@@ -58,6 +58,9 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     private int _fieldCount;
     private int _depthW, _depthH;
     private nint _vb, _ib, _lines;
+    /// <summary>brief-em3d-104 — the shade stream (Scene3DShadeVertex), held only while the realistic view is on; 0 otherwise.
+    /// Bound at vertex buffer index 3 by the realistic pipelines (brief 106; scene.wgsl's header has the mapping).</summary>
+    private nint _shade;
     private readonly nint[] _overlays = new nint[3];
     private readonly nint[] _rb = new nint[Ring], _rbCmd = new nint[Ring];
     private readonly long[] _rbFrame = new long[Ring];
@@ -292,6 +295,34 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             fixed (byte* p = Scene3DPatch.Source(scene, r)) staging = NewBuffer(p, r.ByteLength);
             _patches.Add((staging, target, (nuint)r.ByteOffset, (nuint)r.ByteLength));
         }
+    }
+
+    /// <summary>brief-em3d-104 R-em3d104-3a — the whole shade stream, as UploadScene uploads the vertices.</summary>
+    public override void UploadShade(Scene3DModel scene)
+    {
+        ReleaseShade();
+        fixed (Scene3DShadeVertex* p = scene.ShadeVertices) _shade = NewBuffer(p, scene.ShadeVertices.Length * Scene3DShadeVertex.Stride);
+    }
+
+    /// <summary>The shade stream's changed ranges, staged and copied on the queue by the next frame, as PatchScene's are.</summary>
+    public override void PatchShade(Scene3DModel scene, Scene3DPatch patch)
+    {
+        if (patch.ShadeRanges.Count > 0 && _shade == 0) { UploadShade(scene); return; }
+        foreach (var r in patch.ShadeRanges)
+        {
+            nint staging;
+            fixed (byte* p = Scene3DPatch.Source(scene, r)) staging = NewBuffer(p, r.ByteLength);
+            _patches.Add((staging, _shade, (nuint)r.ByteOffset, (nuint)r.ByteLength));
+        }
+    }
+
+    /// <summary>A command buffer already encoded retains the buffer it reads; a patch still staged for it is dropped with it.</summary>
+    public override void ReleaseShade()
+    {
+        if (_shade == 0) return;
+        for (int k = _patches.Count - 1; k >= 0; k--)
+            if (_patches[k].Target == _shade) { Send(_patches[k].Staging, S.release); _patches.RemoveAt(k); }
+        Release(ref _shade);
     }
 
     private static readonly nint Sel_copyBuffer = Sel("copyFromBuffer:sourceOffset:toBuffer:destinationOffset:size:");
@@ -752,7 +783,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             Release(ref _rbCmd[i]);
         }
         ReleaseImages();
-        Release(ref _vb); Release(ref _ib); Release(ref _lines); Release(ref _field); Release(ref _imageVb);
+        Release(ref _vb); Release(ref _ib); Release(ref _lines); Release(ref _field); Release(ref _imageVb); Release(ref _shade);
         _textures.Clear(ReleaseTexture);
         for (int i = 0; i < 3; i++) Release(ref _overlays[i]);
         for (int i = 0; i < Ring; i++) Release(ref _rb[i]);

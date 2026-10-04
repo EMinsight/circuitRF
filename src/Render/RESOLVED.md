@@ -4654,3 +4654,44 @@ missing the driven port's probes or its kept document is drawn as written, with 
 - **A section through the centre is the tessellated default** (`MeshCut`) and closes, though the equator's vertices lie
   exactly on the plane: the crossing test is strict on one side, so each equator vertex counts as below and every edge to
   the band above is cut once.
+
+## Smooth shading normals (brief-em3d-104, 2026-10-04)
+
+- **The rule** (`ShadingNormals`, the only place a shading normal is made). Per scene vertex, over the triangles that use it:
+  faces never share a scene vertex (the builder already splits by (mesh vertex, face)), so an edge between faces is always
+  sharp; within a face, two triangles sharing an edge through the vertex join one group unless they turn by more than
+  `Em3dSectionScene.SharpEdgeDegrees` (30°, the feature-edge constant); a group is what those joins reach. A split vertex is
+  DUPLICATED (position, id, colour, face identical; the copies follow every original, vertices ascending, groups in first-use
+  order) and only the indices of its later groups' triangles change. The welded, unfaced path takes the same rule.
+- **Weights are Max's (1999), not the brief's area weights**: each corner contributes its unit triangle normal times
+  sin α / (|e₁| |e₂|). Area weighting cannot meet the brief's own gate 1: a cylinder's side vertex is a corner of one half of
+  the facet behind it and both halves of the facet ahead, so the facets weigh 1 : 2 and the normal leans 1.9° off radial.
+  Angle weighting fixes the cylinder but leans 0.3° beside a sphere's poles (gate 4 asks 1e-3). Max's weights give each
+  cylinder facet 1 / (w h) however the quad is split, and are exact for a vertex whose neighbours lie on a sphere.
+- **Degenerate triangles** (height below 1e-5 of the longest edge) contribute nothing and split nothing: one joins its first
+  non-degenerate edge neighbour, so it can never bridge a crease. A group with no contribution takes its first triangle's
+  plane normal, else +z.
+- **"Ball bonds are unfaced" was not so.** A ball (sphere, truncated sphere) is a solid on the FACED path with
+  `FaceUnknown`; the unfaced path is ports, face tints, face images and the air box's faces. A ball flattened on its pad
+  splits only along its cut's rim (sphere vs flat), 32 vertices.
+- **The per-draw transform is rigid**, so the realistic shader may rotate a normal by `MX.m`'s upper 3 × 3: an element's slot
+  is a translation, and a preview's copies come from `C3dTransform`, orthogonal by construction (a rotation, possibly with a
+  mirror, which maps an outward normal to the mirrored outward normal). The one scale (`BoxSlot`, the unit box an element
+  over budget is drawn as) draws lines, which carry no shade stream.
+- **A round bond wire stays faceted.** Its section is the hexagon the generator sweeps (`Em3dWireSection`); 60° between sides
+  is a crease, so every wire vertex splits and the realistic view will show a hexagonal prism, not a smooth wire.
+- **Duplication on the shipped examples** (scene vertices without → with the split):
+
+  | Example | Vertices | Added |
+  |---|---|---|
+  | 3D Connector / Flange, Launch | 166, 699 | 0 |
+  | 3D EM / Bond wire 3D | 216 → 284 | +68 (31 %) |
+  | 3D EM / Package C, L, lid modes | 244, 566, 306 | +128 each (52 %, 23 %, 42 %) |
+  | 3D EM / Via 3D | 1,114 | 0 |
+  | 3D Package / Package | 2,108 → 2,392 | +284 (13 %) |
+  | Thermal Channel vs Surface (both) | 72, 216 | 0 |
+  | Thermal Die to Heatsink | 9,798 → 9,800 | +2 |
+  | Thermal Output Wires / Output, Drawn Wires | 480 → 972 | +492 (103 %, the hexagonal wires) |
+
+  The planar `.cem` examples make no 3D problem and were not counted. The added vertices cost the default view 24 bytes each
+  (it draws them, identical); the shade stream is 16 bytes a vertex and only exists while the realistic view is on.

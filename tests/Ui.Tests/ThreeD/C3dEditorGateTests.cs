@@ -45,6 +45,24 @@ internal sealed class PatchRecordingBackend : Viewer3DBackend
         Counters.CountUpload(patch.Bytes);
     }
 
+    /// <summary>brief-em3d-104 — the shade stream's whole uploads, patched bytes and releases.</summary>
+    public int ShadeUploads, ShadeReleases;
+    public long ShadePatchBytes;
+
+    public override void UploadShade(Scene3DModel scene)
+    {
+        ShadeUploads++;
+        Counters.CountUpload(scene.ShadeBytes);
+    }
+
+    public override void PatchShade(Scene3DModel scene, Scene3DPatch patch)
+    {
+        ShadePatchBytes += patch.ShadeBytes;
+        Counters.CountUpload(patch.ShadeBytes);
+    }
+
+    public override void ReleaseShade() => ShadeReleases++;
+
     public override void UploadOverlay(Scene3DBuffer slot, Scene3DVertex[] lines) => Counters.CountUpload((long)lines.Length * Scene3DVertex.Stride);
     public override void UploadField(CircuitRF.Render.Scene3D.Fields.FieldVertex[] vertices) { }
     public override byte[] RenderPixels(Scene3DFramePlan plan) => new byte[plan.Width * plan.Height * 4];

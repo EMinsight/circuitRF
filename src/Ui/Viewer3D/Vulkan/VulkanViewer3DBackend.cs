@@ -125,6 +125,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     private VkFramebuffer _pickFb;
     private long _frame;
     private (VkBuffer Buf, VkDeviceMemory Mem) _vb, _ib, _lines, _field;
+    /// <summary>brief-em3d-104 — the shade stream (Scene3DShadeVertex), held only while the realistic view is on. Vertex binding 1
+    /// of the realistic pipelines (brief 106; scene.wgsl's header has the mapping).</summary>
+    private (VkBuffer Buf, VkDeviceMemory Mem) _shade;
     private int _fieldCount;
     private readonly (VkBuffer Buf, VkDeviceMemory Mem)[] _overlays = new (VkBuffer, VkDeviceMemory)[3];
 
@@ -741,6 +744,29 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         if (t.Memory.Handle != 0) api.vkFreeMemory(t.Memory, null);
     }
 
+    /// <summary>brief-em3d-104 R-em3d104-3a — the whole shade stream, device-local, as the vertices are.</summary>
+    public override void UploadShade(Scene3DModel scene)
+    {
+        var api = Api;
+        Free(api, ref _shade);
+        fixed (Scene3DShadeVertex* p = scene.ShadeVertices)
+            _shade = Upload(api, p, scene.ShadeVertices.Length * Scene3DShadeVertex.Stride, VkBufferUsageFlags.VertexBuffer);
+    }
+
+    public override void PatchShade(Scene3DModel scene, Scene3DPatch patch)
+    {
+        if (patch.ShadeRanges.Count == 0) return;
+        if (_shade.Buf.Handle == 0) { UploadShade(scene); return; }
+        var api = Api;
+        api.vkDeviceWaitIdle();
+        foreach (var r in patch.ShadeRanges) CopyRange(api, scene, r, _shade.Buf);
+    }
+
+    public override void ReleaseShade()
+    {
+        if (_api is { } api) Free(api, ref _shade);
+    }
+
     /// <summary>brief-em3d-43 gate 6 — the changed ranges only, staged and copied into the buffers in place.
     /// A frame in flight may still read them, so the GPU is waited for first, as a whole upload does.</summary>
     public override void PatchScene(Scene3DModel scene, Scene3DPatch patch)
@@ -751,22 +777,27 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         {
             var target = r.Buffer switch { Scene3DPatchBuffer.Vertices => _vb, Scene3DPatchBuffer.Indices => _ib, _ => _lines };
             if (target.Buf.Handle == 0) { UploadScene(scene); return; }
-            Counters.CountUpload(r.ByteLength);
-            var staging = NewBuffer(api, r.ByteLength, VkBufferUsageFlags.TransferSrc, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
-            void* p;
-            Check(api.vkMapMemory(staging.Item2, 0, (ulong)r.ByteLength, 0, &p), "vkMapMemory");
-            Scene3DPatch.Source(scene, r).CopyTo(new Span<byte>(p, r.ByteLength));
-            api.vkUnmapMemory(staging.Item2);
-            var dst = target.Buf;
-            ulong offset = (ulong)r.ByteOffset, size = (ulong)r.ByteLength;
-            OneShot(api, cb =>
-            {
-                var region = new VkBufferCopy { dstOffset = offset, size = size };
-                api.vkCmdCopyBuffer(cb, staging.Item1, dst, 1, &region);
-            });
-            api.vkDestroyBuffer(staging.Item1, null);
-            api.vkFreeMemory(staging.Item2, null);
+            CopyRange(api, scene, r, target.Buf);
         }
+    }
+
+    /// <summary>One range of <paramref name="scene"/>'s bytes into <paramref name="dst"/> in place, through a staging buffer. Counted.</summary>
+    private void CopyRange(VkDeviceApi api, Scene3DModel scene, Scene3DPatchRange r, VkBuffer dst)
+    {
+        Counters.CountUpload(r.ByteLength);
+        var staging = NewBuffer(api, r.ByteLength, VkBufferUsageFlags.TransferSrc, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
+        void* p;
+        Check(api.vkMapMemory(staging.Item2, 0, (ulong)r.ByteLength, 0, &p), "vkMapMemory");
+        Scene3DPatch.Source(scene, r).CopyTo(new Span<byte>(p, r.ByteLength));
+        api.vkUnmapMemory(staging.Item2);
+        ulong offset = (ulong)r.ByteOffset, size = (ulong)r.ByteLength;
+        OneShot(api, cb =>
+        {
+            var region = new VkBufferCopy { dstOffset = offset, size = size };
+            api.vkCmdCopyBuffer(cb, staging.Item1, dst, 1, &region);
+        });
+        api.vkDestroyBuffer(staging.Item1, null);
+        api.vkFreeMemory(staging.Item2, null);
     }
 
     public override void UploadOverlay(Scene3DBuffer slot, Scene3DVertex[] lines)
@@ -1288,7 +1319,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         }
         api.vkDeviceWaitIdle();
         ReleaseImages();
-        Free(api, _vb); Free(api, _ib); Free(api, _lines); Free(api, _field); Free(api, _imageVb);
+        Free(api, _vb); Free(api, _ib); Free(api, _lines); Free(api, _field); Free(api, _imageVb); Free(api, _shade);
         _textures.Clear(ReleaseTexture);
         foreach (var o in _overlays) Free(api, o);
         foreach (var b in _pickBuf) Free(api, b);

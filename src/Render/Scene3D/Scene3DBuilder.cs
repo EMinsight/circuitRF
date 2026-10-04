@@ -88,7 +88,12 @@ public sealed record Scene3DBuildOptions(
     bool HideOutermostDielectric = true,
     Func<string, Scene3DTransparency?>? Transparency = null,
     Func<string, CircuitRF.Design.ThreeD.C3dPlacedImage?>? Images = null,
-    IReadOnlyList<CircuitRF.Design.ThreeD.C3dFaceImageUse>? FaceImages = null);
+    IReadOnlyList<CircuitRF.Design.ThreeD.C3dFaceImageUse>? FaceImages = null)
+{
+    /// <summary>brief-em3d-104 gate 11 — false keeps every vertex whole (no crease duplicates): the "before" the default view's
+    /// pixels are compared against, built in the same test rather than read from a stored picture.</summary>
+    internal bool SplitShadingCreases { get; init; } = true;
+}
 
 /// <summary>brief-em3d-92 — how see-through one object is drawn: its own percentage (null, its kind's default) and the opacity the
 /// instances it sits in multiply onto it (1 for none). C3dTransparency.Alpha turns the two and the kind's alpha into one.</summary>
@@ -284,7 +289,7 @@ public static class Scene3DBuilder
                                  .Select(s => s.Material).Distinct(StringComparer.Ordinal).ToList();
         var materials = problem.Materials.Select((m, i) => (m, i)).ToDictionary(t => t.m.Name, t => t, StringComparer.Ordinal);
 
-        var b = new Accumulator(L);
+        var b = new Accumulator(L) { SplitShading = options.SplitShadingCreases };
         var imageNotes = new List<string>();
         // brief-em3d-101 Phase B — the objects face images are on, and each one's triangles once it is tessellated.
         var faceImageObjects = new HashSet<string>(options.FaceImages?.Select(u => u.Object) ?? [], StringComparer.Ordinal);
@@ -909,6 +914,9 @@ public static class Scene3DBuilder
 
         private readonly List<Scene3DObject> _objects = [];
         private readonly List<Scene3DVertex> _verts = [];
+        /// <summary>brief-em3d-104 — parallel to <see cref="_verts"/>, always.</summary>
+        private readonly List<Scene3DShadeVertex> _shade = [];
+        public bool SplitShading { get; init; } = true;
         private readonly List<uint[]> _objIndices = [];
         private readonly List<Scene3DVertex> _lines = [];
         private readonly List<Scene3DLineBatch> _lineBatches = [];
@@ -1063,6 +1071,7 @@ public static class Scene3DBuilder
                 if (edges.Count > 0) _edges.Add((id, edges));
                 featureEdges = edges;
             }
+            if (mesh is not null) idx = Shade(obj.FirstVertex, idx);
             obj.VertexCount = _verts.Count - obj.FirstVertex;
             if (lines is not null || (wireEdges is not null && featureEdges is { Count: > 0 }))
             {
@@ -1081,6 +1090,25 @@ public static class Scene3DBuilder
             obj.Min = min; obj.Max = max;
             _objects.Add(obj);
             _objIndices.Add(idx);
+        }
+
+        /// <summary>brief-em3d-104 R-em3d104-1e / 2c — the shade vertices of the object whose vertices start at <paramref name="first"/>:
+        /// each split vertex is copied (position, id, colour and face identical) and its triangles' indices moved to the copy.
+        /// Returns the indices to keep.</summary>
+        private uint[] Shade(int first, uint[] idx)
+        {
+            int count = _verts.Count - first;
+            if (idx.Length == 0)
+            {
+                for (int k = 0; k < count; k++) _shade.Add(new Scene3DShadeVertex(0, 0, 1));
+                return idx;
+            }
+            var pos = new Vector3[count];
+            for (int k = 0; k < count; k++) { var v = _verts[first + k]; pos[k] = new Vector3(v.X, v.Y, v.Z); }
+            var r = ShadingNormals.Compute(pos, idx, (uint)first, SplitShading);
+            foreach (int d in r.Duplicates) _verts.Add(_verts[first + d]);
+            foreach (var n in r.Normals) _shade.Add(new Scene3DShadeVertex(n.X, n.Y, n.Z));
+            return r.Indices;
         }
 
         public Scene3DModel Finish(long generation, (double, double, double) origin, Em3dProblem problem, IReadOnlyList<string>? notes)
@@ -1207,7 +1235,7 @@ public static class Scene3DBuilder
             return new Scene3DModel
             {
                 Generation = generation, Origin = origin,
-                Vertices = [.. _verts], Indices = indices, LineVertices = [.. _lines],
+                Vertices = [.. _verts], ShadeVertices = [.. _shade], Indices = indices, LineVertices = [.. _lines],
                 Objects = [.. _objects], Batches = [.. batches], LineBatches = [.. _lineBatches],
                 EdgeBatches = [.. edgeBatches],
                 Features = [.. _features],

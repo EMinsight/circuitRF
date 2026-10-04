@@ -18,7 +18,9 @@ using System.Runtime.InteropServices;
 namespace CircuitRF.Render.Scene3D;
 
 /// <summary>Which of a scene's buffers a range is in.</summary>
-public enum Scene3DPatchBuffer { Vertices, Indices, Lines }
+/// <para>brief-em3d-104 — <see cref="Shade"/> ranges are listed apart (<see cref="Scene3DPatch.ShadeRanges"/>): the shade stream is
+/// held only while the realistic view is on, and the default view's patch must cost exactly what it did.</para>
+public enum Scene3DPatchBuffer { Vertices, Indices, Lines, Shade }
 
 /// <summary><see cref="ByteLength"/> bytes at <see cref="ByteOffset"/> of one buffer.</summary>
 public readonly record struct Scene3DPatchRange(Scene3DPatchBuffer Buffer, int ByteOffset, int ByteLength);
@@ -31,9 +33,20 @@ public sealed class Scene3DPatch
     /// <summary>The bytes the ranges cover.</summary>
     public long Bytes => Ranges.Sum(r => (long)r.ByteLength);
 
+    /// <summary>brief-em3d-104 R-em3d104-3a — the shade stream's ranges, compared object by object as the vertices are (a recolour
+    /// changes no normal and lists none; a moved vertex or a changed triangle does). Applied only while the stream is held.</summary>
+    public IReadOnlyList<Scene3DPatchRange> ShadeRanges { get; init; } = [];
+
+    /// <summary>The bytes <see cref="ShadeRanges"/> cover.</summary>
+    public long ShadeBytes => ShadeRanges.Sum(r => (long)r.ByteLength);
+
     /// <summary>brief-em3d-48 — array elements standing where none stood before (by group and translation): each is one
     /// per-draw transform, and no geometry.</summary>
     public int ElementTransforms { get; init; }
+
+    /// <summary>brief-em3d-104 — the two scenes' shade streams could not be compared (one lacks a stream): a held stream is
+    /// uploaded whole instead of patched.</summary>
+    public bool ShadeWhole { get; init; }
 
     /// <summary>The patch from <paramref name="from"/> to <paramref name="to"/>, or null when their layouts
     /// differ and <paramref name="to"/> must be uploaded whole.</summary>
@@ -57,17 +70,25 @@ public sealed class Scene3DPatch
                 return null;
 
         var ranges = new List<Scene3DPatchRange>();
+        var shade = new List<Scene3DPatchRange>();
         void Add(Scene3DPatchBuffer buf, int offset, int length)
         {
             if (length == 0) return;
-            if (ranges.Count > 0 && ranges[^1] is var last && last.Buffer == buf && last.ByteOffset + last.ByteLength == offset)
-                ranges[^1] = last with { ByteLength = last.ByteLength + length };
-            else ranges.Add(new Scene3DPatchRange(buf, offset, length));
+            var list = buf == Scene3DPatchBuffer.Shade ? shade : ranges;
+            if (list.Count > 0 && list[^1] is var last && last.Buffer == buf && last.ByteOffset + last.ByteLength == offset)
+                list[^1] = last with { ByteLength = last.ByteLength + length };
+            else list.Add(new Scene3DPatchRange(buf, offset, length));
         }
 
         foreach (var o in to.Objects.Take(oo))
             if (!Same(from.Vertices, to.Vertices, o.FirstVertex, o.VertexCount))
                 Add(Scene3DPatchBuffer.Vertices, o.FirstVertex * Scene3DVertex.Stride, o.VertexCount * Scene3DVertex.Stride);
+        // A scene not built with a shade stream (or two that differ in having one) has no shade patch: the stream is uploaded whole.
+        bool shadeComparable = from.ShadeVertices.Length == from.Vertices.Length && to.ShadeVertices.Length == to.Vertices.Length;
+        if (shadeComparable)
+            foreach (var o in to.Objects.Take(oo))
+                if (!Same(from.ShadeVertices, to.ShadeVertices, o.FirstVertex, o.VertexCount))
+                    Add(Scene3DPatchBuffer.Shade, o.FirstVertex * Scene3DShadeVertex.Stride, o.VertexCount * Scene3DShadeVertex.Stride);
         foreach (var b in to.Batches.Take(ob).OrderBy(b => b.FirstIndex))
             if (!Same(from.Indices, to.Indices, b.FirstIndex, b.IndexCount))
                 Add(Scene3DPatchBuffer.Indices, b.FirstIndex * sizeof(uint), b.IndexCount * sizeof(uint));
@@ -79,7 +100,7 @@ public sealed class Scene3DPatch
         // after it, which changes their ids and not their translations.
         var had = new HashSet<(int, System.Numerics.Vector3)>(from.Elements.Select(e => (e.Group, e.Offset)));
         int moved = to.Elements.Count(e => !had.Contains((e.Group, e.Offset)));
-        return new Scene3DPatch { Ranges = ranges, ElementTransforms = moved };
+        return new Scene3DPatch { Ranges = ranges, ShadeRanges = shade, ElementTransforms = moved, ShadeWhole = !shadeComparable };
     }
 
     private static bool Same<T>(T[] a, T[] b, int first, int count) where T : unmanaged
@@ -90,6 +111,7 @@ public sealed class Scene3DPatch
     {
         Scene3DPatchBuffer.Vertices => MemoryMarshal.AsBytes(scene.Vertices.AsSpan()).Slice(r.ByteOffset, r.ByteLength),
         Scene3DPatchBuffer.Indices  => MemoryMarshal.AsBytes(scene.Indices.AsSpan()).Slice(r.ByteOffset, r.ByteLength),
+        Scene3DPatchBuffer.Shade    => MemoryMarshal.AsBytes(scene.ShadeVertices.AsSpan()).Slice(r.ByteOffset, r.ByteLength),
         _                           => MemoryMarshal.AsBytes(scene.LineVertices.AsSpan()).Slice(r.ByteOffset, r.ByteLength),
     };
 }

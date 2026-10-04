@@ -18,6 +18,7 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
     private readonly long[] _overlayVersions = [-1, -1, -1];
     private long _fieldVersion = -1;
     private Scene3DModel? _uploadedScene;
+    private Scene3DModel? _shadeScene;
     private bool _disposed;
 
     /// <summary>Serialises the render thread against a backend teardown.</summary>
@@ -31,6 +32,13 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
 
     /// <summary>How many new scenes were uploaded as a patch rather than whole.</summary>
     public int PatchesApplied { get; private set; }
+
+    /// <summary>
+    /// brief-em3d-104 R-em3d104-3b/c — whether the backend holds the shade stream (the realistic view, brief 106, sets it). Off,
+    /// a scene uploads exactly the bytes it always did; turned on, the next frame uploads the current stream once, and later
+    /// generations and patches keep it in step; turned off, the next frame releases it.
+    /// </summary>
+    public bool ShadeStream { get; set; }
 
     /// <summary>Counters on the UI lane: the pane's per-frame share on the UI thread.</summary>
     public FrameCounters Ui { get; } = new("ui");
@@ -72,10 +80,13 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
     private void Upload(Viewer3DBackend b, Scene3DModel scene, Scene3DOverlay mesh, Scene3DOverlay section, Scene3DOverlay grid,
                         Scene3DFieldGeometry? field)
     {
+        Scene3DModel? previous = null;
+        Scene3DPatch? patch = null;
         if (!ReferenceEquals(scene, _uploadedScene) || scene.Generation != _uploadedGeneration)
         {
             // brief-em3d-43 gate 6: a scene with the last one's layout rewrites only what changed.
-            if (_uploadedScene is { } old && Scene3DPatch.Between(old, scene) is { } patch)
+            previous = _uploadedScene;
+            if (previous is not null && (patch = Scene3DPatch.Between(previous, scene)) is not null)
             {
                 PatchesApplied++;
                 b.PatchScene(scene, patch);
@@ -83,6 +94,18 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
             else b.UploadScene(scene);
             _uploadedScene = scene;
             _uploadedGeneration = scene.Generation;
+        }
+        // brief-em3d-104 — the shade stream, only while it is wanted: patched by the same comparison when the backend held the
+        // previous scene's, else uploaded whole.
+        if (!ShadeStream)
+        {
+            if (_shadeScene is not null) { b.ReleaseShade(); _shadeScene = null; }
+        }
+        else if (!ReferenceEquals(_shadeScene, scene))
+        {
+            if (patch is { ShadeWhole: false } && _shadeScene is not null && ReferenceEquals(_shadeScene, previous)) b.PatchShade(scene, patch);
+            else b.UploadShade(scene);
+            _shadeScene = scene;
         }
         Sync(b, Scene3DBuffer.Overlay0, 0, mesh);
         Sync(b, Scene3DBuffer.Overlay1, 1, section);

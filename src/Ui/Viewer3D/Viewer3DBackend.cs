@@ -47,6 +47,21 @@ public abstract class Viewer3DBackend : IDisposable
     /// bytes. A backend that cannot patch uploads the whole scene instead, which is always correct.</summary>
     public virtual void PatchScene(Scene3DModel scene, Scene3DPatch patch) => UploadScene(scene);
 
+    // ── the shade stream (brief-em3d-104 R-em3d104-3): held only while the realistic view is on ────────────────────────
+
+    /// <summary>Replaces the shade stream's buffer with <paramref name="scene"/>'s <see cref="Scene3DModel.ShadeVertices"/> (parallel
+    /// to its vertices). Counts the bytes. Called only while the realistic view is on (<see cref="Viewer3DSession.ShadeStream"/>);
+    /// with it off this backend holds no shade buffer at all.</summary>
+    public abstract void UploadShade(Scene3DModel scene);
+
+    /// <summary>Rewrites only <paramref name="patch"/>'s <see cref="Scene3DPatch.ShadeRanges"/> of the shade buffer the last
+    /// <see cref="UploadShade"/> (or patch) left. Counts the bytes. A backend that cannot patch uploads the whole stream, which is
+    /// always correct.</summary>
+    public virtual void PatchShade(Scene3DModel scene, Scene3DPatch patch) => UploadShade(scene);
+
+    /// <summary>Releases the shade buffer: the realistic view was turned off.</summary>
+    public abstract void ReleaseShade();
+
     /// <summary>Replaces one overlay slot's line buffer (<see cref="Scene3DBuffer.Overlay0"/>…2).</summary>
     public abstract void UploadOverlay(Scene3DBuffer slot, Scene3DVertex[] lines);
 

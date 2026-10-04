@@ -72,3 +72,18 @@ Findings from work on the 3D viewer's view model. The field model itself (reader
   releases what it made through `ReleaseTexture`. The image's memory is recorded before it is bound, so a failed bind frees it.
   `NewBuffer` frees its buffer when the memory allocation fails, and `OneShot` frees its command buffer on any failure. Compiled
   only: no Vulkan device has run it.
+
+## The shade stream: upload and binding (brief-em3d-104, 2026-10-04)
+
+- **Lazy, by `Viewer3DSession.ShadeStream`** (brief 106 sets it). Off, nothing is uploaded or held: a scene costs exactly
+  vertices + indices + lines, as before. On, the next frame uploads the whole stream once (16 bytes a vertex); a later scene is
+  PATCHED when the backend held the previous scene's stream and the scene itself was patched, else uploaded whole. Off again,
+  the next frame releases the buffer (Metal also drops any staged patch aimed at it).
+- **Shade ranges are listed apart** (`Scene3DPatch.ShadeRanges`), compared object by object as the vertices are, so the default
+  view's patch is byte-for-byte what it was. A recolour or a translation lists none (normals unchanged); a tilt lists the object.
+- **Buffer mapping** (also at the top of `scene.wgsl` and in `tools/ShaderGen/README.md`): attributes `@location(4)` normal and
+  `@location(5)` slot; Metal vertex buffer index **3** (0 geometry, 1 uniforms, 2 per-draw transform share one argument table),
+  D3D11 input slot **1** (semantics LOC4, LOC5), Vulkan vertex binding **1**. No pipeline declares it yet; 106's do. The WGSL
+  edit is comment-only: the regenerated shaders differ only in their hash line.
+- **Gate 11 ran on Metal**: the CaseA scene drawn with and without the duplicates reads back identical bytes. D3D11 and Vulkan's
+  upload/patch/release are compiled only.

@@ -117,6 +117,8 @@ public static class DocEm3dFixtures
     {
         public override string Description => "no pixels (a figure of a panel)";
         public override void UploadScene(CircuitRF.Render.Scene3D.Scene3DModel scene) { }
+        public override void UploadShade(CircuitRF.Render.Scene3D.Scene3DModel scene) { }
+        public override void ReleaseShade() { }
         public override void UploadOverlay(CircuitRF.Render.Scene3D.Scene3DBuffer slot, CircuitRF.Render.Scene3D.Scene3DVertex[] lines) { }
         public override void UploadField(CircuitRF.Render.Scene3D.Fields.FieldVertex[] vertices) { }
         public override byte[] RenderPixels(CircuitRF.Render.Scene3D.Scene3DFramePlan plan) => new byte[plan.Width * plan.Height * 4];

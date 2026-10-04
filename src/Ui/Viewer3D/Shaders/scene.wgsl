@@ -74,6 +74,12 @@ struct U {
 // 3D editor bugs round 3 — and id.y, a selected object's edge pass (Scene3DFramePlan.EdgePasses): 0 none, else the line
 // drawn again (id.y & 1, id.y >> 1) pixels over, so the outline is two pixels wide where no backend draws a wider line.
 // brief-em3d-96 — in a FIELD draw id.y is instead the drawn plot's colour block (vs_field reads it; vs never sees a field draw).
+//
+// brief-em3d-104 R-em3d104-3d — the SHADE stream (Scene3DShadeVertex: the shading normal vec3f, the appearance slot u32; 16
+// bytes, parallel to the scene's vertices) is a SECOND vertex buffer that only the realistic pipelines (brief 106) declare, as
+// @location(4) normal and @location(5) slot after the four Scene3DVertex attributes. WGSL names no vertex buffer, so the slot is
+// each backend's pipeline layout: Metal vertex buffer index 3 (0 is the geometry, 1 the uniforms, 2 this transform — one
+// argument table), D3D11 input slot 1 (semantics LOC4, LOC5), Vulkan vertex binding 1. No existing pipeline's layout changes.
 struct MX {
     m: mat4x4f,
     id: vec4u,

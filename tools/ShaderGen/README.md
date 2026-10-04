@@ -33,6 +33,18 @@ drawn) is MSL `[[buffer(2)]]`, HLSL `cbuffer … : register(b1)`, SPIR-V descrip
 uniform the Vulkan backend re-offsets per draw). It is a uniform, not a WGSL immediate: naga writes an immediate
 to HLSL as `ConstantBuffer<T>`, which Shader Model 5.0 does not compile.
 
+A second VERTEX buffer — the realistic view's shade stream (brief-em3d-104: `Scene3DShadeVertex`, a shading normal and an
+appearance slot, parallel to the scene's vertices) — needs nothing from naga: with `stage_in` every vertex input is an
+attribute location, and which buffer feeds it is the pipeline's vertex layout. The mapping is fixed here once:
+
+| Stream | WGSL | MSL buffer index | D3D11 input slot | Vulkan vertex binding |
+|---|---|---|---|---|
+| `Scene3DVertex` (24 B) | `@location(0..3)` | 0 | 0 | 0 |
+| `Scene3DShadeVertex` (16 B) | `@location(4)` normal, `@location(5)` slot | **3** | **1** | **1** |
+
+MSL shares one argument table between vertex buffers and `[[buffer(n)]]` bindings, so index 3 is the first one free of the
+uniforms (1) and the per-draw transform (2). Only the realistic pipelines (brief 106) declare the second stream.
+
 An image draw's texture and sampler (brief-em3d-101: a reference image on a sheet or a face) are `@group(1)`:
 
 | Binding | MSL | HLSL | SPIR-V |

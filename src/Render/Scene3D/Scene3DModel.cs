@@ -41,6 +41,20 @@ public struct Scene3DVertex(float x, float y, float z, uint id, uint rgba, uint 
 }
 
 /// <summary>
+/// brief-em3d-104 R-em3d104-2a — a vertex of the SHADE stream, 16 bytes: the shading normal (scene-local, ShadingNormals) and the
+/// object's appearance slot (overview D16; 0 until briefs 105/106 fill it). <see cref="Scene3DModel.ShadeVertices"/> is parallel
+/// to <see cref="Scene3DModel.Vertices"/> — same length, same index — and only the realistic view's pipelines read it, so
+/// <see cref="Scene3DVertex"/>'s 24-byte stride, which every other draw relies on, is unchanged.
+/// </summary>
+[StructLayout(LayoutKind.Sequential, Pack = 4)]
+public struct Scene3DShadeVertex(float nx, float ny, float nz, uint slot = 0)
+{
+    public const int Stride = 16;
+    public float Nx = nx, Ny = ny, Nz = nz;
+    public uint Slot = slot;
+}
+
+/// <summary>
 /// brief-em3d-101 R-em3d101-4a — a vertex of an IMAGE draw, 32 bytes: position (scene-local metres), the texture coordinate
 /// (u right, v DOWN — a texture's rows run top first), the object's ID and face (what hover and selection compare, as on
 /// <see cref="Scene3DVertex"/>), and a colour whose alpha multiplies the texture's (the object's transparency). A stream of its
@@ -210,6 +224,9 @@ public sealed class Scene3DModel
     /// <summary>World position of the scene-local origin, metres.</summary>
     public required (double X, double Y, double Z) Origin { get; init; }
     public required Scene3DVertex[] Vertices { get; init; }
+    /// <summary>brief-em3d-104 R-em3d104-2a — each vertex's shading normal and appearance slot, parallel to <see cref="Vertices"/>
+    /// (a scene built by Scene3DBuilder always has one per vertex). Uploaded only while the realistic view is on.</summary>
+    public Scene3DShadeVertex[] ShadeVertices { get; init; } = [];
     public required uint[] Indices { get; init; }
     public required Scene3DVertex[] LineVertices { get; init; }
     public required Scene3DObject[] Objects { get; init; }
@@ -289,6 +306,7 @@ public sealed class Scene3DModel
     public long VertexBytes => (long)Vertices.Length * Scene3DVertex.Stride;
     public long IndexBytes => (long)Indices.Length * sizeof(uint);
     public long LineBytes => (long)LineVertices.Length * Scene3DVertex.Stride;
+    public long ShadeBytes => (long)ShadeVertices.Length * Scene3DShadeVertex.Stride;
 
     /// <summary>The object with ID <paramref name="id"/>, or null (0, or out of range).</summary>
     public Scene3DObject? Object(uint id) => id >= 1 && id <= Objects.Length ? Objects[id - 1] : null;

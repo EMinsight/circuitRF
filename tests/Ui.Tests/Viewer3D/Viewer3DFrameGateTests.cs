@@ -40,6 +40,9 @@ internal sealed class RecordingBackend : Viewer3DBackend
         Counters.CountUpload((long)lines.Length * Scene3DVertex.Stride);
     }
 
+    public override void UploadShade(Scene3DModel scene) => Counters.CountUpload(scene.ShadeBytes);
+    public override void ReleaseShade() { }
+
     public int FieldUploads;
 
     public override void UploadField(CircuitRF.Render.Scene3D.Fields.FieldVertex[] vertices)
@@ -179,7 +182,7 @@ public sealed class Viewer3DFrameGateTests : IDisposable
         fake.Answer = wire;
         vm.Session.EnsureBackend();
 
-        long tessellations = Scene3DBuilder.Tessellations, builds = vm.Source.Builds;
+        long tessellations = Scene3DBuilder.Tessellations, builds = vm.Source.Builds, normals = ShadingNormals.Built;
         var plan = new Scene3DFramePlan();
         long uploadsAfterFirst = -1;
         for (int i = 0; i < 1000; i++)
@@ -192,6 +195,7 @@ public sealed class Viewer3DFrameGateTests : IDisposable
         }
 
         Assert.Equal(tessellations, Scene3DBuilder.Tessellations);
+        Assert.Equal(normals, ShadingNormals.Built);           // brief-em3d-104 R-em3d104-2d
         Assert.Equal(builds, vm.Source.Builds);
         Assert.Equal(uploadsAfterFirst, fake.Counters.UploadBytesTotal);
         Assert.Equal(wire, vm.View.Hovered);

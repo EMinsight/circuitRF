@@ -83,6 +83,9 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     private ID3D11DepthStencilView? _dsv;
     private int _depthW, _depthH;
     private ID3D11Buffer? _vb, _ib, _lines;
+    /// <summary>brief-em3d-104 — the shade stream (Scene3DShadeVertex), held only while the realistic view is on. Input slot 1 of
+    /// the realistic pipelines' layout (brief 106; scene.wgsl's header has the mapping).</summary>
+    private ID3D11Buffer? _shade;
     private readonly ID3D11Buffer?[] _overlays = new ID3D11Buffer?[3];
     private readonly ID3D11RenderTargetView[] _pickTargets = new ID3D11RenderTargetView[2];
 
@@ -289,6 +292,27 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
             Counters.CountUpload(r.ByteLength);
         }
     }
+
+    /// <summary>brief-em3d-104 R-em3d104-3a — the whole shade stream; DEFAULT usage, so PatchShade rewrites ranges in place.</summary>
+    public override void UploadShade(Scene3DModel scene)
+    {
+        ReleaseShade();
+        fixed (Scene3DShadeVertex* p = scene.ShadeVertices)
+            _shade = NewBuffer(p, scene.ShadeVertices.Length * Scene3DShadeVertex.Stride, BindFlags.VertexBuffer, ResourceUsage.Default);
+    }
+
+    public override void PatchShade(Scene3DModel scene, Scene3DPatch patch)
+    {
+        if (patch.ShadeRanges.Count > 0 && _shade is null) { UploadShade(scene); return; }
+        foreach (var r in patch.ShadeRanges)
+        {
+            Ctx.UpdateSubresource(Scene3DPatch.Source(scene, r), _shade!, 0, 0, 0,
+                                  new Vortice.Mathematics.Box(r.ByteOffset, 0, 0, r.ByteOffset + r.ByteLength, 1, 1));
+            Counters.CountUpload(r.ByteLength);
+        }
+    }
+
+    public override void ReleaseShade() { _shade?.Dispose(); _shade = null; }
 
     public override void UploadOverlay(Scene3DBuffer slot, Scene3DVertex[] lines)
     {
@@ -596,7 +620,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     public override void Dispose()
     {
         ReleaseImages();
-        _vb?.Dispose(); _ib?.Dispose(); _lines?.Dispose(); _field?.Dispose(); _imageVb?.Dispose();
+        _vb?.Dispose(); _ib?.Dispose(); _lines?.Dispose(); _field?.Dispose(); _imageVb?.Dispose(); _shade?.Dispose();
         _textures.Clear(v => v?.Dispose());
         foreach (var o in _overlays) o?.Dispose();
         if (_device is null) return;
