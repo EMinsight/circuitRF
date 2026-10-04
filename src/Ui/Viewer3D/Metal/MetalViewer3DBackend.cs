@@ -71,6 +71,9 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     /// (fragment buffer 4) and the environment's two textures (fragment textures 1 and 2, sampled through the image sampler at index
     /// 1); every one but the pipelines held only while the realistic view is on.</summary>
     private nint _pPbr, _pPbrTrans, _pBackdrop, _appearances, _envMap, _envBrdf;
+    // brief-em3d-109 — the blended field (Exact/Glow below 100 %), the Lit field, and the Lit field's normal stream
+    private nint _pFieldBlend, _pFieldLit, _fieldNormals;
+    private int _fieldNormalCount;
     /// <summary>brief-em3d-107 — the shadow pass's pipeline (depth only), the occlusion's three (the prepass of the materials and of the
     /// ground, the horizon pass, its blur), the ground's; the shadow map (kept between frames: re-rendered only when the session says),
     /// the occlusion's three targets (the view's size), the comparison sampler, and 1 × 1 stand-ins bound while there is no map or no
@@ -142,7 +145,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             return f != 0 ? f : throw new Viewer3DPresentFault($"The 3D view's Metal shader has no function '{name}'.");
         }
         nint vs = Fn("vs"), fsc = Fn("fs_color"), fsl = Fn("fs_line"), fsp = Fn("fs_pick"), fse = Fn("fs_edge"), fst = Fn("fs_top");
-        nint vsf = Fn("vs_field"), fsf = Fn("fs_field");
+        nint vsf = Fn("vs_field"), fsf = Fn("fs_field"), vsfl = Fn("vs_field_lit"), fsfl = Fn("fs_field_lit");
         nint vsg = Fn("vs_grid"), fsg = Fn("fs_grid");
         nint vsi = Fn("vs_image"), fsi = Fn("fs_image");
         nint vsp = Fn("vs_pbr"), fsp2 = Fn("fs_pbr"), fsb = Fn("fs_backdrop"), fspg = Fn("fs_pbr_glass");
@@ -168,6 +171,19 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
             SendV(a, Sel("setFormat:"), VtxFloat3); SendV(a, Sel("setOffset:"), 12 * k); SendV(a, Sel("setBufferIndex:"), (nuint)0);
         }
         SendV(Idx(Send(fvd, Sel("layouts")), 0), Sel("setStride:"), (nuint)FieldVertex.Stride);
+
+        // brief-em3d-109 — the Lit field: the field vertex at buffer 0 (attributes 0–2) and its normal at the shade stream's buffer 3
+        // (attribute 3).
+        nint flvd = Send(Class("MTLVertexDescriptor"), Sel("vertexDescriptor"));
+        nint flattrs = Send(flvd, Sel("attributes"));
+        for (nuint k = 0; k < 4; k++)
+        {
+            nint a = Idx(flattrs, k);
+            SendV(a, Sel("setFormat:"), VtxFloat3); SendV(a, Sel("setOffset:"), k < 3 ? 12 * k : 0);
+            SendV(a, Sel("setBufferIndex:"), k < 3 ? 0 : ShadeBufferIndex);
+        }
+        SendV(Idx(Send(flvd, Sel("layouts")), 0), Sel("setStride:"), (nuint)FieldVertex.Stride);
+        SendV(Idx(Send(flvd, Sel("layouts")), ShadeBufferIndex), Sel("setStride:"), (nuint)FieldShading.Stride);
 
         // brief-em3d-101 — the image vertex: position, texture coordinate, object id, face, colour (its alpha the object's).
         nint ivd = Send(Class("MTLVertexDescriptor"), Sel("vertexDescriptor"));
@@ -236,6 +252,8 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _pLines = Pipe(fsl, false, false, TopoLine);
         _pPick = Pipe(fsp, false, true, TopoTriangle);
         _pField = Pipe(fsf, false, false, TopoTriangle, vsf, fvd);
+        _pFieldBlend = Pipe(fsf, true, false, TopoTriangle, vsf, fvd);
+        _pFieldLit = Pipe(fsfl, true, false, TopoTriangle, vsfl, flvd);
         _pEdges = Pipe(fse, true, false, TopoLine);
         _pTop = Pipe(fst, true, false, TopoTriangle);
         _pGrid = Pipe(fsg, true, false, TopoTriangle, vsg, -1);
@@ -589,6 +607,13 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _fieldCount = vertices.Length;
     }
 
+    public override void UploadFieldNormals(float[] normals)
+    {
+        Release(ref _fieldNormals);
+        fixed (float* p = normals) _fieldNormals = NewBuffer(p, normals.Length * 4);
+        _fieldNormalCount = normals.Length / FieldShading.Floats;
+    }
+
     private nint NewBuffer(void* data, int length)
     {
         if (length == 0) return 0;
@@ -879,6 +904,18 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                         draws++;
                         continue;
                     }
+                    if (d.Pipeline == Scene3DPipeline.FieldLit)
+                    {
+                        // brief-em3d-109 — the Lit field: its vertices with their normals beside them, the environment bound for the sheen.
+                        if (_field == 0 || _fieldNormals == 0 || d.First + d.Count > Math.Min(_fieldCount, _fieldNormalCount) || !BindLook(e)) continue;
+                        SendV(e, S.setRenderPipelineState, _pFieldLit);
+                        SendV(e, S.setDepthStencilState, _dsWrite);
+                        ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(e, S.setVertexBuffer, _field, 0, 0);
+                        ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(e, S.setVertexBuffer, _fieldNormals, 0, ShadeBufferIndex);
+                        ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, void>)MsgSend)(e, Sel_drawPrimitives, PrimTriangle, (nuint)d.First, (nuint)d.Count);
+                        draws++;
+                        continue;
+                    }
                     if (d.Pipeline is Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent)
                     {
                         // brief-em3d-101 — an image: its texture and the one sampler, then its triangles (not indexed).
@@ -894,11 +931,11 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                         continue;
                     }
                     if (buf == 0 || (d.Pipeline is Scene3DPipeline.Opaque or Scene3DPipeline.Translucent or Scene3DPipeline.OnTop && _ib == 0)) continue;
-                    if (d.Pipeline == Scene3DPipeline.Field && d.First + d.Count > _fieldCount) continue;
+                    if (d.Pipeline is Scene3DPipeline.Field or Scene3DPipeline.FieldBlend && d.First + d.Count > _fieldCount) continue;
                     SendV(e, S.setRenderPipelineState, d.Pipeline switch
                     {
                         Scene3DPipeline.Translucent => _pTrans, Scene3DPipeline.Lines => _pLines,
-                        Scene3DPipeline.Field => _pField, Scene3DPipeline.Edges => _pEdges,
+                        Scene3DPipeline.Field => _pField, Scene3DPipeline.FieldBlend => _pFieldBlend, Scene3DPipeline.Edges => _pEdges,
                         Scene3DPipeline.OnTop => _pTop, _ => _pOpaque,
                     });
                     SendV(e, S.setDepthStencilState, d.Pipeline switch
@@ -908,9 +945,9 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                         _ => _dsWrite,
                     });
                     ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(e, S.setVertexBuffer, buf, 0, 0);
-                    if (d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Field or Scene3DPipeline.Edges)
+                    if (d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Field or Scene3DPipeline.FieldBlend or Scene3DPipeline.Edges)
                         ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, void>)MsgSend)(e, Sel_drawPrimitives,
-                            d.Pipeline == Scene3DPipeline.Field ? PrimTriangle : PrimLine, (nuint)d.First, (nuint)d.Count);
+                            d.Pipeline is Scene3DPipeline.Field or Scene3DPipeline.FieldBlend ? PrimTriangle : PrimLine, (nuint)d.First, (nuint)d.Count);
                     else DrawIndexed(e, d);
                     draws++;
                 }
@@ -1058,6 +1095,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         }
         ReleaseImages();
         Release(ref _vb); Release(ref _ib); Release(ref _lines); Release(ref _field); Release(ref _imageVb); Release(ref _shade);
+        Release(ref _fieldNormals);
         ReleaseEnvironment();
         _textures.Clear(ReleaseTexture);
         for (int i = 0; i < 3; i++) Release(ref _overlays[i]);
@@ -1067,7 +1105,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _patches.Clear();
         Release(ref _pOpaque); Release(ref _pTrans); Release(ref _pLines); Release(ref _pPick); Release(ref _pField);
         Release(ref _pEdges); Release(ref _pTop); Release(ref _pGrid); Release(ref _pImage); Release(ref _imageSampler);
-        Release(ref _pPbr); Release(ref _pPbrTrans); Release(ref _pBackdrop);
+        Release(ref _pPbr); Release(ref _pPbrTrans); Release(ref _pBackdrop); Release(ref _pFieldBlend); Release(ref _pFieldLit);
         Release(ref _pShadow); Release(ref _pPrepass); Release(ref _pGroundPrepass); Release(ref _pAo); Release(ref _pAoBlur);
         Release(ref _pGround); Release(ref _shadowSampler); Release(ref _noShadowMap); Release(ref _noOcclusion);
         Release(ref _dsWrite); Release(ref _dsNoWrite); Release(ref _dsAlways);

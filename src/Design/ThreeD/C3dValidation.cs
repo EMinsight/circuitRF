@@ -119,6 +119,11 @@ public static class C3dValidation
             if (!File.Exists(file)) found.Add(C3dDiagnostics.LookHdrUnreadable(path, "the file does not exist"));
             else if (!RadianceHdr.Probe(file, out string? why)) found.Add(C3dDiagnostics.LookHdrUnreadable(path, why ?? "it does not read"));
         }
+        // brief-em3d-109 — the field style is one of three words, the field opacity a percentage
+        look.FieldStyleOf(out bool styleKnown);
+        if (!styleKnown) found.Add(C3dDiagnostics.LookFieldStyle(look.FieldStyle ?? ""));
+        if (look.FieldOpacity is { } fo && !(double.IsFinite(fo) && fo >= C3dLook.FieldOpacityMin && fo <= C3dLook.FieldOpacityMax))
+            found.Add(C3dDiagnostics.LookRange(nameof(C3dLook.FieldOpacity), fo, C3dLook.FieldOpacityMin, C3dLook.FieldOpacityMax));
         // brief-em3d-107 — Shadows, AmbientOcclusion and Ground are booleans: the reader refuses any other value, so nothing is left here
         // brief-em3d-108 — the picture camera, when stated, must be one a picture can be taken from
         if (look.Camera is { } camera)

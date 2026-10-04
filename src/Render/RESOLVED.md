@@ -4801,3 +4801,39 @@ missing the driven port's probes or its kept document is drawn as written, with 
 - **`Scene3DModel` copies by `MemberwiseClone`** (`WithLooks`): the five fields a restyle replaces have explicit backing fields so
   the copy can set them; every other array is shared. `Scene3DObject.Copy` is the same for an object whose slot moved, so the
   scene it came from keeps its own.
+
+## Field plots in the realistic view: Exact, Lit, Glow and opacity (brief-em3d-109, 2026-10-04)
+
+- **Exact needed one shader edit, not none.** `fs_field`'s body moved into `field_colour` (the same operations, so the same pixels:
+  gate 1 compares the realistic view's field pixels with the default view's byte for byte), and its alpha is now `1 − lk1.w`, the
+  Look's `1 − FieldOpacity`. The look block is zero outside the realistic view, so the default view's alpha is still exactly 1.
+- **Lit is not "add the sheen in linear light".** That is what the brief described, but it fails the brief's own gate 2: a
+  saturated orange (1, 0.5, 0) under a 0.1 linear sheen turns 7.2° toward red in HSV (30° → 22.8°), and gate 2 allows 6°. The sheen
+  is applied as a lift toward white in DISPLAY space, `c + k (1 − c)`, with k what adding the sheen in linear light does to a grey of
+  the colour's own luminance. A grey gets exactly the linear sum; every channel only rises; the HSV hue is exactly the map's, because
+  max − min and each difference scale by the same (1 − k). The sheen itself is the brief's: F0 0.04, roughness
+  `Pbr.FieldSheenRoughness` (0.3), the environment through the split-sum lookup plus the key light's GGX highlight, never shadowed or
+  occluded, measured as an exposed luminance. `Pbr.FieldSheen` and `Pbr.LitField` are the reference; gate 2 checks the GPU against
+  them within 2/255 from above.
+- **The Lit field's normals are `FieldShading.Normals`** — brief 104's `ShadingNormals` on the field's own triangles, each plot's range
+  welded by exact position first (a field buffer is an unindexed triangle list). A clip-plane slice comes out with the plane's normal
+  (all its triangles are coplanar), so there is no second path for it. **A Faces plot does not take the shade stream's normal**, as
+  the brief asked: a painted face's triangles are the solver mesh's (`FieldFacePainter` cuts them from a region's boundary), so no
+  shade-stream vertex corresponds to one; the same function on the same face gives the same smooth normal. The sign means nothing (the
+  mesh's winding): `fs_field_lit` turns every normal toward the viewer. They are made only when a frame draws Lit, once per field
+  geometry version (`Viewer3DSession.FieldNormalUploads`; `FieldShading.Built` counts the work), on the render thread.
+- **Glow is CPU-side.** `RealisticLook.SurfaceExposure` (2^(EV + `GlowDim`), −2.5 EV) goes into the look block's exposure, which
+  `fs_pbr` and the environment backdrop read and `fs_field` never does; a theme, solid or gradient background is a DISPLAY colour
+  and is darkened by decode × 2^GlowDim × encode (`RealisticLook.Backdrop`). Chrome brought back with a `Show…` key and reference
+  images are drawn by the default view's pipelines and are not dimmed.
+- **Below 100 % a covered object is drawn.** A Surfaces or Faces plot normally replaces the faces it is painted on
+  (`FieldCovered`), which would leave nothing to show through; `Viewer3DViewState.FieldShowsThrough` (realistic, opacity < 1) turns
+  that off, so the copper is drawn under a 50 % field (gate 4) and casts its shadow as usual.
+- **The indicator is one spelling.** `RealisticLook.FieldIndicator` / `FieldIndicatorText` compose `Lit Fields`, `Blended Fields` and
+  `Lit, Blended Fields` from three constants; the live overlay, `FieldPicture.Paint` (Export Picture, Copy) and the CLI schema's text
+  all ask there, and gate 5 scans `src` for a spelled-out label. It is painted at `IndicatorSize` 10 in the legend ink at alpha
+  `IndicatorAlpha` 160, `IndicatorGap` 4 under the stack, right-aligned with it, or alone in the top right corner.
+- **What ran.** Metal: every pixel gate (1–4, 6). D3D11 and Vulkan were compiled only; their two new pipelines (FieldBlend and
+  FieldLit, the normals at the shade stream's slot) are unverified at runtime, as briefs 62, 101, 106 and 107 recorded. `render --field
+  --look realistic` does not exist yet (brief 110), so its half of gate 5 waits for that brief; the label it must carry is already the
+  one function it will call.

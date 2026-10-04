@@ -57,6 +57,9 @@ public static class Pbr
     /// <summary>The roughness the KEY LIGHT's lobe never goes below: at 0 the GGX lobe is a delta and a point light has no highlight
     /// to draw. The environment's lookup uses the true roughness.</summary>
     public const float MinRoughness = 0.045f;
+    /// <summary>brief-em3d-109 R-em3d109-2a — the Lit field style's sheen: a clear-coat-like dielectric lobe (F0 <see cref="DielectricF0"/>)
+    /// of this roughness (scene.wgsl FIELD_SHEEN_ROUGHNESS).</summary>
+    public const float FieldSheenRoughness = 0.3f;
     /// <summary>The prefiltered environment's levels: roughness 0, 0.25, 0.5, 0.75, 1 at mip levels 0–4.</summary>
     public const int EnvironmentLevels = 5;
     /// <summary>Level 0's side (octahedral, square).</summary>
@@ -297,5 +300,48 @@ public static class Pbr
             surface += through * (1 - tau) * m.Attenuation * irradiance / MathF.PI;
         }
         return surface;
+    }
+
+    // ── brief-em3d-109 R-em3d109-2 — a field plot drawn Lit ────────────────────────────────────────────────────────────
+
+    /// <summary>The luminance weights (Rec. 709) the Lit field style measures its sheen and a colour by.</summary>
+    public static readonly Vector3 Luma = new(0.2126f, 0.7152f, 0.0722f);
+
+    /// <summary>
+    /// fs_field_lit's sheen at a point facing <paramref name="n"/> (unit, already turned toward the viewer) seen along <paramref name="v"/>:
+    /// the environment's reflection through the split-sum lookup at <see cref="FieldSheenRoughness"/>, plus the key light's highlight —
+    /// never shadowed, never occluded — as an exposed LUMINANCE (linear, ≥ 0). White: it carries no hue of its own.
+    /// </summary>
+    public static float FieldSheen(Vector3 n, Vector3 v, IPbrEnvironment env, in PbrLighting light)
+    {
+        float nv = MathF.Max(Vector3.Dot(n, v), MinNdotV);
+        var lut = env.Brdf(nv, FieldSheenRoughness);
+        var r = 2 * Vector3.Dot(n, v) * n - v;
+        var sheen = env.Radiance(light.ToEnvironment(r), FieldSheenRoughness) * light.Intensity * (DielectricF0 * lut.X + lut.Y);
+        var l = light.KeyDirectionWorld;
+        float nl = Vector3.Dot(n, l);
+        if (nl > 0 && light.KeyRadiance != Vector3.Zero)
+        {
+            var h = Vector3.Normalize(l + v);
+            float nh = MathF.Max(Vector3.Dot(n, h), 0), vh = MathF.Max(Vector3.Dot(v, h), 0);
+            const float a = FieldSheenRoughness * FieldSheenRoughness;
+            sheen += light.KeyRadiance * light.Intensity * (F(DielectricF0, vh) * D(nh, a) * V(nv, nl, a) * nl);
+        }
+        return MathF.Max(Vector3.Dot(sheen, Luma), 0) * light.Exposure;
+    }
+
+    /// <summary>
+    /// fs_field_lit's colour: the colour map's DISPLAY colour <paramref name="c"/> lifted by a sheen of exposed luminance
+    /// <paramref name="sheen"/> — <c>c + k (1 − c)</c>, with k what adding the sheen in linear light does to a grey of c's own luminance.
+    /// So a grey gets exactly the linear sum, every channel only rises, and the HSV hue is exactly c's. (Adding the sheen to each channel in
+    /// linear light, as a coat does, turns a saturated orange 7° toward red under a 0.1 sheen; the legend reads by hue.)
+    /// </summary>
+    public static Vector3 LitField(Vector3 c, float sheen)
+    {
+        var lin = new Vector3(ToneCurve.SrgbDecode(c.X), ToneCurve.SrgbDecode(c.Y), ToneCurve.SrgbDecode(c.Z));
+        float y = Vector3.Dot(lin, Luma);
+        float y0 = ToneCurve.SrgbEncode(y), y1 = ToneCurve.SrgbEncode(y + sheen);
+        float k = y0 < 1 ? Math.Clamp((y1 - y0) / (1 - y0), 0, 1) : 0;
+        return c + (Vector3.One - c) * k;
     }
 }

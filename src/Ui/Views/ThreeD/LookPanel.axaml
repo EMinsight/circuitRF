@@ -72,6 +72,22 @@
             </ItemsControl.ItemTemplate>
         </ItemsControl>
 
+        <!-- brief-em3d-109 — how field plots are drawn here: Exact keeps the legend's colours; Lit, or an opacity below 100 %, labels
+             the view and every picture under the legend. -->
+        <TextBlock Text="Field plots" FontWeight="SemiBold" FontSize="12"/>
+        <Grid ColumnDefinitions="78,*,52" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="2">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Style" FontSize="11" VerticalAlignment="Center"/>
+            <ComboBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" HorizontalAlignment="Stretch"
+                      ItemsSource="{x:Static t3:C3dLookPanelViewModel.FieldStyles}" SelectedItem="{Binding FieldStyle}"
+                      ToolTip.Tip="Exact: the colour map's colours, unlit. Lit: a clear-coat sheen that only lightens them. Glow: exact colours, the model dimmed."/>
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Opacity" FontSize="11" VerticalAlignment="Center"/>
+            <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding FieldOpacity}" VerticalAlignment="Center"
+                    ToolTip.Tip="Below 100 %, the material under a plot shows through its colours, percent."/>
+            <TextBox Grid.Row="1" Grid.Column="2" Classes="dim" FontSize="11" Padding="4,1" Text="{Binding FieldOpacityText}" Tag="FieldOpacity"
+                     KeyDown="OnNumberKey" LostFocus="OnNumberLostFocus"/>
+        </Grid>
+        <TextBlock Text="{Binding FieldStyleText}" FontSize="11" TextWrapping="Wrap" Opacity="0.75"/>
+
         <TextBlock Text="Show" FontWeight="SemiBold" FontSize="12"
                    ToolTip.Tip="The realistic view hides the CAD chrome; each box brings one kind back, drawn as the default view draws it."/>
         <ItemsControl ItemsSource="{Binding ShowRows}">

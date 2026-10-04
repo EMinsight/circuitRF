@@ -64,6 +64,47 @@ public sealed class RealisticLook
     public bool AmbientOcclusion { get; private init; } = true;
     public bool Ground { get; private init; } = true;
 
+    /// <summary>brief-em3d-109 R-em3d109-4a — how a field plot is drawn here, and its opacity over the material under it (0–1).</summary>
+    public C3dFieldStyle FieldStyle { get; private init; }
+    public float FieldOpacity { get; private init; } = 1;
+
+    /// <summary>R-em3d109-3b — whether a field lets what is under it show through (its colours are then blends).</summary>
+    public bool FieldBlends => FieldOpacity < 1;
+
+    /// <summary>R-em3d109-3a — Glow's dimming of everything around the field, in EV (owner decision D2: −2.5, tuned by eye on the shipped
+    /// thermal and connector examples). Every lit surface's exposure and the backdrop take it; the field takes none.</summary>
+    public const float GlowDim = -2.5f;
+
+    /// <summary>The exposure fs_pbr and the environment backdrop multiply by: 2^EV, and with Glow 2^(EV + <see cref="GlowDim"/>).</summary>
+    public float SurfaceExposure => FieldStyle == C3dFieldStyle.Glow ? MathF.Pow(2, ExposureEv + GlowDim) : Exposure;
+
+    /// <summary>R-em3d109-3a — a DISPLAY colour (the theme's, a solid or gradient background) darkened as Glow darkens a lit surface:
+    /// decoded, scaled by 2^GlowDim, encoded. Unchanged in any other style.</summary>
+    public Vector3 Backdrop(Vector3 display)
+    {
+        if (FieldStyle != C3dFieldStyle.Glow) return display;
+        float k = MathF.Pow(2, GlowDim);
+        return new(Dim(display.X), Dim(display.Y), Dim(display.Z));
+        float Dim(float c) => ToneCurve.SrgbEncode(ToneCurve.SrgbDecode(c) * k);
+    }
+
+    /// <summary>
+    /// R-em3d109-4b (owner decision D13) — the label a picture of a field drawn with this Look carries under its legend stack:
+    /// <c>Lit Fields</c>, <c>Blended Fields</c>, <c>Lit, Blended Fields</c>, or null for Exact and Glow at full opacity, whose colours are
+    /// the legend's. THE one spelling: the live view, Export Picture, Copy and <c>render</c> all ask here.
+    /// </summary>
+    public string? FieldIndicator => FieldIndicatorText(FieldStyle == C3dFieldStyle.Lit, FieldBlends);
+
+    public const string IndicatorLit = "Lit", IndicatorBlended = "Blended", IndicatorFields = "Fields";
+
+    public static string? FieldIndicatorText(bool lit, bool blended) => (lit, blended) switch
+    {
+        (true, true) => $"{IndicatorLit}, {IndicatorBlended} {IndicatorFields}",
+        (true, false) => $"{IndicatorLit} {IndicatorFields}",
+        (false, true) => $"{IndicatorBlended} {IndicatorFields}",
+        _ => null,
+    };
+
     public bool Shows(Scene3DChrome row) => _shows[(int)row];
 
     public static readonly RealisticLook Default = From(null);
@@ -79,6 +120,7 @@ public sealed class RealisticLook
             Studio = studio, HdrPath = path, RotationDegrees = (float)look.RotationDegrees, Intensity = (float)look.IntensityValue,
             ExposureEv = (float)look.ExposureValue, Background = kind, Top = V(top), Bottom = V(bottom),
             Shadows = look.Shadows != false, AmbientOcclusion = look.AmbientOcclusion != false, Ground = look.Ground != false,
+            FieldStyle = look.FieldStyleOf(out _), FieldOpacity = (float)(look.FieldOpacityValue / C3dLook.FieldOpacityMax),
         };
         bool?[] shows = [look.ShowEdges, look.ShowGrid, look.ShowOverlays, look.ShowAirBox, look.ShowPorts, look.ShowBoundaries, look.ShowImages];
         for (int k = 0; k < shows.Length; k++) r._shows[k] = shows[k] == true;

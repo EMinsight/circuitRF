@@ -391,7 +391,10 @@ public sealed class RealisticViewTests : IDisposable
         // nothing new in the shader that a scan does not compare: brief 107's eight are ShadowsOcclusionExportTests'
         string[] brief107 = ["SHADOW_MIN_COS", "SHADOW_TAPS", "AO_DIRECTIONS", "AO_STEPS", "AO_BIAS", "AO_MAX_PIXELS", "AO_EMPTY", "GROUND_FADE"];
         Assert.All(brief107, n => Assert.True(consts.ContainsKey(n), n));
-        Assert.Equal(floats.Length + 2 + brief107.Length, consts.Count);
+        // and brief 109's two are FieldPlotsRealisticTests'
+        string[] brief109 = ["FIELD_SHEEN_ROUGHNESS", "SRGB_DECODE_BREAK"];
+        Assert.All(brief109, n => Assert.True(consts.ContainsKey(n), n));
+        Assert.Equal(floats.Length + 2 + brief107.Length + brief109.Length, consts.Count);
     }
 
     // ── 6. Metal offscreen ────────────────────────────────────────────────────────────────────────────────────────

@@ -65,6 +65,13 @@ public enum Scene3DPipeline
     /// <summary>R-em3d107-3 — the shadow catcher: six vertices made by vs_ground (a square around the disc on the ground's plane, no vertex
     /// buffer), fs_ground drawing black with the darkening as alpha; depth test without write, blend; after everything opaque.</summary>
     Ground,
+    /// <summary>brief-em3d-109 R-em3d109-3b — a field's triangles as <see cref="Field"/> draws them (fs_field), but BLENDED (RGB src-alpha,
+    /// 1 − src-alpha; alpha one, 1 − src-alpha) at the Look's FieldOpacity: the realistic view's Exact or Glow field below 100 %.</summary>
+    FieldBlend,
+    /// <summary>R-em3d109-2 — the realistic view's Lit field (vs_field_lit / fs_field_lit): the field's vertices with their normal stream
+    /// (<see cref="Fields.FieldShading"/>) as a second vertex buffer, the environment bound; depth write, blended as
+    /// <see cref="FieldBlend"/> (at 100 % its alpha is 1 and the blend changes nothing).</summary>
+    FieldLit,
 }
 
 /// <summary>Which buffer a draw reads: the scene's, one of the overlay slots, the field's, none (the grid), or the scene's image
@@ -227,7 +234,11 @@ public sealed class Viewer3DViewState
     public bool IsVisible(uint id) => id >= 1 && id <= Visible.Length && Visible[id - 1];
 
     /// <summary>Drawn in the colour pass: visible, and not under a field surface being shown.</summary>
-    public bool IsDrawn(uint id) => IsVisible(id) && !(ShowField && id <= FieldCovered.Length && FieldCovered[id - 1]);
+    public bool IsDrawn(uint id) => IsVisible(id) && !(ShowField && !FieldShowsThrough && id <= FieldCovered.Length && FieldCovered[id - 1]);
+
+    /// <summary>brief-em3d-109 R-em3d109-3b — the realistic view's field below full opacity: what it is painted on is drawn under it, so
+    /// the part's material shows through the colour (a covered object is drawn after all).</summary>
+    public bool FieldShowsThrough => DrawsRealistic && Look.FieldBlends;
 }
 
 /// <summary>One frame's uniform blocks and draw lists. Reused from frame to frame.</summary>
@@ -447,6 +458,7 @@ public sealed class Scene3DFramePlan
 
         DrawCount = 0;
         TransformBytes = 0;
+        FieldNormals = false;
         var preview = view.Preview;
         WriteTransforms(preview);
         ChooseDetail(scene, view);
@@ -673,7 +685,12 @@ public sealed class Scene3DFramePlan
         if (Transparent) Clear = (0, 0, 0);
         else if (look.Background is Design.ThreeD.C3dBackgroundKind.Gradient or Design.ThreeD.C3dBackgroundKind.Environment)
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Backdrop, Scene3DBuffer.None, 0, 6);
-        else if (look.Background == Design.ThreeD.C3dBackgroundKind.Solid) Clear = (look.Top.X, look.Top.Y, look.Top.Z);
+        else
+        {
+            // a theme or solid background, darkened with the scene under Glow (R-em3d109-3a)
+            var bg = look.Backdrop(look.Background == Design.ThreeD.C3dBackgroundKind.Solid ? look.Top : new Vector3(Clear.R, Clear.G, Clear.B));
+            Clear = (bg.X, bg.Y, bg.Z);
+        }
 
         var batches = scene.Batches;
         int owned = scene.OwnedBatches;
@@ -694,12 +711,17 @@ public sealed class Scene3DFramePlan
             }
             for (int k = el.FirstBatch; k < el.FirstBatch + el.BatchCount; k++) OpaqueRealistic(scene, view, preview, batches[k], e);
         }
-        // the field: unchanged (overview rule 2 — its colour is a datum; brief 109 adds the opt-in styles)
+        // the field (overview rule 2 — its colour is a datum): Exact and Glow through fs_field unchanged, blended only below full
+        // opacity; Lit (opt-in, and the picture says so) through fs_field_lit, which only ever lightens a colour (brief 109)
+        var fieldPipeline = look.FieldStyle == Design.ThreeD.C3dFieldStyle.Lit ? Scene3DPipeline.FieldLit
+                          : look.FieldBlends ? Scene3DPipeline.FieldBlend : Scene3DPipeline.Field;
         if (view.ShowField && field is { Vertices.Length: > 0 } f)
             foreach (var r in f.Layers)
                 if (r.Count > 0 && r.First >= 0 && r.First + r.Count <= f.Vertices.Length)
-                    Add(ref Draws, ref DrawCount, Scene3DPipeline.Field, Scene3DBuffer.Field, r.First, r.Count, FieldSlot(r.Layer),
-                        Scene3DDepthTie.Field);
+                {
+                    Add(ref Draws, ref DrawCount, fieldPipeline, Scene3DBuffer.Field, r.First, r.Count, FieldSlot(r.Layer), Scene3DDepthTie.Field);
+                    FieldNormals |= fieldPipeline == Scene3DPipeline.FieldLit;
+                }
         // brief-em3d-107 R-em3d107-3 — the ground, after everything opaque (which hides it) and before anything translucent
         if (GroundDrawn) Add(ref Draws, ref DrawCount, Scene3DPipeline.Ground, Scene3DBuffer.None, 0, 6);
         bool edges = look.Shows(Scene3DChrome.Edges);
@@ -813,6 +835,10 @@ public sealed class Scene3DFramePlan
     /// <summary>R-em3d107-2 — whether this frame computes occlusion (the depth prepass of its <see cref="Scene3DPipeline.Pbr"/> draws, the
     /// horizon pass and its blur), and whether it draws the ground (and so puts it in the prepass too).</summary>
     public bool Occlusion, GroundDrawn;
+
+    /// <summary>brief-em3d-109 R-em3d109-2b — whether this frame draws a <see cref="Scene3DPipeline.FieldLit"/> field, so the backend
+    /// needs the field's normal stream (the session uploads it once per field geometry, and lets it go when no frame asks).</summary>
+    public bool FieldNormals;
 
     /// <summary>R-em3d107-5b — a transparent picture: the target is cleared to (0, 0, 0, 0) and no backdrop is drawn.</summary>
     public bool Transparent { get; private set; }
@@ -987,7 +1013,8 @@ public sealed class Scene3DFramePlan
         var env = view.Environment!;
         var light = look.Lighting(env);
         u.Clear();
-        u[0] = look.Exposure; u[1] = look.Intensity; u[2] = light.Cos; u[3] = light.Sin;
+        // brief-em3d-109 — Glow lowers every lit surface's exposure (and the environment backdrop's) by GlowDim; the field reads none of it
+        u[0] = look.SurfaceExposure; u[1] = look.Intensity; u[2] = light.Cos; u[3] = light.Sin;
         u[4] = look.Background switch
         {
             Design.ThreeD.C3dBackgroundKind.Gradient => 1,
@@ -995,10 +1022,11 @@ public sealed class Scene3DFramePlan
             _ => 0,
         };
         u[5] = Pbr.EnvironmentLevels - 1;
+        u[7] = 1 - look.FieldOpacity;
         Put(u, 8, light.KeyDirectionWorld);
         Put(u, 12, env.KeyRadiance);
-        Put(u, 16, look.Top); u[19] = 1;
-        Put(u, 20, look.Bottom); u[23] = 1;
+        Put(u, 16, look.Backdrop(look.Top)); u[19] = 1;
+        Put(u, 20, look.Backdrop(look.Bottom)); u[23] = 1;
         // the backdrop's ray per clip position, as PlaneGrid.WriteRay writes the grid's: direction = bd + x·bdx + y·bdy
         float aspect = MathF.Max(1, width) / MathF.Max(1, height);
         float fov = cam.FovY > 0 && cam.FovY < MathF.PI ? cam.FovY : Camera3D.DefaultFovY;

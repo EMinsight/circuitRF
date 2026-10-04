@@ -2,7 +2,7 @@
 // 3D ▸ View ▸ Look…. It edits the document's Look (brief 106 §5, brief 107's three lighting keys): the environment (a studio, or a
 // Radiance .hdr loaded from disk, stored relative to the .c3d), its rotation, intensity and exposure, the background, one Show box per
 // row of the realistic view's chrome table (RealisticLook.Chrome — GENERATED from it, so a new row needs no panel edit), shadows,
-// contact shading and the ground, and the picture camera (overview D17).
+// contact shading and the ground, the picture camera (overview D17), and (brief 109) how field plots are drawn: their style and opacity.
 //
 // Every edit is one undo entry (C3dEditorViewModel.ChangeLook); a slider drag previews and writes once, on release. Opening the panel
 // turns the realistic view on (owner decision D2), since changing how it looks is the panel's whole purpose, and the header says so.
@@ -96,6 +96,21 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
     [ObservableProperty] private string _intensityText = "";
     [ObservableProperty] private string _exposureText = "";
 
+    /// <summary>brief-em3d-109 R-em3d109-4a — the field plots' style (the Look's spelling) and opacity (percent).</summary>
+    public static IReadOnlyList<string> FieldStyles { get; } = Enum.GetNames<C3dFieldStyle>();
+    [ObservableProperty] private string _fieldStyle = nameof(C3dFieldStyle.Exact);
+    [ObservableProperty] private double _fieldOpacity = C3dLook.DefaultFieldOpacity;
+    [ObservableProperty] private string _fieldOpacityText = "";
+
+    /// <summary>What the chosen style and opacity do to the colours, and that the picture says so.</summary>
+    public string FieldStyleText => (FieldStyle, FieldOpacity < C3dLook.FieldOpacityMax) switch
+    {
+        (nameof(C3dFieldStyle.Lit), _) or (_, true) =>
+            $"The colours are no longer exactly the legend's: the view and every picture carry \"{RealisticLook.FieldIndicatorText(FieldStyle == nameof(C3dFieldStyle.Lit), FieldOpacity < C3dLook.FieldOpacityMax)}\" under the legend.",
+        (nameof(C3dFieldStyle.Glow), _) => "The field's colours are exact; the model around it is dimmed.",
+        _ => "The field's colours are exactly the legend's.",
+    };
+
     public static IReadOnlyList<string> BackgroundKinds { get; } = ["Theme", "Colour", "Gradient", "Environment"];
     [ObservableProperty] private string _backgroundKind = "Theme";
     [ObservableProperty] private Avalonia.Media.Color _backgroundTop = Avalonia.Media.Colors.White;
@@ -166,6 +181,10 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
         RotationText = Show(Rotation);
         IntensityText = Show(Intensity);
         ExposureText = Show(Exposure);
+        FieldStyle = look.FieldStyleOf(out _).ToString();
+        FieldOpacity = look.FieldOpacityValue;
+        FieldOpacityText = Show(FieldOpacity);
+        OnPropertyChanged(nameof(FieldStyleText));
         look.TryBackground(out var kind, out var top, out var bottom);
         BackgroundKind = kind switch
         {
@@ -212,6 +231,15 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
     partial void OnRotationChanged(double value) => Drag(nameof(C3dLook.Rotation), Math.Round(value, 1));
     partial void OnIntensityChanged(double value) => Drag(nameof(C3dLook.Intensity), Math.Round(value, 2));
     partial void OnExposureChanged(double value) => Drag(nameof(C3dLook.Exposure), Math.Round(value, 2));
+    partial void OnFieldOpacityChanged(double value) => Drag(nameof(C3dLook.FieldOpacity), Math.Round(value));
+
+    partial void OnFieldStyleChanged(string value)
+    {
+        OnPropertyChanged(nameof(FieldStyleText));
+        if (Loading) return;
+        // the default is written as "not stated"
+        Change("Field style", l => l.FieldStyle = value == nameof(C3dFieldStyle.Exact) ? null : value);
+    }
 
     private void Drag(string key, double value)
     {
@@ -224,10 +252,12 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
             {
                 case nameof(C3dLook.Rotation): RotationText = Show(value); break;
                 case nameof(C3dLook.Intensity): IntensityText = Show(value); break;
+                case nameof(C3dLook.FieldOpacity): FieldOpacityText = Show(value); break;
                 default: ExposureText = Show(value); break;
             }
         }
         finally { Loading = false; }
+        OnPropertyChanged(nameof(FieldStyleText));
         _editor.PreviewLook(l => SetNumber(l, key, value));
     }
 
@@ -243,8 +273,12 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
     public void CommitText(string key)
     {
         if (Loading) return;
-        string text = (key switch { nameof(C3dLook.Rotation) => RotationText, nameof(C3dLook.Intensity) => IntensityText, _ => ExposureText }).Trim();
-        if (!double.TryParse(text.TrimEnd('°'), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || !double.IsFinite(v))
+        string text = (key switch
+        {
+            nameof(C3dLook.Rotation) => RotationText, nameof(C3dLook.Intensity) => IntensityText,
+            nameof(C3dLook.FieldOpacity) => FieldOpacityText, _ => ExposureText,
+        }).Trim();
+        if (!double.TryParse(text.TrimEnd('°', '%'), NumberStyles.Float, CultureInfo.InvariantCulture, out double v) || !double.IsFinite(v))
         {
             Error = $"'{text}' is not a number.";
             return;
@@ -253,6 +287,7 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
         {
             nameof(C3dLook.Intensity) => (C3dLook.IntensityMin, C3dLook.IntensityMax),
             nameof(C3dLook.Exposure) => (C3dLook.ExposureMin, C3dLook.ExposureMax),
+            nameof(C3dLook.FieldOpacity) => (C3dLook.FieldOpacityMin, C3dLook.FieldOpacityMax),
             _ => (double.NegativeInfinity, double.PositiveInfinity),
         };
         if (v < lo || v > hi)
@@ -269,6 +304,8 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
         {
             case nameof(C3dLook.Rotation): l.Rotation = v; break;
             case nameof(C3dLook.Intensity): l.Intensity = v; break;
+            // the default (100 %) is written as "not stated"
+            case nameof(C3dLook.FieldOpacity): l.FieldOpacity = v >= C3dLook.FieldOpacityMax ? null : v; break;
             default: l.Exposure = v; break;
         }
     }

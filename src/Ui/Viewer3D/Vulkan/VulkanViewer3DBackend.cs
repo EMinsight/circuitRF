@@ -134,6 +134,10 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     /// realistic view is on; and the appearance table at set 0 binding 2 — a 12 KB host-visible buffer made with the device, so the
     /// descriptor set 0 always holds is always valid.</summary>
     private VkPipeline _pPbr, _pPbrTrans, _pBackdrop;
+    // brief-em3d-109 — the blended field (Exact/Glow below 100 %), the Lit field, and the Lit field's normal stream (vertex binding 1)
+    private VkPipeline _pFieldBlend, _pFieldLit;
+    private (VkBuffer Buf, VkDeviceMemory Mem) _fieldNormals;
+    private int _fieldNormalCount;
     private VkDescriptorSetLayout _envSetLayout;
     private Texture? _envMap, _envBrdf;
     private VkDescriptorPool _envPool;
@@ -391,6 +395,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         _pLines = Pipeline(api, _rpColor, "fs_line"u8, VkPrimitiveTopology.LineList, blend: false, depthWrite: true, targets: 1);
         _pPick = Pipeline(api, _rpPick, "fs_pick"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 2);
         _pField = Pipeline(api, _rpColor, "fs_field"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 1, field: true);
+        _pFieldBlend = Pipeline(api, _rpColor, "fs_field"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: true, targets: 1, field: true);
+        _pFieldLit = Pipeline(api, _rpColor, "fs_field_lit"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: true, targets: 1,
+                              field: true, fieldLit: true);
         // brief-em3d-43 — the selection's edges and its face on top: no depth test.
         _pEdges = Pipeline(api, _rpColor, "fs_edge"u8, VkPrimitiveTopology.LineList, blend: true, depthWrite: false, targets: 1, depthTest: false);
         _pTop = Pipeline(api, _rpColor, "fs_top"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1, depthTest: false);
@@ -759,10 +766,11 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
 
     private VkPipeline Pipeline(VkDeviceApi api, VkRenderPass rp, ReadOnlySpan<byte> fragmentEntry, VkPrimitiveTopology topology,
                                 bool blend, bool depthWrite, int targets, bool field = false, bool depthTest = true, bool grid = false,
-                                bool image = false, bool pbr = false, bool premultiplied = false, ReadOnlySpan<byte> vertexEntry = default)
+                                bool image = false, bool pbr = false, bool premultiplied = false, ReadOnlySpan<byte> vertexEntry = default,
+                                bool fieldLit = false)
     {
         // brief-em3d-107 — vertexEntry names a vertex stage taking vs's input (vs_shadow); targets 0 is a depth-only pass
-        fixed (byte* vsName = !vertexEntry.IsEmpty ? vertexEntry : field ? "vs_field"u8 : grid ? "vs_grid"u8 : image ? "vs_image"u8 : pbr ? "vs_pbr"u8 : "vs"u8)
+        fixed (byte* vsName = !vertexEntry.IsEmpty ? vertexEntry : fieldLit ? "vs_field_lit"u8 : field ? "vs_field"u8 : grid ? "vs_grid"u8 : image ? "vs_image"u8 : pbr ? "vs_pbr"u8 : "vs"u8)
         fixed (byte* fsName = fragmentEntry)
         {
             var stages = stackalloc VkPipelineShaderStageCreateInfo[2];
@@ -774,11 +782,13 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 inputRate = VkVertexInputRate.Vertex,
             };
             var attrs = stackalloc VkVertexInputAttributeDescription[6];
-            uint attrCount = field ? 3u : image ? 5u : pbr ? 6u : 4u;
+            uint attrCount = fieldLit ? 4u : field ? 3u : image ? 5u : pbr ? 6u : 4u;
             // brief-em3d-106 — the shade stream: vertex binding 1 (scene.wgsl's header), 16 bytes a vertex.
             var bindings = stackalloc VkVertexInputBindingDescription[2];
             bindings[0] = vbd;
             bindings[1] = new VkVertexInputBindingDescription { binding = 1, stride = (uint)Scene3DShadeVertex.Stride, inputRate = VkVertexInputRate.Vertex };
+            // brief-em3d-109 — the Lit field's normals take the same binding, 12 bytes a vertex
+            if (fieldLit) bindings[1].stride = (uint)FieldShading.Stride;
             if (image)
             {
                 // brief-em3d-101 — Scene3DImageVertex: position, texture coordinate, id, face, colour.
@@ -793,6 +803,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 // brief-em3d-29 — FieldVertex: position, the value's real part, its imaginary part.
                 for (uint k = 0; k < 3; k++)
                     attrs[k] = new VkVertexInputAttributeDescription { location = k, binding = 0, format = VkFormat.R32G32B32Sfloat, offset = 12 * k };
+                if (fieldLit) attrs[3] = new VkVertexInputAttributeDescription { location = 3, binding = 1, format = VkFormat.R32G32B32Sfloat, offset = 0 };
             }
             else
             {
@@ -810,7 +821,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 ? new VkPipelineVertexInputStateCreateInfo()
                 : new VkPipelineVertexInputStateCreateInfo
                 {
-                    vertexBindingDescriptionCount = pbr ? 2u : 1u, pVertexBindingDescriptions = bindings,
+                    vertexBindingDescriptionCount = pbr || fieldLit ? 2u : 1u, pVertexBindingDescriptions = bindings,
                     vertexAttributeDescriptionCount = attrCount, pVertexAttributeDescriptions = attrs,
                 };
             var ia = new VkPipelineInputAssemblyStateCreateInfo { topology = topology };
@@ -1231,6 +1242,14 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         _fieldCount = vertices.Length;
     }
 
+    public override void UploadFieldNormals(float[] normals)
+    {
+        var api = Api;
+        Free(api, ref _fieldNormals);
+        fixed (float* p = normals) _fieldNormals = Upload(api, p, normals.Length * 4, VkBufferUsageFlags.VertexBuffer);
+        _fieldNormalCount = normals.Length / FieldShading.Floats;
+    }
+
     /// <summary>A buffer may still be read by a frame in flight, so replacing one waits for the GPU —
     /// once per generation, never per frame.</summary>
     private void Free(VkDeviceApi api, ref (VkBuffer Buf, VkDeviceMemory Mem) b)
@@ -1587,7 +1606,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             var tie = Scene3DDepthTie.None;
             SetTie(api, cb, tie);
             Scene3DBuffer bound = (Scene3DBuffer)(-1);
-            bool envBound = false, shadeBound = false, lightBound = false;
+            bool envBound = false, lightBound = false;
+            // what vertex binding 1 holds: 0 nothing yet, 1 the shade stream, 2 the Lit field's normals (brief 109)
+            int binding1 = 0;
             for (int i = 0; i < plan.DrawCount; i++)
             {
                 ref var d = ref plan.Draws[i];
@@ -1597,12 +1618,17 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                     Scene3DBuffer.Image => _imageVb.Buf,
                     Scene3DBuffer.Overlay0 => _overlays[0].Buf, Scene3DBuffer.Overlay1 => _overlays[1].Buf, _ => _overlays[2].Buf,
                 };
-                bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges, field = d.Pipeline == Scene3DPipeline.Field;
+                bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges;
+                bool field = d.Pipeline is Scene3DPipeline.Field or Scene3DPipeline.FieldBlend or Scene3DPipeline.FieldLit;
+                bool fieldLit = d.Pipeline == Scene3DPipeline.FieldLit;
                 // brief-em3d-106 — the backdrop draws like the grid; a realistic draw needs the environment's set and the table.
                 bool grid = d.Pipeline is Scene3DPipeline.Grid or Scene3DPipeline.Backdrop or Scene3DPipeline.Ground;
                 bool pbr = d.Pipeline is Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent;
                 if ((pbr || d.Pipeline == Scene3DPipeline.Backdrop) && (_envSet.Handle == 0 || !_appearancesWritten)) continue;
                 if (pbr && _shade.Buf.Handle == 0) continue;
+                // brief-em3d-109 — a Lit field needs the environment for its sheen and its normals beside its vertices
+                if (fieldLit && (_envSet.Handle == 0 || !_appearancesWritten || _fieldNormals.Buf.Handle == 0
+                                 || d.First + d.Count > _fieldNormalCount)) continue;
                 // brief-em3d-101 — an image draw: not indexed; its texture's set at set 1.
                 bool isImage = d.Pipeline is Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent;
                 var bound1 = _textures.Bound;
@@ -1616,8 +1642,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                     api.vkCmdBindPipeline(cb, VkPipelineBindPoint.Graphics, state switch
                     {
                         Scene3DPipeline.Translucent => _pTrans, Scene3DPipeline.Lines => _pLines,
-                        Scene3DPipeline.Field => _pField, Scene3DPipeline.Edges => _pEdges,
-                        Scene3DPipeline.OnTop => _pTop, Scene3DPipeline.Grid => _pGrid,
+                        Scene3DPipeline.Field => _pField, Scene3DPipeline.FieldBlend => _pFieldBlend, Scene3DPipeline.FieldLit => _pFieldLit,
+                        Scene3DPipeline.Edges => _pEdges, Scene3DPipeline.OnTop => _pTop, Scene3DPipeline.Grid => _pGrid,
                         Scene3DPipeline.Image => _pImage, Scene3DPipeline.ImageTranslucent => _pImageTrans,
                         Scene3DPipeline.Pbr => _pPbr, Scene3DPipeline.PbrTranslucent => _pPbrGlass, Scene3DPipeline.Backdrop => _pBackdrop,
                         Scene3DPipeline.Ground => _pGround, _ => _pOpaque,
@@ -1629,7 +1655,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                         api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 3, 1, &ls, 0, null);
                         lightBound = true;
                     }
-                    if ((pbr || state == Scene3DPipeline.Backdrop) && !envBound)
+                    if ((pbr || state is Scene3DPipeline.Backdrop or Scene3DPipeline.FieldLit) && !envBound)
                     {
                         // brief-em3d-106 — set 2, once a frame: binding set 0 again (a transform) leaves it, the layouts being one.
                         var es = _envSet;
@@ -1661,12 +1687,18 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                     api.vkCmdBindVertexBuffers(cb, 0, 1, &buf, &zero);
                     if (!lines && !field && !isImage) api.vkCmdBindIndexBuffer(cb, _ib.Buf, 0, VkIndexType.Uint32);
                 }
-                if (pbr && !shadeBound)
+                if (pbr && binding1 != 1)
                 {
-                    // brief-em3d-106 — the shade stream at vertex binding 1; no other pipeline reads binding 1, so it stays bound.
+                    // brief-em3d-106 — the shade stream at vertex binding 1; only it and the Lit field's normals use binding 1.
                     var sb = _shade.Buf;
                     api.vkCmdBindVertexBuffers(cb, 1, 1, &sb, &zero);
-                    shadeBound = true;
+                    binding1 = 1;
+                }
+                if (fieldLit && binding1 != 2)
+                {
+                    var nb = _fieldNormals.Buf;
+                    api.vkCmdBindVertexBuffers(cb, 1, 1, &nb, &zero);
+                    binding1 = 2;
                 }
                 if (lines || field || isImage) api.vkCmdDraw(cb, (uint)d.Count, 1, (uint)d.First, 0);
                 else api.vkCmdDrawIndexed(cb, (uint)d.Count, 1, (uint)d.First, 0, 0);
@@ -1874,7 +1906,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         }
         api.vkDeviceWaitIdle();
         ReleaseImages();
-        Free(api, _vb); Free(api, _ib); Free(api, _lines); Free(api, _field); Free(api, _imageVb); Free(api, _shade);
+        Free(api, _vb); Free(api, _ib); Free(api, _lines); Free(api, _field); Free(api, _imageVb); Free(api, _shade); Free(api, _fieldNormals);
         ReleaseEnvironmentTextures();
         api.vkUnmapMemory(_apb.Mem);
         Free(api, _apb);
@@ -1892,6 +1924,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         api.vkDestroyPipeline(_pEdges, null); api.vkDestroyPipeline(_pTop, null); api.vkDestroyPipeline(_pGrid, null);
         api.vkDestroyPipeline(_pImage, null); api.vkDestroyPipeline(_pImageTrans, null);
         api.vkDestroyPipeline(_pPbr, null); api.vkDestroyPipeline(_pPbrTrans, null); api.vkDestroyPipeline(_pBackdrop, null);
+        api.vkDestroyPipeline(_pFieldBlend, null); api.vkDestroyPipeline(_pFieldLit, null);
         DestroyShadowMap(api); DestroyOcclusion(api);
         Destroy(api, _noShadowMap); Destroy(api, _noOcclusion);
         foreach (var p in new[] { _pShadow, _pPrepass, _pGroundPrepass, _pAo, _pAoBlur, _pGround, _pPbrGlass }) api.vkDestroyPipeline(p, null);

@@ -18,6 +18,11 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
     private long _uploadedGeneration = -1;
     private readonly long[] _overlayVersions = [-1, -1, -1];
     private long _fieldVersion = -1;
+    /// <summary>brief-em3d-109 — the field geometry version the backend holds normals for; -1 none.</summary>
+    private long _fieldNormalsVersion = -1;
+
+    /// <summary>R-em3d109-2b — how many times the Lit field's normal stream was made and uploaded (once per field geometry).</summary>
+    public int FieldNormalUploads { get; private set; }
     private Scene3DModel? _uploadedScene;
     private Scene3DModel? _shadeScene;
     private PrefilteredEnvironment? _environment;
@@ -93,7 +98,7 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
         {
             if (Backend is not { } b) return false;
             b.Counters.BeginFrame(orbiting);
-            Upload(b, scene, mesh, section, grid, field);
+            Upload(b, scene, mesh, section, grid, field, plan.FieldNormals);
             DecideShadowPass(plan);
             b.Render(image, plan, frame);
             b.Counters.EndFrame();
@@ -104,7 +109,7 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
     /// <summary>Whatever the frame needs that the backend does not already hold — compared by number, so a
     /// frame whose camera or phase alone changed uploads nothing.</summary>
     private void Upload(Viewer3DBackend b, Scene3DModel scene, Scene3DOverlay mesh, Scene3DOverlay section, Scene3DOverlay grid,
-                        Scene3DFieldGeometry? field)
+                        Scene3DFieldGeometry? field, bool fieldNormals)
     {
         Scene3DModel? previous = null;
         Scene3DPatch? patch = null;
@@ -168,6 +173,22 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
             b.UploadField(field.Vertices);
             _fieldVersion = field.Version;
         }
+        // brief-em3d-109 R-em3d109-2b — the Lit field's normals: made and uploaded once per field geometry, only while a frame draws Lit,
+        // and let go when none does (the default view and Exact never make them).
+        if (fieldNormals && field.Vertices.Length > 0)
+        {
+            if (_fieldNormalsVersion != field.Version)
+            {
+                b.UploadFieldNormals(FieldShading.Normals(field.Vertices, field.Layers));
+                _fieldNormalsVersion = field.Version;
+                FieldNormalUploads++;
+            }
+        }
+        else if (_fieldNormalsVersion >= 0)
+        {
+            b.UploadFieldNormals([]);
+            _fieldNormalsVersion = -1;
+        }
     }
 
     /// <summary>
@@ -181,7 +202,7 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
         lock (RenderLock)
         {
             if (_disposed || Backend is not { } b) return null;
-            Upload(b, scene, mesh, section, grid, field);
+            Upload(b, scene, mesh, section, grid, field, plan.FieldNormals);
             DecideShadowPass(plan);
             return b.RenderPixels(plan);
         }

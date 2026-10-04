@@ -220,6 +220,11 @@ public static class C3dDiagnostics
         "The Look's Environment \"{spelled}\" is neither a studio (Studio, HighKey, Dark) nor a Radiance .hdr file; an .exr is not " +
         "read.", ("spelled", spelled));
 
+    /// <summary>brief-em3d-109 R-em3d109-4a — a FieldStyle that is none of the three.</summary>
+    public static Diagnostic LookFieldStyle(string spelled) => Diagnostic.Create(
+        "c3d.look.field-style", DiagnosticSeverity.Error,
+        "The Look's FieldStyle \"{spelled}\" is none of Exact, Lit or Glow.", ("spelled", spelled));
+
     /// <summary>R-em3d106-4d — a user environment that cannot be read. A warning: the view lights the scene with Studio instead
     /// and says so on its status line.</summary>
     public static Diagnostic LookHdrUnreadable(string path, string reason) => Diagnostic.Create(

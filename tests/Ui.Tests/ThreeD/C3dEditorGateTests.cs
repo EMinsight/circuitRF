@@ -75,6 +75,9 @@ internal sealed class PatchRecordingBackend : Viewer3DBackend
 
     public override void UploadOverlay(Scene3DBuffer slot, Scene3DVertex[] lines) => Counters.CountUpload((long)lines.Length * Scene3DVertex.Stride);
     public override void UploadField(CircuitRF.Render.Scene3D.Fields.FieldVertex[] vertices) { }
+    /// <summary>brief-em3d-109 — the Lit field's normal stream uploads (an empty one is a release).</summary>
+    public int FieldNormalUploads;
+    public override void UploadFieldNormals(float[] normals) { if (normals.Length > 0) FieldNormalUploads++; }
     /// <summary>brief-em3d-107 — the size the last picture was drawn at (a supersampled one is drawn larger than it is saved).</summary>
     public (int W, int H) LastPixels;
     /// <summary>The last picture's occlusion cap scale (ao.w): its pixels per window pixel.</summary>

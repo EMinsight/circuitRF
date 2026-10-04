@@ -124,6 +124,7 @@ public static class DocEm3dFixtures
         public override void ReleaseEnvironment() { }
         public override void UploadOverlay(CircuitRF.Render.Scene3D.Scene3DBuffer slot, CircuitRF.Render.Scene3D.Scene3DVertex[] lines) { }
         public override void UploadField(CircuitRF.Render.Scene3D.Fields.FieldVertex[] vertices) { }
+        public override void UploadFieldNormals(float[] normals) { }
         public override byte[] RenderPixels(CircuitRF.Render.Scene3D.Scene3DFramePlan plan) => new byte[plan.Width * plan.Height * 4];
         public override string? CheckInterop(Avalonia.Rendering.Composition.ICompositionGpuInterop interop) => null;
         public override void CreateImages(Avalonia.Rendering.Composition.ICompositionGpuInterop interop, int width, int height, int count) { }

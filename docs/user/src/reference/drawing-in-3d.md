@@ -793,7 +793,7 @@ usual; the status line says *Realistic · preparing …* and then names the envi
 **What steps aside.** The CAD chrome is hidden: the edge lines, the drawing grid, the mesh, FDTD-grid and section
 overlays, the air box, ports, boundaries and face tints, and reference images. The selected object's outline and the
 face-mode highlights stay, because it is still the editor. A [field plot](#simulate) is drawn exactly as in the
-ordinary view: its colours are data and are never lit. An object's stated [transparency](#transparency) still applies;
+ordinary view unless you choose otherwise (see [Field plots in the realistic view](#realistic-fields)). An object's stated [transparency](#transparency) still applies;
 a dielectric's ordinary see-through look does not, because the appearance's `Transmission` decides that here.
 *Copy* and *Export Picture…* draw the realistic view without the hover or the selection.
 
@@ -823,6 +823,8 @@ optional; an omitted key takes the default shown:
 | `AmbientOcclusion` | `false` turns off the contact shading where surfaces meet (default on) |
 | `Ground` | `false` removes the shadow-catching floor under the model (default on) |
 | `Camera` | the camera pictures are taken from, written only by *Use This View for Pictures* (below): `Direction` (from the target toward the viewer), `Target` and `Distance` in DBU, `FovY` in degrees, `Projection` |
+| `FieldStyle` | `Exact` (the default), `Lit` or `Glow`: how a field plot is drawn (below) |
+| `FieldOpacity` | 0–100, default 100: below 100 the material under a field plot shows through its colours |
 
 A `Show…` key only lifts the realistic view's own hiding: an air box you have hidden, an overlay that is off, or a
 hidden object stays hidden. The Look is edited in the [Look panel](#look-panel), or by writing the file. A `Look` edit is
@@ -844,6 +846,31 @@ not cut it. A field plot's colours are never shadowed or shaded. Each of the thr
 glossy surface reflects the studio, a rough one spreads it. Translucency is approximated: what shows through is dimmed
 and tinted by the attenuation colour, and the reflection is added on top, but light is not bent: the view is drawn at
 interactive speed, not ray traced.
+
+### Field plots in the realistic view {#realistic-fields}
+
+A field plot's colour is a measurement, read against its legend, so by default the realistic view leaves it alone:
+everything around the field is lit, and the field itself is the colour map's own colour, exactly as in the ordinary view.
+Exposure, the tone curve, shadows and contact shading never touch it. The `FieldStyle` key, or *Field plots* in the
+[Look panel](#look-panel), offers two other styles for pictures that want more drama:
+
+| Style | What it does | The field's colours |
+|---|---|---|
+| `Exact` | Nothing: the field is drawn as a flat, unlit colour map. | exactly the legend's |
+| `Lit` | A clear-coat sheen on the field, from the studio and its key light, so it looks like a coating on the part. The sheen only ever lightens a colour toward white, and never changes its hue. | lightened where the sheen falls |
+| `Glow` | The field stays exact and the model and background around it are dimmed by 2.5 stops, so the field seems to glow. | exactly the legend's |
+
+`FieldOpacity` below 100 lets the material under a plot show through it: a field painted on copper then reads as copper
+under the colours. A plot that normally replaces the faces it is painted on draws them under it instead.
+
+**The indicator.** When the colours are no longer exactly the legend's, the picture says so: a small **Lit Fields**
+label under the field legend with `Lit`, **Blended Fields** with an opacity below 100, and **Lit, Blended Fields** with
+both. With the legend turned off, the label sits alone in that corner. It is in the view and in every picture (*Copy*
+and *Export Picture…*), whatever the legend and caption options say, and it cannot be turned off. `Exact` and `Glow`
+carry no label.
+
+**A field seen through glass.** A [clip-plane](#simulate) slice inside a substrate whose appearance has `Transmission`
+(fused silica, or your own) shows the field inside the material through it.
 
 ### Changing how things look {#changing-look}
 
@@ -876,7 +903,7 @@ turns it on in one click.
 <a id="look-panel"></a>**The Look panel** opens from the small arrow beside the Realistic view button, or from *3D ▸ View ▸
 Look…*. Opening it turns the realistic view on, since that is what it changes. It holds the environment (a studio, or
 *Load .hdr…*), its rotation, intensity and exposure, the background and its colours, Shadows, Contact shading and
-Ground, and one **Show** box for each kind of CAD chrome the realistic view hides. Every change is saved with the design
+Ground, the [field plots'](#realistic-fields) style and opacity, and one **Show** box for each kind of CAD chrome the realistic view hides. Every change is saved with the design
 and is one undo step; a slider is one step per drag. A new `.hdr` is prepared in the background and the old environment
 stays on screen until it is ready; one used before comes back at once.
 

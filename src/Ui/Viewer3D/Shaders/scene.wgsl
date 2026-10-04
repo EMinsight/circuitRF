@@ -60,10 +60,12 @@ struct U {
     gd: vec4f,
     gdx: vec4f,
     gdy: vec4f,
-    // brief-em3d-106 — the realistic view's look (zero while the view is not realistic): x 2^EV, y the environment's intensity,
+    // brief-em3d-106 — the realistic view's look (zero while the view is not realistic): x 2^EV (brief-em3d-109: times 2^GlowDim with
+    // the Glow field style), y the environment's intensity,
     // z cos and w sin of its rotation about +z
     lk: vec4f,
-    // x the backdrop (0 none: the clear colour, 1 a vertical gradient, 2 the environment), y the environment's last level
+    // x the backdrop (0 none: the clear colour, 1 a vertical gradient, 2 the environment), y the environment's last level, z unused,
+    // w (brief-em3d-109) 1 − the Look's FieldOpacity
     lk1: vec4f,
     // the key light's world direction, and its radiance
     key: vec4f,
@@ -367,15 +369,26 @@ fn colour_map(t: f32, l: u32) -> vec3f {
     return rgb;
 }
 
-@fragment fn fs_field(i: FVO) -> @location(0) vec4f {
-    let l = i.layer;
-    if (u.f[l].fmode.w < 0.5 && clipped(i.world)) { discard; }
-    var v = field_value(i.re, i.im, l);
+// The value under a fragment, through its block's range, as its colour map's colour (a display value).
+fn field_colour(re: vec3f, im: vec3f, l: u32) -> vec3f {
+    var v = field_value(re, im, l);
     if (u.f[l].fmode.y > 0.5) { v = 20.0 * 0.30102999566 * log2(max(abs(v), 1e-30)); }
     let lo = u.f[l].fphase.z;
     let hi = u.f[l].fphase.w;
     let t = clamp((v - lo) / max(hi - lo, 1e-30), 0.0, 1.0);
-    return vec4f(colour_map(t, l), 1.0);
+    return colour_map(t, l);
+}
+
+// brief-em3d-109 R-em3d109-3b — a field's coverage: the realistic view's FieldOpacity (lk1.w carries 1 − it, so it is 0 — opaque —
+// in the default view, where the look block is zero). Only the blended field pipelines (FieldBlend, FieldLit) let it show through.
+fn field_alpha() -> f32 {
+    return 1.0 - u.lk1.w;
+}
+
+@fragment fn fs_field(i: FVO) -> @location(0) vec4f {
+    let l = i.layer;
+    if (u.f[l].fmode.w < 0.5 && clipped(i.world)) { discard; }
+    return vec4f(field_colour(i.re, i.im, l), field_alpha());
 }
 
 // ── brief-em3d-45: the drawing grid ────────────────────────────────────────────────────────────────
@@ -989,4 +1002,89 @@ struct GrOut {
     let c = u.vp * vec4f(h.w, 1.0);
     o.depth = clamp(c.z / c.w, 0.0, 1.0);
     return o;
+}
+
+// ── brief-em3d-109: a field plot in the realistic view, Lit ────────────────────────────────────────────────────────────────────────
+// Exact (the default) and Glow draw with fs_field above, unchanged: no exposure, no curve, no light, no shadow, no occlusion. Lit adds a
+// clear-coat-like SHEEN (F0 DIELECTRIC_F0, roughness FIELD_SHEEN_ROUGHNESS: the environment's reflection and the key light's highlight,
+// never shadowed or occluded) to the colour map's colour, and never darkens it: the sheen's luminance is applied as a lift toward white in
+// DISPLAY space, c + k (1 − c), with k what adding the sheen in linear light does to a grey of the colour's own luminance. Every channel
+// only rises and the hue (HSV) is exactly the map's. Pbr.FieldSheen and Pbr.LitField are the reference.
+//
+// The normal is a second vertex stream beside the field's vertices (FieldShading.Normals, brief 104's function on the field's own
+// triangles): Metal vertex buffer 3, D3D11 input slot 1 (semantic LOC3), Vulkan vertex binding 1 — the shade stream's slots.
+
+const FIELD_SHEEN_ROUGHNESS: f32 = 0.3;
+// ToneCurve.SrgbDecodeBreak
+const SRGB_DECODE_BREAK: f32 = 0.04045;
+
+struct FLVI {
+    @location(0) p: vec3f,
+    @location(1) re: vec3f,
+    @location(2) im: vec3f,
+    @location(3) n: vec3f,
+};
+
+struct FLVO {
+    @builtin(position) pos: vec4f,
+    @location(0) world: vec3f,
+    @location(1) re: vec3f,
+    @location(2) im: vec3f,
+    @location(3) @interpolate(flat) layer: u32,
+    @location(4) n: vec3f,
+};
+
+@vertex fn vs_field_lit(v: FLVI) -> FLVO {
+    var o: FLVO;
+    o.pos = u.vp * vec4f(v.p, 1.0);
+    o.world = v.p;
+    o.re = v.re;
+    o.im = v.im;
+    o.layer = min(mx.id.y, 3u);
+    o.n = v.n;
+    return o;
+}
+
+fn srgb_decode1(x: f32) -> f32 {
+    let c = clamp(x, 0.0, 1.0);
+    return select(pow((c + SRGB_OFFSET) / SRGB_SCALE, SRGB_GAMMA), c / SRGB_SLOPE, c <= SRGB_DECODE_BREAK);
+}
+
+// The sheen's exposed luminance at a point facing n (toward the viewer), seen along v (Pbr.FieldSheen).
+fn field_sheen(n: vec3f, v: vec3f) -> f32 {
+    let nv = max(dot(n, v), MIN_NDOTV);
+    let lut = brdf_lut(nv, FIELD_SHEEN_ROUGHNESS);
+    let r = 2.0 * dot(n, v) * n - v;
+    var sheen = env_radiance(r, FIELD_SHEEN_ROUGHNESS) * u.lk.y * (DIELECTRIC_F0 * lut.x + lut.y);
+    let l = u.key.xyz;
+    let nl = dot(n, l);
+    if (nl > 0.0 && dot(u.keyc.xyz, u.keyc.xyz) > 0.0) {
+        let h = normalize(l + v);
+        let nh = max(dot(n, h), 0.0);
+        let vh = max(dot(v, h), 0.0);
+        let a = FIELD_SHEEN_ROUGHNESS * FIELD_SHEEN_ROUGHNESS;
+        sheen = sheen + u.keyc.xyz * u.lk.y * (schlick1(DIELECTRIC_F0, vh) * ggx_d(nh, a) * smith_v(nv, nl, a) * nl);
+    }
+    return max(dot(sheen, vec3f(0.2126, 0.7152, 0.0722)), 0.0) * u.lk.x;
+}
+
+// The map's colour c lifted by a sheen of exposed luminance s (Pbr.LitField).
+fn lit_field(c: vec3f, s: f32) -> vec3f {
+    let y = dot(vec3f(srgb_decode1(c.r), srgb_decode1(c.g), srgb_decode1(c.b)), vec3f(0.2126, 0.7152, 0.0722));
+    let y0 = srgb1(y);
+    let y1 = srgb1(y + s);
+    var k = 0.0;
+    if (y0 < 1.0) { k = clamp((y1 - y0) / (1.0 - y0), 0.0, 1.0); }
+    return c + (vec3f(1.0, 1.0, 1.0) - c) * k;
+}
+
+@fragment fn fs_field_lit(i: FLVO) -> @location(0) vec4f {
+    let l = i.layer;
+    if (u.f[l].fmode.w < 0.5 && clipped(i.world)) { discard; }
+    let c = field_colour(i.re, i.im, l);
+    let v = normalize(u.eye.xyz - i.world);
+    var n = normalize(i.n);
+    // two-sided: a field surface's winding says nothing about which side is seen
+    if (dot(n, v) < 0.0) { n = -n; }
+    return vec4f(lit_field(c, field_sheen(n, v)), field_alpha());
 }

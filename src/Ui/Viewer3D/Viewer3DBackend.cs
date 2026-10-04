@@ -85,6 +85,11 @@ public abstract class Viewer3DBackend : IDisposable
     /// the bytes. Called when the field GEOMETRY changes — never for a phase step.</summary>
     public abstract void UploadField(FieldVertex[] vertices);
 
+    /// <summary>brief-em3d-109 R-em3d109-2b — replaces the Lit field's normal stream (<see cref="FieldShading"/>: three floats a field
+    /// vertex, parallel to the field buffer) — bound beside it as the shade stream is beside the scene's: Metal vertex buffer 3, D3D11
+    /// input slot 1, Vulkan vertex binding 1. Empty releases it. Counts the bytes. Only a frame with a Lit field asks for it.</summary>
+    public abstract void UploadFieldNormals(float[] normals);
+
     // ── export (brief-em3d-29 R-em3d29-5) ─────────────────────────────────────────────────────
 
     /// <summary>

@@ -5,7 +5,7 @@
 //
 // Every key is optional, and an omitted key is its default: a document that states nothing draws the realistic view exactly as
 // one stating every default does. Nothing is written unless it is stated, so a document opened and saved again is unchanged.
-// Brief 107 added Shadows, AmbientOcclusion and Ground; brief 108 added Camera; brief 109 (FieldStyle, FieldOpacity) adds keys here.
+// Brief 107 added Shadows, AmbientOcclusion and Ground; brief 108 added Camera; brief 109 added FieldStyle and FieldOpacity.
 //
 // brief-em3d-108 R-em3d108-3d (overview D17) — Camera is the ONE place a camera is document state, and only by opt-in: written by
 // "Use This View for Pictures", never by orbiting, so a GUI framing reproduces in `render` and in a glTF export. See C3dDocument.Look.
@@ -19,6 +19,11 @@ namespace CircuitRF.Design.ThreeD;
 
 /// <summary>The three procedural studios (overview D8): a preset is data (StudioEnvironment's records), never code.</summary>
 public enum C3dStudio { Studio, HighKey, Dark }
+
+/// <summary>brief-em3d-109 R-em3d109-4a — how a field plot is drawn in the realistic view. Exact (the default) is the colour map's
+/// colour and nothing else; Lit adds a clear-coat sheen that only ever lightens a colour; Glow keeps the field exact and dims the scene
+/// around it.</summary>
+public enum C3dFieldStyle { Exact, Lit, Glow }
 
 /// <summary>R-em3d106-5 — the <c>Look</c> block. Null on a key is the default.</summary>
 public sealed class C3dLook
@@ -65,6 +70,14 @@ public sealed class C3dLook
     /// live view's camera, whatever it is.</summary>
     public C3dLookCamera? Camera { get; set; }
 
+    // ── brief-em3d-109 R-em3d109-4a — how field plots are drawn in it ───────────────────────────────────────────────────
+
+    /// <summary><c>Exact</c> (omitted), <c>Lit</c> or <c>Glow</c>.</summary>
+    public string? FieldStyle { get; set; }
+
+    /// <summary>A field plot's opacity over the material it lies on, 0 to 100 percent (omitted: 100).</summary>
+    public double? FieldOpacity { get; set; }
+
     /// <summary>Keys this build does not read (a later brief's), kept and written back.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Unread { get; set; }
@@ -76,13 +89,15 @@ public sealed class C3dLook
     public const string DefaultBackground = BackgroundTheme;
     public const string BackgroundTheme = "Theme", BackgroundEnvironment = "Environment";
     public const double ExposureMin = -10, ExposureMax = 10, IntensityMin = 0, IntensityMax = 10;
+    public const double FieldOpacityMin = 0, FieldOpacityMax = 100, DefaultFieldOpacity = 100;
 
     /// <summary>The keys, in file order — what the schema and the gates iterate.</summary>
     public static readonly IReadOnlyList<string> Keys =
     [
         nameof(Environment), nameof(Rotation), nameof(Intensity), nameof(Exposure), nameof(Background),
         nameof(ShowEdges), nameof(ShowGrid), nameof(ShowOverlays), nameof(ShowAirBox), nameof(ShowPorts), nameof(ShowBoundaries),
-        nameof(ShowImages), nameof(Shadows), nameof(AmbientOcclusion), nameof(Ground), nameof(Camera),
+        nameof(ShowImages), nameof(Shadows), nameof(AmbientOcclusion), nameof(Ground), nameof(Camera), nameof(FieldStyle),
+        nameof(FieldOpacity),
     ];
 
     /// <summary>True when it states nothing (and keeps no unread key): such a block is the same as none.</summary>
@@ -90,14 +105,14 @@ public sealed class C3dLook
     public bool IsEmpty => Environment is null && Rotation is null && Intensity is null && Exposure is null && Background is null
                         && ShowEdges is null && ShowGrid is null && ShowOverlays is null && ShowAirBox is null && ShowPorts is null
                         && ShowBoundaries is null && ShowImages is null && Shadows is null && AmbientOcclusion is null && Ground is null
-                        && Camera is null && Unread is not { Count: > 0 };
+                        && Camera is null && FieldStyle is null && FieldOpacity is null && Unread is not { Count: > 0 };
 
     public C3dLook Clone() => new()
     {
         Environment = Environment, Rotation = Rotation, Intensity = Intensity, Exposure = Exposure, Background = Background,
         ShowEdges = ShowEdges, ShowGrid = ShowGrid, ShowOverlays = ShowOverlays, ShowAirBox = ShowAirBox, ShowPorts = ShowPorts,
         ShowBoundaries = ShowBoundaries, ShowImages = ShowImages, Shadows = Shadows, AmbientOcclusion = AmbientOcclusion, Ground = Ground,
-        Camera = Camera?.Clone(),
+        Camera = Camera?.Clone(), FieldStyle = FieldStyle, FieldOpacity = FieldOpacity,
         Unread = Unread is null ? null : new Dictionary<string, JsonElement>(Unread),
     };
 
@@ -120,6 +135,24 @@ public sealed class C3dLook
 
     [JsonIgnore]
     public double ExposureValue => Clamp(Exposure, ExposureMin, ExposureMax, DefaultExposure);
+
+    /// <summary>R-em3d109-3b — the field opacity in percent, clamped into its range.</summary>
+    [JsonIgnore]
+    public double FieldOpacityValue => Clamp(FieldOpacity, FieldOpacityMin, FieldOpacityMax, DefaultFieldOpacity);
+
+    /// <summary>R-em3d109-4a — what <see cref="FieldStyle"/> names; an unknown word is <see cref="C3dFieldStyle.Exact"/> with
+    /// <paramref name="known"/> false (check's error; the view draws the field exactly).</summary>
+    public C3dFieldStyle FieldStyleOf(out bool known)
+    {
+        known = true;
+        if (FieldStyle is not { } f || f.Trim().Length == 0) return C3dFieldStyle.Exact;
+        f = f.Trim();
+        // as EnvironmentOf: Enum.TryParse also takes a number and a comma list, neither of which is a style's name
+        if (Enum.TryParse<C3dFieldStyle>(f, ignoreCase: true, out var s) && Enum.IsDefined(s) && !char.IsDigit(f[0]) && !f.Contains(','))
+            return s;
+        known = false;
+        return C3dFieldStyle.Exact;
+    }
 
     private static double Clamp(double? v, double lo, double hi, double fallback)
         => v is { } x && double.IsFinite(x) ? Math.Clamp(x, lo, hi) : fallback;

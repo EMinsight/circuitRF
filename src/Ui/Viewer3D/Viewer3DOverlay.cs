@@ -101,7 +101,12 @@ public sealed class Viewer3DOverlay : Control
             Text(ctx, label.Text, new Point(x + 6, y - 18), ink, 11, dark);
         }
 
-        if (!picture && vm.FieldLegendVisible) Legends(ctx, vm, w, h, ink, dark);
+        if (!picture)
+        {
+            double stackBottom = vm.FieldLegendVisible ? Legends(ctx, vm, w, h, ink, dark) : LegendTop;
+            // brief-em3d-109 R-em3d109-4c — under the legend stack (alone in its corner without one); FieldPicture paints a picture's
+            if (vm.FieldIndicator is { } indicator) Indicator(ctx, indicator, w, stackBottom, ink);
+        }
 
         // brief-em3d-75 R-em3d75-4c — the hot spot: a ring at the maximum of what is drawn, its temperature and its object.
         // brief-em3d-96 — one per drawn temperature plot.
@@ -548,11 +553,26 @@ public sealed class Viewer3DOverlay : Control
         }.ToImmutable();
     });
 
-    private static void Legends(DrawingContext ctx, Viewer3DViewModel vm, double w, double h, IBrush ink, bool dark)
+    /// <summary>The legend stack's top, and its right edge's inset from the view's.</summary>
+    private const double LegendTop = 12, LegendInset = 12;
+
+    /// <summary>brief-em3d-109 R-em3d109-4b — the field style's indicator: small, in the legend's secondary text colour (its ink at
+    /// FieldPicture.IndicatorAlpha), right-aligned under the stack that ends at <paramref name="top"/>.</summary>
+    private static void Indicator(DrawingContext ctx, string text, double w, double top, IBrush ink)
+    {
+        var secondary = ink is ISolidColorBrush sc
+            ? new ImmutableSolidColorBrush(Color.FromArgb(FieldPicture.IndicatorAlpha, sc.Color.R, sc.Color.G, sc.Color.B))
+            : ink;
+        var t = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, FieldPicture.IndicatorSize, secondary);
+        ctx.DrawText(t, new Point(w - LegendInset - t.Width, top));
+    }
+
+    /// <summary>The legend stack; returns where it ends (the indicator's top).</summary>
+    private static double Legends(DrawingContext ctx, Viewer3DViewModel vm, double w, double h, IBrush ink, bool dark)
     {
         var groups = vm.FieldLegendGroups;
-        if (groups.Count == 0) return;
-        const double barW = 220, barH = 12, pad = 8, line = 16, gap = 8, top = 12;
+        if (groups.Count == 0) return LegendTop;
+        const double barW = 220, barH = 12, pad = 8, line = 16, gap = 8, top = LegendTop;
         var texts = groups.Select(g => g.Lines.Select(l => new FormattedText(l, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                                                                               Typeface.Default, 12, ink)).ToList()).ToList();
         double widest = texts.Max(t => t.Count == 0 ? 0 : t.Max(x => x.Width));
@@ -561,7 +581,7 @@ public sealed class Viewer3DOverlay : Control
         int shown = FieldPicture.StackCount([.. Enumerable.Range(0, groups.Count).Select(k => (float)Height(k, false))], (float)line,
                                             (float)gap, (float)top, (float)(h - top));
         var fill = dark ? LegendFillDark : LegendFillLight;
-        double x0 = w - bw - 12, y0 = top;
+        double x0 = w - bw - LegendInset, y0 = top;
         for (int k = 0; k < shown; k++)
         {
             var g = groups[k];
@@ -584,6 +604,7 @@ public sealed class Viewer3DOverlay : Control
                                                Typeface.Default, 12, ink), new Point(x0 + pad, y));
             y0 += bh + gap;
         }
+        return shown > 0 ? y0 - gap + FieldPicture.IndicatorGap : top;
     }
 
     /// <summary>The axis indicator's centre in a view <paramref name="height"/> DIPs tall.</summary>

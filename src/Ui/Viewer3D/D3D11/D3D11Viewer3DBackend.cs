@@ -62,6 +62,13 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     private readonly Scene3DTextureResidency<ID3D11ShaderResourceView?> _textures = new();
     private ID3D11Buffer? _field;
     private int _fieldCount;
+    // brief-em3d-109 — the Lit field: its vertex stage and input layout (LOC0..2 from slot 0, LOC3 the normal from slot 1), its pixel
+    // shader, and its normal stream
+    private ID3D11VertexShader _vsFieldLit = null!;
+    private ID3D11PixelShader _psFieldLit = null!;
+    private ID3D11InputLayout _layoutFieldLit = null!;
+    private ID3D11Buffer? _fieldNormals;
+    private int _fieldNormalCount;
     private ID3D11BlendState _blendOff = null!, _blendOn = null!;
     private ID3D11DepthStencilState _dsWrite = null!, _dsNoWrite = null!, _dsOff = null!;
     /// <summary>3D editor round 3 / bugs round 9 — one rasterizer state per depth tie (Scene3DDepthTie − TieMin): cull none, and the
@@ -205,6 +212,16 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         var vsf = Compile("vs_field", "vs_5_0");
         _vsField = dev.CreateVertexShader(vsf.Span);
         _psField = dev.CreatePixelShader(Compile("fs_field", "ps_5_0").Span);
+        var vsfl = Compile("vs_field_lit", "vs_5_0");
+        _vsFieldLit = dev.CreateVertexShader(vsfl.Span);
+        _psFieldLit = dev.CreatePixelShader(Compile("fs_field_lit", "ps_5_0").Span);
+        _layoutFieldLit = dev.CreateInputLayout(
+        [
+            new InputElementDescription("LOC", 0, DxFormat.R32G32B32_Float, 0, 0),
+            new InputElementDescription("LOC", 1, DxFormat.R32G32B32_Float, 12, 0),
+            new InputElementDescription("LOC", 2, DxFormat.R32G32B32_Float, 24, 0),
+            new InputElementDescription("LOC", 3, DxFormat.R32G32B32_Float, 0, ShadeSlot),
+        ], vsfl.Span);
         // brief-em3d-45 — the drawing grid: SV_VertexID only, so no input layout at all.
         _vsGrid = dev.CreateVertexShader(Compile("vs_grid", "vs_5_0").Span);
         _psGrid = dev.CreatePixelShader(Compile("fs_grid", "ps_5_0").Span);
@@ -570,6 +587,13 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _fieldCount = vertices.Length;
     }
 
+    public override void UploadFieldNormals(float[] normals)
+    {
+        _fieldNormals?.Dispose();
+        fixed (float* p = normals) _fieldNormals = NewBuffer(p, normals.Length * 4, BindFlags.VertexBuffer);
+        _fieldNormalCount = normals.Length / FieldShading.Floats;
+    }
+
     private ID3D11Buffer? NewBuffer(void* data, int length, BindFlags bind, ResourceUsage usage = ResourceUsage.Immutable)
     {
         if (length == 0) return null;
@@ -795,12 +819,17 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
                 Scene3DBuffer.Scene => _vb, Scene3DBuffer.SceneLines => _lines, Scene3DBuffer.Field => _field, Scene3DBuffer.Image => _imageVb,
                 Scene3DBuffer.Overlay0 => _overlays[0], Scene3DBuffer.Overlay1 => _overlays[1], _ => _overlays[2],
             };
-            bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges, field = d.Pipeline == Scene3DPipeline.Field;
+            bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges;
+            bool field = d.Pipeline is Scene3DPipeline.Field or Scene3DPipeline.FieldBlend or Scene3DPipeline.FieldLit;
+            bool fieldLit = d.Pipeline == Scene3DPipeline.FieldLit;
             // brief-em3d-106 — the backdrop draws like the grid (six vertices, no buffer); a realistic draw needs the look bound.
             bool grid = d.Pipeline is Scene3DPipeline.Grid or Scene3DPipeline.Backdrop or Scene3DPipeline.Ground;
             bool pbr = d.Pipeline is Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent;
             if ((pbr || d.Pipeline == Scene3DPipeline.Backdrop) && (_envMap is null || _envBrdf is null || _cbAppearances is null)) continue;
             if (pbr && _shade is null) continue;
+            // brief-em3d-109 — a Lit field needs the environment for its sheen and its normals beside its vertices
+            if (fieldLit && (_envMap is null || _envBrdf is null || _cbAppearances is null || _fieldNormals is null
+                             || d.First + d.Count > _fieldNormalCount)) continue;
             // brief-em3d-101 — an image draw: not indexed, its own vertex stage, its texture at t0.
             bool image = d.Pipeline is Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent;
             if (image && (d.Texture < 0 || d.Texture >= _textures.Bound.Length || _textures.Bound[d.Texture] is null)) continue;
@@ -811,21 +840,23 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
                 // The vertex stage: the scene's vertex (0), the field's (1), none at all — the grid (2) — or an image's (3).
                 static int StageOf(Scene3DPipeline p) => p switch
                 {
-                    Scene3DPipeline.Field => 1, Scene3DPipeline.Grid or Scene3DPipeline.Backdrop or Scene3DPipeline.Ground => 2,
+                    Scene3DPipeline.Field or Scene3DPipeline.FieldBlend => 1,
+                    Scene3DPipeline.Grid or Scene3DPipeline.Backdrop or Scene3DPipeline.Ground => 2,
                     Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent => 3,
-                    Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent => 4, _ => 0,
+                    Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent => 4, Scene3DPipeline.FieldLit => 5, _ => 0,
                 };
                 int wasStage = (int)state < 0 ? -1 : StageOf(state);
                 int stage = StageOf(d.Pipeline);
                 state = d.Pipeline;
                 if (stage != wasStage)
                 {
-                    ctx.IASetInputLayout(stage switch { 1 => _layoutField, 2 => null, 3 => _layoutImage, 4 => _layoutPbr, _ => _layout });
-                    ctx.VSSetShader(stage switch { 1 => _vsField, 2 => _vsGrid, 3 => _vsImage, 4 => _vsPbr, _ => _vs });
+                    ctx.IASetInputLayout(stage switch { 1 => _layoutField, 2 => null, 3 => _layoutImage, 4 => _layoutPbr, 5 => _layoutFieldLit, _ => _layout });
+                    ctx.VSSetShader(stage switch { 1 => _vsField, 2 => _vsGrid, 3 => _vsImage, 4 => _vsPbr, 5 => _vsFieldLit, _ => _vs });
                     bound = (Scene3DBuffer)(-1);
                     if (stage == 4) ctx.IASetVertexBuffer(ShadeSlot, _shade!, (uint)Scene3DShadeVertex.Stride);
+                    if (stage == 5) ctx.IASetVertexBuffer(ShadeSlot, _fieldNormals!, (uint)FieldShading.Stride);
                 }
-                if (pbr || state == Scene3DPipeline.Backdrop)
+                if (pbr || state is Scene3DPipeline.Backdrop or Scene3DPipeline.FieldLit)
                 {
                     // brief-em3d-106 — the look: the appearance table at b2, the environment at t1 and t2, its sampler at s1.
                     ctx.PSSetConstantBuffer(2, _cbAppearances!);
@@ -837,7 +868,8 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
                 if (pbr || state == Scene3DPipeline.Ground) BindLighting(ctx);
                 ctx.PSSetShader(state switch
                 {
-                    Scene3DPipeline.Field => _psField, Scene3DPipeline.Lines => _psLine, Scene3DPipeline.Edges => _psEdge,
+                    Scene3DPipeline.Field or Scene3DPipeline.FieldBlend => _psField, Scene3DPipeline.FieldLit => _psFieldLit,
+                    Scene3DPipeline.Lines => _psLine, Scene3DPipeline.Edges => _psEdge,
                     Scene3DPipeline.OnTop => _psTop, Scene3DPipeline.Grid => _psGrid,
                     Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent => _psImage,
                     Scene3DPipeline.Pbr => _psPbr, Scene3DPipeline.PbrTranslucent => _psPbrGlass, Scene3DPipeline.Backdrop => _psBackdrop,
@@ -847,7 +879,8 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
                 bool selection = state is Scene3DPipeline.Edges or Scene3DPipeline.OnTop;
                 ctx.OMSetBlendState(state == Scene3DPipeline.PbrTranslucent ? _blendPremultiplied
                                     : state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid or Scene3DPipeline.Image
-                                    or Scene3DPipeline.ImageTranslucent or Scene3DPipeline.Ground || selection ? _blendOn : _blendOff);
+                                    or Scene3DPipeline.ImageTranslucent or Scene3DPipeline.Ground or Scene3DPipeline.FieldBlend
+                                    or Scene3DPipeline.FieldLit || selection ? _blendOn : _blendOff);
                 ctx.OMSetDepthStencilState(selection || state == Scene3DPipeline.Backdrop ? _dsOff
                     : state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid or Scene3DPipeline.ImageTranslucent
                       or Scene3DPipeline.PbrTranslucent or Scene3DPipeline.Ground ? _dsNoWrite : _dsWrite);
@@ -915,7 +948,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     public override void Dispose()
     {
         ReleaseImages();
-        _vb?.Dispose(); _ib?.Dispose(); _lines?.Dispose(); _field?.Dispose(); _imageVb?.Dispose(); _shade?.Dispose();
+        _vb?.Dispose(); _ib?.Dispose(); _lines?.Dispose(); _field?.Dispose(); _imageVb?.Dispose(); _shade?.Dispose(); _fieldNormals?.Dispose();
         ReleaseEnvironment();
         _textures.Clear(v => v?.Dispose());
         foreach (var o in _overlays) o?.Dispose();
@@ -929,7 +962,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _cb?.Dispose(); _cbTransform?.Dispose(); _layout?.Dispose(); _vs?.Dispose(); _layoutField?.Dispose(); _vsField?.Dispose();
         _psColor?.Dispose(); _psLine?.Dispose(); _psPick?.Dispose(); _psField?.Dispose(); _psEdge?.Dispose(); _psTop?.Dispose(); _vsGrid?.Dispose(); _psGrid?.Dispose();
         _layoutImage?.Dispose(); _vsImage?.Dispose(); _psImage?.Dispose(); _imageSampler?.Dispose();
-        _layoutPbr?.Dispose(); _vsPbr?.Dispose(); _psPbr?.Dispose(); _psBackdrop?.Dispose(); _blendPremultiplied?.Dispose();
+        _layoutPbr?.Dispose(); _vsPbr?.Dispose(); _layoutFieldLit?.Dispose(); _vsFieldLit?.Dispose(); _psFieldLit?.Dispose(); _psPbr?.Dispose(); _psBackdrop?.Dispose(); _blendPremultiplied?.Dispose();
         _vsShadow?.Dispose(); _psDepth?.Dispose(); _psPrepass?.Dispose(); _psGroundPrepass?.Dispose(); _psAo?.Dispose(); _psAoBlur?.Dispose();
         _psGround?.Dispose(); _psPbrGlass?.Dispose(); _rasterShadow?.Dispose(); _shadowSampler?.Dispose();
         _noShadowMap?.Dispose(); _noOcclusion?.Dispose();

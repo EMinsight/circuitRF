@@ -64,7 +64,10 @@ internal static class DocumentSchema
         new("3d-view", "The .c3d 3D view format", ".c3d",
             typeof(CircuitRF.Design.ThreeD.C3dDocument),
             // brief-em3d-92 — the cap is C3dTransparency.Max's, never a second literal.
-            C3dPreamble.Replace("{TransparencyMax}", CircuitRF.Design.ThreeD.C3dTransparency.Max.ToString(System.Globalization.CultureInfo.InvariantCulture))),
+            // brief-em3d-109 — the field indicator's labels are RealisticLook's, never a second spelling.
+            C3dPreamble.Replace("{TransparencyMax}", CircuitRF.Design.ThreeD.C3dTransparency.Max.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                       .Replace("{LitFields}", CircuitRF.Render.Scene3D.Look.RealisticLook.FieldIndicatorText(lit: true, blended: false))
+                       .Replace("{BlendedFields}", CircuitRF.Render.Scene3D.Look.RealisticLook.FieldIndicatorText(lit: false, blended: true))),
         new("materials", "The .cmat material library format", ".cmat",
             typeof(CircuitRF.Design.Layout.CmatFile), CmatPreamble),
     ];
@@ -506,6 +509,12 @@ internal static class DocumentSchema
             for Pictures" (an orbit never writes it): Direction (x, y, z from the target toward the
             viewer), Target (x, y, z in DBU), Distance (DBU), FovY (degrees) and Projection
             (Perspective or Orthographic). Omitted, a picture is taken from the live view's camera.
+            FieldStyle is how a field plot is drawn in it: Exact (the default: the colour map's own
+            colour, exactly as the default view draws it), Lit (a clear-coat sheen that only ever
+            lightens a colour, so the picture carries "{LitFields}" under the legend) or Glow (the field
+            exact, the scene around it dimmed). FieldOpacity (0 to 100, default 100) lets the material
+            under a plot show through it; below 100 the colours are blends and the picture carries
+            "{BlendedFields}". Neither label can be turned off.
             Whether the realistic view is ON is not saved. `check` refuses a value out of range or a
             spelling it cannot read, and warns on a .hdr that is missing or does not read (the view
             then lights with Studio).

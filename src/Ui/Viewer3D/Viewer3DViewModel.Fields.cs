@@ -222,6 +222,14 @@ public sealed partial class Viewer3DViewModel
     /// <summary>The overlay's legends: shown with the field.</summary>
     public bool FieldLegendVisible => ShowField && FieldLegendGroups.Count > 0;
 
+    /// <summary>
+    /// brief-em3d-109 R-em3d109-4 (owner decision D13) — <c>Lit Fields</c>, <c>Blended Fields</c> or <c>Lit, Blended Fields</c> while the
+    /// realistic view draws a field whose colours are not the legend's own (RealisticLook.FieldIndicator, the one spelling); null otherwise.
+    /// The live overlay draws it under the legend stack and every picture carries it: it is tied to neither the legend nor the caption
+    /// option, and nothing turns it off.
+    /// </summary>
+    public string? FieldIndicator => View.DrawsRealistic && ShowField && FieldDrawn.Vertices.Length > 0 ? View.Look.FieldIndicator : null;
+
     /// <summary>The focused plot's legend lines: its group's (FieldLegendGroups) — FieldPlotResolver.LegendLines, the function
     /// `render --field`'s legend comes from.</summary>
     public IReadOnlyList<string> FieldLegendLines()
@@ -827,7 +835,10 @@ public sealed partial class Viewer3DViewModel
                 var labels = DrawnLayers.Select(l => l.Item?.Label).OfType<string>().Distinct().ToList();
                 if (labels.Count > 0) caption = string.Join(", ", labels);
             }
-            return new FieldPictureShot(rgba, w, h, k, legends, caption, ThemeServiceDark()) { Transparent = plan.Transparent, Supersample = ss };
+            return new FieldPictureShot(rgba, w, h, k, legends, caption, ThemeServiceDark())
+            {
+                Transparent = plan.Transparent, Supersample = ss, Indicator = FieldIndicator,
+            };
         }
         catch (Exception e) when (e is Viewer3DPresentFault or InvalidOperationException or OutOfMemoryException)
         {

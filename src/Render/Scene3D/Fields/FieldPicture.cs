@@ -27,8 +27,12 @@ public sealed record FieldPictureShot(byte[] Rgba, int Width, int Height, float 
     /// <summary>R-em3d107-5a — how many times this size each side the picture was drawn at before it was brought down (1: not).</summary>
     public int Supersample { get; init; } = 1;
 
-    /// <summary>The pixels with the layer, the legends and the caption painted on (the caller disposes it).</summary>
-    public SKBitmap Compose() => FieldPicture.Compose(Rgba, Width, Height, Scale, Legends, Caption, Dark, Layer);
+    /// <summary>brief-em3d-109 R-em3d109-4 — <c>Lit Fields</c>, <c>Blended Fields</c> or both (<see cref="Look.RealisticLook.FieldIndicator"/>),
+    /// painted under the legend stack whatever the legend and caption options say; null for none.</summary>
+    public string? Indicator { get; init; }
+
+    /// <summary>The pixels with the layer, the legends, the caption and the indicator painted on (the caller disposes it).</summary>
+    public SKBitmap Compose() => FieldPicture.Compose(Rgba, Width, Height, Scale, Legends, Caption, Dark, Layer, Indicator);
 
     public byte[] Png()
     {
@@ -89,7 +93,7 @@ public static class FieldPicture
     /// <summary>As <see cref="Png"/>, unencoded: the composed pixels, RGBA8 premultiplied (opaque). <paramref name="layer"/>,
     /// when given, is painted first, under the legends and the caption.</summary>
     public static SKBitmap Compose(byte[] rgba, int width, int height, float scale, IReadOnlyList<FieldPictureLegend> legends,
-                                   string? caption, bool dark, FieldPictureLayer? layer = null)
+                                   string? caption, bool dark, FieldPictureLayer? layer = null, string? indicator = null)
     {
         var bmp = new SKBitmap(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
         System.Runtime.InteropServices.Marshal.Copy(rgba, 0, bmp.GetPixels(), Math.Min(rgba.Length, width * height * 4));
@@ -107,7 +111,7 @@ public static class FieldPicture
                 }
                 finally { handle.Free(); }
             }
-            Paint(canvas, width, height, scale, legends, caption, dark, SKTypeface.Default);
+            Paint(canvas, width, height, scale, legends, caption, dark, SKTypeface.Default, indicator);
         }
         return bmp;
     }
@@ -127,7 +131,7 @@ public static class FieldPicture
     /// widest's; a legend that would run past the bottom is not drawn, and the last one drawn ends with "+N more".
     /// </summary>
     public static void Paint(SKCanvas canvas, int width, int height, float scale, IReadOnlyList<FieldPictureLegend> legends,
-                             string? caption, bool dark, SKTypeface typeface)
+                             string? caption, bool dark, SKTypeface typeface, string? indicator = null)
     {
         var ink = dark ? new SKColor(235, 235, 240) : new SKColor(30, 32, 38);
         var box = dark ? new SKColor(28, 30, 34, 215) : new SKColor(250, 250, 252, 225);
@@ -135,6 +139,8 @@ public static class FieldPicture
         using var text = new SKPaint { Color = ink, IsAntialias = true };
         using var fill = new SKPaint { Color = box, IsAntialias = true };
         float pad = 8 * scale, line = 16 * scale, gap = 8 * scale;
+        // brief-em3d-109 — where the stack ends (the indicator's top), and its right edge
+        float stackBottom = pad, stackRight = width - pad;
 
         if (legends.Count > 0)
         {
@@ -171,6 +177,14 @@ public static class FieldPicture
                 if (more) canvas.DrawText(MoreLine(legends.Count - shown), x0 + pad, y, font, text);
                 y0 += h + gap;
             }
+            if (shown > 0) stackBottom = y0 - gap + IndicatorGap * scale;
+        }
+        if (indicator is { Length: > 0 })
+        {
+            // R-em3d109-4b — small, in the legend's secondary text colour, right under the stack (alone in its corner with no legend)
+            using var small = new SKFont(typeface, IndicatorSize * scale);
+            using var secondary = new SKPaint { Color = ink.WithAlpha(IndicatorAlpha), IsAntialias = true };
+            canvas.DrawText(indicator, stackRight - small.MeasureText(indicator), stackBottom + IndicatorSize * scale, small, secondary);
         }
         if (caption is { Length: > 0 })
         {
@@ -180,6 +194,11 @@ public static class FieldPicture
             canvas.DrawText(caption, 2 * pad, y0 + line * 0.85f, font, text);
         }
     }
+
+    /// <summary>brief-em3d-109 R-em3d109-4b — the indicator's text size (the legend's is 12, its range 11), its gap below the legend stack,
+    /// and the alpha that makes the legend's ink its secondary colour. The live overlay draws it with the same three.</summary>
+    public const float IndicatorSize = 10, IndicatorGap = 4;
+    public const byte IndicatorAlpha = 160;
 
     /// <summary>brief-em3d-96 D3 — the last legend drawn says how many more there are.</summary>
     public static string MoreLine(int more) => $"+{more} more";

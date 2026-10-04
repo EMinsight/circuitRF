@@ -224,3 +224,19 @@ Findings from work on the 3D viewer's view model. The field model itself (reader
 - **The Look panel's drags** preview through `C3dEditorViewModel.PreviewLook` (the view's `LookSource` reads the preview first) and
   write one `C3dRecordsEdit` of the Look's text alone on release, as the field plots' edits do — not through `ChangeRecords`, whose
   `RecordsChanged` regenerates the scene. `Viewer3DViewModel.LookWrites` counts the uniform writes.
+
+## Field plots in the realistic view: the two field pipelines and the normal stream (brief-em3d-109, 2026-10-04)
+
+- **Two pipelines, appended to `Scene3DPipeline`.** `FieldBlend` is `fs_field` blended (straight alpha, the translucent blend), used
+  for Exact or Glow below 100 %; `FieldLit` is `vs_field_lit`/`fs_field_lit`, always blended (at 100 % its alpha is 1 and the blend
+  changes nothing). Both write depth. The default view and Exact at 100 % keep the old `Field` pipeline untouched.
+- **The Lit field's normal stream binds where the shade stream does**: Metal vertex buffer 3, D3D11 input slot 1 (semantic LOC3),
+  Vulkan vertex binding 1, 12 bytes a vertex (`FieldShading.Stride`). Vulkan used to leave the shade stream bound at binding 1 for the
+  frame on the grounds that nothing else read it; it now tracks which of the two binding 1 holds. `UploadFieldNormals([])` releases.
+  A Lit draw also needs the environment (its sheen samples the prefiltered map and the split-sum table), so it is skipped, as a
+  `Pbr` draw is, until that is uploaded.
+- **The indicator in the live view** is drawn by `Viewer3DOverlay` under the legend stack (`Legends` now returns where the stack ends)
+  or alone at its top, whether or not the legend is shown; a picture's is `FieldPicture`'s, from `FieldPictureShot.Indicator`, which
+  `CapturePicture` always fills from `Viewer3DViewModel.FieldIndicator` — not from the legend or caption options.
+- **Not seen**: the live overlay's label was not looked at (no window here); its gate is the view model's property under every
+  legend/caption combination, and the exported picture's pixels.
