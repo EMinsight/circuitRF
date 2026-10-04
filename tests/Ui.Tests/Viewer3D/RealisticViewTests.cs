@@ -180,6 +180,40 @@ public sealed class RealisticViewTests : IDisposable
         Assert.All(scene.ShadeVertices.Skip(faded.FirstVertex).Take(faded.VertexCount), v => Assert.NotEqual(0u, v.Slot & Scene3DShadeVertex.StatedAlpha));
     }
 
+    /// <summary>An array element is drawn whole from its prototype's DEFAULT-opaque triangles. A dielectric is translucent by its
+    /// kind's default and so is not in that draw — yet with no Transmission the realistic view draws it opaque, so each element's copy
+    /// must still be drawn by itself (it once vanished from every element but the prototype).</summary>
+    [Fact]
+    public void Gate1_AnArrayElementsKindDefaultTranslucentPart_IsStillDrawn()
+    {
+        var a = Em3dBoundaryKind.Absorbing;
+        var solids = new List<Em3dSolid>();
+        for (int k = 0; k < 3; k++)
+        {
+            double x = k * 2e-3;
+            solids.Add(new Em3dSolid($"U[{k}]/sub", "FR4", Em3dRole.Dielectric, new Em3dBox(new(x, 0, 0), new(x + 1e-3, 1e-3, 1e-4)), 0));
+            solids.Add(new Em3dSolid($"U[{k}]/cu", "Copper", Em3dRole.Conductor, new Em3dBox(new(x, 0, 1e-4), new(x + 1e-3, 1e-3, 1.2e-4)), 0));
+        }
+        var problem = new Em3dProblem(solids, [], [], [],
+            new Em3dAirBox(new(-5e-3, -5e-3, -5e-3), new(1e-2, 5e-3, 5e-3), new Em3dFaces(a, a, a, a, a, a)),
+            new Em3dFrequency(1e9, 1e9, 1, Em3dSweepKind.Linear), 25);
+        var run = new object();
+        var scene = Scene3DBuilder.Build(problem, 1, options: new Scene3DBuildOptions(DrawAirBox: false, Origin: (0, 0, 0), HideOutermostDielectric: false,
+            Instancing: n => new Scene3DInstancing(run, n[2] - '0', (n[2] - '0') * 2e-3, 0, 0, n[(n.IndexOf('/') + 1)..])));
+        Assert.Equal(2, scene.Elements.Length);
+        var view = new Viewer3DViewState { Camera = Camera3D.Fit(scene.ContentMin, scene.ContentMax, 1.6f) };
+        view.Adopt(scene, null);
+        Array.Fill(view.Visible, true);
+        Realistic(view);
+        var draws = Draws(Plan(scene, view, Scene3DOverlay.None));
+        Assert.Equal(2, draws.Count(d => d.Pipeline == Scene3DPipeline.Pbr && d.Object == 0));                 // each element whole
+        foreach (var o in scene.Objects.Where(o => o.Name.EndsWith("/sub", StringComparison.Ordinal)))
+        {
+            Assert.True(o.Translucent);
+            Assert.Contains(draws, d => d.Object == o.Id && d.Pipeline == Scene3DPipeline.Pbr);
+        }
+    }
+
     // ── 2. not document state ──────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -236,6 +270,7 @@ public sealed class RealisticViewTests : IDisposable
         Assert.Equal(("c3d.look.hdr-unreadable", CircuitRF.Diagnostics.DiagnosticSeverity.Warning), (missing.Id, missing.Severity));
 
         var image = new RadianceImage(16, 8, [.. Enumerable.Range(0, 16 * 8 * 3).Select(i => 0.5f + (i % 7) * 0.1f)]);
+        image.Rgb[3 * 20] = image.Rgb[3 * 20 + 1] = image.Rgb[3 * 20 + 2] = 1e6f;          // a sun brighter than a half can hold
         File.WriteAllBytes(Path.Combine(_root, "sky.hdr"), RadianceHdr.Encode(image));
         Assert.Empty(Check(new C3dLook { Environment = "sky.hdr", Exposure = -2, Background = "Environment" }));
         var read = RadianceHdr.Read(Path.Combine(_root, "sky.hdr"), out _)!;
@@ -245,9 +280,12 @@ public sealed class RealisticViewTests : IDisposable
         var fell = EnvironmentPrefilter.For(C3dStudio.Studio, Path.Combine(_root, "nowhere.hdr"));
         Assert.Equal("Studio", fell.Label);
         Assert.Contains("nowhere.hdr cannot be read", fell.Fallback);
+        // keyed on the file, as a read one is, so the view model keeps it across an exposure edit rather than re-making it
+        Assert.StartsWith("hdr:" + Path.GetFullPath(Path.Combine(_root, "nowhere.hdr")) + "|", fell.Key);
         var user = EnvironmentPrefilter.For(C3dStudio.Studio, Path.Combine(_root, "sky.hdr"));
         Assert.Equal("sky.hdr", user.Label);
         Assert.Null(user.Fallback);
+        Assert.All(user.Levels, l => Assert.All(l.Rgba, h => Assert.True(Half.IsFinite(h))));   // clamped, never +inf
     }
 
     // ── 3. the reference math ────────────────────────────────────────────────────────────────────────────────────────

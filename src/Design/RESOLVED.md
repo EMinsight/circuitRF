@@ -16582,3 +16582,6 @@ and `ParallelLcResonanceTests.AnInductorWithOnlyADielectricClass_IsWarnedForWhat
 - **`check`'s findings**: `c3d.look.range` (Exposure −10…10, Intensity 0…10, a Rotation that is not a number),
   `c3d.look.background`, `c3d.look.environment` (an unknown word or an `.exr`) are errors; `c3d.look.hdr-unreadable` (a
   missing or unreadable `.hdr`) is a WARNING, because the view falls back to Studio and says so.
+- **Review fixes (2026-10-04).** `RadianceHdr`'s header lines drop a trailing `\r`, so a header saved with CRLF line ends
+  still reads (the `FORMAT=` line is compared exactly). `C3dLook.EnvironmentOf` refuses a comma list: `Enum.TryParse` reads
+  `"Studio,Dark"` as the OR of the two, which is `Dark`, so that spelling passed `check` as a studio.

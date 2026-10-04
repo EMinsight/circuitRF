@@ -4732,3 +4732,18 @@ missing the driven port's probes or its kept document is drawn as written, with 
 - **Visual check**: three pictures (Studio on the theme, High key on the environment, Dark on a gradient) of gold, copper,
   red plastic, a clear-coated laminate and tinted glass read as intended. A glass box shows a bright line along an edge seen
   through it at a grazing angle — what a per-object-sorted raster glass does, left as it is.
+
+### Brief-106 review fixes (2026-10-04)
+
+- **An array element's kind-default-translucent part vanished.** An element is drawn whole from its group's
+  `OpaqueFirst..OpaqueCount`, which holds only the DEFAULT-opaque batches. A dielectric is translucent by its kind's default
+  and so is outside that range, but with no `Transmission` the realistic view draws it OPAQUE — so it was skipped by the
+  translucent pass too, and every element's copy but the prototype's disappeared. `ColourRealistic` now draws an element's
+  translucent batches through `OpaqueRealistic` after the whole draw (which adds only those it draws opaque). Gate:
+  `RealisticViewTests.Gate1_AnArrayElementsKindDefaultTranslucentPart_IsStillDrawn`. The original gate skipped element
+  objects (`o.Element < 0`), because a whole draw is attributed to object 0 — which is how this got through.
+- **An `.hdr` brighter than a half overflowed to +∞.** An unclipped sun easily exceeds 65,504; `(Half)` of it is +∞, and a
+  linear lookup touching it gives ∞·0 = NaN. `ToHalf` clamps to the largest finite half.
+- **An unreadable `.hdr`'s fallback was re-made on every Look change.** It carried Studio's key, which `KeyOf` (comparing on
+  the file) never matched, so each exposure or rotation edit ran `For` again and uploaded a NEW environment object (the
+  session compares by reference). Its key is now `hdr:<full path>|unread`.

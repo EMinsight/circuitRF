@@ -72,7 +72,8 @@ public static class RadianceHdr
         {
             int start = i;
             while (i < s.Length && s[i] != (byte)'\n') i++;
-            string l = Encoding.ASCII.GetString(s[start..i]);
+            // A header saved with CRLF line ends still reads (FORMAT= is compared exactly).
+            string l = Encoding.ASCII.GetString(s[start..i]).TrimEnd('\r');
             if (i < s.Length) i++;
             return l;
         }

@@ -82,7 +82,7 @@ public sealed partial class Viewer3DViewModel
     }
 
     /// <summary>Whether <paramref name="current"/> already is what the Look names: a studio's key, or (for a file) the same file — a
-    /// fallen-back file keeps Studio's key, so it is compared on the file's own path in its label.</summary>
+    /// fallen-back file's key is <c>hdr:&lt;path&gt;|unread</c>, so it matches too and an exposure edit does not re-make it.</summary>
     private static string KeyOf(C3dStudio studio, string? hdr, PrefilteredEnvironment current)
         => hdr is null ? "studio:" + studio : current.Key.StartsWith("hdr:" + Path.GetFullPath(hdr) + "|", StringComparison.Ordinal) ? current.Key : "";
 

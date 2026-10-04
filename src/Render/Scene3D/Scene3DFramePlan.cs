@@ -669,6 +669,10 @@ public sealed class Scene3DFramePlan
             if (Whole(scene, view, preview, el, g, pickPass: false) && !AnyFaded(el) && WholeIsPbr(scene, el))
             {
                 Add(ref Draws, ref DrawCount, Scene3DPipeline.Pbr, Scene3DBuffer.Scene, g.OpaqueFirst, g.OpaqueCount, ElementSlot(e));
+                // The whole draw holds only the group's DEFAULT-opaque triangles: a part translucent by its kind's default whose
+                // appearance does not transmit is opaque here, so it is drawn by itself (OpaqueRealistic skips every other one).
+                for (int k = el.FirstBatch; k < el.FirstBatch + el.BatchCount; k++)
+                    if (batches[k].Translucent) OpaqueRealistic(scene, view, preview, batches[k], e);
                 continue;
             }
             for (int k = el.FirstBatch; k < el.FirstBatch + el.BatchCount; k++) OpaqueRealistic(scene, view, preview, batches[k], e);
@@ -758,7 +762,7 @@ public sealed class Scene3DFramePlan
     }
 
     /// <summary>Whether an element's one opaque draw (its group's default-opaque objects) is all material the realistic view draws
-    /// opaque — else it is drawn object by object.</summary>
+    /// opaque — else it is drawn object by object. Its default-translucent objects are not in that draw; the caller adds them.</summary>
     private bool WholeIsPbr(Scene3DModel scene, in Scene3DElement el)
     {
         for (uint id = el.FirstId; id < el.FirstId + (uint)el.Count; id++)

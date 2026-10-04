@@ -128,12 +128,17 @@ public static class EnvironmentPrefilter
         if (Cache.Count > 16) Cache.Clear();
         return Cache.GetOrAdd(key, env);
 
+        // The file's own key (no size or time: there is none), so the view model's KeyOf recognises it and a rotation or exposure
+        // edit does not make — and upload — a new fallback every time.
         PrefilteredEnvironment FellBack(string reason)
         {
             var s = Studio(C3dStudio.Studio);
+            string full;
+            try { full = Path.GetFullPath(hdrPath); }
+            catch (Exception e) when (e is ArgumentException or NotSupportedException or PathTooLongException) { full = hdrPath; }
             return new PrefilteredEnvironment
             {
-                Key = s.Key, Label = s.Label, Fallback = $"{Path.GetFileName(hdrPath)} cannot be read ({reason}); lit with Studio",
+                Key = $"hdr:{full}|unread", Label = s.Label, Fallback = $"{Path.GetFileName(hdrPath)} cannot be read ({reason}); lit with Studio",
                 Levels = s.Levels, BrdfTable = s.BrdfTable, Sh = s.Sh, KeyDirection = s.KeyDirection, KeyRadiance = s.KeyRadiance,
             };
         }
@@ -425,14 +430,18 @@ public static class EnvironmentPrefilter
         return px;
     }
 
+    /// <summary>The largest finite half: an <c>.hdr</c> sun can be brighter, and a texel converted to +∞ turns every filtered
+    /// lookup that touches it (∞ · 0) into NaN — a black or speckled highlight on the GPU.</summary>
+    private const float HalfMax = 65504f;
+
     private static EnvironmentLevel ToHalf(float[] rgb, int size)
     {
         var h = new Half[size * size * 4];
         for (int p = 0; p < size * size; p++)
         {
-            h[4 * p] = (Half)rgb[3 * p];
-            h[4 * p + 1] = (Half)rgb[3 * p + 1];
-            h[4 * p + 2] = (Half)rgb[3 * p + 2];
+            h[4 * p] = (Half)MathF.Min(rgb[3 * p], HalfMax);
+            h[4 * p + 1] = (Half)MathF.Min(rgb[3 * p + 1], HalfMax);
+            h[4 * p + 2] = (Half)MathF.Min(rgb[3 * p + 2], HalfMax);
             h[4 * p + 3] = (Half)1f;
         }
         return new EnvironmentLevel(size, size, h);

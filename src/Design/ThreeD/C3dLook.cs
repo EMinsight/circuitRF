@@ -109,7 +109,9 @@ public sealed class C3dLook
         known = true;
         if (Environment is not { } e || e.Trim().Length == 0) return (DefaultStudio, null);
         e = e.Trim();
-        if (Enum.TryParse<C3dStudio>(e, ignoreCase: true, out var s) && Enum.IsDefined(s) && !char.IsDigit(e[0])) return (s, null);
+        // Enum.TryParse also takes a number and a comma list ("Studio,Dark" is Dark): neither is a studio's name.
+        if (Enum.TryParse<C3dStudio>(e, ignoreCase: true, out var s) && Enum.IsDefined(s) && !char.IsDigit(e[0]) && !e.Contains(','))
+            return (s, null);
         if (e.EndsWith(".hdr", StringComparison.OrdinalIgnoreCase)) return (DefaultStudio, e);
         known = false;
         return (DefaultStudio, null);
