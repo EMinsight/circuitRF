@@ -1386,6 +1386,25 @@ first, exactly as the other conversions do.</li>
 </ul>
 <p>The geometry kernel does the work in both directions, so on an installation without it both are refused,
 saying why and how to restore it.</p>
+<h3 id="convert-gltf">glTF, for another renderer</h3>
+<p>A 3D view comes out as <strong>binary glTF</strong> (<code>.glb</code>): the model as the 3D view draws it, with its
+<a href="drawing-in-3d.html#appearance">appearances</a> as glTF materials and its smooth normals, for a path tracer or any other
+renderer. It calls the function <em>File ▸ Export ▸ glTF…</em> calls, so a file written here and one written from the editor
+are the same bytes when neither includes a camera.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert Package/3d/Package.c3d -o package.glb
+<span class="prompt">$ </span>circuitrf convert Package/3d/Package.c3d -o package.glb --gltf-assembly
+<span class="prompt">$ </span>circuitrf convert cell/3d/cell.c3d -o hot.glb --gltf-field Top</code></pre>
+<ul>
+<li>The source is a <code>.c3d</code>. What it shows is the document's own: an object the file hides is left out, and so are the
+air box, ports, boundaries and reference images.</li>
+<li><code>--gltf-assembly</code> writes each placed cell as a node that shares its meshes; without it everything is flattened.</li>
+<li><code>--gltf-field &lt;plot&gt;</code> adds a Surfaces or Faces field plot as an unlit mesh with per-vertex colours (at phase 0).
+<code>--region &lt;name&gt;</code> names the region a Surfaces plot of a volume quantity is drawn on, as <code>render --region</code> does. A
+ClipPlane plot is refused.</li>
+<li>The file carries the Look's camera when the document saves one (<em>Set Camera</em> in the Look panel), and no camera
+otherwise.</li>
+<li>circuitRF writes glTF and does not read it: a <code>.glb</code> or <code>.gltf</code> source is refused, and so is a <code>.gltf</code> target.</li>
+</ul>
 <h3 id="convert-options">Options</h3>
 <table>
 <thead>
@@ -1401,7 +1420,7 @@ saying why and how to restore it.</p>
 </tr>
 <tr>
 <td><code>--from &lt;fmt&gt;</code>, <code>--to &lt;fmt&gt;</code></td>
-<td><code>clay</code>, <code>gdsii</code>, <code>dxf</code>, <code>gerber</code>, <code>board</code>, <code>step</code>. Say it when the path does not.</td>
+<td><code>clay</code>, <code>gdsii</code>, <code>dxf</code>, <code>gerber</code>, <code>board</code>, <code>step</code>, <code>gltf</code> (a target only). Say it when the path does not.</td>
 </tr>
 <tr>
 <td><code>--cell &lt;name&gt;</code></td>
@@ -1466,6 +1485,10 @@ saying why and how to restore it.</p>
 <tr>
 <td><code>--assembly</code>, <code>--as-drawn</code>, <code>--thicken-sheets</code>, <code>--include-airbox</code>, <code>--schema ap214\|ap242</code>, <code>--view 3d\|layout</code></td>
 <td>STEP export: the Export STEP dialog's choices, one flag each.</td>
+</tr>
+<tr>
+<td><code>--gltf-assembly</code>, <code>--gltf-field &lt;plot&gt;</code>, <code>--region &lt;name&gt;</code></td>
+<td>glTF export: the Export glTF dialog's choices. See <a href="#convert-gltf">glTF</a>.</td>
 </tr>
 <tr>
 <td><code>--open-archives</code></td>
@@ -1913,6 +1936,31 @@ it at every depth. The flag repeats, and takes a comma-separated list.</li>
 range, or anything but <code>name=whole number</code>, is refused before the file is read.</li>
 <li>It is a <code>.c3d</code>'s: on any other document, <code>.cem</code> included, it is a refusal naming the kind.</li>
 </ul>
+<h4 id="render-realistic">A realistic picture</h4>
+<p><code>--look realistic</code> draws a <code>.c3d</code> as its <a href="drawing-in-3d.md#realistic">realistic view</a> looks, as a <code>.png</code>, with no window. It is
+what Export Picture makes in the realistic view:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf render pkg/3d/pkg.c3d -o shot.png --look realistic --iso
+<span class="prompt">$ </span>circuitrf render pkg/3d/pkg.c3d -o shot.png --look realistic --look-set Exposure=1 --look-set Environment=Dark</code></pre>
+<ul>
+<li><strong>The Look is the file's.</strong> The environment, exposure, background, shadows, ground and every Show option are read
+from the <code>.c3d</code>'s Look. <code>--look-set Key=value</code> changes one key for this picture only, spelled as the file spells it
+(<code>FieldStyle=Lit</code>, <code>Background=#ffffff</code>, <code>Shadows=false</code>, <code>Exposure=null</code> for the default). The value is checked as
+the file's is, so <code>Exposure=20</code> is refused. The file is never written.</li>
+<li><strong>The camera.</strong> <code>--iso</code> or <code>--view-dir top|bottom|front|back|left|right|x,y,z</code> takes the picture orthographically,
+framed on the model. With neither, the camera <em>Set Camera</em> saved in the Look is used, perspective
+included. With no camera at all, the render is refused.</li>
+<li><strong>Quality and background.</strong> <code>--supersample 1|2|4</code> (default 2) draws the picture at that many times its size each way
+and brings it down. <code>--background transparent</code> leaves out the background and keeps the soft ground shadow's alpha.
+<code>--size</code> and <code>--scale</code> set the pixels.</li>
+<li><strong>A field plot.</strong> <code>--field &lt;plot&gt;</code> draws a Surfaces or Faces plot on the model in the Look's field style. The picture
+carries the legend and the <em>Lit Fields</em> or <em>Blended Fields</em> label, as Export Picture's does. A ClipPlane plot is a
+section, so draw it without <code>--look realistic</code>.</li>
+<li><strong>What it refuses.</strong> A <code>.cem</code>, an <code>.svg</code> or <code>.pdf</code> output, and <code>--section</code>, <code>--tight</code>, <code>--labels</code>, <code>--axes</code> and
+<code>--scale-bar</code>.</li>
+<li>The picture is drawn on the processor, by the same shading the realistic view uses, and the same command always
+writes the same bytes. <code>circuitrf explain pkg.c3d --look</code> lists the Look as <code>render</code> reads it, the environment it
+will light with, and every appearance with where each value came from.</li>
+</ul>
 <h4 id="render-images">Reference images</h4>
 <p>A <code>.c3d</code>'s <a href="drawing-in-3d.md#images">reference images</a> — image sheets, and images mapped onto faces — are drawn by
 <code>--iso</code> exactly as the 3D view's <em>Copy as Vector</em> draws them, from the same code: under every line, each clipped to its
@@ -2006,7 +2054,10 @@ never an error — a design does not fail <code>check</code> because a photo mov
 has (<code>c3d.image.face-missing</code> — the record is kept, never dropped), two images on one face (<code>c3d.image.face-twice</code>), a
 face image whose Width or Height is not positive (<code>c3d.image.face-size</code>) and <code>&quot;Locked&quot;</code> on a sheet with no image
 (<code>c3d.image.locked-without-image</code>). An object that is not modelled and has no material raises no <em>has no material</em>
-warning: only what a run solves is warned of.</p>
+warning: only what a run solves is warned of. The <a href="drawing-in-3d.md#realistic">realistic view's <code>Look</code></a> is display too: an
+<code>Exposure</code> or <code>Intensity</code> out of range (<code>c3d.look.range</code>), a <code>Background</code> (<code>c3d.look.background</code>) or an <code>Environment</code>
+(<code>c3d.look.environment</code>) spelled in no form the view reads is an error, and a <code>.hdr</code> that is missing or does not read is a
+warning (<code>c3d.look.hdr-unreadable</code>): the view lights the scene with Studio instead.</p>
 <p>The kind of document is inferred from the path, exactly as <code>convert</code> infers a format. A GDSII or
 Gerber file is <strong>named as interchange</strong> rather than called unreadable — it is simply not validated,
 because there is nothing to validate it against.</p>

@@ -76,7 +76,7 @@ panel lists it under the cell like the others. <strong>File ▸ New 3D Design…
 holding the cell's own layout, ready to extend — the quickest way to take a layout you have already set up
 for EM into 3D.</p>
 <ul>
-<li><strong>What it holds.</strong> Boxes, prisms, cylinders, sheets, polyhedra and bond wires, each made of a named
+<li><strong>What it holds.</strong> Boxes, prisms, cylinders, spheres, sheets, polyhedra and bond wires, each made of a named
 material; instances of other cells' layouts or 3D views; ports; boundaries on faces; VARs; and any number
 of EM setups. Everything a 3D solve needs is in the one file.</li>
 <li><strong>Units.</strong> Every coordinate is stored as a whole number of <strong>database units</strong> (DBU; 1,000 per µm by
@@ -111,7 +111,7 @@ and this editor share the camera, the clip plane, the mesh and field displays, a
 <a href="em-3d.html#view">3D EM ▸ The 3D view</a>. The editor adds the drawing.</li>
 </ul>
 <p>The camera is the viewer's: drag to orbit; right-, middle-, Alt- or Shift-drag to pan; scroll to zoom;
-<strong>Home</strong> fits; <strong>1</strong> is isometric, <strong>2</strong>–<strong>7</strong> the six orthographic views, <strong>P</strong> toggles perspective; <strong>C</strong>
+<strong>Home</strong> fits; <strong>1</strong> is isometric, <strong>2</strong>–<strong>7</strong> the six orthographic views, <strong>P</strong> toggles perspective, <strong>L</strong> the <a href="#realistic">realistic view</a>; <strong>C</strong>
 turns on the clip plane. A new 3D view opens orthographic. The line along the bottom of the view is the
 <strong>status line</strong>: what the armed tool wants next, or what the last edit did, or why it was refused.</p>
 <h2 id="example">The example: an MMIC in a package</h2>
@@ -546,6 +546,11 @@ offset there. A faint grid lies on the plane; moving the camera never moves it.<
 <td>the centre, the radius, then the height</td>
 </tr>
 <tr>
+<td><strong>E</strong></td>
+<td>Sphere</td>
+<td>the centre, then the radius; it is centred on the drawing plane</td>
+</tr>
+<tr>
 <td><strong>P</strong></td>
 <td>Port</td>
 <td>two corners on the plane (see <a href="#simulate">Simulating</a>)</td>
@@ -676,12 +681,95 @@ is drawing only: the solver never reads it, and changing it does not make a resu
 <li>A see-through object is still picked by its surfaces, like any other. While a pushed-in cell's surroundings or a
 boolean's operands are drawn dimmed or ghosted, those looks win.</li>
 </ul>
+<h3 id="appearance">Appearance</h3>
+<p>An <strong>appearance</strong> says how an object looks in the <a href="#realistic">realistic view</a>: how metallic, how rough, how see-through. It belongs
+first to the <strong>material</strong> — forty copper objects should not need forty edits — and an <strong>object</strong> or a placed cell may
+override it, because plating is usually not modelled: a copper trace that should look gold-plated is the common case.
+A boolean's operand — its Blank, or a Tool, kept or not — has no appearance of its own: it looks like its material, unless the
+top-level operation states one, which styles everything that operation makes. The Inspector says so when one is selected.</p>
+<p>The keys are glTF 2.0's metallic-roughness set, and every one is optional:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Range</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>BaseColor</code></td>
+<td><code>#rrggbb</code></td>
+<td>a metal's reflectance, a dielectric's body colour</td>
+</tr>
+<tr>
+<td><code>Metallic</code></td>
+<td>0–1</td>
+<td>1 for a metal, 0 for a dielectric</td>
+</tr>
+<tr>
+<td><code>Roughness</code></td>
+<td>0–1</td>
+<td>0 a mirror, 1 matte</td>
+</tr>
+<tr>
+<td><code>Transmission</code></td>
+<td>0–1</td>
+<td>see-through: glass, quartz, a thin laminate</td>
+</tr>
+<tr>
+<td><code>Ior</code></td>
+<td>1.0–3.0</td>
+<td>the <strong>optical</strong> index of refraction</td>
+</tr>
+<tr>
+<td><code>Clearcoat</code>, <code>ClearcoatRoughness</code></td>
+<td>0–1</td>
+<td>a glossy layer over the body, such as solder mask</td>
+</tr>
+<tr>
+<td><code>AttenuationColor</code></td>
+<td><code>#rrggbb</code></td>
+<td>the tint light picks up passing through</td>
+</tr>
+<tr>
+<td><code>AttenuationDistance</code></td>
+<td>metres, above 0</td>
+<td>how far it travels before taking that tint</td>
+</tr>
+<tr>
+<td><code>Like</code></td>
+<td>a material's name</td>
+<td>that material's look first, with these fields over it</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>On a material</strong> (a <code>.cmat</code> or a technology's own list) it is one more key on the record:
+<code>&quot;Appearance&quot;: { &quot;BaseColor&quot;: &quot;#FAD1C2&quot;, &quot;Metallic&quot;: 1, &quot;Roughness&quot;: 0.35 }</code>. The shipped generic library states true
+reflectances for its metals and visual values for its dielectrics. A metal's display <strong>Color</strong> is unchanged, so the
+ordinary view's copper still looks like the diagrammatic copper you know.</li>
+<li><strong>On an object or a placed cell</strong> in the <code>.c3d</code> it overrides the material's <strong>field by field</strong>. The plated trace is
+<code>&quot;Appearance&quot;: { &quot;Like&quot;: &quot;Gold&quot; }</code> on a copper object; <code>{ &quot;Roughness&quot;: 0.1 }</code> is polished copper. A placed cell's
+appearance applies to every part inside it, and a part's own field wins; of nested cells, the innermost wins. A
+boolean, fillet or chamfer carries it for its result.</li>
+<li><strong>What is not stated</strong> comes from the next statement down: the object, each placed cell around it, the material (and
+its <code>Like</code>), then for <code>BaseColor</code> the material's display <strong>Color</strong>, then the role's default — a conductor metallic
+and fairly rough, a via and a bond wire a little smoother, a dielectric not metallic.</li>
+<li><strong>Nothing physical is read from it, or into it.</strong> The optical index is not worked out from εr (alumina's εr would give
+3.1; its optical index is about 1.76). No solver reads an appearance, two materials that differ only in appearance
+(or colour) are the same material, and <strong>editing an appearance never makes a result stale</strong> — in the <code>.c3d</code>, or in a
+material library or technology a run read.</li>
+<li><code>check</code> refuses a value out of its range and a <code>Like</code> cycle, and warns about a <code>Like</code> naming no material, whose look
+then falls through. <code>circuitrf explain view.c3d --object U1/trace</code> prints the look one object resolves to, and which
+statement decided each field.</li>
+</ul>
 <h3 id="model">Model: kept in the drawing, left out of the solve</h3>
 <p>To try a run without the lid, a second row of bond wires or a fixture, untick its <strong>Model</strong>: it stays on screen, where
 you can still select, move and edit it, and it is left out of <strong>every</strong> simulation run — EM and thermal alike — until
 you tick it again. Hiding an object is not the same thing: a hidden object is still solved.</p>
 <ul>
-<li><strong>Properties</strong> has a <strong>Model</strong> check box on every object that can be solved: a box, prism, cylinder, sheet, polygon,
+<li><strong>Properties</strong> has a <strong>Model</strong> check box on every object that can be solved: a box, prism, cylinder, sphere, sheet, polygon,
 wire, a boolean, fillet or chamfer (for its result — the objects inside it have none of their own), a placed cell
 (every part of it), a <strong>port</strong> and a <strong>heat source</strong>. A polyline is construction geometry and is never solved
 anyway. An effective block's switch is its own <strong>Enabled</strong>, which the Properties row calls <strong>Model</strong> too.</li>
@@ -771,11 +859,15 @@ lists it under <strong>Not Modeled</strong>, with an image icon and the file's n
 every one in a click.</li>
 <li><strong>Tracing.</strong> Right-click it ▸ <strong>Drawing Plane from Image</strong> puts the drawing plane on the image's own plane; then pick
 the Polygon tool and trace. Whatever is drawn on that plane is drawn <strong>over</strong> the image and is what a click picks:
-an image always gives way to the faces lying on it.</li>
+an image gives way to the faces lying on it.</li>
+<li><strong>In front of faces.</strong> To show a picture <em>on</em> a solid — a sheet lying exactly on one of its faces — tick <strong>In front
+of faces</strong> in Properties, or pick <strong>Image in Front of Faces</strong> from its menu. The image is then drawn over every face
+on its plane and is what a click there picks. Untick it (<strong>Image Behind Faces</strong>) to make it a tracing underlay again.
+To put a picture on one face of an object without a separate sheet, use a face image (below).</li>
 <li><strong>Which way up.</strong> On an XY plane the image's right is +x and its up +y; on XZ right +x, up +z; on YZ right +y, up +z —
 as the Top, Front and Right views show them, never mirrored. The sheet's own rotation and mirror move it with the sheet.</li>
 <li><strong>Properties ▸ Image</strong>: the file (<strong>Browse…</strong> points it at another, <strong>Reveal</strong> shows it), its pixels, <strong>Width</strong> and
-<strong>Height</strong> with <strong>Keep aspect</strong>, <strong>Reset to Image Aspect</strong>, <strong>Locked</strong> and <strong>Remove Image</strong> (the sheet stays, an
+<strong>Height</strong> with <strong>Keep aspect</strong>, <strong>Reset to Image Aspect</strong>, <strong>Locked</strong>, <strong>In front of faces</strong> and <strong>Remove Image</strong> (the sheet stays, an
 ordinary sheet — a traced reference becomes a real one). Its <strong>Transparency</strong> row is the image's; a PNG's own
 transparency is kept too.</li>
 <li><strong>Locked</strong> keeps a tracing underlay where it is: it is still selected and edited in Properties, but Move, Rotate, the
@@ -799,7 +891,7 @@ no image. <em>Copy Picture</em>, <em>Export Picture…</em>, <em>Copy as Vector<
 <ul>
 <li><strong>Mapping one</strong>: in Face mode, right-click a <strong>flat</strong> face ▸ <strong>Map Image…</strong>, or hold <strong>Shift</strong> while dropping an image
 file onto a face. It is fitted — as large as fits in the face, centred, its aspect kept. A face carries one image; mapping
-onto a face that has one <strong>replaces</strong> it, as one undo step. A curved face (a cylinder's side) and a placed cell's face
+onto a face that has one <strong>replaces</strong> it, as one undo step. A curved face (a cylinder's side or a sphere's surface) and a placed cell's face
 refuse it, saying why — open the cell to map onto its own faces.</li>
 <li><strong>Which way up</strong>: seen from outside the solid, up is +z (on a top or bottom face, +y), so the picture is never mirrored.</li>
 <li><strong>It belongs to its object</strong>: rename, duplicate, array, group, copy and paste carry it, and deleting the object takes it
@@ -966,7 +1058,7 @@ or the operation in Properties.&quot;</em></p>
 <h3 id="fillets">Rounding edges: Fillet and Chamfer</h3>
 <p>Select edges of one solid in <strong>Edge</strong> mode, then right-click ▸ <strong>Fillet…</strong> or <strong>Chamfer…</strong> (also under
 <strong>3D ▸ Modify ▸ Edge</strong>). A box, prism, cylinder, polyhedron, boolean result or STEP part can be rounded, and so can a
-solid that is already; a sheet has no volume to round, a bond wire is made from its points, and a placed cell's
+solid that is already; a sphere has no edges, a sheet has no volume to round, a bond wire is made from its points, and a placed cell's
 solids belong to its own cell — each disabled item says which. Without the kernel both are disabled with the
 reason, and Edge mode still works.</p>
 <ul>
@@ -1074,11 +1166,193 @@ version. A summary line says what will be written before anything is.</li>
 </ul>
 <p>The <strong>3D Connector</strong> example's flange was made this way: drawn in its own cell, exported, and imported into
 the launch — see <a href="#connector">the second example</a>.</p>
+<h2 id="realistic">The realistic view</h2>
+<p>The <strong>Realistic view</strong> button on the toolbar (the camera aperture, after Perspective and Orthographic), <em>3D ▸ View ▸
+Realistic View</em> and the <strong>L</strong> key in the view all redraw the view with physically based materials lit by a studio: metals reflect it, dielectrics take
+their body colour, gloss and translucency from their <a href="#appearance">appearance</a>. It is for pictures. It is a <strong>view</strong>,
+not an edit: it changes nothing in the model or in any result, it is not saved, and every document opens with it off.
+Selecting, hovering, modelling and the clip plane all keep working underneath it.</p>
+<p>The first time a studio is used in a session it is prepared in the background, and until then the view is drawn as
+usual; the status line says <em>Realistic · preparing …</em> and then names the environment and the exposure.</p>
+<p><strong>What steps aside.</strong> The CAD chrome is hidden: the edge lines, the drawing grid, the mesh, FDTD-grid and section
+overlays, the air box, ports, boundaries and face tints, and reference images. The selected object's outline and the
+face-mode highlights stay, because it is still the editor. A <a href="#simulate">field plot</a> is drawn exactly as in the
+ordinary view unless you choose otherwise (see <a href="#realistic-fields">Field plots in the realistic view</a>). An object's stated <a href="#transparency">transparency</a> still applies;
+a dielectric's ordinary see-through look does not, because the appearance's <code>Transmission</code> decides that here.
+<em>Copy</em> and <em>Export Picture…</em> draw the realistic view without the hover or the selection.</p>
+<p><strong>The <code>Look</code> block.</strong> How the scene is lit is saved in the <code>.c3d</code>, so a picture can be made again later. Every key is
+optional; an omitted key takes the default shown:</p>
+<pre><code class="language-json">&quot;Look&quot;: {
+  &quot;Environment&quot;: &quot;Studio&quot;,
+  &quot;Rotation&quot;: 30,
+  &quot;Intensity&quot;: 1.0,
+  &quot;Exposure&quot;: 0.0,
+  &quot;Background&quot;: &quot;Theme&quot;,
+  &quot;ShowPorts&quot;: false
+}
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Values</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Environment</code></td>
+<td><code>Studio</code> (soft), <code>HighKey</code> (white, low contrast), <code>Dark</code> (a black room with strong rim lights), or a Radiance <code>.hdr</code> file's path, relative to the <code>.c3d</code></td>
+</tr>
+<tr>
+<td><code>Rotation</code></td>
+<td>degrees about +z, turning the studio around the model</td>
+</tr>
+<tr>
+<td><code>Intensity</code></td>
+<td>0–10, the environment's brightness</td>
+</tr>
+<tr>
+<td><code>Exposure</code></td>
+<td>−10 to +10 EV</td>
+</tr>
+<tr>
+<td><code>Background</code></td>
+<td><code>Theme</code> (the view's own colour), <code>#rrggbb</code>, <code>&quot;#rrggbb,#rrggbb&quot;</code> (a vertical gradient, top colour first) or <code>Environment</code> (the studio itself)</td>
+</tr>
+<tr>
+<td><code>ShowEdges</code>, <code>ShowGrid</code>, <code>ShowOverlays</code>, <code>ShowAirBox</code>, <code>ShowPorts</code>, <code>ShowBoundaries</code>, <code>ShowImages</code></td>
+<td><code>true</code> brings that item back, drawn exactly as the ordinary view draws it</td>
+</tr>
+<tr>
+<td><code>Shadows</code></td>
+<td><code>false</code> turns off the key light's shadows (default on)</td>
+</tr>
+<tr>
+<td><code>AmbientOcclusion</code></td>
+<td><code>false</code> turns off the contact shading where surfaces meet (default on)</td>
+</tr>
+<tr>
+<td><code>Ground</code></td>
+<td><code>false</code> removes the shadow-catching floor under the model (default on)</td>
+</tr>
+<tr>
+<td><code>Camera</code></td>
+<td>the camera pictures are taken from, written only by <em>Set Camera</em> (below): <code>Direction</code> (from the target toward the viewer), <code>Target</code> and <code>Distance</code> in DBU, <code>FovY</code> in degrees, <code>Projection</code></td>
+</tr>
+<tr>
+<td><code>FieldStyle</code></td>
+<td><code>Exact</code> (the default), <code>Lit</code> or <code>Glow</code>: how a field plot is drawn (below)</td>
+</tr>
+<tr>
+<td><code>FieldOpacity</code></td>
+<td>0–100, default 100: below 100 the material under a field plot shows through its colours</td>
+</tr>
+</tbody>
+</table>
+<p>A <code>Show…</code> key only lifts the realistic view's own hiding: an air box you have hidden, an overlay that is off, or a
+hidden object stays hidden. The Look is edited in the <a href="#look-panel">Look panel</a>, or by writing the file. A <code>Look</code> edit is
+undone like any other, and <strong>no run sees it</strong>: editing it never makes a result stale.</p>
+<p><strong>Your own environment.</strong> Name a Radiance <code>.hdr</code> (an equirectangular image, +z up) instead of a studio. An <code>.exr</code> is not
+read. A file that is missing or does not read is a warning in <code>check</code>; the view then lights the scene with Studio and
+the status line says why.</p>
+<p><strong>Shadows, contact shading and the ground.</strong> The studio's key light casts <strong>shadows</strong>: soft from High key's broad
+softbox, crisp from Dark's small one. An object whose appearance lets half or more of the light through (<code>Transmission</code>
+0.5 or more) casts none, and ports, boundaries and field plots never do. <strong>Contact shading</strong> darkens the ambient light
+where surfaces meet, such as a die on its substrate or a wire's foot on its pad; it is worked out from what the view shows,
+so it follows the camera. The <strong>ground</strong> is a floor just under the model's lowest point that draws only those two
+darkenings, so the model rests on something instead of floating. It is never seen from below, and the section plane does
+not cut it. A field plot's colours are never shadowed or shaded. Each of the three can be turned off in the <code>Look</code>.</p>
+<p><strong>How it is drawn.</strong> The colours go through the Khronos PBR Neutral tone curve, which keeps base colours faithful. A
+glossy surface reflects the studio, a rough one spreads it. Translucency is approximated: what shows through is dimmed
+and tinted by the attenuation colour, and the reflection is added on top, but light is not bent: the view is drawn at
+interactive speed, not ray traced.</p>
+<h3 id="realistic-fields">Field plots in the realistic view</h3>
+<p>A field plot's colour is a measurement, read against its legend, so by default the realistic view leaves it alone:
+everything around the field is lit, and the field itself is the colour map's own colour, exactly as in the ordinary view.
+Exposure, the tone curve, shadows and contact shading never touch it. The <code>FieldStyle</code> key, or <em>Field plots</em> in the
+<a href="#look-panel">Look panel</a>, offers two other styles for pictures that want more drama:</p>
+<table>
+<thead>
+<tr>
+<th>Style</th>
+<th>What it does</th>
+<th>The field's colours</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Exact</code></td>
+<td>Nothing: the field is drawn as a flat, unlit colour map.</td>
+<td>exactly the legend's</td>
+</tr>
+<tr>
+<td><code>Lit</code></td>
+<td>A clear-coat sheen on the field, from the studio and its key light, so it looks like a coating on the part. The sheen only ever lightens a colour toward white, and never changes its hue.</td>
+<td>lightened where the sheen falls</td>
+</tr>
+<tr>
+<td><code>Glow</code></td>
+<td>The field stays exact and the model and background around it are dimmed by 2.5 stops, so the field seems to glow.</td>
+<td>exactly the legend's</td>
+</tr>
+</tbody>
+</table>
+<p><code>FieldOpacity</code> below 100 lets the material under a plot show through it: a field painted on copper then reads as copper
+under the colours. A plot that normally replaces the faces it is painted on draws them under it instead.</p>
+<p><strong>The indicator.</strong> When the colours are no longer exactly the legend's, the picture says so: a small <strong>Lit Fields</strong>
+label under the field legend with <code>Lit</code>, <strong>Blended Fields</strong> with an opacity below 100, and <strong>Lit, Blended Fields</strong> with
+both. With the legend turned off, the label sits alone in that corner. It is in the view and in every picture (<em>Copy</em>
+and <em>Export Picture…</em>), whatever the legend and caption options say, and it cannot be turned off. <code>Exact</code> and <code>Glow</code>
+carry no label.</p>
+<p><strong>A field seen through glass.</strong> A <a href="#simulate">clip-plane</a> slice inside a substrate whose appearance has <code>Transmission</code>
+(fused silica, or your own) shows the field inside the material through it.</p>
+<h3 id="changing-look">Changing how things look</h3>
+<p>There are two places to change an <a href="#appearance">appearance</a>, and the choice is about <strong>how many things</strong> should change.</p>
+<ul>
+<li><strong>The material route</strong> changes everything made of that material, in every design on the technology. Open the
+Materials editor — <em>Edit Material…</em> on an object, <em>3D ▸ Materials…</em>, the technology's Materials tab or the <code>.cmat</code>
+itself — and use the material's <strong>Appearance</strong> card. Use it to make copper look like copper everywhere, or to tune a
+library's dielectrics once.</li>
+<li><strong>The object route</strong> changes the selected objects only. Select them (Object mode) and use the <strong>Appearance</strong> group in
+the Inspector, under Transparency. Use it for the exceptions: the one gold-plated trace, a polished lid, a part that
+should stand out in a picture. It works for a placed cell too, and its parts inherit it.</li>
+</ul>
+<p>Both show the same fields. A field that is stated shows its value; one that is not shows, greyed, the value it takes,
+and its tooltip says where that comes from (<code>role default</code>, <code>Like 'Gold'</code>, <code>material 'Copper' (generic-materials.cmat)</code>).
+The <strong>×</strong> beside a field removes the statement, so the field comes from the next one down again; <em>Clear override</em>
+removes an object's whole appearance. Several objects whose values differ read <em>mixed</em>, and an edit writes all of them.</p>
+<p><strong>Plating is <code>Like</code>.</strong> Choose <em>Gold</em> in the <strong>Like</strong> box on a copper trace and it takes gold's whole look; any field it
+states itself still wins, so <em>Like Gold</em> with a higher Roughness is brushed gold. The same box on a material makes one
+material look like another (a solder alloy like tin) without restating its numbers.</p>
+<p><strong>Live.</strong> Dragging a slider shows the result in the 3D view as you drag, and the change is one undo step when you let
+go. In the Materials editor a sphere swatch shows the material under the default studio, so a look can be judged with no
+3D view open. In the Materials dialog every change is shown in each open 3D view on that technology while the dialog is
+open; <em>Cancel</em> puts the view back exactly as it was. Neither route rebuilds the model: the view only redraws its
+materials. Editing works whether the realistic view is on or not; while it is off, the Inspector's group says so and
+turns it on in one click.</p>
+<p><a id="look-panel"></a><strong>The Look panel</strong> opens from the small arrow beside the Realistic view button, or from <em>3D ▸ View ▸
+Look…</em>. Opening it turns the realistic view on, since that is what it changes. It holds the environment (a studio, or
+<em>Load .hdr…</em>), its rotation, intensity and exposure, the background and its colours (a swatch opens a picker inside the panel; <em>Done</em> keeps the colour), Shadows, Contact shading and
+Ground, the <a href="#realistic-fields">field plots'</a> style and opacity, and one <strong>Show</strong> box for each kind of CAD chrome the realistic view hides. Every change is saved with the design
+and is one undo step; a slider is one step per drag. The <strong>×</strong> beside a number puts it back to its default (rotation 30°,
+intensity 1, exposure 0 EV, field opacity 100 %), also one undo step. A new <code>.hdr</code> is prepared in the background and the old environment
+stays on screen until it is ready; one used before comes back at once.</p>
+<p><strong>A picture's camera.</strong> The camera is not normally saved with a design. <em>Set Camera</em> in the Look panel
+is the one exception: it saves the current view, and <em>Export Picture…</em>, <code>render</code> and a glTF export take their picture
+from it. Orbiting afterwards never changes it. <em>Go to Camera View</em> brings the live view back to it; <em>Clear</em> removes it,
+and pictures follow the live view again.</p>
+<p><strong>None of this touches a result.</strong> An appearance, a material's display colour, the Look and the picture camera are
+display only. A run never reads them, and changing any of them, in the design or in a material library, never makes a
+result out of date.</p>
 <h2 id="drawings">Pictures and drawings</h2>
 <p>Right-click the view (on anything, or on nothing) for five ways to take it out of circuitRF:</p>
 <ul>
 <li><strong>Copy</strong> puts a picture of the view on the clipboard, drawn by the graphics card at a multiple of the
-window's size. <strong>Export Picture…</strong> saves the same picture as a PNG.</li>
+window's size. <strong>Export Picture…</strong> saves the same picture as a PNG. In the <a href="#realistic">realistic view</a>, the picture
+is drawn at <strong>Supersampling</strong> times its size each way (1×, 2× by default, or 4× for a final picture) and brought
+down, so edges are smooth; the saved size is still the one you chose. <strong>Transparent background</strong> (realistic view
+only) leaves out the background: the PNG's alpha holds the model, a glass object's partial cover, and the ground's
+soft shadow, ready to place on a slide of any colour.</li>
 <li><strong>Copy as Vector</strong> puts the view on the clipboard as <strong>lines</strong>: every silhouette and sharp edge, seen
 along the camera's direction, with the edges behind a surface removed — what the shaded view shows, drawn
 as a line drawing. It pastes into a slide or a document as a picture that stays sharp at any size: on
@@ -1125,6 +1399,38 @@ with another, and with a ruler on the printed page. The dialog remembers its cho
 next time.</p>
 <p>Working out which edges are hidden takes a moment on a large model; above 400,000 triangles it is skipped,
 the edges are all drawn, and the message that reports the export says so.</p>
+<h2 id="gltf">Exporting for another renderer</h2>
+<p>circuitRF does not ray-trace. When a picture needs what only a path tracer gives — refraction through a glass lid,
+caustics, light bouncing between parts — <strong>File ▸ Export ▸ glTF…</strong> writes the model as one binary glTF file (<code>.glb</code>),
+which every path tracer and most 3D tools open. The <a href="#realistic">realistic view</a> approximates those effects; the other
+renderer computes them.</p>
+<p>What is written is <strong>what the view draws</strong>: every shown solid and sheet, with the same triangles and the smooth
+normals the realistic view shades with. A hidden object is left out, and so are the air box, ports, boundaries and
+face tints, the grid, and reference images. An object left out of the solve (<em>Model</em> off) is written: it is drawn.
+Names come along: each object is a node named as in the tree, and each group is a parent node.</p>
+<p>Each <a href="#appearance">appearance</a> becomes a glTF material with the same numbers, since circuitRF's appearance is glTF's
+own metallic-roughness model. Base colour, metallic and roughness are always written; transmission, index of
+refraction, clearcoat and the volume's attenuation are written only where they differ from glTF's defaults, as
+optional extensions, so a viewer that does not know one still opens the file. A material is named after the
+circuitRF material, with <code>+override</code> added where an object's own appearance changed it. The volume's thickness is
+the object's smallest extent, which is an approximation and the export notes say so.</p>
+<p>The dialog offers:</p>
+<ul>
+<li><strong>Flattened</strong> or <strong>Assembly</strong>. With Assembly on, a placed cell is a node and its parts' meshes are written once,
+however often it is placed.</li>
+<li><strong>Include camera</strong>: the current view as the file's camera, so the other renderer opens on the same framing.</li>
+<li><strong>Include field plot</strong>: a drawn Surfaces or Faces plot as a separate mesh, coloured per vertex at the current
+phase and range, with an <em>unlit</em> material so a renderer that honours it shows the colours unshaded, as the view
+does. The parts the plot stands in for are left out, as the view leaves them out. The view colours each pixel from
+the field's value, but a file can only colour the corners of triangles, so the export divides each field triangle
+until no edge spans more than a sixteenth of the colour range, up to four times. The summary says how many
+triangles that made.</li>
+</ul>
+<p>The summary line counts the objects, triangles and materials and names the extensions the file will use, before
+anything is written.</p>
+<p>circuitRF's model is <strong>z-up</strong>; glTF's is <strong>y-up</strong>. The file's top node turns the model so it stands up in every
+viewer, and moves it to where it sits in the design. Lengths are in metres, glTF's unit and circuitRF's.</p>
+<p><code>circuitrf convert x.c3d -o x.glb</code> writes the same file headlessly; see <a href="#headless">From the command line</a>.</p>
 <h2 id="hierarchy">Hierarchy: placing cells</h2>
 <p><strong>Design ▸ Place Cell Instance…</strong> with a 3D view active offers every cell with a <strong>3D view</strong> or a
 <strong>layout</strong>, and a <strong>View</strong> choice between them. The example places the <em>Thru die</em> cell's <strong>layout</strong>: a
@@ -1394,6 +1700,9 @@ same files.</li>
 <li><strong><code>circuitrf convert part.step -o Cell/3d/Cell.c3d</code></strong> — Import STEP into a new 3D view, each part's material by
 name or colour, or <code>--material &lt;part&gt;=&lt;material&gt;</code>; <strong><code>circuitrf convert x.c3d -o x.step</code></strong> — Export STEP, with the
 dialog's choices as flags. See <a href="cli.html#convert-step">convert ▸ STEP, both ways</a>.</li>
+<li><strong><code>circuitrf convert x.c3d -o x.glb</code></strong> — Export glTF, with <code>--gltf-assembly</code> and <code>--gltf-field &lt;plot&gt;</code>; the camera is
+the Look's when the document saves one. See <a href="cli.html#convert-gltf">convert ▸ glTF</a> and
+<a href="#gltf">Exporting for another renderer</a>.</li>
 <li><strong>Booleans, fillets, chamfers and Step parts by hand.</strong> The <code>Boolean</code>, <code>Fillet</code>, <code>Chamfer</code> and <code>Step</code> objects are
 ordinary JSON in the <code>.c3d</code>, and <code>circuitrf reference 3d-view</code> prints every field; the rules for their names, faces,
 edges and <code>Hash</code> are in <a href="file-formats.html#c3d-operations">File formats ▸ The 3D view's operations</a>.</li>
@@ -1480,8 +1789,8 @@ edges and <code>Hash</code> are in <a href="file-formats.html#c3d-operations">Fi
 <td>Push into a placed cell, or enter a boolean to edit its operands; pop out, or leave it</td>
 </tr>
 <tr>
-<td><strong>Home</strong>, <strong>1</strong>–<strong>7</strong>, <strong>P</strong>, <strong>C</strong></td>
-<td>Fit; standard views; perspective; clip plane</td>
+<td><strong>Home</strong>, <strong>1</strong>–<strong>7</strong>, <strong>P</strong>, <strong>L</strong>, <strong>C</strong></td>
+<td>Fit; standard views; perspective; realistic view; clip plane</td>
 </tr>
 <tr>
 <td>In the object tree: <strong>Shift</strong>-click, <strong>Ctrl</strong>-click (<strong>Cmd</strong> too on a Mac)</td>
@@ -1526,7 +1835,8 @@ a length (<code>2.5mil</code>). It is saved in the document, and changing it mov
 two clicks), Poly<strong>g</strong>on (a closed sheet, a click per vertex; click the first vertex, press Enter or
 double-click to close — an outline that crosses itself is refused and the crossing shown), Poly<strong>l</strong>ine
 (construction geometry; Enter or a double-click ends it, a click on its first vertex closes it) and
-C<strong>y</strong>linder (centre, radius, height). A box or cylinder rises along the plane's normal; near a
+C<strong>y</strong>linder (centre, radius, height) and Sph<strong>e</strong>re (centre, radius; centred on the plane, so the click is its
+centre). A box or cylinder rises along the plane's normal; near a
 neighbour's feature its height snaps to that feature, so a box rises to exactly the top of a pad. Every
 click snaps. While a shape is in progress, type a digit to enter a dimension instead of clicking — the
 box that opens at the cursor shows the width, depth, height or radius the next click would set; <strong>Tab</strong>
@@ -1579,7 +1889,9 @@ kind for as long as it can say the result with its own dimensions — a pushed b
 moved sideways is a slanted prism — and otherwise becomes a <strong>polyhedron</strong> with the same face names; the
 status line says so, and Undo takes it back. A cylinder's ends move only along its axis and its side only
 in radius, and in Vertex mode it offers just its two cap centres, which measure but do not move: <em>Convert to
-Polyhedron</em> (Object mode; for a cylinder, choose how many flat sides) makes every vertex editable. While a
+Polyhedron</em> (Object mode; for a cylinder, choose how many flat sides) makes every vertex editable. A sphere's
+one face, <code>surface</code>, is curved, so no face edit takes it — change its <strong>Radius</strong> in Properties — and its centre
+measures but does not move; it is not converted to a polyhedron, and a Boolean is how to cut one. While a
 face or vertex is dragged only that object is redrawn, and the document changes once, as one undo step,
 when you click.</li>
 <li><strong>Dimensions as expressions</strong>. Wherever a dimension is typed — the box at the cursor while
