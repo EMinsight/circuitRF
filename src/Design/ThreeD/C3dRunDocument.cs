@@ -325,6 +325,33 @@ public static class C3dRunDocument
         }
     }
 
+    /// <summary>
+    /// brief-em3d-108 R-em3d108-1d — a RESOLVED technology's canonical physics form, in memory: its own file with every material's
+    /// display fields cleared (<see cref="PhysicsForm"/>'s rule), then each library material and thermal interface it resolved, the
+    /// same fields cleared, with the file each came from. Two technologies with equal forms differ only in how they LOOK, so a 3D
+    /// view reloading one in place of the other re-elaborates nothing (the display-only path). Layer colours still count, as they
+    /// do in the run's manifest: only the materials' display fields are out of the comparison.
+    /// </summary>
+    public static string PhysicsText(Technology tech)
+    {
+        var own = TechPersistence.Clone(tech);
+        foreach (var m in own.Materials) (m.Source, m.Color, m.Appearance) = (null, null, null);
+        var sb = new StringBuilder(TechPersistence.Serialize(own));
+        foreach (var group in tech.LibraryMaterials.GroupBy(l => l.SourcePath, StringComparer.Ordinal))
+        {
+            var copies = MaterialLibraryPersistence.Deserialize(MaterialLibraryPersistence.Serialize([.. group.Select(l => l.Material)]));
+            foreach (var m in copies) (m.Source, m.Color, m.Appearance) = (null, null, null);
+            sb.Append('\u0001').Append(group.Key).Append('\u0002').Append(MaterialLibraryPersistence.Serialize(copies));
+        }
+        foreach (var li in tech.LibraryThermalInterfaces)
+            sb.Append('\u0003').Append(li.SourcePath).Append('\u0002').Append(JsonSerializer.Serialize(li.Interface));
+        return sb.ToString();
+    }
+
+    /// <summary>Whether two resolved technologies are equal in their canonical physics form (<see cref="PhysicsText"/>).</summary>
+    public static bool SamePhysics(Technology? a, Technology? b)
+        => a is not null && b is not null && (ReferenceEquals(a, b) || PhysicsText(a) == PhysicsText(b));
+
     /// <summary>What <paramref name="path"/> contributes to a run, as bytes; its raw bytes when it cannot be read as its kind.</summary>
     private static byte[] Contribution(string path)
     {

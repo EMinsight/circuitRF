@@ -8,6 +8,7 @@
              xmlns:converters="using:CircuitRF.Ui.Converters"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              xmlns:vl="using:CircuitRF.Ui.Views.Layout"
+             xmlns:t3v="using:CircuitRF.Ui.Views.ThreeD"
              x:Class="CircuitRF.Ui.Views.ThreeD.C3dEditorView"
              x:DataType="t3:C3dEditorDocument"
              Background="{DynamicResource SystemChromeLowColor}">
@@ -112,6 +113,17 @@
                               ToolTip.Tip="Realistic view: materials, lighting and shadows, for pictures. Changes nothing in the model.">
                     <mi:MaterialIcon Kind="CameraIris" Width="16" Height="16"/>
                 </ToggleButton>
+                <!-- brief-em3d-108 R-em3d108-3a — the Look panel's drop-down, right beside the toggle (owner decision D1). Opening it turns the
+                     realistic view on (D2). A setup's view has no Look to edit, so it is not offered there. -->
+                <Button x:Name="LookButton" Padding="1,4" Margin="-3,0,0,0" IsVisible="{Binding ViewModel.IsEditable}"
+                        ToolTip.Tip="Look: environment, lighting, background and what the realistic view shows. Opening it turns the realistic view on.">
+                    <mi:MaterialIcon Kind="ChevronDown" Width="12" Height="12"/>
+                    <Button.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedLeft" Opened="OnLookOpened" Closed="OnLookClosed">
+                            <t3v:LookPanel DataContext="{Binding ViewModel.LookPanel}"/>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
 
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 

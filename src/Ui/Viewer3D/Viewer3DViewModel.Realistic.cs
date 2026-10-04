@@ -27,6 +27,10 @@ public sealed partial class Viewer3DViewModel
 
     private int _lookRequest;
 
+    /// <summary>brief-em3d-108 — how many times the Look reached the view: each one a uniform write on the next frame, nothing more
+    /// unless the environment itself changed.</summary>
+    public int LookWrites { get; private set; }
+
     partial void OnIsRealisticChanged(bool value)
     {
         View.Realistic = value;
@@ -53,6 +57,7 @@ public sealed partial class Viewer3DViewModel
         var (look, documentPath) = LookSource?.Invoke() ?? (null, null);
         var parsed = RealisticLook.From(look);
         View.Look = parsed;
+        LookWrites++;
         string? hdr = parsed.HdrPath is { } p ? C3dLook.ResolvePath(p, documentPath) : null;
         var current = View.Environment;
         string label = (look ?? new C3dLook()).EnvironmentLabel;
@@ -95,6 +100,49 @@ public sealed partial class Viewer3DViewModel
             text += $" · {Scene.AppearanceFallbacks:N0} object{(Scene.AppearanceFallbacks == 1 ? "" : "s")} use a default look " +
                     $"(more than {Pbr.TableRows} appearances)";
         RealisticText = text;
+    }
+
+    // ── brief-em3d-108 R-em3d108-3d — the picture camera (overview D17) ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// The live camera as a Look's <c>Camera</c>: the direction from the target toward the eye, the target and the distance in DBU
+    /// (<paramref name="dbuPerMicron"/> — every <c>.c3d</c> coordinate is DBU), the vertical field of view in degrees and the
+    /// projection. Numbers are written exactly (round-trip), so <see cref="GoToPictureCamera"/> puts the same camera back.
+    /// </summary>
+    public C3dLookCamera PictureCamera(int dbuPerMicron)
+    {
+        var c = View.Camera;
+        double perMetre = 1e6 * dbuPerMicron;
+        var (x, y, z) = Scene.ToWorld(c.Target);
+        var back = c.Back;
+        return new C3dLookCamera
+        {
+            Direction = [back.X, back.Y, back.Z],
+            Target = [x * perMetre, y * perMetre, z * perMetre],
+            Distance = c.Distance * perMetre,
+            FovY = c.FovY * 180.0 / Math.PI,
+            Projection = c.Projection == CircuitRF.Render.Scene3D.Projection3D.Orthographic ? C3dLookCamera.Orthographic : C3dLookCamera.Perspective,
+        };
+    }
+
+    /// <summary>Go to Picture View: the live view's camera set to <paramref name="camera"/>. False (nothing moved) for one a picture
+    /// cannot be taken from.</summary>
+    public bool GoToPictureCamera(C3dLookCamera camera, int dbuPerMicron)
+    {
+        if (camera.Faults().Count > 0) return false;
+        double perMetre = 1e6 * dbuPerMicron;
+        var d = camera.Direction!;
+        double len = Math.Sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+        var t = camera.Target!;
+        View.Camera.Target = Scene.ToLocal(t[0] / perMetre, t[1] / perMetre, t[2] / perMetre);
+        View.Camera.Yaw = (float)Math.Atan2(d[1], d[0]);
+        View.Camera.Pitch = (float)Math.Asin(Math.Clamp(d[2] / len, -1, 1));
+        View.Camera.Distance = (float)(camera.Distance!.Value / perMetre);
+        if (camera.FovY is { } fov) View.Camera.FovY = (float)(fov * Math.PI / 180);
+        IsPerspective = !camera.IsOrthographic;
+        View.Camera.Projection = camera.IsOrthographic ? CircuitRF.Render.Scene3D.Projection3D.Orthographic : CircuitRF.Render.Scene3D.Projection3D.Perspective;
+        FrameRequested?.Invoke();
+        return true;
     }
 
     /// <summary>After a new scene: its appearance fallbacks may differ.</summary>

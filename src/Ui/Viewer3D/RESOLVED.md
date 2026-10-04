@@ -187,3 +187,40 @@ Findings from work on the 3D viewer's view model. The field model itself (reader
   anywhere takes the whole 3D view down on Windows, not just the feature that added it. Elsewhere the test holds only that every
   entry point named exists. Vulkan's occlusion targets are sized from the swap image, not the plan, on purpose: its main pass
   draws at the image's size, and `fs_pbr` loads the occlusion at its fragment's pixel.
+
+## Editing appearance live: the display-only reload, and previews by restyle (brief-em3d-108, 2026-10-04)
+
+- **The display-only reload.** A technology change used to re-elaborate every open `.c3d` (`OnChildChanged` → `Invalidate`).
+  `C3dEditorViewModel.OnTechnologyChanged(path)` now compares the technology the adopted scene was elaborated with against the one
+  the cache hands back, in **canonical physics form** (`C3dRunDocument.PhysicsText`: the file's own materials and every library
+  material with `Source`, `Color` and `Appearance` cleared, plus the library thermal interfaces). Equal: the KEPT elaboration is
+  re-assembled into a scene (`Build` was split; its second half is `Assemble`), handed to the view through
+  `Viewer3DViewModel.RegenerateWith`. The builder runs, so a changed `Color` recolours vertices and the session patches exactly
+  those objects' vertex and edge-line bytes; every primitive is a tessellation-cache hit and the elaborator is not called. Any
+  physical change, a build already in flight, a pushed-in frame, a boolean's or fillet's preview, or a name-drag preview takes
+  today's path. Results stay current either way: the run manifest hashes the technology in the same form (brief 105 §5).
+- **A cue per technology.** A library two technologies name raises one `TechnologyChanged` per technology. The second cue arrives
+  while the first display rebuild is in flight; it is measured against THAT rebuild (`_pendingDisplay`), not refused for the build
+  in flight, or the first library edit in a workspace with two technologies would have re-elaborated after all. A technology the
+  elaboration never read (not in `FilesRead`, not one of its technologies) is ignored — unless the design has a refusal or no
+  technology, where the changed file may be the one it was waiting for.
+- **A live technology is no longer mutated in place.** `TechnologyCache.LibraryChanged` used to re-resolve an open technology
+  editor's live override IN PLACE, so the scene's `Elaboration.Technology` and the cache's answer were the same object and "did
+  anything physical change" could not be asked. It now resolves a clone and replaces the entry (the editor already installed deep
+  copies through `SetLive`).
+- **`ObjectsElaborated` is the wrong counter for "was it elaborated".** An εr edit re-elaborates with every object a cache hit, so
+  the count does not move. `C3dEditorViewModel.Elaborations` counts elaborator runs; the gates use it.
+- **Previews are restyles, not rebuilds.** The Materials dialog's unsaved edit (`PreviewAppearance(material, appearance)`, pushed
+  by the workspace to every open view on that technology or naming that library) and the Inspector's slider
+  (`PreviewObjectAppearances(map)`) both go through `Scene3DLooks.Restyle`: the adopted scene copied with the looks asked again, a
+  new table and the shade slots of objects whose row moved. The view keeps the adopted scene; ending a preview puts it back by
+  reference, so Cancel's table is byte for byte. A scene adopted while a preview stands is restyled too; OK and a slider's
+  release end the preview at the next scene built after the write (`EndAppearancePreviewAtNextScene`), so the view never flashes
+  back to the old look in between.
+- **A restyled scene keeps its generation, and caches of geometry compare `Scene.Geometry`.** The FDTD grid and the field and
+  temperature surface builds compared the scene by reference; a restyle mid-drag would have thrown each away. `Scene3DModel.
+  Geometry` is the scene a restyle came from, and those five comparisons use it. The frame plan's per-scene classification (which
+  material is translucent) and the shadow key compare by reference on purpose: a Transmission preview changes both.
+- **The Look panel's drags** preview through `C3dEditorViewModel.PreviewLook` (the view's `LookSource` reads the preview first) and
+  write one `C3dRecordsEdit` of the Look's text alone on release, as the field plots' edits do — not through `ChangeRecords`, whose
+  `RecordsChanged` regenerates the scene. `Viewer3DViewModel.LookWrites` counts the uniform writes.

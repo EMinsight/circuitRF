@@ -107,6 +107,49 @@ public sealed class TechAppearance
         return r;
     }
 
+    // ── one field at a time (brief-em3d-108: the Materials editor and the Inspector write a field, never the record) ──────────
+
+    /// <summary>The ten keys' kinds: a colour (<c>#rrggbb</c>), a material's name (<c>Like</c>), or a number.</summary>
+    public static bool IsColourKey(string key) => key is nameof(BaseColor) or nameof(AttenuationColor);
+    public static bool IsNameKey(string key) => key is nameof(Like);
+
+    /// <summary>What <paramref name="key"/> states: a string for a colour or <c>Like</c>, a double for a number, null when not stated.</summary>
+    public object? Get(string key) => key switch
+    {
+        nameof(BaseColor) => BaseColor, nameof(Metallic) => Metallic, nameof(Roughness) => Roughness,
+        nameof(Transmission) => Transmission, nameof(Ior) => Ior, nameof(Clearcoat) => Clearcoat,
+        nameof(ClearcoatRoughness) => ClearcoatRoughness, nameof(AttenuationColor) => AttenuationColor,
+        nameof(AttenuationDistance) => AttenuationDistance, nameof(Like) => Like,
+        _ => throw new ArgumentException($"'{key}' is not an appearance key", nameof(key)),
+    };
+
+    /// <summary>
+    /// <paramref name="appearance"/> with <paramref name="key"/> stating <paramref name="value"/> (null: not stated) and every other
+    /// field, unread keys included, as it was — a copy. Null when the result states nothing, which is how a record whose last field
+    /// was reset is written: as no record at all.
+    /// </summary>
+    public static TechAppearance? With(TechAppearance? appearance, string key, object? value)
+    {
+        var r = appearance?.Clone() ?? new TechAppearance();
+        string? text = value as string;
+        double? number = value switch { double d => d, float f => f, int i => i, null => null, _ => null };
+        switch (key)
+        {
+            case nameof(BaseColor): r.BaseColor = text; break;
+            case nameof(Metallic): r.Metallic = number; break;
+            case nameof(Roughness): r.Roughness = number; break;
+            case nameof(Transmission): r.Transmission = number; break;
+            case nameof(Ior): r.Ior = number; break;
+            case nameof(Clearcoat): r.Clearcoat = number; break;
+            case nameof(ClearcoatRoughness): r.ClearcoatRoughness = number; break;
+            case nameof(AttenuationColor): r.AttenuationColor = text; break;
+            case nameof(AttenuationDistance): r.AttenuationDistance = number; break;
+            case nameof(Like): r.Like = string.IsNullOrWhiteSpace(text) ? null : text.Trim(); break;
+            default: throw new ArgumentException($"'{key}' is not an appearance key", nameof(key));
+        }
+        return r.IsEmpty ? null : r;
+    }
+
     /// <summary>The stated fields as one line, in file order (<c>Roughness=0.1;Like=Gold</c>) — a cache key, and how
     /// <c>explain</c> spells an override. Numbers round-trip.</summary>
     public string Describe()

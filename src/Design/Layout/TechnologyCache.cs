@@ -111,11 +111,16 @@ public sealed class TechnologyCache
         var changed = new List<string>();
         foreach (var (path, tech) in _cache.ToList())
             if (Names(tech, absLibraryPath)) { _cache.Remove(path); changed.Add(path); }
-        foreach (var (path, tech) in _live)
+        foreach (var (path, tech) in _live.ToList())
         {
             if (!Names(tech, absLibraryPath)) continue;
-            try { TechPersistence.ResolveLibraries(tech, LoaderFor(path), path); }
+            // brief-em3d-108 — re-resolved as a NEW object, never in place: a 3D view decides whether a change was only a look by
+            // comparing the technology it elaborated with against the one it is handed now, and an instance mutated under it would
+            // be both. The editor installs deep copies for the same reason (SetLive).
+            var fresh = TechPersistence.Clone(tech);
+            try { TechPersistence.ResolveLibraries(fresh, LoaderFor(path), path); }
             catch (MaterialLibraryException) { /* reported when the technology is next resolved from disk */ }
+            _live[path] = fresh;
             if (!changed.Contains(path, StringComparer.OrdinalIgnoreCase)) changed.Add(path);
         }
         LibraryReresolutions += changed.Count;

@@ -256,7 +256,7 @@ public sealed partial class Viewer3DViewModel
                 cts.Token.ThrowIfCancellationRequested();
                 _post(() =>
                 {
-                    if (cts.IsCancellationRequested || _disposed || layer.Disposed || !ReferenceEquals(Scene, scene)) return;
+                    if (cts.IsCancellationRequested || _disposed || layer.Disposed || !ReferenceEquals(Scene.Geometry, scene.Geometry)) return;
                     layer.Volume = next;
                     layer.Loaded = sol;
                     FieldRevalues++;

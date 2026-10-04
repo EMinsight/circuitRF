@@ -724,6 +724,7 @@ public partial class WorkspaceViewModel
         ThreeDStandardViewCommand.NotifyCanExecuteChanged();
         ThreeDPerspectiveCommand.NotifyCanExecuteChanged();
         ToggleThreeDRealisticCommand.NotifyCanExecuteChanged();
+        ThreeDLookCommand.NotifyCanExecuteChanged();
         FollowRealisticPane();
         ThreeDClipPlaneCommand.NotifyCanExecuteChanged();
         ThreeDAxisIndicatorCommand.NotifyCanExecuteChanged();
@@ -889,6 +890,11 @@ public partial class WorkspaceViewModel
     /// <summary>brief-em3d-106 R-em3d106-1c — 3D ▸ View ▸ Realistic View: the toolbar's toggle.</summary>
     [RelayCommand(CanExecute = nameof(HasActive3DPane))]
     private void ToggleThreeDRealistic() { if (Active3DPane() is { } p) p.IsRealistic = !p.IsRealistic; }
+
+    /// <summary>brief-em3d-108 R-em3d108-3a — 3D ▸ View ▸ Look…: the active 3D design's Look panel, the flyout beside the Realistic
+    /// toggle. Opening it turns the realistic view on.</summary>
+    [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
+    private void ThreeDLook() => ActiveC3dEditor()?.RequestLookPanel();
 
     /// <summary>Whether the active 3D view is realistic — both menus' check mark. Followed through the pane's own property, so the
     /// toolbar's toggle moves the mark too.</summary>

@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:t3="using:CircuitRF.Ui.ThreeD"
+             xmlns:apv="using:CircuitRF.Ui.Views.Appearance"
+             xmlns:cp="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.ColorPicker"
+             x:Class="CircuitRF.Ui.Views.ThreeD.LookPanel"
+             x:DataType="t3:C3dLookPanelViewModel"
+             Width="340">
+
+    <!-- brief-em3d-108 R-em3d108-3 — the Look panel (owner decision D1: a flyout from the drop-down beside the Realistic toggle, and
+         3D ▸ View ▸ Look…). Every control writes the document's Look as ONE undo entry; a slider previews while dragged and writes on
+         release. The Show boxes are GENERATED from the realistic view's chrome table, so a new kind of chrome needs no edit here.
+         Opening the panel turns the realistic view on (D2), and the header says so. -->
+    <StackPanel Spacing="8" Margin="4" IsEnabled="{Binding IsEditable}">
+        <TextBlock Text="{Binding Header}" FontSize="11" TextWrapping="Wrap" Opacity="0.75"/>
+
+        <TextBlock Text="Environment" FontWeight="SemiBold" FontSize="12"/>
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+            <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding EnvironmentChoices}" SelectedItem="{Binding Environment}"
+                      ToolTip.Tip="A studio lights the model with soft boxes; a Radiance .hdr lights it with a photographed environment."/>
+            <Button Grid.Column="1" Content="Load .hdr…" FontSize="11" Click="OnLoadHdr"
+                    ToolTip.Tip="A Radiance .hdr, stored relative to this design. Prepared once, off the window's thread; the view keeps the old one until it is ready."/>
+        </Grid>
+        <Grid ColumnDefinitions="78,*,52" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="6" RowSpacing="2">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Rotation" FontSize="11" VerticalAlignment="Center"/>
+            <Slider x:Name="RotationSlider" Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="360" Value="{Binding Rotation}" VerticalAlignment="Center"
+                    ToolTip.Tip="Turns the environment about +z, degrees."/>
+            <TextBox Grid.Row="0" Grid.Column="2" Classes="dim" FontSize="11" Padding="4,1" Text="{Binding RotationText}" Tag="Rotation"
+                     KeyDown="OnNumberKey" LostFocus="OnNumberLostFocus"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Intensity" FontSize="11" VerticalAlignment="Center"/>
+            <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="10" Value="{Binding Intensity}" VerticalAlignment="Center"
+                    ToolTip.Tip="How bright the environment is, 0 to 10."/>
+            <TextBox Grid.Row="1" Grid.Column="2" Classes="dim" FontSize="11" Padding="4,1" Text="{Binding IntensityText}" Tag="Intensity"
+                     KeyDown="OnNumberKey" LostFocus="OnNumberLostFocus"/>
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Exposure" FontSize="11" VerticalAlignment="Center"/>
+            <Slider Grid.Row="2" Grid.Column="1" Minimum="-10" Maximum="10" Value="{Binding Exposure}" VerticalAlignment="Center"
+                    ToolTip.Tip="EV: each step doubles or halves the light, −10 to +10."/>
+            <TextBox Grid.Row="2" Grid.Column="2" Classes="dim" FontSize="11" Padding="4,1" Text="{Binding ExposureText}" Tag="Exposure"
+                     KeyDown="OnNumberKey" LostFocus="OnNumberLostFocus"/>
+        </Grid>
+
+        <TextBlock Text="Background" FontWeight="SemiBold" FontSize="12"/>
+        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+            <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{x:Static t3:C3dLookPanelViewModel.BackgroundKinds}"
+                      SelectedItem="{Binding BackgroundKind}"/>
+            <Button Grid.Column="1" Width="34" Height="22" Padding="0" IsVisible="{Binding HasBackgroundColour}" ToolTip.Tip="The colour (a gradient's top).">
+                <Border Background="{Binding BackgroundTop, Converter={x:Static apv:AppearanceEditorView.ToBrush}}" Margin="2" CornerRadius="2"/>
+                <Button.Flyout>
+                    <Flyout Closed="OnBackgroundFlyoutClosed">
+                        <cp:ColorView Tag="top" Width="300" Height="340" IsAlphaVisible="False" IsAlphaEnabled="False"
+                                      Color="{Binding BackgroundTop, Mode=OneWay}" ColorChanged="OnBackgroundColourChanged"/>
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
+            <Button Grid.Column="2" Width="34" Height="22" Padding="0" IsVisible="{Binding HasBackgroundGradient}" ToolTip.Tip="The gradient's bottom.">
+                <Border Background="{Binding BackgroundBottom, Converter={x:Static apv:AppearanceEditorView.ToBrush}}" Margin="2" CornerRadius="2"/>
+                <Button.Flyout>
+                    <Flyout Closed="OnBackgroundFlyoutClosed">
+                        <cp:ColorView Tag="bottom" Width="300" Height="340" IsAlphaVisible="False" IsAlphaEnabled="False"
+                                      Color="{Binding BackgroundBottom, Mode=OneWay}" ColorChanged="OnBackgroundColourChanged"/>
+                    </Flyout>
+                </Button.Flyout>
+            </Button>
+        </Grid>
+
+        <TextBlock Text="Lighting" FontWeight="SemiBold" FontSize="12"/>
+        <ItemsControl ItemsSource="{Binding LightingRows}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="t3:LookToggleRow">
+                    <CheckBox Content="{Binding Label}" IsChecked="{Binding IsChecked}" ToolTip.Tip="{Binding Tip}"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Text="Show" FontWeight="SemiBold" FontSize="12"
+                   ToolTip.Tip="The realistic view hides the CAD chrome; each box brings one kind back, drawn as the default view draws it."/>
+        <ItemsControl ItemsSource="{Binding ShowRows}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><WrapPanel ItemSpacing="10"/></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="t3:LookToggleRow">
+                    <CheckBox Content="{Binding Label}" IsChecked="{Binding IsChecked}" ToolTip.Tip="{Binding Tip}"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Text="Pictures" FontWeight="SemiBold" FontSize="12"/>
+        <TextBlock Text="{Binding PictureCameraText}" FontSize="11" TextWrapping="Wrap" Opacity="0.75"/>
+        <WrapPanel ItemSpacing="6" LineSpacing="4">
+            <Button Content="Use This View for Pictures" FontSize="11" Command="{Binding UseThisViewCommand}"
+                    ToolTip.Tip="Save this camera with the design: Export Picture, render and a glTF export take it. Orbiting never changes it."/>
+            <Button Content="Go to Picture View" FontSize="11" Command="{Binding GoToPictureViewCommand}" IsEnabled="{Binding HasPictureCamera}"/>
+            <Button Content="Clear" FontSize="11" Command="{Binding ClearPictureViewCommand}" IsEnabled="{Binding HasPictureCamera}"/>
+        </WrapPanel>
+        <TextBlock Text="{Binding Error}" Foreground="#C0392B" FontSize="11" TextWrapping="Wrap"
+                   IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+    </StackPanel>
+</UserControl>

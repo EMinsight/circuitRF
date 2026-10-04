@@ -92,6 +92,11 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     public long AdoptedGeneration => Interlocked.Read(ref _adoptedGeneration);
     private long _adoptedGeneration;
 
+    /// <summary>brief-em3d-108 — how many times the document has been elaborated (each scene built through the elaborator, however
+    /// many of its objects were cache hits). A display-only reload adds none.</summary>
+    public long Elaborations => Interlocked.Read(ref _elaborations_);
+    private long _elaborations_;
+
     /// <summary>Objects the elaborator lowered because its cache missed — gate 6's counter.</summary>
     public long ObjectsElaborated { get { lock (_elaborating) return _elaborator.ObjectsElaborated; } }
 
@@ -131,13 +136,14 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         _post = post;
         _elaborator = new C3dElaborator(technologies, kernel);
         _contextElaborator = new C3dElaborator(technologies, kernel);
+        _technologies = technologies;
         _savedStamp = Stamp(FilePath);
         Viewer = new Viewer3DViewModel(FilePath, Path.GetFileName(FilePath), Snapshot, Build, backend, () => ResultsRootProvider?.Invoke(), post)
         {
             EditHost = this,
             KeepEmptyView = () => Document.Objects.Count == 0 && Document.Instances.Count == 0,
             // brief-em3d-106 — the realistic view reads the document's Look; a .hdr is relative to this file.
-            LookSource = () => (Document.Look, FilePath),
+            LookSource = () => (ShownLook, FilePath),
         };
         Viewer.SceneAdopted += OnSceneAdopted;
         Viewer.SelectionChanged += OnViewerSelectionChanged;
@@ -151,6 +157,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(Viewer3DViewModel.TemperatureStep) && ProbeTableOpen) RefreshProbeTable();
+            if (e.PropertyName == nameof(Viewer3DViewModel.IsRealistic)) Properties?.RealisticChanged();   // brief-em3d-108
             if (e.PropertyName is nameof(Viewer3DViewModel.FieldsAvailable) or nameof(Viewer3DViewModel.IsThermalRun))
             {
                 OnPropertyChanged(nameof(ShowThermalRunTools));
@@ -231,11 +238,14 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     private Scene3DModel Build(long generation, object? state, CancellationToken ct)
     {
+        // brief-em3d-108 R-em3d108-1d — a technology that changed only in how it looks: the scene again from the kept elaboration.
+        if (state is C3dDisplayRebuild display) return Rebuild(generation, display);
         var inputs = (C3dSceneInputs)state!;
         var doc = C3dPersistence.Deserialize(inputs.DocumentText);
         lock (_elaborating)
         {
             ct.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref _elaborations_);
             var e = _elaborator.Elaborate(doc, inputs.Path, inputs.WorkspaceCws, new C3dElaborationOptions { Cell = inputs.Cell });
             _elaborations[generation] = e;
             _frameKeys[generation] = inputs.Path + "|" + inputs.Context?.Exclude;
@@ -247,56 +257,71 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             var records = ResolveRecords(doc, e, inputs.SetupJson, inputs.HiddenTints);
             _records[generation] = records;
             ComputeFidelity(generation, doc, inputs.Path, inputs.WorkspaceCws);
-            var box = records.Box ?? C3dProblemAssembly.ExtentBox(extent);
-            IReadOnlyList<Em3dSolid> solids = e.Solids;
-            IReadOnlyList<Em3dSheet> sheets = e.Sheets;
-            IReadOnlyList<Em3dMaterial> materials = e.Materials;
+            _built[generation] = new C3dDisplayRebuild(doc, inputs, e, records,
+                                                       inputs.Context is null && inputs.Ghosts is not { Count: > 0 } && inputs.Cell is null);
             // brief-em3d-48 R-em3d48-4a — pushed in: the top document around the child, in the child's frame, dimmed.
+            (IReadOnlyList<Em3dSolid>, IReadOnlyList<Em3dSheet>, IReadOnlyList<Em3dMaterial>)? context = null;
             if (inputs.Context is { } ctx)
             {
                 var top = _contextElaborator.Elaborate(C3dPersistence.Deserialize(ctx.Text), ctx.Path, inputs.WorkspaceCws);
-                var (cs, csh, cm) = Context(top, ctx.Exclude, ctx.ToTop, e.Solids.Count + e.Sheets.Count + 1);
-                solids = [.. e.Solids, .. cs];
-                sheets = [.. e.Sheets, .. csh];
-                materials = [.. e.Materials, .. cm.Where(m => !e.Materials.Any(x => x.Name == m.Name))];
+                context = Context(top, ctx.Exclude, ctx.ToTop, e.Solids.Count + e.Sheets.Count + 1);
             }
-            // 3D editor bugs round 1 — what has no material is drawn as a wireframe, last (never an instance run's
-            // element), so it can still be seen, picked and edited. Round 2: the solver ignores it (a warning); a material
-            // the technology lacks is still a refusal that stops a run.
-            var unassigned = new HashSet<string>(e.UnassignedSolids.Select(s => s.Name).Concat(e.UnassignedSheets.Select(s => s.Name)), StringComparer.Ordinal);
-            if (unassigned.Count > 0)
-            {
-                solids = [.. solids, .. e.UnassignedSolids];
-                sheets = [.. sheets, .. e.UnassignedSheets];
-            }
-            var instancing = InstancingFor(doc, e);
-            var faceImageHosts = e.FaceImages.Select(u => u.Object).ToHashSet(StringComparer.Ordinal);
-            // brief-em3d-88 — the one problem a view draws, which `render` builds a thermal section's picture from too.
-            var problem = C3dProblemAssembly.ViewProblem(solids, sheets, materials, [.. records.Ports.Select(r => r.Resolved).OfType<Em3dPort>()], box);
-            var notes = new List<string>(e.Refusals);
-            notes.AddRange(e.Warnings);
-            notes.AddRange(e.Notes);
-            return Scene3DBuilder.Build(problem, generation, e.Origins, e.Technology, inputs.Theme, inputs.Variant, notes,
-                new Scene3DBuildOptions(name => e.Provenance.TryGetValue(name, out var p) ? p.FaceNames : null,
-                                        _tessellations, DrawAirBox: records.Box is not null, Origin: _origin,
-                                        FeatureShare: name => e.Provenance.TryGetValue(name, out var p) ? ShareOf(p) : null,
-                                        Instancing: name => unassigned.Contains(name) || e.Images.ContainsKey(name) || faceImageHosts.Contains(name) ? null : instancing(name),
-                                        Wireframe: unassigned.Count > 0 ? unassigned.Contains : null,
-                                        Context: inputs.Context is null ? null : IsContext,
-                                        EditorBoundaries: true,
-                                        Ghost: inputs.Ghosts is { Count: > 0 } ghosts ? n => ghosts.TryGetValue(n, out var g) ? g : Scene3DGhost.None : null,
-                                        OwnFrame: name => OwnFrameOf(doc, e, name),
-                                        HideOutermostDielectric: false,
-                                        Transparency: Scene3DTransparency.Of(e.Provenance),
-                                        // brief-em3d-105 — each object's look over its material's (the realistic view's slots).
-                                        Appearance: CircuitRF.Design.ThreeD.Appearance.AppearanceOverride.Of(e.Provenance),
-                                        // brief-em3d-101 — an image sheet is drawn with its picture (C3dElaboration.Images).
-                                        Images: e.Images.Count == 0 ? null : name => e.Images.GetValueOrDefault(name),
-                                        FaceImages: e.FaceImages.Count == 0 ? null : e.FaceImages,
-                                        FaceTints: [.. records.Boundaries.Where(b => b.Refusal is null)
-                                                           .Select(b => new Scene3DFaceTint(b.Boundary.Object + "/" + b.Boundary.Face, b.Boundary.Kind, b.Pieces)),
-                                                    .. records.ThermalTints]));
+            return Assemble(generation, doc, e, inputs, records, context);
         }
+    }
+
+    /// <summary>The scene from an elaboration: what <see cref="Build"/> does once the document has been elaborated, and all that a
+    /// display-only rebuild does (brief-em3d-108). Called under the elaboration lock: it shares the tessellation cache.</summary>
+    private Scene3DModel Assemble(long generation, C3dDocument doc, C3dElaboration e, C3dSceneInputs inputs, RecordsView records,
+                                  (IReadOnlyList<Em3dSolid> Solids, IReadOnlyList<Em3dSheet> Sheets, IReadOnlyList<Em3dMaterial> Materials)? context)
+    {
+        var extent = e.DisplayExtent() ?? FieldPlotResolver.EmptyExtent;
+        var box = records.Box ?? C3dProblemAssembly.ExtentBox(extent);
+        IReadOnlyList<Em3dSolid> solids = e.Solids;
+        IReadOnlyList<Em3dSheet> sheets = e.Sheets;
+        IReadOnlyList<Em3dMaterial> materials = e.Materials;
+        if (context is var (cs, csh, cm))
+        {
+            solids = [.. e.Solids, .. cs];
+            sheets = [.. e.Sheets, .. csh];
+            materials = [.. e.Materials, .. cm.Where(m => !e.Materials.Any(x => x.Name == m.Name))];
+        }
+        // 3D editor bugs round 1 — what has no material is drawn as a wireframe, last (never an instance run's
+        // element), so it can still be seen, picked and edited. Round 2: the solver ignores it (a warning); a material
+        // the technology lacks is still a refusal that stops a run.
+        var unassigned = new HashSet<string>(e.UnassignedSolids.Select(s => s.Name).Concat(e.UnassignedSheets.Select(s => s.Name)), StringComparer.Ordinal);
+        if (unassigned.Count > 0)
+        {
+            solids = [.. solids, .. e.UnassignedSolids];
+            sheets = [.. sheets, .. e.UnassignedSheets];
+        }
+        var instancing = InstancingFor(doc, e);
+        var faceImageHosts = e.FaceImages.Select(u => u.Object).ToHashSet(StringComparer.Ordinal);
+        // brief-em3d-88 — the one problem a view draws, which `render` builds a thermal section's picture from too.
+        var problem = C3dProblemAssembly.ViewProblem(solids, sheets, materials, [.. records.Ports.Select(r => r.Resolved).OfType<Em3dPort>()], box);
+        var notes = new List<string>(e.Refusals);
+        notes.AddRange(e.Warnings);
+        notes.AddRange(e.Notes);
+        return Scene3DBuilder.Build(problem, generation, e.Origins, e.Technology, inputs.Theme, inputs.Variant, notes,
+            new Scene3DBuildOptions(name => e.Provenance.TryGetValue(name, out var p) ? p.FaceNames : null,
+                                    _tessellations, DrawAirBox: records.Box is not null, Origin: _origin,
+                                    FeatureShare: name => e.Provenance.TryGetValue(name, out var p) ? ShareOf(p) : null,
+                                    Instancing: name => unassigned.Contains(name) || e.Images.ContainsKey(name) || faceImageHosts.Contains(name) ? null : instancing(name),
+                                    Wireframe: unassigned.Count > 0 ? unassigned.Contains : null,
+                                    Context: inputs.Context is null ? null : IsContext,
+                                    EditorBoundaries: true,
+                                    Ghost: inputs.Ghosts is { Count: > 0 } ghosts ? n => ghosts.TryGetValue(n, out var g) ? g : Scene3DGhost.None : null,
+                                    OwnFrame: name => OwnFrameOf(doc, e, name),
+                                    HideOutermostDielectric: false,
+                                    Transparency: Scene3DTransparency.Of(e.Provenance),
+                                    // brief-em3d-105 — each object's look over its material's (the realistic view's slots).
+                                    Appearance: CircuitRF.Design.ThreeD.Appearance.AppearanceOverride.Of(e.Provenance),
+                                    // brief-em3d-101 — an image sheet is drawn with its picture (C3dElaboration.Images).
+                                    Images: e.Images.Count == 0 ? null : name => e.Images.GetValueOrDefault(name),
+                                    FaceImages: e.FaceImages.Count == 0 ? null : e.FaceImages,
+                                    FaceTints: [.. records.Boundaries.Where(b => b.Refusal is null)
+                                                       .Select(b => new Scene3DFaceTint(b.Boundary.Object + "/" + b.Boundary.Face, b.Boundary.Kind, b.Pieces)),
+                                                .. records.ThermalTints]));
     }
 
     /// <summary>
@@ -337,6 +362,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         long gen = Viewer.Scene.Generation;
         CarryCameraAcrossOrigin(gen);
         if (_elaborations.TryGetValue(gen, out var e)) Elaboration = e;
+        AdoptBuilt(gen);                           // brief-em3d-108 — what a display-only reload re-assembles
         AdoptRecords(gen);
         ApplySnapGrid();
         ApplySnapExclusion();

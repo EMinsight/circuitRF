@@ -150,7 +150,9 @@ public abstract class C3dObject : IC3dBindable
     [JsonPropertyOrder(10)]
     public C3dPlacement Placement { get; set; } = new();
 
-    /// <summary>Document state, like a layer's visibility in a <c>.ctech</c>. The camera is not.</summary>
+    /// <summary>Document state, like a layer's visibility in a <c>.ctech</c>. The camera is not — with ONE deliberate, opt-in
+    /// exception: <see cref="C3dDocument.Look"/>'s <c>Camera</c>, written only by "Use This View for Pictures" and never by orbiting
+    /// (brief-em3d-108 R-em3d108-3d, overview D17), so a framing chosen in the GUI reproduces in <c>render</c> and in a glTF.</summary>
     [JsonPropertyOrder(11)]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool Hidden { get; set; }
@@ -778,6 +780,8 @@ public sealed class C3dDocument
     /// CAD chrome it shows again. Display state exactly as <see cref="AirBoxHidden"/> is (saved, undoable, and cleared by
     /// <see cref="C3dPersistence.SerializeForRun"/>). Null, or any key omitted, is the default. Whether the realistic view is ON is
     /// not here: that is view state, off on every open (overview D5).
+    /// <para>brief-em3d-108 — its <c>Camera</c> is the one exception to "the camera is not document state": opt-in, written only by
+    /// "Use This View for Pictures" (never by an orbit), cleared by Clear, and cleared with the rest by SerializeForRun.</para>
     /// </summary>
     public C3dLook? Look { get; set; }
 

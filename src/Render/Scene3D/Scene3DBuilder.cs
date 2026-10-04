@@ -363,11 +363,9 @@ public static class Scene3DBuilder
         var sheetRuns = new RunTracker(b);
         bool Dim(string name) => options.Context?.Invoke(name) == true;
         // brief-em3d-105 — an object's resolved look and its role's default (what it falls back to when the table is full).
-        (AppearanceValues Own, AppearanceValues Default)? Look(string name, Scene3DKind kind, Em3dRole role, string material, (byte R, byte G, byte B) palette)
-        {
-            if (AppearanceRequestFor(kind, role, material, palette, tech, options.Appearance?.Invoke(name)) is not { } request) return null;
-            return (AppearanceResolver.Resolve(request).Values, AppearanceResolver.RoleDefaultOf(request.Role, role, palette));
-        }
+        Scene3DLook? Look(string name, Scene3DKind kind, Em3dRole role, string material, (byte R, byte G, byte B) palette)
+            => AppearanceRequestFor(kind, role, material, palette, tech, options.Appearance?.Invoke(name)) is { } request
+                ? Scene3DLook.Of(request) : null;
 
         // ── solids ───────────────────────────────────────────────────────────────────────────
         bool Wire(string name) => options.Wireframe?.Invoke(name) == true;
@@ -993,7 +991,7 @@ public static class Scene3DBuilder
         /// <summary>brief-em3d-104 — parallel to <see cref="_verts"/>, always.</summary>
         private readonly List<Scene3DShadeVertex> _shade = [];
         /// <summary>brief-em3d-105 — parallel to <see cref="_objects"/> (the ones that own geometry): each one's look, or null.</summary>
-        private readonly List<(AppearanceValues Own, AppearanceValues Default)?> _looks = [];
+        private readonly List<Scene3DLook?> _looks = [];
         public bool SplitShading { get; init; } = true;
         private readonly List<uint[]> _objIndices = [];
         private readonly List<Scene3DVertex> _lines = [];
@@ -1057,7 +1055,7 @@ public static class Scene3DBuilder
         /// <paramref name="wireEdges"/>: also draw the feature edges, always, in that colour — a wireframe object.
         public void Object(Scene3DObject o, Em3dTriangleMesh? mesh, IEnumerable<(Point3 P, uint Rgba)>? lines = null,
                            bool faces = false, bool sheet = false, Scene3DFeatureRef features = default, uint? wireEdges = null,
-                           IReadOnlyList<uint>? vertexRgba = null, (AppearanceValues Own, AppearanceValues Default)? look = null)
+                           IReadOnlyList<uint>? vertexRgba = null, Scene3DLook? look = null)
         {
             _features.Add(features);
             _looks.Add(look);
@@ -1198,39 +1196,23 @@ public static class Scene3DBuilder
         /// </summary>
         private (AppearanceValues[] Table, int Fallbacks) Appearances()
         {
-            var table = new List<AppearanceValues>();
-            var row = new Dictionary<AppearanceValues, int>();
-            bool Intern(AppearanceValues v)
-            {
-                if (row.ContainsKey(v)) return true;
-                if (table.Count >= AppearanceSlots) return false;
-                row[v] = table.Count;
-                table.Add(v);
-                return true;
-            }
-            var owned = _looks.Where(l => l is not null).Select(l => l!.Value).ToList();
-            if (owned.Select(l => l.Own).Distinct().Count() > AppearanceSlots)
-                foreach (var l in owned) Intern(l.Default);
-            int fallbacks = 0;
+            var (table, slots, fallbacks) = Scene3DLooks.Intern(_looks);
             for (int k = 0; k < _looks.Count; k++)
             {
-                if (_looks[k] is not { } l) continue;
-                int slot;
-                if (Intern(l.Own)) slot = row[l.Own];
-                else { fallbacks++; slot = row.TryGetValue(l.Default, out int d) ? d : 0; }
+                if (_looks[k] is null) continue;
                 var o = _objects[k];
-                o.AppearanceSlot = slot;
+                o.AppearanceSlot = slots[k];
                 // brief-em3d-106 R-em3d106-2e (overview D12) — whether the vertex colour's alpha is a STATED coverage (a document's
                 // Transparency, or a dimmed context part): the realistic shader multiplies it on; a kind default it does not.
                 uint stated = o.Transparency is not null || o.Context ? Scene3DShadeVertex.StatedAlpha : 0;
                 for (int v = o.FirstVertex; v < o.FirstVertex + o.VertexCount; v++)
                 {
                     var sv = _shade[v];
-                    sv.Slot = (uint)slot | stated;
+                    sv.Slot = (uint)slots[k] | stated;
                     _shade[v] = sv;
                 }
             }
-            return ([.. table], fallbacks);
+            return (table, fallbacks);
         }
 
         public Scene3DModel Finish(long generation, (double, double, double) origin, Em3dProblem problem, IReadOnlyList<string>? notes)
@@ -1370,6 +1352,8 @@ public static class Scene3DBuilder
                 Images = [.. _images], ImageVertices = [.. _imageVerts], ImageBatches = [.. _imageBatches], PlacedImages = PlacedImages,
                 PlacedFaceImages = [.. PlacedFaceImages], FaceImageProblems = FaceImageProblems,
                 Appearances = appearances, AppearanceFallbacks = fallbacks,
+                // brief-em3d-108 — each owned object's question, so a look can be asked again without this builder
+                AppearanceRequests = [.. _looks.Take(ownedObjects).Select(l => l?.Request)],
             };
         }
     }

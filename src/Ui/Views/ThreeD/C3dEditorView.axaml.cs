@@ -99,6 +99,7 @@ public partial class C3dEditorView : UserControl
             _vm.PropertyChanged -= OnVmPropertyChanged;
             _vm.TreeRevealRequested -= OnTreeReveal;
             _vm.ClipboardWriteRequested -= OnClipboardWriteRequested;
+            _vm.LookPanelRequested -= OnLookPanelRequested;
         }
         var doc = DataContext as C3dEditorDocument;
         _vm = doc?.ViewModel;
@@ -110,9 +111,19 @@ public partial class C3dEditorView : UserControl
         MirrorTreeSelection();
         _vm.TreeRevealRequested += OnTreeReveal;
         _vm.ClipboardWriteRequested += OnClipboardWriteRequested;
+        _vm.LookPanelRequested += OnLookPanelRequested;
         SyncPlotTheme();
         if (doc!.ConsumeActivationFocus()) Dispatcher.UIThread.Post(() => Pane.Focus(), DispatcherPriority.Loaded);
     }
+
+    // ── brief-em3d-108 R-em3d108-3 — the Look panel ──────────────────────────────────────────────────────────────────
+
+    /// <summary>3D ▸ View ▸ Look…: the drop-down's flyout, opened from the menu.</summary>
+    private void OnLookPanelRequested() => LookButton.Flyout?.ShowAt(LookButton);
+
+    private void OnLookOpened(object? sender, EventArgs e) => _vm?.LookPanel.Opened();
+
+    private void OnLookClosed(object? sender, EventArgs e) => _vm?.LookPanel.Closed();
 
     /// <summary>brief-em3d-75 — the line plot follows the application's light or dark variant, as every PlotControl must.</summary>
     private void SyncPlotTheme()

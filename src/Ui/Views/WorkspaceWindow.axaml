@@ -221,6 +221,9 @@
                                     <NativeMenuItem Header="Realistic View" ToggleType="CheckBox" IsChecked="{Binding ThreeDRealistic, Mode=OneWay}"
                                                     ToolTip="Materials, lighting and shadows, for pictures. Changes nothing in the model. Requires an active 3D document."
                                                     Command="{Binding ToggleThreeDRealisticCommand}"/>
+                                    <!-- brief-em3d-108 R-em3d108-3a — the Look panel: how the realistic view looks; opening it turns the view on. -->
+                                    <NativeMenuItem Header="Look…" ToolTip="Environment, lighting, background and what the realistic view shows. Opening it turns the realistic view on. Requires an active 3D design."
+                                                    Command="{Binding ThreeDLookCommand}"/>
                                     <NativeMenuItem Header="Clip Plane" ToolTip="Requires an active 3D document."     Command="{Binding ThreeDClipPlaneCommand}"/>
                                     <NativeMenuItem Header="Axis Indicator" ToolTip="Requires an active 3D document." Command="{Binding ThreeDAxisIndicatorCommand}"/>
                                     <NativeMenuItem Header="Scale Legend" ToolTip="Requires an active 3D document." Command="{Binding ThreeDScaleLegendCommand}"/>
@@ -1107,6 +1110,9 @@
                     <MenuItem Header="_Realistic View" Command="{Binding ToggleThreeDRealisticCommand}" ToggleType="CheckBox"
                               IsChecked="{Binding ThreeDRealistic, Mode=OneWay}"
                               ToolTip.Tip="Materials, lighting and shadows, for pictures. Changes nothing in the model. Requires an active 3D document."/>
+                    <!-- brief-em3d-108 R-em3d108-3a — mirrors the macOS menu's View ▸ Look…. -->
+                    <MenuItem Header="_Look…" Command="{Binding ThreeDLookCommand}"
+                              ToolTip.Tip="Environment, lighting, background and what the realistic view shows. Opening it turns the realistic view on. Requires an active 3D design."/>
                     <MenuItem Header="_Clip Plane" Command="{Binding ThreeDClipPlaneCommand}" InputGesture="C"
                               ToolTip.Tip="Toggle the clip plane. Requires an active 3D document."/>
                     <MenuItem Header="_Axis Indicator" Command="{Binding ThreeDAxisIndicatorCommand}" InputGesture="A"

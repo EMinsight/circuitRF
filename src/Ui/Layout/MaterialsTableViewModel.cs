@@ -7,6 +7,9 @@ using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Theming;
 using CircuitRF.Design.ThreeD;
+using CircuitRF.Design.ThreeD.Appearance;
+using CircuitRF.Render.Scene3D.Look;
+using CircuitRF.Ui.Appearance;
 
 namespace CircuitRF.Ui.Layout;
 
@@ -54,8 +57,10 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
     /// <param name="list">The editable list — read each time, since a snapshot undo replaces it.</param>
     /// <param name="commit">Runs a mutation of the list as ONE undo entry of the host, with its description.</param>
     /// <param name="ownSource">What the Source line says for an editable row ("this technology", "this library").</param>
-    public MaterialsTableViewModel(Func<List<TechMaterial>> list, Action<Action, string> commit, string ownSource)
-        : this([new MaterialListSource(ownSource, list, commit)]) { }
+    /// <param name="libraryPath">brief-em3d-108 — the <c>.cmat</c> the list is, when it is one: where an appearance's provenance
+    /// says a material comes from.</param>
+    public MaterialsTableViewModel(Func<List<TechMaterial>> list, Action<Action, string> commit, string ownSource, string? libraryPath = null)
+        : this([new MaterialListSource(ownSource, list, commit, libraryPath)]) { }
 
     /// <summary>A table over several lists — the 3D view's Materials dialog: the technology's own and each library's.</summary>
     public MaterialsTableViewModel(IReadOnlyList<MaterialListSource> sources)
@@ -192,6 +197,47 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
         if (row is { IsShown: false }) FilterText = "";
         SelectedRow = row;
     }
+
+    // ── brief-em3d-108 R-em3d108-1 — appearance ─────────────────────────────────
+
+    /// <summary>A material's appearance was edited — previewed while a slider drags, or written: the row and the appearance it now
+    /// shows. The 3D view's Materials dialog forwards it to every open 3D view that draws the material (R-em3d108-1c).</summary>
+    public event Action<MaterialRowViewModel, TechAppearance?>? AppearanceEdited;
+
+    internal void RaiseAppearanceEdited(MaterialRowViewModel row, TechAppearance? appearance) => AppearanceEdited?.Invoke(row, appearance);
+
+    /// <summary>
+    /// <paramref name="m"/>'s look, resolved by the one resolver over these lists as a technology would hold them (a library list's
+    /// rows as that library's), with <paramref name="preview"/> standing for its own appearance while a slider drags. The role is the
+    /// one the material implies; the palette colour a 3D view would draw it in is the role's neutral one, since no scene is open here.
+    /// </summary>
+    internal ResolvedAppearance ResolveAppearance(TechMaterial m, TechAppearance? preview, bool previewing)
+    {
+        var own = new List<TechMaterial>();
+        var libraries = new List<LibraryMaterial>();
+        foreach (var src in Sources)
+            foreach (var x in src.List())
+                if (src.LibraryPath is { } lib) libraries.Add(new LibraryMaterial(x, lib));
+                else own.Add(x);
+        libraries.AddRange(LibraryRows);
+        string name = OwnSource.EndsWith(" (the technology's own)", StringComparison.Ordinal) ? OwnSource[..^" (the technology's own)".Length] : OwnSource;
+        Technology tech = new() { Name = name, Materials = own, LibraryMaterials = libraries };
+        if (previewing) tech = AppearanceResolver.WithAppearances(tech, new Dictionary<string, TechAppearance?> { [m.Name] = preview });
+        var implied = C3dMaterialRole.Implied(m);
+        bool conductor = implied == C3dImpliedRole.Conductor;
+        var palette = C3dMaterialRole.ImpliedColour(implied);
+        return AppearanceResolver.Resolve(new AppearanceRequest(tech, m.Name, conductor ? AppearanceRole.Conductor : AppearanceRole.Dielectric,
+                                                                conductor ? CircuitRF.Engine.Em3d.Em3dRole.Conductor : CircuitRF.Engine.Em3d.Em3dRole.Dielectric,
+                                                                palette));
+    }
+
+    /// <summary>The names a material's <c>Like</c> may take: every material these lists and the libraries shown hold.</summary>
+    internal IReadOnlyList<string> AllMaterialNames
+        => [.. Sources.SelectMany(src => src.List()).Select(m => m.Name).Concat(LibraryRows.Select(l => l.Material.Name))
+                      .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>The environment the swatch is lit by: the default studio (the realistic view's own default), prefiltered once a process.</summary>
+    internal static PrefilteredEnvironment SwatchEnvironment => EnvironmentPrefilter.Studio(C3dLook.DefaultStudio);
 
     // ── the one commit path ───────────────────────────────────────────────────
 
@@ -372,8 +418,82 @@ public sealed partial class MaterialRowViewModel : ObservableObject
         _nameText = material.Name;
         SigmaTable.Reload();
         KTable.Reload();
+        _appearance?.Reload();
         OnPropertyChanged(string.Empty);
         RefreshShown();
+    }
+
+    // ── brief-em3d-108 R-em3d108-1a/b — Appearance ───────────────────────────────
+
+    private AppearanceEditorViewModel? _appearance;
+
+    /// <summary>The Appearance section: the nine fields, Like and a reset per field, through the one appearance editor.</summary>
+    public AppearanceEditorViewModel Appearance => _appearance ??= new AppearanceEditorViewModel(new RowAppearanceHost(this));
+
+    /// <summary>A slider's value not yet written: the appearance the swatch and the open 3D views show meanwhile.</summary>
+    private (TechAppearance? Appearance, bool Active) _appearancePreview;
+
+    /// <summary>The look the swatch shows: the record's, or a drag's.</summary>
+    internal ResolvedAppearance ResolvedLook => _table.ResolveAppearance(Material, _appearancePreview.Appearance, _appearancePreview.Active);
+
+    private (AppearanceValues Values, byte[] Pixels)? _swatch;
+
+    /// <summary>R-em3d108-1b — the swatch: 96 × 96 opaque RGBA8 rows, a sphere shaded by the realistic view's own reference under the
+    /// default studio. Redrawn only when the look it shows changed.</summary>
+    public byte[] SwatchPixels
+    {
+        get
+        {
+            var values = ResolvedLook.Values;
+            if (_swatch is { } s && s.Values == values) return s.Pixels;
+            var pixels = AppearanceSwatch.Rgba(values, MaterialsTableViewModel.SwatchEnvironment);
+            _swatch = (values, pixels);
+            return pixels;
+        }
+    }
+
+    private sealed class RowAppearanceHost(MaterialRowViewModel row) : IAppearanceHost
+    {
+        public IReadOnlyList<TechAppearance?> Stated => [row.Material.Appearance];
+        public IReadOnlyList<ResolvedAppearance?> Resolved => [row.ResolvedLook];
+        public IReadOnlyList<string> LikeChoices
+            => [.. row._table.AllMaterialNames.Where(n => !string.Equals(n, row.Material.Name, StringComparison.OrdinalIgnoreCase))];
+        public string? ReadOnlyReason => row.IsEditable ? null : row.ReadOnlyNote ?? "This material is read-only here.";
+
+        public void Preview(string key, object? value)
+        {
+            row._appearancePreview = (TechAppearance.With(row.Material.Appearance, key, value), true);
+            row.OnPropertyChanged(nameof(SwatchPixels));
+            row._table.RaiseAppearanceEdited(row, row._appearancePreview.Appearance);
+        }
+
+        public void EndPreview()
+        {
+            if (!row._appearancePreview.Active) return;
+            row._appearancePreview = default;
+            row.OnPropertyChanged(nameof(SwatchPixels));
+            row._table.RaiseAppearanceEdited(row, row.Material.Appearance);
+        }
+
+        public string? Commit(string key, object? value)
+        {
+            row._appearancePreview = default;
+            if (row.Refuse()) return row._table.Refusal;
+            var next = key.Length == 0 ? null : TechAppearance.With(row.Material.Appearance, key, value);
+            if (MaterialValidation.AppearanceFaults(next).FirstOrDefault() is { } fault)
+            {
+                row.OnPropertyChanged(nameof(SwatchPixels));
+                return $"The appearance's {fault}.";
+            }
+            string name = row.Material.Name;
+            string what = key.Length == 0 ? $"Clear the appearance of {name}"
+                        : value is null ? $"Reset {key} of {name}" : $"Set {key} of {name}";
+            var material = row.Material;
+            row.Edit(() => material.Appearance = next, what);
+            row.OnPropertyChanged(nameof(SwatchPixels));
+            row._table.RaiseAppearanceEdited(row, row.Material.Appearance);
+            return null;
+        }
     }
 
     /// <summary>The list this row belongs to, or null for a library row shown read-only.</summary>

@@ -50,7 +50,7 @@ public sealed partial class MaterialsEditorViewModel : ObservableObject
     {
         FilePath = Path.GetFullPath(filePath);
         Working = materials;
-        Table = new MaterialsTableViewModel(() => Working, Commit, "this library");
+        Table = new MaterialsTableViewModel(() => Working, Commit, "this library", FilePath);
 
         UndoCommand = new RelayCommand(() => UndoRedo.Undo(), () => UndoRedo.CanUndo);
         RedoCommand = new RelayCommand(() => UndoRedo.Redo(), () => UndoRedo.CanRedo);

@@ -52,6 +52,8 @@ public sealed partial class MaterialPickerViewModel : ObservableObject
                 ? $"'{row.Name}' already exists and files name it: rename it in {row.SourceLabel}'s own editor, which renames it everywhere it is used. A new or duplicated material is named here."
                 : null,
         };
+        // brief-em3d-108 R-em3d108-1c — every appearance edit, a drag's included, is offered to the open 3D views as a preview.
+        Table.AppearanceEdited += (row, appearance) => AppearancePreview?.Invoke(row.Source?.LibraryPath, row.Name, appearance);
         // M9: a new material goes to the technology's first library when it names one, else to its own list.
         if (sources.Skip(1).FirstOrDefault(s => s.ReadOnlyReason is null) is { } library) Table.TargetSource = library;
         if (current is not null) Table.Select(current);
@@ -61,6 +63,14 @@ public sealed partial class MaterialPickerViewModel : ObservableObject
         ObjectCount = objectCount;
         Refusal = refusal;
     }
+
+    /// <summary>
+    /// brief-em3d-108 R-em3d108-1c — an appearance edited in the dialog (a slider's preview, or a value written to the copy): the
+    /// library the material's list is (null: the technology's own), its name, and the appearance it shows now. The workspace pushes it
+    /// to every open 3D view on this technology as a preview; Cancel takes every preview away, OK writes the edit through the files'
+    /// own documents (and the views' display-only reload shows it).
+    /// </summary>
+    public event Action<string?, string, CircuitRF.Design.Layout.TechAppearance?>? AppearancePreview;
 
     /// <summary>The Materials editor, over copies of the technology's lists.</summary>
     public MaterialsTableViewModel Table { get; }

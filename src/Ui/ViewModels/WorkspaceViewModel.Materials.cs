@@ -319,18 +319,57 @@ public partial class WorkspaceViewModel
         string? current = indices.Count == 1 ? vm.Document.Objects[indices[0]].Material : vm.CurrentMaterial;
         var picker = new MaterialPickerViewModel(MaterialSeeds(tech, techPath), Path.GetFileName(techPath), startNew, current,
                                                  indices.Count, null);
+        // brief-em3d-108 R-em3d108-1c — the dialog's appearance edits, live in every open 3D view on this technology
+        var previewing = new HashSet<Viewer3D.Viewer3DViewModel>(ReferenceEqualityComparer.Instance);
+        picker.AppearancePreview += (library, material, appearance) =>
+            previewing.UnionWith(PreviewMaterialAppearance(techPath, library, material, appearance));
         bool ok = await new Views.Dialogs.MaterialPickerDialog(picker).ShowDialog<bool>(window);
+        var changed = ok ? picker.ChangedLists : [];
+        // Cancel (or OK with nothing to write) takes the previews away now — each view's table back byte for byte. OK with an edit
+        // keeps them until the scene built from the written technology arrives, so nothing flashes back in between.
+        foreach (var v in previewing)
+            if (changed.Count == 0) v.EndAppearancePreview();
+            else v.EndAppearancePreviewAtNextScene();
         if (!ok) return;
 
-        var changed = picker.ChangedLists;
         foreach (var (seed, materials) in changed)
             if (CommitMaterialList(techPath, seed, materials) is { } refused)
             {
+                foreach (var v in previewing) v.EndAppearancePreview();
                 Messages.Error(refused);
                 return;
             }
         if (changed.Count > 0) ActivateIfOpen(C3dEditorDocument.KeyFor(doc.FilePath));
         vm.ApplyPickedMaterial(indices, picker.ChosenName);
+    }
+
+    /// <summary>
+    /// brief-em3d-108 R-em3d108-1c — <paramref name="material"/>'s appearance shown as <paramref name="appearance"/> in every open 3D
+    /// view whose technology is <paramref name="techPath"/> or names <paramref name="library"/> (in this window and the others), and in
+    /// every setup's 3D view that draws it. Returns the views that took it.
+    /// </summary>
+    internal IReadOnlyList<Viewer3D.Viewer3DViewModel> PreviewMaterialAppearance(string techPath, string? library, string material, TechAppearance? appearance)
+    {
+        var took = new List<Viewer3D.Viewer3DViewModel>();
+        var workspaces = new List<WorkspaceViewModel> { this };
+        foreach (var w in Views.WorkspaceLocator.AllWindows())
+            if (w.DataContext is WorkspaceViewModel other && !ReferenceEquals(other, this)) workspaces.Add(other);
+        foreach (var ws in workspaces)
+            foreach (var doc in ws._openDocsByPath.Values)
+            {
+                var viewer = doc switch
+                {
+                    C3dEditorDocument c3d when OnTechnology(c3d.ViewModel.Elaboration) => c3d.ViewModel.Viewer,
+                    Viewer3D.Viewer3DDocument setup => setup.ViewModel,
+                    _ => null,
+                };
+                if (viewer is not null && viewer.PreviewAppearance(material, appearance)) took.Add(viewer);
+            }
+        return took;
+
+        bool OnTechnology(C3dElaboration? e)
+            => SamePath(e?.TechnologyPath, techPath)
+            || (library is not null && e?.Technology?.ResolvedLibraryPaths.Contains(library, StringComparer.OrdinalIgnoreCase) == true);
     }
 
     // ── Paste into a 3D view (brief-em3d-95 R-em3d95-4) ──────────────────────────────────────

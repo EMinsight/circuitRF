@@ -169,6 +169,15 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         IsRegenerating = true;
     }
 
+    /// <summary>brief-em3d-108 — asks for a new scene from <paramref name="state"/> rather than a fresh snapshot: the 3D editor's
+    /// display-only rebuild, which hands its build the elaboration it already has.</summary>
+    public void RegenerateWith(object state)
+    {
+        if (_disposed) return;
+        Source.Request(state);
+        IsRegenerating = true;
+    }
+
     /// <summary>A .cem, .clay, .ctech or .wBond changed: regenerate after the burst settles.</summary>
     public void Invalidate()
     {
@@ -269,7 +278,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         View.Adopt(scene, _objectNames);
         _objectNames = [.. scene.Objects.Select(o => o.Name)];
         var previous = Scene;
-        Scene = scene;
+        // brief-em3d-108 — a dialog's or a slider's appearance preview stands over every scene adopted while it lasts
+        Scene = PreviewOver(scene);
         HitCycle.SceneChanged(scene.Generation);
         IsRegenerating = scene.Generation < Source.Requested;
         OnPropertyChanged(nameof(IsBuildingFirstScene));
@@ -839,7 +849,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         bool wantSection = ShowMesh && ClipEnabled && mesh is not null;
         bool wantGrid = ShowGrid && GridAvailable && scene.Problem is not null;
         var setup = _lastSetup;
-        var grid = _grid is { } cached && ReferenceEquals(cached.Scene, scene) ? cached.Grid : null;
+        var grid = _grid is { } cached && ReferenceEquals(cached.Scene.Geometry, scene.Geometry) ? cached.Grid : null;
         bool dark = ThemeService.CurrentVariant == ColorVariant.Dark;
         if (!wantSection) SectionOverlay = Scene3DOverlay.None;
         if (!wantGrid) { GridOverlay = Scene3DOverlay.None; GridLabels = []; OnPropertyChanged(nameof(GridLabels)); }
@@ -859,7 +869,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
                     {
                         grid = FdtdGrid.Build(scene.Problem!, CemOpenEms.ResolveGrid(setup?.OpenEms));
                         var built = grid;
-                        _post(() => { if (ReferenceEquals(Scene, scene)) _grid = (scene, built); });
+                        _post(() => { if (ReferenceEquals(Scene.Geometry, scene.Geometry)) _grid = (scene, built); });
                     }
                     drawing = FdtdGridOverlay.Build(grid, scene, clip, dark, cts.Token);
                 }

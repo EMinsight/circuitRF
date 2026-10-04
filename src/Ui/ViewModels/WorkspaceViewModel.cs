@@ -1203,8 +1203,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // it changed: an εr edited in the technology editor (or in a material library) did not move an open
         // .c3d until something else re-elaborated it. Its own technology and every instance's are resolved
         // on each elaboration, so the cue is enough; the elaborator's child cache notices a replaced instance.
+        // brief-em3d-108 R-em3d108-1d — and one whose technology changed only in how it looks re-elaborates nothing.
         foreach (var c3d in _openDocsByPath.Values.OfType<ThreeD.C3dEditorDocument>())
-            c3d.ViewModel.OnChildChanged();
+            c3d.ViewModel.OnTechnologyChanged(changedPath);
 
         TechnologyReResolved?.Invoke(changedPath);
     }

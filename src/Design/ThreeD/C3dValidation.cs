@@ -120,6 +120,12 @@ public static class C3dValidation
             else if (!RadianceHdr.Probe(file, out string? why)) found.Add(C3dDiagnostics.LookHdrUnreadable(path, why ?? "it does not read"));
         }
         // brief-em3d-107 — Shadows, AmbientOcclusion and Ground are booleans: the reader refuses any other value, so nothing is left here
+        // brief-em3d-108 — the picture camera, when stated, must be one a picture can be taken from
+        if (look.Camera is { } camera)
+        {
+            foreach (string fault in camera.Faults()) found.Add(C3dDiagnostics.LookCamera(fault));
+            Unread(camera.Unread, "The Look's Camera", found);
+        }
         Unread(look.Unread, "The Look", found);
     }
 

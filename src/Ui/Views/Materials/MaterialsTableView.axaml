@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:lay="using:CircuitRF.Ui.Layout"
+             xmlns:apv="using:CircuitRF.Ui.Views.Appearance"
              x:Class="CircuitRF.Ui.Views.Materials.MaterialsTableView"
              x:DataType="lay:MaterialsTableViewModel">
 
@@ -382,6 +383,22 @@
                                                  Text="{Binding ColorText, UpdateSourceTrigger=LostFocus}" PlaceholderText="#rrggbb"/>
                                     </Grid>
                                 </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- brief-em3d-108 R-em3d108-1a/b — how it looks in the realistic view: the swatch (a sphere shaded by the view's own
+                             reference, under the default studio, no GPU needed) and the one appearance editor. In the 3D view's Materials
+                             dialog every edit is also shown live in each open 3D view on this technology (R-em3d108-1c). -->
+                        <Border Classes="card">
+                            <StackPanel Spacing="8">
+                                <TextBlock Classes="hdr" Text="Appearance"/>
+                                <TextBlock Classes="hint" Text="How it looks in the realistic view. No solver reads it, and an edit never makes a result out of date. A field it does not state shows, greyed, the value it takes — its tooltip says where that comes from."/>
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                                    <Image Grid.Column="0" Width="96" Height="96" VerticalAlignment="Top"
+                                           Source="{Binding SwatchPixels, Converter={x:Static apv:AppearanceEditorView.SwatchBitmap}}"
+                                           ToolTip.Tip="This material's look under the default studio, as the realistic view shades it."/>
+                                    <apv:AppearanceEditorView Grid.Column="1" DataContext="{Binding Appearance}"/>
+                                </Grid>
                             </StackPanel>
                         </Border>
 

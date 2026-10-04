@@ -4781,3 +4781,23 @@ missing the driven port's probes or its kept document is drawn as written, with 
   would otherwise be cut. It draws black with alpha = the light it loses: the key light's share of a level floor's light
   (key irradiance on +z against the environment's SH irradiance on +z) times the shadow, plus the rest times the occlusion,
   fading from `FadeStart` (0.35) to its rim. It lies `Drop` (1e-4) scene radii under the lowest drawn point.
+
+## The appearance swatch, and a look asked again without the builder (brief-em3d-108, 2026-10-04)
+
+- **`Look/AppearanceSwatch`** shades a 96 × 96 sphere with `Pbr.Shade`, THE reference, so the Materials editor's swatch is what
+  the realistic view draws. The sphere is analytic: each pixel's normal is the unit sphere's (a rim pixel whose centre falls just
+  outside the disc takes the nearest point on it), so there is no mesh, no rasteriser and no GPU, and a swatch draws with no 3D
+  view open. It is seen orthographically from the iso camera's direction (1, −1, 1), lit by the default studio at the default
+  Look, over an 8-pixel checker so transmission reads as see-through; the rim is antialiased by coverage, not by extra samples.
+- **Its cost is a counter, never a timing**: `Evaluations` adds one per shaded pixel (about 6,500 of the 9,216). Gate 1 holds it
+  deterministic (twice, and on another thread), holds a metal's swatch apart from a dielectric's of the same base colour, and holds
+  the brightest pixel strictly falling across roughness 0, 0.25, 0.5 and 1 — compared in floats before quantisation, since at
+  roughness 0 and 0.25 the key light's peak already reaches 255.
+- **`Scene3DModel.AppearanceRequests`** keeps the question the builder asked the resolver for each object that owns geometry, so
+  `Scene3DLooks.Restyle` can ask again through a map (a previewed material, an override) with no builder: a copy of the scene with a
+  new table, the objects whose row moved copied with their new slot, and only their shade vertices rewritten (the `StatedAlpha`
+  bit kept); an element takes its prototype's row. `Scene3DLooks.Intern` is the one interning rule — the builder calls it too — so
+  the identity restyle gives the builder's table exactly.
+- **`Scene3DModel` copies by `MemberwiseClone`** (`WithLooks`): the five fields a restyle replaces have explicit backing fields so
+  the copy can set them; every other array is shared. `Scene3DObject.Copy` is the same for an object whose slot moved, so the
+  scene it came from keeps its own.

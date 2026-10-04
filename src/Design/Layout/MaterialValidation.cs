@@ -121,6 +121,11 @@ public static class MaterialValidation
         (nameof(TechAppearance.AttenuationDistance), a => a.AttenuationDistance, 0, double.PositiveInfinity, true),
     ];
 
+    /// <summary>brief-em3d-108 — the numeric keys' ranges, as the Materials editor's and the Inspector's sliders take them: the same
+    /// table this validation reads, so a slider never offers a value <c>check</c> refuses.</summary>
+    public static IReadOnlyList<(string Key, double Lo, double Hi, bool LoOpen)> AppearanceRanges { get; }
+        = [.. Ranges.Select(r => (r.Key, r.Lo, r.Hi, r.LoOpen))];
+
     /// <summary>
     /// What is wrong with one appearance on its own: each value out of its range, each colour that is not <c>#rrggbb</c> — one
     /// phrase per fault (<c>Roughness 1.5 is outside 0 to 1</c>), for the caller to put after the owner's name. A material's

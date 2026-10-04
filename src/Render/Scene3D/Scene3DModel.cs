@@ -155,6 +155,10 @@ public sealed class Scene3DObject
     /// -1 for what has no appearance (air, a port, a boundary).</summary>
     public int AppearanceSlot { get; set; } = -1;
 
+    /// <summary>brief-em3d-108 — a copy (every field, shallow): what a restyled scene holds where this object's row moved, so the
+    /// scene it came from keeps its own.</summary>
+    internal Scene3DObject Copy() => (Scene3DObject)MemberwiseClone();
+
     /// <summary>The name of face <paramref name="face"/>: its stored name, else <c>face&lt;n&gt;</c>.</summary>
     public string FaceName(int face) => face >= 0 && face < FaceNames.Count ? FaceNames[face]
         : face == Scene3DBuilder.FaceUnknown ? "surface" : $"face{face}";
@@ -234,10 +238,12 @@ public sealed class Scene3DModel
     public required Scene3DVertex[] Vertices { get; init; }
     /// <summary>brief-em3d-104 R-em3d104-2a — each vertex's shading normal and appearance slot, parallel to <see cref="Vertices"/>
     /// (a scene built by Scene3DBuilder always has one per vertex). Uploaded only while the realistic view is on.</summary>
-    public Scene3DShadeVertex[] ShadeVertices { get; init; } = [];
+    public Scene3DShadeVertex[] ShadeVertices { get => _shadeVertices; init => _shadeVertices = value; }
+    private Scene3DShadeVertex[] _shadeVertices = [];
     public required uint[] Indices { get; init; }
     public required Scene3DVertex[] LineVertices { get; init; }
-    public required Scene3DObject[] Objects { get; init; }
+    public required Scene3DObject[] Objects { get => _objects; init => _objects = value; }
+    private Scene3DObject[] _objects = [];
     /// <summary>Opaque batches first, then translucent — each one object.</summary>
     public required Scene3DBatch[] Batches { get; init; }
     public required Scene3DLineBatch[] LineBatches { get; init; }
@@ -313,11 +319,42 @@ public sealed class Scene3DModel
     /// <summary>brief-em3d-105 R-em3d105-4 — the scene's appearance table: one row per distinct resolved appearance (equal ones
     /// share a row), at most <see cref="Scene3DBuilder.AppearanceSlots"/>. A shade vertex's <see cref="Scene3DShadeVertex.Slot"/>
     /// indexes it.</summary>
-    public CircuitRF.Design.ThreeD.Appearance.AppearanceValues[] Appearances { get; init; } = [];
+    public CircuitRF.Design.ThreeD.Appearance.AppearanceValues[] Appearances { get => _appearances; init => _appearances = value; }
+    private CircuitRF.Design.ThreeD.Appearance.AppearanceValues[] _appearances = [];
 
     /// <summary>How many objects draw with their role's default because the table was full (overview D16) — for the status
     /// line.</summary>
-    public int AppearanceFallbacks { get; init; }
+    public int AppearanceFallbacks { get => _appearanceFallbacks; init => _appearanceFallbacks = value; }
+    private int _appearanceFallbacks;
+
+    /// <summary>brief-em3d-108 — the question the builder asked the resolver for each object that owns geometry (parallel to the
+    /// first <see cref="OwnedObjects"/> objects; null for what has no appearance), so a look can be asked again with no builder
+    /// (<see cref="Scene3DLooks.Restyle"/>). An element asks nothing: it takes its prototype's row.</summary>
+    public CircuitRF.Design.ThreeD.Appearance.AppearanceRequest?[] AppearanceRequests { get => _appearanceRequests; init => _appearanceRequests = value; }
+    private CircuitRF.Design.ThreeD.Appearance.AppearanceRequest?[] _appearanceRequests = [];
+
+    /// <summary>brief-em3d-108 — the scene whose geometry this one draws: itself, or (a restyled copy) the scene it was restyled from.
+    /// What a cache of anything built from the GEOMETRY (a field's surfaces, the FDTD grid) compares, so a look changed under a drag
+    /// rebuilds none of them.</summary>
+    public Scene3DModel Geometry => _geometry ?? this;
+    private Scene3DModel? _geometry;
+
+    /// <summary>brief-em3d-108 — this scene with another look: the same geometry, colours, batches and generation, with
+    /// <paramref name="objects"/> (copies where a slot moved), <paramref name="shade"/>, the table and its fallbacks. What
+    /// <see cref="Scene3DLooks.Restyle"/> returns; a shallow copy, so every array it does not replace is shared.</summary>
+    internal Scene3DModel WithLooks(Scene3DObject[] objects, Scene3DShadeVertex[] shade,
+                                    CircuitRF.Design.ThreeD.Appearance.AppearanceValues[] table, int fallbacks,
+                                    CircuitRF.Design.ThreeD.Appearance.AppearanceRequest?[] requests)
+    {
+        var copy = (Scene3DModel)MemberwiseClone();
+        copy._geometry = Geometry;
+        copy._objects = objects;
+        copy._shadeVertices = shade;
+        copy._appearances = table;
+        copy._appearanceFallbacks = fallbacks;
+        copy._appearanceRequests = requests;
+        return copy;
+    }
 
     public int TriangleCount => Indices.Length / 3;
     public long VertexBytes => (long)Vertices.Length * Scene3DVertex.Stride;

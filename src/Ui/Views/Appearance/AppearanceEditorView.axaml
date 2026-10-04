@@ -1,0 +1,70 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ap="using:CircuitRF.Ui.Appearance"
+             xmlns:apv="using:CircuitRF.Ui.Views.Appearance"
+             xmlns:cp="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.ColorPicker"
+             x:Class="CircuitRF.Ui.Views.Appearance.AppearanceEditorView"
+             x:DataType="ap:AppearanceEditorViewModel">
+
+    <!-- brief-em3d-108 R-em3d108-1a / R-em3d108-2a — the ONE appearance editor, hosted by a material's detail pane and by the 3D
+         Inspector. Each field: a slider (or, for a colour, a swatch opening a colour wheel) and a box. A field the target states shows
+         its value; one it does not shows, greyed in the empty box, the value it resolves to, and the box's tooltip says where that
+         comes from (the resolver's own words). The × resets a field to "not stated". A slider previews while dragged and writes once,
+         on release; a box writes on Enter or when it loses focus; a colour writes when its wheel closes. The ColorView's Fluent theme
+         comes from CircuitRfStyles.axaml, as every ColorView's does (without it the control draws as an empty box). -->
+    <StackPanel Spacing="4">
+        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasNote}">
+            <TextBlock Grid.Column="0" Text="{Binding Note}" FontSize="11" Opacity="0.7" VerticalAlignment="Center" TextWrapping="Wrap"/>
+            <Button Grid.Column="1" Content="Turn on" FontSize="11" Padding="8,2" Command="{Binding NoteCommand}"
+                    IsVisible="{Binding NoteCommand, Converter={x:Static ObjectConverters.IsNotNull}}"
+                    ToolTip.Tip="Turn the realistic view on, where an appearance is drawn."/>
+        </Grid>
+        <TextBlock Text="{Binding ReadOnlyReason}" FontSize="11" Opacity="0.7" TextWrapping="Wrap"
+                   IsVisible="{Binding IsReadOnly}"/>
+
+        <Grid ColumnDefinitions="110,*" ColumnSpacing="6" IsEnabled="{Binding IsEditable}">
+            <TextBlock Grid.Column="0" Text="Like" FontSize="11" VerticalAlignment="Center"
+                       ToolTip.Tip="Take that material's whole look first, then this one's own fields over it: Gold on a copper trace is plating."/>
+            <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" ItemsSource="{Binding LikeChoices}" SelectedItem="{Binding Like}"
+                      PlaceholderText="{Binding LikePlaceholder}"/>
+        </Grid>
+
+        <ItemsControl ItemsSource="{Binding Fields}" IsEnabled="{Binding IsEditable}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate><StackPanel Spacing="3"/></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="ap:AppearanceFieldViewModel">
+                    <Grid ColumnDefinitions="110,*,72,Auto" ColumnSpacing="6">
+                        <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="11" VerticalAlignment="Center"
+                                   ToolTip.Tip="{Binding Description}"/>
+                        <Slider Grid.Column="1" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" Value="{Binding Slider}"
+                                VerticalAlignment="Center" IsVisible="{Binding HasSlider}"
+                                ToolTip.Tip="Drag to see it in the realistic view; the value is kept when you let go."/>
+                        <Button Grid.Column="1" HorizontalAlignment="Left" Width="44" Height="20" Padding="0"
+                                IsVisible="{Binding IsColour}" ToolTip.Tip="Pick a colour; it is kept when the wheel closes.">
+                            <Border Background="{Binding Colour, Converter={x:Static apv:AppearanceEditorView.ToBrush}}" CornerRadius="2"
+                                    BorderBrush="#40808080" BorderThickness="1" Margin="2"/>
+                            <Button.Flyout>
+                                <Flyout Placement="BottomEdgeAlignedLeft" Opened="OnColourFlyoutOpened" Closed="OnColourFlyoutClosed">
+                                    <cp:ColorView Width="300" Height="340" IsAlphaVisible="False" IsAlphaEnabled="False"
+                                                  Color="{Binding Colour, Mode=OneWay}" ColorChanged="OnColourChanged"/>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
+                        <TextBox Grid.Column="2" Classes="dim" FontSize="11" Padding="4,1" VerticalAlignment="Center"
+                                 Text="{Binding Text}" PlaceholderText="{Binding Placeholder}" ToolTip.Tip="{Binding Provenance}"
+                                 KeyDown="OnFieldKey" LostFocus="OnFieldLostFocus"/>
+                        <Button Grid.Column="3" Content="×" FontSize="11" Padding="6,0" VerticalAlignment="Center"
+                                Command="{Binding ResetCommand}" ToolTip.Tip="Reset: not stated, so it comes from the next statement down."/>
+                    </Grid>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <Button Content="Clear override" HorizontalAlignment="Left" FontSize="11" Padding="8,3"
+                Command="{Binding ClearOverrideCommand}" IsVisible="{Binding CanClearOverride}"
+                ToolTip.Tip="Remove this appearance: it looks as its material does again."/>
+        <TextBlock Text="{Binding Error}" Foreground="#C0392B" FontSize="11" TextWrapping="Wrap" IsVisible="{Binding HasError}"/>
+    </StackPanel>
+</UserControl>

@@ -502,6 +502,10 @@ internal static class DocumentSchema
             meet) and Ground (a shadow-catching floor under the model's lowest point, which draws
             only the darkening) are each on unless stated false; glass (an appearance Transmission
             of 0.5 or more) casts no shadow, and none of the three ever changes a field plot's colour.
+            Camera is the camera a picture is taken from, written only by the view's "Use This View
+            for Pictures" (an orbit never writes it): Direction (x, y, z from the target toward the
+            viewer), Target (x, y, z in DBU), Distance (DBU), FovY (degrees) and Projection
+            (Perspective or Orthographic). Omitted, a picture is taken from the live view's camera.
             Whether the realistic view is ON is not saved. `check` refuses a value out of range or a
             spelling it cannot read, and warns on a .hdr that is missing or does not read (the view
             then lights with Studio).

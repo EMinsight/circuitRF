@@ -5,7 +5,10 @@
 //
 // Every key is optional, and an omitted key is its default: a document that states nothing draws the realistic view exactly as
 // one stating every default does. Nothing is written unless it is stated, so a document opened and saved again is unchanged.
-// Brief 107 added Shadows, AmbientOcclusion and Ground; briefs 108 (Camera) and 109 (FieldStyle, FieldOpacity) add keys here.
+// Brief 107 added Shadows, AmbientOcclusion and Ground; brief 108 added Camera; brief 109 (FieldStyle, FieldOpacity) adds keys here.
+//
+// brief-em3d-108 R-em3d108-3d (overview D17) — Camera is the ONE place a camera is document state, and only by opt-in: written by
+// "Use This View for Pictures", never by orbiting, so a GUI framing reproduces in `render` and in a glTF export. See C3dDocument.Look.
 
 using System.Globalization;
 using System.Text.Json;
@@ -56,6 +59,12 @@ public sealed class C3dLook
     /// <summary>The shadow catcher under the model: a disc at its lowest z that draws only the darkening (default true).</summary>
     public bool? Ground { get; set; }
 
+    // ── brief-em3d-108 R-em3d108-3d — the camera pictures are taken from (overview D17) ─────────────────────────────────
+
+    /// <summary>The camera a picture is taken from, written only by "Use This View for Pictures"; null (the ordinary case) is the
+    /// live view's camera, whatever it is.</summary>
+    public C3dLookCamera? Camera { get; set; }
+
     /// <summary>Keys this build does not read (a later brief's), kept and written back.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Unread { get; set; }
@@ -73,7 +82,7 @@ public sealed class C3dLook
     [
         nameof(Environment), nameof(Rotation), nameof(Intensity), nameof(Exposure), nameof(Background),
         nameof(ShowEdges), nameof(ShowGrid), nameof(ShowOverlays), nameof(ShowAirBox), nameof(ShowPorts), nameof(ShowBoundaries),
-        nameof(ShowImages), nameof(Shadows), nameof(AmbientOcclusion), nameof(Ground),
+        nameof(ShowImages), nameof(Shadows), nameof(AmbientOcclusion), nameof(Ground), nameof(Camera),
     ];
 
     /// <summary>True when it states nothing (and keeps no unread key): such a block is the same as none.</summary>
@@ -81,13 +90,14 @@ public sealed class C3dLook
     public bool IsEmpty => Environment is null && Rotation is null && Intensity is null && Exposure is null && Background is null
                         && ShowEdges is null && ShowGrid is null && ShowOverlays is null && ShowAirBox is null && ShowPorts is null
                         && ShowBoundaries is null && ShowImages is null && Shadows is null && AmbientOcclusion is null && Ground is null
-                        && Unread is not { Count: > 0 };
+                        && Camera is null && Unread is not { Count: > 0 };
 
     public C3dLook Clone() => new()
     {
         Environment = Environment, Rotation = Rotation, Intensity = Intensity, Exposure = Exposure, Background = Background,
         ShowEdges = ShowEdges, ShowGrid = ShowGrid, ShowOverlays = ShowOverlays, ShowAirBox = ShowAirBox, ShowPorts = ShowPorts,
         ShowBoundaries = ShowBoundaries, ShowImages = ShowImages, Shadows = Shadows, AmbientOcclusion = AmbientOcclusion, Ground = Ground,
+        Camera = Camera?.Clone(),
         Unread = Unread is null ? null : new Dictionary<string, JsonElement>(Unread),
     };
 
@@ -174,3 +184,47 @@ public sealed class C3dLook
 
 /// <summary>What a background spelling is.</summary>
 public enum C3dBackgroundKind { Theme, Solid, Gradient, Environment }
+
+/// <summary>
+/// brief-em3d-108 R-em3d108-3d — the camera pictures are taken from: the direction from the target TOWARD THE VIEWER (x, y, z, any
+/// length), the target in DBU (as every <c>.c3d</c> coordinate is), the distance from target to eye in DBU, the vertical field of
+/// view in degrees, and the projection. Brief 110 renders from it and brief 111 writes it into a glTF.
+/// </summary>
+public sealed class C3dLookCamera
+{
+    public double[]? Direction { get; set; }
+    public double[]? Target { get; set; }
+    public double? Distance { get; set; }
+    public double? FovY { get; set; }
+    /// <summary><c>Perspective</c> (omitted) or <c>Orthographic</c>.</summary>
+    public string? Projection { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
+
+    public const string Perspective = "Perspective", Orthographic = "Orthographic";
+
+    public C3dLookCamera Clone() => new()
+    {
+        Direction = Direction is null ? null : [.. Direction], Target = Target is null ? null : [.. Target], Distance = Distance,
+        FovY = FovY, Projection = Projection, Unread = Unread is null ? null : new Dictionary<string, JsonElement>(Unread),
+    };
+
+    /// <summary>Whether it is orthographic (anything but that spelling is perspective).</summary>
+    [JsonIgnore]
+    public bool IsOrthographic => string.Equals(Projection?.Trim(), Orthographic, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>What is wrong with it, one phrase per fault, for <c>check</c> — empty when a picture can be taken from it.</summary>
+    public IReadOnlyList<string> Faults()
+    {
+        var faults = new List<string>();
+        static bool Finite(double[]? v) => v is { Length: 3 } && v.All(double.IsFinite);
+        if (!Finite(Direction) || Direction!.All(x => x == 0)) faults.Add("Direction is not three numbers pointing somewhere");
+        if (!Finite(Target)) faults.Add("Target is not three numbers (DBU)");
+        if (Distance is not { } d || !double.IsFinite(d) || d <= 0) faults.Add("Distance is not a positive number (DBU)");
+        if (FovY is { } f && !(double.IsFinite(f) && f > 0 && f < 180)) faults.Add("FovY is not between 0 and 180 degrees");
+        if (Projection is { } p && !(p.Trim().Equals(Perspective, StringComparison.OrdinalIgnoreCase) || IsOrthographic))
+            faults.Add($"Projection \"{p}\" is neither Perspective nor Orthographic");
+        return faults;
+    }
+}

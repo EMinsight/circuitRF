@@ -284,6 +284,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         try { Load(); }
         finally { _loading = false; }
         EndStrayTransparencyPreview();
+        EndStrayAppearancePreview();               // brief-em3d-108 — the Appearance group's drag, the same guard
         EndStrayFaceImagePreview();
         EndStrayPlotOffsetPreview();
         OnPropertyChanged(nameof(Materials));
@@ -321,6 +322,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         ClearFieldPlot();
         ClearRecords();
         ClearTransparency();
+        ClearAppearanceGroup();
         ClearModel();
         ClearImage();
         ClearFaceImage();
@@ -438,17 +440,21 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             }
             if (o.Material is { } m) Rows.Add(new C3dPropertyRow("Material", m));
             Rows.Add(new C3dPropertyRow("Editing", "Read-only here: an instance's contents belong to its own cell. Its Transparency is " +
-                                                   "the instance's, in this document: it multiplies onto each part's own."));
+                                                   "the instance's, in this document: it multiplies onto each part's own. Its Appearance " +
+                                                   "is the instance's too: each field it states applies to every part that states none."));
             // brief-em3d-92 — the INSTANCE's transparency is this document's, so it is edited here.
             if (InstanceIndex(inst) is >= 0 and var ii)
             {
                 LoadTransparency([], [ii], editor.Document.Instances[ii].Name);
+                LoadAppearance([], [ii], editor.Document.Instances[ii].Name, o);   // brief-em3d-108 — and its appearance
                 LoadModel([], [ii], editor.Document.Instances[ii].Name);      // brief-em3d-93 — the instance's, in this document
             }
             return;
         }
         // brief-em3d-93 — a port's Model: the one field a port has here
         if (o.Kind == Scene3DKind.Port) { LoadPortModel(editor.SelectedPorts()); return; }
+        // brief-em3d-108 R-em3d108-2d — a setup's view writes nothing: its look, read-only
+        if (editor.IsViewOnly) { LoadAppearanceReadOnly(o, ViewOnlyAppearance); return; }
 
         int index = editor.EditableIndex(o);
         if (index < 0) return;
@@ -473,6 +479,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         }
         int n = objects.Distinct().Count() + instances.Distinct().Count();
         LoadTransparency(objects, instances, n == 1 ? "the selection" : $"{n} items");
+        LoadAppearance(objects, instances, n == 1 ? "the selection" : $"{n} items");
         LoadModel(objects, instances, n == 1 ? "the selection" : $"{n} items");
     }
 
@@ -503,6 +510,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         IsEditable = true;
         // brief-em3d-92 — an operand inside an operation has none of its own: the operation's is its result's.
         if (!operand) LoadTransparency([index], [], obj.Name);
+        if (!operand) LoadAppearance([index], [], obj.Name);                // brief-em3d-108
         if (!operand) LoadModel([index], [], obj.Name);            // brief-em3d-93 — nor a Model: its result's is the operation's
         if (!operand && obj is C3dSheet { Image: not null } imageSheet) LoadImage(index, imageSheet);   // brief-em3d-101
         NameText = editor.ObjectLabel(index);
@@ -556,6 +564,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         Rows.Add(new C3dPropertyRow("Kind", "Group"));
         // brief-em3d-92 R-em3d92-2 — one row for the whole group: every member at every depth, one undo entry.
         LoadTransparency(members.Where(m => !m.Instance).Select(m => m.Index), members.Where(m => m.Instance).Select(m => m.Index), name);
+        LoadAppearance(members.Where(m => !m.Instance).Select(m => m.Index), members.Where(m => m.Instance).Select(m => m.Index), name);
         LoadModel(members.Where(m => !m.Instance).Select(m => m.Index), members.Where(m => m.Instance).Select(m => m.Index), name);
         int objects = members.Count(m => !m.Instance), instances = members.Count - objects;
         var subgroups = C3dGroups.All(doc).Count(g => g.Parent == path);

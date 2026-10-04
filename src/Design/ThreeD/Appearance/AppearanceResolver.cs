@@ -37,6 +37,23 @@ public readonly record struct AppearanceColour(double R, double G, double B)
         double s = c / 255.0;
         return s <= 0.04045 ? s / 12.92 : Math.Pow((s + 0.055) / 1.055, 2.4);
     }
+
+    /// <summary>brief-em3d-108 — back to sRGB 8-bit, as a <c>.cmat</c> spells a colour (<c>#rrggbb</c>): what the Inspector and the
+    /// Materials editor show a resolved colour as. <see cref="FromSrgb"/>'s inverse to the byte.</summary>
+    public (byte R, byte G, byte B) ToSrgb() => (Encode(R), Encode(G), Encode(B));
+
+    public string ToHex()
+    {
+        var (r, g, b) = ToSrgb();
+        return $"#{r:X2}{g:X2}{b:X2}";
+    }
+
+    private static byte Encode(double c)
+    {
+        c = Math.Clamp(c, 0, 1);
+        double s = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.Pow(c, 1 / 2.4) - 0.055;
+        return (byte)Math.Clamp((int)Math.Round(s * 255), 0, 255);
+    }
 }
 
 /// <summary>An appearance with every field concrete: what a renderer draws and the scene's slot table holds. Equal values are
@@ -130,6 +147,32 @@ public static class AppearanceResolver
     /// <summary>The role default alone — what an object takes when the scene's slot table is full (R-em3d105-4).</summary>
     public static AppearanceValues RoleDefaultOf(AppearanceRole role, Em3dRole materialRole, (byte R, byte G, byte B) palette)
         => Resolve(new AppearanceRequest(null, null, role, materialRole, palette)).Values;
+
+    /// <summary>
+    /// brief-em3d-108 R-em3d108-1c — <paramref name="tech"/> as the resolver would read it with each material named in
+    /// <paramref name="appearances"/> carrying that appearance (null: none) instead of its own: what a 3D view previews a Materials
+    /// dialog's unsaved edit with. Only what the resolver reads is carried (the name, the own and library materials, where each came
+    /// from), so it is a technology for resolving a look and nothing else. A name the technology does not define is ignored; a
+    /// material another's <c>Like</c> names changes that one's look too, exactly as it will once the edit is saved.
+    /// </summary>
+    public static Technology WithAppearances(Technology tech, IReadOnlyDictionary<string, TechAppearance?> appearances)
+    {
+        var wanted = new Dictionary<string, TechAppearance?>(appearances, StringComparer.OrdinalIgnoreCase);
+        TechMaterial Over(TechMaterial m)
+        {
+            if (!wanted.TryGetValue(m.Name, out var a)) return m;
+            var copy = MaterialLibraryPersistence.Deserialize(MaterialLibraryPersistence.Serialize([m]))[0];
+            copy.Appearance = a?.Clone();
+            return copy;
+        }
+        return new Technology
+        {
+            Name = tech.Name,
+            Materials = [.. tech.Materials.Select(Over)],
+            LibraryMaterials = [.. tech.LibraryMaterials.Select(l => wanted.ContainsKey(l.Material.Name) ? l with { Material = Over(l.Material) } : l)],
+            ResolvedLibraryPaths = tech.ResolvedLibraryPaths,
+        };
+    }
 
     // ── the walk ─────────────────────────────────────────────────────────────────────────────────
 

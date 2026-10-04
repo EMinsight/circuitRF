@@ -683,7 +683,7 @@ public sealed partial class Viewer3DViewModel
                         if (cts.IsCancellationRequested || _disposed || layer.Disposed) return;
                         // A newer scene arrived while this was built: build again on it (brief-em3d-83 — a plot is not
                         // re-applied on every scene, so a dropped build would leave it undrawn).
-                        if (!ReferenceEquals(Scene, scene)) { layer.BuildingCts = null; ScheduleFieldGeometry(layer); return; }
+                        if (!ReferenceEquals(Scene.Geometry, scene.Geometry)) { layer.BuildingCts = null; ScheduleFieldGeometry(layer); return; }
                         FieldGeometryBuilds++;
                         layer.Builds++;
                         AdoptTemperature(layer, parts, q, scale, covered, note);
@@ -722,7 +722,7 @@ public sealed partial class Viewer3DViewModel
                 _post(() =>
                 {
                     if (cts.IsCancellationRequested || _disposed || layer.Disposed) return;
-                    if (!ReferenceEquals(Scene, scene)) { layer.BuildingCts = null; ScheduleFieldGeometry(layer); return; }
+                    if (!ReferenceEquals(Scene.Geometry, scene.Geometry)) { layer.BuildingCts = null; ScheduleFieldGeometry(layer); return; }
                     FieldGeometryBuilds++;
                     layer.Builds++;
                     layer.Surfaces = surfaces;

@@ -124,6 +124,8 @@ public sealed class MaterialLibraryTests(ITestOutputHelper output) : IDisposable
             "CircuitRF.Cli.Check",                            // MaterialValidation over a refused file's own list
             "CircuitRF.Cli.Explain",                          // "N own and M from libraries"
             "CircuitRF.Design.ThreeD.C3dRunDocument",         // a run input's physics hash: the FILE's records (brief-em3d-105)
+            "CircuitRF.Design.ThreeD.Appearance.AppearanceResolver", // a previewed look's technology keeps own and library apart, so
+                                                              // the provenance still names the library (brief-em3d-108)
             "CircuitRF.Ui.Layout.TechEditorViewModel",        // the Materials tab's own rows
             "CircuitRF.Ui.ViewModels.WorkspaceViewModel",     // own-vs-library in a rename that spans files
         ];

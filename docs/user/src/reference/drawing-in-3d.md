@@ -822,9 +822,10 @@ optional; an omitted key takes the default shown:
 | `Shadows` | `false` turns off the key light's shadows (default on) |
 | `AmbientOcclusion` | `false` turns off the contact shading where surfaces meet (default on) |
 | `Ground` | `false` removes the shadow-catching floor under the model (default on) |
+| `Camera` | the camera pictures are taken from, written only by *Use This View for Pictures* (below): `Direction` (from the target toward the viewer), `Target` and `Distance` in DBU, `FovY` in degrees, `Projection` |
 
 A `Show…` key only lifts the realistic view's own hiding: an air box you have hidden, an overlay that is off, or a
-hidden object stays hidden. Until the Look has a panel of its own, it is edited by writing the file. A `Look` edit is
+hidden object stays hidden. The Look is edited in the [Look panel](#look-panel), or by writing the file. A `Look` edit is
 undone like any other, and **no run sees it**: editing it never makes a result stale.
 
 **Your own environment.** Name a Radiance `.hdr` (an equirectangular image, +z up) instead of a studio. An `.exr` is not
@@ -843,6 +844,50 @@ not cut it. A field plot's colours are never shadowed or shaded. Each of the thr
 glossy surface reflects the studio, a rough one spreads it. Translucency is approximated: what shows through is dimmed
 and tinted by the attenuation colour, and the reflection is added on top, but light is not bent: the view is drawn at
 interactive speed, not ray traced.
+
+### Changing how things look {#changing-look}
+
+There are two places to change an [appearance](#appearance), and the choice is about **how many things** should change.
+
+- **The material route** changes everything made of that material, in every design on the technology. Open the
+  Materials editor — *Edit Material…* on an object, *3D ▸ Materials…*, the technology's Materials tab or the `.cmat`
+  itself — and use the material's **Appearance** card. Use it to make copper look like copper everywhere, or to tune a
+  library's dielectrics once.
+- **The object route** changes the selected objects only. Select them (Object mode) and use the **Appearance** group in
+  the Inspector, under Transparency. Use it for the exceptions: the one gold-plated trace, a polished lid, a part that
+  should stand out in a picture. It works for a placed cell too, and its parts inherit it.
+
+Both show the same fields. A field that is stated shows its value; one that is not shows, greyed, the value it takes,
+and its tooltip says where that comes from (`role default`, `Like 'Gold'`, `material 'Copper' (generic-materials.cmat)`).
+The **×** beside a field removes the statement, so the field comes from the next one down again; *Clear override*
+removes an object's whole appearance. Several objects whose values differ read *mixed*, and an edit writes all of them.
+
+**Plating is `Like`.** Choose *Gold* in the **Like** box on a copper trace and it takes gold's whole look; any field it
+states itself still wins, so *Like Gold* with a higher Roughness is brushed gold. The same box on a material makes one
+material look like another (a solder alloy like tin) without restating its numbers.
+
+**Live.** Dragging a slider shows the result in the 3D view as you drag, and the change is one undo step when you let
+go. In the Materials editor a sphere swatch shows the material under the default studio, so a look can be judged with no
+3D view open. In the Materials dialog every change is shown in each open 3D view on that technology while the dialog is
+open; *Cancel* puts the view back exactly as it was. Neither route rebuilds the model: the view only redraws its
+materials. Editing works whether the realistic view is on or not; while it is off, the Inspector's group says so and
+turns it on in one click.
+
+<a id="look-panel"></a>**The Look panel** opens from the small arrow beside the Realistic view button, or from *3D ▸ View ▸
+Look…*. Opening it turns the realistic view on, since that is what it changes. It holds the environment (a studio, or
+*Load .hdr…*), its rotation, intensity and exposure, the background and its colours, Shadows, Contact shading and
+Ground, and one **Show** box for each kind of CAD chrome the realistic view hides. Every change is saved with the design
+and is one undo step; a slider is one step per drag. A new `.hdr` is prepared in the background and the old environment
+stays on screen until it is ready; one used before comes back at once.
+
+**A picture's camera.** The camera is not normally saved with a design. *Use This View for Pictures* in the Look panel
+is the one exception: it saves the current view, and *Export Picture…*, `render` and a glTF export take their picture
+from it. Orbiting afterwards never changes it. *Go to Picture View* brings the live view back to it; *Clear* removes it,
+and pictures follow the live view again.
+
+**None of this touches a result.** An appearance, a material's display colour, the Look and the picture camera are
+display only. A run never reads them, and changing any of them, in the design or in a material library, never makes a
+result out of date.
 
 ## Pictures and drawings {#drawings}
 
