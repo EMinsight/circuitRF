@@ -265,6 +265,7 @@
                                     <NativeMenuItem Header="Polyline" ToolTip="Construction geometry, a click per vertex. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Polyline"/>
                                     <NativeMenuItem Header="Image…" ToolTip="A reference image as a sheet on the drawing plane, not modelled. Requires an active 3D editor." Command="{Binding ThreeDInsertImageCommand}"/>
                                     <NativeMenuItem Header="Cylinder" ToolTip="Centre, radius, height. Requires an active 3D editor."          Command="{Binding ThreeDDrawCommand}" CommandParameter="Cylinder"/>
+                                    <NativeMenuItem Header="Sphere" ToolTip="Centre, radius. Requires an active 3D editor."                    Command="{Binding ThreeDDrawCommand}" CommandParameter="Sphere"/>
                                     <NativeMenuItem Header="Port" ToolTip="A port between two conductors, two clicks; its polarity is inferred from what it touches. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Port"/>
                                     <NativeMenuItem Header="Wire" ToolTip="A bond wire between two metal objects or sheets (click any face of each), then its loop height. Requires an active 3D editor." Command="{Binding ThreeDDrawCommand}" CommandParameter="Wire"/>
                                     <NativeMenuItemSeparator/>
@@ -1175,6 +1176,10 @@
                     <MenuItem Header="C_ylinder" Command="{Binding ThreeDDrawCommand}" CommandParameter="Cylinder"
                               ToolTip.Tip="Centre, radius, height. Requires an active 3D editor.">
                         <MenuItem.Icon><v3:Viewer3DPathGlyph Data="{x:Static v3:Viewer3DPathGlyph.Cylinder}"/></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Sph_ere" Command="{Binding ThreeDDrawCommand}" CommandParameter="Sphere"
+                              ToolTip.Tip="Centre, radius. Requires an active 3D editor.">
+                        <MenuItem.Icon><v3:Viewer3DPathGlyph Data="{x:Static v3:Viewer3DPathGlyph.Sphere}"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="_Port" Command="{Binding ThreeDDrawCommand}" CommandParameter="Port"
                               ToolTip.Tip="A port between two conductors, two clicks; its polarity is inferred from what it touches. Requires an active 3D editor.">

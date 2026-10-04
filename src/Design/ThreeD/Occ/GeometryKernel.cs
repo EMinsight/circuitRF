@@ -757,7 +757,8 @@ public sealed class GeometryKernel : IDisposable
         string code = reply.Text("code") ?? "";
         string detail = reply.Text("detail") ?? reply.Text("error") ?? "";
         string o = reply.Text("object") is { Length: > 0 } named ? named : obj;
-        string sentence = RefusalSentences.TryGetValue(code, out var words)
+        string sentence = OlderWorker(code, detail) is { } older ? older
+            : RefusalSentences.TryGetValue(code, out var words)
             ? $"{words(o)}: {detail}"
             : $"The geometry kernel could not build '{o}': {detail} (an unrecognised refusal, '{code}')";
         return new GeometryKernelException(GeometryKernelFailure.Refused, sentence, code, o)
@@ -766,6 +767,23 @@ public sealed class GeometryKernel : IDisposable
             Edges = Strings(reply, "edges"), Corner = reply.Json["corner"]?.GetValue<bool>() ?? false,
             WidthUm = reply.Json["width_um"]?.GetValue<double>(), Missing = Strings(reply, "missing"),
         };
+    }
+
+    /// <summary>brief-em3d-102 R-em3d102-3c — the kinds a worker built before them refuses by name, and what it then says.</summary>
+    private static readonly IReadOnlyDictionary<string, string> NewerKinds = new Dictionary<string, string>
+    {
+        ["sphere"] = "spheres",
+    };
+
+    /// <summary>A worker older than a kind it was handed (<c>this worker cannot build a "sphere"</c>): what to do about it, rather
+    /// than the generic failure. Null for any other refusal.</summary>
+    internal static string? OlderWorker(string code, string detail)
+    {
+        const string Prefix = "this worker cannot build a \"";
+        if (code != "tree.invalid" || !detail.StartsWith(Prefix, StringComparison.Ordinal) || !detail.EndsWith('"')) return null;
+        return NewerKinds.TryGetValue(detail[Prefix.Length..^1], out var kinds)
+            ? $"This geometry worker predates {kinds}; rebuild it (tools/geometry-worker/build.sh)."
+            : null;
     }
 
     // ── previews (R-em3d63-8) ────────────────────────────────────────────────────────────────────

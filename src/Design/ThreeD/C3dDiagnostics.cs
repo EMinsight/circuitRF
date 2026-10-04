@@ -281,7 +281,7 @@ public static class C3dDiagnostics
     /// <summary>R-em3d64-1e — solids only.</summary>
     public static Diagnostic OperandKind(string name, string operand, string kind) => Diagnostic.Create(
         "c3d.operation.operand-kind", DiagnosticSeverity.Error,
-        "'{operand}' in '{name}' is a {kind}, which cannot be an operand: a Box, Prism, Cylinder, Polyhedron, Boolean, Fillet, " +
+        "'{operand}' in '{name}' is a {kind}, which cannot be an operand: a Box, Prism, Cylinder, Sphere, Polyhedron, Boolean, Fillet, " +
         "Chamfer or Step part can. A sheet boolean is a later build's, and a wire is not a solid the kernel builds.",
         ("name", name), ("operand", operand), ("kind", kind));
 

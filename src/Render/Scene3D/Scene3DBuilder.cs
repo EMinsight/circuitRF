@@ -345,6 +345,7 @@ public static class Scene3DBuilder
             var solid = s;
             // A plated via's bore carves the barrel and the pads it passes through — in the drawing only (Scene3DBores).
             var mesh = bores?.Carved(s) is { } carved ? Tessellate(carved.Key, carved.Make)
+                     : NamedSurface(s.Primitive, FacesOf(s.Name)) ? Tessellate((s.Primitive, SurfaceKey), () => AsFaceZero(Em3dTessellation.Of(solid)))
                      : Tessellate(s.Primitive, () => Em3dTessellation.Of(solid));
             var (m, slot) = materials.TryGetValue(s.Material, out var mt) ? (mt.m, mt.i) : ((Em3dMaterial?)null, -1);
             if (faceImageObjects.Contains(s.Name)) faceMeshes[s.Name] = (mesh, FacesOf(s.Name), false, dim);
@@ -354,7 +355,8 @@ public static class Scene3DBuilder
                 Rgba = rgba, Translucent = translucent,
                 InitiallyVisible = wire || (s.Role != Em3dRole.Air && s.Name != outermost),
                 FaceNames = FacesOf(s.Name),
-                CapCentres = s.Primitive is Em3dCylinder cyl ? [cyl.AxisStart, cyl.AxisEnd] : null,
+                CapCentres = s.Primitive is Em3dCylinder cyl ? [cyl.AxisStart, cyl.AxisEnd]
+                           : s.Primitive is Em3dSphere ball && NamedSurface(ball, FacesOf(s.Name)) ? [ball.Center] : null,
                 Context = dim, Wireframe = wire, Transparency = see,
             }, mesh, wire && s.Primitive is Em3dCylinder c0 ? CylinderGenerators(c0).Select(q => (q, wireEdge)) : null,
                faces: true, features: Features(s.Name, mesh, sheet: false, (s.Primitive as Em3dShapeSolid)?.Edges), wireEdges: wire ? wireEdge : null);
@@ -626,6 +628,16 @@ public static class Scene3DBuilder
             return true;
         }
     }
+
+    /// <summary>brief-em3d-102 R-em3d102-2b — the cache key's second half for a sphere whose one face is named.</summary>
+    private const string SurfaceKey = "surface";
+
+    /// <summary>brief-em3d-102 §0 — a DRAWN sphere names its one face (<c>surface</c>, by its provenance), so its triangles carry
+    /// face 0 and Face mode selects it; a ball, which names none, keeps <see cref="FaceUnknown"/>. Per object, not per primitive.</summary>
+    private static bool NamedSurface(Em3dPrimitive p, IReadOnlyList<string> faces) => p is Em3dSphere && faces.Count == 1;
+
+    private static Em3dTriangleMesh AsFaceZero(Em3dTriangleMesh m)
+        => new(m.Vertices, [.. m.Triangles.Select(t => t with { Face = 0 })]);
 
     private static Scene3DKind KindOf(Em3dSolid s, IReadOnlyDictionary<string, Em3dObjectOrigin> origins)
     {

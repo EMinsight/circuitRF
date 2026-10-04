@@ -8,7 +8,9 @@
 // nothing attached to a face is lost — and the result says so (Converted), so the status bar can.
 //
 // A CYLINDER is not a B-rep here (its faces are curved): its ends move along its axis (Length, and Base for the
-// bottom), its side along its radius, and a free move is refused with what to do instead. A SHEET is not a
+// bottom), its side along its radius, and a free move is refused with what to do instead. A SPHERE (brief-em3d-102) has one
+// curved face and no vertex: every face edit is refused with where its Radius is changed (owner decision D3), and its centre
+// snaps and measures but does not move. A SHEET is not a
 // solid: pushed along its normal it moves as a whole (Offset), moved in its plane its outline translates, and
 // anything out of its plane is refused.
 //
@@ -85,6 +87,27 @@ public sealed class C3dFaceEditor
     public static IReadOnlyList<C3dPoint3> CapCentres(C3dCylinder c)
         => [c.Base, C3dBrepBuild.With(c.Base, (int)c.Axis, C3dBrepBuild.Get(c.Base, (int)c.Axis) + c.Length)];
 
+    /// <summary>brief-em3d-102 R-em3d102-5d — what Vertex mode shows on a cylinder (its cap centres) or a sphere (its centre), own
+    /// frame; null for anything else. They snap and measure; they do not move.</summary>
+    public static IReadOnlyList<C3dPoint3>? FixedPoints(C3dObject o) => o switch
+    {
+        C3dCylinder c => CapCentres(c),
+        C3dSphere s => [s.Centre],
+        _ => null,
+    };
+
+    /// <summary>brief-em3d-102 R-em3d102-4 (owner decision D3) — what a sphere says to any face edit of its surface.</summary>
+    public const string SphereFaceEdit = "A sphere's surface is curved: change its Radius in the Inspector.";
+
+    /// <summary>brief-em3d-102 R-em3d102-5d — what a sphere says to a vertex move.</summary>
+    public const string SphereVertexMove = "A sphere's centre snaps and measures but does not move.";
+
+    /// <summary>brief-em3d-102 R-em3d102-4 (owner decision D4) — Convert to Polyhedron is not offered for a sphere.</summary>
+    public const string SphereConvert = "A sphere is not converted to a polyhedron: its facets would be ~500 unnamed faces. Cut it with a Boolean instead.";
+
+    /// <summary>The refusal a fixed point gives a vertex move: the cylinder's or the sphere's sentence.</summary>
+    public static string FixedPointMove(C3dObject o) => o is C3dSphere ? SphereVertexMove : CylinderVertexMove;
+
     // ── Move Along Normal (push/pull) ────────────────────────────────────────────────────────
 
     /// <summary>How far face <paramref name="face"/> may go along its normal (<paramref name="sign"/> +1 out, −1 in) before
@@ -93,6 +116,8 @@ public sealed class C3dFaceEditor
     {
         switch (Source)
         {
+            case C3dSphere:
+                return null;
             case C3dCylinder c:
                 if (sign > 0) return null;
                 return face == "side" ? new C3dNormalLimit(c.Radius, "side") : new C3dNormalLimit(Math.Abs(c.Length), "side");
@@ -118,6 +143,7 @@ public sealed class C3dFaceEditor
         switch (Source)
         {
             case C3dCylinder c: return CylinderAlong(c, face, d, length);
+            case C3dSphere: return C3dFaceEditResult.Refuse(SphereFaceEdit);
             case C3dSheet s:
             {
                 var copy = Copy(s);
@@ -170,6 +196,7 @@ public sealed class C3dFaceEditor
         switch (Source)
         {
             case C3dCylinder: return C3dFaceEditResult.Refuse(CylinderFreeMove);
+            case C3dSphere: return C3dFaceEditResult.Refuse(SphereFaceEdit);
             case C3dSheet s:
             {
                 var (u, v, w) = C3dBrepBuild.ToPlane(s.Plane, by);
@@ -206,6 +233,7 @@ public sealed class C3dFaceEditor
         switch (Source)
         {
             case C3dCylinder: return C3dFaceEditResult.Refuse(CylinderVertexMove);
+            case C3dSphere: return C3dFaceEditResult.Refuse(SphereVertexMove);
             case C3dSheet { Image: not null, Rect: { } rect } img when vertex is >= 0 and < 4: return ImageCorner(img, rect, vertex, to, freeAspect, aspect);
             case C3dSheet s: return SheetVertex(s, vertex, to);
             case C3dPolyline: return C3dFaceEditResult.Refuse("A polyline is construction geometry: edit it by drawing it again.");
@@ -350,6 +378,7 @@ public sealed class C3dFaceEditor
         {
             case C3dPolyhedron: return C3dFaceEditResult.Refuse($"'{o.Name}' is already a polyhedron.");
             case C3dSheet or C3dPolyline: return C3dFaceEditResult.Refuse($"'{o.Name}' is not a solid.");
+            case C3dSphere: return C3dFaceEditResult.Refuse(C3dFaceEditor.SphereConvert);
             case C3dCylinder c:
             {
                 int n = facets ?? Engine.Em3d.Em3dTessellation.CylinderSegments;
@@ -378,6 +407,9 @@ public static class C3dFaceCommands
                 refusal = face is "top" or "bottom"
                     ? "A cylinder's cap is round: Convert to Polyhedron first."
                     : "A cylinder's side is curved: Convert to Polyhedron first.";
+                return null;
+            case C3dSphere:
+                refusal = "A sphere's surface is curved, and this needs a flat face.";
                 return null;
             case C3dSheet s:
             {

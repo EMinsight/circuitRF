@@ -444,8 +444,8 @@ public static class C3dThermal
         })];
     }
 
-    /// <summary>Whether <paramref name="q"/> lies inside or on <paramref name="p"/> — exact for a box, a z-extruded polygon
-    /// and a cylinder; the bounding box otherwise.</summary>
+    /// <summary>Whether <paramref name="q"/> lies inside or on <paramref name="p"/> — exact for a box, a z-extruded polygon,
+    /// a cylinder and a sphere; the bounding box otherwise.</summary>
     public static bool Inside(Em3dPrimitive p, Point3 q, double tol)
     {
         switch (p)
@@ -468,6 +468,12 @@ public static class C3dThermal
                 if (t * len < -tol || t * len > len + tol) return false;
                 double rx = dx - t * ax, ry = dy - t * ay, rz = dz - t * az;
                 return Math.Sqrt(rx * rx + ry * ry + rz * rz) <= c.Radius + tol;
+            }
+            case Em3dSphere s:
+            {
+                // brief-em3d-102 R-em3d102-2e — a probe in a corner of the sphere's bounding box is NOT in the sphere.
+                double dx = q.X - s.Center.X, dy = q.Y - s.Center.Y, dz = q.Z - s.Center.Z;
+                return Math.Sqrt(dx * dx + dy * dy + dz * dz) <= s.Radius + tol;
             }
             default:
                 var (x0, y0, z0, x1, y1, z1) = Em3dProblem.Bounds(p);

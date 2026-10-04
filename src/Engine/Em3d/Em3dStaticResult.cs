@@ -99,6 +99,7 @@ public static class Em3dStaticResult
             {
                 Em3dSweep { Section: Em3dSection.Circle } w => (w.Diameter, PathLength(w.Path)),
                 Em3dCylinder c => (2 * c.Radius, Distance(c.AxisStart, c.AxisEnd)),
+                Em3dSphere sp => (2 * sp.Radius, 2 * sp.Radius),   // brief-em3d-102: a sphere's length is its diameter
                 _ => null,
             };
             if (round is { } r && (thickest is null || r.d > thickest.Value.Diameter))

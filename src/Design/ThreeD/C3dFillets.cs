@@ -42,11 +42,16 @@ public static class C3dFillets
     /// <summary>A sheet's edge.</summary>
     public const string SheetRefused = "A sheet has no volume to round.";
 
+    /// <summary>brief-em3d-102 R-em3d102-3d — a sphere: one closed face, so Edge mode finds nothing to pick on it.</summary>
+    public static string SphereRefused(C3dEdgeOp op)
+        => $"A sphere has no edges to {(op == C3dEdgeOp.Fillet ? "round" : "bevel")}: its surface is one closed face.";
+
     /// <summary>Why <paramref name="o"/>'s edges cannot be filleted or chamfered, or null when they can: a solid of brief 66
     /// §1a's kinds — Box, Prism, Cylinder, Polyhedron, Boolean, Step, or a solid already filleted or chamfered.</summary>
     public static string? TargetRefusal(C3dObject o) => o switch
     {
         C3dSheet => SheetRefused,
+        C3dSphere => $"'{o.Name}' is a sphere: its surface is one closed face, with no edge to round or bevel.",
         C3dPolyline => $"'{o.Name}' is a polyline — construction geometry, never in the problem: Extrude it first.",
         C3dWire => $"'{o.Name}' is a bond wire: its shape is made again from its points and its pads, so a rounded wire would stop being a wire.",
         _ when C3dOperands.IsSolid(o) => null,

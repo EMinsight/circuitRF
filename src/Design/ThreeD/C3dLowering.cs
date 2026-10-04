@@ -6,6 +6,7 @@
 //   Box, placement a pure translation or 90° multiples        → Em3dBox
 //   Prism on XY, no Shear, rotation about z only              → Em3dExtrudedPolygon (rotated outline)
 //   Cylinder                                                  → Em3dCylinder (any axis: the rotation is applied)
+//   Sphere                                                    → Em3dSphere (the placement moves its centre)
 //   Anything else                                             → Em3dPolyhedron
 //
 // A sheet lies flat (Em3dSheet at Z) under the same condition a prism stays an extrusion, and otherwise
@@ -42,7 +43,7 @@ public sealed record C3dSheetGeometry(IReadOnlyList<Point2> Outline, IReadOnlyLi
 public static class C3dLowering
 {
     /// <summary>The lowering table's rows, as <see cref="C3dLowered.Kind"/> spells them.</summary>
-    public const string KindBox = "box", KindExtrusion = "extruded-polygon", KindCylinder = "cylinder",
+    public const string KindBox = "box", KindExtrusion = "extruded-polygon", KindCylinder = "cylinder", KindSphere = "sphere",
                         KindPolyhedron = "polyhedron", KindSheet = "sheet", KindFramedSheet = "sheet-in-a-plane";
 
     /// <summary>DBU to metres, exactly: the DBU as a decimal number of micrometres (LayoutUnits), then to metres.</summary>
@@ -100,6 +101,9 @@ public static class C3dLowering
                 };
                 return Transform(new Em3dCylinder(b0, e, M(c.Radius)), C3dCylinder.FaceNameList, w, KindCylinder);
             }
+            case C3dSphere sp:
+                return Transform(new Em3dSphere(new Point3(M(sp.Centre.X), M(sp.Centre.Y), M(sp.Centre.Z)), M(sp.Radius)),
+                                 C3dSphere.FaceNameList, w, KindSphere);
             case C3dPolyhedron ph:
             {
                 // brief-em3d-47 R-em3d47-1c — an edited solid that is exactly a box or a z-prism again lowers as one.
@@ -311,7 +315,7 @@ public static class C3dLowering
                                                     [.. s.Rings.Select(r => (IReadOnlyList<Point3>)[.. r.Select(q => Apply(t, q))])]),
                                       null, faceNames, "sweep");
             case Em3dSphere sp:
-                return new C3dLowered(new Em3dSphere(Apply(t, sp.Center), sp.Radius), null, faceNames, "sphere");
+                return new C3dLowered(new Em3dSphere(Apply(t, sp.Center), sp.Radius), null, faceNames, KindSphere);
             case Em3dTruncatedSphere ts when IsZOnly(t):
             {
                 double z0 = t.M22 * ts.ZMin + t.Tz, z1 = t.M22 * ts.ZMax + t.Tz;

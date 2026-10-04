@@ -432,8 +432,8 @@ public partial class C3dEditorView : UserControl
             {
                 Header = header,
                 InputGesture = new KeyGesture(Enum.Parse<Key>(letter.ToString())),
-                Icon = icon == nameof(Viewer3DPathGlyph.Cylinder)
-                    ? new Viewer3DPathGlyph { Data = Viewer3DPathGlyph.Cylinder }
+                Icon = Viewer3DPathGlyph.Named(icon) is { } drawn
+                    ? new Viewer3DPathGlyph { Data = drawn }
                     : new Material.Icons.Avalonia.MaterialIcon { Kind = Enum.Parse<Material.Icons.MaterialIconKind>(icon), Width = 16, Height = 16 },
             };
             item.Click += (_, _) => { vm.Arm(kind); Pane.Focus(); };

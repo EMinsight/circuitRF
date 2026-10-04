@@ -454,8 +454,8 @@ internal static class DocumentSchema
             along that normal, and a prism's Height is measured along it — negative is allowed, and
             says which way the prism was pulled. Shear moves a prism's top against its bottom.
           * Dimensions are SIZES, never second corners: a box is Min and Size, a rectangle Min and
-            Size, a cylinder Base, Axis, Length and Radius. A size is positive; a negative one is
-            normalised on the next save by moving Min.
+            Size, a cylinder Base, Axis, Length and Radius, a sphere Centre and Radius. A size is
+            positive; a negative one is normalised on the next save by moving Min.
           * Placement: the object's own frame is mirrored (MirrorX negates its x), then rotated by
             each Rotate entry in list order ({"Axis": "Z", "Deg": 90}, right-handed), then moved to
             Origin. Omitted, it is the identity. A rotation lives here, never in the coordinates, so
@@ -511,6 +511,7 @@ internal static class DocumentSchema
                 Prism        bottom, top, side<k> (the outline edge from vertex k to k+1),
                              hole<h>.side<k>
                 Cylinder     bottom, top, side
+                Sphere       surface (curved: no boundary, face edit or image goes on it)
                 Polyhedron   each face's own Name, unique within the object
 
           * A Polyhedron must be closed: every edge used by exactly two faces, in opposite
@@ -639,8 +640,8 @@ internal static class DocumentSchema
             Material and Role are the result's (an operation stating its own is a check error). Tools
             keep their own names, unique across the whole document at every depth. So a port or a
             boundary put on lid before anything was subtracted from it is still on lid afterwards.
-            Operands are solids only — Box, Prism, Cylinder, Polyhedron, Boolean, Fillet, Chamfer,
-            Step; a Sheet, Polyline or Wire is refused. Radius, Distance and Distance2 are dimensions,
+            Operands are solids only — Box, Prism, Cylinder, Sphere, Polyhedron, Boolean, Fillet,
+            Chamfer, Step; a Sheet, Polyline or Wire is refused. Radius, Distance and Distance2 are dimensions,
             expressions allowed, and must be positive. A Placement on an operation moves its whole
             result, after each operand's own.
           * The RESULT's faces: the Blank's keep their bare names (zmax), a Tool's are <tool>:<face>

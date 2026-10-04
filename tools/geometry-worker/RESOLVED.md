@@ -72,3 +72,13 @@ The closure staging already worked cross: it reads `NEEDED` with `readelf`, whic
   only on a build that changed the worker.
 - **`ensure-built.cmd` still deletes and copies in place.** On Windows a running worker holds its DLLs open, so the delete fails
   part-way rather than racing a launch. That needs its own fix, and a Windows machine to try it on.
+
+## The sphere node (brief-em3d-102, 2026-10-03)
+
+- **`BuildSphere`**: `kind: "sphere"`, `centre`, `radius`, exactly one face name. `BRepPrimAPI_MakeSphere` gives one
+  spherical face, a seam meridian and two degenerate pole edges. `NameEdges` already leaves seams and degenerate edges out,
+  so a sphere alone lists no edge. A box with a hemisphere subtracted from its top lists only `ball:surface|zmax`, and its
+  volume matches the analytic answer to 1e-6 (`GeometryKernelWorkerTests`).
+- **Built and gated on macOS arm64 only.** The Windows (llvm-mingw) and Linux builds of this source are owed before
+  release, as for brief 62. A worker built before this refuses the node with its own sentence, which circuitRF reports as a
+  worker to rebuild.

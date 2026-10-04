@@ -54,7 +54,7 @@ public static class C3dOperands
     public static bool IsKernel(C3dObject o) => o is C3dOperation or C3dStep;
 
     /// <summary>A solid: what may be an operand (R-em3d64-1e). A sheet, polyline or wire is not.</summary>
-    public static bool IsSolid(C3dObject o) => o is C3dBox or C3dPrism or C3dCylinder or C3dPolyhedron or C3dOperation or C3dStep;
+    public static bool IsSolid(C3dObject o) => o is C3dBox or C3dPrism or C3dCylinder or C3dSphere or C3dPolyhedron or C3dOperation or C3dStep;
 
     /// <summary>How an object is named in a sentence: <c>a Boolean</c>, <c>a Step part</c>.</summary>
     public static string Article(C3dObject o) => o is C3dStep ? "a Step part" : "a " + C3dObject.KindOf(o);

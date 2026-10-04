@@ -137,12 +137,14 @@ attaches each to the OCCT face that IS that face, by geometry, never by OCCT's l
 |---|---|---|---|
 | `box` | `min`, `size` | `xmin xmax ymin ymax zmin zmax` | the face's plane: its normal picks the axis, its side of the middle picks min or max |
 | `cylinder` | `base`, `axis`, `length` (negative runs backwards), `radius` | `bottom top side` | `side` is the cylindrical face; `bottom` is the cap at `base` |
+| `sphere` | `centre`, `radius` | `surface` | its one spherical face (brief-em3d-102); a worker built before it refuses `this worker cannot build a "sphere"`, which circuitRF reports as a worker to rebuild |
 | `prism` | `outline`, `holes` (points in the object's frame), `extrude` (one vector: height along the plane's normal plus the shear) | `bottom top side0… hole0.side0…` | `bottom` is the outline's face, `top` its translate; side *k* is the face `BRepPrimAPI_MakePrism` generated from outline edge *k* → *k*+1 |
 | `polyhedron` | `vertices`, `loops` (`outer`, `holes`: vertex indices) | one per loop | the face made from that loop, followed through sewing |
 
 **Edges** are named by the two faces they separate, sorted and joined by `|` (`xmax|zmax`); where one pair
 bounds more than one edge a third field numbers them in geometric order (`side|zmax|2`). A seam (a face meeting
-itself, as a cylinder's side does) and a degenerate edge are not feature edges and are not listed.
+itself, as a cylinder's side and a sphere's surface do) and a degenerate edge (a sphere's poles) are not feature edges and are
+not listed.
 
 **The geometric order** (brief 64 §2d) numbers split pieces and repeated edges by CENTROID in the root object's
 own frame — before its `transform`, so moving or rotating the object renumbers nothing — compared x, then y, then

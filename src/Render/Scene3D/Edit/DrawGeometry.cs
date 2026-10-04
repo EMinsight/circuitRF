@@ -91,6 +91,39 @@ public static class DrawGeometry
         }
     }
 
+    /// <summary>brief-em3d-102 R-em3d102-5b — a sphere centred on the plane: its equator on the plane (the circle a cylinder's
+    /// radius shows) and the two great circles across it, one in the plane of the normal and u, one in that of the normal and v
+    /// — so the band reads as a ball, not a disc.</summary>
+    public static void Sphere(DrawingPlane plane, C3dPoint2 centre, double radius, int dbuPerMicron, List<DrawSegment> into)
+    {
+        Circle(plane, centre, radius, 0, dbuPerMicron, into);
+        var (au, av) = DrawingPlane.AxesOf(plane.Plane);
+        double m = C3dLowering.Metres(1, dbuPerMicron);
+        Point3 P(double u, double v, double w)
+        {
+            double x = 0, y = 0, z = 0;
+            void Set(C3dAxis a, double val) { if (a == C3dAxis.X) x = val; else if (a == C3dAxis.Y) y = val; else z = val; }
+            Set(au, u); Set(av, v); Set(plane.Normal, w);
+            return new Point3(x * m, y * m, z * m);
+        }
+        foreach (bool alongU in new[] { true, false })
+        {
+            Point3 At(double t)
+            {
+                double across = radius * Math.Cos(t), up = radius * Math.Sin(t);
+                return alongU ? P(centre.U + across, centre.V, plane.OffsetDbu + up) : P(centre.U, centre.V + across, plane.OffsetDbu + up);
+            }
+            var first = At(0);
+            var prev = first;
+            for (int k = 1; k <= CircleSides; k++)
+            {
+                var next = k == CircleSides ? first : At(2 * Math.PI * k / CircleSides);
+                into.Add(new(prev, next));
+                prev = next;
+            }
+        }
+    }
+
     // ── the exact crossing test (R-em3d45-3c) ────────────────────────────────────────────────
 
     /// <summary>

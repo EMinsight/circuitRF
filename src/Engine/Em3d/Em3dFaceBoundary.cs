@@ -117,14 +117,17 @@ public static class Em3dFaceGeometry
     /// <summary>
     /// A primitive's own face names, indexed by its face numbering (<see cref="Em3dTriangle.Face"/>'s): a box's
     /// <see cref="Em3dTessellation.BoxFaces"/>, an extrusion's bottom, top and ring edges, a cylinder's bottom, top and
-    /// side, a polyhedron's faces by name. Empty for a primitive with no named faces (a sweep, a sphere).
+    /// side, a polyhedron's faces by name. Empty for a primitive with no named faces (a sweep, a truncated ball).
     /// </summary>
+    /// <para>brief-em3d-102 R-em3d102-4 — a sphere's one face is <c>surface</c>. Only a drawn sphere's provenance names it (a ball
+    /// has none), so a boundary reaches it only on a drawn sphere, and <see cref="Pieces"/> refuses it as curved.</para>
     public static IReadOnlyList<string> FaceNames(Em3dPrimitive p) => p switch
     {
         Em3dBox => Em3dTessellation.BoxFaces,
         Em3dExtrudedPolygon e => ["bottom", "top", .. Enumerable.Range(0, e.Outline.Count).Select(k => $"side{k}"),
                                   .. e.Holes.SelectMany((h, i) => Enumerable.Range(0, h.Count).Select(k => $"hole{i}.side{k}"))],
         Em3dCylinder => ["bottom", "top", "side"],
+        Em3dSphere => ["surface"],
         Em3dPolyhedron ph => [.. ph.Faces.Select(f => f.Name)],
         Em3dShapeSolid k => [.. k.Faces.Select(f => f.Name)],
         _ => [],
@@ -216,6 +219,9 @@ public static class Em3dFaceGeometry
                 if (face == "bottom") pts.Reverse();
                 return [new Em3dFacePolygon(pts, [], normal)];
             }
+            case Em3dSphere when face == "surface":
+                why = "it is a sphere's curved surface, and a boundary is placed on a flat face";
+                return null;
             case Em3dPolyhedron ph:
             {
                 var list = new List<Em3dFacePolygon>();

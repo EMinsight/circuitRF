@@ -50,8 +50,11 @@ public sealed partial class C3dEditorViewModel
     /// </summary>
     public string? EdgeOpRefusal(C3dEdgeOp op)
     {
-        if (KernelMissing(op.ToString()) is { } k) return k;
         var edges = Viewer.SelectMode == Scene3DSelectMode.Edge ? Viewer.Selection.Where(i => i.IsEdge).ToList() : [];
+        // brief-em3d-102 R-em3d102-3d — a selected sphere: say it has no edges, kernel or not, rather than ask for some.
+        if (edges.Count == 0 && Viewer.SelectedObjects() is [var only] && DocumentIndex(only) is >= 0 and var si && Document.Objects[si] is C3dSphere)
+            return C3dFillets.SphereRefused(op);
+        if (KernelMissing(op.ToString()) is { } k) return k;
         if (edges.Count == 0) return C3dFillets.SelectEdges(op);
         var ids = edges.Select(i => i.Object).Distinct().ToList();
         if (ids.Count > 1) return C3dFillets.OneObject(op);

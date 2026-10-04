@@ -899,6 +899,10 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                 if (head == "Length") return $"Length (along {c.Axis.ToString().ToLowerInvariant()})";
                 if (head == "Radius") return "Radius";
                 break;
+            case C3dSphere:
+                if (head == "Centre") return $"Centre {Xyz(k)}";
+                if (head == "Radius") return "Radius";
+                break;
             case C3dWire:
                 if (head == "DiameterUm") return "Diameter";
                 // 3D editor round 4 — a wire row.
@@ -1084,6 +1088,10 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
                 break;
             case C3dCylinder c:
                 yield return new("Axis", c.Axis.ToString());
+                break;
+            case C3dSphere sp:
+                // brief-em3d-102 R-em3d102-6d — read-only: the Radius is the field to edit.
+                yield return new("Diameter", LayoutUnits.Format(2 * sp.Radius, editor.Document.DisplayUnit, editor.Document.DbuPerMicron) + " " + LengthUnit);
                 break;
             case C3dSheet s:
                 yield return new("Plane", s.Plane.ToString());

@@ -931,6 +931,21 @@ static Named BuildCylinder(const NodeReader& r, const std::vector<std::string>& 
   return n;
 }
 
+// brief-em3d-102 R-em3d102-3b -- one face, named names[0]. Its seam and its two degenerate pole edges are not feature
+// edges (NameEdges leaves a seam and a degenerate edge out), so a sphere alone has no edge, and a sphere cut from a box
+// adds only the circles where the two surfaces meet.
+static Named BuildSphere(const NodeReader& r, const std::vector<std::string>& names)
+{
+  if (names.size() != 1) r.Bad("a sphere names one face: surface");
+  gp_Pnt centre(r.Xyz("centre"));
+  double radius = r.Num("radius");
+  if (radius <= 0) r.Bad("the radius is not positive");
+  TopoDS_Shape s = BRepPrimAPI_MakeSphere(centre, radius).Shape();
+  Named n{s, {}};
+  for (TopExp_Explorer x(s, TopAbs_FACE); x.More(); x.Next()) n.faces.push_back({x.Current(), names[0]});
+  return n;
+}
+
 static Named BuildPrism(const NodeReader& r, const std::vector<std::string>& names)
 {
   std::vector<gp_Pnt> outline = r.Points(r.Member("outline"), "outline");
@@ -1520,6 +1535,7 @@ static Named BuildNode(const Json& node)
     std::vector<std::string> names = r.FaceNames();
     if (kind.text == "box") n = BuildBox(r, names);
     else if (kind.text == "cylinder") n = BuildCylinder(r, names);
+    else if (kind.text == "sphere") n = BuildSphere(r, names);
     else if (kind.text == "prism") n = BuildPrism(r, names);
     else if (kind.text == "polyhedron") n = BuildPolyhedron(r, names);
     else r.Bad("this worker cannot build a \"" + kind.text + "\"");

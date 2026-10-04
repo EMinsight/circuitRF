@@ -72,11 +72,11 @@ public sealed partial class C3dEditorViewModel
             case "TangentChain":
                 return mode == Scene3DSelectMode.Edge && Viewer.Selection.Any(i => i.IsEdge);
             case "PushPull":
-                return EditableFace() is not null;
+                return EditableFace() is { } fp && fp.Obj is not C3dSphere;
             case "FaceMove":
-                return EditableFace() is { } fm && fm.Obj is not C3dCylinder;
+                return EditableFace() is { } fm && fm.Obj is not (C3dCylinder or C3dSphere);
             case "ExtrudeFace" or "AlignFace":
-                return EditableFace() is { } fe && !(fe.Obj is C3dCylinder && fe.Face == "side");
+                return EditableFace() is { } fe && fe.Obj is not C3dSphere && !(fe.Obj is C3dCylinder && fe.Face == "side");
             case "CopySheet":
                 return EditableFace() is { } fc && C3dFaceCommands.Polygon(fc.Obj, fc.Face, out _) is (_, not null);
             case "MeasureFace":

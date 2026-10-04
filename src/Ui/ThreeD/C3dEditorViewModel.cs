@@ -1076,7 +1076,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
 
     private static readonly (Type Type, string Header)[] Groups =
     [
-        (typeof(C3dBox), "Boxes"), (typeof(C3dPrism), "Prisms"), (typeof(C3dCylinder), "Cylinders"),
+        (typeof(C3dBox), "Boxes"), (typeof(C3dPrism), "Prisms"), (typeof(C3dCylinder), "Cylinders"), (typeof(C3dSphere), "Spheres"),
         (typeof(C3dPolyhedron), "Polyhedra"), (typeof(C3dSheet), "Sheets"), (typeof(C3dPolyline), "Polylines"),
         (typeof(C3dWire), "Wires"),
         // brief-em3d-64 — drawn and listed; brief 66 gives an operation its own node with its operands beneath it.

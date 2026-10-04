@@ -102,7 +102,8 @@ public sealed class Scene3DObject
     public IReadOnlyList<string> FaceNames { get; init; } = [];
 
     /// <summary>brief-em3d-47 R-em3d47-5 — a cylinder's two cap centres (world metres), which are all Vertex mode offers on
-    /// it: its tessellation's vertices are not design. Null for every other object.</summary>
+    /// it: its tessellation's vertices are not design. brief-em3d-102 R-em3d102-5d — a drawn sphere's one centre, likewise.
+    /// Null for every other object.</summary>
     public Engine.Em3d.Point3[]? CapCentres { get; init; }
 
     /// <summary>brief-em3d-43 — its triangle vertices: <see cref="VertexCount"/> from <see cref="FirstVertex"/>

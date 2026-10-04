@@ -804,7 +804,7 @@ public partial class WorkspaceViewModel
 
     private bool HasActiveC3dEditor() => ActiveC3dEditor() is not null;
 
-    /// <summary>3D ▸ Draw ▸ Box … Cylinder — the same arming the toolbar and the Shift+A popup do.</summary>
+    /// <summary>3D ▸ Draw ▸ Box … Cylinder, Sphere — the same arming the toolbar and the Shift+A popup do.</summary>
     [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
     private void ThreeDDraw(string kind)
     {

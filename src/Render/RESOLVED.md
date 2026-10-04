@@ -4639,3 +4639,18 @@ missing the driven port's probes or its kept document is drawn as written, with 
   pixels went to the face in 63 % of the views; with the clamped slope none, and silhouette pixels from behind 382 → 1,728 over
   all the views. A field plot needs a solved field, so its share is unmeasured — the same arrangement, given the same bias. A
   via still takes no slope: its barrel's walls are what made the unclamped one draw a trail, and a via is not drawn on a face.
+
+## A drawn sphere's scene kind and face (brief-em3d-102, 2026-10-03)
+
+- **Checked first, as the brief asked: a drawn sphere never reaches `KindOf`'s `Em3dSphere → Wire` fallback.** Every
+  `.c3d` object gets an origin from the elaborator (Conductor / Body / Air by role), so a sphere is drawn as its material's
+  kind and colour, exactly as a box of that material is. The fallback is left alone; it serves a problem with no origins.
+- **Face 0 is given per object, in the builder**: a sphere whose provenance names one face (`surface`) has its tessellation's
+  triangles re-tagged from −1 to 0 (`NamedSurface` / `AsFaceZero`, cached under its own key so the ball's untouched mesh is
+  never shared with it). A ball keeps `FaceUnknown`. With every triangle on one face there is no feature edge, no corner and
+  no face centre (the face is not planar), so it draws no facet lines. The curved-face refusals (Map Image, Drawing Plane from
+  Face, a port, Align) needed no new code: they read a face's summed normal, which on a closed sphere cancels.
+- **Its centre is `CapCentres`' one entry**, so Vertex mode offers it as it offers a cylinder's cap centres, and nothing else.
+- **A section through the centre is the tessellated default** (`MeshCut`) and closes, though the equator's vertices lie
+  exactly on the plane: the crossing test is strict on one side, so each equator vertex counts as below and every edge to
+  the band above is cut once.

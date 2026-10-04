@@ -444,6 +444,13 @@ public sealed class ThreeDViewDocumentTests : IDisposable
 			}
 		},
 		{
+			"$type": "Sphere",
+			"Name": "bump",
+			"Material": "Gold",
+			"Centre": [900, 500, 100],
+			"Radius": 50
+		},
+		{
 			"$type": "Sheet",
 			"Name": "trace",
 			"Material": "Gold",

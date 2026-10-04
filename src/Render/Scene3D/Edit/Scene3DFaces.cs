@@ -93,7 +93,7 @@ public static class Scene3DFaces
     /// R-em3d43-3b — Vertex mode picks THROUGH the face: of face <paramref name="face"/>'s corners, the one
     /// nearest the cursor on screen, when it is within <paramref name="radiusPx"/>; otherwise none.
     /// brief-em3d-47 R-em3d47-5 — on a cylinder the candidates are its two cap centres, whatever the face: its
-    /// tessellation's vertices are not design.
+    /// tessellation's vertices are not design. brief-em3d-102 — on a sphere, its centre.
     /// </summary>
     public static Vector3? NearestVertexOnScreen(Scene3DModel scene, uint id, int face, in Camera3D camera,
                                                  float px, float py, float width, float height, float radiusPx)

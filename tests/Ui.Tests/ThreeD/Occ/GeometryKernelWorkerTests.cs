@@ -60,7 +60,7 @@ public sealed class GeometryKernelWorkerTests : IDisposable
         Assert.Equal(0, w.ExitCode);
     }
 
-    public static TheoryData<string> Primitives => ["box", "cylinder", "prism", "polyhedron"];
+    public static TheoryData<string> Primitives => ["box", "cylinder", "sphere", "prism", "polyhedron"];
 
     private static C3dObject Primitive(string kind) => kind switch
     {
@@ -71,6 +71,7 @@ public sealed class GeometryKernelWorkerTests : IDisposable
             Placement = new C3dPlacement { MirrorX = true, Rotate = [new C3dRotation { Axis = C3dAxis.Y, Deg = 30 }] },
         },
         "cylinder" => new C3dCylinder { Name = "c", Axis = C3dAxis.X, Length = -80_000, Radius = 20_000 },
+        "sphere" => new C3dSphere { Name = "s", Centre = new C3dPoint3(10_000, 0, 0), Radius = 20_000 },
         "prism" => new C3dPrism
         {
             Name = "p", Plane = C3dPlane.YZ, Height = 30_000, Shear = new C3dPoint2(5_000, 0),
@@ -116,6 +117,31 @@ public sealed class GeometryKernelWorkerTests : IDisposable
             Assert.Equal(20, faces.Single(f => f.Name == "side").MinRadius, 9);
             Assert.Equal(["bottom|side", "side|top"], edges.Select(e => e.Name));   // the seam is not a feature edge
         }
+    }
+
+    /// <summary>brief-em3d-102 gate 6: a box with a sphere subtracted from its top face (a dimple) builds, the result has the
+    /// Tool's face as <c>&lt;tool&gt;:surface</c>, its volume is the box less the hemisphere to 1e-6, and the only edges the sphere
+    /// adds are where its surface meets zmax — never its seam or its pole.</summary>
+    [KernelFact]
+    public void ABoxLessASphere_NamesTheToolsSurface_HasTheAnalyticVolume_AndNoSeamEdge()
+    {
+        using var kernel = KernelForTests.New();
+        var dimple = new C3dBoolean
+        {
+            Name = "dimple", Op = C3dBooleanOp.Subtract,
+            Blank = new C3dBox { Size = new C3dPoint3(200_000, 200_000, 100_000) },
+            Tools = [new C3dSphere { Name = "ball", Centre = new C3dPoint3(100_000, 100_000, 100_000), Radius = 40_000 }],
+        };
+        var tree = GeometryKernelTree.From(dimple, 1000);
+        var build = kernel.Build(tree);
+        Assert.True(build.Valid);
+        double expected = 200.0 * 200 * 100 - 2.0 / 3 * Math.PI * 40 * 40 * 40;
+        Assert.True(Math.Abs(build.VolumeUm3 - expected) <= 1e-6 * expected, $"{build.VolumeUm3} vs {expected}");
+        Assert.Contains(kernel.Faces(tree), f => f.Name == "ball:surface" && f.Kind == "sphere");
+
+        var ballEdges = kernel.Edges(tree, 1).Where(e => e.FaceA.StartsWith("ball:", StringComparison.Ordinal) || e.FaceB.StartsWith("ball:", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(ballEdges);
+        Assert.All(ballEdges, e => Assert.Equal(("ball:surface", "zmax"), (e.FaceA, e.FaceB)));
     }
 
     /// <summary>Gate 5: the same tree twice sends one build; after the memory cache is cleared the disk serves it.</summary>

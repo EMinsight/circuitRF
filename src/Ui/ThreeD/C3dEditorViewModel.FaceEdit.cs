@@ -74,7 +74,8 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     }
 
     /// <summary>The one selected vertex: its object's index, the object, the vertex's index among the object's editable
-    /// vertices (−1 for a cylinder's cap centre, which does not move), and where it is in the world (DBU, and exact).</summary>
+    /// vertices (−1 for a cylinder's cap centre or a sphere's centre, which do not move), and where it is in the world (DBU, and
+    /// exact).</summary>
     public (int Index, C3dObject Obj, int Vertex, C3dPoint3 World, bool Exact)? VertexSelection()
     {
         if (Viewer.SelectMode != Scene3DSelectMode.Vertex || Viewer.Selection is not [{ Face: < 0 } item]) return null;
@@ -90,7 +91,8 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         // brief-em3d-50 — a wire's picked vertex is a corner of its section, a foot's end or a ball's rim: its axis point is
         // within a few diameters of it.
         if (obj is C3dWire wire) reach += 3 * C3dWires.DiameterNm(wire) * 1e-9 / per;
-        IReadOnlyList<C3dPoint3> candidates = obj is C3dCylinder c ? C3dFaceEditor.CapCentres(c) : new C3dFaceEditor(obj).Vertices;
+        var fixedPoints = C3dFaceEditor.FixedPoints(obj);
+        IReadOnlyList<C3dPoint3> candidates = fixedPoints ?? new C3dFaceEditor(obj).Vertices;
         int best = -1;
         double bestD = reach * reach;
         for (int k = 0; k < candidates.Count; k++)
@@ -103,7 +105,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         var (x, y, z) = t.Apply(candidates[best]);
         var world = new C3dPoint3(R(x), R(y), R(z));
         bool exact = t.IsIntegral;
-        return (i, obj, obj is C3dCylinder ? -1 : best, world, exact);
+        return (i, obj, fixedPoints is not null ? -1 : best, world, exact);
     }
 
     private static long R(double v) => (long)Math.Round(v, MidpointRounding.AwayFromZero);
@@ -139,6 +141,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     public void StartPushPull()
     {
         if (!HaveFace(out var f) || LockedFace(f.Obj)) return;
+        if (f.Obj is C3dSphere) { StatusMessage = C3dFaceEditor.SphereFaceEdit; return; }
         if (C3dFaceFrame.Of(f.Obj, f.Face, CursorWorldDbu()) is not { } frame) { StatusMessage = $"Face {f.Face} has no normal to move along."; return; }
         BeginFaceEdit(new PushPullTool(this, f.Index, f.Obj, f.Face, frame), f.Scene, f.SceneFace);
     }
@@ -148,6 +151,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     {
         if (!HaveFace(out var f) || LockedFace(f.Obj)) return;
         if (f.Obj is C3dCylinder) { StatusMessage = C3dFaceEditor.CylinderFreeMove; return; }
+        if (f.Obj is C3dSphere) { StatusMessage = C3dFaceEditor.SphereFaceEdit; return; }
         var frame = C3dFaceFrame.Of(f.Obj, f.Face, null);
         var pivot = frame is { } fr ? new C3dPoint3(R(fr.Through.X), R(fr.Through.Y), R(fr.Through.Z)) : default;
         (C3dPoint3, bool)? baseAt = null;
@@ -166,7 +170,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
             StatusMessage = "Select one vertex of this document's own objects (Vertex mode, V).";
             return;
         }
-        if (v.Vertex < 0) { StatusMessage = C3dFaceEditor.CylinderVertexMove; return; }
+        if (v.Vertex < 0) { StatusMessage = C3dFaceEditor.FixedPointMove(v.Obj); return; }
         if (v.Obj is C3dSheet { Locked: true } locked) { StatusMessage = LockedRefusal(locked.Name); return; }
         var tool = new FaceMoveTool(this, v.Index, v.Obj, v.Vertex, v.Obj is C3dSheet { Image: not null } img ? ImageAspectOf(img) : null);
         BeginFaceEdit(tool, null, -1);
@@ -179,6 +183,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     {
         if (!HaveFace(out var f)) return;
         if (f.Obj is C3dCylinder && f.Face == "side") { StatusMessage = "A cylinder's side is curved: extrude a cap, or Convert to Polyhedron first."; return; }
+        if (f.Obj is C3dSphere) { StatusMessage = C3dFaceEditor.SphereFaceEdit; return; }
         if (C3dFaceFrame.Of(f.Obj, f.Face, null) is not { } frame) { StatusMessage = $"Face {f.Face} has no normal to extrude along."; return; }
         SetTool(new ExtrudeFaceTool(this, f.Index, f.Obj, f.Face, frame));
         StatusMessage = "";
@@ -188,6 +193,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     public void StartAlignToFace()
     {
         if (!HaveFace(out var f) || LockedFace(f.Obj)) return;
+        if (f.Obj is C3dSphere) { StatusMessage = C3dFaceEditor.SphereFaceEdit; return; }
         if (C3dFaceCommands.PlaneOf(f.Obj, f.Face, out var why) is not { } plane) { StatusMessage = why ?? "That face is not flat."; return; }
         var target = new C3dTarget(false, f.Index);
         BeginOperation(new AlignToFaceTool(this, target, PivotOf([target]), plane, f.Face));
@@ -530,16 +536,19 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         }
         else if (FaceSelection() is { } f)
         {
-            bool cyl = f.Obj is C3dCylinder;
+            bool cyl = f.Obj is C3dCylinder, sph = f.Obj is C3dSphere;
+            bool curved = sph || (cyl && f.Face == "side");
             string? copyWhy = null;
             if (C3dFaceCommands.Polygon(f.Obj, f.Face, out var why) is not var (_, aligned)) copyWhy = why;
             else if (aligned is null) copyWhy = "A tilted face: sheets lie on XY, YZ or XZ in this version.";
-            yield return new Viewer3DMenuItem("Move Along Normal", StartPushPull, Gesture: Viewer3DMenuItem.Plain(Key.N));
-            yield return new Viewer3DMenuItem("Move", StartFaceMove, Enabled: !cyl, Tip: cyl ? C3dFaceEditor.CylinderFreeMove : null, Gesture: Viewer3DMenuItem.Plain(Key.G));
-            yield return new Viewer3DMenuItem("Extrude to New Solid", StartExtrudeFace, Gesture: Viewer3DMenuItem.Plain(Key.E, KeyModifiers.Shift), Enabled: !(cyl && f.Face == "side"),
-                                              Tip: cyl && f.Face == "side" ? "A cylinder's side is curved." : "Grows a new solid from the face; the source is unchanged.");
-            yield return new Viewer3DMenuItem("Align to Face…", StartAlignToFace, Enabled: !(cyl && f.Face == "side"),
-                                              Tip: "Then click the face to align with: T toggles Touching and Flush.");
+            // brief-em3d-102 R-em3d102-4 — a sphere's surface: every edit disabled, each saying where the Radius is changed.
+            string? sphWhy = sph ? C3dFaceEditor.SphereFaceEdit : null;
+            yield return new Viewer3DMenuItem("Move Along Normal", StartPushPull, Enabled: !sph, Tip: sphWhy, Gesture: Viewer3DMenuItem.Plain(Key.N));
+            yield return new Viewer3DMenuItem("Move", StartFaceMove, Enabled: !cyl && !sph, Tip: cyl ? C3dFaceEditor.CylinderFreeMove : sphWhy, Gesture: Viewer3DMenuItem.Plain(Key.G));
+            yield return new Viewer3DMenuItem("Extrude to New Solid", StartExtrudeFace, Gesture: Viewer3DMenuItem.Plain(Key.E, KeyModifiers.Shift), Enabled: !curved,
+                                              Tip: sphWhy ?? (cyl && f.Face == "side" ? "A cylinder's side is curved." : "Grows a new solid from the face; the source is unchanged."));
+            yield return new Viewer3DMenuItem("Align to Face…", StartAlignToFace, Enabled: !curved,
+                                              Tip: sphWhy ?? "Then click the face to align with: T toggles Touching and Flush.");
             yield return new Viewer3DMenuItem("Copy as Sheet", CopyFaceAsSheet, Enabled: copyWhy is null, Tip: copyWhy);
             yield return new Viewer3DMenuItem("Measure", MeasureFace, Tip: "Area, perimeter and normal in Properties; Shift-click a parallel face for the distance.");
             yield return new Viewer3DMenuItem("Make Port…", Enabled: false, Tip: Ports);
@@ -553,9 +562,10 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         else if (VertexSelection() is { } v)
         {
             bool fixedPoint = v.Vertex < 0;
-            yield return new Viewer3DMenuItem("Move", StartVertexMove, Enabled: !fixedPoint, Tip: fixedPoint ? C3dFaceEditor.CylinderVertexMove : null, Gesture: Viewer3DMenuItem.Plain(Key.G));
+            string? fixedWhy = fixedPoint ? C3dFaceEditor.FixedPointMove(v.Obj) : null;
+            yield return new Viewer3DMenuItem("Move", StartVertexMove, Enabled: !fixedPoint, Tip: fixedWhy, Gesture: Viewer3DMenuItem.Plain(Key.G));
             yield return new Viewer3DMenuItem("Set Coordinates…", () => ShowProperties(rename: false), Enabled: !fixedPoint,
-                                              Tip: fixedPoint ? C3dFaceEditor.CylinderVertexMove : "Typed, in Properties.");
+                                              Tip: fixedWhy ?? "Typed, in Properties.");
             yield return new Viewer3DMenuItem("Measure From", MeasureFromVertex);
         }
         else if (Viewer.SelectMode == Scene3DSelectMode.Vertex && Viewer.Selection.Count == 1)

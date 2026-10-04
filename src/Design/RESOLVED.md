@@ -16513,3 +16513,22 @@ and `ParallelLcResonanceTests.AnInductorWithOnlyADielectricClass_IsWarnedForWhat
   `ShowResultText`, written only when off. The plot title now says which |Z| it is, and names the dotted curve too whenever it is drawn.
 - **"A short at DC" read as a claim of 0 Ω.** The DC finding now leads with the part's DC impedance, its ESR. It then says
   what makes that a short: the supply voltage across it, which an AC-only simulator generator never applies.
+
+### A sphere primitive: its one named face, per object (brief-em3d-102, 2026-10-03)
+
+- **`C3dSphere` lowers to the `Em3dSphere` the engine already had** (Centre, Radius; a placement moves only the centre), so
+  every solver writer, STEP, the tessellator and the size estimates needed nothing. Nothing in production built a FULL
+  `Em3dSphere` before this: a ball bond is an `Em3dTruncatedSphere`. The code that treated `Em3dSphere` as "a ball, no named
+  faces" was written for a case that never arose.
+- **The `surface` face is per OBJECT, carried by provenance, not per primitive.** `Em3dFaceGeometry.FaceNames(Em3dSphere)`
+  is `["surface"]` for every sphere, but a boundary's or thermal face's lookup intersects it with the object's provenance face
+  list, which only a drawn sphere has, so only a drawn sphere's `surface` can be named. `Pieces` then refuses it as curved,
+  by name, rather than as a face that does not exist. Returning `[]` there would have produced "names a face it does not have
+  (it has surface)", which contradicts itself. The scene's half of the same rule is in `src/Render/RESOLVED.md`.
+- **Every face edit on it is refused, with where the Radius is changed** (D3), and its centre is a fixed point like a
+  cylinder's cap centres (`C3dFaceEditor.FixedPoints`). Convert to Polyhedron is not offered (D4), and the command refuses if
+  reached. Fillet/Chamfer say "a sphere has no edges" BEFORE the kernel-availability check, because the answer does not
+  depend on the kernel.
+- **Flatten keeps a sphere a sphere.** A layout's ball bond still flattens to facets (it is truncated).
+- **An old worker's `this worker cannot build a "sphere"`** becomes "This geometry worker predates spheres; rebuild it" in
+  `GeometryKernel.Refused` (`OlderWorker`). It lives there rather than in the editor, so `check` and the CLI say it too.

@@ -4,8 +4,10 @@
 // triangles. An edge is a feature where two different faces meet (a box has twelve, not the eighteen its
 // triangles have) or where a face has no neighbour (a sheet's rim); a corner is an end of a feature edge; a
 // face's centre is the area-weighted centroid of its triangles, and only a PLANAR face has one — a
-// cylinder's side would put it inside the solid, off every surface a user can see. A sweep or a sphere
-// names no faces (Scene3DBuilder.FaceUnknown) and so has no features at all.
+// cylinder's side would put it inside the solid, off every surface a user can see. A sweep or a ball
+// names no faces (Scene3DBuilder.FaceUnknown) and so has no features at all; a drawn sphere's one face
+// (surface, brief-em3d-102) is curved and meets no other, so it has none either — its centre snaps as a
+// cylinder's cap centres do (Scene3DObject.CapCentres).
 //
 // WHY BY FACE. The pick patch (Scene3DIdPatch) names the (object, face) pairs near the cursor, so the
 // query needs "this face's corners, edges and centre" and nothing else: each is a slice of a flat array,

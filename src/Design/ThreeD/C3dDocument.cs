@@ -113,6 +113,7 @@ public sealed partial class C3dPlacement : IC3dBindable
 [JsonDerivedType(typeof(C3dBox),        "Box")]
 [JsonDerivedType(typeof(C3dPrism),      "Prism")]
 [JsonDerivedType(typeof(C3dCylinder),   "Cylinder")]
+[JsonDerivedType(typeof(C3dSphere),     "Sphere")]
 [JsonDerivedType(typeof(C3dSheet),      "Sheet")]
 [JsonDerivedType(typeof(C3dPolyline),   "Polyline")]
 [JsonDerivedType(typeof(C3dPolyhedron), "Polyhedron")]
@@ -253,6 +254,18 @@ public sealed class C3dCylinder : C3dObject
     public long      Radius { get; set; }
 
     public static readonly string[] FaceNameList = ["bottom", "top", "side"];
+
+    public override IReadOnlyList<string> FaceNames() => FaceNameList;
+}
+
+/// <summary>brief-em3d-102 R-em3d102-1 — a sphere: its centre and radius. A placement's rotation only moves the centre. Its one
+/// face is <c>surface</c>, named so Face mode selects it and so what a curved face refuses is refused by name.</summary>
+public sealed class C3dSphere : C3dObject
+{
+    public C3dPoint3 Centre { get; set; }
+    public long      Radius { get; set; }
+
+    public static readonly string[] FaceNameList = ["surface"];
 
     public override IReadOnlyList<string> FaceNames() => FaceNameList;
 }

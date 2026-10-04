@@ -20,6 +20,7 @@
 //   {"tree":1,"root":{"kind":"box","name":"lid","faces":[…],"transform":[12 numbers, 3 × 4 rows],
 //                     "min":[x,y,z],"size":[x,y,z]}}
 //   cylinder:   "base":[x,y,z],"axis":[x,y,z],"length":L,"radius":r          (bottom is the cap at base)
+//   sphere:     "centre":[x,y,z],"radius":r                                    (one face, surface; brief-em3d-102)
 //   prism:      "outline":[[x,y,z]…],"holes":[[[x,y,z]…]…],"extrude":[x,y,z]  (points in the object's frame)
 //   polyhedron: "vertices":[[x,y,z]…],"loops":[{"outer":[i…],"holes":[[i…]…]}…]
 //
@@ -65,7 +66,7 @@ public sealed class GeometryKernelTree
     public IReadOnlyList<string> FaceNames { get; }
 
     /// <summary>The kinds a tree can hold. A sheet, a polyline and a wire are not solids the kernel builds.</summary>
-    public static bool CanHold(C3dObject obj) => obj is C3dBox or C3dCylinder or C3dPrism or C3dPolyhedron
+    public static bool CanHold(C3dObject obj) => obj is C3dBox or C3dCylinder or C3dSphere or C3dPrism or C3dPolyhedron
                                                  or C3dBoolean or C3dFillet or C3dChamfer or C3dStep;
 
     /// <summary>
@@ -114,7 +115,7 @@ public sealed class GeometryKernelTree
         IReadOnlyList<string> names = obj is C3dPolyhedron ph0 ? [.. (Kernel.C3dRecognition.ExactlyPlanarFaces(ph0) ?? ph0.Faces).Select(f => f.Name)]
                                                                : obj.FaceNames();
         w.Begin()
-         .Key("kind").Str(obj switch { C3dBox => "box", C3dCylinder => "cylinder", C3dPrism => "prism", _ => "polyhedron" })
+         .Key("kind").Str(obj switch { C3dBox => "box", C3dCylinder => "cylinder", C3dSphere => "sphere", C3dPrism => "prism", _ => "polyhedron" })
          .Key("name").Str(obj.Name)
          .Key("faces").BeginArr();
         foreach (var n in names) w.Str(n);
@@ -133,6 +134,11 @@ public sealed class GeometryKernelTree
                 w.Key("axis").Point(c.Axis == C3dAxis.X ? 1 : 0, c.Axis == C3dAxis.Y ? 1 : 0, c.Axis == C3dAxis.Z ? 1 : 0);
                 w.Key("length").Num(U(c.Length));
                 w.Key("radius").Num(U(c.Radius));
+                break;
+            case C3dSphere sp:
+                // brief-em3d-102 R-em3d102-3a — a worker built before spheres refuses the kind with its own sentence.
+                w.Key("centre").Point(U(sp.Centre.X), U(sp.Centre.Y), U(sp.Centre.Z));
+                w.Key("radius").Num(U(sp.Radius));
                 break;
             case C3dPrism p:
             {

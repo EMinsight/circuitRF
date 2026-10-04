@@ -43,6 +43,8 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         (C3dToolKind.Box, 'B', "CubeUnfolded"),
         // A Material kind, or a Viewer3DPathGlyph constant's name: the icon set has no cylinder worth using.
         (C3dToolKind.Cylinder, 'Y', nameof(Viewer3DPathGlyph.Cylinder)),
+        // brief-em3d-102 — Sph_ere (owner decision D1: S, P and H are taken); the icon set has no sphere either (D5).
+        (C3dToolKind.Sphere, 'E', nameof(Viewer3DPathGlyph.Sphere)),
         (C3dToolKind.Sheet, 'S', "RectangleOutline"),
         (C3dToolKind.Polygon, 'G', "VectorPolygon"),
         (C3dToolKind.Polyline, 'L', "VectorPolyline"),
@@ -277,6 +279,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     public bool IsPolygonArmed  { get => ArmedTool == C3dToolKind.Polygon;  set => ArmToggle(C3dToolKind.Polygon, value); }
     public bool IsPolylineArmed { get => ArmedTool == C3dToolKind.Polyline; set => ArmToggle(C3dToolKind.Polyline, value); }
     public bool IsCylinderArmed { get => ArmedTool == C3dToolKind.Cylinder; set => ArmToggle(C3dToolKind.Cylinder, value); }
+    public bool IsSphereArmed   { get => ArmedTool == C3dToolKind.Sphere;   set => ArmToggle(C3dToolKind.Sphere, value); }
     public bool IsPortArmed { get => ArmedTool == C3dToolKind.Port; set => ArmToggle(C3dToolKind.Port, value); }
     // brief-em3d-75 — the thermal tools' toolbar toggles.
     public bool IsHeatSourceArmed { get => ArmedTool is C3dToolKind.HeatSource or C3dToolKind.HeatSourcePolygon; set => ArmToggle(C3dToolKind.HeatSource, value); }
@@ -301,6 +304,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
             C3dToolKind.Sheet => new SheetTool(this),
             C3dToolKind.Polygon => new PolygonTool(this),
             C3dToolKind.Polyline => new PolylineTool(this),
+            C3dToolKind.Sphere => new SphereTool(this),
             C3dToolKind.Port => new PortTool(this, () => NewPortTemplate()),
             C3dToolKind.Wire => WireToolArmed(),
             C3dToolKind.HeatSource => new HeatSourceTool(this),
@@ -338,7 +342,7 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         // brief-em3d-46 — one gesture at a time: arming a tool ends a measurement.
         if (tool is not null) Viewer.EndMeasure();
         foreach (string p in new[] { nameof(ArmedTool), nameof(Tool), nameof(IsBoxArmed), nameof(IsSheetArmed), nameof(IsPolygonArmed),
-                                     nameof(IsPolylineArmed), nameof(IsCylinderArmed), nameof(IsPortArmed), nameof(IsWireArmed), nameof(ToolPrompt),
+                                     nameof(IsPolylineArmed), nameof(IsCylinderArmed), nameof(IsSphereArmed), nameof(IsPortArmed), nameof(IsWireArmed), nameof(ToolPrompt),
                                      nameof(IsHeatSourceArmed), nameof(IsProbeArmed), nameof(IsMeshRegionArmed) })
             OnPropertyChanged(p);
         Viewer.RequestFrame();

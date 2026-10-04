@@ -110,6 +110,8 @@ public static class C3dBindings
         new(typeof(C3dCylinder), nameof(C3dCylinder.Base), 3, C3dFieldKind.Length),
         new(typeof(C3dCylinder), nameof(C3dCylinder.Length), 1, C3dFieldKind.Length),
         new(typeof(C3dCylinder), nameof(C3dCylinder.Radius), 1, C3dFieldKind.Length),
+        new(typeof(C3dSphere), nameof(C3dSphere.Centre), 3, C3dFieldKind.Length),
+        new(typeof(C3dSphere), nameof(C3dSphere.Radius), 1, C3dFieldKind.Length),
         new(typeof(C3dWire), nameof(C3dWire.DiameterUm), 1, C3dFieldKind.Microns),
         new(typeof(C3dRect), nameof(C3dRect.Min), 2, C3dFieldKind.Length),
         new(typeof(C3dRect), nameof(C3dRect.Size), 2, C3dFieldKind.Length),

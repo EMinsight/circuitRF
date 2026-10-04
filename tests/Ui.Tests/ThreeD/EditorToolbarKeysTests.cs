@@ -28,20 +28,33 @@ public sealed class EditorToolbarKeysTests
         Assert.Contains("Pane.ForwardKey(e)", bubble, StringComparison.Ordinal);
     }
 
-    /// <summary>Box, then Cylinder, then Sheet — in the toolbar and the Shift+A popup — and the Sheet is the layout's rectangle.</summary>
+    /// <summary>Box, Cylinder, Sphere, then Sheet — in the toolbar and the Shift+A popup — and the Sheet is the layout's
+    /// rectangle. brief-em3d-102 gate 10: the sphere is third, drawn, on E, and listed after Cylinder in both 3D ▸ Draw menus.</summary>
     [Fact]
     public void Toolbar_CylinderFollowsBox_AndSheetIsARectangle()
     {
         string xaml = Read("C3dEditorView.axaml");
         int box = xaml.IndexOf("IsBoxArmed", StringComparison.Ordinal);
         int cyl = xaml.IndexOf("IsCylinderArmed", StringComparison.Ordinal);
+        int sph = xaml.IndexOf("IsSphereArmed", StringComparison.Ordinal);
         int sheet = xaml.IndexOf("IsSheetArmed", StringComparison.Ordinal);
-        Assert.True(box > 0 && box < cyl && cyl < sheet);
+        Assert.True(box > 0 && box < cyl && cyl < sph && sph < sheet);
+        Assert.Contains("Viewer3DPathGlyph.Sphere", xaml[sph..xaml.IndexOf("</ToggleButton>", sph, StringComparison.Ordinal)], StringComparison.Ordinal);
         string sheetButton = xaml[sheet..xaml.IndexOf("</ToggleButton>", sheet, StringComparison.Ordinal)];
         Assert.Contains("Kind=\"RectangleOutline\"", sheetButton, StringComparison.Ordinal);
 
         var kinds = C3dEditorViewModel.DrawTools.Select(t => t.Kind).ToList();
-        Assert.Equal([C3dToolKind.Box, C3dToolKind.Cylinder, C3dToolKind.Sheet], kinds.Take(3));
+        Assert.Equal([C3dToolKind.Box, C3dToolKind.Cylinder, C3dToolKind.Sphere, C3dToolKind.Sheet], kinds.Take(4));
+        Assert.Equal(('E', nameof(CircuitRF.Ui.Viewer3D.Viewer3DPathGlyph.Sphere)),
+                     C3dEditorViewModel.DrawTools.Where(t => t.Kind == C3dToolKind.Sphere).Select(t => (t.Letter, t.Icon)).Single());
+        string window = File.ReadAllText(ReadPath(Path.Combine("..", "WorkspaceWindow.axaml")));
+        // The native menu and the in-window one: the item after Cylinder's is the sphere's.
+        foreach (var (cylinder, sphere) in new[] { ("Header=\"Cylinder\"", "Header=\"Sphere\""), ("Header=\"C_ylinder\"", "Header=\"Sph_ere\"") })
+        {
+            int at = window.IndexOf(cylinder, StringComparison.Ordinal);
+            Assert.True(at > 0, cylinder);
+            Assert.Equal(window.IndexOf("Header=", at + cylinder.Length, StringComparison.Ordinal), window.IndexOf(sphere, at, StringComparison.Ordinal));
+        }
         Assert.Equal("RectangleOutline", C3dEditorViewModel.DrawTools.Single(t => t.Kind == C3dToolKind.Sheet).Icon);
     }
 

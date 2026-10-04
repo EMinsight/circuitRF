@@ -4,7 +4,7 @@ slug: reference/drawing-in-3d.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > The 3D editor
 lede: Drawing a cell in three dimensions — boxes, cylinders, faces, booleans, fillets, STEP parts, placed cells, bond wires and ports — in circuitRF's own 3D editor, which needs no solver to draw anything. Taught through two examples, an MMIC in a lidded package and a coaxial connector launching onto a board.
-keywords: 3D editor, boolean, subtract, unite, intersect, keep tools, fillet, chamfer, edge mode, STEP, STEP import, STEP export, connector, connector launch, coaxial, OpenCASCADE, 3D view, c3d, drawing in 3D, solid model, CAD, box, cylinder, sheet, polygon, extrude, push pull, move along normal, face, vertex, snap, drawing plane, grid, typed dimensions, expressions, parameters, variables, array, align, gizmo, hierarchy, place cell, die attach, swap view, push in, flatten, group into cell, bond wire, wire, ball bond, wedge bond, loop height, port, lumped port, wave port, air box, boundary, package, lid, cavity, cavity resonance, eigenmode, MMIC, Palace, openEMS, no solver needed
+keywords: 3D editor, boolean, subtract, unite, intersect, keep tools, fillet, chamfer, edge mode, STEP, STEP import, STEP export, connector, connector launch, coaxial, OpenCASCADE, 3D view, c3d, drawing in 3D, solid model, CAD, box, cylinder, sphere, sheet, polygon, extrude, push pull, move along normal, face, vertex, snap, drawing plane, grid, typed dimensions, expressions, parameters, variables, array, align, gizmo, hierarchy, place cell, die attach, swap view, push in, flatten, group into cell, bond wire, wire, ball bond, wedge bond, loop height, port, lumped port, wave port, air box, boundary, package, lid, cavity, cavity resonance, eigenmode, MMIC, Palace, openEMS, no solver needed
 ---
 
 The **3D editor** is where a cell's **3D view** is drawn: solids, sheets, bond wires and ports in three
@@ -54,7 +54,7 @@ panel lists it under the cell like the others. **File ▸ New 3D Design…** mak
 holding the cell's own layout, ready to extend — the quickest way to take a layout you have already set up
 for EM into 3D.
 
-- **What it holds.** Boxes, prisms, cylinders, sheets, polyhedra and bond wires, each made of a named
+- **What it holds.** Boxes, prisms, cylinders, spheres, sheets, polyhedra and bond wires, each made of a named
   material; instances of other cells' layouts or 3D views; ports; boundaries on faces; VARs; and any number
   of EM setups. Everything a 3D solve needs is in the one file.
 - **Units.** Every coordinate is stored as a whole number of **database units** (DBU; 1,000 per µm by
@@ -214,6 +214,7 @@ offset there. A faint grid lies on the plane; moving the camera never moves it.
 | **G** | Polygon | a click per vertex; click the first, press Enter or double-click to close |
 | **L** | Polyline | construction lines, never solved; Enter or a double-click ends one |
 | **Y** | Cylinder | the centre, the radius, then the height |
+| **E** | Sphere | the centre, then the radius; it is centred on the drawing plane |
 | **P** | Port | two corners on the plane (see [Simulating](#simulate)) |
 | **W** | Wire | two pads, then the loop height (see [Bond wires](#wires)) |
 | **H** | Heat source | two corners on the plane, then its name and power (see [Temperature](#thermal)) |
@@ -338,7 +339,7 @@ To try a run without the lid, a second row of bond wires or a fixture, untick it
 you can still select, move and edit it, and it is left out of **every** simulation run — EM and thermal alike — until
 you tick it again. Hiding an object is not the same thing: a hidden object is still solved.
 
-- **Properties** has a **Model** check box on every object that can be solved: a box, prism, cylinder, sheet, polygon,
+- **Properties** has a **Model** check box on every object that can be solved: a box, prism, cylinder, sphere, sheet, polygon,
   wire, a boolean, fillet or chamfer (for its result — the objects inside it have none of their own), a placed cell
   (every part of it), a **port** and a **heat source**. A polyline is construction geometry and is never solved
   anyway. An effective block's switch is its own **Enabled**, which the Properties row calls **Model** too.
@@ -463,7 +464,7 @@ fixture drawing — or to lay the design over and compare. It goes in two ways: 
 
 - **Mapping one**: in Face mode, right-click a **flat** face ▸ **Map Image…**, or hold **Shift** while dropping an image
   file onto a face. It is fitted — as large as fits in the face, centred, its aspect kept. A face carries one image; mapping
-  onto a face that has one **replaces** it, as one undo step. A curved face (a cylinder's side) and a placed cell's face
+  onto a face that has one **replaces** it, as one undo step. A curved face (a cylinder's side or a sphere's surface) and a placed cell's face
   refuse it, saying why — open the cell to map onto its own faces.
 - **Which way up**: seen from outside the solid, up is +z (on a top or bottom face, +y), so the picture is never mirrored.
 - **It belongs to its object**: rename, duplicate, array, group, copy and paste carry it, and deleting the object takes it
@@ -622,7 +623,7 @@ or the operation in Properties."*
 
 Select edges of one solid in **Edge** mode, then right-click ▸ **Fillet…** or **Chamfer…** (also under
 **3D ▸ Modify ▸ Edge**). A box, prism, cylinder, polyhedron, boolean result or STEP part can be rounded, and so can a
-solid that is already; a sheet has no volume to round, a bond wire is made from its points, and a placed cell's
+solid that is already; a sphere has no edges, a sheet has no volume to round, a bond wire is made from its points, and a placed cell's
 solids belong to its own cell — each disabled item says which. Without the kernel both are disabled with the
 reason, and Edge mode still works.
 
@@ -1162,7 +1163,8 @@ order a pane presents them, with the rules each one follows.
   two clicks), Poly**g**on (a closed sheet, a click per vertex; click the first vertex, press Enter or
   double-click to close — an outline that crosses itself is refused and the crossing shown), Poly**l**ine
   (construction geometry; Enter or a double-click ends it, a click on its first vertex closes it) and
-  C**y**linder (centre, radius, height). A box or cylinder rises along the plane's normal; near a
+  C**y**linder (centre, radius, height) and Sph**e**re (centre, radius; centred on the plane, so the click is its
+  centre). A box or cylinder rises along the plane's normal; near a
   neighbour's feature its height snaps to that feature, so a box rises to exactly the top of a pad. Every
   click snaps. While a shape is in progress, type a digit to enter a dimension instead of clicking — the
   box that opens at the cursor shows the width, depth, height or radius the next click would set; **Tab**
@@ -1216,7 +1218,9 @@ order a pane presents them, with the rules each one follows.
   moved sideways is a slanted prism — and otherwise becomes a **polyhedron** with the same face names; the
   status line says so, and Undo takes it back. A cylinder's ends move only along its axis and its side only
   in radius, and in Vertex mode it offers just its two cap centres, which measure but do not move: *Convert to
-  Polyhedron* (Object mode; for a cylinder, choose how many flat sides) makes every vertex editable. While a
+  Polyhedron* (Object mode; for a cylinder, choose how many flat sides) makes every vertex editable. A sphere's
+  one face, `surface`, is curved, so no face edit takes it — change its **Radius** in Properties — and its centre
+  measures but does not move; it is not converted to a polyhedron, and a Boolean is how to cut one. While a
   face or vertex is dragged only that object is redrawn, and the document changes once, as one undo step,
   when you click.
 - **Dimensions as expressions**. Wherever a dimension is typed — the box at the cursor while

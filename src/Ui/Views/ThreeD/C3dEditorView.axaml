@@ -143,6 +143,10 @@
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsCylinderArmed}" ToolTip.Tip="Cylinder: centre, radius, height  (Shift+A, Y)">
                     <v3:Viewer3DPathGlyph Data="{x:Static v3:Viewer3DPathGlyph.Cylinder}"/>
                 </ToggleButton>
+                <!-- brief-em3d-102 — the third solid, right after Cylinder; drawn, as the icon set has no sphere (D5). -->
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsSphereArmed}" ToolTip.Tip="Sphere: centre, radius  (Shift+A, E)">
+                    <v3:Viewer3DPathGlyph Data="{x:Static v3:Viewer3DPathGlyph.Sphere}"/>
+                </ToggleButton>
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsSheetArmed}" ToolTip.Tip="Sheet: a rectangle, two clicks  (Shift+A, S)">
                     <!-- The layout editor's Rectangle glyph: VectorRectangle draws vertex handles on the corners. -->
                     <mi:MaterialIcon Kind="RectangleOutline" Width="16" Height="16"/>

@@ -451,6 +451,10 @@ public static class C3dHierarchy
                 long len = DrawingGet(z, axis) - DrawingGet(a, axis);
                 made = new C3dCylinder { Base = len >= 0 ? a : z, Axis = axis, Length = Math.Abs(len), Radius = D(c.Radius) };
                 break;
+            case Em3dSphere sp:
+                // brief-em3d-102 R-em3d102-1e — a flattened sphere (a drawn one, or a layout's ball bond) stays a sphere, not ~500 facets.
+                made = new C3dSphere { Centre = P(sp.Center), Radius = D(sp.Radius) };
+                break;
             case Em3dPolyhedron ph:
                 made = new C3dPolyhedron
                 {
@@ -463,7 +467,7 @@ public static class C3dHierarchy
                 };
                 break;
             default:
-                // A wire, a ball, a slanted cylinder: the viewer's own tessellation, as triangles.
+                // A wire, a flattened ball, a slanted cylinder: the viewer's own tessellation, as triangles.
                 var mesh = Em3dTessellation.Of(s);
                 made = new C3dPolyhedron
                 {
@@ -559,6 +563,7 @@ public static class C3dHierarchy
                 p.Holes = [.. p.Holes.Select(h => h.Select(q => Mul(q, k)).ToList())];
                 break;
             case C3dCylinder c: c.Base = Mul(c.Base, k); c.Length *= k; c.Radius *= k; break;
+            case C3dSphere sp: sp.Centre = Mul(sp.Centre, k); sp.Radius *= k; break;
             case C3dSheet s:
                 s.Offset *= k;
                 if (s.Rect is { } r) s.Rect = new C3dRect { Min = Mul(r.Min, k), Size = Mul(r.Size, k) };

@@ -1713,6 +1713,7 @@ public static class Em3dRunService
             {
                 Em3dSweep { Section: Em3dSection.Circle } w => w.Diameter / 2,
                 Em3dCylinder c => c.Radius,
+                Em3dSphere s => s.Radius,
                 _ => null,
             };
             if (radius is not { } r || !sigma.TryGetValue(solid.Material, out var m) || !(m.SigmaSm > 0)) continue;

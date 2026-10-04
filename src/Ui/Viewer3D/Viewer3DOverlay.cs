@@ -756,7 +756,7 @@ public sealed class Viewer3DViewGlyph : Control
 /// <summary>
 /// A toolbar glyph drawn from a path in Material's 24-unit box, filled with the inherited foreground, so it sits beside
 /// the Material icons at their size, padding and weight and follows a button's colour as they do. For a shape the icon
-/// set draws badly: its nearest cylinder is <c>Database</c>, a stack of discs (owner, 2026-10-03).
+/// set draws badly: its nearest cylinder is <c>Database</c>, a stack of discs (owner, 2026-10-03), and it has no sphere.
 /// </summary>
 public sealed class Viewer3DPathGlyph : Control
 {
@@ -767,6 +767,23 @@ public sealed class Viewer3DPathGlyph : Control
         "M4,5.4 A8,3.6 0 0 1 20,5.4 L20,18.6 A8,3.6 0 0 1 4,18.6 Z " +
         "M6,5.4 A6,1.6 0 1 0 18,5.4 A6,1.6 0 1 0 6,5.4 Z " +
         "M6,7.78 A8,3.6 0 0 0 18,7.78 L18,18.6 A6,1.6 0 0 1 6,18.6 Z";
+
+    /// <summary>brief-em3d-102 (owner decision D5) — an outlined sphere: the outline circle and the front half of its equator, at
+    /// the icon set's 2-unit stroke, as exact arcs; even-odd, and tilted as the cylinder's caps are (ry 3.6 and 1.6). The band
+    /// lies between two half-ellipses 2 units apart at its middle, wholly inside the ring's hole, and meets the ring's inner edge
+    /// at its two ends — so nothing overlaps and even-odd cuts no notch. Not <c>CircleOutline</c>: that is the 2D circle, and would read as a disc.</summary>
+    public const string Sphere =
+        "M3,12 A9,9 0 1 1 21,12 A9,9 0 1 1 3,12 Z " +
+        "M5,12 A7,7 0 1 0 19,12 A7,7 0 1 0 5,12 Z " +
+        "M19,12 A7,3.6 0 0 1 5,12 A7,1.6 0 0 0 19,12 Z";
+
+    /// <summary>The constant a tool table names (<c>nameof(Cylinder)</c> …), or null for a Material icon's kind.</summary>
+    public static string? Named(string name) => name switch
+    {
+        nameof(Cylinder) => Cylinder,
+        nameof(Sphere) => Sphere,
+        _ => null,
+    };
 
     public static readonly StyledProperty<string?> DataProperty =
         AvaloniaProperty.Register<Viewer3DPathGlyph, string?>(nameof(Data));

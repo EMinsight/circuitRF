@@ -134,6 +134,7 @@ public static class C3dValidation
             case C3dBox b:        Box(b, found);        break;
             case C3dPrism p:      Prism(p, found);      break;
             case C3dCylinder c:   Cylinder(c, found);   break;
+            case C3dSphere sp:    Sphere(sp, found);    break;
             case C3dSheet s:      Sheet(s, found);      break;
             case C3dPolyline l:   Polyline(l, found);   break;
             case C3dPolyhedron h: Polyhedron(h, found); break;
@@ -320,6 +321,12 @@ public static class C3dValidation
             found.Add(C3dDiagnostics.ZeroVolume(c.Name, "cylinder", "its radius is not positive"));
         else if (c.Length == 0)
             found.Add(C3dDiagnostics.ZeroVolume(c.Name, "cylinder", "its length is zero"));
+    }
+
+    private static void Sphere(C3dSphere s, List<Diagnostic> found)
+    {
+        if (s.Radius <= 0)
+            found.Add(C3dDiagnostics.ZeroVolume(s.Name, "sphere", "its radius is not positive"));
     }
 
     private static void Sheet(C3dSheet s, List<Diagnostic> found)
