@@ -86,7 +86,8 @@ struct U {
     lr: vec4f,
     lu: vec4f,
     lf: vec4f,
-    // x 1 with occlusion, y its radius (world), z the blur's reach (world)
+    // x 1 with occlusion, y its radius (world), z the blur's reach (world), w the picture's pixels per window pixel (1 live: a supersampled
+    // export's cap on the radius in pixels grows with it, so the darkening has the same world reach as the view's)
     ao: vec4f,
     // the view's ray per clip position: origin = aro + x arox + y aroy, direction = ard + x ardx + y ardy (ard the view's forward, so the
     // parameter along a ray is its depth): what the occlusion pass rebuilds a pixel's point from, and the ground's ray
@@ -887,7 +888,7 @@ fn ao_normal(xy: vec2i, size: vec2i, p: vec3f) -> vec3f {
     let n = ao_normal(xy, size, p);
     let t = textureLoad(aodepth, xy, 0).r;
     let wpp = length(u.arox.xyz + u.ardx.xyz * t) * 2.0 / f32(size.x);
-    let rpx = clamp(u.ao.y / max(wpp, 1e-30), 1.0, AO_MAX_PIXELS);
+    let rpx = clamp(u.ao.y / max(wpp, 1e-30), 1.0, AO_MAX_PIXELS * max(u.ao.w, 1.0));
     let cell = u32(xy.x & 3) * 4u + u32(xy.y & 3);
     let turn = (f32(cell) + 0.5) / 16.0;
     let step0 = (f32((cell * 5u) & 15u) + 0.5) / 16.0;

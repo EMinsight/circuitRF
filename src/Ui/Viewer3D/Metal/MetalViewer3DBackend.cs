@@ -298,6 +298,19 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         // vertex descriptor was not (a class factory's autoreleased object).
         _noShadowMap = NewTexture(1, 1, FmtDepth32F, 4 | 1, 2);
         _noOcclusion = NewTexture(1, 1, FmtR8Unorm, 4 | 1, 2);
+        // the stand-ins hold what "none" means — a map with nothing in it (depth 1: lit) and no occlusion (1) — rather than whatever a
+        // private texture starts with, in case one is ever read with its uniform switched on
+        {
+            nint pool = PoolPush();
+            nint cb = Send(_queue, S.commandBuffer);
+            nint rp = Send(Class_RPD, S.renderPassDescriptor);
+            DepthOnly(rp, _noShadowMap);
+            Send(Send(cb, S.renderCommandEncoderWithDescriptor, rp), S.endEncoding);
+            Send(Send(cb, S.renderCommandEncoderWithDescriptor, Pass(_noOcclusion, 0, 1, 1, 1, 0)), S.endEncoding);
+            Send(cb, S.commit);
+            Send(cb, S.waitUntilCompleted);
+            PoolPop(pool);
+        }
         foreach (nint f in new[] { vs, fsc, fsl, fsp, fse, fst, vsf, fsf, vsi, fsi, vsp, fsp2, fsb, fspg, vss, fsd, fspre, fsgp, fsao, fsaob, fsgr })
             Send(f, S.release);
         Send(lib, S.release);

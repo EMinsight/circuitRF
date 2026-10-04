@@ -494,10 +494,14 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         _pickFb = Framebuffer(api, _rpPick, [_pickId.View, _pickPos.View, _pickDepth.View], 1, 1);
 
         // brief-em3d-107 — set 3, pointed at 1 × 1 stand-ins until a map or the occlusion's targets exist
-        _noShadowMap = NewImage(api, 1, 1, DepthFormat, VkImageUsageFlags.DepthStencilAttachment | VkImageUsageFlags.Sampled, VkImageAspectFlags.Depth, export: false);
-        _noOcclusion = NewImage(api, 1, 1, VkFormat.R8Unorm, VkImageUsageFlags.ColorAttachment | VkImageUsageFlags.Sampled, VkImageAspectFlags.Color, export: false);
-        ToShaderRead(api, _noShadowMap, VkImageAspectFlags.Depth);
-        ToShaderRead(api, _noOcclusion, VkImageAspectFlags.Color);
+        // the stand-ins hold what "none" means — a map with nothing in it (depth 1: lit) and no occlusion (1) — rather than undefined
+        // contents, in case one is ever read with its uniform switched on
+        _noShadowMap = NewImage(api, 1, 1, DepthFormat, VkImageUsageFlags.DepthStencilAttachment | VkImageUsageFlags.Sampled | VkImageUsageFlags.TransferDst,
+                                VkImageAspectFlags.Depth, export: false);
+        _noOcclusion = NewImage(api, 1, 1, VkFormat.R8Unorm, VkImageUsageFlags.ColorAttachment | VkImageUsageFlags.Sampled | VkImageUsageFlags.TransferDst,
+                                VkImageAspectFlags.Color, export: false);
+        ClearToShaderRead(api, _noShadowMap, VkImageAspectFlags.Depth);
+        ClearToShaderRead(api, _noOcclusion, VkImageAspectFlags.Color);
         var lps = stackalloc VkDescriptorPoolSize[2];
         lps[0] = new VkDescriptorPoolSize { type = VkDescriptorType.SampledImage, descriptorCount = 4 };
         lps[1] = new VkDescriptorPoolSize { type = VkDescriptorType.Sampler, descriptorCount = 1 };
@@ -582,6 +586,36 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         });
     }
 
+    /// <summary>A new stand-in cleared to 1 (depth 1: nothing in the map; occlusion 1: none) and left SHADER_READ_ONLY_OPTIMAL.</summary>
+    private void ClearToShaderRead(VkDeviceApi api, Target t, VkImageAspectFlags aspect)
+    {
+        var img = t.Image;
+        OneShot(api, cb =>
+        {
+            var range = new VkImageSubresourceRange { aspectMask = aspect, levelCount = 1, layerCount = 1 };
+            var b = new VkImageMemoryBarrier
+            {
+                srcAccessMask = 0, dstAccessMask = VkAccessFlags.TransferWrite,
+                oldLayout = VkImageLayout.Undefined, newLayout = VkImageLayout.TransferDstOptimal,
+                srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, image = img, subresourceRange = range,
+            };
+            api.vkCmdPipelineBarrier(cb, VkPipelineStageFlags.TopOfPipe, VkPipelineStageFlags.Transfer, 0, 0, null, 0, null, 1, &b);
+            if (aspect == VkImageAspectFlags.Depth)
+            {
+                var d = new VkClearDepthStencilValue(1f, 0u);
+                api.vkCmdClearDepthStencilImage(cb, img, VkImageLayout.TransferDstOptimal, &d, 1, &range);
+            }
+            else
+            {
+                var c = new VkClearColorValue(1f, 1f, 1f, 1f);
+                api.vkCmdClearColorImage(cb, img, VkImageLayout.TransferDstOptimal, &c, 1, &range);
+            }
+            b.srcAccessMask = VkAccessFlags.TransferWrite; b.dstAccessMask = VkAccessFlags.ShaderRead;
+            b.oldLayout = VkImageLayout.TransferDstOptimal; b.newLayout = VkImageLayout.ShaderReadOnlyOptimal;
+            api.vkCmdPipelineBarrier(cb, VkPipelineStageFlags.Transfer, VkPipelineStageFlags.FragmentShader, 0, 0, null, 0, null, 1, &b);
+        });
+    }
+
     /// <summary>Set 3 pointed at the current shadow map and occlusion targets (or the stand-ins). Never under a frame in flight: the
     /// callers wait for the device first.</summary>
     private void WriteLightSet(VkDeviceApi api)
@@ -609,6 +643,8 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         if (_shadowMap?.Size == size) return;
         Check(api.vkDeviceWaitIdle(), "vkDeviceWaitIdle");
         DestroyShadowMap(api);
+        // set 3 back on the stand-in first: an allocation that fails below must not leave it naming a destroyed view
+        WriteLightSet(api);
         var depth = NewImage(api, size, size, DepthFormat, VkImageUsageFlags.DepthStencilAttachment | VkImageUsageFlags.Sampled,
                              VkImageAspectFlags.Depth, export: false);
         _shadowMap = new ShadowMap { Depth = depth, Size = size, Framebuffer = Framebuffer(api, _rpShadow, [depth.View], size, size) };
@@ -621,6 +657,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         if (_occlusion is { } o && o.Width == w && o.Height == h) return;
         Check(api.vkDeviceWaitIdle(), "vkDeviceWaitIdle");
         DestroyOcclusion(api);
+        WriteLightSet(api);
         var sampled = VkImageUsageFlags.ColorAttachment | VkImageUsageFlags.Sampled;
         var n = new OcclusionTargets
         {

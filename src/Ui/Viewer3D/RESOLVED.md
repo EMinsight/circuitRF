@@ -163,3 +163,27 @@ Findings from work on the 3D viewer's view model. The field model itself (reader
   a field pixel in shadow and in a corner exactly (51, 102, 153); a transparent picture 0 / 40 / 255 alpha; a 50 % slab's
   straightened colour composited over black and white within 1/255). **D3D11 and Vulkan were compiled only; their runtime
   is unverified on this machine**, as briefs 62, 101 and 106 recorded.
+
+### Brief 107 review fixes (2026-10-04)
+
+- **The section plane is in the shadow key.** `fs_depth` discards what the section plane cuts away, so the map depends on the
+  clip state; the key had left it out, and a moved (or toggled) section kept casting the cut-away part's shadow. `KeyOf` now
+  hashes `Clip.Enabled` and, while on, its equation. Moving the plane while the section is OFF still renders nothing.
+- **A picture's occlusion reaches as far in the world as the view's.** The kernel's radius in pixels is capped
+  (`Occlusion.MaxPixels`, 64 WINDOW pixels). A picture drawn at 2 × the window and supersampled 2 × hit that cap at a quarter of
+  the view's world reach, so exported contact shading came out visibly tighter than what the view showed. `Plan(pixelScale:)`
+  (CapturePicture passes scale × supersample) writes `ao.w`, and the shader's cap is `AO_MAX_PIXELS × ao.w`.
+- **Supersampling is Export Picture's only.** `CapturePicture(supersample:)` defaults to 1; the editor's Export passes
+  `ExportSupersample`, and Copy (already 4 × the window) draws once.
+- **A refused picture allocation is a reported fault, not a crash.** On D3D11 a texture the device refuses throws
+  `SharpGenException`, which `CapturePicture`'s handler does not catch; `RenderPixels` now turns it into a
+  `Viewer3DPresentFault`. Every D3D11 reallocation (`EnsureDepth`, the map, the occlusion targets) nulls the old views BEFORE
+  making the new ones, and Vulkan re-points set 3 at the stand-ins before allocating, so a failed allocation never leaves a
+  disposed view behind to be bound by the next frame.
+- **The stand-ins are cleared** (depth 1, occlusion 1) on all three backends rather than left with undefined contents: a
+  stand-in read with its uniform on would otherwise have shadowed everything.
+- **The HLSL is compiled on Windows by a test** (`HlslCompileTests`, entry points read from the backend's own `Compile` calls;
+  no GPU needed). The D3D11 backend compiles every entry point from one file at construction, so one construct FXC rejects
+  anywhere takes the whole 3D view down on Windows, not just the feature that added it. Elsewhere the test holds only that every
+  entry point named exists. Vulkan's occlusion targets are sized from the swap image, not the plan, on purpose: its main pass
+  draws at the image's size, and `fs_pbr` loads the occlusion at its fragment's pixel.

@@ -789,8 +789,11 @@ public sealed partial class Viewer3DViewModel
     /// (1-4), reduced when needed so neither side passes <see cref="FieldPicture.MaxSide"/>, and read back;
     /// with the legends (brief-em3d-96: the same stack as the view's) and the caption to paint over it as the export options say.
     /// The current camera; no pick pass, so no hover id reaches the picture. UI thread: the read-back holds the render lock.
+    /// brief-em3d-107 — <paramref name="supersample"/> (Export Picture's <see cref="ExportSupersample"/>; Copy draws once, at 1) and
+    /// <paramref name="transparent"/> apply to the realistic view only.
     /// </summary>
-    public FieldPictureShot? CapturePicture(int windowPixelsW, int windowPixelsH, int scale, out string? error, bool transparent = false)
+    public FieldPictureShot? CapturePicture(int windowPixelsW, int windowPixelsH, int scale, out string? error, bool transparent = false,
+                                            int supersample = 1)
     {
         error = null;
         float k = Math.Clamp(scale, 1, 4);
@@ -798,7 +801,7 @@ public sealed partial class Viewer3DViewModel
         int w = Math.Clamp((int)Math.Round(windowPixelsW * k), 1, FieldPicture.MaxSide);
         int h = Math.Clamp((int)Math.Round(windowPixelsH * k), 1, FieldPicture.MaxSide);
         // brief-em3d-107 R-em3d107-5a — the realistic picture is drawn at ss × its size (still within MaxSide) and brought down
-        int ss = View.DrawsRealistic ? SupersampleFor(w, h, ExportSupersample) : 1;
+        int ss = View.DrawsRealistic ? SupersampleFor(w, h, supersample) : 1;
         try
         {
             var backend = Session.EnsureBackend();
@@ -809,7 +812,7 @@ public sealed partial class Viewer3DViewModel
             try
             {
                 plan.Plan(Scene, View, w * ss, h * ss, backend.FlipY, pick: false, MeshOverlay, SectionOverlay, GridOverlay, FieldDrawn,
-                          export: true, transparent: transparent);
+                          export: true, transparent: transparent, pixelScale: k * ss);
             }
             finally { View.CursorX = cx; View.CursorY = cy; }
             var rgba = Session.RenderPixels(plan, Scene, MeshOverlay, SectionOverlay, GridOverlay, FieldDrawn);

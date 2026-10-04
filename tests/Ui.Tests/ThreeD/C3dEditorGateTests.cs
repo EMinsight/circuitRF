@@ -77,9 +77,12 @@ internal sealed class PatchRecordingBackend : Viewer3DBackend
     public override void UploadField(CircuitRF.Render.Scene3D.Fields.FieldVertex[] vertices) { }
     /// <summary>brief-em3d-107 — the size the last picture was drawn at (a supersampled one is drawn larger than it is saved).</summary>
     public (int W, int H) LastPixels;
+    /// <summary>The last picture's occlusion cap scale (ao.w): its pixels per window pixel.</summary>
+    public float LastOcclusionScale;
     public override byte[] RenderPixels(Scene3DFramePlan plan)
     {
         LastPixels = (plan.Width, plan.Height);
+        LastOcclusionScale = plan.Uniforms[Scene3DFramePlan.LookAt + Scene3DFramePlan.LightingAt + 35];
         return new byte[plan.Width * plan.Height * 4];
     }
     public override string? CheckInterop(ICompositionGpuInterop interop) => null;

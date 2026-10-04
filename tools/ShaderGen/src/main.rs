@@ -309,7 +309,7 @@ fn plain_hlsl_samplers(src: &str) -> Result<String, String> {
             HLSL_SAMPLERS.len()
         ));
     }
-    if out.contains("nagaSamplerHeap") || out.contains("SamplerIndexArray") {
+    if out.contains("nagaSamplerHeap") || out.contains("nagaComparisonSamplerHeap") || out.contains("SamplerIndexArray") {
         return Err("HLSL: the sampler heap is still referenced after the rewrite".into());
     }
     Ok(out)

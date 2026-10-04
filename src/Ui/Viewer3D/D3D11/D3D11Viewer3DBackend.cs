@@ -299,8 +299,12 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
             rs.DepthBiasClamp = clamp;
             _rasterShadow = dev.CreateRasterizerState(rs);
         }
+        // the stand-ins hold what "none" means — a map with nothing in it (depth 1: lit) and no occlusion (1) — rather than whatever
+        // memory they were given, in case one is ever read with its uniform switched on
         _noShadowMap = NewDepthTarget(1);
         _noOcclusion = NewColourTarget(1, 1, DxFormat.R8_UNorm);
+        Ctx.ClearDepthStencilView(_noShadowMap.Dsv, DepthStencilClearFlags.Depth, 1f, 0);
+        Ctx.ClearRenderTargetView(_noOcclusion.Rtv, new Color4(1f, 1f, 1f, 1f));
         _cb = dev.CreateBuffer(new BufferDescription(Scene3DFramePlan.UniformBytes, BindFlags.ConstantBuffer, ResourceUsage.Default));
         _cbTransform = dev.CreateBuffer(new BufferDescription(Scene3DFramePlan.TransformBytesPerDraw, BindFlags.ConstantBuffer, ResourceUsage.Default));
 
@@ -421,7 +425,9 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     {
         if (_shadowMap?.Size != plan.ShadowSize)
         {
+            // cleared before the new one is made, so a failed allocation leaves no disposed map behind to be bound
             _shadowMap?.Dispose();
+            _shadowMap = null;
             _shadowMap = NewDepthTarget(plan.ShadowSize);
         }
         UnbindLighting(ctx);
@@ -456,6 +462,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         if (_aoDepth is null || _aoDepth.W != w || _aoDepth.H != h)
         {
             _aoDepth?.Dispose(); _aoRaw?.Dispose(); _aoBlur?.Dispose();
+            (_aoDepth, _aoRaw, _aoBlur) = (null, null, null);
             _aoDepth = NewColourTarget(w, h, DxFormat.R32_Float);
             _aoRaw = NewColourTarget(w, h, DxFormat.R8_UNorm);
             _aoBlur = NewColourTarget(w, h, DxFormat.R8_UNorm);
@@ -669,11 +676,29 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     {
         var dev = Device;
         uint w = (uint)plan.Width, h = (uint)plan.Height;
-        using var tex = dev.CreateTexture2D(new Texture2DDescription(ColorFormat, w, h, 1, 1, BindFlags.RenderTarget));
-        using var view = dev.CreateRenderTargetView(tex);
-        using var staging = dev.CreateTexture2D(new Texture2DDescription(ColorFormat, w, h, 1, 1, BindFlags.None,
-            ResourceUsage.Staging, CpuAccessFlags.Read));
-        RenderInto(view, plan);
+        ID3D11Texture2D? tex = null, staging = null;
+        ID3D11RenderTargetView? view = null;
+        try
+        {
+            tex = dev.CreateTexture2D(new Texture2DDescription(ColorFormat, w, h, 1, 1, BindFlags.RenderTarget));
+            view = dev.CreateRenderTargetView(tex);
+            staging = dev.CreateTexture2D(new Texture2DDescription(ColorFormat, w, h, 1, 1, BindFlags.None,
+                ResourceUsage.Staging, CpuAccessFlags.Read));
+            RenderInto(view, plan);
+            return ReadBack(tex, staging, w, h);
+        }
+        catch (SharpGen.Runtime.SharpGenException e)
+        {
+            // brief-em3d-107 — a picture is the largest thing this backend draws (up to FieldPicture.MaxSide a side, supersampled, with the
+            // occlusion's targets beside it): an allocation the device refuses is reported as the picture failing, never thrown past the
+            // caller's handler as a COM error.
+            throw new Viewer3DPresentFault($"The 3D view could not draw a {w} × {h} picture: {e.Message}");
+        }
+        finally { staging?.Dispose(); view?.Dispose(); tex?.Dispose(); }
+    }
+
+    private byte[] ReadBack(ID3D11Texture2D tex, ID3D11Texture2D staging, uint w, uint h)
+    {
         var ctx = Ctx;
         ctx.CopyResource(staging, tex);
         var m = ctx.Map(staging, 0, MapMode.Read, DxMapFlags.None);
@@ -859,6 +884,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         w = Math.Max(1, w); h = Math.Max(1, h);
         if (w == _depthW && h == _depthH && _dsv is not null) return;
         _dsv?.Dispose(); _depth?.Dispose();
+        (_dsv, _depth) = (null, null);
         _depth = Device.CreateTexture2D(new Texture2DDescription(DxFormat.D32_Float, (uint)w, (uint)h, 1, 1, BindFlags.DepthStencil));
         _dsv = Device.CreateDepthStencilView(_depth);
         _depthW = w; _depthH = h;

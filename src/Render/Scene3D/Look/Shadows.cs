@@ -106,7 +106,9 @@ public static class Occlusion
     /// <summary>The horizon's sine below which nothing occludes (a flat neighbour never darkens its plane).</summary>
     public const float Bias = 0.1f;
 
-    /// <summary>The largest radius in pixels the kernel walks (a near camera's world radius covers half the screen).</summary>
+    /// <summary>The largest radius in WINDOW pixels the kernel walks (a near camera's world radius covers half the screen). A picture drawn
+    /// at more pixels than the window (Export Picture's scale and supersampling) scales it by that ratio, so its occlusion reaches as far in
+    /// the world as the view's does.</summary>
     public const float MaxPixels = 64f;
 
     /// <summary>The blur's depth test: a neighbour farther than this fraction of the radius from the pixel's point is another surface

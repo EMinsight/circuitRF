@@ -423,11 +423,13 @@ public sealed class Scene3DFramePlan
     /// Plans a <paramref name="width"/> × <paramref name="height"/> frame of <paramref name="scene"/>.
     /// <paramref name="flipY"/> for an API whose framebuffer y runs down. <paramref name="pick"/> asks
     /// for an ID pass at the cursor. Allocates only when the scene changed. brief-em3d-106 — <paramref name="export"/>: a picture
-    /// (Export Picture, Copy), which in the realistic view draws no hover and no selection (R-em3d106-2c).
+    /// (Export Picture, Copy), which in the realistic view draws no hover and no selection (R-em3d106-2c). brief-em3d-107 —
+    /// <paramref name="pixelScale"/>: how many of this frame's pixels a window pixel spans (a picture's scale times its supersampling; 1
+    /// live), which scales the occlusion's cap in pixels (<see cref="Look.Occlusion.MaxPixels"/>).
     /// </summary>
     public void Plan(Scene3DModel scene, Viewer3DViewState view, int width, int height, bool flipY, bool pick,
                      Scene3DOverlay mesh, Scene3DOverlay section, Scene3DOverlay grid, Fields.Scene3DFieldGeometry? field = null,
-                     bool export = false, bool transparent = false)
+                     bool export = false, bool transparent = false, float pixelScale = 1)
     {
         if (!ReferenceEquals(_sized, scene)) Size(scene);
         Width = width; Height = height;
@@ -448,7 +450,7 @@ public sealed class Scene3DFramePlan
         var preview = view.Preview;
         WriteTransforms(preview);
         ChooseDetail(scene, view);
-        PlanLighting(scene, view, preview, cam, width, height, flipY, export);
+        PlanLighting(scene, view, preview, cam, width, height, flipY, export, pixelScale);
         if (!quiet) MarkFaded(view);
         else _fadedCount = 0;
         if (real) ColourRealistic(scene, view, preview, mesh, section, grid, field, cam, width, height, flipY);
@@ -826,7 +828,7 @@ public sealed class Scene3DFramePlan
 
     /// <summary>The casters, the light's window and the shadow key; the occlusion's and the ground's parameters; all into the look block.</summary>
     private void PlanLighting(Scene3DModel scene, Viewer3DViewState view, Scene3DPreview? preview, in Camera3D cam, int width, int height,
-                              bool flipY, bool export)
+                              bool flipY, bool export, float pixelScale)
     {
         ShadowDrawCount = 0;
         ShadowSize = 0;
@@ -898,13 +900,13 @@ public sealed class Scene3DFramePlan
             Put(u, 24, up, k + e > 0 ? k / (k + e) : 0);
             Put(u, 28, forward, 0);
             ListShadowDraws(scene, preview);
-            ShadowKey = KeyOf(scene, u[..16]);
+            ShadowKey = KeyOf(scene, view.Clip, u[..16]);
         }
 
         // R-em3d107-2 — occlusion: its reach, and the view's ray a pixel's point is rebuilt from.
         Occlusion = look.AmbientOcclusion;
         float radius = Look.Occlusion.RadiusFraction * sceneRadius;
-        u[32] = Occlusion ? 1 : 0; u[33] = radius; u[34] = Look.Occlusion.BlurReach * radius;
+        u[32] = Occlusion ? 1 : 0; u[33] = radius; u[34] = Look.Occlusion.BlurReach * radius; u[35] = MathF.Max(pixelScale, 1);
         var (ro, rox, roy, rd, rdx, rdy) = PlaneGrid.Ray(cam, width, height, flipY);
         Put(u, 36, ro, 0); Put(u, 40, rox, 0); Put(u, 44, roy, 0); Put(u, 48, rd, 0); Put(u, 52, rdx, 0); Put(u, 56, rdy, 0);
 
@@ -957,13 +959,15 @@ public sealed class Scene3DFramePlan
 
     /// <summary>R-em3d107-1b — the shadow key: the scene, the light's matrix, the map's size, and every caster draw with the contents of
     /// any per-frame transform slot (a preview's copy) it is drawn under. An element's own slot is written with the scene, so the scene
-    /// stands for it.</summary>
-    private long KeyOf(Scene3DModel scene, ReadOnlySpan<float> lvp)
+    /// stands for it. The section plane too, while it is on: fs_depth discards what it cuts away, so moving it changes what casts.</summary>
+    private long KeyOf(Scene3DModel scene, ClipPlane3D clip, ReadOnlySpan<float> lvp)
     {
         var h = new HashCode();
         h.Add(scene.Generation);
         h.Add(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(scene));
         h.Add(ShadowSize);
+        h.Add(clip.Enabled);
+        if (clip.Enabled) h.Add(clip.Equation);
         foreach (float f in lvp) h.Add(f);
         for (int i = 0; i < ShadowDrawCount; i++)
         {

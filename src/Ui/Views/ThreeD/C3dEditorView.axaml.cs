@@ -164,8 +164,9 @@ public partial class C3dEditorView : UserControl
     {
         if (_vm is null || TopLevel.GetTopLevel(this) is not Window owner) return;
         var viewer = _vm.Viewer;
-        // brief-em3d-107 R-em3d107-5b — a transparent background is the realistic view's picture only
-        var shot = Viewer3DPictureCopy.Capture(Pane, viewer, viewer.ExportScale, out string? error, transparent: viewer.ExportTransparent);
+        // brief-em3d-107 R-em3d107-5 — supersampling and a transparent background are the realistic view's PICTURE only (Copy draws once)
+        var shot = Viewer3DPictureCopy.Capture(Pane, viewer, viewer.ExportScale, out string? error, transparent: viewer.ExportTransparent,
+                                               supersample: viewer.ExportSupersample);
         if (shot is null) { _vm.StatusMessage = "The picture could not be made: " + error; return; }
         var png = await Task.Run(shot.Png);
         var file = await owner.StorageProvider.SaveFilePickerAsync(new Avalonia.Platform.Storage.FilePickerSaveOptions

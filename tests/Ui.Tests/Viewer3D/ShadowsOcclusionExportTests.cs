@@ -207,10 +207,23 @@ public sealed class ShadowsOcclusionExportTests : IDisposable
         view.Visible[scene.Objects.Single(o => o.Name == "box").Id - 1] = false;
         Frame();
         Assert.Equal(3, session.ShadowPasses);
+        // the section plane: fs_depth discards what it cuts away, so turning it on and moving it re-render the map; moving it while it is
+        // off does not
+        view.Clip.Axis = ClipAxis3D.X;
+        view.Clip.Offset = 1.5e-3f;
+        Frame();
+        Assert.Equal(3, session.ShadowPasses);
+        view.Clip.Enabled = true;
+        Frame();
+        Assert.Equal(4, session.ShadowPasses);
+        view.Clip.Offset = 2.5e-3f;
+        Frame();
+        Assert.Equal(5, session.ShadowPasses);
+        view.Clip.Enabled = false;
         plan.Plan(scene, view, 400, 300, false, false, none, none, none, export: true);
         Assert.Equal(Shadows.ExportMapSize, plan.ShadowSize);
         session.RenderPixels(plan, scene, none, none, none, null);
-        Assert.Equal(4, session.ShadowPasses);
+        Assert.Equal(6, session.ShadowPasses);
     }
 
     // ── 3. glass casts none ───────────────────────────────────────────────────────────────────────────────────────────
@@ -410,13 +423,16 @@ public sealed class ShadowsOcclusionExportTests : IDisposable
         Pump(() => vm.Viewer.View.Environment is not null);
         foreach (int k in PictureResample.Factors)
         {
-            vm.Viewer.ExportSupersample = k;
-            var shot = vm.Viewer.CapturePicture(300, 200, 2, out string? error, transparent: true);
+            var shot = vm.Viewer.CapturePicture(300, 200, 2, out string? error, transparent: true, supersample: k);
             Assert.Null(error);
             Assert.Equal((600, 400, k, true), (shot!.Width, shot.Height, shot.Supersample, shot.Transparent));
             Assert.Equal(600 * 400 * 4, shot.Rgba.Length);
             Assert.Equal((600 * k, 400 * k), fake.LastPixels);
+            // the occlusion's cap in pixels grows with the picture (2 × the window, k × supersampled), so its reach in the world is the view's
+            Assert.Equal(2f * k, fake.LastOcclusionScale);
         }
+        // Copy draws once, at its size: supersampling is Export Picture's
+        Assert.Equal(1, vm.Viewer.CapturePicture(300, 200, 2, out _)!.Supersample);
         // the cap: a picture whose drawn size would pass MaxSide supersamples less
         Assert.Equal(2, Viewer3DViewModel.SupersampleFor(FieldPicture.MaxSide / 3, 100, 4));
         Assert.Equal(1, Viewer3DViewModel.SupersampleFor(FieldPicture.MaxSide, 100, 4));
