@@ -96,6 +96,38 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     private ID3D11BlendState _blendPremultiplied = null!;
     private ID3D11Buffer? _cbAppearances;
     private ID3D11ShaderResourceView? _envMap, _envBrdf;
+    /// <summary>brief-em3d-107 — the shadow pass (vs_shadow / fs_depth, the shadow bias's rasterizer state), the occlusion's three passes
+    /// (the prepass of the materials through vs and of the ground through vs_grid; the horizon pass and its blur), the ground, the glass
+    /// pixel shader (no occlusion), the comparison sampler (s2); the shadow map (t3: R32 typeless — a D32 depth view to draw it, an R32
+    /// float view to read it), the occlusion's targets (t4 the blurred, t5 the prepass's depths, t6 the raw) and 1 × 1 stand-ins. The
+    /// textures are held only while the realistic view is on.</summary>
+    private ID3D11VertexShader _vsShadow = null!;
+    private ID3D11PixelShader _psDepth = null!, _psPrepass = null!, _psGroundPrepass = null!, _psAo = null!, _psAoBlur = null!, _psGround = null!;
+    private ID3D11PixelShader _psPbrGlass = null!;
+    private ID3D11RasterizerState _rasterShadow = null!;
+    private ID3D11SamplerState _shadowSampler = null!;
+    private DepthTarget? _shadowMap, _noShadowMap;
+    private ColourTarget? _aoDepth, _aoRaw, _aoBlur, _noOcclusion;
+
+    /// <summary>A depth texture both drawn into and read: R32 typeless, D32 to draw, R32 float to read.</summary>
+    private sealed class DepthTarget(ID3D11Texture2D texture, ID3D11DepthStencilView dsv, ID3D11ShaderResourceView srv, int size) : IDisposable
+    {
+        public readonly ID3D11Texture2D Texture = texture;
+        public readonly ID3D11DepthStencilView Dsv = dsv;
+        public readonly ID3D11ShaderResourceView Srv = srv;
+        public readonly int Size = size;
+        public void Dispose() { Srv.Dispose(); Dsv.Dispose(); Texture.Dispose(); }
+    }
+
+    /// <summary>A colour texture both drawn into and read.</summary>
+    private sealed class ColourTarget(ID3D11Texture2D texture, ID3D11RenderTargetView rtv, ID3D11ShaderResourceView srv, int w, int h) : IDisposable
+    {
+        public readonly ID3D11Texture2D Texture = texture;
+        public readonly ID3D11RenderTargetView Rtv = rtv;
+        public readonly ID3D11ShaderResourceView Srv = srv;
+        public readonly int W = w, H = h;
+        public void Dispose() { Srv.Dispose(); Rtv.Dispose(); Texture.Dispose(); }
+    }
     private readonly ID3D11Buffer?[] _overlays = new ID3D11Buffer?[3];
     private readonly ID3D11RenderTargetView[] _pickTargets = new ID3D11RenderTargetView[2];
 
@@ -196,6 +228,17 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _vsPbr = dev.CreateVertexShader(vsp.Span);
         _psPbr = dev.CreatePixelShader(Compile("fs_pbr", "ps_5_0").Span);
         _psBackdrop = dev.CreatePixelShader(Compile("fs_backdrop", "ps_5_0").Span);
+        // brief-em3d-107 — vs_shadow takes vs's input (the same LOC0..3, so _layout serves it); the full-screen passes are vs_grid's.
+        _vsShadow = dev.CreateVertexShader(Compile("vs_shadow", "vs_5_0").Span);
+        _psDepth = dev.CreatePixelShader(Compile("fs_depth", "ps_5_0").Span);
+        _psPrepass = dev.CreatePixelShader(Compile("fs_prepass", "ps_5_0").Span);
+        _psGroundPrepass = dev.CreatePixelShader(Compile("fs_ground_prepass", "ps_5_0").Span);
+        _psAo = dev.CreatePixelShader(Compile("fs_ao", "ps_5_0").Span);
+        _psAoBlur = dev.CreatePixelShader(Compile("fs_ao_blur", "ps_5_0").Span);
+        _psGround = dev.CreatePixelShader(Compile("fs_ground", "ps_5_0").Span);
+        _psPbrGlass = dev.CreatePixelShader(Compile("fs_pbr_glass", "ps_5_0").Span);
+        _shadowSampler = dev.CreateSamplerState(new SamplerDescription(Filter.ComparisonMinMagLinearMipPoint, TextureAddressMode.Clamp,
+            TextureAddressMode.Clamp, TextureAddressMode.Clamp, 0, 1, ComparisonFunction.LessEqual, 0, float.MaxValue));
         _layoutPbr = dev.CreateInputLayout(
         [
             new InputElementDescription("LOC", 0, DxFormat.R32G32B32_Float, 0, 0),
@@ -249,6 +292,15 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
             rs.DepthBiasClamp = clamp;
             _raster[t] = dev.CreateRasterizerState(rs);
         }
+        {
+            var (constant, slope, clamp) = Scene3DFramePlan.ShadowBias;
+            rs.DepthBias = (int)constant;
+            rs.SlopeScaledDepthBias = slope;
+            rs.DepthBiasClamp = clamp;
+            _rasterShadow = dev.CreateRasterizerState(rs);
+        }
+        _noShadowMap = NewDepthTarget(1);
+        _noOcclusion = NewColourTarget(1, 1, DxFormat.R8_UNorm);
         _cb = dev.CreateBuffer(new BufferDescription(Scene3DFramePlan.UniformBytes, BindFlags.ConstantBuffer, ResourceUsage.Default));
         _cbTransform = dev.CreateBuffer(new BufferDescription(Scene3DFramePlan.TransformBytesPerDraw, BindFlags.ConstantBuffer, ResourceUsage.Default));
 
@@ -335,6 +387,130 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
     {
         _envMap?.Dispose(); _envBrdf?.Dispose(); _cbAppearances?.Dispose();
         (_envMap, _envBrdf, _cbAppearances) = (null, null, null);
+        // brief-em3d-107 — the shadow map and the occlusion's targets go with it
+        _shadowMap?.Dispose(); _aoDepth?.Dispose(); _aoRaw?.Dispose(); _aoBlur?.Dispose();
+        (_shadowMap, _aoDepth, _aoRaw, _aoBlur) = (null, null, null, null);
+    }
+
+    // ── brief-em3d-107: the shadow map, the occlusion, the ground ──────────────────────────────────────────────────────────
+
+    private DepthTarget NewDepthTarget(int size)
+    {
+        var dev = Device;
+        var tex = dev.CreateTexture2D(new Texture2DDescription(DxFormat.R32_Typeless, (uint)size, (uint)size, 1, 1,
+            BindFlags.DepthStencil | BindFlags.ShaderResource));
+        var dsv = dev.CreateDepthStencilView(tex, new DepthStencilViewDescription(tex, DepthStencilViewDimension.Texture2D, DxFormat.D32_Float));
+        var srv = dev.CreateShaderResourceView(tex, new ShaderResourceViewDescription(tex, Vortice.Direct3D.ShaderResourceViewDimension.Texture2D,
+            DxFormat.R32_Float, 0, 1));
+        return new DepthTarget(tex, dsv, srv, size);
+    }
+
+    private ColourTarget NewColourTarget(int w, int h, DxFormat format)
+    {
+        var dev = Device;
+        var tex = dev.CreateTexture2D(new Texture2DDescription(format, (uint)w, (uint)h, 1, 1, BindFlags.RenderTarget | BindFlags.ShaderResource));
+        return new ColourTarget(tex, dev.CreateRenderTargetView(tex), dev.CreateShaderResourceView(tex), w, h);
+    }
+
+    /// <summary>t3..t6 left empty: a texture about to be drawn into is never still bound to be read (D3D11 would unbind it itself, with
+    /// a warning, and the pass reading it next would read nothing).</summary>
+    private static void UnbindLighting(ID3D11DeviceContext ctx) => ctx.PSUnsetShaderResources(3, 4);
+
+    /// <summary>R-em3d107-1 — the casters into the map from the key light, with the shadow bias; depth only.</summary>
+    private int ShadowPass(ID3D11DeviceContext ctx, Scene3DFramePlan plan)
+    {
+        if (_shadowMap?.Size != plan.ShadowSize)
+        {
+            _shadowMap?.Dispose();
+            _shadowMap = NewDepthTarget(plan.ShadowSize);
+        }
+        UnbindLighting(ctx);
+        ctx.OMSetRenderTargets(0, Array.Empty<ID3D11RenderTargetView>(), _shadowMap.Dsv);
+        ctx.RSSetViewport(0, 0, plan.ShadowSize, plan.ShadowSize);
+        ctx.ClearDepthStencilView(_shadowMap.Dsv, DepthStencilClearFlags.Depth, 1f, 0);
+        ctx.RSSetState(_rasterShadow);
+        ctx.IASetInputLayout(_layout);
+        ctx.VSSetShader(_vsShadow);
+        ctx.PSSetShader(_psDepth);
+        ctx.OMSetBlendState(_blendOff);
+        ctx.OMSetDepthStencilState(_dsWrite);
+        ctx.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        ctx.IASetVertexBuffer(0, _vb!, Scene3DVertex.Stride);
+        ctx.IASetIndexBuffer(_ib!, DxFormat.R32_UInt, 0);
+        int transform = -1, draws = 0;
+        for (int i = 0; i < plan.ShadowDrawCount; i++)
+        {
+            ref var d = ref plan.ShadowDraws[i];
+            if (d.Transform != transform && d.Transform < plan.TransformCount) SetTransform(ctx, plan, transform = d.Transform);
+            ctx.DrawIndexed((uint)d.Count, (uint)d.First, 0);
+            draws++;
+        }
+        return draws;
+    }
+
+    /// <summary>R-em3d107-2 — the occlusion: the opaque materials' (and the ground's) depths along the view's rays, the horizon pass, the
+    /// blur. The main depth buffer serves the prepass; the main pass clears it again.</summary>
+    private int OcclusionPasses(ID3D11DeviceContext ctx, Scene3DFramePlan plan)
+    {
+        int w = plan.Width, h = plan.Height, draws = 0;
+        if (_aoDepth is null || _aoDepth.W != w || _aoDepth.H != h)
+        {
+            _aoDepth?.Dispose(); _aoRaw?.Dispose(); _aoBlur?.Dispose();
+            _aoDepth = NewColourTarget(w, h, DxFormat.R32_Float);
+            _aoRaw = NewColourTarget(w, h, DxFormat.R8_UNorm);
+            _aoBlur = NewColourTarget(w, h, DxFormat.R8_UNorm);
+        }
+        UnbindLighting(ctx);
+        ctx.OMSetRenderTargets(_aoDepth.Rtv, _dsv);
+        ctx.RSSetViewport(0, 0, w, h);
+        ctx.ClearRenderTargetView(_aoDepth.Rtv, new Color4(Occlusion.Empty, 0, 0, 0));
+        ctx.ClearDepthStencilView(_dsv!, DepthStencilClearFlags.Depth, 1f, 0);
+        ctx.RSSetState(Raster(Scene3DDepthTie.None));
+        ctx.IASetInputLayout(_layout);
+        ctx.VSSetShader(_vs);
+        ctx.PSSetShader(_psPrepass);
+        ctx.OMSetBlendState(_blendOff);
+        ctx.OMSetDepthStencilState(_dsWrite);
+        ctx.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        ctx.IASetVertexBuffer(0, _vb!, Scene3DVertex.Stride);
+        ctx.IASetIndexBuffer(_ib!, DxFormat.R32_UInt, 0);
+        int transform = -1;
+        for (int i = 0; i < plan.DrawCount; i++)
+        {
+            ref var d = ref plan.Draws[i];
+            if (d.Pipeline != Scene3DPipeline.Pbr) continue;
+            if (d.Transform != transform && d.Transform < plan.TransformCount) SetTransform(ctx, plan, transform = d.Transform);
+            ctx.DrawIndexed((uint)d.Count, (uint)d.First, 0);
+            draws++;
+        }
+        ctx.IASetInputLayout(null);
+        ctx.VSSetShader(_vsGrid);
+        if (plan.GroundDrawn)
+        {
+            ctx.PSSetShader(_psGroundPrepass);
+            ctx.Draw(6, 0);
+            draws++;
+        }
+        ctx.OMSetDepthStencilState(_dsOff);
+        foreach (var (ps, target) in new[] { (_psAo, _aoRaw!), (_psAoBlur, _aoBlur!) })
+        {
+            UnbindLighting(ctx);
+            ctx.OMSetRenderTargets(target.Rtv, null);
+            ctx.PSSetShaderResource(5, _aoDepth.Srv);
+            if (ps == _psAoBlur) ctx.PSSetShaderResource(6, _aoRaw!.Srv);
+            ctx.PSSetShader(ps);
+            ctx.Draw(6, 0);
+            draws++;
+        }
+        return draws;
+    }
+
+    /// <summary>The shadow map (or its stand-in), its comparison sampler and the blurred occlusion for a lit fragment: t3, s2, t4.</summary>
+    private void BindLighting(ID3D11DeviceContext ctx)
+    {
+        ctx.PSSetShaderResource(3, (_shadowMap ?? _noShadowMap!).Srv);
+        ctx.PSSetSampler(2, _shadowSampler);
+        ctx.PSSetShaderResource(4, (_aoBlur ?? _noOcclusion!).Srv);
     }
 
     /// <summary>brief-em3d-43 gate 6 — the changed ranges only, through the immediate context, which orders
@@ -517,6 +693,19 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         int draws = 0;
         CollectPicks(ctx);
         EnsureDepth(plan.Width, plan.Height);
+        // brief-em3d-107 — the shadow map when its key moved (the session decides) and the occlusion every realistic frame, before the
+        // pick and the colour pass; both read the frame's uniforms.
+        if (plan.Realistic && _vb is not null && _ib is not null && (plan.ShadowPass && plan.ShadowDrawCount > 0 || plan.Occlusion))
+        {
+            ctx.UpdateSubresource(plan.Uniforms.AsSpan(), _cb);
+            Counters.CountUniform(Scene3DFramePlan.UniformBytes);
+            ctx.VSSetConstantBuffer(0, _cb);
+            ctx.PSSetConstantBuffer(0, _cb);
+            ctx.VSSetConstantBuffer(1, _cbTransform);
+            if (plan.ShadowPass && plan.ShadowDrawCount > 0) draws += ShadowPass(ctx, plan);
+            if (plan.Occlusion) draws += OcclusionPasses(ctx, plan);
+            UnbindLighting(ctx);
+        }
         ctx.IASetInputLayout(_layout);
         ctx.VSSetShader(_vs);
         ctx.VSSetConstantBuffer(0, _cb);
@@ -568,7 +757,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         ctx.OMSetRenderTargets(target, _dsv);
         ctx.RSSetViewport(0, 0, plan.Width, plan.Height);
         var (r, g, b) = plan.Clear;
-        ctx.ClearRenderTargetView(target, new Color4(r, g, b, 1f));
+        ctx.ClearRenderTargetView(target, new Color4(r, g, b, plan.Transparent ? 0f : 1f));
         ctx.ClearDepthStencilView(_dsv!, DepthStencilClearFlags.Depth, 1f, 0);
         Scene3DBuffer bound = (Scene3DBuffer)(-1);
         Scene3DPipeline state = (Scene3DPipeline)(-1);
@@ -583,7 +772,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
             };
             bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges, field = d.Pipeline == Scene3DPipeline.Field;
             // brief-em3d-106 — the backdrop draws like the grid (six vertices, no buffer); a realistic draw needs the look bound.
-            bool grid = d.Pipeline is Scene3DPipeline.Grid or Scene3DPipeline.Backdrop;
+            bool grid = d.Pipeline is Scene3DPipeline.Grid or Scene3DPipeline.Backdrop or Scene3DPipeline.Ground;
             bool pbr = d.Pipeline is Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent;
             if ((pbr || d.Pipeline == Scene3DPipeline.Backdrop) && (_envMap is null || _envBrdf is null || _cbAppearances is null)) continue;
             if (pbr && _shade is null) continue;
@@ -597,7 +786,7 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
                 // The vertex stage: the scene's vertex (0), the field's (1), none at all — the grid (2) — or an image's (3).
                 static int StageOf(Scene3DPipeline p) => p switch
                 {
-                    Scene3DPipeline.Field => 1, Scene3DPipeline.Grid or Scene3DPipeline.Backdrop => 2,
+                    Scene3DPipeline.Field => 1, Scene3DPipeline.Grid or Scene3DPipeline.Backdrop or Scene3DPipeline.Ground => 2,
                     Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent => 3,
                     Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent => 4, _ => 0,
                 };
@@ -619,21 +808,24 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
                     ctx.PSSetShaderResource(2, _envBrdf!);
                     ctx.PSSetSampler(1, _imageSampler);
                 }
+                // brief-em3d-107 — a lit fragment and the ground read the shadow map and the occlusion
+                if (pbr || state == Scene3DPipeline.Ground) BindLighting(ctx);
                 ctx.PSSetShader(state switch
                 {
                     Scene3DPipeline.Field => _psField, Scene3DPipeline.Lines => _psLine, Scene3DPipeline.Edges => _psEdge,
                     Scene3DPipeline.OnTop => _psTop, Scene3DPipeline.Grid => _psGrid,
                     Scene3DPipeline.Image or Scene3DPipeline.ImageTranslucent => _psImage,
-                    Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent => _psPbr, Scene3DPipeline.Backdrop => _psBackdrop, _ => _psColor,
+                    Scene3DPipeline.Pbr => _psPbr, Scene3DPipeline.PbrTranslucent => _psPbrGlass, Scene3DPipeline.Backdrop => _psBackdrop,
+                    Scene3DPipeline.Ground => _psGround, _ => _psColor,
                 });
                 if (image) ctx.PSSetSampler(0, _imageSampler);
                 bool selection = state is Scene3DPipeline.Edges or Scene3DPipeline.OnTop;
                 ctx.OMSetBlendState(state == Scene3DPipeline.PbrTranslucent ? _blendPremultiplied
                                     : state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid or Scene3DPipeline.Image
-                                    or Scene3DPipeline.ImageTranslucent || selection ? _blendOn : _blendOff);
+                                    or Scene3DPipeline.ImageTranslucent or Scene3DPipeline.Ground || selection ? _blendOn : _blendOff);
                 ctx.OMSetDepthStencilState(selection || state == Scene3DPipeline.Backdrop ? _dsOff
                     : state is Scene3DPipeline.Translucent or Scene3DPipeline.Grid or Scene3DPipeline.ImageTranslucent
-                      or Scene3DPipeline.PbrTranslucent ? _dsNoWrite : _dsWrite);
+                      or Scene3DPipeline.PbrTranslucent or Scene3DPipeline.Ground ? _dsNoWrite : _dsWrite);
                 ctx.IASetPrimitiveTopology(lines ? PrimitiveTopology.LineList : PrimitiveTopology.TriangleList);
             }
             if (grid)
@@ -712,6 +904,9 @@ internal sealed unsafe class D3D11Viewer3DBackend : Viewer3DBackend
         _psColor?.Dispose(); _psLine?.Dispose(); _psPick?.Dispose(); _psField?.Dispose(); _psEdge?.Dispose(); _psTop?.Dispose(); _vsGrid?.Dispose(); _psGrid?.Dispose();
         _layoutImage?.Dispose(); _vsImage?.Dispose(); _psImage?.Dispose(); _imageSampler?.Dispose();
         _layoutPbr?.Dispose(); _vsPbr?.Dispose(); _psPbr?.Dispose(); _psBackdrop?.Dispose(); _blendPremultiplied?.Dispose();
+        _vsShadow?.Dispose(); _psDepth?.Dispose(); _psPrepass?.Dispose(); _psGroundPrepass?.Dispose(); _psAo?.Dispose(); _psAoBlur?.Dispose();
+        _psGround?.Dispose(); _psPbrGlass?.Dispose(); _rasterShadow?.Dispose(); _shadowSampler?.Dispose();
+        _noShadowMap?.Dispose(); _noOcclusion?.Dispose();
         _blendOff?.Dispose(); _blendOn?.Dispose(); _dsWrite?.Dispose(); _dsNoWrite?.Dispose(); _dsOff?.Dispose(); foreach (var r in _raster) r?.Dispose();
         _ctx?.Dispose(); _device.Dispose();
     }

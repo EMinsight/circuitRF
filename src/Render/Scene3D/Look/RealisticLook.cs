@@ -58,6 +58,12 @@ public sealed class RealisticLook
     /// <summary>2^EV: what the shader multiplies by before the tone curve.</summary>
     public float Exposure => MathF.Pow(2, ExposureEv);
 
+    /// <summary>brief-em3d-107 R-em3d107-4 — the key light's shadows, contact shading, and the shadow-catching ground (each on unless the
+    /// Look says false).</summary>
+    public bool Shadows { get; private init; } = true;
+    public bool AmbientOcclusion { get; private init; } = true;
+    public bool Ground { get; private init; } = true;
+
     public bool Shows(Scene3DChrome row) => _shows[(int)row];
 
     public static readonly RealisticLook Default = From(null);
@@ -72,6 +78,7 @@ public sealed class RealisticLook
         {
             Studio = studio, HdrPath = path, RotationDegrees = (float)look.RotationDegrees, Intensity = (float)look.IntensityValue,
             ExposureEv = (float)look.ExposureValue, Background = kind, Top = V(top), Bottom = V(bottom),
+            Shadows = look.Shadows != false, AmbientOcclusion = look.AmbientOcclusion != false, Ground = look.Ground != false,
         };
         bool?[] shows = [look.ShowEdges, look.ShowGrid, look.ShowOverlays, look.ShowAirBox, look.ShowPorts, look.ShowBoundaries, look.ShowImages];
         for (int k = 0; k < shows.Length; k++) r._shows[k] = shows[k] == true;

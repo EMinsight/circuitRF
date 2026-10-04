@@ -141,6 +141,37 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     private (VkBuffer Buf, VkDeviceMemory Mem) _apb;
     private byte* _apMapped;
     private bool _appearancesWritten;
+    /// <summary>brief-em3d-107 — shadows, occlusion and the ground. Three render passes (the shadow map's, depth only; the occlusion's
+    /// prepass, R32 float depths plus a depth buffer of its own; its horizon pass and blur, R8), their pipelines and the ground's and the
+    /// glass's; set 3's layout (the shadow map, its comparison sampler, the blurred occlusion, the prepass's depths, the raw occlusion) and
+    /// its one set, which always names valid images — 1 × 1 stand-ins, made with the device, until the real ones exist. Re-pointing it
+    /// waits for the device, which happens only when a map or a target is made (a size change), never per frame.</summary>
+    private VkRenderPass _rpShadow, _rpPrepass, _rpAo;
+    private VkPipeline _pShadow, _pPrepass, _pGroundPrepass, _pAo, _pAoBlur, _pGround, _pPbrGlass;
+    private VkDescriptorSetLayout _lightSetLayout;
+    private VkDescriptorPool _lightPool;
+    private VkDescriptorSet _lightSet;
+    private VkSampler _shadowSampler;
+    /// <summary>Whether the device filters a D32 float image linearly: the comparison sampler then blends four comparisons a tap.</summary>
+    private bool _depthLinear;
+    private Target? _noShadowMap, _noOcclusion;
+    private ShadowMap? _shadowMap;
+    private OcclusionTargets? _occlusion;
+
+    private sealed class ShadowMap
+    {
+        public Target Depth = null!;
+        public VkFramebuffer Framebuffer;
+        public int Size;
+    }
+
+    /// <summary>The occlusion's targets at one size: the prepass's depths and its own depth buffer, the raw occlusion and the blurred one.</summary>
+    private sealed class OcclusionTargets
+    {
+        public Target Depths = null!, DepthBuffer = null!, Raw = null!, Blur = null!;
+        public VkFramebuffer Prepass, AoPass, BlurPass;
+        public int Width, Height;
+    }
     private int _fieldCount;
     private readonly (VkBuffer Buf, VkDeviceMemory Mem)[] _overlays = new (VkBuffer, VkDeviceMemory)[3];
 
@@ -228,6 +259,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         bool Has(string e) { foreach (var x in ext) if (Marshal.PtrToStringUTF8((nint)x.extensionName) == e) return true; return false; }
         _canExport = Has("VK_KHR_external_memory_fd") && Has("VK_KHR_external_semaphore_fd");
 
+        VkFormatProperties depthProps;
+        vi.vkGetPhysicalDeviceFormatProperties(_physical, DepthFormat, &depthProps);
+        _depthLinear = (depthProps.optimalTilingFeatures & VkFormatFeatureFlags.SampledImageFilterLinear) != 0;
         VkPhysicalDeviceFeatures supported;
         vi.vkGetPhysicalDeviceFeatures(_physical, &supported);
         _biasClamp = supported.depthBiasClamp;
@@ -292,6 +326,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
 
         _rpColor = RenderPass(api, pick: false);
         _rpPick = RenderPass(api, pick: true);
+        _rpShadow = ReadBackPass(api, VkFormat.Undefined, depth: true);
+        _rpPrepass = ReadBackPass(api, VkFormat.R32Sfloat, depth: true);
+        _rpAo = ReadBackPass(api, VkFormat.R8Unorm, depth: false);
 
         var bindings = stackalloc VkDescriptorSetLayoutBinding[3];
         bindings[0] = new VkDescriptorSetLayoutBinding
@@ -331,8 +368,20 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         VkDescriptorSetLayout envLayout;
         Check(api.vkCreateDescriptorSetLayout(&edsl, null, &envLayout), "vkCreateDescriptorSetLayout");
         _envSetLayout = envLayout;
-        var both = stackalloc VkDescriptorSetLayout[3] { setLayout, imageLayout, envLayout };
-        var pli = new VkPipelineLayoutCreateInfo { setLayoutCount = 3, pSetLayouts = both };
+        // brief-em3d-107 — set 3: the shadow map, its comparison sampler, the blurred occlusion, the prepass's depths, the raw occlusion.
+        var lb = stackalloc VkDescriptorSetLayoutBinding[5];
+        for (uint k = 0; k < 5; k++)
+            lb[k] = new VkDescriptorSetLayoutBinding
+            {
+                binding = k, descriptorType = k == 1 ? VkDescriptorType.Sampler : VkDescriptorType.SampledImage, descriptorCount = 1,
+                stageFlags = VkShaderStageFlags.Fragment,
+            };
+        var ldsl = new VkDescriptorSetLayoutCreateInfo { bindingCount = 5, pBindings = lb };
+        VkDescriptorSetLayout lightLayout;
+        Check(api.vkCreateDescriptorSetLayout(&ldsl, null, &lightLayout), "vkCreateDescriptorSetLayout");
+        _lightSetLayout = lightLayout;
+        var both = stackalloc VkDescriptorSetLayout[4] { setLayout, imageLayout, envLayout, lightLayout };
+        var pli = new VkPipelineLayoutCreateInfo { setLayoutCount = 4, pSetLayouts = both };
         VkPipelineLayout layout;
         Check(api.vkCreatePipelineLayout(&pli, null, &layout), "vkCreatePipelineLayout");
         _layout = layout;
@@ -355,6 +404,19 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         _pPbr = Pipeline(api, _rpColor, "fs_pbr"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 1, pbr: true);
         _pPbrTrans = Pipeline(api, _rpColor, "fs_pbr"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1, pbr: true,
                               premultiplied: true);
+        // brief-em3d-107 — the glass (fs_pbr_glass: no occlusion), the shadow map's casters (vs_shadow, depth only), the occlusion's
+        // prepass (the materials through vs, the ground through vs_grid), its horizon pass and blur (no depth), and the ground.
+        _pPbrGlass = Pipeline(api, _rpColor, "fs_pbr_glass"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1,
+                              pbr: true, premultiplied: true);
+        _pShadow = Pipeline(api, _rpShadow, "fs_depth"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 0,
+                            vertexEntry: "vs_shadow"u8);
+        _pPrepass = Pipeline(api, _rpPrepass, "fs_prepass"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true, targets: 1);
+        _pGroundPrepass = Pipeline(api, _rpPrepass, "fs_ground_prepass"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: true,
+                                   targets: 1, grid: true);
+        _pAo = Pipeline(api, _rpAo, "fs_ao"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: false, targets: 1, depthTest: false, grid: true);
+        _pAoBlur = Pipeline(api, _rpAo, "fs_ao_blur"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: false, targets: 1,
+                            depthTest: false, grid: true);
+        _pGround = Pipeline(api, _rpColor, "fs_ground"u8, VkPrimitiveTopology.TriangleList, blend: true, depthWrite: false, targets: 1, grid: true);
         _pBackdrop = Pipeline(api, _rpColor, "fs_backdrop"u8, VkPrimitiveTopology.TriangleList, blend: false, depthWrite: false, targets: 1,
                               depthTest: false, grid: true);
         var sci = new VkSamplerCreateInfo
@@ -366,6 +428,18 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         VkSampler sampler;
         Check(api.vkCreateSampler(&sci, null, &sampler), "vkCreateSampler");
         _sampler = sampler;
+        // brief-em3d-107 — the shadow map's comparison sampler: lit where the reference is at or before the stored depth; linear (four
+        // comparisons blended a tap) where the device filters D32 linearly, else nearest.
+        var filter = _depthLinear ? VkFilter.Linear : VkFilter.Nearest;
+        var csi = new VkSamplerCreateInfo
+        {
+            magFilter = filter, minFilter = filter, mipmapMode = VkSamplerMipmapMode.Nearest,
+            addressModeU = VkSamplerAddressMode.ClampToEdge, addressModeV = VkSamplerAddressMode.ClampToEdge,
+            addressModeW = VkSamplerAddressMode.ClampToEdge, compareEnable = true, compareOp = VkCompareOp.LessOrEqual, minLod = 0, maxLod = 0,
+        };
+        VkSampler shadowSampler;
+        Check(api.vkCreateSampler(&csi, null, &shadowSampler), "vkCreateSampler");
+        _shadowSampler = shadowSampler;
 
         // two uniform blocks (pick, colour) per frame slot — host-coherent, mapped once
         _ub = NewBuffer(api, Ring * 2 * UniformStride, VkBufferUsageFlags.UniformBuffer, VkMemoryPropertyFlags.HostVisible | VkMemoryPropertyFlags.HostCoherent);
@@ -418,6 +492,167 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         _pickPos = NewImage(api, 1, 1, VkFormat.R32G32B32A32Sfloat, VkImageUsageFlags.ColorAttachment | VkImageUsageFlags.TransferSrc, VkImageAspectFlags.Color, export: false);
         _pickDepth = NewImage(api, 1, 1, DepthFormat, VkImageUsageFlags.DepthStencilAttachment, VkImageAspectFlags.Depth, export: false);
         _pickFb = Framebuffer(api, _rpPick, [_pickId.View, _pickPos.View, _pickDepth.View], 1, 1);
+
+        // brief-em3d-107 — set 3, pointed at 1 × 1 stand-ins until a map or the occlusion's targets exist
+        _noShadowMap = NewImage(api, 1, 1, DepthFormat, VkImageUsageFlags.DepthStencilAttachment | VkImageUsageFlags.Sampled, VkImageAspectFlags.Depth, export: false);
+        _noOcclusion = NewImage(api, 1, 1, VkFormat.R8Unorm, VkImageUsageFlags.ColorAttachment | VkImageUsageFlags.Sampled, VkImageAspectFlags.Color, export: false);
+        ToShaderRead(api, _noShadowMap, VkImageAspectFlags.Depth);
+        ToShaderRead(api, _noOcclusion, VkImageAspectFlags.Color);
+        var lps = stackalloc VkDescriptorPoolSize[2];
+        lps[0] = new VkDescriptorPoolSize { type = VkDescriptorType.SampledImage, descriptorCount = 4 };
+        lps[1] = new VkDescriptorPoolSize { type = VkDescriptorType.Sampler, descriptorCount = 1 };
+        var lpi = new VkDescriptorPoolCreateInfo { maxSets = 1, poolSizeCount = 2, pPoolSizes = lps };
+        VkDescriptorPool lpool;
+        Check(api.vkCreateDescriptorPool(&lpi, null, &lpool), "vkCreateDescriptorPool");
+        _lightPool = lpool;
+        var lai = new VkDescriptorSetAllocateInfo { descriptorPool = lpool, descriptorSetCount = 1, pSetLayouts = &lightLayout };
+        VkDescriptorSet lset;
+        Check(api.vkAllocateDescriptorSets(&lai, &lset), "vkAllocateDescriptorSets");
+        _lightSet = lset;
+        WriteLightSet(api);
+    }
+
+    /// <summary>brief-em3d-107 — a render pass whose attachments are READ by later passes: an optional colour target of
+    /// <paramref name="color"/> (Undefined: none) and an optional depth target, each cleared and left SHADER_READ_ONLY_OPTIMAL — except
+    /// the prepass's depth buffer (a colour target with depth), which nothing reads. Its dependencies order the previous frame's reads
+    /// before these writes, and these writes before the fragment shader reads that follow.</summary>
+    private VkRenderPass ReadBackPass(VkDeviceApi api, VkFormat color, bool depth)
+    {
+        bool hasColor = color != VkFormat.Undefined;
+        var att = stackalloc VkAttachmentDescription[2];
+        uint n = 0;
+        if (hasColor)
+            att[n++] = new VkAttachmentDescription
+            {
+                format = color, samples = VkSampleCountFlags.Count1,
+                loadOp = depth ? VkAttachmentLoadOp.Clear : VkAttachmentLoadOp.DontCare, storeOp = VkAttachmentStoreOp.Store,
+                stencilLoadOp = VkAttachmentLoadOp.DontCare, stencilStoreOp = VkAttachmentStoreOp.DontCare,
+                initialLayout = VkImageLayout.Undefined, finalLayout = VkImageLayout.ShaderReadOnlyOptimal,
+            };
+        if (depth)
+            att[n++] = new VkAttachmentDescription
+            {
+                format = DepthFormat, samples = VkSampleCountFlags.Count1, loadOp = VkAttachmentLoadOp.Clear,
+                storeOp = hasColor ? VkAttachmentStoreOp.DontCare : VkAttachmentStoreOp.Store,
+                stencilLoadOp = VkAttachmentLoadOp.DontCare, stencilStoreOp = VkAttachmentStoreOp.DontCare,
+                initialLayout = VkImageLayout.Undefined,
+                finalLayout = hasColor ? VkImageLayout.DepthStencilAttachmentOptimal : VkImageLayout.ShaderReadOnlyOptimal,
+            };
+        var cref = new VkAttachmentReference { attachment = 0, layout = VkImageLayout.ColorAttachmentOptimal };
+        var dref = new VkAttachmentReference { attachment = hasColor ? 1u : 0u, layout = VkImageLayout.DepthStencilAttachmentOptimal };
+        var sub = new VkSubpassDescription
+        {
+            pipelineBindPoint = VkPipelineBindPoint.Graphics, colorAttachmentCount = hasColor ? 1u : 0u, pColorAttachments = hasColor ? &cref : null,
+            pDepthStencilAttachment = depth ? &dref : null,
+        };
+        var writes = VkPipelineStageFlags.ColorAttachmentOutput | VkPipelineStageFlags.EarlyFragmentTests | VkPipelineStageFlags.LateFragmentTests;
+        var deps = stackalloc VkSubpassDependency[2];
+        deps[0] = new VkSubpassDependency
+        {
+            srcSubpass = VK_SUBPASS_EXTERNAL, dstSubpass = 0,
+            srcStageMask = VkPipelineStageFlags.FragmentShader | writes, dstStageMask = writes,
+            srcAccessMask = VkAccessFlags.ColorAttachmentWrite | VkAccessFlags.DepthStencilAttachmentWrite,
+            dstAccessMask = VkAccessFlags.ColorAttachmentWrite | VkAccessFlags.DepthStencilAttachmentWrite,
+        };
+        deps[1] = new VkSubpassDependency
+        {
+            srcSubpass = 0, dstSubpass = VK_SUBPASS_EXTERNAL, srcStageMask = writes, dstStageMask = VkPipelineStageFlags.FragmentShader,
+            srcAccessMask = VkAccessFlags.ColorAttachmentWrite | VkAccessFlags.DepthStencilAttachmentWrite, dstAccessMask = VkAccessFlags.ShaderRead,
+        };
+        var rpi = new VkRenderPassCreateInfo { attachmentCount = n, pAttachments = att, subpassCount = 1, pSubpasses = &sub, dependencyCount = 2, pDependencies = deps };
+        VkRenderPass rp;
+        Check(api.vkCreateRenderPass(&rpi, null, &rp), "vkCreateRenderPass");
+        return rp;
+    }
+
+    /// <summary>A new image straight to SHADER_READ_ONLY_OPTIMAL, so set 3 may name it before anything has drawn into it.</summary>
+    private void ToShaderRead(VkDeviceApi api, Target t, VkImageAspectFlags aspect)
+    {
+        var img = t.Image;
+        OneShot(api, cb =>
+        {
+            var b = new VkImageMemoryBarrier
+            {
+                srcAccessMask = 0, dstAccessMask = VkAccessFlags.ShaderRead,
+                oldLayout = VkImageLayout.Undefined, newLayout = VkImageLayout.ShaderReadOnlyOptimal,
+                srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED, image = img,
+                subresourceRange = new VkImageSubresourceRange { aspectMask = aspect, levelCount = 1, layerCount = 1 },
+            };
+            api.vkCmdPipelineBarrier(cb, VkPipelineStageFlags.TopOfPipe, VkPipelineStageFlags.FragmentShader, 0, 0, null, 0, null, 1, &b);
+        });
+    }
+
+    /// <summary>Set 3 pointed at the current shadow map and occlusion targets (or the stand-ins). Never under a frame in flight: the
+    /// callers wait for the device first.</summary>
+    private void WriteLightSet(VkDeviceApi api)
+    {
+        var ii = stackalloc VkDescriptorImageInfo[5];
+        var ro = VkImageLayout.ShaderReadOnlyOptimal;
+        ii[0] = new VkDescriptorImageInfo { imageView = (_shadowMap?.Depth ?? _noShadowMap!).View, imageLayout = ro };
+        ii[1] = new VkDescriptorImageInfo { sampler = _shadowSampler };
+        ii[2] = new VkDescriptorImageInfo { imageView = (_occlusion?.Blur ?? _noOcclusion!).View, imageLayout = ro };
+        ii[3] = new VkDescriptorImageInfo { imageView = (_occlusion?.Depths ?? _noOcclusion!).View, imageLayout = ro };
+        ii[4] = new VkDescriptorImageInfo { imageView = (_occlusion?.Raw ?? _noOcclusion!).View, imageLayout = ro };
+        var w = stackalloc VkWriteDescriptorSet[5];
+        for (uint k = 0; k < 5; k++)
+            w[k] = new VkWriteDescriptorSet
+            {
+                dstSet = _lightSet, dstBinding = k, descriptorCount = 1,
+                descriptorType = k == 1 ? VkDescriptorType.Sampler : VkDescriptorType.SampledImage, pImageInfo = &ii[k],
+            };
+        api.vkUpdateDescriptorSets(5, w, 0, null);
+    }
+
+    /// <summary>R-em3d107-1a — the key light's map at <paramref name="size"/>², made (and set 3 re-pointed) only when the size changes.</summary>
+    private void EnsureShadowMap(VkDeviceApi api, int size)
+    {
+        if (_shadowMap?.Size == size) return;
+        Check(api.vkDeviceWaitIdle(), "vkDeviceWaitIdle");
+        DestroyShadowMap(api);
+        var depth = NewImage(api, size, size, DepthFormat, VkImageUsageFlags.DepthStencilAttachment | VkImageUsageFlags.Sampled,
+                             VkImageAspectFlags.Depth, export: false);
+        _shadowMap = new ShadowMap { Depth = depth, Size = size, Framebuffer = Framebuffer(api, _rpShadow, [depth.View], size, size) };
+        WriteLightSet(api);
+    }
+
+    /// <summary>R-em3d107-2a — the occlusion's targets at the frame's size, made (and set 3 re-pointed) only when the size changes.</summary>
+    private void EnsureOcclusion(VkDeviceApi api, int w, int h)
+    {
+        if (_occlusion is { } o && o.Width == w && o.Height == h) return;
+        Check(api.vkDeviceWaitIdle(), "vkDeviceWaitIdle");
+        DestroyOcclusion(api);
+        var sampled = VkImageUsageFlags.ColorAttachment | VkImageUsageFlags.Sampled;
+        var n = new OcclusionTargets
+        {
+            Width = w, Height = h,
+            Depths = NewImage(api, w, h, VkFormat.R32Sfloat, sampled, VkImageAspectFlags.Color, export: false),
+            DepthBuffer = NewImage(api, w, h, DepthFormat, VkImageUsageFlags.DepthStencilAttachment, VkImageAspectFlags.Depth, export: false),
+            Raw = NewImage(api, w, h, VkFormat.R8Unorm, sampled, VkImageAspectFlags.Color, export: false),
+            Blur = NewImage(api, w, h, VkFormat.R8Unorm, sampled, VkImageAspectFlags.Color, export: false),
+        };
+        n.Prepass = Framebuffer(api, _rpPrepass, [n.Depths.View, n.DepthBuffer.View], w, h);
+        n.AoPass = Framebuffer(api, _rpAo, [n.Raw.View], w, h);
+        n.BlurPass = Framebuffer(api, _rpAo, [n.Blur.View], w, h);
+        // the blurred occlusion may be named by set 3 before a frame has drawn it (a frame that turns occlusion off)
+        ToShaderRead(api, n.Blur, VkImageAspectFlags.Color);
+        _occlusion = n;
+        WriteLightSet(api);
+    }
+
+    private void DestroyShadowMap(VkDeviceApi api)
+    {
+        if (_shadowMap is not { } m) return;
+        api.vkDestroyFramebuffer(m.Framebuffer, null);
+        Destroy(api, m.Depth);
+        _shadowMap = null;
+    }
+
+    private void DestroyOcclusion(VkDeviceApi api)
+    {
+        if (_occlusion is not { } o) return;
+        api.vkDestroyFramebuffer(o.Prepass, null); api.vkDestroyFramebuffer(o.AoPass, null); api.vkDestroyFramebuffer(o.BlurPass, null);
+        Destroy(api, o.Depths); Destroy(api, o.DepthBuffer); Destroy(api, o.Raw); Destroy(api, o.Blur);
+        _occlusion = null;
     }
 
     private VkRenderPass RenderPass(VkDeviceApi api, bool pick)
@@ -487,9 +722,10 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
 
     private VkPipeline Pipeline(VkDeviceApi api, VkRenderPass rp, ReadOnlySpan<byte> fragmentEntry, VkPrimitiveTopology topology,
                                 bool blend, bool depthWrite, int targets, bool field = false, bool depthTest = true, bool grid = false,
-                                bool image = false, bool pbr = false, bool premultiplied = false)
+                                bool image = false, bool pbr = false, bool premultiplied = false, ReadOnlySpan<byte> vertexEntry = default)
     {
-        fixed (byte* vsName = field ? "vs_field"u8 : grid ? "vs_grid"u8 : image ? "vs_image"u8 : pbr ? "vs_pbr"u8 : "vs"u8)
+        // brief-em3d-107 — vertexEntry names a vertex stage taking vs's input (vs_shadow); targets 0 is a depth-only pass
+        fixed (byte* vsName = !vertexEntry.IsEmpty ? vertexEntry : field ? "vs_field"u8 : grid ? "vs_grid"u8 : image ? "vs_image"u8 : pbr ? "vs_pbr"u8 : "vs"u8)
         fixed (byte* fsName = fragmentEntry)
         {
             var stages = stackalloc VkPipelineShaderStageCreateInfo[2];
@@ -866,6 +1102,14 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
     {
         ReleaseEnvironmentTextures();
         _appearancesWritten = false;
+        // brief-em3d-107 — the shadow map and the occlusion's targets go too; set 3 falls back to the stand-ins
+        if (_api is { } api && (_shadowMap is not null || _occlusion is not null))
+        {
+            api.vkDeviceWaitIdle();
+            DestroyShadowMap(api);
+            DestroyOcclusion(api);
+            WriteLightSet(api);
+        }
     }
 
     private void ReleaseEnvironmentTextures()
@@ -1197,6 +1441,12 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         }
         if (im.Ready.Handle != 0 && !im.ReadySignalled) signal = im.Ready;
 
+        // brief-em3d-107 — the shadow map and the occlusion's targets are made (and set 3 re-pointed) BEFORE recording: a set may not be
+        // rewritten under a command buffer that binds it
+        bool shadowPass = plan.Realistic && plan.ShadowPass && plan.ShadowDrawCount > 0 && _vb.Buf.Handle != 0 && _ib.Buf.Handle != 0;
+        bool occlusion = plan.Realistic && plan.Occlusion && _vb.Buf.Handle != 0 && _ib.Buf.Handle != 0;
+        if (shadowPass) EnsureShadowMap(api, plan.ShadowSize);
+        if (occlusion) EnsureOcclusion(api, im.Width, im.Height);
         int f0 = (int)(_frame % Ring);
         CollectPicks(api);
         if (_submitted[f0])
@@ -1226,6 +1476,13 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                                   Scene3DFramePlan.TransformBytesPerDraw);
         Counters.CountUniform((long)tCount * Scene3DFramePlan.TransformBytesPerDraw);
         var offs = stackalloc uint[2];
+
+        // the frame's uniforms, written once: the shadow and occlusion passes read them, and so does the colour pass
+        uint colourOff = (uint)((f0 * 2 + 1) * UniformStride);
+        fixed (float* u = plan.Uniforms) Buffer.MemoryCopy(u, _uMapped + colourOff, Scene3DFramePlan.UniformBytes, Scene3DFramePlan.UniformBytes);
+        Counters.CountUniform(Scene3DFramePlan.UniformBytes);
+        if (shadowPass) draws += ShadowPass(api, cb, plan, set, colourOff, tBase, tCount);
+        if (occlusion) draws += OcclusionPasses(api, cb, plan, set, colourOff, tBase, tCount);
 
         if (plan.Pick && plan.PickDrawCount > 0 && _vb.Buf.Handle != 0 && _ib.Buf.Handle != 0 && !_pickPending[f0])
         {
@@ -1275,11 +1532,9 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         }
 
         {
-            uint off = (uint)((f0 * 2 + 1) * UniformStride);
-            fixed (float* u = plan.Uniforms) Buffer.MemoryCopy(u, _uMapped + off, Scene3DFramePlan.UniformBytes, Scene3DFramePlan.UniformBytes);
-            Counters.CountUniform(Scene3DFramePlan.UniformBytes);
+            uint off = colourOff;
             var (r, g, b) = plan.Clear;
-            clears[0] = new VkClearValue(r, g, b, 1f);
+            clears[0] = new VkClearValue(r, g, b, plan.Transparent ? 0f : 1f);
             clears[1] = new VkClearValue(1f, 0u);
             var rbi = new VkRenderPassBeginInfo
             {
@@ -1295,7 +1550,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
             var tie = Scene3DDepthTie.None;
             SetTie(api, cb, tie);
             Scene3DBuffer bound = (Scene3DBuffer)(-1);
-            bool envBound = false, shadeBound = false;
+            bool envBound = false, shadeBound = false, lightBound = false;
             for (int i = 0; i < plan.DrawCount; i++)
             {
                 ref var d = ref plan.Draws[i];
@@ -1307,7 +1562,7 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                 };
                 bool lines = d.Pipeline is Scene3DPipeline.Lines or Scene3DPipeline.Edges, field = d.Pipeline == Scene3DPipeline.Field;
                 // brief-em3d-106 — the backdrop draws like the grid; a realistic draw needs the environment's set and the table.
-                bool grid = d.Pipeline is Scene3DPipeline.Grid or Scene3DPipeline.Backdrop;
+                bool grid = d.Pipeline is Scene3DPipeline.Grid or Scene3DPipeline.Backdrop or Scene3DPipeline.Ground;
                 bool pbr = d.Pipeline is Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent;
                 if ((pbr || d.Pipeline == Scene3DPipeline.Backdrop) && (_envSet.Handle == 0 || !_appearancesWritten)) continue;
                 if (pbr && _shade.Buf.Handle == 0) continue;
@@ -1327,9 +1582,16 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
                         Scene3DPipeline.Field => _pField, Scene3DPipeline.Edges => _pEdges,
                         Scene3DPipeline.OnTop => _pTop, Scene3DPipeline.Grid => _pGrid,
                         Scene3DPipeline.Image => _pImage, Scene3DPipeline.ImageTranslucent => _pImageTrans,
-                        Scene3DPipeline.Pbr => _pPbr, Scene3DPipeline.PbrTranslucent => _pPbrTrans, Scene3DPipeline.Backdrop => _pBackdrop,
-                        _ => _pOpaque,
+                        Scene3DPipeline.Pbr => _pPbr, Scene3DPipeline.PbrTranslucent => _pPbrGlass, Scene3DPipeline.Backdrop => _pBackdrop,
+                        Scene3DPipeline.Ground => _pGround, _ => _pOpaque,
                     });
+                    if ((pbr || state == Scene3DPipeline.Ground) && !lightBound)
+                    {
+                        // brief-em3d-107 — set 3 (the shadow map, the occlusion), once a frame, as set 2 is
+                        var ls = _lightSet;
+                        api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 3, 1, &ls, 0, null);
+                        lightBound = true;
+                    }
                     if ((pbr || state == Scene3DPipeline.Backdrop) && !envBound)
                     {
                         // brief-em3d-106 — set 2, once a frame: binding set 0 again (a transform) leaves it, the layouts being one.
@@ -1389,6 +1651,107 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         _submitted[f0] = true;
         _frame++;
         DrawCallsLastFrame = draws;
+    }
+
+    /// <summary>R-em3d107-1 — the casters into the key light's map, with the shadow bias (dynamic, as every tie's is).</summary>
+    private int ShadowPass(VkDeviceApi api, VkCommandBuffer cb, Scene3DFramePlan plan, VkDescriptorSet set, uint uniformOff, uint tBase, int tCount)
+    {
+        var map = _shadowMap!;
+        var clear = new VkClearValue(1f, 0u);
+        var rbi = new VkRenderPassBeginInfo
+        {
+            renderPass = _rpShadow, framebuffer = map.Framebuffer, renderArea = new VkRect2D(0, 0, (uint)map.Size, (uint)map.Size),
+            clearValueCount = 1, pClearValues = &clear,
+        };
+        api.vkCmdBeginRenderPass(cb, &rbi, VkSubpassContents.Inline);
+        SetViewport(api, cb, map.Size, map.Size);
+        api.vkCmdBindPipeline(cb, VkPipelineBindPoint.Graphics, _pShadow);
+        var offs = stackalloc uint[2] { uniformOff, tBase };
+        api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 0, 1, &set, 2, offs);
+        var (constant, slope, clamp) = Scene3DFramePlan.ShadowBias;
+        api.vkCmdSetDepthBias(cb, constant, clamp, slope);
+        ulong zero = 0;
+        var vb = _vb.Buf;
+        api.vkCmdBindVertexBuffers(cb, 0, 1, &vb, &zero);
+        api.vkCmdBindIndexBuffer(cb, _ib.Buf, 0, VkIndexType.Uint32);
+        int transform = 0, draws = 0;
+        for (int i = 0; i < plan.ShadowDrawCount; i++)
+        {
+            ref var d = ref plan.ShadowDraws[i];
+            if (d.Transform != transform && d.Transform < tCount)
+            {
+                transform = d.Transform;
+                offs[1] = tBase + (uint)(transform * TransformStride);
+                api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 0, 1, &set, 2, offs);
+            }
+            api.vkCmdDrawIndexed(cb, (uint)d.Count, 1, (uint)d.First, 0, 0);
+            draws++;
+        }
+        api.vkCmdEndRenderPass(cb);
+        return draws;
+    }
+
+    /// <summary>R-em3d107-2 — the occlusion: the opaque materials' (and the ground's) depths along the view's rays into its own targets,
+    /// the horizon pass, the blur. Each pass leaves its target SHADER_READ_ONLY_OPTIMAL for the next.</summary>
+    private int OcclusionPasses(VkDeviceApi api, VkCommandBuffer cb, Scene3DFramePlan plan, VkDescriptorSet set, uint uniformOff, uint tBase, int tCount)
+    {
+        var o = _occlusion!;
+        var clears = stackalloc VkClearValue[2];
+        clears[0] = new VkClearValue(CircuitRF.Render.Scene3D.Look.Occlusion.Empty, 0f, 0f, 0f);
+        clears[1] = new VkClearValue(1f, 0u);
+        var rbi = new VkRenderPassBeginInfo
+        {
+            renderPass = _rpPrepass, framebuffer = o.Prepass, renderArea = new VkRect2D(0, 0, (uint)o.Width, (uint)o.Height),
+            clearValueCount = 2, pClearValues = clears,
+        };
+        api.vkCmdBeginRenderPass(cb, &rbi, VkSubpassContents.Inline);
+        SetViewport(api, cb, o.Width, o.Height);
+        api.vkCmdBindPipeline(cb, VkPipelineBindPoint.Graphics, _pPrepass);
+        var offs = stackalloc uint[2] { uniformOff, tBase };
+        api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 0, 1, &set, 2, offs);
+        SetTie(api, cb, Scene3DDepthTie.None);
+        ulong zero = 0;
+        var vb = _vb.Buf;
+        api.vkCmdBindVertexBuffers(cb, 0, 1, &vb, &zero);
+        api.vkCmdBindIndexBuffer(cb, _ib.Buf, 0, VkIndexType.Uint32);
+        int transform = 0, draws = 0;
+        for (int i = 0; i < plan.DrawCount; i++)
+        {
+            ref var d = ref plan.Draws[i];
+            if (d.Pipeline != Scene3DPipeline.Pbr) continue;
+            if (d.Transform != transform && d.Transform < tCount)
+            {
+                transform = d.Transform;
+                offs[1] = tBase + (uint)(transform * TransformStride);
+                api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 0, 1, &set, 2, offs);
+            }
+            api.vkCmdDrawIndexed(cb, (uint)d.Count, 1, (uint)d.First, 0, 0);
+            draws++;
+        }
+        if (plan.GroundDrawn)
+        {
+            api.vkCmdBindPipeline(cb, VkPipelineBindPoint.Graphics, _pGroundPrepass);
+            api.vkCmdDraw(cb, 6, 1, 0, 0);
+            draws++;
+        }
+        api.vkCmdEndRenderPass(cb);
+
+        var ls = _lightSet;
+        foreach (var (pipe, fb) in new[] { (_pAo, o.AoPass), (_pAoBlur, o.BlurPass) })
+        {
+            var abi = new VkRenderPassBeginInfo
+            {
+                renderPass = _rpAo, framebuffer = fb, renderArea = new VkRect2D(0, 0, (uint)o.Width, (uint)o.Height), clearValueCount = 0,
+            };
+            api.vkCmdBeginRenderPass(cb, &abi, VkSubpassContents.Inline);
+            SetViewport(api, cb, o.Width, o.Height);
+            api.vkCmdBindPipeline(cb, VkPipelineBindPoint.Graphics, pipe);
+            api.vkCmdBindDescriptorSets(cb, VkPipelineBindPoint.Graphics, _layout, 3, 1, &ls, 0, null);
+            api.vkCmdDraw(cb, 6, 1, 0, 0);
+            draws++;
+            api.vkCmdEndRenderPass(cb);
+        }
+        return draws;
     }
 
     private static void SetViewport(VkDeviceApi api, VkCommandBuffer cb, int w, int h)
@@ -1492,6 +1855,12 @@ internal sealed unsafe class VulkanViewer3DBackend : Viewer3DBackend
         api.vkDestroyPipeline(_pEdges, null); api.vkDestroyPipeline(_pTop, null); api.vkDestroyPipeline(_pGrid, null);
         api.vkDestroyPipeline(_pImage, null); api.vkDestroyPipeline(_pImageTrans, null);
         api.vkDestroyPipeline(_pPbr, null); api.vkDestroyPipeline(_pPbrTrans, null); api.vkDestroyPipeline(_pBackdrop, null);
+        DestroyShadowMap(api); DestroyOcclusion(api);
+        Destroy(api, _noShadowMap); Destroy(api, _noOcclusion);
+        foreach (var p in new[] { _pShadow, _pPrepass, _pGroundPrepass, _pAo, _pAoBlur, _pGround, _pPbrGlass }) api.vkDestroyPipeline(p, null);
+        api.vkDestroyDescriptorPool(_lightPool, null); api.vkDestroyDescriptorSetLayout(_lightSetLayout, null);
+        api.vkDestroySampler(_shadowSampler, null);
+        api.vkDestroyRenderPass(_rpShadow, null); api.vkDestroyRenderPass(_rpPrepass, null); api.vkDestroyRenderPass(_rpAo, null);
         api.vkDestroyDescriptorSetLayout(_envSetLayout, null);
         api.vkDestroySampler(_sampler, null); api.vkDestroyDescriptorSetLayout(_imageSetLayout, null);
         api.vkDestroyPipelineLayout(_layout, null); api.vkDestroyDescriptorPool(_pool, null);

@@ -388,7 +388,10 @@ public sealed class RealisticViewTests : IDisposable
         Assert.Equal(Scene3DShadeVertex.StatedAlpha, U("STATED_ALPHA"));
         Assert.Contains($"array<AP, {Pbr.TableRows}>", wgsl);
         Assert.Contains($"sh: array<vec4f, 9>", wgsl);
-        Assert.Equal(floats.Length + 2, consts.Count);       // nothing new in the shader that the scan does not compare
+        // nothing new in the shader that a scan does not compare: brief 107's eight are ShadowsOcclusionExportTests'
+        string[] brief107 = ["SHADOW_MIN_COS", "SHADOW_TAPS", "AO_DIRECTIONS", "AO_STEPS", "AO_BIAS", "AO_MAX_PIXELS", "AO_EMPTY", "GROUND_FADE"];
+        Assert.All(brief107, n => Assert.True(consts.ContainsKey(n), n));
+        Assert.Equal(floats.Length + 2 + brief107.Length, consts.Count);
     }
 
     // ── 6. Metal offscreen ────────────────────────────────────────────────────────────────────────────────────────
@@ -464,8 +467,9 @@ public sealed class RealisticViewTests : IDisposable
                 }
             return most;
         }
-        var rough = DrawSphere("#b0b0b0", 0, 1);
-        var glossy = DrawSphere("#b0b0b0", 0, 0.05);
+        // brief-em3d-107 — with no ground: its shadow under the sphere is an edge of its own, and this compares the sphere's shading
+        var rough = DrawSphere("#b0b0b0", 0, 1, new C3dLook { Ground = false });
+        var glossy = DrawSphere("#b0b0b0", 0, 0.05, new C3dLook { Ground = false });
         float pr = Peak(rough.Rgba, rough.W, rough.H), pg = Peak(glossy.Rgba, glossy.W, glossy.H);
         Assert.True(pr < 0.25f * pg && pr < 12, $"rough {pr}, glossy {pg}");
     }

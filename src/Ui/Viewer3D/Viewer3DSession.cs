@@ -55,6 +55,16 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
     public int EnvironmentUploads { get; private set; }
     public int AppearanceUploads { get; private set; }
 
+    /// <summary>
+    /// brief-em3d-107 R-em3d107-1b — how many shadow passes frames have asked the backend for. The map lives on the backend between
+    /// frames and is rendered again only when <see cref="Scene3DFramePlan.ShadowKey"/> moves: a new scene or patch, a drag's preview, a
+    /// visibility change, the key light's direction, the map's size. An orbit changes none of them, so it renders none (gate 2).
+    /// </summary>
+    public int ShadowPasses { get; private set; }
+
+    /// <summary>The key the backend's shadow map was last rendered with; 0 for none (released with the realistic view's lighting).</summary>
+    private long _shadowKey;
+
     /// <summary>Counters on the UI lane: the pane's per-frame share on the UI thread.</summary>
     public FrameCounters Ui { get; } = new("ui");
 
@@ -84,6 +94,7 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
             if (Backend is not { } b) return false;
             b.Counters.BeginFrame(orbiting);
             Upload(b, scene, mesh, section, grid, field);
+            DecideShadowPass(plan);
             b.Render(image, plan, frame);
             b.Counters.EndFrame();
             return true;
@@ -117,8 +128,10 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
             if (_shadeScene is not null) { b.ReleaseShade(); _shadeScene = null; }
             if (_environment is not null || _appearances is not null)
             {
+                // brief-em3d-107 — the backend lets its shadow map and occlusion targets go with the environment
                 b.ReleaseEnvironment();
                 (_environment, _appearances) = (null, null);
+                _shadowKey = 0;
             }
         }
         else
@@ -169,8 +182,18 @@ public sealed class Viewer3DSession(Func<Viewer3DBackend> create) : IDisposable
         {
             if (_disposed || Backend is not { } b) return null;
             Upload(b, scene, mesh, section, grid, field);
+            DecideShadowPass(plan);
             return b.RenderPixels(plan);
         }
+    }
+
+    /// <summary>R-em3d107-1b — the shadow pass only when the map's key moved.</summary>
+    private void DecideShadowPass(Scene3DFramePlan plan)
+    {
+        plan.ShadowPass = plan.ShadowKey != 0 && plan.ShadowKey != _shadowKey;
+        if (!plan.ShadowPass) return;
+        _shadowKey = plan.ShadowKey;
+        ShadowPasses++;
     }
 
     private void Sync(Viewer3DBackend b, Scene3DBuffer slot, int i, Scene3DOverlay o)

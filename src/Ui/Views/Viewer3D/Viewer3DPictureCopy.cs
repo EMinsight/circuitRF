@@ -37,10 +37,10 @@ public static class Viewer3DPictureCopy
     /// the scale bar as the toolbar has them, a measurement, the selection's highlight — painted at the picture's size to
     /// lay over them (3D editor bugs round 6: a picture had been the GPU's pixels alone). Copy and Export Picture… both.
     /// </summary>
-    public static FieldPictureShot? Capture(Control pane, Viewer3DViewModel vm, int scale, out string? error)
+    public static FieldPictureShot? Capture(Control pane, Viewer3DViewModel vm, int scale, out string? error, bool transparent = false)
     {
         var (w, h) = PanePixels(pane);
-        var shot = vm.CapturePicture(w, h, scale, out error);
+        var shot = vm.CapturePicture(w, h, scale, out error, transparent);
         return shot is null ? null : shot with { Layer = Viewer3DOverlay.PictureLayer(vm, pane.Bounds.Width, shot.Width, shot.Height) };
     }
 

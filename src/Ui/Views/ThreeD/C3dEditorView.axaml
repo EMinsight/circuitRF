@@ -416,6 +416,18 @@
                                         </ComboBox.ItemTemplate>
                                     </ComboBox>
                                 </StackPanel>
+                                <!-- brief-em3d-107 R-em3d107-5 — the realistic view's picture: drawn at k × the size and brought down, and
+                                     optionally with no background (the ground's shadow then lands in the PNG's alpha) -->
+                                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ViewModel.Viewer.IsRealistic}">
+                                    <TextBlock Text="Supersampling" VerticalAlignment="Center"/>
+                                    <ComboBox ItemsSource="{Binding ViewModel.Viewer.ExportSupersamples}" SelectedItem="{Binding ViewModel.Viewer.ExportSupersample}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate><TextBlock Text="{Binding StringFormat='{}{0}×'}"/></DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </StackPanel>
+                                <CheckBox IsChecked="{Binding ViewModel.Viewer.ExportTransparent}" Content="Transparent background"
+                                          IsVisible="{Binding ViewModel.Viewer.IsRealistic}"/>
                                 <CheckBox IsChecked="{Binding ViewModel.Viewer.ExportLegend}" Content="Legend"/>
                                 <CheckBox IsChecked="{Binding ViewModel.Viewer.ExportCaption}" Content="Frequency or mode caption"/>
                                 <Button Content="Save PNG…" Click="OnExportPicture" HorizontalAlignment="Right"/>

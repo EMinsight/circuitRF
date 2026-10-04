@@ -119,6 +119,7 @@ public static class C3dValidation
             if (!File.Exists(file)) found.Add(C3dDiagnostics.LookHdrUnreadable(path, "the file does not exist"));
             else if (!RadianceHdr.Probe(file, out string? why)) found.Add(C3dDiagnostics.LookHdrUnreadable(path, why ?? "it does not read"));
         }
+        // brief-em3d-107 — Shadows, AmbientOcclusion and Ground are booleans: the reader refuses any other value, so nothing is left here
         Unread(look.Unread, "The Look", found);
     }
 

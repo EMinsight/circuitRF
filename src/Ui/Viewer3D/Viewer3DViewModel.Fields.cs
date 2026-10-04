@@ -24,6 +24,7 @@ using System.Numerics;
 using CircuitRF.Design.Em3d;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Render.Scene3D;
+using CircuitRF.Render.Scene3D.Look;
 using CircuitRF.Render.Scene3D.Fields;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -775,19 +776,29 @@ public sealed partial class Viewer3DViewModel
     /// <summary>What Copy puts on the clipboard: the view at this multiple of the window (brief-em3d-29 follow-up).</summary>
     public const int CopyScale = 4;
 
+    /// <summary>brief-em3d-107 R-em3d107-5a — the realistic view's picture is drawn at this many times its size in each direction and
+    /// brought down (PictureResample): 1, 2 (the default, owner decision D3) or 4.</summary>
+    public IReadOnlyList<int> ExportSupersamples { get; } = PictureResample.Factors;
+    [ObservableProperty] private int _exportSupersample = PictureResample.DefaultFactor;
+    /// <summary>R-em3d107-5b — the realistic view's picture with no background: the PNG's alpha carries the model's coverage, a glass
+    /// object's partial cover and the ground's soft shadow. Never the live view.</summary>
+    [ObservableProperty] private bool _exportTransparent;
+
     /// <summary>
     /// The view drawn by the GPU offscreen at <paramref name="scale"/> × the window's DEVICE-pixel size
     /// (1-4), reduced when needed so neither side passes <see cref="FieldPicture.MaxSide"/>, and read back;
     /// with the legends (brief-em3d-96: the same stack as the view's) and the caption to paint over it as the export options say.
     /// The current camera; no pick pass, so no hover id reaches the picture. UI thread: the read-back holds the render lock.
     /// </summary>
-    public FieldPictureShot? CapturePicture(int windowPixelsW, int windowPixelsH, int scale, out string? error)
+    public FieldPictureShot? CapturePicture(int windowPixelsW, int windowPixelsH, int scale, out string? error, bool transparent = false)
     {
         error = null;
         float k = Math.Clamp(scale, 1, 4);
         k = Math.Min(k, FieldPicture.MaxSide / (float)Math.Max(1, Math.Max(windowPixelsW, windowPixelsH)));
         int w = Math.Clamp((int)Math.Round(windowPixelsW * k), 1, FieldPicture.MaxSide);
         int h = Math.Clamp((int)Math.Round(windowPixelsH * k), 1, FieldPicture.MaxSide);
+        // brief-em3d-107 R-em3d107-5a — the realistic picture is drawn at ss × its size (still within MaxSide) and brought down
+        int ss = View.DrawsRealistic ? SupersampleFor(w, h, ExportSupersample) : 1;
         try
         {
             var backend = Session.EnsureBackend();
@@ -795,10 +806,15 @@ public sealed partial class Viewer3DViewModel
             float cx = View.CursorX, cy = View.CursorY;
             View.CursorX = View.CursorY = -1;
             // brief-em3d-106 R-em3d106-2c — export: in the realistic view a picture carries no hover and no selection.
-            try { plan.Plan(Scene, View, w, h, backend.FlipY, pick: false, MeshOverlay, SectionOverlay, GridOverlay, FieldDrawn, export: true); }
+            try
+            {
+                plan.Plan(Scene, View, w * ss, h * ss, backend.FlipY, pick: false, MeshOverlay, SectionOverlay, GridOverlay, FieldDrawn,
+                          export: true, transparent: transparent);
+            }
             finally { View.CursorX = cx; View.CursorY = cy; }
             var rgba = Session.RenderPixels(plan, Scene, MeshOverlay, SectionOverlay, GridOverlay, FieldDrawn);
             if (rgba is null) { error = "the 3D view has closed."; return null; }
+            if (ss > 1) rgba = PictureResample.Downsample(rgba, w * ss, h * ss, ss);
             var legends = ExportLegend && FieldLegendVisible
                 ? FieldLegendGroups.Select(g => new FieldPictureLegend(g.Lines, g.Map, g.Scale)).ToList()
                 : [];
@@ -808,13 +824,22 @@ public sealed partial class Viewer3DViewModel
                 var labels = DrawnLayers.Select(l => l.Item?.Label).OfType<string>().Distinct().ToList();
                 if (labels.Count > 0) caption = string.Join(", ", labels);
             }
-            return new FieldPictureShot(rgba, w, h, k, legends, caption, ThemeServiceDark());
+            return new FieldPictureShot(rgba, w, h, k, legends, caption, ThemeServiceDark()) { Transparent = plan.Transparent, Supersample = ss };
         }
         catch (Exception e) when (e is Viewer3DPresentFault or InvalidOperationException or OutOfMemoryException)
         {
             error = e.Message;
             return null;
         }
+    }
+
+    /// <summary>The largest of 4, 2, 1 at most <paramref name="asked"/> that keeps a <paramref name="w"/> × <paramref name="h"/> picture's
+    /// drawn size within <see cref="FieldPicture.MaxSide"/>.</summary>
+    internal static int SupersampleFor(int w, int h, int asked)
+    {
+        int ss = asked >= 4 ? 4 : asked >= 2 ? 2 : 1;
+        while (ss > 1 && (long)Math.Max(w, h) * ss > FieldPicture.MaxSide) ss /= 2;
+        return ss;
     }
 
     private static bool ThemeServiceDark() => CircuitRF.Render.ThemeService.CurrentVariant == CircuitRF.Render.ColorVariant.Dark;

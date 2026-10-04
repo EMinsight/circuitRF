@@ -75,7 +75,13 @@ internal sealed class PatchRecordingBackend : Viewer3DBackend
 
     public override void UploadOverlay(Scene3DBuffer slot, Scene3DVertex[] lines) => Counters.CountUpload((long)lines.Length * Scene3DVertex.Stride);
     public override void UploadField(CircuitRF.Render.Scene3D.Fields.FieldVertex[] vertices) { }
-    public override byte[] RenderPixels(Scene3DFramePlan plan) => new byte[plan.Width * plan.Height * 4];
+    /// <summary>brief-em3d-107 — the size the last picture was drawn at (a supersampled one is drawn larger than it is saved).</summary>
+    public (int W, int H) LastPixels;
+    public override byte[] RenderPixels(Scene3DFramePlan plan)
+    {
+        LastPixels = (plan.Width, plan.Height);
+        return new byte[plan.Width * plan.Height * 4];
+    }
     public override string? CheckInterop(ICompositionGpuInterop interop) => null;
     public override void CreateImages(ICompositionGpuInterop interop, int width, int height, int count) { }
     public override void ReleaseImages() { }

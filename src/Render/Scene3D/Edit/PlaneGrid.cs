@@ -228,27 +228,8 @@ public static class PlaneGrid
     /// </summary>
     public static void WriteRay(Span<float> u, in Camera3D cam, float width, float height, bool flipY)
     {
-        float aspect = MathF.Max(1, width) / MathF.Max(1, height);
-        float fov = cam.FovY > 0 && cam.FovY < MathF.PI ? cam.FovY : Camera3D.DefaultFovY;
-        float sy = flipY ? -1 : 1;
-        var eye = cam.Eye;
-        var (r, up, f) = (cam.Right, cam.Up, cam.Forward);
-        Vector3 ox = default, oy = default, dx = default, dy = default;
-        float persp;
-        if (cam.Projection == Projection3D.Orthographic)
-        {
-            float h = MathF.Max(1e-12f, cam.Distance * MathF.Tan(fov * 0.5f));
-            ox = r * (h * aspect);
-            oy = up * (h * sy);
-            persp = 0;
-        }
-        else
-        {
-            float ty = MathF.Tan(fov * 0.5f);
-            dx = r * (ty * aspect);
-            dy = up * (ty * sy);
-            persp = 1;
-        }
+        var (eye, ox, oy, f, dx, dy) = Ray(cam, width, height, flipY);
+        float persp = cam.Projection == Projection3D.Orthographic ? 0 : 1;
         static void Put(Span<float> u, int at, Vector3 v, float w) { u[at] = v.X; u[at + 1] = v.Y; u[at + 2] = v.Z; u[at + 3] = w; }
         Put(u, 12, eye, persp);
         Put(u, 36, ox, 0);
@@ -256,6 +237,31 @@ public static class PlaneGrid
         Put(u, 44, f, 0);
         Put(u, 48, dx, 0);
         Put(u, 52, dy, 0);
+    }
+
+    /// <summary>The view's ray at clip position (x, y): origin <c>O + x·Ox + y·Oy</c>, direction <c>D + x·Dx + y·Dy</c>, with D the view's
+    /// forward (so the parameter along a ray is the depth along the view). What <see cref="WriteRay"/> writes for the grid, and brief
+    /// 107's occlusion reads to rebuild a point from its depth.</summary>
+    public static (Vector3 O, Vector3 Ox, Vector3 Oy, Vector3 D, Vector3 Dx, Vector3 Dy) Ray(in Camera3D cam, float width, float height, bool flipY)
+    {
+        float aspect = MathF.Max(1, width) / MathF.Max(1, height);
+        float fov = cam.FovY > 0 && cam.FovY < MathF.PI ? cam.FovY : Camera3D.DefaultFovY;
+        float sy = flipY ? -1 : 1;
+        var (r, up, f) = (cam.Right, cam.Up, cam.Forward);
+        Vector3 ox = default, oy = default, dx = default, dy = default;
+        if (cam.Projection == Projection3D.Orthographic)
+        {
+            float h = MathF.Max(1e-12f, cam.Distance * MathF.Tan(fov * 0.5f));
+            ox = r * (h * aspect);
+            oy = up * (h * sy);
+        }
+        else
+        {
+            float ty = MathF.Tan(fov * 0.5f);
+            dx = r * (ty * aspect);
+            dy = up * (ty * sy);
+        }
+        return (cam.Eye, ox, oy, f, dx, dy);
     }
 
     /// <summary>

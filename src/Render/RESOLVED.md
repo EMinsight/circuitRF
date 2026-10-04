@@ -4747,3 +4747,37 @@ missing the driven port's probes or its kept document is drawn as written, with 
 - **An unreadable `.hdr`'s fallback was re-made on every Look change.** It carried Studio's key, which `KeyOf` (comparing on
   the file) never matched, so each exposure or rotation edit ran `For` again and uploaded a NEW environment object (the
   session compares by reference). Its key is now `hdr:<full path>|unread`.
+
+## Shadows, contact shading and the ground (brief-em3d-107, 2026-10-04)
+
+- **`Look/Shadows.cs` is the reference** for every constant the shader shares (`ShadowsOcclusionExportTests` holds them equal,
+  the Poisson taps included; brief 106's constant scan counts brief 107's eight as known).
+- **The shadow map.** Orthographic along the key light, a SQUARE window (square texels) over the casters' bounds in the light's
+  frame, grown by `WindowMargin` and the filter's radius; depth over the casters' range with the same pad. Casters are the
+  material objects drawn whose resolved Transmission is below 0.5 (owner decision D1); chrome and fields never cast. The filter
+  is 16 FIXED Poisson taps, each a bilinear comparison, of radius `PenumbraReach` (0.06) × the scene's bounding radius ×
+  tan(half the key softbox's mean angle): Studio 46.5°, High key 60°, Dark 35°. An `.hdr` has no direct key and casts nothing.
+- **Acne without new bias literals.** The pass is drawn with `DepthBias(Behind)` (`Scene3DFramePlan.ShadowBias`), and the
+  receiver's own depth is carried to each tap along its plane: a tap offset o (world, in the light's right/up) compares at
+  z + g·o, g = −(n·right, n·up) / (n·forward), with |n·forward| floored at `MinSlopeCos`; the lookup point is also moved 1.5
+  texels along n. Without the plane slope a tilted receiver shadows itself across the filter's width.
+- **Two shader bugs found on the way.** (1) A receiver BEYOND the map's far plane (the ground under everything) has its depth
+  clamped to 1, and the plane slope then pushed half the taps above 1 — compared against an empty texel (1.0) they read as
+  shadow, a 50 % plateau far outside any shadow. Each tap's reference is now clamped to 1. (2) The occlusion's normal at the
+  picture's border took a clamped neighbour (the pixel itself), fell back to the view direction, and the flat ground then
+  occluded itself in the outer three columns (alpha 37, 25, 10 in a transparent picture). A neighbour off the picture is
+  now no neighbour.
+- **The occlusion kernel and its radius.** Screen-space and horizon-based: a depth prepass of the opaque `Pbr` draws (and the
+  ground) writes each pixel's depth ALONG THE VIEW'S RAY into an R32 float target, and a point is rebuilt from the plan's ray
+  per clip position (`PlaneGrid.Ray`, factored out of the grid's `WriteRay`) — 4 bytes a pixel, where world positions in
+  RGBA32F would have been 16. `Occlusion.Directions` (8) directions, each walked in `Steps` (4) steps out to the radius,
+  keep their highest horizon sine less `Bias` (0.1), fading with distance²/radius²; the radius is `RadiusFraction` (0.08) ×
+  the scene CONTENT's bounding radius (not the camera's, which a drag enlarges), in world units, capped at `MaxPixels` (64).
+  The directions and steps are turned per pixel by a fixed 4 × 4 interleave (never per frame), which the 4 × 4 depth-aware
+  blur (`BlurReach`, 0.25 of the radius) averages away exactly. It darkens only the environment's light; the key's direct
+  light is the shadow's.
+- **The ground** is a full-screen pass casting each pixel's view ray at its plane, as the drawing grid does, writing its true
+  depth clamped: a disc four scene radii across meets the camera's near and far planes (which bracket the scene sphere) and
+  would otherwise be cut. It draws black with alpha = the light it loses: the key light's share of a level floor's light
+  (key irradiance on +z against the environment's SH irradiance on +z) times the shadow, plus the rest times the occlusion,
+  fading from `FadeStart` (0.35) to its rim. It lies `Drop` (1e-4) scene radii under the lowest drawn point.

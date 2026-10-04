@@ -59,6 +59,12 @@ public enum Scene3DPipeline
     /// <summary>R-em3d106-3f — the realistic view's backdrop, a gradient or the environment: six vertices made by vs_grid covering the
     /// viewport, fs_backdrop, no depth test or write, no blend; drawn first.</summary>
     Backdrop,
+    /// <summary>brief-em3d-107 R-em3d107-1a — a caster's triangles into the key light's shadow map (vs_shadow / fs_depth, depth only,
+    /// the shadow bias <see cref="Scene3DFramePlan.ShadowBias"/>): only in <see cref="Scene3DFramePlan.ShadowDraws"/>.</summary>
+    ShadowDepth,
+    /// <summary>R-em3d107-3 — the shadow catcher: six vertices made by vs_ground (a square around the disc on the ground's plane, no vertex
+    /// buffer), fs_ground drawing black with the darkening as alpha; depth test without write, blend; after everything opaque.</summary>
+    Ground,
 }
 
 /// <summary>Which buffer a draw reads: the scene's, one of the overlay slots, the field's, none (the grid), or the scene's image
@@ -245,16 +251,21 @@ public sealed class Scene3DFramePlan
     /// <summary>brief-em3d-106 R-em3d106-3 — where the realistic view's look block starts, in floats (<see cref="LookFloats"/>).</summary>
     public const int LookAt = GridAt + PlaneGrid.Floats;
 
-    /// <summary>The look block, 288 bytes: exposure (2^EV), intensity, the environment's rotation (cos, sin); the background's mode and
+    /// <summary>The look block, 544 bytes: exposure (2^EV), intensity, the environment's rotation (cos, sin); the background's mode and
     /// the environment's last level; the key light's world direction; its radiance; the background's two colours; the backdrop's
-    /// ray (direction, and its change per clip x and y); the nine irradiance coefficients. Zero while the view is not realistic.</summary>
-    public const int LookFloats = 72;
+    /// ray (direction, and its change per clip x and y); the nine irradiance coefficients; then brief 107's (<see cref="LightingAt"/>):
+    /// the shadow map's matrix, its parameters and the light's frame, the occlusion's parameters and the view's ray, and the ground.
+    /// Zero while the view is not realistic.</summary>
+    public const int LookFloats = 136;
+
+    /// <summary>brief-em3d-107 — where its part of the look block starts, within the block (scene.wgsl's <c>lvp</c>).</summary>
+    public const int LightingAt = 72;
 
     /// <summary>Floats in the uniform block — the WGSL <c>U</c>: vp (16), eye (4), clip (4), the hovered
     /// (object, face), flags, the mode, the selection's count and three pads (128 bytes), the selection's
     /// (object, face) pairs (512 bytes), brief 29's field blocks (<see cref="Fields.FieldUniforms"/>, 288 bytes each,
     /// brief-em3d-96: four, 1,152 bytes), brief 45's grid block (<see cref="PlaneGrid.Floats"/>, 224 bytes), then brief 106's look
-    /// block (288 bytes). 2,304 bytes — under Metal's 4 KB inline-bytes limit (<c>setVertexBytes</c>), which the Metal backend
+    /// block (544 bytes since brief 107). 2,560 bytes — under Metal's 4 KB inline-bytes limit (<c>setVertexBytes</c>), which the Metal backend
     /// asserts.</summary>
     public const int UniformFloats = LookAt + LookFloats;
     public const int UniformBytes = UniformFloats * 4;
@@ -416,7 +427,7 @@ public sealed class Scene3DFramePlan
     /// </summary>
     public void Plan(Scene3DModel scene, Viewer3DViewState view, int width, int height, bool flipY, bool pick,
                      Scene3DOverlay mesh, Scene3DOverlay section, Scene3DOverlay grid, Fields.Scene3DFieldGeometry? field = null,
-                     bool export = false)
+                     bool export = false, bool transparent = false)
     {
         if (!ReferenceEquals(_sized, scene)) Size(scene);
         Width = width; Height = height;
@@ -424,6 +435,8 @@ public sealed class Scene3DFramePlan
         SceneGeneration = scene.Generation;
         bool real = Realistic = view.DrawsRealistic;
         bool quiet = real && export;
+        // brief-em3d-107 R-em3d107-5b — a transparent PICTURE: cleared to (0, 0, 0, 0), no backdrop. Never the live view (its alpha stays 1).
+        Transparent = quiet && transparent;
         uint flags = view.Clip.Enabled ? FlagClip | FlagCapBackFaces : 0;
         var cam = DepthCamera(scene, view);
         Fill(Uniforms, view, cam, width, height, flipY, -1, -1, flags, quiet: quiet);
@@ -435,6 +448,7 @@ public sealed class Scene3DFramePlan
         var preview = view.Preview;
         WriteTransforms(preview);
         ChooseDetail(scene, view);
+        PlanLighting(scene, view, preview, cam, width, height, flipY, export);
         if (!quiet) MarkFaded(view);
         else _fadedCount = 0;
         if (real) ColourRealistic(scene, view, preview, mesh, section, grid, field, cam, width, height, flipY);
@@ -654,7 +668,8 @@ public sealed class Scene3DFramePlan
                                  int width, int height, bool flipY)
     {
         var look = view.Look;
-        if (look.Background is Design.ThreeD.C3dBackgroundKind.Gradient or Design.ThreeD.C3dBackgroundKind.Environment)
+        if (Transparent) Clear = (0, 0, 0);
+        else if (look.Background is Design.ThreeD.C3dBackgroundKind.Gradient or Design.ThreeD.C3dBackgroundKind.Environment)
             Add(ref Draws, ref DrawCount, Scene3DPipeline.Backdrop, Scene3DBuffer.None, 0, 6);
         else if (look.Background == Design.ThreeD.C3dBackgroundKind.Solid) Clear = (look.Top.X, look.Top.Y, look.Top.Z);
 
@@ -683,6 +698,8 @@ public sealed class Scene3DFramePlan
                 if (r.Count > 0 && r.First >= 0 && r.First + r.Count <= f.Vertices.Length)
                     Add(ref Draws, ref DrawCount, Scene3DPipeline.Field, Scene3DBuffer.Field, r.First, r.Count, FieldSlot(r.Layer),
                         Scene3DDepthTie.Field);
+        // brief-em3d-107 R-em3d107-3 — the ground, after everything opaque (which hides it) and before anything translucent
+        if (GroundDrawn) Add(ref Draws, ref DrawCount, Scene3DPipeline.Ground, Scene3DBuffer.None, 0, 6);
         bool edges = look.Shows(Scene3DChrome.Edges);
         foreach (var lb in scene.LineBatches)
             if (view.IsVisible(lb.ObjectId) && (_chromeOf[lb.ObjectId - 1] >= 0 ? Shows(view, lb.ObjectId) : edges))
@@ -771,6 +788,192 @@ public sealed class Scene3DFramePlan
             if (_chromeOf[id - 1] != Material || _realTranslucent[id - 1]) return false;
         }
         return true;
+    }
+
+    // ── brief-em3d-107: shadows, contact shading, the ground ─────────────────────────────────────────────────────────────
+
+    /// <summary>R-em3d107-1a — this frame's casters into the key light's shadow map (<see cref="Scene3DPipeline.ShadowDepth"/>, the
+    /// scene's buffer), and the map's side (0: no shadows this frame). The map's draws are listed every realistic frame, so the key can be
+    /// compared; whether the backend actually RE-RENDERS the map is <see cref="ShadowPass"/>.</summary>
+    public Scene3DDraw[] ShadowDraws = new Scene3DDraw[16];
+    public int ShadowDrawCount;
+    public int ShadowSize;
+
+    /// <summary>R-em3d107-1b — what the shadow map depends on, hashed: the scene (a new generation or a patch is a new scene), the light's
+    /// matrix (the key's direction — the Look's rotation — and the casters' bounds), the map's size, and each caster draw with any preview
+    /// transform it is drawn under (a drag). Nothing about the camera: an orbit leaves it unchanged. 0 when there are no shadows.</summary>
+    public long ShadowKey;
+
+    /// <summary>R-em3d107-1b — whether the backend renders the shadow pass this frame: set by whoever owns the map (Viewer3DSession),
+    /// only when <see cref="ShadowKey"/> differs from the key the map was last rendered with.</summary>
+    public bool ShadowPass;
+
+    /// <summary>R-em3d107-2 — whether this frame computes occlusion (the depth prepass of its <see cref="Scene3DPipeline.Pbr"/> draws, the
+    /// horizon pass and its blur), and whether it draws the ground (and so puts it in the prepass too).</summary>
+    public bool Occlusion, GroundDrawn;
+
+    /// <summary>R-em3d107-5b — a transparent picture: the target is cleared to (0, 0, 0, 0) and no backdrop is drawn.</summary>
+    public bool Transparent { get; private set; }
+
+    /// <summary>The light's window over the casters this frame (default when there are no shadows).</summary>
+    public ShadowWindow ShadowWindow { get; private set; }
+
+    /// <summary>R-em3d107-1c — the polygon offset the shadow pass draws with: the existing helper's push AWAY from the eye — here, from the
+    /// light — so a lit face never shadows itself. The receiver-plane slope in fs_pbr handles the filter's wider reach.</summary>
+    public static (float Constant, float Slope, float Clamp) ShadowBias => DepthBias(Scene3DDepthTie.Behind);
+
+    private bool[] _caster = [];
+
+    /// <summary>The casters, the light's window and the shadow key; the occlusion's and the ground's parameters; all into the look block.</summary>
+    private void PlanLighting(Scene3DModel scene, Viewer3DViewState view, Scene3DPreview? preview, in Camera3D cam, int width, int height,
+                              bool flipY, bool export)
+    {
+        ShadowDrawCount = 0;
+        ShadowSize = 0;
+        ShadowKey = 0;
+        ShadowPass = false;
+        Occlusion = GroundDrawn = false;
+        ShadowWindow = default;
+        if (!Realistic) return;
+        var look = view.Look;
+        var env = view.Environment!;
+        var u = Uniforms.AsSpan(LookAt + LightingAt, LookFloats - LightingAt);
+        u.Clear();
+
+        // What is drawn as a material, and of it what casts (R-em3d107-1d: not glass, Transmission ≥ 0.5; never chrome or a field).
+        var light = look.Lighting(env);
+        var (right, up, forward) = Shadows.Frame(light.KeyDirectionWorld);
+        if (_caster.Length != scene.Objects.Length) _caster = new bool[scene.Objects.Length];
+        var lo = new Vector3(float.MaxValue);
+        var hi = new Vector3(float.MinValue);
+        var llo = new Vector3(float.MaxValue);
+        var lhi = new Vector3(float.MinValue);
+        bool any = false, casts = false;
+        for (int k = 0; k < scene.Objects.Length; k++)
+        {
+            var o = scene.Objects[k];
+            bool drawn = _chromeOf[k] == Material && view.IsDrawn(o.Id);
+            _caster[k] = drawn && scene.Appearances[o.AppearanceSlot].Transmission < Shadows.CasterTransmissionLimit;
+            if (!drawn) continue;
+            bool moving = preview?.IsMoving(o.Id) == true;
+            int copies = moving ? Math.Min(preview!.Copies.Length, MaxPreviewCopies) : 0;
+            for (int c = -1; c < copies; c++)
+            {
+                if (c < 0 && moving && !preview!.KeepOriginal) continue;
+                for (int n = 0; n < 8; n++)
+                {
+                    var corner = new Vector3((n & 1) == 0 ? o.Min.X : o.Max.X, (n & 2) == 0 ? o.Min.Y : o.Max.Y, (n & 4) == 0 ? o.Min.Z : o.Max.Z);
+                    if (c >= 0) corner = Vector3.Transform(corner, preview!.Copies[c]);
+                    if (!float.IsFinite(corner.X) || !float.IsFinite(corner.Y) || !float.IsFinite(corner.Z)) continue;
+                    lo = Vector3.Min(lo, corner); hi = Vector3.Max(hi, corner);
+                    any = true;
+                    if (!_caster[k]) continue;
+                    var q = new Vector3(Vector3.Dot(corner, right), Vector3.Dot(corner, up), Vector3.Dot(corner, forward));
+                    llo = Vector3.Min(llo, q); lhi = Vector3.Max(lhi, q);
+                    casts = true;
+                }
+            }
+        }
+        if (!any) return;
+        float sceneRadius = MathF.Max((scene.ContentMax - scene.ContentMin).Length() * 0.5f, 1e-12f);
+
+        // R-em3d107-1 — the shadow map: fitted, listed, keyed.
+        if (look.Shadows && casts && env.KeyRadiance.LengthSquared() > 0)
+        {
+            ShadowSize = export ? Shadows.ExportMapSize : Shadows.LiveMapSize;
+            float kernel = Shadows.KernelRadius(env.KeyAngleDeg, sceneRadius);
+            float half = 0.5f * MathF.Max(lhi.X - llo.X, lhi.Y - llo.Y);
+            half = MathF.Max(half * (1 + 2 * Shadows.WindowMargin) + 2 * kernel, 1e-12f);
+            float depthPad = Shadows.WindowMargin * MathF.Max(lhi.Z - llo.Z, half) + kernel;
+            var w = new ShadowWindow(right, up, forward, 0.5f * (llo.X + lhi.X), 0.5f * (llo.Y + lhi.Y), half, llo.Z - depthPad, lhi.Z + depthPad);
+            ShadowWindow = w;
+            WriteMatrix(w.Matrix, u[..16]);
+            float texel = 2 * half / ShadowSize;
+            u[16] = 1; u[17] = kernel; u[18] = w.UvPerWorld; u[19] = w.DepthPerWorld;
+            Put(u, 20, right, Shadows.NormalOffsetTexels * texel);
+            // the key light's share of what a level floor receives: the ground's shadow takes away exactly that much
+            var keyOnFloor = env.KeyRadiance * MathF.Max(light.KeyDirectionWorld.Z, 0);
+            var envOnFloor = env.Irradiance(light.ToEnvironment(Vector3.UnitZ));
+            float k = Lum(keyOnFloor), e = Lum(envOnFloor);
+            Put(u, 24, up, k + e > 0 ? k / (k + e) : 0);
+            Put(u, 28, forward, 0);
+            ListShadowDraws(scene, preview);
+            ShadowKey = KeyOf(scene, u[..16]);
+        }
+
+        // R-em3d107-2 — occlusion: its reach, and the view's ray a pixel's point is rebuilt from.
+        Occlusion = look.AmbientOcclusion;
+        float radius = Look.Occlusion.RadiusFraction * sceneRadius;
+        u[32] = Occlusion ? 1 : 0; u[33] = radius; u[34] = Look.Occlusion.BlurReach * radius;
+        var (ro, rox, roy, rd, rdx, rdy) = PlaneGrid.Ray(cam, width, height, flipY);
+        Put(u, 36, ro, 0); Put(u, 40, rox, 0); Put(u, 44, roy, 0); Put(u, 48, rd, 0); Put(u, 52, rdx, 0); Put(u, 56, rdy, 0);
+
+        // R-em3d107-3 — the ground: under the lowest point drawn, never seen from below.
+        float materialRadius = MathF.Max((hi - lo).Length() * 0.5f, 1e-12f);
+        float z = lo.Z - Look.Ground.Drop * materialRadius;
+        bool above = cam.Projection == Projection3D.Orthographic ? cam.Forward.Z < -1e-4f : cam.Eye.Z > z;
+        GroundDrawn = look.Ground && above;
+        if (GroundDrawn)
+        {
+            var c = (lo + hi) * 0.5f;
+            u[60] = c.X; u[61] = c.Y; u[62] = z; u[63] = Look.Ground.RadiusScale * materialRadius;
+        }
+
+        static void Put(Span<float> u, int at, Vector3 v, float w) { u[at] = v.X; u[at + 1] = v.Y; u[at + 2] = v.Z; u[at + 3] = w; }
+        static float Lum(Vector3 c) => 0.2126f * c.X + 0.7152f * c.Y + 0.0722f * c.Z;
+    }
+
+    /// <summary>Each caster's batches, as the colour pass would draw them (a moving one under the preview's copies, an element's under its
+    /// slot) — every element whole or not, never boxed: the map does not depend on where the camera is.</summary>
+    private void ListShadowDraws(Scene3DModel scene, Scene3DPreview? preview)
+    {
+        var batches = scene.Batches;
+        for (int k = 0; k < scene.OwnedBatches; k++)
+            if (_caster[batches[k].ObjectId - 1]) AddShadow(preview, batches[k], -1);
+        for (int e = 0; e < _elements; e++)
+        {
+            var el = scene.Elements[e];
+            for (int k = el.FirstBatch; k < el.FirstBatch + el.BatchCount; k++)
+                if (_caster[batches[k].ObjectId - 1]) AddShadow(preview, batches[k], e);
+        }
+    }
+
+    private void AddShadow(Scene3DPreview? preview, in Scene3DBatch b, int element)
+    {
+        int own = element >= 0 ? ElementSlot(element) : 0;
+        uint id = b.ObjectId;
+        if (preview is null || !preview.IsMoving(id))
+        {
+            Add(ref ShadowDraws, ref ShadowDrawCount, Scene3DPipeline.ShadowDepth, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, own, obj: id);
+            return;
+        }
+        if (preview.KeepOriginal)
+            Add(ref ShadowDraws, ref ShadowDrawCount, Scene3DPipeline.ShadowDepth, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, own, obj: id);
+        int copies = Math.Min(preview.Copies.Length, MaxPreviewCopies);
+        int start = element >= 0 ? ComboSlots(preview, element, copies) : _copyBase;
+        for (int k = 0; k < copies; k++)
+            Add(ref ShadowDraws, ref ShadowDrawCount, Scene3DPipeline.ShadowDepth, Scene3DBuffer.Scene, b.FirstIndex, b.IndexCount, start + k, obj: id);
+    }
+
+    /// <summary>R-em3d107-1b — the shadow key: the scene, the light's matrix, the map's size, and every caster draw with the contents of
+    /// any per-frame transform slot (a preview's copy) it is drawn under. An element's own slot is written with the scene, so the scene
+    /// stands for it.</summary>
+    private long KeyOf(Scene3DModel scene, ReadOnlySpan<float> lvp)
+    {
+        var h = new HashCode();
+        h.Add(scene.Generation);
+        h.Add(System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(scene));
+        h.Add(ShadowSize);
+        foreach (float f in lvp) h.Add(f);
+        for (int i = 0; i < ShadowDrawCount; i++)
+        {
+            ref var d = ref ShadowDraws[i];
+            h.Add(d.First); h.Add(d.Count); h.Add(d.Transform);
+            if (d.Transform >= _copyBase)
+                foreach (float f in Transforms.AsSpan(TransformFloats * d.Transform, TransformFloats)) h.Add(f);
+        }
+        long key = h.ToHashCode();
+        return key == 0 ? 1 : key;
     }
 
     /// <summary>R-em3d106-3 — the look block (<see cref="LookFloats"/>): what fs_pbr and fs_backdrop read.</summary>
@@ -987,6 +1190,7 @@ public sealed class Scene3DFramePlan
         int need = scene.Batches.Length + scene.LineBatches.Length + scene.ImageBatches.Length + 6 + (1 + EdgePasses) * Math.Min(scene.Objects.Length, SelectionLimit);
         if (Draws.Length < need) Draws = new Scene3DDraw[need];
         if (PickDraws.Length < need) PickDraws = new Scene3DDraw[need];
+        if (ShadowDraws.Length < scene.Batches.Length + 1) ShadowDraws = new Scene3DDraw[scene.Batches.Length + 1];
         _keys = new float[scene.Batches.Length];
         _order = new int[scene.Batches.Length];
         _edgeOf = new int[scene.Objects.Length];

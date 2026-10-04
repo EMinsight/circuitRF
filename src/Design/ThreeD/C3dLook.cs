@@ -5,7 +5,7 @@
 //
 // Every key is optional, and an omitted key is its default: a document that states nothing draws the realistic view exactly as
 // one stating every default does. Nothing is written unless it is stated, so a document opened and saved again is unchanged.
-// Briefs 107 (Shadows, AmbientOcclusion, Ground), 108 (Camera) and 109 (FieldStyle, FieldOpacity) add keys here.
+// Brief 107 added Shadows, AmbientOcclusion and Ground; briefs 108 (Camera) and 109 (FieldStyle, FieldOpacity) add keys here.
 
 using System.Globalization;
 using System.Text.Json;
@@ -45,6 +45,17 @@ public sealed class C3dLook
     public bool? ShowBoundaries { get; set; }
     public bool? ShowImages { get; set; }
 
+    // ── brief-em3d-107 R-em3d107-4 — how objects sit on each other (each on unless stated false) ──────────────────────
+
+    /// <summary>The key light's shadows (default true).</summary>
+    public bool? Shadows { get; set; }
+
+    /// <summary>Contact shading: screen-space ambient occlusion on the environment's light (default true).</summary>
+    public bool? AmbientOcclusion { get; set; }
+
+    /// <summary>The shadow catcher under the model: a disc at its lowest z that draws only the darkening (default true).</summary>
+    public bool? Ground { get; set; }
+
     /// <summary>Keys this build does not read (a later brief's), kept and written back.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Unread { get; set; }
@@ -62,20 +73,21 @@ public sealed class C3dLook
     [
         nameof(Environment), nameof(Rotation), nameof(Intensity), nameof(Exposure), nameof(Background),
         nameof(ShowEdges), nameof(ShowGrid), nameof(ShowOverlays), nameof(ShowAirBox), nameof(ShowPorts), nameof(ShowBoundaries),
-        nameof(ShowImages),
+        nameof(ShowImages), nameof(Shadows), nameof(AmbientOcclusion), nameof(Ground),
     ];
 
     /// <summary>True when it states nothing (and keeps no unread key): such a block is the same as none.</summary>
     [JsonIgnore]
     public bool IsEmpty => Environment is null && Rotation is null && Intensity is null && Exposure is null && Background is null
                         && ShowEdges is null && ShowGrid is null && ShowOverlays is null && ShowAirBox is null && ShowPorts is null
-                        && ShowBoundaries is null && ShowImages is null && Unread is not { Count: > 0 };
+                        && ShowBoundaries is null && ShowImages is null && Shadows is null && AmbientOcclusion is null && Ground is null
+                        && Unread is not { Count: > 0 };
 
     public C3dLook Clone() => new()
     {
         Environment = Environment, Rotation = Rotation, Intensity = Intensity, Exposure = Exposure, Background = Background,
         ShowEdges = ShowEdges, ShowGrid = ShowGrid, ShowOverlays = ShowOverlays, ShowAirBox = ShowAirBox, ShowPorts = ShowPorts,
-        ShowBoundaries = ShowBoundaries, ShowImages = ShowImages,
+        ShowBoundaries = ShowBoundaries, ShowImages = ShowImages, Shadows = Shadows, AmbientOcclusion = AmbientOcclusion, Ground = Ground,
         Unread = Unread is null ? null : new Dictionary<string, JsonElement>(Unread),
     };
 

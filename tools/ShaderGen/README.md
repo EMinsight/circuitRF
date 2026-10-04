@@ -72,6 +72,20 @@ The realistic view (brief-em3d-106) adds an appearance table and an environment:
 `plain_hlsl_samplers` now rewrites EVERY sampler naga puts in its heap, each to the register `HLSL_SAMPLERS` names
 (`img_s` s0, `env_s` s1), and fails unless it finds an index buffer and a sampler for each.
 
+Shadows, contact shading and the ground (brief-em3d-107) are `@group(3)`:
+
+| Binding | MSL | HLSL | SPIR-V |
+|---|---|---|---|
+| `@group(3) @binding(0)` the key light's shadow map (`texture_depth_2d`) | `[[texture(3)]]` | `register(t3)` | set 3, binding 0 |
+| `@group(3) @binding(1)` its comparison sampler (`sampler_comparison`) | `[[sampler(2)]]` | `register(s2)` | set 3, binding 1 |
+| `@group(3) @binding(2)` the blurred occlusion (R8) | `[[texture(4)]]` | `register(t4)` | set 3, binding 2 |
+| `@group(3) @binding(3)` the prepass's depths along the view's rays (R32 float) | `[[texture(5)]]` | `register(t5)` | set 3, binding 3 |
+| `@group(3) @binding(4)` the raw occlusion (R8) | `[[texture(6)]]` | `register(t6)` | set 3, binding 4 |
+
+A comparison sampler comes out of naga's COMPARISON heap (`static const SamplerComparisonState smap_s =
+nagaComparisonSamplerHeap[…]`); `plain_hlsl_samplers` rewrites it the same way, to `SamplerComparisonState smap_s :
+register(s2)`.
+
 - **Deterministic.** Every naga option is set explicitly (its SPIR-V default flips a DEBUG flag with the
   tool's own build profile). The same WGSL gives byte-identical outputs.
 - **Valid.** The SPIR-V is re-read by naga's own SPIR-V front end and re-validated before it is written,

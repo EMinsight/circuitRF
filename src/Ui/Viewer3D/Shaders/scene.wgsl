@@ -6,7 +6,8 @@
 // The uniform block is Scene3DFramePlan's: vp, eye, clip, the hovered (object, face), flags, the selection
 // mode, the selection (brief-em3d-43 R-em3d43-5: up to 64 (object, face) pairs), then brief 29's field blocks
 // (FieldUniforms: phase, range, mode, dB, the colour map's stops — brief-em3d-96: four, one per drawn plot), then
-// brief 45's drawing grid (PlaneGrid.Fill), then brief 106's look block (Scene3DFramePlan.FillLook) — 2,304 bytes.
+// brief 45's drawing grid (PlaneGrid.Fill), then brief 106's look block (Scene3DFramePlan.FillLook, with brief 107's lighting
+// after it: Scene3DFramePlan.PlanLighting) — 2,560 bytes.
 // A vertex is Scene3DVertex: position, object id, RGBA8 colour, face (24 bytes); a FIELD vertex is
 // FieldVertex: position, the value's real part, its imaginary part (36 bytes).
 
@@ -76,6 +77,27 @@ struct U {
     bdy: vec4f,
     // the nine irradiance coefficients (Pbr.Irradiance), in the environment's frame
     sh: array<vec4f, 9>,
+    // brief-em3d-107 — the key light's shadow map: world to its clip space (x, y across the map, z its depth in [0, 1])
+    lvp: mat4x4f,
+    // x 1 with shadows, y the filter's radius (world), z the map's uv per world unit, w its depth per world unit
+    ls: vec4f,
+    // the light's frame: right (w the receiver's normal offset, world), up (w the key light's share of a level floor's light),
+    // forward — from the light into the scene
+    lr: vec4f,
+    lu: vec4f,
+    lf: vec4f,
+    // x 1 with occlusion, y its radius (world), z the blur's reach (world)
+    ao: vec4f,
+    // the view's ray per clip position: origin = aro + x arox + y aroy, direction = ard + x ardx + y ardy (ard the view's forward, so the
+    // parameter along a ray is its depth): what the occlusion pass rebuilds a pixel's point from, and the ground's ray
+    aro: vec4f,
+    arox: vec4f,
+    aroy: vec4f,
+    ard: vec4f,
+    ardx: vec4f,
+    ardy: vec4f,
+    // the ground: its centre (x, y), its z, its radius
+    gnd: vec4f,
 };
 @group(0) @binding(0) var<uniform> u: U;
 
@@ -102,6 +124,10 @@ struct U {
 // 12,288 bytes, below Vulkan's guaranteed 16 KB): Metal fragment buffer 4 (3 is the shade stream), D3D11 b2, Vulkan set 0 binding 2.
 // Its ENVIRONMENT is @group(2): bindings 0 (the prefiltered map), 1 (its sampler), 2 (the split-sum table) — Metal textures 1, 2 and
 // sampler 1, D3D11 t1, t2 and s1, Vulkan set 2. Declared with the realistic entry points at the end of this file.
+//
+// brief-em3d-107 — shadows, occlusion and the ground are @group(3): the shadow map (0), its comparison sampler (1), the blurred occlusion
+// (2), the prepass's depths (3) and the raw occlusion (4) — Metal textures 3, 4, 5, 6 and sampler 2; D3D11 t3, t4, t5, t6 and s2;
+// Vulkan set 3. Declared at the end of this file.
 struct MX {
     m: mat4x4f,
     id: vec4u,
@@ -618,8 +644,19 @@ fn highlight_pm(rgb: vec3f, a: f32, id: u32, face: u32) -> vec3f {
 }
 
 // One fragment (Pbr.Radiance, then Pbr.Shade): PREMULTIPLIED display colour and coverage. The opaque pipeline's coverage is 1.
+// brief-em3d-107 — the opaque pipeline's (fs_pbr) environment light is darkened by the occlusion at its pixel; a translucent one
+// (fs_pbr_glass) neither writes the prepass nor receives occlusion (R-em3d107-2c). Both take the key light's shadow on its direct term.
 @fragment fn fs_pbr(i: PVO, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     if (clipped(i.world)) { discard; }
+    return pbr(i, front, occlusion_at(i.pos.xy));
+}
+
+@fragment fn fs_pbr_glass(i: PVO, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+    if (clipped(i.world)) { discard; }
+    return pbr(i, front, 1.0);
+}
+
+fn pbr(i: PVO, front: bool, occ: f32) -> vec4f {
     let m = ap.e[i.slot & SLOT_MASK];
     let v = normalize(u.eye.xyz - i.world);
     var n = normalize(i.n);
@@ -639,13 +676,15 @@ fn highlight_pm(rgb: vec3f, a: f32, id: u32, face: u32) -> vec3f {
     let r = 2.0 * dot(n, v) * n - v;
     let reflected = env_radiance(r, rough) * u.lk.y;
     let irr = irradiance(n) * u.lk.y;
-    var surface = reflected * spec_albedo
-                + (vec3f(1.0, 1.0, 1.0) - spec_albedo) * (1.0 - metal) * (1.0 - t) * base * irr / PI;
+    var surface = (reflected * spec_albedo
+                + (vec3f(1.0, 1.0, 1.0) - spec_albedo) * (1.0 - metal) * (1.0 - t) * base * irr / PI) * occ;
 
-    // the key light, direct (shadowed in brief 107)
+    // the key light, direct, and its shadow (brief 107)
     let l = u.key.xyz;
     let nl = dot(n, l);
     let keyon = nl > 0.0 && dot(u.keyc.xyz, u.keyc.xyz) > 0.0;
+    var vis = 1.0;
+    if (keyon) { vis = shadow_vis(i.world, n); }
     var nh = 0.0;
     var vh = 0.0;
     if (keyon) {
@@ -657,7 +696,7 @@ fn highlight_pm(rgb: vec3f, a: f32, id: u32, face: u32) -> vec3f {
         let fr = schlick3(f0, vh);
         let lobe = fr * (ggx_d(nh, ad) * smith_v(nv, nl, ad));
         let body = (vec3f(1.0, 1.0, 1.0) - fr) * (1.0 - metal) * (1.0 - t) * base / PI;
-        surface = surface + (lobe + body) * u.keyc.xyz * u.lk.y * nl;
+        surface = surface + (lobe + body) * u.keyc.xyz * u.lk.y * nl * vis;
     }
 
     // the clear coat: a dielectric lobe over the body, its energy taken from it
@@ -666,11 +705,11 @@ fn highlight_pm(rgb: vec3f, a: f32, id: u32, face: u32) -> vec3f {
         let ccr = clamp(m.c.x, 0.0, 1.0);
         let lc = brdf_lut(nv, ccr);
         let coat_albedo = DIELECTRIC_F0 * lc.x + lc.y;
-        var coat = env_radiance(r, ccr) * u.lk.y * coat_albedo;
+        var coat = env_radiance(r, ccr) * u.lk.y * coat_albedo * occ;
         if (keyon) {
             var ac = max(ccr, MIN_ROUGHNESS);
             ac = ac * ac;
-            coat = coat + u.keyc.xyz * u.lk.y * (schlick1(DIELECTRIC_F0, vh) * ggx_d(nh, ac) * smith_v(nv, nl, ac) * nl);
+            coat = coat + u.keyc.xyz * u.lk.y * (schlick1(DIELECTRIC_F0, vh) * ggx_d(nh, ac) * smith_v(nv, nl, ac) * nl * vis);
         }
         surface = surface * (1.0 - cc * coat_albedo) + coat * cc;
     }
@@ -684,7 +723,7 @@ fn highlight_pm(rgb: vec3f, a: f32, id: u32, face: u32) -> vec3f {
         let tau = (att.r + att.g + att.b) / 3.0;
         let through = t * (1.0 - fs);
         alpha = 1.0 - through * tau;
-        surface = surface + through * (1.0 - tau) * att * irr / PI;
+        surface = surface + through * (1.0 - tau) * att * irr / PI * occ;
     }
 
     // a STATED transparency multiplies the coverage (D12); an object selected in Object mode is drawn faded, as fs_color draws it
@@ -704,4 +743,249 @@ fn highlight_pm(rgb: vec3f, a: f32, id: u32, face: u32) -> vec3f {
     let d = u.bd.xyz + u.bdx.xyz * i.ndc.x + u.bdy.xyz * i.ndc.y;
     let c = textureSampleLevel(env, env_s, oct_uv(env_dir(d)), 0.0).rgb * u.lk.y;
     return vec4f(display(c), 1.0);
+}
+
+// ── brief-em3d-107: shadows, contact shading, the ground ──────────────────────────────────────────────────────────────────────
+// src/Render/Scene3D/Look/Shadows.cs is THE REFERENCE for every constant below (RealisticViewTests' scan, extended by
+// ShadowsOcclusionExportTests, holds them equal). Nothing here is drawn in the default view, and fs_field never reads any of it
+// (overview rule 2): a field's colour stays its colour map's.
+//
+// Bindings (tools/ShaderGen states them): @group(3) — the shadow map (texture_depth_2d) @binding(0), its comparison sampler @binding(1),
+// the blurred occlusion @binding(2), the prepass's depths @binding(3), the raw occlusion @binding(4): MSL [[texture(3)]], [[sampler(2)]],
+// [[texture(4)]], [[texture(5)]], [[texture(6)]]; HLSL t3, s2, t4, t5, t6; SPIR-V set 3, bindings 0 to 4.
+
+@group(3) @binding(0) var smap: texture_depth_2d;
+@group(3) @binding(1) var smap_s: sampler_comparison;
+@group(3) @binding(2) var aot: texture_2d<f32>;
+@group(3) @binding(3) var aodepth: texture_2d<f32>;
+@group(3) @binding(4) var aoraw: texture_2d<f32>;
+
+// Shadows.MinSlopeCos, Shadows.Poisson.Length
+const SHADOW_MIN_COS: f32 = 0.2;
+const SHADOW_TAPS: u32 = 16u;
+// Occlusion.Directions, .Steps, .Bias, .MaxPixels, .Empty
+const AO_DIRECTIONS: u32 = 8u;
+const AO_STEPS: u32 = 4u;
+const AO_BIAS: f32 = 0.1;
+const AO_MAX_PIXELS: f32 = 64.0;
+const AO_EMPTY: f32 = 3.0e38;
+// Ground.FadeStart
+const GROUND_FADE: f32 = 0.35;
+
+// Shadows.Poisson: the filter's FIXED taps (no per-frame noise, overview §1e)
+var<private> POISSON: array<vec2f, 16> = array<vec2f, 16>(
+    vec2f(-0.94201624, -0.39906216), vec2f(0.94558609, -0.76890725), vec2f(-0.094184101, -0.92938870), vec2f(0.34495938, 0.29387760),
+    vec2f(-0.91588581, 0.45771432), vec2f(-0.81544232, -0.87912464), vec2f(-0.38277543, 0.27676845), vec2f(0.97484398, 0.75648379),
+    vec2f(0.44323325, -0.97511554), vec2f(0.53742981, -0.47373420), vec2f(-0.26496911, -0.41893023), vec2f(0.79197514, 0.19090188),
+    vec2f(-0.24188840, 0.99706507), vec2f(-0.81409955, 0.91437590), vec2f(0.19984126, 0.78641367), vec2f(0.14383161, -0.14100790)
+);
+
+// How much of the key light reaches world point w on a surface of normal n: percentage-closer filtering of the map, each tap a
+// bilinear comparison. A receiver-plane slope from n carries the receiver's own depth to each tap (so a tilted surface does not shadow
+// itself across the filter's width), and the point is moved a texel and a half along n. Outside the casters' window nothing shadows.
+fn shadow_vis(w: vec3f, n: vec3f) -> f32 {
+    if (u.ls.x < 0.5) { return 1.0; }
+    let c = u.lvp * vec4f(w + n * u.lr.w, 1.0);
+    let uv = vec2f(c.x * 0.5 + 0.5, 0.5 - c.y * 0.5);
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || c.z <= 0.0) { return 1.0; }
+    let nf = min(dot(n, u.lf.xyz), -SHADOW_MIN_COS);
+    let g = -vec2f(dot(n, u.lr.xyz), dot(n, u.lu.xyz)) / nf;
+    let z = min(c.z, 1.0);
+    var lit = 0.0;
+    for (var k = 0u; k < SHADOW_TAPS; k = k + 1u) {
+        let o = POISSON[k] * u.ls.y;
+        let t = uv + vec2f(o.x, -o.y) * u.ls.z;
+        // a receiver beyond the map's far plane (the ground under it all) compares at 1: shadowed under a caster, lit where none is
+        lit = lit + textureSampleCompareLevel(smap, smap_s, t, min(z + dot(g, o) * u.ls.w, 1.0));
+    }
+    return lit / f32(SHADOW_TAPS);
+}
+
+// The occlusion at a fragment's pixel (1 with none).
+fn occlusion_at(pos: vec2f) -> f32 {
+    if (u.ao.x < 0.5) { return 1.0; }
+    return textureLoad(aot, vec2i(pos), 0).r;
+}
+
+// ── the depth passes: the shadow map's casters, and the occlusion's prepass ──
+
+struct DVO {
+    @builtin(position) pos: vec4f,
+    @location(0) world: vec3f,
+};
+
+// A caster's triangle into the key light's map (the per-draw transform as vs takes it).
+@vertex fn vs_shadow(v: VI) -> DVO {
+    var o: DVO;
+    let p = (mx.m * vec4f(v.p, 1.0)).xyz;
+    o.pos = u.lvp * vec4f(p, 1.0);
+    o.world = p;
+    return o;
+}
+
+// Depth only; what the section plane cuts away casts nothing.
+@fragment fn fs_depth(i: DVO) {
+    if (clipped(i.world)) { discard; }
+}
+
+// The prepass (with vs): each opaque material's depth along the view's ray.
+@fragment fn fs_prepass(i: VO) -> @location(0) vec4f {
+    if (clipped(i.world)) { discard; }
+    return vec4f(dot(i.world - u.aro.xyz, u.ard.xyz), 0.0, 0.0, 1.0);
+}
+
+// ── the occlusion: horizon-based, from the prepass's depths ──
+
+fn ao_clamp(xy: vec2i, size: vec2i) -> vec2i {
+    return clamp(xy, vec2i(0, 0), size - vec2i(1, 1));
+}
+
+// Pixel xy's point (w 1), or w 0 where the prepass drew nothing.
+fn ao_point(xy: vec2i, size: vec2i) -> vec4f {
+    let t = textureLoad(aodepth, xy, 0).r;
+    if (t > AO_EMPTY * 0.5) { return vec4f(0.0, 0.0, 0.0, 0.0); }
+    let s = vec2f(size);
+    let x = (f32(xy.x) + 0.5) / s.x * 2.0 - 1.0;
+    let y = 1.0 - (f32(xy.y) + 0.5) / s.y * 2.0;
+    let o = u.aro.xyz + u.arox.xyz * x + u.aroy.xyz * y;
+    let d = u.ard.xyz + u.ardx.xyz * x + u.ardy.xyz * y;
+    return vec4f(o + d * t, 1.0);
+}
+
+// The surface's normal at p, from its neighbours: on each axis the nearer one, so a silhouette is not bridged; facing the viewer. A
+// neighbour off the picture is no neighbour (clamped, it would be p itself, and the normal would fall back to the view's).
+fn ao_normal(xy: vec2i, size: vec2i, p: vec3f) -> vec3f {
+    var l = vec4f(0.0, 0.0, 0.0, 0.0);
+    var r = l;
+    var a = l;
+    var b = l;
+    if (xy.x > 0) { l = ao_point(xy - vec2i(1, 0), size); }
+    if (xy.x < size.x - 1) { r = ao_point(xy + vec2i(1, 0), size); }
+    if (xy.y > 0) { a = ao_point(xy - vec2i(0, 1), size); }
+    if (xy.y < size.y - 1) { b = ao_point(xy + vec2i(0, 1), size); }
+    var dx = vec3f(0.0, 0.0, 0.0);
+    if (r.w > 0.0 && (l.w == 0.0 || length(r.xyz - p) < length(p - l.xyz))) { dx = r.xyz - p; } else if (l.w > 0.0) { dx = p - l.xyz; }
+    var dy = vec3f(0.0, 0.0, 0.0);
+    if (b.w > 0.0 && (a.w == 0.0 || length(b.xyz - p) < length(p - a.xyz))) { dy = b.xyz - p; } else if (a.w > 0.0) { dy = p - a.xyz; }
+    var n = cross(dx, dy);
+    let ray = u.ard.xyz;
+    if (dot(n, n) < 1e-36) { return -ray; }
+    n = normalize(n);
+    if (dot(n, ray) > 0.0) { n = -n; }
+    return n;
+}
+
+// With vs_grid's six vertices into an R8 target: 1 open, 0 fully occluded. Each of AO_DIRECTIONS directions is walked out to the radius
+// in AO_STEPS steps and keeps its highest horizon (the sine of its elevation above the surface, less AO_BIAS, fading with distance).
+// The directions and the steps are turned per pixel by a FIXED 4 × 4 interleave, which fs_ao_blur's 4 × 4 window removes.
+@fragment fn fs_ao(i: GVO) -> @location(0) vec4f {
+    let size = vec2i(textureDimensions(aodepth));
+    let xy = vec2i(i.pos.xy);
+    let p4 = ao_point(xy, size);
+    if (p4.w == 0.0) { return vec4f(1.0, 1.0, 1.0, 1.0); }
+    let p = p4.xyz;
+    let n = ao_normal(xy, size, p);
+    let t = textureLoad(aodepth, xy, 0).r;
+    let wpp = length(u.arox.xyz + u.ardx.xyz * t) * 2.0 / f32(size.x);
+    let rpx = clamp(u.ao.y / max(wpp, 1e-30), 1.0, AO_MAX_PIXELS);
+    let cell = u32(xy.x & 3) * 4u + u32(xy.y & 3);
+    let turn = (f32(cell) + 0.5) / 16.0;
+    let step0 = (f32((cell * 5u) & 15u) + 0.5) / 16.0;
+    let r2 = u.ao.y * u.ao.y;
+    var occ = 0.0;
+    for (var d = 0u; d < AO_DIRECTIONS; d = d + 1u) {
+        let a = (f32(d) + turn) * 2.0 * PI / f32(AO_DIRECTIONS);
+        let dir = vec2f(cos(a), sin(a));
+        var h = 0.0;
+        for (var k = 0u; k < AO_STEPS; k = k + 1u) {
+            let off = dir * rpx * ((f32(k) + step0) / f32(AO_STEPS));
+            let q = ao_point(ao_clamp(xy + vec2i(round(off)), size), size);
+            if (q.w == 0.0) { continue; }
+            let v = q.xyz - p;
+            let len2 = dot(v, v);
+            if (len2 <= 0.0) { continue; }
+            let fall = clamp(1.0 - len2 / r2, 0.0, 1.0);
+            h = max(h, (dot(n, v) * inverseSqrt(len2) - AO_BIAS) * fall);
+        }
+        occ = occ + h;
+    }
+    let open = clamp(1.0 - occ / (f32(AO_DIRECTIONS) * (1.0 - AO_BIAS)), 0.0, 1.0);
+    return vec4f(open, open, open, 1.0);
+}
+
+// The 4 × 4 depth-aware blur: the window holds each of the interleave's 16 turns once; a neighbour on another surface (farther than the
+// blur's reach from this pixel's point) does not mix in.
+@fragment fn fs_ao_blur(i: GVO) -> @location(0) vec4f {
+    let size = vec2i(textureDimensions(aodepth));
+    let xy = vec2i(i.pos.xy);
+    let c = ao_point(xy, size);
+    if (c.w == 0.0) { return vec4f(1.0, 1.0, 1.0, 1.0); }
+    var sum = 0.0;
+    var n = 0.0;
+    for (var j = -2; j < 2; j = j + 1) {
+        for (var k = -2; k < 2; k = k + 1) {
+            let q = ao_clamp(xy + vec2i(k, j), size);
+            let p = ao_point(q, size);
+            if (p.w == 0.0 || length(p.xyz - c.xyz) > u.ao.z) { continue; }
+            sum = sum + textureLoad(aoraw, q, 0).r;
+            n = n + 1.0;
+        }
+    }
+    let open = select(1.0, sum / n, n > 0.0);
+    return vec4f(open, open, open, 1.0);
+}
+
+// ── the ground: a shadow catcher ──
+// vs_grid's six vertices; each fragment casts the view's ray at the ground's plane, as fs_grid does, so a disc four scene radii across is
+// never cut by the near or far plane (its depth is written, clamped). Inside the disc it draws BLACK with the light it loses as alpha:
+// the key light's share times its shadow, the rest times the occlusion, fading to nothing at the rim. The section plane does not cut it.
+
+struct GroundHit {
+    w: vec3f,
+    // the parameter along the view's ray (its depth), and the distance from the centre in radii (1 or more: missed)
+    t: f32,
+    r: f32,
+};
+
+fn ground_hit(ndc: vec2f) -> GroundHit {
+    var h: GroundHit;
+    h.r = 2.0;
+    let o = u.aro.xyz + u.arox.xyz * ndc.x + u.aroy.xyz * ndc.y;
+    let d = u.ard.xyz + u.ardx.xyz * ndc.x + u.ardy.xyz * ndc.y;
+    if (abs(d.z) < 1e-30 || u.gnd.w <= 0.0) { return h; }
+    h.t = (u.gnd.z - o.z) / d.z;
+    h.w = o + d * h.t;
+    // a perspective ray meets it only ahead of the eye (an orthographic ray's origin is on the view plane, where t may be negative)
+    if (dot(u.ardx.xyz, u.ardx.xyz) > 0.0 && h.t <= 0.0) { return h; }
+    h.r = length(h.w.xy - u.gnd.xy) / u.gnd.w;
+    return h;
+}
+
+struct GrOut {
+    @location(0) col: vec4f,
+    @builtin(frag_depth) depth: f32,
+};
+
+@fragment fn fs_ground(i: GVO) -> GrOut {
+    let h = ground_hit(i.ndc);
+    if (h.r >= 1.0) { discard; }
+    let fade = 1.0 - smoothstep(GROUND_FADE, 1.0, h.r);
+    let share = u.lu.w;
+    let lost = 1.0 - (share * shadow_vis(h.w, vec3f(0.0, 0.0, 1.0)) + (1.0 - share) * occlusion_at(i.pos.xy));
+    var o: GrOut;
+    o.col = vec4f(0.0, 0.0, 0.0, clamp(lost * fade, 0.0, 1.0));
+    let c = u.vp * vec4f(h.w, 1.0);
+    o.depth = clamp(c.z / c.w, 0.0, 1.0);
+    return o;
+}
+
+// The ground in the occlusion's prepass: what rests on it darkens it, and it darkens what rests on it.
+@fragment fn fs_ground_prepass(i: GVO) -> GrOut {
+    let h = ground_hit(i.ndc);
+    if (h.r >= 1.0) { discard; }
+    var o: GrOut;
+    o.col = vec4f(h.t, 0.0, 0.0, 1.0);
+    let c = u.vp * vec4f(h.w, 1.0);
+    o.depth = clamp(c.z / c.w, 0.0, 1.0);
+    return o;
 }

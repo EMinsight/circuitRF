@@ -125,3 +125,41 @@ Findings from work on the 3D viewer's view model. The field model itself (reader
   GPU's interpolated normal is a fraction of a degree off the exact one, so the first run read 238 against 226. A uniform
   environment matched to 0.1/255. The gate now turns the studio 90° and asserts the environment varies under 2/255 within
   ~1° of the reflected direction before comparing.
+
+## Shadows, contact shading, the ground, the realistic picture (brief-em3d-107, 2026-10-04)
+
+- **The shadow map's invalidation rule.** The map lives on the BACKEND between frames and is re-rendered only when
+  `Scene3DFramePlan.ShadowKey` moves. The plan lists the casters every realistic frame (cheap: no GPU work) and hashes what
+  the map depends on: the scene object and its generation (a new generation or a patch is a new scene), the light's matrix
+  (the key's direction — so the Look's rotation — and the casters' bounds, so visibility), the map's size, and every caster
+  draw with the contents of any per-frame transform slot it is drawn under (a drag's preview). Nothing about the camera is
+  in it, so an orbit renders no shadow pass. **The session decides** (`Viewer3DSession.DecideShadowPass`, and its
+  `ShadowPasses` counter): the pass runs when the key differs from the key the map was last rendered with; releasing the
+  realistic view's lighting resets it. A picture plans a 4096² map (live is 2048²), so the next live frame after an export
+  renders the map once more at its own size. Element casters are never LOD-boxed — the boxing depends on the eye.
+- **The transparent picture's read-back is PREMULTIPLIED.** Only `RenderPixels` with `Scene3DFramePlan.Transparent` clears to
+  (0, 0, 0, 0) and skips the backdrop; with the blend every pipeline already uses (colour src-alpha or one / 1 − src-alpha,
+  alpha one / 1 − src-alpha) the pixels come back premultiplied with real alpha. `FieldPictureShot.Transparent` carries that
+  through Compose (which paints legends on a premultiplied bitmap, so it stays right) and `Png()` straightens it in C#
+  (`PictureResample.Unpremultiply`, rounded) and encodes it as UNPREMUL so Skia converts nothing. The live image is never
+  cleared to 0: its alpha stays 1 (brief 27's rule). Copy never asks for transparency.
+- **Supersampling** happens in `CapturePicture`: the plan is drawn at k × the output (k from 1, 2, 4, halved until the drawn
+  side fits `FieldPicture.MaxSide`) and brought down by `PictureResample.Downsample` before the legends are painted, so the
+  legend, caption and overlay layer are composed at the output size exactly as before.
+- **Bindings** (also in `scene.wgsl` and `tools/ShaderGen/README.md`): group 3 — the shadow map, its
+  comparison sampler, the blurred occlusion, the prepass's depths, the raw occlusion — is Metal fragment textures 3, 4, 5, 6
+  and sampler 2; D3D11 t3, s2, t4, t5, t6; Vulkan set 3, bindings 0–4. The HLSL comparison sampler comes out of naga's
+  COMPARISON sampler heap, which `plain_hlsl_samplers` now rewrites too (`SamplerComparisonState smap_s : register(s2)`).
+- **Per backend.** Metal: three extra encoders (the shadow pass, the prepass into R32Float with the main depth texture
+  reused, then the horizon pass and blur into two R8 targets), 1 × 1 stand-ins for an absent map or occlusion. D3D11: the
+  map is R32_TYPELESS (a D32 view to draw, an R32 float view to read); t3..t6 are unbound before every pass that draws into
+  one of them, since the runtime would otherwise unbind the input itself and the next pass would read nothing. Vulkan: three
+  render passes that leave their targets SHADER_READ_ONLY_OPTIMAL, the prepass with its own depth buffer (no per-image
+  framebuffer), set 3 always naming valid images (stand-ins made with the device and transitioned at once), and every map or
+  target made, and set 3 re-pointed, BEFORE the command buffer is begun (a set may not change under a recording that binds
+  it). The comparison sampler is linear only where the device filters D32 linearly (`_depthLinear`), else nearest.
+- **What ran.** Metal: every brief-107 pixel gate (a box's shadow on its plate 30/255 darker than its mirror, gone with
+  `Shadows: false`; glass at 0.9 casts nothing and 0.2 casts 30/255; an inside corner 21/255 darker, equal without occlusion;
+  a field pixel in shadow and in a corner exactly (51, 102, 153); a transparent picture 0 / 40 / 255 alpha; a 50 % slab's
+  straightened colour composited over black and white within 1/255). **D3D11 and Vulkan were compiled only; their runtime
+  is unverified on this machine**, as briefs 62, 101 and 106 recorded.

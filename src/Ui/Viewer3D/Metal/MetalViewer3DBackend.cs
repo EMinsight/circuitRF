@@ -39,6 +39,8 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     /// <summary>brief-em3d-106 R-em3d106-4c — the environment's two textures: half-float RGBA, which every Mac Metal device samples
     /// with linear filtering, so no RGBE fallback was needed.</summary>
     private const nuint FmtRGBA16Float = 115;
+    /// <summary>brief-em3d-107 — the occlusion's targets: the prepass's depths (R32Float) and the occlusion itself, raw and blurred (R8).</summary>
+    private const nuint FmtR32Float = 55, FmtR8Unorm = 10;
     private const nuint VtxFloat3 = 30, VtxUInt = 36, VtxUChar4Normalized = 9, VtxFloat2 = 29;
     private const nuint PrimLine = 1, PrimTriangle = 3, IndexUInt32 = 1;
     private const nuint WindingCounterClockwise = 1;
@@ -69,6 +71,14 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
     /// (fragment buffer 4) and the environment's two textures (fragment textures 1 and 2, sampled through the image sampler at index
     /// 1); every one but the pipelines held only while the realistic view is on.</summary>
     private nint _pPbr, _pPbrTrans, _pBackdrop, _appearances, _envMap, _envBrdf;
+    /// <summary>brief-em3d-107 — the shadow pass's pipeline (depth only), the occlusion's three (the prepass of the materials and of the
+    /// ground, the horizon pass, its blur), the ground's; the shadow map (kept between frames: re-rendered only when the session says),
+    /// the occlusion's three targets (the view's size), the comparison sampler, and 1 × 1 stand-ins bound while there is no map or no
+    /// occlusion (the uniforms then say neither is read).
+    /// The textures are held only while the realistic view is on.</summary>
+    private nint _pShadow, _pPrepass, _pGroundPrepass, _pAo, _pAoBlur, _pGround, _shadowSampler;
+    private nint _shadowMap, _noShadowMap, _noOcclusion, _aoDepth, _aoRaw, _aoBlur;
+    private int _shadowMapSize, _aoW, _aoH;
     private readonly nint[] _overlays = new nint[3];
     private readonly nint[] _rb = new nint[Ring], _rbCmd = new nint[Ring];
     private readonly long[] _rbFrame = new long[Ring];
@@ -135,7 +145,9 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         nint vsf = Fn("vs_field"), fsf = Fn("fs_field");
         nint vsg = Fn("vs_grid"), fsg = Fn("fs_grid");
         nint vsi = Fn("vs_image"), fsi = Fn("fs_image");
-        nint vsp = Fn("vs_pbr"), fsp2 = Fn("fs_pbr"), fsb = Fn("fs_backdrop");
+        nint vsp = Fn("vs_pbr"), fsp2 = Fn("fs_pbr"), fsb = Fn("fs_backdrop"), fspg = Fn("fs_pbr_glass");
+        nint vss = Fn("vs_shadow"), fsd = Fn("fs_depth"), fspre = Fn("fs_prepass"), fsgp = Fn("fs_ground_prepass"), fsao = Fn("fs_ao");
+        nint fsaob = Fn("fs_ao_blur"), fsgr = Fn("fs_ground");
 
         nint vd = Send(Class("MTLVertexDescriptor"), Sel("vertexDescriptor"));
         nint attrs = Send(vd, Sel("attributes"));
@@ -182,14 +194,16 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         SendV(Idx(Send(pvd, Sel("layouts")), 0), Sel("setStride:"), (nuint)Scene3DVertex.Stride);
         SendV(Idx(Send(pvd, Sel("layouts")), ShadeBufferIndex), Sel("setStride:"), (nuint)Scene3DShadeVertex.Stride);
 
-        nint Pipe(nint fs, bool blend, bool pick, nuint topologyClass, nint vfn = 0, nint vdesc = 0, bool premultiplied = false)
+        // brief-em3d-107 — color: the colour target's format (0: none, the shadow pass); depth: false for the occlusion's full-screen passes.
+        nint Pipe(nint fs, bool blend, bool pick, nuint topologyClass, nint vfn = 0, nint vdesc = 0, bool premultiplied = false,
+                  nuint color = FmtBGRA8, bool depth = true)
         {
             nint d = Send(Send(Class("MTLRenderPipelineDescriptor"), S.alloc), S.init);
             SendV(d, Sel("setVertexFunction:"), vfn != 0 ? vfn : vs);
             SendV(d, Sel("setFragmentFunction:"), fs);
             // brief-em3d-45: the grid's vertex shader reads no vertex buffer — its pipeline has no descriptor (−1).
             SendV(d, Sel("setVertexDescriptor:"), vdesc == -1 ? 0 : vdesc != 0 ? vdesc : vd);
-            SendV(d, Sel("setDepthAttachmentPixelFormat:"), FmtDepth32F);
+            if (depth) SendV(d, Sel("setDepthAttachmentPixelFormat:"), FmtDepth32F);
             SendV(d, Sel("setInputPrimitiveTopology:"), topologyClass);
             nint cas = Send(d, Sel("colorAttachments"));
             if (pick)
@@ -197,10 +211,10 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                 SendV(Idx(cas, 0), Sel("setPixelFormat:"), FmtRG32Uint);
                 SendV(Idx(cas, 1), Sel("setPixelFormat:"), FmtRGBA32Float);
             }
-            else
+            else if (color != 0)
             {
                 nint ca = Idx(cas, 0);
-                SendV(ca, Sel("setPixelFormat:"), FmtBGRA8);
+                SendV(ca, Sel("setPixelFormat:"), color);
                 if (blend)
                 {
                     SendB(ca, Sel("setBlendingEnabled:"), true);
@@ -228,8 +242,16 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _pImage = Pipe(fsi, true, false, TopoTriangle, vsi, ivd);
         _pImageTrans = _pImage;
         _pPbr = Pipe(fsp2, false, false, TopoTriangle, vsp, pvd);
-        _pPbrTrans = Pipe(fsp2, true, false, TopoTriangle, vsp, pvd, premultiplied: true);
+        _pPbrTrans = Pipe(fspg, true, false, TopoTriangle, vsp, pvd, premultiplied: true);
         _pBackdrop = Pipe(fsb, false, false, TopoTriangle, vsg, -1);
+        // brief-em3d-107 — the shadow map's casters (depth only), the occlusion's prepass (the materials through vs, the ground through
+        // vs_grid; depths into R32Float), its horizon pass and blur (R8, no depth), and the ground (blended over the view, its depth tested).
+        _pShadow = Pipe(fsd, false, false, TopoTriangle, vss, vd, color: 0);
+        _pPrepass = Pipe(fspre, false, false, TopoTriangle, vs, vd, color: FmtR32Float);
+        _pGroundPrepass = Pipe(fsgp, false, false, TopoTriangle, vsg, -1, color: FmtR32Float);
+        _pAo = Pipe(fsao, false, false, TopoTriangle, vsg, -1, color: FmtR8Unorm, depth: false);
+        _pAoBlur = Pipe(fsaob, false, false, TopoTriangle, vsg, -1, color: FmtR8Unorm, depth: false);
+        _pGround = Pipe(fsgr, true, false, TopoTriangle, vsg, -1);
 
         // brief-em3d-101 — one sampler for every image: linear between texels and between mip levels, clamped to the edge (the
         // shader draws nothing outside [0, 1] itself).
@@ -242,6 +264,17 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _imageSampler = Send(_device, Sel("newSamplerStateWithDescriptor:"), sd);
         Send(sd, S.release);
         if (_imageSampler == 0) throw new Viewer3DPresentFault("Metal returned no sampler for the 3D view's images.");
+        // brief-em3d-107 — the shadow map's comparison sampler: lit where the reference is at or before the stored depth, each tap a
+        // bilinear blend of four comparisons.
+        nint cd = Send(Send(Class("MTLSamplerDescriptor"), S.alloc), S.init);
+        SendV(cd, Sel("setMinFilter:"), (nuint)1);
+        SendV(cd, Sel("setMagFilter:"), (nuint)1);
+        SendV(cd, Sel("setSAddressMode:"), (nuint)0);
+        SendV(cd, Sel("setTAddressMode:"), (nuint)0);
+        SendV(cd, Sel("setCompareFunction:"), (nuint)3);   // LessEqual
+        _shadowSampler = Send(_device, Sel("newSamplerStateWithDescriptor:"), cd);
+        Send(cd, S.release);
+        if (_shadowSampler == 0) throw new Viewer3DPresentFault("Metal returned no comparison sampler for the 3D view's shadows.");
 
         nint Depth(bool write, nuint compare = 3)
         {
@@ -263,7 +296,10 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
 
         // The pipelines hold what they need; the library and its functions were ours (new…), the
         // vertex descriptor was not (a class factory's autoreleased object).
-        foreach (nint f in new[] { vs, fsc, fsl, fsp, fse, fst, vsf, fsf, vsi, fsi, vsp, fsp2, fsb }) Send(f, S.release);
+        _noShadowMap = NewTexture(1, 1, FmtDepth32F, 4 | 1, 2);
+        _noOcclusion = NewTexture(1, 1, FmtR8Unorm, 4 | 1, 2);
+        foreach (nint f in new[] { vs, fsc, fsl, fsp, fse, fst, vsf, fsf, vsi, fsi, vsp, fsp2, fsb, fspg, vss, fsd, fspre, fsgp, fsao, fsaob, fsgr })
+            Send(f, S.release);
         Send(lib, S.release);
     }
 
@@ -331,10 +367,122 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
               System.Runtime.InteropServices.MemoryMarshal.AsBytes(environment.BrdfTable.AsSpan()).ToArray())]);
     }
 
-    /// <summary>A command buffer already encoded retains what it reads, so releasing here is safe mid-flight.</summary>
+    /// <summary>A command buffer already encoded retains what it reads, so releasing here is safe mid-flight. brief-em3d-107 — the shadow
+    /// map and the occlusion's targets go too.</summary>
     public override void ReleaseEnvironment()
     {
         Release(ref _envMap); Release(ref _envBrdf); Release(ref _appearances);
+        Release(ref _shadowMap); Release(ref _aoDepth); Release(ref _aoRaw); Release(ref _aoBlur);
+        (_shadowMapSize, _aoW, _aoH) = (0, 0, 0);
+    }
+
+    // ── brief-em3d-107: the shadow map, the occlusion, the ground ──────────────────────────────────────────────────────────
+
+    /// <summary>R-em3d107-1a — the key light's map at <paramref name="size"/>² (made again only when the size changes).</summary>
+    private void EnsureShadowMap(int size)
+    {
+        if (size == _shadowMapSize && _shadowMap != 0) return;
+        Release(ref _shadowMap);
+        _shadowMap = NewTexture(size, size, FmtDepth32F, 4 | 1, 2);
+        _shadowMapSize = size;
+    }
+
+    /// <summary>R-em3d107-2a — the occlusion's three targets at the view's size.</summary>
+    private void EnsureOcclusion(int w, int h)
+    {
+        if (w == _aoW && h == _aoH && _aoDepth != 0) return;
+        Release(ref _aoDepth); Release(ref _aoRaw); Release(ref _aoBlur);
+        _aoDepth = NewTexture(w, h, FmtR32Float, 4 | 1, 2);
+        _aoRaw = NewTexture(w, h, FmtR8Unorm, 4 | 1, 2);
+        _aoBlur = NewTexture(w, h, FmtR8Unorm, 4 | 1, 2);
+        (_aoW, _aoH) = (w, h);
+    }
+
+    /// <summary>The shadow map (or the 1 × 1 stand-in), its sampler and the blurred occlusion for a lit fragment: textures 3 and 4, sampler
+    /// 2 (scene.wgsl's group 3). The uniforms say whether either is read.</summary>
+    private void BindLighting(nint e)
+    {
+        ((delegate* unmanaged<nint, nint, nint, nuint, void>)MsgSend)(e, Sel_setFragmentTexture, _shadowMap != 0 ? _shadowMap : _noShadowMap, 3);
+        ((delegate* unmanaged<nint, nint, nint, nuint, void>)MsgSend)(e, Sel_setFragmentSampler, _shadowSampler, 2);
+        ((delegate* unmanaged<nint, nint, nint, nuint, void>)MsgSend)(e, Sel_setFragmentTexture, _aoBlur != 0 ? _aoBlur : _noOcclusion, 4);
+    }
+
+    /// <summary>R-em3d107-1 — the casters into the map, from the key light (the plan's lvp), with the shadow bias.</summary>
+    private void EncodeShadowPass(nint cb, Scene3DFramePlan plan, float* u, float* xf, ref int draws)
+    {
+        EnsureShadowMap(plan.ShadowSize);
+        nint rp = Send(Class_RPD, S.renderPassDescriptor);
+        DepthOnly(rp, _shadowMap);
+        nint e = Send(cb, S.renderCommandEncoderWithDescriptor, rp);
+        Common(e, u, xf);
+        SendV(e, S.setRenderPipelineState, _pShadow);
+        SendV(e, S.setDepthStencilState, _dsWrite);
+        var (constant, slope, clamp) = Scene3DFramePlan.ShadowBias;
+        ((delegate* unmanaged<nint, nint, float, float, float, void>)MsgSend)(e, Sel_setDepthBias, constant, slope, clamp);
+        ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(e, S.setVertexBuffer, _vb, 0, 0);
+        int transform = 0;
+        for (int i = 0; i < plan.ShadowDrawCount; i++)
+        {
+            ref var d = ref plan.ShadowDraws[i];
+            if (d.Transform != transform && d.Transform < plan.TransformCount) SetTransform(e, xf, transform = d.Transform);
+            DrawIndexed(e, d);
+            draws++;
+        }
+        Send(e, S.endEncoding);
+    }
+
+    /// <summary>R-em3d107-2 — the occlusion: the prepass of the opaque materials (and the ground) into the depths target, the horizon pass,
+    /// the blur. The main pass's depth texture serves the prepass; the main pass clears it again.</summary>
+    private void EncodeOcclusion(nint cb, Scene3DFramePlan plan, float* u, float* xf, ref int draws)
+    {
+        EnsureOcclusion(plan.Width, plan.Height);
+        nint rp = Pass(_aoDepth, _depth, Occlusion.Empty, 0, 0, 0);
+        nint e = Send(cb, S.renderCommandEncoderWithDescriptor, rp);
+        Common(e, u, xf);
+        SendV(e, S.setRenderPipelineState, _pPrepass);
+        SendV(e, S.setDepthStencilState, _dsWrite);
+        ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(e, S.setVertexBuffer, _vb, 0, 0);
+        int transform = 0;
+        for (int i = 0; i < plan.DrawCount; i++)
+        {
+            ref var d = ref plan.Draws[i];
+            if (d.Pipeline != Scene3DPipeline.Pbr) continue;
+            if (d.Transform != transform && d.Transform < plan.TransformCount) SetTransform(e, xf, transform = d.Transform);
+            DrawIndexed(e, d);
+            draws++;
+        }
+        if (plan.GroundDrawn)
+        {
+            SendV(e, S.setRenderPipelineState, _pGroundPrepass);
+            ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, void>)MsgSend)(e, Sel_drawPrimitives, PrimTriangle, 0, 6);
+            draws++;
+        }
+        Send(e, S.endEncoding);
+        foreach (var (pipe, target) in new[] { (_pAo, _aoRaw), (_pAoBlur, _aoBlur) })
+        {
+            nint pass = Send(Class_RPD, S.renderPassDescriptor);
+            nint ca = Idx(Send(pass, S.colorAttachments), 0);
+            SendV(ca, S.setTexture, target);
+            SendV(ca, S.setLoadAction, (nuint)0);     // DontCare: every pixel is written
+            SendV(ca, S.setStoreAction, (nuint)1);
+            nint f = Send(cb, S.renderCommandEncoderWithDescriptor, pass);
+            Common(f, u, xf);
+            SendV(f, S.setRenderPipelineState, pipe);
+            ((delegate* unmanaged<nint, nint, nint, nuint, void>)MsgSend)(f, Sel_setFragmentTexture, _aoDepth, 5);
+            if (pipe == _pAoBlur) ((delegate* unmanaged<nint, nint, nint, nuint, void>)MsgSend)(f, Sel_setFragmentTexture, _aoRaw, 6);
+            ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, void>)MsgSend)(f, Sel_drawPrimitives, PrimTriangle, 0, 6);
+            draws++;
+            Send(f, S.endEncoding);
+        }
+    }
+
+    private static void DepthOnly(nint rp, nint depth)
+    {
+        nint da = Send(rp, S.depthAttachment);
+        SendV(da, S.setTexture, depth);
+        SendV(da, S.setLoadAction, (nuint)2);
+        SendV(da, S.setStoreAction, (nuint)1);
+        SendD(da, S.setClearDepth, 1.0);
     }
 
     private static readonly nint Sel_setFragmentBuffer = Sel("setFragmentBuffer:offset:atIndex:");
@@ -649,8 +797,14 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                     Send(blit, S.endEncoding);
                 }
 
+                // brief-em3d-107 — the shadow map when its key moved (the session decides), and the occlusion every realistic frame
+                if (plan.Realistic && _vb != 0 && _ib != 0)
+                {
+                    if (plan.ShadowPass && plan.ShadowDrawCount > 0) EncodeShadowPass(cb, plan, u, xf, ref draws);
+                    if (plan.Occlusion) EncodeOcclusion(cb, plan, u, xf, ref draws);
+                }
                 var (r, g, b) = plan.Clear;
-                nint main = Pass(target, _depth, r, g, b, 0);
+                nint main = Pass(target, _depth, r, g, b, 0, plan.Transparent ? 0 : 1);
                 nint e = Send(cb, S.renderCommandEncoderWithDescriptor, main);
                 Common(e, u, xf);
                 int transform = 0;
@@ -679,6 +833,16 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                         draws++;
                         continue;
                     }
+                    if (d.Pipeline == Scene3DPipeline.Ground)
+                    {
+                        // brief-em3d-107 — the ground: vs_grid's six vertices casting rays at its plane, darkening only.
+                        BindLighting(e);
+                        SendV(e, S.setRenderPipelineState, _pGround);
+                        SendV(e, S.setDepthStencilState, _dsNoWrite);
+                        ((delegate* unmanaged<nint, nint, nuint, nuint, nuint, void>)MsgSend)(e, Sel_drawPrimitives, PrimTriangle, 0, 6);
+                        draws++;
+                        continue;
+                    }
                     if (d.Pipeline == Scene3DPipeline.Backdrop)
                     {
                         // brief-em3d-106 — the backdrop: vs_grid's six vertices, no buffer, no depth.
@@ -693,6 +857,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
                     {
                         // brief-em3d-106 — the scene's triangles with the shade stream beside them, lit.
                         if (_vb == 0 || _ib == 0 || _shade == 0 || !BindLook(e)) continue;
+                        BindLighting(e);
                         SendV(e, S.setRenderPipelineState, d.Pipeline == Scene3DPipeline.Pbr ? _pPbr : _pPbrTrans);
                         SendV(e, S.setDepthStencilState, d.Pipeline == Scene3DPipeline.Pbr ? _dsWrite : _dsNoWrite);
                         ((delegate* unmanaged<nint, nint, nint, nuint, nuint, void>)MsgSend)(e, S.setVertexBuffer, _vb, 0, 0);
@@ -805,7 +970,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         _pickN = n;
     }
 
-    private static nint Pass(nint color, nint depth, double r, double g, double b, nint color1)
+    private static nint Pass(nint color, nint depth, double r, double g, double b, nint color1, double a = 1)
     {
         nint rp = Send(Class_RPD, S.renderPassDescriptor);
         nint cas = Send(rp, S.colorAttachments);
@@ -813,7 +978,7 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         SendV(ca, S.setTexture, color);
         SendV(ca, S.setLoadAction, (nuint)2);
         SendV(ca, S.setStoreAction, (nuint)1);
-        ((delegate* unmanaged<nint, nint, ClearColor, void>)MsgSend)(ca, S.setClearColor, new ClearColor { R = r, G = g, B = b, A = 1 });
+        ((delegate* unmanaged<nint, nint, ClearColor, void>)MsgSend)(ca, S.setClearColor, new ClearColor { R = r, G = g, B = b, A = a });
         if (color1 != 0)
         {
             nint c1 = Idx(cas, 1);
@@ -890,6 +1055,8 @@ internal sealed unsafe class MetalViewer3DBackend : Viewer3DBackend
         Release(ref _pOpaque); Release(ref _pTrans); Release(ref _pLines); Release(ref _pPick); Release(ref _pField);
         Release(ref _pEdges); Release(ref _pTop); Release(ref _pGrid); Release(ref _pImage); Release(ref _imageSampler);
         Release(ref _pPbr); Release(ref _pPbrTrans); Release(ref _pBackdrop);
+        Release(ref _pShadow); Release(ref _pPrepass); Release(ref _pGroundPrepass); Release(ref _pAo); Release(ref _pAoBlur);
+        Release(ref _pGround); Release(ref _shadowSampler); Release(ref _noShadowMap); Release(ref _noOcclusion);
         Release(ref _dsWrite); Release(ref _dsNoWrite); Release(ref _dsAlways);
         if (_queue != 0) Send(_queue, S.release);
         if (_device != 0) Send(_device, S.release);

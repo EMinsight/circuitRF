@@ -26,6 +26,9 @@
 //!   - the realistic view's appearance table @group(0) @binding(2) (brief-em3d-106): MSL `[[buffer(4)]]`; HLSL `register(b2)`;
 //!     SPIR-V set 0 binding 2. Its environment @group(2) @binding(0..2) — the prefiltered map, its sampler, the split-sum table:
 //!     MSL `[[texture(1)]]`, `[[sampler(1)]]`, `[[texture(2)]]`; HLSL `t1`, `s1`, `t2`; SPIR-V set 2, bindings 0, 1, 2.
+//!   - brief-em3d-107's shadows and occlusion @group(3) @binding(0..4) — the shadow map, its comparison sampler, the blurred occlusion,
+//!     the prepass's depths, the raw occlusion: MSL `[[texture(3)]]`, `[[sampler(2)]]`, `[[texture(4..6)]]`; HLSL `t3`, `s2`, `t4..t6`;
+//!     SPIR-V set 3, bindings 0 to 4.
 //!
 //! Deterministic: every option is set explicitly (naga's SPIR-V default flips a DEBUG flag with the
 //! build profile, which would make a debug-built tool emit different words).
@@ -60,8 +63,16 @@ const MSL_APPEARANCE_BUFFER: u8 = 4;
 const ENV: naga::ResourceBinding = naga::ResourceBinding { group: 2, binding: 0 };
 const ENV_SAMPLER: naga::ResourceBinding = naga::ResourceBinding { group: 2, binding: 1 };
 const BRDF: naga::ResourceBinding = naga::ResourceBinding { group: 2, binding: 2 };
+/// brief-em3d-107 — shadows, occlusion and the ground, @group(3): the shadow map @binding(0) (a depth texture), its comparison sampler
+/// @binding(1), the blurred occlusion @binding(2), the prepass's depths @binding(3), the raw occlusion @binding(4): MSL textures 3, 4, 5, 6
+/// and sampler 2; HLSL t3, s2, t4, t5, t6; SPIR-V descriptor set 3, bindings 0 to 4.
+const SHADOW_MAP: naga::ResourceBinding = naga::ResourceBinding { group: 3, binding: 0 };
+const SHADOW_SAMPLER: naga::ResourceBinding = naga::ResourceBinding { group: 3, binding: 1 };
+const OCCLUSION: naga::ResourceBinding = naga::ResourceBinding { group: 3, binding: 2 };
+const PREPASS: naga::ResourceBinding = naga::ResourceBinding { group: 3, binding: 3 };
+const OCCLUSION_RAW: naga::ResourceBinding = naga::ResourceBinding { group: 3, binding: 4 };
 /// Every sampler and the HLSL register it is rewritten to (plain_hlsl_samplers).
-const HLSL_SAMPLERS: [(&str, u32); 2] = [("img_s", 0), ("env_s", 1)];
+const HLSL_SAMPLERS: [(&str, u32); 3] = [("img_s", 0), ("env_s", 1), ("smap_s", 2)];
 /// MSL 2.3: macOS 11+.
 const MSL_VERSION: (u8, u8) = (2, 3);
 /// SPIR-V 1.0: every Vulkan 1.0 driver.
@@ -146,6 +157,14 @@ fn generate(wgsl_path: &Path, out: &Path) -> Result<(), String> {
         msl::BindTarget { sampler: Some(msl::BindSamplerTarget::Resource(1)), ..Default::default() },
     );
     resources.resources.insert(BRDF, msl::BindTarget { texture: Some(2), ..Default::default() });
+    resources.resources.insert(SHADOW_MAP, msl::BindTarget { texture: Some(3), ..Default::default() });
+    resources.resources.insert(
+        SHADOW_SAMPLER,
+        msl::BindTarget { sampler: Some(msl::BindSamplerTarget::Resource(2)), ..Default::default() },
+    );
+    resources.resources.insert(OCCLUSION, msl::BindTarget { texture: Some(4), ..Default::default() });
+    resources.resources.insert(PREPASS, msl::BindTarget { texture: Some(5), ..Default::default() });
+    resources.resources.insert(OCCLUSION_RAW, msl::BindTarget { texture: Some(6), ..Default::default() });
     let mut msl_opts = msl::Options {
         lang_version: MSL_VERSION,
         fake_missing_bindings: false,
@@ -171,6 +190,11 @@ fn generate(wgsl_path: &Path, out: &Path) -> Result<(), String> {
     hlsl_opts.binding_map.insert(ENV, hlsl::BindTarget { space: 0, register: 1, ..Default::default() });
     hlsl_opts.binding_map.insert(ENV_SAMPLER, hlsl::BindTarget { space: 0, register: 1, ..Default::default() });
     hlsl_opts.binding_map.insert(BRDF, hlsl::BindTarget { space: 0, register: 2, ..Default::default() });
+    hlsl_opts.binding_map.insert(SHADOW_MAP, hlsl::BindTarget { space: 0, register: 3, ..Default::default() });
+    hlsl_opts.binding_map.insert(SHADOW_SAMPLER, hlsl::BindTarget { space: 0, register: 2, ..Default::default() });
+    hlsl_opts.binding_map.insert(OCCLUSION, hlsl::BindTarget { space: 0, register: 4, ..Default::default() });
+    hlsl_opts.binding_map.insert(PREPASS, hlsl::BindTarget { space: 0, register: 5, ..Default::default() });
+    hlsl_opts.binding_map.insert(OCCLUSION_RAW, hlsl::BindTarget { space: 0, register: 6, ..Default::default() });
     // naga writes every sampler through a D3D12 sampler HEAP (a 2,048-entry array indexed by a per-group StructuredBuffer), which
     // a D3D11 Shader Model 5.0 compile cannot take — D3D11 has 16 sampler slots. The index buffer is given a register here only so
     // naga writes it; plain_hlsl_samplers then rewrites the heap away into a plain `SamplerState … : register(sN)`.
@@ -181,6 +205,10 @@ fn generate(wgsl_path: &Path, out: &Path) -> Result<(), String> {
     hlsl_opts.sampler_buffer_binding_map.insert(
         hlsl::SamplerIndexBufferKey { group: ENV_SAMPLER.group },
         hlsl::BindTarget { space: 0, register: 14, ..Default::default() },
+    );
+    hlsl_opts.sampler_buffer_binding_map.insert(
+        hlsl::SamplerIndexBufferKey { group: SHADOW_SAMPLER.group },
+        hlsl::BindTarget { space: 0, register: 13, ..Default::default() },
     );
     let mut hlsl_src = String::new();
     let hlsl_pipe = hlsl::PipelineOptions::default();
@@ -205,6 +233,9 @@ fn generate(wgsl_path: &Path, out: &Path) -> Result<(), String> {
     spv_opts.binding_map.insert(ENV, spv::BindingInfo { descriptor_set: 2, binding: 0, binding_array_size: None });
     spv_opts.binding_map.insert(ENV_SAMPLER, spv::BindingInfo { descriptor_set: 2, binding: 1, binding_array_size: None });
     spv_opts.binding_map.insert(BRDF, spv::BindingInfo { descriptor_set: 2, binding: 2, binding_array_size: None });
+    for (b, at) in [(SHADOW_MAP, 0), (SHADOW_SAMPLER, 1), (OCCLUSION, 2), (PREPASS, 3), (OCCLUSION_RAW, 4)] {
+        spv_opts.binding_map.insert(b, spv::BindingInfo { descriptor_set: 3, binding: at, binding_array_size: None });
+    }
     let words = spv::write_vec(&module, &info, &spv_opts, None).map_err(|e| format!("SPIR-V: {e}"))?;
     let words = insert_hash_string(&words, &format!("wgsl-sha256:{hash}"))?;
 
@@ -252,16 +283,21 @@ fn plain_hlsl_samplers(src: &str) -> Result<String, String> {
             index += 1;
             continue;
         }
-        if let Some(rest) = t.strip_prefix("static const SamplerState ") {
+        // brief-em3d-107 — a comparison sampler (the shadow map's) comes from naga's comparison heap: the same rewrite, its own type.
+        let decl = [("static const SamplerState ", "SamplerState", "= nagaSamplerHeap["),
+                    ("static const SamplerComparisonState ", "SamplerComparisonState", "= nagaComparisonSamplerHeap[")]
+            .into_iter()
+            .find_map(|(prefix, ty, heap)| t.strip_prefix(prefix).map(|rest| (rest, ty, heap)));
+        if let Some((rest, ty, heap)) = decl {
             let name = rest.split(|c: char| c == ' ' || c == '=').next().unwrap_or("");
-            if name.is_empty() || !rest.contains("= nagaSamplerHeap[") {
+            if name.is_empty() || !rest.contains(heap) {
                 return Err(format!("HLSL: an unexpected sampler declaration: {t}"));
             }
-            // Each sampler at its own binding-map register (HLSL_SAMPLERS): the image's s0, the environment's s1.
+            // Each sampler at its own binding-map register (HLSL_SAMPLERS): the image's s0, the environment's s1, the shadow map's s2.
             let Some((_, reg)) = HLSL_SAMPLERS.iter().find(|(n, _)| *n == name) else {
                 return Err(format!("HLSL: a sampler HLSL_SAMPLERS does not name: {name}"));
             };
-            out.push_str(&format!("SamplerState {name} : register(s{reg});\n"));
+            out.push_str(&format!("{ty} {name} : register(s{reg});\n"));
             samplers += 1;
             continue;
         }

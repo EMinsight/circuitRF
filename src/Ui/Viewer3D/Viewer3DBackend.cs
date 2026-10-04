@@ -9,7 +9,8 @@
 // pane, re-imports three images, and uploads no geometry (findings §5.7).
 //
 // RULES FROM BRIEF 27 (R-em3d28-1d), which every implementation keeps:
-//   * the shared image's alpha stays 1: blend alpha ONE, ONE_MINUS_SRC_ALPHA;
+//   * the shared image's alpha stays 1: blend alpha ONE, ONE_MINUS_SRC_ALPHA (brief-em3d-107: only a transparent PICTURE, drawn
+//     offscreen by RenderPixels, is cleared to alpha 0 — never the live image);
 //   * every native handle is checked before it is encoded with — a message to nil is a silent no-op,
 //     and a compositor waiting on a signal that was never encoded freezes the whole window. A present
 //     step that cannot signal THROWS (Viewer3DPresentFault), and the pane shows the fault; it never
@@ -73,7 +74,8 @@ public abstract class Viewer3DBackend : IDisposable
     /// the split-sum table), both RGBA16F. Counts the bytes. Once per turn-on and per environment change — a rotation is a uniform.</summary>
     public abstract void UploadEnvironment(Look.PrefilteredEnvironment environment);
 
-    /// <summary>Releases the environment's textures and the appearance table: the realistic view was turned off.</summary>
+    /// <summary>Releases the environment's textures and the appearance table — and brief 107's shadow map and occlusion targets: the
+    /// realistic view was turned off.</summary>
     public abstract void ReleaseEnvironment();
 
     /// <summary>Replaces one overlay slot's line buffer (<see cref="Scene3DBuffer.Overlay0"/>…2).</summary>
@@ -88,7 +90,8 @@ public abstract class Viewer3DBackend : IDisposable
     /// <summary>
     /// Draws <paramref name="plan"/> (planned at the export's size, no pick) into an offscreen image of
     /// its own and reads the pixels back: RGBA8, rows top to bottom. The live swapchain is not touched, so
-    /// the file is the same picture the view shows, at the size asked for.
+    /// the file is the same picture the view shows, at the size asked for. brief-em3d-107 — a <see cref="Scene3DFramePlan.Transparent"/>
+    /// plan clears the image to (0, 0, 0, 0), so the read-back is PREMULTIPLIED (the blend makes it so); the caller straightens it.
     /// </summary>
     public abstract byte[] RenderPixels(Scene3DFramePlan plan);
 

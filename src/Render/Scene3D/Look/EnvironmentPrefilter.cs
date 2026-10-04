@@ -46,6 +46,9 @@ public sealed class PrefilteredEnvironment : IPbrEnvironment
     /// map; the direction is then its dominant one, for brief 107).</summary>
     public required Vector3 KeyDirection { get; init; }
     public required Vector3 KeyRadiance { get; init; }
+    /// <summary>brief-em3d-107 R-em3d107-1c — the key light's angular size, degrees: a studio's key softbox (the mean of its width and
+    /// height), which sets how soft its shadow is. An <c>.hdr</c> has no direct key, so it shadows nothing and this is the default.</summary>
+    public float KeyAngleDeg { get; init; } = Shadows.DefaultKeyAngleDeg;
 
     public long Bytes => Levels.Sum(l => (long)l.Rgba.Length * 2) + BrdfTable.Length * 2L;
 
@@ -140,6 +143,7 @@ public static class EnvironmentPrefilter
             {
                 Key = $"hdr:{full}|unread", Label = s.Label, Fallback = $"{Path.GetFileName(hdrPath)} cannot be read ({reason}); lit with Studio",
                 Levels = s.Levels, BrdfTable = s.BrdfTable, Sh = s.Sh, KeyDirection = s.KeyDirection, KeyRadiance = s.KeyRadiance,
+                KeyAngleDeg = s.KeyAngleDeg,
             };
         }
     }
@@ -148,7 +152,9 @@ public static class EnvironmentPrefilter
     {
         var latlong = DrawLatLong(d => StudioEnvironment.Radiance(preset, d));
         var (dir, radiance) = StudioEnvironment.Key(preset);
-        return Build(latlong, "studio:" + preset.Studio, C3dLook.StudioLabel(preset.Studio), dir, radiance);
+        var key = preset.Lights[preset.Key];
+        return Build(latlong, "studio:" + preset.Studio, C3dLook.StudioLabel(preset.Studio), dir, radiance,
+                     keyAngle: (float)(0.5 * (key.WidthDeg + key.HeightDeg)));
     }
 
     /// <summary>A user's lat–long image (rows top first, +z up at the top, +x at the centre column).</summary>
@@ -169,7 +175,7 @@ public static class EnvironmentPrefilter
     private static float Lum(Vector3 c) => 0.2126f * c.X + 0.7152f * c.Y + 0.0722f * c.Z;
 
     private static PrefilteredEnvironment Build(float[] latlong, string key, string label, Vector3 keyDir, Vector3 keyRadiance,
-                                                Vector3[]? sh = null)
+                                                Vector3[]? sh = null, float keyAngle = Shadows.DefaultKeyAngleDeg)
     {
         Interlocked.Increment(ref _runs);
         sh ??= ProjectSh(latlong);
@@ -185,6 +191,7 @@ public static class EnvironmentPrefilter
         return new PrefilteredEnvironment
         {
             Key = key, Label = label, Levels = levels, BrdfTable = BrdfTexture.Value, Sh = sh, KeyDirection = keyDir, KeyRadiance = keyRadiance,
+            KeyAngleDeg = keyAngle,
         };
     }
 

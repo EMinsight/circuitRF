@@ -498,6 +498,10 @@ internal static class DocumentSchema
             reference images; ShowEdges, ShowGrid, ShowOverlays, ShowAirBox, ShowPorts, ShowBoundaries
             and ShowImages (true) each bring one back, drawn exactly as the default view draws it. A
             Show key never shows what the default view hides (a hidden air box stays hidden).
+            Shadows (the key light's shadows), AmbientOcclusion (contact shading where surfaces
+            meet) and Ground (a shadow-catching floor under the model's lowest point, which draws
+            only the darkening) are each on unless stated false; glass (an appearance Transmission
+            of 0.5 or more) casts no shadow, and none of the three ever changes a field plot's colour.
             Whether the realistic view is ON is not saved. `check` refuses a value out of range or a
             spelling it cannot read, and warns on a .hdr that is missing or does not read (the view
             then lights with Studio).

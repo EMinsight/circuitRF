@@ -20,13 +20,20 @@ public sealed record FieldPictureShot(byte[] Rgba, int Width, int Height, float 
     /// selection's highlight), drawn at this picture's size to lay over the GPU's pixels; null for none.</summary>
     public FieldPictureLayer? Layer { get; init; }
 
+    /// <summary>brief-em3d-107 R-em3d107-5b — drawn over nothing: <see cref="Rgba"/> is PREMULTIPLIED with real alpha, and the PNG is
+    /// straightened before it is encoded (PNG stores straight alpha).</summary>
+    public bool Transparent { get; init; }
+
+    /// <summary>R-em3d107-5a — how many times this size each side the picture was drawn at before it was brought down (1: not).</summary>
+    public int Supersample { get; init; } = 1;
+
     /// <summary>The pixels with the layer, the legends and the caption painted on (the caller disposes it).</summary>
     public SKBitmap Compose() => FieldPicture.Compose(Rgba, Width, Height, Scale, Legends, Caption, Dark, Layer);
 
     public byte[] Png()
     {
         using var bmp = Compose();
-        return FieldPicture.Encode(bmp);
+        return Transparent ? FieldPicture.EncodeStraight(bmp) : FieldPicture.Encode(bmp);
     }
 }
 
@@ -58,6 +65,20 @@ public static class FieldPicture
     internal static byte[] Encode(SKBitmap bmp)
     {
         using var image = SKImage.FromBitmap(bmp);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
+    /// <summary>brief-em3d-107 R-em3d107-5b — a premultiplied picture with real alpha, straightened here (Look.PictureResample.Unpremultiply,
+    /// rounded) and encoded as it is, so the encoder converts nothing.</summary>
+    internal static byte[] EncodeStraight(SKBitmap bmp)
+    {
+        var px = new byte[bmp.Width * bmp.Height * 4];
+        System.Runtime.InteropServices.Marshal.Copy(bmp.GetPixels(), px, 0, px.Length);
+        Look.PictureResample.Unpremultiply(px);
+        var info = new SKImageInfo(bmp.Width, bmp.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+        using var data0 = SKData.CreateCopy(px);
+        using var image = SKImage.FromPixels(info, data0, info.RowBytes);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
         return data.ToArray();
     }

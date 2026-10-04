@@ -819,6 +819,9 @@ optional; an omitted key takes the default shown:
 | `Exposure` | −10 to +10 EV |
 | `Background` | `Theme` (the view's own colour), `#rrggbb`, `"#rrggbb,#rrggbb"` (a vertical gradient, top colour first) or `Environment` (the studio itself) |
 | `ShowEdges`, `ShowGrid`, `ShowOverlays`, `ShowAirBox`, `ShowPorts`, `ShowBoundaries`, `ShowImages` | `true` brings that item back, drawn exactly as the ordinary view draws it |
+| `Shadows` | `false` turns off the key light's shadows (default on) |
+| `AmbientOcclusion` | `false` turns off the contact shading where surfaces meet (default on) |
+| `Ground` | `false` removes the shadow-catching floor under the model (default on) |
 
 A `Show…` key only lifts the realistic view's own hiding: an air box you have hidden, an overlay that is off, or a
 hidden object stays hidden. Until the Look has a panel of its own, it is edited by writing the file. A `Look` edit is
@@ -827,6 +830,14 @@ undone like any other, and **no run sees it**: editing it never makes a result s
 **Your own environment.** Name a Radiance `.hdr` (an equirectangular image, +z up) instead of a studio. An `.exr` is not
 read. A file that is missing or does not read is a warning in `check`; the view then lights the scene with Studio and
 the status line says why.
+
+**Shadows, contact shading and the ground.** The studio's key light casts **shadows**: soft from High key's broad
+softbox, crisp from Dark's small one. An object whose appearance lets half or more of the light through (`Transmission`
+0.5 or more) casts none, and ports, boundaries and field plots never do. **Contact shading** darkens the ambient light
+where surfaces meet, such as a die on its substrate or a wire's foot on its pad; it is worked out from what the view shows,
+so it follows the camera. The **ground** is a floor just under the model's lowest point that draws only those two
+darkenings, so the model rests on something instead of floating. It is never seen from below, and the section plane does
+not cut it. A field plot's colours are never shadowed or shaded. Each of the three can be turned off in the `Look`.
 
 **How it is drawn.** The colours go through the Khronos PBR Neutral tone curve, which keeps base colours faithful. A
 glossy surface reflects the studio, a rough one spreads it. Translucency is approximated: what shows through is dimmed
@@ -838,7 +849,11 @@ interactive speed, not ray traced.
 Right-click the view (on anything, or on nothing) for five ways to take it out of circuitRF:
 
 - **Copy** puts a picture of the view on the clipboard, drawn by the graphics card at a multiple of the
-  window's size. **Export Picture…** saves the same picture as a PNG.
+  window's size. **Export Picture…** saves the same picture as a PNG. In the [realistic view](#realistic), the picture
+  is drawn at **Supersampling** times its size each way (1×, 2× by default, or 4× for a final picture) and brought
+  down, so edges are smooth; the saved size is still the one you chose. **Transparent background** (realistic view
+  only) leaves out the background: the PNG's alpha holds the model, a glass object's partial cover, and the ground's
+  soft shadow, ready to place on a slide of any colour.
 - **Copy as Vector** puts the view on the clipboard as **lines**: every silhouette and sharp edge, seen
   along the camera's direction, with the edges behind a surface removed — what the shaded view shows, drawn
   as a line drawing. It pastes into a slide or a document as a picture that stays sharp at any size: on
