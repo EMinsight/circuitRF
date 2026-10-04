@@ -21,6 +21,7 @@ namespace CircuitRF.Ui.Views.ThreeD;
 public partial class C3dEditorView : UserControl
 {
     private C3dEditorViewModel? _vm;
+    private C3dEditorDocument? _doc;
     private readonly ContextMenu _menu = new();
     private readonly ContextMenu _drawMenu = new();
     private readonly ContextMenu _treeMenu = new();
@@ -39,6 +40,11 @@ public partial class C3dEditorView : UserControl
         // schematic and symbol editors already carry.
         AddHandler(KeyDownEvent, OnViewKeyTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
         AddHandler(GotFocusEvent, OnViewGotFocus, RoutingStrategies.Bubble, handledEventsToo: true);
+        // 3D editor keys — the pane's keys were heard only while the pane had focus, and a toolbar click took it: after
+        // clicking Isometric, 1 did nothing until the canvas was clicked. A toolbar click hands focus back (as the layout
+        // editor's OnToolButtonClick does), and a key nobody in the view used reaches the pane wherever focus is.
+        Toolbar.AddHandler(Button.ClickEvent, OnToolbarClick, RoutingStrategies.Bubble, handledEventsToo: true);
+        AddHandler(KeyDownEvent, OnViewKeyBubble, RoutingStrategies.Bubble);
         Pane.FramePresented += () => Overlay.InvalidateVisual();
         // brief-em3d-86 R-em3d86-3 — a slider drag previews; its release (a track click is one too) keeps the step: one entry.
         SweepCard.AddHandler(PointerReleasedEvent, (_, _) => _vm?.CommitSweepStep(), RoutingStrategies.Bubble, handledEventsToo: true);
@@ -81,6 +87,10 @@ public partial class C3dEditorView : UserControl
     protected override void OnDataContextChanged(EventArgs e)
     {
         base.OnDataContextChanged(e);
+        if (_doc is not null) _doc.ActivationFocusRequested -= OnActivationFocusRequested;
+        _doc = DataContext as C3dEditorDocument;
+        // The tab activated again (the view was already attached): the pane takes the keys, as the layout editor's canvas does.
+        if (_doc is not null) _doc.ActivationFocusRequested += OnActivationFocusRequested;
         if (_vm is not null)
         {
             _vm.DrawMenuRequested -= OnDrawMenuRequested;
@@ -370,6 +380,41 @@ public partial class C3dEditorView : UserControl
         _editBox = null;
     }
 
+    // ── 3D editor keys: wherever focus is in the view ───────────────────────────────────────
+
+    /// <summary>A toolbar button was clicked: the pane takes the keys back. A button that opens a flyout keeps focus for it.</summary>
+    private void OnToolbarClick(object? sender, RoutedEventArgs e)
+    {
+        if (e.Source is Button { Flyout: not null }) return;
+        Dispatcher.UIThread.Post(() => Pane.Focus(), DispatcherPriority.Background);
+    }
+
+    private void OnActivationFocusRequested()
+    {
+        _doc?.ConsumeActivationFocus();
+        Dispatcher.UIThread.Post(() => Pane.Focus(), DispatcherPriority.Background);
+    }
+
+    /// <summary>
+    /// A key that bubbled to the view unused, from anywhere but the pane itself: the pane's keys (1–7, O/F/E/V, G, P …). Never
+    /// from a text field or a drop-down, whose letters are their own; Delete and Backspace only from the pane, so a key pressed
+    /// on some other control never deletes geometry. Esc is the tunnel's (OnViewKeyTunnel).
+    /// </summary>
+    private void OnViewKeyBubble(object? sender, KeyEventArgs e)
+    {
+        if (_vm is null || e.Handled || ReferenceEquals(e.Source, Pane)) return;
+        if (e.Key is Key.Escape or Key.Delete or Key.Back) return;
+        if (IsTextEntry(e.Source as Visual)) return;
+        if (Pane.ForwardKey(e)) e.Handled = true;
+    }
+
+    private bool IsTextEntry(Visual? v)
+    {
+        for (; v is not null && !ReferenceEquals(v, this); v = v.GetVisualParent())
+            if (v is TextBox or ComboBox or AutoCompleteBox or NumericUpDown) return true;
+        return false;
+    }
+
     // ── brief-em3d-45: the drawing ──────────────────────────────────────────────────────────
 
     /// <summary>Shift+A — the Draw popup at the cursor; one letter (underlined) arms each tool.</summary>
@@ -387,7 +432,9 @@ public partial class C3dEditorView : UserControl
             {
                 Header = header,
                 InputGesture = new KeyGesture(Enum.Parse<Key>(letter.ToString())),
-                Icon = new Material.Icons.Avalonia.MaterialIcon { Kind = Enum.Parse<Material.Icons.MaterialIconKind>(icon), Width = 16, Height = 16 },
+                Icon = icon == nameof(Viewer3DPathGlyph.Cylinder)
+                    ? new Viewer3DPathGlyph { Data = Viewer3DPathGlyph.Cylinder }
+                    : new Material.Icons.Avalonia.MaterialIcon { Kind = Enum.Parse<Material.Icons.MaterialIconKind>(icon), Width = 16, Height = 16 },
             };
             item.Click += (_, _) => { vm.Arm(kind); Pane.Focus(); };
             _drawMenu.Items.Add(item);

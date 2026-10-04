@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:CircuitRF.Ui.ViewModels"
         xmlns:s3="using:CircuitRF.Render.Scene3D"
+        xmlns:v3="using:CircuitRF.Ui.Viewer3D"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         xmlns:ctl="using:CircuitRF.Ui.DataDisplay.Controls"
         xmlns:dock="clr-namespace:Dock.Avalonia.Controls;assembly=Dock.Avalonia"
@@ -1157,7 +1158,7 @@
                     </MenuItem>
                     <MenuItem Header="_Sheet" Command="{Binding ThreeDDrawCommand}" CommandParameter="Sheet"
                               ToolTip.Tip="A rectangle, two clicks. Requires an active 3D editor.">
-                        <MenuItem.Icon><mi:MaterialIcon Kind="VectorRectangle" Width="16" Height="16"/></MenuItem.Icon>
+                        <MenuItem.Icon><mi:MaterialIcon Kind="RectangleOutline" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="Poly_gon" Command="{Binding ThreeDDrawCommand}" CommandParameter="Polygon"
                               ToolTip.Tip="A closed sheet, a click per vertex. Requires an active 3D editor.">
@@ -1173,7 +1174,7 @@
                     </MenuItem>
                     <MenuItem Header="C_ylinder" Command="{Binding ThreeDDrawCommand}" CommandParameter="Cylinder"
                               ToolTip.Tip="Centre, radius, height. Requires an active 3D editor.">
-                        <MenuItem.Icon><mi:MaterialIcon Kind="Database" Width="16" Height="16"/></MenuItem.Icon>
+                        <MenuItem.Icon><v3:Viewer3DPathGlyph Data="{x:Static v3:Viewer3DPathGlyph.Cylinder}"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="_Port" Command="{Binding ThreeDDrawCommand}" CommandParameter="Port"
                               ToolTip.Tip="A port between two conductors, two clicks; its polarity is inferred from what it touches. Requires an active 3D editor.">

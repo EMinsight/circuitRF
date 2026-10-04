@@ -79,7 +79,7 @@
         <!-- ── Toolbar ─────────────────────────────────────────────────────────── -->
         <Border DockPanel.Dock="Top" Padding="4,2" BorderThickness="0,0,0,1"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}">
-            <WrapPanel Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
+            <WrapPanel x:Name="Toolbar" Orientation="Horizontal" ItemSpacing="4" LineSpacing="4">
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.IsObjectMode}" ToolTip.Tip="Object mode: select whole solids, sheets and instances  (O)">
                     <mi:MaterialIcon Kind="CubeOutline" Width="16" Height="16"/>
                 </ToggleButton>
@@ -135,12 +135,17 @@
                 <!-- 3D editor bugs round 2 — the tools come first and the snap switches after the drawing plane (owner's order). -->
                 <!-- brief-em3d-45 R-em3d45-3 — the tools (Shift+A opens them at the cursor, one letter each). Arming one keeps
                      the selection mode; Esc disarms. Icon kinds verified in Material.Icons 3.0.2: there is no Cylinder
-                     kind, so the cylinder is Database (a stack of discs). -->
+                     kind, and Database (a stack of discs) read badly, so the cylinder is drawn (Viewer3DPathGlyph). -->
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsBoxArmed}" ToolTip.Tip="Box: corner, opposite corner, height  (Shift+A, B)">
                     <mi:MaterialIcon Kind="CubeUnfolded" Width="16" Height="16"/>
                 </ToggleButton>
+                <!-- 3D editor keys round — the two solids side by side: Cylinder right after Box (owner's order). -->
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsCylinderArmed}" ToolTip.Tip="Cylinder: centre, radius, height  (Shift+A, Y)">
+                    <v3:Viewer3DPathGlyph Data="{x:Static v3:Viewer3DPathGlyph.Cylinder}"/>
+                </ToggleButton>
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsSheetArmed}" ToolTip.Tip="Sheet: a rectangle, two clicks  (Shift+A, S)">
-                    <mi:MaterialIcon Kind="VectorRectangle" Width="16" Height="16"/>
+                    <!-- The layout editor's Rectangle glyph: VectorRectangle draws vertex handles on the corners. -->
+                    <mi:MaterialIcon Kind="RectangleOutline" Width="16" Height="16"/>
                 </ToggleButton>
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsPolygonArmed}" ToolTip.Tip="Polygon: a closed sheet, a click per vertex  (Shift+A, G)">
                     <mi:MaterialIcon Kind="VectorPolygon" Width="16" Height="16"/>
@@ -152,9 +157,6 @@
                 <Button IsVisible="{Binding ViewModel.IsEditable}" Click="OnInsertImage" ToolTip.Tip="Insert Image…: a reference image as a sheet on the drawing plane, not modelled">
                     <mi:MaterialIcon Kind="ImagePlusOutline" Width="16" Height="16"/>
                 </Button>
-                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsCylinderArmed}" ToolTip.Tip="Cylinder: centre, radius, height  (Shift+A, Y)">
-                    <mi:MaterialIcon Kind="Database" Width="16" Height="16"/>
-                </ToggleButton>
                 <!-- brief-em3d-49 R-em3d49-2d — a port, drawn like a sheet; its polarity is inferred from what it touches. -->
                 <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsPortArmed}" ToolTip.Tip="Port: two corners on the drawing plane, between two conductors. The arrow runs from − to +; right-click it to flip  (Shift+A, P)">
                     <mi:MaterialIcon Kind="ArrowUpBoldBoxOutline" Width="16" Height="16"/>

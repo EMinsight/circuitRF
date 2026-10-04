@@ -711,6 +711,13 @@ public sealed class Viewer3DPane : Control
     }
 
     /// <summary>
+    /// 3D editor keys — a key pressed while focus is ELSEWHERE in the view hosting this pane (a toolbar button just clicked,
+    /// a tree row): the same keys as <see cref="OnKeyDown"/>, so 1 is still Isometric and G still Move. The host decides
+    /// what may forward (never a text field); a gizmo drag holds the pointer here, so none is under way.
+    /// </summary>
+    public bool ForwardKey(KeyEventArgs e) => _vm?.HandleKey(e.Key, e.KeyModifiers, GestureInProgress) == true;
+
+    /// <summary>
     /// 3D round 1 — one Esc, one step back. The workspace window binds Escape to a command and a window key binding
     /// marks the key handled before routing reaches the focused control, so this pane's own key handler never sees
     /// Esc in a docked view: the view hosting the pane claims it (tunnel, handled events too) and calls this. A drag

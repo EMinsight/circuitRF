@@ -41,10 +41,11 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
     public static IReadOnlyList<(C3dToolKind Kind, char Letter, string Icon)> DrawTools { get; } =
     [
         (C3dToolKind.Box, 'B', "CubeUnfolded"),
-        (C3dToolKind.Sheet, 'S', "VectorRectangle"),
+        // A Material kind, or a Viewer3DPathGlyph constant's name: the icon set has no cylinder worth using.
+        (C3dToolKind.Cylinder, 'Y', nameof(Viewer3DPathGlyph.Cylinder)),
+        (C3dToolKind.Sheet, 'S', "RectangleOutline"),
         (C3dToolKind.Polygon, 'G', "VectorPolygon"),
         (C3dToolKind.Polyline, 'L', "VectorPolyline"),
-        (C3dToolKind.Cylinder, 'Y', "Database"),
         // brief-em3d-49 R-em3d49-2d — a port, drawn like a sheet.
         (C3dToolKind.Port, 'P', "ArrowUpBoldBoxOutline"),
         // brief-em3d-50 R-em3d50-3a — a bond wire, pad to pad.

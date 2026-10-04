@@ -752,3 +752,40 @@ public sealed class Viewer3DViewGlyph : Control
             ctx.DrawLine(dashed, P(C), P(e));
     }
 }
+
+/// <summary>
+/// A toolbar glyph drawn from a path in Material's 24-unit box, filled with the inherited foreground, so it sits beside
+/// the Material icons at their size, padding and weight and follows a button's colour as they do. For a shape the icon
+/// set draws badly: its nearest cylinder is <c>Database</c>, a stack of discs (owner, 2026-10-03).
+/// </summary>
+public sealed class Viewer3DPathGlyph : Control
+{
+    /// <summary>An outlined cylinder: the top as a full ellipse, the sides, the bottom's front half; stroke 2, even-odd.
+    /// Drawn in Skia as strokes and written back as exact arcs (a stroke's fill path comes out of Skia as one quadratic per
+    /// quarter-ellipse, which is visibly flat at 64 px).</summary>
+    public const string Cylinder =
+        "M4,5.4 A8,3.6 0 0 1 20,5.4 L20,18.6 A8,3.6 0 0 1 4,18.6 Z " +
+        "M6,5.4 A6,1.6 0 1 0 18,5.4 A6,1.6 0 1 0 6,5.4 Z " +
+        "M6,7.78 A8,3.6 0 0 0 18,7.78 L18,18.6 A6,1.6 0 0 1 6,18.6 Z";
+
+    public static readonly StyledProperty<string?> DataProperty =
+        AvaloniaProperty.Register<Viewer3DPathGlyph, string?>(nameof(Data));
+
+    public string? Data { get => GetValue(DataProperty); set => SetValue(DataProperty, value); }
+
+    private Geometry? _geometry;
+    private string? _parsed;
+
+    static Viewer3DPathGlyph() => AffectsRender<Viewer3DPathGlyph>(DataProperty, TextElement.ForegroundProperty);
+
+    public Viewer3DPathGlyph() { Width = 16; Height = 16; }
+
+    public override void Render(DrawingContext ctx)
+    {
+        if (string.IsNullOrEmpty(Data)) return;
+        if (!ReferenceEquals(_parsed, Data)) { _geometry = Geometry.Parse(Data); _parsed = Data; }
+        double s = Math.Min(Bounds.Width, Bounds.Height) / 24.0;
+        using (ctx.PushTransform(Matrix.CreateScale(s, s)))
+            ctx.DrawGeometry(TextElement.GetForeground(this) ?? Brushes.Gray, null, _geometry!);
+    }
+}

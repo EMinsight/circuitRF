@@ -46,3 +46,19 @@
   width, which a later Fit would have framed against.
 - **"Drop to place…" is taken back when a file drag leaves without dropping** (`EndFileDrag`), restoring what the status line
   said before the drag, unless something else has written to it since.
+
+## 3D editor keys only worked while the canvas had focus (2026-10-03)
+
+**Symptom.** Pressing 1 (Isometric), or any toolbar key in the tooltips, did nothing in the 3D editor.
+
+**Cause.** Every key is `Viewer3DViewModel.HandleKey`, reached only from `Viewer3DPane.OnKeyDown`, and the pane took focus only
+on a pointer press inside it (and once, on the view's first attach). A toolbar click focuses the BUTTON, so the next key went
+to it and was dropped; returning to an already-attached 3D tab focused nothing, because `C3dEditorView` never subscribed to
+`ActivationFocusRequested` as the layout editor does. The same thing made image sheets seem hard to move: G after the
+toolbar's Insert Image… went to that button.
+
+**Fix.** Three parts, in `C3dEditorView`: a toolbar `Button.ClickEvent` hands focus back to the pane (the layout editor's
+`OnToolButtonClick`; a button with a flyout keeps it); `ActivationFocusRequested` focuses the pane; and a bubbling KeyDown nobody
+in the view handled is forwarded through `Viewer3DPane.ForwardKey` — never from a TextBox/ComboBox/NumericUpDown/AutoCompleteBox,
+and never Delete/Backspace, so a key pressed on another control cannot delete geometry. No window menu was intercepting:
+the macOS `NativeMenu` 3D items carry no `Gesture`, and the in-window `InputGesture`s are display-only.
