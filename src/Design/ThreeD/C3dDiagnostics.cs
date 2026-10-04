@@ -212,7 +212,7 @@ public static class C3dDiagnostics
     /// <summary>brief-em3d-108 R-em3d108-3d — a Look.Camera a picture cannot be taken from.</summary>
     public static Diagnostic LookCamera(string fault) => Diagnostic.Create(
         "c3d.look.camera", DiagnosticSeverity.Error,
-        "The Look's Camera cannot be used for a picture: its {fault}. Use This View for Pictures writes a sound one, and Clear removes it.",
+        "The Look's Camera cannot be used for a picture: its {fault}. Set Camera in the Look panel writes a sound one, and Clear removes it.",
         ("fault", fault));
 
     public static Diagnostic LookEnvironment(string spelled) => Diagnostic.Create(

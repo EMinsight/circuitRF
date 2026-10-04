@@ -125,7 +125,7 @@ public sealed partial class Viewer3DViewModel
         };
     }
 
-    /// <summary>Go to Picture View: the live view's camera set to <paramref name="camera"/>. False (nothing moved) for one a picture
+    /// <summary>Go to Camera View: the live view's camera set to <paramref name="camera"/>. False (nothing moved) for one a picture
     /// cannot be taken from.</summary>
     public bool GoToPictureCamera(C3dLookCamera camera, int dbuPerMicron)
     {

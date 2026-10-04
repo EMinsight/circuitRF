@@ -102,13 +102,13 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
     [ObservableProperty] private double _fieldOpacity = C3dLook.DefaultFieldOpacity;
     [ObservableProperty] private string _fieldOpacityText = "";
 
-    /// <summary>What the chosen style and opacity do to the colours, and that the picture says so.</summary>
+    /// <summary>What the chosen style and opacity do to the colours. One short line in every state, so that moving the opacity off
+    /// 100 % never re-flows the panel; the label the view and every picture carry under the legend says the rest.</summary>
     public string FieldStyleText => (FieldStyle, FieldOpacity < C3dLook.FieldOpacityMax) switch
     {
-        (nameof(C3dFieldStyle.Lit), _) or (_, true) =>
-            $"The colours are no longer exactly the legend's: the view and every picture carry \"{RealisticLook.FieldIndicatorText(FieldStyle == nameof(C3dFieldStyle.Lit), FieldOpacity < C3dLook.FieldOpacityMax)}\" under the legend.",
-        (nameof(C3dFieldStyle.Glow), _) => "The field's colours are exact; the model around it is dimmed.",
-        _ => "The field's colours are exactly the legend's.",
+        (nameof(C3dFieldStyle.Lit), _) or (_, true) => "The colours are no longer exactly the legend's.",
+        (nameof(C3dFieldStyle.Glow), _) => "Exact colours; the model around them is dimmed.",
+        _ => "The colours are exactly the legend's.",
     };
 
     public static IReadOnlyList<string> BackgroundKinds { get; } = ["Theme", "Colour", "Gradient", "Environment"];
@@ -118,9 +118,32 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
     public bool HasBackgroundColour => BackgroundKind is "Colour" or "Gradient";
     public bool HasBackgroundGradient => BackgroundKind == "Gradient";
 
+    /// <summary>Which end of the background the panel's inline colour picker edits — <c>"top"</c> (a colour, or a gradient's top),
+    /// <c>"bottom"</c> — or null with the picker closed.</summary>
+    [ObservableProperty] private string? _backgroundEditing;
+    public bool IsEditingBackground => BackgroundEditing is not null;
+    public Avalonia.Media.Color BackgroundEditColour => BackgroundEditing == "bottom" ? BackgroundBottom : BackgroundTop;
+    public string BackgroundEditLabel => (BackgroundEditing, BackgroundKind) switch
+    {
+        ("bottom", _) => "The gradient's bottom",
+        (_, "Gradient") => "The gradient's top",
+        _ => "The colour",
+    };
+
+    partial void OnBackgroundEditingChanged(string? value)
+    {
+        OnPropertyChanged(nameof(IsEditingBackground));
+        OnPropertyChanged(nameof(BackgroundEditColour));
+        OnPropertyChanged(nameof(BackgroundEditLabel));
+    }
+
+    partial void OnBackgroundTopChanged(Avalonia.Media.Color value) => OnPropertyChanged(nameof(BackgroundEditColour));
+    partial void OnBackgroundBottomChanged(Avalonia.Media.Color value) => OnPropertyChanged(nameof(BackgroundEditColour));
+
     [ObservableProperty] private bool _hasPictureCamera;
+    /// <summary>One short line in both states, so Set Camera and Clear never re-flow the panel under the pointer.</summary>
     public string PictureCameraText => HasPictureCamera
-        ? "Pictures are taken from the saved view, whatever the live view shows."
+        ? "Pictures are taken from the saved camera."
         : "Pictures are taken from the live view.";
 
     partial void OnHasPictureCameraChanged(bool value) => OnPropertyChanged(nameof(PictureCameraText));
@@ -142,12 +165,14 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
         bool was = _editor.Viewer.IsRealistic;
         if (!was) _editor.Viewer.IsRealistic = true;
         Header = was ? HeaderText : TurnedOnText;
+        BackgroundEditing = null;
         Reload();
     }
 
-    /// <summary>The panel closed: a drag left mid-way is shown no longer.</summary>
+    /// <summary>The panel closed: a colour being picked is kept (one entry, as Done keeps it); a drag left mid-way is shown no longer.</summary>
     public void Closed()
     {
+        DoneBackground();
         _drag = null;
         _editor.EndLookPreview();
     }
@@ -158,20 +183,26 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
         Loading = true;
         try { Load(); }
         finally { Loading = false; }
+        ResetNumberCommand.NotifyCanExecuteChanged();
     }
 
     private void Load()
     {
         var look = _editor.Document.Look ?? new C3dLook();
-        EnvironmentChoices.Clear();
-        EnvironmentChoices.Add(new("Studio", null));
-        EnvironmentChoices.Add(new("High key", nameof(C3dStudio.HighKey)));
-        EnvironmentChoices.Add(new("Dark", nameof(C3dStudio.Dark)));
+        // The list is STABLE: built once, an .hdr appended the first time it is seen, and the selection is always an instance already
+        // in it. A pick in the combo writes the Look and lands back here while the ComboBox is still inside its own selection change;
+        // clearing and refilling the list then (new instances) made Avalonia drop the selection, and the combo showed nothing.
+        if (EnvironmentChoices.Count == 0)
+        {
+            EnvironmentChoices.Add(new("Studio", null));
+            EnvironmentChoices.Add(new("High key", nameof(C3dStudio.HighKey)));
+            EnvironmentChoices.Add(new("Dark", nameof(C3dStudio.Dark)));
+        }
         var (studio, path) = look.EnvironmentOf(out _);
         if (path is not null)
         {
-            var hdr = new LookEnvironmentChoice(Path.GetFileName(path), look.Environment);
-            EnvironmentChoices.Add(hdr);
+            var hdr = EnvironmentChoices.Skip(3).FirstOrDefault(c => c.Value == look.Environment);
+            if (hdr is null) EnvironmentChoices.Add(hdr = new LookEnvironmentChoice(Path.GetFileName(path), look.Environment));
             Environment = hdr;
         }
         else Environment = EnvironmentChoices[studio switch { C3dStudio.HighKey => 1, C3dStudio.Dark => 2, _ => 0 }];
@@ -204,6 +235,9 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(HasBackgroundColour));
         OnPropertyChanged(nameof(HasBackgroundGradient));
+        OnPropertyChanged(nameof(BackgroundEditLabel));
+        // the picker closes when its end no longer exists (an undo included); the kind's own write below is the entry
+        if (!HasBackgroundColour || (BackgroundEditing == "bottom" && !HasBackgroundGradient)) BackgroundEditing = null;
         if (!Loading) WriteBackground();
     }
 
@@ -269,6 +303,43 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
         Change(d.Key, l => SetNumber(l, d.Key, d.Value));
     }
 
+    /// <summary>A number row's ×, as the appearance editor's: the key back to "not stated", which is its default, one undo
+    /// entry. Disabled while the key is already not stated.</summary>
+    [RelayCommand(CanExecute = nameof(CanResetNumber))]
+    private void ResetNumber(string key) => Change($"{key} to its default", l => ClearNumber(l, key));
+
+    private bool CanResetNumber(string key) => IsEditable && _editor.Document.Look is { } l && key switch
+    {
+        nameof(C3dLook.Rotation) => l.Rotation is not null,
+        nameof(C3dLook.Intensity) => l.Intensity is not null,
+        nameof(C3dLook.FieldOpacity) => l.FieldOpacity is not null,
+        _ => l.Exposure is not null,
+    };
+
+    private static void ClearNumber(C3dLook l, string key)
+    {
+        switch (key)
+        {
+            case nameof(C3dLook.Rotation): l.Rotation = null; break;
+            case nameof(C3dLook.Intensity): l.Intensity = null; break;
+            case nameof(C3dLook.FieldOpacity): l.FieldOpacity = null; break;
+            default: l.Exposure = null; break;
+        }
+    }
+
+    /// <summary>The ×'s tooltip: what the default is.</summary>
+    public static string ResetTip(string key) => key switch
+    {
+        nameof(C3dLook.Rotation) => $"Reset to the default, {C3dLook.DefaultRotation}°.",
+        nameof(C3dLook.Intensity) => $"Reset to the default, {C3dLook.DefaultIntensity}.",
+        nameof(C3dLook.FieldOpacity) => $"Reset to the default, {C3dLook.DefaultFieldOpacity} %.",
+        _ => $"Reset to the default, {C3dLook.DefaultExposure} EV.",
+    };
+    public static string RotationResetTip => ResetTip(nameof(C3dLook.Rotation));
+    public static string IntensityResetTip => ResetTip(nameof(C3dLook.Intensity));
+    public static string ExposureResetTip => ResetTip(nameof(C3dLook.Exposure));
+    public static string FieldOpacityResetTip => ResetTip(nameof(C3dLook.FieldOpacity));
+
     /// <summary>A number box, on Enter or when it loses focus.</summary>
     public void CommitText(string key)
     {
@@ -312,7 +383,27 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
 
     // ── the background ────────────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>A background colour picked (its flyout): previewed while it moves, written when the flyout closes.</summary>
+    /// <summary>A swatch clicked: the inline picker edits that end. The same swatch again finishes it; the other swatch keeps the
+    /// first end's colour (one entry) and edits the other.</summary>
+    [RelayCommand]
+    private void EditBackground(string which)
+    {
+        if (BackgroundEditing == which) { DoneBackground(); return; }
+        if (BackgroundEditing is not null) CommitBackground();
+        BackgroundEditing = which;
+    }
+
+    /// <summary>Done (or the panel closing): the picker closes and the colour it was left on is written, one entry — none when it
+    /// was left where it began.</summary>
+    [RelayCommand]
+    public void DoneBackground()
+    {
+        if (BackgroundEditing is null) return;
+        BackgroundEditing = null;
+        CommitBackground();
+    }
+
+    /// <summary>A background colour picked (the inline picker): previewed while it moves, written when the picker is finished.</summary>
     public void PreviewBackground(bool top, Avalonia.Media.Color c)
     {
         Loading = true;
@@ -322,7 +413,7 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
         _editor.PreviewLook(l => l.Background = spelled);
     }
 
-    /// <summary>The colour flyout closed: the background it was left on, one entry.</summary>
+    /// <summary>The picker finished: the background it was left on, one entry.</summary>
     public void CommitBackground() => WriteBackground();
 
     private void WriteBackground() => Change("Background", l => l.Background = BackgroundSpelling());

@@ -29,7 +29,32 @@ public sealed class ActivatableDocumentViewFocusTests
         { "SymbolEditorDocument", Path.Combine("src", "Ui", "Views", "Content", "SymbolEditorView.axaml.cs") },
         { "LayoutDocument",       Path.Combine("src", "Ui", "Views", "Layout", "LayoutEditorView.axaml.cs") },
         { "TechDocument",         Path.Combine("src", "Ui", "Views", "Layout", "TechEditorView.axaml.cs") },
+        { "C3dEditorDocument",    Path.Combine("src", "Ui", "Views", "ThreeD", "C3dEditorView.axaml.cs") },
     };
+
+    /// <summary>
+    /// When a workspace opens, the active document takes the keyboard LAST. The restore has every panel and every document ask
+    /// for focus within a few dispatcher turns (the Project Tree and Library at <c>Input</c>, the editors at <c>Loaded</c> or
+    /// <c>Background</c>), so without a final request the winner was post order — and a workspace opened on a <c>.c3d</c> showed
+    /// a focused-looking document that no key reached (owner-reported). The final request must sit BELOW every one of those
+    /// priorities, or it is not the last word.
+    /// </summary>
+    [Fact]
+    public void AWorkspaceOpen_EndsByHandingTheActiveDocumentTheKeyboard_AtALowerPriorityThanAnyPanel()
+    {
+        string src = Src(Path.Combine("src", "Ui", "ViewModels", "WorkspaceViewModel.Docking.cs"));
+        int finish = src.IndexOf("private void FinishRestoredDockLayout", StringComparison.Ordinal);
+        Assert.True(finish > 0);
+        string body = src[finish..src.IndexOf("\n    }", finish, StringComparison.Ordinal)];
+        Assert.Contains("FocusActiveDocumentAfterOpen();", body, StringComparison.Ordinal);
+
+        int at = src.IndexOf("private void FocusActiveDocumentAfterOpen", StringComparison.Ordinal);
+        string focus = src[at..src.IndexOf("ContextIdle", at, StringComparison.Ordinal)];
+        Assert.Contains("RequestActivationFocus()", focus, StringComparison.Ordinal);
+        Assert.True(Avalonia.Threading.DispatcherPriority.ContextIdle < Avalonia.Threading.DispatcherPriority.Background
+                    && Avalonia.Threading.DispatcherPriority.Background < Avalonia.Threading.DispatcherPriority.Input,
+                    "ContextIdle must run after every Input/Loaded/Background post the restore queued");
+    }
 
     [Theory]
     [MemberData(nameof(DocumentViews))]

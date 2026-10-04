@@ -4,8 +4,8 @@
 // uniform write — or, for a different environment, one prefilter off the UI thread, cached per environment, the old one drawn until the
 // new one is ready.
 //
-// R-em3d108-3d — the picture camera (overview D17): "Use This View for Pictures" writes the live camera into Look.Camera as one entry;
-// an orbit never writes it; "Go to Picture View" puts it back in the live view (view state, no entry); Clear removes it.
+// R-em3d108-3d — the picture camera (overview D17): "Set Camera" writes the live camera into Look.Camera as one entry;
+// an orbit never writes it; "Go to Camera View" puts it back in the live view (view state, no entry); Clear removes it.
 
 using CircuitRF.Design.ThreeD;
 
@@ -94,11 +94,11 @@ public sealed partial class C3dEditorViewModel
 
     // ── R-em3d108-3d — the picture camera ─────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Use This View for Pictures: the live camera written into the Look, one undo entry.</summary>
+    /// <summary>Set Camera: the live camera written into the Look, one undo entry.</summary>
     public bool UseViewForPictures()
-        => ChangeLook("Use This View for Pictures", l => l.Camera = Viewer.PictureCamera(Document.DbuPerMicron));
+        => ChangeLook("Set Camera", l => l.Camera = Viewer.PictureCamera(Document.DbuPerMicron));
 
-    /// <summary>Go to Picture View: the live view's camera set to the Look's. False when the Look states none (or a broken one).</summary>
+    /// <summary>Go to Camera View: the live view's camera set to the Look's. False when the Look states none (or a broken one).</summary>
     public bool GoToPictureView()
         => Document.Look?.Camera is { } c && Viewer.GoToPictureCamera(c, Document.DbuPerMicron);
 

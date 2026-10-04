@@ -527,7 +527,7 @@ public sealed class RealisticViewTests : IDisposable
     // ── 8. the menus and the toolbar ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Gate8_BothMenusCarryRealisticViewAsACheckItem_WithNoKey_AndTheToggleFollowsOrthographic()
+    public void Gate8_BothMenusCarryRealisticViewAsACheckItem_ShowingL_AndTheToggleFollowsOrthographic()
     {
         var xml = XDocument.Parse(File.ReadAllText(Path.Combine(RepoRoot(), "src", "Ui", "Views", "WorkspaceWindow.axaml")));
         var items = xml.Descendants()
@@ -538,8 +538,10 @@ public sealed class RealisticViewTests : IDisposable
         {
             Assert.Equal("CheckBox", (string?)e.Attribute("ToggleType"));
             Assert.Equal("{Binding ToggleThreeDRealisticCommand}", (string?)e.Attribute("Command"));
+            // the view answers L itself: the in-window menu SHOWS it (as Perspective's P); the macOS menu carries no key equivalent,
+            // which would take a bare L from every text box
             Assert.Null(e.Attribute("Gesture"));
-            Assert.Null(e.Attribute("InputGesture"));
+            Assert.Equal(e.Name.LocalName == "MenuItem" ? "L" : null, (string?)e.Attribute("InputGesture"));
             // under 3D ▸ View, right after Perspective
             Assert.Equal("Perspective", ((string?)e.ElementsBeforeSelf().Last().Attribute("Header"))?.Replace("_", ""));
         }

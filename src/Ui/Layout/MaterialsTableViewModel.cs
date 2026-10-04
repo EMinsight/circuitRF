@@ -576,9 +576,28 @@ public sealed partial class MaterialRowViewModel : ObservableObject
 
     /// <summary>Where it is used; the tooltip lists them.</summary>
     public IReadOnlyList<string> Uses => _table.UsedBy?.Invoke(Material.Name) ?? [];
-    public string UsedByText => Uses.Count switch { 0 => "", 1 => Uses[0], var n => $"{n} uses" };
-    public string? UsedByTip => Uses.Count > 1 ? string.Join("\n", Uses) : null;
-    public bool HasUses => Uses.Count > 0;
+
+    /// <summary>The detail's second line — where it comes from AND where it is used, as ONE line for every material, so the
+    /// form below never moves as the selection changes (a separate "Used by" line, shown only for a used material, moved it).
+    /// One use is named; several name the first and count the rest ("2 uses" read as nonsense); none says so.</summary>
+    public string SourceAndUsesText => $"From {SourceLabel} · " + Uses.Count switch
+    {
+        0 => "not used.",
+        1 => $"used by {Uses[0]}.",
+        var n => $"used by {Uses[0]} and {n - 1} more.",
+    };
+
+    /// <summary>The line's tooltip: the source's full path, then every use.</summary>
+    public string? SourceAndUsesTip
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (SourceTip is { Length: > 0 } s) parts.Add(s);
+            if (Uses.Count > 0) parts.Add("Used by:\n" + string.Join("\n", Uses.Select(u => "  " + u)));
+            return parts.Count == 0 ? null : string.Join("\n\n", parts);
+        }
+    }
 
     /// <summary>The σ(T) and k(T) tables, each edited point by point.</summary>
     public TemperatureTableViewModel SigmaTable { get; }

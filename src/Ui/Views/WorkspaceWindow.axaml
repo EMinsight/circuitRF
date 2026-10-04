@@ -218,9 +218,10 @@
                                         </NativeMenuItem.Menu>
                                     </NativeMenuItem>
                                     <NativeMenuItem Header="Perspective" ToolTip="Requires an active 3D document."    Command="{Binding ThreeDPerspectiveCommand}"/>
-                                    <!-- brief-em3d-106 R-em3d106-1c — a check item, no key equivalent (overview D6). -->
+                                    <!-- brief-em3d-106 R-em3d106-1c — a check item. No key equivalent: a bare L on the menu would be taken from
+                                         every text box; the view answers L itself. -->
                                     <NativeMenuItem Header="Realistic View" ToggleType="CheckBox" IsChecked="{Binding ThreeDRealistic, Mode=OneWay}"
-                                                    ToolTip="Materials, lighting and shadows, for pictures. Changes nothing in the model. Requires an active 3D document."
+                                                    ToolTip="Materials, lighting and shadows, for pictures. Changes nothing in the model. L in the view. Requires an active 3D document."
                                                     Command="{Binding ToggleThreeDRealisticCommand}"/>
                                     <!-- brief-em3d-108 R-em3d108-3a — the Look panel: how the realistic view looks; opening it turns the view on. -->
                                     <NativeMenuItem Header="Look…" ToolTip="Environment, lighting, background and what the realistic view shows. Opening it turns the realistic view on. Requires an active 3D design."
@@ -1111,8 +1112,9 @@
                     </MenuItem>
                     <MenuItem Header="_Perspective" Command="{Binding ThreeDPerspectiveCommand}" InputGesture="P"
                               ToolTip.Tip="Toggle perspective and orthographic. Requires an active 3D document."/>
-                    <!-- brief-em3d-106 R-em3d106-1c — mirrors the macOS menu's View ▸ Realistic View: a check item, no key equivalent. -->
-                    <MenuItem Header="_Realistic View" Command="{Binding ToggleThreeDRealisticCommand}" ToggleType="CheckBox"
+                    <!-- brief-em3d-106 R-em3d106-1c — mirrors the macOS menu's View ▸ Realistic View: a check item. L is the view's own key,
+                         shown here as Perspective's P is. -->
+                    <MenuItem Header="_Realistic View" Command="{Binding ToggleThreeDRealisticCommand}" ToggleType="CheckBox" InputGesture="L"
                               IsChecked="{Binding ThreeDRealistic, Mode=OneWay}"
                               ToolTip.Tip="Materials, lighting and shadows, for pictures. Changes nothing in the model. Requires an active 3D document."/>
                     <!-- brief-em3d-108 R-em3d108-3a — mirrors the macOS menu's View ▸ Look…. -->

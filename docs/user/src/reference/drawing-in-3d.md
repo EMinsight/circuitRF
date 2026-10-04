@@ -89,7 +89,7 @@ for EM into 3D.
   [3D EM ▸ The 3D view](em-3d.html#view). The editor adds the drawing.
 
 The camera is the viewer's: drag to orbit; right-, middle-, Alt- or Shift-drag to pan; scroll to zoom;
-**Home** fits; **1** is isometric, **2**–**7** the six orthographic views, **P** toggles perspective; **C**
+**Home** fits; **1** is isometric, **2**–**7** the six orthographic views, **P** toggles perspective, **L** the [realistic view](#realistic); **C**
 turns on the clip plane. A new 3D view opens orthographic. The line along the bottom of the view is the
 **status line**: what the armed tool wants next, or what the last edit did, or why it was refused.
 
@@ -338,6 +338,8 @@ to the technology.
 An **appearance** says how an object looks in the [realistic view](#realistic): how metallic, how rough, how see-through. It belongs
 first to the **material** — forty copper objects should not need forty edits — and an **object** or a placed cell may
 override it, because plating is usually not modelled: a copper trace that should look gold-plated is the common case.
+A boolean's operand — its Blank, or a Tool, kept or not — has no appearance of its own: it looks like its material, unless the
+top-level operation states one, which styles everything that operation makes. The Inspector says so when one is selected.
 
 The keys are glTF 2.0's metallic-roughness set, and every one is optional:
 
@@ -781,8 +783,8 @@ the launch — see [the second example](#connector).
 
 ## The realistic view {#realistic}
 
-The **Realistic view** button on the toolbar (the camera aperture, after Perspective and Orthographic) and *3D ▸ View ▸
-Realistic View* redraw the view with physically based materials lit by a studio: metals reflect it, dielectrics take
+The **Realistic view** button on the toolbar (the camera aperture, after Perspective and Orthographic), *3D ▸ View ▸
+Realistic View* and the **L** key in the view all redraw the view with physically based materials lit by a studio: metals reflect it, dielectrics take
 their body colour, gloss and translucency from their [appearance](#appearance). It is for pictures. It is a **view**,
 not an edit: it changes nothing in the model or in any result, it is not saved, and every document opens with it off.
 Selecting, hovering, modelling and the clip plane all keep working underneath it.
@@ -822,7 +824,7 @@ optional; an omitted key takes the default shown:
 | `Shadows` | `false` turns off the key light's shadows (default on) |
 | `AmbientOcclusion` | `false` turns off the contact shading where surfaces meet (default on) |
 | `Ground` | `false` removes the shadow-catching floor under the model (default on) |
-| `Camera` | the camera pictures are taken from, written only by *Use This View for Pictures* (below): `Direction` (from the target toward the viewer), `Target` and `Distance` in DBU, `FovY` in degrees, `Projection` |
+| `Camera` | the camera pictures are taken from, written only by *Set Camera* (below): `Direction` (from the target toward the viewer), `Target` and `Distance` in DBU, `FovY` in degrees, `Projection` |
 | `FieldStyle` | `Exact` (the default), `Lit` or `Glow`: how a field plot is drawn (below) |
 | `FieldOpacity` | 0–100, default 100: below 100 the material under a field plot shows through its colours |
 
@@ -902,14 +904,15 @@ turns it on in one click.
 
 <a id="look-panel"></a>**The Look panel** opens from the small arrow beside the Realistic view button, or from *3D ▸ View ▸
 Look…*. Opening it turns the realistic view on, since that is what it changes. It holds the environment (a studio, or
-*Load .hdr…*), its rotation, intensity and exposure, the background and its colours, Shadows, Contact shading and
+*Load .hdr…*), its rotation, intensity and exposure, the background and its colours (a swatch opens a picker inside the panel; *Done* keeps the colour), Shadows, Contact shading and
 Ground, the [field plots'](#realistic-fields) style and opacity, and one **Show** box for each kind of CAD chrome the realistic view hides. Every change is saved with the design
-and is one undo step; a slider is one step per drag. A new `.hdr` is prepared in the background and the old environment
+and is one undo step; a slider is one step per drag. The **×** beside a number puts it back to its default (rotation 30°,
+intensity 1, exposure 0 EV, field opacity 100 %), also one undo step. A new `.hdr` is prepared in the background and the old environment
 stays on screen until it is ready; one used before comes back at once.
 
-**A picture's camera.** The camera is not normally saved with a design. *Use This View for Pictures* in the Look panel
+**A picture's camera.** The camera is not normally saved with a design. *Set Camera* in the Look panel
 is the one exception: it saves the current view, and *Export Picture…*, `render` and a glTF export take their picture
-from it. Orbiting afterwards never changes it. *Go to Picture View* brings the live view back to it; *Clear* removes it,
+from it. Orbiting afterwards never changes it. *Go to Camera View* brings the live view back to it; *Clear* removes it,
 and pictures follow the live view again.
 
 **None of this touches a result.** An appearance, a material's display colour, the Look and the picture camera are
@@ -1344,7 +1347,7 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 | **Ctrl/Cmd**-click a face | Draw on that face's plane |
 | **Ctrl/Cmd** while placing | The bottom-centre (die-attach) handle |
 | **Ctrl/Cmd+]**, **Ctrl/Cmd+[** | Push into a placed cell, or enter a boolean to edit its operands; pop out, or leave it |
-| **Home**, **1**–**7**, **P**, **C** | Fit; standard views; perspective; clip plane |
+| **Home**, **1**–**7**, **P**, **L**, **C** | Fit; standard views; perspective; realistic view; clip plane |
 | In the object tree: **Shift**-click, **Ctrl**-click (**Cmd** too on a Mac) | Select every row between; add or remove one row |
 
 ## Every control, in detail {#reference}

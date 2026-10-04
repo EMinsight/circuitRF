@@ -28,6 +28,21 @@ public sealed partial class C3dPropertiesViewModel
 
     partial void OnAppearanceChanged(AppearanceEditorViewModel? value) => OnPropertyChanged(nameof(HasAppearance));
 
+    /// <summary>Where an operand's look comes from, shown in place of the Appearance group it does not have (an operand inside an
+    /// operation has no look of its own: its material's, overridden by the top-level operation's, which styles its whole result —
+    /// a kept Tool included). Empty for anything else.</summary>
+    [ObservableProperty] private string _operandLookNote = "";
+
+    public bool HasOperandLookNote => OperandLookNote.Length > 0;
+
+    partial void OnOperandLookNoteChanged(string value) => OnPropertyChanged(nameof(HasOperandLookNote));
+
+    /// <summary>The note for an operand of <paramref name="operation"/> made of <paramref name="material"/> (null: none stated).</summary>
+    public static string OperandLookText(string operation, string? material)
+        => material is { Length: > 0 }
+            ? $"No appearance of its own inside an operation. Its look is its material's, {material} (Edit… above), unless '{operation}' sets one, which styles everything '{operation}' makes."
+            : $"No appearance of its own inside an operation. Its look is '{operation}''s, which styles everything '{operation}' makes.";
+
     /// <summary>The group's note while the realistic view is off.</summary>
     public const string ShownInRealistic = "Shown in the realistic view";
 
@@ -45,6 +60,7 @@ public sealed partial class C3dPropertiesViewModel
     private void ClearAppearanceGroup()
     {
         Appearance = null;
+        OperandLookNote = "";
         _appearanceTargets = ([], []);
     }
 

@@ -341,6 +341,24 @@ public sealed class BooleansInTheEditorTests : IDisposable
         Assert.IsType<PushPullTool>(vm.Tool);
     }
 
+    /// <summary>An entered operand has no Appearance group of its own; the Inspector says where its look comes from instead of
+    /// showing nothing (its material's, or the top-level operation's), and the top-level object still has the group.</summary>
+    [KernelFact]
+    public void AnEnteredOperand_SaysWhereItsLookComesFrom_InPlaceOfAnAppearanceGroup()
+    {
+        var kernel = Kernel(KernelForTests.New());
+        kernel.Probe();
+        var vm = Open(Write([Subtract("lid", Box("", "Gold", 0, 0, 0, 100, 60, 20), Cyl("bore", "Copper", 50, 30, -10, 40, 10))]), kernel);
+        vm.Viewer.SetSelection([Scene3DItem.OfObject(vm.SceneObject("lid")!.Id)]);
+        Assert.True(vm.Properties.HasAppearance);
+        Assert.False(vm.Properties.HasOperandLookNote);
+        Assert.Null(vm.EnterBoolean(0));
+        Settle(vm);
+        vm.Viewer.SetSelection([Scene3DItem.OfObject(vm.SceneObject("lid:bore")!.Id)]);
+        Assert.False(vm.Properties.HasAppearance);
+        Assert.Equal(C3dPropertiesViewModel.OperandLookText("lid", "Copper"), vm.Properties.OperandLookNote);
+    }
+
     // ── 9. a refusal is not a rollback ─────────────────────────────────────────────────────────────
 
     [KernelFact]

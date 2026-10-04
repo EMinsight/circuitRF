@@ -108,9 +108,9 @@
                     <mi:MaterialIcon Kind="PerspectiveLess" Width="16" Height="16"/>
                 </ToggleButton>
                 <!-- brief-em3d-106 R-em3d106-1b — the realistic view, after the projection pair, in every host (read-only included).
-                     View state: never saved, off on every open, no key equivalent (overview D5, D6). Glyph: a camera aperture (D1). -->
+                     View state: never saved, off on every open; L toggles it. Glyph: a camera aperture (D1). -->
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.IsRealistic}"
-                              ToolTip.Tip="Realistic view: materials, lighting and shadows, for pictures. Changes nothing in the model.">
+                              ToolTip.Tip="Realistic view: materials, lighting and shadows, for pictures. Changes nothing in the model.  (L)">
                     <mi:MaterialIcon Kind="CameraIris" Width="16" Height="16"/>
                 </ToggleButton>
                 <!-- brief-em3d-108 R-em3d108-3a — the Look panel's drop-down, right beside the toggle (owner decision D1). Opening it turns the

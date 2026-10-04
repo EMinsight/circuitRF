@@ -181,7 +181,7 @@
                            TextAlignment="Center"
                            Text="Select a material to see and edit everything it states — or ＋ New to make one."
                            IsVisible="{Binding SelectedRow, Converter={x:Static ObjectConverters.IsNull}}"/>
-                <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                <ScrollViewer x:Name="DetailScroll" HorizontalScrollBarVisibility="Disabled"
                               IsVisible="{Binding SelectedRow, Converter={x:Static ObjectConverters.IsNotNull}}">
                     <StackPanel DataContext="{Binding SelectedRow}" x:DataType="lay:MaterialRowViewModel"
                                 Margin="14,8,16,16" Spacing="10" MaxWidth="780" HorizontalAlignment="Stretch">
@@ -207,11 +207,13 @@
                                 <TextBlock Text="{Binding Role}" FontSize="11"/>
                             </Border>
                         </Grid>
+                        <!-- EXACTLY two lines for every material, neither wrapping (trimmed, the tooltip has the rest), so nothing
+                             below moves as the selection changes: a third "Used by" line, shown only for a used material, moved it. -->
                         <StackPanel Spacing="2">
-                            <TextBlock Classes="hint" Text="{Binding RoleSentence}"/>
-                            <TextBlock Classes="hint" Text="{Binding SourceLabel, StringFormat='From {0}.'}" ToolTip.Tip="{Binding SourceTip}"/>
-                            <TextBlock Classes="hint" IsVisible="{Binding HasUses}" ToolTip.Tip="{Binding UsedByTip}"
-                                       Text="{Binding UsedByText, StringFormat='Used by {0}.'}"/>
+                            <TextBlock Classes="hint" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                       Text="{Binding RoleSentence}" ToolTip.Tip="{Binding RoleSentence}"/>
+                            <TextBlock Classes="hint" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis"
+                                       Text="{Binding SourceAndUsesText}" ToolTip.Tip="{Binding SourceAndUsesTip}"/>
                         </StackPanel>
 
                         <Border Background="{StaticResource MatNoteBrush}" CornerRadius="4" Padding="10,6"
@@ -389,7 +391,7 @@
                         <!-- brief-em3d-108 R-em3d108-1a/b — how it looks in the realistic view: the swatch (a sphere shaded by the view's own
                              reference, under the default studio, no GPU needed) and the one appearance editor. In the 3D view's Materials
                              dialog every edit is also shown live in each open 3D view on this technology (R-em3d108-1c). -->
-                        <Border Classes="card">
+                        <Border x:Name="AppearanceCard" Classes="card">
                             <StackPanel Spacing="8">
                                 <TextBlock Classes="hdr" Text="Appearance"/>
                                 <TextBlock Classes="hint" Text="How it looks in the realistic view. No solver reads it, and an edit never makes a result out of date. A field it does not state shows, greyed, the value it takes — its tooltip says where that comes from."/>
@@ -412,6 +414,9 @@
                                          Text="{Binding SourceText, UpdateSourceTrigger=LostFocus}"/>
                             </StackPanel>
                         </Border>
+                        <!-- Room for the Appearance anchor (code-behind): when the next material is shorter BELOW the card, the
+                             scroll would otherwise be clamped and the card would move. Hidden, and so no spacing, unless needed. -->
+                        <Border x:Name="AnchorSpacer" IsVisible="False"/>
                     </StackPanel>
                 </ScrollViewer>
             </Panel>

@@ -1782,7 +1782,28 @@ public partial class WorkspaceViewModel
         ReapplyCollapsedStateIfNeeded();
 
         ReArrangeDocumentTabStrips();
+
+        FocusActiveDocumentAfterOpen();
     }
+
+    /// <summary>
+    /// When a workspace has opened, the ACTIVE DOCUMENT takes the keyboard, so its keys work with no preliminary click — the
+    /// schematic's, the layout's, the 3D editor's, any editor's.
+    ///
+    /// <para><b>Owner report, 2026-10-04:</b> a workspace opened on a <c>.c3d</c>, the document looked focused, and no key
+    /// reached it. The restore makes every panel AND every document ask for focus as its tab is selected and its view binds, all
+    /// within a few dispatcher turns: the Project Tree and the Library post theirs at <c>Input</c>, the editors at <c>Loaded</c>
+    /// or <c>Background</c>, so which one ends up holding the keyboard was decided by post order, and nothing made the document
+    /// win. This asks once more, at <c>ContextIdle</c> — after every higher-priority post the restore queued has run — so the
+    /// document's request is the last word. A view not yet bound consumes it when it binds (the pending flag), as on any tab
+    /// change.</para>
+    /// </summary>
+    private void FocusActiveDocumentAfterOpen()
+        => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            var active = (_activeDocumentPane ?? _factory.DocumentDock)?.ActiveDockable;
+            (active as CircuitRF.Ui.Commands.IActivatableDocument)?.RequestActivationFocus();
+        }, Avalonia.Threading.DispatcherPriority.ContextIdle);
 
     /// <summary>
     /// Re-arranges the document tab strips after the restore has changed which documents are open.

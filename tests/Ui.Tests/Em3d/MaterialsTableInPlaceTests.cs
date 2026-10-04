@@ -60,6 +60,32 @@ public sealed class MaterialsTableInPlaceTests : IDisposable
         Assert.Equal("Sub", vm.Working[1].Name);
     }
 
+    /// <summary>The detail's second line carries the source AND the uses, so every material shows the same two lines and the form
+    /// below never moves. Several uses name the first and count the rest — "Used by 2 uses." read as nonsense.</summary>
+    [Fact]
+    public void TheSourceAndUsesLine_IsOneLineForEveryMaterial_AndNamesAUseRatherThanCountingUses()
+    {
+        var own = new List<TechMaterial>
+        {
+            new() { Name = "None", Epsr = 2 }, new() { Name = "One", Epsr = 3 }, new() { Name = "Three", Sigma20 = 58e6 },
+        };
+        var uses = new Dictionary<string, string[]>
+        {
+            ["One"] = ["stackup entry 'core'"],
+            ["Three"] = ["stackup entry 'm1'", "stackup entry 'm2'", "body 'lid'"],
+        };
+        var table = new MaterialsTableViewModel(() => own, (mutate, _) => mutate(), "this technology")
+        {
+            UsedBy = name => uses.TryGetValue(name, out var u) ? u : [],
+        };
+        table.Rebuild([]);
+        string Line(string name) => table.Rows.Single(r => r.Name == name).SourceAndUsesText;
+        Assert.Equal("From this technology · not used.", Line("None"));
+        Assert.Equal("From this technology · used by stackup entry 'core'.", Line("One"));
+        Assert.Equal("From this technology · used by stackup entry 'm1' and 2 more.", Line("Three"));
+        Assert.Contains("body 'lid'", table.Rows.Single(r => r.Name == "Three").SourceAndUsesTip);
+    }
+
     [Fact]
     public void LeavingALibraryRowsReadOnlyField_RaisesNoRefusal()
     {

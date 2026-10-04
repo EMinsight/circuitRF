@@ -40,10 +40,8 @@ public partial class LookPanel : UserControl
 
     private void OnBackgroundColourChanged(object? sender, ColorChangedEventArgs e)
     {
-        if (sender is Control { Tag: string which } && Vm is { } vm && e.OldColor != e.NewColor) vm.PreviewBackground(which == "top", e.NewColor);
+        if (Vm is { BackgroundEditing: { } which } vm && e.OldColor != e.NewColor) vm.PreviewBackground(which == "top", e.NewColor);
     }
-
-    private void OnBackgroundFlyoutClosed(object? sender, EventArgs e) => Vm?.CommitBackground();
 
     private async void OnLoadHdr(object? sender, RoutedEventArgs e)
     {

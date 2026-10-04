@@ -137,7 +137,7 @@ public struct Camera3D
     /// brief-em3d-108 R-em3d108-3d / brief-em3d-110 D1 — a Look's picture camera (<see cref="CircuitRF.Design.ThreeD.C3dLookCamera"/>: DBU,
     /// the direction toward the viewer, degrees) as this camera: the target through <paramref name="toLocal"/> (world metres to the scene's
     /// frame), the yaw and pitch of the direction, the distance, the field of view and the projection. The scene's sphere (near and far) is
-    /// kept. False, and nothing changed, for one a picture cannot be taken from. Go to Picture View and <c>render --look realistic</c> both
+    /// kept. False, and nothing changed, for one a picture cannot be taken from. Go to Camera View and <c>render --look realistic</c> both
     /// come here, so the two frame a picture the same way.
     /// </summary>
     public bool SetPictureCamera(CircuitRF.Design.ThreeD.C3dLookCamera camera, int dbuPerMicron, Func<double, double, double, Vector3> toLocal)

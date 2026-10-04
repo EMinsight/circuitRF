@@ -55,15 +55,32 @@ public partial class AppearanceEditorView : UserControl
         if (sender is Control { DataContext: AppearanceFieldViewModel field }) field.CommitText();
     }
 
+    // The field and flyout of the colour being picked, held from Opened to Closed. Avalonia detaches a flyout's popup from its
+    // button BEFORE it raises Closed, so by then the content's inherited DataContext is gone: reading the field from it there found
+    // nothing, the colour was never written, and the preview stayed on screen with no undo entry behind it (owner-reported).
+    private AppearanceFieldViewModel? _colourField;
+    private Flyout? _colourFlyout;
+
     private void OnColourFlyoutOpened(object? sender, EventArgs e)
     {
-        if ((sender as Flyout)?.Content is Control { DataContext: AppearanceFieldViewModel field }) field.BeginColour();
+        if (sender is not Flyout flyout) return;
+        var field = flyout.Target?.DataContext as AppearanceFieldViewModel ?? (flyout.Content as Control)?.DataContext as AppearanceFieldViewModel;
+        if (field is null) return;
+        _colourField = field;
+        _colourFlyout = flyout;
+        field.BeginColour();
     }
 
     private void OnColourFlyoutClosed(object? sender, EventArgs e)
     {
-        if ((sender as Flyout)?.Content is Control { DataContext: AppearanceFieldViewModel field }) field.CommitColour();
+        var field = _colourField;
+        _colourField = null;
+        _colourFlyout = null;
+        field?.CommitColour();
     }
+
+    /// <summary>Done: closes the picker, which keeps the colour (as clicking away does).</summary>
+    private void OnColourDone(object? sender, RoutedEventArgs e) => _colourFlyout?.Hide();
 
     private void OnColourChanged(object? sender, ColorChangedEventArgs e)
     {

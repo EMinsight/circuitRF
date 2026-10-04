@@ -38796,3 +38796,72 @@ window server froze until a forced restart.
   block's `Margin`, which layout applies identically in measure and arrange. **Never put `Padding` on
   a `ScrollViewer` whose direct child is a text block**; a panel child is unaffected because it
   arranges its own children at their desired heights.
+
+## 3D Look panel and Inspector polish (2026-10-04)
+
+- **A class style does not cross into a flyout.** The Look panel's number boxes used `Classes="dim"`, but `TextBox.dim` is
+  defined in `C3dPropertiesView`'s own `UserControl.Styles`; a flyout is its own visual root, so the boxes fell back to
+  Fluent's 32 px `MinHeight`. A view that can be hosted outside the Inspector restates the style itself (`LookPanel`, and
+  `AppearanceEditorView`, which the Materials table hosts too).
+- **Never size a `ColorView`.** Its Fluent template (Avalonia.Controls.ColorPicker 12.0.3) fixes its own tab control at
+  `Width="350" Height="338"` with the preview strip in a row below, so the `Width="300" Height="340"` the Look panel and the
+  appearance editor (Inspector, and the Materials tab's Base/Attenuation colour) set clipped the picker at the side and the
+  bottom. `ColorPickerDialog` (the Display Color button) never sized it and was never clipped — that was the tell. All are
+  natural size now; the Look panel is 360 wide to hold 350. `tests/Ui.Tests/ColorViewSizeTests.cs` scans for a sized one.
+- **No flyout opened from inside a flyout.** The background colour swatches each opened a `ColorView` flyout from inside the
+  Look panel's flyout; the gradient's bottom swatch sits at the panel's right edge and its picker came out clipped, with no
+  visible way to finish it (it committed only on light-dismiss). The picker is now inline in the panel
+  (`C3dLookPanelViewModel.BackgroundEditing`), finished — one undo entry — by Done, by the other swatch, or by the panel closing.
+- **A status line that changes with a control must not change height.** The field-plot style line wrapped to two lines below
+  100 % opacity, and the Pictures line did the same on Set Camera, each pushing the controls under the pointer down. Both are
+  one short sentence in every state, trimmed rather than wrapped. Any bound text above a button follows the same rule.
+- **Appearance rows were three lines tall** because of Fluent's `Slider` (tick bands + full-size thumb); `Slider.compact`'s
+  negative vertical margin, the Match designer's fix, is applied in the appearance editor and the Look panel.
+- **Realistic view key is L** (R is Rotate). The pane handles it; the in-window menu shows it as `InputGesture`; the macOS
+  `NativeMenu` carries no key equivalent, because a bare letter there is taken from every text box. Supersedes brief 106's
+  "no key equivalent" (overview D6).
+- The Look panel's camera buttons are **Set Camera** / **Go to Camera View** (were "Use This View for Pictures" / "Go to
+  Picture View"); the Inspector lists Transparency and Appearance LAST, after everything that defines what the object is.
+- **The Environment combo went blank after a pick** — the ComboBox rule above, one more time. The pick wrote the Look, whose
+  reload CLEARED `EnvironmentChoices` and refilled it with new instances while the ComboBox was still inside its own selection
+  change, and Avalonia dropped the selection. The list is now built once (an `.hdr` appended the first time it is seen, and kept
+  for the session so you can switch back to it), and the selection is always an instance already in it. Any combo whose pick
+  writes the document and reloads its view model needs the same: never rebuild its items on the reload path.
+- **A flyout's `Closed` handler cannot read its content's `DataContext`.** Avalonia's `PopupFlyoutBase.HideCore` calls
+  `Popup.SetPopupParent(null)` BEFORE `OnClosed()`, so the inherited DataContext is already gone when `Closed` fires (`Target`
+  is cleared only AFTER it). The appearance editor's colour flyout looked its field up that way on close, matched nothing, and
+  never wrote: the preview stayed on screen with no undo entry behind it. The field is now held from `Opened`
+  (`flyout.Target.DataContext`); the flyout also has a Done button. Any flyout that commits on close must capture at open.
+- **A swatch Button needs `Horizontal/VerticalContentAlignment="Stretch"`.** Fluent centres a button's content, so a `Border`
+  with no size of its own collapses to its outline, a dot in the middle (the appearance editor's colour fields and the Look
+  panel's background swatches).
+
+## A workspace opened with its active document deaf to keys (2026-10-04)
+
+Owner report: a workspace opened on a `.c3d`, the document looked focused, and no keystroke reached it. Rule given: on a
+workspace open the ACTIVE DOCUMENT gets the keyboard, whatever kind it is. The restore has every panel AND every document ask
+for focus within a few dispatcher turns — the Project Tree and Library post theirs at `Input` (their `OnSelected`/`IsActive`
+activation), the editors at `Loaded` or `Background` (their pending-flag consume on bind) — so the keyboard ended wherever
+post order left it, and nothing made the document win. `FinishRestoredDockLayout` now ends with `FocusActiveDocumentAfterOpen`,
+which re-requests activation focus for the active document at `ContextIdle`, below every priority the restore posts at, so it
+is the last word. Held by `ActivatableDocumentViewFocusTests` (which now lists the 3D editor's view too). Not verified in a
+running window from this shell; if a document still misses the keyboard after an open, find out which control holds focus
+(arrow keys moving the Project Tree selection would say it is the tree) before changing priorities again.
+
+## The material detail pane's Appearance card moved between materials (2026-10-04)
+
+Owner report: scrolled down to Appearance in a `.ctech`'s Materials tab, clicking from material to material moved the card by
+roughly ten pixels each time. Nothing was wrong with any one element: the "Used by" line, a read-only note, an anisotropic
+tensor's rows and wrapped hints above the card vary by material, and so does the Source text below it — and at the bottom of
+the scroll, a material that is shorter below the card lowers the maximum offset, so the clamp shifts the whole page.
+`MaterialsTableView.KeepAppearanceInPlace` anchors on the card instead: its top is read when `SelectedRow` changes (a selection
+change lays nothing out synchronously, so that is still the OLD material's layout), and after `UpdateLayout` the offset moves by
+however far the card did; a hidden `AnchorSpacer` at the foot supplies the room a shorter material would take away. A card
+that is not on screen anchors nothing. The one view serves the `.ctech` Materials tab, the Materials editor and the material
+picker, so all three get it. Not unit-tested: it is scroll arithmetic on a live layout, which this suite cannot run.
+
+**Then a one-frame flash, and the priority that removes it.** Posted at `Background` the correction ran after a frame had been
+drawn with the new material at the old offset. Avalonia 12's own doc for `Loaded` is "processed after layout and render", so
+that is no better. It is posted at `Normal` now — above `Render` — and lays the new material out itself with `UpdateLayout`, so
+the only frame drawn is the corrected one. Any "move the scroll after the content changes" fix wants the same: correct before
+the render, never after it.

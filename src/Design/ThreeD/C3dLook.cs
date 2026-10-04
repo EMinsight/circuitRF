@@ -8,7 +8,7 @@
 // Brief 107 added Shadows, AmbientOcclusion and Ground; brief 108 added Camera; brief 109 added FieldStyle and FieldOpacity.
 //
 // brief-em3d-108 R-em3d108-3d (overview D17) — Camera is the ONE place a camera is document state, and only by opt-in: written by
-// "Use This View for Pictures", never by orbiting, so a GUI framing reproduces in `render` and in a glTF export. See C3dDocument.Look.
+// "Set Camera" in the Look panel, never by orbiting, so a GUI framing reproduces in `render` and in a glTF export. See C3dDocument.Look.
 
 using System.Globalization;
 using System.Text.Json;
@@ -66,7 +66,7 @@ public sealed class C3dLook
 
     // ── brief-em3d-108 R-em3d108-3d — the camera pictures are taken from (overview D17) ─────────────────────────────────
 
-    /// <summary>The camera a picture is taken from, written only by "Use This View for Pictures"; null (the ordinary case) is the
+    /// <summary>The camera a picture is taken from, written only by "Set Camera"; null (the ordinary case) is the
     /// live view's camera, whatever it is.</summary>
     public C3dLookCamera? Camera { get; set; }
 

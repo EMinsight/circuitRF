@@ -2098,8 +2098,8 @@ circuitrf render pkg.c3d -o t.png    --look realistic --field Temps --look-set F
   (`render.look-set.*`). `--look-set` and `--supersample` without `--look realistic` are refused, not ignored.
 - **The camera.** `--iso` or `--view-dir` (brief 89's spellings: the 3D view's standard views, or `x,y,z` toward the
   viewer) is orthographic and fitted as the view's Fit frames. With neither, the Look's `Camera` (overview D17, written
-  by *Use This View for Pictures*) is the camera, perspective included, through `Camera3D.SetPictureCamera`, the
-  function Go to Picture View calls. With no camera at all, the run is refused (`render.look.direction-required`).
+  by *Set Camera*) is the camera, perspective included, through `Camera3D.SetPictureCamera`, the
+  function Go to Camera View calls. With no camera at all, the run is refused (`render.look.direction-required`).
 - **`--supersample 1|2|4`** (default 2) and `--background transparent` are Export Picture's: drawn at that factor
   each way within `FieldPicture.MaxSide` (`PictureResample.FactorFor`, the one rule), brought down by
   `PictureResample.Downsample`, and straightened before the PNG is encoded. `--size`/`--scale` are the picture's

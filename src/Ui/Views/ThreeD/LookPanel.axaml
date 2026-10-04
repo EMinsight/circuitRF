@@ -5,7 +5,26 @@
              xmlns:cp="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.ColorPicker"
              x:Class="CircuitRF.Ui.Views.ThreeD.LookPanel"
              x:DataType="t3:C3dLookPanelViewModel"
-             Width="340">
+             Width="360">
+
+    <UserControl.Styles>
+        <!-- A number box only as tall as its text: Fluent's TextBox has a 32 px MinHeight, and the "dim" class that drops it lives in
+             C3dPropertiesView's styles, which do not reach this panel (it is hosted in a flyout, a separate visual root). -->
+        <Style Selector="TextBox.dim">
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="4,1"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <!-- Fluent's Slider reserves room for tick bands and a full-size thumb, so one slider makes its row about three lines tall;
+             the negative vertical margin pulls its layout footprint back in without squashing the thumb (the Match designer's
+             Slider.compact, the same fix). -->
+        <Style Selector="Slider.compact">
+            <Setter Property="Margin" Value="0,-7"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Styles>
 
     <!-- brief-em3d-108 R-em3d108-3 — the Look panel (owner decision D1: a flyout from the drop-down beside the Realistic toggle, and
          3D ▸ View ▸ Look…). Every control writes the document's Look as ONE undo entry; a slider previews while dragged and writes on
@@ -21,47 +40,60 @@
             <Button Grid.Column="1" Content="Load .hdr…" FontSize="11" Click="OnLoadHdr"
                     ToolTip.Tip="A Radiance .hdr, stored relative to this design. Prepared once, off the window's thread; the view keeps the old one until it is ready."/>
         </Grid>
-        <Grid ColumnDefinitions="78,*,52" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="6" RowSpacing="2">
+        <Grid ColumnDefinitions="78,*,52,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="6" RowSpacing="2">
             <TextBlock Grid.Row="0" Grid.Column="0" Text="Rotation" FontSize="11" VerticalAlignment="Center"/>
-            <Slider x:Name="RotationSlider" Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="360" Value="{Binding Rotation}" VerticalAlignment="Center"
+            <Slider x:Name="RotationSlider" Classes="compact" Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="360" Value="{Binding Rotation}" VerticalAlignment="Center"
                     ToolTip.Tip="Turns the environment about +z, degrees."/>
-            <TextBox Grid.Row="0" Grid.Column="2" Classes="dim" FontSize="11" Padding="4,1" Text="{Binding RotationText}" Tag="Rotation"
+            <TextBox Grid.Row="0" Grid.Column="2" Classes="dim" Text="{Binding RotationText}" Tag="Rotation"
                      KeyDown="OnNumberKey" LostFocus="OnNumberLostFocus"/>
+            <Button Grid.Row="0" Grid.Column="3" Content="×" FontSize="11" Padding="6,0" VerticalAlignment="Center"
+                    Command="{Binding ResetNumberCommand}" CommandParameter="Rotation"
+                    ToolTip.Tip="{x:Static t3:C3dLookPanelViewModel.RotationResetTip}"/>
             <TextBlock Grid.Row="1" Grid.Column="0" Text="Intensity" FontSize="11" VerticalAlignment="Center"/>
-            <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="10" Value="{Binding Intensity}" VerticalAlignment="Center"
+            <Slider Classes="compact" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="10" Value="{Binding Intensity}" VerticalAlignment="Center"
                     ToolTip.Tip="How bright the environment is, 0 to 10."/>
-            <TextBox Grid.Row="1" Grid.Column="2" Classes="dim" FontSize="11" Padding="4,1" Text="{Binding IntensityText}" Tag="Intensity"
+            <TextBox Grid.Row="1" Grid.Column="2" Classes="dim" Text="{Binding IntensityText}" Tag="Intensity"
                      KeyDown="OnNumberKey" LostFocus="OnNumberLostFocus"/>
+            <Button Grid.Row="1" Grid.Column="3" Content="×" FontSize="11" Padding="6,0" VerticalAlignment="Center"
+                    Command="{Binding ResetNumberCommand}" CommandParameter="Intensity"
+                    ToolTip.Tip="{x:Static t3:C3dLookPanelViewModel.IntensityResetTip}"/>
             <TextBlock Grid.Row="2" Grid.Column="0" Text="Exposure" FontSize="11" VerticalAlignment="Center"/>
-            <Slider Grid.Row="2" Grid.Column="1" Minimum="-10" Maximum="10" Value="{Binding Exposure}" VerticalAlignment="Center"
+            <Slider Classes="compact" Grid.Row="2" Grid.Column="1" Minimum="-10" Maximum="10" Value="{Binding Exposure}" VerticalAlignment="Center"
                     ToolTip.Tip="EV: each step doubles or halves the light, −10 to +10."/>
-            <TextBox Grid.Row="2" Grid.Column="2" Classes="dim" FontSize="11" Padding="4,1" Text="{Binding ExposureText}" Tag="Exposure"
+            <TextBox Grid.Row="2" Grid.Column="2" Classes="dim" Text="{Binding ExposureText}" Tag="Exposure"
                      KeyDown="OnNumberKey" LostFocus="OnNumberLostFocus"/>
+            <Button Grid.Row="2" Grid.Column="3" Content="×" FontSize="11" Padding="6,0" VerticalAlignment="Center"
+                    Command="{Binding ResetNumberCommand}" CommandParameter="Exposure"
+                    ToolTip.Tip="{x:Static t3:C3dLookPanelViewModel.ExposureResetTip}"/>
         </Grid>
 
         <TextBlock Text="Background" FontWeight="SemiBold" FontSize="12"/>
         <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
             <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{x:Static t3:C3dLookPanelViewModel.BackgroundKinds}"
                       SelectedItem="{Binding BackgroundKind}"/>
-            <Button Grid.Column="1" Width="34" Height="22" Padding="0" IsVisible="{Binding HasBackgroundColour}" ToolTip.Tip="The colour (a gradient's top).">
+            <Button Grid.Column="1" Width="34" Height="22" Padding="0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                    IsVisible="{Binding HasBackgroundColour}" ToolTip.Tip="The colour (a gradient's top)."
+                    Command="{Binding EditBackgroundCommand}" CommandParameter="top">
                 <Border Background="{Binding BackgroundTop, Converter={x:Static apv:AppearanceEditorView.ToBrush}}" Margin="2" CornerRadius="2"/>
-                <Button.Flyout>
-                    <Flyout Closed="OnBackgroundFlyoutClosed">
-                        <cp:ColorView Tag="top" Width="300" Height="340" IsAlphaVisible="False" IsAlphaEnabled="False"
-                                      Color="{Binding BackgroundTop, Mode=OneWay}" ColorChanged="OnBackgroundColourChanged"/>
-                    </Flyout>
-                </Button.Flyout>
             </Button>
-            <Button Grid.Column="2" Width="34" Height="22" Padding="0" IsVisible="{Binding HasBackgroundGradient}" ToolTip.Tip="The gradient's bottom.">
+            <Button Grid.Column="2" Width="34" Height="22" Padding="0" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                    IsVisible="{Binding HasBackgroundGradient}" ToolTip.Tip="The gradient's bottom."
+                    Command="{Binding EditBackgroundCommand}" CommandParameter="bottom">
                 <Border Background="{Binding BackgroundBottom, Converter={x:Static apv:AppearanceEditorView.ToBrush}}" Margin="2" CornerRadius="2"/>
-                <Button.Flyout>
-                    <Flyout Closed="OnBackgroundFlyoutClosed">
-                        <cp:ColorView Tag="bottom" Width="300" Height="340" IsAlphaVisible="False" IsAlphaEnabled="False"
-                                      Color="{Binding BackgroundBottom, Mode=OneWay}" ColorChanged="OnBackgroundColourChanged"/>
-                    </Flyout>
-                </Button.Flyout>
             </Button>
         </Grid>
+        <!-- The colour picker opens INSIDE the panel, not as a flyout of its own: a flyout opened from inside this flyout was clipped to
+             it (a gradient's bottom swatch sits at the panel's right edge) and had no visible way to be finished. Previewed while it
+             moves; written, as one entry, by Done, by the other swatch, or by the panel closing. The ColorView is NOT sized here: its Fluent template fixes its own tab
+             control at 350 × 338 with the preview strip below, so any smaller Width/Height clips it (it was 300 × 340, cut off at the side
+             and the bottom). Left at its natural size, as ColorPickerDialog leaves it. The panel is 360 wide so
+             the picker's 350 fits inside its margin. -->
+        <StackPanel Spacing="4" IsVisible="{Binding IsEditingBackground}">
+            <TextBlock Text="{Binding BackgroundEditLabel}" FontSize="11" Opacity="0.75"/>
+            <cp:ColorView HorizontalAlignment="Left" IsAlphaVisible="False" IsAlphaEnabled="False"
+                          Color="{Binding BackgroundEditColour, Mode=OneWay}" ColorChanged="OnBackgroundColourChanged"/>
+            <Button Content="Done" FontSize="11" HorizontalAlignment="Right" Command="{Binding DoneBackgroundCommand}"/>
+        </StackPanel>
 
         <TextBlock Text="Lighting" FontWeight="SemiBold" FontSize="12"/>
         <ItemsControl ItemsSource="{Binding LightingRows}">
@@ -73,20 +105,25 @@
         </ItemsControl>
 
         <!-- brief-em3d-109 — how field plots are drawn here: Exact keeps the legend's colours; Lit, or an opacity below 100 %, labels
-             the view and every picture under the legend. -->
+             the view and every picture under the legend. The line under them is ONE line in every state, so moving the opacity off
+             100 % never pushes the rows below it down. -->
         <TextBlock Text="Field plots" FontWeight="SemiBold" FontSize="12"/>
-        <Grid ColumnDefinitions="78,*,52" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="2">
+        <Grid ColumnDefinitions="78,*,52,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="6" RowSpacing="2">
             <TextBlock Grid.Row="0" Grid.Column="0" Text="Style" FontSize="11" VerticalAlignment="Center"/>
-            <ComboBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" HorizontalAlignment="Stretch"
+            <ComboBox Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3" HorizontalAlignment="Stretch"
                       ItemsSource="{x:Static t3:C3dLookPanelViewModel.FieldStyles}" SelectedItem="{Binding FieldStyle}"
                       ToolTip.Tip="Exact: the colour map's colours, unlit. Lit: a clear-coat sheen that only lightens them. Glow: exact colours, the model dimmed."/>
             <TextBlock Grid.Row="1" Grid.Column="0" Text="Opacity" FontSize="11" VerticalAlignment="Center"/>
-            <Slider Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding FieldOpacity}" VerticalAlignment="Center"
+            <Slider Classes="compact" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" Value="{Binding FieldOpacity}" VerticalAlignment="Center"
                     ToolTip.Tip="Below 100 %, the material under a plot shows through its colours, percent."/>
-            <TextBox Grid.Row="1" Grid.Column="2" Classes="dim" FontSize="11" Padding="4,1" Text="{Binding FieldOpacityText}" Tag="FieldOpacity"
+            <TextBox Grid.Row="1" Grid.Column="2" Classes="dim" Text="{Binding FieldOpacityText}" Tag="FieldOpacity"
                      KeyDown="OnNumberKey" LostFocus="OnNumberLostFocus"/>
+            <Button Grid.Row="1" Grid.Column="3" Content="×" FontSize="11" Padding="6,0" VerticalAlignment="Center"
+                    Command="{Binding ResetNumberCommand}" CommandParameter="FieldOpacity"
+                    ToolTip.Tip="{x:Static t3:C3dLookPanelViewModel.FieldOpacityResetTip}"/>
         </Grid>
-        <TextBlock Text="{Binding FieldStyleText}" FontSize="11" TextWrapping="Wrap" Opacity="0.75"/>
+        <TextBlock Text="{Binding FieldStyleText}" FontSize="11" TextTrimming="CharacterEllipsis" Opacity="0.75"
+                   ToolTip.Tip="{Binding FieldStyleText}"/>
 
         <TextBlock Text="Show" FontWeight="SemiBold" FontSize="12"
                    ToolTip.Tip="The realistic view hides the CAD chrome; each box brings one kind back, drawn as the default view draws it."/>
@@ -102,11 +139,14 @@
         </ItemsControl>
 
         <TextBlock Text="Pictures" FontWeight="SemiBold" FontSize="12"/>
-        <TextBlock Text="{Binding PictureCameraText}" FontSize="11" TextWrapping="Wrap" Opacity="0.75"/>
+        <!-- ONE line in both states (trimmed, never wrapped): Set Camera changing it must not move the buttons it sits above. -->
+        <TextBlock Text="{Binding PictureCameraText}" FontSize="11" TextTrimming="CharacterEllipsis" Opacity="0.75"
+                   ToolTip.Tip="Saved by Set Camera; orbiting never changes it. Clear goes back to the live view."/>
         <WrapPanel ItemSpacing="6" LineSpacing="4">
-            <Button Content="Use This View for Pictures" FontSize="11" Command="{Binding UseThisViewCommand}"
-                    ToolTip.Tip="Save this camera with the design: Export Picture, render and a glTF export take it. Orbiting never changes it."/>
-            <Button Content="Go to Picture View" FontSize="11" Command="{Binding GoToPictureViewCommand}" IsEnabled="{Binding HasPictureCamera}"/>
+            <Button Content="Set Camera" FontSize="11" Command="{Binding UseThisViewCommand}"
+                    ToolTip.Tip="Save this view's camera with the design: Export Picture, render and a glTF export take it. Orbiting never changes it."/>
+            <Button Content="Go to Camera View" FontSize="11" Command="{Binding GoToPictureViewCommand}" IsEnabled="{Binding HasPictureCamera}"
+                    ToolTip.Tip="Bring the live view back to the saved camera."/>
             <Button Content="Clear" FontSize="11" Command="{Binding ClearPictureViewCommand}" IsEnabled="{Binding HasPictureCamera}"/>
         </WrapPanel>
         <TextBlock Text="{Binding Error}" Foreground="#C0392B" FontSize="11" TextWrapping="Wrap"

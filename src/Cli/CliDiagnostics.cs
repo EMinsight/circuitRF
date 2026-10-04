@@ -2170,7 +2170,7 @@ internal static class CliDiagnostics
     public static Diagnostic RenderLookDirectionRequired(string path) => Diagnostic.Create(
         "render.look.direction-required", DiagnosticSeverity.Error,
         "render: a realistic picture of '{path}' needs a camera: --iso, or --view-dir top|bottom|front|back|left|right|x,y,z (orthographic), "
-      + "or a Look.Camera in the file (the 3D view's \"Use This View for Pictures\" writes one).", ("path", path));
+      + "or a Look.Camera in the file (the Look panel's \"Set Camera\" writes one).", ("path", path));
 
     public static Diagnostic RenderLookSetMalformed(string text) => Diagnostic.Create(
         "render.look-set.malformed", DiagnosticSeverity.Error,

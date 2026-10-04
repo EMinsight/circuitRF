@@ -579,6 +579,9 @@ public sealed partial class Viewer3DViewModel
             case Key.F9: ToggleGridSnap(); return true;
             case Key.M when !gestureInProgress: ToggleMeasure(); return true;
             case Key.P: IsPerspective = !IsPerspective; return true;
+            // The realistic view's key: L (R is Rotate). The Windows/Linux menu shows it; the macOS menu cannot carry a bare letter
+            // without taking it from every text box, so its tooltip names it, as Hide / Show Selection's does.
+            case Key.L: IsRealistic = !IsRealistic; return true;
             case Key.C: ClipEnabled = !ClipEnabled; return true;
             case Key.A: ShowAxisIndicator = !ShowAxisIndicator; return true;
             case Key.Escape:

@@ -6,12 +6,33 @@
              x:Class="CircuitRF.Ui.Views.Appearance.AppearanceEditorView"
              x:DataType="ap:AppearanceEditorViewModel">
 
+    <!-- Each field's row only as tall as its text (owner-reported: a blank line's worth of space between Metallic, Roughness, …).
+         The box's compact class is restated here because this view is also hosted by the Materials table, outside the Inspector's
+         styles. -->
+    <UserControl.Styles>
+        <!-- Fluent's Slider reserves room for tick bands and a full-size thumb, so one slider makes its row about three lines tall;
+             the negative vertical margin pulls its layout footprint back in without squashing the thumb (the Match designer's
+             Slider.compact, the same fix). -->
+        <Style Selector="Slider.compact">
+            <Setter Property="Margin" Value="0,-7"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBox.dim">
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="4,1"/>
+        </Style>
+    </UserControl.Styles>
+
     <!-- brief-em3d-108 R-em3d108-1a / R-em3d108-2a — the ONE appearance editor, hosted by a material's detail pane and by the 3D
          Inspector. Each field: a slider (or, for a colour, a swatch opening a colour wheel) and a box. A field the target states shows
          its value; one it does not shows, greyed in the empty box, the value it resolves to, and the box's tooltip says where that
          comes from (the resolver's own words). The × resets a field to "not stated". A slider previews while dragged and writes once,
          on release; a box writes on Enter or when it loses focus; a colour writes when its wheel closes. The ColorView's Fluent theme
-         comes from CircuitRfStyles.axaml, as every ColorView's does (without it the control draws as an empty box). -->
+         comes from CircuitRfStyles.axaml, as every ColorView's does (without it the control draws as an empty box). The ColorView is NOT sized here: its Fluent template fixes its own tab
+         control at 350 × 338 with the preview strip below, so any smaller Width/Height clips it (it was 300 × 340, cut off at the side
+         and the bottom). Left at its natural size, as ColorPickerDialog leaves it. -->
     <StackPanel Spacing="4">
         <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasNote}">
             <TextBlock Grid.Column="0" Text="{Binding Note}" FontSize="11" Opacity="0.7" VerticalAlignment="Center" TextWrapping="Wrap"/>
@@ -38,17 +59,23 @@
                     <Grid ColumnDefinitions="110,*,72,Auto" ColumnSpacing="6">
                         <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="11" VerticalAlignment="Center"
                                    ToolTip.Tip="{Binding Description}"/>
-                        <Slider Grid.Column="1" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" Value="{Binding Slider}"
+                        <Slider Grid.Column="1" Classes="compact" Minimum="{Binding Minimum}" Maximum="{Binding Maximum}" Value="{Binding Slider}"
                                 VerticalAlignment="Center" IsVisible="{Binding HasSlider}"
                                 ToolTip.Tip="Drag to see it in the realistic view; the value is kept when you let go."/>
+                        <!-- The swatch FILLS the button: Fluent centres a button's content, and a Border with no size of its own
+                             collapsed to its 1 px outline, a dot in the middle (owner-reported). -->
                         <Button Grid.Column="1" HorizontalAlignment="Left" Width="44" Height="20" Padding="0"
-                                IsVisible="{Binding IsColour}" ToolTip.Tip="Pick a colour; it is kept when the wheel closes.">
+                                HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                                IsVisible="{Binding IsColour}" ToolTip.Tip="Pick a colour; it is kept when you press Done or click away.">
                             <Border Background="{Binding Colour, Converter={x:Static apv:AppearanceEditorView.ToBrush}}" CornerRadius="2"
                                     BorderBrush="#40808080" BorderThickness="1" Margin="2"/>
                             <Button.Flyout>
                                 <Flyout Placement="BottomEdgeAlignedLeft" Opened="OnColourFlyoutOpened" Closed="OnColourFlyoutClosed">
-                                    <cp:ColorView Width="300" Height="340" IsAlphaVisible="False" IsAlphaEnabled="False"
-                                                  Color="{Binding Colour, Mode=OneWay}" ColorChanged="OnColourChanged"/>
+                                    <StackPanel Spacing="4">
+                                        <cp:ColorView IsAlphaVisible="False" IsAlphaEnabled="False"
+                                                      Color="{Binding Colour, Mode=OneWay}" ColorChanged="OnColourChanged"/>
+                                        <Button Content="Done" FontSize="11" HorizontalAlignment="Right" Margin="0,0,12,0" Click="OnColourDone"/>
+                                    </StackPanel>
                                 </Flyout>
                             </Button.Flyout>
                         </Button>

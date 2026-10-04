@@ -999,7 +999,7 @@ are the same bytes when neither includes a camera.
 - `--gltf-field <plot>` adds a Surfaces or Faces field plot as an unlit mesh with per-vertex colours (at phase 0).
   `--region <name>` names the region a Surfaces plot of a volume quantity is drawn on, as `render --region` does. A
   ClipPlane plot is refused.
-- The file carries the Look's camera when the document saves one (*Use This View for Pictures*), and no camera
+- The file carries the Look's camera when the document saves one (*Set Camera* in the Look panel), and no camera
   otherwise.
 - circuitRF writes glTF and does not read it: a `.glb` or `.gltf` source is refused, and so is a `.gltf` target.
 
@@ -1479,7 +1479,7 @@ what Export Picture makes in the realistic view:
   (`FieldStyle=Lit`, `Background=#ffffff`, `Shadows=false`, `Exposure=null` for the default). The value is checked as
   the file's is, so `Exposure=20` is refused. The file is never written.
 - **The camera.** `--iso` or `--view-dir top|bottom|front|back|left|right|x,y,z` takes the picture orthographically,
-  framed on the model. With neither, the camera *Use This View for Pictures* saved in the Look is used, perspective
+  framed on the model. With neither, the camera *Set Camera* saved in the Look is used, perspective
   included. With no camera at all, the render is refused.
 - **Quality and background.** `--supersample 1|2|4` (default 2) draws the picture at that many times its size each way
   and brings it down. `--background transparent` leaves out the background and keeps the soft ground shadow's alpha.
