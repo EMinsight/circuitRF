@@ -686,6 +686,39 @@ public partial class WorkspaceViewModel
         Messages.Success($"Exported STEP: {result.Plan.Summary}", result.Path);
     }
 
+    // ── Export glTF (brief-em3d-111) ───────────────────────────────────────────────────────────
+
+    /// <summary>File ▸ Export ▸ glTF…'s tooltip: what it writes, then what it needs.</summary>
+    public string ThreeDExportGltfTip
+        => "The model as the view draws it, with its appearances and smooth normals, as one binary glTF (.glb) for another renderer — " +
+           "a path tracer gives the refraction and caustics the realistic view approximates. Requires an active 3D document.";
+
+    /// <summary>R-em3d111-3a — needs no geometry kernel: it writes the view's own triangles.</summary>
+    [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
+    private async Task ExportGltf(Window? owner)
+    {
+        if (ActiveC3dEditor() is not { } editor) return;
+        if (ResolveOwner(owner) is not { } window) return;
+        var start = await window.StorageProvider.TryGetFolderFromPathAsync(new Uri(Path.GetDirectoryName(editor.FilePath)!));
+        var file = await window.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export glTF",
+            // NO extension on the suggested name: the storage provider appends DefaultExtension itself (SuggestedFileNameGateTests).
+            SuggestedFileName = Path.GetFileNameWithoutExtension(editor.FilePath),
+            SuggestedStartLocation = start,
+            DefaultExtension = "glb",
+            ShowOverwritePrompt = true,
+            FileTypeChoices = [new FilePickerFileType("glTF binary") { Patterns = ["*.glb"] }],
+        });
+        if (file?.TryGetLocalPath() is not { } target) return;
+
+        var vm = new GltfExportDialogViewModel(target, editor.GltfSource(), editor.GltfCamera(), editor.GltfFields());
+        bool ok = await new CircuitRF.Ui.Views.ThreeD.GltfExportDialog(vm).ShowDialog<bool>(window);
+        if (!ok || vm.Current is not { } result || vm.Written is not { } written) return;
+        foreach (string note in result.Notes) Messages.Info(note, editor.FilePath);
+        Messages.Success($"Exported glTF: {result.Summary}", written);
+    }
+
     /// <summary>The 3D menu's items again — when the geometry kernel's probe answers.</summary>
     internal void RefreshThreeDMenu() => RaiseThreeDMenuChanged();
 
@@ -718,6 +751,7 @@ public partial class WorkspaceViewModel
         OnPropertyChanged(nameof(ThreeDExportStepAvailable));
         OnPropertyChanged(nameof(ThreeDExportStepTip));
         ExportStepCommand.NotifyCanExecuteChanged();
+        ExportGltfCommand.NotifyCanExecuteChanged();
         ExportDrawingCommand.NotifyCanExecuteChanged();
         ThreeDSelectModeCommand.NotifyCanExecuteChanged();
         ThreeDFitCommand.NotifyCanExecuteChanged();

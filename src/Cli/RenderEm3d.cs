@@ -35,6 +35,9 @@ internal static class RenderEm3d
     {
         // brief-em3d-84 — a .c3d's field plot.
         public string? Field { get; init; }
+        /// <summary>brief-em3d-111 — `convert … .glb --gltf-field`: the Surfaces or Faces plot resolved exactly as a realistic picture
+        /// resolves it, handed here instead of being drawn. A ClipPlane plot is refused; no direction is asked for.</summary>
+        public Func<RenderEm3dRealistic.FieldPart, int>? FieldSink { get; init; }
         public bool ListFields { get; init; }
         public double? Phase { get; init; }
         public bool NoLegend { get; init; }

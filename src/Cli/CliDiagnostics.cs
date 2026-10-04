@@ -370,7 +370,7 @@ internal static class CliDiagnostics
 
     public static Diagnostic ConvertUnknownFormat(string format) => Diagnostic.Create(
         "convert.args.unknown-format", DiagnosticSeverity.Error,
-        "Unknown format '{format}'. Known: clay, gdsii, dxf, gerber, board, step.", ("format", format));
+        "Unknown format '{format}'. Known: clay, gdsii, dxf, gerber, board, step, gltf.", ("format", format));
 
     /// <summary>The usage text itself, recorded so a document says what stderr said. Both lines,
     /// because both were printed.</summary>
@@ -379,6 +379,7 @@ internal static class CliDiagnostics
         "Usage: circuitrf convert <input> -o <output> [--from f] [--to f] [--cell name]\n" +
         "       formats: clay | gdsii | dxf | gerber | board; step (a source: -o <new>.c3d)\n" +
         "       step:  --material <part>=<name> (repeatable)  --part <path> (repeatable)  --tech <path.ctech>\n" +
+        "       gltf:  -o <file>.glb from a .c3d  --gltf-assembly  --gltf-field <plot>  --region <name>\n" +
         "       --no-coalesce  keep a painted pour's individual strokes");
 
     /// <summary>brief-em3d-68 R-em3d68-7a — a STEP file becomes a NEW .c3d and nothing else.</summary>
@@ -389,6 +390,41 @@ internal static class CliDiagnostics
     public static Diagnostic ConvertStepExportFlagsWithoutStep() => new(
         "convert.step.export-flags", DiagnosticSeverity.Error,
         "--assembly, --as-drawn, --thicken-sheets, --include-airbox, --schema and --view apply to a STEP target (-o <file>.step) only.");
+
+    // ── brief-em3d-111 — glTF export ──────────────────────────────────────────────────────────────────────
+
+    /// <summary>R-em3d111-3c — a glTF source: circuitRF writes the format and reads none of it.</summary>
+    public static Diagnostic ConvertGltfImport(string path) => Diagnostic.Create(
+        "convert.gltf.import", DiagnosticSeverity.Error,
+        "circuitRF exports glTF; it does not import it. '{path}' cannot be converted.", ("path", path));
+
+    /// <summary>D1 — binary glTF only: one file is what gets emailed.</summary>
+    public static Diagnostic ConvertGltfBinaryOnly(string output) => Diagnostic.Create(
+        "convert.gltf.binary-only", DiagnosticSeverity.Error,
+        "circuitRF writes binary glTF only: name a .glb file as the output ('{output}' is not one).", ("output", output));
+
+    /// <summary>D3 — a glTF is exported from a 3D view, not from a layout or an interchange file.</summary>
+    public static Diagnostic ConvertGltfSource(string path, string kind) => Diagnostic.Create(
+        "convert.gltf.source", DiagnosticSeverity.Error,
+        "A glTF is exported from a 3D view (.c3d): '{path}' is not one (it reads as {kind}).", ("path", path), ("kind", kind));
+
+    public static Diagnostic ConvertGltfFlagsWithoutGltf() => new(
+        "convert.gltf.flags", DiagnosticSeverity.Error,
+        "--gltf-assembly, --gltf-field and --region apply to a glTF target (-o <file>.glb) only.");
+
+    /// <summary>The .c3d does not elaborate: its first refusal, and how many there are.</summary>
+    public static Diagnostic ConvertGltfDoesNotElaborate(string first, int count) => Diagnostic.Create(
+        "convert.gltf.elaboration", DiagnosticSeverity.Error, "{first}{more}",
+        ("first", first), ("more", count > 1 ? $" ({count - 1} more refusal{(count == 2 ? "" : "s")}: `check` lists them.)" : ""));
+
+    /// <summary>R-em3d111-2a — a ClipPlane plot is a section through the volume: there is no surface of the model to carry it.</summary>
+    public static Diagnostic ConvertGltfFieldClipPlane(string plot) => Diagnostic.Create(
+        "convert.gltf.field-clip-plane", DiagnosticSeverity.Error,
+        "'{plot}' is a ClipPlane plot, a section through the volume. --gltf-field takes a Surfaces or Faces plot.", ("plot", plot));
+
+    public static Diagnostic ConvertGltfNothing(string path) => Diagnostic.Create(
+        "convert.gltf.nothing", DiagnosticSeverity.Error,
+        "There is nothing to export from '{path}': no shown object has a material.", ("path", path));
 
     public static Diagnostic ConvertUnknownSchema(string value) => Diagnostic.Create(
         "convert.step.schema", DiagnosticSeverity.Error, "--schema takes ap214 or ap242, not '{value}'.", ("value", value));

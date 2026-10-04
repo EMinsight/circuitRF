@@ -130,6 +130,7 @@
                                     <NativeMenuItem Header="Gerber" Command="{Binding ExportGerberCommand}"/>
                                     <NativeMenuItem Header="Board…" Command="{Binding ExportBoardCommand}"/>
                                     <NativeMenuItem Header="STEP…" ToolTip="{Binding ThreeDExportStepTip}" Command="{Binding ExportStepCommand}" CommandParameter="{Binding $parent[Window]}"/>
+                                    <NativeMenuItem Header="glTF…" ToolTip="{Binding ThreeDExportGltfTip}" Command="{Binding ExportGltfCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <!-- 3D vector copy and drawing export (2026-09-27) — the 3D pane's own Export Drawing…; mirrored below and in the torn-off File menu. -->
                                     <NativeMenuItem Header="Drawing…" ToolTip="A drawing of the active 3D document: isometric, top, front and other views, and sections, at one scale, as SVG or PDF. Requires an active 3D document." Command="{Binding ExportDrawingCommand}" CommandParameter="{Binding $parent[Window]}"/>
                                     <NativeMenuItem Header="Board netlist (IPC-D-356)…" Command="{Binding ExportBoardNetlistCommand}"/>
@@ -931,6 +932,10 @@
                               Command="{Binding ExportStepCommand}"
                               CommandParameter="{Binding $parent[Window]}"
                               ToolTip.Tip="{Binding ThreeDExportStepTip}"/>
+                    <MenuItem Header="_glTF…"
+                              Command="{Binding ExportGltfCommand}"
+                              CommandParameter="{Binding $parent[Window]}"
+                              ToolTip.Tip="{Binding ThreeDExportGltfTip}"/>
                     <MenuItem Header="Dra_wing…"
                               Command="{Binding ExportDrawingCommand}"
                               CommandParameter="{Binding $parent[Window]}"

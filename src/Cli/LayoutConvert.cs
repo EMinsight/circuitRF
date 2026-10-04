@@ -34,7 +34,7 @@ public static class LayoutConvert
     /// second rule for it — an interchange file they could not name would read as a file circuitRF
     /// does not handle, when in fact `convert` handles it.
     /// </summary>
-    internal enum Fmt { Clay, Gdsii, Dxf, Gerber, Board, Step }
+    internal enum Fmt { Clay, Gdsii, Dxf, Gerber, Board, Step, Gltf }
 
     private sealed class Options
     {
@@ -70,6 +70,10 @@ public static class LayoutConvert
         public bool StepAssembly, StepAsDrawn, StepThicken, StepAirBox, StepExportFlags;
         public StepExportSchema StepSchema = StepExportSchema.Ap214;
         public StepExportView StepView = StepExportView.Auto;
+
+        // brief-em3d-111 R-em3d111-3c — glTF export: the Export glTF dialog's options, one flag each.
+        public bool GltfAssembly, GltfFlags;
+        public string? GltfField, GltfRegion;
     }
 
     public static int Run(string[] args)
@@ -149,6 +153,9 @@ public static class LayoutConvert
                 case "--as-drawn": o.StepAsDrawn = o.StepExportFlags = true; break;
                 case "--thicken-sheets": o.StepThicken = o.StepExportFlags = true; break;
                 case "--include-airbox": o.StepAirBox = o.StepExportFlags = true; break;
+                case "--gltf-assembly": o.GltfAssembly = o.GltfFlags = true; break;
+                case "--gltf-field" when i + 1 < args.Length: o.GltfField = args[++i]; o.GltfFlags = true; break;
+                case "--region" when i + 1 < args.Length: o.GltfRegion = args[++i]; o.GltfFlags = true; break;
                 case "--schema" when i + 1 < args.Length:
                     o.StepExportFlags = true;
                     switch (args[++i].ToLowerInvariant())
@@ -185,6 +192,12 @@ public static class LayoutConvert
         // file with no telling extension is classified by CONTENT through the same classifier the
         // Gerber import itself uses, so `convert` and the import can never disagree about what a file
         // is. --from overrides all of it.
+        // brief-em3d-111 R-em3d111-3c — glTF is written, never read; a glTF target is a 3D view exported by GltfExport.
+        if (o.From == Fmt.Gltf || (o.From is null && IsGltf(o.Input))) return JsonRun.Fail(CliDiagnostics.ConvertGltfImport(o.Input));
+        bool gltfTarget = o.To == Fmt.Gltf || (o.To is null && o.Output is not null && IsGltf(o.Output));
+        if (gltfTarget) return ExportGltf(o);
+        if (o.GltfFlags) return JsonRun.Fail(CliDiagnostics.ConvertGltfFlagsWithoutGltf());
+
         bool stepSource = o.From == Fmt.Step || (o.From is null && DetectSource(o.Input) == Fmt.Step);
         if (stepSource)
         {
@@ -402,6 +415,29 @@ public static class LayoutConvert
                 try { Directory.Delete(scratch, recursive: true); } catch { /* best effort */ }
         }
     }
+
+    /// <summary>
+    /// brief-em3d-111 R-em3d111-3c — <c>.c3d</c> → one <c>.glb</c>. Argument checks and reporting only: what is in the file is
+    /// <see cref="CircuitRF.Render.Scene3D.Export.GltfExport"/>'s, the function the Export glTF dialog calls (GltfConvert).
+    /// </summary>
+    private static int ExportGltf(Options o)
+    {
+        if (o.ListCells) return JsonRun.Fail(CliDiagnostics.ConvertListCellsNotApplicable());
+        if (o.StepExportFlags) return JsonRun.Fail(CliDiagnostics.ConvertStepExportFlagsWithoutStep());
+        if (o.Output is null)
+        {
+            JsonRun.Report(CliDiagnostics.ConvertOutputRequired());
+            return Usage();
+        }
+        if (!CircuitRF.Render.Scene3D.Export.GltfExport.IsGltfExtension(o.Output)) return JsonRun.Fail(CliDiagnostics.ConvertGltfBinaryOnly(o.Output));
+        string input = Path.GetFullPath(o.Input!);
+        var kind = DocumentKinds.Classify(input);
+        if (kind != DocumentKind.ThreeD) return JsonRun.Fail(CliDiagnostics.ConvertGltfSource(o.Input!, DocumentKinds.Name(kind)));
+        return GltfConvert.Export(input, o.Output, o.GltfAssembly, o.GltfField, o.GltfRegion);
+    }
+
+    /// <summary>A glTF path, binary or not (<c>.gltf</c> is refused as a target by name, D1).</summary>
+    private static bool IsGltf(string path) => Path.GetExtension(path).ToLowerInvariant() is ".glb" or ".gltf";
 
     private static int? ClayDirectoryRefusal(string output)
     {
@@ -951,6 +987,7 @@ public static class LayoutConvert
         "gerber" or "rs274x" or "excellon" => Fmt.Gerber,
         "board" or "kicad_pcb" => Fmt.Board,   // the extension is a data format; the bare product name is not ours to use
         "step" or "stp" => Fmt.Step,
+        "gltf" or "glb" => Fmt.Gltf,
         _ => null,
     };
 
@@ -959,7 +996,7 @@ public static class LayoutConvert
     internal static string Name(Fmt f) => f switch
     {
         Fmt.Clay => "clay", Fmt.Gdsii => "GDSII", Fmt.Dxf => "DXF",
-        Fmt.Gerber => "Gerber", Fmt.Step => "STEP", _ => "board",
+        Fmt.Gerber => "Gerber", Fmt.Step => "STEP", Fmt.Gltf => "glTF", _ => "board",
     };
 
     internal static Fmt? DetectSource(string path)
@@ -996,10 +1033,11 @@ public static class LayoutConvert
     private static int Usage()
     {
         Console.Error.WriteLine("Usage: circuitrf convert <input> -o <output> [--from f] [--to f] [--cell name]");
-        Console.Error.WriteLine("       formats: clay | gdsii | dxf | gerber | board | step");
+        Console.Error.WriteLine("       formats: clay | gdsii | dxf | gerber | board | step | gltf");
         Console.Error.WriteLine("       step source (-o <new>.c3d):  --material <part>=<name> (repeatable)  --part <path> (repeatable)  --tech <path.ctech>");
         Console.Error.WriteLine("       step target (-o <file>.step; from a .c3d, .clay, cell folder or any format above):");
         Console.Error.WriteLine("              --assembly  --as-drawn  --thicken-sheets  --include-airbox  --schema ap214|ap242  --view 3d|layout  --tech <path.ctech>");
+        Console.Error.WriteLine("       gltf target (-o <file>.glb; from a .c3d):  --gltf-assembly  --gltf-field <plot>  --region <name>");
         Console.Error.WriteLine("       --no-coalesce  keep a painted pour's individual strokes");
         JsonRun.Note(CliDiagnostics.ConvertUsage());
         return 1;

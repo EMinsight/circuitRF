@@ -103,6 +103,8 @@ internal static class RenderEm3dField
         if (req.Iso) asked.Add("--iso");
         if (req.ViewDir is { } vd) asked.Add($"--view-dir {vd}");
         if (asked.Count > 1) return JsonRun.Fail(CliDiagnostics.RenderEm3dMultipleViews(string.Join(" and ", asked)));
+        // brief-em3d-111 — a glTF carries a plot on the model's surfaces; a section has none to carry it on
+        if (req.FieldSink is not null && plot.On == C3dFieldPlotOn.ClipPlane) return JsonRun.Fail(CliDiagnostics.ConvertGltfFieldClipPlane(plot.Name));
         // brief-em3d-110 R-em3d110-1e — a realistic picture draws a Surfaces or Faces plot on the model, in the Look's field style
         RenderEm3dRealistic.LookRead? realistic = null;
         Em3dProjection? realisticDirection = null;
@@ -140,7 +142,7 @@ internal static class RenderEm3dField
             // brief-em3d-89 — a picture of surfaces in depth: a stated direction (the view's camera is not saved), PNG only
             string on = OnText(plot);
             if (req.Sections.Count > 0) return JsonRun.Fail(CliDiagnostics.RenderFieldNotASection(plot.Name, on, asked[0]));
-            if (asked.Count == 0 && realistic is null) return JsonRun.Fail(CliDiagnostics.RenderFieldDirectionRequired(plot.Name, on));
+            if (asked.Count == 0 && realistic is null && req.FieldSink is null) return JsonRun.Fail(CliDiagnostics.RenderFieldDirectionRequired(plot.Name, on));
             // a realistic picture taken from the Look's Camera has no stated direction: the caption names that camera instead
             var (look, bad) = asked.Count == 0 ? (Em3dProjection.Standard(Em3dStandardView.Isometric) with { Name = "from the Look's Camera" }, null)
                                                : Direction(req.ViewDir, req.Iso);
@@ -375,7 +377,7 @@ internal static class RenderEm3dField
             ? Em3dSectionThermal.BoundaryLabels(run, e, found.Table, item.Solution.Index) : [];
         var legend = req.NoLegend ? [] : FieldPlotResolver.LegendLines(plot.Name, q, scale, item.Label, phaseDeg, loopSeconds: null,
             fixedAcrossSweep: q.IsTemperature && plot.FixRange && item.Run.Solutions.Count > 1, stepLabel: item.Label, hotSpot: hotSpot, drive: drive);
-        if (realistic is not null)
+        if (realistic is not null || req.FieldSink is not null)
         {
             // the 3D view's own field layer: its triangles packed as the view packs them, its range and map, the objects it stands in for
             int triangles = surfaces.Sum(x => x.TriangleCount);
@@ -394,7 +396,7 @@ internal static class RenderEm3dField
             var part = new RenderEm3dRealistic.FieldPart(
                 new Scene3DFieldGeometry(Scene3DFieldGeometry.Pack(q, surfaces, nudges), 1), covered, q, scale, phaseDeg * Math.PI / 180, legend,
                 item.Label, report, line);
-            return RenderEm3dRealistic.Picture(path, req, realistic, loaded, scene, realisticDirection, part);
+            return req.FieldSink is { } sink ? sink(part) : RenderEm3dRealistic.Picture(path, req, realistic!, loaded, scene, realisticDirection, part);
         }
         var caption = Em3dSurfaceField.Caption(q.IsTemperature, q.Symbol, target, look, setupName, item.Label, mirrors.Count,
                                                wires.Select(w => w.Wire).Distinct().Count(), boundaries, refused);

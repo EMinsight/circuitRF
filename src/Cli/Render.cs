@@ -146,8 +146,8 @@ internal static class Render
 
     /// <summary>R-rnd2-3's default page. Points for a vector format, device pixels for a raster one —
     /// 1600x1200 is a 4:3 page that reads at a glance in either.</summary>
-    private const int DefaultWidth  = 1600;
-    private const int DefaultHeight = 1200;
+    internal const int DefaultWidth  = 1600;
+    internal const int DefaultHeight = 1200;
 
     /// <summary><c>LayoutViewport.ZoomToFit</c>'s own default, which is the margin the application's
     /// Zoom to Fit uses. Named in <see cref="DocumentExtents"/>, beside the fit arithmetic it belongs
@@ -1422,6 +1422,16 @@ internal static class Render
             return (ThemeResolver.Resolve(asked, workspaceDir), asked, from, null);
         }
 
+        var (dt, dn, df) = DefaultTheme(documentPath);
+        return (dt, dn, df, null);
+    }
+
+    /// <summary>The theme a document is drawn with when no <c>--theme</c> is given: its workspace's recorded scheme, else the
+    /// default. brief-em3d-111 — `convert … .glb` takes it too, since a role's default base colour is the theme's palette colour.</summary>
+    internal static (ColorTheme Theme, string Name, string From) DefaultTheme(string documentPath)
+    {
+        string? cws = DocumentKinds.AncestorCws(documentPath);
+        string? workspaceDir = cws is null ? null : Path.GetDirectoryName(Path.GetFullPath(cws));
         string name = ThemeResolver.DefaultThemeName;
         if (cws is not null)
         {
@@ -1436,8 +1446,7 @@ internal static class Render
         // A recorded name that no longer resolves is the workspace's own state, not the caller's
         // mistake, so it falls through the chain exactly as the application's does and says where it
         // landed rather than refusing.
-        return (ThemeResolver.Resolve(name, workspaceDir), name,
-                WhereItResolves(name, workspaceDir) ?? "built-in", null);
+        return (ThemeResolver.Resolve(name, workspaceDir), name, WhereItResolves(name, workspaceDir) ?? "built-in");
     }
 
     private static string? WhereItResolves(string name, string? workspaceDir)

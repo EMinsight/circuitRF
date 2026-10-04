@@ -56,7 +56,7 @@ Thirteen verbs run no analysis, so none of §3-§6 applies to them and §7's exi
 
 | Verb | Input | Does | Writes |
 |---|---|---|---|
-| `convert` | any interchange format; a STEP file; a `.c3d` or a cell folder (to STEP) | one import, one export | the target format; documented in the repo-root `CLAUDE.md`. **A `clay` target is a DIRECTORY**; a STEP source's one target is a new `.c3d`, and a STEP target takes a `.c3d`, a `.clay`, a cell folder or any interchange source — see below |
+| `convert` | any interchange format; a STEP file; a `.c3d` or a cell folder (to STEP); a `.c3d` (to glTF) | one import, one export | the target format; documented in the repo-root `CLAUDE.md`. **A `clay` target is a DIRECTORY**; a STEP source's one target is a new `.c3d`, and a STEP target takes a `.c3d`, a `.clay`, a cell folder or any interchange source; a `.glb` target takes a `.c3d` only, and glTF is never a source — see below |
 | `new workspace` | a directory | `WorkspaceCreate.Create` | a `.cws` and, unless `--tech none`, a copied `.ctech` |
 | `new cell` | a workspace + a name | `CellCreate.Create` | a cell folder and one empty-but-valid file per `--views` |
 | `import part` | a component file or folder | `ComponentRead` + `ComponentImport.Import` | a cell folder holding the land patterns and the symbol |
@@ -123,6 +123,21 @@ own sentence, verbatim; a `.clay` with no resolvable technology names `--tech` (
 stackup nothing has a height); a model with nothing in it says *nothing to export*; an absent kernel is the
 capability's sentence. stdout is the written path, and `--json` records it as an output of kind `step`. A cancelled
 export exits 130 and writes nothing: the worker's bytes go to a temporary file renamed into place.
+
+**`convert x.c3d -o x.glb` writes what the 3D view draws as binary glTF** (brief-em3d-111). The verb is
+`GltfConvert`: argument checks, the view state headlessly and the report around `GltfExport.Build` (in `src/Render`,
+because the scene and its shading normals live there), the function File ▸ Export ▸ glTF… calls. The scene is the one a
+freshly opened editor draws — `C3dProblemAssembly.ViewProblem` of the elaboration's solids and sheets, the document's
+origin, theme (the workspace's recorded scheme, light) and appearances — and what it shows is the document's: its
+`Hidden` objects are left out, and there is no hidden-by-session state headlessly. `--gltf-assembly` and
+`--gltf-field <plot>` mirror the dialog; the field is resolved by `render --field`'s own resolution
+(`RenderEm3d.Request.FieldSink`), so a plot `render --look realistic` can draw is one `convert` can write, at phase 0,
+and a ClipPlane plot is refused (`convert.gltf.field-clip-plane`). The camera is the Look's `Camera` when the document
+saves one (framed at `render`'s default 4:3), and none otherwise. **glTF is never a source**: a `.glb`/`.gltf` input is
+`convert.gltf.import`, a `.gltf` target is `convert.gltf.binary-only` (D1), and any other source kind is
+`convert.gltf.source`. The file matches the dialog's byte for byte with no camera (`GltfExportTests` gate 7); stdout is
+the written path, `--json` records it as an output of kind `glb`, and the write goes through a temporary file renamed
+into place.
 | `reference` | **nothing at all** | reports what a caller may WRITE: the shipped reference pages, plus four topics generated from the live registries and readers — the component catalogue, the analysis directives, and the `.cdd` and `.ctech` formats | **nothing** — §12 |
 
 **`new` is one verb with a noun, not three** (`brief-automation-3-authoring-verbs.md` R-aut3-13): the

@@ -982,12 +982,33 @@ same bytes but for the file's time stamp.
 The geometry kernel does the work in both directions, so on an installation without it both are refused,
 saying why and how to restore it.
 
+### glTF, for another renderer {#convert-gltf}
+
+A 3D view comes out as **binary glTF** (`.glb`): the model as the 3D view draws it, with its
+[appearances](drawing-in-3d.html#appearance) as glTF materials and its smooth normals, for a path tracer or any other
+renderer. It calls the function *File ▸ Export ▸ glTF…* calls, so a file written here and one written from the editor
+are the same bytes when neither includes a camera.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert Package/3d/Package.c3d -o package.glb
+<span class="prompt">$ </span>circuitrf convert Package/3d/Package.c3d -o package.glb --gltf-assembly
+<span class="prompt">$ </span>circuitrf convert cell/3d/cell.c3d -o hot.glb --gltf-field Top</code></pre>
+
+- The source is a `.c3d`. What it shows is the document's own: an object the file hides is left out, and so are the
+  air box, ports, boundaries and reference images.
+- `--gltf-assembly` writes each placed cell as a node that shares its meshes; without it everything is flattened.
+- `--gltf-field <plot>` adds a Surfaces or Faces field plot as an unlit mesh with per-vertex colours (at phase 0).
+  `--region <name>` names the region a Surfaces plot of a volume quantity is drawn on, as `render --region` does. A
+  ClipPlane plot is refused.
+- The file carries the Look's camera when the document saves one (*Use This View for Pictures*), and no camera
+  otherwise.
+- circuitRF writes glTF and does not read it: a `.glb` or `.gltf` source is refused, and so is a `.gltf` target.
+
 ### Options {#convert-options}
 
 | Option | What it does |
 |---|---|
 | `-o, --output <path>` | The file to write — or the **folder**, for `gerber` and `clay`; a file-shaped path there is refused. Required. |
-| `--from <fmt>`, `--to <fmt>` | `clay`, `gdsii`, `dxf`, `gerber`, `board`, `step`. Say it when the path does not. |
+| `--from <fmt>`, `--to <fmt>` | `clay`, `gdsii`, `dxf`, `gerber`, `board`, `step`, `gltf` (a target only). Say it when the path does not. |
 | `--cell <name>` | Which cell to export, when the source holds several. |
 | `--list-cells` | Report what the input holds and write nothing. |
 | `--name <stem>` | What to call the written Gerber file set. Default: the cell's name. |
@@ -1004,6 +1025,7 @@ saying why and how to restore it.
 | `--material <part>=<material>` | STEP import: the material a part takes. Repeat it per part. |
 | `--part <path>` | STEP import: import only this part (its occurrence path). Repeat it per part. |
 | `--assembly`, `--as-drawn`, `--thicken-sheets`, `--include-airbox`, `--schema ap214\|ap242`, `--view 3d\|layout` | STEP export: the Export STEP dialog's choices, one flag each. |
+| `--gltf-assembly`, `--gltf-field <plot>`, `--region <name>` | glTF export: the Export glTF dialog's choices. See [glTF](#convert-gltf). |
 | `--open-archives` | Look inside an archive when a Gerber folder holds no artwork of its own. It is unpacked to a temporary folder, imported from there, and deleted again; nothing is added to the folder you named. Without this flag, such a folder is a refusal that names the flag. |
 
 ### Which cell gets exported {#convert-cell}

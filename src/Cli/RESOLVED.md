@@ -2920,3 +2920,27 @@ report. `ExplainLook.cs` is `explain --look`. The design is in `docs/design/cli.
   that reason.
 - Gates: `tests/Ui.Tests/Render/RealisticRenderCliTests.cs` and `tests/Ui.Tests/Viewer3D/RealisticPictureTests.cs`.
   Fourteen new `render.look*` ids are in `CliStructuredOutputTests`' committed set.
+
+## `convert x.c3d -o x.glb` (brief-em3d-111, 2026-10-04)
+
+- **`GltfConvert` decides nothing about the file.** It builds the scene a freshly opened editor draws:
+  `C3dProblemAssembly.ViewProblem` of the elaboration's solids and sheets, so a `Model: false` part is written as it
+  is drawn. The run problem would drop that part. It also builds what the document shows (`GltfExport.DocumentVisibility`),
+  the Look's camera when one is saved, and the report. Everything else is `GltfExport.Build`.
+- **Theme.** A role's default base colour is the theme's palette colour, so the CLI takes `render`'s default theme
+  (the workspace's recorded scheme, else the default; `Render.DefaultTheme`, factored out of `ResolveTheme`) in the
+  light variant. The editor builds in the app's active variant. A dark-mode GUI export can therefore differ from
+  `convert` in role-default colours. The byte-identity gate runs both in light.
+- **The field reuses `render --field`'s resolution** through `RenderEm3d.Request.FieldSink`. The Surfaces/Faces
+  branch builds the same `FieldPart` the realistic picture uses and hands it to the sink instead of drawing. No
+  direction is asked for, a ClipPlane plot is refused first, and the phase is 0. `--region` is a convert flag only
+  with `--gltf-field`, because render's region refusal names it.
+- **glTF is never a source.** The check runs before every other classification. `DetectSource` does not learn
+  `.glb`, so `check`/`explain` do not start calling a glTF an interchange file `convert` handles.
+- **Menus: three surfaces, not five.** The brief counted five File ▸ Export ▸ STEP… surfaces. There are three (the
+  native File menu, the in-window File menu, the torn-off File menu), because the 3D menu's copies were removed in
+  the 3D menu cleanup. glTF… sits beside STEP… on all three. It needs no geometry kernel: it writes the view's own
+  triangles.
+- **Gate 7 held on the first run.** The dialog's export and `convert` run as a process were byte-identical on a
+  fixture whose editor scene also holds a port and an air box. Those objects change the scene's
+  buffers and IDs but not what is exported, since vertices are taken in first-use order per object.

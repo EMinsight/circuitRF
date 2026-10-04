@@ -4885,3 +4885,46 @@ missing the driven port's probes or its kept document is drawn as written, with 
 - **One place for the picture camera:** `Camera3D.SetPictureCamera`, which Go to Picture View and `render` both
   call. **One place for the Theme background:** `Viewer3DViewState.ThemeBackground`. `FieldPictureShot.Typeface`
   lets `render` set the legend in the embedded face.
+
+## glTF export: `GltfExport` and `GlbWriter` (brief-em3d-111, 2026-10-04)
+
+- **Why it lives in `src/Render`.** It writes what the view draws: the triangles, face splits, shading normals
+  (`ShadeVertices`, made by `ShadingNormals`) and appearance slots of a `Scene3DModel`. All of that is here, and
+  `src/Design` cannot reference `src/Render`. It draws nothing. File ▸ Export ▸ glTF… and `convert … .glb` both call
+  `GltfExport.Build`. `GlbWriter` is only the container (a 4-byte-aligned JSON chunk and BIN chunk, one buffer view
+  per accessor).
+- **Content** is decided by `GltfExport.Exported`: shown, not a chrome row (`Scene3DFramePlan.ChromeOfObject`), not a
+  tint, not a wireframe (no material), not the dimmed parent of a pushed-in child, and with an appearance slot. The
+  view's own chrome table decides, so nothing restates what counts as air, a port or a boundary. Headlessly, what is
+  shown is `DocumentVisibility`: each object's kind default, less every object the document hides (found through its
+  provenance, as `ApplyHiddenFlags` finds it in the editor).
+- **Frames.** Meshes are scene-local (with Assembly, in their instance's frame). The root node carries the origin's
+  translation in double and the Z-up → Y-up turn, so positions stay small floats as the view keeps them.
+- **Assembly mesh sharing compares within a tolerance, not by rounding.** STEP rounds to 0.1 nm in DBU doubles, but a
+  scene's vertices are single precision, and an array element drawn as prototype + offset differs from an owned copy
+  by float noise. In the first run, 0.1 nm rounding split three instances into two meshes. Now meshes with the same
+  structure (cell, object, materials, triangles) are shared when every position agrees within a millionth of the
+  scene's size and every normal within 1e-3.
+- **Materials are keyed by (slot, name, alpha, thickness, two-sided)**, not by slot alone. The name is the
+  material's, with `+override` where the resolver, asked again without the document's statement, gives different
+  values. A stated transparency (beyond the brief) is written as `alphaMode: BLEND`, since the view draws it. A sheet
+  is `doubleSided`. The volume thickness is the object's smallest bounding-box extent, so it is per object.
+  Extensions are written only where a value differs from glTF's default, in `extensionsUsed` and never
+  `extensionsRequired`.
+- **The field subdivision rule (R-em3d111-2c).** The view colours each pixel from the value interpolated across the
+  triangle. A vertex colour is interpolated colour, so on a coarse mesh the two differ. Each field triangle is split
+  into four at its edge midpoints until no edge's endpoint colour positions (`FieldColorScale.Position`, 0 to 1)
+  differ by more than 1/16, at most four levels (256 triangles from one). Midpoints interpolate the CHANNELS
+  (real and imaginary parts), as the GPU interpolates them, so a new vertex's colour is exactly the fragment's
+  colour there. A triangle still too wide at the cap is counted (`FieldCapped`), which happens on a dB scale near its
+  floor, and the note says so. Colours are the map's sRGB bytes decoded to linear (`LinearColour`).
+- **A Faces plot stands in for no object.** It paints a face over its object, so the object stays in the file. Only
+  what the plot's `Covered` set names is left out, as the view leaves it out.
+- **Only Surfaces and Faces plots are offered.** A ClipPlane plot is a section through the volume, and the CLI path
+  resolves plots through `render --field`, which builds a section a different way.
+- **Camera.** A node under the root, in the scene-local frame. Its rotation maps glTF's camera axes (x right, y up,
+  looking down −z) onto the view's (`CameraRotation`, tested). An orthographic camera's `znear` is clamped to 0,
+  since glTF does not allow a negative one.
+- **Test note:** in .NET 10, `Vector3.Transform(v, q)` with the file's −90° quaternion read as floats moved x by
+  ~2e-8 of a 1.5 mm coordinate. The orientation test applies the file's quaternion in double instead. The file's
+  positions were exact.

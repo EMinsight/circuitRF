@@ -1,0 +1,50 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:t3="using:CircuitRF.Ui.ThreeD"
+        x:Class="CircuitRF.Ui.Views.ThreeD.GltfExportDialog"
+        x:DataType="t3:GltfExportDialogViewModel"
+        Title="{Binding Title}"
+        Width="560" SizeToContent="Height" MinWidth="440"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        ShowInTaskbar="False">
+
+    <!-- brief-em3d-111 R-em3d111-3b: the options, the summary line before writing, then Export. -->
+    <StackPanel Margin="16,12,16,12" Spacing="6">
+        <SelectableTextBlock Text="{Binding TargetPath}" FontSize="11" TextWrapping="Wrap"
+                             Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
+        <TextBlock Text="Structure" FontWeight="SemiBold" FontSize="12" Margin="0,6,0,0"/>
+        <RadioButton GroupName="structure" Content="Flattened: one node per object" IsChecked="{Binding Flattened}"
+                     IsEnabled="{Binding !Writing}"/>
+        <RadioButton GroupName="structure" Content="Assembly: each placed cell a node, its meshes written once" IsChecked="{Binding Assembly}"
+                     IsEnabled="{Binding !Writing}"/>
+
+        <CheckBox Content="Include camera (this view's framing)" IsChecked="{Binding IncludeCamera}" Margin="0,6,0,0"
+                  IsEnabled="{Binding HasCamera}"
+                  ToolTip.Tip="The current view as a glTF camera, so the other renderer opens on the same framing."/>
+
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+            <TextBlock Text="Include field plot" VerticalAlignment="Center" FontSize="12"/>
+            <ComboBox ItemsSource="{Binding FieldChoices}" SelectedIndex="{Binding FieldIndex}" MinWidth="200"
+                      IsEnabled="{Binding HasFields}"
+                      ToolTip.Tip="A drawn Surfaces or Faces plot as an unlit mesh coloured per vertex, at the current phase and range. The objects it stands in for are left out."/>
+        </StackPanel>
+
+        <SelectableTextBlock Text="{Binding Summary}" FontWeight="SemiBold" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0"
+                             IsVisible="{Binding !Busy}"/>
+        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding Busy}" Margin="0,8,0,0">
+            <ProgressBar IsIndeterminate="True" Width="120" VerticalAlignment="Center"/>
+        </StackPanel>
+        <SelectableTextBlock Text="{Binding Error}" IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}"
+                             Foreground="{DynamicResource SystemErrorTextColor}" TextWrapping="Wrap" FontSize="12"/>
+        <SelectableTextBlock Text="{Binding Notes}" IsVisible="{Binding HasNotes}" TextWrapping="Wrap" FontSize="11" MaxHeight="120"
+                             Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,10,0,0">
+            <Button Content="Cancel" Width="90" HorizontalContentAlignment="Center" Command="{Binding CancelCommand}"/>
+            <Button Content="Export" Width="90" HorizontalContentAlignment="Center" IsDefault="True" Command="{Binding ExportCommand}"
+                    ToolTip.Tip="Write the model, its appearances and the options above to the .glb file."/>
+        </StackPanel>
+    </StackPanel>
+</Window>

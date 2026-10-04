@@ -183,6 +183,10 @@
                           Command="{Binding ExportStepCommand}"
                           CommandParameter="{Binding $parent[Window]}"
                           ToolTip.Tip="{Binding ThreeDExportStepTip}"/>
+                <MenuItem Header="_glTF…"
+                          Command="{Binding ExportGltfCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="{Binding ThreeDExportGltfTip}"/>
                 <MenuItem Header="Dra_wing…"
                           Command="{Binding ExportDrawingCommand}"
                           CommandParameter="{Binding $parent[Window]}"

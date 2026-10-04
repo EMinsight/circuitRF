@@ -978,6 +978,45 @@ next time.
 Working out which edges are hidden takes a moment on a large model; above 400,000 triangles it is skipped,
 the edges are all drawn, and the message that reports the export says so.
 
+## Exporting for another renderer {#gltf}
+
+circuitRF does not ray-trace. When a picture needs what only a path tracer gives — refraction through a glass lid,
+caustics, light bouncing between parts — **File ▸ Export ▸ glTF…** writes the model as one binary glTF file (`.glb`),
+which every path tracer and most 3D tools open. The [realistic view](#realistic) approximates those effects; the other
+renderer computes them.
+
+What is written is **what the view draws**: every shown solid and sheet, with the same triangles and the smooth
+normals the realistic view shades with. A hidden object is left out, and so are the air box, ports, boundaries and
+face tints, the grid, and reference images. An object left out of the solve (*Model* off) is written: it is drawn.
+Names come along: each object is a node named as in the tree, and each group is a parent node.
+
+Each [appearance](#appearance) becomes a glTF material with the same numbers, since circuitRF's appearance is glTF's
+own metallic-roughness model. Base colour, metallic and roughness are always written; transmission, index of
+refraction, clearcoat and the volume's attenuation are written only where they differ from glTF's defaults, as
+optional extensions, so a viewer that does not know one still opens the file. A material is named after the
+circuitRF material, with `+override` added where an object's own appearance changed it. The volume's thickness is
+the object's smallest extent, which is an approximation and the export notes say so.
+
+The dialog offers:
+
+- **Flattened** or **Assembly**. With Assembly on, a placed cell is a node and its parts' meshes are written once,
+  however often it is placed.
+- **Include camera**: the current view as the file's camera, so the other renderer opens on the same framing.
+- **Include field plot**: a drawn Surfaces or Faces plot as a separate mesh, coloured per vertex at the current
+  phase and range, with an *unlit* material so a renderer that honours it shows the colours unshaded, as the view
+  does. The parts the plot stands in for are left out, as the view leaves them out. The view colours each pixel from
+  the field's value, but a file can only colour the corners of triangles, so the export divides each field triangle
+  until no edge spans more than a sixteenth of the colour range, up to four times. The summary says how many
+  triangles that made.
+
+The summary line counts the objects, triangles and materials and names the extensions the file will use, before
+anything is written.
+
+circuitRF's model is **z-up**; glTF's is **y-up**. The file's top node turns the model so it stands up in every
+viewer, and moves it to where it sits in the design. Lengths are in metres, glTF's unit and circuitRF's.
+
+`circuitrf convert x.c3d -o x.glb` writes the same file headlessly; see [From the command line](#headless).
+
 ## Hierarchy: placing cells {#hierarchy}
 
 **Design ▸ Place Cell Instance…** with a 3D view active offers every cell with a **3D view** or a
@@ -1276,6 +1315,9 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 - **`circuitrf convert part.step -o Cell/3d/Cell.c3d`** — Import STEP into a new 3D view, each part's material by
   name or colour, or `--material <part>=<material>`; **`circuitrf convert x.c3d -o x.step`** — Export STEP, with the
   dialog's choices as flags. See [convert ▸ STEP, both ways](cli.html#convert-step).
+- **`circuitrf convert x.c3d -o x.glb`** — Export glTF, with `--gltf-assembly` and `--gltf-field <plot>`; the camera is
+  the Look's when the document saves one. See [convert ▸ glTF](cli.html#convert-gltf) and
+  [Exporting for another renderer](#gltf).
 - **Booleans, fillets, chamfers and Step parts by hand.** The `Boolean`, `Fillet`, `Chamfer` and `Step` objects are
   ordinary JSON in the `.c3d`, and `circuitrf reference 3d-view` prints every field; the rules for their names, faces,
   edges and `Hash` are in [File formats ▸ The 3D view's operations](file-formats.html#c3d-operations).

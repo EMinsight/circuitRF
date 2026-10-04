@@ -526,6 +526,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
 
     private float _aspect = 1.6f;
     private string _hoverField = "";
+
+    /// <summary>The view's width over its height — what a glTF camera of this view frames at (brief-em3d-111).</summary>
+    public float Aspect => _aspect;
     private (double X, double Y, double Z)? _lastCursorWorld;
 
     /// <summary>brief-em3d-47 — the surface point under the cursor, world metres, or null off every surface.</summary>
