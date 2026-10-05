@@ -1394,9 +1394,14 @@ cheapest way to find out where your own geometry crosses over.</p>
 <td>The workspace <code>.cmat</code> this instance's own metals come from, relative to the schematic. Written for you when you choose one of its metals, removed when no material names one. If the file cannot be read, the run is refused and names the instance.</td>
 </tr>
 <tr>
-<td><code>Source</code>, <code>File</code></td>
-<td><code>Carried</code></td>
-<td>Whether the component <strong>carries</strong> its design or <strong>links</strong> to a <code>.wBond</code> on disk.</td>
+<td><code>WarnUnsynced</code></td>
+<td><code>true</code></td>
+<td><strong>Warn if Schematic Not Synced to Layout</strong> — the last checkbox in the Inspector. The component always simulates the wires it carries; with this on, each Run warns when they differ from the layout's <code>.wBond</code> (arrays, wire shapes, materials) and names what differs. Run <strong>Update Schematic from Layout</strong> to bring the layout's wires in. <code>Temp</code>, <code>er</code> and <em>Include capacitance</em> belong to the component and are never compared.</td>
+</tr>
+<tr>
+<td><code>File</code></td>
+<td>blank</td>
+<td>The layout's <code>.wBond</code> the component is checked against, relative to the schematic. Written by <strong>Update Layout from Schematic</strong>.</td>
 </tr>
 <tr>
 <td><code>Design</code>, <code>Arrays</code>, <code>SymbolPitch</code></td>
