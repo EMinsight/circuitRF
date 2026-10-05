@@ -59,6 +59,11 @@ two Terms on a network and run S-parameters to get the 2-port S-matrix; their `N
 (auto-assigned 1, 2, …) become the port indices you read as `S(2,1)`, etc. The
 [P1Tone](components.html#p1tone) source can also act as a numbered port for power-driven work.
 
+In every other analysis a Term is the **termination it stands for**: a load of `Z` to its reference. A DC
+run sees its resistance (the real part of `Z`), and a harmonic-balance or loadpull run sees `Z` at every
+harmonic. So a bias or a current returning through a Term flows, exactly as it would through a 50 Ω
+instrument. Put a DC block in front of a Term on a biased node, as you would on a bench.
+
 ## A note on Ground {#ground}
 
 <figure class="symbol"><span class="frame">

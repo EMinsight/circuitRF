@@ -154,4 +154,23 @@ public sealed class BareMeasurementNameTests
             if (System.IO.File.Exists(path)) System.IO.File.Delete(path);
         }
     }
+
+    /// <summary>
+    /// A swept per-category cube, <c>WireTemp[IDC, wire array]</c>, named bare: the sweep is the X and the
+    /// categories are the curves. Read positionally (last = X) it plotted along the array names with one curve
+    /// per sweep point — a table of 101 one-number columns.
+    /// </summary>
+    [Fact]
+    public void BareSweptCategoryCube_SweepIsX_CategoriesAreTheCurves()
+    {
+        var idc = new Axis("IDC", [0, 0.5, 1], "A");
+        var arrays = new Axis("wire array", [0, 1], "", ["W1:G1", "W1:G2"]);
+        var ds = new DataSet();
+        ds.Add("WireTemp", new DataCube([idc, arrays], new double[6]));
+
+        Assert.True(CubeTraceSpecParser.TryParse("WireTemp", ds, out _, out var slice, out _, out var error), error);
+
+        Assert.Equal(AxisRole.KeepAsX, slice![0].Role);
+        Assert.Equal(AxisRole.FamilyIterate, slice[1].Role);
+    }
 }

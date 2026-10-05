@@ -1054,6 +1054,9 @@ namespace CircuitRF.Render.DataDisplay
         public IReadOnlyList<double>?  CubeReal      => _cubeRealValues;
         public string                  CubeXAxisName => _cubeXAxisName;
         public string?                 CubeXUnit     => _cubeXUnit;
+        /// <summary>The X axis' per-sample labels, parallel to <see cref="CubeXValues"/> (a node name, a wire array's
+        /// <c>W1:G1</c>, a two-tone product's "(k1,k2)"), or null when the axis has none.</summary>
+        public IReadOnlyList<string>?  CubeXLabels   => _cubeXLabels;
 
         // ---- The dB radial mode (ANT-7 §2) ------------------------------
 

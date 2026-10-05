@@ -1991,17 +1991,6 @@ public sealed class Elaborator
             {
                 result[ov.Name] = new Value(Unquote(ov.Expression));
             }
-            else if (ov.Name.Equals("GroundPlane", StringComparison.OrdinalIgnoreCase)
-                  && IsBooleanSpelling(Unquote(ov.Expression)))
-            {
-                // The Inspector's GroundPlane picker writes the WORD "true"/"false". Evaluated as an
-                // expression, `true` is an unresolved name, the catch below dropped it, and the instance
-                // silently took its payload's own plane — a design stored with the plane off was then
-                // refused for an undeclared return path however the picker was set. A boolean spelling
-                // goes through verbatim, as IncludeCapacitance does; anything else (a VAR reference) is
-                // still evaluated, so it stays sweepable.
-                result[ov.Name] = new Value(Unquote(ov.Expression));
-            }
             else
             {
                 try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
@@ -2092,14 +2081,15 @@ public sealed class Elaborator
         return result;
     }
 
-    /// <summary>
-    /// True for a wBond parameter whose value is a NAME rather than an expression — see
-    /// <see cref="ResolveWBondParameters"/>'s own note for why each one is on this list.
-    /// </summary>
+    /// <summary>True for any spelling <see cref="Devices.BooleanParameter"/> reads as a boolean.</summary>
     private static bool IsBooleanSpelling(string text) =>
         Devices.BooleanParameter.TrueSpellings.Concat(Devices.BooleanParameter.FalseSpellings)
                .Contains(text.Trim(), StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// True for a wBond parameter whose value is a NAME rather than an expression — see
+    /// <see cref="ResolveWBondParameters"/>'s own note for why each one is on this list.
+    /// </summary>
     private static bool IsWBondNameValued(string name) =>
         name.Equals("Material", StringComparison.OrdinalIgnoreCase)
         || name.StartsWith("Material_", StringComparison.OrdinalIgnoreCase)

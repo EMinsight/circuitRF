@@ -4943,3 +4943,18 @@ missing the driven port's probes or its kept document is drawn as written, with 
   clipping from going quadratic on a slab with many holes.
 - Gate: `PlatedViaAndPerspectiveTests.ANonPlatedHole_IsDrawnAsAHoleInTheSubstrate_AndABoxSlabKeepsItsFaces`, now also
   asserting the plated case.
+
+## The Data Display table printed a category axis' positions, not its labels (2026-10-05)
+
+An X column showed `Axis.Values` only, so a labelled category axis — a wBond's `wire array` (`W1:G1`), a DC `node`,
+`branch` or `opvar` — read 0.000, 1.000 with nothing saying which row was which (the `node` special case only made them
+integers). The trace already carried the labels (`TraceExpression` hands `XAxis.Labels` to `SetCubeData`; only the marker
+readout used them). `TableColumn.XLabels` now maps each X value to its label when the axis states one per value, all
+distinct, and is not a frequency, `harmonic` or `mixIndex` axis — a two-tone product folds onto its frequency, and the
+number is the point there. Plots' X ticks are unchanged. Gate: `TableColumnPlanTests.ALabelledCategoryAxis_ShowsItsLabels`.
+
+A bare name on a swept per-category cube — `WireTemp[IDC, wire array]` — took the positional two-axis rule (last = X,
+earlier = family): it plotted along the array names with one curve per sweep point, a table of 101 one-number columns.
+`CubeTraceSpecParser` now swaps the two when the last is a CATEGORY axis (a label per entry, not freq/harmonic/mixIndex,
+no Hz unit) and the earlier is not; the family path's X column carries labels too. A trace saved with the old roles keeps
+them (the stored slice wins) until it is re-entered. Gate: `BareMeasurementNameTests.BareSweptCategoryCube_SweepIsX_CategoriesAreTheCurves`.

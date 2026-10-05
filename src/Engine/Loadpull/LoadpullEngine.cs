@@ -50,6 +50,11 @@ public sealed class LoadpullEngine
     private readonly HbEngine          _hbEngine;
     private readonly AnalysisSettings  _lpSettings;
 
+    // brief-wbond-wire-temperature R-wbt-4a — true only inside Run(), the one caller that turns each step's wBond currents
+    // into WireTemp. A pursuit's search calls RunOneTermination directly and reads none of them, so it must not pay K+1
+    // back-solves per Pin step for them (its follow-on loadpull is a Run(), and reports WireTemp there).
+    private bool _collectWBondCurrents;
+
     public LoadpullEngine(ElaboratedNetlist netlist, TestBench tb, AnalysisSettings? settings = null)
     {
         _netlist = netlist;
@@ -289,32 +294,36 @@ public sealed class LoadpullEngine
         var gridPoints    = new List<GridPointResult>();
         var convergedV    = new Dictionary<int, Complex[,]>();
         var gridPointList = p.Grid.Points;
-
-        for (int gi = 0; gi < gridPointList.Count; gi++)
+        _collectWBondCurrents = true;
+        try
         {
-            control?.Tick();
+            for (int gi = 0; gi < gridPointList.Count; gi++)
+            {
+                control?.Tick();
 
-            var gp    = gridPointList[gi];
-            var gamma = gp.Gamma;
-            var z     = gp.Z;
+                var gp    = gridPointList[gi];
+                var gamma = gp.Gamma;
+                var z     = gp.Z;
 
-            Console.Error.WriteLine(
-                $"[LP] Grid {gi+1}/{gridPointList.Count}: " +
-                $"Γ={gamma.Real:F4}{(gamma.Imaginary >= 0 ? "+" : "")}{gamma.Imaginary:F4}j  " +
-                $"Z={z.Real:F2}{(z.Imaginary >= 0 ? "+" : "")}{z.Imaginary:F2}j Ω");
+                Console.Error.WriteLine(
+                    $"[LP] Grid {gi+1}/{gridPointList.Count}: " +
+                    $"Γ={gamma.Real:F4}{(gamma.Imaginary >= 0 ? "+" : "")}{gamma.Imaginary:F4}j  " +
+                    $"Z={z.Real:F2}{(z.Imaginary >= 0 ? "+" : "")}{z.Imaginary:F2}j Ω");
 
-            Complex[,]? gridSeed = FindNearestSeed(gi, gamma, convergedV, gridPointList);
-            var gpr = RunOneTermination(p, ctx, z, gi, gridSeed);
+                Complex[,]? gridSeed = FindNearestSeed(gi, gamma, convergedV, gridPointList);
+                var gpr = RunOneTermination(p, ctx, z, gi, gridSeed);
 
-            var lastConv = gpr.PinSteps.LastOrDefault(s => s.Converged);
-            if (lastConv is not null)
-                convergedV[gi] = lastConv.V;
+                var lastConv = gpr.PinSteps.LastOrDefault(s => s.Converged);
+                if (lastConv is not null)
+                    convergedV[gi] = lastConv.V;
 
-            gridPoints.Add(gpr);
-            Console.Error.WriteLine(
-                $"[LP]   Stop={gpr.StopReason}  ({gpr.PinSteps.Count} Pin steps, " +
-                $"{gpr.PinSteps.Count(s => s.Converged)} converged)");
+                gridPoints.Add(gpr);
+                Console.Error.WriteLine(
+                    $"[LP]   Stop={gpr.StopReason}  ({gpr.PinSteps.Count} Pin steps, " +
+                    $"{gpr.PinSteps.Count(s => s.Converged)} converged)");
+            }
         }
+        finally { _collectWBondCurrents = false; }
 
         ctx.SweptModel.ClearHarmonicOverride();
         ctx.SrcModel.SetTone(0);
@@ -331,6 +340,7 @@ public sealed class LoadpullEngine
     /// </summary>
     private IReadOnlyDictionary<string, WBondArrayCurrents>? WBondCurrentsOf(HbEngine.SinglePointResult sr, PursuitContext ctx)
     {
+        if (!_collectWBondCurrents) return null;
         var wbonds = WireTemperatureCubes.Instances(_netlist);
         if (!WireTemperatureCubes.AnySolved(wbonds) || sr.BackSolver is not { } back) return null;
         double[] freqs = [.. Enumerable.Range(0, ctx.K + 1).Select(k => k * ctx.HbParams.ToneHz)];

@@ -145,6 +145,21 @@ public sealed class WBondWireTemperatureTests(ITestOutputHelper output) : IDispo
         Assert.Equal(Wire(alone)[0], t[2]);
     }
 
+    /// <summary>A DC current whose only return is a capacitor (open in DC) does not converge: state 3, NaN, and a Messages line
+    /// that names the wBond — a bare 3 beside a NaN read as the temperature solve having failed.</summary>
+    [Fact]
+    public void ACircuitThatDoesNotConverge_IsState3_AndSaysSoByName()
+    {
+        string cnl = DcCnl().Replace("R:R1        b 0  R=1", "C:C1        b 0  C=1e-12");
+        using var nl = Elaborate(cnl);
+        var dc = NonlinearDcEngine.Run(nl);
+        Assert.False(dc.Converged);
+        var ds = DcResultPacker.Pack(dc, nl);
+        Assert.Equal(3.0, Wire(ds, WireTemperatureCubes.StateCube)[0]);
+        Assert.True(double.IsNaN(Wire(ds)[0]));
+        Assert.Single(nl.Warnings, w => w.Contains("wBond 'WB1'") && w.Contains("did not converge"));
+    }
+
     // ── G13 (engine): a DC-blocked array ─────────────────────────────────────────────────────────────────────
 
     private string BlockedCnl(string analysis) => $"""

@@ -2685,3 +2685,26 @@ A scan of every record in `src/` for a public instance property of the record's 
 `PlanarProblem.PerfectGround`, which builds a new problem each time it is read. It is now the method
 `WithPerfectGround()`, which a record does not print. **A computed property returning the record's own type
 is this trap; make it a method.**
+
+## A Term is its Z at DC (2026-10-05, owner decision; overturns Brief H's "inert in DC")
+
+A wBond test bench drove a DC current source through the wires into a Term and nothing else. Both DC engines skipped
+Port/Term outright, so the current had no return: the nodes ran off to ~1e10 V on gmin, most sweep points did not
+converge, and the ones that "converged" carried a third of the current through gmin. The owner ruled that a Term must
+load the circuit outside S-parameters. `PortModel.DcResistance` (since folded into `TerminationAdmittance`) — Re(Z), 50 Ω when unstated, null for Re(Z) ≤ 0 or a Term inside a sub-cell (which the
+elaborator already says is ignored) — is stamped by `NonlinearDcEngine` and `LinearDcEngine` as a conductance to the
+reference node; the 0 V drive branch is still never stamped there.
+
+- **What it reaches:** every DC run with a top-level Term, and the DC pre-pass of an S-parameter run of a nonlinear
+  circuit (the bias point). No hero and no shipped example has a Term on a DC path; two tests did, both with a Term
+  DC-coupled to a biased node and relying on it being open (`BjtIntegrationTests.B4` — collector pulled to 0.14 V and
+  saturated; `SddBranchEquationTests.T7` — bias divider pulled to ~0 V). Each now has the DC block a bench would have.
+  `TermScopingTests`' Brief H gate now asserts the loading, and that a buried Term stays out.
+- **HB too (same day, owner decision).** `HbLinearExtractor.StampInto` — the one place every HB, loadpull and harmonicaRF
+  solve stamps its linear network — loads a top-level Term with 1/Z at every harmonic and mixing product and 1/Re(Z) at
+  k = 0 (`PortModel.TerminationAdmittance`, which both DC engines read at ω = 0). So the HB k = 0 equation and its
+  `NonlinearDcEngine` seed agree again, and an HB small-signal limit matches the S-parameter wave path's 1/Z0 port load.
+  Every test class with a Term in an HB, loadpull or harmonicaRF run passed unchanged (24 classes across Engine,
+  Harmonica, Core and Ui); no hero or shipped example has a Term in one. Gate:
+  `TermScopingTests.HarmonicBalance_ATermIsItsZ_AtEveryHarmonic_AndRealAtDc` (Z = 50+25j: V₁ = I·Z, V₀ = Idc·Re Z).
+

@@ -412,9 +412,15 @@ with a wBond — and of any parametric sweep around one. It is the cube **`WireT
 with the rest of the run. Only **each array's hottest wire is reported, at its hottest point** along its length —
 so with the ends at different temperatures, a gently heated wire reads its **hotter end** until the heat lifts its
 middle above it.
+A loadpull-pursuit run reports it on its follow-on loadpull, so a pursuit with `CreateLoadpullResult` off has none.
 A fixed-temperature wBond still reports its `Temp`, as a reminder that it was fixed. Beside it, `WireTempState`
 says how each number was found: 0 fixed, 1 solved, 2 no steady state, 3 the circuit itself did not converge
-there.
+there. States 2 and 3 leave `WireTemp` blank (NaN), and the Messages panel says which happened.
+
+**A current needs a path back to ground**, and so does its heat: a source driving the wires into an open
+circuit does not converge, and every wBond on that path reads state 3. A `Term` is such a path — its `Z` in
+DC and harmonic-balance runs alike. And a capacitor straight across the wires takes their RF current instead:
+at a few GHz a 1 µF part is microohms, and the wires stay at their end temperatures however hard they are driven.
 
 **What heats a wire** is its share of the DC current plus every harmonic — or, in a two-tone run, every mixing
 product — each at its own skin-effect resistance, time-averaged (peak currents, ½|I|²R′ per harmonic). The

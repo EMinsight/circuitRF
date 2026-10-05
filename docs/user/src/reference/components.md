@@ -426,6 +426,11 @@ An S-parameter port: a numbered, reference-impedance termination where the simul
 measures. `Num` is the port index, auto-assigned at placement; `Z` is the reference impedance. See
 [Pins, Ports & Terms](pins-ports-terms.html) for how it differs from a Pin.
 
+**Outside S-parameters a Term is a load of `Z`** to its reference: its resistance (the real part of `Z`)
+in a DC run, and `Z` at every harmonic in a harmonic-balance or loadpull run. A bias or a current returning
+through it flows, as it would through the instrument it stands for. Put a DC block in front of a Term on a
+biased node, exactly as on a bench. A Term inside a cell is ignored in every analysis.
+
 {{table: components/Term}}
 
 ### Grounded Term (TermG) {#termg}

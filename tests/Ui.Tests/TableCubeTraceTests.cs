@@ -1092,6 +1092,24 @@ public sealed class TableImprovementsTests
         Assert.Equal("2", cell2);
     }
 
+    /// <summary>A category axis that states labels (a wBond's <c>wire array</c>) shows them, not its 0.000 positions.</summary>
+    [Fact]
+    public void ALabelledCategoryAxis_ShowsItsLabels()
+    {
+        var t = MakeBaseTrace();
+        t.CubeName  = "WireTemp";
+        t.Slice     = new[] { new AxisSlice("wire array", AxisRole.KeepAsX, 0) };
+        t.Transform = CubeTransform.None;
+        t.SetCubeData(new double[] { 0, 1 }, complexValues: null, new double[] { 212.2, 125 }, "wire array", "",
+                      PlotType.Table, FreqUnit.GHz, xLabels: ["W1:G1", "W1:G2"]);
+        var plot = MakePlot(t);
+
+        var cols = TableRenderer.BuildColumns(plot);
+
+        Assert.Equal("W1:G1", TableRenderer.FormatColumnCell(cols[0], 0, plot));
+        Assert.Equal("W1:G2", TableRenderer.FormatColumnCell(cols[0], 1, plot));
+    }
+
     [Fact]
     public void Item6_NonNodeAxis_UsesConfiguredFormat()
     {

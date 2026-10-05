@@ -71,7 +71,17 @@ public static class WireTemperatureCubes
                                                       k => session?.Warm(Key(path, thermal.ArrayNames[k])));
             }
             else
+            {
                 result = WBondWireTemperature.Compute(thermal, new double[thermal.ArrayCount], [], [], circuitConverged);
+                // State 3 is said beside the NaN, once per instance per run. The circuit's own non-convergence
+                // message names nodes and residuals, not the wBond, and a WireTemp of NaN beside a state of 3 with
+                // nothing saying why reads as the temperature solve having failed.
+                if (thermal.Spec.Solved && !circuitConverged)
+                    netlist.AddWarningOnce($"wiretemp-circuit:{path}",
+                        $"wBond '{path}': WireTemp is NaN {(session?.Drive is { } d ? $"at {d}" : where)} because the " +
+                        "circuit solve did not converge there, so the current in its wires is not known " +
+                        "(WireTempState 3). See the non-convergence message for where the circuit is unsettled.");
+            }
 
             foreach (var t in result)
             {

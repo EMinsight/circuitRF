@@ -248,12 +248,6 @@ public static class ParametricSweepEngine
         return DataSet.StackSweepAxis(new Axis(sweep.SweepVarName, sweepValues, baseUnit), datasets);
     }
 
-    /// <summary>
-    /// Pads ragged per-frequency loadpull cubes to a uniform shape so they stack. For each (non-metadata)
-    /// cube present in every dataset with a consistent rank, computes the per-axis maximum length across
-    /// datasets and rebuilds any shorter cube at that shape, filling the new cells (and extended index
-    /// axes) with NaN. Cubes already uniform — and the common non-loadpull case — pass through unchanged.
-    /// </summary>
     /// <summary>A sweep point as a warning names it: <c>Pin = 27.5 dBm</c>, in the unit the sweep was stated in, after the
     /// outer point's own when this sweep is nested.</summary>
     private static string DriveText(string name, double baseValue, string unit, string baseUnit, string? outer)
@@ -264,6 +258,12 @@ public static class ParametricSweepEngine
         return outer is null ? here : $"{outer}, {here}";
     }
 
+    /// <summary>
+    /// Pads ragged per-frequency loadpull cubes to a uniform shape so they stack. For each (non-metadata)
+    /// cube present in every dataset with a consistent rank, computes the per-axis maximum length across
+    /// datasets and rebuilds any shorter cube at that shape, filling the new cells (and extended index
+    /// axes) with NaN. Cubes already uniform — and the common non-loadpull case — pass through unchanged.
+    /// </summary>
     private static List<DataSet> PadRaggedGridsToCommon(List<DataSet> datasets)
     {
         if (datasets.Count < 2) return datasets;

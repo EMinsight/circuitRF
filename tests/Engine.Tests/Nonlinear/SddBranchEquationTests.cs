@@ -218,6 +218,9 @@ public class SddBranchEquationTests(ITestOutputHelper output)
     /// <c>gmin·R</c> away from the source — at 10 MΩ that is 1e-5, which moves <c>dQ/dv</c> by 1e-5
     /// and is measurable here. 10 kΩ puts it at 1e-8. Its conductance adds to the REAL part of Y and
     /// leaves the susceptance alone, which is why it can be made small freely.</para>
+    ///
+    /// <para>The 1 F <c>CBLK</c> keeps the Port out of the bias: a Port is its 50 Ω at DC (since 2026-10-05),
+    /// which against the 10 kΩ feed would hold the node near 0 V. At 1 GHz its reactance is 1.6e-10 Ω.</para>
     /// </summary>
     [Theory]
     [InlineData(0.0)]
@@ -229,7 +232,8 @@ public class SddBranchEquationTests(ITestOutputHelper output)
         double freq = 1e9, omega = 2 * Math.PI * freq;
 
         string cnl = $"""
-            Port:P1  p 0  Num=1 Z=50 Ohm
+            Port:P1  pp 0  Num=1 Z=50 Ohm
+            C:CBLK   pp p  C=1
             Vdc:VB   b 0  Vdc={bias.ToString("R", System.Globalization.CultureInfo.InvariantCulture)} V
             R:RB     b p  R=1e4 Ohm
             SDD:E1   p mid  p 0  V[1]=_v2-({C0:R}*_v2+({A:R})*_v2^3/3)/{K:R}

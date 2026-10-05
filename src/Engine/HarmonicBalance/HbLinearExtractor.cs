@@ -649,8 +649,17 @@ public sealed class HbLinearExtractor
         {
             if (ec.IsNonlinear)       continue;  // linear partition only
             if (ec.Model is MutualInductanceModel) continue;
-            // Term/Port branches are driven ports for S-parameter analysis only; inert in HB.
-            if (ec.Model is PortModel or TermModel) continue;
+            // A Term/Port's 0 V branch is the S-parameter engine's drive and is never stamped here. What
+            // harmonic balance sees is the termination: 1/Z to its reference at every harmonic and mixing
+            // product, 1/Re(Z) at DC — the same operating point NonlinearDcEngine seeds this solve from
+            // (PortModel.TerminationAdmittance). Inert until 2026-10-05: a current whose only return was a
+            // Term drove an open circuit.
+            if (ec.Model is PortModel or TermModel)
+            {
+                if (PortModel.TerminationAdmittance(ec, omega) is { } yPort)
+                    mna.AddAdmittance(ec.Nodes[0], ec.Nodes[1], yPort);
+                continue;
+            }
 
             if (zeroDrive && IsIndependentSource(ec))
                 ec.Stamp(new ZeroDriveMna(mna), omega);

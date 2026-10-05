@@ -263,7 +263,8 @@ Ports are declared by `Port`/`Term` components, each carrying a port number and 
 
 **Scoping rule (Brief H):** `Port`/`Term` branches are **driven ports only in the S-parameter (driven-port) analysis, and only at the analysis's top schematic** (single-segment `InstancePath`, i.e. no `.`). Specifically:
 
-- **In DC/AC/HB:** `Port`/`Term` components are **inert** — they contribute no branch, no short, no load to the MNA. A `Port` at a DC-biased node does not short or load it.
+- **In DC** (`NonlinearDcEngine`, and railRF's `LinearDcEngine`): a top-level `Port`/`Term` is a **resistor of Re(Z)** to its reference node (`PortModel.TerminationAdmittance` at ω = 0) — never its 0 V drive branch, which would short the node. Until 2026-10-05 it was inert (open), which left a current whose only return was a Term driving nothing: the solve ran off to ~1e10 V on gmin. Re(Z) ≤ 0 stays inert. This is also the DC pre-pass of an S-parameter run of a nonlinear circuit, whose ports load the network with Z0 at every other frequency already.
+- **In HB** (`HbLinearExtractor.StampInto`, which every single-, two- and multi-tone, loadpull and harmonicaRF solve extracts through): a top-level `Port`/`Term` is an admittance **1/Z at every harmonic and mixing product, and 1/Re(Z) at k = 0** (`PortModel.TerminationAdmittance`) — the same k = 0 the `NonlinearDcEngine` seed has, and the same 1/Z0 the S-parameter wave path loads a port with, so an HB run's small-signal limit agrees with the S-parameters of the same schematic. Owner decision 2026-10-05; inert before.
 - **In S-parameter analysis:** `Port`/`Term` components stamp their 0 V driven branch **only when at the testbench top** (`InstancePath` has no `.`). A `Port`/`Term` inside an instantiated sub-cell (dotted path) is also inert and emits a design-rule warning.
 - **Reusable cells must use Pins, never Terms.** The linter (run at elaboration) flags Terms in sub-cells. See `docs/design/ports-pins-and-terms.md`.
 

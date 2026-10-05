@@ -140,7 +140,8 @@ public sealed class PinStepResult
     // ── wBond array currents (brief-wbond-wire-temperature R-wbt-4a) ─────────
     /// <summary>Each solved-temperature wBond's array currents at this step, by instance path — read from the step's own
     /// back-solve while it is in hand, so the temperature solve after the ladder needs no second HB solve. Null when the netlist
-    /// solves no wire temperature or the step did not converge.</summary>
+    /// solves no wire temperature, the step did not converge, or it was solved outside <c>LoadpullEngine.Run</c> (a pursuit's
+    /// search, which reads none).</summary>
     public IReadOnlyDictionary<string, WBondArrayCurrents>? WBondCurrents { get; init; }
 
     // ── Convergence ──────────────────────────────────────────────────────────

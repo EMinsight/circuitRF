@@ -138,6 +138,9 @@ failure (it would *short* the node). Resolution:
    analyses a Term should be **inert (open)**, or optionally present `Z` as a termination if the
    user explicitly wants a realistically-terminated bias point. Until that lands, keep Terms in
    S-param testbenches only.
+   **Decided 2026-10-05 (owner): outside S-parameters a top-level Term is its `Z`** — Re(Z) to its
+   reference node at DC, Z at every harmonic in harmonic balance (`PortModel.TerminationAdmittance`). Inert
+   left a current whose only return was a Term driving an open circuit. See `linear-engine.md`.
 
 ---
 

@@ -224,10 +224,16 @@ namespace CircuitRF.Render.DataDisplay
             }
             else if (keptDims.Count == 2)
             {
-                // No explicit family → positional convention: last kept axis = X; earlier = Family.
-                int fDim = keptDims[0];
+                // No explicit family → positional convention: last kept axis = X; earlier = Family —
+                // UNLESS the last is a category axis (a wBond's `wire array`, a DC `node`) and the earlier
+                // is not. A sweep stacks its axis IN FRONT, so a swept `WireTemp[IDC, wire array]` read
+                // positionally plots along the array names with one curve per sweep point: 101 table
+                // columns of a single number each. The categories are the curves; the sweep is the X.
+                int fDim = keptDims[0], xDim = keptDims[1];
+                if (IsCategoryAxis(cube.Axes[xDim]) && !IsCategoryAxis(cube.Axes[fDim]))
+                    (fDim, xDim) = (xDim, fDim);
                 slice[fDim] = slice[fDim] with { Role = AxisRole.FamilyIterate };
-                // slice[keptDims[^1]] stays KeepAsX
+                slice[xDim] = slice[xDim] with { Role = AxisRole.KeepAsX };
             }
             else
             {
@@ -237,6 +243,16 @@ namespace CircuitRF.Render.DataDisplay
 
             return true;
         }
+
+        /// <summary>
+        /// An axis whose entries are NAMED things rather than points along a quantity: it states a label for
+        /// every entry and is not spectral (frequency, harmonic order and a two-tone product carry labels too,
+        /// and are exactly what a curve runs along).
+        /// </summary>
+        private static bool IsCategoryAxis(Axis axis)
+            => axis.Labels is { Length: > 0 } l && l.Length == axis.Length
+               && axis.Name is not ("freq" or "harmonic" or "mixIndex")
+               && !axis.Unit.EndsWith("Hz", StringComparison.Ordinal);
 
         /// <summary>
         /// The transform-name table, exposed because the <c>plot</c> verb's <c>y=</c> has to reach

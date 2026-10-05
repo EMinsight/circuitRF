@@ -40,6 +40,14 @@ namespace CircuitRF.Render.DataDisplay
         public double[]     XValues = Array.Empty<double>();  // XAxis: sorted group X; TraceValue: same ref
         public bool         IsFreqUnit;         // XAxis only
         public bool         IsNodeAxis;         // XAxis only: true when axis name is "node" → render as integer
+
+        /// <summary>
+        /// XAxis only: the axis' own label for each X value, when it states one — what a CATEGORY axis
+        /// (a DC node, a wBond's <c>wire array</c>, an operating-point variable) is called. Its values are
+        /// only positions, and a column of 0.000, 1.000 says nothing about which row is which. Null for an
+        /// axis with no labels, and for a frequency axis, whose number is the point.
+        /// </summary>
+        public Dictionary<double, string>? XLabels;
         public int          FamilyCurveIndex = -1; // TraceValue only: ≥0 = curve k of a family trace
 
         /// <summary>
@@ -580,6 +588,7 @@ namespace CircuitRF.Render.DataDisplay
                 string?  unit;
                 double[] raw;
                 bool     isFamilyPath = false;
+                Dictionary<double, string>? xLabels = null;
 
                 if (trace.IsCubeBound && trace.IsFamily && trace.FamilyCurves.Count > 0
                          && trace.CubeXValues is { } fxs)
@@ -589,6 +598,7 @@ namespace CircuitRF.Render.DataDisplay
                     raw      = new double[fxs.Count];
                     for (int i = 0; i < fxs.Count; i++) raw[i] = fxs[i];
                     isFamilyPath = true;
+                    xLabels  = CategoryLabels(axisName, raw, trace.CubeXLabels, unit);
                 }
                 else if (trace.IsCubeBound && trace.CubeXValues is { } xs)
                 {
@@ -596,6 +606,7 @@ namespace CircuitRF.Render.DataDisplay
                     unit     = trace.CubeXUnit;
                     raw      = new double[xs.Count];
                     for (int i = 0; i < xs.Count; i++) raw[i] = xs[i];
+                    xLabels  = CategoryLabels(axisName, raw, trace.CubeXLabels, unit);
                 }
                 else if (trace.IsCubeBound)
                 {
@@ -650,6 +661,7 @@ namespace CircuitRF.Render.DataDisplay
                         IsFreqUnit      = isFreq,
                         IsNodeAxis      = isNode,
                         PairByIndex     = pairByIndex,
+                        XLabels         = xLabels,
                     });
                     currentXArray = sorted;
                 }
@@ -759,6 +771,8 @@ namespace CircuitRF.Render.DataDisplay
 
             if (col.Kind == TableColKind.XAxis)
             {
+                if (col.XLabels is not null && col.XLabels.TryGetValue(xVal, out var label))
+                    return label;
                 if (col.IsNodeAxis)
                     return ((long)Math.Round(xVal)).ToString(System.Globalization.CultureInfo.InvariantCulture);
                 return col.IsFreqUnit
@@ -783,6 +797,21 @@ namespace CircuitRF.Render.DataDisplay
             return trace.IsCubeBound
                 ? FormatCubeCellAt(trace, xVal)
                 : FormatTraceCell(trace, xVal);
+        }
+
+        /// <summary>
+        /// X value → label for a category axis: one label per value, every value distinct, and no frequency unit
+        /// (a frequency, or a two-tone product folded onto its frequency, is read by its number). Null otherwise.
+        /// </summary>
+        private static Dictionary<double, string>? CategoryLabels(string axisName, double[] raw, IReadOnlyList<string>? labels,
+                                                                  string? unit)
+        {
+            if (labels is null || labels.Count != raw.Length || raw.Length == 0 || IsFreqUnit(unit)
+                || axisName is Trace.MixIndexAxisName or Trace.HarmonicAxisName) return null;
+            var map = new Dictionary<double, string>(raw.Length);
+            for (int i = 0; i < raw.Length; i++)
+                if (string.IsNullOrEmpty(labels[i]) || !map.TryAdd(raw[i], labels[i])) return null;
+            return map;
         }
 
         private static string FormatSummaryCell(SummaryColumnData sc, int rowIndex)

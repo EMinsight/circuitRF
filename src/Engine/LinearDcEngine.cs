@@ -124,10 +124,15 @@ public static class LinearDcEngine
             bool mutual = ec.Model is MutualInductanceModel;
             if (mutual != (pass == 1)) continue;
 
-            // A Term or a Port is a DRIVEN port for S-parameter analysis and a 0 V source anywhere
-            // else — which at DC would short the very drop being measured. Inert here, as it is in
-            // NonlinearDcEngine's own linear pass.
-            if (ec.Model is PortModel or TermModel) continue;
+            // A Term or a Port's 0 V branch is the S-parameter engine's drive — at DC it would short the
+            // very drop being measured. What DC sees is the termination, Re(Z) to its reference node, as
+            // in NonlinearDcEngine's own linear pass (PortModel.TerminationAdmittance).
+            if (ec.Model is PortModel or TermModel)
+            {
+                if (PortModel.TerminationAdmittance(ec, 0.0) is { } yPort)
+                    mna.AddAdmittance(ec.Nodes[0], ec.Nodes[1], yPort);
+                continue;
+            }
 
             int before = mna.BranchCount;
             try { ec.Stamp(mna, omega: 0.0); }

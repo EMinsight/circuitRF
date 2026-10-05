@@ -213,9 +213,12 @@ public sealed class BjtIntegrationTests
     [Fact]
     public void B4_ALinearisedStageHasGain_AndACutOffOneDoesNot()
     {
+        // COUT blocks DC from T2: a Term is its 50 ohm at DC (since 2026-10-05), and on the collector unblocked
+        // it pulls the 1 kohm load to ~0.14 V and saturates the stage, as it would on any bench.
         string Stage(double rb) => $"""
             Term:T1  in 0  Num=1 Z=50
-            Term:T2  c  0  Num=2 Z=50
+            Term:T2  out 0  Num=2 Z=50
+            C:COUT   c out   C=10e-9
             Vdc:VCC  vcc 0  Vdc=3
             R:RBIAS  vcc b   R={rb}
             R:RC     vcc c   R=1e3

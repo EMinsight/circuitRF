@@ -88,11 +88,12 @@ public partial class ParameterEditorViewModel
     internal const string FixedTempParameter = "FixedTemp";
 
     /// <summary>Whether the instance's temperature is fixed. ABSENT is fixed: an instance saved before the
-    /// solved mode existed keeps the answer it had (D4). A new placement writes "false".</summary>
+    /// solved mode existed keeps the answer it had (D4). A new placement writes "false". Every false spelling
+    /// the factory reads ("off", "no", "0") unchecks the box, so the box never disagrees with the run.</summary>
     private bool WBondFixedTemp()
     {
         string v = WBondParameterValue(FixedTempParameter).Trim();
-        return v.Length == 0 || !v.Equals("false", StringComparison.OrdinalIgnoreCase) && v != "0";
+        return !CircuitRF.Core.Devices.BooleanParameter.FalseSpellings.Contains(v, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>

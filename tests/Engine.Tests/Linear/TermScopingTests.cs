@@ -8,8 +8,8 @@ namespace CircuitRF.Engine.Tests.Linear;
 /// <summary>
 /// Gates for Brief H — Term scoping and engine-stamping refinement.
 ///
-/// Gate 1: Term/Port is inert (open) in DC analysis — the port node is neither shorted
-///         nor loaded. S-parameter analysis is unchanged.
+/// Gate 1: a Term/Port at DC is its Re(Z) to its reference node — not shorted by its S-parameter
+///         drive branch, and (since 2026-10-05) not open either. S-parameter analysis is unchanged.
 /// Gate 2: Only top-level Terms become S-param ports; a Term buried inside an
 ///         instantiated sub-cell is inert, doesn't add a port, and emits a warning.
 /// Gate 3: Linter — Terms in cells, stray top-level Pins, duplicate/missing Num.
@@ -30,51 +30,74 @@ public class TermScopingTests
     private static Complex Sij(RfCore.Data.DataSet ds, int r, int c, int fi = 0) =>
         (Complex)ds["S"][fi, r, c];
 
-    // ── Gate 1a: Term is inert in DC ─────────────────────────────────────────
+    // ── Gate 1a: a Term is its Z at DC (overturned 2026-10-05: it was inert) ────────────────────────────
 
     /// <summary>
-    /// Circuit: V1=5V → R1=100Ω → n2; Port:P1 at n2; R2=200Ω from n2 to ground.
-    /// If Port stamps a 0V branch (old behaviour), n2 is shorted → V(n2) = 0.
-    /// If Port is inert (correct behaviour), voltage divider → V(n2) = 5·200/300 = 10/3.
+    /// Circuit: V1=5V → R1=100Ω → n2; Port:P1 (Z=50Ω) at n2; R2=200Ω from n2 to ground.
+    /// A Term terminates: at DC it is Re(Z) to its reference, never its S-parameter 0 V drive branch (a short)
+    /// and no longer open — open, a current whose only return was a Term drove nothing and DC did not converge.
+    /// V(n2) = 5 × (50‖200) / (100 + 50‖200) = 5 × 40/140.
     /// </summary>
-    [Fact]
-    public void DcAnalysis_TermIsInert_PortNodeNotShorted()
+    [Theory]
+    [InlineData("Port:P1")]
+    [InlineData("Term:T1")]
+    public void DcAnalysis_ATermIsItsZ_NotAShortAndNotOpen(string term)
     {
-        var (nl, dc) = RunDc(@"
+        var (nl, dc) = RunDc($@"
 V:V1   n1 0   V=5
 R:R1   n1 n2  R=100 Ohm
-Port:P1  n2 0  Num=1 Z=50 Ohm
+{term}  n2 0  Num=1 Z=50 Ohm
 R:R2   n2 0   R=200 Ohm
 ");
         Assert.True(dc.Converged, "DC solver did not converge");
+        double v2 = dc.NodeVoltages[nl.Nodes.IndexOf("n2") - 1];
+        Assert.Equal(5.0 * 40 / 140, v2, 1e-9);
+    }
 
-        int nodeIdx = nl.Nodes.IndexOf("n2");
-        double v2 = dc.NodeVoltages[nodeIdx - 1];
+    /// <summary>A Term inside an instantiated sub-cell is ignored (the elaborator says so) — at DC as well.</summary>
+    [Fact]
+    public void DcAnalysis_ABuriedTerm_StaysOutOfTheCircuit()
+    {
+        var (nl, dc) = RunDc(@"
+define Stage (p q)
+  R:R1  p q  R=100 Ohm
+  Port:BuriedTerm  q 0  Num=2 Z=50 Ohm
+end
 
-        // Voltage divider: V(n2) = 5 × 200 / (100 + 200) = 10/3 ≈ 3.333 V
-        Assert.True(Math.Abs(v2 - 10.0 / 3) < 1e-6,
-            $"V(n2) = {v2:G6}, expected ≈ 3.333 V; Term must be inert (open) in DC, not a short.");
+V:V1   n1 0   V=5
+Stage:X1  n1 n2
+R:R2   n2 0   R=200 Ohm
+");
+        Assert.True(dc.Converged, "DC solver did not converge");
+        Assert.Equal(10.0 / 3, dc.NodeVoltages[nl.Nodes.IndexOf("n2") - 1], 1e-9);
     }
 
     /// <summary>
-    /// Same circuit with a Term: component (not Port:) — also must be inert in DC.
+    /// Harmonic balance loads a Term too (2026-10-05): a current source into a Term and nothing else reads
+    /// V = I·Z at the fundamental and V = Idc·Re(Z) at DC — the DC point NonlinearDcEngine seeds the solve from.
+    /// The cubic SDD is only there to give the solve a nonlinear interface; at these levels it carries ~1e-10 A.
     /// </summary>
     [Fact]
-    public void DcAnalysis_TermComponentIsInert_PortNodeNotShorted()
+    public void HarmonicBalance_ATermIsItsZ_AtEveryHarmonic_AndRealAtDc()
     {
-        var (nl, dc) = RunDc(@"
-V:V1   n1 0   V=5
-R:R1   n1 n2  R=100 Ohm
-Term:T1  n2 0  Num=1 Z=50 Ohm
-R:R2   n2 0   R=200 Ohm
-");
-        Assert.True(dc.Converged, "DC solver did not converge");
+        var (lib, tb) = new CnlReader().Read("""
+            I_1Tone:I1  n 0  I=0.1  Idc=0.02  Freq=1e9
+            Port:P1     n 0  Num=1  Z=50+25j
+            SDD:D1      n 0  Ports=1  I[1,0]=1e-12*_v1^3
+            analysis HB1 type=hb Tone=1e9 MaxHarm=3
+            """);
+        var nl = new Elaborator(lib).Elaborate(tb);
+        var p  = CircuitRF.Engine.HarmonicBalance.HbEngine.Resolve(
+            tb.Analyses.OfType<CircuitRF.Core.Design.HarmonicBalanceAnalysis>().First(), nl.ResolvedGlobals);
+        var run = new CircuitRF.Engine.HarmonicBalance.HbEngine(nl, tb).Run(p);
+        Assert.True(run.Converged);
 
-        int nodeIdx = nl.Nodes.IndexOf("n2");
-        double v2 = dc.NodeVoltages[nodeIdx - 1];
-
-        Assert.True(Math.Abs(v2 - 10.0 / 3) < 1e-6,
-            $"V(n2) = {v2:G6}, expected ≈ 3.333 V; TermModel must be inert in DC.");
+        var v = run.DataSet["V"];
+        int n = Array.IndexOf(v.Axes.First(a => a.Name == "node").Labels!, "n");
+        var v0 = (Complex)v[n, 0];
+        var v1 = (Complex)v[n, 1];
+        Assert.Equal(0.02 * 50, v0.Real, 1e-6);
+        Assert.True((v1 - 0.1 * new Complex(50, 25)).Magnitude < 1e-6 * v1.Magnitude, $"V1 = {v1}");
     }
 
     // ── Gate 1b: S-param path is unchanged for top-level Terms ────────────────

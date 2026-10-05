@@ -328,3 +328,19 @@ DC, HB, loadpull and pursuit run; the solver is `Thermal/WireConductiveBalance.c
 Pursuit carries `WireTemp` through its follow-on loadpull, the only place it has a Pout layout; a pursuit run with
 `CreateLoadpullResult=false` has neither cube. The `New Material…` record already has a ThermalK field (blank, since it
 copies no metal; Duplicate copies it), so R-wbt-1c needed no code.
+
+### Review follow-up (2026-10-05)
+
+- **A pursuit's search paid for wBond currents it never read.** `LoadpullEngine.SolveAt` read every solved wBond's
+  branch rows (K+1 full-network back-solves) on every Pin step, and the pursuit's search calls `RunOneTermination`
+  directly, query after query, without ever building `WireTemp`. Collection is now on only inside `LoadpullEngine.Run`
+  (`_collectWBondCurrents`), which is also what the follow-on loadpull is, so the pursuit's `WireTemp` is unchanged.
+- **The Inspector's checkbox read `FixedTemp` with its own spelling list** (`false`/`0` only) while the factory reads
+  `BooleanParameter`'s (`off`/`no` too): `FixedTemp=off` ran solved under a checked box. It reads
+  `BooleanParameter.FalseSpellings` now.
+- **The GroundPlane-as-a-word branch had also landed in `ResolveMatchParameters`**, which has no GroundPlane; removed.
+- **State 3 now says so in the Messages panel** (overturning D5's "no message of its own"). A DC run whose only return
+  for a current source was a `Term` — open in DC — did not converge; the wBond showed `WireTemp` NaN beside
+  `WireTempState` 3, and the circuit's own non-convergence message names nodes, not the wBond, so the two were not
+  connected. `WireTemperatureCubes.Compute` warns once per solved instance per run, naming the point.
+  Gate: `WBondWireTemperatureTests.ACircuitThatDoesNotConverge_IsState3_AndSaysSoByName`.

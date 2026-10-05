@@ -110,7 +110,7 @@ forms each device's bias `PortVoltages` with the same node-pair convention used 
 `bias[p] = NodeV(nodes[2p]) − NodeV(nodes[2p+1])`.
 
 **Source-free / no-DC-bias circuits (the common S-param case).** A typical S-parameter testbench has only
-ports (inert at DC — the DC engine skips Port/Term) plus passives and the nonlinear device(s), i.e. no
+ports (each its Re(Z) to ground at DC since 2026-10-05, and Z at every HB harmonic; inert before) plus passives and the nonlinear device(s), i.e. no
 independent DC source. This does **not** fail. With the default `ConductanceRegularization = IfNecessary`,
 the DC engine adds `Gmin` (1e-12 S) to every node, so the source-free system is non-singular and the
 cold-start `x = 0` is already the exact solution (caps are opens at DC, nonlinear-cap `I(0)=0`) — the

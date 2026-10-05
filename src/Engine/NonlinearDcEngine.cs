@@ -315,8 +315,16 @@ public sealed class NonlinearDcEngine
             // in _gAug with everything else. Only the right-hand side moves with the solution, and
             // that is added per iteration in BuildResidualAndJacobian.
             if (ec.Model.Kind != ModelKind.Linear && ec.Model.BranchEquationCount == 0) continue;
-            // Term/Port branches are driven ports for S-parameter analysis only; inert in DC.
-            if (ec.Model is PortModel or TermModel) continue;
+            // A Term/Port's 0 V branch is the S-parameter engine's drive, not a DC element. What a DC run
+            // sees is the termination itself: Re(Z) to the port's reference node (PortModel.TerminationAdmittance).
+            // It was skipped outright until 2026-10-05, which left a current whose only return was a Term
+            // driving an open circuit — the solve ran off to ~1e10 V on gmin and did not converge.
+            if (ec.Model is PortModel or TermModel)
+            {
+                if (PortModel.TerminationAdmittance(ec, 0.0) is { } yPort)
+                    mna.AddAdmittance(ec.Nodes[0], ec.Nodes[1], yPort);
+                continue;
+            }
 
             // WHICH COMPONENT OWNS WHICH BRANCH ROW. A branch unknown has no node name to fall back
             // on, so without this a failure can only call it "branch unknown #60" — which is an
@@ -994,7 +1002,7 @@ public sealed class NonlinearDcEngine
                 return new DcResult(nvOut, false, totalIters,
                                     fOverrun.Length > 0 ? L2(fOverrun) : double.PositiveInfinity, trace,
                                     ExtractProbeCurrents(x), fOverrun, _branchOwners)
-            { WBondArrayCurrents = ExtractWBondArrayCurrents(x) };
+                    { WBondArrayCurrents = ExtractWBondArrayCurrents(x) };
             }
 
             double nextFrac = Math.Min(targetFrac + stepFrac, 1.0);
@@ -1024,7 +1032,7 @@ public sealed class NonlinearDcEngine
                 return new DcResult(nv, false, totalIters,
                                     fFail.Length > 0 ? L2(fFail) : double.PositiveInfinity, trace,
                                     ExtractProbeCurrents(x), fFail, _branchOwners)
-            { WBondArrayCurrents = ExtractWBondArrayCurrents(x) };
+                    { WBondArrayCurrents = ExtractWBondArrayCurrents(x) };
             }
         }
 
