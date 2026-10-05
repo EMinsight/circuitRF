@@ -172,6 +172,7 @@ public partial class WorkspaceViewModel
             {
                 ShowToolPanel(CircuitRF.Ui.Docking.DockPanelIds.Properties);
                 _factory.PropertiesTool?.SetActiveC3d(vm);
+                _propertiesShownFor = doc;
             };
             vm.PropertyChanged += (_, e) =>
             {

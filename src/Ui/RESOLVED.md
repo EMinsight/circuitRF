@@ -1,5 +1,36 @@
 # src/Ui — resolved briefs (detail, off the CLAUDE.md growth path)
 
+## Properties Inspector stuck after Project Tree use — fixed for every document type at once (owner, 2026-10-05)
+
+Owner report: after deleting `.clay` files in the Project Tree, clicking a component in an already-open
+schematic never updated the Inspector, whatever else was clicked, until the workspace was reopened; the
+same had been seen in a `.c3d` view. Fourth report of this family (layout 2026-08-25, symbol 2026-08-17,
+the tool-panel guard 2026-08-29) — each earlier fix patched one editor.
+
+**The hole.** A Project Tree selection BORROWS the Properties panel, and every `PropertiesTool` setter
+detaches every other context (`EditorVm.SetContext(null)`, `ClearC3d()`). The document never leaves
+`DocumentDock.ActiveDockable`, so `ActivateDocument` never re-runs. Three things then failed together:
+- `OnProjectTreeSelectionChanged`'s non-cell branch called `SetActiveCell(null)` — a folder click, or the
+  null selection a tree REFRESH leaves after a delete, blanked the panel with no click involved at all.
+- `OnSchematicCanvasInteracted` stated the schematic "has no such hole" and re-asserted nothing.
+- Dock's `FocusedDockableChanged` — which does fire when focus comes back from the tree — returned early
+  on "same pane, same document". The `.c3d` editor had no canvas hook, so this was its only signal.
+
+**The fix is a record, not a fifth per-editor hook.** The Properties branch of `ActivateDocument` is now
+`RoutePropertiesPanel`, which stores the document it routed for in `_propertiesShownFor`; the tree's
+borrows (cell, file info, railRF) set it to null. `ReclaimPropertiesPanel` re-routes when the user is back
+in the active document — from the focus signal's same-document branch (every document type) and the
+schematic canvas — and a tree selection with nothing to show now RETURNS a borrowed panel instead of
+blanking one that follows a document. The layout/symbol canvas handlers call `RoutePropertiesPanel` too,
+so the record stays true after their repairs.
+
+**Latent ordering trap, also closed.** `ProjectTreeTool.SelectedItem`'s generated setter runs
+`OnTreeSelectionChanged` (via the partial `OnSelectedItemChanged`) BEFORE raising `PropertyChanged`,
+which is what reaches `OnProjectTreeSelectionChanged` — so the old `SetActiveCell(null)` erased the File
+info panel that had just been shown whenever a schematic was active. `_treeSelectionBorrowedProperties`
+lets the second handler see the first one's borrow. Gate: `tests/Ui.Tests/PropertiesPanelTreeBorrowTests.cs`
+(a real `WorkspaceViewModel`; both tests fail with the repairs disabled).
+
 ## Generated cells 1 — the archive carries the artwork it was drawn with (2026-09-28, brief-generated-cells-1-in-the-archive)
 
 **§1, measured before the default was chosen.** The shipped PDK PCells example's four generators, 468

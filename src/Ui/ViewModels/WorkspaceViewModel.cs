@@ -553,7 +553,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             if (args.Dockable is not IDocument document || document.Owner is not IDock pane) return;
             if (ReferenceEquals(pane, _activeDocumentPane)
-                && ReferenceEquals(document, _lastActivatedDocument)) return;
+                && ReferenceEquals(document, _lastActivatedDocument))
+            {
+                // Same document, but the Project Tree may have borrowed the Properties panel since —
+                // this click (Dock's tunnel handler sees it before any editor does) is the user back
+                // in the document, for every document type including those with no canvas hook.
+                ReclaimPropertiesPanel(document);
+                return;
+            }
 
             _activeDocumentPane = pane;
             ActivateDocument(document, requestActivationFocus: false);
@@ -11634,10 +11641,15 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (selected?.Kind != NodeKind.Cell)
         {
-            // Don't clobber the inspector when a cell document tab or data display is active.
-            var activeDockable = _factory.DocumentDock?.ActiveDockable;
-            if (activeDockable is not CellParameterEditorDocument && activeDockable is not DataDisplayDocument)
-                _factory.PropertiesTool?.SetActiveCell(null);
+            // A file-info or railRF panel was just put up for this node by OnTreeSelectionChanged.
+            if (_treeSelectionBorrowedProperties) return;
+
+            // Anything else gives a borrowed panel BACK to the document being worked on. It used to
+            // call SetActiveCell(null) instead, which detached a schematic's or a 3D view's inspector
+            // from its view model with that document still active — a folder click, or the selection
+            // a tree refresh clears after files are deleted, and the inspector stopped following the
+            // canvas until the workspace was reopened. See RoutePropertiesPanel.
+            ReturnPropertiesPanelFromTree();
             return;
         }
 
@@ -11655,6 +11667,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
             var vm = new CellParameterEditorViewModel(selected.Name, editModel);
             _factory.PropertiesTool?.SetActiveCell(vm);
+            _propertiesShownFor = null;   // borrowed — ReclaimPropertiesPanel gives it back
         }
         catch { /* don't surface inspector errors for tree clicks */ }
     }
@@ -12644,7 +12657,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         MarkActiveDocumentPane(doc);
         _factory.SetActiveDockable(doc);
-        _factory.PropertiesTool?.SetActiveSymbolEditor(doc.ViewModel);
+        RoutePropertiesPanel(doc);
         SetActiveUndoTarget(doc);
         ActiveSaveScope = SaveScope.SingleDoc;
     }
@@ -12657,15 +12670,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void HookSchematicCanvasFocus(SchematicDocument doc)
         => doc.CanvasInteracted += () => OnSchematicCanvasInteracted(doc);
 
-    /// <summary>The user just clicked into this schematic's own canvas. Deliberately narrower than the
-    /// layout and symbol handlers: those exist to repair a Properties panel a project-tree click had
-    /// re-routed, and the schematic's Properties routing has no such hole. What it must do is say
-    /// which document PANE is current, because with a side-by-side split that is not something any
-    /// dock's ActiveDockable will report — the tab was already active in its own pane.</summary>
+    /// <summary>The user just clicked into this schematic's own canvas. It must say which document
+    /// PANE is current, because with a side-by-side split that is not something any dock's
+    /// ActiveDockable will report — the tab was already active in its own pane. It also reclaims a
+    /// Properties panel the Project Tree borrowed: this handler used to claim the schematic's routing
+    /// had no such hole, and it had exactly the one the layout and symbol editors were fixed for
+    /// (see <see cref="RoutePropertiesPanel"/>).</summary>
     private void OnSchematicCanvasInteracted(SchematicDocument doc)
     {
         MarkActiveDocumentPane(doc);
         _factory.SetActiveDockable(doc);
+        ReclaimPropertiesPanel(doc);
         SetActiveUndoTarget(doc);
 
         // Sets ActiveSaveScope from the newly-resolved document AND refreshes every File-menu
@@ -12712,7 +12727,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         MarkActiveDocumentPane(doc);
         _factory.SetActiveDockable(doc);
-        ActivateLayoutDocumentForProperties(doc);
+        RoutePropertiesPanel(doc);
         SetActiveUndoTarget(doc);
         ActiveSaveScope = SaveScope.SingleDoc;
     }
@@ -13658,6 +13673,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// <inheritdoc/>
     public void OnTreeSelectionChanged(ProjectTreeNodeViewModel? node)
     {
+        _treeSelectionBorrowedProperties = false;
+
         // R-rail7-10 — a selected .crail shows its own compact summary and an Open railRF… button,
         // following the Match and wBond panels. Checked BEFORE the file-info branch: a .crail scans
         // as its own NodeKind, but one bookmarked as a Known File would otherwise fall into the
@@ -13682,6 +13699,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                     _railPanelWired = true;
                 }
                 panel.SetActiveRail(railNode.AbsolutePath);
+                _propertiesShownFor = null;   // borrowed — see RoutePropertiesPanel
+                _treeSelectionBorrowedProperties = true;
             }
             return;
         }
@@ -13691,6 +13710,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 || (node.Kind == NodeKind.KnownFile && File.Exists(node.AbsolutePath))))
         {
             _factory.PropertiesTool?.SetActiveFileInfo(new FileInfoInspectorViewModel(node.AbsolutePath));
+            _propertiesShownFor = null;   // borrowed — see RoutePropertiesPanel
+            _treeSelectionBorrowedProperties = true;
             return;
         }
         // For all other node kinds, leave the current document-driven context intact.
@@ -15820,6 +15841,95 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private IDockable? _lastActivatedDocument;
 
     /// <summary>
+    /// Routes the Properties panel to <paramref name="activeDockable"/>'s own inspector — data display,
+    /// symbol editor, cell editor, layout, wBond, 3D view or schematic — and records that it did.
+    ///
+    /// <para><b>Why the record exists.</b> A Project Tree selection BORROWS this panel (a cell's
+    /// properties, a file's info, a railRF summary), and every <see cref="PropertiesTool"/> context
+    /// setter clears every other context on its way past — so the document's inspector is detached
+    /// from its view model. The document never left <c>DocumentDock.ActiveDockable</c> (the tree is a
+    /// different dock region), so nothing re-ran this, and every later click on a component changed
+    /// nothing on screen until the workspace was reopened. Layout and symbol editors had each been
+    /// given a canvas-focus repair of their own; the schematic and the 3D view had none (owner,
+    /// 2026-10-05). <see cref="_propertiesShownFor"/> is null while the tree has the panel, and
+    /// <see cref="ReclaimPropertiesPanel"/> gives it back whenever the user returns to a document —
+    /// for every document type at once rather than one editor at a time.</para>
+    /// </summary>
+    private void RoutePropertiesPanel(IDockable? activeDockable)
+    {
+        _propertiesShownFor = activeDockable;
+
+        if (activeDockable is DataDisplayDocument ddDoc)
+        {
+            RouteDataDisplayProperties(ddDoc);
+        }
+        else if (activeDockable is SymbolEditorDocument symDoc)
+        {
+            RouteDataDisplayProperties(null);
+            _factory.PropertiesTool?.SetActiveSymbolEditor(symDoc.ViewModel);
+            // Ports indicator may be stale if the owning cell's .ccell NumPorts changed in the cell
+            // editor while this tab was inactive — re-read it on activation.
+            if (symDoc.ViewModel.CurrentSymbolPath is { } sp)
+                symDoc.ViewModel.SetExternalPortCount(TryCellPortCount(sp));
+        }
+        else if (activeDockable is CellParameterEditorDocument cpd)
+        {
+            RouteDataDisplayProperties(null);
+            _factory.PropertiesTool?.SetActiveCell(cpd.ViewModel);
+        }
+        else if (activeDockable is LayoutDocument layDocForProps)
+        {
+            RouteDataDisplayProperties(null);
+            ActivateLayoutDocumentForProperties(layDocForProps);
+        }
+        else if (activeDockable is WBondDocument wbDocForProps)
+        {
+            RouteDataDisplayProperties(null);
+            ActivateWBondDocumentForProperties(wbDocForProps);
+        }
+        else if (activeDockable is ThreeD.C3dEditorDocument c3dForProps)
+        {
+            // 3D editor round 1 — a 3D view's selection is shown in this panel, as a layout's is.
+            RouteDataDisplayProperties(null);
+            _factory.PropertiesTool?.SetActiveC3d(c3dForProps.ViewModel);
+        }
+        else
+        {
+            RouteDataDisplayProperties(null);
+            var activeVm = activeDockable is SchematicDocument schDoc ? schDoc.ViewModel : null;
+            _factory.PropertiesTool?.SetActiveSchematic(activeVm);
+        }
+    }
+
+    /// <summary>The document whose inspector the Properties panel is showing, or null while a Project
+    /// Tree selection has borrowed it — see <see cref="RoutePropertiesPanel"/>.</summary>
+    private IDockable? _propertiesShownFor;
+
+    /// <summary>True when the LAST <see cref="OnTreeSelectionChanged"/> put a file-info or railRF panel
+    /// up for its node. It runs immediately before <see cref="OnProjectTreeSelectionChanged"/> for the
+    /// same selection, which must not then take the panel straight back.</summary>
+    private bool _treeSelectionBorrowedProperties;
+
+    /// <summary>The user is working in <paramref name="document"/> again — a click in its pane, or on
+    /// its canvas. If the Project Tree borrowed the Properties panel in the meantime, route it back.
+    /// A no-op otherwise, so it is cheap to call on every such gesture.</summary>
+    private void ReclaimPropertiesPanel(IDockable document)
+    {
+        if (ReferenceEquals(_propertiesShownFor, document)) return;
+        if (!ReferenceEquals(document, _lastActivatedDocument)) return;   // ActivateDocument's job, not this one's
+        RoutePropertiesPanel(document);
+    }
+
+    /// <summary>A tree selection with nothing of its own to show: give a borrowed Properties panel
+    /// back to the document being worked on — never blank one that already follows a document. A
+    /// tree REFRESH lands here too (deleting files clears the selection), with no click anywhere.</summary>
+    private void ReturnPropertiesPanelFromTree()
+    {
+        if (_propertiesShownFor is not null) return;
+        RoutePropertiesPanel(_lastActivatedDocument);
+    }
+
+    /// <summary>
     /// Everything that follows "this document is now the one being worked on": the Properties, DRC
     /// and wBond panels, the Analyses panel, the harmonicaRF menu takeover, the UNDO TARGET, the save
     /// scope, and every enablement predicate gated on the active document type.
@@ -15879,47 +15989,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // panels away from whatever the user is actually looking at.
         if (activeDockable is not LayoutDocument) StopWatchingLayoutFrameProperties();
 
-        // Properties panel — route to data display, schematic, symbol-editor, or cell inspector.
-        if (activeDockable is DataDisplayDocument ddDoc)
-        {
-            RouteDataDisplayProperties(ddDoc);
-        }
-        else if (activeDockable is SymbolEditorDocument symDoc)
-        {
-            RouteDataDisplayProperties(null);
-            _factory.PropertiesTool?.SetActiveSymbolEditor(symDoc.ViewModel);
-            // Ports indicator may be stale if the owning cell's .ccell NumPorts changed in the cell
-            // editor while this tab was inactive — re-read it on activation.
-            if (symDoc.ViewModel.CurrentSymbolPath is { } sp)
-                symDoc.ViewModel.SetExternalPortCount(TryCellPortCount(sp));
-        }
-        else if (activeDockable is CellParameterEditorDocument cpd)
-        {
-            RouteDataDisplayProperties(null);
-            _factory.PropertiesTool?.SetActiveCell(cpd.ViewModel);
-        }
-        else if (activeDockable is LayoutDocument layDocForProps)
-        {
-            RouteDataDisplayProperties(null);
-            ActivateLayoutDocumentForProperties(layDocForProps);
-        }
-        else if (activeDockable is WBondDocument wbDocForProps)
-        {
-            RouteDataDisplayProperties(null);
-            ActivateWBondDocumentForProperties(wbDocForProps);
-        }
-        else if (activeDockable is ThreeD.C3dEditorDocument c3dForProps)
-        {
-            // 3D editor round 1 — a 3D view's selection is shown in this panel, as a layout's is.
-            RouteDataDisplayProperties(null);
-            _factory.PropertiesTool?.SetActiveC3d(c3dForProps.ViewModel);
-        }
-        else
-        {
-            RouteDataDisplayProperties(null);
-            var activeVm = activeDockable is SchematicDocument schDoc ? schDoc.ViewModel : null;
-            _factory.PropertiesTool?.SetActiveSchematic(activeVm);
-        }
+        // Properties panel — the one routing every document type shares; see its own note.
+        RoutePropertiesPanel(activeDockable);
 
         // Analyses panel — retain the last schematic so focusing a data display / symbol / cell tab
         // does NOT blank it. A schematic document updates it directly; a Data Display whose base
