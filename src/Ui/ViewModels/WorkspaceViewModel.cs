@@ -4413,6 +4413,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.WorkspaceDisplayUnitProvider = WorkspaceDisplayUnit;
         vm.CellResolverProvider         = () => this;
         vm.UpdateWBondLayout            = UpdateLayoutForWBond;
+        vm.NewWBondMaterial             = NewWBondMaterial;
         vm.DocumentName                 = title;   // no file yet; the tab's title is what it is called
         // filePath = null → scratch; IsScratch = true, IsDirty = false (starts clean), Title = "<title>"
         var doc   = new SchematicDocument(title, vm) { Messages = Messages, Hierarchy = this };
@@ -11760,6 +11761,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.WorkspaceDisplayUnitProvider = WorkspaceDisplayUnit;
         vm.CellResolverProvider         = () => this;
         vm.UpdateWBondLayout            = UpdateLayoutForWBond;
+        vm.NewWBondMaterial             = NewWBondMaterial;
         vm.OpenSiblingLayoutDesignators = OpenLayoutDesignatorsFor;
         return vm;
     }

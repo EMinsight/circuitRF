@@ -40,4 +40,14 @@
     <ProjectReference Include="../Diagnostics/CircuitRF.Diagnostics.csproj" />
   </ItemGroup>
 
+  <!--
+    The shipped material library, LINKED rather than copied: WireMaterials reads every metal's σ₂₀,
+    α₂₀ and σ(T) table from it, so a wire's conductivity is the one the Materials dialog shows.
+    src/Design embeds the same file under its own name; this is a leaf and cannot reach that one.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\Design\resources\technologies\generic-materials.cmat"
+                      LogicalName="CircuitRF.WBond.generic-materials.cmat" />
+  </ItemGroup>
+
 </Project>

@@ -674,3 +674,12 @@ routine gate.
   module puts nothing on the silkscreen. Switched off per instance (`ShowRefDes = false`).
 - **No EM setup on the 3D views, deliberately.** A land pattern is pads only, so a full-wave solve would see each
   resistor as an open.
+
+## Thermal Output Wires: the FromHB gate ran on a results folder no circuit names (2026-10-05)
+
+`ThermalExamplesTests.TheOutputWiresFromHB_ReproducesItsRecordedNumbers` (Benchmark tier) refused before solving:
+*"No instance of the circuit uses this 3D view's EM result"*. Its `Run` helper passed a scratch folder as the results root,
+so EM wrote its `.s2p` there, while the Amplifier's `XOUT` names `<workspace>/results/Output EM.palace.s2p` — where the
+GUI and `circuitrf em` write. The example itself was fine (run headless on a copy: EM, then FromHB, edge wire 205.108 °C).
+The gate now copies the example and runs it with that copy's own `results/`, and reproduces 205.108 °C and w1's limit at
+13.1093 dBm.

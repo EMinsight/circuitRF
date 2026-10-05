@@ -44,6 +44,40 @@ public static class WBondPlacement
     /// <summary>The parameter naming the linked <c>.wBond</c>, relative to the schematic.</summary>
     public const string FileParameter = "File";
 
+    /// <summary>The parameter naming the workspace <c>.cmat</c> this instance's wire metals may come from,
+    /// relative to the schematic — see <see cref="WBondMaterialLibrary"/>.</summary>
+    public const string MaterialLibraryParameter = "MaterialLibrary";
+
+    /// <summary>True for <c>Material</c> and <c>Material_&lt;array&gt;</c> — a metal's NAME.</summary>
+    public static bool IsMaterialParameter(string name)
+        => name == "Material" || name.StartsWith("Material_", StringComparison.Ordinal);
+
+    /// <summary>The stated material library, or null when there is none.</summary>
+    public static string? MaterialLibraryOf(EditableComponent comp)
+    {
+        ArgumentNullException.ThrowIfNull(comp);
+        string value = comp.Parameters.FirstOrDefault(p => p.Name == MaterialLibraryParameter)?.Expression?.Trim() ?? "";
+        if (value.Length >= 2 && value[0] == '"' && value[^1] == '"') value = value[1..^1];
+        return value.Length == 0 ? null : value;
+    }
+
+    /// <summary>The stated material library as an absolute path — <see cref="ResolveLinkedPath"/>'s rule, for
+    /// its reason: relative to the schematic in the document, so the workspace can move.</summary>
+    public static string? ResolveMaterialLibrary(EditableComponent comp, string? schematicDirectory)
+    {
+        if (MaterialLibraryOf(comp) is not { } stored) return null;
+        if (Path.IsPathRooted(stored)) return stored;
+        if (string.IsNullOrEmpty(schematicDirectory)) return null;
+        return Path.GetFullPath(Path.Combine(schematicDirectory, stored.Replace('\\', '/')));
+    }
+
+    /// <summary>How a material library is STORED on an instance: relative to the schematic with forward
+    /// slashes when a schematic directory is known, else absolute.</summary>
+    public static string StoredMaterialLibrary(string absolutePath, string? schematicDirectory)
+        => string.IsNullOrEmpty(schematicDirectory)
+            ? absolutePath
+            : Path.GetRelativePath(schematicDirectory, absolutePath).Replace('\\', '/');
+
     // ── WB45: Carried or Linked ───────────────────────────────────────────────
 
     /// <summary>

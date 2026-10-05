@@ -153,6 +153,6 @@ public sealed class CornerMessageNoiseTests : IDisposable
 
         Assert.Contains(ExtractWith(new Variable("SWSOA", "1")),
                         c => c.Contains("SWSOA", StringComparison.Ordinal)
-                          && c.Contains("design's own definition", StringComparison.Ordinal));
+                          && c.Contains("one declared in this design is used", StringComparison.Ordinal));
     }
 }

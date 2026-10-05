@@ -666,7 +666,7 @@ public sealed partial class MaterialRowViewModel : ObservableObject
     /// an edit of it goes.</summary>
     public string? ReadOnlyNote => IsBuiltIn
         ? _table.BuiltInTarget is { } target
-            ? $"'{Material.Name}' is built into circuitRF. Editing or assigning it saves a copy to {target.Label}, where it is this design's own."
+            ? $"'{Material.Name}' is built into circuitRF. Editing or assigning it saves a copy to {target.Label}, where you can change it."
             : $"'{Material.Name}' is built into circuitRF, and none of these lists can be written to take a copy of it."
         : IsLibrary
         ? $"'{Material.Name}' comes from {SourceLabel}, so it is edited in that library, where the change is on its own undo and Save."

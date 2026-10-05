@@ -237,7 +237,7 @@ public sealed class ThermalRfPlan
                 var per = s.PerUnitCurrent(a);
                 foreach (var (j, d) in members) share[k][j] = per[d];
             }
-            notes.Add($"'{Path.GetFileName(source.Path)}' ({inst.Key.TrimEnd('/')}): the RF share is the design's own inductance reduction, " +
+            notes.Add($"'{Path.GetFileName(source.Path)}' ({inst.Key.TrimEnd('/')}): each wire's share of the RF current comes from the wires' inductance, " +
                       $"with its ground plane {(design.GroundPlane.Enabled ? "on" : "off")}.");
         }
 

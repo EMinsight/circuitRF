@@ -113,7 +113,7 @@ public static class NetExtractor
                     if (!string.Equals(existing.Expression?.Trim(), v.Expression?.Trim(), StringComparison.Ordinal))
                         conflicts.Add($"Corner constant '{v.Name}' is also declared in this design " +
                                       $"as '{existing.Expression}' rather than '{v.Expression}'; the " +
-                                      $"design's own definition is used.");
+                                      $"one declared in this design is used.");
                     continue;
                 }
                 tb.GlobalVariables.Add(v);
@@ -810,7 +810,7 @@ public static class NetExtractor
                 if (tb.GlobalVariables.Any(e => e.Name.Equals(v.Name, StringComparison.Ordinal)))
                 {
                     conflicts.Add($"Variable '{v.Name}' is declared both in this design and in an " +
-                                  $"imported kit netlist; the design's own definition is used.");
+                                  $"imported kit netlist; the one declared in this design is used.");
                     continue;
                 }
                 tb.GlobalVariables.Add(v);
@@ -2077,10 +2077,23 @@ public static class NetExtractor
                 .Where(p => !string.IsNullOrWhiteSpace(p.Expression))
                 .Select(p =>
                 {
+                    // The material library is a PATH: relative to the schematic in the document, absolute
+                    // in the netlist — `File`'s rule, for `File`'s reason (see below). Quoted, as a
+                    // metal's NAME is when it has a space in it ("Gold-tin solder (80/20)"): a .cnl is
+                    // whitespace-delimited, and an unquoted tail would be read as a unit and refuse the line.
+                    if (p.Name == WBondPlacement.MaterialLibraryParameter)
+                        return new ParameterAssignment(p.Name,
+                            Quoted(WBondPlacement.ResolveMaterialLibrary(comp, model.SchematicDirectory) ?? p.Expression), null);
+                    if (WBondPlacement.IsMaterialParameter(p.Name))
+                        return new ParameterAssignment(p.Name, Quoted(p.Expression.Trim()), null);
+
                     var unit = UnitNormalizer.ToEngineUnit(p.Unit);
                     return new ParameterAssignment(p.Name, p.Expression, unit.Length > 0 ? unit : null);
                 })
                 .ToList();
+
+            static string Quoted(string v) =>
+                v.Length >= 2 && v[0] == '"' && v[^1] == '"' || !v.AsSpan().ContainsAny(' ', '\t') ? v : $"\"{v}\"";
 
             if (wbLinked)
             {

@@ -81,6 +81,11 @@ public static class WBondIo
             Sigma20 = m.Sigma20,
             Alpha20 = m.Alpha20,
             DensityKgM3 = m.DensityKgM3,
+            // A shipped metal's table is not repeated: the reader restores it (WireMaterials.Adopt),
+            // so a design's payload stays the size it was before tables existed.
+            SigmaVsTemp = m.SigmaVsTemp is { Count: > 0 } t && !WireMaterials.HasShippedTable(m)
+                ? [.. t.Select(p => new[] { p.TempC, p.Sigma })]
+                : null,
         })],
         Arrays = [.. design.Arrays.Select(a => new ArrayDto
         {
@@ -106,7 +111,8 @@ public static class WBondIo
     {
         var design = new WBondDesign
         {
-            OperatingTempC = doc.OperatingTempC ?? WireMaterials.DefaultOperatingTempC,
+            // The old default written out is read as today's — see WireMaterials.StoredOperatingTempC.
+            OperatingTempC = WireMaterials.StoredOperatingTempC(doc.OperatingTempC),
             // Absent takes the built-in default, which is what lets a field be added without a
             // version bump — and what makes a .wBond written before capacitance existed load with
             // capacitance ON and the panel quoting 10 GHz, rather than throwing (gate C10).
@@ -127,7 +133,11 @@ public static class WBondIo
         {
             design.Materials.Clear();
             foreach (var m in doc.Materials)
-                design.Materials.Add(new WireMaterial(m.Name, m.Sigma20, m.Alpha20, m.DensityKgM3));
+                design.Materials.Add(WireMaterials.Adopt(new WireMaterial(
+                    m.Name, m.Sigma20, m.Alpha20, m.DensityKgM3,
+                    m.SigmaVsTemp is { Count: > 0 } t
+                        ? [.. t.Where(r => r is { Length: 2 }).Select(r => new SigmaPoint(r[0], r[1]))]
+                        : null)));
         }
 
         foreach (var a in doc.Arrays ?? [])
@@ -200,6 +210,10 @@ public static class WBondIo
         public double Sigma20 { get; set; }
         public double Alpha20 { get; set; }
         public double DensityKgM3 { get; set; }
+
+        /// <summary>σ(T) as <c>[°C, S/m]</c> rows, increasing in temperature. Additive and omitted for
+        /// a shipped metal's own table — no version bump.</summary>
+        public List<double[]>? SigmaVsTemp { get; set; }
     }
 
     public sealed class ArrayDto

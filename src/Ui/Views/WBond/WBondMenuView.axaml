@@ -135,7 +135,7 @@
 
     <MenuItem Header="_Design" Padding="8,4">
       <MenuItem Header="Check _Assembly Rules" Command="{Binding CheckDesignRulesCommand}"
-                ToolTip.Tip="Check the wires against this design's own .wasm rule file."/>
+                ToolTip.Tip="Check the wires against this design's .wasm rule file."/>
       <MenuItem Header="Compare _Distributed Model…" Command="{Binding CompareDistributedModelCommand}"
                 ToolTip.Tip="Run the distributed (MoM) model next to the lumped one and show them side by side."/>
     </MenuItem>

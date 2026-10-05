@@ -1015,7 +1015,7 @@ public sealed partial class PartLibraryEditorViewModel : ObservableObject
             : MissingPartCount == 0
                 ? $"Every part number {CoverageSubject} asks for is already in this library."
                 : $"Adds one row per part number {CoverageSubject} asks for and this library has no "
-                + "row for, in the design's own order. Each row states the part number and nothing "
+                + "row for, in the order the design lists them. Each row states the part number and nothing "
                 + "else, so it still counts as a part with no bias curve until you fill it in"
                 + (_bom is null
                     ? "."

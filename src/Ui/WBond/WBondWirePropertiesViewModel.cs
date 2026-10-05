@@ -127,7 +127,7 @@ public sealed partial class WBondWirePropertiesViewModel : ObservableObject
 
     private void SyncMaterialsList() =>
         SyncList(ref _materialsCache, nameof(Materials),
-                 _vm?.Design.Materials.Select(m => m.Name) ?? []);
+                 _vm?.Design.MaterialChoices() ?? []);
 
     private void SyncGroupsList() =>
         SyncList(ref _groupsCache, nameof(AvailableGroups),

@@ -125,6 +125,11 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// </summary>
     public Action<SchematicViewModel, EditableComponent>? UpdateWBondLayout { get; set; }
 
+    /// <summary>The Inspector's wBond <b>New Material…</b>: opens the workspace's material library in the
+    /// Materials editor, reusing one or creating one (<c>WBondMaterialLibrary.LocateOrCreate</c>). Installed by the
+    /// workspace; null in a context with no workspace window, where the row does nothing.</summary>
+    public Action<SchematicViewModel, EditableComponent>? NewWBondMaterial { get; set; }
+
     // ── Render snapshot ───────────────────────────────────────────────────────
 
     [ObservableProperty] private SchematicModel?        _renderModel;

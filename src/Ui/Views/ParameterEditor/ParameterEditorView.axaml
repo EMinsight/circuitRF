@@ -400,7 +400,7 @@
                     <Grid ColumnDefinitions="80,*">
                         <TextBlock Grid.Column="0" Text="Ground plane"
                                    FontSize="11" VerticalAlignment="Center"
-                                   ToolTip.Tip="Overrides whether this component's wires see a ground plane — 'As designed' leaves the wirebond design's own setting alone"/>
+                                   ToolTip.Tip="Overrides whether this component's wires see a ground plane — 'As designed' keeps whatever the wirebond design says"/>
                         <ComboBox Grid.Column="1"
                                   ItemsSource="{Binding WBondGroundPlaneChoices}"
                                   SelectedIndex="{Binding WBondGroundPlaneIndex}"
@@ -517,6 +517,7 @@
                                          KeyDown="OnParamNameKeyDown"/>
                                 <TextBox Grid.Column="1"
                                          Text="{Binding StagedExpression}"
+                                         PlaceholderText="{Binding ExpressionPlaceholder}"
                                          IsVisible="{Binding ShowExpressionTextBox}"
                                          IsReadOnly="{Binding ExpressionReadOnly}"
                                          IsEnabled="{Binding ExpressionEnabled}"
@@ -585,6 +586,15 @@
                                           Margin="3,0,0,0"
                                           VerticalAlignment="Center"
                                           SelectionChanged="OnUnitSelectionChanged"/>
+                                <!-- A temperature's unit is fixed (°C): text, not a combo whose only
+                                     entry would read "None". -->
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding FixedUnit}"
+                                           IsVisible="{Binding HasFixedUnit}"
+                                           FontSize="11"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center"
+                                           ToolTip.Tip="Degrees Celsius"/>
                                 <!-- Subtle, read-only readout of the enum combo's underlying numeric
                                      value — makes clear that the schematic label/inline text-edit
                                      ("Miter = 2") is the SAME raw number the combo commits, not a
@@ -972,8 +982,11 @@
                      ItemsSource is declared BEFORE SelectedIndex, and that ordering is the point
                      (R-fp2-4d): the wBond round-6 defect was a ComboBox whose selection was
                      assigned before its ItemsSource binding attached, which silently dropped it and
-                     read blank. The view model refreshes in the same order for the same reason. -->
-                <Grid IsVisible="{Binding IsNotEmptyState}" Margin="4,2">
+                     read blank. The view model refreshes in the same order for the same reason.
+
+                     Not on a wBond (ShowFootprintRow): a wirebond is made by a bonding machine and
+                     has no land pattern. -->
+                <Grid IsVisible="{Binding ShowFootprintRow}" Margin="4,2">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition SharedSizeGroup="ParamName"    Width="Auto" MinWidth="40"/>
                         <ColumnDefinition Width="*"                                   MinWidth="50"/>

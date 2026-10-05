@@ -335,8 +335,9 @@ internal static class DocumentSchema
             custom metal must also list every built-in one its wires name.
           * A relative File= resolves against the .cnl's own folder, exactly as an SnP's does, so
             the netlist above expects pair.wBond beside it.
-          * Omitted fields take the editor's defaults: OperatingTempC 85 (degrees C), ground plane
-            on, capacitance on, OvermoldEr 1 (air).
+          * Omitted fields take the editor's defaults: OperatingTempC 125 (degrees C), ground plane
+            on, capacitance on, OvermoldEr 1 (air). An OperatingTempC of exactly 85 is read as 125:
+            85 was the default every file stated until 2026-10.
           * EmbeddedGeometry and ViewState are the editor's own; leave them out when writing a file.
 
         Every field the reader understands follows, with its default.

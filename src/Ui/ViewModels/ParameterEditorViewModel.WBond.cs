@@ -75,6 +75,7 @@ public partial class ParameterEditorViewModel
         name is WBondEmbedding.DesignParameter or WBondPlacement.ArraysParameter
              or "SymbolPitch" or "RefPin" or "IncludeCapacitance" or "er"
              or "Source" or "File" or "Material" or "GroundPlane"
+             or WBondPlacement.MaterialLibraryParameter
         || name.StartsWith("LoopHeight_", StringComparison.Ordinal)
         || name.StartsWith("Diameter_", StringComparison.Ordinal)
         || name.StartsWith("Material_", StringComparison.Ordinal);
@@ -315,14 +316,106 @@ public partial class ParameterEditorViewModel
     partial void OnWBondMaterialIndexChanged(int oldValue, int newValue)
     {
         if (_isRefreshing || _target is null || _schematicVm is null) return;
-        ApplyWBondParam("Material", MaterialValueAt(newValue));
+        if (IsNewMaterialRow(newValue))
+        {
+            BeginNewWBondMaterial(() => WBondMaterialIndex = oldValue);
+            return;
+        }
+        SetWBondMaterial("Material", MaterialValueAt(newValue));
     }
 
-    /// <summary>Index 0 is "As drawn" — the empty expression that means the parameter is unset.</summary>
+    /// <summary>Index 0 is "As drawn" — the empty expression that means the parameter is unset — and the
+    /// last is <see cref="NewMaterialRow"/>, which is an action and never a value.</summary>
     private string MaterialValueAt(int index) =>
-        index >= 1 && index - 1 < WBondMaterialOptions.Count - 1
+        index >= 1 && index < WBondMaterialOptions.Count && !IsNewMaterialRow(index)
             ? WBondMaterialOptions[index]
             : "";
+
+    // ── Workspace materials and New Material… ─────────────────────────────────
+
+    /// <summary>The material list's last row: opens the workspace's material library in the Materials editor
+    /// (reusing one, or creating <c>tech/workspace-materials.cmat</c>) with a new material started.</summary>
+    public const string NewMaterialRow = "New Material…";
+
+    /// <summary>The workspace library the list was built from (absolute), or null — see
+    /// <see cref="WBondMaterialLibrary.ForListing"/>.</summary>
+    private string? _wBondLibraryPath;
+
+    /// <summary>The metals in the list that come from <see cref="_wBondLibraryPath"/>.</summary>
+    private HashSet<string> _wBondLibraryNames = new(StringComparer.OrdinalIgnoreCase);
+
+    internal bool IsNewMaterialRow(int index)
+        => index >= 0 && index < WBondMaterialOptions.Count && WBondMaterialOptions[index] == NewMaterialRow;
+
+    /// <summary>How the row's selection is put back after New Material…, deferred past the ComboBox's own
+    /// selection commit (the layout inspector's footprint picker found that an edit made INSIDE it is
+    /// swallowed). Tests run the work inline.</summary>
+    internal Action<Action> PostToUi { get; set; } = work => Avalonia.Threading.Dispatcher.UIThread.Post(work);
+
+    /// <summary>Puts the selection back (<paramref name="revert"/>) and asks the workspace to open the library.
+    /// The new material is CHOSEN afterwards, from this list, once it has a name and a σ₂₀ and is saved.</summary>
+    internal void BeginNewWBondMaterial(Action revert)
+    {
+        PostToUi(() =>
+        {
+            bool was = _isRefreshing;
+            _isRefreshing = true;
+            revert();
+            _isRefreshing = was;
+            if (_target is not null && _schematicVm?.NewWBondMaterial is { } open) open(_schematicVm, _target);
+        });
+    }
+
+    /// <summary>
+    /// Writes one <c>Material</c>/<c>Material_&lt;array&gt;</c> AND keeps <c>MaterialLibrary</c> true to it, in one
+    /// undoable command: the library is named while any material parameter names one of its metals, and removed
+    /// when none does — so choosing a shipped metal again is also how a missing library's reference is cleared.
+    /// </summary>
+    internal void SetWBondMaterial(string name, string value)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+
+        var updated = _target.Parameters.Select(p => p.Clone()).ToList();
+        var existing = updated.FirstOrDefault(p => p.Name == name);
+        string trimmed = value.Trim();
+        if (trimmed.Length == 0)
+        {
+            // The unsuffixed one is declared, so it is blanked; a per-array one is removed (see
+            // SetWBondControlParameter for why).
+            if (name == "Material") { if (existing is not null) existing.Expression = ""; }
+            else if (existing is not null) updated.Remove(existing);
+        }
+        else if (existing is not null) existing.Expression = trimmed;
+        else updated.Add(new EditableParameter { Name = name, Expression = trimmed });
+
+        bool usesLibrary = _wBondLibraryPath is not null && updated.Any(p =>
+            WBondPlacement.IsMaterialParameter(p.Name) && _wBondLibraryNames.Contains(p.Expression.Trim()));
+        updated.RemoveAll(p => p.Name == WBondPlacement.MaterialLibraryParameter);
+        if (usesLibrary)
+            updated.Add(new EditableParameter
+            {
+                Name = WBondPlacement.MaterialLibraryParameter,
+                Expression = WBondPlacement.StoredMaterialLibrary(_wBondLibraryPath!, _schematicVm.EditModel.SchematicDirectory),
+            });
+
+        if (updated.Count == _target.Parameters.Count
+            && updated.Zip(_target.Parameters).All(t => t.First.Name == t.Second.Name && t.First.Expression == t.Second.Expression))
+            return;
+
+        _schematicVm.Execute(new SetParametersCommand(
+            _schematicVm.EditModel, _target, WBondPlacement.InCanonicalOrder(updated)));
+    }
+
+    /// <summary>Re-reads the workspace library's metals into the list — after the library is saved, so a metal
+    /// just made in the Materials editor can be chosen without reselecting the component.</summary>
+    public void RefreshWBondMaterials()
+    {
+        if (_target?.Symbol != SymbolKind.WBond) return;
+        bool was = _isRefreshing;
+        _isRefreshing = true;
+        RebuildWBondControlRows(TryReadWBondDesign(out var design) ? design : null);
+        _isRefreshing = was;
+    }
 
     /// <summary>Writes one per-array controlling parameter, removing it entirely when it is blanked.</summary>
     internal void SetWBondControlParameter(string name, string value)
@@ -365,6 +458,16 @@ public partial class ParameterEditorViewModel
         _schematicVm.Execute(new SetParametersCommand(
             _schematicVm.EditModel, _target, WBondPlacement.InCanonicalOrder(updated)));
     }
+
+    /// <summary>
+    /// What a BLANK generic wBond row is actually using, shown greyed in its empty box: for <c>Temp</c>, the
+    /// temperature stored with the wires (125 °C unless changed). Just the number — the row's unit column already
+    /// says °C — because a box showing nothing gave no way to tell which temperature the run used.
+    /// </summary>
+    private string WBondPlaceholderFor(string name)
+        => name == "Temp" && TryReadWBondDesign(out var design) && design is not null
+            ? design.OperatingTempC.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)
+            : "";
 
     private string WBondParameterValue(string name) =>
         _target?.Parameters.FirstOrDefault(p => p.Name == name)?.Expression ?? "";
@@ -669,15 +772,31 @@ public partial class ParameterEditorViewModel
     /// <summary>
     /// Rebuilds the per-array controlling-parameter rows, and the material list they choose from.
     ///
-    /// <para>The materials come from the DESIGN (<c>WBondDesign.Materials</c>), not from the built-in
-    /// four: the table is user-extensible, and restricting the dropdown to what shipped would make a
-    /// design's own metal unnameable from the schematic. An unknown name is refused BY NAME at
-    /// elaboration, so a hand-authored <c>.cnl</c> is still checked.</para>
+    /// <para>The materials are the DESIGN's own (<c>WBondDesign.Materials</c>) followed by every other
+    /// conductor circuitRF ships (<c>WireMaterials.Library</c>): the design's table is user-extensible,
+    /// so restricting the dropdown to what shipped would make a design's own metal unnameable, and
+    /// restricting it to the design would hide shipped metals a wire may be made of. An unknown name
+    /// is refused BY NAME at elaboration, so a hand-authored <c>.cnl</c> is still checked.</para>
     /// </summary>
     private void RebuildWBondControlRows(WBondDesign? design)
     {
         var materials = new List<string> { AsDrawn };
-        if (design is not null) materials.AddRange(design.Materials.Select(m => m.Name));
+        materials.AddRange(design?.MaterialChoices() ?? WireMaterials.Library.Select(m => m.Name));
+
+        // The workspace library's metals, then any stored name the list cannot otherwise show (a metal of a
+        // library that has since gone missing) — shown as itself rather than as "As drawn", which would be a
+        // lie about what runs — then the action row.
+        _wBondLibraryPath = _target is null ? null
+            : WBondMaterialLibrary.ForListing(_target, _schematicVm?.EditModel.SchematicDirectory);
+        _wBondLibraryNames = new HashSet<string>(
+            WBondMaterialLibrary.ConductorsOf(_wBondLibraryPath).Select(m => m.Name), StringComparer.OrdinalIgnoreCase);
+        foreach (string name in _wBondLibraryNames.Order(StringComparer.Ordinal))
+            if (!materials.Contains(name, StringComparer.OrdinalIgnoreCase)) materials.Add(name);
+        foreach (var p in _target?.Parameters ?? [])
+            if (WBondPlacement.IsMaterialParameter(p.Name) && p.Expression.Trim() is { Length: > 0 } stored
+                && !materials.Contains(stored, StringComparer.OrdinalIgnoreCase))
+                materials.Add(stored);
+        materials.Add(NewMaterialRow);
 
         if (!materials.SequenceEqual(WBondMaterialOptions))
         {
@@ -842,12 +961,17 @@ public sealed partial class WBondControlRow : ObservableObject
         return -1;
     }
 
-    partial void OnMaterialIndexChanged(int value)
+    partial void OnMaterialIndexChanged(int oldValue, int newValue)
     {
         if (_pulling) return;
-        _owner.SetWBondControlParameter(
+        if (_owner.IsNewMaterialRow(newValue))
+        {
+            _owner.BeginNewWBondMaterial(() => { _pulling = true; MaterialIndex = oldValue; _pulling = false; });
+            return;
+        }
+        _owner.SetWBondMaterial(
             "Material_" + ArrayName,
-            value >= 1 && value < Materials.Count ? Materials[value] : "");
+            newValue >= 1 && newValue < Materials.Count ? Materials[newValue] : "");
     }
 
     /// <summary>

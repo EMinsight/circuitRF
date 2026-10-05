@@ -2617,9 +2617,16 @@ public static class ComponentModelFactory
         if (TryGetIgnoringCase(parameters, "er", out var er) && er.Kind == ValueKind.Real)
             design.OvermoldEr = er.AsReal();
 
+        ApplyMaterialLibrary(design, parameters);
+
         var notes = new List<string>();
         ApplyControllingParameters(design, parameters, notes);
         ReportArrayDrift(design, parameters, notes);
+
+        // A Temp outside a wire metal's σ(T) table is CLAMPED to the table's nearest end and run —
+        // a warning on the Messages panel, never a refusal. After the controlling parameters, because
+        // a Material override decides which metals' tables are being read.
+        notes.AddRange(design.ConductivityClampNotes());
 
         // Artwork AND terminal count: with the external reference pin off (the default) the component
         // has 2M terminals, with it on 2M+1. REF is always the LAST one, so this changes nothing about
@@ -2636,6 +2643,57 @@ public static class ComponentModelFactory
             : null;
 
         return new WBondModel(design, path, refPin, notes, includeCapacitance);
+    }
+
+    /// <summary>
+    /// <c>MaterialLibrary</c>: the workspace <c>.cmat</c> this instance's wire metals come from — what the
+    /// Inspector's "New Material…" made, or a library it reused. <b>Looked up at every run</b>, so an edit to
+    /// the material in the Materials editor is what the next run uses. Its conductors are added to the design,
+    /// replacing one of the same name: the workspace's definition is the one the user can see and edit.
+    ///
+    /// <para><b>A stated library that cannot be read is a refusal</b>, naming the instance, the file and the two
+    /// ways out — never a silent fall back to a shipped metal of the same name, which would simulate a
+    /// different conductor with nothing on screen saying so. So is a <c>Material</c> naming a record of the
+    /// library that states no conductivity: it exists, so "not declared" would be the wrong sentence.</para>
+    /// </summary>
+    private static void ApplyMaterialLibrary(WBondDesign design, IReadOnlyDictionary<string, Value> parameters)
+    {
+        if (NameOf(parameters, "MaterialLibrary") is not { } path) return;
+        string instance = NameOf(parameters, "WBondName") is { } n ? $"wBond '{n}'" : "This wBond";
+
+        WireMaterialLibrary library;
+        try
+        {
+            if (!File.Exists(path))
+                throw new FileNotFoundException("the file does not exist.");
+            library = WireMaterialLibrary.ReadFile(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                      or System.Text.Json.JsonException or InvalidDataException)
+        {
+            throw new InvalidOperationException(
+                $"{instance} takes its wire materials from the material library '{path}', which could not be " +
+                $"read: {ex.Message} Restore that file, or select {(NameOf(parameters, "WBondName") ?? "the wBond")} " +
+                "and choose its Material again in the Inspector — choosing a shipped metal removes the reference, " +
+                "and New Material… makes or reuses a library in this workspace.");
+        }
+
+        foreach (var (key, value) in parameters)
+        {
+            if (!IsControllingName(key, "Material") || value.Kind != ValueKind.String) continue;
+            string wanted = value.AsString().Trim();
+            if (library.NonConductors.Contains(wanted, StringComparer.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    $"{instance} asks for wire material '{wanted}', which the material library '{path}' defines " +
+                    "with no electrical conductivity (σ₂₀), so it cannot be a wire. Open the library in the " +
+                    "Materials editor and state its σ₂₀, or choose another material.");
+        }
+
+        foreach (var metal in library.Conductors)
+        {
+            design.Materials.RemoveAll(m => string.Equals(m.Name, metal.Name, StringComparison.OrdinalIgnoreCase));
+            design.Materials.Add(metal);
+        }
     }
 
     /// <summary>

@@ -173,8 +173,12 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         // §2.2 — the trap that must not ship. Every controlling parameter is declared and UNSET;
         // a wBond arriving with `LoopHeight = 20 mil` among its defaults would silently regenerate
         // every existing design's wires to 20 mil on its next run.
-        foreach (string name in new[] { "LoopHeight", "Diameter", "Material", "Temp", "GroundPlane" })
+        foreach (string name in new[] { "LoopHeight", "Diameter", "Material", "GroundPlane" })
             Assert.Contains(defaults, p => p.Name == name && p.Expression.Length == 0);
+
+        // Temp is the exception, deliberately (owner, 2026-10-05): a blank box said nothing about the
+        // temperature the run used. A default reaches only a NEW placement — a .csch loads as written.
+        Assert.Contains(defaults, p => p.Name == "Temp" && p.Expression == "125");
     }
 
     /// <summary>
@@ -1116,9 +1120,18 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         Assert.True(WBondEmbedding.TryDecode(payload, out _));
 
         // A padded payload still decodes — an older file, or a hand-authored one, must not break.
-        // Built as canonical base64 of the same bytes, so this is the exact form that used to ship.
+        // Built as canonical base64 of a design whose byte count is NOT a multiple of three, so padding
+        // genuinely exists: the default design's length is a coincidence (one more digit in its operating
+        // temperature made it a multiple of three, and this half of the test then proved nothing).
+        var needsPadding = WBondEmbedding.DefaultDesign();
+        string trimmed = WBondEmbedding.Encode(needsPadding);
+        for (int i = 1; trimmed.Length % 4 == 0; i++)
+        {
+            needsPadding.AssemblyRef = new string('a', i);
+            trimmed = WBondEmbedding.Encode(needsPadding);
+        }
         string padded = Convert.ToBase64String(Convert.FromBase64String(
-            payload + new string('=', (4 - payload.Length % 4) % 4)));
+            trimmed + new string('=', (4 - trimmed.Length % 4) % 4)));
         Assert.EndsWith("=", padded);
         Assert.True(WBondEmbedding.TryDecode(padded, out _));
 

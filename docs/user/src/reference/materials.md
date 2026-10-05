@@ -129,7 +129,8 @@ holds its end values beyond its range, and its notes say when it did. `check` wa
 
 The Conductor card's **σ(T) table** works the same way for electrical conductivity. A thermal run's electrical half
 (a bond wire's or a trace's resistive heating) reads it in place of σ₂₀ and α₂₀; every EM solver still reads σ₂₀, so
-stating a table moves no EM answer.
+stating a table moves no EM answer. A **wBond** component's wires read the shipped metals' tables too, at the
+component's `Temp` — held at the table's nearest end outside it, with a warning in the Messages panel.
 
 {{ui: materials-thermal}}
 

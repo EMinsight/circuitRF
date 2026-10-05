@@ -621,7 +621,7 @@ src/WBond/ComplexLu.cs|The impedance matrix is singular at wire {k}. That normal
 src/WBond/ControllingParameters.cs|wBond: array '{arrayName}' asks for wire material '{requested}', which this design does 
 src/WBond/ControllingParameters.cs|wBond: loop height for {scope} must be positive; got {metres.ToString(
 src/WBond/ControllingParameters.cs|wBond: wire diameter for array '{arrayName}' must be positive; got 
-src/WBond/ControllingParameters.cs|wBond: wire diameter for array '{arrayName}' rounds to zero at the design's own 
+src/WBond/ControllingParameters.cs|wBond: wire diameter for array '{arrayName}' rounds to zero at the 1 nm resolution 
 src/WBond/Grover.cs|A filament of zero length has no direction.
 src/WBond/InductanceMatrix.cs|Expected at least {n * n} values for a {n} x {n} matrix, got {rowMajor.Length}.
 src/WBond/InductanceMatrix.cs|Wire {wire} now has {w.Points.Count} points ({expected} filaments) but the mesh was built 
@@ -1033,3 +1033,11 @@ src/Design/ThreeD/Occ/GeometryKernelTree.cs|The boolean '{obj.Name}' has no Blan
 src/Design/ThreeD/Occ/GeometryKernelTree.cs|The chamfer '{obj.Name}' has no Target.
 src/Design/ThreeD/Occ/GeometryKernelTree.cs|The fillet '{obj.Name}' has no Target.
 src/Design/ThreeD/Step/StepExport.cs|'{it.Name}' is a {it.Primitive?.GetType().Name}, which STEP export cannot write.
+src/WBond/Materials.cs|The shipped material library '{LibraryResource}' is not embedded.
+src/WBond/Materials.cs|The shipped material library has no '{name}'.
+src/Core/Devices/ComponentModelFactory.cs|the file does not exist.
+src/Core/Devices/ComponentModelFactory.cs|{instance} asks for wire material '{wanted}', which the material library '{path}' defines 
+src/Core/Devices/ComponentModelFactory.cs|{instance} takes its wire materials from the material library '{path}', which could not be 
+src/Design/Schematic/WBondMaterialLibrary.cs|wBond '{comp.InstanceName}' is not in a saved workspace, so there is nowhere to keep a material 
+src/WBond/Materials.cs|it has no Materials list, so it is not a material library.
+src/Core/Devices/WBondModel.cs|wBond '{c.InstancePath}' has {c.Nodes.Length} pin(s) on the schematic, but {source} has 

@@ -504,8 +504,9 @@ On the placed component:
 | **`er`** | `1` | The overmould's relative permittivity. An ordinary real expression, so it can be swept and optimised. |
 | `GroundPlane` | as drawn | Enable/disable the reference plane, and its z. With it off you must nominate a return array. |
 | `RefPin` | `false` | Exposes the `REF` terminal. Changes the terminal count, 2M vs 2M+1. |
-| `Temp` | as drawn | Operating temperature — conductivity, and therefore R(f), depends on it. |
-| `LoopHeight`, `Diameter`, `Material` | **blank** | The controlling parameters: blank means *as drawn*. Set one and it drives every wire; array-scoped spellings (`LoopHeight_G1`, `Diameter_D2`, …) drive one array. Blank is not emitted at all, so an unset parameter never reaches the engine. |
+| `Temp` | `125` | Operating temperature, in **°C** — conductivity, and therefore R(f), depends on it. Every wBond starts at **125 °C** — a newly placed one shows `125`, and a blank box means the temperature stored with the wires, which is also 125 °C unless changed (a file saved before this release, which stored the old default of 85 °C, is read as 125 °C). The box shows that value greyed when it is blank. Each metal's conductivity is read from its σ(T) table; a temperature outside that table is **held at the table's nearest end** and the run says so in the Messages panel. It is never refused. |
+| `LoopHeight`, `Diameter`, `Material` | **blank** | The controlling parameters: blank means *as drawn*. `Material` can name any conductor circuitRF ships (the [generic materials](materials.html)), not only the four bond-wire metals, or one of your own — see [Your own wire metals](#own-metals). Set one and it drives every wire; array-scoped spellings (`LoopHeight_G1`, `Diameter_D2`, …) drive one array. Blank is not emitted at all, so an unset parameter never reaches the engine. |
+| `MaterialLibrary` | — | The workspace `.cmat` this instance's own metals come from, relative to the schematic. Written for you when you choose one of its metals, removed when no material names one. If the file cannot be read, the run is refused and names the instance. |
 | `Source`, `File` | `Carried` | Whether the component **carries** its design or **links** to a `.wBond` on disk. |
 | `Design`, `Arrays`, `SymbolPitch` | — | The carried payload, the array list, and the symbol's pin spacing. Not part of the netlist. |
 
@@ -515,6 +516,31 @@ On the placed component:
 wBond that shipped <code>LoopHeight = 20 mil</code> among its defaults would regenerate every placed
 instance's wires to 20 mil on its next run — silently rewriting geometry somebody drew.</p>
 </div>
+
+### Your own wire metals {#own-metals}
+
+The **Material** list ends with **New Material…**. It opens your workspace's material library in the
+[Materials editor](materials.html) with a new material started: name it, give it a **σ₂₀** (and an α₂₀ or a
+σ(T) table if its conductivity moves with temperature), and save. The metal then appears in the Material list,
+and choosing it is what ties the component to that library.
+
+Which library it opens:
+
+1. the one this wBond already uses, if any;
+2. otherwise a `.cmat` your workspace technology names;
+3. otherwise any other `.cmat` in the workspace;
+4. otherwise a new `tech/workspace-materials.cmat`. A workspace made from scratch has no `.cmat` at all, so this
+   is what happens there.
+
+An untouched copy of circuitRF's own `generic-materials.cmat` is never written to: it stays identical to the
+shipped library. A library your technology does not name yet is added to it, so a 3D or thermal run in the
+same workspace sees the same metals.
+
+The library is read at every run, so an edit you save is what the next run uses — an unsaved edit is not. A
+metal in the library takes precedence over a shipped one of the same name. If the library goes missing, the run is
+refused and names the wBond: restore the file, or choose the Material again (a shipped metal removes the
+reference).
+
 
 Because they are ordinary expressions, the controlling parameters are exactly what a
 [parametric sweep](simulations.html#parametric-sweep) or an optimiser turns: sweep `LoopHeight_G1` and

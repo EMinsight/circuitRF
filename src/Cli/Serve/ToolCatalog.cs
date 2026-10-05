@@ -336,7 +336,7 @@ internal static class ToolCatalog
                     [new("path", true, "The document to explain.")],
                     [
                         Set,
-                        new("expr",     "--expr",     OptKind.Str, "Evaluate an expression in the design's own resolved scope."),
+                        new("expr",     "--expr",     OptKind.Str, "Evaluate an expression in the design's resolved scope."),
                         // StrOptional, not Str: `explain` reads the name as an OPTIONAL token after
                         // the flag, so an empty string handed through as a value is a name — and
                         // `--analysis ""` is refused with "No analysis named ''". The empty string

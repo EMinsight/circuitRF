@@ -1058,6 +1058,24 @@ public static class ComponentTypeRegistry
         => kind is SymbolKind.VerilogA or SymbolKind.WBond
         && parameterName.Equals("File", StringComparison.Ordinal);
 
+    /// <summary>A newly placed wBond's operating temperature, °C: <see cref="CircuitRF.WBond.WireMaterials.DefaultOperatingTempC"/>,
+    /// the one default wire temperature, so the Inspector and the wBond editor cannot disagree.</summary>
+    public static string WBondDefaultTempC { get; } =
+        CircuitRF.WBond.WireMaterials.DefaultOperatingTempC.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The unit a parameter is ALWAYS stated in, for the Inspector to show in place of a unit combo —
+    /// or empty when the parameter has an ordinary one. Today that is the temperatures: <c>Temp</c>,
+    /// <c>Tnom</c> and <c>Dtemp</c> are degrees Celsius on every built-in kind, and are declared
+    /// unitless only because a <c>C</c> unit token would collide with capacitance in the <c>.cnl</c>
+    /// tokenizer. A combo reading "None" on them said nothing about the scale a user was typing in.
+    ///
+    /// <para>Never on <see cref="SymbolKind.Generic"/>: a placed cell or kit part declares its own
+    /// parameters, and a name alone says nothing about what that cell means by it.</para>
+    /// </summary>
+    public static string FixedUnitLabel(SymbolKind kind, string parameterName)
+        => kind is not SymbolKind.Generic && parameterName is "Temp" or "Tnom" or "Dtemp" ? "°C" : "";
+
     /// <summary>
     /// True when a parameter's value is fixed by the TILE the user placed, so it is shown but never
     /// editable — not in the properties dialog, and not through a schematic label either.
@@ -1146,6 +1164,7 @@ public static class ComponentTypeRegistry
          : kind is SymbolKind.Duplexer ? DuplexerParameterDescription(parameterName)
          : SystemBlockParameterDescription(kind, parameterName) is { Length: > 0 } sysDesc ? sysDesc
          : ViaParameterDescription(kind, parameterName) is { Length: > 0 } viaDesc ? viaDesc
+         : WBondParameterDescription(kind, parameterName) is { Length: > 0 } wbDesc ? wbDesc
          : kind is not SymbolKind.VerilogA ? "" : parameterName switch
         {
             "File"  => "The model to load: a compiled model (.osdi), or Verilog-A source (.va, .vams) "
@@ -1160,6 +1179,18 @@ public static class ComponentTypeRegistry
                       + "default; turn it off on devices you are not studying to keep a swept "
                       + "result small.",
             _       => "",
+        };
+
+    /// <summary>The wBond parameters a generic row shows, where the row alone does not say what an
+    /// empty value does.</summary>
+    private static string WBondParameterDescription(SymbolKind kind, string parameterName)
+        => kind is not SymbolKind.WBond ? "" : parameterName switch
+        {
+            "Temp" => "The wires' operating temperature, in °C. Empty: the temperature stored with the wires — "
+                    + "125 °C unless changed. Each metal's conductivity is read from its conductivity-against-temperature "
+                    + "table; a temperature outside the table is held at the table's nearest end, and the "
+                    + "run says so in the Messages panel.",
+            _      => "",
         };
 
     /// <summary>The vias' parameter meanings (brief-via-component.md). Each says what an EMPTY row does,
@@ -1965,7 +1996,13 @@ public static class ComponentTypeRegistry
                     // NOT in the name-valued list of Elaborator.ResolveWBondParameters: it is an
                     // ordinary real expression, which is what makes `er` sweepable and optimisable.
                     new("er",          "1", "", false, UnitDimension.None),
-                    new("Temp",        "", "", false, UnitDimension.None),
+                    // °C. 125, not blank (owner, 2026-10-05): a blank box said nothing about what the run
+                    // used. 125 °C is THE default wire temperature everywhere (WireMaterials.
+                    // DefaultOperatingTempC). A .csch is loaded as written, so an existing instance's blank
+                    // keeps meaning the payload's stored temperature — itself read as 125 when it is the old
+                    // default 85 — and the row shows it as placeholder text. Unlike LoopHeight/Diameter/
+                    // Material below, which must stay blank (§2.2).
+                    new("Temp",        WBondDefaultTempC, "", false, UnitDimension.None),
                     new("GroundPlane", "", "", false, UnitDimension.None),
                     new("LoopHeight",  "", "mil", false, UnitDimension.Length),
                     new("Diameter",    "", "mil", false, UnitDimension.Length),

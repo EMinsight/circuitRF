@@ -155,7 +155,20 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     ///
     /// <para>Anything else added to column 2 must be excluded here too.</para>
     /// </summary>
-    public bool ShowUnitCombo => !IsEnumParam && !IsLayerChoiceParam && !IsChoiceParam && !IsFilePathParam;
+    public bool ShowUnitCombo => !IsEnumParam && !IsLayerChoiceParam && !IsChoiceParam && !IsFilePathParam
+                                 && FixedUnit.Length == 0;
+
+    /// <summary>The unit this parameter is always stated in (<c>°C</c> for a temperature), shown as
+    /// text in the unit column instead of a combo whose only entry would be "None". Empty for every
+    /// other parameter. See <see cref="ComponentTypeRegistry.FixedUnitLabel"/>.</summary>
+    public string FixedUnit { get; private set; } = "";
+
+    /// <summary>Greyed text in an EMPTY expression box saying what blank means for this parameter — a wBond's
+    /// blank <c>Temp</c> is the design's own temperature. Empty for most rows.</summary>
+    public string ExpressionPlaceholder { get; set; } = "";
+
+    /// <summary>True when <see cref="FixedUnit"/> is shown.</summary>
+    public bool HasFixedUnit => FixedUnit.Length > 0;
 
     private const string DefaultLayerChoiceLabel = "(Default)";
 
@@ -535,6 +548,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         // by the editor because it is a fact about the type, not about what the user has chosen.
         _structurallyFixed = ComponentTypeRegistry.IsStructuralParameter(ownerSymbol, param.Name);
         Description     = ComponentTypeRegistry.ParameterDescription(ownerSymbol, param.Name);
+        FixedUnit       = ComponentTypeRegistry.FixedUnitLabel(ownerSymbol, param.Name);
         CanRemove       = ownerComp is not null
                        && ComponentTypeRegistry.IsRemovableParameter(ownerSymbol, param.Name);
         // What removal MEANS differs by type, and the difference matters: a VerilogA parameter falls

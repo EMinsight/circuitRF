@@ -182,6 +182,7 @@ public sealed class WBondModel : ComponentModel, IReportsWarnings
         ArgumentNullException.ThrowIfNull(mna);
         ArgumentNullException.ThrowIfNull(c);
 
+        RefuseIfPinsDisagree(c);
         RefuseIfReturnPathUndeclared(c);
         QueueNotes(c);
 
@@ -254,6 +255,35 @@ public sealed class WBondModel : ComponentModel, IReportsWarnings
                 mna.AddAdmittance(outNode, c.Nodes[2 * j + 1], half);
             }
         }
+    }
+
+    /// <summary>
+    /// The schematic symbol must have a pin for every terminal the design reads before anything is stamped —
+    /// every array reads its two nets by position, so one array too many read past the end of the net list and
+    /// the run died with "Index was outside the bounds of the array", naming nothing.
+    ///
+    /// <para><b>How it happens:</b> a LINKED instance simulates the <c>.wBond</c> beside the layout, but its
+    /// symbol's pins are drawn from the arrays it was placed with. Add (or delete) an array in the layout and
+    /// the two disagree until Update Schematic from Layout brings the new array list onto the symbol
+    /// (<c>WBondSchematicReconcile</c>) — which is the fix this sentence gives.</para>
+    /// </summary>
+    private void RefuseIfPinsDisagree(ElaboratedComponent c)
+    {
+        // MORE nets is not this: a hand-written netlist may list the reference net last with RefPin off
+        // (`wBond:W1 a b 0`), which declares the return and is read by nothing. FEWER is the crash.
+        if (c.Nodes.Length >= PortCount) return;
+
+        string arrays = string.Join(", ", _design.Arrays.Select(a => a.Name));
+        string source = _sourceDescription is { Length: > 0 } s && s != "<inline>"
+            ? $"its linked wirebond file '{Path.GetFileName(s)}'"
+            : "its wirebond design";
+        string refPin = HasReferencePin ? ", plus REF" : "";
+        throw new InvalidOperationException(
+            $"wBond '{c.InstancePath}' has {c.Nodes.Length} pin(s) on the schematic, but {source} has " +
+            $"{ArrayCount} wire array(s) ({arrays}), which need {PortCount} — an input and an output pin per " +
+            $"array{refPin}. The arrays were changed in the layout after the symbol was drawn. Open the " +
+            "schematic and run Design ▸ Update Schematic from Layout so the symbol gains (or drops) those pins, " +
+            "then wire any new ones; or undo the array change in the layout.");
     }
 
     /// <summary>

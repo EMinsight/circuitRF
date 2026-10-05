@@ -1739,12 +1739,12 @@ unlabelled one — above, the series reading finds no resonance at all and puts 
 magnitude out, so the part is plainly a shunt-mounted capacitor. The equations behind each reading are
 on the [Derived Metrics](derived-metrics.html#fixture) page.
 
-<h3 id="explain-expr">`--expr` — evaluate in the design's own scope</h3>
+<h3 id="explain-expr">`--expr` — evaluate in the design's scope</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain pa.cnl --expr "Zopt*2" --set Zopt=12.5
 <span class="output">Zopt*2 = 25   (real)</span></code></pre>
 
-Through the one expression engine, in the design's own resolved scope — never by substitution — with
+Through the one expression engine, in the design's resolved scope — never by substitution — with
 `--set` applied first exactly as a run verb applies it. The kind is reported, never coerced.
 
 <h3 id="explain-ref">`--ref` — where does this reference land</h3>

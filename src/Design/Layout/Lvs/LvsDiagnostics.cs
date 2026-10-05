@@ -695,7 +695,7 @@ public static class LvsDiagnostics
         long widthDbu, long x, long y)
         => Diagnostic.Create(
             "lvs.hierarchy.undeclared-contact", DiagnosticSeverity.Error,
-            "{path} places '{cellName}', whose copper meets this design's own on {layerName} "
+            "{path} places '{cellName}', whose copper touches this design's copper on {layerName} "
             + "({layer}) at {where}, away from every pin it declares. A cell joined to its parent "
             + "by undeclared metal has no hierarchical reading: declare a pin there, or flatten "
             + "'{cellName}' for LVS.",

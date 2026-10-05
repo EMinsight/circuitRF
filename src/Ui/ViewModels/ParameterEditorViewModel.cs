@@ -110,7 +110,10 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     public bool IsNotEmptyState => !IsEmptyState;
     partial void OnIsEmptyStateChanged(bool oldValue, bool newValue)
-        => OnPropertyChanged(nameof(IsNotEmptyState));
+    {
+        OnPropertyChanged(nameof(IsNotEmptyState));
+        OnPropertyChanged(nameof(ShowFootprintRow));
+    }
 
     // ── Header ────────────────────────────────────────────────────────────────
 
@@ -223,6 +226,15 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     // R-fp2-2: no allow-list of component kinds. An S2P standing in for a capacitor, an SRLC and an
     // S4P standing in for a hybrid coupler all have a layout view to place. What is GATED is the
     // DEFAULT (FootprintDefaults) and, from brief 4, what is OFFERED.
+
+    /// <summary>
+    /// Whether the Footprint row is shown: on every component but a <b>wBond</b>. A wirebond has no
+    /// land pattern — a bonding machine places it, not a pick-and-place one, and Update Layout writes
+    /// its wires as the cell's <c>.wBond</c> sidecar rather than as an instance that could carry one.
+    /// That is the ONE exclusion, and it is by what the part physically is, not a list of kinds that
+    /// happen to have no default (R-fp2-2 still holds for everything else).
+    /// </summary>
+    public bool ShowFootprintRow => IsNotEmptyState && !IsWBond;
 
     /// <summary>The <b>None</b> row — index 0, always.</summary>
     public const string FootprintNoneRow = "None";
@@ -911,6 +923,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
                 var row = new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp);
                 if (row.IsFilePathParam) row.PickFileAsync = PickModelFileAsync;
+                if (comp.Symbol == SymbolKind.WBond) row.ExpressionPlaceholder = WBondPlaceholderFor(param.Name);
                 built.Add(row);
             }
 
@@ -948,6 +961,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSnp));
         OnPropertyChanged(nameof(IsSpiceModel));
         OnPropertyChanged(nameof(IsWBond));
+        OnPropertyChanged(nameof(ShowFootprintRow));
         OnPropertyChanged(nameof(IsVerilogA));
         OnPropertyChanged(nameof(ShowCvEditorButton));
         OnPropertyChanged(nameof(ShowAddModelParameter));

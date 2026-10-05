@@ -2469,7 +2469,7 @@ static int PrintHelp()
     Console.WriteLine("                          Runs no analysis and writes nothing.");
     Console.WriteLine();
     Console.WriteLine("explain options:");
-    Console.WriteLine("  --expr \"<expression>\"   evaluate it in the design's own resolved scope");
+    Console.WriteLine("  --expr \"<expression>\"   evaluate it in the design's resolved scope");
     Console.WriteLine("  --set <var=expr>        override a global first, exactly as a run verb does");
     Console.WriteLine("  --analysis [<name>]     every runnable chain, which one dispatches, and");
     Console.WriteLine("                          whether a named inner analysis would be promoted");

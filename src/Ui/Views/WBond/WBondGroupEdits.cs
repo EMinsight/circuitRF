@@ -63,8 +63,7 @@ internal static class WBondGroupEdits
     {
         if (owner is null) return 0;
 
-        var choices = editor.Design.Materials.Select(m => m.Name).ToList();
-        if (choices.Count == 0) choices = WireMaterials.All.Select(m => m.Name).ToList();
+        var choices = editor.Design.MaterialChoices().ToList();
 
         string? current = Row(editor, arrayIndex)?.Material.Value;
 

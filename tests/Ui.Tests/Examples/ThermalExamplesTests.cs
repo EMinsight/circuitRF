@@ -228,8 +228,13 @@ public sealed class ThermalExamplesTests(ITestOutputHelper output) : IDisposable
     public void TheOutputWiresFromHB_ReproducesItsRecordedNumbers()
     {
         var hb = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root(Wires), "expected-numbers.json"))).RootElement.GetProperty("FromHB");
-        Run(Wires, "Output", "EM");
-        var r = Run(Wires, "Output", "FromHB");
+        // On a COPY of the workspace, writing to its own results/ — where the Amplifier's XOUT reads the EM result from. Run's
+        // scratch results root is a folder no circuit names, so FromHB refused with "No instance of the circuit uses this 3D
+        // view's EM result" before solving anything.
+        string copy = Path.Combine(_tmp, "copy", Wires);
+        CopyTree(Root(Wires), copy);
+        Run(Wires, "Output", "EM", copy);
+        var r = Run(Wires, "Output", "FromHB", copy);
         var rec = hb.GetProperty("Recorded");
         double tol = hb.GetProperty("Tolerance").GetDouble();
         double edge = r.Data!["thermal.Twire:U1/wire/Out/1:max"].RealValues[^1], limit = r.Data["circuit.LimitAt:w1"].RealValues.Single();
@@ -238,14 +243,27 @@ public sealed class ThermalExamplesTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(rec.GetProperty("LimitAtW1").GetDouble(), limit, 0.01);
     }
 
-    private EmRunResult Run(string example, string cell, string setup)
+    /// <param name="workspace">A copy of the example to run in, writing to its own <c>results/</c>; null runs the shipped
+    /// example in place, writing to a scratch folder.</param>
+    private EmRunResult Run(string example, string cell, string setup, string? workspace = null)
     {
-        string path = Path.Combine(Root(example), cell, "3d", cell + ".c3d");
+        string root = workspace ?? Root(example);
+        string path = Path.Combine(root, cell, "3d", cell + ".c3d");
         var doc = C3dPersistence.LoadFromFile(path);
         var run = EmRunService.RunThreeDView(C3dSetups.ForRun(C3dSetups.Select(doc, setup).Setup!, path), doc, path,
-                                             Path.Combine(Root(example), ".cws"), Path.Combine(_tmp, example));
+                                             Path.Combine(root, ".cws"),
+                                             workspace is null ? Path.Combine(_tmp, example) : Path.Combine(workspace, "results"));
         Assert.True(run.Status == EmRunStatus.Ok, $"{cell} {setup}: {run.Error}");
         return run;
+    }
+
+    private static void CopyTree(string from, string to)
+    {
+        foreach (string dir in Directory.EnumerateDirectories(from, "*", SearchOption.AllDirectories))
+            Directory.CreateDirectory(Path.Combine(to, Path.GetRelativePath(from, dir)));
+        Directory.CreateDirectory(to);
+        foreach (string file in Directory.EnumerateFiles(from, "*", SearchOption.AllDirectories))
+            File.Copy(file, Path.Combine(to, Path.GetRelativePath(from, file)), overwrite: true);
     }
 
     private static string Root(string example)

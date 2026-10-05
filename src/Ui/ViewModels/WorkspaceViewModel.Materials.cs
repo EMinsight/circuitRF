@@ -49,6 +49,8 @@ public partial class WorkspaceViewModel
                 Messages.Success("Saved", path);
                 _techCache.ClearLiveLibrary(path);
                 NotifyTechEditorsOfLibrary(path);
+                // A wBond's Material list reads the library from disk: a metal just saved can be chosen at once.
+                _factory.PropertiesTool?.EditorVm.RefreshWBondMaterials();
             };
             vm.LibrarySavedAs += (oldPath, newPath) =>
             {
@@ -85,6 +87,51 @@ public partial class WorkspaceViewModel
         {
             Messages.Error($"Failed to open material library '{Path.GetFileName(absolutePath)}': {ex.Message}");
         }
+    }
+
+    // ── a wBond's New Material… ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The Inspector's wBond <b>New Material…</b>: the workspace library is reused or created
+    /// (<see cref="WBondMaterialLibrary.LocateOrCreate"/>), named by the workspace technology when it is not yet,
+    /// and opened in the Materials editor with a new material started. Choosing that material on the wBond is a
+    /// separate act, once it has a name and a σ₂₀ and is saved — the Inspector lists it then.
+    /// </summary>
+    private void NewWBondMaterial(SchematicViewModel vm, EditableComponent comp)
+    {
+        WBondMaterialLibrary.Located located;
+        try { located = WBondMaterialLibrary.LocateOrCreate(comp, vm.EditModel.SchematicDirectory); }
+        catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+        {
+            Messages.Error(ex.Message);
+            return;
+        }
+        if (located.Created) Messages.Info("Created material library", located.Path);
+
+        if (located.TechnologyToRegisterIn is { } ctech)
+        {
+            // A technology open in its editor takes the reference as its own undoable edit — writing the file under
+            // it would be overwritten by its next save. Otherwise the file is written, and every reader re-resolves.
+            if (OpenDocumentAnywhere(ctech) is TechDocument open) open.ViewModel.AddLibrary(located.Path);
+            else
+            {
+                try
+                {
+                    WBondMaterialLibrary.RegisterInTechnology(ctech, located.Path);
+                    _techCache.Invalidate(ctech);
+                    Messages.Info($"Added {Path.GetFileName(located.Path)} to the technology's material libraries", ctech);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+                {
+                    Messages.Warning($"{Path.GetFileName(located.Path)} could not be added to the technology " +
+                                     $"'{Path.GetFileName(ctech)}' ({ex.Message}); the wBond can still use it, a 3D run cannot.");
+                }
+            }
+        }
+
+        OpenOrActivateMaterials(located.Path);
+        if (OpenDocumentAnywhere(located.Path) is MaterialsDocument doc && !doc.ViewModel.Table.IsReadOnly)
+            doc.ViewModel.Table.Add();
     }
 
     private void HookMaterialsDirty(MaterialsDocument doc)

@@ -177,17 +177,21 @@ public static class ControllingParameters
         long nm = WBondUnits.FromMetres(metres);
         if (nm <= 0)
             throw new InvalidOperationException(
-                $"wBond: wire diameter for array '{arrayName}' rounds to zero at the design's own " +
-                "nanometre resolution.");
+                $"wBond: wire diameter for array '{arrayName}' rounds to zero at the 1 nm resolution " +
+                "wire coordinates are stored in.");
 
         return nm;
     }
 
     /// <summary>
-    /// Resolves a material NAME against the design's own table, <b>refusing an unknown one by name</b>.
-    /// <see cref="WBondDesign.Materials"/> is user-extensible, so validating against the decoded design
-    /// rather than the built-in four is what lets a user-defined metal be named from the schematic — and
-    /// a typo is a wrong answer that would otherwise fall back to gold and look right.
+    /// Resolves a material NAME against the design's own table and then the shipped library,
+    /// <b>refusing an unknown one by name</b>. <see cref="WBondDesign.Materials"/> is user-extensible,
+    /// so validating against the decoded design is what lets a user-defined metal be named from the
+    /// schematic — and a typo is a wrong answer that would otherwise fall back to gold and look right.
+    ///
+    /// <para>A shipped metal the design does not declare is ADDED to it, so the wire's name resolves
+    /// to that metal (and its σ(T) table) everywhere the design is read afterwards — a design written
+    /// with four metals can still be made of any conductor circuitRF ships.</para>
     /// </summary>
     private static string ResolveMaterial(WBondDesign design, string requested, string arrayName)
     {
@@ -196,8 +200,17 @@ public static class ControllingParameters
 
         if (match is not null) return match.Name;
 
+        if (WireMaterials.ByName(requested) is { } shipped)
+        {
+            design.Materials.Add(shipped);
+            return shipped.Name;
+        }
+
         throw new InvalidOperationException(
             $"wBond: array '{arrayName}' asks for wire material '{requested}', which this design does " +
-            "not declare. Available: " + string.Join(", ", design.Materials.Select(m => m.Name)) + ".");
+            "not declare and circuitRF does not ship. Available: " +
+            string.Join(", ", design.Materials.Select(m => m.Name)
+                .Concat(WireMaterials.Library.Select(m => m.Name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)) + ".");
     }
 }

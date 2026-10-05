@@ -2026,8 +2026,11 @@ public sealed class Elaborator
                     payload = payload[1..^1];
                 result[ov.Name] = new Value(payload);
             }
-            else if (ov.Name.Equals("File", StringComparison.OrdinalIgnoreCase))
+            else if (ov.Name.Equals("File", StringComparison.OrdinalIgnoreCase)
+                  || ov.Name.Equals("MaterialLibrary", StringComparison.OrdinalIgnoreCase))
             {
+                // `MaterialLibrary` is a path to the .cmat this instance's wire metals come from — the
+                // same kind of value as `File`, resolved the same way.
                 var raw = ov.Expression;
                 if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
                     raw = raw[1..^1];
@@ -2059,6 +2062,10 @@ public sealed class Elaborator
                 catch { /* skip unresolvable; the factory errors if a required numeric is missing */ }
             }
         }
+
+        // Injected, not authored — Match's `MatchName` exactly: what lets a refusal name the instance
+        // the user placed (a missing material library, for one) rather than the type.
+        result["WBondName"] = new Value(inst.InstanceName);
         return result;
     }
 

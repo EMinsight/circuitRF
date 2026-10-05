@@ -85,6 +85,10 @@ bottom) and defaults to creation order.
 
 ### 2.3 Materials
 
+**Superseded (2026-10-05): the default operating temperature is 125 °C** (`WireMaterials.DefaultOperatingTempC`) — the
+editor, a new design and a newly placed component alike; a file's stated 85 (the old default, always written out) reads
+as 125. The table below is kept as the record of the 85 °C figures.
+
 **WB4a. The shipped default conductivity for every metal is its value at 85 °C, not 20 °C.** A wire
 that carries current is never at room temperature, and 85 °C is itself optimistic for a high-power
 part — but it is far closer than the handbook figure, and a default that is optimistic-but-close beats
@@ -112,6 +116,13 @@ point, not a new physical constant.** α_T is conventionally quoted at 20 °C, s
 σ(T) = σ₂₀/(1 + α₂₀(T − 20)) — the 85 °C column above is *derived*, and shown because it is the number
 that actually gets used. Setting T back to 20 °C therefore recovers the reference column exactly, with
 no drift. Uses the existing `Temperature` plumbing in `src/Core/Devices/Temperature.cs`.
+
+**Superseded in part (2026-10-05): a σ(T) TABLE now wins over the α₂₀ formula.** The shipped metals are
+read from `generic-materials.cmat` (linked into `src/WBond` as a resource), and the four wire metals there
+carry σ(T) tables — the same order `ThermalProperties.SigmaAt` uses, so a wire and a thermal run read one
+conductivity. At 20 °C the table and the formula agree exactly; at 85 °C they differ by 0.015 % for gold,
+and by a few percent near the top of each table. Outside the table σ is HELD at its nearest end — clamped and
+warned (`WBondDesign.ConductivityClampNotes`), never refused. A metal with no table keeps the formula.
 
 **WB4d. σ, α_T and the operating temperature are editable per material, and the table is a default,
 not a constant.** Bond wire is alloyed and drawn, so its conductivity is not the handbook figure for

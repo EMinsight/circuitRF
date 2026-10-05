@@ -76,7 +76,7 @@ for EM into 3D.
   substrates, glass, die-attach and thermal materials) below the technology's own; each carries the package mark at
   the right of its row, and a material the technology already names is not listed twice. Assigning a built-in
   material, or editing any of its properties, copies it into the list shown under *New, duplicated and built-in
-  materials go to* — usually the technology's own `.ctech` — where it is the design's own from then on, and the mark
+  materials go to* — usually the technology's own `.ctech` — where it is yours to change from then on, and the mark
   goes. A built-in material keeps its name; **Duplicate** it to make a copy under another. The technology editor's
   Materials tab has the same button.
 - **Edit Material…** opens the file a material is defined in, on its row. Right-click a material's heading in the

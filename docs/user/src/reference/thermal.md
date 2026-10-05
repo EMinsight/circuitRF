@@ -140,7 +140,7 @@ follows it unless its switch on the setup's *Balance* section is off, so the two
   must sum to zero (to 0.1 % of the largest), or the run refuses, naming the ports.
 - **Harmonic currents** heat the wires only, each harmonic at its own skin-effect resistance, each stated **Peak** or **RMS**
   (never inferred); a port's harmonics are shared among the wires of its array by their inductance. A `.wBond`'s wires are
-  shared over their design's own ground plane. Wires drawn in the 3D view are shared in free space unless the document states
+  shared over the ground plane their `.wBond` states. Wires drawn in the 3D view are shared in free space unless the document states
   a `WireGroundPlane`, either a height (`{ "Z": … }`) or a horizontal conductor face (`"carrier/zmax"`). It is never guessed
   from what lies below the pads, and `check` refuses one that is above a drawn wire.
 - **From a circuit**: a setup can take its currents from a harmonic-balance sweep of a schematic whose S-parameter block is

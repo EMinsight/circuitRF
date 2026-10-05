@@ -186,3 +186,90 @@ runs, and only a wire running the other way is reversed (it must be: a reversed 
 
 `InternalImpedance` gained `NormalizedZSlope` and `ResistanceWithSigmaSlope` for the thermal Newton step. Nothing wBond itself
 computes moved: its 85 °C evaluation and every wBond test are unchanged.
+
+## Wire metals read the shipped σ(T) tables; Temp clamps and warns (2026-10-05)
+
+**Before this, a placed wBond's `Temp` reached the model but never a table.** `ImpedanceReduction` evaluated
+`WireMaterial.SigmaAt`, which was the α₂₀ formula only, with the four metals' σ₂₀/α₂₀ written as literals here. The
+temperature-dependent tables added to `generic-materials.cmat` were read by the thermal solver and by nothing in
+wBond, so there was no range to clamp to and nothing to warn about.
+
+- **`WireMaterials` reads `generic-materials.cmat`**, linked into this assembly as `CircuitRF.WBond.generic-materials.cmat`
+  (a leaf cannot reach `src/Design`'s copy). `All` is still the four bond-wire metals, the list a new design declares;
+  `Library` is every shipped conductor (nine), and `ByName` searches it. A metal with no `Alpha20` gets 0, so its σ does
+  not move with temperature.
+- **A table wins over the formula, and is HELD at its ends** — `ThermalProperties.SigmaAt`'s order and rule, so a wire
+  and a thermal run read one conductivity for one metal. `WBondDesign.ConductivityClampNotes` names each metal in use whose
+  table does not reach the operating temperature; the factory appends them to the model's notes, so they reach the
+  Messages panel through `IReportsWarnings` with the instance path. Clamped, never refused.
+- **Old files keep their size and gain the tables.** Every `.wBond` and carried payload already stores its metals as
+  σ₂₀/α₂₀/density. `WireMaterials.Adopt` swaps a stored copy for the shipped record when the name AND both numbers match,
+  and the writer omits a shipped metal's table (`HasShippedTable`), so `WBondEmbedding.DefaultPayload` is unchanged byte
+  for byte. A user metal's own table is written as `SigmaVsTemp: [[°C, S/m], …]`.
+- **A `Material` override may name any shipped conductor**, declared by the design or not: `ControllingParameters`
+  adds it to the design, so it resolves everywhere the design is read afterwards. `WBondDesign.MaterialChoices` is the
+  one list every material picker offers (the Inspector, the editor's wire properties, Set Material).
+- **Numbers that moved:** at 85 °C gold's table reads 0.015 % from the formula. `WBondTouchstoneExportTests`' full-matrix
+  gate compared at `precision: 12`, which ROUNDS both sides, and the shifted value straddled a rounding boundary 6e-14
+  apart; it now uses an absolute 1e-12. The Thermal Output Wires numbers did not move: the 3D path takes a wire's σ
+  from the technology's materials first (`Em3dWires.ResolveMetal`), which already carried these tables.
+
+## A wBond instance's own material library — New Material… (2026-10-05)
+
+**The instance names its library**: `MaterialLibrary`, relative to the schematic in the document and absolute (quoted when
+needed) in the netlist — a linked `File`'s rule. The elaborator keeps it verbatim like `File` and injects `WBondName` (Match's
+`MatchName` pattern) so `ComponentModelFactory.ApplyMaterialLibrary` can refuse BY INSTANCE: a stated library that cannot be
+read is a refusal naming the instance, the file and the two ways out, never a fall-back to a shipped metal of the same name.
+A Material naming a library record with no σ₂₀ is refused as "not a wire", not as "not declared". The library's conductors
+REPLACE same-named design metals: the workspace's definition is the one the user can see.
+
+`WireMaterials.ReadLibrary` reads any `.cmat` (gzipped or not, case-insensitive keys) and is what the shipped list is built from
+too. The reuse order and the creation live in `src/Design/Schematic/WBondMaterialLibrary` so they are testable headless; the
+Inspector only calls them (`SchematicViewModel.NewWBondMaterial`, installed by the workspace). **A pristine
+`generic-materials.cmat` copy is never reused** — `MaterialLibraries.CopyGenericBeside` refuses a changed one, so writing a
+user metal into it would break Add Generic Materials later. A technology open in its editor takes the new library through
+`TechEditorViewModel.AddLibrary` (undoable, dirty); otherwise the `.ctech` is written and the cache invalidated.
+
+**A latent .cnl bug this surfaced:** a metal NAME with a space ("Gold-tin solder (80/20)", or any user metal) was written to
+the netlist unquoted and the reader took its tail as a unit. `NetExtractor` now quotes `Material`/`Material_*` and
+`MaterialLibrary` when they contain whitespace; the elaborator already unquoted them.
+
+## "Index was outside the bounds of the array" from a linked wBond whose layout gained an array (2026-10-05)
+
+A LINKED instance simulates the `.wBond` beside the layout, but its symbol's pins are drawn from the arrays it was placed
+with. A second array added in the layout gave the model 2M = 4 terminals against the symbol's 2 nets, and `Stamp` read
+`c.Nodes[2]` — an unnamed crash at the first frequency. `ReportArrayDrift` already noticed the change, but only as a
+note queued for AFTER the stamp. `WBondModel.RefuseIfPinsDisagree` now runs first and refuses naming the instance, the
+file, the arrays and the count, and sends the user to Design ▸ Update Schematic from Layout (`WBondSchematicReconcile`),
+which gives the symbol the pins. Only FEWER nets are refused: a hand-written `.cnl` legitimately lists the reference net
+last with RefPin off (`wBond:WB1 p1 p2 0`, every `WBondStampTests` netlist), and refusing "not equal" broke nine of them.
+
+## A newly placed wBond starts at Temp = 125 °C (2026-10-05)
+
+Owner change: the Inspector's blank `Temp` gave no way to tell what temperature a run used. The registry now declares
+`Temp = 125` (`ComponentTypeRegistry.WBondDefaultTempC`). This is NOT the §2.2 trap the controlling parameters guard
+against: a `.csch` is loaded exactly as written (nothing fills declared parameters on load), so only a NEW placement —
+palette, wire import, Layout→Schematic — gets 125, and every existing instance answers bit-identically. An existing
+blank `Temp` still means the design's own `OperatingTempC` (85 °C by default), and its row now shows that value as
+placeholder text (`ParameterRowViewModel.ExpressionPlaceholder`). The design's own default and the wBond editor's readout
+stay at 85 °C; the instance parameter wins at run time, as before.
+
+## 125 °C is the default wire temperature everywhere (2026-10-05, supersedes the entry above in part)
+
+Owner: the default bond-wire temperature is 125 °C throughout circuitRF — the wBond editor and a new design included, not
+only a new placement. `WireMaterials.DefaultOperatingTempC` is 125, and `ComponentTypeRegistry.WBondDefaultTempC` is now
+derived from it rather than a second literal.
+
+**A stored 85 reads as 125** (`WireMaterials.StoredOperatingTempC`, in `WBondIo.FromDocument`, which every payload decode
+goes through). The writer has always written `OperatingTempC` out and nothing in the application ever set it to anything
+but the default, so every `.wBond` and carried payload from before this states 85 — the old default, not a choice. Without
+this, a placed component's blank `Temp` showed and ran at 85 while the owner expected 125. A hand-typed 85 is
+indistinguishable and reads the same way (stated in the CLI's `reference wbond` page); any other value is kept. This DOES
+move existing answers: an instance with a blank `Temp` now runs at 125 °C instead of 85.
+
+The blank-row placeholder is the bare number (the unit column says °C). The phrase "the design's own" was removed from every
+user-facing string and the user docs at the owner's request; the remaining hits are code comments.
+
+`WBondSchematicPlacementTests.TheEmbeddedPayload_CarriesNoBase64Padding…` padded the DEFAULT payload and asserted padding
+appeared — true only while its byte count was not a multiple of three; one more digit made it one. It now picks a design
+whose encoding genuinely needs padding.

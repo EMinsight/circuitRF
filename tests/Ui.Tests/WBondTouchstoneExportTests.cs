@@ -192,8 +192,10 @@ public class WBondTouchstoneExportTests : IDisposable
             for (int r = 0; r < 2; r++)
                 for (int c = 0; c < 2; c++)
                 {
-                    Assert.Equal(expected[r * 2 + c].Real,      z[r, c].Real,      12);
-                    Assert.Equal(expected[r * 2 + c].Imaginary, z[r, c].Imaginary, 12);
+                    // An absolute tolerance, not `precision: 12`: that overload ROUNDS both sides to 12
+                    // places, so two values 6e-14 apart straddling a rounding boundary fail it.
+                    Assert.Equal(expected[r * 2 + c].Real,      z[r, c].Real,      1e-12);
+                    Assert.Equal(expected[r * 2 + c].Imaginary, z[r, c].Imaginary, 1e-12);
                 }
 
             // Vacuity guard: an uncoupled pair would satisfy everything above with zeros.

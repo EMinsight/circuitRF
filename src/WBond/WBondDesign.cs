@@ -386,6 +386,33 @@ public sealed class WBondDesign
         ?? WireMaterials.Default;
 
     /// <summary>
+    /// The metals a wire of this design may be made of, by name: the design's own first, then every
+    /// other conductor circuitRF ships (<see cref="WireMaterials.Library"/>) — what every material
+    /// picker offers, so the schematic's and the editor's lists are one list.
+    /// </summary>
+    public IReadOnlyList<string> MaterialChoices()
+        => [.. Materials.Select(m => m.Name).Concat(WireMaterials.Library.Select(m => m.Name))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>
+    /// One sentence per metal a wire is made of whose σ(T) table does not reach
+    /// <see cref="OperatingTempC"/> — that metal's conductivity is clamped to the table's nearest end
+    /// (<see cref="WireMaterial.SigmaAt"/>), which is a warning and never a refusal. Empty when every
+    /// metal in use covers the temperature or has no table.
+    /// </summary>
+    public IReadOnlyList<string> ConductivityClampNotes()
+    {
+        var notes = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var wire in Arrays.SelectMany(a => a.Wires))
+        {
+            var material = MaterialFor(wire);
+            if (seen.Add(material.Name) && material.ClampNote(OperatingTempC) is { } note) notes.Add(note);
+        }
+        return notes;
+    }
+
+    /// <summary>
     /// Checks the structural invariants the array reduction depends on (R-wb-1).
     ///
     /// <para><b>An empty array is refused here rather than in the linear algebra.</b> It makes the

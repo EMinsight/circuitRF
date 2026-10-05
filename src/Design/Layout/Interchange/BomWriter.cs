@@ -56,7 +56,7 @@ public static class BomWriter
     private static readonly string[] Columns = ["Refdes", "Value", "Footprint", "Description"];
 
     public const string DefaultProvenance =
-        "Bill of materials projected by circuitRF from the design's own components.";
+        "Bill of materials projected by circuitRF from the design's components.";
 
     public static string Write(
         IReadOnlyList<BomEntry> rows, BomWriteOptions? options = null)
