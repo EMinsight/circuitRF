@@ -13,6 +13,14 @@
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
 
+    <Window.Styles>
+        <!-- The sweep rows' TextBlocks draw the same whether enabled or not, so the disabled section
+             fades as a whole to read as greyed out. -->
+        <Style Selector="StackPanel.sweeps:disabled">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
+    </Window.Styles>
+
     <Grid RowDefinitions="*,Auto" Margin="20,16,20,16">
 
         <ScrollViewer Grid.Row="0"
@@ -151,7 +159,10 @@
                       IsVisible="{Binding ShowSweeps}"
                       FontSize="12">
 
-                <StackPanel Spacing="6" Margin="0,8,0,0">
+                <!-- Disabled with the analysis: a disabled analysis runs none of its sweeps, so
+                     they grey out to say so. On the body, not the Expander, so it still opens. -->
+                <StackPanel Classes="sweeps" Spacing="6" Margin="0,8,0,0"
+                            IsEnabled="{Binding #EnabledCheck.IsChecked}">
 
                     <TextBlock Text="Top = innermost sweep = plot X axis. Rows below are outer (slower) sweeps."
                                FontSize="10" Opacity="0.6" TextWrapping="Wrap" Margin="0,0,0,2"/>

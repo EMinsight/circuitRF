@@ -29,6 +29,13 @@
         <Style Selector="Expander.corners /template/ ContentPresenter">
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
         </Style>
+
+        <!-- A sweep card whose base analysis is disabled (AnalysisRowViewModel.ChainRuns): its
+             controls are disabled, and the whole card fades, because a TextBlock draws the same
+             whether its parent is enabled or not. -->
+        <Style Selector="Grid.card:disabled">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
     </UserControl.Styles>
 
     <Grid RowDefinitions="Auto,Auto,*">
@@ -257,7 +264,8 @@ overwrites silently on every subsequent run under that same name."/>
                     <DataTemplate x:DataType="vm:AnalysisRowViewModel">
                         <Border Padding="4,3"
                                 Background="Transparent"
-                                Margin="{Binding IsSweep, Converter={StaticResource IndentConv}}">
+                                Margin="{Binding IsSweep, Converter={StaticResource IndentConv}}"
+                                ToolTip.Tip="{Binding NotRunReason}">
 
                             <!-- The card's own menu. Every item binds through Owner and passes THIS
                                  row as its parameter: a right-click does not move a ListBox's
@@ -277,7 +285,11 @@ overwrites silently on every subsequent run under that same name."/>
                                 </ContextMenu>
                             </Border.ContextMenu>
 
-                            <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                            <!-- Disabled on the Grid, not the Border, so the card's menu (Remove,
+                                 Run All) still opens on a greyed-out sweep. -->
+                            <Grid ColumnDefinitions="Auto,Auto,*,Auto"
+                                  Classes="card"
+                                  IsEnabled="{Binding ChainRuns}">
 
                                 <!-- Enabled checkbox -->
                                 <CheckBox Grid.Column="0"

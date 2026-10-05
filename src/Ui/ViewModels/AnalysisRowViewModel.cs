@@ -72,6 +72,20 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         ? $"{BaseAnalysisName(psa, _schematicVm.EditModel)} {psa.SweepVarName} Sweep"
         : Analysis.Name;
 
+    /// <summary>
+    /// False for a sweep card whose base analysis is disabled. A disabled base makes the whole chain
+    /// inert — none of its sweeps run, whatever their own checkboxes say — so the card greys out to
+    /// show it. Always true for a base card, whose own checkbox already says whether it runs. Rows are
+    /// rebuilt on every model change, so toggling the base re-evaluates this without a notification.
+    /// </summary>
+    public bool ChainRuns => Analysis is not ParametricSweepAnalysis psa
+        || BaseAnalysis(psa, _schematicVm.EditModel) is not { Enabled: false };
+
+    /// <summary>The greyed-out card's tooltip; null (no tooltip) while the chain runs.</summary>
+    public string? NotRunReason => ChainRuns
+        ? null
+        : $"Not run: {BaseAnalysisName((ParametricSweepAnalysis)Analysis, _schematicVm.EditModel)} is disabled";
+
     /// <summary>What the card menu's Remove item says. "Remove", not "Delete", is the verb the rest
     /// of circuitRF's menus use for taking something out of a document.</summary>
     public string RemoveLabel => $"Remove {MenuName}";
@@ -86,14 +100,18 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
     /// card the user can see rather than the one a run would collapse to. Depth-guarded, and falls
     /// back to the sweep's own name if the chain dangles.
     /// </summary>
-    private static string BaseAnalysisName(ParametricSweepAnalysis psa, SchematicEditModel model)
+    private static string BaseAnalysisName(ParametricSweepAnalysis psa, SchematicEditModel model) =>
+        BaseAnalysis(psa, model)?.Name ?? psa.Name;
+
+    /// <summary>The non-sweep analysis at the bottom of the chain, or null if the chain dangles.</summary>
+    private static Core.Design.Analysis? BaseAnalysis(ParametricSweepAnalysis psa, SchematicEditModel model)
     {
         Core.Design.Analysis? a = psa;
         for (int guard = 0; a is ParametricSweepAnalysis p && guard < 64; guard++)
             a = model.Analyses.FirstOrDefault(
                 x => string.Equals(x.Name, p.InnerAnalysisName, System.StringComparison.OrdinalIgnoreCase));
 
-        return a is not null and not ParametricSweepAnalysis ? a.Name : psa.Name;
+        return a is not null and not ParametricSweepAnalysis ? a : null;
     }
 
     // ── Construction ──────────────────────────────────────────────────────────

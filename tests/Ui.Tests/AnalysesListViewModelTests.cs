@@ -93,6 +93,24 @@ public sealed class AnalysesListViewModelTests
     }
 
     [Fact]
+    public void DisablingBase_GreysOutEverySweepInItsChain()
+    {
+        var dc     = new DcAnalysis("DC1");
+        var inner  = new ParametricSweepAnalysis("DC1_sweep_Vgs", "Vgs", [1.0, 2.0], "DC1");
+        var outer  = new ParametricSweepAnalysis("DC1_sweep_Vgs_sweep_Vds", "Vds", [1.0, 2.0], "DC1_sweep_Vgs");
+        var schVm  = MakeVm(dc, inner, outer);
+        var vm     = BindVm(schVm);
+        Assert.All(vm.Rows, r => Assert.True(r.ChainRuns));
+
+        vm.Rows[0].Enabled = false;   // rebuilds the rows
+
+        Assert.True(vm.Rows[0].ChainRuns);   // the base card shows its own checkbox, not greyed
+        Assert.False(vm.Rows[1].ChainRuns);
+        Assert.False(vm.Rows[2].ChainRuns);
+        Assert.Equal("Not run: DC1 is disabled", vm.Rows[2].NotRunReason);
+    }
+
+    [Fact]
     public void Enable_Toggle_Undoable()
     {
         var a     = new DcAnalysis("DC1");
