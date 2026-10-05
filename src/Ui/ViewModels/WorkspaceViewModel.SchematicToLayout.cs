@@ -302,11 +302,15 @@ public partial class WorkspaceViewModel
         // and writes it back on save, so merging through the file would change nothing on screen and be
         // overwritten moments later (owner, 2026-08-17, with the workspace attached — the `.wBond` held
         // G1 and G2 while the layout showed only G1).
+        //
+        // One undo step on the open layout's wires, recorded BEFORE the merge: it adds, reshapes and
+        // (since 2026-10-05) deletes arrays, and ⌘Z in the layout has to be able to put them back.
+        bool undoPoint = layoutVm.BeginExternalWireEdit();
         var seeded = WBondCellSeeding.Seed(model, cellDir, cellName, only, layoutVm.WireDesign, looseDir);
-        if (seeded.Outcome == WBondCellSeeding.Outcome.NoWBond) return;
 
         // Before the messages, so a repaint is not waiting behind a message sink.
-        if (seeded.LiveDesignChanged) layoutVm.NotifyWireDesignChangedExternally();
+        layoutVm.EndExternalWireEdit(undoPoint, seeded.LiveDesignChanged);
+        if (seeded.Outcome == WBondCellSeeding.Outcome.NoWBond) return;
 
         foreach (string line in seeded.Messages)
         {

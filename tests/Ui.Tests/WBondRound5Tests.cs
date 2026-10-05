@@ -436,9 +436,9 @@ public class WBondRound5Tests
     /// another Update Layout from Schematic, the new array that I created in schematic does not show up
     /// in the layout."</i> WB41's never-overwrite rule is right about EXISTING arrays and was wrong
     /// about a new one: adding an array touches no wire that is already drawn, so refusing to add it
-    /// protected nothing and dropped the thing the command had just been asked to do. Drift is still
-    /// reported for the direction that genuinely cannot be resolved — an array drawn in the layout that
-    /// the component no longer declares (<see cref="AnArrayOnlyInTheLayout_IsKeptAndReported"/>).</para>
+    /// protected nothing and dropped the thing the command had just been asked to do. The other direction,
+    /// an array drawn in the layout that the component does not declare, is removed and named since
+    /// 2026-10-05 (<see cref="AnArrayOnlyInTheLayout_IsRemovedAndNamed"/>).</para>
     /// </summary>
     [Fact]
     public void AnArrayAddedOnTheSchematic_IsMergedIntoTheSidecar()
@@ -473,16 +473,14 @@ public class WBondRound5Tests
     }
 
     /// <summary>
-    /// The direction that genuinely cannot be resolved: an array drawn in the LAYOUT that the component
-    /// no longer declares. It is kept and reported — deleting is the one direction that destroys drawn
-    /// work irrecoverably, and the array may have been removed from the component by accident.
-    ///
-    /// <para>The remedy named must match this direction. The message this replaces said "use Update
-    /// Schematic from Layout, or delete the file to re-seed it", which told a user who had just ADDED an
-    /// array on the schematic to pull the layout back over it — i.e. to throw that array away.</para>
+    /// An array drawn in the LAYOUT that the component does not declare is REMOVED, and named
+    /// (revised 2026-10-05, owner's decision: Update Layout from Schematic makes the layout's wires match
+    /// the schematic, which is what simulates). This test used to assert it was kept and reported. A
+    /// deliberate exception to R-L5-4, which keeps a layout INSTANCE whose schematic component is gone;
+    /// an open layout can undo the whole merge in one step.
     /// </summary>
     [Fact]
-    public void AnArrayOnlyInTheLayout_IsKeptAndReported()
+    public void AnArrayOnlyInTheLayout_IsRemovedAndNamed()
     {
         using var cell = new TempCell("amp");
 
@@ -506,12 +504,11 @@ public class WBondRound5Tests
 
         var again = WBondCellSeeding.Seed(model, cell.CellDir, "amp");
 
-        Assert.Equal(2, WBondIo.ReadFile(sidecar).Arrays.Count);   // kept, not deleted
+        Assert.Equal(["G1"], WBondIo.ReadFile(sidecar).Arrays.Select(a => a.Name));
 
         string said = string.Join("\n", again.Messages);
-        Assert.Contains("'D1'", said, StringComparison.Ordinal);
-        Assert.Contains("add the array back", said, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Update Schematic from Layout", said, StringComparison.Ordinal);
+        Assert.Contains("'D1', 1 wire", said, StringComparison.Ordinal);
+        Assert.Contains("removed", said, StringComparison.Ordinal);
     }
 
     /// <summary>

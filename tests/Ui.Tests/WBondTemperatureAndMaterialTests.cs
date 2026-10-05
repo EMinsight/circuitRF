@@ -51,7 +51,8 @@ public sealed class WBondTemperatureAndMaterialTests : IDisposable
     }
 
     /// <summary>Two Terms across a placed wBond, swept at 1 MHz, with the component configured by the caller.</summary>
-    private RunResult RunWith(Action<EditableComponent> configure, string schematicDir)
+    /// <param name="warnings">Collects the extraction's warnings; null asserts there are none.</param>
+    private RunResult RunWith(Action<EditableComponent> configure, string schematicDir, List<string>? warnings = null)
     {
         var model = new SchematicEditModel { SchematicDirectory = schematicDir };
         Directory.CreateDirectory(model.SchematicDirectory);
@@ -78,7 +79,8 @@ public sealed class WBondTemperatureAndMaterialTests : IDisposable
             "SP1", new FrequencySpec("1", "1", "1", SweepKind.Linear, "MHz", "MHz", "MHz")));
 
         var extracted = NetExtractor.Extract(model, "tb");
-        Assert.Empty(extracted.Conflicts);
+        if (warnings is null) Assert.Empty(extracted.Conflicts);
+        else warnings.AddRange(extracted.Conflicts);
         string cnl = Path.Combine(_root, "netlist.cnl");
         File.WriteAllText(cnl, CnlWriter.Write(extracted.TestBench, extracted.Library));
         return SchematicRunService.RunNetlist(cnl, baseDirectory: _root);
@@ -280,11 +282,12 @@ public sealed class WBondTemperatureAndMaterialTests : IDisposable
         Assert.Equal(before, editor.WBondMaterialIndex);       // the action row is never left selected
     }
 
-    /// <summary>A LINKED wBond whose layout gained an array has fewer schematic pins than the model needs. The run
-    /// died with "Index was outside the bounds of the array"; it now refuses naming the instance and the arrays,
-    /// and the remedy it names — Update Schematic from Layout — gives the symbol the missing pins.</summary>
+    /// <summary>A wBond whose layout gained an array, with Temp changed in the schematic (wbond.md §9.7, revised
+    /// 2026-10-05). The run used to be REFUSED — the file ran, and its two arrays needed four pins the symbol did not
+    /// have. Now the schematic's own wires run, the Run warns that the layout differs, and Update Schematic from Layout
+    /// gives the symbol the layout's pins and clears the warning.</summary>
     [Fact]
-    public void AnArrayAddedInTheLayout_IsRefusedByName_AndUpdateSchematicFromLayoutGivesThePins()
+    public void AnArrayAddedInTheLayout_RunsTheSchematicsWires_Warns_AndUpdateSchematicFromLayoutClearsIt()
     {
         string ws = NewWorkspace("Drift");
         string sch = Path.Combine(ws, "Amp", "schematic");
@@ -298,18 +301,25 @@ public sealed class WBondTemperatureAndMaterialTests : IDisposable
         WBondIo.WriteFile(wbond, twoArrays);
 
         EditableComponent? placed = null;
-        var run = RunWith(c => { WBondPlacement.LinkTo(c, wbond, sch); placed = c; }, sch);
+        var warnings = new List<string>();
+        var run = RunWith(c =>
+        {
+            WBondPlacement.LinkTo(c, wbond, sch);
+            c.Parameters.First(p => p.Name == "Temp").Expression = "150";
+            placed = c;
+        }, sch, warnings);
 
-        Assert.NotEqual(RunStatus.Success, run.Status);
-        Assert.DoesNotContain("outside the bounds", run.StatusMessage);
-        Assert.Contains("wBond 'W1' has 2 pin(s)", run.StatusMessage);
-        Assert.Contains("G1, G2", run.StatusMessage);
-        Assert.Contains("Update Schematic from Layout", run.StatusMessage);
+        Assert.True(run.Status == RunStatus.Success, run.StatusMessage);
+        string warning = Assert.Single(warnings);
+        Assert.Contains("wBond 'W1' is not synced", warning);
+        Assert.Contains("arrays G1 in the schematic, G1, G2 in the layout", warning);
+        Assert.Contains("Update Schematic from Layout", warning);
 
         var model = new SchematicEditModel { SchematicDirectory = sch };
         model.Components.Add(placed!);
         WBondSchematicReconcile.Run(model, WBondIo.ReadFile(wbond)).Command!.Execute();
         Assert.Equal(4, model.BuildRenderModel().Item1.Components.Single().Ports.Count);
+        Assert.Equal(WBondSync.Status.InSync, WBondSync.Check(placed!, sch).Status);
     }
 
     /// <summary>A blank Temp shows, greyed, the temperature the run will use — 125 even for wires saved when the

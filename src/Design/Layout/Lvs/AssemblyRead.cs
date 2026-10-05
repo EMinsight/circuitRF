@@ -14,12 +14,13 @@
 // 2M(+1) pins against a `.wBond` SIDECAR holding polylines in nanometres, with no net on a wire, no
 // pad binding on a foot and no LayoutPin anywhere in the picture.
 //
-// ── IT READS THE WIRES THE ENGINE WOULD READ, WHICH IS NOT ALWAYS A LAYOUT FILE ───────────────
+// ── IT READS THE WIRES THE ENGINE WOULD READ ─────────────────────────────────────────────────
 //
-// R-lvs13-5b. A placed wBond's `Source` chooses Carried (the `Design` payload on the component) or
-// Linked (the `.wBond` the `File` parameter names), and the ENGINE simulates whichever it says —
-// `NetExtractor` acts on that parameter and this file makes the same choice by asking the same
-// function. Verifying the other one verifies a design nobody runs.
+// R-lvs13-5b. Verifying wires nobody runs verifies nothing. Until 2026-10-05 a placed wBond's
+// `Source` could say Linked, and the engine then simulated the `.wBond` its `File` named; this file
+// followed the same choice. The schematic's own wires (the `Design` payload) now ALWAYS run
+// (wbond.md §9.7), so they are what is compared — and a cell file that differs from them is
+// reported (R-lvs13-5c), never substituted.
 //
 // That is why a schematic-side object reaches a layout-side read here, and it is NOT the thing
 // `LayoutRead`'s own header forbids. What crosses is GEOMETRY — a polyline someone drew, which
@@ -67,27 +68,19 @@ internal static class AssemblyRead
     /// said about how they were found.
     /// </summary>
     /// <remarks>
-    /// <b>The enumeration is the SCHEMATIC's</b>, because the choice of wire source is per instance
-    /// (R-lvs13-5a) and only an instance can make it. A `.wBond` beside the artwork that no
+    /// <b>The enumeration is the SCHEMATIC's</b>, because each instance carries its own wires
+    /// (R-lvs13-5a). A `.wBond` beside the artwork that no
     /// instance names is the ordinary mid-design state of the layout-driven flow (wbond.md §9.5):
     /// the wires exist and the component has not been created yet, which is what
     /// "Update Schematic from wBond Layout" is for.
     /// </remarks>
     /// <param name="model">The schematic, already read.</param>
-    /// <param name="cschPath">Where it was read from — what a stored <c>File</c> is relative to.</param>
+    /// <param name="cschPath">Where it was read from.</param>
     /// <param name="clayPath">The root artwork — what the cell's own <c>.wBond</c> is found beside.</param>
     public static (IReadOnlyList<AssemblyWBond> WBonds, IReadOnlyList<Diagnostic> Notes) Resolve(
         SchematicEditModel model, string cschPath, string clayPath)
     {
         ArgumentNullException.ThrowIfNull(model);
-
-        // The base a Linked `File` resolves against, derived HERE rather than taken off the model:
-        // this runs BEFORE `SchematicRead`, which is where `SchematicDirectory` is otherwise filled
-        // in, and a null one would silently answer "nothing linked" and compare the carried wires
-        // instead — the one substitution R-lvs13-5b forbids. Same rule SchematicRead applies, said
-        // in the place that needs it first.
-        string? schematicDir = model.SchematicDirectory
-            ?? System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(cschPath));
 
         var notes = new List<Diagnostic>();
         var found = new List<AssemblyWBond>();
@@ -102,37 +95,19 @@ internal static class AssemblyRead
             if (comp.Symbol != SymbolKind.WBond) continue;
             if (SchematicExclusions.IsExcluded(comp)) continue;
 
-            var source = WBondPlacement.SourceOf(comp);
-            string? linked = source == WBondPlacement.WireSource.Linked
-                ? WBondPlacement.ResolveLinkedPath(comp, schematicDir)
-                : null;
-
-            // The fallback `NetExtractor` already takes, mirrored rather than invented: Linked with
-            // nothing resolvable simulates the carried payload, so that is what is compared.
-            var design = linked is not null ? TryRead(linked) : null;
-            string from = design is not null && linked is not null
-                ? System.IO.Path.GetFileName(linked)
-                : "carried in the schematic";
-            string spelling = design is not null
-                ? nameof(WBondPlacement.WireSource.Linked)
-                : nameof(WBondPlacement.WireSource.Carried);
-
+            // The schematic's own wires — what the next Run simulates (wbond.md §9.7, revised
+            // 2026-10-05: there is no longer a Linked instance that runs the file instead).
             string payload = comp.Parameters
                 .FirstOrDefault(p => p.Name == WBondEmbedding.DesignParameter)?.Expression ?? "";
+            if (!WBondEmbedding.TryDecode(payload, out var design) || design is null) continue;
 
-            if (design is null)
-            {
-                if (!WBondEmbedding.TryDecode(payload, out var carried) || carried is null) continue;
-                design = carried;
-
-                // R-lvs13-5c. The carried copy against the cell's own file — the state §9.6 calls
-                // normal and recoverable, which must never be quiet.
-                if (sidecar is not null && TryRead(sidecar) is { } onDisk
-                    && !string.Equals(WBondEmbedding.Encode(design), WBondEmbedding.Encode(onDisk),
-                                      StringComparison.Ordinal))
-                    notes.Add(LvsDiagnostics.WBondPayloadDrift(
-                        comp.InstanceName, System.IO.Path.GetFileName(sidecar)));
-            }
+            // R-lvs13-5c. The schematic's copy against the cell's own file — the state §9.6 calls
+            // normal and recoverable, which must never be quiet.
+            if (sidecar is not null && TryRead(sidecar) is { } onDisk
+                && !string.Equals(WBondEmbedding.Encode(design), WBondEmbedding.Encode(onDisk),
+                                  StringComparison.Ordinal))
+                notes.Add(LvsDiagnostics.WBondPayloadDrift(
+                    comp.InstanceName, System.IO.Path.GetFileName(sidecar)));
 
             // A design with no arrays has no pins, and `NetExtractor` emits no instance for it.
             // Emitting one here would put a device on the layout side that the schematic cannot
@@ -140,7 +115,7 @@ internal static class AssemblyRead
             if (design.Arrays.Count == 0) continue;
 
             // R-lvs13-4c, BEFORE anything is compared. Consumed, never re-derived.
-            var drift = WBondPlacement.DriftBetween(comp, design, from);
+            var drift = WBondPlacement.DriftBetween(comp, design, "carried in the schematic");
             if (drift is not null)
             {
                 notes.Add(LvsDiagnostics.WBondArrayDrift(
@@ -150,7 +125,7 @@ internal static class AssemblyRead
             }
 
             notes.Add(LvsDiagnostics.WBondWiresRead(
-                comp.InstanceName, spelling, from, design.Arrays.Count, design.WireCount));
+                comp.InstanceName, design.Arrays.Count, design.WireCount));
 
             found.Add(new AssemblyWBond(
                 comp.InstanceName, design, RefPinOf(comp), Drifted: false));

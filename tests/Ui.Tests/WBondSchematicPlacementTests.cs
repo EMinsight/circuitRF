@@ -158,17 +158,16 @@ public sealed class WBondSchematicPlacementTests : IDisposable
         Assert.Contains(defaults, p => p.Name == WBondPlacement.DesignParameter);
         Assert.Contains(defaults, p => p.Name == WBondPlacement.ArraysParameter);
 
-        // WB-G / WB45 (wbond.md §9.7) REVERSES what this used to assert. `File` is declared again —
-        // but BLANK, and inert until `Source` says Linked. The old assertion ("there is no File
-        // parameter any more") was right for §5.0's world, where carrying was the only behaviour;
-        // carrying is now the DEFAULT rather than the only option, and a linked instance genuinely
-        // points at a path, so there is again something to browse for.
+        // wbond.md §9.7. `File` is declared, BLANK until Update Layout from Schematic writes it, and
+        // names the layout wire file the instance is CHECKED against — the schematic's own wires
+        // always run. It is a path, so there is something to browse for.
         Assert.Contains(defaults, p => p.Name == "File" && p.Expression.Length == 0);
         Assert.True(ComponentTypeRegistry.IsFilePathParameter(SymbolKind.WBond, "File"));
 
-        // Carried by construction: a freshly placed wBond has no cell and no file to link to.
-        Assert.Contains(defaults, p => p.Name == "Source"
-                                    && p.Expression == nameof(WBondPlacement.WireSource.Carried));
+        // Warn if Schematic Not Synced to Layout: on by default (revised 2026-10-05). `Source`, the
+        // retired Carried/Linked switch, is no longer declared.
+        Assert.Contains(defaults, p => p.Name == WBondPlacement.WarnUnsyncedParameter && p.Expression == "true");
+        Assert.DoesNotContain(defaults, p => p.Name == WBondPlacement.LegacySourceParameter);
 
         // §2.2 — the trap that must not ship. Every controlling parameter is declared and UNSET;
         // a wBond arriving with `LoopHeight = 20 mil` among its defaults would silently regenerate

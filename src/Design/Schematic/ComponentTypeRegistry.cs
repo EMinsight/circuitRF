@@ -1050,9 +1050,8 @@ public static class ComponentTypeRegistry
     /// it is stated here. A path is exactly the kind of value nobody should be asked to type, and a
     /// mistyped one fails much later with a worse message.</para>
     /// </summary>
-    /// <para>wBond's `File` is back, and only for the LINKED half of WB45 (wbond.md §9.7). A carried
-    /// wBond still names no file and still has nothing to browse for — bringing wires in is
-    /// File ▸ Import ▸ Wirebond Wires…, which has its own picker. A linked one genuinely points at a
+    /// <para>wBond's `File` names the layout wire file the instance is checked against (wbond.md §9.7).
+    /// Bringing wires IN is File ▸ Import ▸ Wirebond Wires…, which has its own picker; this one is a
     /// path, and a path is exactly the kind of value nobody should be asked to type.</para>
     public static bool IsFilePathParameter(SymbolKind kind, string parameterName)
         => kind is SymbolKind.VerilogA or SymbolKind.WBond
@@ -1976,16 +1975,17 @@ public static class ComponentTypeRegistry
             // array names are not knowable until the design
             // is decoded. The wBond parameter panel generates them from the instance's own array list.
             //
-            // `Source` and `File` are WB45's carried-or-linked axis. `Carried` by construction: a
-            // freshly placed wBond has no cell and no file to link to. Only Update Layout from
-            // Schematic flips it, and says so (WB45a) — never a later scan noticing a file exists,
-            // which would change which wires simulate with nothing on screen.
+            // `WarnUnsynced` and `File` (wbond.md §9.7, revised 2026-10-05): `File` names the layout's
+            // `.wBond` this instance is CHECKED against — blank until Update Layout from Schematic
+            // writes it — and `WarnUnsynced` says whether a Run warns when the two differ. The
+            // schematic's own wires simulate either way. (`Source`, WB45's Carried/Linked switch, is
+            // retired; older documents still carry it and nothing reads it.)
             case SymbolKind.WBond:
                 return [
                     new("Design",      WBondEmbedding.DefaultPayload, "", false, UnitDimension.None),
                     new("Arrays",      WBondSymbolProvider.DefaultArraysKey, "", false, UnitDimension.None),
-                    new("Source",      nameof(WBondPlacement.WireSource.Carried), "", false, UnitDimension.None),
                     new("File",        "", "", false, UnitDimension.None),
+                    new("WarnUnsynced", "true", "", false, UnitDimension.None),
                     new("SymbolPitch", nameof(WBondSymbolPitch.Loose), "", false, UnitDimension.None),
                     new("RefPin",      "false", "", false, UnitDimension.None),
                     // `IncludeCapacitance` is the ONE wBond parameter whose default changes the

@@ -2431,6 +2431,18 @@ seeded from the placed component's `Design` payload, and carrying the same `Sche
 every other schematic→layout instance carries, so a re-run recognises what it already emitted rather
 than duplicating it.
 
+**WB41a. A re-run MERGES into the existing `.wBond`, array by array** *(revised 2026-10-05)*. An array
+the schematic gained is added; the controlling parameters are applied path-preservingly to the arrays
+already drawn; the array order is realigned to the schematic's (pin order); and **an array the
+schematic does not declare is deleted**, named in Messages with its wire count. Until 2026-10-05 that
+last array was kept and reported — the same rule R-L5-4 applies to a layout instance whose schematic
+component is gone — and the owner chose deletion for wires: the command makes the layout's wires match
+the schematic, which is what simulates (§9.7). The cost accepted is that an array drawn first in the
+layout and not yet brought into the schematic is deleted if this command is run for another reason.
+That is recoverable: in an open layout the **whole merge is one undo step** on the wires
+(`LayoutEditorViewModel.BeginExternalWireEdit`), which it was not before. A schematic declaring no
+arrays deletes nothing.
+
 ### 9.6 Layout → Schematic — "Update Schematic from wBond Layout"
 
 **WB42. The `Design` payload stays the SIMULATION source of truth; the layout is the EDITING source of
@@ -2456,70 +2468,55 @@ schematic and its layout are in between any two runs of the round trip — and t
 away. What must never happen is simulating a payload the user believes they have edited; the drift
 report is what makes that impossible to do quietly.
 
-### 9.7 Carried or Linked — a per-instance choice *(added 2026-08-17)*
+### 9.7 The schematic's wires run; the layout is checked against them *(revised 2026-10-05)*
 
-WB42 above assumes the payload is the only simulation source. It is not the only *possible* one: the
-component has always accepted either a carried design **or** a path to a `.wBond`, with the carried one
-winning where both are present. Which the elaborator emits was never an explicit decision, and the
-owner's question — *should the netlist reference the `.wBond` instead of carrying a copy?* — is that
-decision.
+**WB45 (revised). A placed wBond always simulates the wires it carries — its `Design` payload — exactly
+as every other component simulates what the schematic says. The layout's `.wBond` is COMPARED with
+them, and a difference is a warning, never a refusal.**
 
-> **Naming, and why it is not "embedded".** §9.1 already spends the words *referenced* and *embedded* on
-> a **different axis** — whether a `.wBond` file **embeds the layout artwork** it was drawn over or
-> **references** the cells by path. That axis is about what is inside the `.wBond`; this one is about
-> where a placed schematic component's **wires** come from. Using the same two words for both is how
-> "does embedded actually mean referenced?" becomes a reasonable question (owner, 2026-08-17). This
-> section therefore says **Carried**, which is §5.0's own verb — *"the component carries its design"* —
-> and leaves *embedded* to mean exactly what §9.1 has always meant by it. **The two axes are
-> independent:** a Linked instance may point at a `.wBond` that embeds its artwork, or at one that
-> references cells, and neither choice constrains the other.
+- **`File`** names the `.wBond` the instance is checked against, relative to the schematic. It is blank
+  until **Update Layout from Schematic** writes the file (§9.5), which records it; that command also
+  records it for an instance whose cell already has one. Recording it changes nothing about what runs.
+- **`WarnUnsynced`** (`true` by default; absent reads as `true`) is the Inspector checkbox **"Warn if
+  Schematic Not Synced to Layout"** — the wBond panel's last row, with a note under it stating what the
+  comparison finds right now (no layout wires yet / in sync / what differs / not found).
+- When it is on, **every extraction** (Simulate, `circuitrf check`) compares the two and warns, naming
+  the instance, the file and the difference, and the remedy: **Update Schematic from Layout** (§9.6),
+  which is the only way a layout edit reaches the simulation. A missing or unreadable file is a warning
+  too: the schematic still has its own wires to run.
 
-**WB45. A placed wBond declares its wire source: `Carried` or `Linked`. `Linked` is the default whenever
-the instance resolves to a workspace cell whose `layout/` owns a `.wBond`; `Carried` is the default
-otherwise, and remains the only option for an imported, foreign or workspace-less design.**
+**What counts as "not synced"** (`WBondSync`, `src/Design/Schematic`): the wires — the array list, each
+array's wires, the material definitions, and the ground plane unless the instance overrides it. Both
+sides are compared **after the instance's controlling parameters (§5.5.1) are applied to each**: Update
+Layout from Schematic bakes them into the file while leaving the payload raw, so a raw comparison would
+warn straight after the command that synced them. That depends on every controlling parameter setting an
+absolute value — the same property that deferred `Span` (WB24c). **The instance-level settings — `Temp`,
+`er`, `IncludeCapacitance` — are not compared**: they belong to the schematic component, apply over
+either copy, and changing one is the ordinary way to explore a design without touching the layout.
+Editor-only state (view state, embedded artwork, a wire's lock, the readout frequency) is ignored. The
+comparison reads the file **on disk**, so an unsaved layout edit is not seen until it is saved.
 
-This is the same answer, and the same shape, as D10 gave on its own axis: **both**, chosen explicitly,
-with the consequence stated where the choice is made.
+**What this replaced, and why.** From 2026-08-17 to 2026-10-05 each instance chose a wire source,
+`Carried` or `Linked`; a `Linked` instance's netlist named the `.wBond` and the engine simulated the
+FILE. That made geometry edits in the layout reach the run without a reconcile, but at three costs:
 
-- **`Linked`** — the netlist names the `.wBond` by a path relative to the schematic. **One copy of the
-  wires**, so staleness becomes *unrepresentable* rather than reported: §9.6's reconcile command is
-  unnecessary rather than merely convenient, which is exactly what §9.5's layout-driven flow wants. The
-  netlist also becomes readable — §5.0's unpadded-base64 rule exists solely because a padded payload
-  silently swallows whichever parameter follows it on the instance line, a trap a path does not have.
-- **`Carried`** — today's behaviour, unchanged and still the portable one: no path to break, nothing to
-  resolve, a schematic that travels alone.
+1. **An array added or removed in the layout made the design unsimulatable.** The symbol's pins come
+   from the payload, so the model had more (or fewer) terminals than the symbol had pins, and the run
+   was refused until Update Schematic from Layout ran — even when the user had only changed `Temp` or a
+   material in the schematic.
+2. **Two rules where every other component has one.** Everywhere else the schematic is what runs and
+   the layout is checked against it; a wBond alone could run the layout.
+3. **A switch whose consequence was invisible.** Which wires simulated depended on a combobox at the
+   bottom of the panel, and a geometry edit in the layout changed the answer with nothing on screen.
 
-**WB45a. The state changes only at a moment the user can see, and is announced there.** A freshly placed
-wBond is `Carried` by construction — there is no cell and no file to link to yet. The file comes into
-existence when **Update Layout from Schematic** runs (§9.5), and *that command* is where the instance
-flips to `Linked` and says so. It must never flip as a silent side effect of a later scan noticing that a
-file now exists: that would change which wires simulate without anything happening on screen.
+The owner asked for the schematic to be authoritative and for an out-of-sync wBond to warn rather than
+refuse. The cost accepted: a loop-height tweak in the layout no longer reaches the run by itself — the
+Run warns until Update Schematic from Layout brings it in.
 
-**WB45b. The control is the parameter panel's LAST row** *(owner, 2026-08-17)*, below the arrays, the
-per-array overrides and the artwork controls — an expert's control, and one the ordinary flow never
-touches, since WB45a's flip is what sets it. It is there to go back to `Carried`, or to repair a link.
-The consequence note of WB45 stays directly under the box wherever the box sits.
-
-**Why §5.0/WB17b is not thereby overturned.** Its argument — self-containment, no path to break, no
-"Not Found" state — is strongest for a schematic that travels on its own and weakest for one that lives
-in a workspace cell. A schematic instantiating workspace cells is *already* not self-contained: §4 of
-`workspace-and-project-tree.md` resolves cells by relative path and renders "Not Found" when they move.
-A linked wBond is in exactly that boat, under machinery that already exists — and WB17b keeps governing
-the case it was written for, which is now the `Carried` default rather than the only behaviour.
-
-**One consequence must be built with it, not after it.** Under `Linked`, the array-drift check of
-§9.2/WB35a becomes **more** load-bearing, not less. Carried drift is introduced by an explicit re-import;
-linked drift arrives the moment someone reorders arrays in the `.wBond`, changing the symbol's pin order
-live beneath an already-wired schematic — the same defect, arriving more quietly. The drift check
-therefore has to run at elaboration for a linked instance and report, or linking is strictly more
-dangerous than carrying on that one axis.
-
-**What does NOT differ between the two.** Both are editable in the layout, because WB40 attaches wires to
-a layout by what is on disk beside the `.clay`, and both routes put the same file there. Both accept the
-controlling parameters of §5.5.1, because those are applied to the *decoded* design and cannot tell where
-it came from. The only difference is **what the next Run simulates after a layout edit**: under `Linked`
-it is the edit; under `Carried` it is still the payload until §9.6 is run, which is precisely the drift
-WB42's report exists to make loud.
+**Older documents** still carry `Source=Carried|Linked`. Nothing reads it; it is hidden from the
+Inspector and never emitted to a netlist, so a `Linked` instance now simulates its own wires and warns
+if the file differs. The engine still accepts `File=` (with `Arrays=` for the drift check of
+§9.2/WB35a) in a **hand-written `.cnl`**; a schematic never emits it.
 
 ---
 
@@ -2764,7 +2761,7 @@ or fast-but-wall-clock-sensitive):
 | O-9 | A view sub-folder for "assembly" / "application"? | **Neither.** An **assembly** contains instances of other cells, so it is an ordinary cell with a hierarchical layout — already expressible, mixed technologies included; what it still needs is **z** on a layout instance, a model change rather than a directory. An **application** board *instantiates* this cell, so it is a sibling cell reached by an association reference, not a view of it | `workspace-and-project-tree.md` §1.2.1 |
 | O-10 | Loop height, diameter and material on the schematic symbol? | **Yes — as controlling parameters**, array-scoped and suffixed, applied as an override at elaboration that never writes back, unset by default meaning "as drawn". This is what makes them sweepable and optimisable without a sweep mutating the design once | §5.5.1, WB44 |
 | O-11 | Span too? | **Deferred.** Span is not a loop property but the pad positions; it scales by *factor* not to a value (WB24c), and it moves a bonded foot off its pad (WB24b) — safe under the layout editor's live snapping, blind from the schematic. The only one of the six needing new geometry rules rather than exposure of existing ones | §5.5.1, WB44a |
-| O-12 | Should the netlist reference the `.wBond` rather than carry a copy? | **Per-instance choice, `Linked` by default** when the instance resolves to a workspace cell that owns one; `Carried` otherwise and for imported/foreign designs. **Named `Carried`, not `Embedded`** — §9.1 already spends *embedded/referenced* on a different axis (what is inside the `.wBond`), and reusing them made the two indistinguishable. Linking makes §9.6's reconcile unnecessary rather than merely convenient — but the array-drift check must then run at elaboration, or linked drift arrives more quietly than carried drift | §9.7, WB45 |
+| O-12 | Should the netlist reference the `.wBond` rather than carry a copy? | **Superseded 2026-10-05: no — the schematic's wires always run and the `.wBond` is compared (warning, per-instance switch). Original answer:** **Per-instance choice, `Linked` by default** when the instance resolves to a workspace cell that owns one; `Carried` otherwise and for imported/foreign designs. **Named `Carried`, not `Embedded`** — §9.1 already spends *embedded/referenced* on a different axis (what is inside the `.wBond`), and reusing them made the two indistinguishable. Linking makes §9.6's reconcile unnecessary rather than merely convenient — but the array-drift check must then run at elaboration, or linked drift arrives more quietly than carried drift | §9.7, WB45 |
 
 ### Resolved by the owner, 2026-08-18
 

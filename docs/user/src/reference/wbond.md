@@ -808,7 +808,8 @@ On the placed component:
 | `TempEnd` | `85` | With `Temp` unchecked: the temperature, in °C, where the wires **end** — at the array's **output** pin, typically the package lead. Greyed while `Temp` is checked. |
 | `LoopHeight`, `Diameter`, `Material` | **blank** | The controlling parameters: blank means *as drawn*. `Material` can name any conductor circuitRF ships (the [generic materials](materials.html)), not only the four bond-wire metals, or one of your own — see [Your own wire metals](#own-metals). Set one and it drives every wire; array-scoped spellings (`LoopHeight_G1`, `Diameter_D2`, …) drive one array. Blank is not emitted at all, so an unset parameter never reaches the engine. |
 | `MaterialLibrary` | — | The workspace `.cmat` this instance's own metals come from, relative to the schematic. Written for you when you choose one of its metals, removed when no material names one. If the file cannot be read, the run is refused and names the instance. |
-| `Source`, `File` | `Carried` | Whether the component **carries** its design or **links** to a `.wBond` on disk. |
+| `WarnUnsynced` | `true` | **Warn if Schematic Not Synced to Layout** — the last checkbox in the Inspector. The component always simulates the wires it carries; with this on, each Run warns when they differ from the layout's `.wBond` (arrays, wire shapes, materials) and names what differs. Run **Update Schematic from Layout** to bring the layout's wires in. `Temp`, `er` and *Include capacitance* belong to the component and are never compared. |
+| `File` | blank | The layout's `.wBond` the component is checked against, relative to the schematic. Written by **Update Layout from Schematic**. |
 | `Design`, `Arrays`, `SymbolPitch` | — | The carried payload, the array list, and the symbol's pin spacing. Not part of the netlist. |
 
 <div class="callout warn">

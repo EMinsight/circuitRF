@@ -321,6 +321,24 @@ public sealed partial class LayoutEditorViewModel
         IsDirty = true;
     }
 
+    /// <summary>
+    /// Opens an external edit of <see cref="WireDesign"/> as ONE undo step on the wires (Update Layout from
+    /// Schematic's merge). Close it with <see cref="EndExternalWireEdit"/>.
+    /// </summary>
+    /// <returns>Whether an undo point was recorded — the token <see cref="EndExternalWireEdit"/> takes.</returns>
+    public bool BeginExternalWireEdit() => WireEditor?.PushExternalUndo() == true;
+
+    /// <summary>
+    /// Closes <see cref="BeginExternalWireEdit"/>: repaints and keeps the undo point when the design
+    /// <paramref name="changed"/>, drops it when nothing did, so Ctrl+Z never lands on a no-op.
+    /// </summary>
+    public void EndExternalWireEdit(bool began, bool changed)
+    {
+        if (changed) NotifyWireDesignChangedExternally();
+        else if (began) WireEditor!.DropExternalUndo();
+        if (began) WireHistoryChanged?.Invoke();
+    }
+
     public void NotifyWireDesignChangedExternally()
     {
         if (WireEditor is not { } editor) return;

@@ -38,10 +38,19 @@ public static class WBondPlacement
     /// <summary>The parameter that CARRIES the design (<see cref="WBondEmbedding"/>).</summary>
     public const string DesignParameter = WBondEmbedding.DesignParameter;
 
-    /// <summary>The parameter that declares where this instance's wires come from (WB45).</summary>
-    public const string SourceParameter = "Source";
+    /// <summary>
+    /// <b>Retired 2026-10-05</b> — WB45's <c>Carried</c>/<c>Linked</c> choice. Documents written before then
+    /// still carry it; it is read by nothing, hidden from the parameter panel and never emitted to a netlist.
+    /// </summary>
+    public const string LegacySourceParameter = "Source";
 
-    /// <summary>The parameter naming the linked <c>.wBond</c>, relative to the schematic.</summary>
+    /// <summary>
+    /// Whether a Run warns when this instance's wires no longer match the layout's <c>.wBond</c>
+    /// (<see cref="WBondSync"/>). The schematic's own wires simulate either way.
+    /// </summary>
+    public const string WarnUnsyncedParameter = "WarnUnsynced";
+
+    /// <summary>The layout wire file this instance is checked against, relative to the schematic.</summary>
     public const string FileParameter = "File";
 
     /// <summary>The parameter naming the workspace <c>.cmat</c> this instance's wire metals may come from,
@@ -78,46 +87,18 @@ public static class WBondPlacement
             ? absolutePath
             : Path.GetRelativePath(schematicDirectory, absolutePath).Replace('\\', '/');
 
-    // ── WB45: Carried or Linked ───────────────────────────────────────────────
+    // ── The layout wire file this instance is checked against (wbond.md §9.7) ──
 
     /// <summary>
-    /// Which of a placed wBond's two wire sources the next Run simulates (<c>wbond.md</c> §9.7/WB45).
-    ///
-    /// <para><b>Carried, not Embedded.</b> §9.1 already spends <i>embedded</i> and <i>referenced</i> on
-    /// a different axis — whether a <c>.wBond</c> file embeds the layout artwork it was drawn over, or
-    /// references cells by path. That axis is about what is inside the file; this one is about where a
-    /// placed component's WIRES come from. The two are independent, and reusing the words made them
-    /// indistinguishable. <i>Carried</i> is §5.0's own verb.</para>
+    /// Whether a Run warns about this instance being out of step with its layout wires. <b>On unless it
+    /// says otherwise</b> — absent is on, so every schematic written before the switch existed warns.
     /// </summary>
-    public enum WireSource
-    {
-        /// <summary>
-        /// Today's behaviour and still the portable one: the wires travel inside the schematic, so
-        /// there is no path to break and nothing to resolve. §5.0/WB17b governs this case.
-        /// </summary>
-        Carried,
-
-        /// <summary>
-        /// The netlist names the cell's <c>.wBond</c> by a path relative to the schematic. ONE copy of
-        /// the wires, so staleness becomes unrepresentable rather than reported — which is what §9.5's
-        /// layout-driven flow wants. The cost is a "Not Found" state and the drift check of §3.2.
-        /// </summary>
-        Linked,
-    }
-
-    /// <summary>
-    /// A placed instance's declared wire source. <b>Carried is the default for anything that does not
-    /// say</b> — every schematic written before WB45, and every instance that has never been through
-    /// Update Layout from Schematic.
-    /// </summary>
-    public static WireSource SourceOf(EditableComponent comp)
+    public static bool WarnsIfUnsynced(EditableComponent comp)
     {
         ArgumentNullException.ThrowIfNull(comp);
 
-        string value = comp.Parameters.FirstOrDefault(p => p.Name == SourceParameter)?.Expression ?? "";
-        return value.Equals(nameof(WireSource.Linked), StringComparison.OrdinalIgnoreCase)
-            ? WireSource.Linked
-            : WireSource.Carried;
+        string value = comp.Parameters.FirstOrDefault(p => p.Name == WarnUnsyncedParameter)?.Expression?.Trim() ?? "";
+        return !CircuitRF.Core.Devices.BooleanParameter.FalseSpellings.Contains(value, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>The stored link path — relative to the schematic — or null when there is none.</summary>
@@ -153,9 +134,12 @@ public static class WBondPlacement
     }
 
     /// <summary>
-    /// Points an instance at a <c>.wBond</c> and flips it to <see cref="WireSource.Linked"/>
-    /// (WB45a) — the ONE place that transition happens, and it is called from a command the user can
-    /// see (<c>WBondCellSeeding</c>).
+    /// Records the <c>.wBond</c> this instance is checked against — called by Update Layout from
+    /// Schematic (<c>WBondCellSeeding</c>), which is where the file comes into existence.
+    ///
+    /// <para><b>It changes nothing about what simulates.</b> Until 2026-10-05 this also flipped the
+    /// instance to <c>Linked</c>, after which the run read the FILE; the schematic's own wires now always
+    /// run, and the file is only compared against them (<see cref="WBondSync"/>).</para>
     ///
     /// <para>The path is stored RELATIVE to the schematic when one is known, and absolute otherwise;
     /// see <see cref="ResolveLinkedPath"/> for why.</para>
@@ -173,7 +157,6 @@ public static class WBondPlacement
             stored = Path.GetRelativePath(schematicDirectory, absolutePath).Replace('\\', '/');
         }
 
-        SetParameter(comp, SourceParameter, nameof(WireSource.Linked));
         SetParameter(comp, FileParameter, stored);
         return stored;
     }

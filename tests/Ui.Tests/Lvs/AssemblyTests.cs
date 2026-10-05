@@ -197,31 +197,31 @@ public sealed class AssemblyTests : IDisposable
         Assert.DoesNotContain(result.Schematic.Devices, d => d.Path == "W1");
     }
 
-    // ══ 6 — Carried or Linked, and the report says which ════════════════════════════════════════
+    // ══ 6 — the schematic's wires are compared, and a differing layout file is reported ═════════
 
     /// <summary>
-    /// <b>Gate 6.</b> The two wire sources give different answers on a drifted instance; LVS reads
-    /// the one the ENGINE would read, and names it (R-lvs13-5b/5c).
+    /// <b>Gate 6.</b> LVS reads the wires the ENGINE runs — the schematic's own, always (wbond.md §9.7,
+    /// revised 2026-10-05) — and reports a layout file that differs rather than substituting it
+    /// (R-lvs13-5b/5c).
     /// </summary>
     /// <remarks>
     /// The <c>.wBond</c> beside the artwork has one foot hanging in space and the carried payload
-    /// does not. Carried therefore reads clean and warns that the two have parted; Linked reads the
-    /// unbonded wire. Verifying the wrong one verifies a design nobody runs.
+    /// does not. Naming that file on the instance changes nothing: the carried wires read clean and
+    /// the report warns that the two have parted. Verifying the file would verify a design nobody runs.
     /// </remarks>
     [Fact]
-    public void CarriedAndLinkedReadDifferentWiresAndTheReportNamesWhich()
+    public void TheSchematicsWiresAreCompared_AndADifferingLayoutFileIsReported()
     {
-        var carried = LvsRun.Run(Assembly("Carried", sidecarWithStrayFoot: true));
-        var linked  = LvsRun.Run(Assembly("Linked", sidecarWithStrayFoot: true, linkToSidecar: true));
+        foreach (bool named in new[] { false, true })
+        {
+            var result = LvsRun.Run(Assembly(named ? "Named" : "Unnamed",
+                                             sidecarWithStrayFoot: true, linkToSidecar: named));
 
-        Assert.Equal("Carried", Read(carried).Diagnostic.Arguments["source"]);
-        Assert.DoesNotContain(carried.Findings, f => f.Id == "lvs.wbond.foot-on-nothing");
-        var stale = Assert.Single(carried.Findings, f => f.Id == "lvs.wbond.payload-drift");
-        Assert.Equal(DiagnosticSeverity.Warning, stale.Severity);
-
-        Assert.Equal("Linked", Read(linked).Diagnostic.Arguments["source"]);
-        Assert.Contains(linked.Findings, f => f.Id == "lvs.wbond.foot-on-nothing");
-        Assert.DoesNotContain(linked.Findings, f => f.Id == "lvs.wbond.payload-drift");
+            Read(result);
+            Assert.DoesNotContain(result.Findings, f => f.Id == "lvs.wbond.foot-on-nothing");
+            var stale = Assert.Single(result.Findings, f => f.Id == "lvs.wbond.payload-drift");
+            Assert.Equal(DiagnosticSeverity.Warning, stale.Severity);
+        }
     }
 
     // ══ 7 — the stamped capacitors are not devices ══════════════════════════════════════════════
@@ -413,7 +413,7 @@ public sealed class AssemblyTests : IDisposable
     /// against — R-lvs13-4c's drift.</param>
     /// <param name="sidecarWithStrayFoot">Write a <c>.wBond</c> beside the artwork that differs
     /// from the carried payload, which is R-lvs13-5c's recoverable state.</param>
-    /// <param name="linkToSidecar">Point the instance at that file and set <c>Source=Linked</c>.</param>
+    /// <param name="linkToSidecar">Name that file in the instance's <c>File</c> parameter.</param>
     /// <param name="dieOverlapsBoard">Run the die's own metal under a board trace, with nothing
     /// declared between them — R-lvs13-2a.</param>
     /// <param name="unmappableDieLayer">Give the die a layer the board's technology cannot be

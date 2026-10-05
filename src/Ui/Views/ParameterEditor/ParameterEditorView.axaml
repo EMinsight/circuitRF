@@ -439,41 +439,21 @@
                                  ToolTip.Tip="A number, or an expression such as a VAR name — so it can be swept or optimised."/>
                     </Grid>
 
-                    <!-- ── WB45: where the wires come from — LAST, as the panel's advanced tail
-                         (owner, 2026-08-17: "an advanced feature that only wBond experts would use").
-                         Carried (still the portable one — the wires travel inside the schematic, no
-                         path to break) or Linked (the netlist names the cell's .wBond, so there is ONE
-                         copy of the wires and staleness becomes unrepresentable rather than reported).
+                    <!-- Warn if Schematic Not Synced to Layout — LAST, as the panel's advanced tail
+                         (wbond.md §9.7, revised 2026-10-05). It replaced WB45's Carried/Linked
+                         combobox: the schematic's own wires now ALWAYS simulate, like every other
+                         component, and the layout's .wBond is only compared against them. A Linked
+                         instance used to simulate the file, so an array added in the layout gave the
+                         model more terminals than the symbol had pins and the run was refused.
 
-                         It sat third, right under the design summary, which put the panel's most
-                         consequential and least-used control in front of the ones every user touches —
-                         the arrays, the per-array overrides, the artwork. Nobody needs to SET it in the
-                         ordinary flow: a placed wBond is Carried by construction and Update Layout from
-                         Schematic is what flips it to Linked and says so (WB45a, WBondCellSeeding). The
-                         box exists to go BACK to Carried — for a schematic that has to travel on its
-                         own — and to repair a link, which are both expert moves.
-
-                         Moved WITHIN this panel rather than below the generic rows underneath it: those
-                         are LAST by the owner's own earlier decision (see their comment below), and a
-                         wBond's only generic row is `Temp`.
-
-                         The CONSEQUENCE stays stated on the note line directly under the box, the same
-                         shape as the MKlopf entry-mode toggle: the two differ in exactly one thing —
-                         what the next Run simulates after a layout edit — and nothing else on screen
-                         would say which is in force. That is load-bearing wherever it sits, and more so
-                         down here where it is read less often. -->
-                    <Grid ColumnDefinitions="80,*">
-                        <TextBlock Grid.Column="0" Text="Source"
-                                   FontSize="11" VerticalAlignment="Center"
-                                   ToolTip.Tip="Whether this component's wires travel inside the schematic (Carried) or are read from the cell's wirebond file (Linked)"/>
-                        <ComboBox Grid.Column="1"
-                                  ItemsSource="{Binding WBondSourceOptions}"
-                                  SelectedIndex="{Binding WBondSourceIndex}"
-                                  FontSize="11"
-                                  Padding="4,3"/>
-                    </Grid>
-                    <TextBlock Text="{Binding WBondSourceNote}"
-                               Margin="80,0,0,0"
+                         The note under it states what the comparison finds right now, whether or not
+                         the Run is warning about it — the same WBondSync answer, so the two agree. -->
+                    <CheckBox IsChecked="{Binding WBondWarnUnsynced}"
+                              Content="Warn if Schematic Not Synced to Layout"
+                              FontSize="11"
+                              ToolTip.Tip="Each Run compares this component's wires with the layout's wirebond file and warns when they differ. The schematic's wires are what simulate either way; Update Schematic from Layout brings the layout's wires in."/>
+                    <TextBlock Text="{Binding WBondSyncNote}"
+                               Margin="24,0,0,0"
                                FontSize="10" TextWrapping="Wrap"
                                Foreground="{DynamicResource SystemBaseMediumColor}"/>
                 </StackPanel>

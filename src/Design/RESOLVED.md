@@ -16694,3 +16694,40 @@ no board outline and no copper above or below now is NOT DRAWN; an instance (`.c
 viewer's planar path also drops the generator's air solid and the air-box faces and edges (`DrawAirBox: false`), since a
 planar solve has no air box; the 3D editor already draws none when a document has no setup. A wires-only layout's
 picture is now its wires and nothing else, which is what the 2D layout shows.
+
+## A wBond's schematic wires always run; an out-of-sync layout is a warning (2026-10-05)
+
+- **The defect.** A `Linked` wBond (WB45) simulated its layout `.wBond`, while its symbol's pins came
+  from its own carried copy. An array added in the layout therefore gave the model more terminals than
+  the symbol had pins, and every run was REFUSED, even when the only edit since was `Temp` or a material
+  in the schematic. The owner asked for the schematic to be what simulates, with a mismatch only warned.
+- **The change.** `NetExtractor` always emits the `Design` payload and never `File`/`Arrays`. `Source` is
+  retired (`WBondPlacement.LegacySourceParameter`: still hidden and filtered, read by nothing), and
+  `WarnUnsynced` (default `true`, absent = `true`) is the Inspector checkbox "Warn if Schematic Not
+  Synced to Layout". `WBondSync.Check` is the one comparison used by Simulate's warning, the Inspector
+  note and `circuitrf check`. LVS (`AssemblyRead`) compares the carried wires only, as they are what
+  runs. Update Layout from Schematic records `File` on every write, including an instance whose cell
+  already had a file; this used to be on the first write only, because recording it also changed what
+  ran.
+- **The comparison must apply the instance's controlling parameters to BOTH sides.** Seeding bakes
+  `LoopHeight`/`Diameter`/`Material` overrides into the file and leaves the payload raw, so comparing
+  the raw copies warns immediately after Update Layout from Schematic. Applying the same overrides to
+  each relies on `ControllingParameters.ApplyTo` being idempotent, and
+  `WBondControllingParametersTests.ApplyingAControllingParameterTwice_IsTheIdentity` now gates exactly
+  that.
+- **Deliberately not compared:** `Temp`, `er`, `IncludeCapacitance` (instance settings, applied over
+  either copy), `GroundPlane` while the instance sets it, and editor-only state (view state, embedded
+  artwork, `Locked`, readout frequency). The file is read from disk, so an unsaved layout edit is not
+  seen until it is saved.
+- **Known gap, pre-existing:** the CLI run verbs (`sparam`/`hb`/…) on a `.csch` go through
+  `SchematicCircuit.CnlTextOf`, which drops extraction conflicts, so they never print this (or any other)
+  extraction warning. `check` and the GUI's Simulate do.
+- Spec: `docs/design/wbond.md` §9.7 (revised).
+- **Follow-up, same day: Update Layout from Schematic now DELETES an array the schematic does not
+  declare** (`WBondCellSeeding.MergeInto`). It used to keep it and post a warning. That matched R-L5-4
+  (a layout instance whose schematic component is gone is reported, never auto-deleted), but the owner
+  found it confusing once the schematic became authoritative, and chose deletion for wires. This is a
+  deliberate exception to R-L5-4. The merge into an open layout is now ONE undo step on the wires
+  (`WBondViewModel.PushExternalUndo`, bracketed by `LayoutEditorViewModel.Begin/EndExternalWireEdit`);
+  before this it recorded no undo entry at all. The merge is in `src/Ui/WBond`, but the finding sits
+  here beside the sync entry it follows from. Spec: wbond.md WB41a.

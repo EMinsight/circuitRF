@@ -55,7 +55,7 @@ public sealed class WBondModel : ComponentModel, IReportsWarnings
     /// <summary>
     /// What the controlling parameters (§5.5.1/WB44) did that the user cannot see for themselves —
     /// detached wires an override could not reach (§2.0), a name that is both an array and a profile,
-    /// a linked file whose arrays have drifted (§3.2/WB35a). Queued at construction, phrased with the
+    /// a named file whose arrays have drifted (§3.2/WB35a). Queued at construction, phrased with the
     /// instance path at the first <see cref="Stamp"/>, and drained from there by the engine.
     /// </summary>
     private readonly List<string> _notes;
@@ -282,10 +282,10 @@ public sealed class WBondModel : ComponentModel, IReportsWarnings
     /// every array reads its two nets by position, so one array too many read past the end of the net list and
     /// the run died with "Index was outside the bounds of the array", naming nothing.
     ///
-    /// <para><b>How it happens:</b> a LINKED instance simulates the <c>.wBond</c> beside the layout, but its
-    /// symbol's pins are drawn from the arrays it was placed with. Add (or delete) an array in the layout and
-    /// the two disagree until Update Schematic from Layout brings the new array list onto the symbol
-    /// (<c>WBondSchematicReconcile</c>) — which is the fix this sentence gives.</para>
+    /// <para><b>How it happens:</b> a netlist whose wires come from a <c>File</c> with more arrays than it lists
+    /// nets for. A schematic used to produce exactly that — a Linked instance simulated the file while its symbol's
+    /// pins came from its own copy — until 2026-10-05, when the schematic's own wires became what always runs
+    /// (wbond.md §9.7). A hand-written <c>.cnl</c> still can.</para>
     /// </summary>
     private void RefuseIfPinsDisagree(ElaboratedComponent c)
     {
@@ -295,15 +295,13 @@ public sealed class WBondModel : ComponentModel, IReportsWarnings
 
         string arrays = string.Join(", ", _design.Arrays.Select(a => a.Name));
         string source = _sourceDescription is { Length: > 0 } s && s != "<inline>"
-            ? $"its linked wirebond file '{Path.GetFileName(s)}'"
+            ? $"its wirebond file '{Path.GetFileName(s)}'"
             : "its wirebond design";
         string refPin = HasReferencePin ? ", plus REF" : "";
         throw new InvalidOperationException(
-            $"wBond '{c.InstancePath}' has {c.Nodes.Length} pin(s) on the schematic, but {source} has " +
-            $"{ArrayCount} wire array(s) ({arrays}), which need {PortCount} — an input and an output pin per " +
-            $"array{refPin}. The arrays were changed in the layout after the symbol was drawn. Open the " +
-            "schematic and run Design ▸ Update Schematic from Layout so the symbol gains (or drops) those pins, " +
-            "then wire any new ones; or undo the array change in the layout.");
+            $"wBond '{c.InstancePath}' is connected to {c.Nodes.Length} net(s), but {source} has " +
+            $"{ArrayCount} wire array(s) ({arrays}), which need {PortCount} — an input and an output net per " +
+            $"array{refPin}. List a net for every array terminal, or name wires whose arrays match the nets given.");
     }
 
     /// <summary>

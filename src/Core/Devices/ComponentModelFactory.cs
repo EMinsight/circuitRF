@@ -2587,14 +2587,14 @@ public static class ComponentModelFactory
 
             path = fileValue.AsString();
 
-            // WB45's own "Not Found" state (§3.1). §5.0/WB17b's argument against a referenced design
-            // was precisely that it reintroduces one; a Linked instance accepts that, so the refusal
-            // has to read like the cell-reference one the user already knows — the path that failed,
-            // and the two ways out of it.
+            // A netlist that names its wires by path — a hand-written .cnl; a schematic always carries
+            // them in `Design` (wbond.md §9.7, revised 2026-10-05). §5.0/WB17b's argument against a
+            // referenced design was that it reintroduces a "Not Found" state, so the refusal reads like
+            // the cell-reference one: the path that failed, and the two ways out of it.
             if (!File.Exists(path))
                 throw new FileNotFoundException(
-                    $"wBond: its linked wirebond file was not found: '{path}'. Either restore the file, " +
-                    "or set the component's Source back to Carried so it simulates the wires it carries.",
+                    $"wBond: its wirebond file was not found: '{path}'. Either restore the file, " +
+                    "or carry the wires in the instance's Design parameter instead.",
                     path);
 
             design = WBondIo.ReadFile(path);
@@ -2845,18 +2845,13 @@ public static class ComponentModelFactory
         IsControllingLength(key, parameter);
 
     /// <summary>
-    /// §3.2/WB35a — <b>the array-drift check, run at elaboration for a LINKED instance.</b>
+    /// §3.2/WB35a — <b>the array-drift check, run at elaboration</b> for a netlist that names its wires by
+    /// <c>File</c> and states the <c>Arrays</c> record they were wired against.
     ///
-    /// <para>Under <c>Linked</c> this check becomes MORE load-bearing, not less. Carried drift is
-    /// introduced by an explicit re-import, so it can be reported at the moment of the import; linked
-    /// drift arrives the moment someone reorders arrays in the <c>.wBond</c>, changing the symbol's pin
-    /// order live beneath an already-wired schematic. Pin order IS array order, so every pin keeps its
-    /// position while its name moves to a different row — the same defect, arriving more quietly.
-    /// Without this, linking would be strictly more dangerous than carrying on that one axis.</para>
-    ///
-    /// <para><c>Arrays</c> is the record the schematic maintains (the array editor is the only thing
-    /// that writes it), and <c>NetExtractor</c> forwards it for a linked instance ALONE — a carried
-    /// instance's payload cannot drift against itself.</para>
+    /// <para>Pin order IS array order, so a file whose arrays were reordered keeps every pin in its
+    /// position while its name moves to a different row. A schematic no longer produces this shape — it
+    /// always carries its own wires (wbond.md §9.7, revised 2026-10-05) and warns through
+    /// <c>WBondSync</c> instead — so this guards a hand-written <c>.cnl</c>.</para>
     /// </summary>
     private static void ReportArrayDrift(
         WBondDesign design, IReadOnlyDictionary<string, Value> parameters, List<string> notes)
@@ -2870,10 +2865,10 @@ public static class ComponentModelFactory
             .SequenceEqual(current.Split('|').OrderBy(s => s, StringComparer.Ordinal));
 
         notes.Add(reorder
-            ? $"the arrays in its linked wirebond file are REORDERED relative to what this instance was "
+            ? $"the arrays in its wirebond file are REORDERED relative to what this instance was "
               + $"wired against ({recorded} → {current}). Every pin keeps its position while its name "
               + "moves, so the wires now connect to different arrays. Check the wiring."
-            : $"the array list in its linked wirebond file has changed since this instance was wired "
+            : $"the array list in its wirebond file has changed since this instance was wired "
               + $"({recorded} → {current}), so its pins have moved. Check the wiring.");
     }
 

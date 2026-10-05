@@ -61,8 +61,7 @@ public static class WBondCellSeeding
         /// <summary>
         /// It already existed and gained an array the schematic had since added — <b>without any wire
         /// already in it being regenerated, re-pointed or moved</b>. Distinct from
-        /// <see cref="Created"/> because the WB45a flip to <c>Linked</c> belongs on a first write only:
-        /// a merge changes what is drawn, never which of the two sources the next Run reads.
+        /// <see cref="Created"/> because a merge changes some of what is drawn rather than all of it.
         /// </summary>
         Merged,
 
@@ -182,9 +181,19 @@ public static class WBondCellSeeding
 
             // An OPEN editor is the authority over its own wires — see MergeIntoLive for the owner
             // report that says why this branch is not optional.
-            return liveDesign is not null
+            var merged = liveDesign is not null
                 ? MergeIntoLive(comp, liveDesign, existing, messages)
                 : MergeIntoExisting(comp, existing, messages);
+
+            // An instance placed before it was recorded — or one that pre-dates the record — learns
+            // which file it is checked against. This changes nothing about what simulates (the
+            // schematic's own wires always do), so it is safe on every write, not only the first.
+            if (merged.HasSidecar && WBondPlacement.LinkedPathOf(comp) is null)
+            {
+                WBondPlacement.LinkTo(comp, existing, model.SchematicDirectory);
+                model.NotifyChanged();
+            }
+            return merged;
         }
 
         string? payload = comp.Parameters.FirstOrDefault(p => p.Name == WBondEmbedding.DesignParameter)?.Expression;
@@ -230,29 +239,16 @@ public static class WBondCellSeeding
             $"({design.Arrays.Count} array(s), {design.WireCount} wire(s)). " +
             "Its wires now draw over this cell's layout and are edited there.");
 
-        // WB45a — THIS is where a placed wBond becomes Linked, and it says so.
-        //
-        // The state must change only at a moment the user can see. A freshly placed wBond is Carried
-        // by construction (there is no cell and no file to link to); the file comes into existence
-        // here, and flipping here is what keeps "which wires simulate" tied to something that happened
-        // on screen. It must NEVER flip as a side effect of a later scan noticing the file exists.
-        //
-        // Only on Created. A Carried instance whose cell already has a .wBond is a legitimate state —
-        // someone who deliberately kept the portable payload — and is not auto-converted.
+        // The instance records the file it is now checked against (wbond.md §9.7, revised 2026-10-05).
+        // Until then this was where it flipped to Linked and started simulating the FILE; the
+        // schematic's own wires now always run, and the file is only compared against them.
         string stored = WBondPlacement.LinkTo(comp, path, model.SchematicDirectory);
         model.NotifyChanged();
 
-        // The GEOMETRY half of this sentence is what linking buys; the ARRAY half is what it does not,
-        // and saying only the first is what produced the owner's second report (2026-08-17: "this
-        // contradicts the 'nothing needs bringing back into the schematic' text"). A placed wBond's
-        // PINS come from its carried payload, so an array added or removed in the layout still has to
-        // be brought back or the symbol and the model disagree about the terminal count.
         messages.Add(
-            $"wBond '{comp.InstanceName}' is now LINKED to '{stored}': the next Run simulates the wires " +
-            "in the layout, so moving a wire or changing a loop height there needs nothing further. " +
-            "ADDING OR REMOVING AN ARRAY still does — the symbol's pins come from the schematic's own " +
-            "copy — so run Update Schematic from Layout after that. Set Source back to Carried in its " +
-            "parameters if the schematic should travel on its own.");
+            $"wBond '{comp.InstanceName}' is checked against '{stored}'. The schematic's own wires are " +
+            "what simulate; after editing the wires in the layout, run Update Schematic from Layout to " +
+            "bring them in. Until then each Run warns that the two differ.");
 
         return new Result(Outcome.Created, path, messages);
     }
@@ -374,7 +370,7 @@ public static class WBondCellSeeding
             return new Result(Outcome.KeptExisting, path, messages);
         }
 
-        var status = MergeInto(onDisk, comp, name, messages);
+        var status = MergeInto(onDisk, comp, name, messages, live: false);
 
         if (status is MergeStatus.Refused) return new Result(Outcome.KeptExisting, path, messages);
         if (status is MergeStatus.Unchanged) return new Result(Outcome.KeptExisting, path, messages);
@@ -414,7 +410,7 @@ public static class WBondCellSeeding
     private static Result MergeIntoLive(
         EditableComponent comp, WBondDesign live, string path, List<string> messages)
     {
-        var status = MergeInto(live, comp, Path.GetFileName(path), messages);
+        var status = MergeInto(live, comp, Path.GetFileName(path), messages, live: true);
 
         return status is MergeStatus.Changed
             ? new Result(Outcome.Merged, path, messages) { LiveDesignChanged = true }
@@ -434,15 +430,22 @@ public static class WBondCellSeeding
     ///     already carried to the SOLVER as an override (§5.5.1/WB44) without needing to overwrite the
     ///     drawing. Re-baking it here would undo layout work to change a number that has already taken
     ///     effect.</item>
-    ///   <item><b>An array the schematic no longer has is kept, not deleted.</b> Deleting is the one
-    ///     direction that destroys drawn work irrecoverably, and the array may have been removed from
-    ///     the component by accident. It is REPORTED, and the remedy named is the one that matches this
-    ///     direction — which the old message got backwards, telling a user who had just added an array
-    ///     on the schematic to pull FROM the layout, i.e. to throw that array away.</item>
     /// </list>
+    ///
+    /// <h3>An array the schematic no longer has IS deleted (revised 2026-10-05)</h3>
+    /// <para>It used to be kept and reported, on the grounds that deleting drawn work is the one
+    /// irrecoverable direction. That left the owner with an array removed from the schematic still drawn
+    /// in the layout after this command, with a line in Messages as the only explanation — this command
+    /// is "make the layout match the schematic", and the schematic is what simulates (wbond.md §9.7).
+    /// Two things make the deletion safe to do: it is named in Messages with its wire count, and in an
+    /// open layout the whole merge is ONE undo step (<c>LayoutEditorViewModel.BeginExternalWireEdit</c>).
+    /// A schematic that declares no arrays at all deletes nothing — that is a payload problem, not a
+    /// request to empty the layout.</para>
     /// </summary>
+    /// <param name="live">True when <paramref name="target"/> is an open layout's design, whose undo can
+    /// reverse this merge.</param>
     private static MergeStatus MergeInto(
-        WBondDesign target, EditableComponent comp, string name, List<string> messages)
+        WBondDesign target, EditableComponent comp, string name, List<string> messages, bool live)
     {
         string? payload = comp.Parameters.FirstOrDefault(p => p.Name == WBondEmbedding.DesignParameter)?.Expression;
         if (!WBondEmbedding.TryDecode(payload, out var wanted) || wanted is null)
@@ -460,17 +463,20 @@ public static class WBondCellSeeding
             .Where(a => !wanted.Arrays.Any(w => w.Name.Equals(a.Name, StringComparison.OrdinalIgnoreCase)))
             .ToList();
 
-        // Array order IS pin order, and under `Linked` the model's terminals come from the FILE while
-        // the symbol's pins come from the component's payload — so leaving the two in different orders
-        // wires every array to the wrong branch. Reordering moves no wire in space; it only realigns
-        // the two lists, which is what makes it safe to do unasked.
+        // Array order IS pin order: the symbol's pins come from the component's payload, so a file
+        // in a different order would bring every array back onto the wrong pins at the next Update
+        // Schematic from Layout. Reordering moves no wire in space; it only realigns the two lists,
+        // which is what makes it safe to do unasked.
+        if (wanted.Arrays.Count == 0) orphaned.Clear();
+
         var merged = wanted.Arrays
             .Select(w => byName.TryGetValue(w.Name, out var existing) ? existing : w)
-            .Concat(orphaned)      // kept, and reported below — never silently dropped
+            .Concat(wanted.Arrays.Count == 0 ? target.Arrays : [])
             .ToList();
 
+        // Reordering is judged on the arrays both sides keep — a deletion is reported on its own.
         bool reordered = !merged.Select(a => a.Name).SequenceEqual(
-            target.Arrays.Select(a => a.Name), StringComparer.OrdinalIgnoreCase);
+            target.Arrays.Except(orphaned).Select(a => a.Name), StringComparer.OrdinalIgnoreCase);
 
         target.Arrays.Clear();
         target.Arrays.AddRange(merged);
@@ -509,12 +515,11 @@ public static class WBondCellSeeding
         // memory and never written, which is the silent half of the failure.
         bool remolded = target.OvermoldEr != erBefore;
 
-        if (added.Count == 0 && !reordered && reshaped == 0 && !remolded)
+        if (added.Count == 0 && orphaned.Count == 0 && !reordered && reshaped == 0 && !remolded)
         {
             // Agreed, kept, and nothing worth saying about it. "The wires are already in the layout"
             // is not news to someone who just ran this on a cell they have been editing (owner,
             // 2026-08-17), and reporting it trains people to skim the pane.
-            if (orphaned.Count > 0) messages.Add(DescribeOrphaned(comp, orphaned, name));
             return MergeStatus.Unchanged;
         }
 
@@ -535,7 +540,7 @@ public static class WBondCellSeeding
                 $"wBond '{comp.InstanceName}': the arrays in '{name}' were re-ordered to match the " +
                 "schematic, so its pins line up with the component's. No wire moved.");
 
-        if (orphaned.Count > 0) messages.Add(DescribeOrphaned(comp, orphaned, name));
+        if (orphaned.Count > 0) messages.Add(DescribeRemoved(comp, orphaned, name, live));
 
         return MergeStatus.Changed;
     }
@@ -568,19 +573,15 @@ public static class WBondCellSeeding
     }
 
     /// <summary>
-    /// An array drawn in the layout that the schematic component no longer declares.
-    ///
-    /// <para><b>The remedy named here is the one that matches THIS direction.</b> The message this
-    /// replaces said "use Update Schematic from Layout, or delete the file to re-seed it" — advice that
-    /// told a user who had just added an array on the schematic to pull the layout back over it, i.e.
-    /// to throw away the array they had come here to add.</para>
+    /// The arrays this merge deleted because the component no longer declares them — named with their
+    /// wire counts, and with the way back when there is one (an open layout's undo).
     /// </summary>
-    private static string DescribeOrphaned(EditableComponent comp, List<WireArray> orphaned, string name)
-        => $"wBond '{comp.InstanceName}': {Plural(orphaned.Count, "array")} " +
-           $"({string.Join(", ", orphaned.Select(a => $"'{a.Name}'"))}) " +
-           $"{(orphaned.Count == 1 ? "is" : "are")} drawn in '{name}' but no longer declared on the " +
-           "component, so its pins are not on the symbol. The wires were kept: add the array back in " +
-           "the component's parameters, or delete those wires in the layout.";
+    private static string DescribeRemoved(EditableComponent comp, List<WireArray> removed, string name, bool live)
+        => $"wBond '{comp.InstanceName}': {Plural(removed.Count, "array")} " +
+           $"({string.Join(", ", removed.Select(a => $"'{a.Name}', {Plural(a.Wires.Count, "wire")}"))}) " +
+           $"{(removed.Count == 1 ? "was" : "were")} removed from '{name}' because the component no longer " +
+           "declares " + (removed.Count == 1 ? "it" : "them") + "." +
+           (live ? " Undo in the layout puts " + (removed.Count == 1 ? "it" : "them") + " back." : "");
 
     private static string Plural(int count, string noun) =>
         count == 1 ? $"1 {noun}" : $"{count} {noun}s";

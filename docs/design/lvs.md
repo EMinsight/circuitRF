@@ -511,10 +511,11 @@ failure this would otherwise produce: reorder the array list and every pin keeps
 its name moves, so the wires now connect to different arrays. LVS consumes that report rather than
 re-deriving it, and a drifted wBond is a finding before any net is compared.
 
-**R-lvs-22. Which of the two wire sources LVS reads is the instance's own `Source` parameter
-(Carried or Linked), and the report says which.** §9.7's per-instance choice is what the *engine*
-simulates; LVS must verify the same wires the engine will use, or it verifies a design nobody runs.
-A Carried instance whose payload has drifted from its cell's `.wBond` is `lvs.wbond.payload-drift`,
+**R-lvs-22. LVS reads the wires the engine simulates — the instance's own carried wires — and the
+report says so.** Verifying any other wires verifies a design nobody runs. (Until 2026-10-05 an
+instance's `Source` could say Linked, and both the engine and LVS then read the `.wBond` its `File`
+named; wbond.md §9.7 retired that.) An instance whose wires differ from its cell's `.wBond` is
+`lvs.wbond.payload-drift`,
 a warning naming "Update Schematic from wBond Layout" as the remedy — the state §9.6 calls normal
 and recoverable.
 

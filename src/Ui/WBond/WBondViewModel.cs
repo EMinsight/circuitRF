@@ -1621,6 +1621,20 @@ public sealed partial class WBondViewModel : ObservableObject
         if (_undoStamps.Count > 0) _undoStamps.Pop();
     }
 
+    /// <summary>
+    /// An undo point for an edit made to <see cref="Design"/> from OUTSIDE this editor — Update Layout
+    /// from Schematic merging the schematic's arrays into an open layout, which adds, deletes and
+    /// reshapes arrays in place. Without it that merge left nothing to undo, and since 2026-10-05 it
+    /// deletes arrays the schematic no longer declares. Pair with <see cref="DropExternalUndo"/> when the
+    /// edit changed nothing.
+    /// </summary>
+    /// <returns>Whether an entry was pushed (none while a gesture is open).</returns>
+    public bool PushExternalUndo() => PushUndo();
+
+    /// <summary>Removes the entry <see cref="PushExternalUndo"/> just pushed, for an external edit that
+    /// changed nothing.</summary>
+    public void DropExternalUndo() => DropUndoEntry();
+
     /// <summary>Pushes an undo entry, unless a gesture is open. Returns whether it actually pushed.</summary>
     private bool PushUndo()
     {

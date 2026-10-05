@@ -826,17 +826,15 @@ public static class LvsDiagnostics
     /// </summary>
     /// <remarks>
     /// Info, and unconditional wherever a wBond is compared. Verifying wires the engine will not
-    /// simulate verifies a design nobody runs, and the only way a reader can tell which of the two
-    /// sources answered is to be told: a Carried instance and a Linked one look identical in every
-    /// other line of the report.
+    /// simulate verifies a design nobody runs, so the report says which wires were used: the
+    /// schematic's own, which always run (wbond.md §9.7, revised 2026-10-05).
     /// </remarks>
-    public static Diagnostic WBondWiresRead(string path, string source, string from, int arrays, int wires)
+    public static Diagnostic WBondWiresRead(string path, int arrays, int wires)
         => Diagnostic.Create(
             "lvs.wbond.wires-read", DiagnosticSeverity.Info,
-            "wBond '{path}' was compared against its {source} wires ({from}): {arrays} array(s), "
+            "wBond '{path}' was compared using the wires the schematic carries: {arrays} array(s), "
             + "{wires} wire(s). These are the wires the next Run simulates.",
-            ("path", path), ("source", source), ("from", from),
-            ("arrays", arrays), ("wires", wires));
+            ("path", path), ("arrays", arrays), ("wires", wires));
 
     /// <summary>
     /// R-lvs13-3c. A wire foot on no copper at all.

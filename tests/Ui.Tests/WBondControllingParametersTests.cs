@@ -113,10 +113,12 @@ public sealed class WBondControllingParametersTests : IDisposable
         return new SchematicEditModel { SchematicDirectory = dir };
     }
 
-    private RunResult RunPlaced(SchematicEditModel model)
+    /// <param name="warnings">Collects the extraction's warnings; null asserts there are none.</param>
+    private RunResult RunPlaced(SchematicEditModel model, List<string>? warnings = null)
     {
         var result = NetExtractor.Extract(model, "tb");
-        Assert.Empty(result.Conflicts);
+        if (warnings is null) Assert.Empty(result.Conflicts);
+        else warnings.AddRange(result.Conflicts);
 
         string cnlPath = Path.Combine(_root, "netlist.cnl");
         File.WriteAllText(cnlPath, CnlWriter.Write(result.TestBench, result.Library));
@@ -217,7 +219,7 @@ public sealed class WBondControllingParametersTests : IDisposable
         // parameter removed from the instance rather than merely left blank.
         var asBefore = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
         var legacy = asBefore.Components.First(c => c.Symbol == SymbolKind.WBond);
-        foreach (string name in new[] { "LoopHeight", "Diameter", "Material", "Source", "File" })
+        foreach (string name in new[] { "LoopHeight", "Diameter", "Material", WBondPlacement.WarnUnsyncedParameter, "File" })
             legacy.Parameters.Remove(legacy.Parameters.First(p => p.Name == name));
 
         var now = S21Of(RunPlaced(withDeclarations));
@@ -690,42 +692,41 @@ public sealed class WBondControllingParametersTests : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    //  Gates 6 & 7 — Carried or Linked (WB45)
+    //  Gates 6 & 7 — the schematic's wires run; the layout file is compared (wbond.md §9.7)
     // ═══════════════════════════════════════════════════════════════════════════
 
     /// <summary>
-    /// <b>WB45a — the flip happens at a moment the user can see, and is announced there.</b>
-    /// A freshly placed wBond is Carried by construction; the file comes into existence when Update
-    /// Layout from Schematic runs, and <i>that command</i> is where the instance becomes Linked.
+    /// <b>Update Layout from Schematic records the file the instance is checked against, and says the
+    /// schematic's own wires are what run</b> (revised 2026-10-05 — it used to flip the instance to
+    /// Linked, after which the run read the file).
     ///
     /// <para>The stored path is relative to the SCHEMATIC, which is what makes it survive the cell
     /// folder being moved or checked out somewhere else — an absolute path breaks on every other
     /// machine.</para>
     /// </summary>
     [Fact]
-    public void Gate6_UpdateLayoutFromSchematic_FlipsTheInstanceToLinked_AndSaysSo()
+    public void Gate6_UpdateLayoutFromSchematic_RecordsTheFile_AndSaysTheSchematicRuns()
     {
         var model = NewSchematic();
         var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         model.Components.Add(comp);
 
-        Assert.Equal(WBondPlacement.WireSource.Carried, WBondPlacement.SourceOf(comp));
+        Assert.Null(WBondPlacement.LinkedPathOf(comp));
 
         string cellDir = Path.Combine(_root, "Amp");
         var seeded = WBondCellSeeding.Seed(model, cellDir, "Amp");
 
         Assert.Equal(WBondCellSeeding.Outcome.Created, seeded.Outcome);
-        Assert.Equal(WBondPlacement.WireSource.Linked, WBondPlacement.SourceOf(comp));
 
         // Relative, and pointing back out of schematic/ into layout/ — the WB40 attachment location.
         string stored = WBondPlacement.LinkedPathOf(comp)!;
         Assert.False(Path.IsPathRooted(stored));
         Assert.Contains("layout/Amp.wBond", stored.Replace('\\', '/'));
+        Assert.Equal(WBondSync.Status.InSync, WBondSync.Check(comp, model.SchematicDirectory).Status);
 
-        // Announced, with the consequence and the way back.
         string said = string.Join("\n", seeded.Messages);
-        Assert.Contains("LINKED", said);
-        Assert.Contains("Carried", said);
+        Assert.Contains("checked against", said);
+        Assert.Contains("Update Schematic from Layout", said);
     }
 
     /// <summary>
@@ -800,13 +801,13 @@ public sealed class WBondControllingParametersTests : IDisposable
     }
 
     /// <summary>
-    /// <b>Applying a controlling parameter twice is the identity, and the fix above depends on it.</b>
+    /// <b>Applying a controlling parameter twice is the identity, and the sync check depends on it.</b>
     ///
-    /// <para>Update Layout bakes the value into the file and then flips the instance to Linked — so the
-    /// next Run reads the already-baked file and applies the same parameter to it AGAIN. That is only
-    /// safe because every controlling parameter sets an ABSOLUTE value (a height, a diameter, a metal)
-    /// rather than a delta or a factor. The claim is gated here rather than argued: the run's answer
-    /// must be the same whether the parameter is still on the instance or has since been cleared.</para>
+    /// <para>Update Layout bakes the value into the FILE and leaves the schematic's copy raw, and
+    /// <c>WBondSync</c> compares the two with the instance's overrides applied to EACH — so the baked
+    /// file gets the parameter a second time. That is only "in sync" because every controlling parameter
+    /// sets an ABSOLUTE value (a height, a diameter, a metal) rather than a delta or a factor; a
+    /// non-idempotent one would warn straight after the command that synced them.</para>
     ///
     /// <para>This is the same property that made <c>Span</c> — which scales by FACTOR (WB24c) — the one
     /// of the six that had to be deferred, so the gate is worth keeping if Span is ever revisited.</para>
@@ -814,25 +815,19 @@ public sealed class WBondControllingParametersTests : IDisposable
     [Fact]
     public void ApplyingAControllingParameterTwice_IsTheIdentity()
     {
-        var model = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
-        var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
+        var model = NewSchematic();
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1", "G2"), "W1");
+        model.Components.Add(comp);
 
-        var lh = comp.Parameters.First(p => p.Name == "LoopHeight");
-        lh.Expression = "45";
-        lh.Unit = "mil";
+        comp.Parameters.First(p => p.Name == "LoopHeight").Expression = "45";
+        comp.Parameters.First(p => p.Name == "LoopHeight").Unit = "mil";
+        comp.Parameters.Add(new EditableParameter { Name = "Diameter_G2", Expression = "2", Unit = "mil" });
 
         var seeded = WBondCellSeeding.Seed(model, Path.Combine(_root, "Amp"), "Amp");
         Assert.Equal(WBondCellSeeding.Outcome.Created, seeded.Outcome);
-        Assert.Equal(WBondPlacement.WireSource.Linked, WBondPlacement.SourceOf(comp));
 
-        // The parameter is still set, so the run applies it on top of the file it just baked.
-        double applied = SeriesL(S21Of(RunPlaced(model)), 5e9);
-
-        // Now clear it: the file already holds 45 mil, so nothing should move.
-        lh.Expression = "";
-        double baked = SeriesL(S21Of(RunPlaced(model)), 5e9);
-
-        Assert.Equal(baked, applied, 12);
+        var sync = WBondSync.Check(comp, model.SchematicDirectory);
+        Assert.True(sync.Status == WBondSync.Status.InSync, sync.Note);
     }
 
     /// <summary>
@@ -926,8 +921,7 @@ public sealed class WBondControllingParametersTests : IDisposable
     /// The second half of the same report: <i>"Same is true for deleting a whole group of wires in
     /// layout — the deletion is not respected in schematic."</i>
     ///
-    /// <para>This is the case that matters even under <c>Linked</c>. A placed wBond's <b>pins come from
-    /// its carried payload</b>, so a deleted array leaves the symbol still showing that array's two
+    /// <para>A placed wBond's <b>pins come from its carried payload</b>, so a deleted array leaves the symbol still showing that array's two
     /// terminals — still wired to whatever the user connected them to — while the model behind it has
     /// one branch fewer. The <c>Arrays</c> record moves with the payload, and the pin count follows.</para>
     /// </summary>
@@ -1179,7 +1173,7 @@ public sealed class WBondControllingParametersTests : IDisposable
             created.Parameters.First(p => p.Name == WBondEmbedding.DesignParameter).Expression);
 
         // …and every other parameter a dropped wBond gets is there, at its own default.
-        Assert.Equal("Carried", created.Parameters.First(p => p.Name == "Source").Expression);
+        Assert.Equal("true", created.Parameters.First(p => p.Name == WBondPlacement.WarnUnsyncedParameter).Expression);
 
         // The unconnected pins are STATED. A component that appears wired to nothing with no
         // explanation reads as a half-finished command.
@@ -1200,28 +1194,30 @@ public sealed class WBondControllingParametersTests : IDisposable
     }
 
     /// <summary>
-    /// Reconciling does <b>not</b> touch <c>Source</c>. It makes the payload agree with the layout; it
-    /// does not decide which of them the next Run reads, and quietly flipping that is precisely what
-    /// WB45a forbids.
+    /// Reconciling does <b>not</b> touch the sync switch or the file the instance is checked against.
+    /// It makes the schematic's wires agree with the layout; the switch is the user's.
     /// </summary>
     [Fact]
-    public void UpdateSchematicFromLayout_LeavesTheWireSourceAlone()
+    public void UpdateSchematicFromLayout_LeavesTheSyncSwitchAndFileAlone()
     {
         var model = NewSchematic();
         var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         model.Components.Add(comp);
+        comp.Parameters.First(p => p.Name == WBondPlacement.WarnUnsyncedParameter).Expression = "false";
 
         string layoutDir = Path.Combine(_root, "Amp", "layout");
         Directory.CreateDirectory(layoutDir);
         string wbondPath = Path.Combine(layoutDir, "Amp.wBond");
         WBondIo.WriteFile(wbondPath, ArchedDesign(45.0, "G1"));
         WBondPlacement.LinkTo(comp, wbondPath, model.SchematicDirectory);
+        Assert.Equal(WBondSync.Status.Differs, WBondSync.Check(comp, model.SchematicDirectory).Status);
 
         var result = WBondSchematicReconcile.Run(model, ArchedDesign(45.0, "G1"));
         result.Command!.Execute();
 
-        Assert.Equal(WBondPlacement.WireSource.Linked, WBondPlacement.SourceOf(comp));
+        Assert.False(WBondPlacement.WarnsIfUnsynced(comp));
         Assert.Equal("../layout/Amp.wBond", WBondPlacement.LinkedPathOf(comp));
+        Assert.Equal(WBondSync.Status.InSync, WBondSync.Check(comp, model.SchematicDirectory).Status);
     }
 
     /// <summary>
@@ -1270,10 +1266,72 @@ public sealed class WBondControllingParametersTests : IDisposable
     }
 
     /// <summary>
+    /// <b>An array the schematic no longer declares is REMOVED from the layout</b> (revised 2026-10-05:
+    /// it used to be kept, so the layout went on drawing an array the schematic had dropped). Named in
+    /// the messages with its wire count; the arrays both sides keep are untouched, and the two are in
+    /// sync afterwards.
+    /// </summary>
+    [Fact]
+    public void UpdateLayout_RemovesAnArrayTheSchematicNoLongerDeclares()
+    {
+        var model = NewSchematic();
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1", "G2", "G3"), "W1");
+        model.Components.Add(comp);
+
+        string cellDir = Path.Combine(_root, "Amp");
+        var first = WBondCellSeeding.Seed(model, cellDir, "Amp");
+        Assert.Equal(WBondCellSeeding.Outcome.Created, first.Outcome);
+        var keptG1 = WBondIo.ReadFile(first.Path!).Arrays[0].Wires.Select(w => w.Points.ToList()).ToList();
+
+        WBondPlacement.ApplyDesign(comp, ArchedDesign(20.0, "G1", "G2"));
+        var second = WBondCellSeeding.Seed(model, cellDir, "Amp");
+
+        Assert.Equal(WBondCellSeeding.Outcome.Merged, second.Outcome);
+        var onDisk = WBondIo.ReadFile(second.Path!);
+        Assert.Equal(["G1", "G2"], onDisk.Arrays.Select(a => a.Name));
+        for (int w = 0; w < keptG1.Count; w++)
+            Assert.Equal(keptG1[w], onDisk.Arrays[0].Wires[w].Points);
+
+        string said = string.Join("\n", second.Messages);
+        Assert.Contains("'G3'", said);
+        Assert.Contains("removed", said);
+        Assert.DoesNotContain("Undo", said);   // no open layout, so no undo to offer
+        Assert.Equal(WBondSync.Status.InSync, WBondSync.Check(comp, model.SchematicDirectory).Status);
+    }
+
+    /// <summary>
+    /// The same removal into an OPEN layout's wires is one undo step: the external-edit undo point
+    /// recorded before the merge puts the deleted array back, wires and all.
+    /// </summary>
+    [Fact]
+    public void UpdateLayout_RemovingAnArrayFromAnOpenLayout_IsUndoable()
+    {
+        var model = NewSchematic();
+        var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1", "G2"), "W1");
+        model.Components.Add(comp);
+
+        var editor = new WBondViewModel(ArchedDesign(20.0, "G1", "G2", "G3"));
+        string layoutDir = Path.Combine(_root, "Amp", "layout");
+        Directory.CreateDirectory(layoutDir);
+        WBondIo.WriteFile(Path.Combine(layoutDir, "Amp.wBond"), editor.Design);
+
+        Assert.True(editor.PushExternalUndo());
+        var seeded = WBondCellSeeding.Seed(model, Path.Combine(_root, "Amp"), "Amp", liveDesign: editor.Design);
+        Assert.True(seeded.LiveDesignChanged);
+        editor.CommitStructuralChange();
+
+        Assert.Equal(["G1", "G2"], editor.Design.Arrays.Select(a => a.Name));
+        Assert.Contains("Undo in the layout", string.Join("\n", seeded.Messages));
+
+        editor.Undo();
+        Assert.Equal(["G1", "G2", "G3"], editor.Design.Arrays.Select(a => a.Name));
+        Assert.NotEmpty(editor.Design.Arrays[2].Wires);
+    }
+
+    /// <summary>
     /// The owner's sequence in full, through the real panel commands: seed, add an array in the dialog,
     /// seed again, add a third, seed again. Each round's array must arrive, the pin count must follow,
-    /// and the instance must stay <c>Linked</c> — the WB45a flip belongs on the FIRST write only, and a
-    /// merge changes what is drawn rather than which source the next Run reads.
+    /// and the instance must keep naming the one file it is checked against.
     /// </summary>
     [Fact]
     public void UpdateLayout_RunTwice_KeepsBringingNewArraysAcross()
@@ -1290,7 +1348,7 @@ public sealed class WBondControllingParametersTests : IDisposable
         string sidecar = Path.Combine(cellDir, "layout", "Amp.wBond");
 
         Assert.Equal(WBondCellSeeding.Outcome.Created, WBondCellSeeding.Seed(model, cellDir, "Amp").Outcome);
-        Assert.Equal(WBondPlacement.WireSource.Linked, WBondPlacement.SourceOf(comp));
+        Assert.Equal("../layout/Amp.wBond", WBondPlacement.LinkedPathOf(comp));
 
         for (int round = 2; round <= 3; round++)
         {
@@ -1314,8 +1372,7 @@ public sealed class WBondControllingParametersTests : IDisposable
                 }
         }
 
-        // A merge never re-decides the wire source.
-        Assert.Equal(WBondPlacement.WireSource.Linked, WBondPlacement.SourceOf(comp));
+        Assert.Equal("../layout/Amp.wBond", WBondPlacement.LinkedPathOf(comp));
     }
 
     /// <summary>
@@ -1448,17 +1505,17 @@ public sealed class WBondControllingParametersTests : IDisposable
     }
 
     /// <summary>
-    /// §3.0 — <b>a Carried instance whose cell already has a <c>.wBond</c> is a legitimate state, not
-    /// an error.</b> It is someone who deliberately kept the portable payload, and re-running Update
-    /// Layout must not auto-convert it: the flip belongs on <c>Created</c> alone, because a flip on a
-    /// later scan noticing the file exists would change which wires simulate with nothing on screen.
+    /// An instance whose cell already has a <c>.wBond</c> — one placed before the file was recorded, or
+    /// a schematic that pre-dates the record — is given that file to be checked against. Safe on any
+    /// write, because it changes nothing about what simulates; its own wires are left exactly as they were.
     /// </summary>
     [Fact]
-    public void ACarriedInstance_WhoseCellAlreadyHasAWBondFile_IsNotAutoConverted()
+    public void AnInstanceWhoseCellAlreadyHasAWBondFile_IsGivenItToBeCheckedAgainst()
     {
         var model = NewSchematic();
         var comp = WBondPlacement.BuildCarrying(ArchedDesign(20.0, "G1"), "W1");
         model.Components.Add(comp);
+        string before = comp.Parameters.First(p => p.Name == "Design").Expression;
 
         string cellDir = Path.Combine(_root, "Amp");
         string layoutDir = Path.Combine(cellDir, "layout");
@@ -1468,60 +1525,60 @@ public sealed class WBondControllingParametersTests : IDisposable
         var seeded = WBondCellSeeding.Seed(model, cellDir, "Amp");
 
         Assert.Equal(WBondCellSeeding.Outcome.KeptExisting, seeded.Outcome);
-        Assert.Equal(WBondPlacement.WireSource.Carried, WBondPlacement.SourceOf(comp));
+        Assert.Equal("../layout/Amp.wBond", WBondPlacement.LinkedPathOf(comp));
+        Assert.Equal(before, comp.Parameters.First(p => p.Name == "Design").Expression);
     }
 
     /// <summary>
-    /// <b>Gate 6 — a linked instance runs from the FILE, and survives the schematic being moved.</b>
+    /// <b>Gate 6 — the owner's case (2026-10-05): the schematic's own wires run, and a layout that
+    /// differs is a WARNING.</b> Until then a Linked instance simulated the file, so the answer
+    /// followed the layout and an array added there refused the run.
     ///
-    /// <para>The move is real: the whole cell folder is renamed, so an absolute stored path would be
-    /// dangling and a workspace-relative one would be wrong. A schematic-relative one still resolves,
-    /// exactly as §4 of <c>workspace-and-project-tree.md</c> resolves a cell reference.</para>
-    ///
-    /// <para>The oracle is that the wires that RUN are the file's and not the payload's: the file is
-    /// written at a different loop height from the one the component carries, so the two produce
-    /// measurably different inductances.</para>
+    /// <para>The oracle is that the inductance is BIT-identical with and without the file named: the
+    /// file holds a much taller loop, so had it run the answer would have moved by far more than any
+    /// tolerance. The warning names the array whose wires differ, it is gone when the switch is
+    /// cleared, and the schematic-relative path still resolves after the cell folder is moved.</para>
     /// </summary>
     [Fact]
-    public void Gate6_ALinkedInstance_RunsFromTheFile_AndSurvivesAMoveOfTheSchematic()
+    public void Gate6_TheSchematicsWiresRun_AndADifferingLayoutWarns()
     {
         var model = Testbench(ArchedDesign(10.0, "G1"), SpAt5GHz());
         var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
 
-        // The file holds a much TALLER loop than the payload does, so "which one ran" is measurable.
         string cellDir = Path.Combine(_root, "Amp");
         string layoutDir = Path.Combine(cellDir, "layout");
         Directory.CreateDirectory(layoutDir);
         string wbondPath = Path.Combine(layoutDir, "Amp.wBond");
         WBondIo.WriteFile(wbondPath, ArchedDesign(45.0, "G1"));
 
-        double carried = SeriesL(S21Of(RunPlaced(model)), 5e9);
+        double alone = SeriesL(S21Of(RunPlaced(model)), 5e9);
 
         WBondPlacement.LinkTo(comp, wbondPath, model.SchematicDirectory);
-        double linked = SeriesL(S21Of(RunPlaced(model)), 5e9);
+        var warnings = new List<string>();
+        double named = SeriesL(S21Of(RunPlaced(model, warnings)), 5e9);
 
-        Assert.True(linked > carried * 1.2,
-            $"a linked instance must simulate the FILE's 45 mil wires, not the payload's 10 mil ones; " +
-            $"got {linked * 1e12:F1} pH against {carried * 1e12:F1} pH.");
+        Assert.Equal(alone, named);
+        string warning = Assert.Single(warnings);
+        Assert.Contains("wBond 'W1' is not synced", warning);
+        Assert.Contains("the wires in G1 differ", warning);
 
-        // Now move the whole cell folder. The stored value is relative to the schematic, so it is the
-        // SAME string and it still resolves.
+        comp.Parameters.First(p => p.Name == WBondPlacement.WarnUnsyncedParameter).Expression = "false";
+        Assert.Empty(NetExtractor.Extract(model, "tb").Conflicts);
+
+        // Move the whole cell folder: the stored value is relative to the schematic, so it is the SAME
+        // string and it still resolves — the comparison still finds the file rather than "not found".
         string movedCell = Path.Combine(_root, "Amp2");
         Directory.Move(cellDir, movedCell);
         model.SchematicDirectory = Path.Combine(movedCell, "schematic");
-
-        double afterMove = SeriesL(S21Of(RunPlaced(model)), 5e9);
-        Assert.Equal(linked, afterMove, 12);
+        Assert.Equal(WBondSync.Status.Differs, WBondSync.Check(comp, model.SchematicDirectory).Status);
     }
 
     /// <summary>
-    /// <b>Gate 6, the other half — it refuses LEGIBLY when the file is gone, with the path in the
-    /// message.</b> §5.0/WB17b's argument against referencing a design was exactly that it
-    /// reintroduces a "Not Found" state; WB45 accepts that cost for the Linked case, so the refusal
-    /// has to read like the cell-reference one the user already knows.
+    /// <b>Gate 6, the other half — a missing layout file is a warning, never a refusal.</b> The schematic
+    /// carries its own wires, so there is still something to run; the warning names the path.
     /// </summary>
     [Fact]
-    public void Gate6_ALinkedInstance_RefusesLegiblyWhenTheFileIsGone()
+    public void Gate6_AMissingLayoutFile_WarnsAndStillRuns()
     {
         var model = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
         var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
@@ -1534,29 +1591,30 @@ public sealed class WBondControllingParametersTests : IDisposable
         WBondPlacement.LinkTo(comp, wbondPath, model.SchematicDirectory);
         File.Delete(wbondPath);
 
-        var run = RunPlaced(model);
+        var warnings = new List<string>();
+        var run = RunPlaced(model, warnings);
 
-        Assert.NotEqual(RunStatus.Success, run.Status);
-        Assert.Contains("Amp.wBond", run.StatusMessage);
-        Assert.Contains("Carried", run.StatusMessage);
+        Assert.True(run.Status == RunStatus.Success, run.StatusMessage);
+        string warning = Assert.Single(warnings);
+        Assert.Contains("Amp.wBond", warning);
+        Assert.Contains("not found", warning);
     }
 
     /// <summary>
-    /// <b>Gate 7 — a linked instance whose <c>.wBond</c> had its arrays REORDERED is reported, not
-    /// silently re-pointed (§3.2/WB35a).</b>
+    /// <b>Gate 7 — a netlist whose wires' arrays were REORDERED against its <c>Arrays</c> record is
+    /// reported, not silently re-pointed (§3.2/WB35a).</b>
     ///
-    /// <para>This is the consequence that had to ship WITH linking rather than after it. Carried drift
-    /// is introduced by an explicit re-import, so it can be reported at that moment; linked drift
-    /// arrives the instant someone reorders arrays in the file, changing the symbol's pin order live
-    /// beneath an already-wired schematic. Pin order IS array order, so every pin keeps its position
-    /// while its NAME moves to a different row. Without this check, linking would be strictly more
-    /// dangerous than carrying on that one axis.</para>
+    /// <para>The engine-side check, for a hand-written <c>.cnl</c> that names its wires by <c>File</c>
+    /// and states the record. A schematic never produces this any more — it always carries its own
+    /// wires (wbond.md §9.7, revised 2026-10-05) — so the schematic's equivalent is the sync warning,
+    /// gated below. Pin order IS array order, so every pin keeps its position while its NAME moves to a
+    /// different row.</para>
     ///
     /// <para>The reorder is CONSTRUCTED rather than made by a real edit, so the fixture states exactly
     /// the condition being tested.</para>
     /// </summary>
     [Fact]
-    public void Gate7_ALinkedFileWithReorderedArrays_IsReported()
+    public void Gate7_ANetlistWithReorderedArrays_IsReported()
     {
         var p = Params(
             ("Arrays", "G1|G2"),
@@ -1572,25 +1630,16 @@ public sealed class WBondControllingParametersTests : IDisposable
     }
 
     /// <summary>
-    /// <b>Gate 7 through the whole product path</b> — extract → <c>.cnl</c> → elaborate → engine →
-    /// <c>RunResult.Warnings</c>, which is what reaches the Messages pane.
-    ///
-    /// <para>This also pins something the direct-factory gate above cannot see: the <c>Arrays</c>
-    /// record is written into the netlist as <c>G1|G2</c>, and a <c>.cnl</c> parameter value is read as
-    /// raw text up to the next whitespace. If the <c>|</c> ever stopped surviving that round trip the
-    /// drift check would silently never fire again — the record would arrive blank, and a blank record
-    /// is (correctly) treated as "nothing is known about what this was wired against".</para>
+    /// <b>Gate 7 through the whole product path</b> — a layout file whose arrays were REORDERED is named
+    /// in the Run's warning, in both orders, so the user can see that bringing it in would move pins.
+    /// The run itself uses the schematic's own order, which is the order the symbol was wired in.
     /// </summary>
     [Fact]
-    public void Gate7_TheReorderReachesTheRunAsAWarning()
+    public void Gate7_AReorderedLayoutFile_ReachesTheRunAsAWarning()
     {
         var model = Testbench(ArchedDesign(20.0, "G1", "G2"), SpAt5GHz());
         var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
 
-        Assert.Equal("G1|G2", comp.Parameters.First(p => p.Name == "Arrays").Expression);
-
-        // The FILE reorders them. Same set, same wires, different order — so every pin keeps its
-        // position on the symbol while its name moves to a different row.
         string layoutDir = Path.Combine(_root, "Amp", "layout");
         Directory.CreateDirectory(layoutDir);
         string wbondPath = Path.Combine(layoutDir, "Amp.wBond");
@@ -1598,12 +1647,13 @@ public sealed class WBondControllingParametersTests : IDisposable
 
         WBondPlacement.LinkTo(comp, wbondPath, model.SchematicDirectory);
 
-        var run = RunPlaced(model);
+        var warnings = new List<string>();
+        var run = RunPlaced(model, warnings);
         Assert.True(run.Status == RunStatus.Success, run.StatusMessage);
 
-        string warnings = string.Join("\n", run.Warnings);
-        Assert.Contains("REORDERED", warnings);
-        Assert.Contains("W1", warnings);
+        string warning = Assert.Single(warnings);
+        Assert.Contains("arrays G1, G2 in the schematic, G2, G1 in the layout", warning);
+        Assert.Contains("W1", warning);
     }
 
     /// <summary>An agreeing array list says nothing — the check must not be noise on every run.</summary>
@@ -1619,21 +1669,16 @@ public sealed class WBondControllingParametersTests : IDisposable
     }
 
     /// <summary>
-    /// A CARRIED instance's netlist carries the payload and no <c>Arrays</c> record — its payload
-    /// cannot drift against itself, so the check would only ever be noise there. A LINKED one carries
-    /// the path and the record, and NOT the payload: one copy of the wires is the whole point.
+    /// The netlist carries the schematic's own wires whether or not a layout file is named — never the
+    /// path, the <c>Arrays</c> record, the sync switch or the retired <c>Source</c>, none of which the
+    /// engine reads.
     /// </summary>
     [Fact]
-    public void TheNetlistNamesExactlyOneSource()
+    public void TheNetlistAlwaysCarriesTheSchematicsWires()
     {
         var model = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
         var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
-
-        var carried = NetExtractor.Extract(model, "tb").TestBench.Instances
-            .First(i => i.InstanceName == "W1");
-
-        Assert.Contains(carried.Overrides, o => o.Name == "Design");
-        Assert.DoesNotContain(carried.Overrides, o => o.Name is "File" or "Arrays" or "Source");
+        comp.Parameters.Add(new EditableParameter { Name = WBondPlacement.LegacySourceParameter, Expression = "Linked" });
 
         string layoutDir = Path.Combine(_root, "Amp", "layout");
         Directory.CreateDirectory(layoutDir);
@@ -1641,46 +1686,13 @@ public sealed class WBondControllingParametersTests : IDisposable
         WBondIo.WriteFile(wbondPath, ArchedDesign(20.0, "G1"));
         WBondPlacement.LinkTo(comp, wbondPath, model.SchematicDirectory);
 
-        var linked = NetExtractor.Extract(model, "tb").TestBench.Instances
-            .First(i => i.InstanceName == "W1");
+        var extracted = NetExtractor.Extract(model, "tb");
+        Assert.Empty(extracted.Conflicts);   // in sync, so nothing to say
 
-        Assert.DoesNotContain(linked.Overrides, o => o.Name == "Design");
-        Assert.Contains(linked.Overrides, o => o.Name == "Arrays");
-
-        // Absolute in the NETLIST, relative in the DOCUMENT: the netlist is a generated intermediate
-        // written wherever the run writes it, and the extractor is where the schematic's own directory
-        // is known.
-        var file = linked.Overrides.First(o => o.Name == "File");
-        Assert.True(Path.IsPathRooted(file.Expression));
+        var w1 = extracted.TestBench.Instances.First(i => i.InstanceName == "W1");
+        Assert.Contains(w1.Overrides, o => o.Name == "Design");
+        Assert.DoesNotContain(w1.Overrides,
+            o => o.Name is "File" or "Arrays" or "Source" or WBondPlacement.WarnUnsyncedParameter);
     }
 
-    /// <summary>
-    /// A controlling parameter reaches a LINKED instance exactly as it reaches a carried one — it is
-    /// applied to the decoded design and cannot tell where that design came from (§2, WB45's "what
-    /// does NOT differ").
-    /// </summary>
-    [Fact]
-    public void AControllingParameter_ReachesALinkedInstanceToo()
-    {
-        var model = Testbench(ArchedDesign(20.0, "G1"), SpAt5GHz());
-        var comp = model.Components.First(c => c.Symbol == SymbolKind.WBond);
-
-        string layoutDir = Path.Combine(_root, "Amp", "layout");
-        Directory.CreateDirectory(layoutDir);
-        string wbondPath = Path.Combine(layoutDir, "Amp.wBond");
-        WBondIo.WriteFile(wbondPath, ArchedDesign(10.0, "G1"));
-        WBondPlacement.LinkTo(comp, wbondPath, model.SchematicDirectory);
-
-        double asDrawn = SeriesL(S21Of(RunPlaced(model)), 5e9);
-
-        var lh = comp.Parameters.First(p => p.Name == "LoopHeight");
-        lh.Expression = "45";
-        lh.Unit = "mil";
-
-        double overridden = SeriesL(S21Of(RunPlaced(model)), 5e9);
-
-        Assert.True(overridden > asDrawn * 1.2,
-            $"the override must reach the linked design too; got {overridden * 1e12:F1} pH " +
-            $"against {asDrawn * 1e12:F1} pH.");
-    }
 }

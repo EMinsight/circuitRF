@@ -22,23 +22,15 @@ namespace CircuitRF.Ui.WBond;
 /// <see cref="WBondCellSeeding"/>'s own "use Design ▸ Update Schematic from Layout to bring them back
 /// into the component". The command existed; the half of it that handles wires did not.</para>
 ///
-/// <h3>Why this matters even for a LINKED instance</h3>
-/// <para>It is tempting to think linking makes this unnecessary — WB45 says a linked instance simulates
-/// the file, so a geometry edit in the layout is picked up at the next Run with nothing to reconcile.
-/// That is true of GEOMETRY and false of the ARRAY LIST, and the difference is not cosmetic: a placed
-/// wBond's <b>pins are drawn from its carried payload</b> (<c>WBondSymbolProvider</c>), so deleting an
-/// array in the layout leaves a symbol still showing that array's two terminals, still wired to
-/// whatever the user connected them to, while the model behind it has one branch fewer. The netlist and
-/// the symbol then disagree about how many terminals this component has.</para>
-///
-/// <para>So: under <c>Carried</c> this command is how a layout edit reaches the simulation at all; under
-/// <c>Linked</c> it is how a layout edit reaches the <i>symbol</i>. Neither is optional, and the
-/// Source-note text was corrected at the same time as this was built, because it had claimed a wire
-/// edited in the layout "no longer needs bringing back into the schematic".</para>
+/// <h3>It is the only way a layout edit reaches the simulation</h3>
+/// <para>The schematic's own wires are what a Run simulates (wbond.md §9.7, revised 2026-10-05 —
+/// until then a <c>Linked</c> instance simulated the file instead, and an array added in the layout
+/// made the run unsimulatable). So this command is how a layout edit reaches BOTH the run and the
+/// symbol's pins; until it runs, each Run warns that the two differ (<c>WBondSync</c>).</para>
 ///
 /// <h3>What it does NOT touch</h3>
-/// <para><c>Source</c>. Reconciling makes the payload agree with the file; it does not decide which of
-/// them the next Run reads, and quietly flipping that is precisely what WB45a forbids.</para>
+/// <para><c>WarnUnsynced</c> and <c>File</c>. The switch is the user's, and the file the instance is
+/// checked against is set by Update Layout from Schematic.</para>
 /// </summary>
 public static class WBondSchematicReconcile
 {

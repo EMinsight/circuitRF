@@ -65,7 +65,7 @@ src/Core/Devices/ComponentModelFactory.cs|VerilogA: '{modelFile}' declares {offe
 src/Core/Devices/ComponentModelFactory.cs|VerilogA: '{modelFile}' has no device type '{typeId}'. It offers: 
 src/Core/Devices/ComponentModelFactory.cs|VerilogA: no model file. Set the component's 'File' parameter to a compiled model — 
 src/Core/Devices/ComponentModelFactory.cs|Z_Port: ZPortCount is required
-src/Core/Devices/ComponentModelFactory.cs|wBond: its linked wirebond file was not found: '{path}'. Either restore the file, 
+src/Core/Devices/ComponentModelFactory.cs|wBond: its wirebond file was not found: '{path}'. Either restore the file, 
 src/Core/Devices/ComponentModelFactory.cs|wBond: neither 'Design' (the embedded wires) nor 'File' (a .wBond to load) is set.
 src/Core/Devices/ComponentModelFactory.cs|wBond: the 'Design' parameter could not be read as a wirebond design. Re-import 
 src/Core/Devices/ComponentModelFactory.cs|{typeName}: '{kv.Key}' was given the complex value {z.Real:G6}
@@ -1040,7 +1040,7 @@ src/Core/Devices/ComponentModelFactory.cs|{instance} asks for wire material '{wa
 src/Core/Devices/ComponentModelFactory.cs|{instance} takes its wire materials from the material library '{path}', which could not be 
 src/Design/Schematic/WBondMaterialLibrary.cs|wBond '{comp.InstanceName}' is not in a saved workspace, so there is nowhere to keep a material 
 src/WBond/Materials.cs|it has no Materials list, so it is not a material library.
-src/Core/Devices/WBondModel.cs|wBond '{c.InstancePath}' has {c.Nodes.Length} pin(s) on the schematic, but {source} has 
+src/Core/Devices/WBondModel.cs|wBond '{c.InstancePath}' is connected to {c.Nodes.Length} net(s), but {source} has 
 
 # brief-wbond-wire-temperature — internal invariants of the 1D wire-temperature solve and of a metal's k(T) lookup. Each is
 # reached only by a caller that broke its contract (the user-facing refusal for a metal with no k is a coded diagnostic,

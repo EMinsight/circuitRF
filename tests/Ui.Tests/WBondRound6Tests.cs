@@ -782,20 +782,15 @@ public class WBondRound6Tests
     }
 
     /// <summary>
-    /// <b>Carried/Linked is the wBond panel's LAST row</b> (owner, 2026-08-17: "an advanced feature that
-    /// only wBond experts would use").
+    /// <b>The sync switch is the wBond panel's LAST row</b> (owner, 2026-08-17: "an advanced feature that
+    /// only wBond experts would use" — said of the Carried/Linked box it replaced on 2026-10-05).
     ///
-    /// <para>It used to sit third, directly under the design summary — the panel's most consequential
-    /// and least-used control placed in front of every control an ordinary user actually touches. The
-    /// ordinary flow never sets it at all: a placed wBond is Carried by construction and
-    /// <c>WBondCellSeeding</c> flips it to Linked (WB45a). Asserted as a full ORDER rather than as
-    /// "after the checkbox", so a later insertion that lands between two of these is caught too.</para>
-    ///
-    /// <para>The note line has to stay directly beneath its own box — it carries the one consequence
-    /// that separates the two options, and down here it is read less often, not more.</para>
+    /// <para>Asserted as a full ORDER rather than as "after the checkbox", so a later insertion that
+    /// lands between two of these is caught too. The note line stays directly beneath its own box: it
+    /// states what the comparison finds right now.</para>
     /// </summary>
     [Fact]
-    public void TheSourceRow_IsLastInTheWBondPanel_BeingTheExpertsOnlyControl()
+    public void TheSyncRow_IsLastInTheWBondPanel_BeingTheExpertsOnlyControl()
     {
         var xaml = Read("src", "Ui", "Views", "ParameterEditor", "ParameterEditorView.axaml");
 
@@ -811,18 +806,18 @@ public class WBondRound6Tests
         int pitch   = At("Text=\"Symbol Pitch\"");
         int ground  = At("Text=\"Ground plane\"");
         int refPin  = At("Content=\"External reference pin\"");
-        int source  = At("{Binding WBondSourceOptions}");
-        int note    = At("{Binding WBondSourceNote}");
+        int source  = At("{Binding WBondWarnUnsynced}");
+        int note    = At("{Binding WBondSyncNote}");
 
         Assert.True(summary < arrays && arrays < pitch && pitch < ground && ground < refPin,
-                    "The ordinary wBond rows changed order — this test only pins where Source sits.");
-        Assert.True(refPin < source, "Source must be the LAST row of the wBond panel, after every ordinary control.");
+                    "The ordinary wBond rows changed order — this test only pins where the sync switch sits.");
+        Assert.True(refPin < source, "The sync switch must be the LAST row of the wBond panel, after every ordinary control.");
         Assert.True(source < note, "The consequence note belongs directly under its own box.");
 
         // …and still INSIDE the panel: moved to its tail, not out from under `IsWBond` into rows that
         // every other component type would then render.
         Assert.True(note < At("<!-- Generic parameter rows, LAST"),
-                    "Source escaped the wBond panel — it must stay within the IsWBond StackPanel.");
+                    "The sync switch escaped the wBond panel — it must stay within the IsWBond StackPanel.");
     }
 
     // ══════════════════════════════════════════════════════════════════════════════════════════

@@ -505,22 +505,43 @@ public class WBondParameterPanelTests
     }
 
     /// <summary>
-    /// WB45 — <b>a freshly placed wBond is Carried, and cannot be set to Linked with nothing to link
-    /// to.</b> Linked with no path would be a Not-Found on the next Run with no way back except this
-    /// same box; the box snaps back and the note line says why.
+    /// <b>Warn if Schematic Not Synced to Layout</b> (wbond.md §9.7, revised 2026-10-05) — checked on a
+    /// fresh placement, one undoable parameter edit when cleared, and the note under it states the
+    /// comparison's current answer: no layout wires yet, then in sync, then the difference by name.
     /// </summary>
     [Fact]
-    public void TheSourceControl_StartsCarried_AndRefusesLinkedWithNothingToLinkTo()
+    public void TheSyncCheckbox_StartsChecked_WritesItsParameter_AndTheNoteStatesTheComparison()
     {
-        var (_, comp, editor) = Place();
+        var (model, comp, editor) = Place();
 
-        Assert.Equal(0, editor.WBondSourceIndex);
-        Assert.Contains("Update Layout from Schematic", editor.WBondSourceNote);
+        Assert.True(editor.WBondWarnUnsynced);
+        Assert.Contains("Update Layout from Schematic", editor.WBondSyncNote);
 
-        editor.WBondSourceIndex = 1;
+        editor.WBondWarnUnsynced = false;
+        Assert.Equal("false", comp.Parameters.First(p => p.Name == WBondPlacement.WarnUnsyncedParameter).Expression);
+        Assert.False(WBondPlacement.WarnsIfUnsynced(comp));
 
-        Assert.Equal(0, editor.WBondSourceIndex);
-        Assert.Equal(nameof(WBondPlacement.WireSource.Carried),
-            comp.Parameters.First(p => p.Name == "Source").Expression);
+        // Give it a layout file that matches, then one with a second array.
+        string dir = Path.Combine(Path.GetTempPath(), "crf-sync-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            string sch = Path.Combine(dir, "schematic");
+            string layout = Path.Combine(dir, "layout", "Amp.wBond");
+            Directory.CreateDirectory(Path.GetDirectoryName(layout)!);
+            model.EditModel.SchematicDirectory = sch;
+
+            WBondEmbedding.TryDecode(comp.Parameters.First(p => p.Name == "Design").Expression, out var drawn);
+            WBondIo.WriteFile(layout, drawn!);
+            WBondPlacement.LinkTo(comp, layout, sch);
+            editor.SetTargetDirect(model, comp, showClose: false);
+            Assert.Contains("In sync", editor.WBondSyncNote);
+
+            drawn!.Arrays.Add(new WireArray { Name = "G2", Wires = { drawn.Arrays[0].Wires[0] } });
+            WBondIo.WriteFile(layout, drawn);
+            editor.SetTargetDirect(model, comp, showClose: false);
+            Assert.Contains("Not synced", editor.WBondSyncNote);
+            Assert.Contains("G1, G2 in the layout", editor.WBondSyncNote);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
     }
 }

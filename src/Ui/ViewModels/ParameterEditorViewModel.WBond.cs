@@ -53,9 +53,10 @@ public partial class ParameterEditorViewModel
     /// The parameters this panel owns, and which must therefore NOT also appear as generic text rows.
     ///
     /// <para><c>Design</c> and <c>Arrays</c> are hidden by design (§5.0); <c>SymbolPitch</c>/<c>RefPin</c>
-    /// have real controls; <c>Source</c>/<c>File</c> are WB45's carried-or-linked axis, which is a
-    /// choice with a consequence rather than a value to type; <c>Material</c> is an ENUMERATION over the
-    /// design's own metals, so it gets a dropdown rather than a text box a typo can reach.</para>
+    /// have real controls; <c>WarnUnsynced</c> is a checkbox and <c>File</c> is set by Update Layout from
+    /// Schematic (<c>Source</c>, the retired Carried/Linked switch, stays hidden on older documents);
+    /// <c>Material</c> is an ENUMERATION over the design's own metals, so it gets a dropdown rather than
+    /// a text box a typo can reach.</para>
     ///
     /// <para><b><c>LoopHeight</c>, <c>Diameter</c> and <c>Temp</c> are deliberately NOT here.</b> They
     /// are expression fields like any other — which is the point: a generic row is what makes
@@ -74,7 +75,8 @@ public partial class ParameterEditorViewModel
     internal static bool IsWBondPanelParameter(string name) =>
         name is WBondEmbedding.DesignParameter or WBondPlacement.ArraysParameter
              or "SymbolPitch" or "RefPin" or "IncludeCapacitance" or "er"
-             or "Source" or "File" or "Material" or "GroundPlane"
+             or WBondPlacement.LegacySourceParameter or WBondPlacement.WarnUnsyncedParameter
+             or "File" or "Material" or "GroundPlane"
              or WBondPlacement.MaterialLibraryParameter or FixedTempParameter
         || name.StartsWith("LoopHeight_", StringComparison.Ordinal)
         || name.StartsWith("Diameter_", StringComparison.Ordinal)
@@ -324,33 +326,23 @@ public partial class ParameterEditorViewModel
         WBondGroundPlaneIndex = index;
     }
 
-    // ── WB45: Carried or Linked ───────────────────────────────────────────────
-
-    /// <summary>Carried / Linked — the two wire sources, in the order the lifecycle visits them.</summary>
-    public static string[] WBondSourceOptions { get; } =
-        [nameof(WBondPlacement.WireSource.Carried), nameof(WBondPlacement.WireSource.Linked)];
-
-    [ObservableProperty] private int _wBondSourceIndex;
-    [ObservableProperty] private string _wBondSourceNote = "";
+    // ── Warn if Schematic Not Synced to Layout (wbond.md §9.7, revised 2026-10-05) ──
 
     /// <summary>
-    /// The consequence, stated where the choice is made — the same shape as the MKlopf Z1/Z2-vs-W1/W2
-    /// entry-mode toggle. The two options differ in exactly one thing (what the next Run simulates
-    /// after a layout edit) and nothing on screen says which one is in force.
+    /// Whether a Run warns when this component's wires no longer match the layout's <c>.wBond</c>. The
+    /// schematic's own wires simulate either way — this replaced WB45's Carried/Linked choice, under
+    /// which a Linked instance simulated the file and an array added in the layout refused the run.
+    /// Checked unless the component says otherwise, so a schematic written before it existed warns.
     /// </summary>
-    partial void OnWBondSourceIndexChanged(int oldValue, int newValue)
+    [ObservableProperty] private bool _wBondWarnUnsynced = true;
+
+    /// <summary>The comparison's current answer, shown under the checkbox whether or not it warns.</summary>
+    [ObservableProperty] private string _wBondSyncNote = "";
+
+    partial void OnWBondWarnUnsyncedChanged(bool oldValue, bool newValue)
     {
         if (_isRefreshing || _target is null || _schematicVm is null) return;
-
-        // Linked with nothing to link to would be a Not-Found on the next Run and no way back except
-        // this same box. Refused by snapping back, and the reason is on the note line below it.
-        if (newValue == 1 && WBondPlacement.LinkedPathOf(_target) is null)
-        {
-            RefreshWBondProperties();
-            return;
-        }
-
-        ApplyWBondParam("Source", WBondSourceOptions[(uint)newValue < 2 ? newValue : 0]);
+        ApplyWBondParam(WBondPlacement.WarnUnsyncedParameter, newValue ? "true" : "false");
     }
 
     // ── §5.5.1/WB44: the controlling parameters, per array ────────────────────
@@ -754,7 +746,7 @@ public partial class ParameterEditorViewModel
 
         RebuildWBondArrayRows(design);
         RefreshWBondGroundPlane();
-        RefreshWBondSource();
+        RefreshWBondSync();
         RebuildWBondControlRows(design);
         _isRefreshing = false;
     }
@@ -797,38 +789,15 @@ public partial class ParameterEditorViewModel
     }
 
     /// <summary>
-    /// Pulls WB45's source state, and states the consequence of the one that is in force.
-    ///
-    /// <para>A linked instance whose file is missing is named HERE as well as refused at the next Run:
-    /// the parameter panel is where the user can act on it, and "Not Found" arriving only as a run
-    /// failure is the state §5.0/WB17b was right to want to avoid.</para>
+    /// Pulls the sync switch and states what the comparison finds right now — the same
+    /// <see cref="WBondSync"/> answer the Run's warning comes from, so the two cannot disagree.
     /// </summary>
-    private void RefreshWBondSource()
+    private void RefreshWBondSync()
     {
         if (_target is null) return;
 
-        bool linked = WBondPlacement.SourceOf(_target) == WBondPlacement.WireSource.Linked;
-        WBondSourceIndex = linked ? 1 : 0;
-
-        string? stored = WBondPlacement.LinkedPathOf(_target);
-        string? resolved = WBondPlacement.ResolveLinkedPath(_target, _schematicVm?.EditModel.SchematicDirectory);
-
-        // Linking buys GEOMETRY, not the array list — the symbol's pins come from this component's own
-        // payload either way, so an array added or removed in the layout still has to be reconciled.
-        // Saying only the first half is what produced the owner's report of 2026-08-17.
-        WBondSourceNote = linked
-            ? resolved is not null && File.Exists(resolved)
-                ? $"The wires in \"{stored}\" are what runs — move a wire or change a loop height in the " +
-                  "layout and just Run. Adding or removing an ARRAY there still needs Update Schematic " +
-                  "from Layout, because the symbol's pins come from this component's own copy."
-                : $"Not found: \"{stored}\". The next Run will refuse until the file is restored or " +
-                  "Source is set back to Carried."
-            : stored is null
-                ? "The wires travel inside this schematic. Run Update Layout from Schematic to write " +
-                  "them into the cell's layout and link to them there."
-                : $"The wires travel inside this schematic. \"{stored}\" is on disk and is what the " +
-                  "layout edits, but it is NOT what runs until Source is set to Linked — or until " +
-                  "Update Schematic from Layout brings those wires back into this component.";
+        WBondWarnUnsynced = WBondPlacement.WarnsIfUnsynced(_target);
+        WBondSyncNote = WBondSync.Check(_target, _schematicVm?.EditModel.SchematicDirectory).Note;
     }
 
     /// <summary>
