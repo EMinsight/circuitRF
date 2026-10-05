@@ -11,7 +11,7 @@ namespace CircuitRF.Cli;
 /// decision D1); brief 25 added <c>remove</c>.
 ///
 /// <para><b>This file holds no install or removal logic</b>: argument parsing, the consent refusal, progress on
-/// stderr and reporting. <c>list</c> is <see cref="SolverStatus.Of"/> — what each Settings ▸ 3D EM row
+/// stderr and reporting. <c>list</c> is <see cref="SolverStatus.Of"/> — what each Settings ▸ Solvers row
 /// shows — and <c>install</c> is <see cref="SolverInstaller.Consent"/> then
 /// <see cref="SolverInstaller.Install"/>, which the Settings row and a refusal's <i>Install …</i> action
 /// call too; <c>remove</c> is <see cref="SolverUninstaller.PlanOne"/> or <see cref="SolverUninstaller.PlanAll"/>

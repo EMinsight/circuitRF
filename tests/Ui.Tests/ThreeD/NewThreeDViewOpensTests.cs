@@ -5,6 +5,7 @@
 // ================================================================
 
 using System.Text.RegularExpressions;
+using CircuitRF.Ui.ThreeD;
 
 namespace CircuitRF.Ui.Tests.ThreeD;
 
@@ -49,6 +50,26 @@ public sealed class NewThreeDViewOpensTests
         string v3 = StripComments(Src("src/Ui/ViewModels/WorkspaceViewModel.Viewer3D.cs"));
         start = v3.IndexOf("Viewer3DCamerasToPersist()", StringComparison.Ordinal);
         Assert.Matches(@"OfType<CircuitRF\.Ui\.ThreeD\.C3dEditorDocument>\(\)\)\s*if \(!doc\.IsScratch", v3[start..]);
+    }
+
+    /// <summary>Settings ▸ General ▸ Open in realistic view: a per-user preference, off by default, applied by the workspace
+    /// after the editor starts — exactly where the toolbar button would act — and never read from the .c3d.</summary>
+    [Fact]
+    public void RealisticOnOpen_IsAPerUserPreference_AppliedAfterTheEditorStarts()
+    {
+        string td = StripComments(Src("src/Ui/ViewModels/WorkspaceViewModel.ThreeD.cs"));
+        int start = td.IndexOf("private void OpenC3dEditor(", StringComparison.Ordinal);
+        Assert.Matches(@"vm\.Start\(\);\s*if \(Realistic3DPreference\.OnOpen\) vm\.Viewer\.IsRealistic = true;", td[start..]);
+
+        bool was = Realistic3DPreference.TestOverrideActive;
+        var stored = Realistic3DPreference.TestOverrideStore;
+        try
+        {
+            Realistic3DPreference.TestOverrideActive = true;
+            Realistic3DPreference.TestOverrideStore = null;
+            Assert.False(Realistic3DPreference.OnOpen);
+        }
+        finally { Realistic3DPreference.TestOverrideActive = was; Realistic3DPreference.TestOverrideStore = stored; }
     }
 
     /// <summary>The cell menu's Open 3D View sits with the other Open items and runs the tree's command.</summary>

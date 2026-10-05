@@ -85,7 +85,7 @@ public class SettingsDialogHelpAndTooltipsTests
     }
 
     /// <summary>
-    /// Settings ▸ 3D EM: every visible string is selectable, so a path, version or refusal can be
+    /// Settings ▸ Solvers: every visible string is selectable, so a path, version or refusal can be
     /// copied and shared. Only a tooltip's text may stay a plain TextBlock.
     /// </summary>
     [Fact]
@@ -247,7 +247,7 @@ public class SettingsDialogHelpAndTooltipsTests
     private static int Occurrences(string text, string needle)
         => text.Split(needle).Length - 1;
 
-    /// <summary>Settings ▸ 3D EM: Spack's path padding (a chain of <c>__spack_path_placeholder__</c>
+    /// <summary>Settings ▸ Solvers: Spack's path padding (a chain of <c>__spack_path_placeholder__</c>
     /// directories, the last one truncated) folds to one "…", so a status line stays one path long.</summary>
     [Fact]
     public void TheSolverStatusLine_FoldsSpackPathPadding()

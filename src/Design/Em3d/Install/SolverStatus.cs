@@ -1,7 +1,7 @@
 namespace CircuitRF.Design.Em3d.Install;
 
 /// <summary>
-/// One tool's row, as Settings ▸ 3D EM shows it and <c>circuitrf solver list</c> prints it
+/// One tool's row, as Settings ▸ Solvers shows it and <c>circuitrf solver list</c> prints it
 /// (brief-em3d-24 R-em3d24-5a, R-em3d24-7): what discovery found, where and how, whether it is validated,
 /// what its build can do, and whether the assistant offers to install it here. <b>Both call
 /// <see cref="Of"/></b>, so the window and the terminal cannot disagree about a machine.

@@ -211,7 +211,7 @@ public sealed class SolverDiscoveryTests : IDisposable
         string mac     = palace.DescribeFailure([], windows: false);
 
         int tool    = windows.IndexOf("Palace was not found", StringComparison.Ordinal);
-        int point   = windows.IndexOf("Settings ▸ 3D EM", StringComparison.Ordinal);
+        int point   = windows.IndexOf("Settings ▸ Solvers", StringComparison.Ordinal);
         int env     = windows.IndexOf("CIRCUITRF_PALACE", StringComparison.Ordinal);
         int install = windows.IndexOf(SolverDiscovery.ManualInstallSection, StringComparison.Ordinal);
         Assert.True(tool >= 0 && tool < point && point < env && env < install, windows);

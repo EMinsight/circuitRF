@@ -548,7 +548,7 @@ public static class FigureCatalog
         new("settings-3d-em", DocSettingsFixtures.Em3dSolvers,
             DocSettingsFixtures.Width, DocSettingsFixtures.Height,
             WindowFrame.Titled("circuitRF Settings"),
-            "Settings, 3D EM: one row per program a 3D EM run can need - Palace, Gmsh and openEMS - "
+            "Settings, Solvers: one row per program a 3D EM run can need - Palace, Gmsh and openEMS - "
           + "with a path to name it and a line saying what circuitRF found. Blank means search."),
 
         // ── The 3D EM guide: one section through each cell of examples/3D EM/ ─────────────

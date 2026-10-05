@@ -140,7 +140,7 @@ public sealed class WslMemoryDialogModel
     /// <summary>The label the memory warning's row and the 150 % confirmation offer.</summary>
     public const string RowAction = "Give the subsystem more memory…";
 
-    /// <summary>The Settings ▸ 3D EM line: "Linux subsystem: 3.8 GB of 7.6 GB".</summary>
+    /// <summary>The Settings ▸ Solvers line: "Linux subsystem: 3.8 GB of 7.6 GB".</summary>
     public static string SettingsLine(long? subsystemBytes, long hostBytes)
         => subsystemBytes is { } b
             ? $"Linux subsystem: {MachineMemory.Format(b)} of {MachineMemory.Format(hostBytes)}"

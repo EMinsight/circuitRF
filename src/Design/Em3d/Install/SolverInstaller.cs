@@ -483,7 +483,7 @@ public sealed class SolverInstaller
             sb.Append(" A 3D run now finds it (installed by circuitRF).");
         else if (found is not null)
             sb.Append($" A 3D run still uses the {discovery.Name} {found.HowFoundText} ({found.Where}), which comes first; " +
-                      "clear that in Settings ▸ 3D EM to use this one.");
+                      "clear that in Settings ▸ Solvers to use this one.");
         sb.Append(DescribeSuperseded(recipe));
         return sb.ToString();
     }
@@ -501,7 +501,7 @@ public sealed class SolverInstaller
         var sb = new StringBuilder();
         sb.Append($" circuitRF also installed {(older.Count == 1 ? "an older version" : "older versions")} of {name}, kept so earlier results can be compared: ");
         sb.Append(string.Join("; ", older.Select(o => $"{name} {o.Record.Version} ({SolverUninstaller.Size(o.Bytes)}, at {o.Record.Home})")));
-        sb.Append(". Settings ▸ 3D EM offers to remove " + (older.Count == 1 ? "it" : "each") +
+        sb.Append(". Settings ▸ Solvers offers to remove " + (older.Count == 1 ? "it" : "each") +
                   $", as does 'circuitrf solver remove {SolverHomes.ToolId(recipe.Tool)} --version <v>'.");
         return sb.ToString();
     }

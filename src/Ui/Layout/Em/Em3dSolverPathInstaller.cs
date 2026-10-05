@@ -1,5 +1,5 @@
 // Hands CircuitRF.Design the one thing 3D EM solver discovery needs from the application: which Palace,
-// Gmsh and openEMS the user named in Settings ▸ 3D EM (brief-em3d-6 R-em3d6-1a), and the mpirun
+// Gmsh and openEMS the user named in Settings ▸ Solvers (brief-em3d-6 R-em3d6-1a), and the mpirun
 // Palace runs under.
 //
 // The preferences live above the firewall in AppPreferences and CircuitRF.Design may not reach them,

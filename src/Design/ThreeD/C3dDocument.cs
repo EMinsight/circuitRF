@@ -779,7 +779,8 @@ public sealed class C3dDocument
     /// brief-em3d-106 R-em3d106-5 — the realistic view's look: environment, rotation, intensity, exposure, background, and which
     /// CAD chrome it shows again. Display state exactly as <see cref="AirBoxHidden"/> is (saved, undoable, and cleared by
     /// <see cref="C3dPersistence.SerializeForRun"/>). Null, or any key omitted, is the default. Whether the realistic view is ON is
-    /// not here: that is view state, off on every open (overview D5).
+    /// not here: that is view state, and whether a design OPENS in it is a per-user setting (src/Ui Realistic3DPreference) —
+    /// what a machine can afford to draw is a property of its GPU, not of the design.
     /// <para>brief-em3d-108 — its <c>Camera</c> is the one exception to "the camera is not document state": opt-in, written only by
     /// "Set Camera" (never by an orbit), cleared by Clear, and cleared with the rest by SerializeForRun.</para>
     /// </summary>

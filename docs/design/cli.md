@@ -3066,7 +3066,7 @@ parsing, the layer-name lookup, refusals and reporting.
 (brief-em3d-24 R-em3d24-7; `em-3d.md` §7.2's "a build machine installs the same way the GUI does".)
 **One verb with nouns, on `history`'s pattern** (owner decision D1); brief-em3d-25 added `remove`.
 
-**It owns no install logic.** `list` is `SolverStatus.Of` — the call each Settings ▸ 3D EM row makes —
+**It owns no install logic.** `list` is `SolverStatus.Of` — the call each Settings ▸ Solvers row makes —
 and `install` is `SolverInstaller.Consent` then `SolverInstaller.Install` (`src/Design/Em3d/Install`),
 which the Settings row and a 3D run's *Install …* action call too. `src/Cli/Solver.cs` is argument
 parsing, the consent refusal, progress on stderr and reporting; a comment-stripped source scan in

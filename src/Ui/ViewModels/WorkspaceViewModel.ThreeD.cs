@@ -72,14 +72,14 @@ public partial class WorkspaceViewModel
     /// <summary>The refusal's dialog (file name, the sentence); a test substitutes a recorder.</summary>
     internal Func<string, string, Task> KernelRefusalDialog { get; set; }
 
-    /// <summary>[Open Settings ▸ 3D EM] [Close] over the sentence — Settings' 3D EM tab carries the kernel's row.</summary>
+    /// <summary>[Open Settings ▸ Solvers] [Close] over the sentence — Settings' Solvers tab carries the kernel's row.</summary>
     private async Task ShowKernelRefusalAsync(string file, string why)
     {
         if (ResolveOwner(null) is not { } owner) return;
-        if (await TextConfirmDialog.AskAsync(owner, file, C3dKernelUse.CannotOpen, why, "Open Settings ▸ 3D EM"))
+        if (await TextConfirmDialog.AskAsync(owner, file, C3dKernelUse.CannotOpen, why, "Open Settings ▸ Solvers"))
         {
             var settings = new SettingsView(CurrentWorkspacePath is { } ws ? Path.GetDirectoryName(ws) : null);
-            settings.SelectTab("3D EM");
+            settings.SelectTab("Solvers");
             settings.Show(owner);
         }
     }
@@ -187,6 +187,8 @@ public partial class WorkspaceViewModel
             _openDocsByPath[key] = doc;
             WatchC3d(doc);
             vm.Start();
+            // Settings ▸ General ▸ 3D Designs — per user, never the .c3d: as if the toolbar button had been pressed.
+            if (Realistic3DPreference.OnOpen) vm.Viewer.IsRealistic = true;
             RaiseThreeDMenuChanged();
         }
         catch (Exception ex)

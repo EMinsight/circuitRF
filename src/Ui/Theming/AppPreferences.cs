@@ -277,6 +277,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? Snap3DEnabled { get; set; }
 
+    // Whether a 3D design opens in the realistic view (Settings ▸ General). Per USER, a property of the machine's GPU, so
+    // never in the .c3d — a document from someone with a faster machine must not switch a slower one into it. Null means
+    // the shipped default (off). See Realistic3DPreference.
+    [JsonPropertyName("view3d_realistic_on_open")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? View3DRealisticOnOpen { get; set; }
+
     [JsonPropertyName("snap3d_kinds")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public int? Snap3DKinds { get; set; }

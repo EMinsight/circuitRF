@@ -8,7 +8,7 @@ using CircuitRF.Ui.Messages;
 namespace CircuitRF.Ui.Views.Dialogs;
 
 /// <summary>
-/// The GUI's removal of circuitRF-installed solvers (brief-em3d-25): a Settings ▸ 3D EM row's
+/// The GUI's removal of circuitRF-installed solvers (brief-em3d-25): a Settings ▸ Solvers row's
 /// <i>Uninstall …</i> and <i>Remove all 3D solvers…</i>. It plans
 /// with <see cref="SolverUninstaller"/> (sizes measured now), asks with the plan's own confirmation, and
 /// removes with <see cref="SolverUninstaller.Remove"/> — the functions <c>circuitrf solver remove</c>

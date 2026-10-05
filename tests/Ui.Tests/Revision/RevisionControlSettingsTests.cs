@@ -71,9 +71,9 @@ public class RevisionControlSettingsTests
     public void TheTabIsImmediatelyAfterSecurityAndPermissions()
     {
         Assert.Equal(
-            // "3D EM" (the solver paths) arrived with brief-em3d-6, at the end.
+            // "Solvers" (the solver paths) arrived with brief-em3d-6, at the end, first headed "3D EM".
             ["General", "Technology", "Security & Permissions", "Revision Control", "Color Theme",
-             "Wirebonds", "3D EM"],
+             "Wirebonds", "Solvers"],
             TabHeaders());
     }
 

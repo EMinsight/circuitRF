@@ -33,7 +33,7 @@ internal sealed record AppRemoval(AppRemovalKind Kind, string Target, string Des
 /// (2026-09-26): an application is removed the way its platform removes applications. The Linux
 /// tarball's <c>install.sh --uninstall</c> does its own equivalent through <c>solver remove --all</c>;
 /// the macOS Trash and a <c>.deb</c> removal run no circuitRF code, so there the solvers stay, are
-/// reused by a reinstall, and are removed from Settings ▸ 3D EM (em-3d.md §7.2 point 4). There is
+/// reused by a reinstall, and are removed from Settings ▸ Solvers (em-3d.md §7.2 point 4). There is
 /// deliberately no CLI verb (R-em3d25-4c): a build machine runs <c>circuitrf solver remove --all</c> and
 /// then the platform's own uninstall.</para>
 ///
@@ -88,7 +88,7 @@ internal static class AppUninstall
         }
         sb.AppendLine();
         sb.AppendLine("This reaches only your account. Solvers another account installed on this computer are theirs and stay; " +
-                      "each account's own Settings ▸ 3D EM ▸ Remove all 3D solvers is how they go.");
+                      "each account's own Settings ▸ Solvers ▸ Remove all 3D solvers is how they go.");
         sb.AppendLine();
         sb.Append(removal.Describe);
         return sb.ToString();

@@ -587,7 +587,7 @@ public sealed partial class SolverDiscovery
     {
         var sb = new StringBuilder();
         sb.Append($"{Name} was not found, so this 3D setup cannot run. ");
-        sb.Append($"To use a {Name} that is already installed, name it in Settings ▸ 3D EM, or set the " +
+        sb.Append($"To use a {Name} that is already installed, name it in Settings ▸ Solvers, or set the " +
                   $"environment variable {EnvironmentVariable} to its full path. ");
         sb.Append($"To install it, follow “{ManualInstallSection}” in the EM Setup reference ({ManualInstallPage}).");
         // brief-em3d-24 — the assistant, where this machine has a recipe; brief-em3d-26 — on Windows, Palace's
@@ -595,12 +595,12 @@ public sealed partial class SolverDiscovery
         if (windows && Tool == SolverTool.Palace)
             sb.Append(" Palace does not run natively on Windows; circuitRF runs it inside the Linux subsystem (WSL 2), and " +
                       "looked for it in every WSL 2 distribution. circuitRF can build it there for you, from its own upstream: " +
-                      $"Install {Name}… on this message or in Settings ▸ 3D EM, or 'circuitrf solver install " +
+                      $"Install {Name}… on this message or in Settings ▸ Solvers, or 'circuitrf solver install " +
                       $"{Install.SolverHomes.ToolId(Tool)}'. openEMS runs natively on Windows, with nothing to build: set the " +
                       "setup's Solver3D to OpenEms.");
         else if (Install.SolverRecipes.For(Tool) is not null)
             sb.Append($" circuitRF can also install it for you, from its own upstream: Install {Name}… on this message or " +
-                      $"in Settings ▸ 3D EM, or 'circuitrf solver install {Install.SolverHomes.ToolId(Tool)}'.");
+                      $"in Settings ▸ Solvers, or 'circuitrf solver install {Install.SolverHomes.ToolId(Tool)}'.");
         if (rejected.Count > 0)
             sb.Append(" Tried: ").Append(string.Join("; ", rejected)).Append('.');
         return sb.ToString();
@@ -654,7 +654,7 @@ public sealed partial class SolverDiscovery
         };
         return $"{Name} at '{installation.Where}' ({installation.HowFoundText}) reports version " +
                $"{installation.DescribeVersion()}, which circuitRF has not validated, so this 3D setup will not run. " +
-               $"Validated: {list}. {why} Point circuitRF at a validated {Name} in Settings ▸ 3D EM or with " +
+               $"Validated: {list}. {why} Point circuitRF at a validated {Name} in Settings ▸ Solvers or with " +
                $"{EnvironmentVariable}; “{ManualInstallSection}” in the EM Setup reference ({ManualInstallPage}) " +
                "says how each was installed.";
     }

@@ -5,7 +5,7 @@ namespace CircuitRF.Design.Em3d.Wsl;
 /// <summary>
 /// brief-em3d-97 — giving the Linux subsystem more memory: <c>memory=</c> in the user's <c>.wslconfig</c>, then,
 /// when asked, <c>wsl --shutdown</c> so the next start reads it. The dialog, the memory warning's row and
-/// Settings ▸ 3D EM all go through here, and every step goes through <see cref="IWsl"/>, so the whole operation
+/// Settings ▸ Solvers all go through here, and every step goes through <see cref="IWsl"/>, so the whole operation
 /// runs against the test fake.
 ///
 /// <para><b>Two facts shape it.</b> <c>.wslconfig</c> is machine-wide for this user — every distribution and Docker

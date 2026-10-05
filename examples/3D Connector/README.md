@@ -17,7 +17,7 @@ of curved geometry**, in **Help ▸ circuitRF Documentation**. They quote the sa
 ## You can draw without a solver — but not without the geometry kernel
 
 Booleans, fillets and STEP parts are built by **OpenCASCADE**, the geometry kernel that ships inside circuitRF.
-**Settings ▸ 3D EM** says whether this installation has it; a development build that has not built it cannot open
+**Settings ▸ Solvers** says whether this installation has it; a development build that has not built it cannot open
 this example's `Launch` or `Flange` (a dialog says why and how to restore it). Opening, orbiting, editing, `check`
 and `explain` need no solver. **Run** needs Palace or openEMS; the first press without one offers to install it.
 

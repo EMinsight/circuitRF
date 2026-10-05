@@ -104,11 +104,11 @@ it like a Palace on this computer. Gmsh and openEMS run natively.
 [EM Setup ▸ Palace on Windows](em-setup.html#palace-windows) has what each missing piece's message says.
 
 **By hand.** If you prefer to build the solvers yourself, circuitRF finds them on `PATH`, in a Spack
-install tree, in a conda environment, or where you name them in **Settings ▸ 3D EM**. It runs only the
+install tree, in a conda environment, or where you name them in **Settings ▸ Solvers**. It runs only the
 versions it has validated. The exact validated versions and the three build problems met on macOS are in
 [EM Setup ▸ Installing the 3D solvers by hand](em-setup.html#install-3d-solvers).
 
-**Removing them.** **Uninstall …** in **Settings ▸ 3D EM**, or `circuitrf solver remove palace --yes`.
+**Removing them.** **Uninstall …** in **Settings ▸ Solvers**, or `circuitrf solver remove palace --yes`.
 circuitRF removes only what it installed, and never touches your documents or results. See
 [EM Setup ▸ Removing the 3D solvers](em-setup.html#uninstall-solvers).
 

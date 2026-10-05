@@ -17,7 +17,7 @@ keywords: preferences, options, configuration, theme, dark mode, colours, colors
 <li><a href="#revision-control">Revision Control</a></li>
 <li><a href="#color-theme">Color Theme</a></li>
 <li><a href="#wirebonds">Wirebonds</a></li>
-<li><a href="#em3d">3D EM</a></li>
+<li><a href="#em3d">Solvers</a></li>
 <li><a href="#footer">The footer: Help, Revert, Cancel, Close</a></li>
 <li><a href="#where">Where the settings are stored</a></li>
 </ol>
@@ -85,6 +85,17 @@ applies to every open window and everything drawn in them.
 This is the light/dark *variant*. Which colour each thing is drawn in is the
 {{anchor: settings#color-theme|Color Theme}} tab, and every colour theme carries both variants — the two
 settings compose rather than competing.
+
+### 3D Designs
+
+**Open in realistic view** opens every 3D design with the realistic view already on, as if you had
+pressed its toolbar button. It is off by default, and it takes effect the next time a design opens — one
+already open keeps whatever its toolbar button says.
+
+It is a setting rather than something a design remembers because whether the realistic view is quick
+enough to leave on depends on **your** graphics card, not on the design. A design someone with a faster
+machine sends you opens the way you have chosen here. The look itself — environment, exposure, edges,
+grid — *is* saved in each design, so turning the view on shows it the way it was set up.
 
 ### Copy / Export
 
@@ -433,7 +444,7 @@ rules are checked **as well as** this one, never instead of it.
 Everything about the wires themselves — loop height, span, the array basis, the inductance the kernel
 computes and the S-parameters it exports — is in {{anchor: wbond.html|the wBond chapter}}.
 
-## 3D EM {#em3d}
+## Solvers {#em3d}
 
 {{ui: settings-3d-em}}
 

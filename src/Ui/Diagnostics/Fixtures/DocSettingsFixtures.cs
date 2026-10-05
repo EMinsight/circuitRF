@@ -65,7 +65,7 @@ public static class DocSettingsFixtures
     public static FigureScene Wirebonds() => Tab(5);
 
     /// <summary>
-    /// 3D EM: the Palace, Gmsh and openEMS rows (brief-em3d-6). Last, so nothing above it moved.
+    /// Solvers (first headed "3D EM"): the Palace, Gmsh and openEMS rows (brief-em3d-6). Last, so nothing above it moved.
     ///
     /// <para>The status lines read "Not checked yet." in the figure: discovery runs when the tab is
     /// SHOWN (its <c>Loaded</c>), which a captured tab never is — and a figure that ran it would show
@@ -82,7 +82,7 @@ public static class DocSettingsFixtures
         // pictures depending on the generating machine's toolchain, which is not a reproducible
         // figure. This is the docs seam and nothing a user runs.
         RevisionControlSettingsView.ShowAsAvailableForCapture = true;
-        // The 3D EM tab's status lines are this machine's solver discovery: its home directory is written as ~ so no
+        // The Solvers tab's status lines are this machine's solver discovery: its home directory is written as ~ so no
         // author's path reaches a committed figure.
         Em3dSolverSettingsView.AnonymizeHomeForCapture = true;
 

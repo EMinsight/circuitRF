@@ -243,7 +243,7 @@ public static class PalaceRun
         return (exe, args);
     }
 
-    /// <summary>The <c>mpirun</c> named in Settings ▸ 3D EM, or null. Installed by <c>src/Ui</c>
+    /// <summary>The <c>mpirun</c> named in Settings ▸ Solvers, or null. Installed by <c>src/Ui</c>
     /// (<c>Em3dSolverPathInstaller</c>), read when needed — the seam <see cref="SolverDiscovery.PreferredCommand"/> is.</summary>
     public static Func<string?>? PreferredMpiLauncher { get; set; }
 

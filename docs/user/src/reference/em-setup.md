@@ -746,7 +746,7 @@ and installs it for your user account only. It never needs administrator rights.
 There are three ways to start an install, and they all do the same thing:
 
 - **Install …** on the message a 3D run gives when a solver is missing.
-- **Install …** on the solver's row in {{anchor: settings.html#em3d|Settings ▸ 3D EM}}.
+- **Install …** on the solver's row in {{anchor: settings.html#em3d|Settings ▸ Solvers}}.
 - `circuitrf solver install palace --yes` from a terminal, which is how a build machine does it.
 
 **Nothing is downloaded until you agree.** First you see what will happen:
@@ -870,7 +870,7 @@ run offers **Give the Subsystem More Memory First…** too: it opens the same di
 run, so press Simulate again afterwards. When even the largest value would leave the run short, the
 warning says so, offers no button, and names the remedies that shrink the problem instead.
 
-**Choosing where Palace runs.** {{anchor: settings.html#em3d|Settings ▸ 3D EM}} has a **Location** row
+**Choosing where Palace runs.** {{anchor: settings.html#em3d|Settings ▸ Solvers}} has a **Location** row
 under Palace, on Windows only. **Automatic** (the default) uses a native Palace if there ever is one,
 then the subsystem. You can also choose **Native**, or one distribution by name. When Palace runs in the
 subsystem, a line under it reads the subsystem's memory each time the page is shown ("Linux subsystem:
@@ -890,7 +890,7 @@ circuitRF removes **only what it installed**. A solver you installed yourself, o
 
 There are three ways, and they all do the same thing:
 
-- **Uninstall …** under the solver's row in {{anchor: settings.html#em3d|Settings ▸ 3D EM}}. There is one
+- **Uninstall …** under the solver's row in {{anchor: settings.html#em3d|Settings ▸ Solvers}}. There is one
   button for each version circuitRF installed.
 - **Remove all 3D solvers …** at the foot of that page. It removes every one after a single
   confirmation.
@@ -934,7 +934,7 @@ folder, and their own **Remove all 3D solvers** removes them.
 **Where the solvers stay**, they wait in your user folder. When you install circuitRF again it finds
 them and uses them without reinstalling, and their Settings rows still offer **Uninstall …**. To get
 the space back instead, use **Remove all 3D solvers …** in
-{{anchor: settings.html#em3d|Settings ▸ 3D EM}} before you remove circuitRF.
+{{anchor: settings.html#em3d|Settings ▸ Solvers}} before you remove circuitRF.
 
 **Updating circuitRF never removes a solver.**
 
@@ -942,7 +942,7 @@ the space back instead, use **Remove all 3D solvers …** in
 
 A 3D setup (one whose `Solver3D` names Palace or openEMS) runs a solver circuitRF does not include. You
 install it yourself, and circuitRF finds it — or you name it in
-{{anchor: settings.html#em3d|Settings ▸ 3D EM}}. **circuitRF runs only the versions it has validated**
+{{anchor: settings.html#em3d|Settings ▸ Solvers}}. **circuitRF runs only the versions it has validated**
 and refuses any other, naming the validated ones, because a solver's input can change meaning between
 versions and the result would look plausible either way.
 
@@ -989,7 +989,7 @@ Spack's own install record instead — in `$SPACK_ROOT/opt/spack`, `~/spack/opt/
 one core through MPI's `mpirun`, and the same record says which MPI this Palace was built against, so
 circuitRF uses exactly that `mpirun`. A different MPI's `mpirun` found on `PATH` can start the processes
 and then fail to connect them, so that one comes later in the search. If your install tree is somewhere else,
-name Palace (and `mpirun`, if you want more than one core) in Settings ▸ 3D EM. `which palace` and
+name Palace (and `mpirun`, if you want more than one core) in Settings ▸ Solvers. `which palace` and
 `which mpirun`, run with the environment loaded, print the two paths. Without an `mpirun`, Palace runs
 as a single process and the run's notes say so. Other platforms: *not yet verified* — see Palace's own
 documentation.
@@ -1003,7 +1003,7 @@ If you build Palace, you accept those terms. circuitRF distributes no copy of Pa
 none.</p>
 </div>
 
-When a row in Settings ▸ 3D EM reads *validated*, the program is ready. `circuitrf explain` on a 3D
+When a row in Settings ▸ Solvers reads *validated*, the program is ready. `circuitrf explain` on a 3D
 `.cem` gives the same answer from the command line, under *solvers*.
 
 ## What the layout shows after a run {#overlays}

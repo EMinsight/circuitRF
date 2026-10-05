@@ -920,7 +920,7 @@ So the design is:
 1. **No in-app *Uninstall circuitRF…* command.** One shipped (brief-em3d-25) and was withdrawn
    (owner's call, 2026-09-26): no ordinary application uninstalls itself from its own Help menu —
    users remove an application the way their platform removes applications. The removal of the
-   solvers on their own is Settings ▸ 3D EM (*Uninstall …* per tool, *Remove all 3D solvers*), which
+   solvers on their own is Settings ▸ Solvers (*Uninstall …* per tool, *Remove all 3D solvers*), which
    is where the warning below sends a macOS or `.deb` user who wants the space back.
 2. **On Windows, the Apps-list uninstall runs circuitRF's own warning and solver removal**, then the
    MSI uninstall (`circuitRF.exe --uninstall`). The perUser layout already
@@ -1307,7 +1307,7 @@ shared geometry are cross-checks, not references — all of them are circuitRF-d
 - **Uninstalling circuitRF removes the solvers it installed, with a warning, where the platform's own
   uninstall runs circuitRF code** — the Windows Apps list and the Linux tarball's `install.sh
   --uninstall`; never during an upgrade; and where the platform allows no warning (macOS Trash, `.deb`),
-  leftovers are reused by a reinstall rather than hunted down, and Settings ▸ 3D EM removes them (§7.2).
+  leftovers are reused by a reinstall rather than hunted down, and Settings ▸ Solvers removes them (§7.2).
   There is no in-app *Uninstall circuitRF…* command.
 - **Windows users are not shut out of FEM**: circuitRF drives a Palace in the user's own Linux
   subsystem; openEMS runs natively; remote runs need nothing local (§7.4–§7.6).

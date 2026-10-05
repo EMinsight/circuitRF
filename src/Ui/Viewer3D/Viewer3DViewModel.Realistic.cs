@@ -1,8 +1,9 @@
-// brief-em3d-106 R-em3d106-1 — the realistic view's toggle: VIEW STATE, never saved, off on every open (overview D5), and toggling
+// brief-em3d-106 R-em3d106-1 — the realistic view's toggle: VIEW STATE, never saved in the document, and toggling
 // it marks nothing dirty. Turning it on asks the session for the shade stream and the environment's textures ONCE (R-em3d106-1e);
 // it re-tessellates and re-elaborates nothing. The environment is prefiltered off the UI thread the first time a studio or a file
 // is asked for, and cached after that, so a second toggle is immediate; until it is ready the view draws as the default view does
-// and the status line says so.
+// and the status line says so. It opens OFF unless the per-user Realistic3DPreference says otherwise — the workspace applies
+// that after the editor starts, exactly as the toolbar button would (overview D5 as amended 2026-10-04).
 
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Render.Scene3D.Look;

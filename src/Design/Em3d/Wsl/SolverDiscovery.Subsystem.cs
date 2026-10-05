@@ -37,7 +37,7 @@ public sealed partial class SolverDiscovery
             : state.Distributions.Where(d => string.Equals(d.Name, named, StringComparison.OrdinalIgnoreCase)).ToList();
         if (named is not null && candidates.Count == 0)
         {
-            notes.Add($"the Linux subsystem distribution '{named}' chosen in Settings ▸ 3D EM is not installed " +
+            notes.Add($"the Linux subsystem distribution '{named}' chosen in Settings ▸ Solvers is not installed " +
                       $"(installed: {string.Join(", ", state.Distributions.Select(d => d.Name))})");
             return null;
         }

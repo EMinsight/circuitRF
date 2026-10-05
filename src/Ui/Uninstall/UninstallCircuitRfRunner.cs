@@ -10,7 +10,7 @@ namespace CircuitRF.Ui.Uninstall;
 /// solvers, then circuitRF. The decisions — what is removed, how, and every sentence shown — are
 /// <see cref="AppUninstall"/>'s and <see cref="SolverUninstaller"/>'s; this file only asks and reports.
 /// There is no in-app menu command for it: an application is removed the way its platform removes
-/// applications, and Settings ▸ 3D EM is where the solvers are removed on their own (2026-09-26).
+/// applications, and Settings ▸ Solvers is where the solvers are removed on their own (2026-09-26).
 /// </summary>
 internal static class UninstallCircuitRfRunner
 {
@@ -36,7 +36,7 @@ internal static class UninstallCircuitRfRunner
         {
             await TextConfirmDialog.AskAsync(owner, Title, "circuitRF cannot uninstall this copy",
                 removal.Describe + (plan.CanProceed
-                    ? " The 3D solvers circuitRF installed can still be removed from Settings ▸ 3D EM ▸ Remove all 3D solvers."
+                    ? " The 3D solvers circuitRF installed can still be removed from Settings ▸ Solvers ▸ Remove all 3D solvers."
                     : ""), confirmLabel: null);
             return;
         }

@@ -209,7 +209,7 @@ public sealed class Viewer3DViewState
     public static (float R, float G, float B) ThemeBackground(bool dark) => dark ? (0.12f, 0.13f, 0.15f) : (0.93f, 0.94f, 0.96f);
     /// <summary>brief-em3d-46 — a drag's preview, or null.</summary>
     public Scene3DPreview? Preview;
-    /// <summary>brief-em3d-106 R-em3d106-1a — the realistic view: view state, never saved, off on every open (overview D5). It takes
+    /// <summary>brief-em3d-106 R-em3d106-1a — the realistic view: view state, never saved in the document (overview D5). It takes
     /// effect once <see cref="Environment"/> is ready; until then the frame is the default view's.</summary>
     public bool Realistic;
     /// <summary>The document's Look, parsed (R-em3d106-5).</summary>

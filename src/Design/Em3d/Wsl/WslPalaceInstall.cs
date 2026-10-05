@@ -29,7 +29,7 @@ public static class WslPalaceInstall
             chosen = state.Distributions.FirstOrDefault(d => string.Equals(d.Name, named, StringComparison.OrdinalIgnoreCase));
             if (chosen is null)
             {
-                refusal = $"The Linux subsystem distribution '{named}' chosen in Settings ▸ 3D EM is not installed. Installed: " +
+                refusal = $"The Linux subsystem distribution '{named}' chosen in Settings ▸ Solvers is not installed. Installed: " +
                           $"{string.Join(", ", state.Distributions.Select(d => d.Name))}. Choose one of them, or Automatic.";
                 return null;
             }

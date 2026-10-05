@@ -76,9 +76,9 @@
                  can no longer be dragged narrower than its own tab strip, which is the honest
                  constraint; a seventh header will need this number raised again, or shorter names.
 
-                 The SEVENTH header took the second route: "3D EM" (brief-em3d-6), estimated at ~59 px,
-                 ~13 px spare — see that tab's own comment for how the estimate was made and that it
-                 was not measured. An eighth header will not fit at 720. -->
+                 The SEVENTH header took the second route: "Solvers" (brief-em3d-6, first headed "3D EM"),
+                 estimated at ~66 px, ~6 px spare — see that tab's own comment for how the estimate was
+                 made and that it was not measured. An eighth header will not fit at 720. -->
             <TabControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <StackPanel Orientation="Horizontal"/>
@@ -157,6 +157,17 @@
                                         <mi:MaterialIcon Kind="WeatherNight" Width="16" Height="16"/>
                                     </Button>
                                 </StackPanel>
+
+                                <!-- 3D Designs — whether a .c3d opens in the realistic view. Here and not in
+                                     the .c3d because what a machine can afford to draw is a property of its
+                                     GPU, not of the design (Realistic3DPreference). Under Theme because it is
+                                     the other "how things look" switch, and the column had the room. -->
+                                <TextBlock Text="3D Designs" FontSize="11" FontWeight="SemiBold"
+                                           Opacity="0.55" Margin="0,20,0,6"/>
+                                <CheckBox  Name="RealisticOnOpenCheck" FontSize="12"
+                                           Content="Open in realistic view"
+                                           IsCheckedChanged="OnRealisticOnOpenChanged"
+                                           ToolTip.Tip="Opens every 3D design with the realistic view already on, as if you had pressed its toolbar button. The look itself — environment, exposure, edges, grid — is saved in each design. Leave this off on a machine whose graphics card makes the realistic view slow; the toolbar button still turns it on for one design."/>
                             </StackPanel>
                         </Grid>
 
@@ -534,19 +545,20 @@
                 </ScrollViewer>
             </TabItem>
 
-            <!-- ── 3D EM tab (brief-em3d-6 R-em3d6-4a) ─────────────────────────
+            <!-- ── Solvers tab (brief-em3d-6 R-em3d6-4a; renamed from "3D EM", owner, 2026-10-04) ──
                  LAST, so no per-tab figure index above it moves. One row per program a 3D EM run can
                  need — Palace, Gmsh, openEMS — each saying what was found, where, which version,
                  whether circuitRF has validated it and how it was found. The controls live in
-                 Em3dSolverSettingsView, as Revision Control's and Technology's do.
+                 Em3dSolverSettingsView, as Revision Control's and Technology's do; its own heading
+                 still reads "3D EM Solvers".
 
-                 The header is "3D EM" and not "3D EM Solvers" because of the tab strip's width (see the
-                 note at the top of this TabControl): the six headers measured 620 px against 692 usable
-                 at MinWidth 720, and "3D EM" at FontSize 13 with 10 px padding each side comes to about
-                 59 px — ESTIMATED from the Inter glyph advances that reproduce "Wirebonds"' measured
-                 85 px, NOT measured on the headless harness — leaving roughly 13 px spare. The longer
-                 name would have needed MinWidth raised, which moves every Settings figure. -->
-            <TabItem Header="3D EM">
+                 The header is short because of the tab strip's width (see the note at the top of this
+                 TabControl): the six headers before it measured 620 px against 692 usable at MinWidth
+                 720. "Solvers" at FontSize 13 is ~45.6 px of Inter Regular advances (~47 px SemiBold),
+                 against ~40.6 px for the old "3D EM" — so about 66 px with padding, leaving roughly
+                 6 px spare. ESTIMATED from the Inter glyph advances that reproduce "Wirebonds"' and
+                 "General"'s measured widths, NOT measured on the headless harness. -->
+            <TabItem Header="Solvers">
                 <ScrollViewer Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
                     <dlg:Em3dSolverSettingsView/>
                 </ScrollViewer>

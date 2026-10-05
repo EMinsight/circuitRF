@@ -11,7 +11,7 @@ using CircuitRF.Ui.Theming;
 namespace CircuitRF.Ui.Views.Dialogs;
 
 /// <summary>
-/// Settings ▸ 3D EM (brief-em3d-6 R-em3d6-4a): one row per program a 3D run can need, each saying what
+/// Settings ▸ Solvers (brief-em3d-6 R-em3d6-4a): one row per program a 3D run can need, each saying what
 /// <see cref="SolverDiscovery"/> found. The same discovery a run calls at its top, so the row and the
 /// run never disagree.
 ///

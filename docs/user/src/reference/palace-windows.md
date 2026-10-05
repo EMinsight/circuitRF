@@ -131,7 +131,7 @@ It is done when the `$` prompt comes back. You can close the Ubuntu window.
 
 ### 5. Install Palace from circuitRF {#step-install}
 
-1. In circuitRF, open **Settings ▸ 3D EM**.
+1. In circuitRF, open **Settings ▸ Solvers**.
 2. On the Palace row, choose **Install Palace…**.
 3. circuitRF shows what it is about to do: the version, every web address it will download from, the
    folder inside Ubuntu it installs into, and Palace's licence note. **Nothing is downloaded until you
@@ -146,7 +146,7 @@ that installs it.
 ### 6. Check that it worked {#step-check}
 
 When the build finishes, circuitRF checks the installed Palace before it says anything is done. The
-Palace row in **Settings ▸ 3D EM** then reads *Installed by circuitRF* and names the Ubuntu distribution
+Palace row in **Settings ▸ Solvers** then reads *Installed by circuitRF* and names the Ubuntu distribution
 it found it in.
 
 From here on you use Palace exactly as on any other computer. Simulate starts Ubuntu when it needs it,
@@ -183,7 +183,7 @@ Every message circuitRF gives on the way, and what each missing piece looks like
 
 Each of these removes one layer. Stop at whichever you like.
 
-1. **Palace.** **Uninstall Palace…** in **Settings ▸ 3D EM** removes the folder circuitRF built inside
+1. **Palace.** **Uninstall Palace…** in **Settings ▸ Solvers** removes the folder circuitRF built inside
    Ubuntu. Ubuntu and the build tools stay.
 2. **Ubuntu, and everything in it.** In an ordinary Terminal, run `wsl --unregister Ubuntu`. This
    deletes the Ubuntu virtual disk, including Palace, the build tools and any files you kept in your

@@ -670,7 +670,7 @@ internal static class DocumentSchema
             x-extent on each side; never both on one face. Palace finds a face's surfaces by its
             bounding box and counts them exactly: a neighbour's face lying in the same plane and
             overlapping it is refused, never merged. A curved face (a cylinder's side) is refused.
-          * OPERATIONS are built by OpenCASCADE, which ships with circuitRF (Settings ▸ 3D EM says
+          * OPERATIONS are built by OpenCASCADE, which ships with circuitRF (Settings ▸ Solvers says
             whether this installation has it). A Boolean is Op (Subtract,
             Unite, Intersect) of one Blank and one or more Tools, owned inline; a Fillet rounds named
             Edges of its Target by Radius; a Chamfer cuts them by Distance (and Distance2 along the

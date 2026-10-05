@@ -114,19 +114,19 @@ public sealed partial class EmSetupEditorViewModel
         "The planar-only settings are hidden; they are kept, and come back if you switch to Planar.";
 
     public string Solver3DDescription => Solver3DChoice.IsThermal
-        ? "Temperature, solved by circuitRF's own thermal solver on a mesh Gmsh makes (Settings ▸ 3D EM): the heat sources, " +
+        ? "Temperature, solved by circuitRF's own thermal solver on a mesh Gmsh makes (Settings ▸ Solvers): the heat sources, " +
           "boundaries and probes drawn in this view, their values below."
         : Solver3DChoice.Value switch
     {
         Em3dSolver.Palace =>
             "Generates a 3D model from the layout, its technology and any bond wires, meshes it with Gmsh and " +
-            "solves it with Palace, both installed separately (Settings ▸ 3D EM). " + PlanarHiddenNote,
+            "solves it with Palace, both installed separately (Settings ▸ Solvers). " + PlanarHiddenNote,
         Em3dSolver.OpenEms =>
             "Generates a 3D model from the layout, its technology and any bond wires, places circuitRF's own FDTD " +
-            "grid on it and solves it with openEMS, installed separately (Settings ▸ 3D EM) — once per port. " + PlanarHiddenNote,
+            "grid on it and solves it with openEMS, installed separately (Settings ▸ Solvers) — once per port. " + PlanarHiddenNote,
         Em3dSolver.Both =>
             "Generates one 3D model from the layout, its technology and any bond wires and solves it with Palace, " +
-            "then with openEMS (Settings ▸ 3D EM), writing each solver's result and a comparison of the two. " + PlanarHiddenNote,
+            "then with openEMS (Settings ▸ Solvers), writing each solver's result and a comparison of the two. " + PlanarHiddenNote,
         _ => "circuitRF's own planar and cross-section solvers, chosen under Analysis.",
     };
 

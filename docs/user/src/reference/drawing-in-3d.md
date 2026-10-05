@@ -572,7 +572,7 @@ its own. <code>w2 = 2*w</code> in mil, with <code>w</code> = 10 mil, is 20 mil, 
 
 Four kinds of object are built by **OpenCASCADE**, the geometry kernel that ships inside circuitRF, rather
 than by the editor itself: a **Boolean** (subtract, unite or intersect), a **Fillet**, a **Chamfer** and a
-**Step** part (one solid of an imported STEP file). **Settings ▸ 3D EM** says whether this installation has
+**Step** part (one solid of an imported STEP file). **Settings ▸ Solvers** says whether this installation has
 the kernel. **All four are made in the editor** — booleans and fillets below, STEP parts in
 [STEP](#step) — and a `.c3d` holding any of them is drawn, checked, explained and elaborated. The kernel is
 Open CASCADE Technology; **Help ▸ About** and its third-party notices say which version and under what
@@ -714,7 +714,7 @@ point found along a curved edge is on its drawn chord, so the status line marks 
 <span class="label">Without the geometry kernel</span>
 <p>A development build, or an installation missing its <code>geometry-kernel</code> folder, cannot build
 these objects. A 3D view that holds <b>any</b> of them — even a disabled one — is <b>not opened</b>: a dialog
-names the objects, says why, and offers <b>Open Settings ▸ 3D EM</b>, where the kernel's row says how to
+names the objects, says why, and offers <b>Open Settings ▸ Solvers</b>, where the kernel's row says how to
 restore it. A 3D view with none of them opens exactly as before. <code>circuitrf check</code> reports one
 error per such object and exits 1, and <code>em</code> refuses before writing anything. A document that places
 a <i>child</i> using one still opens; that one instance is refused and Simulate says which.</p>
@@ -795,7 +795,8 @@ the launch — see [the second example](#connector).
 The **Realistic view** button on the toolbar (the camera aperture, after Perspective and Orthographic), *3D ▸ View ▸
 Realistic View* and the **L** key in the view all redraw the view with physically based materials lit by a studio: metals reflect it, dielectrics take
 their body colour, gloss and translucency from their [appearance](#appearance). It is for pictures. It is a **view**,
-not an edit: it changes nothing in the model or in any result, it is not saved, and every document opens with it off.
+not an edit: it changes nothing in the model or in any result, and it is not saved in the design. Every design opens
+with it off unless {{anchor: settings.html#general|Settings ▸ General ▸ Open in realistic view}} is on.
 Selecting, hovering, modelling and the clip plane all keep working underneath it.
 
 The first time a studio is used in a session it is prepared in the background, and until then the view is drawn as

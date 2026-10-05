@@ -12,6 +12,7 @@ using CircuitRF.Ui.Revision;
 using CircuitRF.Ui.Layout.Drc;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Theming;
+using CircuitRF.Ui.ThreeD;
 using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
 
@@ -73,7 +74,7 @@ public partial class SettingsView : Window
     }
 
     /// <summary>brief-em3d-64 R-em3d64-5b — opens on the tab whose header is <paramref name="header"/> (the refusal on open's
-    /// <i>Open Settings ▸ 3D EM</i>); an unknown header leaves the first tab selected.</summary>
+    /// <i>Open Settings ▸ Solvers</i>); an unknown header leaves the first tab selected.</summary>
     public void SelectTab(string header)
     {
         if (Tabs.Items.OfType<TabItem>().FirstOrDefault(t => t.Header as string == header) is { } tab) Tabs.SelectedItem = tab;
@@ -175,6 +176,8 @@ public partial class SettingsView : Window
 
             SyncThemeButtons(prefs.Appearance ?? AppearanceMode.System);
 
+            RealisticOnOpenCheck.IsChecked = Realistic3DPreference.OnOpen;
+
             CopyColorCombo.ItemsSource   = new[] { "Follow System", "Force Light", "Force Dark" };
             CopyColorCombo.SelectedIndex = (int)(prefs.CopyColorMode ?? CopyColorMode.FollowSystem);
 
@@ -227,6 +230,13 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral) return;
         AppPreferencesIo.Update(p => p.ShowDockersOnLaunch = ShowDockersOnLaunchCheck.IsChecked);
+    }
+
+    // Takes effect at the next open; a design already open keeps whatever its toolbar button says.
+    private void OnRealisticOnOpenChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingGeneral) return;
+        Realistic3DPreference.OnOpen = RealisticOnOpenCheck.IsChecked == true;
     }
 
     // ── Theme (light / dark / system) ────────────────────────────────────────
