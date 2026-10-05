@@ -1488,7 +1488,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // checking here is what turns the refusal into a Messages row rather than an exception.
         if (Directory.Exists(workspaceDir))
         {
-            Messages.Error($"A folder named '{result.Name}' already exists at that location.");
+            Messages.Error($"A folder named '{result.Name}' already exists at that location.", workspaceDir);
             return;
         }
 

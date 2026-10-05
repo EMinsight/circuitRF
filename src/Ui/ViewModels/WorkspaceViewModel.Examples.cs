@@ -111,7 +111,10 @@ public partial class WorkspaceViewModel
         // halfway through leaves a workspace nobody asked for.
         if (ExampleWorkspaceInstall.Refusal(example, parentDir) is { } refusal)
         {
-            Messages.Error(refusal);
+            // Linked when the refusal is a folder already in the way: the user's next step is to
+            // go and look at it, and the sentence names it without being able to open it.
+            string dest = ExampleWorkspaceInstall.DestinationFor(example, parentDir);
+            Messages.Error(refusal, Directory.Exists(dest) || File.Exists(dest) ? dest : null);
             return;
         }
 
@@ -135,7 +138,7 @@ public partial class WorkspaceViewModel
 
         _lastWorkspaceParentDir = parentDir;
         Messages.Info($"Copied the '{example.Title}' example to '{result.WorkspaceDir}' "
-                    + $"({result.FileCount} file(s)). It is yours to edit.");
+                    + $"({result.FileCount} file(s)). It is yours to edit.", result.WorkspaceDir);
 
         if (WindowIsEmptyForExample())
             await SwitchToWorkspaceReporting(result.CwsPath);
