@@ -331,6 +331,7 @@ command rebuilds every page and every figure from the live application:
 
 ```bash
 dotnet run --project tools/DocGen -- --out docs/user
+dotnet run --project tools/DocGen -- --page docs/user/src/reference/wbond.md   # just this page, in seconds (prose edits only; no figures)
 ```
 
 Prose is authored as Markdown under `docs/user/src/`; the pages under `docs/user/` are the output and

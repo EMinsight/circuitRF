@@ -49,6 +49,24 @@ public sealed class DocGenRun
     public bool RebuildStatic { get => _rebuildStatic; set => _rebuildStatic = value; }
     private bool _rebuildStatic;
 
+    /// <summary>
+    /// Regenerate ONLY these pages — each a source path (<c>docs/user/src/reference/wbond.md</c>,
+    /// absolute, or relative to the working directory or to <c>docs/user/src</c>) or an output slug
+    /// (<c>reference/wbond.html</c>). Null for an ordinary full run.
+    ///
+    /// <para>A page run captures NOTHING: symbols, figures, toolbars and fonts are left exactly as
+    /// committed, and the page inlines the figures already on disk. That is what makes it seconds
+    /// instead of minutes, and it is also its limit — a change that moves a figure needs the full run.
+    /// Every page is still EXPANDED, because the search index and the cross-link check are built from
+    /// all of them; only the named pages and the search index are written. Any other page whose output
+    /// would now differ (a retitled page renames its neighbours' Previous/Next links and the contents
+    /// page) is named in the report rather than written, so the run cannot quietly leave the site
+    /// inconsistent.</para>
+    /// </summary>
+    public IReadOnlyList<string>? OnlyPages { get; set; }
+
+    private readonly List<string> _staleOthers = [];
+
     public void Run(bool slidesOnly = false, string? slidesOut = null,
                     IReadOnlySet<string>? decks = null,
                     IReadOnlyList<ColorVariant>? variants = null)
@@ -60,6 +78,24 @@ public sealed class DocGenRun
         string figures = Path.Combine(_docsRoot, "assets", "figures");
         string symbols = Path.Combine(_docsRoot, "assets", "symbols");
         Directory.CreateDirectory(figures);
+
+        if (OnlyPages is not null)
+        {
+            Pages(slidesOnly: false, slidesOut: null);
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"Pages regenerated in {clock.Elapsed.TotalSeconds:F1} s "
+                        + "(figures, symbols, toolbars and fonts left as committed):");
+            foreach (var f in _written.Distinct()) sb.AppendLine("  " + f);
+            if (_staleOthers.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine($"{_staleOthers.Count} OTHER page(s) would also change and were NOT written. Add them");
+                sb.AppendLine("with --page, or run the full regeneration:");
+                foreach (var p in _staleOthers) sb.AppendLine("  " + p);
+            }
+            Report = sb.ToString();
+            return;
+        }
 
         if (!slidesOnly)
         {
@@ -259,6 +295,8 @@ public sealed class DocGenRun
         // forward cross-link resolves as readily as a backward one.
         var offered = AnchorIndex(pages);
 
+        var selected = OnlyPages is null ? null : SelectPages(pages, srcRoot, OnlyPages);
+
         // The reading order, checked against the page set BEFORE anything is written: a run that
         // would produce an unreachable page fails instead of producing it.
         var nav = SiteNav.Load(_docsRoot);
@@ -312,7 +350,7 @@ public sealed class DocGenRun
             Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
 
             var expander = new Placeholders(_docsRoot, Path.GetDirectoryName(outPath)!,
-                                            id => _manifests[id], offered.Contains, nav, titles, page.Slug);
+                                            ToolbarManifest, offered.Contains, nav, titles, page.Slug);
             string expanded = expander.Expand(page.Body, page.SourcePath);
             foreach (var f in expander.FontFamiliesUsed) families.Add(f);
 
@@ -334,6 +372,12 @@ public sealed class DocGenRun
                     $"{page.SourcePath}: an unexpanded placeholder survived into the output: " +
                     $"'{leftover.Value}'. A placeholder that reaches a shipped page as literal braces is " +
                     "exactly the failure this pipeline exists to prevent.");
+
+            if (selected is not null && !selected.Contains(page))
+            {
+                if (!File.Exists(outPath) || File.ReadAllText(outPath) != html) _staleOthers.Add(page.Slug);
+                continue;
+            }
 
             File.WriteAllText(outPath, html);
             _written.Add(outPath);
@@ -364,6 +408,49 @@ public sealed class DocGenRun
         // their font usage is whatever their <img>-referenced symbol files already used.
         return families;
     }
+
+    /// <summary>
+    /// A toolbar's button manifest: the one the full run captured, or — on a page run, which captures
+    /// no toolbars — read from a fresh fixture, exactly as <see cref="Toolbars"/> reads it.
+    /// </summary>
+    private IReadOnlyList<ToolbarCatalog.Entry> ToolbarManifest(string id)
+    {
+        if (!_manifests.TryGetValue(id, out var m))
+            _manifests[id] = m = ToolbarCatalog.Manifest(DocFixtures.Toolbar(id).Panel);
+        return m;
+    }
+
+    /// <summary>Resolve <see cref="OnlyPages"/> against the sources. An unknown name is an error,
+    /// never a run that reports success having written nothing.</summary>
+    private static HashSet<DocPage> SelectPages(IReadOnlyList<DocPage> pages, string srcRoot,
+                                                IReadOnlyList<string> requested)
+    {
+        var chosen = new HashSet<DocPage>();
+        foreach (var r in requested)
+        {
+            string slug = r.Replace('\\', '/');
+            if (slug.EndsWith(".md", StringComparison.OrdinalIgnoreCase)) slug = slug[..^3] + ".html";
+
+            var hit = pages.FirstOrDefault(p =>
+                   SamePath(p.SourcePath, Path.GetFullPath(r))
+                || SamePath(p.SourcePath, Path.GetFullPath(Path.Combine(srcRoot, r)))
+                || p.Slug == slug);
+
+            if (hit is null)
+                throw new InvalidOperationException(
+                    $"--page '{r}' names no source page. Give the Markdown source "
+                  + "(docs/user/src/reference/wbond.md) or the output slug (reference/wbond.html).");
+            if (hit.Kind == "slides")
+                throw new InvalidOperationException(
+                    $"--page '{r}' is a slide deck. Build it with --slides <out-dir> --deck {hit.Deck}.");
+            chosen.Add(hit);
+        }
+        return chosen;
+    }
+
+    private static bool SamePath(string a, string b)
+        => string.Equals(Path.GetFullPath(a), b,
+                         OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// The hand-written HTML pages that survive this run untouched — everything under the docs root

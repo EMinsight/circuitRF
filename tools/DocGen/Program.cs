@@ -13,6 +13,7 @@ namespace CircuitRF.DocGen;
 /// <code>
 ///   dotnet run --project tools/DocGen -- --out docs/user          figures + fonts + HTML
 ///   dotnet run --project tools/DocGen -- --slides docs/slides     landscape PDF decks
+///   dotnet run --project tools/DocGen -- --page docs/user/src/reference/wbond.md   one page, seconds
 /// </code>
 ///
 /// <para>Decks are selectable (<c>--deck overview</c>) and themed (<c>--theme dark</c>); both
@@ -30,6 +31,16 @@ public static class Program
           dotnet run --project tools/DocGen -- --out <docs-dir>        regenerate figures, fonts and pages
           dotnet run --project tools/DocGen -- --slides <out-dir>      regenerate the landscape PDF decks
           dotnet run --project tools/DocGen -- --out <d> --slides <s>  both
+          dotnet run --project tools/DocGen -- --page <src.md>[,...]   only these pages (seconds)
+
+        Page options
+          --page <p>[,<p>]    regenerate ONLY these pages' HTML, plus the search index. Each is a
+                              Markdown source (docs/user/src/reference/wbond.md, or relative to
+                              docs/user/src) or an output slug (reference/wbond.html); repeatable.
+                              Captures nothing: figures, symbols, toolbars and fonts stay as
+                              committed, so a change that moves a figure still needs the full run.
+                              Other pages whose output would change too are NAMED, not written.
+                              Writes into --out if given, else docs/user.
 
         Deck options (with --slides)
           --deck <id>[,<id>]  build only these decks. Default: all of them.
@@ -58,6 +69,7 @@ public static class Program
     public static int Main(string[] args)
     {
         string? outDir = null, slidesDir = null;
+        List<string>? pages = null;
         bool lintDiag = false, rebuildStatic = false;
         HashSet<string>? decks = null;
         List<CircuitRF.Render.ColorVariant>? variants = null;
@@ -68,6 +80,10 @@ public static class Program
             {
                 case "--out"    when i + 1 < args.Length: outDir    = args[++i]; break;
                 case "--slides" when i + 1 < args.Length: slidesDir = args[++i]; break;
+                case "--page"   when i + 1 < args.Length:
+                    pages ??= [];
+                    pages.AddRange(Split(args[++i]));
+                    break;
                 case "--deck"   when i + 1 < args.Length:
                     decks ??= new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (var d in Split(args[++i])) decks.Add(d);
@@ -100,7 +116,16 @@ public static class Program
             }
         }
 
-        if (outDir is null && slidesDir is null) { Console.WriteLine(Usage); return 2; }
+        if (outDir is null && slidesDir is null && pages is null) { Console.WriteLine(Usage); return 2; }
+
+        // A page run captures nothing, so pairing it with a deck build or a static-figure rebuild
+        // would have it silently skip what was asked for.
+        if (pages is not null && (slidesDir is not null || rebuildStatic))
+        {
+            Console.Error.WriteLine("--page regenerates pages only; it cannot be combined with --slides or --rebuild-static.\n");
+            Console.Error.WriteLine(Usage);
+            return 2;
+        }
 
         // --deck and --theme narrow a deck run. Accepting them on a run that builds no decks would
         // silently do nothing, which is the failure this whole tool is built to refuse.
@@ -134,8 +159,8 @@ public static class Program
         try
         {
             string docs = outDir ?? DefaultDocsRoot();
-            var run = new DocGenRun(docs) { RebuildStatic = rebuildStatic };
-            run.Run(slidesOnly: outDir is null, slidesOut: slidesDir, decks: decks, variants: variants);
+            var run = new DocGenRun(docs) { RebuildStatic = rebuildStatic, OnlyPages = pages };
+            run.Run(slidesOnly: outDir is null && pages is null, slidesOut: slidesDir, decks: decks, variants: variants);
             Console.WriteLine(run.Report);
             return 0;
         }
