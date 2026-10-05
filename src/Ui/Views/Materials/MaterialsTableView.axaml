@@ -143,7 +143,8 @@
                         <!-- The built-in materials, listed or not; each listed one carries the mark the toggle shows. -->
                         <ToggleButton Grid.Column="2" Padding="5,3" MinWidth="0" VerticalAlignment="Stretch"
                                       IsVisible="{Binding OffersBuiltIns}" IsChecked="{Binding ShowBuiltIns}"
-                                      ToolTip.Tip="Show the materials built into circuitRF. Editing or assigning one saves a copy to the list new materials go to.">
+                                      IsEnabled="{Binding HasBuiltInsToShow}" ToolTip.ShowOnDisabled="True"
+                                      ToolTip.Tip="{Binding BuiltInsTip}">
                             <mi:MaterialIcon Kind="PackageVariantClosed" Width="14" Height="14"/>
                         </ToggleButton>
                         <Button Grid.Column="3" Classes="tool" Content="Delete" Command="{Binding DeleteCommand}"
@@ -203,7 +204,7 @@
                             <Button Grid.Column="0" Width="34" Height="34" Padding="3" VerticalAlignment="Center"
                                     IsEnabled="{Binding IsEditable}" Command="{Binding PickColorCommand}"
                                     CommandParameter="{Binding $parent[Window]}"
-                                    ToolTip.Tip="The colour the 3D view draws it in. Pick one, or set it under Display.">
+                                    ToolTip.Tip="Its colour: the ordinary-view colour when one is set, else the realistic view's base colour. Click to set the ordinary-view colour.">
                                 <Border Width="26" Height="26" CornerRadius="4" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1">
                                     <Border.Background>
                                         <SolidColorBrush Color="{Binding ListSwatchColor}"/>
@@ -377,41 +378,37 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- display -->
-                        <Border Classes="card">
-                            <StackPanel Spacing="8">
-                                <TextBlock Classes="hdr" Text="Display"/>
-                                <StackPanel Spacing="3">
-                                    <TextBlock Classes="lbl" Text="Colour in the 3D view — empty for the view's own palette"/>
-                                    <Grid ColumnDefinitions="Auto,160" ColumnSpacing="6" HorizontalAlignment="Left">
-                                        <Button Grid.Column="0" Width="30" Padding="3" IsEnabled="{Binding IsEditable}"
-                                                Command="{Binding PickColorCommand}" CommandParameter="{Binding $parent[Window]}"
-                                                ToolTip.Tip="Pick the colour the 3D view draws it in.">
-                                            <Border Width="20" Height="16" CornerRadius="2" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1">
-                                                <Border.Background>
-                                                    <SolidColorBrush Color="{Binding SwatchColor}"/>
-                                                </Border.Background>
-                                            </Border>
-                                        </Button>
-                                        <TextBox Grid.Column="1" Classes="val" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
-                                                 Text="{Binding ColorText, UpdateSourceTrigger=LostFocus}" PlaceholderText="#rrggbb"/>
-                                    </Grid>
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
                         <!-- brief-em3d-108 R-em3d108-1a/b — how it looks in the realistic view: the swatch (a sphere shaded by the view's own
                              reference, under the default studio, no GPU needed) and the one appearance editor. In the 3D view's Materials
                              dialog every edit is also shown live in each open 3D view on this technology (R-em3d108-1c). -->
                         <Border x:Name="AppearanceCard" Classes="card">
                             <StackPanel Spacing="8">
                                 <TextBlock Classes="hdr" Text="Appearance"/>
-                                <TextBlock Classes="hint" Text="How it looks in the realistic view — a picture, not physics: no solver reads the look, and an edit never makes a result out of date. A field it does not state shows, greyed, the value it takes — its tooltip says where that comes from."/>
+                                <TextBlock Classes="hint" Text="How it looks — a picture, not physics: no solver reads any of it, and an edit never makes a result out of date. A field it does not state shows, greyed, the value it takes; its tooltip says where that comes from."/>
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                                     <Image Grid.Column="0" Width="96" Height="96" VerticalAlignment="Top"
                                            Source="{Binding SwatchPixels, Converter={x:Static apv:AppearanceEditorView.SwatchBitmap}}"
                                            ToolTip.Tip="This material's look under the default studio, as the realistic view shades it."/>
-                                    <apv:AppearanceEditorView Grid.Column="1" DataContext="{Binding Appearance}"/>
+                                    <StackPanel Grid.Column="1" Spacing="6">
+                                        <apv:AppearanceEditorView DataContext="{Binding Appearance}"/>
+                                        <!-- 2026-10-04 — the ordinary view's colour, here beside the realistic view's rather than on a card of its
+                                             own (it was "Display"): the record's Color key. Empty, the ordinary view draws each object in its
+                                             layer's colour (a dielectric, in the view's palette). -->
+                                        <Grid ColumnDefinitions="110,Auto,110" ColumnSpacing="6"
+                                              ToolTip.Tip="The colour the ordinary 3D view draws every object of this material in. Empty: each conductor takes its layer's colour, each dielectric the view's palette. The realistic view uses Base colour above.">
+                                            <TextBlock Grid.Column="0" Text="Ordinary-view colour" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                            <Button Grid.Column="1" Width="30" Padding="3" IsEnabled="{Binding IsEditable}"
+                                                    Command="{Binding PickColorCommand}" CommandParameter="{Binding $parent[Window]}">
+                                                <Border Width="20" Height="16" CornerRadius="2" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1">
+                                                    <Border.Background>
+                                                        <SolidColorBrush Color="{Binding SwatchColor}"/>
+                                                    </Border.Background>
+                                                </Border>
+                                            </Button>
+                                            <TextBox Grid.Column="2" Classes="val" IsReadOnly="{Binding !IsEditable}" KeyDown="OnCellKeyDown"
+                                                     Text="{Binding ColorText, UpdateSourceTrigger=LostFocus}" PlaceholderText="layer colour"/>
+                                        </Grid>
+                                    </StackPanel>
                                 </Grid>
                             </StackPanel>
                         </Border>

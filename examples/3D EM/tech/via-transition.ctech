@@ -209,7 +209,8 @@
       "Name": "Copper",
       "Sigma20": 58000000,
       "Alpha20": 0.0039,
-      "DensityKgM3": 8960
+      "DensityKgM3": 8960,
+      "Appearance": { "BaseColor": "#FAD1C2", "Metallic": 1, "Roughness": 0.35 }
     },
     {
       "Name": "Laminate",

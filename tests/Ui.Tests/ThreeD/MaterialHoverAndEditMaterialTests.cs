@@ -135,7 +135,9 @@ public sealed class MaterialHoverAndEditMaterialTests : IDisposable
     public void TheMaterialsTable_ScrollsTheSelectedRowIntoView()
     {
         string src = StripComments(File.ReadAllText(RepoFile("src/Ui/Views/Materials/MaterialsTableView.axaml.cs")));
-        Assert.Contains("nameof(MaterialsTableViewModel.SelectedRow)) RevealSelected()", src);
+        int onSelected = src.IndexOf("!= nameof(MaterialsTableViewModel.SelectedRow)) return;", StringComparison.Ordinal);
+        Assert.True(onSelected >= 0);                                     // the SelectedRow handler…
+        Assert.Contains("RevealSelected();", src[onSelected..src.IndexOf('}', onSelected)]);   // …reveals the row
         Assert.Contains("AttachedToVisualTree += (_, _) => RevealSelected()", src);
         Assert.Contains("RowList.ScrollIntoView(row)", src);
         Assert.Contains("x:Name=\"RowList\"", File.ReadAllText(RepoFile("src/Ui/Views/Materials/MaterialsTableView.axaml")));

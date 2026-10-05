@@ -399,25 +399,31 @@
       "Name": "Gold",
       "Sigma20": 41000000,
       "Alpha20": 0.0034,
-      "DensityKgM3": 19300
+      "DensityKgM3": 19300,
+      "Appearance": { "BaseColor": "#FFE39D", "Metallic": 1, "Roughness": 0.25 }
     },
     {
       "Name": "Aluminium",
       "Sigma20": 37700000,
       "Alpha20": 0.0039,
-      "DensityKgM3": 2700
+      "DensityKgM3": 2700,
+      "Color": "#A3A8AF",
+      "Appearance": { "BaseColor": "#E4E7EA", "Metallic": 1, "Roughness": 0.4 }
     },
     {
       "Name": "Copper",
       "Sigma20": 58000000,
       "Alpha20": 0.0039,
-      "DensityKgM3": 8960
+      "DensityKgM3": 8960,
+      "Appearance": { "BaseColor": "#FAD1C2", "Metallic": 1, "Roughness": 0.35 }
     },
     {
       "Name": "Silver",
       "Sigma20": 63000000,
       "Alpha20": 0.0038,
-      "DensityKgM3": 10490
+      "DensityKgM3": 10490,
+      "Color": "#C4C7CC",
+      "Appearance": { "BaseColor": "#FCFAF5", "Metallic": 1, "Roughness": 0.2 }
     },
     {
       "Name": "GaAs",

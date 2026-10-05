@@ -424,8 +424,12 @@ public sealed class MaterialLibraryTests(ITestOutputHelper output) : IDisposable
             foreach (var own in tech.Materials)
                 if (generic.FirstOrDefault(g => string.Equals(g.Name, own.Name, StringComparison.OrdinalIgnoreCase)) is { } g)
                 {
-                    (g.Source, g.Appearance) = (null, null);   // display fields (brief-em3d-105: appearance too)
-                    Assert.Equal(MaterialLibraryPersistence.Serialize([own]), MaterialLibraryPersistence.Serialize([g]));
+                    // Display fields aside (brief-em3d-105: appearance too; 2026-10-04: a technology's own Silver and
+                    // Aluminium carry the library's colour and look, since its own record is the one every view reads).
+                    var mine = MaterialLibraryPersistence.Deserialize(MaterialLibraryPersistence.Serialize([own]))[0];
+                    (g.Source, g.Color, g.Appearance) = (null, null, null);
+                    (mine.Source, mine.Color, mine.Appearance) = (null, null, null);
+                    Assert.Equal(MaterialLibraryPersistence.Serialize([mine]), MaterialLibraryPersistence.Serialize([g]));
                 }
         }
 

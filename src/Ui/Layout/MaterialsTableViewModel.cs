@@ -92,12 +92,17 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
 
     private bool _offersBuiltIns;
 
-    /// <summary>Whether the list offers the materials shipped inside circuitRF (its Built-in toggle). The 3D view's Materials
-    /// dialog and the technology editor's tab do; a <c>.cmat</c> document does not.</summary>
+    /// <summary>Whether the list offers the materials shipped inside circuitRF (its Built-in toggle). Every host does since
+    /// 2026-10-04 — the 3D view's Materials dialog, the technology editor's tab, and a <c>.cmat</c> document, where adopting one
+    /// copies it into the library.</summary>
     public bool OffersBuiltIns
     {
         get => _offersBuiltIns;
-        init => _offersBuiltIns = value;
+        init
+        {
+            _offersBuiltIns = value;
+            RecountBuiltIns(Rows.Where(r => !r.IsBuiltIn).Select(r => r.Name));   // the constructor's Rebuild ran before this
+        }
     }
 
     /// <summary>Lists the built-in materials below the rest — those not already listed under the same name. Each is shown as
@@ -105,7 +110,38 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
     /// is made; a host that remembers it sets it.</summary>
     [ObservableProperty] private bool _showBuiltIns;
 
-    partial void OnShowBuiltInsChanged(bool value) => Rebuild();
+    partial void OnShowBuiltInsChanged(bool value)
+    {
+        Rebuild();
+        OnPropertyChanged(nameof(HasBuiltInsToShow));
+        OnPropertyChanged(nameof(BuiltInsTip));
+    }
+
+    private void RecountBuiltIns(IEnumerable<string> listed)
+    {
+        var named = new HashSet<string>(listed, StringComparer.OrdinalIgnoreCase);
+        BuiltInsNotListed = OffersBuiltIns ? BuiltInNames.Value.Count(n => !named.Contains(n)) : 0;
+    }
+
+    /// <summary>The built-in materials' names, read once: <see cref="Rebuild"/> asks on every edit.</summary>
+    private static readonly Lazy<string[]> BuiltInNames = new(() => [.. MaterialLibraries.LoadGeneric().Select(m => m.Name)]);
+
+    /// <summary>How many built-in materials the toggle would add — those no list here already names. Zero (a technology naming
+    /// the generic library, or that library itself) greys the toggle out, its tooltip saying why: a toggle that adds nothing
+    /// read as broken (owner-reported).</summary>
+    [ObservableProperty] private int _builtInsNotListed;
+
+    public bool HasBuiltInsToShow => BuiltInsNotListed > 0 || ShowBuiltIns;
+
+    public string BuiltInsTip => HasBuiltInsToShow
+        ? $"Show the {BuiltInsNotListed} material{(BuiltInsNotListed == 1 ? "" : "s")} built into circuitRF that these lists do not already have. Editing or assigning one saves a copy to the list new materials go to."
+        : "Every material built into circuitRF is already listed here (as generic-materials.cmat), so there is nothing more to show.";
+
+    partial void OnBuiltInsNotListedChanged(int value)
+    {
+        OnPropertyChanged(nameof(HasBuiltInsToShow));
+        OnPropertyChanged(nameof(BuiltInsTip));
+    }
 
     /// <summary>Where a built-in material is copied when it is edited or assigned: <see cref="TargetSource"/>, else the first
     /// list that can be written; null when none can.</summary>
@@ -235,6 +271,7 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
         foreach (var src in Sources)
             foreach (var m in src.List()) wanted.Add((m, src, null, false));
         foreach (var lm in LibraryRows) wanted.Add((lm.Material, null, lm.SourcePath, false));
+        RecountBuiltIns(wanted.Select(w => w.Material.Name));
         if (OffersBuiltIns && ShowBuiltIns)
         {
             // A fresh copy each time: an adopted record belongs to its list from then on, and an undo must not find it edited here.
@@ -553,6 +590,7 @@ public sealed partial class MaterialRowViewModel : ObservableObject
         {
             row._appearancePreview = (TechAppearance.With(row.Material.Appearance, key, value), true);
             row.OnPropertyChanged(nameof(SwatchPixels));
+            row.OnPropertyChanged(nameof(ListSwatchColor));
             row._table.RaiseAppearanceEdited(row, row._appearancePreview.Appearance);
         }
 
@@ -561,6 +599,7 @@ public sealed partial class MaterialRowViewModel : ObservableObject
             if (!row._appearancePreview.Active) return;
             row._appearancePreview = default;
             row.OnPropertyChanged(nameof(SwatchPixels));
+            row.OnPropertyChanged(nameof(ListSwatchColor));
             row._table.RaiseAppearanceEdited(row, row.Material.Appearance);
         }
 
@@ -572,6 +611,7 @@ public sealed partial class MaterialRowViewModel : ObservableObject
             if (MaterialValidation.AppearanceFaults(next).FirstOrDefault() is { } fault)
             {
                 row.OnPropertyChanged(nameof(SwatchPixels));
+                row.OnPropertyChanged(nameof(ListSwatchColor));
                 return $"The appearance's {fault}.";
             }
             string name = row.Material.Name;
@@ -580,6 +620,7 @@ public sealed partial class MaterialRowViewModel : ObservableObject
             var material = row.Material;
             row.Edit(() => material.Appearance = next, what);
             row.OnPropertyChanged(nameof(SwatchPixels));
+            row.OnPropertyChanged(nameof(ListSwatchColor));
             row._table.RaiseAppearanceEdited(row, row.Material.Appearance);
             return null;
         }
@@ -896,12 +937,18 @@ public sealed partial class MaterialRowViewModel : ObservableObject
         }
     }
 
-    /// <summary>The list's swatch: the stated colour, else a neutral one per role, so an unstated colour still reads.</summary>
+    /// <summary>The list's swatch: the ordinary-view colour when one is stated, else the realistic view's resolved base colour —
+    /// never a colour the material does not have. Until 2026-10-04 it fell back to one stand-in colour per role, so every metal
+    /// with no stated colour read as gold, silver included (owner-reported).</summary>
     public Avalonia.Media.Color ListSwatchColor
-        => Material.Color is { } c && Rgba.TryParseHex(c, out var rgba) ? new Avalonia.Media.Color(255, rgba.R, rgba.G, rgba.B)
-         : Implied(C3dMaterialRole.ImpliedColour(ImpliedRole));
-
-    private static Avalonia.Media.Color Implied((byte R, byte G, byte B) c) => Avalonia.Media.Color.FromRgb(c.R, c.G, c.B);
+    {
+        get
+        {
+            if (Material.Color is { } c && Rgba.TryParseHex(c, out var rgba)) return new Avalonia.Media.Color(255, rgba.R, rgba.G, rgba.B);
+            var (r, g, b) = ResolvedLook.Values.BaseColor.ToSrgb();
+            return Avalonia.Media.Color.FromRgb(r, g, b);
+        }
+    }
 
     /// <summary>The Colour column's swatch — transparent while no colour is stated (the 3D view's own palette).</summary>
     public Avalonia.Media.Color SwatchColor

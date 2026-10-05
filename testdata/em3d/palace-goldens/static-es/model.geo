@@ -8,7 +8,7 @@ Geometry.OCCBoundsUseStl = 1;
 e = 0.001;
 
 // ---- solids, in construction order -------------------------------------------------------
-// RO4350: Dielectric, RO4350, order 1
+// RO4350: Dielectric, RO4350B, order 1
 v = newv; Box(v) = {-3000, -4000, 35, 9000, 8000, 508};
 s0[] = {v};
 // air: Air, Air, order 2

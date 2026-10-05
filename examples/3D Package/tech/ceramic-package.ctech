@@ -129,7 +129,8 @@
       "Name": "Gold",
       "Sigma20": 41000000,
       "Alpha20": 0.0034,
-      "DensityKgM3": 19300
+      "DensityKgM3": 19300,
+      "Appearance": { "BaseColor": "#FFE39D", "Metallic": 1, "Roughness": 0.25 }
     },
     {
       "Name": "Alumina",

@@ -26,6 +26,14 @@
 				"L": 0.00508
 			},
 			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		},
+		"MLIN_7088fa0da930": {
+			"GeneratorId": "MLIN",
+			"Parameters": {
+				"W": 0.0011176,
+				"L": 0.00508
+			},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
 		}
 	},
 	"Pins": [
@@ -107,7 +115,7 @@
 	],
 	"Instances": [
 		{
-			"CellRef": "../../.generated-cells/MLIN_d80d6d59c6e6",
+			"CellRef": "../../.generated-cells/MLIN_7088fa0da930",
 			"X": 508000,
 			"Y": 0,
 			"Rot": "R0",
@@ -146,7 +154,7 @@
 			"ShowRefDes": false
 		},
 		{
-			"CellRef": "../../.generated-cells/MLIN_d80d6d59c6e6",
+			"CellRef": "../../.generated-cells/MLIN_7088fa0da930",
 			"X": 10668000,
 			"Y": 0,
 			"Rot": "R0",
@@ -185,7 +193,7 @@
 			"ShowRefDes": false
 		},
 		{
-			"CellRef": "../../.generated-cells/MLIN_d80d6d59c6e6",
+			"CellRef": "../../.generated-cells/MLIN_7088fa0da930",
 			"X": 20828000,
 			"Y": 0,
 			"Rot": "R0",

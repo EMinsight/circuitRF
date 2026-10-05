@@ -83,7 +83,8 @@
       "DensityKgM3": 2700,
       "SpecificHeat": 897,
       "Source": "Resistivity 2.65e-8 ohm-m at 20 C: CRC Handbook of Chemistry and Physics, electrical resistivity of pure metals. Temperature coefficient 0.0039 /K and density 2700 kg/m3: CRC Handbook of Chemistry and Physics. Thermal conductivity k(T) and the shape of conductivity against temperature from 20 C to 626.85 C, the last tabulated row below the melting point (660.323 C, ITS-90): the pure bulk metal's recommended values, rho(T) from Desai, James and Ho, Electrical resistivity of aluminum and manganese, J. Phys. Chem. Ref. Data 13, 1131 (1984); k(T) from Ho, Powell and Liley, Thermal conductivity of the elements: a comprehensive review, J. Phys. Chem. Ref. Data 3, Supplement 1 (1974). The conductivity table is that rho(T) with a constant 7.41e-12 ohm-m added (Matthiessen's rule: an impurity adds a temperature-independent resistivity) so that it equals Sigma20 at 20 C; the slope with temperature is the pure metal's. Specific heat at 25 C: CRC Handbook of Chemistry and Physics.",
-      "Appearance": { "BaseColor": "#F5F6F6", "Metallic": 1, "Roughness": 0.35 }
+      "Color": "#A3A8AF",
+      "Appearance": { "BaseColor": "#E4E7EA", "Metallic": 1, "Roughness": 0.4 }
     },
     {
       "Name": "Copper",
@@ -175,6 +176,7 @@
       "DensityKgM3": 10490,
       "SpecificHeat": 235,
       "Source": "Resistivity 1.59e-8 ohm-m and temperature coefficient 0.0038 /K at 20 C: CRC Handbook of Chemistry and Physics, electrical resistivity of pure metals. Density: CRC Handbook of Chemistry and Physics. Thermal conductivity k(T) and the shape of conductivity against temperature from 20 C to 926.85 C, the last tabulated row below the melting point (961.78 C, ITS-90): the pure bulk metal's recommended values, rho(T) from Matula, Electrical resistivity of copper, gold, palladium, and silver, J. Phys. Chem. Ref. Data 8, 1147 (1979); k(T) from Ho, Powell and Liley, Thermal conductivity of the elements: a comprehensive review, J. Phys. Chem. Ref. Data 3, Supplement 1 (1974). The conductivity table is that rho(T) with a constant -5.98e-12 ohm-m added (Matthiessen's rule: an impurity adds a temperature-independent resistivity) so that it equals Sigma20 at 20 C; the slope with temperature is the pure metal's. Specific heat at 25 C: CRC Handbook of Chemistry and Physics.",
+      "Color": "#C4C7CC",
       "Appearance": { "BaseColor": "#FCFAF5", "Metallic": 1, "Roughness": 0.2 }
     },
     {

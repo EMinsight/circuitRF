@@ -31,7 +31,9 @@ public sealed class EditorRound5ChromeTests
         Assert.Equal(0, flips);                                   // hidden, and still hidden
 
         var focused = typeof(WorkspaceViewModel).GetField("_focusedWindowDocument", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        focused.SetValue(vm, RuntimeHelpers.GetUninitializedObject(typeof(C3dEditorDocument)));
+        // The read-only viewer's document, whose uninitialized ViewModel reads as "no pane" — the editor's dereferences its
+        // ViewModel to find the pane, which an uninitialized document does not have.
+        focused.SetValue(vm, RuntimeHelpers.GetUninitializedObject(typeof(Viewer3DDocument)));
         vm.RefreshThreeDMenu();
         vm.RefreshThreeDMenu();
         Assert.Equal(1, flips);                                   // shown once, however often it is re-raised

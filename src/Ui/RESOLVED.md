@@ -38838,6 +38838,14 @@ window server froze until a forced restart.
   now keeps its own `UndoRedoStack` of whole-list snapshots, with Undo/Redo buttons and railRF's Ctrl/⌘+Z handler (not a
   key binding, which would take the key from a text box). Because an undo restores the lists as new objects, "this
   material already existed" is tracked by NAME, not by reference.
+- **The Built-in toggle added nothing on most designs, and said nothing** (owner-reported: it looked broken).
+  It lists the built-in materials no list here already names, and a technology naming `generic-materials.cmat` already
+  names all of them. It now counts them (`BuiltInsNotListed`) and is greyed out at zero, its tooltip saying why; and a
+  `.cmat` document offers it too, adopting a built-in into that library.
+- **One place for a material's colours.** The list and identity swatch fell back to one stand-in colour per role, so every
+  metal that stated no colour read as gold; it is now the ordinary-view colour, else the realistic view's resolved base
+  colour (`ListSwatchColor`, through the row's `ResolvedLook`). The separate Display card is gone: its colour (the record's
+  `Color`) is the Appearance card's last row, "Ordinary-view colour", beside the realistic view's Base colour.
 - **Realistic view key is L** (R is Rotate). The pane handles it; the in-window menu shows it as `InputGesture`; the macOS
   `NativeMenu` carries no key equivalent, because a bare letter there is taken from every text box. Supersedes brief 106's
   "no key equivalent" (overview D6).

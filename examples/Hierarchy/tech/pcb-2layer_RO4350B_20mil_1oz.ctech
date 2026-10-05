@@ -454,7 +454,8 @@
         }
       ],
       "DensityKgM3": 19300,
-      "SpecificHeat": 129
+      "SpecificHeat": 129,
+      "Appearance": { "BaseColor": "#FFE39D", "Metallic": 1, "Roughness": 0.25 }
     },
     {
       "Name": "Aluminium",
@@ -562,7 +563,9 @@
         }
       ],
       "DensityKgM3": 2700,
-      "SpecificHeat": 897
+      "SpecificHeat": 897,
+      "Color": "#A3A8AF",
+      "Appearance": { "BaseColor": "#E4E7EA", "Metallic": 1, "Roughness": 0.4 }
     },
     {
       "Name": "Copper",
@@ -710,7 +713,8 @@
         }
       ],
       "DensityKgM3": 8960,
-      "SpecificHeat": 385
+      "SpecificHeat": 385,
+      "Appearance": { "BaseColor": "#FAD1C2", "Metallic": 1, "Roughness": 0.35 }
     },
     {
       "Name": "Silver",
@@ -842,7 +846,9 @@
         }
       ],
       "DensityKgM3": 10490,
-      "SpecificHeat": 235
+      "SpecificHeat": 235,
+      "Color": "#C4C7CC",
+      "Appearance": { "BaseColor": "#FCFAF5", "Metallic": 1, "Roughness": 0.2 }
     },
     {
       "Name": "RO4350B",

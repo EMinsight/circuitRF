@@ -123,7 +123,8 @@
       "Sigma20": 58000000,
       "Alpha20": 0.00393,
       "DensityKgM3": 8960,
-      "Color": "#b87333"
+      "Color": "#b87333",
+      "Appearance": { "BaseColor": "#FAD1C2", "Metallic": 1, "Roughness": 0.35 }
     },
     {
       "Name": "Connector alloy",

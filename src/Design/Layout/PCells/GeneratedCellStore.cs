@@ -427,6 +427,15 @@ public static class GeneratedCellStore
                     if (layer is System.Text.Json.Nodes.JsonObject o)
                         foreach (var presentational in _renderOnlyLayerFields)
                             o.Remove(presentational);
+
+            // A material's display colour and its realistic-view appearance: read by the 3D views alone, never by a
+            // generator or a solver (2026-10-04 — recolouring the shipped Silver and Aluminium renamed every generated
+            // cell of the workspaces on those technologies).
+            if (root["Materials"] is System.Text.Json.Nodes.JsonArray materials)
+                foreach (var material in materials)
+                    if (material is System.Text.Json.Nodes.JsonObject o)
+                        foreach (var presentational in _renderOnlyMaterialFields)
+                            o.Remove(presentational);
         }
 
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(node?.ToJsonString() ?? ctechJson)))[..12]
@@ -436,6 +445,8 @@ public static class GeneratedCellStore
     /// <summary>What a <c>LayerDef</c> says about drawing, as opposed to about the process.</summary>
     private static readonly string[] _renderOnlyLayerFields =
         ["Visible", "Selectable", "Color", "FillOpacity", "FillPattern", "ZOrder"];
+
+    private static readonly string[] _renderOnlyMaterialFields = ["Color", "Appearance"];
 
     private static string BuildCellName(
         string workspaceRootDir, string generatorId, IReadOnlyDictionary<string, PCellValue> parameters,

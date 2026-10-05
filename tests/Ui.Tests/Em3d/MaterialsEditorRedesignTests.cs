@@ -197,4 +197,19 @@ public sealed class MaterialsEditorRedesignTests : IDisposable
         picker.RedoCommand.Execute(null);
         Assert.DoesNotContain(table.Rows, r => r.Name == "Gold");
     }
+
+    /// <summary>The list's swatch is a colour the material has: its ordinary-view colour when stated, else the realistic view's
+    /// base colour — not one stand-in per role, which drew every unstated metal gold.</summary>
+    [Fact]
+    public void TheListSwatch_IsTheOrdinaryViewColour_ElseTheRealisticBaseColour()
+    {
+        var list = new List<TechMaterial>
+        {
+            new() { Name = "Silver", Sigma20 = 6.3e7, Appearance = new TechAppearance { BaseColor = "#FCFAF5", Metallic = 1 } },
+            new() { Name = "Copper", Sigma20 = 5.8e7, Color = "#B87333", Appearance = new TechAppearance { BaseColor = "#FAD1C2" } },
+        };
+        var table = new MaterialsTableViewModel(() => list, (mutate, _) => mutate(), "this library");
+        Assert.Equal(Avalonia.Media.Color.FromRgb(0xFC, 0xFA, 0xF5), table.Rows.Single(r => r.Name == "Silver").ListSwatchColor);
+        Assert.Equal(Avalonia.Media.Color.FromRgb(0xB8, 0x73, 0x33), table.Rows.Single(r => r.Name == "Copper").ListSwatchColor);
+    }
 }

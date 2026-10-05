@@ -35,13 +35,24 @@ public sealed class OperationsInTheDocumentTests : IDisposable
     {
         var fake = new FakeKernel();
         using var kernel = fake.Create();
-        // brief-em3d-70 — the 3D Connector example uses the kernel on purpose; every OTHER shipped 3D view holds no kernel
-        // object, and those are what this gate is about.
-        var all = Directory.GetFiles(Path.Combine(RepoRoot(), "examples"), "*.c3d", SearchOption.AllDirectories);
+        // brief-em3d-70 — the 3D Connector example uses the kernel on purpose, and the Hierarchy example carries its own copy
+        // of that launch; every OTHER shipped 3D view holds no kernel object, and those are what this gate is about.
+        string examples = Path.Combine(RepoRoot(), "examples");
+        var all = Directory.GetFiles(examples, "*.c3d", SearchOption.AllDirectories);
         var usesKernel = all.Where(f => C3dKernelUse.Of(C3dPersistence.LoadFromFile(f)).Count > 0).ToList();
-        Assert.Equal(["Flange.c3d", "Launch.c3d"], usesKernel.Select(Path.GetFileName).Order());
-        Assert.All(usesKernel, f => Assert.Contains($"{Path.DirectorySeparatorChar}3D Connector{Path.DirectorySeparatorChar}", f));
-        var files = all.Except(usesKernel).ToList();
+        Assert.Equal(["3D Connector/Flange/3d/Flange.c3d", "3D Connector/Launch/3d/Launch.c3d", "Hierarchy/Launch/3d/Launch.c3d"],
+            usesKernel.Select(f => Path.GetRelativePath(examples, f).Replace(Path.DirectorySeparatorChar, '/')).Order(StringComparer.Ordinal));
+        // The Hierarchy Assembly holds no kernel object but PLACES that launch, so its elaboration reaches the kernel too.
+        bool Places(string f) => C3dPersistence.LoadFromFile(f).Instances.Any(i =>
+        {
+            string cell = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(f)!, i.CellRef)) + Path.DirectorySeparatorChar;
+            return usesKernel.Any(k => k.StartsWith(cell, StringComparison.Ordinal))
+                || all.Where(o => o.StartsWith(cell, StringComparison.Ordinal) && o != f).Any(Places);
+        });
+        var placesKernel = all.Except(usesKernel).Where(Places).ToList();
+        Assert.Equal(["Hierarchy/Assembly/3d/Assembly.c3d"],
+            placesKernel.Select(f => Path.GetRelativePath(examples, f).Replace(Path.DirectorySeparatorChar, '/')));
+        var files = all.Except(usesKernel).Except(placesKernel).ToList();
         Assert.NotEmpty(files);
         foreach (string f in files)
         {

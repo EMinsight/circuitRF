@@ -81,7 +81,8 @@ On the left is the list: one row per material, with its colour, its name, what i
 *Air*, *States nothing*, or *Ambiguous* — it states both εr and σ₂₀, so an object made of it must be given a
 **Role** in the 3D view) and the file it comes from. **Filter** narrows the list by name, role or file. On the right
 is everything the selected material states, on one form, in cards: **Dielectric**, **Conductor**, **Thermal**,
-**Display**, **Appearance** and **Notes**.
+**Appearance** and **Notes**. A row's swatch is the material's colour: its ordinary-view colour when one is set, else its
+base colour in the realistic view.
 
 Every field commits when you press **Enter** or leave it; **Escape** puts the shown value back. Each change is one undo
 step, and nothing reaches the disk until you **Save** the file it belongs to. An empty field is *not stated* and is left
@@ -153,16 +154,19 @@ fixed: **the tensor does not rotate with a rotated solid.**
 
 ## How it looks {#appearance}
 
-Two cards decide how a material is drawn, and neither is read by any solver.
+The **Appearance** card decides how a material is drawn, in both 3D views, and no solver reads any of it. It holds two
+colours because the two views have different jobs:
 
-- **Display** sets its colour in the ordinary 3D view — the colour of its row's swatch, too. Leave it empty for the
-  view's own palette.
-- **Appearance** sets how it looks in the [realistic view](drawing-in-3d.html#realistic): base colour, how metallic, how
-  rough, how see-through, and the rest of the glTF metallic-roughness set. A field it does not state shows, greyed, the
-  value it takes from its role; **Like** borrows another material's whole look. The sphere is the material under the
-  default studio, so a look can be judged with no 3D view open. Every field is described under
-  [Appearance](drawing-in-3d.html#appearance), and [Changing how things look](drawing-in-3d.html#changing-look) says when
-  to set a look on the material and when on one object.
+- **Base colour** and the fields with it set how it looks in the [realistic view](drawing-in-3d.html#realistic): how
+  metallic, how rough, how see-through, and the rest of the glTF metallic-roughness set. A metal's base colour is its
+  true reflectance — silver's is nearly white. A field it does not state shows, greyed, the value it takes from its role;
+  **Like** borrows another material's whole look. The sphere is the material under the default studio, so a look can be
+  judged with no 3D view open. Every field is described under [Appearance](drawing-in-3d.html#appearance), and
+  [Changing how things look](drawing-in-3d.html#changing-look) says when to set a look on the material and when on one
+  object.
+- **Ordinary-view colour** sets the colour the ordinary 3D view draws every object of the material in. That view is a
+  diagram, so by default it draws each conductor in its layer's colour (top and bottom metal stay apart) and each
+  dielectric in the view's palette; leave the field empty for that.
 
 {{ui: materials-appearance}}
 
@@ -219,6 +223,6 @@ A `.cmat` is JSON, and each material is one record in its `Materials` array — 
 ```
 
 A conductor states `Sigma20` (S/m) and `Alpha20` (1/K), and may state `SigmaVsTemp` in the same form as
-`ThermalKVsTemp`; `Mur` is μr; `Color` is the Display colour. A technology names its libraries in its own
+`ThermalKVsTemp`; `Mur` is μr; `Color` is the ordinary-view colour. A technology names its libraries in its own
 `MaterialLibraries` list: `"MaterialLibraries": [ "generic-materials.cmat" ]`. See
 [File formats](file-formats.html) for every document type.

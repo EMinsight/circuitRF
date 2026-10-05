@@ -16650,3 +16650,23 @@ and `ParallelLcResonanceTests.AnInductorWithOnlyADielectricClass_IsWarnedForWhat
 - **Only new workspaces get it.** A workspace holds its own COPY of the technology. The Hierarchy example was rebuilt
   from the shipped file. The Klopfenstein Taper and Patch Antenna examples carry older copies and still draw the
   laminate in the palette colour until their copies are updated.
+
+## A material's colour and appearance are left out of the generated-cell stamp (2026-10-04)
+
+`GeneratedCellStore.StampOf` hashes a technology into every generated cell's NAME, and already left out what only the
+renderer reads — the layers' colour, stipple, opacity, order, visibility. A material's `Color` and `Appearance` are the same
+kind of field (only the 3D views read them; no generator or solver does) but were hashed, so recolouring the shipped Silver
+and Aluminium renamed every generated cell of every workspace on those technologies — a full regeneration, every layout
+placing one rewritten. They are now excluded (`_renderOnlyMaterialFields`). This changes the stamp ONCE for a technology
+whose materials already stated a colour or look: its generated cells regenerate on the next Update Layout. The Hierarchy
+example was one (its laminate and connector alloy had a look); its two layouts were re-stamped with Update Layout from
+Schematic, run headlessly, so its example test's "running it again changes nothing" holds.
+
+**A technology's own record of a material hides the library's entirely** (`Technology.FindMaterial` reads the own list
+first, and the conflict rule ignores colour and look). Every shipped technology carries its own bare Gold, Aluminium, Copper
+and Silver beside the generic library's, so the library's look for them never reached a design: Silver drew in its layer's
+colour, gold-like. Silver and Aluminium now carry the same `Color` and `Appearance` in the library and in every technology's
+own list, shipped and example copies alike; `Gate14` compares the records with those display fields aside. Every
+technology's own Gold and Copper took the library's `Appearance` too (no `Color`: the library states none for them, so they
+keep their layer's colour in the ordinary view).
+
