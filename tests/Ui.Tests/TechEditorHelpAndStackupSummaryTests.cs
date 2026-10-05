@@ -61,6 +61,7 @@ public sealed class TechEditorHelpAndStackupSummaryTests
         Assert.Equal(("reference/stackup.html",       ""),            TechEditorViewModel.HelpDestinationFor(1));
         Assert.Equal(("reference/layout-editor.html", "drc"),         TechEditorViewModel.HelpDestinationFor(2));
         Assert.Equal(("reference/layout-editor.html", "interchange"), TechEditorViewModel.HelpDestinationFor(3));
+        Assert.Equal(("reference/materials.html",     ""),            TechEditorViewModel.HelpDestinationFor(TechEditorViewModel.MaterialsTabIndex));
     }
 
     /// <summary>
@@ -71,7 +72,7 @@ public sealed class TechEditorHelpAndStackupSummaryTests
     [Fact]
     public void EveryHelpDestination_IsRegisteredInDocAnchors()
     {
-        foreach (var index in new[] { 0, 1, 2, 3 })
+        foreach (var index in new[] { 0, 1, 2, 3, TechEditorViewModel.MaterialsTabIndex })
         {
             var (page, anchor) = TechEditorViewModel.HelpDestinationFor(index);
             Assert.Contains(DocAnchors.TechEditorLinks, l => l.Page == page && l.Anchor == anchor);

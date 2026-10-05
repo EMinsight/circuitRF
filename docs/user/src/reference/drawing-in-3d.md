@@ -65,10 +65,12 @@ for EM into 3D.
 - **Materials** come from the cell's technology. **Assign Material…**, **New Material…** and the **Edit…** button
   beside the Inspector's Material box open the **Materials** dialog: every material the technology has — its own and
   its libraries' (`.cmat` files, see [File formats](file-formats.html)) — with every property of the selected one on
-  one form: dielectric, conductor, thermal, the σ(T) and k(T) tables, colour and source. See, edit, **Duplicate** or
+  one form: dielectric, conductor, thermal, the σ(T) and k(T) tables, colour, appearance and notes. See, edit, **Duplicate** or
   make one there, then assign it. Edits go to the file each material belongs to when you press OK, as an unsaved
-  change there — save that file to keep them; Cancel discards them. A material that already exists is renamed and
-  deleted in its own file's editor, which renames it everywhere it is used. A placed cell brings its **own**
+  change there — save that file to keep them; Cancel discards them. **Delete** (or right-click a material) removes one;
+  a material already in use is listed with its uses first. A material that already exists is renamed in its own
+  file's editor, which renames it everywhere it is used ([Materials](materials.html) walks
+  through the editor and how a `.cmat` relates to a `.ctech`). A placed cell brings its **own**
   technology's materials with it — see [Hierarchy](#hierarchy).
 - **Built-in materials.** The package button beside **Duplicate** lists the materials circuitRF ships with (metals,
   substrates, glass, die-attach and thermal materials) below the technology's own; each carries the package mark at
@@ -916,6 +918,8 @@ Ground, the [field plots'](#realistic-fields) style and opacity, and one **Show*
 and is one undo step; a slider is one step per drag. The **×** beside a number puts it back to its default (rotation 30°,
 intensity 1, exposure 0 EV, field opacity 100 %), also one undo step. A new `.hdr` is prepared in the background and the old environment
 stays on screen until it is ready; one used before comes back at once.
+
+{{ui: em3d-look-panel}}
 
 **A picture's camera.** The camera is not normally saved with a design. *Set Camera* in the Look panel
 is the one exception: it saves the current view, and *Export Picture…*, `render` and a glTF export take their picture

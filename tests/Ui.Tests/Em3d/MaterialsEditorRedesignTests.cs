@@ -36,7 +36,7 @@ public sealed class MaterialsEditorRedesignTests : IDisposable
              new MaterialSourceSeed("lib.cmat", "/x/lib.cmat", library, null)],
             "t.ctech", startNew: false, current: "Gallium nitride", objectCount: 1, refusal: null);
         var table = picker.Table;
-        Assert.False(table.CanDelete);
+        Assert.True(table.CanDelete);                              // owner request, 2026-10-04: the dialog deletes too
         Assert.Equal("lib.cmat", table.TargetSource.Label);        // M9: the first library
 
         var gan = table.SelectedRow!;
@@ -130,5 +130,71 @@ public sealed class MaterialsEditorRedesignTests : IDisposable
         Assert.All(lib, m => Assert.Contains(C3dMaterialRole.Implied(m), new[] { C3dImpliedRole.Conductor, C3dImpliedRole.Dielectric }));
         Assert.Equal(9.5, lib.Single(m => m.Name == "Gallium nitride").Epsr);
         Assert.Equal(9.7, lib.Single(m => m.Name == "Silicon carbide (4H, semi-insulating)").Epsr);
+    }
+
+    /// <summary>A .cmat's delete — the button or a row's context menu — is warned about rather than refused when the material is
+    /// in use: the host is asked with the uses, a "no" deletes nothing, a "yes" deletes it as one undo entry.</summary>
+    [Fact]
+    public async Task ACmatDeleteOfAMaterialInUse_AsksTheHost_AndGoesAheadOnlyWhenConfirmed()
+    {
+        Directory.CreateDirectory(_tmp);
+        string path = Path.Combine(_tmp, "lib.cmat");
+        MaterialLibraryPersistence.SaveToFile(path, [new TechMaterial { Name = "Gold", Sigma20 = 4.1e7 }, new TechMaterial { Name = "SiC", Epsr = 9.7 }]);
+        var vm = new MaterialsEditorViewModel(path, MaterialLibraryPersistence.LoadFromFile(path));
+        vm.Table.UsedBy = name => name == "Gold" ? ["body 'Lid' of t.ctech"] : [];
+        IReadOnlyList<string>? asked = null;
+        bool answer = false;
+        vm.Table.ConfirmDelete = (_, uses) => { asked = uses; return Task.FromResult(answer); };
+
+        var gold = vm.Table.Rows.Single(r => r.Name == "Gold");
+        Assert.True(gold.OffersDelete && gold.CanBeDeleted);
+        await gold.DeleteCommand.ExecuteAsync(null);
+        Assert.Equal(["body 'Lid' of t.ctech"], asked);
+        Assert.Contains(vm.Working, m => m.Name == "Gold");               // "no": nothing deleted
+
+        answer = true;
+        await gold.DeleteCommand.ExecuteAsync(null);
+        Assert.DoesNotContain(vm.Working, m => m.Name == "Gold");
+        Assert.Null(vm.Table.Refusal);
+        vm.UndoCommand.Execute(null);
+        Assert.Contains(vm.Working, m => m.Name == "Gold");
+    }
+
+    /// <summary>The 3D view's Materials dialog deletes from its copy: a material made in the dialog at once, one that already
+    /// existed only after the host's warning — a "no" keeps it — the delete reaches the file's list only through OK, and the dialog's
+    /// own undo takes it back.</summary>
+    [Fact]
+    public async Task TheDialog_DeletesANewMaterialAtOnce_AndAnExistingOneOnlyAfterTheHostsWarning()
+    {
+        var library = new List<TechMaterial> { new() { Name = "Gold", Sigma20 = 4.1e7 }, new() { Name = "SiC", Epsr = 9.7 } };
+        var picker = new MaterialPickerViewModel([new MaterialSourceSeed("lib.cmat", "/x/lib.cmat", library, null)],
+                                                 "t.ctech", startNew: false, current: "Gold", objectCount: 1, refusal: null);
+        var asked = new List<(string Name, string? Library)>();
+        bool answer = false;
+        picker.ConfirmDeleteExisting = (name, lib) => { asked.Add((name, lib)); return Task.FromResult(answer); };
+        var table = picker.Table;
+
+        table.Add();
+        await table.SelectedRow!.DeleteCommand.ExecuteAsync(null);         // made here: no warning
+        Assert.Empty(asked);
+        Assert.DoesNotContain(table.Rows, r => r.Name == "Material1");
+
+        var gold = table.Rows.Single(r => r.Name == "Gold");
+        await gold.DeleteCommand.ExecuteAsync(null);                       // existing: warned, "no"
+        Assert.Equal([("Gold", (string?)"/x/lib.cmat")], asked);
+        Assert.Contains(table.Rows, r => r.Name == "Gold");
+
+        answer = true;
+        await gold.DeleteCommand.ExecuteAsync(null);
+        Assert.DoesNotContain(table.Rows, r => r.Name == "Gold");
+        Assert.Equal(2, library.Count);                                    // the caller's list waits for OK
+        var (_, materials) = Assert.Single(picker.ChangedLists);
+        Assert.Equal(["SiC"], materials.Select(m => m.Name));
+
+        picker.UndoCommand.Execute(null);                                  // the dialog's own history brings it back
+        Assert.Contains(table.Rows, r => r.Name == "Gold");
+        Assert.Empty(picker.ChangedLists);
+        picker.RedoCommand.Execute(null);
+        Assert.DoesNotContain(table.Rows, r => r.Name == "Gold");
     }
 }

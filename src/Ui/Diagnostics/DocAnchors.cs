@@ -48,21 +48,23 @@ public static class DocAnchors
 
     /// <summary>
     /// The Technology Editor's Help button, which follows the visible tab — from
-    /// <c>TechEditorViewModel.HelpDestinationFor</c>. Four tabs edit four unrelated things and no one
-    /// chapter documents all of them, so three of these are sections of the Layout Editor chapter and
-    /// the fourth is the Stackup chapter.
+    /// <c>TechEditorViewModel.HelpDestinationFor</c>. Five tabs edit five unrelated things and no one
+    /// chapter documents all of them, so three of these are sections of the Layout Editor chapter, one
+    /// is the Stackup chapter and the Materials tab's is the Materials chapter.
     /// </summary>
     public static readonly IReadOnlyList<Link> TechEditorLinks =
         [new("reference/layout-editor.html", "technology"),
          new("reference/stackup.html",       ""),
          new("reference/layout-editor.html", "drc"),
-         new("reference/layout-editor.html", "interchange")];
+         new("reference/layout-editor.html", "interchange"),
+         new(Layout.MaterialsTableViewModel.HelpPage, "")];
 
     /// <summary>Pages opened whole, with no anchor.</summary>
     public static readonly IReadOnlyList<string> WholePages =
         ["index.html", "reference/components.html", "reference/nonlinear-capacitor.html",
          "reference/em-setup.html", "reference/harmonicarf.html", "reference/wbond.html",
-         "reference/match.html", "reference/settings.html", "reference/smith-chart.html"];
+         "reference/match.html", "reference/settings.html", "reference/smith-chart.html",
+         Layout.MaterialsTableViewModel.HelpPage];
 
     /// <summary>Every destination the application can navigate to, deduplicated.</summary>
     public static IReadOnlyList<Link> All()

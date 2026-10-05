@@ -43,6 +43,13 @@
         <Style Selector="TextBox.error">
             <Setter Property="BorderBrush" Value="IndianRed"/>
         </Style>
+        <!-- The clip-plane slider set the toolbar's height: Fluent's Slider reserves room for tick bands and a full-size thumb.
+             The negative vertical margin pulls its layout footprint back in without squashing the thumb (the Match designer's
+             Slider.compact, the same fix; an explicit Height would push the thumb off the track). -->
+        <Style Selector="Slider.compact">
+            <Setter Property="Margin" Value="0,-7"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
         <!-- 3D editor round 5 — a side panel's edge is a grip: drag it to resize the panel. A view setting, never the
              document's. The theme styles a Thumb only inside a scroll bar or a slider: a bare one has no template, so it
              drew nothing and took no pointer — hence its own, which shows on hover. Round 6: the Variables panel's too. -->
@@ -419,7 +426,7 @@
                 <ComboBox ItemsSource="{Binding ViewModel.Viewer.ClipAxes}" SelectedItem="{Binding ViewModel.Viewer.ClipAxis}"
                           IsEnabled="{Binding ViewModel.Viewer.ClipEnabled}" MinWidth="70" VerticalAlignment="Center"
                           ToolTip.Tip="The plane's normal: an axis, or the current view direction"/>
-                <Slider Width="120" Minimum="0" Maximum="1" Value="{Binding ViewModel.Viewer.ClipPosition}"
+                <Slider Classes="compact" Width="120" Minimum="0" Maximum="1" Value="{Binding ViewModel.Viewer.ClipPosition}"
                         IsEnabled="{Binding ViewModel.Viewer.ClipEnabled}" VerticalAlignment="Center"
                         ToolTip.Tip="Drag the clip plane through the model"/>
                 <ToggleButton IsChecked="{Binding ViewModel.Viewer.ClipFlip}" IsEnabled="{Binding ViewModel.Viewer.ClipEnabled}"

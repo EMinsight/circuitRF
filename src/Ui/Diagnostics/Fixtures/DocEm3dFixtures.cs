@@ -112,7 +112,20 @@ public static class DocEm3dFixtures
         return new FigureScene(new CircuitRF.Ui.Views.ThreeD.C3dSetupAnalysesView { DataContext = vm }) { Cleanup = vm.Dispose };
     }
 
-    /// <summary>A 3D backend that draws nothing: the Setups panel's figure never shows the pane.</summary>
+    /// <summary>The Look panel (brief-em3d-108) over the 3D Package example, which states no Look: the panel as it first opens,
+    /// on the default studio and the default lighting. The panel is captured on its own, out of its flyout.</summary>
+    public static FigureScene LookPanel()
+    {
+        string root = ExampleWorkspaces.ResolveRoot()
+            ?? throw new InvalidOperationException("No examples/ tree beside the generator or above it, so the Look panel figure has no document.");
+        string ws = Path.Combine(root, "3D Package");
+        string path = Path.Combine(ws, "Package/3d/Package.c3d");
+        var vm = new CircuitRF.Ui.ThreeD.C3dEditorViewModel(path, C3dPersistence.LoadFromFile(path), () => new NoPixels(),
+                                                            () => Path.Combine(ws, ".cws"), a => a());
+        return new FigureScene(new CircuitRF.Ui.Views.ThreeD.LookPanel { DataContext = vm.LookPanel }) { Cleanup = vm.Dispose };
+    }
+
+    /// <summary>A 3D backend that draws nothing: the Setups and Look panels' figures never show the pane.</summary>
     private sealed class NoPixels : CircuitRF.Ui.Viewer3D.Viewer3DBackend
     {
         public override string Description => "no pixels (a figure of a panel)";

@@ -652,7 +652,7 @@ public sealed partial class TechEditorViewModel : ObservableObject
         1 => ("reference/stackup.html",       ""),
         2 => ("reference/layout-editor.html", "drc"),
         3 => ("reference/layout-editor.html", "interchange"),
-        MaterialsTabIndex => ("reference/layout-editor.html", "technology"),
+        MaterialsTabIndex => (MaterialsTableViewModel.HelpPage, ""),
         _ => ("reference/layout-editor.html", "technology"),
     };
 
@@ -666,7 +666,7 @@ public sealed partial class TechEditorViewModel : ObservableObject
         1 => "Open the documentation for the Stackup",
         2 => "Open the documentation for design-rule checking",
         3 => "Open the documentation for interchange mappings",
-        MaterialsTabIndex => "Open the documentation for the technology, its materials and material libraries",
+        MaterialsTabIndex => "Open the documentation for materials and material libraries",
         _ => "Open the documentation for the technology and its layer table",
     };
 

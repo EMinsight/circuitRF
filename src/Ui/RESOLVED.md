@@ -38817,6 +38817,27 @@ window server froze until a forced restart.
   one short sentence in every state, trimmed rather than wrapped. Any bound text above a button follows the same rule.
 - **Appearance rows were three lines tall** because of Fluent's `Slider` (tick bands + full-size thumb); `Slider.compact`'s
   negative vertical margin, the Match designer's fix, is applied in the appearance editor and the Look panel.
+  The 3D editor toolbar's clip-plane slider had the same defect — it alone set the toolbar's height — and takes the same
+  class (`C3dEditorView.axaml`). **Any new `Slider` in a toolbar or a dense row should start with `Classes="compact"`.**
+- **A row context menu belongs on the LIST, not on the row.** The Materials editor's Delete Material menu failed twice
+  in the app (owner-reported both times). First, declared on the row template, it cancelled itself: a declared menu's
+  `DataContext` is null while its `Opening` runs (measured headlessly), so a check of it there refused every row. Second,
+  a fresh `ContextMenu` built per request and opened on the row still did not show in the app, although a headless
+  right-click opened it — so the headless host cannot be trusted to answer this. The fix copies the 3D editor's object tree,
+  whose menu works: the `ListBox` handles `ContextRequested`, the row is the `ListBoxItem` above `e.Source`, and one
+  persistent menu is filled and opened on the list (`MaterialsTableView.OnRowListContextRequested`). The doc figure
+  `materials-delete-menu` raises the request from the row and fails if the menu does not open.
+  **What the owner was actually in was the 3D view's Materials dialog** (New Material… / Assign / Edit…), whose table had
+  `CanDelete = false` — so neither the Delete button nor the menu existed there, by design, and no fix to the menu could
+  have shown it. Ask WHICH host of the shared Materials editor a report is about before debugging the control: it has three.
+  The dialog now deletes too — a material made in it at once, an existing one after the uses warning
+  (`MaterialPickerViewModel.ConfirmDeleteExisting`) — from its copy, so only OK writes it.
+  Two follow-ups from the owner the same day. **The delete warning must be owned by the dialog**, not by the workspace
+  window under it: owned by the workspace window, Cancel on the warning closed the Materials dialog as well (macOS).
+  **The dialog had no undo** — its lists committed with a bare `mutate()` — so a delete there could not be taken back. It
+  now keeps its own `UndoRedoStack` of whole-list snapshots, with Undo/Redo buttons and railRF's Ctrl/⌘+Z handler (not a
+  key binding, which would take the key from a text box). Because an undo restores the lists as new objects, "this
+  material already existed" is tracked by NAME, not by reference.
 - **Realistic view key is L** (R is Rotate). The pane handles it; the in-window menu shows it as `InputGesture`; the macOS
   `NativeMenu` carries no key equivalent, because a bare letter there is taken from every text box. Supersedes brief 106's
   "no key equivalent" (overview D6).

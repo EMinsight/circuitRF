@@ -105,6 +105,35 @@ public partial class MaterialsTableView : UserControl
         }, DispatcherPriority.Background);
     }
 
+    /// <summary>
+    /// A right-click on a row of the list: Delete Material, the Delete button's, on that row — selected first, so the form shows
+    /// what is about to go. Only where the host offers Delete (CanDelete), as the Delete button is. The 3D editor's object
+    /// tree is the pattern: the LIST answers the request, the row is the one under <see cref="RoutedEventArgs.Source"/>, and one
+    /// menu is filled and opened on the list. A menu declared on the row's template never opened: its DataContext is null while
+    /// its Opening runs, so a check there cancelled it; and a fresh menu opened on the row did not show in the app either.
+    /// </summary>
+    private void OnRowListContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        if (_vm is null || (e.Source as Control)?.FindAncestorOfType<ListBoxItem>(includeSelf: true)?.DataContext
+                is not MaterialRowViewModel { OffersDelete: true } row) return;
+        e.Handled = true;
+        _vm.SelectedRow = row;
+        RowMenu.ItemsSource = new[]
+        {
+            new MenuItem
+            {
+                Header = "Delete Material",
+                Icon = new Material.Icons.Avalonia.MaterialIcon { Kind = Material.Icons.MaterialIconKind.Delete },
+                Command = row.DeleteCommand,
+                IsEnabled = row.CanBeDeleted,
+            },
+        };
+        RowMenu.Open(RowList);
+    }
+
+    /// <summary>The list's row menu, filled for the row right-clicked (and read by the documentation's figure of it).</summary>
+    internal ContextMenu RowMenu { get; } = new();
+
     /// <summary>A new or duplicated material's name, selected to be typed over — after the form has bound to it.</summary>
     private void FocusName()
         => Dispatcher.UIThread.Post(() =>

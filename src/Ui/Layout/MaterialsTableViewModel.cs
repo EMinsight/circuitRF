@@ -139,8 +139,13 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
         foreach (var r in Rows) r.RefreshShown();
     }
 
-    /// <summary>Whether Delete is offered. The 3D view's dialog does not: a delete is the file's own editor's, where
-    /// every use is listed.</summary>
+    /// <summary>The Materials chapter — where the '?' of every Materials editor goes (the .cmat document, the 3D view's
+    /// Materials dialog, and the technology editor's Materials tab). Registered in DocAnchors, so the docs build fails if the
+    /// page stops being emitted.</summary>
+    public const string HelpPage = "reference/materials.html";
+
+    /// <summary>Whether Delete is offered — the button and the row's context menu. Every host offers it now; the 3D view's
+    /// dialog used to withhold it.</summary>
     public bool CanDelete { get; init; } = true;
 
     /// <summary>Opens a library row's own document on that row (the technology tab). Null: not offered.</summary>
@@ -181,6 +186,13 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
     /// <summary>Where each material is used — stackup entries, bodies, open 3D objects — for the Used-by
     /// column and for Delete's refusal. Null answers nothing.</summary>
     public Func<string, IReadOnlyList<string>>? UsedBy { get; set; }
+
+    /// <summary>
+    /// Asked before every delete, with the uses <see cref="UsedBy"/> found: the host adds what only it can see (files that are
+    /// not open), warns when anything still names the material, and answers whether to go ahead. Null: a material in use is
+    /// refused, listing its uses (the technology editor's Materials tab).
+    /// </summary>
+    public Func<string, IReadOnlyList<string>, Task<bool>>? ConfirmDelete { get; set; }
 
     /// <summary>
     /// The host's cross-file rename (R-em3d53-4c): given the old and new name, renames the material in the
@@ -343,19 +355,34 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
         }
     }
 
-    /// <summary>Deletes the selected own row — refused, listing every use, while anything names it (R-em3d53-4c).</summary>
+    /// <summary>Deletes the selected own row. With <see cref="ConfirmDelete"/> the host warns about every use and the delete
+    /// goes ahead if confirmed; without it, a material in use is refused, listing every use (R-em3d53-4c).</summary>
     [RelayCommand]
-    public void Delete()
+    public async Task Delete()
     {
-        if (!CanDelete || SelectedRow is not { IsLibrary: false, Source: { } source } row) return;
-        var uses = UsedBy?.Invoke(row.Name) ?? [];
-        if (uses.Count > 0)
+        if (!CanDelete || SelectedRow is not { IsLibrary: false, IsBuiltIn: false, Source: { } source } row) return;
+        string name = row.Name;
+        var uses = UsedBy?.Invoke(name) ?? [];
+        if (ConfirmDelete is { } confirm)
         {
-            Refusal = $"'{row.Name}' is in use, so it was not deleted: {string.Join("; ", uses)}. Change those first.";
+            if (!await confirm(name, uses)) return;
+        }
+        else if (uses.Count > 0)
+        {
+            Refusal = $"'{name}' is in use, so it was not deleted: {string.Join("; ", uses)}. Change those first.";
             return;
         }
+        // The list may have changed while the warning was up (an undo, a reload): delete the record only if it is still there.
         var m = row.Material;
-        Edit(source, () => source.List().Remove(m), $"Delete material {row.Name}");
+        if (!source.List().Contains(m)) return;
+        Edit(source, () => source.List().Remove(m), $"Delete material {name}");
+    }
+
+    /// <summary>The row's context menu: selects it, then deletes it as the Delete button does.</summary>
+    internal Task DeleteRow(MaterialRowViewModel row)
+    {
+        SelectedRow = row;
+        return Delete();
     }
 
     /// <summary>Renames an own row. '@', a name already in these lists, and a rename <see cref="RenameRefusal"/> refuses are
@@ -462,6 +489,7 @@ public sealed partial class MaterialRowViewModel : ObservableObject
         _nameText = material.Name;
         PickColorCommand = new AsyncRelayCommand<Window?>(PickColorAsync);
         OpenLibraryCommand = new RelayCommand(() => _table.OpenLibrary?.Invoke(this), () => CanOpenLibrary);
+        DeleteCommand = new AsyncRelayCommand(() => _table.DeleteRow(this));
         SigmaTable = new TemperatureTableViewModel(this, "σ(T)", "S/m", m => m.SigmaVsTemp, (m, t) => m.SigmaVsTemp = t, m => m.Sigma20, "σ₂₀");
         KTable = new TemperatureTableViewModel(this, "k(T)", "W/(m·K)", m => m.ThermalKVsTemp, (m, t) => m.ThermalKVsTemp = t, m => m.ThermalK, "k");
         _isShown = Matches(table.FilterText);
@@ -609,6 +637,13 @@ public sealed partial class MaterialRowViewModel : ObservableObject
     public bool CanOpenLibrary => IsLibrary && _table.OpenLibrary is not null;
     public string OpenLibraryText => $"Edit in {SourceLabel}";
     public IRelayCommand OpenLibraryCommand { get; }
+
+    /// <summary>Whether the row has a context menu at all: only where the host offers deleting.</summary>
+    public bool OffersDelete => _table.CanDelete;
+
+    /// <summary>Whether the context menu's Delete is enabled: a row of a list being edited, not a library's or a built-in.</summary>
+    public bool CanBeDeleted => _table.CanDelete && !IsBuiltIn && IsEditable;
+    public IAsyncRelayCommand DeleteCommand { get; }
 
     /// <summary>The list's filter: a row is shown when its name, role or source contains the text.</summary>
     [ObservableProperty] private bool _isShown;

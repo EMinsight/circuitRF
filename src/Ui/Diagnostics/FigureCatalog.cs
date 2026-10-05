@@ -607,6 +607,40 @@ public static class FigureCatalog
             "The launch's two setups in the Setups panel. Under openEMS, a warning: it will not represent "
           + "the pin's 100 um fillet, because the grid cell there is wider than the radius."),
 
+        // ── The Materials chapter: one new material entered into a .cmat, card by card, and a technology's Materials tab ──
+
+        new("materials-new", DocMaterialsFixtures.NewMaterial, 1000, 560, null,
+            "A new material, My laminate, in a .cmat library: added with + New, named, and given its relative permittivity "
+          + "and loss tangent on the Dielectric card. The list on the left shows every material in the file."),
+
+        new("materials-anisotropic", DocMaterialsFixtures.AnisotropicPermittivity, 1000, 560, null,
+            "The same laminate with Anisotropic εr ticked: 3.66 along x and y, in the plane of the board, and 3.5 along z, "
+          + "through it. A 3D solver reads the three values; a planar solver still reads εr."),
+
+        new("materials-thermal", DocMaterialsFixtures.Thermal, 1000, 620, null,
+            "The laminate's Thermal card: thermal conductivity, density and specific heat; an anisotropic k, higher in the "
+          + "plane than through it; and a k(T) table of two points, opened."),
+
+        new("materials-appearance", DocMaterialsFixtures.Appearance, 1000, 560, null,
+            "The laminate's Appearance card: a body colour and a roughness are stated; the greyed fields show the values it "
+          + "takes from its role. The sphere is the material under the default studio."),
+
+        new("materials-delete-menu", DocMaterialsFixtures.DeleteMenu, 1000, 560, null,
+            "Right-click a material in a .cmat's list for Delete Material. If anything in the workspace uses it, the uses "
+          + "are listed and the delete waits for Delete Anyway.",
+            MustContainPopup: true),
+
+        new("materials-technology-tab", DocMaterialsFixtures.TechnologyTab, 1000, 640, null,
+            "A technology's Materials tab. At the top, the .cmat library it names, relative to the .ctech. Below, the "
+          + "technology's own materials, then the library's, which are edited in the library itself."),
+
+        // ── The realistic view's Look panel (brief-em3d-108): the panel out of its flyout, on a design that states no Look ──
+
+        new("em3d-look-panel", DocEm3dFixtures.LookPanel, 368, 616, null,
+            "The Look panel, as it first opens: the studio environment and its rotation, intensity and exposure; the "
+          + "background; shadows, contact shading and the ground; the field plots' style and opacity; and one Show box "
+          + "for each kind of CAD chrome the realistic view hides."),
+
         // ── Is this solved? (brief-em3d-98) — the glyphs a .c3d's tab and tree row carry, drawn by the control itself ──
 
         new("em3d-solve-badges", DocSolvedFixtures.Legend, 580, 176, null,

@@ -148,7 +148,7 @@
                         </ToggleButton>
                         <Button Grid.Column="3" Classes="tool" Content="Delete" Command="{Binding DeleteCommand}"
                                 IsVisible="{Binding CanDelete}"
-                                ToolTip.Tip="Delete the selected material. A material in use is not deleted; its uses are listed."/>
+                                ToolTip.Tip="Delete the selected material. If anything uses it, those uses are listed first."/>
                     </Grid>
                     <StackPanel Spacing="3" IsVisible="{Binding HasSeveralSources}">
                         <TextBlock Classes="lbl" Text="New, duplicated and built-in materials go to"/>
@@ -158,7 +158,9 @@
                     <TextBox Text="{Binding FilterText}" PlaceholderText="Filter by name, role or file" FontSize="12" Padding="6,4"/>
                     <TextBlock Text="{Binding ReadOnlyReason}" IsVisible="{Binding IsReadOnly}" Classes="hint"/>
                 </StackPanel>
-                <ListBox x:Name="RowList" Classes="list" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow, Mode=TwoWay}" SelectionMode="Single">
+                <!-- A right-click on a row: Delete Material, the Delete button's, on that row (code-behind, OnRowListContextRequested). -->
+                <ListBox x:Name="RowList" Classes="list" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow, Mode=TwoWay}" SelectionMode="Single"
+                         ContextRequested="OnRowListContextRequested">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="lay:MaterialRowViewModel">
                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" Margin="6,4" IsVisible="{Binding IsShown}"
@@ -241,7 +243,7 @@
                         <Border Classes="card">
                             <StackPanel Spacing="8">
                                 <TextBlock Classes="hdr" Text="Dielectric"/>
-                                <TextBlock Classes="hint" Text="Stating εr makes it a dielectric. Every solver takes εr and tan δ as constants: say in Source the frequency they are stated at."/>
+                                <TextBlock Classes="hint" Text="Stating εr makes it a dielectric. Every solver takes εr and tan δ as constants: say in Notes the frequency they are stated at."/>
                                 <Grid ColumnDefinitions="*,*,*" ColumnSpacing="14">
                                     <StackPanel Grid.Column="0" Spacing="3">
                                         <TextBlock Classes="lbl" Text="Relative permittivity εr"/>
@@ -404,7 +406,7 @@
                         <Border x:Name="AppearanceCard" Classes="card">
                             <StackPanel Spacing="8">
                                 <TextBlock Classes="hdr" Text="Appearance"/>
-                                <TextBlock Classes="hint" Text="How it looks in the realistic view. No solver reads it, and an edit never makes a result out of date. A field it does not state shows, greyed, the value it takes — its tooltip says where that comes from."/>
+                                <TextBlock Classes="hint" Text="How it looks in the realistic view — a picture, not physics: no solver reads the look, and an edit never makes a result out of date. A field it does not state shows, greyed, the value it takes — its tooltip says where that comes from."/>
                                 <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
                                     <Image Grid.Column="0" Width="96" Height="96" VerticalAlignment="Top"
                                            Source="{Binding SwatchPixels, Converter={x:Static apv:AppearanceEditorView.SwatchBitmap}}"
@@ -414,11 +416,10 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- source -->
+                        <!-- notes (the record's Source key) -->
                         <Border Classes="card">
                             <StackPanel Spacing="8">
-                                <TextBlock Classes="hdr" Text="Source"/>
-                                <TextBlock Classes="hint" Text="Where the values come from, and for a dielectric the frequency they are stated at. No solver reads it."/>
+                                <TextBlock Classes="hdr" Text="Notes"/>
                                 <TextBox FontSize="12" Padding="6,4" TextWrapping="Wrap" AcceptsReturn="True" MinHeight="90"
                                          IsReadOnly="{Binding !IsEditable}" PlaceholderText="not stated"
                                          Text="{Binding SourceText, UpdateSourceTrigger=LostFocus}"/>

@@ -1,4 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Layout;
 
 namespace CircuitRF.Ui.ThreeD;
@@ -20,13 +22,22 @@ public sealed record MaterialSourceSeed(string Label, string? LibraryPath, IRead
 ///
 /// <para>It edits COPIES. Nothing reaches a file until OK, and then each list that changed is handed to that file's own
 /// document as ONE undo entry (<see cref="ChangedLists"/>), the file becoming an unsaved change, exactly as a new material
-/// always was; Cancel discards every edit. Two gestures are its file's editor's, not this dialog's: deleting a material
-/// (where its uses are listed) and renaming one that already existed (where every file naming it is renamed with it).</para>
+/// always was; Cancel discards every edit. Renaming a material that already existed is its file's editor's, where every file
+/// naming it is renamed with it. Deleting one is offered here too (owner request, 2026-10-04): a material made in this dialog
+/// goes at once, since no file names it yet; one that already existed is deleted only after the host's warning listing its
+/// uses (<see cref="ConfirmDeleteExisting"/>) — and like every edit here, only from the copy until OK.</para>
+///
+/// <para>Every edit is one entry on the dialog's own <see cref="UndoRedo"/> (owner-reported: a delete here could not be
+/// undone), a snapshot of all the lists, as the <c>.cmat</c> document's entries are of its one list. After OK the whole of
+/// the dialog's change is one entry on each changed file's own stack.</para>
 /// </summary>
 public sealed partial class MaterialPickerViewModel : ObservableObject
 {
     private readonly List<(MaterialSourceSeed Seed, List<TechMaterial> Working, string Before)> _lists = [];
-    private readonly HashSet<TechMaterial> _existing = new(ReferenceEqualityComparer.Instance);
+    /// <summary>The names the files already had — by NAME, because an undo restores the lists from a snapshot, as new
+    /// objects. A name is unique within the technology, so a material bearing one of these names is one that already
+    /// existed.</summary>
+    private readonly HashSet<string> _existing = new(StringComparer.OrdinalIgnoreCase);
 
     /// <param name="seeds">The technology's own list first, then each library it names.</param>
     /// <param name="technologyLabel">The technology's file name, for the header.</param>
@@ -40,9 +51,9 @@ public sealed partial class MaterialPickerViewModel : ObservableObject
         foreach (var seed in seeds)
         {
             var working = MaterialLibraryPersistence.Deserialize(MaterialLibraryPersistence.Serialize(seed.Materials));
-            foreach (var m in working) _existing.Add(m);
+            foreach (var m in working) _existing.Add(m.Name);
             _lists.Add((seed, working, MaterialLibraryPersistence.Serialize(working)));
-            sources.Add(new MaterialListSource(seed.Label, () => working, (mutate, _) => mutate(), seed.LibraryPath)
+            sources.Add(new MaterialListSource(seed.Label, () => working, Commit, seed.LibraryPath)
             {
                 ReadOnlyReason = seed.ReadOnlyReason,
                 IsBuiltIn = seed.BuiltIn,
@@ -50,17 +61,27 @@ public sealed partial class MaterialPickerViewModel : ObservableObject
         }
         Table = new MaterialsTableViewModel(sources)
         {
-            CanDelete = false,
             OffersBuiltIns = true,
-            RenameRefusal = row => _existing.Contains(row.Material)
+            RenameRefusal = row => _existing.Contains(row.Name)
                 ? $"'{row.Name}' already exists and files name it: rename it in {row.SourceLabel}'s own editor, which renames it everywhere it is used. A new or duplicated material is named here."
                 : null,
         };
+        Table.ConfirmDelete = (name, _) => Table.SelectedRow is { } row && _existing.Contains(row.Name)
+            ? ConfirmDeleteExisting?.Invoke(name, row.Source?.LibraryPath) ?? Task.FromResult(true)
+            : Task.FromResult(true);
         // brief-em3d-108 R-em3d108-1c — every appearance edit, a drag's included, is offered to the open 3D views as a preview.
         Table.AppearanceEdited += (row, appearance) => AppearancePreview?.Invoke(row.Source?.LibraryPath, row.Name, appearance);
         // M9: a new material goes to the technology's first library when it names one, else to its own list.
         if (sources.Skip(1).FirstOrDefault(s => s.ReadOnlyReason is null) is { } library) Table.TargetSource = library;
         if (current is not null) Table.Select(current);
+
+        UndoCommand = new RelayCommand(UndoRedo.Undo, () => UndoRedo.CanUndo);
+        RedoCommand = new RelayCommand(UndoRedo.Redo, () => UndoRedo.CanRedo);
+        UndoRedo.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(UndoRedoStack.CanUndo)) UndoCommand.NotifyCanExecuteChanged();
+            if (e.PropertyName is nameof(UndoRedoStack.CanRedo)) RedoCommand.NotifyCanExecuteChanged();
+        };
 
         TechnologyLabel = technologyLabel;
         StartNew = startNew;
@@ -75,6 +96,48 @@ public sealed partial class MaterialPickerViewModel : ObservableObject
     /// own documents (and the views' display-only reload shows it).
     /// </summary>
     public event Action<string?, string, CircuitRF.Design.Layout.TechAppearance?>? AppearancePreview;
+
+    /// <summary>The dialog's own history: every edit made in it, until OK or Cancel.</summary>
+    public UndoRedoStack UndoRedo { get; } = new();
+    public IRelayCommand UndoCommand { get; private set; } = null!;
+    public IRelayCommand RedoCommand { get; private set; } = null!;
+
+    private string[] SnapshotAll() => [.. _lists.Select(l => MaterialLibraryPersistence.Serialize(l.Working))];
+
+    /// <summary>Every list's commit: the mutation runs on the copy, then one entry holding all the lists before and after.
+    /// Nothing changed, nothing pushed.</summary>
+    private void Commit(Action mutate, string description)
+    {
+        var before = SnapshotAll();
+        mutate();
+        var after = SnapshotAll();
+        if (before.SequenceEqual(after)) return;
+        UndoRedo.Execute(new Snapshot(this, before, after, description));
+    }
+
+    /// <summary>Puts every list back as <paramref name="lists"/> says — in place, since each source reads its list through
+    /// a closure — and rebuilds the table, which keeps the selection by name.</summary>
+    private void Apply(string[] lists)
+    {
+        for (int i = 0; i < _lists.Count; i++)
+        {
+            var working = _lists[i].Working;
+            working.Clear();
+            working.AddRange(MaterialLibraryPersistence.Deserialize(lists[i]));
+        }
+        Table.Rebuild();
+    }
+
+    private sealed class Snapshot(MaterialPickerViewModel owner, string[] before, string[] after, string description) : IUiCommand
+    {
+        public string Description => description;
+        public void Execute() => owner.Apply(after);
+        public void Undo() => owner.Apply(before);
+    }
+
+    /// <summary>Asked before deleting a material that already existed — its name, and the library it is in (null: the
+    /// technology's own list). The host lists its uses and answers whether to go ahead. Null deletes without asking.</summary>
+    public Func<string, string?, Task<bool>>? ConfirmDeleteExisting { get; set; }
 
     /// <summary>The Materials editor, over copies of the technology's lists.</summary>
     public MaterialsTableViewModel Table { get; }

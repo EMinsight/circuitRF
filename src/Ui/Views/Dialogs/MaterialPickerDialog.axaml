@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:t3="using:CircuitRF.Ui.ThreeD"
         xmlns:matv="using:CircuitRF.Ui.Views.Materials"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="CircuitRF.Ui.Views.Dialogs.MaterialPickerDialog"
         x:DataType="t3:MaterialPickerViewModel"
         Title="Materials" Width="1000" Height="720" MinWidth="720" MinHeight="460"
@@ -12,21 +13,35 @@
          seen, edited, duplicated or made where it is assigned. OK commits each changed list to its file's document. -->
     <DockPanel>
         <Border DockPanel.Dock="Top" Padding="14,10" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1">
-            <StackPanel Spacing="3">
-                <TextBlock Text="{Binding Header}" FontSize="15" FontWeight="SemiBold"/>
-                <TextBlock Text="{Binding Explanation}" FontSize="11" TextWrapping="Wrap"
-                           Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="3">
+                    <TextBlock Text="{Binding Header}" FontSize="15" FontWeight="SemiBold"/>
+                    <TextBlock Text="{Binding Explanation}" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </StackPanel>
+                <!-- Help, top right, on the ? glyph every Help button in the application uses: the Materials chapter. -->
+                <Button Grid.Column="1" Padding="6,3" Margin="8,0,0,0" VerticalAlignment="Top" Click="OnHelp"
+                        ToolTip.Tip="Open the documentation for materials and material libraries">
+                    <mi:MaterialIcon Kind="HelpCircleOutline" Width="14" Height="14"/>
+                </Button>
+            </Grid>
         </Border>
 
         <Border DockPanel.Dock="Bottom" Padding="14,10" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,1,0,0">
-            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
-                <TextBlock Grid.Column="0" Text="{Binding Refusal}" TextWrapping="Wrap" FontSize="11" Foreground="#C0392B"
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+                <!-- The dialog's own history (Ctrl/⌘+Z, Ctrl/⌘+Shift+Z outside a text box): every edit made here, until OK or Cancel. -->
+                <Button Grid.Column="0" Command="{Binding UndoCommand}" Padding="6,4" ToolTip.Tip="Undo the last change made in this dialog  (Ctrl/⌘+Z)">
+                    <mi:MaterialIcon Kind="Undo" Width="16" Height="16"/>
+                </Button>
+                <Button Grid.Column="1" Command="{Binding RedoCommand}" Padding="6,4" ToolTip.Tip="Redo  (Ctrl/⌘+Shift+Z)">
+                    <mi:MaterialIcon Kind="Redo" Width="16" Height="16"/>
+                </Button>
+                <TextBlock Grid.Column="2" Text="{Binding Refusal}" TextWrapping="Wrap" FontSize="11" Foreground="#C0392B"
                            VerticalAlignment="Center"
                            IsVisible="{Binding Refusal, Converter={x:Static ObjectConverters.IsNotNull}}"/>
-                <Button Grid.Column="1" Content="{Binding OkText}" IsDefault="True" MinWidth="110" Click="OnOk"
+                <Button Grid.Column="3" Content="{Binding OkText}" IsDefault="True" MinWidth="110" Click="OnOk"
                         HorizontalContentAlignment="Center"/>
-                <Button Grid.Column="2" Content="Cancel" IsCancel="True" MinWidth="90" Click="OnCancel"
+                <Button Grid.Column="4" Content="Cancel" IsCancel="True" MinWidth="90" Click="OnCancel"
                         HorizontalContentAlignment="Center"/>
             </Grid>
         </Border>

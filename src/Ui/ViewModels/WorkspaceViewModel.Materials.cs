@@ -5,6 +5,7 @@
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.ThreeD;
+using CircuitRF.Ui.Views.Dialogs;
 using CommunityToolkit.Mvvm.Input;
 using Dock.Model.Core;
 
@@ -63,6 +64,7 @@ public partial class WorkspaceViewModel
             vm.NamedBy = LibraryUsers(absolutePath);
             vm.Table.UsedBy = name => LibraryMaterialUses(vm.FilePath, name);
             vm.Table.RenameAcross = (oldName, newName) => RenameLibraryMaterial(doc, oldName, newName);
+            vm.Table.ConfirmDelete = (name, uses) => ConfirmLibraryMaterialDelete(doc, name, uses);
 
             _factory.OpenDocument(doc);
             _openDocsByPath[absolutePath] = doc;
@@ -197,9 +199,75 @@ public partial class WorkspaceViewModel
         return UnopenedMentions(oldName, users, includeTechnologies: true);
     }
 
-    /// <summary>The files not open that still name <paramref name="oldName"/>: technologies among
-    /// <paramref name="technologies"/> (by stackup entry or body) and every <c>.c3d</c> under the workspace.</summary>
+    /// <summary>
+    /// Deleting a material from a <c>.cmat</c>: warns, listing every use — the open files <paramref name="uses"/> names and the
+    /// unopened ones read from disk — and goes ahead only on Delete Anyway. Nothing that names it is rewritten: a stackup entry,
+    /// body or 3D object left naming it is reported by <c>check</c> as an unknown material, as a rename's leftovers are.
+    /// A material nothing names is deleted without asking, as before.
+    /// </summary>
+    private Task<bool> ConfirmLibraryMaterialDelete(MaterialsDocument library, string name, IReadOnlyList<string> uses)
+        => ConfirmMaterialDelete(HostWindowOf(library), name, uses,
+                                 UnopenedFilesNaming(name, LibraryUsers(library.FilePath), includeTechnologies: true),
+                                 "The delete can be undone until the file is saved.");
+
+    /// <summary>
+    /// The 3D view's Materials dialog deleting a material that already existed: the same warning, over the uses of the file it
+    /// is in — a library's (every technology naming it, open 3D views on them) or the technology's own list's (its stackup and
+    /// bodies, open 3D views on it) — and the unopened files naming it.
+    /// </summary>
+    private Task<bool> ConfirmPickerMaterialDelete(Avalonia.Controls.Window window, Technology tech, string techPath, string name, string? library)
+    {
+        IReadOnlyList<string> uses;
+        List<string> unopened;
+        if (library is not null)
+        {
+            uses = LibraryMaterialUses(library, name);
+            unopened = UnopenedFilesNaming(name, LibraryUsers(library), includeTechnologies: true);
+        }
+        else
+        {
+            string file = Path.GetFileName(techPath);
+            uses =
+            [
+                .. tech.Stackup.Layers.Where(l => string.Equals(l.Material, name, StringComparison.OrdinalIgnoreCase))
+                                      .Select(l => $"stackup entry '{l.Name}' of {file}"),
+                .. tech.Bodies.Where(b => string.Equals(b.Material, name, StringComparison.OrdinalIgnoreCase))
+                              .Select(b => $"body '{b.Name}' of {file}"),
+                .. OpenC3dUsesOf(name, c3d => SamePath(c3d.Elaboration?.TechnologyPath, techPath)),
+            ];
+            unopened = UnopenedFilesNaming(name, [], includeTechnologies: false);
+        }
+        return ConfirmMaterialDelete(window, name, uses, unopened,
+                                     "Nothing is deleted until you press OK in the Materials dialog; Cancel keeps it.");
+    }
+
+    /// <summary>The delete warning both editors show: every use, open and unopened, and Delete Anyway. A material nothing
+    /// names is deleted without asking.</summary>
+    private static async Task<bool> ConfirmMaterialDelete(Avalonia.Controls.Window? window, string name, IReadOnlyList<string> uses,
+                                                         IReadOnlyList<string> unopened, string undoNote)
+    {
+        if (uses.Count == 0 && unopened.Count == 0) return true;
+        if (window is null) return false;
+        var lines = new List<string>();
+        lines.AddRange(uses.Select(u => "  " + u));
+        lines.AddRange(unopened.Select(f => $"  {f} (not open)"));
+        string text = $"'{name}' is used in this workspace:\n\n{string.Join("\n", lines)}\n\n"
+                    + "Deleting it leaves each of these naming a material that no longer exists; `check` reports them as unknown. "
+                    + undoNote;
+        return await TextConfirmDialog.AskAsync(window, "Delete Material", $"Delete '{name}'?", text, "Delete Anyway");
+    }
+
+    /// <summary>The files not open that still name <paramref name="oldName"/>, as a sentence, or null.</summary>
     private string? UnopenedMentions(string oldName, IReadOnlyList<string> technologies, bool includeTechnologies)
+    {
+        var listed = UnopenedFilesNaming(oldName, technologies, includeTechnologies);
+        return listed.Count == 0 ? null
+            : $"Not rewritten, because they are not open: {string.Join(", ", listed)} still name '{oldName}', and `check` will report it as unknown there.";
+    }
+
+    /// <summary>The files not open that name <paramref name="oldName"/>: technologies among <paramref name="technologies"/>
+    /// (by stackup entry or body) and every <c>.c3d</c> under the workspace.</summary>
+    private List<string> UnopenedFilesNaming(string oldName, IReadOnlyList<string> technologies, bool includeTechnologies)
     {
         var listed = new List<string>();
         if (includeTechnologies)
@@ -230,8 +298,7 @@ public partial class WorkspaceViewModel
                 catch { /* not a 3D view, or unreadable */ }
             }
         }
-        return listed.Count == 0 ? null
-            : $"Not rewritten, because they are not open: {string.Join(", ", listed)} still name '{oldName}', and `check` will report it as unknown there.";
+        return listed;
     }
 
     // ── Edit Material… from a 3D view (brief-em3d-94 R-em3d94-2) ─────────────────────────────
@@ -322,6 +389,10 @@ public partial class WorkspaceViewModel
         string? current = indices.Count == 1 ? vm.Document.Objects[indices[0]].Material : vm.CurrentMaterial;
         var picker = new MaterialPickerViewModel(MaterialSeeds(tech, techPath), Path.GetFileName(techPath), startNew, current,
                                                  indices.Count, null);
+        // The warning is owned by the DIALOG, the top window: owned by the workspace window under it, closing the warning closed
+        // the dialog as well on macOS (owner-reported: Cancel on the warning dismissed the Materials dialog).
+        var dialog = new Views.Dialogs.MaterialPickerDialog(picker);
+        picker.ConfirmDeleteExisting = (name, library) => ConfirmPickerMaterialDelete(dialog, tech, techPath, name, library);
         // The Built-in toggle opens the way it was last left in this window.
         picker.Table.ShowBuiltIns = _materialPickerShowsBuiltIns;
         if (current is not null && picker.Table.SelectedRow is null) picker.Table.Select(current);
@@ -333,7 +404,7 @@ public partial class WorkspaceViewModel
         var previewing = new HashSet<Viewer3D.Viewer3DViewModel>(ReferenceEqualityComparer.Instance);
         picker.AppearancePreview += (library, material, appearance) =>
             previewing.UnionWith(PreviewMaterialAppearance(techPath, library, material, appearance));
-        bool ok = await new Views.Dialogs.MaterialPickerDialog(picker).ShowDialog<bool>(window);
+        bool ok = await dialog.ShowDialog<bool>(window);
         var changed = ok ? picker.ChangedLists : [];
         // Cancel (or OK with nothing to write) takes the previews away now — each view's table back byte for byte. OK with an edit
         // keeps them until the scene built from the written technology arrives, so nothing flashes back in between.

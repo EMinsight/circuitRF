@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:lay="using:CircuitRF.Ui.Layout"
              xmlns:matv="using:CircuitRF.Ui.Views.Materials"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Materials.MaterialsEditorView"
              x:DataType="lay:MaterialsDocument"
              Focusable="True" IsTabStop="False"
@@ -11,11 +12,18 @@
          reference it, since an edit here changes all of them. -->
     <DockPanel>
         <Border DockPanel.Dock="Top" Padding="8,6" BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="0,0,0,1">
-            <StackPanel Spacing="2">
-                <TextBlock Text="{Binding FilePath}" FontSize="11" TextTrimming="CharacterEllipsis"/>
-                <TextBlock Text="{Binding ViewModel.NamedByText}" FontSize="11" TextWrapping="Wrap"
-                           Foreground="{DynamicResource SystemBaseMediumColor}"/>
-            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto">
+                <StackPanel Grid.Column="0" Spacing="2">
+                    <TextBlock Text="{Binding FilePath}" FontSize="11" TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding ViewModel.NamedByText}" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource SystemBaseMediumColor}"/>
+                </StackPanel>
+                <!-- Help, top right, on the ? glyph every Help button in the application uses: the Materials chapter. -->
+                <Button Grid.Column="1" Padding="6,3" Margin="8,0,0,0" VerticalAlignment="Top" Click="OnHelp"
+                        ToolTip.Tip="Open the documentation for materials and material libraries">
+                    <mi:MaterialIcon Kind="HelpCircleOutline" Width="14" Height="14"/>
+                </Button>
+            </Grid>
         </Border>
         <matv:MaterialsTableView DataContext="{Binding ViewModel.Table}"/>
     </DockPanel>
