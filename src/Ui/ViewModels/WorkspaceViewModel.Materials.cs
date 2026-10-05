@@ -294,6 +294,9 @@ public partial class WorkspaceViewModel
     private void HookC3dMaterials(C3dEditorDocument doc)
         => doc.ViewModel.MaterialPickerRequested += (indices, startNew) => _ = ShowMaterialPickerAsync(doc, indices, startNew);
 
+    /// <summary>The Materials dialog's Built-in toggle, as it was last left in this window.</summary>
+    private bool _materialPickerShowsBuiltIns;
+
     private async Task ShowMaterialPickerAsync(C3dEditorDocument doc, IReadOnlyList<int> indices, bool startNew)
     {
         var vm = doc.ViewModel;
@@ -319,6 +322,13 @@ public partial class WorkspaceViewModel
         string? current = indices.Count == 1 ? vm.Document.Objects[indices[0]].Material : vm.CurrentMaterial;
         var picker = new MaterialPickerViewModel(MaterialSeeds(tech, techPath), Path.GetFileName(techPath), startNew, current,
                                                  indices.Count, null);
+        // The Built-in toggle opens the way it was last left in this window.
+        picker.Table.ShowBuiltIns = _materialPickerShowsBuiltIns;
+        if (current is not null && picker.Table.SelectedRow is null) picker.Table.Select(current);
+        picker.Table.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MaterialsTableViewModel.ShowBuiltIns)) _materialPickerShowsBuiltIns = picker.Table.ShowBuiltIns;
+        };
         // brief-em3d-108 R-em3d108-1c — the dialog's appearance edits, live in every open 3D view on this technology
         var previewing = new HashSet<Viewer3D.Viewer3DViewModel>(ReferenceEqualityComparer.Instance);
         picker.AppearancePreview += (library, material, appearance) =>
@@ -461,7 +471,8 @@ public partial class WorkspaceViewModel
             else
                 seeds.Add(new MaterialSourceSeed(label, null,
                                                  [.. tech.LibraryMaterials.Where(m => string.Equals(m.SourcePath, lib, StringComparison.OrdinalIgnoreCase)).Select(m => m.Material)],
-                                                 $"'{label}' is shipped inside circuitRF and is not edited: Duplicate a material from it to change a copy."));
+                                                 $"'{label}' is shipped inside circuitRF and is not edited: Duplicate a material from it to change a copy.",
+                                                 BuiltIn: true));
         }
         return seeds;
     }

@@ -21,6 +21,11 @@ public partial class LookPanel : UserControl
 
     private C3dLookPanelViewModel? Vm => DataContext as C3dLookPanelViewModel;
 
+    /// <summary>The close button: the panel does not know the flyout it is hosted in, so its host hides it.</summary>
+    public event EventHandler? CloseRequested;
+
+    private void OnClose(object? sender, RoutedEventArgs e) => CloseRequested?.Invoke(this, EventArgs.Empty);
+
     private void Release(object? source)
     {
         if ((source as Avalonia.Visual)?.FindAncestorOfType<Slider>(includeSelf: true) is not null) Vm?.CommitDrag();

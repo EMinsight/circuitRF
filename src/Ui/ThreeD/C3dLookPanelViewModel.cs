@@ -148,23 +148,15 @@ public sealed partial class C3dLookPanelViewModel : ObservableObject
 
     partial void OnHasPictureCameraChanged(bool value) => OnPropertyChanged(nameof(PictureCameraText));
 
-    /// <summary>The header: what the panel changes, and — when opening it turned the realistic view on — that it did.</summary>
-    [ObservableProperty] private string _header = HeaderText;
-
-    public const string HeaderText = "How the realistic view looks. Saved with the design and undoable; no result depends on it.";
-    public const string TurnedOnText = "Opening this panel turned the realistic view on. " + HeaderText;
-
     public bool IsEditable => !_editor.IsViewOnly;
 
     /// <summary>The last refused gesture's sentence.</summary>
     [ObservableProperty] private string _error = "";
 
-    /// <summary>R-em3d108-3e — the panel opened: the realistic view comes on (and the header says so when this is what turned it on).</summary>
+    /// <summary>R-em3d108-3e — the panel opened: the realistic view comes on.</summary>
     public void Opened()
     {
-        bool was = _editor.Viewer.IsRealistic;
-        if (!was) _editor.Viewer.IsRealistic = true;
-        Header = was ? HeaderText : TurnedOnText;
+        _editor.Viewer.IsRealistic = true;
         BackgroundEditing = null;
         Reload();
     }

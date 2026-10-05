@@ -295,9 +295,8 @@ public sealed class EditingAppearanceTests : IDisposable
         var (vm, fake, _, _) = Open();
         var panel = vm.LookPanel;
         Assert.False(vm.Viewer.IsRealistic);
-        panel.Opened();                                                     // D2: opening turns the realistic view on, and says so
+        panel.Opened();                                                     // D2: opening turns the realistic view on
         Assert.True(vm.Viewer.IsRealistic);
-        Assert.Equal(C3dLookPanelViewModel.TurnedOnText, panel.Header);
         Pump(() => vm.Viewer.View.Environment is not null);
         Frame(vm);
         Frame(vm);

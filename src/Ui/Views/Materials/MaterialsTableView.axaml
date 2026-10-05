@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:lay="using:CircuitRF.Ui.Layout"
              xmlns:apv="using:CircuitRF.Ui.Views.Appearance"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Materials.MaterialsTableView"
              x:DataType="lay:MaterialsTableViewModel">
 
@@ -134,17 +135,23 @@
             <!-- ── the materials ─────────────────────────────────────────────────────────────── -->
             <DockPanel Grid.Column="0" Margin="8,8,0,8">
                 <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,6">
-                    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="4">
+                    <Grid ColumnDefinitions="*,*,Auto,*" ColumnSpacing="4">
                         <Button Grid.Column="0" Classes="tool" Content="＋ New" Command="{Binding AddCommand}"
                                 ToolTip.Tip="A new material that states nothing yet — give it εr (a dielectric) or σ₂₀ (a conductor), and k for a thermal run."/>
                         <Button Grid.Column="1" Classes="tool" Content="Duplicate" Command="{Binding DuplicateCommand}"
                                 ToolTip.Tip="A copy of the selected material — every value and table — under a new name, ready to be typed over."/>
-                        <Button Grid.Column="2" Classes="tool" Content="Delete" Command="{Binding DeleteCommand}"
+                        <!-- The built-in materials, listed or not; each listed one carries the mark the toggle shows. -->
+                        <ToggleButton Grid.Column="2" Padding="5,3" MinWidth="0" VerticalAlignment="Stretch"
+                                      IsVisible="{Binding OffersBuiltIns}" IsChecked="{Binding ShowBuiltIns}"
+                                      ToolTip.Tip="Show the materials built into circuitRF. Editing or assigning one saves a copy to the list new materials go to.">
+                            <mi:MaterialIcon Kind="PackageVariantClosed" Width="14" Height="14"/>
+                        </ToggleButton>
+                        <Button Grid.Column="3" Classes="tool" Content="Delete" Command="{Binding DeleteCommand}"
                                 IsVisible="{Binding CanDelete}"
                                 ToolTip.Tip="Delete the selected material. A material in use is not deleted; its uses are listed."/>
                     </Grid>
                     <StackPanel Spacing="3" IsVisible="{Binding HasSeveralSources}">
-                        <TextBlock Classes="lbl" Text="New and duplicated materials go to"/>
+                        <TextBlock Classes="lbl" Text="New, duplicated and built-in materials go to"/>
                         <ComboBox ItemsSource="{Binding Sources}" SelectedItem="{Binding TargetSource}" HorizontalAlignment="Stretch" FontSize="11"
                                   ToolTip.Tip="The file a new or duplicated material is written to: a library the technology names, or the technology's own list."/>
                     </StackPanel>
@@ -154,7 +161,7 @@
                 <ListBox x:Name="RowList" Classes="list" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow, Mode=TwoWay}" SelectionMode="Single">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="lay:MaterialRowViewModel">
-                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="8" Margin="6,4" IsVisible="{Binding IsShown}"
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8" Margin="6,4" IsVisible="{Binding IsShown}"
                                   ToolTip.Tip="{Binding RoleReason}">
                                 <Border Grid.Column="0" Width="14" Height="14" CornerRadius="3" VerticalAlignment="Center"
                                         BorderBrush="{DynamicResource CrfTileBorderBrush}" BorderThickness="1">
@@ -167,6 +174,9 @@
                                     <TextBlock Text="{Binding Subtitle}" FontSize="10" TextTrimming="CharacterEllipsis"
                                                Foreground="{DynamicResource SystemBaseMediumColor}"/>
                                 </StackPanel>
+                                <mi:MaterialIcon Grid.Column="2" Kind="PackageVariantClosed" Width="13" Height="13" VerticalAlignment="Center"
+                                                 Foreground="{DynamicResource SystemBaseMediumColor}" IsVisible="{Binding ShowsBuiltInMark}"
+                                                 ToolTip.Tip="Built into circuitRF"/>
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>

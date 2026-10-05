@@ -4,8 +4,10 @@ using CircuitRF.Ui.Layout;
 namespace CircuitRF.Ui.ThreeD;
 
 /// <summary>One list the 3D view's Materials dialog edits: a technology's own materials, or one library's, as its file
-/// holds them now (an open document's unsaved state included), and why it cannot be edited, if it cannot.</summary>
-public sealed record MaterialSourceSeed(string Label, string? LibraryPath, IReadOnlyList<TechMaterial> Materials, string? ReadOnlyReason);
+/// holds them now (an open document's unsaved state included), and why it cannot be edited, if it cannot. <paramref name="BuiltIn"/>:
+/// a library shipped inside circuitRF, whose rows carry the built-in mark.</summary>
+public sealed record MaterialSourceSeed(string Label, string? LibraryPath, IReadOnlyList<TechMaterial> Materials, string? ReadOnlyReason,
+                                        bool BuiltIn = false);
 
 /// <summary>
 /// brief-em3d-53 R-em3d53-5 — the 3D editor's Materials dialog, behind Assign Material… and New Material….
@@ -43,11 +45,13 @@ public sealed partial class MaterialPickerViewModel : ObservableObject
             sources.Add(new MaterialListSource(seed.Label, () => working, (mutate, _) => mutate(), seed.LibraryPath)
             {
                 ReadOnlyReason = seed.ReadOnlyReason,
+                IsBuiltIn = seed.BuiltIn,
             });
         }
         Table = new MaterialsTableViewModel(sources)
         {
             CanDelete = false,
+            OffersBuiltIns = true,
             RenameRefusal = row => _existing.Contains(row.Material)
                 ? $"'{row.Name}' already exists and files name it: rename it in {row.SourceLabel}'s own editor, which renames it everywhere it is used. A new or duplicated material is named here."
                 : null,
@@ -107,7 +111,10 @@ public sealed partial class MaterialPickerViewModel : ObservableObject
     /// <summary>Validates OK: a material chosen, and no list with an error. Null when it may close.</summary>
     public string? Accept()
     {
-        if (Table.SelectedRow is null) return "Choose a material, or ＋ New to make one.";
+        if (Table.SelectedRow is not { } row) return "Choose a material, or ＋ New to make one.";
+        // A built-in material is no material of this technology until it is copied into one of its lists.
+        if (row.IsBuiltIn && !Table.AdoptBuiltIn(row, null, $"Use built-in material {row.Name}"))
+            return Table.Refusal ?? $"'{row.Name}' could not be copied into this technology.";
         foreach (var (seed, working, _) in _lists)
             if (MaterialValidation.Validate(working).FirstOrDefault(p => p.Severity == CircuitRF.Diagnostics.DiagnosticSeverity.Error) is { } p)
                 return $"{seed.Label}: {p.Message}";

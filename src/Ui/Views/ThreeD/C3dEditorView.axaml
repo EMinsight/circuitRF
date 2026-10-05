@@ -114,13 +114,15 @@
                     <mi:MaterialIcon Kind="CameraIris" Width="16" Height="16"/>
                 </ToggleButton>
                 <!-- brief-em3d-108 R-em3d108-3a — the Look panel's drop-down, right beside the toggle (owner decision D1). Opening it turns the
-                     realistic view on (D2). A setup's view has no Look to edit, so it is not offered there. -->
+                     realistic view on (D2). A setup's view has no Look to edit, so it is not offered there.
+                     It opens LEFTWARD (right edges aligned), over the Objects tree rather than the viewport, so the picture being
+                     tuned stays in view; the viewport takes the wheel while it is open (code-behind: OverlayInputPassThroughElement). -->
                 <Button x:Name="LookButton" Padding="1,4" Margin="-3,0,0,0" IsVisible="{Binding ViewModel.IsEditable}"
                         ToolTip.Tip="Look: environment, lighting, background and what the realistic view shows. Opening it turns the realistic view on.">
                     <mi:MaterialIcon Kind="ChevronDown" Width="12" Height="12"/>
                     <Button.Flyout>
-                        <Flyout Placement="BottomEdgeAlignedLeft" Opened="OnLookOpened" Closed="OnLookClosed">
-                            <t3v:LookPanel DataContext="{Binding ViewModel.LookPanel}"/>
+                        <Flyout Placement="BottomEdgeAlignedRight" Opened="OnLookOpened" Closed="OnLookClosed">
+                            <t3v:LookPanel DataContext="{Binding ViewModel.LookPanel}" CloseRequested="OnLookCloseRequested"/>
                         </Flyout>
                     </Button.Flyout>
                 </Button>
@@ -683,7 +685,7 @@
             </Border>
 
             <!-- ── The pane, and its 2D chrome ─────────────────────────────────── -->
-            <Panel Grid.Column="1">
+            <Panel Grid.Column="1" x:Name="ViewportPanel">
                 <v3:Viewer3DPane x:Name="Pane" DataContext="{Binding ViewModel.Viewer}"/>
                 <v3:Viewer3DOverlay x:Name="Overlay" DataContext="{Binding ViewModel.Viewer}"/>
                 <!-- brief-em3d-86 R-em3d86-3 — the sweep slider, on the viewport with the field's legend: one control per sweep

@@ -33,6 +33,9 @@ public sealed class MaterialListSource(string label, Func<List<TechMaterial>> li
     /// <summary>Why it cannot be edited (a shipped library, a read-only file), or null.</summary>
     public string? ReadOnlyReason { get; init; }
 
+    /// <summary>The list is a library shipped inside circuitRF: its rows carry the built-in mark.</summary>
+    public bool IsBuiltIn { get; init; }
+
     public override string ToString() => Label;
 }
 
@@ -75,8 +78,56 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
     /// <summary>The lists this table edits, in the order their rows are listed.</summary>
     public IReadOnlyList<MaterialListSource> Sources { get; }
 
-    /// <summary>Where Add and Duplicate write — chosen in the dialog when there is more than one list.</summary>
+    /// <summary>Where Add and Duplicate write — chosen in the dialog when there is more than one list. A built-in material is
+    /// copied here too, the first time it is edited or assigned.</summary>
     [ObservableProperty] private MaterialListSource _targetSource;
+
+    partial void OnTargetSourceChanged(MaterialListSource value)
+    {
+        foreach (var r in Rows)
+            if (r.IsBuiltIn) r.Rebind(r.Material);
+    }
+
+    // ── the materials built into circuitRF ─────────────────────────────────────
+
+    private bool _offersBuiltIns;
+
+    /// <summary>Whether the list offers the materials shipped inside circuitRF (its Built-in toggle). The 3D view's Materials
+    /// dialog and the technology editor's tab do; a <c>.cmat</c> document does not.</summary>
+    public bool OffersBuiltIns
+    {
+        get => _offersBuiltIns;
+        init => _offersBuiltIns = value;
+    }
+
+    /// <summary>Lists the built-in materials below the rest — those not already listed under the same name. Each is shown as
+    /// it ships; editing or assigning one copies it into <see cref="TargetSource"/>, where it is the design's own. Off when the table
+    /// is made; a host that remembers it sets it.</summary>
+    [ObservableProperty] private bool _showBuiltIns;
+
+    partial void OnShowBuiltInsChanged(bool value) => Rebuild();
+
+    /// <summary>Where a built-in material is copied when it is edited or assigned: <see cref="TargetSource"/>, else the first
+    /// list that can be written; null when none can.</summary>
+    public MaterialListSource? BuiltInTarget
+        => TargetSource.ReadOnlyReason is null ? TargetSource : Sources.FirstOrDefault(s => s.ReadOnlyReason is null);
+
+    /// <summary>
+    /// Copies the built-in <paramref name="row"/> into <see cref="BuiltInTarget"/> — after <paramref name="mutate"/>, the edit
+    /// that asked for it — as ONE entry. The row's record is this table's own fresh copy of the shipped one, re-read on every
+    /// <see cref="Rebuild"/>, so it is the record added; the rebuild then lists it as the target's row, and the built-in row
+    /// of that name is gone.
+    /// </summary>
+    internal bool AdoptBuiltIn(MaterialRowViewModel row, Action? mutate, string description)
+    {
+        if (BuiltInTarget is not { } target)
+        {
+            Refusal = $"'{row.Name}' is built into circuitRF, and none of these lists can be written to take a copy of it.";
+            return false;
+        }
+        var m = row.Material;
+        return Edit(target, () => { mutate?.Invoke(); target.List().Add(m); }, description);
+    }
 
     public bool HasSeveralSources => Sources.Count > 1;
 
@@ -168,17 +219,25 @@ public sealed partial class MaterialsTableViewModel : ObservableObject
         int selectedIndex = selectedRow is null ? -1 : Rows.IndexOf(selectedRow);
         int countBefore = Rows.Count;
 
-        var wanted = new List<(TechMaterial Material, MaterialListSource? Own, string? Library)>();
+        var wanted = new List<(TechMaterial Material, MaterialListSource? Own, string? Library, bool BuiltIn)>();
         foreach (var src in Sources)
-            foreach (var m in src.List()) wanted.Add((m, src, null));
-        foreach (var lm in LibraryRows) wanted.Add((lm.Material, null, lm.SourcePath));
+            foreach (var m in src.List()) wanted.Add((m, src, null, false));
+        foreach (var lm in LibraryRows) wanted.Add((lm.Material, null, lm.SourcePath, false));
+        if (OffersBuiltIns && ShowBuiltIns)
+        {
+            // A fresh copy each time: an adopted record belongs to its list from then on, and an undo must not find it edited here.
+            var listed = new HashSet<string>(wanted.Select(w => w.Material.Name), StringComparer.OrdinalIgnoreCase);
+            foreach (var m in MaterialLibraries.LoadGeneric())
+                if (listed.Add(m.Name)) wanted.Add((m, null, null, true));
+        }
         for (int i = 0; i < wanted.Count; i++)
         {
-            var (m, own, library) = wanted[i];
-            if (i >= Rows.Count) Rows.Add(new MaterialRowViewModel(this, m, own, library));
-            else if (ReferenceEquals(Rows[i].Source, own) && string.Equals(Rows[i].LibrarySource, library, StringComparison.OrdinalIgnoreCase))
+            var (m, own, library, builtIn) = wanted[i];
+            if (i >= Rows.Count) Rows.Add(new MaterialRowViewModel(this, m, own, library, builtIn));
+            else if (ReferenceEquals(Rows[i].Source, own) && Rows[i].IsBuiltIn == builtIn
+                     && string.Equals(Rows[i].LibrarySource, library, StringComparison.OrdinalIgnoreCase))
                 Rows[i].Rebind(m);
-            else Rows[i] = new MaterialRowViewModel(this, m, own, library);
+            else Rows[i] = new MaterialRowViewModel(this, m, own, library, builtIn);
         }
         while (Rows.Count > wanted.Count) Rows.RemoveAt(Rows.Count - 1);
 
@@ -392,12 +451,14 @@ public sealed partial class MaterialRowViewModel : ObservableObject
 {
     private readonly MaterialsTableViewModel _table;
 
-    internal MaterialRowViewModel(MaterialsTableViewModel table, TechMaterial material, MaterialListSource? source, string? librarySource)
+    internal MaterialRowViewModel(MaterialsTableViewModel table, TechMaterial material, MaterialListSource? source, string? librarySource,
+                                  bool builtIn = false)
     {
         _table = table;
         Material = material;
         Source = source;
         LibrarySource = librarySource;
+        IsBuiltIn = builtIn;
         _nameText = material.Name;
         PickColorCommand = new AsyncRelayCommand<Window?>(PickColorAsync);
         OpenLibraryCommand = new RelayCommand(() => _table.OpenLibrary?.Invoke(this), () => CanOpenLibrary);
@@ -503,22 +564,42 @@ public sealed partial class MaterialRowViewModel : ObservableObject
     public string? LibrarySource { get; }
 
     public bool IsLibrary => LibrarySource is not null;
-    public bool IsEditable => !IsLibrary && !_table.IsReadOnly && Source?.ReadOnlyReason is null;
+
+    /// <summary>A material built into circuitRF, listed by the Built-in toggle: shown as it ships, and copied into the dialog's
+    /// target list the first time it is edited or assigned.</summary>
+    public bool IsBuiltIn { get; }
+
+    /// <summary>The built-in mark beside the name: a built-in row, or a row of a library shipped inside circuitRF.</summary>
+    public bool ShowsBuiltInMark => IsBuiltIn || Source?.IsBuiltIn == true
+                                 || LibrarySource?.StartsWith(MaterialLibraries.ShippedPrefix, StringComparison.Ordinal) == true;
+
+    public bool IsEditable => IsBuiltIn
+        ? !_table.IsReadOnly && _table.BuiltInTarget is not null
+        : !IsLibrary && !_table.IsReadOnly && Source?.ReadOnlyReason is null;
     public string Name => Material.Name;
 
-    /// <summary>Whether the name may be typed over: an editable row the host does not refuse renaming.</summary>
-    public bool IsNameEditable => IsEditable && _table.RenameRefusal?.Invoke(this) is null;
+    /// <summary>Whether the name may be typed over: an editable row the host does not refuse renaming. A built-in keeps its name.</summary>
+    public bool IsNameEditable => !IsBuiltIn && IsEditable && _table.RenameRefusal?.Invoke(this) is null;
 
     /// <summary>Why the name is fixed here, for its tooltip.</summary>
-    public string NameTip => (IsEditable ? _table.RenameRefusal?.Invoke(this) : null)
-                             ?? "The name a stackup entry, body or 3D object names it by. '@' is reserved.";
+    public string NameTip => IsBuiltIn
+        ? "A built-in material keeps its name: Duplicate it to make a copy under another."
+        : (IsEditable ? _table.RenameRefusal?.Invoke(this) : null)
+          ?? "The name a stackup entry, body or 3D object names it by. '@' is reserved.";
 
-    /// <summary>Where the row comes from: this file, the list it belongs to, or the library it came from.</summary>
-    public string SourceLabel => LibrarySource is { } s ? Path.GetFileName(MaterialLibraries.Display(s)) : Source?.Label ?? _table.OwnSource;
-    public string? SourceTip => LibrarySource is { } s ? MaterialLibraries.Display(s) : Source?.LibraryPath;
+    /// <summary>Where the row comes from: this file, the list it belongs to, the library it came from, or circuitRF itself.</summary>
+    public string SourceLabel => IsBuiltIn ? "built-in"
+        : LibrarySource is { } s ? Path.GetFileName(MaterialLibraries.Display(s)) : Source?.Label ?? _table.OwnSource;
+    public string? SourceTip => IsBuiltIn ? $"Built into circuitRF ({MaterialLibraries.GenericFileName})"
+        : LibrarySource is { } s ? MaterialLibraries.Display(s) : Source?.LibraryPath;
 
-    /// <summary>Why the form is read-only, or null: a library row, a read-only list, a read-only file.</summary>
-    public string? ReadOnlyNote => IsLibrary
+    /// <summary>Why the form is read-only, or null: a library row, a read-only list, a read-only file. A built-in row says where
+    /// an edit of it goes.</summary>
+    public string? ReadOnlyNote => IsBuiltIn
+        ? _table.BuiltInTarget is { } target
+            ? $"'{Material.Name}' is built into circuitRF. Editing or assigning it saves a copy to {target.Label}, where it is this design's own."
+            : $"'{Material.Name}' is built into circuitRF, and none of these lists can be written to take a copy of it."
+        : IsLibrary
         ? $"'{Material.Name}' comes from {SourceLabel}, so it is edited in that library, where the change is on its own undo and Save."
         : Source?.ReadOnlyReason ?? (_table.IsReadOnly ? _table.ReadOnlyReason ?? "This file is read-only." : null);
 
@@ -634,7 +715,12 @@ public sealed partial class MaterialRowViewModel : ObservableObject
     /// list is not edited at all.</summary>
     internal bool Refuse()
     {
-        if (IsLibrary)
+        if (IsBuiltIn)
+        {
+            if (IsEditable) return false;
+            _table.Refusal = ReadOnlyNote;
+        }
+        else if (IsLibrary)
             _table.Refusal = $"'{Material.Name}' comes from {SourceLabel}: open that library to edit it, so the change is on its own undo and Save.";
         else if (Source?.ReadOnlyReason is { } why) _table.Refusal = why;
         else return false;
@@ -643,7 +729,9 @@ public sealed partial class MaterialRowViewModel : ObservableObject
     }
 
     /// <summary>Commits a mutation of this row's record through its list.</summary>
-    internal bool Edit(Action mutate, string description) => Source is { } source && _table.Edit(source, mutate, description);
+    internal bool Edit(Action mutate, string description)
+        => IsBuiltIn ? _table.AdoptBuiltIn(this, mutate, description + " (a copy of the built-in material)")
+                     : Source is { } source && _table.Edit(source, mutate, description);
 
     /// <summary>A refused gesture of this row, shown where the table shows its refusals.</summary>
     internal void Refused(string why)

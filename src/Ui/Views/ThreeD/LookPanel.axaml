@@ -3,6 +3,7 @@
              xmlns:t3="using:CircuitRF.Ui.ThreeD"
              xmlns:apv="using:CircuitRF.Ui.Views.Appearance"
              xmlns:cp="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.ColorPicker"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.ThreeD.LookPanel"
              x:DataType="t3:C3dLookPanelViewModel"
              Width="360">
@@ -29,11 +30,16 @@
     <!-- brief-em3d-108 R-em3d108-3 — the Look panel (owner decision D1: a flyout from the drop-down beside the Realistic toggle, and
          3D ▸ View ▸ Look…). Every control writes the document's Look as ONE undo entry; a slider previews while dragged and writes on
          release. The Show boxes are GENERATED from the realistic view's chrome table, so a new kind of chrome needs no edit here.
-         Opening the panel turns the realistic view on (D2), and the header says so. -->
+         Opening the panel turns the realistic view on (D2). No header line: the space went to the picture; the close button shares
+         the first heading's row, hugging the right edge. -->
     <StackPanel Spacing="8" Margin="4" IsEnabled="{Binding IsEditable}">
-        <TextBlock Text="{Binding Header}" FontSize="11" TextWrapping="Wrap" Opacity="0.75"/>
-
-        <TextBlock Text="Environment" FontWeight="SemiBold" FontSize="12"/>
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Grid.Column="0" Text="Environment" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+            <Button Grid.Column="1" Padding="2" MinWidth="0" MinHeight="0" Background="Transparent" BorderThickness="0"
+                    VerticalAlignment="Center" Click="OnClose" ToolTip.Tip="Close the Look panel">
+                <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+            </Button>
+        </Grid>
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
             <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding EnvironmentChoices}" SelectedItem="{Binding Environment}"
                       ToolTip.Tip="A studio lights the model with soft boxes; a Radiance .hdr lights it with a photographed environment."/>

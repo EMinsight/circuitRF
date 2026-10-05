@@ -70,6 +70,13 @@ for EM into 3D.
   change there — save that file to keep them; Cancel discards them. A material that already exists is renamed and
   deleted in its own file's editor, which renames it everywhere it is used. A placed cell brings its **own**
   technology's materials with it — see [Hierarchy](#hierarchy).
+- **Built-in materials.** The package button beside **Duplicate** lists the materials circuitRF ships with (metals,
+  substrates, glass, die-attach and thermal materials) below the technology's own; each carries the package mark at
+  the right of its row, and a material the technology already names is not listed twice. Assigning a built-in
+  material, or editing any of its properties, copies it into the list shown under *New, duplicated and built-in
+  materials go to* — usually the technology's own `.ctech` — where it is the design's own from then on, and the mark
+  goes. A built-in material keeps its name; **Duplicate** it to make a copy under another. The technology editor's
+  Materials tab has the same button.
 - **Edit Material…** opens the file a material is defined in, on its row. Right-click a material's heading in the
   Objects tree (by material; *No material* has none), or an object's row, which says which material:
   *Edit Material 'FR4'…*. A material in the technology's own list opens the technology on its **Materials** tab; one

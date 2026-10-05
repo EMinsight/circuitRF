@@ -60,6 +60,42 @@ public sealed class MaterialsEditorRedesignTests : IDisposable
         Assert.Equal(150, materials.Single(m => m.Name == "GaN epi").ThermalK);
     }
 
+    /// <summary>The Built-in toggle lists the shipped materials the technology does not already name, each marked; editing one
+    /// copies it — with the edit — into the target list as that list's own, and assigning one copies it as it ships.</summary>
+    [Fact]
+    public void BuiltInMaterials_AreListedByTheToggle_AndCopiedIntoTheTechnologyWhenEditedOrAssigned()
+    {
+        var own = new List<TechMaterial> { new() { Name = "Gold", Sigma20 = 3e7 } };
+        var picker = new MaterialPickerViewModel([new MaterialSourceSeed("t.ctech (the technology's own)", null, own, null)],
+                                                 "t.ctech", startNew: false, current: "Gold", objectCount: 1, refusal: null);
+        var table = picker.Table;
+        Assert.True(table.OffersBuiltIns);
+        Assert.False(table.ShowBuiltIns);
+        Assert.DoesNotContain(table.Rows, r => r.IsBuiltIn);
+
+        table.ShowBuiltIns = true;
+        var generic = MaterialLibraries.LoadGeneric();
+        Assert.Equal(1 + generic.Count - 1, table.Rows.Count);                       // the technology's Gold is not listed twice
+        Assert.Equal(3e7, table.Rows.Single(r => r.Name == "Gold").Material.Sigma20);
+        Assert.All(table.Rows.Where(r => r.Name != "Gold"), r => Assert.True(r.IsBuiltIn && r.ShowsBuiltInMark && r.IsEditable && !r.IsNameEditable));
+
+        table.Select("PTFE");
+        table.SelectedRow!.EpsrText = "2.1";                                          // an edit adopts the material
+        var ptfe = table.SelectedRow!;
+        Assert.False(ptfe.IsBuiltIn);
+        Assert.Equal(2.1, ptfe.Material.Epsr);
+        Assert.Single(table.Rows, r => r.Name == "PTFE");
+
+        table.Select("Soda-lime glass (window)");
+        Assert.True(table.SelectedRow!.IsBuiltIn);
+        Assert.Null(picker.Accept());                                                 // assigning adopts it as it ships
+        Assert.Equal("Soda-lime glass (window)", picker.ChosenName);
+        var (_, materials) = Assert.Single(picker.ChangedLists);
+        Assert.Equal(["Gold", "PTFE", "Soda-lime glass (window)"], materials.Select(m => m.Name));
+        Assert.Equal(6.31, materials[2].Epsr);
+        Assert.Single(own);                                                           // the caller's list is untouched until OK
+    }
+
     /// <summary>A k(T) table is edited point by point, each gesture one undo entry, kept sorted; a repeated temperature is
     /// refused and an empty table is written as no table.</summary>
     [Fact]

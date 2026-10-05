@@ -29,6 +29,9 @@ public partial class C3dEditorView : UserControl
     public C3dEditorView()
     {
         InitializeComponent();
+        // The Look panel is light-dismiss, and its dismiss overlay covers the window and swallows the wheel: the viewport is let
+        // through so the picture being tuned can still be zoomed while the panel is open.
+        if (LookButton.Flyout is Avalonia.Controls.Primitives.PopupFlyoutBase look) look.OverlayInputPassThroughElement = ViewportPanel;
         ActualThemeVariantChanged += (_, _) => SyncPlotTheme();
         // brief-em3d-45 — the typed field sees Tab and Enter before the TextBox (and focus navigation) does; its Esc is
         // the view's (OnViewKeyTunnel).
@@ -124,6 +127,8 @@ public partial class C3dEditorView : UserControl
     private void OnLookOpened(object? sender, EventArgs e) => _vm?.LookPanel.Opened();
 
     private void OnLookClosed(object? sender, EventArgs e) => _vm?.LookPanel.Closed();
+
+    private void OnLookCloseRequested(object? sender, EventArgs e) => LookButton.Flyout?.Hide();
 
     /// <summary>brief-em3d-75 — the line plot follows the application's light or dark variant, as every PlotControl must.</summary>
     private void SyncPlotTheme()

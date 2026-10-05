@@ -222,6 +222,17 @@
       "Appearance": { "BaseColor": "#FFFFFF", "Metallic": 0, "Roughness": 0.02, "Transmission": 0.95, "Ior": 1.46 }
     },
     {
+      "Name": "Soda-lime glass (window)",
+      "Epsr": 6.31,
+      "TanD": 0.01,
+      "Mur": 1,
+      "ThermalK": 1,
+      "DensityKgM3": 2500,
+      "SpecificHeat": 840,
+      "Source": "Everyday window (float) glass. Relative permittivity 6.31 and conductivity 0.0036 f^1.3394 S/m (f in GHz), from Recommendation ITU-R P.2040's building-materials table, valid 0.1 to 100 GHz; the loss tangent 0.01 is that conductivity at 1 GHz, and it rises with frequency (about 0.022 at 10 GHz). Thermal conductivity 1 W/(m K), density 2500 kg/m3 and specific heat 840 J/(kg K) at 25 C: representative values for soda-lime glass from glass handbooks (e.g. Harper, Handbook of Ceramics, Glasses, and Diamonds), not any one product. Its look: refractive index 1.52 at visible wavelengths, and the faint green its iron content gives a long path through it (an edge, not a face).",
+      "Appearance": { "BaseColor": "#FFFFFF", "Metallic": 0, "Roughness": 0.01, "Transmission": 0.95, "Ior": 1.52, "AttenuationColor": "#D3EBDC", "AttenuationDistance": 0.05 }
+    },
+    {
       "Name": "High-resistivity silicon",
       "Epsr": 11.9,
       "TanD": 0.0015,

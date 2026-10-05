@@ -80,6 +80,7 @@ public sealed partial class TechEditorViewModel
         }, "this technology")
         {
             UsedBy = UsesOf,
+            OffersBuiltIns = true,
             OpenLibrary = row => { if (row.LibrarySource is { } lib) OpenLibraryRequested?.Invoke(lib, row.Name); },
         };
         ResolveLibrariesInPlace();

@@ -555,6 +555,20 @@ public sealed class RealisticViewTests : IDisposable
         Assert.Contains("Kind=\"CameraIris\"", toolbar[real..(real + 400)]);
     }
 
+    /// <summary>The Look panel opens leftward (over the Objects tree, not the viewport), and the viewport is its dismiss overlay's
+    /// pass-through element, so the wheel still zooms the picture while the panel is open.</summary>
+    [Fact]
+    public void LookPanel_OpensLeftward_AndLetsTheViewportTakeTheWheel()
+    {
+        string dir = Path.Combine(RepoRoot(), "src", "Ui", "Views", "ThreeD");
+        string toolbar = File.ReadAllText(Path.Combine(dir, "C3dEditorView.axaml"));
+        int look = toolbar.IndexOf("x:Name=\"LookButton\"", StringComparison.Ordinal);
+        Assert.True(look > 0);
+        Assert.Matches("<Flyout Placement=\"BottomEdgeAlignedRight\"[^>]*Opened=\"OnLookOpened\"", toolbar[look..]);
+        Assert.Contains("<Panel Grid.Column=\"1\" x:Name=\"ViewportPanel\">", toolbar);
+        Assert.Contains("look.OverlayInputPassThroughElement = ViewportPanel", File.ReadAllText(Path.Combine(dir, "C3dEditorView.axaml.cs")));
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────────────────────────────────────────
 
     private void Pump(Func<bool> until)
