@@ -152,9 +152,9 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     public string SnapModeTooltip => SnapMode switch
     {
-        SnapMode.ConnectionGrid => "Snap: Connection Grid  (G)",
-        SnapMode.FineGrid       => "Snap: Fine Grid  (G)",
-        _                       => "Snap: Off  (G)",
+        SnapMode.ConnectionGrid => "Snap: Connection Grid  (Shift+G)",
+        SnapMode.FineGrid       => "Snap: Fine Grid  (Shift+G)",
+        _                       => "Snap: Off  (Shift+G)",
     };
 
     /// <summary>Cycles P → p → none → P (same order as the Symbol Editor).</summary>
@@ -704,7 +704,7 @@ public sealed partial class SchematicViewModel : ObservableObject
 
     /// <summary>
     /// Arms a click-to-place of a built-in symbol — the Pin / Term / GND toolbar buttons and their
-    /// P / T / Shift+G shortcuts.
+    /// P / T / G shortcuts.
     ///
     /// <para>Clears the selection, because arming and having a selection are two claims on the same
     /// keys and the selection wins every one of them (owner report, 2026-09-07). R and M route to
@@ -5064,7 +5064,8 @@ public sealed partial class SchematicViewModel : ObservableObject
         _moveLabelPhase = MoveLabelPhase.Picking;
         // Arming a tool waits for the first mouse move before showing a ghost — so the remembered
         // position goes with the ghost itself, or a newly-armed part would appear at wherever the
-        // pointer last happened to be, which may not even be over this canvas.
+        // pointer last happened to be, which may not even be over this canvas. (A KEYBOARD-armed part is
+        // shown at once by SchematicCanvas.ShowPlacementGhostAtPointer, which checks the pointer is over it.)
         _placeGhostPos = null;
         // Clear drag overrides and segment highlight so the renderer falls back to model positions.
         Overlay = Overlay with { RubberBand = null, WirePreview = null, Ghost = null,

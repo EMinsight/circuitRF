@@ -192,7 +192,7 @@
                 <!-- Ground symbol -->
                 <Button x:Name="PlaceGroundBtn"
                         Click="OnPlaceGround"
-                        ToolTip.Tip="Place Ground  (Shift+G)"
+                        ToolTip.Tip="Place Ground  (G)"
                         Padding="6,3">
                     <ctrl:PaletteGlyphControl Kind="Ground" Width="16" Height="16"
                                               Monochrome="True"
@@ -284,7 +284,7 @@
                 <!-- Grid Snap tri-state (none / p / P) -->
                 <Button x:Name="SnapModeBtn"
                         Click="OnCycleSnapMode"
-                        ToolTip.Tip="Snap: Fine Grid  (G)"
+                        ToolTip.Tip="Snap: Fine Grid  (Shift+G)"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="Grid" Width="16" Height="16"/>
                 </Button>

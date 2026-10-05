@@ -582,9 +582,27 @@ public sealed class SchematicCanvas : Control
 
     // ── Pointer — move ────────────────────────────────────────────────────────
 
+    // Where the pointer last moved over this canvas, in control coordinates — what a keyboard-armed
+    // placement shows its ghost at before the mouse has moved again.
+    private Point? _lastPointerScreen;
+
+    /// <summary>
+    /// Shows the armed placement's ghost under the pointer straight away, as if the mouse had moved —
+    /// for a placement armed from the KEYBOARD (G / T / P), where the pointer is already resting on the
+    /// canvas and no move event is coming. Does nothing when the pointer is not over this canvas: then
+    /// the ghost waits for the first move, as a toolbar-armed placement's does.
+    /// </summary>
+    public void ShowPlacementGhostAtPointer()
+    {
+        if (_editContext is null || !IsPointerOver || _lastPointerScreen is not { } pos) return;
+        _editContext.OnPointerMoved(ScreenToWorldX(pos.X), ScreenToWorldY(pos.Y), leftDown: false, pos.X, pos.Y);
+        InvalidateVisual();
+    }
+
     private void OnPointerMoved(object? _, PointerEventArgs e)
     {
         var pos   = e.GetPosition(this);
+        _lastPointerScreen = pos;
         double wx = ScreenToWorldX(pos.X);
         double wy = ScreenToWorldY(pos.Y);
 

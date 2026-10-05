@@ -13,7 +13,7 @@ namespace CircuitRF.Ui.Tests;
 /// <para>Not a keybinding bug. <c>RotateSelection</c>/<c>MirrorSelection</c> already fall back to the
 /// armed placement's own rotation — but only when nothing is selected, which is the correct rule and
 /// the one the toolbar was breaking. The palette arms through <c>PlacementService</c>, whose R has a
-/// path of its own, so the fault was visible only on the toolbar buttons and their P / T / Shift+G
+/// path of its own, so the fault was visible only on the toolbar buttons and their P / T / G
 /// shortcuts.</para>
 ///
 /// <para>Delete is the sharper reason this had to change: with a selection still live under an armed

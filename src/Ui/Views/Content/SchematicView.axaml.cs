@@ -361,22 +361,25 @@ public partial class SchematicView : UserControl
             case Key.T:
                 vm.BeginPlacement(SymbolKind.Term);
                 SchematicCanvasCtrl.Focus();
+                SchematicCanvasCtrl.ShowPlacementGhostAtPointer();
                 e.Handled = true;
                 break;
             case Key.P:
                 vm.BeginPlacement(SymbolKind.Pin);
                 SchematicCanvasCtrl.Focus();
+                SchematicCanvasCtrl.ShowPlacementGhostAtPointer();
                 e.Handled = true;
                 break;
-            // Shift+G — Place Ground (plain G stays snap-mode cycle, below).
+            // Shift+G — cycle the snap mode (rare); plain G — Place Ground (common), below.
             case Key.G when e.KeyModifiers.HasFlag(KeyModifiers.Shift):
-                vm.BeginPlacement(SymbolKind.Ground);
-                SchematicCanvasCtrl.Focus();
+                vm.CycleSnapMode();
+                UpdateSnapModeButton();
                 e.Handled = true;
                 break;
             case Key.G:
-                vm.CycleSnapMode();
-                UpdateSnapModeButton();
+                vm.BeginPlacement(SymbolKind.Ground);
+                SchematicCanvasCtrl.Focus();
+                SchematicCanvasCtrl.ShowPlacementGhostAtPointer();
                 e.Handled = true;
                 break;
         }
@@ -447,7 +450,7 @@ public partial class SchematicView : UserControl
         var mode = Vm?.SnapMode ?? SnapMode.FineGrid;
         SnapModeBtn.Classes.Set("snap-connection", mode == SnapMode.ConnectionGrid);
         SnapModeBtn.Classes.Set("snap-fine",       mode == SnapMode.FineGrid);
-        ToolTip.SetTip(SnapModeBtn, Vm?.SnapModeTooltip ?? "Snap: Off  (G)");
+        ToolTip.SetTip(SnapModeBtn, Vm?.SnapModeTooltip ?? "Snap: Off  (Shift+G)");
     }
 
     // ── Hierarchy toolbar ─────────────────────────────────────────────────────
