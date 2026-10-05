@@ -50,9 +50,16 @@ public sealed record Em3dLayoutSolidsOptions(double? FMaxHz, double TempC, bool 
     public bool FloorAllowed { get; init; } = true;
 
     /// <summary>A planar setup previewed in 3D, for VIEWING only: every laterally unbounded slab is drawn to
-    /// <see cref="SlabLateralBound"/>'s shape rather than across the air box. The planar solve still treats
+    /// <see cref="SlabLateralBound"/>'s shape rather than across the air box, and one with no outline or copper to
+    /// take a shape from is not drawn at all. The planar solve still treats
     /// every dielectric as laterally infinite; nothing a solver reads is built this way.</summary>
     public bool DisplaySlabs { get; init; }
+
+    /// <summary>A picture, never a solve: a layout with no conductor artwork is drawn when it has wires, and a wire end
+    /// over no conductor lands on an undrawn pad. What a solve would have refused on is kept in
+    /// <see cref="Em3dLayoutSolids.Builder.PadRefusal"/>. The bug this answers: a wBond placed in a schematic and pushed
+    /// to an empty layout by Update Layout from Schematic has wires and no artwork, so its 3D view showed nothing.</summary>
+    public bool PadsOptional { get; init; }
 }
 
 /// <summary>A layout's geometry as the 3D problem's vocabulary: solids, sheets and materials, and where
@@ -136,6 +143,10 @@ public static class Em3dLayoutSolids
         public double FloorZ { get; private set; } = double.NaN;
         public bool FloorStatedAway { get; private set; }
         public Em3dWireBuild? WireBuild { get; private set; }
+
+        /// <summary>With <see cref="Em3dLayoutSolidsOptions.PadsOptional"/>: the refusal a solve would have stopped on —
+        /// no conductor artwork, or a wire end over no pad. Null otherwise.</summary>
+        public string? PadRefusal { get; private set; }
 
         /// <summary>The content's extent, metres — what an air box pads.</summary>
         public double Cx0 { get; private set; } = double.PositiveInfinity;
@@ -259,11 +270,13 @@ public static class Em3dLayoutSolids
                     (polysByBand.TryGetValue(level, out var l) ? l : polysByBand[level] = [])
                         .Add((poly, shape.Net is { Length: > 0 } n ? n : null, shape.Layer));
 
-            if (polysByBand.Count == 0)
-                return $"This EM setup is pointed at geometry with nothing on a layer bound to a " +
-                       $"conductor entry in technology '{tech.Name}', so there is no metal to put in a 3D " +
-                       "problem. Draw the artwork on a conductor layer, or bind the layer it is on to a " +
-                       "conductor entry in the technology editor's Stackup tab.";
+            string? noMetal = polysByBand.Count > 0 ? null :
+                $"This EM setup is pointed at geometry with nothing on a layer bound to a " +
+                $"conductor entry in technology '{tech.Name}', so there is no metal to put in a 3D " +
+                "problem. Draw the artwork on a conductor layer, or bind the layer it is on to a " +
+                "conductor entry in the technology editor's Stackup tab.";
+            // A picture of wires alone is still a picture: the refusal waits until the wires are known.
+            if (noMetal is not null && !options.PadsOptional) return noMetal;
 
             // ── Vias: spans resolved once, geometry after the floor is known ─────────────────
             int unspanned = 0;
@@ -476,11 +489,14 @@ public static class Em3dLayoutSolids
                 string wbondSource = wireSource.Path is { } wbPath
                     ? $".wBond '{Path.GetFileName(wbPath)}' Materials" : "the .wBond's Materials";
                 WireBuild = Em3dWires.Build(wireSource, pads, zOrigin, tech, tempC,
-                                            (m, fromWBond) => Add(m, fromWBond ? wbondSource : TechnologySource(m.Name)));
+                                            (m, fromWBond) => Add(m, fromWBond ? wbondSource : TechnologySource(m.Name)),
+                                            options.PadsOptional);
                 Notes.AddRange(WireBuild.Notes);
                 WarningList.AddRange(WireBuild.Warnings);
                 if (WireBuild.Refusal is { } wireRefusal) return wireRefusal;
             }
+            if (noMetal is not null && WireBuild is not { Solids.Count: > 0 }) return noMetal;
+            PadRefusal = noMetal ?? WireBuild?.PadRefusal;
 
             Extent();
             return null;
@@ -591,8 +607,9 @@ public static class Em3dLayoutSolids
             foreach (var (body, z0, z1, drawnPolys) in _bodies)
             {
                 string material = BodyMaterial(tech.FindMaterial(body.Material)!, out var role);
-                order++;
                 IReadOnlyList<PlanarPolygon> polys = drawnPolys.Count == 0 && bound ? Bounded(z0, z1, body.Name) : drawnPolys;
+                if (polys.Count == 0 && options.DisplaySlabs) continue;   // nothing drawn bounds it: not in the picture
+                order++;
                 if (polys.Count == 0)
                     solids.Add(Origin(new Em3dSolid(body.Name, material, role, FullExtent(z0, z1), order),
                                       Em3dObjectKind.Body, null));
@@ -768,6 +785,9 @@ public static class Em3dLayoutSolids
                     return hull;
                 }
             }
+            // A planar preview draws no slab that nothing drawn bounds: a box around whatever else is in the picture —
+            // wires alone, on a layout with no artwork — showed a substrate nobody placed.
+            if (options.DisplaySlabs) return [];
             _slabBounds.Add((slab, SlabBoundKind.BoundingBox, null));
             return [new PlanarPolygon([new(Cx0, Cy0), new(Cx1, Cy0), new(Cx1, Cy1), new(Cx0, Cy1)])];
         }

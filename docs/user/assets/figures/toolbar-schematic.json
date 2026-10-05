@@ -61,7 +61,7 @@
       "Index": 6,
       "Slot": 6,
       "Id": "PlaceGroundBtn",
-      "Tooltip": "Place Ground  (Shift\u002BG)",
+      "Tooltip": "Place Ground  (G)",
       "Icon": "symbol:Ground",
       "Command": null,
       "Kind": "button"
@@ -160,7 +160,7 @@
       "Index": 14,
       "Slot": 17,
       "Id": "SnapModeBtn",
-      "Tooltip": "Snap: Fine Grid  (G)",
+      "Tooltip": "Snap: Fine Grid  (Shift\u002BG)",
       "Icon": "Grid",
       "Command": null,
       "Kind": "button"

@@ -16670,3 +16670,27 @@ own list, shipped and example copies alike; `Gate14` compares the records with t
 technology's own Gold and Copper took the library's `Appearance` too (no `Color`: the library states none for them, so they
 keep their layer's colour in the ordinary view).
 
+
+## A planar setup's 3D picture draws wires that have no pad yet (2026-10-05)
+
+A wBond placed in a schematic and pushed to a fresh layout by Update Layout from Schematic leaves the cell with a
+`.wBond` sidecar and an EMPTY `.clay` (WB23: no wire enters a `.clay`). The EM button makes a planar setup for it, and
+Show 3D said "Nothing to show: … nothing on a layer bound to a conductor …". Two refusals stood in the way, both correct
+for a SOLVE: `Em3dLayoutSolids.Prepare` refused a layout with no conductor artwork before it ever read the wires, and
+`Em3dWires.Build` refused a wire end over no conductor ("a 3D model does not put a foot on nothing").
+
+The planar preview is a picture, and it already draws a layout whose ports would refuse (`portsOptional`). It now also
+passes `padsOptional` (`Em3dGenerator.Generate` → `Em3dLayoutSolidsOptions.PadsOptional` → `Em3dWires.Build`): the
+no-artwork refusal waits until the wires are known and is returned only when there are no wires either, and an end over
+no conductor lands on an UNDRAWN pad named `(no pad)` whose top is the end's axis z less half a diameter. That is kernel W's
+convention, so a `.wBond` end is not moved. The square is sized to hold the foot, so no overhang warning is raised. What a solve would have refused on is kept in `PadRefusal` and is the picture's
+first note (`Viewer3DViewModel.NotSolvableNote`). A solve, and a 3D setup's own view, are unchanged: neither passes the
+flag. Gate: `Viewer3DFrameGateTests.APlanarSetupOverWiresAlone_DrawsTheWires_AndSaysItWouldNotRun`.
+
+**Follow-up, same day: the picture drew a substrate and an air box nobody placed.** With no artwork, `Bounded`'s last
+fallback — the bounding box of everything in the picture — wrapped the technology's dielectric round the wires alone, so a
+wBond-only layout showed the workspace technology's laminate slab. In a planar preview (`DisplaySlabs`) a slab or body with
+no board outline and no copper above or below now is NOT DRAWN; an instance (`.c3d`) keeps the bounding-box fallback. The
+viewer's planar path also drops the generator's air solid and the air-box faces and edges (`DrawAirBox: false`), since a
+planar solve has no air box; the 3D editor already draws none when a document has no setup. A wires-only layout's
+picture is now its wires and nothing else, which is what the 2D layout shows.

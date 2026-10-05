@@ -3,8 +3,8 @@ title: wBond
 slug: reference/wbond.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > wBond
-lede: Bondwire arrays: geometry, inductance, the 3D kernel, and S-parameters out.
-keywords: bondwire, bond wire, wirebond, wire bond, ribbon, die attach, package, wire temperature, bond wire temperature, WireTemp, TempStart, TempEnd, FixedTemp
+lede: Bondwire arrays: geometry, inductance, wire temperature, three levels of solver, and S-parameters out.
+keywords: bondwire, bond wire, wirebond, wire bond, ribbon, die attach, package, wire temperature, bond wire temperature, WireTemp, TempStart, TempEnd, FixedTemp, WireTempState, conductive balance, heat equation, thermal runaway, fusing current, skin effect heating, current sharing, MoM, method of moments, FEM, FDTD, Palace, openEMS, ground step, split ground
 ---
 
 <nav class="toc">
@@ -19,10 +19,11 @@ keywords: bondwire, bond wire, wirebond, wire bond, ribbon, die attach, package,
 <li><a href="#physics">How the inductance is computed</a></li>
 <li><a href="#array-basis">The array-basis reduction, derived</a></li>
 <li><a href="#capacitance">Capacitance, Use Capacitance and ε<sub>r</sub></a></li>
+<li><a href="#wire-temperature">Wire temperature in DC and harmonic-balance runs</a></li>
 <li><a href="#limits">What the model does not include</a></li>
-<li><a href="#wire-temperature">Wire temperature from a DC or large-signal run</a></li>
+<li><a href="#fidelity">Equations, the MoM kernel, or FEM and FDTD</a></li>
 <li><a href="#kernel">The 3D MoM kernel, and how it solves fast</a></li>
-<li><a href="#fem">MoM and FEM, compared honestly</a></li>
+<li><a href="#fem">FEM and FDTD: the most accurate answer</a></li>
 <li><a href="#sparams">S-parameters out: lumped and distributed</a></li>
 <li><a href="#parameters">Parameters</a></li>
 <li><a href="#files">The .wBond file, and DXF</a></li>
@@ -42,10 +43,18 @@ them into arrays, and the component computes each array's inductance, the mutual
 arrays, and the capacitance to the plane below — as a circuit element you simulate with, or as a
 Touchstone file.
 
-Everything in the fast path is **frequency-domain, quasi-static and closed-form**: no meshing, no
-solver, no Sommerfeld integral. That is what lets it re-solve inside a drag. A **3D method-of-moments
-kernel** sits behind it for when the quasi-static assumptions run out; both are described below. It is a
-bondwire solver and nothing else — the geometry it knows about is wires, pads and one ground plane.
+**It also tells you how hot the wires get.** Every DC, harmonic-balance and loadpull run of a design with a
+wBond solves each wire's temperature from the DC and harmonic currents the circuit put through it, with
+the metal's electrical and thermal conductivity following the temperature along the wire — see
+[Wire temperature](#wire-temperature), which gives every equation.
+
+**Three levels of answer, at three costs.** The **equations** — closed-form, quasi-static, no mesh and no
+solver — answer in microseconds, which is what lets the component re-solve inside a drag and is what
+the schematic simulates with. The **3D MoM kernel** solves the same wires as distributed conductors in
+seconds, for a quick EM answer. A **full 3D solve — FEM or FDTD** — is the most accurate, and the only one
+that sees what lies around the wires: a stepped or split ground, a cavity, a lid, a mould compound. The
+first two know about wires, pads and one flat ground plane, and nothing else; [Equations, the MoM kernel,
+or FEM and FDTD](#fidelity) says which to use when.
 
 ## The schematic side: one symbol, one pin pair per array {#schematic}
 
@@ -360,6 +369,237 @@ medium shortens by √ε<sub>r</sub>. At ε<sub>r</sub> = 4 a 1 mm wire is elect
 was in air — expect the lumped and distributed models to part company sooner than they do in air.</p>
 </div>
 
+## Wire temperature in DC and harmonic-balance runs {#wire-temperature}
+
+How hot do a power amplifier's output wires get at each drive level? A wBond answers that itself, with no
+mesh and no 3D run, in one of two modes set by the checkbox on its `Temp` row:
+
+- **Checked — fixed.** The wires are at `Temp`, and that is the temperature their resistance is evaluated at.
+- **Unchecked — solved** (what a newly placed wBond is). Each wire is held at `TempStart` where it leaves the
+  array's input pin and at `TempEnd` where it reaches the output pin, and its temperature in between is solved
+  from the currents the run found in it.
+
+**Why the defaults are 125 °C and 85 °C.** A power amplifier's output wire runs from a die pad, near the
+channel's heat, to a package lead on the case — typically 125 °C and 85 °C. They differ so that the two ends read
+as the independent settings they are.
+
+### What a run reports {#wt-output}
+
+**Wire temperature is an output of every DC, harmonic-balance, loadpull and loadpull-pursuit run** of a design
+with a wBond — and of any parametric sweep around one. It is the cube **`WireTemp`**, in °C, one trace per array
+(`WB1:Out` names instance `WB1`'s array `Out`); plot it against a swept `Pin` in the Data Display, or export it
+with the rest of the run. Only **each array's hottest wire is reported, at its hottest point** along its length —
+so with the ends at different temperatures, a gently heated wire reads its **hotter end** until the heat lifts its
+middle above it.
+A loadpull-pursuit run reports it on its follow-on loadpull, so a pursuit with `CreateLoadpullResult` off has none.
+A fixed-temperature wBond still reports its `Temp`, as a reminder that it was fixed. Beside it, `WireTempState`
+says how each number was found: 0 fixed, 1 solved, 2 no steady state, 3 the circuit itself did not converge
+there. States 2 and 3 leave `WireTemp` blank (NaN), and the Messages panel says which happened.
+
+**A current needs a path back to ground**, and so does its heat: a source driving the wires into an open
+circuit does not converge, and every wBond on that path reads state 3. A `Term` is such a path — its `Z` in
+DC and harmonic-balance runs alike. And a capacitor straight across the wires takes their RF current instead:
+at a few GHz a 1 µF part is microohms, and the wires stay at their end temperatures however hard they are driven.
+
+**A wire that carries no current** — behind a DC block in a DC run, or an array the circuit leaves open — reads
+the **hotter of its two end temperatures**: with no heat its temperature runs straight from one end to the
+other. That is an ordinary answer, not a warning.
+
+A solved wBond needs its wire metal to state a **thermal conductivity** (`ThermalK`). Every metal circuitRF ships
+does; a metal of your own that states none is refused by name in solved mode, and runs in fixed mode.
+
+### The heat equation along a wire {#wt-equation}
+
+The circuit run comes first; the temperature is solved from what it found. Each wire is treated as a
+one-dimensional conductor along its **3D arc length** *s* — the same length its resistance is computed
+from — with its two ends held and **no heat leaving through its sides**:
+
+```
+  d/ds ( k(T) · A · dT/ds )  +  q′(s)  =  0          0 < s < ℓ
+
+  T(0) = TempStart        the end at the array's input pin
+  T(ℓ) = TempEnd          the end at its output pin
+
+  A = π d²/4              the wire's cross-section;  ℓ its arc length;  k(T) its thermal conductivity
+```
+
+q′ is the heat generated per unit length, W/m. With no side loss, a wire's **shape does not enter** — only its
+length, diameter and metal do. Two wires of the same length and diameter run at the same temperature whatever
+their loop, if they carry the same current.
+
+### The heat: DC plus every harmonic {#wt-heat}
+
+A wire's thermal time constant is milliseconds; an RF period is nanoseconds. So the heat that matters is the
+**time average** of the dissipation, and for a current
+
+```
+  i(t) = I_dc + Σ_f Re{ Î(f) · e^(j2πft) }          Î(f) the PEAK phasor at frequency f
+```
+
+the time average of i² is I_dc² + Σ ½|Î(f)|²: every cross term between two different frequencies averages to
+zero. Each frequency is then charged at **its own** skin-effect resistance:
+
+```
+  q′(s) = I_dc² / ( σ(T)·A )  +  Σ_f  ½ · |Î(f)|² · R′_ac( f, σ(T) )
+
+  R′_ac(f, σ) = Re{ Z_int(ω) }       per unit length, from §4 of How the inductance is computed:
+                                     Z_int = R_dc · (γa/2) · I₀(γa)/I₁(γa),  γ = √(jωµσ)
+```
+
+The sum runs over **every frequency the run carries**: the harmonics of a one-tone harmonic-balance run, every
+mixing product of a two-tone one. Both terms are evaluated at the **local** temperature T(s), so a hotter stretch
+of wire, with its lower σ, generates more heat — that feedback is what the solve below has to balance, and it is
+what makes runaway possible.
+
+Deep in the skin regime R′_ac ∝ 1/√σ rather than 1/σ, so an RF current's heat rises with temperature about half
+as steeply as the same DC current's.
+
+### How an array's current divides among its wires {#wt-sharing}
+
+The circuit hands the temperature solve **one current per array** — each array's terminal current J_k at DC and
+at every harmonic. Dividing it among the array's wires is done two different ways, because DC and RF divide by
+different physics.
+
+**RF divides by inductance.** The per-wire currents come from the [array-basis reduction](#array-basis):
+
+```
+  Î_i(f) = Σ_k  S_ik · J_k(f)          S = L⁻¹ A L_arr          (wire i, array k)
+```
+
+S is real and frequency-independent: column *k* is the current each wire carries per ampere into array *k*.
+The sum over **every** array is a phasor sum with the phases the circuit solve found, so it includes the
+circulating current a neighbour induces in an array the circuit leaves idle — "no drive" is not "no heat". It is
+also where an array's **edge wires** come out carrying the most. The share uses **L**, not **R** + jω**L**:
+for a 1 mil gold wire 1 mm long, ωL is already ten times R at 100 MHz, and more above.
+
+**DC divides by resistance — at temperature, inside the solve.** An array's wires are in parallel between the
+same two pads, so they share one voltage V:
+
+```
+  R_i(T) · I_i  =  V              R_i(T) = ∫₀^ℓᵢ ds / ( σ(T(s)) · A )
+  Σ_i  I_i      =  I_dc           the array's DC current
+```
+
+A hotter wire has a higher resistance and takes less of the DC, which cools it; the solve finds the division
+and the temperatures together. Arrays share no DC current with each other, so **each array is solved on its
+own**.
+
+### The metal's σ(T) and k(T) {#wt-materials}
+
+Both conductivities come from the same [material](materials.html) records a 3D thermal run reads:
+
+```
+  σ(T) = σ₂₀ / ( 1 + α₂₀·(T − 20) )         when the metal states no σ(T) table
+  σ(T) = the σ(T) table, piecewise linear   when it does (the table wins over α₂₀)
+  k(T) = ThermalK                           a constant
+  k(T) = the k(T) table, piecewise linear   when the metal states one
+```
+
+A table is **held at its end rows** beyond them. Below the bottom row that is an ordinary answer. **Above the top
+row it is not**: with σ held, a wire's heat stops growing with its temperature, and a second, unphysical
+family of steady states appears hotter than the metal melts. So a state anywhere above the top row of either
+table is refused as a solution — gold's tables end at 1,027 °C, just below its melting point.
+
+### The conductive balance: how the solve works {#wt-algorithm}
+
+The solve is the **conductive balance** algorithm of the [3D thermal run](thermal.html#electrothermal), applied to
+wires that touch nothing but their two ends: the same Newton iteration, line search, stall rule and convergence
+test, on a one-dimensional mesh.
+
+**Discretisation.** Each wire is **16 second-order (quadratic) line elements** — 33 nodes — integrated by
+3-point Gauss quadrature. The count was chosen by measurement: on a 1 mil gold wire run near 600 °C, with both
+σ(T) and k(T) tabulated, halving the element size moves the maximum temperature by far less than 0.01 K. The
+Galerkin residual at node *a* is
+
+```
+  r_a = ∫ [ k(T)·A·T′·N_a′  −  N_a · q′(T) ] ds          N_a the node's quadratic shape function
+```
+
+**Unknowns, per array:** every interior node temperature of every wire, each wire's DC current I_i, and the
+array's voltage V. The two end nodes of every wire are fixed at `TempStart` and `TempEnd`.
+
+**Newton's method, with the full Jacobian.** The Jacobian carries the conduction stiffness and **both
+temperature slopes**: dk/dT in the conduction term and dσ/dT in the heating, at DC and at every harmonic (the
+slope of R′_ac with σ comes from the same Bessel evaluation as R′_ac itself). That is what lets the iteration
+converge quadratically even when the heating feeds back hard on the temperature.
+
+**Each step is solved by block elimination, never as a dense matrix.** The temperature block of one wire is
+banded — two sub- and two super-diagonals, from the quadratic elements — so each wire is factorised on its own in
+O(n), against two right-hand sides; eliminating its temperatures leaves one equation in its current; and
+eliminating the currents leaves **one scalar equation for V**. The cost is linear in the number of wires.
+
+**Line search.** A full Newton step is tried first, then halved — up to ten times — until the scaled residual
+falls *and* the state is physical: σ > 0, k > 0, finite, below 10⁷ °C, and inside the top rows of the tables.
+
+**Converged** when the last update is at most **10⁻⁶ of the temperature span** along the array (floored at
+1 mK) *and* both the heat residual and the current residual, each scaled by its own load, are below **10⁻⁸** (or
+their round-off floor). A solve that takes **30 Newton steps**, or three damped steps in a row (each at most ⅛ of
+a full step) that fail to halve the residual, has not converged.
+
+**Where it starts.** A cold start is the **exact zero-current solution** — the conduction profile between the
+two ends: a straight line for a constant k, solved to round-off when k varies — with every current zero. An
+array that carries nothing is therefore already at its answer and takes no step at all. Along a sweep, each
+point starts from the previous point's answer, with the new DC divided by conductance as the predictor.
+
+**When the full drive will not converge: continuation, and runaway.** Every current is scaled by a drive
+factor λ, and λ = 0 — the cold start — is solved exactly. The solve bisects λ between the highest drive that
+converged and the lowest that did not, always starting from the last converged state. When that bracket closes to
+**0.5 %**, the wire has **no steady state** at full drive: that is a **runaway**, reported as state 2, and the
+Messages panel names the drive and the last one that converged. Sixty solves without closing the bracket is
+also reported as state 2 — no steady state was found — but is not called a runaway.
+
+**The reported number** is the hottest point of each array: every element's quadratic is evaluated at its
+vertex as well as its nodes, so a peak that falls between two nodes is not missed.
+
+### Two hand checks, and why runaway exists {#wt-hand-check}
+
+The solver uses no closed form, but two exist, and both are what it is tested against.
+
+**Uniform heat, constant σ and k.** The equation integrates directly to a parabola on top of the straight line
+between the ends:
+
+```
+  T(s) = TempStart + (TempEnd − TempStart)·s/ℓ  +  q′·s·(ℓ − s) / (2·k·A)
+
+  rise at mid-span, over the straight line:   ΔT = q′·ℓ² / (8·k·A)
+```
+
+For a 1 mil gold wire 1 mm long carrying 1 A DC (σ = 4.1×10⁷ S/m, k = 318 W/(m·K)), q′ ≈ 48 W/m and the
+mid-span rise is about **37 K**. It grows as **ℓ²** and falls as **d⁴** — doubling a wire's length quadruples
+its rise; going from 1 mil to 2 mil wire divides it by sixteen at the same current.
+
+**DC with the α₂₀ law: the runaway current.** With σ = σ₂₀/(1 + α₂₀(T − 20)), constant k and DC only, the
+substitution u = 1 + α₂₀(T − 20) turns the equation into
+
+```
+  u″ + β² u = 0,          β² = I² α₂₀ / ( σ₂₀ · k · A² )
+```
+
+whose solution between two positive end values is a sine arch that stays finite only while **βℓ < π**. The
+current at which it stops is
+
+```
+  I_crit = (π · A / ℓ) · √( σ₂₀ · k / α₂₀ )
+```
+
+— about **2.9 A** for that 1 mil, 1 mm wire with α₂₀ = 0.0039 /K. Above it no steady temperature exists: the wire's
+heat grows with its temperature faster than conduction to its ends can carry it away. It scales as **A/ℓ**, so a
+wire twice as long runs away at half the current. RF heat rises with temperature more gently, so its runaway
+comes later, but by the same mechanism.
+
+### What it does not model {#wt-limits}
+
+- **No heat leaves through a wire's sides** — no mould compound, no air, no radiation. Every bit of heat flows
+  along the wire to its two ends, so the answer is an **upper bound**: a real wire in a mould runs cooler. The
+  mould is what the [3D thermal run](thermal.html#electrothermal) adds.
+- **The circuit is not re-solved at the temperature found.** The coupling runs one way, circuit to temperature.
+  The circuit's resistance is taken at the **hotter of the two ends**, in S-parameters and every other analysis —
+  a wire is never cooler than its hotter end, so its loss is never understated — and the run reports what the
+  wires actually reach.
+- **The ends are held.** `TempStart` and `TempEnd` are boundary conditions, not answers: the heat a wire sends into
+  its pads does not warm them. A die whose pad temperature depends on its own dissipation is a 3D thermal run.
+- **Steady state only**: a CW drive, not a pulse.
+
 ## What the model does not include {#limits}
 
 The two assumptions behind the array reduction are good, and they are assumptions.
@@ -388,87 +628,63 @@ The two assumptions behind the array reduction are good, and they are assumption
     the reactance stops dominating is visible there directly.
 - **No radiation, no retardation** in the quasi-static path. A 100 mil arc is λ/10 at about 11.8 GHz;
   segmented into filaments it is a distributed ladder good well past that, but the *coupling* is
-  quasi-static.
+  quasi-static. The [MoM kernel](#kernel) lets the current vary along the wire; a [FEM or FDTD](#fem) run is
+  full-wave.
 - **Proximity effect is not in the shipped resistance.** The Bessel term is the *isolated* wire. Real
   arrays at 4–8 mil pitch with 1 mil wire sit at s/a ≈ 8–16, where neighbour currents raise R above the
   isolated value. The mesher warns when any wire pair falls below **s/a = 6**.
 - **The ground plane is infinite, flat and perfect.** A stepped or split ground under the wires is a
   first-order error — 30–50% on L for a plane split — which is why the reference conductor is not
-  optional.
+  optional. The MoM kernel shares this assumption; a [FEM or FDTD](#fem) run does not, because it solves the
+  ground you drew.
 
-## Wire temperature from a DC or large-signal run {#wire-temperature}
+## Equations, the MoM kernel, or FEM and FDTD {#fidelity}
 
-How hot do a power amplifier's output wires get at each drive level? A wBond answers that itself, with no
-mesh and no 3D run, in one of two modes set by the checkbox on its `Temp` row:
+A bond wire can be solved three ways in circuitRF, and they are not rivals: each is the right tool at a different
+point in a design, and each is the check on the one before it.
 
-- **Checked — fixed.** The wires are at `Temp`, and that is the temperature their resistance is evaluated at.
-- **Unchecked — solved** (what a newly placed wBond is). Each wire is held at `TempStart` where it leaves the
-  array's input pin and at `TempEnd` where it reaches the output pin, and its temperature in between is solved
-  from the currents the run found in it.
+| | What it is | What it costs | What it sees |
+|---|---|---|---|
+| **Equations** | The closed forms above: Grover's filaments, images, the Bessel internal impedance, the array reduction | Microseconds. Re-solves inside a drag; it is what the schematic simulates with | Wires, pads, and one flat, infinite, perfect ground plane. Quasi-static |
+| **3D MoM kernel** | A thin-wire method-of-moments solve: every wire a distributed conductor, one unknown per segment | Seconds for a sweep | The same wires and the same ground plane — but the current is allowed to vary along each wire |
+| **FEM or FDTD** | A full 3D solve of the whole structure, by Palace (FEM) or openEMS (FDTD) | Minutes and gigabytes per run | Everything you draw: ground steps and splits, cavities, lids, lead frames, a mould compound of finite size |
 
-**Wire temperature is an output of every DC, harmonic-balance, loadpull and loadpull-pursuit run** of a design
-with a wBond — and of any parametric sweep around one. It is the cube **`WireTemp`**, in °C, one trace per array
-(`WB1:Out` names instance `WB1`'s array `Out`); plot it against a swept `Pin` in the Data Display, or export it
-with the rest of the run. Only **each array's hottest wire is reported, at its hottest point** along its length —
-so with the ends at different temperatures, a gently heated wire reads its **hotter end** until the heat lifts its
-middle above it.
-A loadpull-pursuit run reports it on its follow-on loadpull, so a pursuit with `CreateLoadpullResult` off has none.
-A fixed-temperature wBond still reports its `Temp`, as a reminder that it was fixed. Beside it, `WireTempState`
-says how each number was found: 0 fixed, 1 solved, 2 no steady state, 3 the circuit itself did not converge
-there. States 2 and 3 leave `WireTemp` blank (NaN), and the Messages panel says which happened.
+**Use the equations for very fast answers** — matching, tuning, sweeping a loop height, an optimiser, every
+harmonic-balance run. **Use the MoM kernel for a quick EM answer** when the wires are electrically long enough
+that a lumped L and C stop describing them. **Use FEM or FDTD for the most accurate answer**, and whenever the
+ground under the wires is not a single flat plane.
 
-**A current needs a path back to ground**, and so does its heat: a source driving the wires into an open
-circuit does not converge, and every wBond on that path reads state 3. A `Term` is such a path — its `Z` in
-DC and harmonic-balance runs alike. And a capacitor straight across the wires takes their RF current instead:
-at a few GHz a 1 µF part is microohms, and the wires stay at their end temperatures however hard they are driven.
+### The equations {#equations}
 
-**What heats a wire** is its share of the DC current plus every harmonic — or, in a two-tone run, every mixing
-product — each at its own skin-effect resistance, time-averaged (peak currents, ½|I|²R′ per harmonic). The
-conductivity σ(T) and the thermal conductivity k(T) of the metal follow the temperature along the wire, from the
-same material tables a 3D thermal run reads. The DC divides among an array's wires by their resistance at
-temperature; RF divides by their inductance, so an array's edge wires carry the most — and an array the circuit
-leaves idle still carries the circulating current its neighbours induce.
+Everything from [How the inductance is computed](#physics) through [Capacitance](#capacitance) is this tier.
+It is **frequency-domain, quasi-static and closed-form**: no mesh, no matrix solve beyond the N × N wire
+matrices, no Sommerfeld integral. The Array Inductance panel's live readout, the component's stamp in every
+analysis, and the *Lumped (analytic)* Touchstone export are all this tier, and they are the same numbers.
 
-**Why the defaults are 125 °C and 85 °C.** A power amplifier's output wire runs from a die pad, near the
-channel's heat, to a package lead on the case — typically 125 °C and 85 °C. They differ so that the two ends read
-as the independent settings they are.
-
-**What it does not model:**
-
-- **No heat leaves through a wire's sides** — no mould compound, no air, no radiation. Every bit of heat flows
-  along the wire to its two ends, so the answer is an **upper bound**: a real wire in a mould runs cooler. The
-  mould is what the [3D thermal run](thermal.html#electrothermal) adds.
-- **The circuit is not re-solved at the temperature found.** Its resistance is taken at the **hotter of the two
-  ends**, in S-parameters and every other analysis — a wire is never cooler than its hotter end, so its loss is
-  never understated — and the run reports what the wires actually reach.
-- Steady state only: a CW drive, not a pulse.
-
-**A wire that carries no current** — behind a DC block in a DC run, or an array the circuit leaves open — reads
-the **hotter of its two end temperatures**: with no heat its temperature runs straight from one end to the
-other. That is an ordinary answer, not a warning.
-
-**Runaway is an answer.** Above some current a wire has no steady temperature: its resistance rises as it heats,
-and past that current nothing balances. That point's `WireTemp` is blank (NaN), and the Messages panel says so
-once per array, naming the drive and the last one that converged.
-
-A solved wBond needs its wire metal to state a **thermal conductivity** (`ThermalK`). Every metal circuitRF ships
-does; a metal of your own that states none is refused by name in solved mode, and runs in fixed mode.
+It is exact for what it assumes, and its assumptions are listed plainly in
+[What the model does not include](#limits): equipotential pads, no retardation, an isolated wire's resistance,
+and one perfect ground plane.
 
 ## The 3D MoM kernel, and how it solves fast {#kernel}
 
 Behind the closed-form path is a **thin-wire method-of-moments kernel** — the Harrington/Richmond/NEC
-formulation, which is the founding problem of computational EM and a very good fit for this geometry.
+formulation, which is the founding problem of computational EM and a very good fit for this geometry. It is
+the *Distributed (MoM)* model in [Export Touchstone…](#sparams), and **Compare Distributed Model…** runs it
+beside the equations.
 
 **What it solves.** One unknown per wire segment: the axial current. Free charge at the segment ends
 pairs with it (the standard PEEC current/charge pairing). Three matrices:
 
 - **[Lp]** — partial inductance, Neumann double line integrals over segment pairs, closed-form for
   straight filaments;
-- **[P]** — coefficients of potential, free-space Coulomb kernel;
+- **[P]** — coefficients of potential, the Coulomb kernel with the ground plane's image;
 - **[Z_int]** — per-segment internal impedance from the exact round-wire Bessel solution, giving
   R(f) ∝ √f and internal L(f) with no fitting.
 
-Assembled, that is an RLC ladder per wire plus full mutual coupling, solved for the N-port.
+Assembled, that is an RLC ladder per wire plus full mutual coupling, solved for the N-port. What it adds over
+the equations is that **the current may vary along a wire** — a wire is a transmission line, not a lumped L
+with its capacitance at the ends. It is still quasi-static (no radiation) and still sees one flat ground plane:
+it is a distributed refinement of the equations, not a different picture of the package.
 
 **How it solves fast** — four mechanisms, none of them an adjective:
 
@@ -477,11 +693,10 @@ Assembled, that is an RLC ladder per wire plus full mutual coupling, solved for 
 2. **The thin-wire approximation collapses the cross-section into an analytic kernel.** At 40 GHz a
    1 mil radius is 0.0034 λ₀ — deeply valid. Nothing has to resolve the circumference, and nothing has
    to resolve the sub-micron skin depth inside it, because the internal impedance is closed-form.
-3. **The matrices are frequency-independent** in the quasi-static stage. Only [Z_int] and the
-   ω-weighting move with frequency, and both are closed-form per segment — so a 1001-point sweep is one
-   fill plus 1001 cheap evaluations.
-4. **There is no Sommerfeld integral and no domain truncation.** The ground plane is an image; the
-   radiation condition is exact. No airbox, no PML, no "is my boundary far enough".
+3. **The matrices are frequency-independent.** Only [Z_int] and the ω-weighting move with frequency, and
+   both are closed-form per segment — so a 1001-point sweep is one fill plus 1001 factorisations.
+4. **There is no Sommerfeld integral and no domain truncation.** The ground plane is an image. No airbox,
+   no PML, no "is my boundary far enough".
 
 **Sizing, so you know what you are asking for.** Segmentation is driven by geometric fidelity of the
 arc rather than by wavelength — a faithful loop needs roughly 25–30 segments over a 100 mil arc:
@@ -495,35 +710,60 @@ arc rather than by wavelength — a faithful loop needs roughly 25–30 segments
 Only the 200-wire extreme brushes the engine's unknown ceiling, and the predicted count is reported
 before the solve rather than discovered at allocation time.
 
-## MoM and FEM, compared honestly {#fem}
+## FEM and FDTD: the most accurate answer {#fem}
 
-If you already solve bond wires in a 3D FEM tool, here is the fair comparison. **Neither table is
-marketing**; both are the reason to pick one tool over the other for a given job.
+For the most accurate answer, the wires go into a **full 3D solve** with everything around them:
+[Palace](em-solvers.html#fem), a finite-element (FEM) solver, or [openEMS](em-solvers.html#fdtd), a
+finite-difference time-domain (FDTD) solver. There are two ways to get them there:
 
-### Where this kernel wins
+- **From the layout.** A wBond is the wire layer of a layout cell, so an [EM setup](em-3d.html#setting-up) on that
+  layout with its **Solver** set to Palace or openEMS builds the 3D model from the layout, its technology's
+  stackup and these wires, and runs it. The [bond wire example](em-3d.html#example-bond-wire) does exactly this
+  from a `.wBond`.
+- **In the 3D editor.** A [3D view](drawing-in-3d.html#wires) draws wires with the **W** tool, between any two
+  metal objects — including across hierarchy, from a die's pads inside a placed cell to a package's leads, which
+  a `.wBond` cannot do because it belongs to one layout. That is where a package, its lid and its mould are
+  drawn around them.
 
-| | Why it matters here |
+**What the 3D solve sees that the other two cannot:**
+
+| | Why it matters for a bond wire |
 |---|---|
-| Unknowns scale with wire count, not with the air between them | The 5 mil ↔ 300 mil pitch range is a distance in a Green's function, not a graded 3D volume mesh |
-| The 1 mil radius stops being a meshing problem | The thin-wire kernel is analytic; FEM must resolve the circumference *and* the skin depth inside it |
-| The radiation condition is exact | No airbox, no PML, no domain truncation — a whole class of setup error disappears |
-| Skin loss is closed-form | R(f) and internal L(f) from a Bessel expression, better than an impedance boundary on a coarse mesh |
-| Re-meshing a loop is re-sampling a polyline | Sweeping loop height, pitch or wire count — or Monte-Carlo over real bonder variance — is nearly free |
-| The output is already the currency | An N-port Touchstone from pad to pad, ready for a test bench |
+| **Ground discontinuities** | A split in the ground under the wires, a slot, a ground that ends partway along the span. The return current has to go around it; the image plane has no way to know. A plane split is a **30–50 %** error on L for the equations and the kernel |
+| **Ground steps** | A die on a pedestal, a carrier in a cavity, a substrate thinner than the die beside it — the return conductor is at two heights under one wire. The equations and the kernel have one plane at one z |
+| **Inhomogeneous dielectrics** | A mould cap of finite thickness with air above it, die attach, underfill, the substrate under the pads. The equations and the kernel have one homogeneous medium above the plane |
+| **The metal around the wires** | Lead frames with tie bars, clips, lids, cavity walls. Their currents and their coupling to the wires are part of the answer |
+| **Cavity resonance** | A lid over a cavity has modes; an eigenmode solve finds them directly ([The lid's resonance](drawing-in-3d.html#lid)) |
+| **Fields, and radiation** | A picture of E and J in the package, and a full-wave answer with retardation and radiation, where the other two are quasi-static |
 
-### Where FEM wins — plainly
+**FEM or FDTD.** Both handle the geometry above. **FEM suits bond wires better**: its tetrahedra follow the
+wire's curved surface, and adaptive refinement puts small elements only around it. FDTD runs on a rectilinear
+grid whose smallest cell sets its time step, so one 25 µm wire in a millimetre-scale package makes the whole run
+step finely — it is at its best on Manhattan metal over a broad band. Running **both** on one setup (*FEM &
+FDTD - Compare*) gives two answers from methods that share no numerics. The full comparison is
+[EM Solvers: MoM, FEM and FDTD](em-solvers.html).
 
-| | Why it hurts |
+**What it costs.** The single-wire example in [3D EM](em-3d.html#example-bond-wire) takes **179 s and 3.1 GB**
+in Palace at its Standard preset; the MoM kernel solves the same `.wBond` in a moment. When the two are compared,
+mind **where the terminals are**: the kernel's are the wire's own ends, while a 3D run's ports sit wherever the
+setup puts them — in that example at the pads' outer edges, so its answer also contains the pads and the drop to
+ground. Compare a 3D answer with the wBond's only after putting their reference planes in the same place.
+
+### Which to use {#which}
+
+| Situation | Use |
 |---|---|
-| **Inhomogeneous 3D dielectrics** | Mould compound, die attach, underfill. FEM assigns ε<sub>r</sub> per element and moves on; this kernel has one homogeneous medium above the plane |
-| **Complex 3D metal** | Lead frames with tie bars, clips, stepped cavities, lids. Surface area to mesh grows until the advantage erodes |
-| **Dense matrix** | O(N²) memory and O(N³) per frequency, against FEM's sparse. Wirebond N is small enough that it does not bind — but it is a real asymmetry |
-| **Field visualisation** | This gives you currents and S-parameters, not a picture of E inside the mould cap |
-| **Cavity resonance** | MoM conditions badly near a cavity mode; FEM is comfortable there |
-| **Maturity** | An established 3D FEM tool is the validated reference. A newer kernel is not |
+| Matching, tuning, optimising, any circuit run | **Equations** — what the schematic already simulates with |
+| Wires approaching λ/10, or an overmould shortening the wavelength | **MoM kernel** — *Compare Distributed Model…* shows where the two part company |
+| A single flat ground under every wire, and you want a second opinion | **MoM kernel**, then **FEM** as the independent reference |
+| A stepped, split or slotted ground, a cavity, a lid, a lead frame | **FEM** (or FDTD) — the other two cannot represent it |
+| A mould cap that the loops break through, or air above a thin mould | **FEM** |
+| "Is there a resonance in my band?" | **FEM, eigenmode** |
+| An answer you are about to commit to | **FEM & FDTD - Compare** |
 
-If your problem is a moulded package with a lead frame and a lid, use FEM. If it is 40 wires over a
-plane and you want to sweep the loop height, this is the faster and better-conditioned tool.
+**Each level checks the one before it.** The kernel and the equations must agree where the wires are
+electrically short; FEM and the kernel must agree over a flat plane once their reference planes match. Where
+they part company, the difference is the answer to "does my geometry need the next level?".
 
 ## S-parameters out: lumped and distributed {#sparams}
 

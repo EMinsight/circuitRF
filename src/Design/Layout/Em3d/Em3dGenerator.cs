@@ -72,6 +72,10 @@ public sealed record Em3dGenerationResult(Em3dProblem? Problem, string? Refusal,
     /// <summary>Why the problem has no ports, when it was generated with <c>portsOptional</c> and the ports refused:
     /// the refusal a solve would have stopped on. Null otherwise.</summary>
     public string? PortRefusal { get; init; }
+
+    /// <summary>Why a solve would have refused the geometry, when it was generated with <c>padsOptional</c> and drawn
+    /// anyway: no conductor artwork, or a wire end over no pad. Null otherwise.</summary>
+    public string? PadRefusal { get; init; }
 }
 
 /// <summary>What kind of thing in the design a solid or sheet of the 3D problem is.</summary>
@@ -168,20 +172,23 @@ public static class Em3dGenerator
     /// <c>.wBond</c> stem-paired with the layout (WB40), if it has one.</param>
     /// <param name="portsOptional">True for a picture, never for a solve: ports that refuse leave the problem with no
     /// ports and the refusal in <see cref="Em3dGenerationResult.PortRefusal"/>, so the geometry is still drawn.</param>
+    /// <param name="padsOptional">True for a picture, never for a solve: wires are drawn on a layout with no conductor
+    /// artwork, and a wire end over no conductor lands on an undrawn pad (<see cref="Em3dLayoutSolidsOptions.PadsOptional"/>);
+    /// the refusal is in <see cref="Em3dGenerationResult.PadRefusal"/>.</param>
     public static Em3dGenerationResult Generate(EmSetup setup, EmLayoutSource source, Technology tech,
                                                 Em3dWireSource? wires = null, bool displaySlabs = false,
-                                                bool portsOptional = false)
+                                                bool portsOptional = false, bool padsOptional = false)
     {
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(tech);
-        return new Run(setup, source, tech, wires, displaySlabs, portsOptional).Go();
+        return new Run(setup, source, tech, wires, displaySlabs, portsOptional, padsOptional).Go();
     }
 
     // ── One generation ─────────────────────────────────────────────────────────────────────────
 
     private sealed class Run(EmSetup setup, EmLayoutSource source, Technology tech, Em3dWireSource? wires, bool displaySlabs,
-                             bool portsOptional)
+                             bool portsOptional, bool padsOptional)
     {
         // brief-em3d-42 R-em3d42-2 — the geometry lives in Em3dLayoutSolids now; this class adds the sweep,
         // the ports, the air box, the air above the stack and the terminals around its stages. The notes
@@ -217,7 +224,7 @@ public static class Em3dGenerator
             // ── The geometry, up to the bond wires (Em3dLayoutSolids' first stage) ────────────
             var earlier = _notes;
             _g = new Em3dLayoutSolids.Builder(source, tech, wires,
-                new Em3dLayoutSolidsOptions(fMax, _tempC, Instance: false) { RegionSetup = setup, FloorAllowed = !floorStatedAway, DisplaySlabs = displaySlabs });
+                new Em3dLayoutSolidsOptions(fMax, _tempC, Instance: false) { RegionSetup = setup, FloorAllowed = !floorStatedAway, DisplaySlabs = displaySlabs, PadsOptional = padsOptional });
             _g.Notes.AddRange(earlier);
             _notes = _g.Notes;
             if (_g.Prepare() is { } geometryRefusal) return No(geometryRefusal);
@@ -320,6 +327,7 @@ public static class Em3dGenerator
                 NoAlpha = _g.NoAlphaList,
                 UnknownTemperature = _g.UnknownTemperatureList,
                 PortRefusal = _portRefusal,
+                PadRefusal = _g.PadRefusal,
             };
         }
 

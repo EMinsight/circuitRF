@@ -273,6 +273,42 @@ public sealed class Viewer3DFrameGateTests : IDisposable
         Assert.Equal(Viewer3DViewModel.PlanarPreviewNote, vm.Scene.Notes[^1]);
     }
 
+    /// <summary>A wBond pushed to a fresh layout by Update Layout from Schematic leaves wires and no artwork. The planar
+    /// setup's picture draws the wires on undrawn pads and says first why it would not run; a solve still refuses. It
+    /// draws the wires ALONE, as the 2D layout does: no substrate nobody placed, and no air box a planar solve lacks.</summary>
+    [Fact]
+    public void APlanarSetupOverWiresAlone_DrawsTheWires_AndSaysItWouldNotRun()
+    {
+        var (setup, source) = Em3dGeneratorTests.Microstrip();
+        setup.Solver3D = Em3dSolver.None;
+        string clay = Path.Combine(_root, "amp", "layout", "amp.clay");
+        Directory.CreateDirectory(Path.GetDirectoryName(clay)!);
+        CircuitRF.WBond.WBondIo.WriteFile(Path.ChangeExtension(clay, ".wBond"), CircuitRF.WBond.WBondEmbedding.DefaultDesign());
+        source.View.Shapes.Clear();
+        source = source with { AbsolutePath = clay };
+        Assert.Contains("nothing on a layer bound to a conductor",
+                        Em3dGenerator.Generate(setup, source, source.Technology!).Refusal);
+
+        using var ready = new ManualResetEventSlim(false);
+        using var vm = new Viewer3DViewModel(Path.Combine(_root, "amp.cem"),
+            () => new Viewer3DInputs(setup.Clone(), source, null, ColorTheme.BuiltIn, ColorVariant.Light),
+            () => new RecordingBackend(), () => _root, a => a());
+        vm.Source.SceneReady += _ => ready.Set();
+        vm.Regenerate();
+        Assert.True(ready.Wait(TimeSpan.FromSeconds(30)));
+        SpinWait.SpinUntil(() => vm.Scene.Generation == 1, TimeSpan.FromSeconds(5));
+
+        Assert.Contains(vm.Scene.Objects, o => o.Kind == Scene3DKind.Wire);
+        Assert.All(vm.Scene.Objects, o => Assert.Equal(Scene3DKind.Wire, o.Kind));
+        Assert.StartsWith(Viewer3DViewModel.NotSolvableNote + "This EM setup is pointed at geometry with nothing", vm.Scene.Notes[0]);
+
+        // File ▸ Export ▸ glTF… from this view: a scene with no document behind it writes every wire it draws.
+        var glb = CircuitRF.Ui.Tests.ThreeD.GlbFile.Validate(CircuitRF.Render.Scene3D.Export.GltfExport.Build(
+            vm.GltfSource("amp"), new CircuitRF.Render.Scene3D.Export.GltfExportOptions()).Bytes);
+        var names = glb.Nodes.Select(n => n.GetProperty("name").GetString()).ToList();
+        Assert.All(vm.Scene.Objects, o => Assert.Contains(o.Name, names));
+    }
+
     /// <summary>Show 3D is offered for a planar setup too: its layout through the stackup, with one
     /// note saying what it is — and no mesh or grid, which only a 3D solver makes.</summary>
     [Fact]

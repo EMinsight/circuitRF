@@ -147,6 +147,10 @@ internal sealed class Em3dWireBuild
     public List<string> Warnings { get; } = [];
     public string? Refusal { get; set; }
 
+    /// <summary>Built with <c>padsOptional</c>: the first wire end over no conductor — the refusal a solve would have
+    /// stopped on. Null when every end found a pad.</summary>
+    public string? PadRefusal { get; set; }
+
     /// <summary>Wire metals stating σ₂₀ but no α₂₀ (brief-em3d-5's temperature rows).</summary>
     public SortedSet<string> NoAlpha { get; } = new(StringComparer.Ordinal);
 }
@@ -194,8 +198,12 @@ public static class Em3dWires
 
     // ── The build ────────────────────────────────────────────────────────────────────────────
 
+    /// <param name="padsOptional">True for a picture, never for a solve: an end over no conductor lands on an UNDRAWN
+    /// pad at the height the <c>.wBond</c> states (its axis less half a diameter, kernel W's convention) instead of
+    /// refusing, and the refusal is kept in <see cref="Em3dWireBuild.PadRefusal"/>.</param>
     internal static Em3dWireBuild Build(Em3dWireSource source, IReadOnlyList<Em3dWirePad> pads, double zOriginM,
-                                        Technology tech, double tempC, Func<Em3dMaterial, bool, string> addMaterial)
+                                        Technology tech, double tempC, Func<Em3dMaterial, bool, string> addMaterial,
+                                        bool padsOptional = false)
     {
         var build  = new Em3dWireBuild();
         var design = source.Design;
@@ -241,11 +249,22 @@ public static class Em3dWires
                 foreach (var (pad, end, q) in new[] { (startPad, "start", pts[0]), (endPad, "end", pts[^1]) })
                     if (pad is null)
                     {
-                        build.Refusal = $"Wire {name}'s {end} at ({Um(q.X * 1e6)}, {Um(q.Y * 1e6)}) µm is over no conductor " +
-                                        "in this problem, so there is no pad for it to be bonded to. A 3D model does not put " +
-                                        "a foot on nothing: move the end onto its pad, or draw the pad.";
-                        return build;
+                        string noPad = $"Wire {name}'s {end} at ({Um(q.X * 1e6)}, {Um(q.Y * 1e6)}) µm is over no conductor " +
+                                     "in this problem, so there is no pad for it to be bonded to. A 3D model does not put " +
+                                     "a foot on nothing: move the end onto its pad, or draw the pad.";
+                        if (!padsOptional) { build.Refusal = noPad; return build; }
+                        build.PadRefusal ??= noPad;
                     }
+                if (padsOptional)
+                {
+                    // Wide enough to hold the foot, so an undrawn pad never reports an overhang.
+                    double half = 2 * (process.FootLength.Nm * 1e-9 + d);
+                    Em3dWirePad Undrawn(Point3 q) => new("(no pad)", new PlanarPolygon(
+                        [new EmPoint(q.X - half, q.Y - half), new EmPoint(q.X + half, q.Y - half),
+                         new EmPoint(q.X + half, q.Y + half), new EmPoint(q.X - half, q.Y + half)]), q.Z - d / 2);
+                    startPad ??= Undrawn(pts[0]);
+                    endPad   ??= Undrawn(pts[^1]);
+                }
 
                 var made = Resolve(new Em3dWireInput(name, pts, section, d, wire.StartBond ?? BondStyle.Wedge,
                                                      wire.EndBond ?? BondStyle.Wedge, process.FootLength.Nm,

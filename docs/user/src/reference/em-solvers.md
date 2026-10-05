@@ -261,7 +261,8 @@ So the honest summary is:
 | Vias stitching metal to ground | **MoM** | Vias are part of the planar model |
 | A patch antenna on a large ground | **MoM**, or FDTD for a finite board | MoM's ground is infinite and exact; a real board's finite ground needs 3D — see [Antennas](antennas.html) |
 | A signal via **through** a reference plane | **FEM** or **FDTD** | MoM refuses it: its return plane must lie below every conductor |
-| Bond wires | **FEM**, or wBond's own kernel | Curved, thin metal is FEM's strength; [wBond](wbond.html) is faster and FEM is its independent check |
+| Bond wires over one flat ground | **wBond**, then **FEM** | [wBond](wbond.html#fidelity)'s equations and kernel are far faster; curved, thin metal is FEM's strength, and FEM is their independent check |
+| Bond wires over a ground step or split, in a cavity, under a lid | **FEM** | wBond's ground is one flat plane; FEM solves the ground you drew |
 | A die in a package, leads, lids, connectors | **FEM** | Small features in an enclosed volume |
 | "Is there a cavity resonance in my band?" | **FEM, eigenmode** | Finds each mode's frequency and Q directly |
 | A package's capacitance or inductance matrix | **FEM, electrostatic or magnetostatic** | Only Palace computes them |

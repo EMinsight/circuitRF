@@ -1522,7 +1522,7 @@ and installs it for your user account only. It never needs administrator rights.
 <p>There are three ways to start an install, and they all do the same thing:</p>
 <ul>
 <li><strong>Install …</strong> on the message a 3D run gives when a solver is missing.</li>
-<li><strong>Install …</strong> on the solver's row in <a href="settings.html#em3d">Settings ▸ 3D EM</a>.</li>
+<li><strong>Install …</strong> on the solver's row in <a href="settings.html#em3d">Settings ▸ Solvers</a>.</li>
 <li><code>circuitrf solver install palace --yes</code> from a terminal, which is how a build machine does it.</li>
 </ul>
 <p><strong>Nothing is downloaded until you agree.</strong> First you see what will happen:</p>
@@ -1675,7 +1675,7 @@ is working there. When a run's estimate is past 150 % of the subsystem's memory,
 run offers <strong>Give the Subsystem More Memory First…</strong> too: it opens the same dialog and does not start the
 run, so press Simulate again afterwards. When even the largest value would leave the run short, the
 warning says so, offers no button, and names the remedies that shrink the problem instead.</p>
-<p><strong>Choosing where Palace runs.</strong> <a href="settings.html#em3d">Settings ▸ 3D EM</a> has a <strong>Location</strong> row
+<p><strong>Choosing where Palace runs.</strong> <a href="settings.html#em3d">Settings ▸ Solvers</a> has a <strong>Location</strong> row
 under Palace, on Windows only. <strong>Automatic</strong> (the default) uses a native Palace if there ever is one,
 then the subsystem. You can also choose <strong>Native</strong>, or one distribution by name. When Palace runs in the
 subsystem, a line under it reads the subsystem's memory each time the page is shown (&quot;Linux subsystem:
@@ -1691,7 +1691,7 @@ circuitRF removes <strong>only what it installed</strong>. A solver you installe
 <code>PATH</code>, in Spack or in conda, has no Uninstall, and circuitRF never deletes it.</p>
 <p>There are three ways, and they all do the same thing:</p>
 <ul>
-<li><strong>Uninstall …</strong> under the solver's row in <a href="settings.html#em3d">Settings ▸ 3D EM</a>. There is one
+<li><strong>Uninstall …</strong> under the solver's row in <a href="settings.html#em3d">Settings ▸ Solvers</a>. There is one
 button for each version circuitRF installed.</li>
 <li><strong>Remove all 3D solvers …</strong> at the foot of that page. It removes every one after a single
 confirmation.</li>
@@ -1751,12 +1751,12 @@ folder, and their own <strong>Remove all 3D solvers</strong> removes them.</p>
 <p><strong>Where the solvers stay</strong>, they wait in your user folder. When you install circuitRF again it finds
 them and uses them without reinstalling, and their Settings rows still offer <strong>Uninstall …</strong>. To get
 the space back instead, use <strong>Remove all 3D solvers …</strong> in
-<a href="settings.html#em3d">Settings ▸ 3D EM</a> before you remove circuitRF.</p>
+<a href="settings.html#em3d">Settings ▸ Solvers</a> before you remove circuitRF.</p>
 <p><strong>Updating circuitRF never removes a solver.</strong></p>
 <h2 id="install-3d-solvers">Installing the 3D solvers by hand</h2>
 <p>A 3D setup (one whose <code>Solver3D</code> names Palace or openEMS) runs a solver circuitRF does not include. You
 install it yourself, and circuitRF finds it — or you name it in
-<a href="settings.html#em3d">Settings ▸ 3D EM</a>. <strong>circuitRF runs only the versions it has validated</strong>
+<a href="settings.html#em3d">Settings ▸ Solvers</a>. <strong>circuitRF runs only the versions it has validated</strong>
 and refuses any other, naming the validated ones, because a solver's input can change meaning between
 versions and the result would look plausible either way.</p>
 <table>
@@ -1831,7 +1831,7 @@ Spack's own install record instead — in <code>$SPACK_ROOT/opt/spack</code>, <c
 one core through MPI's <code>mpirun</code>, and the same record says which MPI this Palace was built against, so
 circuitRF uses exactly that <code>mpirun</code>. A different MPI's <code>mpirun</code> found on <code>PATH</code> can start the processes
 and then fail to connect them, so that one comes later in the search. If your install tree is somewhere else,
-name Palace (and <code>mpirun</code>, if you want more than one core) in Settings ▸ 3D EM. <code>which palace</code> and
+name Palace (and <code>mpirun</code>, if you want more than one core) in Settings ▸ Solvers. <code>which palace</code> and
 <code>which mpirun</code>, run with the environment loaded, print the two paths. Without an <code>mpirun</code>, Palace runs
 as a single process and the run's notes say so. Other platforms: <em>not yet verified</em> — see Palace's own
 documentation.
@@ -1843,7 +1843,7 @@ documentation.
 If you build Palace, you accept those terms. circuitRF distributes no copy of Palace, so it passes on
 none.</p>
 </div>
-<p>When a row in Settings ▸ 3D EM reads <em>validated</em>, the program is ready. <code>circuitrf explain</code> on a 3D
+<p>When a row in Settings ▸ Solvers reads <em>validated</em>, the program is ready. <code>circuitrf explain</code> on a 3D
 <code>.cem</code> gives the same answer from the command line, under <em>solvers</em>.</p>
 <h2 id="overlays">What the layout shows after a run</h2>
 <p>The layout canvas for the analysed <code>.clay</code> draws three overlays, all of them from the engine's own

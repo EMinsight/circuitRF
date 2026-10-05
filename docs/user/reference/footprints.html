@@ -135,6 +135,9 @@ technology is a <strong>board</strong>, and it lands carrying <code>smt:0201@N</
 size a person still places by hand. Everything else lands with <strong>None</strong>: a three-element
 branch, a PCell, an SnP, a source, a port and a placed cell are all things where guessing artwork
 would be putting a package on a model.</p>
+<p>A <strong>wBond</strong> has no Footprint row at all. A wirebond is made by a bonding machine, not
+placed by a pick-and-place one, and Update Layout writes its wires into the cell's
+<code>.wBond</code> rather than placing an instance — so there is no land pattern for it to name.</p>
 <p>It is applied <strong>at placement and never again</strong>. Change the workspace technology later
 and your parts keep the footprints they were authored with — a default that followed the technology
 around would be a design that changes when you open it somewhere else.</p>

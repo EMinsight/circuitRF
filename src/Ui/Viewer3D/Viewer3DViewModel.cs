@@ -234,10 +234,15 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     /// <summary>The one note a planar setup's 3D picture carries.</summary>
     public const string PlanarPreviewNote =
         "Planar setup, shown in 3D. The planar solve treats every dielectric as laterally infinite; each is drawn " +
-        "here to the board outline, or to the outline of the copper above and below it, for viewing only.";
+        "here to the board outline, or to the outline of the copper above and below it, for viewing only, and one " +
+        "with neither is not drawn. A planar solve has no air box, so none is shown.";
 
     /// <summary>What a planar setup's picture says first when its ports could not be built; the refusal follows.</summary>
     public const string PortsNotDrawnNote = "Shown without ports: ";
+
+    /// <summary>What a planar setup's picture says first when it was drawn with wires on no pad, or with no artwork at
+    /// all; the refusal a solve would stop on follows.</summary>
+    public const string NotSolvableNote = "Shown for a look, but would not run: ";
 
     private static Scene3DModel BuildPlanar(long gen, Viewer3DInputs inputs, EmLayoutSource source,
                                             Technology tech, CancellationToken ct)
@@ -247,13 +252,19 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         preview.Problem3D = Em3dProblemType.Driven;
         preview.Ports3D = [];
         // Ports that would refuse a solve do not blank the picture: it exists for a look, and a layout with no port
-        // labels yet, or one whose ports cannot be built in 3D, is exactly when the geometry is worth seeing.
-        var g = Em3dGenerator.Generate(preview, source, tech, displaySlabs: true, portsOptional: true);
+        // labels yet, or one whose ports cannot be built in 3D, is exactly when the geometry is worth seeing. Nor do
+        // wires with no pad under them — a wBond pushed to a fresh layout has wires and no artwork yet.
+        var g = Em3dGenerator.Generate(preview, source, tech, displaySlabs: true, portsOptional: true, padsOptional: true);
         ct.ThrowIfCancellationRequested();
         if (g.Problem is null) return Scene3DModel.Empty(gen, [g.Refusal ?? "the layout could not be built in 3D."]);
-        List<string> notes = g.PortRefusal is { } ports ? [PortsNotDrawnNote + ports, PlanarPreviewNote] : [PlanarPreviewNote];
-        return Scene3DBuilder.Build(g.Problem, gen, g.Origins, tech, inputs.Theme, inputs.Variant,
-                                    notes, new Scene3DBuildOptions(HideOutermostDielectric: false));
+        List<string> notes = [];
+        if (g.PadRefusal is { } pads) notes.Add(NotSolvableNote + pads);
+        if (g.PortRefusal is { } ports) notes.Add(PortsNotDrawnNote + ports);
+        notes.Add(PlanarPreviewNote);
+        // No air box and no air solid: the generator makes both for a 3D solve, and a planar one has neither.
+        var problem = g.Problem with { Solids = [.. g.Problem.Solids.Where(x => x.Name != Em3dGenerator.AirSolidName)] };
+        return Scene3DBuilder.Build(problem, gen, g.Origins, tech, inputs.Theme, inputs.Variant,
+                                    notes, new Scene3DBuildOptions(DrawAirBox: false, HideOutermostDielectric: false));
     }
 
     /// <summary>

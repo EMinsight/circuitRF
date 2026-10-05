@@ -75,6 +75,10 @@ the point at which an S-parameter analysis injects a wave and measures the scatt
 two Terms on a network and run S-parameters to get the 2-port S-matrix; their <code>Num</code> values
 (auto-assigned 1, 2, …) become the port indices you read as <code>S(2,1)</code>, etc. The
 <a href="components.html#p1tone">P1Tone</a> source can also act as a numbered port for power-driven work.</p>
+<p>In every other analysis a Term is the <strong>termination it stands for</strong>: a load of <code>Z</code> to its reference. A DC
+run sees its resistance (the real part of <code>Z</code>), and a harmonic-balance or loadpull run sees <code>Z</code> at every
+harmonic. So a bias or a current returning through a Term flows, exactly as it would through a 50 Ω
+instrument. Put a DC block in front of a Term on a biased node, as you would on a bench.</p>
 <h2 id="ground">A note on Ground</h2>
 <figure class="symbol"><span class="frame">
     <img class="sym-light" src="../assets/symbols/ground.svg" alt="Ground symbol">

@@ -159,7 +159,7 @@ installs the tools.</li>
 <p>It is done when the <code>$</code> prompt comes back. You can close the Ubuntu window.</p>
 <h3 id="step-install">5. Install Palace from circuitRF</h3>
 <ol>
-<li>In circuitRF, open <strong>Settings ▸ 3D EM</strong>.</li>
+<li>In circuitRF, open <strong>Settings ▸ Solvers</strong>.</li>
 <li>On the Palace row, choose <strong>Install Palace…</strong>.</li>
 <li>circuitRF shows what it is about to do: the version, every web address it will download from, the
 folder inside Ubuntu it installs into, and Palace's licence note. <strong>Nothing is downloaded until you
@@ -172,7 +172,7 @@ filesystem. If a build tool is still missing, nothing is downloaded, and the mes
 that installs it.</p>
 <h3 id="step-check">6. Check that it worked</h3>
 <p>When the build finishes, circuitRF checks the installed Palace before it says anything is done. The
-Palace row in <strong>Settings ▸ 3D EM</strong> then reads <em>Installed by circuitRF</em> and names the Ubuntu distribution
+Palace row in <strong>Settings ▸ Solvers</strong> then reads <em>Installed by circuitRF</em> and names the Ubuntu distribution
 it found it in.</p>
 <p>From here on you use Palace exactly as on any other computer. Simulate starts Ubuntu when it needs it,
 runs Palace there, and brings the results back. You never need to open the Ubuntu window again. To try
@@ -256,7 +256,7 @@ it, open one of the examples in <a href="em-3d.html#example">3D EM ▸ Walking t
 <h2 id="undo">Undoing all of it</h2>
 <p>Each of these removes one layer. Stop at whichever you like.</p>
 <ol>
-<li><strong>Palace.</strong> <strong>Uninstall Palace…</strong> in <strong>Settings ▸ 3D EM</strong> removes the folder circuitRF built inside
+<li><strong>Palace.</strong> <strong>Uninstall Palace…</strong> in <strong>Settings ▸ Solvers</strong> removes the folder circuitRF built inside
 Ubuntu. Ubuntu and the build tools stay.</li>
 <li><strong>Ubuntu, and everything in it.</strong> In an ordinary Terminal, run <code>wsl --unregister Ubuntu</code>. This
 deletes the Ubuntu virtual disk, including Palace, the build tools and any files you kept in your

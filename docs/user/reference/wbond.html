@@ -31,7 +31,7 @@
   <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › wBond</p>
 
   <h1>wBond</h1>
-  <p class="lede">Bondwire arrays: geometry, inductance, the 3D kernel, and S-parameters out.</p>
+  <p class="lede">Bondwire arrays: geometry, inductance, wire temperature, three levels of solver, and S-parameters out.</p>
 
 <nav class="toc">
 <h2>On this page</h2>
@@ -45,9 +45,11 @@
 <li><a href="#physics">How the inductance is computed</a></li>
 <li><a href="#array-basis">The array-basis reduction, derived</a></li>
 <li><a href="#capacitance">Capacitance, Use Capacitance and ε<sub>r</sub></a></li>
+<li><a href="#wire-temperature">Wire temperature in DC and harmonic-balance runs</a></li>
 <li><a href="#limits">What the model does not include</a></li>
+<li><a href="#fidelity">Equations, the MoM kernel, or FEM and FDTD</a></li>
 <li><a href="#kernel">The 3D MoM kernel, and how it solves fast</a></li>
-<li><a href="#fem">MoM and FEM, compared honestly</a></li>
+<li><a href="#fem">FEM and FDTD: the most accurate answer</a></li>
 <li><a href="#sparams">S-parameters out: lumped and distributed</a></li>
 <li><a href="#parameters">Parameters</a></li>
 <li><a href="#files">The .wBond file, and DXF</a></li>
@@ -63,10 +65,17 @@ dominant element in your match.</p>
 them into arrays, and the component computes each array's inductance, the mutual inductance between
 arrays, and the capacitance to the plane below — as a circuit element you simulate with, or as a
 Touchstone file.</p>
-<p>Everything in the fast path is <strong>frequency-domain, quasi-static and closed-form</strong>: no meshing, no
-solver, no Sommerfeld integral. That is what lets it re-solve inside a drag. A <strong>3D method-of-moments
-kernel</strong> sits behind it for when the quasi-static assumptions run out; both are described below. It is a
-bondwire solver and nothing else — the geometry it knows about is wires, pads and one ground plane.</p>
+<p><strong>It also tells you how hot the wires get.</strong> Every DC, harmonic-balance and loadpull run of a design with a
+wBond solves each wire's temperature from the DC and harmonic currents the circuit put through it, with
+the metal's electrical and thermal conductivity following the temperature along the wire — see
+<a href="#wire-temperature">Wire temperature</a>, which gives every equation.</p>
+<p><strong>Three levels of answer, at three costs.</strong> The <strong>equations</strong> — closed-form, quasi-static, no mesh and no
+solver — answer in microseconds, which is what lets the component re-solve inside a drag and is what
+the schematic simulates with. The <strong>3D MoM kernel</strong> solves the same wires as distributed conductors in
+seconds, for a quick EM answer. A <strong>full 3D solve — FEM or FDTD</strong> — is the most accurate, and the only one
+that sees what lies around the wires: a stepped or split ground, a cavity, a lid, a mould compound. The
+first two know about wires, pads and one flat ground plane, and nothing else; <a href="#fidelity">Equations, the MoM kernel,
+or FEM and FDTD</a> says which to use when.</p>
 <h2 id="schematic">The schematic side: one symbol, one pin pair per array</h2>
 <figure class="figure"><span class="frame">
 <span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="620" height="494" viewBox="0 0 620 494"><defs><path id="wbond-symbol-arrays_d0" d="M9 4.5Q9 4.61 8.99 4.72Q8.99 4.83 8.98 4.94Q8.97 5.05 8.95 5.16Q8.94 5.27 8.91 5.38Q8.89 5.49 8.87 5.59Q8.84 5.7 8.81 5.81Q8.77 5.91 8.74 6.02Q8.7 6.12 8.66 6.22Q8.62 6.32 8.57 6.42Q8.52 6.52 8.47 6.62Q8.42 6.72 8.36 6.81Q8.3 6.91 8.24 7Q8.18 7.09 8.11 7.18Q8.05 7.27 7.98 7.35Q7.91 7.44 7.83 7.52Q7.76 7.6 7.68 7.68Q7.6 7.76 7.52 7.83Q7.44 7.91 7.35 7.98Q7.27 8.05 7.18 8.11Q7.09 8.18 7 8.24Q6.91 8.3 6.81 8.36Q6.72 8.42 6.62 8.47Q6.52 8.52 6.42 8.57Q6.32 8.62 6.22 8.66Q6.12 8.7 6.02 8.74Q5.91 8.77 5.81 8.81Q5.7 8.84 5.59 8.87Q5.49 8.89 5.38 8.91Q5.27 8.94 5.16 8.95Q5.05 8.97 4.94 8.98Q4.83 8.99 4.72 8.99Q4.61 9 4.5 9Q4.39 9 4.28 8.99Q4.17 8.99 4.06 8.98Q3.95 8.97 3.84 8.95Q3.73 8.94 3.62 8.91Q3.51 8.89 3.41 8.87Q3.3 8.84 3.19 8.81Q3.09 8.77 2.98 8.74Q2.88 8.7 2.78 8.66Q2.68 8.62 2.58 8.57Q2.48 8.52 2.38 8.47Q2.28 8.42 2.19 8.36Q2.09 8.3 2 8.24Q1.91 8.18 1.82 8.11Q1.73 8.05 1.65 7.98Q1.56 7.91 1.48 7.83Q1.4 7.76 1.32 7.68Q1.24 7.6 1.17 7.52Q1.09 7.44 1.02 7.35Q0.9514 7.27 0.8856 7.18Q0.8198 7.09 0.7584 7Q0.697 6.91 0.6402 6.81Q0.5834 6.72 0.5314 6.62Q0.4793 6.52 0.432 6.42Q0.3848 6.32 0.3425 6.22Q0.3003 6.12 0.2631 6.02Q0.2258 5.91 0.1938 5.81Q0.1617 5.7 0.1349 5.59Q0.108 5.49 0.08647 5.38Q0.06491 5.27 0.04871 5.16Q0.0325 5.05 0.02167 4.94Q0.01084 4.83 0.00542 4.72Q0 4.61 0 4.5Q0 4.39 0.00542 4.28Q0.01084 4.17 0.02167 4.06Q0.0325 3.95 0.04871 3.84Q0.06491 3.73 0.08647 3.62Q0.108 3.51 0.1349 3.41Q0.1617 3.3 0.1938 3.19Q0.2258 3.09 0.2631 2.98Q0.3003 2.88 0.3425 2.78Q0.3848 2.68 0.432 2.58Q0.4793 2.48 0.5314 2.38Q0.5834 2.28 0.6402 2.19Q0.697 2.09 0.7584 2Q0.8198 1.91 0.8856 1.82Q0.9514 1.73 1.02 1.65Q1.09 1.56 1.17 1.48Q1.24 1.4 1.32 1.32Q1.4 1.24 1.48 1.17Q1.56 1.09 1.65 1.02Q1.73 0.9514 1.82 0.8856Q1.91 0.8198 2 0.7584Q2.09 0.697 2.19 0.6402Q2.28 0.5834 2.38 0.5314Q2.48 0.4793 2.58 0.432Q2.68 0.3848 2.78 0.3425Q2.88 0.3003 2.98 0.2631Q3.09 0.2258 3.19 0.1938Q3.3 0.1617 3.41 0.1349Q3.51 0.108 3.62 0.08647Q3.73 0.06491 3.84 0.04871Q3.95 0.0325 4.06 0.02167Q4.17 0.01084 4.28 0.00542Q4.39 0 4.5 0Q4.61 0 4.72 0.00542Q4.83 0.01084 4.94 0.02167Q5.05 0.0325 5.16 0.04871Q5.27 0.06491 5.38 0.08647Q5.49 0.108 5.59 0.1349Q5.7 0.1617 5.81 0.1938Q5.91 0.2258 6.02 0.2631Q6.12 0.3003 6.22 0.3425Q6.32 0.3848 6.42 0.432Q6.52 0.4793 6.62 0.5314Q6.72 0.5834 6.81 0.6402Q6.91 0.697 7 0.7584Q7.09 0.8198 7.18 0.8856Q7.27 0.9514 7.35 1.02Q7.44 1.09 7.52 1.17Q7.6 1.24 7.68 1.32Q7.76 1.4 7.83 1.48Q7.91 1.56 7.98 1.65Q8.05 1.73 8.11 1.82Q8.18 1.91 8.24 2Q8.3 2.09 8.36 2.19Q8.42 2.28 8.47 2.38Q8.52 2.48 8.57 2.58Q8.62 2.68 8.66 2.78Q8.7 2.88 8.74 2.98Q8.77 3.09 8.81 3.19Q8.84 3.3 8.87 3.41Q8.89 3.51 8.91 3.62Q8.94 3.73 8.95 3.84Q8.97 3.95 8.98 4.06Q8.99 4.17 8.99 4.28Q9 4.39 9 4.5Z" /><path id="wbond-symbol-arrays_d1" d="M0.5 20.5L0.5 3.5Q0.5 3.35 0.5144 3.21Q0.5289 3.06 0.5576 2.91Q0.5864 2.77 0.6292 2.63Q0.672 2.49 0.7284 2.35Q0.7848 2.22 0.8542 2.09Q0.9237 1.96 1.01 1.83Q1.09 1.71 1.18 1.6Q1.27 1.48 1.38 1.38Q1.48 1.27 1.6 1.18Q1.71 1.09 1.83 1.01Q1.96 0.9237 2.09 0.8542Q2.22 0.7848 2.35 0.7284Q2.49 0.672 2.63 0.6292Q2.77 0.5864 2.91 0.5576Q3.06 0.5289 3.21 0.5144Q3.35 0.5 3.5 0.5L26.5 0.5Q26.65 0.5 26.79 0.5144Q26.94 0.5289 27.09 0.5576Q27.23 0.5864 27.37 0.6292Q27.51 0.672 27.65 0.7284Q27.78 0.7848 27.91 0.8542Q28.04 0.9237 28.17 1.01Q28.29 1.09 28.4 1.18Q28.52 1.27 28.62 1.38Q28.73 1.48 28.82 1.6Q28.91 1.71 28.99 1.83Q29.08 1.96 29.15 2.09Q29.22 2.22 29.27 2.35Q29.33 2.49 29.37 2.63Q29.41 2.77 29.44 2.91Q29.47 3.06 29.49 3.21Q29.5 3.35 29.5 3.5L29.5 20.5Q29.5 20.65 29.49 20.79Q29.47 20.94 29.44 21.09Q29.41 21.23 29.37 21.37Q29.33 21.51 29.27 21.65Q29.22 21.78 29.15 21.91Q29.08 22.04 28.99 22.17Q28.91 22.29 28.82 22.4Q28.73 22.52 28.62 22.62Q28.52 22.73 28.4 22.82Q28.29 22.91 28.17 22.99Q28.04 23.08 27.91 23.15Q27.78 23.22 27.65 23.27Q27.51 23.33 27.37 23.37Q27.23 23.41 27.09 23.44Q26.94 23.47 26.79 23.49Q26.65 23.5 26.5 23.5L3.5 23.5Q3.35 23.5 3.21 23.49Q3.06 23.47 2.91 23.44Q2.77 23.41 2.63 23.37Q2.49 23.33 2.35 23.27Q2.22 23.22 2.09 23.15Q1.96 23.08 1.83 22.99Q1.71 22.91 1.6 22.82Q1.48 22.73 1.38 22.62Q1.27 22.52 1.18 22.4Q1.09 22.29 1.01 22.17Q0.9237 22.04 0.8542 21.91Q0.7848 21.78 0.7284 21.65Q0.672 21.51 0.6292 21.37Q0.5864 21.23 0.5576 21.09Q0.5289 20.94 0.5144 20.79Q0.5 20.65 0.5 20.5Z" /></defs><rect fill="white" width="620" height="494" /><rect fill="#F6F8FA" width="620" height="494" /><clipPath id="wbond-symbol-arrays_cl_0"><rect width="620" height="494" rx="8" ry="8" /></clipPath><g clip-path="url(#wbond-symbol-arrays_cl_0)"><path fill="none" stroke="#DCE3EA" stroke-width="1" stroke-miterlimit="10" d="M0.5 485.5L0.5 8.5Q0.5 8.3 0.5096 8.11Q0.5193 7.91 0.5385 7.72Q0.5578 7.52 0.5866 7.33Q0.6154 7.13 0.6537 6.94Q0.692 6.75 0.7398 6.56Q0.7875 6.37 0.8445 6.18Q0.9015 5.99 0.9676 5.8Q1.03 5.62 1.11 5.44Q1.18 5.26 1.27 5.08Q1.35 4.9 1.44 4.73Q1.54 4.56 1.64 4.39Q1.74 4.22 1.85 4.06Q1.96 3.89 2.07 3.73Q2.19 3.58 2.32 3.42Q2.44 3.27 2.57 3.13Q2.7 2.98 2.84 2.84Q2.98 2.7 3.13 2.57Q3.27 2.44 3.42 2.32Q3.58 2.19 3.73 2.07Q3.89 1.96 4.06 1.85Q4.22 1.74 4.39 1.64Q4.56 1.54 4.73 1.44Q4.9 1.35 5.08 1.27Q5.26 1.18 5.44 1.11Q5.62 1.03 5.8 0.9676Q5.99 0.9015 6.18 0.8445Q6.37 0.7875 6.56 0.7398Q6.75 0.692 6.94 0.6537Q7.13 0.6154 7.33 0.5866Q7.52 0.5578 7.72 0.5385Q7.91 0.5193 8.11 0.5096Q8.3 0.5 8.5 0.5L611.5 0.5Q611.7 0.5 611.89 0.5096Q612.09 0.5193 612.28 0.5385Q612.48 0.5578 612.67 0.5866Q612.87 0.6154 613.06 0.6537Q613.25 0.692 613.44 0.7398Q613.63 0.7875 613.82 0.8445Q614.01 0.9015 614.2 0.9676Q614.38 1.03 614.56 1.11Q614.74 1.18 614.92 1.27Q615.1 1.35 615.27 1.44Q615.44 1.54 615.61 1.64Q615.78 1.74 615.94 1.85Q616.11 1.96 616.27 2.07Q616.42 2.19 616.58 2.32Q616.73 2.44 616.87 2.57Q617.02 2.7 617.16 2.84Q617.3 2.98 617.43 3.13Q617.56 3.27 617.68 3.42Q617.81 3.58 617.93 3.73Q618.04 3.89 618.15 4.06Q618.26 4.22 618.36 4.39Q618.46 4.56 618.55 4.73Q618.65 4.9 618.73 5.08Q618.82 5.26 618.89 5.44Q618.97 5.62 619.03 5.8Q619.1 5.99 619.16 6.18Q619.21 6.37 619.26 6.56Q619.31 6.75 619.35 6.94Q619.39 7.13 619.41 7.33Q619.44 7.52 619.46 7.72Q619.48 7.91 619.49 8.11Q619.5 8.3 619.5 8.5L619.5 485.5Q619.5 485.7 619.49 485.89Q619.48 486.09 619.46 486.28Q619.44 486.48 619.41 486.67Q619.39 486.87 619.35 487.06Q619.31 487.25 619.26 487.44Q619.21 487.63 619.16 487.82Q619.1 488.01 619.03 488.2Q618.97 488.38 618.89 488.56Q618.82 488.74 618.73 488.92Q618.65 489.1 618.55 489.27Q618.46 489.44 618.36 489.61Q618.26 489.78 618.15 489.94Q618.04 490.11 617.93 490.27Q617.81 490.42 617.68 490.58Q617.56 490.73 617.43 490.87Q617.3 491.02 617.16 491.16Q617.02 491.3 616.87 491.43Q616.73 491.56 616.58 491.68Q616.42 491.81 616.27 491.93Q616.11 492.04 615.94 492.15Q615.78 492.26 615.61 492.36Q615.44 492.46 615.27 492.56Q615.1 492.65 614.92 492.73Q614.74 492.82 614.56 492.89Q614.38 492.97 614.2 493.03Q614.01 493.1 613.82 493.16Q613.63 493.21 613.44 493.26Q613.25 493.31 613.06 493.35Q612.87 493.39 612.67 493.41Q612.48 493.44 612.28 493.46Q612.09 493.48 611.89 493.49Q611.7 493.5 611.5 493.5L8.5 493.5Q8.3 493.5 8.11 493.49Q7.91 493.48 7.72 493.46Q7.52 493.44 7.33 493.41Q7.13 493.39 6.94 493.35Q6.75 493.31 6.56 493.26Q6.37 493.21 6.18 493.16Q5.99 493.1 5.8 493.03Q5.62 492.97 5.44 492.89Q5.26 492.82 5.08 492.73Q4.9 492.65 4.73 492.56Q4.56 492.46 4.39 492.36Q4.22 492.26 4.06 492.15Q3.89 492.04 3.73 491.93Q3.58 491.81 3.42 491.68Q3.27 491.56 3.13 491.43Q2.98 491.3 2.84 491.16Q2.7 491.02 2.57 490.87Q2.44 490.73 2.32 490.58Q2.19 490.42 2.07 490.27Q1.96 490.11 1.85 489.95Q1.74 489.78 1.64 489.61Q1.54 489.44 1.44 489.27Q1.35 489.1 1.27 488.92Q1.18 488.74 1.11 488.56Q1.03 488.38 0.9676 488.2Q0.9015 488.01 0.8445 487.82Q0.7875 487.63 0.7398 487.44Q0.692 487.25 0.6537 487.06Q0.6154 486.87 0.5866 486.67Q0.5578 486.48 0.5385 486.28Q0.5193 486.09 0.5096 485.89Q0.5 485.7 0.5 485.5Z" /><rect fill="white" transform="translate(1 1)" width="618" height="492" /><rect fill="#EEF2F5" transform="translate(1 1)" width="618" height="34" /><clipPath id="wbond-symbol-arrays_cl_1"><rect x="245" y="10" width="130" height="16" /></clipPath><g clip-path="url(#wbond-symbol-arrays_cl_1)"><text fill="#5C6B7A" transform="translate(245 10)" font-size="12.5" font-weight="600" font-family="Inter" x="0, 7.22, 10.48, 15.15, 22.37, 29.97, 33.23, 38.12, 46.25, 53.57, 56.68, 62.5, 65.6, 73.72, 80.93, 88.6, 96, 107.23, 114.41, 119.16, 122.42" y="12.11">
@@ -770,6 +779,175 @@ is the pessimistic (high-C) end.</p>
 medium shortens by √ε<sub>r</sub>. At ε<sub>r</sub> = 4 a 1 mm wire is electrically twice as long as it
 was in air — expect the lumped and distributed models to part company sooner than they do in air.</p>
 </div>
+<h2 id="wire-temperature">Wire temperature in DC and harmonic-balance runs</h2>
+<p>How hot do a power amplifier's output wires get at each drive level? A wBond answers that itself, with no
+mesh and no 3D run, in one of two modes set by the checkbox on its <code>Temp</code> row:</p>
+<ul>
+<li><strong>Checked — fixed.</strong> The wires are at <code>Temp</code>, and that is the temperature their resistance is evaluated at.</li>
+<li><strong>Unchecked — solved</strong> (what a newly placed wBond is). Each wire is held at <code>TempStart</code> where it leaves the
+array's input pin and at <code>TempEnd</code> where it reaches the output pin, and its temperature in between is solved
+from the currents the run found in it.</li>
+</ul>
+<p><strong>Why the defaults are 125 °C and 85 °C.</strong> A power amplifier's output wire runs from a die pad, near the
+channel's heat, to a package lead on the case — typically 125 °C and 85 °C. They differ so that the two ends read
+as the independent settings they are.</p>
+<h3 id="wt-output">What a run reports</h3>
+<p><strong>Wire temperature is an output of every DC, harmonic-balance, loadpull and loadpull-pursuit run</strong> of a design
+with a wBond — and of any parametric sweep around one. It is the cube <strong><code>WireTemp</code></strong>, in °C, one trace per array
+(<code>WB1:Out</code> names instance <code>WB1</code>'s array <code>Out</code>); plot it against a swept <code>Pin</code> in the Data Display, or export it
+with the rest of the run. Only <strong>each array's hottest wire is reported, at its hottest point</strong> along its length —
+so with the ends at different temperatures, a gently heated wire reads its <strong>hotter end</strong> until the heat lifts its
+middle above it.
+A loadpull-pursuit run reports it on its follow-on loadpull, so a pursuit with <code>CreateLoadpullResult</code> off has none.
+A fixed-temperature wBond still reports its <code>Temp</code>, as a reminder that it was fixed. Beside it, <code>WireTempState</code>
+says how each number was found: 0 fixed, 1 solved, 2 no steady state, 3 the circuit itself did not converge
+there. States 2 and 3 leave <code>WireTemp</code> blank (NaN), and the Messages panel says which happened.</p>
+<p><strong>A current needs a path back to ground</strong>, and so does its heat: a source driving the wires into an open
+circuit does not converge, and every wBond on that path reads state 3. A <code>Term</code> is such a path — its <code>Z</code> in
+DC and harmonic-balance runs alike. And a capacitor straight across the wires takes their RF current instead:
+at a few GHz a 1 µF part is microohms, and the wires stay at their end temperatures however hard they are driven.</p>
+<p><strong>A wire that carries no current</strong> — behind a DC block in a DC run, or an array the circuit leaves open — reads
+the <strong>hotter of its two end temperatures</strong>: with no heat its temperature runs straight from one end to the
+other. That is an ordinary answer, not a warning.</p>
+<p>A solved wBond needs its wire metal to state a <strong>thermal conductivity</strong> (<code>ThermalK</code>). Every metal circuitRF ships
+does; a metal of your own that states none is refused by name in solved mode, and runs in fixed mode.</p>
+<h3 id="wt-equation">The heat equation along a wire</h3>
+<p>The circuit run comes first; the temperature is solved from what it found. Each wire is treated as a
+one-dimensional conductor along its <strong>3D arc length</strong> <em>s</em> — the same length its resistance is computed
+from — with its two ends held and <strong>no heat leaving through its sides</strong>:</p>
+<pre><code>  d/ds ( k(T) · A · dT/ds )  +  q′(s)  =  0          0 &lt; s &lt; ℓ
+
+  T(0) = TempStart        the end at the array's input pin
+  T(ℓ) = TempEnd          the end at its output pin
+
+  A = π d²/4              the wire's cross-section;  ℓ its arc length;  k(T) its thermal conductivity
+</code></pre>
+<p>q′ is the heat generated per unit length, W/m. With no side loss, a wire's <strong>shape does not enter</strong> — only its
+length, diameter and metal do. Two wires of the same length and diameter run at the same temperature whatever
+their loop, if they carry the same current.</p>
+<h3 id="wt-heat">The heat: DC plus every harmonic</h3>
+<p>A wire's thermal time constant is milliseconds; an RF period is nanoseconds. So the heat that matters is the
+<strong>time average</strong> of the dissipation, and for a current</p>
+<pre><code>  i(t) = I_dc + Σ_f Re{ Î(f) · e^(j2πft) }          Î(f) the PEAK phasor at frequency f
+</code></pre>
+<p>the time average of i² is I_dc² + Σ ½|Î(f)|²: every cross term between two different frequencies averages to
+zero. Each frequency is then charged at <strong>its own</strong> skin-effect resistance:</p>
+<pre><code>  q′(s) = I_dc² / ( σ(T)·A )  +  Σ_f  ½ · |Î(f)|² · R′_ac( f, σ(T) )
+
+  R′_ac(f, σ) = Re{ Z_int(ω) }       per unit length, from §4 of How the inductance is computed:
+                                     Z_int = R_dc · (γa/2) · I₀(γa)/I₁(γa),  γ = √(jωµσ)
+</code></pre>
+<p>The sum runs over <strong>every frequency the run carries</strong>: the harmonics of a one-tone harmonic-balance run, every
+mixing product of a two-tone one. Both terms are evaluated at the <strong>local</strong> temperature T(s), so a hotter stretch
+of wire, with its lower σ, generates more heat — that feedback is what the solve below has to balance, and it is
+what makes runaway possible.</p>
+<p>Deep in the skin regime R′_ac ∝ 1/√σ rather than 1/σ, so an RF current's heat rises with temperature about half
+as steeply as the same DC current's.</p>
+<h3 id="wt-sharing">How an array's current divides among its wires</h3>
+<p>The circuit hands the temperature solve <strong>one current per array</strong> — each array's terminal current J_k at DC and
+at every harmonic. Dividing it among the array's wires is done two different ways, because DC and RF divide by
+different physics.</p>
+<p><strong>RF divides by inductance.</strong> The per-wire currents come from the <a href="#array-basis">array-basis reduction</a>:</p>
+<pre><code>  Î_i(f) = Σ_k  S_ik · J_k(f)          S = L⁻¹ A L_arr          (wire i, array k)
+</code></pre>
+<p>S is real and frequency-independent: column <em>k</em> is the current each wire carries per ampere into array <em>k</em>.
+The sum over <strong>every</strong> array is a phasor sum with the phases the circuit solve found, so it includes the
+circulating current a neighbour induces in an array the circuit leaves idle — &quot;no drive&quot; is not &quot;no heat&quot;. It is
+also where an array's <strong>edge wires</strong> come out carrying the most. The share uses <strong>L</strong>, not <strong>R</strong> + jω<strong>L</strong>:
+for a 1 mil gold wire 1 mm long, ωL is already ten times R at 100 MHz, and more above.</p>
+<p><strong>DC divides by resistance — at temperature, inside the solve.</strong> An array's wires are in parallel between the
+same two pads, so they share one voltage V:</p>
+<pre><code>  R_i(T) · I_i  =  V              R_i(T) = ∫₀^ℓᵢ ds / ( σ(T(s)) · A )
+  Σ_i  I_i      =  I_dc           the array's DC current
+</code></pre>
+<p>A hotter wire has a higher resistance and takes less of the DC, which cools it; the solve finds the division
+and the temperatures together. Arrays share no DC current with each other, so <strong>each array is solved on its
+own</strong>.</p>
+<h3 id="wt-materials">The metal's σ(T) and k(T)</h3>
+<p>Both conductivities come from the same <a href="materials.html">material</a> records a 3D thermal run reads:</p>
+<pre><code>  σ(T) = σ₂₀ / ( 1 + α₂₀·(T − 20) )         when the metal states no σ(T) table
+  σ(T) = the σ(T) table, piecewise linear   when it does (the table wins over α₂₀)
+  k(T) = ThermalK                           a constant
+  k(T) = the k(T) table, piecewise linear   when the metal states one
+</code></pre>
+<p>A table is <strong>held at its end rows</strong> beyond them. Below the bottom row that is an ordinary answer. <strong>Above the top
+row it is not</strong>: with σ held, a wire's heat stops growing with its temperature, and a second, unphysical
+family of steady states appears hotter than the metal melts. So a state anywhere above the top row of either
+table is refused as a solution — gold's tables end at 1,027 °C, just below its melting point.</p>
+<h3 id="wt-algorithm">The conductive balance: how the solve works</h3>
+<p>The solve is the <strong>conductive balance</strong> algorithm of the <a href="thermal.html#electrothermal">3D thermal run</a>, applied to
+wires that touch nothing but their two ends: the same Newton iteration, line search, stall rule and convergence
+test, on a one-dimensional mesh.</p>
+<p><strong>Discretisation.</strong> Each wire is <strong>16 second-order (quadratic) line elements</strong> — 33 nodes — integrated by
+3-point Gauss quadrature. The count was chosen by measurement: on a 1 mil gold wire run near 600 °C, with both
+σ(T) and k(T) tabulated, halving the element size moves the maximum temperature by far less than 0.01 K. The
+Galerkin residual at node <em>a</em> is</p>
+<pre><code>  r_a = ∫ [ k(T)·A·T′·N_a′  −  N_a · q′(T) ] ds          N_a the node's quadratic shape function
+</code></pre>
+<p><strong>Unknowns, per array:</strong> every interior node temperature of every wire, each wire's DC current I_i, and the
+array's voltage V. The two end nodes of every wire are fixed at <code>TempStart</code> and <code>TempEnd</code>.</p>
+<p><strong>Newton's method, with the full Jacobian.</strong> The Jacobian carries the conduction stiffness and <strong>both
+temperature slopes</strong>: dk/dT in the conduction term and dσ/dT in the heating, at DC and at every harmonic (the
+slope of R′_ac with σ comes from the same Bessel evaluation as R′_ac itself). That is what lets the iteration
+converge quadratically even when the heating feeds back hard on the temperature.</p>
+<p><strong>Each step is solved by block elimination, never as a dense matrix.</strong> The temperature block of one wire is
+banded — two sub- and two super-diagonals, from the quadratic elements — so each wire is factorised on its own in
+O(n), against two right-hand sides; eliminating its temperatures leaves one equation in its current; and
+eliminating the currents leaves <strong>one scalar equation for V</strong>. The cost is linear in the number of wires.</p>
+<p><strong>Line search.</strong> A full Newton step is tried first, then halved — up to ten times — until the scaled residual
+falls <em>and</em> the state is physical: σ &gt; 0, k &gt; 0, finite, below 10⁷ °C, and inside the top rows of the tables.</p>
+<p><strong>Converged</strong> when the last update is at most <strong>10⁻⁶ of the temperature span</strong> along the array (floored at
+1 mK) <em>and</em> both the heat residual and the current residual, each scaled by its own load, are below <strong>10⁻⁸</strong> (or
+their round-off floor). A solve that takes <strong>30 Newton steps</strong>, or three damped steps in a row (each at most ⅛ of
+a full step) that fail to halve the residual, has not converged.</p>
+<p><strong>Where it starts.</strong> A cold start is the <strong>exact zero-current solution</strong> — the conduction profile between the
+two ends: a straight line for a constant k, solved to round-off when k varies — with every current zero. An
+array that carries nothing is therefore already at its answer and takes no step at all. Along a sweep, each
+point starts from the previous point's answer, with the new DC divided by conductance as the predictor.</p>
+<p><strong>When the full drive will not converge: continuation, and runaway.</strong> Every current is scaled by a drive
+factor λ, and λ = 0 — the cold start — is solved exactly. The solve bisects λ between the highest drive that
+converged and the lowest that did not, always starting from the last converged state. When that bracket closes to
+<strong>0.5 %</strong>, the wire has <strong>no steady state</strong> at full drive: that is a <strong>runaway</strong>, reported as state 2, and the
+Messages panel names the drive and the last one that converged. Sixty solves without closing the bracket is
+also reported as state 2 — no steady state was found — but is not called a runaway.</p>
+<p><strong>The reported number</strong> is the hottest point of each array: every element's quadratic is evaluated at its
+vertex as well as its nodes, so a peak that falls between two nodes is not missed.</p>
+<h3 id="wt-hand-check">Two hand checks, and why runaway exists</h3>
+<p>The solver uses no closed form, but two exist, and both are what it is tested against.</p>
+<p><strong>Uniform heat, constant σ and k.</strong> The equation integrates directly to a parabola on top of the straight line
+between the ends:</p>
+<pre><code>  T(s) = TempStart + (TempEnd − TempStart)·s/ℓ  +  q′·s·(ℓ − s) / (2·k·A)
+
+  rise at mid-span, over the straight line:   ΔT = q′·ℓ² / (8·k·A)
+</code></pre>
+<p>For a 1 mil gold wire 1 mm long carrying 1 A DC (σ = 4.1×10⁷ S/m, k = 318 W/(m·K)), q′ ≈ 48 W/m and the
+mid-span rise is about <strong>37 K</strong>. It grows as <strong>ℓ²</strong> and falls as <strong>d⁴</strong> — doubling a wire's length quadruples
+its rise; going from 1 mil to 2 mil wire divides it by sixteen at the same current.</p>
+<p><strong>DC with the α₂₀ law: the runaway current.</strong> With σ = σ₂₀/(1 + α₂₀(T − 20)), constant k and DC only, the
+substitution u = 1 + α₂₀(T − 20) turns the equation into</p>
+<pre><code>  u″ + β² u = 0,          β² = I² α₂₀ / ( σ₂₀ · k · A² )
+</code></pre>
+<p>whose solution between two positive end values is a sine arch that stays finite only while <strong>βℓ &lt; π</strong>. The
+current at which it stops is</p>
+<pre><code>  I_crit = (π · A / ℓ) · √( σ₂₀ · k / α₂₀ )
+</code></pre>
+<p>— about <strong>2.9 A</strong> for that 1 mil, 1 mm wire with α₂₀ = 0.0039 /K. Above it no steady temperature exists: the wire's
+heat grows with its temperature faster than conduction to its ends can carry it away. It scales as <strong>A/ℓ</strong>, so a
+wire twice as long runs away at half the current. RF heat rises with temperature more gently, so its runaway
+comes later, but by the same mechanism.</p>
+<h3 id="wt-limits">What it does not model</h3>
+<ul>
+<li><strong>No heat leaves through a wire's sides</strong> — no mould compound, no air, no radiation. Every bit of heat flows
+along the wire to its two ends, so the answer is an <strong>upper bound</strong>: a real wire in a mould runs cooler. The
+mould is what the <a href="thermal.html#electrothermal">3D thermal run</a> adds.</li>
+<li><strong>The circuit is not re-solved at the temperature found.</strong> The coupling runs one way, circuit to temperature.
+The circuit's resistance is taken at the <strong>hotter of the two ends</strong>, in S-parameters and every other analysis —
+a wire is never cooler than its hotter end, so its loss is never understated — and the run reports what the
+wires actually reach.</li>
+<li><strong>The ends are held.</strong> <code>TempStart</code> and <code>TempEnd</code> are boundary conditions, not answers: the heat a wire sends into
+its pads does not warm them. A die whose pad temperature depends on its own dissipation is a 3D thermal run.</li>
+<li><strong>Steady state only</strong>: a CW drive, not a pulse.</li>
+</ul>
 <h2 id="limits">What the model does not include</h2>
 <p>The two assumptions behind the array reduction are good, and they are assumptions.</p>
 <ul>
@@ -800,27 +978,79 @@ the reactance stops dominating is visible there directly.</li>
 </li>
 <li><strong>No radiation, no retardation</strong> in the quasi-static path. A 100 mil arc is λ/10 at about 11.8 GHz;
 segmented into filaments it is a distributed ladder good well past that, but the <em>coupling</em> is
-quasi-static.</li>
+quasi-static. The <a href="#kernel">MoM kernel</a> lets the current vary along the wire; a <a href="#fem">FEM or FDTD</a> run is
+full-wave.</li>
 <li><strong>Proximity effect is not in the shipped resistance.</strong> The Bessel term is the <em>isolated</em> wire. Real
 arrays at 4–8 mil pitch with 1 mil wire sit at s/a ≈ 8–16, where neighbour currents raise R above the
 isolated value. The mesher warns when any wire pair falls below <strong>s/a = 6</strong>.</li>
 <li><strong>The ground plane is infinite, flat and perfect.</strong> A stepped or split ground under the wires is a
 first-order error — 30–50% on L for a plane split — which is why the reference conductor is not
-optional.</li>
+optional. The MoM kernel shares this assumption; a <a href="#fem">FEM or FDTD</a> run does not, because it solves the
+ground you drew.</li>
 </ul>
+<h2 id="fidelity">Equations, the MoM kernel, or FEM and FDTD</h2>
+<p>A bond wire can be solved three ways in circuitRF, and they are not rivals: each is the right tool at a different
+point in a design, and each is the check on the one before it.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>What it is</th>
+<th>What it costs</th>
+<th>What it sees</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Equations</strong></td>
+<td>The closed forms above: Grover's filaments, images, the Bessel internal impedance, the array reduction</td>
+<td>Microseconds. Re-solves inside a drag; it is what the schematic simulates with</td>
+<td>Wires, pads, and one flat, infinite, perfect ground plane. Quasi-static</td>
+</tr>
+<tr>
+<td><strong>3D MoM kernel</strong></td>
+<td>A thin-wire method-of-moments solve: every wire a distributed conductor, one unknown per segment</td>
+<td>Seconds for a sweep</td>
+<td>The same wires and the same ground plane — but the current is allowed to vary along each wire</td>
+</tr>
+<tr>
+<td><strong>FEM or FDTD</strong></td>
+<td>A full 3D solve of the whole structure, by Palace (FEM) or openEMS (FDTD)</td>
+<td>Minutes and gigabytes per run</td>
+<td>Everything you draw: ground steps and splits, cavities, lids, lead frames, a mould compound of finite size</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Use the equations for very fast answers</strong> — matching, tuning, sweeping a loop height, an optimiser, every
+harmonic-balance run. <strong>Use the MoM kernel for a quick EM answer</strong> when the wires are electrically long enough
+that a lumped L and C stop describing them. <strong>Use FEM or FDTD for the most accurate answer</strong>, and whenever the
+ground under the wires is not a single flat plane.</p>
+<h3 id="equations">The equations</h3>
+<p>Everything from <a href="#physics">How the inductance is computed</a> through <a href="#capacitance">Capacitance</a> is this tier.
+It is <strong>frequency-domain, quasi-static and closed-form</strong>: no mesh, no matrix solve beyond the N × N wire
+matrices, no Sommerfeld integral. The Array Inductance panel's live readout, the component's stamp in every
+analysis, and the <em>Lumped (analytic)</em> Touchstone export are all this tier, and they are the same numbers.</p>
+<p>It is exact for what it assumes, and its assumptions are listed plainly in
+<a href="#limits">What the model does not include</a>: equipotential pads, no retardation, an isolated wire's resistance,
+and one perfect ground plane.</p>
 <h2 id="kernel">The 3D MoM kernel, and how it solves fast</h2>
 <p>Behind the closed-form path is a <strong>thin-wire method-of-moments kernel</strong> — the Harrington/Richmond/NEC
-formulation, which is the founding problem of computational EM and a very good fit for this geometry.</p>
+formulation, which is the founding problem of computational EM and a very good fit for this geometry. It is
+the <em>Distributed (MoM)</em> model in <a href="#sparams">Export Touchstone…</a>, and <strong>Compare Distributed Model…</strong> runs it
+beside the equations.</p>
 <p><strong>What it solves.</strong> One unknown per wire segment: the axial current. Free charge at the segment ends
 pairs with it (the standard PEEC current/charge pairing). Three matrices:</p>
 <ul>
 <li><strong>[Lp]</strong> — partial inductance, Neumann double line integrals over segment pairs, closed-form for
 straight filaments;</li>
-<li><strong>[P]</strong> — coefficients of potential, free-space Coulomb kernel;</li>
+<li><strong>[P]</strong> — coefficients of potential, the Coulomb kernel with the ground plane's image;</li>
 <li><strong>[Z_int]</strong> — per-segment internal impedance from the exact round-wire Bessel solution, giving
 R(f) ∝ √f and internal L(f) with no fitting.</li>
 </ul>
-<p>Assembled, that is an RLC ladder per wire plus full mutual coupling, solved for the N-port.</p>
+<p>Assembled, that is an RLC ladder per wire plus full mutual coupling, solved for the N-port. What it adds over
+the equations is that <strong>the current may vary along a wire</strong> — a wire is a transmission line, not a lumped L
+with its capacitance at the ends. It is still quasi-static (no radiation) and still sees one flat ground plane:
+it is a distributed refinement of the equations, not a different picture of the package.</p>
 <p><strong>How it solves fast</strong> — four mechanisms, none of them an adjective:</p>
 <ol>
 <li><strong>Unknowns scale with wire count, not with the air between the wires.</strong> The 5 mil ↔ 300 mil pitch
@@ -828,11 +1058,10 @@ range is <em>a distance in a Green's function</em>, not two decades of volume me
 <li><strong>The thin-wire approximation collapses the cross-section into an analytic kernel.</strong> At 40 GHz a
 1 mil radius is 0.0034 λ₀ — deeply valid. Nothing has to resolve the circumference, and nothing has
 to resolve the sub-micron skin depth inside it, because the internal impedance is closed-form.</li>
-<li><strong>The matrices are frequency-independent</strong> in the quasi-static stage. Only [Z_int] and the
-ω-weighting move with frequency, and both are closed-form per segment — so a 1001-point sweep is one
-fill plus 1001 cheap evaluations.</li>
-<li><strong>There is no Sommerfeld integral and no domain truncation.</strong> The ground plane is an image; the
-radiation condition is exact. No airbox, no PML, no &quot;is my boundary far enough&quot;.</li>
+<li><strong>The matrices are frequency-independent.</strong> Only [Z_int] and the ω-weighting move with frequency, and
+both are closed-form per segment — so a 1001-point sweep is one fill plus 1001 factorisations.</li>
+<li><strong>There is no Sommerfeld integral and no domain truncation.</strong> The ground plane is an image. No airbox,
+no PML, no &quot;is my boundary far enough&quot;.</li>
 </ol>
 <p><strong>Sizing, so you know what you are asking for.</strong> Segmentation is driven by geometric fidelity of the
 arc rather than by wavelength — a faithful loop needs roughly 25–30 segments over a 100 mil arc:</p>
@@ -868,81 +1097,108 @@ arc rather than by wavelength — a faithful loop needs roughly 25–30 segments
 </table>
 <p>Only the 200-wire extreme brushes the engine's unknown ceiling, and the predicted count is reported
 before the solve rather than discovered at allocation time.</p>
-<h2 id="fem">MoM and FEM, compared honestly</h2>
-<p>If you already solve bond wires in a 3D FEM tool, here is the fair comparison. <strong>Neither table is
-marketing</strong>; both are the reason to pick one tool over the other for a given job.</p>
-<h3 id="where-this-kernel-wins">Where this kernel wins</h3>
+<h2 id="fem">FEM and FDTD: the most accurate answer</h2>
+<p>For the most accurate answer, the wires go into a <strong>full 3D solve</strong> with everything around them:
+<a href="em-solvers.html#fem">Palace</a>, a finite-element (FEM) solver, or <a href="em-solvers.html#fdtd">openEMS</a>, a
+finite-difference time-domain (FDTD) solver. There are two ways to get them there:</p>
+<ul>
+<li><strong>From the layout.</strong> A wBond is the wire layer of a layout cell, so an <a href="em-3d.html#setting-up">EM setup</a> on that
+layout with its <strong>Solver</strong> set to Palace or openEMS builds the 3D model from the layout, its technology's
+stackup and these wires, and runs it. The <a href="em-3d.html#example-bond-wire">bond wire example</a> does exactly this
+from a <code>.wBond</code>.</li>
+<li><strong>In the 3D editor.</strong> A <a href="drawing-in-3d.html#wires">3D view</a> draws wires with the <strong>W</strong> tool, between any two
+metal objects — including across hierarchy, from a die's pads inside a placed cell to a package's leads, which
+a <code>.wBond</code> cannot do because it belongs to one layout. That is where a package, its lid and its mould are
+drawn around them.</li>
+</ul>
+<p><strong>What the 3D solve sees that the other two cannot:</strong></p>
 <table>
 <thead>
 <tr>
 <th></th>
-<th>Why it matters here</th>
+<th>Why it matters for a bond wire</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Unknowns scale with wire count, not with the air between them</td>
-<td>The 5 mil ↔ 300 mil pitch range is a distance in a Green's function, not a graded 3D volume mesh</td>
+<td><strong>Ground discontinuities</strong></td>
+<td>A split in the ground under the wires, a slot, a ground that ends partway along the span. The return current has to go around it; the image plane has no way to know. A plane split is a <strong>30–50 %</strong> error on L for the equations and the kernel</td>
 </tr>
 <tr>
-<td>The 1 mil radius stops being a meshing problem</td>
-<td>The thin-wire kernel is analytic; FEM must resolve the circumference <em>and</em> the skin depth inside it</td>
+<td><strong>Ground steps</strong></td>
+<td>A die on a pedestal, a carrier in a cavity, a substrate thinner than the die beside it — the return conductor is at two heights under one wire. The equations and the kernel have one plane at one z</td>
 </tr>
 <tr>
-<td>The radiation condition is exact</td>
-<td>No airbox, no PML, no domain truncation — a whole class of setup error disappears</td>
+<td><strong>Inhomogeneous dielectrics</strong></td>
+<td>A mould cap of finite thickness with air above it, die attach, underfill, the substrate under the pads. The equations and the kernel have one homogeneous medium above the plane</td>
 </tr>
 <tr>
-<td>Skin loss is closed-form</td>
-<td>R(f) and internal L(f) from a Bessel expression, better than an impedance boundary on a coarse mesh</td>
-</tr>
-<tr>
-<td>Re-meshing a loop is re-sampling a polyline</td>
-<td>Sweeping loop height, pitch or wire count — or Monte-Carlo over real bonder variance — is nearly free</td>
-</tr>
-<tr>
-<td>The output is already the currency</td>
-<td>An N-port Touchstone from pad to pad, ready for a test bench</td>
-</tr>
-</tbody>
-</table>
-<h3 id="where-fem-wins-plainly">Where FEM wins — plainly</h3>
-<table>
-<thead>
-<tr>
-<th></th>
-<th>Why it hurts</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><strong>Inhomogeneous 3D dielectrics</strong></td>
-<td>Mould compound, die attach, underfill. FEM assigns ε<sub>r</sub> per element and moves on; this kernel has one homogeneous medium above the plane</td>
-</tr>
-<tr>
-<td><strong>Complex 3D metal</strong></td>
-<td>Lead frames with tie bars, clips, stepped cavities, lids. Surface area to mesh grows until the advantage erodes</td>
-</tr>
-<tr>
-<td><strong>Dense matrix</strong></td>
-<td>O(N²) memory and O(N³) per frequency, against FEM's sparse. Wirebond N is small enough that it does not bind — but it is a real asymmetry</td>
-</tr>
-<tr>
-<td><strong>Field visualisation</strong></td>
-<td>This gives you currents and S-parameters, not a picture of E inside the mould cap</td>
+<td><strong>The metal around the wires</strong></td>
+<td>Lead frames with tie bars, clips, lids, cavity walls. Their currents and their coupling to the wires are part of the answer</td>
 </tr>
 <tr>
 <td><strong>Cavity resonance</strong></td>
-<td>MoM conditions badly near a cavity mode; FEM is comfortable there</td>
+<td>A lid over a cavity has modes; an eigenmode solve finds them directly (<a href="drawing-in-3d.html#lid">The lid's resonance</a>)</td>
 </tr>
 <tr>
-<td><strong>Maturity</strong></td>
-<td>An established 3D FEM tool is the validated reference. A newer kernel is not</td>
+<td><strong>Fields, and radiation</strong></td>
+<td>A picture of E and J in the package, and a full-wave answer with retardation and radiation, where the other two are quasi-static</td>
 </tr>
 </tbody>
 </table>
-<p>If your problem is a moulded package with a lead frame and a lid, use FEM. If it is 40 wires over a
-plane and you want to sweep the loop height, this is the faster and better-conditioned tool.</p>
+<p><strong>FEM or FDTD.</strong> Both handle the geometry above. <strong>FEM suits bond wires better</strong>: its tetrahedra follow the
+wire's curved surface, and adaptive refinement puts small elements only around it. FDTD runs on a rectilinear
+grid whose smallest cell sets its time step, so one 25 µm wire in a millimetre-scale package makes the whole run
+step finely — it is at its best on Manhattan metal over a broad band. Running <strong>both</strong> on one setup (<em>FEM &amp;
+FDTD - Compare</em>) gives two answers from methods that share no numerics. The full comparison is
+<a href="em-solvers.html">EM Solvers: MoM, FEM and FDTD</a>.</p>
+<p><strong>What it costs.</strong> The single-wire example in <a href="em-3d.html#example-bond-wire">3D EM</a> takes <strong>179 s and 3.1 GB</strong>
+in Palace at its Standard preset; the MoM kernel solves the same <code>.wBond</code> in a moment. When the two are compared,
+mind <strong>where the terminals are</strong>: the kernel's are the wire's own ends, while a 3D run's ports sit wherever the
+setup puts them — in that example at the pads' outer edges, so its answer also contains the pads and the drop to
+ground. Compare a 3D answer with the wBond's only after putting their reference planes in the same place.</p>
+<h3 id="which">Which to use</h3>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Use</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Matching, tuning, optimising, any circuit run</td>
+<td><strong>Equations</strong> — what the schematic already simulates with</td>
+</tr>
+<tr>
+<td>Wires approaching λ/10, or an overmould shortening the wavelength</td>
+<td><strong>MoM kernel</strong> — <em>Compare Distributed Model…</em> shows where the two part company</td>
+</tr>
+<tr>
+<td>A single flat ground under every wire, and you want a second opinion</td>
+<td><strong>MoM kernel</strong>, then <strong>FEM</strong> as the independent reference</td>
+</tr>
+<tr>
+<td>A stepped, split or slotted ground, a cavity, a lid, a lead frame</td>
+<td><strong>FEM</strong> (or FDTD) — the other two cannot represent it</td>
+</tr>
+<tr>
+<td>A mould cap that the loops break through, or air above a thin mould</td>
+<td><strong>FEM</strong></td>
+</tr>
+<tr>
+<td>&quot;Is there a resonance in my band?&quot;</td>
+<td><strong>FEM, eigenmode</strong></td>
+</tr>
+<tr>
+<td>An answer you are about to commit to</td>
+<td><strong>FEM &amp; FDTD - Compare</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Each level checks the one before it.</strong> The kernel and the equations must agree where the wires are
+electrically short; FEM and the kernel must agree over a flat plane once their reference planes match. Where
+they part company, the difference is the answer to &quot;does my geometry need the next level?&quot;.</p>
 <h2 id="sparams">S-parameters out: lumped and distributed</h2>
 <figure class="figure"><span class="frame">
 <span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="850" height="574" viewBox="0 0 850 574"><defs><path id="wbond-sparameters_d0" d="M9 4.5Q9 4.61 8.99 4.72Q8.99 4.83 8.98 4.94Q8.97 5.05 8.95 5.16Q8.94 5.27 8.91 5.38Q8.89 5.49 8.87 5.59Q8.84 5.7 8.81 5.81Q8.77 5.91 8.74 6.02Q8.7 6.12 8.66 6.22Q8.62 6.32 8.57 6.42Q8.52 6.52 8.47 6.62Q8.42 6.72 8.36 6.81Q8.3 6.91 8.24 7Q8.18 7.09 8.11 7.18Q8.05 7.27 7.98 7.35Q7.91 7.44 7.83 7.52Q7.76 7.6 7.68 7.68Q7.6 7.76 7.52 7.83Q7.44 7.91 7.35 7.98Q7.27 8.05 7.18 8.11Q7.09 8.18 7 8.24Q6.91 8.3 6.81 8.36Q6.72 8.42 6.62 8.47Q6.52 8.52 6.42 8.57Q6.32 8.62 6.22 8.66Q6.12 8.7 6.02 8.74Q5.91 8.77 5.81 8.81Q5.7 8.84 5.59 8.87Q5.49 8.89 5.38 8.91Q5.27 8.94 5.16 8.95Q5.05 8.97 4.94 8.98Q4.83 8.99 4.72 8.99Q4.61 9 4.5 9Q4.39 9 4.28 8.99Q4.17 8.99 4.06 8.98Q3.95 8.97 3.84 8.95Q3.73 8.94 3.62 8.91Q3.51 8.89 3.41 8.87Q3.3 8.84 3.19 8.81Q3.09 8.77 2.98 8.74Q2.88 8.7 2.78 8.66Q2.68 8.62 2.58 8.57Q2.48 8.52 2.38 8.47Q2.28 8.42 2.19 8.36Q2.09 8.3 2 8.24Q1.91 8.18 1.82 8.11Q1.73 8.05 1.65 7.98Q1.56 7.91 1.48 7.83Q1.4 7.76 1.32 7.68Q1.24 7.6 1.17 7.52Q1.09 7.44 1.02 7.35Q0.9514 7.27 0.8856 7.18Q0.8198 7.09 0.7584 7Q0.697 6.91 0.6402 6.81Q0.5834 6.72 0.5314 6.62Q0.4793 6.52 0.432 6.42Q0.3848 6.32 0.3425 6.22Q0.3003 6.12 0.2631 6.02Q0.2258 5.91 0.1938 5.81Q0.1617 5.7 0.1349 5.59Q0.108 5.49 0.08647 5.38Q0.06491 5.27 0.04871 5.16Q0.0325 5.05 0.02167 4.94Q0.01084 4.83 0.00542 4.72Q0 4.61 0 4.5Q0 4.39 0.00542 4.28Q0.01084 4.17 0.02167 4.06Q0.0325 3.95 0.04871 3.84Q0.06491 3.73 0.08647 3.62Q0.108 3.51 0.1349 3.41Q0.1617 3.3 0.1938 3.19Q0.2258 3.09 0.2631 2.98Q0.3003 2.88 0.3425 2.78Q0.3848 2.68 0.432 2.58Q0.4793 2.48 0.5314 2.38Q0.5834 2.28 0.6402 2.19Q0.697 2.09 0.7584 2Q0.8198 1.91 0.8856 1.82Q0.9514 1.73 1.02 1.65Q1.09 1.56 1.17 1.48Q1.24 1.4 1.32 1.32Q1.4 1.24 1.48 1.17Q1.56 1.09 1.65 1.02Q1.73 0.9514 1.82 0.8856Q1.91 0.8198 2 0.7584Q2.09 0.697 2.19 0.6402Q2.28 0.5834 2.38 0.5314Q2.48 0.4793 2.58 0.432Q2.68 0.3848 2.78 0.3425Q2.88 0.3003 2.98 0.2631Q3.09 0.2258 3.19 0.1938Q3.3 0.1617 3.41 0.1349Q3.51 0.108 3.62 0.08647Q3.73 0.06491 3.84 0.04871Q3.95 0.0325 4.06 0.02167Q4.17 0.01084 4.28 0.00542Q4.39 0 4.5 0Q4.61 0 4.72 0.00542Q4.83 0.01084 4.94 0.02167Q5.05 0.0325 5.16 0.04871Q5.27 0.06491 5.38 0.08647Q5.49 0.108 5.59 0.1349Q5.7 0.1617 5.81 0.1938Q5.91 0.2258 6.02 0.2631Q6.12 0.3003 6.22 0.3425Q6.32 0.3848 6.42 0.432Q6.52 0.4793 6.62 0.5314Q6.72 0.5834 6.81 0.6402Q6.91 0.697 7 0.7584Q7.09 0.8198 7.18 0.8856Q7.27 0.9514 7.35 1.02Q7.44 1.09 7.52 1.17Q7.6 1.24 7.68 1.32Q7.76 1.4 7.83 1.48Q7.91 1.56 7.98 1.65Q8.05 1.73 8.11 1.82Q8.18 1.91 8.24 2Q8.3 2.09 8.36 2.19Q8.42 2.28 8.47 2.38Q8.52 2.48 8.57 2.58Q8.62 2.68 8.66 2.78Q8.7 2.88 8.74 2.98Q8.77 3.09 8.81 3.19Q8.84 3.3 8.87 3.41Q8.89 3.51 8.91 3.62Q8.94 3.73 8.95 3.84Q8.97 3.95 8.98 4.06Q8.99 4.17 8.99 4.28Q9 4.39 9 4.5Z" /><path id="wbond-sparameters_d1" d="M0.5 20.5L0.5 3.5Q0.5 3.35 0.5144 3.21Q0.5289 3.06 0.5576 2.91Q0.5864 2.77 0.6292 2.63Q0.672 2.49 0.7284 2.35Q0.7848 2.22 0.8542 2.09Q0.9237 1.96 1.01 1.83Q1.09 1.71 1.18 1.6Q1.27 1.48 1.38 1.38Q1.48 1.27 1.6 1.18Q1.71 1.09 1.83 1.01Q1.96 0.9237 2.09 0.8542Q2.22 0.7848 2.35 0.7284Q2.49 0.672 2.63 0.6292Q2.77 0.5864 2.91 0.5576Q3.06 0.5289 3.21 0.5144Q3.35 0.5 3.5 0.5L196.5 0.5Q196.65 0.5 196.79 0.5144Q196.94 0.5289 197.09 0.5576Q197.23 0.5864 197.37 0.6292Q197.51 0.672 197.65 0.7284Q197.78 0.7848 197.91 0.8542Q198.04 0.9237 198.17 1.01Q198.29 1.09 198.4 1.18Q198.52 1.27 198.62 1.38Q198.73 1.48 198.82 1.6Q198.91 1.71 198.99 1.83Q199.08 1.96 199.15 2.09Q199.22 2.22 199.27 2.35Q199.33 2.49 199.37 2.63Q199.41 2.77 199.44 2.91Q199.47 3.06 199.49 3.21Q199.5 3.35 199.5 3.5L199.5 20.5Q199.5 20.65 199.49 20.79Q199.47 20.94 199.44 21.09Q199.41 21.23 199.37 21.37Q199.33 21.51 199.27 21.65Q199.22 21.78 199.15 21.91Q199.08 22.04 198.99 22.17Q198.91 22.29 198.82 22.4Q198.73 22.52 198.62 22.62Q198.52 22.73 198.4 22.82Q198.29 22.91 198.17 22.99Q198.04 23.08 197.91 23.15Q197.78 23.22 197.65 23.27Q197.51 23.33 197.37 23.37Q197.23 23.41 197.09 23.44Q196.94 23.47 196.79 23.49Q196.65 23.5 196.5 23.5L3.5 23.5Q3.35 23.5 3.21 23.49Q3.06 23.47 2.91 23.44Q2.77 23.41 2.63 23.37Q2.49 23.33 2.35 23.27Q2.22 23.22 2.09 23.15Q1.96 23.08 1.83 22.99Q1.71 22.91 1.6 22.82Q1.48 22.73 1.38 22.62Q1.27 22.52 1.18 22.4Q1.09 22.29 1.01 22.17Q0.9237 22.04 0.8542 21.91Q0.7848 21.78 0.7284 21.65Q0.672 21.51 0.6292 21.37Q0.5864 21.23 0.5576 21.09Q0.5289 20.94 0.5144 20.79Q0.5 20.65 0.5 20.5Z" /><path id="wbond-sparameters_d2" d="M0.5 20.5L0.5 3.5Q0.5 3.35 0.5144 3.21Q0.5289 3.06 0.5576 2.91Q0.5864 2.77 0.6292 2.63Q0.672 2.49 0.7284 2.35Q0.7848 2.22 0.8542 2.09Q0.9237 1.96 1.01 1.83Q1.09 1.71 1.18 1.6Q1.27 1.48 1.38 1.38Q1.48 1.27 1.6 1.18Q1.71 1.09 1.83 1.01Q1.96 0.9237 2.09 0.8542Q2.22 0.7848 2.35 0.7284Q2.49 0.672 2.63 0.6292Q2.77 0.5864 2.91 0.5576Q3.06 0.5289 3.21 0.5144Q3.35 0.5 3.5 0.5L26.5 0.5Q26.65 0.5 26.79 0.5144Q26.94 0.5289 27.09 0.5576Q27.23 0.5864 27.37 0.6292Q27.51 0.672 27.65 0.7284Q27.78 0.7848 27.91 0.8542Q28.04 0.9237 28.17 1.01Q28.29 1.09 28.4 1.18Q28.52 1.27 28.62 1.38Q28.73 1.48 28.82 1.6Q28.91 1.71 28.99 1.83Q29.08 1.96 29.15 2.09Q29.22 2.22 29.27 2.35Q29.33 2.49 29.37 2.63Q29.41 2.77 29.44 2.91Q29.47 3.06 29.49 3.21Q29.5 3.35 29.5 3.5L29.5 20.5Q29.5 20.65 29.49 20.79Q29.47 20.94 29.44 21.09Q29.41 21.23 29.37 21.37Q29.33 21.51 29.27 21.65Q29.22 21.78 29.15 21.91Q29.08 22.04 28.99 22.17Q28.91 22.29 28.82 22.4Q28.73 22.52 28.62 22.62Q28.52 22.73 28.4 22.82Q28.29 22.91 28.17 22.99Q28.04 23.08 27.91 23.15Q27.78 23.22 27.65 23.27Q27.51 23.33 27.37 23.37Q27.23 23.41 27.09 23.44Q26.94 23.47 26.79 23.49Q26.65 23.5 26.5 23.5L3.5 23.5Q3.35 23.5 3.21 23.49Q3.06 23.47 2.91 23.44Q2.77 23.41 2.63 23.37Q2.49 23.33 2.35 23.27Q2.22 23.22 2.09 23.15Q1.96 23.08 1.83 22.99Q1.71 22.91 1.6 22.82Q1.48 22.73 1.38 22.62Q1.27 22.52 1.18 22.4Q1.09 22.29 1.01 22.17Q0.9237 22.04 0.8542 21.91Q0.7848 21.78 0.7284 21.65Q0.672 21.51 0.6292 21.37Q0.5864 21.23 0.5576 21.09Q0.5289 20.94 0.5144 20.79Q0.5 20.65 0.5 20.5Z" /><path id="wbond-sparameters_d3" d="M0.75 8L15.25 8" /></defs><rect fill="white" width="850" height="574" /><rect fill="#F6F8FA" width="850" height="574" /><clipPath id="wbond-sparameters_cl_0"><rect width="850" height="574" rx="8" ry="8" /></clipPath><g clip-path="url(#wbond-sparameters_cl_0)"><path fill="none" stroke="#DCE3EA" stroke-width="1" stroke-miterlimit="10" d="M0.5 565.5L0.5 8.5Q0.5 8.3 0.5096 8.11Q0.5193 7.91 0.5385 7.72Q0.5578 7.52 0.5866 7.33Q0.6154 7.13 0.6537 6.94Q0.692 6.75 0.7398 6.56Q0.7875 6.37 0.8445 6.18Q0.9015 5.99 0.9676 5.8Q1.03 5.62 1.11 5.44Q1.18 5.26 1.27 5.08Q1.35 4.9 1.44 4.73Q1.54 4.56 1.64 4.39Q1.74 4.22 1.85 4.06Q1.96 3.89 2.07 3.73Q2.19 3.58 2.32 3.42Q2.44 3.27 2.57 3.13Q2.7 2.98 2.84 2.84Q2.98 2.7 3.13 2.57Q3.27 2.44 3.42 2.32Q3.58 2.19 3.73 2.07Q3.89 1.96 4.06 1.85Q4.22 1.74 4.39 1.64Q4.56 1.54 4.73 1.44Q4.9 1.35 5.08 1.27Q5.26 1.18 5.44 1.11Q5.62 1.03 5.8 0.9676Q5.99 0.9015 6.18 0.8445Q6.37 0.7875 6.56 0.7398Q6.75 0.692 6.94 0.6537Q7.13 0.6154 7.33 0.5866Q7.52 0.5578 7.72 0.5385Q7.91 0.5193 8.11 0.5096Q8.3 0.5 8.5 0.5L841.5 0.5Q841.7 0.5 841.89 0.5096Q842.09 0.5193 842.28 0.5385Q842.48 0.5578 842.67 0.5866Q842.87 0.6154 843.06 0.6537Q843.25 0.692 843.44 0.7398Q843.63 0.7875 843.82 0.8445Q844.01 0.9015 844.2 0.9676Q844.38 1.03 844.56 1.11Q844.74 1.18 844.92 1.27Q845.1 1.35 845.27 1.44Q845.44 1.54 845.61 1.64Q845.78 1.74 845.94 1.85Q846.11 1.96 846.27 2.07Q846.42 2.19 846.58 2.32Q846.73 2.44 846.87 2.57Q847.02 2.7 847.16 2.84Q847.3 2.98 847.43 3.13Q847.56 3.27 847.68 3.42Q847.81 3.58 847.93 3.73Q848.04 3.89 848.15 4.06Q848.26 4.22 848.36 4.39Q848.46 4.56 848.56 4.73Q848.65 4.9 848.73 5.08Q848.82 5.26 848.89 5.44Q848.97 5.62 849.03 5.8Q849.1 5.99 849.16 6.18Q849.21 6.37 849.26 6.56Q849.31 6.75 849.35 6.94Q849.39 7.13 849.41 7.33Q849.44 7.52 849.46 7.72Q849.48 7.91 849.49 8.11Q849.5 8.3 849.5 8.5L849.5 565.5Q849.5 565.7 849.49 565.89Q849.48 566.09 849.46 566.28Q849.44 566.48 849.41 566.67Q849.39 566.87 849.35 567.06Q849.31 567.25 849.26 567.44Q849.21 567.63 849.16 567.82Q849.1 568.01 849.03 568.2Q848.97 568.38 848.89 568.56Q848.82 568.74 848.73 568.92Q848.65 569.1 848.56 569.27Q848.46 569.44 848.36 569.61Q848.26 569.78 848.15 569.94Q848.04 570.11 847.93 570.27Q847.81 570.42 847.68 570.58Q847.56 570.73 847.43 570.87Q847.3 571.02 847.16 571.16Q847.02 571.3 846.87 571.43Q846.73 571.56 846.58 571.68Q846.42 571.81 846.27 571.93Q846.11 572.04 845.94 572.15Q845.78 572.26 845.61 572.36Q845.44 572.46 845.27 572.55Q845.1 572.65 844.92 572.73Q844.74 572.82 844.56 572.89Q844.38 572.97 844.2 573.03Q844.01 573.1 843.82 573.16Q843.63 573.21 843.44 573.26Q843.25 573.31 843.06 573.35Q842.87 573.39 842.67 573.41Q842.48 573.44 842.28 573.46Q842.09 573.48 841.89 573.49Q841.7 573.5 841.5 573.5L8.5 573.5Q8.3 573.5 8.11 573.49Q7.91 573.48 7.72 573.46Q7.52 573.44 7.33 573.41Q7.13 573.39 6.94 573.35Q6.75 573.31 6.56 573.26Q6.37 573.21 6.18 573.16Q5.99 573.1 5.8 573.03Q5.62 572.97 5.44 572.89Q5.26 572.82 5.08 572.73Q4.9 572.65 4.73 572.55Q4.56 572.46 4.39 572.36Q4.22 572.26 4.06 572.15Q3.89 572.04 3.73 571.93Q3.58 571.81 3.42 571.68Q3.27 571.56 3.13 571.43Q2.98 571.3 2.84 571.16Q2.7 571.02 2.57 570.87Q2.44 570.73 2.32 570.58Q2.19 570.42 2.07 570.27Q1.96 570.11 1.85 569.95Q1.74 569.78 1.64 569.61Q1.54 569.44 1.44 569.27Q1.35 569.1 1.27 568.92Q1.18 568.74 1.11 568.56Q1.03 568.38 0.9676 568.2Q0.9015 568.01 0.8445 567.82Q0.7875 567.63 0.7398 567.44Q0.692 567.25 0.6537 567.06Q0.6154 566.87 0.5866 566.67Q0.5578 566.48 0.5385 566.28Q0.5193 566.09 0.5096 565.89Q0.5 565.7 0.5 565.5Z" /><rect fill="white" transform="translate(1 1)" width="848" height="572" /><rect fill="#EEF2F5" transform="translate(1 1)" width="848" height="34" /><clipPath id="wbond-sparameters_cl_1"><rect x="354" y="10" width="142" height="16" /></clipPath><g clip-path="url(#wbond-sparameters_cl_1)"><text fill="#5C6B7A" transform="translate(354 10)" font-size="12.5" font-weight="600" font-family="Inter" x="0, 7.22, 10.48, 15.15, 22.37, 29.97, 33.23, 38.12, 46.25, 53.57, 56.68, 62.5, 65.6, 74.66, 81.84, 86.59, 93.77, 96.88, 105.93, 109.19, 116.05, 123.86, 127.12, 134.05" y="12.11">
@@ -981,7 +1237,7 @@ plane and you want to sweep the loop height, this is the faster and better-condi
 													0
 											</text><text fill="#3C4F4F" transform="translate(42 93)" font-size="11.4" font-family="IBM Plex Sans" x="102.72, 109.56" y="41.99">
 													10
-											</text><clipPath id="wbond-sparameters_cl_44"><rect x="166" y="131" width="465" height="285" /></clipPath><g clip-path="url(#wbond-sparameters_cl_44)"><path fill="none" stroke="#A0A0A0" stroke-width="0.95" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(42 93)" d="M124 323L124 38M208.58 323L208.58 38M293.17 323L293.17 38M377.75 323L377.75 38M462.34 323L462.34 38M546.92 323L546.92 38" /><path fill="none" stroke="#A0A0A0" stroke-width="0.95" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(42 93)" d="M124 306.24L589 306.24M124 272.71L589 272.71M124 239.18L589 239.18M124 205.65L589 205.65M124 172.12L589 172.12M124 138.59L589 138.59M124 105.06L589 105.06M124 71.53L589 71.53M124 38L589 38" /><path fill="none" stroke="#3C4F4F" stroke-width="0.95" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M124 323L124 318.73M208.58 323L208.58 318.73M293.17 323L293.17 318.73M377.75 323L377.75 318.73M462.34 323L462.34 318.73M546.92 323L546.92 318.73" /><path fill="none" stroke="#3C4F4F" stroke-width="0.95" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M124 306.24L130.98 306.24M124 272.71L130.98 272.71M124 239.18L130.98 239.18M124 205.65L130.98 205.65M124 172.12L130.98 172.12M124 138.59L130.98 138.59M124 105.06L130.98 105.06M124 71.53L130.98 71.53M124 38L130.98 38" /></g><clipPath id="wbond-sparameters_cl_45"><rect x="166" y="131" width="465" height="285" /></clipPath><g clip-path="url(#wbond-sparameters_cl_45)"><path fill="none" stroke="#C8C8C8" stroke-width="0.475" stroke-miterlimit="4" stroke-opacity="0.2" transform="translate(42 93)" d="M166.29 323L166.29 38M250.88 323L250.88 38M335.46 323L335.46 38M420.04 323L420.04 38M504.63 323L504.63 38" /><path fill="none" stroke="#C8C8C8" stroke-width="0.475" stroke-miterlimit="4" stroke-opacity="0.2" transform="translate(42 93)" d="M124 323L589 323M124 289.47L589 289.47M124 255.94L589 255.94M124 222.41L589 222.41M124 188.88L589 188.88M124 155.35L589 155.35M124 121.82L589 121.82M124 88.29L589 88.29M124 54.76L589 54.76" /><path fill="none" stroke="#3C4F4F" stroke-width="0.475" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M166.29 323L166.29 320.86M250.88 323L250.88 320.86M335.46 323L335.46 320.86M420.04 323L420.04 320.86M504.63 323L504.63 320.86" /><path fill="none" stroke="#3C4F4F" stroke-width="0.475" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M124 323L127.49 323M124 289.47L127.49 289.47M124 255.94L127.49 255.94M124 222.41L127.49 222.41M124 188.88L127.49 188.88M124 155.35L127.49 155.35M124 121.82L127.49 121.82M124 88.29L127.49 88.29M124 54.76L127.49 54.76" /></g><clipPath id="wbond-sparameters_cl_46"><rect x="166" y="131" width="465" height="285" /></clipPath><g clip-path="url(#wbond-sparameters_cl_46)"><path fill="none" stroke="red" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" transform="translate(42 93)" d="M126.12 71.54L128.22 71.55L130.32 71.55L132.43 71.55L134.53 71.56L136.64 71.56L138.74 71.57L140.84 71.57L142.95 71.58L145.05 71.58L147.16 71.59L149.26 71.59L151.36 71.6L153.47 71.61L155.57 71.61L157.68 71.62L159.78 71.63L161.88 71.63L163.99 71.64L166.09 71.65L168.2 71.66L170.3 71.67L172.4 71.68L174.51 71.69L176.61 71.7L178.72 71.71L180.82 71.72L182.92 71.73L185.03 71.74L187.13 71.76L189.24 71.77L191.34 71.78L193.44 71.79L195.55 71.81L197.65 71.82L199.76 71.84L201.86 71.85L203.96 71.87L206.07 71.88L208.17 71.9L210.28 71.91L212.38 71.93L214.48 71.95L216.59 71.96L218.69 71.98L220.8 72L222.9 72.02L225 72.03L227.11 72.05L229.21 72.07L231.32 72.09L233.42 72.11L235.52 72.13L237.63 72.15L239.73 72.17L241.84 72.19L243.94 72.21L246.04 72.23L248.15 72.26L250.25 72.28L252.36 72.3L254.46 72.32L256.56 72.35L258.67 72.37L260.77 72.39L262.88 72.42L264.98 72.44L267.08 72.46L269.19 72.49L271.29 72.51L273.4 72.54L275.5 72.56L277.6 72.59L279.71 72.62L281.81 72.64L283.92 72.67L286.02 72.7L288.13 72.72L290.23 72.75L292.33 72.78L294.44 72.81L296.54 72.83L298.65 72.86L300.75 72.89L302.85 72.92L304.96 72.95L307.06 72.98L309.17 73.01L311.27 73.04L313.37 73.07L315.48 73.1L317.58 73.13L319.69 73.16L321.79 73.19L323.89 73.22L326 73.26L328.1 73.29L330.21 73.32L332.31 73.35L334.41 73.38L336.52 73.42L338.62 73.45L340.73 73.48L342.83 73.52L344.93 73.55L347.04 73.58L349.14 73.62L351.25 73.65L353.35 73.68L355.45 73.72L357.56 73.75L359.66 73.79L361.77 73.82L363.87 73.86L365.97 73.89L368.08 73.93L370.18 73.97L372.29 74L374.39 74.04L376.49 74.07L378.6 74.11L380.7 74.15L382.81 74.18L384.91 74.22L387.01 74.26L389.12 74.29L391.22 74.33L393.33 74.37L395.43 74.41L397.53 74.44L399.64 74.48L401.74 74.52L403.85 74.56L405.95 74.59L408.05 74.63L410.16 74.67L412.26 74.71L414.37 74.75L416.47 74.79L418.57 74.83L420.68 74.86L422.78 74.9L424.89 74.94L426.99 74.98L429.09 75.02L431.2 75.06L433.3 75.1L435.41 75.14L437.51 75.18L439.61 75.22L441.72 75.26L443.82 75.3L445.93 75.34L448.03 75.38L450.13 75.42L452.24 75.46L454.34 75.5L456.45 75.54L458.55 75.58L460.66 75.62L462.76 75.66L464.86 75.71L466.97 75.75L469.07 75.79L471.18 75.83L473.28 75.87L475.38 75.91L477.49 75.95L479.59 75.99L481.7 76.03L483.8 76.08L485.9 76.12L488.01 76.16L490.11 76.2L492.22 76.24L494.32 76.28L496.42 76.32L498.53 76.37L500.63 76.41L502.74 76.45L504.84 76.49L506.94 76.53L509.05 76.58L511.15 76.62L513.26 76.66L515.36 76.7L517.46 76.74L519.57 76.79L521.67 76.83L523.78 76.87L525.88 76.91L527.98 76.95L530.09 77L532.19 77.04L534.29 77.08L536.4 77.12L538.5 77.16L540.61 77.21L542.71 77.25L544.82 77.29L546.92 77.33" /><path fill="none" stroke="blue" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" transform="translate(42 93)" d="M126.12 304.61L128.22 284.51L130.32 272.73L132.43 264.37L134.53 257.89L136.64 252.6L138.74 248.12L140.84 244.24L142.95 240.83L145.05 237.77L147.16 235.01L149.26 232.5L151.36 230.18L153.47 228.04L155.57 226.05L157.68 224.19L159.78 222.44L161.88 220.8L163.99 219.25L166.09 217.78L168.2 216.38L170.3 215.05L172.4 213.78L174.51 212.57L176.61 211.41L178.72 210.3L180.82 209.23L182.92 208.2L185.03 207.21L187.13 206.26L189.24 205.34L191.34 204.45L193.44 203.59L195.55 202.75L197.65 201.95L199.76 201.17L201.86 200.41L203.96 199.67L206.07 198.96L208.17 198.26L210.28 197.59L212.38 196.93L214.48 196.29L216.59 195.67L218.69 195.06L220.8 194.47L222.9 193.89L225 193.33L227.11 192.78L229.21 192.25L231.32 191.72L233.42 191.21L235.52 190.71L237.63 190.23L239.73 189.75L241.84 189.28L243.94 188.83L246.04 188.38L248.15 187.94L250.25 187.52L252.36 187.1L254.46 186.69L256.56 186.29L258.67 185.89L260.77 185.51L262.88 185.13L264.98 184.76L267.08 184.4L269.19 184.04L271.29 183.69L273.4 183.35L275.5 183.02L277.6 182.69L279.71 182.37L281.81 182.05L283.92 181.74L286.02 181.44L288.13 181.14L290.23 180.85L292.33 180.56L294.44 180.28L296.54 180L298.65 179.73L300.75 179.47L302.85 179.2L304.96 178.95L307.06 178.7L309.17 178.45L311.27 178.21L313.37 177.97L315.48 177.73L317.58 177.5L319.69 177.28L321.79 177.06L323.89 176.84L326 176.63L328.1 176.42L330.21 176.21L332.31 176.01L334.41 175.81L336.52 175.62L338.62 175.43L340.73 175.24L342.83 175.06L344.93 174.88L347.04 174.7L349.14 174.53L351.25 174.36L353.35 174.19L355.45 174.03L357.56 173.86L359.66 173.71L361.77 173.55L363.87 173.4L365.97 173.25L368.08 173.1L370.18 172.96L372.29 172.82L374.39 172.68L376.49 172.55L378.6 172.41L380.7 172.28L382.81 172.16L384.91 172.03L387.01 171.91L389.12 171.79L391.22 171.67L393.33 171.55L395.43 171.44L397.53 171.33L399.64 171.22L401.74 171.12L403.85 171.01L405.95 170.91L408.05 170.81L410.16 170.72L412.26 170.62L414.37 170.53L416.47 170.44L418.57 170.35L420.68 170.26L422.78 170.18L424.89 170.09L426.99 170.01L429.09 169.93L431.2 169.86L433.3 169.78L435.41 169.71L437.51 169.64L439.61 169.57L441.72 169.5L443.82 169.43L445.93 169.37L448.03 169.3L450.13 169.24L452.24 169.18L454.34 169.13L456.45 169.07L458.55 169.02L460.66 168.96L462.76 168.91L464.86 168.86L466.97 168.81L469.07 168.77L471.18 168.72L473.28 168.68L475.38 168.64L477.49 168.59L479.59 168.56L481.7 168.52L483.8 168.48L485.9 168.45L488.01 168.41L490.11 168.38L492.22 168.35L494.32 168.32L496.42 168.29L498.53 168.26L500.63 168.24L502.74 168.21L504.84 168.19L506.94 168.17L509.05 168.15L511.15 168.13L513.26 168.11L515.36 168.09L517.46 168.08L519.57 168.06L521.67 168.05L523.78 168.04L525.88 168.03L527.98 168.02L530.09 168.01L532.19 168L534.29 167.99L536.4 167.99L538.5 167.98L540.61 167.98L542.71 167.98L544.82 167.98L546.92 167.98" /></g><text fill="#3C4F4F" transform="translate(42 93)" font-size="10.26" font-family="IBM Plex Sans" x="332.94, 336.27, 340.03, 345.67, 351.62, 354.04, 357.47, 364.61, 371.86, 376.62" y="355.09">
+											</text><clipPath id="wbond-sparameters_cl_44"><rect x="166" y="131" width="465" height="285" /></clipPath><g clip-path="url(#wbond-sparameters_cl_44)"><path fill="none" stroke="#A0A0A0" stroke-width="0.95" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(42 93)" d="M124 323L124 38M208.58 323L208.58 38M293.17 323L293.17 38M377.75 323L377.75 38M462.34 323L462.34 38M546.92 323L546.92 38" /><path fill="none" stroke="#A0A0A0" stroke-width="0.95" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(42 93)" d="M124 306.24L589 306.24M124 272.71L589 272.71M124 239.18L589 239.18M124 205.65L589 205.65M124 172.12L589 172.12M124 138.59L589 138.59M124 105.06L589 105.06M124 71.53L589 71.53M124 38L589 38" /><path fill="none" stroke="#3C4F4F" stroke-width="0.95" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M124 323L124 318.73M208.58 323L208.58 318.73M293.17 323L293.17 318.73M377.75 323L377.75 318.73M462.34 323L462.34 318.73M546.92 323L546.92 318.73" /><path fill="none" stroke="#3C4F4F" stroke-width="0.95" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M124 306.24L130.98 306.24M124 272.71L130.98 272.71M124 239.18L130.98 239.18M124 205.65L130.98 205.65M124 172.12L130.98 172.12M124 138.59L130.98 138.59M124 105.06L130.98 105.06M124 71.53L130.98 71.53M124 38L130.98 38" /></g><clipPath id="wbond-sparameters_cl_45"><rect x="166" y="131" width="465" height="285" /></clipPath><g clip-path="url(#wbond-sparameters_cl_45)"><path fill="none" stroke="#C8C8C8" stroke-width="0.475" stroke-miterlimit="4" stroke-opacity="0.2" transform="translate(42 93)" d="M166.29 323L166.29 38M250.88 323L250.88 38M335.46 323L335.46 38M420.04 323L420.04 38M504.63 323L504.63 38" /><path fill="none" stroke="#C8C8C8" stroke-width="0.475" stroke-miterlimit="4" stroke-opacity="0.2" transform="translate(42 93)" d="M124 323L589 323M124 289.47L589 289.47M124 255.94L589 255.94M124 222.41L589 222.41M124 188.88L589 188.88M124 155.35L589 155.35M124 121.82L589 121.82M124 88.29L589 88.29M124 54.76L589 54.76" /><path fill="none" stroke="#3C4F4F" stroke-width="0.475" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M166.29 323L166.29 320.86M250.88 323L250.88 320.86M335.46 323L335.46 320.86M420.04 323L420.04 320.86M504.63 323L504.63 320.86" /><path fill="none" stroke="#3C4F4F" stroke-width="0.475" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M124 323L127.49 323M124 289.47L127.49 289.47M124 255.94L127.49 255.94M124 222.41L127.49 222.41M124 188.88L127.49 188.88M124 155.35L127.49 155.35M124 121.82L127.49 121.82M124 88.29L127.49 88.29M124 54.76L127.49 54.76" /></g><clipPath id="wbond-sparameters_cl_46"><rect x="166" y="131" width="465" height="285" /></clipPath><g clip-path="url(#wbond-sparameters_cl_46)"><path fill="none" stroke="red" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" transform="translate(42 93)" d="M126.12 71.54L128.22 71.55L130.32 71.55L132.43 71.56L134.53 71.56L136.64 71.56L138.74 71.57L140.84 71.57L142.95 71.58L145.05 71.58L147.16 71.59L149.26 71.59L151.36 71.6L153.47 71.61L155.57 71.61L157.68 71.62L159.78 71.63L161.88 71.64L163.99 71.65L166.09 71.65L168.2 71.66L170.3 71.67L172.4 71.68L174.51 71.69L176.61 71.7L178.72 71.71L180.82 71.72L182.92 71.74L185.03 71.75L187.13 71.76L189.24 71.77L191.34 71.79L193.44 71.8L195.55 71.81L197.65 71.83L199.76 71.84L201.86 71.85L203.96 71.87L206.07 71.88L208.17 71.9L210.28 71.92L212.38 71.93L214.48 71.95L216.59 71.97L218.69 71.98L220.8 72L222.9 72.02L225 72.04L227.11 72.06L229.21 72.08L231.32 72.09L233.42 72.11L235.52 72.13L237.63 72.15L239.73 72.17L241.84 72.2L243.94 72.22L246.04 72.24L248.15 72.26L250.25 72.28L252.36 72.3L254.46 72.33L256.56 72.35L258.67 72.37L260.77 72.4L262.88 72.42L264.98 72.44L267.08 72.47L269.19 72.49L271.29 72.52L273.4 72.54L275.5 72.57L277.6 72.6L279.71 72.62L281.81 72.65L283.92 72.67L286.02 72.7L288.13 72.73L290.23 72.76L292.33 72.78L294.44 72.81L296.54 72.84L298.65 72.87L300.75 72.9L302.85 72.93L304.96 72.96L307.06 72.99L309.17 73.02L311.27 73.05L313.37 73.08L315.48 73.11L317.58 73.14L319.69 73.17L321.79 73.2L323.89 73.23L326 73.26L328.1 73.29L330.21 73.33L332.31 73.36L334.41 73.39L336.52 73.42L338.62 73.46L340.73 73.49L342.83 73.52L344.93 73.56L347.04 73.59L349.14 73.62L351.25 73.66L353.35 73.69L355.45 73.73L357.56 73.76L359.66 73.8L361.77 73.83L363.87 73.87L365.97 73.9L368.08 73.94L370.18 73.97L372.29 74.01L374.39 74.04L376.49 74.08L378.6 74.12L380.7 74.15L382.81 74.19L384.91 74.23L387.01 74.26L389.12 74.3L391.22 74.34L393.33 74.37L395.43 74.41L397.53 74.45L399.64 74.49L401.74 74.53L403.85 74.56L405.95 74.6L408.05 74.64L410.16 74.68L412.26 74.72L414.37 74.76L416.47 74.79L418.57 74.83L420.68 74.87L422.78 74.91L424.89 74.95L426.99 74.99L429.09 75.03L431.2 75.07L433.3 75.11L435.41 75.15L437.51 75.19L439.61 75.23L441.72 75.27L443.82 75.31L445.93 75.35L448.03 75.39L450.13 75.43L452.24 75.47L454.34 75.51L456.45 75.55L458.55 75.59L460.66 75.63L462.76 75.67L464.86 75.71L466.97 75.75L469.07 75.79L471.18 75.84L473.28 75.88L475.38 75.92L477.49 75.96L479.59 76L481.7 76.04L483.8 76.08L485.9 76.12L488.01 76.17L490.11 76.21L492.22 76.25L494.32 76.29L496.42 76.33L498.53 76.37L500.63 76.42L502.74 76.46L504.84 76.5L506.94 76.54L509.05 76.58L511.15 76.62L513.26 76.67L515.36 76.71L517.46 76.75L519.57 76.79L521.67 76.83L523.78 76.88L525.88 76.92L527.98 76.96L530.09 77L532.19 77.04L534.29 77.09L536.4 77.13L538.5 77.17L540.61 77.21L542.71 77.26L544.82 77.3L546.92 77.34" /><path fill="none" stroke="blue" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" transform="translate(42 93)" d="M126.12 304.62L128.22 284.51L130.32 272.73L132.43 264.38L134.53 257.89L136.64 252.6L138.74 248.12L140.84 244.25L142.95 240.83L145.05 237.78L147.16 235.02L149.26 232.5L151.36 230.19L153.47 228.05L155.57 226.05L157.68 224.19L159.78 222.45L161.88 220.81L163.99 219.25L166.09 217.78L168.2 216.39L170.3 215.06L172.4 213.79L174.51 212.58L176.61 211.42L178.72 210.3L180.82 209.23L182.92 208.21L185.03 207.22L187.13 206.26L189.24 205.34L191.34 204.45L193.44 203.59L195.55 202.76L197.65 201.95L199.76 201.17L201.86 200.41L203.96 199.68L206.07 198.96L208.17 198.27L210.28 197.6L212.38 196.94L214.48 196.3L216.59 195.68L218.69 195.07L220.8 194.48L222.9 193.9L225 193.34L227.11 192.79L229.21 192.26L231.32 191.73L233.42 191.22L235.52 190.72L237.63 190.23L239.73 189.76L241.84 189.29L243.94 188.83L246.04 188.39L248.15 187.95L250.25 187.52L252.36 187.11L254.46 186.7L256.56 186.29L258.67 185.9L260.77 185.52L262.88 185.14L264.98 184.77L267.08 184.41L269.19 184.05L271.29 183.7L273.4 183.36L275.5 183.03L277.6 182.7L279.71 182.38L281.81 182.06L283.92 181.75L286.02 181.45L288.13 181.15L290.23 180.86L292.33 180.57L294.44 180.29L296.54 180.01L298.65 179.74L300.75 179.48L302.85 179.21L304.96 178.96L307.06 178.71L309.17 178.46L311.27 178.22L313.37 177.98L315.48 177.75L317.58 177.52L319.69 177.29L321.79 177.07L323.89 176.85L326 176.64L328.1 176.43L330.21 176.23L332.31 176.02L334.41 175.83L336.52 175.63L338.62 175.44L340.73 175.25L342.83 175.07L344.93 174.89L347.04 174.71L349.14 174.54L351.25 174.37L353.35 174.2L355.45 174.04L357.56 173.88L359.66 173.72L361.77 173.56L363.87 173.41L365.97 173.26L368.08 173.12L370.18 172.97L372.29 172.83L374.39 172.69L376.49 172.56L378.6 172.43L380.7 172.3L382.81 172.17L384.91 172.04L387.01 171.92L389.12 171.8L391.22 171.68L393.33 171.57L395.43 171.46L397.53 171.34L399.64 171.24L401.74 171.13L403.85 171.03L405.95 170.93L408.05 170.83L410.16 170.73L412.26 170.63L414.37 170.54L416.47 170.45L418.57 170.36L420.68 170.27L422.78 170.19L424.89 170.11L426.99 170.03L429.09 169.95L431.2 169.87L433.3 169.79L435.41 169.72L437.51 169.65L439.61 169.58L441.72 169.51L443.82 169.45L445.93 169.38L448.03 169.32L450.13 169.26L452.24 169.2L454.34 169.14L456.45 169.08L458.55 169.03L460.66 168.98L462.76 168.93L464.86 168.88L466.97 168.83L469.07 168.78L471.18 168.74L473.28 168.69L475.38 168.65L477.49 168.61L479.59 168.57L481.7 168.53L483.8 168.5L485.9 168.46L488.01 168.43L490.11 168.39L492.22 168.36L494.32 168.33L496.42 168.31L498.53 168.28L500.63 168.25L502.74 168.23L504.84 168.21L506.94 168.18L509.05 168.16L511.15 168.14L513.26 168.13L515.36 168.11L517.46 168.09L519.57 168.08L521.67 168.07L523.78 168.05L525.88 168.04L527.98 168.03L530.09 168.02L532.19 168.02L534.29 168.01L536.4 168L538.5 168L540.61 168L542.71 167.99L544.82 167.99L546.92 167.99" /></g><text fill="#3C4F4F" transform="translate(42 93)" font-size="10.26" font-family="IBM Plex Sans" x="332.94, 336.27, 340.03, 345.67, 351.62, 354.04, 357.47, 364.61, 371.86, 376.62" y="355.09">
 													freq (GHz)
 											</text><text fill="red" transform="matrix(0 -1 1 0 126.78 273.5)" font-size="10.26" font-family="IBM Plex Sans" x="-27.66, -21.7, -18.26, -12.11, -9.32, -3.16, 0.277, 2.7, 8.65, 15.35, 21.5" y="3.59">
 													S(2,1) dB20
@@ -1024,7 +1280,7 @@ plane and you want to sweep the loop height, this is the faster and better-condi
 													0
 											</text><text fill="#D2D2D2" transform="translate(42 93)" font-size="11.4" font-family="IBM Plex Sans" x="102.72, 109.56" y="41.99">
 													10
-											</text><clipPath id="wbond-sparameters-dark_cl_44"><rect x="166" y="131" width="465" height="285" /></clipPath><g clip-path="url(#wbond-sparameters-dark_cl_44)"><path fill="none" stroke="#646464" stroke-width="0.95" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(42 93)" d="M124 323L124 38M208.58 323L208.58 38M293.17 323L293.17 38M377.75 323L377.75 38M462.34 323L462.34 38M546.92 323L546.92 38" /><path fill="none" stroke="#646464" stroke-width="0.95" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(42 93)" d="M124 306.24L589 306.24M124 272.71L589 272.71M124 239.18L589 239.18M124 205.65L589 205.65M124 172.12L589 172.12M124 138.59L589 138.59M124 105.06L589 105.06M124 71.53L589 71.53M124 38L589 38" /><path fill="none" stroke="#C8C8C8" stroke-width="0.95" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M124 323L124 318.73M208.58 323L208.58 318.73M293.17 323L293.17 318.73M377.75 323L377.75 318.73M462.34 323L462.34 318.73M546.92 323L546.92 318.73" /><path fill="none" stroke="#C8C8C8" stroke-width="0.95" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M124 306.24L130.98 306.24M124 272.71L130.98 272.71M124 239.18L130.98 239.18M124 205.65L130.98 205.65M124 172.12L130.98 172.12M124 138.59L130.98 138.59M124 105.06L130.98 105.06M124 71.53L130.98 71.53M124 38L130.98 38" /></g><clipPath id="wbond-sparameters-dark_cl_45"><rect x="166" y="131" width="465" height="285" /></clipPath><g clip-path="url(#wbond-sparameters-dark_cl_45)"><path fill="none" stroke="#464646" stroke-width="0.475" stroke-miterlimit="4" stroke-opacity="0.2" transform="translate(42 93)" d="M166.29 323L166.29 38M250.88 323L250.88 38M335.46 323L335.46 38M420.04 323L420.04 38M504.63 323L504.63 38" /><path fill="none" stroke="#464646" stroke-width="0.475" stroke-miterlimit="4" stroke-opacity="0.2" transform="translate(42 93)" d="M124 323L589 323M124 289.47L589 289.47M124 255.94L589 255.94M124 222.41L589 222.41M124 188.88L589 188.88M124 155.35L589 155.35M124 121.82L589 121.82M124 88.29L589 88.29M124 54.76L589 54.76" /><path fill="none" stroke="#C8C8C8" stroke-width="0.475" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M166.29 323L166.29 320.86M250.88 323L250.88 320.86M335.46 323L335.46 320.86M420.04 323L420.04 320.86M504.63 323L504.63 320.86" /><path fill="none" stroke="#C8C8C8" stroke-width="0.475" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M124 323L127.49 323M124 289.47L127.49 289.47M124 255.94L127.49 255.94M124 222.41L127.49 222.41M124 188.88L127.49 188.88M124 155.35L127.49 155.35M124 121.82L127.49 121.82M124 88.29L127.49 88.29M124 54.76L127.49 54.76" /></g><clipPath id="wbond-sparameters-dark_cl_46"><rect x="166" y="131" width="465" height="285" /></clipPath><g clip-path="url(#wbond-sparameters-dark_cl_46)"><path fill="none" stroke="red" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" transform="translate(42 93)" d="M126.12 71.54L128.22 71.55L130.32 71.55L132.43 71.55L134.53 71.56L136.64 71.56L138.74 71.57L140.84 71.57L142.95 71.58L145.05 71.58L147.16 71.59L149.26 71.59L151.36 71.6L153.47 71.61L155.57 71.61L157.68 71.62L159.78 71.63L161.88 71.63L163.99 71.64L166.09 71.65L168.2 71.66L170.3 71.67L172.4 71.68L174.51 71.69L176.61 71.7L178.72 71.71L180.82 71.72L182.92 71.73L185.03 71.74L187.13 71.76L189.24 71.77L191.34 71.78L193.44 71.79L195.55 71.81L197.65 71.82L199.76 71.84L201.86 71.85L203.96 71.87L206.07 71.88L208.17 71.9L210.28 71.91L212.38 71.93L214.48 71.95L216.59 71.96L218.69 71.98L220.8 72L222.9 72.02L225 72.03L227.11 72.05L229.21 72.07L231.32 72.09L233.42 72.11L235.52 72.13L237.63 72.15L239.73 72.17L241.84 72.19L243.94 72.21L246.04 72.23L248.15 72.26L250.25 72.28L252.36 72.3L254.46 72.32L256.56 72.35L258.67 72.37L260.77 72.39L262.88 72.42L264.98 72.44L267.08 72.46L269.19 72.49L271.29 72.51L273.4 72.54L275.5 72.56L277.6 72.59L279.71 72.62L281.81 72.64L283.92 72.67L286.02 72.7L288.13 72.72L290.23 72.75L292.33 72.78L294.44 72.81L296.54 72.83L298.65 72.86L300.75 72.89L302.85 72.92L304.96 72.95L307.06 72.98L309.17 73.01L311.27 73.04L313.37 73.07L315.48 73.1L317.58 73.13L319.69 73.16L321.79 73.19L323.89 73.22L326 73.26L328.1 73.29L330.21 73.32L332.31 73.35L334.41 73.38L336.52 73.42L338.62 73.45L340.73 73.48L342.83 73.52L344.93 73.55L347.04 73.58L349.14 73.62L351.25 73.65L353.35 73.68L355.45 73.72L357.56 73.75L359.66 73.79L361.77 73.82L363.87 73.86L365.97 73.89L368.08 73.93L370.18 73.97L372.29 74L374.39 74.04L376.49 74.07L378.6 74.11L380.7 74.15L382.81 74.18L384.91 74.22L387.01 74.26L389.12 74.29L391.22 74.33L393.33 74.37L395.43 74.41L397.53 74.44L399.64 74.48L401.74 74.52L403.85 74.56L405.95 74.59L408.05 74.63L410.16 74.67L412.26 74.71L414.37 74.75L416.47 74.79L418.57 74.83L420.68 74.86L422.78 74.9L424.89 74.94L426.99 74.98L429.09 75.02L431.2 75.06L433.3 75.1L435.41 75.14L437.51 75.18L439.61 75.22L441.72 75.26L443.82 75.3L445.93 75.34L448.03 75.38L450.13 75.42L452.24 75.46L454.34 75.5L456.45 75.54L458.55 75.58L460.66 75.62L462.76 75.66L464.86 75.71L466.97 75.75L469.07 75.79L471.18 75.83L473.28 75.87L475.38 75.91L477.49 75.95L479.59 75.99L481.7 76.03L483.8 76.08L485.9 76.12L488.01 76.16L490.11 76.2L492.22 76.24L494.32 76.28L496.42 76.32L498.53 76.37L500.63 76.41L502.74 76.45L504.84 76.49L506.94 76.53L509.05 76.58L511.15 76.62L513.26 76.66L515.36 76.7L517.46 76.74L519.57 76.79L521.67 76.83L523.78 76.87L525.88 76.91L527.98 76.95L530.09 77L532.19 77.04L534.29 77.08L536.4 77.12L538.5 77.16L540.61 77.21L542.71 77.25L544.82 77.29L546.92 77.33" /><path fill="none" stroke="blue" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" transform="translate(42 93)" d="M126.12 304.61L128.22 284.51L130.32 272.73L132.43 264.37L134.53 257.89L136.64 252.6L138.74 248.12L140.84 244.24L142.95 240.83L145.05 237.77L147.16 235.01L149.26 232.5L151.36 230.18L153.47 228.04L155.57 226.05L157.68 224.19L159.78 222.44L161.88 220.8L163.99 219.25L166.09 217.78L168.2 216.38L170.3 215.05L172.4 213.78L174.51 212.57L176.61 211.41L178.72 210.3L180.82 209.23L182.92 208.2L185.03 207.21L187.13 206.26L189.24 205.34L191.34 204.45L193.44 203.59L195.55 202.75L197.65 201.95L199.76 201.17L201.86 200.41L203.96 199.67L206.07 198.96L208.17 198.26L210.28 197.59L212.38 196.93L214.48 196.29L216.59 195.67L218.69 195.06L220.8 194.47L222.9 193.89L225 193.33L227.11 192.78L229.21 192.25L231.32 191.72L233.42 191.21L235.52 190.71L237.63 190.23L239.73 189.75L241.84 189.28L243.94 188.83L246.04 188.38L248.15 187.94L250.25 187.52L252.36 187.1L254.46 186.69L256.56 186.29L258.67 185.89L260.77 185.51L262.88 185.13L264.98 184.76L267.08 184.4L269.19 184.04L271.29 183.69L273.4 183.35L275.5 183.02L277.6 182.69L279.71 182.37L281.81 182.05L283.92 181.74L286.02 181.44L288.13 181.14L290.23 180.85L292.33 180.56L294.44 180.28L296.54 180L298.65 179.73L300.75 179.47L302.85 179.2L304.96 178.95L307.06 178.7L309.17 178.45L311.27 178.21L313.37 177.97L315.48 177.73L317.58 177.5L319.69 177.28L321.79 177.06L323.89 176.84L326 176.63L328.1 176.42L330.21 176.21L332.31 176.01L334.41 175.81L336.52 175.62L338.62 175.43L340.73 175.24L342.83 175.06L344.93 174.88L347.04 174.7L349.14 174.53L351.25 174.36L353.35 174.19L355.45 174.03L357.56 173.86L359.66 173.71L361.77 173.55L363.87 173.4L365.97 173.25L368.08 173.1L370.18 172.96L372.29 172.82L374.39 172.68L376.49 172.55L378.6 172.41L380.7 172.28L382.81 172.16L384.91 172.03L387.01 171.91L389.12 171.79L391.22 171.67L393.33 171.55L395.43 171.44L397.53 171.33L399.64 171.22L401.74 171.12L403.85 171.01L405.95 170.91L408.05 170.81L410.16 170.72L412.26 170.62L414.37 170.53L416.47 170.44L418.57 170.35L420.68 170.26L422.78 170.18L424.89 170.09L426.99 170.01L429.09 169.93L431.2 169.86L433.3 169.78L435.41 169.71L437.51 169.64L439.61 169.57L441.72 169.5L443.82 169.43L445.93 169.37L448.03 169.3L450.13 169.24L452.24 169.18L454.34 169.13L456.45 169.07L458.55 169.02L460.66 168.96L462.76 168.91L464.86 168.86L466.97 168.81L469.07 168.77L471.18 168.72L473.28 168.68L475.38 168.64L477.49 168.59L479.59 168.56L481.7 168.52L483.8 168.48L485.9 168.45L488.01 168.41L490.11 168.38L492.22 168.35L494.32 168.32L496.42 168.29L498.53 168.26L500.63 168.24L502.74 168.21L504.84 168.19L506.94 168.17L509.05 168.15L511.15 168.13L513.26 168.11L515.36 168.09L517.46 168.08L519.57 168.06L521.67 168.05L523.78 168.04L525.88 168.03L527.98 168.02L530.09 168.01L532.19 168L534.29 167.99L536.4 167.99L538.5 167.98L540.61 167.98L542.71 167.98L544.82 167.98L546.92 167.98" /></g><text fill="#D2D2D2" transform="translate(42 93)" font-size="10.26" font-family="IBM Plex Sans" x="332.94, 336.27, 340.03, 345.67, 351.62, 354.04, 357.47, 364.61, 371.86, 376.62" y="355.09">
+											</text><clipPath id="wbond-sparameters-dark_cl_44"><rect x="166" y="131" width="465" height="285" /></clipPath><g clip-path="url(#wbond-sparameters-dark_cl_44)"><path fill="none" stroke="#646464" stroke-width="0.95" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(42 93)" d="M124 323L124 38M208.58 323L208.58 38M293.17 323L293.17 38M377.75 323L377.75 38M462.34 323L462.34 38M546.92 323L546.92 38" /><path fill="none" stroke="#646464" stroke-width="0.95" stroke-miterlimit="4" stroke-opacity="0.498" transform="translate(42 93)" d="M124 306.24L589 306.24M124 272.71L589 272.71M124 239.18L589 239.18M124 205.65L589 205.65M124 172.12L589 172.12M124 138.59L589 138.59M124 105.06L589 105.06M124 71.53L589 71.53M124 38L589 38" /><path fill="none" stroke="#C8C8C8" stroke-width="0.95" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M124 323L124 318.73M208.58 323L208.58 318.73M293.17 323L293.17 318.73M377.75 323L377.75 318.73M462.34 323L462.34 318.73M546.92 323L546.92 318.73" /><path fill="none" stroke="#C8C8C8" stroke-width="0.95" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M124 306.24L130.98 306.24M124 272.71L130.98 272.71M124 239.18L130.98 239.18M124 205.65L130.98 205.65M124 172.12L130.98 172.12M124 138.59L130.98 138.59M124 105.06L130.98 105.06M124 71.53L130.98 71.53M124 38L130.98 38" /></g><clipPath id="wbond-sparameters-dark_cl_45"><rect x="166" y="131" width="465" height="285" /></clipPath><g clip-path="url(#wbond-sparameters-dark_cl_45)"><path fill="none" stroke="#464646" stroke-width="0.475" stroke-miterlimit="4" stroke-opacity="0.2" transform="translate(42 93)" d="M166.29 323L166.29 38M250.88 323L250.88 38M335.46 323L335.46 38M420.04 323L420.04 38M504.63 323L504.63 38" /><path fill="none" stroke="#464646" stroke-width="0.475" stroke-miterlimit="4" stroke-opacity="0.2" transform="translate(42 93)" d="M124 323L589 323M124 289.47L589 289.47M124 255.94L589 255.94M124 222.41L589 222.41M124 188.88L589 188.88M124 155.35L589 155.35M124 121.82L589 121.82M124 88.29L589 88.29M124 54.76L589 54.76" /><path fill="none" stroke="#C8C8C8" stroke-width="0.475" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M166.29 323L166.29 320.86M250.88 323L250.88 320.86M335.46 323L335.46 320.86M420.04 323L420.04 320.86M504.63 323L504.63 320.86" /><path fill="none" stroke="#C8C8C8" stroke-width="0.475" stroke-linecap="square" stroke-miterlimit="4" transform="translate(42 93)" d="M124 323L127.49 323M124 289.47L127.49 289.47M124 255.94L127.49 255.94M124 222.41L127.49 222.41M124 188.88L127.49 188.88M124 155.35L127.49 155.35M124 121.82L127.49 121.82M124 88.29L127.49 88.29M124 54.76L127.49 54.76" /></g><clipPath id="wbond-sparameters-dark_cl_46"><rect x="166" y="131" width="465" height="285" /></clipPath><g clip-path="url(#wbond-sparameters-dark_cl_46)"><path fill="none" stroke="red" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" transform="translate(42 93)" d="M126.12 71.54L128.22 71.55L130.32 71.55L132.43 71.56L134.53 71.56L136.64 71.56L138.74 71.57L140.84 71.57L142.95 71.58L145.05 71.58L147.16 71.59L149.26 71.59L151.36 71.6L153.47 71.61L155.57 71.61L157.68 71.62L159.78 71.63L161.88 71.64L163.99 71.65L166.09 71.65L168.2 71.66L170.3 71.67L172.4 71.68L174.51 71.69L176.61 71.7L178.72 71.71L180.82 71.72L182.92 71.74L185.03 71.75L187.13 71.76L189.24 71.77L191.34 71.79L193.44 71.8L195.55 71.81L197.65 71.83L199.76 71.84L201.86 71.85L203.96 71.87L206.07 71.88L208.17 71.9L210.28 71.92L212.38 71.93L214.48 71.95L216.59 71.97L218.69 71.98L220.8 72L222.9 72.02L225 72.04L227.11 72.06L229.21 72.08L231.32 72.09L233.42 72.11L235.52 72.13L237.63 72.15L239.73 72.17L241.84 72.2L243.94 72.22L246.04 72.24L248.15 72.26L250.25 72.28L252.36 72.3L254.46 72.33L256.56 72.35L258.67 72.37L260.77 72.4L262.88 72.42L264.98 72.44L267.08 72.47L269.19 72.49L271.29 72.52L273.4 72.54L275.5 72.57L277.6 72.6L279.71 72.62L281.81 72.65L283.92 72.67L286.02 72.7L288.13 72.73L290.23 72.76L292.33 72.78L294.44 72.81L296.54 72.84L298.65 72.87L300.75 72.9L302.85 72.93L304.96 72.96L307.06 72.99L309.17 73.02L311.27 73.05L313.37 73.08L315.48 73.11L317.58 73.14L319.69 73.17L321.79 73.2L323.89 73.23L326 73.26L328.1 73.29L330.21 73.33L332.31 73.36L334.41 73.39L336.52 73.42L338.62 73.46L340.73 73.49L342.83 73.52L344.93 73.56L347.04 73.59L349.14 73.62L351.25 73.66L353.35 73.69L355.45 73.73L357.56 73.76L359.66 73.8L361.77 73.83L363.87 73.87L365.97 73.9L368.08 73.94L370.18 73.97L372.29 74.01L374.39 74.04L376.49 74.08L378.6 74.12L380.7 74.15L382.81 74.19L384.91 74.23L387.01 74.26L389.12 74.3L391.22 74.34L393.33 74.37L395.43 74.41L397.53 74.45L399.64 74.49L401.74 74.53L403.85 74.56L405.95 74.6L408.05 74.64L410.16 74.68L412.26 74.72L414.37 74.76L416.47 74.79L418.57 74.83L420.68 74.87L422.78 74.91L424.89 74.95L426.99 74.99L429.09 75.03L431.2 75.07L433.3 75.11L435.41 75.15L437.51 75.19L439.61 75.23L441.72 75.27L443.82 75.31L445.93 75.35L448.03 75.39L450.13 75.43L452.24 75.47L454.34 75.51L456.45 75.55L458.55 75.59L460.66 75.63L462.76 75.67L464.86 75.71L466.97 75.75L469.07 75.79L471.18 75.84L473.28 75.88L475.38 75.92L477.49 75.96L479.59 76L481.7 76.04L483.8 76.08L485.9 76.12L488.01 76.17L490.11 76.21L492.22 76.25L494.32 76.29L496.42 76.33L498.53 76.37L500.63 76.42L502.74 76.46L504.84 76.5L506.94 76.54L509.05 76.58L511.15 76.62L513.26 76.67L515.36 76.71L517.46 76.75L519.57 76.79L521.67 76.83L523.78 76.88L525.88 76.92L527.98 76.96L530.09 77L532.19 77.04L534.29 77.09L536.4 77.13L538.5 77.17L540.61 77.21L542.71 77.26L544.82 77.3L546.92 77.34" /><path fill="none" stroke="blue" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" transform="translate(42 93)" d="M126.12 304.62L128.22 284.51L130.32 272.73L132.43 264.38L134.53 257.89L136.64 252.6L138.74 248.12L140.84 244.25L142.95 240.83L145.05 237.78L147.16 235.02L149.26 232.5L151.36 230.19L153.47 228.05L155.57 226.05L157.68 224.19L159.78 222.45L161.88 220.81L163.99 219.25L166.09 217.78L168.2 216.39L170.3 215.06L172.4 213.79L174.51 212.58L176.61 211.42L178.72 210.3L180.82 209.23L182.92 208.21L185.03 207.22L187.13 206.26L189.24 205.34L191.34 204.45L193.44 203.59L195.55 202.76L197.65 201.95L199.76 201.17L201.86 200.41L203.96 199.68L206.07 198.96L208.17 198.27L210.28 197.6L212.38 196.94L214.48 196.3L216.59 195.68L218.69 195.07L220.8 194.48L222.9 193.9L225 193.34L227.11 192.79L229.21 192.26L231.32 191.73L233.42 191.22L235.52 190.72L237.63 190.23L239.73 189.76L241.84 189.29L243.94 188.83L246.04 188.39L248.15 187.95L250.25 187.52L252.36 187.11L254.46 186.7L256.56 186.29L258.67 185.9L260.77 185.52L262.88 185.14L264.98 184.77L267.08 184.41L269.19 184.05L271.29 183.7L273.4 183.36L275.5 183.03L277.6 182.7L279.71 182.38L281.81 182.06L283.92 181.75L286.02 181.45L288.13 181.15L290.23 180.86L292.33 180.57L294.44 180.29L296.54 180.01L298.65 179.74L300.75 179.48L302.85 179.21L304.96 178.96L307.06 178.71L309.17 178.46L311.27 178.22L313.37 177.98L315.48 177.75L317.58 177.52L319.69 177.29L321.79 177.07L323.89 176.85L326 176.64L328.1 176.43L330.21 176.23L332.31 176.02L334.41 175.83L336.52 175.63L338.62 175.44L340.73 175.25L342.83 175.07L344.93 174.89L347.04 174.71L349.14 174.54L351.25 174.37L353.35 174.2L355.45 174.04L357.56 173.88L359.66 173.72L361.77 173.56L363.87 173.41L365.97 173.26L368.08 173.12L370.18 172.97L372.29 172.83L374.39 172.69L376.49 172.56L378.6 172.43L380.7 172.3L382.81 172.17L384.91 172.04L387.01 171.92L389.12 171.8L391.22 171.68L393.33 171.57L395.43 171.46L397.53 171.34L399.64 171.24L401.74 171.13L403.85 171.03L405.95 170.93L408.05 170.83L410.16 170.73L412.26 170.63L414.37 170.54L416.47 170.45L418.57 170.36L420.68 170.27L422.78 170.19L424.89 170.11L426.99 170.03L429.09 169.95L431.2 169.87L433.3 169.79L435.41 169.72L437.51 169.65L439.61 169.58L441.72 169.51L443.82 169.45L445.93 169.38L448.03 169.32L450.13 169.26L452.24 169.2L454.34 169.14L456.45 169.08L458.55 169.03L460.66 168.98L462.76 168.93L464.86 168.88L466.97 168.83L469.07 168.78L471.18 168.74L473.28 168.69L475.38 168.65L477.49 168.61L479.59 168.57L481.7 168.53L483.8 168.5L485.9 168.46L488.01 168.43L490.11 168.39L492.22 168.36L494.32 168.33L496.42 168.31L498.53 168.28L500.63 168.25L502.74 168.23L504.84 168.21L506.94 168.18L509.05 168.16L511.15 168.14L513.26 168.13L515.36 168.11L517.46 168.09L519.57 168.08L521.67 168.07L523.78 168.05L525.88 168.04L527.98 168.03L530.09 168.02L532.19 168.02L534.29 168.01L536.4 168L538.5 168L540.61 168L542.71 167.99L544.82 167.99L546.92 167.99" /></g><text fill="#D2D2D2" transform="translate(42 93)" font-size="10.26" font-family="IBM Plex Sans" x="332.94, 336.27, 340.03, 345.67, 351.62, 354.04, 357.47, 364.61, 371.86, 376.62" y="355.09">
 													freq (GHz)
 											</text><text fill="red" transform="matrix(0 -1 1 0 126.78 273.5)" font-size="10.26" font-family="IBM Plex Sans" x="-27.66, -21.7, -18.26, -12.11, -9.32, -3.16, 0.277, 2.7, 8.65, 15.35, 21.5" y="3.59">
 													S(2,1) dB20
@@ -1114,13 +1370,28 @@ cheapest way to find out where your own geometry crosses over.</p>
 </tr>
 <tr>
 <td><code>Temp</code></td>
-<td>as drawn</td>
-<td>Operating temperature — conductivity, and therefore R(f), depends on it.</td>
+<td><code>125</code></td>
+<td>Operating temperature, in <strong>°C</strong> — conductivity, and therefore R(f), depends on it. The row leads with a <strong>checkbox</strong>. <strong>Checked</strong>, the wires are held at <code>Temp</code> in every analysis — a blank box means the temperature stored with the wires, which is also 125 °C unless changed (a file saved before this release, which stored the old default of 85 °C, is read as 125 °C), shown greyed. <strong>Unchecked</strong> — what a newly placed wBond is — the wires' temperature is <strong>solved</strong> from each DC and large-signal run between <code>TempStart</code> and <code>TempEnd</code> (<a href="#wire-temperature">Wire temperature</a>), <code>Temp</code> is greyed, and the impedance is evaluated at the <strong>hotter of <code>TempStart</code> and <code>TempEnd</code></strong>, in S-parameters and every other analysis. A wBond placed before this release has no checkbox state stored and stays checked, so its answer does not change. Each metal's conductivity is read from its σ(T) table; a temperature outside that table is <strong>held at the table's nearest end</strong> and the run says so in the Messages panel. It is never refused.</td>
+</tr>
+<tr>
+<td><code>TempStart</code></td>
+<td><code>125</code></td>
+<td>With <code>Temp</code> unchecked: the temperature, in °C, each array's wires are held at where they <strong>start</strong> — at the array's <strong>input</strong> pin, typically the die. An expression, so <code>TempStart = tdie</code> can be typed and swept. Greyed while <code>Temp</code> is checked; its value is kept.</td>
+</tr>
+<tr>
+<td><code>TempEnd</code></td>
+<td><code>85</code></td>
+<td>With <code>Temp</code> unchecked: the temperature, in °C, where the wires <strong>end</strong> — at the array's <strong>output</strong> pin, typically the package lead. Greyed while <code>Temp</code> is checked.</td>
 </tr>
 <tr>
 <td><code>LoopHeight</code>, <code>Diameter</code>, <code>Material</code></td>
 <td><strong>blank</strong></td>
-<td>The controlling parameters: blank means <em>as drawn</em>. Set one and it drives every wire; array-scoped spellings (<code>LoopHeight_G1</code>, <code>Diameter_D2</code>, …) drive one array. Blank is not emitted at all, so an unset parameter never reaches the engine.</td>
+<td>The controlling parameters: blank means <em>as drawn</em>. <code>Material</code> can name any conductor circuitRF ships (the <a href="materials.html">generic materials</a>), not only the four bond-wire metals, or one of your own — see <a href="#own-metals">Your own wire metals</a>. Set one and it drives every wire; array-scoped spellings (<code>LoopHeight_G1</code>, <code>Diameter_D2</code>, …) drive one array. Blank is not emitted at all, so an unset parameter never reaches the engine.</td>
+</tr>
+<tr>
+<td><code>MaterialLibrary</code></td>
+<td>—</td>
+<td>The workspace <code>.cmat</code> this instance's own metals come from, relative to the schematic. Written for you when you choose one of its metals, removed when no material names one. If the file cannot be read, the run is refused and names the instance.</td>
 </tr>
 <tr>
 <td><code>Source</code>, <code>File</code></td>
@@ -1140,6 +1411,27 @@ cheapest way to find out where your own geometry crosses over.</p>
 wBond that shipped <code>LoopHeight = 20 mil</code> among its defaults would regenerate every placed
 instance's wires to 20 mil on its next run — silently rewriting geometry somebody drew.</p>
 </div>
+<h3 id="own-metals">Your own wire metals</h3>
+<p>The <strong>Material</strong> list ends with <strong>New Material…</strong>. It opens your workspace's material library in the
+<a href="materials.html">Materials editor</a> with a new material started: name it, give it a <strong>σ₂₀</strong> (and an α₂₀ or a
+σ(T) table if its conductivity moves with temperature) and a <strong>ThermalK</strong> if the wBond solves its
+<a href="#wire-temperature">wire temperature</a>, and save. The metal then appears in the Material list,
+and choosing it is what ties the component to that library.</p>
+<p>Which library it opens:</p>
+<ol>
+<li>the one this wBond already uses, if any;</li>
+<li>otherwise a <code>.cmat</code> your workspace technology names;</li>
+<li>otherwise any other <code>.cmat</code> in the workspace;</li>
+<li>otherwise a new <code>tech/workspace-materials.cmat</code>. A workspace made from scratch has no <code>.cmat</code> at all, so this
+is what happens there.</li>
+</ol>
+<p>An untouched copy of circuitRF's own <code>generic-materials.cmat</code> is never written to: it stays identical to the
+shipped library. A library your technology does not name yet is added to it, so a 3D or thermal run in the
+same workspace sees the same metals.</p>
+<p>The library is read at every run, so an edit you save is what the next run uses — an unsaved edit is not. A
+metal in the library takes precedence over a shipped one of the same name. If the library goes missing, the run is
+refused and names the wBond: restore the file, or choose the Material again (a shipped metal removes the
+reference).</p>
 <p>Because they are ordinary expressions, the controlling parameters are exactly what a
 <a href="simulations.html#parametric-sweep">parametric sweep</a> or an optimiser turns: sweep <code>LoopHeight_G1</code> and
 watch the match move.</p>

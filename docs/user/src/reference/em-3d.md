@@ -43,7 +43,8 @@ independent check on them. Do not use it as a replacement.
 |---|---|
 | Planar metal on a layered board or die, and vias that stitch to ground | The planar solver. A 3D run is an independent cross-check only |
 | A signal via **through** a reference plane: a line on each side of the same plane | **3D.** The planar solver refuses it: its return plane must lie beneath every conductor it solves |
-| Bond-wire arrays | wBond's kernel. A 3D run is the independent reference it is validated against |
+| Bond-wire arrays over one flat ground | wBond's equations or its kernel. A 3D run is the independent reference they are validated against |
+| Bond wires over a stepped or split ground, in a cavity, or under a lid | **3D.** wBond's ground is one flat plane — see [wBond ▸ Equations, the MoM kernel, or FEM and FDTD](wbond.html#fidelity) |
 | Leadframes, lids, cavities, stepped metal, connectors, package-to-board transitions | **3D.** Nothing planar represents them |
 | A package's capacitance and inductance matrices | **3D (Palace).** Electrostatic and magnetostatic solves |
 | Resonances of a cavity or a lid: "is there a mode inside my band?" | **3D (Palace).** An eigenmode solve finds them directly |

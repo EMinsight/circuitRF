@@ -821,6 +821,10 @@ nothing else attached to it has no DC path to ground and the matrix is singular.
 <p>An S-parameter port: a numbered, reference-impedance termination where the simulator excites and
 measures. <code>Num</code> is the port index, auto-assigned at placement; <code>Z</code> is the reference impedance. See
 <a href="pins-ports-terms.html">Pins, Ports &amp; Terms</a> for how it differs from a Pin.</p>
+<p><strong>Outside S-parameters a Term is a load of <code>Z</code></strong> to its reference: its resistance (the real part of <code>Z</code>)
+in a DC run, and <code>Z</code> at every harmonic in a harmonic-balance or loadpull run. A bias or a current returning
+through it flows, as it would through the instrument it stands for. Put a DC block in front of a Term on a
+biased node, exactly as on a bench. A Term inside a cell is ignored in every analysis.</p>
 <table class="param-table">
 <thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
 <tr><td>1</td><td>+</td></tr>
@@ -1389,20 +1393,23 @@ interchange and Touchstone export are in <b><a href="wbond.html">wBond</a></b>. 
 most often left wrong — <code>IncludeCapacitance</code> and <code>er</code> — are explained there.</p>
 </div>
 <p class="small">Terminals are set by <code>Arrays</code>; this component has no fixed pin geometry of its own.</p><table class="param-table">
-<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th></tr></thead>
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>Arrays</td><td><code>G1</code></td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>Source</td><td><code>Carried</code></td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>File</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>SymbolPitch</td><td><code>Loose</code></td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>RefPin</td><td><code>false</code></td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>IncludeCapacitance</td><td><code>true</code></td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>er</td><td><code>1</code></td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>Temp</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>GroundPlane</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>LoopHeight</td><td>&mdash;</td><td>mil</td><td>&mdash;</td></tr>
-<tr><td>Diameter</td><td>&mdash;</td><td>mil</td><td>&mdash;</td></tr>
-<tr><td>Material</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Arrays</td><td><code>G1</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Source</td><td><code>Carried</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>File</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>SymbolPitch</td><td><code>Loose</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>RefPin</td><td><code>false</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>IncludeCapacitance</td><td><code>true</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>er</td><td><code>1</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Temp</td><td><code>125</code></td><td>&mdash;</td><td>&mdash;</td><td>Checked: the wires are held at this temperature, in &#176;C, in every analysis, and a DC, harmonic-balance or loadpull run reports it as WireTemp. Empty: the temperature stored with the wires — 125 &#176;C unless changed. Unchecked: the wires&#39; temperature is SOLVED from each DC and large-signal run&#39;s currents, between TempStart and TempEnd, and reported as WireTemp; the impedance is then evaluated at the hotter of those two ends, in every analysis. Each metal&#39;s conductivity is read from its conductivity-against-temperature table; a temperature outside the table is held at the table&#39;s nearest end, and the run says so in the Messages panel.</td></tr>
+<tr><td>FixedTemp</td><td><code>false</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>TempStart</td><td><code>125</code></td><td>&mdash;</td><td>&mdash;</td><td>With Temp unchecked: the temperature, in &#176;C, each array&#39;s wires are held at where they start, at the array&#39;s input pin — typically the die. Default 125 &#176;C.</td></tr>
+<tr><td>TempEnd</td><td><code>85</code></td><td>&mdash;</td><td>&mdash;</td><td>With Temp unchecked: the temperature, in &#176;C, each array&#39;s wires are held at where they end, at the array&#39;s output pin — typically the package lead. Default 85 &#176;C.</td></tr>
+<tr><td>GroundPlane</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>LoopHeight</td><td>&mdash;</td><td>mil</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Diameter</td><td>&mdash;</td><td>mil</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>Material</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
 </tbody></table>
 <h2 id="data-file-components">Data-file components</h2>
 <h3 id="snp">Touchstone N-Port (SnP)</h3>

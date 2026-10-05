@@ -77,8 +77,12 @@ independent check on them. Do not use it as a replacement.</p>
 <td><strong>3D.</strong> The planar solver refuses it: its return plane must lie beneath every conductor it solves</td>
 </tr>
 <tr>
-<td>Bond-wire arrays</td>
-<td>wBond's kernel. A 3D run is the independent reference it is validated against</td>
+<td>Bond-wire arrays over one flat ground</td>
+<td>wBond's equations or its kernel. A 3D run is the independent reference they are validated against</td>
+</tr>
+<tr>
+<td>Bond wires over a stepped or split ground, in a cavity, or under a lid</td>
+<td><strong>3D.</strong> wBond's ground is one flat plane — see <a href="wbond.html#fidelity">wBond ▸ Equations, the MoM kernel, or FEM and FDTD</a></td>
 </tr>
 <tr>
 <td>Leadframes, lids, cavities, stepped metal, connectors, package-to-board transitions</td>
@@ -168,10 +172,10 @@ it like a Palace on this computer. Gmsh and openEMS run natively.
 <a href="palace-windows.html">Installing Palace on Windows</a> walks through it step by step, and
 <a href="em-setup.html#palace-windows">EM Setup ▸ Palace on Windows</a> has what each missing piece's message says.</p>
 <p><strong>By hand.</strong> If you prefer to build the solvers yourself, circuitRF finds them on <code>PATH</code>, in a Spack
-install tree, in a conda environment, or where you name them in <strong>Settings ▸ 3D EM</strong>. It runs only the
+install tree, in a conda environment, or where you name them in <strong>Settings ▸ Solvers</strong>. It runs only the
 versions it has validated. The exact validated versions and the three build problems met on macOS are in
 <a href="em-setup.html#install-3d-solvers">EM Setup ▸ Installing the 3D solvers by hand</a>.</p>
-<p><strong>Removing them.</strong> <strong>Uninstall …</strong> in <strong>Settings ▸ 3D EM</strong>, or <code>circuitrf solver remove palace --yes</code>.
+<p><strong>Removing them.</strong> <strong>Uninstall …</strong> in <strong>Settings ▸ Solvers</strong>, or <code>circuitrf solver remove palace --yes</code>.
 circuitRF removes only what it installed, and never touches your documents or results. See
 <a href="em-setup.html#uninstall-solvers">EM Setup ▸ Removing the 3D solvers</a>.</p>
 <h2 id="setting-up">Setting one up</h2>

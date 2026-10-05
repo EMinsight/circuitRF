@@ -98,7 +98,7 @@ technology's materials with it — see <a href="#hierarchy">Hierarchy</a>.</li>
 substrates, glass, die-attach and thermal materials) below the technology's own; each carries the package mark at
 the right of its row, and a material the technology already names is not listed twice. Assigning a built-in
 material, or editing any of its properties, copies it into the list shown under <em>New, duplicated and built-in
-materials go to</em> — usually the technology's own <code>.ctech</code> — where it is the design's own from then on, and the mark
+materials go to</em> — usually the technology's own <code>.ctech</code> — where it is yours to change from then on, and the mark
 goes. A built-in material keeps its name; <strong>Duplicate</strong> it to make a copy under another. The technology editor's
 Materials tab has the same button.</li>
 <li><strong>Edit Material…</strong> opens the file a material is defined in, on its row. Right-click a material's heading in the
@@ -976,7 +976,7 @@ its own. <code>w2 = 2*w</code> in mil, with <code>w</code> = 10 mil, is 20 mil, 
 <h2 id="operations">Booleans, fillets, chamfers and STEP parts</h2>
 <p>Four kinds of object are built by <strong>OpenCASCADE</strong>, the geometry kernel that ships inside circuitRF, rather
 than by the editor itself: a <strong>Boolean</strong> (subtract, unite or intersect), a <strong>Fillet</strong>, a <strong>Chamfer</strong> and a
-<strong>Step</strong> part (one solid of an imported STEP file). <strong>Settings ▸ 3D EM</strong> says whether this installation has
+<strong>Step</strong> part (one solid of an imported STEP file). <strong>Settings ▸ Solvers</strong> says whether this installation has
 the kernel. <strong>All four are made in the editor</strong> — booleans and fillets below, STEP parts in
 <a href="#step">STEP</a> — and a <code>.c3d</code> holding any of them is drawn, checked, explained and elaborated. The kernel is
 Open CASCADE Technology; <strong>Help ▸ About</strong> and its third-party notices say which version and under what
@@ -1105,7 +1105,7 @@ point found along a curved edge is on its drawn chord, so the status line marks 
 <span class="label">Without the geometry kernel</span>
 <p>A development build, or an installation missing its <code>geometry-kernel</code> folder, cannot build
 these objects. A 3D view that holds <b>any</b> of them — even a disabled one — is <b>not opened</b>: a dialog
-names the objects, says why, and offers <b>Open Settings ▸ 3D EM</b>, where the kernel's row says how to
+names the objects, says why, and offers <b>Open Settings ▸ Solvers</b>, where the kernel's row says how to
 restore it. A 3D view with none of them opens exactly as before. <code>circuitrf check</code> reports one
 error per such object and exits 1, and <code>em</code> refuses before writing anything. A document that places
 a <i>child</i> using one still opens; that one instance is refused and Simulate says which.</p>
@@ -1179,7 +1179,8 @@ the launch — see <a href="#connector">the second example</a>.</p>
 <p>The <strong>Realistic view</strong> button on the toolbar (the camera aperture, after Perspective and Orthographic), <em>3D ▸ View ▸
 Realistic View</em> and the <strong>L</strong> key in the view all redraw the view with physically based materials lit by a studio: metals reflect it, dielectrics take
 their body colour, gloss and translucency from their <a href="#appearance">appearance</a>. It is for pictures. It is a <strong>view</strong>,
-not an edit: it changes nothing in the model or in any result, it is not saved, and every document opens with it off.
+not an edit: it changes nothing in the model or in any result, and it is not saved in the design. Every design opens
+with it off unless <a href="settings.html#general">Settings ▸ General ▸ Open in realistic view</a> is on.
 Selecting, hovering, modelling and the clip plane all keep working underneath it.</p>
 <p>The first time a studio is used in a session it is prepared in the background, and until then the view is drawn as
 usual; the status line says <em>Realistic · preparing …</em> and then names the environment and the exposure.</p>

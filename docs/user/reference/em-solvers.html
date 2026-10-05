@@ -426,9 +426,14 @@ down, and MoM cannot represent the enclosure.</li>
 <td>MoM refuses it: its return plane must lie below every conductor</td>
 </tr>
 <tr>
-<td>Bond wires</td>
-<td><strong>FEM</strong>, or wBond's own kernel</td>
-<td>Curved, thin metal is FEM's strength; <a href="wbond.html">wBond</a> is faster and FEM is its independent check</td>
+<td>Bond wires over one flat ground</td>
+<td><strong>wBond</strong>, then <strong>FEM</strong></td>
+<td><a href="wbond.html#fidelity">wBond</a>'s equations and kernel are far faster; curved, thin metal is FEM's strength, and FEM is their independent check</td>
+</tr>
+<tr>
+<td>Bond wires over a ground step or split, in a cavity, under a lid</td>
+<td><strong>FEM</strong></td>
+<td>wBond's ground is one flat plane; FEM solves the ground you drew</td>
 </tr>
 <tr>
 <td>A die in a package, leads, lids, connectors</td>

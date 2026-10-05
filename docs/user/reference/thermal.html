@@ -163,7 +163,9 @@ counted exactly because the pulse is solved at the harmonics of 1 kHz rather tha
 <p>A thermal setup may also state <strong>currents at ports</strong>. The current flows through the model's metal and its bond wires and
 heats them — <strong>electrothermal</strong>, in circuitRF's word, and solved by <strong>conductive balance</strong>: one Newton loop over temperature
 and potential, with each metal's electrical conductivity σ(T) and each material's k(T) following the temperature. Each
-follows it unless its switch on the setup's <em>Balance</em> section is off, so the two contributions can be compared one at a time.</p>
+follows it unless its switch on the setup's <em>Balance</em> section is off, so the two contributions can be compared one at a time.
+For a quick estimate with no mesh, a schematic wBond solves its own wires' temperature from every DC and large-signal run,
+with no mould around them — see <a href="wbond.html#wire-temperature">wBond ▸ Wire temperature</a>.</p>
 <ul>
 <li><strong>Bond wires are solved as one-dimensional elements</strong> along their true 3D centrelines, their area always πd²/4 whatever
 the section their EM model uses, coupled to the pads they bond to and to the mould compound they run through. The
@@ -179,7 +181,7 @@ alone — one's current returns through the other. They are solved as a balanced
 must sum to zero (to 0.1 % of the largest), or the run refuses, naming the ports.</li>
 <li><strong>Harmonic currents</strong> heat the wires only, each harmonic at its own skin-effect resistance, each stated <strong>Peak</strong> or <strong>RMS</strong>
 (never inferred); a port's harmonics are shared among the wires of its array by their inductance. A <code>.wBond</code>'s wires are
-shared over their design's own ground plane. Wires drawn in the 3D view are shared in free space unless the document states
+shared over the ground plane their <code>.wBond</code> states. Wires drawn in the 3D view are shared in free space unless the document states
 a <code>WireGroundPlane</code>, either a height (<code>{ &quot;Z&quot;: … }</code>) or a horizontal conductor face (<code>&quot;carrier/zmax&quot;</code>). It is never guessed
 from what lies below the pads, and <code>check</code> refuses one that is above a drawn wire.</li>
 <li><strong>From a circuit</strong>: a setup can take its currents from a harmonic-balance sweep of a schematic whose S-parameter block is
@@ -243,6 +245,11 @@ as a balanced pair. At 28 dBm drive the circuit gives 49.51 dBm from 4.43 A, and
 164.7 °C); the run takes 12 s, and states when each wire passes its limit:
 <em>&quot;Probe 'w1' reaches its limit of 150 °C at Pin ≈ 13.11 (Pout_dBm ≈ 47.14, Id_A ≈ 3.242, Eff ≈ 40.2).&quot;</em> Run the <code>EM</code> setup first (1 min 37 s and 5.8 GB in Palace at the Draft preset;
 its series inductance for the six wires is 228.5 pH at 2 GHz).</p>
+<p><strong>The quick check, with no 3D run.</strong> The <code>Amplifier Wires</code> bench drives the same sweep through a wBond component carrying the six
+wires of <code>Pads.wBond</code>, its temperature solved between 125 °C at the die and 85 °C at the lead
+(<a href="wbond.html#wire-temperature">wBond ▸ Wire temperature</a>): the whole sweep takes 0.4 s, and <code>WireTemp</code> reads 166.5 °C at 10 dBm,
+464.9 °C at 20 dBm and 503.0 °C at 28 dBm. That is hotter than the 205.1 °C above because no heat leaves through a wire's sides —
+there is no mould — and from a circuit whose output network is the wires alone, which at 28 dBm gives 51.32 dBm from 5.37 A.</p>
 <p><strong>Checks.</strong> The same row drawn as 3D-view wires (the second cell, <em>Drawn Wires</em>) reads 393.0 °C at 14 A and runs away at the same
 current. Brief 72's closed form for one isolated wire in air, its ends at the heels' temperature, reads 642.2 °C at the same
 current and runs away at 3.15 A per wire: the overmold takes most of the rise. Recomputing the RF share with each wire's hot

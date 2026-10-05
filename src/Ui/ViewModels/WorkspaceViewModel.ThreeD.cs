@@ -19,6 +19,7 @@ using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
+using CircuitRF.Render.Scene3D.Export;
 using CircuitRF.Ui.ThreeD;
 using CircuitRF.Ui.ViewModels.ProjectTree;
 using CircuitRF.Ui.Layout;
@@ -694,20 +695,35 @@ public partial class WorkspaceViewModel
     /// <summary>File ▸ Export ▸ glTF…'s tooltip: what it writes, then what it needs.</summary>
     public string ThreeDExportGltfTip
         => "The model as the view draws it, with its appearances and smooth normals, as one binary glTF (.glb) for another renderer — " +
-           "a path tracer gives the refraction and caustics the realistic view approximates. Requires an active 3D document.";
+           "a path tracer gives the refraction and caustics the realistic view approximates. Requires an active 3D document " +
+           "or an EM setup's 3D view.";
+
+    /// <summary>What an export of the active document reads: the file it is named after and the view's scene, camera and plots —
+    /// a .c3d editor's (with the elaboration behind it) or a setup's Show 3D (a scene with no document).</summary>
+    private (string Path, Func<GltfExportSource> Source, Func<GltfCamera> Camera, Func<IReadOnlyList<GltfField>> Fields)? GltfExportTarget()
+        => ResolveActiveDocumentForCommands() switch
+        {
+            C3dEditorDocument e => (e.ViewModel.FilePath, e.ViewModel.GltfSource, e.ViewModel.GltfCamera, e.ViewModel.GltfFields),
+            Viewer3DDocument v when v.ViewModel.Scene.Objects.Length > 0 =>
+                (v.CemPath, () => v.ViewModel.GltfSource(Path.GetFileNameWithoutExtension(v.CemPath)), v.ViewModel.GltfCamera,
+                 v.ViewModel.GltfFields),
+            _ => null,
+        };
+
+    private bool CanExportGltf() => GltfExportTarget() is not null;
 
     /// <summary>R-em3d111-3a — needs no geometry kernel: it writes the view's own triangles.</summary>
-    [RelayCommand(CanExecute = nameof(HasActiveC3dEditor))]
+    [RelayCommand(CanExecute = nameof(CanExportGltf))]
     private async Task ExportGltf(Window? owner)
     {
-        if (ActiveC3dEditor() is not { } editor) return;
+        if (GltfExportTarget() is not { } src) return;
         if (ResolveOwner(owner) is not { } window) return;
-        var start = await window.StorageProvider.TryGetFolderFromPathAsync(new Uri(Path.GetDirectoryName(editor.FilePath)!));
+        var start = await window.StorageProvider.TryGetFolderFromPathAsync(new Uri(Path.GetDirectoryName(src.Path)!));
         var file = await window.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = "Export glTF",
             // NO extension on the suggested name: the storage provider appends DefaultExtension itself (SuggestedFileNameGateTests).
-            SuggestedFileName = Path.GetFileNameWithoutExtension(editor.FilePath),
+            SuggestedFileName = Path.GetFileNameWithoutExtension(src.Path),
             SuggestedStartLocation = start,
             DefaultExtension = "glb",
             ShowOverwritePrompt = true,
@@ -715,10 +731,10 @@ public partial class WorkspaceViewModel
         });
         if (file?.TryGetLocalPath() is not { } target) return;
 
-        var vm = new GltfExportDialogViewModel(target, editor.GltfSource(), editor.GltfCamera(), editor.GltfFields());
+        var vm = new GltfExportDialogViewModel(target, src.Source(), src.Camera(), src.Fields());
         bool ok = await new CircuitRF.Ui.Views.ThreeD.GltfExportDialog(vm).ShowDialog<bool>(window);
         if (!ok || vm.Current is not { } result || vm.Written is not { } written) return;
-        foreach (string note in result.Notes) Messages.Info(note, editor.FilePath);
+        foreach (string note in result.Notes) Messages.Info(note, src.Path);
         Messages.Success($"Exported glTF: {result.Summary}", written);
     }
 

@@ -57,6 +57,8 @@ public partial class WorkspaceViewModel
                                            () => GetResultsRoot(), a => Dispatcher.UIThread.Post(a));
             vm.IsPerspective = false;                  // orthographic, as the 3D editor opens; a stored camera wins
             vm.RestoreCamera(StoredCamera(full));
+            // Export glTF is enabled by what the view has drawn, and the first scene arrives after the tab is active.
+            vm.SceneAdopted += ExportGltfCommand.NotifyCanExecuteChanged;
             var doc = new Viewer3DDocument(vm);
             _factory.OpenDocument(doc);
             _openDocsByPath[key] = doc;
