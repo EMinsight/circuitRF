@@ -627,3 +627,50 @@ lead. The DC CURRENT, which the thermal run takes, is the circuit's own. A findi
 
 **Figures.** The four pictures in `docs/user/assets/fixed/output-wires-*.png` were drawn by a one-off patch (its README says
 how); brief-em3d-88 is the brief that makes `render --field` draw them.
+
+## The Hierarchy example (2026-10-04)
+
+Built by `tests/Ui.Tests/Examples/HierarchyExampleAuthoring.cs` (`CRF_AUTHOR_HIERARCHY=1`) through the functions the
+GUI's commands call: `WorkspaceCreate`, `CellCreate`, `SchematicToLayoutGenerator.Run` (Update Layout from Schematic)
+with `DiskCellResolver`, and a third Update Layout run asserted to change nothing. `HierarchyExampleTests` is the
+routine gate.
+
+- **A cell parameter that values are written in terms of made the cell fail `check` and LVS on its own.** Fixed at the
+  extractor rather than worked around in the example. See `src/Design/RESOLVED.md`, "A cell's own schematic binds its
+  declared parameters at their defaults".
+- **A VAR block inside a cell is cell-local.** `NetExtractor` turns a sub-cell's VARs into `Cell.Variables`, which are
+  evaluated in each instance's scope. That is what lets Pad state `Rsh`/`Rse` once and resolve them per instance. It
+  also keeps the schematic readable: the formulas written inline on each resistor overlapped one another on the canvas.
+- **A board pin on a line's own artwork is on no net.** An MLIN placement is a DEVICE to LVS, and a device's internal
+  copper is not interconnect, so Board's `IN`/`OUT` pins placed on the line ends read as "Open: … a piece with no pins".
+  A 20 mil drawn launch at each edge, with the pin on it, is what a real board has anyway.
+- **Pad needs `FlattenForLvs`.** Update Layout from Schematic draws Pad's ground vias and pour itself (designer feedback
+  round 11), and that pour meets Board's on Bottom Copper away from every declared pin. LVS rightly refuses a
+  hierarchical reading of a cell joined to its parent by undeclared metal. With Pad flattened, Board matches and keeps
+  one accurate warning: its ground copper carries no pin, because Board's schematic states no ground net of its own.
+- **Measurements belong on a Meas component.** `SchematicEditModel.Measurements` round-trips through the `.csch`, but
+  it is not what the `.cnl` writer emits as `measure` lines; a Meas component is, and it is also what a user would draw.
+- **A cell instance written headlessly needs `CellInterfaceHash`.** The GUI's placement records
+  `PlacedCellRef.HashFor` beside the reference. An instance without one reads as "never recorded", so the authoring
+  code's `Cell(...)` helper records the hash and seeds parameters from the `.ccell`, as placement does.
+- **The 3D hierarchy has to place 3D VIEWS to be pushed into in place.** The first cut placed Board's LAYOUT in
+  Assembly, and Push Into Cell on a layout instance leaves 3D for the layout editor. That placement is legitimate, but
+  it showed no 3D sub-view. Board now has a 3D view of its own (its own layout as `L1` on a carrier; a cell's 3D view
+  may place its own layout, never its own 3D view), and Assembly places that 3D view plus a Launch cell twice.
+- **The 3D editor had no toolbar buttons for Push Into Cell / Pop Out**, only Ctrl/Cmd+] / [, the context menu, and
+  a Pop Out button in the breadcrumb bar that appears only once you have pushed in. It now has the layout editor's ↓/↑
+  pair, enabled on `C3dEditorViewModel.CanPushIn` (one instance selected) and `CanPopOut`. Gate: the push-in test in
+  `ThreeD/HierarchyGateTests`.
+- **The connector is the 3D Connector example's, copied.** A first attempt drew one from boxes and gave it no
+  bore, so the pin sat on the body's face, shorted to it. The copy keeps that example's housing, PTFE-filled bore,
+  STEP flange and filleted pin, and drops its board instance, ports and setups. Its "Connector alloy" is added to
+  this workspace's technology BEFORE any layout is generated: a generated part is keyed on its technology's content,
+  so a technology edited afterwards leaves every part in both layouts reading as out of date (the gate's "Update
+  Layout again changes nothing" caught exactly that). Its z = 0 is the ground plane's top, so Assembly places it 35 µm
+  up, on the Board 3D view's ground plane.
+- **Pushed into a 3D child, only the child is drawn now.** brief-em3d-48 drew the parent around it, dimmed; the owner
+  asked for the layout editor's behaviour, where the level above is not drawn at all.
+- **X1 and X2 show no designator on Board's layout.** A module is not a part: its resistors carry designators, the
+  module puts nothing on the silkscreen. Switched off per instance (`ShowRefDes = false`).
+- **No EM setup on the 3D views, deliberately.** A land pattern is pads only, so a full-wave solve would see each
+  resistor as an open.

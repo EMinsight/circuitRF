@@ -39,6 +39,31 @@ internal sealed class LayoutSessionRegistry
     public bool IsDirty(string normalizedPath)
         => _dirtyPaths.Contains(normalizedPath);
 
+    /// <summary>
+    /// Every session the open <paramref name="docs"/> show — EVERY frame of each tab, not only its base — then every
+    /// registered session no tab shows, each once, with the <c>.clay</c> path it resolves from: the path it is
+    /// registered under, else the tab's own file for a base frame. What a technology change has to reach
+    /// (<c>WorkspaceViewModel.AllLayoutSessions</c> says why the base frame alone was the bug).
+    /// </summary>
+    public IReadOnlyList<(LayoutEditorViewModel Vm, string? ClayPath)> EverySession(IEnumerable<LayoutDocument> docs)
+    {
+        var seen = new HashSet<LayoutEditorViewModel>(ReferenceEqualityComparer.Instance);
+        var found = new List<(LayoutEditorViewModel, string?)>();
+        foreach (var doc in docs)
+        {
+            var frames = doc.NavFrames;
+            for (int i = 0; i < frames.Count; i++)
+            {
+                var session = frames[i].Session;
+                if (!seen.Add(session)) continue;
+                found.Add((session, TryGetPath(session, out var registered) ? registered : i == 0 ? doc.FilePath : null));
+            }
+        }
+        foreach (var (path, session) in _sessions)
+            if (seen.Add(session)) found.Add((session, path));
+        return found;
+    }
+
     /// <summary>True when there are dirty sessions not currently referenced by any open document.</summary>
     public bool HasOrphanedDirtySession(Func<string, bool> isReferenced)
         => _dirtyPaths.Any(p => !isReferenced(p));

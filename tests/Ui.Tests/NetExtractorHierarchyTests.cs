@@ -717,4 +717,40 @@ public class NetExtractorHierarchyTests
             CellSymbolResolver.InvalidateAll();
         }
     }
+
+    // ── A cell's own schematic run as the top binds its declared parameters at their defaults ──
+
+    /// <summary>A parameterised cell's schematic, extracted on its own (check, LVS, Simulate), binds each declared
+    /// parameter at its default — AHEAD of the VARs written in terms of it — and a VAR of the same name wins.</summary>
+    [Fact]
+    public void OwnCellSchematic_BindsDeclaredParameterDefaults_VarOfSameNameWins()
+    {
+        string cellDir = Path.Combine(Path.GetTempPath(), "crf-ownparams-" + System.Guid.NewGuid().ToString("N")[..8], "Pad");
+        try
+        {
+            string schematicDir = CircuitRF.Design.Cells.CellFolder.SubFolderPath(cellDir, CircuitRF.Design.Cells.ViewType.Schematic);
+            Directory.CreateDirectory(schematicDir);
+            CircuitRF.Design.Cells.CellPersistence.SaveToFile(Path.Combine(cellDir, ".ccell"), new CircuitRF.Design.Cells.CcellFile
+            {
+                Parameters = [new() { Name = "dB", DefaultExpression = "3" }, new() { Name = "Z0", DefaultExpression = "75" }],
+            });
+
+            var model = TwoPortSubCell();
+            model.SchematicDirectory = schematicDir;
+            var vars = new EditableComponent { InstanceName = "VAR1", Symbol = SymbolKind.Var };
+            vars.Parameters.Add(new EditableParameter { Name = "K", Expression = "10^(dB/20)" });
+            vars.Parameters.Add(new EditableParameter { Name = "Z0", Expression = "50" });
+            model.Components.Add(vars);
+
+            var globals = NetExtractor.Extract(model).TestBench.GlobalVariables;
+
+            Assert.Equal(["dB", "K", "Z0"], globals.Select(v => v.Name));
+            Assert.Equal("3", globals[0].Expression);
+            Assert.Equal("50", globals.Single(v => v.Name == "Z0").Expression);
+        }
+        finally
+        {
+            try { Directory.Delete(Path.GetDirectoryName(cellDir)!, recursive: true); } catch { /* best effort */ }
+        }
+    }
 }

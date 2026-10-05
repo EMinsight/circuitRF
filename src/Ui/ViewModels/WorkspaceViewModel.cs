@@ -1170,11 +1170,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 ? new OrphanTechChoice(choice.Value.Path, null)
                 : new OrphanTechChoice(null, choice.Value.StarterTech);
 
-            foreach (var doc in _scratchLayouts.Concat(_openDocsByPath.Values.OfType<LayoutDocument>()))
+            foreach (var (vm, clayPath) in AllLayoutSessions())
             {
-                if (doc.FilePath is null) continue;
-                if (!string.Equals(Path.GetFullPath(doc.FilePath), normalizedClayPath, StringComparison.OrdinalIgnoreCase)) continue;
-                doc.ViewModel.ApplyTechResolution(ResolveTechFor(doc.ViewModel.Model.TechRef, doc.FilePath));
+                if (clayPath is null) continue;
+                if (!string.Equals(Path.GetFullPath(clayPath), normalizedClayPath, StringComparison.OrdinalIgnoreCase)) continue;
+                vm.ApplyTechResolution(ResolveTechFor(vm.Model.TechRef, clayPath));
             }
         }
         finally
@@ -1191,12 +1191,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private void OnTechnologyChanged(string changedPath)
     {
-        foreach (var doc in _scratchLayouts.Concat(_openDocsByPath.Values.OfType<LayoutDocument>()))
+        foreach (var (vm, clayPath) in AllLayoutSessions())
         {
-            if (!string.Equals(doc.ViewModel.ResolvedTechPath, changedPath, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(vm.ResolvedTechPath, changedPath, StringComparison.OrdinalIgnoreCase))
                 continue;
-            var resolution = ResolveTechFor(doc.ViewModel.Model.TechRef, doc.FilePath);
-            doc.ViewModel.ApplyTechResolution(resolution);
+            vm.ApplyTechResolution(ResolveTechFor(vm.Model.TechRef, clayPath));
         }
 
         // brief-em3d-53 R-em3d53-1f — an open 3D view elaborates through this same cache but was never told
@@ -1209,6 +1208,20 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         TechnologyReResolved?.Invoke(changedPath);
     }
+
+    /// <summary>
+    /// Every layout session a technology change must reach, each once, with the <c>.clay</c> path it resolves from.
+    ///
+    /// <para><b>Not just each tab's <see cref="LayoutDocument.ViewModel"/>.</b> That is the tab's BASE cell; a sub-cell
+    /// pushed into is a session of its own (<see cref="LayoutDocument.ActiveViewModel"/>), holding its own resolved
+    /// technology. Walking only the base re-resolved the parent and left the sub-cell on screen drawing the old one: a
+    /// layer's visibility turned off in the technology editor did nothing while you were pushed into a sub-cell. So this
+    /// walks every frame of every tab, then any registered session no tab is showing (a tab popped back out keeps
+    /// its child session until it is retired), and a session's path is the one it is registered under — the
+    /// sub-cell's own <c>.clay</c>, whose <c>TechRef</c> is resolved against it.</para>
+    /// </summary>
+    private IReadOnlyList<(LayoutEditorViewModel Vm, string? ClayPath)> AllLayoutSessions()
+        => _layoutRegistry.EverySession(_scratchLayouts.Concat(_openDocsByPath.Values.OfType<LayoutDocument>()));
 
     /// <summary>
     /// A <c>.ctech</c> has been re-read and every open layout document re-resolved against it.
@@ -1259,11 +1272,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// default to the new one.</summary>
     private void RefreshAllOpenLayoutTech()
     {
-        foreach (var doc in _scratchLayouts.Concat(_openDocsByPath.Values.OfType<LayoutDocument>()))
-        {
-            var resolution = ResolveTechFor(doc.ViewModel.Model.TechRef, doc.FilePath);
-            doc.ViewModel.ApplyTechResolution(resolution);
-        }
+        foreach (var (vm, clayPath) in AllLayoutSessions())
+            vm.ApplyTechResolution(ResolveTechFor(vm.Model.TechRef, clayPath));
 
         // The default itself moved, so no one path names what changed — an empty string says
         // "whatever you are using, ask again".

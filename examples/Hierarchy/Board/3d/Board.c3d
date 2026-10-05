@@ -1,0 +1,22 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mil",
+	"SnapDbu": 25400,
+	"Objects": [
+		{
+			"$type": "Box",
+			"Name": "carrier",
+			"Material": "Aluminium",
+			"Min": [0, -5080000, -1524000],
+			"Size": [26416000, 10160000, 1524000]
+		}
+	],
+	"Instances": [
+		{
+			"Name": "L1",
+			"CellRef": "../../Board",
+			"View": "Layout"
+		}
+	]
+}

@@ -52,7 +52,8 @@ public sealed class PlatedViaAndPerspectiveTests
     }
 
     /// <summary>A non-plated hole is an air cylinder with no barrel: the substrate it passes through is drawn with the hole,
-    /// and a box-shaped slab keeps the box's own face numbers (z max is 5), the hole's wall no face.</summary>
+    /// and a box-shaped slab keeps the box's own face numbers (z max is 5), the hole's wall no face. A plated via carves it
+    /// too, at its barrel's outside.</summary>
     [Fact]
     public void ANonPlatedHole_IsDrawnAsAHoleInTheSubstrate_AndABoxSlabKeepsItsFaces()
     {
@@ -71,10 +72,15 @@ public sealed class PlatedViaAndPerspectiveTests
         Assert.Equal(Em3dTessellation.Of(slab).Triangles.Select(t => t.Face).Distinct().Order(),
                      drawn.Triangles.Select(t => t.Face).Where(f => f >= 0).Distinct().Order());
 
-        // A plated barrel around the same bore hides the substrate: the slab is left whole, so a board of vias costs nothing.
+        // A plated barrel around the same bore carves the substrate too, at the BARREL'S outside (0.5 mm), which the tube
+        // fills — so looking down the bore shows the plating, not the slab's top face across it (owner report, 2026-10-04).
+        // At the bore's 0.4 mm the slab's hole wall would be the tube's inner wall drawn a second time.
         var barrel = new Em3dSolid("via/1", "fr4", Em3dRole.Conductor, new Em3dCylinder(new(0, 0, 0), new(0, 0, 0.5 * Mm), 0.5 * Mm), 3);
         var plated = problem with { Solids = [slab, hole, barrel] };
-        Assert.Null(Scene3DBores.Of(plated)!.Carved(slab));
+        var carved = Scene3DBores.Of(plated)!.Carved(slab)!.Value.Make();
+        Assert.DoesNotContain(carved.Triangles.Where(t => t.Face == 5), t => Covers(carved, t, 0.45 * Mm, 0));
+        Assert.Contains(carved.Vertices, v => Math.Abs(Math.Sqrt(v.X * v.X + v.Y * v.Y) - 0.5 * Mm) < 1e-12);
+        Assert.DoesNotContain(carved.Vertices, v => Math.Abs(Math.Sqrt(v.X * v.X + v.Y * v.Y) - 0.4 * Mm) < 1e-12);
     }
 
     private static bool Covers(Em3dTriangleMesh m, Em3dTriangle t, double x, double y)

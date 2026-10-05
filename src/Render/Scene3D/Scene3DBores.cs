@@ -9,10 +9,14 @@
 // through. Only that case is carved: a vertical air cylinder spanning a conductor's whole height, lying wholly inside it.
 // A bore that stops part-way, clips an edge or overlaps another hole is left to the precedence rule alone, as before.
 //
-// A DIELECTRIC is carved the same way (2026-09-30), by a BARE bore only: a non-plated hole is an air cylinder with no
-// barrel around it, so an uncarved substrate showed no hole at all. A plated via's bore is not carved out of the
-// substrate — its barrel hides that — so a board with thousands of vias does not triangulate a slab with thousands of
-// holes. A box-shaped slab (no board outline) is carved as its rectangle extruded, its faces given back the box's own.
+// A DIELECTRIC is carved the same way (2026-09-30): a non-plated hole is an air cylinder with no barrel around it, so an
+// uncarved substrate showed no hole at all. A PLATED via's bore carves it too (2026-10-04, owner report): 2026-09-30 left
+// those out on the reasoning that the barrel hides the substrate, but it hides only the slab's SIDE — looking down the
+// bore, the slab's top face spans the tube and the plating cannot be seen at all. A plated via carves the slab at the
+// barrel's OUTSIDE radius, which the tube then fills: at the bore's radius the slab's hole wall and the tube's inner wall
+// would be one surface drawn twice, in two colours. Cost: one more ring per via in the slab's caps, which the
+// triangulator's z-order index keeps from going quadratic. A box-shaped slab (no board outline) is carved as its
+// rectangle extruded, its faces given back the box's own.
 
 using CircuitRF.Engine.Em3d;
 
@@ -24,8 +28,9 @@ internal sealed class Scene3DBores
     /// <summary>Metres: geometry closer than this is the same place (the generator writes both from one number).</summary>
     private const double Tol = 1e-9;
 
-    /// <param name="Bare">No metal cylinder around it: a hole, not a barrel's bore — the only kind a dielectric is carved by.</param>
-    private readonly record struct Bore(double X, double Y, double R, double Z0, double Z1, int Priority, bool Bare);
+    /// <param name="Outer">The radius a DIELECTRIC is carved at: the barrel's outside when the bore is a plated via's, else
+    /// <paramref name="R"/> — a bare hole.</param>
+    private readonly record struct Bore(double X, double Y, double R, double Z0, double Z1, int Priority, double Outer);
 
     private readonly Bore[] _bores;   // by X
     private readonly Em3dPrecedence _precedence;
@@ -42,15 +47,15 @@ internal sealed class Scene3DBores
             if (s.Role != Em3dRole.Air || s.Primitive is not Em3dCylinder c || !Vertical(c)) continue;
             precedence ??= Em3dPrecedence.Of(problem);
             bores.Add(new Bore(c.AxisStart.X, c.AxisStart.Y, c.Radius,
-                               Math.Min(c.AxisStart.Z, c.AxisEnd.Z), Math.Max(c.AxisStart.Z, c.AxisEnd.Z), precedence.Of(s), Bare: true));
+                               Math.Min(c.AxisStart.Z, c.AxisEnd.Z), Math.Max(c.AxisStart.Z, c.AxisEnd.Z), precedence.Of(s), Outer: c.Radius));
         }
         if (bores.Count > 0)
             foreach (var s in problem.Solids)
                 if (s.Role == Em3dRole.Conductor && s.Primitive is Em3dCylinder m && Vertical(m))
                     for (int i = 0; i < bores.Count; i++)
-                        if (bores[i].Bare && Math.Abs(bores[i].X - m.AxisStart.X) <= Tol && Math.Abs(bores[i].Y - m.AxisStart.Y) <= Tol &&
+                        if (bores[i].Outer == bores[i].R && Math.Abs(bores[i].X - m.AxisStart.X) <= Tol && Math.Abs(bores[i].Y - m.AxisStart.Y) <= Tol &&
                             bores[i].R < m.Radius - Tol)
-                            bores[i] = bores[i] with { Bare = false };
+                            bores[i] = bores[i] with { Outer = m.Radius };
         if (bores.Count == 0) return null;
         bores.Sort((a, b) => a.X.CompareTo(b.X));
         return new Scene3DBores([.. bores], precedence!);
@@ -102,9 +107,12 @@ internal sealed class Scene3DBores
         double minX = double.MaxValue, maxX = double.MinValue;
         foreach (var p in e.Outline) { minX = Math.Min(minX, p.X); maxX = Math.Max(maxX, p.X); }
         List<Bore>? taken = null;
-        foreach (var b in Near(minX, maxX))
+        bool dielectric = s.Role == Em3dRole.Dielectric;
+        foreach (var bore in Near(minX, maxX))
         {
-            if (b.Priority <= priority || !Spans(b, e.ZBottom, e.ZTop) || (s.Role == Em3dRole.Dielectric && !b.Bare)) continue;
+            // A dielectric is carved at the barrel's outside; metal at the bore.
+            var b = dielectric ? bore with { R = bore.Outer } : bore;
+            if (b.Priority <= priority || !Spans(b, e.ZBottom, e.ZTop)) continue;
             var centre = new Point2(b.X, b.Y);
             if (!Inside(e.Outline, centre) || Clearance(e.Outline, centre) < b.R - Tol) continue;
             if (e.Holes.Any(h => Inside(h, centre) || Clearance(h, centre) < b.R - Tol)) continue;

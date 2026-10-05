@@ -1,0 +1,298 @@
+{
+  "FormatVersion": 2,
+  "CellName": "Board",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "P1",
+      "Symbol": "Pin",
+      "X": -1500,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Name",
+          "Expression": "IN",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "TL1",
+      "Symbol": "Mlin",
+      "X": -1000,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "W",
+          "Expression": "44",
+          "Unit": "mil",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "L",
+          "Expression": "200",
+          "Unit": "mil",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "SignalLayer",
+          "Expression": "",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "GroundReference",
+          "Expression": "",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "X1",
+      "Symbol": "Generic",
+      "X": -400,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "dB",
+          "Expression": "3",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ],
+      "CellRef": "../../Pad",
+      "CellInterfaceHash": "5c58bf4068a4"
+    },
+    {
+      "InstanceName": "TL2",
+      "Symbol": "Mlin",
+      "X": 200,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "W",
+          "Expression": "44",
+          "Unit": "mil",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "L",
+          "Expression": "200",
+          "Unit": "mil",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "SignalLayer",
+          "Expression": "",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "GroundReference",
+          "Expression": "",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "X2",
+      "Symbol": "Generic",
+      "X": 800,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "dB",
+          "Expression": "6",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        }
+      ],
+      "CellRef": "../../Pad",
+      "CellInterfaceHash": "5c58bf4068a4"
+    },
+    {
+      "InstanceName": "TL3",
+      "Symbol": "Mlin",
+      "X": 1400,
+      "Y": 0,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "W",
+          "Expression": "44",
+          "Unit": "mil",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "L",
+          "Expression": "200",
+          "Unit": "mil",
+          "ShowOnSchematic": true,
+          "Dimension": "Length"
+        },
+        {
+          "Name": "SignalLayer",
+          "Expression": "",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        },
+        {
+          "Name": "GroundReference",
+          "Expression": "",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    },
+    {
+      "InstanceName": "P2",
+      "Symbol": "Pin",
+      "X": 1900,
+      "Y": 0,
+      "Rotation": "R180",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Name",
+          "Expression": "OUT",
+          "Unit": "",
+          "ShowOnSchematic": false,
+          "Dimension": "None"
+        }
+      ]
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          -1400,
+          0
+        ],
+        [
+          -1200,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -800,
+          0
+        ],
+        [
+          -600,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          -200,
+          0
+        ],
+        [
+          0,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          400,
+          0
+        ],
+        [
+          600,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1000,
+          0
+        ],
+        [
+          1200,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1600,
+          0
+        ],
+        [
+          1800,
+          0
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  }
+}

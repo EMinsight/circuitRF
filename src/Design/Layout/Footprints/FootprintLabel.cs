@@ -345,4 +345,78 @@ public static class FootprintLabel
         }
         return shapes;
     }
+
+    /// <summary>
+    /// The designators of the parts INSIDE a placed module — <paramref name="inst"/>'s cell's own placements, theirs,
+    /// and so on down — carried into the parent's frame through <paramref name="inst"/>'s placement, every element of
+    /// an array. <paramref name="inst"/>'s OWN designator is not among them: that is <see cref="ShapeFor"/>'s, and
+    /// switching it off (a module is not a part) leaves its parts' designators standing.
+    ///
+    /// <para><b>For the FLAT readings only</b> — the screen and <c>LayoutDesignFlatten</c> (Gerber, DRC,
+    /// <c>check</c>). A hierarchical export (GDSII, DXF) asks <see cref="ShapesFor"/> of every cell and must not have
+    /// a sub-cell's designators emitted a second time in its parent. Until 2026-10-04 the flat readings took the
+    /// root's own placements and stopped, on the stated assumption that the root is the only level a board places
+    /// parts at; a board placing a module of parts (the Hierarchy example's Board placing two Pads) drew its parts'
+    /// designators only once you pushed into the module.</para>
+    ///
+    /// <para><b>The text is the sub-cell's own</b> — what pushing into the module shows. A module placed twice
+    /// therefore draws each of its designators twice; unique board numbering is a future feature, and
+    /// <see cref="DuplicateReports"/> still reports only a view's own placements.</para>
+    /// </summary>
+    public static IReadOnlyList<LabelShape> NestedShapesFor(
+        LayoutInstance inst, string parentLayoutDir, int parentDbuPerMicron, LandPatternRoles roles, LayerKey silk)
+    {
+        var found = new List<LabelShape>();
+        Nested(inst, parentLayoutDir, parentDbuPerMicron, roles, silk, found,
+               new HashSet<string>(StringComparer.OrdinalIgnoreCase), depth: 1);
+        return found;
+    }
+
+    private static void Nested(LayoutInstance inst, string parentLayoutDir, int parentDbu, LandPatternRoles roles,
+                               LayerKey silk, List<LabelShape> into, HashSet<string> visiting, int depth)
+    {
+        if (depth > CellHierarchy.MaxDepth) return;
+        var res = CellLayoutResolver.Resolve(inst.CellRef, parentLayoutDir);
+        if (res.View is not { } cell || res.ResolvedCellDir is not { } cellDir || cell.Instances.Count == 0) return;
+        if (!visiting.Add(cellDir)) return;   // a cycle draws nothing more; the geometry walk reports it
+        try
+        {
+            string cellLayoutDir = CellHierarchy.LayoutBaseDirOf(cellDir);
+            var local = new List<LabelShape>();
+            foreach (var child in cell.Instances)
+            {
+                if (child.DesignatorShown && child.DisplayRefDes is { Length: > 0 })
+                {
+                    var childCell = child.LabelDx is not null && child.LabelDy is not null
+                        ? null : CellLayoutResolver.Resolve(child.CellRef, cellLayoutDir).View;
+                    if (ShapeFor(child, childCell, roles, cell.DbuPerMicron, silk) is { } own) local.Add(own);
+                }
+                Nested(child, cellLayoutDir, cell.DbuPerMicron, roles, silk, local, visiting, depth + 1);
+            }
+            if (local.Count == 0) return;
+
+            // Into the parent's frame: the placement's own transform, then the cell's DBU to the parent's.
+            double k = (double)Math.Max(1, parentDbu) / Math.Max(1, cell.DbuPerMicron);
+            int rows = Math.Max(1, inst.Rows), cols = Math.Max(1, inst.Cols);
+            for (int r = 0; r < rows; r++)
+                for (int c = 0; c < cols; c++)
+                {
+                    var (ox, oy) = LayoutInstanceTransform.ArrayCellOrigin(inst, r, c);
+                    foreach (var l in local)
+                    {
+                        var (x, y) = LayoutInstanceTransform.TransformPoint(l.X, l.Y, inst, r, c);
+                        // The same angle rule PlacementFor applies to a placement's own designator, so the two agree.
+                        double a = l.RotationDegrees + inst.RotationDegrees;
+                        into.Add(new LabelShape
+                        {
+                            Layer = l.Layer, Text = l.Text, HAlign = l.HAlign, VAlign = l.VAlign,
+                            X = ox + (long)Math.Round((x - ox) * k), Y = oy + (long)Math.Round((y - oy) * k),
+                            Height = (long)Math.Round(l.Height * Math.Abs(inst.Mag) * k),
+                            RotationDegrees = ReadableAngle(inst.MirrorX ? -a : a),
+                        });
+                    }
+                }
+        }
+        finally { visiting.Remove(cellDir); }
+    }
 }

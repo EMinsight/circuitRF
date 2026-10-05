@@ -1,0 +1,202 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mil",
+	"SnapDbu": 25400,
+	"AngleMode": "AnyAngle",
+	"SchematicPCellSnapshots": {
+		"R1": {},
+		"R2": {},
+		"R3": {}
+	},
+	"PCellSnapshots": {
+		"smt-0402@N_da6fd8853933": {
+			"GeneratorId": "smt:0402@N",
+			"Parameters": {},
+			"TechIdentity": "tech/pcb-2layer_RO4350B_20mil_1oz.ctech"
+		}
+	},
+	"GroundViaKeys": [
+		"R1:2",
+		"R3:2"
+	],
+	"Pins": [
+		{
+			"Name": "IN",
+			"X": 0,
+			"Y": 0,
+			"WidthDbu": 508000,
+			"OutwardDeg": 180,
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"Name": "OUT",
+			"X": 5080000,
+			"Y": 0,
+			"WidthDbu": 508000,
+			"OutwardDeg": 0,
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		}
+	],
+	"Shapes": [
+		{
+			"$type": "Path",
+			"Xy": [
+				0, 0,
+				2140000, 0
+			],
+			"Width": 508000,
+			"End": "Flush",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Path",
+			"Xy": [
+				2940000, 0,
+				5080000, 0
+			],
+			"Width": 508000,
+			"End": "Flush",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			}
+		},
+		{
+			"$type": "Path",
+			"Xy": [
+				1016000, -800000,
+				1016000, -1834600
+			],
+			"Width": 609600,
+			"End": "Flush",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Generated": "ground-via R1:2"
+		},
+		{
+			"$type": "Via",
+			"X": 1016000,
+			"Y": -1529800,
+			"PadSize": 609600,
+			"DrillSize": 304800,
+			"Layer": {
+				"Layer": 7,
+				"Datatype": 0
+			},
+			"Generated": "ground-via R1:2 @1016000,-1529800"
+		},
+		{
+			"$type": "Path",
+			"Xy": [
+				4064000, -800000,
+				4064000, -1834600
+			],
+			"Width": 609600,
+			"End": "Flush",
+			"Layer": {
+				"Layer": 1,
+				"Datatype": 0
+			},
+			"Generated": "ground-via R3:2"
+		},
+		{
+			"$type": "Via",
+			"X": 4064000,
+			"Y": -1529800,
+			"PadSize": 609600,
+			"DrillSize": 304800,
+			"Layer": {
+				"Layer": 7,
+				"Datatype": 0
+			},
+			"Generated": "ground-via R3:2 @4064000,-1529800"
+		},
+		{
+			"$type": "Poly",
+			"Xy": [
+				7149000, 2940000,
+				-2069000, 2940000,
+				-2069000, -4374600,
+				7149000, -4374600
+			],
+			"Layer": {
+				"Layer": 2,
+				"Datatype": 0
+			},
+			"Generated": "ground-pour"
+		}
+	],
+	"Instances": [
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_da6fd8853933",
+			"X": 1016000,
+			"Y": -400000,
+			"Rot": "R270",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "R1",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 270,
+				"LayoutMirror": false
+			},
+			"LabelDx": 0,
+			"LabelDy": -1045000
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_da6fd8853933",
+			"X": 2540000,
+			"Y": 0,
+			"Rot": "R0",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "R2",
+			"OrientationLink": {
+				"SchematicDeg": 270,
+				"SchematicMirror": false,
+				"LayoutDeg": 0,
+				"LayoutMirror": false
+			}
+		},
+		{
+			"CellRef": "../../.generated-cells/smt-0402@N_da6fd8853933",
+			"X": 4064000,
+			"Y": -400000,
+			"Rot": "R270",
+			"MirrorX": false,
+			"Mag": 1,
+			"Rows": 1,
+			"Cols": 1,
+			"PitchX": 0,
+			"PitchY": 0,
+			"SchematicId": "R3",
+			"OrientationLink": {
+				"SchematicDeg": 0,
+				"SchematicMirror": false,
+				"LayoutDeg": 270,
+				"LayoutMirror": false
+			}
+		}
+	]
+}

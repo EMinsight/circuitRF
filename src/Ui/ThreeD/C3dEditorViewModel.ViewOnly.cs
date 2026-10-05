@@ -46,7 +46,6 @@ public sealed partial class C3dEditorViewModel
         _workspaceCws = () => null;
         _post = a => a();
         _elaborator = new C3dElaborator();
-        _contextElaborator = new C3dElaborator();
         Viewer = viewer;
         Viewer.SceneAdopted += OnViewSceneAdopted;
         Viewer.SelectionChanged += OnViewerSelectionChanged;

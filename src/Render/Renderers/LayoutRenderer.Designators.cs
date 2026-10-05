@@ -39,7 +39,9 @@ public static partial class LayoutRenderer
     /// </summary>
     private const double DesignatorLegibilityDevicePixels = 5.0;
 
-    /// <summary>One placement's designator, held back for <see cref="DrawDesignators"/>.</summary>
+    /// <summary>One placement's designator, held back for <see cref="DrawDesignators"/>. <paramref name="Index"/> is
+    /// the placement in this view's own <c>Instances</c>, or -1 for a part nested inside a placed module — drawn,
+    /// never selected or dragged here: it is the module's data, edited by pushing into it.</summary>
     internal readonly record struct DeferredDesignator(int Index, LabelShape Label, SKColor Color);
 
     /// <summary>
@@ -59,11 +61,6 @@ public static partial class LayoutRenderer
     {
         var none = new List<DeferredDesignator>();
         if (view.Instances.Count == 0) return none;
-
-        bool any = false;
-        foreach (var inst in view.Instances)
-            if (inst.DesignatorShown && inst.DisplayRefDes is { Length: > 0 }) { any = true; break; }
-        if (!any) return none;
 
         var roles = LandPatternLayers.Resolve(tech, PCellLayerSelection.Default, []);
         if (roles.Silkscreen is not { } silk) return none;
@@ -90,21 +87,28 @@ public static partial class LayoutRenderer
             // makes dragging the designator itself show up, since that drag publishes an override
             // carrying the new offset and nothing else (R-fp4b-6a).
             var inst = dragOverrides.TryGetValue(entry.Index, out var ov) ? ov : view.Instances[entry.Index];
+
+            // One resolve per distinct CellRef, which also says whether the cell places parts of its own: a land
+            // pattern does not, and costs nothing more below.
+            if (!cellViews.TryGetValue(inst.CellRef, out var cellView))
+                cellViews[inst.CellRef] = cellView =
+                    CellHierarchy.ResolveForWalk(
+                        inst, baseDir, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0).SubView;
+
+            // The parts inside a placed module carry designators too — the sub-cell's own text, as pushing in
+            // shows it (FootprintLabel.NestedShapesFor). The module's own designator, below, is independent.
+            if (cellView is { Instances.Count: > 0 })
+                foreach (var nested in FootprintLabel.NestedShapesFor(inst, baseDir, view.DbuPerMicron, roles, silk))
+                    if (nested.Height * devicePxPerDbu >= DesignatorLegibilityDevicePixels)
+                        list.Add(new DeferredDesignator(-1, nested, color));
+
             if (!inst.DesignatorShown || inst.DisplayRefDes is not { Length: > 0 }) continue;
 
             // A stored offset needs no cell at all, so a BROKEN reference still draws its designator
             // where the user put it — which is the case where knowing what the part was called matters
             // most. Only the auto position reads the resolved cell.
-            LayoutView? cellView = null;
-            if (inst.LabelDx is null || inst.LabelDy is null)
-            {
-                if (!cellViews.TryGetValue(inst.CellRef, out cellView))
-                    cellViews[inst.CellRef] = cellView =
-                        CellHierarchy.ResolveForWalk(
-                            inst, baseDir, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0).SubView;
-            }
-
-            if (FootprintLabel.ShapeFor(inst, cellView, roles, view.DbuPerMicron, silk) is not { } label)
+            if (FootprintLabel.ShapeFor(inst, inst.LabelDx is null || inst.LabelDy is null ? cellView : null,
+                                        roles, view.DbuPerMicron, silk) is not { } label)
                 continue;
             if (label.Height * devicePxPerDbu < DesignatorLegibilityDevicePixels) continue;
 

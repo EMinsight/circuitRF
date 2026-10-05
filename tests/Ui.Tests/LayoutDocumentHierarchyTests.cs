@@ -234,4 +234,56 @@ public sealed class LayoutDocumentHierarchyTests
         doc.PushIn(subVm, "X1");
         Assert.Null(doc.ActiveFrameSavedViewport);
     }
+
+    /// <summary>
+    /// A technology edit reaches the sub-cell a tab is pushed into, not only the tab's base cell. The bug: visibility
+    /// turned off in the technology editor did nothing while a sub-cell was on screen, because the workspace re-resolved
+    /// each tab's <see cref="LayoutDocument.ViewModel"/> — the base — and the pushed-in frame kept its old technology.
+    /// The walk is <see cref="LayoutSessionRegistry.EverySession"/>; the loop is <c>WorkspaceViewModel.OnTechnologyChanged</c>'s.
+    /// </summary>
+    [Fact]
+    public void TechnologyChange_ReachesThePushedInSubCell_WithItsOwnClayPath()
+    {
+        string techPath = Path.Combine(Path.GetTempPath(), $"crf-hier-tech-{Guid.NewGuid():N}.ctech");
+        var key = new LayerKey(1, 0);
+        TechPersistence.SaveToFile(techPath, new Technology
+        {
+            Name = "T", DefaultDisplayUnit = LayoutUnit.Um, DefaultSnapDbu = 1000,
+            Layers = [new LayerDef { Key = key, Name = "M1", Visible = true, Selectable = true }],
+        });
+        try
+        {
+            var cache = new TechnologyCache();
+            TechResolution Resolve() => new(cache.Get(techPath), techPath, TechResolutionSource.WorkspaceDefault, []);
+            var baseVm = MakeVm();
+            var subVm = MakeVm();
+            baseVm.ApplyTechResolution(Resolve());
+            subVm.ApplyTechResolution(Resolve());
+            var registry = new LayoutSessionRegistry();
+            registry.Register("/ws/Board/layout/Board.clay", baseVm, _ => { });
+            registry.Register("/ws/Pad/layout/Pad.clay", subVm, _ => { });
+            var doc = new LayoutDocument("Board", baseVm);
+            doc.PushIn(subVm, "X1");
+
+            var sessions = registry.EverySession([doc]);
+            Assert.Equal([(baseVm, "/ws/Board/layout/Board.clay"), (subVm, "/ws/Pad/layout/Pad.clay")],
+                         sessions.Select(s => (s.Vm, s.ClayPath)));
+
+            // The live edit, then OnTechnologyChanged's loop over what the walk returned.
+            var edited = TechPersistence.LoadFromFile(techPath);
+            edited.Layers[0].Visible = false;
+            cache.TechnologyChanged += changed =>
+            {
+                foreach (var (vm, _) in registry.EverySession([doc]))
+                    if (string.Equals(vm.ResolvedTechPath, changed, StringComparison.OrdinalIgnoreCase))
+                        vm.ApplyTechResolution(Resolve());
+            };
+            cache.SetLive(techPath, edited);
+
+            Assert.Same(subVm, doc.ActiveViewModel);
+            Assert.False(doc.ActiveViewModel.Technology!.Layers.Single(l => l.Key == key).Visible);
+            Assert.False(baseVm.Technology!.Layers.Single(l => l.Key == key).Visible);
+        }
+        finally { try { File.Delete(techPath); } catch { /* best effort */ } }
+    }
 }

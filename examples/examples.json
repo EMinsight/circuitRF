@@ -7,6 +7,11 @@
       "Summary": "A Touchstone black box swept for gain and stability, a pair of coupled inductors, and a FET two-port on the Two-Port Stability template's own Data Display. Stability factors K and mu are written as measurement expressions."
     },
     {
+      "Folder": "Hierarchy",
+      "Title": "Hierarchy",
+      "Summary": "A 9 dB attenuator built as cells inside cells: a parameterised pi pad placed twice on a board, simulated from a test bench, laid out with Update Layout from Schematic at both levels, and assembled in 3D from 3D views of other cells you can push into."
+    },
+    {
       "Folder": "Harmonic Balance",
       "Title": "Harmonic Balance",
       "Summary": "A 48 V GaN power amplifier driven into compression, and the same amplifier under two tones for IM2/IM3/IM5. The FET is a reusable sub-cell."

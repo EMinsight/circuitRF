@@ -16585,3 +16585,68 @@ and `ParallelLcResonanceTests.AnInductorWithOnlyADielectricClass_IsWarnedForWhat
 - **Review fixes (2026-10-04).** `RadianceHdr`'s header lines drop a trailing `\r`, so a header saved with CRLF line ends
   still reads (the `FORMAT=` line is compared exactly). `C3dLook.EnvironmentOf` refuses a comma list: `Enum.TryParse` reads
   `"Studio,Dark"` as the OR of the two, which is `Dark`, so that spelling passed `check` as a studio.
+
+## A cell's own schematic binds its declared parameters at their defaults (2026-10-04)
+
+- **The defect.** A cell whose component values are written in terms of its own `.ccell` parameter (the Hierarchy
+  example's Pad: `K = 10^(dB/20)` in a VAR block, resistors `R = Rsh`) simulated correctly as an INSTANCE, where the
+  instance binds `dB`. Extracted on its own, nothing bound it. `circuitrf check` reported `elaboration failed —
+  Unresolved name 'dB' in scope 'global'`, and LVS refused the cell outright ("does not elaborate, so it has no resolved
+  values to compare"), although the artwork matched exactly (`lvs --set dB=3` reported "matches"). The SDD-based FET
+  cells in the HB/Loadpull examples never hit this, because their equations are evaluated at run time, not at
+  elaboration.
+- **The fix is in `NetExtractor.Extract`, the one place every path shares** (GUI Simulate, the run verbs, `netlist`,
+  `check`, LVS's `SchematicRead`). When the TOP model's `SchematicDirectory` is a cell folder's `schematic/`, the
+  `.ccell`'s declared parameters become globals at their defaults. That is the value an instance placed with no
+  overrides would give them. They are placed AHEAD of the schematic's own VARs, which may be written in terms of them,
+  and a VAR of the same name wins. A sub-cell's extraction does not use this; its parameters are still bound by the
+  instance through `ParameterDeclaration`.
+- **Read from disk**, as `DiskCellResolver` reads a sub-cell's `.ccell`, so an unsaved edit in the cell-parameter editor
+  is not seen until saved. An unreadable `.ccell` binds nothing.
+- Gate: `NetExtractorHierarchyTests.OwnCellSchematic_BindsDeclaredParameterDefaults_VarOfSameNameWins`.
+
+## A part inside a placed module drew no designator (2026-10-04)
+
+- **Symptom.** On the Hierarchy example's Board, the resistors inside each placed Pad showed their silkscreen
+  designators only after pushing into Pad. The Gerber/DRC flatten omitted them too.
+- **Cause: a stated assumption, not a slip.** `FootprintLabel.ShapesFor`, the renderer's `CollectDesignators` and
+  `LayoutDesignFlatten` all took the ROOT's own placements and stopped, "the root, the only level a board places parts
+  at". A board placing a module of parts breaks that.
+- **Fix.** `FootprintLabel.NestedShapesFor(inst, …)` walks the parts inside a placement, any depth (cycle guard and
+  `CellHierarchy.MaxDepth`), and carries each designator into the parent's frame: every array element, the cell's DBU
+  scaled to the parent's, and the angle composed by the rule `PlacementFor` uses for a placement's own designator. The
+  screen (index -1: drawn, never selected or dragged at that level) and `LayoutDesignFlatten` both call it. The text is
+  the sub-cell's own, so a module placed twice repeats its names; unique board numbering is a future feature.
+- **`ShapesFor` is deliberately unchanged.** The hierarchical exports (GDSII, DXF) ask it of every cell; recursing there
+  would emit a sub-cell's designators twice.
+- **A module's own designator is independent of its parts'.** Switching X1/X2's off (`ShowRefDes = false`) leaves
+  R1–R3 drawn. The renderer no longer returns early when no top-level designator is shown, since the nested ones may
+  still be. It resolves one cell per distinct `CellRef` per frame, and descends only into cells that place instances.
+- Gate: `HierarchyExampleTests.BoardSilkscreen_CarriesTheModulesPartDesignators_AndNotTheModules`.
+
+## A generated ground via's ring now sits wholly in pad-layer copper (2026-10-04)
+
+- **What changed.** `GroundArtwork.Beside`, which both the generated ground via and a placed VIAGND use, drew the tie
+  as the narrower of the pin width and the via pad, ending FLUSH on the via's centre. That left half the via's annular
+  ring outside the pad-layer copper. The tie is now as wide as the via pad and runs half a pad PAST the via's centre,
+  flush at both ends, so the whole ring is covered, as the owner asked (best practice). **Not a round end:** the first
+  cut used one, and a round end's cap at the PIN reaches back past the land's inner edge into the gap between a part's
+  two lands, which narrowed the footprint's gap (owner, 2026-10-04). Flush at the pin adds nothing there.
+- **What was deliberate, and stayed.** `ViaGapMicrons` (150 µm): the via sits beside the land, not in it, so solder is
+  not drawn down the hole. No record gave a reason for the narrow flush tie.
+- **Effect on existing designs.** The ground artwork is managed: the next Update Layout or Draw Ground Pour redraws a
+  generated tie to the new shape. A tie the designer edited or kept after moving the via is theirs and is left alone.
+  The only committed layout carrying generated vias is the Hierarchy example's Pad, rebuilt with the new tie.
+- Gate: `HierarchyExampleTests.PadGroundVias_AreWhollyCoveredByTheirTie`.
+
+## The shipped RO4350B laminate drew green in 3D (2026-10-04)
+
+- **Cause.** The two shipped RO4350B technologies' dielectric stackup entry ("RO4350") named no `Material`, so the 3D
+  solid's material was the entry's own name. `Scene3DBuilder` then took the first colour of its dielectric palette,
+  which is green. Each technology does define a `RO4350B` material, with no colour and nothing pointing at it.
+- **Fix.** The entry now names `"Material": "RO4350B"`, with the same εr 3.66 / tanδ 0.0037 / μr 1 as the entry's own
+  numbers, so nothing electrical changes. The material gains `"Color": "#ebe8df"`, the laminate's off-white. Both
+  `pcb-2layer_RO4350B_20mil_1oz` and `_30mil_1oz`.
+- **Only new workspaces get it.** A workspace holds its own COPY of the technology. The Hierarchy example was rebuilt
+  from the shipped file. The Klopfenstein Taper and Patch Antenna examples carry older copies and still draw the
+  laminate in the palette colour until their copies are updated.

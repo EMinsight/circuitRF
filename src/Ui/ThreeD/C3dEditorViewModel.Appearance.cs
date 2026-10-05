@@ -113,7 +113,7 @@ public sealed partial class C3dEditorViewModel
             _frameKeys[generation] = d.Inputs.Path + "|";
             _records[generation] = d.Records;
             _built[generation] = d;
-            return Assemble(generation, d.Document, d.Elaboration, d.Inputs, d.Records, null);
+            return Assemble(generation, d.Document, d.Elaboration, d.Inputs, d.Records);
         }
     }
 

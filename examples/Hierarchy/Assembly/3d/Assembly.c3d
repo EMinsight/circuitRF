@@ -1,0 +1,33 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mil",
+	"SnapDbu": 25400,
+	"Objects": [],
+	"Instances": [
+		{
+			"Name": "B1",
+			"CellRef": "../../Board"
+		},
+		{
+			"Name": "J1",
+			"CellRef": "../../Launch",
+			"Placement": {
+				"Origin": [0, 0, 35000]
+			}
+		},
+		{
+			"Name": "J2",
+			"CellRef": "../../Launch",
+			"Placement": {
+				"Origin": [26416000, 0, 35000],
+				"Rotate": [
+					{
+						"Axis": "Z",
+						"Deg": 180
+					}
+				]
+			}
+		}
+	]
+}

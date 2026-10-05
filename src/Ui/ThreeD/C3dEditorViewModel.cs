@@ -35,8 +35,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace CircuitRF.Ui.ThreeD;
 
 /// <summary>The UI thread's snapshot for one scene build: the document as its file would say it.</summary>
-/// <para>brief-em3d-48 — pushed into a child, the TOP document's text and path, the pushed element's path in it and the
-/// element's transform (the child's metres to the top's): the dimmed context.</para>
 /// <para>brief-em3d-49 — <paramref name="SetupJson"/> is the active setup's full .cem spelling: its air box is drawn and the
 /// ports are resolved against it.</para>
 /// <para>brief-em3d-51 — <paramref name="Cell"/> is the cell as a gesture's preview would leave it (a drag writing a
@@ -45,7 +43,6 @@ namespace CircuitRF.Ui.ThreeD;
 /// <para>brief-em3d-90 — <paramref name="HiddenTints"/>: the active setup's thermal boundaries whose rows are unticked, by row
 /// name (<c>thermal:die/zmin</c>) — data for the build thread, which never reads the editor's own sets.</para>
 public sealed record C3dSceneInputs(string DocumentText, string Path, string? WorkspaceCws, ColorTheme Theme, ColorVariant Variant,
-                                    (string Text, string Path, string Exclude, C3dTransform ToTop)? Context = null,
                                     string? SetupJson = null, C3dCell? Cell = null,
                                     IReadOnlyDictionary<string, Scene3DGhost>? Ghosts = null,
                                     IReadOnlySet<string>? HiddenTints = null);
@@ -53,7 +50,6 @@ public sealed record C3dSceneInputs(string DocumentText, string Path, string? Wo
 public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEditHost, IDisposable
 {
     private readonly C3dElaborator _elaborator;
-    private readonly C3dElaborator _contextElaborator;
     private readonly object _elaborating = new();
     private readonly Scene3DTessellationCache _tessellations = new();
     private readonly ConcurrentDictionary<long, C3dElaboration> _elaborations = new();
@@ -135,7 +131,6 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         _workspaceCws = workspaceCws;
         _post = post;
         _elaborator = new C3dElaborator(technologies, kernel);
-        _contextElaborator = new C3dElaborator(technologies, kernel);
         _technologies = technologies;
         _savedStamp = Stamp(FilePath);
         Viewer = new Viewer3DViewModel(FilePath, Path.GetFileName(FilePath), Snapshot, Build, backend, () => ResultsRootProvider?.Invoke(), post)
@@ -201,7 +196,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         // brief-em3d-66 — a boolean previewed or entered draws its own document, with ghosts; brief-em3d-67 — so does a fillet.
         var boolean = FilletScene() ?? BooleanScene();
         return new C3dSceneInputs(boolean?.Text ?? DocumentText(), FilePath, _workspaceCws(), ThemeService.Active, ThemeService.CurrentVariant,
-                                  ContextSnapshot(), SceneSetupJson(), _namePreview?.Cell, boolean?.Ghosts, HiddenTintsOfActiveSetup());
+                                  SceneSetupJson(), _namePreview?.Cell, boolean?.Ghosts, HiddenTintsOfActiveSetup());
     }
 
     /// <summary>
@@ -248,7 +243,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             Interlocked.Increment(ref _elaborations_);
             var e = _elaborator.Elaborate(doc, inputs.Path, inputs.WorkspaceCws, new C3dElaborationOptions { Cell = inputs.Cell });
             _elaborations[generation] = e;
-            _frameKeys[generation] = inputs.Path + "|" + inputs.Context?.Exclude;
+            _frameKeys[generation] = inputs.Path;
             // brief-em3d-84 — the origin rule `render --field` places its slice by (FieldPlotResolver.SceneOrigin).
             var extent = e.DisplayExtent() ?? FieldPlotResolver.EmptyExtent;
             if (_origin is not { } o || !NearEnough(o, extent))
@@ -258,34 +253,22 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
             _records[generation] = records;
             ComputeFidelity(generation, doc, inputs.Path, inputs.WorkspaceCws);
             _built[generation] = new C3dDisplayRebuild(doc, inputs, e, records,
-                                                       inputs.Context is null && inputs.Ghosts is not { Count: > 0 } && inputs.Cell is null);
-            // brief-em3d-48 R-em3d48-4a — pushed in: the top document around the child, in the child's frame, dimmed.
-            (IReadOnlyList<Em3dSolid>, IReadOnlyList<Em3dSheet>, IReadOnlyList<Em3dMaterial>)? context = null;
-            if (inputs.Context is { } ctx)
-            {
-                var top = _contextElaborator.Elaborate(C3dPersistence.Deserialize(ctx.Text), ctx.Path, inputs.WorkspaceCws);
-                context = Context(top, ctx.Exclude, ctx.ToTop, e.Solids.Count + e.Sheets.Count + 1);
-            }
-            return Assemble(generation, doc, e, inputs, records, context);
+                                                       inputs.Ghosts is not { Count: > 0 } && inputs.Cell is null);
+            // Pushed in, only the child is drawn — as the layout editor draws only the cell pushed into (owner, 2026-10-04).
+            // brief-em3d-48 R-em3d48-4a drew the top document around it, dimmed; that read as part of the child.
+            return Assemble(generation, doc, e, inputs, records);
         }
     }
 
     /// <summary>The scene from an elaboration: what <see cref="Build"/> does once the document has been elaborated, and all that a
     /// display-only rebuild does (brief-em3d-108). Called under the elaboration lock: it shares the tessellation cache.</summary>
-    private Scene3DModel Assemble(long generation, C3dDocument doc, C3dElaboration e, C3dSceneInputs inputs, RecordsView records,
-                                  (IReadOnlyList<Em3dSolid> Solids, IReadOnlyList<Em3dSheet> Sheets, IReadOnlyList<Em3dMaterial> Materials)? context)
+    private Scene3DModel Assemble(long generation, C3dDocument doc, C3dElaboration e, C3dSceneInputs inputs, RecordsView records)
     {
         var extent = e.DisplayExtent() ?? FieldPlotResolver.EmptyExtent;
         var box = records.Box ?? C3dProblemAssembly.ExtentBox(extent);
         IReadOnlyList<Em3dSolid> solids = e.Solids;
         IReadOnlyList<Em3dSheet> sheets = e.Sheets;
         IReadOnlyList<Em3dMaterial> materials = e.Materials;
-        if (context is var (cs, csh, cm))
-        {
-            solids = [.. e.Solids, .. cs];
-            sheets = [.. e.Sheets, .. csh];
-            materials = [.. e.Materials, .. cm.Where(m => !e.Materials.Any(x => x.Name == m.Name))];
-        }
         // 3D editor bugs round 1 — what has no material is drawn as a wireframe, last (never an instance run's
         // element), so it can still be seen, picked and edited. Round 2: the solver ignores it (a warning); a material
         // the technology lacks is still a refusal that stops a run.
@@ -308,7 +291,6 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
                                     FeatureShare: name => e.Provenance.TryGetValue(name, out var p) ? ShareOf(p) : null,
                                     Instancing: name => unassigned.Contains(name) || e.Images.ContainsKey(name) || faceImageHosts.Contains(name) ? null : instancing(name),
                                     Wireframe: unassigned.Count > 0 ? unassigned.Contains : null,
-                                    Context: inputs.Context is null ? null : IsContext,
                                     EditorBoundaries: true,
                                     Ghost: inputs.Ghosts is { Count: > 0 } ghosts ? n => ghosts.TryGetValue(n, out var g) ? g : Scene3DGhost.None : null,
                                     OwnFrame: name => OwnFrameOf(doc, e, name),
@@ -892,8 +874,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     {
         bool chain = snap.Kind == Snap3DKind.Grid
                      || (Viewer.Scene.Object(snap.Object) is { } o &&
-                         (IsContext(o.Name) ? _frames.Count > 0 && _frames[^1].Exact
-                                            : Elaboration?.Provenance.TryGetValue(o.Name, out var p) == true && p!.Exact));
+                         Elaboration?.Provenance.TryGetValue(o.Name, out var p) == true && p!.Exact);
         double per = C3dLowering.Metres(1, Document.DbuPerMicron);
         (long D, bool Whole) Of(double m)
         {
@@ -1314,6 +1295,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
     private void OnViewerSelectionChanged()
     {
         FilletSelectionChanged();
+        OnPropertyChanged(nameof(CanPushIn));
         if (!_syncingTree && !TreeRowStillSelected())
         {
             _syncingTree = true;

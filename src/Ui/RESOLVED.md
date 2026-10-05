@@ -38865,3 +38865,17 @@ drawn with the new material at the old offset. Avalonia 12's own doc for `Loaded
 that is no better. It is posted at `Normal` now — above `Render` — and lays the new material out itself with `UpdateLayout`, so
 the only frame drawn is the corrected one. Any "move the scroll after the content changes" fix wants the same: correct before
 the render, never after it.
+
+## A technology edit did not reach a pushed-into layout sub-cell (2026-10-04)
+
+- **Symptom.** With a layout tab pushed into a sub-cell, turning a layer's visibility off in the technology editor
+  changed nothing on screen. The same edit worked at the tab's base cell.
+- **Cause.** A `LayoutDocument` holds a stack of frames, and each pushed-in sub-cell is a session of its own
+  (`ActiveViewModel`) with its own resolved `Technology`. `WorkspaceViewModel.OnTechnologyChanged`,
+  `RefreshAllOpenLayoutTech` and the orphan-technology choice all looped over each tab's `ViewModel`, which is the BASE
+  frame. The parent was re-resolved, and the sub-cell being drawn kept the technology it was opened with. A session no
+  tab showed (left in the registry after a pop-out until retired) was missed the same way.
+- **Fix.** `LayoutSessionRegistry.EverySession(docs)` walks every frame of every tab, then every registered session no
+  tab shows, each once, with the `.clay` path it is registered under (so a sub-cell's own `TechRef` is resolved against
+  its own file). All three loops use it through `WorkspaceViewModel.AllLayoutSessions`.
+- Gate: `LayoutDocumentHierarchyTests.TechnologyChange_ReachesThePushedInSubCell_WithItsOwnClayPath`.

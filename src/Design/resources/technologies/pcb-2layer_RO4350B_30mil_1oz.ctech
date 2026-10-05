@@ -219,6 +219,7 @@
         "Kind": "Dielectric",
         "Name": "RO4350",
         "ThicknessDbu": 762000,
+        "Material": "RO4350B",
         "Epsr": 3.66,
         "TanD": 0.0037,
         "Mur": 1,
@@ -483,7 +484,8 @@
       "Name": "RO4350B",
       "Epsr": 3.66,
       "TanD": 0.0037,
-      "Mur": 1
+      "Mur": 1,
+      "Color": "#ebe8df"
     }
   ]
 }

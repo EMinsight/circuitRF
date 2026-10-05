@@ -87,6 +87,7 @@ public static class NetExtractor
 
         var tb = new TestBench(testBenchName);
         tb.Instances.AddRange(instances);
+        tb.GlobalVariables.AddRange(OwnCellParameterDefaults(model, topVars));
         tb.GlobalVariables.AddRange(topVars);
 
         // A kit netlist brings its own supporting declarations with it. They are merged rather than
@@ -130,6 +131,40 @@ public static class NetExtractor
             tb.Analyses.Add(analysis);
 
         return new ExtractionResult(tb, conflicts) { CellPorts = cellPorts, Library = lib };
+    }
+
+    /// <summary>
+    /// A cell's own schematic extracted as the TOP binds the cell's declared parameters at their defaults — the
+    /// values an instance placed with no overrides would give it. Without this, a parameterised cell's schematic did
+    /// not elaborate on its own (<c>Unresolved name 'dB'</c>), so <c>check</c> reported an error and LVS refused a
+    /// cell that is correct, while the same cell simulated fine as an instance. As a sub-cell its parameters are bound
+    /// by the instance (<see cref="ParameterDeclaration"/>), which this does not touch.
+    ///
+    /// <para>Placed AHEAD of the schematic's own VARs, which may be written in terms of them, and skipped for any
+    /// name a VAR already defines: what the user wrote in the drawing wins over the interface's default. Read from
+    /// disk, as <see cref="DiskCellResolver"/> reads a sub-cell's; an unreadable <c>.ccell</c> binds nothing, as it
+    /// declares nothing there either.</para>
+    /// </summary>
+    private static IEnumerable<Variable> OwnCellParameterDefaults(SchematicEditModel model, IReadOnlyList<Variable> topVars)
+    {
+        if (model.SchematicDirectory is not { Length: > 0 } schematicDir) return [];
+        string cellDir = Path.GetDirectoryName(Path.GetFullPath(schematicDir)) ?? "";
+        string ccellPath = Path.Combine(cellDir, CellFolder.CcellFileName);
+        if (!File.Exists(ccellPath)
+            || !string.Equals(Path.GetFullPath(CellFolder.SubFolderPath(cellDir, ViewType.Schematic)),
+                              Path.GetFullPath(schematicDir).TrimEnd(Path.DirectorySeparatorChar), StringComparison.Ordinal))
+            return [];
+
+        List<CcellParameter> declared;
+        try { declared = CellPersistence.LoadFromFile(ccellPath).Parameters; }
+        catch { return []; }
+
+        return declared
+            .Where(p => p.Name.Length > 0 && p.DefaultExpression.Length > 0
+                        && !topVars.Any(v => v.Name.Equals(p.Name, StringComparison.Ordinal)))
+            .Select(p => new Variable(p.Name, p.DefaultExpression,
+                                      UnitNormalizer.ToEngineUnit(p.Unit) is { Length: > 0 } u ? u : null))
+            .ToList();
     }
 
     // ── Per-model extraction pipeline (shared by top and sub-cells) ─────────

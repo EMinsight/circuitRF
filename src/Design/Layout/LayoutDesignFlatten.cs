@@ -193,7 +193,13 @@ public static class LayoutDesignFlatten
         // already is to the land pattern's own body outline.
         var labels = Footprints.FootprintLabel.ShapesFor(
             rootView, rootLayoutDir, rootTech,
-            inst => CellLayoutResolver.Resolve(inst.CellRef, rootLayoutDir).View);
+            inst => CellLayoutResolver.Resolve(inst.CellRef, rootLayoutDir).View).ToList();
+        // And the parts nested inside the root's placements (2026-10-04): a board placing a MODULE of parts would
+        // otherwise put none of their designators on its silkscreen. The screen draws the same ones, from the same
+        // function (FootprintLabel.NestedShapesFor).
+        if (Footprints.LandPatternLayers.Resolve(rootTech, PCells.PCellLayerSelection.Default, []) is { Silkscreen: { } silk } roles)
+            foreach (var inst in rootView.Instances)
+                labels.AddRange(Footprints.FootprintLabel.NestedShapesFor(inst, rootLayoutDir, rootView.DbuPerMicron, roles, silk));
         shapes.AddRange(labels);
         // Untagged on purpose. Silk is not a conductor, so the electrical reading never sees one;
         // tagging it with the placement it names would put a device's path on artwork that carries

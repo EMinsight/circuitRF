@@ -463,7 +463,7 @@ public sealed class HierarchyGateTests : IDisposable
     // ── §4: push in, edit in the child's frame, pop out saving or discarding ──────────────────
 
     [Fact]
-    public void PushIn_EditsTheChildInItsOwnFrameAmongTheDimmedParent_AndPopOutSavesOrDiscards_NeverLoses()
+    public void PushIn_EditsTheChildAloneInItsOwnFrame_AndPopOutSavesOrDiscards_NeverLoses()
     {
         string ws = Workspace();
         string die = C3dCell(ws, "Die", new C3dDocument { Objects = [Box("pad", 0, 0, 0, 10, 10, 2)] });
@@ -476,18 +476,26 @@ public sealed class HierarchyGateTests : IDisposable
         string dieBytes = File.ReadAllText(die);
 
         vm.Viewer.SelectMode = Scene3DSelectMode.Object;
+        // The toolbar's pair: Push Into Cell enables on one selected instance, Pop Out once pushed in.
+        var raised = new List<string?>();
+        vm.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+        Assert.False(vm.CanPushIn);
+        vm.Viewer.SetSelection([Scene3DItem.OfObject(vm.SceneObject("lead")!.Id)]);
+        Assert.False(vm.CanPushIn);
         vm.Viewer.SetSelection([Scene3DItem.OfObject(vm.SceneObject("U1/pad")!.Id)]);
+        Assert.True(vm.CanPushIn);
+        Assert.Contains(nameof(vm.CanPushIn), raised);
+        Assert.False(vm.CanPopOut);
         Assert.Null(vm.PushIntoSelected());
         Settle(vm);
+        Assert.True(vm.CanPopOut);
         Assert.Equal(die, vm.FilePath);
         Assert.Equal(pkg, vm.TopFilePath);
-        // The child in its own frame; the parent around it, moved into that frame, dimmed and not selectable.
+        // The child in its own frame, and ONLY the child: the parent is not drawn at all, as the layout editor draws only
+        // the cell pushed into (owner, 2026-10-04 — brief-em3d-48's dimmed parent read as part of the child).
         var pad = vm.SceneObject("pad")!;
         Assert.Equal(0, vm.Viewer.Scene.ToWorld(pad.Min).X, 1e-12);
-        var lead = vm.SceneObject(C3dEditorViewModel.ContextPrefix + "lead")!;
-        Assert.True(lead.Context && lead.Pickable && !lead.Selectable);
-        Assert.Equal(-1050e-6, vm.Viewer.Scene.ToWorld(lead.Min).X, 1e-12);
-        Assert.Null(vm.SceneObject(C3dEditorViewModel.ContextPrefix + "U1/pad"));
+        Assert.DoesNotContain(vm.Viewer.Scene.Objects, o => o.Name.Contains("lead", StringComparison.Ordinal) || o.Context);
 
         vm.ChangeObjects("Grow", [0], o => ((C3dBox)o).Size = new C3dPoint3(30 * Um, 10 * Um, 2 * Um));
         Assert.True(vm.IsDirty);

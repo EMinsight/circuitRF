@@ -328,8 +328,15 @@ public static class GroundArtwork
         var (vx, vy) = LayoutInstanceTransform.TransformPoint(lx, ly, inst, 0, 0);
         var (px, py) = LayoutInstanceTransform.TransformPoint(pin.X, pin.Y, inst, 0, 0);
 
-        long across = pin.WidthDbu > 0 ? (long)Math.Round(pin.WidthDbu * inst.Mag) : padDbu;
-        var tie = new PathShape { Layer = pin.Layer, Xy = [px, py, vx, vy], Width = Math.Min(across, padDbu), End = PathEndStyle.Flush };
+        // The tie is as wide as the via's pad and runs half a pad PAST the via's centre, so the via's whole annular ring sits
+        // in pad-layer copper — best practice, and what the owner asked for (2026-10-04). Flush at BOTH ends, deliberately:
+        // a round end at the pin reaches back past the land's inner edge into the gap between a part's two lands, and the
+        // far end only has to cover the ring, which a square end does. It was the narrower of the pin and the via pad,
+        // ending flush on the via's centre, which left half the ring outside the copper; nothing recorded a reason for that.
+        // The CLEARANCE above is the deliberate part and is unchanged: the via stays out of the land.
+        var (ex, ey) = LayoutInstanceTransform.TransformPoint(pin.X + (long)Math.Round(dx * (along + padDbu / 2.0)),
+                                                              pin.Y + (long)Math.Round(dy * (along + padDbu / 2.0)), inst, 0, 0);
+        var tie = new PathShape { Layer = pin.Layer, Xy = [px, py, ex, ey], Width = padDbu, End = PathEndStyle.Flush };
         return (vx, vy, tie);
     }
 

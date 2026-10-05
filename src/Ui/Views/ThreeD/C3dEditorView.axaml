@@ -98,6 +98,20 @@
 
                 <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
 
+                <!-- Hierarchy navigation — the layout editor's Push Into Cell / Pop Out pair: same glyphs, same keys. Push In
+                     is enabled on one selected instance (a 3D child is edited here, alone; a layout child opens in the
+                     layout editor); Pop Out once pushed in. -->
+                <Button IsVisible="{Binding ViewModel.IsEditable}" IsEnabled="{Binding ViewModel.CanPushIn}" Click="OnPushInClick"
+                        ToolTip.Tip="Push Into Cell: edit the selected instance's cell — a 3D view here; a layout in the layout editor  (Ctrl+])">
+                    <mi:MaterialIcon Kind="ArrowDown" Width="16" Height="16"/>
+                </Button>
+                <Button IsVisible="{Binding ViewModel.IsEditable}" IsEnabled="{Binding ViewModel.CanPopOut}" Click="OnPopOutClick"
+                        ToolTip.Tip="Pop Out: back to the parent  (Ctrl+[)">
+                    <mi:MaterialIcon Kind="ArrowUp" Width="16" Height="16"/>
+                </Button>
+
+                <Border Width="1" Margin="2,3" Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+
                 <Button Command="{Binding ViewModel.Viewer.FitCommand}" ToolTip.Tip="Fit  (Home)">
                     <mi:MaterialIcon Kind="FitToPageOutline" Width="16" Height="16"/>
                 </Button>

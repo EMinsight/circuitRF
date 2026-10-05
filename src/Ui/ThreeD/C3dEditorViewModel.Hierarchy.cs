@@ -9,9 +9,9 @@
 // PUSH IN is a NAVIGATION STACK in the same editor (hier2/hier3's shape): each frame is a document with its own undo
 // history and its own save state, and the top frame's tab is the one on screen. The pushed-in child is elaborated as
 // the editable document, IN ITS OWN FRAME — so the drawing plane, the snap and the Properties panel read in the child's
-// coordinates and display unit — and the top document is elaborated beside it, the pushed element left out, moved into
-// the child's frame by the inverse of the element's transform and drawn dimmed: the snap reaches it, a click never
-// selects it. Pop Out saves or discards a dirty child, as the user answers; nothing is ever dropped silently.
+// coordinates and display unit — and ONLY the child is drawn, as the layout editor draws only the cell pushed into.
+// (brief-em3d-48 drew the top document around it, dimmed; owner, 2026-10-04: the parent read as part of the child.)
+// Pop Out saves or discards a dirty child, as the user answers; nothing is ever dropped silently.
 
 using System.Globalization;
 using CircuitRF.Design.Layout;
@@ -380,8 +380,6 @@ public sealed partial class C3dEditorViewModel
         public string? SavedStamp;
         public string Label = "";
         public string ElementPath = "";
-        public C3dTransform ToTop = C3dTransform.Identity;
-        public bool Exact = true;
         public Camera3D? Camera;
         public DrawingPlane Plane = DrawingPlane.Default;
     }
@@ -393,6 +391,10 @@ public sealed partial class C3dEditorViewModel
 
     public int NavDepth => Math.Max(0, _frames.Count - 1);
     public bool CanPopOut => _frames.Count > 1;
+
+    /// <summary>One instance is selected — what the toolbar's Push Into Cell button is enabled on, as the layout editor's
+    /// is. Raised on every selection change and every push or pop.</summary>
+    public bool CanPushIn => SelectedInstance() >= 0;
 
     /// <summary>The breadcrumb: every frame, the last one current (hier4's shape).</summary>
     public IReadOnlyList<C3dBreadcrumb> Breadcrumbs
@@ -442,11 +444,12 @@ public sealed partial class C3dEditorViewModel
         ApplySnapGrid();
         SyncPlaneTexts();
         FrameText = _frames.Count == 1 ? "" :
-            $"Editing '{f.Label}' in context — coordinates in {Path.GetFileName(f.FilePath)}'s frame, {LayoutUnits.Suffix(Document.DisplayUnit)}. " +
-            "The parent is dimmed: it snaps, it cannot be selected.";
+            $"Editing '{f.Label}' — coordinates in {Path.GetFileName(f.FilePath)}'s frame, {LayoutUnits.Suffix(Document.DisplayUnit)}. " +
+            "Pop Out to return to the parent.";
         OnPropertyChanged(nameof(UndoRedo));
         OnPropertyChanged(nameof(NavDepth));
         OnPropertyChanged(nameof(CanPopOut));
+        OnPropertyChanged(nameof(CanPushIn));
         OnPropertyChanged(nameof(Breadcrumbs));
         OnPropertyChanged(nameof(IsDirty));
         DocumentChanged();
@@ -454,7 +457,7 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>
     /// Push Into Cell on instance <paramref name="index"/> (element <paramref name="element"/> of an array, [0,0,0] when
-    /// null): a 3D child is edited here, in context; a layout child opens in the layout editor. Returns the refusal, or
+    /// null): a 3D child is edited here, alone; a layout child opens in the layout editor. Returns the refusal, or
     /// null.
     /// </summary>
     public string? PushInto(int index, (int I, int J, int K)? element = null)
@@ -470,7 +473,7 @@ public sealed partial class C3dEditorViewModel
             return StatusMessage = $"{inst.Name} is a layout: it opened in the layout editor (a layout is not edited in 3D).";
         }
         if (OpenElsewhere?.Invoke(file) == true)
-            return StatusMessage = $"'{Path.GetFileName(file)}' is open in its own tab: edit it there, or close it to edit it in context here.";
+            return StatusMessage = $"'{Path.GetFileName(file)}' is open in its own tab: edit it there, or close it to edit it here.";
         if (_frames.Any(f => string.Equals(Path.GetFullPath(f.FilePath), Path.GetFullPath(file), StringComparison.OrdinalIgnoreCase)))
             return StatusMessage = $"'{Path.GetFileName(file)}' is already open in this stack.";
         C3dDocument child;
@@ -480,19 +483,14 @@ public sealed partial class C3dEditorViewModel
         var (i, j, k) = element ?? (0, 0, 0);
         var counts = inst.Array?.Counts ?? [1, 1, 1];
         bool array = inst.Array is not null && counts.Any(n => n > 1);
-        var pitch = inst.Array?.Pitch ?? default;
-        var placement = inst.Placement.Translated(new C3dPoint3(i * pitch.X, j * pitch.Y, k * pitch.Z));
         StoreActive();
         var parent = _frames[^1];
         parent.Camera = Viewer.View.Camera;
-        var toParent = C3dLowering.InMetres(placement.ToTransform(), Document.DbuPerMicron);
         var frame = new NavFrame
         {
             FilePath = file, Document = child, UndoRedo = new UndoRedoStack(), SavedStamp = Stamp(file),
             Label = $"{inst.Name}{(array ? $"[{i},{j},{k}]" : "")} · {Path.GetFileName(cellDir)}",
             ElementPath = (parent.ElementPath.Length > 0 ? parent.ElementPath + "/" : "") + inst.Name + (array ? $"[{i},{j},{k}]" : ""),
-            ToTop = toParent.Then(parent.ToTop),
-            Exact = parent.Exact && placement.ToTransform().IsIntegral && child.DbuPerMicron == Document.DbuPerMicron,
             Plane = _plane,
         };
         WatchStack(frame.UndoRedo);
@@ -553,48 +551,6 @@ public sealed partial class C3dEditorViewModel
     private void OnStackChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(UndoRedoStack.IsModified)) OnPropertyChanged(nameof(IsDirty));
-    }
-
-    /// <summary>The top document and the pushed element, for the scene build's context (null at the top).</summary>
-    private (string Text, string Path, string Exclude, C3dTransform ToTop)? ContextSnapshot()
-    {
-        if (_frames.Count < 2) return null;
-        var top = _frames[0];
-        var active = _frames[^1];
-        return (C3dPersistence.Serialize(top.Document), top.FilePath, active.ElementPath, active.ToTop);
-    }
-
-    /// <summary>Whether a scene object is the dimmed parent's.</summary>
-    public static bool IsContext(string name) => name.StartsWith(ContextPrefix, StringComparison.Ordinal);
-
-    /// <summary>The prefix a context object's name carries — '/' never starts a document object's name.</summary>
-    public const string ContextPrefix = "^/";
-
-    /// <summary>
-    /// The top document's elaboration, the pushed element left out, moved into the child's frame: what the pushed-in
-    /// view draws dimmed around the child. A context solid keeps its primitive where the inverse transform allows.
-    /// </summary>
-    private static (List<Em3dSolid> Solids, List<Em3dSheet> Sheets, List<Em3dMaterial> Materials) Context(
-        C3dElaboration top, string exclude, C3dTransform toTop, int order)
-    {
-        bool Excluded(string path) => path == exclude || path.StartsWith(exclude + "/", StringComparison.Ordinal);
-        var inv = toTop.Inverse();
-        var solids = new List<Em3dSolid>();
-        var sheets = new List<Em3dSheet>();
-        foreach (var s in top.Solids)
-        {
-            if (top.Provenance.TryGetValue(s.Name, out var p) && Excluded(p.InstancePath)) continue;
-            var faces = top.Provenance.TryGetValue(s.Name, out var q) ? q.FaceNames : [];
-            var moved = C3dLowering.Transform(s.Primitive, faces, inv, C3dLowering.KindPolyhedron);
-            if (moved.Solid is { } prim) solids.Add(new Em3dSolid(ContextPrefix + s.Name, s.Material, s.Role, prim, order + s.Order));
-        }
-        foreach (var sh in top.Sheets)
-        {
-            if (top.Provenance.TryGetValue(sh.Name, out var p) && Excluded(p.InstancePath)) continue;
-            var g = C3dLowering.TransformSheet(C3dLowering.Geometry(sh), inv);
-            sheets.Add(new Em3dSheet(ContextPrefix + sh.Name, sh.Material, g.Outline, g.Holes, g.Z, sh.ThicknessM, order + sh.Order) { Frame = g.Frame });
-        }
-        return (solids, sheets, [.. top.Materials]);
     }
 
     // ── instancing for the scene (R-em3d48-3a) ───────────────────────────────────────────────

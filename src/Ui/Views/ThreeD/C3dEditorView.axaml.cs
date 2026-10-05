@@ -543,6 +543,8 @@ public partial class C3dEditorView : UserControl
     // brief-em3d-48 — the breadcrumb and the Pop Out button: the view model asks about a dirty child.
     private void OnPopOutClick(object? sender, RoutedEventArgs e) => _ = _vm?.PopOutAsync();
 
+    private void OnPushInClick(object? sender, RoutedEventArgs e) => _vm?.PushIntoSelected();
+
     private void OnBreadcrumbClick(object? sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: int index }) _ = _vm?.PopToAsync(index);

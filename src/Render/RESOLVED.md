@@ -4928,3 +4928,18 @@ missing the driven port's probes or its kept document is drawn as written, with 
 - **Test note:** in .NET 10, `Vector3.Transform(v, q)` with the file's −90° quaternion read as floats moved x by
   ~2e-8 of a 1.5 mm coordinate. The orientation test applies the file's quaternion in double instead. The file's
   positions were exact.
+
+## Looking down a plated via showed the substrate, not the plating (2026-10-04)
+
+- **Symptom.** In the 3D view, a plated through-hole seen from above showed the laminate across the hole; the copper
+  barrel's wall could not be seen.
+- **Cause.** `Scene3DBores` carved a dielectric only for a BARE bore (a non-plated hole). The 2026-09-30 reasoning was
+  that a plated via's barrel hides the substrate, and it does hide the slab's sides. But the slab's top face spans the
+  inside of the tube, and from above that face is all you see.
+- **Fix.** A plated via's bore carves the dielectric too, at the barrel's OUTSIDE radius (`Bore.Outer`), which the tube
+  then fills. Not at the bore's own radius: there the slab's hole wall would coincide with the tube's inner wall, one
+  surface drawn twice in two colours. View only, as before; the solver's problem is untouched.
+- **Cost.** One ring per via in each carved slab's caps. `Em3dPolygonTriangulation`'s z-order index keeps the ear
+  clipping from going quadratic on a slab with many holes.
+- Gate: `PlatedViaAndPerspectiveTests.ANonPlatedHole_IsDrawnAsAHoleInTheSubstrate_AndABoxSlabKeepsItsFaces`, now also
+  asserting the plated case.
