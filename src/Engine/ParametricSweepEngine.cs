@@ -157,6 +157,13 @@ public static class ParametricSweepEngine
             ? new HarmonicBalance.HbSmallSignalCache(settings)
             : null;
 
+        // brief-wbond-wire-temperature R-wbt-3e/4e — the wBond wire temperatures' memory along THIS sweep's axis: each array's
+        // last converged state warm-starts the next point, and a runaway warning names the point it happened at and the last
+        // one that converged. A nested sweep's points carry the outer point's drive too, since that is what a reader needs to
+        // find it. Unused by a netlist with no wBond.
+        var thermal = new CircuitRF.WBond.Thermal.WireThermalSession();
+        string? outerDrive = diagnosticsInto?.WireThermal?.Drive;
+
         for (int si = 0; si < sweepValues.Length; si++)
         {
             control?.ThrowIfCancellationRequested();
@@ -195,6 +202,8 @@ public static class ParametricSweepEngine
                 // Safe because what RunInner returns is a DataSet of numbers: nothing downstream
                 // holds a model, and the warm-start seed is a plain complex array.
                 using var netlist = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
+                thermal.Drive = DriveText(sweep.SweepVarName, val, effUnit, baseUnit, outerDrive);
+                netlist.WireThermal = thermal;
                 datasets.Add(RunInner(inner, lib, tb, netlist, settings, baseDirectory, writeState,
                     warmStart ? seed : null, out var nextSeed, innerControl, wspCache));
                 seed = warmStart ? nextSeed : null;
@@ -245,6 +254,16 @@ public static class ParametricSweepEngine
     /// datasets and rebuilds any shorter cube at that shape, filling the new cells (and extended index
     /// axes) with NaN. Cubes already uniform — and the common non-loadpull case — pass through unchanged.
     /// </summary>
+    /// <summary>A sweep point as a warning names it: <c>Pin = 27.5 dBm</c>, in the unit the sweep was stated in, after the
+    /// outer point's own when this sweep is nested.</summary>
+    private static string DriveText(string name, double baseValue, string unit, string baseUnit, string? outer)
+    {
+        double scale = string.IsNullOrEmpty(unit) ? 1.0 : Units.Scale(unit) ?? 1.0;
+        string shown = string.IsNullOrEmpty(unit) ? baseUnit : unit;
+        string here = string.Create(CultureInfo.InvariantCulture, $"{name} = {baseValue / scale:G6}") + (shown.Length > 0 ? $" {shown}" : "");
+        return outer is null ? here : $"{outer}, {here}";
+    }
+
     private static List<DataSet> PadRaggedGridsToCommon(List<DataSet> datasets)
     {
         if (datasets.Count < 2) return datasets;
@@ -332,7 +351,7 @@ public static class ParametricSweepEngine
             var nan = new Complex(double.NaN, double.NaN);
             for (int i = 0; i < total; i++) td[i] = nan;
             for (int s = 0; s < srcTotal; s++) td[TargetIndex(s)] = sd[s];
-            return new DataCube(axes, td);
+            return new DataCube(axes, td) { Unit = src.Unit };
         }
         else
         {
@@ -340,7 +359,7 @@ public static class ParametricSweepEngine
             var td = new double[total];
             for (int i = 0; i < total; i++) td[i] = double.NaN;
             for (int s = 0; s < srcTotal; s++) td[TargetIndex(s)] = sd[s];
-            return new DataCube(axes, td);
+            return new DataCube(axes, td) { Unit = src.Unit };
         }
     }
 

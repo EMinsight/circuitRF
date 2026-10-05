@@ -221,6 +221,48 @@ public sealed class ThermalExamplesTests(ITestOutputHelper output) : IDisposable
         Assert.True(moved.Count == 0, "thermal results moved from the recorded ones:\n" + string.Join("\n", moved));
     }
 
+    /// <summary>
+    /// brief-wbond-wire-temperature G11 — the Amplifier Wires bench, the quick check with no 3D run: its drive sweep in process (well
+    /// under a second, so routine), WireTemp at the three recorded drive levels, every point solved, and the circuit's own Pout and
+    /// drain current at 28 dBm.
+    /// </summary>
+    [Fact]
+    public void TheAmplifierWiresBench_ReproducesItsRecordedNumbers()
+    {
+        var aw = JsonDocument.Parse(File.ReadAllText(Path.Combine(Root(Wires), "expected-numbers.json"))).RootElement.GetProperty("AmplifierWires");
+        double tol = aw.GetProperty("Tolerance").GetDouble();
+        string schematic = Path.Combine(Root(Wires), "Amplifier Wires", "schematic", "Amplifier Wires.csch");
+        var (model, _, _) = CircuitRF.Design.Schematic.SchematicPersistence.LoadFromFile(schematic);
+        var extracted = CircuitRF.Design.Schematic.NetExtractor.Extract(model, "Amplifier Wires");
+        Directory.CreateDirectory(_tmp);
+        string cnl = Path.Combine(_tmp, "amplifier-wires.cnl");
+        File.WriteAllText(cnl, CircuitRF.Core.Netlist.CnlWriter.Write(extracted.TestBench, extracted.Library));
+        var run = CircuitRF.Ui.Schematic.SchematicRunService.RunNetlist(cnl, baseDirectory: Path.GetDirectoryName(schematic));
+        Assert.True(run.Status == CircuitRF.Ui.Schematic.RunStatus.Success, run.StatusMessage);
+        var ds = Assert.Single(run.DataSets);
+
+        var t = ds["WireTemp"];
+        var pins = t.Axes[0].Values;
+        Assert.All(ds["WireTempState"].RealValues, v => Assert.Equal(1.0, v));
+        foreach (var p in aw.GetProperty("Recorded").EnumerateArray())
+        {
+            int i = Array.IndexOf(pins, p.GetProperty("Pin").GetDouble());
+            output.WriteLine($"WireTemp at {pins[i]} dBm {t.RealValues[i]:F3} °C");
+            Assert.Equal(p.GetProperty("WireTemp").GetDouble(), t.RealValues[i], tol);
+        }
+        // the bench's own measure lines, at 28 dBm: Pout_dBm = 10·log10(Re(½·V(out,1)·I(IOUT,1)*)·1000), Id_A = Re I(IDD,0)
+        System.Numerics.Complex At(string cube, string name, int k)
+        {
+            var c = ds[cube];
+            int row = Array.IndexOf(c.Axes[1].Labels!, name), nRow = c.Axes[1].Length, nH = c.Axes[2].Length;
+            return c.ComplexValues[((pins.Length - 1) * nRow + row) * nH + k];
+        }
+        var at28 = aw.GetProperty("At28");
+        double pout = 10 * Math.Log10((0.5 * At("V", "out", 1) * System.Numerics.Complex.Conjugate(At("I", "IOUT", 1))).Real * 1000);
+        Assert.Equal(at28.GetProperty("Pout_dBm").GetDouble(), pout, 0.01);
+        Assert.Equal(at28.GetProperty("Id_A").GetDouble(), At("I", "IDD", 0).Real, 0.01);
+    }
+
     /// <summary>brief-em3d-85 — the EM setup in Palace (Draft, about 1.5 min), then FromHB on its result: the edge wire at 28 dBm
     /// and the drive at which it passes its limit.</summary>
     [PalaceFact]

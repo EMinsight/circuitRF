@@ -75,10 +75,71 @@ public partial class ParameterEditorViewModel
         name is WBondEmbedding.DesignParameter or WBondPlacement.ArraysParameter
              or "SymbolPitch" or "RefPin" or "IncludeCapacitance" or "er"
              or "Source" or "File" or "Material" or "GroundPlane"
-             or WBondPlacement.MaterialLibraryParameter
+             or WBondPlacement.MaterialLibraryParameter or FixedTempParameter
         || name.StartsWith("LoopHeight_", StringComparison.Ordinal)
         || name.StartsWith("Diameter_", StringComparison.Ordinal)
         || name.StartsWith("Material_", StringComparison.Ordinal);
+
+    // ── The wire temperature: fixed or solved (brief-wbond-wire-temperature R-wbt-5) ────────────
+
+    /// <summary>The Temp row's checkbox. Panel-owned because it has a real control; <c>Temp</c>,
+    /// <c>TempStart</c> and <c>TempEnd</c> are NOT — they stay expression rows, so a <c>VAR</c> is typable
+    /// in each (see the note on <see cref="IsWBondPanelParameter"/>).</summary>
+    internal const string FixedTempParameter = "FixedTemp";
+
+    /// <summary>Whether the instance's temperature is fixed. ABSENT is fixed: an instance saved before the
+    /// solved mode existed keeps the answer it had (D4). A new placement writes "false".</summary>
+    private bool WBondFixedTemp()
+    {
+        string v = WBondParameterValue(FixedTempParameter).Trim();
+        return v.Length == 0 || !v.Equals("false", StringComparison.OrdinalIgnoreCase) && v != "0";
+    }
+
+    /// <summary>
+    /// R-wbt-5a/b — the Temp row leads with the FixedTemp checkbox; checked, Temp is live and the two boundary
+    /// rows are greyed, unchecked the reverse. Greying never touches a value: a <c>VAR</c> in a greyed box is
+    /// kept and committed unchanged.
+    /// </summary>
+    private void ConfigureWBondTemperatureRow(ParameterRowViewModel row)
+    {
+        bool fixedTemp = WBondFixedTemp();
+        switch (row.Name)
+        {
+            case "Temp":
+                row.ShowLeadingCheck(fixedTemp);
+                row.LeadingCheckChanged = SetWBondFixedTemp;
+                row.SetDisabledByMode(!fixedTemp);
+                break;
+            case "TempStart" or "TempEnd":
+                row.SetDisabledByMode(fixedTemp);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// R-wbt-5e — one undoable <see cref="SetParametersCommand"/>, as <c>IncludeCapacitance</c> is. Never rewrites
+    /// a value. An instance from before the solved mode states no boundary temperatures, so unchecking adds the
+    /// two that are missing at their defaults — that is what the run would use — in canonical order, under Temp.
+    /// </summary>
+    private void SetWBondFixedTemp(bool fixedTemp)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null) return;
+        var updated = _target.Parameters.Select(p => p.Clone()).ToList();
+        Set(FixedTempParameter, fixedTemp ? "true" : "false");
+        if (!fixedTemp)
+        {
+            if (updated.All(p => p.Name != "TempStart")) Set("TempStart", ComponentTypeRegistry.WBondDefaultTempC);
+            if (updated.All(p => p.Name != "TempEnd")) Set("TempEnd", ComponentTypeRegistry.WBondDefaultTempEndC);
+        }
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, WBondPlacement.InCanonicalOrder(updated)));
+
+        void Set(string name, string value)
+        {
+            var param = updated.FirstOrDefault(p => p.Name == name);
+            if (param is not null) param.Expression = value;
+            else updated.Add(new EditableParameter { Name = name, Expression = value });
+        }
+    }
 
     // ── The three simple controls ─────────────────────────────────────────────
 

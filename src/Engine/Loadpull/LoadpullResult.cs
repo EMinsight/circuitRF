@@ -137,6 +137,12 @@ public sealed class PinStepResult
     public double De   { get; }    // drain efficiency = Pout / Pdc (linear, not dB)
     public double Pae  { get; }    // PAE = (Pout − Pin_delivered) / Pdc (linear)
 
+    // ── wBond array currents (brief-wbond-wire-temperature R-wbt-4a) ─────────
+    /// <summary>Each solved-temperature wBond's array currents at this step, by instance path — read from the step's own
+    /// back-solve while it is in hand, so the temperature solve after the ladder needs no second HB solve. Null when the netlist
+    /// solves no wire temperature or the step did not converge.</summary>
+    public IReadOnlyDictionary<string, WBondArrayCurrents>? WBondCurrents { get; init; }
+
     // ── Convergence ──────────────────────────────────────────────────────────
     public bool    Converged   { get; }
     public int     Iterations  { get; }

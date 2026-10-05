@@ -1,6 +1,7 @@
 using System.Numerics;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.WBond;
+using CircuitRF.WBond.Thermal;
 
 namespace CircuitRF.Core.Devices;
 
@@ -88,9 +89,14 @@ public sealed class WBondModel : ComponentModel, IReportsWarnings
     /// own <see cref="WBondDesign.IncludeCapacitance"/>. The instance parameter wins when it is set,
     /// which is the same relationship <c>GroundPlane</c> already has with the design's own flag.
     /// </param>
+    /// <param name="thermal">
+    /// How the wire temperature is set (brief-wbond-wire-temperature D4): null is FIXED at the design's own
+    /// operating temperature, which is every instance saved before the solved mode existed. In solved mode
+    /// the caller has already set the design's operating temperature to <see cref="WireThermalSpec.StampC"/>.
+    /// </param>
     public WBondModel(WBondDesign design, string sourceDescription = "<inline>",
                       bool referencePin = false, IReadOnlyList<string>? notes = null,
-                      bool? includeCapacitance = null)
+                      bool? includeCapacitance = null, WireThermalSpec? thermal = null)
     {
         ArgumentNullException.ThrowIfNull(design);
         design.Validate();
@@ -113,7 +119,21 @@ public sealed class WBondModel : ComponentModel, IReportsWarnings
 
         ArrayBranchIndices = new int[design.Arrays.Count];
         for (int k = 0; k < ArrayBranchIndices.Length; k++) ArrayBranchIndices[k] = -1;
+
+        ThermalSpec = thermal ?? WireThermalSpec.Fixed(design.OperatingTempC);
     }
+
+    /// <summary>How this instance's wire temperature is set — fixed, or solved from a run's currents.</summary>
+    public WireThermalSpec ThermalSpec { get; }
+
+    private WBondThermalModel? _thermal;
+
+    /// <summary>
+    /// What the wire temperature solve needs of this component — each wire's length, diameter and metal, and
+    /// the inductive share — built once per model (R-wbt-2d), on first use, from the same design and reduction
+    /// the stamp uses.
+    /// </summary>
+    public WBondThermalModel Thermal => _thermal ??= WBondThermalModel.Create(_design, ThermalSpec, InductanceOnly);
 
     /// <summary>The design this component models. Exposed for the coupling audit and for measurements.</summary>
     public WBondDesign Design => _design;

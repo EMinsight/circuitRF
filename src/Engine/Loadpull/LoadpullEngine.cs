@@ -320,7 +320,69 @@ public sealed class LoadpullEngine
         ctx.SrcModel.SetTone(0);
         ctx.LoadModel.SetTone(0);
 
-        return BuildLoadpullDataSet(gridPoints, p, ctx);
+        var ds = BuildLoadpullDataSet(gridPoints, p, ctx);
+        AddWireTemperature(ds, gridPoints, p);
+        return ds;
+    }
+
+    /// <summary>
+    /// brief-wbond-wire-temperature R-wbt-4a — every solved-temperature wBond's array currents at one converged step, read from
+    /// the step's back-solver at each harmonic (as <c>HbPinCurrents</c> reads an SnP's rows). Null when none solves.
+    /// </summary>
+    private IReadOnlyDictionary<string, WBondArrayCurrents>? WBondCurrentsOf(HbEngine.SinglePointResult sr, PursuitContext ctx)
+    {
+        var wbonds = WireTemperatureCubes.Instances(_netlist);
+        if (!WireTemperatureCubes.AnySolved(wbonds) || sr.BackSolver is not { } back) return null;
+        double[] freqs = [.. Enumerable.Range(0, ctx.K + 1).Select(k => k * ctx.HbParams.ToneHz)];
+        return wbonds.Where(w => w.Model.ThermalSpec.Solved)
+                     .ToDictionary(w => w.Path, w => WireTemperatureCubes.FromBranchRows(w.Model, freqs, k => back.GetSolution(k, 0)),
+                                   StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// R-wbt-4d — <c>WireTemp</c> and its state as <c>[gridPoint, pinStep, wire array]</c>, the layout the FOM cubes have plus
+    /// the array axis. Solved along each load point's Pin ladder in order, so each step warm-starts from the one below and a
+    /// runaway warning names the step it happened at and the last that converged. A step the ladder never reached, or that did
+    /// not converge, is state 3 (NaN) — a fixed-temperature instance still reports its Temp there.
+    /// </summary>
+    private void AddWireTemperature(DataSet ds, List<GridPointResult> gridPoints, LoadpullAnalysisParams p)
+    {
+        var wbonds = WireTemperatureCubes.Instances(_netlist);
+        if (wbonds.Count == 0) return;
+        var pinSeq = BuildPinSequence(p).ToList();
+        var gridAxis = ds["Pout"].Axes[0];
+        var pinAxis = ds["Pout"].Axes[1];
+        string? outer = _netlist.WireThermal?.Drive;
+        string[]? labels = null;
+        double[] temps = [], states = [];
+        for (int gi = 0; gi < gridPoints.Count; gi++)
+        {
+            var gpr = gridPoints[gi];
+            var session = new CircuitRF.WBond.Thermal.WireThermalSession();
+            for (int pi = 0; pi < pinSeq.Count; pi++)
+            {
+                var step = pi < gpr.PinSteps.Count ? gpr.PinSteps[pi] : null;
+                session.Drive = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"Pin = {pinSeq[pi].PavlDbm:0.##} dBm at load {gridAxis.Labels?[gi] ?? gi.ToString(System.Globalization.CultureInfo.InvariantCulture)} Ω")
+                    + (outer is null ? "" : $" ({outer})");
+                var point = WireTemperatureCubes.Compute(_netlist, wbonds,
+                    (path, model) => step?.WBondCurrents?.GetValueOrDefault(path) ?? WBondArrayCurrents.Dc(new double[model.ArrayCount]),
+                    step is { Converged: true, WBondCurrents: not null }, "at this drive", session);
+                if (labels is null)
+                {
+                    labels = point.Labels;
+                    temps = new double[gridPoints.Count * pinSeq.Count * labels.Length];
+                    states = new double[temps.Length];
+                }
+                int at = (gi * pinSeq.Count + pi) * labels.Length;
+                Array.Copy(point.TempC, 0, temps, at, labels.Length);
+                Array.Copy(point.State, 0, states, at, labels.Length);
+            }
+        }
+        if (labels is null) return;
+        ds.Add(WireTemperatureCubes.Cube,
+               new DataCube([gridAxis, pinAxis, WireTemperatureCubes.ArrayAxis(labels)], temps) { Unit = "°C" });
+        ds.Add(WireTemperatureCubes.StateCube, new DataCube([gridAxis, pinAxis, WireTemperatureCubes.ArrayAxis(labels)], states));
     }
 
     // ── DataSet builder ──────────────────────────────────────────────────────
@@ -542,7 +604,10 @@ public sealed class LoadpullEngine
                 sr.V, sr.INl, iSrcIn,
                 foms.PavlW, foms.PinDeliveredW, foms.PoutW, foms.GtDb, foms.GpDb,
                 vLoad, iLoad, vSrc, iSrc2,
-                sr.Converged, sr.Iterations, sr.FailReason);
+                sr.Converged, sr.Iterations, sr.FailReason)
+            {
+                WBondCurrents = sr.Converged ? WBondCurrentsOf(sr, ctx) : null,
+            };
 
             if (!sr.Converged && sr.FailReason is not null) lastFailReason = sr.FailReason;
 

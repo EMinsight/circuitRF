@@ -1063,6 +1063,11 @@ public static class ComponentTypeRegistry
     public static string WBondDefaultTempC { get; } =
         CircuitRF.WBond.WireMaterials.DefaultOperatingTempC.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
+    /// <summary>A newly placed wBond's output-end temperature in solved mode, °C (brief-wbond-wire-temperature D4):
+    /// <see cref="CircuitRF.WBond.WireMaterials.DefaultEndTempC"/> — a package lead, where <c>TempStart</c> is a die pad.</summary>
+    public static string WBondDefaultTempEndC { get; } =
+        CircuitRF.WBond.WireMaterials.DefaultEndTempC.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
     /// <summary>
     /// The unit a parameter is ALWAYS stated in, for the Inspector to show in place of a unit combo —
     /// or empty when the parameter has an ordinary one. Today that is the temperatures: <c>Temp</c>,
@@ -1074,7 +1079,7 @@ public static class ComponentTypeRegistry
     /// parameters, and a name alone says nothing about what that cell means by it.</para>
     /// </summary>
     public static string FixedUnitLabel(SymbolKind kind, string parameterName)
-        => kind is not SymbolKind.Generic && parameterName is "Temp" or "Tnom" or "Dtemp" ? "°C" : "";
+        => kind is not SymbolKind.Generic && parameterName is "Temp" or "Tnom" or "Dtemp" or "TempStart" or "TempEnd" ? "°C" : "";
 
     /// <summary>
     /// True when a parameter's value is fixed by the TILE the user placed, so it is shown but never
@@ -1186,10 +1191,17 @@ public static class ComponentTypeRegistry
     private static string WBondParameterDescription(SymbolKind kind, string parameterName)
         => kind is not SymbolKind.WBond ? "" : parameterName switch
         {
-            "Temp" => "The wires' operating temperature, in °C. Empty: the temperature stored with the wires — "
-                    + "125 °C unless changed. Each metal's conductivity is read from its conductivity-against-temperature "
-                    + "table; a temperature outside the table is held at the table's nearest end, and the "
-                    + "run says so in the Messages panel.",
+            "Temp" => "Checked: the wires are held at this temperature, in °C, in every analysis, and a DC, harmonic-"
+                    + "balance or loadpull run reports it as WireTemp. Empty: the temperature stored with the wires — "
+                    + "125 °C unless changed. Unchecked: the wires' temperature is SOLVED from each DC and large-signal "
+                    + "run's currents, between TempStart and TempEnd, and reported as WireTemp; the impedance is then "
+                    + "evaluated at the hotter of those two ends, in every analysis. Each metal's conductivity is read "
+                    + "from its conductivity-against-temperature table; a temperature outside the table is held at the "
+                    + "table's nearest end, and the run says so in the Messages panel.",
+            "TempStart" => "With Temp unchecked: the temperature, in °C, each array's wires are held at where they start, "
+                         + "at the array's input pin — typically the die. Default 125 °C.",
+            "TempEnd"   => "With Temp unchecked: the temperature, in °C, each array's wires are held at where they end, "
+                         + "at the array's output pin — typically the package lead. Default 85 °C.",
             _      => "",
         };
 
@@ -2003,6 +2015,14 @@ public static class ComponentTypeRegistry
                     // default 85 — and the row shows it as placeholder text. Unlike LoopHeight/Diameter/
                     // Material below, which must stay blank (§2.2).
                     new("Temp",        WBondDefaultTempC, "", false, UnitDimension.None),
+                    // brief-wbond-wire-temperature D4 — the Temp row's checkbox, and the two boundary
+                    // temperatures under it. A NEW placement solves its temperature (FixedTemp "false");
+                    // an instance that states no FixedTemp — every one saved before this — is FIXED, so its
+                    // answer does not move (ComponentModelFactory.WireThermalSpecOf). TempStart/TempEnd are
+                    // expression rows, so `TempStart = tdie` is typable and sweepable.
+                    new("FixedTemp",   "false", "", false, UnitDimension.None),
+                    new("TempStart",   WBondDefaultTempC, "", false, UnitDimension.None),
+                    new("TempEnd",     WBondDefaultTempEndC, "", false, UnitDimension.None),
                     new("GroundPlane", "", "", false, UnitDimension.None),
                     new("LoopHeight",  "", "mil", false, UnitDimension.Length),
                     new("Diameter",    "", "mil", false, UnitDimension.Length),

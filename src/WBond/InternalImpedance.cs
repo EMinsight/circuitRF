@@ -209,8 +209,24 @@ public static class InternalImpedance
         double rdc = DcResistancePerMetre(radiusM, sigma);
         if (frequencyHz <= 0.0) return (rdc, -rdc / sigma);
         double q = QParameter(frequencyHz, radiusM, sigma);
-        double re = NormalizedZ(q).Real;
-        return (rdc * re, rdc / sigma * (-re + q / 2.0 * NormalizedZSlope(q).Real));
+        var (n, slope) = NormalizedZWithSlope(q);
+        double re = n.Real;
+        return (rdc * re, rdc / sigma * (-re + q / 2.0 * slope.Real));
+    }
+
+    /// <summary>
+    /// <see cref="NormalizedZ"/> and <see cref="NormalizedZSlope"/> together, by the same arithmetic as each — so bit for bit
+    /// the same two numbers — with the continued fraction run ONCE where both need it. A thermal solve asks for both at every
+    /// quadrature point of every wire at every harmonic, and the fraction is nearly all of what that costs
+    /// (brief-wbond-wire-temperature R-wbt-4f).
+    /// </summary>
+    public static (Complex Z, Complex Slope) NormalizedZWithSlope(double q)
+    {
+        if (q < SeriesLimit || q > AsymptoticLimit || q == 0.0) return (NormalizedZ(q), NormalizedZSlope(q));
+        var dz = new Complex(1, 1);
+        var z = new Complex(q, q);
+        Complex n = z / 2.0 / RatioI1OverI0(z);
+        return (n, (2.0 * n / z + z / 2.0 - 2.0 * n * n / z) * dz);
     }
 
     /// <summary>

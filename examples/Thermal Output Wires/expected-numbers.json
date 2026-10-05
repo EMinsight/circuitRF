@@ -43,6 +43,17 @@
     "Tolerance": 0.05,
     "Recorded": { "Pin": 28, "Edge": 205.108, "Centre": 164.69, "Pout_dBm": 49.5149, "Id_A": 4.42938, "LimitAtW1": 13.1093 }
   },
+  "AmplifierWires": {
+    "Time": "0.4 s for the sweep through `circuitrf hb`",
+    "Readme": [ "0.4 s", "166.5 °C", "464.9 °C", "503.0 °C", "51.32 dBm", "5.37 A" ],
+    "Tolerance": 0.05,
+    "Recorded": [
+      { "Pin": 10, "WireTemp": 166.455 },
+      { "Pin": 20, "WireTemp": 464.936 },
+      { "Pin": 28, "WireTemp": 503.044 }
+    ],
+    "At28": { "Pout_dBm": 51.3172, "Id_A": 5.36603 }
+  },
   "DrawnWires": {
     "Time": "23 s",
     "Readme": [ "393.0 °C" ],

@@ -58,6 +58,8 @@ public sealed class WBondTemperatureAndMaterialTests : IDisposable
 
         var comp = WBondPlacement.BuildCarrying(OneArray(), "W1");
         comp.Parameters.First(p => p.Name == "IncludeCapacitance").Expression = "false";
+        // These tests are about a FIXED temperature reaching the run; a new placement solves its own (brief-wbond-wire-temperature D4).
+        comp.Parameters.First(p => p.Name == "FixedTemp").Expression = "true";
         configure(comp);
         model.Components.Add(comp);
 

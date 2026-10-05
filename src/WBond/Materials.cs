@@ -9,6 +9,11 @@ namespace CircuitRF.WBond;
 /// <param name="Sigma">Conductivity at <paramref name="TempC"/>, S/m.</param>
 public readonly record struct SigmaPoint(double TempC, double Sigma);
 
+/// <summary>One row of a thermal-conductivity-against-temperature table: k at <see cref="TempC"/>.</summary>
+/// <param name="TempC">Temperature, °C.</param>
+/// <param name="K">Thermal conductivity at <paramref name="TempC"/>, W/(m·K).</param>
+public readonly record struct KPoint(double TempC, double K);
+
 /// <summary>
 /// A bond-wire metal (wbond.md §2.3).
 ///
@@ -68,6 +73,73 @@ public sealed record WireMaterial(string Name, double Sigma20, double Alpha20, d
             $"Temp = {tempC:0.##} °C is outside {Name}'s conductivity table ({lo:0.##} to {hi:0.##} °C), " +
             $"so its conductivity is held at the {end:0.##} °C value, {SigmaAt(end):G4} S/m.");
     }
+
+    // ── Thermal conductivity (brief-wbond-wire-temperature R-wbt-1) ──────────────────────────────────────
+    //
+    // Read from the same .cmat records and keys the 3D thermal run reads. Not positional, so every caller that
+    // builds a metal from σ₂₀/α₂₀ alone is unchanged and states no k — legal everywhere except where a wire's
+    // temperature is SOLVED, which refuses by name (ComponentModelFactory.CreateWBondModel).
+
+    /// <summary>Thermal conductivity, W/(m·K): the constant, and the value below a <see cref="ThermalKVsTemp"/>
+    /// table when there is one. Null when the metal states none.</summary>
+    public double? ThermalK { get; init; }
+
+    /// <summary>k against temperature, strictly increasing in °C, or null for the constant <see cref="ThermalK"/>.</summary>
+    public IReadOnlyList<KPoint>? ThermalKVsTemp { get; init; }
+
+    /// <summary>Whether the metal states a thermal conductivity at all.</summary>
+    public bool HasThermalK => ThermalK is not null || ThermalKVsTemp is { Count: > 0 };
+
+    /// <summary>
+    /// k and dk/dT at <paramref name="tempC"/>: the table when stated — linear inside it, HELD at its bottom row
+    /// below it and at its top row above it (above it the state is not physical, which <see cref="BeyondTables"/>
+    /// says; the value is still defined so a caller can evaluate before it checks) — else the constant, slope 0.
+    /// At a row, the segment STARTING there, as <see cref="SigmaAt"/> reads its table.
+    /// </summary>
+    public (double K, double Slope) ThermalKAt(double tempC)
+    {
+        if (ThermalKVsTemp is not { Count: > 0 } t)
+            return (ThermalK ?? throw new InvalidOperationException($"Wire material '{Name}' states no thermal conductivity."), 0.0);
+        return Table(t.Count, i => t[i].TempC, i => t[i].K, tempC);
+    }
+
+    /// <summary>
+    /// σ and dσ/dT at <paramref name="tempC"/>, the same σ <see cref="SigmaAt"/> gives: the table's segment slope
+    /// (0 where it is held), or the α₂₀ formula's derivative −σ₂₀α₂₀/(1 + α₂₀(T − 20))².
+    /// </summary>
+    public (double Sigma, double Slope) SigmaWithSlopeAt(double tempC)
+    {
+        if (SigmaVsTemp is not { Count: > 0 } t)
+        {
+            double u = 1.0 + Alpha20 * (tempC - 20.0);
+            return (Sigma20 / u, -Sigma20 * Alpha20 / (u * u));
+        }
+        return Table(t.Count, i => t[i].TempC, i => t[i].Sigma, tempC);
+    }
+
+    /// <summary>
+    /// A table's value and slope, by the rule the 3D thermal run's <c>ThermalProperties.FromTable</c> reads one: held (slope
+    /// 0) beyond either end, else the segment whose lower row is at or below T — at the top row, the last segment.
+    /// </summary>
+    private static (double Value, double Slope) Table(int n, Func<int, double> temp, Func<int, double> value, double tempC)
+    {
+        if (n == 1 || tempC < temp(0)) return (value(0), 0.0);
+        if (tempC > temp(n - 1)) return (value(n - 1), 0.0);
+        int i = 0;
+        while (i < n - 2 && temp(i + 1) <= tempC) i++;
+        double slope = (value(i + 1) - value(i)) / (temp(i + 1) - temp(i));
+        return (value(i) + slope * (tempC - temp(i)), slope);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="tempC"/> lies above the top row of either table this metal states — σ(T) or k(T).
+    /// A table is held there, and with σ held a wire's heat stops growing with its temperature, so past a runaway
+    /// a second, unphysical branch of steady states appears hotter than the metal melts. Such a state is NOT
+    /// physical — the meaning <c>ElectricalConductivity.Beyond</c> gives the 3D run's tables. A formula has no top.
+    /// </summary>
+    public bool BeyondTables(double tempC)
+        => SigmaVsTemp is { Count: > 0 } s && tempC > s[^1].TempC
+           || ThermalKVsTemp is { Count: > 0 } k && tempC > k[^1].TempC;
 }
 
 /// <summary>
@@ -96,6 +168,12 @@ public static class WireMaterials
     /// design, the wBond editor and a newly placed component all start here. It was 85 °C (WB4a, 2026-08-07).
     /// </summary>
     public const double DefaultOperatingTempC = 125.0;
+
+    /// <summary>
+    /// A solved wire's default output-end temperature, °C (brief-wbond-wire-temperature D4) — a package lead, where the input end
+    /// (<see cref="DefaultOperatingTempC"/>) is a die pad. Different from it so the two ends read as independent.
+    /// </summary>
+    public const double DefaultEndTempC = 85.0;
 
     /// <summary>
     /// The default before 2026-10-05. Every <c>.wBond</c> and carried payload written until then states it, because
@@ -208,12 +286,23 @@ public static class WireMaterials
                     .Where(r => Prop(r, "TempC") is { ValueKind: JsonValueKind.Number } && Prop(r, "Value") is { ValueKind: JsonValueKind.Number })
                     .Select(r => new SigmaPoint(Prop(r, "TempC")!.Value.GetDouble(), Prop(r, "Value")!.Value.GetDouble()))];
 
+            // k and k(T) under the keys the 3D thermal run reads (ThermalMaterials) — R-wbt-1a.
+            List<KPoint>? kTable = null;
+            if (Prop(m, "ThermalKVsTemp") is { ValueKind: JsonValueKind.Array } kRows)
+                kTable = [.. kRows.EnumerateArray()
+                    .Where(r => Prop(r, "TempC") is { ValueKind: JsonValueKind.Number } && Prop(r, "Value") is { ValueKind: JsonValueKind.Number })
+                    .Select(r => new KPoint(Prop(r, "TempC")!.Value.GetDouble(), Prop(r, "Value")!.Value.GetDouble()))];
+
             metals.Add(new WireMaterial(
                 name,
                 s20.GetDouble(),
                 Prop(m, "Alpha20") is { ValueKind: JsonValueKind.Number } a ? a.GetDouble() : 0.0,
                 Prop(m, "DensityKgM3") is { ValueKind: JsonValueKind.Number } d ? d.GetDouble() : 0.0,
-                table is { Count: > 0 } ? table.AsReadOnly() : null));
+                table is { Count: > 0 } ? table.AsReadOnly() : null)
+            {
+                ThermalK = Prop(m, "ThermalK") is { ValueKind: JsonValueKind.Number } k ? k.GetDouble() : null,
+                ThermalKVsTemp = kTable is { Count: > 0 } ? kTable.AsReadOnly() : null,
+            });
         }
         return new WireMaterialLibrary(metals, others);
     }

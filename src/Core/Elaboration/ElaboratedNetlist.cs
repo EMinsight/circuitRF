@@ -24,6 +24,14 @@ public sealed class ElaboratedNetlist : IDisposable
     /// </summary>
     public double AmbientC { get; internal set; } = Devices.Temperature.NominalC;
 
+    /// <summary>
+    /// brief-wbond-wire-temperature R-wbt-3e/4e — the memory a SWEEP carries from one point's wBond wire
+    /// temperatures to the next: each array's last converged state (a warm start) and the drive it was found at,
+    /// which a runaway warning names. Set by the sweep on each point's netlist; null for a run with no sweep,
+    /// which then needs none.
+    /// </summary>
+    public CircuitRF.WBond.Thermal.WireThermalSession? WireThermal { get; set; }
+
     /// <summary>Indices into Components whose Model is nonlinear (HB partition seed).</summary>
     public IReadOnlyList<int> NonlinearComponents => _nonlinearComponents;
     private readonly List<int> _nonlinearComponents = [];

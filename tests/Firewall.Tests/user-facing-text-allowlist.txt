@@ -1041,3 +1041,10 @@ src/Core/Devices/ComponentModelFactory.cs|{instance} takes its wire materials fr
 src/Design/Schematic/WBondMaterialLibrary.cs|wBond '{comp.InstanceName}' is not in a saved workspace, so there is nowhere to keep a material 
 src/WBond/Materials.cs|it has no Materials list, so it is not a material library.
 src/Core/Devices/WBondModel.cs|wBond '{c.InstancePath}' has {c.Nodes.Length} pin(s) on the schematic, but {source} has 
+
+# brief-wbond-wire-temperature — internal invariants of the 1D wire-temperature solve and of a metal's k(T) lookup. Each is
+# reached only by a caller that broke its contract (the user-facing refusal for a metal with no k is a coded diagnostic,
+# WireThermalDiagnostics), so none is a sentence a user is expected to read.
+src/WBond/Materials.cs|Wire material '{Name}' states no thermal conductivity.
+src/WBond/Thermal/WireConductiveBalance.cs|An array has at least one wire.
+src/WBond/Thermal/WireConductiveBalance.cs|{drive.PeakA.Count} wires' harmonic currents for {wires.Count} wires.

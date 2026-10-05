@@ -717,19 +717,22 @@ namespace RfCore.Data
             axes[0] = newAxis;
             for (int d = 0; d < first.Rank; d++) axes[1 + d] = first.Axes[d];
 
+            // The value unit survives stacking when every point states the same one (a swept °C cube stays °C).
+            string unit = cubes.All(c => c.Unit == first.Unit) ? first.Unit : "";
+
             if (first.DataKind == DataKind.Complex)
             {
                 var data = new Complex[cubes.Count * chunkSize];
                 for (int n = 0; n < cubes.Count; n++)
                     Array.Copy(cubes[n]._complexData!, 0, data, n * chunkSize, chunkSize);
-                return new DataCube(axes, data, noCopy: true);
+                return new DataCube(axes, data, noCopy: true) { Unit = unit };
             }
             else
             {
                 var data = new double[cubes.Count * chunkSize];
                 for (int n = 0; n < cubes.Count; n++)
                     Array.Copy(cubes[n]._realData!, 0, data, n * chunkSize, chunkSize);
-                return new DataCube(axes, data, noCopy: true);
+                return new DataCube(axes, data, noCopy: true) { Unit = unit };
             }
         }
 

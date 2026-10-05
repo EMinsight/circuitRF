@@ -1103,6 +1103,55 @@ dimensionless scale factor, with a stated pinned foot and with §8's loop-height
 reported on every solve. **Owner decision, 2026-08-17: deferred** — the other five carry the use case,
 and span is the only one of the six needing new geometry rules rather than exposure of existing ones.
 
+### 5.6 Wire temperature — solved from a DC or large-signal run
+
+*brief-wbond-wire-temperature, 2026-10-05; decisions WT-1 – WT-7 in §14.* An instance's temperature is either
+**fixed** (`FixedTemp` true, or ABSENT — every instance saved before this) at `Temp`, or **solved** (`FixedTemp`
+false, what a new placement writes) between `TempStart` at each array's input pin and `TempEnd` at its output
+pin. Every DC, harmonic-balance, loadpull and loadpull-pursuit run — and any parametric sweep around one —
+reports **`WireTemp`** (°C, axis `wire array`, labels `<instance path>:<array>`) with **`WireTempState`** beside
+it (0 fixed, 1 solved, 2 no steady state, 3 the circuit did not converge). Both are absent from a run with no
+wBond, so every other DataSet is unchanged. S-parameters report neither.
+
+**The stamp temperature in solved mode is max(`TempStart`, `TempEnd`)**, in every analysis, set on the design
+before the clamp notes so a clamp warning names it. One model per factory call serves every analysis, and one
+rule keeps an HB run's small-signal limit equal to the S-parameters of the same schematic.
+
+**The formulation** (`src/WBond/Thermal/WireConductiveBalance.cs`). Each wire is a chain of second-order line
+elements (16, chosen by measurement: halving the element size moves a 566 °C gold wire's maximum 0.0026 K) along
+its 3D arc length — `Wire.PathLengthMetres`, the length its resistance is computed from — with Dirichlet ends and
+adiabatic sides: −(k(T)·A·T′)′ = q′(T), q′ = I_i²/(σ(T)·A) + Σ_f ½|I_f,i|²·R′_ac(f, σ(T)), time-averaged, peak
+phasors. **The DC division is part of the solve:** an array's wires share one voltage V, so I_i = V/R_i(T_i) and
+Σ I_i = I_dc; the unknowns are the interior temperatures, each wire's current and V, and a Newton step eliminates
+each wire's banded block (O(n)), then its current, then the scalar V. Arrays share no DC and are solved apart.
+**The method is `ConductiveBalance`'s** — full Jacobian with the k(T) and σ(T) slopes, ten step halvings, the
+stall rule, the span-floored convergence test and the round-off floors, the "already at the answer" start — and
+its constants are restated (src/WBond is a leaf) and held equal to the originals by a test in
+`tests/Thermal.Tests`. A cold start is the **exact zero-current state** (the conduction profile, linear for a
+constant k), so a wire carrying no current takes no step and reads the hotter end exactly, with no threshold;
+a failed point is reached by bisecting a drive scale on every current from zero (`Continuation`'s rule, its fold
+prediction omitted — it saves 3D solves, and a 1D one is a few milliseconds). Above either material table's top
+row, as at σ ≤ 0, a state is not physical.
+
+**The currents.** DC: `DcResult.WBondArrayCurrents`, read at `ArrayBranchIndices` as an IProbe's row is, packed
+in `DcResultPacker.Pack` — the one packer. Single-tone HB and every loadpull step: the branch rows of the linear
+back-solver at each harmonic. Two- and multi-tone: the same rows of the full-network solve the engine already
+makes at every mixing product — that solve IS the stamp's equation, so this is Z_arr⁻¹·(V_in − V_out) without a
+second factorisation. With capacitance on, the branch is the series current between the end shunts: the wires'.
+
+**The per-wire RF current sums PHASORS.** Wire i at f carries Σ_k share[k][i]·I_k(f) over every array of the
+instance, the share being `ArrayReduction.CurrentShares` (what `ArrayShare.For` gives). The 3D thermal run adds
+magnitudes, because it is handed array currents without phases; the circuit's phases are known here, so the sum is
+exact. An idle array's wires still carry their neighbours' circulating current.
+
+**A sweep carries memory** (`ElaboratedNetlist.WireThermal`, one `WireThermalSession` per sweep, per load point in
+a loadpull): each array's last converged state warm-starts the next point, and a runaway warns once per instance
+and array per run, naming its drive and the last point that converged.
+
+**`WireTempState` is not `__`-prefixed.** `DataSet.StackSweepAxis` passes a `__` cube through a sweep unstacked —
+point 0's copy for every point — so a metadata spelling would have reported the first point's states beside a
+later point's NaN. It is a per-point result like `Converged`.
+
 ---
 
 ## 6. The wBond Editor
@@ -2129,7 +2178,7 @@ cannot live inside a technology without duplication, and duplicated rules drift.
 
 **The lifecycles differ.** A `.ctech` changes when a process node revises. Assembly rules change when
 the house buys a bonder, qualifies a wire, or a specific product gets a waiver. Different owners,
-different revision cadence, different approval chains.
+different revision schedules, different approval chains.
 
 **But some rules genuinely *are* die-side, and the split must be drawn honestly:**
 
@@ -2731,6 +2780,18 @@ or fast-but-wall-clock-sensitive):
 | O-20 | Why can't the Touchstone export carry the capacitance? | **It can, and the claim that it could not was wrong.** It was a property of the array-pair port basis — a floating pair has no terminal for a shunt to leave by — presented as a property of the physics. Touchstone's implicit common reference node IS the ground plane, so a port-per-TERMINAL export (3 arrays → 6 ports) carries the shunt capacitors exactly as the stamp places them. That basis is now the default; the compact array-pair form stays as an option and says in the file what it omits | §11, WB42 |
 | O-19 | The Frequency tooltip should not say "it never reaches the simulation" | **Replaced with what the control is** — the *inductance extraction frequency*. The fact remains true, keeps its code comment and keeps its test; it just is not what a user needs read to them | §6.8.1 |
 | O-16 | Does the panel need a frequency? | **Yes.** It never did before, because it reported a purely geometric quantity; with capacitance the terminal inductance genuinely moves with frequency, so the panel must say which one it is quoting. Default 10 GHz, GHz always, persisted in the `.wBond` — and it is a readout setting that must never reach `Stamp` | §6.8.1 |
+
+### Decided for the wire temperature (brief-wbond-wire-temperature, 2026-10-05)
+
+| # | question | decision | where it landed |
+|---|---|---|---|
+| WT-1 | Self-consistent, or one way? | **One way.** The circuit is solved, the wire temperatures follow from its currents, nothing goes back. In solved mode the stamp is at **max(TempStart, TempEnd)** (owner) — in **every** analysis, so HB's small-signal limit agrees with the S-parameters. A re-stamping loop is a possible follow-up | §5.6 |
+| WT-2 | What thermal model? | **Conduction along the wire only**, between two fixed end temperatures, adiabatic sides: an upper bound. Only arc length, diameter and metal matter | §5.6 |
+| WT-3 | What heat? | **The time average**: DC plus every non-DC frequency the run carries — harmonics, or every mixing product — each at its own R′_ac(f, σ(T)). CW only | §5.6 |
+| WT-4 | Parameters | **`FixedTemp`** (the checkbox on `Temp`), **`TempStart`** (125) and **`TempEnd`** (85), expression rows. A new placement solves; an instance with no `FixedTemp` is fixed, bit for bit | §5.5, §5.6 |
+| WT-5 | Output | **`WireTemp`** (°C, `wire array`, `<path>:<array>`), the hottest wire at its hottest point; a fixed instance reports its `Temp`. **`WireTempState`** beside it — not `__`-prefixed, so a sweep stacks it | §5.6 |
+| WT-6 | Where does the code live? | **`src/WBond/Thermal/`**, beside the wire physics; no new project reference. The engines call it after convergence | §5.6 |
+| WT-7 | Which analyses? | **DC, HB (one, two and more tones), loadpull, pursuit, and sweeps of them** (owner added DC). Not S-parameters | §5.6 |
 
 ### Open — for the owner
 

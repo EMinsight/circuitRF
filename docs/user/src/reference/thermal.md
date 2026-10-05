@@ -125,6 +125,8 @@ A thermal setup may also state **currents at ports**. The current flows through 
 heats them — **electrothermal**, in circuitRF's word, and solved by **conductive balance**: one Newton loop over temperature
 and potential, with each metal's electrical conductivity σ(T) and each material's k(T) following the temperature. Each
 follows it unless its switch on the setup's *Balance* section is off, so the two contributions can be compared one at a time.
+For a quick estimate with no mesh, a schematic wBond solves its own wires' temperature from every DC and large-signal run,
+with no mould around them — see [wBond ▸ Wire temperature](wbond.html#wire-temperature).
 
 - **Bond wires are solved as one-dimensional elements** along their true 3D centrelines, their area always πd²/4 whatever
   the section their EM model uses, coupled to the pads they bond to and to the mould compound they run through. The
@@ -192,6 +194,12 @@ as a balanced pair. At 28 dBm drive the circuit gives 49.51 dBm from 4.43 A, and
 164.7 °C); the run takes 12 s, and states when each wire passes its limit:
 *"Probe 'w1' reaches its limit of 150 °C at Pin ≈ 13.11 (Pout_dBm ≈ 47.14, Id_A ≈ 3.242, Eff ≈ 40.2)."* Run the `EM` setup first (1 min 37 s and 5.8 GB in Palace at the Draft preset;
 its series inductance for the six wires is 228.5 pH at 2 GHz).
+
+**The quick check, with no 3D run.** The `Amplifier Wires` bench drives the same sweep through a wBond component carrying the six
+wires of `Pads.wBond`, its temperature solved between 125 °C at the die and 85 °C at the lead
+([wBond ▸ Wire temperature](wbond.html#wire-temperature)): the whole sweep takes 0.4 s, and `WireTemp` reads 166.5 °C at 10 dBm,
+464.9 °C at 20 dBm and 503.0 °C at 28 dBm. That is hotter than the 205.1 °C above because no heat leaves through a wire's sides —
+there is no mould — and from a circuit whose output network is the wires alone, which at 28 dBm gives 51.32 dBm from 5.37 A.
 
 **Checks.** The same row drawn as 3D-view wires (the second cell, *Drawn Wires*) reads 393.0 °C at 14 A and runs away at the same
 current. Brief 72's closed form for one isolated wire in air, its ends at the heels' temperature, reads 642.2 °C at the same

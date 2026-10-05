@@ -273,3 +273,58 @@ user-facing string and the user docs at the owner's request; the remaining hits 
 `WBondSchematicPlacementTests.TheEmbeddedPayload_CarriesNoBase64Padding…` padded the DEFAULT payload and asserted padding
 appeared — true only while its byte count was not a multiple of three; one more digit made it one. It now picks a design
 whose encoding genuinely needs padding.
+
+## Wire temperature solved from a DC or large-signal run (2026-10-05, brief-wbond-wire-temperature)
+
+A solved-mode wBond (`FixedTemp=false`, what a new placement writes) reports `WireTemp`/`WireTempState` from every
+DC, HB, loadpull and pursuit run; the solver is `Thermal/WireConductiveBalance.cs`, the orchestration
+`Thermal/WBondWireTemperature.cs`, the engine side `src/Engine/WireTemperatureCubes.cs`. Design: `docs/design/wbond.md`
+§5.6. What is worth knowing:
+
+- **Element count: 16 per wire**, by measurement (`WireTemperatureTests.ElementCount_Converged`): a 1 mil, 1 mm gold
+  wire at 1.7 A DC plus harmonics, both tables on, reads 566.194 / 566.260 / 566.258 °C at 8 / 16 / 32 elements —
+  8 → 16 moves it 0.066 K, 16 → 32 moves it 0.0026 K. The maximum is taken from each element's quadratic, not only its
+  nodes, so a peak falling between two nodes is not read low.
+- **Cost per point** (scratch harness, Release, Apple M4; 6 wires in 2 arrays, DC plus 5 harmonics): **3.9 ms cold,
+  0.83 ms warm** (the previous point's state), 0.12 ms with no current. The brief expected well under a millisecond;
+  cold is not. Nearly all of it is the exact Bessel R′_ac at every quadrature point of every wire at every harmonic
+  (720 evaluations per assembly here, ~5 assemblies cold). `InternalImpedance.ResistanceWithSigmaSlope` ran the
+  continued fraction twice — value and slope — and now runs it once (`NormalizedZWithSlope`, bit-identical): that
+  halved it from 7.2 / 1.6 ms. Tabulating R′_ac would cut it further and would no longer be the 3D run's own
+  evaluation, so it was not done. Against that, the whole 10-point `Amplifier Wires` sweep runs in 0.4 s.
+- **Gold runs away just below 2 A** in a 1 mil, 1 mm wire held at 125/85 °C: it reaches the σ(T) table's top row
+  (1,027 °C, melting), where a state stops being physical. A test drive of 2.2 A that "should" have been merely hot was
+  past it.
+- **A warm start from a lower drive must take the new drive's current split first.** From a zero-current state the
+  line search's heat scale is round-off, so every step that heats the wire looked like a blow-up and was refused down
+  to nothing. `ShareCurrent` now runs on every start (the predictor); a drive with no current at all always starts
+  from the exact cold state, which is its answer.
+- **With unequal ends a gently heated wire reads its hotter end exactly.** Two wires sharing 1 A at 125/85 °C never
+  lift an interior point above 125 °C, so `WireTemp` is 125.000 — correct, and it read like a bug in the first test.
+  The engine gates hold both ends equal where they need the heat to show.
+- **The constants are restated, not referenced**: `src/WBond` is a leaf and the brief allowed no new reference, so
+  `Absurd`, `StallStep`, `SpanFloorK`, the Newton tolerance and iteration limit, and `Bracket` are copied, and
+  `tests/Thermal.Tests/WireTemperatureCrossCheckTests.TheRestatedConstants_AreConductiveBalances` holds each equal to
+  its original (`SpanFloorK` by reflection — it is internal). G3 in the same file: one gold wire, DC plus a 2 GHz
+  harmonic, against `ConductiveBalance` on the W1 bench (no Gmsh) — 268.628 °C against 268.620 °C.
+
+### Four things found on the way, outside the solver
+
+- **`__WireTempState` would have been wrong in every sweep.** `DataSet.StackSweepAxis` passes a `__` cube through
+  UNSTACKED — point 0's copy for every point — so the brief's metadata spelling would have reported the first point's
+  states beside a later point's NaN. The cube is `WireTempState`, a per-point result like `Converged`.
+- **`DataCube.PrependAxis` dropped the value unit**, and so did `ParametricSweepEngine`'s ragged-grid pad: a swept
+  `WireTemp` lost its °C. Both now keep it (stacking only when every point states the same one).
+- **`GroundPlane=true` from the Inspector's picker never reached the model.** The elaborator evaluated it as an
+  expression, `true` failed to resolve, the catch dropped it, and the instance took its payload's own plane — so a
+  `.wBond` stored with the plane off (the Output Wires example's `Pads.wBond`) was refused for an undeclared return
+  path whatever the picker said. A boolean spelling now passes verbatim, as `IncludeCapacitance` does; anything else
+  (a `VAR`) is still evaluated. Gate: `WBondWireTemperatureTests.GroundPlaneWrittenAsAWord_ReachesTheModel`.
+- **Two- and multi-tone HB already solve the full network at every mixing product** (the IProbe currents come from
+  it), so the wBond's branch rows are read there rather than computing Z_arr⁻¹·(V_in − V_out) a second time. An
+  IProbe in series with a capacitance-on wBond is NOT the wires' current — it also carries the input shunt — so the
+  engine gates that compare against a probe switch capacitance off.
+
+Pursuit carries `WireTemp` through its follow-on loadpull, the only place it has a Pout layout; a pursuit run with
+`CreateLoadpullResult=false` has neither cube. The `New Material…` record already has a ThermalK field (blank, since it
+copies no metal; Duplicate copies it), so R-wbt-1c needed no code.

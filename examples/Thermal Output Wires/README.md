@@ -21,6 +21,7 @@ and **5.8 GB**. Thermal needs **Gmsh**, and the EM setup **Palace**; the first r
 | **Output** | 3D view, µm | The die placed as `U1` on a copper–molybdenum flange; a copper lead on an alumina standoff under the finger; the mould over all of it; two ports, one probe per wire; the setups `EM`, `DcSweep`, `RfHarmonics` and `FromHB` |
 | **Drawn Wires** | 3D view, µm | The same model with the six wires drawn in the 3D view instead of read from `Pads.wBond`; the setup `DcSweep` |
 | **Amplifier** | schematic (test bench) | `Amplifier.csch`: the harmonic-balance drive sweep `FromHB` takes its currents from |
+| **Amplifier Wires** | schematic (test bench) | The same drive with a wBond carrying `Pads.wBond`'s wires in place of the EM block: the wire temperature with no 3D run |
 
 Every material is one of circuitRF's generic materials, from `tech/generic-materials.cmat`. The mould's glass transition is taken
 as 150 °C, and every wire probe's *Limit* is set to it, so a run says when and where a wire first passes it.
@@ -85,6 +86,26 @@ standoff, so the run solves them as a balanced pair.
 One way only: the circuit saw the wires at the temperature their S-parameters were solved at; the thermal run reports what they
 actually reach. The DC resistance of the EM block is its lowest frequency's (0.1 GHz), so the drain sits a few volts below the
 lead at DC; the DC **current** through the wires, which is what heats them, is the circuit's own.
+
+## Amplifier Wires: the quick check, with no 3D run
+
+The **Amplifier Wires** test bench is the `Amplifier` bench's drive — the same FET, bias, choke, load and `Pin` sweep 10 → 28 dBm
+— with a **wBond component carrying the six wires of `Pads.wBond`** where `Amplifier` has the EM block. Its temperature is
+**solved** (the checkbox on its `Temp` row is clear), between 125 °C at the die end and 85 °C at the lead end, and every point of
+the sweep reports **`WireTemp`**: the hottest wire, at its hottest point. It needs no EM run and no Gmsh: the whole sweep takes
+**0.4 s**.
+
+| Pin | WireTemp |
+|---|---|
+| 10 dBm | 166.5 °C |
+| 20 dBm | 464.9 °C |
+| 28 dBm | 503.0 °C |
+
+Against `FromHB`'s 205.1 °C at 28 dBm, **the quick check runs hotter because no heat leaves through a wire's sides**: it has no
+mould, so every watt flows along the wire to its ends, and it is an upper bound. The circuit is not quite `Amplifier`'s either —
+its output network is the wires alone, over the flange as their ground plane, not the EM block of the whole package — so at 28
+dBm it gives **51.32 dBm** from **5.37 A**. The component's `GroundPlane` is on: `Pads.wBond` stores it off, because the 3D EM
+setup has its own flange, and a placed wBond needs a return path.
 
 ## Drawn Wires: one wire model, two ways to draw it
 

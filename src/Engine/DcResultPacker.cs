@@ -21,6 +21,8 @@ namespace CircuitRF.Engine;
 ///                      this solution (Labels = "&lt;InstancePath&gt;.&lt;opVarName&gt;"). Absent
 ///                      when no device reported any.
 ///   "__OpVars"         provenance for the opvar axis, so the picker can group and filter.
+///   "WireTemp"         Real °C, axis [wire array] — each wBond array's hottest wire, solved from its DC current
+///                      (or its fixed Temp); "WireTempState" beside it. Both absent with no wBond (WireTemperatureCubes).
 /// A standalone DC run yields scalars per node/probe (an operating-point table); wrapping DC in a
 /// ParametricSweep prepends the sweep axes via StackSweepAxis → a plottable [sweep…, node] V cube
 /// and [sweep…, branch] I cube.
@@ -90,6 +92,14 @@ public static class DcResultPacker
             ds.Add("__OpVars", new DataCube(
                 [new Axis("opvar", opIdx, "", opNames)], new double[opNames.Length]));
         }
+
+        // brief-wbond-wire-temperature R-wbt-4d — WireTemp from each wBond's DC array currents, here in the ONE packer, so
+        // the standalone, swept and CLI DC runs carry identical cubes. A netlist with no wBond gets neither cube.
+        var wbonds = WireTemperatureCubes.Instances(nl);
+        if (wbonds.Count > 0)
+            WireTemperatureCubes.Add(ds, WireTemperatureCubes.Compute(nl, wbonds,
+                (path, model) => WBondArrayCurrents.Dc(dc.WBondArrayCurrents.TryGetValue(path, out var i) ? i : new double[model.ArrayCount]),
+                dc.Converged, "at the operating point"));
 
         var labeled = nodeNames.Where(nm => nl.Nodes.LabeledNames.Contains(nm)).Distinct().ToArray();
         if (labeled.Length > 0)

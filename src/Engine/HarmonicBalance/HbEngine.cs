@@ -756,6 +756,8 @@ public sealed class HbEngine
         var ds = BuildSingleToneDataSet(
             Vfull, INlfull, namesFull, f0, K, PointOutcome.Of(solveResult.Converged, solveResult.IterTrace), portCurrentsByBranch,
             _netlist.Nodes.LabeledNames, probeCurrents, opVars);
+        AddWireTemperature(ds, solveResult.Converged,
+            [.. Enumerable.Range(0, K + 1).Select(k => k * f0)], k => backSolver.GetSolution(k, 0));
 
         // ── The WSProbe small-signal sweep (brief-wsprobe-5) ──────────────────
         // The conversion-matrix solve linearises THIS converged periodic steady state, which is why
@@ -783,6 +785,20 @@ public sealed class HbEngine
         // V holds the converged interface spectrum [N, K+1]; expose it so a parametric sweep can
         // warm-start the next point (continuation — §11). Only propagate a converged seed.
         return new HbRunResult(ds, backSolver, solveResult.Converged, V, trace);
+    }
+
+    /// <summary>
+    /// brief-wbond-wire-temperature R-wbt-4a/4d — <c>WireTemp</c> on a harmonic-balance point: each wBond's array currents
+    /// read from <paramref name="solution"/>(m), the full solution at frequency <paramref name="frequenciesHz"/>[m] (harmonics
+    /// for one tone, every mixing product for two or more), so the heat counts DC and every non-DC frequency the run carries.
+    /// Nothing at all for a netlist with no wBond; no current is read for a fixed-temperature one.
+    /// </summary>
+    private void AddWireTemperature(DataSet ds, bool converged, IReadOnlyList<double> frequenciesHz, Func<int, Complex[]> solution)
+    {
+        var wbonds = WireTemperatureCubes.Instances(_netlist);
+        if (wbonds.Count == 0) return;
+        WireTemperatureCubes.Add(ds, WireTemperatureCubes.Compute(_netlist, wbonds,
+            (_, model) => WireTemperatureCubes.FromBranchRows(model, frequenciesHz, solution), converged, "at this drive"));
     }
 
     /// <summary>
@@ -1093,6 +1109,8 @@ public sealed class HbEngine
         var ds2 = BuildTwoToneDataSet(
             Vfull, INlfull, namesFull, grid, f1, f2, PointOutcome.Of(solveResult.Converged, solveResult.IterTrace), portCurrentsByBranch,
             _netlist.Nodes.LabeledNames, probeCurrents, opVars2);
+        AddWireTemperature(ds2, solveResult.Converged,
+            [.. Enumerable.Range(0, M).Select(m => grid.OmegaOf(m, w1, w2) / (2 * Math.PI))], m => xMix[m]);
 
         // The WSProbe small-signal sweep lives on the LATTICE two-tone path (R-wsp5-7), which is the
         // default; this is the rectangular-FFT path AnalysisSettings.HbTwoToneOnLattice = false
@@ -1376,6 +1394,8 @@ public sealed class HbEngine
         var dsNd = BuildMultiToneDataSet(
             Vfull, INlfull, namesFull, lattice, f, PointOutcome.Of(solveResult.Converged, solveResult.IterTrace), portCurrentsByBranch,
             _netlist.Nodes.LabeledNames, probeCurrents, opVarsNd);
+        AddWireTemperature(dsNd, solveResult.Converged,
+            [.. Enumerable.Range(0, M).Select(m => lattice.OmegaOf(m, omegas) / (2 * Math.PI))], m => xMix[m]);
 
         // ── The WSProbe small-signal sweep over the mixing lattice (R-wsp5-7) ──
         var wspProbesNd = WspProbeSites();

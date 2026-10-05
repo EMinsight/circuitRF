@@ -1991,6 +1991,17 @@ public sealed class Elaborator
             {
                 result[ov.Name] = new Value(Unquote(ov.Expression));
             }
+            else if (ov.Name.Equals("GroundPlane", StringComparison.OrdinalIgnoreCase)
+                  && IsBooleanSpelling(Unquote(ov.Expression)))
+            {
+                // The Inspector's GroundPlane picker writes the WORD "true"/"false". Evaluated as an
+                // expression, `true` is an unresolved name, the catch below dropped it, and the instance
+                // silently took its payload's own plane — a design stored with the plane off was then
+                // refused for an undeclared return path however the picker was set. A boolean spelling
+                // goes through verbatim, as IncludeCapacitance does; anything else (a VAR reference) is
+                // still evaluated, so it stays sweepable.
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+            }
             else
             {
                 try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
@@ -2038,6 +2049,7 @@ public sealed class Elaborator
             }
             else if (ov.Name.Equals("RefPin", StringComparison.OrdinalIgnoreCase)
                   || ov.Name.Equals("IncludeCapacitance", StringComparison.OrdinalIgnoreCase)
+                  || ov.Name.Equals("FixedTemp", StringComparison.OrdinalIgnoreCase)
                   || IsWBondNameValued(ov.Name))
             {
                 // Verbatim, like Design: the schematic writes the WORD "true"/"false", and running
@@ -2045,7 +2057,7 @@ public sealed class Elaborator
                 // as a literal — a dependency with nothing to gain. The factory reads either
                 // spelling. It is not sweepable and there is nothing to sweep it over. The same holds
                 // for `IncludeCapacitance` — a model is present or it is not, and nothing between the
-                // two is interpolable.
+                // two is interpolable — and for `FixedTemp`, the Temp row's checkbox.
                 //
                 // The same rule covers the NAME-valued controlling parameters of §5.5.1/WB44:
                 // `Material`/`Material_<array>` is a metal's name, `Arrays` is the recorded array list
@@ -2054,6 +2066,17 @@ public sealed class Elaborator
                 // fail on or — worse — resolve against some unrelated variable that happens to share
                 // the name. Loop height and diameter are NOT here: they are lengths, and being
                 // ordinary expressions is exactly what makes them sweepable (WB44 property 4).
+                result[ov.Name] = new Value(Unquote(ov.Expression));
+            }
+            else if (ov.Name.Equals("GroundPlane", StringComparison.OrdinalIgnoreCase)
+                  && IsBooleanSpelling(Unquote(ov.Expression)))
+            {
+                // The Inspector's GroundPlane picker writes the WORD "true"/"false". Evaluated as an
+                // expression, `true` is an unresolved name, the catch below dropped it, and the instance
+                // silently took its payload's own plane — a design stored with the plane off was then
+                // refused for an undeclared return path however the picker was set. A boolean spelling
+                // goes through verbatim, as IncludeCapacitance does; anything else (a VAR reference) is
+                // still evaluated, so it stays sweepable.
                 result[ov.Name] = new Value(Unquote(ov.Expression));
             }
             else
@@ -2073,6 +2096,10 @@ public sealed class Elaborator
     /// True for a wBond parameter whose value is a NAME rather than an expression — see
     /// <see cref="ResolveWBondParameters"/>'s own note for why each one is on this list.
     /// </summary>
+    private static bool IsBooleanSpelling(string text) =>
+        Devices.BooleanParameter.TrueSpellings.Concat(Devices.BooleanParameter.FalseSpellings)
+               .Contains(text.Trim(), StringComparer.OrdinalIgnoreCase);
+
     private static bool IsWBondNameValued(string name) =>
         name.Equals("Material", StringComparison.OrdinalIgnoreCase)
         || name.StartsWith("Material_", StringComparison.OrdinalIgnoreCase)

@@ -115,7 +115,11 @@ public sealed partial class ParameterRowViewModel : ObservableObject
 
     /// <summary>
     /// False for a parameter fixed by the TILE, which greys the value box and its unit combo out
-    /// (owner, 2026-09-13: <i>if the parameter is truly read only it should be disabled</i>).
+    /// (owner, 2026-09-13: <i>if the parameter is truly read only it should be disabled</i>) — and,
+    /// since brief-wbond-wire-temperature R-wbt-5b, for a row another setting of the SAME component
+    /// has switched off for now (<see cref="SetDisabledByMode"/>): a wBond's <c>Temp</c> while its
+    /// temperature is solved, or its <c>TempStart</c>/<c>TempEnd</c> while it is fixed. Greyed is not
+    /// only "fixed for the life of the component" any more; the value is kept and committed either way.
     ///
     /// <para><b>The distinction from <see cref="ExpressionReadOnly"/> is permanence.</b> This one is
     /// never editable, for any component of that type, in any state — so greyed is the honest
@@ -127,13 +131,62 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// through the same <c>EditParameterCommand</c>, so a live unit picker beside a frozen value is
     /// still a way to edit a parameter that does not change.</para>
     /// </summary>
-    public bool ExpressionEnabled => !_structurallyFixed;
+    public bool ExpressionEnabled => !_structurallyFixed && !_disabledByMode;
 
     /// <summary>The registry's answer, re-read on every refresh. Kept apart from
     /// <see cref="SetExpressionReadOnly"/>'s so neither can clear the other — a refresh would
     /// otherwise hand a VerilogA <c>Pins</c> row back its editability.</summary>
     private bool _structurallyFixed;
     private bool _readOnlyRequested;
+
+    /// <summary>
+    /// The third reason a row is greyed, and kept apart from the other two for the same reason they are
+    /// kept apart from each other: a refresh re-reads <see cref="_structurallyFixed"/> from the registry and
+    /// must not clear this, and this must not clear it. Set by the editor from another parameter of the
+    /// same component (R-wbt-5b).
+    /// </summary>
+    private bool _disabledByMode;
+
+    internal void SetDisabledByMode(bool disabled)
+    {
+        if (_disabledByMode == disabled) return;
+        _disabledByMode = disabled;
+        OnPropertyChanged(nameof(ExpressionEnabled));
+    }
+
+    /// <summary>
+    /// Whether this row leads with a checkbox — a wBond's <c>Temp</c>, whose checkbox is its <c>FixedTemp</c>
+    /// (R-wbt-5a): checking Temp fixes the temperature, which is what the label suggests.
+    /// </summary>
+    public bool HasLeadingCheck { get; internal set; }
+
+    private bool _leadingCheck;
+
+    /// <summary>The leading checkbox's state. A change is handed to <see cref="LeadingCheckChanged"/>, which
+    /// commits it; the row itself writes nothing.</summary>
+    public bool LeadingCheck
+    {
+        get => _leadingCheck;
+        set
+        {
+            if (_leadingCheck == value) return;
+            _leadingCheck = value;
+            OnPropertyChanged();
+            if (!_isRefreshing) LeadingCheckChanged?.Invoke(value);
+        }
+    }
+
+    /// <summary>Commits the leading checkbox — set by the editor that owns what it means.</summary>
+    internal Action<bool>? LeadingCheckChanged { get; set; }
+
+    /// <summary>Sets the leading checkbox from the model without committing anything.</summary>
+    internal void ShowLeadingCheck(bool value)
+    {
+        HasLeadingCheck = true;
+        _leadingCheck = value;
+        OnPropertyChanged(nameof(HasLeadingCheck));
+        OnPropertyChanged(nameof(LeadingCheck));
+    }
 
     internal void SetExpressionReadOnly(bool readOnly)
     {

@@ -121,6 +121,14 @@ public sealed class NonlinearDcEngine
         /// </summary>
         public IReadOnlyDictionary<string, double> OperatingPointVars { get; }
 
+        /// <summary>
+        /// brief-wbond-wire-temperature R-wbt-4a0 — each wBond instance's DC current per wire array, input pin to
+        /// output pin, keyed by instance path: read out of the solution at the model's <c>ArrayBranchIndices</c>,
+        /// where and how <see cref="ProbeCurrents"/> reads an IProbe's row. Empty when the circuit holds no wBond.
+        /// </summary>
+        public IReadOnlyDictionary<string, double[]> WBondArrayCurrents { get; internal init; } =
+            new Dictionary<string, double[]>();
+
         internal DcResult(double[] v, bool converged, int iters, double residual,
             ConvergenceTrace trace, IReadOnlyDictionary<string, double> probeCurrents,
             double[]? residualPerUnknown = null,
@@ -807,6 +815,25 @@ public sealed class NonlinearDcEngine
         }
     }
 
+    /// <summary>R-wbt-4a0 — every wBond's array currents at <paramref name="x"/>, as <see cref="ExtractProbeCurrents"/>
+    /// reads an IProbe's: the branch row the model's last Stamp was given.</summary>
+    private IReadOnlyDictionary<string, double[]> ExtractWBondArrayCurrents(double[] x)
+    {
+        var map = new Dictionary<string, double[]>(StringComparer.Ordinal);
+        foreach (var ec in _nl.Components)
+        {
+            if (ec.Model is not WBondModel wb) continue;
+            var i = new double[wb.ArrayCount];
+            for (int k = 0; k < i.Length; k++)
+            {
+                int br = wb.ArrayBranchIndices[k];
+                i[k] = br >= _nodeCount && br < _systemSize && br < x.Length ? x[br] : 0.0;
+            }
+            map[ec.InstancePath] = i;
+        }
+        return map;
+    }
+
     private IReadOnlyDictionary<string, double> ExtractProbeCurrents(double[] x)
     {
         var map = new Dictionary<string, double>(StringComparer.Ordinal);
@@ -933,7 +960,8 @@ public sealed class NonlinearDcEngine
         // device on an answer that is about to be thrown away — and reporting a read-back for a
         // bias the solve did not reach is worse than reporting none.
         return new DcResult(nodeV, converged, iters, finalRes, trace, ExtractProbeCurrents(xNew),
-                            operatingPointVars: converged ? CollectOperatingPointVars(xNew) : null);
+                            operatingPointVars: converged ? CollectOperatingPointVars(xNew) : null)
+            { WBondArrayCurrents = ExtractWBondArrayCurrents(xNew) };
     }
 
     /// <summary>
@@ -965,7 +993,8 @@ public sealed class NonlinearDcEngine
                 _lastX = x; ReportWorstResiduals(fOverrun);
                 return new DcResult(nvOut, false, totalIters,
                                     fOverrun.Length > 0 ? L2(fOverrun) : double.PositiveInfinity, trace,
-                                    ExtractProbeCurrents(x), fOverrun, _branchOwners);
+                                    ExtractProbeCurrents(x), fOverrun, _branchOwners)
+            { WBondArrayCurrents = ExtractWBondArrayCurrents(x) };
             }
 
             double nextFrac = Math.Min(targetFrac + stepFrac, 1.0);
@@ -994,7 +1023,8 @@ public sealed class NonlinearDcEngine
                 _lastX = x; ReportWorstResiduals(fFail);
                 return new DcResult(nv, false, totalIters,
                                     fFail.Length > 0 ? L2(fFail) : double.PositiveInfinity, trace,
-                                    ExtractProbeCurrents(x), fFail, _branchOwners);
+                                    ExtractProbeCurrents(x), fFail, _branchOwners)
+            { WBondArrayCurrents = ExtractWBondArrayCurrents(x) };
             }
         }
 
@@ -1011,7 +1041,8 @@ public sealed class NonlinearDcEngine
         CaptureControlBias(x);   // seed SDD.ControlBias for a downstream S-param linearization
         return new DcResult(nodeV, converged, totalIters, finalRes, trace,
                             ExtractProbeCurrents(x), fFinal, _branchOwners,
-                            converged ? CollectOperatingPointVars(x) : null);
+                            converged ? CollectOperatingPointVars(x) : null)
+            { WBondArrayCurrents = ExtractWBondArrayCurrents(x) };
     }
 
     /// <summary>

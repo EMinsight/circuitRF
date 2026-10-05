@@ -923,7 +923,11 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
                 var row = new ParameterRowViewModel(param, _schematicVm, comp.Symbol, comp);
                 if (row.IsFilePathParam) row.PickFileAsync = PickModelFileAsync;
-                if (comp.Symbol == SymbolKind.WBond) row.ExpressionPlaceholder = WBondPlaceholderFor(param.Name);
+                if (comp.Symbol == SymbolKind.WBond)
+                {
+                    row.ExpressionPlaceholder = WBondPlaceholderFor(param.Name);
+                    ConfigureWBondTemperatureRow(row);
+                }
                 built.Add(row);
             }
 

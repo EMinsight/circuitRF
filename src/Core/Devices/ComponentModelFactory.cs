@@ -9,6 +9,7 @@ using RfCore;
 using CircuitRF.Core.Matching;
 using CircuitRF.Core.Systems;
 using CircuitRF.WBond;
+using CircuitRF.WBond.Thermal;
 
 namespace CircuitRF.Core.Devices;
 
@@ -2623,6 +2624,15 @@ public static class ComponentModelFactory
         ApplyControllingParameters(design, parameters, notes);
         ReportArrayDrift(design, parameters, notes);
 
+        // brief-wbond-wire-temperature R-wbt-2c — fixed or solved. ABSENT is fixed: every instance saved
+        // before FixedTemp existed stamps exactly what it stamped before (G7). A new placement writes
+        // FixedTemp=false. In solved mode the stamp is at the HIGHER of the two ends (D1) — a wire is never
+        // cooler than its hotter end, so its loss is never understated — in every analysis, so an HB run's
+        // small-signal limit agrees with the S-parameters of the same schematic. Set BEFORE the clamp notes,
+        // so a clamp warning names the temperature actually stamped.
+        var thermal = WireThermalSpecOf(design, parameters);
+        design.OperatingTempC = thermal.StampC;
+
         // A Temp outside a wire metal's σ(T) table is CLAMPED to the table's nearest end and run —
         // a warning on the Messages panel, never a refusal. After the controlling parameters, because
         // a Material override decides which metals' tables are being read.
@@ -2642,7 +2652,32 @@ public static class ComponentModelFactory
             ? BooleanParameter.Parse("IncludeCapacitance", cap)
             : null;
 
-        return new WBondModel(design, path, refPin, notes, includeCapacitance);
+        return new WBondModel(design, path, refPin, notes, includeCapacitance, thermal);
+    }
+
+    /// <summary>
+    /// R-wbt-2c — the instance's wire-temperature spec. <c>FixedTemp</c> absent is TRUE: fixed at the
+    /// design's operating temperature (the <c>Temp</c> override already applied). Solved mode reads
+    /// <c>TempStart</c> (default 125 °C) and <c>TempEnd</c> (default 85 °C), and refuses, by name, a wire
+    /// metal that states no thermal conductivity (R-wbt-1b) — after the material library and the
+    /// controlling parameters, which decide which metals the wires are.
+    /// </summary>
+    private static WireThermalSpec WireThermalSpecOf(WBondDesign design, IReadOnlyDictionary<string, Value> parameters)
+    {
+        if (BooleanParameter.Parse(parameters, "FixedTemp", whenAbsent: true))
+            return WireThermalSpec.Fixed(design.OperatingTempC);
+
+        double start = parameters.TryGetValue("TempStart", out var s) && s.Kind == ValueKind.Real ? s.AsReal() : WireMaterials.DefaultOperatingTempC;
+        double end = parameters.TryGetValue("TempEnd", out var e) && e.Kind == ValueKind.Real ? e.AsReal() : WireMaterials.DefaultEndTempC;
+
+        string instance = NameOf(parameters, "WBondName") ?? "wBond";
+        foreach (var wire in design.Arrays.SelectMany(a => a.Wires))
+        {
+            var metal = design.MaterialFor(wire);
+            if (!metal.HasThermalK)
+                throw new InvalidOperationException(WireThermalDiagnostics.NoThermalConductivity(instance, metal.Name).Render());
+        }
+        return new WireThermalSpec(true, design.OperatingTempC, start, end);
     }
 
     /// <summary>

@@ -4,7 +4,7 @@ slug: reference/wbond.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > wBond
 lede: Bondwire arrays: geometry, inductance, the 3D kernel, and S-parameters out.
-keywords: bondwire, bond wire, wirebond, wire bond, ribbon, die attach, package
+keywords: bondwire, bond wire, wirebond, wire bond, ribbon, die attach, package, wire temperature, bond wire temperature, WireTemp, TempStart, TempEnd, FixedTemp
 ---
 
 <nav class="toc">
@@ -20,6 +20,7 @@ keywords: bondwire, bond wire, wirebond, wire bond, ribbon, die attach, package
 <li><a href="#array-basis">The array-basis reduction, derived</a></li>
 <li><a href="#capacitance">Capacitance, Use Capacitance and ε<sub>r</sub></a></li>
 <li><a href="#limits">What the model does not include</a></li>
+<li><a href="#wire-temperature">Wire temperature from a DC or large-signal run</a></li>
 <li><a href="#kernel">The 3D MoM kernel, and how it solves fast</a></li>
 <li><a href="#fem">MoM and FEM, compared honestly</a></li>
 <li><a href="#sparams">S-parameters out: lumped and distributed</a></li>
@@ -395,6 +396,58 @@ The two assumptions behind the array reduction are good, and they are assumption
   first-order error — 30–50% on L for a plane split — which is why the reference conductor is not
   optional.
 
+## Wire temperature from a DC or large-signal run {#wire-temperature}
+
+How hot do a power amplifier's output wires get at each drive level? A wBond answers that itself, with no
+mesh and no 3D run, in one of two modes set by the checkbox on its `Temp` row:
+
+- **Checked — fixed.** The wires are at `Temp`, and that is the temperature their resistance is evaluated at.
+- **Unchecked — solved** (what a newly placed wBond is). Each wire is held at `TempStart` where it leaves the
+  array's input pin and at `TempEnd` where it reaches the output pin, and its temperature in between is solved
+  from the currents the run found in it.
+
+**Wire temperature is an output of every DC, harmonic-balance, loadpull and loadpull-pursuit run** of a design
+with a wBond — and of any parametric sweep around one. It is the cube **`WireTemp`**, in °C, one trace per array
+(`WB1:Out` names instance `WB1`'s array `Out`); plot it against a swept `Pin` in the Data Display, or export it
+with the rest of the run. Only **each array's hottest wire is reported, at its hottest point** along its length —
+so with the ends at different temperatures, a gently heated wire reads its **hotter end** until the heat lifts its
+middle above it.
+A fixed-temperature wBond still reports its `Temp`, as a reminder that it was fixed. Beside it, `WireTempState`
+says how each number was found: 0 fixed, 1 solved, 2 no steady state, 3 the circuit itself did not converge
+there.
+
+**What heats a wire** is its share of the DC current plus every harmonic — or, in a two-tone run, every mixing
+product — each at its own skin-effect resistance, time-averaged (peak currents, ½|I|²R′ per harmonic). The
+conductivity σ(T) and the thermal conductivity k(T) of the metal follow the temperature along the wire, from the
+same material tables a 3D thermal run reads. The DC divides among an array's wires by their resistance at
+temperature; RF divides by their inductance, so an array's edge wires carry the most — and an array the circuit
+leaves idle still carries the circulating current its neighbours induce.
+
+**Why the defaults are 125 °C and 85 °C.** A power amplifier's output wire runs from a die pad, near the
+channel's heat, to a package lead on the case — typically 125 °C and 85 °C. They differ so that the two ends read
+as the independent settings they are.
+
+**What it does not model:**
+
+- **No heat leaves through a wire's sides** — no mould compound, no air, no radiation. Every bit of heat flows
+  along the wire to its two ends, so the answer is an **upper bound**: a real wire in a mould runs cooler. The
+  mould is what the [3D thermal run](thermal.html#electrothermal) adds.
+- **The circuit is not re-solved at the temperature found.** Its resistance is taken at the **hotter of the two
+  ends**, in S-parameters and every other analysis — a wire is never cooler than its hotter end, so its loss is
+  never understated — and the run reports what the wires actually reach.
+- Steady state only: a CW drive, not a pulse.
+
+**A wire that carries no current** — behind a DC block in a DC run, or an array the circuit leaves open — reads
+the **hotter of its two end temperatures**: with no heat its temperature runs straight from one end to the
+other. That is an ordinary answer, not a warning.
+
+**Runaway is an answer.** Above some current a wire has no steady temperature: its resistance rises as it heats,
+and past that current nothing balances. That point's `WireTemp` is blank (NaN), and the Messages panel says so
+once per array, naming the drive and the last one that converged.
+
+A solved wBond needs its wire metal to state a **thermal conductivity** (`ThermalK`). Every metal circuitRF ships
+does; a metal of your own that states none is refused by name in solved mode, and runs in fixed mode.
+
 ## The 3D MoM kernel, and how it solves fast {#kernel}
 
 Behind the closed-form path is a **thin-wire method-of-moments kernel** — the Harrington/Richmond/NEC
@@ -504,7 +557,9 @@ On the placed component:
 | **`er`** | `1` | The overmould's relative permittivity. An ordinary real expression, so it can be swept and optimised. |
 | `GroundPlane` | as drawn | Enable/disable the reference plane, and its z. With it off you must nominate a return array. |
 | `RefPin` | `false` | Exposes the `REF` terminal. Changes the terminal count, 2M vs 2M+1. |
-| `Temp` | `125` | Operating temperature, in **°C** — conductivity, and therefore R(f), depends on it. Every wBond starts at **125 °C** — a newly placed one shows `125`, and a blank box means the temperature stored with the wires, which is also 125 °C unless changed (a file saved before this release, which stored the old default of 85 °C, is read as 125 °C). The box shows that value greyed when it is blank. Each metal's conductivity is read from its σ(T) table; a temperature outside that table is **held at the table's nearest end** and the run says so in the Messages panel. It is never refused. |
+| `Temp` | `125` | Operating temperature, in **°C** — conductivity, and therefore R(f), depends on it. The row leads with a **checkbox**. **Checked**, the wires are held at `Temp` in every analysis — a blank box means the temperature stored with the wires, which is also 125 °C unless changed (a file saved before this release, which stored the old default of 85 °C, is read as 125 °C), shown greyed. **Unchecked** — what a newly placed wBond is — the wires' temperature is **solved** from each DC and large-signal run between `TempStart` and `TempEnd` ([Wire temperature](#wire-temperature)), `Temp` is greyed, and the impedance is evaluated at the **hotter of `TempStart` and `TempEnd`**, in S-parameters and every other analysis. A wBond placed before this release has no checkbox state stored and stays checked, so its answer does not change. Each metal's conductivity is read from its σ(T) table; a temperature outside that table is **held at the table's nearest end** and the run says so in the Messages panel. It is never refused. |
+| `TempStart` | `125` | With `Temp` unchecked: the temperature, in °C, each array's wires are held at where they **start** — at the array's **input** pin, typically the die. An expression, so `TempStart = tdie` can be typed and swept. Greyed while `Temp` is checked; its value is kept. |
+| `TempEnd` | `85` | With `Temp` unchecked: the temperature, in °C, where the wires **end** — at the array's **output** pin, typically the package lead. Greyed while `Temp` is checked. |
 | `LoopHeight`, `Diameter`, `Material` | **blank** | The controlling parameters: blank means *as drawn*. `Material` can name any conductor circuitRF ships (the [generic materials](materials.html)), not only the four bond-wire metals, or one of your own — see [Your own wire metals](#own-metals). Set one and it drives every wire; array-scoped spellings (`LoopHeight_G1`, `Diameter_D2`, …) drive one array. Blank is not emitted at all, so an unset parameter never reaches the engine. |
 | `MaterialLibrary` | — | The workspace `.cmat` this instance's own metals come from, relative to the schematic. Written for you when you choose one of its metals, removed when no material names one. If the file cannot be read, the run is refused and names the instance. |
 | `Source`, `File` | `Carried` | Whether the component **carries** its design or **links** to a `.wBond` on disk. |
@@ -521,7 +576,8 @@ instance's wires to 20 mil on its next run — silently rewriting geometry someb
 
 The **Material** list ends with **New Material…**. It opens your workspace's material library in the
 [Materials editor](materials.html) with a new material started: name it, give it a **σ₂₀** (and an α₂₀ or a
-σ(T) table if its conductivity moves with temperature), and save. The metal then appears in the Material list,
+σ(T) table if its conductivity moves with temperature) and a **ThermalK** if the wBond solves its
+[wire temperature](#wire-temperature), and save. The metal then appears in the Material list,
 and choosing it is what ties the component to that library.
 
 Which library it opens:

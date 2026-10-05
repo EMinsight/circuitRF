@@ -38,10 +38,10 @@ framework, not the GUI referencing the CLI — and `CircuitRF.Cli.Verbs` has its
 | Verb | Input | Runs | Writes |
 |---|---|---|---|
 | `sparam` | `.cnl` or `.csch` | `SParameterEngine` | Touchstone `.sNp` by default; `-o`'s extension picks the format (`.sNp`, or `.npy`/`.mat`/`.txt` for the cubes). With a `WSProbe` in the netlist it also prints one line per probe (`WSProbe GATE idx=1 H0(f_lo)=… ZG(f_lo)=… SM_Y0 min −18.1 dB @ 1.5913 GHz SM_H0 min −19.8 dB @ 1.7337 GHz` — each stability margin's minimum over the sweep and its frequency, in dB), evaluates the bench's `measure` lines, carries `wsprobes: [{label, idx, smY0Min, smY0MinHz, smH0Min, smH0MinHz}]` in `--json` (**linear**, because dB is a display convention and a document carries the number), reports a probe whose margin falls below the analysis line's `MarginThreshold=` (default −15 dB, `MarginThreshold=none` disables) as an Info diagnostic, and — a probe with no port being legal — refuses a Touchstone of a run that has no `S`, naming the cube spellings (`docs/design/stability-wsprobe.md` §3, §9) |
-| `dc` | `.cnl` or `.csch` | `NonlinearDcEngine` | node voltages + probe currents to stdout |
-| `hb` | `.cnl` or `.csch` | `HbEngine` (single- or multi-tone) | stdout tables; `-o .mat/.npy/.txt` |
-| `lp` | `.cnl` or `.csch` | `LoadpullEngine` + `LoadpullPostProcessor` | stdout grid table; `-o .mat/.npy/.txt/.spl/.lpcwave` |
-| `lpp` | `.cnl` or `.csch` | `LoadpullPursuitEngine` | stdout optima + follow-on grid; `-o` as `hb`; `--out-grid` writes the `.gam` |
+| `dc` | `.cnl` or `.csch` | `NonlinearDcEngine` | node voltages + probe currents to stdout; `--json` carries `WireTemp` when the netlist has a wBond |
+| `hb` | `.cnl` or `.csch` | `HbEngine` (single- or multi-tone) | stdout tables; `-o .mat/.npy/.txt` — with `WireTemp`/`WireTempState` when the netlist has a wBond |
+| `lp` | `.cnl` or `.csch` | `LoadpullEngine` + `LoadpullPostProcessor` | stdout grid table; `-o .mat/.npy/.txt/.spl/.lpcwave` (`WireTemp [grid, pin, wire array]` with a wBond) |
+| `lpp` | `.cnl` or `.csch` | `LoadpullPursuitEngine` | stdout optima + follow-on grid; `-o` as `hb` (the follow-on carries `WireTemp`); `--out-grid` writes the `.gam` |
 | `em` | `.cem` | `EmSetupResolver` + `EmRunService` (kernel chosen by `EmKernelRegistry`) | Touchstone `.sNp` + grouped `.npy` at the path Simulate writes; `-o` moves the Touchstone |
 | `rail` | `.crail` (or a `.clay` / `.csch` / cell folder with one beside it) | `RailOrder` + `RailDcRun` — the extractor, the solve and the via check `src/Design/RailRf` already holds | stdout tables; `-o .csv/.npy/.mat/.txt` for the numbers and `.svg/.pdf` for the report page — §17 |
 | `smith` | `.csmith` | `SmithCascade` + `SmithReadings` + `SmithBand` — the evaluator the Smith Chart window's status strip reads on every edit | stdout reading + the per-node walk; `-o .s1p` for the load Γ and `.svg/.pdf/.png` for the chart — §18 |

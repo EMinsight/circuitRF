@@ -504,17 +504,26 @@
                                     <ColumnDefinition SharedSizeGroup="ParamRemove"  Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <TextBox Grid.Column="0"
-                                         Text="{Binding StagedName}"
-                                         IsReadOnly="{Binding NameReadOnly}"
-                                         PlaceholderText="{Binding NameWatermark}"
-                                         FontSize="11"
-                                         Padding="2,3"
-                                         VerticalAlignment="Center"
-                                         Margin="0,0,4,0"
-                                         ToolTip.Tip="{Binding NameTooltip}"
-                                         LostFocus="OnParamNameLostFocus"
-                                         KeyDown="OnParamNameKeyDown"/>
+                                <!-- A row may lead with a checkbox: a wBond's Temp, whose checkbox is its
+                                     FixedTemp (brief-wbond-wire-temperature R-wbt-5a). Checking Temp fixes
+                                     the temperature, which is what the label says. -->
+                                <DockPanel Grid.Column="0" Margin="0,0,4,0">
+                                    <CheckBox DockPanel.Dock="Left"
+                                              IsVisible="{Binding HasLeadingCheck}"
+                                              IsChecked="{Binding LeadingCheck}"
+                                              MinWidth="0" Padding="0" Margin="0,0,4,0"
+                                              VerticalAlignment="Center"
+                                              ToolTip.Tip="Checked: the wires are held at Temp. Unchecked: their temperature is solved from each DC and large-signal run, between TempStart and TempEnd."/>
+                                    <TextBox Text="{Binding StagedName}"
+                                             IsReadOnly="{Binding NameReadOnly}"
+                                             PlaceholderText="{Binding NameWatermark}"
+                                             FontSize="11"
+                                             Padding="2,3"
+                                             VerticalAlignment="Center"
+                                             ToolTip.Tip="{Binding NameTooltip}"
+                                             LostFocus="OnParamNameLostFocus"
+                                             KeyDown="OnParamNameKeyDown"/>
+                                </DockPanel>
                                 <TextBox Grid.Column="1"
                                          Text="{Binding StagedExpression}"
                                          PlaceholderText="{Binding ExpressionPlaceholder}"
