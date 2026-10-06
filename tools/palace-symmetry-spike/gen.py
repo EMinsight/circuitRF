@@ -3,6 +3,7 @@
 Threshold size field from the metal, Algorithm 6 / 3D 10, MSH 2.2 binary. mm units (L0 = 1e-3).
 
 Geometry A (air stripline pair) and B (microstrip pair). Port faces:
+  shared: one rectangle per end covering both strips, attribute 4 (x0) / 5 (xL) (brief 124)
   touch : one rectangle per strip, the end face split at the midline (113-a's per-line run)
   gap   : the two rectangles separated by a strip |y| < g/2, its own attribute (12), given PMC
   half  : y <= 0 only; the cut plane y = 0 is attribute 13 (PMC or PEC in the config)
@@ -12,7 +13,7 @@ remainder PEC (B); 12 gap strip; 13 cut plane.
 """
 import sys, json, gmsh
 
-def build(path, geom="A", mode="touch", g=0.0, r=2, wa=None, wb=None, verbose=0, edge=None, fullport=False):
+def build(path, geom="A", mode="touch", g=0.0, r=2, wa=None, wb=None, verbose=0, edge=None, fullport=False, Y=None):
     occ = gmsh.model.occ
     gmsh.initialize(); gmsh.option.setNumber("General.Verbosity", verbose)
     gmsh.model.add("m")
@@ -20,7 +21,7 @@ def build(path, geom="A", mode="touch", g=0.0, r=2, wa=None, wb=None, verbose=0,
     if geom == "A":
         b, t, S = 2.0, 0.02, 0.4
         W = 1.2; wa = wa or W; wb = wb or W
-        Y = 0.2 + max(wa, wb) + 6.0          # PEC walls 6 mm beyond the strips (symmetric box)
+        Y = Y or 0.2 + max(wa, wb) + 6.0     # PEC walls 6 mm beyond the strips (symmetric box)
         z0, z1 = -b / 2, b / 2
         zs0, zs1 = -t / 2, t / 2
         lnear, lfar, dmin, dmax = 1.2 * 2.0 ** -r, 2.0 * 2.0 ** -r, W, 2 * b
@@ -28,7 +29,7 @@ def build(path, geom="A", mode="touch", g=0.0, r=2, wa=None, wb=None, verbose=0,
     else:
         h, t, S = 0.508, 0.017, 0.3
         W = 1.1; wa = wa or W; wb = wb or W
-        Y = S / 2 + max(wa, wb) + 3.0
+        Y = Y or S / 2 + max(wa, wb) + 3.0
         z0, z1 = 0.0, h + 3.0
         zs0, zs1 = h, h + t
         lnear, lfar, dmin, dmax = 1.1 * 2.0 ** -r, 2.0 * 2.0 ** -r, W, 3.0
@@ -59,6 +60,8 @@ def build(path, geom="A", mode="touch", g=0.0, r=2, wa=None, wb=None, verbose=0,
                     tools.append((2, rect(x, -py, -g / 2, pz0, pz1))); tools.append((2, rect(x, g / 2, py, pz0, pz1)))
                 elif mode == "half":
                     tools.append((2, rect(x, -py, 0.0, pz0, pz1)))
+                elif mode == "shared":
+                    tools.append((2, rect(x, -py, py, pz0, pz1)))
                 else:
                     tools.append((2, rect(x, -py, 0.0, pz0, pz1))); tools.append((2, rect(x, 0.0, py, pz0, pz1)))
             else:
@@ -99,7 +102,7 @@ def build(path, geom="A", mode="touch", g=0.0, r=2, wa=None, wb=None, verbose=0,
             inport = (ya > -py - eps and yb < py + eps and za > pz0 - eps and zb < pz1 + eps)
             if geom == "B" and not inport:
                 add(9, tg); continue
-            if yc < 0:
+            if yc < 0 or mode == "shared":   # shared: ONE port face per end covering both strips
                 add(4 if near else 5, tg)
             else:
                 add(6 if near else 7, tg)

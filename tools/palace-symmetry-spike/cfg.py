@@ -2,22 +2,32 @@
 Changes per run: which ports exist, which are excited, and the PMC / PEC attribute lists."""
 import json, sys
 
-def port(idx, attr, x, yc, zs, zg, exc):
-    p = {"Index": idx, "Attributes": [attr], "Mode": 1, "Offset": 0.0, "MaxIts": 30,
+def port(idx, attr, x, yc, zs, zg, exc, mode=1, active=None, maxsize=None):
+    p = {"Index": idx, "Attributes": [attr], "Mode": mode, "Offset": 0.0, "MaxIts": 30,
          "KSPTol": 1e-08, "EigenTol": 1e-06,
          "VoltagePath": [[x, yc, zs], [x, yc, zg]], "NSamples": 100}
+    if active is not None: p["Active"] = active
+    if maxsize: p["MaxSize"] = maxsize
     if exc: p["Excitation"] = idx
     return p
 
-def write(path, geom="A", mode="touch", freqs=(5.0,), excite=(1,), cut=None, wa=None, wb=None, shield=False, fullport=False):
+def write(path, geom="A", mode="touch", freqs=(5.0,), excite=(1,), cut=None, wa=None, wb=None, shield=False, fullport=False,
+          losstan=0.0, maxsize=20, active_explicit=True):
     L = 15.0
     if geom == "A":
         S, W = 0.4, 1.2; wa = wa or W; wb = wb or W; zs, zg = -0.01, -1.0
     else:
         S, W = 0.3, 1.1; wa = wa or W; wb = wb or W; zs, zg = 0.508, 0.0
     ya, yb = -(S / 2 + wa / 2), S / 2 + wb / 2
-    ports = [port(1, 4, 0.0, ya, zs, zg, 1 in excite), port(2, 5, L, ya, zs, zg, 2 in excite)]
-    if mode != "half":
+    if mode == "shared":
+        # brief 124: one face per end, entry k = Mode k, the face's first entry Active, equal MaxSize, every entry
+        # excited; entry 1/3 VoltagePath on line 1, 2/4 on line 2 (signal -> ground)
+        ports = [port(1, 4, 0.0, ya, zs, zg, True, 1, True if active_explicit else None, maxsize),
+                 port(2, 4, 0.0, yb, zs, zg, True, 2, False, maxsize),
+                 port(3, 5, L, ya, zs, zg, True, 1, True if active_explicit else None, maxsize), port(4, 5, L, yb, zs, zg, True, 2, False, maxsize)]
+    else:
+        ports = [port(1, 4, 0.0, ya, zs, zg, 1 in excite), port(2, 5, L, ya, zs, zg, 2 in excite)]
+    if mode not in ("half", "shared"):
         ports += [port(3, 6, 0.0, yb, zs, zg, 3 in excite), port(4, 7, L, yb, zs, zg, 4 in excite)]
     bnd = {"WavePort": ports}
     pec = [10, 11] if geom == "A" else ([8, 11] if fullport else [8, 9, 11])
@@ -31,7 +41,7 @@ def write(path, geom="A", mode="touch", freqs=(5.0,), excite=(1,), cut=None, wa=
     if geom == "B" and not shield: bnd["Absorbing"] = {"Attributes": [10], "Order": 1}
     if geom == "B" and shield: pec.append(10)
     mats = [{"Attributes": [1], "Permeability": 1.0, "Permittivity": 1.0, "LossTan": 0.0}]
-    if geom == "B": mats.append({"Attributes": [2], "Permeability": 1.0, "Permittivity": 3.5, "LossTan": 0.0})
+    if geom == "B": mats.append({"Attributes": [2], "Permeability": 1.0, "Permittivity": 3.5, "LossTan": losstan})
     cfg = {
         "Problem": {"Type": "Driven", "Verbose": 2, "Output": "postpro"},
         "Model": {"Mesh": "mesh.msh", "L0": 0.001},

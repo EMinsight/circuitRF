@@ -1,0 +1,14 @@
+warning: openEMS chose a time step of 5.996E-14 s, 1.11 times circuitRF's Courant estimate of 5.404E-14 s — outside 0.5–1. The answer is still openEMS's; the estimate circuitRF reports before a run is what disagrees.
+note: Solver: openEMS 0.37.0-rc3 (67d3784, CSXCAD dcdb62b) at <openEMS>.
+note: The air box's floor is below the geometry: a 3D view states no floor of its own, so every face is the setup's (absorbing unless its AirBox says otherwise).
+note: The xmin face carries wave port 'near', so openEMS feeds it from behind, through a 13.5319 mm extension of the face's own cross-section ending in PML.
+note: The xmax face carries wave port 'far', so openEMS feeds it from behind, through a 13.5319 mm extension of the face's own cross-section ending in PML.
+note: openEMS boundaries: xmin PML (8 cells), xmax PML (8 cells), ymin PEC, ymax PEC, zmin PEC, zmax PEC.
+note: 'strip_a', 'strip_b' are written as perfect conductors: an FDTD grid does not resolve a metal's skin depth, so openEMS's answer has no conductor loss in them, where Palace gives each its conductivity.
+note: 'substrate', 'air', 'strip_a', 'strip_b' reach an absorbing face and are continued through its PML, so the absorber terminates the medium rather than a step into free space.
+note: openEMS grid: 490 × 100 × 35 = 1,715,000 cells; smallest cell 17 µm on z, set by 'substrate' material face at z = 508 µm; 'air' material face at z = 508 µm; 'strip_a' edge at z = 508 µm; 'strip_b' edge at z = 508 µm; 'strip_a' edge at z = 525 µm; 'strip_b' edge at z = 525 µm. openEMS runs once per port: 4 runs, each up to 1,855,550 time steps.
+note: Terminal P1: the line measured Z 47.45 Ω, ε_eff 2.67 at 6 GHz, with the other terminals of 'near' passive.
+note: Terminal P2: the line measured Z 47.46 Ω, ε_eff 2.67 at 6 GHz, with the other terminals of 'far' passive.
+note: Terminal P3: the line measured Z 47.45 Ω, ε_eff 2.67 at 6 GHz, with the other terminals of 'near' passive.
+note: Terminal P4: the line measured Z 47.45 Ω, ε_eff 2.67 at 6 GHz, with the other terminals of 'far' passive.
+      283.92 real       862.23 user        15.11 sys

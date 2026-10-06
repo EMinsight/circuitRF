@@ -1,0 +1,19 @@
+{
+ "FormatVersion": 1,
+ "Name": "pairB",
+ "Materials": [
+  {
+   "Name": "PEC",
+   "Sigma20": 1e+30
+  },
+  {
+   "Name": "Sub",
+   "Epsr": 3.5,
+   "TanD": 0.0
+  },
+  {
+   "Name": "Air",
+   "Epsr": 1
+  }
+ ]
+}

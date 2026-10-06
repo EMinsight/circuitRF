@@ -1,0 +1,162 @@
+{
+ "Problem": {
+  "Type": "Driven",
+  "Verbose": 2,
+  "Output": "postpro"
+ },
+ "Model": {
+  "Mesh": "mesh.msh",
+  "L0": 0.001
+ },
+ "Domains": {
+  "Materials": [
+   {
+    "Attributes": [
+     1
+    ],
+    "Permeability": 1.0,
+    "Permittivity": 1.0,
+    "LossTan": 0.0
+   }
+  ]
+ },
+ "Boundaries": {
+  "WavePort": [
+   {
+    "Index": 1,
+    "Attributes": [
+     4
+    ],
+    "Mode": 1,
+    "Offset": 0.0,
+    "MaxIts": 30,
+    "KSPTol": 1e-08,
+    "EigenTol": 1e-06,
+    "VoltagePath": [
+     [
+      0.0,
+      -0.8,
+      -0.01
+     ],
+     [
+      0.0,
+      -0.8,
+      -1.0
+     ]
+    ],
+    "NSamples": 100,
+    "Active": true,
+    "MaxSize": 20,
+    "Excitation": 1
+   },
+   {
+    "Index": 2,
+    "Attributes": [
+     4
+    ],
+    "Mode": 2,
+    "Offset": 0.0,
+    "MaxIts": 30,
+    "KSPTol": 1e-08,
+    "EigenTol": 1e-06,
+    "VoltagePath": [
+     [
+      0.0,
+      0.8,
+      -0.01
+     ],
+     [
+      0.0,
+      0.8,
+      -1.0
+     ]
+    ],
+    "NSamples": 100,
+    "Active": false,
+    "MaxSize": 20,
+    "Excitation": 2
+   },
+   {
+    "Index": 3,
+    "Attributes": [
+     5
+    ],
+    "Mode": 1,
+    "Offset": 0.0,
+    "MaxIts": 30,
+    "KSPTol": 1e-08,
+    "EigenTol": 1e-06,
+    "VoltagePath": [
+     [
+      15.0,
+      -0.8,
+      -0.01
+     ],
+     [
+      15.0,
+      -0.8,
+      -1.0
+     ]
+    ],
+    "NSamples": 100,
+    "Active": true,
+    "MaxSize": 20,
+    "Excitation": 3
+   },
+   {
+    "Index": 4,
+    "Attributes": [
+     5
+    ],
+    "Mode": 2,
+    "Offset": 0.0,
+    "MaxIts": 30,
+    "KSPTol": 1e-08,
+    "EigenTol": 1e-06,
+    "VoltagePath": [
+     [
+      15.0,
+      0.8,
+      -0.01
+     ],
+     [
+      15.0,
+      0.8,
+      -1.0
+     ]
+    ],
+    "NSamples": 100,
+    "Active": false,
+    "MaxSize": 20,
+    "Excitation": 4
+   }
+  ],
+  "PEC": {
+   "Attributes": [
+    10,
+    11
+   ]
+  }
+ },
+ "Solver": {
+  "Order": 2,
+  "Device": "CPU",
+  "Driven": {
+   "Samples": [
+    {
+     "Type": "Point",
+     "Freq": [
+      5.0
+     ]
+    }
+   ],
+   "Save": []
+  },
+  "Linear": {
+   "Type": "Default",
+   "KSPType": "GMRES",
+   "Tol": 1e-08,
+   "MaxIts": 200
+  }
+ }
+}

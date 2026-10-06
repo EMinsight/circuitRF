@@ -17479,3 +17479,203 @@ conductors. Palace may remove the limitation, and then circuitRF should follow i
 - **The harness is in `tools/palace-symmetry-spike/`** (moved there after the spike, at the owner's request; the brief
   had kept it to a scratchpad, which is how 113-a's was lost). Its README gives the `run.sh` line for each fixture.
   Before trusting a rebuilt mesh on a new Palace, reproduce a committed fixture first, as this spike did against 113-a's.
+
+## Palace modal transform on a shared face — brief-em3d-124 (2026-10-06)
+
+A measurement spike, no product code. Palace **v0.18.1** (`0dc74cd`, 8 MPI ranks), openEMS **v0.37.0-rc3** (`67d3784`,
+through `circuitrf em`), Apple M4 / 16 GB. Fixtures and every departure from 113-a's and 119's runs:
+`testdata/em3d/terminal/palace-modal/` and its README. Harness: `tools/palace-symmetry-spike/` (`modal.py` is the
+transform, `shared.py` the comparisons, `oems/` the openEMS side). Every S is at 50 Ω, ports in 119's order (1 line-1 near,
+2 line-1 far, 3 line-2 near, 4 line-2 far).
+
+**Read first.**
+- Palace `docs/src/guide/boundaries.md`; `scripts/schema/config-schema.json` (`WavePort.Mode`: ranked by decreasing
+  wavenumber; `Active`: turns the port's damping term off; `MaxSize`: default `max(2·Mode, Mode + 15)`; `VoltagePath`:
+  signal → ground, pins the polarity so ∫E·dl is real-positive); `CHANGELOG.md` 0.18.0–0.18.1.
+- `palace/models/waveportoperator.cpp`: `Normalize` (≈ 140: |∫e×h*·n| = 1, phase set against a reference field, the
+  peak convention); `Initialize` (≈ 880–1010); the Robin term (≈ 1735–1750: added for `Active` entries only, as
+  i·**Re** kₙ·M — "the line-attenuation Im(kₙ) is intentionally dropped"); the mode's n×H, used both as the source and as
+  the projection, built from **Re** kₙ too (≈ 348–352, 940); the excitation (≈ 1830: 2(−iω)·n×H_inc with the ∇ₜEₙ term);
+  the modal correction of PR [#886](https://github.com/awslabs/palace/pull/886) (≈ 1880–2030: a rank-one term restoring
+  the full n×H, including ∇ₜEₙ, **for the Active entry's own mode only**). `palace/models/postoperator.cpp` ≈ 1743
+  (`V_wp` = the total field's line integral along the entry's path) and ≈ 1838–1900 (S = ∫E×h*·n − δ, with the offset
+  factor). kₙ is written only to the log, to four significant figures (`Port i, mode m: kₙ = …`).
+- Issues (read only): [#328](https://github.com/awslabs/palace/issues/328) (open; degenerate TEM modes cannot be told
+  apart; the maintainer's advice is still to split the port and pick each half's sign);
+  [#960](https://github.com/awslabs/palace/issues/960) (open, filed 2026-09-21, no comments: for a lossy cross-section the
+  conjugate projection is O(φ) wrong in S phase, φ ≈ ½·arctan tanδ, and Z_PV assumes 2P_avg = 1);
+  [#171](https://github.com/awslabs/palace/issues/171) / PR [#197](https://github.com/awslabs/palace/pull/197) (`Active`:
+  several modes on one attribute set, the Robin coefficient chosen from one of them);
+  PR [#937](https://github.com/awslabs/palace/pull/937) (**open, updated 2026-10-06**: moves ports to time-averaged power,
+  i.e. a √2 change in driven amplitudes; its thread defers the lossy normalisation to #960). Searched again for several
+  modes per face, terminal ports and degenerate modes: nothing newer on point. Related and open:
+  [#996](https://github.com/awslabs/palace/issues/996) / PR [#1019](https://github.com/awslabs/palace/pull/1019) (mode
+  ranking ignores Im kₙ, so a lossy or evanescent face can pick the wrong mode index), PR
+  [#977](https://github.com/awslabs/palace/pull/977) (absorbing-BC bugs in the 2D mode solver).
+
+**The transform as rebuilt** from R-em3d113-1d/e/g, per face, with the face's N entries (`Mode` k on entry k, the lowest
+`Active`, every entry its own excitation, each `VoltagePath` from its own strip to ground), S_m the modal matrix Palace
+writes, V the `V_wp` matrix (terminal × excitation), and G[n, i] = ⟨e_n, h_i⟩ = ∫ e_n × h_i*·n:
+
+```
+P = 1 + S_m = Gᵀ C                    (C: the modal amplitudes of the total transverse E, a + b)
+M = V (1 + S_m)⁻¹ = T_V G⁻ᵀ           (T_V[k, n] = ∫_path_k e_n·dl)
+T_I = M⁻ᴴ                              (TEM: G = T_Vᵀ T_I*, so G cancels)
+a − b = 2·1 − K C,   K = diag(Re k₁ / Re k_m)   (k₁: the face's Active entry)
+U = V,  I = T_I (a − b),  S = (U − Z₀ I)(U + Z₀ I)⁻¹
+G per face from Palace's Z_PV:  |(M Gᵀ)_ii|² = Z_PV[i]
+```
+
+Where 113's text was ambiguous, what was chosen:
+1. **G is symmetric with a unit diagonal and one REAL off-diagonal g per two-mode face.** 113 says "real g" and "two
+   equations per face" without saying that g₁₂ = g₂₁. For TEM modes h = ẑ×e/η, so ⟨e_n, h_i⟩ = ∫e_n·e_i*/η, which is
+   symmetric for real modes; the unit diagonal is `Normalize`. With one unknown and two equations, the residual is a
+   check. Solved by least squares on the relative residual from seven starts, all roots recorded.
+2. **K uses real parts.** 113 wrote k₁/k_m and did not treat loss. In a driven solve Palace builds the Robin term AND every
+   mode's n×H (source and projection) from Re kₙ, while a lossy mode's true H is (k_m / Re k_m) times that n×H. In the 1D
+   port model the launch factor 2·Re k_m/k_m and that current factor cancel, leaving Re k₁/Re k_m. Measured below
+   (R-em3d124-1d): the complex form is 20× further from openEMS on what the loss does.
+3. **The power convention is factor 1** (113's R-em3d113-1h): |T_V,ii|² = Z_PV after the fit, relative residual 2e-6 to
+   4e-4 on every face, lossy ones included.
+4. **Self-check:** M must be block-diagonal (a terminal sees only its own face's modes): off-block ≤ 6.5e-4 of the
+   largest entry on every run.
+
+**R-em3d124-1a — A, reproduced, then through the transform.** 113-a's `pair-a-shared-face` config on a rebuilt r2 mesh
+(ND 293,586 against 294,792): Palace's degenerate pair came out in a **different mixture** (Z_PV 65.4 / 59.0 Ω on the near
+face against 113-a's 12.9 / 2.4 Ω; raw σ_max 1.100 against 1.273), as 113 found it varies with the mesh. Through the
+transform, **the two runs' terminal S agree to max |ΔS| 0.0004**, so the transform removes the mixture. With 119's edge
+field (r3 e0.02, 119's go density) the full shared-face model is 762 k tetrahedra, about 5.1 M unknowns, which does not fit
+in 16 GB. The densities run are r2 plus the edge field, with route B re-run at each:
+
+| run (ND, wall) | raw σ_max | g near / far (resid) | 2D-predicted g | σ after | vs 2D (101.95 / 70.885 Ω) | vs route B, same density |
+|---|---|---|---|---|---|---|
+| r2, 113-a's MaxSize (294 k, 43 s) | 1.100 | +0.102 / −0.006 (2e-5) | +0.105 / +0.002 | 1.0000 / 1.0000 | 0.027 | 0.0026 |
+| r2 e0.02 (1.21 M, 109 s) | 1.470 | −0.501 / +0.153 (4e-6) | −0.500 / +0.154 | 1.0000 / 1.0000 | 0.0032 | **0.0003** |
+| r2 e0.01 (2.15 M, 224 s) | 1.074 | −0.001 / −0.074 (6e-6) | −0.001 / −0.074 | 1.0000 / 1.0000 | 0.0024 | **0.0003** |
+
+(The last two columns are max |ΔS| over all 16 entries. Per-port |S_jj|² + Σ|S_ij|² is 1.0000 on every row. "2D-predicted
+g" is T_Vᵀ·Y_c·T_V* with Y_c from the 2D reference, 113's −0.624 against −0.622.) **At equal density the transform IS route
+B**, to 0.0003 (≤ 0.006 dB / 0.05°). At r2 e0.01, against the 2D reference: S11 −0.040 dB / −0.06°, thru +0.010 dB /
+−0.06°, near-end +0.073 dB / +0.05°, far-end +0.014 dB / −0.38°. The near-end misses 119's 0.05 dB by mesh: route B on the
+same mesh reads +0.077 dB, it was +0.098 at e0.02, and route B met the bar only on 119's r3 background, which the full
+model cannot hold here. **The complex-g fit lands on a wrong root**: on r2 e0.02 one face goes to g = 0.153 + 0.016j (6° of
+phase) with zero residual, σ_min 0.9997 and max |ΔS| 0.010 against 0.0032. The real-g restriction carries the result; on
+r2 e0.01 the two fits happen to agree.
+
+**R-em3d124-1b — the asymmetric air pair: go.** Exact reference: the multiconductor line from the 2D C matrix
+(`asym.py`). Modes are still degenerate (all kₙ = 104.8 m⁻¹), now neither even nor odd.
+
+| line 2 wider by | mesh (ND, wall) | raw σ_max | g near / far | σ after | max \|ΔS\| | S11 / S33 | thru S21 / S43 | near-end | far-end |
+|---|---|---|---|---|---|---|---|---|---|
+| 10 % | r2 e0.02 (1.21 M, 113 s) | 1.249 | +0.061 / −0.254 | 1.0000 / 1.0000 | 0.0030 | −0.054 / −0.060 dB | +0.013 / +0.011 dB | +0.099 dB / +0.03° | +0.016 dB / −0.42° |
+| 10 % | r2 e0.01 (2.16 M, 203 s) | 1.048 | −0.048 / +0.011 | 1.0000 / 1.0000 | 0.0025 | −0.045 / −0.050 dB | +0.011 / +0.009 dB | +0.090 dB / +0.04° | +0.031 dB / −0.40° |
+| 3 % | r2 e0.02 (1.21 M, 112 s) | 1.544 | **+0.561** / +0.090 | 1.0000 / 1.0000 | 0.0031 | −0.052 / −0.059 dB | +0.012 / +0.013 dB | +0.103 dB / +0.04° | +0.035 dB / −0.41° |
+
+The error is the symmetric pair's on the same mesh (0.0032 / 0.0024), and converges with it. Every phase is within 0.5°.
+The fitted g matches the 2D-predicted Gram to ≤ 0.0006 on all three. **Line 2's own entries are right**: S33 −7.33 dB
+against −7.28 dB exact (10 %), where 119's symmetric combination forced S33 = S11 and was 0.021 off from the formula alone.
+The only entry outside 0.05 dB is the near-end magnitude, which is the mesh error that route B shows on the same mesh.
+
+**R-em3d124-1c — the asymmetric microstrip pair, lossless (non-degenerate modes).** Geometry B, line 2 1.32 mm, 119's
+shielded box, t = 0.017 mm on both solvers (PEC boxes on openEMS), so 119's `b-half*-r3e-shield-full` stays the
+symmetric reference. Palace at r2 e0.02, one frequency per run (1.57 M ND, 162–182 s, 4 excitations).
+- **The Robin correction is exact against route B.** The symmetric pair on the shared face against route B at the same
+  density: max |ΔS| **0.0003 (2 GHz) and 0.0007 (6 GHz)**. Without it: 0.040 and 0.048, the far-end +4.1 dB / +43° at
+  2 GHz, and the inactive entry's column carries 0.855 of its power (113's mechanism, measured again).
+- **Losslessness after the transform**, asymmetric: σ 1.0000 / 0.9998, 1.0001 / 1.0000 and **1.0011 / 0.9988** at 2, 4 and
+  6 GHz, per-port power within 0.0012 of 1. Without the Robin correction σ_min is 0.805 and the per-port power 0.91, while
+  σ_max stays 1.0000. K = Re k₁/Re k₂ is 1.0793, 1.0823 and 1.0863 across the band. The 6 GHz residual is the 1D port
+  model's: PR #886's modal correction restores ∇ₜEₙ for the Active mode only, so the inactive hybrid mode's port is not
+  exactly the scalar Robin the correction assumes, and that grows with frequency.
+- **openEMS's own error on microstrip** (circuitrf em, the symmetric pair, against Palace's symmetric pair on the shared
+  face, which is route B to 0.0007): **max |ΔS| 0.0096 / 0.0240 / 0.0040 at 2 / 4 / 6 GHz**, and above −30 dB
+  **0.59 dB / 1.8°, 2.7 dB / 9.2° (S11 at −27 dB), 0.20 dB / 0.15°**. Against 119's r3e route B the 2 and 6 GHz numbers are
+  0.0089 / 0.0037. The 4 GHz figure is mostly a definition: **the PEC lid makes circuitRF's openEMS port classify each
+  strip as a stripline** (`FdtdWavePorts.Classify`: a PEC face on both sides of the path axis), so the terminal voltage is
+  the mean of the strip → ground and strip → lid integrals. Those differ: up/down = 0.986 at 2 GHz and **0.895 at 6 GHz**
+  for the driven strip, and 0.65 at −18° on the passive one. Re-assembled from the probe files with the strip → ground half
+  alone (Palace's path; `oems/probes.py`, which reproduces the `.s4p` to 1e-10 with the mean), openEMS's error is 0.0103 /
+  0.0089 / 0.0025.
+- **So the bar for (c) is openEMS's own measured error**, not 0.1 dB / 1°. Against it, by max |ΔS| the asymmetric pair
+  lands where the symmetric one does at every frequency: **0.0095 / 0.0243 / 0.0048** (strip → ground: 0.0101 / 0.0087 /
+  0.0025). One per-entry exception: at 2 GHz the far-end, −29.6 dB (just above −30), is 2.7° off against the symmetric
+  pair's 1.8° (|ΔS| 0.0016). The sharper test cancels each solver's own discretisation: **what the asymmetry does**,
+  S(asym) − S(sym), is 0.096 / 0.096 / 0.022 at 2 / 4 / 6 GHz on both solvers, and the two agree to **0.0024 / 0.0046 /
+  0.0020** (strip → ground: 0.0022 / 0.0026 / 0.0017).
+
+**R-em3d124-1d — the same pair, lossy (tan δ 0.02 on both solvers).** kₙ is complex now (k₁ = 142.0 − 1.304j at 4 GHz).
+- **openEMS's loss is exact at 4 GHz only.** `CsxcadWriter` writes tanδ as a constant conductivity fitted at the band
+  centre (κ = 2π·f_c·ε₀·εr·tanδ; the run's own note says so), so at 2 GHz it carries twice the loss and at 6 GHz two-thirds.
+  Measured: openEMS's thru loss over lossless is 0.154 dB at 2 GHz and 0.157 dB at 6 GHz (flat), Palace's 0.077 and
+  0.236 dB (×3.06, as a constant tanδ gives). The 2 and 6 GHz comparisons (0.0102 / 0.0097) therefore test nothing about
+  loss, and 4 GHz is the case. (The spike compared 2 and 6 GHz first and read the note afterwards.)
+- **At 4 GHz, what the loss does agrees to max |ΔS| 0.0004**: S(lossy) − S(lossless) on Palace through the transform
+  against the same on openEMS. Thru loss 0.1539 against 0.1536 dB, phase change 0.005° against 0.015°; S43 0.1526 against
+  0.1518 dB. Directly, the lossy pair is where the lossless one is: max |ΔS| 0.0239 (`.s4p`) / 0.0087 (strip → ground).
+- **The real-part K is the one that works.** The same differential through 113's complex k₁/k_m: 0.0085, with S11's
+  loss-induced change +0.36 dB against openEMS's −0.34 dB (real-part form: −0.69 dB; S11 is at −30 dB). Without any Robin
+  correction the direct error is 0.045, but that error is nearly the same lossless, so the differential sees only 0.0011:
+  the differential tests what the LOSS does to the transform, not the Robin correction itself (that is (c)'s
+  losslessness check).
+- **The real-g fit is not needed**: B's g is 1e-5 to 5e-4 lossless and the same lossy. The complex fit returns
+  0.0005 + 0.0078j at 6 GHz (zero residual; ill-posed, as on A) and moves the comparison from 0.0097 to 0.0108.
+  G = 1 gives the fitted-G result to 2e-5 at 2 and 4 GHz and 5.5e-4 at 6 GHz (where the fitted g is 5e-4), which moves
+  nothing against openEMS. So on a non-degenerate face, use G = 1 and do not fit.
+- **#960 in these runs.** The lossy mode's own voltage comes out with a phase of −0.26° at 6 GHz (−0.007° at 2 GHz;
+  `V_wp` is real by sign only). That is the O(φ) the issue describes. It is consistent between V, Z_PV and the projection, so
+  the transform carries it and nothing in the loss differential shows it. The raw modal self-reflection could not isolate
+  the port's predicted |Im k₁|/(2 Re k₁) ≈ 0.0045, because the line's own reflections interfere with it.
+
+**R-em3d124-1e/f — robustness and cost.**
+
+| case | raw σ max / min | after: σ max / min | per-port power | reciprocity |
+|---|---|---|---|---|
+| A sym, r2 e0.01 | 1.074 / 0.926 | 1.00001 / 0.99999 | 1.0000 | 3e-6 |
+| A asym 10 %, r2 e0.01 | 1.048 / 0.952 | 1.00000 / 1.00000 | 1.0000 | 3e-6 |
+| A asym 3 %, r2 e0.02 | 1.544 / 0.417 | 1.00000 / 0.99998 | 0.99999 | 3e-6 |
+| B asym, 2 / 4 / 6 GHz | 1.000 / 0.884, 0.892, 0.842 | ≤ 1.0011 / ≥ 0.9988 | 0.9988–1.0011 | ≤ 7e-5 |
+| B asym lossy, 2 / 4 / 6 GHz | 0.998 / 0.871 … | 0.999 / 0.983, 0.991 / 0.972, 0.980 / 0.968 | 0.98 / 0.97 / 0.95 (loss) | ≤ 1.3e-4 |
+
+Reciprocity is again blind (≤ 6e-6 on the uncorrected A results too). Cost against route B on the same mesh: A r2 e0.02,
+**109 s against 15 + 16 s**; r2 e0.01, **224 s against 28 + 28 s**; B, **162–182 s per frequency against about 45 s per
+frequency** for route B's two halves. The shared face is twice the unknowns and four excitations against one per half, so
+3.5–4× the wall clock and about twice the memory. That is also why it cannot reach 119's r3 e0.02 on this machine.
+GMRES: 16–19 iterations on A, 21–26 on B. Solver time: Palace 44 min, openEMS 14 min (three `circuitrf em` runs of
+285 s, 4 × ~70 s each). No run was over five minutes.
+
+**N > 2 was not run.** The algebra is N-general: M, T_I = M⁻ᴴ, K, the terminal S. **The Gram fit is not.** A degenerate
+face of N real modes has N(N−1)/2 unknown g and N Z_PV equations, so N = 3 is exactly determined (the residual stops being
+a check) and N ≥ 4 is under-determined. A non-degenerate face needs no fit (G = 1 measured to 5e-4), so N > 2 on such a
+face should work as it is. On a homogeneous (degenerate) face it needs a further condition, such as losslessness or
+reciprocity of the result, which this spike did not try.
+
+**Go/no-go: (1), the derived transform alone.** It meets the bar on (a) as route B does on the same mesh (to 0.0003),
+on (b) at 10 % and 3 % at two densities, and on (c) at openEMS's own measured error, which is the larger bar. On (d), at the
+one frequency where openEMS's loss is exact, what the loss does agrees to 0.0004. The direct lossy comparison is 0.0239
+(0.0087 with Palace's voltage path), which is openEMS's error on the lossless symmetric pair; so **(d) does not meet a
+literal 0.1 dB / 1° against openEMS, and neither does any microstrip case including the symmetric one.** The owner should
+read option 1 with that stated. Option 2's premise, that the transform is lossless-only, is what the measurement
+contradicts. For brief 115:
+- One shared face per end, N entries, `Mode` k, the first `Active`, **equal `MaxSize`**, `Offset` 0, every entry excited
+  (N runs of the excitation loop per face), `VoltagePath` signal → ground on each terminal's own strip.
+- The transform above, with **K from the real parts of the logged kₙ** and **G fitted (real, symmetric) only on a face
+  whose modes are degenerate**. Decide degeneracy from the kₙ: equal to the printed digits on A, 7–8 % apart on B. On a
+  non-degenerate face, G = 1.
+- Checks to keep: per-port power and σ_min, not σ_max; |T_V,ii|² = Z_PV after the fit; M block-diagonal; the fit's residual
+  (it is the only sign of a wrong root). On a lossless problem, |1 − σ| > 0.002 should warn.
+- kₙ must be parsed from the log (four figures); nothing else writes it.
+- Covers symmetric and asymmetric two-conductor faces. Route B is not needed. N = 3 on a degenerate face is unverified,
+  and N ≥ 4 on one needs more than this spike measured (above).
+- Mesh: the shared face needs about twice route B's memory for the same density, so the strip-edge refinement 119 found
+  necessary costs more here.
+
+**What the transform depends on in Palace, to re-check at a version bump** (`SolverDiscovery`'s validated list):
+the Robin term on `Active` entries only, scalar, from **Re** kₙ (≈ 1735–1749); every mode's n×H built from Re kₙ
+(≈ 348–352): **#960's fix** (unconjugated projection, Re-power normalisation) changes both G and the K cancellation, and a
+changed K is what the loss differential above would catch; the modal correction of #886 applying to the Active mode only
+(why the inactive hybrid mode leaves the 6 GHz residual); S = ∫E×h*·n − δ at the peak convention: **PR #937** moves ports to
+time-averaged power, and |T_V,ii|² = Z_PV is the check that sees a √2; `V_wp` independent of `Offset` (113); equal
+`MaxSize` giving one shared eigen-solve (113); mode ranking by Re kₙ (**#996 / #1019** change it to complex distance: on a
+lossy face the Mode index could then pick differently, so re-check that every entry's Z_PV and kₙ are the expected
+modes); and **#328**: if Palace learns to discriminate degenerate modes, the Gram fit is no longer needed, but the
+transform still is, because one face still carries all the terminals' modes.

@@ -1,0 +1,142 @@
+>> mpirun -n 8 palace-arm64.bin config.json
+
+_____________     _______
+_____   __   \____ __   /____ ____________
+____   /_/  /  __ ` /  /  __ ` /  ___/  _ \
+___   _____/  /_/  /  /  /_/  /  /__/  ___/
+  /__/     \___,__/__/\___,__/\_____\_____/
+
+Git changeset ID: 0dc74cd
+Running with 8 MPI processes
+Device configuration: cpu
+Memory configuration: host-std
+libCEED backend: /cpu/self/xsmm/blocked
+
+
+Characteristic length and time scales:
+ Lc = 1.500e-02 m, tc = 5.003e-02 ns
+Finished partitioning mesh into 8 subdomains
+
+Mesh curvature order: 1
+Mesh bounding box:
+ (Xmin, Ymin, Zmin) = (+0.000e+00, -7.400e-03, -1.000e-03) m
+ (Xmax, Ymax, Zmax) = (+1.500e-02, +0.000e+00, +1.000e-03) m
+
+Parallel Mesh Stats:
+
+                minimum     average     maximum       total
+ vertices          2361        2652        2927       21218
+ edges            14181       15019       15826      120154
+ faces            22361       23014       23677      184112
+ elements         10337       10647       10858       85176
+ neighbors            2           3           4
+
+            minimum     maximum
+ h        0.0011068   0.0388269
+ kappa      1.06051     12.6582
+
+Estimated current per-rank memory usage is: Min. 15.5M, Max. 66.6M, Avg. 22.2M, Total 177.5M
+Estimated current per-node memory usage is: Min. 177.5M, Max. 177.5M, Avg. 177.5M, Total 177.5M
+
+Configuring Robin impedance BC for wave ports at attributes:
+ 4: Index = 1, mode = 1, d = 0.000e+00 m,  n = (-1.0,+0.0,+0.0)
+ 5: Index = 2, mode = 1, d = 0.000e+00 m,  n = (+1.0,+0.0,+0.0)
+
+Configuring wave port excitation source term at attributes:
+ 4: Index = 1
+
+Configuring Dirichlet PEC BC at attributes:
+ 10-11
+
+Computing frequency response for:
+Excitation with index 1 has contributions from:
+ Wave port  1
+
+Assembling system matrices, number of global unknowns:
+ H1 (p = 2): 141372, ND (p = 2): 608532, RT (p = 2): 807864
+ Operator assembly level: Partial
+ Mesh geometries:
+  Tetrahedron: P = 20, Q = 14 (quadrature order = 4)
+
+Calculating boundary modes at wave ports for ω/2π = 5.000e+00 GHz (1.572e+00)
+ Number of global unknowns for port 1:
+  H1: 1187, ND: 2822
+ Port 1, mode 1: kₙ = 1.048e+02+9.558e-32i m⁻¹, Z_PV = 1.019e+02 Ω
+ Number of global unknowns for port 2:
+  H1: 1187, ND: 2822
+ Port 2, mode 1: kₙ = 1.048e+02-1.437e-44i m⁻¹, Z_PV = 1.019e+02 Ω
+
+Assembling multigrid hierarchy:
+ Level 0 (p = 1): 120154 unknowns
+ Level 1 (p = 2): 608532 unknowns
+ Level 0 (auxiliary) (p = 1): 21218 unknowns
+ Level 1 (auxiliary) (p = 2): 141372 unknowns
+
+It 1/1: ω/2π = 5.000e+00 GHz (total elapsed time = 2.56e+00 s)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 2.139392e+03
+  1 (restart 0) KSP residual norm 1.300751e+01
+  2 (restart 0) KSP residual norm 1.970097e+00
+  3 (restart 0) KSP residual norm 2.398351e-01
+  4 (restart 0) KSP residual norm 1.551790e-01
+  5 (restart 0) KSP residual norm 2.379121e-02
+  6 (restart 0) KSP residual norm 1.511479e-02
+  7 (restart 0) KSP residual norm 3.415713e-03
+  8 (restart 0) KSP residual norm 1.799594e-03
+  9 (restart 0) KSP residual norm 6.456628e-04
+ 10 (restart 0) KSP residual norm 3.245311e-04
+ 11 (restart 0) KSP residual norm 1.354008e-04
+ 12 (restart 0) KSP residual norm 7.275583e-05
+ 13 (restart 0) KSP residual norm 3.637452e-05
+ 14 (restart 0) KSP residual norm 1.698240e-05
+GMRES solver converged in 14 iterations (avg. reduction factor: 2.639e-01)
+ Sol. ||E|| = 4.403142e+01 (||RHS|| = 1.922609e+00)
+ Field energy E (2.503e-11 J) + H (2.503e-11 J) = 5.005e-11 J
+ S[1][1] = -1.134e-03-6.873e-05i, |S[1][1]| = -5.889e+01, arg(S[1][1]) = -1.765e+02
+ S[2][1] = -1.698e-03-1.000e+00i, |S[2][1]| = -3.973e-06, arg(S[2][1]) = -9.010e+01
+ Updating solution error estimates
+
+Completed 0 iterations of adaptive mesh refinement (AMR):
+ Indicator norm = 4.427e-02, global unknowns = 608532
+ Max. iterations = 0, tol. = 1.000e-02
+
+Estimated peak per-rank memory usage is: Min. 791.0M, Max. 860.0M, Avg. 818.2M, Total 6.4G
+Estimated peak per-node memory usage is: Min. 6.4G, Max. 6.4G, Avg. 6.4G, Total 6.4G
+
+Elapsed Time Report (s)           Min.        Max.        Avg.
+==============================================================
+Initialization                   0.103       0.239       0.222
+  Mesh Preprocessing             0.280       0.417       0.297
+Operator Construction            0.834       0.856       0.848
+  Wave Ports                     0.065       0.098       0.082
+Linear Solve                     0.573       0.586       0.579
+  Setup                          2.325       2.337       2.329
+  Preconditioner                 4.234       4.275       4.257
+  Coarse Solve                   1.601       1.605       1.603
+Estimation                       0.019       0.030       0.025
+  Construction                   1.881       1.891       1.886
+  Solve                          2.653       2.658       2.655
+Postprocessing                   0.049       0.057       0.053
+Disk IO                          0.179       0.181       0.180
+--------------------------------------------------------------
+Total                           15.057      15.079      15.070
+
+Peak Memory                   Per-Node       Total   Total HWM
+==============================================================
+Initialization                   16.0M       16.0M       16.0M
+  Mesh Preprocessing             79.7M       79.7M       95.7M
+Operator Construction           965.9M      965.9M        1.0G
+  Wave Ports                     11.3M       11.3M        1.0G
+Linear Solve                    163.3M      163.3M        1.2G
+  Setup                           1.3G        1.3G        2.5G
+  Preconditioner                148.8M      148.8M        2.6G
+  Coarse Solve                    2.1G        2.1G        4.7G
+Estimation                      284.5M      284.5M        5.0G
+  Construction                  708.8M      708.8M        5.7G
+  Solve                         276.4M      276.4M        6.0G
+Postprocessing                  148.2M      148.2M        6.1G
+Disk IO                          41.8M       41.8M        6.2G
+--------------------------------------------------------------
+Total                             6.3G        6.3G        6.3G
+
