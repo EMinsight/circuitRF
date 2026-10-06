@@ -1,0 +1,251 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mm",
+	"SnapDbu": 10000,
+	"Objects": [
+		{
+			"$type": "Boolean",
+			"Name": "housing",
+			"Op": "Unite",
+			"Blank": {
+				"$type": "Boolean",
+				"Op": "Subtract",
+				"KeepTools": true,
+				"Blank": {
+					"$type": "Box",
+					"Material": "Connector alloy",
+					"Min": [-5000000, -1500000, { "Expr": "axis_z - body_h/2", "Unit": "Mm" }],
+					"Size": [4000000, 3000000, { "Expr": "body_h", "Unit": "Mm" }]
+				},
+				"Tools": [
+					{
+						"$type": "Cylinder",
+						"Name": "bore",
+						"Material": "PTFE",
+						"Base": [-5000000, 0, { "Expr": "axis_z", "Unit": "Mm" }],
+						"Axis": "X",
+						"Length": 5000000,
+						"Radius": { "Expr": "bore_d/2", "Unit": "Mm" }
+					}
+				]
+			},
+			"Tools": [
+				{
+					"$type": "Step",
+					"Name": "flange",
+					"Material": "Connector alloy",
+					"File": "flange.step",
+					"Part": "1/1",
+					"Hash": "sha256:73799aa021a737bd0e0533af7d24bcf7d224f1d16a1ac92568a7378658a3e115",
+					"Unit": "millimetre",
+					"SourcePath": "flange.step"
+				}
+			]
+		},
+		{
+			"$type": "Fillet",
+			"Name": "pin",
+			"Radius": { "Expr": "tip_r", "Unit": "Mm" },
+			"Edges": [
+				"side|top"
+			],
+			"Target": {
+				"$type": "Cylinder",
+				"Material": "Connector alloy",
+				"Base": [-5000000, 0, { "Expr": "axis_z", "Unit": "Mm" }],
+				"Axis": "X",
+				"Length": 6500000,
+				"Radius": { "Expr": "pin_d/2", "Unit": "Mm" }
+			}
+		}
+	],
+	"Instances": [
+		{
+			"Name": "B1",
+			"CellRef": "../../Board",
+			"View": "Layout",
+			"Placement": {
+				"Origin": [0, 0, -35000]
+			}
+		}
+	],
+	"Variables": [
+		{
+			"Name": "pin_d",
+			"Expression": "0.4",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "bore_d",
+			"Expression": "1.34",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "tip_r",
+			"Expression": "0.1",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "sub_h",
+			"Expression": "0.508",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "cu_t",
+			"Expression": "0.035",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "body_h",
+			"Expression": "3",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "axis_z",
+			"Expression": "sub_h + cu_t/2 + pin_d/2"
+		}
+	],
+	"Ports": [
+		{
+			"Number": 1,
+			"Name": "P1",
+			"Kind": "Wave",
+			"Plane": "YZ",
+			"Offset": -5000000,
+			"Rect": {
+				"Min": [-1000000, { "Expr": "axis_z - 1", "Unit": "Mm" }],
+				"Size": [2000000, 2000000]
+			},
+			"Z0": "50"
+		},
+		{
+			"Number": 2,
+			"Name": "P2",
+			"Kind": "Lumped",
+			"Plane": "YZ",
+			"Offset": 5080000,
+			"Rect": {
+				"Min": [-787400, 0],
+				"Size": [1574800, 508000]
+			},
+			"Z0": "50"
+		}
+	],
+	"Setups": [
+		{
+			"FormatVersion": 1,
+			"Name": "Palace",
+			"Frequency": {
+				"StartExpr": "2",
+				"StopExpr": "18",
+				"StepExpr": "",
+				"NumPoints": 5,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": true,
+			"Solver3D": "Palace",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"XMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Absorbing"
+				},
+				"YMin": {
+					"PaddingUm": 2000,
+					"Boundary": "Absorbing"
+				},
+				"YMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Absorbing"
+				},
+				"ZMin": {
+					"PaddingUm": 2000,
+					"Boundary": "Absorbing"
+				},
+				"ZMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Absorbing"
+				}
+			},
+			"Palace": {
+				"Quality": "Draft",
+				"LinearSolver": "Direct"
+			}
+		},
+		{
+			"FormatVersion": 1,
+			"Name": "openEMS",
+			"Frequency": {
+				"StartExpr": "2",
+				"StopExpr": "18",
+				"StepExpr": "",
+				"NumPoints": 5,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": true,
+			"Solver3D": "OpenEms",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"XMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Absorbing"
+				},
+				"YMin": {
+					"PaddingUm": 2000,
+					"Boundary": "Absorbing"
+				},
+				"YMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Absorbing"
+				},
+				"ZMin": {
+					"PaddingUm": 2000,
+					"Boundary": "Absorbing"
+				},
+				"ZMax": {
+					"PaddingUm": 2000,
+					"Boundary": "Absorbing"
+				}
+			}
+		}
+	]
+}

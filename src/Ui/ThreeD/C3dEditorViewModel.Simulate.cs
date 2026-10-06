@@ -630,15 +630,17 @@ public sealed partial class C3dEditorViewModel
         return new C3dPort { Number = n, Name = $"P{n}", Kind = kind, Z0 = last?.Terminals?.LastOrDefault()?.Z0 ?? last?.Z0 ?? "50" };
     }
 
-    /// <summary>Adds a port: one undo entry; the status line says what it joins, or why it cannot be built.</summary>
-    public void AddPort(C3dPort port)
+    /// <summary>Adds a port: one undo entry; the status line says what it joins, or why it cannot be built.
+    /// <paramref name="referenceWhy"/> is why Make Port chose the reference it wrote (brief-em3d-121), which the resolver
+    /// would otherwise call stated.</summary>
+    public void AddPort(C3dPort port, string? referenceWhy = null)
     {
         ChangeRecords($"Add port {port.Name}", d => d.Ports.Add(port));
         ToolCommits++;
         var r = C3dPorts.Resolve(port, Document.DbuPerMicron, CurrentPortContext());
         StatusMessage = r.Refusal ?? (r.Terminals is { } ts
             ? $"Made {C3dPorts.Label(port)}, a wave port with {ts.Count} terminals ({string.Join(", ", ts.Select(t => $"{t.SourceLabel} on '{t.PositiveObject}'"))}); " +
-              $"'{r.Resolved!.NegativeObject}' is the reference: {r.Reason}."
+              $"'{r.Resolved!.NegativeObject}' is the reference: {referenceWhy ?? r.Reason}."
             : C3dPortReports.Describe(r));
     }
 
@@ -732,15 +734,16 @@ public sealed partial class C3dEditorViewModel
     /// </summary>
     public string? MakePortFromFace(uint objectId, int face, Em3dPortKind kind)
     {
-        if (PortFromFace(objectId, face, kind, out var port) is { } why) return why;
-        AddPort(port!);
+        if (PortFromFace(objectId, face, kind, out var port, out string? referenceWhy) is { } why) return why;
+        AddPort(port!, referenceWhy);
         return null;
     }
 
     /// <summary>The port Make Port would add on a face, not added — or why the face cannot take one.</summary>
-    private string? PortFromFace(uint objectId, int face, Em3dPortKind kind, out C3dPort? port)
+    private string? PortFromFace(uint objectId, int face, Em3dPortKind kind, out C3dPort? port, out string? referenceWhy)
     {
         port = null;
+        referenceWhy = null;
         var scene = Viewer.Scene;
         if (scene.Object(objectId) is not { } o || face < 0) return "Select a face first.";
         var (area, normal) = Scene3DFaces.AreaAndNormal(scene, objectId, face);
@@ -759,15 +762,22 @@ public sealed partial class C3dEditorViewModel
         long v0 = D(pts.Min(q => Get(q, va))), v1 = D(pts.Max(q => Get(q, va)));
         double rectArea = (u1 - u0) * per * ((v1 - v0) * per);
         if (u1 <= u0 || v1 <= v0 || Math.Abs(rectArea - area) > 1e-6 * rectArea)
-            return $"Face {o.FaceName(face)} is not a rectangle: a port takes a rectangular face.";
+        {
+            // brief-em3d-121 — a wave port's rectangle is a region of the box's face, not the face itself: a flat face of any
+            // other shape (a coax's dielectric end, a disc) gives its bounding rectangle
+            if (kind != Em3dPortKind.Wave || WaveRegion(o, face, axis, ua, va, D) is not var (wu0, wv0, wu1, wv1) || wu1 <= wu0 || wv1 <= wv0)
+                return $"Face {o.FaceName(face)} is not a rectangle: a port takes a rectangular face.";
+            (u0, v0, u1, v1) = (wu0, wv0, wu1, wv1);
+        }
         port = NewPortTemplate(kind);
         port.Plane = plane;
         port.Offset = D(Get(pts[0], axis));
         port.Rect = new C3dRect { Min = new C3dPoint2(u0, v0), Size = new C3dPoint2(u1 - u0, v1 - v0) };
         // brief-em3d-114 R-em3d114-3a — a box face met by three or more conductors: one terminal per conductor besides the
         // reference, numbered with the next free numbers in a stable order and named P<n>; the reference is written.
-        if (C3dPorts.TerminalsFor(port, Document.DbuPerMicron, CurrentPortContext(), out string? tie) is var (reference, _, conductors))
+        if (C3dPorts.TerminalsFor(port, Document.DbuPerMicron, CurrentPortContext(), out string? tie) is var (reference, why, conductors))
         {
+            referenceWhy = why;
             var numbers = NextPortNumbers(conductors.Count);
             string z0 = port.Z0;
             port.Name = UniquePortName(BoxFaceKey(axis, port.Offset));
@@ -778,6 +788,33 @@ public sealed partial class C3dEditorViewModel
         }
         else if (tie is not null) return tie;
         return null;
+    }
+
+    /// <summary>
+    /// brief-em3d-121 — the bounding rectangle of a flat face that is not a rectangle, in DBU on the plane's u and v axes: a
+    /// cylinder's cap exactly, from its axis and radius (its tessellation's polygon falls short of the circle), and any other
+    /// face from its tessellation's corners.
+    /// </summary>
+    private (long U0, long V0, long U1, long V1)? WaveRegion(Scene3DObject o, int face, int axis, int ua, int va, Func<double, long> dbu)
+    {
+        double[] lo, hi;
+        if (Elaboration?.Solids.FirstOrDefault(s => s.Name == o.Name)?.Primitive is Em3dCylinder c &&
+            Math.Abs(C3dPortContext.Get(c.AxisEnd, ua) - C3dPortContext.Get(c.AxisStart, ua)) <= 1e-12 &&
+            Math.Abs(C3dPortContext.Get(c.AxisEnd, va) - C3dPortContext.Get(c.AxisStart, va)) <= 1e-12)
+        {
+            var (x0, y0, z0, x1, y1, z1) = Em3dProblem.Bounds(c);
+            (lo, hi) = ([x0, y0, z0], [x1, y1, z1]);
+        }
+        else
+        {
+            var corners = Scene3DFaces.Vertices(Viewer.Scene, o.Id, face);
+            if (corners.Count < 3) return null;
+            var origin = Viewer.Scene.Origin;
+            double[] Of(System.Numerics.Vector3 q) => [q.X + origin.X, q.Y + origin.Y, q.Z + origin.Z];
+            lo = [.. Enumerable.Range(0, 3).Select(a => corners.Min(q => Of(q)[a]))];
+            hi = [.. Enumerable.Range(0, 3).Select(a => corners.Max(q => Of(q)[a]))];
+        }
+        return (dbu(lo[ua]), dbu(lo[va]), dbu(hi[ua]), dbu(hi[va]));
     }
 
     /// <summary>Which air-box face (<c>xmin</c> …) a face at <paramref name="offsetDbu"/> on <paramref name="axis"/> is, by the box
@@ -810,7 +847,7 @@ public sealed partial class C3dEditorViewModel
     private Viewer3DMenuItem MakePortItem(Scene3DItem item, Em3dPortKind kind)
     {
         string word = kind == Em3dPortKind.Wave ? "Wave" : "Lumped";
-        string? why = PortFromFace(item.Object, item.Face, kind, out var port)
+        string? why = PortFromFace(item.Object, item.Face, kind, out var port, out _)
                       ?? C3dPorts.Resolve(port!, Document.DbuPerMicron, CurrentPortContext()).Refusal;
         string tip = kind == Em3dPortKind.Wave
             ? "A wave port lies on a face of the active setup's air box — the end of a line that reaches the box. A face met by " +

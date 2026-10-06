@@ -1,0 +1,650 @@
+{
+  "About": "The key numbers README.md and the new-user guide's walk-through (section 14) state, in one place, and the recorded |S| of every shipped run. circuitRF's tests check that each quoted value's Readme text appears in both pages, recompute the closed forms from the cells' VARs, hold the recorded Pair result to Cohn's ideal coupled line, and gate 4 (Category=Benchmark) re-runs the three shipped runs and holds every recorded |S| to its run's Tolerance (dB). Measured once on an Apple M4 (10 cores, 16 GB), macOS 27.0, Palace 0.18.1 on 10 processes, Gmsh 4.15.2, openEMS 0.37.0-rc3, OpenCASCADE 8.0.1. A time is the whole run's wall clock; memory is Palace's own peak over its processes; openEMS's size is its grid's cell count.",
+  "References": [
+    {
+      "Name": "coax",
+      "Expected": 50.021,
+      "Readme": [
+        "50.02 Ω"
+      ]
+    },
+    {
+      "Name": "even",
+      "Expected": 57.511,
+      "Readme": [
+        "57.51 Ω"
+      ]
+    },
+    {
+      "Name": "odd",
+      "Expected": 43.1,
+      "Readme": [
+        "43.10 Ω"
+      ]
+    }
+  ],
+  "Ideal": [
+    {
+      "Quantity": "S31_dB",
+      "AtGHz": 10,
+      "Expected": -0.088,
+      "Readme": "−0.088 dB"
+    },
+    {
+      "Quantity": "S21_dB",
+      "AtGHz": 10,
+      "Expected": -16.984,
+      "Readme": "−16.98 dB"
+    },
+    {
+      "Quantity": "S41_dB",
+      "AtGHz": 10,
+      "Expected": -64.468,
+      "Readme": "−64.47 dB"
+    }
+  ],
+  "Lumped": [
+    {
+      "Setup": "Palace",
+      "Quantity": "S11_dB",
+      "AtGHz": 18,
+      "Expected": -40.747,
+      "Readme": "−40.75 dB"
+    },
+    {
+      "Setup": "openEMS",
+      "Quantity": "S11_dB",
+      "AtGHz": 18,
+      "Expected": -23.481,
+      "Readme": "−23.48 dB"
+    }
+  ],
+  "Lines": [
+    {
+      "Cell": "Launch",
+      "Setup": "Palace",
+      "What": "the coax's mode impedance Z_PV over the sweep",
+      "Readme": [
+        "49.18 to 49.31 Ω"
+      ]
+    },
+    {
+      "Cell": "Launch",
+      "Setup": "openEMS",
+      "What": "the coax line's Z and ε_eff at 10 GHz",
+      "Readme": [
+        "56.72 Ω",
+        "ε_eff 3.17"
+      ]
+    },
+    {
+      "Cell": "Pair",
+      "Setup": "openEMS",
+      "What": "each terminal's line Z and ε_eff at 10 GHz, the others passive",
+      "Readme": [
+        "50.17 Ω",
+        "ε_eff 2.10"
+      ]
+    }
+  ],
+  "Runs": [
+    {
+      "Cell": "Launch",
+      "Setup": "Palace",
+      "Preset": "Draft (element order 1, no refinement passes), Direct",
+      "Readme": [
+        "1 min 5 s",
+        "4.5 GB"
+      ],
+      "Values": [
+        {
+          "Quantity": "S11_dB",
+          "AtGHz": 10,
+          "Expected": -21.707,
+          "Readme": "−21.71 dB"
+        },
+        {
+          "Quantity": "S11_dB",
+          "AtGHz": 18,
+          "Expected": -19.528,
+          "Readme": "−19.53 dB"
+        },
+        {
+          "Quantity": "S21_dB",
+          "AtGHz": 18,
+          "Expected": -0.5621,
+          "Readme": "−0.562 dB"
+        }
+      ],
+      "Tolerance": {
+        "S11": 0.05,
+        "S21": 0.005,
+        "S22": 0.05
+      },
+      "Recorded": [
+        {
+          "GHz": 2.0,
+          "S11_dB": -26.853,
+          "S21_dB": -0.034,
+          "S22_dB": -26.765
+        },
+        {
+          "GHz": 6.0,
+          "S11_dB": -20.993,
+          "S21_dB": -0.1207,
+          "S22_dB": -21.069
+        },
+        {
+          "GHz": 10.0,
+          "S11_dB": -21.707,
+          "S21_dB": -0.1824,
+          "S22_dB": -22.915
+        },
+        {
+          "GHz": 14.0,
+          "S11_dB": -21.052,
+          "S21_dB": -0.3893,
+          "S22_dB": -28.712
+        },
+        {
+          "GHz": 18.0,
+          "S11_dB": -19.528,
+          "S21_dB": -0.5621,
+          "S22_dB": -30.368
+        }
+      ]
+    },
+    {
+      "Cell": "Launch",
+      "Setup": "openEMS",
+      "Preset": "the default grid: 20 cells per wavelength, grading 1.3",
+      "Readme": [
+        "1 min 43 s",
+        "660,192 cells"
+      ],
+      "Values": [
+        {
+          "Quantity": "S11_dB",
+          "AtGHz": 10,
+          "Expected": -15.582,
+          "Readme": "−15.58 dB"
+        },
+        {
+          "Quantity": "S11_dB",
+          "AtGHz": 18,
+          "Expected": -21.206,
+          "Readme": "−21.21 dB"
+        },
+        {
+          "Quantity": "S21_dB",
+          "AtGHz": 18,
+          "Expected": -0.4689,
+          "Readme": "−0.469 dB"
+        }
+      ],
+      "Tolerance": {
+        "S11": 0.05,
+        "S21": 0.005,
+        "S22": 0.05
+      },
+      "Recorded": [
+        {
+          "GHz": 2.0,
+          "S11_dB": -27.519,
+          "S21_dB": -0.0167,
+          "S22_dB": -27.681
+        },
+        {
+          "GHz": 6.0,
+          "S11_dB": -20.605,
+          "S21_dB": -0.0692,
+          "S22_dB": -20.994
+        },
+        {
+          "GHz": 10.0,
+          "S11_dB": -15.582,
+          "S21_dB": -0.23,
+          "S22_dB": -16.481
+        },
+        {
+          "GHz": 14.0,
+          "S11_dB": -15.895,
+          "S21_dB": -0.4499,
+          "S22_dB": -19.023
+        },
+        {
+          "GHz": 18.0,
+          "S11_dB": -21.206,
+          "S21_dB": -0.4689,
+          "S22_dB": -27.143
+        }
+      ]
+    },
+    {
+      "Cell": "Pair",
+      "Setup": "openEMS",
+      "Preset": "90 cells per wavelength (8 cells from each strip to a ground plane), MinCell 10 µm",
+      "Readme": [
+        "52 s",
+        "1,033,923 cells"
+      ],
+      "Values": [
+        {
+          "Quantity": "S31_dB",
+          "AtGHz": 10,
+          "Expected": -0.0923,
+          "Readme": "−0.092 dB"
+        },
+        {
+          "Quantity": "S21_dB",
+          "AtGHz": 10,
+          "Expected": -16.944,
+          "Readme": "−16.94 dB"
+        },
+        {
+          "Quantity": "S41_dB",
+          "AtGHz": 10,
+          "Expected": -60.879,
+          "Readme": "−60.88 dB"
+        }
+      ],
+      "Tolerance": {
+        "S11": 0.05,
+        "S21": 0.05,
+        "S31": 0.005,
+        "S41": 0.05
+      },
+      "Recorded": [
+        {
+          "GHz": 2.0,
+          "S11_dB": -45.255,
+          "S11_deg": -147.286,
+          "S21_dB": -18.855,
+          "S21_deg": 37.48,
+          "S31_dB": -0.061,
+          "S31_deg": -52.496,
+          "S41_dB": -62.017,
+          "S41_deg": -18.812
+        },
+        {
+          "GHz": 2.5,
+          "S11_dB": -44.109,
+          "S11_deg": -159.34,
+          "S21_dB": -17.665,
+          "S21_deg": 24.499,
+          "S31_dB": -0.0792,
+          "S31_deg": -65.484,
+          "S41_dB": -60.894,
+          "S41_deg": -43.84
+        },
+        {
+          "GHz": 3.0,
+          "S11_dB": -43.496,
+          "S11_deg": -171.528,
+          "S21_dB": -17.022,
+          "S21_deg": 11.562,
+          "S31_dB": -0.0912,
+          "S31_deg": -78.427,
+          "S41_dB": -60.314,
+          "S41_deg": -69.009
+        },
+        {
+          "GHz": 3.5,
+          "S11_dB": -43.332,
+          "S11_deg": 176.205,
+          "S21_dB": -16.846,
+          "S21_deg": -1.351,
+          "S31_dB": -0.0948,
+          "S31_deg": -91.346,
+          "S41_dB": -60.189,
+          "S41_deg": -94.287
+        },
+        {
+          "GHz": 4.0,
+          "S11_dB": -43.593,
+          "S11_deg": 163.839,
+          "S21_dB": -17.115,
+          "S21_deg": -14.267,
+          "S31_dB": -0.0893,
+          "S31_deg": -104.268,
+          "S41_dB": -60.496,
+          "S41_deg": -119.736
+        },
+        {
+          "GHz": 4.5,
+          "S11_dB": -44.315,
+          "S11_deg": 151.33,
+          "S21_dB": -17.862,
+          "S21_deg": -27.211,
+          "S31_dB": -0.0757,
+          "S31_deg": -117.219,
+          "S41_dB": -61.275,
+          "S41_deg": -145.439
+        },
+        {
+          "GHz": 5.0,
+          "S11_dB": -45.602,
+          "S11_deg": 138.648,
+          "S21_dB": -19.185,
+          "S21_deg": -40.201,
+          "S31_dB": -0.0567,
+          "S31_deg": -130.219,
+          "S41_dB": -62.635,
+          "S41_deg": -171.473
+        },
+        {
+          "GHz": 5.5,
+          "S11_dB": -47.683,
+          "S11_deg": 125.8,
+          "S21_dB": -21.309,
+          "S21_deg": -53.245,
+          "S31_dB": -0.0362,
+          "S31_deg": -143.28,
+          "S41_dB": -64.816,
+          "S41_deg": 162.049
+        },
+        {
+          "GHz": 6.0,
+          "S11_dB": -51.121,
+          "S11_deg": 112.868,
+          "S21_dB": -24.792,
+          "S21_deg": -66.333,
+          "S31_dB": -0.0183,
+          "S31_deg": -156.399,
+          "S41_dB": -68.403,
+          "S41_deg": 134.758
+        },
+        {
+          "GHz": 6.5,
+          "S11_dB": -57.931,
+          "S11_deg": 100.292,
+          "S21_dB": -31.678,
+          "S21_deg": -79.387,
+          "S31_dB": -0.0068,
+          "S31_deg": -169.564,
+          "S41_dB": -75.564,
+          "S41_deg": 104.183
+        },
+        {
+          "GHz": 7.0,
+          "S11_dB": -69.989,
+          "S11_deg": -99.382,
+          "S21_dB": -43.232,
+          "S21_deg": 86.495,
+          "S31_dB": -0.004,
+          "S31_deg": 177.249,
+          "S41_dB": -84.382,
+          "S41_deg": -73.213
+        },
+        {
+          "GHz": 7.5,
+          "S11_dB": -54.531,
+          "S11_deg": -108.488,
+          "S21_dB": -28.073,
+          "S21_deg": 73.927,
+          "S31_dB": -0.0105,
+          "S31_deg": 164.068,
+          "S41_dB": -71.289,
+          "S41_deg": -116.418
+        },
+        {
+          "GHz": 8.0,
+          "S11_dB": -49.574,
+          "S11_deg": -121.348,
+          "S21_dB": -23.109,
+          "S21_deg": 60.839,
+          "S31_dB": -0.025,
+          "S31_deg": 150.919,
+          "S41_dB": -66.567,
+          "S41_deg": -144.811
+        },
+        {
+          "GHz": 8.5,
+          "S11_dB": -46.804,
+          "S11_deg": -134.289,
+          "S21_dB": -20.302,
+          "S21_deg": 47.768,
+          "S31_dB": -0.0444,
+          "S31_deg": 137.822,
+          "S41_dB": -63.907,
+          "S41_deg": -171.949
+        },
+        {
+          "GHz": 9.0,
+          "S11_dB": -45.101,
+          "S11_deg": -147.109,
+          "S21_dB": -18.551,
+          "S21_deg": 34.748,
+          "S31_dB": -0.0647,
+          "S31_deg": 124.787,
+          "S41_dB": -62.278,
+          "S41_deg": 161.311
+        },
+        {
+          "GHz": 9.5,
+          "S11_dB": -44.079,
+          "S11_deg": -159.778,
+          "S21_dB": -17.485,
+          "S21_deg": 21.782,
+          "S31_dB": -0.0818,
+          "S31_deg": 111.808,
+          "S41_dB": -61.322,
+          "S41_deg": 134.741
+        },
+        {
+          "GHz": 10.0,
+          "S11_dB": -43.572,
+          "S11_deg": -172.325,
+          "S21_dB": -16.944,
+          "S21_deg": 8.857,
+          "S31_dB": -0.0923,
+          "S31_deg": 98.871,
+          "S41_dB": -60.879,
+          "S41_deg": 108.217
+        },
+        {
+          "GHz": 10.5,
+          "S11_dB": -43.508,
+          "S11_deg": 175.191,
+          "S21_dB": -16.861,
+          "S21_deg": -4.05,
+          "S31_dB": -0.094,
+          "S31_deg": 85.952,
+          "S41_dB": -60.879,
+          "S41_deg": 81.627
+        },
+        {
+          "GHz": 11.0,
+          "S11_dB": -43.877,
+          "S11_deg": 162.702,
+          "S21_dB": -17.226,
+          "S21_deg": -16.965,
+          "S31_dB": -0.0866,
+          "S31_deg": 73.025,
+          "S41_dB": -61.31,
+          "S41_deg": 54.85
+        },
+        {
+          "GHz": 11.5,
+          "S11_dB": -44.727,
+          "S11_deg": 150.155,
+          "S21_dB": -18.083,
+          "S21_deg": -29.911,
+          "S31_dB": -0.0715,
+          "S31_deg": 60.064,
+          "S41_dB": -62.209,
+          "S41_deg": 27.732
+        },
+        {
+          "GHz": 12.0,
+          "S11_dB": -46.182,
+          "S11_deg": 137.529,
+          "S21_dB": -19.549,
+          "S21_deg": -42.905,
+          "S31_dB": -0.0519,
+          "S31_deg": 47.049,
+          "S41_dB": -63.685,
+          "S41_deg": 0.051
+        },
+        {
+          "GHz": 12.5,
+          "S11_dB": -48.522,
+          "S11_deg": 124.884,
+          "S21_dB": -21.893,
+          "S21_deg": -55.949,
+          "S31_dB": -0.0315,
+          "S31_deg": 33.974,
+          "S41_dB": -65.973,
+          "S41_deg": -28.641
+        },
+        {
+          "GHz": 13.0,
+          "S11_dB": -52.465,
+          "S11_deg": 112.516,
+          "S21_dB": -25.816,
+          "S21_deg": -69.019,
+          "S31_dB": -0.0147,
+          "S31_deg": 20.842,
+          "S41_dB": -69.649,
+          "S41_deg": -59.714
+        },
+        {
+          "GHz": 13.5,
+          "S11_dB": -61.106,
+          "S11_deg": 102.751,
+          "S21_dB": -34.34,
+          "S21_deg": -81.938,
+          "S31_dB": -0.0049,
+          "S31_deg": 7.668,
+          "S41_dB": -76.603,
+          "S41_deg": -101.407
+        },
+        {
+          "GHz": 14.0,
+          "S11_dB": -63.392,
+          "S11_deg": -103.076,
+          "S21_dB": -37.155,
+          "S21_deg": 83.951,
+          "S31_dB": -0.0041,
+          "S31_deg": -5.522,
+          "S41_dB": -81.203,
+          "S41_deg": 123.196
+        },
+        {
+          "GHz": 14.5,
+          "S11_dB": -53.269,
+          "S11_deg": -111.373,
+          "S21_dB": -26.711,
+          "S21_deg": 71.161,
+          "S31_dB": -0.0126,
+          "S31_deg": -18.701,
+          "S41_dB": -71.886,
+          "S41_deg": 63.231
+        },
+        {
+          "GHz": 15.0,
+          "S11_dB": -49.053,
+          "S11_deg": -123.601,
+          "S21_dB": -22.387,
+          "S21_deg": 58.096,
+          "S31_dB": -0.0284,
+          "S31_deg": -31.842,
+          "S41_dB": -67.482,
+          "S41_deg": 29.733
+        },
+        {
+          "GHz": 15.5,
+          "S11_dB": -46.618,
+          "S11_deg": -136.172,
+          "S21_dB": -19.855,
+          "S21_deg": 45.048,
+          "S31_dB": -0.0484,
+          "S31_deg": -44.928,
+          "S41_dB": -64.886,
+          "S41_deg": -0.232
+        },
+        {
+          "GHz": 16.0,
+          "S11_dB": -45.13,
+          "S11_deg": -148.712,
+          "S21_dB": -18.271,
+          "S21_deg": 32.05,
+          "S31_dB": -0.0684,
+          "S31_deg": -57.953,
+          "S41_dB": -63.23,
+          "S41_deg": -29.077
+        },
+        {
+          "GHz": 16.5,
+          "S11_dB": -44.278,
+          "S11_deg": -161.135,
+          "S21_dB": -17.327,
+          "S21_deg": 19.103,
+          "S31_dB": -0.0844,
+          "S31_deg": -70.924,
+          "S41_dB": -62.18,
+          "S41_deg": -57.422
+        },
+        {
+          "GHz": 17.0,
+          "S11_dB": -43.924,
+          "S11_deg": -173.445,
+          "S21_dB": -16.887,
+          "S21_deg": 6.192,
+          "S31_dB": -0.0931,
+          "S31_deg": -83.857,
+          "S41_dB": -61.575,
+          "S41_deg": -85.52
+        },
+        {
+          "GHz": 17.5,
+          "S11_dB": -44.01,
+          "S11_deg": 174.308,
+          "S21_dB": -16.9,
+          "S21_deg": -6.706,
+          "S31_dB": -0.0929,
+          "S31_deg": -96.778,
+          "S41_dB": -61.332,
+          "S41_deg": -113.524
+        },
+        {
+          "GHz": 18.0,
+          "S11_dB": -44.543,
+          "S11_deg": 162.058,
+          "S21_dB": -17.366,
+          "S21_deg": -19.615,
+          "S31_dB": -0.0838,
+          "S31_deg": -109.714,
+          "S41_dB": -61.417,
+          "S41_deg": -141.54
+        }
+      ]
+    }
+  ],
+  "Alternatives": [
+    {
+      "Cell": "Launch",
+      "Setup": "Palace",
+      "Preset": "Draft with element order 2, Direct",
+      "Readme": [
+        "8 min 30 s",
+        "8.9 GB",
+        "50.13 to 50.26 Ω"
+      ],
+      "Values": [
+        {
+          "Quantity": "S11_dB",
+          "AtGHz": 10,
+          "Expected": -25.021,
+          "Readme": "−25.02 dB"
+        },
+        {
+          "Quantity": "S11_dB",
+          "AtGHz": 18,
+          "Expected": -21.439,
+          "Readme": "−21.44 dB"
+        }
+      ]
+    }
+  ]
+}

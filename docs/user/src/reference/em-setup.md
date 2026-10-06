@@ -715,7 +715,13 @@ Z0 across it. A lumped sheet has a small series inductance of its own, and on a 
 a step in S11 at the top of the band. A **wave port** has none: it is a region of the air box's face where
 the line is fed and measured in its own field. Both solvers build one, each its own way: Palace computes
 the line's mode on that face at every frequency, and openEMS feeds the line from behind the face and
-measures it with probes (*On openEMS*, below).
+measures it with probes (*On openEMS*, below). The **3D Wave Ports** example walks through one on each solver
+([A first wave port](../new-user-guide/index.html#wave-ports-3d)).
+
+In a 3D view a wave port's two ends are the conductors that meet its region, and its voltage path runs straight
+across the gap between them. A conductor **enclosed** by another, a coax's pin inside its housing, has its path
+inferred along a ray from the outer to the inner, through the inner's centre. The 3D editor has no field for a
+voltage path; a geometry the ray gets wrong states `VoltagePath` in the `.c3d`, and a stated path always wins.
 
 The port table in the **Solver** group lists every port the layout labels, and it is the one place a
 3D setup's ports are configured — the planar **Ports** group is hidden while a 3D solver is chosen. Each
@@ -784,15 +790,22 @@ When a wave port's region is met by **several signal conductors and one referenc
 a ground, two strips inside one shield — it is one port with a **terminal** per signal conductor. Each
 terminal is a port of the result in every way a port is: it has its own number in the Touchstone file,
 its own Z0, and its own row in the port map. These are **terminal** S-parameters, the voltage and current
-on each conductor. A coupled pair with a two-terminal wave port at each end is a four-port: terminals 1
-and 2 at one end, 3 and 4 at the other, and S21, S31 and S41 are its thru, near-end and far-end coupling
-just as for any four lumped ports.
+on each conductor. A coupled pair with a two-terminal wave port at each end is a four-port: with terminals
+1 and 2 at one end and 3 and 4 at the other, 1 and 3 on one strip, S31 is its thru, S21 its near-end and S41
+its far-end coupling, just as for any four lumped ports. The **3D Wave Ports** example's *Pair* is exactly this,
+run on openEMS against Cohn's ideal line ([its walk-through](../new-user-guide/index.html#wave-ports-3d)).
 
 The **reference** is the conductor every terminal's voltage is measured from. Left unstated it is the
 conductor meeting the region that is in the ground set (the setup's Ground net, or a PEC face of the air
-box); failing that, the one with the largest surface. Two candidates with equal surfaces are refused,
-asking for `Reference`. Each terminal's voltage path runs from the reference to its conductor, inferred as
-a single wave port's is, or stated.
+box); failing that, the one with the largest surface. The air box's PEC faces count as **one** reference,
+named by the first of them in the order xmin, xmax, ymin, ymax, zmin, zmax. Two candidates with equal
+surfaces among drawn conductors are refused, asking for `Reference`. Each terminal's voltage path runs from
+the reference to its conductor, inferred as a single wave port's is, or stated.
+
+So strips whose ground planes are the air box's PEC faces, as in the example's *Pair*, take a terminal each:
+*Make Port ▸ Wave* on that face writes one per strip, referenced to the box. A bare wave port already in a
+file there keeps its own reading, one port from one strip to the other, and `circuitrf check` adds a note
+saying what the gesture would write.
 
 In a `.c3d` the port carries `Reference` (optional) and `Terminals`; it states no `Number`, `Z0`,
 `Positive`, `Negative`, `VoltagePath` or `Flip` of its own, and each terminal states its own:

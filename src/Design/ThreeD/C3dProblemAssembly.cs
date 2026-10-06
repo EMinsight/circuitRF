@@ -420,6 +420,7 @@ public static class C3dProblemAssembly
                     continue;
                 }
                 if (r.Resolved is null) return No(r.Refusal!, e.Warnings);
+                if (r.Note is { } note) notes.Add(note);                  // brief-em3d-121 D1
                 foreach (var q in r.All) modelled.Add((r.Port, q));      // brief-em3d-114 — a terminal is a port
             }
             if (setup.Problem3D == Em3dProblemType.Driven && document.Ports.Count > 0 && modelled.Count == 0)
@@ -587,7 +588,7 @@ public static class C3dPortReports
         var d = p.Kind == Em3dPortKind.Wave && p.VoltagePath is { } v
             ? new Point3(v.To.X - v.From.X, v.To.Y - v.From.Y, v.To.Z - v.From.Z) : p.Direction;
         return $"{r.Label} ({(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}) runs from '{p.NegativeObject}' to '{p.PositiveObject}' " +
-               $"along {Along(d)}: {r.Reason}.";
+               $"along {Along(d)}: {r.Reason}." + (r.Note is { } note ? " " + note : "");
     }
 
     private static Point3 Vec(Em3dPort t) => t.VoltagePath is { } v ? new Point3(v.To.X - v.From.X, v.To.Y - v.From.Y, v.To.Z - v.From.Z) : t.Direction;

@@ -186,8 +186,9 @@ public sealed class TerminalWavePortTests(ITestOutputHelper output) : IDisposabl
             string name = Path.GetRelativePath(repo, f);
             if (text.Contains("\n\t\"Objects\"", StringComparison.Ordinal)) { Assert.True(text == saved, name); written++; }
             Assert.True(saved == C3dPersistence.Serialize(C3dPersistence.Deserialize(saved)), name);
-            Assert.DoesNotContain("\"Terminals\"", saved);
-            Assert.DoesNotContain("\"Reference\"", saved);
+            // brief-em3d-117 shipped the first file that states them (3D Wave Ports' Pair); the writer still adds them to none
+            if (!text.Contains("\"Terminals\"", StringComparison.Ordinal)) Assert.DoesNotContain("\"Terminals\"", saved);
+            if (!text.Contains("\"Reference\"", StringComparison.Ordinal)) Assert.DoesNotContain("\"Reference\"", saved);
         }
         output.WriteLine($"{written} of {files.Count} files are the writer's own and re-save byte for byte.");
         Assert.True(written > 0);

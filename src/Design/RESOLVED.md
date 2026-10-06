@@ -17246,3 +17246,33 @@ also reports what a cylindrical setup's grid would refuse.
 **Not done.** `Em3dFidelity`'s per-kernel-solid staircase rows are not given on a cylindrical grid (they read cells per world
 axis). `OpenEmsBackendTests.Gate10` failed once when run beside the other openEMS classes and passes alone: it collects
 processes through the static `OpenEmsRun.ProcessStarted` event, so another class's openEMS lands in its list.
+
+## Wave ports by hand: a coax's ray, and the air box's PEC faces as one reference — brief-em3d-121 (2026-10-06)
+
+A single wave port whose two ends overlap on the face now falls back to a ray path when one end's section ENCLOSES the
+other's foot with clearance (`C3dPorts.Encloses`, `EnclosedRay`); `TerminalsFor` takes strips between PEC box faces as
+terminals referenced to the box (`BoxReferenced`); `InferReference` reads several PEC box faces as one ground, named by the
+first in xmin…zmax order. Gate: `tests/Ui.Tests/ThreeD/WavePortsByHandTests.cs`. What was not obvious:
+
+**The shortest ray lands inside a tessellated wall, by up to 1 %.** `RayPath` takes the shortest of its four rays, which
+is right for a terminal (the nearest of two ground planes). Round a coax every ray meets the one wall, and on the Launch's
+housing (a kernel mesh) the shortest is the one that hits a chord's middle: 0.6655 mm from the axis, not the bore's
+0.67 mm, so the path was 1 % short. Palace's Z_PV integrates along that path, so the port's renormalisation would move. For
+the enclosed case `RayPath(longest: true)` keeps each direction's NEAREST crossing and takes the longest direction: a
+polygon's corners lie on the drawn circle and its chords inside it. On the Launch that gives exactly brief 117's stated
+path, (0, 1.3955) → (0, 0.9255) mm, so its recorded runs stand. The terminal path (`longest: false`) is unchanged, tie order
+included.
+
+**"Encloses" is two tests.** No segment of the outer's section meets the inner's foot box (1 DBU of slack: a pin touching
+the bore is shorted, and stays refused with the old sentence), and the section lies on all four sides of the foot's
+centre. An L-shaped return beside a strip fails the second, so D4 holds: refused, as before. No `.c3d` in the repo has
+such a port (both files with wave ports, the 3D Wave Ports example's, were checked).
+
+**A drawn conductor touching a PEC box face is not a terminal against it.** Not in the brief, added because without it the
+box-face rule would catch a microstrip whose drawn ground lies on a PEC floor: the ground would become a terminal with a
+zero-length path. `BoxReferenced` therefore also requires that no drawn conductor's foot touches a PEC face's line on the
+region; that case keeps the two-conductor reading.
+
+**D1's note is a new field, `C3dPortResult.Note`.** A stored bare wave port on Pair's face keeps its strip-to-strip reading
+(the reader never invents terminals) and gains a note naming the gesture's alternative. `C3dPortReports.Describe` appends
+it, so `check` and `explain` print it, and `C3dProblemAssembly.Assemble` adds it to the run's notes.

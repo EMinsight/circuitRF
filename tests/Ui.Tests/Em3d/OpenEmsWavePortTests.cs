@@ -357,7 +357,7 @@ public sealed class OpenEmsWavePortTests(ITestOutputHelper output) : IDisposable
 
     /// <summary>The 3D Connector's coax along z: pin ⌀ 0.4 mm, PTFE bore ⌀ 1.34 mm in a 1.4 mm square shield, 1 mm long, a wave
     /// port on the zmin face with its path from the shield to the pin.</summary>
-    private static C3dDocument Coax() => new()
+    internal static C3dDocument Coax() => new()
     {
         Objects =
         [
@@ -383,7 +383,7 @@ public sealed class OpenEmsWavePortTests(ITestOutputHelper output) : IDisposable
     };
 
     /// <summary>The coax's setup: PEC walls on the shield, the port face stated PEC (D9 lowers it absorbing), the far end absorbing.</summary>
-    private static EmSetup CoaxSetup(double cellsPerWavelength) => new()
+    internal static EmSetup CoaxSetup(double cellsPerWavelength) => new()
     {
         Name = "S1", Solver3D = Em3dSolver.OpenEms,
         Frequency = new CircuitRF.Core.Design.FrequencySpec("2", "18", 5, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz"),

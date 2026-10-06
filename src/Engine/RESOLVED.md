@@ -2708,3 +2708,23 @@ reference node; the 0 V drive branch is still never stamped there.
   Harmonica, Core and Ui); no hero or shipped example has a Term in one. Gate:
   `TermScopingTests.HarmonicBalance_ATermIsItsZ_AtEveryHarmonic_AndRealAtDc` (Z = 50+25j: V₁ = I·Z, V₀ = Idc·Re Z).
 
+
+## openEMS grid: a thirds pair broken by grading in a narrow gap (brief-em3d-117, 2026-10-06; NOT fixed)
+
+Found building the 3D Wave Ports example's stripline pair; reported, not patched (brief 117 §8). Two strips facing across
+a gap S each get a thirds pair (a line 2h/3 outside the edge, one h/3 inside, nothing between). The two outside lines
+leave a middle cell of S − 4h/3. The 3/7-of-the-gap clamp above engages only when h > 3S/7; just below it the middle
+cell is a hair WIDER than the largest cell, so `Fill` halves it, and the halves sit beside the thirds pairs' h-wide cells
+at a ratio near 2, past `GradingRatio` 1.3. Grading then inserts a line INSIDE each thirds pair, a fraction of a cell
+from the edge, and the edge singularity the rule exists to place is gridded as if there were no rule.
+
+Measured on PTFE stripline, b 2 mm, W 1.6 mm, S 0.3 mm, 90 cells per wavelength at 18 GHz (h = 127.7 µm): middle cell
+129.8 µm → lines at ±64.9 and 0, and grading lines at −122.3 and 121.8 µm between the pairs (−64.9 | −192.6, 64.9 | 192.6).
+The odd mode, whose field is in the gap, ran slow (ε_eff 2.25–2.48 against 2.1; in air 1.11–1.15 against 1.00), so the
+far-end coupling of a homogeneous line read −12.6 dB at 18 GHz against Cohn's −75 dB, the thru 15° late, max |ΔS| 0.26.
+The same cell with S 0.4 mm (middle cell 229.7 µm, halves 114.9 µm, ratio 1.11, no insertion) lands within 0.0027 of
+Cohn everywhere from 2 to 18 GHz. Nothing warns: the grid summary only names the 56.9 µm smallest cell.
+
+What a fix has to decide: either let the clamp also cover the band where S − 4h/3 falls between h and about 2h/1.3 (so the
+middle cell is one cell), or forbid grading from splitting a thirds pair and grade outward from it instead. Either moves
+every grid with two edges facing across a narrow gap, so the openEMS goldens would be re-checked. Brief written: `docs/sonnet-briefs/brief-em3d-122-thirds-pair-grading.md`.

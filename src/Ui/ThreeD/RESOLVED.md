@@ -62,3 +62,23 @@ toolbar's Insert Image… went to that button.
 in the view handled is forwarded through `Viewer3DPane.ForwardKey` — never from a TextBox/ComboBox/NumericUpDown/AutoCompleteBox,
 and never Delete/Backspace, so a key pressed on another control cannot delete geometry. No window menu was intercepting:
 the macOS `NativeMenu` 3D items carry no `Gesture`, and the in-window `InputGesture`s are display-only.
+
+## Make Port ▸ Wave on a face that is not a rectangle — brief-em3d-121 (2026-10-06)
+
+**The coax face was never greyed out for the reason brief 121 gives.** Brief 121 expected *Make Port ▸ Wave* on the
+Launch's bore face to be refused by the port's overlap rule. The editor refused it earlier: `PortFromFace` requires a face
+whose area equals its bounding rectangle's, and the bore's end is a disc ("Face bottom is not a rectangle"). A wave port's
+rectangle is only a region of the box's face, so a wave port now takes any flat, axis-normal face as the rectangle round it
+(`WaveRegion`): a cylinder's cap exactly, from the elaborated primitive's bounds (its tessellated polygon falls short of the
+circle on one axis or the other), and any other face from its tessellation's corners. A lumped port still needs a
+rectangular face.
+
+**That square is not the shipped Launch's port**, measured once through brief 117's gate 4: on the 1.34 mm square, openEMS's
+default grid left the current probe round the pin 106 µm from the housing where it needs a cell (153 µm), and the run was
+refused; Palace ran but its Draft |S| moved by up to 1.9 dB (S22 at 14 GHz), from the different Gmsh geometry. The 2 × 2 mm
+rectangle's grid lines at ±1 mm are what give the probe its room. The owner chose to ship P1 as the Port tool draws it,
+2 × 2 mm round the axis, stating no ends and no path; it lowers to the problem the runs were recorded with.
+
+**The status line names why Make Port chose the reference.** `AddPort` resolved the port it had just written, whose
+`Reference` is then stated, so the reason read "the reference is stated". `MakePortFromFace` passes `TerminalsFor`'s reason
+through (`AddPort(port, referenceWhy)`).

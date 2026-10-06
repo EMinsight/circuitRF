@@ -1,0 +1,172 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mm",
+	"SnapDbu": 10000,
+	"Objects": [
+		{
+			"$type": "Box",
+			"Name": "fill",
+			"Material": "PTFE",
+			"Min": [0, { "Expr": "-(s/2 + w + 10*w)", "Unit": "Mm" }, { "Expr": "-b/2", "Unit": "Mm" }],
+			"Size": [{ "Expr": "len", "Unit": "Mm" }, { "Expr": "s + 22*w", "Unit": "Mm" }, { "Expr": "b", "Unit": "Mm" }]
+		},
+		{
+			"$type": "Sheet",
+			"Name": "strip_a",
+			"Material": "Copper",
+			"Plane": "XY",
+			"Offset": 0,
+			"Rect": {
+				"Min": [0, { "Expr": "-(s/2 + w)", "Unit": "Mm" }],
+				"Size": [{ "Expr": "len", "Unit": "Mm" }, { "Expr": "w", "Unit": "Mm" }]
+			}
+		},
+		{
+			"$type": "Sheet",
+			"Name": "strip_b",
+			"Material": "Copper",
+			"Plane": "XY",
+			"Offset": 0,
+			"Rect": {
+				"Min": [0, { "Expr": "s/2", "Unit": "Mm" }],
+				"Size": [{ "Expr": "len", "Unit": "Mm" }, { "Expr": "w", "Unit": "Mm" }]
+			}
+		}
+	],
+	"Variables": [
+		{
+			"Name": "w",
+			"Expression": "1.65",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "s",
+			"Expression": "0.4",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "b",
+			"Expression": "2",
+			"Unit": "Mm"
+		},
+		{
+			"Name": "len",
+			"Expression": "15",
+			"Unit": "Mm"
+		}
+	],
+	"Ports": [
+		{
+			"Name": "xmin",
+			"Kind": "Wave",
+			"Plane": "YZ",
+			"Offset": 0,
+			"Rect": {
+				"Min": [-18350000, -1000000],
+				"Size": [36700000, 2000000]
+			},
+			"Reference": "airbox/zmin",
+			"Terminals": [
+				{
+					"Number": 1,
+					"Name": "P1",
+					"Conductor": "strip_a",
+					"Z0": "50"
+				},
+				{
+					"Number": 2,
+					"Name": "P2",
+					"Conductor": "strip_b",
+					"Z0": "50"
+				}
+			]
+		},
+		{
+			"Name": "xmax",
+			"Kind": "Wave",
+			"Plane": "YZ",
+			"Offset": 15000000,
+			"Rect": {
+				"Min": [-18350000, -1000000],
+				"Size": [36700000, 2000000]
+			},
+			"Reference": "airbox/zmin",
+			"Terminals": [
+				{
+					"Number": 3,
+					"Name": "P3",
+					"Conductor": "strip_a",
+					"Z0": "50"
+				},
+				{
+					"Number": 4,
+					"Name": "P4",
+					"Conductor": "strip_b",
+					"Z0": "50"
+				}
+			]
+		}
+	],
+	"Setups": [
+		{
+			"FormatVersion": 1,
+			"Name": "openEMS",
+			"Frequency": {
+				"StartExpr": "2",
+				"StopExpr": "18",
+				"StepExpr": "",
+				"NumPoints": 33,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": true,
+			"Solver3D": "OpenEms",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 0,
+					"Boundary": "Absorbing"
+				},
+				"XMax": {
+					"PaddingUm": 0,
+					"Boundary": "Absorbing"
+				},
+				"YMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pmc"
+				},
+				"YMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pmc"
+				},
+				"ZMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				}
+			},
+			"OpenEms": {
+				"CellsPerWavelength": 90,
+				"MinCellUm": 10
+			}
+		}
+	]
+}

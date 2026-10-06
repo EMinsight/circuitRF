@@ -170,7 +170,7 @@ Opening, editing and looking at a 3D model needs neither program. Only **Simulat
 | Licence | Apache 2.0 | GPL v3 |
 | Mesh | Tetrahedra, made by [Gmsh](https://gmsh.info) from circuitRF's model | A rectilinear grid, written by circuitRF |
 | Parallel | Across processes (MPI): one per physical core by default | Across the cores of one machine |
-| What circuitRF runs on it | Driven S-parameters, eigenmode, electrostatic, magnetostatic; lumped and wave ports; radiation pattern | Driven S-parameters; lumped and wave ports, including several terminals on one face; radiation pattern |
+| What circuitRF runs on it | Driven S-parameters, eigenmode, electrostatic, magnetostatic; lumped and wave ports; radiation pattern | Driven S-parameters; lumped and wave ports, including several terminals on one face ([the 3D Wave Ports example](../new-user-guide/index.html#wave-ports-3d)); radiation pattern |
 | Install, as measured on one Apple M4 | Built from source: 52 min, 1.9 GB | 8 min, 0.27 GB |
 | On Windows | Inside your Windows Subsystem for Linux (WSL 2). Palace's GitHub page covers Linux and macOS only; see [Installing Palace on Windows](palace-windows.html) | Native |
 

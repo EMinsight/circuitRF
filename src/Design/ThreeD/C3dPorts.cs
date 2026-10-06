@@ -50,6 +50,10 @@ public sealed record C3dPortResult(C3dPort Port, Em3dPort? Resolved, string? Ref
 
     /// <summary>Every neutral port this one lowers to: its terminals, or itself, or none when refused.</summary>
     public IReadOnlyList<Em3dPort> All => Terminals ?? (Resolved is { } r ? [r] : []);
+
+    /// <summary>brief-em3d-121 D1 — a reading the port keeps and the gesture would not make, naming the alternative; null on
+    /// every other port. A run adds it to its notes, and <c>check</c>/<c>explain</c> print it after the reason.</summary>
+    public string? Note { get; init; }
 }
 
 /// <summary>
@@ -510,6 +514,7 @@ public static class C3dPorts
 
         // The two conductors: whatever meets the rectangle's region of the face.
         string negative, positive, reason;
+        string? note = null;
         IReadOnlyList<(string, IReadOnlyList<string>)> contacts = [];
         var feet = Feet(ctx, normalAxis, h, uDir, vDir, u0, v0, u1, v1);
         if (port.Terminals is { Count: > 0 } terminals)
@@ -528,7 +533,14 @@ public static class C3dPorts
             var found = feet.Keys.ToList();
             contacts = [("region", (IReadOnlyList<string>)found)];
             if (found.Count > 2 && found.Count(n => !n.StartsWith("airbox/", StringComparison.Ordinal)) == 2)
-                found = [.. found.Where(n => !n.StartsWith("airbox/", StringComparison.Ordinal))];
+            {
+                // brief-em3d-121 D1 — the stored reading stands (the reader never invents terminals); the gesture's is named
+                var drawn = found.Where(n => !IsBoxFace(n)).ToList();
+                if (BoxReferenced(drawn, found, feet, ctx, normalAxis, h, uDir, vDir))
+                    note = $"{label} meets '{drawn[0]}', '{drawn[1]}' and the air box's PEC faces on the {face} face; it is read as one " +
+                           "port between the two strips. Make Port ▸ Wave on that face writes a terminal per strip, referenced to the box.";
+                found = drawn;
+            }
             if (found.Count(n => !IsBoxFace(n)) > 2) found = [.. found.Where(n => !IsBoxFace(n))];
             if (found.Count > 2)
                 return Refuse(port, ManyConductorsRefusal(label, face, found, ctx), contacts);
@@ -562,6 +574,13 @@ public static class C3dPorts
             from = P(fu, fv);
             to = P(tu, tv);
         }
+        // R-em3d121-1 — a coax: the outer's section encloses the inner's foot with clearance, so the path runs along a ray from
+        // the outer to the inner, as a terminal's does (R-em3d114-1e). Flipped, the same ray runs the other way.
+        else if (EnclosedRay(negative, positive, ctx, feet, normalAxis, h, uDir, vDir, u0, v0, u1, v1) is var (ou, ov, iu, iv, outer, inner))
+        {
+            (from, to) = outer == negative ? (P(ou, ov), P(iu, iv)) : (P(iu, iv), P(ou, ov));
+            reason += $"; the path runs from '{negative}' to '{positive}' along a ray, because '{outer}' encloses '{inner}' on the face";
+        }
         else
             return Refuse(port, $"{label}'s two conductors '{negative}' and '{positive}' overlap across its region of the {face} face, " +
                                 "so no straight path runs between them; state its VoltagePath.", contacts);
@@ -578,7 +597,87 @@ public static class C3dPorts
             Kind = Em3dPortKind.Wave,
             VoltagePath = new Em3dSegment(from, to),
         };
-        return new C3dPortResult(port, resolved, null, contacts, reason);
+        return new C3dPortResult(port, resolved, null, contacts, reason) { Note = note };
+    }
+
+    /// <summary>
+    /// R-em3d121-1 — the ray path between a single wave port's two ends when one's section encloses the other's foot with
+    /// clearance (a coax): from the outer's section to the inner's foot, whichever end is the outer. Null when neither
+    /// encloses the other, or when no ray meets the outer inside the rectangle: two conductors that overlap on the face
+    /// without one enclosing the other are shorted or side by side, and a ray between them is no voltage path.
+    /// </summary>
+    private static (double OU, double OV, double IU, double IV, string Outer, string Inner)? EnclosedRay(
+        string a, string b, C3dPortContext ctx, Dictionary<string, (double U0, double V0, double U1, double V1)> feet, int axis, double h,
+        Point3 uDir, Point3 vDir, double u0, double v0, double u1, double v1)
+    {
+        foreach (var (outer, inner) in new[] { (a, b), (b, a) })
+        {
+            var o = ctx.Conductors.First(c => c.Name == outer);
+            if (!Encloses(o, feet[inner], ctx, axis, h, uDir, vDir)) continue;
+            if (RayPath(o, ctx, axis, h, uDir, vDir, feet[inner], u0, v0, u1, v1, longest: true) is var (fu, fv, tu, tv))
+                return (fu, fv, tu, tv, outer, inner);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// R-em3d121-1 — whether conductor <paramref name="outer"/>'s section by the plane encloses the foot <paramref name="p"/>
+    /// with clearance: no segment of the section meets the foot's box (1 DBU of slack), and the section lies on all four
+    /// sides of it — straight along +u, −u, +v and −v from its centre. A PEC box face (a line) encloses nothing.
+    /// </summary>
+    internal static bool Encloses(C3dPortContext.Conductor outer, (double U0, double V0, double U1, double V1) p, C3dPortContext ctx,
+                                  int axis, double h, Point3 uDir, Point3 vDir)
+    {
+        if (outer.Axis >= 0) return false;
+        double tol = ctx.Dbu;
+        var segs = Section(outer, ctx, axis, h, uDir, vDir);
+        double cu = (p.U0 + p.U1) / 2, cv = (p.V0 + p.V1) / 2;
+        bool below = false, above = false, left = false, right = false;
+        foreach (var (s, e) in segs)
+        {
+            if (SegmentMeetsBox(s, e, (p.U0 - tol, p.V0 - tol, p.U1 + tol, p.V1 + tol))) return false;
+            foreach (double v in Crossings(s.U, s.V, e.U, e.V, cu, tol)) { below |= v < p.V0; above |= v > p.V1; }
+            foreach (double u in Crossings(s.V, s.U, e.V, e.U, cv, tol)) { left |= u < p.U0; right |= u > p.U1; }
+        }
+        return below && above && left && right;
+    }
+
+    /// <summary>True when segment s–e meets the box (Liang–Barsky).</summary>
+    private static bool SegmentMeetsBox((double U, double V) s, (double U, double V) e, (double U0, double V0, double U1, double V1) b)
+    {
+        double t0 = 0, t1 = 1, du = e.U - s.U, dv = e.V - s.V;
+        foreach (var (q, r) in new[] { (-du, s.U - b.U0), (du, b.U1 - s.U), (-dv, s.V - b.V0), (dv, b.V1 - s.V) })
+        {
+            if (q == 0) { if (r < 0) return false; continue; }
+            double t = r / q;
+            if (q < 0) { if (t > t1) return false; t0 = Math.Max(t0, t); }
+            else { if (t < t0) return false; t1 = Math.Min(t1, t); }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// R-em3d121-2 — whether a wave port's region takes the box-referenced terminal reading: two or more drawn conductors meet
+    /// it, none in the ground set, none touching a PEC box face that meets it (a ground drawn on the box's floor is joined to
+    /// it, so the floor is not its reference), none's section enclosing another's foot (a coax keeps its two-conductor
+    /// reading), and at least one PEC box face meets it.
+    /// </summary>
+    private static bool BoxReferenced(IReadOnlyList<string> drawn, IReadOnlyList<string> found,
+                                      Dictionary<string, (double U0, double V0, double U1, double V1)> feet, C3dPortContext ctx, int axis,
+                                      double h, Point3 uDir, Point3 vDir)
+    {
+        var faces = found.Where(IsBoxFace).ToList();
+        if (drawn.Count < 2 || faces.Count == 0 || drawn.Any(ctx.Ground.Contains)) return false;
+        double tol = ctx.Dbu;
+        bool Touch((double U0, double V0, double U1, double V1) x, (double U0, double V0, double U1, double V1) y)
+            => x.U0 <= y.U1 + tol && y.U0 <= x.U1 + tol && x.V0 <= y.V1 + tol && y.V0 <= x.V1 + tol;
+        if (drawn.Any(n => faces.Any(f => Touch(feet[n], feet[f])))) return false;
+        foreach (string outer in drawn)
+        {
+            var o = ctx.Conductors.First(c => c.Name == outer);
+            if (drawn.Any(inner => inner != outer && Encloses(o, feet[inner], ctx, axis, h, uDir, vDir))) return false;
+        }
+        return true;
     }
 
     /// <summary>Every conductor meeting the rectangle's region of the plane at <paramref name="h"/>, with its (u, v) box.</summary>
@@ -609,7 +708,9 @@ public static class C3dPorts
 
     /// <summary>
     /// R-em3d114-1c — the reference among <paramref name="candidates"/>: the one in the ground set (an air-box PEC face
-    /// counts), else the largest surface — among the ground set's members when several are in it. A tie is no answer.
+    /// counts), else the largest surface — among the ground set's members when several are in it. A tie is no answer —
+    /// among drawn conductors: when every ground-set candidate is a PEC face of the air box, they are one ground, named by
+    /// the first in face order (xmin … zmax), brief-em3d-121.
     /// </summary>
     internal static (string? Reference, string Reason, string? Refusal) InferReference(IReadOnlyList<string> candidates, C3dPortContext ctx)
     {
@@ -618,6 +719,12 @@ public static class C3dPorts
         var ground = cs.Where(c => ctx.Ground.Contains(c.Name)).ToList();
         if (ground.Count == 1)
             return (ground[0].Name, $"'{ground[0].Name}' is the only one in the ground set" + (ground[0].Axis >= 0 ? " (a PEC face of the air box)" : ""), null);
+        // R-em3d121-2 — the air box's PEC faces are one reference (openEMS grounds a line to every one of them), never a tie
+        if (ground.Count > 1 && ground.All(c => c.Axis >= 0))
+        {
+            var first = ground.OrderBy(c => ctx.Conductors.IndexOf(c)).First();
+            return (first.Name, $"the air box's PEC faces are one ground; '{first.Name}' names it", null);
+        }
         var pool = (ground.Count > 1 ? ground : cs).OrderByDescending(c => c.Area).ToList();
         bool mm = pool[0].Area >= 1e-6;
         string Area(double m2) => (mm ? m2 * 1e6 : m2 * 1e12).ToString("0.####", CultureInfo.InvariantCulture) + (mm ? " mm²" : " µm²");
@@ -721,7 +828,9 @@ public static class C3dPorts
     /// <summary>
     /// R-em3d114-3a — what Make Port ▸ Wave writes on a face met by three or more conductors: the reference by the same rule
     /// a run infers it, and every other conductor in a stable order — its foot's centre along the rectangle's long axis, then
-    /// its name. Null when the draft is not a wave port on a box face met by three or more (an ordinary port, resolved as one);
+    /// its name. brief-em3d-121 R-em3d121-2: two or more drawn conductors between PEC box faces (none grounded, none enclosing
+    /// another) are all terminals, the faces their reference. Null when the draft is not a wave port on a box face met by three
+    /// or more (an ordinary port, resolved as one);
     /// <paramref name="refusal"/> says why such a face takes no terminals (a tie for the reference).
     /// </summary>
     public static (string Reference, string Reason, IReadOnlyList<string> Conductors)? TerminalsFor(C3dPort draft, int dbuPerMicron,
@@ -738,66 +847,83 @@ public static class C3dPorts
         var (uDir, vDir) = PlaneAxes(draft.Plane);
         var feet = Feet(ctx, normalAxis, h, uDir, vDir, u0, v0, u1, v1);
         var found = feet.Keys.ToList();
-        if (found.Count > 2 && found.Count(n => !IsBoxFace(n)) == 2) return null;      // the two-conductor rule's own reading
-        if (found.Count(n => !IsBoxFace(n)) > 2) found = [.. found.Where(n => !IsBoxFace(n))];
+        var drawn = found.Where(n => !IsBoxFace(n)).ToList();
+        bool alongU = u1 - u0 >= v1 - v0;
+        List<string> Ordered(IEnumerable<string> names)
+            => [.. names.OrderBy(n => alongU ? (feet[n].U0 + feet[n].U1) / 2 : (feet[n].V0 + feet[n].V1) / 2).ThenBy(n => n, StringComparer.Ordinal)];
+        // R-em3d121-2 — strips between the box's PEC faces (a stripline whose ground planes are the box): each drawn conductor
+        // is a terminal, and the faces are the reference
+        if (BoxReferenced(drawn, found, feet, ctx, normalAxis, h, uDir, vDir))
+        {
+            var (boxFace, boxWhy, _) = InferReference([.. found.Where(IsBoxFace)], ctx);
+            return (boxFace!, boxWhy, Ordered(drawn));
+        }
+        if (found.Count > 2 && drawn.Count == 2) return null;      // the two-conductor rule's own reading
+        if (drawn.Count > 2) found = drawn;
         if (found.Count < 3) return null;
         var (reference, why, tie) = InferReference(found, ctx);
         if (reference is null) { refusal = $"The face is met by {found.Count} conductors and {tie}."; return null; }
-        bool alongU = u1 - u0 >= v1 - v0;
-        var ordered = found.Where(n => n != reference)
-                           .OrderBy(n => alongU ? (feet[n].U0 + feet[n].U1) / 2 : (feet[n].V0 + feet[n].V1) / 2)
-                           .ThenBy(n => n, StringComparer.Ordinal).ToList();
-        return (reference, why, ordered);
+        return (reference, why, Ordered(found.Where(n => n != reference)));
     }
 
     /// <summary>
     /// R-em3d114-1e — the voltage path when the reference's foot encloses the terminal's (a stripline's joined grounds, a
     /// shield): from the terminal's foot, straight along u or v from its centre to the nearest point of the reference's own
-    /// section, whichever is shortest; null when no such line meets it inside the rectangle.
+    /// section, whichever is shortest; null when no such line meets it inside the rectangle. brief-em3d-121 — with
+    /// <paramref name="longest"/>, whichever is longest: round an enclosed conductor (a coax) every ray meets the one wall,
+    /// and a tessellated wall's corners lie on the drawn surface while its chords fall inside it, so the longest ray is the
+    /// one that reaches the wall as drawn. Along each ray it is still the nearest crossing.
     /// </summary>
     private static (double FU, double FV, double TU, double TV)? RayPath(C3dPortContext.Conductor reference, C3dPortContext ctx, int axis, double h,
                                                                        Point3 uDir, Point3 vDir, (double U0, double V0, double U1, double V1) p,
-                                                                       double u0, double v0, double u1, double v1)
+                                                                       double u0, double v0, double u1, double v1, bool longest = false)
     {
         double tol = ctx.Dbu;
         var segs = Section(reference, ctx, axis, h, uDir, vDir);
         double cu = (p.U0 + p.U1) / 2, cv = (p.V0 + p.V1) / 2;
         (double, double, double, double)? best = null;
         double bestLen = double.PositiveInfinity;
-        void Try(double fu, double fv, double tu, double tv)
+        // each direction's nearest crossing (−v, +v, −u, +u), for the longest
+        var nearest = new ((double, double, double, double) Path, double Len)?[4];
+        void Try(int dir, double fu, double fv, double tu, double tv)
         {
             if (fu < u0 - tol || fu > u1 + tol || fv < v0 - tol || fv > v1 + tol) return;
             double len = Math.Abs(tu - fu) + Math.Abs(tv - fv);
-            if (len > tol && len < bestLen) (best, bestLen) = ((fu, fv, tu, tv), len);
+            if (len <= tol) return;
+            if (len < bestLen) (best, bestLen) = ((fu, fv, tu, tv), len);
+            if (nearest[dir] is not { } n || len < n.Len) nearest[dir] = ((fu, fv, tu, tv), len);
         }
         foreach (var (a, b) in segs)
         {
             // the line u = cu: below the foot (−v) and above it (+v)
-            foreach (double v in Crossings(a.U, a.V, b.U, b.V, cu))
+            foreach (double v in Crossings(a.U, a.V, b.U, b.V, cu, tol))
             {
-                if (v <= p.V0 + tol) Try(cu, v, cu, p.V0);
-                if (v >= p.V1 - tol) Try(cu, v, cu, p.V1);
+                if (v <= p.V0 + tol) Try(0, cu, v, cu, p.V0);
+                if (v >= p.V1 - tol) Try(1, cu, v, cu, p.V1);
             }
             // the line v = cv: left (−u) and right (+u)
-            foreach (double u in Crossings(a.V, a.U, b.V, b.U, cv))
+            foreach (double u in Crossings(a.V, a.U, b.V, b.U, cv, tol))
             {
-                if (u <= p.U0 + tol) Try(u, cv, p.U0, cv);
-                if (u >= p.U1 - tol) Try(u, cv, p.U1, cv);
+                if (u <= p.U0 + tol) Try(2, u, cv, p.U0, cv);
+                if (u >= p.U1 - tol) Try(3, u, cv, p.U1, cv);
             }
         }
-        return best;
+        if (!longest) return best;
+        var ways = nearest.OfType<((double, double, double, double) Path, double Len)>().ToList();
+        return ways.Count == 0 ? null : ways.MaxBy(w => w.Len).Path;
+    }
 
-        // Where segment (x, y)a–b crosses the line x = at, as y values (both ends when it lies along the line).
-        IEnumerable<double> Crossings(double ax, double ay, double bx, double by, double at)
+    /// <summary>Where segment (x, y)a–b crosses the line x = <paramref name="at"/>, as y values (both ends when it lies along
+    /// the line).</summary>
+    private static IEnumerable<double> Crossings(double ax, double ay, double bx, double by, double at, double tol)
+    {
+        if (Math.Abs(ax - bx) <= tol)
         {
-            if (Math.Abs(ax - bx) <= tol)
-            {
-                if (Math.Abs(ax - at) <= tol) { yield return ay; yield return by; }
-                yield break;
-            }
-            if (at < Math.Min(ax, bx) - tol || at > Math.Max(ax, bx) + tol) yield break;
-            yield return ay + (Math.Clamp(at, Math.Min(ax, bx), Math.Max(ax, bx)) - ax) / (bx - ax) * (by - ay);
+            if (Math.Abs(ax - at) <= tol) { yield return ay; yield return by; }
+            yield break;
         }
+        if (at < Math.Min(ax, bx) - tol || at > Math.Max(ax, bx) + tol) yield break;
+        yield return ay + (Math.Clamp(at, Math.Min(ax, bx), Math.Max(ax, bx)) - ax) / (bx - ax) * (by - ay);
     }
 
     /// <summary>Conductor <paramref name="c"/>'s section by the plane at <paramref name="h"/>, as (u, v) segments: each

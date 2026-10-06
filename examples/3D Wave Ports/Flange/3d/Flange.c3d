@@ -1,0 +1,30 @@
+{
+	"FormatVersion": 1,
+	"DbuPerMicron": 1000,
+	"DisplayUnit": "Mm",
+	"SnapDbu": 10000,
+	"Objects": [
+		{
+			"$type": "Boolean",
+			"Name": "flange",
+			"Op": "Subtract",
+			"Blank": {
+				"$type": "Box",
+				"Material": "Connector alloy",
+				"Min": [-1000000, -3500000, -1500000],
+				"Size": [1000000, 7000000, 4500000]
+			},
+			"Tools": [
+				{
+					"$type": "Cylinder",
+					"Name": "hole",
+					"Material": "Connector alloy",
+					"Base": [-1000000, 0, 725500],
+					"Axis": "X",
+					"Length": 1000000,
+					"Radius": 670000
+				}
+			]
+		}
+	]
+}

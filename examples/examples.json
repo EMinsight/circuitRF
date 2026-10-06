@@ -47,6 +47,11 @@
       "Summary": "A coaxial connector launching onto a 50 ohm microstrip at a board edge: a housing with its bore subtracted and kept as the PTFE fill, a flange imported from STEP and united with it, and a centre pin with a rounded tip. Solved by Palace and by openEMS, with and without the fillet."
     },
     {
+      "Folder": "3D Wave Ports",
+      "Title": "3D Wave Ports",
+      "Summary": "How to set up a wave port: the 3D Connector's launch with its back end open and fed by a coaxial wave port on Palace and on openEMS, and an edge-coupled stripline pair whose four strip ends are each a terminal of a wave port on openEMS, plotted against Cohn's ideal coupled line."
+    },
+    {
       "Folder": "Thermal Die to Heatsink",
       "Title": "Thermal: Die to Heatsink",
       "Summary": "A GaN-on-SiC die on a copper\u2013molybdenum flange, a board with a field of plated vias, and a heatsink at 85 \u00b0C: the junction temperature and Rth against dissipated power, with the via field solved as drawn or as one effective block."

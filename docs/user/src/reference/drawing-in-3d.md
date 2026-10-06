@@ -1107,7 +1107,8 @@ sweep from 2 to 30 GHz, and **Lid modes**, a Palace eigenmode solve. The **activ
 **Run** runs and whose air box is drawn.
 
 **Ports.** **Shift+A P** draws one on the drawing plane, two corners; or right-click a flat rectangular
-face, *Make Port ▸ Lumped* or *Wave*. **Which kind a face can take depends on where it lies, not on what it
+face, *Make Port ▸ Lumped* or *Wave*. A wave port takes any flat face, a disc for one, as the rectangle round
+it, since its rectangle is only a region of the box's face. **Which kind a face can take depends on where it lies, not on what it
 was drawn as**: a wave port is a region of an air-box face (a sheet drawn there is the usual way to state one),
 and a lumped port bridges two conductors on opposite edges (a face of a small gap block does exactly that). The
 menu offers only the kind that would resolve, and the other's tip says why. **Which way round a lumped port is comes from what it touches**: each
@@ -1124,8 +1125,9 @@ every transmission term by 180°, so look before a run.
 ground — is one port with a **terminal** per signal conductor. Each terminal is its own numbered port of the
 result, with its own Z0. One conductor is the **reference**, the one every terminal's voltage is measured
 from: the one in the ground set (the setup's Ground net, or a PEC face of the air box), or failing that the
-one with the largest surface. *Make Port ▸ Wave* on such a face writes the reference and one terminal per
-other conductor, numbered with the next free numbers from left to right along the face. The 3D view draws
+one with the largest surface; the air box's PEC faces count as one reference, so strips between them (a
+stripline whose ground planes are the box) each take a terminal. *Make Port ▸ Wave* on such a face writes the
+reference and one terminal per other conductor, numbered with the next free numbers from left to right along the face. The 3D view draws
 each terminal as an arrow from the reference to its conductor, in the port colour, with its number at the
 head. A face whose reference cannot be decided (two candidates with equal surfaces) says so on the menu item.
 A port with several terminals runs on openEMS; Palace refuses it
@@ -1511,7 +1513,7 @@ order a pane presents them, with the rules each one follows.
   editor, with that `.cem` listed read-only and active, so its ports and boundaries can be seen.
 - **Ports** (**P** in the Shift+A popup, or *3D ▸ Draw ▸ Port*). A port is drawn like a sheet —
   two corners on the drawing plane — or made from a face: right-click a flat, rectangular face and choose
-  *Make Port ▸ Lumped* or *Wave*. It takes the next free number and the last port's Z0. **Which way round it
+  *Make Port ▸ Lumped* or *Wave* (a wave port takes any flat face, as the rectangle round it). It takes the next free number and the last port's Z0. **Which way round it
   is comes from what it touches**: each edge of the rectangle is tested against every conductor, and exactly
   one pair of opposite edges must each touch exactly one conductor. The end that is ground — the setup's
   Ground net, a placed layout's ground plane, or a PEC face of the air box — is **−**; otherwise the larger
@@ -1521,8 +1523,8 @@ order a pane presents them, with the rules each one follows.
   and *Delete*. A wrong polarity turns every transmission term by 180°, so check the arrow before a run.
   A **wave** port must lie on a face of the active setup's air box. Every setup uses every port, and a
   placed cell's own ports are never used: only the parent says where a signal enters.
-  On a box face met by three or more conductors, *Make Port ▸ Wave* makes one port with a **terminal** per
-  conductor besides the reference, named `P<n>` with the next free numbers, and names the port after the face
+  On a box face met by three or more conductors, or by two or more strips between the box's PEC faces, *Make
+  Port ▸ Wave* makes one port with a **terminal** per conductor besides the reference, named `P<n>` with the next free numbers, and names the port after the face
   (`xmin`); the status line says how many terminals it made and which conductor is the reference. Such a port is
   one row of the tree, its tick the whole port's, with a row beneath it for each terminal: its number, name,
   conductor and Z0. Right-click the port for *Set Reference* (any conductor meeting its region; choosing a

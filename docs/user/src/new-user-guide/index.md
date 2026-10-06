@@ -22,6 +22,7 @@ lede: Never used a circuit simulator before? Perfect — this guide starts from 
       <li><a href="#loadpull">Loadpull, contours &amp; Pursuit</a></li>
       <li><a href="#match">Matching networks: the Match component</a></li>
       <li><a href="#connector-3d">A first 3D solve: a connector and its fillet</a></li>
+      <li><a href="#wave-ports-3d">Wave ports: one port per conductor</a></li>
     </ol>
   </nav>
 
@@ -318,6 +319,48 @@ The whole story, with the numbers, is in
 <a href="../reference/em-solvers.html#curved">EM Solvers ▸ What each solver sees of curved geometry</a>, and every
 gesture that drew the example is in
 <a href="../reference/drawing-in-3d.html#connector">The 3D Editor ▸ The second example</a>.
+
+## 14 · Wave ports: one port per conductor {#wave-ports-3d}
+
+Ten minutes, and nothing to draw. A **wave port** makes a region of the air box's face a matched continuation of the
+line that ends there, so the port adds no gap and no parasitic of its own. This example uses one on a coax, and then
+on a pair of lines that end on one face, where each line becomes a port of its own.
+
+1. **Tools ▸ Examples ▸ 3D Wave Ports**, and open the **Launch** cell's 3D view. It is §13's connector with its back
+   end open: the coax runs to the air box's face, and **P1** there is a wave port. Its arrow runs from the housing to
+   the pin. P1 states only its rectangle: delete it and draw it again with the Port tool (**Shift+A P**) on that face,
+   2 mm square round the axis, and the same arrow is inferred, along a ray from the bore's wall to the pin, because the
+   housing encloses the pin. The coax's closed-form impedance is **50.02 Ω**.
+2. **Run** *Palace*, then *openEMS*. Compare |S11| at 18 GHz with §13's lumped gap port: it read **−40.75 dB** on Palace
+   and **−23.48 dB** on openEMS; the wave port reads **−19.53 dB** and **−21.21 dB**. The deep null was the gap's
+   capacitance, not the connector.
+3. Open **Pair**: two strips in PTFE between two ground planes, with a wave port at each end whose **two numbered
+   arrows** are its **terminals**, one per strip. Delete both ports and right-click each end face ▸ *Make Port ▸ Wave*
+   to make them yourself: the status line names `airbox/zmin` as the reference, because the ground planes are the air
+   box's PEC faces and count as one. Terminals 1 and 2 are at one end and 3 and 4 at the other, so
+   **S31 is the thru, S21 the near-end coupling and S41 the far-end coupling**. Its even and odd impedances are
+   **57.51 Ω** and **43.10 Ω** by Cohn's closed form.
+4. **Run** *openEMS* (Pair has no Palace setup) and plot dB(S31), dB(S21) and dB(S41) on a Data Display. At 10 GHz
+   openEMS reads **−0.092 dB**, **−16.94 dB** and **−60.88 dB** where Cohn's ideal line gives **−0.088 dB**,
+   **−16.98 dB** and **−64.47 dB**.
+
+**What each solver did.** Palace solved the coax's mode on the face and reports its impedance, **49.18 to 49.31 Ω**
+at the *Draft* preset and **50.13 to 50.26 Ω** at element order 2 (8 min 30 s and 8.9 GB instead of a minute; |S11|
+then reads −25.02 dB at 10 GHz and −21.44 dB at 18 GHz).
+openEMS fed the line from behind the face and measured its voltage and current there; on the Launch its square cells
+leave the round pin unresolved, and it says so: the line measured **56.72 Ω**, **ε_eff 3.17**, so on that cell
+Palace is the answer to trust. On Pair, openEMS fed each strip on its own and built S from the four runs together;
+each terminal's line measured **50.17 Ω**, **ε_eff 2.10**. Pair is openEMS's because Palace takes a port's modes from
+the face, and splitting a face between two strips leaves each port only the odd half of the field.
+
+| Run | Time | Size | Measured |
+|---|---|---|---|
+| Launch, Palace | 1 min 5 s | 4.5 GB | \|S11\| −21.71 dB at 10 GHz, \|S21\| −0.562 dB at 18 GHz |
+| Launch, openEMS | 1 min 43 s | 660,192 cells | \|S11\| −15.58 dB at 10 GHz, \|S21\| −0.469 dB at 18 GHz |
+| Pair, openEMS | 52 s | 1,033,923 cells | four runs, one per terminal |
+
+The example's README has every step and number, and the reference is
+<a href="../reference/em-setup.html#wave-ports">EM Setup ▸ Wave ports</a>.
 
 ---
 

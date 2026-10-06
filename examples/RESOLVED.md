@@ -683,3 +683,53 @@ so EM wrote its `.s2p` there, while the Amplifier's `XOUT` names `<workspace>/re
 GUI and `circuitrf em` write. The example itself was fine (run headless on a copy: EM, then FromHB, edge wire 205.108 °C).
 The gate now copies the example and runs it with that copy's own `results/`, and reproduces 205.108 °C and w1's limit at
 13.1093 dBm.
+
+## brief-em3d-117 — the 3D Wave Ports example (2026-10-06)
+
+A new workspace, `examples/3D Wave Ports/`: the 3D Connector's Board, Flange, `flange.step` and technology copied byte
+for byte (a test holds them so), its Launch with the back end open and P1 a coaxial wave port, and Pair, an edge-coupled
+PTFE stripline pair with a two-terminal wave port at each end. Gate: `tests/Ui.Tests/Examples/Em3dWavePortsExampleTests.cs`.
+
+- **Resolved by brief-em3d-121 (below).** **Neither cell's port can be made by hand yet; both are stated in the file, and the README says so.** brief 114 left a
+  single wave port refusing an enclosed conductor ("… overlap across its region …; state its VoltagePath") and the editor
+  has no field for a voltage path, so *Make Port ▸ Wave* on the coax face is greyed out. And when a stripline's ground
+  planes are the air box's PEC faces, `C3dPorts.TerminalsFor` takes the two-conductor reading (two strips besides box
+  faces) and the gesture makes ONE port from strip a to strip b, not two terminals; two drawn ground sheets do not help,
+  since equal surfaces tie and a second ground is then "neither a terminal nor the reference". A united ground (one
+  Boolean) would be one conductor, but openEMS writes a boolean as a polyhedron, which leaves out grid nodes on its faces
+  (brief 42), so the ground planes would move. Brief 117 §8 says report, not patch: the owner decides whether 114's
+  RayPath fallback extends to a single wave port, and whether box-face grounds count as the reference for terminals. Brief written: `docs/sonnet-briefs/brief-em3d-121-wave-ports-by-hand.md`.
+- **openEMS does not resolve the Launch's coax at the connector's grid.** The pin is 3 cells across; the run's own line
+  measurement reads 56.72 Ω and ε_eff 3.17 (closed form 50.02 Ω, 2.1). Brief 116's gate 8 found the error linear in the
+  cell (50.88 Ω / 2.22 at r_i/10), and this is that line extended to r_i/1.4. Raising CellsPerWavelength barely moves the
+  pin's cell (111 µm at 90, 2.3 M cells) because openEMS honours no mesh region; 20 cells across the pin needs 575, which
+  is 137 million cells for this box. A cylindrical grid cannot serve a coax that meets a board. The README tells the
+  reader Palace's answer is the one to trust on this cell; whether to ship the openEMS setup that way is the owner's call.
+- **Pair's section is S = 0.4 mm, not the first choice of 0.3 mm**, because at 0.3 mm the grid's thirds rule is broken by
+  grading in the gap and the odd mode runs slow (max |ΔS| 0.26 against Cohn; `src/Engine/RESOLVED.md`, "a thirds pair
+  broken by grading"). At b 2 mm, W 1.65, S 0.4 mm, Cohn's Z₀e/Z₀o are 57.51/43.10 Ω and openEMS lands within 0.0027 of
+  his ideal line over the whole matrix, 2–18 GHz. The default MinCell (a tenth of the 1.6 mm strip) equalled the feed's
+  cell and raised a stream of "closer than MinCell" warnings, so the setup states MinCellUm 10, as brief 116's gate does.
+- **The em-setup page had S21 and S31 swapped.** With terminals 1 and 2 at one end and 3 and 4 at the other, S21 is the
+  near-end coupling and S31 the thru; it named them "thru, near-end". Corrected with the example's link.
+- **The Palace gap port's deep 18 GHz null was the gap.** With the wave port, |S11| at 18 GHz is −19.53 dB on Palace where
+  the lumped gap port read −40.75 dB. Palace's mode impedance at the Draft preset is 49.18–49.31 Ω.
+
+## brief-em3d-121 — the 3D Wave Ports example made by hand (2026-10-06)
+
+Both cells' ports are now made with the editor's gestures; the reasons are in `src/Design/RESOLVED.md` and
+`src/Ui/ThreeD/RESOLVED.md` § brief-em3d-121. Gate: `tests/Ui.Tests/ThreeD/WavePortsByHandTests.cs`.
+
+- **Pair's four terminals are what *Make Port ▸ Wave* writes** on the fill's xmin and then xmax face, re-made by
+  `WavePortsByHandTests.AuthorTheExamplesPorts` (`CRF_AUTHOR_3D_WAVE_PORTS=1`). The only change in the file is each
+  port's rectangle, now numbers (the gesture writes the face's DBU) where it was the VARs' expressions; the values are
+  the same, so the lowered problem is identical (gate 3) and the recorded numbers stand.
+- **The Launch's P1 states only its rectangle**: `Positive`, `Negative` and `VoltagePath` are gone, and the inferred
+  path is exactly the one that was stated. The rectangle stays the 2 × 2 mm one the Port tool draws, the owner's
+  choice: *Make Port ▸ Wave* on the bore's end face gives the 1.34 mm square round the disc, on which openEMS refused the
+  run (its current probe had 106 µm of room where it needs one 153 µm cell) and Palace's Draft |S| moved by up to
+  1.9 dB. The README teaches the Port tool for P1 and says what the face gesture gives.
+- **Gate 4 re-run on the shipped files**: all three runs reproduce their recorded |S| within tolerance (largest difference 0.015 dB), so no number in the README or the new-user guide moved.
+- **`TerminalWavePortTests.Gate5` failed before this brief**, from brief 117 on: it asserted that no shipped `.c3d`
+  contains `Terminals` or `Reference`, and Pair does. It now asserts only that re-saving adds neither key to a file that
+  lacked it.

@@ -1,0 +1,33 @@
+{
+  "FormatVersion": 1,
+  "DbuPerMicron": 1000,
+  "DisplayUnit": "Mil",
+  "SnapDbu": 25400,
+  "AngleMode": "AnyAngle",
+  "TechRef": "../../tech/board-and-connector.ctech",
+  "Shapes": [
+    {
+      "$type": "Rect",
+      "Layer": {
+        "Layer": 20,
+        "Datatype": 0
+      },
+      "X1": 0,
+      "Y1": -2540000,
+      "X2": 5080000,
+      "Y2": 2540000
+    },
+    {
+      "$type": "Rect",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "X1": 101600,
+      "Y1": -787400,
+      "X2": 5080000,
+      "Y2": 787400
+    }
+  ],
+  "Instances": []
+}

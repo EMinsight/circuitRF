@@ -125,11 +125,14 @@ Palace's modal wave port handles it as today. openEMS would need a mode-matching
 | 118 | Example: 3D Eigenmode | — | Microstrip in a lidded cavity; the same cavity with a grounded pillar; eigenmode plus a driven sweep showing the notch move |
 | [119](brief-em3d-119-palace-magnetic-wall-spike.md) | Spike: Palace terminal ports by symmetry (the magnetic-wall edge) | 113-a (nothing else) | Go/no-go for Palace terminal ports: a PMC strip between per-line ports (even mode) combined with 113-a's touching ports (odd), or a PMC/PEC symmetry half-model. No shipped code. Not urgent |
 | [120](brief-em3d-120-openems-cylindrical-grid.md) | openEMS: a cylindrical grid, exact cylinders and a weighted source | 116 | `OpenEms.Grid: Cylindrical` on a `.c3d` setup; booleans of primitives written as prioritised operands; a coax terminal fed in its own 1/ρ profile. Meets 116's coax criterion for problems round about one axis |
+| [121](brief-em3d-121-wave-ports-by-hand.md) | Wave ports by hand: a coax, and terminals against the air box's ground | 114, 116, 117 | A single wave port infers a coax's voltage path (114's `RayPath` fallback, enclosure only); *Make Port ▸ Wave* writes terminals when the ground is the air box's PEC faces, which count as one reference. 117's two ports re-made by the gesture |
+| [122](brief-em3d-122-thirds-pair-grading.md) | openEMS grid: no line inside a thirds pair | — | Measure, then repair the grading that splits a thirds pair when two edges face across a gap just wider than the clamp allows (117's S 0.3 mm pair: max \|ΔS\| 0.26 against Cohn). No churn for clean grids |
 
 **Build order** (after 113-a): **118** any time (no engine work). **114 → 116 → 117** is the main line; 116's
 single-terminal half (the coax) needs no 114 and can start first. **120 after 116**: it extends 116's coax source and
 probes, and its gates run wave ports. **119 any time**: a scratch spike that changes no code and blocks nothing; run it
-when solver time is free, and before anyone builds Palace terminal ports.
+when solver time is free, and before anyone builds Palace terminal ports. **121 and 122 after 117**, independent of each other: 121 makes 117's ports by hand, 122
+fixes the grid defect 117 worked around.
 
 ### 2a. UI and user docs: where each lands
 
