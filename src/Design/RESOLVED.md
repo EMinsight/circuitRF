@@ -17299,3 +17299,183 @@ converged in 3 iterations and mode 2's residual sat at 3–6 × 10⁻⁵ against
 - **The rows with a Q near 1 are real.** With two lumped 50 Ω ports, a matched line through the cavity has poles with
   Q ≈ 1.1–1.4 and ~83 % of their energy in the laminate. Shift-and-invert about `Target` finds them because they are near
   it in the complex plane; they are what Count 3 returns beside the cavity mode, not an artefact of the fix.
+
+## Palace terminal ports by symmetry — brief-em3d-119 (2026-10-06)
+
+A measurement spike, no product code. Palace **v0.18.1** (`0dc74cd`, still upstream's latest release), 8 MPI ranks,
+Apple M4 / 16 GB. Fixtures, configs and every departure from 113-a's runs: `testdata/em3d/terminal/palace-symmetry/`
+and its README. Every S below is at a 50 Ω terminal reference, 5 GHz on geometry A.
+
+**Read first.**
+- `docs/src/guide/boundaries.md`: PMC is the natural condition and can be stated with `Boundaries.PMC`; the 2D port
+  solve honours PEC and PMC; a touching port's edges are PEC in the other port's mode solve.
+- `palace/models/waveportoperator.cpp` (≈ line 1560), which says exactly which edges are Dirichlet in a port's mode
+  solve: `PEC` + `WavePortPEC` + every other ACTIVE wave port's attributes. **Anything else on a port's edge, a stated
+  `PMC` strip included, is natural (magnetic).** That is what route A rests on, and no undocumented key is needed.
+- `scripts/schema/config-schema.json`: `PMC`, `WavePortPEC`, `WavePort`. There is no `WavePortPMC`.
+- Issues (read only): [#251](https://github.com/awslabs/palace/issues/251) and
+  [#328](https://github.com/awslabs/palace/issues/328) (the symmetry route; #328 still open),
+  [#960](https://github.com/awslabs/palace/issues/960) (open: the port's normalisation and conjugate projection are
+  exact only for a LOSSLESS port cross-section), [#265](https://github.com/awslabs/palace/issues/265) /
+  [#703](https://github.com/awslabs/palace/issues/703) (non-PEC boundaries in the port solve),
+  [#920](https://github.com/awslabs/palace/issues/920), [#736](https://github.com/awslabs/palace/issues/736).
+  Searches for PMC on wave-port edges, symmetry planes, even/odd ports, magnetic walls and absorbing boundaries beside a
+  microstrip found nothing more on point.
+
+**The harness had to be rebuilt.** 113-a's was in a session scratchpad and is gone. The rebuild was checked against
+113-a's committed fixtures before anything else: the per-line run reproduces `pair-a-per-line`'s Z_PV to every printed
+digit (68.8686 Ω) and its S to 0.01 dB, and `pair-b-per-line`'s Z_PV to 0.01 Ω. The 2D references were rebuilt the same
+way and reproduce 113-a's: A 101.944 / 70.881 Ω (113-a 101.95 / 70.885); B quasi-static 58.611 Ω / 2.9101 and
+40.704 Ω / 2.4283 (113-a 58.62 / 2.910, 40.72 / 2.4285).
+
+**R-em3d119-1a — route A, a PMC strip between the per-line ports.** Each port's mode becomes half of the EVEN mode, as
+designed: Z_PV 108.44 / 104.32 Ω at g = 0.3 / 0.15 mm (r2) and 108.95 / 104.80 / 103.12 Ω at g = 0.3 / 0.15 / 0.075 mm
+(r3), falling toward the 2D PMC-midline half (101.94) as g → 0. **But the brief's prediction about the singular values
+is wrong:** they are not two at 1 and two lost. All four are 0.998–1.0005. The odd mode is not lost here; it is
+**reflected** (its modal |S11| 0.38–0.44, |S21| 0.90–0.92, power conserved), because the strip lies across the odd
+mode's strongest field, the gap between the strips. So **σ_min cannot see route A's wrong half**, unlike 113-a's
+touching ports: the gap run's own 4-port at r3 reads σ 1.0001 / 0.9981 and has the far-end phase 16.4° wrong.
+
+**The renormalised result does not depend on g**, although Z_PV moves 6 %. Combined with the touching run's odd half by
+§3 (each modal 2-port renormalised from its own Z_PV to 50 Ω):
+
+| run | Z_PV even / odd | line Zc even / odd | thru Δ dB / ° | near-end | far-end | S11 | max \|ΔS\| | σ max / min |
+|---|---|---|---|---|---|---|---|---|
+| A r2, g 0.3 | 108.44 / 68.87 | 100.00 / 67.77 | +0.113 / −0.34 | +0.845 / −0.15 | +0.238 / −1.50 | −0.498 / −0.27 | 0.0265 | 1.0005 / 0.9995 |
+| A r2, g 0.15 | 104.32 / 68.87 | 99.99 / 67.77 | +0.114 / −0.33 | +0.843 / +0.01 | +0.235 / −1.60 | −0.498 / −0.22 | 0.0265 | 1.0005 / 0.9995 |
+| A r3, g 0.3 | 108.95 / 70.14 | 101.12 / 69.45 | +0.051 / −0.18 | +0.401 / −0.05 | +0.130 / −0.48 | −0.218 / −0.17 | 0.0118 | 1.0001 / 0.9998 |
+| A r3, g 0.15 | 104.80 / 70.14 | 101.13 / 69.45 | +0.051 / −0.15 | +0.406 / +0.05 | +0.133 / −0.81 | −0.216 / −0.14 | 0.0117 | 1.0002 / 0.9998 |
+| A r3, g 0.075 | 103.12 / 70.14 | 101.13 / 69.45 | +0.051 / −0.14 | +0.405 / +0.08 | +0.134 / −0.86 | −0.216 / −0.13 | 0.0117 | 1.0001 / 0.9998 |
+
+"Line Zc" is the characteristic impedance of each modal 2-port read back from its Z matrix, i.e. the line the 3D mesh
+actually solved. g changes only the far-end phase (−0.48° → −0.86°, toward route B's −1.07° at the same density, below).
+The rest of the error is the 3D line itself: the odd mode reads 69.45 Ω against 70.885 at r3. Wall clock: 103–115 s a
+run at r3 (ND 2.07 M, peak 6.8–9.4 GB), 14–16 s at r2; one excitation each.
+
+**R-em3d119-1b — route B, the half-model: go on A.** One line, the cut plane `PMC` (even) or `PEC` (odd), one wave port
+per end, port 1 excited (port 2 follows from the end-to-end mirror). At equal density it is route A to within 0.0002
+\|ΔS\| (r3: 0.0119 against 0.0117). **The error is the 3D line's discretisation, halving from r2 to r3, so the lever is
+mesh at the strips' edges, not the route:** a second size field on the strip's long edges (SizeMin e, DistMin 0.02,
+DistMax 0.3 mm, growing to the r3 size):
+
+| mesh | ND, wall (each run) | Z_PV even / odd | line Zc even / odd | thru | near-end | far-end | S11 | max \|ΔS\| | σ |
+|---|---|---|---|---|---|---|---|---|---|
+| r2 | 153 k, 5.5 s | 100.92 / 68.87 | 100.09 / 68.06 | +0.105 / −0.29 | +0.750 / +0.15 | +0.194 / −1.74 | −0.453 / −0.24 | 0.0242 | 1.0002 / 0.9998 |
+| r3 | 1.06 M, 38–40 s | 101.55 / 70.18 | 101.12 / 69.43 | +0.052 / −0.16 | +0.412 / +0.07 | +0.141 / −1.07 | −0.220 / −0.14 | 0.0119 | 1.0001 / 0.9999 |
+| r3, e 0.05 | 1.97 M, 75 s | 101.79 / 70.62 | 101.67 / 70.39 | +0.018 / −0.06 | +0.139 / +0.04 | +0.048 / −0.35 | −0.073 / −0.05 | 0.0040 | 1.0000 / 1.0000 |
+| r3, e 0.03 | 2.19 M, 75–78 s | 101.86 / 70.74 | 101.80 / 70.65 | +0.009 / −0.03 | +0.064 / +0.01 | +0.019 / −0.20 | −0.036 / −0.02 | 0.0020 | 1.0000 / 1.0000 |
+| **r3, e 0.02** | **2.57 M, 99–103 s, ≤ 7.4 GB** | 101.89 / 70.79 | 101.86 / 70.74 | **+0.005 / −0.02** | **+0.038 / +0.01** | **+0.011 / −0.11** | **−0.021 / −0.01** | **0.0012** | **1.0000 / 1.0000** |
+
+Every entry here is above −30 dB (S11 −6.5, near-end −17.2, far-end −22.4 dB), so the bar is 0.05 dB / 0.5° on all four,
+and r3 e 0.02 meets it with σ within 0.0001 of 1. Against an ideal coupled line built from Palace's OWN port solution
+(each half's Z_PV and kₙ) the same result is within |ΔS| 0.0004: the combination adds nothing; what remains is mesh.
+**Cost against one 113-a run:** two runs of 99 + 103 s against 113-a's r3 per-line run (326 s, four excitations, and
+wrong). A half-model whose two ends are not mirror images needs both its ports excited: the asymmetric runs below took
+194–201 s with two excitations against 103–115 s with one.
+
+**Route A at the go mesh was not run.** The full model at r3 e 0.02 is about 5 M unknowns and, scaling the half-model's
+peak, about 14–15 GB, which is the whole of this 16 GB machine. At every density that was run, route A and route B agree
+to 0.0002 |ΔS| apart from the strip's far-end phase, so nothing suggests route A would do better; it costs twice as much.
+
+**R-em3d119-1c — geometry B (microstrip pair, εr 3.5), route B.**
+- **On 113-a's box (first-order absorbing sides and lid 3 mm out), the even half loses power: no-go as built.**
+  |S11|² + |S21|² of the even (PMC) half is 0.945 at 2 GHz and 0.893 at 6 GHz; the odd (PEC) half's is 0.999 / 0.993.
+  Combined: σ_min 0.951 / 0.906, max |ΔS| 0.034 / 0.051. The ports' kₙ are real (Im ~1e-20) and the port windows never
+  touch the absorbing faces, so #960's lossy-port error does not apply. **One change settles the mechanism:** the same
+  two runs with the sides and lid PEC instead of absorbing give 0.9999 / 0.9987 (even) and 1.0000 / 1.0000 (odd), with
+  Z_PV unchanged. The even mode, with no PEC midline to confine it, reaches the absorbing faces, and a first-order
+  absorbing boundary parallel to the line loads a guided quasi-TEM field. 113-a's per-line B (σ_min 0.56 / 0.25) carried
+  this loss as well as the missing even mode; its share was not separated.
+- **Shielded (PEC sides ±4.25 mm, PEC lid 3.508 mm), the route is exact.** Reference: the quasi-static 2D solve of that
+  box (57.103 Ω / 2.8269, 40.646 Ω / 2.4245). Port windows covering the whole end face changed nothing measurable at r2
+  (Z_PV even 56.12 → 56.61 Ω; combined S within 0.01 dB). At r3 e 0.02 (ND 3.27 M, **333–338 s for two frequencies, over
+  the brief's five minutes**): σ 1.0000 / 1.0000 at both frequencies; against the quasi-static reference,
+
+  | f | thru | near-end | far-end | S11 (\|ΔS\| only, −31 dB) | max \|ΔS\| |
+  |---|---|---|---|---|---|
+  | 2 GHz | −0.003 dB / −0.08° | +0.149 dB / −0.11° | +0.094 dB / −0.46° (−28.8 dB: \|ΔS\| 0.0005) | 0.0018 | 0.0025 |
+  | 6 GHz | −0.012 dB / −1.04° | (−34 dB: \|ΔS\| 0.0047) | +0.760 dB / −1.10° | 0.0016 | 0.0180 |
+
+  So B misses 0.1 dB / 1° on the 2 GHz near-end and on the 6 GHz thru phase and far-end. **The miss is the reference, not
+  the route**: against an ideal coupled line built from Palace's own port Z_PV and kₙ, the same result is within |ΔS|
+  0.0006 / 0.04 dB / 0.15° at 2 GHz and 0.0005 / 0.02 dB / 0.06° at 6 GHz, and the 3D line Palace solved agrees with its
+  own 2D port mode (even 59.44 Ω / ε_eff 2.878 from the 3D result, 59.47 Ω / 2.877 from the port at 6 GHz). What differs
+  from quasi-static is the full-wave line: even ε_eff 2.834 → 2.877 and Z_PV 57.40 → 59.47 Ω from 2 to 6 GHz, odd
+  2.427 → 2.434 and 40.66 → 41.11 Ω. A quasi-static reference cannot judge a microstrip pair to 1° at 6 GHz; a full-wave
+  2D mode solve (Palace's `BoundaryMode`, or a second solver) would be needed to call B either way.
+- **Measured trap in the scratch analysis:** extracting a line's electrical length with arccos folds at 180°, and the
+  even line here is 184° long at 6 GHz. Folded, it read ε_eff 2.65; unfolded, 2.90.
+
+**R-em3d119-1d — how much asymmetry the combination tolerates.** Line 2 made 10 % wider (1.32 mm), nothing else
+changed. In homogeneous air every mode of any cross-section is TEM at k₀, so the exact 4-port is the multiconductor line
+built from the 2D 2 × 2 capacitance matrix (Zc = C⁻¹/c); it reduces to the even/odd formula to 7e-14 on the symmetric
+pair. That replaced the brief's openEMS comparison: it is exact rather than 0.0016 off (brief 116's pair), and needs no
+second geometry. **The formula alone**, i.e. §3 applied to the exact asymmetric 4-port by projecting on (1, ±1)/√2:
+
+| line 2 wider by | max \|ΔS\| | S11 / S33 | thru S21 / S43 | σ_min |
+|---|---|---|---|---|
+| 1 % | 0.0021 | −0.039 / +0.039 dB | +0.011 / −0.011 dB | 1.0000 |
+| 2 % | 0.0042 | −0.077 / +0.078 dB | +0.023 / −0.023 dB | 1.0000 |
+| 3 % | 0.0063 | −0.116 / +0.118 dB | +0.034 / −0.034 dB | 1.0000 |
+| 5 % | 0.0105 | −0.194 / +0.199 dB | +0.056 / −0.055 dB | 0.9999 |
+| 10 % | 0.0209 | −0.392 / +0.410 dB | +0.108 / −0.106 dB | 0.9997 |
+
+The coupling entries stay exact (the combination is reciprocal); the formula averages the two lines' self terms, and the
+error is linear in the asymmetry. **The 0.05 dB bar is crossed at about 1.3 % width difference and the 0.006 |ΔS| bar at
+about 3 %. Nothing detects it:** σ stays at 1.000 to 5 %. **Palace route A on the 10 % pair** (g 0.075, r3, ports 1 and
+3 excited, 194 + 201 s): Z_PV 103.07 / 96.71 Ω (even halves) and 70.18 / 67.11 Ω (odd halves); against the exact pair,
+max |ΔS| 0.0323, S11 −0.612 dB, thru +0.154 dB, near-end +0.385 dB, far-end +0.120 dB / −0.91°, S33 |ΔS| 0.0096, σ
+1.0000 / 0.9995. That is the formula's 0.021 plus the r3 mesh's 0.012 seen on the symmetric pair, so the 2D numbers above
+are the asymmetry rule. **Input to a refusal rule for 115: refuse, do not warn.** A warning would be on a result whose
+error no check can see, and a 1.3 % width difference is a fabrication tolerance.
+
+**Go/no-go: GO, route B, for mirror-symmetric two-conductor faces.** On A at 113-a's spacing, route B meets 0.05 dB /
+0.5° on all four entries with max |ΔS| 0.0012 and σ within 0.0001 of 1, at about 100 s a run, two runs (r3 plus
+0.02 mm edge refinement; at 113-a's own r3 it does not, by its mesh, as no Palace setup at that density would). B's
+route is exact against Palace's own port modes but misses 0.1 dB / 1° against a quasi-static reference that a full-wave
+microstrip line does not follow; and on 113-a's open box it needs its absorbing faces kept clear of the even mode.
+What a rewritten brief 115 would build:
+- **Route B, not route A:** two runs on a half-model the lowering cuts at a declared symmetry plane (`PMC` for even,
+  `PEC` for odd), one ordinary wave port per end with `VoltagePath` signal → ground, each modal 2-port renormalised from
+  its own Z_PV, then §3. No touching ports, no PMC strip, half the unknowns, and every quantity it reads is documented.
+  Route A doubles the cost, adds a g-dependent far-end phase, and its even run hides a wrong odd half from σ.
+- **Recognising a symmetric face:** geometric mirror symmetry of everything the solve sees (conductors, materials,
+  boundaries, ports and their paths) about one plane, checked by the lowering, with the two terminals mirror images.
+  Anything else is refused by name, per §4d.
+- **Check losslessness per half, not only on the result:** the even half on B lost 5–11 % with the combined σ_max still
+  1.0000. On a lossless structure, |S11|² + |S21|² of each half is the check that would have caught it.
+- **Mesh:** the strip-edge refinement is what made the bar; 113-a's densities do not, by either route.
+
+**Solver time:** about 42 minutes in total. Two runs (geometry B at r3 e 0.02, 333 and 338 s) were over five minutes:
+the edge field was sized on A's half-model and not re-sized for B's two frequencies before launch.
+
+**If upstream fixes this.** Route B is a workaround for a Palace limitation, not a design circuitRF wants for its own
+sake. It needs mirror symmetry, two runs and a refusal rule, and it cannot do an asymmetric pair or more than two
+conductors. Palace may remove the limitation, and then circuitRF should follow it.
+- **What to watch.** [#328](https://github.com/awslabs/palace/issues/328) (open: wave ports that discriminate degenerate
+  TEM modes) is the one that matters. A fix there is what makes several modes on one shared face (113-a's
+  `pair-a-shared-face`, σ_max 1.27 today) or true per-conductor ports usable. Also watch any new key that makes a
+  touching port's shared edge magnetic (a `WavePortPMC` beside `WavePortPEC`), and
+  [#960](https://github.com/awslabs/palace/issues/960) (lossy-port normalisation, which moves S phase on lossy port
+  cross-sections; it does not touch this spike's lossless runs, but it does touch every Palace wave-port golden on a
+  lossy substrate). Read `CHANGELOG.md` for these each time circuitRF moves its validated Palace version
+  (`SolverDiscovery.Create`'s `validated` list). That bump is the moment to check, because circuitRF validates one Palace
+  build at a time.
+- **What to re-run, on the new version and nothing else changed.** (1) 113-a's `pair-a-shared-face` and
+  `pair-a-per-line` configs as they are, plus whatever setup the fix documents. (2) This brief's route B go mesh
+  (`a-half{PMC,PEC}-r3e0.02`) as the comparison: it should reproduce, and it is the in-solver answer the new route must
+  match. (3) The 10 %-asymmetric pair (`asym-*`) against the exact multiconductor reference in R-em3d119-1d. That is the
+  case route B cannot do and the main reason to switch. Judge by this brief's bar: 0.05 dB / 0.5° above −30 dB, |ΔS| ≤
+  0.006 below, **σ_min as well as σ_max** within 0.002 of 1, and per-port |S11|² + |S21|² where a port can be isolated.
+  113-a showed σ_max alone is blind to a missing mode; this brief showed σ can be blind to a wrong one.
+- **What then changes.** If the native route meets the bar on A and on the asymmetric pair: brief 115 (or its successor)
+  lowers a multi-terminal port natively, the symmetry recognition and its refusal go away, and D14 becomes "both
+  solvers". If route B was built in the meantime, retire it in the same change that moves the validated version, rather
+  than keeping two Palace terminal routes. circuitRF never runs an unvalidated Palace, so there is no older-version
+  user for it to serve. Keep this brief's fixtures as the reference numbers the native route was checked against. If
+  the fix only adds a magnetic-edge key (no mode discrimination), route A loses its PMC strip and runs on the drawn model
+  without cutting it, but it still needs symmetry and two runs. Re-measure route A against route B at the go mesh before
+  preferring it; on cost alone route B still wins.
+- **The harness is in `tools/palace-symmetry-spike/`** (moved there after the spike, at the owner's request; the brief
+  had kept it to a scratchpad, which is how 113-a's was lost). Its README gives the `run.sh` line for each fixture.
+  Before trusting a rebuilt mesh on a new Palace, reproduce a committed fixture first, as this spike did against 113-a's.

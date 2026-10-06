@@ -89,6 +89,10 @@ examples/*/results/
 tools/Viewer3dSpike/native/
 tools/Viewer3dSpike/data/
 
+# Brief em3d-119 spike harness: its meshes and Palace output (runs/), and a machine's own PATH (env.sh)
+tools/palace-symmetry-spike/runs/
+tools/palace-symmetry-spike/env.sh
+
 # OpenCASCADE never enters this repository (brief-em3d-61/62, owner decision 2026-09-27): not its source
 # archive, not its source tree, not a build tree, not a library. A spike build is ~5 GB. Building
 # circuitRF from source fetches OCCT with the recipe (tools/geometry-worker/occt/) into the per-user cache

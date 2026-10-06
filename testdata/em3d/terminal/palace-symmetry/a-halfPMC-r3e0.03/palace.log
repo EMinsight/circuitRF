@@ -1,0 +1,141 @@
+>> mpirun -n 8 palace-arm64.bin config.json
+
+_____________     _______
+_____   __   \____ __   /____ ____________
+____   /_/  /  __ ` /  /  __ ` /  ___/  _ \
+___   _____/  /_/  /  /  /_/  /  /__/  ___/
+  /__/     \___,__/__/\___,__/\_____\_____/
+
+Git changeset ID: 0dc74cd
+Running with 8 MPI processes
+Device configuration: cpu
+Memory configuration: host-std
+libCEED backend: /cpu/self/xsmm/blocked
+
+
+Characteristic length and time scales:
+ Lc = 1.500e-02 m, tc = 5.003e-02 ns
+Finished partitioning mesh into 8 subdomains
+
+Mesh curvature order: 1
+Mesh bounding box:
+ (Xmin, Ymin, Zmin) = (+0.000e+00, -7.400e-03, -1.000e-03) m
+ (Xmax, Ymax, Zmax) = (+1.500e-02, +0.000e+00, +1.000e-03) m
+
+Parallel Mesh Stats:
+
+                minimum     average     maximum       total
+ vertices          7521        8143        9043       65151
+ edges            50282       52095       54683      416767
+ faces            83569       84768       86472      678151
+ elements         40803       40816       40861      326535
+ neighbors            2           3           4
+
+            minimum     maximum
+ h       0.00163471   0.0202024
+ kappa      1.02811      6.9452
+
+Estimated current per-rank memory usage is: Min. 30.9M, Max. 187.8M, Avg. 51.8M, Total 414.4M
+Estimated current per-node memory usage is: Min. 414.4M, Max. 414.4M, Avg. 414.4M, Total 414.4M
+
+Configuring Robin impedance BC for wave ports at attributes:
+ 4: Index = 1, mode = 1, d = 0.000e+00 m,  n = (-1.0,+0.0,+0.0)
+ 5: Index = 2, mode = 1, d = 0.000e+00 m,  n = (+1.0,+0.0,+0.0)
+
+Configuring wave port excitation source term at attributes:
+ 4: Index = 1
+
+Configuring Dirichlet PEC BC at attributes:
+ 10-11
+
+Computing frequency response for:
+Excitation with index 1 has contributions from:
+ Wave port  1
+
+Assembling system matrices, number of global unknowns:
+ H1 (p = 2): 481918, ND (p = 2): 2189836, RT (p = 2): 3014058
+ Operator assembly level: Partial
+ Mesh geometries:
+  Tetrahedron: P = 20, Q = 14 (quadrature order = 4)
+
+Calculating boundary modes at wave ports for ω/2π = 5.000e+00 GHz (1.572e+00)
+ Number of global unknowns for port 1:
+  H1: 3647, ND: 8882
+ Port 1, mode 1: kₙ = 1.048e+02-1.185e-20i m⁻¹, Z_PV = 1.019e+02 Ω
+ Number of global unknowns for port 2:
+  H1: 3647, ND: 8882
+ Port 2, mode 1: kₙ = 1.048e+02-1.092e-21i m⁻¹, Z_PV = 1.019e+02 Ω
+
+Assembling multigrid hierarchy:
+ Level 0 (p = 1): 416767 unknowns
+ Level 1 (p = 2): 2189836 unknowns
+ Level 0 (auxiliary) (p = 1): 65151 unknowns
+ Level 1 (auxiliary) (p = 2): 481918 unknowns
+
+It 1/1: ω/2π = 5.000e+00 GHz (total elapsed time = 1.09e+01 s)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 5.832834e+03
+  1 (restart 0) KSP residual norm 1.545733e+01
+  2 (restart 0) KSP residual norm 1.849805e+00
+  3 (restart 0) KSP residual norm 2.004550e-01
+  4 (restart 0) KSP residual norm 1.260519e-01
+  5 (restart 0) KSP residual norm 2.047210e-02
+  6 (restart 0) KSP residual norm 9.247973e-03
+  7 (restart 0) KSP residual norm 3.894951e-03
+  8 (restart 0) KSP residual norm 1.540867e-03
+  9 (restart 0) KSP residual norm 6.820744e-04
+ 10 (restart 0) KSP residual norm 3.188844e-04
+ 11 (restart 0) KSP residual norm 1.418907e-04
+ 12 (restart 0) KSP residual norm 6.800668e-05
+ 13 (restart 0) KSP residual norm 3.372461e-05
+GMRES solver converged in 13 iterations (avg. reduction factor: 2.324e-01)
+ Sol. ||E|| = 5.184206e+01 (||RHS|| = 1.899134e+00)
+ Field energy E (2.502e-11 J) + H (2.502e-11 J) = 5.005e-11 J
+ S[1][1] = -6.374e-04-5.132e-06i, |S[1][1]| = -6.391e+01, arg(S[1][1]) = -1.795e+02
+ S[2][1] = -1.417e-03-1.000e+00i, |S[2][1]| = +1.219e-05, arg(S[2][1]) = -9.008e+01
+ Updating solution error estimates
+
+Completed 0 iterations of adaptive mesh refinement (AMR):
+ Indicator norm = 3.613e-02, global unknowns = 2189836
+ Max. iterations = 0, tol. = 1.000e-02
+
+Estimated peak per-rank memory usage is: Min. 1021.1M, Max. 1.1G, Avg. 1.0G, Total 8.2G
+Estimated peak per-node memory usage is: Min. 8.2G, Max. 8.2G, Avg. 8.2G, Total 8.2G
+
+Elapsed Time Report (s)           Min.        Max.        Avg.
+==============================================================
+Initialization                   0.375       1.029       0.945
+  Mesh Preprocessing             1.113       1.764       1.195
+Operator Construction            3.472       3.545       3.516
+  Wave Ports                     0.246       0.371       0.311
+Linear Solve                     3.821       3.874       3.837
+  Setup                         10.182      10.219      10.201
+  Preconditioner                17.671      17.783      17.721
+  Coarse Solve                  19.054      19.097      19.071
+Estimation                       0.531       0.567       0.553
+  Construction                   8.519       8.535       8.528
+  Solve                         10.531      10.545      10.540
+Postprocessing                   0.666       0.694       0.679
+Disk IO                          0.884       0.887       0.886
+--------------------------------------------------------------
+Total                           78.042      78.042      78.042
+
+Peak Memory                   Per-Node       Total   Total HWM
+==============================================================
+Initialization                   19.5M       19.5M       19.5M
+  Mesh Preprocessing            267.5M      267.5M      287.0M
+Operator Construction             3.2G        3.2G        3.5G
+  Wave Ports                     26.9M       26.9M        3.5G
+Linear Solve                      0.0K        0.0K        3.5G
+  Setup                           1.6G        1.6G        5.1G
+  Preconditioner                 83.6M       83.6M        5.2G
+  Coarse Solve                    0.0K        0.0K        5.2G
+Estimation                        0.0K        0.0K        5.2G
+  Construction                    2.7G        2.7G        7.9G
+  Solve                           0.0K        0.0K        7.9G
+Postprocessing                    0.0K        0.0K        7.9G
+Disk IO                         131.8M      131.8M        8.0G
+--------------------------------------------------------------
+Total                             8.1G        8.1G        8.1G
+
