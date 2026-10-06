@@ -1,0 +1,142 @@
+{
+  "FormatVersion": 1,
+  "Name": "Housing and board: an aluminium housing, a PTFE-glass laminate, copper and a perfect conductor",
+  "DefaultDisplayUnit": "Mm",
+  "DefaultSnapDbu": 10000,
+  "DefaultFlattenTolDbu": 1000,
+  "DefaultLabelHeightDbu": 254000,
+  "DefaultViaPadDbu": 600000,
+  "DefaultViaDrillDbu": 300000,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "Top Copper",
+      "Color": {
+        "r": 204,
+        "g": 120,
+        "b": 60,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 8,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Ground",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "Top Copper",
+        "ThicknessDbu": 17000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Material": "Copper"
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Laminate",
+        "ThicknessDbu": 254000,
+        "Epsr": 2.2,
+        "TanD": 0.0009,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false,
+        "Material": "PTFE-glass laminate"
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Housing floor",
+        "ThicknessDbu": 1000000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 37700000,
+        "DrawingLayers": [],
+        "IsGroundReference": true,
+        "Material": "Aluminium"
+      }
+    ]
+  },
+  "DrcRules": [
+    {
+      "Name": "Top Copper Min Width",
+      "Kind": "MinWidth",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 100000,
+      "Severity": "Error"
+    },
+    {
+      "Name": "Top Copper Min Spacing",
+      "Kind": "MinSpacing",
+      "Layer": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "ValueDbu": 100000,
+      "Severity": "Error"
+    }
+  ],
+  "Materials": [
+    {
+      "Name": "Copper",
+      "Sigma20": 58000000,
+      "Alpha20": 0.00393,
+      "DensityKgM3": 8960,
+      "Color": "#b87333",
+      "Appearance": {
+        "BaseColor": "#FAD1C2",
+        "Metallic": 1,
+        "Roughness": 0.35
+      }
+    },
+    {
+      "Name": "Aluminium",
+      "Sigma20": 37700000,
+      "Alpha20": 0.0039,
+      "DensityKgM3": 2700,
+      "Mur": 1,
+      "Color": "#b8bcc2",
+      "Appearance": {
+        "BaseColor": "#D6D9DD",
+        "Metallic": 1,
+        "Roughness": 0.4
+      }
+    },
+    {
+      "Name": "PTFE-glass laminate",
+      "Epsr": 2.2,
+      "TanD": 0.0009,
+      "Mur": 1,
+      "Color": "#d8d0b0"
+    },
+    {
+      "Name": "Perfect conductor",
+      "Color": "#b87333",
+      "Appearance": {
+        "BaseColor": "#FAD1C2",
+        "Metallic": 1,
+        "Roughness": 0.35
+      }
+    }
+  ]
+}

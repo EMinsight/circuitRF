@@ -17276,3 +17276,26 @@ region; that case keeps the two-conductor reading.
 **D1's note is a new field, `C3dPortResult.Note`.** A stored bare wave port on Pair's face keeps its strip-to-strip reading
 (the reader never invents terminals) and gains a note naming the gesture's alternative. `C3dPortReports.Describe` appends
 it, so `check` and `explain` print it, and `C3dProblemAssembly.Assemble` adds it to the run's notes.
+
+## Palace eigenmode: `MaxIts` is stated, never left to Palace — brief-em3d-118 (2026-10-06)
+
+**An eigenmode run with a lossy metal and `Count` above 1 could run forever.** A finite conductivity makes Palace's
+eigenproblem nonlinear: it solves a linearised problem (SLEPc, seconds) and then refines each mode with a quasi-Newton
+iteration (`nleps.cpp`). That iteration's own default bound is 100 (`if (nleps_it <= 0) nleps_it = 100`), but 0.18.1's
+config reader resolves an unset `Solver.Eigenmode.MaxIts` to **1,000,000** at parse time (`configfile.cpp`, "Resolve
+iteration / subspace sentinels"), so the solver never sees the sentinel. On the 3D Eigenmode example's cavity, mode 1
+converged in 3 iterations and mode 2's residual sat at 3–6 × 10⁻⁵ against a 10⁻⁶ tolerance with Armijo backtracks for
+600+ iterations (~1 s each) before the run was stopped. The 3D Package example never met it: it asks for one mode.
+
+- **Fix (owner's choice, 2026-10-06):** `PalaceConfigWriter` writes `"MaxIts": 100` (`EigenmodeMaxIterations`), Palace's
+  own nonlinear default. A mode that stalls is restarted (up to `MaxRestart` 2) and then the next initial guess is taken,
+  as Palace intends. `MaxIts` bounds the linear SLEPc solve too; it converges in one restart on every case here. Pinned by
+  `PalaceEigenTests.TheWaveAndEigenmodeConfigurations_ValidateAgainstThePinnedSchema`.
+- **A lossy ZERO-THICKNESS SHEET was what stalled, not the walls.** Measured by editing the run folder's `config.json` and
+  running Palace by hand: walls aluminium + the line sheet copper stalled on mode 2 even with `MaxIts` 100 (three restarts of
+  100, then a mode at Q 1.3 after ~10 min). Giving the copper sheet `Thickness` 17 µm changed nothing. The line made a
+  perfect conductor, walls still aluminium: all three modes in 29 s of eigen solve. The example ships its line as a
+  perfect conductor for that reason (`examples/RESOLVED.md`).
+- **The rows with a Q near 1 are real.** With two lumped 50 Ω ports, a matched line through the cavity has poles with
+  Q ≈ 1.1–1.4 and ~83 % of their energy in the laminate. Shift-and-invert about `Target` finds them because they are near
+  it in the complex plane; they are what Count 3 returns beside the cavity mode, not an artefact of the fix.

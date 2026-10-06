@@ -620,9 +620,13 @@ internal static class Explain
         if (src.Elaboration is { } e)
         {
             ThreeDWalk(e, walks);
-            ModelWalk(C3dPersistence.LoadFromFile(full), e, walks);
-            PortWalk(C3dPersistence.LoadFromFile(full), e, walks);
-            ResultWalk(C3dPersistence.LoadFromFile(full), full, e, walks);
+            // Resolved as the elaborator and check resolve it: a field written as an expression (a port's Rect) holds 0 in
+            // its number until Resolve writes the value in, and the port walk measures those numbers.
+            var doc = C3dPersistence.LoadFromFile(full);
+            C3dResolver.Resolve(doc, C3dCell.Of(full));
+            ModelWalk(doc, e, walks);
+            PortWalk(doc, e, walks);
+            ResultWalk(doc, full, e, walks);
         }
         if (objectName is not null)
         {

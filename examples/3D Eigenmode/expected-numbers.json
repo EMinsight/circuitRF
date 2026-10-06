@@ -1,0 +1,46 @@
+{
+  "About": "The key numbers README.md and the EM Setup chapter's Eigenmodes section state, in one place. circuitRF's tests compute the closed form from the cells' VARs, check that each Readme text appears in README.md (and each Headline text in em-setup.md too), and the Benchmark gate re-runs the four setups: the cavity mode's frequency within 0.2 %, the Cavity's notch within one sweep step of its eigenmode, and Cavity with post's cavity mode above the band. Measured once on an Apple M4 (10 cores, 16 GB), macOS 27.0, Palace 0.18.1 on 10 processes, Gmsh 4.15.2. A time is the whole run's wall clock; memory is Palace's own peak over its processes. CavityMode is the row of the mode table that is the cavity's resonance: the first with a Q above 10, since the rows with a Q near 1 are the line between its ports.",
+  "Band": { "StartGHz": 8, "StopGHz": 12, "StepGHz": 0.005, "Readme": "8–12 GHz" },
+  "ClosedForm": { "AMm": 22, "DMm": 20, "Expected": 10.1289, "Readme": "10.13 GHz" },
+  "Headline": [ "9.956 GHz", "539", "−11.69 dB", "12.84 GHz" ],
+  "Cells": [
+    {
+      "Cell": "Cavity",
+      "CavityMode": 1,
+      "Modes": {
+        "Preset": "Draft, element order 2, EdgeRefinement 1, Direct",
+        "Cost": [ "3 min 42 s", "3.7 GB" ],
+        "Values": [
+          { "Mode": 1, "GHz": 9.95642, "Q": 539.10, "QUnloaded": 3236.0, "Readme": [ "9.956 GHz", "539", "3,236" ] },
+          { "Mode": 2, "GHz": 10.18353, "Q": 1.101, "Readme": [ "10.18 GHz" ] },
+          { "Mode": 3, "GHz": 14.43185, "Q": 1.373, "Readme": [ "14.43 GHz" ] }
+        ]
+      },
+      "Driven": {
+        "Preset": "Draft, element order 2, EdgeRefinement 1, Direct",
+        "Cost": [ "34 s", "4.3 GB" ],
+        "NotchGHz": 9.955, "NotchDb": -11.694, "MinS21Db": -11.694,
+        "Readme": [ "9.955 GHz", "−11.69 dB" ]
+      }
+    },
+    {
+      "Cell": "Cavity with post",
+      "CavityMode": 2,
+      "Modes": {
+        "Preset": "Draft, element order 2, EdgeRefinement 1, Direct",
+        "Cost": [ "1 min 47 s", "4.9 GB" ],
+        "Values": [
+          { "Mode": 1, "GHz": 10.22119, "Q": 1.105, "Readme": [ "10.22 GHz" ] },
+          { "Mode": 2, "GHz": 12.84366, "Q": 2480.3, "QUnloaded": 2879.0, "Readme": [ "12.84 GHz", "2,480", "2,879" ] },
+          { "Mode": 3, "GHz": 14.45165, "Q": 1.370, "Readme": [ "14.45 GHz" ] }
+        ]
+      },
+      "Driven": {
+        "Preset": "Draft, element order 2, EdgeRefinement 1, Direct",
+        "Cost": [ "41 s", "4.3 GB" ],
+        "NotchGHz": null, "NotchDb": null, "MinS21Db": -0.0926,
+        "Readme": [ "−0.093 dB" ]
+      }
+    }
+  ]
+}

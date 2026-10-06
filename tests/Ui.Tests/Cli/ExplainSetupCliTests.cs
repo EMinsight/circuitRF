@@ -64,6 +64,40 @@ public sealed class ExplainSetupCliTests(ITestOutputHelper output) : IDisposable
         Assert.Contains("is not a 3D view", techOut + techErr);
     }
 
+    /// <summary>brief-em3d-118 — a port whose rectangle is written as expressions. explain measured the file's stored
+    /// numbers, which hold 0 until the document is resolved, and reported "P1's rectangle has no area (0 × 0 DBU)" where
+    /// check resolved the same port; explain now walks the document resolved as the elaborator resolves it.</summary>
+    [Fact]
+    public void APortRectangleWrittenAsExpressions_IsMeasuredAtItsValue()
+    {
+        string ws = Path.Combine(_root, "eig");
+        string src = Path.Combine(ExampleWorkspaces.ResolveRoot(RepoRoot())!, "3D Eigenmode");
+        foreach (string f in Directory.EnumerateFiles(src, "*", SearchOption.AllDirectories))
+        {
+            string to = Path.Combine(ws, Path.GetRelativePath(src, f));
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.Copy(f, to);
+        }
+        string c3d = Path.Combine(ws, "Cavity", "3d", "Cavity.c3d");
+        var node = JsonNode.Parse(File.ReadAllText(c3d))!;
+        node["Ports"]![0]!["Rect"] = JsonNode.Parse(
+            """{ "Min": [{ "Expr": "-w/2", "Unit": "Mm" }, 0], "Size": [{ "Expr": "w", "Unit": "Mm" }, { "Expr": "t_sub", "Unit": "Mm" }] }""");
+        File.WriteAllText(c3d, node.ToJsonString());
+
+        var (exit, stdout, stderr) = RunCli("explain", c3d, "--setup", "Modes");
+        Assert.True(exit == 0, stderr + stdout);
+        Assert.DoesNotContain("has no area", stdout);
+        Assert.Contains("port P1 (setup 'Modes') touches — left: nothing; right: nothing; bottom: 'floor'; top: 'line'. " +
+                        "P1 (lumped) runs from 'floor' to 'line'", stdout);
+    }
+
+    private static string RepoRoot()
+    {
+        for (string? dir = AppContext.BaseDirectory; dir is not null; dir = Path.GetDirectoryName(dir))
+            if (File.Exists(Path.Combine(dir, "circuitrf.slnx"))) return dir;
+        throw new InvalidOperationException("repo root not found");
+    }
+
     private string TwoSetupView()
     {
         const long um = 1000;

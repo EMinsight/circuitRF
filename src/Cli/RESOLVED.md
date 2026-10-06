@@ -2944,3 +2944,13 @@ report. `ExplainLook.cs` is `explain --look`. The design is in `docs/design/cli.
 - **Gate 7 held on the first run.** The dialog's export and `convert` run as a process were byte-identical on a
   fixture whose editor scene also holds a port and an air box. Those objects change the scene's
   buffers and IDs but not what is exported, since vertices are taken in first-use order per object.
+
+## `explain x.c3d` measured an unresolved port rectangle (brief-em3d-118, 2026-10-06)
+
+**A port whose `Rect` is written as expressions read "P1's rectangle has no area (0 × 0 DBU)" in `explain`, while
+`check` and a run resolved it.** A bound field's number is 0 in the file until `C3dResolver.Resolve` writes the value in,
+in place; the elaborator and `check` resolve the document they hand the port resolver, but `ExplainThreeD` gave its
+model, port and result walks three fresh `C3dPersistence.LoadFromFile` copies, never resolved. The port walk measured the
+stored zeros. It now loads one copy, resolves it as the elaborator does (`C3dCell.Of(full)`, no `--set`, matching the
+elaboration it is walked beside) and hands that to all three. The GUI and the thermal current path were checked and
+already resolve first. Gate: `ExplainSetupCliTests.APortRectangleWrittenAsExpressions_IsMeasuredAtItsValue`.

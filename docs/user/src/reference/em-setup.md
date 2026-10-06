@@ -853,6 +853,14 @@ resonance inside my band?". `Eigenmode` sets how many modes (`Count`, default 3)
 - **Participation** is the fraction of each mode's electric energy in each meshed region: it is what
   says where a mode lives.
 
+**Worked example.** **Tools ▸ Examples ▸ 3D Eigenmode** asks the question on its own: a 50 Ω line through an
+aluminium housing, in the band 8–12 GHz. The empty cavity's closed form puts its lowest mode at 10.13 GHz, an upper
+bound, since the laminate on the floor pulls the mode down. The cavity's first mode is at **9.956 GHz** (Q **539**),
+inside the band, and the driven S21 has a **−11.69 dB** notch there. With a grounded post beside the line, the mode is
+at **12.84 GHz**, above the band, and the notch is gone. **The post does not damp the mode; it shortens the cavity the
+mode sees**, so the mode's frequency rises (its Q goes up, not down). The example's mode tables also show rows with a Q
+near 1: those are the line between its two ports, not resonances.
+
 The result is `results/<name>.palace_eig.npy` and no Touchstone file; `circuitrf em` prints the mode
 table and the panel shows it after a run. Palace's own files stay in the run folder.
 

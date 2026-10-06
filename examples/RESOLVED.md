@@ -733,3 +733,40 @@ Both cells' ports are now made with the editor's gestures; the reasons are in `s
 - **`TerminalWavePortTests.Gate5` failed before this brief**, from brief 117 on: it asserted that no shipped `.c3d`
   contains `Terminals` or `Reference`, and Pair does. It now asserts only that re-saving adds neither key to a file that
   lacked it.
+
+## brief-em3d-118 — the 3D Eigenmode example (2026-10-06)
+
+A new workspace, `examples/3D Eigenmode/`: *Cavity* (a 50 Ω microstrip through a lidded aluminium housing) and *Cavity
+with post* (the same, plus one grounded post), each with an eigenmode setup *Modes* and a driven setup *Driven* on Palace,
+and a saved *Cavity mode* field plot. Gate: `tests/Ui.Tests/Examples/Em3dEigenmodeExampleTests.cs`. The two `.c3d` files
+were written as JSON (every object a Box, Sheet or Cylinder a user draws with the tools), not drawn by an authoring test.
+
+- **The brief's example band, 2–12 GHz with the mode near 8 GHz, cannot be met with one post.** A 2D TM estimate
+  (finite-difference Helmholtz, Dirichlet on the walls and the post) over square and rectangular cavities, posts 2–4 mm,
+  clear of the line by 0.8 mm: one post at the mode's maximum raises the first mode by **at most ~30 %** (1.14–1.31×; the
+  square is best; a bigger post must sit further from the centre to clear the line and gains nothing past ~3 mm). The
+  brief's three conditions need ≥1.65× for 2–12 GHz. So the band is X band, **8–12 GHz**, where the closed form (10.13 GHz)
+  is just above the middle and ×1.27 clears 12 GHz. Palace measured ×1.29 (9.956 → 12.84 GHz).
+- **Iterations.** a = d = 21 mm square: Palace's mode 1 at 9.92 GHz (Q 499), but the run did not finish (the nonlinear
+  refinement below). Suspected the square's degenerate TM210/TM120 pair and moved to **a 22 × d 20 mm**, which splits it
+  by 0.9 GHz: no change, the cause was elsewhere. With the cause fixed: Cavity's mode 9.956 GHz, the post's 12.84 GHz,
+  `post_d` 2.5 mm, `post_gap` 0.8 mm, laminate 0.254 mm εr 2.2, `w` 0.78 mm (Hammerstad: 50.16 Ω), h 4 mm.
+- **Palace's eigen refinement never ended** with Count 3 and a lossy line: `src/Design/RESOLVED.md` § Palace eigenmode:
+  `MaxIts`. The owner chose to write `MaxIts`; the example's **line is a perfect conductor** (a material stating neither σ
+  nor εr, with the object's `Role: Conductor`), because a lossy zero-thickness sheet stalled the refinement even with
+  `MaxIts` bounded. The housing and post stay aluminium, so wall loss is in every Q. The README says so.
+- **Count 3 returns two rows with Q ≈ 1** in both cells (10.18/14.43 GHz, then 10.22/14.45 GHz with the post): the line
+  between its ports. With the post they sort below the cavity mode, so *Cavity with post*'s cavity mode is **row 2**. The
+  README teaches the reading (a resonance has Q in the hundreds or more), `expected-numbers.json` records `CavityMode`, the
+  post cell's field plot names mode 2, and gate 5 asserts the recorded row is the first with Q above 10.
+- **The cross-check holds**: Cavity's driven notch is at 9.955 GHz (−11.69 dB at the nearest point) against the
+  eigenmode's 9.9564 GHz, inside the 5 MHz step. The driven mesh is not the eigen mesh (13,750 against 16,177 tetrahedra)
+  and still agrees. With the post, |S21| stays above −0.093 dB over 8–12 GHz.
+- **The post raised the Q** (539 → 2,480 loaded; Q_ext per port 1.3 k → 36 k): with the post the mode moves to the half of
+  the housing away from the post, and less of its field is left at the ports. The README uses it as the evidence that the
+  post shortens the cavity rather than damping the mode.
+- **No εr VAR.** The brief lists "substrate εr" among the VARs, but a `.c3d` cannot bind a material's εr to an expression;
+  a VAR that drove nothing would mislead, so εr is the technology material's and the README says where it lives.
+- **Port rectangles are numbers**, as 3D Package's and 3D Wave Ports' are. While building this, `explain` reported "P1's
+  rectangle has no area (0 × 0 DBU)" for a Rect written as expressions where `check` resolved it; fixed the same day
+  (`src/Cli/RESOLVED.md`, "explain measured an unresolved port rectangle").

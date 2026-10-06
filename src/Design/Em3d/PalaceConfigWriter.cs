@@ -318,6 +318,10 @@ public static class PalaceConfigWriter
             w.WriteStartObject("Eigenmode");
             w.WriteNumber("N", problem.EigenmodeCount);
             w.WriteNumber("Target", problem.EigenmodeTargetHz / 1e9);
+            // brief-em3d-118 — stated, never left to Palace: 0.18.1 resolves an unset MaxIts to 1,000,000 when it reads
+            // the file, which pre-empts its nonlinear solver's own default of 100, so a mode whose quasi-Newton
+            // refinement stalls (a lossy metal) never gives up and the run never ends.
+            w.WriteNumber("MaxIts", EigenmodeMaxIterations);
             if (SavesFields(settings)) w.WriteNumber("Save", problem.EigenmodeCount);     // R-em3d29-1a: every mode
             w.WriteEndObject();
             WriteLinear(w, settings);
@@ -390,6 +394,10 @@ public static class PalaceConfigWriter
                    "and Palace's far-field integral has no closed surface to run over. Make every port a lumped port for a pattern.";
         return null;
     }
+
+    /// <summary>brief-em3d-118 — an eigenmode solve's <c>MaxIts</c>: Palace's own default for its nonlinear refinement,
+    /// which bounds each restart of a mode's quasi-Newton iteration.</summary>
+    public const int EigenmodeMaxIterations = 100;
 
     /// <summary>Whether the setup saves fields at all: only <c>SaveFieldsGHz: []</c> says no.</summary>
     public static bool SavesFields(PalaceSettings settings) => settings.SaveFieldsGHz is not { Count: 0 };

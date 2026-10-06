@@ -1179,6 +1179,9 @@ leaves out.
 die stays put. The closed form then says 20.87 GHz — a mode below 22 GHz, walking toward the band — and **Run**
 on *Lid modes* finds where the drawn package puts it.
 
+For the question on its own, a resonance inside the band and a grounded post that moves it out, open **Tools ▸
+Examples ▸ 3D Eigenmode** ({{anchor: em-setup.html#eigenmodes|EM Setup ▸ Eigenmodes}} quotes its numbers).
+
 ## Temperature {#thermal}
 
 The same model solves for heat. A **thermal setup** (*Simulate ▸ Setup Analyses…*, the thermometer button — or any setup

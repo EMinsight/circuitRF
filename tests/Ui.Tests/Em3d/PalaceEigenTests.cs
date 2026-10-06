@@ -385,6 +385,8 @@ public sealed class PalaceEigenTests(ITestOutputHelper output) : IDisposable
         var eig = cdoc.RootElement.GetProperty("Solver").GetProperty("Eigenmode");
         Assert.Equal(3, eig.GetProperty("N").GetInt32());
         Assert.Equal(cavity.EigenmodeTargetHz / 1e9, eig.GetProperty("Target").GetDouble());
+        // brief-em3d-118 — bounded: left unset, 0.18.1 lets a stalled mode iterate a million times.
+        Assert.Equal(PalaceConfigWriter.EigenmodeMaxIterations, eig.GetProperty("MaxIts").GetInt32());
         Assert.Equal(clow.Groups.Count(gr => gr.Dimension == 3),
                      cdoc.RootElement.GetProperty("Domains").GetProperty("Postprocessing").GetProperty("Energy").GetArrayLength());
     }

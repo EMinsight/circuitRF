@@ -268,7 +268,7 @@ So the honest summary is:
 | Bond wires over one flat ground | **wBond**, then **FEM** | [wBond](wbond.html#fidelity)'s equations and kernel are far faster; curved, thin metal is FEM's strength, and FEM is their independent check |
 | Bond wires over a ground step or split, in a cavity, under a lid | **FEM** | wBond's ground is one flat plane; FEM solves the ground you drew |
 | A die in a package, leads, lids, connectors | **FEM** | Small features in an enclosed volume |
-| "Is there a cavity resonance in my band?" | **FEM, eigenmode** | Finds each mode's frequency and Q directly |
+| "Is there a cavity resonance in my band?" | **FEM, eigenmode** | Finds each mode's frequency and Q directly ([the 3D Eigenmode example](em-setup.html#eigenmodes)) |
 | A package's capacitance or inductance matrix | **FEM, electrostatic or magnetostatic** | Only Palace computes them |
 | A broadband Manhattan board structure: a transition, a launch, a stripline | **FDTD**, or FEM | One pulse covers the band, at little memory |
 | A radiator that is not planar | **FDTD** or FEM | FDTD's PML keeps the box small; both give a pattern — [Antennas ▸ From a 3D solver](antennas.html#3d) |

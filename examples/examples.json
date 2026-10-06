@@ -52,6 +52,11 @@
       "Summary": "How to set up a wave port: the 3D Connector's launch with its back end open and fed by a coaxial wave port on Palace and on openEMS, and an edge-coupled stripline pair whose four strip ends are each a terminal of a wave port on openEMS, plotted against Cohn's ideal coupled line."
     },
     {
+      "Folder": "3D Eigenmode",
+      "Title": "3D Eigenmode (a cavity resonance)",
+      "Summary": "Is there a cavity resonance in my band? A 50 ohm line through an aluminium housing whose first mode lies inside 8-12 GHz, found by Palace's eigenmode solve and seen as a notch in a driven sweep, and the same housing with one grounded post, which shortens the cavity the mode sees and moves it above the band."
+    },
+    {
       "Folder": "Thermal Die to Heatsink",
       "Title": "Thermal: Die to Heatsink",
       "Summary": "A GaN-on-SiC die on a copper\u2013molybdenum flange, a board with a field of plated vias, and a heatsink at 85 \u00b0C: the junction temperature and Rth against dissipated power, with the via field solved as drawn or as one effective block."
