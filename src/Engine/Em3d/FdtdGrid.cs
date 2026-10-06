@@ -185,6 +185,23 @@ public sealed record FdtdMerge(
         $"{FdtdGrid.AxisName(Axis)} = {FdtdGrid.FormatLength(MergedAtM)}.";
 }
 
+/// <summary>
+/// brief-em3d-122 R-em3d122-1 — a thirds pair with a grid line strictly between its two lines: the edge (its feature and
+/// position are <paramref name="Source"/>'s), where its two lines are, and the lines between them.
+/// </summary>
+public sealed record FdtdThirdsViolation(
+    FdtdAxis              Axis,
+    FdtdLineSource        Source,
+    double                InsideM,
+    double                OutsideM,
+    IReadOnlyList<double> Between)
+{
+    public string Sentence =>
+        $"On {FdtdGrid.AxisName(Axis)}: {Source.Describe(Axis)} has {Between.Count} grid line(s) between its pair at " +
+        $"{FdtdGrid.FormatLength(InsideM)} and {FdtdGrid.FormatLength(OutsideM)}: " +
+        string.Join(", ", Between.Select(FdtdGrid.FormatLength)) + ".";
+}
+
 /// <summary>One axis of the grid, with the reasons behind it (R-em3d8-5a).</summary>
 /// <param name="Lines">Sorted, metres, PML included.</param>
 /// <param name="Required">The required lines after merging — the anchors the fill ran between.</param>
@@ -333,13 +350,31 @@ public static partial class FdtdGrid
 
         FdtdAxisGrid Axis(FdtdAxis a)
         {
-            var required = Merge([.. CollectRequired(problem, a, settings, ctx.MinCell), .. wavePorts.ExtraLines(a)], a, ctx.MinCell,
-                                 merges, warnings);
-            var (lo, hi) = ctx.Faces(a);
-            var lines = Fill(required, iv => ctx.MaxCell(a, iv.Lo, iv.Hi), settings.GradingRatio,
-                             lo == Em3dBoundaryKind.Absorbing ? settings.PmlCells : 0,
-                             hi == Em3dBoundaryKind.Absorbing ? settings.PmlCells : 0);
-            return Describe(a, lines, required, ctx.BoxMin(a), ctx.BoxMax(a));
+            // brief-em3d-122 R-em3d122-2 — a thirds pair the fill split is repaired by lowering that edge's local cell and
+            // building the axis again. A grid with no split pair is built exactly once, exactly as before.
+            var localCells = new Dictionary<ThirdsEdge, (double H, string? By)>();
+            for (int pass = 0; ; pass++)
+            {
+                var axisMerges = new List<FdtdMerge>();
+                var axisWarnings = new List<string>();
+                var required = Merge([.. CollectRequired(problem, a, settings, ctx.MinCell, localCells), .. wavePorts.ExtraLines(a)],
+                                     a, ctx.MinCell, axisMerges, axisWarnings);
+                var (lo, hi) = ctx.Faces(a);
+                var lines = Fill(required, iv => ctx.MaxCell(a, iv.Lo, iv.Hi), settings.GradingRatio,
+                                 lo == Em3dBoundaryKind.Absorbing ? settings.PmlCells : 0,
+                                 hi == Em3dBoundaryKind.Absorbing ? settings.PmlCells : 0);
+                var grid = Describe(a, lines, required, ctx.BoxMin(a), ctx.BoxMax(a));
+                var broken = ThirdsViolations(grid);
+                if (broken.Count == 0)
+                {
+                    merges.AddRange(axisMerges);
+                    warnings.AddRange(axisWarnings);
+                    return grid;
+                }
+                if (pass >= MaxThirdsRepairPasses || !RepairThirds(grid, broken, localCells, settings.GradingRatio))
+                    throw new InvalidOperationException("The FDTD grid's thirds pairs could not be kept whole — a defect in " +
+                                                        "FdtdGrid: " + string.Join(" ", broken.Select(v => v.Sentence)));
+            }
         }
 
         var x = Axis(FdtdAxis.X);
@@ -398,8 +433,17 @@ public static partial class FdtdGrid
     /// </summary>
     public static List<FdtdRequiredLine> CollectRequired(Em3dProblem problem, FdtdAxis axis,
                                                          OpenEmsGridSettings settings, double minCellM)
+        => CollectRequired(problem, axis, settings, minCellM, null);
+
+    /// <summary>…with <paramref name="localCells"/> lowering named edges' local cells (brief-em3d-122 R-em3d122-2): an edge
+    /// listed there takes the smaller of its own local cell and the listed one, and the listed feature as what set it.</summary>
+    private static List<FdtdRequiredLine> CollectRequired(Em3dProblem problem, FdtdAxis axis, OpenEmsGridSettings settings,
+                                                          double minCellM, IReadOnlyDictionary<ThirdsEdge, (double H, string? By)>? localCells)
     {
         var ctx = new Context(problem, settings);
+        (double H, string? By) Lowered(string feature, double e, int metalSide, double h, string? by)
+            => localCells is not null && localCells.TryGetValue(new ThirdsEdge(feature, e, metalSide), out var l) && l.H < h
+                   ? l : (h, by);
         var lines = new List<FdtdRequiredLine>();
         void Add(double at, bool fix, FdtdLineSource src, double hint = double.PositiveInfinity)
             => lines.Add(new FdtdRequiredLine(at, fix, [src], hint));
@@ -432,7 +476,7 @@ public static partial class FdtdGrid
             // edge parallel to another axis. Between those, curved and oblique faces are staircased (Em3dFidelity says so).
             if (shape.Kernel is { } kernel)
             {
-                KernelLines(kernel, shape, axis, settings, minCellM, ctx, Add);
+                KernelLines(kernel, shape, axis, settings, minCellM, ctx, Add, Lowered);
                 continue;
             }
 
@@ -488,7 +532,8 @@ public static partial class FdtdGrid
                         continue;
                     }
 
-                    var (h, setBy) = ctx.LocalCell(axis, shape, e, metalSide, Math.Min(pb, qb), Math.Max(pb, qb));
+                    var (h0, by0) = ctx.LocalCell(axis, shape, e, metalSide, Math.Min(pb, qb), Math.Max(pb, qb));
+                    var (h, setBy) = Lowered(shape.Name, e, metalSide, h0, by0);
                     double outside = e - metalSide * 2 * h / 3;
                     // Too narrow for two lines that the merge would not undo, an edge on the air box
                     // whose outside line would leave it, or an edge SHORTER than its local cell — a facet
@@ -531,7 +576,8 @@ public static partial class FdtdGrid
 
     /// <summary>brief-em3d-65 R-em3d65-3e — the required lines of one kernel solid on <paramref name="axis"/>.</summary>
     private static void KernelLines(Em3dShapeSolid k, Shape shape, FdtdAxis axis, OpenEmsGridSettings settings, double minCellM,
-                                    Context ctx, Action<double, bool, FdtdLineSource, double> add)
+                                    Context ctx, Action<double, bool, FdtdLineSource, double> add,
+                                    Func<string, double, int, double, string?, (double H, string? By)> lowered)
     {
         int a = (int)axis;
         var faceKind = shape.Conductor ? FdtdLineKind.MetalExtreme : FdtdLineKind.MaterialFace;
@@ -587,12 +633,12 @@ public static partial class FdtdGrid
             if (metalSide == 0) continue;
             if (Em3dPieceSide(on, k, a) is int outward && outward != -metalSide) continue;
             double width = Hi(off.Box, a) - Lo(off.Box, a);
-            double h = Math.Min(ctx.MaxCellAt(axis, at), ThirdsWidthFraction * width);
+            var (h, by) = lowered(shape.Name, at, metalSide, Math.Min(ctx.MaxCellAt(axis, at), ThirdsWidthFraction * width), null);
             double outside = at - metalSide * 2 * h / 3;
             if (!(h >= ThirdsMinCells * minCellM) || outside < ctx.BoxMin(axis) || outside > ctx.BoxMax(axis)) continue;
             if (!thirds.Add((at, metalSide))) continue;
-            add(at + metalSide * h / 3, false, new FdtdLineSource(shape.Name, FdtdLineKind.ThirdsInside, at, h), h);
-            add(outside, false, new FdtdLineSource(shape.Name, FdtdLineKind.ThirdsOutside, at, h), h);
+            add(at + metalSide * h / 3, false, new FdtdLineSource(shape.Name, FdtdLineKind.ThirdsInside, at, h, by), h);
+            add(outside, false, new FdtdLineSource(shape.Name, FdtdLineKind.ThirdsOutside, at, h, by), h);
         }
     }
 
@@ -858,6 +904,142 @@ public static partial class FdtdGrid
         double f = L / total;
         for (int k = 0; k < n; k++) cells[k] *= f;
         return cells;
+    }
+
+    // ── the thirds pair's invariant (brief-em3d-122 R-em3d122-1) ─────────────────────────────
+
+    /// <summary>
+    /// Every thirds pair on <paramref name="axis"/> with a grid line strictly between its two lines. A pair is one edge's
+    /// <see cref="FdtdLineKind.ThirdsInside"/> and <see cref="FdtdLineKind.ThirdsOutside"/> sources — the same feature, the
+    /// same edge, and the edge between them — read from the required lines after merging, which is where they actually are.
+    /// The rule exists to put the edge a third of a cell into ONE cell; a line between them grids the edge as if there were
+    /// no rule, and nothing else would say so.
+    /// <para>A pair with another REQUIRED line between its two (a port extent or a material face on the edge itself) is not
+    /// one: that line is a feature's, every cell size keeps it there, and it is where the problem put it. What this finds is
+    /// a line nothing asked for — one the fill made.</para>
+    /// </summary>
+    public static IReadOnlyList<FdtdThirdsViolation> ThirdsViolations(FdtdAxisGrid axis)
+    {
+        var result = new List<FdtdThirdsViolation>();
+        foreach (var pair in ThirdsPairs(axis.Required))
+        {
+            double lo = Math.Min(pair.InsideM, pair.OutsideM), hi = Math.Max(pair.InsideM, pair.OutsideM);
+            double tol = 1e-9 * (hi - lo);
+            if (axis.Required.Any(r => r.PositionM > lo + tol && r.PositionM < hi - tol)) continue;
+            var between = axis.Lines.Where(v => v > lo + tol && v < hi - tol).ToList();
+            if (between.Count > 0) result.Add(new FdtdThirdsViolation(axis.Axis, pair.Source, pair.InsideM, pair.OutsideM, between));
+        }
+        return result;
+    }
+
+    /// <summary>The thirds pairs among <paramref name="required"/>, in position order of their inside lines.</summary>
+    private static List<ThirdsPair> ThirdsPairs(IReadOnlyList<FdtdRequiredLine> required)
+    {
+        // (feature, edge, metal side) → the inside line's position and the outside line's.
+        var inside = new Dictionary<(string, double, int), (double At, FdtdLineSource Src)>();
+        var outside = new Dictionary<(string, double, int), double>();
+        foreach (var line in required)
+            foreach (var s in line.Sources)
+            {
+                if (s.Kind == FdtdLineKind.ThirdsInside)
+                    inside.TryAdd((s.Feature, s.FeatureAtM, Math.Sign(line.PositionM - s.FeatureAtM)), (line.PositionM, s));
+                else if (s.Kind == FdtdLineKind.ThirdsOutside)
+                    outside.TryAdd((s.Feature, s.FeatureAtM, -Math.Sign(line.PositionM - s.FeatureAtM)), line.PositionM);
+            }
+        var pairs = new List<ThirdsPair>();
+        foreach (var (key, (at, src)) in inside)
+            if (outside.TryGetValue(key, out double o)) pairs.Add(new ThirdsPair(src, key.Item3, at, o));
+        return [.. pairs.OrderBy(p => p.InsideM)];
+    }
+
+    /// <param name="MetalSide">+1 when the metal is above the edge on this axis, −1 below.</param>
+    private sealed record ThirdsPair(FdtdLineSource Source, int MetalSide, double InsideM, double OutsideM);
+
+    /// <summary>One edge's thirds pair, as <see cref="CollectRequired(Em3dProblem, FdtdAxis, OpenEmsGridSettings, double)"/>
+    /// keys it: the feature, the edge's coordinate, and the side its metal is on.</summary>
+    private readonly record struct ThirdsEdge(string Feature, double AtM, int MetalSide);
+
+    /// <summary>The repair's bound (D2). Each pass only lowers local cells, and an edge whose cell falls below
+    /// <see cref="ThirdsMinCells"/> MinCells keeps one line on the edge and has no pair to split, so the loop ends; this
+    /// guards against a defect.</summary>
+    private const int MaxThirdsRepairPasses = 64;
+
+    /// <summary>
+    /// brief-em3d-122 R-em3d122-2 — lowers the local cell of each split pair's edge in <paramref name="localCells"/>; false
+    /// when nothing was lowered. The fill split a pair because the interval beside one of its lines is a little more than a
+    /// whole number of cells — a gap of S − 4h/3 just over h halves into cells near h/2, which grade back up to h INSIDE the
+    /// pair. That side is the one whose cell inside the pair came out smaller. Its edge's cell becomes h′ = D/(k + f): D from
+    /// this edge to what bounds the interval (the facing edge when that is another pair's line, else the line itself), k the
+    /// interval's cells at today's cell rounded up, and f the thirds that the pairs on either end take of D (⅔ beside an
+    /// outside line, ⅓ an inside one) — so the interval is exactly k cells of h′. A facing edge gets the same h′. For two
+    /// edges facing across S this is S/(k + 4/3), and at k = 1 the 3/7 gap clamp. h′ ≤ h always, so this only refines.
+    /// When the interval is whole already — the split came from a smaller cell grading in from farther away — the cell is
+    /// lowered by √ratio, and the next pass makes it whole again.
+    /// </summary>
+    private static bool RepairThirds(FdtdAxisGrid grid, IReadOnlyList<FdtdThirdsViolation> broken,
+                                     Dictionary<ThirdsEdge, (double H, string? By)> localCells, double ratio)
+    {
+        var req = grid.Required;
+        bool changed = false;
+        bool Lower(ThirdsEdge edge, double h, string? by)
+        {
+            if (localCells.TryGetValue(edge, out var cur) && cur.H <= h) return false;
+            localCells[edge] = (h, by);
+            return true;
+        }
+
+        foreach (var v in broken)
+        {
+            double e = v.Source.FeatureAtM, h0 = v.Source.LocalCellM ?? throw new InvalidOperationException("A thirds line with no local cell.");
+            int side = Math.Sign(v.InsideM - e);
+            var self = new ThirdsEdge(v.Source.Feature, e, side);
+            // The pair's own end cells: the smaller one is beside the interval that split it.
+            double lo = Math.Min(v.InsideM, v.OutsideM), hi = Math.Max(v.InsideM, v.OutsideM);
+            double cellLo = v.Between[0] - lo, cellHi = hi - v.Between[^1];
+            bool insideIsLo = v.InsideM < v.OutsideM;
+            double cellIn = insideIsLo ? cellLo : cellHi, cellOut = insideIsLo ? cellHi : cellLo;
+
+            foreach (bool outside in new[] { true, false })
+            {
+                if (outside ? cellOut > cellIn * (1 + 1e-9) : cellIn > cellOut * (1 + 1e-9)) continue;
+                double p = outside ? v.OutsideM : v.InsideM;
+                double f1 = outside ? 2.0 / 3 : 1.0 / 3;
+                int dir = Math.Sign(p - e) is 0 ? (outside ? -side : side) : Math.Sign(p - e);
+                double tol = 1e-9 * h0;
+                var n = dir > 0 ? req.FirstOrDefault(r => r.PositionM > p + tol) : req.LastOrDefault(r => r.PositionM < p - tol);
+                if (n is null) continue;
+                double m0 = Math.Abs(n.PositionM - p);
+                // The interval's far end: another edge's thirds line (that edge at or beyond it), or the line itself.
+                var other = n.Fixed ? null : n.Sources.FirstOrDefault(s =>
+                    s.Kind is FdtdLineKind.ThirdsInside or FdtdLineKind.ThirdsOutside && s.LocalCellM is not null &&
+                    (s.FeatureAtM - n.PositionM) * dir >= -tol &&
+                    !(s.Feature == self.Feature && s.FeatureAtM == e));
+                double d, f2, hMax;
+                if (other is not null)
+                {
+                    d = Math.Abs(other.FeatureAtM - e);
+                    f2 = other.Kind == FdtdLineKind.ThirdsInside ? 1.0 / 3 : 2.0 / 3;
+                    hMax = Math.Max(h0, other.LocalCellM!.Value);
+                }
+                else
+                {
+                    d = Math.Abs(n.PositionM - e);
+                    f2 = 0;
+                    hMax = h0;
+                }
+                int k = Math.Max(1, (int)Math.Ceiling(m0 / hMax - 1e-9));
+                double h1 = d / (k + f1 + f2);
+                if (!(h1 < h0 * (1 - 1e-9))) h1 = h0 / Math.Sqrt(ratio);
+                changed |= Lower(self, h1, other?.Feature ?? n.Sources[0].Feature);
+                if (other is not null)
+                {
+                    int otherSide = other.Kind == FdtdLineKind.ThirdsInside ? Math.Sign(n.PositionM - other.FeatureAtM)
+                                                                            : -Math.Sign(n.PositionM - other.FeatureAtM);
+                    changed |= Lower(new ThirdsEdge(other.Feature, other.FeatureAtM, otherSide), h1, v.Source.Feature);
+                }
+            }
+        }
+        return changed;
     }
 
     // ── what the result reports (R-em3d8-5) ──────────────────────────────────────────────────

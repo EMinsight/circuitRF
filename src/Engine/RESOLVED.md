@@ -2709,7 +2709,7 @@ reference node; the 0 V drive branch is still never stamped there.
   `TermScopingTests.HarmonicBalance_ATermIsItsZ_AtEveryHarmonic_AndRealAtDc` (Z = 50+25j: V₁ = I·Z, V₀ = Idc·Re Z).
 
 
-## openEMS grid: a thirds pair broken by grading in a narrow gap (brief-em3d-117, 2026-10-06; NOT fixed)
+## openEMS grid: a thirds pair broken by grading in a narrow gap (brief-em3d-117, 2026-10-06; fixed by brief-em3d-122)
 
 Found building the 3D Wave Ports example's stripline pair; reported, not patched (brief 117 §8). Two strips facing across
 a gap S each get a thirds pair (a line 2h/3 outside the edge, one h/3 inside, nothing between). The two outside lines
@@ -2728,3 +2728,63 @@ Cohn everywhere from 2 to 18 GHz. Nothing warns: the grid summary only names the
 What a fix has to decide: either let the clamp also cover the band where S − 4h/3 falls between h and about 2h/1.3 (so the
 middle cell is one cell), or forbid grading from splitting a thirds pair and grade outward from it instead. Either moves
 every grid with two edges facing across a narrow gap, so the openEMS goldens would be re-checked. Brief written: `docs/sonnet-briefs/brief-em3d-122-thirds-pair-grading.md`.
+
+### brief-em3d-122 — measured, then repaired on violation (2026-10-06)
+
+**The check (R-1.1).** `FdtdGrid.ThirdsViolations(FdtdAxisGrid)` pairs each edge's `ThirdsInside` and `ThirdsOutside`
+sources by (feature, edge coordinate, metal side) from the MERGED required lines and returns the pairs with a grid line
+strictly between. It skips a pair with another REQUIRED line between its two: that line is a feature's (see below), every
+cell size keeps it there, and no refinement can clear it. What it finds is a line nothing asked for — one the fill made.
+
+**The bands (R-1.2, R-1.4)** — 100 µm cap, MinCell 10 µm, ratio 1.3, 0.01 steps. The brief predicted only the facing gap,
+at S/h ≈ (2.33, 2.87), (3.33, 3.64), (4.33, 4.41). Measured, the fill split pairs in four geometries, not one:
+
+| geometry | split at | the interval beside the pair, in cells of h |
+|---|---|---|
+| two sheets facing across S | S/h 2.34–2.97, 3.34–3.65 | S − 4h/3: 1.01–1.64, 2.01–2.31 |
+| one strip of width W (its own two edges) | W/h 1.67–2.31, 2.67–2.98 | W − 2h/3: 1.00–1.64, 2.00–2.31 |
+| an edge D from a PEC box face | D/h 0.70–1.54, 1.67–2.31, 2.67–2.98 | D − 2h/3: 0.03–0.87, 1.00–1.64, 2.00–2.31 |
+| an edge D from a dielectric's face | identical to the box face | |
+
+So the first band runs to 1.64 cells, not the brief's 1/0.77 = 1.54 (`Plan` wants a cell within √r of its END size, not
+r), there is no third band, and a single edge breaks too — against a box or material face for EVERY D below about 1.5
+cells, and on a strip's own interior. The 3/5 width clamp makes a strip's interior exactly one cell at W = 5h/3; just
+above it the interior halves, exactly as the 3/7 gap clamp's middle does.
+
+**The repo (R-1.3)**, every grid traced while the named classes ran:
+
+- `FdtdGridTests`: 67 builds; **35 had 142 split pairs**, nearly all in gate 2's fifty seeded layouts (random grading
+  ratios 1.15–1.5), plus one pair in each of two microstrip fixtures (one of them gate 5's strip-and-pad).
+- The openEMS Ui classes (`OpenEmsBackendTests`, `OpenEmsWavePortTests`, `OpenEmsCylindricalGridTests`,
+  `Em3dWavePortsExampleTests`, `Em3dConnectorExampleTests`): 21 builds; **one** had split pairs — 
+  `OpenEmsWavePortTests.Gate5_ACurrentBoxTouchingTheOtherStrip` (S 0.1 mm, 60 cells per wavelength), its two strips' own
+  interiors. A refusal test; it still refuses. **Every golden and every shipped example grid (3D Connector, 3D Wave Ports
+  Launch and Pair) had none**, so all are built by the unchanged first pass, byte for byte.
+
+**A second kind, NOT repaired — for the owner.** Far more pairs have a REQUIRED line between their two lines than a fill
+line: 15 of the 21 Ui grids have one, among them the 3D Connector's and the Board fixture's, and case B's every pair. The
+cause is a port extent or a material face lying ON the metal edge — every lumped port drawn across a strip's full width
+puts its fixed extent lines on the strip's two edges, and a board's dielectric ends where its copper does. The edge then
+gets three lines, the middle one on the edge, which is the grid the thirds rule exists to avoid. Refinement cannot clear
+it (the line stays on the edge at any cell); dropping the pair for an edge line, or moving a port extent off the edge,
+are both design decisions, and neither is in this brief.
+
+**The repair (R-2, D1-D3 as defaulted).** `Build` runs the check after `Fill`; a grid with no split pair returns from the
+first pass, exactly as before. Otherwise `RepairThirds` lowers the split edges' local cells in a per-axis table that
+`CollectRequired` reads, and the axis is built again, at most 64 passes, then throws (D2). For each split pair it picks
+the side whose cell INSIDE the pair came out smaller (the interval that forced it), finds what bounds that interval —
+another edge's thirds line (that edge is the anchor) or any other required line (the line is) — and sets
+h′ = D/(k + f₁ + f₂): D from the edge to the anchor, k the interval's cells at today's h rounded up, f the thirds each end
+takes (⅔ beside an outside line, ⅓ an inside one, 0 a plain line). The interval is then exactly k cells of h′; a facing
+edge gets the same h′, and for two facing edges that is the brief's S/(k + 4/3). When the interval is already whole (the
+split graded in from a smaller cell farther off), h is lowered by √ratio and the next pass makes it whole; an edge whose
+cell falls below three MinCells loses its pair for an edge line, so the loop ends. The lowered cell and the feature
+that set it go on both thirds sources (`LocalCellM`, `LocalCellSetBy`), so `explain`'s smallest-cell sentence names the
+facing strip, the box face or the material face. No warning (D3).
+
+**Results.** `FdtdGridTests` gate 11 (the three sweeps above, 0 split pairs, graded, max cell held) and gate 12 (brief
+117's §0 section: h′ = 90 µm, lines −180, −90, 0, 90, 180 µm, set by the facing strip), and gate 2's fifty layouts all clean.
+`OpenEmsWavePortTests.Gate10` (Benchmark, 60 s): the S 0.3 mm PTFE pair against Cohn (59.80 / 41.89 Ω), max |ΔS| 0.0083
+over 2–18 GHz (was 0.26), far-end at 18 GHz −58.6 dB (was −12.6; ideal −75.5), every thru/near/far within tolerance.
+`explain` on it: 209 × 283 × 17 = 1,005,499 cells, smallest 90 µm on y, set by the four gap thirds lines.
+The examples' Benchmark gates were not re-run: their grids took the unchanged first pass (no split pair, traced above).

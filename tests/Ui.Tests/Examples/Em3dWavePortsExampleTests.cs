@@ -245,7 +245,7 @@ public sealed class Em3dWavePortsExampleTests(ITestOutputHelper output) : IDispo
 
     /// <summary>Column 1 of the ideal symmetric coupled line in a homogeneous dielectric, every terminal in z0, numbered as the
     /// example: 1 and 2 at x = 0 (strips a and b), 3 and 4 at x = len — so S21 near-end, S31 thru, S41 far-end.</summary>
-    private static Complex[] CoupledLine(double zEven, double zOdd, double lenMm, double er, double f, double z0)
+    internal static Complex[] CoupledLine(double zEven, double zOdd, double lenMm, double er, double f, double z0)
     {
         double th = 2 * Math.PI * f * lenMm * 1e-3 * Math.Sqrt(er) / C0;
         (Complex S11, Complex S21) Line(double zc)

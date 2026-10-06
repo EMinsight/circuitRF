@@ -334,6 +334,62 @@ public sealed class OpenEmsWavePortTests(ITestOutputHelper output) : IDisposable
         }
     }
 
+    // ── 10. brief-em3d-122: the pair whose thirds pairs the fill used to split ────────────────
+
+    /// <summary>
+    /// Brief 117's first Pair section — the shipped example's .c3d with W 1.6 mm and S 0.3 mm, its own openEMS setup (2-18 GHz
+    /// in 33 points, 90 cells per wavelength, MinCellUm 10, PMC sides 10·W out, PEC top and bottom) — against Cohn's coupled
+    /// line (Z₀e 59.80, Z₀o 41.89 Ω, 15 mm): thru within 0.1 dB / 1°, near- and far-end within 0.5 dB / 1° where the ideal
+    /// entry is above −30 dB, max |ΔS| ≤ 0.015 at every frequency. With the gap's middle halved it was 0.26 and the far end
+    /// −12.6 dB at 18 GHz against −75 dB.
+    /// </summary>
+    [OpenEmsFact]
+    [Trait("Category", "Benchmark")]
+    public void Gate10_TheS0p3Pair_IsCohnsCoupledLine()
+    {
+        string example = Path.Combine(ExampleWorkspaces.ResolveRoot(PalaceBackendTests.RepoRoot()) ?? throw new InvalidOperationException("no examples/"),
+                                      "3D Wave Ports", "Pair", "3d", "Pair.c3d");
+        var doc = C3dPersistence.LoadFromFile(example);
+        doc.Variables.Single(v => v.Name == "w").Expression = "1.6";
+        doc.Variables.Single(v => v.Name == "s").Expression = "0.3";
+        foreach (var port in doc.Ports) port.Rect = Rect(-17750, -1000, 35500, 2000);     // ±(s/2 + 11·w), the fill's sides
+        string ws = Workspace();
+        string path = WriteC3d(ws, "Pair", doc);
+        var (embedded, why) = C3dSetups.Select(doc, "openEMS");
+        Assert.True(embedded is not null, why);
+        var watch = Stopwatch.StartNew();
+        var run = EmRunService.RunThreeDView(C3dSetups.ForRun(embedded!, path), doc, path, Path.Combine(ws, ".cws"),
+                                             Path.Combine(_root, "results"), confirmMemory: _ => true);
+        output.WriteLine($"{watch.Elapsed.TotalSeconds:F1} s");
+        Assert.True(run.Status == EmRunStatus.Ok, run.Error);
+
+        var (ze, zo) = Examples.Em3dWavePortsExampleTests.Cohn(1.6, 0.3, 2, 2.1);
+        output.WriteLine($"Cohn: Z0e {ze:F2} Ω, Z0o {zo:F2} Ω");
+        Assert.Equal((59.80, 41.89), (Math.Round(ze, 2), Math.Round(zo, 2)));
+        var snp = RfCore.TouchstoneIO.ReadFile(run.SnpPath!);
+        var bad = new List<string>();
+        for (int k = 0; k < snp.Frequencies.Length; k++)
+        {
+            double f = snp.Frequencies[k];
+            var c = Examples.Em3dWavePortsExampleTests.CoupledLine(ze, zo, 15, 2.1, f, 50);   // refl, near, thru, far
+            // 1, 2 at x = 0 (strips a, b); 3, 4 at x = 15 mm.
+            int[,] which = { { 0, 1, 2, 3 }, { 1, 0, 3, 2 }, { 2, 3, 0, 1 }, { 3, 2, 1, 0 } };
+            double worst = 0;
+            for (int i = 0; i < 4; i++)
+                for (int j = 0; j < 4; j++) worst = Math.Max(worst, (snp[k][i, j] - c[which[i, j]]).Magnitude);
+            output.WriteLine($"{f / 1e9,5} GHz max |ΔS| {worst:F4}  far-end {Db(snp[k][3, 0]):F1} dB (ideal {Db(c[3]):F1})");
+            if (worst > 0.015) bad.Add($"max |ΔS| {worst:F4} at {f / 1e9} GHz");
+            foreach (var (name, i, tol) in new[] { ("near-end S21", 1, 0.5), ("thru S31", 2, 0.1), ("far-end S41", 3, 0.5) })
+            {
+                if (Db(c[i]) < -30) continue;
+                var sv = snp[k][i, 0];
+                if (Math.Abs(Db(sv) - Db(c[i])) > tol || Math.Abs(Phase(sv / c[i])) > 1)
+                    bad.Add($"{name} at {f / 1e9} GHz: {Db(sv) - Db(c[i]):+0.000;-0.000} dB, {Phase(sv / c[i]):+0.00;-0.00}°");
+            }
+        }
+        Assert.True(bad.Count == 0, string.Join("\n", bad));
+    }
+
     private (int ExitCode, string StdOut, string StdErr) RunCli(params string[] args)
     {
         string cliDir = System.Reflection.CustomAttributeExtensions

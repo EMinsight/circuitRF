@@ -121,6 +121,7 @@ public sealed class FdtdGridTests(ITestOutputHelper output)
             var g = FdtdGrid.Build(p, settings, Plenty);
             AssertGraded(g, settings.GradingRatio, $"layout {i}");
             AssertMaxCell(p, g, settings.CellsPerWavelength, $"layout {i}");
+            AssertNoSplitPair(g, $"layout {i}");
         }
     }
 
@@ -319,6 +320,76 @@ public sealed class FdtdGridTests(ITestOutputHelper output)
         Assert.Empty(g.Warnings);
     }
 
+    // ── 11. A thirds pair is never split by the fill (brief-em3d-122) ───────────────────────────
+
+    /// <summary>
+    /// Under a fixed 100 µm cap: two sheets facing across S, one strip of width W, and one edge a distance D from a PEC box
+    /// face, each from 1.5 to 6 cells in 0.01 steps (the box face from 0.7, where the outside line first fits). Before the
+    /// repair the fill split pairs at S/h 2.34–2.97 and 3.34–3.65, W/h 1.67–2.31 and 2.67–2.98, D/h 0.70–1.54, 1.67–2.31
+    /// and 2.67–2.98: an interval a little over a whole number of cells halves, and its halves grade back up inside the pair.
+    /// </summary>
+    [Fact]
+    public void Gate11_NoLineInsideAThirdsPair_AcrossAFacingGap_AStripsWidth_OrBesideABoxFace()
+    {
+        const double h = 100, w = 2000;
+        var settings = Defaults with { MinCellM = 10 * Um };
+        double f = C0 / (settings.CellsPerWavelength * h * Um);
+        Em3dProblem Air(double y0, double y1, params Em3dSheet[] sheets)
+        {
+            var box = Box(-1500, 1500, y0, y1, 0, 1000, pecFloor: true) with
+            {
+                Faces = new Em3dFaces(Em3dBoundaryKind.Pec, Em3dBoundaryKind.Pec, Em3dBoundaryKind.Pec, Em3dBoundaryKind.Pec,
+                                      Em3dBoundaryKind.Pec, Em3dBoundaryKind.Pec),
+            };
+            return new Em3dProblem([AirSolid(box)], sheets, Materials, [], box, new Em3dFrequency(f / 10, f, 11, Em3dSweepKind.Linear), 20);
+        }
+        Em3dSheet Strip(string name, double y0, double y1) => Sheet(name, -800 * Um, 800 * Um, y0 * Um, y1 * Um, 500 * Um);
+
+        var cases = new (string What, int From, Func<double, Em3dProblem> Make)[]
+        {
+            ("S/h", 150, q => Air(-q * h / 2 - w - 1000, q * h / 2 + w + 1000, Strip("a", -q * h / 2 - w, -q * h / 2), Strip("b", q * h / 2, q * h / 2 + w))),
+            ("W/h", 150, q => Air(-2000, 2000, Strip("a", -q * h / 2, q * h / 2))),
+            ("D/h", 70, q => Air(-q * h, 3000, Strip("a", 0, w))),
+        };
+        foreach (var (what, from, make) in cases)
+            for (int i = from; i <= 600; i++)
+            {
+                var p = make(i / 100.0);
+                var g = FdtdGrid.Build(p, settings, Plenty);
+                string at = $"{what} {i / 100.0:0.00}";
+                AssertNoSplitPair(g, at);
+                AssertGraded(g, settings.GradingRatio, at);
+                AssertMaxCell(p, g, settings.CellsPerWavelength, at);
+            }
+    }
+
+    /// <summary>
+    /// Brief 117's first pair (§0 of brief 122): PTFE stripline, b 2 mm, W 1.6 mm, S 0.3 mm, 90 cells per wavelength at
+    /// 18 GHz (h = 127.7 µm). The gap's middle was 129.8 µm and split in two; now both edges' cell is S/(2 + 4/3) = 90 µm, the
+    /// gap's lines run −180, −90, 0, 90, 180 µm, and the thirds lines say what set their cell.
+    /// </summary>
+    [Fact]
+    public void Gate12_Brief117sPair_GridsItsGapInWholeCells_OfS_Over_TwoAndFourThirds()
+    {
+        const double halfB = 1000, wUm = 1600, half = 150, side = half + 11 * wUm;
+        var faces = new Em3dFaces(Em3dBoundaryKind.Absorbing, Em3dBoundaryKind.Absorbing, Em3dBoundaryKind.Pmc, Em3dBoundaryKind.Pmc,
+                                  Em3dBoundaryKind.Pec, Em3dBoundaryKind.Pec);
+        var box = new Em3dAirBox(new Point3(0, -side * Um, -halfB * Um), new Point3(15000 * Um, side * Um, halfB * Um), faces);
+        var p = new Em3dProblem(
+            [new Em3dSolid("fill", "PTFE", Em3dRole.Dielectric, new Em3dBox(box.Min, box.Max), 1)],
+            [Sheet("strip_a", 0, 15000 * Um, (-half - wUm) * Um, -half * Um, 0), Sheet("strip_b", 0, 15000 * Um, half * Um, (half + wUm) * Um, 0)],
+            [.. Materials, new("PTFE", 2.1, null, 0, 1, 0)], [], box, new Em3dFrequency(2e9, 18e9, 33, Em3dSweepKind.Linear), 20);
+        var g = FdtdGrid.Build(p, Defaults with { CellsPerWavelength = 90, MinCellM = 10 * Um }, Plenty);
+
+        output.WriteLine(string.Join(" ", g.Y.Lines.Where(v => Math.Abs(v) < 400 * Um).Select(v => (v / Um).ToString("0.000"))));
+        foreach (double at in new[] { -180, -90, 0, 90, 180 }) AssertLine(g.Y.Lines, at * Um);
+        Assert.DoesNotContain(g.Y.Lines, v => Math.Abs(Math.Abs(v) - half * Um) < 9 * Um);
+        var gapEdge = g.Y.Required.SelectMany(r => r.Sources)
+                                  .Single(s => s.Feature == "strip_a" && s.Kind == FdtdLineKind.ThirdsOutside && s.FeatureAtM == -half * Um);
+        Assert.Equal(90 * Um, gapEdge.LocalCellM!.Value, 1e-15);
+        Assert.Equal("strip_b", gapEdge.LocalCellSetBy);
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────────────────────────
 
     private static readonly Em3dFrequency Band = new(1e9, 20e9, 20, Em3dSweepKind.Linear);
@@ -453,6 +524,12 @@ public sealed class FdtdGridTests(ITestOutputHelper output)
 
     private static void AssertLine(IReadOnlyList<double> lines, double at)
         => Assert.True(lines.Any(v => Math.Abs(v - at) <= 1e-12), $"no line at {at:R}");
+
+    private static void AssertNoSplitPair(FdtdGridResult g, string what)
+    {
+        var split = new[] { g.X, g.Y, g.Z }.SelectMany(FdtdGrid.ThirdsViolations).ToList();
+        Assert.True(split.Count == 0, $"{what}: " + string.Join(" ", split.Select(v => v.Sentence)));
+    }
 
     private static void AssertGraded(FdtdGridResult g, double ratio, string what)
     {
