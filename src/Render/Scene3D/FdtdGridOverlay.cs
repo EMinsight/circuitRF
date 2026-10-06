@@ -20,8 +20,14 @@ namespace CircuitRF.Render.Scene3D;
 /// <summary>A label for one axis's smallest cell: the sentence and the scene-local point it names.</summary>
 public sealed record FdtdCellLabel(FdtdAxis Axis, double SmallestCellM, string Text, Vector3 At);
 
-/// <summary>The drawn grid: line vertices, and the per-axis smallest-cell labels.</summary>
-public sealed record FdtdGridDrawing(Scene3DVertex[] Lines, IReadOnlyList<FdtdCellLabel> Labels);
+/// <summary>brief-em3d-116 — a label naming one of a wave port's feed planes (its source, its reference plane).</summary>
+public sealed record FdtdFeedLabel(string Text, Vector3 At);
+
+/// <summary>The drawn grid: line vertices, the per-axis smallest-cell labels, and the wave-port feed planes' labels.</summary>
+public sealed record FdtdGridDrawing(Scene3DVertex[] Lines, IReadOnlyList<FdtdCellLabel> Labels)
+{
+    public IReadOnlyList<FdtdFeedLabel> FeedLabels { get; init; } = [];
+}
 
 public static class FdtdGridOverlay
 {
@@ -96,6 +102,32 @@ public static class FdtdGridOverlay
             }
         }
 
+        // ── brief-em3d-116 R-em3d116-5 — each wave port's feed: the grid runs on through it (the lines above), and its source
+        // plane and reference plane are outlined over the port's region, so the source has a visible place and the grown box
+        // is not a surprise in the cell count. The air box itself is drawn as before: the feed is the lowering's.
+        var feedLabels = new List<FdtdFeedLabel>();
+        uint sourceInk = dark ? Scene3DVertex.Pack(225, 120, 255, 255) : Scene3DVertex.Pack(150, 40, 190, 255);
+        uint referenceInk = dark ? Scene3DVertex.Pack(110, 230, 120, 255) : Scene3DVertex.Pack(20, 140, 40, 255);
+        foreach (var feed in grid.WavePorts.Feeds)
+        {
+            var (b, c) = Others(feed.Axis);
+            double b0 = feed.Terminals.Min(t => C3(t.Port.Min, b)), b1 = feed.Terminals.Max(t => C3(t.Port.Max, b));
+            double c0 = feed.Terminals.Min(t => C3(t.Port.Min, c)), c1 = feed.Terminals.Max(t => C3(t.Port.Max, c));
+            string names = string.Join(", ", feed.Ports.Select(n => $"'{n}'"));
+            string a = FdtdGrid.AxisName(feed.Axis);
+            foreach (var (at, ink, what) in new[] { (feed.SourceAtM, sourceInk, "openEMS source"), (feed.ReferenceAtM, referenceInk, "reference plane") })
+            {
+                Segment(feed.Axis, at, c, c0, b, b0, b1, ink);
+                Segment(feed.Axis, at, c, c1, b, b0, b1, ink);
+                Segment(feed.Axis, at, b, b0, c, c0, c1, ink);
+                Segment(feed.Axis, at, b, b1, c, c0, c1, ink);
+                var centre = new double[3];
+                centre[(int)feed.Axis] = at; centre[(int)b] = b1; centre[(int)c] = c1;
+                feedLabels.Add(new FdtdFeedLabel($"{what} of {names} at {a} = {FdtdGrid.FormatLength(at)}",
+                                                 scene.ToLocal(centre[0], centre[1], centre[2])));
+            }
+        }
+
         // ── the smallest cell on each axis ───────────────────────────────────────────────────
         var labels = new List<FdtdCellLabel>();
         var mid = (scene.ContentMin + scene.ContentMax) * 0.5f;
@@ -111,7 +143,7 @@ public static class FdtdGridOverlay
             at = axis switch { FdtdAxis.X => at with { X = local }, FdtdAxis.Y => at with { Y = local }, _ => at with { Z = local } };
             labels.Add(new FdtdCellLabel(axis, g.SmallestCellM, text, at));
         }
-        return new FdtdGridDrawing([.. outv], labels);
+        return new FdtdGridDrawing([.. outv], labels) { FeedLabels = feedLabels };
 
         void Segment(FdtdAxis fixedAxis, double fixedAt, FdtdAxis lineAxis, double lineAt, FdtdAxis runAxis, double from, double to, uint rgba)
         {
@@ -152,6 +184,7 @@ public static class FdtdGridOverlay
 
     private static double Coord((double X, double Y, double Z) o, FdtdAxis a) => a switch { FdtdAxis.X => o.X, FdtdAxis.Y => o.Y, _ => o.Z };
     private static double C(Vector3 p, FdtdAxis a) => a switch { FdtdAxis.X => p.X, FdtdAxis.Y => p.Y, _ => p.Z };
+    private static double C3(Point3 p, FdtdAxis a) => a switch { FdtdAxis.X => p.X, FdtdAxis.Y => p.Y, _ => p.Z };
     private static Vector3 P(Scene3DModel s, uint i) => new(s.Vertices[i].X, s.Vertices[i].Y, s.Vertices[i].Z);
 
     private static int LowerBound(IReadOnlyList<double> a, double v)

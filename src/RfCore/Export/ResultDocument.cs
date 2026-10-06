@@ -1215,6 +1215,11 @@ namespace RfCore.Export
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public Em3dStaticJson? Static { get; init; }
 
+        /// <summary>brief-em3d-116 R-em3d116-3 — how openEMS builds each wave port (its feed, source, planes, current boxes),
+        /// as sentences; null when the setup runs no wave port on openEMS, so every earlier report is unchanged.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<string>? OpenEmsWavePorts { get; init; }
+
         /// <summary>brief-em3d-23 R-em3d23-4a — an eigenmode problem's mode count and target; null otherwise.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public Em3dEigenmodeJson? Eigenmode { get; init; }

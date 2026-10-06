@@ -97,14 +97,15 @@ public static class Em3dRunService
               "with `circuitrf em --solver palace`."
             : null;
 
-    /// <summary>
-    /// brief-em3d-23 R-em3d23-2e / §7 — what only Palace does: the static problems (brief 22), an eigenmode
-    /// solve (FDTD has no eigensolver) and a wave port (openEMS's own waveguide and microstrip ports are a
-    /// later brief). On openEMS or Both it is refused naming Palace, before anything is looked for.
-    /// </summary>
     /// <summary>brief-em3d-114 — the diagnostic source of a terminal wave port's refusal.</summary>
     public const string TerminalPortsSource = "em3d-terminal-ports";
 
+    /// <summary>
+    /// brief-em3d-23 R-em3d23-2e / §7 — what only Palace does: the static problems (brief 22) and an eigenmode solve (FDTD
+    /// has no eigensolver). On openEMS or Both it is refused naming Palace, before anything is looked for. brief-em3d-116
+    /// lifted the wave port from this list: openEMS feeds one as a probed line, and refuses only a hollow waveguide, which
+    /// it learns from the problem (FdtdWavePorts.HollowRefusal, in the lowering — still before any process starts).
+    /// </summary>
     public static string? PalaceOnlyRefusal(EmSetup setup)
     {
         if (StaticSolverRefusal(setup) is { } staticOnly) return staticOnly;
@@ -114,37 +115,43 @@ public static class Em3dRunService
         if (setup.Problem3D == Em3dProblemType.Eigenmode)
             return $"This setup asks for an eigenmode solve on {on}, and only Palace finds eigenmodes: openEMS is a " +
                    "time-domain (FDTD) solver and has no eigensolver. " + remedy;
-        if (setup.HasWavePorts3D && !setup.IsStatic3D)
-        {
-            var wave = setup.Ports3D.Where(p => p.Kind == Em3dPortKind.Wave).Select(p => p.Port).Distinct().Order().ToList();
-            return $"Port{(wave.Count == 1 ? "" : "s")} {string.Join(", ", wave)} {(wave.Count == 1 ? "is a wave port" : "are wave ports")}, " +
-                   $"and only Palace builds wave ports in this version (openEMS's waveguide and microstrip ports are a later " +
-                   $"addition), so this setup cannot run on {on}. {remedy} Or make the port{(wave.Count == 1 ? "" : "s")} lumped.";
-        }
         return null;
     }
 
     /// <summary>
-    /// brief-em3d-114 R-em3d114-2e — a multi-terminal wave port (overview D14): Palace refuses it for this series, naming
-    /// openEMS; openEMS refuses it until brief 116 builds it. <paramref name="ports"/> is each such port's label and terminal
-    /// count; null when there is none, or the solver runs neither.
+    /// brief-em3d-114 R-em3d114-2e / brief-em3d-116 R-em3d116-3 — a multi-terminal wave port (overview D14): Palace refuses
+    /// it, naming openEMS, which builds it. On Both the run goes ahead on openEMS alone and says Palace was skipped
+    /// (<see cref="TerminalPortsSkipPalace"/>). <paramref name="ports"/> is each such port's label and terminal count;
+    /// null when there is none, or the solver can run them.
     /// </summary>
     public static string? TerminalPortRefusal(Em3dSolver solver, IReadOnlyList<(string Label, int Terminals)> ports)
+        => solver == Em3dSolver.Palace && ports.Count > 0
+            ? TerminalHead(ports[0]) + "terminal wave ports run on openEMS only in this version. Set the setup's solver to openEMS."
+            : null;
+
+    /// <summary>
+    /// brief-em3d-116 R-em3d116-3 — what openEMS's lowering would refuse of <paramref name="problem"/>'s wave ports (a hollow
+    /// waveguide; a current loop with no room), through the planner and the placement the run's writer uses; null when it
+    /// builds them all. <c>check</c> reports it, so a setup that checks clean is not refused by its run for this.
+    /// </summary>
+    public static string? OpenEmsWavePortRefusal(Em3dProblem problem, OpenEmsGridSettings gridSettings)
     {
-        if (ports.Count == 0) return null;
-        var (label, n) = ports[0];
+        if (!problem.HasWavePorts || gridSettings.Problems().Count > 0) return null;
+        var grid = FdtdGrid.Build(problem, gridSettings, long.MaxValue);
+        return grid.WavePorts.Refusal ?? FdtdWavePorts.Place(problem, grid.WavePorts, grid).Refusal;
+    }
+
+    /// <summary>brief-em3d-116 R-em3d116-3 — the note a Both run carries when a terminal port sends it to openEMS alone.</summary>
+    public static string TerminalPortsSkipPalace(IReadOnlyList<(string Label, int Terminals)> ports)
+        => TerminalHead(ports[0]) + "terminal wave ports run on openEMS only in this version, so this setup ran on openEMS and " +
+           "Palace was skipped for it.";
+
+    private static string TerminalHead((string Label, int Terminals) port)
+    {
+        var (label, n) = port;
         string count = n switch { 2 => "two", 3 => "three", 4 => "four", 5 => "five", 6 => "six", 7 => "seven", 8 => "eight", 9 => "nine",
                                   _ => n.ToString(CultureInfo.InvariantCulture) };
-        string head = $"Port '{label}' has {count} terminals; ";
-        string palace = head + "terminal wave ports run on openEMS only in this version. Set the setup's solver to openEMS.";
-        string openEms = head + "terminal wave ports are not yet built for openEMS.";
-        return solver switch
-        {
-            Em3dSolver.Palace  => palace,
-            Em3dSolver.OpenEms => openEms,
-            Em3dSolver.Both    => palace + " " + openEms,
-            _                  => null,
-        };
+        return $"Port '{label}' has {count} terminals; ";
     }
 
     /// <summary>The problem's multi-terminal ports, as <see cref="TerminalPortRefusal"/> takes them: one entry per face group.</summary>
@@ -349,6 +356,16 @@ public static class Em3dRunService
         // brief-em3d-114 R-em3d114-2e — whatever built the problem; a .c3d's run has already refused before discovery
         if (TerminalPortRefusal(solver, TerminalPorts(problem.Ports)) is { } terminalPorts)
             return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded(TerminalPortsSource, terminalPorts));
+        // brief-em3d-116 R-em3d116-3 — Both, with a terminal port: openEMS alone, and the run says Palace was skipped.
+        if (both && TerminalPorts(problem.Ports) is { Count: > 0 } skipPalace)
+        {
+            log.Notes.Add(TerminalPortsSkipPalace(skipPalace));
+            solver = Em3dSolver.OpenEms;
+            both = false;
+            palace = false;
+            palaceStop = null;
+            if (openEmsStop is { } openEmsRefused) return log.Result(openEmsRefused.Status, openEmsRefused.Diagnostic);
+        }
 
         // ── each backend's lowering: no process yet ──────────────────────────────────────────
         PalacePlan? palacePlan = null;
@@ -1158,6 +1175,8 @@ public static class Em3dRunService
         }
         foreach (var port in problem.Ports) Grow(port.Min.X, port.Min.Y, port.Min.Z, port.Max.X, port.Max.Y, port.Max.Z);
         double diagonal = x1 >= x0 ? Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0) + (z1 - z0) * (z1 - z0)) : 0;
+        // brief-em3d-116 — a wave port's source sits behind its face, its feed's length farther from every other port.
+        diagonal += grid.WavePorts.Feeds.Sum(f => f.ExtensionM);
         double slowest = problem.Materials.Select(m => Math.Sqrt(Math.Max(1, m.Epsr) * Math.Max(1, m.Mur))).DefaultIfEmpty(1).Max();
         double settleS = grid.ExcitationS + 2 * diagonal * slowest / 299_792_458.0;
 
@@ -1211,6 +1230,8 @@ public static class Em3dRunService
         if (result.Error is { } singular) return Failed(singular);
 
         var data = BuildOpenEmsDataSet(result, ports, grid, runs, runSettings);
+        // brief-em3d-116 R-em3d116-2e — each wave-port terminal's line, as it measured itself in its own run.
+        log.Notes.AddRange(LineNotes(runs, lowering, freqs, data));
 
         // ── brief-em3d-31 R-em3d31-2 — the radiation pattern, from the surface each port's run dumped ─────
         if (lowering.FarField is { } surface)
@@ -1244,6 +1265,49 @@ public static class Em3dRunService
                    ? $" at {Db(worst)} against {Db(runSettings.EndCriterionDb)}" : "") + ": not converged.";
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "openEMS " + openEms.DescribeVersion(), comparisonFacts,
                        NotConverged: notConverged);
+    }
+
+    /// <summary>brief-em3d-116 — the cubes of each wave-port terminal's measured line in the openEMS group.</summary>
+    public const string LineZCube = "LineZ", LineEpsEffCube = "LineEpsEff";
+
+    /// <summary>
+    /// brief-em3d-116 R-em3d116-2e — each wave-port terminal's characteristic impedance and effective permittivity, measured at
+    /// its reference plane in the run that excited it, as notes ("Terminal P1: the line measured Z 50.4 Ω, ε_eff 2.20.", at
+    /// the band's middle point) and as <see cref="LineZCube"/>/<see cref="LineEpsEffCube"/> over the sweep. A coupled
+    /// terminal's are seen with the other terminals passive, which the note says; nothing compares them.
+    /// </summary>
+    internal static IReadOnlyList<string> LineNotes(IReadOnlyList<OpenEmsPortRun> runs, CsxcadLowering lowering, double[] freqs, DataSet data)
+    {
+        var notes = new List<string>();
+        var measured = new List<(int Port, FdtdLineMeasure M)>();
+        for (int k = 0; k < runs.Count; k++)
+        {
+            if (runs[k].Line is not { } l) continue;
+            var m = FdtdLineProbes.Measure(l.Ua, l.U, l.Uc, l.Ia, l.Ib, l.SpacingM, freqs);
+            measured.Add((runs[k].Port, m));
+            int mid = freqs.Length / 2;
+            var names = lowering.Probes.FirstOrDefault(p => p.Port == runs[k].Port);
+            string label = names?.Terminal ?? $"P{runs[k].Port}";
+            notes.Add($"Terminal {label}: the line measured Z {Fmt(m.Z[mid].Real)} Ω, ε_eff {m.EpsEff[mid].ToString("F2", CultureInfo.InvariantCulture)}" +
+                      (freqs.Length > 1 ? $" at {Fmt(freqs[mid] / 1e9)} GHz" : "") +
+                      (names?.Group is { } g ? $", with the other terminals of '{g}' passive" : "") + ".");
+        }
+        if (measured.Count > 0)
+        {
+            var portAxis = new Axis("Port", [.. measured.Select(m => (double)m.Port)], "");
+            var f = new Axis("f", freqs, "Hz");
+            var z = new System.Numerics.Complex[freqs.Length * measured.Count];
+            var e = new double[freqs.Length * measured.Count];
+            for (int i = 0; i < freqs.Length; i++)
+                for (int j = 0; j < measured.Count; j++)
+                {
+                    z[i * measured.Count + j] = measured[j].M.Z[i];
+                    e[i * measured.Count + j] = measured[j].M.EpsEff[i];
+                }
+            data.AddToGroup(OpenEmsGroup, LineZCube, new DataCube([f, portAxis], z) { Unit = "Ohm" });
+            data.AddToGroup(OpenEmsGroup, LineEpsEffCube, new DataCube([f, portAxis], e));
+        }
+        return notes;
     }
 
     /// <summary>
@@ -1358,7 +1422,10 @@ public static class Em3dRunService
         var lines = new List<string>();
         foreach (var p in problem.Ports.OrderBy(p => p.Number))
             lines.Add($"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
-                      $"to '{Ascii(p.PositiveObject)}', lumped, {R(p.Z0.Real)} Ohm");
+                      $"to '{Ascii(p.PositiveObject)}', " +
+                      // brief-em3d-116 — a wave port's terminal: a fed line, measured by probes and referred to Z0 directly
+                      (p.Kind == Em3dPortKind.Wave ? "wave (fed line, voltage and current probes at the reference plane)" : "lumped") +
+                      $", {R(p.Z0.Real)} Ohm");
         lines.AddRange(Em3dPortMap.Lines(problem.Ports));     // brief-em3d-93 — which document port each is, when one was off
         lines.Add($"circuitRF-EM 3D grid: {grid.X.Lines.Count} x {grid.Y.Lines.Count} x {grid.Z.Lines.Count} = {grid.Cells} cells; " +
                   $"smallest cell {Ascii(FdtdGrid.FormatLength(s0.SmallestCellM))} on {FdtdGrid.AxisName(s0.Axis)}, set by " +

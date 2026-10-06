@@ -35,6 +35,12 @@
 // port sheet, a voltage probe along its centre line, a current probe across its middle, and — in the
 // excited port's file only — a soft E-field excitation. Probe names are port<k>_u / port<k>_i.
 //
+// WAVE PORTS (brief-em3d-116) are fed, probed lines: per terminal, a source shaped to the line on the source plane behind
+// the face, voltage probes port<k>_ua/_u/_uc on three planes round the reference plane and current probes port<k>_ia/_ib
+// between them, every coordinate an exact written grid line or the midpoint of two. Where they go is FdtdWavePorts'
+// (src/Engine); the feed is lines FdtdGrid.Build already put in the grid, and a solid reaching the face is carried down it
+// by the same Context.Out as through any absorbing face (a cylinder too, on a feed face only, so no lumped file changes).
+//
 // ONE MODEL, N FILES (R-em3d9-3b). Model() is the shared model; PortFile(k) is it with port k's
 // excitation added as the LAST property, so the N files differ in exactly that element and no ID moves.
 
@@ -74,6 +80,29 @@ public sealed record CsxcadLowering(
     IReadOnlyList<Em3dKernelFile>? KernelFiles = null)
 {
     public bool Ok => Refusal is null;
+
+    /// <summary>brief-em3d-116 — each port's probe files, in <see cref="Ports"/> order: what <see cref="OpenEmsRun"/> reads.</summary>
+    public IReadOnlyList<OpenEmsProbeNames> Probes { get; init; } = [];
+
+    /// <summary>brief-em3d-116 R-em3d116-2 — every wave-port terminal's elements as written (empty with no wave port).</summary>
+    public IReadOnlyList<FdtdTerminalElements> WaveTerminals { get; init; } = [];
+}
+
+/// <summary>
+/// brief-em3d-116 — the probe files of one port. A lumped port's are <c>port{k}_u</c> and <c>port{k}_i</c>. A wave-port
+/// terminal's U is its middle voltage plane (the mean of its two halves for a stripline) and its I the sample-wise mean of
+/// its two current planes (R-em3d116-2d); <see cref="Ua"/>/<see cref="Uc"/> are the outer voltage planes, read for the line's
+/// own Z and ε_eff (R-em3d116-2e), <see cref="SpacingM"/> their spacing.
+/// </summary>
+public sealed record OpenEmsProbeNames(int Port, IReadOnlyList<string> U, IReadOnlyList<string> I)
+{
+    public IReadOnlyList<string>? Ua { get; init; }
+    public IReadOnlyList<string>? Uc { get; init; }
+    public double SpacingM { get; init; }
+    /// <summary>The terminal's label (<c>P1</c>) and, for a terminal of a port with several, that port's (<c>Left</c>).</summary>
+    public string? Terminal { get; init; }
+    public string? Group { get; init; }
+    public bool IsWave => Ua is not null;
 }
 
 public static class CsxcadWriter
@@ -102,6 +131,11 @@ public static class CsxcadWriter
     /// <summary>The voltage and current probes' names — and so openEMS's output files.</summary>
     public static string VoltageProbe(int port) => $"port{port}_u";
     public static string CurrentProbe(int port) => $"port{port}_i";
+
+    /// <summary>brief-em3d-116 R-em3d116-2b/c — a wave-port terminal's probes: <c>port{k}_ua</c>, <c>_u</c>, <c>_uc</c> on the three
+    /// voltage planes (with <c>_up</c>/<c>_dn</c> for a stripline's halves), <c>port{k}_ia</c>/<c>_ib</c> on the two current planes.</summary>
+    public static string VoltageProbe(int port, string plane, string half) => $"port{port}_{plane}{half}";
+    public static string CurrentProbe(int port, string plane) => $"port{port}_{plane}";
 
     /// <summary>ε₀, F/m.</summary>
     public const double Epsilon0 = 8.8541878128e-12;
@@ -142,14 +176,22 @@ public static class CsxcadWriter
         foreach (var p in problem.Ports)
         {
             if (!(p.Z0.Real > 0))
-                return No($"Port {p.Number}'s reference impedance is {Ohms(p.Z0)}. An openEMS lumped port is " +
-                          "terminated in a resistance, which must be positive: set the port's Z0 to a value with a " +
-                          "positive real part.");
-            if (ExcitationAxis(p) is null)
+                return No(p.Kind == Em3dPortKind.Wave
+                    ? $"Port {p.Number}'s reference impedance is {Ohms(p.Z0)}. A wave port's S-parameters are referred to it, " +
+                      "which needs a positive real part: set the port's Z0 to one."
+                    : $"Port {p.Number}'s reference impedance is {Ohms(p.Z0)}. An openEMS lumped port is " +
+                      "terminated in a resistance, which must be positive: set the port's Z0 to a value with a " +
+                      "positive real part.");
+            if (p.Kind == Em3dPortKind.Lumped && ExcitationAxis(p) is null)
                 return No($"Port {p.Number}'s direction is not along an axis in the port's own sheet, so openEMS's " +
                           "lumped port cannot state it.");
         }
         if (run.Problems() is { Count: > 0 } bad) return No(string.Join(" ", bad));
+        // brief-em3d-116 — a wave port is a fed, probed line, on the grid built with its feed (FdtdGrid.Build planned it).
+        var plan = grid.WavePorts;
+        if (plan.Refusal is { } noWave) return No(noWave);
+        if (problem.HasWavePorts && plan.Feeds.Count == 0)
+            return No("The 3D problem has wave ports, and the openEMS grid was built without their feeds, so they cannot be written.");
         // brief-em3d-49 R-em3d49-4c — a face boundary is a zero-thickness sheet of PEC or of its metal, coincident with
         // the face, at a priority above every solid; the grid (FdtdGrid.Build) was given the same sheets.
         foreach (var (b, pieces) in problem.FaceBoundaryPieces())
@@ -168,6 +210,17 @@ public static class CsxcadWriter
         var materials = problem.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
         materials.TryAdd(GmshGeoWriter.FreeSpace.Name, GmshGeoWriter.FreeSpace);
 
+        // brief-em3d-116 R-em3d116-1c — a face carrying a wave port is absorbing (D9); its feed is in the grid, so a solid
+        // reaching the face is carried through the feed and the PML (Context.Out) as through any absorbing face.
+        IReadOnlyList<FdtdTerminalElements> waveTerminals = [];
+        if (plan.Feeds.Count > 0)
+        {
+            foreach (var feed in plan.Feeds) faceKinds[Array.IndexOf(FaceKeys, feed.Face)] = Em3dBoundaryKind.Absorbing;
+            var (placed, cannot) = FdtdWavePorts.Place(problem, plan, grid);
+            if (cannot is not null) return No(cannot);
+            waveTerminals = placed;
+        }
+
         // ── The band: the pulse, and the frequency tanδ is exact at ─────────────────────────────
         double fMin = problem.Frequency.StartHz, fMax = problem.Frequency.StopHz;
         double f0 = (fMin + fMax) / 2, fc = (fMax - fMin) / 2;
@@ -182,6 +235,7 @@ public static class CsxcadWriter
         var extended = new List<string>();
 
         var ctx = new Context(problem, grid, faceKinds, gridSettings.PmlCells);
+        foreach (var feed in plan.Feeds) ctx.Feed[Array.IndexOf(FaceKeys, feed.Face)] = true;
         var props = new StringBuilder();
         int id = 0;
 
@@ -256,8 +310,17 @@ public static class CsxcadWriter
         int portPriority = items.Count == 0 ? 1 : ctx.Precedence.Max + 1;
         var ports = problem.Ports.OrderBy(p => p.Number).ToList();
         var excitations = new List<string>();
+        var probeNames = new List<OpenEmsProbeNames>();
         foreach (var p in ports)
         {
+            if (p.Kind == Em3dPortKind.Wave)
+            {
+                var t = waveTerminals.Single(w => w.Port == p.Number);
+                probeNames.Add(WaveProbes(props, ref id, t));
+                excitations.Add(WaveExcitation(t, portPriority));
+                continue;
+            }
+            probeNames.Add(new OpenEmsProbeNames(p.Number, [VoltageProbe(p.Number)], [CurrentProbe(p.Number)]));
             var (start, stop, axis, sign) = Terminals(p);
             Open(props, "LumpedElement", id++, $"port{p.Number}_resist", Colors.Port,
                  $" Direction=\"{axis}\" Caps=\"1\" R=\"{R(p.Z0.Real)}\" LEtype=\"0\"");
@@ -339,6 +402,7 @@ public static class CsxcadWriter
         }
 
         // ── Notes ────────────────────────────────────────────────────────────────────────────────
+        notes.AddRange(plan.Notes);
         notes.Add("openEMS boundaries: " + string.Join(", ", Enumerable.Range(0, 6).Select(k =>
             $"{FaceKeys[k]} {BoundaryName(faceKinds[k], ctx.Pml)}")) + ".");
         var lossy = problem.Solids.Where(s => s.Role != Em3dRole.Conductor && materials[s.Material].TanD > 0)
@@ -386,10 +450,12 @@ public static class CsxcadWriter
         string body = props.ToString();
         string model = head + body + tail;
         var files = excitations.Select((e, k) =>
-            head + body + e.Replace("{ID}", (id).ToString(CultureInfo.InvariantCulture)) + tail).ToList();
+            head + body + e.Replace("{ID0}", (id).ToString(CultureInfo.InvariantCulture))
+                           .Replace("{ID1}", (id + 1).ToString(CultureInfo.InvariantCulture)) + tail).ToList();
 
         return new CsxcadLowering(model, files, [.. ports.Select(p => p.Number)], fitHz, f0, fc, maxSteps,
-                                  pec, thin, notes, null, surface, kernelFiles);
+                                  pec, thin, notes, null, surface, kernelFiles)
+               { Probes = probeNames, WaveTerminals = waveTerminals };
     }
 
     /// <summary>A face normal to an axis is written this fraction of its local cell outward (R-em3d65-3d).</summary>
@@ -563,7 +629,7 @@ public static class CsxcadWriter
         sb.Append("                </Primitives>\n");
     }
 
-    /// <summary>The excited port's property, with an <c>{ID}</c> placeholder: it is always the last.</summary>
+    /// <summary>The excited port's property, with an <c>{ID0}</c> placeholder: it is always the last.</summary>
     private static string ExcitationProperty(Em3dPort p, Point3 start, Point3 stop, int axis, int sign, int priority)
     {
         // A soft E-field source on the port sheet pointing from the positive terminal to the negative —
@@ -572,7 +638,7 @@ public static class CsxcadWriter
         e[axis] = -sign;
         var sb = new StringBuilder();
         var c = Colors.Excitation;
-        sb.Append($"            <Excitation ID=\"{{ID}}\" Name=\"port{p.Number}_excite\" Number=\"0\" Enabled=\"1\" Frequency=\"0\" " +
+        sb.Append($"            <Excitation ID=\"{{ID0}}\" Name=\"port{p.Number}_excite\" Number=\"0\" Enabled=\"1\" Frequency=\"0\" " +
                   $"Delay=\"0\" Type=\"0\" Excite=\"{e[0]},{e[1]},{e[2]}\" PropDir=\"0,0,0\">\n");
         sb.Append($"                <FillColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
         sb.Append($"                <EdgeColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
@@ -580,6 +646,77 @@ public static class CsxcadWriter
         sb.Append("                <Weight X=\"1\" Y=\"1\" Z=\"1\" />\n");
         sb.Append("            </Excitation>\n");
         return sb.ToString();
+    }
+
+    // ── brief-em3d-116 — a wave-port terminal: three voltage planes, two current planes, a shaped source ─────────
+
+    private static readonly string[] PlaneNames = ["ua", "u", "uc"];
+
+    /// <summary>
+    /// R-em3d116-2b/c — the terminal's probes: on each voltage plane the path from the reference to the conductor with the
+    /// lumped port's weight −1 (a stripline's two halves as <c>_up</c>/<c>_dn</c>, each weight 1 in magnitude, averaged by the
+    /// reader), and on each half-cell plane between them the current box, its sign making I flow into the device.
+    /// </summary>
+    private static OpenEmsProbeNames WaveProbes(StringBuilder props, ref int id, FdtdTerminalElements t)
+    {
+        int k = t.Port;
+        int halves = t.Voltage.Count / 3;
+        var names = new List<string>[3];
+        for (int plane = 0; plane < 3; plane++)
+        {
+            names[plane] = [];
+            for (int h = 0; h < halves; h++)
+            {
+                var q = t.Voltage[plane * halves + h];
+                string name = VoltageProbe(k, PlaneNames[plane], q.Suffix);
+                names[plane].Add(name);
+                OpenProbe(props, id++, name, type: 0, weight: -1, normDir: -1);
+                AppendPrimitives(props, Box(0, q.From, q.To));
+                props.Append("            </ProbeBox>\n");
+            }
+        }
+        int axis = (int)t.Feed.Axis, u = t.Terminal.U, v = t.Terminal.V;
+        var (b0, c0, b1, c1) = t.CurrentBox;
+        foreach (var (plane, at) in new[] { ("ia", t.IaAtM), ("ib", t.IbAtM) })
+        {
+            OpenProbe(props, id++, CurrentProbe(k, plane), type: 1, weight: t.CurrentWeight, normDir: axis);
+            AppendPrimitives(props, Box(0, Place(axis, at, u, b0, v, c0), Place(axis, at, u, b1, v, c1)));
+            props.Append("            </ProbeBox>\n");
+        }
+        return new OpenEmsProbeNames(k, names[1], [CurrentProbe(k, "ia"), CurrentProbe(k, "ib")])
+        {
+            Ua = names[0], Uc = names[2], SpacingM = t.PlaneSpacingM, Terminal = t.Terminal.Label,
+            Group = t.Terminal.Port.FaceGroup is null ? null : t.Terminal.Port.FaceGroupLabel,
+        };
+    }
+
+    /// <summary>R-em3d116-2a — the terminal's source(s), as the excited file's last properties (<c>{ID0}</c>, <c>{ID1}</c>).</summary>
+    private static string WaveExcitation(FdtdTerminalElements t, int priority)
+    {
+        var sb = new StringBuilder();
+        var c = Colors.Excitation;
+        for (int i = 0; i < t.Sources.Count; i++)
+        {
+            var src = t.Sources[i];
+            var e = src.Excite;
+            sb.Append($"            <Excitation ID=\"{{ID{i}}}\" Name=\"port{t.Port}_excite{src.Suffix}\" Number=\"0\" Enabled=\"1\" Frequency=\"0\" " +
+                      $"Delay=\"0\" Type=\"0\" Excite=\"{e[0]},{e[1]},{e[2]}\" PropDir=\"0,0,0\">\n");
+            sb.Append($"                <FillColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
+            sb.Append($"                <EdgeColor R=\"{c.R}\" G=\"{c.G}\" B=\"{c.B}\" a=\"{c.A}\" />\n");
+            AppendPrimitives(sb, Box(priority, src.Min, src.Max));
+            sb.Append(src.Weight is { } w
+                ? $"                <Weight X=\"{Esc(w[0])}\" Y=\"{Esc(w[1])}\" Z=\"{Esc(w[2])}\" />\n"
+                : "                <Weight X=\"1\" Y=\"1\" Z=\"1\" />\n");
+            sb.Append("            </Excitation>\n");
+        }
+        return sb.ToString();
+    }
+
+    private static Point3 Place(int a, double av, int b, double bv, int c, double cv)
+    {
+        var x = new double[3];
+        x[a] = av; x[b] = bv; x[c] = cv;
+        return new Point3(x[0], x[1], x[2]);
     }
 
     private static string MaterialProperty(Em3dMaterial m, double fitHz)
@@ -639,9 +776,11 @@ public static class CsxcadWriter
                 return sb.ToString();
             }
             case Em3dCylinder c:
+                // brief-em3d-116 R-em3d116-1a — an axis end on a wave port's face runs on down its feed (only there, so a
+                // lumped problem's cylinders are written exactly as before).
                 return $"                    <Cylinder Priority=\"{pr}\" Radius=\"{R(c.Radius)}\">\n" +
-                       $"                        {P("P1", c.AxisStart)}\n" +
-                       $"                        {P("P2", c.AxisEnd)}\n" +
+                       $"                        {P("P1", ctx.OutFeed(c.AxisStart, ref reached))}\n" +
+                       $"                        {P("P2", ctx.OutFeed(c.AxisEnd, ref reached))}\n" +
                        "                    </Cylinder>\n";
             case Em3dSphere sp:
                 return $"                    <Sphere Priority=\"{pr}\" Radius=\"{R(sp.Radius)}\">\n" +
@@ -670,7 +809,11 @@ public static class CsxcadWriter
                 var mesh = Em3dTessellation.Of(s);
                 var sb = new StringBuilder();
                 sb.Append($"                    <Polyhedron Priority=\"{pr}\">\n");
-                foreach (var v in mesh.Vertices) sb.Append($"                        <Vertex>{R(v.X)},{R(v.Y)},{R(v.Z)}</Vertex>\n");
+                foreach (var v0 in mesh.Vertices)
+                {
+                    var v = ctx.OutFeed(v0, ref reached);
+                    sb.Append($"                        <Vertex>{R(v.X)},{R(v.Y)},{R(v.Z)}</Vertex>\n");
+                }
                 foreach (var t in mesh.Triangles) sb.Append($"                        <Face>{t.A},{t.B},{t.C}</Face>\n");
                 sb.Append("                    </Polyhedron>\n");
                 return sb.ToString();
@@ -889,6 +1032,20 @@ public static class CsxcadWriter
 
         public Point3 Out(Point3 q, ref bool reached)
             => new(Out(q.X, 0, ref reached), Out(q.Y, 1, ref reached), Out(q.Z, 2, ref reached));
+
+        /// <summary>brief-em3d-116 — the faces carrying a wave port's feed (xmin … zmax order); set by the writer.</summary>
+        public bool[] Feed { get; } = new bool[6];
+
+        /// <summary>brief-em3d-116 — <see cref="Out(Point3, ref bool)"/>, on the faces carrying a feed only.</summary>
+        public Point3 OutFeed(Point3 q, ref bool reached)
+        {
+            if (!Feed.Any(f => f)) return q;
+            double[] v = [q.X, q.Y, q.Z];
+            for (int a = 0; a < 3; a++)
+                if ((Feed[2 * a] && Math.Abs(v[a] - _box[2 * a]) <= _tol) || (Feed[2 * a + 1] && Math.Abs(v[a] - _box[2 * a + 1]) <= _tol))
+                    v[a] = Out(v[a], a, ref reached);
+            return new Point3(v[0], v[1], v[2]);
+        }
         public Point2 Out2(Point2 q, ref bool reached) => new(Out(q.X, 0, ref reached), Out(q.Y, 1, ref reached));
         public double OutZ(double z, ref bool reached) => Out(z, 2, ref reached);
         public double OutAxis(double v, int axis, ref bool reached) => Out(v, axis, ref reached);

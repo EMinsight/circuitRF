@@ -845,7 +845,7 @@ internal static class Check
                 $"planar finds {(planarOnly.Count == 1 ? "it where it was" : "them where they were")}."));
 
         // brief-em3d-22 R-em3d22-1b/c — a static problem on Palace only, and what it keeps but does not read.
-        // brief-em3d-23 — likewise an eigenmode solve and a wave port: the run's own sentence.
+        // brief-em3d-23 — likewise an eigenmode solve: the run's own sentence (brief-em3d-116 lifted the wave port).
         if (CircuitRF.Design.Em3d.Em3dRunService.PalaceOnlyRefusal(setup) is { } palaceOnly)
         {
             f.Add(CliDiagnostics.CheckEmRefused(path, palaceOnly));
@@ -902,6 +902,11 @@ internal static class Check
                 CircuitRF.Design.Em3d.PalaceConfigWriter.FarFieldRefusal(problem) is { } noPalacePattern)
                 f.Add(CliDiagnostics.CheckEmNote(path, noPalacePattern));
         }
+        // brief-em3d-116 — a wave port openEMS cannot build (a hollow waveguide, a current loop with no room): the lowering's
+        // own sentence, from the run's own planner.
+        if (problems.Count == 0 && setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both &&
+            CircuitRF.Design.Em3d.Em3dRunService.OpenEmsWavePortRefusal(problem, CemOpenEms.ResolveGrid(setup.OpenEms)) is { } noWave)
+            problems.Add(noWave);
         foreach (string p in problems) f.Add(CliDiagnostics.CheckEmRefused(path, p));
         if (problems.Count == 0)
             f.Add(CliDiagnostics.CheckEmWouldRun(path,

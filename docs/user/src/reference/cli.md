@@ -1702,6 +1702,13 @@ S-parameters are. (Below, the `via` line under each, which says how it was decid
 `check` reports the same port as one line, and each refusal — a terminal on the reference, two terminals on
 one conductor, a number another port already has — names the port and the terminal.
 
+When the setup runs on openEMS (or both solvers), an **openEMS wave ports** block says how openEMS builds
+each wave port ([EM Setup ▸ Wave ports](em-setup.html#wave-ports)): per face, the feed's length and what
+set it, how far the grid grows past the face, the source plane and the three voltage planes; per terminal,
+the source's shape, the two current planes, the current loop and how many cells it clears the nearest
+other conductor by; then the run's own notes about that face (its PML, PEC side walls). A port openEMS
+cannot build says `a run would stop here:` and why.
+
 <h3 id="explain-analysis">`--analysis` — which chain would run</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain pa.cnl --analysis

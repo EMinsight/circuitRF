@@ -17122,3 +17122,54 @@ goldens (`PalaceBackendTests.Gate1`) are unchanged.
 **Not done:** `check` does not build the problem, so it cannot report an R-em3d114-2b violation. The lowering always
 builds a group with one rectangle, one reference and distinct conductors, so a `.c3d` cannot produce one; only a
 hand-built `Em3dProblem` can, and `Validate` refuses it in the run.
+
+## openEMS wave ports: fed, probed lines — brief-em3d-116 (2026-10-06)
+
+A wave port on openEMS, from a `.c3d` or a `.cem`, single or multi-terminal: each terminal fed from behind its face and
+measured on three voltage planes and two current planes, S from all runs through the unchanged `FdtdPortTransform.Solve`.
+Planner and placement: `src/Engine/Em3d/FdtdWavePorts.cs`; the line's own Z/ε_eff: `FdtdLineMeasure.cs`. Gate:
+`tests/Ui.Tests/Em3d/OpenEmsWavePortTests.cs`. What was not obvious:
+
+**The feed is grid lines, not geometry.** `FdtdGrid.Build` asks `FdtdWavePorts.Plan` for each wave-port face's lattice — fixed
+lines from one cell outside the source to one cell past the reference plane — and lowers that face absorbing (D9). The
+problem's air box is not touched. `CsxcadWriter`'s `Context.Out` already carries a coordinate on an absorbing face out to
+the grid's edge, so a grid that reaches past the face extrudes every solid crossing it down the feed and on through the PML
+with no new geometry code. `FdtdGridResult.WavePorts` carries the plan, so the writer, `explain`, `check` and the 3D view's
+grid overlay all read one answer.
+
+**A cylinder was never carried through an absorbing face.** `Primitive`'s `Em3dCylinder` case wrote its axis ends as given,
+unlike a box, a prism or a sheet. A coax pin would have stopped at the face. It now runs down a FEED face only
+(`Context.OutFeed`; also the tessellated-polyhedron case), so no lumped problem's file changes (the goldens confirm it).
+**Not fixed:** a cylinder still stops at an ordinary absorbing face. It is a pre-existing gap in the PML continuation, outside
+this brief.
+
+**A 1/ρ weight is 0/0 on the axis**, and the coax's axis is usually a grid line, where openEMS evaluates the weight. The
+denominator is `max(ρ², r_i²)`; the annulus mask is 0 there anyway. Expression numbers are written with a lowercase exponent.
+
+**A source sheet's width snaps inward.** With the thirds rule a strip's edge is not a line, and snapping each edge to its
+nearest line can put one side outside the strip. The sheet spans the lines on or inside the strip (nearest when none is).
+
+**The side-wall note must skip the strips' own planes.** A stripline between the box's PEC top and bottom first drew the
+1d note against them: a PEC face a stripline or microstrip path runs to is its reference, not a side wall.
+
+**Measured, gate 9 (the pair as a `.c3d`, PMC sides, t = 0, 8 cells per 1 mm strip-to-plane, 842 k cells, 4 runs, 51 s):**
+max |ΔS| against the ideal coupled line (Z₀e 104.08 / Z₀o 73.58 Ω) is 0.0012 / 0.0016 / 0.0012 at 2 / 5 / 8 GHz; thru
+0.009 dB / 0.03°, near-end 0.03 dB / 0.1°, far-end 0.016 dB / 0.07°. 113-a's StripLinePort replay measured 0.0115 with a
+0.057 dB thru (gate 4 still holds that replay to its tolerances). The line measured ε_eff 1.00 (air) and 88.65 Ω per terminal
+with the other passive. The `openEMS chose a time step … 1.01 times circuitRF's Courant estimate` warning appears on these
+runs: method 3's local limit exceeds the global estimate when the smallest cells on the three axes are not in one cell. Not
+caused by the ports; left as it is.
+
+**Measured, gate 8 (the coax on a Cartesian grid, through `circuitrf em`): the brief's bound is not met.** Line Z at 10 GHz:
+51.13 Ω / ε_eff 2.27 at 28.7 µm cells (r_i/7), **50.88 Ω / 2.22 at 20 µm (r_i/10, 958 k cells, 97 s)**, against 50.021 ± 0.6 Ω.
+Both fall linearly with the cell, extrapolating to about 50.3 Ω / 2.11, so the probes read the discretised line correctly and
+the residue is the staircase of the round conductors (the pair, all flat metal on grid lines, lands within 0.0016 of its reference). 113-a's own r_i/10 Cartesian run read
+50.39–50.56 Ω on a differently aligned grid: at this resolution the Z error depends on where the lines fall on the circles.
+Gate 8 is left at the brief's 0.6 Ω and fails; the owner decides the bound (or the resolution) for a Cartesian coax, and
+brief 120's cylindrical grid is where the coax is meant to be exact.
+
+**A coax's floating pin stalls openEMS's own energy criterion** (−28.8 dB after 479 k steps on the r_i/7 run started by hand),
+F0's case again; the port signals were down 73 dB by 1.25 ns, so circuitRF's decay stop ends the run there.
+
+**`check` reports both openEMS wave-port refusals** (hollow waveguide; a current loop with no room) on the `.cem` path, through
+`Em3dRunService.OpenEmsWavePortRefusal`, the run's own planner. A `.c3d`'s check assembles no problem per setup, so it does not.

@@ -219,9 +219,9 @@ public sealed class TerminalWavePortTests(ITestOutputHelper output) : IDisposabl
 
     // ── 7. refused to run ───────────────────────────────────────────────────────────────────────
 
+    // brief-em3d-116 lifted openEMS's refusal (it builds terminal ports); Palace's stands (D14).
     [Theory]
     [InlineData(Em3dSolver.Palace, "Port 'Left' has two terminals; terminal wave ports run on openEMS only in this version. Set the setup's solver to openEMS.")]
-    [InlineData(Em3dSolver.OpenEms, "Port 'Left' has two terminals; terminal wave ports are not yet built for openEMS.")]
     public void Gate7_ATwoTerminalSetup_IsRefusedBeforeGmsh(Em3dSolver solver, string sentence)
     {
         long gmsh = PalaceRun.GmshInvocations;

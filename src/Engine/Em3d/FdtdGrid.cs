@@ -89,6 +89,9 @@ public enum FdtdLineKind
     PortExtent,
     /// <summary>A face of the air box — never moved.</summary>
     AirBoxFace,
+    /// <summary>brief-em3d-116 — a wave port's feed: the source plane, the voltage planes and the uniform lattice between —
+    /// never moved.</summary>
+    WavePortPlane,
 }
 
 /// <summary>
@@ -120,6 +123,7 @@ public sealed record FdtdLineSource(
             FdtdLineKind.MaterialFace  => $"material face at {at}",
             FdtdLineKind.SheetPlane    => $"sheet plane at {at}",
             FdtdLineKind.PortExtent    => $"port extent at {at}",
+            FdtdLineKind.WavePortPlane => $"feed line at {at}",
             _                          => $"face at {at}",
         };
         if (Kind is FdtdLineKind.ThirdsInside or FdtdLineKind.ThirdsOutside)
@@ -209,6 +213,10 @@ public sealed record FdtdGridResult(
 {
     public FdtdAxisGrid Axis(FdtdAxis a) => a switch { FdtdAxis.X => X, FdtdAxis.Y => Y, _ => Z };
 
+    /// <summary>brief-em3d-116 R-em3d116-1 — the wave ports' feeds this grid was built with (their lattices are among its
+    /// lines), or why openEMS cannot build them. <see cref="FdtdWavePortPlan.None"/> for a problem with no wave port.</summary>
+    public FdtdWavePortPlan WavePorts { get; init; } = FdtdWavePortPlan.None;
+
     /// <summary>The axis holding the smallest cell of the whole grid — the one that sets Δt most.</summary>
     public FdtdAxisGrid Smallest => new[] { X, Y, Z }.MinBy(g => g.SmallestCellM)!;
 }
@@ -285,12 +293,21 @@ public static class FdtdGrid
         problem = Em3dFaceSheets.Apply(problem);
 
         var ctx = new Context(problem, settings);
+        // brief-em3d-116 R-em3d116-1 — a wave port's face is fed from behind: its feed's lattice is fixed lines past the face,
+        // and the face is lowered absorbing (overview D9), so the PML begins where the feed ends.
+        var wavePorts = FdtdWavePorts.Plan(problem, settings, ctx.MinCell);
+        if (wavePorts.Feeds.Count > 0)
+        {
+            problem = FdtdWavePorts.WithFeedFacesAbsorbing(problem, wavePorts);
+            ctx = new Context(problem, settings);
+        }
         var merges = new List<FdtdMerge>();
         var warnings = new List<string>();
 
         FdtdAxisGrid Axis(FdtdAxis a)
         {
-            var required = Merge(CollectRequired(problem, a, settings, ctx.MinCell), a, ctx.MinCell, merges, warnings);
+            var required = Merge([.. CollectRequired(problem, a, settings, ctx.MinCell), .. wavePorts.ExtraLines(a)], a, ctx.MinCell,
+                                 merges, warnings);
             var (lo, hi) = ctx.Faces(a);
             var lines = Fill(required, iv => ctx.MaxCell(a, iv.Lo, iv.Hi), settings.GradingRatio,
                              lo == Em3dBoundaryKind.Absorbing ? settings.PmlCells : 0,
@@ -318,7 +335,8 @@ public static class FdtdGrid
         long memory = Em3dSizeEstimate.OpenEmsMemoryBytes(cells);
         long limit = availableMemoryBytes ?? GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
 
-        var result = new FdtdGridResult(x, y, z, ctx.MinCell, cells, dt, pulse, steps, memory, merges, warnings, null);
+        var result = new FdtdGridResult(x, y, z, ctx.MinCell, cells, dt, pulse, steps, memory, merges, warnings, null)
+                     { WavePorts = wavePorts };
         // brief-em3d-65 R-em3d65-4d — a kernel solid's rounded features the grid will not respect, beside the oblique-face
         // warning above; the NOTE rows are the writer's (CsxcadLowering.Notes), so a run says each row once.
         warnings.AddRange(Em3dFidelity.For(problem, Em3dFidelitySolver.OpenEms, result)

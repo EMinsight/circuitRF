@@ -266,18 +266,14 @@ public sealed class PalaceEigenTests(ITestOutputHelper output) : IDisposable
 
     // ── 8. Refusals before work ─────────────────────────────────────────────────────────────────
 
+    // brief-em3d-116 lifted the wave port on openEMS (it is a fed, probed line there): only the eigenmode refusal remains.
     [Fact]
-    public void Gate8_WaveOnOpenEms_WaveOffAFace_AndEigenmodeOnOpenEms_AreRefusedBeforeGmsh()
+    public void Gate8_WaveOffAFace_AndEigenmodeOnOpenEms_AreRefusedBeforeGmsh()
     {
         long gmsh = PalaceRun.GmshInvocations;
         foreach (var solver in new[] { Em3dSolver.OpenEms, Em3dSolver.Both })
         {
-            var (wave, src) = WaveMicrostrip(wave: true);
-            wave.Solver3D = solver;
-            var r = EmRunService.Run(wave, src, Path.Combine(_root, "w-" + solver));
-            Assert.Equal(EmRunStatus.Refused, r.Status);
-            Assert.Contains("only Palace builds wave ports", r.Error);
-
+            var (_, src) = WaveMicrostrip(wave: true);
             var eig = new EmSetup { Solver3D = solver, Problem3D = Em3dProblemType.Eigenmode };
             var e = EmRunService.Run(eig, src, Path.Combine(_root, "e-" + solver));
             Assert.Equal(EmRunStatus.Refused, e.Status);

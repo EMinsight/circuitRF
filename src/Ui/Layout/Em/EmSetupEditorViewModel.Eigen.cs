@@ -91,8 +91,9 @@ public sealed partial class EmSetupEditorViewModel
 
     public const string Port3DKindTip =
         "Lumped: a sheet between the line and its return with the port's Z0 across it. Wave: a region of the air " +
-        "box's face, fed by the line's own mode — no series parasitic, but the line must run to the layout's " +
-        "edge, and only Palace builds one. Kinds may be mixed.";
+        "box's face, measured in the line's own field — no series parasitic, but the line must run to the layout's " +
+        "edge. Both solvers build one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a " +
+        "port with several terminals. Kinds may be mixed.";
 
     private void RaiseEigenVisibility()
     {

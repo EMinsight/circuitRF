@@ -94,11 +94,11 @@ public sealed class Viewer3DOverlay : Control
         if (vm.View.ShowAxisIndicator) AxisIndicator(ctx, cam, AxisIndicatorCentre(h), ink);
         if (vm.ShowScaleLegend) ScaleBar(ctx, cam, vm, w, h, inkPen, ink);
 
-        foreach (var label in vm.GridLabels)
+        foreach (var (text, at) in vm.GridLabels.Select(l => (l.Text, l.At)).Concat(vm.GridFeedLabels.Select(l => (l.Text, l.At))))
         {
-            var (x, y, visible) = cam.Project(label.At, (float)w, (float)h);
+            var (x, y, visible) = cam.Project(at, (float)w, (float)h);
             if (!visible) continue;
-            Text(ctx, label.Text, new Point(x + 6, y - 18), ink, 11, dark);
+            Text(ctx, text, new Point(x + 6, y - 18), ink, 11, dark);
         }
 
         if (!picture)

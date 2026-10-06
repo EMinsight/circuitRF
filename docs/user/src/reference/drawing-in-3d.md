@@ -1128,6 +1128,8 @@ one with the largest surface. *Make Port ▸ Wave* on such a face writes the ref
 other conductor, numbered with the next free numbers from left to right along the face. The 3D view draws
 each terminal as an arrow from the reference to its conductor, in the port colour, with its number at the
 head. A face whose reference cannot be decided (two candidates with equal surfaces) says so on the menu item.
+A port with several terminals runs on openEMS; Palace refuses it
+([EM Setup ▸ Several conductors on one face](em-setup.html#wave-port-terminals)).
 
 **The air box** is the region solved in: each face a distance beyond the geometry, and a boundary — PEC,
 PMC, symmetry or absorbing — chosen by right-clicking the face. The example's package **is** its own

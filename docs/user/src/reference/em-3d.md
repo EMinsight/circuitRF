@@ -126,9 +126,10 @@ full description.
   capacitance matrix, *Magnetostatic* for an inductance matrix, *Eigenmode* for resonant frequencies and
   Q. [Package RLC](em-setup.html#package-rlc), [Eigenmodes](em-setup.html#eigenmodes).
 - **Ports.** A layout's port labels become ports. In 3D a port is **lumped** by default: a sheet from the
-  line down to its return, with the port's Z₀ across it. A **wave port** (`Ports3D`, Palace only) is fed
-  by the line's own mode on the air box's face instead, and has no sheet parasitic.
-  [Wave ports](em-setup.html#wave-ports).
+  line down to its return, with the port's Z₀ across it. A **wave port** (`Ports3D`) is fed and measured
+  in the line's own field at the air box's face instead, and has no sheet parasitic. Both solvers build
+  one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a port with several
+  terminals. [Wave ports](em-setup.html#wave-ports).
 - **Terminals** (`Terminals3D`, static solves): the matrix's rows and columns, each named by a net.
   Every conductor on that net belongs to the terminal. A magnetostatic terminal also names the port its
   current enters by.

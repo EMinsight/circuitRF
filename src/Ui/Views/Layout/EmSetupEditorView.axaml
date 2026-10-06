@@ -592,7 +592,7 @@
                                                  ToolTip.Tip="The wave port's height in multiples of the line's height above its return. Blank: 8."/>
                                         <TextBox Grid.Column="5" Classes="cell" Tag="Ports3D" Text="{Binding OffsetUm}" IsEnabled="{Binding IsWave}"
                                                  PlaceholderText="0" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
-                                                 ToolTip.Tip="How far into the structure the wave port's reference plane lies. Palace de-embeds the line between."/>
+                                                 ToolTip.Tip="How far into the structure the wave port's reference plane lies: both solvers measure there, so the line between is de-embedded."/>
                                         <!-- Only a leftover row can go: a port the layout labels is
                                              configured, never removed, here. -->
                                         <Button Grid.Column="6" Content="✕" Padding="6,0"

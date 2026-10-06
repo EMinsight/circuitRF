@@ -151,6 +151,10 @@ runs the time stepping.
 - **Absorbing boundaries are good.** openEMS's PML (perfectly matched layer) soaks up an outgoing wave
   over a few cells, so a radiator's air box can stay small.
 - openEMS drives **one port per run**, so an N-port setup is N runs, one after another.
+- **The two solvers build a wave port differently.** Palace computes the line's mode on the air box's face
+  and projects the field onto it. openEMS computes no mode: it feeds the line from a short extension
+  behind the face and measures its voltage and current with probes around the reference plane.
+  [Wave ports](em-setup.html#wave-ports).
 
 ## Palace and openEMS: the two programs {#programs}
 
@@ -166,7 +170,7 @@ Opening, editing and looking at a 3D model needs neither program. Only **Simulat
 | Licence | Apache 2.0 | GPL v3 |
 | Mesh | Tetrahedra, made by [Gmsh](https://gmsh.info) from circuitRF's model | A rectilinear grid, written by circuitRF |
 | Parallel | Across processes (MPI): one per physical core by default | Across the cores of one machine |
-| What circuitRF runs on it | Driven S-parameters, eigenmode, electrostatic, magnetostatic; lumped and wave ports; radiation pattern | Driven S-parameters with lumped ports; radiation pattern |
+| What circuitRF runs on it | Driven S-parameters, eigenmode, electrostatic, magnetostatic; lumped and wave ports; radiation pattern | Driven S-parameters; lumped and wave ports, including several terminals on one face; radiation pattern |
 | Install, as measured on one Apple M4 | Built from source: 52 min, 1.9 GB | 8 min, 0.27 GB |
 | On Windows | Inside your Windows Subsystem for Linux (WSL 2). Palace's GitHub page covers Linux and macOS only; see [Installing Palace on Windows](palace-windows.html) | Native |
 

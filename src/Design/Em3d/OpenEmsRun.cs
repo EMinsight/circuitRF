@@ -46,7 +46,12 @@ public sealed record OpenEmsLogFacts(double? TimeStepS, long? Cells, long? Steps
 /// past the pulse, so there is no decay to measure).</param>
 /// <param name="Converged">The ports decayed to the criterion, or openEMS's energy criterion was met.</param>
 public sealed record OpenEmsPortRun(int Port, bool Ok, bool Cancelled, string? Message, OpenEmsLogFacts? Facts,
-                                    double DecayDb, bool Converged, IReadOnlyList<FdtdPortProbes>? Probes);
+                                    double DecayDb, bool Converged, IReadOnlyList<FdtdPortProbes>? Probes)
+{
+    /// <summary>brief-em3d-116 R-em3d116-2e — when the excited port is a wave-port terminal, its five probes in this run
+    /// (U_a, U, U_c, I_a, I_b) and the voltage planes' spacing: what the line's own Z and ε_eff are measured from.</summary>
+    public (FdtdProbe Ua, FdtdProbe U, FdtdProbe Uc, FdtdProbe Ia, FdtdProbe Ib, double SpacingM)? Line { get; init; }
+}
 
 public static class OpenEmsRun
 {
@@ -157,9 +162,9 @@ public static class OpenEmsRun
 
         control?.BeginStage($"solving (openEMS), port {index + 1} of {n}", lowering.MaxTimeSteps, "steps");
 
-        var tails = lowering.Ports.SelectMany(p => new[] { new ProbeTail(Path.Combine(dir, CsxcadWriter.VoltageProbe(p))),
-                                                           new ProbeTail(Path.Combine(dir, CsxcadWriter.CurrentProbe(p))) })
-                                  .ToArray();
+        var tails = Names(lowering).SelectMany(p => new[] { new ProbeTail(Path.Combine(dir, p.U[0])),
+                                                            new ProbeTail(Path.Combine(dir, p.I[0])) })
+                                   .ToArray();
         var gate = new Lock();
         var tail = new Queue<string>();
         long latestStep = 0;
@@ -245,17 +250,74 @@ public static class OpenEmsRun
         var facts = ParseLog(logText);
 
         var probes = new List<FdtdPortProbes>();
-        foreach (int q in lowering.Ports)
+        foreach (var names in Names(lowering))
         {
-            var u = ReadProbe(Path.Combine(dir, CsxcadWriter.VoltageProbe(q)), out string? eu);
-            var i = ReadProbe(Path.Combine(dir, CsxcadWriter.CurrentProbe(q)), out string? ei);
-            if (eu is not null || ei is not null) return Fail((eu ?? ei)!);
-            probes.Add(new FdtdPortProbes(u!, i!));
+            if (ReadPort(dir, names, out string? error) is not { } read) return Fail(error!);
+            probes.Add(read);
+        }
+
+        // brief-em3d-116 R-em3d116-2e — the excited terminal's line, from its own five probes in its own run.
+        var own = Names(lowering)[index];
+        (FdtdProbe, FdtdProbe, FdtdProbe, FdtdProbe, FdtdProbe, double)? line = null;
+        if (own.IsWave)
+        {
+            var ua = Mean(dir, own.Ua!, out string? e1);
+            var um = Mean(dir, own.U, out string? e2);
+            var uc = Mean(dir, own.Uc!, out string? e3);
+            var ia = ReadProbe(Path.Combine(dir, own.I[0]), out string? e4);
+            var ib = ReadProbe(Path.Combine(dir, own.I[1]), out string? e5);
+            if ((e1 ?? e2 ?? e3 ?? e4 ?? e5) is { } lineError) return Fail(lineError);
+            line = (ua!, um!, uc!, ia!, ib!, own.SpacingM);
         }
 
         double decay = Decay(probes, windowS, settleS) ?? double.NaN;      // NaN: stopped before a window past the pulse
         bool converged = facts.Aborted || facts.EnergyCriterionMet || decay <= endCriterionDb;
-        return new OpenEmsPortRun(port, true, false, null, facts, decay, converged, probes);
+        return new OpenEmsPortRun(port, true, false, null, facts, decay, converged, probes) { Line = line };
+    }
+
+    /// <summary>The lowering's probe names per port; a lowering from before brief 116 (none recorded) is lumped throughout.</summary>
+    private static IReadOnlyList<OpenEmsProbeNames> Names(CsxcadLowering lowering)
+        => lowering.Probes.Count == lowering.Ports.Count ? lowering.Probes
+           : [.. lowering.Ports.Select(p => new OpenEmsProbeNames(p, [CsxcadWriter.VoltageProbe(p)], [CsxcadWriter.CurrentProbe(p)]))];
+
+    /// <summary>
+    /// brief-em3d-116 R-em3d116-2d — one port's U and I in one run: U the mean of its voltage files (one, or a stripline's two
+    /// halves), I the mean of its current files (one, or a terminal's two half-cell planes), each sample by sample. Files
+    /// averaged together must share one time column; when they do not, the error names them.
+    /// </summary>
+    public static FdtdPortProbes? ReadPort(string dir, OpenEmsProbeNames names, out string? error)
+    {
+        var u = Mean(dir, names.U, out error);
+        if (u is null) return null;
+        var i = Mean(dir, names.I, out error);
+        return i is null ? null : new FdtdPortProbes(u, i);
+    }
+
+    /// <summary>The sample-wise mean of probe files sharing one time column.</summary>
+    private static FdtdProbe? Mean(string dir, IReadOnlyList<string> files, out string? error)
+    {
+        error = null;
+        var read = new List<FdtdProbe>(files.Count);
+        foreach (string f in files)
+        {
+            var p = ReadProbe(Path.Combine(dir, f), out error);
+            if (p is null) return null;
+            read.Add(p);
+        }
+        if (read.Count == 1) return read[0];
+        var t = read[0].TimeS;
+        for (int k = 1; k < read.Count; k++)
+            if (read[k].TimeS.Length != t.Length || !read[k].TimeS.AsSpan().SequenceEqual(t))
+            {
+                error = $"openEMS's probe files {string.Join(" and ", files.Select(f => $"'{Path.Combine(dir, f)}'"))} do not share one " +
+                        "time column, so they cannot be averaged sample by sample.";
+                return null;
+            }
+        var v = new double[t.Length];
+        foreach (var p in read)
+            for (int n = 0; n < v.Length; n++) v[n] += p.Value[n];
+        for (int n = 0; n < v.Length; n++) v[n] /= read.Count;
+        return new FdtdProbe(t, v);
     }
 
     // ── The ports' decay ─────────────────────────────────────────────────────────────────────

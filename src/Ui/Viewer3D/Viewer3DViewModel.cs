@@ -109,6 +109,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     public Scene3DOverlay GridOverlay { get; private set; } = Scene3DOverlay.None;
     public IReadOnlyList<FdtdCellLabel> GridLabels { get; private set; } = [];
 
+    /// <summary>brief-em3d-116 R-em3d116-5 — the wave-port feeds' source and reference planes, named where they are drawn.</summary>
+    public IReadOnlyList<FdtdFeedLabel> GridFeedLabels { get; private set; } = [];
+
     /// <summary>Formats a length, metres, in the layout's display unit.</summary>
     public Func<double, string> FormatLength { get; private set; } = m => (m * 1e6).ToString("G4", CultureInfo.InvariantCulture) + " µm";
 
@@ -866,7 +869,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         var grid = _grid is { } cached && ReferenceEquals(cached.Scene.Geometry, scene.Geometry) ? cached.Grid : null;
         bool dark = ThemeService.CurrentVariant == ColorVariant.Dark;
         if (!wantSection) SectionOverlay = Scene3DOverlay.None;
-        if (!wantGrid) { GridOverlay = Scene3DOverlay.None; GridLabels = []; OnPropertyChanged(nameof(GridLabels)); }
+        if (!wantGrid) { GridOverlay = Scene3DOverlay.None; GridLabels = []; GridFeedLabels = []; OnPropertyChanged(nameof(GridLabels)); }
         if (!wantSection && !wantGrid) { FrameRequested?.Invoke(); return; }
         Task.Run(() =>
         {
@@ -896,6 +899,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
                     {
                         GridOverlay = new Scene3DOverlay(drawing.Lines, ++_overlayVersion);
                         GridLabels = drawing.Labels;
+                        GridFeedLabels = drawing.FeedLabels;
                         OnPropertyChanged(nameof(GridLabels));
                     }
                     FrameRequested?.Invoke();

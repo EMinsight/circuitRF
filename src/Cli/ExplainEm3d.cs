@@ -100,7 +100,7 @@ internal static class ExplainEm3d
             Kind = q.Kind == Em3dPortKind.Wave ? "wave" : null,
             ReferencePlane = q.Kind != Em3dPortKind.Wave ? null
                 : $"on the air box's {p.FaceOf(q.Min, q.Max)} face" + (q.ReferencePlane.ShiftM > 0
-                    ? $", moved {(q.ReferencePlane.ShiftM * 1e6).ToString("G6", CultureInfo.InvariantCulture)} µm into the structure by the port's Offset (Palace de-embeds it)"
+                    ? $", moved {(q.ReferencePlane.ShiftM * 1e6).ToString("G6", CultureInfo.InvariantCulture)} µm into the structure by the port's Offset (both solvers measure there)"
                     : " (Offset 0: the S-parameters are referred to the face itself)"),
         }).ToList();
 
@@ -138,10 +138,53 @@ internal static class ExplainEm3d
                                    Size(p, setup, grid), solvers, notes, warnings, null)
         {
             Static = Static(p, setup),
+            OpenEmsWavePorts = setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both ? WavePortLines(p, grid.Grid) : null,
             Eigenmode = p.Type != Em3dProblemType.Eigenmode ? null
                 : new Em3dEigenmodeJson(p.EigenmodeCount, setup.Eigenmode?.Count is null ? "default" : "field",
                                         p.EigenmodeTargetHz, setup.Eigenmode?.TargetGHz is null ? "default (the sweep's start)" : "field"),
         };
+    }
+
+    /// <summary>
+    /// brief-em3d-116 R-em3d116-3 — per wave port on openEMS: the feed and how its length was set, the source plane and the
+    /// source's shape, the three voltage planes, each terminal's current planes and the clearance of its box, and the notes
+    /// (the face's termination, PEC side walls). Read from the grid a run writes and the placement its writer makes.
+    /// </summary>
+    private static IReadOnlyList<string>? WavePortLines(Em3dProblem p, FdtdGridResult? g)
+    {
+        if (g is null || !p.HasWavePorts) return null;
+        var plan = g.WavePorts;
+        if (plan.Refusal is { } no) return [$"a run would stop here: {no}"];
+        var lines = new List<string>();
+        var (placed, cannot) = FdtdWavePorts.Place(p, plan, g);
+        string L(double m) => FdtdGrid.FormatLength(m);
+        foreach (var f in plan.Feeds)
+        {
+            string a = FdtdGrid.AxisName(f.Axis);
+            lines.Add($"{f.Face} face ({string.Join(", ", f.Ports.Select(x => $"'{x}'"))}): feed {L(f.FeedM)} from the source to the reference plane, " +
+                      $"{f.LengthSetBy}; the grid grows {L(f.ExtensionM)} past the face before its PML; source plane at {a} = {L(f.SourceAtM)}; " +
+                      $"voltage planes at {a} = {L(f.At(f.ReferenceIndex - 1))}, {L(f.ReferenceAtM)} (the reference plane) and " +
+                      $"{L(f.At(f.ReferenceIndex + 1))}.");
+            foreach (var e in placed.Where(e => e.Feed == f))
+            {
+                var t = e.Terminal;
+                string shape = t.Shape switch
+                {
+                    FdtdTerminalShape.Coaxial    => $"coaxial: a radial source ∝ 1/ρ over the annulus from {L(t.InnerRadiusM)} to {L(t.OuterRadiusM)}",
+                    FdtdTerminalShape.Stripline  => "a strip between two reference planes: two sheets across it, strip to each plane, pointing away " +
+                                                    "from it; its voltage is the mean of the two halves",
+                    FdtdTerminalShape.Microstrip => "a strip over one reference plane: one sheet across it, strip to the plane",
+                    _                            => "a source along its voltage path",
+                };
+                string u = FdtdGrid.AxisName((FdtdAxis)t.U), v = FdtdGrid.AxisName((FdtdAxis)t.V);
+                lines.Add($"  terminal {t.Label} ('{t.Port.PositiveObject}', port {t.Port.Number}): {shape}; current planes at {a} = {L(e.IaAtM)} and " +
+                          $"{L(e.IbAtM)}, the loop {u} {L(e.CurrentBox.U0)} .. {L(e.CurrentBox.U1)}, {v} {L(e.CurrentBox.V0)} .. {L(e.CurrentBox.V1)}" +
+                          (e.NearestConductor is { } n ? $", clear of '{n}' by {e.ClearanceCells.ToString("0.##", CultureInfo.InvariantCulture)} cells ({L(e.ClearanceM)})" : "") + ".");
+            }
+        }
+        if (cannot is not null) lines.Add($"a run would stop here: {cannot}");
+        lines.AddRange(plan.Notes);
+        return lines;
     }
 
     /// <summary>brief-em3d-22 R-em3d22-2b — the terminals, the ground and what floats.</summary>
@@ -383,6 +426,11 @@ internal static class ExplainEm3d
                               $"normal ({G(q.ReferenceNormal[0])}, {G(q.ReferenceNormal[1])}, {G(q.ReferenceNormal[2])}), " +
                               $"shift {L(q.ReferenceShiftM)}" +
                               (q.Kind is { } kind ? $"; {kind} port, reference plane {q.ReferencePlane}" : ""));
+        if (r.OpenEmsWavePorts is { Count: > 0 } waveLines)
+        {
+            Console.WriteLine("  openEMS wave ports");
+            foreach (string l in waveLines) Console.WriteLine($"    {l}");
+        }
         if (r.Eigenmode is { } eig)
             Console.WriteLine($"  eigenmode    {eig.Count} mode(s) ({eig.CountFrom}) above {G(eig.TargetHz / 1e9)} GHz ({eig.TargetFrom})");
 

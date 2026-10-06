@@ -651,9 +651,10 @@ in engineering units, and `circuitrf explain` lists which conductors are in whic
 
 A 3D port is **lumped** by default: a sheet from the line down (or up) to its return, with the port's
 Z0 across it. A lumped sheet has a small series inductance of its own, and on a tall sheet it shows as
-a step in S11 at the top of the band. A **wave port** has none: it is a region of the air box's face,
-fed by the line's own mode, which Palace computes on that face at every frequency. Palace only; a setup
-naming openEMS or both solvers is refused, and so is its `check`.
+a step in S11 at the top of the band. A **wave port** has none: it is a region of the air box's face where
+the line is fed and measured in its own field. Both solvers build one, each its own way: Palace computes
+the line's mode on that face at every frequency, and openEMS feeds the line from behind the face and
+measures it with probes (*On openEMS*, below).
 
 The port table in the **Solver** group lists every port the layout labels, and it is the one place a
 3D setup's ports are configured — the planar **Ports** group is hidden while a 3D solver is chosen. Each
@@ -672,20 +673,49 @@ that kind of row can be removed.
   height above its return. Blank takes the sizing rule: 10 line widths (10 substrate heights for a line
   narrower than its substrate) by 8 heights. The answer does not depend on them: ±20 % of the region
   moved |S21| on a 50 Ω microstrip by under 0.02 dB.
-- **OffsetUm** moves the reference plane that far into the structure; Palace de-embeds the line between.
-  `circuitrf explain` says where each port's reference plane is.
-- **What the numbers are referred to.** Palace refers a wave port's S-parameters to the port's own mode
+- **OffsetUm** moves the reference plane that far into the structure. Both solvers measure there, so the
+  line between is de-embedded. `circuitrf explain` says where each port's reference plane is.
+- **What the numbers are referred to, on Palace.** Palace refers a wave port's S-parameters to the port's own mode
   at unit power — that is, to the mode's impedance, which changes with frequency (it is Palace's
   *Z_PV*, measured along a line from the return up to the strip). The Touchstone file states one real
   reference impedance per port, so circuitRF renormalises each wave port to its **Z0** and the file's
   header says so. On a 50 Ω microstrip the mode impedance is within a few ohms of 50; on a waveguide it
   is several hundred ohms, so set Z0 to the mode impedance the run reports if you want a matched file.
-- **One mode.** A wave port excites and measures its first mode. If the port's region is large enough
+- **One mode, on Palace.** A wave port excites and measures its first mode. If the port's region is large enough
   for a second mode to propagate at the top of the sweep, the run warns — its S-parameters then leave
   out the power that mode carries. Make the region smaller, or lower the sweep's top.
 
 A wave port needs Palace's eigensolver (every Palace build has one) and GSLIB (the `+gslib` variant, on
 by default). A build without either is refused before anything meshes, naming the variant.
+
+**On openEMS.** openEMS computes no mode. It builds the port the way a transmission-line port is built on
+an FDTD grid:
+
+- **The line is fed from a short extension behind the face.** The grid grows outward past the face, the
+  face's own cross-section continues through it, and a source at its far end is shaped to the line: a
+  radial field across a coax's dielectric, a sheet from a strip to its reference plane (one sheet over a
+  ground, two for a strip between two planes). The feed is at least 4.5 times the largest distance on the
+  face from a conductor to its reference, and at least ten cells. The run's notes give its length, and
+  the 3D view's openEMS grid draws it, with the source plane and the reference plane marked.
+- **The face is absorbing for openEMS** whatever the setup says, because the extension ends in PML. A
+  face the setup states as PEC or PMC stays so for Palace, and the run's notes say so.
+- **Voltage and current are measured around the reference plane**: the voltage on three planes one cell
+  apart, the middle one on the reference plane, and the current on the two planes between them, averaged.
+  The result is referred to Z0 directly, with no renormalisation.
+- **The run reports the line's own impedance and ε_eff** per port, measured from the same probes
+  (`Terminal P1: the line measured Z 50.4 Ω, ε_eff 2.20.`). On openEMS's Cartesian grid a round
+  conductor is a staircase, and a coax reads slightly slow there: an ε_eff a few percent above its
+  dielectric's is that, not the port.
+- **A hollow waveguide is refused**: a region met by one conductor has no voltage between conductors, and
+  openEMS would need a mode-matching port, which circuitRF does not build yet. Run it on Palace.
+- **Keep PEC side walls away from the line.** Two PEC walls beside a line make a box with modes of its
+  own; one near the band is excited by the feed's source and carries voltage but no current on the line.
+  The run notes it when the empty cross-section's first mode is below 1.5 times the sweep's top. Make
+  those faces PMC or Absorbing. A PEC face that is the line's own reference plane is not a side wall.
+- **The current probe needs room**: its loop round each conductor must lie in dielectric with one grid
+  cell to spare from any other conductor, corners included, or it reads a fraction of the current. A port
+  whose loop cannot be placed is refused, naming the conductor it would touch and the clearance needed;
+  refine the openEMS grid there or move the conductors apart.
 
 #### Several conductors on one face {#wave-port-terminals}
 
@@ -723,6 +753,13 @@ In a `.c3d` the port carries `Reference` (optional) and `Terminals`; it states n
   ([Drawing in 3D ▸ Simulating](drawing-in-3d.html#simulate)).
 - `Model` turns the whole port off, every terminal with it.
 - A `.cem` cannot state one: a layout's edge port is one conductor. Terminal ports are drawn in a 3D view.
+
+**Terminal ports run on openEMS.** Each terminal is fed and measured on its own, one run per terminal,
+and S comes from all the runs together: a coupled pair whose lines end in the feed's absorber is
+terminated in the pair's own impedances, not in each terminal's Z0, so no single run gives a column of S
+by itself. **Palace does not run a port with several terminals**: its port modes come from the face, and
+a face split between lines represents only their odd mode. A setup naming Palace is refused, pointing to
+openEMS; one naming both solvers runs on openEMS and says Palace was skipped.
 
 ### Eigenmodes {#eigenmodes}
 
