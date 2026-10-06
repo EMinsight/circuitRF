@@ -9,7 +9,12 @@ text, terminal S from several modes on one shared face, was a no-go in brief 113
 face listed under `PMC` or `PEC`), `src/Design/Em3d/Em3dRunService.cs` (`TerminalPortRefusal`, `ExecutePalace`: two
 solves on one mesh), `src/Cli/` (`em`'s report, `explain`), the field-plot step labels, `docs/user/src/reference/`
 (`em-setup.md`, `em-3d.md`, `cli.md`)
-**Depends on:** 114, 119 · **Blocks:** the example brief this brief asks for (§9)
+**Depends on:** 114, 119, **124** · **Blocks:** the example brief this brief asks for (§9)
+
+> **On hold (2026-10-06) until [brief 124](brief-em3d-124-palace-modal-transform-spike.md) reports.** 124 measures brief
+> 113's derived modal transform on a shared face, which would also cover ASYMMETRIC pairs. Its go/no-go names what this
+> brief builds: this text as written (route B), route B plus the transform, or the transform alone (and then this brief
+> is rewritten).
 
 ---
 
@@ -180,7 +185,7 @@ run the classes you touch, not the suites.
 ## 9. `R-em3d115-9` — then write the example brief
 
 The 3D Wave Ports example says Pair "runs on openEMS only". Once gates 1–8 pass and the owner check is done, **write a
-NEW brief**: `docs/sonnet-briefs/brief-em3d-<next free number>-example-wave-ports-palace.md` (124 at the time of
+NEW brief**: `docs/sonnet-briefs/brief-em3d-<next free number>-example-wave-ports-palace.md` (125 at the time of
 writing), and add it to the overview's §2 table. Do not edit the example in this brief. That brief updates
 `examples/3D Wave Ports/` so it shows terminal ports on both solvers:
 - **Pair** gains a Palace setup with gate 7's mesh settings, and its README section says how to run it on Palace,

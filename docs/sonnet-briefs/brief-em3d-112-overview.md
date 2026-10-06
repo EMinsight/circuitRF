@@ -2,7 +2,7 @@
 
 **Status:** Briefed, not built · **Date:** 2026-10-05 · **Decisions: open, each with a recommended default** (§3); [113-a](brief-em3d-113-a-terminal-port-redo.md) measured 2026-10-05: terminal ports ship on openEMS only (D14), Palace revisited by brief 119; openEMS coax on a cylindrical grid (D15, brief 120)
 **Design note:** [`docs/design/em-3d.md`](../design/em-3d.md) §2, §4.4 (reference planes), §5.3 (the FDTD port transform).
-**Previous briefs:** 1–111. This series is numbered **112–120**.
+**Previous briefs:** 1–111. This series is numbered **112–124**.
 **Precedent:** [brief 23](brief-em3d-23-wave-ports-and-eigenmodes.md) (Palace wave ports, mode 1 only, eigenmode),
 its findings in `src/Design/RESOLVED.md` § "Wave ports and eigenmodes — brief-em3d-23", and
 [brief 70](brief-em3d-70-showcase.md) (the `3D Connector` example).
@@ -119,7 +119,7 @@ Palace's modal wave port handles it as today. openEMS would need a mode-matching
 |---|---|---|---|
 | 113 | Measure first: the terminal-port spike | — | Numbers that settle §1b–g on the pinned Palace 0.18.1 and openEMS 0.37.0-rc3; go/no-go for 115 and 116. No shipped code |
 | 114 | The terminal wave port: document, problem, editor | 113-a | `C3dPort.Terminals`, `Reference`; N-conductor inference; `Em3dPort.FaceGroup`; port rows, overlay, `check`, `explain`. openEMS refuses it until 116; Palace refuses it (D14) |
-| 115 | Palace: terminal ports by mirror symmetry | 114, 119 | **Rewritten 2026-10-06 from 119's go (route B).** A two-terminal port on a problem that is its own mirror image: cut at the plane, solve the half with the cut face PMC then PEC on one mesh, combine to terminal S. Anything else refused by name. Ends by writing the example brief (Pair on Palace) |
+| 115 | Palace: terminal ports by mirror symmetry | 114, 119, 124 | **Rewritten 2026-10-06 from 119's go (route B); on hold until 124 reports.** A two-terminal port on a problem that is its own mirror image: cut at the plane, solve the half with the cut face PMC then PEC on one mesh, combine to terminal S. Anything else refused by name. Ends by writing the example brief (Pair on Palace) |
 | 116 | openEMS: wave ports by probes | 113-a (114 for N > 1) | Feed extension, a source shaped to the line, three voltage and two current planes per terminal, S from all runs at once; single and multi-terminal; lifts the Palace-only refusal for any port with two or more conductors |
 | 117 | Example: 3D Wave Ports | 116 (114 for Pair) | The connector with its back end open (coax wave port, both solvers) and a coupled pair (two-terminal wave ports, openEMS only); numbers quoted once |
 | 118 | Example: 3D Eigenmode | — | Microstrip in a lidded cavity; the same cavity with a grounded pillar; eigenmode plus a driven sweep showing the notch move |
@@ -128,12 +128,14 @@ Palace's modal wave port handles it as today. openEMS would need a mode-matching
 | [121](brief-em3d-121-wave-ports-by-hand.md) | Wave ports by hand: a coax, and terminals against the air box's ground | 114, 116, 117 | A single wave port infers a coax's voltage path (114's `RayPath` fallback, enclosure only); *Make Port ▸ Wave* writes terminals when the ground is the air box's PEC faces, which count as one reference. 117's two ports re-made by the gesture |
 | [122](brief-em3d-122-thirds-pair-grading.md) | openEMS grid: no line inside a thirds pair | — | Measure, then repair the grading that splits a thirds pair when two edges face across a gap just wider than the clamp allows (117's S 0.3 mm pair: max \|ΔS\| 0.26 against Cohn). No churn for clean grids |
 | [123](brief-em3d-123-thirds-pair-required-line.md) | openEMS grid: a required line on a thirds edge | 122 | Measure first whether a port extent, a material face or a kernel solid's own face lying inside a thirds pair costs accuracy (three variants against closed forms); fix upstream's way (the extent snaps) only if it does, else change nothing |
+| [124](brief-em3d-124-palace-modal-transform-spike.md) | Spike: terminal S from Palace's modal S on a shared face, any cross-section | 119 | Brief 113's derived transform (Gram + Robin corrections) rebuilt on 119's meshes and judged against independent references: the symmetric and an asymmetric air pair (exact 2D), an asymmetric microstrip pair lossless and lossy (openEMS). Go/no-go names what 115 builds: the transform alone, route B plus the transform, or route B only. No product code |
 
 **Build order** (after 113-a): **118** any time (no engine work). **114 → 116 → 117** is the main line; 116's
 single-terminal half (the coax) needs no 114 and can start first. **120 after 116**: it extends 116's coax source and
 probes, and its gates run wave ports. **119 any time**: a scratch spike that changes no code and blocks nothing; run it
 when solver time is free, and before anyone builds Palace terminal ports. **121 and 122 after 117**, independent of each other: 121 makes 117's ports by hand, 122
-fixes the grid defect 117 worked around. **123 after 122**: it measures the pairs 122's check leaves alone, and may change nothing.
+fixes the grid defect 117 worked around. **123 after 122**: it measures the pairs 122's check leaves alone, and may change nothing. **124 before 115**: its
+go/no-go decides whether 115 builds route B, the derived modal transform, or both.
 
 ### 2a. UI and user docs: where each lands
 
@@ -170,7 +172,7 @@ once, after the series. A brief's diff never touches a generated file.
 | D11 | The wave-port example's home | **A new workspace, `3D Wave Ports`**, self-contained (examples are copied whole by *Tools ▸ Examples*), with `Launch` (the connector, back end open) and `Pair`. `3D Connector` is left as it is | 117 |
 | D12 | The pair's cross-section | **Measured (113-a):** the edge-coupled air stripline pair works on openEMS (thru 0.057 dB / 0.00° at every spacing; PMC sides). Its reference is a 2D field solve of the drawn section, not Cohn (Cohn is the t → 0 limit). On Palace neither the stripline nor the microstrip pair yields terminal S (§1b), so no Palace fallback exists. | 117 |
 | D13 | Mixed-mode (Sdd/Scc) | **Deferred.** RfCore has no mixed-mode conversion today; the example plots terminal S (thru, near-end and far-end coupling) | 117 |
-| D14 | Which solver gives terminal ports | **Decided (owner, 2026-10-05): openEMS only.** Palace refuses a multi-terminal wave port by name, pointing to openEMS. **To be revisited** with brief 119, which tries the magnetic-wall edge (a PMC strip between per-line ports) and a symmetry half-model, both with documented Palace keys only. **Brief 119 measured (2026-10-06): GO, route B** (the symmetry half-model, `PMC` / `PEC` cut, two runs, §3 combination): on A it meets 0.05 dB / 0.5°, max \|ΔS\| 0.0012, σ within 0.0001 of 1, at ~100 s a run with 0.02 mm strip-edge refinement. Route A works but costs twice as much and hides a wrong half from σ. Mirror-symmetric two-conductor faces only; a 1.3 % width difference already breaks 0.05 dB with nothing to detect it, so 115 refuses asymmetry. B's route is exact against Palace's own port modes but misses 0.1 dB / 1° against its quasi-static reference (full-wave dispersion), and the even half loses 5–11 % to 113-a's absorbing walls. The owner chose route B: brief 115 is rewritten around it. If Palace fixes #328 upstream, see `src/Design/RESOLVED.md` § brief-em3d-119, "If upstream fixes this" | 114, 115, 116, 117 |
+| D14 | Which solver gives terminal ports | **Decided (owner, 2026-10-05): openEMS only.** Palace refuses a multi-terminal wave port by name, pointing to openEMS. **To be revisited** with brief 119, which tries the magnetic-wall edge (a PMC strip between per-line ports) and a symmetry half-model, both with documented Palace keys only. **Brief 119 measured (2026-10-06): GO, route B** (the symmetry half-model, `PMC` / `PEC` cut, two runs, §3 combination): on A it meets 0.05 dB / 0.5°, max \|ΔS\| 0.0012, σ within 0.0001 of 1, at ~100 s a run with 0.02 mm strip-edge refinement. Route A works but costs twice as much and hides a wrong half from σ. Mirror-symmetric two-conductor faces only; a 1.3 % width difference already breaks 0.05 dB with nothing to detect it, so 115 refuses asymmetry. B's route is exact against Palace's own port modes but misses 0.1 dB / 1° against its quasi-static reference (full-wave dispersion), and the even half loses 5–11 % to 113-a's absorbing walls. The owner chose route B: brief 115 is rewritten around it, and held for brief 124, which measures brief 113's derived modal transform (it would also cover asymmetric pairs). If Palace fixes #328 upstream, see `src/Design/RESOLVED.md` § brief-em3d-119, "If upstream fixes this" | 114, 115, 116, 117 |
 | D15 | openEMS: a coax's accuracy | **Decided (owner, 2026-10-05): a cylindrical grid** (brief 120), with exact cylinders and a weighted source. It serves problems round about one axis; the 3D Connector's Launch, a coax meeting a board, stays Cartesian and its run notes the coax's phase-velocity error (113-a: 1–2.4 %) | 116, 117, 120 |
 
 ---
@@ -180,7 +182,8 @@ once, after the series. A brief's diff never touches a generated file.
 - **openEMS hollow-waveguide ports** (TE₁₀ mode-matching, ProbeBox types 10/11). Upstream has the elements, but it is a
   different port (modal, no terminal), and nothing in this series needs it.
 - **Palace terminal ports** (D14): openEMS gives them now. Brief 119 measured a go for mirror-symmetric pairs by the
-  symmetry half-model (route B); brief 115, rewritten around it, builds it. A native Palace fix (#328)
+  symmetry half-model (route B); brief 115, rewritten around it, builds it once brief 124 has measured whether the derived
+  modal transform also covers asymmetric pairs. A native Palace fix (#328)
   would replace it: `src/Design/RESOLVED.md` § brief-em3d-119 says what to re-run and what then changes.
 - **Mixed-mode S-parameters** in RfCore (D13). It is an RfCore feature on its own, useful far beyond 3D EM.
 - **Palace field plots as terminal drives** (D8).
