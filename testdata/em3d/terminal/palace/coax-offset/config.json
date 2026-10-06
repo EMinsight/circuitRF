@@ -1,0 +1,105 @@
+{
+ "Problem": {
+  "Type": "Driven",
+  "Verbose": 2,
+  "Output": "postpro/off"
+ },
+ "Model": {
+  "Mesh": "mesh.msh",
+  "L0": 0.001
+ },
+ "Domains": {
+  "Materials": [
+   {
+    "Attributes": [
+     1
+    ],
+    "Permeability": 1.0,
+    "Permittivity": 2.1,
+    "LossTan": 0.0
+   }
+  ]
+ },
+ "Boundaries": {
+  "PEC": {
+   "Attributes": [
+    2
+   ]
+  },
+  "WavePort": [
+   {
+    "Index": 1,
+    "Attributes": [
+     3
+    ],
+    "Mode": 1,
+    "Excitation": 1,
+    "Offset": 0.0,
+    "MaxIts": 30,
+    "KSPTol": 1e-08,
+    "EigenTol": 1e-06,
+    "VoltagePath": [
+     [
+      0.2,
+      0.0,
+      0.0
+     ],
+     [
+      0.67,
+      0.0,
+      0.0
+     ]
+    ],
+    "NSamples": 100
+   },
+   {
+    "Index": 2,
+    "Attributes": [
+     4
+    ],
+    "Mode": 1,
+    "Excitation": 2,
+    "Offset": 1.0,
+    "MaxIts": 30,
+    "KSPTol": 1e-08,
+    "EigenTol": 1e-06,
+    "VoltagePath": [
+     [
+      0.2,
+      0.0,
+      10.0
+     ],
+     [
+      0.67,
+      0.0,
+      10.0
+     ]
+    ],
+    "NSamples": 100
+   }
+  ]
+ },
+ "Solver": {
+  "Order": 3,
+  "Device": "CPU",
+  "Driven": {
+   "Samples": [
+    {
+     "Type": "Point",
+     "Freq": [
+      2.0,
+      6.0,
+      10.0
+     ]
+    }
+   ],
+   "Save": []
+  },
+  "Linear": {
+   "Type": "Default",
+   "KSPType": "GMRES",
+   "Tol": 1e-08,
+   "MaxIts": 200
+  }
+ }
+}

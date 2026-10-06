@@ -16731,3 +16731,394 @@ picture is now its wires and nothing else, which is what the 2D layout shows.
   (`WBondViewModel.PushExternalUndo`, bracketed by `LayoutEditorViewModel.Begin/EndExternalWireEdit`);
   before this it recorded no undo entry at all. The merge is in `src/Ui/WBond`, but the finding sits
   here beside the sync entry it follows from. Spec: wbond.md WB41a.
+
+## Terminal wave ports — brief-em3d-113 (2026-10-05)
+
+> **Superseded by brief-em3d-113-a** (`docs/sonnet-briefs/brief-em3d-113-a-terminal-port-redo.md`). These setups
+> were built from Palace's source and imitation of circuitRF's writers, without the solvers' documentation or shipped
+> examples, and the two Palace corrections below are unvalidated. Do not build on this section; its fixtures were deleted.
+
+A measurement spike: no product code. Hand-written Gmsh/Palace/CSXCAD inputs, run against Palace 0.18.1 (8 ranks) and
+openEMS 0.37.0-rc3 (8 threads) on the F0 machine (Apple M4, 16 GB). The inputs, outputs, run sizes, wall clocks and the
+independent references are in `testdata/em3d/terminal/` and its README. Geometries: **A**, an air edge-coupled
+stripline pair (b = 2 mm, W = 1.2 mm, S = 0.4 mm, t = 20 µm, walls at 3b, ℓ = 15 mm). **B**, a microstrip pair on εr 3.5
+(h = 0.508 mm, W = 1.1 mm, S = 0.3 mm, covered). **C**, the `3D Connector`'s coax. **D**, A on openEMS. Each Palace face
+carries entry k = `Mode` k, the lowest index `Active`, and every entry's `VoltagePath` runs from the reference to its
+conductor.
+
+**The headline: the overview's §1c transform is right in form but wrong for BOTH pairs.** Each pair needs one
+correction, and both corrections come from data Palace already writes. With them, A meets the go threshold on the fine
+mesh for every entry at or above −17 dB, and B matches an ideal line built from Palace's own modes to 0.003 dB on the
+thru. Without them, A is off by 9–30 dB / 180° and B by 4–13 dB.
+
+**R-em3d113-1a — Palace accepts shared-face entries.** Its log says `Configuring Robin impedance BC for wave ports at
+attributes: 11: Index = 1, mode = 1 … 12: Index = 3, mode = 1` and then `Configuring wave port excitation source term
+at attributes: 11: Index = 1 / 11: Index = 2 / 12: Index = 3 / 12: Index = 4`. An inactive entry is excited and
+measured, but adds no Robin term. Gmsh's OCC `Extrude … Layers{}` of a triangulated face wrote
+tetrahedra, not prisms; Palace reads them fine. **Wave-port voltage paths must end on mesh nodes.** A path ending on
+a faceted circle aborts in `SetUpExcitationVoltagePath` ("Could not locate all WavePort VoltagePath quadrature points on
+the port surface (found 50/51)"), so a coax path runs along a seam vertex.
+
+**R-em3d113-1b — kₙ is printed for the inactive entries too**: `Port 2, mode 2: kₙ = 6.535e+01…, Z_PV = 2.035e+01 Ω`.
+`WavePortOperator::Initialize` prints every port with no `active` check. D6's shift-by-circuitRF route is open.
+
+**R-em3d113-1c — MaxSize.** With the default (`max(2·Mode, Mode+15)`, so 16 against 17), A's two same-face modes come
+from different Krylov runs and overlap almost completely (|⟨e₁,h₂⟩| = 0.90 on one face). With the same `MaxSize` on both
+entries they come from ONE deterministic solve (the start vector is all ones, `GetInitialSpace`). They still overlap,
+because the solver is `GEN_NON_HERMITIAN`: SLEPc returns eigenvectors, and within a degenerate pair those are not
+power-orthogonal. Measured |g| ranged 0.01–0.62 depending only on the mesh. **Once the overlap is corrected (below), the
+default and the equal-MaxSize runs give the same terminal S** (worst 0.356 dB vs 0.351 dB against the reference, on one
+order-1 mesh). Equal `MaxSize` is still the rule to write: only a shared solve guarantees two independent modes, and
+|g| → 1 is singular. On B (non-degenerate) the two settings agree to 2e-12.
+
+**R-em3d113-1d/e — A, the degenerate face.** Palace's S is a projection, P = 1 + S_m = Gᵀ·C, where C holds the modal
+amplitudes and G[j,i] = ⟨e_j, h_i⟩ is the Gram matrix of the face's modes. §1c assumes G = 1. Measured G is not 1: the
+same-face cross term S[2][1] IS g on a matched face, and it equals the Gram predicted from the 2D reference admittance to
+three digits (−0.624 against −0.622). The corrected transform per face is
+
+```
+M = V·(1 + S_m)⁻¹          (= T_V·G⁻ᵀ)
+T_I = M⁻ᴴ                  (independent of G, for TEM: G = T_Vᵀ·Y_c·T_V*)
+C = G⁻ᵀ·(1 + S_m)
+I = M⁻ᴴ·(2 − C),  U = V,  S = (U − Z₀I)(U + Z₀I)⁻¹
+```
+
+**g is fixed by Palace's own Z_PV**: |(M·Gᵀ)ᵢᵢ|² = Z_PV[i] gives two equations per face. Solved over complex g they are
+near-tangent and pick a wrong phase (the fine mesh landed at 18° error with zero residual). **Solved over REAL g they are
+well posed**, with residuals 2e-5 to 5e-4. Palace's modes are real here (T_V real to 1e-4), so G is. At 5 GHz against the
+2D reference:
+
+| run (ND unknowns) | Palace modal σ_max | as written | corrected |
+|---|---|---|---|
+| order 1, default MaxSize (63 k) | 1.901 | 30.1 dB / 180° | 0.356 dB / 0.27° |
+| order 1, MaxSize 20 (63 k) | 1.252 | 3.7 dB / 0.3° | 0.351 dB / 0.44° |
+| order 2, MaxSize 20 (485 k) | 1.215 | 8.9 dB / 179° | 0.109 dB / 1.31° |
+| order 2, MaxSize 20 (1.24 M) | 1.656 | 15.4 dB / 180° | **0.053 dB / 0.75°** |
+
+On the fine mesh, every entry at or above −17 dB (S11, thru, near-end) is within **0.053 dB / 0.11°**. The −22 dB
+far-end coupling is within 0.04 dB but 0.42–0.75° in phase, converging (1.31° on the coarse mesh). Against an ideal line
+built from Palace's OWN Z₀e/Z₀o (recovered per face as Y_c = T_V⁻ᵀ·G·T_V*⁻¹), the error is 0.031 dB, so what remains is
+discretisation, not the transform. **Cohn is not usable as A's reference at t/b = 0.01**: the thickness lowers Z₀e by 2.2 %
+and Z₀o by 3.8 %, which is 0.66 dB on the near-end coupling. A 2D Laplace solve of the exact cross-section (Z₀e
+101.95, Z₀o 70.885 Ω) is the reference, and it reproduces Cohn at t → 0.
+
+**R-em3d113-1f — the self-checks.** **Reciprocity cannot see this failure**: ‖S − Sᵀ‖/‖S‖ was 1e-4 to 3e-4 for EVERY
+A result, right or 30 dB wrong. Passivity can: σ_max is 1.25–2.15 as written and 1.0001–1.0005 corrected. On B the
+corrected σ_max is 1.0008 with reciprocity 1.0–1.5e-3, and on the coax 1.000008 and 6e-6. Suggested thresholds for
+115: **σ_max above 1.002 warns, above 1.01 refuses**, and reciprocity ≤ 5e-3 as a secondary check only.
+
+**R-em3d113-1g — B and the Robin mismatch.** B's modes are orthogonal (same-face cross term −100 to −112 dB). What
+breaks §1c is the inactive mode's port, which is not merely a −27 dB reflection. Palace's scalar Robin uses the active
+k₁, so mode 2 is LAUNCHED at 2k₂/(k₁+k₂) of its stated amplitude (−0.41 dB here), and reflected by (k₂−k₁)/(k₂+k₁).
+Measured: the inactive entry's self-reflection is −26.76 dB at 2 GHz against −27.36 dB predicted from the printed kₙ.
+As written, the columns lose 8 % of their power and the result is off by 3.8 dB / 76° (2 GHz) and 13.3 dB / 68° (6 GHz)
+against an ideal line from Palace's own modes. **Both effects follow from the printed kₙ, in a 1D port model**:
+A_m(k_m + k₁) − B_m(k_m − k₁) = 2k_m·s_m, which gives **A − B = 2s − (k₁/k_m)·C** in place of 2s − C. With it the
+columns are lossless to 1e-3, and against Palace's own modes the result is thru 0.0001–0.003 dB / 0.07–0.27°, far-end
+0.06–0.09 dB / 0.3–0.8°, S11 (−31 to −34 dB) 0.23–0.37 dB / 0.56–0.73°, and near-end 0.01 dB (2 GHz) but 0.65 dB on the
+−38 dB value at 6 GHz. Against the quasi-static extractor (open, not covered) the large entries agree to 0.1–0.2 dB.
+**D7's −30 dB warning premise does not hold**: the uncorrected error is never "about the reflection", and after the
+correction the predicted reflection is not an error at all. The quantity to report is the residual after correction,
+which the passivity check measures.
+
+**R-em3d113-1h — the power convention.** On the coax, |T_V|² = Z_PV to 1–3e-7 at 2, 6 and 10 GHz (50.0013 Ω), so
+**T_I = (T_Vᴴ)⁻¹ with factor 1**: Palace normalises ∫E×H*·n = 1, the peak convention its own source comment states. A
+factor of 2 makes S11 −4.8 dB instead of −91 dB. Palace's coax Z_PV is 50.00 Ω against the closed form's 50.06 Ω (its
+port mesh is a polygon).
+
+**R-em3d113-1i — Offset.** `V_wp` is unchanged by `Offset` (2e-13 relative), while S_m shifts by 2kₙd (41.757° predicted,
+41.764° measured). **So a terminal port must be written to Palace with `Offset` 0**: with any other value, V and S refer
+to different planes and V·(1 + S_m)⁻¹ mixes them. The shift belongs to circuitRF, per mode with each kₙ, before the
+transform (D6).
+
+**Go/no-go for 115.** As written: **no-go on both A and B.** With the two corrections: A within 0.05 dB / 0.5° on every
+entry at or above −17 dB on the fine mesh, and the −22 dB far-end phase at 0.75° and converging. B as above. The
+corrections are the owner's call to adopt (overview §3, D6/D7/D12 and the new D14); the spike did not change the series.
+**Cost:** a direct solver refactors once per EXCITATION per frequency, because Palace loops excitation-outer. B's 2
+frequencies × 4 excitations took 11 min 41 s with SuperLU (7.5 GB). GMRES on these long extruded meshes needed 170–350
+iterations where the aspect ratio exceeded about 50.
+
+**R-em3d113-2a — the openEMS feed length.** The coax (C) converges at **L ≥ 2 bore diameters = 27 cells**: from 2 D to
+4 D, ∠S21 moves under 0.02° and |S21| under 0.002 dB. From 1 D to 2 D it moves 0.35°, and from 0.5 D to 1 D 1.3°. The
+stripline pair (D) does NOT converge on that scale. The source excites the box's first higher-order mode, which carries
+voltage on the path and no strip current (it rings at 9.42 GHz with −118 dB current against −52 dB voltage at the
+record's end) and is evanescent at 5 GHz with a 1/e length of about 6 mm. σ_max at 5 GHz is 1.092 / 1.086 / 1.074 /
+1.045 / **1.008** for L = 1 / 2 / 4 / 8 / **24 mm** (0.07–1.6 × the face's 14.8 mm width; 8–192 cells). **The rule that
+holds on both is therefore a multiple of the face's LARGEST transverse size, at least 1.6×**, and longer as the band nears
+that mode's cutoff. Cells grow with it (2.36 M at 24 mm, 5 min for 100,000 steps).
+
+**R-em3d113-2b — the coax against the closed form fails, and the cause is the grid, not the port.** At 20 µm transverse
+cells, U/I = 50.69 Ω (closed form 50.06, +1.3 %) and ∠S21 + βℓ = −2.4°, −7.2°, −11.9° at 2, 6, 10 GHz. Measured from the
+probes themselves, **the staircased coax propagates at ε_eff 2.248 instead of 2.1**, and the same coax filled with air
+gives 1.06 (Z 74.4 against 72.5 Ω), so the error is geometric. That is consistent with E and H seeing different effective
+radii on a pin only 10 cells in radius. It does not fall monotonically with the cell (30 µm: ε_eff 2.224, Z 51.3 Ω), so no
+cell rule fixes it cheaply. **Brief 116's coax criterion (0.5 Ω, 1°) is not met on a Cartesian grid at these sizes**,
+and the shipped `3D Connector` openEMS setup carries the same error. A cylindrical grid (`CoordSystem="1"`) was not
+tried. The current probe sits half a cell off the voltage plane: Im Z grows linearly with f (−0.17 j at 2 GHz to −0.89 j
+at 10 GHz, βΔz/2 ≈ 0.78 j predicted at 10 GHz), about −42 dB of |S11| at 10 GHz. Upstream's line ports average two
+voltage planes for this. **A line source or probe whose zero-extent coordinate is not a grid line is DROPPED with only
+`Warning: Unused primitive (type: Box) detected in property: port1_excite!`**, and the run then has no energy: a 47-cell
+grid has no line at y = 0, and `np.arange` drift (−1.3000000000000012 mm) does the same.
+
+**R-em3d113-2c — D against the reference and against Palace.** At L = 24 mm and 5 GHz: 0.227 dB / 1.21° against the 2D
+reference, and **0.225 dB / 1.95° against Palace's corrected A**, against a 0.1 dB / 1° criterion. The residual is the
+near-end coupling's magnitude (+0.23 dB, Z₀o from strips one cell thick at 18–20 µm) and the S11 phase (−0.97°), plus a
+feed not yet converged (σ_max 1.008). **No-go as measured.** A finer strip grid and a longer feed are both needed, and
+together they cost more than 3× the 24 mm run.
+
+**R-em3d113-2d — `FdtdPortTransform.Solve` needs no change.** Fed the probe files through `OpenEmsRun.ReadProbe`
+unchanged, with the missing runs supplied by symmetry, it gives the same S as an independent mirror to every printed digit
+(coax: S21 −0.0014 dB / −71.991° at 2 GHz; pair: S31 −1.2250 dB / −90.173° at 5 GHz). N terminals are N ports.
+
+**R-em3d113-2e — a current box on the shield.** Drawn at the bore radius, the box's contour runs through the shield's
+staircase and encloses most of its return current. I falls to about 1 % of the true value: **Z reads 5.73 kΩ and S11
+0.00 dB at 2 and 6 GHz, and nothing reports an error.** The port looks open. Brief 116's refusal must say that the box
+around a terminal must stay inside the reference conductor's opening with at least one cell of dielectric between them,
+and that if it does not, the port measures almost no current.
+
+> Superseded by § "Terminal wave ports — brief-em3d-113-a" below.
+
+## Terminal wave ports — brief-em3d-113-a (2026-10-05)
+
+A measurement spike that redoes brief 113 from the solvers' own documentation and shipped examples. No product code.
+Palace v0.18.1 on 8 MPI ranks, openEMS v0.37.0-rc3 (`67d3784`) on 8 threads, Apple M4 / 16 GB. Fixtures, configs,
+probe files and every departure from the upstream example are in `testdata/em3d/terminal/` and its README.
+
+**Read first.**
+- **Palace:** `docs/src/guide/boundaries.md` (*Lumped and wave port excitation*); `docs/src/examples/cpw.md` with
+  `examples/cpw/` (`cpw_wave_uniform.json`, `mesh/mesh.jl` `generate_cpw_wave_mesh`); `docs/src/examples/coaxial.md`
+  with `examples/coaxial/` (`coaxial_lumped_wave.json`, `mesh/mesh.jl`); `scripts/schema/config-schema.json`
+  (`WavePort`: `Mode`, `Active`, `MaxSize`, `VoltagePath`, `PolarityAttributes`); `CHANGELOG.md`.
+- **openEMS:** `python/openEMS/ports.py` (`CoaxialPort`, `StripLinePort`, `Port.CalcPort`); `matlab/examples/waveguide/`
+  `Coax.m` and `Coax_CylinderCoords.m`; `matlab/examples/transmission_lines/` `Stripline.m` and `directional_coupler.m`
+  (with `calc_ypar.m`); `python/Tutorials/StripLine2MSL.py`; docs.openems.de (signals page).
+- **Issue trackers (read only).** Palace [#328](https://github.com/awslabs/palace/issues/328) (open: TEM modes of a
+  coupled stripline cannot be told apart; the maintainers' advice is to split the port and pick each half's sign),
+  [#251](https://github.com/awslabs/palace/issues/251) (a maintainer: split the port and impose even or odd symmetry
+  with a PEC or PMC edge between the halves), [#171](https://github.com/awslabs/palace/issues/171) / PR
+  [#197](https://github.com/awslabs/palace/pull/197) (`Active`: several modes on one face, one of them damping),
+  [#996](https://github.com/awslabs/palace/issues/996). openEMS (`thliebig/openEMS`, `thliebig/openEMS-Project`) and a web
+  search: nothing on coupled-line or multi-strip ports; the docs' signals page warns only about a step excitation never
+  decaying.
+
+**Reproductions.** Palace's `cpw_wave_uniform.json` unchanged on `cpw_wave_0.msh`: 64 s, ND 117,764, 291 MB per rank.
+|S31| and |S41| match the published `cpw-p2-*` points to ≤ 0.4 dB at all seven frequencies and |S11| to ≤ 0.7 dB up to
+17 GHz, but |S11| reads −17.4 against about −16.4 dB at 20 GHz, −16.7 against −14.6 dB at 26 GHz and −27.9 against −34 dB
+at 32 GHz (the plots predate
+v0.18.1; below −15 dB these are |ΔS| ≤ 0.04). `coaxial_lumped_wave.json` unchanged: |S11| −9.5408 dB against −9.5434 dB
+from its own Z_PV (50.005 Ω) and the 100 Ω port, |S21| −0.524 dB against −0.522 dB, ∠S21 13.63° against −βℓ = 13.77° (mod 360°).
+
+**R-em3d113a-1b — the coax on Palace (go).** The example's mesh generator with the 3D Connector's coax, both ends wave
+ports. Z_PV **49.976 Ω**, identical at refinement 2 and 3 (ND 25,680 / 102,048; 4.4 / 21 s). The closed form is
+η₀/(2π√εr)·ln(r_o/r_i) = **50.021 Ω**; the brief's 50.06 Ω uses the rounding η₀/2π ≈ 60 (upstream's `Coax.m` uses η₀).
+∠S21 = −βℓ to 1e-5° at 2, 6 and 10 GHz. **Re-confirmed:** |V_wp|² = Z_PV to 9e-9 (factor 1, the peak convention);
+with port 2's `Offset` at 1 mm, ∠S21 moves by exactly kd (3.48034°, 10.44101°, 17.40169°) and `V_wp` moves by 1e-15.
+
+**R-em3d113a-1c — the pair, the documented way: no-go.** `generate_cpw_wave_mesh`'s construction on geometry A (air
+stripline pair, b 2 mm, W 1.2, S 0.4, t 0.02, ℓ 15 mm, PEC walls 6 mm out): one port rectangle per strip meeting at the
+midline, one mode each, `VoltagePath` strip → ground, every port excited. GMRES converges in 22–34 iterations (113's
+extruded meshes needed 170–350). The reference is an ideal coupled line from a 2D field solve of the exact cross-section
+(Z₀e **101.95**, Z₀o **70.885** Ω, converged on a graded grid to 0.15 µm; 113's figures reproduced), with each
+terminal referenced to that port's own Z_PV, which is what an exact port would deliver. At 5 GHz:
+
+| mesh (ND) | Z_PV | thru | near-end | far-end (ref −29.6 dB) | max \|ΔS\| | singular values |
+|---|---|---|---|---|---|---|
+| r1 (46 k), 6.5 s | 66.68 | 1.19 dB | 0.91 dB | −15.7 dB | 0.124 | 1, 1, 0.753, 0.731 |
+| r2 (295 k), 46 s, 567 MB/rank | 68.87 | 1.18 dB | 0.44 dB | −16.0 dB | 0.123 | 1, 1, 0.761, 0.739 |
+| r3 (2.07 M), 326 s, 6.9 GB | 70.16 | 1.17 dB | 0.81 dB | −16.2 dB | 0.122 | 1, 1, 0.767, 0.745 |
+
+The error does not move with the mesh. **The mechanism is the documented one:** touching wave ports treat each other's
+edges as PEC in their mode solves, so each per-line port mode is half of the ODD mode (Z_PV → the 2D PEC-midline
+70.874 Ω). The even mode is not in the span of the port modes; its power is absorbed (in a homogeneous section the Robin
+term absorbs any TEM field) but never counted, so two singular values sit at 0.75 in a lossless structure, and Palace
+reports a far-end coupling as large as its near-end one. **σ_max is 1.0000 throughout: a passivity check cannot see this
+failure.** Losslessness can (σ_min), on a lossless structure; on a lossy one the missing power is indistinguishable
+from loss.
+
+**The spacing sweep** (1 excitation, filled by the pair's double symmetry, r3 density, 5 GHz; references re-solved per
+spacing):
+
+| S | S/W | Z₀e / Z₀o (2D) | thru | far-end, Palace / ref | \|ΔS\| on thru and far-end | σ_min | ND, wall |
+|---|---|---|---|---|---|---|---|
+| 4.8 | 4 | 88.37 / 88.34 | 0.001 dB / 0.12° | −75.4 / −120.7 dB | 0.002 / 0.0002 | 0.9997 | 2.91 M, 155 s |
+| 2.4 | 2 | 88.99 / 87.71 | 0.063 dB / 0.12° | −42.7 / −80.6 dB | 0.0075 / 0.0072 | 0.984 | 2.54 M, 128 s |
+| 1.2 | 1 | 92.45 / 83.98 | 0.39 dB / 0.13° | −26.7 / −51.7 dB | 0.044 / 0.044 | 0.905 | 2.26 M, 109 s |
+| 0.6 | 0.5 | 98.47 / 76.30 | 0.90 dB / 0.15° | −18.9 / −35.5 dB | 0.097 / 0.097 | 0.794 | 2.12 M, 98 s |
+| 0.4 | 0.33 | 101.95 / 70.885 | 1.17 dB / 0.17° | −16.2 / −29.6 dB | 0.121 / 0.122 | 0.745 | (r3 above) |
+
+S11 below −30 dB is judged by |ΔS| only: it is ≤ 0.011 everywhere and set by Z_PV's own port-mesh error (0.5 %), not by
+the split. **The 0.05 dB crossing lies between S = 2W and 4W (S ≈ 1.2–2.4 b)**, where the true near-end coupling is
+already below −46 dB. At every spacing the split invents a far-end coupling of about the near-end's size.
+
+**Geometry B** (microstrip pair, εr 3.5, h 0.508, W 1.1, S 0.3, t 0.017 mm), per-line ports as in the cpw example
+(rest of the end face PEC, absorbing box): ND 285 k, 75 s for 2 frequencies × 4 excitations. The port mode is again the
+odd mode (k → ε_eff 2.427 against the 2D odd 2.4285; Z_PV 39.4 against Z₀o 40.72). Against the 2D quasi-static
+reference (Z₀e 58.62 Ω / ε_eff 2.910, Z₀o 40.72 Ω / 2.4285, walls 20 mm out) the thru is off 1.5 dB (2 GHz) and 1.9 dB
+(6 GHz), max |ΔS| 0.15 / 0.20, σ_min 0.56 / 0.25. circuitRF's `RlgcExtractor` + `ModalDecomposition` was not run:
+the failure is decided by the 2D solve alone, and the extractor needs a test-project harness.
+
+**R-em3d113a-1d — several modes on one shared face, as documented: no-go.** The docs define `Mode` (ranked by
+decreasing wavenumber) and `Active` (turns the damping term off) and show no shared-face example. One rectangle per end
+covering both strips, entries `Mode` 1 (`Active`) and `Mode` 2 (`Active: false`): Palace returns the degenerate pair in a
+different mixture at each end (Z_PV 12.9 and 2.4 Ω near, 84.8 and 85.0 Ω far), same-face cross terms of −11.3 and
+−26.6 dB, and **σ_max 1.273**. No correction was derived. This is issue #328.
+
+**Go/no-go for 115: no-go — report to the owner before 114.** Per-line ports fail at A's spacing by 1.17 dB on the
+thru and 13.4 dB on the far-end coupling (|ΔS| 0.12). They meet 0.05 dB only where the lines are effectively uncoupled,
+so moving the example to such a spacing would leave it with nothing to show. The documented shared face is worse. The
+one route the maintainers point to (#251, #328) is symmetry: split the face and solve the halves with a PEC edge (odd)
+and with a PMC edge (even). Palace imposes PEC on touching edges by default, and no documented key makes a shared edge
+PMC. Whether to pursue that, accept modal S, or go per-terminal on openEMS only is the owner's decision.
+
+**R-em3d113a-2a — the coax on openEMS.** Upstream's `CoaxialPort` excites the line's own radial profile (a 1/r weight
+function) and evaluates with three voltage planes and two current planes. From its own β and Z_L, at 2/6/10 GHz:
+
+| grid | cells, wall | Z_L | β/β_th | ∠S21 + βΔz |
+|---|---|---|---|---|
+| Cartesian, r_i/10 transverse, 50 µm axial, 10 mm | 1.07 M, 216 s (200 k steps, end criterion not reached) | 50.39–50.56 | 1.018–1.024 | −0.4 / −1.3 / −2.1° over 5 mm |
+| Cartesian, r_i/20 uniform (`Coax.m`'s own), 2 mm | 4.23 M, stopped at 116 k steps (~8 min) | 50.39–50.43 | 1.009–1.011 (6, 10 GHz) | −0.03 / −0.10 / −0.16° over 1 mm |
+| Cylindrical, 71 azimuth lines (the example's), r_i/10 | 0.90 M, 18 s | 50.61–50.81 | 1.000 (6 GHz) | +0.001° over 5 mm |
+| Cylindrical, 71 lines, r_i/20 | 3.46 M, 82 s | 50.15–50.82 (2 GHz noisy) | 0.999 | ≤ 0.03° |
+| **Cylindrical, 141 azimuth lines**, r_i/10 | 1.78 M, 37 s | **50.28–50.47** | 1.000 | **≤ 0.07°** |
+
+Against 50.021 Ω and k₀√2.1, **the coax meets 0.5 Ω / 1° only on the cylindrical grid** (141 lines; the Z error is
+first order in Δα, 0.72 → 0.36 Ω). The Cartesian staircase keeps Z within 0.4 Ω but propagates 1–2.4 % slow, which over
+a connector's few millimetres is 1–2° at 10 GHz. Two traps: `Coax.m`'s excitation (f0 = fc) reaches DC, and on a
+closed, MUR-terminated coax the static field it leaves never decays (energy flat at −10.9 dB, then −31.4 dB with the
+band moved to 2–10 GHz), so the end criterion is never reached. And the Python interface's `Write2XML` dump of the
+cylindrical run, replayed, takes a different time step (2.52e-14 against 3.65e-14 s); its result agrees to 0.02 Ω /
+0.02°. **Owner decision for 116:** `CsxcadWriter` writes a Cartesian grid only (`CoordSystem="0"`) and a flat excitation
+weight only. It does write CSXCAD's `<Cylinder>` for a plain cylinder solid, but a coax shield drawn as a boolean (the 3D
+Connector's housing minus its bore) reaches it as a kernel shape and goes out as a tessellated polyhedron. The owner
+chose the cylindrical grid (2026-10-05): brief-em3d-120.
+
+**R-em3d113a-2b — one stripline.** `Stripline.m`'s setup (PML ends, PMC sides 10·W out, PEC grounds, λ/50, 1/3–2/3 edge
+lines at res/4, 4 cells per strip height) at A's single strip, t = 0, air. The 2D reference for that box is 90.60 Ω
+(Cohn, infinite width: 90.67). Z_L and β/k₀ at 5 GHz from upstream's own three-probe formulas, by cells per strip height: 4 → 85.87 Ω / 1.036;
+8 → 89.35 / 1.0000; 16 → 89.97 / 1.0001; 32 (14.8 M cells, 460 s) → 90.30 / 1.0002. **The example's own grid is
+5 % low on Z and 3.5 % slow**; 8 cells per height is the cheapest usable grid (4 s).
+
+**R-em3d113a-2c — the pair on openEMS: per-terminal ports work.** Two `StripLinePort`s per end, one per strip, each
+excited in its own run, PMC sides at ±(10·W + (S+W)/2), 8 cells per height (4 s a run, 325 k cells). **S must be
+assembled from all runs at once**, S = (U − Z₀I)(U + Z₀I)⁻¹, as upstream's own four-port example does
+(`directional_coupler.m` → `calc_ypar.m`). Upstream's per-port `calcPort` columns (b_i/a_j at a fixed reference) are
+valid only when every port's termination equals the reference; on a PML-ended coupled pair the termination is a 2×2
+characteristic matrix, and the columns came out impossible (|S21| −0.006 dB beside |S11| −11 dB and |S31| ≈ |S41|
+−18.8 dB). Against the 2D reference for openEMS's box (t = 0, PMC walls; Z₀e/Z₀o 104.08/73.58 Ω at A's spacing), at
+50 Ω, 5 GHz:
+
+| S | thru | near-end | far-end | max \|ΔS\| |
+|---|---|---|---|---|
+| 4.8 | 0.057 dB / 0.00° | (−78 dB) | (−83 dB) | 0.009 |
+| 2.4 | 0.057 / 0.00° | 0.37 / 0.02° | 0.17 / 0.01° | 0.009 |
+| 1.2 | 0.057 / 0.00° | 0.34 / 0.02° | 0.13 / 0.01° | 0.009 |
+| 0.6 | 0.057 / 0.00° | 0.35 / 0.02° | 0.12 / 0.01° | 0.010 |
+| 0.4 | 0.057 / 0.00° | 0.37 / 0.02° | 0.11 / 0.01° | 0.012 |
+
+**The error does not grow with coupling**: it is the grid's 0.7 % low Z, magnified by a 50 Ω reference on a ~88 Ω line,
+and the phase is exact. At 2 and 8 GHz: max |ΔS| 0.0085 / 0.0087. A 16-cell grid (1.2 M cells, 25 s a run) gives the same
+magnitudes but a 0.63° thru / 6° far-end phase error at 5 GHz, and β/k₀ 1.007 from upstream's own three-probe formula;
+halving the axial cell changed nothing, and the single strip on the same transverse grid is not slow. Cause not found;
+the 8-cell result is the one to build on. **116's pair criterion cannot be applied as written**: it is "within 0.1 dB / 1°
+of Palace (3c)", and 3c is a no-go. Against the 2D reference, the pair meets 0.1 dB / 1° on the thru and the far-end, and
+misses it on the near-end magnitude (0.34–0.37 dB) because of the grid's Z. Owner decision.
+
+**R-em3d113a-2d — FeedShift and MeasPlaneShift.** On the PMC-sided pair, with the two planes kept 15 mm apart: a feed
+shift of 3, 6 and 12 mm (1.5b–6b), and a feed-to-plane distance of 4.5, 9 and 18 mm (2.25b–9b), move every entry by
+≤ 0.001 dB / 0.01° at 5 and 8 GHz. 113's long-feed requirement came from its PEC-walled box, whose first higher mode
+was near the band. **Rule for 116:** the tutorials' proportions (`StripLine2MSL.py`: feed ≈ 2.4b, plane ≈ 2.4b past it)
+with PMC or absorbing sides. Do not write PEC side walls close to a stripline.
+
+**R-em3d113a-2e — circuitRF's half.** Upstream's probe files for the pair, fed to `FdtdPortTransform.Solve` through
+`OpenEmsRun.ReadProbe`, with each port's U = the middle voltage plane and I = the mean of the two current planes (as
+`calcTLPort` and `calc_ypar.m` do): **identical to the upstream-assembled matrix to every printed digit** (S21 −1.3013 dB
+/ −89.029° at 5 GHz). Without the averaging (I from one plane, half a cell off): every phase moves, by 0.77° on the thru
+and 0.75° on S11 at 5 GHz. **Brief 116 adds exactly that: three voltage planes and two current planes per terminal, and
+the current mean, ahead of the unchanged `Solve`.** `Solve`'s per-probe time column already does what `calc_ypar.m`'s
+explicit half-step correction does.
+
+**The `CsxcadWriter`-shaped XML (pair, all four runs)**: metres, integer probe weights, a flat excitation weight,
+round-trip numbers. Its probe data matches the Python interface's in-memory run to **3e-12 on all 32 probes**, and S
+through `Solve` matches to every printed digit, but only after two fixes:
+- **Precision.** The Python interface's own `Write2XML` prints coordinates to 7 significant figures. The feed plane
+  then misses its grid line and openEMS drops both excitation boxes with only `Warning: Unused primitive (type: Box)`.
+  The run has no energy and runs to the step limit. So Python's XML dump does not reproduce Python's own run.
+- **Ties.** `StripLinePort` puts its current-loop edges exactly on half-cells. With the truncated coordinates, strip 2's
+  loop snapped one cell inward, into the strip's edge, and read **55–68 % of the current** with no warning, while strip
+  1's loop, mirror-image, was right. Writing the exact half-cell positions fixed it.
+
+`CsxcadWriter` writes round-trip numbers, so the first does not apply to it. The second does: **a current-probe edge on
+an exact half-cell is a tie, and 116 must place it off the tie or compute it exactly from the written grid lines.**
+Integer weights cost nothing: write upstream's two weight-0.5 probes as weight 1 and halve their sum. **Not done:** the
+coax in `CsxcadWriter` shape, which needs a cylindrical grid and a weighted source (brief-em3d-120).
+
+**R-em3d113a-2f — a current box at the shield.** Upstream's coax port (r_i 0.2, bore 0.67 mm, 20 µm cells), extra
+square current probes at the port's plane (U/I at 6 GHz, the port's own 50.98 Ω): half-width 240 µm (the port's
+default) and 450 µm → 50.98 Ω; **630 µm (corners at 891 µm, inside the shield) → 108.9 Ω; 670 µm (sides on the bore)
+→ 282.8 Ω; 690 µm (in the metal) → I = 0**. Nothing warns. 116's refusal: every point of the current loop, corners
+included (√2 × the half-width for a square around a round conductor), must lie in the dielectric with a cell to spare;
+otherwise the port reads a fraction of the current, up to an open circuit.
+
+**Re-confirmed from 113:** |T_V|² = Z_PV (factor 1); `V_wp` ignores `Offset` while S shifts by 2kₙd (one-sided kd on a
+transmission entry); `FdtdPortTransform.Solve` needs no change; openEMS drops an off-grid zero-thickness source with a
+warning only; reciprocity is blind (‖S − Sᵀ‖/‖S‖ ≤ 2e-6 on every wrong Palace pair). **Corrected from 113:**
+passivity (σ_max) is blind too, for the failure the documented setup produces; Cohn is the t → 0 limit of the 2D solve
+(90.60 against 90.67 Ω here), never the reference at real thickness. **Solver time:** about 76 minutes, past the brief's
+hour: two openEMS runs went to their step limits (a no-energy XML replay; `Coax.m`'s DC tail), and two (Palace r3 at
+5.4 min; the 32-cell stripline at 7.7 min) were over five minutes.
+
+## The terminal wave port: document, problem, editor — brief-em3d-114 (2026-10-06)
+
+A `.c3d` wave port can now be one port with N terminals (`C3dPort.Reference`, `C3dPort.Terminals`, `C3dTerminal`). Each
+terminal lowers to its own `Em3dPort` sharing `FaceGroup` (its lowest document number) and the reference as
+`NegativeObject`. Both solvers refuse it before discovery and before Gmsh (Palace by D14, openEMS until brief 116). Gate:
+`tests/Ui.Tests/ThreeD/TerminalWavePortTests.cs`. What was not obvious:
+
+**`ShouldSerialize` replaces the ignore conditions; it does not add to them.** Hiding the port-level keys on a terminal
+port means setting a predicate on `Number`, `Z0`, `Positive`, `Negative`, `Flip` and `VoltagePath`. Once one is set,
+System.Text.Json no longer applies the options' `WhenWritingNull` or `Flip`'s `[JsonIgnore(WhenWritingDefault)]` to that
+property, so `C3dPersistence.PortLevel` restates both (null and `false` are not written). Without that, every ordinary
+port would have gained `"Positive": null` and `"Flip": false`, which breaks rule 3 on every file.
+
+**A stated `"Z0": "50"` cannot be told from the default by its value.** The refusal for a file that states both
+`Terminals` and a port-level key needs to see it, so the reader marks each such key it sets (`C3dPort.Stated`, through
+the property's `Set` hook). A port that states one keeps writing it, so the refused file re-saves with the key it is
+refused for rather than quietly losing it.
+
+**Brief 23's path rule finds nothing for a stripline.** `Path` measures the gap between the two conductors' bounding
+boxes in the face. A shield's or a joined stripline ground's box covers the whole region, and so it overlaps every
+strip on both axes. For terminals, `C3dPorts.RayPath` is the fallback: from the strip's centre, straight along u or v to
+the nearest segment of the reference's own section, taking the shortest. A single wave port is unchanged; it still
+refuses an enclosed conductor (a coax) and asks for `VoltagePath`. Extending the fallback to it would only turn refusals
+into answers, but no brief asked for that.
+
+**A terminal's `Flip` reverses its voltage path and keeps the reference as `NegativeObject`.** Swapping the objects as
+a single port's Flip does would break the group's shared reference (R-em3d114-2b). So for a flipped terminal the path
+runs from the conductor to the reference, and `Em3dPort.VoltagePath`'s comment says so.
+
+**Choosing the reference.** With terminals stated, the reference is chosen from the conductors meeting the region that
+are NOT terminals (a stated terminal is never the reference), and air-box PEC faces are dropped when a real conductor is
+a candidate, as the two-conductor rule already did. If several conductors are in the ground set, the largest of those is
+taken. A conductor on the face that is neither a terminal nor the reference is refused by name, because left in place
+it would change the mode without saying so.
+
+**The port map writes terminal lines even when nothing was renumbered** (`Em3dPortMap.HasTerminals`). Until now the
+map was written only when a port was off. The "turned off" line is still written only when one is. Nothing written
+before this brief changes, since no earlier result had terminals.
+
+**Editor.** *Make Port ▸ Wave* on a face met by three or more conductors writes the terminals, numbered with the next
+free numbers in order of the conductor's foot along the face's long axis (then name). The port is named after the box face
+(`xmin`, `xmin 2`), because `P<n>` belongs to the terminals. Port commands now find ports by object identity, not by
+`Number`: a multi-terminal port's `Number` is 0. In the scene, a group's first terminal draws the rectangle and each
+other terminal draws a strip along its own arrow, so overlapping identical sheets do not z-fight and each terminal can be
+picked. The tree row of such a port is named `ports/<lowest number>` so it never collides with its first terminal's
+`port/<n>` row.
+
+**Gate 5's resave check, measured:** 9 of the repo's 11 `.c3d` files are in the writer's own (tab-indented) form and
+re-save byte for byte. The other two are hand-written (two-space indent), so they were never in the writer's form. Both
+re-save to a form that then re-saves byte for byte, and neither gains `Terminals` or `Reference`. The Palace and Gmsh
+goldens (`PalaceBackendTests.Gate1`) are unchanged.
+
+**Not done:** `check` does not build the problem, so it cannot report an R-em3d114-2b violation. The lowering always
+builds a group with one rectangle, one reference and distinct conductors, so a `.c3d` cannot produce one; only a
+hand-built `Em3dProblem` can, and `Validate` refuses it in the run.

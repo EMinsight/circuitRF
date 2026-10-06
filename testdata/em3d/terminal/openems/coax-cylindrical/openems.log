@@ -1,0 +1,38 @@
+>> openEMS model.xml --numThreads=8
+ ---------------------------------------------------------------------- 
+ | openEMS 64bit -- version 67d3784
+ | (C) 2010-2026 Thorsten Liebig <thorsten.liebig@gmx.de>  GPL license
+ ---------------------------------------------------------------------- 
+	Used external libraries:
+		CSXCAD -- Version: dcdb62b
+		hdf5   -- Version: 2.2.0
+		          compiled against: HDF5 library version: 2.2.0
+		tinyxml -- compiled against: 2.6.2
+		fparser
+		boost  -- compiled against: 1_92
+		vtk -- Version: 9.7.0
+		       compiled against: 9.7.0
+
+openEMS - fixed number of threads: 8
+Create cylindrical FDTD operator
+FDTD simulation size: 25x140x501 --> 1.77855e+06 FDTD cells 
+FDTD timestep is: 2.5245e-14 s; Nyquist rate: 1980 timesteps @1.0003e+10 Hz
+openEMS::SetupFDTD: Warning, the timestep seems to be very small --> long simulation. Check your mesh!?
+Excitation signal length is: 28370 timesteps (7.16201e-10s)
+Max. number of timesteps: 120000 ( --> 4.22982 * Excitation signal length)
+Create FDTD engine (cylindrical mesh using sse compression + multithreading)
+Running FDTD engine... this may take a while... grab a cup of coffee?!?
+[@        4s] Timestep:         2475 || Speed:  953.2 MC/s (1.866e-03 s/TS) || Energy: ~3.45e-26 (- 0.00dB)
+[@        9s] Timestep:         4950 || Speed:  954.2 MC/s (1.864e-03 s/TS) || Energy: ~1.23e-23 (- 0.00dB)
+[@       13s] Timestep:         7425 || Speed:  956.3 MC/s (1.860e-03 s/TS) || Energy: ~3.84e-22 (- 0.00dB)
+[@       18s] Timestep:         9900 || Speed:  964.0 MC/s (1.845e-03 s/TS) || Energy: ~1.93e-21 (- 0.00dB)
+[@       22s] Timestep:        12375 || Speed:  969.5 MC/s (1.834e-03 s/TS) || Energy: ~2.96e-20 (- 0.00dB)
+[@       27s] Timestep:        14850 || Speed:  970.9 MC/s (1.832e-03 s/TS) || Energy: ~7.44e-20 (- 0.00dB)
+[@       32s] Timestep:        17325 || Speed:  971.4 MC/s (1.831e-03 s/TS) || Energy: ~2.00e-20 (- 5.71dB)
+[@       36s] Timestep:        19800 || Speed:  970.3 MC/s (1.833e-03 s/TS) || Energy: ~6.02e-21 (-10.92dB)
+[@       41s] Timestep:        22275 || Speed:  971.0 MC/s (1.832e-03 s/TS) || Energy: ~1.12e-21 (-18.23dB)
+[@       45s] Timestep:        24750 || Speed:  969.4 MC/s (1.835e-03 s/TS) || Energy: ~2.07e-23 (-35.55dB)
+[@       50s] Timestep:        27225 || Speed:  971.3 MC/s (1.831e-03 s/TS) || Energy: ~4.67e-26 (-62.02dB)
+RunFDTD: end-criteria of -50.00dB reached after 27225 timesteps (-62.02dB)
+Time for 27225 iterations with 1778550.00 cells : 50.15 sec
+Speed: 965.52 MCells/s 

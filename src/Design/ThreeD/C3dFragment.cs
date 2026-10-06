@@ -493,19 +493,37 @@ public static class C3dFragment
         }
 
         // ports: numbers kept when free, else the next free, in source order; conductors bound, or both cleared (inferred)
-        var usedNumbers = target.Ports.Select(p => p.Number).ToHashSet();
+        // brief-em3d-114 — a terminal is a port: each one numbered as one
+        var usedNumbers = C3dPorts.UsedNumbers(target).ToHashSet();
         int next = usedNumbers.Count == 0 ? 1 : usedNumbers.Max() + 1;
         var numbering = new List<string>();
         foreach (var p in src.Ports)
         {
-            int was = p.Number;
-            if (usedNumbers.Contains(p.Number))
+            int Renumber(int was)
             {
+                if (!usedNumbers.Contains(was)) { usedNumbers.Add(was); return was; }
                 while (usedNumbers.Contains(next)) next++;
-                p.Number = next;
-                numbering.Add($"P{was}→P{p.Number}");
+                numbering.Add($"P{was}→P{next}");
+                usedNumbers.Add(next);
+                return next;
             }
-            usedNumbers.Add(p.Number);
+            if (p.Terminals is { Count: > 0 } terminals)
+            {
+                foreach (var t in terminals) t.Number = Renumber(t.Number);
+                bool refBound = p.Reference is null || Bind(p.Reference).Item1 is not null;
+                if (!refBound || terminals.Any(t => Bind(t.Conductor).Item1 is null))
+                    report.Add($"{C3dPorts.Label(p)}'s conductors are not all here: its terminals name conductors this document lacks, so it " +
+                               "is refused until they are renamed.");
+                else
+                {
+                    if (p.Reference is { } rf) p.Reference = Bind(rf).Item1;
+                    foreach (var t in terminals) t.Conductor = Bind(t.Conductor).Item1!;
+                }
+                target.Ports.Add(p);
+                result.Ports.AddRange(terminals.Select(t => t.Number));
+                continue;
+            }
+            p.Number = Renumber(p.Number);
             if (p.Positive is { } pos && p.Negative is { } neg)
             {
                 var (bp, hp) = Bind(pos);
@@ -752,6 +770,7 @@ public static class C3dFragment
         foreach (var f in C3dBindings.Bound(d)) yield return f.Expr.Expr;
         foreach (var i in d.Instances) foreach (var e in i.Params?.Values ?? Enumerable.Empty<C3dExpr>()) yield return e.Expr;
         foreach (var p in d.Ports) yield return p.Z0;
+        foreach (var t in d.Ports.SelectMany(p => p.Terminals ?? [])) yield return t.Z0;
         foreach (var h in d.HeatSources) if (h.Power is { Length: > 0 } hp) yield return hp;
         foreach (var (_, _, t) in C3dThermal.ThermalSetups(d)) foreach (var f in C3dThermal.ExpressionFields(t)) yield return f.Text;
     }
@@ -766,6 +785,7 @@ public static class C3dFragment
             if (i.Params is { } ps)
                 foreach (string k in ps.Keys.ToList()) ps[k] = ps[k] with { Expr = C3dExpressionText.Rename(ps[k].Expr, from, to) };
         foreach (var p in d.Ports) p.Z0 = C3dExpressionText.Rename(p.Z0, from, to);
+        foreach (var t in d.Ports.SelectMany(p => p.Terminals ?? [])) t.Z0 = C3dExpressionText.Rename(t.Z0, from, to);
         foreach (var h in d.HeatSources) if (h.Power is { Length: > 0 } hp) h.Power = C3dExpressionText.Rename(hp, from, to);
         foreach (var (index, setup, t) in C3dThermal.ThermalSetups(d).ToList())
         {

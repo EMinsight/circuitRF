@@ -160,8 +160,11 @@ public static class FieldDrive
         C3dDocument doc;
         try { doc = C3dPersistence.Deserialize(File.ReadAllText(path)); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException) { return null; }
-        var modelled = doc.Ports.Where(p => p.Model).OrderBy(p => p.Number).ToList();
-        bool renumbered = modelled.Count < doc.Ports.Count;
+        // brief-em3d-114 — a terminal is a port: each one, numbered and referenced as itself
+        var modelled = doc.Ports.Where(p => p.Model)
+                          .SelectMany(p => p.Terminals is { Count: > 0 } ts ? ts.Select(t => (t.Number, t.Z0)) : [(p.Number, p.Z0)])
+                          .OrderBy(e => e.Number).ToList();
+        bool renumbered = doc.Ports.Any(p => !p.Model);
         var map = new Dictionary<int, Complex>();
         for (int n = 0; n < modelled.Count; n++)
             if (C3dPorts.TryParseZ0(modelled[n].Z0, out var z)) map[renumbered ? n + 1 : modelled[n].Number] = z;

@@ -2,11 +2,12 @@
 
 **Series:** [3D EM, eighth series](brief-em3d-112-overview.md) · **Tag:** `R-em3d114-n`
 **Area:** `src/Design/ThreeD/C3dDocument.cs` (`C3dPort`, a new `C3dTerminal`), `C3dPersistence`, `src/Design/ThreeD/C3dPorts.cs`
-(inference), `C3dProblemAssembly`, `src/Engine/Em3d/Em3dProblem.cs` (`Em3dPort.FaceGroup`, `Mode`, validation),
-`src/Design/Em3d/GmshGeoWriter.cs` (one face claim per group), `src/Design/Em3d/Em3dPortMap.cs`,
+(inference), `C3dProblemAssembly`, `src/Engine/Em3d/Em3dProblem.cs` (`Em3dPort.FaceGroup`, validation), `src/Design/Em3d/Em3dPortMap.cs`,
 `src/Ui/ThreeD/C3dEditorViewModel.Simulate.cs` (*Make Port ▸ Wave*, the port rows, the overlay), `src/Render/Scene3D/Scene3DBuilder.cs`
 (drawing a terminal's voltage path), `src/Cli/` (`check`, `explain`, `DocumentSchema`), `docs/user/src/reference/` (`drawing-in-3d.md`, `em-setup.md`, `cli.md`)
-**Depends on:** 113 (its findings may change D3/D4 before this starts) · **Blocks:** 115, 116's multi-terminal half
+**Depends on:** 113-a · **Blocks:** 116's multi-terminal half
+**Changed by D14 (owner, 2026-10-05):** terminal ports run on openEMS only. Palace refuses them by name, so this brief
+no longer carries anything that existed only for Palace's shared face (`Mode`, the Gmsh face claim).
 
 ---
 
@@ -14,8 +15,8 @@
 
 A `.c3d` wave port that is **one port with N terminals**: N signal conductors and one reference, all meeting the port's
 rectangle on an air-box face. Everything up to the solver understands it. It can be drawn, saved, reopened, inferred,
-checked, explained and shown in the editor. **No solver runs it yet.** Palace and openEMS refuse it with a sentence naming
-briefs 115 and 116's feature, until those land.
+checked, explained and shown in the editor. **No solver runs it yet.** openEMS refuses it until brief 116 lands; Palace
+refuses it for this series (overview D14), with a sentence pointing to openEMS.
 
 Overview rule 3 governs throughout: **a one-terminal wave port, and every lumped port, is byte-identical to today**, in the
 file, the problem, the Gmsh script and the Palace configuration.
@@ -75,25 +76,31 @@ case infers it today (from the reference's foot to the terminal's), or stated.
 construction: the problem's `Ports` list is the result's ports. The new init-only properties, both null/default on every
 port that exists today:
 
-- `FaceGroup` (`int?`) — shared by a port's terminals; null for a one-terminal port.
-- `Mode` (`int`, default 1) — 1…N within the group, in terminal order as written.
+- `FaceGroup` (`int?`) — shared by a port's terminals; null for a one-terminal port. openEMS's lowering (116) uses it to
+  give the group one feed extension.
+
+(An earlier draft also added `Mode`, 1…N within the group, for Palace's shared-face modes. Brief 113-a found that route
+unusable and D14 keeps terminal ports off Palace, so it is not added. Brief 119 decides what Palace would need, if
+anything.)
 
 **`R-em3d114-2b` `Em3dProblem.Validate`** gains the group rules:
 
 - Every port in a group has the same rectangle, face and `NegativeObject`.
 - Each has a distinct `PositiveObject`, and every one has a `VoltagePath`.
-- Modes run 1…N with no gap.
 - Every port in the group is `Wave`.
 
-**`R-em3d114-2c` `GmshGeoWriter`** claims a group's face region **once**, in one physical group, so the mesh has one port
-surface per face. A one-terminal port's script is unchanged (gate 5).
+**`R-em3d114-2c`** *(removed by D14)*. `GmshGeoWriter` needs no change: Palace refuses a group before Gmsh runs.
 
 **`R-em3d114-2d` `Em3dPortMap`** records, for each result port, its terminal: `result port 2 is the 3D view's port 'Left',
 terminal 'P2' (strip_b)`. The diagnostics cube carries the document number as today.
 
-**`R-em3d114-2e` Refusals until 115/116.** `Em3dRunService` refuses a problem with any `FaceGroup` on every solver:
-"Port 'Left' has two terminals; terminal wave ports are not yet built for Palace / openEMS." Brief 115 removes the Palace
-refusal and brief 116 the openEMS one. The refusal is **before Gmsh**, as every capability refusal is.
+**`R-em3d114-2e` Refusals.** `Em3dRunService` refuses a problem with any `FaceGroup`:
+- on **Palace**, for this series (D14): "Port 'Left' has two terminals; terminal wave ports run on openEMS only in this
+  version. Set the setup's solver to openEMS." This sentence stays when 116 lands;
+- on **openEMS**, until brief 116 lands: "Port 'Left' has two terminals; terminal wave ports are not yet built for
+  openEMS." Brief 116 removes it.
+
+Both are **before Gmsh**, as every capability refusal is.
 
 ---
 
@@ -134,9 +141,9 @@ Edit `docs/user/src/` only. Do **not** run DocGen or regenerate `docs/user`; the
   and per-terminal *Flip*.
 - `em-setup.md` **#wave-ports**: a new subsection, *Several conductors on one face* {#wave-port-terminals}. It covers what
   a terminal is, that each terminal is a port of the result (numbering, with the pair as the example), the `Reference` and
-  `Terminals` keys with a short JSON block, and that a `.cem` cannot state one (overview D2). **Which solvers run it is
-  left to 115 and 116** to write. Until they land, the subsection says nothing about running, rather than stating a
-  refusal that is about to be lifted.
+  `Terminals` keys with a short JSON block, and that a `.cem` cannot state one (overview D2). **Which solver runs it is
+  left to 116** to write. Until it lands, the subsection says nothing about running, rather than stating a refusal that
+  is about to be lifted.
 - `cli.md`: `explain`'s terminal lines (4).
 
 ## 5. Gate
@@ -150,13 +157,13 @@ Edit `docs/user/src/` only. Do **not** run DocGen or regenerate `docs/user`; the
 3. **Refusals.** Each of: both `Terminals` and `Positive`; one terminal; a lumped port with terminals; a terminal on the
    reference; two terminals on one conductor; a terminal number clashing with another port; three conductors and no
    `Terminals` (the new sentence, naming the fix).
-4. **Problem.** The lowering has two `Em3dPort`s sharing `FaceGroup`, modes 1 and 2, the same rectangle and negative
-   object; `Validate` refuses each 2b violation built by hand.
+4. **Problem.** The lowering has two `Em3dPort`s sharing `FaceGroup`, the same rectangle and negative object;
+   `Validate` refuses each 2b violation built by hand.
 5. **Byte identity.** Every existing `.c3d` example and fixture re-saves unchanged. Every existing Palace and Gmsh golden
    (`testdata/em3d/palace-goldens`) is regenerated byte-identical.
 6. **Make Port.** On the pair's face the command writes one port, two terminals, numbers 1 and 2 (or the next free), and
    one undo step removes it.
-7. **Refused to run.** A two-terminal setup on Palace and on openEMS is refused before Gmsh with 2e's sentence (Gmsh
+7. **Refused to run.** A two-terminal setup on Palace and on openEMS is refused before Gmsh with 2e's sentences (Gmsh
    invoked 0 times).
 8. **`explain`** prints 4's lines for the fixture.
 

@@ -549,6 +549,15 @@ public static class EmRunService
             var d = EmDiagnostics.Forwarded("c3d-planar", $"This setup is a planar analysis, and {CircuitRF.Design.ThreeD.C3dSetups.PlanarRefusal}.");
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null, d.Render(), [], Diagnostic: d);
         }
+        // brief-em3d-114 R-em3d114-2e — a multi-terminal wave port is refused by its solver before anything is looked for or
+        // meshed, as every capability refusal is (a static solve reads no wave port, so it is not asked).
+        if (!setup.IsStatic3D && CircuitRF.Design.Em3d.Em3dRunService.TerminalPortRefusal(setup.Solver3D,
+                [.. document.Ports.Where(p => p.Model && p.Kind == CircuitRF.Engine.Em3d.Em3dPortKind.Wave && p.Terminals is { Count: >= 2 })
+                                  .Select(p => (CircuitRF.Design.ThreeD.C3dPorts.Label(p), p.Terminals!.Count))]) is { } terminalPorts)
+        {
+            var d = EmDiagnostics.Forwarded(CircuitRF.Design.Em3d.Em3dRunService.TerminalPortsSource, terminalPorts);
+            return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null, d.Render(), [], Diagnostic: d);
+        }
         var elaborator = new CircuitRF.Design.ThreeD.C3dElaborator();
         try
         {

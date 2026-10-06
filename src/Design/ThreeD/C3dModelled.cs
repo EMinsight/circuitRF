@@ -147,21 +147,24 @@ public static class C3dModelled
     public static IReadOnlyList<Em3dPort> Renumber(IReadOnlyList<(C3dPort Port, Em3dPort Resolved)> modelled, IReadOnlyList<C3dPort> off,
                                                   List<string> notes)
     {
-        var ordered = modelled.OrderBy(m => m.Port.Number).ToList();
+        // brief-em3d-114 — by the RESULT port's document number, which is a terminal's own: each terminal is one port here.
+        var ordered = modelled.OrderBy(m => m.Resolved.Number).ToList();
         if (off.Count == 0) return [.. ordered.Select(m => m.Resolved)];
         var ports = new List<Em3dPort>(ordered.Count);
         for (int k = 0; k < ordered.Count; k++)
         {
             var (doc, r) = ordered[k];
-            ports.Add(r with { Number = k + 1, Name = C3dPorts.ProblemName(k + 1), SourceNumber = doc.Number, SourceLabel = C3dPorts.Label(doc) });
+            ports.Add(r with { Number = k + 1, Name = C3dPorts.ProblemName(k + 1), SourceNumber = r.Number,
+                               SourceLabel = r.FaceGroup is null ? C3dPorts.Label(doc) : r.SourceLabel });
         }
-        string map = string.Join(", ", ordered.Select((m, k) => $"{C3dPorts.Label(m.Port)}→{k + 1}"));
-        foreach (var p in off.OrderBy(p => p.Number))
+        string map = string.Join(", ", ordered.Select((m, k) =>
+            $"{(m.Resolved.FaceGroup is null ? C3dPorts.Label(m.Port) : $"{C3dPorts.Label(m.Port)} {m.Resolved.SourceLabel ?? m.Resolved.Number.ToString(System.Globalization.CultureInfo.InvariantCulture)}")}→{k + 1}"));
+        foreach (var p in off.OrderBy(p => C3dPorts.Numbers(p).DefaultIfEmpty(0).Min()))
             notes.Add($"{C3dPorts.Label(p)} not modelled: it is left out of the solve entirely — no excitation, no port sheet and no " +
                       "lumped element — so the gap it spans is whatever the geometry and the background are there: open, not " +
                       "shorted and not terminated in its Z0.");
         notes.Add($"The result's ports are the modelled ones, renumbered: {map}. The document's port numbers are unchanged.");
-        int declared = ordered.Count + off.Count;
+        int declared = ordered.Count + off.Sum(p => C3dPorts.Numbers(p).Count);
         notes.Add($"The result has {ordered.Count} port{(ordered.Count == 1 ? "" : "s")}; this 3D view declares {declared} — a " +
                   $"schematic placing it expects {declared}.");
         return ports;

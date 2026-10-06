@@ -420,7 +420,7 @@ public static class C3dProblemAssembly
                     continue;
                 }
                 if (r.Resolved is null) return No(r.Refusal!, e.Warnings);
-                modelled.Add((r.Port, r.Resolved));
+                foreach (var q in r.All) modelled.Add((r.Port, q));      // brief-em3d-114 — a terminal is a port
             }
             if (setup.Problem3D == Em3dProblemType.Driven && document.Ports.Count > 0 && modelled.Count == 0)
                 return No(C3dModelled.AllPortsOff, e.Warnings);
@@ -579,11 +579,29 @@ public static class C3dPortReports
     public static string Describe(C3dPortResult r)
     {
         if (r.Resolved is not { } p) return r.Refusal ?? "";
+        // brief-em3d-114 R-em3d114-4 — a multi-terminal port: its reference and why, then each terminal as a port of the result
+        if (r.Terminals is { } ts)
+            return $"{r.Label} (wave, {ts.Count} terminals) on the {Em3dProblemFace(p)} face: the reference is '{p.NegativeObject}' — " +
+                   $"{r.Reason}; " + string.Join("; ", ts.Select(t => $"terminal {t.Number}{(t.SourceLabel is { } n ? $" '{n}'" : "")} runs to " +
+                                                                    $"'{t.PositiveObject}' along {Along(Vec(t))}")) + ".";
         var d = p.Kind == Em3dPortKind.Wave && p.VoltagePath is { } v
             ? new Point3(v.To.X - v.From.X, v.To.Y - v.From.Y, v.To.Z - v.From.Z) : p.Direction;
-        double ax = Math.Abs(d.X), ay = Math.Abs(d.Y), az = Math.Abs(d.Z);
-        string along = ax >= ay && ax >= az ? (d.X >= 0 ? "+x" : "-x") : ay >= az ? (d.Y >= 0 ? "+y" : "-y") : (d.Z >= 0 ? "+z" : "-z");
         return $"{r.Label} ({(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}) runs from '{p.NegativeObject}' to '{p.PositiveObject}' " +
-               $"along {along}: {r.Reason}.";
+               $"along {Along(d)}: {r.Reason}.";
+    }
+
+    private static Point3 Vec(Em3dPort t) => t.VoltagePath is { } v ? new Point3(v.To.X - v.From.X, v.To.Y - v.From.Y, v.To.Z - v.From.Z) : t.Direction;
+
+    private static string Along(Point3 d)
+    {
+        double ax = Math.Abs(d.X), ay = Math.Abs(d.Y), az = Math.Abs(d.Z);
+        return ax >= ay && ax >= az ? (d.X >= 0 ? "+x" : "-x") : ay >= az ? (d.Y >= 0 ? "+y" : "-y") : (d.Z >= 0 ? "+z" : "-z");
+    }
+
+    /// <summary>The air-box face a wave port's rectangle lies on (<c>xmin</c> …), from its inward reference-plane normal.</summary>
+    public static string Em3dProblemFace(Em3dPort p)
+    {
+        var n = p.ReferencePlane.Normal;
+        return Math.Abs(n.X) > 0.5 ? (n.X > 0 ? "xmin" : "xmax") : Math.Abs(n.Y) > 0.5 ? (n.Y > 0 ? "ymin" : "ymax") : (n.Z > 0 ? "zmin" : "zmax");
     }
 }

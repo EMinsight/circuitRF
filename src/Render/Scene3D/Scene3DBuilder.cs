@@ -508,7 +508,10 @@ public static class Scene3DBuilder
                 b.Object(obj, board.Mesh, Outline(p).Select(q => (q, pinLine)), vertexRgba: board.Rgba);
                 continue;
             }
-            var (verts, tris) = PortSheet(p);
+            // brief-em3d-114 R-em3d114-3c — a multi-terminal port's terminals share one rectangle: the first draws it, and each
+            // other terminal a strip along its own voltage path, so each arrow (reference to conductor) has a sheet to pick it by
+            var (verts, tris) = p.FaceGroup is { } g && p.VoltagePath is { } path && problem.Ports.First(q => q.FaceGroup == g) != p
+                ? TerminalStrip(p, path) : PortSheet(p);
             b.Object(obj, new Em3dTriangleMesh(verts, tris), PortArrow(p).Select(q => (q, pinLine)));
         }
 
@@ -801,6 +804,19 @@ public static class Scene3DBuilder
         tris.Add(new Em3dTriangle(0, 1, 2, p.Name));
         tris.Add(new Em3dTriangle(0, 2, 3, p.Name));
         return (verts, tris);
+    }
+
+    /// <summary>brief-em3d-114 — a terminal's own sheet: a strip in the port's plane along its voltage path, a fifth of the
+    /// path's length wide.</summary>
+    private static (List<Point3>, List<Em3dTriangle>) TerminalStrip(Em3dPort p, Em3dSegment path)
+    {
+        var (from, to) = (path.From, path.To);
+        var d = new Vector3((float)(to.X - from.X), (float)(to.Y - from.Y), (float)(to.Z - from.Z));
+        var n = p.Min.X == p.Max.X ? Vector3.UnitX : p.Min.Y == p.Max.Y ? Vector3.UnitY : Vector3.UnitZ;
+        var side = Vector3.Cross(d, n) * 0.1f;
+        Point3 Off(Point3 q, float k) => new(q.X + side.X * k, q.Y + side.Y * k, q.Z + side.Z * k);
+        return ([Off(from, -1), Off(to, -1), Off(to, 1), Off(from, 1)],
+                [new Em3dTriangle(0, 1, 2, p.Name), new Em3dTriangle(0, 2, 3, p.Name)]);
     }
 
     /// <summary>3D editor bugs round 9 — the checkerboard's second colour and its arrow's: against a dark pin colour the cells

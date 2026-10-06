@@ -145,12 +145,15 @@ public sealed partial class C3dEditorViewModel
             else if (r.InstanceIndex >= 0 || (r.ObjectIndex < 0 && !r.IsAirBox && !r.IsGroup && r.Kind != FieldPlotKind && r.Kind != FaceImageKind))
             {
                 // an instance's contents, an instance's part, an EM face boundary's tint: the view hides them for this session
-                var names = r.InstanceIndex >= 0 ? r.Children.Select(c => c.Name) : [r.Name];
+                // brief-em3d-114 — a multi-terminal port's row is the whole port: its terminals' sheets
+                bool group = r.Kind == "Port" && r.Name.StartsWith(PortGroupRowPrefix, StringComparison.Ordinal);
+                var names = r.InstanceIndex >= 0 || group ? r.Children.Select(c => c.Name) : [r.Name];
                 foreach (string n in names)
                     if (SceneObject(n) is { } s) Viewer.SetVisibleEverywhere(s.Id, visible);
                 foreach (var c in r.Children) c.Sync(visible);
                 r.Sync(visible);
-                if (r.Kind == "Port") SetPortShown(r.Name, visible);   // a refused port has no sheet: its overlay goes too
+                if (r.Kind is "Port" or TerminalKind)                  // a refused port has no sheet: its overlay goes too
+                    foreach (string n in group ? names : [r.Name]) SetPortShown(n, visible);
             }
         }
         BeginGroup(description);

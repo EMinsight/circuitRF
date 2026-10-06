@@ -639,12 +639,55 @@ public sealed class C3dPort
     /// <summary>A wave port's voltage path; null is inferred as brief 23 infers it.</summary>
     public C3dVoltagePath? VoltagePath { get; set; }
 
+    /// <summary>brief-em3d-114 R-em3d114-1c — a multi-terminal wave port's reference conductor (the ground or shield every
+    /// terminal's voltage is measured from); null is inferred. Read only with <see cref="Terminals"/>.</summary>
+    public string? Reference { get; set; }
+
+    /// <summary>
+    /// brief-em3d-114 R-em3d114-1a — a wave port met by several signal conductors: one terminal per conductor, each its own
+    /// numbered port of the result. With it the port-level <see cref="Number"/>, <see cref="Z0"/>, <see cref="Positive"/>,
+    /// <see cref="Negative"/>, <see cref="VoltagePath"/> and <see cref="Flip"/> are not written, and stating any of them is
+    /// refused (<see cref="C3dPorts"/>). Null on every other port: one terminal is the ordinary port's own spelling.
+    /// </summary>
+    public List<C3dTerminal>? Terminals { get; set; }
+
+    /// <summary>The port-level keys the file stated (the reader marks them), so a file stating both <see cref="Terminals"/>
+    /// and one of them is refused rather than quietly read: a stated Z0 of "50" is otherwise the default.</summary>
+    [JsonIgnore]
+    internal HashSet<string>? Stated { get; set; }
+
     /// <summary>brief-em3d-93 R-em3d93-1a — whether the port is in the solve. False: no excitation, no port sheet and no lumped
     /// element — the gap it spans is left as the geometry makes it (open, not terminated) — and the result's ports are the
     /// modelled ones, renumbered 1…N in <see cref="Number"/> order. The port keeps its placement, Z0 and path. Written only
     /// when false.</summary>
     [DefaultValue(true)]
     public bool Model { get; set; } = true;
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Unread { get; set; }
+}
+
+/// <summary>
+/// brief-em3d-114 R-em3d114-1a — one terminal of a multi-terminal wave port: a signal conductor meeting the port's region,
+/// numbered as a port of the result (rule 1: a terminal IS a port). Its voltage runs from the port's reference to
+/// <see cref="Conductor"/>, inferred as a single wave port's is unless <see cref="VoltagePath"/> states it.
+/// </summary>
+public sealed class C3dTerminal
+{
+    public int    Number    { get; set; }
+    public string Name      { get; set; } = "";
+    public string Conductor { get; set; } = "";
+
+    /// <summary>The terminal's reference impedance, Ω, spelled as a port's.</summary>
+    public string Z0 { get; set; } = "50";
+
+    /// <summary>Reverses the terminal's voltage path (conductor to reference): a 180° error in every transmission term
+    /// otherwise. The reference stays the reference.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Flip { get; set; }
+
+    /// <summary>Null is inferred: from the reference's foot to this conductor's.</summary>
+    public C3dVoltagePath? VoltagePath { get; set; }
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Unread { get; set; }

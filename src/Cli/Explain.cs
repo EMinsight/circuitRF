@@ -12,6 +12,8 @@ using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Engine.Mom;
+using Em3dPort = CircuitRF.Engine.Em3d.Em3dPort;
+using Point3 = CircuitRF.Engine.Em3d.Point3;
 using System.Numerics;
 using RfCore;
 using RfCore.Data;
@@ -703,11 +705,45 @@ internal static class Explain
             var r = report.Result;
             string touches = r.Contacts.Count == 0 ? "not measured: both ends are stated"
                 : string.Join("; ", r.Contacts.Select(c => $"{c.Edge}: {(c.Objects.Count == 0 ? "nothing" : string.Join(", ", c.Objects.Select(o => $"'{o}'")))}"));
-            walks.Add(new ResolutionStepJson($"port {r.Label}" + (report.Setup is { } s ? $" (setup '{s}')" : ""), null,
+            string where = report.Setup is { } s ? $" (setup '{s}')" : "";
+            if (r.Terminals is { } ts && r.Refusal is null)
+            {
+                TerminalWalk(doc, r, ts, where, touches, walks);
+                continue;
+            }
+            walks.Add(new ResolutionStepJson($"port {r.Label}" + where, null,
                 $"touches — {touches}. " + (r.Refusal ?? C3dPortReports.Describe(r)),
                 "each edge's conductors to within 1 DBU; one opposite pair, one conductor each; the negative end is the " +
                 "ground set's, else the larger surface; Flip swaps; Positive and Negative stated override it"));
         }
+    }
+
+    /// <summary>
+    /// brief-em3d-114 R-em3d114-4 — a multi-terminal wave port: its face, its reference and why, then per terminal its number,
+    /// conductor, Z0 and voltage path (ends in the display unit), and what its S-parameters are.
+    /// </summary>
+    private static void TerminalWalk(C3dDocument doc, C3dPortResult r, IReadOnlyList<Em3dPort> ts, string where, string touches,
+                                     List<ResolutionStepJson> walks)
+    {
+        var first = ts[0];
+        walks.Add(new ResolutionStepJson($"port {r.Label}" + where, null,
+            $"touches — {touches}. A wave port with {ts.Count} terminals on the air box's {C3dPortReports.Em3dProblemFace(first)} face; " +
+            $"the reference is '{first.NegativeObject}': {r.Reason}.",
+            "the conductors meeting the region; the reference is the one in the ground set (a PEC air-box face counts), else " +
+            "the largest surface; a tie is refused; Reference states it"));
+        string P(Point3 q) => $"({C3dUnits.Spell(q.X, doc.DisplayUnit)}, {C3dUnits.Spell(q.Y, doc.DisplayUnit)}, {C3dUnits.Spell(q.Z, doc.DisplayUnit)})";
+        foreach (var t in ts)
+        {
+            var v = t.VoltagePath!.Value;
+            walks.Add(new ResolutionStepJson($"port {r.Label} terminal {t.Number}" + (t.SourceLabel is { } n ? $" '{n}'" : "") + where, null,
+                $"conductor '{t.PositiveObject}', Z0 {C3dPorts.FormatZ0(t.Z0)} Ω, voltage path {P(v.From)} to {P(v.To)}",
+                "from the reference's foot to the conductor's across their gap, at the conductor's centre; where the reference " +
+                "encloses it, straight along the face's axes to the reference's nearest metal; VoltagePath states it; Flip reverses it"));
+        }
+        walks.Add(new ResolutionStepJson($"port {r.Label} result" + where, null,
+            $"terminal S: each terminal is a port of the result (port{(ts.Count == 1 ? "" : "s")} {string.Join(", ", ts.Select(t => t.Number))}), " +
+            "its voltage and current on its own conductor, against its own Z0",
+            "a terminal is a port everywhere a port number is used: the .sNp, the port map, field drives"));
     }
 
     /// <summary>

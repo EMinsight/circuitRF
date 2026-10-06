@@ -102,6 +102,9 @@ public static class Em3dRunService
     /// solve (FDTD has no eigensolver) and a wave port (openEMS's own waveguide and microstrip ports are a
     /// later brief). On openEMS or Both it is refused naming Palace, before anything is looked for.
     /// </summary>
+    /// <summary>brief-em3d-114 — the diagnostic source of a terminal wave port's refusal.</summary>
+    public const string TerminalPortsSource = "em3d-terminal-ports";
+
     public static string? PalaceOnlyRefusal(EmSetup setup)
     {
         if (StaticSolverRefusal(setup) is { } staticOnly) return staticOnly;
@@ -120,6 +123,34 @@ public static class Em3dRunService
         }
         return null;
     }
+
+    /// <summary>
+    /// brief-em3d-114 R-em3d114-2e — a multi-terminal wave port (overview D14): Palace refuses it for this series, naming
+    /// openEMS; openEMS refuses it until brief 116 builds it. <paramref name="ports"/> is each such port's label and terminal
+    /// count; null when there is none, or the solver runs neither.
+    /// </summary>
+    public static string? TerminalPortRefusal(Em3dSolver solver, IReadOnlyList<(string Label, int Terminals)> ports)
+    {
+        if (ports.Count == 0) return null;
+        var (label, n) = ports[0];
+        string count = n switch { 2 => "two", 3 => "three", 4 => "four", 5 => "five", 6 => "six", 7 => "seven", 8 => "eight", 9 => "nine",
+                                  _ => n.ToString(CultureInfo.InvariantCulture) };
+        string head = $"Port '{label}' has {count} terminals; ";
+        string palace = head + "terminal wave ports run on openEMS only in this version. Set the setup's solver to openEMS.";
+        string openEms = head + "terminal wave ports are not yet built for openEMS.";
+        return solver switch
+        {
+            Em3dSolver.Palace  => palace,
+            Em3dSolver.OpenEms => openEms,
+            Em3dSolver.Both    => palace + " " + openEms,
+            _                  => null,
+        };
+    }
+
+    /// <summary>The problem's multi-terminal ports, as <see cref="TerminalPortRefusal"/> takes them: one entry per face group.</summary>
+    public static IReadOnlyList<(string Label, int Terminals)> TerminalPorts(IReadOnlyList<Em3dPort> ports)
+        => [.. ports.Where(p => p.FaceGroup is not null).GroupBy(p => p.FaceGroup!.Value).OrderBy(g => g.Key)
+                    .Select(g => (g.First().FaceGroupLabel ?? $"port {g.Key}", g.Count()))];
 
     /// <summary>The Touchstone's path without its <c>.sNp</c> suffix: the override when the setup has
     /// one (<c>-o</c> moves the Touchstone only, as for planar), the solver-named stem otherwise.</summary>
@@ -315,6 +346,9 @@ public static class Em3dRunService
         var problem = generated.Problem!;
         if (problem.Validate() is { Count: > 0 } invalid)
             return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-problem", string.Join(" ", invalid)));
+        // brief-em3d-114 R-em3d114-2e — whatever built the problem; a .c3d's run has already refused before discovery
+        if (TerminalPortRefusal(solver, TerminalPorts(problem.Ports)) is { } terminalPorts)
+            return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded(TerminalPortsSource, terminalPorts));
 
         // ── each backend's lowering: no process yet ──────────────────────────────────────────
         PalacePlan? palacePlan = null;

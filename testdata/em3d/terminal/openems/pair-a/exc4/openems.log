@@ -1,0 +1,27 @@
+>> openEMS model.xml --numThreads=8
+ ---------------------------------------------------------------------- 
+ | openEMS 64bit -- version 67d3784
+ | (C) 2010-2026 Thorsten Liebig <thorsten.liebig@gmx.de>  GPL license
+ ---------------------------------------------------------------------- 
+	Used external libraries:
+		CSXCAD -- Version: dcdb62b
+		hdf5   -- Version: 2.2.0
+		          compiled against: HDF5 library version: 2.2.0
+		tinyxml -- compiled against: 2.6.2
+		fparser
+		boost  -- compiled against: 1_92
+		vtk -- Version: 9.7.0
+		       compiled against: 9.7.0
+
+openEMS - fixed number of threads: 8
+Create FDTD operator (compressed SSE + multi-threading)
+FDTD simulation size: 153x125x17 --> 325125 FDTD cells 
+FDTD timestep is: 1.53013e-13 s; Nyquist rate: 326 timesteps @1.00236e+10 Hz
+Excitation signal length is: 3745 timesteps (5.73035e-10s)
+Max. number of timesteps: 500000 ( --> 133.511 * Excitation signal length)
+Create FDTD engine (compressed SSE + multi-threading)
+Running FDTD engine... this may take a while... grab a cup of coffee?!?
+[@        4s] Timestep:         5022 || Speed:  404.3 MC/s (8.042e-04 s/TS) || Energy: ~8.57e-23 (-82.35dB)
+RunFDTD: end-criteria of -70.00dB reached after 5022 timesteps (-82.35dB)
+Time for 5022 iterations with 325125.00 cells : 4.04 sec
+Speed: 404.24 MCells/s 

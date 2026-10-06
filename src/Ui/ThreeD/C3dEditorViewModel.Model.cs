@@ -67,10 +67,10 @@ public sealed partial class C3dEditorViewModel
     /// <summary>Ports' Model, one undo entry.</summary>
     public void SetPortsModel(IReadOnlyList<C3dPort> ports, bool model)
     {
-        var numbers = ports.Select(p => p.Number).ToHashSet();
+        var set = ports.ToHashSet();          // by identity: a multi-terminal port has no number of its own (brief-em3d-114)
         string what = ports.Count == 1 ? C3dPorts.Label(ports[0]) : $"{ports.Count} ports";
         ChangeRecords($"{(model ? "Model" : "Leave out")} {what}",
-                      d => { foreach (var p in d.Ports.Where(p => numbers.Contains(p.Number))) p.Model = model; });
+                      d => { foreach (var p in d.Ports.Where(set.Contains)) p.Model = model; });
     }
 
     /// <summary>A heat source's Model (D1), one undo entry.</summary>
@@ -102,7 +102,7 @@ public sealed partial class C3dEditorViewModel
     private string? NotModelledSuffix(Scene3DObject o)
     {
         if (o.Kind == Scene3DKind.Port)
-            return Document.Ports.FirstOrDefault(p => p.Number == o.PortNumber) is { Model: false } ? C3dModelled.Suffix : null;
+            return C3dPorts.OwnerOf(Document, o.PortNumber) is { Model: false } ? C3dModelled.Suffix : null;
         return Elaboration is { } e && C3dModelled.IsOff(e, o.Name) ? C3dModelled.Suffix : null;
     }
 }

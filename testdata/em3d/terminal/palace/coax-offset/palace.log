@@ -1,0 +1,267 @@
+>> mpirun -n 8 palace-arm64.bin config.json
+
+_____________     _______
+_____   __   \____ __   /____ ____________
+____   /_/  /  __ ` /  /  __ ` /  ___/  _ \
+___   _____/  /_/  /  /  /_/  /  /__/  ___/
+  /__/     \___,__/__/\___,__/\_____\_____/
+
+Git changeset ID: 0dc74cd
+Running with 8 MPI processes
+Device configuration: cpu
+Memory configuration: host-std
+libCEED backend: /cpu/self/xsmm/blocked
+
+
+Characteristic length and time scales:
+ Lc = 1.000e-02 m, tc = 3.336e-02 ns
+Finished partitioning mesh into 8 subdomains
+
+Mesh curvature order: 2
+Mesh bounding box:
+ (Xmin, Ymin, Zmin) = (-6.700e-04, -6.700e-04, +0.000e+00) m
+ (Xmax, Ymax, Zmax) = (+6.700e-04, +6.700e-04, +1.000e-02) m
+
+Parallel Mesh Stats:
+
+                minimum     average     maximum       total
+ vertices            42          68          90         544
+ edges              125         166         197        1328
+ faces              116         130         140        1040
+ elements            32          32          32         256
+ neighbors            3           4           5
+
+            minimum     maximum
+ h        0.0368053   0.0368053
+ kappa      3.68235     3.68235
+
+Estimated current per-rank memory usage is: Min. 9.7M, Max. 10.9M, Avg. 9.9M, Total 79.3M
+Estimated current per-node memory usage is: Min. 79.3M, Max. 79.3M, Avg. 79.3M, Total 79.3M
+
+Configuring Robin impedance BC for wave ports at attributes:
+ 3: Index = 1, mode = 1, d = 0.000e+00 m,  n = (+0.0,+0.0,-1.0)
+ 4: Index = 2, mode = 1, d = 1.000e-03 m,  n = (+0.0,+0.0,+1.0)
+
+Configuring wave port excitation source term at attributes:
+ 3: Index = 1
+ 4: Index = 2
+
+Configuring Dirichlet PEC BC at attributes:
+ 2
+
+Computing frequency response for:
+Excitation 1/2 with index 1 has contributions from:
+ Wave port  1
+Excitation 2/2 with index 2 has contributions from:
+ Wave port  2
+
+Assembling system matrices, number of global unknowns:
+ H1 (p = 3): 9408, ND (p = 3): 25680, RT (p = 3): 23184
+ Operator assembly level: Partial
+ Mesh geometries:
+  Cube: P = 144, Q = 64 (quadrature order = 6)
+
+Sweeping excitation index 1 (1/2):
+
+Calculating boundary modes at wave ports for ω/2π = 2.000e+00 GHz (4.192e-01)
+ Number of global unknowns for port 1:
+  H1: 192, ND: 336
+ Port 1, mode 1: kₙ = 6.074e+01+7.594e-22i m⁻¹, Z_PV = 4.998e+01 Ω
+ Number of global unknowns for port 2:
+  H1: 192, ND: 336
+ Port 2, mode 1: kₙ = 6.074e+01+3.038e-21i m⁻¹, Z_PV = 4.998e+01 Ω
+
+Assembling multigrid hierarchy:
+ Level 0 (p = 1): 1328 unknowns
+ Level 1 (p = 2): 8352 unknowns
+ Level 2 (p = 3): 25680 unknowns
+ Level 0 (auxiliary) (p = 1): 544 unknowns
+ Level 1 (auxiliary) (p = 2): 3168 unknowns
+ Level 2 (auxiliary) (p = 3): 9408 unknowns
+
+It 1/3: ω/2π = 2.000e+00 GHz (total elapsed time = 3.97e-01 s, solve 1/6)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 4.505112e+01
+  1 (restart 0) KSP residual norm 4.814101e+00
+  2 (restart 0) KSP residual norm 4.087816e-01
+  3 (restart 0) KSP residual norm 8.444264e-03
+  4 (restart 0) KSP residual norm 7.902127e-04
+  5 (restart 0) KSP residual norm 1.065881e-04
+  6 (restart 0) KSP residual norm 1.230470e-05
+  7 (restart 0) KSP residual norm 2.173527e-06
+  8 (restart 0) KSP residual norm 2.449886e-07
+GMRES solver converged in 8 iterations (avg. reduction factor: 9.267e-02)
+ Sol. ||E|| = 3.334604e+01 (||RHS|| = 2.087254e-01)
+ Field energy E (2.417e-11 J) + H (2.417e-11 J) = 4.834e-11 J
+ S[1][1] = -2.715e-09+1.605e-10i, |S[1][1]| = -1.713e+02, arg(S[1][1]) = +1.766e+02
+ S[2][1] = +8.542e-01-5.199e-01i, |S[2][1]| = +1.875e-08, arg(S[2][1]) = -3.132e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 6.000e+00 GHz (1.258e+00)
+ Port 1, mode 1: kₙ = 1.822e+02-0.000e+00i m⁻¹, Z_PV = 4.998e+01 Ω
+ Port 2, mode 1: kₙ = 1.822e+02-1.640e-19i m⁻¹, Z_PV = 4.998e+01 Ω
+
+It 2/3: ω/2π = 6.000e+00 GHz (total elapsed time = 1.05e+00 s, solve 2/6)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.237027e+02
+  1 (restart 0) KSP residual norm 8.624599e+00
+  2 (restart 0) KSP residual norm 2.875041e+00
+  3 (restart 0) KSP residual norm 2.532331e-01
+  4 (restart 0) KSP residual norm 8.534915e-03
+  5 (restart 0) KSP residual norm 7.821621e-04
+  6 (restart 0) KSP residual norm 1.103465e-04
+  7 (restart 0) KSP residual norm 8.802399e-06
+  8 (restart 0) KSP residual norm 1.584463e-06
+  9 (restart 0) KSP residual norm 2.593406e-07
+GMRES solver converged in 9 iterations (avg. reduction factor: 1.062e-01)
+ Sol. ||E|| = 3.334604e+01 (||RHS|| = 6.261761e-01)
+ Field energy E (2.417e-11 J) + H (2.417e-11 J) = 4.834e-11 J
+ S[1][1] = +4.606e-09-7.428e-09i, |S[1][1]| = -1.612e+02, arg(S[1][1]) = -5.819e+01
+ S[2][1] = -6.922e-02-9.976e-01i, |S[2][1]| = -3.412e-08, arg(S[2][1]) = -9.397e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 1.000e+01 GHz (2.096e+00)
+ Port 1, mode 1: kₙ = 3.037e+02-0.000e+00i m⁻¹, Z_PV = 4.998e+01 Ω
+ Port 2, mode 1: kₙ = 3.037e+02-0.000e+00i m⁻¹, Z_PV = 4.998e+01 Ω
+
+It 3/3: ω/2π = 1.000e+01 GHz (total elapsed time = 1.71e+00 s, solve 3/6)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 2.546296e+01
+  1 (restart 0) KSP residual norm 1.592984e+01
+  2 (restart 0) KSP residual norm 4.082949e+00
+  3 (restart 0) KSP residual norm 5.045987e-01
+  4 (restart 0) KSP residual norm 1.697281e-02
+  5 (restart 0) KSP residual norm 1.552725e-03
+  6 (restart 0) KSP residual norm 1.945158e-04
+  7 (restart 0) KSP residual norm 1.967089e-05
+  8 (restart 0) KSP residual norm 2.565447e-06
+  9 (restart 0) KSP residual norm 4.772910e-07
+ 10 (restart 0) KSP residual norm 5.090694e-08
+GMRES solver converged in 10 iterations (avg. reduction factor: 1.321e-01)
+ Sol. ||E|| = 3.334604e+01 (||RHS|| = 1.043627e+00)
+ Field energy E (2.417e-11 J) + H (2.417e-11 J) = 4.834e-11 J
+ S[1][1] = +1.019e-09-8.487e-11i, |S[1][1]| = -1.798e+02, arg(S[1][1]) = -4.762e+00
+ S[2][1] = -9.179e-01-3.969e-01i, |S[2][1]| = +1.528e-08, arg(S[2][1]) = -1.566e+02
+ Updating solution error estimates
+
+Sweeping excitation index 2 (2/2):
+
+Calculating boundary modes at wave ports for ω/2π = 2.000e+00 GHz (4.192e-01)
+ Port 1, mode 1: kₙ = 6.074e+01+7.594e-22i m⁻¹, Z_PV = 4.998e+01 Ω
+ Port 2, mode 1: kₙ = 6.074e+01+3.038e-21i m⁻¹, Z_PV = 4.998e+01 Ω
+
+It 1/3: ω/2π = 2.000e+00 GHz (total elapsed time = 2.43e+00 s, solve 4/6)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 6.247325e+01
+  1 (restart 0) KSP residual norm 2.389685e+01
+  2 (restart 0) KSP residual norm 3.557572e+00
+  3 (restart 0) KSP residual norm 2.675969e-01
+  4 (restart 0) KSP residual norm 1.060873e-02
+  5 (restart 0) KSP residual norm 8.874273e-04
+  6 (restart 0) KSP residual norm 1.272118e-04
+  7 (restart 0) KSP residual norm 1.214033e-05
+  8 (restart 0) KSP residual norm 2.056600e-06
+  9 (restart 0) KSP residual norm 3.028872e-07
+GMRES solver converged in 9 iterations (avg. reduction factor: 1.236e-01)
+ Sol. ||E|| = 3.334604e+01 (||RHS|| = 2.087254e-01)
+ Field energy E (2.417e-11 J) + H (2.417e-11 J) = 4.834e-11 J
+ S[1][2] = +8.542e-01-5.199e-01i, |S[1][2]| = -4.105e-08, arg(S[1][2]) = -3.132e+01
+ S[2][2] = +2.606e-09+4.219e-09i, |S[2][2]| = -1.661e+02, arg(S[2][2]) = +5.830e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 6.000e+00 GHz (1.258e+00)
+ Port 1, mode 1: kₙ = 1.822e+02-0.000e+00i m⁻¹, Z_PV = 4.998e+01 Ω
+ Port 2, mode 1: kₙ = 1.822e+02-1.640e-19i m⁻¹, Z_PV = 4.998e+01 Ω
+
+It 2/3: ω/2π = 6.000e+00 GHz (total elapsed time = 3.09e+00 s, solve 5/6)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.237027e+02
+  1 (restart 0) KSP residual norm 8.624599e+00
+  2 (restart 0) KSP residual norm 2.875041e+00
+  3 (restart 0) KSP residual norm 2.532331e-01
+  4 (restart 0) KSP residual norm 8.534916e-03
+  5 (restart 0) KSP residual norm 7.821619e-04
+  6 (restart 0) KSP residual norm 1.103463e-04
+  7 (restart 0) KSP residual norm 8.802182e-06
+  8 (restart 0) KSP residual norm 1.584413e-06
+  9 (restart 0) KSP residual norm 2.593327e-07
+GMRES solver converged in 9 iterations (avg. reduction factor: 1.062e-01)
+ Sol. ||E|| = 3.334604e+01 (||RHS|| = 6.261761e-01)
+ Field energy E (2.417e-11 J) + H (2.417e-11 J) = 4.834e-11 J
+ S[1][2] = -6.922e-02-9.976e-01i, |S[1][2]| = -3.412e-08, arg(S[1][2]) = -9.397e+01
+ S[2][2] = +6.951e-09-5.298e-09i, |S[2][2]| = -1.612e+02, arg(S[2][2]) = -3.731e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 1.000e+01 GHz (2.096e+00)
+ Port 1, mode 1: kₙ = 3.037e+02-0.000e+00i m⁻¹, Z_PV = 4.998e+01 Ω
+ Port 2, mode 1: kₙ = 3.037e+02-0.000e+00i m⁻¹, Z_PV = 4.998e+01 Ω
+
+It 3/3: ω/2π = 1.000e+01 GHz (total elapsed time = 3.76e+00 s, solve 6/6)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 2.546296e+01
+  1 (restart 0) KSP residual norm 1.592984e+01
+  2 (restart 0) KSP residual norm 4.082949e+00
+  3 (restart 0) KSP residual norm 5.045987e-01
+  4 (restart 0) KSP residual norm 1.697281e-02
+  5 (restart 0) KSP residual norm 1.552725e-03
+  6 (restart 0) KSP residual norm 1.945158e-04
+  7 (restart 0) KSP residual norm 1.967089e-05
+  8 (restart 0) KSP residual norm 2.565447e-06
+  9 (restart 0) KSP residual norm 4.772910e-07
+ 10 (restart 0) KSP residual norm 5.090694e-08
+GMRES solver converged in 10 iterations (avg. reduction factor: 1.321e-01)
+ Sol. ||E|| = 3.334604e+01 (||RHS|| = 1.043627e+00)
+ Field energy E (2.417e-11 J) + H (2.417e-11 J) = 4.834e-11 J
+ S[1][2] = -9.179e-01-3.969e-01i, |S[1][2]| = +1.528e-08, arg(S[1][2]) = -1.566e+02
+ S[2][2] = +8.851e-10+5.119e-10i, |S[2][2]| = -1.798e+02, arg(S[2][2]) = +3.004e+01
+ Updating solution error estimates
+
+Completed 0 iterations of adaptive mesh refinement (AMR):
+ Indicator norm = 5.020e-04, global unknowns = 25680
+ Max. iterations = 0, tol. = 1.000e-02
+
+Estimated peak per-rank memory usage is: Min. 65.0M, Max. 71.2M, Avg. 67.7M, Total 541.8M
+Estimated peak per-node memory usage is: Min. 541.8M, Max. 541.8M, Avg. 541.8M, Total 541.8M
+
+Elapsed Time Report (s)           Min.        Max.        Avg.
+==============================================================
+Initialization                   0.002       0.003       0.003
+  Mesh Preprocessing             0.007       0.007       0.007
+Operator Construction            0.056       0.059       0.057
+  Wave Ports                     0.046       0.060       0.053
+Linear Solve                     0.083       0.087       0.085
+  Setup                          2.319       2.322       2.321
+  Preconditioner                 1.433       1.450       1.442
+  Coarse Solve                   0.032       0.035       0.034
+Estimation                       0.003       0.006       0.004
+  Construction                   0.058       0.058       0.058
+  Solve                          0.040       0.050       0.048
+Postprocessing                   0.031       0.043       0.033
+Disk IO                          0.004       0.007       0.006
+--------------------------------------------------------------
+Total                            4.186       4.199       4.193
+
+Peak Memory                   Per-Node       Total   Total HWM
+==============================================================
+Initialization                   15.1M       15.1M       15.1M
+  Mesh Preprocessing             13.0M       13.0M       28.1M
+Operator Construction            82.8M       82.8M      110.8M
+  Wave Ports                      5.9M        5.9M      116.8M
+Linear Solve                      7.4M        7.4M      124.1M
+  Setup                          72.0M       72.0M      196.1M
+  Preconditioner                 20.6M       20.6M      216.8M
+  Coarse Solve                   37.8M       37.8M      254.6M
+Estimation                        3.5M        3.5M      258.1M
+  Construction                   39.8M       39.8M      297.9M
+  Solve                           4.1M        4.1M      301.9M
+Postprocessing                   10.5M       10.5M      312.4M
+Disk IO                           5.0M        5.0M      317.4M
+--------------------------------------------------------------
+Total                           399.8M      399.8M      399.8M
+

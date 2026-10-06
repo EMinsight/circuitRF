@@ -660,6 +660,26 @@ internal static class DocumentSchema
             is each setup's own, so this is checked per setup. Its two conductors are the ones that
             meet the region, and its voltage path runs across the gap between them at the positive
             one's centre; VoltagePath ({"From": [u, v], "To": [u, v]}) states it instead.
+          * A wave port whose region is met by SEVERAL signal conductors and one reference (a ground,
+            a shield) is one port with Terminals — each terminal is its own numbered port of the result,
+            with its own Z0 (terminal S-parameters, not modal ones). The port states no Number, Z0,
+            Positive, Negative, VoltagePath or Flip; each terminal states its own:
+
+                { "Name": "Left", "Kind": "Wave", "Plane": "YZ", "Offset": 0, "Rect": { ... },
+                  "Reference": "gnd",
+                  "Terminals": [
+                    { "Number": 1, "Name": "P1", "Conductor": "strip_a", "Z0": "50" },
+                    { "Number": 2, "Name": "P2", "Conductor": "strip_b", "Z0": "50" } ] }
+
+            Reference is optional: inferred, it is the one conductor meeting the region that is in the
+            ground set (a PEC air-box face counts), else the largest surface; a tie is refused. Each
+            terminal's Conductor must meet the region and is never the reference; two terminals on one
+            conductor are refused; terminal numbers share one namespace with every other port's. A
+            terminal's voltage path runs from the reference to its conductor (inferred; VoltagePath
+            states it, Flip reverses it). One terminal is refused (write the ordinary port), and so is a
+            lumped port with Terminals. Terminals are never inferred when reading: a wave port with no
+            Terminals whose region three or more conductors meet is refused, naming the fix. Model
+            applies to the whole port. A .cem cannot state one.
           * FaceBoundaries put a boundary on a NAMED face of a dielectric or air object:
             {"Object": "block", "Face": "zmax", "Kind": "Pec"}, or Kind "Conductive" with a
             Material. A boundary follows its face through every edit, and a fold hands it to each

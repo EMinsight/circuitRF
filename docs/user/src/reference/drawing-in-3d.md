@@ -1120,6 +1120,15 @@ two ports are 5 × 5 mil rectangles on the YZ plane at each lead's outer end, fr
 each runs **from `floor` (−) up to its lead (+)**. *Flip* on its menu turns it round; a wrong arrow turns
 every transmission term by 180°, so look before a run.
 
+**A wave port on a face met by several conductors** — two strips inside one shield, a coupled pair over a
+ground — is one port with a **terminal** per signal conductor. Each terminal is its own numbered port of the
+result, with its own Z0. One conductor is the **reference**, the one every terminal's voltage is measured
+from: the one in the ground set (the setup's Ground net, or a PEC face of the air box), or failing that the
+one with the largest surface. *Make Port ▸ Wave* on such a face writes the reference and one terminal per
+other conductor, numbered with the next free numbers from left to right along the face. The 3D view draws
+each terminal as an arrow from the reference to its conductor, in the port colour, with its number at the
+head. A face whose reference cannot be decided (two candidates with equal surfaces) says so on the menu item.
+
 **The air box** is the region solved in: each face a distance beyond the geometry, and a boundary — PEC,
 PMC, symmetry or absorbing — chosen by right-clicking the face. The example's package **is** its own
 shield: both setups set every face to PEC with **no padding**, so the box lies flush against the floor,
@@ -1510,6 +1519,14 @@ order a pane presents them, with the rules each one follows.
   and *Delete*. A wrong polarity turns every transmission term by 180°, so check the arrow before a run.
   A **wave** port must lie on a face of the active setup's air box. Every setup uses every port, and a
   placed cell's own ports are never used: only the parent says where a signal enters.
+  On a box face met by three or more conductors, *Make Port ▸ Wave* makes one port with a **terminal** per
+  conductor besides the reference, named `P<n>` with the next free numbers, and names the port after the face
+  (`xmin`); the status line says how many terminals it made and which conductor is the reference. Such a port is
+  one row of the tree, its tick the whole port's, with a row beneath it for each terminal: its number, name,
+  conductor and Z0. Right-click the port for *Set Reference* (any conductor meeting its region; choosing a
+  terminal's conductor swaps it with the reference), *Model* and *Delete*; with a terminal's arrow selected, the
+  same menu adds *Flip* and *Z0…* for that terminal. *Flip* reverses the terminal's arrow; the reference stays
+  the reference.
 - **Bond wires** (**W** in the Shift+A popup, or *3D ▸ Draw ▸ Wire*). A wire runs between two metal
   objects or sheets — a die's pad inside a placed cell to a lead in the package is the usual case, which a `.wBond`
   cannot do because it belongs to one layout. Click any face of the object the wire starts on: each end attaches to

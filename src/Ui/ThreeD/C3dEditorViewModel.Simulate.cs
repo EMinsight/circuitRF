@@ -610,18 +610,24 @@ public sealed partial class C3dEditorViewModel
 
     // ── ports (R-em3d49-2) ───────────────────────────────────────────────────────────────────
 
-    /// <summary>The smallest port number the document does not use.</summary>
-    public int NextPortNumber()
+    /// <summary>The smallest port number the document does not use — a terminal's number is a port's (brief-em3d-114).</summary>
+    public int NextPortNumber() => NextPortNumbers(1)[0];
+
+    /// <summary>The <paramref name="count"/> smallest port numbers the document does not use, ascending.</summary>
+    private List<int> NextPortNumbers(int count)
     {
-        var used = Document.Ports.Select(p => p.Number).ToHashSet();
-        for (int n = 1; ; n++) if (!used.Contains(n)) return n;
+        var used = C3dPorts.UsedNumbers(Document).ToHashSet();
+        var free = new List<int>(count);
+        for (int n = 1; free.Count < count; n++) if (!used.Contains(n)) free.Add(n);
+        return free;
     }
 
     /// <summary>R-em3d49-2d — what a new port starts as: the next number, and the last port's Z0.</summary>
     public C3dPort NewPortTemplate(Em3dPortKind kind = Em3dPortKind.Lumped)
     {
         int n = NextPortNumber();
-        return new C3dPort { Number = n, Name = $"P{n}", Kind = kind, Z0 = Document.Ports.LastOrDefault()?.Z0 ?? "50" };
+        var last = Document.Ports.LastOrDefault();
+        return new C3dPort { Number = n, Name = $"P{n}", Kind = kind, Z0 = last?.Terminals?.LastOrDefault()?.Z0 ?? last?.Z0 ?? "50" };
     }
 
     /// <summary>Adds a port: one undo entry; the status line says what it joins, or why it cannot be built.</summary>
@@ -630,7 +636,10 @@ public sealed partial class C3dEditorViewModel
         ChangeRecords($"Add port {port.Name}", d => d.Ports.Add(port));
         ToolCommits++;
         var r = C3dPorts.Resolve(port, Document.DbuPerMicron, CurrentPortContext());
-        StatusMessage = r.Refusal ?? C3dPortReports.Describe(r);
+        StatusMessage = r.Refusal ?? (r.Terminals is { } ts
+            ? $"Made {C3dPorts.Label(port)}, a wave port with {ts.Count} terminals ({string.Join(", ", ts.Select(t => $"{t.SourceLabel} on '{t.PositiveObject}'"))}); " +
+              $"'{r.Resolved!.NegativeObject}' is the reference: {r.Reason}."
+            : C3dPortReports.Describe(r));
     }
 
     /// <summary>The port context for the scene now shown — for a port the user is drawing.</summary>
@@ -638,42 +647,83 @@ public sealed partial class C3dEditorViewModel
         => _recordsView?.Context ?? (Elaboration is { } e ? C3dProblemAssembly.PortContext(ActiveSetup, Document, e, null) : new C3dPortContext(
                new C3dElaboration([], [], [], new Dictionary<string, C3dProvenance>(), [], []), Document.DbuPerMicron, null, []));
 
-    /// <summary>The document port a scene object is (<c>port/N</c>), or null.</summary>
+    /// <summary>The document port a scene object is (<c>port/N</c>: the port, or a terminal of it), or null.</summary>
     public C3dPort? PortOf(Scene3DObject o)
-        => o.Kind == Scene3DKind.Port ? Document.Ports.FirstOrDefault(p => C3dPorts.ProblemName(p.Number) == o.Name) : null;
+        => o.Kind == Scene3DKind.Port ? C3dPorts.OwnerOf(Document, o.PortNumber) : null;
 
     internal IReadOnlyList<C3dPort> SelectedPorts()
         => [.. Viewer.SelectedObjects().Select(PortOf).OfType<C3dPort>().Distinct()];
 
+    /// <summary>brief-em3d-114 — the terminals selected in the scene (a terminal's sheet is its own object), with their ports.</summary>
+    internal IReadOnlyList<(C3dPort Port, C3dTerminal Terminal)> SelectedTerminals()
+        => [.. Viewer.SelectedObjects().Where(o => o.Kind == Scene3DKind.Port)
+                  .Select(o => (Port: PortOf(o), Number: o.PortNumber))
+                  .Where(t => t.Port is { Terminals: not null })
+                  .Select(t => (t.Port!, C3dPorts.TerminalOf(t.Port!, t.Number)))
+                  .Where(t => t.Item2 is not null).Select(t => (t.Item1, t.Item2!)).Distinct()];
+
+    /// <summary>Flips ordinary ports; a multi-terminal port has no polarity of its own (its terminals each have one).</summary>
     public void FlipPorts(IReadOnlyList<C3dPort> ports)
     {
-        var numbers = ports.Select(p => p.Number).ToHashSet();
-        ChangeRecords(ports.Count == 1 ? $"Flip {C3dPorts.Label(ports[0])}" : $"Flip {ports.Count} ports",
-                      d => { foreach (var p in d.Ports.Where(p => numbers.Contains(p.Number))) p.Flip = !p.Flip; });
+        var set = ports.Where(p => !C3dPorts.HasTerminals(p)).ToHashSet();
+        if (set.Count == 0) return;
+        ChangeRecords(set.Count == 1 ? $"Flip {C3dPorts.Label(set.First())}" : $"Flip {set.Count} ports",
+                      d => { foreach (var p in d.Ports.Where(set.Contains)) p.Flip = !p.Flip; });
+    }
+
+    /// <summary>brief-em3d-114 R-em3d114-3d — reverses one terminal's voltage path; the reference stays the reference.</summary>
+    public void FlipTerminal(C3dPort port, C3dTerminal terminal)
+        => ChangeRecords($"Flip {C3dPorts.TerminalLabel(port, terminal)}", _ => terminal.Flip = !terminal.Flip);
+
+    /// <summary>
+    /// brief-em3d-114 R-em3d114-3d — states a multi-terminal port's reference. A conductor that is one of its terminals swaps
+    /// places with the reference it had, so the port keeps one terminal per signal conductor; null on success, else why not.
+    /// </summary>
+    public string? SetPortReference(C3dPort port, string conductor)
+    {
+        if (port.Terminals is not { Count: > 0 } ts) return $"{C3dPorts.Label(port)} has no terminals, so it has no reference to set.";
+        string? was = PortResults.FirstOrDefault(r => r.Port == port)?.Resolved?.NegativeObject ?? port.Reference;
+        var swap = ts.FirstOrDefault(t => t.Conductor == conductor);
+        if (swap is not null && was is null)
+            return $"'{conductor}' is {C3dPorts.TerminalLabel(port, swap)}, and the port has no reference to give that terminal in its place.";
+        ChangeRecords($"Reference of {C3dPorts.Label(port)}: {conductor}", _ =>
+        {
+            port.Reference = conductor;
+            if (swap is not null) swap.Conductor = was!;
+        });
+        return null;
     }
 
     public void SetPortKind(IReadOnlyList<C3dPort> ports, Em3dPortKind kind)
     {
-        var numbers = ports.Select(p => p.Number).ToHashSet();
+        var set = ports.ToHashSet();
         ChangeRecords($"Make {(ports.Count == 1 ? C3dPorts.Label(ports[0]) : $"{ports.Count} ports")} {kind.ToString().ToLowerInvariant()}",
-                      d => { foreach (var p in d.Ports.Where(p => numbers.Contains(p.Number))) p.Kind = kind; });
+                      d => { foreach (var p in d.Ports.Where(set.Contains)) p.Kind = kind; });
     }
 
-    /// <summary>Sets a port's Z0; null on success, else why not.</summary>
+    /// <summary>Sets the Z0 of port <paramref name="number"/> — an ordinary port's, or a terminal's (brief-em3d-114); null on
+    /// success, else why not.</summary>
     public string? SetPortZ0(int number, string z0)
     {
         if (!C3dPorts.TryParseZ0(z0, out var z) || !(z.Real > 0))
             return $"'{z0}' is not a reference impedance: a number of ohms with a positive real part, or a complex one such as 25+j10.";
-        ChangeRecords($"Z0 of port {number}", d => { foreach (var p in d.Ports.Where(p => p.Number == number)) p.Z0 = z0.Trim(); });
+        ChangeRecords($"Z0 of port {number}", d =>
+        {
+            foreach (var p in d.Ports)
+            {
+                if (C3dPorts.TerminalOf(p, number) is { } t) t.Z0 = z0.Trim();
+                else if (!C3dPorts.HasTerminals(p) && p.Number == number) p.Z0 = z0.Trim();
+            }
+        });
         return null;
     }
 
     public void DeletePorts(IReadOnlyList<C3dPort> ports)
     {
-        var numbers = ports.Select(p => p.Number).ToHashSet();
+        var set = ports.ToHashSet();
         Viewer.SetSelection([]);
         ChangeRecords(ports.Count == 1 ? $"Delete {C3dPorts.Label(ports[0])}" : $"Delete {ports.Count} ports",
-                      d => d.Ports.RemoveAll(p => numbers.Contains(p.Number)));
+                      d => d.Ports.RemoveAll(set.Contains));
     }
 
     /// <summary>
@@ -714,7 +764,40 @@ public sealed partial class C3dEditorViewModel
         port.Plane = plane;
         port.Offset = D(Get(pts[0], axis));
         port.Rect = new C3dRect { Min = new C3dPoint2(u0, v0), Size = new C3dPoint2(u1 - u0, v1 - v0) };
+        // brief-em3d-114 R-em3d114-3a — a box face met by three or more conductors: one terminal per conductor besides the
+        // reference, numbered with the next free numbers in a stable order and named P<n>; the reference is written.
+        if (C3dPorts.TerminalsFor(port, Document.DbuPerMicron, CurrentPortContext(), out string? tie) is var (reference, _, conductors))
+        {
+            var numbers = NextPortNumbers(conductors.Count);
+            string z0 = port.Z0;
+            port.Name = UniquePortName(BoxFaceKey(axis, port.Offset));
+            port.Number = 0;
+            port.Reference = reference;
+            port.Terminals = [.. conductors.Select((c, k) => new C3dTerminal { Number = numbers[k], Name = $"P{numbers[k]}", Conductor = c, Z0 = z0 })];
+            port.Z0 = "50";
+        }
+        else if (tie is not null) return tie;
         return null;
+    }
+
+    /// <summary>Which air-box face (<c>xmin</c> …) a face at <paramref name="offsetDbu"/> on <paramref name="axis"/> is, by the box
+    /// the scene drew; the axis alone when there is none.</summary>
+    private string BoxFaceKey(int axis, long offsetDbu)
+    {
+        string a = "xyz"[axis].ToString();
+        if (ShownAirBox is not { } box) return a;
+        double at = C3dLowering.Metres(offsetDbu, Document.DbuPerMicron);
+        double lo = axis == 0 ? box.Min.X : axis == 1 ? box.Min.Y : box.Min.Z, hi = axis == 0 ? box.Max.X : axis == 1 ? box.Max.Y : box.Max.Z;
+        return a + (Math.Abs(at - lo) <= Math.Abs(at - hi) ? "min" : "max");
+    }
+
+    /// <summary><paramref name="stem"/>, or <c>stem 2</c>, <c>stem 3</c> … — the first no port or terminal is named.</summary>
+    private string UniquePortName(string stem)
+    {
+        var taken = Document.Ports.Select(p => p.Name).Concat(Document.Ports.SelectMany(p => p.Terminals ?? []).Select(t => t.Name))
+                                  .ToHashSet(StringComparer.Ordinal);
+        if (!taken.Contains(stem)) return stem;
+        for (int k = 2; ; k++) if (!taken.Contains($"{stem} {k}")) return $"{stem} {k}";
     }
 
     /// <summary>
@@ -730,7 +813,8 @@ public sealed partial class C3dEditorViewModel
         string? why = PortFromFace(item.Object, item.Face, kind, out var port)
                       ?? C3dPorts.Resolve(port!, Document.DbuPerMicron, CurrentPortContext()).Refusal;
         string tip = kind == Em3dPortKind.Wave
-            ? "A wave port lies on a face of the active setup's air box — the end of a line that reaches the box."
+            ? "A wave port lies on a face of the active setup's air box — the end of a line that reaches the box. A face met by " +
+              "more than two conductors makes one terminal per conductor besides the reference, each its own port of the result."
             : "A lumped port bridges two conductors, one on each of two opposite edges of the face.";
         return new Viewer3DMenuItem(word, () => Report(MakePortFromFace(item.Object, item.Face, kind)), Enabled: why is null,
                                     Tip: why ?? tip);
@@ -864,6 +948,13 @@ public sealed partial class C3dEditorViewModel
         var sel = Viewer.Selection;
         if (Viewer.SelectMode == Scene3DSelectMode.Object && SelectedPorts() is { Count: > 0 } ports)
         {
+            // brief-em3d-114 R-em3d114-3d — a multi-terminal port: its reference, and each selected terminal's own Flip and Z0
+            if (ports is [{ Terminals: { Count: > 0 } } multi])
+            {
+                foreach (var m in TerminalPortItems(multi)) yield return m;
+                yield return Viewer3DMenuItem.Separator;
+                yield break;
+            }
             yield return new Viewer3DMenuItem(ports.Count == 1 ? $"Flip {C3dPorts.Label(ports[0])}" : "Flip Ports", () => FlipPorts(ports),
                                               Tip: "Swap the port's + and − ends: the arrow turns round.");
             yield return new Viewer3DMenuItem("Port Kind", Children:
@@ -928,6 +1019,30 @@ public sealed partial class C3dEditorViewModel
         yield return Viewer3DMenuItem.Separator;
     }
 
+    /// <summary>
+    /// brief-em3d-114 R-em3d114-3d — a multi-terminal port's items: Set Reference (the conductors meeting its region; a terminal's
+    /// conductor swaps places with the reference), each selected terminal's Flip and Z0, its Model and Delete.
+    /// </summary>
+    private IEnumerable<Viewer3DMenuItem> TerminalPortItems(C3dPort port)
+    {
+        var result = PortResults.FirstOrDefault(r => r.Port == port);
+        string? current = result?.Resolved?.NegativeObject ?? port.Reference;
+        var region = result?.Contacts.FirstOrDefault(c => c.Edge == "region").Objects ?? [];
+        yield return new Viewer3DMenuItem("Set Reference", Enabled: region.Count > 0,
+            Tip: region.Count > 0 ? "The conductor every terminal's voltage is measured from. Choosing a terminal's conductor swaps the two."
+                                  : result?.Refusal ?? "No conductor meets the port's region.",
+            Children: [.. region.Select(c => new Viewer3DMenuItem((c == current ? "● " : "") + c, () => Report(SetPortReference(port, c))))]);
+        foreach (var (p, t) in SelectedTerminals().Where(x => x.Port == port))
+        {
+            yield return new Viewer3DMenuItem($"Flip {t.Name}", () => FlipTerminal(p, t),
+                                              Tip: "Reverse the terminal's voltage path: its arrow turns round, and the reference stays the reference.");
+            yield return new Viewer3DMenuItem($"Z0… of {t.Name} ({t.Z0} Ω)", () => TextRequested?.Invoke($"Z0 of {C3dPorts.TerminalLabel(p, t)}",
+                "Reference impedance, Ω (a complex one as 25+j10):", t.Z0, text => SetPortZ0(t.Number, text)));
+        }
+        yield return PortModelItem([port]);
+        yield return new Viewer3DMenuItem($"Delete {C3dPorts.Label(port)}", () => DeletePorts([port]));
+    }
+
     private static Em3dBoundaryKind FaceKindOf(Em3dAirBox b, string face) => face switch
     {
         "xmin" => b.Faces.XMin, "xmax" => b.Faces.XMax, "ymin" => b.Faces.YMin,
@@ -974,7 +1089,15 @@ public sealed partial class C3dEditorViewModel
         foreach (var r in PortResults)
         {
             // A port unticked shows nothing of itself: no number, no refusal, no red outline.
-            if (!IsPortShown(C3dPorts.ProblemName(r.Port.Number))) continue;
+            if (!C3dPorts.Numbers(r.Port).Any(n => IsPortShown(C3dPorts.ProblemName(n)))) continue;
+            // brief-em3d-114 R-em3d114-3c — each terminal's number at the head of its arrow (the scene draws the arrow, reference
+            // to conductor, in the port colour)
+            if (r.Terminals is { } ts)
+            {
+                foreach (var t in ts.Where(t => IsPortShown(t.Name) && t.VoltagePath is not null))
+                    overlay.Labels.Add((t.VoltagePath!.Value.To, t.Number.ToString(CultureInfo.InvariantCulture)));
+                continue;
+            }
             if (r.Resolved is { } p)
             {
                 overlay.Labels.Add((Centre(p.Min, p.Max), r.Port.Number.ToString(CultureInfo.InvariantCulture)));
@@ -1058,7 +1181,7 @@ public sealed partial class C3dEditorViewModel
             foreach (var old in g.Items.Where(i => i.Kind == "Port").ToList()) g.Items.Remove(old);
             if (g.Items.Count == 0) { DetachExpansion([g]); Tree.Remove(g); }
         }
-        var rows = PortResults.Select(r => (Off: !r.Port.Model, Row: new C3dTreeItem(this, C3dPorts.ProblemName(r.Port.Number), "Port",
+        var rows = PortResults.Select(r => (Off: !r.Port.Model, Row: C3dPorts.HasTerminals(r.Port) ? TerminalPortRow(r) : new C3dTreeItem(this, C3dPorts.ProblemName(r.Port.Number), "Port",
             r.Resolved is { } p ? $"{C3dPorts.Label(r.Port)} {(p.Kind == Em3dPortKind.Wave ? "wave" : "lumped")}: {p.NegativeObject} → {p.PositiveObject}" +
                                   (r.Port.Model ? "" : C3dModelled.Suffix)
                                 : $"{C3dPorts.Label(r.Port)}: {(r.Port.Model ? "refused" : "not modelled")}", -1, -1,
@@ -1100,6 +1223,44 @@ public sealed partial class C3dEditorViewModel
                     });
         }
         RestoreExpansion();
+    }
+
+    /// <summary>brief-em3d-114 — the name of a multi-terminal port's own row (its terminals' rows are their scene objects').</summary>
+    public const string PortGroupRowPrefix = "ports/";
+
+    /// <summary>The document port a tree row stands for: a port's row, a multi-terminal port's row, or one of its terminals'.</summary>
+    internal C3dPort? PortOfRow(C3dTreeItem row)
+    {
+        if (row.Kind == TerminalKind || (row.Kind == "Port" && !row.Name.StartsWith(PortGroupRowPrefix, StringComparison.Ordinal)))
+            return int.TryParse(row.Name.AsSpan(row.Name.IndexOf('/') + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)
+                ? C3dPorts.OwnerOf(Document, n) : null;
+        return row.Kind == "Port" && int.TryParse(row.Name.AsSpan(PortGroupRowPrefix.Length), NumberStyles.Integer, CultureInfo.InvariantCulture, out int g)
+            ? C3dPorts.OwnerOf(Document, g) : null;
+    }
+
+    /// <summary>A terminal's row, beneath its port's.</summary>
+    public const string TerminalKind = "Terminal";
+
+    /// <summary>
+    /// brief-em3d-114 R-em3d114-3b — a multi-terminal port is ONE row, its tick the whole port's (overview D5), with a row per
+    /// terminal beneath it: number, name, conductor and Z0. Each terminal row is its sheet's, so selecting it selects the
+    /// terminal, whose Flip and Z0 the context menu edits.
+    /// </summary>
+    private C3dTreeItem TerminalPortRow(C3dPortResult r)
+    {
+        var port = r.Port;
+        var numbers = C3dPorts.Numbers(port);
+        bool shown = numbers.Any(n => IsPortShown(C3dPorts.ProblemName(n)));
+        string detail = r.Resolved is { } p
+            ? $"{C3dPorts.Label(port)} wave, {numbers.Count} terminals, reference {p.NegativeObject}" + (port.Model ? "" : C3dModelled.Suffix)
+            : $"{C3dPorts.Label(port)}: {(port.Model ? "refused" : "not modelled")}";
+        var row = new C3dTreeItem(this, PortGroupRowPrefix + numbers.DefaultIfEmpty(0).Min().ToString(CultureInfo.InvariantCulture), "Port", detail, -1, -1, shown)
+        { IsReadOnly = true, IsModelled = port.Model };
+        foreach (var t in port.Terminals!)
+            row.Children.Add(new C3dTreeItem(this, C3dPorts.ProblemName(t.Number), TerminalKind,
+                $"{t.Number} {t.Name}: {t.Conductor}, {t.Z0} Ω{(t.Flip ? ", flipped" : "")}", -1, -1, IsPortShown(C3dPorts.ProblemName(t.Number)))
+            { IsReadOnly = true, IsModelled = port.Model });
+        return row;
     }
 
     /// <summary>

@@ -532,7 +532,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         if (keepNames is null && _hiddenPorts.Count > 0)
         {
             _hiddenPorts.Clear();       // Show All shows a refused port's outline too, and its row's tick follows
-            foreach (var row in AllTreeItems().Where(t => t.Kind == "Port")) row.Sync(true);
+            foreach (var row in AllTreeItems().Where(t => t.Kind is "Port" or TerminalKind)) row.Sync(true);
             Viewer.RequestFrame();
         }
         return true;

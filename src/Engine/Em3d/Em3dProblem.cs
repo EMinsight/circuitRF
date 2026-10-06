@@ -322,8 +322,21 @@ public sealed record Em3dPort(
     /// </summary>
     public int? SourceNumber { get; init; }
 
-    /// <summary>brief-em3d-93 — the port's label in that document (<c>P3</c>), set with <see cref="SourceNumber"/>.</summary>
+    /// <summary>brief-em3d-93 — the port's label in that document (<c>P3</c>), set with <see cref="SourceNumber"/>; a terminal's
+    /// is its own name (brief-em3d-114), set always.</summary>
     public string? SourceLabel { get; init; }
+
+    /// <summary>
+    /// brief-em3d-114 R-em3d114-2a — the group of a multi-terminal wave port's terminals: every terminal of one port carries
+    /// the same value (its lowest document number), shares its rectangle and its reference (<see cref="NegativeObject"/>),
+    /// and is otherwise a port like any other (overview rule 1). Null on every port with one terminal. A terminal's
+    /// <see cref="VoltagePath"/> runs from the reference to its conductor, or the other way when the terminal is flipped.
+    /// </summary>
+    public int? FaceGroup { get; init; }
+
+    /// <summary>brief-em3d-114 — the label of the port a terminal belongs to (<c>Left</c>), set with <see cref="FaceGroup"/>:
+    /// what a refusal and the result's port map name it by.</summary>
+    public string? FaceGroupLabel { get; init; }
 }
 
 /// <summary>
@@ -607,6 +620,7 @@ public sealed record Em3dProblem(
             }
         }
 
+        ValidateFaceGroups(problems);
         ValidateFaceBoundaries(problems);
 
         if (IsStatic) ValidateTerminals(problems);
@@ -624,6 +638,34 @@ public sealed record Em3dProblem(
                          "positive start, a stop at or above it, and at least one point.");
 
         return problems;
+    }
+
+    /// <summary>
+    /// brief-em3d-114 R-em3d114-2b — a multi-terminal wave port's terminals: every one a wave port with a voltage path, on one
+    /// rectangle of one face, with one reference, and each its own conductor.
+    /// </summary>
+    private void ValidateFaceGroups(List<string> problems)
+    {
+        foreach (var g in Ports.Where(p => p.FaceGroup is not null).GroupBy(p => p.FaceGroup!.Value))
+        {
+            var ps = g.OrderBy(p => p.Number).ToList();
+            string name = ps[0].FaceGroupLabel is { } l ? $"Port '{l}'" : $"Face group {g.Key}";
+            string numbers = string.Join(", ", ps.Select(p => p.Number));
+            if (ps.Count < 2)
+                problems.Add($"{name} has one terminal (port {numbers}); a face group is two or more terminals.");
+            if (ps.FirstOrDefault(p => p.Kind != Em3dPortKind.Wave) is { } lumped)
+                problems.Add($"{name}'s terminal port {lumped.Number} is not a wave port; every terminal of a face group is one.");
+            if (ps.FirstOrDefault(p => p.VoltagePath is null) is { } pathless)
+                problems.Add($"{name}'s terminal port {pathless.Number} has no voltage path; every terminal needs its own.");
+            if (ps.Any(p => p.Min != ps[0].Min || p.Max != ps[0].Max) || ps.Select(p => FaceOf(p.Min, p.Max)).Distinct().Count() > 1)
+                problems.Add($"{name}'s terminals (ports {numbers}) do not share one rectangle on one face of the air box.");
+            if (ps.Select(p => p.NegativeObject).Distinct(StringComparer.Ordinal).Count() > 1)
+                problems.Add($"{name}'s terminals (ports {numbers}) do not share one reference: " +
+                             $"{string.Join(", ", ps.Select(p => $"'{p.NegativeObject}'").Distinct())}.");
+            foreach (var dup in ps.GroupBy(p => p.PositiveObject, StringComparer.Ordinal).Where(d => d.Count() > 1))
+                problems.Add($"{name}'s terminals {string.Join(" and ", dup.Select(p => $"port {p.Number}"))} are all on '{dup.Key}'; " +
+                             "each terminal is its own conductor.");
+        }
     }
 
     /// <summary>

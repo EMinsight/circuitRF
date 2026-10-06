@@ -687,6 +687,43 @@ that kind of row can be removed.
 A wave port needs Palace's eigensolver (every Palace build has one) and GSLIB (the `+gslib` variant, on
 by default). A build without either is refused before anything meshes, naming the variant.
 
+#### Several conductors on one face {#wave-port-terminals}
+
+When a wave port's region is met by **several signal conductors and one reference** — a coupled pair over
+a ground, two strips inside one shield — it is one port with a **terminal** per signal conductor. Each
+terminal is a port of the result in every way a port is: it has its own number in the Touchstone file,
+its own Z0, and its own row in the port map. These are **terminal** S-parameters, the voltage and current
+on each conductor. A coupled pair with a two-terminal wave port at each end is a four-port: terminals 1
+and 2 at one end, 3 and 4 at the other, and S21, S31 and S41 are its thru, near-end and far-end coupling
+just as for any four lumped ports.
+
+The **reference** is the conductor every terminal's voltage is measured from. Left unstated it is the
+conductor meeting the region that is in the ground set (the setup's Ground net, or a PEC face of the air
+box); failing that, the one with the largest surface. Two candidates with equal surfaces are refused,
+asking for `Reference`. Each terminal's voltage path runs from the reference to its conductor, inferred as
+a single wave port's is, or stated.
+
+In a `.c3d` the port carries `Reference` (optional) and `Terminals`; it states no `Number`, `Z0`,
+`Positive`, `Negative`, `VoltagePath` or `Flip` of its own, and each terminal states its own:
+
+```
+{ "Name": "Left", "Kind": "Wave", "Plane": "YZ", "Offset": 0, "Rect": { ... },
+  "Reference": "gnd",
+  "Terminals": [
+    { "Number": 1, "Name": "P1", "Conductor": "strip_a", "Z0": "50" },
+    { "Number": 2, "Name": "P2", "Conductor": "strip_b", "Z0": "50" } ] }
+```
+
+- A terminal's number shares one namespace with every other port and terminal of the 3D view.
+- Each terminal's conductor must meet the region and is never the reference; two terminals on one
+  conductor are refused, and so is a conductor on the face that is neither a terminal nor the reference.
+- One terminal is refused: write the ordinary wave port. A lumped port has one gap and takes no terminals.
+- Terminals are never invented when a file is read: a wave port without `Terminals` whose region three or
+  more conductors meet is refused, naming them and the fix. *Make Port ▸ Wave* writes them for you
+  ([Drawing in 3D ▸ Simulating](drawing-in-3d.html#simulate)).
+- `Model` turns the whole port off, every terminal with it.
+- A `.cem` cannot state one: a layout's edge port is one conductor. Terminal ports are drawn in a 3D view.
+
 ### Eigenmodes {#eigenmodes}
 
 **Problem** *Eigenmode* finds the structure's resonant frequencies and their Q — "is there a lid

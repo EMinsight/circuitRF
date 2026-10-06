@@ -1684,6 +1684,24 @@ Solved
   'Palace'   FEM (Palace)    Solved 14:32 (18 min)
   'openEMS'  FDTD (openEMS)  Out of date: the model has changed</span></code></pre>
 
+<h3 id="explain-terminals">A 3D view: a wave port with terminals</h3>
+
+On a `.c3d`, `explain` walks every port the way a run resolves it. A wave port met by several conductors
+([EM Setup ▸ Several conductors on one face](em-setup.html#wave-port-terminals)) gets a line for the port —
+its face, its reference and why that conductor is the reference — then one per terminal with its number,
+conductor, Z0 and voltage path (its ends in the view's display unit), and a last line saying what its
+S-parameters are. (Below, the `via` line under each, which says how it was decided, is left out.)
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Pair.c3d
+<span class="output">…
+  port Left    touches — region: 'gnd', 'strip_a', 'strip_b'. A wave port with 2 terminals on the air box's xmin face; the reference is 'gnd': 'gnd' is the only one in the ground set.
+  port Left terminal 1 'P1' conductor 'strip_a', Z0 50 Ω, voltage path (0 µm, 2100 µm, 20 µm) to (0 µm, 2100 µm, 1010 µm)
+  port Left terminal 2 'P2' conductor 'strip_b', Z0 50 Ω, voltage path (0 µm, 2900 µm, 20 µm) to (0 µm, 2900 µm, 1010 µm)
+  port Left result terminal S: each terminal is a port of the result (ports 1, 2), its voltage and current on its own conductor, against its own Z0</span></code></pre>
+
+`check` reports the same port as one line, and each refusal — a terminal on the reference, two terminals on
+one conductor, a number another port already has — names the port and the terminal.
+
 <h3 id="explain-analysis">`--analysis` — which chain would run</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain pa.cnl --analysis

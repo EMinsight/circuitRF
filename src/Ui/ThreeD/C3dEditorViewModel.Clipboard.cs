@@ -62,7 +62,7 @@ public sealed partial class C3dEditorViewModel
             if (row.IsGroup)
                 foreach (var m in C3dGroups.MembersOf(Document, row.GroupPath!))
                     (m.Instance ? instances : objects).Add(m.Index);
-            else if (row.Kind == "Port" && Document.Ports.FindIndex(p => C3dPorts.ProblemName(p.Number) == row.Name) is >= 0 and var pi) ports.Add(pi);
+            else if (row.Kind is "Port" or TerminalKind && PortOfRow(row) is { } rowPort && Document.Ports.IndexOf(rowPort) is >= 0 and var pi) ports.Add(pi);
             else if (row.Kind == EmBoundaryKind &&
                      Document.FaceBoundaries.FindIndex(b => Scene3DBuilder.FaceTintPrefix + b.Object + "/" + b.Face == row.Name) is >= 0 and var bi) faces.Add(bi);
             else if (row.Kind is HeatSourceKind or ProbeKind or MeshRegionKind or EffectiveBlockKind) places.Add(row.Name);
@@ -196,7 +196,9 @@ public sealed partial class C3dEditorViewModel
     private void SelectPasted(C3dPasteResult r)
     {
         var names = r.Objects.Concat(r.Instances).Concat(r.Places).ToHashSet(StringComparer.Ordinal);
-        var ports = r.Ports.Select(C3dPorts.ProblemName).ToHashSet(StringComparer.Ordinal);
+        var ports = r.Ports.Select(C3dPorts.ProblemName)
+                     .Concat(r.Ports.Select(n => PortGroupRowPrefix + n.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+                     .ToHashSet(StringComparer.Ordinal);
         var rows = AllTreeItems().Where(t => !t.IsGroup && t.OperandPath is null && !t.IsFeature && t.Kind != "Part" &&
                                              ((t.Kind == "Port" ? ports : names).Contains(t.Name) ||
                                               (t.Kind == SymmetryPlaneKind && r.SymmetryPlanes.Any(a => t.Name == SymmetryRowName(a))) ||

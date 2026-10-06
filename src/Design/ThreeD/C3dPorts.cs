@@ -43,6 +43,13 @@ public sealed record C3dPortResult(C3dPort Port, Em3dPort? Resolved, string? Ref
 {
     /// <summary>The port's label in a sentence: <c>P1</c>, or <c>port 1</c> when it has no name.</summary>
     public string Label => C3dPorts.Label(Port);
+
+    /// <summary>brief-em3d-114 R-em3d114-2a — a multi-terminal wave port's terminals, each its own neutral port, in the
+    /// document's terminal order; <see cref="Resolved"/> is then the first. Null on every other port, and when refused.</summary>
+    public IReadOnlyList<Em3dPort>? Terminals { get; init; }
+
+    /// <summary>Every neutral port this one lowers to: its terminals, or itself, or none when refused.</summary>
+    public IReadOnlyList<Em3dPort> All => Terminals ?? (Resolved is { } r ? [r] : []);
 }
 
 /// <summary>
@@ -194,8 +201,45 @@ public sealed class C3dPortContext
 
 public static class C3dPorts
 {
-    /// <summary>A port's label in a sentence: its name, or <c>port N</c>.</summary>
-    public static string Label(C3dPort p) => p.Name is { Length: > 0 } n ? n : $"port {p.Number}";
+    /// <summary>A port's label in a sentence: its name, or <c>port N</c> (a multi-terminal port's numbers joined).</summary>
+    public static string Label(C3dPort p) => p.Name is { Length: > 0 } n ? n : $"port {string.Join("/", Numbers(p))}";
+
+    // ── brief-em3d-114: a terminal is a port (overview rule 1) ──────────────────────────────────
+
+    /// <summary>The port-level keys a multi-terminal port's terminals carry instead (R-em3d114-1a).</summary>
+    public static readonly IReadOnlySet<string> PortLevelKeys =
+        new HashSet<string>(StringComparer.Ordinal) { "Number", "Z0", "Positive", "Negative", "Flip", "VoltagePath" };
+
+    /// <summary>Whether <paramref name="p"/>'s own value states port-level <paramref name="key"/> — every key but Z0, whose
+    /// default is a value (<see cref="C3dPort.Stated"/> says whether a file wrote it).</summary>
+    internal static bool StatesPortLevel(C3dPort p, string key) => key switch
+    {
+        "Number"      => p.Number != 0,
+        "Positive"    => p.Positive is not null,
+        "Negative"    => p.Negative is not null,
+        "Flip"        => p.Flip,
+        "VoltagePath" => p.VoltagePath is not null,
+        _             => false,
+    };
+
+    /// <summary>True when <paramref name="p"/> is a port with terminals (one terminal included: it is refused, not ignored).</summary>
+    public static bool HasTerminals(C3dPort p) => p.Terminals is { Count: > 0 };
+
+    /// <summary>The result-port numbers <paramref name="p"/> takes: its terminals', or its own.</summary>
+    public static IReadOnlyList<int> Numbers(C3dPort p) => p.Terminals is { Count: > 0 } t ? [.. t.Select(x => x.Number)] : [p.Number];
+
+    /// <summary>Every result-port number the document's ports and terminals take, in document order.</summary>
+    public static IEnumerable<int> UsedNumbers(C3dDocument doc) => doc.Ports.SelectMany(Numbers);
+
+    /// <summary>The port that holds result-port <paramref name="number"/> — itself, or as a terminal — or null.</summary>
+    public static C3dPort? OwnerOf(C3dDocument doc, int number) => doc.Ports.FirstOrDefault(p => Numbers(p).Contains(number));
+
+    /// <summary>The terminal numbered <paramref name="number"/> of <paramref name="p"/>, or null.</summary>
+    public static C3dTerminal? TerminalOf(C3dPort p, int number) => p.Terminals?.FirstOrDefault(t => t.Number == number);
+
+    /// <summary>A terminal in a sentence: <c>terminal 'P2' of Left</c>.</summary>
+    public static string TerminalLabel(C3dPort p, C3dTerminal t)
+        => $"terminal '{(t.Name is { Length: > 0 } n ? n : t.Number.ToString(CultureInfo.InvariantCulture))}' of {Label(p)}";
 
     /// <summary>The name the neutral problem gives port <paramref name="number"/> — the generator's, so a magnetostatic
     /// terminal's <c>Source</c> resolves the same way from either container.</summary>
@@ -205,16 +249,23 @@ public static class C3dPorts
     public static IReadOnlyList<C3dPortResult> Resolve(C3dDocument doc, C3dPortContext context)
     {
         var results = new List<C3dPortResult>(doc.Ports.Count);
-        var numbers = new Dictionary<int, C3dPort>();
+        // R-em3d114-1b — one namespace: every terminal number is unique across every port and every terminal.
+        var numbers = new Dictionary<int, string>();
         foreach (var p in doc.Ports)
         {
-            if (p.Number < 1)
-                results.Add(Refuse(p, $"{Label(p)} has number {p.Number}; a port is numbered from 1."));
-            else if (numbers.TryGetValue(p.Number, out var first))
-                results.Add(Refuse(p, $"{Label(p)} and {Label(first)} are both port {p.Number}; each port has its own number."));
-            else
-                results.Add(Resolve(p, doc.DbuPerMicron, context));
-            numbers.TryAdd(p.Number, p);
+            string? clash = null;
+            var entries = p.Terminals is { Count: > 0 } ts
+                ? ts.Select(t => (t.Number, Who: TerminalLabel(p, t), Upper: "T" + TerminalLabel(p, t)[1..])).ToList()
+                : [(p.Number, Label(p), Label(p))];
+            foreach (var (n, who, upper) in entries)
+            {
+                if (n < 1) clash ??= $"{upper} has number {n}; a port is numbered from 1.";
+                else if (numbers.TryGetValue(n, out var first))
+                    clash ??= $"{upper} and {first} are both port {n}; each port has its own number" +
+                              (p.Terminals is { Count: > 0 } ? ", and a terminal is a port." : ".");
+                numbers.TryAdd(n, who);
+            }
+            results.Add(clash is not null ? Refuse(p, clash) : Resolve(p, doc.DbuPerMicron, context));
         }
         return results;
     }
@@ -228,23 +279,32 @@ public static class C3dPorts
     public static C3dPortResult Resolve(C3dPort port, int dbuPerMicron, C3dPortContext context)
     {
         var r = ResolveDrawn(port, dbuPerMicron, context);
-        if (!port.Model || r.Resolved is not { } p || context.NotModelled.Count == 0) return r;
-        foreach (var (conductor, positive) in new[] { (p.PositiveObject, true), (p.NegativeObject, false) })
-            if (context.NotModelled.Contains(conductor))
-                return r with { Resolved = null, Refusal = C3dModelled.PortConductorRefusal(port, conductor, positive) };
+        if (!port.Model || r.Resolved is null || context.NotModelled.Count == 0) return r;
+        foreach (var p in r.All)
+            foreach (var (conductor, positive) in new[] { (p.PositiveObject, true), (p.NegativeObject, false) })
+                if (context.NotModelled.Contains(conductor))
+                    return r with { Resolved = null, Terminals = null, Refusal = C3dModelled.PortConductorRefusal(port, conductor, positive) };
         return r;
     }
 
     private static C3dPortResult ResolveDrawn(C3dPort port, int dbuPerMicron, C3dPortContext context)
     {
         string label = Label(port);
-        if (!TryParseZ0(port.Z0, out var z0))
-            return Refuse(port, $"{label}'s Z0 '{port.Z0}' is not an impedance: write a number of ohms, or a complex one such as 25+j10.");
-        if (!(z0.Real > 0))
-            return Refuse(port, $"{label}'s Z0 is {port.Z0} Ω; a port's reference impedance has a positive real part.");
+        Complex z0 = default;
+        if (port.Terminals is { Count: > 0 } terminals)
+        {
+            if (TerminalShapeRefusal(port, label, terminals) is { } shape) return Refuse(port, shape);
+        }
+        else
+        {
+            if (!TryParseZ0(port.Z0, out z0))
+                return Refuse(port, $"{label}'s Z0 '{port.Z0}' is not an impedance: write a number of ohms, or a complex one such as 25+j10.");
+            if (!(z0.Real > 0))
+                return Refuse(port, $"{label}'s Z0 is {port.Z0} Ω; a port's reference impedance has a positive real part.");
+        }
         if (port.Rect.Size.U <= 0 || port.Rect.Size.V <= 0)
             return Refuse(port, $"{label}'s rectangle has no area ({port.Rect.Size.U} × {port.Rect.Size.V} DBU).");
-        if ((port.Positive is null) != (port.Negative is null))
+        if (port.Terminals is null && (port.Positive is null) != (port.Negative is null))
             return Refuse(port, $"{label} states its {(port.Positive is null ? "Negative" : "Positive")} end only. State both " +
                                 "ends, or neither and let what the port touches decide.");
 
@@ -262,6 +322,39 @@ public static class C3dPorts
         return port.Kind == Em3dPortKind.Wave
             ? Wave(port, label, z0, context, u0, v0, u1, v1, h, normalAxis, uDir, vDir, min, max, P)
             : Lumped(port, label, z0, context, u0, v0, u1, v1, normalAxis, uDir, vDir, min, max, P);
+    }
+
+    /// <summary>
+    /// R-em3d114-1a/-1e — what a port with terminals cannot be, before any geometry: one that also states a port-level key, one
+    /// with a single terminal, a lumped one, a terminal with no conductor or no impedance, and two terminals on one conductor.
+    /// </summary>
+    private static string? TerminalShapeRefusal(C3dPort port, string label, List<C3dTerminal> terminals)
+    {
+        var stated = PortLevelKeys.Where(k => port.Stated?.Contains(k) == true || StatesPortLevel(port, k)).ToList();
+        if (stated.Count > 0)
+            return $"{label} states both Terminals and {Join(stated)}: with Terminals, each terminal states its own Number, Z0, " +
+                   $"conductor, VoltagePath and Flip, and the port states none of them. Remove {Join(stated)} from the port.";
+        if (terminals.Count == 1)
+            return $"{label} has one terminal. A wave port with one signal conductor is the ordinary wave port: write its Number " +
+                   "and Z0 on the port and remove Terminals.";
+        if (port.Kind == Em3dPortKind.Lumped)
+            return $"{label} is a lumped port with Terminals. A lumped sheet has one gap, so it is one port; make it a wave port, " +
+                   "or remove Terminals.";
+        foreach (var t in terminals)
+        {
+            string who = TerminalLabel(port, t);
+            if (t.Conductor is not { Length: > 0 })
+                return $"{char.ToUpperInvariant(who[0])}{who[1..]} names no conductor: a terminal is the signal conductor it is the port of.";
+            if (!TryParseZ0(t.Z0, out var z) || !(z.Real > 0))
+                return $"{char.ToUpperInvariant(who[0])}{who[1..]}'s Z0 '{t.Z0}' is not a reference impedance: a number of ohms with a " +
+                       "positive real part, or a complex one such as 25+j10.";
+        }
+        foreach (var g in terminals.GroupBy(t => t.Conductor, StringComparer.Ordinal).Where(g => g.Count() > 1))
+            return $"{label}'s terminals {Join([.. g.Select(t => $"'{t.Name}'")])} all name '{g.Key}'; each terminal is its own conductor.";
+        return null;
+
+        static string Join(IReadOnlyList<string> items)
+            => items.Count <= 1 ? string.Concat(items) : string.Join(", ", items.Take(items.Count - 1)) + " and " + items[^1];
     }
 
     // ── lumped ───────────────────────────────────────────────────────────────────────────────────
@@ -418,9 +511,9 @@ public static class C3dPorts
         // The two conductors: whatever meets the rectangle's region of the face.
         string negative, positive, reason;
         IReadOnlyList<(string, IReadOnlyList<string>)> contacts = [];
-        var feet = new Dictionary<string, (double U0, double V0, double U1, double V1)>(StringComparer.Ordinal);
-        foreach (var c in ctx.Conductors)
-            if (Footprint(c, ctx, normalAxis, h, uDir, vDir, u0, v0, u1, v1) is { } fp) feet[c.Name] = fp;
+        var feet = Feet(ctx, normalAxis, h, uDir, vDir, u0, v0, u1, v1);
+        if (port.Terminals is { Count: > 0 } terminals)
+            return WaveTerminals(port, label, terminals, ctx, feet, face, h, normalAxis, uDir, vDir, u0, v0, u1, v1, min, max, P);
 
         if (port.Positive is { } sp && port.Negative is { } sn)
         {
@@ -436,13 +529,16 @@ public static class C3dPorts
             contacts = [("region", (IReadOnlyList<string>)found)];
             if (found.Count > 2 && found.Count(n => !n.StartsWith("airbox/", StringComparison.Ordinal)) == 2)
                 found = [.. found.Where(n => !n.StartsWith("airbox/", StringComparison.Ordinal))];
+            if (found.Count(n => !IsBoxFace(n)) > 2) found = [.. found.Where(n => !IsBoxFace(n))];
+            if (found.Count > 2)
+                return Refuse(port, ManyConductorsRefusal(label, face, found, ctx), contacts);
             if (found.Count != 2)
                 return Refuse(port, found.Count == 0
                     ? $"{label} is a wave port on the air box's {face} face, and no conductor meets its region: a line must run to " +
                       "the face for its mode to be excited there."
-                    : $"{label} is a wave port on the air box's {face} face, and {(found.Count == 1 ? "only " : "")}" +
-                      $"{string.Join(", ", found.Select(n => $"'{n}'"))} meet{(found.Count == 1 ? "s" : "")} its region; a wave port's " +
-                      "mode runs between two conductors. " + (found.Count > 2 ? "Shrink the region, or state Positive and Negative." : ""), contacts);
+                    : $"{label} is a wave port on the air box's {face} face, and only " +
+                      $"{string.Join(", ", found.Select(n => $"'{n}'"))} meets its region; a wave port's " +
+                      "mode runs between two conductors. ", contacts);
             var a = ctx.Conductors.First(c => c.Name == found[0]);
             var b = ctx.Conductors.First(c => c.Name == found[1]);
             (negative, reason) = Negative(a, b, ctx);
@@ -483,6 +579,265 @@ public static class C3dPorts
             VoltagePath = new Em3dSegment(from, to),
         };
         return new C3dPortResult(port, resolved, null, contacts, reason);
+    }
+
+    /// <summary>Every conductor meeting the rectangle's region of the plane at <paramref name="h"/>, with its (u, v) box.</summary>
+    private static Dictionary<string, (double U0, double V0, double U1, double V1)> Feet(C3dPortContext ctx, int normalAxis, double h, Point3 uDir,
+                                                                                      Point3 vDir, double u0, double v0, double u1, double v1)
+    {
+        var feet = new Dictionary<string, (double U0, double V0, double U1, double V1)>(StringComparer.Ordinal);
+        foreach (var c in ctx.Conductors)
+            if (Footprint(c, ctx, normalAxis, h, uDir, vDir, u0, v0, u1, v1) is { } fp) feet[c.Name] = fp;
+        return feet;
+    }
+
+    private static bool IsBoxFace(string name) => name.StartsWith("airbox/", StringComparison.Ordinal);
+
+    /// <summary>
+    /// R-em3d114-1d — a wave port with no Terminals whose region meets three or more conductors: the reader never invents
+    /// terminals (overview D4), so the refusal names what was found, the reference it would take, and the two fixes.
+    /// </summary>
+    private static string ManyConductorsRefusal(string label, string face, IReadOnlyList<string> found, C3dPortContext ctx)
+    {
+        var (reference, why, _) = InferReference(found, ctx);
+        string names = string.Join(", ", found.Take(found.Count - 1).Select(n => $"'{n}'")) + $" and '{found[^1]}'";
+        return $"{label} is a wave port on the air box's {face} face, and {found.Count} conductors meet its region: {names}. " +
+               (reference is not null ? $"The reference would be '{reference}' ({why}), and each of the others a terminal. "
+                                      : $"No reference can be inferred among them ({why}). ") +
+               "Add Terminals to the port, one per signal conductor, or use Make Port ▸ Wave on that face, which writes them.";
+    }
+
+    /// <summary>
+    /// R-em3d114-1c — the reference among <paramref name="candidates"/>: the one in the ground set (an air-box PEC face
+    /// counts), else the largest surface — among the ground set's members when several are in it. A tie is no answer.
+    /// </summary>
+    internal static (string? Reference, string Reason, string? Refusal) InferReference(IReadOnlyList<string> candidates, C3dPortContext ctx)
+    {
+        var cs = candidates.Select(n => ctx.Conductors.First(c => c.Name == n)).ToList();
+        if (cs.Count == 0) return (null, "no conductor is left to be it", "no conductor besides the terminals meets the region");
+        var ground = cs.Where(c => ctx.Ground.Contains(c.Name)).ToList();
+        if (ground.Count == 1)
+            return (ground[0].Name, $"'{ground[0].Name}' is the only one in the ground set" + (ground[0].Axis >= 0 ? " (a PEC face of the air box)" : ""), null);
+        var pool = (ground.Count > 1 ? ground : cs).OrderByDescending(c => c.Area).ToList();
+        bool mm = pool[0].Area >= 1e-6;
+        string Area(double m2) => (mm ? m2 * 1e6 : m2 * 1e12).ToString("0.####", CultureInfo.InvariantCulture) + (mm ? " mm²" : " µm²");
+        string head = ground.Count > 1 ? "several are in the ground set, and " : "none is in the ground set, and ";
+        if (pool.Count > 1 && Math.Abs(pool[0].Area - pool[1].Area) <= 1e-9 * pool[0].Area)
+        {
+            var tied = pool.Where(c => Math.Abs(c.Area - pool[0].Area) <= 1e-9 * pool[0].Area).Select(c => $"'{c.Name}'").ToList();
+            string why = head + $"{string.Join(" and ", tied)} have equal surfaces ({Area(pool[0].Area)})";
+            return (null, why, why + ", so which is the reference is not decided by the geometry; state Reference");
+        }
+        return (pool[0].Name, head + $"'{pool[0].Name}' has the largest surface ({Area(pool[0].Area)}" +
+                              (pool.Count > 1 ? $" against {Area(pool[1].Area)}" : "") + ")", null);
+    }
+
+    /// <summary>
+    /// R-em3d114-1c/-1e/-2a — a wave port with N terminals: each terminal's conductor meets the region and is not the
+    /// reference, no other conductor is left on the face, and each terminal lowers to its own wave port sharing the
+    /// rectangle, the reference and one <see cref="Em3dPort.FaceGroup"/>.
+    /// </summary>
+    private static C3dPortResult WaveTerminals(C3dPort port, string label, List<C3dTerminal> terminals, C3dPortContext ctx,
+                                               Dictionary<string, (double U0, double V0, double U1, double V1)> feet, string face, double h,
+                                               int normalAxis, Point3 uDir, Point3 vDir, double u0, double v0, double u1, double v1,
+                                               Point3 min, Point3 max, Func<double, double, Point3> P)
+    {
+        ctx.InferenceRuns++;
+        IReadOnlyList<(string, IReadOnlyList<string>)> contacts = [("region", (IReadOnlyList<string>)feet.Keys.ToList())];
+        C3dPortResult No(string why) => Refuse(port, why, contacts);
+        string Upper(string s) => char.ToUpperInvariant(s[0]) + s[1..];
+
+        foreach (var t in terminals)
+        {
+            string who = TerminalLabel(port, t);
+            if (!ctx.Conductors.Any(c => c.Name == t.Conductor))
+                return No($"{Upper(who)} names '{t.Conductor}', which is no conductor of the elaborated model.");
+            if (!feet.ContainsKey(t.Conductor))
+                return No($"{Upper(who)} names '{t.Conductor}', which does not meet the port's region of the {face} face: a terminal " +
+                          "is a conductor that runs to the face.");
+        }
+        var signal = terminals.Select(t => t.Conductor).ToHashSet(StringComparer.Ordinal);
+
+        string reference, reason;
+        if (port.Reference is { } stated)
+        {
+            if (!ctx.Conductors.Any(c => c.Name == stated))
+                return No($"{label}'s Reference '{stated}' is no conductor of the elaborated model" +
+                          (ctx.Box is null ? "." : " and no PEC face of the setup's air box."));
+            (reference, reason) = (stated, "the reference is stated");
+        }
+        else
+        {
+            var candidates = feet.Keys.Where(n => !signal.Contains(n)).ToList();
+            if (candidates.Count > 1 && candidates.Any(n => !IsBoxFace(n))) candidates = [.. candidates.Where(n => !IsBoxFace(n))];
+            var (inferred, why, refusal) = InferReference(candidates, ctx);
+            if (inferred is null)
+                return No($"{label}'s reference cannot be inferred: {refusal}. State its Reference.");
+            (reference, reason) = (inferred, why);
+        }
+        if (terminals.FirstOrDefault(t => t.Conductor == reference) is { } onReference)
+            return No($"{Upper(TerminalLabel(port, onReference))} names '{reference}', which is the port's reference: a terminal's voltage " +
+                      "is measured from the reference, so it is never one. Name another conductor, or another Reference.");
+        if (feet.Keys.FirstOrDefault(n => !signal.Contains(n) && n != reference && !IsBoxFace(n)) is { } loose)
+            return No($"'{loose}' also meets {label}'s region of the {face} face and is neither a terminal nor the reference " +
+                      $"'{reference}': give it a terminal, or shrink the region.");
+
+        double M(long v) => C3dLowering.Metres(v, ctx.DbuPerMicron);
+        var centre = new Point3((min.X + max.X) / 2, (min.Y + max.Y) / 2, (min.Z + max.Z) / 2);
+        double s = face.EndsWith("min", StringComparison.Ordinal) ? 1 : -1;
+        var inward = new Point3(normalAxis == 0 ? s : 0, normalAxis == 1 ? s : 0, normalAxis == 2 ? s : 0);
+        int group = terminals.Min(t => t.Number);
+        var ports = new List<Em3dPort>(terminals.Count);
+        foreach (var t in terminals)
+        {
+            Point3 from, to;
+            if (t.VoltagePath is { } vp) (from, to) = (P(M(vp.From.U), M(vp.From.V)), P(M(vp.To.U), M(vp.To.V)));
+            else if (!feet.ContainsKey(reference))
+                return No($"{label}'s reference '{reference}' does not meet its region of the {face} face, so no voltage path can be " +
+                          $"inferred for {TerminalLabel(port, t)}; state its VoltagePath.");
+            else if ((Path(feet[reference], feet[t.Conductor]) ?? RayPath(ctx.Conductors.First(c => c.Name == reference), ctx, normalAxis, h,
+                                                                           uDir, vDir, feet[t.Conductor], u0, v0, u1, v1)) is var (fu, fv, tu, tv))
+                (from, to) = (P(fu, fv), P(tu, tv));
+            else
+                return No($"No straight path runs from {label}'s reference '{reference}' to {TerminalLabel(port, t)} ('{t.Conductor}') " +
+                          $"inside its region of the {face} face; state the terminal's VoltagePath.");
+            if (t.Flip) (from, to) = (to, from);
+            TryParseZ0(t.Z0, out var z0);
+            var d = Geometry3.Sub(to, from);
+            double len = Math.Sqrt(Geometry3.Dot(d, d));
+            ports.Add(new Em3dPort(t.Number, ProblemName(t.Number), t.Conductor, reference, min, max,
+                                   len > 0 ? new Point3(d.X / len, d.Y / len, d.Z / len) : uDir, z0, new Em3dReferencePlane(centre, inward, 0))
+            {
+                Kind = Em3dPortKind.Wave,
+                VoltagePath = new Em3dSegment(from, to),
+                FaceGroup = group,
+                FaceGroupLabel = label,
+                SourceLabel = t.Name is { Length: > 0 } n ? n : null,
+            });
+        }
+        return new C3dPortResult(port, ports[0], null, contacts, reason) { Terminals = ports };
+    }
+
+    /// <summary>
+    /// R-em3d114-3a — what Make Port ▸ Wave writes on a face met by three or more conductors: the reference by the same rule
+    /// a run infers it, and every other conductor in a stable order — its foot's centre along the rectangle's long axis, then
+    /// its name. Null when the draft is not a wave port on a box face met by three or more (an ordinary port, resolved as one);
+    /// <paramref name="refusal"/> says why such a face takes no terminals (a tie for the reference).
+    /// </summary>
+    public static (string Reference, string Reason, IReadOnlyList<string> Conductors)? TerminalsFor(C3dPort draft, int dbuPerMicron,
+                                                                                                   C3dPortContext ctx, out string? refusal)
+    {
+        refusal = null;
+        if (draft.Kind != Em3dPortKind.Wave || ctx.Box is not { } box || draft.Rect.Size.U <= 0 || draft.Rect.Size.V <= 0) return null;
+        double M(long v) => C3dLowering.Metres(v, dbuPerMicron);
+        double u0 = M(draft.Rect.Min.U), v0 = M(draft.Rect.Min.V);
+        double u1 = M(draft.Rect.Min.U + draft.Rect.Size.U), v1 = M(draft.Rect.Min.V + draft.Rect.Size.V), h = M(draft.Offset);
+        int normalAxis = draft.Plane switch { C3dPlane.YZ => 0, C3dPlane.XZ => 1, _ => 2 };
+        if (Math.Abs(C3dPortContext.Get(box.Min, normalAxis) - h) > ctx.Dbu && Math.Abs(C3dPortContext.Get(box.Max, normalAxis) - h) > ctx.Dbu)
+            return null;
+        var (uDir, vDir) = PlaneAxes(draft.Plane);
+        var feet = Feet(ctx, normalAxis, h, uDir, vDir, u0, v0, u1, v1);
+        var found = feet.Keys.ToList();
+        if (found.Count > 2 && found.Count(n => !IsBoxFace(n)) == 2) return null;      // the two-conductor rule's own reading
+        if (found.Count(n => !IsBoxFace(n)) > 2) found = [.. found.Where(n => !IsBoxFace(n))];
+        if (found.Count < 3) return null;
+        var (reference, why, tie) = InferReference(found, ctx);
+        if (reference is null) { refusal = $"The face is met by {found.Count} conductors and {tie}."; return null; }
+        bool alongU = u1 - u0 >= v1 - v0;
+        var ordered = found.Where(n => n != reference)
+                           .OrderBy(n => alongU ? (feet[n].U0 + feet[n].U1) / 2 : (feet[n].V0 + feet[n].V1) / 2)
+                           .ThenBy(n => n, StringComparer.Ordinal).ToList();
+        return (reference, why, ordered);
+    }
+
+    /// <summary>
+    /// R-em3d114-1e — the voltage path when the reference's foot encloses the terminal's (a stripline's joined grounds, a
+    /// shield): from the terminal's foot, straight along u or v from its centre to the nearest point of the reference's own
+    /// section, whichever is shortest; null when no such line meets it inside the rectangle.
+    /// </summary>
+    private static (double FU, double FV, double TU, double TV)? RayPath(C3dPortContext.Conductor reference, C3dPortContext ctx, int axis, double h,
+                                                                       Point3 uDir, Point3 vDir, (double U0, double V0, double U1, double V1) p,
+                                                                       double u0, double v0, double u1, double v1)
+    {
+        double tol = ctx.Dbu;
+        var segs = Section(reference, ctx, axis, h, uDir, vDir);
+        double cu = (p.U0 + p.U1) / 2, cv = (p.V0 + p.V1) / 2;
+        (double, double, double, double)? best = null;
+        double bestLen = double.PositiveInfinity;
+        void Try(double fu, double fv, double tu, double tv)
+        {
+            if (fu < u0 - tol || fu > u1 + tol || fv < v0 - tol || fv > v1 + tol) return;
+            double len = Math.Abs(tu - fu) + Math.Abs(tv - fv);
+            if (len > tol && len < bestLen) (best, bestLen) = ((fu, fv, tu, tv), len);
+        }
+        foreach (var (a, b) in segs)
+        {
+            // the line u = cu: below the foot (−v) and above it (+v)
+            foreach (double v in Crossings(a.U, a.V, b.U, b.V, cu))
+            {
+                if (v <= p.V0 + tol) Try(cu, v, cu, p.V0);
+                if (v >= p.V1 - tol) Try(cu, v, cu, p.V1);
+            }
+            // the line v = cv: left (−u) and right (+u)
+            foreach (double u in Crossings(a.V, a.U, b.V, b.U, cv))
+            {
+                if (u <= p.U0 + tol) Try(u, cv, p.U0, cv);
+                if (u >= p.U1 - tol) Try(u, cv, p.U1, cv);
+            }
+        }
+        return best;
+
+        // Where segment (x, y)a–b crosses the line x = at, as y values (both ends when it lies along the line).
+        IEnumerable<double> Crossings(double ax, double ay, double bx, double by, double at)
+        {
+            if (Math.Abs(ax - bx) <= tol)
+            {
+                if (Math.Abs(ax - at) <= tol) { yield return ay; yield return by; }
+                yield break;
+            }
+            if (at < Math.Min(ax, bx) - tol || at > Math.Max(ax, bx) + tol) yield break;
+            yield return ay + (Math.Clamp(at, Math.Min(ax, bx), Math.Max(ax, bx)) - ax) / (bx - ax) * (by - ay);
+        }
+    }
+
+    /// <summary>Conductor <paramref name="c"/>'s section by the plane at <paramref name="h"/>, as (u, v) segments: each
+    /// triangle crossing the plane gives one, a triangle lying in it gives its edges, and a PEC face gives its line.</summary>
+    private static List<((double U, double V) A, (double U, double V) B)> Section(C3dPortContext.Conductor c, C3dPortContext ctx, int axis, double h,
+                                                                                Point3 uDir, Point3 vDir)
+    {
+        double tol = ctx.Dbu;
+        var segs = new List<((double, double), (double, double))>();
+        (double, double) UV(Point3 q) => (Geometry3.Dot(q, uDir), Geometry3.Dot(q, vDir));
+        if (c.Axis >= 0)
+        {
+            if (c.Axis == axis) return [];
+            var (x0, y0, z0, x1, y1, z1) = c.Box;
+            double[] lo = [x0, y0, z0], hi = [x1, y1, z1];
+            lo[axis] = hi[axis] = h;
+            segs.Add((UV(new Point3(lo[0], lo[1], lo[2])), UV(new Point3(hi[0], hi[1], hi[2]))));
+            return segs;
+        }
+        var m = c.Cylinder is { } cyl ? Em3dTessellation.Of(new Em3dSolid(c.Name, "", Em3dRole.Conductor, cyl, 0)) : c.Mesh!;
+        foreach (var t in m.Triangles)
+        {
+            var tri = new[] { m.Vertices[t.A], m.Vertices[t.B], m.Vertices[t.C] };
+            var on = new List<Point3>(3);
+            for (int i = 0; i < 3; i++)
+            {
+                var p = tri[i];
+                var q = tri[(i + 1) % 3];
+                double dp = C3dPortContext.Get(p, axis) - h, dq = C3dPortContext.Get(q, axis) - h;
+                if (Math.Abs(dp) <= tol) on.Add(p);
+                else if ((dp < -tol && dq > tol) || (dp > tol && dq < -tol))
+                {
+                    double f = dp / (dp - dq);
+                    on.Add(new Point3(p.X + (q.X - p.X) * f, p.Y + (q.Y - p.Y) * f, p.Z + (q.Z - p.Z) * f));
+                }
+            }
+            if (on.Count == 2) segs.Add((UV(on[0]), UV(on[1])));
+            else if (on.Count == 3) for (int i = 0; i < 3; i++) segs.Add((UV(on[i]), UV(on[(i + 1) % 3])));
+        }
+        return segs;
     }
 
     /// <summary>

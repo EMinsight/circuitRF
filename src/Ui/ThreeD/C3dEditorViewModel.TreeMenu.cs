@@ -52,9 +52,9 @@ public sealed partial class C3dEditorViewModel
             items.Add(Viewer3DMenuItem.Separator);
             items.Add(new Viewer3DMenuItem(AirBoxShown ? "Hide" : "Show", () => SetRowsVisible([item], !AirBoxShown, $"{(AirBoxShown ? "Hide" : "Show")} {item.Name}")));
         }
-        else if (item.Kind == "Port")
+        else if (item.Kind is "Port" or TerminalKind)
         {
-            var port = Document.Ports.FirstOrDefault(p => CircuitRF.Design.ThreeD.C3dPorts.ProblemName(p.Number) == item.Name);
+            var port = PortOfRow(item);
             items.Add(new Viewer3DMenuItem("Duplicate", Enabled: false, Tip: "A port is drawn with the Port tool: each one joins its own pair of conductors."));
             items.Add(Viewer3DMenuItem.Separator);
             items.Add(new Viewer3DMenuItem("Delete", port is null ? null : () => DeletePorts([port]), Enabled: port is not null));

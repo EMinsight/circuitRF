@@ -65,7 +65,7 @@ public static class C3dPersistence
         Encoder = C3dBindings.Encoder,
         TypeInfoResolver = new DefaultJsonTypeInfoResolver
         {
-            Modifiers = { info => C3dBindings.Modify(info, spelling), OmitEmpty },
+            Modifiers = { info => C3dBindings.Modify(info, spelling), OmitEmpty, PortLevel },
         },
     };
 
@@ -97,6 +97,29 @@ public static class C3dPersistence
                 p.ShouldSerialize = static (_, v) => v is ICollection { Count: > 0 };
             else if (p.PropertyType == typeof(C3dPlacement))
                 p.ShouldSerialize = static (_, v) => v is C3dPlacement { IsDefault: false };
+        }
+    }
+
+    /// <summary>
+    /// brief-em3d-114 R-em3d114-1a — a port with <see cref="C3dPort.Terminals"/> writes none of the keys a terminal carries
+    /// for it (rule 3 keeps every other port's spelling exactly), unless the port states one, which is a refusal the file must
+    /// keep showing. Reading marks each such key the file states, so a stated <c>"Z0": "50"</c> is told from the default.
+    /// </summary>
+    private static void PortLevel(JsonTypeInfo info)
+    {
+        if (info.Type != typeof(C3dPort)) return;
+        foreach (var p in info.Properties)
+        {
+            if (!C3dPorts.PortLevelKeys.Contains(p.Name)) continue;
+            string key = p.Name;
+            // Setting ShouldSerialize replaces the ignore conditions, so theirs is restated: null is never written (the
+            // options' WhenWritingNull), nor Flip's false (its WhenWritingDefault) — the only bool among these keys.
+            var inner = p.ShouldSerialize;
+            p.ShouldSerialize = (o, v) => (inner?.Invoke(o, v) ?? v is not (null or false)) &&
+                                          (o is not C3dPort { Terminals: { Count: > 0 } } port || port.Stated?.Contains(key) == true ||
+                                           C3dPorts.StatesPortLevel(port, key));
+            if (p.Set is { } set)
+                p.Set = (o, v) => { set(o, v); ((C3dPort)o).Stated ??= new HashSet<string>(StringComparer.Ordinal); ((C3dPort)o).Stated!.Add(key); };
         }
     }
 
