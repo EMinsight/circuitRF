@@ -23,8 +23,10 @@ using System.Globalization;
 
 namespace CircuitRF.Engine.Em3d;
 
-/// <summary>A grid axis.</summary>
-public enum FdtdAxis { X, Y, Z }
+/// <summary>A grid axis. <see cref="Rho"/> and <see cref="Alpha"/> (brief-em3d-120) name a CYLINDRICAL grid's radial and
+/// azimuthal axes in its sentences, never a world axis: they are held in <see cref="FdtdGridResult.X"/> and
+/// <see cref="FdtdGridResult.Y"/>, as openEMS holds them in XLines and YLines.</summary>
+public enum FdtdAxis { X, Y, Z, Rho, Alpha }
 
 /// <summary>
 /// The openEMS section's grid fields, RESOLVED (brief-em3d-8 R-em3d8-6). <b>The defaults live here
@@ -52,6 +54,10 @@ public sealed record OpenEmsGridSettings(
     /// </summary>
     public static OpenEmsGridSettings Default { get; } = new(20, 1.3, true, null, 8);
 
+    /// <summary>brief-em3d-120 — a cylindrical grid about one axis; null (the default, and what every existing setup
+    /// means) is the Cartesian grid.</summary>
+    public OpenEmsCylindrical? Cylindrical { get; init; }
+
     /// <summary>Every value that cannot be built, as sentences naming the field — empty when all can.</summary>
     public IReadOnlyList<string> Problems()
     {
@@ -64,10 +70,25 @@ public sealed record OpenEmsGridSettings(
             p.Add($"OpenEms.MinCellUm is {G(m * 1e6)}; it must be a positive length.");
         if (PmlCells < 0 || PmlCells > 64)
             p.Add($"OpenEms.PmlCells is {PmlCells}; it must be 0 to 64.");
+        if (Cylindrical?.AzimuthLines is { } n && (n < OpenEmsCylindrical.MinAzimuthLines || n > OpenEmsCylindrical.MaxAzimuthLines))
+            p.Add($"OpenEms.AzimuthLines is {n}; it must be {OpenEmsCylindrical.MinAzimuthLines} to {OpenEmsCylindrical.MaxAzimuthLines}.");
+        if (Cylindrical is { } c && (c.Axis > FdtdAxis.Z || !double.IsFinite(c.Origin.X) || !double.IsFinite(c.Origin.Y) || !double.IsFinite(c.Origin.Z)))
+            p.Add("OpenEms.Axis must be X, Y or Z, and OpenEms.AxisOriginUm three finite lengths.");
         return p;
     }
 
     private static string G(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
+}
+
+/// <summary>
+/// brief-em3d-120 R-em3d120-2 — the setup's cylindrical grid, resolved: the world axis it is round about, a point that axis
+/// passes through (metres), and the azimuth line count when the setup states one (null: §2c's rule, see
+/// <see cref="FdtdCylinder.AzimuthSetBy"/>).
+/// </summary>
+public sealed record OpenEmsCylindrical(FdtdAxis Axis, Point3 Origin, int? AzimuthLines = null)
+{
+    /// <summary>The fewest and most azimuth lines a setup may state (both counts include the closing line at 2π).</summary>
+    public const int MinAzimuthLines = 9, MaxAzimuthLines = 4001;
 }
 
 /// <summary>Why a required line exists (R-em3d8-2d).</summary>
@@ -211,7 +232,12 @@ public sealed record FdtdGridResult(
     IReadOnlyList<string>      Warnings,
     string?                    Refusal)
 {
-    public FdtdAxisGrid Axis(FdtdAxis a) => a switch { FdtdAxis.X => X, FdtdAxis.Y => Y, _ => Z };
+    public FdtdAxisGrid Axis(FdtdAxis a) => a switch { FdtdAxis.X or FdtdAxis.Rho => X, FdtdAxis.Y or FdtdAxis.Alpha => Y, _ => Z };
+
+    /// <summary>brief-em3d-120 — the cylindrical grid this is, or null for a Cartesian one. On a cylindrical grid <see cref="X"/>
+    /// holds ρ (metres), <see cref="Y"/> α (radians, 0 to 2π; its <see cref="FdtdAxisGrid.SmallestCellM"/> is the smallest
+    /// ARC, metres) and <see cref="Z"/> the coordinate along the axis (metres, the world's own).</summary>
+    public FdtdCylinder? Cylinder { get; init; }
 
     /// <summary>brief-em3d-116 R-em3d116-1 — the wave ports' feeds this grid was built with (their lattices are among its
     /// lines), or why openEMS cannot build them. <see cref="FdtdWavePortPlan.None"/> for a problem with no wave port.</summary>
@@ -226,7 +252,7 @@ public sealed record FdtdGridResult(
 /// three steps it is made of — <see cref="CollectRequired"/>, <see cref="Merge"/> and
 /// <see cref="Fill"/> — are public so each is tested on its own.
 /// </summary>
-public static class FdtdGrid
+public static partial class FdtdGrid
 {
     /// <summary>The speed of light in vacuum, m/s.</summary>
     public const double C0 = 299_792_458.0;
@@ -291,6 +317,7 @@ public static class FdtdGrid
             throw new ArgumentException(string.Join(" ", bad), nameof(settings));
         // brief-em3d-49 — a face boundary is a sheet coincident with its face here, so it gets that sheet's lines.
         problem = Em3dFaceSheets.Apply(problem);
+        if (settings.Cylindrical is { } cylindrical) return BuildCylindrical(problem, settings, cylindrical, availableMemoryBytes);
 
         var ctx = new Context(problem, settings);
         // brief-em3d-116 R-em3d116-1 — a wave port's face is fed from behind: its feed's lattice is fixed lines past the face,
@@ -899,7 +926,10 @@ public static class FdtdGrid
 
     // ── shared helpers ───────────────────────────────────────────────────────────────────────
 
-    public static string AxisName(FdtdAxis a) => a switch { FdtdAxis.X => "x", FdtdAxis.Y => "y", _ => "z" };
+    public static string AxisName(FdtdAxis a) => a switch
+    {
+        FdtdAxis.X => "x", FdtdAxis.Y => "y", FdtdAxis.Rho => "ρ", FdtdAxis.Alpha => "α", _ => "z",
+    };
 
     /// <summary>A length for a sentence: nm, µm or mm, four significant figures.</summary>
     public static string FormatLength(double m)

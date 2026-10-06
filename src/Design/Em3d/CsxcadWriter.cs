@@ -105,7 +105,7 @@ public sealed record OpenEmsProbeNames(int Port, IReadOnlyList<string> U, IReadO
     public bool IsWave => Ua is not null;
 }
 
-public static class CsxcadWriter
+public static partial class CsxcadWriter
 {
     /// <summary>The model file's name, in the run directory and in each port's.</summary>
     public const string ModelFile = "model.xml";
@@ -187,6 +187,8 @@ public static class CsxcadWriter
                           "lumped port cannot state it.");
         }
         if (run.Problems() is { Count: > 0 } bad) return No(string.Join(" ", bad));
+        // brief-em3d-120 — a cylindrical grid is its own lowering (CsxcadWriter.Cylindrical.cs); nothing below changes for a Cartesian one.
+        if (grid.Cylinder is { } cylinder) return WriteCylindrical(problem, grid, gridSettings, run, farFieldHz, cylinder, faceKinds);
         // brief-em3d-116 — a wave port is a fed, probed line, on the grid built with its feed (FdtdGrid.Build planned it).
         var plan = grid.WavePorts;
         if (plan.Refusal is { } noWave) return No(noWave);
@@ -403,6 +405,7 @@ public static class CsxcadWriter
 
         // ── Notes ────────────────────────────────────────────────────────────────────────────────
         notes.AddRange(plan.Notes);
+        if (CartesianCoaxNote(problem, plan, grid) is { } staircase) notes.Add(staircase);
         notes.Add("openEMS boundaries: " + string.Join(", ", Enumerable.Range(0, 6).Select(k =>
             $"{FaceKeys[k]} {BoundaryName(faceKinds[k], ctx.Pml)}")) + ".");
         var lossy = problem.Solids.Where(s => s.Role != Em3dRole.Conductor && materials[s.Material].TanD > 0)
@@ -456,6 +459,35 @@ public static class CsxcadWriter
         return new CsxcadLowering(model, files, [.. ports.Select(p => p.Number)], fitHz, f0, fc, maxSteps,
                                   pec, thin, notes, null, surface, kernelFiles)
                { Probes = probeNames, WaveTerminals = waveTerminals };
+    }
+
+    /// <summary>
+    /// brief-em3d-120 R-em3d120-5 — on a Cartesian grid, a coaxial wave-port terminal's staircase: its cells across the pin,
+    /// what 113-a measured such a coax to carry, and the setting that removes it — or why it cannot be removed here.
+    /// </summary>
+    public static string? CartesianCoaxNote(Em3dProblem problem, FdtdWavePortPlan plan, FdtdGridResult grid)
+    {
+        if (grid.Cylinder is not null) return null;
+        var coax = plan.Feeds.SelectMany(f => f.Terminals).Where(t => t.Shape == FdtdTerminalShape.Coaxial).ToList();
+        if (coax.Count == 0) return null;
+        var t = coax.MinBy(x => x.InnerRadiusM)!;
+        double cell = 0;
+        foreach (int a in new[] { t.U, t.V })
+        {
+            var lines = grid.Axis((FdtdAxis)a).Lines;
+            double c = t.Centre(a);
+            for (int i = 1; i < lines.Count; i++)
+                if (lines[i] > c - t.InnerRadiusM && lines[i - 1] < c + t.InnerRadiusM) cell = Math.Max(cell, lines[i] - lines[i - 1]);
+        }
+        int across = cell > 0 ? (int)Math.Round(2 * t.InnerRadiusM / cell) : 0;
+        string who = coax.Count == 1 ? $"Terminal {coax[0].Label} is" : $"Terminals {string.Join(", ", coax.Select(x => x.Label))} are";
+        string remedy = FdtdWavePorts.CommonCoaxialAxis(problem, plan, out string? whyNot) is var (axis, origin)
+            ? $"A cylindrical grid removes it: set the openEMS section's Grid to Cylindrical, Axis {FdtdGrid.AxisName(axis).ToUpperInvariant()}, " +
+              $"AxisOriginUm [{G(origin.X * 1e6)}, {G(origin.Y * 1e6)}, {G(origin.Z * 1e6)}]."
+            : $"A cylindrical grid cannot remove it here: {whyNot} (the problem is not round about one axis).";
+        return $"{who} coaxial, and openEMS's Cartesian grid staircases the round conductors ({across} cells across '{t.Port.PositiveObject}'). " +
+               "Brief 113-a measured such a coax 2.4 % slow in phase velocity at 20 cells across its pin and 1.0 % at 40, its impedance " +
+               $"within about 0.5 Ω of the closed form. {remedy}";
     }
 
     /// <summary>A face normal to an axis is written this fraction of its local cell outward (R-em3d65-3d).</summary>

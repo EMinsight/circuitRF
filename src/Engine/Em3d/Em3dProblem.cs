@@ -130,6 +130,14 @@ public sealed record Em3dShapeSolid(
     /// </summary>
     public Func<double, double, Em3dTriangleMesh>? Tessellator { get; init; }
 
+    /// <summary>
+    /// brief-em3d-120 R-em3d120-4b — when this solid is a Subtract whose Blank and Tools are plain primitives: those operands,
+    /// so a cylindrical openEMS grid can write the Blank and cut each Tool by priority instead of a tessellation (a bore then
+    /// lies on the grid's own circle). Set by the elaboration; null for every other kernel solid. A HINT only: the B-rep is
+    /// the solid, and nothing but that one lowering reads this. Not part of equality.
+    /// </summary>
+    public Em3dOperands? Operands { get; init; }
+
     /// <summary>The bound of the faces' tight boxes, metres.</summary>
     public (double X0, double Y0, double Z0, double X1, double Y1, double Z1) Bounds()
     {
@@ -172,6 +180,13 @@ public sealed record Em3dShapeSolid(
         return axis;
     }
 }
+
+/// <summary>brief-em3d-120 — a Subtract's operands as primitives (metres, placed): its Blank, and its Tools.</summary>
+public sealed record Em3dOperands(Em3dPrimitive Blank, IReadOnlyList<Em3dOperandTool> Tools);
+
+/// <summary>One Tool of a Subtract: its primitive, its name, and — when the Subtract keeps its Tools — the name of the solid it
+/// is kept as (it follows the result in the problem, in its own material).</summary>
+public sealed record Em3dOperandTool(string Name, Em3dPrimitive Primitive, string? KeptAs);
 
 /// <summary>One named face of a kernel solid: its surface kind (plane, cylinder, cone, sphere, torus, bspline, other),
 /// tight box and smallest radius of curvature (0 for a plane), metres, and its triangles in the display mesh.</summary>

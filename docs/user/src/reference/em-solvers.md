@@ -305,6 +305,11 @@ with an axis. The two 3D solvers see them differently, and the difference follow
   cannot make the grid follow the surface. Its note per kernel object names the worst feature: *will not represent*
   (the cell is wider than the radius), *staircases … with about N cells* (a warning below four), or that refining
   the grid converges it.
+- **openEMS on a cylindrical grid follows a round surface coaxial with its axis.** A 3D view's setup can ask for a grid
+  of circles about one axis ([A cylindrical grid](em-setup.html#openems-cylindrical)); a pin and a bore centred on it
+  then lie on the grid's own circles. The coax that runs 1 to 2.4 % slow on the rectilinear grid measured its phase
+  velocity exact there, and its impedance within 0.4 Ω. Only surfaces round about that one axis gain: anything else on
+  such a grid is staircased as before.
 
 **Where the notes appear.** Under each setup in *Simulate ▸ Setup Analyses…* (the 3D editor's Setups panel), in
 `circuitrf check` at their own severity — they never change its exit code — and in the run's messages. None of them

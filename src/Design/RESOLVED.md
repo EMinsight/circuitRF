@@ -17173,3 +17173,76 @@ F0's case again; the port signals were down 73 dB by 1.25 ns, so circuitRF's dec
 
 **`check` reports both openEMS wave-port refusals** (hollow waveguide; a current loop with no room) on the `.cem` path, through
 `Em3dRunService.OpenEmsWavePortRefusal`, the run's own planner. A `.c3d`'s check assembles no problem per setup, so it does not.
+
+## openEMS on a cylindrical grid — brief-em3d-120 (2026-10-06)
+
+`OpenEms.Grid: Cylindrical` (with `Axis`, `AxisOriginUm`, optional `AzimuthLines`) builds the FDTD grid in (ρ, α, z) about one
+world axis: `FdtdGrid.Cylindrical.cs` (Engine), `CsxcadWriter.Cylindrical.cs`, coaxial placement in `FdtdWavePorts`, the
+overlay in `FdtdGridOverlay.Cylindrical.cs`. Gate: `tests/Ui.Tests/Em3d/OpenEmsCylindricalGridTests.cs`. openEMS v0.37.0-rc3,
+8 threads, Apple M4.
+
+**R-em3d120-1a — every primitive kind on a closed cylindrical grid** (one metal primitive per file, `--no-simulation -v`,
+openEMS's PEC edge count against a prediction from the exact Cartesian geometry at the Yee edge midpoints; ρ 0.1–1 mm at
+50 µm, 72 α cells, z 0–1 mm at 50 µm). With `CoordSystem="0"` every kind fills exactly what it fills on a Cartesian grid:
+Box, LinPoly, Polygon, Cylinder, CylindricalShell and Sphere to the edge; Polyhedron and PolyhedronReader minus the 24 nodes
+lying exactly on a face (brief 42's known exclusion, here at α = 0 where x = ρ); Wire with its round caps and the centreline
+path openEMS adds to any Curve-derived primitive; a diagonal Curve within half a cell of its segment. **Without** it, CSXCAD
+reads a Box's corners, a Cylinder's, a Sphere's, a Wire's and a Curve's points as (ρ, α, z) (a coaxial cylinder's agree only
+because ρ = 0); LinPoly and Polygon are always Cartesian and warn "can not be defined in non Cartesian coordinate systems".
+**Nothing needs refusing.** On a circle that IS a grid line, a Cartesian Cylinder loses 39 of 8,658 α-edges and 12 z-edges
+(cos/sin rounding ties) and a CylindricalShell 104 of 4,810; a Box in (ρ, α, z) fills it exactly. So a coaxial cylinder is
+written as that Box, and a coaxial tube as one annulus Box rather than `<CylindricalShell>` (the brief's literal choice).
+
+**R-em3d120-1b — the axis** (3D Connector coax, 71 α lines, 20 µm cells, 6 mm). ρ from the pin's surface: 0.54 M cells,
+Δt 5.31e-14 s, 13 s, Z +0.71 Ω, phase ≤ 0.004° over 5 mm. ρ from 0 with the pin a PEC Box: 0.76 M cells, Δt **2.12e-15 s**
+(openEMS switches to its conservative method on an r = 0 mesh, and the innermost ring's arc is tiny), 309 s (past the brief's
+minute, and it hit its step limit), the same Z to 0.002 Ω and phase ≤ 0.03°. **Allowed, with a warning**: correct, 25× slower.
+
+**R-em3d120-1c — the azimuth rule** (3.5 mm, 40 µm axial cells, 2/6/10 GHz). Z error +0.71 / +0.35 / +0.22 / +0.16 Ω at
+70 / 140 / 210 / 280 cells, flat in frequency (≈ 7.5 Ω·rad × Δα: a static, capacitance error); β/β_th within 0.3 % and the
+phase over 5 mm within 0.07° at every count. `MultiGrid` at 0.4 mm: the same Z, Δt ×1.7–1.9, but wall time no better
+(21.7 against 17.2 s at 210; 26.3 against 26.5 s at 280), so it is not used. **Rule:** the arc at the outermost conductor
+radius no longer than the radial cell there, rounded up to a multiple of 4 (216 cells on 20 µm cells: +0.22 Ω).
+
+**R-em3d120-1d — the replay's time step.** The Python `Write2XML` dump prints the fill box's α end as `6.283185`, 3.1e-7 rad
+short of 2π. openEMS closes α by adding a line at 2π + α₁, and the nodes on the closing line then lie outside the PTFE: method
+3's local limit there sees εr 1, and the time step falls by √2.1 (3.645e-14 → 2.5245e-14 s, a ratio of 1.4440). Writing that
+one coordinate as round-trip 2π restores 3.645e-14 s. The writer writes every α extent as the exact first and last written line.
+
+**A hole must not own its surface.** The first housing run (the Subtract written as its Blank, its kept bore cut out at
+2·p + 1) read **51.3 Ω and ε_eff 2.17**, where the same coax drawn as a holed prism read 50.39 Ω and 2.10: CSXCAD's ranges are
+inclusive, so the hole won the grid nodes ON the bore and the metal's surface moved out to the next radial line. The hole now
+stops `FaceOffsetCells` (1e-4) of the local radial cell short of its radius, and an end inside the Blank (a floor) as far short
+along the axis; the housing then read 50.39 Ω, 2.10, ∠S21 within 0.03° of −βℓ. Cut tools are limited to cylinders coaxial
+with the axis, which is what can be stated exactly; any other Tool keeps the tessellation, with a note.
+
+**Equivalence of the cut.** Priorities on a cylindrical grid are written doubled, so a hole fits at 2·p + 1, above its Blank
+and below anything that beat the Blank. That is the Boolean exactly unless a solid BELOW the Blank in precedence overlaps a
+Tool (it would vanish under the hole) — tolerated only when the Tool is kept and beats that solid anyway. The common case it
+rejects is PTFE drawn as its own solid in a bore that is not kept; the note names the solid.
+
+**A polygon bore is a circle to its rounding.** A prism whose hole's vertices all lie at one distance from the axis gives a
+radius line; its circumradius came out 670.001 µm against the PTFE cylinder's exact 670, and the merge moved both lines to
+their midpoint, so no line sat on the bore. A polygon radius now takes an exact (cylinder) radius within a thousandth of it.
+
+**The Courant estimate** is taken on the smallest arc, times the index of the medium every cell of that innermost ring lies
+in (openEMS's method 3 is local). Without the index the coax's ratio was 1.45; with it 1.01 — still just outside the run's
+0.5–1.0 band, so the band's warning appears on these runs exactly as on 116's pair (method 3 slightly exceeds the plain
+Courant limit). Left as it is: the band is not this brief's.
+
+**Measured, gate 6** (the coax section, 3 mm, through `circuitrf em`, 16 ρ × 124 α × 231 z = 458 k cells, 35 s for both
+ports): Z 50.39 Ω against 50.021 (the 124-cell azimuth step's +0.38), ε_eff 2.10, ∠S21 within 0.002° of −βℓ from 2 to 10
+GHz, |S11| −44 to −57 dB. 113-a's own 141-line fixture, replayed through the readers with the current averaged (gate 3):
+50.28–50.40 Ω, ≤ 0.06°.
+
+**Departures from the brief, and why.** The origin key is `AxisOriginUm` (µm, the file's unit-suffix convention), not
+`AxisOrigin`. The source weight is `r_i/rho` (E = 1 at the pin, the same amplitude as 116's Cartesian source), ∝ 1/ρ as the
+brief asks. A coaxial tube is a native annulus Box, not `<CylindricalShell>` (1a). ρ from the axis is allowed (1b). A lumped
+port is refused on a cylindrical grid (circuitRF writes openEMS's lumped port on a Cartesian grid only), as is a radiation
+pattern (the near-to-far-field box is Cartesian-only); no field is dumped for the 3D view (its reader takes a Cartesian grid),
+and the run says so. The setup panel offers Grid, Axis and Origin; `AzimuthLines` is a file field only. `check` on a `.c3d`
+also reports what a cylindrical setup's grid would refuse.
+
+**Not done.** `Em3dFidelity`'s per-kernel-solid staircase rows are not given on a cylindrical grid (they read cells per world
+axis). `OpenEmsBackendTests.Gate10` failed once when run beside the other openEMS classes and passes alone: it collects
+processes through the static `OpenEmsRun.ProcessStarted` event, so another class's openEMS lands in its list.

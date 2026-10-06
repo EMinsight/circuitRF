@@ -549,6 +549,7 @@ public static class EmRunService
             var d = EmDiagnostics.Forwarded("c3d-planar", $"This setup is a planar analysis, and {CircuitRF.Design.ThreeD.C3dSetups.PlanarRefusal}.");
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null, d.Render(), [], Diagnostic: d);
         }
+        if (fromCem && CemCylindricalRefusal(setup) is { } cemCylinder) return cemCylinder;
         // brief-em3d-114 R-em3d114-2e — a multi-terminal wave port is refused by its solver before anything is looked for or
         // meshed, as every capability refusal is (a static solve reads no wave port, so it is not asked).
         if (!setup.IsStatic3D && CircuitRF.Design.Em3d.Em3dRunService.TerminalPortRefusal(setup.Solver3D,
@@ -588,6 +589,15 @@ public static class EmRunService
             return new EmRunResult(EmRunStatus.Cancelled, null, null, null, null, null,
                 cancelled.Render(), [], Diagnostic: cancelled);
         }
+    }
+
+    /// <summary>brief-em3d-120 C5 — a .cem's openEMS setup asking for a cylindrical grid, refused before anything is looked for.</summary>
+    private static EmRunResult? CemCylindricalRefusal(EmSetup setup)
+    {
+        if (setup.Solver3D is not (Em3dSolver.OpenEms or Em3dSolver.Both) || CemOpenEms.CemCylindricalRefusal(setup.OpenEms) is not { } why)
+            return null;
+        var d = EmDiagnostics.Forwarded("openems-cylindrical-cem", why);
+        return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null, d.Render(), [], Diagnostic: d);
     }
 
     private static EmRunResult RunCore(
@@ -633,6 +643,7 @@ public static class EmRunService
         // brief-em3d-7 R-em3d7-1a — it is run behind this door, which stays the only one: the discovery
         // checks (brief 6) come first there, then the backend. Nothing below this line changes for a
         // planar setup.
+        if (setup.Is3D && CemCylindricalRefusal(setup) is { } cemCylinder) return cemCylinder;
         if (setup.Is3D)
             return CircuitRF.Design.Em3d.Em3dRunService.Run(setup, source, resultsRoot, ct, control, maxCores, confirmMemory);
 

@@ -1049,8 +1049,29 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 };
             }
             else if (material is not null && Role(C3dValidation.EffectiveRole(obj), material, name) is { } role)
-                Add(obj, name, lowered, material, role, world, tech, prefix, path, exact);
+                Add(obj, name, Operands(obj, lowered, world, doc.DbuPerMicron, prefix), material, role, world, tech, prefix, path, exact);
             KeptTools(obj, world, doc, tech, prefix, path, exact);
+        }
+
+        /// <summary>
+        /// brief-em3d-120 R-em3d120-4b — a Subtract whose Blank and Tools are plain objects carries them, lowered exactly as
+        /// they would be on their own and placed where the kernel placed them, so a cylindrical openEMS grid can cut a bore by
+        /// priority instead of tessellating it. A hint on the kernel solid; anything else is returned as it was.
+        /// </summary>
+        private static C3dLowered Operands(C3dObject obj, C3dLowered lowered, C3dTransform world, int dbuPerMicron, string prefix)
+        {
+            if (obj is not C3dBoolean { Op: C3dBooleanOp.Subtract, Enabled: true, Blank: { } blank } b || lowered.Solid is not Em3dShapeSolid k ||
+                blank is C3dOperation || b.Tools.Count == 0 || b.Tools.Any(t => t is C3dOperation))
+                return lowered;
+            var carried = C3dLowering.InMetres(obj.Placement.ToTransform(), dbuPerMicron).Then(world);
+            if (C3dLowering.Lower(blank, carried, dbuPerMicron)?.Solid is not { } blankPrim) return lowered;
+            var tools = new List<Em3dOperandTool>();
+            foreach (var t in b.Tools)
+            {
+                if (C3dLowering.Lower(t, carried, dbuPerMicron)?.Solid is not { } toolPrim) return lowered;
+                tools.Add(new Em3dOperandTool(t.Name, toolPrim, b.KeepTools ? prefix + t.Name : null));
+            }
+            return lowered with { Solid = k with { Operands = new Em3dOperands(blankPrim, tools) } };
         }
 
         /// <summary>

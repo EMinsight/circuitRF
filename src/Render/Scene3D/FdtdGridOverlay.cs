@@ -29,11 +29,13 @@ public sealed record FdtdGridDrawing(Scene3DVertex[] Lines, IReadOnlyList<FdtdCe
     public IReadOnlyList<FdtdFeedLabel> FeedLabels { get; init; } = [];
 }
 
-public static class FdtdGridOverlay
+public static partial class FdtdGridOverlay
 {
     public static FdtdGridDrawing Build(FdtdGridResult grid, Scene3DModel scene, in ClipPlane3D clip,
                                         bool dark = false, CancellationToken ct = default)
     {
+        // brief-em3d-120 — a cylindrical grid is drawn as circles and spokes about its axis (FdtdGridOverlay.Cylindrical.cs).
+        if (grid.Cylinder is { } cylinder) return BuildCylindrical(grid, cylinder, scene, clip, dark, ct);
         uint planeInk = dark ? Scene3DVertex.Pack(170, 175, 185, 255) : Scene3DVertex.Pack(110, 115, 125, 255);
         uint metalInk = dark ? Scene3DVertex.Pack(255, 120, 60, 255) : Scene3DVertex.Pack(215, 60, 20, 255);
         var outv = new List<Scene3DVertex>();

@@ -382,7 +382,7 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
     /// union over every element at that path. A primitive's path does not name the property kind that
     /// holds it (<c>Properties/*/Primitives/Box</c>): which solid is a Box is the geometry's business,
     /// and gate 5 compares kinds of primitive separately.</summary>
-    private static Dictionary<string, SortedSet<string>> Paths(XDocument d)
+    internal static Dictionary<string, SortedSet<string>> Paths(XDocument d)
     {
         var map = new Dictionary<string, SortedSet<string>>(StringComparer.Ordinal);
         foreach (var e in d.Descendants())

@@ -322,7 +322,9 @@ setup's refusals and notes, the mesh, the field) are always shown.
   shows inside a package, under a lid, or through a via's clearance.
 - **Mesh.** After a Palace run, the mesh Gmsh made: the boundary triangles, and the tetrahedra the clip
   plane cuts.
-- **Grid.** For an openEMS setup, the FDTD grid on the clip plane and where it meets the metal.
+- **Grid.** For an openEMS setup, the FDTD grid on the clip plane and where it meets the metal. A cylindrical
+  grid is drawn as it is: on a clip plane across its axis, a circle at each radius and a spoke at each angle; on a
+  plane along it, the radii as lines along the axis; on the metal, where its circles, spokes and planes cross it.
 - **Field plots.** After a run that saved them, a field is drawn by a **field plot**: a row of the Object
   Tree's **Field Plots** group, saved with the 3D view like any object, so a plot is still there when the
   file is closed and opened again. Add one with the **+** on the group's header (or right-click the group,

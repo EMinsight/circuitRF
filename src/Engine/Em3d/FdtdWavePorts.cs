@@ -116,7 +116,8 @@ public sealed record FdtdWavePortPlan(IReadOnlyList<FdtdFeed> Feeds, IReadOnlyLi
 }
 
 /// <summary>A source of one terminal: a box (zero thickness on the face's axis), its E direction, and its weight
-/// expressions (null: flat). <see cref="Suffix"/> names it (<c>_up</c>, <c>_dn</c>, or empty).</summary>
+/// expressions (null: flat). <see cref="Suffix"/> names it (<c>_up</c>, <c>_dn</c>, or empty). On a cylindrical grid
+/// (brief-em3d-120) the box and the direction are in the grid's own (ρ, α, z).</summary>
 public sealed record FdtdSourceBox(string Suffix, Point3 Min, Point3 Max, int[] Excite, string[]? Weight);
 
 /// <summary>A voltage probe of one terminal on one plane: from the reference to the conductor, weight −1 (the lumped
@@ -126,7 +127,8 @@ public sealed record FdtdVoltageProbe(string Suffix, Point3 From, Point3 To);
 /// <summary>
 /// One terminal's elements on the grid (R-em3d116-2): the planes, the sources, the voltage probes on each plane, the
 /// current box (transverse corners on dual-grid lines) and the sign that makes I flow into the device, and the
-/// clearance from its contour to the nearest other conductor.
+/// clearance from its contour to the nearest other conductor. On a cylindrical grid (brief-em3d-120) every point is in the
+/// grid's own (ρ, α, z) and the current box is (ρ0, α0, ρ1, α1): a full disc about the axis.
 /// </summary>
 public sealed record FdtdTerminalElements(
     FdtdTerminal                       Terminal,
@@ -269,6 +271,7 @@ public static class FdtdWavePorts
     public static (IReadOnlyList<FdtdTerminalElements> Terminals, string? Refusal) Place(Em3dProblem problem, FdtdWavePortPlan plan,
                                                                                         FdtdGridResult grid)
     {
+        if (grid.Cylinder is { } cylinder) return PlaceCylindrical(plan, grid, cylinder);
         var all = new List<FdtdTerminalElements>();
         var box = problem.Boundary;
         double span = Math.Max(box.Max.X - box.Min.X, Math.Max(box.Max.Y - box.Min.Y, box.Max.Z - box.Min.Z));
@@ -400,6 +403,104 @@ public static class FdtdWavePorts
             }
         }
         return (all, null);
+    }
+
+    /// <summary>
+    /// brief-em3d-120 R-em3d120-4c/d — a coaxial terminal on a CYLINDRICAL grid (the grid refused every other kind), every
+    /// coordinate in the grid's own (ρ, α, z): the source a Box spanning the dielectric annulus on the source plane, its weight
+    /// E_ρ = r_i/ρ in the grid's own radial component (the same field as the Cartesian source, one component); each voltage
+    /// line along ρ at α = 0, between the written radii of the path's two ends; each current probe a full disc about the axis
+    /// whose rim is the DUAL line nearest midway between pin and shield, so it lies wholly in the dielectric and on no tie.
+    /// </summary>
+    private static (IReadOnlyList<FdtdTerminalElements> Terminals, string? Refusal) PlaceCylindrical(FdtdWavePortPlan plan, FdtdGridResult grid,
+                                                                                                     FdtdCylinder cyl)
+    {
+        var all = new List<FdtdTerminalElements>();
+        var rho = grid.X.Lines;
+        var zl = grid.Z.Lines;
+        double a0 = grid.Y.Lines[0], a1 = grid.Y.Lines[^1];
+        foreach (var feed in plan.Feeds)
+        {
+            double Line(int k) => Snap(zl, feed.At(k));
+            double source = Line(feed.SourceIndex), ua = Line(feed.ReferenceIndex - 1), uMid = Line(feed.ReferenceIndex),
+                   uc = Line(feed.ReferenceIndex + 1);
+            double ia = (ua + uMid) / 2, ib = (uMid + uc) / 2;
+            foreach (var t in feed.Terminals)
+            {
+                var p = t.Port;
+                var vp = p.VoltagePath!.Value;
+                bool flipped = ReferenceEndIsTo(t, vp);
+                double ri = Snap(rho, t.InnerRadiusM), ro = Snap(rho, t.OuterRadiusM);
+                string s = flipped ? "-" : "";
+                var sources = new List<FdtdSourceBox>
+                {
+                    new("", new Point3(ri, a0, source), new Point3(ro, a1, source), [1, 0, 0], [$"{s}{Ex(ri)}/rho", "0", "0"]),
+                };
+                double rFrom = Snap(rho, cyl.RadiusOf(vp.From)), rTo = Snap(rho, cyl.RadiusOf(vp.To));
+                var placed = new List<FdtdVoltageProbe>();
+                foreach (double at in new[] { ua, uMid, uc })
+                    placed.Add(new FdtdVoltageProbe("", new Point3(rFrom, a0, at), new Point3(rTo, a0, at)));
+
+                // The disc's rim: the dual line nearest the annulus' middle, a cell clear of the shield and outside the pin.
+                double rim = double.NaN, best = double.PositiveInfinity;
+                for (int i = 0; i + 1 < rho.Count; i++)
+                {
+                    double d = (rho[i] + rho[i + 1]) / 2;
+                    if (d <= ri || d >= ro) continue;
+                    if (Math.Abs(d - (ri + ro) / 2) < best) { best = Math.Abs(d - (ri + ro) / 2); rim = d; }
+                }
+                double cell = double.IsNaN(rim) ? ro - ri : CellAt(rho, rim);
+                double clear = double.IsNaN(rim) ? 0 : ro - rim, cells = clear / cell;
+                if (double.IsNaN(rim) || cells < 1 || (rim - ri) / cell < 1)
+                    return ([], $"Terminal {t.Label}'s current probe on the {feed.Face} face has no room: its disc about '{p.PositiveObject}' must lie " +
+                                $"in dielectric with one cell to spare from '{p.NegativeObject}' and from the conductor itself, and the annulus from " +
+                                $"{Fmt(ri)} to {Fmt(ro)} holds {Math.Max(0, (int)Math.Round((ro - ri) / cell))} radial cell(s). Refine the openEMS grid " +
+                                "there (CellsPerWavelength, MinCellUm).");
+                int weight1 = feed.Inward * (flipped ? -1 : 1);
+                all.Add(new FdtdTerminalElements(t, feed, source, ua, uMid, uc, ia, ib, sources, placed, (0, a0, rim, a1), weight1,
+                                                 clear, cells, p.NegativeObject));
+            }
+        }
+        return (all, null);
+    }
+
+    /// <summary>
+    /// brief-em3d-120 R-em3d120-2 C1 / R-em3d120-5 — the one line every wave-port terminal of <paramref name="plan"/> is coaxial
+    /// about (a world axis and a point on it, the axial coordinate 0), which a cylindrical grid could be built on; or null, with
+    /// the reason there is none in <paramref name="whyNot"/> (null when the problem has no coaxial terminal at all).
+    /// </summary>
+    public static (FdtdAxis Axis, Point3 Origin)? CommonCoaxialAxis(Em3dProblem problem, FdtdWavePortPlan plan, out string? whyNot)
+    {
+        whyNot = null;
+        var terminals = plan.Feeds.SelectMany(f => f.Terminals.Select(t => (Feed: f, Terminal: t))).ToList();
+        if (!terminals.Any(x => x.Terminal.Shape == FdtdTerminalShape.Coaxial)) return null;
+        if (problem.Ports.FirstOrDefault(p => p.Kind == Em3dPortKind.Lumped) is { } lumped)
+        {
+            whyNot = $"port {lumped.SourceNumber ?? lumped.Number} is a lumped port";
+            return null;
+        }
+        if (terminals.FirstOrDefault(x => x.Terminal.Shape != FdtdTerminalShape.Coaxial) is { Terminal: { } flat })
+        {
+            whyNot = $"terminal {flat.Label} is not coaxial, and openEMS has one grid per run";
+            return null;
+        }
+        if (plan.Feeds.Select(f => f.Axis).Distinct().Count() > 1)
+        {
+            whyNot = "the coaxial terminals sit on faces normal to different axes";
+            return null;
+        }
+        var first = terminals[0].Terminal;
+        double cu = first.Centre(first.U), cv = first.Centre(first.V);
+        foreach (var (_, t) in terminals)
+            if (Math.Abs(t.Centre(t.U) - cu) > 1e-3 * t.InnerRadiusM || Math.Abs(t.Centre(t.V) - cv) > 1e-3 * t.InnerRadiusM)
+            {
+                whyNot = $"terminals {first.Label} and {t.Label} are coaxial about different lines";
+                return null;
+            }
+        var o = new double[3];
+        o[first.U] = cu;
+        o[first.V] = cv;
+        return (plan.Feeds[0].Axis, new Point3(o[0], o[1], o[2]));
     }
 
     /// <summary>The problem with every face carrying a feed lowered absorbing (overview D9): what the grid and the writer use.</summary>

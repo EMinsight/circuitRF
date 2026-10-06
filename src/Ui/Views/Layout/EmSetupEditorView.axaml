@@ -777,6 +777,33 @@
                                    Text="{Binding ViewModel.OpenEmsFieldError}"
                                    IsVisible="{Binding ViewModel.OpenEmsFieldError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
                     </Grid>
+                    <!-- brief-em3d-120 R-em3d120-5: a 3D view's own setup may ask for a cylindrical grid, round about one axis. -->
+                    <Grid Margin="0,6,0,0" ColumnDefinitions="Auto,140" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="2"
+                          HorizontalAlignment="Left">
+                        <Grid.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="ViewModel.IsOpenEmsSetup"/>
+                                <Binding Path="ViewModel.ShowOpenEmsGrid"/>
+                            </MultiBinding>
+                        </Grid.IsVisible>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Grid" VerticalAlignment="Center"/>
+                        <ComboBox  Grid.Row="0" Grid.Column="1" Classes="cell"
+                                   ItemsSource="{x:Static em:EmSetupEditorViewModel.OpenEmsGridChoices}"
+                                   SelectedItem="{Binding ViewModel.OpenEmsGridChoice}"
+                                   ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.OpenEmsGridTip}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Classes="colhdr" Text="Axis" VerticalAlignment="Center"
+                                   IsVisible="{Binding ViewModel.IsOpenEmsCylindrical}"/>
+                        <ComboBox  Grid.Row="1" Grid.Column="1" Classes="cell" IsVisible="{Binding ViewModel.IsOpenEmsCylindrical}"
+                                   ItemsSource="{x:Static em:EmSetupEditorViewModel.OpenEmsAxisChoices}"
+                                   SelectedItem="{Binding ViewModel.OpenEmsAxis}"
+                                   ToolTip.Tip="The world axis the cylindrical grid is round about: the coax's own."/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Axis through (µm)" VerticalAlignment="Center"
+                                   IsVisible="{Binding ViewModel.IsOpenEmsCylindrical}"/>
+                        <TextBox   Grid.Row="2" Grid.Column="1" Classes="num" Tag="OpenEms.AxisOriginUm" IsVisible="{Binding ViewModel.IsOpenEmsCylindrical}"
+                                   Text="{Binding ViewModel.OpenEmsAxisOriginText}" PlaceholderText="0, 0, 0"
+                                   LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                   ToolTip.Tip="A point the axis passes through, x, y, z in µm: the centre of the coax's pin."/>
+                    </Grid>
                   </StackPanel>
                 </Border>
 

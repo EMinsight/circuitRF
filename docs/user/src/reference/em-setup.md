@@ -540,6 +540,67 @@ openEMS computes its own), the steps and memory the run would take, and every me
 not fit in memory is refused, naming the feature behind the smallest cell and the setting that would
 relax it.
 
+### A cylindrical grid {#openems-cylindrical}
+
+A round conductor on a rectilinear grid is a staircase, and a staircased coax carries its wave slowly: the
+3D Connector's coax (pin ⌀ 0.4 mm in a 1.34 mm PTFE bore) measured 1 to 2.4 % slow in phase velocity
+depending on the cells across its pin, about 1° over a few millimetres at 10 GHz. A 3D view's own setup can
+ask openEMS for a **cylindrical grid** instead, whose lines are circles about one axis, spokes from it and
+planes along it: a conductor coaxial with that axis then lies exactly on the grid's own circles.
+
+| Field (in `OpenEms`) | Default | What it does |
+|---|---|---|
+| `Grid` | `Cartesian` | `Cylindrical` asks for the grid below. Never inferred: every existing setup stays Cartesian |
+| `Axis` | `Z` | The world axis the grid is round about |
+| `AxisOriginUm` | `[0, 0, 0]` | A point the axis passes through, x, y, z in µm: the centre of the coax's pin |
+| `AzimuthLines` | the rule below | Lines round the circle, 0 and 2π both counted |
+
+In the setup panel the openEMS section offers **Grid**, and with *Cylindrical* chosen, **Axis** and **Axis
+through**. A `.cem` setup cannot ask for one (a layout problem stays Cartesian) and is refused if it does.
+
+**What suits it.** A problem round about one axis: a coax section, a coax step or bead, a coax-to-coax adapter,
+a pin in a round bore. **A coax meeting a board does not**: openEMS has one grid per run, and around the coax's
+axis the board and its line would be staircased instead. The 3D Connector's **Launch** therefore stays Cartesian
+and keeps the coax's error, about 1 % in phase velocity over its 4.5 mm of coax — roughly 1.4° at 18 GHz. A
+Cartesian run with a coaxial wave port says so in a note, with the setting that removes it when it can be
+removed, or why it cannot; `circuitrf check` suggests the setting when every wave port is coaxial about one line.
+
+**The domain** is the cylinder inscribed in the air box's cross-section about the axis. The box's two faces the
+axis crosses are its ends; its four side faces become one outer radius and must share one boundary kind. A
+dielectric reaching past that radius is refused; metal may cross it, as a shield ending on the wall does.
+
+**Where ρ starts.** At the surface of a metal solid that contains the axis along the whole box — a pin — so the
+grid wastes no cells inside it. With none, it starts on the axis itself and openEMS treats the axis: correct,
+and slow, because the innermost ring's tiny arc sets the time step. Measured on the same coax: identical
+impedance and phase, at a time step 25 times smaller.
+
+**How many azimuth lines.** The impedance error is first order in the azimuth step and does not depend on
+frequency; the phase is exact at any count. Measured on the 3D Connector's coax (20 µm radial cells), against
+the closed form's 50.021 Ω:
+
+| Azimuth cells | 70 | 140 | 210 | 280 |
+|---|---|---|---|---|
+| Z error | +0.71 Ω | +0.35 Ω | +0.22 Ω | +0.16 Ω |
+
+The default makes the arc at the outermost conductor radius no longer than the radial cell there, rounded up to
+a multiple of four; `circuitrf explain` names the radius and the cell that set it. A finer inner grid on the
+axis side (openEMS's *multi-grid*) roughly doubles the time step but measured no faster, so it is not used.
+
+**How shapes are written.** A cylinder coaxial with the axis is written in the grid's own coordinates, which
+fills its circle exactly. A Boolean **Subtract** whose Blank and Tools are plain shapes — the 3D Connector's
+housing with its bore — is written as the Blank with each coaxial Tool cut out above it by priority, the bore
+in the kept Tool's own material or in the background's, so the bore too lies on a circle. That is done only
+where it is exactly the Boolean: when another solid below the housing in precedence overlaps a Tool (PTFE
+drawn as its own solid in a bore that is not kept), the housing is written as its tessellation instead and the
+run's notes say why. Every other shape is written as on a Cartesian grid and fills the same cells it would there.
+
+**Wave ports** must be coaxial terminals on the two faces the axis crosses, centred on the axis: their source is
+openEMS's own radial one, and their current probes are full discs about the axis. Refused, each naming the fix:
+a lumped port, a terminal that is not coaxial or not on the axis, a radiation pattern (openEMS's far-field box
+is written on a Cartesian grid only). No field is saved for the 3D view, whose field plots read a Cartesian
+grid; the run says so. Measured end to end through `circuitrf em`: the coax section above within 0.4 Ω of its
+closed form, and its transmission phase within 0.01° of the line's.
+
 ### Running openEMS {#openems-run}
 
 With openEMS chosen the panel shows the grid settings above and two of its own, each a field of the

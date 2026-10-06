@@ -1134,10 +1134,17 @@ public static class Em3dRunService
         log.Notes.AddRange(lowering.Notes);
         int n = lowering.Ports.Count;
         var s0 = grid.Smallest;
-        log.Notes.Add($"openEMS grid: {grid.X.Lines.Count:N0} × {grid.Y.Lines.Count:N0} × {grid.Z.Lines.Count:N0} = {grid.Cells:N0} " +
-                      $"cells; smallest cell {FdtdGrid.FormatLength(s0.SmallestCellM)} on {FdtdGrid.AxisName(s0.Axis)}, set by " +
-                      $"{string.Join("; ", s0.SmallestCellFeatures.Select(f => f.Describe(s0.Axis)))}. openEMS runs once per port: " +
-                      $"{n} run{(n == 1 ? "" : "s")}, each up to {lowering.MaxTimeSteps:N0} time steps.");
+        if (grid.Cylinder is { } cyl)
+            log.Notes.Add($"openEMS cylindrical grid about {cyl.Describe()}: {grid.X.Lines.Count:N0} ρ × {cyl.AzimuthCells:N0} α × " +
+                          $"{grid.Z.Lines.Count:N0} {FdtdGrid.AxisName(cyl.Axis)} = {grid.Cells:N0} cells; ρ from {FdtdGrid.FormatLength(cyl.RhoMinM)} " +
+                          $"to {FdtdGrid.FormatLength(cyl.RhoMaxM)}; α in {cyl.AzimuthCells} cells, set by {cyl.AzimuthSetBy}; smallest arc " +
+                          $"{FdtdGrid.FormatLength(cyl.SmallestArcM)} at ρ = {FdtdGrid.FormatLength(cyl.SmallestArcAtM)}. openEMS runs once per port: " +
+                          $"{n} run{(n == 1 ? "" : "s")}, each up to {lowering.MaxTimeSteps:N0} time steps.");
+        else
+            log.Notes.Add($"openEMS grid: {grid.X.Lines.Count:N0} × {grid.Y.Lines.Count:N0} × {grid.Z.Lines.Count:N0} = {grid.Cells:N0} " +
+                          $"cells; smallest cell {FdtdGrid.FormatLength(s0.SmallestCellM)} on {FdtdGrid.AxisName(s0.Axis)}, set by " +
+                          $"{string.Join("; ", s0.SmallestCellFeatures.Select(f => f.Describe(s0.Axis)))}. openEMS runs once per port: " +
+                          $"{n} run{(n == 1 ? "" : "s")}, each up to {lowering.MaxTimeSteps:N0} time steps.");
 
         return new OpenEmsPlan(gridSettings, runSettings, grid, lowering,
                                readiness.Single(r => r.Tool == SolverTool.OpenEms).Installation!);

@@ -176,6 +176,15 @@ internal static class ExplainEm3d
                     FdtdTerminalShape.Microstrip => "a strip over one reference plane: one sheet across it, strip to the plane",
                     _                            => "a source along its voltage path",
                 };
+                if (g.Cylinder is not null)
+                {
+                    lines.Add($"  terminal {t.Label} ('{t.Port.PositiveObject}', port {t.Port.Number}): coaxial, on the cylindrical grid: a radial source " +
+                              $"E_ρ ∝ 1/ρ in the grid's own ρ component over the annulus from {L(e.Sources[0].Min.X)} to {L(e.Sources[0].Max.X)}; " +
+                              $"voltage along ρ at α = 0; current planes at {a} = {L(e.IaAtM)} and {L(e.IbAtM)}, each a disc to ρ = {L(e.CurrentBox.U1)} " +
+                              $"round the full circle, clear of '{e.NearestConductor}' by {e.ClearanceCells.ToString("0.##", CultureInfo.InvariantCulture)} cells " +
+                              $"({L(e.ClearanceM)}).");
+                    continue;
+                }
                 string u = FdtdGrid.AxisName((FdtdAxis)t.U), v = FdtdGrid.AxisName((FdtdAxis)t.V);
                 lines.Add($"  terminal {t.Label} ('{t.Port.PositiveObject}', port {t.Port.Number}): {shape}; current planes at {a} = {L(e.IaAtM)} and " +
                           $"{L(e.IbAtM)}, the loop {u} {L(e.CurrentBox.U0)} .. {L(e.CurrentBox.U1)}, {v} {L(e.CurrentBox.V0)} .. {L(e.CurrentBox.V1)}" +
@@ -299,6 +308,7 @@ internal static class ExplainEm3d
         if (grid.Grid is not { } g)
             return new("openems", "unavailable", null, null, null, null,
                        $"no grid: {grid.Why ?? "there is no 3D problem to size."}");
+        if (g.Cylinder is { } cyl) return CylindricalSize(g, cyl, ports);
         var s = g.Smallest;
         string axis = FdtdGrid.AxisName(s.Axis);
         var features = s.SmallestCellFeatures.Select(f => f.Describe(s.Axis)).ToList();
@@ -314,6 +324,29 @@ internal static class ExplainEm3d
                          $"{ports} times one run." : "");
         return new("openems", "exact", g.Cells, null, g.TimeStepEstimateS, g.MemoryBytes, note,
                    [g.X.Lines.Count, g.Y.Lines.Count, g.Z.Lines.Count], s.SmallestCellM, axis, features, g.Steps,
+                   g.Merges.Select(m => m.Sentence).ToList(), g.Warnings, g.Refusal);
+    }
+
+    /// <summary>brief-em3d-120 R-em3d120-5 — a cylindrical grid: its axis and origin, ρ range, azimuth count and why, the smallest
+    /// arc, the Courant estimate on it.</summary>
+    private static Em3dSizeJson CylindricalSize(FdtdGridResult g, FdtdCylinder cyl, int ports)
+    {
+        string L(double m) => FdtdGrid.FormatLength(m);
+        string axial = FdtdGrid.AxisName(cyl.Axis);
+        string start = cyl.RhoMinSetBy is { } pin ? $"the surface of '{pin}'" : "the axis itself (no metal contains it along the whole box)";
+        string feature = cyl.RhoMinSetBy is { } by ? $"'{by}' at ρ = {L(cyl.RhoMinM)}" : $"the first ring, ρ = {L(cyl.SmallestArcAtM)}";
+        string note =
+            $"a cylindrical grid about {cyl.Describe()}: {g.X.Lines.Count:N0} ρ × {cyl.AzimuthCells:N0} α × {g.Z.Lines.Count:N0} {axial} = " +
+            $"{g.Cells:N0} cells, the grid a run writes; ρ from {L(cyl.RhoMinM)} ({start}) to {L(cyl.RhoMaxM)} (the circle inscribed in the " +
+            $"{string.Join(", ", cyl.SideFaces)} faces, {cyl.RhoMaxKind switch { Em3dBoundaryKind.Pec => "PEC", Em3dBoundaryKind.Pmc => "PMC", _ => "absorbing" }}); α in {cyl.AzimuthCells} cells, set by {cyl.AzimuthSetBy}; smallest arc " +
+            $"{L(cyl.SmallestArcM)} at ρ = {L(cyl.SmallestArcAtM)}, smallest radial cell {L(g.X.SmallestCellM)}, smallest {axial} cell " +
+            $"{L(g.Z.SmallestCellM)}. Time step about {g.TimeStepEstimateS:G3} s (the Courant estimate on the smallest arc, in the medium " +
+            $"that ring lies in; openEMS computes its own), about {g.Steps:N0} steps for the pulse and a nominal ring-down, about " +
+            $"{g.MemoryBytes / 1e6:N0} MB. " +
+            (g.Merges.Count == 0 ? "No lines merged." : $"{g.Merges.Count} merge(s) of lines closer than MinCell ({L(g.MinCellM)}).") +
+            (ports > 1 ? $" openEMS runs once per port: {ports} runs, one after another, so the whole takes about {ports} times one run." : "");
+        return new("openems", "exact", g.Cells, null, g.TimeStepEstimateS, g.MemoryBytes, note,
+                   [g.X.Lines.Count, cyl.AzimuthCells, g.Z.Lines.Count], cyl.SmallestArcM, "α", [feature], g.Steps,
                    g.Merges.Select(m => m.Sentence).ToList(), g.Warnings, g.Refusal);
     }
 

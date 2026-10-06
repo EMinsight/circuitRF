@@ -11,6 +11,12 @@ using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace CircuitRF.Ui.Layout.Em;
 
+/// <summary>brief-em3d-120 — one row of the openEMS Grid picker.</summary>
+public sealed record OpenEmsGridChoice(OpenEmsGridKind Value, string Label)
+{
+    public override string ToString() => Label;
+}
+
 public sealed partial class EmSetupEditorViewModel
 {
     [ObservableProperty] private string _openEmsCellsPerWavelengthText = "";
@@ -21,6 +27,43 @@ public sealed partial class EmSetupEditorViewModel
     [ObservableProperty] private string _openEmsMaxTimeStepsText       = "";
     [ObservableProperty] private bool   _openEmsThirdsRule             = true;
     [ObservableProperty] private string? _openEmsFieldError;
+
+    // brief-em3d-120 R-em3d120-5 — a 3D view's own setup chooses a cylindrical grid: Grid, Axis and Origin.
+    [ObservableProperty] private OpenEmsGridChoice _openEmsGridChoice = OpenEmsGridChoices[0];
+    [ObservableProperty] private OpenEmsGridAxis   _openEmsAxis       = OpenEmsGridAxis.Z;
+    [ObservableProperty] private string            _openEmsAxisOriginText = "";
+
+    public static IReadOnlyList<OpenEmsGridChoice> OpenEmsGridChoices { get; } =
+    [
+        new(OpenEmsGridKind.Cartesian,   "Cartesian"),
+        new(OpenEmsGridKind.Cylindrical, "Cylindrical"),
+    ];
+
+    public static IReadOnlyList<OpenEmsGridAxis> OpenEmsAxisChoices { get; } = [OpenEmsGridAxis.X, OpenEmsGridAxis.Y, OpenEmsGridAxis.Z];
+
+    public const string OpenEmsGridTip =
+        "Cartesian (the default) suits every problem. Cylindrical puts round conductors coaxial with one axis on the grid's own " +
+        "circles: a coax section, step, bead or adapter, or a pin in a round bore. Its wave ports must be coaxial terminals on " +
+        "the two faces the axis crosses. A coax meeting a board stays Cartesian: openEMS has one grid per run.";
+
+    /// <summary>The Grid picker is offered on a 3D view's own setup only (C5: a .cem stays Cartesian).</summary>
+    public bool ShowOpenEmsGrid => IsEmbedded;
+
+    /// <summary>Axis and Origin are read only on a cylindrical grid.</summary>
+    public bool IsOpenEmsCylindrical => IsEmbedded && OpenEmsGridChoice.Value == OpenEmsGridKind.Cylindrical;
+
+    partial void OnOpenEmsGridChoiceChanged(OpenEmsGridChoice value)
+    {
+        OnPropertyChanged(nameof(IsOpenEmsCylindrical));
+        if (_suppressCommit) return;
+        CommitOpenEmsField("OpenEms.Grid");
+    }
+
+    partial void OnOpenEmsAxisChanged(OpenEmsGridAxis value)
+    {
+        if (_suppressCommit) return;
+        CommitOpenEmsField("OpenEms.Axis");
+    }
 
     /// <summary>What a blank box stands for — the defaults the generator and the writer read.</summary>
     public static string OpenEmsDefaultCellsPerWavelength => G(CircuitRF.Engine.Em3d.OpenEmsGridSettings.Default.CellsPerWavelength);
@@ -41,6 +84,9 @@ public sealed partial class EmSetupEditorViewModel
         OpenEmsMaxTimeStepsText       = o?.MaxTimeSteps?.ToString(CultureInfo.InvariantCulture) ?? "";
         OpenEmsThirdsRule             = o?.ThirdsRule ?? CircuitRF.Engine.Em3d.OpenEmsGridSettings.Default.ThirdsRule;
         OpenEmsSaveFieldsText         = SaveFieldsText(o?.SaveFieldsGHz);         // brief-em3d-83
+        OpenEmsGridChoice             = OpenEmsGridChoices.First(c => c.Value == (o?.Grid ?? OpenEmsGridKind.Cartesian));
+        OpenEmsAxis                   = o?.Axis ?? OpenEmsGridAxis.Z;
+        OpenEmsAxisOriginText         = o?.AxisOriginUm is { } origin ? string.Join(", ", origin.Select(v => G(v))) : "";
         OpenEmsFieldError = null;
     }
 
@@ -102,6 +148,24 @@ public sealed partial class EmSetupEditorViewModel
             case "OpenEms.SaveFieldsGHz":               // brief-em3d-83 R-em3d83-6 — the frequencies the E (and H) dumps are made at
                 if (TryParseSaveFields(OpenEmsSaveFieldsText, out var saves, out error)) section.SaveFieldsGHz = saves;
                 break;
+            case "OpenEms.Grid":                        // brief-em3d-120 — Cartesian is written as no field at all
+                section.Grid = OpenEmsGridChoice.Value == OpenEmsGridKind.Cartesian ? null : OpenEmsGridChoice.Value;
+                break;
+            case "OpenEms.Axis":
+                section.Axis = OpenEmsAxis == OpenEmsGridAxis.Z ? null : OpenEmsAxis;
+                break;
+            case "OpenEms.AxisOriginUm":
+            {
+                string text = OpenEmsAxisOriginText.Trim();
+                if (text.Length == 0) { section.AxisOriginUm = null; break; }
+                var parts = text.Split([',', ' '], StringSplitOptions.RemoveEmptyEntries);
+                var values = new List<double>();
+                foreach (string part in parts)
+                    if (TryDouble(part, out double v) && double.IsFinite(v)) values.Add(v);
+                if (parts.Length != 3 || values.Count != 3) { error = "Enter the axis origin as three lengths in µm, x, y, z — e.g. 0, 0, 0."; break; }
+                section.AxisOriginUm = values;
+                break;
+            }
             case "OpenEms.ThirdsRule":
                 section.ThirdsRule = OpenEmsThirdsRule == CircuitRF.Engine.Em3d.OpenEmsGridSettings.Default.ThirdsRule
                     ? null : OpenEmsThirdsRule;

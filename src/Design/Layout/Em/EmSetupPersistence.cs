@@ -394,6 +394,12 @@ public sealed record PalaceSettings(
     }
 }
 
+/// <summary>brief-em3d-120 — an openEMS grid's coordinates.</summary>
+public enum OpenEmsGridKind { Cartesian, Cylindrical }
+
+/// <summary>brief-em3d-120 — the world axis a cylindrical openEMS grid is round about.</summary>
+public enum OpenEmsGridAxis { X, Y, Z }
+
 /// <summary>openEMS's own settings (em-3d.md §4.2). Every field may be omitted, and an omitted field
 /// takes circuitRF's default for it; an omitted section takes every default. These place the grid
 /// lines openEMS solves on — circuitRF writes the grid itself, and `explain` reports it before a run.</summary>
@@ -444,11 +450,30 @@ public sealed class CemOpenEms
     /// </summary>
     public bool? SaveH { get; set; }
 
+    /// <summary>
+    /// brief-em3d-120 R-em3d120-2 C1 — the grid's coordinates: <c>Cartesian</c> (omitted: what every existing file means) or
+    /// <c>Cylindrical</c>, round about <see cref="Axis"/> through <see cref="AxisOriginUm"/>. Never inferred. A 3D view's own
+    /// setup only (C5): a <c>.cem</c> stating it is refused.
+    /// </summary>
+    public OpenEmsGridKind? Grid { get; set; }
+
+    /// <summary>brief-em3d-120 — the world axis a cylindrical grid is round about. Default Z. Read only with <c>Grid: Cylindrical</c>.</summary>
+    public OpenEmsGridAxis? Axis { get; set; }
+
+    /// <summary>brief-em3d-120 — a point the axis passes through, [x, y, z] in µm. Default the origin. Read only with
+    /// <c>Grid: Cylindrical</c>.</summary>
+    public List<double>? AxisOriginUm { get; set; }
+
+    /// <summary>brief-em3d-120 — the azimuth lines of a cylindrical grid, 0 and 2π both counted. Default: the arc at the
+    /// outermost conductor radius no longer than the radial cell there (R-em3d120-1c).</summary>
+    public int? AzimuthLines { get; set; }
+
     /// <summary>A copy, so an editor can change one without touching a setup that shares it.</summary>
     public CemOpenEms Clone()
     {
         var c = (CemOpenEms)MemberwiseClone();
         c.SaveFieldsGHz = SaveFieldsGHz is { } f ? [.. f] : null;
+        c.AxisOriginUm = AxisOriginUm is { } o ? [.. o] : null;
         return c;
     }
 
@@ -457,7 +482,8 @@ public sealed class CemOpenEms
     [JsonIgnore]
     public bool IsEmpty =>
         CellsPerWavelength is null && GradingRatio is null && ThirdsRule is null && MinCellUm is null && PmlCells is null &&
-        EndCriterionDb is null && MaxTimeSteps is null && SaveFieldsGHz is null && SaveH is null;
+        EndCriterionDb is null && MaxTimeSteps is null && SaveFieldsGHz is null && SaveH is null &&
+        Grid is null && Axis is null && AxisOriginUm is null && AzimuthLines is null;
 
     /// <summary>
     /// brief-em3d-8 R-em3d8-6 — the section's grid fields RESOLVED, each omitted one taking
@@ -472,8 +498,25 @@ public sealed class CemOpenEms
             section.GradingRatio       ?? d.GradingRatio,
             section.ThirdsRule         ?? d.ThirdsRule,
             section.MinCellUm is { } um ? um * 1e-6 : d.MinCellM,
-            section.PmlCells           ?? d.PmlCells);
+            section.PmlCells           ?? d.PmlCells)
+        {
+            // brief-em3d-120 — a malformed origin resolves to NaN, which OpenEmsGridSettings.Problems names.
+            Cylindrical = section.Grid != OpenEmsGridKind.Cylindrical ? null : new CircuitRF.Engine.Em3d.OpenEmsCylindrical(
+                (CircuitRF.Engine.Em3d.FdtdAxis)(int)(section.Axis ?? OpenEmsGridAxis.Z),
+                section.AxisOriginUm is null ? default
+                    : section.AxisOriginUm is [var x, var y, var z] ? new CircuitRF.Engine.Em3d.Point3(x * 1e-6, y * 1e-6, z * 1e-6)
+                    : new CircuitRF.Engine.Em3d.Point3(double.NaN, double.NaN, double.NaN),
+                section.AzimuthLines),
+        };
     }
+
+    /// <summary>brief-em3d-120 C5 — the refusal of a cylindrical grid in a <c>.cem</c>'s own setup, or null.</summary>
+    public static string? CemCylindricalRefusal(CemOpenEms? section)
+        => section?.Grid == OpenEmsGridKind.Cylindrical
+            ? "This .cem's openEMS section sets Grid to Cylindrical, and a cylindrical grid is written for a 3D view's own setup only: " +
+              "a .cem is a layout problem, and stays on a Cartesian grid. Set OpenEms.Grid to Cartesian, or move the setup into the " +
+              ".c3d it solves."
+            : null;
 
     /// <summary>brief-em3d-9 R-em3d9-6 — the section's run fields RESOLVED, each omitted one taking
     /// <see cref="OpenEmsRunSettings.Default"/>'s.</summary>

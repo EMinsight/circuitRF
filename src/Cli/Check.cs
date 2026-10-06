@@ -608,6 +608,13 @@ internal static class Check
                                                    (Path.GetFullPath(path), ResultsRoot.For(Path.GetFullPath(path), DocumentKinds.AncestorCws(Path.GetFullPath(path))))))
                     f.Add(CliDiagnostics.CheckThreeDFinding(path, d));
 
+        // brief-em3d-120 R-em3d120-2 C1 — an openEMS setup with coaxial wave ports: on a Cartesian grid, the suggestion of a
+        // cylindrical one (a note, never inferred into the run); on a cylindrical grid, what the grid would refuse.
+        if (doc.Ports.Any(p => p.Model && p.Kind == CircuitRF.Engine.Em3d.Em3dPortKind.Wave))
+            foreach (var embedded in C3dSetups.Read(doc))
+                if (embedded is { Refusal: null, Setup: { Is3D: true, IsStatic3D: false, Solver3D: Em3dSolver.OpenEms or Em3dSolver.Both } s3 })
+                    CylindricalAdvice(path, f, embedded.Name, C3dSetups.ForRun(s3, Path.GetFullPath(path)), doc);
+
         // brief-em3d-65 R-em3d65-4d — what each embedded setup's solver will not respect of a kernel solid, at the row's own
         // severity. Only a document holding a kernel object assembles anything here.
         if (C3dKernelUse.Of(doc).Count > 0)
@@ -618,6 +625,31 @@ internal static class Check
                     var assembled = C3dProblemAssembly.Assemble(run, doc, Path.GetFullPath(path), DocumentKinds.AncestorCws(Path.GetFullPath(path)));
                     AddFidelity(path, f, embedded.Name, run, assembled.Problem);
                 }
+    }
+
+    /// <summary>brief-em3d-120 — the cylindrical-grid note or refusals for one embedded openEMS setup, from the run's own planner.</summary>
+    private static void CylindricalAdvice(string path, Findings f, string setupName, EmSetup setup, C3dDocument doc)
+    {
+        var settings = CemOpenEms.ResolveGrid(setup.OpenEms);
+        if (settings.Problems().Count > 0) return;
+        var assembled = C3dProblemAssembly.Assemble(setup, doc, Path.GetFullPath(path), DocumentKinds.AncestorCws(Path.GetFullPath(path)));
+        if (assembled.Problem is not { } problem || problem.Validate().Count > 0) return;
+        if (settings.Cylindrical is not null)
+        {
+            var grid = CircuitRF.Engine.Em3d.FdtdGrid.Build(problem, settings, long.MaxValue);
+            if ((grid.Refusal ?? CircuitRF.Engine.Em3d.FdtdWavePorts.Place(problem, grid.WavePorts, grid).Refusal) is { } refused)
+                f.Add(CliDiagnostics.CheckThreeDSetup(path, $"setup '{setupName}': {refused}"));
+            return;
+        }
+        var plan = CircuitRF.Engine.Em3d.FdtdWavePorts.Plan(problem, settings);
+        if (CircuitRF.Engine.Em3d.FdtdWavePorts.CommonCoaxialAxis(problem, plan, out _) is not var (axis, origin)) return;
+        static string G(double v) => v.ToString("G6", System.Globalization.CultureInfo.InvariantCulture);
+        f.Add(CliDiagnostics.CheckThreeDNote(path,
+            $"setup '{setupName}': every wave port is coaxial about the {CircuitRF.Engine.Em3d.FdtdGrid.AxisName(axis)} axis through " +
+            $"[{G(origin.X * 1e6)}, {G(origin.Y * 1e6)}, {G(origin.Z * 1e6)}] µm. A cylindrical openEMS grid puts its round conductors on the " +
+            $"grid's own circles (OpenEms.Grid: Cylindrical, Axis: {CircuitRF.Engine.Em3d.FdtdGrid.AxisName(axis).ToUpperInvariant()}, " +
+            $"AxisOriginUm: [{G(origin.X * 1e6)}, {G(origin.Y * 1e6)}, {G(origin.Z * 1e6)}]); on the Cartesian grid brief 113-a measured " +
+            "such a coax 1 to 2.4 % slow in phase velocity."));
     }
 
     /// <summary>brief-em3d-65 — one finding per fidelity row of <paramref name="problem"/> under <paramref name="setup"/>.</summary>
@@ -749,6 +781,9 @@ internal static class Check
 
         // brief-em3d-73 D1 — a thermal setup lives in its .c3d; the run refuses a .cem holding one, and so does check.
         if (setup.IsThermal) { f.Add(CliDiagnostics.CheckEmRefused(path, C3dThermal.CemRefusal)); return; }
+        // brief-em3d-120 C5 — a cylindrical grid is a 3D view's own setup's; the run refuses a .cem stating one, and so does check.
+        if (setup.Is3D && setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both && CemOpenEms.CemCylindricalRefusal(setup.OpenEms) is { } cylinder)
+        { f.Add(CliDiagnostics.CheckEmRefused(path, cylinder)); return; }
 
         string full = Path.GetFullPath(path);
         // The same walk-up `circuitrf em` performs, and for the same reason (cli.md §8.1). No flag

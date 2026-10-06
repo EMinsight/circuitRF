@@ -61,6 +61,8 @@ public static class Em3dFidelity
     {
         ArgumentNullException.ThrowIfNull(problem);
         var rows = new List<Em3dFidelityFinding>();
+        // brief-em3d-120 — the rows read cells per world axis; a cylindrical grid has none (its Y holds radians), so none is given.
+        if (solver == Em3dFidelitySolver.OpenEms && grid?.Cylinder is not null) return rows;
         foreach (var s in problem.Solids)
         {
             if (s.Primitive is not Em3dShapeSolid k) continue;
