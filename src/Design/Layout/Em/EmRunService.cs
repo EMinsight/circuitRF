@@ -554,7 +554,8 @@ public static class EmRunService
         // meshed, as every capability refusal is (a static solve reads no wave port, so it is not asked).
         if (!setup.IsStatic3D && CircuitRF.Design.Em3d.Em3dRunService.TerminalPortRefusal(setup.Solver3D,
                 [.. document.Ports.Where(p => p.Model && p.Kind == CircuitRF.Engine.Em3d.Em3dPortKind.Wave && p.Terminals is { Count: >= 2 })
-                                  .Select(p => (CircuitRF.Design.ThreeD.C3dPorts.Label(p), p.Terminals!.Count))]) is { } terminalPorts)
+                                  .Select(p => (CircuitRF.Design.ThreeD.C3dPorts.Label(p), p.Terminals!.Count))],
+                lumpedPorts: document.Ports.Any(p => p.Model && p.Kind == CircuitRF.Engine.Em3d.Em3dPortKind.Lumped)) is { } terminalPorts)
         {
             var d = EmDiagnostics.Forwarded(CircuitRF.Design.Em3d.Em3dRunService.TerminalPortsSource, terminalPorts);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null, d.Render(), [], Diagnostic: d);

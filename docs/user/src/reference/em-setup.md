@@ -793,7 +793,8 @@ its own Z0, and its own row in the port map. These are **terminal** S-parameters
 on each conductor. A coupled pair with a two-terminal wave port at each end is a four-port: with terminals
 1 and 2 at one end and 3 and 4 at the other, 1 and 3 on one strip, S31 is its thru, S21 its near-end and S41
 its far-end coupling, just as for any four lumped ports. The **3D Wave Ports** example's *Pair* is exactly this,
-run on openEMS against Cohn's ideal line ([its walk-through](../new-user-guide/index.html#wave-ports-3d)).
+run on openEMS against Cohn's ideal line, and its *Coupled Microstrip* runs two unequal microstrip lines on both
+solvers ([its walk-through](../new-user-guide/index.html#wave-ports-3d)).
 
 The **reference** is the conductor every terminal's voltage is measured from. Left unstated it is the
 conductor meeting the region that is in the ground set (the setup's Ground net, or a PEC face of the air
@@ -828,12 +829,49 @@ In a `.c3d` the port carries `Reference` (optional) and `Terminals`; it states n
 - `Model` turns the whole port off, every terminal with it.
 - A `.cem` cannot state one: a layout's edge port is one conductor. Terminal ports are drawn in a 3D view.
 
-**Terminal ports run on openEMS.** Each terminal is fed and measured on its own, one run per terminal,
-and S comes from all the runs together: a coupled pair whose lines end in the feed's absorber is
-terminated in the pair's own impedances, not in each terminal's Z0, so no single run gives a column of S
-by itself. **Palace does not run a port with several terminals**: its port modes come from the face, and
-a face split between lines represents only their odd mode. A setup naming Palace is refused, pointing to
-openEMS; one naming both solvers runs on openEMS and says Palace was skipped.
+**On openEMS**, each terminal is fed and measured on its own, one run per terminal, and S comes from all
+the runs together: a coupled pair whose lines end in the feed's absorber is terminated in the pair's own
+impedances, not in each terminal's Z0, so no single run gives a column of S by itself. Any number of
+terminals runs.
+
+<a id="wave-port-terminals-palace"></a>**On Palace**, a port with **two terminals** runs when its lines' modes travel
+at **different speeds**: a microstrip pair, or any pair over a dielectric that does not fill the cross-section, the two
+lines alike or not. Palace takes a wave port's modes from its face, so circuitRF gives each end **one port face carrying
+both terminals**: the face's two modes are solved together, each is launched in turn, and circuitRF converts Palace's S
+between modes into **terminal S**, one port per terminal at its own Z0, in the same `.sNp` an openEMS run writes. It
+corrects for the port absorbing the second mode at the first one's speed, which is what Palace's port does.
+
+**Lines whose modes travel at one speed are refused on Palace**, naming openEMS: a stripline, or any pair in a
+homogeneous fill. Palace returns two such modes in an arbitrary mixture, draws it again every time it solves the face
+(for each excitation and frequency of a sweep), and on some meshes returns nearly the same field twice, so no conversion
+can recover two terminals from them. The run finds this out before the 3D solve, from Palace's own solve of the face's
+modes (seconds), and says the two wavenumbers it found.
+
+It costs one solve per terminal at every frequency Palace solves: a pair at each end is four solves, and the whole
+cross-section is meshed. The sweep is Palace's ordinary adaptive one. It writes no wavenumber for the modes, so the run
+solves each terminal face's modes on their own at five of the sweep's frequencies and interpolates between them. The
+face's ground must be one conductor on the face: a face whose ground planes are separate conductors there carries a
+mode per extra conductor, which two terminals cannot account for, and the run's check for a mode past the terminals'
+own says so.
+
+Also refused on Palace, each naming openEMS: **three or more terminals** on one face, a **reference plane moved off the
+face** (the terminal voltages Palace writes are measured at the face), and a **lumped port** in the same problem. A
+setup naming both solvers then runs on openEMS, and the run says Palace was skipped or refused.
+
+What a Palace run says about the conversion:
+
+- A **note** naming the route, per port: *Port 'Left': terminals P1, P2 as modes 1 and 2 of one Palace
+  wave port, converted to terminal S (modes not degenerate, Robin correction K = 1.079 to 1.086)*, and one
+  giving each terminal's power |S_jj|² + Σ|S_ij|² and the singular values of S.
+- **The problem has no loss mechanism, yet its terminal S is not lossless** (more than 0.2 %): every
+  conductor perfect, every dielectric lossless and no absorbing face, so the power that went missing is
+  the conversion's. Refine the mesh at the port face.
+- **A terminal's own voltage does not give Palace's mode impedance**: the installed Palace states its
+  modes' power differently from the version circuitRF was checked against. Use a validated version.
+- **A terminal reads another port face's modes**: two port faces are coupled through their modes. Move
+  them apart.
+- **The face supports a mode past its terminals' own** at the top of the sweep: that mode's power is not
+  in the result. Make the port region smaller, or lower the sweep's top.
 
 ### Eigenmodes {#eigenmodes}
 

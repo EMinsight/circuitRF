@@ -1220,6 +1220,12 @@ namespace RfCore.Export
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public IReadOnlyList<string>? OpenEmsWavePorts { get; init; }
 
+        /// <summary>brief-em3d-115 R-em3d115-6 — per multi-terminal wave port on Palace, the route a run takes (each terminal's
+        /// Mode, the Active entry, the face's one MaxSize) or the sentence a run refuses it with; null when the setup runs no
+        /// terminal port on Palace, so every earlier report is unchanged.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<string>? PalaceTerminalPorts { get; init; }
+
         /// <summary>brief-em3d-23 R-em3d23-4a — an eigenmode problem's mode count and target; null otherwise.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public Em3dEigenmodeJson? Eigenmode { get; init; }

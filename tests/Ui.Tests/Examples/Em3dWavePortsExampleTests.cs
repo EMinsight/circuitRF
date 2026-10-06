@@ -51,21 +51,78 @@ public sealed class Em3dWavePortsExampleTests(ITestOutputHelper output) : IDispo
             Assert.Matches($@"{n} port/{n}\s+strip_{(n % 2 == 1 ? 'a' : 'b')} → airbox/zmin", stdout);
     }
 
-    /// <summary>A Palace setup added to Pair by hand is refused before Gmsh, with brief 114/116's sentence (overview D14).</summary>
+    /// <summary>brief-em3d-115 — a Palace setup added to a copy of Pair runs (Palace no longer refuses two terminals), and
+    /// <c>explain</c> names each face's terminals as the modes of one Palace wave port, the Active entry and the shared MaxSize.
+    /// The example ships none: its README says what was measured.</summary>
     [Fact]
-    public void Gate1_APalaceSetupOnPair_IsRefusedNamingOpenEms()
+    public void Gate1_APalaceSetupOnPair_ExplainsItsRoute()
     {
-        long gmsh = PalaceRun.GmshInvocations;
-        var (doc, path, cws) = Pair();
-        var (embedded, why) = C3dSetups.Select(doc, "openEMS");
+        string pair = PairWithAPalaceSetup();
+        string stdout = Cli("explain", pair, "--setup", "Palace");
+        Assert.Contains("port 'xmin': terminals P1, P2 as modes 1 and 2 of one Palace wave port on the xmin face: P1 Mode 1, Active; " +
+                        "P2 Mode 2, not Active; MaxSize 17 on every entry", stdout);
+        Assert.Contains("port 'xmax': terminals P3, P4 as modes 1 and 2 of one Palace wave port on the xmax face", stdout);
+    }
+
+    /// <summary>brief-em3d-115 R-em3d115-8b — Coupled Microstrip's Palace setup: both faces' terminals as the modes of one Palace
+    /// wave port each, before anything runs.</summary>
+    [Fact]
+    public void Gate1_CoupledMicrostripsPalaceSetup_ExplainsItsRoute()
+    {
+        string stdout = Cli("explain", CoupledMicrostripPath(), "--setup", "Palace");
+        Assert.Contains("port 'xmin': terminals P1, P2 as modes 1 and 2 of one Palace wave port on the xmin face", stdout);
+        Assert.Contains("port 'xmax': terminals P3, P4 as modes 1 and 2 of one Palace wave port on the xmax face", stdout);
+    }
+
+    /// <summary>brief-em3d-115 R-em3d115-8b — the two strips differ, and the recorded runs show it: on both solvers, line a's
+    /// reflection |S11| and line b's |S22| differ by more than 1 dB somewhere in the band.</summary>
+    [Fact]
+    public void Gate3_CoupledMicrostripsTwoLinesReflectDifferently()
+    {
+        foreach (var run in Numbers().Runs.Where(r => r.Cell == "Coupled Microstrip"))
+            Assert.Contains(run.Recorded, p => Math.Abs(p["S11_dB"] - p["S22_dB"]) > 1);
+        Assert.Equal(2, Numbers().Runs.Count(r => r.Cell == "Coupled Microstrip"));
+    }
+
+    /// <summary>brief-em3d-115 — Pair's two strips are in one homogeneous fill, so their modes travel at one speed, and a Palace
+    /// run refuses the face after meshing and its 2D mode solve, before any 3D solve (one Palace process), naming openEMS.</summary>
+    [CircuitRF.Ui.Tests.Em3d.PalaceFact]
+    [Trait("Category", "Benchmark")]
+    public void Gate1_APalaceRunOfPair_IsRefusedBeforeItsSolve()
+    {
+        string pair = PairWithAPalaceSetup();
+        var doc = C3dPersistence.LoadFromFile(pair);
+        var (embedded, why) = C3dSetups.Select(doc, "Palace");
         Assert.True(embedded is not null, why);
-        var setup = C3dSetups.ForRun(embedded!, path);
-        setup.Solver3D = Em3dSolver.Palace;
-        var run = EmRunService.RunThreeDView(setup, doc, path, cws, Path.Combine(_tmp, "results"));
+        long palace = PalaceRun.PalaceInvocations;
+        var run = EmRunService.RunThreeDView(C3dSetups.ForRun(embedded!, pair), doc, pair, Path.Combine(_tmp, "ws", ".cws"),
+                                             Path.Combine(_tmp, "results"), confirmMemory: _ => true);
         Assert.Equal(EmRunStatus.Refused, run.Status);
-        Assert.Contains("Port 'xmin' has two terminals; terminal wave ports run on openEMS only in this version. " +
-                        "Set the setup's solver to openEMS.", run.Error);
-        Assert.Equal(gmsh, PalaceRun.GmshInvocations);
+        Assert.Contains("modes travel at one speed", run.Error);
+        Assert.Contains("Set the setup's solver to openEMS.", run.Error);
+        Assert.Equal(palace + 1, PalaceRun.PalaceInvocations);
+    }
+
+    /// <summary>A copy of the workspace whose Pair has a Palace setup beside its openEMS one (the same sweep and air box).</summary>
+    private string PairWithAPalaceSetup()
+    {
+        string copy = Path.Combine(_tmp, "ws");
+        foreach (string f in Directory.EnumerateFiles(Root(), "*", SearchOption.AllDirectories))
+        {
+            string to = Path.Combine(copy, Path.GetRelativePath(Root(), f));
+            Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+            File.Copy(f, to, overwrite: true);
+        }
+        string pair = Path.Combine(copy, "Pair", "3d", "Pair.c3d");
+        var root = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(pair))!;
+        var setups = root["Setups"]!.AsArray();
+        var palace = setups.Single(x => (string?)x!["Name"] == "openEMS")!.DeepClone();
+        palace["Name"] = "Palace";
+        palace["Solver3D"] = "Palace";
+        palace.AsObject().Remove("OpenEms");
+        setups.Add(palace);
+        File.WriteAllText(pair, root.ToJsonString());
+        return pair;
     }
 
     /// <summary>Board, Flange, flange.step and the technology are the 3D Connector's, unchanged (R-em3d117-1).</summary>
@@ -178,7 +235,7 @@ public sealed class Em3dWavePortsExampleTests(ITestOutputHelper output) : IDispo
         var moved = new List<string>();
         foreach (var run in Numbers().Runs)
         {
-            var (doc, path, cws) = run.Cell == "Pair" ? Pair() : Launch();
+            var (doc, path, cws) = run.Cell switch { "Pair" => Pair(), "Coupled Microstrip" => CoupledMicrostrip(), _ => Launch() };
             var (embedded, why) = C3dSetups.Select(doc, run.Setup);
             Assert.True(embedded is not null, why);
             var wall = Stopwatch.StartNew();
@@ -282,6 +339,11 @@ public sealed class Em3dWavePortsExampleTests(ITestOutputHelper output) : IDispo
 
     private static (C3dDocument Doc, string Path, string Cws) Pair()
         => (C3dPersistence.LoadFromFile(PairPath()), PairPath(), Path.Combine(Root(), ".cws"));
+
+    private static string CoupledMicrostripPath() => Path.Combine(Root(), "Coupled Microstrip", "3d", "Coupled Microstrip.c3d");
+
+    private static (C3dDocument Doc, string Path, string Cws) CoupledMicrostrip()
+        => (C3dPersistence.LoadFromFile(CoupledMicrostripPath()), CoupledMicrostripPath(), Path.Combine(Root(), ".cws"));
 
     /// <summary><c>check --json</c> as a process: the verb a user runs.</summary>
     private static (List<string> Errors, List<string> Warnings) Check(string path)

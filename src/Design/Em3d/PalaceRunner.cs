@@ -20,6 +20,10 @@ internal interface IPalaceRunner : IDisposable
     /// <inheritdoc cref="PalaceRun.SecondModes(string, string, string, double, IReadOnlyList{int}, CancellationToken, out string?)"/>
     IReadOnlyList<PalaceWaveMode>? SecondModes(string runDir, string configJson, string palace, double topHz,
                                                IReadOnlyList<int> wavePorts, CancellationToken ct, out string? note);
+
+    /// <inheritdoc cref="PalaceRun.FaceModes(string, string, string, int, int, double, CancellationToken, out string?)"/>
+    IReadOnlyList<System.Numerics.Complex>? FaceModes(string runDir, string configJson, string palace, int attribute, int count,
+                                                      double fHz, CancellationToken ct, out string? note);
 }
 
 /// <summary>Palace on this machine — series 1's route, unchanged.</summary>
@@ -36,6 +40,10 @@ internal sealed class NativePalaceRunner : IPalaceRunner
     public IReadOnlyList<PalaceWaveMode>? SecondModes(string runDir, string configJson, string palace, double topHz,
                                                       IReadOnlyList<int> wavePorts, CancellationToken ct, out string? note)
         => PalaceRun.SecondModes(runDir, configJson, palace, topHz, wavePorts, ct, out note);
+
+    public IReadOnlyList<System.Numerics.Complex>? FaceModes(string runDir, string configJson, string palace, int attribute, int count,
+                                                             double fHz, CancellationToken ct, out string? note)
+        => PalaceRun.FaceModes(runDir, configJson, palace, attribute, count, fHz, ct, out note);
 
     public void Dispose() { }
 }

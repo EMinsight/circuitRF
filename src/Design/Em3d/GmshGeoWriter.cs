@@ -192,7 +192,12 @@ public static partial class GmshGeoWriter
         // passes through, so a sheet crossing an interface between two slabs (prepreg on core, a trace
         // over an inner-layer plane) comes back as one piece per slab. The query is the sheet's own
         // zero-thickness box, so only coplanar pieces inside the rectangle can match — the sheet itself.
-        var portGroups = problem.Ports.Select(p =>
+        // brief-em3d-115 R-em3d115-2a — a multi-terminal wave port's terminals share one rectangle (brief 114 validates it), so
+        // the face is ONE surface and one attribute, claimed once, under its lowest-numbered terminal: every other terminal of
+        // the group has no surface of its own (the configuration puts its entry on the same attribute). A problem with no
+        // group keeps every port, and its script its bytes.
+        var portIndex = Enumerable.Range(0, problem.Ports.Count).Where(k => !SharesAnotherTerminalsFace(problem, problem.Ports[k])).ToList();
+        var portGroups = portIndex.Select(k => problem.Ports[k]).Select(p =>
             new Em3dGroup(p.Name, ++attr, 2, Em3dGroupKind.Port, 1, AtLeast: true, PortNumber: p.Number)).ToList();
         groups.AddRange(portGroups);
 
@@ -286,10 +291,13 @@ public static partial class GmshGeoWriter
             L($"// sheet {Comment(sh.Name)}: {Comment(sh.Material)}, {Num(sh.ThicknessM * 1e6)} um thick");
             EmitPlanar(g, $"h{k}", [sh.Outline, .. sh.Holes], sh.World);
         }
-        for (int k = 0; k < problem.Ports.Count; k++)
+        foreach (int k in portIndex)
         {
             var p = problem.Ports[k];
             L($"// {Comment(p.Name)}: from {Comment(p.NegativeObject)} to {Comment(p.PositiveObject)}");
+            if (p.FaceGroup is { } fg)
+                L($"// ... the face of port {Comment(p.FaceGroupLabel ?? "")}'s terminals " +
+                  string.Join(", ", problem.Ports.Where(q => q.FaceGroup == fg).OrderBy(q => q.Number).Select(q => q.Number.ToString(CultureInfo.InvariantCulture))));
             if (p.Annulus is { } ring) EmitAnnulus(g, $"p{k}", p, ring);
             else EmitRectangle(g, $"p{k}", p.Min, p.Max);
         }
@@ -297,7 +305,7 @@ public static partial class GmshGeoWriter
 
         var meshed = Enumerable.Range(0, problem.Solids.Count).Where(i => problem.Solids[i].Role != Em3dRole.Conductor).ToList();
         var surfaces = Enumerable.Range(0, problem.Sheets.Count).Select(k => $"h{k}[]")
-                                 .Concat(Enumerable.Range(0, problem.Ports.Count).Select(k => $"p{k}[]")).ToList();
+                                 .Concat(portIndex.Select(k => $"p{k}[]")).ToList();
         L("// ---- one fragment: imprints the shared faces and the sheets, splits no volume -------------");
         L($"frag[] = BooleanFragments{{ Volume{{{string.Join(", ", meshed.Select(i => $"s{i}[]").Append("bg[]"))}}}; Delete; }}" +
           (surfaces.Count == 0 ? "{ };" : $"{{ Surface{{{string.Join(", ", surfaces)}}}; Delete; }};"));
@@ -322,7 +330,7 @@ public static partial class GmshGeoWriter
         };
         void ClaimPorts(bool wave)
         {
-            for (int k = 0; k < problem.Ports.Count; k++)
+            foreach (int k in portIndex)
             {
                 var p = problem.Ports[k];
                 if (!problem.IsStatic && (p.Kind == Em3dPortKind.Wave) != wave) continue;
@@ -419,7 +427,7 @@ public static partial class GmshGeoWriter
         for (int k = 0; k < sheetGroups.Count; k++)
             L($"Physical Surface(\"{PhysicalName(sheetGroups[k].Name)}\", {sheetGroups[k].Attribute}) = {{w{k}[]}};");
         for (int k = 0; k < portGroups.Count; k++)
-            L($"Physical Surface(\"{PhysicalName(portGroups[k].Name)}\", {portGroups[k].Attribute}) = {{q{k}[]}};");
+            L($"Physical Surface(\"{PhysicalName(portGroups[k].Name)}\", {portGroups[k].Attribute}) = {{q{portIndex[k]}[]}};");
         for (int k = 0; k < 6; k++)
             L($"Physical Surface(\"{PhysicalName(faceGroups[k].Name)}\", {faceGroups[k].Attribute}) = {{f{k}[]}};");
         for (int k = 0; k < boundaryGroups.Count; k++)
@@ -446,7 +454,7 @@ public static partial class GmshGeoWriter
         for (int k = 0; k < sheetGroups.Count; k++)
             L($"Printf(\"group {sheetGroups[k].Attribute} %g 0\", #w{k}[]) >> \"{EntitiesFile}\";");
         for (int k = 0; k < portGroups.Count; k++)
-            L($"Printf(\"group {portGroups[k].Attribute} %g 0\", #q{k}[]) >> \"{EntitiesFile}\";");
+            L($"Printf(\"group {portGroups[k].Attribute} %g 0\", #q{portIndex[k]}[]) >> \"{EntitiesFile}\";");
         for (int k = 0; k < 6; k++)
             L($"Printf(\"group {faceGroups[k].Attribute} %g 0\", #f{k}[]) >> \"{EntitiesFile}\";");
         for (int k = 0; k < boundaryGroups.Count; k++)
@@ -516,7 +524,7 @@ public static partial class GmshGeoWriter
         }
         Refine([.. conductors.Select(i => $"c{i}[]"), .. Enumerable.Range(0, problem.Sheets.Count).Select(k => $"w{k}[]"),
                 .. Enumerable.Range(0, boundaryGroups.Count).Select(k => $"b{k}[]")], sizeEdge);
-        Refine([.. Enumerable.Range(0, problem.Ports.Count).Select(k => $"q{k}[]")], sizePort);
+        Refine([.. portIndex.Select(k => $"q{k}[]")], sizePort);
         // brief-em3d-74 R-em3d74-4b — each mesh region a Box field in the same Min; none present, not a byte changes.
         foreach (var region in problem.MeshRegions)
             L(BoxField(++field, region, sizeMax, settings.Grading, fields));
@@ -1017,6 +1025,11 @@ public static partial class GmshGeoWriter
         }
         return (x0, y0, z0, x1, y1, z1);
     }
+
+    /// <summary>brief-em3d-115 — whether <paramref name="p"/> is a terminal whose face belongs to a lower-numbered terminal of
+    /// its group (the group's face is that terminal's surface).</summary>
+    internal static bool SharesAnotherTerminalsFace(Em3dProblem problem, Em3dPort p)
+        => p.FaceGroup is { } g && problem.Ports.Any(q => q.FaceGroup == g && q.Number < p.Number);
 
     /// <summary>An axis-aligned rectangle with one zero axis — a port sheet.</summary>
     private static void EmitRectangle(StringBuilder g, string list, Point3 min, Point3 max)

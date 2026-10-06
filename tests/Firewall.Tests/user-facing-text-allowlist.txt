@@ -1048,3 +1048,4 @@ src/Core/Devices/WBondModel.cs|wBond '{c.InstancePath}' is connected to {c.Nodes
 src/WBond/Materials.cs|Wire material '{Name}' states no thermal conductivity.
 src/WBond/Thermal/WireConductiveBalance.cs|An array has at least one wire.
 src/WBond/Thermal/WireConductiveBalance.cs|{drive.PeakA.Count} wires' harmonic currents for {wires.Count} wires.
+src/Engine/Em3d/ModalTerminalTransform.cs|The sample's matrices, the faces and the references do not describe the same ports.

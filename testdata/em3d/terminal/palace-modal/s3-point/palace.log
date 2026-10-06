@@ -1,0 +1,1532 @@
+>> mpirun -n 8 palace-arm64.bin config.json
+
+_____________     _______
+_____   __   \____ __   /____ ____________
+____   /_/  /  __ ` /  /  __ ` /  ___/  _ \
+___   _____/  /_/  /  /  /_/  /  /__/  ___/
+  /__/     \___,__/__/\___,__/\_____\_____/
+
+Git changeset ID: 0dc74cd
+Running with 8 MPI processes
+Device configuration: cpu
+Memory configuration: host-std
+libCEED backend: /cpu/self/xsmm/blocked
+
+Added 19796 boundary elements for material interfaces to the mesh
+
+Characteristic length and time scales:
+ Lc = 1.500e-02 m, tc = 5.003e-02 ns
+Finished partitioning mesh into 8 subdomains
+
+Mesh curvature order: 1
+Mesh bounding box:
+ (Xmin, Ymin, Zmin) = (+0.000e+00, -4.250e-03, +0.000e+00) m
+ (Xmax, Ymax, Zmax) = (+1.500e-02, +4.250e-03, +3.508e-03) m
+
+Parallel Mesh Stats:
+
+                minimum     average     maximum       total
+ vertices          6197        6434        6887       51479
+ edges            37500       38128       38824      305029
+ faces            59455       60113       60746      480906
+ elements         27650       28419       29004      227357
+ neighbors            3           4           5
+
+            minimum     maximum
+ h       0.00104532   0.0360152
+ kappa      1.00739     11.5988
+
+Estimated current per-rank memory usage is: Min. 24.5M, Max. 94.0M, Avg. 33.9M, Total 270.8M
+Estimated current per-node memory usage is: Min. 270.8M, Max. 270.8M, Avg. 270.8M, Total 270.8M
+
+Configuring Robin impedance BC for wave ports at attributes:
+ 4: Index = 1, mode = 1, d = 0.000e+00 m,  n = (-1.0,+0.0,+0.0)
+ 5: Index = 3, mode = 1, d = 0.000e+00 m,  n = (+1.0,+0.0,+0.0)
+
+Configuring wave port excitation source term at attributes:
+ 4: Index = 1
+ 4: Index = 2
+ 5: Index = 3
+ 5: Index = 4
+
+Configuring Dirichlet PEC BC at attributes:
+ 8, 10-11
+
+Computing frequency response for:
+Excitation 1/4 with index 1 has contributions from:
+ Wave port  1
+Excitation 2/4 with index 2 has contributions from:
+ Wave port  2
+Excitation 3/4 with index 3 has contributions from:
+ Wave port  3
+Excitation 4/4 with index 4 has contributions from:
+ Wave port  4
+
+Assembling system matrices, number of global unknowns:
+ H1 (p = 2): 356508, ND (p = 2): 1571870, RT (p = 2): 2124789
+ Operator assembly level: Partial
+ Mesh geometries:
+  Tetrahedron: P = 20, Q = 14 (quadrature order = 4)
+
+Sweeping excitation index 1 (1/4):
+
+Calculating boundary modes at wave ports for ω/2π = 2.000e+00 GHz (6.288e-01)
+ Number of global unknowns for port 1:
+  H1: 2829, ND: 6844
+ Port 1, mode 1: kₙ = 7.079e+01+2.531e-38i m⁻¹, Z_PV = 2.586e+01 Ω
+ Number of global unknowns for port 2:
+  H1: 2829, ND: 6844
+ Port 2, mode 2: kₙ = 6.559e+01-5.646e-35i m⁻¹, Z_PV = 1.602e+01 Ω
+ Number of global unknowns for port 3:
+  H1: 2829, ND: 6844
+ Port 3, mode 1: kₙ = 7.079e+01-1.092e-18i m⁻¹, Z_PV = 2.586e+01 Ω
+ Number of global unknowns for port 4:
+  H1: 2829, ND: 6844
+ Port 4, mode 2: kₙ = 6.559e+01+2.430e-17i m⁻¹, Z_PV = 1.602e+01 Ω
+
+Assembling multigrid hierarchy:
+ Level 0 (p = 1): 305029 unknowns
+ Level 1 (p = 2): 1571870 unknowns
+ Level 0 (auxiliary) (p = 1): 51479 unknowns
+ Level 1 (auxiliary) (p = 2): 356508 unknowns
+
+It 1/9: ω/2π = 2.000e+00 GHz (total elapsed time = 6.49e+00 s, solve 1/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.024519e+02
+  1 (restart 0) KSP residual norm 8.437935e+00
+  2 (restart 0) KSP residual norm 1.626460e+00
+  3 (restart 0) KSP residual norm 1.147816e+00
+  4 (restart 0) KSP residual norm 6.603464e-01
+  5 (restart 0) KSP residual norm 2.067901e-01
+  6 (restart 0) KSP residual norm 8.650347e-02
+  7 (restart 0) KSP residual norm 2.629888e-02
+  8 (restart 0) KSP residual norm 1.266404e-02
+  9 (restart 0) KSP residual norm 4.648487e-03
+ 10 (restart 0) KSP residual norm 2.176921e-03
+ 11 (restart 0) KSP residual norm 8.729251e-04
+ 12 (restart 0) KSP residual norm 3.757706e-04
+ 13 (restart 0) KSP residual norm 1.795146e-04
+ 14 (restart 0) KSP residual norm 8.069648e-05
+ 15 (restart 0) KSP residual norm 3.449246e-05
+ 16 (restart 0) KSP residual norm 1.667994e-05
+ 17 (restart 0) KSP residual norm 9.394790e-06
+ 18 (restart 0) KSP residual norm 5.387021e-06
+ 19 (restart 0) KSP residual norm 3.000043e-06
+ 20 (restart 0) KSP residual norm 1.746004e-06
+ 21 (restart 0) KSP residual norm 1.007896e-06
+GMRES solver converged in 21 iterations (avg. reduction factor: 4.156e-01)
+ Sol. ||E|| = 3.820226e+01 (||RHS|| = 9.784665e-01)
+ Field energy E (4.238e-11 J) + H (4.235e-11 J) = 8.473e-11 J
+ S[1][1] = -7.662e-04-4.312e-04i, |S[1][1]| = -6.112e+01, arg(S[1][1]) = -1.506e+02
+ S[2][1] = +1.429e-05+1.580e-05i, |S[2][1]| = -9.343e+01, arg(S[2][1]) = +4.787e+01
+ S[3][1] = +4.868e-01-8.735e-01i, |S[3][1]| = -2.976e-06, arg(S[3][1]) = -6.087e+01
+ S[4][1] = +5.651e-06+4.041e-06i, |S[4][1]| = -1.032e+02, arg(S[4][1]) = +3.557e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 2.500e+00 GHz (7.859e-01)
+ Port 1, mode 1: kₙ = 8.855e+01+8.371e-39i m⁻¹, Z_PV = 2.595e+01 Ω
+ Port 2, mode 2: kₙ = 8.199e+01-2.696e-35i m⁻¹, Z_PV = 1.603e+01 Ω
+ Port 3, mode 1: kₙ = 8.855e+01+2.566e-18i m⁻¹, Z_PV = 2.595e+01 Ω
+ Port 4, mode 2: kₙ = 8.199e+01+3.199e-16i m⁻¹, Z_PV = 1.603e+01 Ω
+
+It 2/9: ω/2π = 2.500e+00 GHz (total elapsed time = 5.32e+01 s, solve 2/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 3.967665e+01
+  1 (restart 0) KSP residual norm 2.444931e+00
+  2 (restart 0) KSP residual norm 8.669322e-01
+  3 (restart 0) KSP residual norm 7.697634e-01
+  4 (restart 0) KSP residual norm 1.823182e-01
+  5 (restart 0) KSP residual norm 1.140513e-01
+  6 (restart 0) KSP residual norm 2.348631e-02
+  7 (restart 0) KSP residual norm 1.488640e-02
+  8 (restart 0) KSP residual norm 3.645420e-03
+  9 (restart 0) KSP residual norm 1.838368e-03
+ 10 (restart 0) KSP residual norm 8.208866e-04
+ 11 (restart 0) KSP residual norm 2.890968e-04
+ 12 (restart 0) KSP residual norm 1.416044e-04
+ 13 (restart 0) KSP residual norm 6.095965e-05
+ 14 (restart 0) KSP residual norm 2.825844e-05
+ 15 (restart 0) KSP residual norm 1.227470e-05
+ 16 (restart 0) KSP residual norm 5.784876e-06
+ 17 (restart 0) KSP residual norm 3.075042e-06
+ 18 (restart 0) KSP residual norm 1.833013e-06
+GMRES solver converged in 18 iterations (avg. reduction factor: 3.557e-01)
+ Sol. ||E|| = 3.821167e+01 (||RHS|| = 1.223411e+00)
+ Field energy E (4.245e-11 J) + H (4.243e-11 J) = 8.488e-11 J
+ S[1][1] = -9.511e-04-2.401e-04i, |S[1][1]| = -6.017e+01, arg(S[1][1]) = -1.658e+02
+ S[2][1] = +1.733e-05+1.473e-05i, |S[2][1]| = -9.286e+01, arg(S[2][1]) = +4.036e+01
+ S[3][1] = +2.397e-01-9.709e-01i, |S[3][1]| = -3.209e-06, arg(S[3][1]) = -7.613e+01
+ S[4][1] = +8.399e-06+3.144e-06i, |S[4][1]| = -1.009e+02, arg(S[4][1]) = +2.052e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 3.000e+00 GHz (9.431e-01)
+ Port 1, mode 1: kₙ = 1.063e+02+1.166e-38i m⁻¹, Z_PV = 2.606e+01 Ω
+ Port 2, mode 2: kₙ = 9.840e+01-5.521e-35i m⁻¹, Z_PV = 1.606e+01 Ω
+ Port 3, mode 1: kₙ = 1.063e+02+1.504e-16i m⁻¹, Z_PV = 2.606e+01 Ω
+ Port 4, mode 2: kₙ = 9.840e+01-1.368e-16i m⁻¹, Z_PV = 1.606e+01 Ω
+
+It 3/9: ω/2π = 3.000e+00 GHz (total elapsed time = 9.04e+01 s, solve 3/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.754200e+02
+  1 (restart 0) KSP residual norm 2.677049e+00
+  2 (restart 0) KSP residual norm 2.530238e+00
+  3 (restart 0) KSP residual norm 9.974915e-01
+  4 (restart 0) KSP residual norm 2.212553e-01
+  5 (restart 0) KSP residual norm 1.412154e-01
+  6 (restart 0) KSP residual norm 2.879395e-02
+  7 (restart 0) KSP residual norm 1.857808e-02
+  8 (restart 0) KSP residual norm 4.262614e-03
+  9 (restart 0) KSP residual norm 2.265989e-03
+ 10 (restart 0) KSP residual norm 9.470267e-04
+ 11 (restart 0) KSP residual norm 3.580124e-04
+ 12 (restart 0) KSP residual norm 1.700404e-04
+ 13 (restart 0) KSP residual norm 7.481857e-05
+ 14 (restart 0) KSP residual norm 3.434437e-05
+ 15 (restart 0) KSP residual norm 1.400161e-05
+ 16 (restart 0) KSP residual norm 6.889071e-06
+GMRES solver converged in 16 iterations (avg. reduction factor: 3.103e-01)
+ Sol. ||E|| = 3.822374e+01 (||RHS|| = 1.468562e+00)
+ Field energy E (4.253e-11 J) + H (4.253e-11 J) = 8.506e-11 J
+ S[1][1] = -1.015e-03+1.855e-05i, |S[1][1]| = -5.987e+01, arg(S[1][1]) = +1.790e+02
+ S[2][1] = +1.811e-05+1.317e-05i, |S[2][1]| = -9.300e+01, arg(S[2][1]) = +3.603e+01
+ S[3][1] = -2.490e-02-9.997e-01i, |S[3][1]| = -3.210e-06, arg(S[3][1]) = -9.143e+01
+ S[4][1] = +1.102e-05+9.987e-07i, |S[4][1]| = -9.912e+01, arg(S[4][1]) = +5.176e+00
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 3.500e+00 GHz (1.100e+00)
+ Port 1, mode 1: kₙ = 1.242e+02-3.261e-32i m⁻¹, Z_PV = 2.618e+01 Ω
+ Port 2, mode 2: kₙ = 1.148e+02-2.071e-29i m⁻¹, Z_PV = 1.608e+01 Ω
+ Port 3, mode 1: kₙ = 1.242e+02+1.805e-18i m⁻¹, Z_PV = 2.618e+01 Ω
+ Port 4, mode 2: kₙ = 1.148e+02+6.284e-16i m⁻¹, Z_PV = 1.608e+01 Ω
+
+It 4/9: ω/2π = 3.500e+00 GHz (total elapsed time = 1.28e+02 s, solve 4/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 2.766196e+01
+  1 (restart 0) KSP residual norm 2.748542e+00
+  2 (restart 0) KSP residual norm 2.551247e+00
+  3 (restart 0) KSP residual norm 1.044231e+00
+  4 (restart 0) KSP residual norm 2.567806e-01
+  5 (restart 0) KSP residual norm 1.652052e-01
+  6 (restart 0) KSP residual norm 3.373603e-02
+  7 (restart 0) KSP residual norm 2.176436e-02
+  8 (restart 0) KSP residual norm 4.872606e-03
+  9 (restart 0) KSP residual norm 2.641976e-03
+ 10 (restart 0) KSP residual norm 1.068421e-03
+ 11 (restart 0) KSP residual norm 4.286637e-04
+ 12 (restart 0) KSP residual norm 1.957742e-04
+ 13 (restart 0) KSP residual norm 9.093756e-05
+ 14 (restart 0) KSP residual norm 3.917968e-05
+ 15 (restart 0) KSP residual norm 1.588753e-05
+ 16 (restart 0) KSP residual norm 7.941312e-06
+ 17 (restart 0) KSP residual norm 4.103105e-06
+ 18 (restart 0) KSP residual norm 2.434418e-06
+ 19 (restart 0) KSP residual norm 1.355820e-06
+GMRES solver converged in 19 iterations (avg. reduction factor: 3.783e-01)
+ Sol. ||E|| = 3.823840e+01 (||RHS|| = 1.713949e+00)
+ Field energy E (4.262e-11 J) + H (4.264e-11 J) = 8.526e-11 J
+ S[1][1] = -9.402e-04+2.750e-04i, |S[1][1]| = -6.018e+01, arg(S[1][1]) = +1.637e+02
+ S[2][1] = +1.661e-05+1.270e-05i, |S[2][1]| = -9.359e+01, arg(S[2][1]) = +3.741e+01
+ S[3][1] = -2.883e-01-9.575e-01i, |S[3][1]| = -3.875e-06, arg(S[3][1]) = -1.068e+02
+ S[4][1] = +1.302e-05-2.325e-06i, |S[4][1]| = -9.757e+01, arg(S[4][1]) = -1.012e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 4.000e+00 GHz (1.258e+00)
+ Port 1, mode 1: kₙ = 1.420e+02+9.704e-33i m⁻¹, Z_PV = 2.631e+01 Ω
+ Port 2, mode 2: kₙ = 1.312e+02-3.372e-29i m⁻¹, Z_PV = 1.611e+01 Ω
+ Port 3, mode 1: kₙ = 1.420e+02+3.743e-17i m⁻¹, Z_PV = 2.631e+01 Ω
+ Port 4, mode 2: kₙ = 1.312e+02-2.689e-16i m⁻¹, Z_PV = 1.611e+01 Ω
+
+It 5/9: ω/2π = 4.000e+00 GHz (total elapsed time = 1.71e+02 s, solve 5/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.513405e+01
+  1 (restart 0) KSP residual norm 2.938638e+00
+  2 (restart 0) KSP residual norm 1.251253e+00
+  3 (restart 0) KSP residual norm 8.249362e-01
+  4 (restart 0) KSP residual norm 2.848283e-01
+  5 (restart 0) KSP residual norm 1.825276e-01
+  6 (restart 0) KSP residual norm 3.782601e-02
+  7 (restart 0) KSP residual norm 2.386513e-02
+  8 (restart 0) KSP residual norm 5.409258e-03
+  9 (restart 0) KSP residual norm 2.914645e-03
+ 10 (restart 0) KSP residual norm 1.177479e-03
+ 11 (restart 0) KSP residual norm 4.883676e-04
+ 12 (restart 0) KSP residual norm 2.169391e-04
+ 13 (restart 0) KSP residual norm 1.058189e-04
+ 14 (restart 0) KSP residual norm 4.221101e-05
+ 15 (restart 0) KSP residual norm 1.769766e-05
+ 16 (restart 0) KSP residual norm 8.849195e-06
+ 17 (restart 0) KSP residual norm 4.640707e-06
+ 18 (restart 0) KSP residual norm 2.749723e-06
+ 19 (restart 0) KSP residual norm 1.536385e-06
+ 20 (restart 0) KSP residual norm 9.373637e-07
+ 21 (restart 0) KSP residual norm 4.710854e-07
+GMRES solver converged in 21 iterations (avg. reduction factor: 4.066e-01)
+ Sol. ||E|| = 3.825535e+01 (||RHS|| = 1.959596e+00)
+ Field energy E (4.273e-11 J) + H (4.275e-11 J) = 8.548e-11 J
+ S[1][1] = -7.457e-04+4.583e-04i, |S[1][1]| = -6.116e+01, arg(S[1][1]) = +1.484e+02
+ S[2][1] = +1.393e-05+1.480e-05i, |S[2][1]| = -9.384e+01, arg(S[2][1]) = +4.673e+01
+ S[3][1] = -5.317e-01-8.469e-01i, |S[3][1]| = -3.394e-06, arg(S[3][1]) = -1.221e+02
+ S[4][1] = +1.387e-05-6.631e-06i, |S[4][1]| = -9.626e+01, arg(S[4][1]) = -2.554e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 4.500e+00 GHz (1.415e+00)
+ Port 1, mode 1: kₙ = 1.600e+02-2.628e-30i m⁻¹, Z_PV = 2.645e+01 Ω
+ Port 2, mode 2: kₙ = 1.477e+02-5.575e-28i m⁻¹, Z_PV = 1.615e+01 Ω
+ Port 3, mode 1: kₙ = 1.600e+02+1.197e-18i m⁻¹, Z_PV = 2.645e+01 Ω
+ Port 4, mode 2: kₙ = 1.477e+02+4.782e-17i m⁻¹, Z_PV = 1.615e+01 Ω
+
+It 6/9: ω/2π = 4.500e+00 GHz (total elapsed time = 2.15e+02 s, solve 6/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.055967e+01
+  1 (restart 0) KSP residual norm 3.284454e+00
+  2 (restart 0) KSP residual norm 1.266599e+00
+  3 (restart 0) KSP residual norm 3.672912e-01
+  4 (restart 0) KSP residual norm 2.780798e-01
+  5 (restart 0) KSP residual norm 1.853664e-01
+  6 (restart 0) KSP residual norm 4.086788e-02
+  7 (restart 0) KSP residual norm 2.415945e-02
+  8 (restart 0) KSP residual norm 5.819738e-03
+  9 (restart 0) KSP residual norm 3.030994e-03
+ 10 (restart 0) KSP residual norm 1.252576e-03
+ 11 (restart 0) KSP residual norm 5.288186e-04
+ 12 (restart 0) KSP residual norm 2.297572e-04
+ 13 (restart 0) KSP residual norm 1.153273e-04
+ 14 (restart 0) KSP residual norm 4.344312e-05
+ 15 (restart 0) KSP residual norm 1.886351e-05
+ 16 (restart 0) KSP residual norm 9.594924e-06
+ 17 (restart 0) KSP residual norm 5.087614e-06
+ 18 (restart 0) KSP residual norm 3.001688e-06
+ 19 (restart 0) KSP residual norm 1.677098e-06
+ 20 (restart 0) KSP residual norm 1.004250e-06
+ 21 (restart 0) KSP residual norm 4.976379e-07
+GMRES solver converged in 21 iterations (avg. reduction factor: 4.149e-01)
+ Sol. ||E|| = 3.827398e+01 (||RHS|| = 2.205522e+00)
+ Field energy E (4.285e-11 J) + H (4.287e-11 J) = 8.572e-11 J
+ S[1][1] = -4.849e-04+5.172e-04i, |S[1][1]| = -6.299e+01, arg(S[1][1]) = +1.332e+02
+ S[2][1] = +1.184e-05+2.013e-05i, |S[2][1]| = -9.263e+01, arg(S[2][1]) = +5.954e+01
+ S[3][1] = -7.376e-01-6.752e-01i, |S[3][1]| = -2.286e-06, arg(S[3][1]) = -1.375e+02
+ S[4][1] = +1.324e-05-1.144e-05i, |S[4][1]| = -9.514e+01, arg(S[4][1]) = -4.082e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 5.000e+00 GHz (1.572e+00)
+ Port 1, mode 1: kₙ = 1.779e+02-3.256e-30i m⁻¹, Z_PV = 2.660e+01 Ω
+ Port 2, mode 2: kₙ = 1.641e+02-4.439e-28i m⁻¹, Z_PV = 1.619e+01 Ω
+ Port 3, mode 1: kₙ = 1.779e+02+4.265e-18i m⁻¹, Z_PV = 2.660e+01 Ω
+ Port 4, mode 2: kₙ = 1.641e+02+1.693e-17i m⁻¹, Z_PV = 1.619e+01 Ω
+
+It 7/9: ω/2π = 5.000e+00 GHz (total elapsed time = 2.56e+02 s, solve 7/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 8.337669e+00
+  1 (restart 0) KSP residual norm 3.777519e+00
+  2 (restart 0) KSP residual norm 1.296946e+00
+  3 (restart 0) KSP residual norm 3.521494e-01
+  4 (restart 0) KSP residual norm 2.381282e-01
+  5 (restart 0) KSP residual norm 1.078775e-01
+  6 (restart 0) KSP residual norm 4.259790e-02
+  7 (restart 0) KSP residual norm 2.177279e-02
+  8 (restart 0) KSP residual norm 6.095869e-03
+  9 (restart 0) KSP residual norm 2.948801e-03
+ 10 (restart 0) KSP residual norm 1.261079e-03
+ 11 (restart 0) KSP residual norm 5.477058e-04
+ 12 (restart 0) KSP residual norm 2.303435e-04
+ 13 (restart 0) KSP residual norm 1.160814e-04
+ 14 (restart 0) KSP residual norm 4.312146e-05
+ 15 (restart 0) KSP residual norm 1.899731e-05
+ 16 (restart 0) KSP residual norm 1.019429e-05
+ 17 (restart 0) KSP residual norm 5.382077e-06
+ 18 (restart 0) KSP residual norm 3.166856e-06
+ 19 (restart 0) KSP residual norm 1.767776e-06
+ 20 (restart 0) KSP residual norm 1.041377e-06
+ 21 (restart 0) KSP residual norm 5.289310e-07
+ 22 (restart 0) KSP residual norm 3.068953e-07
+GMRES solver converged in 22 iterations (avg. reduction factor: 4.268e-01)
+ Sol. ||E|| = 3.829352e+01 (||RHS|| = 2.451739e+00)
+ Field energy E (4.297e-11 J) + H (4.299e-11 J) = 8.596e-11 J
+ S[1][1] = -2.305e-04+4.345e-04i, |S[1][1]| = -6.616e+01, arg(S[1][1]) = +1.179e+02
+ S[2][1] = +1.239e-05+2.833e-05i, |S[2][1]| = -9.019e+01, arg(S[2][1]) = +6.637e+01
+ S[3][1] = -8.908e-01-4.543e-01i, |S[3][1]| = -1.198e-06, arg(S[3][1]) = -1.530e+02
+ S[4][1] = +1.102e-05-1.619e-05i, |S[4][1]| = -9.416e+01, arg(S[4][1]) = -5.576e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 5.500e+00 GHz (1.729e+00)
+ Port 1, mode 1: kₙ = 1.959e+02-3.408e-29i m⁻¹, Z_PV = 2.675e+01 Ω
+ Port 2, mode 2: kₙ = 1.806e+02-5.595e-27i m⁻¹, Z_PV = 1.623e+01 Ω
+ Port 3, mode 1: kₙ = 1.959e+02-1.173e-18i m⁻¹, Z_PV = 2.675e+01 Ω
+ Port 4, mode 2: kₙ = 1.806e+02+6.110e-17i m⁻¹, Z_PV = 1.623e+01 Ω
+
+It 8/9: ω/2π = 5.500e+00 GHz (total elapsed time = 2.94e+02 s, solve 8/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 7.249499e+00
+  1 (restart 0) KSP residual norm 4.453764e+00
+  2 (restart 0) KSP residual norm 1.307679e+00
+  3 (restart 0) KSP residual norm 3.730666e-01
+  4 (restart 0) KSP residual norm 2.462792e-01
+  5 (restart 0) KSP residual norm 5.475509e-02
+  6 (restart 0) KSP residual norm 3.689497e-02
+  7 (restart 0) KSP residual norm 1.339521e-02
+  8 (restart 0) KSP residual norm 6.257036e-03
+  9 (restart 0) KSP residual norm 2.805903e-03
+ 10 (restart 0) KSP residual norm 1.214189e-03
+ 11 (restart 0) KSP residual norm 5.600009e-04
+ 12 (restart 0) KSP residual norm 2.266065e-04
+ 13 (restart 0) KSP residual norm 1.118798e-04
+ 14 (restart 0) KSP residual norm 4.325573e-05
+ 15 (restart 0) KSP residual norm 2.074257e-05
+ 16 (restart 0) KSP residual norm 1.115498e-05
+ 17 (restart 0) KSP residual norm 6.173791e-06
+ 18 (restart 0) KSP residual norm 3.536549e-06
+ 19 (restart 0) KSP residual norm 2.100149e-06
+ 20 (restart 0) KSP residual norm 1.131331e-06
+ 21 (restart 0) KSP residual norm 6.063319e-07
+ 22 (restart 0) KSP residual norm 3.376495e-07
+GMRES solver converged in 22 iterations (avg. reduction factor: 4.308e-01)
+ Sol. ||E|| = 3.831303e+01 (||RHS|| = 2.698257e+00)
+ Field energy E (4.310e-11 J) + H (4.311e-11 J) = 8.622e-11 J
+ S[1][1] = -5.463e-05+2.323e-04i, |S[1][1]| = -7.244e+01, arg(S[1][1]) = +1.032e+02
+ S[2][1] = +1.736e-05+3.783e-05i, |S[2][1]| = -8.761e+01, arg(S[2][1]) = +6.535e+01
+ S[3][1] = -9.798e-01-1.998e-01i, |S[3][1]| = -4.716e-07, arg(S[3][1]) = -1.685e+02
+ S[4][1] = +7.315e-06-2.041e-05i, |S[4][1]| = -9.328e+01, arg(S[4][1]) = -7.028e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 6.000e+00 GHz (1.886e+00)
+ Port 1, mode 1: kₙ = 2.140e+02-3.220e-29i m⁻¹, Z_PV = 2.691e+01 Ω
+ Port 2, mode 2: kₙ = 1.970e+02-9.684e-27i m⁻¹, Z_PV = 1.627e+01 Ω
+ Port 3, mode 1: kₙ = 2.140e+02+8.370e-18i m⁻¹, Z_PV = 2.691e+01 Ω
+ Port 4, mode 2: kₙ = 1.970e+02-2.617e-17i m⁻¹, Z_PV = 1.627e+01 Ω
+
+It 9/9: ω/2π = 6.000e+00 GHz (total elapsed time = 3.30e+02 s, solve 9/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 6.950710e+00
+  1 (restart 0) KSP residual norm 5.288036e+00
+  2 (restart 0) KSP residual norm 1.315137e+00
+  3 (restart 0) KSP residual norm 3.912540e-01
+  4 (restart 0) KSP residual norm 2.584976e-01
+  5 (restart 0) KSP residual norm 5.200397e-02
+  6 (restart 0) KSP residual norm 3.488372e-02
+  7 (restart 0) KSP residual norm 8.147209e-03
+  8 (restart 0) KSP residual norm 4.953379e-03
+  9 (restart 0) KSP residual norm 2.380912e-03
+ 10 (restart 0) KSP residual norm 1.026175e-03
+ 11 (restart 0) KSP residual norm 5.299840e-04
+ 12 (restart 0) KSP residual norm 2.213957e-04
+ 13 (restart 0) KSP residual norm 1.118282e-04
+ 14 (restart 0) KSP residual norm 4.462625e-05
+ 15 (restart 0) KSP residual norm 2.275380e-05
+ 16 (restart 0) KSP residual norm 1.173622e-05
+ 17 (restart 0) KSP residual norm 6.608307e-06
+ 18 (restart 0) KSP residual norm 3.598150e-06
+ 19 (restart 0) KSP residual norm 2.215020e-06
+ 20 (restart 0) KSP residual norm 1.132857e-06
+ 21 (restart 0) KSP residual norm 6.187759e-07
+ 22 (restart 0) KSP residual norm 3.543674e-07
+GMRES solver converged in 22 iterations (avg. reduction factor: 4.320e-01)
+ Sol. ||E|| = 3.833158e+01 (||RHS|| = 2.945078e+00)
+ Field energy E (4.324e-11 J) + H (4.324e-11 J) = 8.647e-11 J
+ S[1][1] = -8.311e-06-3.253e-05i, |S[1][1]| = -8.948e+01, arg(S[1][1]) = -1.043e+02
+ S[2][1] = +2.754e-05+4.615e-05i, |S[2][1]| = -8.539e+01, arg(S[2][1]) = +5.917e+01
+ S[3][1] = -9.975e-01+7.007e-02i, |S[3][1]| = -3.054e-07, arg(S[3][1]) = +1.760e+02
+ S[4][1] = +2.329e-06-2.376e-05i, |S[4][1]| = -9.244e+01, arg(S[4][1]) = -8.440e+01
+ Updating solution error estimates
+
+Sweeping excitation index 2 (2/4):
+
+Calculating boundary modes at wave ports for ω/2π = 2.000e+00 GHz (6.288e-01)
+ Port 1, mode 1: kₙ = 7.079e+01+2.515e-38i m⁻¹, Z_PV = 2.586e+01 Ω
+ Port 2, mode 2: kₙ = 6.559e+01-5.646e-35i m⁻¹, Z_PV = 1.602e+01 Ω
+ Port 3, mode 1: kₙ = 7.079e+01-6.471e-19i m⁻¹, Z_PV = 2.586e+01 Ω
+ Port 4, mode 2: kₙ = 6.559e+01-2.391e-18i m⁻¹, Z_PV = 1.602e+01 Ω
+
+It 1/9: ω/2π = 2.000e+00 GHz (total elapsed time = 3.79e+02 s, solve 10/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.017216e+02
+  1 (restart 0) KSP residual norm 3.996007e+01
+  2 (restart 0) KSP residual norm 1.034442e+01
+  3 (restart 0) KSP residual norm 4.639609e+00
+  4 (restart 0) KSP residual norm 1.390162e+00
+  5 (restart 0) KSP residual norm 7.155471e-01
+  6 (restart 0) KSP residual norm 1.827651e-01
+  7 (restart 0) KSP residual norm 9.251942e-02
+  8 (restart 0) KSP residual norm 3.309559e-02
+  9 (restart 0) KSP residual norm 1.423231e-02
+ 10 (restart 0) KSP residual norm 7.132884e-03
+ 11 (restart 0) KSP residual norm 2.523585e-03
+ 12 (restart 0) KSP residual norm 1.225709e-03
+ 13 (restart 0) KSP residual norm 5.140846e-04
+ 14 (restart 0) KSP residual norm 2.180832e-04
+ 15 (restart 0) KSP residual norm 1.207666e-04
+ 16 (restart 0) KSP residual norm 4.882700e-05
+ 17 (restart 0) KSP residual norm 2.647054e-05
+ 18 (restart 0) KSP residual norm 1.483409e-05
+ 19 (restart 0) KSP residual norm 8.429646e-06
+ 20 (restart 0) KSP residual norm 4.727476e-06
+ 21 (restart 0) KSP residual norm 2.779447e-06
+ 22 (restart 0) KSP residual norm 1.571297e-06
+ 23 (restart 0) KSP residual norm 9.127960e-07
+GMRES solver converged in 23 iterations (avg. reduction factor: 4.480e-01)
+ Sol. ||E|| = 4.399736e+01 (||RHS|| = 9.605083e-01)
+ Field energy E (3.502e-11 J) + H (3.752e-11 J) = 7.254e-11 J
+ S[1][2] = +1.428e-05+1.582e-05i, |S[1][2]| = -9.343e+01, arg(S[1][2]) = +4.792e+01
+ S[2][2] = -2.612e-02+3.141e-02i, |S[2][2]| = -2.778e+01, arg(S[2][2]) = +1.298e+02
+ S[3][2] = +5.872e-06+4.426e-06i, |S[3][2]| = -1.027e+02, arg(S[3][2]) = +3.701e+01
+ S[4][2] = +5.105e-01-7.710e-01i, |S[4][2]| = -6.802e-01, arg(S[4][2]) = -5.649e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 2.500e+00 GHz (7.859e-01)
+ Port 1, mode 1: kₙ = 8.855e+01+8.335e-39i m⁻¹, Z_PV = 2.595e+01 Ω
+ Port 2, mode 2: kₙ = 8.199e+01-2.696e-35i m⁻¹, Z_PV = 1.603e+01 Ω
+ Port 3, mode 1: kₙ = 8.855e+01+3.710e-18i m⁻¹, Z_PV = 2.595e+01 Ω
+ Port 4, mode 2: kₙ = 8.199e+01+4.726e-16i m⁻¹, Z_PV = 1.603e+01 Ω
+
+It 2/9: ω/2π = 2.500e+00 GHz (total elapsed time = 4.20e+02 s, solve 11/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 2.476245e+01
+  1 (restart 0) KSP residual norm 2.569062e+00
+  2 (restart 0) KSP residual norm 1.205792e+00
+  3 (restart 0) KSP residual norm 8.357092e-01
+  4 (restart 0) KSP residual norm 9.998932e-02
+  5 (restart 0) KSP residual norm 2.521646e-02
+  6 (restart 0) KSP residual norm 1.270447e-02
+  7 (restart 0) KSP residual norm 3.425524e-03
+  8 (restart 0) KSP residual norm 1.525637e-03
+  9 (restart 0) KSP residual norm 6.908260e-04
+ 10 (restart 0) KSP residual norm 2.169283e-04
+ 11 (restart 0) KSP residual norm 1.050532e-04
+ 12 (restart 0) KSP residual norm 4.716058e-05
+ 13 (restart 0) KSP residual norm 2.265134e-05
+ 14 (restart 0) KSP residual norm 1.085976e-05
+ 15 (restart 0) KSP residual norm 6.917897e-06
+ 16 (restart 0) KSP residual norm 3.469161e-06
+ 17 (restart 0) KSP residual norm 2.022488e-06
+ 18 (restart 0) KSP residual norm 1.064701e-06
+GMRES solver converged in 18 iterations (avg. reduction factor: 3.517e-01)
+ Sol. ||E|| = 4.431194e+01 (||RHS|| = 1.200674e+00)
+ Field energy E (3.554e-11 J) + H (3.691e-11 J) = 7.244e-11 J
+ S[1][2] = +1.735e-05+1.472e-05i, |S[1][2]| = -9.286e+01, arg(S[1][2]) = +4.031e+01
+ S[2][2] = -1.295e-02+2.153e-02i, |S[2][2]| = -3.200e+01, arg(S[2][2]) = +1.210e+02
+ S[3][2] = +8.923e-06+3.517e-06i, |S[3][2]| = -1.004e+02, arg(S[3][2]) = +2.151e+01
+ S[4][2] = +3.072e-01-8.711e-01i, |S[4][2]| = -6.896e-01, arg(S[4][2]) = -7.058e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 3.000e+00 GHz (9.431e-01)
+ Port 1, mode 1: kₙ = 1.063e+02+1.154e-38i m⁻¹, Z_PV = 2.606e+01 Ω
+ Port 2, mode 2: kₙ = 9.840e+01-5.521e-35i m⁻¹, Z_PV = 1.606e+01 Ω
+ Port 3, mode 1: kₙ = 1.063e+02+1.820e-16i m⁻¹, Z_PV = 2.606e+01 Ω
+ Port 4, mode 2: kₙ = 9.840e+01+4.490e-16i m⁻¹, Z_PV = 1.606e+01 Ω
+
+It 3/9: ω/2π = 3.000e+00 GHz (total elapsed time = 4.55e+02 s, solve 12/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 8.312482e+01
+  1 (restart 0) KSP residual norm 4.120207e+00
+  2 (restart 0) KSP residual norm 2.612418e+00
+  3 (restart 0) KSP residual norm 9.311191e-01
+  4 (restart 0) KSP residual norm 1.254595e-01
+  5 (restart 0) KSP residual norm 3.105137e-02
+  6 (restart 0) KSP residual norm 1.598004e-02
+  7 (restart 0) KSP residual norm 4.099511e-03
+  8 (restart 0) KSP residual norm 1.883891e-03
+  9 (restart 0) KSP residual norm 7.954520e-04
+ 10 (restart 0) KSP residual norm 2.506160e-04
+ 11 (restart 0) KSP residual norm 1.205242e-04
+ 12 (restart 0) KSP residual norm 5.128769e-05
+ 13 (restart 0) KSP residual norm 2.518262e-05
+ 14 (restart 0) KSP residual norm 1.284507e-05
+ 15 (restart 0) KSP residual norm 8.143276e-06
+ 16 (restart 0) KSP residual norm 3.912877e-06
+GMRES solver converged in 16 iterations (avg. reduction factor: 3.113e-01)
+ Sol. ||E|| = 4.460243e+01 (||RHS|| = 1.440864e+00)
+ Field energy E (3.602e-11 J) + H (3.636e-11 J) = 7.238e-11 J
+ S[1][2] = +1.810e-05+1.316e-05i, |S[1][2]| = -9.300e+01, arg(S[1][2]) = +3.602e+01
+ S[2][2] = -5.991e-03+6.399e-03i, |S[2][2]| = -4.114e+01, arg(S[2][2]) = +1.331e+02
+ S[3][2] = +1.194e-05+1.091e-06i, |S[3][2]| = -9.843e+01, arg(S[3][2]) = +5.223e+00
+ S[4][2] = +8.592e-02-9.188e-01i, |S[4][2]| = -6.978e-01, arg(S[4][2]) = -8.466e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 3.500e+00 GHz (1.100e+00)
+ Port 1, mode 1: kₙ = 1.242e+02+5.035e-32i m⁻¹, Z_PV = 2.618e+01 Ω
+ Port 2, mode 2: kₙ = 1.148e+02-2.882e-29i m⁻¹, Z_PV = 1.608e+01 Ω
+ Port 3, mode 1: kₙ = 1.242e+02+3.076e-18i m⁻¹, Z_PV = 2.618e+01 Ω
+ Port 4, mode 2: kₙ = 1.148e+02-8.503e-16i m⁻¹, Z_PV = 1.608e+01 Ω
+
+It 4/9: ω/2π = 3.500e+00 GHz (total elapsed time = 4.86e+02 s, solve 13/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 6.471972e+01
+  1 (restart 0) KSP residual norm 2.739285e+00
+  2 (restart 0) KSP residual norm 1.198852e+00
+  3 (restart 0) KSP residual norm 8.982269e-01
+  4 (restart 0) KSP residual norm 1.445620e-01
+  5 (restart 0) KSP residual norm 3.676840e-02
+  6 (restart 0) KSP residual norm 1.853382e-02
+  7 (restart 0) KSP residual norm 4.741776e-03
+  8 (restart 0) KSP residual norm 2.156747e-03
+  9 (restart 0) KSP residual norm 8.808061e-04
+ 10 (restart 0) KSP residual norm 2.769184e-04
+ 11 (restart 0) KSP residual norm 1.340238e-04
+ 12 (restart 0) KSP residual norm 5.433772e-05
+ 13 (restart 0) KSP residual norm 2.742117e-05
+ 14 (restart 0) KSP residual norm 1.495620e-05
+ 15 (restart 0) KSP residual norm 9.132457e-06
+ 16 (restart 0) KSP residual norm 4.321455e-06
+ 17 (restart 0) KSP residual norm 2.533006e-06
+GMRES solver converged in 17 iterations (avg. reduction factor: 3.308e-01)
+ Sol. ||E|| = 4.483725e+01 (||RHS|| = 1.681085e+00)
+ Field energy E (3.642e-11 J) + H (3.594e-11 J) = 7.236e-11 J
+ S[1][2] = +1.662e-05+1.269e-05i, |S[1][2]| = -9.359e+01, arg(S[1][2]) = +3.737e+01
+ S[2][2] = -7.047e-03-1.051e-02i, |S[2][2]| = -3.795e+01, arg(S[2][2]) = -1.238e+02
+ S[3][2] = +1.411e-05-2.813e-06i, |S[3][2]| = -9.684e+01, arg(S[3][2]) = -1.127e+01
+ S[4][2] = -1.401e-01-9.114e-01i, |S[4][2]| = -7.040e-01, arg(S[4][2]) = -9.874e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 4.000e+00 GHz (1.258e+00)
+ Port 1, mode 1: kₙ = 1.420e+02-9.325e-32i m⁻¹, Z_PV = 2.631e+01 Ω
+ Port 2, mode 2: kₙ = 1.312e+02-3.309e-29i m⁻¹, Z_PV = 1.611e+01 Ω
+ Port 3, mode 1: kₙ = 1.420e+02+4.298e-17i m⁻¹, Z_PV = 2.631e+01 Ω
+ Port 4, mode 2: kₙ = 1.312e+02+5.056e-18i m⁻¹, Z_PV = 1.611e+01 Ω
+
+It 5/9: ω/2π = 4.000e+00 GHz (total elapsed time = 5.56e+02 s, solve 14/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 2.373416e+01
+  1 (restart 0) KSP residual norm 2.895574e+00
+  2 (restart 0) KSP residual norm 1.215620e+00
+  3 (restart 0) KSP residual norm 3.044324e-01
+  4 (restart 0) KSP residual norm 1.459318e-01
+  5 (restart 0) KSP residual norm 4.186256e-02
+  6 (restart 0) KSP residual norm 1.969966e-02
+  7 (restart 0) KSP residual norm 5.301778e-03
+  8 (restart 0) KSP residual norm 2.278062e-03
+  9 (restart 0) KSP residual norm 9.424293e-04
+ 10 (restart 0) KSP residual norm 2.887168e-04
+ 11 (restart 0) KSP residual norm 1.449987e-04
+ 12 (restart 0) KSP residual norm 5.625238e-05
+ 13 (restart 0) KSP residual norm 2.942861e-05
+ 14 (restart 0) KSP residual norm 1.696561e-05
+ 15 (restart 0) KSP residual norm 9.843280e-06
+ 16 (restart 0) KSP residual norm 4.670231e-06
+ 17 (restart 0) KSP residual norm 2.734879e-06
+ 18 (restart 0) KSP residual norm 1.354512e-06
+ 19 (restart 0) KSP residual norm 7.531284e-07
+GMRES solver converged in 19 iterations (avg. reduction factor: 3.683e-01)
+ Sol. ||E|| = 4.499421e+01 (||RHS|| = 1.921340e+00)
+ Field energy E (3.670e-11 J) + H (3.569e-11 J) = 7.239e-11 J
+ S[1][2] = +1.393e-05+1.479e-05i, |S[1][2]| = -9.384e+01, arg(S[1][2]) = +4.671e+01
+ S[2][2] = -1.610e-02-2.525e-02i, |S[2][2]| = -3.047e+01, arg(S[2][2]) = -1.225e+02
+ S[3][2] = +1.478e-05-7.823e-06i, |S[3][2]| = -9.553e+01, arg(S[3][2]) = -2.790e+01
+ S[4][2] = -3.576e-01-8.495e-01i, |S[4][2]| = -7.081e-01, arg(S[4][2]) = -1.128e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 4.500e+00 GHz (1.415e+00)
+ Port 1, mode 1: kₙ = 1.600e+02-2.222e-30i m⁻¹, Z_PV = 2.645e+01 Ω
+ Port 2, mode 2: kₙ = 1.477e+02-3.772e-28i m⁻¹, Z_PV = 1.615e+01 Ω
+ Port 3, mode 1: kₙ = 1.600e+02+7.933e-18i m⁻¹, Z_PV = 2.645e+01 Ω
+ Port 4, mode 2: kₙ = 1.477e+02-1.288e-16i m⁻¹, Z_PV = 1.615e+01 Ω
+
+It 6/9: ω/2π = 4.500e+00 GHz (total elapsed time = 6.13e+02 s, solve 15/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.472154e+01
+  1 (restart 0) KSP residual norm 3.119422e+00
+  2 (restart 0) KSP residual norm 1.309242e+00
+  3 (restart 0) KSP residual norm 2.523632e-01
+  4 (restart 0) KSP residual norm 7.400129e-02
+  5 (restart 0) KSP residual norm 4.439235e-02
+  6 (restart 0) KSP residual norm 1.879601e-02
+  7 (restart 0) KSP residual norm 5.742003e-03
+  8 (restart 0) KSP residual norm 2.194423e-03
+  9 (restart 0) KSP residual norm 9.759184e-04
+ 10 (restart 0) KSP residual norm 2.809990e-04
+ 11 (restart 0) KSP residual norm 1.515615e-04
+ 12 (restart 0) KSP residual norm 5.670420e-05
+ 13 (restart 0) KSP residual norm 3.107071e-05
+ 14 (restart 0) KSP residual norm 1.846258e-05
+ 15 (restart 0) KSP residual norm 1.021229e-05
+ 16 (restart 0) KSP residual norm 4.896737e-06
+ 17 (restart 0) KSP residual norm 2.833840e-06
+ 18 (restart 0) KSP residual norm 1.417437e-06
+ 19 (restart 0) KSP residual norm 7.961053e-07
+GMRES solver converged in 19 iterations (avg. reduction factor: 3.793e-01)
+ Sol. ||E|| = 4.506263e+01 (||RHS|| = 2.161636e+00)
+ Field energy E (3.683e-11 J) + H (3.562e-11 J) = 7.246e-11 J
+ S[1][2] = +1.184e-05+2.013e-05i, |S[1][2]| = -9.263e+01, arg(S[1][2]) = +5.954e+01
+ S[2][2] = -3.128e-02-3.428e-02i, |S[2][2]| = -2.667e+01, arg(S[2][2]) = -1.324e+02
+ S[3][2] = +1.350e-05-1.322e-05i, |S[3][2]| = -9.447e+01, arg(S[3][2]) = -4.440e+01
+ S[4][2] = -5.538e-01-7.365e-01i, |S[4][2]| = -7.106e-01, arg(S[4][2]) = -1.269e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 5.000e+00 GHz (1.572e+00)
+ Port 1, mode 1: kₙ = 1.779e+02-2.810e-30i m⁻¹, Z_PV = 2.660e+01 Ω
+ Port 2, mode 2: kₙ = 1.641e+02-4.899e-28i m⁻¹, Z_PV = 1.619e+01 Ω
+ Port 3, mode 1: kₙ = 1.779e+02-1.466e-18i m⁻¹, Z_PV = 2.660e+01 Ω
+ Port 4, mode 2: kₙ = 1.641e+02+7.228e-18i m⁻¹, Z_PV = 1.619e+01 Ω
+
+It 7/9: ω/2π = 5.000e+00 GHz (total elapsed time = 6.82e+02 s, solve 16/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.083114e+01
+  1 (restart 0) KSP residual norm 3.434328e+00
+  2 (restart 0) KSP residual norm 1.372924e+00
+  3 (restart 0) KSP residual norm 2.815933e-01
+  4 (restart 0) KSP residual norm 4.911744e-02
+  5 (restart 0) KSP residual norm 3.554081e-02
+  6 (restart 0) KSP residual norm 1.227202e-02
+  7 (restart 0) KSP residual norm 5.941830e-03
+  8 (restart 0) KSP residual norm 1.864653e-03
+  9 (restart 0) KSP residual norm 9.663811e-04
+ 10 (restart 0) KSP residual norm 2.538867e-04
+ 11 (restart 0) KSP residual norm 1.491792e-04
+ 12 (restart 0) KSP residual norm 5.569092e-05
+ 13 (restart 0) KSP residual norm 3.230941e-05
+ 14 (restart 0) KSP residual norm 1.907432e-05
+ 15 (restart 0) KSP residual norm 1.007290e-05
+ 16 (restart 0) KSP residual norm 5.058416e-06
+ 17 (restart 0) KSP residual norm 2.853181e-06
+ 18 (restart 0) KSP residual norm 1.460351e-06
+ 19 (restart 0) KSP residual norm 8.566869e-07
+ 20 (restart 0) KSP residual norm 4.953501e-07
+GMRES solver converged in 20 iterations (avg. reduction factor: 3.949e-01)
+ Sol. ||E|| = 4.504411e+01 (||RHS|| = 2.401975e+00)
+ Field energy E (3.683e-11 J) + H (3.571e-11 J) = 7.254e-11 J
+ S[1][2] = +1.239e-05+2.832e-05i, |S[1][2]| = -9.020e+01, arg(S[1][2]) = +6.636e+01
+ S[2][2] = -4.921e-02-3.528e-02i, |S[2][2]| = -2.436e+01, arg(S[2][2]) = -1.444e+02
+ S[3][2] = +1.029e-05-1.815e-05i, |S[3][2]| = -9.361e+01, arg(S[3][2]) = -6.045e+01
+ S[4][2] = -7.168e-01-5.787e-01i, |S[4][2]| = -7.124e-01, arg(S[4][2]) = -1.411e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 5.500e+00 GHz (1.729e+00)
+ Port 1, mode 1: kₙ = 1.959e+02-2.935e-29i m⁻¹, Z_PV = 2.675e+01 Ω
+ Port 2, mode 2: kₙ = 1.806e+02-7.009e-27i m⁻¹, Z_PV = 1.623e+01 Ω
+ Port 3, mode 1: kₙ = 1.959e+02-1.546e-18i m⁻¹, Z_PV = 2.675e+01 Ω
+ Port 4, mode 2: kₙ = 1.806e+02+5.951e-17i m⁻¹, Z_PV = 1.623e+01 Ω
+
+It 8/9: ω/2π = 5.500e+00 GHz (total elapsed time = 7.20e+02 s, solve 17/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 8.767839e+00
+  1 (restart 0) KSP residual norm 3.871215e+00
+  2 (restart 0) KSP residual norm 1.402891e+00
+  3 (restart 0) KSP residual norm 3.113479e-01
+  4 (restart 0) KSP residual norm 5.048418e-02
+  5 (restart 0) KSP residual norm 3.484419e-02
+  6 (restart 0) KSP residual norm 6.493635e-03
+  7 (restart 0) KSP residual norm 4.222349e-03
+  8 (restart 0) KSP residual norm 1.163501e-03
+  9 (restart 0) KSP residual norm 6.582361e-04
+ 10 (restart 0) KSP residual norm 2.335957e-04
+ 11 (restart 0) KSP residual norm 1.400877e-04
+ 12 (restart 0) KSP residual norm 5.613208e-05
+ 13 (restart 0) KSP residual norm 3.176776e-05
+ 14 (restart 0) KSP residual norm 1.878743e-05
+ 15 (restart 0) KSP residual norm 1.032923e-05
+ 16 (restart 0) KSP residual norm 6.045761e-06
+ 17 (restart 0) KSP residual norm 3.231609e-06
+ 18 (restart 0) KSP residual norm 1.768190e-06
+ 19 (restart 0) KSP residual norm 1.038951e-06
+ 20 (restart 0) KSP residual norm 5.766645e-07
+ 21 (restart 0) KSP residual norm 3.166907e-07
+GMRES solver converged in 21 iterations (avg. reduction factor: 4.079e-01)
+ Sol. ||E|| = 4.495176e+01 (||RHS|| = 2.642363e+00)
+ Field energy E (3.671e-11 J) + H (3.591e-11 J) = 7.262e-11 J
+ S[1][2] = +1.735e-05+3.783e-05i, |S[1][2]| = -8.761e+01, arg(S[1][2]) = +6.536e+01
+ S[2][2] = -6.576e-02-2.779e-02i, |S[2][2]| = -2.293e+01, arg(S[2][2]) = -1.571e+02
+ S[3][2] = +5.534e-06-2.197e-05i, |S[3][2]| = -9.290e+01, arg(S[3][2]) = -7.586e+01
+ S[4][2] = -8.364e-01-3.856e-01i, |S[4][2]| = -7.149e-01, arg(S[4][2]) = -1.553e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 6.000e+00 GHz (1.886e+00)
+ Port 1, mode 1: kₙ = 2.140e+02-3.156e-29i m⁻¹, Z_PV = 2.691e+01 Ω
+ Port 2, mode 2: kₙ = 1.970e+02-1.025e-26i m⁻¹, Z_PV = 1.627e+01 Ω
+ Port 3, mode 1: kₙ = 2.140e+02+1.524e-18i m⁻¹, Z_PV = 2.691e+01 Ω
+ Port 4, mode 2: kₙ = 1.970e+02+1.479e-17i m⁻¹, Z_PV = 1.627e+01 Ω
+
+It 9/9: ω/2π = 6.000e+00 GHz (total elapsed time = 7.56e+02 s, solve 18/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 7.651082e+00
+  1 (restart 0) KSP residual norm 4.461648e+00
+  2 (restart 0) KSP residual norm 1.408614e+00
+  3 (restart 0) KSP residual norm 3.356903e-01
+  4 (restart 0) KSP residual norm 5.496012e-02
+  5 (restart 0) KSP residual norm 3.780666e-02
+  6 (restart 0) KSP residual norm 7.867356e-03
+  7 (restart 0) KSP residual norm 4.568071e-03
+  8 (restart 0) KSP residual norm 1.493643e-03
+  9 (restart 0) KSP residual norm 6.862614e-04
+ 10 (restart 0) KSP residual norm 3.665824e-04
+ 11 (restart 0) KSP residual norm 1.234151e-04
+ 12 (restart 0) KSP residual norm 6.583252e-05
+ 13 (restart 0) KSP residual norm 3.529817e-05
+ 14 (restart 0) KSP residual norm 1.918749e-05
+ 15 (restart 0) KSP residual norm 9.416651e-06
+ 16 (restart 0) KSP residual norm 5.499590e-06
+ 17 (restart 0) KSP residual norm 2.966426e-06
+ 18 (restart 0) KSP residual norm 1.840281e-06
+ 19 (restart 0) KSP residual norm 1.094474e-06
+ 20 (restart 0) KSP residual norm 5.975936e-07
+ 21 (restart 0) KSP residual norm 3.505582e-07
+GMRES solver converged in 21 iterations (avg. reduction factor: 4.119e-01)
+ Sol. ||E|| = 4.480811e+01 (||RHS|| = 2.882804e+00)
+ Field energy E (3.651e-11 J) + H (3.616e-11 J) = 7.267e-11 J
+ S[1][2] = +2.754e-05+4.615e-05i, |S[1][2]| = -8.539e+01, arg(S[1][2]) = +5.918e+01
+ S[2][2] = -7.699e-02-1.339e-02i, |S[2][2]| = -2.214e+01, arg(S[2][2]) = -1.701e+02
+ S[3][2] = -2.150e-07-2.434e-05i, |S[3][2]| = -9.227e+01, arg(S[3][2]) = -9.051e+01
+ S[4][2] = -9.049e-01-1.686e-01i, |S[4][2]| = -7.196e-01, arg(S[4][2]) = -1.694e+02
+ Updating solution error estimates
+
+Sweeping excitation index 3 (3/4):
+
+Calculating boundary modes at wave ports for ω/2π = 2.000e+00 GHz (6.288e-01)
+ Port 1, mode 1: kₙ = 7.079e+01+2.507e-38i m⁻¹, Z_PV = 2.586e+01 Ω
+ Port 2, mode 2: kₙ = 6.559e+01-5.646e-35i m⁻¹, Z_PV = 1.602e+01 Ω
+ Port 3, mode 1: kₙ = 7.079e+01+6.783e-19i m⁻¹, Z_PV = 2.586e+01 Ω
+ Port 4, mode 2: kₙ = 6.559e+01+1.325e-17i m⁻¹, Z_PV = 1.602e+01 Ω
+
+It 1/9: ω/2π = 2.000e+00 GHz (total elapsed time = 7.91e+02 s, solve 19/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.074527e+02
+  1 (restart 0) KSP residual norm 4.043331e+01
+  2 (restart 0) KSP residual norm 1.180141e+01
+  3 (restart 0) KSP residual norm 5.194282e+00
+  4 (restart 0) KSP residual norm 1.433730e+00
+  5 (restart 0) KSP residual norm 8.442543e-01
+  6 (restart 0) KSP residual norm 2.013788e-01
+  7 (restart 0) KSP residual norm 1.064804e-01
+  8 (restart 0) KSP residual norm 3.299001e-02
+  9 (restart 0) KSP residual norm 1.432198e-02
+ 10 (restart 0) KSP residual norm 7.348327e-03
+ 11 (restart 0) KSP residual norm 2.333378e-03
+ 12 (restart 0) KSP residual norm 1.241036e-03
+ 13 (restart 0) KSP residual norm 4.858830e-04
+ 14 (restart 0) KSP residual norm 2.239875e-04
+ 15 (restart 0) KSP residual norm 1.189846e-04
+ 16 (restart 0) KSP residual norm 5.623504e-05
+ 17 (restart 0) KSP residual norm 2.929146e-05
+ 18 (restart 0) KSP residual norm 1.768436e-05
+ 19 (restart 0) KSP residual norm 9.595312e-06
+ 20 (restart 0) KSP residual norm 5.556733e-06
+ 21 (restart 0) KSP residual norm 3.151194e-06
+ 22 (restart 0) KSP residual norm 1.847326e-06
+ 23 (restart 0) KSP residual norm 1.008087e-06
+GMRES solver converged in 23 iterations (avg. reduction factor: 4.486e-01)
+ Sol. ||E|| = 3.820211e+01 (||RHS|| = 9.777375e-01)
+ Field energy E (4.238e-11 J) + H (4.235e-11 J) = 8.473e-11 J
+ S[1][3] = +4.868e-01-8.735e-01i, |S[1][3]| = -3.340e-06, arg(S[1][3]) = -6.087e+01
+ S[2][3] = +5.792e-06+4.425e-06i, |S[2][3]| = -1.027e+02, arg(S[2][3]) = +3.738e+01
+ S[3][3] = -7.698e-04-4.248e-04i, |S[3][3]| = -6.112e+01, arg(S[3][3]) = -1.511e+02
+ S[4][3] = +2.046e-05+5.800e-06i, |S[4][3]| = -9.345e+01, arg(S[4][3]) = +1.583e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 2.500e+00 GHz (7.859e-01)
+ Port 1, mode 1: kₙ = 8.855e+01+8.348e-39i m⁻¹, Z_PV = 2.595e+01 Ω
+ Port 2, mode 2: kₙ = 8.199e+01-2.696e-35i m⁻¹, Z_PV = 1.603e+01 Ω
+ Port 3, mode 1: kₙ = 8.855e+01-7.418e-18i m⁻¹, Z_PV = 2.595e+01 Ω
+ Port 4, mode 2: kₙ = 8.199e+01-3.933e-16i m⁻¹, Z_PV = 1.603e+01 Ω
+
+It 2/9: ω/2π = 2.500e+00 GHz (total elapsed time = 8.28e+02 s, solve 20/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 3.967625e+01
+  1 (restart 0) KSP residual norm 2.444798e+00
+  2 (restart 0) KSP residual norm 8.662226e-01
+  3 (restart 0) KSP residual norm 7.682681e-01
+  4 (restart 0) KSP residual norm 1.825463e-01
+  5 (restart 0) KSP residual norm 1.137587e-01
+  6 (restart 0) KSP residual norm 2.338081e-02
+  7 (restart 0) KSP residual norm 1.475699e-02
+  8 (restart 0) KSP residual norm 3.630885e-03
+  9 (restart 0) KSP residual norm 1.821267e-03
+ 10 (restart 0) KSP residual norm 8.183326e-04
+ 11 (restart 0) KSP residual norm 2.876653e-04
+ 12 (restart 0) KSP residual norm 1.408186e-04
+ 13 (restart 0) KSP residual norm 6.095822e-05
+ 14 (restart 0) KSP residual norm 2.841827e-05
+ 15 (restart 0) KSP residual norm 1.244732e-05
+ 16 (restart 0) KSP residual norm 5.893215e-06
+ 17 (restart 0) KSP residual norm 3.154864e-06
+ 18 (restart 0) KSP residual norm 1.885967e-06
+GMRES solver converged in 18 iterations (avg. reduction factor: 3.563e-01)
+ Sol. ||E|| = 3.821149e+01 (||RHS|| = 1.222444e+00)
+ Field energy E (4.245e-11 J) + H (4.243e-11 J) = 8.488e-11 J
+ S[1][3] = +2.397e-01-9.709e-01i, |S[1][3]| = -3.127e-06, arg(S[1][3]) = -7.613e+01
+ S[2][3] = +8.945e-06+3.527e-06i, |S[2][3]| = -1.003e+02, arg(S[2][3]) = +2.152e+01
+ S[3][3] = -9.536e-04-2.300e-04i, |S[3][3]| = -6.017e+01, arg(S[3][3]) = -1.664e+02
+ S[4][3] = +2.236e-05-2.157e-06i, |S[4][3]| = -9.297e+01, arg(S[4][3]) = -5.510e+00
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 3.000e+00 GHz (9.431e-01)
+ Port 1, mode 1: kₙ = 1.063e+02+1.187e-38i m⁻¹, Z_PV = 2.606e+01 Ω
+ Port 2, mode 2: kₙ = 9.840e+01-5.521e-35i m⁻¹, Z_PV = 1.606e+01 Ω
+ Port 3, mode 1: kₙ = 1.063e+02+1.658e-16i m⁻¹, Z_PV = 2.606e+01 Ω
+ Port 4, mode 2: kₙ = 9.840e+01+2.174e-16i m⁻¹, Z_PV = 1.606e+01 Ω
+
+It 3/9: ω/2π = 3.000e+00 GHz (total elapsed time = 8.61e+02 s, solve 21/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.754179e+02
+  1 (restart 0) KSP residual norm 2.674976e+00
+  2 (restart 0) KSP residual norm 2.530859e+00
+  3 (restart 0) KSP residual norm 9.967411e-01
+  4 (restart 0) KSP residual norm 2.214694e-01
+  5 (restart 0) KSP residual norm 1.409001e-01
+  6 (restart 0) KSP residual norm 2.869705e-02
+  7 (restart 0) KSP residual norm 1.846171e-02
+  8 (restart 0) KSP residual norm 4.243745e-03
+  9 (restart 0) KSP residual norm 2.251541e-03
+ 10 (restart 0) KSP residual norm 9.454392e-04
+ 11 (restart 0) KSP residual norm 3.570959e-04
+ 12 (restart 0) KSP residual norm 1.694818e-04
+ 13 (restart 0) KSP residual norm 7.482654e-05
+ 14 (restart 0) KSP residual norm 3.445392e-05
+ 15 (restart 0) KSP residual norm 1.418400e-05
+ 16 (restart 0) KSP residual norm 7.003158e-06
+GMRES solver converged in 16 iterations (avg. reduction factor: 3.106e-01)
+ Sol. ||E|| = 3.822355e+01 (||RHS|| = 1.467321e+00)
+ Field energy E (4.253e-11 J) + H (4.253e-11 J) = 8.506e-11 J
+ S[1][3] = -2.490e-02-9.997e-01i, |S[1][3]| = -3.149e-06, arg(S[1][3]) = -9.143e+01
+ S[2][3] = +1.197e-05+1.085e-06i, |S[2][3]| = -9.840e+01, arg(S[2][3]) = +5.180e+00
+ S[3][3] = -1.015e-03+3.169e-05i, |S[3][3]| = -5.987e+01, arg(S[3][3]) = +1.782e+02
+ S[4][3] = +1.889e-05-1.096e-05i, |S[4][3]| = -9.322e+01, arg(S[4][3]) = -3.011e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 3.500e+00 GHz (1.100e+00)
+ Port 1, mode 1: kₙ = 1.242e+02-5.498e-31i m⁻¹, Z_PV = 2.618e+01 Ω
+ Port 2, mode 2: kₙ = 1.148e+02-2.187e-29i m⁻¹, Z_PV = 1.608e+01 Ω
+ Port 3, mode 1: kₙ = 1.242e+02+2.110e-17i m⁻¹, Z_PV = 2.618e+01 Ω
+ Port 4, mode 2: kₙ = 1.148e+02-2.331e-16i m⁻¹, Z_PV = 1.608e+01 Ω
+
+It 4/9: ω/2π = 3.500e+00 GHz (total elapsed time = 8.91e+02 s, solve 22/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 2.766155e+01
+  1 (restart 0) KSP residual norm 2.747678e+00
+  2 (restart 0) KSP residual norm 2.546262e+00
+  3 (restart 0) KSP residual norm 1.043102e+00
+  4 (restart 0) KSP residual norm 2.569853e-01
+  5 (restart 0) KSP residual norm 1.649111e-01
+  6 (restart 0) KSP residual norm 3.366438e-02
+  7 (restart 0) KSP residual norm 2.166646e-02
+  8 (restart 0) KSP residual norm 4.851984e-03
+  9 (restart 0) KSP residual norm 2.631208e-03
+ 10 (restart 0) KSP residual norm 1.067380e-03
+ 11 (restart 0) KSP residual norm 4.283469e-04
+ 12 (restart 0) KSP residual norm 1.954393e-04
+ 13 (restart 0) KSP residual norm 9.097264e-05
+ 14 (restart 0) KSP residual norm 3.925095e-05
+ 15 (restart 0) KSP residual norm 1.608728e-05
+ 16 (restart 0) KSP residual norm 8.086602e-06
+ 17 (restart 0) KSP residual norm 4.229667e-06
+ 18 (restart 0) KSP residual norm 2.510139e-06
+ 19 (restart 0) KSP residual norm 1.382276e-06
+GMRES solver converged in 19 iterations (avg. reduction factor: 3.787e-01)
+ Sol. ||E|| = 3.823822e+01 (||RHS|| = 1.712395e+00)
+ Field energy E (4.262e-11 J) + H (4.264e-11 J) = 8.526e-11 J
+ S[1][3] = -2.883e-01-9.575e-01i, |S[1][3]| = -3.789e-06, arg(S[1][3]) = -1.068e+02
+ S[2][3] = +1.412e-05-2.799e-06i, |S[2][3]| = -9.683e+01, arg(S[2][3]) = -1.121e+01
+ S[3][3] = -9.358e-04+2.897e-04i, |S[3][3]| = -6.018e+01, arg(S[3][3]) = +1.628e+02
+ S[4][3] = +9.759e-06-1.759e-05i, |S[4][3]| = -9.393e+01, arg(S[4][3]) = -6.099e+01
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 4.000e+00 GHz (1.258e+00)
+ Port 1, mode 1: kₙ = 1.420e+02-1.413e-31i m⁻¹, Z_PV = 2.631e+01 Ω
+ Port 2, mode 2: kₙ = 1.312e+02-4.101e-29i m⁻¹, Z_PV = 1.611e+01 Ω
+ Port 3, mode 1: kₙ = 1.420e+02+4.110e-18i m⁻¹, Z_PV = 2.631e+01 Ω
+ Port 4, mode 2: kₙ = 1.312e+02-2.322e-16i m⁻¹, Z_PV = 1.611e+01 Ω
+
+It 5/9: ω/2π = 4.000e+00 GHz (total elapsed time = 9.24e+02 s, solve 23/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.513381e+01
+  1 (restart 0) KSP residual norm 2.937715e+00
+  2 (restart 0) KSP residual norm 1.248989e+00
+  3 (restart 0) KSP residual norm 8.256287e-01
+  4 (restart 0) KSP residual norm 2.850448e-01
+  5 (restart 0) KSP residual norm 1.822744e-01
+  6 (restart 0) KSP residual norm 3.778569e-02
+  7 (restart 0) KSP residual norm 2.378702e-02
+  8 (restart 0) KSP residual norm 5.390156e-03
+  9 (restart 0) KSP residual norm 2.907928e-03
+ 10 (restart 0) KSP residual norm 1.177184e-03
+ 11 (restart 0) KSP residual norm 4.885190e-04
+ 12 (restart 0) KSP residual norm 2.169034e-04
+ 13 (restart 0) KSP residual norm 1.059279e-04
+ 14 (restart 0) KSP residual norm 4.230296e-05
+ 15 (restart 0) KSP residual norm 1.795080e-05
+ 16 (restart 0) KSP residual norm 9.054459e-06
+ 17 (restart 0) KSP residual norm 4.787073e-06
+ 18 (restart 0) KSP residual norm 2.822649e-06
+ 19 (restart 0) KSP residual norm 1.560381e-06
+ 20 (restart 0) KSP residual norm 9.414073e-07
+ 21 (restart 0) KSP residual norm 4.592887e-07
+GMRES solver converged in 21 iterations (avg. reduction factor: 4.061e-01)
+ Sol. ||E|| = 3.825519e+01 (||RHS|| = 1.957684e+00)
+ Field energy E (4.273e-11 J) + H (4.275e-11 J) = 8.548e-11 J
+ S[1][3] = -5.317e-01-8.469e-01i, |S[1][3]| = -3.349e-06, arg(S[1][3]) = -1.221e+02
+ S[2][3] = +1.478e-05-7.818e-06i, |S[2][3]| = -9.553e+01, arg(S[2][3]) = -2.787e+01
+ S[3][3] = -7.368e-04+4.724e-04i, |S[3][3]| = -6.116e+01, arg(S[3][3]) = +1.473e+02
+ S[4][3] = -3.572e-06-1.892e-05i, |S[4][3]| = -9.431e+01, arg(S[4][3]) = -1.007e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 4.500e+00 GHz (1.415e+00)
+ Port 1, mode 1: kₙ = 1.600e+02-3.064e-30i m⁻¹, Z_PV = 2.645e+01 Ω
+ Port 2, mode 2: kₙ = 1.477e+02-6.377e-28i m⁻¹, Z_PV = 1.615e+01 Ω
+ Port 3, mode 1: kₙ = 1.600e+02-3.928e-18i m⁻¹, Z_PV = 2.645e+01 Ω
+ Port 4, mode 2: kₙ = 1.477e+02-1.139e-16i m⁻¹, Z_PV = 1.615e+01 Ω
+
+It 6/9: ω/2π = 4.500e+00 GHz (total elapsed time = 9.60e+02 s, solve 24/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.055948e+01
+  1 (restart 0) KSP residual norm 3.283134e+00
+  2 (restart 0) KSP residual norm 1.264818e+00
+  3 (restart 0) KSP residual norm 3.685413e-01
+  4 (restart 0) KSP residual norm 2.784350e-01
+  5 (restart 0) KSP residual norm 1.851099e-01
+  6 (restart 0) KSP residual norm 4.085802e-02
+  7 (restart 0) KSP residual norm 2.410444e-02
+  8 (restart 0) KSP residual norm 5.805641e-03
+  9 (restart 0) KSP residual norm 3.028584e-03
+ 10 (restart 0) KSP residual norm 1.253631e-03
+ 11 (restart 0) KSP residual norm 5.292062e-04
+ 12 (restart 0) KSP residual norm 2.301569e-04
+ 13 (restart 0) KSP residual norm 1.155590e-04
+ 14 (restart 0) KSP residual norm 4.363610e-05
+ 15 (restart 0) KSP residual norm 1.920248e-05
+ 16 (restart 0) KSP residual norm 9.878828e-06
+ 17 (restart 0) KSP residual norm 5.238292e-06
+ 18 (restart 0) KSP residual norm 3.062728e-06
+ 19 (restart 0) KSP residual norm 1.695786e-06
+ 20 (restart 0) KSP residual norm 1.006592e-06
+ 21 (restart 0) KSP residual norm 4.853767e-07
+GMRES solver converged in 21 iterations (avg. reduction factor: 4.144e-01)
+ Sol. ||E|| = 3.827387e+01 (||RHS|| = 2.203206e+00)
+ Field energy E (4.285e-11 J) + H (4.287e-11 J) = 8.572e-11 J
+ S[1][3] = -7.376e-01-6.752e-01i, |S[1][3]| = -2.236e-06, arg(S[1][3]) = -1.375e+02
+ S[2][3] = +1.351e-05-1.321e-05i, |S[2][3]| = -9.447e+01, arg(S[2][3]) = -4.437e+01
+ S[3][3] = -4.725e-04+5.286e-04i, |S[3][3]| = -6.299e+01, arg(S[3][3]) = +1.318e+02
+ S[4][3] = -1.813e-05-1.293e-05i, |S[4][3]| = -9.305e+01, arg(S[4][3]) = -1.445e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 5.000e+00 GHz (1.572e+00)
+ Port 1, mode 1: kₙ = 1.779e+02-2.607e-30i m⁻¹, Z_PV = 2.660e+01 Ω
+ Port 2, mode 2: kₙ = 1.641e+02-6.292e-28i m⁻¹, Z_PV = 1.619e+01 Ω
+ Port 3, mode 1: kₙ = 1.779e+02+4.747e-18i m⁻¹, Z_PV = 2.660e+01 Ω
+ Port 4, mode 2: kₙ = 1.641e+02+3.260e-18i m⁻¹, Z_PV = 1.619e+01 Ω
+
+It 7/9: ω/2π = 5.000e+00 GHz (total elapsed time = 9.97e+02 s, solve 25/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 8.337504e+00
+  1 (restart 0) KSP residual norm 3.775675e+00
+  2 (restart 0) KSP residual norm 1.295465e+00
+  3 (restart 0) KSP residual norm 3.525593e-01
+  4 (restart 0) KSP residual norm 2.382563e-01
+  5 (restart 0) KSP residual norm 1.084875e-01
+  6 (restart 0) KSP residual norm 4.262561e-02
+  7 (restart 0) KSP residual norm 2.174601e-02
+  8 (restart 0) KSP residual norm 6.089728e-03
+  9 (restart 0) KSP residual norm 2.950770e-03
+ 10 (restart 0) KSP residual norm 1.264006e-03
+ 11 (restart 0) KSP residual norm 5.481815e-04
+ 12 (restart 0) KSP residual norm 2.312832e-04
+ 13 (restart 0) KSP residual norm 1.164959e-04
+ 14 (restart 0) KSP residual norm 4.348927e-05
+ 15 (restart 0) KSP residual norm 1.944231e-05
+ 16 (restart 0) KSP residual norm 1.055044e-05
+ 17 (restart 0) KSP residual norm 5.512923e-06
+ 18 (restart 0) KSP residual norm 3.218458e-06
+ 19 (restart 0) KSP residual norm 1.789964e-06
+ 20 (restart 0) KSP residual norm 1.045086e-06
+ 21 (restart 0) KSP residual norm 5.186616e-07
+ 22 (restart 0) KSP residual norm 3.002882e-07
+GMRES solver converged in 22 iterations (avg. reduction factor: 4.263e-01)
+ Sol. ||E|| = 3.829345e+01 (||RHS|| = 2.448973e+00)
+ Field energy E (4.297e-11 J) + H (4.299e-11 J) = 8.596e-11 J
+ S[1][3] = -8.908e-01-4.543e-01i, |S[1][3]| = -1.164e-06, arg(S[1][3]) = -1.530e+02
+ S[2][3] = +1.030e-05-1.815e-05i, |S[2][3]| = -9.361e+01, arg(S[2][3]) = -6.043e+01
+ S[3][3] = -2.163e-04+4.417e-04i, |S[3][3]| = -6.616e+01, arg(S[3][3]) = +1.161e+02
+ S[4][3] = -3.008e-05+7.245e-07i, |S[4][3]| = -9.043e+01, arg(S[4][3]) = +1.786e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 5.500e+00 GHz (1.729e+00)
+ Port 1, mode 1: kₙ = 1.959e+02-3.042e-29i m⁻¹, Z_PV = 2.675e+01 Ω
+ Port 2, mode 2: kₙ = 1.806e+02-6.827e-27i m⁻¹, Z_PV = 1.623e+01 Ω
+ Port 3, mode 1: kₙ = 1.959e+02+1.343e-17i m⁻¹, Z_PV = 2.675e+01 Ω
+ Port 4, mode 2: kₙ = 1.806e+02+1.990e-17i m⁻¹, Z_PV = 1.623e+01 Ω
+
+It 8/9: ω/2π = 5.500e+00 GHz (total elapsed time = 1.04e+03 s, solve 26/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 7.249351e+00
+  1 (restart 0) KSP residual norm 4.451201e+00
+  2 (restart 0) KSP residual norm 1.306622e+00
+  3 (restart 0) KSP residual norm 3.733145e-01
+  4 (restart 0) KSP residual norm 2.463192e-01
+  5 (restart 0) KSP residual norm 5.504229e-02
+  6 (restart 0) KSP residual norm 3.704106e-02
+  7 (restart 0) KSP residual norm 1.350509e-02
+  8 (restart 0) KSP residual norm 6.268376e-03
+  9 (restart 0) KSP residual norm 2.813329e-03
+ 10 (restart 0) KSP residual norm 1.219213e-03
+ 11 (restart 0) KSP residual norm 5.607255e-04
+ 12 (restart 0) KSP residual norm 2.280432e-04
+ 13 (restart 0) KSP residual norm 1.126588e-04
+ 14 (restart 0) KSP residual norm 4.388162e-05
+ 15 (restart 0) KSP residual norm 2.139170e-05
+ 16 (restart 0) KSP residual norm 1.158126e-05
+ 17 (restart 0) KSP residual norm 6.321282e-06
+ 18 (restart 0) KSP residual norm 3.577290e-06
+ 19 (restart 0) KSP residual norm 2.135207e-06
+ 20 (restart 0) KSP residual norm 1.134495e-06
+ 21 (restart 0) KSP residual norm 5.972189e-07
+ 22 (restart 0) KSP residual norm 3.297586e-07
+GMRES solver converged in 22 iterations (avg. reduction factor: 4.304e-01)
+ Sol. ||E|| = 3.831300e+01 (||RHS|| = 2.694990e+00)
+ Field energy E (4.310e-11 J) + H (4.311e-11 J) = 8.622e-11 J
+ S[1][3] = -9.798e-01-1.998e-01i, |S[1][3]| = -4.334e-07, arg(S[1][3]) = -1.685e+02
+ S[2][3] = +5.537e-06-2.197e-05i, |S[2][3]| = -9.290e+01, arg(S[2][3]) = -7.585e+01
+ S[3][3] = -4.073e-05+2.352e-04i, |S[3][3]| = -7.244e+01, arg(S[3][3]) = +9.983e+01
+ S[4][3] = -3.569e-05+2.041e-05i, |S[4][3]| = -8.772e+01, arg(S[4][3]) = +1.502e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 6.000e+00 GHz (1.886e+00)
+ Port 1, mode 1: kₙ = 2.140e+02-3.197e-29i m⁻¹, Z_PV = 2.691e+01 Ω
+ Port 2, mode 2: kₙ = 1.970e+02-9.499e-27i m⁻¹, Z_PV = 1.627e+01 Ω
+ Port 3, mode 1: kₙ = 2.140e+02-8.027e-18i m⁻¹, Z_PV = 2.691e+01 Ω
+ Port 4, mode 2: kₙ = 1.970e+02+1.695e-17i m⁻¹, Z_PV = 1.627e+01 Ω
+
+It 9/9: ω/2π = 6.000e+00 GHz (total elapsed time = 1.07e+03 s, solve 27/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 6.950578e+00
+  1 (restart 0) KSP residual norm 5.284659e+00
+  2 (restart 0) KSP residual norm 1.314485e+00
+  3 (restart 0) KSP residual norm 3.915122e-01
+  4 (restart 0) KSP residual norm 2.585862e-01
+  5 (restart 0) KSP residual norm 5.215516e-02
+  6 (restart 0) KSP residual norm 3.494836e-02
+  7 (restart 0) KSP residual norm 8.225856e-03
+  8 (restart 0) KSP residual norm 5.018046e-03
+  9 (restart 0) KSP residual norm 2.415326e-03
+ 10 (restart 0) KSP residual norm 1.042439e-03
+ 11 (restart 0) KSP residual norm 5.343856e-04
+ 12 (restart 0) KSP residual norm 2.228431e-04
+ 13 (restart 0) KSP residual norm 1.122685e-04
+ 14 (restart 0) KSP residual norm 4.527546e-05
+ 15 (restart 0) KSP residual norm 2.342996e-05
+ 16 (restart 0) KSP residual norm 1.227442e-05
+ 17 (restart 0) KSP residual norm 6.796241e-06
+ 18 (restart 0) KSP residual norm 3.646038e-06
+ 19 (restart 0) KSP residual norm 2.216374e-06
+ 20 (restart 0) KSP residual norm 1.136207e-06
+ 21 (restart 0) KSP residual norm 6.152848e-07
+ 22 (restart 0) KSP residual norm 3.433602e-07
+GMRES solver converged in 22 iterations (avg. reduction factor: 4.314e-01)
+ Sol. ||E|| = 3.833157e+01 (||RHS|| = 2.941263e+00)
+ Field energy E (4.324e-11 J) + H (4.324e-11 J) = 8.647e-11 J
+ S[1][3] = -9.975e-01+7.007e-02i, |S[1][3]| = -2.670e-07, arg(S[1][3]) = +1.760e+02
+ S[2][3] = -2.118e-07-2.434e-05i, |S[2][3]| = -9.227e+01, arg(S[2][3]) = -9.050e+01
+ S[3][3] = +3.642e-06-3.337e-05i, |S[3][3]| = -8.948e+01, arg(S[3][3]) = -8.377e+01
+ S[4][3] = -3.229e-05+4.272e-05i, |S[4][3]| = -8.543e+01, arg(S[4][3]) = +1.271e+02
+ Updating solution error estimates
+
+Sweeping excitation index 4 (4/4):
+
+Calculating boundary modes at wave ports for ω/2π = 2.000e+00 GHz (6.288e-01)
+ Port 1, mode 1: kₙ = 7.079e+01+2.534e-38i m⁻¹, Z_PV = 2.586e+01 Ω
+ Port 2, mode 2: kₙ = 6.559e+01-5.646e-35i m⁻¹, Z_PV = 1.602e+01 Ω
+ Port 3, mode 1: kₙ = 7.079e+01-2.948e-18i m⁻¹, Z_PV = 2.586e+01 Ω
+ Port 4, mode 2: kₙ = 6.559e+01+7.646e-17i m⁻¹, Z_PV = 1.602e+01 Ω
+
+It 1/9: ω/2π = 2.000e+00 GHz (total elapsed time = 1.11e+03 s, solve 28/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.018183e+02
+  1 (restart 0) KSP residual norm 3.998061e+01
+  2 (restart 0) KSP residual norm 1.037253e+01
+  3 (restart 0) KSP residual norm 4.637121e+00
+  4 (restart 0) KSP residual norm 1.386842e+00
+  5 (restart 0) KSP residual norm 7.132436e-01
+  6 (restart 0) KSP residual norm 1.815050e-01
+  7 (restart 0) KSP residual norm 9.219502e-02
+  8 (restart 0) KSP residual norm 3.291212e-02
+  9 (restart 0) KSP residual norm 1.412001e-02
+ 10 (restart 0) KSP residual norm 7.100877e-03
+ 11 (restart 0) KSP residual norm 2.504425e-03
+ 12 (restart 0) KSP residual norm 1.213698e-03
+ 13 (restart 0) KSP residual norm 5.123848e-04
+ 14 (restart 0) KSP residual norm 2.181654e-04
+ 15 (restart 0) KSP residual norm 1.210173e-04
+ 16 (restart 0) KSP residual norm 4.910987e-05
+ 17 (restart 0) KSP residual norm 2.654194e-05
+ 18 (restart 0) KSP residual norm 1.483641e-05
+ 19 (restart 0) KSP residual norm 8.525744e-06
+ 20 (restart 0) KSP residual norm 4.800610e-06
+ 21 (restart 0) KSP residual norm 2.813423e-06
+ 22 (restart 0) KSP residual norm 1.587523e-06
+ 23 (restart 0) KSP residual norm 9.177251e-07
+GMRES solver converged in 23 iterations (avg. reduction factor: 4.480e-01)
+ Sol. ||E|| = 4.399936e+01 (||RHS|| = 9.508314e-01)
+ Field energy E (3.502e-11 J) + H (3.752e-11 J) = 7.254e-11 J
+ S[1][4] = +5.669e-06+4.041e-06i, |S[1][4]| = -1.031e+02, arg(S[1][4]) = +3.548e+01
+ S[2][4] = +5.105e-01-7.710e-01i, |S[2][4]| = -6.802e-01, arg(S[2][4]) = -5.649e+01
+ S[3][4] = +2.038e-05+5.797e-06i, |S[3][4]| = -9.348e+01, arg(S[3][4]) = +1.588e+01
+ S[4][4] = -2.613e-02+3.142e-02i, |S[4][4]| = -2.777e+01, arg(S[4][4]) = +1.298e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 2.500e+00 GHz (7.859e-01)
+ Port 1, mode 1: kₙ = 8.855e+01+8.409e-39i m⁻¹, Z_PV = 2.595e+01 Ω
+ Port 2, mode 2: kₙ = 8.199e+01-2.696e-35i m⁻¹, Z_PV = 1.603e+01 Ω
+ Port 3, mode 1: kₙ = 8.855e+01+9.398e-18i m⁻¹, Z_PV = 2.595e+01 Ω
+ Port 4, mode 2: kₙ = 8.199e+01-5.088e-16i m⁻¹, Z_PV = 1.603e+01 Ω
+
+It 2/9: ω/2π = 2.500e+00 GHz (total elapsed time = 1.15e+03 s, solve 29/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 2.476285e+01
+  1 (restart 0) KSP residual norm 2.572756e+00
+  2 (restart 0) KSP residual norm 1.216300e+00
+  3 (restart 0) KSP residual norm 8.371053e-01
+  4 (restart 0) KSP residual norm 1.003823e-01
+  5 (restart 0) KSP residual norm 2.516063e-02
+  6 (restart 0) KSP residual norm 1.258261e-02
+  7 (restart 0) KSP residual norm 3.421385e-03
+  8 (restart 0) KSP residual norm 1.510785e-03
+  9 (restart 0) KSP residual norm 6.909391e-04
+ 10 (restart 0) KSP residual norm 2.175979e-04
+ 11 (restart 0) KSP residual norm 1.051369e-04
+ 12 (restart 0) KSP residual norm 4.758774e-05
+ 13 (restart 0) KSP residual norm 2.259738e-05
+ 14 (restart 0) KSP residual norm 1.049158e-05
+ 15 (restart 0) KSP residual norm 6.562276e-06
+ 16 (restart 0) KSP residual norm 3.212919e-06
+ 17 (restart 0) KSP residual norm 1.839539e-06
+ 18 (restart 0) KSP residual norm 9.618008e-07
+GMRES solver converged in 18 iterations (avg. reduction factor: 3.497e-01)
+ Sol. ||E|| = 4.431460e+01 (||RHS|| = 1.188572e+00)
+ Field energy E (3.554e-11 J) + H (3.691e-11 J) = 7.244e-11 J
+ S[1][4] = +8.380e-06+3.150e-06i, |S[1][4]| = -1.010e+02, arg(S[1][4]) = +2.060e+01
+ S[2][4] = +3.072e-01-8.711e-01i, |S[2][4]| = -6.896e-01, arg(S[2][4]) = -7.058e+01
+ S[3][4] = +2.238e-05-2.155e-06i, |S[3][4]| = -9.296e+01, arg(S[3][4]) = -5.498e+00
+ S[4][4] = -1.296e-02+2.156e-02i, |S[4][4]| = -3.199e+01, arg(S[4][4]) = +1.210e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 3.000e+00 GHz (9.431e-01)
+ Port 1, mode 1: kₙ = 1.063e+02+1.179e-38i m⁻¹, Z_PV = 2.606e+01 Ω
+ Port 2, mode 2: kₙ = 9.840e+01-5.521e-35i m⁻¹, Z_PV = 1.606e+01 Ω
+ Port 3, mode 1: kₙ = 1.063e+02+1.838e-16i m⁻¹, Z_PV = 2.606e+01 Ω
+ Port 4, mode 2: kₙ = 9.840e+01-1.368e-16i m⁻¹, Z_PV = 1.606e+01 Ω
+
+It 3/9: ω/2π = 3.000e+00 GHz (total elapsed time = 1.18e+03 s, solve 30/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 8.312488e+01
+  1 (restart 0) KSP residual norm 4.138199e+00
+  2 (restart 0) KSP residual norm 2.615692e+00
+  3 (restart 0) KSP residual norm 9.317394e-01
+  4 (restart 0) KSP residual norm 1.257516e-01
+  5 (restart 0) KSP residual norm 3.098466e-02
+  6 (restart 0) KSP residual norm 1.587071e-02
+  7 (restart 0) KSP residual norm 4.096561e-03
+  8 (restart 0) KSP residual norm 1.871915e-03
+  9 (restart 0) KSP residual norm 7.962327e-04
+ 10 (restart 0) KSP residual norm 2.516616e-04
+ 11 (restart 0) KSP residual norm 1.206035e-04
+ 12 (restart 0) KSP residual norm 5.166193e-05
+ 13 (restart 0) KSP residual norm 2.493442e-05
+ 14 (restart 0) KSP residual norm 1.239235e-05
+ 15 (restart 0) KSP residual norm 7.674345e-06
+ 16 (restart 0) KSP residual norm 3.617490e-06
+GMRES solver converged in 16 iterations (avg. reduction factor: 3.098e-01)
+ Sol. ||E|| = 4.460558e+01 (||RHS|| = 1.426335e+00)
+ Field energy E (3.602e-11 J) + H (3.636e-11 J) = 7.238e-11 J
+ S[1][4] = +1.104e-05+1.014e-06i, |S[1][4]| = -9.911e+01, arg(S[1][4]) = +5.251e+00
+ S[2][4] = +8.592e-02-9.188e-01i, |S[2][4]| = -6.978e-01, arg(S[2][4]) = -8.466e+01
+ S[3][4] = +1.891e-05-1.098e-05i, |S[3][4]| = -9.320e+01, arg(S[3][4]) = -3.015e+01
+ S[4][4] = -5.994e-03+6.437e-03i, |S[4][4]| = -4.111e+01, arg(S[4][4]) = +1.330e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 3.500e+00 GHz (1.100e+00)
+ Port 1, mode 1: kₙ = 1.242e+02-4.450e-31i m⁻¹, Z_PV = 2.618e+01 Ω
+ Port 2, mode 2: kₙ = 1.148e+02-2.249e-29i m⁻¹, Z_PV = 1.608e+01 Ω
+ Port 3, mode 1: kₙ = 1.242e+02+1.862e-17i m⁻¹, Z_PV = 2.618e+01 Ω
+ Port 4, mode 2: kₙ = 1.148e+02-6.161e-17i m⁻¹, Z_PV = 1.608e+01 Ω
+
+It 4/9: ω/2π = 3.500e+00 GHz (total elapsed time = 1.21e+03 s, solve 31/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 6.471835e+01
+  1 (restart 0) KSP residual norm 2.742501e+00
+  2 (restart 0) KSP residual norm 1.198273e+00
+  3 (restart 0) KSP residual norm 8.999648e-01
+  4 (restart 0) KSP residual norm 1.447540e-01
+  5 (restart 0) KSP residual norm 3.669613e-02
+  6 (restart 0) KSP residual norm 1.844375e-02
+  7 (restart 0) KSP residual norm 4.740589e-03
+  8 (restart 0) KSP residual norm 2.148527e-03
+  9 (restart 0) KSP residual norm 8.820810e-04
+ 10 (restart 0) KSP residual norm 2.783525e-04
+ 11 (restart 0) KSP residual norm 1.341560e-04
+ 12 (restart 0) KSP residual norm 5.467006e-05
+ 13 (restart 0) KSP residual norm 2.710160e-05
+ 14 (restart 0) KSP residual norm 1.446743e-05
+ 15 (restart 0) KSP residual norm 8.606613e-06
+ 16 (restart 0) KSP residual norm 4.025129e-06
+ 17 (restart 0) KSP residual norm 2.326918e-06
+GMRES solver converged in 17 iterations (avg. reduction factor: 3.291e-01)
+ Sol. ||E|| = 4.484060e+01 (||RHS|| = 1.664123e+00)
+ Field energy E (3.642e-11 J) + H (3.594e-11 J) = 7.236e-11 J
+ S[1][4] = +1.302e-05-2.325e-06i, |S[1][4]| = -9.757e+01, arg(S[1][4]) = -1.012e+01
+ S[2][4] = -1.401e-01-9.114e-01i, |S[2][4]| = -7.040e-01, arg(S[2][4]) = -9.874e+01
+ S[3][4] = +9.771e-06-1.760e-05i, |S[3][4]| = -9.392e+01, arg(S[3][4]) = -6.096e+01
+ S[4][4] = -7.039e-03-1.046e-02i, |S[4][4]| = -3.799e+01, arg(S[4][4]) = -1.239e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 4.000e+00 GHz (1.258e+00)
+ Port 1, mode 1: kₙ = 1.420e+02-1.538e-31i m⁻¹, Z_PV = 2.631e+01 Ω
+ Port 2, mode 2: kₙ = 1.312e+02-2.935e-29i m⁻¹, Z_PV = 1.611e+01 Ω
+ Port 3, mode 1: kₙ = 1.420e+02-6.817e-18i m⁻¹, Z_PV = 2.631e+01 Ω
+ Port 4, mode 2: kₙ = 1.312e+02-1.829e-17i m⁻¹, Z_PV = 1.611e+01 Ω
+
+It 5/9: ω/2π = 4.000e+00 GHz (total elapsed time = 1.24e+03 s, solve 32/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 2.373298e+01
+  1 (restart 0) KSP residual norm 2.898342e+00
+  2 (restart 0) KSP residual norm 1.215513e+00
+  3 (restart 0) KSP residual norm 3.047195e-01
+  4 (restart 0) KSP residual norm 1.458314e-01
+  5 (restart 0) KSP residual norm 4.178744e-02
+  6 (restart 0) KSP residual norm 1.963371e-02
+  7 (restart 0) KSP residual norm 5.302531e-03
+  8 (restart 0) KSP residual norm 2.274058e-03
+  9 (restart 0) KSP residual norm 9.441440e-04
+ 10 (restart 0) KSP residual norm 2.906098e-04
+ 11 (restart 0) KSP residual norm 1.452603e-04
+ 12 (restart 0) KSP residual norm 5.652802e-05
+ 13 (restart 0) KSP residual norm 2.915424e-05
+ 14 (restart 0) KSP residual norm 1.647786e-05
+ 15 (restart 0) KSP residual norm 9.318483e-06
+ 16 (restart 0) KSP residual norm 4.394571e-06
+ 17 (restart 0) KSP residual norm 2.541848e-06
+ 18 (restart 0) KSP residual norm 1.236450e-06
+GMRES solver converged in 18 iterations (avg. reduction factor: 3.581e-01)
+ Sol. ||E|| = 4.499744e+01 (||RHS|| = 1.901943e+00)
+ Field energy E (3.670e-11 J) + H (3.569e-11 J) = 7.239e-11 J
+ S[1][4] = +1.387e-05-6.634e-06i, |S[1][4]| = -9.626e+01, arg(S[1][4]) = -2.556e+01
+ S[2][4] = -3.576e-01-8.495e-01i, |S[2][4]| = -7.081e-01, arg(S[2][4]) = -1.128e+02
+ S[3][4] = -3.568e-06-1.892e-05i, |S[3][4]| = -9.431e+01, arg(S[3][4]) = -1.007e+02
+ S[4][4] = -1.607e-02-2.519e-02i, |S[4][4]| = -3.049e+01, arg(S[4][4]) = -1.225e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 4.500e+00 GHz (1.415e+00)
+ Port 1, mode 1: kₙ = 1.600e+02-1.643e-30i m⁻¹, Z_PV = 2.645e+01 Ω
+ Port 2, mode 2: kₙ = 1.477e+02-3.127e-28i m⁻¹, Z_PV = 1.615e+01 Ω
+ Port 3, mode 1: kₙ = 1.600e+02-1.630e-17i m⁻¹, Z_PV = 2.645e+01 Ω
+ Port 4, mode 2: kₙ = 1.477e+02-1.063e-16i m⁻¹, Z_PV = 1.615e+01 Ω
+
+It 6/9: ω/2π = 4.500e+00 GHz (total elapsed time = 1.27e+03 s, solve 33/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.472033e+01
+  1 (restart 0) KSP residual norm 3.121602e+00
+  2 (restart 0) KSP residual norm 1.309070e+00
+  3 (restart 0) KSP residual norm 2.526189e-01
+  4 (restart 0) KSP residual norm 7.345727e-02
+  5 (restart 0) KSP residual norm 4.430034e-02
+  6 (restart 0) KSP residual norm 1.875846e-02
+  7 (restart 0) KSP residual norm 5.744568e-03
+  8 (restart 0) KSP residual norm 2.194878e-03
+  9 (restart 0) KSP residual norm 9.781278e-04
+ 10 (restart 0) KSP residual norm 2.833328e-04
+ 11 (restart 0) KSP residual norm 1.521908e-04
+ 12 (restart 0) KSP residual norm 5.688815e-05
+ 13 (restart 0) KSP residual norm 3.100309e-05
+ 14 (restart 0) KSP residual norm 1.800038e-05
+ 15 (restart 0) KSP residual norm 9.723343e-06
+ 16 (restart 0) KSP residual norm 4.628980e-06
+ 17 (restart 0) KSP residual norm 2.656523e-06
+ 18 (restart 0) KSP residual norm 1.300893e-06
+ 19 (restart 0) KSP residual norm 7.380458e-07
+GMRES solver converged in 19 iterations (avg. reduction factor: 3.778e-01)
+ Sol. ||E|| = 4.506542e+01 (||RHS|| = 2.139797e+00)
+ Field energy E (3.683e-11 J) + H (3.562e-11 J) = 7.246e-11 J
+ S[1][4] = +1.324e-05-1.144e-05i, |S[1][4]| = -9.514e+01, arg(S[1][4]) = -4.083e+01
+ S[2][4] = -5.538e-01-7.365e-01i, |S[2][4]| = -7.106e-01, arg(S[2][4]) = -1.269e+02
+ S[3][4] = -1.813e-05-1.293e-05i, |S[3][4]| = -9.305e+01, arg(S[3][4]) = -1.445e+02
+ S[4][4] = -3.123e-02-3.421e-02i, |S[4][4]| = -2.668e+01, arg(S[4][4]) = -1.324e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 5.000e+00 GHz (1.572e+00)
+ Port 1, mode 1: kₙ = 1.779e+02-2.994e-30i m⁻¹, Z_PV = 2.660e+01 Ω
+ Port 2, mode 2: kₙ = 1.641e+02-2.982e-28i m⁻¹, Z_PV = 1.619e+01 Ω
+ Port 3, mode 1: kₙ = 1.779e+02+1.438e-18i m⁻¹, Z_PV = 2.660e+01 Ω
+ Port 4, mode 2: kₙ = 1.641e+02-5.577e-18i m⁻¹, Z_PV = 1.619e+01 Ω
+
+It 7/9: ω/2π = 5.000e+00 GHz (total elapsed time = 1.31e+03 s, solve 34/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 1.082991e+01
+  1 (restart 0) KSP residual norm 3.435723e+00
+  2 (restart 0) KSP residual norm 1.372694e+00
+  3 (restart 0) KSP residual norm 2.818247e-01
+  4 (restart 0) KSP residual norm 4.898820e-02
+  5 (restart 0) KSP residual norm 3.547804e-02
+  6 (restart 0) KSP residual norm 1.224398e-02
+  7 (restart 0) KSP residual norm 5.940182e-03
+  8 (restart 0) KSP residual norm 1.869082e-03
+  9 (restart 0) KSP residual norm 9.692024e-04
+ 10 (restart 0) KSP residual norm 2.561878e-04
+ 11 (restart 0) KSP residual norm 1.507884e-04
+ 12 (restart 0) KSP residual norm 5.565627e-05
+ 13 (restart 0) KSP residual norm 3.255408e-05
+ 14 (restart 0) KSP residual norm 1.863917e-05
+ 15 (restart 0) KSP residual norm 9.662662e-06
+ 16 (restart 0) KSP residual norm 4.785066e-06
+ 17 (restart 0) KSP residual norm 2.672670e-06
+ 18 (restart 0) KSP residual norm 1.360679e-06
+ 19 (restart 0) KSP residual norm 8.032806e-07
+ 20 (restart 0) KSP residual norm 4.658103e-07
+GMRES solver converged in 20 iterations (avg. reduction factor: 3.937e-01)
+ Sol. ||E|| = 4.504618e+01 (||RHS|| = 2.377690e+00)
+ Field energy E (3.683e-11 J) + H (3.571e-11 J) = 7.254e-11 J
+ S[1][4] = +1.101e-05-1.618e-05i, |S[1][4]| = -9.417e+01, arg(S[1][4]) = -5.576e+01
+ S[2][4] = -7.168e-01-5.787e-01i, |S[2][4]| = -7.124e-01, arg(S[2][4]) = -1.411e+02
+ S[3][4] = -3.008e-05+7.187e-07i, |S[3][4]| = -9.043e+01, arg(S[3][4]) = +1.786e+02
+ S[4][4] = -4.913e-02-3.521e-02i, |S[4][4]| = -2.437e+01, arg(S[4][4]) = -1.444e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 5.500e+00 GHz (1.729e+00)
+ Port 1, mode 1: kₙ = 1.959e+02-3.583e-29i m⁻¹, Z_PV = 2.675e+01 Ω
+ Port 2, mode 2: kₙ = 1.806e+02-6.276e-27i m⁻¹, Z_PV = 1.623e+01 Ω
+ Port 3, mode 1: kₙ = 1.959e+02+1.425e-17i m⁻¹, Z_PV = 2.675e+01 Ω
+ Port 4, mode 2: kₙ = 1.806e+02+3.761e-17i m⁻¹, Z_PV = 1.623e+01 Ω
+
+It 8/9: ω/2π = 5.500e+00 GHz (total elapsed time = 1.34e+03 s, solve 35/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 8.766650e+00
+  1 (restart 0) KSP residual norm 3.871440e+00
+  2 (restart 0) KSP residual norm 1.402743e+00
+  3 (restart 0) KSP residual norm 3.115834e-01
+  4 (restart 0) KSP residual norm 5.050356e-02
+  5 (restart 0) KSP residual norm 3.485609e-02
+  6 (restart 0) KSP residual norm 6.517013e-03
+  7 (restart 0) KSP residual norm 4.229842e-03
+  8 (restart 0) KSP residual norm 1.168921e-03
+  9 (restart 0) KSP residual norm 6.592808e-04
+ 10 (restart 0) KSP residual norm 2.340928e-04
+ 11 (restart 0) KSP residual norm 1.427706e-04
+ 12 (restart 0) KSP residual norm 5.658749e-05
+ 13 (restart 0) KSP residual norm 3.166485e-05
+ 14 (restart 0) KSP residual norm 1.832571e-05
+ 15 (restart 0) KSP residual norm 9.882700e-06
+ 16 (restart 0) KSP residual norm 5.860286e-06
+ 17 (restart 0) KSP residual norm 2.998942e-06
+ 18 (restart 0) KSP residual norm 1.635179e-06
+ 19 (restart 0) KSP residual norm 9.514150e-07
+ 20 (restart 0) KSP residual norm 5.357929e-07
+ 21 (restart 0) KSP residual norm 3.038389e-07
+GMRES solver converged in 21 iterations (avg. reduction factor: 4.071e-01)
+ Sol. ||E|| = 4.495296e+01 (||RHS|| = 2.615625e+00)
+ Field energy E (3.671e-11 J) + H (3.591e-11 J) = 7.262e-11 J
+ S[1][4] = +7.314e-06-2.040e-05i, |S[1][4]| = -9.328e+01, arg(S[1][4]) = -7.028e+01
+ S[2][4] = -8.364e-01-3.856e-01i, |S[2][4]| = -7.149e-01, arg(S[2][4]) = -1.553e+02
+ S[3][4] = -3.569e-05+2.041e-05i, |S[3][4]| = -8.772e+01, arg(S[3][4]) = +1.502e+02
+ S[4][4] = -6.565e-02-2.774e-02i, |S[4][4]| = -2.294e+01, arg(S[4][4]) = -1.571e+02
+ Updating solution error estimates
+
+Calculating boundary modes at wave ports for ω/2π = 6.000e+00 GHz (1.886e+00)
+ Port 1, mode 1: kₙ = 2.140e+02-3.290e-29i m⁻¹, Z_PV = 2.691e+01 Ω
+ Port 2, mode 2: kₙ = 1.970e+02-9.921e-27i m⁻¹, Z_PV = 1.627e+01 Ω
+ Port 3, mode 1: kₙ = 2.140e+02+1.564e-17i m⁻¹, Z_PV = 2.691e+01 Ω
+ Port 4, mode 2: kₙ = 1.970e+02+1.669e-17i m⁻¹, Z_PV = 1.627e+01 Ω
+
+It 9/9: ω/2π = 6.000e+00 GHz (total elapsed time = 1.38e+03 s, solve 36/36)
+
+  Residual norms for GMRES solve
+  0 (restart 0) KSP residual norm 7.650059e+00
+  1 (restart 0) KSP residual norm 4.459921e+00
+  2 (restart 0) KSP residual norm 1.408697e+00
+  3 (restart 0) KSP residual norm 3.359628e-01
+  4 (restart 0) KSP residual norm 5.516342e-02
+  5 (restart 0) KSP residual norm 3.791916e-02
+  6 (restart 0) KSP residual norm 7.919442e-03
+  7 (restart 0) KSP residual norm 4.589006e-03
+  8 (restart 0) KSP residual norm 1.500888e-03
+  9 (restart 0) KSP residual norm 6.934314e-04
+ 10 (restart 0) KSP residual norm 3.696799e-04
+ 11 (restart 0) KSP residual norm 1.255414e-04
+ 12 (restart 0) KSP residual norm 6.668976e-05
+ 13 (restart 0) KSP residual norm 3.538615e-05
+ 14 (restart 0) KSP residual norm 1.869717e-05
+ 15 (restart 0) KSP residual norm 8.925980e-06
+ 16 (restart 0) KSP residual norm 5.261800e-06
+ 17 (restart 0) KSP residual norm 2.731765e-06
+ 18 (restart 0) KSP residual norm 1.685720e-06
+ 19 (restart 0) KSP residual norm 1.008364e-06
+ 20 (restart 0) KSP residual norm 5.543401e-07
+ 21 (restart 0) KSP residual norm 3.367221e-07
+GMRES solver converged in 21 iterations (avg. reduction factor: 4.111e-01)
+ Sol. ||E|| = 4.480839e+01 (||RHS|| = 2.853609e+00)
+ Field energy E (3.651e-11 J) + H (3.616e-11 J) = 7.267e-11 J
+ S[1][4] = +2.328e-06-2.375e-05i, |S[1][4]| = -9.244e+01, arg(S[1][4]) = -8.440e+01
+ S[2][4] = -9.049e-01-1.686e-01i, |S[2][4]| = -7.196e-01, arg(S[2][4]) = -1.694e+02
+ S[3][4] = -3.229e-05+4.272e-05i, |S[3][4]| = -8.542e+01, arg(S[3][4]) = +1.271e+02
+ S[4][4] = -7.685e-02-1.336e-02i, |S[4][4]| = -2.216e+01, arg(S[4][4]) = -1.701e+02
+ Updating solution error estimates
+
+Completed 0 iterations of adaptive mesh refinement (AMR):
+ Indicator norm = 5.770e-02, global unknowns = 1571870
+ Max. iterations = 0, tol. = 1.000e-02
+
+Estimated peak per-rank memory usage is: Min. 1.1G, Max. 1.3G, Avg. 1.2G, Total 9.5G
+Estimated peak per-node memory usage is: Min. 9.5G, Max. 9.5G, Avg. 9.5G, Total 9.5G
+
+Elapsed Time Report (s)           Min.        Max.        Avg.
+==============================================================
+Initialization                   0.266       0.899       0.819
+  Mesh Preprocessing             0.717       1.352       0.797
+Operator Construction           25.042      27.419      26.204
+  Wave Ports                    14.213      20.051      15.735
+Linear Solve                   100.424     102.164     100.919
+  Setup                        227.221     229.583     228.418
+  Preconditioner               566.509     572.289     570.338
+  Coarse Solve                 167.532     167.899     167.675
+Estimation                       3.554       3.959       3.835
+  Construction                   7.549       7.557       7.553
+  Solve                        289.525     289.609     289.575
+Postprocessing                   6.238       6.352       6.287
+Disk IO                          0.518       0.521       0.520
+--------------------------------------------------------------
+Total                         1418.698    1418.713    1418.705
+
+Peak Memory                   Per-Node       Total   Total HWM
+==============================================================
+Initialization                   17.8M       17.8M       17.8M
+  Mesh Preprocessing            228.0M      228.0M      245.7M
+Operator Construction             4.3G        4.3G        4.6G
+  Wave Ports                    151.9M      151.9M        4.7G
+Linear Solve                      0.0K        0.0K        4.7G
+  Setup                           1.8G        1.8G        6.6G
+  Preconditioner                241.2M      241.2M        6.8G
+  Coarse Solve                    0.0K        0.0K        6.8G
+Estimation                      388.0M      388.0M        7.2G
+  Construction                    1.9G        1.9G        9.1G
+  Solve                          59.0M       59.0M        9.1G
+Postprocessing                    1.6M        1.6M        9.1G
+Disk IO                          94.9M       94.9M        9.2G
+--------------------------------------------------------------
+Total                             9.3G        9.3G        9.3G
+

@@ -119,15 +119,53 @@ public static class Em3dRunService
     }
 
     /// <summary>
-    /// brief-em3d-114 R-em3d114-2e / brief-em3d-116 R-em3d116-3 — a multi-terminal wave port (overview D14): Palace refuses
-    /// it, naming openEMS, which builds it. On Both the run goes ahead on openEMS alone and says Palace was skipped
-    /// (<see cref="TerminalPortsSkipPalace"/>). <paramref name="ports"/> is each such port's label and terminal count;
-    /// null when there is none, or the solver can run them.
+    /// brief-em3d-114 R-em3d114-2e / brief-em3d-115 R-em3d115-2d — what Palace refuses of a problem's multi-terminal wave ports
+    /// (D-115a/b), naming openEMS, which builds them: three or more terminals on one face (the Gram fit of a degenerate face is
+    /// exactly determined at three and under-determined at four, brief 124), a reference plane moved off the port face (the
+    /// terminal voltages Palace writes ignore the Offset, brief 113), and a lumped port beside a terminal group (the transform
+    /// is stated for wave-port entries only). <paramref name="ports"/> is each such port's label and terminal count;
+    /// <paramref name="shifted"/> a terminal port whose reference plane is moved, and how far. Null when Palace runs them all,
+    /// and on every other solver. On Both the run goes ahead on openEMS alone and says Palace was skipped
+    /// (<see cref="TerminalPortsSkipPalace"/>).
     /// </summary>
-    public static string? TerminalPortRefusal(Em3dSolver solver, IReadOnlyList<(string Label, int Terminals)> ports)
-        => solver == Em3dSolver.Palace && ports.Count > 0
-            ? TerminalHead(ports[0]) + "terminal wave ports run on openEMS only in this version. Set the setup's solver to openEMS."
+    public static string? TerminalPortRefusal(Em3dSolver solver, IReadOnlyList<(string Label, int Terminals)> ports,
+                                              bool lumpedPorts = false, (string Label, double ShiftM)? shifted = null)
+        => solver == Em3dSolver.Palace && PalaceTerminalReason(ports, lumpedPorts, shifted) is { } why
+            ? why + ". Set the setup's solver to openEMS."
             : null;
+
+    /// <summary>brief-em3d-116 R-em3d116-3 — the note a Both run carries when Palace refuses its terminal ports and it runs on
+    /// openEMS alone. Null when Palace runs them.</summary>
+    public static string? TerminalPortsSkipPalace(IReadOnlyList<(string Label, int Terminals)> ports, bool lumpedPorts = false,
+                                                  (string Label, double ShiftM)? shifted = null)
+        => PalaceTerminalReason(ports, lumpedPorts, shifted) is { } why
+            ? why + ", so this setup ran on openEMS and Palace was skipped for it."
+            : null;
+
+    private static string? PalaceTerminalReason(IReadOnlyList<(string Label, int Terminals)> ports, bool lumpedPorts,
+                                                (string Label, double ShiftM)? shifted)
+    {
+        if (ports.FirstOrDefault(p => p.Terminals > 2) is { Label: not null } many)
+            return TerminalHead(many) + "Palace runs terminal ports with two terminals per face in this version";
+        if (ports.Count == 0) return null;
+        if (shifted is { } s)
+            return $"Port '{s.Label}' has its reference plane moved {Fmt(Math.Abs(s.ShiftM) * 1e3)} mm off its face; Palace runs terminal " +
+                   "ports with the reference plane on the port face in this version (the terminal voltages it writes are measured there)";
+        if (lumpedPorts)
+            return TerminalHead(ports[0]) + "Palace runs terminal ports only beside other wave ports in this version, and this problem " +
+                   "also has a lumped port";
+        return null;
+    }
+
+    /// <summary>The facts <see cref="TerminalPortRefusal"/> reads, from a built problem.</summary>
+    public static (IReadOnlyList<(string Label, int Terminals)> Ports, bool LumpedPorts, (string Label, double ShiftM)? Shifted)
+        TerminalFacts(Em3dProblem problem)
+    {
+        var groups = TerminalPorts(problem.Ports);
+        bool lumped = groups.Count > 0 && problem.Ports.Any(p => p.Kind == Em3dPortKind.Lumped);
+        var moved = problem.Ports.FirstOrDefault(p => p.FaceGroup is not null && p.ReferencePlane.ShiftM != 0);
+        return (groups, lumped, moved is null ? null : (moved.FaceGroupLabel ?? moved.Name, moved.ReferencePlane.ShiftM));
+    }
 
     /// <summary>
     /// brief-em3d-116 R-em3d116-3 — what openEMS's lowering would refuse of <paramref name="problem"/>'s wave ports (a hollow
@@ -140,11 +178,6 @@ public static class Em3dRunService
         var grid = FdtdGrid.Build(problem, gridSettings, long.MaxValue);
         return grid.WavePorts.Refusal ?? FdtdWavePorts.Place(problem, grid.WavePorts, grid).Refusal;
     }
-
-    /// <summary>brief-em3d-116 R-em3d116-3 — the note a Both run carries when a terminal port sends it to openEMS alone.</summary>
-    public static string TerminalPortsSkipPalace(IReadOnlyList<(string Label, int Terminals)> ports)
-        => TerminalHead(ports[0]) + "terminal wave ports run on openEMS only in this version, so this setup ran on openEMS and " +
-           "Palace was skipped for it.";
 
     private static string TerminalHead((string Label, int Terminals) port)
     {
@@ -354,12 +387,14 @@ public static class Em3dRunService
         if (problem.Validate() is { Count: > 0 } invalid)
             return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-problem", string.Join(" ", invalid)));
         // brief-em3d-114 R-em3d114-2e — whatever built the problem; a .c3d's run has already refused before discovery
-        if (TerminalPortRefusal(solver, TerminalPorts(problem.Ports)) is { } terminalPorts)
+        var terminalFacts = TerminalFacts(problem);
+        if (TerminalPortRefusal(solver, terminalFacts.Ports, terminalFacts.LumpedPorts, terminalFacts.Shifted) is { } terminalPorts)
             return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded(TerminalPortsSource, terminalPorts));
-        // brief-em3d-116 R-em3d116-3 — Both, with a terminal port: openEMS alone, and the run says Palace was skipped.
-        if (both && TerminalPorts(problem.Ports) is { Count: > 0 } skipPalace)
+        // brief-em3d-116 R-em3d116-3 / brief-em3d-115 R-em3d115-2d — Both, with a terminal port Palace refuses: openEMS alone, and
+        // the run says Palace was skipped. A two-terminal face runs on both.
+        if (both && TerminalPortsSkipPalace(terminalFacts.Ports, terminalFacts.LumpedPorts, terminalFacts.Shifted) is { } skipPalace)
         {
-            log.Notes.Add(TerminalPortsSkipPalace(skipPalace));
+            log.Notes.Add(skipPalace);
             solver = Em3dSolver.OpenEms;
             both = false;
             palace = false;
@@ -681,6 +716,27 @@ public static class Em3dRunService
                                              electrostatic: problem.Type == Em3dProblemType.Electrostatic);
         PalaceStep solved;
         string? mpiNote;
+        // brief-em3d-115 — a terminal face whose two modes travel at one speed (a stripline, any homogeneous fill) is refused:
+        // Palace returns such a pair in an arbitrary mixture, re-drawn every time it solves the face (per excitation and
+        // frequency in a sweep) and on some meshes as nearly the same field even within one solve, so no conversion can
+        // recover two terminals from it (src/Design/RESOLVED.md § brief-em3d-115). Found before the 3D solve, by the face's
+        // own 2D mode solve at the sweep's centre (seconds).
+        if (problem.Type == Em3dProblemType.Driven && !problem.IsStatic && Em3dPortMap.HasTerminals(problem.Ports))
+        {
+            var ordered = problem.Ports.OrderBy(p => p.Number).ToList();
+            var requested = FrequenciesHz(problem.Frequency);
+            double centre = requested[requested.Length / 2];
+            foreach (var face in PalaceTerminalS.Faces(ordered).Where(f => f.Count > 1))
+            {
+                int attribute = lowering.Groups.Single(g => g.Kind == Em3dGroupKind.Port && g.PortNumber == ordered[face[0]].Number).Attribute;
+                var kn = runner.FaceModes(runDir, plan.ConfigJson, palace.Path, attribute, face.Count, centre, ct, out string? why);
+                if (ct.IsCancellationRequested) return Cancelled();
+                if (kn is null) return Failed($"The terminal faces' modes could not be found before the solve: {why}.");
+                if (ModalTerminalTransform.IsDegenerate(kn))
+                    return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(TerminalPortsSource,
+                        PalaceTerminalS.DegenerateRefusal(ordered[face[0]].FaceGroupLabel ?? ordered[face[0]].Name, kn, centre)));
+            }
+        }
         try { solved = runner.Solve(runDir, plan.ConfigJson, palace.Path, processes, control, ct, out mpiNote, tracker, physical); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
@@ -708,39 +764,103 @@ public static class Em3dRunService
         // brief-em3d-23 R-em3d23-2d — a wave port's S is referred to its mode's own impedance: renormalised to
         // the port's stated Z0 before anything else reads it.
         Complex[][]? modeZ = null;
+        // brief-em3d-115 R-em3d115-4 — with a terminal group, Palace's S is MODAL on that face: every port goes through the
+        // transform instead (a one-entry face reduces to the renormalisation below), from S, V_wp, Z_PV and the log's kₙ.
+        (PalaceModalSamples Samples, PalaceTerminalOutcome Outcome)? terminal = null;
+        if (Em3dPortMap.HasTerminals(ports))
+        {
+            var modes = PalaceRun.ReadWaveModes(File.ReadLines(Path.Combine(runDir, PalaceRun.PalaceLogFile))).ToList();
+            var faces = PalaceTerminalS.Faces(ports).Where(f => f.Count > 1).ToList();
+            var needed = faces.SelectMany(f => f.Select(i => ports[i].Number)).ToHashSet();
+            // R-em3d115-3 — an adaptive sweep logs no kₙ: each terminal face's modes are solved on their own (Palace's 2D mode
+            // solve of that face, seconds) at a few of the sweep's frequencies, and interpolated between.
+            if (requestedHz.Any(f => !modes.Any(m => needed.All(m.Modes.ContainsKey) && Math.Abs(m.FrequencyHz - f) <= 5e-4 * f)))
+            {
+                control?.BeginStage("solving the terminal faces' modes (Palace)");
+                var knots = PalaceTerminalS.KnotFrequenciesHz(requestedHz);
+                foreach (double f in knots)
+                {
+                    var block = new Dictionary<int, PalaceWaveMode>();
+                    foreach (var face in faces)
+                    {
+                        int attribute = lowering.Groups.Single(g => g.Kind == Em3dGroupKind.Port && g.PortNumber == ports[face[0]].Number).Attribute;
+                        var kn = runner.FaceModes(runDir, plan.ConfigJson, palace.Path, attribute, face.Count, f, ct, out string? why);
+                        if (ct.IsCancellationRequested) return Cancelled();
+                        if (kn is null) return Failed($"The terminal faces' wavenumbers could not be found: {why}.");
+                        for (int k = 0; k < face.Count; k++) block[ports[face[k]].Number] = new PalaceWaveMode(ports[face[k]].Number, k + 1, kn[k]);
+                    }
+                    modes.Add(new PalaceWaveModeSample(f, block));
+                }
+                log.Notes.Add($"Palace's adaptive sweep writes no wavenumber kₙ, which the terminal S needs: each terminal face's modes were " +
+                              $"solved on their own (Palace's 2D mode solve of the face) at {string.Join(", ", knots.Select(f => Fmt(f / 1e9)))} GHz " +
+                              "and interpolated between, on the effective permittivity.");
+            }
+            var samples = PalaceTerminalS.Read(post, modes, [.. ports.Select(p => p.Number)], out string? terminalError, needed);
+            if (samples is null) return Failed(terminalError!);
+            if (SweepRows(samples.FrequenciesHz, requestedHz) is { } rows && samples.FrequenciesHz.Length > requestedHz.Length)
+                samples = new PalaceModalSamples([.. rows.Select(k => samples.FrequenciesHz[k])], [.. rows.Select(k => samples.Samples[k])]);
+            var outcome = PalaceTerminalS.Convert(samples, ports, out terminalError);
+            if (outcome is null) return Failed(terminalError!);
+            terminal = (samples, outcome);
+            s = outcome.S;
+            modeZ = [.. samples.Samples.Select(x => x.ZPv.Select(z => new Complex(z, 0)).ToArray())];
+            log.Notes.AddRange(PalaceTerminalS.RouteNotes(ports, outcome));
+            var (checkNotes, checkWarnings) = PalaceTerminalS.Checks(ports, outcome, PalaceTerminalS.Lossless(problem));
+            log.Notes.AddRange(checkNotes);
+            log.Warnings.AddRange(checkWarnings);
+        }
         if (problem.HasWavePorts)
         {
             var wave = ports.Where(p => p.Kind == Em3dPortKind.Wave).ToList();
-            modeZ = PalaceRun.ReadPortZ(Path.Combine(post, PalaceRun.PortZFile), [.. wave.Select(p => p.Number)],
-                                        out double[] zf, out string? zError);
-            if (modeZ is null) return Failed(zError!);
-            if (zf.Length > s.FrequenciesHz.Length && SweepRows(zf, requestedHz) is { } zRows)
+            if (terminal is null)
             {
-                modeZ = [.. zRows.Select(k => modeZ[k])];
-                zf = [.. zRows.Select(k => zf[k])];
+                modeZ = PalaceRun.ReadPortZ(Path.Combine(post, PalaceRun.PortZFile), [.. wave.Select(p => p.Number)],
+                                            out double[] zf, out string? zError);
+                if (modeZ is null) return Failed(zError!);
+                if (zf.Length > s.FrequenciesHz.Length && SweepRows(zf, requestedHz) is { } zRows)
+                {
+                    modeZ = [.. zRows.Select(k => modeZ[k])];
+                    zf = [.. zRows.Select(k => zf[k])];
+                }
+                if (zf.Length != s.FrequenciesHz.Length ||
+                    zf.Where((f, k) => Math.Abs(f - s.FrequenciesHz[k]) > 1e-6 * Math.Abs(f)).Any())
+                    return Failed($"Palace's {PalaceRun.PortZFile} and {PalaceRun.PortSFile} do not list the same frequencies, so the " +
+                                  "wave ports' S-parameters cannot be renormalised.");
+                s = RenormaliseWavePorts(s, ports, wave, modeZ);
+                log.Notes.Add(WaveNote(ports, wave, modeZ, s.FrequenciesHz));
             }
-            if (zf.Length != s.FrequenciesHz.Length ||
-                zf.Where((f, k) => Math.Abs(f - s.FrequenciesHz[k]) > 1e-6 * Math.Abs(f)).Any())
-                return Failed($"Palace's {PalaceRun.PortZFile} and {PalaceRun.PortSFile} do not list the same frequencies, so the " +
-                              "wave ports' S-parameters cannot be renormalised.");
-            s = RenormaliseWavePorts(s, ports, wave, modeZ);
-            log.Notes.Add(WaveNote(ports, wave, modeZ, s.FrequenciesHz));
-            // R-em3d23-3 — a port face that supports a second propagating mode gives an S that means something else.
+            // R-em3d23-3 — a port face that supports a mode past its own gives an S that means something else. brief-em3d-115
+            // R-em3d115-2c: on a terminal face its own are the terminals' modes, so the face is asked about mode N + 1.
             try
             {
+                var asked = wave.Where(p => !GmshGeoWriter.SharesAnotherTerminalsFace(problem, p)).ToList();
                 var second = runner.SecondModes(runDir, plan.ConfigJson, palace.Path, problem.Frequency.StopHz,
-                                                   [.. wave.Select(p => p.Number)], ct, out string? secondNote);
-                if (second is null) log.Notes.Add($"Whether a wave port's second mode propagates was not checked: {secondNote}.");
+                                                   [.. asked.Select(p => p.Number)], ct, out string? secondNote);
+                string? Group(PalaceWaveMode m) => ports.First(p => p.Number == m.Port).FaceGroupLabel;
+                int Terminals(PalaceWaveMode m) => wave.Count(q => q.FaceGroup is not null && q.FaceGroup == ports.First(p => p.Number == m.Port).FaceGroup);
+                if (second is null)
+                    log.Notes.Add(terminal is null
+                        ? $"Whether a wave port's second mode propagates was not checked: {secondNote}."
+                        : $"Whether a wave port face supports a mode past its own was not checked: {secondNote}.");
                 else if (second.Any(m => m.Propagating))
                     foreach (var m in second.Where(m => m.Propagating))
-                        log.Warnings.Add($"Port {m.Port}'s wave-port face supports a SECOND propagating mode at " +
+                        log.Warnings.Add((Group(m) is { } label
+                                             ? $"Port '{label}''s face supports a propagating mode past its {Terminals(m)} terminals' own (mode {m.Mode}) at "
+                                             : $"Port {m.Port}'s wave-port face supports a SECOND propagating mode at ") +
                                      $"{Fmt(problem.Frequency.StopHz / 1e9)} GHz (Palace's kₙ = {Fmt(m.Kn.Real)}{(m.Kn.Imaginary < 0 ? "−" : "+")}" +
-                                     $"{Fmt(Math.Abs(m.Kn.Imaginary))}i m⁻¹), so its S-parameters are those of the first mode alone and " +
-                                     "power the second carries is not in them. Make the port region smaller (the Ports3D Width and " +
-                                     "Height), or lower the sweep's top.");
-                else log.Notes.Add($"No wave port's second mode propagates at {Fmt(problem.Frequency.StopHz / 1e9)} GHz, the top of " +
-                                   "the sweep (Palace, asked for mode 2): " + string.Join("; ", second.Select(m =>
-                                       $"port {m.Port}'s decays by 1/e in {Fmt(m.DecayLengthM * 1e3)} mm")) + ".");
+                                     $"{Fmt(Math.Abs(m.Kn.Imaginary))}i m⁻¹), so its S-parameters are those of " +
+                                     (Group(m) is null ? "the first mode alone and power the second carries is not in them. "
+                                                       : "its terminals' modes alone and power the extra mode carries is not in them. ") +
+                                     "Make the port region smaller (the Ports3D Width and Height), or lower the sweep's top.");
+                else if (terminal is null)
+                    log.Notes.Add($"No wave port's second mode propagates at {Fmt(problem.Frequency.StopHz / 1e9)} GHz, the top of " +
+                                  "the sweep (Palace, asked for mode 2): " + string.Join("; ", second.Select(m =>
+                                      $"port {m.Port}'s decays by 1/e in {Fmt(m.DecayLengthM * 1e3)} mm")) + ".");
+                else
+                    log.Notes.Add($"No wave port face supports a mode past its own at {Fmt(problem.Frequency.StopHz / 1e9)} GHz, the top of " +
+                                  "the sweep (Palace, asked for the next mode of each face): " + string.Join("; ", second.Select(m =>
+                                      $"{(Group(m) is { } l ? $"port '{l}''s mode {m.Mode}" : $"port {m.Port}'s mode 2")} decays by 1/e in " +
+                                      $"{Fmt(m.DecayLengthM * 1e3)} mm")) + ".");
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
@@ -755,6 +875,7 @@ public static class Em3dRunService
 
         // ── The DataSet: S and Z0 in the house convention, plus Palace's own record ─────────────
         var data = BuildDataSet(s, ports, facts);
+        if (terminal is { } t) PalaceTerminalS.AddDiagnostics(data, PalaceGroup, t.Samples, t.Outcome, ports);
         if (plan.FarField && PalacePattern(post, s, ports, setup, data, log.Notes) is { } patternError) return Failed(patternError);
         if (modeZ is not null)
         {

@@ -609,6 +609,27 @@ printed under three labels rather than flattened into one stream:
 | `warning:` | Something to act on — a stale `.sNp` about to be replaced, a technology that resolved but failed validation. |
 | `error:` | Something you asked for and did not get — a results file that could not be written. |
 
+### A 3D view's terminal ports on Palace {#em-palace-terminals}
+
+A `.c3d` whose wave port has two terminals runs on Palace too when its lines' modes travel at different speeds
+([EM Setup ▸ On Palace](em-setup.html#wave-port-terminals-palace)), and the run's notes say how its terminal S was made: one line per port
+naming its terminals as the modes of one Palace wave port and how they were converted, then one giving each terminal's
+power and the singular values of S.
+
+```text
+note: Port 'Left': terminals P1, P2 as modes 1 and 2 of one Palace wave port, converted to terminal S (modes not
+      degenerate, Robin correction K = 1.079 to 1.086).
+note: Terminal S checks: per-port power |S_jj|² + Σ|S_ij|² … to …, singular values … to …, reciprocity max |S_ij − S_ji| …
+```
+
+An adaptive sweep adds a note naming the frequencies each terminal face's modes were solved at. A fit with no consistent
+root, a lossless problem whose S is not lossless, a terminal voltage that does not give Palace's mode impedance, and a
+face supporting a mode past its terminals' own are each a `warning:`, with what to do about it. Palace's modal S, the
+voltages, the mode impedances and wavenumbers, and the fitted G and K are kept in the run's `.npy` (the `palace` group's
+`modal_*` cubes), so a disputed result can be re-derived without running again. Three terminals on one face, a
+reference plane moved off the face, or a lumped port beside them are refused before anything runs, naming openEMS; a face
+whose modes travel at one speed (a stripline) is refused once the mesh exists, by its own mode solve, before the 3D solve.
+
 ### A refusal is a result {#em-refusals}
 
 The EM engine declines geometry it cannot solve *correctly* rather than returning a plausible number.
@@ -1708,6 +1729,13 @@ set it, how far the grid grows past the face, the source plane and the three vol
 the source's shape, the two current planes, the current loop and how many cells it clears the nearest
 other conductor by; then the run's own notes about that face (its PML, PEC side walls). A port openEMS
 cannot build says `a run would stop here:` and why.
+
+When it runs on Palace (or both solvers), a **Palace terminal ports** block gives one line per port with
+terminals ([EM Setup ▸ On Palace](em-setup.html#wave-port-terminals-palace)): its terminals as the modes
+of one Palace wave port on its face, which entry is Active, the one `MaxSize` every entry shares, and
+that a run refuses the face, before its 3D solve, if its modes travel at one speed. A port Palace refuses (three
+terminals, a reference plane moved off the face) says `a run would stop here:` and why; on both solvers it
+says Palace will be skipped.
 
 <h3 id="explain-analysis">`--analysis` — which chain would run</h3>
 

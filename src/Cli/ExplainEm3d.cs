@@ -139,10 +139,39 @@ internal static class ExplainEm3d
         {
             Static = Static(p, setup),
             OpenEmsWavePorts = setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both ? WavePortLines(p, grid.Grid) : null,
+            PalaceTerminalPorts = setup.Solver3D is Em3dSolver.Palace or Em3dSolver.Both ? PalaceTerminalLines(p, setup.Solver3D) : null,
             Eigenmode = p.Type != Em3dProblemType.Eigenmode ? null
                 : new Em3dEigenmodeJson(p.EigenmodeCount, setup.Eigenmode?.Count is null ? "default" : "field",
                                         p.EigenmodeTargetHz, setup.Eigenmode?.TargetGHz is null ? "default (the sweep's start)" : "field"),
         };
+    }
+
+    /// <summary>
+    /// brief-em3d-115 R-em3d115-6 — per multi-terminal wave port on Palace: the route a run takes (one face, an entry per
+    /// terminal, its Mode, the Active one, the face's one MaxSize, Offset 0) and that whether the face is degenerate is decided
+    /// from the run's kₙ — or the sentence the run refuses it with (on Both, the note that Palace is skipped).
+    /// </summary>
+    private static IReadOnlyList<string>? PalaceTerminalLines(Em3dProblem p, Em3dSolver solver)
+    {
+        var facts = Em3dRunService.TerminalFacts(p);
+        if (facts.Ports.Count == 0) return null;
+        if ((solver == Em3dSolver.Both
+                ? Em3dRunService.TerminalPortsSkipPalace(facts.Ports, facts.LumpedPorts, facts.Shifted)
+                : Em3dRunService.TerminalPortRefusal(solver, facts.Ports, facts.LumpedPorts, facts.Shifted)) is { } no)
+            return [$"a run would stop here: {no}"];
+        var lines = new List<string>();
+        foreach (var g in p.Ports.Where(q => q.FaceGroup is not null).GroupBy(q => q.FaceGroup!.Value).OrderBy(g => g.Key))
+        {
+            var ts = g.OrderBy(q => q.Number).ToList();
+            int maxSize = Math.Max(2 * ts.Count, ts.Count + 15);
+            lines.Add($"port '{ts[0].FaceGroupLabel}': terminals {string.Join(", ", ts.Select(t => t.SourceLabel ?? t.Name))} as modes " +
+                      $"{string.Join(" and ", Enumerable.Range(1, ts.Count))} of one Palace wave port on the {p.FaceOf(ts[0].Min, ts[0].Max)} face: " +
+                      string.Join("; ", ts.Select((t, k) => $"{t.SourceLabel ?? t.Name} Mode {k + 1}{(k == 0 ? ", Active" : ", not Active")}")) +
+                      $"; MaxSize {maxSize} on every entry, so the face's modes come from one eigen-solve; Offset 0; each entry is its own " +
+                      "excitation. A run first solves the face's modes on their own: if they travel at one speed (a stripline, any homogeneous " +
+                      "fill) it is refused, naming openEMS; otherwise the modal S is converted to terminal S, each terminal at its own Z0.");
+        }
+        return lines;
     }
 
     /// <summary>
@@ -463,6 +492,11 @@ internal static class ExplainEm3d
         {
             Console.WriteLine("  openEMS wave ports");
             foreach (string l in waveLines) Console.WriteLine($"    {l}");
+        }
+        if (r.PalaceTerminalPorts is { Count: > 0 } palaceLines)
+        {
+            Console.WriteLine("  Palace terminal ports");
+            foreach (string l in palaceLines) Console.WriteLine($"    {l}");
         }
         if (r.Eigenmode is { } eig)
             Console.WriteLine($"  eigenmode    {eig.Count} mode(s) ({eig.CountFrom}) above {G(eig.TargetHz / 1e9)} GHz ({eig.TargetFrom})");

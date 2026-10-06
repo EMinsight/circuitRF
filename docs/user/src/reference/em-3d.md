@@ -198,6 +198,13 @@ the other solver's:
 configuration, both programs' logs, and the saved fields. The run can be repeated by hand from it. An
 unchanged model reuses its mesh.
 
+**A port with two terminals on Palace** ([On Palace](em-setup.html#wave-port-terminals-palace)) also keeps
+what its terminal S was converted from, per frequency, in the `palace` group of `<setup>.palace_em.npy`:
+`modal_S` and `modal_V` (Palace's modal S and the voltage along each terminal's path, port by excitation),
+`modal_Zpv` and `modal_kn` (each mode's impedance and wavenumber), and `modal_G` and `modal_K` (the fitted
+overlap of a face's modes and its Robin correction). A disputed result can be re-derived from them without
+running Palace again.
+
 ## Is this solved? {#solved}
 
 A 3D run takes minutes to hours, so a 3D view (`.c3d`) says, for each of its setups, whether a run's result still
@@ -333,7 +340,10 @@ setup's refusals and notes, the mesh, the field) are always shown.
     so switching setups never changes what an existing plot shows; *Active* follows whichever is active.
   - **Solution** — what the run saved: a frequency (driven), a mode (eigenmode), a terminal (static), a
     sweep point (thermal). The plot keeps the **value**, not its place in the list, so a later run that saves
-    one more frequency never moves it to another. The list ends with *Other frequency… (needs a re-run)*,
+    one more frequency never moves it to another. On Palace, a port with two terminals is solved one **mode**
+    of its face at a time, not one terminal, so its choices read *5 GHz, Left mode 2 driven*: the field of the
+    face's second mode launched, which is not terminal 2 driven alone. An openEMS run drives each terminal, and
+    its choices name the port. The list ends with *Other frequency… (needs a re-run)*,
     which adds a frequency to the setup's *Save fields at* and moves the plot to it.
   - **Quantity** — only those in the solver's files are offered: the electric field |E|, the surface
     current J_s on the conductors, and for a static solve the potential.

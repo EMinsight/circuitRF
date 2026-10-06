@@ -1130,7 +1130,8 @@ stripline whose ground planes are the box) each take a terminal. *Make Port ▸ 
 reference and one terminal per other conductor, numbered with the next free numbers from left to right along the face. The 3D view draws
 each terminal as an arrow from the reference to its conductor, in the port colour, with its number at the
 head. A face whose reference cannot be decided (two candidates with equal surfaces) says so on the menu item.
-A port with several terminals runs on openEMS; Palace refuses it
+A port with two terminals runs on both solvers when its lines' modes travel at different speeds (a microstrip pair;
+a stripline is openEMS's); one with three or more runs on openEMS only
 ([EM Setup ▸ Several conductors on one face](em-setup.html#wave-port-terminals)).
 
 **The air box** is the region solved in: each face a distance beyond the geometry, and a boundary — PEC,

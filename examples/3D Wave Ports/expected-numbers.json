@@ -1,5 +1,5 @@
 {
-  "About": "The key numbers README.md and the new-user guide's walk-through (section 14) state, in one place, and the recorded |S| of every shipped run. circuitRF's tests check that each quoted value's Readme text appears in both pages, recompute the closed forms from the cells' VARs, hold the recorded Pair result to Cohn's ideal coupled line, and gate 4 (Category=Benchmark) re-runs the three shipped runs and holds every recorded |S| to its run's Tolerance (dB). Measured once on an Apple M4 (10 cores, 16 GB), macOS 27.0, Palace 0.18.1 on 10 processes, Gmsh 4.15.2, openEMS 0.37.0-rc3, OpenCASCADE 8.0.1. A time is the whole run's wall clock; memory is Palace's own peak over its processes; openEMS's size is its grid's cell count.",
+  "About": "The key numbers README.md and the new-user guide's walk-through (section 14) state, in one place, and the recorded |S| of every shipped run. circuitRF's tests check that each quoted value's Readme text appears in both pages, recompute the closed forms from the cells' VARs, hold the recorded Pair result to Cohn's ideal coupled line, and gate 4 (Category=Benchmark) re-runs the five shipped runs and holds every recorded |S| to its run's Tolerance (dB). Measured once on an Apple M4 (10 cores, 16 GB), macOS 27.0, Palace 0.18.1 on 10 processes, Gmsh 4.15.2, openEMS 0.37.0-rc3, OpenCASCADE 8.0.1. A time is the whole run's wall clock; memory is Palace's own peak over its processes; openEMS's size is its grid's cell count.",
   "References": [
     {
       "Name": "coax",
@@ -617,6 +617,430 @@
           "S31_deg": -109.714,
           "S41_dB": -61.417,
           "S41_deg": -141.54
+        }
+      ]
+    },
+    {
+      "Cell": "Coupled Microstrip",
+      "Setup": "Palace",
+      "Preset": "Standard (element order 2), no refinement passes, mesh regions along the strips' edges",
+      "Readme": [
+        "14 min 34 s",
+        "5.1 GB"
+      ],
+      "Values": [
+        {
+          "Quantity": "S11_dB",
+          "AtGHz": 2,
+          "Expected": -21.741,
+          "Readme": "−21.74 dB"
+        },
+        {
+          "Quantity": "S22_dB",
+          "AtGHz": 2,
+          "Expected": -15.478,
+          "Readme": "−15.48 dB"
+        },
+        {
+          "Quantity": "S11_dB",
+          "AtGHz": 10,
+          "Expected": -17.376,
+          "Readme": "−17.38 dB"
+        },
+        {
+          "Quantity": "S22_dB",
+          "AtGHz": 10,
+          "Expected": -16.08,
+          "Readme": "−16.08 dB"
+        }
+      ],
+      "Tolerance": {
+        "S11": 0.05,
+        "S21": 0.05,
+        "S31": 0.005,
+        "S41": 0.05,
+        "S22": 0.05
+      },
+      "Recorded": [
+        {
+          "GHz": 2.0,
+          "S11_dB": -21.741,
+          "S21_dB": -19.098,
+          "S31_dB": -0.1486,
+          "S41_dB": -35.945,
+          "S22_dB": -15.478
+        },
+        {
+          "GHz": 2.5,
+          "S11_dB": -20.38,
+          "S21_dB": -17.822,
+          "S31_dB": -0.1787,
+          "S41_dB": -33.599,
+          "S22_dB": -14.306
+        },
+        {
+          "GHz": 3.0,
+          "S11_dB": -19.541,
+          "S21_dB": -17.036,
+          "S31_dB": -0.2041,
+          "S41_dB": -31.567,
+          "S22_dB": -13.641
+        },
+        {
+          "GHz": 3.5,
+          "S11_dB": -19.13,
+          "S21_dB": -16.654,
+          "S31_dB": -0.2201,
+          "S41_dB": -29.829,
+          "S22_dB": -13.389
+        },
+        {
+          "GHz": 4.0,
+          "S11_dB": -19.096,
+          "S21_dB": -16.654,
+          "S31_dB": -0.2242,
+          "S41_dB": -28.343,
+          "S22_dB": -13.519
+        },
+        {
+          "GHz": 4.5,
+          "S11_dB": -19.512,
+          "S21_dB": -17.012,
+          "S31_dB": -0.2158,
+          "S41_dB": -27.061,
+          "S22_dB": -14.015
+        },
+        {
+          "GHz": 5.0,
+          "S11_dB": -20.381,
+          "S21_dB": -17.816,
+          "S31_dB": -0.1989,
+          "S41_dB": -25.96,
+          "S22_dB": -14.947
+        },
+        {
+          "GHz": 5.5,
+          "S11_dB": -21.855,
+          "S21_dB": -19.174,
+          "S31_dB": -0.1694,
+          "S41_dB": -25.018,
+          "S22_dB": -16.414
+        },
+        {
+          "GHz": 6.0,
+          "S11_dB": -24.308,
+          "S21_dB": -21.311,
+          "S31_dB": -0.1391,
+          "S41_dB": -24.194,
+          "S22_dB": -18.632
+        },
+        {
+          "GHz": 6.5,
+          "S11_dB": -28.556,
+          "S21_dB": -24.864,
+          "S31_dB": -0.116,
+          "S41_dB": -23.476,
+          "S22_dB": -22.156
+        },
+        {
+          "GHz": 7.0,
+          "S11_dB": -38.972,
+          "S21_dB": -32.077,
+          "S31_dB": -0.103,
+          "S41_dB": -22.836,
+          "S22_dB": -28.824
+        },
+        {
+          "GHz": 7.5,
+          "S11_dB": -34.721,
+          "S21_dB": -39.335,
+          "S31_dB": -0.1066,
+          "S41_dB": -22.248,
+          "S22_dB": -42.76
+        },
+        {
+          "GHz": 8.0,
+          "S11_dB": -26.593,
+          "S21_dB": -27.056,
+          "S31_dB": -0.1284,
+          "S41_dB": -21.691,
+          "S22_dB": -26.54
+        },
+        {
+          "GHz": 8.5,
+          "S11_dB": -22.587,
+          "S21_dB": -22.296,
+          "S31_dB": -0.1658,
+          "S41_dB": -21.15,
+          "S22_dB": -21.54
+        },
+        {
+          "GHz": 9.0,
+          "S11_dB": -20.081,
+          "S21_dB": -19.525,
+          "S31_dB": -0.2138,
+          "S41_dB": -20.618,
+          "S22_dB": -18.793
+        },
+        {
+          "GHz": 9.5,
+          "S11_dB": -18.438,
+          "S21_dB": -17.748,
+          "S31_dB": -0.2663,
+          "S41_dB": -20.091,
+          "S22_dB": -17.104
+        },
+        {
+          "GHz": 10.0,
+          "S11_dB": -17.376,
+          "S21_dB": -16.626,
+          "S31_dB": -0.3141,
+          "S41_dB": -19.569,
+          "S22_dB": -16.08
+        },
+        {
+          "GHz": 10.5,
+          "S11_dB": -16.784,
+          "S21_dB": -15.997,
+          "S31_dB": -0.3504,
+          "S41_dB": -19.049,
+          "S22_dB": -15.538
+        },
+        {
+          "GHz": 11.0,
+          "S11_dB": -16.609,
+          "S21_dB": -15.792,
+          "S31_dB": -0.3716,
+          "S41_dB": -18.533,
+          "S22_dB": -15.394
+        },
+        {
+          "GHz": 11.5,
+          "S11_dB": -16.848,
+          "S21_dB": -15.99,
+          "S31_dB": -0.3714,
+          "S41_dB": -18.019,
+          "S22_dB": -15.611
+        },
+        {
+          "GHz": 12.0,
+          "S11_dB": -17.549,
+          "S21_dB": -16.618,
+          "S31_dB": -0.3516,
+          "S41_dB": -17.504,
+          "S22_dB": -16.196
+        }
+      ]
+    },
+    {
+      "Cell": "Coupled Microstrip",
+      "Setup": "openEMS",
+      "Preset": "300 cells per wavelength, 5 µm smallest cell",
+      "Readme": [
+        "7 min 28 s",
+        "6,053,568 cells"
+      ],
+      "Values": [
+        {
+          "Quantity": "S11_dB",
+          "AtGHz": 2,
+          "Expected": -21.245,
+          "Readme": "−21.25 dB"
+        },
+        {
+          "Quantity": "S22_dB",
+          "AtGHz": 2,
+          "Expected": -15.552,
+          "Readme": "−15.55 dB"
+        },
+        {
+          "Quantity": "S11_dB",
+          "AtGHz": 10,
+          "Expected": -23.842,
+          "Readme": "−23.84 dB"
+        },
+        {
+          "Quantity": "S22_dB",
+          "AtGHz": 10,
+          "Expected": -11.863,
+          "Readme": "−11.86 dB"
+        }
+      ],
+      "Tolerance": {
+        "S11": 0.05,
+        "S21": 0.05,
+        "S31": 0.005,
+        "S41": 0.05,
+        "S22": 0.05
+      },
+      "Recorded": [
+        {
+          "GHz": 2.0,
+          "S11_dB": -21.245,
+          "S21_dB": -19.598,
+          "S31_dB": -0.0922,
+          "S41_dB": -35.591,
+          "S22_dB": -15.552
+        },
+        {
+          "GHz": 2.5,
+          "S11_dB": -20.091,
+          "S21_dB": -18.422,
+          "S31_dB": -0.1158,
+          "S41_dB": -33.081,
+          "S22_dB": -14.216
+        },
+        {
+          "GHz": 3.0,
+          "S11_dB": -19.481,
+          "S21_dB": -17.764,
+          "S31_dB": -0.1325,
+          "S41_dB": -30.909,
+          "S22_dB": -13.374
+        },
+        {
+          "GHz": 3.5,
+          "S11_dB": -19.326,
+          "S21_dB": -17.522,
+          "S31_dB": -0.1403,
+          "S41_dB": -29.075,
+          "S22_dB": -12.935
+        },
+        {
+          "GHz": 4.0,
+          "S11_dB": -19.609,
+          "S21_dB": -17.665,
+          "S31_dB": -0.1376,
+          "S41_dB": -27.519,
+          "S22_dB": -12.853
+        },
+        {
+          "GHz": 4.5,
+          "S11_dB": -20.337,
+          "S21_dB": -18.185,
+          "S31_dB": -0.1258,
+          "S41_dB": -26.218,
+          "S22_dB": -13.137
+        },
+        {
+          "GHz": 5.0,
+          "S11_dB": -21.562,
+          "S21_dB": -19.114,
+          "S31_dB": -0.1067,
+          "S41_dB": -25.135,
+          "S22_dB": -13.838
+        },
+        {
+          "GHz": 5.5,
+          "S11_dB": -23.425,
+          "S21_dB": -20.544,
+          "S31_dB": -0.0839,
+          "S41_dB": -24.228,
+          "S22_dB": -15.07
+        },
+        {
+          "GHz": 6.0,
+          "S11_dB": -26.208,
+          "S21_dB": -22.646,
+          "S31_dB": -0.0621,
+          "S41_dB": -23.486,
+          "S22_dB": -17.084
+        },
+        {
+          "GHz": 6.5,
+          "S11_dB": -30.669,
+          "S21_dB": -25.818,
+          "S31_dB": -0.0443,
+          "S41_dB": -22.885,
+          "S22_dB": -20.483
+        },
+        {
+          "GHz": 7.0,
+          "S11_dB": -40.383,
+          "S21_dB": -31.272,
+          "S31_dB": -0.0336,
+          "S41_dB": -22.385,
+          "S22_dB": -27.489
+        },
+        {
+          "GHz": 7.5,
+          "S11_dB": -40.552,
+          "S21_dB": -49.141,
+          "S31_dB": -0.0315,
+          "S41_dB": -21.957,
+          "S22_dB": -36.572
+        },
+        {
+          "GHz": 8.0,
+          "S11_dB": -31.649,
+          "S21_dB": -34.35,
+          "S31_dB": -0.0367,
+          "S41_dB": -21.549,
+          "S22_dB": -22.704
+        },
+        {
+          "GHz": 8.5,
+          "S11_dB": -27.854,
+          "S21_dB": -28.035,
+          "S31_dB": -0.0489,
+          "S41_dB": -21.102,
+          "S22_dB": -17.754
+        },
+        {
+          "GHz": 9.0,
+          "S11_dB": -25.729,
+          "S21_dB": -24.866,
+          "S31_dB": -0.0661,
+          "S41_dB": -20.595,
+          "S22_dB": -14.875
+        },
+        {
+          "GHz": 9.5,
+          "S11_dB": -24.488,
+          "S21_dB": -22.941,
+          "S31_dB": -0.0858,
+          "S41_dB": -20.003,
+          "S22_dB": -13.032
+        },
+        {
+          "GHz": 10.0,
+          "S11_dB": -23.842,
+          "S21_dB": -21.702,
+          "S31_dB": -0.1104,
+          "S41_dB": -19.331,
+          "S22_dB": -11.863
+        },
+        {
+          "GHz": 10.5,
+          "S11_dB": -23.709,
+          "S21_dB": -20.926,
+          "S31_dB": -0.1405,
+          "S41_dB": -18.627,
+          "S22_dB": -11.192
+        },
+        {
+          "GHz": 11.0,
+          "S11_dB": -24.004,
+          "S21_dB": -20.436,
+          "S31_dB": -0.178,
+          "S41_dB": -17.893,
+          "S22_dB": -10.955
+        },
+        {
+          "GHz": 11.5,
+          "S11_dB": -24.724,
+          "S21_dB": -20.147,
+          "S31_dB": -0.2332,
+          "S41_dB": -17.171,
+          "S22_dB": -11.138
+        },
+        {
+          "GHz": 12.0,
+          "S11_dB": -25.956,
+          "S21_dB": -20.057,
+          "S31_dB": -0.304,
+          "S41_dB": -16.54,
+          "S22_dB": -11.738
         }
       ]
     }

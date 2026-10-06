@@ -2,12 +2,15 @@
 
 How to set up and run a **wave port**, on Palace and on openEMS. A wave port turns a region of the air box's face
 into a matched continuation of the line that ends there: the line is fed and measured in its own field, so there is no
-gap and no parasitic of the port's own in the answer. This workspace has two cells that use one:
+gap and no parasitic of the port's own in the answer. This workspace has three cells that use one:
 
 - **Launch** is the **3D Connector** example's launch with its back end open: the coax runs to the air box's face, and
   that end is a wave port. Set against the 3D Connector's lumped gap port, it shows what the gap was costing.
 - **Pair** is an edge-coupled stripline pair with **two conductors ending on each face**. Each strip end is its own
-  port, a **terminal** of the face's wave port, so the pair is a four-port. It runs on openEMS only (below says why).
+  port, a **terminal** of the face's wave port, so the pair is a four-port. It runs on openEMS (below says why not on Palace).
+- **Coupled Microstrip** is a pair of microstrip lines of **different widths** in a closed housing, with a two-terminal
+  wave port at each end, run on **both** solvers: on Palace, each end is one port face carrying both strips' modes,
+  converted to one port per strip.
 
 The reference chapter is **EM Setup ▸ Wave ports**, and its section **Several conductors on one face**, in
 **Help ▸ circuitRF Documentation**. This page is the walk-through; it does not repeat that chapter.
@@ -24,8 +27,9 @@ offers to install it.
 | **Flange** | 3D view, mm | The 3D Connector's flange, unchanged, the source of `Launch/3d/flange.step` |
 | **Launch** | 3D view, mm | The 3D Connector's launch with the bore cut through the housing's back and the pin run to it. P1 is a wave port on the air box's xmin face; P2 is still the board's lumped port. Setups *Palace* and *openEMS* |
 | **Pair** | 3D view, mm | Two copper strips of zero thickness in a PTFE fill between two ground planes, 15 mm long, with a two-terminal wave port at each end. Setup *openEMS* |
+| **Coupled Microstrip** | 3D view, mm | Two copper strips of zero thickness, 1.2 mm and 2 mm wide and 0.3 mm apart, on the 20 mil PTFE-glass laminate, 15 mm long, in a housing whose floor, sides and lid are PEC, with a two-terminal wave port at each end. Setups *Palace* and *openEMS* |
 
-One technology, `tech/board-and-connector.ctech`, the 3D Connector's, serves all four.
+One technology, `tech/board-and-connector.ctech`, the 3D Connector's, serves all five.
 
 **The Launch's coax** is the 3D Connector's: `pin_d` = 0.4 mm inside `bore_d` = 1.34 mm of PTFE (εr 2.1). Its
 impedance by the closed form is Z₀ = η₀/(2π√εr)·ln(D/d) = **50.02 Ω**. The 3D Connector's README says 50.06 Ω because
@@ -81,6 +85,19 @@ launch itself.
    nulls between; the far-end coupling of a homogeneous line is zero, and what is left is the residue of the small
    reflections at each end.
 
+## Coupled Microstrip, by hand
+
+1. Open **Coupled Microstrip**'s 3D view: strip **a** (1.2 mm) and strip **b** (2 mm) on the laminate, the floor the
+   ground, the housing's sides 4.5 mm out from the centre and its lid 3 mm above the laminate, all PEC. Each end face
+   carries one port with two terminals, numbered as Pair's: 1 (a) and 2 (b) at x = 0, 3 (a) and 4 (b) at x = 15 mm, so
+   **S31 is a's thru, S21 the near-end and S41 the far-end coupling, and S11 and S22 are the two lines' reflections.**
+   Each terminal's arrow runs up from the floor (`airbox/zmin`, the reference) to its strip.
+2. Run *Palace*, then *openEMS* (2–12 GHz in 21 points). Plot dB(S11) and dB(S22) from both on one Data Display: the
+   two lines reflect differently, which no symmetry route could have produced. At 2 GHz Palace reads **−21.74 dB** and
+   **−15.48 dB**, openEMS **−21.25 dB** and **−15.55 dB**.
+3. Read Palace's notes: one per port says its terminals were converted from the face's two modes (*modes not
+   degenerate, Robin correction K = 1.048 to 1.060*), and one gives each terminal's power and the singular values of S.
+
 ## What each solver did
 
 **On the Launch, Palace** solved the coax's own mode on the face at every frequency and projected the field onto it.
@@ -106,10 +123,30 @@ passive, and the whole S matrix lies within 0.003 of Cohn's ideal line at every 
 90 cells per wavelength, which puts 8 cells between each strip and a ground plane: with 4, a stripline's impedance
 reads about 5 % low.
 
-**Why Pair has no Palace setup.** Palace takes a wave port's modes from its face, and the documented way to give two
-strips a port each splits the face between them, so each port carries only the odd half of the field. On a pair like
-this one that is more than a dB off on the thru and over 10 dB off on the far-end coupling, so circuitRF refuses a
-terminal port on Palace and names openEMS. Add a Palace setup to Pair to see the refusal.
+**Why Pair has no Palace setup.** Pair's two strips sit in one homogeneous fill, so their two modes travel at one
+speed, and a Palace run refuses such a face before its 3D solve, naming openEMS (**EM Setup ▸ Wave ports ▸ On
+Palace**). Palace returns two such modes in an arbitrary mixture, drawn again every time it solves the face: over a
+sweep Pair's modal S came back non-reciprocal, and even solved one frequency at a time one face's two modes came back
+as nearly the same field at 10 GHz. Giving Pair PEC sides (its PMC sides leave the two ground planes separate
+conductors on the face, a third mode) or perfect-conductor strips does not change that, so they were not taken further.
+
+**On Coupled Microstrip, Palace** solved each end face's two modes, which travel at different speeds (K, the ratio of
+their wavenumbers, is 1.048 to 1.060), launched each in turn, and converted the modal S to one port per strip. Its
+adaptive sweep writes no wavenumber, so the run also solved each face's modes on their own at five of the sweep's
+frequencies, a few seconds each. Its own check warns at 12 GHz that terminal 4's voltage is 0.11 % off Palace's mode
+impedance, just past the 0.1 % it warns at: that is the copper's loss, which the conversion was not measured with.
+
+**On Coupled Microstrip, openEMS** fed each strip on its own as for Pair. The two agree to max |ΔS| 0.009–0.026 from
+2 to 8 GHz and part above it, to 0.11 at 11 GHz: at 10 GHz Palace reads |S11| **−17.38 dB** and |S22| **−16.08 dB**,
+openEMS **−23.84 dB** and **−11.86 dB**. There are two reasons:
+- **The lid.** A strip with PEC on both sides of it is a stripline to openEMS's port, so its voltage is the mean of
+  strip to floor and strip to lid, and under a lid those are not equal for a microstrip. Rebuilt from the run's own
+  probe files with the strip-to-floor voltage alone (Palace's path), openEMS agrees with Palace to 0.008–0.027 over the
+  whole band. Brief 125 decides what openEMS's port should do here.
+- **The loss.** The laminate's loss tangent is a conductivity to openEMS, exact at the band's centre only, and the
+  strips are **copper**, the technology's metal, which each solver models its own way on a sheet of zero thickness:
+  Palace's terminals keep 97.9–99.1 % of their power, openEMS's 96.4–100.1 %. Perfect-conductor strips would take that
+  difference away; whether the example should use them is left open, so it uses the technology's copper.
 
 ## The numbers
 
@@ -122,6 +159,16 @@ machine will differ. They are also in `expected-numbers.json`, with **every** fr
 |---|---|---|---|---|---|
 | Launch, Palace (Draft) | 1 min 5 s | 4.5 GB | −21.71 dB | −19.53 dB | −0.562 dB |
 | Launch, openEMS (20 cells per wavelength) | 1 min 43 s | 660,192 cells | −15.58 dB | −21.21 dB | −0.469 dB |
+
+| Coupled Microstrip | Time | Size | \|S11\| / \|S22\| at 2 GHz | at 6 GHz | at 10 GHz |
+|---|---|---|---|---|---|
+| Palace (element order 2, no refinement passes) | 14 min 34 s | 5.1 GB | −21.74 / −15.48 dB | −24.31 / −18.63 dB | −17.38 / −16.08 dB |
+| openEMS (300 cells per wavelength) | 7 min 28 s | 6,053,568 cells | −21.25 / −15.55 dB | −26.21 / −17.08 dB | −23.84 / −11.86 dB |
+
+| Coupled Microstrip, thru \|S31\| / near-end \|S21\| / far-end \|S41\| | at 2 GHz | at 6 GHz | at 10 GHz |
+|---|---|---|---|
+| Palace | −0.149 / −19.10 / −35.94 dB | −0.139 / −21.31 / −24.19 dB | −0.314 / −16.63 / −19.57 dB |
+| openEMS | −0.092 / −19.60 / −35.59 dB | −0.062 / −22.65 / −23.49 dB | −0.110 / −21.70 / −19.33 dB |
 
 | Pair, openEMS (90 cells per wavelength), at 10 GHz | Time | Size | \|S31\| thru | \|S21\| near-end | \|S41\| far-end |
 |---|---|---|---|---|---|
@@ -137,13 +184,17 @@ no refinement passes) and openEMS's default grid, each 2–18 GHz in 5 points, s
 Palace at element order 2 is above: eight times the time and twice the memory, and |S11| moves by 3.3 dB at 10 GHz and 1.9 dB at 18 GHz. openEMS's
 finer grids are no way out for this coax (above). The Pair's setup is 2–18 GHz in 33 points, which costs openEMS nothing (one run
 covers the band) and shows the coupling's shape; its 90 cells per wavelength are the cost of 8 cells per strip height.
+Coupled Microstrip's Palace setup is the *Standard* preset's element order 2 with no refinement passes (with Standard's
+two passes the estimate is 8.5 GB) and four mesh regions, 20 µm boxes along the strips' edges; its openEMS setup takes
+300 cells per wavelength and a 5 µm smallest cell (6.05 million cells; the grid's own smallest is 36 µm). Both sweep
+2–12 GHz in 21 points, below the housing's own modes: Palace's check finds the faces' third mode evanescent at 12 GHz.
 
 ## The regression test
 
 `Em3dWavePortsExampleTests` holds this page together: every number above is in `expected-numbers.json`, the closed
 forms are recomputed from the cells' VARs, and the recorded Pair result is held to Cohn's line (thru within 0.1 dB /
-1°, coupling within 0.5 dB / 1°, every entry within 0.015). Its gate 4 re-runs the three shipped runs and holds every
-recorded |S| to its run's tolerance. It is `Category=Benchmark` (a few minutes, and it needs Palace and openEMS):
+1°, coupling within 0.5 dB / 1°, every entry within 0.015). Its gate 4 re-runs the five shipped runs and holds every
+recorded |S| to its run's tolerance. It is `Category=Benchmark` (about half an hour, and it needs Palace and openEMS):
 
     dotnet test tests/Ui.Tests --settings circuitrf.benchmark.runsettings --filter "FullyQualifiedName~Em3dWavePortsExampleTests"
 

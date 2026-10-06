@@ -261,26 +261,44 @@ public static class PalaceConfigWriter
         if (problem.HasWavePorts)
         {
             w.WriteStartArray("WavePort");
-            foreach (var (g, p) in portGroups.Where(x => x.Port.Kind == Em3dPortKind.Wave))
+            foreach (var (g, leader) in portGroups.Where(x => x.Port.Kind == Em3dPortKind.Wave))
             {
-                var v = p.VoltagePath!.Value;
-                w.WriteStartObject();
-                w.WriteNumber("Index", p.Number);
-                Attributes(w, [g.Attribute]);
-                w.WriteNumber("Mode", 1);
-                w.WriteNumber("Offset", Math.Round(p.ReferencePlane.ShiftM / GmshGeoWriter.LengthUnitM, 9));
-                if (!eigen) w.WriteNumber("Excitation", p.Number);
-                w.WriteStartArray("VoltagePath");
-                foreach (var q in new[] { v.From, v.To })
+                // brief-em3d-115 R-em3d115-2b — a terminal group's face carries one entry per terminal, in number order:
+                // Mode k on the k-th, the first Active (the only one Palace gives a Robin term), every one excited, and ONE
+                // MaxSize on all of them, the largest Palace's default would pick for any (max(2·Mode, Mode + 15) at Mode N),
+                // so the face's modes come from one shared eigen-solve (113). Offset is 0: Palace's V_wp ignores it, and a
+                // shifted reference plane is refused before this (TerminalPortRefusal).
+                var entries = leader.FaceGroup is { } fg
+                    ? problem.Ports.Where(q => q.FaceGroup == fg).OrderBy(q => q.Number).ToList()
+                    : [leader];
+                int maxSize = Math.Max(2 * entries.Count, entries.Count + 15);
+                for (int k = 0; k < entries.Count; k++)
                 {
-                    w.WriteStartArray();
-                    w.WriteNumberValue(Math.Round(q.X / GmshGeoWriter.LengthUnitM, 9));
-                    w.WriteNumberValue(Math.Round(q.Y / GmshGeoWriter.LengthUnitM, 9));
-                    w.WriteNumberValue(Math.Round(q.Z / GmshGeoWriter.LengthUnitM, 9));
+                    var p = entries[k];
+                    var v = p.VoltagePath!.Value;
+                    w.WriteStartObject();
+                    w.WriteNumber("Index", p.Number);
+                    Attributes(w, [g.Attribute]);
+                    w.WriteNumber("Mode", k + 1);
+                    if (entries.Count > 1)
+                    {
+                        w.WriteBoolean("Active", k == 0);
+                        w.WriteNumber("MaxSize", maxSize);
+                    }
+                    w.WriteNumber("Offset", Math.Round(p.ReferencePlane.ShiftM / GmshGeoWriter.LengthUnitM, 9));
+                    if (!eigen) w.WriteNumber("Excitation", p.Number);
+                    w.WriteStartArray("VoltagePath");
+                    foreach (var q in new[] { v.From, v.To })
+                    {
+                        w.WriteStartArray();
+                        w.WriteNumberValue(Math.Round(q.X / GmshGeoWriter.LengthUnitM, 9));
+                        w.WriteNumberValue(Math.Round(q.Y / GmshGeoWriter.LengthUnitM, 9));
+                        w.WriteNumberValue(Math.Round(q.Z / GmshGeoWriter.LengthUnitM, 9));
+                        w.WriteEndArray();
+                    }
                     w.WriteEndArray();
+                    w.WriteEndObject();
                 }
-                w.WriteEndArray();
-                w.WriteEndObject();
             }
             w.WriteEndArray();
         }

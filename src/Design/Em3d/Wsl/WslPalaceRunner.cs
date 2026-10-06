@@ -136,6 +136,34 @@ internal sealed class WslPalaceRunner(WslSession session, string linuxHome, stri
         });
     }
 
+    public IReadOnlyList<System.Numerics.Complex>? FaceModes(string runDir, string configJson, string palace, int attribute, int count,
+                                                             double fHz, CancellationToken ct, out string? note)
+    {
+        var plan = Plan(linuxHome, runDir);
+        return PalaceRun.FaceModes(runDir, configJson, attribute, count, fHz, out note, dir =>
+        {
+            // The face-mode configuration names ../model.msh, which the staging directory already holds; Palace's log is
+            // written on this side, which is all that is read back.
+            if (Stage(runDir, plan) is { } failure) return new PalaceRun.ProcessRun(-1, false, failure, []);
+            string linuxDir = WslPaths.Combine(plan.LinuxRunDirectory, PalaceRun.FaceModeDirectory);
+            var mkdir = session.Exec(["mkdir", "-p", linuxDir]);
+            if (!mkdir.Ok) return new PalaceRun.ProcessRun(-1, false, mkdir.Failure ?? mkdir.Message, []);
+            try
+            {
+                File.Copy(Path.Combine(dir, PalaceConfigWriter.ConfigFile),
+                          session.ToWindows(WslPaths.Combine(linuxDir, PalaceConfigWriter.ConfigFile)), overwrite: true);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return new PalaceRun.ProcessRun(-1, false, e.Message, []);
+            }
+            bool bare = palace.EndsWith(".bin", StringComparison.Ordinal);
+            return Start(plan, linuxDir, Path.Combine(dir, PalaceRun.PalaceLogFile),
+                         bare ? [palace, PalaceConfigWriter.ConfigFile] : [palace, "--serial", PalaceConfigWriter.ConfigFile],
+                         null, ct, new ProcessWatch(null, 0));
+        });
+    }
+
     /// <summary>A fresh staging directory holding exactly the plan's copy-in files. Once per run directory
     /// per leg: the second-mode check reuses what the solve staged.</summary>
     private string? Stage(string runDir, WslStagingPlan plan)

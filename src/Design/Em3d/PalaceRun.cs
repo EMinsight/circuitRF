@@ -598,7 +598,9 @@ public static class PalaceRun
     /// it: this runs Palace on the same mesh with every wave port set to mode 2 at the sweep's top frequency,
     /// and stops it — killing the tree — as soon as every port has printed that line, which Palace does
     /// while it sets up the ports, before the 3D solve. Null when it could not be asked (the reason is in
-    /// <paramref name="note"/>); nothing here fails the run.
+    /// <paramref name="note"/>); nothing here fails the run. brief-em3d-115 R-em3d115-2c — a terminal face's own modes are
+    /// its N terminals', so it is asked for mode N + 1 on its Active entry, and only that entry (the lowest of
+    /// <paramref name="wavePorts"/> on the face) is in the result.
     /// </summary>
     public static IReadOnlyList<PalaceWaveMode>? SecondModes(string runDir, string configJson, string palace, double topHz,
                                                             IReadOnlyList<int> wavePorts, CancellationToken ct, out string? note)
@@ -625,6 +627,7 @@ public static class PalaceRun
     {
         note = null;
         string dir = Path.Combine(runDir, SecondModeDirectory);
+        var expected = new Dictionary<int, int>();
         try
         {
             Directory.CreateDirectory(dir);
@@ -632,7 +635,16 @@ public static class PalaceRun
             root["Problem"]!["Output"] = "postpro";
             root["Model"]!["Mesh"] = "../" + GmshGeoWriter.MeshFile;
             root["Model"]!.AsObject().Remove("Refinement");
-            foreach (var wp in root["Boundaries"]!["WavePort"]!.AsArray()) wp!["Mode"] = 2;
+            // brief-em3d-115 R-em3d115-2c — on a terminal face (N entries on one attribute) modes 1…N are the terminals' own,
+            // so the face's Active entry asks mode N + 1 instead, once per face; an entry alone on its face asks mode 2.
+            foreach (var face in root["Boundaries"]!["WavePort"]!.AsArray().GroupBy(wp => (int)wp!["Attributes"]![0]!))
+            {
+                var entries = face.ToList();
+                var leader = entries.FirstOrDefault(wp => wp!["Active"]?.GetValue<bool>() == true) ?? entries.MinBy(wp => (int)wp!["Index"]!);
+                int mode = entries.Count + 1;
+                leader!["Mode"] = mode;
+                expected[(int)leader["Index"]!] = mode;
+            }
             var driven = root["Solver"]!["Driven"]!.AsObject();
             driven["Samples"] = new System.Text.Json.Nodes.JsonArray(new System.Text.Json.Nodes.JsonObject
             {
@@ -648,19 +660,105 @@ public static class PalaceRun
             return null;
         }
 
+        var asked = wavePorts.Where(expected.ContainsKey).ToList();
         var seen = new Dictionary<int, PalaceWaveMode>();
         void OnLine(string line)
         {
-            if (ParseWaveMode(line) is { Mode: 2 } m) seen[m.Port] = m;
-            if (wavePorts.All(seen.ContainsKey)) throw new OperationCanceledException();
+            if (ParseWaveMode(line) is { } m && expected.TryGetValue(m.Port, out int mode) && m.Mode == mode) seen[m.Port] = m;
+            if (asked.All(seen.ContainsKey)) throw new OperationCanceledException();
         }
         var result = run(dir, new ProcessWatch(OnLine, 0));
-        if (wavePorts.All(seen.ContainsKey)) return [.. wavePorts.Select(p => seen[p])];
+        if (asked.All(seen.ContainsKey)) return [.. asked.Select(p => seen[p])];
         note = result.Cancelled ? "the second-mode check was cancelled"
              : result.StartFailure is { } why ? $"the second-mode check could not start Palace ({why})"
-             : $"Palace printed no mode-2 line for every wave port (exit {result.ExitCode}; its log is {Path.Combine(dir, PalaceLogFile)})";
+             : $"Palace printed no line for the mode past each wave port face's own (exit {result.ExitCode}; its log is {Path.Combine(dir, PalaceLogFile)})";
         return null;
     }
+
+    /// <summary>The directory, under the run directory, a face's mode solve runs in (brief-em3d-115).</summary>
+    public const string FaceModeDirectory = "facemodes";
+
+    private static readonly System.Text.RegularExpressions.Regex FaceModeLine = new(
+        @"^\s*eig (\d+): kn = \S+, n_eff = ([-+]?\d+(?:\.\d+)?(?:e[-+]\d+)?)([-+]\d+(?:\.\d+)?(?:e[-+]\d+)?)i",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// <b>brief-em3d-115 R-em3d115-3 — a port face's own modes at one frequency, from Palace's 2D mode solve.</b> An adaptive
+    /// sweep logs no kₙ (0.18.1 suppresses the port output while it builds its reduced model, and re-solves only the Active
+    /// entry's mode afterwards, printing nothing), and the terminal transform needs every entry's. Palace's
+    /// <c>BoundaryMode</c> problem extracts the face from the same mesh (<c>Solver.BoundaryMode.Attributes</c>) and solves its
+    /// modes there, in seconds: on the 3D Wave Ports Pair's mesh, 3 s against 113 s for a driven start that is stopped at its
+    /// port lines. Its log prints each mode's n_eff to seven figures (<c>eig 0: kn = …, n_eff = 1.691209e+00+1.4e-13i</c>);
+    /// kₙ = n_eff·ω/c. The first <paramref name="count"/> modes in Palace's own order (decreasing Re kₙ), which is the order the
+    /// driven run's <c>Mode</c> indices count; measured equal to the driven log's kₙ to its four figures on brief 124's
+    /// microstrip pair. Null, with the reason, when it could not be asked.
+    /// </summary>
+    internal static IReadOnlyList<Complex>? FaceModes(string runDir, string configJson, int attribute, int count, double fHz,
+                                                     out string? note, Func<string, ProcessRun> run)
+    {
+        note = null;
+        string dir = Path.Combine(runDir, FaceModeDirectory);
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var root = System.Text.Json.Nodes.JsonNode.Parse(configJson)!.AsObject();
+            root["Problem"]!["Type"] = "BoundaryMode";
+            root["Problem"]!["Output"] = "postpro";
+            root["Problem"]!["OutputFormats"] = new System.Text.Json.Nodes.JsonObject { ["Paraview"] = false };
+            root["Model"]!["Mesh"] = "../" + GmshGeoWriter.MeshFile;
+            root["Model"]!.AsObject().Remove("Refinement");
+            var solver = root["Solver"]!.AsObject();
+            solver.Remove("Driven");
+            solver["BoundaryMode"] = new System.Text.Json.Nodes.JsonObject
+            {
+                ["Freq"] = fHz / 1e9,
+                ["N"] = count,
+                ["Attributes"] = new System.Text.Json.Nodes.JsonArray(attribute),
+            };
+            WriteText(Path.Combine(dir, PalaceConfigWriter.ConfigFile), root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidOperationException or NullReferenceException)
+        {
+            note = $"the port face's mode solve could not be staged ({e.Message})";
+            return null;
+        }
+        var result = run(dir);
+        var modes = ParseFaceModes(File.Exists(Path.Combine(dir, PalaceLogFile)) ? File.ReadLines(Path.Combine(dir, PalaceLogFile)) : [], fHz);
+        if (modes.Count >= count) return [.. modes.Take(count)];
+        note = result.Cancelled ? "the port face's mode solve was cancelled"
+             : result.StartFailure is { } why ? $"the port face's mode solve could not start Palace ({why})"
+             : $"Palace's mode solve of attribute {attribute} at {(fHz / 1e9).ToString("G6", CultureInfo.InvariantCulture)} GHz printed " +
+               $"{modes.Count} of {count} modes (exit {result.ExitCode}; its log is {Path.Combine(dir, PalaceLogFile)})";
+        return null;
+    }
+
+    /// <summary>The modes a <c>BoundaryMode</c> log prints, kₙ in m⁻¹ (n_eff·ω/c), in its own order.</summary>
+    internal static IReadOnlyList<Complex> ParseFaceModes(IEnumerable<string> lines, double fHz)
+    {
+        const double c0 = 299_792_458.0;
+        var byIndex = new SortedDictionary<int, Complex>();
+        foreach (string line in lines)
+        {
+            var m = FaceModeLine.Match(line);
+            if (!m.Success) continue;
+            static double D(string s) => double.Parse(s, NumberStyles.Float, CultureInfo.InvariantCulture);
+            byIndex[int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)] =
+                new Complex(D(m.Groups[2].Value), D(m.Groups[3].Value)) * (2 * Math.PI * fHz / c0);
+        }
+        return [.. byIndex.Values];
+    }
+
+    /// <summary>The face's mode solve on this machine: one process, as the second-mode check runs.</summary>
+    public static IReadOnlyList<Complex>? FaceModes(string runDir, string configJson, string palace, int attribute, int count, double fHz,
+                                                   CancellationToken ct, out string? note)
+        => FaceModes(runDir, configJson, attribute, count, fHz, out note, dir =>
+        {
+            bool bareBinary = palace.EndsWith(".bin", StringComparison.Ordinal);
+            Interlocked.Increment(ref _palace);
+            return RunProcess(palace, bareBinary ? [PalaceConfigWriter.ConfigFile] : ["--serial", PalaceConfigWriter.ConfigFile],
+                              dir, Path.Combine(dir, PalaceLogFile), Em3dProcessKind.Solver,
+                              env: new Dictionary<string, string> { ["OMP_NUM_THREADS"] = "1" }, null, ct, new ProcessWatch(null, 0));
+        });
 
     /// <summary>brief-em3d-31 — Palace's far field, r·E in Cartesian components per (frequency, excitation, θ, φ).</summary>
     public const string FarFieldFile = "farfield-rE.csv";
@@ -749,6 +847,89 @@ public static class PalaceRun
             }
         }
         return (f, vi, vt);
+    }
+
+    /// <summary>
+    /// <b>brief-em3d-115 R-em3d115-4 — the wave ports' voltage matrix, by column NAME</b>: <c>Re{V_wp[i][j]} (V)</c> and
+    /// <c>Im{V_wp[i][j]} (V)</c>, the TOTAL field's line integral along port i's voltage path with port j excited
+    /// (postoperator.cpp ≈ 1743, 0.18.1). With one excitation the second index is dropped (<c>Re{V_wp[i]} (V)</c>), as
+    /// <see cref="ReadPortV"/>'s columns are. Returns V[f][i, j] in <paramref name="ports"/>' order for both indices, and each
+    /// row's frequency, GHz as printed.
+    /// </summary>
+    public static (double[] FrequenciesGHz, Complex[][,] V)? ReadWavePortV(string csvPath, IReadOnlyList<int> ports, out string? error)
+    {
+        if (ReadTable(csvPath, out error) is not { } t) return null;
+        var (h, rows) = t;
+        int n = ports.Count, fc = h.IndexOf("f (GHz)");
+        var re = new int[n, n];
+        var im = new int[n, n];
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+            {
+                int Col(string part) => h.IndexOf($"{part}{{V_wp[{ports[i]}][{ports[j]}]}} (V)") is int k and >= 0 ? k
+                                       : n == 1 ? h.IndexOf($"{part}{{V_wp[{ports[i]}]}} (V)") : -1;
+                (re[i, j], im[i, j]) = (Col("Re"), Col("Im"));
+                if (re[i, j] < 0 || im[i, j] < 0 || fc < 0)
+                {
+                    error = $"Palace's {PortVFile} has no column 'Re{{V_wp[{ports[i]}][{ports[j]}]}} (V)' ({csvPath}).";
+                    return null;
+                }
+            }
+        var f = new double[rows.Count];
+        var v = new Complex[rows.Count][,];
+        for (int r = 0; r < rows.Count; r++)
+        {
+            double Cell(int k) => k < rows[r].Length && double.TryParse(rows[r][k].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double x)
+                ? x : double.NaN;
+            f[r] = Cell(fc);
+            v[r] = new Complex[n, n];
+            for (int i = 0; i < n; i++)
+                for (int j = 0; j < n; j++) v[r][i, j] = new Complex(Cell(re[i, j]), Cell(im[i, j]));
+            if (double.IsNaN(f[r]) || Enumerable.Range(0, n * n).Any(k => double.IsNaN(v[r][k / n, k % n].Real) || double.IsNaN(v[r][k / n, k % n].Imaginary)))
+            {
+                error = $"Row {r + 2} of Palace's {PortVFile} is not all numbers ({csvPath}).";
+                return null;
+            }
+        }
+        return (f, v);
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex BoundaryModesLine = new(
+        @"^\s*Calculating boundary modes at wave ports for \S+ = ([-+]?\d+(?:\.\d+)?(?:e[-+]\d+)?) GHz",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// brief-em3d-115 R-em3d115-4 — every wave port's kₙ, from the log, by the frequency Palace set its ports up at: a
+    /// Point sweep logs <c>Calculating boundary modes at wave ports for ω/2π = 2.000e+00 GHz (…)</c> and then one mode line
+    /// per entry, once per frequency PER EXCITATION (0.18.1 loops the excitations outside the frequencies); the first block
+    /// at each frequency is kept. An adaptive sweep logs no such line and no kₙ at all. kₙ is written nowhere else, and only
+    /// to four figures; the frequency line too, so a block's frequency is matched to a row of port-S.csv at that precision.
+    /// </summary>
+    public static IReadOnlyList<PalaceWaveModeSample> ReadWaveModes(IEnumerable<string> logLines)
+    {
+        var blocks = new List<PalaceWaveModeSample>();
+        Dictionary<int, PalaceWaveMode>? current = null;
+        double fHz = double.NaN;
+        void Close()
+        {
+            if (current is { Count: > 0 } && !blocks.Any(b => Math.Abs(b.FrequencyHz - fHz) <= 1e-9 * fHz))
+                blocks.Add(new PalaceWaveModeSample(fHz, current));
+            current = null;
+        }
+        foreach (string line in logLines)
+        {
+            var f = BoundaryModesLine.Match(line);
+            if (f.Success)
+            {
+                Close();
+                fHz = double.Parse(f.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture) * 1e9;
+                current = [];
+                continue;
+            }
+            if (current is not null && ParseWaveMode(line) is { } m) current[m.Port] = m;
+        }
+        Close();
+        return blocks;
     }
 
     /// <summary>Counts one Palace start made outside this class (the Linux subsystem route).</summary>

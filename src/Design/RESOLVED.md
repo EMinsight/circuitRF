@@ -17679,3 +17679,135 @@ time-averaged power, and |T_V,ii|² = Z_PV is the check that sees a √2; `V_wp`
 lossy face the Mode index could then pick differently, so re-check that every entry's Z_PV and kₙ are the expected
 modes); and **#328**: if Palace learns to discriminate degenerate modes, the Gram fit is no longer needed, but the
 transform still is, because one face still carries all the terminals' modes.
+
+## Palace terminal ports on a shared face — brief-em3d-115 (2026-10-06)
+
+Brief 124's derived modal transform, built: `ModalTerminalTransform` (src/Engine/Em3d, the numbers), `PalaceTerminalS`
+(src/Design/Em3d: faces, readers, the §5 checks, the diagnostics cubes), one port surface per terminal group in
+`GmshGeoWriter`, N `WavePort` entries per face in `PalaceConfigWriter`, `PalaceRun.ReadWavePortV` / `ReadWaveModes`, and
+the run service's Palace read path. Gates: `tests/Ui.Tests/Em3d/PalaceTerminalPortTests.cs` (replays of 124's runs, the
+refusals, the checks), `tests/Engine.Tests/Em3d/ModalTerminalTransformTests.cs` (the algebra),
+`TerminalWavePortTests.Gate7` (three terminals refused before Gmsh), and the example's tests.
+
+### What the C# transform reproduces of 124 (gates 1–4, on the committed runs)
+
+| Claim | 124 (modal.py) | C# |
+|---|---|---|
+| `a-shared-r2e0.02` against route B on the same mesh | 0.0003 | **0.00033**, g −0.5008 / +0.1533 |
+| 124's and 113-a's mode mixtures (`a-shared-r2-default`, `../palace/pair-a-shared-face`) | 0.0004 | **0.00044** |
+| `asym10-shared-r2e0.01` against the exact line (124's 2D Zc, committed in the test) | 0.0025 | **0.0025** |
+| `basym-shared-r2e-f{2,4,6}`: per-port power, K | within 0.0012; 1.0793 / 1.0823 / 1.0863 | 0.99985–1.00007; the same K |
+| What loss does at 4 GHz, against openEMS | 0.0004 | **0.00043** |
+| G = 1 on A: per-port power off by | — | 0.527 |
+| K = 1 on B at 6 GHz: σ_min | 0.805 | 0.804 |
+| complex K: the loss differential | 0.0085 | 0.0085 |
+
+### Choices the brief left open, and what was chosen
+
+- **M is block-diagonal by construction.** M = V·(1 + S_m)⁻¹ carries entries outside a face's own block (≤ 6.5e-4 of its
+  largest on 124's runs); they are reported as the §5 check and dropped, and U = M·P (V less that part) instead of V.
+  A one-entry face takes T_V = √Z_PV, real (Palace pins each mode's ∫E·dl real-positive along its path). That is what
+  makes the brief's "a one-entry face reduces to RenormaliseWavePorts to 1e-12" true: with the measured M_ii it holds only
+  to |M_ii|² − Z_PV (2e-6 to 4e-4). Against modal.py, which keeps the full M, every 124 shared-face run moves by
+  5e-5 to 3.3e-4 (max |ΔS|), and its distance to each independent reference by ≤ 1e-5: route B 0.00033 / 0.00025 either
+  way, the exact asymmetric line 0.0025 / 0.0030. (The blocks were then fitted face by face instead of cut from V·P⁻¹:
+  R-em3d115-8.)
+- **The Gram fit is exact, not seven starts.** For a two-mode face each residual rᵢ = (|M_ii + g·M_ij|² − Zᵢ)/Zᵢ is a
+  quadratic in g, so Σrᵢ² is a quartic: its stationary points are a cubic's real roots, all evaluated, with g kept inside
+  (−1, 1) where a Gram of two unit modes is positive definite. It finds 124's roots.
+- **kₙ is keyed by the frequency Palace logs, not by block order.** A Point sweep logs `Calculating boundary modes at
+  wave ports for ω/2π = … GHz` before each set of mode lines, and 0.18.1 loops excitations OUTSIDE frequencies, so the
+  same frequency's block appears once per excitation (113-a's coax run: six blocks for three frequencies). The first
+  block per frequency is kept, and a row of `port-S.csv` is matched to it at the log's four figures.
+- **The voltage path stays reference → conductor**, as brief 114 builds it and as every single wave port is written.
+  Palace's convention is signal → ground, but reversing every path is every terminal's sign flipped together, which
+  leaves terminal S unchanged (an Engine test holds it); a flipped terminal flips alone, as it should.
+- **A lumped port beside a terminal group is refused on Palace**, naming openEMS. The transform is stated for wave-port
+  entries (V_wp, Z_PV, kₙ); a lumped port's place in it was not measured.
+- **D-115b's shifted reference plane cannot be stated today**: a `.c3d` terminal port is lowered at its face (brief 114,
+  shift 0), and only a `.cem` port carries a shift, which has no terminals. The refusal is the problem-level backstop.
+- **The second-mode check** asks each terminal face's Active entry for mode N + 1 and leaves the face's other entries as
+  they are; an ungrouped port asks mode 2 as before, and every sentence of a run without a group is unchanged.
+
+### R-em3d115-3 — the frequency sweep, measured: adaptive, with kₙ from Palace's own 2D mode solve
+
+124's `basym-shared-r2e` mesh (1.57 M unknowns, 8 ranks), 2–6 GHz in 9 points, run twice; both are committed as
+`testdata/em3d/terminal/palace-modal/s3-{adaptive,point}` (CSVs and configs; the Point run's log, launcher path shortened).
+- **Point samples: 1,419 s** (36 solves of ~40 s; 9.3 GB). **Adaptive (`AdaptiveTol` 1e-4, circuitRF's default): about
+  15 min**, a reduced model per excitation from 4–6 full solves each. (Its log was lost to a driver-script bug that re-ran
+  it in place; the CSVs were saved first, and the timing is the two runs' file times.)
+- **`port-S.csv`, `port-V.csv` and `port-Z.csv` carry every output frequency in the adaptive run**, and they are the
+  Point run's to four decimals at all nine (raw modal S, V_wp and Z_PV, the inactive entries' included). The worry from
+  the source (`romoperator.cpp` re-solves only the ACTIVE entry's mode online, via `GetWavePortKn`) does not show in
+  what it writes.
+- **The adaptive run's log has NO kₙ line at any frequency**: `drivensolver.cpp` suppresses port output during the offline
+  phase, and the online phase's re-solve (`WavePortData::Initialize` through `GetWavePortKn`) does not print. So the
+  brief's "kₙ interpolated where the log lacks it" has nothing logged to interpolate from in a product run.
+- **The transform with kₙ interpolated** (ε_eff linear in f, from 124's 2/4/6 GHz logs on the same mesh) against the
+  Point run with its own logged kₙ: **max |ΔS| 0.0004** over the nine (C#: 0.00037), the whole difference being the
+  interpolation (Point's own data through interpolated kₙ moves by the same 0.0004; kₙ itself is interpolated to 4e-4).
+  Under the brief's 0.001: **adaptive, with interpolated kₙ.**
+- **Where the kₙ come from: Palace's `BoundaryMode` problem** (in the pinned 0.18.1 schema), which extracts the port face
+  from the run's own mesh (`Solver.BoundaryMode.Attributes`) and solves its modes there. On that mesh it gives
+  106.335 / 98.400 m⁻¹ at 3 GHz against the driven log's 1.063e+02 / 9.840e+01, in **2 s**; on the 3D Wave Ports Pair's
+  mesh, 303.7168 m⁻¹ at 10 GHz against the driven log's 3.037e+02, in 3 s. A driven start stopped at its port lines (the
+  second-mode check's way) took **113 s** serial on Pair's mesh. Its log prints n_eff to seven figures; it also writes
+  `mode-kn.csv` at full precision, which the run does not read (the log is what the Linux-subsystem route has on the
+  Windows side). The run solves each terminal face at five of the sweep's frequencies (all of them when there are five or
+  fewer, ends included) and interpolates between; a Point sweep's log already names every frequency's kₙ and is used
+  as it is.
+
+### R-em3d115-8 — the example: Pair stays openEMS's, Coupled Microstrip runs on both
+
+**Pair on Palace, measured** (the 3D Wave Ports Pair, PTFE stripline W 1.65, S 0.4, b 2, 15 mm; the openEMS setup's sweep
+and air box, element order 2, no refinement passes, four 20 µm mesh regions along the strips' edges), one Point frequency
+(10 GHz, 4 excitations, 8 ranks) against Cohn's line (57.511 / 43.100 Ω):
+
+| Variant | Mesh | Per frequency | max \|ΔS\| | per-port power | σ min / max | Gram fit |
+|---|---|---|---|---|---|---|
+| as drawn: copper sheets, PMC sides | 106 k tets, 730 k unknowns | 131 s | 0.0285 | 0.987–0.991 | 0.960 / **1.030** | g ≈ 0 |
+| perfect-conductor strips, PMC sides | same | 124 s | 0.094 | **0.887–0.924** | 0.827 / 1.070 | g −0.078 / −0.013 |
+| perfect-conductor strips, **PEC** sides | same | 121 s | **0.0132** | 0.9988–0.9995 | 0.992 / 1.007 | residual 3e-5 |
+| the same, `EdgeRefinement` 0.1 | 295 k tets, 2.0 M unknowns | 464 s | 0.28 | 0.64–0.91 | 0.32 / 1.00 | **g −1.005, residual 0.30** |
+
+- **PMC sides make it three modes**: the two ground planes are separate conductors on the face, so it carries three TEM
+  modes at one speed for two terminals (8–11 % of the power lost on a lossless problem). openEMS's local probes do not
+  see it.
+- **A degenerate face is a lottery.** At 2.0 M unknowns Palace returned the face's two modes as nearly the same field
+  (voltage columns 0.9998 collinear). Then, through `circuitrf em`: an **adaptive** sweep (33 points, 29 min 27 s)
+  came back with a NON-RECIPROCAL modal S (|S12| 0.365 against |S21| 0.645 at 2 GHz), and so did a **two-frequency Point**
+  run (|S − Sᵀ| 0.85): Palace re-solves the face per excitation and frequency, and draws the mixture anew each time.
+  **One Palace run per frequency** (each frequency's excitations share one face solve) was built and run end to end (3
+  points, 16 min 35 s): at 10 GHz one face's modes came back nearly collinear again (Gram residual 3, g → +1), on a mesh
+  that had converted cleanly a few hundred tetrahedra earlier. Nothing converts one field into two terminals.
+- **So a terminal face whose modes travel at one speed is REFUSED on Palace** (owner's choice of the two remaining,
+  after the per-frequency route failed), naming openEMS. The run finds it after meshing and before the 3D solve, with
+  Palace's 2D mode solve of each face at the sweep's centre (`PalaceTerminalS.DegenerateRefusal`; ~3 s): Pair's two kₙ are
+  303.7168 and 303.7168 m⁻¹. Gate: `Em3dWavePortsExampleTests.Gate1_APalaceRunOfPair_IsRefusedBeforeItsSolve`
+  (Benchmark, 11 s; exactly one Palace process). The Gram fit stays in the transform, and in the 124 replays, but no
+  shipped run reaches it. PEC sides and perfect-conductor strips (the owner left both open) would not change the refusal.
+
+**Coupled Microstrip** (new cell): strips 1.2 and 2 mm, 0.3 mm apart, copper sheets on the 20 mil PTFE-glass laminate
+(εr 2.2, tanδ 0.0009), 15 mm, PEC floor, sides at ±4.5 mm and lid 3 mm above the laminate; Palace at element order 2 with
+no refinement passes and the four edge regions (14 min 34 s, 5.1 GB, 405 k unknowns), openEMS at 300 cells per
+wavelength and 5 µm (7 min 28 s, 6.05 M cells), 2–12 GHz in 21 points.
+- **M by least squares, per face** (a change made here). A line a whole number of half-wavelengths long has thru terms
+  near −1, so P = 1 + S_m is nearly singular there; at 7.5 GHz the inverse gave |T_V,ii|² 4.8 % off Z_PV and a 1.8 %
+  off-face reading, both false. Each face's rows V_f = M_f·P_f keep full rank, so M_f is now their least-squares fit over
+  every excitation and P is never inverted; the off-face check is what that fit leaves unexplained. 7.5 GHz: 0.08 %.
+  124's replays move by ≤ 1.7e-4 (the 6 GHz B runs; ≤ 4e-5 elsewhere), and the A face's Gram residual from 4e-6 to 2e-6.
+- **What the run says**: modes not degenerate, K 1.048–1.060; per-port power 0.979–0.991, σ 0.980–1.0007, reciprocity
+  5e-3 (124's dielectric-loss runs ≤ 1.3e-4: this is copper on a zero-thickness sheet, which 124 never measured); one
+  warning, terminal 4's voltage 0.11 % off Z_PV at 12 GHz (the 0.1 % limit; conductor loss, #960's kind). The faces' third
+  mode is evanescent at 12 GHz (1/e in 4.4 and 1.55 mm).
+- **Against openEMS**: |S11| / |S22| at 2 GHz −21.74 / −15.48 dB (Palace) and −21.25 / −15.55 dB (openEMS); max |ΔS|
+  0.009–0.026 to 8 GHz, then **0.10–0.11 at 10–12 GHz** (S22 −16.08 against −11.86 dB at 10 GHz). Re-assembled from the
+  openEMS run's own probe files with the strip → floor voltage alone (`tools/palace-symmetry-spike/oems/probes.py dn`;
+  the mean reproduces the `.s4p` to 1e-10), openEMS agrees with Palace to **0.008–0.027 over the whole band**. The lid
+  classification (D-115c) is the high-frequency gap; brief 125 has the number.
+- **Copper** (the technology's only metal; the example cannot carry a material of its own, and its technology must stay
+  the 3D Connector's byte for byte): Palace's terminals keep 97.9–99.1 % of their power, openEMS's 96.4–100.1 %
+  (openEMS's laminate loss is a conductivity fitted at the band centre). Whether the example should use perfect-conductor
+  strips is left open by the owner; the README says so.
+- **S11 ≠ S33** in the brief is 124's numbering (1 and 2 one line); this example numbers 1 and 2 at one end, so the two
+  lines' reflections are S11 and S22. They differ by 6.3 dB at 2 GHz on Palace (5.7 on openEMS).

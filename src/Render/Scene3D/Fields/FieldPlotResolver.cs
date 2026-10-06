@@ -289,7 +289,8 @@ public static class FieldPlotResolver
         int port = s.Excitation > 0 ? s.Excitation : s.Drive?.Port ?? 0;
         return s.Kind switch
         {
-            FieldProblemKind.Driven => $"{G(s.Timestep)} GHz" + (port > 0 ? $", port {port} driven" : ""),
+            FieldProblemKind.Driven => $"{G(s.Timestep)} GHz" + (port <= 0 ? ""
+                : solver is null or "Palace" && ModeOf(port, problem) is { } mode ? $", {mode} driven" : $", port {port} driven"),
             FieldProblemKind.Eigenmode when modes?.FirstOrDefault(m => m.Index == s.Index + 1) is { } m =>
                 $"Mode {s.Index + 1}: {G(m.FrequencyHz / 1e9)} GHz, Q {m.Q.ToString("G3", CultureInfo.InvariantCulture)}",
             FieldProblemKind.Eigenmode => $"Mode {s.Index + 1}",
@@ -297,6 +298,18 @@ public static class FieldPlotResolver
             FieldProblemKind.Thermal => $"Point {s.Index + 1}",
             _ => $"Terminal {TerminalName(s.Index, problem)} carrying 1 A",
         };
+    }
+
+    /// <summary>
+    /// brief-em3d-115 R-em3d115-6 (D8) — on Palace, a terminal face's excitation k drives the face's mode k, not terminal k
+    /// alone (the run converts the modes to terminal S afterwards; no terminal drive is superposed here): <c>Left mode 2</c>.
+    /// Null for a port on no terminal face.
+    /// </summary>
+    private static string? ModeOf(int port, Em3dProblem? problem)
+    {
+        if (problem?.Ports.FirstOrDefault(q => q.Number == port) is not { FaceGroup: { } g } p) return null;
+        int k = problem.Ports.Where(q => q.FaceGroup == g).OrderBy(q => q.Number).ToList().IndexOf(p) + 1;
+        return $"{p.FaceGroupLabel ?? p.Name} mode {k.ToString(CultureInfo.InvariantCulture)}";
     }
 
     /// <summary>brief-em3d-100 — request <paramref name="p"/>'s drive at <paramref name="s"/> for its own quantity
