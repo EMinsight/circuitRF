@@ -523,6 +523,29 @@ and per-band `Z[k]` to the whole multi-tone spectrum this way.
 
 ---
 
+## Tuning {#tuning}
+
+The **Tuning** panel (tabbed behind Analyses; also View ▸ Panels ▸ Tuning) puts a slider on any value
+you choose and re-simulates as you move it, with every open Data Display following along.
+
+- **Choosing values.** Click **＋** to search everything tunable in the focused schematic — tick
+  *Include sub-cells* to reach inside its sub-circuits — or use the tune toggle beside a row in the
+  Properties panel, or right-click a parameter value on the canvas ▸ **Tune**. A value that is an
+  expression is not tunable; tune the VAR it reads instead.
+- **Start / Stop.** Nothing is simulated until **▶**. Stop keeps the last result as the schematic's
+  results file. **⚙** chooses which analyses run per move and turns on *Run on release* — simulate
+  only when a slider is let go; a badge on ⚙ suggests it when runs are slow.
+- **Rows.** Drag the slider, type a value and press Enter, or use the arrow keys (Shift for ten steps,
+  Page Up/Down for a tenth of the range). Click the minimum or maximum under a slider to change it;
+  **⋮** sets linear or log spacing, a step, re-centres or resets the range, or reveals the part.
+- **Status.** The dot is grey when idle, green while tuning and amber when the display is behind the
+  sliders; behind rows are tinted. While tuning, the canvas draws each changed value in the tuned colour.
+- **Push** writes the values into the schematic — one undo step per document, inside sub-cells too —
+  and **Revert** returns every slider to the schematic. Until you Push, nothing is changed or marked
+  unsaved. Snapshot keeps the current traces as faded ghosts for comparison.
+
+---
+
 ## Running an analysis from the command line {#cli}
 
 Everything above is driven from the GUI's Run button, and everything above also runs headless. The

@@ -1,0 +1,291 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dockVm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:tun="using:CircuitRF.Ui.Tuning"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Tuning.TuningToolView"
+             x:DataType="dockVm:TuningTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- brief-tuneopt-4 §2. Header (schematic + status), a toolbar of the Analyses panel's own small
+         icon buttons, then one row per tune-enabled entry. Readouts carry no prose: a value, or a
+         short status, and a sentence only where there is no value at all. -->
+
+    <UserControl.Styles>
+        <Style Selector="Button.tb">
+            <Setter Property="Padding" Value="3,2"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Margin" Value="0,0,1,0"/>
+        </Style>
+        <Style Selector="Button.tb mi|MaterialIcon">
+            <Setter Property="Width" Value="14"/>
+            <Setter Property="Height" Value="14"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
+        <Style Selector="Button.tb:disabled mi|MaterialIcon">
+            <Setter Property="Opacity" Value="0.35"/>
+        </Style>
+        <Style Selector="Border.row.lagging">
+            <Setter Property="Background" Value="#14FFA000"/>
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Opacity" Value="0.6"/>
+        </Style>
+        <Style Selector="TextBlock.bound">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Opacity" Value="0.6"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style Selector="ListBox.AddRows ListBoxItem">
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay, x:DataType=tun:TuningAddRow}"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Panel>
+        <!-- No schematic focused: one line, nothing else. -->
+        <TextBlock IsVisible="{Binding !Panel.HasSchematic}"
+                   Text="{x:Static tun:TuningPanelViewModel.NoSchematicText}"
+                   Margin="8" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+
+        <Grid RowDefinitions="Auto,Auto,Auto,*" IsVisible="{Binding HasSchematic}"
+              DataContext="{Binding Panel}" x:DataType="tun:TuningPanelViewModel">
+
+            <!-- Header: schematic, status dot, last evaluation time / how far behind. -->
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="6,4,6,1">
+                <TextBlock Grid.Column="0" Text="{Binding HeaderLabel}"
+                           FontWeight="SemiBold" FontSize="12"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <Ellipse Grid.Column="1" x:Name="StatusDot" Width="8" Height="8" Margin="6,0,4,0"
+                         VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="2" x:Name="StatusTime" FontSize="11" Opacity="0.7"
+                           VerticalAlignment="Center"/>
+            </Grid>
+
+            <!-- Toolbar. -->
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" Margin="4,0,4,2">
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Button Classes="tb" Command="{Binding StartCommand}" IsVisible="{Binding !IsRunning}"
+                            ToolTip.Tip="Start tuning — the Data Display follows the sliders">
+                        <mi:MaterialIcon Kind="Play"/>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding StopCommand}" IsVisible="{Binding IsRunning}"
+                            ToolTip.Tip="Stop tuning — keeps the last result as the results file">
+                        <mi:MaterialIcon Kind="Stop"/>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding RevertCommand}"
+                            ToolTip.Tip="Revert every slider to the schematic's value">
+                        <mi:MaterialIcon Kind="Restore"/>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding PushCommand}"
+                            ToolTip.Tip="Push the tuned values into the schematic (undoable)">
+                        <mi:MaterialIcon Kind="TrayArrowDown"/>
+                    </Button>
+
+                    <Border Width="1" Height="12" Margin="2,0,3,0" VerticalAlignment="Center"
+                            Background="{DynamicResource SystemBaseLowColor}"/>
+
+                    <Button Classes="tb" Command="{Binding SnapshotCommand}"
+                            ToolTip.Tip="Snapshot — keep the current traces as faded ghosts">
+                        <mi:MaterialIcon Kind="CameraOutline"/>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding ClearSnapshotCommand}"
+                            ToolTip.Tip="Clear snapshot">
+                        <mi:MaterialIcon Kind="CameraOffOutline"/>
+                    </Button>
+
+                    <Border Width="1" Height="12" Margin="2,0,3,0" VerticalAlignment="Center"
+                            Background="{DynamicResource SystemBaseLowColor}"/>
+
+                    <!-- Add…: the catalog, searchable, multi-select, Enter adds. -->
+                    <Button Classes="tb" x:Name="AddButton" ToolTip.Tip="Add values to tune…">
+                        <mi:MaterialIcon Kind="Plus"/>
+                        <Button.Flyout>
+                            <Flyout Placement="BottomEdgeAlignedLeft">
+                                <Grid RowDefinitions="Auto,Auto,*" Width="320" Height="300"
+                                      DataContext="{Binding Add}" x:DataType="tun:TuningAddViewModel">
+                                    <TextBox Grid.Row="0" x:Name="AddSearch" Text="{Binding SearchText}"
+                                             PlaceholderText="Name, instance, parameter or cell" FontSize="12">
+                                        <TextBox.InnerLeftContent>
+                                            <mi:MaterialIcon Kind="Magnify" Width="14" Height="14" Margin="6,0,0,0" Opacity="0.6"/>
+                                        </TextBox.InnerLeftContent>
+                                    </TextBox>
+                                    <CheckBox Grid.Row="1" Content="Include sub-cells" FontSize="12" Margin="0,4"
+                                              IsChecked="{Binding IncludeSubCells}"/>
+                                    <ListBox Grid.Row="2" x:Name="AddList" Classes="AddRows"
+                                             ItemsSource="{Binding Results}" SelectionMode="Multiple,Toggle">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="tun:TuningAddRow">
+                                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                                                        <TextBlock Text="{Binding Key}" FontSize="12"/>
+                                                        <TextBlock Text="{Binding Location}" Classes="muted" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="1" Text="{Binding ValueText}" FontSize="11"
+                                                               Opacity="0.8" Margin="8,0,0,0"/>
+                                                    <mi:MaterialIcon Grid.Column="2" Kind="LockOutline" Width="12" Height="12"
+                                                                     Margin="4,0,0,0" Opacity="0.6"
+                                                                     IsVisible="{Binding IsReadOnly}"
+                                                                     ToolTip.Tip="{Binding ReadOnlyReason}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Grid>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+
+                    <!-- ⚙: run on release, and which analyses a move evaluates. -->
+                    <Panel>
+                        <Button Classes="tb" x:Name="SettingsButton" ToolTip.Tip="Tuning settings">
+                            <mi:MaterialIcon Kind="CogOutline"/>
+                            <Button.Flyout>
+                                <Flyout Placement="BottomEdgeAlignedLeft">
+                                    <StackPanel Width="280" Spacing="4">
+                                        <CheckBox Content="Run on release" FontSize="12" IsChecked="{Binding RunOnRelease}"
+                                                  ToolTip.Tip="Simulate only when a slider is let go"/>
+                                        <Separator Margin="0,2"/>
+                                        <RadioButton GroupName="TuneScope" Content="All enabled analyses" FontSize="12"
+                                                     IsChecked="{Binding ScopeSettings.UseAll}"/>
+                                        <RadioButton GroupName="TuneScope" Content="Only these:" FontSize="12"
+                                                     IsChecked="{Binding !ScopeSettings.UseAll}"/>
+                                        <ItemsControl ItemsSource="{Binding ScopeSettings.Analyses}" Margin="18,0,0,0"
+                                                      IsEnabled="{Binding !ScopeSettings.UseAll}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="tun:TuningScopeRow">
+                                                    <Grid ColumnDefinitions="*,Auto">
+                                                        <CheckBox Grid.Column="0" Content="{Binding Name}" FontSize="12"
+                                                                  IsChecked="{Binding IsChecked}"/>
+                                                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding PointsText}" Classes="muted" HorizontalAlignment="Right"/>
+                                                            <TextBlock Text="{Binding Warning}" FontSize="10" HorizontalAlignment="Right"
+                                                                       Foreground="{DynamicResource SystemErrorTextColor}"
+                                                                       IsVisible="{Binding HasWarning}"/>
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Flyout>
+                            </Button.Flyout>
+                        </Button>
+                        <!-- The badge: the last evaluation was slow. One click turns run-on-release on. -->
+                        <Button Command="{Binding AcceptRunOnReleaseCommand}" IsVisible="{Binding RunOnReleaseSuggested}"
+                                Width="9" Height="9" Padding="0" MinWidth="0" MinHeight="0" CornerRadius="5"
+                                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,0,-1,0"
+                                Background="#FFFFA000" BorderThickness="0"
+                                ToolTip.Tip="Evaluations are slow — click to simulate only when a slider is released"/>
+                    </Panel>
+
+                    <Button Classes="tb" Click="OnHelp" ToolTip.Tip="Help">
+                        <mi:MaterialIcon Kind="HelpCircleOutline"/>
+                    </Button>
+                </StackPanel>
+
+                <!-- Presets (TO-5) sit here; this phase leaves the place. -->
+                <Button Grid.Column="2" IsEnabled="False" Padding="6,1" FontSize="11"
+                        Background="Transparent" BorderThickness="0"
+                        ToolTip.Tip="Presets">
+                    <StackPanel Orientation="Horizontal" Spacing="2">
+                        <TextBlock Text="Presets" VerticalAlignment="Center"/>
+                        <mi:MaterialIcon Kind="MenuDown" Width="12" Height="12"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+
+            <!-- What the last action did. -->
+            <TextBlock Grid.Row="2" Text="{Binding StatusText}" FontSize="11" Opacity="0.75"
+                       Margin="6,0,6,2" TextTrimming="CharacterEllipsis"
+                       IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+            <ScrollViewer Grid.Row="3" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding Rows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="tun:TuningRowViewModel">
+                            <Border Classes="row" Classes.lagging="{Binding IsLagging}" Padding="6,3,4,3">
+                                <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+
+                                    <!-- Name, and where it lives for a sub-cell row. -->
+                                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Spacing="4"
+                                                VerticalAlignment="Center" MinWidth="80" Margin="0,0,6,0">
+                                        <TextBlock Text="{Binding Key}" FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding Location}" Classes="muted" IsVisible="{Binding HasLocation}"
+                                                   VerticalAlignment="Center"/>
+                                        <mi:MaterialIcon Kind="LockOutline" Width="11" Height="11" Opacity="0.6"
+                                                         IsVisible="{Binding IsReadOnly}" ToolTip.Tip="{Binding ReadOnlyReason}"/>
+                                    </StackPanel>
+
+                                    <!-- Disabled: the reason, and nothing to drag. -->
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="3"
+                                               IsVisible="{Binding IsDisabled}" Classes="muted" VerticalAlignment="Center"
+                                               Text="{Binding DisabledReason, StringFormat='disabled — {0}'}"/>
+
+                                    <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="1"
+                                            Value="{Binding Position}" IsVisible="{Binding IsEnabled}"
+                                            Classes="tuning" Margin="0,-8" VerticalAlignment="Center"
+                                            Focusable="True" Tag="{Binding}"/>
+                                    <TextBox Grid.Row="0" Grid.Column="2" Text="{Binding ValueBoxText}"
+                                             IsVisible="{Binding IsEnabled}" Classes="tuningValue"
+                                             Width="64" FontSize="12" Padding="4,1" MinHeight="0" Margin="4,0,2,0"
+                                             HorizontalContentAlignment="Right" Tag="{Binding}"/>
+                                    <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding Unit}" FontSize="11"
+                                               IsVisible="{Binding IsEnabled}" VerticalAlignment="Center" MinWidth="16"/>
+
+                                    <!-- ⋮ -->
+                                    <Button Grid.Row="0" Grid.Column="4" Classes="tb" ToolTip.Tip="More">
+                                        <mi:MaterialIcon Kind="DotsVertical"/>
+                                        <Button.Flyout>
+                                            <MenuFlyout>
+                                                <MenuItem Header="Linear" Command="{Binding SetLinearCommand}"/>
+                                                <MenuItem Header="Log" Command="{Binding SetLogCommand}"/>
+                                                <MenuItem Header="Step…" Command="{Binding EditStepCommand}"/>
+                                                <Separator/>
+                                                <MenuItem Header="Re-centre range on value" Command="{Binding RecentreRangeCommand}"/>
+                                                <MenuItem Header="Reset range to default" Command="{Binding ResetRangeCommand}"/>
+                                                <Separator/>
+                                                <MenuItem Header="Reveal on canvas" Command="{Binding RevealCommand}"/>
+                                                <MenuItem Header="Remove from tuning" Command="{Binding RemoveCommand}"/>
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+
+                                    <!-- min / max under the slider, editable in place; the scale beside them. -->
+                                    <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="Auto,*,Auto,Auto"
+                                          IsVisible="{Binding IsEnabled}">
+                                        <Panel Grid.Column="0">
+                                            <TextBlock Text="{Binding MinText}" Classes="bound" IsVisible="{Binding !IsEditingMin}"
+                                                       Tag="min" PointerPressed="OnBoundPressed" ToolTip.Tip="Minimum — click to edit"/>
+                                            <TextBox Text="{Binding MinText}" IsVisible="{Binding IsEditingMin}" Classes="tuningBound"
+                                                     Tag="min" Width="64" FontSize="10" Padding="2,0" MinHeight="0"/>
+                                        </Panel>
+                                        <Panel Grid.Column="2">
+                                            <TextBlock Text="{Binding MaxText}" Classes="bound" IsVisible="{Binding !IsEditingMax}"
+                                                       Tag="max" PointerPressed="OnBoundPressed" ToolTip.Tip="Maximum — click to edit"/>
+                                            <TextBox Text="{Binding MaxText}" IsVisible="{Binding IsEditingMax}" Classes="tuningBound"
+                                                     Tag="max" Width="64" FontSize="10" Padding="2,0" MinHeight="0"/>
+                                        </Panel>
+                                        <TextBlock Grid.Column="3" Text="{Binding ScaleLabel}" Classes="muted" Margin="6,0,0,0"/>
+                                    </Grid>
+
+                                    <!-- Step… -->
+                                    <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="4"
+                                                IsVisible="{Binding IsEditingStep}">
+                                        <TextBlock Text="step" Classes="muted" VerticalAlignment="Center"/>
+                                        <TextBox Text="{Binding StepText}" Classes="tuningBound" Tag="step"
+                                                 Width="64" FontSize="10" Padding="2,0" MinHeight="0"/>
+                                        <TextBlock Text="{Binding Unit}" Classes="muted" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+    </Panel>
+</UserControl>

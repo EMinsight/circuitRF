@@ -93,6 +93,9 @@ public class CircuitRfDockFactory : Factory
     /// panels do.</summary>
     public ImpedanceTool?    ImpedanceTool    { get; private set; }
 
+    /// <summary>brief-tuneopt-4's Tuning panel, following the focused schematic and tabbed behind Analyses.</summary>
+    public TuningTool?       TuningTool       { get; private set; }
+
     /// <summary>
     /// RC-10's one history panel (§5.10) — the versions and the restore points in one list.
     /// <b>Replaces the two properties this factory carried before</b>, which is what makes "a layout
@@ -202,6 +205,7 @@ public class CircuitRfDockFactory : Factory
             LvsTool         = new LvsTool();
             InstancesTool   = new InstancesTool();
             ImpedanceTool   = new ImpedanceTool();
+            TuningTool      = new TuningTool();
             HistoryTool = new HistoryTool();
             WBondProfileTool    = new WBondProfileTool();
             WBondInductanceTool = new WBondInductanceTool();
@@ -219,6 +223,7 @@ public class CircuitRfDockFactory : Factory
             LvsTool         ??= new LvsTool();
             InstancesTool   ??= new InstancesTool();
             ImpedanceTool   ??= new ImpedanceTool();
+            TuningTool      ??= new TuningTool();
             HistoryTool ??= new HistoryTool();
             WBondProfileTool    ??= new WBondProfileTool();
             WBondInductanceTool ??= new WBondInductanceTool();
@@ -241,6 +246,7 @@ public class CircuitRfDockFactory : Factory
             DockPanelIds.Lvs         => LvsTool,
             DockPanelIds.Instances   => InstancesTool,
             DockPanelIds.Impedance   => ImpedanceTool,
+            DockPanelIds.Tuning      => TuningTool,
             DockPanelIds.History     => HistoryTool,
             DockPanelIds.WBondProfile    => WBondProfileTool,
             DockPanelIds.WBondInductance => WBondInductanceTool,
@@ -763,6 +769,7 @@ public class CircuitRfDockFactory : Factory
         DockPanelIds.Lvs         => LvsTool,
         DockPanelIds.Instances   => InstancesTool,
         DockPanelIds.Impedance   => ImpedanceTool,
+        DockPanelIds.Tuning      => TuningTool,
         DockPanelIds.History     => HistoryTool,
         DockPanelIds.WBondProfile    => WBondProfileTool,
         DockPanelIds.WBondInductance => WBondInductanceTool,
@@ -773,7 +780,7 @@ public class CircuitRfDockFactory : Factory
     private IEnumerable<ITool?> AllTools() =>
     [
         ProjectTreeTool, PaletteTool, PropertiesTool, AnalysesTool, MessagesTool, DrcTool, LvsTool,
-        WBondProfileTool, WBondInductanceTool, HistoryTool, InstancesTool, ImpedanceTool,
+        WBondProfileTool, WBondInductanceTool, HistoryTool, InstancesTool, ImpedanceTool, TuningTool,
     ];
 
     // ── Auto-hidden panels ────────────────────────────────────────────────────
@@ -1350,6 +1357,21 @@ public class CircuitRfDockFactory : Factory
     {
         if (_documentDock is null) return;
         OpenDocumentIn(_documentDock, doc);
+    }
+
+    /// <summary>
+    /// Adds <paramref name="doc"/> as a tab of the primary strip WITHOUT making it the active one or
+    /// taking focus — a document an action dirtied in the background (a tuning Push into a sub-cell
+    /// nobody had open, brief-tuneopt-4 R-to4-8) has to be visible, and must not pull the user off
+    /// the document they are working in.
+    /// </summary>
+    public void OpenDocumentInBackground(Document doc)
+    {
+        if (_documentDock is null) return;
+        var active = _documentDock.ActiveDockable;
+        AddDockable(_documentDock, doc);
+        if (active is not null && !ReferenceEquals(_documentDock.ActiveDockable, active))
+            SetActiveDockable(active);
     }
 
     /// <summary>Opens <paramref name="doc"/> as the active tab of a GIVEN document strip — a side pane

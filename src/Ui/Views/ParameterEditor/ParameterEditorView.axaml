@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.ParameterEditor.ParameterEditorView"
              x:DataType="vm:ParameterEditorViewModel"
              Background="{DynamicResource SystemChromeLowColor}">
@@ -606,11 +607,23 @@
                                                      VerticalAlignment="Center"
                                                      Margin="8,0,4,0"
                                                      ToolTip.Tip="Approximate value at current schematic state (pre-simulation)"/>
-                                <CheckBox Grid.Column="4"
-                                          IsChecked="{Binding ShowOnSchematic}"
-                                          ToolTip.Tip="Show on schematic"
-                                          Margin="6,0,2,0"
-                                          VerticalAlignment="Center"/>
+                                <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <CheckBox IsChecked="{Binding ShowOnSchematic}"
+                                              ToolTip.Tip="Show on schematic"
+                                              Margin="6,0,2,0"
+                                              VerticalAlignment="Center"/>
+                                    <!-- brief-tuneopt-4 R-to4-3: present only on a row the Tuning panel
+                                         offers — an expression, a string or a row of an untuned schematic
+                                         has none, rather than a greyed one. -->
+                                    <ToggleButton IsVisible="{Binding CanTune}"
+                                                  IsChecked="{Binding IsTuned}"
+                                                  Padding="2" MinWidth="0" MinHeight="0"
+                                                  Background="Transparent" BorderThickness="0"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip.Tip="Tune — adds this value to the Tuning panel">
+                                        <mi:MaterialIcon Kind="TuneVertical" Width="13" Height="13"/>
+                                    </ToggleButton>
+                                </StackPanel>
                                 <!-- Per-row remove. NOT the footer's "−", which removes the last
                                      indexed GROUP — correct for P1Tone's Z[k] and ToneSource's
                                      Freq[n]/V[n]/Phase[n], and no way at all to reach the first of a

@@ -136,6 +136,21 @@ public sealed partial class SchematicViewModel : ObservableObject
     [ObservableProperty] private SchematicSpatialIndex? _spatialIndex;
     [ObservableProperty] private SchematicOverlay        _overlay = SchematicOverlay.Empty;
 
+    /// <summary>
+    /// Parameter text a tuning session is simulating in place of what this drawing stores, by
+    /// component Id then label row (brief-tuneopt-4 R-to4-7). Kept apart from <see cref="Overlay"/>,
+    /// which a dozen interaction paths rebuild from scratch: the canvas merges the two per frame, so no
+    /// drag or rubber band can wipe the tuned colour off the canvas.
+    /// </summary>
+    [ObservableProperty] private IReadOnlyDictionary<string, IReadOnlyDictionary<int, string>>? _tunedLabels;
+
+    /// <summary>
+    /// The Tuning panel's half of the Inspector's tune toggle and the canvas's right-click ▸ Tune
+    /// (brief-tuneopt-4 R-to4-3). Installed by the workspace on every session; null where there is no
+    /// panel, and then neither surface offers anything.
+    /// </summary>
+    public Tuning.ITuningSurface? Tuning { get; set; }
+
     // ── Tool state ────────────────────────────────────────────────────────────
 
     public enum Tool { Select, Pan, Wire, Place, ZoomBox, MoveLabels }

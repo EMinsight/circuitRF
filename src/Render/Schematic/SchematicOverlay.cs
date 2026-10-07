@@ -32,6 +32,16 @@ public sealed record class SchematicOverlay
 
     internal static readonly HashSet<(string WireId, int SegmentIndex)> EmptySegments = new();
 
+    // ── Tuning (brief-tuneopt-4 R-to4-7) ──────────────────────────────────────
+
+    /// <summary>
+    /// Label text a tuning session replaces, by component Id then label row (2+ = the parameter rows
+    /// as <see cref="SchematicComponent.Labels"/> numbers them). Drawn in the theme's
+    /// <see cref="SchematicRenderTheme.TunedText"/> instead of the stored text, so the canvas shows the
+    /// value being simulated. Null when nothing is tuned. The renderer knows nothing of sessions.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<int, string>>? TunedLabels { get; init; }
+
     // ── Rubber-band select ────────────────────────────────────────────────────
 
     /// <summary>World-space rubber-band rect, or null when not dragging.</summary>

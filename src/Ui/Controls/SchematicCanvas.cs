@@ -119,7 +119,8 @@ public sealed class SchematicCanvas : Control
     {
         if (e.PropertyName is nameof(SchematicViewModel.RenderModel)
                            or nameof(SchematicViewModel.SpatialIndex)
-                           or nameof(SchematicViewModel.Overlay))
+                           or nameof(SchematicViewModel.Overlay)
+                           or nameof(SchematicViewModel.TunedLabels))
             SyncFromVm();
         else if (e.PropertyName is nameof(SchematicViewModel.ActiveTool)
                                 or nameof(SchematicViewModel.DuplicateDragArmed))
@@ -165,7 +166,9 @@ public sealed class SchematicCanvas : Control
         if (_editContext is null) return;
         _model   = _editContext.RenderModel;
         _index   = _editContext.SpatialIndex;
-        _overlay = _editContext.Overlay;
+        _overlay = _editContext.TunedLabels is { } tuned
+            ? _editContext.Overlay with { TunedLabels = tuned }
+            : _editContext.Overlay;
         _needsInitialFit = _model is not null && _needsInitialFit;
         InvalidateVisual();
     }
@@ -205,6 +208,10 @@ public sealed class SchematicCanvas : Control
 
     /// <summary>ID of the component (or wire) that was right-clicked. Null if background.</summary>
     public string? ContextMenuTargetId { get; private set; }
+
+    /// <summary>The parameter (its index in the component's full list) whose shown value the last
+    /// right-click landed on, or null — what the context menu's Tune acts on (brief-tuneopt-4).</summary>
+    public int? ContextMenuParamIndex { get; private set; }
 
     // ── Internal state ────────────────────────────────────────────────────────
 
@@ -534,6 +541,7 @@ public sealed class SchematicCanvas : Control
         if (props.IsRightButtonPressed)
         {
             ContextMenuTargetId = null;
+            ContextMenuParamIndex = null;
             if (_editContext is not null && _model is not null && _index is not null)
             {
                 var hit = SchematicHitTest.Test(_editContext.EditModel, _model, _index, wx, wy, zoom: _zoom);
@@ -544,6 +552,7 @@ public sealed class SchematicCanvas : Control
                     or SchematicHitTest.HitKind.ComponentFootprint)
                 {
                     ContextMenuTargetId = hit.Id;
+                    if (hit.Kind == SchematicHitTest.HitKind.ComponentParam) ContextMenuParamIndex = hit.SubIndex;
                     // Also select the right-clicked component if not already selected
                     _editContext.SelectIfUnselected(hit.Id);
                 }

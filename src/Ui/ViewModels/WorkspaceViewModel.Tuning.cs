@@ -1,0 +1,164 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using CircuitRF.Core.Design;
+using CircuitRF.Core.Netlist;
+using CircuitRF.Design.Circuit;
+using CircuitRF.Design.Optimization;
+using CircuitRF.Ui.DataDisplay;
+using CircuitRF.Ui.Schematic;
+using CircuitRF.Ui.Tuning;
+using Dock.Model.Core;
+
+namespace CircuitRF.Ui.ViewModels;
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  The Tuning panel (brief-tuneopt-4). This file decides which schematic the panel tunes, gives it a
+//  session that evaluates exactly what Simulate would (the same extraction, corners and resolver, read
+//  back in memory instead of through netlist.cnl), and hands it the sessions a Push writes into. The
+//  panel itself — rows, Push, Revert, lag — is TuningPanelViewModel, which knows nothing of the shell.
+// ─────────────────────────────────────────────────────────────────────────────
+
+public partial class WorkspaceViewModel
+{
+    private TuningPanelViewModel? _wiredTuningPanel;
+    private TuningSurfaceRelay?   _tuningSurface;
+
+    /// <summary>What every schematic session's Inspector and canvas ask about tuning — forwarded to the
+    /// current panel, so a layout rebuild that replaces the panel does not strand older sessions.</summary>
+    internal ITuningSurface TuningSurface => _tuningSurface ??= new TuningSurfaceRelay(() => _factory.TuningTool?.Panel);
+
+    /// <summary>
+    /// Points the Tuning panel at <paramref name="document"/>'s TOP frame for a schematic, and clears it
+    /// for anything else (R-to4-2) — with one exception: a Data Display taking focus while a session
+    /// runs keeps the panel where it is. That display is where the session's results are being looked
+    /// at, and stopping the session because someone clicked it would make live tuning unusable.
+    /// </summary>
+    private void RouteTuningPanel(IDockable? document)
+    {
+        WireTuningPanel();
+        if (_factory.TuningTool?.Panel is not { } panel) return;
+
+        switch (document)
+        {
+            case SchematicDocument sd:
+                panel.SetActiveSchematic(sd.NavFrames[0].Session, InstancesRootHeaderOf(sd));
+                break;
+            case DataDisplayDocument when panel.IsRunning:
+                break;
+            default:
+                panel.SetActiveSchematic(null, null);
+                break;
+        }
+    }
+
+    private void WireTuningPanel()
+    {
+        var panel = _factory.TuningTool?.Panel;
+        if (ReferenceEquals(panel, _wiredTuningPanel) || panel is null) return;
+        _wiredTuningPanel = panel;
+
+        panel.Defer = a => Avalonia.Threading.Dispatcher.UIThread.Post(a, Avalonia.Threading.DispatcherPriority.Background);
+        panel.CreateSession      = CreateTuneSession;
+        panel.SessionForDrawing  = d => SessionForTunedDrawing(d, openTab: true);
+        panel.ExistingSessionFor = d => SessionForTunedDrawing(d, openTab: false);
+        panel.PointsOf           = TunePointsOf;
+        panel.RevealOnCanvas     = RevealTunable;
+    }
+
+    // ── The session: Simulate's own extraction, in memory ───────────────────
+
+    /// <summary>The bench as Simulate would netlist it — same resolver, same corners — prepared once.</summary>
+    private (PreparedCircuit Circuit, SchematicDocument Doc, string BaseDir)? PrepareTunedCircuit(SchematicViewModel tuned)
+    {
+        if (!FindSchematicDocumentWithFrame(tuned, out var doc, out _)) return null;
+
+        var model     = tuned.EditModel;
+        var problems  = new List<string>();
+        var corners   = WorkspaceCorners.BindingsFor(AvailableCornerAxes, model.CornerSelections, problems);
+        var extracted = NetExtractor.Extract(model, doc.Id, cells: this, cornerVariables: corners);
+        foreach (var p in problems.Concat(extracted.Conflicts)) Messages.Warning($"Tuning: {p}");
+
+        var baseDir = RunBaseDirectory();
+        var text    = CnlWriter.Write(extracted.TestBench, extracted.Library, "tuning session");
+        var wsRoot  = CurrentWorkspacePath is not null ? Path.GetDirectoryName(CurrentWorkspacePath) : null;
+        return (PreparedCircuit.FromText(text, baseDir, wsRoot, doc.Id), doc, baseDir);
+    }
+
+    private TuneSession? CreateTuneSession(SchematicViewModel tuned, IReadOnlyList<string>? analyses)
+    {
+        if (PrepareTunedCircuit(tuned) is not { } p) return null;
+        if (p.Circuit.ReadError is { } error)
+        {
+            Messages.Error($"Tuning: {error}");
+            return null;
+        }
+
+        var key  = RunResultsWriter.SchematicKey(p.Doc.FilePath, p.Doc.Id);
+        var sink = TuneSinkFor(p.BaseDir, key, tuned.EditModel.ResultsFileName);
+        return TuneSession.ForCircuit(p.Circuit, sink,
+            a => Avalonia.Threading.Dispatcher.UIThread.Post(a), analyses);
+    }
+
+    /// <summary>What one slider move costs per analysis (the ⚙ list): leaf points and sweep points.</summary>
+    private IReadOnlyDictionary<string, (long Points, long SweepPoints)> TunePointsOf(
+        SchematicViewModel tuned, IReadOnlyList<string> names)
+    {
+        var result = new Dictionary<string, (long, long)>(StringComparer.Ordinal);
+        if (PrepareTunedCircuit(tuned) is not { Circuit.ReadError: null } p) return result;
+        foreach (var name in names)
+        {
+            var plan = CircuitEvaluation.Plan(p.Circuit, new CircuitEvaluationRequest { Analyses = [name] });
+            if (plan.Status == RunStatus.Success) result[name] = (plan.TotalWorkUnits, plan.SweepPoints);
+        }
+        return result;
+    }
+
+    // ── The documents a Push writes into (R-to4-8) ──────────────────────────
+
+    /// <summary>
+    /// The session editing <paramref name="drawing"/>. With <paramref name="openTab"/>, a session with no
+    /// tab of its own is given one — WITHOUT focus — so its new unsaved state is visible and reaches the
+    /// ordinary unsaved-changes prompt; a dirty document never hides in a background session.
+    /// </summary>
+    private SchematicViewModel? SessionForTunedDrawing(SchematicEditModel drawing, bool openTab)
+    {
+        foreach (var path in _registry.AllPaths.ToList())
+        {
+            if (!_registry.TryGet(path, out var vm) || vm is null || !ReferenceEquals(vm.EditModel, drawing)) continue;
+            if (openTab && !_openDocsByPath.ContainsKey(path))
+            {
+                var doc = new SchematicDocument(Path.GetFileName(path), vm, path) { Messages = Messages, Hierarchy = this };
+                HookSchematicCanvasFocus(doc);
+                _factory.OpenDocumentInBackground(doc);
+                _openDocsByPath[path] = doc;
+            }
+            return vm;
+        }
+        return null;
+    }
+
+    /// <summary>⋮ ▸ Reveal on canvas: brings the row's drawing forward and frames its component.</summary>
+    private void RevealTunable(SchematicViewModel tuned, Tunable t)
+    {
+        var catalog = _factory.TuningTool?.Panel.Catalog;
+        var drawing = t.Cell is null ? tuned.EditModel : catalog?.Drawings.GetValueOrDefault(t.Cell);
+        if (drawing is null) return;
+
+        var component = drawing.Components.FirstOrDefault(c => t.Kind == TunableKind.Variable
+            ? c.Symbol == SymbolKind.Var && c.Parameters.Any(p => p.Name.Trim() == t.Owner)
+            : c.InstanceName == t.Owner);
+        var vm = ReferenceEquals(drawing, tuned.EditModel) ? tuned : SessionForTunedDrawing(drawing, openTab: true);
+        if (component is null || vm is null) return;
+
+        if (FindSchematicDocumentShowing(vm) is { } shown)
+            RevealAfterActivating(shown, () => InstanceReveal.Reveal(shown, component));
+        else if (FindSchematicDocumentWithFrame(vm, out var root, out int k))
+            RevealAfterActivating(root, () =>
+            {
+                PopToLevel(root, k);
+                InstanceReveal.Reveal(root, component);
+            });
+    }
+}

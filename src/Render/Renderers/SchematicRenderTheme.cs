@@ -36,6 +36,10 @@ public sealed class SchematicRenderTheme
     public SKColor WireRouting       { get; init; }
     public SKColor DisabledGlyph     { get; init; }
 
+    /// <summary>A parameter's text while a tuning session holds a value for it that the schematic does
+    /// not (brief-tuneopt-4 R-to4-7) — the canvas showing what is being simulated, not what is saved.</summary>
+    public SKColor TunedText         { get; init; }
+
     // ── Projection factory (L2) ───────────────────────────────────────────────
 
     /// <summary>
@@ -77,6 +81,7 @@ public sealed class SchematicRenderTheme
             GhostBody        = isLight ? new SKColor(  0, 100, 180, 120) : new SKColor( 80, 180, 255, 130),
             WireRouting      = SK(ColorRole.SchematicWireRouting),
             DisabledGlyph    = isLight ? new SKColor(200,  60,  60, 160) : new SKColor(240,  80,  80, 160),
+            TunedText        = isLight ? new SKColor(196,  92,   0, 255) : new SKColor(255, 168,  64, 255),
         };
     }
 
@@ -114,6 +119,7 @@ public sealed class SchematicRenderTheme
         GhostBody         = GhostBody,
         WireRouting       = WireRouting,
         DisabledGlyph     = DisabledGlyph,
+        TunedText         = TunedText,
     };
 
     /// <summary>Returns a copy with all symbol-line colors replaced by a neutral grey matching the toolbar foreground.</summary>
@@ -143,6 +149,7 @@ public sealed class SchematicRenderTheme
             GhostBody         = GhostBody,
             WireRouting       = WireRouting,
             DisabledGlyph     = DisabledGlyph,
+            TunedText         = TunedText,
         };
     }
 }

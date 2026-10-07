@@ -138,6 +138,7 @@ public static class SchematicRenderer
         using var compNamePaint   = new SKPaint { IsAntialias = true,  Color = theme.ComponentNameText };
         using var instNamePaint   = new SKPaint { IsAntialias = true,  Color = theme.InstanceNameText };
         using var paramNamePaint  = new SKPaint { IsAntialias = true,  Color = theme.ParameterNameText };
+        using var tunedPaint      = new SKPaint { IsAntialias = true,  Color = theme.TunedText };
         using var netLabelFont    = new SKFont(SkiaFonts.PlexItalic,  Math.Max(4f, (float)(zoom * 65.0)));
         using var netLabelPaint   = new SKPaint { IsAntialias = true,  Color = theme.NetLabelText };
         using var pinNameFont     = new SKFont(SkiaFonts.PlexRegular, Math.Max(4f, (float)(zoom * PinNameWorldHeight)));
@@ -366,8 +367,10 @@ public static class SchematicRenderer
                 (double DX, double DY)? lblDrag = null;
                 if (overlay?.LabelDragOffsets is { } ldo && ldo.TryGetValue(c.Id, out var ld))
                     lblDrag = ld;
+                IReadOnlyDictionary<int, string>? tuned = null;
+                overlay?.TunedLabels?.TryGetValue(c.Id, out tuned);
                 DrawLabels(canvas, c, cx, cy, panX, panY, zoom, textFont,
-                    compNamePaint, instNamePaint, paramNamePaint, lblDrag);
+                    compNamePaint, instNamePaint, paramNamePaint, lblDrag, tuned, tunedPaint);
             }
         }
 
@@ -1048,7 +1051,8 @@ public static class SchematicRenderer
         double panX, double panY, double zoom,
         SKFont font,
         SKPaint compNamePaint, SKPaint instNamePaint, SKPaint paramNamePaint,
-        (double DX, double DY)? dragDelta = null)
+        (double DX, double DY)? dragDelta = null,
+        IReadOnlyDictionary<int, string>? tuned = null, SKPaint? tunedPaint = null)
     {
         // All anchors are computed via the canonical helper so the renderer and hit-test
         // can never drift — SchematicComponent.LabelRowGeometry is the single source of truth.
@@ -1062,6 +1066,11 @@ public static class SchematicRenderer
             var (worldX, worldY, _, _) = SchematicComponent.LabelRowGeometry(cx, cy, i, oDx, oDy, c.Symbol, portCount, c.GlyphBbMaxY - c.Y);
             var (lx, ly) = ToPixel(worldX, worldY, panX, panY, zoom);
             var paint = i == 0 ? compNamePaint : (i == 1 ? instNamePaint : paramNamePaint);
+            if (i >= 2 && tunedPaint is not null && tuned is not null && tuned.TryGetValue(i, out var tunedText))
+            {
+                label = tunedText;
+                paint = tunedPaint;
+            }
             canvas.DrawText(label, lx, ly, SKTextAlign.Left, font, paint);
         }
     }

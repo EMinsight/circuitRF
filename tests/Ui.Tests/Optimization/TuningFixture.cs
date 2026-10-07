@@ -56,8 +56,12 @@ internal static class TuningFixture
         return c;
     }
 
-    public static ICellResolver Resolver(string r3 = "10") => new StubResolver(
-        new CellResolution("DUT", Dut(r3), [new ParameterDeclaration("Rbias", "1", "kOhm")], DutFolder));
+    public static ICellResolver Resolver(string r3 = "10") => Resolver(Dut(r3));
+
+    /// <summary>A resolver handing out <paramref name="dut"/> itself — the GUI's shape, where the resolver
+    /// returns the open session's own model, so a test can watch a Push land in it.</summary>
+    public static ICellResolver Resolver(SchematicEditModel dut) => new StubResolver(
+        new CellResolution("DUT", dut, [new ParameterDeclaration("Rbias", "1", "kOhm")], DutFolder));
 
     private sealed class StubResolver(CellResolution dut) : ICellResolver
     {

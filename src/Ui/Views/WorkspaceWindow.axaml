@@ -514,6 +514,7 @@
                                     <NativeMenuItem Header="Library"      Command="{Binding ShowToolPanelCommand}" CommandParameter="Palette"/>
                                     <NativeMenuItem Header="Properties"   Command="{Binding ShowToolPanelCommand}" CommandParameter="Properties"/>
                                     <NativeMenuItem Header="Analyses"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses"/>
+                                    <NativeMenuItem Header="Tuning"       Command="{Binding ShowToolPanelCommand}" CommandParameter="Tuning"/>
                                     <NativeMenuItem Header="Messages"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages"/>
                                     <NativeMenuItem Header="DRC"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc"/>
                                     <NativeMenuItem Header="LVS"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Lvs"/>
@@ -1457,6 +1458,11 @@
                     <MenuItem Header="_Analyses"
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses">
                         <MenuItem.Icon><mi:MaterialIcon Kind="PlayCircleOutline" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <!-- brief-tuneopt-4. Tabbed behind Analyses in both shipped default layouts. -->
+                    <MenuItem Header="T_uning"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Tuning">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="TuneVertical" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="_Messages"
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages">

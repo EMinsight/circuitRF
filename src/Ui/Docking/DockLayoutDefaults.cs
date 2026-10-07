@@ -100,6 +100,7 @@ public static class DockLayoutDefaults
             new CwsDockPanel { Id = DockPanelIds.Palette,     Side = DockSide.Left,   Group = 0, Order = 1, Active = false, Proportion = ProjectTreeGroupProportion },
             new CwsDockPanel { Id = DockPanelIds.Properties,  Side = DockSide.Left,   Group = 1, Order = 0, Active = true,  Proportion = PropertiesGroupProportion  },
             new CwsDockPanel { Id = DockPanelIds.Analyses,    Side = DockSide.Left,   Group = 1, Order = 1, Active = false, Proportion = PropertiesGroupProportion  },
+            new CwsDockPanel { Id = DockPanelIds.Tuning,      Side = DockSide.Left,   Group = 1, Order = 2, Active = false, Proportion = PropertiesGroupProportion  },
             new CwsDockPanel { Id = DockPanelIds.Messages,    Side = DockSide.Bottom, Group = 0, Order = 0, Active = true,  Proportion = MessagesProportion         },
             new CwsDockPanel { Id = DockPanelIds.Drc,         Side = DockSide.Bottom, Group = 0, Order = 1, Active = false, Proportion = MessagesProportion         },
             new CwsDockPanel { Id = DockPanelIds.Lvs,         Side = DockSide.Bottom, Group = 0, Order = 2, Active = false, Proportion = MessagesProportion         },
@@ -130,6 +131,7 @@ public static class DockLayoutDefaults
             new CwsDockPanel { Id = DockPanelIds.ProjectTree, Side = DockSide.Left,   Group = 0, Order = 0, Active = true,  Proportion = ProjectTreeAloneProportion    },
             new CwsDockPanel { Id = DockPanelIds.Properties,  Side = DockSide.Left,   Group = 1, Order = 0, Active = true,  Proportion = PropertiesGroupAloneProportion },
             new CwsDockPanel { Id = DockPanelIds.Analyses,    Side = DockSide.Left,   Group = 1, Order = 1, Active = false, Proportion = PropertiesGroupAloneProportion },
+            new CwsDockPanel { Id = DockPanelIds.Tuning,      Side = DockSide.Left,   Group = 1, Order = 2, Active = false, Proportion = PropertiesGroupAloneProportion },
             new CwsDockPanel { Id = DockPanelIds.Palette,     Side = DockSide.Right,  Group = 0, Order = 0, Active = true,  Proportion = 1.0                            },
             new CwsDockPanel { Id = DockPanelIds.Messages,    Side = DockSide.Bottom, Group = 0, Order = 0, Active = true,  Proportion = MessagesProportion             },
             new CwsDockPanel { Id = DockPanelIds.Drc,         Side = DockSide.Bottom, Group = 0, Order = 1, Active = false, Proportion = MessagesProportion             },
@@ -152,6 +154,34 @@ public static class DockLayoutDefaults
         DocumentOrder  = from?.DocumentOrder is { } order ? new List<string>(order) : [],
         ActiveDocument = from?.ActiveDocument,
     };
+
+    /// <summary>
+    /// Panels whose default place is "tabbed behind another one": a layout that has moved the other one
+    /// should get the newcomer THERE, not in a column the user emptied (brief-tuneopt-4 R-to4-1).
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> TabbedBehind = new Dictionary<string, string>
+    {
+        [DockPanelIds.Tuning] = DockPanelIds.Analyses,
+    };
+
+    /// <summary>
+    /// <paramref name="missing"/> placed as the last tab of the dock its sibling is docked in, or null
+    /// when it has no sibling rule or the sibling is not docked and open in <paramref name="panels"/>.
+    /// </summary>
+    private static CwsDockPanel? BesideItsSibling(CwsDockPanel missing, IReadOnlyList<CwsDockPanel> panels)
+    {
+        if (!TabbedBehind.TryGetValue(missing.Id, out var siblingId)) return null;
+        if (panels.FirstOrDefault(p => p.Id == siblingId) is not { Open: true } sibling) return null;
+        if (sibling.AutoHidden) return null;
+
+        int order = panels.Where(p => p.Open && p.Side == sibling.Side && p.Group == sibling.Group && p.Inboard == sibling.Inboard)
+                          .Select(p => p.Order).DefaultIfEmpty(sibling.Order).Max() + 1;
+        return new CwsDockPanel
+        {
+            Id = missing.Id, Side = sibling.Side, Group = sibling.Group, Inboard = sibling.Inboard,
+            Order = order, Active = false, Proportion = sibling.Proportion,
+        };
+    }
 
     /// <summary>
     /// Fills in a default placement for any panel the given layout does not mention at all — a panel
@@ -184,7 +214,7 @@ public static class DockLayoutDefaults
 
         foreach (var d in Default().Panels)
             if (!known.Contains(d.Id))
-                merged.Panels.Add(d);
+                merged.Panels.Add(BesideItsSibling(d, merged.Panels) ?? d);
 
         // A side that gained its first panel this way needs a column size too.
         foreach (var d in Default().Sides)

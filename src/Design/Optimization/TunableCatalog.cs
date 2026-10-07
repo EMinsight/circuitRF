@@ -74,6 +74,8 @@ public sealed class TunableCatalog
 
     private readonly Dictionary<string, Tunable> _byKey;
     private readonly Dictionary<string, string>  _notOffered;
+    private IReadOnlyDictionary<string, SchematicEditModel> _drawings =
+        new Dictionary<string, SchematicEditModel>(StringComparer.Ordinal);
 
     private TunableCatalog(List<Tunable> tunables, Dictionary<string, string> notOffered, List<string> unresolved)
     {
@@ -97,6 +99,38 @@ public sealed class TunableCatalog
     /// <summary>Why a key that DOES name a value of the design is not offered (it is an expression,
     /// a string, a port number); null when it is offered or names nothing.</summary>
     public string? WhyNotOffered(string key) => _notOffered.GetValueOrDefault(key);
+
+    /// <summary>
+    /// The drawing each scope's values live in: <c>""</c> for the tuned schematic itself, otherwise the
+    /// cell as the keys spell it. These are the very models the resolver handed out — in the GUI the
+    /// open sessions' own — so Push writes into the drawing that is on screen. Empty for a catalog of
+    /// a netlist, which has no drawing.
+    /// </summary>
+    public IReadOnlyDictionary<string, SchematicEditModel> Drawings => _drawings;
+
+    /// <summary>The cell a drawing is, as the keys spell it — <c>""</c> for the tuned schematic, null for
+    /// a drawing this design does not reach.</summary>
+    public string? CellOf(SchematicEditModel drawing)
+    {
+        foreach (var (cell, model) in _drawings)
+            if (ReferenceEquals(model, drawing)) return cell;
+        return null;
+    }
+
+    /// <summary>
+    /// The key of a parameter row as drawn in <paramref name="drawing"/> — a VAR row is its variable,
+    /// anything else <c>instance.parameter</c> — or null when the catalog does not offer it. The one
+    /// mapping the Inspector, the canvas and Push share, so the three cannot disagree on what a row is.
+    /// </summary>
+    public string? KeyFor(SchematicEditModel drawing, EditableComponent component, EditableParameter parameter)
+    {
+        if (CellOf(drawing) is not { } cell || string.IsNullOrWhiteSpace(parameter.Name)) return null;
+        string prefix = cell.Length == 0 ? "" : cell + ":";
+        string key = component.Symbol == SymbolKind.Var
+            ? prefix + parameter.Name.Trim()
+            : $"{prefix}{component.InstanceName}.{parameter.Name}";
+        return _byKey.ContainsKey(key) ? key : null;
+    }
 
     /// <summary>
     /// The catalog of a schematic. <paramref name="cells"/> is the resolver Simulate uses — the
@@ -132,7 +166,9 @@ public sealed class TunableCatalog
 
         // A disabled component is not in the netlist; one excluded from it (a probe, a MEAS block) has
         // nothing to tune. Instances the extraction emitted are exactly the rest.
-        return FromNetlist(extracted.TestBench, extracted.Library, varRows, extracted.CellKeys, workspaceRoot, Stored);
+        var catalog = FromNetlist(extracted.TestBench, extracted.Library, varRows, extracted.CellKeys, workspaceRoot, Stored);
+        catalog._drawings = drawings;
+        return catalog;
     }
 
     /// <summary>Passes every resolution through, remembering each cell's drawing by its key.</summary>

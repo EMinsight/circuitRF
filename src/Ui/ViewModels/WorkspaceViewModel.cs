@@ -4421,6 +4421,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.WorkspaceRootProvider    = () => CurrentWorkspaceRoot;
         vm.WorkspaceDisplayUnitProvider = WorkspaceDisplayUnit;
         vm.CellResolverProvider         = () => this;
+        vm.Tuning                       = TuningSurface;
         vm.UpdateWBondLayout            = UpdateLayoutForWBond;
         vm.NewWBondMaterial             = NewWBondMaterial;
         vm.DocumentName                 = title;   // no file yet; the tab's title is what it is called
@@ -11827,6 +11828,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         vm.WorkspaceRootProvider    = () => CurrentWorkspaceRoot;
         vm.WorkspaceDisplayUnitProvider = WorkspaceDisplayUnit;
         vm.CellResolverProvider         = () => this;
+        vm.Tuning                       = TuningSurface;
         vm.UpdateWBondLayout            = UpdateLayoutForWBond;
         vm.NewWBondMaterial             = NewWBondMaterial;
         vm.OpenSiblingLayoutDesignators = OpenLayoutDesignatorsFor;
@@ -16159,6 +16161,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // rule as the two panels above.
         RouteInstancesPanel(activeDockable);
 
+        // brief-tuneopt-4 R-to4-2 — the Tuning panel follows the same rule, on the bench's TOP frame.
+        RouteTuningPanel(activeDockable);
+
         // wbond.md §10.1 — the two wBond panels follow the same rule, for the same reason: a wire
         // profile shown beside a schematic is worse than an empty panel that says so.
         _factory.WBondProfileTool?.SetActiveWBond(null);
@@ -16968,6 +16973,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // The Instances panel must not go on listing a document that has gone — a torn-off window's
         // close in particular changes no shell dock's ActiveDockable, so nothing else would clear it.
         if (ReferenceEquals(dockable, _instancesFrameDoc)) RouteInstancesPanel(null);
+
+        // Closing the tuned bench ends its session, wherever focus went (TO-3 cancels on close).
+        if (dockable is SchematicDocument closedTuned
+            && ReferenceEquals(closedTuned.NavFrames[0].Session, _factory.TuningTool?.Panel.Tuned))
+            RouteTuningPanel(null);
 
         // If the retained schematic is closed, blank the Analyses panel.
         if (ReferenceEquals(dockable, _lastActiveSchematicDoc))
@@ -17911,6 +17921,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 vm.ComponentPlaced      += OnComponentPlaced;
                 vm.WorkspaceRootProvider = () => CurrentWorkspaceRoot;
                 vm.CellResolverProvider  = () => this;
+                vm.Tuning                = TuningSurface;
                 vm.DocumentName          = name;
                 var doc = new SchematicDocument(name, vm) { Messages = Messages, Hierarchy = this };
                 HookSchematicCanvasFocus(doc);

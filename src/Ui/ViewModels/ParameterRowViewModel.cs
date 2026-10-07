@@ -634,6 +634,38 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         OnPropertyChanged(nameof(ExpressionReadOnly));
         OnPropertyChanged(nameof(ExpressionEnabled));
         RecomputePreview();
+        RefreshTuning();
+    }
+
+    // ── Tuning (brief-tuneopt-4 R-to4-3.2) ───────────────────────────────────
+
+    /// <summary>The tunable key this row is in the focused design, or null when the catalog does not
+    /// offer it — an expression, a string, a row of a schematic nobody is tuning.</summary>
+    public string? TuneKey { get; private set; }
+
+    /// <summary>The row carries a tune toggle. Absent, never greyed, on a row that is not offered.</summary>
+    public bool CanTune => TuneKey is not null;
+
+    /// <summary>The toggle: sets or clears the entry's tune flag — one undo step in the tuned schematic,
+    /// the same effect as the Tuning panel's Add… and the canvas's right-click ▸ Tune.</summary>
+    public bool IsTuned
+    {
+        get => TuneKey is { } key && _schematicVm.Tuning?.IsTuned(key) == true;
+        set
+        {
+            if (_isRefreshing || TuneKey is not { } key || value == IsTuned) return;
+            _schematicVm.Tuning?.SetTuned(key, value);
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>Re-asks the tuning surface what this row is — on build and on every model change.</summary>
+    internal void RefreshTuning()
+    {
+        TuneKey = _ownerComp is null ? null : _schematicVm.Tuning?.KeyFor(_schematicVm.EditModel, _ownerComp, _param);
+        OnPropertyChanged(nameof(TuneKey));
+        OnPropertyChanged(nameof(CanTune));
+        OnPropertyChanged(nameof(IsTuned));
     }
 
     /// <summary>Parses an expression as an enum-option index; falls back to 0 (the first option)
@@ -836,6 +868,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// <summary>Refresh staged values from the model (called after external edits or undo).</summary>
     public void RefreshFromModel()
     {
+        RefreshTuning();
         _isRefreshing = true;
         StagedName       = _param.Name;
         StagedExpression = _param.Expression;   // fires OnStagedExpressionChanged → RecomputePreview

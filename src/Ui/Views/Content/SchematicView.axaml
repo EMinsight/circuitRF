@@ -441,6 +441,18 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
+                        <!-- brief-tuneopt-4 R-to4-3: a right-click on a shown parameter value the Tuning
+                             panel offers. Hidden for anything else — a value that is an expression
+                             is not offered, so there is nothing to tune. -->
+                        <MenuItem x:Name="CtxTune"
+                                  Header="Tune"
+                                  IsVisible="False"
+                                  Click="OnCtxTune">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="TuneVertical" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
                         <!-- ArrowDown, matching the toolbar's own Push Into Cell button (owner,
                              2026-09-05) — and Pop Out's ArrowUp above it. One direction per action
                              across every surface; the menu used to point right for the same command. -->

@@ -38981,3 +38981,21 @@ parser now normalizes through `UnitNormalizer.ToEngineUnit` before both the suff
 scale, so "200", "200 um", "200 µm" and "200 μm" (Greek mu) all mean 200 µm. Gate:
 `PCellPropertiesInspectorParameterListTests.AnMmicPartsMicronRow_TakesABareNumberAsMicrons`, every
 µm row of all four parts through the real commit path.
+
+## Tuning panel (brief-tuneopt-4, 2026-10-07)
+
+- **Following focus literally would stop live tuning the moment the Data Display is clicked.** The
+  brief's rule is the Instances panel's — clear on any non-schematic focus — and a session stops when
+  its schematic leaves the panel. Clicking the display a session publishes to is the ordinary gesture
+  while tuning, so a `DataDisplayDocument` taking focus while a session runs leaves the panel alone
+  (`WorkspaceViewModel.RouteTuningPanel`). Every other document still clears it.
+- **A string `Replace` of an 8-space-indented line also matched its 12-space twin** twice in this
+  work (a duplicate switch arm in `CircuitRfDockFactory`, a duplicate initializer in
+  `SchematicRenderTheme`) — both compile errors, so harmless, but the same slip in a list of
+  statements would compile and run twice.
+- **`SchematicOverlay` is rebuilt from scratch by about a dozen interaction paths**, so tuned label
+  text rides on `SchematicViewModel.TunedLabels` and the canvas merges it into the overlay per frame;
+  putting it on `Overlay` itself would be wiped by the first drag or rubber band.
+- **Flyouts get no generated field from `x:Name`** — they are not in the control namescope; reach one
+  through its button's `Flyout`.
+

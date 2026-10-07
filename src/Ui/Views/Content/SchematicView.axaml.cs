@@ -512,6 +512,22 @@ public partial class SchematicView : UserControl
 
     // ── Context menu ──────────────────────────────────────────────────────────
 
+    /// <summary>The tunable key of the parameter value the right-click landed on, or null.</summary>
+    private string? TuneKeyOfContextTarget(EditableComponent? comp)
+    {
+        if (comp is null || Vm is not { Tuning: { } tuning } vm) return null;
+        if (SchematicCanvasCtrl.ContextMenuParamIndex is not { } i || i < 0 || i >= comp.Parameters.Count) return null;
+        return tuning.KeyFor(vm.EditModel, comp, comp.Parameters[i]);
+    }
+
+    private void OnCtxTune(object? sender, RoutedEventArgs e)
+    {
+        var id   = SchematicCanvasCtrl.ContextMenuTargetId;
+        var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
+        if (TuneKeyOfContextTarget(comp) is { } key && Vm?.Tuning is { } tuning)
+            tuning.SetTuned(key, !tuning.IsTuned(key));
+    }
+
     private void OnContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         bool hasTarget = !string.IsNullOrEmpty(SchematicCanvasCtrl.ContextMenuTargetId);
@@ -541,6 +557,12 @@ public partial class SchematicView : UserControl
 
         var id   = SchematicCanvasCtrl.ContextMenuTargetId;
         var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
+
+        // Tune: only on a right-click that landed on a parameter value the Tuning panel offers.
+        string? tuneKey = TuneKeyOfContextTarget(comp);
+        CtxTune.IsVisible = tuneKey is not null;
+        if (tuneKey is not null)
+            CtxTune.Header = Vm?.Tuning?.IsTuned(tuneKey) == true ? "Stop Tuning" : "Tune";
 
         // GND is a special symbol — hide the items that have no meaning for it.
         bool isGnd  = comp?.Symbol == SymbolKind.Ground;

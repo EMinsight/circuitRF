@@ -1,6 +1,7 @@
 # Tuning and optimization
 
-**Status:** TO-1 built (model, file format, catalog, in-memory overrides, `check`/`explain`/`reference`).
+**Status:** TO-1 … TO-4 built (model, file format, catalog, in-memory overrides, `check`/`explain`/`reference`;
+evaluation service; live session and Data Display; the Tuning panel).
 TO-2 … TO-12 briefed (`docs/sonnet-briefs/brief-tuneopt-*.md`). The overview brief
 (`brief-tuneopt-0-overview.md`) holds the decisions D1–D17 in full and is binding; this note is the
 standing reference for what is built, and restates the decisions only as far as the code depends on them.
@@ -142,3 +143,33 @@ preset — that names nothing. An unknown function name in a goal expression par
 
 A variable entry, a goal and the optimizer settings each carry an `Extra` map, and both serializations
 keep unknown keys, so a tolerance can be added to a `tune` line without a format break.
+
+## 8. The Tuning panel (TO-4)
+
+| Piece | Where |
+|---|---|
+| Panel state | `src/Ui/Tuning/TuningPanelViewModel.cs` (+ `TuningRowViewModel`, `TuningAddViewModel`, `TuningScopeViewModel`) |
+| Dock + view | `TuningTool`, `DockPanelIds.Tuning`, `src/Ui/Views/Tuning/TuningToolView.axaml` |
+| Shell wiring | `WorkspaceViewModel.Tuning.cs` — routing, session creation, sub-cell sessions, reveal |
+| Slider maths | `TuningSliderMapping` (log/lin position, integer and step snap, keyboard nudges) |
+| Entry edits | `src/Design/Optimization/TuningSetupEdits.cs` (pure) → `SetTuningSetupCommand` (one undo step) |
+| Push | `TuningPush` → one `CommandBatch` per owning document |
+| Canvas colour | `SchematicViewModel.TunedLabels` → `SchematicOverlay.TunedLabels` → `SchematicRenderTheme.TunedText` |
+
+- **The tuned schematic is the focused tab's TOP frame**, so pushing into a sub-cell keeps tuning the
+  bench. A non-schematic document clears the panel and stops the session — except a Data Display while a
+  session runs, because that is where its results are watched.
+- **One key mapping.** `TunableCatalog.KeyFor(drawing, component, parameter)` is what the Inspector toggle,
+  the canvas's right-click ▸ Tune and the panel agree on; `TunableCatalog.Drawings` gives each scope's
+  drawing — the open session's own model in the GUI, so Push edits what is on screen.
+- **Discovery is lazy.** A schematic with nothing tuned never extracts on an edit; the catalog is computed
+  when a row, the Add… list or the Inspector asks.
+- **The session evaluates what Simulate would**: the same `NetExtractor.Extract` with the workspace
+  resolver and corner bindings, written by `CnlWriter` and read back in memory (`PreparedCircuit.FromText`)
+  rather than through `netlist.cnl`, which Simulate owns.
+- **Push** writes `G15` numbers with the row's own unit spelling where it means the same unit; an
+  instance inheriting a cell default gains the override (`AddParameterCommand`). A sub-cell session with no
+  tab is opened with `CircuitRfDockFactory.OpenDocumentInBackground`.
+- **A layout saved before TO-4** gains the panel beside wherever it put Analyses
+  (`DockLayoutDefaults.WithMissingPanelsFilled`'s `TabbedBehind` rule), not at the default column.
+
