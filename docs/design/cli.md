@@ -138,6 +138,23 @@ saves one (framed at `render`'s default 4:3), and none otherwise. **glTF is neve
 `convert.gltf.source`. The file matches the dialog's byte for byte with no camera (`GltfExportTests` gate 7); stdout is
 the written path, `--json` records it as an output of kind `glb`, and the write goes through a temporary file renamed
 into place.
+
+**`oasis` is a sixth stream-and-artwork format, and `--engine native|gdstk` picks a GDSII end's reader or writer**
+(brief-oasis-gdstk.md §7d, §10a). Both go through `StreamInterchange.Import`/`Write` in `src/Design`, the two calls the
+GUI's File ▸ Import / Export entries make, so `src/Cli` names a `StreamRoute` and branches on nothing else. OASIS is
+read and written by the gdstk worker only, so the route of an `oasis` end is fixed; `--engine` applies to a `gdsii`
+end (default `native`, D5), and with no `gdsii` end it is refused (`convert.engine.not-gdsii`) rather than ignored. An
+`.oas`/`.oasis` path is OASIS, and a file with no telling extension is OASIS when it begins with the
+`%SEMI-OASIS\r\n` signature (`StreamInterchange.LooksLikeOasis`, checked in `DetectSource` before the Gerber
+classifier). The Export OASIS dialog's options are flags at the dialog's DEFAULTS, never the GUI user's remembered
+preference: `--oas-compression 0-9`, `--oas-validation none|crc32|checksum32`, `--oas-standard-properties`; with no
+OASIS target they are refused (`convert.oasis.flags-not-oasis`). The dialog's fourth option, shape detection, has no
+flag and stays on. Without the worker an OASIS end is refused before anything is read (`convert.oasis.unavailable`, D6).
+**The byte gate has no exclusion**: gdstk's OASIS writer writes no timestamp (G0's Q8), so `convert`'s `.oas` equals
+`StreamInterchange.Write`'s byte for byte, with the default options and with all three flags set
+(`ConvertCliVerbTests.ConvertingAClayToOasis_WritesWhatTheApplicationsOwnExportWrites`). The all-pairs matrix is 35
+pairs over six formats — 24 that need no worker, 11 with an `oasis` end under `GdstkTheory` — plus the `--engine gdstk`
+rows over every pair with a `gdsii` end.
 | `reference` | **nothing at all** | reports what a caller may WRITE: the shipped reference pages, plus four topics generated from the live registries and readers — the component catalogue, the analysis directives, and the `.cdd` and `.ctech` formats | **nothing** — §12 |
 
 **`new` is one verb with a noun, not three** (`brief-automation-3-authoring-verbs.md` R-aut3-13): the
@@ -912,7 +929,11 @@ layout that resolves no technology (`layout-view.md` §2.4's normal, fully-suppo
 extension, and for a directory by what it contains — and an extension circuitRF does not own is
 offered to **`convert`'s own classifier**, which reads content, before being called unknown. A GDSII
 or Gerber file is reported as interchange rather than as something circuitRF cannot read; it is not
-VALIDATED, because there is nothing to validate it against.
+VALIDATED, because there is nothing to validate it against. **OASIS is the exception** (brief-oasis-gdstk.md
+§10b): `GdstkImport.Header` opens it in the gdstk worker and closes it, transferring no geometry, and
+`check.oasis.summary` reports its cells, counts, grid and `LAYERNAME` names. gdstk parses the whole file on `open`
+(its CRC-32 or checksum included), so a damaged file is `check.file.unreadable`, an error, exactly when the import
+would refuse it. With no worker it is `check.oasis.no-worker`, a warning: the file is named and was not read.
 
 **A bare `.ccell` is the CELL it declares** (R-lvs1-4d), so `check` on one checks the folder around
 it. That one redirection lives in `check` rather than in `DocumentKinds.Classify`, because every other

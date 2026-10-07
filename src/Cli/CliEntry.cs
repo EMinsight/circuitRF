@@ -2497,8 +2497,8 @@ static int PrintHelp()
     Console.WriteLine("                          1 any fail, 130 cancelled (the finished layers are written).");
     Console.WriteLine();
     Console.WriteLine("convert options:");
-    Console.WriteLine("  formats: clay | gdsii | dxf | gerber | board — inferred from the paths");
-    Console.WriteLine("           (.clay .gds .dxf .kicad_pcb; a FOLDER is a Gerber file set)");
+    Console.WriteLine("  formats: clay | gdsii | oasis | dxf | gerber | board — inferred from the paths");
+    Console.WriteLine("           (.clay .gds .oas .dxf .kicad_pcb; a FOLDER is a Gerber file set)");
     Console.WriteLine("  -o, --output <path>     the file to write, or the FOLDER for gerber / clay");
     Console.WriteLine("  --from f, --to f        say the format when the path does not");
     Console.WriteLine("  --cell <name>           which cell, when the source holds several");
@@ -2506,6 +2506,11 @@ static int PrintHelp()
     Console.WriteLine("  --list-cells            report what the input holds, write nothing");
     Console.WriteLine("  --tech <file.ctech>     the technology to convert against");
     Console.WriteLine("  --keep-cells <dir>      keep the cells an import produced");
+    Console.WriteLine("  --engine native|gdstk   the GDSII reader or writer for a gdsii end (default native)");
+    Console.WriteLine("  --oas-compression 6     an oasis target's CBLOCK level, 0 (stored) to 9");
+    Console.WriteLine("  --oas-validation crc32  none | crc32 | checksum32");
+    Console.WriteLine("  --oas-standard-properties   write OASIS's standard properties");
+    Console.WriteLine("                          (oasis and --engine gdstk need the gdstk worker)");
     Console.WriteLine("  --dxf-version AC1032    AC1015 | AC1018 | AC1032   --dxf-units <n>");
     Console.WriteLine("  --drill-units mm|inch   --drill-format <int>:<dec>");
     Console.WriteLine("  --drill-zeros leading|trailing");

@@ -427,15 +427,15 @@ internal static class ToolCatalog
 
         new("convert",
             "Convert artwork from one format to another, in either direction: export a layout (.clay) to "
-          + "GDSII, Gerber, DXF, a .kicad_pcb board, STEP or glTF, or import the interchange formats to .clay. Formats come from the paths; "
-          + "from and to override.",
+          + "GDSII, OASIS, Gerber, DXF, a .kicad_pcb board, STEP or glTF, or import the interchange formats to .clay. Formats come from the paths; "
+          + "from and to override. OASIS, and GDSII with engine gdstk, go through the gdstk worker.",
             null, null,
             [
                 new("", ["convert"],
                     [new("path", true, "The file or folder to convert. A folder is a Gerber file set.")],
                     [
                         Output,
-                        new("from",       "--from",        OptKind.Str,  "The source format when the path does not say: clay, gdsii, dxf, gerber, board."),
+                        new("from",       "--from",        OptKind.Str,  "The source format when the path does not say: clay, gdsii, oasis, dxf, gerber, board."),
                         new("to",         "--to",          OptKind.Str,  "The target format when the path does not say."),
                         new("cell",       "--cell",        OptKind.Str,  "Which cell, when the source holds several."),
                         new("name",       "--name",        OptKind.Str,  "What to call the written file set (gerber)."),
@@ -445,6 +445,11 @@ internal static class ToolCatalog
                         new("workspace",  "--workspace",   OptKind.Path,
                             "The .cws the layers graft onto. Without one a .ctech of its own is written."),
                         new("dbu",        "--dbu",         OptKind.Integer, "Database units per micron. Default 1000."),
+                        new("engine",     "--engine",      OptKind.Str,
+                            "native (default) or gdstk: which GDSII reader or writer a gdsii source or target goes through."),
+                        new("oasCompression", "--oas-compression", OptKind.Integer, "An oasis target's compression level, 0 to 9. Default 6."),
+                        new("oasValidation",  "--oas-validation",  OptKind.Str,  "An oasis target's validation: none, crc32 (default) or checksum32."),
+                        new("oasStandardProperties", "--oas-standard-properties", OptKind.Flag, "Write OASIS's standard properties."),
                         new("dxfVersion", "--dxf-version", OptKind.Str,  "AC1015, AC1018 or AC1032."),
                         new("dxfUnits",   "--dxf-units",   OptKind.Integer, "The DXF units code."),
                         new("drillUnits", "--drill-units", OptKind.Str,  "mm or inch."),

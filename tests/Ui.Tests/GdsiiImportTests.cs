@@ -23,6 +23,35 @@ public class GdsiiImportTests : IDisposable
         return ms;
     }
 
+    // ── "Add to technology" on a layer the file only numbers ───────────────────────────────────────
+
+    /// <summary>
+    /// A layer the mapping dialog answered "Add to technology" comes back as a layer the technology can
+    /// DRAW: named (<c>L11/0</c>, since GDSII gives no name) and coloured. The source definition's colour
+    /// is the zero Rgba — fully transparent — so adding it as it was put the layer in the technology and
+    /// drew nothing. The summary reports the answer ("added"), not the proposal ("(unknown)").
+    /// Shared by every stream route: OASIS and GDSII (gdstk) end in the same StreamLayoutImport.
+    /// </summary>
+    [Fact]
+    public void Import_LayerAnsweredAddToTechnology_IsNamedAndVisible_AndReportedAsAdded()
+    {
+        var tech = new Technology { Name = "T", Layers = { new LayerDef { Key = new LayerKey(1, 0), Name = "Top" } } };
+        var s = new InterchangeStructure("CELL", [new RectShape { Layer = new LayerKey(11, 0), X1 = 0, Y1 = 0, X2 = 10, Y2 = 10 }], []);
+        using var stream = BuildGdsii([s], new GdsiiUnits(1e-6, 1e-9));
+
+        var result = GdsiiImport.Import(stream, _dir, tech, 1000, false, resolveLayerMapping: rows =>
+            LayoutLayerMapping.BuildChoices([.. rows.Select(r => r with
+            {
+                Choice = new LayoutFragment.LayerReconciliationChoice(LayoutFragment.LayerReconciliationAction.AddToTechnology),
+            })]));
+
+        var added = Assert.Single(result.LayersToAdd);
+        Assert.Equal(new LayerKey(11, 0), added.Key);
+        Assert.Equal("L11/0", added.Name);
+        Assert.True(added.Color.A > 0, "an added layer must not be transparent");
+        Assert.Contains(result.Messages, m => m.Contains("11/0→added"));
+    }
+
     // ── Gate 10: import creates real cells through the normal CellFolder machinery ───────────────
 
     [Fact]

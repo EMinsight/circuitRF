@@ -9,6 +9,8 @@ using CircuitRF.Design.Layout.Assembly;
 using CircuitRF.Design.Layout.Drc;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Footprints;
+using CircuitRF.Design.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange.Gdstk;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Smith;
@@ -227,6 +229,12 @@ internal static class Check
             case DocumentKind.Foreign:
                 f.Begin(path, kind);
                 f.Add(CliDiagnostics.CheckForeignFile(path));
+                break;
+
+            // brief-oasis-gdstk.md §10b — OASIS is the one interchange format read here, because it is binary and
+            // compressed and its own extension check (CRC-32 or checksum) is the worker's to run.
+            case DocumentKind.Interchange when LayoutConvert.DetectSource(path) == LayoutConvert.Fmt.Oasis:
+                Scoped(path, kind, f, () => CheckOasis(path, f));
                 break;
 
             case DocumentKind.Interchange:
@@ -1145,6 +1153,32 @@ internal static class Check
                 && tc.WsProbe is null && tc.ContourTrace is null && tc.SummaryColumn is null)
                 f.Add(CliDiagnostics.CheckDataDisplayEmptyTrace(
                     path, pc.CustomTitle is { Length: > 0 } ? pc.CustomTitle : tab.Name));
+    }
+
+    /// <summary>
+    /// An OASIS file's header, through the gdstk worker: its cells, its counts and the layers it names. Read-only
+    /// and nothing is created — <see cref="GdstkImport.Header"/> transfers no geometry. With no worker the file is
+    /// named and a warning says why it was not read (D6).
+    /// </summary>
+    private static void CheckOasis(string path, Findings f)
+    {
+        if (StreamRoute.OasisGdstk.Unavailable() is { } reason)
+        {
+            f.Add(CliDiagnostics.CheckOasisNoWorker(path, reason));
+            return;
+        }
+
+        GdstkImport.HeaderResult h;
+        try { h = GdstkImport.Header(path, GdstkFormat.Oasis, token: RunHost.Cancellation); }
+        catch (GdstkException e) { f.Add(CliDiagnostics.CheckUnreadable(path, e.Diagnostic.Render())); return; }
+
+        var tops = h.Cells.Where(c => c.Top).Select(c => c.Name).ToList();
+        var names = h.LayerNames.Select(n => n.Name).Distinct(StringComparer.Ordinal).ToList();
+        f.Add(CliDiagnostics.CheckOasisSummary(
+            path, h.Cells.Count, tops.Count == 0 ? "none" : string.Join(", ", tops),
+            h.Cells.Sum(c => c.Polygons), h.Cells.Sum(c => c.Paths), h.Cells.Sum(c => c.Labels),
+            h.Cells.Sum(c => c.References), h.SourceDbuPerMicron.ToString("G", System.Globalization.CultureInfo.InvariantCulture),
+            names.Count == 0 ? "no named layers" : $"named layers {string.Join(", ", names)}"));
     }
 
     private static void CheckTouchstone(string path, Findings f)

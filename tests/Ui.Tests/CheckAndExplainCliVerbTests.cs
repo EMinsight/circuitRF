@@ -36,12 +36,15 @@ using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Assembly;
 using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.Layout.Interchange.Gdstk;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Symbol;
 using Symbol = CircuitRF.Design.Symbol.Symbol;
 using CircuitRF.Design.Theming;
 using CircuitRF.Design.Workspace;
+using CircuitRF.Ui.Tests.Em3d;
+using CircuitRF.Ui.Tests.Interchange;
 using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests;
@@ -484,6 +487,52 @@ public sealed class CheckAndExplainCliVerbTests(ITestOutputHelper output) : IDis
         var run = RunCli("check", gds, "--json");
         AssertHasDiagnostic(run, "check.path.interchange");
         Assert.Equal(0, run.ExitCode);                       // Info only — nothing is wrong with it
+    }
+
+    /// <summary>brief-oasis-gdstk.md §10b: an OASIS file is read, not only named — its header through the gdstk
+    /// worker, giving its cells and the layers it names.</summary>
+    [GdstkFact]
+    public void Check_AnOasisFile_ReportsItsCellsAndNamedLayers()
+    {
+        string oas = Path.Combine(RepoRoot(), "testdata", "interchange", "gdstk", "oasis-hand", "hand-layernames.oas");
+
+        var run = RunCli("check", oas, "--json");
+
+        var doc = AssertHasDiagnostic(run, "check.oasis.summary");
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal("1", Argument(doc, "check.oasis.summary", "cells"));
+        Assert.Contains("M1", Argument(doc, "check.oasis.summary", "layers"));
+    }
+
+    /// <summary>A damaged OASIS file is an error: gdstk parses all of it on open, so `check` refuses what the
+    /// import would refuse.</summary>
+    [GdstkFact]
+    public void Check_ATruncatedOasisFile_IsAnError()
+    {
+        var bytes = File.ReadAllBytes(Path.Combine(
+            RepoRoot(), "testdata", "interchange", "gdstk", "oasis-gdstk", "q5-hierarchy.oas"));
+        string oas = Path.Combine(Dir("oasis"), "truncated.oas");
+        File.WriteAllBytes(oas, bytes[..(bytes.Length / 2)]);
+
+        var run = RunCli("check", oas, "--json");
+
+        AssertHasDiagnostic(run, "check.file.unreadable");
+        Assert.Equal(1, run.ExitCode);
+    }
+
+    /// <summary>D6: with no worker an OASIS file is still named — by its signature, whatever its extension — and
+    /// a warning says why it was not read.</summary>
+    [Fact]
+    public void Check_AnOasisFile_WithNoWorker_IsNamedAndWarned()
+    {
+        string oas = Path.Combine(Dir("oasis"), "artwork.bin");
+        File.WriteAllBytes(oas, [.. "%SEMI-OASIS\r\n"u8, .. new byte[64]]);
+
+        var (code, stdout, stderr) = CliProcess.Run(RepoRoot(),
+            [(GdstkWorker.EnvironmentVariable, Path.Combine(Dir("oasis"), "no-such-worker"))], "check", oas, "--json");
+
+        AssertHasDiagnostic(new CliRun(code, stdout, stderr), "check.oasis.no-worker");
+        Assert.Equal(0, code);
     }
 
     [Fact]

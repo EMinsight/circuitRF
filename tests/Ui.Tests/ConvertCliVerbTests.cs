@@ -22,7 +22,9 @@ using System.Text.Json;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange.Gdstk;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Tests.Em3d;
 using CircuitRF.Ui.Tests.Interchange;
 using Xunit.Abstractions;
 
@@ -46,32 +48,40 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
     /// <summary>Every ordered pair of formats that names a real conversion. clay→clay is excluded
     /// because it is a file copy and the verb refuses it by name; the diagonal is otherwise kept —
     /// GDSII→GDSII is a normalization through the cell model, not a no-op, and it is the pair most
-    /// likely to expose a reader and a writer disagreeing.</summary>
-    public static TheoryData<string, string> Pairs
+    /// likely to expose a reader and a writer disagreeing. 35 pairs over six formats.</summary>
+    private static IEnumerable<(string From, string To)> AllPairs()
     {
-        get
-        {
-            var d = new TheoryData<string, string>();
-            string[] all = ["clay", "gdsii", "dxf", "gerber", "board"];
-            foreach (string from in all)
-                foreach (string to in all)
-                    if (!(from == "clay" && to == "clay")) d.Add(from, to);
-            return d;
-        }
+        string[] all = ["clay", "gdsii", "oasis", "dxf", "gerber", "board"];
+        foreach (string from in all)
+            foreach (string to in all)
+                if (!(from == "clay" && to == "clay")) yield return (from, to);
     }
+
+    private static TheoryData<string, string> PairsWhere(Func<string, string, bool> keep)
+    {
+        var d = new TheoryData<string, string>();
+        foreach (var (from, to) in AllPairs()) if (keep(from, to)) d.Add(from, to);
+        return d;
+    }
+
+    /// <summary>The 24 pairs that need no worker.</summary>
+    public static TheoryData<string, string> Pairs => PairsWhere((f, t) => f != "oasis" && t != "oasis");
 
     [Theory, MemberData(nameof(Pairs))]
     public void EveryFormatConvertsToEveryOther(string from, string to) => ConvertsPair(from, to);
+
+    /// <summary>brief-oasis-gdstk.md §10a: the 11 pairs with an OASIS end, which only the gdstk worker reads and writes.</summary>
+    public static TheoryData<string, string> OasisPairs => PairsWhere((f, t) => f == "oasis" || t == "oasis");
+
+    [GdstkTheory, MemberData(nameof(OasisPairs))]
+    public void EveryOasisPairConverts(string from, string to) => ConvertsPair(from, to);
 
     /// <summary>brief-oasis-gdstk.md §7d: every pair with a GDSII end, through gdstk's reader or writer.</summary>
     public static TheoryData<string, string> GdsiiPairs
     {
         get
         {
-            var d = new TheoryData<string, string>();
-            foreach (var row in Pairs)
-                if ((string)row[0] == "gdsii" || (string)row[1] == "gdsii") d.Add((string)row[0], (string)row[1]);
-            return d;
+            return PairsWhere((f, t) => f == "gdsii" || t == "gdsii");
         }
     }
 
@@ -104,6 +114,7 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(0, code);
         // The run names its route, so a gdstk row that quietly ran circuitRF's own reader or writer fails here.
         if (extra.Contains("gdstk")) Assert.Contains("GDSII (gdstk)", stderr);
+        if (from == "oasis" || to == "oasis") Assert.Contains("OASIS (gdstk)", stderr);
 
         // stdout is the RESULT (§3.1's split): the paths written, one per line, and nothing else.
         // Everything above — notes, warnings, what the import understood — went to stderr.
@@ -124,8 +135,9 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
             // ...and it carries the layer table the file declared — EXCEPT from GDSII, which
             // identifies a layer by number and has no name to carry. That exception is the format's,
             // it is documented in the CLI chapter, and `--tech` is how a user gets names back; a test
-            // that demanded names here would be demanding something GDSII cannot supply.
-            if (from != "gdsii") Assert.NotEmpty(TechPersistence.LoadFromFile(techs[0]).Layers);
+            // that demanded names here would be demanding something GDSII cannot supply. OASIS CAN name a
+            // layer (LAYERNAME), but the export writes none, so a seed made by `convert` has none to carry.
+            if (from is not ("gdsii" or "oasis")) Assert.NotEmpty(TechPersistence.LoadFromFile(techs[0]).Layers);
         }
         else
         {
@@ -160,6 +172,97 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
 
         Assert.Equal(WithoutGdsiiTimestamps(File.ReadAllBytes(viaApp)),
                      WithoutGdsiiTimestamps(File.ReadAllBytes(viaCli)));
+    }
+
+    /// <summary>
+    /// brief-oasis-gdstk.md §10a's byte gate: `convert`'s `.oas` is what <c>GdstkExport</c> — the call
+    /// File ▸ Export ▸ OASIS (gdstk) makes — writes for the same cell with the same options, BYTE FOR BYTE
+    /// with nothing masked: G0's Q8 found gdstk's OASIS writer has no timestamp and two writes are
+    /// identical. The second row proves the three --oas-* flags reach the writer rather than parse and vanish.
+    /// </summary>
+    [GdstkTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConvertingAClayToOasis_WritesWhatTheApplicationsOwnExportWrites(bool withFlags)
+    {
+        var (clayPath, cellDir, tech) = BuildClayCell();
+        string[] flags = withFlags
+            ? ["--oas-compression", "0", "--oas-validation", "checksum32", "--oas-standard-properties"]
+            : [];
+
+        string viaCli = Path.Combine(_root, "cli.oas");
+        var (code, _, stderr) = RunCli(["convert", clayPath, "-o", viaCli, .. flags]);
+        output.WriteLine(stderr);
+        Assert.Equal(0, code);
+
+        var options = flags.Length == 0
+            ? OasisWriteOptions.Default
+            : new OasisWriteOptions(CompressionLevel: 0, Validation: OasisValidation.Checksum32, StandardProperties: true);
+        string viaApp = Path.Combine(_root, "app.oas");
+        var plan = GdsiiExport.Analyze(cellDir, tech, Dbu, LayoutPersistence.LoadFromFile(clayPath));
+        StreamInterchange.Write(StreamRoute.OasisGdstk, viaApp, plan, oasis: options);
+
+        Assert.Equal(File.ReadAllBytes(viaApp), File.ReadAllBytes(viaCli));
+    }
+
+    /// <summary>An OASIS file is named by its signature when its extension says nothing (§10a): the same
+    /// bytes under a made-up extension list the same cells.</summary>
+    [GdstkFact]
+    public void AnOasisFileWithNoTellingExtension_IsReadByItsSignature()
+    {
+        string oas = SourceIn("oasis");
+        string renamed = Path.Combine(_root, "artwork.bin");
+        File.Copy(oas, renamed);
+
+        var (code, stdout, stderr) = RunCli("convert", renamed, "--list-cells");
+
+        output.WriteLine(stderr);
+        Assert.Equal(0, code);
+        Assert.Equal("Part", stdout.Trim());
+    }
+
+    /// <summary>Relative paths, as a shell user types them, reach the worker as the caller meant them — read and
+    /// write. The worker runs in its own folder, so a path sent as typed resolved against that folder.</summary>
+    [GdstkFact]
+    public void RelativeOasisPaths_ResolveAgainstTheCallersDirectory()
+    {
+        File.Copy(SourceIn("oasis"), Path.Combine(_root, "relative-in.oas"));
+
+        var (code, _, stderr) = RunCli("convert", "relative-in.oas", "-o", "relative-out.oas");
+
+        output.WriteLine(stderr);
+        Assert.Equal(0, code);
+        Assert.True(File.Exists(Path.Combine(_root, "relative-out.oas")));
+    }
+
+    /// <summary>The --oas-* flags are the OASIS writer's: with no OASIS target they are refused, not ignored,
+    /// and nothing is written. Needs no worker: the refusal comes first.</summary>
+    [Fact]
+    public void OasisFlags_WithNoOasisTarget_AreRefused()
+    {
+        string target = Path.Combine(_root, "not-oasis.gds");
+
+        var (code, _, stderr) = RunCli("convert", SourceIn("clay"), "-o", target, "--oas-compression", "3");
+
+        Assert.Equal(1, code);
+        Assert.Contains("apply to an oasis target only", stderr);
+        Assert.False(File.Exists(target));
+    }
+
+    /// <summary>D6: with no gdstk worker, an OASIS end is a refusal naming why, before anything is read or written.</summary>
+    [Fact]
+    public void Oasis_WithNoWorker_IsRefusedAndSaysWhy()
+    {
+        string target = Path.Combine(_root, "no-worker.oas");
+        string missing = Path.Combine(_root, "no-such-worker");
+
+        var (code, _, stderr) = CliProcess.Run(_root, [(GdstkWorker.EnvironmentVariable, missing)],
+                                               "convert", SourceIn("clay"), "-o", target);
+
+        Assert.Equal(1, code);
+        Assert.Contains("OASIS is read and written by the gdstk worker, which cannot run", stderr);
+        Assert.Contains(missing, stderr);
+        Assert.False(File.Exists(target));
     }
 
     /// <summary>
@@ -569,6 +672,7 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
     {
         "clay" or "gerber" => Path.Combine(_root, stem),
         "gdsii" => Path.Combine(_root, stem + ".gds"),
+        "oasis" => Path.Combine(_root, stem + ".oas"),
         "dxf" => Path.Combine(_root, stem + ".dxf"),
         _ => Path.Combine(_root, stem + ".kicad_pcb"),
     };

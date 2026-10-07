@@ -77,7 +77,7 @@ public static class StreamLayoutImport
                 return new GdsiiImport.ImportResult(true, [], new Dictionary<string, string>(), [], messages, []);
         }
         choices ??= LayoutLayerMapping.BuildChoices(rows);
-        messages.Add(LayoutLayerMapping.SummarizeMapping(rows, destTech));
+        messages.Add(LayoutLayerMapping.SummarizeMapping(LayoutLayerMapping.Settle(rows, choices), destTech));
 
         // §8 — structure name ↔ cell name mapping, reported so a fab's structure name can be traced
         // back to the user's cell.
@@ -112,7 +112,7 @@ public static class StreamLayoutImport
             var reconciled = LayoutFragment.ApplyReconciliation(s.Shapes, sourceLayers, choices);
             foreach (var def in reconciled.LayersToAdd)
                 if (addedLayerKeys.Add(def.Key))
-                    layersToAdd.Add(def);
+                    layersToAdd.Add(NewTechnologyLayer(def));
 
             var cellDir = cellDirByStructure[s.Name];
             var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
@@ -224,6 +224,20 @@ public static class StreamLayoutImport
             case PathShape path: foreach (var v in path.Xy) yield return v; break;
             case LabelShape l: yield return l.X; yield return l.Y; break;
         }
+    }
+
+    /// <summary>
+    /// The technology layer an "add to technology" choice creates. A stream file carries a layer's number
+    /// and, in OASIS, perhaps a name — never a colour — so the source definition's colour is the zero
+    /// <c>Rgba</c>, which is fully transparent: added as it is, the layer would be in the technology
+    /// and draw nothing. It gets <see cref="FallbackPalette"/>'s colour instead (the one the editor already
+    /// drew the undefined layer in) and the file's name, or <c>L11/0</c> when the file names none.
+    /// </summary>
+    private static LayerDef NewTechnologyLayer(LayerDef source)
+    {
+        var def = FallbackPalette.For(source.Key);
+        if (!string.IsNullOrWhiteSpace(source.Name)) def.Name = source.Name;
+        return def;
     }
 
     private static List<InterchangeStructure> RescaleAll(IReadOnlyList<InterchangeStructure> structures, double ratio)

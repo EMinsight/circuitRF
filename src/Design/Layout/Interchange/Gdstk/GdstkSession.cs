@@ -40,9 +40,11 @@ public sealed class GdstkSession(GdstkWorker worker)
     // ── Reading ────────────────────────────────────────────────────────────────
 
     /// <summary>Opens <paramref name="path"/>. The worker adds Windows' long-path prefix itself, so the
-    /// path goes as it is (tools/gdstk-worker/RESOLVED.md).</summary>
+    /// path goes as it is (tools/gdstk-worker/RESOLVED.md) — but ABSOLUTE: the worker runs in its own folder,
+    /// so a relative path would resolve against that folder rather than the caller's.</summary>
     public GdstkLibrary Open(string path, GdstkFormat format, CancellationToken token = default)
     {
+        path = Path.GetFullPath(path);
         long size = File.Exists(path) ? new FileInfo(path).Length : 0;
         var (deadline, cap) = worker.BoundsFor(size);
         var reply = worker.Send(new GeometryKernelMessage(new JsonObject
@@ -125,6 +127,7 @@ public sealed class GdstkSession(GdstkWorker worker)
     /// write leaves no partial file at <paramref name="path"/>.</summary>
     public GdstkWriteResult FinishWrite(int handle, string path, CancellationToken token = default)
     {
+        path = Path.GetFullPath(path);   // as Open: the worker's working directory is not the caller's
         var (deadline, cap) = worker.BoundsFor(_sent);
         var reply = worker.Send(new GeometryKernelMessage(new JsonObject
         {

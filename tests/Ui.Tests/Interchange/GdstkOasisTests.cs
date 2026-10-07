@@ -3,6 +3,7 @@ using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.Layout.Interchange.Gdstk;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Tests.Em3d;
 
 namespace CircuitRF.Ui.Tests.Interchange;
 
@@ -34,8 +35,8 @@ public sealed class GdstkOasisTests : IDisposable
         InterchangeEquality.AssertEqual(WhatOasisHolds(c.Structures), c.DbuPerMicron, read.Structures, read.SourceDbuPerMicron);
     }
 
-    /// <summary>2 — GDSII (circuitRF's writer) → OASIS → GDSII (circuitRF's writer), each step an import into
-    /// cell folders and an export from them as <c>convert</c> performs it, gives the first file's content.</summary>
+    /// <summary>2 — GDSII (circuitRF's writer) → <c>convert</c> → OASIS → <c>convert</c> → GDSII (circuitRF's
+    /// writer) gives the first file's content. The verb runs as a process, as a user runs it.</summary>
     [GdstkTheory]
     [InlineData("hierarchy"), InlineData("aref-3x2"), InlineData("sref-transform"), InlineData("dbu-0p25nm")]
     public void Gdsii_ThroughOasis_BackToGdsii_KeepsTheContent(string name)
@@ -44,8 +45,8 @@ public sealed class GdstkOasisTests : IDisposable
         string first = Path.Combine(_dir, "first.gds");
         StreamInterchange.Write(StreamRoute.Gdsii, first, GdstkCorpus.Plan(c));
 
-        string oas = Convert(StreamRoute.Gdsii, first, StreamRoute.OasisGdstk, "oas", c.DbuPerMicron);
-        string last = Convert(StreamRoute.OasisGdstk, oas, StreamRoute.Gdsii, "gds", c.DbuPerMicron);
+        string oas = Convert(first, "oas");
+        string last = Convert(oas, "gds");
 
         var (a, aDbu) = ReadNative(first);
         var (b, bDbu) = ReadNative(last);
@@ -322,15 +323,12 @@ public sealed class GdstkOasisTests : IDisposable
     private static long[] Shift(long[] xy, long dx, long dy) =>
         xy.Select((v, k) => v + (k % 2 == 0 ? dx : dy)).ToArray();
 
-    /// <summary>What <c>convert</c> does between two stream formats: import every cell into a scratch
-    /// directory at the file's own resolution, and export the top cell.</summary>
-    private string Convert(StreamRoute from, string file, StreamRoute to, string extension, int dbuPerMicron)
+    /// <summary><c>circuitrf convert file -o …</c>, formats from the extensions; the written path.</summary>
+    private string Convert(string file, string extension)
     {
-        string cells = Directory.CreateDirectory(Path.Combine(_dir, $"cells-{Path.GetFileName(file)}")).FullName;
-        var imported = StreamInterchange.Import(from, file, cells, null, dbuPerMicron, preferSourceResolution: true);
-        var plan = GdsiiExport.Analyze(Assert.Single(imported.TopLevelCellDirs), null, dbuPerMicron);
-        string output = Path.Combine(_dir, $"{Path.GetFileNameWithoutExtension(file)}-{to}.{extension}");
-        StreamInterchange.Write(to, output, plan);
+        string output = Path.Combine(_dir, $"{Path.GetFileNameWithoutExtension(file)}-to.{extension}");
+        var (code, _, stderr) = CliProcess.Run(_dir, [], "convert", file, "-o", output);
+        Assert.True(code == 0, $"convert {Path.GetFileName(file)} -> .{extension} failed:\n{stderr}");
         return output;
     }
 

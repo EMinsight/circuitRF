@@ -371,17 +371,18 @@ internal static class CliDiagnostics
 
     public static Diagnostic ConvertUnknownFormat(string format) => Diagnostic.Create(
         "convert.args.unknown-format", DiagnosticSeverity.Error,
-        "Unknown format '{format}'. Known: clay, gdsii, dxf, gerber, board, step, gltf.", ("format", format));
+        "Unknown format '{format}'. Known: clay, gdsii, oasis, dxf, gerber, board, step, gltf.", ("format", format));
 
     /// <summary>The usage text itself, recorded so a document says what stderr said. Both lines,
     /// because both were printed.</summary>
     public static Diagnostic ConvertUsage() => new(
         "convert.args.usage", DiagnosticSeverity.Error,
         "Usage: circuitrf convert <input> -o <output> [--from f] [--to f] [--cell name]\n" +
-        "       formats: clay | gdsii | dxf | gerber | board; step (a source: -o <new>.c3d)\n" +
+        "       formats: clay | gdsii | oasis | dxf | gerber | board; step (a source: -o <new>.c3d)\n" +
         "       step:  --material <part>=<name> (repeatable)  --part <path> (repeatable)  --tech <path.ctech>\n" +
         "       gltf:  -o <file>.glb from a .c3d  --gltf-assembly  --gltf-field <plot>  --region <name>\n" +
         "       --engine native|gdstk  the GDSII reader or writer for a gdsii source or target (default native)\n" +
+        "       oasis:  --oas-compression 0-9  --oas-validation none|crc32|checksum32  --oas-standard-properties\n" +
         "       --no-coalesce  keep a painted pour's individual strokes");
 
     // ── brief-oasis-gdstk.md §7d — --engine ──────────────────────────────────────────────────────────
@@ -460,6 +461,27 @@ internal static class CliDiagnostics
         "convert.step.material", DiagnosticSeverity.Error,
         "--material takes <part>=<material>; '{text}' is not that.", ("text", text));
 
+    // ── brief-oasis-gdstk.md §10a — the oasis format ─────────────────────────────────────────────────
+
+    public static Diagnostic ConvertBadOasisCompression(string value) => Diagnostic.Create(
+        "convert.args.oas-compression", DiagnosticSeverity.Error,
+        "--oas-compression takes a level from 0 (stored) to 9, not '{value}'.", ("value", value));
+
+    public static Diagnostic ConvertUnknownOasisValidation(string value) => Diagnostic.Create(
+        "convert.args.oas-validation", DiagnosticSeverity.Error,
+        "--oas-validation takes none, crc32 or checksum32, not '{value}'.", ("value", value));
+
+    /// <summary>The --oas-* flags are the OASIS writer's: with no OASIS target there is nothing for them to set.</summary>
+    public static Diagnostic ConvertOasisFlagsWithoutOasis() => new(
+        "convert.oasis.flags-not-oasis", DiagnosticSeverity.Error,
+        "--oas-compression, --oas-validation and --oas-standard-properties apply to an oasis target only, and this " +
+        "conversion writes none.");
+
+    /// <summary>D6 — OASIS without the worker. <paramref name="reason"/> is discovery's sentence.</summary>
+    public static Diagnostic ConvertOasisUnavailable(string reason) => Diagnostic.Create(
+        "convert.oasis.unavailable", DiagnosticSeverity.Error,
+        "OASIS is read and written by the gdstk worker, which cannot run: {reason}", ("reason", reason));
+
     public static Diagnostic ConvertListCellsNotApplicable() => new(
         "convert.args.list-cells-not-applicable", DiagnosticSeverity.Error,
         "A .clay names one cell — --list-cells applies to a file that can hold several.");
@@ -467,12 +489,12 @@ internal static class CliDiagnostics
     public static Diagnostic ConvertSourceUnrecognised(string fileName) => Diagnostic.Create(
         "convert.source.unrecognised", DiagnosticSeverity.Error,
         "Could not tell what '{fileName}' is from its name or its content. " +
-        "Name it with --from clay|gdsii|dxf|gerber|board|step.", ("fileName", fileName));
+        "Name it with --from clay|gdsii|oasis|dxf|gerber|board|step.", ("fileName", fileName));
 
     public static Diagnostic ConvertTargetUnrecognised(string output) => Diagnostic.Create(
         "convert.target.unrecognised", DiagnosticSeverity.Error,
         "'{output}' does not name a format. Give it a known extension " +
-        "(.clay, .gds, .dxf, .kicad_pcb) or say --to clay|gdsii|dxf|gerber|board.", ("output", output));
+        "(.clay, .gds, .oas, .dxf, .kicad_pcb) or say --to clay|gdsii|oasis|dxf|gerber|board.", ("output", output));
 
     public static Diagnostic ConvertClayToClay() => new(
         "convert.clay-to-clay", DiagnosticSeverity.Error,
@@ -551,10 +573,12 @@ internal static class CliDiagnostics
         "are all referenced by something else). Name one with --cell, or list them with --list-cells.",
         ("count", count), ("what", what));
 
-    public static Diagnostic ConvertGdsiiCoordinateOverflow() => new(
+    /// <summary>The stream export plan's refusal. GDSII and OASIS share one plan (brief-oasis-gdstk.md §6b), so
+    /// <paramref name="format"/> names which file was not written; the limits are the plan's either way.</summary>
+    public static Diagnostic ConvertGdsiiCoordinateOverflow(string format) => Diagnostic.Create(
         "convert.gdsii.coordinate-overflow", DiagnosticSeverity.Error,
-        "values do not fit GDSII (a coordinate beyond 32 bits, a layer or datatype beyond 0–65535, or an " +
-        "array count beyond 32767) — nothing written.");
+        "values do not fit the {format} export (a coordinate beyond 32 bits, a layer or datatype beyond 0–65535, or an " +
+        "array count beyond 32767) — nothing written.", ("format", format));
 
     public static Diagnostic ConvertGerberDiagnostic(string text) => Diagnostic.Create(
         "convert.gerber.refused", DiagnosticSeverity.Error, "{text}", ("text", text));
@@ -801,6 +825,28 @@ internal static class CliDiagnostics
         "check.path.interchange", DiagnosticSeverity.Info,
         "'{path}' is {format} interchange, not a circuitRF document — there is nothing to validate "
         + "until it is imported. Read it with `circuitrf convert`.", ("path", path), ("format", format));
+
+    // ── OASIS (brief-oasis-gdstk.md §10b) ────────────────────────────────────
+    //
+    //  The one interchange format `check` reads rather than only names: an OASIS file is opened by the
+    //  gdstk worker, which parses all of it (and checks its CRC or checksum), so a damaged file is an
+    //  error here exactly as the import would refuse it.
+
+    /// <summary>What the worker's <c>open</c> listed. No geometry crosses: the counts are gdstk's.</summary>
+    public static Diagnostic CheckOasisSummary(
+        string path, int cells, string top, long polygons, long paths, long labels, long references, string grid,
+        string layers) => Diagnostic.Create(
+        "check.oasis.summary", DiagnosticSeverity.Info,
+        "{path}: OASIS, {cells} cell(s) (top: {top}); {polygons} polygon(s), {paths} path(s), {labels} label(s), "
+        + "{references} reference(s); {grid} DBU/µm; {layers}. Import it with `circuitrf convert` or File ▸ Import ▸ OASIS (gdstk)….",
+        ("path", path), ("cells", cells), ("top", top), ("polygons", polygons), ("paths", paths), ("labels", labels),
+        ("references", references), ("grid", grid), ("layers", layers));
+
+    /// <summary>D6 — an OASIS file in a build with no gdstk worker: named, not read.</summary>
+    public static Diagnostic CheckOasisNoWorker(string path, string reason) => Diagnostic.Create(
+        "check.oasis.no-worker", DiagnosticSeverity.Warning,
+        "{path} is OASIS, and reading it needs the gdstk worker, which cannot run: {reason}",
+        ("path", path), ("reason", reason));
 
     // ── Touchstone (`.sNp`) ──────────────────────────────────────────────────
     //

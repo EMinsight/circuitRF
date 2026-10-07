@@ -30,12 +30,12 @@ namespace CircuitRF.Cli;
 public static class LayoutConvert
 {
     /// <summary>
-    /// The five interchange formats. <c>internal</c> rather than private because <c>check</c> and
+    /// The interchange formats. <c>internal</c> rather than private because <c>check</c> and
     /// <c>explain</c> classify a path the same way this verb does (R-aut4-11) and must not grow a
     /// second rule for it — an interchange file they could not name would read as a file circuitRF
     /// does not handle, when in fact `convert` handles it.
     /// </summary>
-    internal enum Fmt { Clay, Gdsii, Dxf, Gerber, Board, Step, Gltf }
+    internal enum Fmt { Clay, Gdsii, Dxf, Gerber, Board, Step, Gltf, Oasis }
 
     private sealed class Options
     {
@@ -50,6 +50,14 @@ public static class LayoutConvert
 
         /// <summary>The route a GDSII end of this conversion takes.</summary>
         public StreamRoute GdsiiRoute => Engine ?? StreamRoute.Gdsii;
+
+        /// <summary>The route a stream-format end takes: OASIS has only gdstk's; GDSII takes --engine.</summary>
+        public StreamRoute RouteOf(Fmt f) => f == Fmt.Oasis ? StreamRoute.OasisGdstk : GdsiiRoute;
+
+        // brief-oasis-gdstk.md §10a — the OASIS writer's options, the Export OASIS dialog's, one flag each. The
+        // defaults are the dialog's defaults, not anyone's remembered preference: headless there is no user.
+        public OasisWriteOptions Oasis = OasisWriteOptions.Default;
+        public bool OasisFlags;
 
         // DXF
         public DxfAcadVersion AcadVersion = DxfAcadVersion.R2018;
@@ -114,6 +122,21 @@ public static class LayoutConvert
                         default: return JsonRun.Fail(CliDiagnostics.ConvertUnknownEngine(args[i]));
                     }
                     break;
+                case "--oas-compression" when i + 1 < args.Length:
+                    if (!int.TryParse(args[++i], out int level) || level is < 0 or > 9)
+                        return JsonRun.Fail(CliDiagnostics.ConvertBadOasisCompression(args[i]));
+                    o.Oasis = o.Oasis with { CompressionLevel = level }; o.OasisFlags = true; break;
+                case "--oas-validation" when i + 1 < args.Length:
+                    switch (args[++i].ToLowerInvariant())
+                    {
+                        case "none": o.Oasis = o.Oasis with { Validation = OasisValidation.None }; break;
+                        case "crc32": o.Oasis = o.Oasis with { Validation = OasisValidation.Crc32 }; break;
+                        case "checksum32": o.Oasis = o.Oasis with { Validation = OasisValidation.Checksum32 }; break;
+                        default: return JsonRun.Fail(CliDiagnostics.ConvertUnknownOasisValidation(args[i]));
+                    }
+                    o.OasisFlags = true; break;
+                case "--oas-standard-properties":
+                    o.Oasis = o.Oasis with { StandardProperties = true }; o.OasisFlags = true; break;
                 case "--dbu" when i + 1 < args.Length && int.TryParse(args[i + 1], out int dbu):
                     o.DbuPerMicron = Math.Max(1, dbu); i++; break;
 
@@ -213,6 +236,14 @@ public static class LayoutConvert
             if (!gdsiiEnd) return JsonRun.Fail(CliDiagnostics.ConvertEngineNeedsGdsii());
             if (engine.Unavailable() is { } missing) return JsonRun.Fail(CliDiagnostics.ConvertEngineUnavailable(missing));
         }
+
+        // brief-oasis-gdstk.md §10a, D6 — OASIS is read and written by the gdstk worker only, so either end being
+        // OASIS needs it; and the --oas-* flags are the OASIS writer's, so they need an OASIS target.
+        bool oasisSource = (o.From ?? DetectSource(o.Input)) == Fmt.Oasis;
+        bool oasisTarget = o.Output is not null && (o.To ?? DetectTarget(o.Output)) == Fmt.Oasis;
+        if (o.OasisFlags && !oasisTarget) return JsonRun.Fail(CliDiagnostics.ConvertOasisFlagsWithoutOasis());
+        if ((oasisSource || oasisTarget) && StreamRoute.OasisGdstk.Unavailable() is { } absent)
+            return JsonRun.Fail(CliDiagnostics.ConvertOasisUnavailable(absent));
 
         // The source format is inferable from what the path IS — a folder is a Gerber file set, and a
         // file with no telling extension is classified by CONTENT through the same classifier the
@@ -537,7 +568,7 @@ public static class LayoutConvert
 
         return from switch
         {
-            Fmt.Gdsii => ImportGdsii(o, staging, destTech, name),
+            Fmt.Gdsii or Fmt.Oasis => ImportStream(o, from, staging, destTech, name),
             Fmt.Dxf   => ImportDxf(o, staging, destTech, name),
             Fmt.Board => ImportBoard(o, staging, destTech, name),
             Fmt.Gerber => ImportGerber(o, staging, destTech),
@@ -588,12 +619,12 @@ public static class LayoutConvert
 
     // ── The four importers, each reduced to the same Source ───────────────────────────────────────
 
-    private static Source? ImportGdsii(Options o, string staging, Technology? destTech, string name)
+    private static Source? ImportStream(Options o, Fmt from, string staging, Technology? destTech, string name)
     {
         GdsiiImport.ImportResult r;
         try
         {
-            r = StreamInterchange.Import(o.GdsiiRoute, o.Input!, staging, destTech, o.DbuPerMicron,
+            r = StreamInterchange.Import(o.RouteOf(from), o.Input!, staging, destTech, o.DbuPerMicron,
                 preferSourceResolution: true, token: RunHost.Cancellation);
         }
         catch (GdstkException ex)
@@ -606,7 +637,7 @@ public static class LayoutConvert
         if (r.Cancelled) return Refused();
 
         string? cellDir = PickCell(o.Cell, r.CreatedCellDirs,
-            r.TopLevelCellDirs.Count > 0 ? r.TopLevelCellDirs[0] : null, "GDSII structure");
+            r.TopLevelCellDirs.Count > 0 ? r.TopLevelCellDirs[0] : null, from == Fmt.Oasis ? "OASIS cell" : "GDSII structure");
         if (cellDir is null) return null;
 
         var tech = MintTechnology(staging, name, destTech, r.LayersToAdd, stackup: null, r.CreatedCellDirs);
@@ -822,28 +853,31 @@ public static class LayoutConvert
 
         switch (to)
         {
-            case Fmt.Gdsii:
+            case Fmt.Gdsii or Fmt.Oasis:
             {
+                // One plan for both stream formats (brief-oasis-gdstk.md §6b): only the writer at the end differs.
+                var route = o.RouteOf(to);
+                string format = route.FormatName();
                 var plan = GdsiiExport.Analyze(src.CellDir, src.Tech, src.DbuPerMicron, src.View);
                 foreach (var u in plan.UnresolvedInstanceReferences)
                     Console.Error.WriteLine($"warning: unresolved instance reference '{u}' — not written.");
                 if (!plan.CanWrite)
                 {
-                    Console.Error.WriteLine("error: values do not fit GDSII — nothing written.");
-                    JsonRun.Note(CliDiagnostics.ConvertGdsiiCoordinateOverflow());
+                    Console.Error.WriteLine($"error: values do not fit the {format} export — nothing written.");
+                    JsonRun.Note(CliDiagnostics.ConvertGdsiiCoordinateOverflow(format));
                     foreach (var c in plan.CoordinateOverflowOffenders) Console.Error.WriteLine($"       {c}");
                     return 1;
                 }
                 GdsiiExportSummary summary;
-                try { summary = StreamInterchange.Write(o.GdsiiRoute, output, plan, token: RunHost.Cancellation); }
+                try { summary = StreamInterchange.Write(route, output, plan, token: RunHost.Cancellation, oasis: o.Oasis); }
                 catch (GdstkException ex) { return JsonRun.Fail(ex.Diagnostic); }
-                JsonRun.AddOutput("gdsii", output);
-                // What the gdstk route adds to say (a port flag it cannot carry, the worker's notes). The native
-                // writer's own diagnostics repeat the plan's counts, which are reported just below.
-                if (o.GdsiiRoute.UsesGdstk()) Report(summary.Diagnostics);
+                JsonRun.AddOutput(to == Fmt.Oasis ? "oasis" : "gdsii", output);
+                // What the gdstk route adds to say (what OASIS cannot hold, a port flag it cannot carry, the worker's
+                // notes). The native writer's own diagnostics repeat the plan's counts, which are reported just below.
+                if (route.UsesGdstk()) Report(summary.Diagnostics);
                 Note(plan.CurvedShapesFlattened, "curved shape", "flattened to polygons");
                 Note(plan.HolesKeyholed, "hole", "keyholed");
-                Note(plan.BitmapsSkipped, "bitmap", "skipped — GDSII carries no raster");
+                Note(plan.BitmapsSkipped, "bitmap", $"skipped — {format} carries no raster");
                 Note(plan.ViaPadsSkipped, "via", "exported as a barrel with no landing pad");
                 foreach (var r in plan.LayerRenumberings)
                 {
@@ -851,7 +885,7 @@ public static class LayoutConvert
                     JsonRun.Note(CliDiagnostics.ConvertNote(r));
                 }
                 if (plan.HasVias) Console.Error.WriteLine(
-                    "note: this design has vias, and GDSII carries no drill table — geometry only, not a PCB deliverable.");
+                    $"note: this design has vias, and {format} carries no drill table — geometry only, not a PCB deliverable.");
                 Console.WriteLine(output);
                 return 0;
             }
@@ -1035,6 +1069,7 @@ public static class LayoutConvert
     {
         "clay" or "layout" or "circuitrf" => Fmt.Clay,
         "gds" or "gdsii" or "gds2" => Fmt.Gdsii,
+        "oas" or "oasis" => Fmt.Oasis,
         "dxf" => Fmt.Dxf,
         "gerber" or "rs274x" or "excellon" => Fmt.Gerber,
         "board" or "kicad_pcb" => Fmt.Board,   // the extension is a data format; the bare product name is not ours to use
@@ -1045,12 +1080,12 @@ public static class LayoutConvert
 
     private static int BadFormat(string s) => JsonRun.Fail(CliDiagnostics.ConvertUnknownFormat(s));
 
-    /// <summary><see cref="Name"/>, naming the gdstk route on a GDSII end that takes it.</summary>
-    private static string RouteName(Options o, Fmt f) => f == Fmt.Gdsii ? o.GdsiiRoute.DisplayName() : Name(f);
+    /// <summary><see cref="Name"/>, naming the gdstk route on a stream-format end that takes it.</summary>
+    private static string RouteName(Options o, Fmt f) => f is Fmt.Gdsii or Fmt.Oasis ? o.RouteOf(f).DisplayName() : Name(f);
 
     internal static string Name(Fmt f) => f switch
     {
-        Fmt.Clay => "clay", Fmt.Gdsii => "GDSII", Fmt.Dxf => "DXF",
+        Fmt.Clay => "clay", Fmt.Gdsii => "GDSII", Fmt.Oasis => "OASIS", Fmt.Dxf => "DXF",
         Fmt.Gerber => "Gerber", Fmt.Step => "STEP", Fmt.Gltf => "glTF", _ => "board",
     };
 
@@ -1064,6 +1099,8 @@ public static class LayoutConvert
         // itself uses, never a second rule. A STEP file says so on its first line (ISO 10303-21's
         // header), which StepImport reads — the one line of STEP text read outside the worker.
         if (StepImport.LooksLikeStep(path)) return Fmt.Step;
+        // An OASIS file says so in its first 13 bytes (brief-oasis-gdstk.md §10a); nothing else begins that way.
+        if (StreamInterchange.LooksLikeOasis(path)) return Fmt.Oasis;
         try
         {
             var kind = GerberFileClassifier.Classify(path).Kind;
@@ -1079,6 +1116,7 @@ public static class LayoutConvert
     {
         ".clay" => Fmt.Clay,
         ".gds" or ".gdsii" or ".gds2" => Fmt.Gdsii,
+        ".oas" or ".oasis" => Fmt.Oasis,
         ".dxf" => Fmt.Dxf,
         ".kicad_pcb" => Fmt.Board,
         ".step" or ".stp" => Fmt.Step,
@@ -1088,8 +1126,9 @@ public static class LayoutConvert
     private static int Usage()
     {
         Console.Error.WriteLine("Usage: circuitrf convert <input> -o <output> [--from f] [--to f] [--cell name]");
-        Console.Error.WriteLine("       formats: clay | gdsii | dxf | gerber | board | step | gltf");
+        Console.Error.WriteLine("       formats: clay | gdsii | oasis | dxf | gerber | board | step | gltf");
         Console.Error.WriteLine("       --engine native|gdstk  the GDSII reader or writer for a gdsii source or target (default native)");
+        Console.Error.WriteLine("       oasis target:  --oas-compression 0-9  --oas-validation none|crc32|checksum32  --oas-standard-properties");
         Console.Error.WriteLine("       step source (-o <new>.c3d):  --material <part>=<name> (repeatable)  --part <path> (repeatable)  --tech <path.ctech>");
         Console.Error.WriteLine("       step target (-o <file>.step; from a .c3d, .clay, cell folder or any format above):");
         Console.Error.WriteLine("              --assembly  --as-drawn  --thicken-sheets  --include-airbox  --schema ap214|ap242  --view 3d|layout  --tech <path.ctech>");

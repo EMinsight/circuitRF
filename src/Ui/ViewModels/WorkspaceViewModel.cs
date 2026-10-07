@@ -4751,6 +4751,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         foreach (var msg in result.Messages) Messages.Info(msg);
+
+        // The rows the mapping dialog answered "Add to technology". Installed BEFORE the top cell opens, so
+        // it opens on a technology that defines them rather than on fallback colours (the import alone
+        // only REPORTS them, as every importer does).
+        ApplyImportToTechnology(techRes, result.LayersToAdd, stackup: null);
         _factory.ProjectTreeTool?.Refresh();
 
         // item 7/R-fix-6: cells WERE always created correctly under the workspace, and the tree WAS
@@ -4933,6 +4938,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
 
         foreach (var msg in result.Messages) Messages.Info(msg);
+        ApplyImportToTechnology(techRes, result.LayersToAdd, stackup: null);
         _factory.ProjectTreeTool?.Refresh();
         Messages.Success($"Imported {result.CreatedCellDirs.Count} cell(s) from DXF.");
     }

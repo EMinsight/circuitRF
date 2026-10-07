@@ -1399,6 +1399,12 @@ conversion here and the same conversion through the GUI produce the same bytes.<
 <td>✓</td>
 </tr>
 <tr>
+<td>OASIS</td>
+<td><code>.oas</code>, <code>.oasis</code></td>
+<td>✓</td>
+<td>✓</td>
+</tr>
+<tr>
 <td>DXF</td>
 <td><code>.dxf</code></td>
 <td>✓</td>
@@ -1428,7 +1434,8 @@ conversion here and the same conversion through the GUI produce the same bytes.<
 rest. There is no privileged direction and no hub format you have to route through by hand: a
 conversion is an import followed by an export, and <code>convert</code> does both.</p>
 <p>Formats are read off the paths. A folder means Gerber; a file with no telling extension is classified
-by its <em>content</em>, through the same classifier the Gerber import uses. <code>--from</code> and <code>--to</code> override
+by its <em>content</em> — an OASIS file by the signature it begins with, anything else through the same
+classifier the Gerber import uses. <code>--from</code> and <code>--to</code> override
 that, and <code>--to</code> is <strong>required</strong> when the output is a folder, since a folder could be either Gerber or
 <code>.clay</code>.</p>
 <h3 id="convert-examples">Examples</h3>
@@ -1455,6 +1462,26 @@ other circuitRF tool expects a layout view to be.</p>
 <span class="prompt">$ </span>circuitrf convert lib.gds -o coupler.dxf --cell COUPLER</code></pre>
 <p>Convert a directory of drawings in one line:</p>
 <pre><code class="cmd"><span class="prompt">$ </span>for f in dxf/*.dxf; do circuitrf convert "$f" -o "gds/$(basename "${f%.dxf}").gds"; done</code></pre>
+<h3 id="convert-oasis">OASIS, and the second GDSII route</h3>
+<p>OASIS is read and written by <strong>gdstk</strong>, the same reader and writer <strong>File ▸ Import ▸ OASIS (gdstk)…</strong> and
+<strong>File ▸ Export ▸ OASIS (gdstk)</strong> use; <a href="layout-editor.html#oasis-gdstk">Interchange</a> says what an OASIS file
+keeps and what it does not.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert mmic.gds -o mmic.oas
+<span class="prompt">$ </span>circuitrf convert mask.oas -o cells/ --to clay --tech process.ctech
+<span class="prompt">$ </span>circuitrf convert Amp/layout/Amp.clay -o amp.oas --oas-compression 9</code></pre>
+<p>An OASIS export takes the Export OASIS dialog's options as flags, at the dialog's defaults:
+<code>--oas-compression 0</code>–<code>9</code> (default <code>6</code>), <code>--oas-validation none|crc32|checksum32</code> (default <code>crc32</code>) and
+<code>--oas-standard-properties</code>. They apply to an OASIS <strong>target</strong> only; on any other conversion they are
+refused rather than ignored. Two runs with the same options write the same bytes.</p>
+<p><strong><code>--engine gdstk</code> sends a GDSII end through gdstk too</strong>, instead of circuitRF's own GDSII reader or
+writer, which stay the default (<code>--engine native</code>). It is the command-line twin of <strong>GDSII (gdstk)…</strong> in
+the File menus. A conversion with no GDSII end refuses the flag. When a GDSII file reads differently from
+what you expect, converting it once each way and comparing is a quick way to see whether the file or the
+reader is at fault:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert lib.gds -o native/ --to clay
+<span class="prompt">$ </span>circuitrf convert lib.gds -o gdstk/ --to clay --engine gdstk</code></pre>
+<p>gdstk runs as a separate program shipped beside circuitRF. On an installation without it, a conversion
+with an OASIS end, or with <code>--engine gdstk</code>, is refused before anything is read, and says why.</p>
 <h3 id="convert-step">STEP, both ways</h3>
 <p>A STEP file is a solid model, so it goes <strong>into a 3D view</strong>, and anything circuitRF can draw in 3D comes
 <strong>out as one</strong>. Both directions call the function the 3D editor's own dialog calls — <em>Import STEP…</em> and
@@ -1513,7 +1540,15 @@ otherwise.</li>
 </tr>
 <tr>
 <td><code>--from &lt;fmt&gt;</code>, <code>--to &lt;fmt&gt;</code></td>
-<td><code>clay</code>, <code>gdsii</code>, <code>dxf</code>, <code>gerber</code>, <code>board</code>, <code>step</code>, <code>gltf</code> (a target only). Say it when the path does not.</td>
+<td><code>clay</code>, <code>gdsii</code>, <code>oasis</code>, <code>dxf</code>, <code>gerber</code>, <code>board</code>, <code>step</code>, <code>gltf</code> (a target only). Say it when the path does not.</td>
+</tr>
+<tr>
+<td><code>--engine native\|gdstk</code></td>
+<td>Which GDSII reader or writer a GDSII source or target goes through. Default <code>native</code>. See <a href="#convert-oasis">OASIS</a>.</td>
+</tr>
+<tr>
+<td><code>--oas-compression &lt;0-9&gt;</code>, <code>--oas-validation none\|crc32\|checksum32</code>, <code>--oas-standard-properties</code></td>
+<td>OASIS export: the Export OASIS dialog's options. Defaults <code>6</code>, <code>crc32</code>, off.</td>
 </tr>
 <tr>
 <td><code>--cell &lt;name&gt;</code></td>
@@ -1614,7 +1649,8 @@ the honest way to see what a conversion actually understood before you send the 
 <p><strong>GDSII is the one exception, and it is the format's own doing.</strong> GDSII identifies a layer by a
 number, not a name, so an import has nothing to name it <em>with</em>: the numbers come through exactly, the
 names do not. Convert from GDSII with <code>--tech</code> pointing at the technology those numbers belong to and
-the names come back.</p>
+the names come back. An OASIS file <em>may</em> name its layers; when it does, a name is matched against
+<code>--tech</code> before the number is, and when it does not, OASIS behaves as GDSII does.</p>
 <h3 id="convert-refusals">When it refuses</h3>
 <div class="callout note">
 <span class="label">A drill file that does not state its format is a refusal, not a guess</span>
@@ -1638,7 +1674,8 @@ and the conversion reads it off the coordinates and says as much. The flags are 
 leave a genuine question, and the note printed for every drill file names which parts of its format
 were <strong>declared</strong>, which were <strong>inferred</strong>, and from what.</p>
 <p>It also stops, rather than guessing, when a design instantiates cells drawn against a <em>different</em>
-technology and the layer mapping needs confirming; when coordinates overflow GDSII's 32-bit range; and
+technology and the layer mapping needs confirming; when a coordinate overflows GDSII's 32-bit range, or a layer, datatype or array count overflows its 16-bit one (an OASIS export is held to the same limits); when an OASIS
+repetition would expand into more than a million shapes; and
 when the source holds several cells and none of them is an unambiguous top. Every refusal exits <code>1</code>
 and writes nothing at all.</p>
 <p>Everything short of a refusal is a <strong>note on stderr</strong>, counted and named: labels flattened to
@@ -2170,6 +2207,13 @@ instead.</p>
 <p>The kind of document is inferred from the path, exactly as <code>convert</code> infers a format. A GDSII or
 Gerber file is <strong>named as interchange</strong> rather than called unreadable — it is simply not validated,
 because there is nothing to validate it against.</p>
+<p><strong>An OASIS file is read.</strong> gdstk opens the whole file, checking its CRC or checksum when it carries one,
+and <code>check</code> reports its cells, their shape and reference counts, its grid and the layer names it declares
+— without importing anything. A damaged file is an <strong>error</strong>, because the import would refuse it too. On
+an installation without gdstk the file is still named, with a <strong>warning</strong> saying it was not read.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf check mask.oas
+<span class="output">note: mask.oas: OASIS, 4 cell(s) (top: top, empty); 1 polygon(s), 0 path(s), 0 label(s), 4 reference(s); 1000 DBU/µm; no named layers. Import it with `circuitrf convert` or File ▸ Import ▸ OASIS (gdstk)….
+1 document(s) checked: 0 error(s), 0 warning(s), 1 note(s).</span></code></pre>
 <h3 id="check-touchstone">Checking a Touchstone file</h3>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf check part.s2p
 <span class="output">note: part.s2p: 2-port, 401 points, 1 MHz to 1 GHz, reference 50 Ω.
@@ -3025,7 +3069,7 @@ flow that works are in <a href="ai-agents.html">Designing with an AI agent</a>.<
 <p><strong>Most clients load a server when a session starts</strong>, so one registered mid-session appears in the
 next one. Nothing is lost meanwhile: every tool is a verb, and the same verbs answer from a shell with
 the same documents.</p>
-<p><strong>Fifteen tools, and each is a verb you already have:</strong></p>
+<p><strong>Sixteen tools, and each is a verb you already have:</strong></p>
 <table>
 <thead>
 <tr>
@@ -3052,7 +3096,11 @@ the same documents.</p>
 </tr>
 <tr>
 <td><code>import</code></td>
-<td><code>import part</code> or <code>convert</code></td>
+<td><code>import part</code> — a component, as a cell</td>
+</tr>
+<tr>
+<td><code>convert</code></td>
+<td><code>convert</code> — artwork between formats, in either direction, so exporting a layout is a <code>convert</code></td>
 </tr>
 <tr>
 <td><code>render</code></td>

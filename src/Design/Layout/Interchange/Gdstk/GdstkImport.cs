@@ -66,6 +66,29 @@ public static class GdstkImport
         };
     }
 
+    /// <summary>
+    /// What <see cref="Header"/> gives: the library's cells as <c>open</c> lists them, the names the file gives
+    /// its layers (OASIS <c>LAYERNAME</c>), its resolution, and what gdstk said while reading it.
+    /// </summary>
+    public sealed record HeaderResult(
+        IReadOnlyList<GdstkCellSummary> Cells, IReadOnlyList<GdstkLayerName> LayerNames, double SourceDbuPerMicron,
+        IReadOnlyList<string> Messages);
+
+    /// <summary>
+    /// Opens <paramref name="path"/> and closes it again, transferring no geometry: what <c>check</c> reports of an
+    /// OASIS file (brief-oasis-gdstk.md §10b). gdstk parses the whole file on <c>open</c>, so a damaged file is
+    /// refused here exactly as <see cref="Read"/> would refuse it — a <see cref="GdstkException"/> naming the file.
+    /// </summary>
+    public static HeaderResult Header(
+        string path, GdstkFormat format, GdstkWorkerOptions? worker = null, CancellationToken token = default)
+    {
+        using var w = GdstkWorker.Start(worker, token);
+        var session = new GdstkSession(w);
+        var library = session.Open(path, format, token);
+        session.Close(library, token);
+        return new HeaderResult(library.Cells, library.LayerNames, GridOf(library, format), library.Messages);
+    }
+
     /// <summary>The file's database units per micrometre. G0's Q6: gdstk's OASIS writer — and so other
     /// writers' files read through it — cannot state a 1 nm or 0.25 nm grid exactly, so 1000 arrives as
     /// 1000.0000000000001. A grid within a part in 10⁹ of a whole number IS that number; anything

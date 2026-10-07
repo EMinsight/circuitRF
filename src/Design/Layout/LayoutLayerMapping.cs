@@ -180,6 +180,17 @@ public static class LayoutLayerMapping
         return string.Join(", ", parts);
     }
 
+    /// <summary>
+    /// <paramref name="rows"/> with each row's <see cref="LayerMappingRow.Choice"/> replaced by what
+    /// <paramref name="choices"/> settled for its source layer — what the user ANSWERED rather than what
+    /// was proposed. An importer's summary is built from these, so a row the dialog changed from "keep as
+    /// unknown" to "add to technology" is reported as added rather than as the proposal it started as.
+    /// </summary>
+    public static IReadOnlyList<LayerMappingRow> Settle(
+        IReadOnlyList<LayerMappingRow> rows,
+        IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice> choices) =>
+        [.. rows.Select(r => choices.TryGetValue(r.Source, out var c) ? r with { Choice = c } : r)];
+
     /// <summary>Projects the rows' settled choices into the shape used by
     /// <see cref="LayoutFragment.ApplyReconciliation"/> — the paste path reuses that method verbatim;
     /// only the trigger (this class, not <c>GetMissingLayers</c>) and the dialog (one table, not a

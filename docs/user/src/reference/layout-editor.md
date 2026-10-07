@@ -33,6 +33,7 @@ at any moment:
 <li><a href="#interchange">Interchange</a>
   <ol>
   <li><a href="#gdsii">GDSII</a></li>
+  <li><a href="#oasis-gdstk">OASIS and GDSII through gdstk</a></li>
   <li><a href="#dxf">DXF</a></li>
   <li><a href="#gerber">Gerber and Excellon</a></li>
   <li><a href="#board">Board files (<code>.kicad_pcb</code>)</a></li>
@@ -483,7 +484,8 @@ The two places it *does* come out are the two where a measurement is the point:
 
 ## Interchange {#interchange}
 
-**File ▸ Import** offers GDSII, DXF, Gerber and Board; **File ▸ Export** offers the same four.
+**File ▸ Import** offers GDSII, DXF, Gerber and Board; **File ▸ Export** offers the same four. Both menus
+also offer **GDSII (gdstk)** and **OASIS (gdstk)**, described [below](#oasis-gdstk).
 
 **Every export says what it could not carry at full fidelity before it writes anything**, and that
 preview is produced by running the *real* write into a null stream — so it can never disagree with what
@@ -523,6 +525,71 @@ not artwork, and is skipped. The import counts each.
 columns and rows 1–32767, and the export refuses, by name and before writing anything, a shape or instance
 outside those ranges. A layer that came in from DXF or a board file with no GDSII number of its own is
 written as the lowest layer number the export is not already using, and the report says which.
+
+### OASIS and GDSII through gdstk {#oasis-gdstk}
+
+OASIS is the compact successor to GDSII that mask shops and fabs increasingly exchange. circuitRF reads and
+writes it through **gdstk**, an open-source layout library that runs as a separate program shipped beside
+circuitRF. gdstk also reads and writes GDSII, which gives GDSII a second route. The four entries are:
+
+| Entry | What it does |
+|---|---|
+| **File ▸ Import ▸ OASIS (gdstk)…** | Imports every cell of an `.oas` file, as **GDSII…** does for a `.gds`. |
+| **File ▸ Export ▸ OASIS (gdstk)** | Exports the active layout and the cells it places as one `.oas` file. |
+| **File ▸ Import ▸ GDSII (gdstk)…** | Imports a `.gds` file with gdstk's reader instead of circuitRF's own. |
+| **File ▸ Export ▸ GDSII (gdstk)** | Exports a `.gds` file with gdstk's writer instead of circuitRF's own. |
+
+gdstk only reads and writes the file. Everything after the read, and everything before the write, is
+circuitRF's own and the same for every route: the layer-mapping dialog, cell naming, port recognition, the
+export's fidelity report, and the DRC and LVS checks your settings run before an export. If an
+installation has no gdstk, the four entries are disabled, and their tooltip says so.
+
+**Why there are two GDSII routes.** Plain **GDSII…** is circuitRF's own reader and writer. It stays the
+default, and it is the one the layout toolbar's export button uses. The **(gdstk)** entries are an
+independent implementation of the same format. When a GDSII file from another tool imports wrongly, or a
+file circuitRF wrote is read wrongly elsewhere, try it through the other route. If the two routes agree,
+the problem is in the file. If they disagree, the route is the likely cause, so say which route you used
+when you report it. The label names the route for that reason. Two differences are expected:
+
+- **Label size.** gdstk reads a text element's size from its magnification only. circuitRF's own writer
+  stores a label's height in the element's width field, so a label written by **GDSII** and read by
+  **GDSII (gdstk)…** arrives at the default height.
+- **Port labels.** gdstk does not carry properties. A port label exported through either (gdstk) route is
+  written as plain text, and the export report counts how many. On import, properties are counted and
+  skipped.
+
+A gdstk export refuses an instance of a cell that the export does not include. The export dialog lists
+any such instance before the save dialog opens. circuitRF's own GDSII writer writes it as a reference to
+a cell that is not in the file.
+
+**What an OASIS import does not bring in.** Properties, `XNAME` and `XELEMENT` records have no form in a
+circuitRF layout. They are skipped and counted in one message. A circle arrives as the polygon gdstk reads
+it as. A shape or instance **repetition** is expanded into separate shapes or instances. An import that
+would create more than **1,000,000** of them is refused, says how many it would create, and creates
+nothing. A GDSII file is held to 100,000 on both routes. An OASIS file can name its layers (`LAYERNAME`).
+Where it does, a layer of your technology with the **same name** is matched first, whatever its number,
+and the layer/datatype number is used only when no name matches. A grid finer than the workspace's
+resolution is handled as for GDSII.
+
+**What an OASIS export changes, and says so.** OASIS has no round path end, so a round end is written flush.
+OASIS stores a path's half-width, so an odd width is written one database unit wider. OASIS text has no
+rotation or size, so a rotated or resized label reads back upright at the default height. The export
+dialog counts each of these before anything is written. Curves are flattened and holes keyholed exactly as
+for GDSII. An OASIS `CIRCLE` record is never written.
+
+The export dialog has an **OASIS options** section. Its settings are remembered between exports:
+
+| Option | Default | What it does |
+|---|---|---|
+| Compression level | 6 | How hard compressed blocks are compressed, from 0 (stored) to 9. |
+| Validation | CRC-32 | How a reader can check the file's bytes: CRC-32, a 32-bit checksum, or none. |
+| Write rectangles and trapezoids as OASIS shapes | on | Smaller files. Off writes every polygon as a general polygon. |
+| Write standard properties | off | Adds the SEMI standard properties that some readers use. |
+
+Exporting the same layout twice with the same options writes the same bytes. From the command line,
+[`convert`](cli.html#convert-oasis) does the same imports and exports (`--engine gdstk` selects the second
+GDSII route), and [`check`](cli.html#check) reads an OASIS file's cells and layer names without importing
+it.
 
 ### DXF {#dxf}
 

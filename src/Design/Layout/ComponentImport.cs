@@ -129,7 +129,7 @@ public static class ComponentImport
             if (choices is null) return null;
         }
         choices ??= LayoutLayerMapping.BuildChoices(rows);
-        if (rows.Count > 0) messages.Add(LayoutLayerMapping.SummarizeMapping(rows, destTech));
+        if (rows.Count > 0) messages.Add(LayoutLayerMapping.SummarizeMapping(LayoutLayerMapping.Settle(rows, choices), destTech));
 
         // ── The land patterns ───────────────────────────────────────────────────────────────────
         var layersToAdd = new List<LayerDef>();

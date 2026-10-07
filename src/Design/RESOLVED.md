@@ -18248,3 +18248,81 @@ against their `reads_back_as`; a 1001 × 1000 repetition refused with nothing cr
 (`read.truncated`) with nothing created; LAYERNAME landing on a same-named layer of a different number while the
 same-numbered layer has another name; and the write- and read-side condition messages. The OASIS export dialog
 compiles and is wired, but has no headless harness and was not seen on screen.
+
+## OASIS and gdstk — headless, documentation and finish (brief-oasis-gdstk G5, R-oas-5, 2026-10-06)
+
+**`convert` has an `oasis` format** (`LayoutConvert.Fmt.Oasis`; `oas`/`oasis` as a `--from`/`--to` name, `.oas`/`.oasis`
+by extension). An end's route is `Options.RouteOf`: OASIS is always `StreamRoute.OasisGdstk`, GDSII takes `--engine`.
+Import and export are the GDSII arms with the route as a parameter (`ImportStream`, `case Fmt.Gdsii or Fmt.Oasis`), so
+the two stream formats share one plan, one set of notes and one refusal; the overflow refusal
+(`convert.gdsii.coordinate-overflow`, id kept) now names which format was not written, because an OASIS export is
+held to the shared plan's GDSII limits even though OASIS itself has none. A file with no telling extension is OASIS
+when it begins with `%SEMI-OASIS\r\n` (`StreamInterchange.LooksLikeOasis`, 13 bytes, asked before the Gerber
+classifier), which is also how `check` and `explain` name one — they classify through `convert`'s `DetectSource`.
+The writer's options are flags at the DIALOG'S defaults, not the remembered preference (headless has no user):
+`--oas-compression 0-9`, `--oas-validation none|crc32|checksum32`, `--oas-standard-properties`. Refused with no OASIS
+target (`convert.oasis.flags-not-oasis`); an OASIS end with no worker is refused before anything is read
+(`convert.oasis.unavailable`, D6). **The dialog's fourth option, rectangle/trapezoid detection, has no flag** — the
+brief lists three; it stays on headlessly, and adding `--oas-no-shape-detection` would be one line if wanted.
+
+**The byte gate needs no exclusion.** gdstk's OASIS writer has no timestamp (G0's Q8), so `convert`'s `.oas` equals
+`StreamInterchange.Write`'s byte for byte, with default options and with all three flags set — the second row is
+what proves the flags reach the writer. **The matrix is 35 pairs, not the brief's "30"**: six formats with clay→clay
+excluded is 6 × 6 − 1. 24 need no worker (`[Theory]`), the 11 with an `oasis` end run under `GdstkTheory`, and the
+`--engine gdstk` rows now cover every pair with a `gdsii` end (11, including gdsii↔oasis). `GdstkOasisTests` test 2
+(GDSII → OASIS → GDSII) now runs the verb as a process rather than the in-process import-then-export G4 used.
+
+**A relative path did not work on any gdstk route, and nothing had caught it.** The worker runs in its own folder, so
+`circuitrf check x.oas` (and `convert x.oas …`, and `--engine gdstk` on a relative `.gds`) sent `x.oas` to a process
+that resolved it there: *the file could not be opened: No such file or directory (read.open-failed)*. Every test had
+used absolute paths. `GdstkSession.Open` and `FinishWrite` now send `Path.GetFullPath(path)`, which fixes every caller
+at the one place the path crosses the process boundary;
+`ConvertCliVerbTests.RelativeOasisPaths_ResolveAgainstTheCallersDirectory` holds it (read and write).
+
+**`check` reads an OASIS file's header** (`GdstkImport.Header`: `open` then `close`, no geometry transferred).
+`check.oasis.summary` (info) gives the cells, the top cells by name, polygon/path/label/reference counts, the grid and
+the `LAYERNAME` names. Layers BY NUMBER are not listed: `open` reports counts per cell, not keys, and listing them
+would mean transferring every cell — `convert --list-cells` or an import is the way to see them. gdstk parses the
+whole file on `open` and checks its CRC-32 or checksum there, so a damaged file is `check.file.unreadable` (error)
+exactly when the import refuses it. No worker: `check.oasis.no-worker`, a WARNING (the file was not read), exit 0
+under the default `--severity`. Other interchange formats keep `check.path.interchange`.
+
+**Where §10e's records are:** the mapping table is `GdstkMapping`'s own doc comment; the expansion limits and the
+1.8 s / 1.36 GB / 158 MB measurement are in the G4 section above; the departures from the geometry worker are in
+`tools/gdstk-worker/RESOLVED.md` (one static file, gdstk compiled with the worker, cross-built Windows RIDs, the
+shared cache folder) and the G2 section above (the bounded request, coded diagnostics, the label-height rule, the
+dangling-reference refusal); every Q4 disagreement and its classification is in the G0 section above (six of ours,
+plus the seventh R-gnf found, all fixed by R-gnf; label mirror and magnification — our model's, deterministic) and
+G3's (the label `WIDTH` on TEXT, classified ambiguous). G3's comparison found no further difference.
+
+Documentation: `docs/user/src/reference/layout-editor.md` § *OASIS and GDSII through gdstk* (`#oasis-gdstk`),
+`docs/user/src/reference/cli.md` (`#convert-oasis`, the options table, `check`'s OASIS paragraph),
+`docs/design/cli.md` (the `oasis`/`--engine` paragraph and §10's OASIS exception); the usage text, `circuitrf help`
+and the MCP server's `convert` tool (`engine` and the three `oas*` options) list `oasis`. `circuitrf reference` lists no
+convert formats, so nothing changed there.
+
+## "Add to technology" on a GDSII, OASIS or DXF import added nothing (2026-10-06)
+
+Reported on an OASIS import: three unmatched layers answered *Add to technology* in the mapping dialog,
+and afterwards the technology did not define them (the editor drew them in fallback colours and warned
+for each). Three defects, the first one older than the gdstk series — no stream import had ever done it:
+
+1. **The GUI never installed `LayersToAdd` for the GDSII/OASIS routes or for DXF.** Gerber, board and
+   component imports call `WorkspaceViewModel.ApplyImportToTechnology`; `ImportStreamLibraryAsync` and
+   `ImportDxfLibraryAsync` did not, so the import computed the layers and the result was dropped. Both
+   now call it, before the top cell opens. As for the other importers it is a SESSION install
+   (`TechnologyCache.SetLive`, or the open technology editor's working copy) and says so in the
+   Messages panel; writing the `.ctech` is still the user's Save.
+2. **A stream file's added layer would have been invisible anyway.** `GdsiiLayerReconciliation.BuildSourceLayers`
+   gives each source layer only a key and (OASIS `LAYERNAME`, or a matched alias) a name, and `LayerDef.Color`
+   defaults to the zero `Rgba` — alpha 0. `StreamLayoutImport.NewTechnologyLayer` now builds the added layer
+   from `FallbackPalette.For(key)` (the colour the editor was already drawing it in, name `L11/0`) and keeps
+   the file's name when there is one. DXF, board and component layers carry their own colours and are unchanged.
+3. **The import summary reported the PROPOSAL, not the answer.** `StreamLayoutImport`, `DxfImport`,
+   `PcbImport` and `ComponentImport` summarised the rows they handed the dialog, so a row answered
+   *Add to technology* still read `11/0→(unknown)`. `LayoutLayerMapping.Settle(rows, choices)` applies the
+   settled choices first; Gerber already summarised the answered rows.
+
+Held by `GdsiiImportTests.Import_LayerAnsweredAddToTechnology_IsNamedAndVisible_AndReportedAsAdded` (native
+route; the OASIS and GDSII (gdstk) routes end in the same `StreamLayoutImport`). The GUI half has no headless
+harness — `WorkspaceViewModel` cannot be constructed in a test — and was not seen on screen.

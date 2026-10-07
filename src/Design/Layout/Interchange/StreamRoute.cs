@@ -105,6 +105,25 @@ public static class StreamInterchange
     public static IReadOnlyList<string> BlockingReferences(this StreamRoute route, GdsiiExport.ExportPlan plan) =>
         route.UsesGdstk() ? plan.UnresolvedInstanceReferences : [];
 
+    /// <summary>The bytes every OASIS file begins with (SEMI P39 §13): <c>%SEMI-OASIS</c>, CR, LF.</summary>
+    public static ReadOnlySpan<byte> OasisMagic => "%SEMI-OASIS\r\n"u8;
+
+    /// <summary>
+    /// Whether <paramref name="path"/> begins with <see cref="OasisMagic"/> — how <c>convert</c>, <c>check</c> and
+    /// <c>explain</c> name an OASIS file whose extension says nothing (brief-oasis-gdstk.md §10a). Reads 13 bytes;
+    /// an unreadable file is simply not OASIS.
+    /// </summary>
+    public static bool LooksLikeOasis(string path)
+    {
+        try
+        {
+            using var f = File.OpenRead(path);
+            Span<byte> head = stackalloc byte[OasisMagic.Length];
+            return f.ReadAtLeast(head, head.Length, throwOnEndOfStream: false) == head.Length && head.SequenceEqual(OasisMagic);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
+    }
+
     private static GdstkFormat GdstkFormatOf(StreamRoute route) =>
         route == StreamRoute.OasisGdstk ? GdstkFormat.Oasis : GdstkFormat.Gdsii;
 }

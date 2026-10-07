@@ -104,7 +104,7 @@ public static class PcbImport
             if (choices is null) return Nothing(messages);
         }
         choices ??= LayoutLayerMapping.BuildChoices(rows);
-        if (rows.Count > 0) messages.Add(LayoutLayerMapping.SummarizeMapping(rows, destTech));
+        if (rows.Count > 0) messages.Add(LayoutLayerMapping.SummarizeMapping(LayoutLayerMapping.Settle(rows, choices), destTech));
 
         // ── Stackup, and the via entries its conductors make expressible ─────────────────────────
         // Built HERE rather than at the end, because the via spans are named against it and the vias

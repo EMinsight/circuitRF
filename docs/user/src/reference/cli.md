@@ -980,6 +980,7 @@ conversion here and the same conversion through the GUI produce the same bytes.
 |---|---|---|---|
 | circuitRF layout | `.clay` | the file | a **folder** of cells plus a `.ctech` |
 | GDSII | `.gds`, `.gdsii`, `.gds2` | ✓ | ✓ |
+| OASIS | `.oas`, `.oasis` | ✓ | ✓ |
 | DXF | `.dxf` | ✓ | ✓ |
 | Gerber + Excellon | a **folder**, or one Gerber/drill file | ✓ | a **folder** |
 | Board | `.kicad_pcb` | ✓ | ✓ |
@@ -990,7 +991,8 @@ rest. There is no privileged direction and no hub format you have to route throu
 conversion is an import followed by an export, and `convert` does both.
 
 Formats are read off the paths. A folder means Gerber; a file with no telling extension is classified
-by its *content*, through the same classifier the Gerber import uses. `--from` and `--to` override
+by its *content* — an OASIS file by the signature it begins with, anything else through the same
+classifier the Gerber import uses. `--from` and `--to` override
 that, and `--to` is **required** when the output is a folder, since a folder could be either Gerber or
 `.clay`.
 
@@ -1033,6 +1035,33 @@ One cell out of a GDSII library that holds many:
 Convert a directory of drawings in one line:
 
 <pre><code class="cmd"><span class="prompt">$ </span>for f in dxf/*.dxf; do circuitrf convert "$f" -o "gds/$(basename "${f%.dxf}").gds"; done</code></pre>
+
+### OASIS, and the second GDSII route {#convert-oasis}
+
+OASIS is read and written by **gdstk**, the same reader and writer **File ▸ Import ▸ OASIS (gdstk)…** and
+**File ▸ Export ▸ OASIS (gdstk)** use; [Interchange](layout-editor.html#oasis-gdstk) says what an OASIS file
+keeps and what it does not.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert mmic.gds -o mmic.oas
+<span class="prompt">$ </span>circuitrf convert mask.oas -o cells/ --to clay --tech process.ctech
+<span class="prompt">$ </span>circuitrf convert Amp/layout/Amp.clay -o amp.oas --oas-compression 9</code></pre>
+
+An OASIS export takes the Export OASIS dialog's options as flags, at the dialog's defaults:
+`--oas-compression 0`–`9` (default `6`), `--oas-validation none|crc32|checksum32` (default `crc32`) and
+`--oas-standard-properties`. They apply to an OASIS **target** only; on any other conversion they are
+refused rather than ignored. Two runs with the same options write the same bytes.
+
+**`--engine gdstk` sends a GDSII end through gdstk too**, instead of circuitRF's own GDSII reader or
+writer, which stay the default (`--engine native`). It is the command-line twin of **GDSII (gdstk)…** in
+the File menus. A conversion with no GDSII end refuses the flag. When a GDSII file reads differently from
+what you expect, converting it once each way and comparing is a quick way to see whether the file or the
+reader is at fault:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert lib.gds -o native/ --to clay
+<span class="prompt">$ </span>circuitrf convert lib.gds -o gdstk/ --to clay --engine gdstk</code></pre>
+
+gdstk runs as a separate program shipped beside circuitRF. On an installation without it, a conversion
+with an OASIS end, or with `--engine gdstk`, is refused before anything is read, and says why.
 
 ### STEP, both ways {#convert-step}
 
@@ -1087,7 +1116,9 @@ are the same bytes when neither includes a camera.
 | Option | What it does |
 |---|---|
 | `-o, --output <path>` | The file to write — or the **folder**, for `gerber` and `clay`; a file-shaped path there is refused. Required. |
-| `--from <fmt>`, `--to <fmt>` | `clay`, `gdsii`, `dxf`, `gerber`, `board`, `step`, `gltf` (a target only). Say it when the path does not. |
+| `--from <fmt>`, `--to <fmt>` | `clay`, `gdsii`, `oasis`, `dxf`, `gerber`, `board`, `step`, `gltf` (a target only). Say it when the path does not. |
+| `--engine native\|gdstk` | Which GDSII reader or writer a GDSII source or target goes through. Default `native`. See [OASIS](#convert-oasis). |
+| `--oas-compression <0-9>`, `--oas-validation none\|crc32\|checksum32`, `--oas-standard-properties` | OASIS export: the Export OASIS dialog's options. Defaults `6`, `crc32`, off. |
 | `--cell <name>` | Which cell to export, when the source holds several. |
 | `--list-cells` | Report what the input holds and write nothing. |
 | `--name <stem>` | What to call the written Gerber file set. Default: the cell's name. |
@@ -1136,7 +1167,8 @@ Two consequences worth knowing:
 **GDSII is the one exception, and it is the format's own doing.** GDSII identifies a layer by a
 number, not a name, so an import has nothing to name it *with*: the numbers come through exactly, the
 names do not. Convert from GDSII with `--tech` pointing at the technology those numbers belong to and
-the names come back.
+the names come back. An OASIS file *may* name its layers; when it does, a name is matched against
+`--tech` before the number is, and when it does not, OASIS behaves as GDSII does.
 
 ### When it refuses {#convert-refusals}
 
@@ -1166,7 +1198,8 @@ leave a genuine question, and the note printed for every drill file names which 
 were **declared**, which were **inferred**, and from what.
 
 It also stops, rather than guessing, when a design instantiates cells drawn against a *different*
-technology and the layer mapping needs confirming; when a coordinate overflows GDSII's 32-bit range, or a layer, datatype or array count overflows its 16-bit one; and
+technology and the layer mapping needs confirming; when a coordinate overflows GDSII's 32-bit range, or a layer, datatype or array count overflows its 16-bit one (an OASIS export is held to the same limits); when an OASIS
+repetition would expand into more than a million shapes; and
 when the source holds several cells and none of them is an unambiguous top. Every refusal exits `1`
 and writes nothing at all.
 
@@ -1717,6 +1750,15 @@ instead.
 The kind of document is inferred from the path, exactly as `convert` infers a format. A GDSII or
 Gerber file is **named as interchange** rather than called unreadable — it is simply not validated,
 because there is nothing to validate it against.
+
+**An OASIS file is read.** gdstk opens the whole file, checking its CRC or checksum when it carries one,
+and `check` reports its cells, their shape and reference counts, its grid and the layer names it declares
+— without importing anything. A damaged file is an **error**, because the import would refuse it too. On
+an installation without gdstk the file is still named, with a **warning** saying it was not read.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf check mask.oas
+<span class="output">note: mask.oas: OASIS, 4 cell(s) (top: top, empty); 1 polygon(s), 0 path(s), 0 label(s), 4 reference(s); 1000 DBU/µm; no named layers. Import it with `circuitrf convert` or File ▸ Import ▸ OASIS (gdstk)….
+1 document(s) checked: 0 error(s), 0 warning(s), 1 note(s).</span></code></pre>
 
 <h3 id="check-touchstone">Checking a Touchstone file</h3>
 

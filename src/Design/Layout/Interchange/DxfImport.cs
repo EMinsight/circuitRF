@@ -112,7 +112,7 @@ public static class DxfImport
                 return new ImportResult(true, [], new Dictionary<string, string>(), [], messages);
         }
         choices ??= LayoutLayerMapping.BuildChoices(rows);
-        if (rows.Count > 0) messages.Add(LayoutLayerMapping.SummarizeMapping(rows, destTech));
+        if (rows.Count > 0) messages.Add(LayoutLayerMapping.SummarizeMapping(LayoutLayerMapping.Settle(rows, choices), destTech));
 
         // §8-equivalent — block name <-> cell name mapping, reported both ways.
         var blockNames = rescaled.Select(s => s.Name).ToList();

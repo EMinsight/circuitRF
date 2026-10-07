@@ -453,6 +453,9 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.layout.degenerate-shape",
         "check.layout.unknown-field",
         "check.name.invalid",
+        // brief-oasis-gdstk.md §10b — an OASIS file's header, read through the gdstk worker.
+        "check.oasis.no-worker",
+        "check.oasis.summary",
         "check.path.foreign",
         "check.path.interchange",
         "check.path.not-found",
@@ -535,6 +538,9 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "convert.args.engine",
         "convert.args.list-cells-not-applicable",
         "convert.args.multiple-inputs",
+        // brief-oasis-gdstk.md §10a — the OASIS writer's options.
+        "convert.args.oas-compression",
+        "convert.args.oas-validation",
         "convert.args.output-required",
         "convert.args.unknown-format",
         "convert.args.unknown-option",
@@ -567,6 +573,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "convert.input.not-found",
         "convert.layout.unreadable",
         "convert.note",
+        "convert.oasis.flags-not-oasis",
+        "convert.oasis.unavailable",
         "convert.source.unrecognised",
         "convert.step.export-flags",
         "convert.step.flags",
