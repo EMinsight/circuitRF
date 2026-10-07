@@ -1,0 +1,72 @@
+{
+ "fixture": "sref-30deg",
+ "group": "probe",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "leaf": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       1000,
+       0,
+       1000,
+       500,
+       0,
+       500
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   },
+   "top": {
+    "refs": [
+     {
+      "cell": "leaf",
+      "x": 0,
+      "y": 0,
+      "rotation": 30,
+      "magnification": 1,
+      "mirror": false
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "labels": []
+   }
+  }
+ },
+ "files": {
+  "sref-30deg.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 268,
+   "sha256": "2d73b0510e479777cc1c7af5fd9b4ac23efc98500fe605af3114978b65511d59"
+  },
+  "sref-30deg.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 256,
+   "sha256": "490fc5875d8328b03e9c65a5580d5d836ae84e380d25dec6ff019f5c72285356"
+  },
+  "sref-30deg.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 331,
+   "sha256": "431b94a44be518c994a14ace105fb3f1aa66f0b0326c2bf2c3a487032d3eea8f"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [],
+  "gdstk->gdstk": [],
+  "gdstk: readers": []
+ }
+}

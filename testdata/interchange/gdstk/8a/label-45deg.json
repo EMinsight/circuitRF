@@ -1,0 +1,54 @@
+{
+ "fixture": "label-45deg",
+ "group": "probe",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "top": {
+    "labels": [
+     {
+      "layer": 7,
+      "texttype": 0,
+      "text": "slant",
+      "x": 0,
+      "y": 0,
+      "anchor": 0,
+      "rotation": 45,
+      "magnification": 1,
+      "mirror": false
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "refs": []
+   }
+  }
+ },
+ "files": {
+  "label-45deg.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 174,
+   "sha256": "4a7cab0da44fcc0bf5788dff7a4bca9696c13d76a4069f218ea773aec47a6f8b"
+  },
+  "label-45deg.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 172,
+   "sha256": "08abd939fcf2597dd3211bc4c9860421cc0ba1d39af7f8a49acb48ba0a121ef6"
+  },
+  "label-45deg.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 312,
+   "sha256": "02e95bc862802612ca998dd45f93f1f7006a391a1fd74a4adbcb02aaac36711b"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [],
+  "gdstk->gdstk": [],
+  "gdstk: readers": []
+ }
+}

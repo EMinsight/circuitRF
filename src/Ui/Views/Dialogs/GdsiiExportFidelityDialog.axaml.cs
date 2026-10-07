@@ -30,6 +30,10 @@ public partial class GdsiiExportFidelityDialog : Window
         ViaPadSkippedLine.Text = $"• {plan.ViaPadsSkipped} via(s) have no landing layer set — pad not exported.";
         ViaPadSkippedLine.IsVisible = plan.ViaPadsSkipped > 0;
 
+        // D7 (brief-gdsii-native-fixes.md): an imported layer with no GDSII number gets a free one.
+        LayersRenumberedLine.Text = string.Join("\n", plan.LayerRenumberings.Select(r => $"• {r}"));
+        LayersRenumberedLine.IsVisible = plan.LayerRenumberings.Count > 0;
+
         // R-via-10: GDSII carries no drill table — never a manufacturable PCB deliverable.
         ViaFabricationNoteLine.IsVisible = plan.HasVias;
 

@@ -54,6 +54,81 @@ public class LayoutGdsiiExportTests : IDisposable
         Assert.False(File.Exists(outPath));
     }
 
+    /// <summary>brief-gdsii-native-fixes.md F3, read at record level: UNITS holds the database unit
+    /// in user units, then in metres. Within 1e-15 relative, because <c>1e-9 / 1e-6</c> is not exactly
+    /// 0.001 in double precision.</summary>
+    [Theory]
+    [InlineData(1000, 0.001, 1e-9)]
+    [InlineData(4000, 0.00025, 2.5e-10)]
+    public void Write_UnitsRecord_HoldsTheDatabaseUnitInUserUnitsThenInMetres(int dbuPerMicron, double inUserUnits, double inMetres)
+    {
+        var cellDir = CreateCell("TOP", v => { });
+        var outPath = Path.Combine(_dir, "out.gds");
+        GdsiiExport.Write(outPath, GdsiiExport.Analyze(cellDir, null, dbuPerMicron));
+
+        using var stream = File.OpenRead(outPath);
+        var records = new GdsiiRecordReader(stream);
+        GdsiiRecord units;
+        do Assert.True(records.TryReadNext(out units)); while (units.Type != GdsiiRecordType.Units);
+
+        var v = units.AsReal8Array();
+        Assert.True(Math.Abs(v[0] / inUserUnits - 1) < 1e-15, $"first real {v[0]:R}");
+        Assert.True(Math.Abs(v[1] / inMetres - 1) < 1e-15, $"second real {v[1]:R}");
+    }
+
+    /// <summary>F3/D7: a layer or datatype outside 0–65535 is refused, by name, before a byte is
+    /// written — a wrapped value would be a different layer.</summary>
+    [Theory]
+    [InlineData(70000, 0)]
+    [InlineData(1, -1)]
+    public void Write_LayerOrDatatypeOutsideSixteenBits_IsRefusedBeforeAnyByte(int layer, int datatype)
+    {
+        var rect = new RectShape { Layer = new LayerKey(layer, datatype), X1 = 0, Y1 = 0, X2 = 10, Y2 = 10 };
+        using var ms = new MemoryStream();
+        var ex = Assert.Throws<GdsiiExportException>(() =>
+            GdsiiWriter.Write(ms, [new InterchangeStructure("TOP", [rect], [])], new GdsiiUnits(1e-6, 1e-9), null));
+        Assert.Contains($"{layer}/{datatype}", Assert.Single(ex.Offenders));
+        Assert.Equal(0, ms.Length);
+    }
+
+    /// <summary>D7 (owner decision while landing the brief): a DXF or board import gives a layer the
+    /// technology had no number for a negative placeholder key. GDSII is written with the lowest layer
+    /// number the export does not already use, datatype kept, and says so by name.</summary>
+    [Fact]
+    public void Write_PlaceholderLayer_IsWrittenAsTheLowestFreeLayerNumber_AndReported()
+    {
+        var tech = new Technology { Name = "T", Layers = { new LayerDef { Key = new LayerKey(-1, 0), Name = "Top Copper" } } };
+        List<LayoutShape> shapes =
+        [
+            new RectShape { Layer = new LayerKey(0, 0), X1 = 0, Y1 = 0, X2 = 10, Y2 = 10 },
+            new RectShape { Layer = new LayerKey(1, 0), X1 = 0, Y1 = 0, X2 = 10, Y2 = 10 },
+            new RectShape { Layer = new LayerKey(-1, 0), X1 = 0, Y1 = 0, X2 = 10, Y2 = 10 },
+            new LabelShape { Layer = new LayerKey(-2, 0), X = 0, Y = 0, Text = "x", Height = 10 },
+        ];
+        using var ms = new MemoryStream();
+        var summary = GdsiiWriter.Write(ms, [new InterchangeStructure("TOP", shapes, [])], new GdsiiUnits(1e-6, 1e-9), tech);
+
+        ms.Position = 0;
+        var layers = GdsiiReader.Open(ms).ReadStructures().Single().Shapes.Select(sh => sh.Layer.Layer);
+        Assert.Equal([0, 1, 2, 3], layers);
+        Assert.Equal(
+            ["Layer \"Top Copper\" has no GDSII number; written as GDSII layer 2.",
+             "Layer -2 has no GDSII number; written as GDSII layer 3."],
+            summary.LayersRenumbered);
+    }
+
+    /// <summary>F3/D7: an array count outside COLROW's 1–32767 is refused the same way.</summary>
+    [Fact]
+    public void Write_ArrayCountOutsideColRow_IsRefusedBeforeAnyByte()
+    {
+        var inst = new LayoutInstance { CellRef = "LEAF", Cols = 40000, Rows = 1, PitchX = 1 };
+        using var ms = new MemoryStream();
+        var ex = Assert.Throws<GdsiiExportException>(() =>
+            GdsiiWriter.Write(ms, [new InterchangeStructure("TOP", [], [inst])], new GdsiiUnits(1e-6, 1e-9), null));
+        Assert.Contains("40000 × 1", Assert.Single(ex.Offenders));
+        Assert.Equal(0, ms.Length);
+    }
+
     [Fact]
     public void Analyze_ReportsCurveHoleAndBitmapCounts_MatchingWhatWriteActuallyDoes()
     {

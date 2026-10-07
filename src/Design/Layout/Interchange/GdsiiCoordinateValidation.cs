@@ -4,12 +4,20 @@
 // points) — sufficient because flattening a curved primitive never produces a point outside its own
 // defining extent (a circle's flattened points lie exactly on its radius; a cubic's subdivision points
 // lie within its control polygon's convex hull), so there is no need to flatten twice just to validate.
+// brief-gdsii-native-fixes.md D7: the same refusal covers every other number GDSII holds in fewer bits
+// than our model — a layer above 65535, a datatype or label datatype (TEXTTYPE) outside 0–65535, and
+// an array count outside 1–32767. A wrapped value is a different layer, which is a silent loss like a
+// truncated coordinate. A negative LAYER is an import's placeholder and is renumbered by the writer.
 
 namespace CircuitRF.Design.Layout.Interchange;
 
 public static class GdsiiCoordinateValidation
 {
-    public static IReadOnlyList<string> CheckOverflow(IReadOnlyList<InterchangeStructure> structures)
+    public const int MaxLayerNumber = ushort.MaxValue, MaxArrayCount = short.MaxValue;
+
+    /// <summary><paramref name="tech"/> resolves a via's pad layer exactly as the writer does
+    /// (<see cref="ViaSpanResolver.PadLayer"/>), so the key checked is the key written.</summary>
+    public static IReadOnlyList<string> CheckOverflow(IReadOnlyList<InterchangeStructure> structures, Technology? tech = null)
     {
         var offenders = new List<string>();
         foreach (var s in structures)
@@ -24,6 +32,11 @@ public static class GdsiiCoordinateValidation
                         $"{s.Name}: shape #{shapeIndex} ({shape.GetType().Name} on layer " +
                         $"{shape.Layer.Layer}/{shape.Layer.Datatype}) has a coordinate beyond GDSII's " +
                         "32-bit integer range.");
+                foreach (var key in LayerKeysWritten(shape, tech))
+                    if (!LayerInRange(key))
+                        offenders.Add(
+                            $"{s.Name}: shape #{shapeIndex} ({shape.GetType().Name}) is on layer " +
+                            $"{key.Layer}/{key.Datatype}; GDSII holds layer and datatype numbers 0–{MaxLayerNumber}.");
             }
 
             int instIndex = 0;
@@ -36,9 +49,26 @@ public static class GdsiiCoordinateValidation
                     offenders.Add(
                         $"{s.Name}: instance #{instIndex} (CellRef=\"{inst.CellRef}\") has a coordinate " +
                         "beyond GDSII's 32-bit integer range.");
+                if (inst.Cols < 1 || inst.Cols > MaxArrayCount || inst.Rows < 1 || inst.Rows > MaxArrayCount)
+                    offenders.Add(
+                        $"{s.Name}: instance #{instIndex} (CellRef=\"{inst.CellRef}\") is a {inst.Cols} × {inst.Rows} " +
+                        $"array; GDSII holds column and row counts 1–{MaxArrayCount}.");
             }
         }
         return offenders;
+    }
+
+    /// <summary>A NEGATIVE layer number is an import's placeholder, which <see cref="GdsiiWriter"/>
+    /// renumbers to a free one and reports; only its datatype is checked here.</summary>
+    private static bool LayerInRange(LayerKey key) =>
+        key.Layer <= MaxLayerNumber && key.Datatype is >= 0 and <= MaxLayerNumber;
+
+    /// <summary>Every layer key <paramref name="shape"/> is written on — a via's pad layer resolved as the
+    /// writer resolves it.</summary>
+    internal static IEnumerable<LayerKey> LayerKeysWritten(LayoutShape shape, Technology? tech)
+    {
+        yield return shape.Layer;
+        if (shape is ViaShape via && ViaSpanResolver.PadLayer(via, tech) is { } pad) yield return pad;
     }
 
     private static bool InRange(long v) => v >= int.MinValue && v <= int.MaxValue;
@@ -94,9 +124,10 @@ public static class GdsiiCoordinateValidation
 }
 
 /// <summary>Thrown by <see cref="GdsiiWriter.Write"/> before any bytes are written when one or more
-/// shapes/instances have a coordinate beyond GDSII's 32-bit integer range (§2.1 item 2, gate 8).</summary>
+/// shapes/instances hold a value GDSII cannot: a coordinate beyond its 32-bit integer range (§2.1 item
+/// 2, gate 8), or a layer number or array count beyond its 16-bit fields (D7).</summary>
 public sealed class GdsiiExportException(IReadOnlyList<string> offenders)
-    : Exception($"GDSII export aborted — {offenders.Count} coordinate(s) exceed the 32-bit integer range:\n" +
+    : Exception($"GDSII export aborted — {offenders.Count} value(s) do not fit the format:\n" +
                 string.Join('\n', offenders))
 {
     public IReadOnlyList<string> Offenders { get; } = offenders;

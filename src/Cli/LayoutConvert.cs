@@ -787,7 +787,7 @@ public static class LayoutConvert
                     Console.Error.WriteLine($"warning: unresolved instance reference '{u}' — not written.");
                 if (!plan.CanWrite)
                 {
-                    Console.Error.WriteLine("error: coordinates overflow GDSII's 32-bit integer range — nothing written.");
+                    Console.Error.WriteLine("error: values do not fit GDSII — nothing written.");
                     JsonRun.Note(CliDiagnostics.ConvertGdsiiCoordinateOverflow());
                     foreach (var c in plan.CoordinateOverflowOffenders) Console.Error.WriteLine($"       {c}");
                     return 1;
@@ -798,6 +798,11 @@ public static class LayoutConvert
                 Note(plan.HolesKeyholed, "hole", "keyholed");
                 Note(plan.BitmapsSkipped, "bitmap", "skipped — GDSII carries no raster");
                 Note(plan.ViaPadsSkipped, "via", "exported as a barrel with no landing pad");
+                foreach (var r in plan.LayerRenumberings)
+                {
+                    Console.Error.WriteLine($"note: {r}");
+                    JsonRun.Note(CliDiagnostics.ConvertNote(r));
+                }
                 if (plan.HasVias) Console.Error.WriteLine(
                     "note: this design has vias, and GDSII carries no drill table — geometry only, not a PCB deliverable.");
                 Console.WriteLine(output);

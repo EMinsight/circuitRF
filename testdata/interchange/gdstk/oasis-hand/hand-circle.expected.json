@@ -1,0 +1,31 @@
+{
+ "file": "hand-circle.oas",
+ "grid_per_um": 1000,
+ "records": [
+  {
+   "record": "CIRCLE",
+   "layer": 1,
+   "datatype": 0,
+   "radius": 50000,
+   "x": 0,
+   "y": 0
+  },
+  {
+   "record": "CIRCLE",
+   "layer": 1,
+   "datatype": 0,
+   "radius": 500,
+   "x": 200000,
+   "y": 0
+  }
+ ],
+ "gdstk_reads_as": {
+  "tolerance_dbu": 0.5,
+  "polygons": [
+   703,
+   71
+  ],
+  "nonintegral_coordinates": 1544
+ },
+ "comment": "gdstk turns a CIRCLE into a polygon at read time; the vertex count follows the read tolerance, and the vertices are off the grid (the worker must round them, and count them)"
+}

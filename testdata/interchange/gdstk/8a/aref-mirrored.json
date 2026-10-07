@@ -1,0 +1,81 @@
+{
+ "fixture": "aref-mirrored",
+ "group": "probe",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "leaf": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       1000,
+       0,
+       1000,
+       500,
+       0,
+       500
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   },
+   "top": {
+    "refs": [
+     {
+      "cell": "leaf",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": true,
+      "rep": {
+       "kind": "rectangular",
+       "columns": 2,
+       "rows": 2,
+       "spacing": [
+        2000,
+        1500
+       ]
+      }
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "labels": []
+   }
+  }
+ },
+ "files": {
+  "aref-mirrored.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 292,
+   "sha256": "4eb10683eb9553e9c6f8c4b784bf4b5126036c9cd50b46a9cb11c8e013c9b5e1"
+  },
+  "aref-mirrored.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 268,
+   "sha256": "f4437c133be868737adccedd579652cbd2c9cff692952a03bfee305b7a24885b"
+  },
+  "aref-mirrored.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 333,
+   "sha256": "34cad484e37d9825b0dbb732a386e0d2df65c40b83bc1976805103695ec18e9f"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [],
+  "gdstk->gdstk": [],
+  "gdstk: readers": []
+ }
+}

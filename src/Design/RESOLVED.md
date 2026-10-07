@@ -18014,3 +18014,84 @@ MLIN (the kit example's generators were not promoted), tokens `MIMCAP`/`SPIRAL`/
   terminal, told apart by count like a tee).
 - **Not done:** no GUI command for the extraction (CLI/MCP only); no parameter-editor readout of the
   computed C/L/R; the example workspaces' copies of the GaAs `.ctech` were not given the sheet resistance.
+
+## OASIS and gdstk — spike (brief-oasis-gdstk G0, 2026-10-06)
+
+The findings, every number and the go/no-go are in `docs/design/oasis-gdstk-findings.md`. The harness is
+`tools/gdstk-worker/spike/`, and the fixed corpus is `testdata/interchange/gdstk/`. No code under `Interchange/`
+changed. The points below are what a future reader of `Interchange/` would trip on.
+
+- **The spike's corpus found six defects in our OWN GDSII stack**, which are recorded and deliberately not fixed
+  (the brief forbids changing `GdsiiReader`/`GdsiiWriter` behaviour). The fixture for each is in
+  `testdata/interchange/gdstk/8a/`:
+  1. A legal AREF whose column vector points along y (gdstk's spelling of a 90° array) is collapsed: all instances
+     land at the origin, and the diagnostic says "approximated" (`aref-rotated`).
+  2. Layer or datatype values above 32767 are read as `Int16`, so 40000 becomes −25536 (`layer-40000`,
+     `datatype-40000`). Our writer writes 40000 correctly.
+  3. A `BOX` element is dropped with no diagnostic (`box-record.gds`). gdstk reads it as a polygon.
+  4. `GdsiiWriter`'s `UNITS` record has the user unit in metres (1e-6) as its first real, where the spec wants the
+     database unit in user units (0.001). Geometry is right, but another reader derives a 1 mm user unit.
+  5. A label's magnification is dropped **silently** when read; its mirror is dropped with a diagnostic (`labels`).
+  6. Text types other than 0 or 1 are lost (`label-texttype`).
+
+  **All six are fixed by `brief-gdsii-native-fixes.md` (R-gnf, 2026-10-06), plus a seventh it found**, each held
+  by a test that reads gdstk's file, not our own round trip:
+  1. Fixed: an AREF is read as the lattice its three points define — axis-aligned either way round is one array,
+     anything else is placed as one instance per lattice point, capped at 100,000 per file
+     (`GdsiiImportTests.Aref_ColumnVectorAlongY_ReadsAsOneArray_AtTheSourcePositions`,
+     `…Aref_SkewedLattice_IsPlacedAsSeparateInstances_AtExactlyTheLatticePoints`,
+     `…Aref_ExpansionAboveTheLimit_IsRefused_AndTheImportCreatesNothing`).
+  2. Fixed: layer, datatype, texttype and boxtype read unsigned (`GdsiiImportTests.LayerAndDatatypeAbove32767_ReadUnsigned`,
+     `LayoutGdsiiRoundTripTests.Layer40000_RoundTrips`).
+  3. Fixed: `BOX` reads as a polygon on `(LAYER, BOXTYPE)`, `NODE` is skipped, each counted in one message
+     (`GdsiiImportTests.Box_ReadsAsAPolygon_WithACountedMessage`, `…Node_IsSkipped_WithACountedMessage`).
+  4. Fixed: `UNITS` is written `[db/user, db]` and read back as their quotient
+     (`LayoutGdsiiExportTests.Write_UnitsRecord_HoldsTheDatabaseUnitInUserUnitsThenInMetres`,
+     `GdsiiImportTests.Units_FromASpecConformantWriter_ReadAsAOneMicronUserUnit`). A file circuitRF wrote before
+     this reads with a 1 mm user unit, which nothing downstream uses.
+  5. Fixed: `MAG` on TEXT scales `Height` (`GdsiiImportTests.LabelMag_ScalesItsHeight`). The mirror is still only
+     reported: `LabelShape` has no mirror field.
+  6. Fixed: TEXTTYPE is the label's datatype (`GdsiiImportTests.LabelTextType_ReadsAsTheLabelsDatatype_AndIsNeverAPort`).
+  7. **Found while writing the brief: a label's own datatype never reached the file.** The writer wrote TEXTTYPE
+     from `IsPort` and the reader rebuilt the key as `(layer, 0)`, so `(31, 5)` came back as `(31, 0)` through our
+     own round trip and `PinInference` could never match a non-zero label purpose in an imported file. Fixed with 6
+     (`LayoutGdsiiRoundTripTests.Label_OnANonZeroDatatype_RoundTripsOnThatDatatype`).
+
+  **Decided** (the brief's §0a): D1 a label's `LayerKey.Datatype` is its TEXTTYPE both ways; D2 the lattice rule
+  above; D3 `IsPort` travels as `PROPATTR 126` / `PROPVALUE "circuitrf:port"` on the TEXT element
+  (`LayoutGdsiiRoundTripTests.PortLabel_WritesThePortProperty_AndItsDatatypeAsTextType`); D4 no legacy rule — an
+  older circuitRF file's `TEXTTYPE 1` port labels arrive as ordinary labels on datatype 1; D5 MAG scales Height
+  and the writer writes no MAG; D6 BOX and NODE as above; D7 the writer refuses a layer above 65535, a datatype
+  outside 0–65535 and a `COLROW` count outside 1–32767 before writing a byte
+  (`LayoutGdsiiExportTests.Write_LayerOrDatatypeOutsideSixteenBits_IsRefusedBeforeAnyByte`,
+  `…Write_ArrayCountOutsideColRow_IsRefusedBeforeAnyByte`).
+
+  **D7 met a case the brief did not know about: import placeholder layers.** A DXF or board import gives a layer the
+  technology had no number for a NEGATIVE key (`DxfLayerReconciliation`, `PcbLayerReconciliation`,
+  `PcbViaSpanMapping`), and the old writer wrapped −1 to 65535 in silence — invisible to us because the old signed
+  reader turned 65535 back into −1. A strict refusal made every DXF→GDSII and board→GDSII `convert` fail. Owner
+  decision: **a negative layer number is written as the lowest layer number the export does not already use,
+  datatype kept, and named in the export's diagnostics** (the fidelity dialog's list and a CLI `note:`); a negative
+  datatype is still refused. Placeholders are assigned −1 first, so the answer does not depend on shape order
+  (`LayoutGdsiiExportTests.Write_PlaceholderLayer_IsWrittenAsTheLowestFreeLayerNumber_AndReported`). A test that
+  compares an exported layer with the model's key must translate through `ExportPlan.LayerRenumberings` —
+  `PcbImportTests.Gate9_…` does.
+- **The two GDSII routes will disagree on these by design until they are fixed.** The gdstk route reads all six
+  correctly. A comparison test (G3 §7c) needs them classified, not "fixed" in the test.
+- **G2 must refuse a negative layer or datatype** rather than hand it to the worker: gdstk turns it into layer 0.
+- **OASIS coordinates arrive 1 ulp off integral** (566,644 of 10⁶ values in Q6), because `read_oas`'s scale factor
+  is 1 ± 1 ulp. They must be `llround`ed in the worker. §5's managed-side integrality assertion is right and would
+  fire otherwise. GDSII arrives exact.
+- **gdstk writes a 1 nm OASIS grid as `1000.0000000000001`** (no double divides exactly), so an OASIS import rounds
+  `DbuPerMicron` to the nearest integer.
+- **gdstk's `read_oas` must be called with no error pointer**: with one, it stops silently at the first
+  XNAME/XELEMENT/XGEOMETRY. **It never checks the CRC32 that the file carries**, so the worker runs `oas_validate`
+  first. **A failed CBLOCK inflate is logged and then parsed anyway**, giving content that differs between
+  platforms, so that log line must be a refusal.
+- **Windows, from the owner's real-Windows session**: non-ASCII paths go through the worker's `activeCodePage` UTF-8
+  manifest, and a path of 260 characters or more needs the client to add `\\?\` (`\\?\UNC\…` for a share).
+  `longPathAware` is ignored when the machine's `LongPathsEnabled` policy is off, as it was on the session's machine.
+  The worker's END-record check uses 32-bit `long` offsets, which fail on Windows for files over 2 GB, so G1 must use
+  64-bit offsets. A script client on Windows PowerShell 5.1 must give the worker's stdin an encoding with no
+  preamble: on a UTF-8 code page, .NET Framework writes a byte-order mark that the worker reads as a 297 MB frame
+  length.

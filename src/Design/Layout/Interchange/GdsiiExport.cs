@@ -33,9 +33,14 @@ public static class GdsiiExport
         int LabelRecordsWritten = 0,
         /// <summary>§4.3/R-via-9: vias with no <see cref="ViaShape.LandingLayer"/> set — see
         /// <see cref="GdsiiExportSummary.ViaPadsSkipped"/>'s own doc comment.</summary>
-        int ViaPadsSkipped = 0)
+        int ViaPadsSkipped = 0,
+        /// <summary>D7: placeholder layers given a free GDSII number — see
+        /// <see cref="GdsiiExportSummary.LayersRenumbered"/>'s own doc comment.</summary>
+        IReadOnlyList<string>? LayersRenumbered = null)
     {
         public bool CanWrite => CoordinateOverflowOffenders.Count == 0;
+
+        public IReadOnlyList<string> LayerRenumberings => LayersRenumbered ?? [];
 
         /// <summary>R-via-10: any via at all means this export is geometry-only, never a manufacturable
         /// PCB deliverable (neither format carries a drill table) — the dialog notes this whenever it
@@ -51,7 +56,8 @@ public static class GdsiiExport
         /// "something to report" too.</summary>
         public bool HasNothingToReport =>
             CurvedShapesFlattened == 0 && HolesKeyholed == 0 && BitmapsSkipped == 0 &&
-            UnresolvedInstanceReferences.Count == 0 && ViaPadsSkipped == 0 && !HasVias && CanWrite;
+            UnresolvedInstanceReferences.Count == 0 && ViaPadsSkipped == 0 && !HasVias &&
+            LayerRenumberings.Count == 0 && CanWrite;
     }
 
     /// <summary>Walks <paramref name="rootCellDir"/>'s hierarchy and computes the fidelity plan — no
@@ -74,7 +80,7 @@ public static class GdsiiExport
             return new ExportPlan(
                 summary.CurvedShapesFlattened, summary.HolesKeyholed, summary.BitmapsSkipped,
                 [], unresolvedRefs, nameByCellName, structures, units, tech, summary.LabelRecordsWritten,
-                summary.ViaPadsSkipped);
+                summary.ViaPadsSkipped, summary.LayersRenumbered);
         }
         catch (GdsiiExportException ex)
         {

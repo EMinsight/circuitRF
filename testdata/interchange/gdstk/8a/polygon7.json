@@ -1,0 +1,63 @@
+{
+ "fixture": "polygon7",
+ "group": "simple",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "top": {
+    "polygons": [
+     {
+      "layer": 2,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       4000,
+       0,
+       4000,
+       1000,
+       3000,
+       1000,
+       3000,
+       3000,
+       1000,
+       2500,
+       0,
+       3000
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "files": {
+  "polygon7.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 194,
+   "sha256": "ffc75d932a2ba37b87441917c1638484664387211c72a56f2c915df767ba6f54"
+  },
+  "polygon7.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 194,
+   "sha256": "3608175cf68aacb9f8fb4010f9dd81323bc7eed6057c6a7f06d8175a2216ed58"
+  },
+  "polygon7.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 323,
+   "sha256": "2dc95cc79136fb8a21861d3cc9f81139ebf31bc5893888d3e322a3baece3f492"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [],
+  "gdstk->gdstk": [],
+  "gdstk: readers": []
+ }
+}

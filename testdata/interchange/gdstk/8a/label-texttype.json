@@ -1,0 +1,77 @@
+{
+ "fixture": "label-texttype",
+ "group": "probe",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "top": {
+    "labels": [
+     {
+      "layer": 7,
+      "texttype": 1,
+      "text": "pin",
+      "x": 0,
+      "y": 0,
+      "anchor": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "layer": 7,
+      "texttype": 5,
+      "text": "five",
+      "x": 100,
+      "y": 0,
+      "anchor": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "refs": []
+   }
+  }
+ },
+ "files": {
+  "label-texttype.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 238,
+   "sha256": "2258da4e799b032aef242f585197ff3c54b8e9896b6bf7095e335efef2b663c1"
+  },
+  "label-texttype.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 198,
+   "sha256": "d1b8d2d77b7bb2007d55a938043492716f75ccd6096bc76ae2a707b6aeb3375f"
+  },
+  "label-texttype.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 325,
+   "sha256": "53b2bf51fb19fa7fb5ccf5740fcd4991ef205a4288b9e2187f401a3b2584e222"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [
+   "top: 1x only in fixture: ('label', 7, 5, 'five', 100, 0, 0.0, False, 1.0, ((0, 0),))",
+   "top: 1x only in circuitrf read: ('label', 7, 0, 'five', 100, 0, 0.0, False, 1.0, ((0, 0),))"
+  ],
+  "circuitrf->gdstk": [
+   "top: 1x only in fixture: ('label', 7, 5, 'five', 100, 0, 0.0, False, 1.0, ((0, 0),))",
+   "top: 1x only in gdstk read: ('label', 7, 0, 'five', 100, 0, 0.0, False, 1.0, ((0, 0),))"
+  ],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [
+   "top: 1x only in fixture: ('label', 7, 5, 'five', 100, 0, 0.0, False, 1.0, ((0, 0),))",
+   "top: 1x only in circuitrf read: ('label', 7, 0, 'five', 100, 0, 0.0, False, 1.0, ((0, 0),))"
+  ],
+  "gdstk->gdstk": [],
+  "gdstk: readers": [
+   "top: 1x only in circuitrf read: ('label', 7, 0, 'five', 100, 0, 0.0, False, 1.0, ((0, 0),))",
+   "top: 1x only in gdstk read: ('label', 7, 5, 'five', 100, 0, 0.0, False, 1.0, ((0, 0),))"
+  ]
+ }
+}

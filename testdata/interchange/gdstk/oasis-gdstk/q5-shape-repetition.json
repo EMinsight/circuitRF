@@ -1,0 +1,88 @@
+{
+ "file": "q5-shape-repetition.oas",
+ "writer": "gdstk 1.0.1 write_oas (spike worker)",
+ "options": {
+  "compression_level": 6,
+  "detect_rectangles": true,
+  "detect_trapezoids": true,
+  "validation": "crc32",
+  "standard_properties": false
+ },
+ "bytes": 307,
+ "sha256": "607d9a8a014fbc260c2fb840f8cd94640d272cf2a25d59ee49d065379f5bfcd2",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 1e-09,
+  "cells": {
+   "s": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       10,
+       0,
+       10,
+       10,
+       0,
+       10
+      ],
+      "rep": {
+       "kind": "rectangular",
+       "columns": 3,
+       "rows": 2,
+       "spacing": [
+        100,
+        100
+       ]
+      }
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "reads_back_as": {
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "s": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       10,
+       0,
+       10,
+       10,
+       0,
+       10
+      ],
+      "rep": {
+       "kind": "rectangular",
+       "columns": 3,
+       "rows": 2,
+       "spacing": [
+        100,
+        100
+       ]
+      }
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  },
+  "tops": [
+   "s"
+  ]
+ },
+ "differences": []
+}

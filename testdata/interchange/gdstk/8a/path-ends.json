@@ -1,0 +1,83 @@
+{
+ "fixture": "path-ends",
+ "group": "simple",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "top": {
+    "paths": [
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "flush",
+      "xy": [
+       0,
+       0,
+       1000,
+       0,
+       1000,
+       1000
+      ]
+     },
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "round",
+      "xy": [
+       0,
+       3000,
+       1000,
+       3000
+      ]
+     },
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "halfwidth",
+      "xy": [
+       0,
+       6000,
+       1000,
+       6000,
+       1000,
+       7000
+      ]
+     }
+    ],
+    "polygons": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "files": {
+  "path-ends.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 284,
+   "sha256": "bc112289e6ba2c20541732526b316ca25c06ec5693335b2b3e412f90c64aad66"
+  },
+  "path-ends.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 284,
+   "sha256": "8663ea22d79c7b3841edf0669b2757cc74cb3630192408cb20a84ca95cf3b214"
+  },
+  "path-ends.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 325,
+   "sha256": "6bc28a994be7791ceff269af37d9c64d9b040fa562b0b5bff7c000ad1706772e"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [],
+  "gdstk->gdstk": [],
+  "gdstk: readers": []
+ }
+}

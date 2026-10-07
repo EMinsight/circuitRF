@@ -1,0 +1,57 @@
+{
+ "fixture": "rectangle",
+ "group": "simple",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "top": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       2000,
+       0,
+       2000,
+       1000,
+       0,
+       1000
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "files": {
+  "rectangle.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 170,
+   "sha256": "08e3e4e23ea6ba8d77e603455869c31f2c6a362d724cb4a58d2537ab421a1881"
+  },
+  "rectangle.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 170,
+   "sha256": "1fba5d33ce602bcaae8023af80b827cd32abc40a013029b883cc3ccf62cd07da"
+  },
+  "rectangle.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 307,
+   "sha256": "d298d9d968905014b11c75c5b0ddf194d831a099b22d26ce907c02cdf6645e73"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [],
+  "gdstk->gdstk": [],
+  "gdstk: readers": []
+ }
+}

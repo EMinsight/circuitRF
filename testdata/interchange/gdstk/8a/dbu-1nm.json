@@ -1,0 +1,57 @@
+{
+ "fixture": "dbu-1nm",
+ "group": "simple",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "top": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       -123457,
+       7,
+       99991,
+       7,
+       99991,
+       1003,
+       -123457,
+       1003
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "files": {
+  "dbu-1nm.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 170,
+   "sha256": "647330b313d2085da8dfd20e061cd7a6f10a118e35b3ca29e377bb25cedf2aff"
+  },
+  "dbu-1nm.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 170,
+   "sha256": "21c1b55cdbe15b029cc505b7cbf069a56c51c1257db9876327230de24c8e93b9"
+  },
+  "dbu-1nm.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 310,
+   "sha256": "3d1e2b08ad0b3f33012249c11f716b3adab0e10ee97f4f8211effa3442b29082"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [],
+  "gdstk->gdstk": [],
+  "gdstk: readers": []
+ }
+}

@@ -1166,7 +1166,7 @@ leave a genuine question, and the note printed for every drill file names which 
 were **declared**, which were **inferred**, and from what.
 
 It also stops, rather than guessing, when a design instantiates cells drawn against a *different*
-technology and the layer mapping needs confirming; when coordinates overflow GDSII's 32-bit range; and
+technology and the layer mapping needs confirming; when a coordinate overflows GDSII's 32-bit range, or a layer, datatype or array count overflows its 16-bit one; and
 when the source holds several cells and none of them is an unambiguous top. Every refusal exits `1`
 and writes nothing at all.
 

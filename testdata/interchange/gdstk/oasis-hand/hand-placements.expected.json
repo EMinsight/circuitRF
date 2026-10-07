@@ -1,0 +1,147 @@
+{
+ "grid_per_um": 1000,
+ "cells": {
+  "c": {
+   "polygons": [
+    {
+     "layer": 1,
+     "datatype": 0,
+     "xy": [
+      0,
+      0,
+      100,
+      0,
+      100,
+      50,
+      0,
+      50
+     ]
+    }
+   ]
+  },
+  "t": {
+   "refs": [
+    {
+     "cell": "c",
+     "x": 0,
+     "y": 0,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ]
+     ],
+     "rep_type": null
+    },
+    {
+     "cell": "c",
+     "x": 1000,
+     "y": 0,
+     "rotation": 90,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ]
+     ],
+     "rep_type": null
+    },
+    {
+     "cell": "c",
+     "x": 2000,
+     "y": 0,
+     "rotation": 180,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ]
+     ],
+     "rep_type": null
+    },
+    {
+     "cell": "c",
+     "x": 3000,
+     "y": 0,
+     "rotation": 270,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ]
+     ],
+     "rep_type": null
+    },
+    {
+     "cell": "c",
+     "x": 4000,
+     "y": 0,
+     "rotation": 0,
+     "mirror": true,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ]
+     ],
+     "rep_type": null
+    },
+    {
+     "cell": "c",
+     "x": 5000,
+     "y": 0,
+     "rotation": 90,
+     "mirror": true,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ]
+     ],
+     "rep_type": null
+    },
+    {
+     "cell": "c",
+     "x": 0,
+     "y": 5000,
+     "rotation": 30,
+     "mirror": false,
+     "magnification": 2,
+     "offsets": [
+      [
+       0,
+       0
+      ]
+     ],
+     "rep_type": null
+    },
+    {
+     "cell": "c",
+     "x": 3000,
+     "y": 5000,
+     "rotation": 90,
+     "mirror": true,
+     "magnification": 0.5,
+     "offsets": [
+      [
+       0,
+       0
+      ]
+     ],
+     "rep_type": null
+    }
+   ]
+  }
+ }
+}

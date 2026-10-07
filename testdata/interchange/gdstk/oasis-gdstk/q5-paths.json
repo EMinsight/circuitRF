@@ -1,0 +1,223 @@
+{
+ "file": "q5-paths.oas",
+ "writer": "gdstk 1.0.1 write_oas (spike worker)",
+ "options": {
+  "compression_level": 6,
+  "detect_rectangles": true,
+  "detect_trapezoids": true,
+  "validation": "crc32",
+  "standard_properties": false
+ },
+ "bytes": 354,
+ "sha256": "1a0eda8892b4c893caf93fb5ade585263106d482573cb9b73ac18c0c7c7c1a84",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 1e-09,
+  "cells": {
+   "w": {
+    "paths": [
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "flush",
+      "xy": [
+       0,
+       0,
+       1000,
+       0,
+       1000,
+       1000
+      ],
+      "ext": null
+     },
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "halfwidth",
+      "xy": [
+       0,
+       3000,
+       1000,
+       3000
+      ],
+      "ext": null
+     },
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "extended",
+      "ext": [
+       20,
+       30
+      ],
+      "xy": [
+       0,
+       6000,
+       1000,
+       6000
+      ]
+     },
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "round",
+      "xy": [
+       0,
+       9000,
+       1000,
+       9000
+      ],
+      "ext": null
+     },
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 3,
+      "end": "flush",
+      "xy": [
+       0,
+       12000,
+       1000,
+       12000
+      ],
+      "ext": null
+     },
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "flush",
+      "xy": [
+       0,
+       15000,
+       1,
+       15000,
+       1001,
+       15000
+      ],
+      "ext": null
+     }
+    ],
+    "polygons": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "reads_back_as": {
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "w": {
+    "polygons": [],
+    "paths": [
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "flush",
+      "ext": null,
+      "xy": [
+       0,
+       0,
+       1000,
+       0,
+       1000,
+       1000
+      ],
+      "rep": null
+     },
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "halfwidth",
+      "ext": null,
+      "xy": [
+       0,
+       3000,
+       1000,
+       3000
+      ],
+      "rep": null
+     },
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "extended",
+      "ext": [
+       20,
+       30
+      ],
+      "xy": [
+       0,
+       6000,
+       1000,
+       6000
+      ],
+      "rep": null
+     },
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "flush",
+      "ext": null,
+      "xy": [
+       0,
+       9000,
+       1000,
+       9000
+      ],
+      "rep": null
+     },
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 4,
+      "end": "flush",
+      "ext": null,
+      "xy": [
+       0,
+       12000,
+       1000,
+       12000
+      ],
+      "rep": null
+     },
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "flush",
+      "ext": null,
+      "xy": [
+       0,
+       15000,
+       1,
+       15000,
+       1001,
+       15000
+      ],
+      "rep": null
+     }
+    ],
+    "labels": [],
+    "refs": []
+   }
+  },
+  "tops": [
+   "w"
+  ]
+ },
+ "differences": [
+  "w: 1x only in source: ('path', 5, 0, (0, 12000, 1000, 12000), 3, 'flush', None, ((0, 0),))",
+  "w: 1x only in source: ('path', 5, 0, (0, 9000, 1000, 9000), 100, 'round', None, ((0, 0),))",
+  "w: 1x only in read back: ('path', 5, 0, (0, 12000, 1000, 12000), 4, 'flush', None, ((0, 0),))",
+  "w: 1x only in read back: ('path', 5, 0, (0, 9000, 1000, 9000), 100, 'flush', None, ((0, 0),))"
+ ]
+}

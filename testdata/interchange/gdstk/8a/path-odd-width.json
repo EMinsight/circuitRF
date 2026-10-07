@@ -1,0 +1,55 @@
+{
+ "fixture": "path-odd-width",
+ "group": "probe",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "top": {
+    "paths": [
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 3,
+      "end": "flush",
+      "xy": [
+       0,
+       0,
+       1000,
+       0
+      ]
+     }
+    ],
+    "polygons": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "files": {
+  "path-odd-width.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 160,
+   "sha256": "4616b602ac04e1b0c5577844baf7c8884044e5bf0b29028871a6682b03ab8eac"
+  },
+  "path-odd-width.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 160,
+   "sha256": "e35e886e1f7d9337cb31839970f2810591603e8228d3e7793a71976c83b7e73c"
+  },
+  "path-odd-width.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 309,
+   "sha256": "64546f1c327359994db4b131fcbc49796a9aa35985bf1c4bc21b35313a16d17c"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [],
+  "gdstk->gdstk": [],
+  "gdstk: readers": []
+ }
+}

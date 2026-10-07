@@ -1,0 +1,87 @@
+{
+ "fixture": "aref-rotated",
+ "group": "probe",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "leaf": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       1000,
+       0,
+       1000,
+       500,
+       0,
+       500
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   },
+   "top": {
+    "refs": [
+     {
+      "cell": "leaf",
+      "x": 0,
+      "y": 0,
+      "rotation": 90,
+      "magnification": 1,
+      "mirror": false,
+      "rep": {
+       "kind": "rectangular",
+       "columns": 3,
+       "rows": 2,
+       "spacing": [
+        2000,
+        1500
+       ]
+      }
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "labels": []
+   }
+  }
+ },
+ "files": {
+  "aref-rotated.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 292,
+   "sha256": "8a37d9b5dbdf54dddacf9c02d784a441dd5e0bd1142e4b15b53a86b770b724f3"
+  },
+  "aref-rotated.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 280,
+   "sha256": "7b13eaecb7a377382c2acaa8a95e81e27efc502a1c4c951ddc66feae2217bdfd"
+  },
+  "aref-rotated.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 333,
+   "sha256": "11b864126ae7ff1cc0f725f174b29d08be8bfbc804d001cb6bdd0fb329485a02"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [
+   "top: 1x only in fixture: ('ref', 'leaf', 0, 0, 90.0, False, 1.0, ((0, 0), (0, 1500), (2000, 0), (2000, 1500), (4000, 0), (4000, 1500)))",
+   "top: 1x only in circuitrf read: ('ref', 'leaf', 0, 0, 90.0, False, 1.0, ((0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0)))"
+  ],
+  "gdstk->gdstk": [],
+  "gdstk: readers": [
+   "top: 1x only in circuitrf read: ('ref', 'leaf', 0, 0, 90.0, False, 1.0, ((0, 0), (0, 0), (0, 0), (0, 0), (0, 0), (0, 0)))",
+   "top: 1x only in gdstk read: ('ref', 'leaf', 0, 0, 90.0, False, 1.0, ((0, 0), (0, 1500), (2000, 0), (2000, 1500), (4000, 0), (4000, 1500)))"
+  ]
+ }
+}

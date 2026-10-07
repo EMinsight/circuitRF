@@ -1,0 +1,180 @@
+{
+ "file": "q5-hierarchy-deflate9.oas",
+ "writer": "gdstk 1.0.1 write_oas (spike worker)",
+ "options": {
+  "compression_level": 9,
+  "detect_rectangles": true,
+  "detect_trapezoids": true,
+  "validation": "crc32",
+  "standard_properties": false
+ },
+ "bytes": 363,
+ "sha256": "e28e10439f2569b1524d88a658258fb37023dad0e934e196faeb8681d786a090",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 1e-09,
+  "cells": {
+   "leaf": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       10,
+       0,
+       10,
+       10,
+       0,
+       10
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   },
+   "mid": {
+    "refs": [
+     {
+      "cell": "leaf",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "leaf",
+      "x": 100,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "labels": []
+   },
+   "top": {
+    "refs": [
+     {
+      "cell": "mid",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "leaf",
+      "x": 500,
+      "y": 500,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "labels": []
+   },
+   "empty": {
+    "polygons": [],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "reads_back_as": {
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "leaf": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       10,
+       0,
+       10,
+       10,
+       0,
+       10
+      ],
+      "rep": null
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   },
+   "mid": {
+    "polygons": [],
+    "paths": [],
+    "labels": [],
+    "refs": [
+     {
+      "cell": "leaf",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": null
+     },
+     {
+      "cell": "leaf",
+      "x": 100,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": null
+     }
+    ]
+   },
+   "top": {
+    "polygons": [],
+    "paths": [],
+    "labels": [],
+    "refs": [
+     {
+      "cell": "mid",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": null
+     },
+     {
+      "cell": "leaf",
+      "x": 500,
+      "y": 500,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": null
+     }
+    ]
+   },
+   "empty": {
+    "polygons": [],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  },
+  "tops": [
+   "top",
+   "empty"
+  ]
+ },
+ "differences": []
+}

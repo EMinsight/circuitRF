@@ -1,0 +1,368 @@
+{
+ "file": "q5-ref-repetitions.oas",
+ "writer": "gdstk 1.0.1 write_oas (spike worker)",
+ "options": {
+  "compression_level": 6,
+  "detect_rectangles": true,
+  "detect_trapezoids": true,
+  "validation": "crc32",
+  "standard_properties": false
+ },
+ "bytes": 411,
+ "sha256": "9359a54423ae34feb9300e5acaa842af91db0fa8004db2ce9670dd5b6a251c92",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 1e-09,
+  "cells": {
+   "c": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       100,
+       0,
+       100,
+       50,
+       0,
+       50
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   },
+   "t": {
+    "refs": [
+     {
+      "cell": "c",
+      "x": 0,
+      "y": 0,
+      "rep": {
+       "kind": "rectangular",
+       "columns": 3,
+       "rows": 2,
+       "spacing": [
+        300,
+        200
+       ]
+      },
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "c",
+      "x": 10000,
+      "y": 0,
+      "rep": {
+       "kind": "rectangular",
+       "columns": 4,
+       "rows": 1,
+       "spacing": [
+        150,
+        0
+       ]
+      },
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "c",
+      "x": 20000,
+      "y": 0,
+      "rep": {
+       "kind": "rectangular",
+       "columns": 1,
+       "rows": 3,
+       "spacing": [
+        0,
+        250
+       ]
+      },
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "c",
+      "x": 30000,
+      "y": 0,
+      "rep": {
+       "kind": "regular",
+       "columns": 2,
+       "rows": 3,
+       "v1": [
+        300,
+        100
+       ],
+       "v2": [
+        -50,
+        400
+       ]
+      },
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "c",
+      "x": 40000,
+      "y": 0,
+      "rep": {
+       "kind": "explicit",
+       "offsets": [
+        100,
+        0,
+        100,
+        100,
+        -150,
+        130
+       ]
+      },
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "c",
+      "x": 50000,
+      "y": 0,
+      "rep": {
+       "kind": "explicit_x",
+       "coords": [
+        100,
+        350,
+        400
+       ]
+      },
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "c",
+      "x": 60000,
+      "y": 0,
+      "rep": {
+       "kind": "explicit_y",
+       "coords": [
+        100,
+        130
+       ]
+      },
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "c",
+      "x": 80000,
+      "y": 0,
+      "rep": {
+       "kind": "rectangular",
+       "columns": 3,
+       "rows": 2,
+       "spacing": [
+        -300,
+        200
+       ]
+      },
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "labels": []
+   }
+  }
+ },
+ "reads_back_as": {
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "c": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       100,
+       0,
+       100,
+       50,
+       0,
+       50
+      ],
+      "rep": null
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   },
+   "t": {
+    "polygons": [],
+    "paths": [],
+    "labels": [],
+    "refs": [
+     {
+      "cell": "c",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": {
+       "kind": "rectangular",
+       "columns": 3,
+       "rows": 2,
+       "spacing": [
+        300,
+        200
+       ]
+      }
+     },
+     {
+      "cell": "c",
+      "x": 10000,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": {
+       "kind": "rectangular",
+       "columns": 4,
+       "rows": 1,
+       "spacing": [
+        150,
+        0
+       ]
+      }
+     },
+     {
+      "cell": "c",
+      "x": 20000,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": {
+       "kind": "rectangular",
+       "columns": 1,
+       "rows": 3,
+       "spacing": [
+        0,
+        250
+       ]
+      }
+     },
+     {
+      "cell": "c",
+      "x": 30000,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": {
+       "kind": "regular",
+       "columns": 2,
+       "rows": 3,
+       "v1": [
+        300,
+        100
+       ],
+       "v2": [
+        -50,
+        400
+       ]
+      }
+     },
+     {
+      "cell": "c",
+      "x": 40000,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": {
+       "kind": "explicit",
+       "offsets": [
+        100,
+        0,
+        100,
+        100,
+        -150,
+        130
+       ]
+      }
+     },
+     {
+      "cell": "c",
+      "x": 50000,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": {
+       "kind": "explicit_x",
+       "coords": [
+        100,
+        350,
+        400
+       ]
+      }
+     },
+     {
+      "cell": "c",
+      "x": 60000,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": {
+       "kind": "explicit_y",
+       "coords": [
+        100,
+        130
+       ]
+      }
+     },
+     {
+      "cell": "c",
+      "x": 80000,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": {
+       "kind": "regular",
+       "columns": 3,
+       "rows": 2,
+       "v1": [
+        -300,
+        0
+       ],
+       "v2": [
+        0,
+        200
+       ]
+      }
+     }
+    ]
+   }
+  },
+  "tops": [
+   "t"
+  ]
+ },
+ "differences": [],
+ "note": "rewritten by corpus.py without the gdstk#247 row (x = 70000, explicit_x [100, -300]); runs/q5 keeps the original"
+}

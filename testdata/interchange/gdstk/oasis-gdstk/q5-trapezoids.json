@@ -1,0 +1,154 @@
+{
+ "file": "q5-trapezoids.oas",
+ "writer": "gdstk 1.0.1 write_oas (spike worker)",
+ "options": {
+  "compression_level": 6,
+  "detect_rectangles": true,
+  "detect_trapezoids": true,
+  "validation": "crc32",
+  "standard_properties": false
+ },
+ "bytes": 342,
+ "sha256": "7efa03a9aab619a41415f5cf4c74d7cb1170be74b44f2916a6f66907ddd7cf1c",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 1e-09,
+  "cells": {
+   "t": {
+    "polygons": [
+     {
+      "layer": 3,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       1000,
+       0,
+       800,
+       500,
+       200,
+       500
+      ]
+     },
+     {
+      "layer": 3,
+      "datatype": 0,
+      "xy": [
+       2000,
+       0,
+       2500,
+       200,
+       2500,
+       800,
+       2000,
+       1000
+      ]
+     },
+     {
+      "layer": 3,
+      "datatype": 0,
+      "xy": [
+       4000,
+       0,
+       5000,
+       0,
+       4000,
+       1000
+      ]
+     },
+     {
+      "layer": 3,
+      "datatype": 0,
+      "xy": [
+       6000,
+       0,
+       7000,
+       0,
+       7000,
+       1000,
+       6500,
+       1000
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "reads_back_as": {
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "t": {
+    "polygons": [
+     {
+      "layer": 3,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       1000,
+       0,
+       800,
+       500,
+       200,
+       500
+      ],
+      "rep": null
+     },
+     {
+      "layer": 3,
+      "datatype": 0,
+      "xy": [
+       2500,
+       200,
+       2500,
+       800,
+       2000,
+       1000,
+       2000,
+       0
+      ],
+      "rep": null
+     },
+     {
+      "layer": 3,
+      "datatype": 0,
+      "xy": [
+       4000,
+       0,
+       5000,
+       0,
+       4000,
+       1000
+      ],
+      "rep": null
+     },
+     {
+      "layer": 3,
+      "datatype": 0,
+      "xy": [
+       6000,
+       0,
+       7000,
+       0,
+       7000,
+       1000,
+       6500,
+       1000
+      ],
+      "rep": null
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  },
+  "tops": [
+   "t"
+  ]
+ },
+ "differences": []
+}

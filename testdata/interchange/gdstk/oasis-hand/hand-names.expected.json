@@ -1,0 +1,65 @@
+{
+ "grid_per_um": 1000,
+ "cells": {
+  "root": {
+   "refs": [
+    {
+     "cell": "leaf",
+     "x": 100,
+     "y": 200,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ]
+     ],
+     "rep_type": null
+    }
+   ],
+   "labels": [
+    {
+     "layer": 9,
+     "texttype": 4,
+     "text": "alpha",
+     "x": 10,
+     "y": 20
+    },
+    {
+     "layer": 9,
+     "texttype": 4,
+     "text": "beta",
+     "x": 30,
+     "y": 20
+    },
+    {
+     "layer": 9,
+     "texttype": 4,
+     "text": "beta",
+     "x": 50,
+     "y": 60
+    }
+   ]
+  },
+  "leaf": {
+   "polygons": [
+    {
+     "layer": 1,
+     "datatype": 0,
+     "xy": [
+      0,
+      0,
+      10,
+      0,
+      10,
+      10,
+      0,
+      10
+     ]
+    }
+   ]
+  }
+ }
+}

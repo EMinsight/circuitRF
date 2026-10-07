@@ -505,6 +505,25 @@ geometry. Curved primitives are flattened to polygons and holes are keyholed, bo
 has no other representation; the export report counts each. Vias export as barrel plus landing pad, and
 a via with no landing layer exports its barrel only and is named in the report.
 
+**Labels.** A label's datatype is written as GDSII's text type and read back from it, so a label on
+`(31, 5)` arrives on `(31, 5)` and a process's label-purpose layer is recognised on import. A port label
+carries a GDSII property on its text element (attribute 126, value `circuitrf:port`); another tool keeps or
+ignores it, and on import only that property makes a label a port, never its text type. A text element's
+magnification is folded into the label's height; its mirror is not held, and the import says so.
+
+**Arrays.** An array reference whose rows and columns run along the axes, in either orientation, arrives
+as one array. Any other lattice cannot be one array in circuitRF's model, so it arrives as one instance at
+each lattice point, exactly, with a message naming the cell and the count. A file whose arrays would place
+more than 100,000 instances this way is refused, and nothing is created.
+
+**Other elements.** A `BOX` arrives as a polygon on its layer and box type. A `NODE` carries connectivity,
+not artwork, and is skipped. The import counts each.
+
+**Numbers the format cannot hold.** GDSII numbers layers, datatypes and text types 0–65535 and array
+columns and rows 1–32767, and the export refuses, by name and before writing anything, a shape or instance
+outside those ranges. A layer that came in from DXF or a board file with no GDSII number of its own is
+written as the lowest layer number the export is not already using, and the report says which.
+
 ### DXF {#dxf}
 
 Import and export. The exporter writes **R2000 (AC1015), R2004 (AC1018) or R2018 (AC1032)**, selectable,

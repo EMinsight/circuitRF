@@ -538,7 +538,8 @@ internal static class CliDiagnostics
 
     public static Diagnostic ConvertGdsiiCoordinateOverflow() => new(
         "convert.gdsii.coordinate-overflow", DiagnosticSeverity.Error,
-        "coordinates overflow GDSII's 32-bit integer range — nothing written.");
+        "values do not fit GDSII (a coordinate beyond 32 bits, a layer or datatype beyond 0–65535, or an " +
+        "array count beyond 32767) — nothing written.");
 
     public static Diagnostic ConvertGerberDiagnostic(string text) => Diagnostic.Create(
         "convert.gerber.refused", DiagnosticSeverity.Error, "{text}", ("text", text));

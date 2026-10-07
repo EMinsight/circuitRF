@@ -1,0 +1,62 @@
+{
+ "fixture": "box-record",
+ "group": "probe",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "top": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       10,
+       0,
+       10,
+       10,
+       0,
+       10
+      ]
+     },
+     {
+      "layer": 2,
+      "datatype": 0,
+      "xy": [
+       100,
+       0,
+       110,
+       0,
+       110,
+       10,
+       100,
+       10
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "files": {
+  "box-record.gds": {
+   "writer": "q4.py gds_box_file, byte by byte (circuitRF's spike harness)",
+   "bytes": 234,
+   "sha256": "9834eaa4a9006ffc3c1c30974d9e9ce35ea093f5fca158070565ccf6b7b8128a"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "file->circuitrf": [
+   "top: 1x only in fixture: ('polygon', 2, 0, ((100, 0), (110, 0), (110, 10), (100, 10)), ((0, 0),))"
+  ],
+  "file->gdstk": [],
+  "file: readers": [
+   "top: 1x only in gdstk read: ('polygon', 2, 0, ((100, 0), (110, 0), (110, 10), (100, 10)), ((0, 0),))"
+  ]
+ }
+}

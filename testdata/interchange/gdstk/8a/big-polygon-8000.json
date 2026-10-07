@@ -1,0 +1,24 @@
+{
+ "fixture": "big-polygon-8000",
+ "group": "probe",
+ "source": {
+  "grid_per_um": 1000,
+  "note": "one polygon, layer 1, datatype 0, 8000 vertices: vertex i = (i, (i * 7919) % 1000 + (1000 if i is odd else 0)) -- q4.py PROBES (16,000 integers, not repeated here)"
+ },
+ "files": {
+  "big-polygon-8000.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 489,
+   "sha256": "1b717b0dad1253a82a77a02182cf21f77354df65182dcd819cccfca34cff945e"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [],
+  "gdstk->gdstk": [],
+  "gdstk: readers": []
+ }
+}

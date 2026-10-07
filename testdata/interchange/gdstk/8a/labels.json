@@ -1,0 +1,107 @@
+{
+ "fixture": "labels",
+ "group": "simple",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "top": {
+    "labels": [
+     {
+      "layer": 7,
+      "texttype": 0,
+      "text": "east",
+      "x": 0,
+      "y": 0,
+      "anchor": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "layer": 7,
+      "texttype": 0,
+      "text": "north",
+      "x": 1000,
+      "y": 0,
+      "anchor": 0,
+      "rotation": 90,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "layer": 7,
+      "texttype": 0,
+      "text": "mirrored",
+      "x": 2000,
+      "y": 0,
+      "anchor": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": true
+     },
+     {
+      "layer": 7,
+      "texttype": 0,
+      "text": "big",
+      "x": 3000,
+      "y": 0,
+      "anchor": 0,
+      "rotation": 0,
+      "magnification": 2,
+      "mirror": false
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "refs": []
+   }
+  }
+ },
+ "files": {
+  "labels.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 376,
+   "sha256": "819662da5d70fd463afd497db8a112935b61ab141d2435d8668d89808f6c34be"
+  },
+  "labels.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 338,
+   "sha256": "90a32f922a721bd2066d5f54015455ac3ac0ea94e585b5650d9508f00ae085f5"
+  },
+  "labels.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 357,
+   "sha256": "9ad80a4ee285de918f47990148471d24f4e0d84db5631cc6a32d2a294df631c8"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [
+   "top: 1x only in fixture: ('label', 7, 0, 'big', 3000, 0, 0.0, False, 2.0, ((0, 0),))",
+   "top: 1x only in fixture: ('label', 7, 0, 'mirrored', 2000, 0, 0.0, True, 1.0, ((0, 0),))",
+   "top: 1x only in circuitrf read: ('label', 7, 0, 'big', 3000, 0, 0.0, False, 1.0, ((0, 0),))",
+   "top: 1x only in circuitrf read: ('label', 7, 0, 'mirrored', 2000, 0, 0.0, False, 1.0, ((0, 0),))"
+  ],
+  "circuitrf->gdstk": [
+   "top: 1x only in fixture: ('label', 7, 0, 'big', 3000, 0, 0.0, False, 2.0, ((0, 0),))",
+   "top: 1x only in fixture: ('label', 7, 0, 'mirrored', 2000, 0, 0.0, True, 1.0, ((0, 0),))",
+   "top: 1x only in gdstk read: ('label', 7, 0, 'big', 3000, 0, 0.0, False, 1.0, ((0, 0),))",
+   "top: 1x only in gdstk read: ('label', 7, 0, 'mirrored', 2000, 0, 0.0, False, 1.0, ((0, 0),))"
+  ],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [
+   "top: 1x only in fixture: ('label', 7, 0, 'big', 3000, 0, 0.0, False, 2.0, ((0, 0),))",
+   "top: 1x only in fixture: ('label', 7, 0, 'mirrored', 2000, 0, 0.0, True, 1.0, ((0, 0),))",
+   "top: 1x only in circuitrf read: ('label', 7, 0, 'big', 3000, 0, 0.0, False, 1.0, ((0, 0),))",
+   "top: 1x only in circuitrf read: ('label', 7, 0, 'mirrored', 2000, 0, 0.0, False, 1.0, ((0, 0),))"
+  ],
+  "gdstk->gdstk": [],
+  "gdstk: readers": [
+   "top: 1x only in circuitrf read: ('label', 7, 0, 'big', 3000, 0, 0.0, False, 1.0, ((0, 0),))",
+   "top: 1x only in circuitrf read: ('label', 7, 0, 'mirrored', 2000, 0, 0.0, False, 1.0, ((0, 0),))",
+   "top: 1x only in gdstk read: ('label', 7, 0, 'big', 3000, 0, 0.0, False, 2.0, ((0, 0),))",
+   "top: 1x only in gdstk read: ('label', 7, 0, 'mirrored', 2000, 0, 0.0, True, 1.0, ((0, 0),))"
+  ]
+ }
+}

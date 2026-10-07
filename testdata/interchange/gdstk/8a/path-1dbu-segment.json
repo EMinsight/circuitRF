@@ -1,0 +1,57 @@
+{
+ "fixture": "path-1dbu-segment",
+ "group": "probe",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "top": {
+    "paths": [
+     {
+      "layer": 5,
+      "datatype": 0,
+      "width": 100,
+      "end": "flush",
+      "xy": [
+       0,
+       0,
+       1,
+       0,
+       1001,
+       0
+      ]
+     }
+    ],
+    "polygons": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "files": {
+  "path-1dbu-segment.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 168,
+   "sha256": "d3006555bfe2b8eb91b3a7d1d24727c36657e9c97d8bac6164d47f1e7a1d4322"
+  },
+  "path-1dbu-segment.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 168,
+   "sha256": "1668ae6854348fd757327161c5326db5c8c94995b50755009087495e104f7fa1"
+  },
+  "path-1dbu-segment.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 310,
+   "sha256": "0dc6be1e63fe591cf259c0b182bfe496a7e6289f04234b9ef5838995e3458f3d"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [],
+  "gdstk->gdstk": [],
+  "gdstk: readers": []
+ }
+}

@@ -1,0 +1,99 @@
+{
+ "fixture": "layers-datatypes",
+ "group": "simple",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "top": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       100,
+       0,
+       100,
+       100,
+       0,
+       100
+      ]
+     },
+     {
+      "layer": 1,
+      "datatype": 1,
+      "xy": [
+       200,
+       0,
+       300,
+       0,
+       300,
+       100,
+       200,
+       100
+      ]
+     },
+     {
+      "layer": 2,
+      "datatype": 0,
+      "xy": [
+       400,
+       0,
+       500,
+       0,
+       500,
+       100,
+       400,
+       100
+      ]
+     },
+     {
+      "layer": 2,
+      "datatype": 1,
+      "xy": [
+       600,
+       0,
+       700,
+       0,
+       700,
+       100,
+       600,
+       100
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "files": {
+  "layers-datatypes.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 362,
+   "sha256": "edbe58a2fa28b42a2b32178754adcebfc7fbea9e39325e7903ae6f150e33733d"
+  },
+  "layers-datatypes.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 362,
+   "sha256": "6380b2bfe256d9df894cc09d7fcbb8569786d2972e206b326b460b65172e2112"
+  },
+  "layers-datatypes.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 325,
+   "sha256": "9c8b9b3b2bc345881101eb816d1c8283ae8f9f96babf6780e19b74a5a49da1fb"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [],
+  "gdstk->gdstk": [],
+  "gdstk: readers": []
+ }
+}

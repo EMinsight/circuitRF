@@ -1195,8 +1195,8 @@ public static partial class DxfWriter
         w.WriteDouble(40, label.Height * dbuToDrawingUnit);
         w.WriteEscapedString(1, label.Text);
         w.WriteDouble(50, label.RotationDegrees);
-        w.WriteInt(70, label.IsPort ? 1 : 0); // not a real DXF TEXT field — our own port marker, mirrors
-                                              // GdsiiWriter's TEXTTYPE convention for the same purpose.
+        w.WriteInt(70, label.IsPort ? 1 : 0); // not a real DXF TEXT field — our own port marker, the
+                                              // counterpart of GdsiiWriter's "circuitrf:port" TEXT property.
         w.WriteString(100, "AcDbText"); // TEXT's own spec quirk: the AcDbText subclass marker repeats
                                         // after the base fields (normally bracketing alignment groups
                                         // this writer never emits) — omitting the repeat is itself

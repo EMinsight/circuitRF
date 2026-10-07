@@ -1,0 +1,100 @@
+{
+ "file": "q5-rectangles.oas",
+ "writer": "gdstk 1.0.1 write_oas (spike worker)",
+ "options": {
+  "compression_level": 6,
+  "detect_rectangles": true,
+  "detect_trapezoids": true,
+  "validation": "crc32",
+  "standard_properties": false
+ },
+ "bytes": 314,
+ "sha256": "62f03ba3353c442b99a7299247a0ec7197721dc27aa7aef11b37ee5cdf842025",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 1e-09,
+  "cells": {
+   "r": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       2000,
+       0,
+       2000,
+       2000,
+       0,
+       2000
+      ]
+     },
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       5000,
+       0,
+       8000,
+       0,
+       8000,
+       1000,
+       5000,
+       1000
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "reads_back_as": {
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "r": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       2000,
+       0,
+       2000,
+       2000,
+       0,
+       2000
+      ],
+      "rep": null
+     },
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       5000,
+       0,
+       8000,
+       0,
+       8000,
+       1000,
+       5000,
+       1000
+      ],
+      "rep": null
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  },
+  "tops": [
+   "r"
+  ]
+ },
+ "differences": []
+}

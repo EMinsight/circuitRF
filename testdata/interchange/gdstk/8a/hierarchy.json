@@ -1,0 +1,103 @@
+{
+ "fixture": "hierarchy",
+ "group": "simple",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "leaf": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       1000,
+       0,
+       1000,
+       500,
+       0,
+       500
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   },
+   "mid": {
+    "refs": [
+     {
+      "cell": "leaf",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "leaf",
+      "x": 3000,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "labels": []
+   },
+   "top": {
+    "refs": [
+     {
+      "cell": "mid",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "leaf",
+      "x": 0,
+      "y": 5000,
+      "rotation": 180,
+      "magnification": 1,
+      "mirror": false
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "labels": []
+   }
+  }
+ },
+ "files": {
+  "hierarchy.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 482,
+   "sha256": "6c3d112230063ac0deb217364bc3fb09255551d57ae9324c11dfdda9037f9e7a"
+  },
+  "hierarchy.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 380,
+   "sha256": "dfbed074a5de8457a67d5e626e8ef385b52cf0c89baf2a4192178ecc17e9ee03"
+  },
+  "hierarchy.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 356,
+   "sha256": "4a4915810d87e3fb0202de0e47d7eeca523e445cd6158124ea39fa3744565f97"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [],
+  "gdstk->gdstk": [],
+  "gdstk: readers": []
+ }
+}

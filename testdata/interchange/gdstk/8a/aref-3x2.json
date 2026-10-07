@@ -1,0 +1,81 @@
+{
+ "fixture": "aref-3x2",
+ "group": "simple",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "leaf": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       1000,
+       0,
+       1000,
+       500,
+       0,
+       500
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   },
+   "top": {
+    "refs": [
+     {
+      "cell": "leaf",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": {
+       "kind": "rectangular",
+       "columns": 3,
+       "rows": 2,
+       "spacing": [
+        2000,
+        1500
+       ]
+      }
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "labels": []
+   }
+  }
+ },
+ "files": {
+  "aref-3x2.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 292,
+   "sha256": "bf31c8da9dc2d115aa107a92ff9f33cdd19bc093e74b4e9211381ad01d0aa55f"
+  },
+  "aref-3x2.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 262,
+   "sha256": "305e8a261a2ef9559997b40725c344275094b7f69b9ad8e5d1f92dc1f9ffbc32"
+  },
+  "aref-3x2.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 333,
+   "sha256": "5a54b996d61a93fd6f1f31a4cce2c311228c5bb7b5ec5fd1a23dc8c60c6c9f25"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [],
+  "gdstk->circuitrf": [],
+  "gdstk->gdstk": [],
+  "gdstk: readers": []
+ }
+}

@@ -325,6 +325,13 @@ src/Design/Layout/Interchange/GdsiiReader.cs|GDSII PATH is missing its ENDEL rec
 src/Design/Layout/Interchange/GdsiiReader.cs|GDSII TEXT is missing its ENDEL record.
 src/Design/Layout/Interchange/GdsiiReader.cs|GDSII structure is missing its ENDSTR record.
 src/Design/Layout/Interchange/GdsiiReader.cs|GDSII {(isArray ? 
+src/Design/Layout/Interchange/GdsiiReader.cs|GDSII AREF \"{sname}\" does not hold its three XY points.
+src/Design/Layout/Interchange/GdsiiReader.cs|GDSII AREF \"{sname}\" has a non-positive COLROW count ({cols} × {rows}).
+src/Design/Layout/Interchange/GdsiiReader.cs|GDSII AREF \"{sname}\" would bring the instances placed one by one to {_expandedInstances + n}, 
+src/Design/Layout/Interchange/GdsiiReader.cs|GDSII BOX is missing its ENDEL record.
+src/Design/Layout/Interchange/GdsiiReader.cs|GDSII NODE is missing its ENDEL record.
+src/Design/Layout/Interchange/GdsiiReader.cs|GDSII SREF \"{sname}\" has no XY point.
+src/Design/Layout/Interchange/GdsiiReader.cs|GDSII UNITS record must hold two positive reals.
 src/Design/Layout/Interchange/GdsiiReal8.cs|GDSII 8-byte real requires exactly 8 bytes.
 src/Design/Layout/Interchange/GdsiiRecordIo.cs|GDSII record {type} exceeds the 16-bit length field ({length} bytes) — split into multiple elements.
 src/Design/Layout/Interchange/GdsiiRecordIo.cs|Invalid GDSII record length {length}.
@@ -966,6 +973,8 @@ src/Design/Layout/Lvs/LvsReduce.cs|LVS reduction made {groups.Count - made} coll
 src/Engine/Em3d/FdtdGrid.cs|An FDTD grid interval could not be partitioned after smoothing.
 src/Engine/Em3d/FdtdGrid.cs|The FDTD grid's size smoothing did not settle — a defect in FdtdGrid.Fill.
 src/Engine/Em3d/FdtdGrid.cs|The fill needs the two air-box faces at least.
+src/Engine/Em3d/FdtdGrid.cs|A thirds line with no local cell.
+src/Engine/Em3d/FdtdGrid.cs|The FDTD grid's thirds pairs could not be kept whole — a defect in 
 src/Engine/Em3d/FdtdPortTransform.cs|There must be one run per port, each carrying every port's probes, and one Z0 per port.
 # brief-em3d-26 — argument guards on a programmer's error (a relative path where a Linux one is needed,
 # a removal of a path too short to be one circuitRF made); no user reaches either.

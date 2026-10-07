@@ -199,6 +199,52 @@ public class LayoutGdsiiRoundTripTests
         Assert.True(((LabelShape)structs[0].Shapes[0]).IsPort);
     }
 
+    /// <summary>brief-gdsii-native-fixes.md D1: a label's datatype is its TEXTTYPE, both ways.</summary>
+    [Fact]
+    public void Label_OnANonZeroDatatype_RoundTripsOnThatDatatype()
+    {
+        var label = new LabelShape { Layer = new LayerKey(31, 5), X = 0, Y = 0, Text = "drain", Height = 100 };
+        var (_, structs) = WriteThenRead([new InterchangeStructure("TOP", [label], [])]);
+        Assert.Equal(new LayerKey(31, 5), Assert.Single(structs[0].Shapes).Layer);
+    }
+
+    /// <summary>D3, at record level so writer and reader cannot agree on a mistake: a port label's TEXT
+    /// carries PROPATTR 126 / PROPVALUE "circuitrf:port" after STRING and before ENDEL, and its
+    /// TEXTTYPE is still its datatype.</summary>
+    [Fact]
+    public void PortLabel_WritesThePortProperty_AndItsDatatypeAsTextType()
+    {
+        var label = new LabelShape { Layer = new LayerKey(5, 3), X = 0, Y = 0, Text = "gate", Height = 100, IsPort = true };
+        using var ms = new MemoryStream();
+        GdsiiWriter.Write(ms, [new InterchangeStructure("TOP", [label], [])], Units, null);
+        ms.Position = 0;
+
+        var records = new GdsiiRecordReader(ms);
+        var text = new List<GdsiiRecord>();
+        while (records.TryReadNext(out var rec))
+        {
+            if (rec.Type == GdsiiRecordType.Text) text.Clear();
+            text.Add(rec);
+            if (rec.Type == GdsiiRecordType.EndEl && text[0].Type == GdsiiRecordType.Text) break;
+        }
+
+        Assert.Equal(3, text.Single(r => r.Type == GdsiiRecordType.TextType).AsInt16Array()[0]);
+        Assert.Equal(
+            [GdsiiRecordType.StringRec, GdsiiRecordType.PropAttr, GdsiiRecordType.PropValue, GdsiiRecordType.EndEl],
+            text.TakeLast(4).Select(r => r.Type));
+        Assert.Equal(126, text[^3].AsInt16Array()[0]);
+        Assert.Equal("circuitrf:port", text[^2].AsAscii());
+    }
+
+    /// <summary>D7: a layer above 32767 is written and read as itself.</summary>
+    [Fact]
+    public void Layer40000_RoundTrips()
+    {
+        var rect = new RectShape { Layer = new LayerKey(40000, 40001), X1 = 0, Y1 = 0, X2 = 10, Y2 = 10 };
+        var (_, structs) = WriteThenRead([new InterchangeStructure("TOP", [rect], [])]);
+        Assert.Equal(new LayerKey(40000, 40001), Assert.Single(structs[0].Shapes).Layer);
+    }
+
     [Fact]
     public void PlainInstance_RoundTrips_AsSref()
     {

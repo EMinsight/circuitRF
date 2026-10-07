@@ -1,0 +1,355 @@
+{
+ "grid_per_um": 1000,
+ "cells": {
+  "child": {
+   "polygons": [
+    {
+     "layer": 1,
+     "datatype": 0,
+     "xy": [
+      0,
+      0,
+      1000,
+      0,
+      1000,
+      1000,
+      0,
+      1000
+     ]
+    }
+   ]
+  },
+  "top": {
+   "refs": [
+    {
+     "cell": "child",
+     "x": 10000,
+     "y": 0,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       200
+      ],
+      [
+       300,
+       0
+      ],
+      [
+       300,
+       200
+      ],
+      [
+       600,
+       0
+      ],
+      [
+       600,
+       200
+      ]
+     ],
+     "rep_type": 1
+    },
+    {
+     "cell": "child",
+     "x": 20000,
+     "y": 0,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ],
+      [
+       150,
+       0
+      ],
+      [
+       300,
+       0
+      ],
+      [
+       450,
+       0
+      ]
+     ],
+     "rep_type": 2
+    },
+    {
+     "cell": "child",
+     "x": 30000,
+     "y": 0,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       250
+      ],
+      [
+       0,
+       500
+      ]
+     ],
+     "rep_type": 3
+    },
+    {
+     "cell": "child",
+     "x": 40000,
+     "y": 0,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ],
+      [
+       100,
+       0
+      ],
+      [
+       350,
+       0
+      ],
+      [
+       400,
+       0
+      ]
+     ],
+     "rep_type": 4
+    },
+    {
+     "cell": "child",
+     "x": 50000,
+     "y": 0,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ],
+      [
+       100,
+       0
+      ],
+      [
+       350,
+       0
+      ],
+      [
+       400,
+       0
+      ]
+     ],
+     "rep_type": 5
+    },
+    {
+     "cell": "child",
+     "x": 60000,
+     "y": 0,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       100
+      ],
+      [
+       0,
+       130
+      ]
+     ],
+     "rep_type": 6
+    },
+    {
+     "cell": "child",
+     "x": 70000,
+     "y": 0,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ],
+      [
+       0,
+       100
+      ],
+      [
+       0,
+       300
+      ]
+     ],
+     "rep_type": 7
+    },
+    {
+     "cell": "child",
+     "x": 80000,
+     "y": 0,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       -100,
+       800
+      ],
+      [
+       -50,
+       400
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       200,
+       900
+      ],
+      [
+       250,
+       500
+      ],
+      [
+       300,
+       100
+      ]
+     ],
+     "rep_type": 8
+    },
+    {
+     "cell": "child",
+     "x": 90000,
+     "y": 0,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       0,
+       0
+      ],
+      [
+       120,
+       -70
+      ],
+      [
+       240,
+       -140
+      ],
+      [
+       360,
+       -210
+      ]
+     ],
+     "rep_type": 9
+    },
+    {
+     "cell": "child",
+     "x": 100000,
+     "y": 0,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       -150,
+       130
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       100,
+       0
+      ],
+      [
+       100,
+       100
+      ]
+     ],
+     "rep_type": 10
+    },
+    {
+     "cell": "child",
+     "x": 110000,
+     "y": 0,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       -120,
+       100
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       100,
+       0
+      ],
+      [
+       130,
+       70
+      ]
+     ],
+     "rep_type": 11
+    },
+    {
+     "cell": "child",
+     "x": 200000,
+     "y": 0,
+     "rotation": 0,
+     "mirror": false,
+     "magnification": 1,
+     "offsets": [
+      [
+       -120,
+       100
+      ],
+      [
+       0,
+       0
+      ],
+      [
+       100,
+       0
+      ],
+      [
+       130,
+       70
+      ]
+     ],
+     "rep_type": 0
+    }
+   ]
+  }
+ }
+}

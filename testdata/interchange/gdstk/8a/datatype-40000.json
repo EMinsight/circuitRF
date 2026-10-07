@@ -1,0 +1,69 @@
+{
+ "fixture": "datatype-40000",
+ "group": "probe",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "top": {
+    "polygons": [
+     {
+      "layer": 3,
+      "datatype": 40000,
+      "xy": [
+       0,
+       0,
+       100,
+       0,
+       100,
+       100,
+       0,
+       100
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "files": {
+  "datatype-40000.circuitrf.gds": {
+   "writer": "circuitRF GdsiiWriter (GdsiiDump write)",
+   "bytes": 170,
+   "sha256": "ac46262e1040da59714ca57c0e9869c84b4f6b566a966c612be0a9f64e07093c"
+  },
+  "datatype-40000.gdstk.gds": {
+   "writer": "gdstk 1.0.1 write_gds (spike worker)",
+   "bytes": 170,
+   "sha256": "2413d673e2a4df0b4e0734411c5ce48db5790dc06a6ca2274017168276cc16c8"
+  },
+  "datatype-40000.gdstk.oas": {
+   "writer": "gdstk 1.0.1 write_oas (spike worker): compression 6, detect rectangles and trapezoids, CRC32",
+   "bytes": 306,
+   "sha256": "2855f3a0770d1294ffa28f8fd9663d2cddf615222a3c2653cb669949670d47bd"
+  }
+ },
+ "q4": {
+  "comment": "empty list = equal under \u00a78b; '<writer>-><reader>' compares the reading with the source",
+  "circuitrf->circuitrf": [
+   "top: 1x only in fixture: ('polygon', 3, 40000, ((0, 0), (100, 0), (100, 100), (0, 100)), ((0, 0),))",
+   "top: 1x only in circuitrf read: ('polygon', 3, -25536, ((0, 0), (100, 0), (100, 100), (0, 100)), ((0, 0),))"
+  ],
+  "circuitrf->gdstk": [],
+  "circuitrf: readers": [
+   "top: 1x only in circuitrf read: ('polygon', 3, -25536, ((0, 0), (100, 0), (100, 100), (0, 100)), ((0, 0),))",
+   "top: 1x only in gdstk read: ('polygon', 3, 40000, ((0, 0), (100, 0), (100, 100), (0, 100)), ((0, 0),))"
+  ],
+  "gdstk->circuitrf": [
+   "top: 1x only in fixture: ('polygon', 3, 40000, ((0, 0), (100, 0), (100, 100), (0, 100)), ((0, 0),))",
+   "top: 1x only in circuitrf read: ('polygon', 3, -25536, ((0, 0), (100, 0), (100, 100), (0, 100)), ((0, 0),))"
+  ],
+  "gdstk->gdstk": [],
+  "gdstk: readers": [
+   "top: 1x only in circuitrf read: ('polygon', 3, -25536, ((0, 0), (100, 0), (100, 100), (0, 100)), ((0, 0),))",
+   "top: 1x only in gdstk read: ('polygon', 3, 40000, ((0, 0), (100, 0), (100, 100), (0, 100)), ((0, 0),))"
+  ]
+ }
+}

@@ -1,0 +1,116 @@
+{
+ "file": "q5-labels.oas",
+ "writer": "gdstk 1.0.1 write_oas (spike worker)",
+ "options": {
+  "compression_level": 6,
+  "detect_rectangles": true,
+  "detect_trapezoids": true,
+  "validation": "crc32",
+  "standard_properties": false
+ },
+ "bytes": 346,
+ "sha256": "c519f913cdb470c7fa80f1481c737f15d4ca244fb1fa6f45ec0a74fe1430cc4d",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 1e-09,
+  "cells": {
+   "l": {
+    "labels": [
+     {
+      "layer": 7,
+      "texttype": 3,
+      "text": "plain",
+      "x": 0,
+      "y": 0,
+      "anchor": 5,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "layer": 7,
+      "texttype": 0,
+      "text": "rot90",
+      "x": 100,
+      "y": 0,
+      "anchor": 5,
+      "rotation": 90,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "layer": 7,
+      "texttype": 0,
+      "text": "mag2mirror",
+      "x": 200,
+      "y": 0,
+      "anchor": 5,
+      "rotation": 0,
+      "magnification": 2,
+      "mirror": true
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "refs": []
+   }
+  }
+ },
+ "reads_back_as": {
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "l": {
+    "polygons": [],
+    "paths": [],
+    "labels": [
+     {
+      "layer": 7,
+      "texttype": 3,
+      "text": "plain",
+      "x": 0,
+      "y": 0,
+      "anchor": 8,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": null
+     },
+     {
+      "layer": 7,
+      "texttype": 0,
+      "text": "rot90",
+      "x": 100,
+      "y": 0,
+      "anchor": 8,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": null
+     },
+     {
+      "layer": 7,
+      "texttype": 0,
+      "text": "mag2mirror",
+      "x": 200,
+      "y": 0,
+      "anchor": 8,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": null
+     }
+    ],
+    "refs": []
+   }
+  },
+  "tops": [
+   "l"
+  ]
+ },
+ "differences": [
+  "l: 1x only in source: ('label', 7, 0, 'mag2mirror', 200, 0, 0.0, True, 2.0, ((0, 0),))",
+  "l: 1x only in source: ('label', 7, 0, 'rot90', 100, 0, 90.0, False, 1.0, ((0, 0),))",
+  "l: 1x only in read back: ('label', 7, 0, 'mag2mirror', 200, 0, 0.0, False, 1.0, ((0, 0),))",
+  "l: 1x only in read back: ('label', 7, 0, 'rot90', 100, 0, 0.0, False, 1.0, ((0, 0),))"
+ ]
+}

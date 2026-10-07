@@ -295,10 +295,18 @@ public class PcbImportTests : IDisposable
         var top = GdsiiReader.Open(stream).ReadStructures()
             .Single(s => s.Shapes.Count > 0);
 
+        // The board's layers carry import placeholder keys (negative); GDSII writes each as a free
+        // layer number and says which (brief-gdsii-native-fixes.md D7).
+        var written = plan.LayerRenumberings
+            .Select(r => System.Text.RegularExpressions.Regex.Match(r, @"^Layer (-\d+) .* GDSII layer (\d+)\.$"))
+            .Where(m => m.Success)
+            .ToDictionary(m => int.Parse(m.Groups[1].Value), m => int.Parse(m.Groups[2].Value));
+        LayerKey Gds(LayerKey k) => written.TryGetValue(k.Layer, out int n) ? new LayerKey(n, k.Datatype) : k;
+
         // Which layer got the DRILL-sized circle and which got the PAD-sized one — measured from the
         // exported geometry's own extent, never from the fields.
         long ExtentOn(LayerKey key) => top.Shapes
-            .Where(s => s.Layer == key)
+            .Where(s => s.Layer == Gds(key))
             .Select(LayoutGeometry.BboxOf)
             .Where(b => !b.IsEmpty)
             .Select(b => b.MaxX - b.MinX)

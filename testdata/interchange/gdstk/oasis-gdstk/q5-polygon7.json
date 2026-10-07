@@ -1,0 +1,83 @@
+{
+ "file": "q5-polygon7.oas",
+ "writer": "gdstk 1.0.1 write_oas (spike worker)",
+ "options": {
+  "compression_level": 6,
+  "detect_rectangles": true,
+  "detect_trapezoids": true,
+  "validation": "crc32",
+  "standard_properties": false
+ },
+ "bytes": 321,
+ "sha256": "b9595b878f32f5749bd57e5f97e6f51d9557ecadb877a34caa4454b2d81d2def",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 1e-09,
+  "cells": {
+   "p": {
+    "polygons": [
+     {
+      "layer": 2,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       4000,
+       0,
+       4000,
+       1000,
+       3000,
+       1000,
+       3000,
+       3000,
+       1000,
+       2500,
+       0,
+       3000
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  }
+ },
+ "reads_back_as": {
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "p": {
+    "polygons": [
+     {
+      "layer": 2,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       4000,
+       0,
+       4000,
+       1000,
+       3000,
+       1000,
+       3000,
+       3000,
+       1000,
+       2500,
+       0,
+       3000
+      ],
+      "rep": null
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   }
+  },
+  "tops": [
+   "p"
+  ]
+ },
+ "differences": []
+}

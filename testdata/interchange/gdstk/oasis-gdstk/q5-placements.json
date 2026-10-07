@@ -1,0 +1,187 @@
+{
+ "file": "q5-placements.oas",
+ "writer": "gdstk 1.0.1 write_oas (spike worker)",
+ "options": {
+  "compression_level": 6,
+  "detect_rectangles": true,
+  "detect_trapezoids": true,
+  "validation": "crc32",
+  "standard_properties": false
+ },
+ "bytes": 360,
+ "sha256": "25e91102f085635eb1630438ea31e187972ce8de650056ab0568483cc5311868",
+ "source": {
+  "grid_per_um": 1000,
+  "precision_m": 1e-09,
+  "cells": {
+   "c": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       100,
+       0,
+       100,
+       50,
+       0,
+       50
+      ]
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   },
+   "t": {
+    "refs": [
+     {
+      "cell": "c",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "c",
+      "x": 1000,
+      "y": 0,
+      "rotation": 90,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "c",
+      "x": 2000,
+      "y": 0,
+      "rotation": 180,
+      "magnification": 1,
+      "mirror": false
+     },
+     {
+      "cell": "c",
+      "x": 3000,
+      "y": 0,
+      "rotation": 270,
+      "magnification": 1,
+      "mirror": true
+     },
+     {
+      "cell": "c",
+      "x": 4000,
+      "y": 0,
+      "rotation": 90,
+      "magnification": 2,
+      "mirror": true
+     },
+     {
+      "cell": "c",
+      "x": 5000,
+      "y": 0,
+      "rotation": 30,
+      "magnification": 1,
+      "mirror": false
+     }
+    ],
+    "polygons": [],
+    "paths": [],
+    "labels": []
+   }
+  }
+ },
+ "reads_back_as": {
+  "precision_m": 9.999999999999999e-10,
+  "cells": {
+   "c": {
+    "polygons": [
+     {
+      "layer": 1,
+      "datatype": 0,
+      "xy": [
+       0,
+       0,
+       100,
+       0,
+       100,
+       50,
+       0,
+       50
+      ],
+      "rep": null
+     }
+    ],
+    "paths": [],
+    "labels": [],
+    "refs": []
+   },
+   "t": {
+    "polygons": [],
+    "paths": [],
+    "labels": [],
+    "refs": [
+     {
+      "cell": "c",
+      "x": 0,
+      "y": 0,
+      "rotation": 0,
+      "magnification": 1,
+      "mirror": false,
+      "rep": null
+     },
+     {
+      "cell": "c",
+      "x": 1000,
+      "y": 0,
+      "rotation": 90,
+      "magnification": 1,
+      "mirror": false,
+      "rep": null
+     },
+     {
+      "cell": "c",
+      "x": 2000,
+      "y": 0,
+      "rotation": 180,
+      "magnification": 1,
+      "mirror": false,
+      "rep": null
+     },
+     {
+      "cell": "c",
+      "x": 3000,
+      "y": 0,
+      "rotation": 270,
+      "magnification": 1,
+      "mirror": true,
+      "rep": null
+     },
+     {
+      "cell": "c",
+      "x": 4000,
+      "y": 0,
+      "rotation": 90,
+      "magnification": 2,
+      "mirror": true,
+      "rep": null
+     },
+     {
+      "cell": "c",
+      "x": 5000,
+      "y": 0,
+      "rotation": 29.999999999999996,
+      "magnification": 1,
+      "mirror": false,
+      "rep": null
+     }
+    ]
+   }
+  },
+  "tops": [
+   "t"
+  ]
+ },
+ "differences": []
+}
