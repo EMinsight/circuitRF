@@ -295,8 +295,16 @@ namespace CircuitRF.Render.DataDisplay
         /// what puts spurious closed contours just inside the peak. The cost is a deliberately
         /// approximating fit — nodes come back ~1.2 dB off — and for a contour display that is the
         /// right trade, because the surface between the nodes is what is being drawn.</para>
+        ///
+        /// <para><b>The kernel is thin-plate since 2026-10-07 (owner)</b>: on every loadpull dataset
+        /// seen to date it draws visibly smoother contours than multiquadric at the same smoothing.
+        /// Thin-plate <c>r²·ln r</c> takes no shape parameter, so <see cref="Epsilon"/> only matters
+        /// once a user switches the card to multiquadric or Gaussian; with its linear tail, smoothing
+        /// 0.1 measures +0.031 dB overshoot on the reference bowl (<c>Rbf2D.RequiresPolynomialTail</c>).
+        /// A saved <c>.cdd</c> writes its kernel explicitly, so a trace saved on multiquadric stays on
+        /// it; only a NEW trace, or a file with no kernel field, takes this default.</para>
         /// </summary>
-        public const RbfKernel Kernel = RbfKernel.Multiquadric;
+        public const RbfKernel Kernel = RbfKernel.ThinPlate;
 
         /// <inheritdoc cref="Kernel"/>
         public const double Smoothing = 0.1;

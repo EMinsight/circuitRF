@@ -537,7 +537,8 @@ power drive-ups at load points **off** the data grid).
 
 > **DESIGN UNBLOCKED — full design in `docs/design/loadpull-contours.md`.** The reference materials are in
 > hand (Hart ARFTG-2006 paper + `SPLData.py` + `.spl`/`.lpcwave` test data, in `loadpull-contours-refs/`).
-> The method is RBF (multiquadric) 2-D interpolation over scattered Γ, with per-grid-point compression
+> The method is RBF 2-D interpolation over scattered Γ (multiquadric in the reference; the shipped contour
+> default is thin-plate, `ContourDefaults.Kernel`), with per-grid-point compression
 > preprocessing and a stack-of-surfaces for off-grid drive-up synthesis. Contour **iso-line tracing is ours
 > to build** (marching squares; not in the Python, which used matplotlib). See the note for the algorithm,
 > the scipy.Rbf scope, and the sub-gate detail.

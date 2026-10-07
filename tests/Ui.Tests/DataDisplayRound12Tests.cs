@@ -26,7 +26,7 @@ public sealed class DataDisplayRound12Tests
     [Fact]
     public void TheContourRbfDefaultsAreSmooth0Point1AndEpsilon0Point5()
     {
-        Assert.Equal(RbfKernel.Multiquadric, ContourDefaults.Kernel);
+        Assert.Equal(RbfKernel.ThinPlate, ContourDefaults.Kernel);
         Assert.Equal(0.1, ContourDefaults.Smoothing);
         Assert.Equal(0.5, ContourDefaults.Epsilon);
 

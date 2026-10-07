@@ -316,7 +316,7 @@ public sealed class ContourTraceCardTests
         Assert.False(result.DisplayMxp);
         Assert.False(result.DisplayMxe);
         Assert.False(result.DisplayGridPoints);
-        Assert.Equal(RbfKernel.Multiquadric, result.InterpKernel);
+        Assert.Equal(ContourDefaults.Kernel, result.InterpKernel);
         // The shipped defaults, from ContourDefaults — 0.1 / 0.5 since 2026-08-18 (owner). A missing
         // field must land on whatever the current default IS, not on the value it had when this test
         // was written, so both sides read the one constant.
@@ -389,7 +389,7 @@ public sealed class ContourTraceCardTests
         Assert.Equal(SKColors.Black, cd.GridPointColor);
         // §6 (round 6): LabelForeground now defaults to Black (dark text on white background)
         Assert.Equal(SKColors.Black, cd.LabelForeground);
-        Assert.Equal(RbfKernel.Multiquadric, cd.InterpKernel);
+        Assert.Equal(ContourDefaults.Kernel, cd.InterpKernel);
         Assert.Equal(ContourDefaults.Smoothing, cd.Smoothing);
         Assert.Equal(ContourDefaults.Epsilon, cd.Epsilon);
         // §5: new size/opacity fields

@@ -4958,3 +4958,16 @@ earlier = family): it plotted along the array names with one curve per sweep poi
 `CubeTraceSpecParser` now swaps the two when the last is a CATEGORY axis (a label per entry, not freq/harmonic/mixIndex,
 no Hz unit) and the earlier is not; the family path's X column carries labels too. A trace saved with the old roles keeps
 them (the stored slice wins) until it is re-entered. Gate: `BareMeasurementNameTests.BareSweptCategoryCube_SweepIsX_CategoriesAreTheCurves`.
+
+## Loadpull contours default to thin-plate, not multiquadric (2026-10-07)
+
+The owner found thin-plate draws visibly smoother contours than multiquadric on every loadpull dataset seen to date, so
+`ContourDefaults.Kernel` is now `RbfKernel.ThinPlate`. That is the one constant the runtime `ContourData`, the persisted
+`ContourTraceConfig` and the trace card's view model all read. Smoothing 0.1 and ε 0.5 are unchanged. Thin-plate has no
+shape parameter, so ε only applies after a switch to multiquadric or Gaussian, and with its linear tail smoothing 0.1
+overshoots by +0.031 dB on the reference bowl (`Rbf2D.RequiresPolynomialTail`). **A saved `.cdd` is not migrated**:
+`DataDisplayJson` writes every property, so a trace saved as `"InterpKernel": "Multiquadric"` stays multiquadric. Only a
+new contour trace, or a file with no kernel field, picks up the new default. The MXP/MXE markers come out of the same fit,
+so on a new trace they can land on a slightly different grid point than they did before. `Rbf2D`'s own parameter default
+and harmonicaRF's `ContourKernel` stay multiquadric; neither is the Data Display. Gate:
+`DataDisplayRound12Tests.TheContourRbfDefaultsAreSmooth0Point1AndEpsilon0Point5`.

@@ -428,9 +428,9 @@ public sealed class Rbf2D
     /// <para><b>This is a deliberate departure from legacy <c>scipy.interpolate.Rbf</c></b>, which
     /// this class otherwise matches and which has the same defect. Modern
     /// <c>scipy.interpolate.RBFInterpolator</c> <i>requires</i> <c>degree ≥ 1</c> for
-    /// <c>thin_plate_spline</c> for exactly this reason. Multiquadric — the shipped default and the
-    /// one the loadpull display actually uses — takes neither the tail nor the ridge and is
-    /// bit-identical to before.</para>
+    /// <c>thin_plate_spline</c> for exactly this reason. Multiquadric — this class's own default —
+    /// takes neither the tail nor the ridge and is bit-identical to before. (The Data Display's
+    /// contour default became thin-plate on 2026-10-07; see <c>ContourDefaults.Kernel</c>.)</para>
     /// </summary>
     public static bool RequiresPolynomialTail(RbfKernel kernel) => kernel == RbfKernel.ThinPlate;
 
@@ -454,8 +454,8 @@ public sealed class Rbf2D
     /// </list>
     ///
     /// <para><b>Multiquadric keeps scipy's sign and is bit-identical to every earlier build.</b> It is
-    /// the shipped default and the kernel the loadpull display actually uses, so nothing about the
-    /// numbers anyone has already looked at moves.</para>
+    /// this class's own default, so nothing about the numbers anyone has already looked at on it
+    /// moves.</para>
     /// </summary>
     public static double SmoothingSign(RbfKernel kernel) =>
         kernel == RbfKernel.Multiquadric ? -1.0 : +1.0;
