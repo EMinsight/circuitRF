@@ -174,6 +174,8 @@ public static class LvsFindingIds
         "lvs.recognize.ambiguous-axis",
         "lvs.recognize.rule-invalid",
         "lvs.recognize.parameter-failed",
+        "lvs.recognize.not-stated",
+        "lvs.recognize.component-ambiguous",
 
         // the assembly's bond wires (brief 13)
         "lvs.wbond.wires-read",

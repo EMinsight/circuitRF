@@ -74,7 +74,15 @@ public sealed record DeviceCandidate(
     long X, long Y, Bbox Bounds,
     double AreaDbu2, double PerimeterDbu, double LengthDbu, double WidthDbu, bool AxisAmbiguous,
     IReadOnlyList<DeviceTerminalCandidate> Terminals,
-    IReadOnlyList<long[]> Rings);
+    IReadOnlyList<long[]> Rings)
+{
+    /// <summary>
+    /// Every distinct <see cref="LayoutShape.Component"/> stated by a shape drawn on one of the
+    /// body's own layers whose centre lies inside the body, in ordinal order (AA-2) — the name the
+    /// artwork gave this device, where it gave one.
+    /// </summary>
+    public IReadOnlyList<string> Components { get; init; } = [];
+}
 
 /// <summary>The geometric half of tier-3 recognition — R-lvs14-3.</summary>
 public static class DeviceCandidates
@@ -119,7 +127,7 @@ public static class DeviceCandidates
     public static IReadOnlyList<DeviceCandidate> Find(
         IReadOnlyList<LayoutShape> copper, Technology? tech,
         DrcLayerExpr body, IReadOnlyList<DrcLayerExpr> terminals,
-        out IReadOnlyCollection<LayerKey> missingLayers)
+        out IReadOnlyCollection<LayerKey> missingLayers, CopperCut? cut = null)
     {
         ArgumentNullException.ThrowIfNull(body);
         ArgumentNullException.ThrowIfNull(terminals);
@@ -142,6 +150,14 @@ public static class DeviceCandidates
 
         var bodies = DrcRegions.Components(eval.Evaluate(body));
 
+        // AA-2. Terminals are read on the copper that is STILL IN THE PARTITION — the body of a
+        // copper-body rule (a line, a via barrel) has left it, so a terminal's interior point must
+        // not land inside one, or its net lookup finds no piece. Bodies are read on the uncut
+        // copper, because the cut IS those bodies.
+        var terminalEval = cut is { IsEmpty: false }
+            ? new DrcRegionEval(cut.ApplyTo(layerRegions), tech.Layers.Select(l => l.Key).ToHashSet())
+            : eval;
+
         // Each terminal expression's own components, once — a rule is evaluated against the whole
         // design and then matched against each body, not re-evaluated per body.
         //
@@ -153,12 +169,19 @@ public static class DeviceCandidates
         for (int slot = 0; slot < terminals.Count; slot++)
         {
             var layers = terminals[slot].ReferencedLayers().ToArray();
-            foreach (var component in DrcRegions.Components(eval.Evaluate(terminals[slot])))
+            foreach (var component in DrcRegions.Components(terminalEval.Evaluate(terminals[slot])))
                 terminalPieces.Add((slot, component, layers));
         }
 
-        missingLayers = eval.MissingLayers;
+        missingLayers = ReferenceEquals(terminalEval, eval)
+            ? eval.MissingLayers
+            : [.. eval.MissingLayers.Union(terminalEval.MissingLayers)];
         if (bodies.Count == 0) return [];
+
+        // AA-2: the shapes that NAME a part — a Component on a shape of the body's own layers. Few
+        // or none on most artwork, so the per-body test below is a short list, not the whole board.
+        var bodyLayers = body.ReferencedLayers().ToHashSet();
+        var named = copper.Where(sh => sh.Component is { Length: > 0 } && bodyLayers.Contains(sh.Layer)).ToList();
 
         var candidates = new List<DeviceCandidate>(bodies.Count);
         foreach (var component in bodies)
@@ -201,7 +224,10 @@ public static class DeviceCandidates
                 length, width,
                 length > 0 && (length - width) <= SquareFraction * length,
                 touching,
-                DrcRegions.ToRings(component)));
+                DrcRegions.ToRings(component))
+            {
+                Components = NamesInside(named, component, bounds),
+            });
         }
 
         // Deterministic, and by the artwork's own coordinates: two runs over unchanged geometry
@@ -214,6 +240,64 @@ public static class DeviceCandidates
         });
 
         return candidates;
+    }
+
+    /// <summary>
+    /// The copper every copper-body rule's bodies occupy — what leaves the partition (AA-2,
+    /// <see cref="DeviceRule.CopperBody"/>).
+    /// </summary>
+    /// <remarks>
+    /// <b>Per layer the body NAMES</b>, and only those. <c>and(1/0, 20/0)</c> cuts Metal1 where the
+    /// marker covers it and leaves Metal2 crossing over it alone; a via rule's <c>8/0</c> cuts the
+    /// barrel and nothing else. The same expansion and the same evaluator a DRC region uses, so a
+    /// cut is exactly the region the recognition then reads as a body.
+    /// </remarks>
+    /// <returns>Null where no body was found, which is what every technology with no copper-body
+    /// rule and every board with none drawn gets — the partition is then built byte for byte as
+    /// before.</returns>
+    public static CopperCut? CutOf(
+        IReadOnlyList<LayoutShape> copper, Technology? tech, IReadOnlyList<DrcLayerExpr> bodies)
+    {
+        ArgumentNullException.ThrowIfNull(bodies);
+        if (tech is null || copper is not { Count: > 0 } || bodies.Count == 0) return null;
+
+        var layerRegions = LayerRegions.Build(copper, tech, null, electricalOnly: false);
+        if (layerRegions.Count == 0) return null;
+
+        var eval = new DrcRegionEval(layerRegions, tech.Layers.Select(l => l.Key).ToHashSet());
+        var byLayer = new Dictionary<LayerKey, Paths64>();
+
+        foreach (var body in bodies)
+        {
+            var region = eval.Evaluate(body);
+            if (region.Count == 0) continue;
+
+            foreach (var layer in body.ReferencedLayers().Distinct())
+            {
+                if (!layerRegions.ContainsKey(layer)) continue;
+                if (!byLayer.TryGetValue(layer, out var acc)) byLayer[layer] = acc = [];
+                acc.AddRange(region);
+            }
+        }
+
+        if (byLayer.Count == 0) return null;
+        foreach (var layer in byLayer.Keys.ToList()) byLayer[layer] = DrcRegions.Union(byLayer[layer]);
+        return new CopperCut(byLayer);
+    }
+
+    /// <summary>The distinct Components of <paramref name="named"/> whose centre is inside the
+    /// body — <c>Regions.Contains</c> decides, the partition's own containment test.</summary>
+    private static IReadOnlyList<string> NamesInside(List<LayoutShape> named, Paths64 component, Bbox bounds)
+    {
+        if (named.Count == 0) return [];
+        var names = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var shape in named)
+        {
+            var box = LayoutGeometry.BboxOf(shape);
+            long cx = (box.MinX + box.MaxX) / 2, cy = (box.MinY + box.MaxY) / 2;
+            if (bounds.Contains(cx, cy) && Regions.Contains(component, cx, cy)) names.Add(shape.Component!);
+        }
+        return names.Count == 0 ? [] : [.. names];
     }
 
     /// <summary>Whether two boxes are close enough to be worth an exact test — the dilation's own
@@ -348,5 +432,41 @@ public static class DeviceCandidates
             foreach (var point in path)
                 box = box.Union(new Bbox(point.X, point.Y, point.X, point.Y));
         return box;
+    }
+}
+
+/// <summary>
+/// Copper that has left the connectivity partition because a recognised device IS that copper — a
+/// line, a spiral, a via barrel (AA-2). <b>Opaque on purpose</b>: it carries Clipper regions, and
+/// nothing under <c>Lvs/</c> may touch one, so it is handed from <see cref="DeviceCandidates.CutOf"/>
+/// to <see cref="CopperPieces.Build"/> without anybody in between reading it.
+/// </summary>
+public sealed class CopperCut
+{
+    private readonly Dictionary<LayerKey, Paths64> _byLayer;
+
+    internal CopperCut(Dictionary<LayerKey, Paths64> byLayer) => _byLayer = byLayer;
+
+    /// <summary>True where nothing is cut.</summary>
+    public bool IsEmpty => _byLayer.Count == 0;
+
+    /// <summary>The drawing layers something was cut from.</summary>
+    public IReadOnlyCollection<LayerKey> Layers => _byLayer.Keys;
+
+    /// <summary>
+    /// <paramref name="regions"/> with the cut subtracted, layer by layer — a NEW dictionary, so the
+    /// caller's own regions are untouched. A layer emptied entirely is dropped rather than kept as an
+    /// empty entry, which is how <see cref="LayerRegions.Build"/> represents a layer with nothing on it.
+    /// </summary>
+    internal Dictionary<LayerKey, Paths64> ApplyTo(Dictionary<LayerKey, Paths64> regions)
+    {
+        var result = new Dictionary<LayerKey, Paths64>(regions.Count);
+        foreach (var (layer, paths) in regions)
+        {
+            if (!_byLayer.TryGetValue(layer, out var cut)) { result[layer] = paths; continue; }
+            var left = Clipper.BooleanOp(ClipType.Difference, paths, cut, LayoutClipper.Rule);
+            if (left.Count > 0) result[layer] = left;
+        }
+        return result;
     }
 }

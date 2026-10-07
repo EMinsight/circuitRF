@@ -17939,3 +17939,78 @@ the old run's strip → floor re-assembly to **3.0e-5** at every point, and agai
 GHz. `expected-numbers.json`'s openEMS rows, the README (its lid paragraph and tables) and the new-user guide's walk-through
 carry the new numbers: |S11| / |S22| at 2 GHz −21.00 / −15.72 dB, at 10 GHz −17.82 / −15.30 dB (Palace −17.38 / −16.08).
 The README keeps the first run's time: the grid and the solve are unchanged, only which probe files are read.
+
+## The trace cross-section honours patterned dielectrics, and the line calculator (2026-10-06, AA-3)
+
+- **The defect, found by the line calculator's first GaAs run:** `TraceStack.StackOf` built the trace
+  cross-section's medium from the raw stackup, so a dielectric with `PresentWithLayer` was laterally
+  infinite. On the shipped GaAs technology that put the 0.2 µm εr 6.8 MIM film on every Metal1 line with
+  no Nitride drawn anywhere — both EM extractors already asked `PatternedDielectric.Deactivate` and turned
+  it to air, and its header predicted exactly this failure on a path that did not ask. Worse than the bias:
+  the boundary-element solve against a film that thin was not smooth in the width. Z0 went
+  47.92 → 49.08 → 51.53 → 50.79 → 49.16 Ω over 67.90–68.20 µm, and 75 µm read higher than 72 µm. With the
+  film as air it falls monotonically (50.86 → 50.77 Ω over the same range). That noise reached
+  `impedance`, the canvas probe and the Impedance panel equally.
+- **The fix:** `StackOf(tech, shapes, notes)` runs `Deactivate` with "is it drawn": a conductor tie asks
+  whether the plate conductor has copper in the artwork, and a mask tie asks whether the mask layer is
+  drawn. That is the cross-section extractor's mask rule. `Analyze` adds `Deactivate`'s sentence to the
+  report notes, and the probe discards it. Gate: `LineCalculatorTests.APatternedFilmWithNoMaskDrawn_IsAirInTheTraceCrossSection`
+  (bit-equal to a technology whose film is air outright; drawing Nitride anywhere brings it back).
+- **Still true, not fixed:** where the mask IS drawn, the film is laterally infinite for every trace on
+  the layout (the 2.5D premise), and the solve against it will be as rough in the width as above. This
+  happens whenever Nitride is drawn anywhere on a GaAs layout. Smoothing it means meshing that thin band
+  differently in `BoundaryMesher` (`EmMeshSettings.Default`), which is beyond AA-3.
+- **The model column calls the model.** `MicrostripLineModel.LineParameters(f)` was split out of
+  `Stamp`, and the attenuation keeps its old sum order (conductor, then dielectric) so stamps are
+  bit-identical. `LineCalculator` elaborates a one-instance test bench to get the model instead of
+  calling the closed forms again. The gate compares the result with `==` against an MLIN in a `.cnl` read
+  through `CnlTechnologyBinding`.
+- **What the calculator shows on GaAs Metal1** (static): at 50 Ω the model needs 68.04 µm and the
+  cross-section 70.72 µm (+3.9 %). At 90 Ω they need 7.88 µm and 10.22 µm (+30 %): there T = 3 µm is
+  ~40 % of W and W/h is below Kirschning-Jansen's range, which the model's validity reporter says.
+  That is the disagreement the brief wanted seen before drawing.
+
+## MMIC passives: MIMCAP, SPIRAL, TFR, AIRBRIDGE and `em --component` (AA-1, 2026-10-06)
+
+brief-agent-authoring-overview.md AA-1, with the owner's decisions: hybrid spiral model, new C# PCells beside
+MLIN (the kit example's generators were not promoted), tokens `MIMCAP`/`SPIRAL`/`TFR`/`AIRBRIDGE`.
+
+- **One resolution for both halves.** `MmicStackResolver` (`Layout/PCells/MmicStack.cs`) reads the stackup
+  once: the capacitor film is a dielectric directly between two conductors AND tied to a mask by
+  `PresentWithLayer` (requiring the mask is what keeps a board's core from reading as a capacitor film);
+  the bridge metal is the far end of a via joining the base metal to a second non-ground conductor; the
+  resistor film is the first drawing layer stating `SheetResistanceOhmPerSq`. `MmicPassiveInjection` (the
+  model's numbers) and the four PCells (the artwork) both call it, so the drawn and the simulated part
+  cannot disagree about which metal is which.
+- **Sheet resistance lives on the drawing layer** — `LayerDef.SheetResistanceOhmPerSq`, additive, null
+  everywhere it is not stated, 50 Ω/sq on the shipped GaAs `Resistor` layer (and `StarterTechnologies`).
+  Not a stackup conductor: that would add a level to every planar run. `TechValidation` refuses a
+  non-positive value. The capacitor density is NOT stored anywhere: it is the film's εr/t, read off the
+  stackup.
+- **The spiral estimate against EM, measured.** Default coil (N 2.5, W = S = 10 µm, Din 100 µm) on the
+  shipped GaAs, extracted through `ComponentEmExtraction`: series L from −1/Y21 is 1.718 nH at 6 GHz;
+  modified Wheeler gives 1.441 nH — **0.84 of the EM value, i.e. 16 % low** (the formula is the coil
+  alone; the drawn part adds its escape and leads; the ground plane under it lowers L and does not
+  rescue the estimate). Gated at a ratio of 0.75–1.0 by `MmicPassiveTests.Spiral_…` (Benchmark, 11.6 s).
+  One geometry only — a second was not run, to keep EM runs short.
+- **The extraction's apparent L rises at low frequency, and the gate avoids it.** The same run swept
+  1–10 GHz read 3.88, 2.22, 1.92, 1.80, 1.75, 1.72, 1.70, 1.68, 1.67, 1.65 nH — flat above ~4 GHz, rising
+  steeply below 3 GHz while the shunt C stays at 40–42 fF throughout. Not investigated (the coil's
+  resonance is far above, so it is not physics of the part); the runs reported γ as quasi-static below
+  26 GHz. Worth a look by whoever next works on the planar kernel's low-frequency calibration.
+- **The extraction mesh is a trade, stated.** At the default mesh (4 across + edge fan) that coil was
+  20,637 unknowns, refused against the 5,000 ceiling. `ExtractionMesh` = `Auto: false`, edge mesh off,
+  2 across: 1,298 unknowns, ~65 s for three points on the CLI. **`Auto: true` ignores `EdgeMesh`** — the
+  first attempt with `EdgeMesh: false` alone still meshed the edge fan (7,842 unknowns).
+- **The solver adds de-embedding leads to both ports** (281 and 262 µm here) because the coil's own metal
+  sits beside each pin inside the calibration standard's length; they are meshed and peeled off again.
+  That makes the artwork ~780 µm long for a 200 µm coil.
+- **TFR is refused by `em --component`**: its film is not a stackup layer, so the solve would see two
+  unconnected contacts. The refusal is generic — any artwork on a layer the stackup does not carry, bar
+  a `PresentWithLayer` mask.
+- **LVS:** a schematic MIMCAP/TFR now carries its model's `C`/`R` among its LVS values (`SchematicRead.ValuesOf`)
+  so a recognised device compares by name, not by topology only. DeviceType maps MIMCAP→Capacitor,
+  TFR→Resistor, SPIRAL→Inductor, AIRBRIDGE→TransmissionLine (interconnect with a series L and a third
+  terminal, told apart by count like a tee).
+- **Not done:** no GUI command for the extraction (CLI/MCP only); no parameter-editor readout of the
+  computed C/L/R; the example workspaces' copies of the GaAs `.ctech` were not given the sheet resistance.

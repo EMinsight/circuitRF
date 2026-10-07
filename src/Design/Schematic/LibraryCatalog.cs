@@ -364,8 +364,10 @@ public static class LibraryCatalog
         ComponentCategory.Terminals        => 4,
         ComponentCategory.TransmissionLine => 5,
         ComponentCategory.Microstrip       => 6,
-        ComponentCategory.Matching         => 7,
-        ComponentCategory.DataFiles        => 8,
-        _                                  => 9,
+        // Beside Microstrip: the other half of what a die or a board is drawn from.
+        ComponentCategory.Mmic             => 7,
+        ComponentCategory.Matching         => 8,
+        ComponentCategory.DataFiles        => 9,
+        _                                  => 10,
     };
 }

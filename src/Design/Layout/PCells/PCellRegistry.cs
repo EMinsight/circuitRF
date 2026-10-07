@@ -24,6 +24,11 @@ public static class PCellRegistry
             { "MKLOPF", MKlopfPCell.Generate },
             { ViaPCell.GeneratorId,       ViaPCell.Generate       },
             { ViaPCell.GroundGeneratorId, ViaPCell.GenerateGround },
+            // The MMIC passives (brief-agent-authoring-overview.md AA-1).
+            { MimCapPCell.GeneratorId,    MimCapPCell.Generate    },
+            { SpiralPCell.GeneratorId,    SpiralPCell.Generate    },
+            { TfrPCell.GeneratorId,       TfrPCell.Generate       },
+            { AirbridgePCell.GeneratorId, AirbridgePCell.Generate },
         };
 
     // ── Resolvers: generators that are not built in ────────────────────────────

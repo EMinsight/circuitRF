@@ -215,7 +215,7 @@ public static class TraceImpedanceProbe
         string LayerName(LayerKey k) => tech.Layers.FirstOrDefault(l => l.Key == k)?.Name is { Length: > 0 } n
             ? n : $"layer {k.Layer}/{k.Datatype}";
 
-        var (stack, bands, bandOf, stackRefusal) = TraceStack.StackOf(tech);
+        var (stack, bands, bandOf, stackRefusal) = TraceStack.StackOf(tech, shapes);
 
         if (!bandOf.ContainsKey(layers[0]))
             return TraceImpedanceResult.Refused(

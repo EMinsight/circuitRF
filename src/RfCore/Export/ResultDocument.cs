@@ -160,7 +160,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ImpedanceSurveyJson? ImpedanceSurvey = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<RenderFieldPlotJson>? FieldPlots = null);
+        IReadOnlyList<RenderFieldPlotJson>? FieldPlots = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ImpedanceLineJson? ImpedanceLine = null);
 
     /// <summary>
     /// What an <c>NDF=yes</c> run found (brief-wsprobe-6 R-wsp6-2): the right-half-plane pole count
@@ -736,6 +738,74 @@ namespace RfCore.Export
         double  Length,
         double? TypicalZ0,
         string? TypicalRefusal);
+
+    /// <summary>
+    /// What <c>impedance --tech … --layer …</c> (the line calculator) answered: per row, the circuit
+    /// model's answer (an elaborated MLIN) beside the quasi-static cross-section's (what
+    /// <c>impedance</c> reports on a drawn line), with nothing drawn. Lengths in µm, loss in dB/mm.
+    /// </summary>
+    /// <param name="Ground">The conductor the MODEL's substrate is measured to; absent with no
+    /// substrate (then <paramref name="SubstrateRefusal"/> says why).</param>
+    /// <param name="GapUm">A coplanar line's gap to its ground either side; absent for a microstrip.</param>
+    /// <param name="FreqHz">Where the dispersive values, loss and λg are given; absent when not asked.</param>
+    public sealed record ImpedanceLineJson(
+        string                               Technology,
+        string                               Layer,
+        string                               Conductor,
+        string?                              Ground,
+        double?                              SubstrateHeightUm,
+        double?                              ConductorThicknessUm,
+        double?                              Er,
+        double?                              TanD,
+        double?                              SigmaSPerM,
+        string?                              SubstrateRefusal,
+        double?                              GapUm,
+        double?                              FreqHz,
+        IReadOnlyList<ImpedanceLineRowJson> Rows,
+        IReadOnlyList<string>                Warnings);
+
+    /// <param name="TargetZ0">The impedance a width was synthesised for; absent on a row asked by width.</param>
+    /// <param name="CrossSectionAtModelWidth">A synthesis row only: the cross-section of the MODEL's
+    /// width — what a line drawn at the width the schematic uses would measure.</param>
+    /// <param name="Z0DifferencePercent">Cross-section static Z0 against the model's static Z0 at the
+    /// SAME width (the model's, on a synthesis row), percent of the model's.</param>
+    /// <param name="WidthDifferencePercent">A synthesis row only: the cross-section's width against the
+    /// model's, percent of the model's.</param>
+    /// <param name="Solves">Cross-section analyses the row took.</param>
+    public sealed record ImpedanceLineRowJson(
+        double?                    TargetZ0,
+        ImpedanceLineModelJson?    Model,
+        string?                    ModelRefusal,
+        ImpedanceLineSectionJson?  CrossSection,
+        ImpedanceLineSectionJson?  CrossSectionAtModelWidth,
+        double?                    Z0DifferencePercent,
+        double?                    WidthDifferencePercent,
+        int                        Solves);
+
+    /// <param name="Z0">Dispersive Z0 at the frequency (Kirschning-Jansen), what a run stamps; absent
+    /// without a frequency.</param>
+    public sealed record ImpedanceLineModelJson(
+        double                WidthUm,
+        double                Z0Static,
+        double                EeffStatic,
+        double?               Z0,
+        double?               Eeff,
+        double?               LossDbPerMm,
+        double?               ConductorLossDbPerMm,
+        double?               DielectricLossDbPerMm,
+        double?               LambdaGUm,
+        IReadOnlyList<string> Warnings);
+
+    /// <param name="Z0">The quasi-static Z0; the solve has no dispersion and no loss.</param>
+    /// <param name="LambdaGUm">From the quasi-static εeff at the frequency.</param>
+    public sealed record ImpedanceLineSectionJson(
+        double                WidthUm,
+        double?               Z0,
+        double?               Eeff,
+        double?               LambdaGUm,
+        string                Configuration,
+        string?               Refusal,
+        IReadOnlyList<string> Notes);
 
     /// <summary>
     /// What <c>lvs</c> compared, and what it concluded.
@@ -1523,6 +1593,9 @@ namespace RfCore.Export
     /// <c>X</c>/<c>Y</c> at rotation <c>R0</c> with no mirror (y grows downward) — what a wire in a
     /// hand-written <c>.csch</c> must end on. Absent where the symbol's pins come from a referenced
     /// cell.</param>
+    /// <param name="Validity">What the model is an estimate of and the range it is stated over,
+    /// where the component's model is a closed-form estimate rather than an ideal element. Absent
+    /// otherwise.</param>
     public sealed record ReferenceSymbolJson(
         string                                  Kind,
         string                                  DisplayName,
@@ -1531,7 +1604,9 @@ namespace RfCore.Export
         ReferencePortsJson                      Ports,
         IReadOnlyList<ReferenceParameterJson>   Parameters,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<ReferencePinJson>?        Pins = null);
+        IReadOnlyList<ReferencePinJson>?        Pins = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                                 Validity = null);
 
     /// <summary>One terminal of a drawn symbol: its name and its position at R0.</summary>
     public sealed record ReferencePinJson(string Name, double X, double Y);
@@ -1794,7 +1869,30 @@ namespace RfCore.Export
         IReadOnlyList<ReferenceStackupLayerJson> Stackup,
         IReadOnlyList<string>                   MaterialLibraries,
         IReadOnlyList<string>                   Materials,
-        int                                     DrcRules);
+        int                                     DrcRules,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ReferenceLayerJson>?      Layers = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ReferenceRecognitionRuleJson>? RecognitionRules = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>?                  Constants = null);
+
+    /// <summary>One drawing layer, by the Key a <c>.clay</c> shape names it with.</summary>
+    /// <param name="InStackup">Whether a Conductor or Via stackup entry draws on it. False is a
+    /// drawn-only layer — a resistive film, a dielectric window, a recognition marker — which joins
+    /// nothing electrically.</param>
+    public sealed record ReferenceLayerJson(string Name, int Layer, int Datatype, bool InStackup);
+
+    /// <summary>One rule of the technology's device-recognition deck, which <c>lvs --recognize</c>
+    /// reads. Body and Terminals are layer expressions over Keys (<c>and(1/0, 20/0)</c>).</summary>
+    public sealed record ReferenceRecognitionRuleJson(
+        string                               Name,
+        string                               Kind,
+        string                               Body,
+        IReadOnlyList<string>                Terminals,
+        IReadOnlyDictionary<string, string>  Parameters,
+        bool                                 CopperBody,
+        bool                                 GroundTerminal);
 
     /// <param name="ThicknessUm">Micrometres. Absent on a via, whose length is its span.</param>
     /// <param name="DrawingLayers">The layout layers drawn on this entry, by name.</param>

@@ -164,7 +164,9 @@ public static class StarterTechnologies
                 new LayerDef { Key = metal1,       Name = "Metal1",        Color = new Rgba(0xE0, 0xB0, 0x40), ZOrder = 8, Purpose = "drawing" },
                 new LayerDef { Key = metal2,       Name = "Metal2",        Color = new Rgba(0xC0, 0x80, 0x20), ZOrder = 9, Purpose = "drawing" },
                 new LayerDef { Key = via,          Name = "Via",           Color = new Rgba(0x90, 0x90, 0x90), ZOrder = 7, Purpose = "drawing" },
-                new LayerDef { Key = resistor,     Name = "Resistor",      Color = new Rgba(0x60, 0x40, 0xA0), ZOrder = 6, Purpose = "drawing" },
+                // A 50 Ω/sq thin film — the value the TFR component reads (brief-agent-authoring-overview AA-1).
+                new LayerDef { Key = resistor,     Name = "Resistor",      Color = new Rgba(0x60, 0x40, 0xA0), ZOrder = 6, Purpose = "drawing",
+                               SheetResistanceOhmPerSq = 50 },
                 new LayerDef { Key = capDielectric, Name = "Cap Dielectric", Color = new Rgba(0x30, 0x90, 0xB0), ZOrder = 5, Purpose = "drawing" },
                 new LayerDef { Key = nitride,      Name = "Nitride",       Color = new Rgba(0x40, 0x70, 0x40), ZOrder = 4, Purpose = "drawing" },
                 new LayerDef { Key = substrate,    Name = "Substrate",     Color = new Rgba(0x50, 0x50, 0x50), ZOrder = 1, Purpose = "drawing" },
@@ -175,6 +177,10 @@ public static class StarterTechnologies
                 // the one free slot below the metals (3), beside the other connection layers.
                 new LayerDef { Key = mimMetal,     Name = "MIM Metal",     Color = new Rgba(0xD0, 0x60, 0x70), ZOrder = 10, Purpose = "drawing" },
                 new LayerDef { Key = mimVia,       Name = "MIM Via",       Color = new Rgba(0x70, 0x30, 0x38), ZOrder = 3,  Purpose = "drawing" },
+                // Drawn-only markers the LVS recognition deck reads (AA-2): metal under one is a
+                // microstrip line or a spiral, not plain interconnect.
+                new LayerDef { Key = new LayerKey(20, 0), Name = "Line Marker",     Color = new Rgba(0x00, 0xAA, 0xAA), ZOrder = 11, Purpose = "drawing", FillOpacity = 0.12 },
+                new LayerDef { Key = new LayerKey(21, 0), Name = "Inductor Marker", Color = new Rgba(0xC8, 0x78, 0x00), ZOrder = 12, Purpose = "drawing", FillOpacity = 0.12 },
             ],
             // §3.1 (docs/sonnet-briefs/brief-via-primitive-and-stackup.md): top to bottom, Metal2 / air
             // (εr=1) / Metal1 / GaAs / backside ground — an airbridge needs no new primitive, only this

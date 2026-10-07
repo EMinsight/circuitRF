@@ -95,6 +95,7 @@ public sealed class PaletteCategoryEntry
     private static string RealDisplayName(ComponentCategory c) => c switch
     {
         ComponentCategory.TransmissionLine => "Transmission Line",
+        ComponentCategory.Mmic             => "MMIC",
         ComponentCategory.DataFiles        => "Data Files",
         _                                  => c.ToString()
     };
@@ -282,6 +283,7 @@ public sealed partial class PaletteTool : Tool, IActivatableTool
             ComponentCategory.Terminals,
             ComponentCategory.TransmissionLine,
             ComponentCategory.Microstrip,
+            ComponentCategory.Mmic,
             ComponentCategory.Matching,
             ComponentCategory.DataFiles,
         })

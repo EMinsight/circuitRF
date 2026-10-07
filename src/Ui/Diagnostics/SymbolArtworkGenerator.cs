@@ -107,6 +107,11 @@ public static class SymbolArtworkGenerator
         // The two vias (brief-via-component.md).
         (SymbolKind.Via,             "via",               2),
         (SymbolKind.ViaGnd,          "via-gnd",           1),
+        // The MMIC passives (brief-agent-authoring-overview AA-1).
+        (SymbolKind.MimCap,          "mimcap",            2),
+        (SymbolKind.Spiral,          "spiral",            2),
+        (SymbolKind.Tfr,             "tfr",               2),
+        (SymbolKind.Airbridge,       "airbridge",         3),
         (SymbolKind.VerilogA,        "verilog-a",         3),
         (SymbolKind.WBond,           "wbond",             0),
         // The five large-signal FET laws SHARE one glyph and one 3-pin geometry on purpose (the

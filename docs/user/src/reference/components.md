@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, via, VIA, VIAGND, part, symbol, library, bead, ferrite
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, TFR, thin-film resistor, AIRBRIDGE, air bridge
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -720,6 +720,70 @@ most often left wrong — <code>IncludeCapacitance</code> and <code>er</code> �
 </div>
 
 {{table: components/WBond}}
+
+## MMIC passives {#mmic}
+
+The parts a die is drawn from. Like a microstrip line, each one takes its process from the workspace
+technology — you state only the geometry, and the stackup supplies the film's permittivity and
+thickness, the metals, the sheet resistance, the air-bridge height and the substrate. Each has a
+built-in layout cell of the same name, so a schematic of them generates a layout the way a board's
+microstrip does, with every terminal on the metal that lies on the substrate.
+
+On a technology that lacks what a part needs — a board has no MIM film, for instance — the run says
+which piece is missing and uses the shipped GaAs process's numbers instead.
+
+### MIM Capacitor (MIMCAP) {#mimcap}
+
+{{symbol: mimcap}}
+
+A metal-insulator-metal capacitor. `W` × `L` is the top plate; the capacitance is the film's
+ε·W·L/t with the plates' edge fringing, the series resistance comes from both plates' metal, the loss
+from the film's loss tangent, and the bottom plate's capacitance through the substrate to ground is
+included. Terminal 1 is the top plate and terminal 2 the bottom plate: for a shunt capacitor, ground
+terminal 2, which shorts that substrate capacitance out.
+
+{{table: components/MimCap}}
+
+### Spiral Inductor (SPIRAL) {#spiral}
+
+{{symbol: spiral}}
+
+A square spiral of `N` turns, `W` wide with `S` between turns and a clear opening `Din` across the
+middle. Terminal 1 is the outer end; terminal 2 is the inner end, brought out over the turns on the
+air-bridge metal.
+
+<div class="callout note">
+<span class="label">The inductance is an estimate</span>
+<p>It comes from a published closed form for the coil alone (the modified Wheeler formula), which does
+not include the escape and leads of the drawn part or the ground plane under it. On the shipped GaAs
+process the default coil reads about 16 % low against an EM extraction of the drawn part. For a value
+to rely on, extract the drawn coil and use the result in its place:</p>
+<p><code>circuitrf em &lt;workspace&gt; --component "SPIRAL N=2.5 W=10 um S=10 um Din=100 um" --freq 1GHz:20GHz:1GHz -o L1.s2p</code></p>
+<p>Port 1 of the file is terminal 1, so it drops into the schematic as an SnP in the part's place.</p>
+</div>
+
+{{table: components/Spiral}}
+
+### Thin-Film Resistor (TFR) {#tfr}
+
+{{symbol: tfr}}
+
+The technology's resistor film, `W` wide with its contacts `L` apart: its resistance is the film's
+sheet resistance times L/W squares. The contacts and their overlap of the film are not included. A
+technology states its film by giving a drawing layer a sheet resistance.
+
+{{table: components/Tfr}}
+
+### Air Bridge (AIRBRIDGE) {#airbridge}
+
+{{symbol: airbridge}}
+
+A span of the air-bridge metal crossing another line: `L` is the clear span between its two posts,
+`W` its width and `Wu` the width of the line it crosses. Terminals 1 and 2 are the landings; terminal 3
+is the crossed line at the crossing, coupled to the bridge through the overlap capacitance. Tie
+terminal 3 to ground for a bridge over a ground strap.
+
+{{table: components/Airbridge}}
 
 ## Data-file components
 

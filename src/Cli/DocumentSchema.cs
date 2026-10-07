@@ -182,9 +182,27 @@ internal static class DocumentSchema
         reads and nothing else does. It is for artwork carrying no instances: a rule's Body is a
         layer expression whose connected components are candidate devices, its Terminals are the
         layers a terminal may be on, and its Parameters are formulas over Length, Width, Area and
-        Perimeter — all SI — plus the Constants this file declares. A technology stating none
+        Perimeter — all SI — plus the Constants this file declares, plus two the process supplies:
+        TfrSheetResistance (the sheet resistance a drawing layer states, SheetResistanceOhmPerSq)
+        and MimCapDensity (ε0·εr/t of the stackup's capacitor dielectric). A Constants entry of
+        the same name overrides either. A technology stating no DeviceRules
         recognises nothing, which is the ordinary case and is not an error. `check` validates the
         deck, so a rule that will not read is refused before any run reads it.
+
+        Two flags complete a rule. CopperBody true says the body is metal that IS the device — a
+        microstrip line, a spiral, a via barrel: its copper leaves the connectivity reading, so the
+        metal either side of it is two nets rather than one (a line read as plain copper would short
+        its two ends). GroundTerminal true adds the ground reference as the device's last terminal,
+        for a via to an undrawn backside plane. A recognised device whose body shapes carry a
+        Component (see `reference layout`) takes that name as its designator and is matched to the
+        schematic part of the same name; with none, it is matched on structure alone.
+
+        The shipped mmic-GaAs technology carries a deck: a thin-film resistor is Resistor not covered
+        by Metal1; a MIM capacitor is MIM Metal over Nitride over Metal1; a backside via is a Backside
+        Via shape, with Metal1 at one end and ground at the other; a microstrip line is Metal1 (or
+        Metal2) under a Line Marker; a spiral is the metal under an Inductor Marker. The two markers
+        are drawn-only layers that exist for recognition — a line is otherwise indistinguishable from
+        any other copper. `reference technologies mmic-GaAs_2LM_100um` lists every rule with its keys.
 
         Every field the reader understands follows, with its default.
         """;
@@ -221,7 +239,7 @@ internal static class DocumentSchema
             circuitrf check  ws/thru/layout/thru.clay
             circuitrf render ws/thru/layout/thru.clay -o thru.svg
 
-        Seven things that are not obvious from the field list:
+        Eight things that are not obvious from the field list:
 
           * Every coordinate and size is an integer DBU. DbuPerMicron says what one is worth: at the
             default 1000, one DBU is one nanometre, so 1.1 mm is 1100000. y is UP.
@@ -235,6 +253,15 @@ internal static class DocumentSchema
             port number. PortDirection is the way current flows INTO the metal (R0 = +x, R90 = +y,
             R180 = -x, R270 = -y); omitted, it is inferred from the geometry, and an ambiguous
             inference is refused at run time rather than guessed.
+          * Net, Component and Pin on a shape are optional labels, and none of them changes what is
+            connected — copper is connected by touching. Net stamps a net NAME on the copper the shape
+            belongs to: `lvs` reads it as a name to match against the schematic's net of that name,
+            and reports it when the copper disagrees, but never obeys it. Component names the part a
+            shape belongs to: `lvs --recognize` gives a device it recognises in plain artwork the
+            Component its body shapes state, so it is matched to the schematic part of that name.
+            Pin names the pad of that part (an imported Gerber's %TO.P sets both); inside a cell it
+            marks the pad a LayoutPin of that name sits on. A placed cell's own pins are its
+            LayoutPins, not these fields.
           * DisplayUnit and SnapDbu are editor conveniences. Nothing is computed from them.
           * ImpedanceReview and ImpedanceAcceptances are the Impedance Analysis's review state: the
             settings and scope last used, and the findings a designer accepted. Both are omitted when

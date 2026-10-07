@@ -512,6 +512,29 @@ public static class LvsDiagnostics
             ("parameters", parameters));
 
     /// <summary>
+    /// One recognised body carries two different <c>Component</c> names on its shapes (AA-2), so it
+    /// takes neither: picking one would anchor it to a part the other name may be right about.
+    /// </summary>
+    public static Diagnostic RecognizeComponentAmbiguous(string rule, string path, string names)
+        => Diagnostic.Create(
+            "lvs.recognize.component-ambiguous", DiagnosticSeverity.Warning,
+            "The '{rule}' device at {path} is named {names} by the Component of its shapes. A device "
+            + "has one name, so it took none and was matched on structure alone.",
+            ("rule", rule), ("path", path), ("names", names));
+
+    /// <summary>
+    /// A recognised device's rule states some values and not these (AA-2) — a line's substrate,
+    /// which is the circuit's and not the artwork's. <b>Once per rule, at info</b>, on
+    /// <see cref="PropertyNotDrawn"/>'s terms.
+    /// </summary>
+    public static Diagnostic RecognizeNotStated(string rule, int devices, string stated, string parameters)
+        => Diagnostic.Create(
+            "lvs.recognize.not-stated", DiagnosticSeverity.Info,
+            "The recognition rule '{rule}' reads {stated} only from the artwork, so the schematic's "
+            + "{parameters} ({devices} device(s)) have nothing in the artwork to be compared against.",
+            ("rule", rule), ("devices", devices), ("stated", stated), ("parameters", parameters));
+
+    /// <summary>
     /// R-lvs10-2d. <b>Not the same thing as <see cref="PropertyLayoutSilent"/>.</b> The artwork
     /// states values — it is a generator with a parameter list — and this one is not on it, which
     /// means the two sides are not the same generator.

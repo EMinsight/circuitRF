@@ -106,11 +106,17 @@ public abstract class LayoutShape
     /// discarding data the file went to the trouble of declaring is not a neutral act, and this is the
     /// natural key for a later "group by component" editor action. Additive and nullable, so every
     /// existing <c>.clay</c> re-serializes byte-for-byte with no <c>FormatVersion</c> bump.</para>
+    ///
+    /// <para><b>One reader</b> (AA-2): LVS's tier-3 recognition gives a device it reads out of plain
+    /// artwork the Component its body's shapes state, as its designator — so an imported or
+    /// hand-written die whose parts are named is matched part for part rather than on structure
+    /// alone. It joins nothing and connects nothing.</para>
     /// </summary>
     public string? Component { get; set; }
 
-    /// <summary>The pad/pin name within <see cref="Component"/>, when declared (<c>%TO.P</c>). Same
-    /// rules as <see cref="Component"/>: carried, unread, additive, nullable.</summary>
+    /// <summary>The pad/pin name within <see cref="Component"/>, when declared (<c>%TO.P</c>).
+    /// Additive and nullable; connects nothing. Inside a cell, a PCell's ground artwork finds the pad
+    /// a <see cref="LayoutPin"/> of this name sits on by it.</summary>
     public string? Pin { get; set; }
 
     /// <summary>

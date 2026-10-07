@@ -6,7 +6,8 @@ namespace CircuitRF.Design.Schematic;
 
 /// <summary>
 /// A hand-written <c>.cnl</c>, read the way a schematic is extracted: its microstrip and via
-/// instances take their substrate from the workspace technology.
+/// instances take their substrate from the workspace technology, and its MMIC passives (AA-1) their
+/// process.
 ///
 /// <para><b>Why this exists.</b> A schematic's microstrip resolves its substrate at extraction
 /// (<see cref="MicrostripSubstrateInjection"/>, <see cref="ViaSubstrateInjection"/>), so the
@@ -81,6 +82,8 @@ public static class CnlTechnologyBinding
         if (context.CellNames.Contains(inst.Reference)) return null;
         if (!ComponentTypeRegistry.TryParseCode(inst.Reference, out var kind, out _)) return null;
 
+        if (MmicPassiveInjection.IsMmicKind(kind)) return BindMmic(inst, kind, context);
+
         bool microstrip = MicrostripSubstrateInjection.IsMicrostripKind(kind);
         bool via        = ViaSubstrateInjection.IsViaKind(kind);
         if (!microstrip && !via) return null;
@@ -154,6 +157,32 @@ public static class CnlTechnologyBinding
                 string.Join(", ", added.Select(a => $"{a.Name}={a.Expression}")) + ".");
 
         return Rebuilt(inst, kept);
+    }
+
+    /// <summary>
+    /// An MMIC passive (AA-1): the schematic's rule again, with no layer to name. Whatever process
+    /// number the line leaves unstated follows the technology; a line stating them all is left alone;
+    /// outside a technology the standalone default stands, and inside one that lacks what the part
+    /// needs, the run says which piece is missing.
+    /// </summary>
+    private static Instance? BindMmic(Instance inst, SymbolKind kind, Context context)
+    {
+        var stated = new HashSet<string>(inst.Overrides.Select(o => o.Name), StringComparer.Ordinal);
+        if (MmicPassiveInjection.InjectedNames(kind).All(stated.Contains)) return null;
+
+        var tech = context.Technology;
+        if (tech is null) return null;
+
+        string label = $"{inst.Reference}:{inst.InstanceName}";
+        var (resolved, warning) = MmicPassiveInjection.Build(tech, kind);
+        if (warning is not null) context.Tb.ReadWarnings.Add($"{label}: {warning}");
+        var added = resolved.Where(r => !stated.Contains(r.Name)).ToList();
+        if (added.Count == 0) return null;
+
+        context.Tb.ReadNotes.Add(
+            $"{label}: process from the technology {context.TechnologyName} — " +
+            string.Join(", ", added.Select(a => $"{a.Name}={a.Expression}")) + ".");
+        return Rebuilt(inst, [.. inst.Overrides, .. added]);
     }
 
     private static Instance Rebuilt(Instance inst, List<ParameterAssignment> overrides)

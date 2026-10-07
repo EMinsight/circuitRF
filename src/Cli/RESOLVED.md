@@ -2995,3 +2995,32 @@ An agent driving circuitRF through MCP alone hit three `check` outputs it had to
 - **The mesh budget disappeared under `--summary`.** It lived only in info notes. It is now result
   data, `documents[i].em` (kernel, unknowns, ceiling, ceiling kind, verdict), omitted for every other
   document, so existing documents serialise unchanged. `--summary` changes diagnostics only.
+
+## `netlist --to-schematic`: what drawing a netlist turned up (2026-10-06)
+
+brief-agent-authoring-overview.md AA-6. `NetlistSchematic.Build` in `src/Design/Schematic` draws, and
+`src/Cli/NetlistToSchematic.cs` only reports.
+
+- **A glyph a few units past its own pin walled the pin in.** A `Term`'s polarity mark puts its box
+  15 units above the `+` pin. Rounding that box OUTWARD to the grid, then adding the one-cell margin,
+  kept out the cell beyond the pin's approach cell. The approach cell was exempt but enclosed, so the
+  router reached no terminal at all and every net fell back to a label. The keep-out now rounds the
+  glyph box to the NEAREST grid line before the margin.
+- **A port drawn on the end of the main line cannot be reached.** With its pin on the line, the
+  approach from above is blocked by the line element's own keep-out. Every hanging element, end ports
+  included, now sits a few cells below the line, and its wire Ts on with a vertex.
+- **A wire through a value is the commonest unreadable result,** so label rows are keep-out, cell by
+  cell for the text only. Keeping out the box around glyph AND labels walled in pins sitting between
+  the two, and the unrouted count went from about one net per drawing to about five.
+- **`CnlReader` makes a Touchstone `File` absolute** against the netlist's folder. Written into a
+  drawing unchanged, that is an absolute path in a document a user shares. It is rewritten relative to
+  the drawing's folder, which the extraction's own reader resolves back to the same file.
+- **`render`'s schematic fit cut off label rows — fixed.** `DocumentExtents.SchematicBox` framed on
+  the render model's ±200 component box and net labels, not on component LABEL rows, so a VAR block
+  at the bottom of a sheet ran off the picture. It now unions each component's `FullBb` (what the
+  renderer culls against and the canvas's Zoom to Fit frames on) plus the same 200-unit margin,
+  unioned with the old box so a sheet that already fitted frames identically. Gate:
+  `tests/Ui.Tests/Render/SchematicFitTests.cs`. The drawing still puts its VAR/MEAS blocks above the
+  circuit, which reads better and no longer works around anything.
+
+Gate: `tests/Ui.Tests/Cli/NetlistToSchematicTests.cs`.

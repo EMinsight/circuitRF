@@ -1348,11 +1348,19 @@ static int RunEm(string[] args)
     Em3dSolver? solver = null;
     bool force = false;
     var emSets = new List<(string Name, string Expr)>();
+    // AA-1 — `em --component "SPIRAL N=3 W=10 um"`: one built-in component's drawn part, extracted.
+    string? component = null, componentFreq = null;
 
     for (int i = 0; i < args.Length; i++)
     {
         switch (args[i])
         {
+            case "--component" when i + 1 < args.Length:
+                component = args[++i];
+                break;
+            case "--freq" when i + 1 < args.Length:
+                componentFreq = args[++i];
+                break;
             case "-o" or "--output" when i + 1 < args.Length:
                 output = args[++i];
                 break;
@@ -1401,10 +1409,17 @@ static int RunEm(string[] args)
         }
     }
 
+    if (component is not null)
+        return EmComponent.Run(component, input, output, componentFreq,
+                               (result, setup, path) => ReportEmRun(result, setup, path), EmProgressToStderr());
+    if (componentFreq is not null)
+        return JsonRun.Fail(CliDiagnostics.EmFreqWithoutComponent());
+
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
         Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name>] [-o out.sNp] [--workspace <file.cws>] [--solver palace|openems|both] [--force] [--set var=expr]");
+        Console.Error.WriteLine("       circuitrf em [<workspace dir | .cws | .ctech>] --component \"SPIRAL N=3 W=10 um ...\" -o out.sNp [--freq start:stop:step]");
         return code;
     }
     JsonRun.InputPath = input;
@@ -1545,6 +1560,16 @@ static int RunEm(string[] args)
         return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message));
     }
 
+    return ReportEmRun(result, setup, cemPath);
+}
+
+/// <summary>
+/// What every EM run prints and returns once it has a result — the setup's own run above, and
+/// <c>em --component</c>'s (<see cref="EmComponent"/>), so a part extracted headlessly is reported in
+/// exactly the words a drawn layout's run is.
+/// </summary>
+static int ReportEmRun(EmRunResult result, EmSetup setup, string cemPath)
+{
     // R-emcli-6 — THREE lists, kept apart, because they ask three different things of the reader.
     // Notes are the run explaining itself, warnings are things to act on, errors are things the user
     // asked for and did not get. Flattening them into one list is the exact defect the split was

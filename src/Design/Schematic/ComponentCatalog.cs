@@ -76,6 +76,10 @@ public sealed record CatalogSymbol(
     /// wires by; empty where the pins come from a referenced cell's own symbol. A variadic kind's
     /// pins are listed at <see cref="CatalogPorts.ListedAt"/>.</summary>
     public IReadOnlyList<CatalogPin> Pins { get; init; } = [];
+
+    /// <summary>What the model is an estimate of and the range it is stated over, from
+    /// <see cref="ComponentTypeRegistry.ModelValidity"/>. Empty for an ideal element.</summary>
+    public string Validity { get; init; } = "";
 }
 
 /// <summary>One terminal of a drawn symbol, in schematic units relative to the component's origin
@@ -190,6 +194,7 @@ public static class ComponentCatalog
                     Parameters(k, PortCountFor(k)))
                 {
                     Pins = [.. SymbolPortDefs.For(k, ListedPortCount).Select(p => new CatalogPin(p.Name, p.LocalX, p.LocalY))],
+                    Validity = ComponentTypeRegistry.ModelValidity(k),
                 })
                 .OrderBy(s => s.Kind, StringComparer.Ordinal)
                 .ToArray();

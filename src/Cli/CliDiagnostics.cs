@@ -1021,6 +1021,16 @@ internal static class CliDiagnostics
         "em.c3d.setup", DiagnosticSeverity.Error, "{path}: {reason}", ("path", path), ("reason", reason));
 
     /// <summary>brief-em3d-42 — --setup names a .c3d's embedded setup; a .cem is its own setup.</summary>
+    /// <summary>AA-1 — <c>em --component</c> refused before anything ran: the component line, the
+    /// technology, the sweep or the output, each named in <paramref name="reason"/>.</summary>
+    public static Diagnostic EmComponentRefused(string reason) => Diagnostic.Create(
+        "cli.em.component-refused", DiagnosticSeverity.Error, "em --component: {reason}", ("reason", reason));
+
+    /// <summary>AA-1 — <c>--freq</c> given to a <c>.cem</c> run, which states its own sweep.</summary>
+    public static Diagnostic EmFreqWithoutComponent() => Diagnostic.Create(
+        "cli.em.freq-without-component", DiagnosticSeverity.Error,
+        "em: --freq sets the sweep of an --component extraction; a .cem states its own frequency sweep.");
+
     public static Diagnostic EmSetupOnCem(string file) => Diagnostic.Create(
         "em.setup.on-cem", DiagnosticSeverity.Error,
         "--setup chooses one of a .c3d's embedded setups; '{file}' is a .cem, which is its own setup.", ("file", file));
@@ -2601,7 +2611,40 @@ internal static class CliDiagnostics
     /// is not the one given — comments gone, directives reordered — and call it an extraction.</summary>
     public static Diagnostic NetlistAlreadyANetlist(string path) => Diagnostic.Create(
         "netlist.path.already-a-netlist", DiagnosticSeverity.Error,
-        "'{path}' is already a netlist. Run it directly, or `circuitrf read` it.", ("path", path));
+        "'{path}' is already a netlist. Run it directly, `circuitrf read` it, or draw it as a "
+      + "schematic with --to-schematic.", ("path", path));
+
+    // ── netlist --to-schematic (brief-agent-authoring-overview.md AA-6) ──────
+
+    public static Diagnostic NetlistToSchematicNotANetlist(string path, string kind) => Diagnostic.Create(
+        "netlist.to-schematic.not-a-netlist", DiagnosticSeverity.Error,
+        "--to-schematic draws a NETLIST, and '{path}' is {kind}. Give a .cnl.",
+        ("path", path), ("kind", kind));
+
+    public static Diagnostic NetlistToSchematicOutputNotCsch(string path, string extension) => Diagnostic.Create(
+        "netlist.to-schematic.output-not-csch", DiagnosticSeverity.Error,
+        "netlist --to-schematic: '{path}' has extension '{extension}', and a drawing is a .csch.",
+        ("path", path), ("extension", extension));
+
+    /// <summary>One per conflicting flag: the board tables and <c>--cell</c> both name a document this
+    /// mode does not read.</summary>
+    public static Diagnostic NetlistToSchematicConflictingFlag(string flag) => Diagnostic.Create(
+        "netlist.to-schematic.conflicting-flag", DiagnosticSeverity.Error,
+        "netlist --to-schematic: {flag} does not apply — the input is one .cnl and the output one .csch.",
+        ("flag", flag));
+
+    public static Diagnostic NetlistToSchematicUnreadable(string path, string why) => Diagnostic.Create(
+        "netlist.to-schematic.unreadable", DiagnosticSeverity.Error,
+        "'{path}' did not read as a netlist: {why}", ("path", path), ("why", why));
+
+    /// <summary>The drawing's OWN sentence. A drawing that leaves out one instance is a different
+    /// circuit, so nothing is written when any instance cannot be drawn.</summary>
+    public static Diagnostic NetlistToSchematicRefused(string path, string why) => Diagnostic.Create(
+        "netlist.to-schematic.refused", DiagnosticSeverity.Error,
+        "'{path}': {why} Nothing was written.", ("path", path), ("why", why));
+
+    public static Diagnostic NetlistToSchematicNote(string note) => Diagnostic.Create(
+        "netlist.to-schematic.note", DiagnosticSeverity.Warning, "{note}", ("note", note));
 
     public static Diagnostic NetlistCellRequired(string path) => Diagnostic.Create(
         "netlist.workspace.cell-required", DiagnosticSeverity.Error,
@@ -3568,6 +3611,63 @@ internal static class CliDiagnostics
         "impedance: cancelled after {done} of {asked} layers; the report holds the layers that finished.",
         ("done", done.ToString(System.Globalization.CultureInfo.InvariantCulture)),
         ("asked", asked.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+    // ── impedance --tech: the line calculator (AA-3) ────────────────────────────────────────────
+    //
+    // Refusals of the calculator's own. A column with no answer for one row (a coplanar line has no
+    // circuit model) is said in the row; `impedance.line.unanswered` is the warning for a row that
+    // asked a column which could not answer it.
+
+    public static Diagnostic ImpedanceLineTechRequired(string option) => Diagnostic.Create(
+        "impedance.line.tech-required", DiagnosticSeverity.Error,
+        "impedance: {option} belongs to the line calculator, which needs --tech: a .ctech, a workspace or a "
+      + "document inside one, or a shipped technology id.", ("option", option));
+
+    public static Diagnostic ImpedanceLinePathNotUsed(string path) => Diagnostic.Create(
+        "impedance.line.path-not-used", DiagnosticSeverity.Error,
+        "impedance: with --tech the line calculator draws its own line and analyses no layout, so '{path}' "
+      + "would be ignored. Give the layout without --tech to review it, or drop the path.", ("path", path));
+
+    public static Diagnostic ImpedanceLineOptionNotUsed(string option) => Diagnostic.Create(
+        "impedance.line.option-not-used", DiagnosticSeverity.Error,
+        "impedance: {option} reviews a drawn layout and means nothing to the line calculator (--tech).",
+        ("option", option));
+
+    public static Diagnostic ImpedanceLineLayerRequired(string known) => Diagnostic.Create(
+        "impedance.line.layer-required", DiagnosticSeverity.Error,
+        "impedance: the line calculator needs one copper layer, --layer <name>. This technology's copper layers are: {known}.",
+        ("known", known));
+
+    public static Diagnostic ImpedanceLineOneLayer() => new(
+        "impedance.line.one-layer", DiagnosticSeverity.Error,
+        "impedance: the line calculator takes one layer at a time.");
+
+    public static Diagnostic ImpedanceLineNothingAsked() => new(
+        "impedance.line.nothing-asked", DiagnosticSeverity.Error,
+        "impedance: say what to calculate — --width <w>[,<w>…] for the line a width gives, or --z0 <ohms>[,<ohms>…] "
+      + "for the width an impedance needs.");
+
+    public static Diagnostic ImpedanceTechNotFound(string text, string shipped) => Diagnostic.Create(
+        "impedance.tech.not-found", DiagnosticSeverity.Error,
+        "impedance: --tech '{text}' is not a file or folder here, and no shipped technology has that id. "
+      + "Shipped technologies: {shipped}.", ("text", text), ("shipped", shipped));
+
+    public static Diagnostic ImpedanceTechNone(string path) => Diagnostic.Create(
+        "impedance.tech.none", DiagnosticSeverity.Error,
+        "impedance: '{path}' resolves no technology — it is in no workspace, or its workspace names no default "
+      + "technology. Give the .ctech itself to --tech.", ("path", path));
+
+    public static Diagnostic ImpedanceTechUnreadable(string path) => Diagnostic.Create(
+        "impedance.tech.unreadable", DiagnosticSeverity.Error,
+        "impedance: the technology '{path}' could not be read.", ("path", path));
+
+    public static Diagnostic ImpedanceLineRefused(string why) => Diagnostic.Create(
+        "impedance.line.refused", DiagnosticSeverity.Error,
+        "impedance: no line was calculated: {why}", ("why", why));
+
+    public static Diagnostic ImpedanceLineUnanswered(string row, string column, string why) => Diagnostic.Create(
+        "impedance.line.unanswered", DiagnosticSeverity.Warning,
+        "impedance: {row}: the {column} has no answer — {why}", ("row", row), ("column", column), ("why", why));
 
     // ── solver (brief-em3d-24 R-em3d24-7) ─────────────────────────────────────────────────────────────
 

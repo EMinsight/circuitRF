@@ -105,6 +105,13 @@ public static class TechValidation
             if (!knownLayers.Add(layer.Key))
                 problems.Add(new(TechProblemArea.Layers,
                     $"Duplicate layer ({layer.Key.Layer},{layer.Key.Datatype}) \"{layer.Name}\"."));
+            // A resistor film's sheet resistance is what a TFR on it is worth per square; zero or
+            // negative would make every resistor drawn on it a short or a negative resistance.
+            if (layer.SheetResistanceOhmPerSq is { } rs && !(rs > 0))
+                problems.Add(new(TechProblemArea.Layers,
+                    $"Layer \"{layer.Name}\" states a sheet resistance of {rs:G4} Ω/sq; it must be positive, or " +
+                    "left out for a layer that is not a resistor film.",
+                    Id: Ids.SheetResistanceInvalid, Severity: DiagnosticSeverity.Error));
         }
 
         var conductorNames = new HashSet<string>(
@@ -416,6 +423,8 @@ public static class TechValidation
         public const string BodySitsOnUnknown       = "tech.body.sits-on-unknown";
         public const string BodyNameClash           = "tech.body.name-clash";
         public const string BodyOutlineLayerUnknown = "tech.body.outline-layer-unknown";
+        /// <summary>AA-1 — a layer's sheet resistance stated as zero or negative.</summary>
+        public const string SheetResistanceInvalid  = "tech.layer.sheet-resistance-invalid";
     }
 
     private static TechProblem Material(string id, DiagnosticSeverity severity, string message)
@@ -622,7 +631,13 @@ public static class TechValidation
         Technology tech, HashSet<LayerKey> knownLayers, List<TechProblem> problems)
     {
         // ── The constants ────────────────────────────────────────────────────────────────────
-        var scope = new Core.Expressions.Scope("technology");
+        // The two names the process supplies (MmicStackResolver.DeckConstants) sit in an outer frame,
+        // as DeviceRecognition.ConstantsOf binds them, so a declared constant may build on them.
+        var derived = new Core.Expressions.Scope("technology (derived)");
+        foreach (var (dName, dExpression, dUnit) in PCells.MmicStackResolver.DeckConstants(tech))
+            derived.Bind(dName, dExpression, NormalizeUnit(dUnit));
+
+        var scope = new Core.Expressions.Scope("technology", derived);
         foreach (var constant in tech.Constants)
         {
             if (constant.Name is not { Length: > 0 })
@@ -647,6 +662,7 @@ public static class TechValidation
         var declared = tech.Constants
             .Where(c => c.Name is { Length: > 0 })
             .Select(c => c.Name)
+            .Concat(PCells.MmicStackResolver.DeckConstants(tech).Select(c => c.Name))
             .ToHashSet(StringComparer.Ordinal);
 
         // ── The rules ────────────────────────────────────────────────────────────────────────
@@ -693,7 +709,7 @@ public static class TechValidation
                         problems.Add(new(TechProblemArea.Drc,
                             $"Device rule \"{name}\" parameter {parameter} refers to \"{reference}\", " +
                             $"which is neither a measured quantity ({Lvs.DeviceRecognition.MeasuredNames}) " +
-                            "nor a constant this technology declares."));
+                            "nor a constant this technology declares or derives."));
             }
         }
     }

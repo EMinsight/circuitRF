@@ -209,7 +209,24 @@ public static class LayoutRead
         // pads join this level's copper. With no hierarchy this is every shape the flatten made,
         // byte for byte as before.
         var copper = LayoutReadHierarchy.CopperFor(shapes, view, modules, pads, origins);
-        var pieces = CopperPieces.Build(copper, tech, view.Shapes);
+
+        // AA-2: what tier-3 recognition may look at, and the copper its copper-body rules take out
+        // of the partition — decided BEFORE the partition, because a recognised line is a device
+        // and not interconnect, exactly as a placed one is (LayoutReadBodies). Which placements
+        // own copper is IsDevice's answer, the one the device walk below gives again.
+        CopperCut? cut = null;
+        if (hierarchy is { Recognize: true })
+        {
+            var ownedByDevices = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < view.Instances.Count; i++)
+                if (IsDevice(view.Instances[i], placed[i].CellDir, placed[i].View))
+                    ownedByDevices.Add(LayoutDesignFlatten.PathOf(view.Instances[i], i));
+
+            cut = DeviceRecognition.Cut(
+                tech, LayoutReadHierarchy.RecognizableCopper(flat.Shapes, view, placed, hierarchy, ownedByDevices));
+        }
+
+        var pieces = CopperPieces.Build(copper, tech, view.Shapes, cut: cut);
         bodies.ReadPins(pads, origins, pieces, hierarchy);
 
         // R-lvs9-5a2's third counter. CopperPieces unions once per call, by LayerRegions.Build's
@@ -390,7 +407,7 @@ public static class LayoutRead
             DeviceRecognition.Emit(
                 tech,
                 LayoutReadHierarchy.RecognizableCopper(flat.Shapes, view, placed, hierarchy, devicePaths),
-                pieces, nets, devices, padGeometry, notes, naming, document);
+                pieces, nets, devices, padGeometry, notes, naming, document, cut);
 
         // ── The assembly's bond wires (brief 13) ───────────────────────────────────────────────
         //

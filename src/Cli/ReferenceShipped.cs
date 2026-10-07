@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Design.Schematic;
 using RfCore.Export;
 
@@ -119,6 +120,12 @@ internal static partial class Reference
             l.Kind == StackupKind.Via ? l.SpanFromLayer : null,
             l.Kind == StackupKind.Via ? l.SpanToLayer : null)).ToList();
 
+        // A layer no Conductor or Via entry draws on is drawn-only: it joins nothing, which is what a
+        // resistive film, a dielectric window and a recognition marker all are.
+        var claimed = tech.Stackup.Layers
+            .Where(l => l.Kind is StackupKind.Conductor or StackupKind.Via)
+            .SelectMany(l => l.DrawingLayers).ToHashSet();
+
         var materials = tech.Materials.Select(m => m.Name)
             .Concat(tech.LibraryMaterials.Select(m => m.Material.Name))
             .Distinct(StringComparer.Ordinal).ToList();
@@ -131,7 +138,28 @@ internal static partial class Reference
             stackup,
             tech.MaterialLibraries ?? [],
             materials,
-            tech.DrcRules.Count);
+            tech.DrcRules.Count,
+            [.. tech.Layers.Select(l => new ReferenceLayerJson(
+                l.Name, l.Key.Layer, l.Key.Datatype, claimed.Contains(l.Key)))],
+            tech.DeviceRules.Count == 0 ? null
+                : [.. tech.DeviceRules.Select(r => new ReferenceRecognitionRuleJson(
+                    r.Name, r.Kind, r.Body, r.Terminals,
+                    new SortedDictionary<string, string>(r.Parameters, StringComparer.Ordinal),
+                    r.CopperBody, r.GroundTerminal))],
+            ConstantsOf(tech));
+    }
+
+    // The derived names come first and are marked as such: a formula reading TfrSheetResistance in a
+    // technology whose Constants are empty would otherwise look like a reference to nothing.
+    private static string[]? ConstantsOf(Technology tech)
+    {
+        string[] rows =
+        [
+            .. MmicStackResolver.DeckConstants(tech).Select(c =>
+                $"{c.Name} = {c.Expression}{(c.Unit is { Length: > 0 } u ? " " + u : "")} (from the process)"),
+            .. tech.Constants.Select(c => $"{c.Name} = {c.Expression}{(c.Unit is { Length: > 0 } u ? " " + u : "")}"),
+        ];
+        return rows.Length == 0 || tech.DeviceRules.Count == 0 ? null : rows;
     }
 
     private static string RenderTechnologies(IReadOnlyList<ReferenceTechnologyJson> rows)
@@ -167,7 +195,28 @@ internal static partial class Reference
             }
             sb.AppendLine($"  material libraries: {(t.MaterialLibraries.Count == 0 ? "none" : string.Join(", ", t.MaterialLibraries))}");
             sb.AppendLine($"  materials it can name: {(t.Materials.Count == 0 ? "none" : string.Join(", ", t.Materials))}");
+            if (t.Layers is { Count: > 0 } layers)
+            {
+                sb.AppendLine("  drawing layers (a .clay shape's Layer is the Key):");
+                foreach (var l in layers)
+                    sb.AppendLine($"    {l.Layer}/{l.Datatype,-4} {l.Name}{(l.InStackup ? "" : "   [drawn only - joins nothing]")}");
+            }
             sb.AppendLine($"  DRC rules: {t.DrcRules}");
+            if (t.RecognitionRules is { Count: > 0 } rules)
+            {
+                sb.AppendLine("  device recognition (lvs --recognize; 'reference technology' explains the fields):");
+                foreach (var r in rules)
+                {
+                    var row = new StringBuilder($"    {r.Name}: {r.Kind}, body {r.Body}, terminals {string.Join(" ; ", r.Terminals)}");
+                    if (r.CopperBody) row.Append(", copper body");
+                    if (r.GroundTerminal) row.Append(", + ground terminal");
+                    if (r.Parameters.Count > 0)
+                        row.Append(", ").Append(string.Join(", ", r.Parameters.Select(p => $"{p.Key} = {p.Value}")));
+                    sb.AppendLine(row.ToString());
+                }
+                if (t.Constants is { Count: > 0 } constants)
+                    sb.AppendLine($"    constants: {string.Join("; ", constants)}");
+            }
             sb.AppendLine();
         }
         return sb.ToString();

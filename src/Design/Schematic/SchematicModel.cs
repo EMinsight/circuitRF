@@ -546,6 +546,27 @@ public enum SymbolKind
     /// there is no pin count on this kind to keep in step.</para>
     /// </summary>
     SpiceModel,
+
+    // ── The MMIC passives (brief-agent-authoring-overview.md AA-1) ────────────
+    //
+    // Each is bound to the technology the way MLIN is: the user states geometry and the stackup
+    // supplies the process (MmicPassiveInjection). Each has a built-in PCell of the same token, so a
+    // schematic of them generates a layout as a board's microstrip does. Appended, never inserted, so
+    // no existing kind's value moves.
+
+    /// <summary>Metal-insulator-metal capacitor (engine "MIMCAP"). Terminal 1 the top plate, 2 the
+    /// bottom plate, over the implicit reference.</summary>
+    MimCap,
+
+    /// <summary>Square spiral inductor (engine "SPIRAL"). Terminal 1 the outer end, 2 the inner end
+    /// brought out on the bridge metal.</summary>
+    Spiral,
+
+    /// <summary>Thin-film resistor (engine "TFR"): sheet resistance times squares.</summary>
+    Tfr,
+
+    /// <summary>Air bridge (engine "AIRBRIDGE"). Terminals 1 and 2 the landings, 3 the line crossed.</summary>
+    Airbridge,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

@@ -302,14 +302,21 @@ internal static class ToolCatalog
                     "Loadpull pursuit: searches for the MXP and MXE terminations. Returns the optima and the "
                   + "result's shape; ask for the cubes with all, only or group."),
                 new("em", ["em"],
-                    [new("path", true, "The .cem to run.")],
+                    [new("path", true, "The .cem to run; with component, the workspace folder (or .cws, or .ctech) "
+                                     + "whose technology the part is drawn on.")],
                     [Output, .. Narrowing,
                      new("workspace", "--workspace", OptKind.Path,
                          "The .cws paths resolve against. Default: the nearest one above the .cem."),
                      new("solver", "--solver", OptKind.Str,
-                         "A 3D setup's solver for this run only: palace, openems or both. Default: the .cem's Solver3D.")],
-                    "Electromagnetic extraction of the layout the .cem names. Writes a Touchstone and a .npy; a 3D "
-                  + "setup run with both solvers writes each one's and a comparison .npy."),
+                         "A 3D setup's solver for this run only: palace, openems or both. Default: the .cem's Solver3D."),
+                     new("component", "--component", OptKind.Str,
+                         "Extract one built-in component's drawn part instead of a .cem: its type and parameters as on a "
+                       + ".cnl instance line, e.g. \"SPIRAL N=3 W=10 um S=8 um Din=100 um\". Port n is terminal n. "
+                       + "Needs output."),
+                     new("freq", "--freq", OptKind.Str,
+                         "With component: the sweep, start:stop:step, e.g. 1GHz:20GHz:1GHz. Default 1-20 GHz.")],
+                    "Electromagnetic extraction of the layout the .cem names, or of one component's drawn part. Writes "
+                  + "a Touchstone and a .npy; a 3D setup run with both solvers writes each one's and a comparison .npy."),
             ]),
 
         new("check",
@@ -602,17 +609,25 @@ internal static class ToolCatalog
           + "analysis also takes a .csch directly and extracts in memory; this is for reading what "
           + "it will run, and for checking your own authoring against a known-good one. Given a "
           + ".clay it PROJECTS the board instead: a board netlist, a placement table and a bill of "
-          + "materials, from one reading of the artwork, so the three cannot disagree.",
+          + "materials, from one reading of the artwork, so the three cannot disagree. With "
+          + "toSchematic it runs the other way: a .cnl you wrote becomes a readable drawn .csch.",
             null, null,
             [
                 new("", [ "netlist" ],
                     [new("path", true,
                         "A .csch, a cell folder, or a workspace with cell — or a .clay, with at least "
-                      + "one of ipc/placement/bom.")],
+                      + "one of ipc/placement/bom — or a .cnl, with toSchematic.")],
                     [
                         new("output", "-o", OptKind.Path,
                             "Where the .cnl is written. Without it the text comes back in the result."),
                         new("cell", "--cell", OptKind.Str, "Which cell, when the path is a workspace."),
+                        new("toSchematic", "--to-schematic", OptKind.Flag,
+                            "The other direction: path is a .cnl, and the result is a DRAWN schematic (.csch) — "
+                          + "the signal path left to right with the ports at its ends, shunt elements dropped "
+                          + "below, a ground symbol on every terminal on net 0, orthogonal wires, and every net "
+                          + "labelled with its netlist name. It extracts back to the same instances, nets and "
+                          + "values. Refused, with every cause named, for a netlist that defines cells or uses a "
+                          + "type with no schematic symbol. output, when given, must end in .csch."),
                         // Named individually because two of the three are .csv and an extension
                         // cannot say which — R-ab3-2b, which is why `-o` on a board is a refusal.
                         new("ipc", "--ipc", OptKind.Path,
@@ -742,7 +757,9 @@ internal static class ToolCatalog
                           + "Off by default and for a design circuitRF authored: a placed instance "
                           + "already says what a part is, and the instance always wins. It is for "
                           + "artwork carrying no instances at all. A technology stating no deck "
-                          + "recognises nothing, which is not an error."),
+                          + "recognises nothing, which is not an error. The shipped mmic-GaAs "
+                          + "technology carries one ('reference technologies' lists its rules); a "
+                          + "recognised part is matched by name when its body shapes carry Component."),
                         Set,
                         new("severity", "--severity", OptKind.Str,
                             "What decides the exit code: warning or error. Default error; warnings "
@@ -766,11 +783,16 @@ internal static class ToolCatalog
           + "The review saved on the layout in the editor (settings, layers and scope) applies unless an "
           + "argument overrides it, and so do the findings accepted there: each is reported accepted with its "
           + "reason and does not count against its trace or the exit code. To accept one headlessly, add it to "
-          + "the .clay's ImpedanceAcceptances (reference topic layout); there is no accept argument.",
+          + "the .clay's ImpedanceAcceptances (reference topic layout); there is no accept argument. "
+          + "LINE CALCULATOR: with tech (and no path) nothing is drawn or read: give layers (one copper layer) and "
+          + "width and/or z0, and each row reports the circuit model's answer (an elaborated MLIN: static and "
+          + "dispersive Z0, eeff, loss, guided wavelength) beside the quasi-static cross-section's (what this tool "
+          + "reports on a line drawn at that width), with the difference. z0 synthesises a width in each column. "
+          + "gap makes it coplanar (cross-section only: no circuit component models a coplanar line).",
             null, null,
             [
                 new("", [ "impedance" ],
-                    [new("path", true, "A .clay, or a cell folder holding one.")],
+                    [new("path", true, "A .clay, or a cell folder holding one. Required, except with tech.", Required: false)],
                     [
                         new("target", "--target", OptKind.Number, "The target Z0 in ohms. Default the saved value, else 50."),
                         new("tolerance", "--tol", OptKind.Number,
@@ -786,11 +808,13 @@ internal static class ToolCatalog
                             "What decides the exit code: warning or fail. Default fail; warnings are reported either way."),
                         new("layers", "--layers", OptKind.StrList,
                             "The copper layers to analyse, by the technology's layer names. Default the saved "
-                          + "layers, else every copper layer. A name that is not a copper layer is refused with the names that are."),
+                          + "layers, else every copper layer. A name that is not a copper layer is refused with the names that are. "
+                          + "Line calculator: exactly one, the layer the line is on."),
                         new("maxWidth", "--max-width", OptKind.Number,
                             "The widest copper read as a trace, in um. Default from the stackup."),
                         new("width", "--width", OptKind.StrRepeat,
-                            "Review only the traces of these widths on one layer: \"<layer>=<width>[,<width>...]\", "
+                            "Line calculator (with tech): widths to analyse, \"70um\" or \"10um,70um\", one row each. "
+                          + "Otherwise: review only the traces of these widths on one layer: \"<layer>=<width>[,<width>...]\", "
                           + "a bare width in um or with a unit (18mil). Replaces the saved width classes for that "
                           + "layer for this run; a layer given none is reviewed at every width. A trace's width is "
                           + "the width over most of its length. Out-of-scope traces are not cut, solved or listed, "
@@ -822,6 +846,20 @@ internal static class ToolCatalog
                           + "class — and analyse nothing. The way to choose width."),
                         new("output", "-o", OptKind.Path,
                             "Write the PDF report here (the one the layout editor exports). Must end in .pdf."),
+                        new("tech", "--tech", OptKind.PathOrName,
+                            "Line calculator: the technology — a .ctech, a workspace or document inside one (its "
+                          + "technology as a schematic there resolves it), or a shipped technology id (reference "
+                          + "topic technologies). Selects the calculator; a path beside it is refused."),
+                        new("z0", "--z0", OptKind.StrList,
+                            "Line calculator: impedances in ohms to synthesise a width for, one row each. Both "
+                          + "columns solve for their own width: the model by bisection on its static Z0, the "
+                          + "cross-section to one DBU (1 nm)."),
+                        new("gap", "--gap", OptKind.Str,
+                            "Line calculator: a coplanar line, ground copper on the same layer this far from each "
+                          + "edge (25um, 6mil; a bare number is um)."),
+                        new("freq", "--freq", OptKind.Str,
+                            "Line calculator: the frequency WITH its unit (10GHz) for the dispersive Z0 and eeff, "
+                          + "loss per length and guided wavelength. Without it only static values are given."),
                         Summary,
                     ],
                     ""),

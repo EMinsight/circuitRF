@@ -35,7 +35,7 @@ namespace CircuitRF.Cli;
 /// (owner, 2026-09-25) — the analysis is layer by layer precisely so that stopping a long run keeps
 /// what it has done — and says on its first page that it was cancelled.</para>
 /// </summary>
-internal static class Impedance
+internal static partial class Impedance
 {
     private sealed class Options
     {
@@ -59,12 +59,28 @@ internal static class Impedance
         public readonly List<string> Nets = [];
         public readonly List<string> Picks = [];
         public readonly List<string> WholeLayers = [];
+        // AA-3, the line calculator (ImpedanceLine.cs): set by --tech, --z0, --gap, --freq and a --width
+        // with no layer in it.
+        public string? Tech;
+        public readonly List<double> Z0s = [];
+        public double? GapMeters;
+        public double? FreqHz;
+        public readonly List<double> PlainWidthsMeters = [];
+        public string? FirstLineOption;
+        // Every layout-review flag given, by spelling, so the calculator can name the one it cannot use.
+        public readonly List<string> ReviewOptions = [];
     }
 
     public static int Run(string[] args)
     {
         var o = new Options();
         if (Parse(args, o) is { } bad) return bad;
+        if (o.Tech is not null) return RunLine(o);
+        if (o.FirstLineOption is { } lineOnly) return JsonRun.Fail(CliDiagnostics.ImpedanceLineTechRequired(lineOnly));
+        if (o.PlainWidthsMeters.Count > 0)
+            return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--width", "(a width with no layer)",
+                "a copper layer and one or more widths, e.g. \"Top Copper=457\" or \"Top Copper=18mil,10mil\" "
+              + "(a bare width is the line calculator's, with --tech)"));
 
         if (o.Path is null) { JsonRun.Report(CliDiagnostics.ImpedancePathRequired()); return Usage(); }
         JsonRun.InputPath = o.Path;
@@ -319,13 +335,17 @@ internal static class Impedance
             "                           [--region [<layer>@]x0,y0,x1,y1]... [--net <name>]... [--pick <layer>@<x>,<y>[:connected]]...\n" +
             "                           [--whole-layer <layer>]...\n" +
             "                           [--severity warning|fail] [--ignore-accepted] [-o report.pdf]\n" +
+            "       circuitrf impedance --tech <ctech|workspace|document|shipped-id> --layer <name>\n" +
+            "                           (--width <w>[,<w>...] | --z0 <ohms>[,<ohms>...]) [--gap <g>] [--freq 10GHz]\n" +
             "  <layout> is a .clay or a cell folder holding one. The review saved on the layout applies\n" +
             "  unless a flag overrides it; --survey lists the trace widths per layer and analyses nothing.\n" +
             "  --region, --net, --pick and --whole-layer select traces and each replaces the saved selectors\n" +
             "  of its kind; with any of the first three set, a layer none of them reaches is not reviewed;\n" +
             "  every coordinate carries a unit (12.5mm, 400um, 50mil). Findings accepted in the editor are\n" +
             "  reported ACCEPTED and do not count; --ignore-accepted counts them. Trace within --via-transition\n" +
-            "  of the land of a via on it is not checked (the plane is cleared there) and each is noted; 0 checks it.");
+            "  of the land of a via on it is not checked (the plane is cleared there) and each is noted; 0 checks it.\n" +
+            "  With --tech it is a line calculator and draws nothing: the circuit model's answer (an elaborated\n" +
+            "  MLIN) beside the cross-section's (what impedance reports on a drawn line); --gap makes it coplanar.");
         return 1;
     }
 
@@ -334,6 +354,7 @@ internal static class Impedance
         for (int i = 0; i < args.Length; i++)
         {
             string a = args[i];
+            if (ReviewOnly.Contains(a)) o.ReviewOptions.Add(a);
             switch (a)
             {
                 case "-o" or "--output" when i + 1 < args.Length: o.Output = args[++i]; continue;
@@ -366,13 +387,37 @@ internal static class Impedance
                     // one reader and 6 GHz to another, and λ/20 at the wrong one softens nothing or
                     // everything.
                     string text = args[++i];
-                    var (_, unit) = CircuitRF.Design.Matching.MatchValueFormat.SplitTypedValue(text);
-                    if (CircuitRF.Design.Matching.MatchValueFormat.TryMatchUnit(unit, CircuitRF.Design.Matching.MatchQuantity.Frequency) is null
-                        || !CircuitRF.Design.Matching.MatchValueFormat.TryParseWithUnit(
-                               text, CircuitRF.Design.Matching.MatchQuantity.Frequency, "Hz", out double hz, out _)
-                        || !(hz > 0))
+                    if (Frequency(text) is not { } hz)
                         return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--max-freq", text, "a frequency with its unit, e.g. 6GHz"));
                     o.MaxFrequencyHz = hz;
+                    continue;
+                }
+                // ── the line calculator (AA-3) ──
+                case "--tech" when i + 1 < args.Length: o.Tech = args[++i]; continue;
+                case "--z0" when i + 1 < args.Length:
+                {
+                    o.FirstLineOption ??= a;
+                    foreach (string z in args[++i].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                    {
+                        if (!TryOhms(z, out double ohms) || !(ohms > 0) || !double.IsFinite(ohms))
+                            return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--z0", args[i], "one or more positive impedances in ohms, e.g. 50 or 25,50,90"));
+                        o.Z0s.Add(ohms);
+                    }
+                    continue;
+                }
+                case "--gap" when i + 1 < args.Length:
+                    o.FirstLineOption ??= a;
+                    if (!LayoutUnits.TryParse(args[++i].Trim(), LayoutUnit.Um, 1000, out long gapNm) || gapNm <= 0)
+                        return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--gap", args[i], "a positive length, e.g. 25um or 6mil (a bare number is µm)"));
+                    o.GapMeters = gapNm * 1e-9;
+                    continue;
+                case "--freq" when i + 1 < args.Length:
+                {
+                    o.FirstLineOption ??= a;
+                    string text = args[++i];
+                    if (Frequency(text) is not { } hz)
+                        return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--freq", text, "a frequency with its unit, e.g. 10GHz"));
+                    o.FreqHz = hz;
                     continue;
                 }
                 case "--severity" when i + 1 < args.Length:
@@ -405,6 +450,18 @@ internal static class Impedance
                     string text = args[++i];
                     int eq = text.IndexOf('=');
                     var microns = new List<double>();
+                    if (eq < 0)
+                    {
+                        // No layer: the line calculator's width list (--tech). Refused later without it.
+                        foreach (string w in text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                        {
+                            if (!LayoutUnits.TryParse(w, LayoutUnit.Um, 1000, out long nm) || nm <= 0)
+                                return JsonRun.Fail(CliDiagnostics.ImpedanceBadNumber("--width", text,
+                                    "one or more positive widths, e.g. 70um or 18mil,10mil (a bare number is µm)"));
+                            o.PlainWidthsMeters.Add(nm * 1e-9);
+                        }
+                        continue;
+                    }
                     if (eq > 0)
                         foreach (string w in text[(eq + 1)..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                         {
@@ -432,6 +489,24 @@ internal static class Impedance
             }
         }
         return null;
+    }
+
+    /// <summary>The flags that review a drawn layout, which the line calculator refuses by name.</summary>
+    private static readonly HashSet<string> ReviewOnly =
+    [
+        "-o", "--output", "--target", "--tol", "--tolerance", "--warn", "--max-freq", "--severity", "--max-width",
+        "--via-transition", "--region", "--net", "--pick", "--whole-layer", "--no-scope", "--survey", "--ignore-accepted",
+    ];
+
+    /// <summary>A frequency WITH its unit, or null — the rule every CLI frequency follows.</summary>
+    private static double? Frequency(string text)
+    {
+        var (_, unit) = CircuitRF.Design.Matching.MatchValueFormat.SplitTypedValue(text);
+        return CircuitRF.Design.Matching.MatchValueFormat.TryMatchUnit(unit, CircuitRF.Design.Matching.MatchQuantity.Frequency) is not null
+               && CircuitRF.Design.Matching.MatchValueFormat.TryParseWithUnit(
+                      text, CircuitRF.Design.Matching.MatchQuantity.Frequency, "Hz", out double hz, out _)
+               && hz > 0 && double.IsFinite(hz)
+            ? hz : null;
     }
 
     private static bool TryOhms(string text, out double value)

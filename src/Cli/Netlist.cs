@@ -39,6 +39,10 @@ namespace CircuitRF.Cli;
 /// <see cref="CellLookup"/> and <c>CellFolder.ResolvePrimary</c>, the same two functions, so the cell
 /// this extracts is the cell that verb would have drawn. There is no <c>--view</c>: a netlist comes
 /// out of a schematic and out of nothing else, so the view is never a question.</para>
+///
+/// <para><b><c>--to-schematic</c> runs it the other way</b> (brief-agent-authoring-overview.md AA-6):
+/// a <c>.cnl</c> in, a drawn <c>.csch</c> out that extracts back to the same instances, nets and
+/// values. <see cref="NetlistToSchematic"/> is that half.</para>
 /// </summary>
 internal static class Netlist
 {
@@ -46,6 +50,7 @@ internal static class Netlist
     {
         string? path = null, output = null, cell = null;
         string? ipc = null, placement = null, bom = null;
+        bool toSchematic = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -56,6 +61,7 @@ internal static class Netlist
                 case "--ipc" when i + 1 < args.Length:            ipc       = args[++i]; continue;
                 case "--placement" when i + 1 < args.Length:      placement = args[++i]; continue;
                 case "--bom" when i + 1 < args.Length:            bom       = args[++i]; continue;
+                case "--to-schematic":                            toSchematic = true;    continue;
                 default:
                     if (args[i].StartsWith('-'))
                     { JsonRun.Report(CliDiagnostics.NetlistUnknownOption(args[i])); return Usage(); }
@@ -77,6 +83,14 @@ internal static class Netlist
         // layout is the ordinary case, and asking for a placement table out of it is unambiguous.
         bool board = ipc is not null || placement is not null || bom is not null;
         var kind = DocumentKinds.Classify(path);
+
+        // AA-6: the other direction — a drawing from a netlist. Its own file, as the board is.
+        if (toSchematic)
+        {
+            foreach (var (flag, given) in new[] { ("--cell", cell), ("--ipc", ipc), ("--placement", placement), ("--bom", bom) })
+                if (given is not null) return JsonRun.Fail(CliDiagnostics.NetlistToSchematicConflictingFlag(flag));
+            return NetlistToSchematic.Run(path, kind, output);
+        }
         if (kind == DocumentKind.Layout || (board && kind == DocumentKind.Cell))
             return Board.Run(path, kind, ipc, placement, bom, output);
 
@@ -133,6 +147,8 @@ internal static class Netlist
         Console.Error.WriteLine(
             "       circuitrf netlist <path.clay | cell-folder> "
           + "[--ipc out.ipc] [--placement out.csv] [--bom out.csv]");
+        Console.Error.WriteLine(
+            "       circuitrf netlist <path.cnl> --to-schematic [-o out.csch]");
         return 1;
     }
 

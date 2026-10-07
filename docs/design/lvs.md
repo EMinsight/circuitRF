@@ -287,6 +287,21 @@ things the sketch above leaves implicit:*
 The constants those formulas multiply by are a `Constants` block on the technology beside
 `DeviceRules` — one wafer has one sheet resistance, and several rules may read it.
 
+*Extended 2026-10-06 (`brief-agent-authoring-overview.md` AA-2), when the shipped GaAs technology
+got the first real deck:*
+
+- **`CopperBody`** — the body is metal that IS the device (a line, a spiral, a via barrel). Its
+  region leaves the partition BEFORE the partition is built, on every layer the body names, so the
+  copper either side is two nets: tier 3's half of what `LayoutReadBodies` does for a placed line.
+  Terminals are read on the cut copper. **`GroundTerminal`** appends ground as the last terminal,
+  as a placed `VIAGND` gets it; a copper-body line with one drawn end is an open stub.
+- **A recognised device takes its designator from the `Component` field of its body's shapes**, so
+  named artwork anchors at tier 1. Without names, one mis-wire on a small die cascades through the
+  structural refinement into every device unmatched.
+- **A line has no layer signature**, so the shipped deck reads one under a drawn-only marker layer
+  (Line Marker 20/0, Inductor Marker 21/0 for a spiral). Recognition by layers was chosen over
+  recognition by a generator's recorded origin because it also reads imported GDSII.
+
 #### Which cells are devices, and which are interconnect
 
 **R-lvs-8.** A resolved cell is **interconnect** when it corresponds to no schematic component:
@@ -1054,7 +1069,8 @@ section keeps the record.
   fails if a change widens one of those gaps past the tolerance.
 
 - **§4.1 tier 3's recognition deck's CONTENTS — CLOSED as written, which is to say deliberately
-  left empty.** The shape is built and fixed exactly as the note describes it, and **no shipped
+  left empty.** *Superseded 2026-10-06: an agent-authored MMIC filter was the design that needed
+  one, and the shipped GaAs technology now states five device kinds (AA-2, above).* The shape is built and fixed exactly as the note describes it, and **no shipped
   technology states a rule**, because no design has needed one. That is the answer rather than an
   omission: `--recognize` is off per run *and* off per technology, a process declaring no rules
   recognises nothing and that is not an error, and the deck is validated by
@@ -1162,7 +1178,8 @@ not connected.
 
 `--recognize` reads what copper **looks like**, never whether the process would actually make that
 device. Every candidate it rejects is reported with its reason, a recognised device carries no
-designator so it can only ever match structurally, and a run that recognised anything says so at
+designator unless its shapes' `Component` names it (so an unnamed one can only ever match
+structurally), and a run that recognised anything says so at
 info. That is a boundary the note implied and the build had to state, because a recognition result
 read as a manufacturability statement is the one way this feature could mislead.
 

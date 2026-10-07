@@ -1070,7 +1070,8 @@ public static partial class TraceImpedanceAnalysis
         IReadOnlyList<LayoutShape> shapes, Technology tech, int dbuPerMicron,
         TraceImpedanceOptions options, RunControl? control, CancellationToken ct)
     {
-        var (stack, bands, bandOf, stackRefusal) = TraceStack.StackOf(tech);
+        var stackNotes = new List<string>();
+        var (stack, bands, bandOf, stackRefusal) = TraceStack.StackOf(tech, shapes, stackNotes);
         if (stackRefusal is not null) return (null, stackRefusal);
         if (bands.Count == 0)
             return (null,
@@ -1121,7 +1122,7 @@ public static partial class TraceImpedanceAnalysis
         var requested = options.Layers ?? [.. bands.Where(b => subjects.ContainsKey(b.Index))
                                                      .Select(b => b.Layer.DrawingLayers.First(dl => bandOf[dl] == b))];
         var analysed = new List<(LayerKey Key, CrossSectionExtractor.Band Band)>();
-        var notes = new List<string>();
+        var notes = new List<string>(stackNotes);
         foreach (var key in requested)
         {
             if (!bandOf.TryGetValue(key, out var band))

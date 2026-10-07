@@ -327,6 +327,11 @@ public static class SchematicRead
             if (!parameters.ContainsKey(p.Name)) continue;
             facts[p.Name] = new LvsParameterFact(p.Dimension);
         }
+        // AA-1: an MMIC passive's derived value (ValuesOf), so it compares by name against a recognised
+        // device's C or R rather than by topology alone.
+        foreach (var (name, dim) in new[] { ("C", UnitDimension.Capacitance), ("R", UnitDimension.Resistance) })
+            if (comp.Symbol is SymbolKind.MimCap or SymbolKind.Tfr && parameters.ContainsKey(name) && !facts.ContainsKey(name))
+                facts[name] = new LvsParameterFact(dim);
         return facts.Count > 0 ? facts : EmptyFacts;
     }
 
@@ -348,6 +353,11 @@ public static class SchematicRead
             ValueKind.String  => value.AsString(),
             _                 => null,
         };
+        // AA-1: a MIMCAP states W and L, and what it IS is a capacitance; a TFR likewise a resistance.
+        // The model's own value — the one the run uses — is what a recognised device's C or R is
+        // compared against.
+        if (ec.Model is CircuitRF.Core.Devices.MimCapModel mim) values["C"] = mim.Capacitance;
+        else if (ec.Model is CircuitRF.Core.Devices.ThinFilmResistorModel tfr) values["R"] = tfr.Resistance;
         return values;
     }
 

@@ -129,7 +129,7 @@ public static class DeviceTypes
     /// <c>LayoutToSchematicGenerator</c> seeded and now calls.
     /// </summary>
     /// <remarks>
-    /// Eight entries, which is every generator that has a schematic counterpart today. R-lvs4-5c
+    /// Twelve entries, which is every generator that has a schematic counterpart today. R-lvs4-5c
     /// completes it against <c>PCellRegistry</c> with a test that FAILS THE BUILD on a generator
     /// with no entry, rather than falling back at runtime: a silent fallback here produces two
     /// devices of "unknown" type that then match each other.
@@ -145,6 +145,11 @@ public static class DeviceTypes
             ["MKLOPF"] = SymbolKind.Mklopf,
             ["VIA"]    = SymbolKind.Via,
             ["VIAGND"] = SymbolKind.ViaGnd,
+            // The MMIC passives (AA-1): each generator is keyed by its component's own token.
+            ["MIMCAP"]    = SymbolKind.MimCap,
+            ["SPIRAL"]    = SymbolKind.Spiral,
+            ["TFR"]       = SymbolKind.Tfr,
+            ["AIRBRIDGE"] = SymbolKind.Airbridge,
         };
 
     /// <summary>The <see cref="SymbolKind"/> <paramref name="generatorId"/> produces, if any.</summary>
@@ -242,9 +247,11 @@ public static class DeviceTypes
     /// </remarks>
     public static DeviceKind Of(SymbolKind kind) => kind switch
     {
-        SymbolKind.Resistor  => DeviceKind.Resistor,
-        SymbolKind.Capacitor => DeviceKind.Capacitor,
-        SymbolKind.Inductor  => DeviceKind.Inductor,
+        // The MMIC passives are the same coarse kinds as the ideal elements they realise, so a
+        // MIMCAP in the layout pairs with a C in the schematic and the other way about.
+        SymbolKind.Resistor  or SymbolKind.Tfr    => DeviceKind.Resistor,
+        SymbolKind.Capacitor or SymbolKind.MimCap => DeviceKind.Capacitor,
+        SymbolKind.Inductor  or SymbolKind.Spiral => DeviceKind.Inductor,
 
         // Every microstrip element, plus the ideal line: one kind, because the artwork does not
         // distinguish them either — what tells a tee from a cross is its terminal COUNT, which the
@@ -252,6 +259,9 @@ public static class DeviceTypes
         SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MTee
             or SymbolKind.MCross or SymbolKind.Mtaper or SymbolKind.Mklopf
             or SymbolKind.Tline
+            // An air bridge is interconnect with a series L, and it has a third terminal (the line
+            // crossed), so it is the line family's, told apart by its terminal count like a tee.
+            or SymbolKind.Airbridge
             => DeviceKind.TransmissionLine,
 
         // Both vias are one kind: which one is told apart by the terminal count, as a tee from a cross.

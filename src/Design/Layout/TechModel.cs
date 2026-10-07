@@ -112,6 +112,20 @@ public sealed class LayerDef
     /// <summary>Null = no interchange overrides declared (GDSII import/export falls back to
     /// <see cref="Key"/> directly). Additive, no <c>.ctech</c> <c>FormatVersion</c> bump.</summary>
     public InterchangeMapping? Interchange { get; set; }
+
+    /// <summary>
+    /// The sheet resistance of the resistive film this mask patterns, Ω/sq — what a thin-film
+    /// resistor (<c>TFR</c>) drawn on this layer is worth per square (brief-agent-authoring-overview.md
+    /// AA-1). Null for every layer that is not a resistor film, which is every layer of every
+    /// <c>.ctech</c> written before this existed: additive, omitted on write when null, no
+    /// <c>FormatVersion</c> bump.
+    ///
+    /// <para><b>On the drawing layer and not the stackup</b>, because a resistor film is not a
+    /// conductor level an EM solve meshes: it is a mask, patterned into small rectangles, whose one
+    /// electrical fact is this number. A stackup conductor entry would put a whole new level into
+    /// every planar run on the technology.</para>
+    /// </summary>
+    public double? SheetResistanceOhmPerSq { get; set; }
 }
 
 public enum StackupKind { Dielectric, Conductor, Via }
@@ -1049,6 +1063,35 @@ public sealed class DeviceRule
     /// already answers that.
     /// </remarks>
     public Dictionary<string, string> Parameters { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// <b>The body is metal that IS the device</b> — a microstrip line, a spiral, a via barrel
+    /// (brief-agent-authoring-overview.md AA-2).
+    /// </summary>
+    /// <remarks>
+    /// A resistor's film and a capacitor's dielectric join nothing at DC, so their terminals land on
+    /// two nets by themselves. A line is ONE piece of copper end to end, and read as interconnect it
+    /// puts both of its terminals on one net — the short <c>LayoutReadBodies</c> exists to prevent
+    /// for a PLACED line. True takes every body this rule finds out of the connectivity partition,
+    /// on every layer its <see cref="Body"/> names, so the copper either side of it is two nets.
+    /// Written only when true, so every deck written before it existed round-trips unchanged.
+    /// </remarks>
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool CopperBody { get; set; }
+
+    /// <summary>
+    /// <b>The device's last terminal is the ground reference</b>, not a drawn layer — a via to the
+    /// backside metal, whose far end is a plane the artwork does not draw.
+    /// </summary>
+    /// <remarks>
+    /// It is what a placed <c>VIAGND</c> already gets (<c>LayoutRead</c> adds the plane as its second
+    /// terminal), stated for recognition: the rule's <see cref="Terminals"/> then describe the one
+    /// drawn end and the plane completes the pair. Written only when true.
+    /// </remarks>
+    [System.Text.Json.Serialization.JsonIgnore(
+        Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool GroundTerminal { get; set; }
 }
 
 /// <summary>

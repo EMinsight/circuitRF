@@ -64,7 +64,7 @@ Thirteen verbs run no analysis, so none of §3-§6 applies to them and §7's exi
 | `explain` | the same, plus `--expr` / `--analysis` / `--ref` / `--cells` / `--layers` / `--extents` / `--footprints`, and `--setup` and `--object` (one object's resolved appearance) for a `.c3d` | reports what resolution DECIDED | **nothing** — §10 |
 | `render` | the same three view documents, a cell folder, a workspace + `--cell`, a `.cdd`, a 3D `.cem`, or a `.c3d` (and its field plots) | draws it with the renderer the GUI draws with | one `.svg` / `.pdf` / `.png` — §13, §13.7 for a data display, §13.8 for a 3D setup, §13.8.1 for a field plot |
 | `read` | a result file, or one of circuitRF's own documents | loads it back through the readers the GUI reads through | **nothing** — §11.4 |
-| `netlist` | a `.csch`, a cell folder, or a workspace + `--cell` | the extraction the GUI's own Simulate performs | one `.cnl`, or the text on stdout — §14 |
+| `netlist` | a `.csch`, a cell folder, or a workspace + `--cell` — or a `.cnl` + `--to-schematic` | the extraction the GUI's own Simulate performs, or `NetlistSchematic.Build` | one `.cnl`, or the text on stdout; a drawn `.csch` — §14, §14.2 |
 | `plot` | a result file | builds a one-plot data display and draws it | one `.svg` / `.pdf` / `.png`, and the `.cdd` under `--write-cdd` — §15 |
 | `find` | a directory | enumerates the workspaces, cells, views and analyses under it | **nothing** — §16 |
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | compares the artwork against the drawing, through `LvsRun.Run` | **nothing** unless `-o` names a report — §19 |
@@ -722,6 +722,36 @@ complete, current result (`C3dSolveStatus.AllCurrent`), it prints one stderr lin
 ```
 note: the result for 'EM1' was already current; running again
 ```
+
+### 8.9 One component's drawn part: `--component` (brief-agent-authoring-overview AA-1)
+
+```
+circuitrf em [<workspace dir | .cws | .ctech>] --component "SPIRAL N=3 W=10 um S=8 um Din=100 um" \
+             -o L1.s2p [--freq 1GHz:20GHz:1GHz]
+```
+
+The "extract this spiral" half of the spiral's hybrid model (owner decision): the closed form is an
+estimate, flagged as one, and this is how a caller gets the number to rely on. **A mode of `em`, not a
+verb**, because what it produces is exactly what `em` produces — a Touchstone, the `.npy` in the
+workspace's `results/`, and the same three-list report (`ReportEmRun`, shared with the `.cem` path).
+
+It owns nothing. The line is read by `CnlReader` and elaborated, so `W=10 um` means what it means on an
+instance line; the artwork is the component's own built-in PCell; `ComponentEmExtraction`
+(`src/Design/Layout/Em`) puts a port label on every pin — **port n is terminal n**, so the file drops into
+the schematic as an SnP in the part's place — and `EmRunService.Run` solves it. The technology is the
+usual walk-up from the path (or the current directory), or a `.ctech` named directly; none is a refusal.
+`-o` is required — there is no setup to name a default after — and `--freq` is refused on a `.cem` run.
+
+**Two things it refuses rather than answer wrongly.** A component with no built-in generator has no
+drawn part. A part whose artwork draws on a layer the stackup does not carry (other than a
+`PresentWithLayer` mask) is refused naming the layer: a `TFR`'s film is a sheet resistance, not a
+conductor level, and a solve would see two unconnected contacts.
+
+**The mesh is traded for reach, and says so.** `ComponentEmExtraction.ExtractionMesh` is two cells
+across the narrowest metal with no edge fan: at the default the shipped 2.5-turn spiral was 20,637
+unknowns, past the planar kernel's 5,000 ceiling. The edge-mesh-off warning the run prints is the
+trade's own statement (Q reads low). Measured numbers: `src/Design/RESOLVED.md` (AA-1). MCP: the `em`
+tool's `component` and `freq` options, with `path` the workspace folder.
 
 ## 9. Adding a verb
 
@@ -2197,6 +2227,52 @@ A `.cnl` input is refused rather than re-emitted: passing it through the reader 
 hand back a file that is not the one given — comments gone, directives reordered — and call it an
 extraction.
 
+### 14.2 The same verb, the other way: `--to-schematic`
+
+`brief-agent-authoring-overview.md` AA-6.
+
+```
+circuitrf netlist filter.cnl --to-schematic -o filter.csch
+circuitrf netlist filter.cnl --to-schematic > filter.csch
+```
+
+An agent can write a correct netlist far more easily than it can place symbols and route wires, and
+a person reviewing that agent's design wants a drawing. **A drawing from a netlist is the extraction
+run backwards**, so it is this verb in another mode and not a new noun.
+
+**A flag, not an inference from `-o`.** The verb's direction everywhere else is schematic → netlist,
+and a `.cnl` handed to it is refused (§14). Reversing the direction because `-o` happened to end in
+`.csch` would make one typo turn an extraction into a drawing. `-o` with the flag must end in `.csch`.
+The board flags and `--cell` are refused alongside it.
+
+**It owns no placement and no routing.** Both are `NetlistSchematic.Build` in `src/Design/Schematic`,
+below the firewall, so the window can offer the same drawing without a second copy. The wiring is
+`SchematicAutoRouter`, the router the SPICE subcircuit import draws with, because geometry IS
+connectivity here: a wire laid wrongly across another does not look wrong, it joins two nets.
+
+**The gate is the round trip.** Every committed `.cnl` (they are all under `testdata/`; `examples/`
+ships schematics) either draws and extracts back, through `SchematicCircuit`, to the same instances,
+nets in order, parameters, globals, measurements and analyses, or is refused for a reason the test
+pins. Today 51 draw and 4 are refused: two define cells, one uses a type with no symbol, and one is
+a wirebond. **Every net is labelled** with its netlist name because a net's name is part of the
+circuit (`V(out)` reads it), and an unlabelled wire extracts under an invented one. The one parameter
+a drawing adds is a variadic symbol's port count, when the line left it to the nets. Gate:
+`tests/Ui.Tests/Cli/NetlistToSchematicTests.cs`, which also holds every drawing to no overlapping
+symbols and orthogonal wires, and the verb as a process byte for byte against the in-process call.
+
+**The layout, in order.** The main line is the shortest chain of elements from port 1 to port 2 (with
+fewer than two ports, between the two drive or termination fixtures furthest apart). Each two-terminal
+element on it is turned so its entry pin faces left. Elements with one signal net hang below the net
+they connect to, signal pin uppermost, spaced by their measured glyph and label widths. A
+two-terminal element bridging two path nets sits above. Everything else goes in rows below, growing
+downwards from the nets it connects to. Upright parts have their labels moved beside them, because
+the default place under the glyph is on top of the ground symbol. Labels are keep-out for wires.
+
+**The netlist is read as written** (`CnlReader`, not the technology binding a run uses), because the
+binding writes the workspace's substrate into each microstrip line. A drawing carrying those numbers
+would carry them twice once its own extraction bound the technology again. A Touchstone `File`, which
+the reader makes absolute, is written relative to where the drawing is saved.
+
 ### 14.1 The same verb, over a BOARD
 
 `brief-authored-board-3-companion-writers.md` R-ab3-2.
@@ -3070,7 +3146,38 @@ parsing, the layer-name lookup, refusals and reporting.
   writes anything, and the report's first page says it was cancelled.
 - **The findings are the report, not diagnostics.** Every `impedance.` id is a refusal of the verb's
   own; a failing trace is the verb working.
-- MCP: the `impedance` tool, single-mode, `path` positional (`ToolCatalog`).
+- MCP: the `impedance` tool, single-mode, `path` positional (`ToolCatalog`); `path` is optional so the
+  calculator below is reachable as the same tool.
+
+### 21.1 The line calculator — `impedance --tech <t> --layer <name> (--width … | --z0 …) [--gap g] [--freq f]` (AA-3)
+
+A MODE of `impedance`, not a verb (owner's answer to brief-agent-authoring-overview AA-3): that verb owns
+the cross-section, and the question is the same one asked before the line exists. `--tech` selects it.
+**It owns no analysis**: every number is `LineCalculator.Calculate` (`src/Design/Layout/Em`), and
+`src/Cli/ImpedanceLine.cs` is the technology lookup, refusals and reporting.
+
+- **Two columns, neither a second copy.** The model column is an MLIN *elaborated* — a one-instance test
+  bench with `MicrostripSubstrateInjection.BuildOverrides` for the layer's conductor, through the
+  `Elaborator`, asked `MicrostripLineModel.LineParameters`, which is what its `Stamp` calls (the method
+  was split out of `Stamp` for this, with the sum order kept so stamps are bit-identical). The
+  cross-section column is `TraceImpedanceAnalysis.Analyze` on a layout built in memory: one straight line
+  20 widths long, and for `--gap` ground strips 10·(W+G) wide either side, selected by a pick so the
+  strips are copper and never traces under review. Gate: `tests/Ui.Tests/Em/LineCalculatorTests.cs` —
+  the model equals an elaborated `.cnl` MLIN field for field with `==`, and the cross-section equals
+  `AnalyzeFile` on a `.clay` with the line drawn elsewhere and at another length.
+- **Synthesis per column.** Model: `HammerstadJensen.SynthesizeWidth` (bisection on the static
+  `Compute`, 60 halvings over W/h ∈ [0.01, 100]) — the MLIN parameter editor's Z0 field calls the same
+  function. Cross-section: a bracket grown ×1.6 from the model's width (or H), then false position on
+  ln W with the Illinois step, to **one DBU** (1 nm); at most 60 solves. Both target the STATIC Z0.
+- **`--tech`.** A `.ctech`; a `.clay` by the layout's own resolution; any other file or folder by the
+  walk a schematic there uses (nearest `.cws`, its default technology) — because that is the substrate an
+  MLIN there elaborates on; else a shipped id. Nothing resolving is `impedance.tech.none`/`not-found`.
+- **Refused, not ignored:** a layout path with `--tech` (`impedance.line.path-not-used`), any
+  layout-review flag (`impedance.line.option-not-used`), `--z0`/`--gap`/`--freq` without `--tech`
+  (`impedance.line.tech-required`), a layer the technology lacks (`impedance.layers.unknown`, listing).
+- **`--json`** is `impedanceLine`, lengths in µm, loss in dB/mm. Exit 0 when every row has an answer in
+  every column it can have one in (a coplanar line has no model, which is said, not failed), 1 when a row
+  has none or the calculator is refused; a column that could not answer is `impedance.line.unanswered`.
 
 ## 22. `solver` — the 3D solver install assistant, headless
 

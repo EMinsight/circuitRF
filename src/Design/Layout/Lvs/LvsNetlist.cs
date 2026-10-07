@@ -185,6 +185,15 @@ public sealed record LvsDevice(
     /// a different generator (<c>LvsProperties</c>).
     /// </remarks>
     public string Generator { get; init; } = "";
+
+    /// <summary>
+    /// <b>Read out of copper by a recognition rule</b> rather than from a placed instance (brief 14,
+    /// AA-2). Such a device claims exactly the values its rule's formulas state, and nothing else —
+    /// so a schematic parameter the rule does not state is said once per rule at info
+    /// (<c>lvs.recognize.not-stated</c>), never warned about per device: a line's substrate is the
+    /// circuit's, and no amount of looking at the artwork recovers it.
+    /// </summary>
+    public bool Recognized { get; init; }
 }
 
 /// <summary>One net.</summary>

@@ -2,6 +2,54 @@
 
 ---
 
+## Plain MMIC artwork could not pass LVS: the GaAs deck, copper bodies, and naming (AA-2, 2026-10-06)
+
+An agent's filter, drawn as plain shapes on the shipped GaAs technology, reported "0 devices" and an
+error per schematic part: the technology had no recognition deck. Writing the deck was not enough on
+its own, for three reasons.
+
+- **A line, a spiral and a via barrel are copper, so recognising them was not enough.** The
+  resistor and capacitor rules work because their bodies (a resistive film, a dielectric) join
+  nothing. A line read as a recognised device still shorted its ends through its own metal, and a
+  backside via still put its pad on ground — the placed-line problem `LayoutReadBodies` solved,
+  arriving again for recognition. `DeviceRule.CopperBody` takes the body out of the partition:
+  `DeviceRecognition.Cut` computes it BEFORE `CopperPieces.Build`, and every body found is cut,
+  accepted or not, because which candidates are accepted depends on terminals read on the cut
+  partition. Terminals are evaluated on the cut copper too (`DeviceCandidates.Find`'s `cut`):
+  otherwise a MIM bottom plate continuous with a marked line found its interior point inside the
+  removed line and landed on no piece. `CopperCut` is opaque so nothing under `Lvs/` touches Clipper.
+- **The via's far end and a stub's far end are undrawn.** `DeviceRule.GroundTerminal` adds ground
+  as the last terminal, exactly as a placed `VIAGND` gets it. A copper-body LINE with one drawn end
+  is an open stub and gets an open net — a resistor with one pad is still a rejection.
+- **A line has no layer signature.** Metal1 under nothing distinguishes a line from a pad. The deck
+  adds two drawn-only marker layers (Line Marker 20/0, Inductor Marker 21/0). The line rules are per
+  metal level, because a rule cuts every layer its body names: `and(or(1/0, 2/0), 20/0)` would have
+  cut an airbridge crossing the line.
+
+**Recognised values compared "exact", and a correct capacitor failed.** An area measured off a
+polygon and a typed capacitance agree to 15 digits, not the last bit, and a recognised parameter
+carried `UnitDimension.None`. It now carries the dimension its rule's name implies (`R`, `C`, `L`,
+and a line's `W`/`L`), used only when the schematic parameter states none.
+
+**A line's substrate parameters warned on every recognised line** — the 2026-09-24 problem again,
+since a recognised device has no `Generator`. `LvsDevice.Recognized` routes them to one
+`lvs.recognize.not-stated` info line per rule.
+
+**Unnamed, one mis-wire is twelve findings.** Recognised devices carry no designator, so matching is
+structural, and colour refinement on a small, connected die sends one moved capacitor everywhere: every
+device came back unmatched. A recognised body now takes its designator from the `Component` field of
+its shapes (two different names: `lvs.recognize.component-ambiguous`, and neither is taken). With
+names, the same fault is one `lvs.terminal.wrong-net` line naming both nets. Net labels on the copper
+did not help here: they anchor nets, and the devices still diverged.
+
+`examples/LVS/tech/mmic-GaAs_2LM_100um.ctech` must stay byte-identical to the shipped file
+(`ProvingDesignTests`), so it carries the deck too. `examples/PDK PCells/tech`'s copy had already
+diverged and was left alone, as was the in-code `StarterTechnologies.MmicGaAs` in `src/Ui`.
+
+Gate: `tests/Ui.Tests/Lvs/MmicRecognitionDeckTests.cs`.
+
+---
+
 ## A microstrip board: 14 errors and 20 warnings, 4 of them real (field report, 2026-09-24)
 
 A five-line filter (three series `MLIN`s, four shunt parts, four open stubs) reported 14 errors and
@@ -410,3 +458,19 @@ The overview says a test parses the note's requirement numbers and the traceabil
 compares the sets. It did not exist. `tests/Ui.Tests/Lvs/SeriesTraceabilityTests.cs` is it, and it
 passes as written — the table does cover `R-lvs-1 … R-lvs-55` with no hole — so what it buys is the
 next requirement somebody adds to the note.
+
+## Where the shipped GaAs deck's two constants come from (AA-2)
+
+`TfrSheetResistance` = 50 Ω/sq is the thin-film resistor value published most often in open GaAs
+pHEMT process datasheets: 0.25–0.5 µm power and general-purpose processes state 50 Ω/sq NiCr or
+TaN, some offer 20 Ω/sq beside it, and the fine-gate (0.1–0.15 µm) low-noise processes state 30
+Ω/sq. A 100 µm, two-metal stack is the first kind, so 50. `MimCapDensity` is not a separate
+number: it is ε0·εr/t of the stackup's MIM dielectric (6.8, 0.2 µm → ≈300 pF/mm²), inside the
+published 250–630 pF/mm² range, and a test holds it equal to the stackup. Neither is a specific
+foundry's figure; a user with a real process edits the `.ctech`.
+
+**Neither is declared in the deck.** AA-1 put the sheet resistance on the Resistor layer
+(`LayerDef.SheetResistanceOhmPerSq`) for the TFR model, and MIMCAP reads the film directly, so a
+`Constants` entry for either would be a second copy that an edit to the layer or film leaves behind.
+`DeviceRecognition.ConstantsOf` binds both from `MmicStackResolver` — the resolver the models use —
+in an outer scope; a `Constants` entry of the same name still overrides, for a measured density.

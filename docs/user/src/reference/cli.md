@@ -133,7 +133,7 @@ convention behind both.</p>
 | `check` | a workspace, a cell folder, or one document | Every validator the application already uses | **Nothing** — findings to stdout |
 | `explain` | the same | Resolution only — no analysis | **Nothing** — the walk and the answer, to stdout |
 | `read` | a result file, or one of circuitRF's own documents | The same loaders the Data Display reads a file with | **Nothing** — what the file holds, to stdout |
-| `netlist` | a `.csch`, a cell folder, or a workspace | The same extraction **Simulate** performs | A `.cnl`, or the netlist text to stdout |
+| `netlist` | a `.csch`, a cell folder, or a workspace — or a `.cnl` with `--to-schematic` | The same extraction **Simulate** performs, or that extraction run backwards | A `.cnl`, or the netlist text to stdout; a drawn `.csch` with `--to-schematic` |
 | `plot` | a result file | Builds a one-plot data display and draws it | A `.svg`, `.pdf` or `.png`, where `-o` says |
 | `find` | a directory | Nothing — it reads documents | **Nothing** — the workspaces, cells, views and analyses under it |
 | `reference` | **nothing** | Nothing — it reads no file | **Nothing** — the reference pages, and every netlist primitive with its terminals and parameters |
@@ -600,6 +600,22 @@ structure that turned out to have four ports is written `.s4p`.
 
 With no workspace above the `.cem`, `results/` is created beside the `.cem` itself.
 
+### One component's drawn part: `--component` {#em-component}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf em mydie --component "SPIRAL N=2.5 W=10 um S=10 um Din=100 um" --freq 1GHz:20GHz:1GHz -o L1.s2p</code></pre>
+
+Extracts one built-in component as it would be drawn: its layout cell on the workspace's technology,
+with a port on every terminal — port 1 is terminal 1, and so on — so the Touchstone can replace the
+part in the schematic as an [SnP](components.html#snp). The line is the type and its parameters,
+written as on a `.cnl` instance line. The path is the workspace (or its `.cws`, or a `.ctech`); with
+none, the current folder's workspace is used. `-o` is required; with no `--freq` the sweep is 1–20 GHz.
+
+This is how to get a value to rely on for a [spiral inductor](components.html#spiral), whose built-in
+inductance is an estimate. The extraction meshes two cells across the narrowest metal, with no edge
+mesh, so that a coil fits the planar solver — the run says so, and the Q it reads is low. A
+[thin-film resistor](components.html#tfr) is refused: its film is a sheet resistance, not a layer the
+solver meshes, and its own model is exact for what it states.
+
 ### note, warning, error — three lists, kept apart {#em-messages}
 
 An EM run has three different things to say and they ask three different things of you, so they are
@@ -846,6 +862,46 @@ its count of traces left out. With `--survey`, the result is `impedanceSurvey` i
 no trace fails &mdash; warnings are always reported and still exit 0 &mdash; **1** when one fails (or no part of it could be solved) or the
 run is refused, and with `--severity warning` when one warns; **130** on a cancellation. A cancelled run still writes the report for the layers that **finished**,
 and says on its first page that it was cancelled.
+
+### The line calculator: `impedance --tech` {#impedance-line}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance --tech &lt;technology&gt; --layer &lt;name&gt; (--width &lt;w&gt;[,&lt;w&gt;…] | --z0 &lt;ohms&gt;[,&lt;ohms&gt;…])
+<span class="prompt">  </span>[--gap &lt;g&gt;] [--freq 10GHz]</code></pre>
+
+With `--tech` and no layout, `impedance` answers for a line **that is not drawn yet**: the width a Z0
+needs, or the Z0, ε<sub>eff</sub>, loss and guided wavelength a width gives, on one copper layer of a
+technology. Every row has **two answers side by side**:
+
+- **circuit model (MLIN)** &mdash; what an MLIN of that width on that layer simulates as: the substrate
+  the layer resolves to, the static Z0 and ε<sub>eff</sub>, and at `--freq` the dispersive Z0 and
+  ε<sub>eff</sub>, the loss in dB/mm and λ<sub>g</sub>. It is the same number a run uses.
+- **cross-section (impedance)** &mdash; what `impedance` would report on a line drawn at that width: the
+  quasi-static Z0 and ε<sub>eff</sub>, with λ<sub>g</sub> from that ε<sub>eff</sub>. The solve has no
+  dispersion and no loss.
+
+The **difference** column shows how far apart they are. A large gap is worth seeing before you draw: the
+schematic simulates the model, and the drawn line measures the cross-section.
+
+`--z0` gives each column **its own width**. The model width comes from the same synthesis the MLIN
+parameter editor's Z0 field uses. The cross-section width is solved to 1&nbsp;nm, the finest width a
+layout can hold. A *Z0 at the model's W* row shows what a line drawn at the model's width would measure.
+
+| Option | Meaning |
+|---|---|
+| `--tech <t>` | A `.ctech` file; a workspace folder, or a document inside one (it resolves the technology a schematic there would use); or the id of a technology that ships with circuitRF ([`reference technologies`](#reference) lists them). |
+| `--layer <name>` | One copper layer: a drawing layer's name or a stackup conductor's. A name the technology does not have is refused with the names it does have. |
+| `--width <w>[,<w>…]` | Widths to analyse, one row each. A bare number is µm, or give a unit (`18mil`). |
+| `--z0 <ohms>[,<ohms>…]` | Impedances to find a width for, one row each. |
+| `--gap <g>` | Makes the line **coplanar**, with ground on the same layer this far from each edge. The cross-section is then the only answer, because no circuit component models a coplanar line. |
+| `--freq <freq>` | Where the dispersive values, the loss and λ<sub>g</sub> are given, **with its unit** (`10GHz`). Without it, only static values are shown. |
+
+A layout path given with `--tech`, or a flag that only means something for a drawn layout (`--target`,
+`--region`, `-o` and so on), is **refused rather than ignored**. With `--json` the result is
+`impedanceLine`: the substrate and, per row, `model` (`widthUm`, `z0Static`, `eeffStatic`, `z0`, `eeff`,
+`lossDbPerMm`, `lambdaGUm`), `crossSection` (`widthUm`, `z0`, `eeff`, `lambdaGUm`, `configuration`),
+`z0DifferencePercent` and, on a `--z0` row, `crossSectionAtModelWidth` and `widthDifferencePercent`.
+Exit **0** when every row is answered, and **1** when the calculator is refused or a row has no answer.
+A column that cannot answer one row is a warning.
 
 ## `smith` — a matching network, headless {#smith}
 
@@ -2003,7 +2059,8 @@ With `--json`, `--only` and `--group` narrow what comes back — which matters, 
 
 ## `netlist` — the netlist a schematic runs as {#netlist}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf netlist &lt;path.csch | cell-folder | workspace --cell N&gt; [-o out.cnl]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf netlist &lt;path.csch | cell-folder | workspace --cell N&gt; [-o out.cnl]
+<span class="prompt">$ </span>circuitrf netlist &lt;path.cnl&gt; --to-schematic [-o out.csch]</code></pre>
 
 The extraction **Simulate** performs, as a file you can read. It takes a `.csch`, a cell folder, or a
 workspace with `--cell` — the same three inputs [`render`](#render) takes, resolved the same way.
@@ -2031,8 +2088,43 @@ byte for byte the same text.</p>
 </div>
 
 `-o` takes a `.cnl` and refuses any other extension — there is one format here. A `.cnl` input is
-refused too: passing it through the reader and the writer would hand back a file that is not the one
-you gave (comments gone, directives reordered) and call it an extraction.
+refused too, unless you ask for [a drawing of it](#netlist-to-schematic): passing it through the
+reader and the writer would hand back a file that is not the one you gave (comments gone, directives
+reordered) and call it an extraction.
+
+### Drawing a netlist: `--to-schematic` {#netlist-to-schematic}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf netlist filter.cnl --to-schematic -o filter.csch
+<span class="output">filter.csch</span></code></pre>
+
+The other direction: a `.cnl` you wrote becomes a schematic you can open, review and edit. The
+drawing puts the signal path left to right, from port 1 to port 2, with the ports at its ends. Each
+element hanging off a net on that path (a shunt capacitor, a termination, a port) drops below the
+net. An element bridging two nets on the path sits above it. Everything else goes in rows underneath,
+near what it connects to. Every terminal on net `0` gets its own ground symbol, every wire is
+horizontal or vertical, and **every net carries a label with the name the netlist gave it**. Globals
+go in one VAR block and measurements in one MEAS block, above the circuit. The analyses go into the
+schematic as they were.
+
+<div class="callout">
+<span class="label">The drawing is the netlist</span>
+<p>It extracts back, through the same extraction <b>Simulate</b> performs, to the same instances, the
+same nets in the same order, and the same parameter values. The one thing a drawing may add is a port
+count a variadic symbol needs to draw its pins (<code>NumPorts</code> on an SDD or a Z-port), when the
+line left it to be inferred from its nets. Run <code>circuitrf netlist filter.csch</code> on the
+result to see for yourself.</p>
+</div>
+
+**A connection the router cannot draw without crossing something is made by net label** — a real
+connection, so the circuit is unchanged, and the verb names the nets it did that for. **A netlist it
+cannot draw is refused, with every cause named and nothing written:** one that defines cells (a
+hierarchy needs a cell folder per definition), an instance whose type has no schematic symbol, or a
+wirebond, whose pins come from the design file it references. User functions and directives the
+reader keeps verbatim have nowhere to go in a schematic. They are left out, and the verb says so.
+
+A Touchstone `File` reference is written relative to where the drawing is saved, so it still finds
+the same file. Without `-o` the drawing goes to stdout with its references relative to the netlist's
+own folder, which is right for `circuitrf netlist filter.cnl --to-schematic > filter.csch`.
 
 ---
 

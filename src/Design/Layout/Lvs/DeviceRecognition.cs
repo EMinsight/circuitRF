@@ -45,6 +45,7 @@ using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout.Drc;
 using CircuitRF.Design.Layout.Extraction;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Design.Layout.Lvs;
@@ -101,6 +102,29 @@ internal static class DeviceRecognition
     }
 
     /// <summary>
+    /// The copper every <see cref="DeviceRule.CopperBody"/> rule's bodies occupy, which leaves the
+    /// partition BEFORE it is built (AA-2) — or null where the deck has no such rule or the artwork
+    /// has no such body, which leaves the partition exactly as it was.
+    /// </summary>
+    /// <remarks>
+    /// <b>Every body, accepted or not.</b> Which candidates become devices depends on their
+    /// terminals, and their terminals are read on the cut partition — so the cut cannot wait for
+    /// the verdict. A body the run then rejects is still reported by <see cref="Emit"/>, with its
+    /// reason, which is where a reader looking at a split net finds out why.
+    /// </remarks>
+    public static CopperCut? Cut(Technology? tech, IReadOnlyList<LayoutShape> copper)
+    {
+        if (tech is not { DeviceRules.Count: > 0 } || copper.Count == 0) return null;
+
+        var bodies = new List<DrcLayerExpr>();
+        foreach (var rule in tech.DeviceRules)
+            if (rule.CopperBody && TryCompile(rule, out _, out var body, out _, out _))
+                bodies.Add(body!);
+
+        return bodies.Count == 0 ? null : DeviceCandidates.CutOf(copper, tech, bodies);
+    }
+
+    /// <summary>
     /// Runs the technology's deck over <paramref name="copper"/> and appends what it recognised to
     /// <paramref name="devices"/>.
     /// </summary>
@@ -121,17 +145,14 @@ internal static class DeviceRecognition
         Technology? tech, IReadOnlyList<LayoutShape> copper,
         CopperPieces pieces, LayoutRead.NetTable nets,
         List<LvsDevice> devices, List<LvsPadGeometry> padGeometry,
-        List<Diagnostic> notes, LvsGeometryNaming naming, string document)
+        List<Diagnostic> notes, LvsGeometryNaming naming, string document, CopperCut? cut = null)
     {
         // R-lvs14-1d: a technology with no block cannot recognise anything, and SAYING SO IS NOT AN
         // ERROR. A caller that asked for recognition on a process that describes none gets the
         // ordinary instance reading, unchanged.
         if (tech is not { DeviceRules.Count: > 0 } || copper.Count == 0) return;
 
-        var constants = new Scope("technology");
-        foreach (var constant in tech.Constants)
-            if (constant.Name is { Length: > 0 })
-                constants.Bind(constant.Name, constant.Expression ?? "", EngineUnit(constant.Unit));
+        var constants = ConstantsOf(tech);
 
         int recognised = 0, rulesUsed = 0;
 
@@ -145,7 +166,7 @@ internal static class DeviceRecognition
                 continue;
             }
 
-            var candidates = DeviceCandidates.Find(copper, tech, body!, terminals!, out var missing);
+            var candidates = DeviceCandidates.Find(copper, tech, body!, terminals!, out var missing, cut);
 
             // A layer the TECHNOLOGY does not define — not merely one this design has nothing on,
             // which is the ordinary state of most layers of any process. The rule cannot be applied
@@ -170,11 +191,21 @@ internal static class DeviceRecognition
 
                 // R-lvs14-3b. A candidate whose terminal count is not the rule's is NOT a device —
                 // and it is reported, because a recognition pass that quietly dropped half the
-                // devices would make a design read as clean.
-                if (candidate.Terminals.Count != TerminalsPerDevice)
+                // devices would make a design read as clean. A ground-terminal rule draws one end
+                // fewer (AA-2): the plane is the other.
+                int drawn = TerminalsPerDevice - (rule.GroundTerminal ? 1 : 0);
+
+                // AA-2. A LINE with one end touching nothing is an open stub, and the schematic
+                // draws exactly that: its far end on a net of its own. LayoutReadBodies reads a
+                // placed line's open end the same way. Nothing else gets this — a resistor with
+                // one pad is a drawing error and stays a rejection.
+                bool openEnd = rule.CopperBody && kind == DeviceKind.TransmissionLine
+                               && candidate.Terminals.Count == drawn - 1 && drawn > 1;
+
+                if (candidate.Terminals.Count != drawn && !openEnd)
                 {
                     notes.Add(LvsDiagnostics.RecognizeTerminalCount(
-                        ruleName, where, candidate.Terminals.Count, TerminalsPerDevice));
+                        ruleName, where, candidate.Terminals.Count, drawn));
                     continue;
                 }
 
@@ -201,13 +232,25 @@ internal static class DeviceRecognition
                     nets.Attach(net, deviceIndex, i);
                 }
 
+                // AA-2: the ends the artwork does not draw — an open stub's far end, then the plane
+                // under a via. Numbered on from the drawn ones, exactly as a placed VIAGND's plane is.
+                if (openEnd) AddTerminal(wired, nets.Open(), nets, deviceIndex);
+                if (rule.GroundTerminal) AddTerminal(wired, nets.Ground(), nets, deviceIndex);
+
+                // R-lvs14-3e: NO DESIGNATOR where nothing named the device, so it can only ever be
+                // matched STRUCTURALLY (tier 2) — honest, and exactly what recognition buys. AA-2:
+                // where the artwork DID name it — a Component on its body's shapes, which is what a
+                // Gerber %TO.C and an agent writing a .clay both state — that name is its designator,
+                // and it anchors exactly as a placed part's reference designator does. Two names on
+                // one body is no name at all, and is said.
+                string designator = candidate.Components.Count == 1 ? candidate.Components[0] : "";
+                if (candidate.Components.Count > 1)
+                    notes.Add(LvsDiagnostics.RecognizeComponentAmbiguous(
+                        ruleName, path, string.Join(", ", candidate.Components)));
+
                 devices.Add(new LvsDevice(
                     path,
-
-                    // R-lvs14-3e. NO DESIGNATOR and NO ANCHOR, deliberately: nothing named this
-                    // device, so it can only ever be matched STRUCTURALLY (tier 2) — which is
-                    // honest and is exactly what recognition buys.
-                    "",
+                    designator,
                     new DeviceType(kind, null, ruleName),
                     wired, values,
                     new LvsProvenance(document, path, candidate.X, candidate.Y))
@@ -217,8 +260,9 @@ internal static class DeviceRecognition
                     // with what the schematic asked for, which is a different sentence pointing at
                     // a different file.
                     ParameterFacts = values.ToDictionary(
-                        p => p.Key, _ => new LvsParameterFact(UnitDimension.None, Computed: true),
+                        p => p.Key, p => new LvsParameterFact(DimensionOf(kind, p.Key), Computed: true),
                         StringComparer.Ordinal),
+                    Recognized = true,
                 });
 
                 recognised++;
@@ -230,6 +274,33 @@ internal static class DeviceRecognition
         if (recognised > 0)
             notes.Add(LvsDiagnostics.RecognizeInUse(
                 tech.Name is { Length: > 0 } t ? t : "this technology", recognised, rulesUsed));
+    }
+
+    /// <summary>
+    /// What a recognised value IS, so it is compared at that dimension's tolerance (AA-2).
+    /// </summary>
+    /// <remarks>
+    /// <b>Only where the schematic does not already say.</b> The comparison takes the schematic
+    /// parameter's own dimension first (<c>LvsProperties.Dimension</c>); this answers for a design
+    /// whose parameters state none — a hand-written <c>.csch</c> — where an area measured off a
+    /// polygon and the same capacitance typed as a number agree to fifteen digits, not to the last
+    /// bit, and "exact" would report a correct capacitor as a mismatch. The names are the ones every
+    /// built-in two-terminal passive and microstrip element already uses; anything else stays None.
+    /// </remarks>
+    private static UnitDimension DimensionOf(DeviceKind kind, string parameter) => (kind, parameter) switch
+    {
+        (DeviceKind.Resistor, "R")  => UnitDimension.Resistance,
+        (DeviceKind.Capacitor, "C") => UnitDimension.Capacitance,
+        (DeviceKind.Inductor, "L")  => UnitDimension.Inductance,
+        (DeviceKind.TransmissionLine, "W" or "L") => UnitDimension.Length,
+        _ => UnitDimension.None,
+    };
+
+    private static void AddTerminal(List<LvsTerminal> wired, int net, LayoutRead.NetTable nets, int deviceIndex)
+    {
+        int port = wired.Count + 1;
+        wired.Add(new LvsTerminal(port, port.ToString(CultureInfo.InvariantCulture), net));
+        nets.Attach(net, deviceIndex, wired.Count - 1);
     }
 
     // ── One rule, compiled (R-lvs14-2a, R-lvs14-2d) ──────────────────────────────────────────
@@ -477,6 +548,32 @@ internal static class DeviceRecognition
         DeviceKind.Via              => "V",
         _                           => "X",
     };
+
+    /// <summary>
+    /// The names a deck formula may use: the technology's own <see cref="Technology.Constants"/>,
+    /// over two the process already states elsewhere — <c>TfrSheetResistance</c>, the resistor
+    /// layer's <see cref="LayerDef.SheetResistanceOhmPerSq"/>, and <c>MimCapDensity</c>, ε0·εr/t of
+    /// the stackup's capacitor dielectric — both found by the same <see cref="MmicStackResolver"/>
+    /// the MIMCAP and TFR models read.
+    /// </summary>
+    /// <remarks>
+    /// <b>Derived rather than declared</b> so the deck and the circuit models cannot disagree: a
+    /// second copy of either number in <c>Constants</c> is what an edit to the layer or the film
+    /// would leave behind. A constant of the same name still wins, because it binds in the inner
+    /// frame — a process whose film is not ideal states its measured density there.
+    /// </remarks>
+    internal static Scope ConstantsOf(Technology tech)
+    {
+        var derived = new Scope("technology (derived)");
+        foreach (var (name, expression, unit) in MmicStackResolver.DeckConstants(tech))
+            derived.Bind(name, expression, EngineUnit(unit));
+
+        var constants = new Scope("technology", derived);
+        foreach (var constant in tech.Constants)
+            if (constant.Name is { Length: > 0 })
+                constants.Bind(constant.Name, constant.Expression ?? "", EngineUnit(constant.Unit));
+        return constants;
+    }
 
     private static string? EngineUnit(string? unit)
     {

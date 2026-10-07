@@ -252,6 +252,8 @@ internal static class LvsProperties
 
         // The same shape for a part the artwork was drawn FROM: what its generator takes, and what
         // the schematic carries that it does not — a line's substrate, one line per generator.
+        var notStated = new Dictionary<string, (HashSet<string> Devices, string Stated, SortedSet<string> Names)>(
+            StringComparer.Ordinal);
         var notDrawn = new Dictionary<string, (HashSet<string> Devices, string Stated, SortedSet<string> Names)>(
             StringComparer.Ordinal);
 
@@ -320,6 +322,21 @@ internal static class LvsProperties
                         continue;
                     }
 
+                    // AA-2: a recognised device claims what its rule's formulas state and no more
+                    // — the same one-line-per-source terms as a generator's own parameters.
+                    if (l.Recognized)
+                    {
+                        string rule = l.Type.Name is { Length: > 0 } rn ? rn : l.Type.Kind.ToString();
+                        if (!notStated.TryGetValue(rule, out var entry))
+                            entry = (new HashSet<string>(StringComparer.Ordinal),
+                                     string.Join(", ", l.Parameters.Keys.OrderBy(k => k, StringComparer.Ordinal)),
+                                     new SortedSet<string>(StringComparer.Ordinal));
+                        entry.Names.Add(name);
+                        entry.Devices.Add(s.Path);
+                        notStated[rule] = entry;
+                        continue;
+                    }
+
                     found.Add(LvsDiagnostics.PropertyMissing(
                         s.Path, l.Path, name, LvsValueFormat.Of(asked, Dimension(s, l, name)),
                         string.Join(", ", l.Parameters.Keys.OrderBy(k => k, StringComparer.Ordinal))));
@@ -355,6 +372,10 @@ internal static class LvsProperties
         foreach (var (generator, tally) in notDrawn.OrderBy(e => e.Key, StringComparer.Ordinal))
             found.Add(LvsDiagnostics.PropertyNotDrawn(
                 generator, tally.Devices.Count, tally.Stated, string.Join(", ", tally.Names)));
+
+        foreach (var (rule, tally) in notStated.OrderBy(e => e.Key, StringComparer.Ordinal))
+            found.Add(LvsDiagnostics.RecognizeNotStated(
+                rule, tally.Devices.Count, tally.Stated, string.Join(", ", tally.Names)));
 
         foreach (var (dimension, count) in unestablished.OrderBy(e => e.Key))
             found.Add(LvsDiagnostics.ToleranceUnestablished(dimension.ToString(), count));

@@ -26,7 +26,7 @@ public static class NetExtractor
     /// when its GLYPH hides the return path, not when its model happens to be N-port —
     /// <c>MixerD</c>, which brings all six of its nets out as pins, is deliberately not a member.</para>
     /// </summary>
-    private static readonly HashSet<SymbolKind> GroundReferencedPortBlocks =
+    internal static readonly HashSet<SymbolKind> GroundReferencedPortBlocks =
     [
         SymbolKind.Mixer,
         // The system blocks (brief-sys-1). Every one of them is ground-referenced by construction:
@@ -2191,6 +2191,16 @@ public static class NetExtractor
             overrides2.AddRange(substrateOverrides);
             if (warning is not null)
                 warningsOut?.Add($"{comp.InstanceName}: {warning}");
+        }
+
+        // AA-1: the MMIC passives take their process numbers from the same technology, by the same
+        // resolution their artwork draws with (MmicPassiveInjection).
+        if (MmicPassiveInjection.IsMmicKind(comp.Symbol))
+        {
+            var (mmicOverrides, mmicWarning) = MmicPassiveInjection.Build(microstripTech, comp.Symbol);
+            overrides2.AddRange(mmicOverrides);
+            if (mmicWarning is not null)
+                warningsOut?.Add($"{comp.InstanceName}: {mmicWarning}");
         }
 
         // All built-in primitives: emit terminals in PortIndex order.

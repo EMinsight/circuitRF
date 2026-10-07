@@ -163,14 +163,22 @@ public sealed class CopperPieces
     /// <c>Pin</c> and that is all they may carry — pin is a property of the pattern, net is a
     /// property of the board.</para>
     /// </param>
+    /// <param name="cut">Copper that is a recognised device rather than interconnect
+    /// (<see cref="DeviceCandidates.CutOf"/>). Null — every caller but an LVS run with recognition
+    /// on — partitions exactly as before.</param>
     public static CopperPieces Build(
         IReadOnlyList<LayoutShape> copper, Technology? tech,
-        IReadOnlyList<LayoutShape>? stamps = null, RailRf.RailLengthFormat? format = null)
+        IReadOnlyList<LayoutShape>? stamps = null, RailRf.RailLengthFormat? format = null,
+        CopperCut? cut = null)
     {
         ArgumentNullException.ThrowIfNull(copper);
         if (tech is null || copper.Count == 0) return Empty;
 
         var layerRegions = LayerRegions.Build(copper, tech);
+
+        // AA-2: copper a recognised device IS (a line, a via barrel) leaves the partition, so the
+        // copper either side of it is two nets — what LayoutReadBodies does for a PLACED line.
+        if (cut is { IsEmpty: false }) layerRegions = cut.ApplyTo(layerRegions);
         if (layerRegions.Count == 0) return Empty;
 
         var pieces = DrcConnectivity.ExtractWithGround(layerRegions, tech, out var reach, out var joins);

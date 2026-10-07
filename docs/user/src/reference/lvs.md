@@ -341,8 +341,55 @@ an unknown kind, a formula naming something neither measured nor declared, a cyc
 
 A run that recognised anything says so, naming the technology and the count, so a clean report is never
 mistaken for the stronger claim. **Recognition answers *what does this copper look like*, never *is this
-the device the process actually makes*.** Every candidate it rejected is reported with its reason, and a
-recognised device carries no designator, so it can only ever be matched structurally.
+the device the process actually makes*.** Every candidate it rejected is reported with its reason.
+
+### The shipped MMIC deck
+
+The shipped GaAs technology (`mmic-GaAs_2LM_100um`) carries a deck, so a die drawn as plain shapes on
+its layers &mdash; or a flattened GDSII of one &mdash; can be compared against its schematic:
+
+| Device | What the artwork must show | Terminals | Values read |
+|---|---|---|---|
+| Thin-film resistor | Resistor (4/0), where Metal1 does not cover it | the Metal1 contacts at its ends | R = sheet resistance &times; length / width |
+| MIM capacitor | MIM Metal (9/0) over Nitride (6/0) over Metal1 (1/0) | the Metal1 bottom plate, then the MIM Metal top plate | C = capacitance per area &times; area |
+| Backside via | a Backside Via (8/0) shape | the Metal1 pad, then ground | none |
+| Microstrip line | Metal1 or Metal2 under a **Line Marker** (20/0) | the metal it meets at each end | W, L |
+| Spiral inductor | the metal under an **Inductor Marker** (21/0) | the metal it meets outside the marker | none |
+
+The formulas use two names the technology supplies without a `Constants` entry: `TfrSheetResistance` is
+the sheet resistance stated on the Resistor layer (50 &Omega;/square), and `MimCapDensity` is computed
+from the stackup's MIM dielectric (&epsilon;<sub>r</sub> 6.8, 0.2 &micro;m: about 300 pF/mm&sup2;)
+&mdash; the same numbers the MIMCAP and TFR components read, so the deck and the circuit models cannot
+disagree. Both are typical published values for GaAs pHEMT processes, not a particular foundry's; change
+the layer and the film to match yours, or state a measured value as a constant of the same name, which
+takes precedence.
+
+The two markers are drawn-only layers that exist for this: without one, a line is just copper like any
+other. Draw the marker over the line itself, ending where the line meets something &mdash; two lines
+that meet need unmarked metal between them, and metal of the other level crossing under a marker is
+read as a line of its own.
+A marked line with one end touching nothing is an **open stub**, and its far end is a net of its own,
+as the schematic draws it.
+
+A line, a spiral and a via are metal that *is* the device, so the deck marks them **copper bodies**:
+their metal is taken out of the connectivity reading, and the copper either side becomes two nets
+instead of one. A tee or a cross is not recognised; where a schematic draws one, draw the junction as
+unmarked metal and use plain lines into it.
+
+### Naming a recognised part
+
+A device read out of copper has no designator unless the artwork gives it one. Put the part's name in
+the **Component** field of a shape of its body (the MIM top plate, the resistor film, the line's
+metal) and the recognised device takes it, so it is matched to the schematic part of that name. A
+named design reports a mis-wired capacitor as one line &mdash; *C1 terminal 1 is on 'b' in the
+schematic and reaches 'a' in the layout* &mdash; where an unnamed one, matched on structure alone,
+reports every part around the fault as unmatched. Two names on one body is a warning, and the device
+takes neither.
+
+The other two labels a shape can carry connect nothing either. **Net** stamps a net name on the copper
+it is part of: it is matched against the schematic's net of that name, and reported when the copper
+disagrees, but never obeyed. **Pin** names the pad of a component, as an imported Gerber's pad
+attributes do; inside a cell it marks the pad a layout pin of that name sits on.
 
 ## What LVS does not check {#limits}
 

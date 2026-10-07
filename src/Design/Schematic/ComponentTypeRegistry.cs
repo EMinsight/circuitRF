@@ -30,6 +30,11 @@ public enum ComponentCategory
     /// part, and it is where a future matching-network family belongs. <c>Other</c> would hide the
     /// headline component of the release behind the least descriptive label in the picker.</summary>
     Matching,
+    /// <summary>The MMIC passives (brief-agent-authoring-overview.md AA-1): MIM capacitor, spiral
+    /// inductor, thin-film resistor and air bridge. A category on <see cref="Matching"/>'s precedent —
+    /// it names a class of parts a user goes looking for, the ones a die is drawn from, and none of
+    /// them is a microstrip line or a lumped element in the sense those two categories mean.</summary>
+    Mmic,
     /// <summary>System-level blocks (brief-sys-series.md, owner request 2026-08-31): the balun,
     /// circulator, switches, ideal amplifier, directional coupler, 90° hybrid, ideal filter,
     /// attenuator and duplexer — plus the two mixer tiles, which keep <see cref="Devices"/> as their
@@ -703,6 +708,23 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["VIAGND", "via", "ground via", "via to ground", "grounding via", "shunt",
                           "return", "pad capacitance", "plated through hole"]),
+        // The MMIC passives (AA-1), in their own category. Not also under Lumped: that category is
+        // held to the ideal lumped elements (LibraryCatalogTests), and these are process parts.
+        [SymbolKind.MimCap]       = new("MIMCAP", "MIM",
+            Category: ComponentCategory.Mmic,
+            SearchTerms: ["MIMCAP", "MIM", "MIM capacitor", "metal insulator metal", "capacitor", "MMIC",
+                          "thin film capacitor", "nitride"]),
+        [SymbolKind.Spiral]       = new("SPIRAL", "SPL",
+            Category: ComponentCategory.Mmic,
+            SearchTerms: ["SPIRAL", "spiral", "spiral inductor", "square spiral", "inductor", "coil", "MMIC",
+                          "Wheeler"]),
+        [SymbolKind.Tfr]          = new("TFR", "TFR",
+            Category: ComponentCategory.Mmic,
+            SearchTerms: ["TFR", "thin film resistor", "resistor", "sheet resistance", "ohms per square",
+                          "MMIC", "NiCr", "TaN"]),
+        [SymbolKind.Airbridge]    = new("AIRBRIDGE", "AB",
+            Category: ComponentCategory.Mmic,
+            SearchTerms: ["AIRBRIDGE", "air bridge", "airbridge", "crossover", "bridge", "MMIC"]),
     };
 
     /// <summary>Returns the full metadata for a SymbolKind; falls back to a generic entry if unknown.</summary>
@@ -879,6 +901,22 @@ public static class ComponentTypeRegistry
         SymbolKind.ViaGnd =>
             "One terminal, A, on FromLayer. The far end is ground: the via lands on GroundLayer.",
 
+        SymbolKind.MimCap =>
+            "Not interchangeable: terminal 1 is the top plate and terminal 2 the bottom plate, the one "
+          + "lying on the substrate, which carries the plate's capacitance to ground. For a shunt "
+          + "capacitor ground terminal 2.",
+
+        SymbolKind.Spiral =>
+            "Not interchangeable in the drawn part: terminal 1 is the outer end and terminal 2 the "
+          + "inner end, brought out over the turns on the bridge metal. The model itself is symmetric.",
+
+        SymbolKind.Tfr =>
+            "Interchangeable: the two ends of the film.",
+
+        SymbolKind.Airbridge =>
+            "Terminals 1 and 2 are the bridge's two landings and are interchangeable. Terminal 3 is the "
+          + "line it crosses, at the crossing; tie it to ground for a bridge over a ground strap.",
+
         SymbolKind.Match =>
             "Not interchangeable: terminal 1 is the R1 side and terminal 2 the R2 side. The "
           + "synthesised ladder is stored R1-first, so swapping the two reverses every asymmetric "
@@ -1005,6 +1043,10 @@ public static class ComponentTypeRegistry
         SymbolKind.Mklopf        => "MKLOPF",
         SymbolKind.Via           => "VIA",
         SymbolKind.ViaGnd        => "VIAGND",
+        SymbolKind.MimCap        => "MIMCAP",
+        SymbolKind.Spiral        => "SPIRAL",
+        SymbolKind.Tfr           => "TFR",
+        SymbolKind.Airbridge     => "AIRBRIDGE",
         SymbolKind.Diode         => "Diode",
         SymbolKind.VerilogA      => "VerilogA",
         // Lower-case 'w' on purpose: ComponentModelFactory registers the type as "wBond" and its
@@ -1168,6 +1210,7 @@ public static class ComponentTypeRegistry
          : kind is SymbolKind.Duplexer ? DuplexerParameterDescription(parameterName)
          : SystemBlockParameterDescription(kind, parameterName) is { Length: > 0 } sysDesc ? sysDesc
          : ViaParameterDescription(kind, parameterName) is { Length: > 0 } viaDesc ? viaDesc
+         : MmicParameterDescription(kind, parameterName) is { Length: > 0 } mmicDesc ? mmicDesc
          : WBondParameterDescription(kind, parameterName) is { Length: > 0 } wbDesc ? wbDesc
          : kind is not SymbolKind.VerilogA ? "" : parameterName switch
         {
@@ -1203,6 +1246,60 @@ public static class ComponentTypeRegistry
                          + "at the array's output pin — typically the package lead. Default 85 °C.",
             _      => "",
         };
+
+    /// <summary>
+    /// What a component's model IS — the closed form it computes and the range that form is stated
+    /// over — for the components whose model is an estimate rather than an ideal element
+    /// (brief-agent-authoring-overview.md AA-1). Empty for the rest, which is the honest answer for an
+    /// ideal R and never a placeholder. The catalogue prints it, so a caller choosing a part sees
+    /// where its answer stops being trustworthy before it relies on one.
+    /// </summary>
+    public static string ModelValidity(SymbolKind kind) => kind switch
+    {
+        SymbolKind.MimCap =>
+            "C from the film's permittivity and thickness with Palmer's edge fringing (W, L >= 10 film "
+          + "thicknesses); ESR from both plates' sheet resistance with skin effect, Rs·L/(3W) each; "
+          + "dielectric loss from the film's tanD; the bottom plate's capacitance through the substrate to "
+          + "ground. Lumped while the longer side is under a twentieth of a wavelength in the film.",
+        SymbolKind.Spiral =>
+            "AN ESTIMATE. L by the modified Wheeler formula (Mohan et al. 1999) for the coil alone, fitted "
+          + "for S <= 3·W; it does not include the escape and leads of the drawn part, nor the ground plane "
+          + "under it. Against a planar EM extraction of the default 2.5-turn coil on the shipped GaAs it "
+          + "read 16 % low (1.44 against 1.72 nH). R from the trace length with skin effect; trace-to-ground "
+          + "and crossing capacitance as parallel plates. For a value to rely on, EM-extract the drawn coil: "
+          + "circuitrf em --component.",
+        SymbolKind.Tfr =>
+            "R = sheet resistance × L/W from the technology's resistor film; contacts and end overlap not "
+          + "included; the film's capacitance to ground split between the ends.",
+        SymbolKind.Airbridge =>
+            "Series L of a straight ribbon (Grover) and R with skin effect, from landing to landing; the "
+          + "crossing capacitance W·Wu over the bridge height, without fringing. Valid for a span longer "
+          + "than its own width.",
+        _ => "",
+    };
+
+    /// <summary>The MMIC passives' parameter meanings (AA-1), each with the range its model is
+    /// stated over. Only geometry is a parameter: the process numbers come from the technology.</summary>
+    private static string MmicParameterDescription(SymbolKind kind, string parameterName) => (kind, parameterName) switch
+    {
+        (SymbolKind.MimCap, "W") => "Top-plate width, across the feed. C is the film's ε·W·L/t with Palmer's edge "
+                                  + "fringing, valid while W and L are each at least ten film thicknesses.",
+        (SymbolKind.MimCap, "L") => "Top-plate length, along the feed. The plates' series resistance grows with L/W.",
+        (SymbolKind.Spiral, "N") => "Turns. The layout draws whole quarter turns. The modified Wheeler inductance is "
+                                  + "an estimate, fitted for spacing up to about three widths and a coil far from "
+                                  + "ground; a ground plane under the coil lowers the real value.",
+        (SymbolKind.Spiral, "W") => "Trace width.",
+        (SymbolKind.Spiral, "S") => "Spacing between turns. The inductance estimate is fitted for S up to about 3·W.",
+        (SymbolKind.Spiral, "Din") => "Inner clear opening across the first pair of sides.",
+        (SymbolKind.Tfr, "W") => "Film width. R is the film's sheet resistance times L/W squares; the contacts "
+                               + "and the metal overlap at each end are not included.",
+        (SymbolKind.Tfr, "L") => "Film length between the contacts.",
+        (SymbolKind.Airbridge, "L") => "Span: the bridge's length between its two landings.",
+        (SymbolKind.Airbridge, "W") => "Bridge width.",
+        (SymbolKind.Airbridge, "Wu") => "Width of the line crossed. The crossing capacitance is the overlap W·Wu over "
+                                      + "the bridge's height, without fringing.",
+        _ => "",
+    };
 
     /// <summary>The vias' parameter meanings (brief-via-component.md). Each says what an EMPTY row does,
     /// because empty is the default and it is not the same thing as zero.</summary>
@@ -2704,6 +2801,25 @@ public static class ComponentTypeRegistry
                         new(ViaSubstrateInjection.GroundLayerParam, "", "", false, UnitDimension.None),
                         .. ViaDimensionParams];
 
+            // The MMIC passives (AA-1). Geometry only, in micrometres because that is what a die is
+            // drawn in; everything a process decides is injected from the technology at extraction
+            // (MmicPassiveInjection), as a microstrip's substrate is.
+            case SymbolKind.MimCap:
+                return [new("W", "50", "µm", true, UnitDimension.Length),
+                        new("L", "50", "µm", true, UnitDimension.Length)];
+            case SymbolKind.Spiral:
+                return [new("N",   "2.5", "",   true,  UnitDimension.None),
+                        new("W",   "10",  "µm", true,  UnitDimension.Length),
+                        new("S",   "10",  "µm", false, UnitDimension.Length),
+                        new("Din", "100", "µm", false, UnitDimension.Length)];
+            case SymbolKind.Tfr:
+                return [new("W", "10", "µm", true, UnitDimension.Length),
+                        new("L", "20", "µm", true, UnitDimension.Length)];
+            case SymbolKind.Airbridge:
+                return [new("L",  "30", "µm", true,  UnitDimension.Length),
+                        new("W",  "10", "µm", false, UnitDimension.Length),
+                        new("Wu", "10", "µm", false, UnitDimension.Length)];
+
             // Ground/Generic need no default parameters.
             default: return [];
         }
@@ -2819,6 +2935,10 @@ public static class ComponentTypeRegistry
             case "ML":       kind = SymbolKind.Mlin;         return true;
             case "VIA":      kind = SymbolKind.Via;          return true;
             case "VIAGND":   kind = SymbolKind.ViaGnd;       return true;
+            case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
+            case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
+            case "TFR":      kind = SymbolKind.Tfr;          return true;
+            case "AIRBRIDGE": kind = SymbolKind.Airbridge;   return true;
             case "MBEND":
             case "MB":       kind = SymbolKind.MBend;        return true;
             case "MTEE":

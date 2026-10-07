@@ -78,7 +78,8 @@
       "ZOrder": 6,
       "Visible": true,
       "Selectable": true,
-      "Purpose": "drawing"
+      "Purpose": "drawing",
+      "SheetResistanceOhmPerSq": 50
     },
     {
       "Key": {
@@ -184,6 +185,42 @@
       },
       "FillOpacity": 0.35,
       "ZOrder": 3,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 20,
+        "Datatype": 0
+      },
+      "Name": "Line Marker",
+      "Color": {
+        "r": 0,
+        "g": 170,
+        "b": 170,
+        "a": 255
+      },
+      "FillOpacity": 0.12,
+      "ZOrder": 11,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing"
+    },
+    {
+      "Key": {
+        "Layer": 21,
+        "Datatype": 0
+      },
+      "Name": "Inductor Marker",
+      "Color": {
+        "r": 200,
+        "g": 120,
+        "b": 0,
+        "a": 255
+      },
+      "FillOpacity": 0.12,
+      "ZOrder": 12,
       "Visible": true,
       "Selectable": true,
       "Purpose": "drawing"
@@ -392,6 +429,76 @@
       },
       "ValueDbu": 4000,
       "Severity": "Error"
+    }
+  ],
+  "DeviceRules": [
+    {
+      "Name": "Thin-film resistor",
+      "Kind": "Resistor",
+      "Body": "not(4/0, 1/0)",
+      "Terminals": [
+        "1/0"
+      ],
+      "Parameters": {
+        "R": "TfrSheetResistance * Length / Width"
+      }
+    },
+    {
+      "Name": "MIM capacitor",
+      "Kind": "Capacitor",
+      "Body": "and(and(9/0, 6/0), 1/0)",
+      "Terminals": [
+        "1/0",
+        "9/0"
+      ],
+      "Parameters": {
+        "C": "MimCapDensity * Area"
+      }
+    },
+    {
+      "Name": "Microstrip line (Metal1)",
+      "Kind": "TransmissionLine",
+      "Body": "and(1/0, 20/0)",
+      "Terminals": [
+        "1/0"
+      ],
+      "Parameters": {
+        "L": "Length",
+        "W": "Width"
+      },
+      "CopperBody": true
+    },
+    {
+      "Name": "Microstrip line (Metal2)",
+      "Kind": "TransmissionLine",
+      "Body": "and(2/0, 20/0)",
+      "Terminals": [
+        "2/0"
+      ],
+      "Parameters": {
+        "L": "Length",
+        "W": "Width"
+      },
+      "CopperBody": true
+    },
+    {
+      "Name": "Spiral inductor",
+      "Kind": "Inductor",
+      "Body": "and(or(or(1/0, 2/0), 3/0), 21/0)",
+      "Terminals": [
+        "or(1/0, 2/0)"
+      ],
+      "CopperBody": true
+    },
+    {
+      "Name": "Backside via to ground",
+      "Kind": "Via",
+      "Body": "8/0",
+      "Terminals": [
+        "1/0"
+      ],
+      "CopperBody": true,
+      "GroundTerminal": true
     }
   ],
   "MaterialLibraries": [

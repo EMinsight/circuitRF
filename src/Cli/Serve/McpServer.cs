@@ -228,7 +228,8 @@ internal sealed class McpServer
                 "overwrites an existing workspace; 'create' does make missing parent directories.\n" +
                 "\n" +
                 "'find' says what is already here. 'netlist' extracts the .cnl a schematic runs as, " +
-                "which is also the reference to check your own authoring against.\n" +
+                "which is also the reference to check your own authoring against; with toSchematic it " +
+                "runs the other way and draws a .cnl you wrote as a readable .csch.\n" +
                 "\n" +
                 "End to end. Nothing here writes a document — use your own file tools for step 3.\n" +
                 "  1. create   what=workspace path=<root> name=demo      -> <root>/demo/.cws\n" +

@@ -228,6 +228,14 @@ public static class DocumentExtents
     /// bitmap-only selection otherwise sizes to a dummy extent, and a long net label near the edge is
     /// clipped. <c>SchematicClipboard.BuildSelectionModel</c> is where both were learned.
     ///
+    /// <para><b>Each component's <c>FullBb</c> is unioned too.</b> The model box aggregates a FIXED
+    /// square around each origin, so a component whose label rows run past it — a VAR or MEAS block
+    /// of more than a few rows, a long value — was cut off at the edge of the picture.
+    /// <c>FullBb</c> (glyph plus every label at its offset) is what the renderer culls against and
+    /// what the canvas's own Zoom to Fit frames on, with the same 200-unit breathing room the model
+    /// box carries. Unioned with the old box rather than replacing it, so a sheet whose labels
+    /// already fitted frames exactly as before.</para>
+    ///
     /// <para>Null when there is nothing to draw, or when what there is has no extent on an axis — which
     /// is a different fact from a box at the origin and must not be reported as one.</para>
     /// </summary>
@@ -237,6 +245,13 @@ public static class DocumentExtents
         double x0, y0, x1, y1;
         if (hasCompWire) { x0 = rm.BbMinX; y0 = rm.BbMinY; x1 = rm.BbMaxX; y1 = rm.BbMaxY; }
         else             { x0 = y0 = double.MaxValue; x1 = y1 = double.MinValue; }
+
+        const double margin = 200;
+        foreach (var c in rm.Components)
+        {
+            x0 = Math.Min(x0, c.FullBbMinX - margin);   y0 = Math.Min(y0, c.FullBbMinY - margin);
+            x1 = Math.Max(x1, c.FullBbMaxX + margin);   y1 = Math.Max(y1, c.FullBbMaxY + margin);
+        }
 
         foreach (var bm in rm.Bitmaps)
         {

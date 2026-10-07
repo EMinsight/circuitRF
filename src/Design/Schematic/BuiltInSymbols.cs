@@ -96,6 +96,10 @@ public static class BuiltInSymbols
     private static readonly Symbol _mklopf        = BuildMklopf();
     private static readonly Symbol _via           = BuildVia();
     private static readonly Symbol _viaGnd        = BuildViaGnd();
+    private static readonly Symbol _mimCap        = BuildMimCap();
+    private static readonly Symbol _spiral        = BuildSpiral();
+    private static readonly Symbol _tfr           = BuildTfr();
+    private static readonly Symbol _airbridge     = BuildAirbridge();
     private static readonly Symbol _termG         = BuildTermG();
     private static readonly Symbol _diode         = BuildDiode();
     private static readonly Symbol _fet           = BuildFet(nChannel: true);
@@ -212,6 +216,10 @@ public static class BuiltInSymbols
             case SymbolKind.Mklopf:     return _mklopf;
             case SymbolKind.Via:        return _via;
             case SymbolKind.ViaGnd:     return _viaGnd;
+            case SymbolKind.MimCap:     return _mimCap;
+            case SymbolKind.Spiral:     return _spiral;
+            case SymbolKind.Tfr:        return _tfr;
+            case SymbolKind.Airbridge:  return _airbridge;
             case SymbolKind.Vdc:        return _vdcSrc;
             case SymbolKind.ToneSource: return _toneSrc;
             case SymbolKind.CurrentToneSource: return _iToneSrc;
@@ -2063,6 +2071,50 @@ public static class BuiltInSymbols
         prims.Add(L(0, -200, 0, -ViaPadY - ViaBarrelR * ViaFlatten));      // lead A drops into the opening
         return Sym(prims, SymbolKind.ViaGnd);
     }
+
+    // ── MMIC passives (brief-agent-authoring-overview.md AA-1) ────────────────────────────
+    // Horizontal, pins at (±200, 0) like MLIN, because each sits in a die's lines. Each is drawn as
+    // what it is on the die rather than as the ideal element: the reader has to tell a MIM capacitor
+    // from a discrete C on the same schematic.
+
+    // MIMCAP: two EQUAL straight plates (a discrete C's second plate is curved) with the dielectric
+    // film between them drawn as a thin box — the thing that makes it a MIM part.
+    private static Symbol BuildMimCap() => Sym([
+        L(-200,   0, -20,   0),
+        L(  20,   0, 200,   0),
+        L( -20, -60, -20,  60),            // top plate
+        L(  20, -60,  20,  60),            // bottom plate
+        RRect(0, 0, 24, 96, 0),            // the film between them
+    ], SymbolKind.MimCap);
+
+    // SPIRAL: a square spiral seen from above, the outer end leaving left and the inner end brought out
+    // right over the turns on a bridge (the short raised segment).
+    private static Symbol BuildSpiral() => Sym([
+        L(-200,   0, -90,   0),
+        PLine(-90, 0,  -90, -70,  70, -70,  70, 70,  -60, 70,  -60, -40,  40, -40,  40, 40,  -30, 40,
+              -30, -10,  10, -10,  10, 10),   // the coil, outer end to inner end
+        PLine(10, 10, 10, 0, 100, 0),          // the escape from the inner end
+        L( 100,   0, 200,   0),
+    ], SymbolKind.Spiral);
+
+    // TFR: a resistor zig-zag inside the outline of the film it is cut from.
+    private static Symbol BuildTfr() => Sym([
+        L(-200,   0, -90,   0),
+        L(  90,   0, 200,   0),
+        RRect(0, 0, 180, 60, 0),           // the film
+        PLine(-90, 0, -70, -20, -40, 20, -10, -20, 20, 20, 50, -20, 70, 0, 90, 0),
+    ], SymbolKind.Tfr);
+
+    // AIRBRIDGE: the bridge arching between its two landings over the line it crosses, which runs down
+    // to terminal 3.
+    private static Symbol BuildAirbridge() => Sym([
+        L(-200,   0, -120,   0),
+        L( 120,   0,  200,   0),
+        QC(-120, 0, 0, -120, 120, 0),      // the span
+        L(-120,   0, -120, 20),            // the two posts
+        L( 120,   0,  120, 20),
+        L(   0, -30,   0, 200),            // the line it crosses
+    ], SymbolKind.Airbridge);
 
     // ── Tuner — compact almost-square termination, single left pin ────────────
     // 220 × 200 box (edges ±110 / ±100) — nearly square. Advanced users want a small footprint,

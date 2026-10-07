@@ -26,10 +26,41 @@ internal sealed class TraceStack
     public double MetresPerDbu => 1.0 / (DbuPerMicron * 1e6);
 
     /// <summary>The stack and its bands, or a refusal naming the stackup defect.</summary>
+    /// <param name="shapes">The artwork the cuts will be taken through. It decides whether a PATTERNED
+    /// dielectric (<see cref="StackupLayer.PresentWithLayer"/>) is in the medium — see below. Null is
+    /// "nothing drawn", so every patterned film is air.</param>
+    /// <param name="notes">Where what that decided is said; null discards it.</param>
+    /// <remarks>
+    /// <b>A patterned film is decided by <see cref="PatternedDielectric.Deactivate"/>, the rule both EM
+    /// extractors use</b> (AA-3): present when the layout draws its mask, or carries copper on the plate
+    /// conductor it is tied to; air, with its thickness kept, otherwise. Before this the trace
+    /// cross-section took every patterned film as laterally infinite: on the shipped GaAs technology a
+    /// 0.2 µm εr 6.8 MIM dielectric lay on every Metal1 line, with no Nitride drawn anywhere — the
+    /// failure PatternedDielectric's own header predicts for a path that does not ask it — and the
+    /// boundary-element solve against a film that thin was not smooth in the width either: Z0 moved by
+    /// ±2 Ω between widths 50 nm apart (47.9 → 51.5 → 49.2 Ω over 67.9–68.2 µm), where without the film
+    /// it falls monotonically (50.86 → 50.77 Ω).
+    /// </remarks>
     public static (List<CrossSectionExtractor.Band> Stack, List<CrossSectionExtractor.Band> Bands,
-                   Dictionary<LayerKey, CrossSectionExtractor.Band> BandOf, string? Refusal) StackOf(Technology tech)
+                   Dictionary<LayerKey, CrossSectionExtractor.Band> BandOf, string? Refusal) StackOf(
+        Technology tech, IReadOnlyList<LayoutShape>? shapes = null, List<string>? notes = null)
     {
-        var stack = CrossSectionExtractor.BuildStack(tech.Stackup);
+        var drawn = new HashSet<LayerKey>();
+        foreach (var shape in shapes ?? [])
+            if (shape is not (LabelShape or BitmapShape)) drawn.Add(shape.Layer);
+        bool Draws(string conductorOrMask) =>
+            tech.Stackup.Layers.FirstOrDefault(l => l.Kind == StackupKind.Conductor &&
+                                                    string.Equals(l.Name, conductorOrMask, StringComparison.Ordinal))
+                is { } conductor
+                ? conductor.DrawingLayers.Any(drawn.Contains)
+                : tech.Layers.Any(l => string.Equals(l.Name, conductorOrMask, StringComparison.Ordinal) && drawn.Contains(l.Key));
+        var findings = new List<EmFinding>();
+        var effective = PatternedDielectric.Deactivate(
+            tech.Stackup, Draws, revertSheetSurface: false, findings, null,
+            new PatternedFilmMask(tech.Layers, Draws));
+        notes?.AddRange(findings.Select(f => f.Text));
+
+        var stack = CrossSectionExtractor.BuildStack(effective ?? tech.Stackup);
         var bands = stack.Where(b => b.Layer.Kind == StackupKind.Conductor).ToList();
         var bandOf = new Dictionary<LayerKey, CrossSectionExtractor.Band>();
         foreach (var b in bands)

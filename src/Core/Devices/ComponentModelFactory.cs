@@ -85,6 +85,9 @@ public static class ComponentModelFactory
             "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
             "VIA", "VIAGND",
+            // The four MMIC passives (brief-agent-authoring-overview.md AA-1), each bound to the
+            // technology's stackup at extraction as MLIN is.
+            "MIMCAP", "SPIRAL", "TFR", "AIRBRIDGE",
             "ExtDevice", "wBond", "Match", "Mixer",
             // The ideal system blocks (brief-sys-2, brief-sys-3). One IdealSBlockModel subclass
             // each; "Switch" serves both switch tiles, with the throw count a parameter, and
@@ -182,6 +185,14 @@ public static class ComponentModelFactory
             return new ViaModel(ReadViaGeometry(parameters, grounded: false));
         if (typeName.Equals("VIAGND", StringComparison.OrdinalIgnoreCase))
             return CreateViaGroundModel(parameters);
+        if (typeName.Equals("MIMCAP", StringComparison.OrdinalIgnoreCase))
+            return CreateMimCapModel(parameters);
+        if (typeName.Equals("SPIRAL", StringComparison.OrdinalIgnoreCase))
+            return CreateSpiralModel(parameters);
+        if (typeName.Equals("TFR", StringComparison.OrdinalIgnoreCase))
+            return CreateThinFilmResistorModel(parameters);
+        if (typeName.Equals("AIRBRIDGE", StringComparison.OrdinalIgnoreCase))
+            return CreateAirbridgeModel(parameters);
         if (typeName.Equals("ExtDevice", StringComparison.OrdinalIgnoreCase))
             return CreateExternalDeviceModel(parameters);
         if (typeName.Equals("VerilogA", StringComparison.OrdinalIgnoreCase))
@@ -2137,6 +2148,45 @@ public static class ComponentModelFactory
             padThickness: GetReal(parameters, "Tpad", g.Length),
             padEpsR:      GetReal(parameters, "Erpad", GetReal(parameters, "Er", DefaultSubstrateEpsR)));
     }
+
+    // ── MIMCAP / SPIRAL / TFR / AIRBRIDGE (brief-agent-authoring-overview.md AA-1) ────────────
+    // Every length is SI metres. A schematic instance on a technology has its materials injected at
+    // extraction (MmicPassiveInjection, src/Design), and a .cnl inside a workspace has them bound by
+    // CnlTechnologyBinding; a bare line outside any technology falls back to the numbers below, which
+    // are the shipped GaAs process's (mmic-GaAs_2LM_100um) — the process these parts exist for.
+    public const double DefaultMimEpsR          = 6.8;
+    public const double DefaultMimThickness     = 0.2e-6;
+    public const double DefaultMimTanD          = 0.001;
+    public const double DefaultMimPlateThickness = 0.25e-6;
+    public const double DefaultMmicMetalThickness = 3e-6;
+    public const double DefaultMmicSigma        = 4.1e7;
+    public const double DefaultMmicSubstrateH   = 100e-6;
+    public const double DefaultMmicSubstrateEpsR = 12.9;
+    public const double DefaultSheetResistance  = 50.0;
+    public const double DefaultBridgeHeight     = 3e-6;
+
+    private static MimCapModel CreateMimCapModel(IReadOnlyDictionary<string, Value> p)
+        => new(GetReal(p, "W", 50e-6), GetReal(p, "L", 50e-6),
+               GetReal(p, "Er", DefaultMimEpsR), GetReal(p, "Td", DefaultMimThickness),
+               GetReal(p, "TanD", DefaultMimTanD),
+               GetReal(p, "SigmaTop", DefaultMmicSigma), GetReal(p, "Ttop", DefaultMimPlateThickness),
+               GetReal(p, "SigmaBot", DefaultMmicSigma), GetReal(p, "Tbot", DefaultMmicMetalThickness),
+               GetReal(p, "H", DefaultMmicSubstrateH), GetReal(p, "ErSub", DefaultMmicSubstrateEpsR));
+
+    private static SpiralInductorModel CreateSpiralModel(IReadOnlyDictionary<string, Value> p)
+        => new(GetReal(p, "N", 2.5), GetReal(p, "W", 10e-6), GetReal(p, "S", 10e-6), GetReal(p, "Din", 100e-6),
+               GetReal(p, "Sigma", DefaultMmicSigma), GetReal(p, "T", DefaultMmicMetalThickness),
+               GetReal(p, "H", DefaultMmicSubstrateH), GetReal(p, "ErSub", DefaultMmicSubstrateEpsR),
+               GetReal(p, "Hb", DefaultBridgeHeight), GetReal(p, "Erb", 1.0));
+
+    private static ThinFilmResistorModel CreateThinFilmResistorModel(IReadOnlyDictionary<string, Value> p)
+        => new(GetReal(p, "W", 10e-6), GetReal(p, "L", 20e-6), GetReal(p, "Rs", DefaultSheetResistance),
+               GetReal(p, "H", DefaultMmicSubstrateH), GetReal(p, "ErSub", DefaultMmicSubstrateEpsR));
+
+    private static AirbridgeModel CreateAirbridgeModel(IReadOnlyDictionary<string, Value> p)
+        => new(GetReal(p, "L", 30e-6), GetReal(p, "W", 10e-6), GetReal(p, "Wu", 10e-6),
+               GetReal(p, "Sigma", DefaultMmicSigma), GetReal(p, "T", DefaultMmicMetalThickness),
+               GetReal(p, "Hb", DefaultBridgeHeight), GetReal(p, "Erb", 1.0));
 
     private static MicrostripBendModel CreateMicrostripBendModel(IReadOnlyDictionary<string, Value> parameters)
     {

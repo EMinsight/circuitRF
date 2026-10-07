@@ -180,7 +180,10 @@ invents a statement will see it reported there, and nowhere else.
 **A drawn schematic takes more care than a netlist.** The `schematic` topic gives a complete working
 example, and `components <TYPE>` gives each symbol's pin positions, but every wire has to end exactly
 on a pin. Have the agent run `check` and `netlist` on the `.csch`: `check` reports a component it
-cannot identify, and `netlist` shows what the drawing actually connects.
+cannot identify, and `netlist` shows what the drawing actually connects. Simpler still, have it
+write the netlist and let `netlist` with `toSchematic` draw it
+([`--to-schematic`](cli.html#netlist-to-schematic)). The drawing extracts back to the same circuit,
+and every net carries its netlist name.
 
 ## Keeping its work reversible {#safety}
 

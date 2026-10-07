@@ -359,7 +359,8 @@ internal static partial class Reference
             [.. s.Parameters.Select(p => new ReferenceParameterJson(
                 p.Name, p.Expression, p.Unit, p.Dimension, p.ShowOnSchematic,
                 p.Meaning.Length == 0 ? null : p.Meaning))],
-            s.Pins.Count == 0 ? null : [.. s.Pins.Select(p => new ReferencePinJson(p.Name, p.X, p.Y))]))]);
+            s.Pins.Count == 0 ? null : [.. s.Pins.Select(p => new ReferencePinJson(p.Name, p.X, p.Y))],
+            s.Validity.Length == 0 ? null : s.Validity))]);
 
     private static ReferencePortsJson ToJson(CatalogPorts p)
         => new(p.Count, p.Names, p.DeterminedBy, p.ListedAt,
@@ -399,6 +400,7 @@ internal static partial class Reference
                 // Repeated per symbol rather than only at the token, because a token whose tiles
                 // disagree drops it above and the tile is then the only place it is stated.
                 if (s.Ports.OrderNote.Length > 0) sb.Append("    order: ").AppendLine(s.Ports.OrderNote);
+                if (s.Validity.Length > 0) sb.Append("    model: ").AppendLine(s.Validity);
                 // Where a .csch wire must END to reach each terminal — measured from rendered pixels
                 // by the one client that had to draw a schematic without it.
                 if (s.Pins.Count > 0)
