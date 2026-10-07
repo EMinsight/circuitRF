@@ -68,7 +68,19 @@ public sealed record CatalogSymbol(
     string                          Category,
     IReadOnlyList<string>           SearchTerms,
     CatalogPorts                    Ports,
-    IReadOnlyList<CatalogParameter> Parameters);
+    IReadOnlyList<CatalogParameter> Parameters)
+{
+    /// <summary>Where each terminal sits on the drawn symbol, relative to the component's own
+    /// <c>X</c>/<c>Y</c> at rotation <c>R0</c> with no mirror — what a wire in a hand-written
+    /// <c>.csch</c> has to end on. From <see cref="SymbolPortDefs"/>, the table extraction connects
+    /// wires by; empty where the pins come from a referenced cell's own symbol. A variadic kind's
+    /// pins are listed at <see cref="CatalogPorts.ListedAt"/>.</summary>
+    public IReadOnlyList<CatalogPin> Pins { get; init; } = [];
+}
+
+/// <summary>One terminal of a drawn symbol, in schematic units relative to the component's origin
+/// (y grows DOWNWARD).</summary>
+public sealed record CatalogPin(string Name, double X, double Y);
 
 /// <summary>
 /// One primitive, keyed on the token a <c>.cnl</c> writes.
@@ -175,7 +187,10 @@ public static class ComponentCatalog
                     ComponentTypeRegistry.Get(k).Category.ToString(),
                     ComponentTypeRegistry.Get(k).SearchTerms ?? [],
                     PortsOf(k),
-                    Parameters(k, PortCountFor(k))))
+                    Parameters(k, PortCountFor(k)))
+                {
+                    Pins = [.. SymbolPortDefs.For(k, ListedPortCount).Select(p => new CatalogPin(p.Name, p.LocalX, p.LocalY))],
+                })
                 .OrderBy(s => s.Kind, StringComparer.Ordinal)
                 .ToArray();
 

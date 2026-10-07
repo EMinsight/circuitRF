@@ -455,11 +455,12 @@ public sealed class ReferenceCliVerbTests(ITestOutputHelper output)
         var names  = topics.EnumerateArray().Select(t => t.GetProperty("topic").GetString()).ToArray();
 
         // The authored pages first, then the GENERATED topics: the document formats (AUT-10
-        // R-aut10-3/4, plus .clay/.cem/.wBond), the analysis directives (R-aut10-1) and the
-        // component catalogue.
+        // R-aut10-3/4, plus .clay/.cem/.wBond), the analysis directives (R-aut10-1), the component
+        // index before the catalogue it indexes, and what ships.
         Assert.Equal(
             ReferenceLibrary.TopicNames.Concat(["data-display", "technology", "layout", "em-setup", "wbond",
-                                               "3d-view", "materials", "analyses", "components"]),
+                                               "3d-view", "materials", "schematic", "analyses", "component-index",
+                                               "components", "technologies", "shipped-materials"]),
             names);
 
         foreach (var t in topics.EnumerateArray())
@@ -502,6 +503,145 @@ public sealed class ReferenceCliVerbTests(ITestOutputHelper output)
                        .EnumerateArray().Select(p => p.GetProperty("name").GetString()).ToArray();
 
         Assert.Equal(ComponentCatalog.Parameters(SymbolKind.Mlin, 0).Select(p => p.Name), names);
+    }
+
+    // ══ what ships, and the cheap index ═════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// The index has one row per catalogue type, in the catalogue's order, and costs a small fraction
+    /// of it — the whole reason it exists is that the catalogue did not fit in one tool result.
+    /// </summary>
+    [Fact]
+    public void TheComponentIndex_HasEveryCatalogueType_AtAFractionOfItsSize()
+    {
+        var run = RunCli("reference", "component-index", "--json");
+        Assert.Equal(0, run.ExitCode);
+
+        var rows = Payload(run.StdOut).GetProperty("reference").GetProperty("componentIndex").EnumerateArray().ToArray();
+        Assert.Equal(ComponentCatalog.All().Select(e => e.Type), rows.Select(r => r.GetProperty("type").GetString()));
+
+        var mlin = rows.Single(r => r.GetProperty("type").GetString() == "MLIN");
+        Assert.Equal(2, mlin.GetProperty("nets").GetInt32());
+
+        int index = Encoding.UTF8.GetByteCount(RunCli("reference", "component-index").StdOut);
+        int whole = Encoding.UTF8.GetByteCount(RunCli("reference", "components").StdOut);
+        Assert.True(index * 5 < whole, $"the index is {index} B against the catalogue's {whole} B.");
+    }
+
+    /// <summary>
+    /// <c>technologies</c> lists exactly the technologies that ship — both directions, against the
+    /// embedded set <c>new workspace --tech</c> draws from — flags the default, narrows to one by id,
+    /// and refuses an id that does not ship by listing the ones that do.
+    /// </summary>
+    [Fact]
+    public void Technologies_AreExactlyTheShippedOnes_AndOneNarrowsByItsId()
+    {
+        var shipped = CircuitRF.Design.Layout.ShippedTechnologies.All.Select(e => e.Id).ToArray();
+
+        var all = Payload(RunCli("reference", "technologies", "--json").StdOut)
+            .GetProperty("reference").GetProperty("technologies").EnumerateArray().ToArray();
+        Assert.Equal(shipped, all.Select(t => t.GetProperty("id").GetString()));
+        Assert.Equal(CircuitRF.Design.Layout.ShippedTechnologies.DefaultId,
+                     all.Single(t => t.GetProperty("isDefault").GetBoolean()).GetProperty("id").GetString());
+
+        string mmic = shipped.Single(id => id.StartsWith("mmic-", StringComparison.Ordinal));
+        var one = Payload(RunCli("reference", "technologies", mmic, "--json").StdOut)
+            .GetProperty("reference").GetProperty("technologies").EnumerateArray().Single();
+        var tech = CircuitRF.Design.Layout.ShippedTechnologies.Load(mmic);
+        Assert.Equal(tech.Stackup.Layers.Select(l => l.Name),
+                     one.GetProperty("stackup").EnumerateArray().Select(l => l.GetProperty("name").GetString()));
+
+        var refused = RunCli("reference", "technologies", "no-such-process", "--json");
+        Assert.Equal(1, refused.ExitCode);
+        var d = Diagnostics(refused.StdOut).Single();
+        Assert.Equal("reference.technology.unknown", d.GetProperty("id").GetString());
+        Assert.Contains(mmic, d.GetProperty("message").GetString()!, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <c>shipped-materials</c> lists every record of every library that ships, and nothing else —
+    /// both directions, against the embedded libraries read through the library reader — with each
+    /// record's role as the <c>.cmat</c> format defines it.
+    /// </summary>
+    [Fact]
+    public void ShippedMaterials_AreEveryRecordOfEveryShippedLibrary()
+    {
+        var expected = CircuitRF.Design.Layout.MaterialLibraries.ShippedLibraryNames()
+            .SelectMany(lib => CircuitRF.Design.Layout.MaterialLibraries.LoadShipped(lib).Select(m => lib + "|" + m.Name))
+            .ToArray();
+        Assert.NotEmpty(expected);
+
+        var rows = Payload(RunCli("reference", "shipped-materials", "--json").StdOut)
+            .GetProperty("reference").GetProperty("materials").EnumerateArray().ToArray();
+        Assert.Equal(expected, rows.Select(r => r.GetProperty("library").GetString() + "|" + r.GetProperty("name").GetString()));
+
+        string Role(string name) => rows.First(r => r.GetProperty("name").GetString() == name).GetProperty("role").GetString()!;
+        Assert.Equal("conductor", Role("Gold"));
+        Assert.Equal("dielectric", Role("GaAs"));
+    }
+
+    /// <summary>Where each pin sits is the extractor's own table — what a wire in a hand-written
+    /// <c>.csch</c> must end on, and what one client had to measure from rendered pixels.</summary>
+    [Fact]
+    public void ASymbolsPins_AreTheTableExtractionConnectsBy()
+    {
+        var run = RunCli("reference", "components", "MLIN", "--json");
+        var pins = Payload(run.StdOut).GetProperty("reference").GetProperty("components")[0]
+                                      .GetProperty("symbols")[0].GetProperty("pins").EnumerateArray()
+                                      .Select(p => (p.GetProperty("name").GetString(),
+                                                    p.GetProperty("x").GetDouble(), p.GetProperty("y").GetDouble()))
+                                      .ToArray();
+
+        Assert.Equal(SymbolPortDefs.For(SymbolKind.Mlin, ComponentCatalog.ListedPortCount)
+                                   .Select(p => ((string?)p.Name, (double)p.LocalX, (double)p.LocalY)), pins);
+        Assert.Contains("pins at R0: 1 (-200, 0)  2 (200, 0)", RunCli("reference", "components", "MLIN").StdOut);
+    }
+
+    /// <summary>A <c>.csch</c> names a component by SYMBOL KIND; asking by that name finds the .cnl
+    /// token it places.</summary>
+    [Fact]
+    public void AComponentNamedByItsSymbolKind_FindsTheTokenItPlaces()
+    {
+        var run = RunCli("reference", "components", "TermG", "--json");
+        Assert.Equal(0, run.ExitCode);
+        Assert.Equal("Port", Payload(run.StdOut).GetProperty("reference").GetProperty("components")[0]
+                                                .GetProperty("type").GetString());
+    }
+
+    /// <summary>
+    /// The schematic topic's worked example is a real file: lifted out of the served text, it checks
+    /// with nothing to say and extracts to the lines the topic says it does. A preamble whose example
+    /// had drifted from the reader would teach exactly the misspellings the topic exists to prevent.
+    /// </summary>
+    [Fact]
+    public void TheSchematicTopicsExample_ChecksCleanAndExtractsAsItSays()
+    {
+        string text = RunCli("reference", "schematic").StdOut.Replace("\r\n", "\n");
+        string Block(string after, string before)
+        {
+            int start = text.IndexOf(after, StringComparison.Ordinal) + after.Length;
+            int end   = text.IndexOf(before, start, StringComparison.Ordinal);
+            return string.Join("\n", text[start..end].Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0));
+        }
+        string json      = Block("This is a whole file:", "It extracts to:");
+        string[] netlist = Block("It extracts to:", "Eight things").Split('\n');
+
+        string dir = Path.Combine(Path.GetTempPath(), "crf-ref-csch-" + Guid.NewGuid().ToString("N")[..10]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            string csch = Path.Combine(dir, "pad.csch");
+            File.WriteAllText(csch, json);
+
+            var check = RunCli("check", csch);
+            Assert.True(check.ExitCode == 0, check.StdErr);
+            Assert.Contains("0 error(s), 0 warning(s)", check.StdErr + check.StdOut);
+
+            var extracted = RunCli("netlist", csch).StdOut.Split('\n').Select(l => l.Trim()).ToHashSet();
+            foreach (string line in netlist)
+                Assert.True(extracted.Contains(line), $"the topic says the example extracts to '{line}'; it does not.");
+        }
+        finally { try { Directory.Delete(dir, true); } catch { /* best effort */ } }
     }
 
     /// <summary>An unknown topic LISTS the real ones — <c>--tech</c>'s precedent, never a

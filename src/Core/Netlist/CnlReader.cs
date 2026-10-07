@@ -18,7 +18,8 @@ namespace CircuitRF.Core.Netlist;
 ///   analysis Name ...         — raw directive → RawDirective("analysis", ...)
 ///   measure Name ...          — raw directive → RawDirective("measure", ...)
 ///
-/// Unknown lines are skipped (real-world exports may have header lines).
+/// Unknown lines are skipped (real-world exports may have header lines), and each one is recorded in
+/// <see cref="TestBench.ReadWarnings"/> so a misspelled statement is reported rather than lost.
 /// Analysis/measure directives are stored verbatim — grammar is Phase 2.
 /// </summary>
 public sealed class CnlReader
@@ -53,8 +54,12 @@ public sealed class CnlReader
             {
                 if (!TryParseLine(trimmed))
                 {
-                    // Skip unknown/unrecognised lines (header lines, unknown directives).
-                    // Committed fixtures are clean, so this path is for real-world imports.
+                    // Skipped, as before — an imported netlist may carry header lines — but SAID: a
+                    // misspelled or invented statement (`technology "x.ctech"`) used to vanish and
+                    // the run went ahead without it, which `check` then called clean.
+                    _testBench!.ReadWarnings.Add(
+                        $"line {_lineNumber}: '{(trimmed.Length > 80 ? trimmed[..80] + "…" : trimmed)}' " +
+                        "is not a statement the netlist reader knows, and was skipped.");
                 }
             }
             catch (Exception ex) when (ex is not CnlReadException)

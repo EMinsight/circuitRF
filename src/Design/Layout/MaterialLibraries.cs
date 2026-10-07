@@ -104,6 +104,24 @@ public static class MaterialLibraries
         return reader.ReadToEnd();
     }
 
+    /// <summary>The file name of every material library that ships embedded beside the technologies,
+    /// sorted — read off the assembly's resources, so a library added there is listed with nothing to
+    /// remember. What <c>circuitrf reference shipped-materials</c> enumerates.</summary>
+    public static IReadOnlyList<string> ShippedLibraryNames()
+    {
+        var names = typeof(MaterialLibraries).Assembly.GetManifestResourceNames()
+            .Where(n => n.StartsWith(ShippedResourcePrefix, StringComparison.Ordinal)
+                        && n.EndsWith(".cmat", StringComparison.Ordinal))
+            .Select(n => n[ShippedResourcePrefix.Length..])
+            .ToList();
+        names.Sort(StringComparer.Ordinal);
+        return names;
+    }
+
+    /// <summary>One shipped library's records, by its file name.</summary>
+    public static IReadOnlyList<TechMaterial> LoadShipped(string fileName)
+        => MaterialLibraryPersistence.Deserialize(ShippedRawJson(fileName));
+
     /// <summary>The shipped generic library's records.</summary>
     public static IReadOnlyList<TechMaterial> LoadGeneric() => MaterialLibraryPersistence.Deserialize(GenericRawJson());
 

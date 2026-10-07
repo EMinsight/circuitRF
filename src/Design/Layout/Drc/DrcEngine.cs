@@ -579,12 +579,14 @@ public static class DrcEngine
                 var overlap = Clipper.BooleanOp(ClipType.Intersection, grown[i], grown[j], LayoutClipper.Rule);
                 if (overlap.Count == 0) continue;
 
+                long? gap = null;   // measured once per violating pair, never for a passing one
                 foreach (var region in DrcRegions.Components(overlap))
                 {
                     // A gap of exactly the rule value inflates to a zero-area contact, which Clipper2
                     // drops; anything that survives with area is genuinely closer than the rule.
                     if (Math.Abs(Clipper.Area(region)) <= 0) continue;
-                    into.Add(Make(rule, region, conductors[i].Net, conductors[j].Net));
+                    gap ??= DrcRegions.MinDistance(conductors[i].Paths, conductors[j].Paths);
+                    into.Add(Make(rule, region, conductors[i].Net, conductors[j].Net) with { MeasuredDbu = gap });
                 }
             }
         }

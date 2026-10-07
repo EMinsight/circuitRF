@@ -24,6 +24,8 @@ using CircuitRF.Core.Design;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Workspace;
+using CircuitRF.Engine.Mom;
+using System.Text.Json;
 using CircuitRF.Ui.Layout;
 using Xunit.Abstractions;
 
@@ -199,5 +201,76 @@ public sealed class EmRunSeverityCliTests(ITestOutputHelper output) : IDisposabl
         Assert.True(firstNote < int.MaxValue, "this run is supposed to produce notes too:\n" + stderr);
         Assert.True(lastWarning < firstNote,
             $"a warning was printed at line {lastWarning}, after the first note at {firstNote}:\n" + stderr);
+    }
+
+    /// <summary>A plain Metal1 line on the shipped MMIC technology with a port at each end, and a
+    /// full-wave planar <c>.cem</c> whose PlanarMesh states <paramref name="mesh"/>.</summary>
+    private string BuildLine(PlanarMeshSettings mesh)
+    {
+        LayerKey Metal1 = new(1, 0);
+        string cellLayoutDir = Path.Combine(_root, "Line", "layout");
+        Directory.CreateDirectory(cellLayoutDir);
+        TechPersistence.SaveToFile(Path.Combine(_root, "mmic.ctech"), StarterTechnologies.MmicGaAs());
+
+        var view = new LayoutView { DbuPerMicron = Dbu };
+        view.Shapes.Add(Rect(Metal1, 0, 0, 400, 20));
+        view.Shapes.Add(Port(Metal1,   0, 10, "P1"));
+        view.Shapes.Add(Port(Metal1, 400, 10, "P2"));
+        LayoutPersistence.SaveToFile(Path.Combine(cellLayoutDir, "Line.clay"), view);
+        WorkspacePersistence.SaveToFile(Path.Combine(_root, ".cws"), new CwsFile { DefaultTechRef = "mmic.ctech" });
+
+        var setup = new EmSetup
+        {
+            Name         = "line",
+            AnalysisKind = EmAnalysisKind.Planar,   // a uniform line would otherwise go to the cross-section kernel
+            LayoutRef    = Path.Combine("Line", "layout", "Line.clay"),
+            Frequency    = new FrequencySpec("1", "10", 5, SweepKind.Linear, "GHz", "GHz"),
+            PlanarMesh   = mesh,
+        };
+        string cemPath = Path.Combine(_root, "line.cem");
+        EmSetupPersistence.SaveToFile(cemPath, setup);
+        return cemPath;
+    }
+
+    /// <summary>
+    /// With <c>Auto</c> on, a stated <c>EdgeMesh: false</c> is discarded (<c>PlanarMeshSettings.Resolved</c>
+    /// is the contract) and the mesh notes report only the value used. <c>check</c> says so, naming the
+    /// field and the switch that makes it take effect; otherwise the notes say "edge mesh on" and
+    /// nothing explains why.
+    /// </summary>
+    [Fact]
+    public void CheckOnACem_AFieldAutoDiscards_IsAWarningNamingIt()
+    {
+        string cemPath = BuildLine(PlanarMeshSettings.Default with { EdgeMesh = false });
+
+        var (_, stdout, stderr) = RunCli("check", cemPath, "--json");
+        output.WriteLine(stderr);
+
+        var d = JsonDocument.Parse(stdout).RootElement.GetProperty("diagnostics").EnumerateArray()
+                            .Single(x => x.GetProperty("id").GetString() == "check.em.mesh-auto-override");
+        Assert.Equal("warning", d.GetProperty("severity").GetString());
+        Assert.Equal("EdgeMesh", d.GetProperty("arguments").GetProperty("fields").GetString());
+        Assert.Contains("\"Auto\": false", d.GetProperty("message").GetString(), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The mesh budget survives <c>--summary</c>: the unknown count and the ceiling it is judged
+    /// against are on the document's result row, not only in the notes <c>--summary</c> collapses.
+    /// </summary>
+    [Fact]
+    public void CheckOnACem_TheMeshBudget_SurvivesSummary()
+    {
+        string cemPath = BuildLine(PlanarMeshSettings.Default);
+
+        var (_, stdout, stderr) = RunCli("check", cemPath, "--json", "--summary");
+        output.WriteLine(stderr);
+
+        var root = JsonDocument.Parse(stdout).RootElement;
+        Assert.DoesNotContain(root.GetProperty("diagnostics").EnumerateArray(),
+                              x => x.GetProperty("severity").GetString() == "info");   // notes collapsed
+        var em = root.GetProperty("result").GetProperty("check").GetProperty("documents")[0].GetProperty("em");
+        Assert.True(em.GetProperty("unknowns").GetInt32() > 0);
+        Assert.True(em.GetProperty("ceiling").GetInt32() > 0);
+        Assert.Equal("ok", em.GetProperty("verdict").GetString());
     }
 }

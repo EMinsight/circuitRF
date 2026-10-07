@@ -1353,6 +1353,11 @@ public sealed class SchematicEditModel
     /// </summary>
     public string? SchematicDirectory { get; set; }
 
+    /// <summary>What the read ignored, misread or dropped (<see cref="SchematicLoadAudit"/>). Set by
+    /// <see cref="SchematicPersistence.Deserialize"/>; empty for a model built in memory. The GUI
+    /// posts these on a fresh load and <c>circuitrf check</c> reports them, in the same words.</summary>
+    public IReadOnlyList<SchematicLoadFinding> LoadFindings { get; set; } = [];
+
     public List<EditableComponent>  Components   { get; } = new();
     public List<EditableWire>       Wires        { get; } = new();
     public List<EditableNetLabel>   NetLabels    { get; } = new();

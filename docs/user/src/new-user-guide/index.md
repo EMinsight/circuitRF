@@ -375,4 +375,6 @@ The example's README has every step and number, and the reference is
 
 <p class="small">Ready for specifics? The <a href="../reference/index.html">Reference Guide</a> documents
   every component, every analysis setting, and the plot types in detail. Already comfortable with simulators?
-  The <a href="../quick-start/index.html">Quick Start</a> is the fast path.</p>
+  The <a href="../quick-start/index.html">Quick Start</a> is the fast path. Want an AI agent to do the
+  drawing? <a href="../reference/ai-agents.html">Designing with an AI agent</a> covers connecting one and
+  what to tell it.</p>

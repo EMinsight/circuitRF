@@ -333,7 +333,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
     // form, and dc's own scan.
     [InlineData("cli.args.unknown-option",              "lp|testdata/Hero3/hero3.cnl|--maxmix|3")]
     [InlineData("cli.args.unknown-option",              "sparam|testdata/Hero1/hero1.cnl|-a|AC1")]
-    [InlineData("cli.args.unknown-option",              "dc|testdata/Hero1/hero1.cnl|--set|Vg=1")]
+    [InlineData("cli.args.unknown-option",              "dc|testdata/Hero1/hero1.cnl|--tol|1e-9")]
     [InlineData("cli.args.multiple-inputs",             "dc|testdata/Hero1/hero1.cnl|second.cnl")]
     [InlineData("cli.analysis.not-selected",            "hb|testdata/Hero1/hero1.cnl")]
     [InlineData("convert.input.not-found",              "convert|nope.dxf|-o|out.gds")]
@@ -437,6 +437,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.elaboration.failed",
         "check.elaboration.note",
         "check.elaboration.warning",
+        "check.em.mesh-auto-override",
         "check.em.note",
         "check.em.refused",
         "check.em.unresolved",
@@ -464,7 +465,13 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.ref.primary-missing",
         "check.ref.redirected",
         "check.resolver.note",
+        "check.schematic.analysis-skipped",
         "check.schematic.conflict",
+        "check.schematic.measurements-not-evaluated",
+        "check.schematic.missing-symbol",
+        "check.schematic.unknown-field",
+        "check.schematic.unknown-symbol",
+        "check.schematic.wrong-shape",
         // `check <path.csmith>` — what the design holds. Info rather than a finding: SmithDesignIo
         // is what REFUSES a malformed one, so reaching this line means the document is well formed.
         // Recorded here late: the id shipped with brief 1 of the Smith series and this list was not
@@ -763,6 +770,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "plot.trace.cube-required",
         "plot.trace.cut-malformed",
         "plot.trace.cut-needs-pattern-axes",
+        "plot.trace.db-ambiguous",
         "plot.trace.field-malformed",
         "plot.trace.freq-malformed",
         "plot.trace.no-port-axis",
@@ -854,6 +862,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "reference.args.unknown-option",
         "reference.component.unknown",
         "reference.resource.unknown",
+        "reference.technology.unknown",
         "reference.topic.unknown",
         // RND-4's `.cdd` half (brief-render-4-data-display.md), recorded here late: they were added
         // with the verb and this list was not, so the first change after them is what found it.
@@ -978,6 +987,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "render.workspace.no-such-cell",
         "serve.args.json-not-applicable",
         "serve.args.not-for-mode",
+        "serve.args.print-config-json",
         "serve.args.required",
         "serve.args.root-required",
         "serve.args.unknown-option",
@@ -991,6 +1001,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "serve.image.too-large",
         "serve.image.unreadable",
         "serve.path.outside-root",
+        "serve.print-config.no-process-path",
         "serve.root.not-found",
         "serve.tool.cancelled",
         "serve.tool.failed",

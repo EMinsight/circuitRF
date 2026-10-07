@@ -89,6 +89,23 @@ public sealed class CheckAndExplainCliVerbTests(ITestOutputHelper output) : IDis
         AssertHasDiagnostic(RunCli("check", csch, "--json"), "check.view.defect");
     }
 
+    /// <summary><c>SchematicPersistence</c>'s own load findings (<c>SchematicLoadAudit</c>): a component
+    /// whose type is spelt "Kind" is read as a resistor and still simulates, so it is an error and
+    /// `check` exits 1 on it.</summary>
+    [Fact]
+    public void SchematicPersistence_AComponentWithNoSymbol_IsAnError()
+    {
+        string csch = Write("Amp.csch", """
+            { "FormatVersion": 2, "CellName": "Amp",
+              "Components": [ { "InstanceName": "TL1", "Kind": "Mlin", "X": 0, "Y": 0, "Parameters": [] } ],
+              "Wires": [] }
+            """);
+
+        var run = RunCli("check", csch, "--json");
+        AssertHasDiagnostic(run, "check.schematic.missing-symbol");
+        Assert.Equal(1, run.ExitCode);
+    }
+
     /// <summary><c>CellFolder.ResolvePrimary</c>: the `.ccell` names a primary that is not there.
     /// <c>PrimaryState</c>'s own remarks say do not collapse this into NoPrimary, so it has its own id.</summary>
     [Fact]
@@ -359,6 +376,54 @@ public sealed class CheckAndExplainCliVerbTests(ITestOutputHelper output) : IDis
         var doc = AssertHasDiagnostic(RunCli("check", clay, "--json"), "check.drc.violation");
         Assert.Equal("M1 min spacing", Argument(doc, "check.drc.violation", "rule"));
         Assert.Equal("MinSpacing",     Argument(doc, "check.drc.violation", "kind"));
+    }
+
+    /// <summary>
+    /// A violation says WHERE it is and what it is between. Two abutting rectangles on nets "in" and
+    /// "sig" are a short: the finding names the technology's layer, both nets, says they touch in so
+    /// many words, and carries the marker box in the layout's display unit. Before this it said only
+    /// the rule and a record's ToString for the layer — an agent found the cause by reasoning alone.
+    /// </summary>
+    [Fact]
+    public void DrcViolation_SaysWhereItIs_AndThatTwoNetsTouch()
+    {
+        string ws   = Dir("ws");
+        string tech = Path.Combine(ws, "proc.ctech");
+        var key     = new LayerKey(1, 0);
+        var t = new Technology
+        {
+            Name   = "Proc",
+            Layers = [new LayerDef { Key = key, Name = "M1", Color = new Rgba(200, 200, 200, 255) }],
+        };
+        t.DrcRules.Add(new DrcRule
+        {
+            Name = "M1 min spacing", Kind = DrcRuleKind.MinSpacing, Layer = key, ValueDbu = 4000,
+        });
+        TechPersistence.SaveToFile(tech, t);
+
+        string clay = Path.Combine(Dir("ws/cell/layout"), "Amp.clay");
+        var view = new LayoutView
+        {
+            TechRef      = Path.GetRelativePath(Path.GetDirectoryName(clay)!, tech),
+            DbuPerMicron = 1000,
+            DisplayUnit  = LayoutUnit.Um,
+        };
+        view.Shapes.Add(new RectShape { Layer = key, Net = "in",  X1 = 0,      Y1 = 0, X2 = 100000, Y2 = 30000 });
+        view.Shapes.Add(new RectShape { Layer = key, Net = "sig", X1 = 100000, Y1 = 0, X2 = 200000, Y2 = 30000 });
+        LayoutPersistence.SaveToFile(clay, view);
+
+        var doc = AssertHasDiagnostic(RunCli("check", clay, "--json"), "check.drc.violation");
+        var d = doc.RootElement.GetProperty("diagnostics").EnumerateArray()
+                            .Single(x => x.GetProperty("id").GetString() == "check.drc.violation");
+        var a = d.GetProperty("arguments");
+
+        Assert.Equal("M1",  a.GetProperty("layerName").GetString());
+        Assert.Equal("1/0", a.GetProperty("layer").GetString());
+        Assert.True(a.GetProperty("touching").GetBoolean());
+        Assert.Equal(["in", "sig"], new[] { a.GetProperty("netA").GetString(), a.GetProperty("netB").GetString() }.Order());
+        Assert.InRange(a.GetProperty("minX").GetDouble(), 90, 100);   // the marker straddles x = 100 um
+        Assert.InRange(a.GetProperty("maxX").GetDouble(), 100, 110);
+        Assert.Contains("touch", d.GetProperty("message").GetString(), StringComparison.Ordinal);
     }
 
     /// <summary><c>LayoutPersistence</c>'s own load findings (<c>LayoutLoadAudit</c>): a polygon spelt

@@ -36,6 +36,19 @@ public sealed class TestBench(string name)
     public List<RawDirective> RawDirectives { get; } = [];
 
     /// <summary>
+    /// What READING the netlist decided that its author should hear, before any of it is simulated:
+    /// a line the reader did not recognise and skipped, a substrate a microstrip line took from the
+    /// workspace technology. The elaborator forwards both lists into the run's own
+    /// <c>Warnings</c> and <c>Notes</c>, so everything that reports those (the Messages pane,
+    /// <c>check</c>, a run verb) reports these too. A skipped line used to vanish without a word,
+    /// so a misspelled statement simply did not happen.
+    /// </summary>
+    public List<string> ReadWarnings { get; } = [];
+
+    /// <inheritdoc cref="ReadWarnings"/>
+    public List<string> ReadNotes    { get; } = [];
+
+    /// <summary>
     /// Net names that came from a user-placed net label in the schematic (provenance set).
     /// Populated by NetExtractor; empty for hand-written netlists. Propagated to
     /// NodeMap.LabeledNames by the Elaborator and persisted in the __LabeledNodes DataCube.

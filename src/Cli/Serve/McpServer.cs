@@ -245,7 +245,10 @@ internal sealed class McpServer
                 "  6. read     path=<root>/demo/pad.s2p                  -> the cubes; narrow with only/at/range\n" +
                 "On an instance line the NETS come first and every 'Key=value' after them; how many " +
                 "nets each type takes is the 'nets' field of reference components, which is not the " +
-                "same number as its symbol's pin count. render draws a .csch, .csym, .clay or .cdd " +
+                "same number as its symbol's pin count; 'reference component-index' lists every type " +
+                "in a line each, and 'components <TYPE>' is one. 'reference technologies' and " +
+                "'shipped-materials' are what create's tech= and a .ctech's material libraries can " +
+                "name. render draws a .csch, .csym, .clay or .cdd " +
                 "— never a .cnl; 'plot' draws a result file. An unknown analysis key or type= token " +
                 "is refused, not ignored.",
         };

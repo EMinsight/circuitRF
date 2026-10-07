@@ -70,6 +70,12 @@ internal static class DocumentSchema
                        .Replace("{BlendedFields}", CircuitRF.Render.Scene3D.Look.RealisticLook.FieldIndicatorText(lit: false, blended: true))),
         new("materials", "The .cmat material library format", ".cmat",
             typeof(CircuitRF.Design.Layout.CmatFile), CmatPreamble),
+        // The drawn circuit. A client that wanted a schematic a person could read had nothing but the
+        // reader to go on: it found the type key, the parameter shape, the wire shape and every pin
+        // offset by trial — the last by measuring rendered pixels — and a wrong key made a
+        // component a resistor without a word (SchematicLoadAudit now says so).
+        new("schematic", "The .csch schematic format", ".csch",
+            typeof(CircuitRF.Design.Schematic.CschFile), CschPreamble),
     ];
 
     public static Format? Find(string topic)
@@ -80,7 +86,7 @@ internal static class DocumentSchema
         given a .cdd, and this is how to write one.
 
         For ONE plot you do not need to write one at all: `circuitrf plot <result> -o out.svg
-        --trace cube=S,i=2,j=1,y=db` draws it, and `--write-cdd out.cdd` hands you the document it
+        --trace cube=S,i=2,j=1,y=db20` draws it, and `--write-cdd out.cdd` hands you the document it
         built — which is a correct starting point to edit rather than a blank page.
 
         A display holds tabs; a tab holds plots; a plot holds traces; a trace names a cube in a
@@ -343,6 +349,84 @@ internal static class DocumentSchema
         Every field the reader understands follows, with its default.
         """;
 
+    private const string CschPreamble = """
+        A schematic is the drawn circuit: placed components, the wires between their pins, and the
+        analyses that run it. It is JSON. `netlist` shows the .cnl it extracts to, which is what every
+        run verb simulates, and `check` reports anything the reader ignored or misread.
+
+        A 25 ohm series resistor between two 50 ohm ports, its value from a VAR block, swept 0.1 to
+        6 GHz, with one measurement. This is a whole file:
+
+            {
+              "FormatVersion": 2,
+              "CellName": "pad",
+              "Components": [
+                { "InstanceName": "VAR1", "Symbol": "Var", "X": -600, "Y": -800,
+                  "Parameters": [ { "Name": "Rs", "Expression": "25" } ] },
+                { "InstanceName": "P1", "Symbol": "TermG", "X": -600, "Y": 400,
+                  "Parameters": [ { "Name": "Num", "Expression": "1" }, { "Name": "Z", "Expression": "50" } ] },
+                { "InstanceName": "P2", "Symbol": "TermG", "X": 600, "Y": 400,
+                  "Parameters": [ { "Name": "Num", "Expression": "2" }, { "Name": "Z", "Expression": "50" } ] },
+                { "InstanceName": "R1", "Symbol": "Resistor", "X": 0, "Y": 0, "Rotation": "R90",
+                  "Parameters": [ { "Name": "R", "Expression": "Rs" } ] },
+                { "InstanceName": "MEAS1", "Symbol": "Meas", "X": -600, "Y": 1000,
+                  "Parameters": [ { "Name": "S21_dB", "Expression": "dB(SP1.S(2,1))" } ] }
+              ],
+              "Wires": [
+                { "Points": [ [-600, 200], [-600, 0], [-200, 0] ] },
+                { "Points": [ [600, 200], [600, 0], [200, 0] ] }
+              ],
+              "Analyses": [
+                { "Type": "sp", "Name": "SP1",
+                  "Sweeps": [ { "StartExpr": "0.1", "StopExpr": "6", "StartUnit": "GHz", "StopUnit": "GHz",
+                                "Mode": "PointCount", "NumPoints": 60, "Kind": "Linear" } ] }
+              ]
+            }
+
+        It extracts to:
+
+            Rs = 25
+            Port:P1  n1  0  Num=1  Z=50
+            Port:P2  n2  0  Num=2  Z=50
+            R:R1  n2  n1  R=Rs
+            analysis SP1 type=sparam start="0.1" startUnit=GHz stop="6" stopUnit=GHz npts=60
+            measure S21_dB = dB(SP1.S(2,1))
+
+        Eight things that are not obvious from the field list:
+
+          * "Symbol" is the component's type, spelled as a SYMBOL KIND — Resistor, Capacitor, Mlin,
+            TermG, Var, Meas — which is not always the .cnl token (TermG and Term both write Port).
+            `reference components` accepts either spelling and shows each token's kinds. A component with no Symbol is
+            read as a Resistor, so `check` reports it as an error; no other key names the type.
+          * Parameters are a LIST of { "Name", "Expression" } — the expression is text in the
+            expression language ("30um", "Rs", "1/(w0^2*C)"). An object map is not a list: the
+            component cannot be read and becomes a placeholder. "Value" holds a JSON DOCUMENT for
+            the parameters that carry one; for an ordinary value write Expression.
+          * A VAR block's variables are its Parameters rows, one per variable; a Meas block's
+            measurements are its rows, Name = expression. Neither has pins. The top-level
+            Measurements list is not evaluated by a run — use a Meas block.
+          * Coordinates are schematic units on a 100-unit grid, y growing DOWNWARD. A wire is a list
+            of [x, y] points. A pin connects only where a wire has a POINT exactly on it — never to
+            the middle of a segment. Two wires connect where they share a point, where an end of one
+            lies on the other (a T), or where they cross at a Dot; a plain crossing is not a
+            connection. NetLabels with the same Name are one net.
+          * Pin positions are relative to the component's X, Y at Rotation R0 with no mirror —
+            `reference components <TYPE>` lists them as "pins at R0". Rotation R90 maps a pin at
+            (x, y) to (-y, x); R180 to (-x, -y); R270 to (y, -x). MirrorX negates x first.
+            The resistor above is vertical at R0, pins (0, -200) and (0, 200); at R90 they land on
+            (200, 0) and (-200, 0), where the wires end.
+          * An analysis is an entry in Analyses with a lower-case Type — dc, sp, hb, sweep, lp or
+            lpp. Its fields are the ones listed below for an analysis; an entry the reader cannot
+            build is dropped, and `check` says why. `reference analyses` describes the same
+            settings as .cnl keys.
+          * A port is a TermG (one pin, reference grounded) or a Term (two pins, + and -), with Num
+            and Z. Ground is a component too: Symbol "Ground", one pin at (0, 0).
+          * A design that belongs to a workspace resolves its technology, and a microstrip or via
+            part takes its substrate from it at extraction — `netlist` shows the values it chose.
+
+        Every field the reader understands follows, with its default.
+        """;
+
     private const string CmatPreamble = """
         A material library is a list of named materials a technology can use, in a file of its own so
         several technologies can share it. It is JSON with two keys that are always written — an EMPTY
@@ -419,6 +503,14 @@ internal static class DocumentSchema
         melting points), ceramics, semiconductors, laminates, die attaches and package alloys, each
         record with its Source — and every shipped technology names it; `new workspace` copies it
         into tech/ beside the technology. `check <file.cmat>` checks a library on its own.
+        `reference shipped-materials` lists every material it holds, with its values;
+        `reference technologies` lists which libraries each shipped technology names.
+
+        To USE a shipped material, refer to it by Name: a technology that names the library (every
+        shipped one does) can already use it. To DEFINE a new one, add a record to the .ctech's own
+        Materials list, or to a .cmat of your own that you add to the .ctech's MaterialLibraries.
+        Prefer that to editing the workspace's copy of generic-materials.cmat: a copy that no longer
+        matches the shipped library is refused when circuitRF next offers to add it beside a technology.
 
         Every field the reader understands follows, with its default.
         """;

@@ -33,7 +33,7 @@ circuitRF is for RF practitioners or researchers who can't justify the cost of t
 - 2.5D MoM
 - 3D FEM and FDTD (using Palace and openEMS)
 - 3D FEM thermal solver
-- command line and MCP server
+- command line and MCP server ([use it from an AI agent](#use-circuitrf-from-an-ai-agent))
 - Documentation with examples
 
 What is *not* in it yet:
@@ -111,6 +111,38 @@ instead.
 
 Automatic updates can be turned off in **Settings ▸ Security & Permissions**. Building the installers
 yourself: [BUILDING.md](BUILDING.md).
+
+---
+
+## Use circuitRF from an AI agent
+
+circuitRF is also an **MCP server**, so an AI agent can create workspaces, write designs, check
+them, run simulations and read the results back. The installed application is the server; there is
+nothing else to install.
+
+**1. Pick a root folder.** The server can read and write only inside it. Use the folder your
+designs live in, such as `~/designs`, not your whole home folder.
+
+**2. Ask circuitRF for its configuration.** It prints the JSON an MCP client needs, with the
+executable's full path filled in, and the matching Claude Code command:
+
+| Platform | Command |
+|---|---|
+| macOS | `/Applications/circuitRF.app/Contents/MacOS/circuitRF serve --root ~/designs --print-config` |
+| Windows | `%LOCALAPPDATA%\Programs\circuitRF\circuitRF.exe serve --root %USERPROFILE%\designs --print-config` |
+| Linux | `~/.local/bin/circuitrf serve --root ~/designs --print-config` |
+
+**3. Register it with your client.** With Claude Code, run the `claude mcp add …` line it printed.
+Most other clients take the printed JSON in their MCP settings. Start a new session afterwards,
+because most clients load servers only when a session starts.
+
+**4. Check that it answers.** Ask the agent to call circuitRF's `reference` tool. It should list
+the reference topics.
+
+Then read **[Designing with an AI agent](docs/user/reference/ai-agents.html)**, which covers what
+to tell the agent, which reference topics it should read first, and the design flow that works. The
+full server description, including running it from a source build, is in the
+[Command Line chapter](docs/user/reference/cli.html#serve).
 
 ---
 
@@ -236,7 +268,8 @@ Full CLI documentation: the
 [Command Line chapter](docs/user/reference/cli.html) of the user docs (design notes in
 [`docs/design/cli.md`](docs/design/cli.md)).
 An installed circuitRF is the command line too (`circuitrf <verb> …`, `circuitrf serve --root <dir>`
-for MCP) — for an agent installing it unattended, see
+for MCP, set up as in [Use circuitRF from an AI agent](#use-circuitrf-from-an-ai-agent)) — for an
+agent installing it unattended, see
 [Installing for an agent](docs/user/reference/cli.html#agent-install).
 
 
@@ -283,8 +316,9 @@ dotnet run --project src/Cli -- read results/Amp_em.npy --only S --json
 # Dump the elaborated netlist (flattened + parameters resolved) - great for debugging
 dotnet run --project src/Cli -- elab mycircuit.cnl
 
-# Speak a protocol to an external client over stdin/stdout, confined to one directory
-dotnet run --project src/Cli -- serve --root ~/designs
+# Print the MCP client configuration for this build (an MCP client starts the server itself;
+# see "Use circuitRF from an AI agent" above, and point clients at a built dll, not at dotnet run)
+dotnet run --project src/Cli -- serve --root ~/designs --print-config
 
 # Help
 dotnet run --project src/Cli

@@ -167,7 +167,13 @@ public sealed class CschParameter
     public JsonNode? Value { get; set; }
 
     /// <summary>The expression this parameter carries, whichever form it was written in.</summary>
-    public string ReadExpression() => Value?.ToJsonString() ?? Expression ?? "";
+    /// <remarks>A <see cref="Value"/> that is a JSON STRING is the expression itself, unquoted.
+    /// circuitRF never writes one (<see cref="From"/> stores only documents there), but a hand-written
+    /// <c>{"Name": "W", "Value": "30um"}</c> is unambiguous — and returning its JSON spelling handed
+    /// the netlist <c>W="30um"</c>, a quoted string where a length was meant.</remarks>
+    public string ReadExpression()
+        => Value is JsonValue v && v.TryGetValue<string>(out var text) ? text
+         : Value?.ToJsonString() ?? Expression ?? "";
 
     /// <summary>Builds one, choosing the form from the expression itself.</summary>
     public static CschParameter From(
@@ -285,6 +291,10 @@ public static class SchematicPersistence
 {
     public const int CurrentFormatVersion = 2;
 
+    /// <summary>The reader's own options — <see cref="SchematicLoadAudit"/> binds an analysis with
+    /// them to ask whether the reader would keep it.</summary>
+    internal static JsonSerializerOptions ReaderOptions => _jsonOpts;
+
     private static readonly JsonSerializerOptions _jsonOpts = new()
     {
         WriteIndented              = true,
@@ -339,6 +349,10 @@ public static class SchematicPersistence
         var root = JsonNode.Parse(json) as JsonObject
             ?? throw new InvalidDataException("Failed to deserialize .csch file.");
 
+        // What the lenient read below will ignore, misread or drop — said BEFORE the components are
+        // pulled out, because the tolerant per-component parse is exactly what swallows it.
+        var findings = SchematicLoadAudit.Audit(root, _jsonOpts);
+
         var componentsNode = root["Components"] as JsonArray;
         root.Remove("Components");
 
@@ -354,7 +368,9 @@ public static class SchematicPersistence
             foreach (var elem in componentsNode)
                 file.Components.Add(ParseComponentTolerant(elem));
 
-        return (FromFileModel(file, cschDirectory), file.View, file.CellName);
+        var model = FromFileModel(file, cschDirectory);
+        model.LoadFindings = findings;
+        return (model, file.View, file.CellName);
     }
 
     /// <summary>

@@ -326,7 +326,7 @@ internal static class PlotVerb
             "                     [--background opaque|transparent] [--write-cdd out.cdd]\n" +
             "                     [--radial linear|db] [--db-floor -40] [--db-ring 10]\n" +
             "                     [--db-ref peak|<dB>] [--db-unit dBi]\n" +
-            "  a trace spec is comma-separated key=value: cube=S i=2 j=1 y=db axis=left|right\n" +
+            "  a trace spec is comma-separated key=value: cube=S i=2 j=1 y=db20 axis=left|right\n" +
             "  an antenna pattern: cube=farfield.U cut=<phi deg>|all [port=<n>] [freq=2.45G] y=db10\n" +
             "                      cut=<deg> is the PLANE at that phi — theta swept, and the phi+180\n" +
             "                      branch drawn at -theta, on a --radial db polar plot\n" +
@@ -580,7 +580,7 @@ internal static class PlotVerb
     /// <summary>
     /// One <c>--trace</c>: comma-separated <c>key=value</c>, split on TOP-LEVEL commas only. The
     /// separator has to be bracket- and quote-aware because the cube shorthand it carries is full of
-    /// commas — <c>cube=S[:,1,0],y=db</c> is two fields, not four.
+    /// commas — <c>cube=S[:,1,0],y=db20</c> is two fields, not four.
     /// </summary>
     private static (TraceSpec? Spec, int? Refusal) ParseTrace(string raw)
     {
@@ -597,7 +597,14 @@ internal static class PlotVerb
             switch (key)
             {
                 case "cube": spec.Text  = value; break;
-                case "y":    spec.YText = value; break;
+                case "y":
+                    // A bare `db` is refused rather than read: here it would be 10·log10, while
+                    // `dB()` in a measurement is 20·log10, and the wrong one on an S-parameter
+                    // draws a believable curve at half depth (PlotTraceDbAmbiguous says more).
+                    if (value.Equals("db", StringComparison.OrdinalIgnoreCase))
+                        return (null, JsonRun.Fail(CliDiagnostics.PlotTraceDbAmbiguous(raw)));
+                    spec.YText = value;
+                    break;
                 case "i" or "j":
                 {
                     if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) || n < 1)
@@ -799,7 +806,7 @@ internal static class PlotVerb
                 if (!CubeTraceSpecParser.TryParseTransformName(t, out wspTransform))
                     return (null, JsonRun.Fail(CliDiagnostics.PlotTraceUnresolved(
                         spec.Raw, $"{t}(…)", $"'{wy}' is not a transform. "
-                      + "They are: db20, db10, db, mag, phase, real, imag, conj, none.")));
+                      + "They are: db20, db10, mag, phase, real, imag, conj, none.")));
             }
 
             // The slice is authored against the METRIC cube's own axes, not the wsp matrix's leading

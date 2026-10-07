@@ -89,11 +89,18 @@ internal static class Check
             _open        = true;
         }
 
+        private CheckedEmJson? _currentEm;
+
+        /// <summary>The current document's mesh budget, recorded on its result row.</summary>
+        public void SetEm(CheckedEmJson em) { if (_open) _currentEm = em; }
+
         public void End()
         {
             if (!_open) return;
             _documents.Add(new CheckedDocumentJson(
-                _currentPath, DocumentKinds.Name(_currentKind), _current.Errors, _current.Warnings));
+                _currentPath, DocumentKinds.Name(_currentKind), _current.Errors, _current.Warnings,
+                _currentEm));
+            _currentEm = null;
             _open = false;
         }
 
@@ -420,6 +427,10 @@ internal static class Check
         try { (model, _, _) = SchematicPersistence.LoadFromFile(path); }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 
+        // What the lenient read ignored, misread or dropped — a component with no Symbol is read as a
+        // resistor and still simulates, so this is the first thing said about the file.
+        foreach (var finding in model.LoadFindings) f.Add(CliDiagnostics.CheckSchematicLoadFinding(path, finding));
+
         string baseDir = Path.GetDirectoryName(Path.GetFullPath(path))!;
 
         // Every cell reference the schematic carries, through the resolver the editor draws with —
@@ -706,15 +717,41 @@ internal static class Check
         foreach (var d in result.Diagnostics) f.Add(CliDiagnostics.CheckDrcNote(path, d));
 
         foreach (var v in result.Violations)
-            f.Add(CliDiagnostics.CheckDrcViolation(
-                path, v.RuleName, v.Kind.ToString(),
-                // A WAIVED violation is reported and does not count (§9A.1: waiving must be
-                // "persisted, and visible"), so it lands as a note rather than at the rule's own
-                // severity — which is what keeps a fully-waived design exiting 0.
-                v.Waived ? DiagnosticSeverity.Info
-                         : v.Severity == DrcSeverity.Error ? DiagnosticSeverity.Error
-                                                           : DiagnosticSeverity.Warning,
-                v.Layer?.ToString(), v.MeasuredText, v.Waived));
+            f.Add(DrcViolationDiagnostic(path, view, tech, v));
+    }
+
+    /// <summary>
+    /// A violation as <c>check</c> reports it: the layer by its technology name, the measurement
+    /// against the rule, the nets, and the marker box in the layout's display unit — everything a
+    /// reader needs to find it without opening the layout editor.
+    /// </summary>
+    private static Diagnostic DrcViolationDiagnostic(string path, LayoutView view, Technology? tech, DrcViolation v)
+    {
+        string Spell(long dbu) => LayoutUnits.Spell(dbu, view.DisplayUnit, view.DbuPerMicron);
+        double In(long dbu) => (double)LayoutUnits.FromDbu(dbu, view.DisplayUnit, view.DbuPerMicron);
+
+        string? layer     = v.Layer is { } k ? $"{k.Layer}/{k.Datatype}" : null;
+        string? layerName = v.Layer is { } key ? tech?.Layers.FirstOrDefault(l => l.Key == key)?.Name : null;
+
+        // A die-side rule's value is in DBU; a wire rule states its own measurement in words.
+        string? required = v.IsAssembly || v.Layer is null ? null : Spell(v.RequiredDbu);
+        string? measured = v.MeasuredText ?? (v.MeasuredDbu is { } m ? Spell(m) : null);
+        bool touching    = v.MeasuredDbu == 0 && v.NetA is not null && v.NetB is not null && v.NetA != v.NetB;
+
+        var b = v.Marker;
+        string region = $"({Spell(b.MinX)}, {Spell(b.MinY)})–({Spell(b.MaxX)}, {Spell(b.MaxY)})";
+
+        return CliDiagnostics.CheckDrcViolation(
+            path, v.RuleName, v.Kind.ToString(),
+            // A WAIVED violation is reported and does not count (§9A.1: waiving must be "persisted,
+            // and visible"), so it lands as a note rather than at the rule's own severity — which is
+            // what keeps a fully-waived design exiting 0.
+            v.Waived ? DiagnosticSeverity.Info
+                     : v.Severity == DrcSeverity.Error ? DiagnosticSeverity.Error
+                                                       : DiagnosticSeverity.Warning,
+            layer, layerName, measured, required, v.NetA, v.NetB, touching,
+            LayoutUnits.AsciiSuffix(view.DisplayUnit), In(b.MinX), In(b.MinY), In(b.MaxX), In(b.MaxY),
+            region, v.Waived);
     }
 
     /// <summary>The cell folder a view file belongs to: <c>&lt;cell&gt;/&lt;view&gt;/&lt;file&gt;</c>.
@@ -863,6 +900,24 @@ internal static class Check
 
         foreach (var finding in pre.Findings)
             f.Add(CliDiagnostics.CheckEmFinding(path, finding.Text, finding.IsWarning));
+
+        // A mesh field the file states and Auto then discards (PlanarMeshSettings.Resolved): the
+        // mesh notes report the value USED, so without this nothing says why it differs. Only when
+        // the planar kernel was chosen — the other kernels never read PlanarMesh at all, and a
+        // warning about a mesh that does not run would be its own false statement.
+        if (pre.Kind == EmAnalysisKind.Planar && setup.AutoOverriddenMeshFields() is { Count: > 0 } overridden)
+            f.Add(CliDiagnostics.CheckEmMeshAutoOverride(
+                path,
+                string.Join(", ", overridden.Select(o => o.Key)),
+                string.Join(", ", overridden.Select(o => $"{o.Key} = {o.Stated}")),
+                string.Join(", ", overridden.Select(o => $"{o.Key} = {o.Used}"))));
+
+        if (pre.PlanarMesh is { } mesh)
+            f.SetEm(new CheckedEmJson(
+                pre.KernelName, mesh.UnknownCount,
+                mesh.CeilingUnknowns > 0 ? mesh.CeilingUnknowns : null,
+                mesh.CeilingUnknowns > 0 ? (mesh.AcceleratedCeiling ? "accelerated" : "dense") : null,
+                mesh.Verdict.ToString().ToLowerInvariant()));
 
         if (pre.Refusal is { } refusal) f.Add(CliDiagnostics.CheckEmRefused(path, refusal));
         else f.Add(CliDiagnostics.CheckEmWouldRun(
@@ -1164,7 +1219,7 @@ internal static class Check
     {
         Library   lib;
         TestBench tb;
-        try { (lib, tb) = CnlReader.ReadFile(path); }
+        try { (lib, tb) = CnlTechnologyBinding.ReadFile(path); }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 
         Elaborate(path, tb, lib, f);

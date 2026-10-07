@@ -21,6 +21,8 @@ keywords: measure, post-processing, expression, equation, derived result, post p
       <li><a href="#sparam">S-parameters: 1-based ports</a></li>
       <li><a href="#compose">Composition &amp; scope</a></li>
       <li><a href="#swept">Swept variables</a></li>
+      <li><a href="#freq">Frequency: <code>freq</code></a></li>
+      <li><a href="#spec">Spec checks: the worst value over a band</a></li>
     </ol>
   </nav>
 
@@ -151,7 +153,8 @@ and under `circuitrf sparam`.
 Measurements are evaluated in declaration order, and each is in scope by name for the ones after
 it — so a complex figure of merit builds from intermediates. Also in scope: every global
 [VAR](components.html#var) variable (by name). The element-wise helpers `conj`, `real`, `imag`,
-`mag`, `phase`, `dB`, `dB10`, `dBm`, `log10`, `ln` broadcast over cubes. Referencing an unknown
+`mag`, `phase`, `dB`, `dB10`, `dBm`, `log10`, `ln` broadcast over cubes; `max_over` and
+`min_over` [reduce one](#spec). Referencing an unknown
 analysis raises an error naming the available ones; a failing measurement is reported as a run
 note and does not fail the whole run.
 
@@ -179,6 +182,35 @@ It needs a frequency axis to be. A run whose analyses produced none (DC only), o
 different frequency grids, leaves `freq` unresolved and the measurement's error says which of the
 two it was — rather than silently computing against the wrong grid. Under harmonic balance the
 spectral axis is `harmonic` (or `mixIndex`) and a small-signal sweep is `ssfreq`; neither is `freq`.
+
+## Spec checks: the worst value over a band {#spec}
+
+A specification line asks for the **worst** value of a quantity over a frequency band: "insertion
+loss ≤ 1 dB from 0.1 to 3 GHz", "rejection ≥ 20 dB from 6 to 12 GHz". `max_over` and `min_over`
+compute exactly that:
+
+```text
+measure  IL_worst  = max_over(-dB(SP1.S(2,1)), 0.1GHz, 3GHz)     the largest loss in the passband
+measure  RL1_worst = min_over(-dB(SP1.S(1,1)), 0.1GHz, 3GHz)     the smallest return loss
+measure  Rej_worst = min_over(-dB(SP1.S(2,1)), 6GHz, 12GHz)      the least rejection in the stopband
+measure  IL_margin = 1 - IL_worst                                 positive means the spec is met
+```
+
+`max_over(x, lo, hi)` is the largest value of `x` over the points whose frequency lies in
+`[lo, hi]`, and `min_over` the smallest. Both ends are **inclusive**, so a band edge that is a grid
+point is part of the band.
+
+- **The axis is `freq`** unless you name another as a fourth argument:
+  `max_over(x, -10, 0, "Pin")`. A value with a single axis is reduced over that axis.
+- **Every other axis is kept.** Over a parametric sweep you get one worst case per sweep point, a
+  curve you can plot against the swept variable. With no other axis you get a single number.
+- **The values must be real.** Complex numbers have no order, so take `dB(…)`, `mag(…)` or
+  `real(…)` first. A complex value is refused, saying so.
+- **A band with no grid point in it is refused**, naming the axis's extent. An empty band in a spec
+  check is almost always a mistyped limit.
+
+The worst value is only as good as the grid. A narrow notch between two frequency points is not
+seen, so sweep finely enough to resolve the response near each band edge.
 
 ---
 

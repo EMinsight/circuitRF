@@ -268,7 +268,29 @@ namespace RfCore.Export
     /// <c>assembly-rules</c>, <c>folder</c>. Inferred from the path exactly as <c>convert</c> infers
     /// a format (R-aut4-11): by extension, and for a directory by what it contains.
     /// </param>
-    public sealed record CheckedDocumentJson(string Path, string Kind, int Errors, int Warnings);
+    /// <param name="Em">
+    /// For a planar <c>.cem</c> that extracts and meshes, the size of the problem a run would solve.
+    /// Absent for every other document, and for a setup that never reached a mesh. It is result
+    /// data rather than a note so that <c>--summary</c>, which collapses notes into counts, cannot
+    /// hide the one number that decides whether a run is affordable.
+    /// </param>
+    public sealed record CheckedDocumentJson(
+        string Path, string Kind, int Errors, int Warnings,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        CheckedEmJson? Em = null);
+
+    /// <param name="Kernel">The kernel the setup resolved to, as the run would name it.</param>
+    /// <param name="Unknowns">The mesh's unknown count.</param>
+    /// <param name="Ceiling">The unknown ceiling the count is judged against.</param>
+    /// <param name="CeilingKind"><c>dense</c> or <c>accelerated</c> — which ceiling governs.</param>
+    /// <param name="Verdict"><c>ok</c>, <c>warn</c> or <c>refused</c> — the mesher's own budget verdict.</param>
+    public sealed record CheckedEmJson(
+        string Kernel, int Unknowns,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int? Ceiling,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? CeilingKind,
+        string Verdict);
 
     /// <param name="Severity">
     /// The threshold the exit code was decided at — <c>warning</c> or <c>error</c>. Carried because
@@ -1497,13 +1519,22 @@ namespace RfCore.Export
     /// it, which is not always what the <c>.cnl</c> calls it.</param>
     /// <param name="SearchTerms">How a person goes looking for this part, so a client can find "the
     /// thing that does X" without reading the whole catalogue.</param>
+    /// <param name="Pins">Where each terminal sits on the drawn symbol, relative to the component's
+    /// <c>X</c>/<c>Y</c> at rotation <c>R0</c> with no mirror (y grows downward) — what a wire in a
+    /// hand-written <c>.csch</c> must end on. Absent where the symbol's pins come from a referenced
+    /// cell.</param>
     public sealed record ReferenceSymbolJson(
         string                                  Kind,
         string                                  DisplayName,
         string                                  Category,
         IReadOnlyList<string>                   SearchTerms,
         ReferencePortsJson                      Ports,
-        IReadOnlyList<ReferenceParameterJson>   Parameters);
+        IReadOnlyList<ReferenceParameterJson>   Parameters,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ReferencePinJson>?        Pins = null);
+
+    /// <summary>One terminal of a drawn symbol: its name and its position at R0.</summary>
+    public sealed record ReferencePinJson(string Name, double X, double Y);
 
     /// <param name="Type">The token a <c>.cnl</c> writes — the thing a caller cannot guess and is
     /// blocked without.</param>
@@ -1721,7 +1752,97 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<ReferenceAnalysisJson>?  Analyses = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<ReferenceSchemaTypeJson>? Schema  = null);
+        IReadOnlyList<ReferenceSchemaTypeJson>? Schema  = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ReferenceComponentIndexJson>? ComponentIndex = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ReferenceTechnologyJson>? Technologies = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ReferenceMaterialJson>? Materials = null);
+
+    /// <summary>One row of the component INDEX — the type token and enough to choose it, without its
+    /// parameters. The full catalogue is ~150 kB; the index is what a client reads first.</summary>
+    /// <param name="Nets">How many nets an instance line binds, when that is one number.</param>
+    /// <param name="NetsSetBy">The parameter that sets it, when it is not one number.</param>
+    /// <param name="Description">The palette's display names for the type, joined.</param>
+    public sealed record ReferenceComponentIndexJson(
+        string                Type,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?                  Nets,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?               NetsSetBy,
+        IReadOnlyList<string> Categories,
+        string                Description,
+        bool                  Simulatable,
+        bool                  Placeable);
+
+    /// <summary>One technology that ships with circuitRF, read from its embedded <c>.ctech</c> through
+    /// the reader a user's own file goes through.</summary>
+    /// <param name="Id">What <c>new workspace --tech</c> and the <c>create</c> tool's <c>tech</c>
+    /// take.</param>
+    /// <param name="Stackup">Top to bottom, as the technology orders it.</param>
+    /// <param name="MaterialLibraries">The <c>.cmat</c> references the technology names.</param>
+    /// <param name="Materials">Every material name a 3D view or stackup entry of this technology may
+    /// use: its own records and its libraries'.</param>
+    public sealed record ReferenceTechnologyJson(
+        string                                  Id,
+        string                                  Name,
+        bool                                    IsDefault,
+        string                                  DisplayUnit,
+        string                                  TopBoundary,
+        string                                  BottomBoundary,
+        IReadOnlyList<ReferenceStackupLayerJson> Stackup,
+        IReadOnlyList<string>                   MaterialLibraries,
+        IReadOnlyList<string>                   Materials,
+        int                                     DrcRules);
+
+    /// <param name="ThicknessUm">Micrometres. Absent on a via, whose length is its span.</param>
+    /// <param name="DrawingLayers">The layout layers drawn on this entry, by name.</param>
+    /// <param name="SpanFrom">A via's upper conductor, by stackup name.</param>
+    /// <param name="SpanTo">A via's lower conductor, by stackup name.</param>
+    public sealed record ReferenceStackupLayerJson(
+        string                Kind,
+        string                Name,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?               ThicknessUm,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?               Material,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?               Epsr,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?               TanD,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?               SigmaSPerM,
+        IReadOnlyList<string> DrawingLayers,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+        bool                  GroundReference = false,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?               SpanFrom = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?               SpanTo = null);
+
+    /// <summary>One material record from a library that ships with circuitRF. Null means the record
+    /// does not state it, exactly as in the <c>.cmat</c>.</summary>
+    /// <param name="Role">conductor, dielectric, air, both stated, or neither stated — what the record's
+    /// stated values make it.</param>
+    public sealed record ReferenceMaterialJson(
+        string  Name,
+        string  Library,
+        string  Role,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Epsr,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? TanD,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Mur,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Sigma20,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Alpha20,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? ThermalK,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Source);
 
     /// <summary>One object type of a JSON document format, generated from the type the reader
     /// deserialises into (AUT-10 R-aut10-3/4). The first entry is the root.</summary>

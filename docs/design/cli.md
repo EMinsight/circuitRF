@@ -1455,6 +1455,20 @@ place.**
   itself. There is no user at the other end to confirm with. A client that wants a file gone deletes
   it itself.
 
+### 11.5a `--print-config` — the configuration, written by the thing it configures
+
+`serve --root <dir> --print-config` starts nothing. It prints the `mcpServers` JSON that starts
+*this* server and exits. The command is `Environment.ProcessPath`, plus the entry assembly as the
+first argument when that is the `dotnet` host, because the executable's full path is the part people
+get wrong by hand and a client's `PATH` is often not their shell's. The root and every `--kits`
+folder are written absolute (a client starts the server from a working directory of its own), and
+the root goes through `PathRoot.Open` first, so a configuration naming a missing root is refused
+rather than printed. stdout carries the JSON alone, so it redirects cleanly into a file, and the
+Claude Code `claude mcp add` line goes to stderr. `--json` beside it is refused
+(`serve.args.print-config-json`), because what it prints is already JSON. The gate launches the
+printed command exactly as a client would, from an unrelated directory, and requires it to answer
+`initialize`.
+
 ### 11.6 Progress, cancellation, and one call at a time
 
 Capability calls are **serialized** — the verbs use process-wide state (`JsonRun`, `Console.Out`), so
@@ -2249,7 +2263,7 @@ otherwise short task: a document with a tab, a plot container, a placement, a so
 slice, every field of which has to be right before anything appears.
 
 ```
-circuitrf plot lc.s2p -o s21.svg --trace cube=S,i=2,j=1,y=db --title "LC lowpass"
+circuitrf plot lc.s2p -o s21.svg --trace cube=S,i=2,j=1,y=db20 --title "LC lowpass"
 circuitrf plot run.npy -o pae.png --trace cube=PAE --trace cube=Pout,axis=right --x 5:25
 ```
 

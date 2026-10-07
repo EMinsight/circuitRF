@@ -66,25 +66,10 @@ internal static class ReferenceResources
             resources.Add(Describe(f.Topic, f.Title, Reference.SchemaSummary(f),
                                    Encoding.UTF8.GetByteCount(DocumentSchema.Render(f))));
 
-        resources.Add(Describe(
-            Reference.AnalysesTopic,
-            "Analysis directives",
-            $"Generated from the schema the .cnl reader validates against: the " +
-            $"{AnalysisDirectiveSchema.Specs.Count} analysis type= tokens, their other accepted " +
-            "spellings, and every key with its default and whether it is required.",
-            Encoding.UTF8.GetByteCount(Reference.AnalysesText())));
-
-        var catalog = ComponentCatalog.All();
-        resources.Add(Describe(
-            Reference.ComponentsTopic,
-            "Component types",
-            $"Generated from the live registries: the {catalog.Count} .cnl type tokens, how many " +
-            "nets each instance line binds, their terminals, and every parameter with its default, " +
-            "unit and visibility.",
-            // Measured by rendering it, the way the CLI's own topic list measures it. The catalogue
-            // is a walk over static tables, so this is cheap, and a hard-coded number here would be a
-            // second fact about the first that nothing keeps in step.
-            Encoding.UTF8.GetByteCount(Reference.CatalogText())));
+        // The generated topics, from the one list the CLI's own topic list prints — measured by
+        // rendering them, since a hard-coded size would be a second fact nothing keeps in step.
+        foreach (var g in Reference.Generated())
+            resources.Add(Describe(g.Topic, g.Title, g.Summary, g.Bytes));
 
         return resources;
     }

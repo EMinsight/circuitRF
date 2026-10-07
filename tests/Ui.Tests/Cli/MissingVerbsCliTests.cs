@@ -295,8 +295,8 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
         string cdd       = Path.Combine(dir, "one.cdd");
 
         var plot = RunCli("plot", s2p, "-o", viaPlot, "--write-cdd", cdd,
-                          "--trace", "cube=S,i=1,j=1,y=db",
-                          "--trace", "cube=S,i=2,j=1,y=db",
+                          "--trace", "cube=S,i=1,j=1,y=db20",
+                          "--trace", "cube=S,i=2,j=1,y=db20",
                           "--title", "LC lowpass");
         Assert.True(plot.ExitCode == 0, plot.StdErr + plot.StdOut);
 
@@ -319,14 +319,14 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
         string cdd = Path.Combine(dir, "one.cdd");
 
         Assert.Equal(0, RunCli("plot", Sparam(dir), "-o", Path.Combine(dir, "p.svg"),
-                               "--write-cdd", cdd, "--trace", "cube=S,i=2,j=1,y=db").ExitCode);
+                               "--write-cdd", cdd, "--trace", "cube=S,i=2,j=1,y=db20").ExitCode);
 
         var config = JsonSerializer.Deserialize<DataDisplayConfig>(
             File.ReadAllText(cdd), DataDisplayJson.Options)!;
         var trace = config.Tabs[0].Plots[0].Traces[0];
 
         Assert.Equal("S", trace.CubeName);
-        Assert.Equal(CubeTransform.dB, trace.CubeTransform);
+        Assert.Equal(CubeTransform.dB20, trace.CubeTransform);
         Assert.Equal(
             [("freq", AxisRole.KeepAsX, 0), ("i", AxisRole.PinToIndex, 1), ("j", AxisRole.PinToIndex, 0)],
             trace.CubeSlice.Select(s => (s.AxisName, s.Role, s.Index)).ToArray());
@@ -347,6 +347,23 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
         Assert.False(File.Exists(outPath));
     }
 
+    /// <summary>A bare <c>y=db</c> is refused, naming db20 and db10. The trace card's <c>db</c> is
+    /// 10·log10 and a measurement's <c>dB()</c> is 20·log10, so the word drew S-parameters at half
+    /// their true depth with nothing to show it was wrong.</summary>
+    [Fact]
+    public void ABareDb_IsRefusedAsAmbiguous_NamingDb20AndDb10()
+    {
+        string dir = Dir("bare-db");
+        string outPath = Path.Combine(dir, "p.svg");
+
+        var run = RunCli("plot", Sparam(dir), "-o", outPath, "--trace", "cube=S,i=2,j=1,y=db", "--json");
+        Assert.NotEqual(0, run.ExitCode);
+        Assert.Contains("plot.trace.db-ambiguous", Ids(run.StdOut));
+        Assert.Contains("db20", run.StdOut, StringComparison.Ordinal);
+        Assert.Contains("db10", run.StdOut, StringComparison.Ordinal);
+        Assert.False(File.Exists(outPath));
+    }
+
     /// <summary>A cube the result does not hold, and a port the cube does not have, are refusals
     /// that NAME what is there — not a picture with nothing in it.</summary>
     [Fact]
@@ -357,7 +374,7 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
 
         // A cube the file does not hold is refused by NAME, listing what it does hold — in every
         // spelling, including the bare one the parser answers with "Missing '['".
-        foreach (string typed in new[] { "cube=Pout,y=db", "cube=Pout,i=1,j=1", "cube=mag(Pout)" })
+        foreach (string typed in new[] { "cube=Pout,y=db20", "cube=Pout,i=1,j=1", "cube=mag(Pout)" })
         {
             var noCube = RunCli("plot", s2p, "-o", Path.Combine(dir, "a.svg"), "--trace", typed, "--json");
             Assert.True(noCube.ExitCode != 0, typed);
@@ -366,7 +383,7 @@ public sealed class MissingVerbsCliTests(ITestOutputHelper output) : IDisposable
         }
 
         var noPort = RunCli("plot", s2p, "-o", Path.Combine(dir, "b.svg"),
-                            "--trace", "cube=S,i=9,j=1,y=db", "--json");
+                            "--trace", "cube=S,i=9,j=1,y=db20", "--json");
         Assert.NotEqual(0, noPort.ExitCode);
         Assert.Contains("plot.trace.unresolved", Ids(noPort.StdOut));
 

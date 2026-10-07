@@ -1690,6 +1690,10 @@ the only observer is a JSON-RPC write, which is serialized and already throttled
   CLI's override mechanism, and its absence means a bias or frequency global cannot be overridden for
   the two oldest verbs — headlessly or through the protocol. Adding it is a capability change to
   verbs this series did not otherwise touch, so it is named here rather than folded into a review.
+  **Closed 2026-10-06**: an MCP-only agent tuning a filter hit the refusal and hand-edited its
+  netlist once per corner instead. Both verbs now read `--set` through `hb`'s own path
+  (`HbCircuitRun.ApplySet`, before elaboration), and the catalog advertises it for both; the gate is
+  `SetCliVerbTests`.
 - **`sparam` takes no `-a`.** It runs the first typed `SParameterAnalysis`; a netlist declaring two
   has no way to say which.
 - **`elab` is a verb with no tool.** It is reachable from the command line and not through `serve`,
@@ -2954,3 +2958,40 @@ model, port and result walks three fresh `C3dPersistence.LoadFromFile` copies, n
 stored zeros. It now loads one copy, resolves it as the elaborator does (`C3dCell.Of(full)`, no `--set`, matching the
 elaboration it is walked beside) and hands that to all three. The GUI and the thermal current path were checked and
 already resolve first. Gate: `ExplainSetupCliTests.APortRectangleWrittenAsExpressions_IsMeasuredAtItsValue`.
+
+## `plot --trace …,y=db` refused as ambiguous (2026-10-06)
+
+An agent driving the MCP server plotted S21/S11 with `y=db` and got every curve at exactly half its
+true depth: a 26 dB rejection read as 13 dB. The trace card's `db` is `CubeTransform.dB`, which is
+10·log10 (`Trace.cs`), while a measurement's `dB()` is 20·log10, so the same word means two things.
+Nothing looked wrong, because the curves had the right shape.
+
+- **Only the CLI's `y=` refuses it** (`plot.trace.db-ambiguous`, naming `db20` and `db10`). A `.cdd`'s
+  stored `CubeTransform.dB` keeps its meaning, since that document already records which transform
+  it draws. The `cube=db(…)` spelling inside a trace spec is the trace card's own and is untouched.
+- **Every example that said `y=db` was the trap itself**, including the WSProbe margin examples in
+  `cli.md` and `wsprobe.md`. A margin's default transform is `dB20` (`WspMetrics.DefaultTransform`),
+  so `y=db` drew it at half depth too. They all say `db20` now.
+
+Gate: `MissingVerbsCliTests.ABareDb_IsRefusedAsAmbiguous_NamingDb20AndDb10`.
+
+## `check` findings an agent could not act on (2026-10-06)
+
+An agent driving circuitRF through MCP alone hit three `check` outputs it had to reason around.
+
+- **DRC violations carried no location.** `DrcViolation` always had the marker box and both nets;
+  `Check.RunDrc` passed on only the rule, the kind and `Layer?.ToString()`, which printed a record's
+  `LayerKey { Layer = 1, Datatype = 0 }`. The diagnostic now spells the layer as the technology names
+  it, the marker box in the layout's display unit, the nets, and the measured gap against the rule.
+  The engine measures the gap (`DrcRegions.MinDistance`, edge against edge) only for a pair already in
+  violation, and records it as `DrcViolation.MeasuredDbu`. A zero gap between two named nets is said to
+  TOUCH, because "0um, needs 4um" reads as a near miss and it is a short.
+- **`PlanarMesh` fields that `Auto` discards were silent.** `PlanarMeshSettings.Resolved` is the
+  contract: Auto chooses cells per wavelength, edge mesh and edge cells, and every other field
+  survives. That is unchanged. `EmSetup.AutoOverriddenMeshFields()` names the stated values Auto drops,
+  and `check` warns (`check.em.mesh-auto-override`), only when the planar kernel was chosen. A uniform
+  line goes to the cross-section kernel, which never reads PlanarMesh, so warning there would describe
+  a mesh that does not run.
+- **The mesh budget disappeared under `--summary`.** It lived only in info notes. It is now result
+  data, `documents[i].em` (kernel, unknowns, ceiling, ceiling kind, verdict), omitted for every other
+  document, so existing documents serialise unchanged. `--summary` changes diagnostics only.

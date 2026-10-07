@@ -54,6 +54,7 @@ reference/wsprobe.html      | The WSProbe: nodal transfer functions for stabilit
 reference/plot-types.html   | Rectangular, Smith, Polar and Table — and which data each will accept.
 reference/npy-export.html   | Getting results out into Python, MATLAB or a Touchstone file.
 reference/cli.html          | Running every analysis headless: the verbs, their options and their exit codes.
+reference/ai-agents.html    | Connecting an AI agent through MCP, what to tell it, and the design flow that works.
 
 == Layout & EM
 reference/layout-editor.html   | The layout view: technology, drawing, snapping, and the schematic it belongs to.

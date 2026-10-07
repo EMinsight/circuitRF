@@ -167,7 +167,7 @@ public static class SchematicRunService
         TestBench tb;
         try
         {
-            (lib, tb) = CnlReader.ReadFile(netlistPath);
+            (lib, tb) = CnlTechnologyBinding.ReadFile(netlistPath);
         }
         catch (Exception ex)
         {

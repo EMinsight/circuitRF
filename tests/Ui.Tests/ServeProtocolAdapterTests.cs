@@ -746,6 +746,64 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         Assert.Contains("serve.args.json-not-applicable", Ids(document));
     }
 
+    /// <summary>
+    /// <c>--print-config</c> prints a configuration that STARTS THE SERVER IT DESCRIBES: the JSON on
+    /// stdout is launched exactly as a client would launch it — its command, its arguments, from an
+    /// unrelated working directory — and the result answers <c>initialize</c>. The root and the
+    /// <c>--kits</c> folder are given relative and must come back absolute, since a client's working
+    /// directory is its own. <c>--json</c> beside it is refused, because what it prints is already
+    /// JSON.
+    /// </summary>
+    [Fact]
+    public void PrintConfig_IsAConfigurationThatStartsTheServerItDescribes()
+    {
+        string kits = Path.Combine(Root, "kits");
+        Directory.CreateDirectory(kits);
+
+        var psi = new ProcessStartInfo("dotnet")
+        {
+            WorkingDirectory       = Root,
+            RedirectStandardOutput = true,
+            RedirectStandardError  = true,
+            UseShellExecute        = false,
+        };
+        foreach (string a in new[] { CliDll(), "serve", "--root", ".", "--kits", "kits", "--print-config" })
+            psi.ArgumentList.Add(a);
+        using var proc = Process.Start(psi)!;
+        var outTask = proc.StandardOutput.ReadToEndAsync();
+        var errTask = proc.StandardError.ReadToEndAsync();
+        proc.WaitForExit();
+        string stdout = outTask.GetAwaiter().GetResult(), stderr = errTask.GetAwaiter().GetResult();
+
+        Assert.True(proc.ExitCode == 0, stderr);
+        Assert.Contains("claude mcp add circuitrf -- ", stderr, StringComparison.Ordinal);
+
+        var entry     = JsonNode.Parse(stdout)!["mcpServers"]!["circuitrf"]!;
+        string command = entry["command"]!.GetValue<string>();
+        string[] args  = [.. entry["args"]!.AsArray().Select(a => a!.GetValue<string>())];
+
+        // The same DIRECTORIES, absolute. Compared through a file in each rather than as strings: the
+        // child resolves "." against a working directory the OS may report through a symlink (macOS'
+        // /var is /private/var), and either spelling is a correct configuration.
+        File.WriteAllText(Path.Combine(Root, "root.marker"), "");
+        File.WriteAllText(Path.Combine(kits, "kits.marker"), "");
+        Assert.Equal(CliDll(), args[0]);
+        Assert.Equal(["serve", "--root", "--kits"], new[] { args[1], args[2], args[4] });
+        Assert.True(Path.IsPathRooted(args[3]) && File.Exists(Path.Combine(args[3], "root.marker")), args[3]);
+        Assert.True(Path.IsPathRooted(args[5]) && File.Exists(Path.Combine(args[5], "kits.marker")), args[5]);
+
+        using var server = new ServeSession(command, args, Path.GetTempPath(), output);
+        var initialize = JsonDocument.Parse(server.Request("initialize", new JsonObject
+        {
+            ["protocolVersion"] = "2025-06-18",
+        })).RootElement;
+        Assert.Equal("circuitrf", initialize.GetProperty("serverInfo").GetProperty("name").GetString());
+
+        var (refused, document, _) = RunCli("serve", "--root", Root, "--print-config", "--json");
+        Assert.Equal(1, refused);
+        Assert.Contains("serve.args.print-config-json", Ids(document));
+    }
+
     // ══ §5.4 — lifecycle ═════════════════════════════════════════════════════════════════════════
 
     /// <summary>It starts, advertises, and shuts down cleanly with no client ever calling a tool.</summary>
@@ -1375,10 +1433,19 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
 
         public ServeSession(string cliDll, string workingDirectory, string root, string? kits,
                             ITestOutputHelper output)
+            : this("dotnet",
+                   kits is null ? [cliDll, "serve", "--root", root]
+                                : [cliDll, "serve", "--root", root, "--kits", kits],
+                   workingDirectory, output) { }
+
+        /// <summary>A server started from an arbitrary command line — what a client configured from
+        /// <c>serve --print-config</c> would run.</summary>
+        public ServeSession(string command, IReadOnlyList<string> arguments, string workingDirectory,
+                            ITestOutputHelper output)
         {
             _output = output;
 
-            var psi = new ProcessStartInfo("dotnet")
+            var psi = new ProcessStartInfo(command)
             {
                 WorkingDirectory       = workingDirectory,
                 RedirectStandardInput  = true,
@@ -1386,11 +1453,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
                 RedirectStandardError  = true,
                 UseShellExecute        = false,
             };
-            psi.ArgumentList.Add(cliDll);
-            psi.ArgumentList.Add("serve");
-            psi.ArgumentList.Add("--root");
-            psi.ArgumentList.Add(root);
-            if (kits is not null) { psi.ArgumentList.Add("--kits"); psi.ArgumentList.Add(kits); }
+            foreach (string a in arguments) psi.ArgumentList.Add(a);
 
             _proc = Process.Start(psi)!;
 

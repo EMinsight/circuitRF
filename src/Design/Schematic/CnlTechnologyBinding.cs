@@ -1,0 +1,200 @@
+using CircuitRF.Core.Design;
+using CircuitRF.Core.Netlist;
+using CircuitRF.Design.Layout;
+
+namespace CircuitRF.Design.Schematic;
+
+/// <summary>
+/// A hand-written <c>.cnl</c>, read the way a schematic is extracted: its microstrip and via
+/// instances take their substrate from the workspace technology.
+///
+/// <para><b>Why this exists.</b> A schematic's microstrip resolves its substrate at extraction
+/// (<see cref="MicrostripSubstrateInjection"/>, <see cref="ViaSubstrateInjection"/>), so the
+/// <c>.cnl</c> a schematic becomes already states <c>H</c>, <c>Er</c> and the rest. A <c>.cnl</c>
+/// written by hand did not go through extraction, and before this its <c>SignalLayer="Metal1"</c> was
+/// accepted, resolved against nothing, and simulated on the models' standalone default — 1.6 mm of
+/// εr 4.4 — inside a GaAs workspace, with <c>check</c> reporting nothing. The only sign was a
+/// validity note about W/h. That is a converged, plausible, wrong answer, the failure the whole
+/// automation surface exists to prevent.</para>
+///
+/// <para><b>The rule is the schematic's rule, applied to whatever the line leaves unstated.</b> A
+/// substrate parameter the line states is the line's. One it leaves unstated follows the
+/// technology, resolved by the same walk-up a schematic in that folder would use
+/// (<see cref="MicrostripSubstrateInjection.ResolveWorkspaceTechnology"/>). The layer-choice
+/// parameters (<c>SignalLayer</c>, <c>GroundReference</c>, <c>FromLayer</c>, <c>ToLayer</c>,
+/// <c>GroundLayer</c>) are resolution INPUTS, so they are consumed here and never reach the engine,
+/// exactly as the extractor drops them. A line that already states every substrate parameter, which
+/// includes everything a schematic's extraction writes, is left exactly as it is.</para>
+///
+/// <para><b>Naming a layer with no technology to resolve it in is a refusal, not a fallback.</b> The
+/// author asked for a stackup and a default substrate is not one. A layer the technology does not
+/// have falls back to its default signal layer WITH A WARNING, exactly as a schematic's does, so a
+/// netlist means the same thing whichever of the two it was written as. A line that named no layer,
+/// outside any technology, keeps the standalone default it always had.</para>
+///
+/// <para>What this decided reaches <see cref="TestBench.ReadNotes"/> and
+/// <see cref="TestBench.ReadWarnings"/>, which the elaborator forwards, so <c>check</c>, a run verb
+/// and the Messages pane all report it.</para>
+/// </summary>
+public static class CnlTechnologyBinding
+{
+    private static readonly string[] MicrostripSubstrate = ["H", "T", "Er", "Sigma", "TanD"];
+    private static readonly string[] MicrostripLayers    = ["SignalLayer", "GroundReference"];
+
+    /// <summary>
+    /// <see cref="CnlReader.ReadFile"/> plus the binding — what every consumer that SIMULATES a
+    /// <c>.cnl</c> file reads it with, so a netlist means the same thing headless and in the window.
+    /// </summary>
+    public static (Library Library, TestBench TestBench) ReadFile(string path, string testBenchName = "tb")
+    {
+        var (lib, tb) = CnlReader.ReadFile(path, testBenchName);
+        Bind(lib, tb, Path.GetDirectoryName(Path.GetFullPath(path)));
+        return (lib, tb);
+    }
+
+    /// <summary>Binds every microstrip and via instance in <paramref name="tb"/> and in every cell
+    /// <paramref name="lib"/> defines, resolving the technology from <paramref name="directory"/>.</summary>
+    /// <exception cref="InvalidOperationException">An instance names a layer that cannot be
+    /// resolved.</exception>
+    public static void Bind(Library lib, TestBench tb, string? directory)
+    {
+        var cellNames = new HashSet<string>(lib.Cells.Select(c => c.Name), StringComparer.Ordinal);
+        var context   = new Context(directory, cellNames, tb);
+
+        BindAll(tb.Instances, context);
+        foreach (var cell in lib.Cells) BindAll(cell.Instances, context);
+    }
+
+    private static void BindAll(List<Instance> instances, Context context)
+    {
+        for (int i = 0; i < instances.Count; i++)
+            if (BindOne(instances[i], context) is { } bound)
+                instances[i] = bound;
+    }
+
+    /// <summary>The instance with its substrate bound, or null when it is not one this applies to or
+    /// already states everything.</summary>
+    private static Instance? BindOne(Instance inst, Context context)
+    {
+        // A cell the netlist defines wins over a primitive of the same spelling, as it does in the
+        // elaborator, so a user cell called "ML" is never mistaken for a microstrip line.
+        if (context.CellNames.Contains(inst.Reference)) return null;
+        if (!ComponentTypeRegistry.TryParseCode(inst.Reference, out var kind, out _)) return null;
+
+        bool microstrip = MicrostripSubstrateInjection.IsMicrostripKind(kind);
+        bool via        = ViaSubstrateInjection.IsViaKind(kind);
+        if (!microstrip && !via) return null;
+
+        string[] layerParams = microstrip ? MicrostripLayers : [.. ViaSubstrateInjection.LayerParams];
+        var stated = new HashSet<string>(inst.Overrides.Select(o => o.Name), StringComparer.Ordinal);
+        string? Text(string name) => inst.Overrides.LastOrDefault(o => o.Name == name)?.Expression is { } e
+                                     && Unquote(e) is { Length: > 0 } t ? t : null;
+
+        var namedLayers = layerParams.Where(p => Text(p) is not null).ToArray();
+        // "H" is the barrel length on a via and the substrate height on a line: a line that states it
+        // has stated its substrate, which is what an extracted .cnl always does.
+        bool fullyStated = microstrip ? MicrostripSubstrate.All(stated.Contains) : stated.Contains("H");
+
+        var kept = inst.Overrides.Where(o => !layerParams.Contains(o.Name)).ToList();
+        string label = $"{inst.Reference}:{inst.InstanceName}";
+
+        if (fullyStated)
+        {
+            if (namedLayers.Length == 0) return null;
+            context.Tb.ReadNotes.Add(
+                $"{label}: {string.Join(" and ", namedLayers)} not used — the line states its own substrate.");
+            return Rebuilt(inst, kept);
+        }
+
+        var tech = context.Technology;
+        IReadOnlyList<ParameterAssignment> resolved;
+        var messages = new List<string>();
+
+        if (microstrip)
+        {
+            resolved = MicrostripSubstrateInjection.BuildOverrides(
+                tech, out var warning, Text("SignalLayer"), Text("GroundReference"));
+            if (warning is not null) messages.Add(warning);
+        }
+        else
+        {
+            var editable = inst.Overrides.Select(o => new EditableParameter { Name = o.Name, Expression = Unquote(o.Expression) });
+            var injection = ViaSubstrateInjection.Build(tech, kind, editable);
+            resolved = injection.Span is null ? [] : injection.Overrides;
+            messages.AddRange(injection.Messages);
+        }
+
+        if (resolved.Count == 0)
+        {
+            // Nothing resolved. Naming a layer asked for a stackup, and the default is not one.
+            if (namedLayers.Length > 0)
+            {
+                string why = tech is null
+                    ? "no technology resolves for this netlist (it is not inside a workspace, or the workspace names no default technology)"
+                    : messages.FirstOrDefault() ?? "the technology cannot resolve it";
+                string substrate = microstrip ? "H, T, Er, Sigma and TanD" : "H, Er and Sigma";
+                throw new InvalidOperationException(
+                    $"{label} names {Describe(namedLayers, Text)}, but {why}. Put the netlist in a workspace whose technology has that layer, or state {substrate} on the line.");
+            }
+
+            // A line that named nothing, with no technology: the standalone default, as it always was.
+            // Inside a technology that could not resolve one, that default is worth a warning.
+            if (tech is not null)
+                foreach (var m in messages) context.Tb.ReadWarnings.Add($"{label}: {m}");
+            return namedLayers.Length == 0 && kept.Count == inst.Overrides.Count ? null : Rebuilt(inst, kept);
+        }
+
+        var added = resolved.Where(r => !stated.Contains(r.Name)).ToList();
+        kept.AddRange(added);
+
+        foreach (var m in messages) context.Tb.ReadWarnings.Add($"{label}: {m}");
+        if (added.Count > 0)
+            context.Tb.ReadNotes.Add(
+                $"{label}: substrate from the technology {context.TechnologyName} — " +
+                string.Join(", ", added.Select(a => $"{a.Name}={a.Expression}")) + ".");
+
+        return Rebuilt(inst, kept);
+    }
+
+    private static Instance Rebuilt(Instance inst, List<ParameterAssignment> overrides)
+        => new(inst.InstanceName, inst.Reference, inst.NetBindings, overrides) { RefNetBinding = inst.RefNetBinding };
+
+    private static string Describe(string[] names, Func<string, string?> text)
+        => string.Join(" and ", names.Select(n => $"{n} '{text(n)}'"));
+
+    /// <summary>A layer name may be written quoted (<c>SignalLayer="Metal1"</c>); the quotes are the
+    /// netlist's, not the name's.</summary>
+    private static string Unquote(string s)
+    {
+        s = s.Trim();
+        return s.Length >= 2 && s[0] == '"' && s[^1] == '"' ? s[1..^1] : s;
+    }
+
+    /// <summary>The technology is resolved once per netlist, and only when an instance needs it.</summary>
+    private sealed class Context(string? directory, HashSet<string> cellNames, TestBench tb)
+    {
+        private bool _resolved;
+        private Technology? _technology;
+
+        public HashSet<string> CellNames { get; } = cellNames;
+        public TestBench Tb { get; } = tb;
+
+        public Technology? Technology
+        {
+            get
+            {
+                if (!_resolved)
+                {
+                    _technology = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(directory);
+                    _resolved   = true;
+                }
+                return _technology;
+            }
+        }
+
+        public string TechnologyName =>
+            MicrostripSubstrateInjection.ResolveWorkspaceTechnologyPath(directory) is { } p
+                ? $"'{Path.GetFileNameWithoutExtension(p)}'"
+                : "of this workspace";
+    }
+}

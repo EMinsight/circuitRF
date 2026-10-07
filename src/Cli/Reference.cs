@@ -38,7 +38,7 @@ namespace CircuitRF.Cli;
 /// fallback, because a fallback here answers a different question than the one asked and says
 /// nothing about it.</para>
 /// </summary>
-internal static class Reference
+internal static partial class Reference
 {
     /// <summary>The topic name the generated catalogue answers to. The prose page about components
     /// ships as <see cref="ReferenceLibrary.ComponentNotesTopic"/> — see there for why the machine
@@ -64,7 +64,46 @@ internal static class Reference
     public static IEnumerable<string> AllTopics
         => ReferenceLibrary.TopicNames
                            .Concat(DocumentSchema.All.Select(f => f.Topic))
-                           .Concat([AnalysesTopic, ComponentsTopic]);
+                           .Concat(Generated().Select(g => g.Topic));
+
+    /// <summary>
+    /// The topics generated from live data rather than authored or reflected — with the title, the
+    /// summary and the served size the topic list and the resource listing both print. ONE list, so
+    /// the two channels cannot advertise different sets, and the cheap index comes before the
+    /// expensive catalogue it indexes.
+    /// </summary>
+    public static IReadOnlyList<(string Topic, string Title, string Summary, int Bytes)> Generated()
+    {
+        var catalog = ComponentCatalog.All();
+        return
+        [
+            (AnalysesTopic, "Analysis directives",
+             $"Generated from the schema the .cnl reader validates against: the " +
+             $"{AnalysisDirectiveSchema.Specs.Count} analysis type= tokens, their other accepted " +
+             "spellings, and every key with its default and whether it is required. Name one to get " +
+             "just that directive.",
+             ByteLength(RenderAnalyses(AnalysisDirectiveSchema.Specs))),
+            (ComponentIndexTopic, "Component index",
+             $"Generated from the live registries: the {catalog.Count} .cnl type tokens, one line each, " +
+             "with the nets an instance line binds and what the type is. Read this first, then " +
+             "'components <TYPE>' for one type's terminals and parameters.",
+             ByteLength(RenderComponentIndex(catalog))),
+            (ComponentsTopic, "Component types",
+             $"Generated from the live registries: every one of the {catalog.Count} .cnl type tokens " +
+             "with its nets, terminals and every parameter's default, unit and visibility. It is large; " +
+             "'component-index' lists the types, and 'components <TYPE>' is one primitive.",
+             ByteLength(RenderComponents(catalog))),
+            (TechnologiesTopic, "Shipped technologies",
+             $"Generated from the {CircuitRF.Design.Layout.ShippedTechnologies.All.Count} .ctech files that " +
+             "ship with circuitRF: the id 'create' and 'new workspace --tech' take, the stackup top to " +
+             "bottom, the layers drawn on it and the material libraries it names. Name one to get just it.",
+             ByteLength(TechnologiesText())),
+            (ShippedMaterialsTopic, "Shipped materials",
+             "Generated from the material libraries that ship with circuitRF: every material's name, " +
+             "role, electrical and thermal values and source, and how a technology uses one.",
+             ByteLength(ShippedMaterialsText())),
+        ];
+    }
 
     public static int Run(string[] args)
     {
@@ -88,6 +127,15 @@ internal static class Reference
 
         if (string.Equals(topic, AnalysesTopic, StringComparison.OrdinalIgnoreCase))
             return Analyses(item);
+
+        if (string.Equals(topic, ComponentIndexTopic, StringComparison.OrdinalIgnoreCase))
+            return item is null ? ComponentIndex() : JsonRun.Fail(CliDiagnostics.ReferenceItemNotForTopic(topic));
+
+        if (string.Equals(topic, TechnologiesTopic, StringComparison.OrdinalIgnoreCase))
+            return Technologies(item);
+
+        if (string.Equals(topic, ShippedMaterialsTopic, StringComparison.OrdinalIgnoreCase))
+            return item is null ? ShippedMaterials() : JsonRun.Fail(CliDiagnostics.ReferenceItemNotForTopic(topic));
 
         if (DocumentSchema.Find(topic) is { } format)
         {
@@ -124,33 +172,19 @@ internal static class Reference
             topics.Add(new ReferenceTopicJson(
                 f.Topic, f.Title, SchemaSummary(f), ByteLength(DocumentSchema.Render(f))));
 
-        topics.Add(new ReferenceTopicJson(
-            AnalysesTopic,
-            "Analysis directives",
-            $"Generated from the schema the .cnl reader validates against: the " +
-            $"{AnalysisDirectiveSchema.Specs.Count} analysis type= tokens, their other accepted " +
-            "spellings, and every key with its default and whether it is required. Name one to get " +
-            "just that directive.",
-            ByteLength(RenderAnalyses(AnalysisDirectiveSchema.Specs))));
-
-        var catalog = ComponentCatalog.All();
-        topics.Add(new ReferenceTopicJson(
-            ComponentsTopic,
-            "Component types",
-            $"Generated from the live registries: the {catalog.Count} .cnl type tokens, how many " +
-            "nets each instance line binds, their terminals, and every parameter with its default, " +
-            "unit and visibility. Name one to get just that primitive.",
-            ByteLength(RenderComponents(catalog))));
+        foreach (var g in Generated())
+            topics.Add(new ReferenceTopicJson(g.Topic, g.Title, g.Summary, g.Bytes));
 
         JsonRun.Reference = new ReferenceReportJson(topics, null, null);
 
         Console.WriteLine("Reference topics — circuitrf reference <topic>");
         Console.WriteLine();
         foreach (var t in topics)
-            Console.WriteLine($"  {t.Topic,-17} {Kb(t.Bytes),8}  {t.Title}");
+            Console.WriteLine($"  {t.Topic,-18} {Kb(t.Bytes),8}  {t.Title}");
         Console.WriteLine();
         Console.WriteLine("  circuitrf reference components <TYPE>   one primitive");
         Console.WriteLine("  circuitrf reference analyses <TYPE>     one analysis directive");
+        Console.WriteLine("  circuitrf reference technologies <ID>   one shipped technology");
         return 0;
     }
 
@@ -244,10 +278,6 @@ internal static class Reference
         k.Indexed ? k.Name + "[i]" : k.Name,
         k.Required, k.Default, k.Summary, k.Indexed, universal);
 
-    /// <summary>The directives' own text — what the topic list and the resource listing measure.
-    /// Pure, like <see cref="CatalogText"/>.</summary>
-    public static string AnalysesText() => RenderAnalyses(AnalysisDirectiveSchema.Specs);
-
     /// <summary>
     /// The human form, from the same table the JSON reads — one computation, so the two cannot
     /// disagree (R-aut1-9's rule again).
@@ -303,6 +333,11 @@ internal static class Reference
             ? all
             : [.. all.Where(e => string.Equals(e.Type, type, StringComparison.OrdinalIgnoreCase))];
 
+        // A .csch names its component by SYMBOL KIND (TermG, Resistor), not by .cnl token (Port, R);
+        // a schematic author asking about the kind they are writing gets the token that kind places.
+        if (chosen.Count == 0 && type is not null)
+            chosen = [.. all.Where(e => e.Symbols.Any(s => string.Equals(s.Kind, type, StringComparison.OrdinalIgnoreCase)))];
+
         if (chosen.Count == 0)
             return JsonRun.Fail(CliDiagnostics.ReferenceUnknownComponent(
                 type!, string.Join(", ", all.Select(e => e.Type))));
@@ -323,16 +358,12 @@ internal static class Reference
             s.Kind, s.DisplayName, s.Category, s.SearchTerms, ToJson(s.Ports),
             [.. s.Parameters.Select(p => new ReferenceParameterJson(
                 p.Name, p.Expression, p.Unit, p.Dimension, p.ShowOnSchematic,
-                p.Meaning.Length == 0 ? null : p.Meaning))]))]);
+                p.Meaning.Length == 0 ? null : p.Meaning))],
+            s.Pins.Count == 0 ? null : [.. s.Pins.Select(p => new ReferencePinJson(p.Name, p.X, p.Y))]))]);
 
     private static ReferencePortsJson ToJson(CatalogPorts p)
         => new(p.Count, p.Names, p.DeterminedBy, p.ListedAt,
                p.OrderNote.Length == 0 ? null : p.OrderNote);
-
-    /// <summary>The catalogue's own text, rendered without running the verb — what the topic list
-    /// and the resource listing measure to state a size. Pure: it touches neither
-    /// <see cref="JsonRun"/> nor <see cref="Console"/>.</summary>
-    public static string CatalogText() => RenderComponents(ComponentCatalog.All());
 
     /// <summary>
     /// The human form. Same catalogue, same order, same facts — the two forms read one computation,
@@ -368,6 +399,11 @@ internal static class Reference
                 // Repeated per symbol rather than only at the token, because a token whose tiles
                 // disagree drops it above and the tile is then the only place it is stated.
                 if (s.Ports.OrderNote.Length > 0) sb.Append("    order: ").AppendLine(s.Ports.OrderNote);
+                // Where a .csch wire must END to reach each terminal — measured from rendered pixels
+                // by the one client that had to draw a schematic without it.
+                if (s.Pins.Count > 0)
+                    sb.Append("    pins at R0: ").AppendLine(string.Join("  ",
+                        s.Pins.Select(p => FormattableString.Invariant($"{p.Name} ({p.X:0.##}, {p.Y:0.##})"))));
 
                 if (s.Parameters.Count == 0)
                 {

@@ -203,7 +203,7 @@ public static class ThermalCircuitLink
             }
             if (ext == ".cnl")
             {
-                var (lib, tb) = CnlReader.ReadFile(path);
+                var (lib, tb) = CnlTechnologyBinding.ReadFile(path);
                 return (lib, tb, [Path.GetFullPath(path)]);
             }
             refusal = $"The thermal setup's circuit '{path}' is neither a .csch nor a .cnl.";

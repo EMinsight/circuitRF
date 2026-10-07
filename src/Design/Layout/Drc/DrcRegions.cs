@@ -230,4 +230,61 @@ internal static class DrcRegions
         }
         return rings;
     }
+
+    /// <summary>
+    /// The closest approach between two conductors' outlines, in DBU, rounded to the nearest DBU —
+    /// what a spacing violation reports as MEASURED, so "2 um, needs 4 um" can be said instead of
+    /// only "too close". Zero when the outlines touch or cross, which for two conductors on
+    /// different nets is a short rather than a near miss.
+    ///
+    /// <para>Edge against edge, every pair: only ever called for a pair the inflate-and-intersect
+    /// test has already found in violation, so the quadratic cost is paid on the handful of pairs a
+    /// report names, never across the layout.</para>
+    /// </summary>
+    internal static long MinDistance(Paths64 a, Paths64 b)
+    {
+        double best = double.PositiveInfinity;
+        foreach (var pa in a)
+            for (int i = 0; i < pa.Count; i++)
+            {
+                var a0 = pa[i]; var a1 = pa[(i + 1) % pa.Count];
+                foreach (var pb in b)
+                    for (int j = 0; j < pb.Count; j++)
+                    {
+                        double d = SegmentDistance(a0, a1, pb[j], pb[(j + 1) % pb.Count]);
+                        if (d < best) best = d;
+                        if (best == 0) return 0;
+                    }
+            }
+        return double.IsInfinity(best) ? 0 : (long)Math.Round(best);
+    }
+
+    private static double SegmentDistance(Point64 p1, Point64 p2, Point64 q1, Point64 q2)
+    {
+        if (SegmentsCross(p1, p2, q1, q2)) return 0;
+        return Math.Min(Math.Min(PointSegment(p1, q1, q2), PointSegment(p2, q1, q2)),
+                        Math.Min(PointSegment(q1, p1, p2), PointSegment(q2, p1, p2)));
+    }
+
+    private static double PointSegment(Point64 p, Point64 a, Point64 b)
+    {
+        double dx = b.X - a.X, dy = b.Y - a.Y;
+        double len2 = dx * dx + dy * dy;
+        double t = len2 == 0 ? 0 : Math.Clamp(((p.X - a.X) * dx + (p.Y - a.Y) * dy) / len2, 0, 1);
+        double ex = a.X + t * dx - p.X, ey = a.Y + t * dy - p.Y;
+        return Math.Sqrt(ex * ex + ey * ey);
+    }
+
+    private static bool SegmentsCross(Point64 p1, Point64 p2, Point64 q1, Point64 q2)
+    {
+        static int Orient(Point64 a, Point64 b, Point64 c)
+        {
+            double v = (double)(b.X - a.X) * (c.Y - a.Y) - (double)(b.Y - a.Y) * (c.X - a.X);
+            return v > 0 ? 1 : v < 0 ? -1 : 0;
+        }
+        int o1 = Orient(p1, p2, q1), o2 = Orient(p1, p2, q2), o3 = Orient(q1, q2, p1), o4 = Orient(q1, q2, p2);
+        // Collinear touching is caught by PointSegment returning 0, so only a proper crossing needs
+        // to be found here.
+        return o1 * o2 < 0 && o3 * o4 < 0;
+    }
 }

@@ -204,7 +204,7 @@ different question with nothing to say so.</p>
 
 ## `sparam` — S-parameters {#sparam}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf sparam &lt;file.cnl|.csch&gt; [--freq start:stop:step] [-o out.sNp]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf sparam &lt;file.cnl|.csch&gt; [--freq start:stop:step] [--set var=expr] [-o out.sNp]</code></pre>
 
 ```text
 $ circuitrf sparam hero1.cnl --freq 1GHz:3GHz:1GHz -o hero1.s2p
@@ -215,6 +215,7 @@ Wrote hero1.s2p
 | Option | What it does |
 |---|---|
 | `--freq start:stop:step` | Override the sweep. **Omit it and the netlist's own `sparam` analysis is used**, segments and all — which is almost always what you want, because it is the sweep the design was set up with. |
+| `--set <var=expr>` | Override a global variable **before elaboration**, [as `hb` does](#set). Repeatable. Everything written in terms of it re-derives, including the netlist's own sweep. |
 | `-o`, `--output <path>` | Where the result goes, and **its extension picks the format**: `.s1p`…`.s99p` for a Touchstone, or `.npy` / `.mat` / `.txt` for the cubes. Omitted, it is the input file with its extension changed to `.sNp` for the port count found. |
 
 There is no stdout table. The port count in the default extension comes from the network, so a
@@ -250,7 +251,7 @@ want the per-port references in a form every tool reads, write <code>.npy</code>
 
 ## `dc` — the operating point {#dc}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf dc &lt;file.cnl|.csch&gt;</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf dc &lt;file.cnl|.csch&gt; [--set var=expr]</code></pre>
 
 ```text
 $ circuitrf dc hero2.cnl
@@ -262,7 +263,8 @@ Node voltages:
   n_drain                                  48
 ```
 
-No options beyond the common ones. It prints the converged node voltages and any probe currents, and
+`--set var=expr` overrides a global before elaboration, [as `hb` does](#set); it is repeatable. It
+prints the converged node voltages and any probe currents, and
 [exits 2](#exit) if the solve did not converge — the operating point is the one thing every nonlinear
 analysis is built on, so a non-converged DC is a failed run, not a partial one.
 
@@ -1636,6 +1638,26 @@ warning: only what a run solves is warned of. The [realistic view's `Look`](draw
 (`c3d.look.environment`) spelled in no form the view reads is an error, and a `.hdr` that is missing or does not read is a
 warning (`c3d.look.hdr-unreadable`): the view lights the scene with Studio instead.
 
+**A DRC violation says where it is.** Each one names the layer as the technology names it, the
+region in the layout's own display unit, and, for a spacing rule, the two nets and how far apart they
+are against what the rule needs. Two shapes on different nets that touch are reported as touching,
+because that is a short rather than a near miss:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf check Filter/layout/Filter.clay
+<span class="output">error: Filter.clay: Metal1 Min Spacing (MinSpacing) on Metal1 (1/0) — shapes on nets 'in' and 'sig' touch at (98um, -2um)–(102um, 32um)
+error: Filter.clay: Metal1 Min Spacing (MinSpacing) on Metal1 (1/0) — 2um, needs 4um between nets 'in' and 'out' at (-1.728um, 30um)–(101.728um, 32um)</span></code></pre>
+
+Under `--json` the same facts are typed arguments: `layer`, `layerName`, `netA`, `netB`, `touching`,
+`measured`, `required`, and the region as `minX`, `minY`, `maxX`, `maxY` in `unit`.
+
+**On a planar `.cem`, the mesh budget is part of the result**, not only a note: the document's row in
+`result.check.documents` carries `em` with the kernel, the unknown count, the ceiling it is judged
+against (`dense` or `accelerated`) and the mesher's verdict (`ok`, `warn` or `refused`). It survives
+`--summary`, so the cheap form of the call still answers whether a run is affordable. A
+`PlanarMesh` field the file states but `"Auto": true` discards (cells per wavelength, edge mesh, edge
+cells) is a warning, `check.em.mesh-auto-override`, naming the field and the value the mesh uses
+instead.
+
 The kind of document is inferred from the path, exactly as `convert` infers a format. A GDSII or
 Gerber file is **named as interchange** rather than called unreadable — it is simply not validated,
 because there is nothing to validate it against.
@@ -2021,7 +2043,7 @@ you gave (comments gone, directives reordered) and call it an extraction.
 One plot, one axis pair, without writing a data display first.
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf plot lc.s2p -o match.png \
-<span class="prompt">    </span>--trace cube=S,i=1,j=1,y=db --trace cube=S,i=2,j=1,y=db \
+<span class="prompt">    </span>--trace cube=S,i=1,j=1,y=db20 --trace cube=S,i=2,j=1,y=db20 \
 <span class="prompt">    </span>--title "LC lowpass" --ylabel dB --x 1:5 --y -40:5
 <span class="output">Wrote match.png (792x612 device-pixels, 19,785 bytes)
   1 plot(s) on 1 page(s), 1 data source(s)</span></code></pre>
@@ -2032,7 +2054,7 @@ One plot, one axis pair, without writing a data display first.
 |---|---|
 | `cube` | Which cube. Required. It is the same shorthand the trace card's spec box takes, so `S`, `S[:,2,1]`, `Pout` and `mag(V[:,"X1.drain"])` all work. |
 | `i`, `j` | The **port numbers** of a matrix cube — `i=2,j=1` is S21. Refused together with a bracketed slice: they are the convenience over writing one. |
-| `y` | `db`, `db10`, `db20`, `mag`, `phase`, `real`, `imag` or `conj`. |
+| `y` | `db20` (20·log₁₀ — S-parameters, voltages, currents, a probe margin), `db10` (10·log₁₀ — powers), `mag`, `phase`, `real`, `imag` or `conj`. A bare `db` is refused as ambiguous (`plot.trace.db-ambiguous`): in a data display it means 10·log₁₀, while a measurement's `dB()` is 20·log₁₀, and the wrong one draws an S-parameter at half its depth. |
 | `axis` | `left` (the default) or `right`. |
 | `cut` | An antenna pattern cut: a bearing in degrees pins the cube's `phi` axis and sweeps `theta`; `all` keeps every `phi` as a curve family. The verb prints the φ it landed on. |
 | `port` | The **port number** on a cube's `port` axis — not an index. A port the run does not hold is refused, listing the ones it does. |
@@ -2041,7 +2063,7 @@ One plot, one axis pair, without writing a data display first.
 | `metric` | Which of the reference document's quantities — `H0`, `1/Y0`, `ZG`, `SM_Y0`, `LGa`, `SMenv`, … See [The WSProbe](wsprobe.html#metrics). Some take `with=`, `set=`, `z0=`, `side=`, `gi=` or the envelope's grid keys. |
 
 ```text
-circuitrf plot amp.npy -o margin.svg --trace cube=SP1.wsp,probe=GATE,metric=SM_Y0,y=db
+circuitrf plot amp.npy -o margin.svg --trace cube=SP1.wsp,probe=GATE,metric=SM_Y0,y=db20
 ```
 
 **Case is load-bearing in that notation and is not folded away** — `LGF` is one probe's forward
@@ -2202,6 +2224,19 @@ machine that has no copy of this site. `components` is the **generated catalogue
 live component registry every time you ask, so it cannot go stale — while `component-notes` is this
 site's [Components](components.html) page, which explains what each part is *for*. The catalogue
 answers "what may I write"; the page answers "what does it mean". Ask for both if you want both.
+
+The list above is abridged; the program prints every topic. Three more generated ones answer the
+questions a design starts with:
+
+| Topic | What it lists | Name one |
+|---|---|---|
+| `component-index` | every type token in one line — its nets, its category and what it is. A few kB, against the full catalogue's ~100 kB: read it first, then `components <TYPE>` | — |
+| `technologies` | every technology that ships, by the id `new workspace --tech` takes, with its stackup top to bottom, the layers drawn on each entry and the material libraries it names | `technologies <id>` |
+| `shipped-materials` | every material in the libraries that ship — role, εr and tanδ or σ₂₀ and α₂₀, thermal conductivity and source — and how a technology uses one | — |
+
+Like `components`, all three are generated from the data they describe every time you ask: the
+technologies are read from the embedded `.ctech` files through the same reader as your own, and the
+materials from the embedded `.cmat` libraries.
 
 Asking for a topic prints it as its own Markdown, so it redirects cleanly:
 
@@ -2395,11 +2430,14 @@ block saying how many were left out. **Warnings and errors are never collapsed**
 carries everything, so nothing is hidden: what you stop paying for is thirty notes describing
 inferences that all went fine.
 
+`--summary` changes the diagnostics only, never the `result`. Anything a caller needs as a number, such
+as `check`'s mesh budget on a `.cem`, is in the result and is the same with or without it.
+
 ---
 
 ## `serve` — the MCP server {#serve}
 
-<pre><code class="cmd"><span class="prompt">$ </span>circuitrf serve --root &lt;dir&gt; [--kits &lt;dir&gt;]</code></pre>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf serve --root &lt;dir&gt; [--kits &lt;dir&gt;] [--print-config]</code></pre>
 
 **This is circuitRF as an MCP server.** It speaks the **Model Context Protocol** over its standard
 input and output — the stdio transport, newline-delimited JSON-RPC 2.0, with `initialize`,
@@ -2438,6 +2476,34 @@ your shell's. On Windows it is `%LOCALAPPDATA%\Programs\circuitRF\circuitRF.exe`
 `~/.local/bin/circuitrf`. With Claude Code it is one line:
 
 <pre><code class="cmd"><span class="prompt">$ </span>claude mcp add circuitrf -- /Applications/circuitRF.app/Contents/MacOS/circuitRF serve --root ~/designs</code></pre>
+
+**Or let circuitRF write the configuration for you.** `--print-config` starts nothing: it prints the
+`mcpServers` JSON for the executable you ran it with, with the root (and any `--kits` folders) made
+absolute, and exits. The JSON goes to stdout, so it can be redirected into a file; the matching
+`claude mcp add` line goes to stderr, ready to paste.
+
+<pre><code class="cmd"><span class="prompt">$ </span>/Applications/circuitRF.app/Contents/MacOS/circuitRF serve --root ~/designs --print-config</code></pre>
+
+The root is checked before anything is printed, so a configuration naming a folder that does not
+exist is refused rather than written.
+
+**Choose the root deliberately.** It is everything the server can read and write, with your own
+authority. Point it at the folder your designs live in, such as `~/designs`, not at your home
+folder or a whole drive: an agent working inside `~/designs` needs nothing outside it, and a root of
+`~` lets every tool read and write anywhere in your home folder.
+
+**From a source build**, the command is `dotnet` and the first argument is the built
+`CircuitRF.Cli.dll`. Build it once, then point the client at the build output rather than at
+`dotnet run`. `dotnet run` builds before every start, so the server is slow to come up and a client
+may give up waiting for it:
+
+<pre><code class="cmd"><span class="prompt">$ </span>dotnet build src/Cli -c Release
+<span class="prompt">$ </span>dotnet src/Cli/bin/Release/net10.0/CircuitRF.Cli.dll serve --root ~/designs --print-config</code></pre>
+
+Rebuild after pulling changes; the client keeps running whatever was built last.
+
+What to tell an agent once it is connected, which reference topics it should read, and the design
+flow that works are in [Designing with an AI agent](ai-agents.html).
 
 **Most clients load a server when a session starts**, so one registered mid-session appears in the
 next one. Nothing is lost meanwhile: every tool is a verb, and the same verbs answer from a shell with
@@ -2578,7 +2644,8 @@ it — so in the session that installed it, use the full path,
 It prints the release's version — the tag from step 1 — and exits `0`, opening no window. Anything else means the path is wrong.
 
 **4. Register the server** with the client: the command is that same executable, the arguments are
-`serve --root <dir>` ([above](#serve)).
+`serve --root <dir>` ([above](#serve)). `serve --root <dir> --print-config` prints exactly that
+configuration, with the executable's full path filled in.
 
 **5. Keep working in the meantime.** Most clients load a newly registered server only when their
 next session starts, so the tools will not appear in the session that did the install. Nothing is

@@ -90,6 +90,15 @@ public sealed record DrcViolation(
     /// </summary>
     public string? MeasuredText { get; init; }
 
+    /// <summary>
+    /// The measured value in DBU, for a die-side violation whose engine check knows it — today the
+    /// spacing check, which reports the closest approach between the two conductors. Null where the
+    /// check measures a region rather than one distance. Zero means the two conductors TOUCH, which
+    /// on two named nets is a short rather than a near miss, and a report should say so in those
+    /// words rather than as "0 um, needs 4 um".
+    /// </summary>
+    public long? MeasuredDbu { get; init; }
+
     /// <summary>True when this violation came from an assembly rule rather than the technology.</summary>
     public bool IsAssembly => Section is not null;
 }

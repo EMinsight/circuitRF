@@ -911,7 +911,7 @@ schematic editor's own wire cut.
 
 ```text
 circuitrf plot amp.npy -o margin.svg \
-    --trace cube=SP1.wsp,probe=GATE,metric=SM_Y0,y=db
+    --trace cube=SP1.wsp,probe=GATE,metric=SM_Y0,y=db20
 ```
 
 `probe=` is what turns a `cube=…wsp` trace into a probe metric; `metric=` takes the document's own

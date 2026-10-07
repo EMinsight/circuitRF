@@ -255,6 +255,11 @@ knobs are about wavelength and edges.
 | **Boundary cells** | **Staircase** | How curved and oblique edges are treated. **Staircase** approximates them on the rectangular grid. **Conformal** cuts the boundary cells to follow the metal, which is more accurate on tapers, bends and curves — and is **not** a free win. Read [conformal boundary cells](mom-engine.html#conformal) before turning it on; it ships off because it regresses on one class of board. |
 | **Mesh frequency** | blank | The frequency the cell-size cap is sized at. Blank uses the top of the sweep. Sizing lower gives fewer unknowns and a faster run, at the cost of resolution at the top of the band — the notes under the group say what the trade actually is for your geometry. |
 
+With **Auto** on, the mesher chooses cells per wavelength, edge mesh and edge cells itself and those
+three fields are not read. Every other field in this group is still used. A hand-written `.cem` that
+states one of the three with `"Auto": true` gets a `check` warning naming it; set `"Auto": false` in
+`PlanarMesh` for it to take effect.
+
 Below the fields sits the **mesh summary** — unknown count, cells across the narrowest conductor, and the
 mesher's own verdict on whether that is enough — plus the mesh notes. This is the readout that tells you
 a run is about to be too big *before* you start it.

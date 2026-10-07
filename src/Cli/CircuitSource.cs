@@ -36,7 +36,7 @@ internal static class CircuitSource
             {
                 case DocumentKind.Netlist:
                 {
-                    var (lib, tb) = CnlReader.ReadFile(path);
+                    var (lib, tb) = CnlTechnologyBinding.ReadFile(path);
                     return (lib, tb);
                 }
 
@@ -102,7 +102,7 @@ internal static class CircuitSource
         switch (kind)
         {
             case DocumentKind.Netlist:
-                return CnlReader.ReadFile(path);
+                return CnlTechnologyBinding.ReadFile(path);
 
             case DocumentKind.Schematic:
                 return FromSchematic(path);

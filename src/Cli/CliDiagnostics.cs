@@ -1,4 +1,5 @@
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Schematic;
 using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Cli;
@@ -1082,6 +1083,20 @@ internal static class CliDiagnostics
     public static Diagnostic CheckEmFinding(string path, string text, bool warning)
         => warning ? CheckEmWarning(path, text) : CheckEmNote(path, text);
 
+    /// <summary>
+    /// A planar-mesh field stated in the <c>.cem</c> that <c>Auto</c> discards. A warning, not a note:
+    /// the mesh that runs is not the one the file asks for, and the mesh notes report only the value
+    /// used, so nothing else says why.
+    /// </summary>
+    public static Diagnostic CheckEmMeshAutoOverride(string path, string fields, string stated, string used) =>
+        Diagnostic.Create(
+            "check.em.mesh-auto-override", DiagnosticSeverity.Warning,
+            "{path}: PlanarMesh has \"Auto\": true, which chooses {fields} itself, so the stated " +
+            "{stated} {isAre} not read and the mesh uses {used}. Set \"Auto\": false in PlanarMesh for " +
+            "the stated {itThem} to take effect.",
+            ("path", path), ("fields", fields), ("stated", stated), ("used", used),
+            ("isAre", fields.Contains(',') ? "are" : "is"), ("itThem", fields.Contains(',') ? "values" : "value"));
+
     /// <summary>A finding whose class says the answer would not be what was drawn.</summary>
     public static Diagnostic CheckEmWarning(string path, string text) => Diagnostic.Create(
         "check.em.warning", DiagnosticSeverity.Warning,
@@ -1224,20 +1239,41 @@ internal static class CliDiagnostics
     /// <summary>One DRC violation, at the severity the RULE states. The rule's own name, layer and
     /// measurement travel as arguments — a caller filtering on "every clearance violation" reads
     /// them, never the sentence.</summary>
+    /// <summary>
+    /// One DRC violation, and WHERE it is. The layer is spelled the way the technology names it, the
+    /// region is the violation's marker box in the layout's own display unit, and a spacing violation
+    /// says which nets it is between and how far apart they are. Two conductors on different nets that
+    /// touch are a SHORT, and are said to touch in so many words — "0 um, needs 4 um" reads as a
+    /// near miss.
+    /// </summary>
     public static Diagnostic CheckDrcViolation(
         string path, string rule, string kind, DiagnosticSeverity severity,
-        string? layer, string? measured, bool waived) => Diagnostic.Create(
+        string? layer, string? layerName, string? measured, string? required,
+        string? netA, string? netB, bool touching,
+        string unit, double minX, double minY, double maxX, double maxY, string region,
+        bool waived) => Diagnostic.Create(
         "check.drc.violation", severity,
-        "{path}: {rule} ({kind}){onLayer}{measurement}{waiver}",
+        "{path}: {rule} ({kind}){onLayer}{measurement}{nets}{where}{waiver}",
         ("path", path), ("rule", rule), ("kind", kind),
-        ("layer", layer), ("measured", measured), ("waived", waived),
-        // The three rendered fragments are separate arguments from the three TYPED ones above, and
-        // named differently: a consumer reads `layer`, a reader reads `onLayer`. Reusing one name
-        // for both would mean the typed value could not be read back without re-parsing the prose,
-        // which is the exact thing R-aut4-4 exists to prevent.
-        ("onLayer",     layer    is { Length: > 0 } ? $" on {layer}" : ""),
-        ("measurement", measured is { Length: > 0 } ? $" — {measured}" : ""),
-        ("waiver",      waived ? " (waived)" : ""));
+        ("layer", layer), ("layerName", layerName), ("measured", measured), ("required", required),
+        ("netA", netA), ("netB", netB), ("touching", touching),
+        ("unit", unit), ("minX", minX), ("minY", minY), ("maxX", maxX), ("maxY", maxY),
+        ("waived", waived),
+        // The rendered fragments are separate arguments from the TYPED ones above, and named
+        // differently: a consumer reads `layer`, a reader reads `onLayer`. Reusing one name for both
+        // would mean the typed value could not be read back without re-parsing the prose, which is
+        // the exact thing R-aut4-4 exists to prevent.
+        ("onLayer", layerName is { Length: > 0 } ? $" on {layerName} ({layer})"
+                  : layer is { Length: > 0 }     ? $" on {layer}" : ""),
+        ("measurement", touching ? ""
+                      : measured is { Length: > 0 } && required is { Length: > 0 } ? $" — {measured}, needs {required}"
+                      : measured is { Length: > 0 } ? $" — {measured}"
+                      : required is { Length: > 0 } ? $" — needs {required}" : ""),
+        ("nets", touching ? $" — shapes on nets '{netA}' and '{netB}' touch"
+               : netA is not null && netB is not null ? $" between nets '{netA}' and '{netB}'"
+               : netA is not null ? $" on net '{netA}'" : ""),
+        ("where", $" at {region}"),
+        ("waiver", waived ? " (waived)" : ""));
 
     /// <summary>Anything the DRC run could not do — an unresolved instance, an unmapped
     /// cross-technology sub-cell, the flatten ceiling. Stated rather than dropped.</summary>
@@ -1253,6 +1289,26 @@ internal static class CliDiagnostics
         finding.Kind == LayoutLoadFindingKind.DegenerateShape
             ? CheckLayoutDegenerateShape(path, finding.Message)
             : CheckLayoutUnknownField(path, finding.Message);
+
+    /// <summary>
+    /// What reading a <c>.csch</c> found wrong without refusing it (<see cref="SchematicLoadAudit"/>) —
+    /// the sentence is the audit's, which the GUI's Messages line also says. One id per kind, so a
+    /// caller can tell "a misspelt key" from "this component became a resistor".
+    /// </summary>
+    public static Diagnostic CheckSchematicLoadFinding(string path, SchematicLoadFinding finding)
+    {
+        var (id, severity) = finding.Kind switch
+        {
+            SchematicLoadFindingKind.MissingSymbol   => ("check.schematic.missing-symbol",   DiagnosticSeverity.Error),
+            SchematicLoadFindingKind.UnknownSymbol   => ("check.schematic.unknown-symbol",   DiagnosticSeverity.Error),
+            SchematicLoadFindingKind.WrongShape      => ("check.schematic.wrong-shape",      DiagnosticSeverity.Error),
+            SchematicLoadFindingKind.AnalysisSkipped => ("check.schematic.analysis-skipped", DiagnosticSeverity.Warning),
+            SchematicLoadFindingKind.MeasurementsNotEvaluated
+                => ("check.schematic.measurements-not-evaluated", DiagnosticSeverity.Warning),
+            _                                        => ("check.schematic.unknown-field",    DiagnosticSeverity.Warning),
+        };
+        return Diagnostic.Create(id, severity, "{path}: {text}", ("path", path), ("text", finding.Message));
+    }
 
     private static Diagnostic CheckLayoutDegenerateShape(string path, string text) => Diagnostic.Create(
         "check.layout.degenerate-shape", DiagnosticSeverity.Error,
@@ -1520,12 +1576,18 @@ internal static class CliDiagnostics
         "reference.analysis.unknown", DiagnosticSeverity.Error,
         "No analysis type '{type}'. Types: {known}", ("type", type), ("known", known));
 
-    /// <summary>A second argument on a topic that does not have items. Only <c>components</c> and
-    /// <c>analyses</c> do.</summary>
+    /// <summary>A technology id that does not ship, listing the ones that do — the same list
+    /// <c>new workspace --tech</c>'s refusal prints.</summary>
+    public static Diagnostic ReferenceUnknownTechnology(string id, string known) => Diagnostic.Create(
+        "reference.technology.unknown", DiagnosticSeverity.Error,
+        "No shipped technology '{id}'. Technologies: {known}", ("id", id), ("known", known));
+
+    /// <summary>A second argument on a topic that does not have items. Only <c>components</c>,
+    /// <c>analyses</c> and <c>technologies</c> do.</summary>
     public static Diagnostic ReferenceItemNotForTopic(string topic) => Diagnostic.Create(
         "reference.args.item-not-for-topic", DiagnosticSeverity.Error,
-        "reference: '{topic}' is one page and names nothing inside it. Only 'components' and " +
-        "'analyses' take a name.",
+        "reference: '{topic}' is one page and names nothing inside it. Only 'components', " +
+        "'analyses' and 'technologies' take a name.",
         ("topic", topic));
 
     /// <summary>A type named with no topic. Reachable from a tool call, where the two arguments are
@@ -1566,6 +1628,21 @@ internal static class CliDiagnostics
         "serve.args.json-not-applicable", DiagnosticSeverity.Error,
         "serve: --json does not apply — stdout carries the protocol, and every tool call returns a " +
         "document of its own.");
+
+    /// <summary><c>--json</c> with <c>--print-config</c>. What it prints is already a JSON document,
+    /// and a second envelope around it would be one more thing to unwrap before pasting it.</summary>
+    public static Diagnostic ServePrintConfigJson() => new(
+        "serve.args.print-config-json", DiagnosticSeverity.Error,
+        "serve: --json does not apply to --print-config — what it prints is already the client's " +
+        "JSON configuration.");
+
+    /// <summary>The running executable's path is unknown, so there is no command to print — and a
+    /// guessed one is exactly the hand-typed path <c>--print-config</c> exists to replace.</summary>
+    public static Diagnostic ServePrintConfigNoProcessPath() => new(
+        "serve.print-config.no-process-path", DiagnosticSeverity.Error,
+        "serve: --print-config cannot tell which executable is running, so it has no command to " +
+        "print. Configure the client with the full path to circuitRF and the arguments " +
+        "serve --root <dir>.");
 
     public static Diagnostic ServeRootNotFound(string path) => Diagnostic.Create(
         "serve.root.not-found", DiagnosticSeverity.Error,
@@ -2630,7 +2707,7 @@ internal static class CliDiagnostics
     public static Diagnostic PlotTraceRequired() => new(
         "plot.args.trace-required", DiagnosticSeverity.Error,
         "plot: at least one --trace is required. A spec is comma-separated key=value — "
-      + "cube=S,i=2,j=1,y=db.");
+      + "cube=S,i=2,j=1,y=db20.");
 
     public static Diagnostic PlotUnknownOption(string option) => Diagnostic.Create(
         "plot.args.unknown-option", DiagnosticSeverity.Error,
@@ -2832,6 +2909,17 @@ internal static class CliDiagnostics
         "plot.trace.port-malformed", DiagnosticSeverity.Error,
         "plot: in --trace '{trace}', {key}='{value}' is not a port number from 1.",
         ("trace", trace), ("key", key), ("value", value));
+
+    /// <summary>A bare <c>y=db</c>. On a trace card <c>db</c> is 10·log10, a POWER ratio, while the
+    /// measurement function <c>dB()</c> is 20·log10 — so <c>y=db</c> on an S-parameter drew every curve
+    /// at half its true depth, a plausible picture with nothing to say it was wrong. The CLI refuses
+    /// the ambiguous word and names the two it could have meant; an existing .cdd's <c>db</c> keeps
+    /// its meaning, because that document already says which one it is drawn as.</summary>
+    public static Diagnostic PlotTraceDbAmbiguous(string trace) => Diagnostic.Create(
+        "plot.trace.db-ambiguous", DiagnosticSeverity.Error,
+        "plot: in --trace '{trace}', y=db is ambiguous. Use y=db20 (20·log10) for S-parameters, " +
+        "voltages and currents, or y=db10 (10·log10) for powers.",
+        ("trace", trace));
 
     public static Diagnostic PlotTraceAxisUnknown(string trace, string value) => Diagnostic.Create(
         "plot.trace.axis-unknown", DiagnosticSeverity.Error,

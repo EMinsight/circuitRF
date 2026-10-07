@@ -33,12 +33,22 @@ namespace CircuitRF.Cli.Serve;
 /// externally-supplied device model with it. It is deliberately not a tool argument: a kit folder is
 /// installed software rather than design data, it lives outside the root by nature, and letting a
 /// client name one would be the server pointing at an arbitrary directory on its say-so.</para>
+///
+/// <para><b><c>--print-config</c> starts nothing</b>: it prints the configuration an MCP client needs
+/// to start THIS server, and exits. The command is the executable actually running — the installed
+/// app, or <c>dotnet</c> plus the entry assembly for a source build — because the path is the part
+/// people get wrong by hand, and a client's <c>PATH</c> is often not their shell's. The root and every
+/// <c>--kits</c> folder are written absolute, since the client starts the server from a directory of
+/// its own choosing. The root is validated first, so a config naming a missing root is never printed.
+/// stdout is the client JSON and nothing else, so it can be redirected into a file; the Claude Code
+/// one-liner for the same command goes to stderr.</para>
 /// </summary>
 internal static class ServeVerb
 {
     public static int Run(string[] args)
     {
         string? root = null;
+        bool printConfig = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -46,6 +56,9 @@ internal static class ServeVerb
             {
                 case "--root" when i + 1 < args.Length:
                     root = args[++i];
+                    break;
+                case "--print-config":
+                    printConfig = true;
                     break;
                 default:
                     return JsonRun.Fail(CliDiagnostics.ServeUnknownOption(args[i]));
@@ -55,12 +68,20 @@ internal static class ServeVerb
         if (root is null)
         {
             int code = JsonRun.Fail(CliDiagnostics.ServeRootRequired());
-            Console.Error.WriteLine("Usage: circuitrf serve --root <dir> [--kits <dir>]");
+            Console.Error.WriteLine("Usage: circuitrf serve --root <dir> [--kits <dir>] [--print-config]");
             return code;
         }
 
         var confinement = PathRoot.Open(root, out var refusal);
         if (confinement is null) return JsonRun.Fail(refusal!);
+
+        if (printConfig)
+        {
+            // --json has already taken stdout, and what this prints IS a JSON document — a second
+            // envelope around it would be one more thing to unwrap before pasting it anywhere.
+            if (JsonRun.Enabled) return JsonRun.Fail(CliDiagnostics.ServePrintConfigJson());
+            return PrintConfig(confinement.Root);
+        }
 
         // --json is one of the flags taken before dispatch, so `serve` never sees it in its own
         // arguments — but it has already captured the real stdout, and this verb needs that stream
@@ -86,5 +107,71 @@ internal static class ServeVerb
 
         using var rpc = new JsonRpc(stdin, stdout);
         return new McpServer(rpc, confinement).Serve();
+    }
+
+    // ── --print-config ───────────────────────────────────────────────────────
+
+    private static int PrintConfig(string root)
+    {
+        if (Environment.ProcessPath is not { Length: > 0 } host)
+            return JsonRun.Fail(CliDiagnostics.ServePrintConfigNoProcessPath());
+
+        var launch = new List<string>();
+
+        // `dotnet CircuitRF.Cli.dll serve …` — a source build run through the shared host. The host
+        // alone would start nothing, so the entry assembly goes first in the arguments.
+        if (string.Equals(Path.GetFileNameWithoutExtension(host), "dotnet", StringComparison.OrdinalIgnoreCase)
+            && System.Reflection.Assembly.GetEntryAssembly()?.Location is { Length: > 0 } entry)
+            launch.Add(entry);
+
+        launch.Add("serve");
+        launch.Add("--root");
+        launch.Add(root);
+        foreach (string kits in CliEntry.KitFolders)
+        {
+            launch.Add("--kits");
+            launch.Add(Path.GetFullPath(kits));
+        }
+
+        var args = new System.Text.Json.Nodes.JsonArray();
+        foreach (string a in launch) args.Add(a);
+
+        var config = new System.Text.Json.Nodes.JsonObject
+        {
+            ["mcpServers"] = new System.Text.Json.Nodes.JsonObject
+            {
+                ["circuitrf"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["command"] = host,
+                    ["args"]    = args,
+                },
+            },
+        };
+
+        Console.Out.WriteLine(config.ToJsonString(new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            // A Windows path is backslashes, and the default encoder writes non-ASCII as \uXXXX —
+            // legal JSON, but not what anyone pasting it expects to see.
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        }));
+
+        Console.Error.WriteLine("[circuitRF] Claude Code, the same server in one line:");
+        Console.Error.WriteLine("  claude mcp add circuitrf -- "
+                              + string.Join(' ', new[] { host }.Concat(launch).Select(ShellWord)));
+        return 0;
+    }
+
+    /// <summary>One argument as the user's shell would need it typed: bare when it is plainly safe,
+    /// otherwise quoted — double quotes on Windows, where a backslash is a path separator and not an
+    /// escape, and single quotes elsewhere.</summary>
+    internal static string ShellWord(string s)
+    {
+        if (s.Length > 0 && s.All(c => char.IsAsciiLetterOrDigit(c) || "/._-:+=@,%".Contains(c)
+                                       || (c == '\\' && OperatingSystem.IsWindows())))
+            return s;
+        return OperatingSystem.IsWindows()
+            ? "\"" + s.Replace("\"", "\\\"") + "\""
+            : "'" + s.Replace("'", "'\\''") + "'";
     }
 }

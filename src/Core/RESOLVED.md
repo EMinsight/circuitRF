@@ -3359,3 +3359,24 @@ in `Devices/ViaFormulas.cs` with its source.
 
 Gates: `tests/Core.Tests/Devices/ViaFormulasTests.cs`, `tests/Engine.Tests/Devices/ViaSParamTests.cs`
 (hand-built RLC T to 1e-9, the Palace comparison, the one warning).
+
+## `max_over` / `min_over`: the worst value over a band (2026-10-06)
+
+A spec line asks for a worst case over a band, and measurements had no way to say it: `min`/`max`
+take two values, so an agent read the worst case off a cube by eye. `max_over(x, lo, hi [, "axis"])`
+and `min_over(…)` reduce ONE axis (`freq` by default, or a rank-1 cube's only axis) over the points
+whose values lie in `[lo, hi]`, and keep every other axis.
+
+- **Inclusive with a 1e-9 relative tolerance.** A band edge that is a grid point (3 GHz on a 0.1 GHz
+  step) must be inside the band however the grid's doubles came out. An exclusive or exact compare
+  silently drops the edge point, which is very often the worst one.
+- **Real values only, refused otherwise.** Complex numbers have no order, and reducing over one part
+  of them would answer a different question without saying so.
+- **An empty band is a refusal naming the axis extent**, not an empty result. In a spec check, an
+  empty band almost always means a mistyped limit.
+- **Trap: the firewall gate's allowlist reads only the FIRST literal of a concatenated message**, and a
+  first literal ending in a space needs a trailing space in the allowlist line too. Such a line does
+  not survive an editor that trims whitespace. The messages here are written as single interpolated
+  literals, with joined lists computed into a local first, so no allowlist line ends in whitespace.
+
+Gate: `tests/Core.Tests/Expressions/BandReductionTests.cs`.

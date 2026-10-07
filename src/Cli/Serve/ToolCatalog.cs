@@ -274,19 +274,18 @@ internal static class ToolCatalog
             "analysis",
             "Which analysis to run.",
             [
-                // No `-a` and no `--set`: RunSparam's loop reads neither. It takes the first typed
-                // SParameterAnalysis and has no override path — src/Cli/RESOLVED.md records that as
-                // a capability gap in the two oldest verbs rather than one this table may paper over.
+                // No `-a`: RunSparam takes the first typed SParameterAnalysis — src/Cli/RESOLVED.md
+                // records that gap. `--set` it reads, through hb's own override path.
                 new("sparam", ["sparam"],
                     [new("path", true, "The .cnl to run.")],
-                    [Output, .. Narrowing,
+                    [Set, Output, .. Narrowing,
                      new("freq", "--freq", OptKind.Str, "Frequency sweep as start:stop:step (1GHz, 100MHz, 1e9).")],
                     "S-parameters. -o writes a Touchstone (.s1p … .s99p) or the cubes (.npy, .mat, .txt); "
                   + "an extension naming neither is refused."),
-                // Likewise no `--set`, and DcSettingsFrom's own three knobs rather than HB's.
+                // DcSettingsFrom's own three knobs rather than HB's, and the same `--set`.
                 new("dc", ["dc"],
                     [new("path", true, "The .cnl to run.")],
-                    [.. Narrowing, .. DcOptions],
+                    [Set, .. Narrowing, .. DcOptions],
                     "DC operating point."),
                 new("hb", ["hb"],
                     [new("path", true, "The .cnl to run.")],
@@ -646,10 +645,11 @@ internal static class ToolCatalog
                         new("format", "--format", OptKind.Str,
                             "Override the format the extension implies: svg, pdf or png."),
                         new("trace", "--trace", OptKind.StrRepeat,
-                            "One curve, as comma-separated key=value: cube=S,i=2,j=1,y=db. cube is the trace "
+                            "One curve, as comma-separated key=value: cube=S,i=2,j=1,y=db20. cube is the trace "
                           + "card's own shorthand, so a bracketed slice (cube=S[:,1,0]) and a transform "
                           + "(cube=mag(Pout)) work too; i and j pin the cube's i/j axes by PORT NUMBER and are "
-                          + "refused alongside a bracketed slice. y is db, db10, db20, mag, phase, real or imag. "
+                          + "refused alongside a bracketed slice. y is db20 (S, V, I), db10 (power), mag, phase, real or "
+                          + "imag; a bare db is refused as ambiguous. "
                           + "axis is left (default) or right. At least one is required — a plot with no trace is "
                           + "refused, not drawn empty."),
                         new("type", "--type", OptKind.Str,
@@ -887,18 +887,21 @@ internal static class ToolCatalog
             ]),
 
         new("reference",
-            "What may be written in circuitRF's documents: the reference pages, and the generated " +
-            "catalogue of every netlist primitive with its terminals and parameters. " +
+            "What may be written in circuitRF's documents: the reference pages, the generated " +
+            "catalogue of every netlist primitive (start from 'component-index'), and the " +
+            "technologies and materials that ship with circuitRF. " +
             "No arguments lists the topics and their sizes. Reads no file and writes nothing.",
             null, null,
             [
                 new("", [ "reference" ],
                     [
                         new("topic", false,
-                            "Which topic. Omit for the list. 'components' is the generated catalogue.",
+                            "Which topic. Omit for the list. 'component-index' lists every primitive in a line each; " +
+                            "'technologies' and 'shipped-materials' are what ships.",
                             Required: false),
                         new("type",  false,
-                            "With topic 'components', one primitive's .cnl type token — MLIN, SDD, FET_Statz.",
+                            "With topic 'components', one primitive's .cnl type token — MLIN, SDD, FET_Statz. " +
+                            "With 'analyses', one type= token; with 'technologies', one technology id.",
                             Required: false),
                     ],
                     [],

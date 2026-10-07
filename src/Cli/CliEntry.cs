@@ -56,6 +56,11 @@ public static class CliEntry
     /// <summary>Whether the device-worker log event has been subscribed. See Run.</summary>
     private static bool _workerLogHooked;
 
+    /// <summary>This invocation's <c>--kits</c> folders, as given. Read by <c>serve --print-config</c>,
+    /// which has to write them into the configuration it prints and never sees them as arguments,
+    /// because they are taken before dispatch.</summary>
+    internal static IReadOnlyList<string> KitFolders { get; private set; } = [];
+
     /// <summary>The <c>--kits</c> folder sets already given a resolver. See Run.</summary>
     private static readonly HashSet<string> _kitsAdded = [];
 
@@ -100,6 +105,7 @@ args = JsonRun.TakeFlags(args);
 // does in the GUI: point at a folder of installed kits and a netlist naming one resolves it. Taken
 // out of the argument list here so every command gets it without repeating the parsing.
 args = TakeKitFolders(args, out var kitFolders);
+KitFolders = kitFolders;
 
 // --trust-kit <dir> lets ONE run execute a kit's PCell scripts to rebuild its generated cells
 // (brief-generated-cells-2 R-gc2-2, cli.md §21). Taken here, like --kits, so every geometry verb
@@ -265,6 +271,7 @@ static int RunSparam(string[] args)
     string? input = null, output = null;
     bool    freqExplicit = false;
     double  start  = 1e9, stop = 10e9, step = 1e8;
+    var     sets   = new List<(string Name, string Expr)>();
 
     for (int i = 0; i < args.Length; i++)
     {
@@ -283,6 +290,9 @@ static int RunSparam(string[] args)
             case "-o" or "--output" when i + 1 < args.Length:
                 output = args[++i];
                 break;
+            case "--set" when i + 1 < args.Length:
+                if (!TryTakeSet("sparam", args[++i], sets, out int setRefusal)) return setRefusal;
+                break;
             default:
                 // An unrecognised flag is REFUSED, not dropped. See CliDiagnostics.RunUnknownOption:
                 // dropping it also fed its VALUE to the line below as the input path.
@@ -296,7 +306,7 @@ static int RunSparam(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("sparam", ".cnl"));
-        Console.Error.WriteLine("Usage: circuitrf sparam <file.cnl|.csch> [--freq start:stop:step] [-o out.sNp]");
+        Console.Error.WriteLine("Usage: circuitrf sparam <file.cnl|.csch> [--freq start:stop:step] [--set var=expr] [-o out.sNp]");
         return code;
     }
     JsonRun.InputPath = input;
@@ -310,6 +320,7 @@ static int RunSparam(string[] args)
         if (CircuitSource.ReadRunInput("sparam", input, out int kindRefusal) is not { } source)
             return kindRefusal;
         var (lib, tb) = source;
+        ApplySets(tb, sets);
         var nl = new Elaborator(lib).Elaborate(tb);
         var shown = PrintWarnings(nl);
 
@@ -436,9 +447,15 @@ static int RunDc(string[] args)
     // three flags it knows. So an unrecognised flag was neither read nor reported — `dc x.cnl --set
     // Vg=1` ran without the override and said nothing. Scanned here, where the whole argument list
     // is still in one piece.
+    var sets = new List<(string Name, string Expr)>();
     for (int i = 1; i < args.Length; i++)
     {
         if (!args[i].StartsWith('-')) return JsonRun.Fail(CliDiagnostics.RunMultipleInputs("dc", args[i]));
+        if (args[i] == "--set" && i + 1 < args.Length)
+        {
+            if (!TryTakeSet("dc", args[++i], sets, out int setRefusal)) return setRefusal;
+            continue;
+        }
         if (args[i] is not ("--max-iter" or "--maxiter" or "--dc-steps" or "--gmin"))
             return JsonRun.Fail(CliDiagnostics.RunUnknownOption("dc", args[i]));
         i++;   // its value
@@ -454,6 +471,7 @@ static int RunDc(string[] args)
         if (CircuitSource.ReadRunInput("dc", input, out int kindRefusal) is not { } source)
             return kindRefusal;
         var (lib, tb) = source;
+        ApplySets(tb, sets);
         var nl = new Elaborator(lib).Elaborate(tb);
         var shown = PrintWarnings(nl);
 
@@ -497,6 +515,31 @@ static int RunDc(string[] args)
         return result.Converged ? 0 : 2;
     }
     catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
+}
+
+// ── --set, for the verbs that read it in their own loops ─────────────────────
+
+/// <summary>One <c>--set name=expr</c>, split and recorded, or the verb's malformed-set refusal.
+/// The spelling and the refusal are <c>hb</c>'s, so every run verb takes the same thing.</summary>
+static bool TryTakeSet(string verb, string kvText, List<(string Name, string Expr)> sets, out int refusal)
+{
+    refusal = 0;
+    int eq = kvText.IndexOf('=');
+    if (eq <= 0) { refusal = JsonRun.Fail(CliDiagnostics.SetMalformed(verb, kvText)); return false; }
+    sets.Add((kvText[..eq].Trim(), kvText[(eq + 1)..].Trim()));
+    return true;
+}
+
+/// <summary>Applies each override to the test bench's own variable scope BEFORE elaboration, through
+/// the function <c>hb</c> uses — so anything derived from the variable re-derives, including a sweep
+/// whose bounds are written in terms of it.</summary>
+static void ApplySets(TestBench tb, List<(string Name, string Expr)> sets)
+{
+    foreach (var (name, expr) in sets)
+    {
+        HbCircuitRun.ApplySet(tb, name, expr);
+        Console.Error.WriteLine($"[circuitRF] set {name} = {expr}");
+    }
 }
 
 // ── Harmonic balance ──────────────────────────────────────────────────────────
@@ -2352,7 +2395,7 @@ static int PrintHelp()
     Console.WriteLine("  impedance <layout> [-o report.pdf]  (every trace's Z0 against a target, and its return path)");
     Console.WriteLine("  render  <path> -o out.svg  (a schematic, symbol or layout as a picture)");
     Console.WriteLine("  read    <path>         (a result file as cubes, or a document as its own text)");
-    Console.WriteLine("  plot    <result> -o out.svg --trace cube=S,i=2,j=1,y=db   (one picture, no .cdd)");
+    Console.WriteLine("  plot    <result> -o out.svg --trace cube=S,i=2,j=1,y=db20 (one picture, no .cdd)");
     Console.WriteLine("  find    <root>         (what is here: workspaces, cells, views, analyses)");
     Console.WriteLine("  reference [topic] [type]  (what a caller may WRITE: the prose pages, and the");
     Console.WriteLine("                          generated component catalogue. Takes no path.)");
@@ -2517,6 +2560,9 @@ static int PrintHelp()
     Console.WriteLine("                          stdout carries the protocol and nothing else, so");
     Console.WriteLine("                          progress and notes stay on stderr as always.");
     Console.WriteLine("                          --kits applies to every call the server serves.");
+    Console.WriteLine("  --print-config          start nothing: print the JSON an MCP client needs to");
+    Console.WriteLine("                          start this server (stdout), and the Claude Code");
+    Console.WriteLine("                          one-liner for it (stderr).");
     Console.WriteLine();
     Console.WriteLine("Options (any command):");
     Console.WriteLine("  --kits <dir>        folder of installed kits, for externally-provided");

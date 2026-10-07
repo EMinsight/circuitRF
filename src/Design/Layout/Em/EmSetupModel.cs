@@ -568,6 +568,31 @@ public sealed class EmSetup
         return set;
     }
 
+    /// <summary>
+    /// The planar-mesh fields this setup states away from their defaults that <c>Auto</c> DISCARDS,
+    /// as <c>(.cem key, stated value, value used)</c>. <see cref="PlanarMeshSettings.Resolved"/> is the
+    /// contract: with <c>Auto</c> on, cells per wavelength, edge mesh and edge cells are chosen for the
+    /// user and every other field survives. A stated value that is then not read is invisible in a
+    /// hand-written file — the mesh notes report the value USED, and nothing says why it differs — so
+    /// <c>check</c> names each one and the switch that makes it take effect.
+    /// </summary>
+    public IReadOnlyList<(string Key, string Stated, string Used)> AutoOverriddenMeshFields()
+    {
+        var m = PlanarMesh;
+        if (!m.Auto) return [];
+        var used = m.Resolved;
+        var list = new List<(string, string, string)>();
+        if (m.CellsPerWavelength != used.CellsPerWavelength)
+            list.Add(("CellsPerWavelength", Inv(m.CellsPerWavelength), Inv(used.CellsPerWavelength)));
+        if (m.EdgeMesh != used.EdgeMesh)
+            list.Add(("EdgeMesh", m.EdgeMesh ? "true" : "false", used.EdgeMesh ? "true" : "false"));
+        if (m.EdgeCells != used.EdgeCells)
+            list.Add(("EdgeCells", Inv(m.EdgeCells), Inv(used.EdgeCells)));
+        return list;
+
+        static string Inv(int v) => v.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     public EmSetup Clone() => new()
     {
         AnalysisKind           = AnalysisKind,

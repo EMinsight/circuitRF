@@ -98,7 +98,9 @@ may not shadow them.
     </tbody>
     <caption><code>phase</code> and the <code>.phase</code> cube transform both use <strong>degrees</strong>.
     <code>dB</code>/<code>dBm</code> are <a href="measurements.html">measurement</a> functions, not general
-    built-ins (and so are never unit suffixes).</caption>
+    built-ins (and so are never unit suffixes). So are <code>max_over(x, lo, hi)</code> and
+    <code>min_over(x, lo, hi)</code>, the <a href="measurements.html#spec">worst value over a band</a> —
+    unlike <code>min(a,b)</code>/<code>max(a,b)</code>, which compare two values.</caption>
   </table>
 
 ## Units {#units}

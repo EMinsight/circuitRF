@@ -17820,3 +17820,29 @@ three things a port is made of differently — `Operator::SnapBox2Mesh` snaps th
 nearest line, but `Operator_Ext_Excitation` excites every E edge whose Yee position lies geometrically inside the box, with
 no snap. Written as drawn, the element and the excitation could span different edges. A coordinate already on a line is
 written as drawn, so a port with nothing to snap is byte-identical; the port's own plane and its drive axis never snap.
+
+## A hand-written schematic's silent misreads are reported, and the format has a reference topic (2026-10-06)
+
+- **The failures, all found by an agent writing a `.csch` from the reference topics alone:** a component
+  whose type was keyed `"Kind"` read as `SymbolKind`'s first member — a **Resistor** — and simulated; a
+  `"Parameters"` object made the tolerant per-component parse fall back to an `Unknown` placeholder; a
+  `{"Name","Value"}` parameter reached the netlist QUOTED (`ReadExpression` returned the JSON node's
+  spelling); an analysis with `"Type": "sparam"` was dropped by `AnalysisSerialization.FromDto`'s
+  "unknown tag" arm; and a top-level `Measurements` list is read and saved but **never evaluated** (a run
+  evaluates `Meas` block rows — the list has been vestigial since the MEAS component landed).
+- **`SchematicLoadAudit` reports them; the reader is unchanged except `ReadExpression`.** A string
+  `Value` is now the expression unquoted — circuitRF never writes one, so nothing round-trips differently.
+  Everything else stays lenient (a newer file must open) and is said instead: `SchematicEditModel.
+  LoadFindings`, posted by the GUI on a fresh load (`WorkspaceViewModel.GetOrCreateSession`, skipping the
+  unknown-Symbol kind `ReportUnknownComponents` already names) and reported by `check` as
+  `check.schematic.{missing-symbol,unknown-symbol,wrong-shape}` (errors) and
+  `{unknown-field,analysis-skipped,measurements-not-evaluated}` (warnings).
+- **A JSON walk, not the layout audit's serializer capture.** The per-component parse catches the very
+  exceptions worth reporting, so only the raw JSON still shows what the author wrote; schematics are small
+  enough that a second pass costs nothing. The walk reads the DTO types by reflection with the reader's
+  case-insensitive matching. `EveryShippedSchematic_ReadsWithNoFindings` holds it to zero false positives
+  on every `.csch` under `examples/` and `testdata/`.
+- **Not done:** `ParseComponentTolerant` still records the REAL symbol name as `UnknownSymbolRawName` when
+  some other field was malformed, so the GUI's "unknown component type Capacitor" line is misleading in
+  that case; the audit's wrong-shape finding names the actual cause beside it. Run verbs do not refuse a
+  schematic with error findings — the same terms as `.clay`'s `LayoutLoadAudit`.

@@ -106,6 +106,12 @@ public sealed class Elaborator
         _voltageProbes.Clear();
 
         var netlist     = new ElaboratedNetlist();
+
+        // What reading the netlist decided (TestBench.ReadWarnings) — reported by the run like
+        // anything the run itself decides, so no consumer needs to know the list exists.
+        foreach (var w in tb.ReadWarnings) netlist.AddWarningOnce("read:" + w, w);
+        foreach (var n in tb.ReadNotes)    netlist.AddNoteOnce("read:" + n, n);
+
         var globalScope = BuildGlobalScope(tb);
         GlobalScope     = globalScope;
 

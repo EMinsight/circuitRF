@@ -253,6 +253,11 @@ public sealed partial class Evaluator
             // Cube-only: pin one axis BY NAME (measurements.md §3.2). Not a scalar function — it is
             // the shape-independent counterpart of a positional slice.
             "at"        => EvalAt(cl, scope),
+            // Band reductions (measurements.md "Spec checks"): the worst value of a real quantity over a
+            // RANGE of one axis — the frequency band a spec line names. The axis is reduced away; every
+            // other axis (a parametric sweep, say) is kept, so a swept run gives one worst case per point.
+            "max_over"  => EvalReduceOver(cl, scope, "max_over", max: true),
+            "min_over"  => EvalReduceOver(cl, scope, "min_over", max: false),
             "dB"        => EvalDB20(cl, scope),     // 20·log10|z|
             "dB20"      => EvalDB20(cl, scope),     // alias: 20·log10|z|
             "dB10"      => EvalDB10(cl, scope),     // 10·log10|z|
@@ -768,6 +773,94 @@ public sealed partial class Evaluator
         {
             throw new ExpressionException($"at(): {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// <c>max_over(x, lo, hi [, "axis"])</c> / <c>min_over(…)</c>: the largest (smallest) value of
+    /// <paramref name="cl"/>'s first argument over the points of one axis whose values lie in
+    /// <c>[lo, hi]</c>, inclusive. The axis defaults to <c>freq</c>, or to a rank-1 cube's only axis.
+    ///
+    /// <para>REAL values only. The order of complex numbers is not defined, and quietly reducing over
+    /// one part of them would answer a different question — so a complex cube is refused, naming the
+    /// functions that make it real (<c>dB</c>, <c>mag</c>, <c>real</c>). A range holding no grid point
+    /// is refused with the axis's extent rather than returning nothing: an empty band in a spec check
+    /// is a mistyped limit, and a reduction over nothing has no worst value.</para>
+    ///
+    /// <para>The ends are inclusive with a relative tolerance of 1e-9, so a band edge that IS a grid
+    /// point — 3 GHz on a 0.1 GHz step — is inside it however the grid's floating-point values came
+    /// out. A NaN in the band propagates (Math.Max/Min do), so a bad point is never hidden behind a
+    /// good one.</para>
+    /// </summary>
+    private Value EvalReduceOver(CallExpr cl, Scope scope, string name, bool max)
+    {
+        if (cl.Args.Length is not (3 or 4)) throw new ArityException(name, 3, cl.Args.Length);
+
+        var v = EvalExpr(cl.Args[0], scope);
+        var loVal = EvalExpr(cl.Args[1], scope);
+        var hiVal = EvalExpr(cl.Args[2], scope);
+        if (loVal.Kind != ValueKind.Real || hiVal.Kind != ValueKind.Real)
+            throw new ExpressionException($"{name}(): the range ends must be numbers, e.g. {name}(x, 0.1GHz, 3GHz).");
+        double lo = loVal.AsReal(), hi = hiVal.AsReal();
+        if (lo > hi)
+            throw new ExpressionException($"{name}(): the range is empty — {lo:G6} is above {hi:G6}. Give the low end first.");
+
+        if (v.Kind != ValueKind.Cube)
+            throw new ExpressionException(
+                $"{name}(): this value is a single number, so it has no axis to reduce over.");
+        var cube = v.AsCube();
+        if (cube.DataKind != RfCore.Data.DataKind.Real)
+            throw new ExpressionException(
+                $"{name}(): the values are complex, which have no order. Reduce a real quantity: dB(…), mag(…) or real(…) of it.");
+
+        string axes = string.Join(", ", cube.Axes.Select(a => a.Name));
+        string axisName;
+        if (cl.Args.Length == 4)
+        {
+            var a = EvalExpr(cl.Args[3], scope);
+            axisName = a.Kind == ValueKind.String ? a.AsString() : a.ToString()!;
+        }
+        else if (cube.Axes.Any(a => a.Name == "freq")) axisName = "freq";
+        else if (cube.Rank == 1)                      axisName = cube.Axes[0].Name;
+        else
+            throw new ExpressionException(
+                $"{name}(): this value has no 'freq' axis; name the axis to reduce as a fourth argument. Its axes are: {axes}.");
+
+        RfCore.Data.Axis axis;
+        try { axis = cube.Axis(axisName); }
+        catch (ArgumentException)
+        {
+            throw new ExpressionException($"{name}(): no axis named '{axisName}'. Its axes are: {axes}.");
+        }
+
+        double tol = 1e-9 * Math.Max(Math.Abs(lo), Math.Abs(hi));
+        double[]? acc = null;
+        RfCore.Data.Axis[]? rest = null;
+        for (int k = 0; k < axis.Length; k++)
+        {
+            double x = axis.Values[k];
+            if (x < lo - tol || x > hi + tol) continue;
+
+            var slice = cube.At(axisName, k);
+            double[] values = slice.RealValues;
+            if (acc is null)
+            {
+                acc  = values;
+                rest = [.. slice.Axes];
+                continue;
+            }
+            for (int e = 0; e < acc.Length; e++)
+                acc[e] = max ? Math.Max(acc[e], values[e]) : Math.Min(acc[e], values[e]);
+        }
+
+        if (acc is null)
+        {
+            string extent = $"{axis.Values.Min():G6} to {axis.Values.Max():G6} {axis.Unit}".TrimEnd();
+            throw new ExpressionException(
+                $"{name}(): no '{axisName}' point lies in [{lo:G6}, {hi:G6}]; the axis runs from {extent}.");
+        }
+
+        if (rest!.Length == 0) return new Value(acc[0]);
+        return new Value(new RfCore.Data.DataCube(rest, acc) { Unit = cube.Unit });
     }
 
     private Value EvalMag(CallExpr cl, Scope scope)

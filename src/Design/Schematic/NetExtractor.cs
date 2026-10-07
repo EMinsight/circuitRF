@@ -669,7 +669,7 @@ public static class NetExtractor
                 Netlist read;
                 if (path.EndsWith(".cnl", StringComparison.OrdinalIgnoreCase))
                 {
-                    var (library, bench) = CnlReader.ReadFile(path);
+                    var (library, bench) = CnlTechnologyBinding.ReadFile(path);
                     read = new Netlist(library, bench, []);
                 }
                 else read = LooksLikeSpice(path) ? ReadSpiceNetlist(path) : ReadKitNetlists(path);

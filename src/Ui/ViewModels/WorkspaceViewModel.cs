@@ -11849,6 +11849,16 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var (editModel, _, _) = SchematicPersistence.LoadFromFile(key);
         ReportUnknownComponents(editModel, key);
 
+        // What the read ignored, misread or dropped (SchematicLoadAudit) — once per fresh load, the
+        // same sentences `circuitrf check` reports. An unknown Symbol is skipped here because
+        // ReportUnknownComponents has just named it.
+        foreach (var finding in editModel.LoadFindings)
+        {
+            if (finding.Kind == SchematicLoadFindingKind.UnknownSymbol) continue;
+            if (finding.IsError) Messages.Error(finding.Message, key);
+            else Messages.Warning(finding.Message, key);
+        }
+
         // SL3 R-sl3-9 — scanned BEFORE the session is built, because the scan is what sets the marks
         // the first render reads, and reported here so each affected cell is said once per fresh
         // load rather than once per re-open.
