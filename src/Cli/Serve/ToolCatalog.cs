@@ -402,12 +402,16 @@ internal static class ToolCatalog
                     "A cell folder and one empty-but-valid file per view."),
             ]),
 
+        // `import` and `convert` are two tools because they are two verbs. They were one tool with a
+        // `what` selector, which put every EXPORT — a .clay to GDSII, Gerber, DXF, STEP — under a tool
+        // named and described as bringing artwork IN, where an agent looking for an export does not
+        // look. Both are single-mode now, like `render`.
         new("import",
-            "Bring foreign artwork or a component in: a part as a cell, or one interchange format converted to another.",
-            "what",
-            "Which import.",
+            "Bring a component in as a cell: a footprint and its symbol, from a component file or folder. "
+          + "To convert artwork between formats, including exporting a layout, use convert.",
+            null, null,
             [
-                new("part", ["import", "part"],
+                new("", ["import", "part"],
                     [new("path", true, "The component file or folder.")],
                     [
                         new("into",       "--into",        OptKind.Path, "The workspace the cell is created in."),
@@ -419,8 +423,16 @@ internal static class ToolCatalog
                         Summary,
                     ],
                     "A footprint and its symbol, as a cell."),
-                new("convert", ["convert"],
-                    [new("path", true, "The file or folder to import. A folder is a Gerber file set.")],
+            ]),
+
+        new("convert",
+            "Convert artwork from one format to another, in either direction: export a layout (.clay) to "
+          + "GDSII, Gerber, DXF, a .kicad_pcb board, STEP or glTF, or import the interchange formats to .clay. Formats come from the paths; "
+          + "from and to override.",
+            null, null,
+            [
+                new("", ["convert"],
+                    [new("path", true, "The file or folder to convert. A folder is a Gerber file set.")],
                     [
                         Output,
                         new("from",       "--from",        OptKind.Str,  "The source format when the path does not say: clay, gdsii, dxf, gerber, board."),

@@ -1301,11 +1301,17 @@ was checked rather than assumed.
 
 ### 11.3 The tool surface
 
-**Fourteen tools, and the count is the point** (R-aut-9). A client that discovers tools up front
+**Sixteen tools, and the count is the point** (R-aut-9). A client that discovers tools up front
 carries every description for the whole session whether or not it calls one, so the surface is a
-standing cost paid on every interaction. Thirteen come out of `ToolCatalog`'s one table; the
-fourteenth, `batch`, is advertised beside them by `HistoryBatch` because it is the only one that is
+standing cost paid on every interaction. Fifteen come out of `ToolCatalog`'s one table; the
+sixteenth, `batch`, is advertised beside them by `HistoryBatch` because it is the only one that is
 not a command line.
+
+**`import` and `convert` are two tools because they are two verbs** (2026-10-06). They were one,
+`import` with a `what` selector, and that filed every EXPORT — a `.clay` to GDSII, Gerber, DXF,
+STEP — under a tool whose name and description say artwork comes IN; the agent docs ended up telling
+an agent to export "with `import`". Saving a tool is worth nothing if the capability it holds cannot
+be found by its name.
 
 | Tool | Becomes |
 |---|---|
@@ -1313,12 +1319,14 @@ not a command line.
 | `check` | `check` |
 | `explain` | `explain`, including RND-3's `--cells` / `--layers` / `--extents` and `--footprints` |
 | `create` | `new workspace` / `new cell` |
-| `import` | `import part` / `convert` |
+| `import` | `import part` |
+| `convert` | `convert` — one import and one export between any two formats, so an export is a `convert` |
 | `render` | `render` — **one tool over every document kind**, as the verb is (R-rnd0-4/R-rnd5-2). The kind comes from the path, so there is no selector; making the view type one would advertise three modes where there is one verb |
 | `netlist` | `netlist` — the extraction Simulate performs, as a document |
 | `plot` | `plot` — one picture out of a result file, with no `.cdd` to author first |
 | `find` | `find` — what is here: workspaces, cells, views, analyses |
 | `lvs` | `lvs` — one tool over every document kind, as the verb is. **The capability an out-of-process author needs most**: an agent that wrote a `.clay` cannot look at the screen |
+| `impedance` | `impedance` — a drawn layout's traces, or (`tech`) the line calculator with nothing drawn |
 | `read` | `read` |
 | `history` | `history checkpoint` / `list` / `restore` (RC-5, `revision-control.md` §5.3d) |
 | `reference` | `reference` — the same bytes the resources below serve, for a client that does not surface resources to the model |

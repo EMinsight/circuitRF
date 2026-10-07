@@ -399,19 +399,18 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             (mineDir, "<DEST>"), (cliDir, "<DEST>"));
     }
 
-    /// <summary><c>import</c>, in its <c>convert</c> mode — an interchange round the GUI's own
-    /// File ▸ Export drives too.</summary>
+    /// <summary><c>convert</c> — an interchange round the GUI's own File ▸ Export drives too.</summary>
     [Fact]
-    public void Import_ThroughTheServer_IsTheDocumentTheCliWrites()
+    public void Convert_ThroughTheServer_IsTheDocumentTheCliWrites()
     {
         string clay    = LayoutFixture();
         string mineOut = Path.Combine(Dir("mine"), "line.gds");
         string cliOut  = Path.Combine(Dir("theirs"), "line.gds");
 
         using var server = Start(Root);
-        string mine = server.Call("import", new JsonObject
+        string mine = server.Call("convert", new JsonObject
         {
-            ["what"] = "convert", ["path"] = clay, ["output"] = mineOut,
+            ["path"] = clay, ["output"] = mineOut,
         });
 
         AssertSameDocument(mine, Cli("convert", clay, "-o", cliOut, "--json"),
@@ -615,9 +614,9 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             server.Call("check",   new JsonObject { ["path"] = workspace });
             server.Call("explain", new JsonObject { ["path"] = csch });
             server.Call("create",  new JsonObject { ["what"] = "workspace", ["path"] = Path.Combine(Dir("more"), "B") });
-            server.Call("import",  new JsonObject
+            server.Call("convert", new JsonObject
             {
-                ["what"] = "convert", ["path"] = clay, ["output"] = Path.Combine(Dir("more"), "line.gds"),
+                ["path"] = clay, ["output"] = Path.Combine(Dir("more"), "line.gds"),
             });
             server.Call("read",    new JsonObject { ["path"] = csch });
             // RND-5's new capabilities, on the channel that would break first: a renderer that wrote
@@ -850,7 +849,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         //
         // `impedance` is the Trace Impedance Analysis — a board review an agent can run on artwork it
         // did not draw.
-        Assert.Equal(["run", "check", "explain", "create", "import", "render", "netlist", "plot",
+        Assert.Equal(["run", "check", "explain", "create", "import", "convert", "render", "netlist", "plot",
                       "find", "lvs", "impedance", "read", "history", "reference", "batch"],
                      tools);
 
@@ -923,8 +922,10 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["explain/"]          = ["path"],
             ["create/workspace"]  = ["path"],
             ["create/cell"]       = ["workspace", "name"],
-            ["import/part"]       = ["path"],
-            ["import/convert"]    = ["path"],
+            // `import` and `convert` were one tool with a `what` selector until an export was found
+            // filed under "import"; both are single-mode now.
+            ["import/"]           = ["path"],
+            ["convert/"]          = ["path"],
             ["read/"]             = ["path"],
             // AUT-11's three. Single-mode for the same reason `render` is: each takes a path whose
             // kind it infers, so there is no selector to key on.

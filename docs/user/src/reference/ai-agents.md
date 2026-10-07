@@ -153,7 +153,7 @@ The order below keeps every expensive step behind a cheap check.
 5. **Write the EM setup** (`.cem`) and run `check` on it. Its notes report what the solver will mesh
    and how large the problem is. See the next section.
 6. **Run EM** once the size is acceptable, then `read` the Touchstone and compare it with step 3.
-7. **Export** the artwork with `import`, for example to GDSII.
+7. **Export** the artwork with `convert`, for example a `.clay` in and a `.gds` out.
 
 ## EM runs: check the cost first {#em}
 

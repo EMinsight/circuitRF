@@ -2601,7 +2601,7 @@ flow that works are in [Designing with an AI agent](ai-agents.html).
 next one. Nothing is lost meanwhile: every tool is a verb, and the same verbs answer from a shell with
 the same documents.
 
-**Fifteen tools, and each is a verb you already have:**
+**Sixteen tools, and each is a verb you already have:**
 
 | Tool | Runs |
 |---|---|
@@ -2609,7 +2609,8 @@ the same documents.
 | `check` | `check` |
 | `explain` | `explain`, including `--cells`, `--layers`, `--extents` and `--footprints` |
 | `create` | `new workspace` or `new cell` |
-| `import` | `import part` or `convert` |
+| `import` | `import part` — a component, as a cell |
+| `convert` | `convert` — artwork between formats, in either direction, so exporting a layout is a `convert` |
 | `render` | `render` — one tool over every document kind, as the verb is |
 | `read` | `read` |
 | `netlist` | `netlist` — the extraction a schematic runs as |

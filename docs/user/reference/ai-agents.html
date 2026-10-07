@@ -212,7 +212,7 @@ to compare each drawn line's Z0 with what the circuit model assumed.</li>
 <li><strong>Write the EM setup</strong> (<code>.cem</code>) and run <code>check</code> on it. Its notes report what the solver will mesh
 and how large the problem is. See the next section.</li>
 <li><strong>Run EM</strong> once the size is acceptable, then <code>read</code> the Touchstone and compare it with step 3.</li>
-<li><strong>Export</strong> the artwork with <code>import</code>, for example to GDSII.</li>
+<li><strong>Export</strong> the artwork with <code>convert</code>, for example a <code>.clay</code> in and a <code>.gds</code> out.</li>
 </ol>
 <h2 id="em">EM runs: check the cost first</h2>
 <p>An EM run is the one step that can take hours. Before starting one, the agent should run <code>check</code> on
