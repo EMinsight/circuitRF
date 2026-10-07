@@ -158,6 +158,20 @@ public sealed class CnlReader
             return true;
         }
 
+        // Tuning and optimization: "tune …", "preset …", "goal …", "optimize …" (TuningDirectiveText).
+        // A line whose next token is '=' is an ASSIGNMENT to a variable that happens to share the
+        // word ("tune = 3"), never a directive.
+        int firstSpace = line.IndexOfAny([' ', '\t']);
+        string firstWord = firstSpace < 0 ? line : line[..firstSpace];
+        if (TuningDirectiveText.IsKeyword(firstWord)
+            && !(firstSpace >= 0 && line[firstSpace..].TrimStart().StartsWith('=')))
+        {
+            var tb   = _currentCell is null ? _testBench! : ThrowDirectiveInCell(line);
+            var rest = firstSpace < 0 ? "" : line[firstSpace..].Trim();
+            TuningDirectiveText.Read(firstWord, StripInlineComment(rest), tb, tb.ReadWarnings, _lineNumber);
+            return true;
+        }
+
         // Net-label provenance: "labelednets name1 name2 ..."
         if (line.StartsWith("labelednets ", StringComparison.Ordinal) ||
             line.Equals("labelednets", StringComparison.Ordinal))

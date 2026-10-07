@@ -3380,3 +3380,17 @@ whose values lie in `[lo, hi]`, and keep every other axis.
   literals, with joined lists computed into a local first, so no allowlist line ends in whitespace.
 
 Gate: `tests/Core.Tests/Expressions/BandReductionTests.cs`.
+
+## Tuning directives in the `.cnl` reader (TO-1, 2026-10-07)
+
+- **`tune`, `preset`, `goal`, `optimize` are recognised only as the line's first word with no `=` after
+  it**, so `tune = 3` is still an assignment to a variable called `tune`. The four are refused inside a
+  `define` block, as `analysis` and `measure` are.
+- **Unknown keys on these lines are a WARNING and are KEPT** (`Extra` maps, written back), unlike an
+  `analysis` line's, which are refused. A later version's key — a yield tolerance — must survive a round
+  trip through this one; the overview's §5 asks for exactly that.
+- **`timelimit` takes `s`, `ms`, `min`, `h`, local to `TuningDirectiveText`.** `Units` has no time units,
+  and adding a bare `s` to its table would make a bare `s` after an instance-line value a unit instead of
+  a net name — the class of bug the root notes list under "a bare word after a key=value param".
+- **A goal line's own words are never units**: after `hi=2`, a following `in` is the goal type, not
+  inches. The reference page says so (spell inches `inch` there).

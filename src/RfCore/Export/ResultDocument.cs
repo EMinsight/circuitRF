@@ -1271,7 +1271,51 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ExplainEm3dJson?                    Em3d = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<ExplainSolvedJson>?   Solved = null);
+        IReadOnlyList<ExplainSolvedJson>?   Solved = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainTunablesJson?                Tunables = null);
+
+    /// <summary>
+    /// <c>explain --tunables</c> — every value of a schematic that can be tuned, at any depth
+    /// (docs/design/tuning-optimization.md), and the keys its tuning setup names that resolve to nothing.
+    /// </summary>
+    public sealed record ExplainTunablesJson(
+        IReadOnlyList<ExplainTunableJson> Tunables,
+        IReadOnlyList<string>             Unresolved);
+
+    /// <summary>One tunable.</summary>
+    /// <param name="Key">The identity a tune line, a preset and the CLI use: <c>R1.R</c>, <c>Wline</c>, <c>DUT:R3.R</c>.</param>
+    /// <param name="Location"><c>top</c>, or the cell and how many instances share it: <c>DUT · ×2</c>.</param>
+    /// <param name="Kind"><c>parameter</c>, <c>variable</c> or <c>cellParameter</c> (an instance's own declared parameter).</param>
+    /// <param name="Value">The value as the design holds it.</param>
+    /// <param name="Number">The number in <paramref name="Unit"/>.</param>
+    /// <param name="IsDefault">An inherited cell parameter: the value is the cell's default.</param>
+    /// <param name="ReadOnly">Why Push cannot write it; absent when it can.</param>
+    /// <param name="Disabled">Why it cannot be moved right now; absent when it can.</param>
+    /// <param name="Min">The entry's min when the setup has one, else the default range's.</param>
+    /// <param name="Max">The entry's max, else the default range's.</param>
+    /// <param name="RangeGuessed">No entry, and the value is zero, so the default range is a guess.</param>
+    /// <param name="Tune">The setup offers it in the Tuning window.</param>
+    /// <param name="Opt">The setup varies it in the optimizer.</param>
+    public sealed record ExplainTunableJson(
+        string  Key,
+        string  Location,
+        int     InstanceCount,
+        string  Kind,
+        string  Value,
+        double  Number,
+        string  Unit,
+        bool    Integer,
+        bool    IsDefault,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? ReadOnly,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Disabled,
+        string  Min,
+        string  Max,
+        bool    RangeGuessed,
+        bool    Tune,
+        bool    Opt);
 
     /// <summary>
     /// brief-em3d-98 R-em3d98-8 — one (setup, solver leg) of a 3D view: whether it has a result of the model as it is now

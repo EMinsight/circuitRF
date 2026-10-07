@@ -11,6 +11,7 @@ using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Footprints;
 using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.Layout.Interchange.Gdstk;
+using CircuitRF.Design.Optimization;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Smith;
@@ -524,7 +525,18 @@ internal static class Check
         }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 
-        Elaborate(path, tb, lib, f);
+        // The tuning setup is checked against the schematic's own catalog — its VAR rows, its cells'
+        // folders — rather than the bare netlist's, so a key the Tuning window would not offer is
+        // reported here in the same words (TuningValidator).
+        TunableCatalog? catalog = null;
+        if (tb.Tuning is { IsEmpty: false })
+        {
+            string? cws = DocumentKinds.AncestorCws(Path.GetFullPath(path));
+            try { catalog = TunableCatalog.Discover(model, DiskCellResolver.Instance, cws is null ? null : Path.GetDirectoryName(cws)); }
+            catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
+        }
+
+        Elaborate(path, tb, lib, f, catalog);
     }
 
     private static void CheckLayout(string path, Findings f, TechnologyCache cache)
@@ -1265,14 +1277,21 @@ internal static class Check
     /// exactly the same <c>TestBench</c> and <c>Library</c> on the way (AUT-2), so checking it
     /// differently would mean checking something the run verbs never see.
     /// </summary>
-    private static void Elaborate(string path, TestBench tb, Library lib, Findings f)
+    private static void Elaborate(string path, TestBench tb, Library lib, Findings f, TunableCatalog? catalog = null)
     {
         ElaboratedNetlist nl;
         try { nl = new Elaborator(lib).Elaborate(tb); }
-        catch (Exception ex) { f.Add(CliDiagnostics.CheckElaborationFailed(path, ex.Message)); return; }
+        catch (Exception ex)
+        {
+            f.Add(CliDiagnostics.CheckElaborationFailed(path, ex.Message));
+            CheckTuning(path, tb, lib, null, catalog, f);
+            return;
+        }
 
         using (nl)
         {
+            CheckTuning(path, tb, lib, nl, catalog, f);
+
             foreach (var w in nl.Warnings) f.Add(CliDiagnostics.CheckElaborationWarning(path, w));
             foreach (var n in nl.Notes)    f.Add(CliDiagnostics.CheckElaborationNote(path, n));
 
@@ -1308,5 +1327,18 @@ internal static class Check
                     f.Add(CliDiagnostics.CheckNoRunnableAnalysis(path, why));
             }
         }
+    }
+
+    /// <summary>
+    /// The tuning setup's rules (TuningValidator) — the same code the Tuning and Optimizer windows
+    /// refuse on, so a setup that passes here is one the application accepts.
+    /// </summary>
+    private static void CheckTuning(string path, TestBench tb, Library lib, ElaboratedNetlist? nl,
+                                    TunableCatalog? catalog, Findings f)
+    {
+        if (tb.Tuning is not { IsEmpty: false }) return;
+        catalog ??= TunableCatalog.FromNetlist(tb, lib);
+        foreach (var finding in TuningValidator.Validate(tb, catalog, nl))
+            f.Add(CliDiagnostics.CheckTuningFinding(path, finding));
     }
 }

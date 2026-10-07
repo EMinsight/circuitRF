@@ -1,0 +1,84 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
+using CircuitRF.Core.Design;
+using CircuitRF.Core.Expressions;
+
+namespace CircuitRF.Design.Optimization;
+
+/// <summary>
+/// What counts as a plain number for tuning (overview D1) — <c>47</c>, <c>47 pF</c>, <c>47pF</c>,
+/// <c>1.2e-9</c> — and the arithmetic on one: its value in its own unit, its default range, and how
+/// a value is spelled back as the text a schematic holds.
+/// </summary>
+public static class TunableValue
+{
+    private static readonly Regex _plain = new(
+        @"^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*([A-Za-zΩµμ%°]+)?\s*$",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// Reads value text as a plain number with an optional recognized unit. <paramref name="number"/>
+    /// is in that unit (47 for <c>47 pF</c>), <paramref name="unit"/> its engine spelling (<c>pF</c>, or
+    /// "" for none), and <paramref name="si"/> the number in base SI. False for anything else — an
+    /// expression, a variable reference, a string.
+    /// </summary>
+    public static bool TryParse(string text, out double number, out string unit, out double si)
+    {
+        number = 0; unit = ""; si = 0;
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        var m = _plain.Match(text);
+        if (!m.Success) return false;
+        if (!double.TryParse(m.Groups[1].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out number))
+            return false;
+        if (m.Groups[2].Success)
+        {
+            unit = UnitNormalizer.ToEngineUnit(m.Groups[2].Value);
+            if (!Units.IsRecognizedUnit(unit)) return false;
+        }
+        si = number * (unit.Length == 0 ? 1.0 : Units.Scale(unit) ?? 1.0);
+        return true;
+    }
+
+    /// <summary>The value text an expression and its unit column make together — <c>47 pF</c>.</summary>
+    public static string Text(string expression, string? unit)
+        => string.IsNullOrEmpty(unit) ? expression.Trim() : $"{expression.Trim()} {unit}";
+
+    /// <summary>
+    /// Splits value text into the expression and unit a schematic row (or a netlist assignment) would
+    /// hold — <c>47 pF</c> → (<c>47</c>, <c>pF</c>). A value written with no unit keeps
+    /// <paramref name="existingUnit"/>, because typing <c>47</c> into a row whose unit column says pF
+    /// means 47 pF.
+    /// </summary>
+    public static (string Expression, string? Unit) Split(string text, string? existingUnit)
+    {
+        var (expr, unit) = Units.LiftInlineUnit(text.Trim());
+        return (expr, unit ?? (string.IsNullOrEmpty(existingUnit) ? null : existingUnit));
+    }
+
+    /// <summary>
+    /// The range a tunable gets when it is first activated (overview D4), in its own unit: a positive
+    /// value v → [v/2, 2v]; a negative one → [v − |v|/2, v + |v|/2]; zero → [0, 1], which is a guess
+    /// and says so.
+    /// </summary>
+    public static (string Min, string Max, bool Guessed) DefaultRange(double number, string unit)
+    {
+        if (number == 0) return (Format(0, unit), Format(1, unit), true);
+        return number > 0
+            ? (Format(number / 2, unit), Format(number * 2, unit), false)
+            : (Format(number * 1.5, unit), Format(number * 0.5, unit), false);
+    }
+
+    /// <summary>The effective scale of a range: <see cref="TuneScale.Auto"/> is log when min &gt; 0
+    /// and max/min ≥ 10.</summary>
+    public static TuneScale Effective(TuneScale scale, double min, double max)
+        => scale != TuneScale.Auto ? scale : min > 0 && max / min >= 10 ? TuneScale.Log : TuneScale.Lin;
+
+    /// <summary>A number in a unit, spelled the way a schematic row holds it.</summary>
+    public static string Format(double number, string unit)
+    {
+        // G15, not R: a default bound is arithmetic on the value (×1.5 of -0.1 is -0.15000000000000002
+        // in binary), and fifteen digits is more than any row is typed with.
+        string n = number.ToString("G15", CultureInfo.InvariantCulture);
+        return unit.Length == 0 ? n : $"{n} {unit}";
+    }
+}

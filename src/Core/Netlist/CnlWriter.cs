@@ -85,6 +85,12 @@ public static class CnlWriter
                 sb.AppendLine($"measure {m.Name} = {m.Expression}");
         }
 
+        // Tuning and optimization: tune, preset, goal, optimize (TuningDirectiveText). Nothing at all
+        // when the testbench has no setup, so a netlist written before these existed is unchanged.
+        if (tb.Tuning is { IsEmpty: false } tuning)
+            foreach (var line in TuningDirectiveText.Write(tuning))
+                sb.AppendLine(line);
+
         // Raw directives — verbatim
         foreach (var raw in tb.RawDirectives)
             sb.AppendLine($"{raw.Kind} {raw.RawLine}");
@@ -103,7 +109,8 @@ public static class CnlWriter
         => tb.Instances.Count > 0 || HasDirectives(tb);
 
     private static bool HasDirectives(TestBench tb)
-        => tb.Analyses.Count > 0 || tb.Measurements.Count > 0 || tb.RawDirectives.Count > 0;
+        => tb.Analyses.Count > 0 || tb.Measurements.Count > 0 || tb.RawDirectives.Count > 0
+        || tb.Tuning is { IsEmpty: false };
 
     // ── Cell-block emission ───────────────────────────────────────────────────
 

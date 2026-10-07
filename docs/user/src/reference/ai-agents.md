@@ -118,6 +118,7 @@ usually needs them:
 | `technologies` | before creating the workspace | every shipped technology: its id, stackup and materials |
 | `netlist` | before the first `.cnl` | the instance line, analysis and measurement syntax |
 | `analyses` | before declaring any analysis | every `type=` and every key it accepts, with defaults |
+| `tuning`, `goals` | before writing a tune, preset, goal or optimize line | which values can vary and how they are named; the goal grammar; each with a complete worked example |
 | `component-index` | when choosing parts | every component type in one line each: nets, category, name |
 | `components <TYPE>` | before using a component type | its nets, terminals and parameters |
 | `units`, `expressions` | when writing values or measurements | SI suffixes, functions, conditionals |

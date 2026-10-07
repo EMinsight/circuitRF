@@ -1788,7 +1788,8 @@ What each finding means, and the limits of the causality measurement, are on the
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain &lt;path&gt; [--expr "&lt;expression&gt;"] [--set var=expr]
                             [--analysis [&lt;name&gt;]] [--ref &lt;relative-ref&gt;]
                             [--cells [--all]] [--layers] [--extents] [--view &lt;name&gt;]
-                            [--footprints] [--setup &lt;name&gt;] [--object &lt;name&gt;] [--look]</code></pre>
+                            [--footprints] [--setup &lt;name&gt;] [--object &lt;name&gt;] [--look]
+                            [--tunables]</code></pre>
 
 `check` answers "is something wrong". `explain` answers the question that is **not** a failure: which
 technology did this layout get, which analysis would actually run, what does this expression evaluate
@@ -2040,6 +2041,29 @@ places is how that goes unread.
 it never reaches the simulator. Asking the netlist about it would report every design as stating
 none.</p>
 </div>
+
+
+<h3 id="explain-tunables"><code>--tunables</code> — which values can be tuned?</h3>
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Bench/schematic/Bench.csch --tunables
+<span class="output">Tunables (5):
+  R1.R      top       50 Ohm          10 Ohm .. 200 Ohm  [tune; opt]
+  X1.Rbias  top       1 kOhm          500 Ohm .. 2 kOhm  [tune]
+  Rload     top       50 Ohm          25 Ohm .. 100 Ohm  [opt]
+  DUT:R3.R  DUT · ×2  10 Ohm          5 Ohm .. 50 Ohm
+  DUT:R5.R  DUT · ×2  22 Ohm          11 Ohm .. 44 Ohm  [read-only: it belongs to another workspace]</span></code></pre>
+
+Every value of the design that can be tuned or optimized, at any depth, with the **key** a `tune` line
+or a preset names it by. A value is tunable when it is written as a plain number with an optional
+unit; an expression is not, and the variable it reads is. A value inside a cell is named
+`Cell:Instance.Parameter` and moves in **every** instance of that cell — the second column says how
+many share it. A sub-circuit instance's own parameters are listed once per instance (`X1.Rbias`), even
+when the instance is using the cell's default.
+
+The range is the one the schematic's tuning setup gives the value, or the range it would get when you
+first tune it. A value Push cannot write — in a library cell, or another workspace — says why; it can
+still be tuned and optimized. Keys the setup names that match nothing in the design are listed last,
+and ignored.
 
 <h3 id="explain-extents"><code>--extents</code> — how big is it?</h3>
 
@@ -2356,6 +2380,8 @@ direction and a 4 kB page and an 84 kB one should not look alike:
   data-display       12.8 kB  The .cdd data-display format
   technology          6.1 kB  The .ctech technology format
   analyses            8.5 kB  Analysis directives
+  tuning              3.8 kB  Tuning directives
+  goals               2.7 kB  Optimization goals
   components         91.3 kB  Component types
 
   circuitrf reference components &lt;TYPE&gt;   one primitive

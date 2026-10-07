@@ -79,7 +79,7 @@ public sealed record AnalysisDirectiveSpec(
 /// <c>Expr</c>/<c>Name</c>/<c>Path</c> suffix, so the rule that maps one to the other is three
 /// string operations and cannot fall out of step the way a hand-written table of ~60 pairs would.</para>
 /// </summary>
-public static class AnalysisDirectiveSchema
+public static partial class AnalysisDirectiveSchema
 {
     /// <summary>Keys legal on every directive regardless of type.</summary>
     private static readonly AnalysisDirectiveKey[] _universal =

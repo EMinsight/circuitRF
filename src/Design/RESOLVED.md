@@ -18402,3 +18402,25 @@ open's `RegenerateAll` repoints existing layouts to the new cell.
 fingerprints every built-in generator's default artwork (no technology) against the version it was
 recorded at; a changed fingerprint at an unchanged version fails and prints the line to paste after
 bumping. Verified by removing pin 4 again at version 2: it fails.
+
+## Tuning TO-1: the model lives in src/Core; the catalog offers only what the drawing holds (2026-10-07)
+
+- **The tuning model (`TuningSetup` and its parts) is in `src/Core/Design`, not `src/Design/Optimization`**
+  where the brief first put it. A `TestBench` carries it and the `.cnl` reader/writer are in `src/Core`,
+  which cannot reference this project. The catalog, the in-memory overrides and the `check` rules are
+  here, in `Optimization/`.
+- **Extraction injects parameters a drawing never stated.** A microstrip's `H`, `T`, `Er`, `Sigma`,
+  `TanD` come from the workspace technology (`MicrostripSubstrateInjection`), so a catalog built from
+  the extracted netlist alone offered them as tunables — values Push has no row to write into, shown
+  with binary noise like `3.5000000000000004E-05`. `TunableCatalog.Discover` wraps the caller's resolver
+  to remember each cell's drawing and offers an instance parameter only when that component in that
+  drawing holds it. A `.cnl` (no drawing) offers everything it states. Seen on the Hierarchy example's
+  `Board` cell.
+- **The catalog walks the extracted netlist, deliberately.** Cell names in keys must be the `.cnl`'s
+  spelling, including `CellScope.NameFor`'s `Amp_2` for a second cell with the same leaf name; a walk of
+  the drawings would need a second copy of that rule. `ExtractionResult.CellKeys` exposes the library
+  name → cell folder map that rule builds.
+- **Diagnostics, not strings.** The firewall's user-facing-text gate refuses a new
+  `throw new …Exception("…")` below the UI firewall; the `.cnl` refusals are `TuningDirectiveDiagnostics`
+  (thrown inside a `TuningDirectiveException`, which `CnlReader` wraps with the line) and the rules are
+  `TuningDiagnostics`, returned by `TuningValidator`. `check` reports them as `check.tuning.*`.

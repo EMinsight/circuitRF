@@ -385,6 +385,10 @@ internal static class ToolCatalog
                             "Per component of a schematic: the footprint it states, what that resolved to, how many pads "
                           + "against how many ports, and — for a built-in case size — the technology the land pattern "
                           + "would be generated against."),
+                        new("tunables", "--tunables", OptKind.Flag,
+                            "Every value of a schematic or netlist that can be tuned or optimized, at any depth, with its key "
+                          + "(R1.R, Wline, DUT:R3.R), value, default range and whether Push can write it; and the keys the "
+                          + "tuning setup names that resolve to nothing."),
                         new("all",     "--all",     OptKind.Flag,
                             "Only with cells: include generated cells, which are hidden by default. On its own it is refused."),
                         new("view",    "--view",    OptKind.Str,

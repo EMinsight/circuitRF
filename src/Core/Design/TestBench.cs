@@ -28,6 +28,14 @@ public sealed class TestBench(string name)
     public List<Measurement>  Measurements    { get; } = [];
 
     /// <summary>
+    /// The tunable entries, presets, goals and optimizer settings — the <c>tune</c>, <c>preset</c>,
+    /// <c>goal</c> and <c>optimize</c> directives. Null when the netlist states none, which is every
+    /// netlist written before they existed. Nothing in a run reads it; it rides along so a
+    /// <c>.csch</c> and the <c>.cnl</c> it extracts to say the same thing.
+    /// </summary>
+    public TuningSetup? Tuning { get; set; }
+
+    /// <summary>
     /// Verbatim analysis/measure lines from .cnl that the reader cannot yet interpret.
     /// Preserved for round-trip fidelity. Replaced by typed entries once the directive
     /// grammar is settled in Phase 2.

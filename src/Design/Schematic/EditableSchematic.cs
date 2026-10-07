@@ -1377,6 +1377,13 @@ public sealed class SchematicEditModel
     public List<Measurement> Measurements { get; } = new();
 
     /// <summary>
+    /// The tunable entries, presets, goals and optimizer settings (docs/design/tuning-optimization.md).
+    /// Null — and absent from the file — for a schematic that never had any. Held on the TUNED
+    /// schematic, even for a tunable that lives in a sub-cell (overview D5).
+    /// </summary>
+    public TuningSetup? Tuning { get; set; }
+
+    /// <summary>
     /// User-specified results file name (schematic-level — a run writes ONE grouped file for the
     /// whole testbench, so this is not per-analysis). Null/blank means the default,
     /// <c>&lt;schematicKey&gt;.npy</c>. When set, always inside the workspace's <c>results/</c>

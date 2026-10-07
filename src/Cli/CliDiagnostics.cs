@@ -1283,6 +1283,13 @@ internal static class CliDiagnostics
         "check.elaboration.warning", DiagnosticSeverity.Warning,
         "{path}: {text}", ("path", path), ("text", text));
 
+    /// <summary>A rule of the tuning setup (TuningValidator, whose own diagnostic this carries under a
+    /// <c>check.</c> prefix): an error, or a key that names nothing, which is a warning
+    /// (tuning-optimization.md D3).</summary>
+    public static Diagnostic CheckTuningFinding(string path, Diagnostic finding) => Diagnostic.Create(
+        "check." + finding.Id, finding.Severity,
+        "{path}: {text}", ("path", path), ("text", finding.Render()));
+
     public static Diagnostic CheckElaborationNote(string path, string text) => Diagnostic.Create(
         "check.elaboration.note", DiagnosticSeverity.Info,
         "{path}: {text}", ("path", path), ("text", text));

@@ -1,0 +1,79 @@
+using CircuitRF.Diagnostics;
+
+namespace CircuitRF.Design.Optimization;
+
+/// <summary>
+/// What <see cref="TuningValidator"/> says about a tuning setup — <c>check</c> reports these, and the
+/// tuning and optimizer windows refuse on the errors among them. <c>{who}</c> names the line:
+/// <c>tune R1.R</c>, <c>preset "wide band": R1.R</c>, <c>goal G1</c>, <c>optimize</c>.
+/// </summary>
+public static class TuningDiagnostics
+{
+    /// <summary>A key that names nothing — a warning, never an error (tuning-optimization.md D3).</summary>
+    public static Diagnostic KeyUnresolved(string who, bool inPreset) => Diagnostic.Create(
+        "tuning.key.unresolved", DiagnosticSeverity.Warning,
+        inPreset ? "{who} names nothing in this design; recalling the preset skips it."
+                 : "{who} names nothing in this design; it is ignored.",
+        ("who", who));
+
+    public static Diagnostic KeyNotOffered(string who, string why) => Diagnostic.Create(
+        "tuning.key.not-offered", DiagnosticSeverity.Error,
+        "{who} cannot be tuned: {why}.", ("who", who), ("why", why));
+
+    public static Diagnostic NotANumber(string who, string what, string text) => Diagnostic.Create(
+        "tuning.value.not-a-number", DiagnosticSeverity.Error,
+        "{who}: the {what} '{text}' is not a number.", ("who", who), ("what", what), ("text", text));
+
+    public static Diagnostic RangeInverted(string who, string min, string max) => Diagnostic.Create(
+        "tuning.range.inverted", DiagnosticSeverity.Error,
+        "{who}: min={min} is not below max={max}.", ("who", who), ("min", min), ("max", max));
+
+    public static Diagnostic LogNeedsPositiveMin(string who, string min) => Diagnostic.Create(
+        "tuning.range.log-nonpositive", DiagnosticSeverity.Error,
+        "{who}: scale=log needs min above zero, and min={min}.", ("who", who), ("min", min));
+
+    public static Diagnostic PresetNameQuote(string name) => Diagnostic.Create(
+        "tuning.preset.name-quote", DiagnosticSeverity.Error,
+        "preset '{name}': a preset's name cannot contain a double quote.", ("name", name));
+
+    public static Diagnostic ExpressionUnparsed(string who, string message) => Diagnostic.Create(
+        "tuning.goal.expression", DiagnosticSeverity.Error,
+        "{who}: the expression does not parse — {message}", ("who", who), ("message", message));
+
+    public static Diagnostic AnalysisUndeclared(string who, string analysis, string declared) => Diagnostic.Create(
+        "tuning.goal.analysis-undeclared", DiagnosticSeverity.Error,
+        "{who}: analysis={analysis} is not an analysis this design declares ({declared}).",
+        ("who", who), ("analysis", analysis), ("declared", declared));
+
+    public static Diagnostic BandNeedsTwoLimits(string who, string type) => Diagnostic.Create(
+        "tuning.goal.band-incomplete", DiagnosticSeverity.Error,
+        "{who}: '{type}' needs two limits.", ("who", who), ("type", type));
+
+    public static Diagnostic BandInverted(string who, string lower, string upper) => Diagnostic.Create(
+        "tuning.goal.band-inverted", DiagnosticSeverity.Error,
+        "{who}: the band's lower limit {lower} is not below its upper limit {upper}.",
+        ("who", who), ("lower", lower), ("upper", upper));
+
+    public static Diagnostic SlopeNeedsRange(string who) => Diagnostic.Create(
+        "tuning.goal.slope-without-range", DiagnosticSeverity.Error,
+        "{who}: a sloped limit needs a range (over=… lo=… hi=…) to slope across.", ("who", who));
+
+    public static Diagnostic GoalRangeInverted(string who, string lo, string hi) => Diagnostic.Create(
+        "tuning.goal.range-inverted", DiagnosticSeverity.Error,
+        "{who}: lo={lo} is above hi={hi}.", ("who", who), ("lo", lo), ("hi", hi));
+
+    public static Diagnostic GoalRangeEmpty(string who, string lo, string hi, string axis, string analysis,
+                                            double gridMin, double gridMax) => Diagnostic.Create(
+        "tuning.goal.range-empty", DiagnosticSeverity.Error,
+        "{who}: the range {lo} .. {hi} on {axis} holds no point of {analysis}'s grid, which runs {gridMin} .. {gridMax} in base SI.",
+        ("who", who), ("lo", lo), ("hi", hi), ("axis", axis), ("analysis", analysis),
+        ("gridMin", gridMin), ("gridMax", gridMax));
+
+    public static Diagnostic UnknownAlgorithm(string algorithm, string known) => Diagnostic.Create(
+        "tuning.optimize.algorithm", DiagnosticSeverity.Error,
+        "optimize: algorithm={algorithm} is not one of {known}.", ("algorithm", algorithm), ("known", known));
+
+    public static Diagnostic TimeLimitInvalid(string limit) => Diagnostic.Create(
+        "tuning.optimize.timelimit", DiagnosticSeverity.Error,
+        "optimize: timelimit={limit} is not a duration; write a number and s, ms, min or h.", ("limit", limit));
+}

@@ -61,7 +61,7 @@ Thirteen verbs run no analysis, so none of §3-§6 applies to them and §7's exi
 | `new cell` | a workspace + a name | `CellCreate.Create` | a cell folder and one empty-but-valid file per `--views` |
 | `import part` | a component file or folder | `ComponentRead` + `ComponentImport.Import` | a cell folder holding the land patterns and the symbol |
 | `check` | a workspace, a cell folder, or one document | the validators that already exist | **nothing** — §10 |
-| `explain` | the same, plus `--expr` / `--analysis` / `--ref` / `--cells` / `--layers` / `--extents` / `--footprints`, and `--setup` and `--object` (one object's resolved appearance) for a `.c3d` | reports what resolution DECIDED | **nothing** — §10 |
+| `explain` | the same, plus `--expr` / `--analysis` / `--ref` / `--cells` / `--layers` / `--extents` / `--footprints` / `--tunables`, and `--setup` and `--object` (one object's resolved appearance) for a `.c3d` | reports what resolution DECIDED | **nothing** — §10 |
 | `render` | the same three view documents, a cell folder, a workspace + `--cell`, a `.cdd`, a 3D `.cem`, or a `.c3d` (and its field plots) | draws it with the renderer the GUI draws with | one `.svg` / `.pdf` / `.png` — §13, §13.7 for a data display, §13.8 for a 3D setup, §13.8.1 for a field plot |
 | `read` | a result file, or one of circuitRF's own documents | loads it back through the readers the GUI reads through | **nothing** — §11.4 |
 | `netlist` | a `.csch`, a cell folder, or a workspace + `--cell` — or a `.cnl` + `--to-schematic` | the extraction the GUI's own Simulate performs, or `NetlistSchematic.Build` | one `.cnl`, or the text on stdout; a drawn `.csch` — §14, §14.2 |
@@ -1089,6 +1089,14 @@ deliberately (§11.3).
   resolution (R-fp2-6), so asking the netlist would report every design as stating none. The
   resolution is `FootprintCatalog.Resolve`, the same one Update Layout performs, so `explain` cannot
   describe artwork the application would then refuse.
+- **`--tunables`** *(a `.csch`, a cell, or a `.cnl`)* — every value that can be tuned or optimized, at
+  any depth (`docs/design/tuning-optimization.md` §2): its key (`R1.R`, `Wline`, `X1.Rbias`,
+  `DUT:R3.R`), where it lives and how many instances share it (`DUT · ×2`), its value, and the range the
+  setup gives it — or the default range a first activation would — with whether Push can write it and,
+  if not, why. Then the keys the schematic's tuning setup names that resolve to nothing. It owns no
+  discovery: a schematic's list is `TunableCatalog.Discover` through `DiskCellResolver`, the descent a
+  run makes, so the keys are spelled as the netlist spells its cells. On a `.cnl` every global counts as
+  a variable and nothing is read-only, because a netlist has no drawing to push into.
 
 The seven questions are **refused together rather than ordered** (R-rnd3-2) — each asks something
 different, and a precedence nobody stated would be an invention. `--all` is `--cells`' own modifier and
@@ -1232,6 +1240,13 @@ each is that name with an `Lp`/`Lpp`/`Psa` prefix and an `Expr`/`Name`/`Path` su
 the rule rather than sixty pairs is what keeps it true after the next key is added — and a key that
 would itself be changed by the rule (and so could shadow another) fails a test rather than colliding.
 
+**The tuning directives are the exception that is not refused** (TO-1). `tune`, `preset`, `goal` and
+`optimize` have their own table (`AnalysisDirectiveSchema.TuningDirectives`); a key it does not list is a
+WARNING naming the key, and the key is kept and written back, because a later version's key — a yield
+tolerance on a `tune` line — must survive a round trip through this one. A malformed line is still
+refused. `check` then applies `TuningValidator`'s rules (`tuning-optimization.md` §6), reported as
+`check.tuning.*`.
+
 ### 10A.2 A net count is not a port count
 
 `src/Core/Netlist/InstanceNetContract.cs` states how many nets each primitive's instance line binds.
@@ -1338,7 +1353,7 @@ be found by its name.
 |---|---|
 | `run` | `sparam` / `dc` / `hb` / `lp` / `lpp` / `em`, selected by an argument — one tool, not six. `em` takes a `.cem` or a `.c3d`, whose embedded setup `setup` names — every shipped eigenmode example embeds two |
 | `check` | `check` |
-| `explain` | `explain`, including RND-3's `--cells` / `--layers` / `--extents` and `--footprints` |
+| `explain` | `explain`, including RND-3's `--cells` / `--layers` / `--extents`, `--footprints` and `--tunables` |
 | `create` | `new workspace` / `new cell` |
 | `import` | `import part` |
 | `convert` | `convert` — one import and one export between any two formats, so an export is a `convert` |
@@ -1667,7 +1682,9 @@ excluded deliberately** — at 54 kB it is the largest page of them all, and a p
 has every verb's schema from `tools/list`, so it is the one page it needs least.
 
 The generated topics follow: `data-display`, `technology`, `layout`, `em-setup`, `wbond`, `analyses`,
-`components`. The five formats are here because they are documents a client must WRITE and that
+`tuning`, `goals`, `components`. **`tuning` and `goals`** (TO-1) print the four tuning directives from
+`AnalysisDirectiveSchema.TuningDirectives` — the table the reader checks their keys against — each with a
+worked example that is a complete netlist `check` passes as it stands. The five formats are here because they are documents a client must WRITE and that
 `create` does not make (or makes only empty) — `layout`, `em-setup` and `wbond` are the authoring
 surface for EM and wirebond runs, and the one `docs/design/em-3d.md` §4.6 extends to 3D — the
 exercise behind this series got a plot only because an unrelated `.cdd` happened to be on the machine

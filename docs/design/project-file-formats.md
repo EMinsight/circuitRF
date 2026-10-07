@@ -104,6 +104,38 @@ bump**, the same additive convention every other optional field in these formats
   itself; the explicit *Accept the new interface* gesture is the only thing that rewrites it. Open and
   save never touch it — see `workspace-and-project-tree.md` §4.3.
 
+**The tuning block** *(TO-1, added 2026-10-07)*. A top-level `"Tuning"` object holding the
+schematic's tuning and optimization setup — the variable entries, presets, goals and optimizer
+settings (`docs/design/tuning-optimization.md`). Written **only when the setup is non-empty**, and each
+of its four members only when it has content, so a schematic that never tuned anything writes exactly
+the bytes it always did. **No `FormatVersion` bump** — an optional, null-by-default field, the same
+additive convention as `CellInterfaceHash`. Values are kept as the **text the schematic would hold**
+(`"47 pF"`), never as resolved numbers, so a pushed preset is byte-identical to a typed value.
+
+```json
+"Tuning": {
+  "Variables": [
+    { "Key": "R1.R", "Tune": true, "Opt": true, "Min": "10 Ohm", "Max": "200 Ohm", "Scale": "Log" }
+  ],
+  "Presets": [
+    { "Name": "wide band", "Created": "2026-10-07T12:00:00Z", "Values": { "R1.R": "47 Ohm", "DUT:Wline": "212 um" } }
+  ],
+  "Goals": [
+    { "Name": "G1", "Expression": "dB(SP1.S(2,1))", "Analysis": "SP1",
+      "Range": { "Axis": "freq", "Lo": "1 GHz", "Hi": "2 GHz" }, "Type": "Ge", "Limit": "-0.5",
+      "Weight": 1, "Enabled": true }
+  ],
+  "Optimizer": { "Algorithm": "lm", "MaxIterations": 200, "Seed": 1 }
+}
+```
+
+Enums are names (`Scale`: `Auto|Lin|Log`; `Discrete`: `None|Integer|Preferred`; `Type`:
+`Le|Ge|Eq|In|Out`; `Cost`: `LeastSquares|Minimax`; `Scope`: `GoalAnalyses|All`); a boolean or enum at
+its default is omitted. A key this build does not know is reported by the load audit and ignored; the
+`Extra` object on a variable, goal or optimizer record carries keys a `.cnl` stated that this version
+does not use, so they survive the round trip. `NetExtractor` emits the same content as `tune`, `preset`,
+`goal` and `optimize` lines, and `netlist --to-schematic` reads them back into this block.
+
 **What `.csch` does NOT contain:** the elaborated netlist, matrices, results, or anything the engine
 computes. It is purely the editable schematic. Results are `DataSet`s (Phase 5 export/import); the netlist is
 the derived `.cnl`/design model.

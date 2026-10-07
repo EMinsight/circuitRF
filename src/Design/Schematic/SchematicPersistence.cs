@@ -2,6 +2,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using CircuitRF.Core.Design;
 using CircuitRF.Design.Cells;
 namespace CircuitRF.Design.Schematic;
 
@@ -45,6 +46,40 @@ public sealed class CschFile
     /// Absent (null) when no corner is selected — the case for every design that never opens the
     /// Corners block. See SchematicEditModel.CornerSelections.</summary>
     public Dictionary<string, string>? CornerSelections { get; set; }
+
+    /// <summary>The tuning and optimization block (docs/design/tuning-optimization.md). Absent when
+    /// the schematic has none, so a schematic that never tuned anything writes the bytes it always did.
+    /// An optional field with null as its default — no <c>FormatVersion</c> bump, by the convention
+    /// every optional field this format has gained follows.</summary>
+    public CschTuning? Tuning { get; set; }
+}
+
+/// <summary>
+/// The <c>.csch</c> spelling of a <see cref="TuningSetup"/>: the same four parts, each list omitted
+/// when empty. The elements are the model's own types — plain data, bound directly.
+/// </summary>
+public sealed class CschTuning
+{
+    public List<TunableEntry>?     Variables { get; set; }
+    public List<TuningPreset>?     Presets   { get; set; }
+    public List<OptimizationGoal>? Goals     { get; set; }
+    public OptimizerSettings?      Optimizer { get; set; }
+
+    public static CschTuning? From(TuningSetup? s) => s is null || s.IsEmpty ? null : new()
+    {
+        Variables = s.Variables.Count > 0 ? [.. s.Variables.Select(v => v.Clone())] : null,
+        Presets   = s.Presets.Count   > 0 ? [.. s.Presets.Select(p => p.Clone())]   : null,
+        Goals     = s.Goals.Count     > 0 ? [.. s.Goals.Select(g => g.Clone())]     : null,
+        Optimizer = s.Optimizer?.Clone(),
+    };
+
+    public TuningSetup ToSetup() => new()
+    {
+        Variables = Variables ?? [],
+        Presets   = Presets   ?? [],
+        Goals     = Goals     ?? [],
+        Optimizer = Optimizer,
+    };
 }
 
 public sealed class CschComponent
@@ -535,6 +570,8 @@ public static class SchematicPersistence
         if (m.CornerSelections.Count > 0)
             file.CornerSelections = new Dictionary<string, string>(m.CornerSelections, StringComparer.Ordinal);
 
+        file.Tuning = CschTuning.From(m.Tuning);
+
         return file;
     }
 
@@ -626,6 +663,9 @@ public static class SchematicPersistence
             foreach (var (key, section) in file.CornerSelections)
                 if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(section))
                     m.CornerSelections[key] = section;
+
+        if (file.Tuning?.ToSetup() is { IsEmpty: false } tuning)
+            m.Tuning = tuning;
 
         return m;
     }

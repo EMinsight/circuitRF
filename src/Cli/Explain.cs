@@ -65,7 +65,7 @@ internal static class Explain
     {
         string? path = null, expr = null, reference = null, analysisName = null, setupName = null, objectName = null;
         bool wantAnalyses = false, wantCells = false, wantLayers = false, wantExtents = false, all = false;
-        bool wantFootprints = false, wantLook = false;
+        bool wantFootprints = false, wantLook = false, wantTunables = false;
         ViewType? askedView = null;
         var sets = new List<(string Name, string Expr)>();
 
@@ -81,6 +81,8 @@ internal static class Explain
                 // brief-footprint-4 R-fp4-4b. An OPTION and not a verb, on R-rnd3-1's terms, and it
                 // joins the one-question rule below rather than getting an exception from it.
                 case "--footprints": wantFootprints = true; continue;
+                // TO-1 R-to1-7 — every tunable value of a schematic or netlist, and the setup keys that name nothing.
+                case "--tunables": wantTunables = true; continue;
                 case "--all":     all         = true; continue;
                 case "--view" when i + 1 < args.Length:
                 {
@@ -154,7 +156,8 @@ internal static class Explain
 
         int asked = (expr is null ? 0 : 1) + (reference is null ? 0 : 1) + (wantAnalyses ? 1 : 0)
                   + (wantCells ? 1 : 0) + (wantLayers ? 1 : 0) + (wantExtents ? 1 : 0)
-                  + (wantFootprints ? 1 : 0) + (objectName is null ? 0 : 1) + (wantLook ? 1 : 0);
+                  + (wantFootprints ? 1 : 0) + (objectName is null ? 0 : 1) + (wantLook ? 1 : 0)
+                  + (wantTunables ? 1 : 0);
         if (asked > 1) { JsonRun.Report(CliDiagnostics.ExplainOneQuestion()); return Usage(); }
         if (all && !wantCells) { JsonRun.Report(CliDiagnostics.ExplainAllNeedsCells()); return Usage(); }
 
@@ -177,6 +180,7 @@ internal static class Explain
         IReadOnlyList<ExplainFootprintJson>? footprints = null;
         ExplainEm3dJson?                    em3d     = null;
         IReadOnlyList<CircuitRF.Design.ThreeD.SetupSolveStatus>? solved = null;
+        ExplainTunablesJson?                tunables = null;
 
         // The document's OWN resolution always runs, whatever was asked: "which workspace, which
         // technology" is context for every other answer, and a report that omitted it would leave a
@@ -260,6 +264,13 @@ internal static class Explain
             exit |= fpExit;
         }
 
+        if (wantTunables)
+        {
+            var (report, tunableExit) = ExplainTunables.Collect(path, kind);
+            tunables = report;
+            exit    |= tunableExit;
+        }
+
         // brief-em3d-51 R-em3d51-5c — a 3D view's --expr evaluates in the DOCUMENT's resolved scope (its cell's parameters
         // and its VARs), with --set applied first, as a circuit's does in its global scope.
         if (expr is not null && kind == DocumentKind.ThreeD)
@@ -306,11 +317,12 @@ internal static class Explain
 
         JsonRun.Explain = new ExplainReportJson(
             path, DocumentKinds.Name(kind), walks, analyses, value, refRes, cells, layers, extents,
-            footprints, em3d, solved is null ? null : Solved.ForExplain(solved));
+            footprints, em3d, solved is null ? null : Solved.ForExplain(solved), tunables);
 
         Print(path, kind, walks, analyses, value, refRes, cells, layers, extents, footprints);
         if (em3d is not null) ExplainEm3d.Print(em3d);
         if (solved is not null) Solved.Print(solved);
+        if (tunables is not null) ExplainTunables.Print(tunables);
         return exit;
     }
 
@@ -320,6 +332,7 @@ internal static class Explain
         Console.Error.WriteLine("                            [--analysis [<name>]] [--ref <relative-ref>]");
         Console.Error.WriteLine("                            [--cells [--all]] [--layers] [--extents] [--view <name>]");
         Console.Error.WriteLine("                            [--footprints] [--setup <name>] [--object <name>] [--look]");
+        Console.Error.WriteLine("                            [--tunables]");
         return 1;
     }
 

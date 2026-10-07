@@ -184,6 +184,7 @@ public static class NetlistSchematic
         PlaceDirectives(model, tb);
 
         foreach (var a in tb.Analyses) model.Analyses.Add(a);
+        if (tb.Tuning is { IsEmpty: false } tuning) model.Tuning = tuning.Clone();
 
         if (tb.Functions.Count > 0)
             notes.Add(

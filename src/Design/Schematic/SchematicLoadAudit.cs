@@ -232,12 +232,18 @@ public static class SchematicLoadAudit
     // ── leaves ───────────────────────────────────────────────────────────────
 
     private static bool IsLeaf(Type t)
-        => t == typeof(string) || t.IsPrimitive || t.IsEnum || t == typeof(decimal);
+        => t == typeof(string) || t.IsPrimitive || t.IsEnum || t == typeof(decimal) || t == typeof(DateTime);
 
     private static bool LeafAccepts(Type t, JsonNode node, out string expected)
     {
         var kind = node is JsonValue v ? v.GetValueKind() : node is JsonArray ? JsonValueKind.Array : JsonValueKind.Object;
         if (t == typeof(string)) { expected = "a string"; return kind is JsonValueKind.String or JsonValueKind.Null; }
+        if (t == typeof(DateTime))
+        {
+            expected = "a date (yyyy-MM-ddTHH:mm:ssZ)";
+            return kind == JsonValueKind.String && DateTime.TryParse(((JsonValue)node).GetValue<string>(),
+                System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out _);
+        }
         if (t == typeof(bool))   { expected = "true or false"; return kind is JsonValueKind.True or JsonValueKind.False; }
         if (t.IsEnum)
         {
@@ -287,7 +293,8 @@ public static class SchematicLoadAudit
     private static bool IsDictionary(Type t, out Type? valueType)
     {
         valueType = null;
-        if (!t.IsGenericType || !typeof(IDictionary).IsAssignableFrom(t) && t.GetGenericTypeDefinition() != typeof(Dictionary<,>))
+        if (!t.IsGenericType || !typeof(IDictionary).IsAssignableFrom(t) && t.GetGenericTypeDefinition() != typeof(Dictionary<,>)
+                                && t.GetGenericTypeDefinition() != typeof(OrderedDictionary<,>))
             return false;
         valueType = t.GetGenericArguments()[1];
         return true;

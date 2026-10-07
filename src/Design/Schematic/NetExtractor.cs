@@ -58,6 +58,15 @@ public static class NetExtractor
         /// Cells are ordered leaf-first so <c>define</c>-before-use is satisfied.
         /// </summary>
         public Library Library { get; init; } = new("netlist");
+
+        /// <summary>
+        /// Each schematic-backed cell's library name — the name the <c>.cnl</c> spells its instances'
+        /// type with — mapped to the identity its resolver gave it (<see cref="CellResolution.Key"/>:
+        /// the absolute cell folder, for the disk and workspace resolvers). A cell the library holds
+        /// that is absent here came from a kit's netlist rather than a schematic.
+        /// </summary>
+        public IReadOnlyDictionary<string, string> CellKeys { get; init; } =
+            new Dictionary<string, string>(StringComparer.Ordinal);
     }
 
     /// <param name="cornerVariables">
@@ -130,7 +139,15 @@ public static class NetExtractor
         foreach (var analysis in model.Analyses)
             tb.Analyses.Add(analysis);
 
-        return new ExtractionResult(tb, conflicts) { CellPorts = cellPorts, Library = lib };
+        // The tuning block rides along unchanged, so the `.cnl` says what the `.csch` says (overview D5).
+        // A copy: the netlist is handed to runs that must not reach back into the open document.
+        if (model.Tuning is { IsEmpty: false } tuning)
+            tb.Tuning = tuning.Clone();
+
+        return new ExtractionResult(tb, conflicts)
+        {
+            CellPorts = cellPorts, Library = lib, CellKeys = scope.LibraryNameToKey(),
+        };
     }
 
     /// <summary>
@@ -1326,6 +1343,10 @@ public static class NetExtractor
             _taken.Add(name);
             return name;
         }
+
+        /// <summary>Library name → cell key, for every cell named during this extraction.</summary>
+        public Dictionary<string, string> LibraryNameToKey()
+            => _names.ToDictionary(kv => kv.Value, kv => kv.Key, StringComparer.Ordinal);
     }
 
     private static Instance? EmitCellInstance(
