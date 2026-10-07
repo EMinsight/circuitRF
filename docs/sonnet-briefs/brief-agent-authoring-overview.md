@@ -101,6 +101,11 @@ cross-section answer equals `impedance` on a drawn line of that width.
 
 ## AA-4 — Tuning and optimisation
 
+> **Superseded (2026-10-07)** by the tuning and optimization series, `brief-tuneopt-0-overview.md`. Both owner decisions
+> below are answered there: optimization is in scope (PRD v3.1 §5.1), and the headless optimizer reports values and
+> writes nothing back to the design's values (a named preset is the one opt-in write). This section is kept as the
+> evidence that motivated it; build from the new series, not from here.
+
 **Evidence.** `set` now works on every circuit analysis, so a sweep of what-ifs is scriptable, but the agent still ran each
 iteration and read the worst value itself. With the band reductions now in measurements, a goal can be STATED; nothing
 yet searches for the values that meet it.

@@ -1,7 +1,9 @@
 # circuitRF — Project Requirements Document (PRD)
 
-**Status:** Approved — v1.4 baseline · **Owner:** (you) · **Date:** 2026-09-23
-**Scope of this document:** defines *what* circuitRF v1 must do and how we'll know it's done. It does **not** specify the data model or algorithms (those live in `docs/design/`).
+**Status:** Approved — v3.1 · **Owner:** (you) · **Date:** 2026-10-07
+**Scope of this document:** defines *what* circuitRF must do and how we'll know it's done. It began as the v1 baseline; the product has since moved past v3 (the 3D geometry editor, 3D full-wave EM and 3D thermal), and sections that still say "v1" describe the baseline they were written for. It does **not** specify the data model or algorithms (those live in `docs/design/`).
+
+> **v1.4 → v3.1 (2026-10-07):** brought the document up to the product as it ships. The v1 non-goals that have since been delivered are recorded as delivered (§2): the **Verilog-A/OSDI device path**, the **3D geometry editor** (`.c3d`), **3D full-wave EM** through external open-source solvers run as separate processes, and **native 3D thermal**. Added **tuning and optimization** as a functional requirement (§5.1, §9, §10) — the "no optimization engine" non-goal is retired. **Yield analysis (Monte Carlo, design centering, yield optimization) is the planned follow-on** and is not yet in scope. No change to the five heroes, which remain the engine's acceptance anchors.
 
 > **v1.3 → v1.4 (2026-09-23):** recorded the direction for **3D FEM** — full-wave EM on arbitrary 3D geometry (packages, cavities, lids, connectors) and 3D thermal (FET channel down to heatsink) — as a **v2-at-the-earliest, possibly v3** capability. **The v1 non-goal in §2 is unchanged for v1**; §2 now says where the excluded capability is headed, §15 records how external GPL tools are used, and §17 records the decisions. Design draft in [`design/em-3d.md`](design/em-3d.md). No change to v1 scope, the heroes, or the engine.
 >
@@ -25,17 +27,21 @@ circuitRF is a lightweight, cross-platform Electronic Design Automation (EDA) ci
 
 circuitRF's distinguishing promises are: (1) it is an **RF simulator, not a SPICE simulator** — the analyses and workflow are built around the RF/microwave problem; (2) it makes **loadpull and sourcepull simulation as easy as possible**; (3) it is **lightweight, low-cost, and human-readable** in its file formats; (4) it is **easy** — measured as a low number of clicks/inputs to a useful result — while still exposing the full configuration advanced users expect; and (5) it closes the loop from **schematic to physical layout to electromagnetic simulation** in one tool, for both PCB and MMIC work, without a separate layout package or EM licence.
 
-## 2. Non-goals (explicitly out of scope for v1)
+## 2. Non-goals
 
-circuitRF v1 is deliberately bounded. The following are **not** in v1:
+circuitRF is deliberately bounded. The following are **not** in scope today:
 
-- **Not a SPICE simulator.** Transient analysis is deferred; v1 ships DC, S-parameters, and harmonic balance only.
-- **Full Verilog-A is deferred to v2.** v1 ships built-in nonlinear models plus the Symbolically-Defined Device (§6). The **ASM-HEMT** GaN model rides on the v2 Verilog-A/OSDI backend (§6.1) — not in v1.
-- **Layout is 2D. EM is 2.5D planar plus 3D wirebonds — and no FEM.** The layout view is fully implemented in v1 (§8, §9) with a **2.5D method-of-moments** solver for planar geometry and a **thin-wire MoM kernel for bond wires** (§5). Out of scope: **FEM, volumetric meshing, and arbitrary 3D geometry** — the user cannot draw a 3D solid, the layout database stores no 3D shape type, and nothing meshes a volume. A wirebond is admitted as a **parametric component** whose layout view is its 2D projection and whose 3D path is generated from named parameters (loop height, profile, diameter), which is why it needs none of the excluded machinery.
-  **3D FEM is a v2 (possibly v3) capability, not v1** (§17, v1.4): full-wave EM driven through an external open-source FEM solver, 3D thermal as a native solver, and a 3D geometry view — scoped in [`design/em-3d.md`](design/em-3d.md). Nothing in v1 depends on it, and v1 work must not start on it.
+- **Not a SPICE simulator.** There is no transient analysis; circuitRF ships DC, S-parameters, harmonic balance (with loadpull/sourcepull) and EM.
 - **No layout auto-router.** Schematic→layout places components; the user routes. Obstacle-aware auto-routing applies to schematic wiring only.
-- **A third-party cell database is not the storage layer.** v1 uses circuitRF's own human-readable native format. An optional third-party *cell import/export bridge* may come later; full support is out of scope.
-- **No co-simulation, no system/behavioral-level modeling (e.g., X-parameter generation), no optimization/yield engine** in v1.
+- **A third-party cell database is not the storage layer.** circuitRF uses its own human-readable native format. An optional third-party *cell import/export bridge* may come later; full support is out of scope.
+- **No co-simulation and no system/behavioral-level model generation** (e.g., X-parameter generation).
+- **No yield engine yet.** Monte Carlo yield analysis, design centering and yield optimization are the **planned follow-on to tuning and optimization** (§5.1) and build on its variables and goals; they are not in scope until briefed.
+
+**Non-goals of the v1 baseline that have since been delivered** (kept here so the history of the scope is legible):
+
+- **Verilog-A** — delivered through the OSDI external-device path (§6.1's architectural requirement is what it exercises).
+- **3D geometry, FEM and 3D thermal** (v1.4 placed them at v2-at-the-earliest, possibly v3) — delivered: a **3D geometry editor** (`.c3d` documents), **3D full-wave EM** driven through external open-source solvers run as **separate processes** (§15), and a **native 3D thermal** solver. **The layout database is still 2D**: 3D geometry lives in its own document, and a wirebond is still a parametric component whose layout view is its 2D projection. Design detail in [`design/em-3d.md`](design/em-3d.md).
+- **Optimization** — in scope from v3.1 (§5.1).
 
 ## 3. Users & jobs-to-be-done
 
@@ -96,6 +102,16 @@ These circuits define "done" for the v1 engine; every proposed feature is gated 
   - **3D wirebonds (thin-wire)** — ball- and wedge-bond loop profiles in arrays up to **200 wires**, capturing the **mutual coupling between every wire**, over the packaging-realistic range: 0.5–1.25 mil wire radius, 5–50 mil loop height, 5–300 mil pitch. Staged the same way and for the same reason: quasi-static PEEC first (frequency-independent matrices, so a sweep is effectively free), then retarded full-wave. Wires-only over a ground plane first; meshed surfaces — landing pads, **overmold**, and **stepped/discontinuous ground** — second. Closed-form partial inductance (Neumann/Grover) and a right-angle-corner image solution are the validation oracles; owner-generated 3D FEM data is the regression anchor. Design detail in [`design/mom-wirebond-kernel.md`](design/mom-wirebond-kernel.md), summarised in `mom-engine.md` §10.11.
 
   This kernel exists because die-to-board bondwire inductance is a first-order design parameter in exactly the power-amplifier and module work the hero circuits (§4) represent, and because it is the geometry where MoM most clearly beats FEM: unknowns scale with wire count rather than with the volume of air between the wires.
+
+### 5.1 Tuning and optimization (v3.1)
+
+- **Tunable quantities** — any component parameter or VAR variable whose value is a plain number (not an expression), at any level of the hierarchy below the schematic being tuned, can be activated for tuning and/or optimization. Each carries one shared **min/max range**, persisted with the schematic. Nothing is activated by default.
+- **Live tuning** — moving a slider re-simulates off the UI thread and the Data Display updates as results arrive. The newest value always wins; the user is told when the displayed result lags the sliders.
+- **Presets** — a set of tuned values can be **locked in** as a named preset stored in the `.csch` and recalled later. Recall is **best effort**: a value whose component or variable no longer exists is skipped and reported, never an error.
+- **Push** — the tuned or optimized values are written into the schematic(s) by one command, and the push is undoable.
+- **Goals** — an optimization goal is a measurement expression evaluated on one analysis, optionally restricted to a range of a swept axis (`freq`, a sweep variable), with a limit of type **≤, ≥, =, inside [a, b] or outside [a, b]**, a weight, and optional sloped limits. Goals are authored in the Optimizer window and stored with the schematic; they are also legal `.cnl` text so the CLI and an AI agent can write them.
+- **Optimizer** — a choice of algorithms (local gradient, local derivative-free, global population-based and surrogate-based for expensive simulations, discrete/standard-value), persisted per schematic; maximum iterations/evaluations; pause, resume and stop at any point; best-so-far tracking; per-iteration feedback on how far each goal is from being met; and an indication when a variable has railed at its min or max.
+- **Headless** — the optimizer runs from the CLI and the MCP server with the same goals and the same result as the GUI. It reports values; it never rewrites the design's values unasked.
 
 ## 6. Components (functional requirements)
 
@@ -160,11 +176,12 @@ Cells live in **Libraries**; circuitRF can reference many libraries simultaneous
 - **Undo/redo** — across all editors.
 - **Data Display** — native `DataCube`-driven plots and tables (Smith, polar, rectangular, table); **measured-vs-simulated overlay**.
 - **Variable / parameter / sweep setup** — define variables and cell parameters, set instance overrides, and choose sweep axes (§7).
+- **Tuning and Optimizer windows** (§5.1) — dockable tool panels that follow the focused schematic, docked by default behind the Analyses panel (Tuning) and behind Tuning (Optimizer), with the same compact toolbar-button style as the Analyses panel.
 - **Advanced settings** — all solver/analysis settings present and quickly findable, without cluttering the "easy" path.
 
 ## 10. Command-line interface (functional requirement)
 
-A CLI accepts an input netlist and/or JSON circuit description plus an output file. It is also the **engine's primary test harness**: the engine must be fully drivable and validated headless, before and independently of the GUI.
+A CLI accepts an input netlist and/or JSON circuit description plus an output file. It is also the **engine's primary test harness**: the engine must be fully drivable and validated headless, before and independently of the GUI. **The optimizer (§5.1) is a CLI verb and an MCP capability**, discoverable from the MCP reference topics, so an AI agent can write goals and run it without the GUI.
 
 ## 11. File formats & data export (functional requirements)
 
@@ -246,6 +263,11 @@ Dominant risks: **HB convergence and two-tone frequency indexing** (now with a h
 - **3D thermal → a native C# FEM solver**, whose main product is a thermal network for the FET thermal node (§6.1).
 - The tool survey behind these choices is dated 2026-09-23 and is to be **re-surveyed before any of it is built** (`design/em-3d.md`).
 
+**Resolved (v3.1, 2026-10-07):**
+- **3D geometry, 3D full-wave EM and 3D thermal → delivered** (the v1.4 entries above describe the plan they were delivered against).
+- **Tuning and optimization → in scope** (§5.1). Tuning and optimization share one variable list with one range per variable; goals are authored only in the Optimizer window (no goal schematic component); presets live in the `.csch`; the headless optimizer reports values and writes nothing back to the design's values. Brief series: `docs/sonnet-briefs/brief-tuneopt-0-overview.md`.
+- **Yield (Monte Carlo, design centering, yield optimization) → the planned follow-on series**, not part of the tuning/optimization series.
+
 **Remaining open items:**
 1. **Hero 2/4/5 power-sweep range** — TBD pending the chosen SDD FET model (small-signal start, compression depth, and the drive level(s) used for the Hero-5 IM check).
 2. Hero-5 IM tolerances (§4) are **[PROPOSED]** — confirm dBc bounds once reference IM data exists.
@@ -254,4 +276,4 @@ Dominant risks: **HB convergence and two-tone frequency indexing** (now with a h
 
 ---
 
-*Implementation status (2026-06-24): Phases 1–7 are substantially complete — the engine (MNA/S-parameters, nonlinear DC, single/two-tone HB, sweeps, loadpull) runs the heroes from the CLI and the GUI, and the Avalonia editors + `DataCube`-native Data Display are in place, including end-to-end loadpull contour plotting (simulated and measured) and interactive markers that operate on the contour surface. Remaining for the v1 (alpha) release: Phase-8 packaging/hardening. Noise analysis is a deliberate green-field deferral (see `docs/Development_Plan.md` §11). Roadmap and current status live in `docs/Development_Plan.md`.*
+*Implementation status (2026-10-07): the v1 engine, editors and Data Display shipped, and the product has since grown past v3 — full layout with interchange, planar and wirebond MoM, the 3D geometry editor with 3D full-wave EM and 3D thermal, the Verilog-A/OSDI device path, revision control, and the CLI/MCP automation surface. Tuning and optimization (§5.1) is briefed in `docs/sonnet-briefs/brief-tuneopt-0-overview.md`. Noise analysis remains a deliberate green-field deferral (see `docs/Development_Plan.md` §11). Earlier status: Phases 1–7 substantially complete by 2026-06-24.*
