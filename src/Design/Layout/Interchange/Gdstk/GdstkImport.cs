@@ -12,7 +12,7 @@ public static class GdstkImport
     /// cell folder under <paramref name="parentDir"/>. Every other parameter is
     /// <see cref="GdsiiImport.Import"/>'s, with the same meaning. Throws <see cref="GdstkException"/> when
     /// there is no worker, it fails (its sentence names the file) or a repetition would expand past
-    /// <see cref="GdstkMapping.MaxExpanded"/>, and
+    /// the format's limit (<see cref="GdstkMapping.MaxExpandedFor"/>), and
     /// <see cref="OperationCanceledException"/> on <paramref name="token"/> — in every case having created
     /// nothing.
     /// </summary>
@@ -28,16 +28,24 @@ public static class GdstkImport
         GdstkWorkerOptions? worker = null,
         CancellationToken token = default)
     {
-        var (structures, sourceDbuPerMicron, diagnostics) = Read(path, format, worker, token);
+        var read = Read(path, format, worker, token);
         return StreamLayoutImport.Import(
-            structures, sourceDbuPerMicron, diagnostics, GdstkSession.DisplayName(format),
-            parentDir, destTech, destDbuPerMicron, preferSourceResolution, resolveLayerMapping, pinRules);
+            read.Structures, read.SourceDbuPerMicron, read.Diagnostics, GdstkSession.DisplayName(format),
+            parentDir, destTech, destDbuPerMicron, preferSourceResolution, resolveLayerMapping, pinRules,
+            read.LayerNames);
+    }
+
+    /// <summary>What <see cref="Read"/> gives: the same three things <see cref="GdsiiReader"/> gives
+    /// <see cref="GdsiiImport"/>, and the names the file gives its layers (OASIS <c>LAYERNAME</c>, per
+    /// used key; empty for GDSII).</summary>
+    public sealed record ReadResult(List<InterchangeStructure> Structures, double SourceDbuPerMicron, IReadOnlyList<string> Diagnostics)
+    {
+        public IReadOnlyDictionary<LayerKey, string> LayerNames { get; init; } = new Dictionary<LayerKey, string>();
     }
 
     /// <summary>The read alone: every cell as an <see cref="InterchangeStructure"/> in the file's own
-    /// database units, the file's resolution, and what the read had to say — the same three things
-    /// <see cref="GdsiiReader"/> gives <see cref="GdsiiImport"/>.</summary>
-    public static (List<InterchangeStructure> Structures, double SourceDbuPerMicron, IReadOnlyList<string> Diagnostics) Read(
+    /// database units, the file's resolution, what the read had to say, and the file's layer names.</summary>
+    public static ReadResult Read(
         string path, GdstkFormat format, GdstkWorkerOptions? worker = null, CancellationToken token = default)
     {
         using var w = GdstkWorker.Start(worker, token);
@@ -50,7 +58,23 @@ public static class GdstkImport
             structures.Add(GdstkMapping.ToInterchange(session.ReadCell(library, cell.Name, token), notes));
         session.Close(library, token);
 
-        var diagnostics = library.Messages.Select(m => $"gdstk: {m}").Concat(notes.Finish(library.LibraryProperties)).ToList();
-        return (structures, library.SourceDbuPerMicron, diagnostics);
+        var said = notes.TakeIgnoredRecords(library.Messages);
+        var diagnostics = said.Select(m => $"gdstk: {m}").Concat(notes.Finish(library.LibraryProperties)).ToList();
+        return new ReadResult(structures, GridOf(library, format), diagnostics)
+        {
+            LayerNames = GdstkLayerNames.For(structures, library.LayerNames),
+        };
+    }
+
+    /// <summary>The file's database units per micrometre. G0's Q6: gdstk's OASIS writer — and so other
+    /// writers' files read through it — cannot state a 1 nm or 0.25 nm grid exactly, so 1000 arrives as
+    /// 1000.0000000000001. A grid within a part in 10⁹ of a whole number IS that number; anything
+    /// further off is the file's own and stays as it is.</summary>
+    private static double GridOf(GdstkLibrary library, GdstkFormat format)
+    {
+        double grid = library.SourceDbuPerMicron;
+        if (format != GdstkFormat.Oasis) return grid;
+        double whole = Math.Round(grid);
+        return whole > 0 && Math.Abs(grid - whole) <= 1e-9 * whole ? whole : grid;
     }
 }

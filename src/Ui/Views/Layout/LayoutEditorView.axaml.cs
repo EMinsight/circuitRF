@@ -17,6 +17,7 @@ using CircuitRF.Ui.Docking;
 using CircuitRF.Ui.Layout;
 using CircuitRF.Ui.Layout.Drc;
 using CircuitRF.Design.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange.Gdstk;
 using CircuitRF.Ui.Messages;
 using CircuitRF.Ui.Renderers;
 using CircuitRF.WBond;
@@ -1758,11 +1759,22 @@ public partial class LayoutEditorView : UserControl
         // before writing — when nothing will (ExportPlan.HasNothingToReport), showing a dialog that
         // says "nothing will change" only trains users to dismiss dialogs unread, which defeats the
         // ones that actually matter. Skip straight to the save picker in that case.
+        //
+        // The OASIS route always shows it: its options are there (R-oas-4b), and so is what an OASIS file
+        // cannot hold.
         bool canWrite = plan.CanWrite && route.BlockingReferences(plan).Count == 0;
-        if (!plan.HasNothingToReport)
+        OasisWriteOptions? oasis = null;
+        if (!plan.HasNothingToReport || route == StreamRoute.OasisGdstk)
         {
-            var confirmed = await new GdsiiExportFidelityDialog(plan, route).ShowDialog<bool>(owner);
+            var dialog = new GdsiiExportFidelityDialog(plan, route,
+                route == StreamRoute.OasisGdstk ? GdsiiExportFidelityDialog.RememberedOasisOptions() : null);
+            var confirmed = await dialog.ShowDialog<bool>(owner);
             if (!confirmed || !canWrite) return;
+            if (dialog.OasisOptions is { } chosen)
+            {
+                oasis = chosen;
+                GdsiiExportFidelityDialog.RememberOasisOptions(chosen);
+            }
         }
         else if (!canWrite) return;
 
@@ -1785,7 +1797,7 @@ public partial class LayoutEditorView : UserControl
         try
         {
             // The gdstk routes start a worker process and wait on it, so the write runs off the UI thread.
-            var summary = await Task.Run(() => StreamInterchange.Write(route, file.Path.LocalPath, plan));
+            var summary = await Task.Run(() => StreamInterchange.Write(route, file.Path.LocalPath, plan, oasis: oasis));
             vm.ReportMessage(
                 $"Exported {route.DisplayName()} · {summary.CurvedShapesFlattened} curve(s) flattened, " +
                 $"{summary.HolesKeyholed} hole(s) keyholed, {summary.BitmapsSkipped} bitmap(s) skipped, " +

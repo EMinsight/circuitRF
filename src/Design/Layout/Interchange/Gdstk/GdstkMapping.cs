@@ -5,6 +5,8 @@
 // so the two routes disagree only where gdstk delivers something different, never because circuitRF
 // interprets the same thing twice.
 
+using System.Text.RegularExpressions;
+
 namespace CircuitRF.Design.Layout.Interchange.Gdstk;
 
 /// <summary>
@@ -31,9 +33,13 @@ namespace CircuitRF.Design.Layout.Interchange.Gdstk;
 /// reference                               LayoutInstance                           mirror then rotate, as GDSII.
 ///   rectangular repetition                  Rows / Cols / PitchX / PitchY          a count of 1 zeroes its pitch.
 ///   regular, axis-aligned either way        one array (columns along y swap)      GdsiiReader.ReadLattice.
-///   any other repetition                    one instance per copy, one message     under MaxExpanded, else refused.
-/// any shape's repetition (OASIS)          one shape per copy, counted              under MaxExpanded, else refused.
+///   any other repetition                    one instance per copy, one message     under the limit, else refused.
+/// any shape's repetition (OASIS)          one shape per copy, counted              under the limit, else refused:
+///                                                                                  100,000 for GDSII, 10⁶ for OASIS.
 /// properties, robust paths, off-grid      not imported / rounded, one message each the cell reply's notes.
+/// XNAME, XELEMENT, XGEOMETRY (OASIS)      not imported, counted with properties    gdstk's one line per record,
+///                                                                                  folded into one message.
+/// OASIS LAYERNAME                         the source layer's name                  GdstkLayerNames: name before number.
 ///
 /// circuitRF (export, after StreamLowering)  gdstk
 /// ───────────────────────────────────────── ──────────────────────────────────────────────────────────────────────
@@ -48,10 +54,19 @@ namespace CircuitRF.Design.Layout.Interchange.Gdstk;
 /// </summary>
 public static class GdstkMapping
 {
-    /// <summary>The most single instances or shapes one import creates by expanding repetitions. The native
-    /// reader's limit (<see cref="GdsiiReader.MaxExpandedInstances"/>), shared so the two routes refuse the
-    /// same file; R-oas-4c sets OASIS's own limit in G4.</summary>
+    /// <summary>The most single instances or shapes one GDSII import creates by expanding repetitions. The
+    /// native reader's limit (<see cref="GdsiiReader.MaxExpandedInstances"/>), shared so the two GDSII
+    /// routes refuse the same file.</summary>
     public const int MaxExpanded = GdsiiReader.MaxExpandedInstances;
+
+    /// <summary>R-oas-4c: the most single shapes or instances one OASIS import creates by expanding
+    /// repetitions — G0's Q7 figure. OASIS is where repetitions live: a 1000 × 1000 rectangle array is a
+    /// 316-byte file, so the GDSII limit would refuse ordinary OASIS. Above it the import is refused,
+    /// never truncated.</summary>
+    public const int MaxExpandedOasis = 1_000_000;
+
+    /// <summary>The expansion limit for a file of <paramref name="format"/>.</summary>
+    public static int MaxExpandedFor(GdstkFormat format) => format == GdstkFormat.Oasis ? MaxExpandedOasis : MaxExpanded;
 
     /// <summary>The height a label carries per unit of magnification — the native reader's default
     /// text height, which is what it multiplies a TEXT's MAG by when the TEXT has no WIDTH.</summary>
@@ -67,6 +82,28 @@ public static class GdstkMapping
         internal readonly List<string> Messages = [];
         internal long Expanded, Properties, RobustPaths, MultiElementPaths, OffGrid, ShapesExpanded;
         internal int CellProperties;
+        private readonly SortedDictionary<string, int> _ignoredRecords = new(StringComparer.Ordinal);
+
+        /// <summary>The expansion limit this file is read under.</summary>
+        internal int Limit => MaxExpandedFor(Format);
+
+        /// <summary>
+        /// Takes gdstk's own "Record type XNAME ignored." lines out of <paramref name="gdstkMessages"/> —
+        /// one per record, so a file of a thousand XNAMEs would bury every other message — and returns the
+        /// rest. The records it took are counted in <see cref="Finish"/>'s one not-imported line, beside
+        /// the properties, which circuitRF has no form for either (G0 condition 4).
+        /// </summary>
+        public IReadOnlyList<string> TakeIgnoredRecords(IEnumerable<string> gdstkMessages)
+        {
+            var rest = new List<string>();
+            foreach (string m in gdstkMessages)
+            {
+                var hit = IgnoredRecord.Match(m);
+                if (hit.Success) _ignoredRecords[hit.Groups[1].Value] = _ignoredRecords.GetValueOrDefault(hit.Groups[1].Value) + 1;
+                else rest.Add(m);
+            }
+            return rest;
+        }
 
         /// <summary>The messages, with the per-file counts appended. <paramref name="libraryProperties"/>:
         /// the library itself carried properties.</summary>
@@ -74,8 +111,16 @@ public static class GdstkMapping
         {
             var all = new List<string>(Messages);
             long props = Properties + CellProperties + (libraryProperties ? 1 : 0);
-            if (props > 0)
-                all.Add($"{props} propert{(props == 1 ? "y" : "ies")} not imported: circuitRF keeps no element, cell or library properties.");
+            string propsText = $"{props} propert{(props == 1 ? "y" : "ies")}";
+            if (_ignoredRecords.Count > 0)
+            {
+                var parts = _ignoredRecords.Select(r => $"{r.Value} {r.Key}").ToList();
+                if (props > 0) parts.Insert(0, propsText);
+                string list = parts.Count == 1 ? parts[0] : string.Join(", ", parts[..^1]) + " and " + parts[^1];
+                all.Add($"{list} record(s) not imported: circuitRF keeps no properties and has no form for extension records.");
+            }
+            else if (props > 0)
+                all.Add($"{propsText} not imported: circuitRF keeps no element, cell or library properties.");
             if (ShapesExpanded > 0)
                 all.Add($"{ShapesExpanded} shape(s) placed one by one from repetitions.");
             if (RobustPaths > 0)
@@ -83,9 +128,14 @@ public static class GdstkMapping
             if (MultiElementPaths > 0)
                 all.Add($"{MultiElementPaths} multi-element path(s) read as one path per element.");
             if (OffGrid > 0)
-                all.Add($"{OffGrid} coordinate(s) were off the file's grid and rounded to it.");
+                all.Add(Format == GdstkFormat.Oasis
+                    ? $"{OffGrid} coordinate(s) were off the file's grid and rounded to it (an OASIS CIRCLE arrives as a polygon whose vertices are)."
+                    : $"{OffGrid} coordinate(s) were off the file's grid and rounded to it.");
             return all;
         }
+
+        // gdstk's own words for a record it reads past (library.cpp, read_oas).
+        private static readonly Regex IgnoredRecord = new(@"Record type (XNAME|XELEMENT|XGEOMETRY) ignored", RegexOptions.CultureInvariant);
     }
 
     public static InterchangeStructure ToInterchange(GdstkCell cell, ImportNotes notes)
@@ -197,16 +247,16 @@ public static class GdstkMapping
         expandedByCell[r.Cell] = expandedByCell.GetValueOrDefault(r.Cell) + n;
     }
 
-    /// <summary>Every copy's displacement — just (0, 0) for an element with no repetition — under
-    /// <see cref="MaxExpanded"/>. Above it the read throws, and because the import reads every cell before
+    /// <summary>Every copy's displacement — just (0, 0) for an element with no repetition — under the
+    /// file's expansion limit (<see cref="MaxExpandedFor"/>). Above it the read throws, and because the import reads every cell before
     /// it creates anything, nothing is created.</summary>
     private static IReadOnlyList<(long X, long Y)> Copies(GdstkRepetition? rep, ImportNotes notes, bool counted = true)
     {
         if (rep is null || rep.Count <= 1) return [(0, 0)];
         long n = rep.Count;
         long total = notes.Expanded + notes.ShapesExpanded + n;
-        if (total > MaxExpanded)
-            throw new GdstkException(GdstkFailure.Refused, GdstkDiagnostics.ExpansionLimit(n, total, MaxExpanded), "import.expansion-limit");
+        if (total > notes.Limit)
+            throw new GdstkException(GdstkFailure.Refused, GdstkDiagnostics.ExpansionLimit(n, total, notes.Limit), "import.expansion-limit");
         if (counted) notes.ShapesExpanded += n;
         return rep.Offsets().ToList();
     }

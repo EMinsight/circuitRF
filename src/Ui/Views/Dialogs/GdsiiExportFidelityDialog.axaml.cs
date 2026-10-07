@@ -1,6 +1,8 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using CircuitRF.Design.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange.Gdstk;
+using CircuitRF.Ui.Theming;
 
 namespace CircuitRF.Ui.Views.Dialogs;
 
@@ -23,7 +25,11 @@ public partial class GdsiiExportFidelityDialog : Window
 
     public GdsiiExportFidelityDialog(GdsiiExport.ExportPlan plan) : this(plan, StreamRoute.Gdsii) { }
 
-    public GdsiiExportFidelityDialog(GdsiiExport.ExportPlan plan, StreamRoute route) : this()
+    /// <summary>The OASIS writer's options as the dialog closed (the route's defaults, or what
+    /// <paramref name="oasis"/> opened on, until the user changes them). Null on a GDSII route.</summary>
+    public OasisWriteOptions? OasisOptions { get; private set; }
+
+    public GdsiiExportFidelityDialog(GdsiiExport.ExportPlan plan, StreamRoute route, OasisWriteOptions? oasis = null) : this()
     {
         string format = route.FormatName();
         Title = $"Export {route.DisplayName()}";
@@ -49,7 +55,23 @@ public partial class GdsiiExportFidelityDialog : Window
         // R-via-10: GDSII carries no drill table — never a manufacturable PCB deliverable.
         ViaFabricationNoteLine.IsVisible = plan.HasVias;
 
-        NoChangesLine.IsVisible = plan.HasNothingToReport;
+        // R-oas-4b: what an OASIS file cannot hold, counted from the elements the write will send, and
+        // the writer's options. Both appear on the OASIS route only.
+        var oasisLosses = route == StreamRoute.OasisGdstk ? OasisLosses.Of(plan).Messages() : [];
+        OasisLossLine.Text = string.Join("\n", oasisLosses.Select(m => $"• {m}"));
+        OasisLossLine.IsVisible = oasisLosses.Count > 0;
+        if (route == StreamRoute.OasisGdstk)
+        {
+            var o = oasis ?? OasisWriteOptions.Default;
+            OasisOptions = o;
+            OasisOptionsPanel.IsVisible = true;
+            OasisCompression.Value = o.CompressionLevel;
+            OasisValidationBox.SelectedIndex = (int)o.Validation;
+            OasisDetectShapes.IsChecked = o.DetectRectanglesAndTrapezoids;
+            OasisStandardProperties.IsChecked = o.StandardProperties;
+        }
+
+        NoChangesLine.IsVisible = plan.HasNothingToReport && oasisLosses.Count == 0;
 
         var blocking = route.BlockingReferences(plan);
         if (plan.UnresolvedInstanceReferences.Count > 0)
@@ -74,5 +96,47 @@ public partial class GdsiiExportFidelityDialog : Window
     }
 
     private void OnCancelClick(object? sender, RoutedEventArgs e) => Close(false);
-    private void OnExportClick(object? sender, RoutedEventArgs e) => Close(true);
+    private void OnExportClick(object? sender, RoutedEventArgs e)
+    {
+        if (OasisOptions is not null)
+            OasisOptions = new OasisWriteOptions(
+                Math.Clamp((int)(OasisCompression.Value ?? 6), 0, 9),
+                OasisDetectShapes.IsChecked ?? true,
+                OasisValidationBox.SelectedIndex is >= 0 and <= 2 ? (OasisValidation)OasisValidationBox.SelectedIndex : OasisValidation.Crc32,
+                OasisStandardProperties.IsChecked ?? false);
+        Close(true);
+    }
+
+    /// <summary>The OASIS options this user last exported with (<see cref="OasisWriteOptions.Default"/>
+    /// for any they never set).</summary>
+    public static OasisWriteOptions RememberedOasisOptions()
+    {
+        var p = AppPreferencesIo.Load();
+        var d = OasisWriteOptions.Default;
+        return new OasisWriteOptions(
+            p.OasisCompressionLevel is int level and >= 0 and <= 9 ? level : d.CompressionLevel,
+            p.OasisDetectRectanglesAndTrapezoids ?? d.DetectRectanglesAndTrapezoids,
+            p.OasisValidation switch
+            {
+                "none" => OasisValidation.None,
+                "checksum32" => OasisValidation.Checksum32,
+                "crc32" => OasisValidation.Crc32,
+                _ => d.Validation,
+            },
+            p.OasisStandardProperties ?? d.StandardProperties);
+    }
+
+    /// <summary>Remembers <paramref name="o"/> for this user's next OASIS export.</summary>
+    public static void RememberOasisOptions(OasisWriteOptions o) => AppPreferencesIo.Update(p =>
+    {
+        p.OasisCompressionLevel = o.CompressionLevel;
+        p.OasisDetectRectanglesAndTrapezoids = o.DetectRectanglesAndTrapezoids;
+        p.OasisValidation = o.Validation switch
+        {
+            OasisValidation.None => "none",
+            OasisValidation.Checksum32 => "checksum32",
+            _ => "crc32",
+        };
+        p.OasisStandardProperties = o.StandardProperties;
+    });
 }

@@ -646,6 +646,27 @@ public sealed class AppPreferences
     [JsonPropertyName("smith_preferred_inductors_henry")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<double>? SmithPreferredInductorsHenry { get; set; }
+
+    // brief-oasis-gdstk.md R-oas-4b: the OASIS (gdstk) export dialog's four options, remembered from one
+    // export to the next. Null is the default (OasisWriteOptions.Default: compression 6, rectangles and
+    // trapezoids detected, CRC32, no standard properties). Per USER for CheckDrcOnExport's own reason:
+    // how a user hands files to their mask shop is a working habit, not a property of a design.
+    // Validation is stored by name ("none", "crc32", "checksum32") so the file stays readable.
+    [JsonPropertyName("oasis_compression_level")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? OasisCompressionLevel { get; set; }
+
+    [JsonPropertyName("oasis_detect_rectangles_and_trapezoids")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? OasisDetectRectanglesAndTrapezoids { get; set; }
+
+    [JsonPropertyName("oasis_validation")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? OasisValidation { get; set; }
+
+    [JsonPropertyName("oasis_standard_properties")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? OasisStandardProperties { get; set; }
 }
 
 public static class AppPreferencesIo

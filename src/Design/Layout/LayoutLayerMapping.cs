@@ -213,6 +213,7 @@ public static class LayoutLayerMapping
         return (null, LayerMatchKind.NoMatch);
     }
 
-    private static bool NamesMatch(string? a, string? b) =>
+    /// <summary>The name comparison every proposal makes: case- and surrounding-whitespace-insensitive.</summary>
+    internal static bool NamesMatch(string? a, string? b) =>
         a is not null && b is not null && string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
 }

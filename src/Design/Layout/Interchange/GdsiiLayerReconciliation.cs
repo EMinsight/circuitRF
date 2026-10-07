@@ -20,9 +20,17 @@ public static class GdsiiLayerReconciliation
     /// <see cref="LayoutLayerMapping.Propose"/> reproduces exactly the right <see
     /// cref="LayerMatchKind"/> (<c>SameKeySameName</c> when the destination technology already owns
     /// that GDSII identity, <c>NoMatch</c> otherwise) with zero changes to L1g's own code.
+    ///
+    /// <para><paramref name="fileLayerNames"/> are the names the FILE gives its layers — OASIS
+    /// <c>LAYERNAME</c> records (R-oas-4a); GDSII has none and passes null. They are matched NAME FIRST,
+    /// as DXF layer names are (<see cref="DxfLayerReconciliation"/>): a file name that a destination
+    /// layer carries becomes the synthetic name, so <c>Propose</c> lands the key on that layer by name
+    /// whatever its number. A file name no destination layer carries gives way to the numeric identity
+    /// above, and is the row's name only when that finds nothing either — so the mapping dialog shows
+    /// what the file calls a layer it is asking about.</para>
     /// </summary>
     public static IReadOnlyList<LayerDef> BuildSourceLayers(
-        IReadOnlyList<LayoutShape> shapes, Technology? destTech)
+        IReadOnlyList<LayoutShape> shapes, Technology? destTech, IReadOnlyDictionary<LayerKey, string>? fileLayerNames = null)
     {
         var order = new List<LayerKey>();
         var seen = new HashSet<LayerKey>();
@@ -33,7 +41,14 @@ public static class GdsiiLayerReconciliation
         var result = new List<LayerDef>(order.Count);
         foreach (var key in order)
         {
-            string name = "";
+            string? fileName = fileLayerNames?.GetValueOrDefault(key);
+            if (fileName is not null && destTech is not null && destTech.Layers.Any(l => LayoutLayerMapping.NamesMatch(l.Name, fileName)))
+            {
+                result.Add(new LayerDef { Key = key, Name = fileName });
+                continue;
+            }
+
+            string name = fileName ?? "";
             if (destTech is not null)
             {
                 foreach (var l in destTech.Layers)

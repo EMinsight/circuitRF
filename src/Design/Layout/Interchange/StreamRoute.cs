@@ -83,14 +83,15 @@ public static class StreamInterchange
     /// Writes <paramref name="plan"/> (<see cref="GdsiiExport.Analyze"/>'s) to <paramref name="filePath"/>
     /// through <paramref name="route"/>, and returns what the lowering did — the plan's own counts on every
     /// route, plus whatever the gdstk route adds to say. Refuses, writing nothing, exactly as
-    /// <see cref="GdsiiExport.Write"/> and <see cref="GdstkExport.Write"/> do.
+    /// <see cref="GdsiiExport.Write"/> and <see cref="GdstkExport.Write"/> do. <paramref name="oasis"/>
+    /// is the OASIS route's writer options (null: the defaults); the GDSII routes ignore it.
     /// </summary>
     public static GdsiiExportSummary Write(
         StreamRoute route, string filePath, GdsiiExport.ExportPlan plan,
-        GdstkWorkerOptions? worker = null, CancellationToken token = default)
+        GdstkWorkerOptions? worker = null, CancellationToken token = default, OasisWriteOptions? oasis = null)
     {
         if (route.UsesGdstk())
-            return GdstkExport.Write(filePath, plan, GdstkFormatOf(route), options: null, worker, token);
+            return GdstkExport.Write(filePath, plan, GdstkFormatOf(route), oasis, worker, token);
 
         return GdsiiExport.Write(filePath, plan);
     }

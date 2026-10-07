@@ -415,6 +415,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         AddCellToWorkspaceCommand.NotifyCanExecuteChanged();
         ImportGdsiiLibraryCommand.NotifyCanExecuteChanged();
         ImportGdsiiGdstkCommand.NotifyCanExecuteChanged();
+        ImportOasisGdstkCommand.NotifyCanExecuteChanged();
         ImportDxfLibraryCommand.NotifyCanExecuteChanged();
         ImportBoardCommand.NotifyCanExecuteChanged();
         ImportGerberCommand.NotifyCanExecuteChanged();
@@ -4663,11 +4664,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private Task ImportGdsiiGdstk(Window? owner) => ImportStreamLibraryAsync(owner, StreamRoute.GdsiiGdstk);
     private bool CanImportGdsiiGdstk() => CurrentWorkspacePath is not null && GdstkUnavailableReason is null;
 
-    /// <summary>File ▸ Import ▸ OASIS (gdstk)…: shown, and disabled until OASIS import is enabled
-    /// (brief-oasis-gdstk.md G4).</summary>
+    /// <summary>File ▸ Import ▸ OASIS (gdstk)…: OASIS, which only gdstk reads, through the same import
+    /// (brief-oasis-gdstk.md §9a), disabled when this build has no worker (D6).</summary>
     [RelayCommand(CanExecute = nameof(CanImportOasisGdstk))]
     private Task ImportOasisGdstk(Window? owner) => ImportStreamLibraryAsync(owner, StreamRoute.OasisGdstk);
-    private static bool CanImportOasisGdstk() => false;
+    private bool CanImportOasisGdstk() => CurrentWorkspacePath is not null && GdstkUnavailableReason is null;
 
     /// <summary>Why the (gdstk) entries are disabled in this build, or null when the worker is here. Asked
     /// once: the worker does not appear or vanish while the application runs.</summary>
@@ -4678,12 +4679,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     public string GdstkImportGdsiiTip => GdstkUnavailableReason ??
         "Import a GDSII library through gdstk, the second GDSII reader. circuitRF's own GDSII… entry stays the default; try this one when a file reads differently than expected.";
 
-    public string GdstkImportOasisTip => GdstkUnavailableReason ?? "OASIS import is not enabled in this build.";
+    public string GdstkImportOasisTip => GdstkUnavailableReason ??
+        "Import an OASIS file through gdstk. Layers the file names are matched to the technology by name first.";
 
     public string GdstkExportGdsiiTip => GdstkUnavailableReason ??
         "Write GDSII through gdstk, the second GDSII writer. Requires an active layout document.";
 
-    public string GdstkExportOasisTip => GdstkUnavailableReason ?? "OASIS export is not enabled in this build.";
+    public string GdstkExportOasisTip => GdstkUnavailableReason ??
+        "Write OASIS through gdstk. Requires an active layout document.";
 
     private async Task ImportStreamLibraryAsync(Window? owner, StreamRoute route)
     {
@@ -9763,10 +9766,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void ExportGdsiiGdstk() => ExportStream(StreamRoute.GdsiiGdstk);
     private bool CanExportGdsiiGdstk() => IsLayoutDocumentActive() && GdstkUnavailableReason is null;
 
-    /// <summary>File ▸ Export ▸ OASIS (gdstk): shown, and disabled until OASIS export is enabled (G4).</summary>
+    /// <summary>File ▸ Export ▸ OASIS (gdstk): OASIS through the gdstk worker (brief-oasis-gdstk.md §9b),
+    /// disabled when this build has none.</summary>
     [RelayCommand(CanExecute = nameof(CanExportOasisGdstk))]
     private void ExportOasisGdstk() => ExportStream(StreamRoute.OasisGdstk);
-    private static bool CanExportOasisGdstk() => false;
+    private bool CanExportOasisGdstk() => IsLayoutDocumentActive() && GdstkUnavailableReason is null;
 
     /// <summary>Every stream export, one entry point: the active layout runs ITS OWN export for the route.</summary>
     private void ExportStream(StreamRoute route) => (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportGdsii(route);
@@ -16105,6 +16109,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Export GDSII/DXF (item 8) are enabled only when a layout document is active.
         ExportGdsiiCommand.NotifyCanExecuteChanged();
         ExportGdsiiGdstkCommand.NotifyCanExecuteChanged();
+        ExportOasisGdstkCommand.NotifyCanExecuteChanged();
         // Standing gotcha (see this file's own L5 note): a [RelayCommand(CanExecute=...)] gated on
         // the active document type is NOT re-evaluated on its own — it must be added to BOTH
         // fan-outs, or it silently stays stuck at whatever it was on construction.
@@ -16411,6 +16416,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         ExportGdsiiCommand.NotifyCanExecuteChanged();
         ExportGdsiiGdstkCommand.NotifyCanExecuteChanged();
+        ExportOasisGdstkCommand.NotifyCanExecuteChanged();
         PlaceCellInstanceCommand.NotifyCanExecuteChanged();
         NewThreeDViewFromLayoutCommand.NotifyCanExecuteChanged();
         // Standing gotcha (see this file's own L5 note): a [RelayCommand(CanExecute=...)] gated on

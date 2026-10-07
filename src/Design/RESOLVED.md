@@ -18199,3 +18199,52 @@ angles to 1e-9° on import (G2), so a tighter tolerance would report the snap. *
 1000 on purpose**: circuitRF's writer carries a label's height as `WIDTH`, which gdstk ignores on TEXT, so any
 other height reads back through gdstk as 1000 — G2's recorded difference (the spec leaves `WIDTH` on TEXT
 undefined, so it is classified ambiguous, not either side's defect), not one to rediscover in every case.
+
+## OASIS and gdstk — OASIS import and export (brief-oasis-gdstk G4, R-oas-4, 2026-10-06)
+
+**LAYERNAME is matched name first, then number** (R-oas-4a). `Gdstk/GdstkLayerNames.For` turns the file's
+records into one name per layer key the import uses: labels look among the TEXT records (their key is
+(layer, text type)), everything else among the GEOMETRY records, geometry winning on a key used by both, the first
+record winning when several cover a key. OASIS interval types 0–4 as SEMI P39 states them; gdstk keeps the one
+bound of types 1–3 in `bound_a`. `GdsiiLayerReconciliation.BuildSourceLayers` takes the names as an optional
+argument (GDSII passes none) and adapts them onto the UNMODIFIED `LayoutLayerMapping.Propose`, the way
+`DxfLayerReconciliation` does: a file name that some destination layer carries becomes the synthetic name, so
+`Propose` finds it by name (`ExactName`) whatever its number; a file name nobody carries gives way to the numeric
+identity, and is the row's name only when that finds nothing either, so the mapping dialog shows what the file
+calls the layer it is asking about. `NamesMatch` became `internal` so the comparison is one function.
+
+**The expansion limit is per format** (R-oas-4c). GDSII stays at the native reader's 100,000 (both GDSII routes
+refuse the same file). OASIS is **10⁶**, G0's Q7 figure (`GdstkMapping.MaxExpandedOasis`), because OASIS is
+where repetitions live: a 1000 × 1000 array is a 311-byte file. Measured on circuitRF's side with a scratch
+harness (osx-arm64, Release; owner's Debug will be slower): **importing that file at exactly the limit takes
+1.8 s, peaks at 1.36 GB in circuitRF's own process, and writes a 158 MB `.clay`** of 10⁶ `PolygonShape`s. The
+memory is circuitRF's, not the worker's (which Q7 measured at ~200 MB). The limit is the owner's to lower.
+
+**Conditions from G0, each a message with its count:**
+- *Write* (`OasisLosses`, counted from the elements the write sends, so the export dialog and the write's
+  messages are one number): round ends written flush, odd widths written one unit wider, labels that lose a
+  rotation or a size.
+- *Read*: gdstk logs one `Record type XNAME ignored.` line per record; `ImportNotes.TakeIgnoredRecords` takes
+  them out and `Finish` counts them with the properties in ONE line. A CIRCLE's off-grid vertices are counted in
+  the existing off-grid line, which on OASIS says that is what they are. Shape repetitions expanded: the existing
+  line.
+- *Grid*: an OASIS grid within 1e-9 of a whole number is that number (`GdstkImport.GridOf`), because gdstk's
+  writer states 1000 as 1000.0000000000001 (Q6).
+
+**One loss is not a message: an extended end of width/2 comes back half-width** (Q8). In circuitRF's model that is
+`Extended` → `Square`, the same shape, so nothing is lost; `GdstkOasisTests.WhatOasisHolds` states it.
+
+**Export options** (R-oas-4b): `OasisWriteOptions` (compression 0–9, rectangles-and-trapezoids detection as one
+switch, validation none/CRC-32/checksum-32, standard properties), defaults 6/on/CRC-32/off. `circle_tolerance`
+stays 0 in the worker, so no OASIS CIRCLE is ever written. The export dialog always opens on the OASIS route (its
+options are there even when nothing else is to report) and remembers the four in `preferences.json`
+(`oasis_*`); `StreamInterchange.Write` takes them as an argument, per this project's rule that a preference
+is an argument.
+
+**Tests** (`tests/Ui.Tests/Interchange/GdstkOasisTests`, 33 cases, green on osx-arm64): the corpus through OASIS
+and back; GDSII → OASIS → GDSII through the import-then-export `convert` performs, **in process** (`convert`'s
+`oasis` format is G5's; that test re-points at the verb then); the 13 committed `oasis-gdstk/*.oas` fixtures
+against their `reads_back_as`; a 1001 × 1000 repetition refused with nothing created; a truncated file refused
+(`read.truncated`) with nothing created; LAYERNAME landing on a same-named layer of a different number while the
+same-numbered layer has another name; and the write- and read-side condition messages. The OASIS export dialog
+compiles and is wired, but has no headless harness and was not seen on screen.

@@ -18,8 +18,10 @@ public static class StreamLayoutImport
     /// <paramref name="rawStructures"/>, whose coordinates are in the source's database units
     /// (<paramref name="sourceDbuPerMicron"/>). <paramref name="diagnostics"/> are the reader's own
     /// messages, which lead the result's. <paramref name="formatName"/> ("GDSII", "OASIS") is the word
-    /// the messages use for the source. <paramref name="resolveLayerMapping"/> and the rest are
-    /// <see cref="GdsiiImport.Import"/>'s, with the same meaning.
+    /// the messages use for the source. <paramref name="fileLayerNames"/> are the names the file gives
+    /// its layers (OASIS <c>LAYERNAME</c>; null for GDSII), matched before the numbers.
+    /// <paramref name="resolveLayerMapping"/> and the rest are <see cref="GdsiiImport.Import"/>'s, with
+    /// the same meaning.
     /// </summary>
     public static GdsiiImport.ImportResult Import(
         IReadOnlyList<InterchangeStructure> rawStructures,
@@ -31,7 +33,8 @@ public static class StreamLayoutImport
         int destDbuPerMicron,
         bool preferSourceResolution,
         Func<IReadOnlyList<LayerMappingRow>, IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>?>? resolveLayerMapping = null,
-        PinInferenceRules? pinRules = null)
+        PinInferenceRules? pinRules = null,
+        IReadOnlyDictionary<LayerKey, string>? fileLayerNames = null)
     {
         int pinsFound = 0, pinsNamed = 0;
         var pinNotes = new List<string>();
@@ -63,7 +66,7 @@ public static class StreamLayoutImport
         // consistent layer vocabulary throughout); the .ctech mapping supplies proposals, the existing
         // dialog resolves what it cannot — never a second reconciliation algorithm.
         var allShapes = scaled.SelectMany(s => s.Shapes).ToList();
-        var sourceLayers = GdsiiLayerReconciliation.BuildSourceLayers(allShapes, destTech);
+        var sourceLayers = GdsiiLayerReconciliation.BuildSourceLayers(allShapes, destTech, fileLayerNames);
         var rows = LayoutLayerMapping.Propose(allShapes, sourceLayers, destTech);
 
         IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>? choices = null;
