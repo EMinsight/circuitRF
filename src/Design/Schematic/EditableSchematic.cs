@@ -86,12 +86,12 @@ public static class SymbolPortDefs
             case SymbolKind.ViaGnd:  return [("A", 0f, -200f)];
             // The MMIC passives (AA-1): horizontal, on MLIN's left/right convention, because they sit
             // in a die's lines. MIMCAP 1 = top plate, 2 = bottom plate; SPIRAL 1 = outer end, 2 = inner
-            // end; AIRBRIDGE 1/2 = the landings and 3, below, the line it crosses.
+            // end; AIRBRIDGE 1/2 = the landings, and 3 (below) / 4 (above) the two ends of the line it crosses.
             case SymbolKind.MimCap:    return [("1", -200f, 0f), ("2", 200f, 0f)];
             case SymbolKind.Spiral:    return [("1", -200f, 0f), ("2", 200f, 0f)];
             case SymbolKind.OctSpiral: return [("1", -200f, 0f), ("2", 200f, 0f)];
             case SymbolKind.Tfr:       return [("1", -200f, 0f), ("2", 200f, 0f)];
-            case SymbolKind.Airbridge: return [("1", -200f, 0f), ("2", 200f, 0f), ("3", 0f, 200f)];
+            case SymbolKind.Airbridge: return [("1", -200f, 0f), ("2", 200f, 0f), ("3", 0f, 200f), ("4", 0f, -200f)];
             // Pin: one connection terminal at the lead tip (horizontal, tip on the right).
             case SymbolKind.Pin:     return [("1", 100f, 0f)];
             // IProbe: two terminals at the bottom, 100 apart, both at y=100.

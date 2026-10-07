@@ -2188,7 +2188,8 @@ public static class ComponentModelFactory
     private static AirbridgeModel CreateAirbridgeModel(IReadOnlyDictionary<string, Value> p)
         => new(GetReal(p, "L", 30e-6), GetReal(p, "W", 10e-6), GetReal(p, "Wu", 10e-6),
                GetReal(p, "Sigma", DefaultMmicSigma), GetReal(p, "T", DefaultMmicMetalThickness),
-               GetReal(p, "Hb", DefaultBridgeHeight), GetReal(p, "Erb", 1.0));
+               GetReal(p, "Hb", DefaultBridgeHeight), GetReal(p, "Erb", 1.0),
+               GetReal(p, "SigmaU", DefaultMmicSigma), GetReal(p, "Tu", DefaultMmicMetalThickness));
 
     private static MicrostripBendModel CreateMicrostripBendModel(IReadOnlyDictionary<string, Value> parameters)
     {

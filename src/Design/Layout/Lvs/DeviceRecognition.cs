@@ -546,6 +546,7 @@ internal static class DeviceRecognition
         DeviceKind.Transistor       => "Q",
         DeviceKind.TransmissionLine => "T",
         DeviceKind.Via              => "V",
+        DeviceKind.Crossover        => "B",
         _                           => "X",
     };
 

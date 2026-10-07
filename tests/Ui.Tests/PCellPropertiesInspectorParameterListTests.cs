@@ -294,7 +294,7 @@ public sealed class PCellPropertiesInspectorParameterListTests : IDisposable
         if (kind == SymbolKind.Tfr)   // no technology: the standalone 50 Ω/sq film
             Assert.Equal("≈ 400 Ω (8 sq × 50 Ω/sq)", RowNamed(props, readout).ValueText);
         if (readout == "L")
-            Assert.EndsWith(" nH (estimate)", RowNamed(props, readout).ValueText);
+            Assert.EndsWith(" nH (estimated)", RowNamed(props, readout).ValueText);
     }
 
     /// <summary>A resolver standing in for a kit: it declares the DIMENSIONS a real one declares on

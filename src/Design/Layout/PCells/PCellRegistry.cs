@@ -256,6 +256,9 @@ public static class PCellRegistry
             // end widths — an ordinary impedance transformer on a low-permittivity board — was
             // therefore drawn with the full end step, and a generated cell already on disk carries it.
             { "MKLOPF", 2 },
+            // A four-port now: the crossed line's segment is two bridge widths long and carries pin 4 on
+            // its upper end. A cell on disk from the three-port was drawn without it.
+            { "AIRBRIDGE", 2 },
         };
 
     public static int GeneratorVersion(string generatorId)

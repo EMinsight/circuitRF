@@ -565,7 +565,8 @@ public enum SymbolKind
     /// <summary>Thin-film resistor (engine "TFR"): sheet resistance times squares.</summary>
     Tfr,
 
-    /// <summary>Air bridge (engine "AIRBRIDGE"). Terminals 1 and 2 the landings, 3 the line crossed.</summary>
+    /// <summary>Air bridge (engine "AIRBRIDGE"). Terminals 1 and 2 the landings, 3 and 4 the two ends of
+    /// the line crossed.</summary>
     Airbridge,
 
     /// <summary>Octagonal spiral inductor (engine "OSPIRAL"): <see cref="Spiral"/> with its corners cut,

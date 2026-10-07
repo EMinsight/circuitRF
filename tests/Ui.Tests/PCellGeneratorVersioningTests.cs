@@ -99,6 +99,62 @@ public sealed class PCellGeneratorVersioningTests : IDisposable
         Assert.True(minY < 0, "the freshly (re)generated MTee cell must carry the corrected -Y branch geometry");
     }
 
+    /// <summary>
+    /// <b>A built-in generator's output may not change without its version changing.</b> Each one's
+    /// artwork at its component's default parameters (no technology) is fingerprinted and recorded
+    /// against the version it was drawn at. The AIRBRIDGE's fourth pin was added without a bump, and a
+    /// placed bridge went on resolving to its cached three-pin cell — the bug this class exists for,
+    /// found a second time. When this fails: bump the generator in PCellRegistry's version table and
+    /// record the new version and fingerprint here.
+    /// </summary>
+    [Fact]
+    public void ABuiltInGeneratorsOutput_DoesNotChangeWithoutAVersionBump()
+    {
+        var recorded = new Dictionary<string, (int Version, string Fingerprint)>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "AIRBRIDGE", (2, "2327f8e71ab15d8a") },
+            { "MBEND",     (2, "29da574becb2a6ae") },
+            { "MCROSS",    (1, "f1a45766bd0cf635") },
+            { "MIMCAP",    (1, "737cbbe2de2e2d49") },
+            { "MKLOPF",    (2, "536d3e0bcb7fdf36") },
+            { "MLIN",      (1, "d959192817a03f9f") },
+            { "MTAPER",    (1, "c94d21d51b1b12c6") },
+            { "MTEE",      (2, "97c5e024b02f10fe") },
+            { "OSPIRAL",   (1, "c8c3edac9f941c3f") },
+            { "SPIRAL",    (1, "895490af0315aa14") },
+            { "TFR",       (1, "f99f3ddad4627f0e") },
+            { "VIA",       (1, "8a6588e560a37ddd") },
+            { "VIAGND",    (1, "e60d55d66db4a1f5") },
+        };
+
+        var report = new List<string>();
+        foreach (var id in PCellRegistry.KnownGeneratorIds.OrderBy(i => i, StringComparer.Ordinal))
+        {
+            Assert.True(LayoutToSchematicGenerator.TryGetSymbolKind(id, out var kind), id);
+            Assert.True(PCellRegistry.TryGet(id, out var generate), id);
+            var art = generate(SchematicToLayoutGenerator.ResolveDefaultParameters(kind, 0), null, PCellLayerSelection.Default);
+            string fingerprint = Fingerprint(art);
+            int version = PCellRegistry.GeneratorVersion(id);
+            if (!recorded.TryGetValue(id, out var r) || r.Version != version || r.Fingerprint != fingerprint)
+                report.Add($"{{ \"{id}\", ({version}, \"{fingerprint}\") }},"
+                         + (recorded.TryGetValue(id, out var was) && was.Version == version
+                             ? "   <- OUTPUT CHANGED at the same version: bump it in PCellRegistry" : ""));
+        }
+        Assert.True(report.Count == 0, "Built-in generator fingerprints differ from the record:\n" + string.Join("\n", report));
+    }
+
+    private static string Fingerprint(PCellResult art)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var shape in art.Shapes)
+            sb.Append(shape.GetType().Name).Append(System.Text.Json.JsonSerializer.Serialize(shape, shape.GetType())).Append('\n');
+        foreach (var pin in art.Pins)
+            sb.Append(pin.Name).Append(':').Append(pin.X).Append(',').Append(pin.Y).Append(',').Append(pin.Layer)
+              .Append(',').Append(pin.WidthDbu).Append(',').Append(pin.OutwardDirectionDeg.ToString("R", System.Globalization.CultureInfo.InvariantCulture)).Append('\n');
+        byte[] hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(sb.ToString()));
+        return System.Convert.ToHexString(hash)[..16].ToLowerInvariant();
+    }
+
     /// <summary>Reproduces GeneratedCellStore's OLD (pre-versioning) hash exactly, so this test can
     /// plant a stale cell folder under the name a pre-fix session would have used.</summary>
     private static string LegacyHashWithoutVersion(

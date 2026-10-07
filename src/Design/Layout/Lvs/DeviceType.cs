@@ -64,6 +64,10 @@ public enum DeviceKind
     /// <summary>A source, a port, a termination — the fixture. Excluded from the default
     /// comparison (R-lvs4-4c) and named so the exclusion can be stated rather than guessed.</summary>
     Fixture,
+
+    /// <summary>An air bridge: two landings and the two ends of the line it crosses. Its own kind, so it
+    /// never pairs with a microstrip cross, which has the same four terminals.</summary>
+    Crossover,
 }
 
 /// <summary>
@@ -260,10 +264,9 @@ public static class DeviceTypes
         SymbolKind.Mlin or SymbolKind.MBend or SymbolKind.MTee
             or SymbolKind.MCross or SymbolKind.Mtaper or SymbolKind.Mklopf
             or SymbolKind.Tline
-            // An air bridge is interconnect with a series L, and it has a third terminal (the line
-            // crossed), so it is the line family's, told apart by its terminal count like a tee.
-            or SymbolKind.Airbridge
             => DeviceKind.TransmissionLine,
+
+        SymbolKind.Airbridge => DeviceKind.Crossover,
 
         // Both vias are one kind: which one is told apart by the terminal count, as a tee from a cross.
         SymbolKind.Via or SymbolKind.ViaGnd => DeviceKind.Via,

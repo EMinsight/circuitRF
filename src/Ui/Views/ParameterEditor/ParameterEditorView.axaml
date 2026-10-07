@@ -775,7 +775,7 @@
                     <SelectableTextBlock Grid.Row="0" Grid.Column="1" Text="{Binding MmicReadoutText}"
                                          FontSize="11" Padding="4,3" VerticalAlignment="Center"
                                          Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                                         ToolTip.Tip="Computed from the geometry on the technology's process — a readout, not an input."/>
+                                         ToolTip.Tip="Estimated from the geometry — a readout, not an input."/>
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="R" FontSize="11"
                                IsVisible="{Binding HasMmicResistance}"
                                Margin="0,0,4,0" VerticalAlignment="Center"/>
@@ -783,7 +783,7 @@
                                          IsVisible="{Binding HasMmicResistance}"
                                          FontSize="11" Padding="4,3" VerticalAlignment="Center"
                                          Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                                         ToolTip.Tip="The coil's series resistance from the drawn trace length and the metal's conductivity — computed, not an input."/>
+                                         ToolTip.Tip="Estimated from the geometry — a readout, not an input."/>
                     <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding MmicReadoutNote}"
                                IsVisible="{Binding HasMmicReadoutNote}"
                                FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"

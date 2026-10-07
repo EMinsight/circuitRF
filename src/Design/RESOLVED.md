@@ -18378,3 +18378,27 @@ their image in the ground plane under the substrate (Greenhouse/Ruehli). Modifie
   less two antiparallel sides (Grover's parallel-filament form at d = l), a square loop is
   `(2µ₀a/π)·[ln(2a/(w+t)) + 0.033 + 0.2235(w+t)/a]`; it is not the −0.726 recalled from a table.
   `PartialInductanceTests` writes the derivation out.
+
+## AIRBRIDGE is a four-port; MMIC readouts carry no notes (2026-10-07)
+
+- **AIRBRIDGE terminals: 1/2 the landings, 3/4 the two ends of the crossed line.** The model is two
+  Ts (bridge 1–2, crossed segment 3–4) joined by the overlap capacitance between their midpoints,
+  which are Kron-eliminated per frequency (linear part). The crossed segment is two bridge widths long
+  on the base metal (`SigmaU`/`Tu` injected from the stack); the PCell draws exactly that, pin 4 on
+  its upper end. **LVS gives it its own `DeviceKind.Crossover`**: in the line family it would now
+  share a four-terminal count with MCROSS and could pair with one.
+- **The readouts show a value marked "estimated" and nothing else.** A note appears only when there
+  is no value (an unevaluable expression, a non-positive size). The owner removed the explanatory
+  text that had been shown in warning colour under every MMIC part.
+
+## A placed AIRBRIDGE kept its three pins: the generator version was not bumped (2026-10-07)
+
+The fourth pin was added to `AirbridgePCell` without bumping `AIRBRIDGE` in `PCellRegistry`'s
+generator-version table. A generated cell's folder name is a hash of (generator, version, parameters,
+technology, layers), so an air bridge placed before the change resolved to its cached three-pin cell —
+the same failure MTEE had in L5 (`PCellGeneratorVersioningTests`' header). Bumped to 2; the workspace
+open's `RegenerateAll` repoints existing layouts to the new cell.
+**Guard:** `PCellGeneratorVersioningTests.ABuiltInGeneratorsOutput_DoesNotChangeWithoutAVersionBump`
+fingerprints every built-in generator's default artwork (no technology) against the version it was
+recorded at; a changed fingerprint at an unchanged version fails and prints the line to paste after
+bumping. Verified by removing pin 4 again at version 2: it fails.

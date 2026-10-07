@@ -31,7 +31,7 @@ public static class MmicPassiveInjection
         SymbolKind.MimCap    => ["Er", "Td", "TanD", "SigmaTop", "Ttop", "SigmaBot", "Tbot", "H", "ErSub"],
         SymbolKind.Spiral or SymbolKind.OctSpiral => ["Sigma", "T", "H", "ErSub", "Hb", "Erb"],
         SymbolKind.Tfr       => ["Rs", "H", "ErSub"],
-        SymbolKind.Airbridge => ["Sigma", "T", "Hb", "Erb"],
+        SymbolKind.Airbridge => ["Sigma", "T", "Hb", "Erb", "SigmaU", "Tu"],
         _                    => [],
     };
 
@@ -94,6 +94,11 @@ public static class MmicPassiveInjection
                 Add("T",     MmicStackResolver.Metres(stack.BridgeMetal.ThicknessDbu));
                 Add("Hb",    stack.BridgeHeightMeters);
                 Add("Erb",   stack.BridgeEpsR);
+                if (stack.BaseMetal is { } crossed)               // the line under the bridge
+                {
+                    Add("SigmaU", crossed.SigmaSm);
+                    Add("Tu",     MmicStackResolver.Metres(crossed.ThicknessDbu));
+                }
                 break;
         }
         return (o, null);
@@ -117,13 +122,13 @@ public static class MmicPassiveInjection
     /// <summary>
     /// What a TFR's resistance, a MIMCAP's capacitance or a spiral's inductance comes out to, as the
     /// text a properties panel shows (<c>≈ 100 Ω (2 sq × 50 Ω/sq)</c>, <c>≈ 1.51 pF</c>,
-    /// <c>≈ 1.44 nH (estimate)</c>). <paramref name="geometry"/> is the instance's parameters in SI
+    /// <c>≈ 1.5 nH (estimated)</c>). <paramref name="geometry"/> is the instance's parameters in SI
     /// (metres; N a plain count); a missing one takes the model's own default. Computed by the model a
     /// run builds, from the overrides <see cref="Build"/> injects — never a second copy of the formula
     /// that could disagree with what is simulated, and a closed form in every case, so it is cheap
-    /// enough to follow every keystroke. Null for any other kind or a non-positive size.
-    /// <paramref name="note"/> says when the process numbers are the standalone defaults, and for a
-    /// spiral says what the estimate leaves out.
+    /// enough to follow every keystroke. Null for any other kind or a non-positive size, and then
+    /// <paramref name="note"/> says why; when there IS a value there is no note — the value is marked
+    /// estimated and that is all the panel says.
     /// </summary>
     public static string? Readout(Technology? technology, SymbolKind kind, IReadOnlyDictionary<string, double> geometry,
                                   out string? note)
@@ -133,7 +138,7 @@ public static class MmicPassiveInjection
         foreach (var (name, v) in geometry)
             if (name is "W" or "L" or "Din" or "N" && !(v > 0)) { note = $"{name} must be positive."; return null; }
 
-        var (overrides, warning) = Build(technology, kind);
+        var (overrides, _) = Build(technology, kind);
         var values = new Dictionary<string, CircuitRF.Core.Expressions.Value>(StringComparer.Ordinal);
         foreach (var (name, v) in geometry) values[name] = new CircuitRF.Core.Expressions.Value(v);
         foreach (var o in overrides)
@@ -142,23 +147,13 @@ public static class MmicPassiveInjection
         var model = ComponentModelFactory.TryCreate(ComponentTypeRegistry.EngineReference(kind), values);
 
         var ci = CultureInfo.InvariantCulture;
-        var notes = new List<string>();
-        if (technology is null) notes.Add("No technology resolved; computed on the shipped GaAs process's defaults.");
-        else if (warning is not null) notes.Add(warning);
-        if (model is SpiralInductorModel coil)
-            notes.Add("An estimate: the drawn coil, its escape and its pad, summed segment by segment over the "
-                    + "ground plane under the substrate, with each conductor as a line on its centre (no current "
-                    + "crowding, no skin effect in L). The modified Wheeler formula for the coil alone in free space "
-                    + $"gives {(coil.WheelerInductance * 1e9).ToString("0.##", ci)} nH. EM-extract the coil for a "
-                    + "value to rely on.");
-        note = notes.Count > 0 ? string.Join(" ", notes) : null;
 
         return model switch
         {
             ThinFilmResistorModel r => string.Format(ci, "≈ {0} ({1:0.###} sq × {2:0.###} Ω/sq)",
                                            FormatOhms(r.Resistance), r.L / r.W, r.SheetResistance),
             MimCapModel c           => "≈ " + FormatFarads(c.Capacitance),
-            SpiralInductorModel l   => "≈ " + (l.Inductance * 1e9).ToString("0.##", ci) + " nH (estimate)",
+            SpiralInductorModel l   => "≈ " + (l.Inductance * 1e9).ToString("0.##", ci) + " nH (estimated)",
             _                       => null,
         };
     }
@@ -180,7 +175,7 @@ public static class MmicPassiveInjection
         if (ComponentModelFactory.TryCreate(ComponentTypeRegistry.EngineReference(kind), values) is not SpiralInductorModel coil)
             return null;
         var ci = CultureInfo.InvariantCulture;
-        return string.Format(ci, "≈ {0} at DC, {1} at {2:0.##} GHz (the coil's trace, skin effect included)",
+        return string.Format(ci, "≈ {0} at DC, {1} at {2:0.##} GHz (estimated)",
             FormatOhms(coil.Resistance(0)), FormatOhms(coil.Resistance(freqHz)), freqHz / 1e9);
     }
 

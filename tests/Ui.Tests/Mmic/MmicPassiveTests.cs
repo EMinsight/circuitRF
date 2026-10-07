@@ -136,6 +136,39 @@ public sealed class MmicPassiveTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(pin2.Y - pin1.Y, end.Y2 - p1y, 1.0);
     }
 
+    /// <summary>AIRBRIDGE is a four-port: the bridge from 1 to 2, the crossed line from 3 to 4, and the two
+    /// coupled only through the overlap capacitance — so at low frequency driving 1 pushes jωC through the
+    /// bridge's midpoint (at half the drive) into the crossed segment's midpoint, which splits it between
+    /// 3 and 4: Y31 = −jωC/4. Nothing reaches ground, so every row sums to zero, and the drawn segment
+    /// between pins 3 and 4 is the model's two bridge widths.</summary>
+    [Fact]
+    public void Airbridge_IsAFourPort_CoupledThroughTheOverlap()
+    {
+        var m = Model<AirbridgeModel>(SymbolKind.Airbridge, ("L", 30e-6), ("W", 10e-6), ("Wu", 10e-6));
+        Assert.Equal(4, m.PortCount);
+
+        double omega = 2 * Math.PI * 1e6;
+        var y = m.Admittance(omega);
+        for (int i = 0; i < 4; i++)
+        {
+            Complex row = 0;
+            for (int j = 0; j < 4; j++)
+            {
+                row += y[i, j];
+                Assert.True((y[i, j] - y[j, i]).Magnitude <= 1e-9 * y[i, i].Magnitude, $"Y{i + 1}{j + 1} != Y{j + 1}{i + 1}");
+            }
+            Assert.True(row.Magnitude < 1e-9 * y[i, i].Magnitude, $"row {i + 1} sums to {row}");
+        }
+        double expected = -omega * m.CrossingCapacitance / 4;
+        Assert.Equal(expected, y[2, 0].Imaginary, Math.Abs(expected) * 1e-3);
+
+        var art = AirbridgePCell.Generate(new Dictionary<string, PCellValue> { ["W"] = PCellValue.Real(10e-6) },
+            ShippedTechnologies.Load(GaAs), PCellLayerSelection.Default);
+        var p3 = art.Pins.Single(p => p.Name == "3");
+        var p4 = art.Pins.Single(p => p.Name == "4");
+        Assert.Equal(m.CrossedLength * 1e9, p4.Y - p3.Y, 1.0);   // DBU are nanometres
+    }
+
     // ── the technology binding ─────────────────────────────────────────────────────────────────
 
     /// <summary>A hand-written .cnl inside a GaAs workspace takes the process from the technology,

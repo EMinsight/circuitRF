@@ -2116,15 +2116,16 @@ public static class BuiltInSymbols
         PLine(-90, 0, -70, -20, -40, 20, -10, -20, 20, 20, 50, -20, 70, 0, 90, 0),
     ], SymbolKind.Tfr);
 
-    // AIRBRIDGE: the bridge arching between its two landings over the line it crosses, which runs down
-    // to terminal 3.
+    // AIRBRIDGE: the bridge arching between its two landings over the line it crosses, which runs
+    // straight through underneath from terminal 4 (top) to terminal 3 (bottom).
     private static Symbol BuildAirbridge() => Sym([
         L(-200,   0, -120,   0),
         L( 120,   0,  200,   0),
         QC(-120, 0, 0, -120, 120, 0),      // the span
         L(-120,   0, -120, 20),            // the two posts
         L( 120,   0,  120, 20),
-        L(   0, -30,   0, 200),            // the line it crosses
+        L(   0, -200,  0, -75),            // the line it crosses, broken where the span passes over it
+        L(   0, -45,   0, 200),
     ], SymbolKind.Airbridge);
 
     // ── Tuner — compact almost-square termination, single left pin ────────────

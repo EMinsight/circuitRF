@@ -1903,8 +1903,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             return new PCellParamRowViewModel(this, name, "Ω");
         if (name == MmicReadoutRow)
             return new PCellParamRowViewModel(this, name, "", computed: true,
-                tip: "Computed from the geometry on the layout's technology — a readout, not an input. "
-                   + "Hover the row for what the estimate leaves out.");
+                tip: "Estimated from the geometry — a readout, not an input.");
 
         // What the GENERATOR says about this parameter, from its two independent sources: the
         // declaration (labels, enumerations, bounds, the DIMENSION — asked of the script) and the run

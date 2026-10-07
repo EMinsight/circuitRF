@@ -805,9 +805,10 @@ technology states its film by giving a drawing layer a sheet resistance.
 {{symbol: airbridge}}
 
 A span of the air-bridge metal crossing another line: `L` is the clear span between its two posts,
-`W` its width and `Wu` the width of the line it crosses. Terminals 1 and 2 are the landings; terminal 3
-is the crossed line at the crossing, coupled to the bridge through the overlap capacitance. Tie
-terminal 3 to ground for a bridge over a ground strap.
+`W` its width and `Wu` the width of the line it crosses. Terminals 1 and 2 are the landings; terminals
+3 and 4 are the two ends of the crossed line's segment under the bridge, which is two bridge widths
+long. The two are coupled through the overlap capacitance. Tie terminals 3 and 4 to ground for a
+bridge over a ground strap.
 
 {{table: components/Airbridge}}
 

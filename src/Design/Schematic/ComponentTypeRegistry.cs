@@ -922,8 +922,8 @@ public static class ComponentTypeRegistry
             "Interchangeable: the two ends of the film.",
 
         SymbolKind.Airbridge =>
-            "Terminals 1 and 2 are the bridge's two landings and are interchangeable. Terminal 3 is the "
-          + "line it crosses, at the crossing; tie it to ground for a bridge over a ground strap.",
+            "Terminals 1 and 2 are the bridge's two landings, and 3 and 4 the two ends of the line it "
+          + "crosses; each pair is interchangeable. Tie 3 and 4 to ground for a bridge over a ground strap.",
 
         SymbolKind.Match =>
             "Not interchangeable: terminal 1 is the R1 side and terminal 2 the R2 side. The "
@@ -1289,8 +1289,9 @@ public static class ComponentTypeRegistry
           + "included; the film's capacitance to ground split between the ends.",
         SymbolKind.Airbridge =>
             "Series L of a straight ribbon (Grover) and R with skin effect, from landing to landing; the "
-          + "crossing capacitance W·Wu over the bridge height, without fringing. Valid for a span longer "
-          + "than its own width.",
+          + "crossed line's segment, two bridge widths long, likewise from 3 to 4; the crossing capacitance "
+          + "W·Wu over the bridge height, without fringing, between the two midpoints. Valid for a span "
+          + "longer than its own width.",
         _ => "",
     };
 

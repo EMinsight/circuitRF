@@ -234,17 +234,20 @@ public sealed class SpiralInductorModel : ComponentModel, IReportsWarnings
 }
 
 /// <summary>
-/// <c>AIRBRIDGE</c> — a span of the bridge metal crossing over another line. Terminals 1 and 2 are the
-/// bridge's two landings; terminal 3 is the line it crosses, at the crossing.
+/// <c>AIRBRIDGE</c> — a span of the bridge metal crossing over another line: a FOUR-port. Terminals 1
+/// and 2 are the bridge's two landings; terminals 3 and 4 are the two ends of the crossed line's
+/// segment under the bridge (<see cref="CrossedLength"/> long, two bridge widths), so the line runs
+/// through the part rather than ending at it.
 ///
-/// <para><b>Topology.</b> A T: half the span's <c>R(f) + jωL</c> from each landing to the span's
-/// midpoint, and the overlap capacitance from the midpoint to terminal 3. Terminal 3 is a node of the
-/// crossed line, not a line itself: the line under the bridge is drawn and modelled by whatever is
-/// wired to terminal 3. Tie terminal 3 to ground for a bridge over a ground strap.</para>
+/// <para><b>Topology.</b> Two Ts sharing their midpoints' coupling: half the span's <c>R(f) + jωL</c>
+/// from each landing to the span's midpoint, half the crossed segment's from each of its ends to its
+/// midpoint, and the overlap capacitance between the two midpoints. The midpoints are eliminated
+/// exactly at every frequency (the part is linear). Tie 3 and 4 to ground for a bridge over a ground
+/// strap.</para>
 /// </summary>
 public sealed class AirbridgeModel : ComponentModel, IReportsWarnings
 {
-    public override int PortCount => 3;
+    public override int PortCount => 4;
     public override ModelKind Kind => ModelKind.Linear;
 
     public double Span { get; }
@@ -253,36 +256,67 @@ public sealed class AirbridgeModel : ComponentModel, IReportsWarnings
     public double T { get; }
     public double Inductance { get; }
     public double CrossingCapacitance { get; }
+
+    /// <summary>The crossed segment: two bridge widths long (the bridge's footprint and half a width
+    /// beyond each edge — what the layout generator draws), <see cref="CrossedWidth"/> wide.</summary>
+    public double CrossedLength { get; }
+    public double CrossedWidth { get; }
+    public double CrossedSigma { get; }
+    public double CrossedT { get; }
+    public double CrossedInductance { get; }
     private readonly LumpedValidityWarning _warning;
 
     public AirbridgeModel(double span, double w, double crossedWidth, double sigma, double t,
-                          double bridgeH, double bridgeEpsR)
+                          double bridgeH, double bridgeEpsR, double crossedSigma, double crossedT)
     {
         Span = span; W = w; Sigma = sigma; T = t;
         Inductance = MmicPassiveFormulas.RibbonInductance(span, w, t);
         CrossingCapacitance = MmicPassiveFormulas.ParallelPlateCapacitance(bridgeEpsR, w, crossedWidth, bridgeH);
+        CrossedLength = 2 * w; CrossedWidth = crossedWidth; CrossedSigma = crossedSigma; CrossedT = crossedT;
+        CrossedInductance = MmicPassiveFormulas.RibbonInductance(CrossedLength, crossedWidth, crossedT);
         _warning = new LumpedValidityWarning("AIRBRIDGE", "span", span, 1.0);
     }
 
-    public double Resistance(double freqHz)
+    public double Resistance(double freqHz) => StripResistance(freqHz, Span, W, T, Sigma);
+
+    /// <summary>The crossed segment's series resistance at <paramref name="freqHz"/>, Ω.</summary>
+    public double CrossedResistance(double freqHz) => StripResistance(freqHz, CrossedLength, CrossedWidth, CrossedT, CrossedSigma);
+
+    private static double StripResistance(double freqHz, double length, double w, double t, double sigma)
     {
-        double te = MmicPassiveFormulas.EffectiveThickness(freqHz, T, Sigma);
-        return Sigma > 0 && te > 0 && W > 0 ? Span / (W * Sigma * te) : 1e-9;
+        double te = MmicPassiveFormulas.EffectiveThickness(freqHz, t, sigma);
+        return sigma > 0 && te > 0 && w > 0 ? length / (w * sigma * te) : 1e-9;
     }
 
     public IReadOnlyList<(string Key, string Message)> DrainWarnings() => _warning.Drain();
 
-    /// <summary>The 3×3 admittance over (1, 2, 3), the midpoint eliminated.</summary>
+    /// <summary>The 4×4 admittance over (1, 2, 3, 4), both midpoints eliminated.</summary>
     public Complex[,] Admittance(double omega)
     {
         double f = omega / (2 * Math.PI);
-        Complex za = new Complex(Math.Max(Resistance(f), 1e-9), omega * Inductance) / 2;
-        Complex[] v = [1 / za, 1 / za, new Complex(0, omega * CrossingCapacitance)];
-        Complex sum = v[0] + v[1] + v[2];
-        var y = new Complex[3, 3];
-        for (int i = 0; i < 3; i++)
-            for (int j = 0; j < 3; j++)
-                y[i, j] = (i == j ? v[i] : Complex.Zero) - v[i] * v[j] / sum;
+        Complex yb = 2 / new Complex(Math.Max(Resistance(f), 1e-9), omega * Inductance);               // each half span
+        Complex yu = 2 / new Complex(Math.Max(CrossedResistance(f), 1e-9), omega * CrossedInductance);  // each half segment
+        Complex yc = new(0, omega * CrossingCapacitance);
+
+        // Nodes 0..3 the terminals, 4 the bridge midpoint, 5 the crossed segment's midpoint.
+        var full = new Complex[6, 6];
+        void Branch(int a, int b, Complex y) { full[a, a] += y; full[b, b] += y; full[a, b] -= y; full[b, a] -= y; }
+        Branch(0, 4, yb); Branch(4, 1, yb);
+        Branch(2, 5, yu); Branch(5, 3, yu);
+        Branch(4, 5, yc);
+
+        // Kron reduction: Y = Ytt − Yti·Yii⁻¹·Yit, Yii the 2×2 midpoint block.
+        Complex a11 = full[4, 4], a12 = full[4, 5], a21 = full[5, 4], a22 = full[5, 5];
+        Complex det = a11 * a22 - a12 * a21;
+        Complex i11 = a22 / det, i12 = -a12 / det, i21 = -a21 / det, i22 = a11 / det;
+        var y = new Complex[4, 4];
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++)
+            {
+                Complex t0 = i11 * full[4, j] + i12 * full[5, j];
+                Complex t1 = i21 * full[4, j] + i22 * full[5, j];
+                y[i, j] = full[i, j] - (full[i, 4] * t0 + full[i, 5] * t1);
+            }
         return y;
     }
 
@@ -290,8 +324,8 @@ public sealed class AirbridgeModel : ComponentModel, IReportsWarnings
     {
         _warning.Check(c.InstancePath, omega / (2 * Math.PI));
         var y = Admittance(omega);
-        for (int i = 0; i < 3; i++)
-            for (int j = 0; j < 3; j++)
+        for (int i = 0; i < 4; i++)
+            for (int j = 0; j < 4; j++)
                 mna.AddBlockAdmittance(c.Nodes[i], c.Nodes[j], y[i, j]);
     }
 }

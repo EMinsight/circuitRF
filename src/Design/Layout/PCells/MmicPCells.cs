@@ -404,9 +404,9 @@ public static class OctSpiralPCell
 /// <summary>
 /// AIRBRIDGE artwork: a base-metal landing at each end, a bridge-via post on each, and the bridge
 /// metal spanning between them, the clear span between the posts being L. Under the middle of the span
-/// the crossed line is drawn as a short base-metal segment Wu wide running across the bridge's
-/// footprint, with pin 3 on its lower end; the rest of that line is the user's. Pins 1 and 2 are the
-/// landings' outer edges.
+/// the crossed line is drawn as a base-metal segment Wu wide and two bridge widths long — the length the
+/// model's crossed segment is — with pin 3 on its lower end and pin 4 on its upper end; the rest of
+/// that line is the user's. Pins 1 and 2 are the landings' outer edges.
 /// </summary>
 public static class AirbridgePCell
 {
@@ -429,7 +429,7 @@ public static class AirbridgePCell
         long xA = lead + pl, xB = xA + span;            // the posts' inner edges
         long xEnd = xB + pl + lead;
         long cx = (xA + xB) / 2, uHalf = wu / 2;
-        long ext = half + f;                            // the crossed segment runs this far past the bridge
+        long ext = w;                                   // the crossed segment: ±W about the bridge's centreline
 
         var shapes = new List<LayoutShape>
         {
@@ -445,6 +445,7 @@ public static class AirbridgePCell
             new PCellPin("1", 0,    0,    baseLayer, w,  180.0),
             new PCellPin("2", xEnd, 0,    baseLayer, w,    0.0),
             new PCellPin("3", cx,   -ext, baseLayer, wu, 270.0),
+            new PCellPin("4", cx,    ext, baseLayer, wu,  90.0),
         };
         var notes = MmicArt.Notes(technology, stack, MmicPart.Airbridge);
         if (span < wu + 2 * f)

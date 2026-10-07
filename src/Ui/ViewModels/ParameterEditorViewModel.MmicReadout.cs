@@ -9,9 +9,10 @@ namespace CircuitRF.Ui.ViewModels;
 //  Owner request (2026-10-07): the geometry is the input, the value is what a designer reads. Computed
 //  through MmicPassiveInjection.Readout — the injection a run makes and the model it builds — so the
 //  number here is the number simulated. Every one is a closed form (microseconds), so it is computed
-//  on the UI thread on every refresh. A spiral's is the modified Wheeler ESTIMATE, labelled as one, and
-//  the note under it says what it leaves out. The layout's Inspector and Component Properties show the
-//  same readout as a computed "R"/"C"/"L" row (LayoutShapePropertiesViewModel).
+//  on the UI thread on every refresh. The value is marked "estimated" and nothing more is said: a note
+//  shows only when there is no value (W is an expression, a size is not positive). The layout's
+//  Inspector and Component Properties show the same readout as a computed "R"/"C"/"L" row
+//  (LayoutShapePropertiesViewModel).
 // ──────────────────────────────────────────────────────────────────────────────
 
 public partial class ParameterEditorViewModel
@@ -25,7 +26,7 @@ public partial class ParameterEditorViewModel
     /// <summary>The estimated value, or empty.</summary>
     public string MmicReadoutText { get; private set; } = "";
 
-    /// <summary>Why no value is shown, or which process numbers it used. Empty when there is nothing to say.</summary>
+    /// <summary>Why no value is shown. Empty whenever there is a value.</summary>
     public string MmicReadoutNote { get; private set; } = "";
 
     public bool HasMmicReadoutNote => MmicReadoutNote.Length > 0;
