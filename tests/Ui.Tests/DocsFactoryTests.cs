@@ -861,14 +861,19 @@ public class DocsFactoryTests
     [Fact]
     public void TheSearchIndexCarriesProseAndNotFigureGeometry()
     {
-        long bytes = new FileInfo(SearchIndexPath()).Length;
-        Assert.True(bytes < 1_500_000,
-            $"search-index.js is {bytes:N0} bytes. It holds the prose of ~33 pages and should be well "
-          + "under a megabyte; this size means figure geometry is being indexed as text.");
-
-        var offenders = new List<string>();
+        // The ceiling is for the failure, not for the prose: a geometry leak is two orders of
+        // magnitude (~100 MB), while the prose grows with the docs — 1.46 MB of text over 55 pages
+        // when the original 1.5 MB ceiling (set at ~33 pages) was outgrown. The path-data look
+        // below is what proves the content is prose.
         var root = SearchIndexJson();
         var pages = root.GetProperty("p").EnumerateArray().Select(p => p[0].GetString()!).ToList();
+
+        long bytes = new FileInfo(SearchIndexPath()).Length;
+        Assert.True(bytes < 4_000_000,
+            $"search-index.js is {bytes:N0} bytes for {pages.Count} pages of prose; this size means "
+          + "figure geometry is being indexed as text.");
+
+        var offenders = new List<string>();
 
         foreach (var s in root.GetProperty("s").EnumerateArray())
         {

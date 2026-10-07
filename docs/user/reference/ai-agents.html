@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>circuitRF — Designing with an AI agent</title>
+<link rel="icon" href="../assets/img/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/css/circuitrf-docs.css">
+<!--
+  GENERATED FILE - do not edit. Edit the Markdown source named below and re-run:
+      dotnet run [project tools/DocGen] [flag out] docs/user
+  (XML comments cannot contain a double hyphen; the flags are ordinary ones.)
+  Source: docs/user/src/reference/ai-agents.md
+-->
+</head>
+<body>
+
+<header class="doc-header">
+  <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
+  <span class="doc-kind">Reference Guide</span>
+  <div class="doc-search" data-crf-search data-root="../" hidden>
+    <input type="search" class="search-input" autocomplete="off" spellcheck="false"
+           aria-label="Search the documentation" placeholder="Search docs"
+           role="combobox" aria-expanded="false" aria-autocomplete="list">
+    <div class="search-panel" role="listbox" hidden></div>
+  </div>
+</header>
+<hr class="doc-headrule">
+
+<main class="page">
+  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Designing with an AI agent</p>
+
+  <h1>Designing with an AI agent</h1>
+  <p class="lede">Connect an AI agent to circuitRF&#39;s MCP server, tell it what to build, and know where it will need your help. What to set up, what to say, which reference topics it should read, and the design flow that works.</p>
+
+<nav class="toc">
+<h2>On this page</h2>
+<ol>
+<li><a href="#what">What an agent can do in circuitRF</a></li>
+<li><a href="#setup">Connecting the agent</a></li>
+<li><a href="#brief">What to tell it</a></li>
+<li><a href="#topics">The reference topics it should read</a></li>
+<li><a href="#flow">The design flow that works</a></li>
+<li><a href="#em">EM runs: check the cost first</a></li>
+<li><a href="#traps">Where agents go wrong</a></li>
+<li><a href="#safety">Keeping its work reversible</a></li>
+</ol>
+</nav>
+<h2 id="what">What an agent can do in circuitRF</h2>
+<p>circuitRF runs as an <strong>MCP server</strong>. An agent connected to it can create workspaces and cells,
+write designs, check them, simulate them, render them and read the results back. It can also
+export artwork and import parts. All of this is available without the window, and each tool returns
+the same JSON document as the matching <a href="cli.html">command-line verb</a>.</p>
+<p><strong>The agent works by writing files.</strong> There are no tools for placing one component or setting
+one parameter. The agent writes a netlist, a layout or an EM setup in full, using its own file
+tools, and then asks circuitRF whether it is sound (<code>check</code>), what circuitRF made of it
+(<code>explain</code>), and what it does (<code>run</code>). The file formats are the interface, and the
+<a href="#topics">reference topics</a> describe every one of them, so the agent does not need circuitRF's
+source code.</p>
+<p>A capable agent, given a filter specification and the GaAs technology that ships with circuitRF,
+produces the following in about a quarter of an hour:</p>
+<ul>
+<li>a synthesised prototype;</li>
+<li>a version built from elements that technology can realise, simulated against the spec and its
+tolerance corners;</li>
+<li>a drawn schematic;</li>
+<li>a layout that passes DRC;</li>
+<li>a checked EM setup;</li>
+<li>a GDSII file;</li>
+<li>a report saying what is still unverified.</li>
+</ul>
+<p>It will also tell you where it had to work things out for itself. <a href="#traps">Where agents go wrong</a>
+lists the places that happen today.</p>
+<h2 id="setup">Connecting the agent</h2>
+<p>The server is the circuitRF application itself, started with <code>serve</code>. The agent's client starts it,
+so you only need to tell the client how to.</p>
+<p><strong>1. Choose a root folder.</strong> The server reads and writes only inside it, and refuses any path that
+leads out of it. Use the folder your designs live in, not your home folder.</p>
+<p><strong>2. Print the configuration.</strong> circuitRF writes it for you, with the full path to the executable
+filled in:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>/Applications/circuitRF.app/Contents/MacOS/circuitRF serve --root ~/designs --print-config</code></pre>
+<p>On Windows the executable is <code>%LOCALAPPDATA%\Programs\circuitRF\circuitRF.exe</code>; on Linux,
+<code>~/.local/bin/circuitrf</code>. The JSON it prints goes into your client's MCP settings. For Claude Code,
+run the <code>claude mcp add …</code> line it prints underneath.</p>
+<p><strong>3. Start a new session.</strong> Most clients load MCP servers only when a session starts.</p>
+<p><strong>4. Check that it answers.</strong> Ask the agent to call circuitRF's <code>reference</code> tool with no topic. It
+should list the reference topics with their sizes. If it cannot see a circuitRF tool, the client
+did not start the server: run the printed command yourself and read what it says on stderr.</p>
+<p>The <a href="cli.html#serve">Command Line chapter</a> describes the server in full, including what it refuses
+and how to run it from a source build.</p>
+<h2 id="brief">What to tell it</h2>
+<p>Give the agent the same things you would give a colleague: the specification, the process, what
+you want back, and how you will judge it. A brief that has worked well:</p>
+<pre><code class="language-text">Design a 50 ohm two-port low-pass filter as an MMIC on the GaAs technology that ships with
+circuitRF. Insertion loss &lt;= 1 dB from 0.1 to 3 GHz, return loss &gt;= 10 dB at both ports over the
+same band, rejection &gt;= 20 dB from 6 to 12 GHz.
+
+Work in a circuitRF workspace named lc_filter. Deliver: a circuit-level design simulated against
+the spec, a schematic, a layout that passes check, an EM setup that passes check, a GDSII export,
+and REPORT.md with the performance against each spec line and everything that is unverified.
+
+Read circuitRF's reference topics before writing a file of a kind you have not written yet. Run
+check after every file you write. Ask me before starting any EM run, and tell me its unknown count
+first.
+</code></pre>
+<p>Five points in that brief do most of the work:</p>
+<ul>
+<li><strong>Name the technology</strong>, or say that it is one that ships with circuitRF. The <code>technologies</code>
+reference topic lists every shipped technology with its stackup.</li>
+<li><strong>Ask for a report of what is unverified.</strong> An agent that has no EM result will say so, and
+you need to know which numbers come from a circuit model and which from a field solve.</li>
+<li><strong>Tell it to <code>check</code> after every write.</strong> It costs nothing, and it catches most mistakes before
+they reach a simulation.</li>
+<li><strong>Make it ask before EM.</strong> An EM run can take minutes or hours. <a href="#em">The next section but one</a>
+explains how to estimate the cost first.</li>
+<li><strong>Ask for a friction log</strong> if you are evaluating circuitRF or the agent. &quot;Note every time you
+guessed a syntax, were refused, or computed something yourself&quot; produces a list worth reading.</li>
+</ul>
+<h2 id="topics">The reference topics it should read</h2>
+<p><code>reference</code> with no topic lists every topic and its size. The ones an agent needs, in the order it
+usually needs them:</p>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>When</th>
+<th>What it gives</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>technologies</code></td>
+<td>before creating the workspace</td>
+<td>every shipped technology: its id, stackup and materials</td>
+</tr>
+<tr>
+<td><code>netlist</code></td>
+<td>before the first <code>.cnl</code></td>
+<td>the instance line, analysis and measurement syntax</td>
+</tr>
+<tr>
+<td><code>analyses</code></td>
+<td>before declaring any analysis</td>
+<td>every <code>type=</code> and every key it accepts, with defaults</td>
+</tr>
+<tr>
+<td><code>component-index</code></td>
+<td>when choosing parts</td>
+<td>every component type in one line each: nets, category, name</td>
+</tr>
+<tr>
+<td><code>components &lt;TYPE&gt;</code></td>
+<td>before using a component type</td>
+<td>its nets, terminals and parameters</td>
+</tr>
+<tr>
+<td><code>units</code>, <code>expressions</code></td>
+<td>when writing values or measurements</td>
+<td>SI suffixes, functions, conditionals</td>
+</tr>
+<tr>
+<td><code>measurements</code></td>
+<td>when checking against a spec</td>
+<td>named quantities computed from a run</td>
+</tr>
+<tr>
+<td><code>shipped-materials</code></td>
+<td>before choosing or defining a material</td>
+<td>every material that ships, with its properties</td>
+</tr>
+<tr>
+<td><code>technology</code>, <code>materials</code></td>
+<td>before reading or writing a <code>.ctech</code> / <code>.cmat</code></td>
+<td>the stackup, layers, DRC rules and material records</td>
+</tr>
+<tr>
+<td><code>schematic</code></td>
+<td>before the first <code>.csch</code></td>
+<td>components, wires, variables and analyses, with a worked example</td>
+</tr>
+<tr>
+<td><code>layout</code></td>
+<td>before the first <code>.clay</code></td>
+<td>shapes, layers, nets, ports</td>
+</tr>
+<tr>
+<td><code>em-setup</code></td>
+<td>before the first <code>.cem</code></td>
+<td>solver, mesh, ports and sweep</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Start from <code>component-index</code>, then ask for one type at a time.</strong> <code>reference components</code> with no
+type is the whole catalogue, around 100 kB, which is more than many agents can take in one tool
+result. The index is a few kilobytes, and <code>components &lt;TYPE&gt;</code> is a few hundred bytes.</p>
+<p>The same topics are offered as MCP <em>resources</em> at <code>circuitrf://reference/&lt;topic&gt;</code>, which cost less
+for clients that support them.</p>
+<h2 id="flow">The design flow that works</h2>
+<p>The order below keeps every expensive step behind a cheap check.</p>
+<ol>
+<li><strong>Create the workspace on the technology.</strong> Use <code>create</code> with <code>what=workspace</code> and a <code>tech</code>.
+Every later document in the workspace resolves that technology.</li>
+<li><strong>Synthesise an ideal prototype</strong> as a <code>.cnl</code> of ideal L and C, and <code>run</code> it. This proves that
+the topology and values can meet the spec before anything physical is drawn.</li>
+<li><strong>Rebuild it from realisable elements</strong>: microstrip, vias and capacitors the process can make.
+Run it again, including tolerance corners. Each spec line becomes one <code>measure</code>: <code>max_over</code> and
+<code>min_over</code> give the worst value of a quantity over a frequency band, for example
+<code>measure IL_worst = max_over(-dB(SP1.S(2,1)), 0.1GHz, 3GHz)</code>. The agent reads them back with
+<code>read</code>. See <a href="measurements.html">Measurements</a>.</li>
+<li><strong>Draw the layout</strong> (<code>.clay</code>). Run <code>check</code> for DRC, <code>render</code> it to look at, and run <code>impedance</code>
+to compare each drawn line's Z0 with what the circuit model assumed.</li>
+<li><strong>Write the EM setup</strong> (<code>.cem</code>) and run <code>check</code> on it. Its notes report what the solver will mesh
+and how large the problem is. See the next section.</li>
+<li><strong>Run EM</strong> once the size is acceptable, then <code>read</code> the Touchstone and compare it with step 3.</li>
+<li><strong>Export</strong> the artwork with <code>import</code>, for example to GDSII.</li>
+</ol>
+<h2 id="em">EM runs: check the cost first</h2>
+<p>An EM run is the one step that can take hours. Before starting one, the agent should run <code>check</code> on
+the <code>.cem</code> and read its mesh budget: the number of unknowns, the solver's ceiling, and the mesher's
+verdict. The budget is in the document's <code>em</code> entry, so it is there even when <code>summary</code> collapses the
+notes. A mesh setting that <code>Auto</code> overrides is reported as a warning naming it. Coarsen the mesh, or narrow what is meshed, until the number is
+acceptable, and only then ask circuitRF to run it. <a href="em-setup.html">EM Setup</a> describes each mesh
+setting. <a href="em-solvers.html">EM Solvers</a> explains what each solver costs.</p>
+<h2 id="traps">Where agents go wrong</h2>
+<p>These are the places an agent working only from the reference topics is likely to stumble.</p>
+<p><strong>Keep netlists inside the workspace.</strong> A microstrip or via in a <code>.cnl</code> takes its substrate from
+the workspace technology, exactly as one in a schematic does, and <code>check</code> says which numbers it
+took. Outside any workspace there is no technology, so a line that names a layer is refused and a
+line that names none uses a default board substrate.</p>
+<p><strong>Read <code>check</code>'s warnings, not just its error count.</strong> A line the netlist reader does not recognise
+is skipped and reported as a warning, and warnings do not change the exit code. An agent that
+invents a statement will see it reported there, and nowhere else.</p>
+<p><strong>A drawn schematic takes more care than a netlist.</strong> The <code>schematic</code> topic gives a complete working
+example, and <code>components &lt;TYPE&gt;</code> gives each symbol's pin positions, but every wire has to end exactly
+on a pin. Have the agent run <code>check</code> and <code>netlist</code> on the <code>.csch</code>: <code>check</code> reports a component it
+cannot identify, and <code>netlist</code> shows what the drawing actually connects. Simpler still, have it
+write the netlist and let <code>netlist</code> with <code>toSchematic</code> draw it
+(<a href="cli.html#netlist-to-schematic"><code>--to-schematic</code></a>). The drawing extracts back to the same circuit,
+and every net carries its netlist name.</p>
+<h2 id="safety">Keeping its work reversible</h2>
+<p>Nothing the server does deletes or overwrites a workspace. An agent's own file edits are another
+matter, because it writes files with its own tools. If the workspace has <a href="history.html">history</a>
+turned on, the agent can take a restore point before a change (<code>history</code> with <code>checkpoint</code>), and
+<code>batch</code> groups several calls under one restore point. <a href="history.html#assistants">History and AI
+assistants</a> describes how that works.</p>
+
+<nav class="page-nav">
+  <a class="prev" href="cli.html"><span class="dir">Previous</span><span class="name">The Command Line</span></a>
+  <a class="next" href="layout-editor.html"><span class="dir">Next</span><span class="name">The Layout Editor</span></a>
+</nav>
+</main>
+
+<footer class="doc-footer">
+  <img src="../assets/img/circuitRF-mark.svg" alt="">
+  <span>circuitRF — RF circuit simulator</span>
+  <span class="spacer"></span>
+  <a href="../index.html">Documentation home</a>
+</footer>
+
+<script src="../assets/js/search-index.js" defer></script>
+<script src="../assets/js/docs-search.js" defer></script>
+</body>
+</html>

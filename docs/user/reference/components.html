@@ -1396,8 +1396,8 @@ most often left wrong — <code>IncludeCapacitance</code> and <code>er</code> �
 <thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
 <tr><td>Arrays</td><td><code>G1</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
-<tr><td>Source</td><td><code>Carried</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>File</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+<tr><td>WarnUnsynced</td><td><code>true</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>SymbolPitch</td><td><code>Loose</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>RefPin</td><td><code>false</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>IncludeCapacitance</td><td><code>true</code></td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
@@ -1410,6 +1410,126 @@ most often left wrong — <code>IncludeCapacitance</code> and <code>er</code> �
 <tr><td>LoopHeight</td><td>&mdash;</td><td>mil</td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>Diameter</td><td>&mdash;</td><td>mil</td><td>&mdash;</td><td>&mdash;</td></tr>
 <tr><td>Material</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td><td>&mdash;</td></tr>
+</tbody></table>
+<h2 id="mmic">MMIC passives</h2>
+<p>The parts a die is drawn from. Like a microstrip line, each one takes its process from the workspace
+technology — you state only the geometry, and the stackup supplies the film's permittivity and
+thickness, the metals, the sheet resistance, the air-bridge height and the substrate. Each has a
+built-in layout cell of the same name, so a schematic of them generates a layout the way a board's
+microstrip does, with every terminal on the metal that lies on the substrate.</p>
+<p>On a technology that lacks what a part needs — a board has no MIM film, for instance — the run says
+which piece is missing and uses the shipped GaAs process's numbers instead.</p>
+<h3 id="mimcap">MIM Capacitor (MIMCAP)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 75L110.77 75" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M129.23 75L212.31 75" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M110.77 47.31L110.77 102.69" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M129.23 47.31L129.23 102.69" /><rect fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" x="114.46" y="52.85" width="11.08" height="44.31" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="24" y="71.31" width="7.38" height="7.38" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="208.62" y="71.31" width="7.38" height="7.38" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="89.91, 102.17, 108.51, 120.77, 130.4, 140.48" y="172.32">
+			MIMCAP
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 75L110.77 75" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M129.23 75L212.31 75" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M110.77 47.31L110.77 102.69" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M129.23 47.31L129.23 102.69" /><rect fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" x="114.46" y="52.85" width="11.08" height="44.31" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="24" y="71.31" width="7.38" height="7.38" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="208.62" y="71.31" width="7.38" height="7.38" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="89.91, 102.17, 108.51, 120.77, 130.4, 140.48" y="172.32">
+			MIMCAP
+	</text></svg></span>
+</span><figcaption>MIMCAP</figcaption></figure>
+<p>A metal-insulator-metal capacitor. <code>W</code> × <code>L</code> is the top plate; the capacitance is the film's
+ε·W·L/t with the plates' edge fringing, the series resistance comes from both plates' metal, the loss
+from the film's loss tangent, and the bottom plate's capacitance through the substrate to ground is
+included. Terminal 1 is the top plate and terminal 2 the bottom plate: for a shunt capacitor, ground
+terminal 2, which shorts that substrate capacitance out.</p>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>1</td></tr>
+<tr><td>2</td><td>2</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. Not interchangeable: terminal 1 is the top plate and terminal 2 the bottom plate, the one lying on the substrate, which carries the plate&#39;s capacitance to ground. For a shunt capacitor ground terminal 2.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>W</td><td><code>50</code></td><td>&#181;m</td><td>shown</td><td>Top-plate width, across the feed. C is the film&#39;s ε&#183;W&#183;L/t with Palmer&#39;s edge fringing, valid while W and L are each at least ten film thicknesses.</td></tr>
+<tr><td>L</td><td><code>50</code></td><td>&#181;m</td><td>shown</td><td>Top-plate length, along the feed. The plates&#39; series resistance grows with L/W.</td></tr>
+</tbody></table>
+<h3 id="spiral">Spiral Inductor (SPIRAL)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 75L78.46 75" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M78.46 75L78.46 42.69L152.31 42.69L152.31 107.31L92.31 107.31L92.31 56.54L138.46 56.54L138.46 93.46L106.15 93.46L106.15 70.38L124.62 70.38L124.62 79.62" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M124.62 79.62L124.62 75L166.15 75" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M166.15 75L212.31 75" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="24" y="71.31" width="7.38" height="7.38" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="208.62" y="71.31" width="7.38" height="7.38" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="93.51, 102.68, 112.29, 118.64, 128.6, 138.68" y="172.32">
+			SPIRAL
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 75L78.46 75" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M78.46 75L78.46 42.69L152.31 42.69L152.31 107.31L92.31 107.31L92.31 56.54L138.46 56.54L138.46 93.46L106.15 93.46L106.15 70.38L124.62 70.38L124.62 79.62" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M124.62 79.62L124.62 75L166.15 75" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M166.15 75L212.31 75" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="24" y="71.31" width="7.38" height="7.38" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="208.62" y="71.31" width="7.38" height="7.38" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="93.51, 102.68, 112.29, 118.64, 128.6, 138.68" y="172.32">
+			SPIRAL
+	</text></svg></span>
+</span><figcaption>SPIRAL</figcaption></figure>
+<p>A square spiral of <code>N</code> turns, <code>W</code> wide with <code>S</code> between turns and a clear opening <code>Din</code> across the
+middle. Terminal 1 is the outer end; terminal 2 is the inner end, brought out over the turns on the
+air-bridge metal.</p>
+<div class="callout note">
+<span class="label">The inductance is an estimate</span>
+<p>It comes from a published closed form for the coil alone (the modified Wheeler formula), which does
+not include the escape and leads of the drawn part or the ground plane under it. On the shipped GaAs
+process the default coil reads about 16 % low against an EM extraction of the drawn part. For a value
+to rely on, extract the drawn coil and use the result in its place:</p>
+<p><code>circuitrf em &lt;workspace&gt; --component "SPIRAL N=2.5 W=10 um S=10 um Din=100 um" --freq 1GHz:20GHz:1GHz -o L1.s2p</code></p>
+<p>Port 1 of the file is terminal 1, so it drops into the schematic as an SnP in the part's place.</p>
+</div>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>1</td></tr>
+<tr><td>2</td><td>2</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. Not interchangeable in the drawn part: terminal 1 is the outer end and terminal 2 the inner end, brought out over the turns on the bridge metal. The model itself is symmetric.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>N</td><td><code>2.5</code></td><td>&mdash;</td><td>shown</td><td>Turns. The layout draws whole quarter turns. The modified Wheeler inductance is an estimate, fitted for spacing up to about three widths and a coil far from ground; a ground plane under the coil lowers the real value.</td></tr>
+<tr><td>W</td><td><code>10</code></td><td>&#181;m</td><td>shown</td><td>Trace width.</td></tr>
+<tr><td>S</td><td><code>10</code></td><td>&#181;m</td><td>&mdash;</td><td>Spacing between turns. The inductance estimate is fitted for S up to about 3&#183;W.</td></tr>
+<tr><td>Din</td><td><code>100</code></td><td>&#181;m</td><td>&mdash;</td><td>Inner clear opening across the first pair of sides.</td></tr>
+</tbody></table>
+<h3 id="tfr">Thin-Film Resistor (TFR)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 75L78.46 75" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M161.54 75L212.31 75" /><rect fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" x="78.46" y="61.15" width="83.08" height="27.69" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M78.46 75L87.69 65.77L101.54 84.23L115.39 65.77L129.23 84.23L143.08 65.77L152.31 75L161.54 75" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="24" y="71.31" width="7.38" height="7.38" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="208.62" y="71.31" width="7.38" height="7.38" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="106.34, 115.04, 123.7" y="172.32">
+			TFR
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 75L78.46 75" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M161.54 75L212.31 75" /><rect fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" x="78.46" y="61.15" width="83.08" height="27.69" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M78.46 75L87.69 65.77L101.54 84.23L115.39 65.77L129.23 84.23L143.08 65.77L152.31 75L161.54 75" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="24" y="71.31" width="7.38" height="7.38" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="208.62" y="71.31" width="7.38" height="7.38" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="106.34, 115.04, 123.7" y="172.32">
+			TFR
+	</text></svg></span>
+</span><figcaption>TFR</figcaption></figure>
+<p>The technology's resistor film, <code>W</code> wide with its contacts <code>L</code> apart: its resistance is the film's
+sheet resistance times L/W squares. The contacts and their overlap of the film are not included. A
+technology states its film by giving a drawing layer a sheet resistance.</p>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>1</td></tr>
+<tr><td>2</td><td>2</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. Interchangeable: the two ends of the film.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>W</td><td><code>10</code></td><td>&#181;m</td><td>shown</td><td>Film width. R is the film&#39;s sheet resistance times L/W squares; the contacts and the metal overlap at each end are not included.</td></tr>
+<tr><td>L</td><td><code>20</code></td><td>&#181;m</td><td>shown</td><td>Film length between the contacts.</td></tr>
+</tbody></table>
+<h3 id="airbridge">Air Bridge (AIRBRIDGE)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M57.8 61.32L82.68 61.32" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M157.32 61.32L182.2 61.32" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M82.68 61.32Q120 24 157.32 61.32" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M82.68 61.32L82.68 67.54" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M157.32 61.32L157.32 67.54" /><path fill="none" stroke="#2D14C3" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 51.99L120 123.51" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="54.8" y="58.32" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="179.2" y="58.32" width="6" height="6" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="117" y="120.51" width="6" height="6" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="78.68, 88.76, 95.1, 105.06, 115.01, 124.97, 131.31, 141.65, 152.32" y="172.32">
+			AIRBRIDGE
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M57.8 61.32L82.68 61.32" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M157.32 61.32L182.2 61.32" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M82.68 61.32Q120 24 157.32 61.32" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M82.68 61.32L82.68 67.54" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M157.32 61.32L157.32 67.54" /><path fill="none" stroke="#9684FA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" d="M120 51.99L120 123.51" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="54.8" y="58.32" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="179.2" y="58.32" width="6" height="6" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="117" y="120.51" width="6" height="6" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="78.68, 88.76, 95.1, 105.06, 115.01, 124.97, 131.31, 141.65, 152.32" y="172.32">
+			AIRBRIDGE
+	</text></svg></span>
+</span><figcaption>AIRBRIDGE</figcaption></figure>
+<p>A span of the air-bridge metal crossing another line: <code>L</code> is the clear span between its two posts,
+<code>W</code> its width and <code>Wu</code> the width of the line it crosses. Terminals 1 and 2 are the landings; terminal 3
+is the crossed line at the crossing, coupled to the bridge through the overlap capacitance. Tie
+terminal 3 to ground for a bridge over a ground strap.</p>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>1</td></tr>
+<tr><td>2</td><td>2</td></tr>
+<tr><td>3</td><td>3</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. Terminals 1 and 2 are the bridge&#39;s two landings and are interchangeable. Terminal 3 is the line it crosses, at the crossing; tie it to ground for a bridge over a ground strap.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>L</td><td><code>30</code></td><td>&#181;m</td><td>shown</td><td>Span: the bridge&#39;s length between its two landings.</td></tr>
+<tr><td>W</td><td><code>10</code></td><td>&#181;m</td><td>&mdash;</td><td>Bridge width.</td></tr>
+<tr><td>Wu</td><td><code>10</code></td><td>&#181;m</td><td>&mdash;</td><td>Width of the line crossed. The crossing capacitance is the overlap W&#183;Wu over the bridge&#39;s height, without fringing.</td></tr>
 </tbody></table>
 <h2 id="data-file-components">Data-file components</h2>
 <h3 id="snp">Touchstone N-Port (SnP)</h3>
@@ -3879,6 +3999,10 @@ in the same multi-line editor as VAR. No fixed parameters.</p>
 <tr><td><a href="#mklopf">MKLOPF</a></td><td>Mklopf</td><td>Microstrip</td></tr>
 <tr><td><a href="#via">VIA</a></td><td>Via</td><td>Microstrip</td></tr>
 <tr><td><a href="#viagnd">VIAGND</a></td><td>ViaGnd</td><td>Microstrip</td></tr>
+<tr><td><a href="#mimcap">MIMCAP</a></td><td>MimCap</td><td>Mmic</td></tr>
+<tr><td><a href="#spiral">SPIRAL</a></td><td>Spiral</td><td>Mmic</td></tr>
+<tr><td><a href="#tfr">TFR</a></td><td>Tfr</td><td>Mmic</td></tr>
+<tr><td><a href="#airbridge">AIRBRIDGE</a></td><td>Airbridge</td><td>Mmic</td></tr>
 <tr><td><a href="#veriloga">VerilogA</a></td><td>VerilogA</td><td>Devices</td></tr>
 <tr><td><a href="#wbond">wBond</a></td><td>WBond</td><td>Other</td></tr>
 <tr><td><a href="#fetcurtice">Curtice</a></td><td>FetCurtice</td><td>Devices</td></tr>

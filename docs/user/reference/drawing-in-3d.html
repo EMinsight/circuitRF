@@ -1666,7 +1666,8 @@ the same panel a <code>.cem</code> opens, less the layout row. The example has t
 sweep from 2 to 30 GHz, and <strong>Lid modes</strong>, a Palace eigenmode solve. The <strong>active</strong> setup is the one
 <strong>Run</strong> runs and whose air box is drawn.</p>
 <p><strong>Ports.</strong> <strong>Shift+A P</strong> draws one on the drawing plane, two corners; or right-click a flat rectangular
-face, <em>Make Port ▸ Lumped</em> or <em>Wave</em>. <strong>Which kind a face can take depends on where it lies, not on what it
+face, <em>Make Port ▸ Lumped</em> or <em>Wave</em>. A wave port takes any flat face, a disc for one, as the rectangle round
+it, since its rectangle is only a region of the box's face. <strong>Which kind a face can take depends on where it lies, not on what it
 was drawn as</strong>: a wave port is a region of an air-box face (a sheet drawn there is the usual way to state one),
 and a lumped port bridges two conductors on opposite edges (a face of a small gap block does exactly that). The
 menu offers only the kind that would resolve, and the other's tip says why. <strong>Which way round a lumped port is comes from what it touches</strong>: each
@@ -1678,6 +1679,18 @@ arrow and all. While it is drawn, the arrow (or the reason there cannot be one) 
 two ports are 5 × 5 mil rectangles on the YZ plane at each lead's outer end, from the floor up to the lead:
 each runs <strong>from <code>floor</code> (−) up to its lead (+)</strong>. <em>Flip</em> on its menu turns it round; a wrong arrow turns
 every transmission term by 180°, so look before a run.</p>
+<p><strong>A wave port on a face met by several conductors</strong> — two strips inside one shield, a coupled pair over a
+ground — is one port with a <strong>terminal</strong> per signal conductor. Each terminal is its own numbered port of the
+result, with its own Z0. One conductor is the <strong>reference</strong>, the one every terminal's voltage is measured
+from: the one in the ground set (the setup's Ground net, or a PEC face of the air box), or failing that the
+one with the largest surface; the air box's PEC faces count as one reference, so strips between them (a
+stripline whose ground planes are the box) each take a terminal. <em>Make Port ▸ Wave</em> on such a face writes the
+reference and one terminal per other conductor, numbered with the next free numbers from left to right along the face. The 3D view draws
+each terminal as an arrow from the reference to its conductor, in the port colour, with its number at the
+head. A face whose reference cannot be decided (two candidates with equal surfaces) says so on the menu item.
+A port with two terminals runs on both solvers when its lines' modes travel at different speeds (a microstrip pair;
+a stripline is openEMS's); one with three or more runs on openEMS only
+(<a href="em-setup.html#wave-port-terminals">EM Setup ▸ Several conductors on one face</a>).</p>
 <p><strong>The air box</strong> is the region solved in: each face a distance beyond the geometry, and a boundary — PEC,
 PMC, symmetry or absorbing — chosen by right-clicking the face. The example's package <strong>is</strong> its own
 shield: both setups set every face to PEC with <strong>no padding</strong>, so the box lies flush against the floor,
@@ -1716,6 +1729,8 @@ leaves out.</p>
 <p><strong>Move the mode.</strong> Set <code>cav_w</code> to <code>480</code> in the Variables panel: the walls, floor, base and lid move out and the
 die stays put. The closed form then says 20.87 GHz — a mode below 22 GHz, walking toward the band — and <strong>Run</strong>
 on <em>Lid modes</em> finds where the drawn package puts it.</p>
+<p>For the question on its own, a resonance inside the band and a grounded post that moves it out, open <strong>Tools ▸
+Examples ▸ 3D Eigenmode</strong> (<a href="em-setup.html#eigenmodes">EM Setup ▸ Eigenmodes</a> quotes its numbers).</p>
 <h2 id="thermal">Temperature</h2>
 <p>The same model solves for heat. A <strong>thermal setup</strong> (<em>Simulate ▸ Setup Analyses…</em>, the thermometer button — or any setup
 whose <em>Solver</em> is set to <strong>Thermal</strong>) is solved by circuitRF's own steady-conduction solver after Gmsh meshes every solid
@@ -2100,7 +2115,7 @@ placed cell), because a drawn object has no net. <em>Show 3D</em> on a <code>.ce
 editor, with that <code>.cem</code> listed read-only and active, so its ports and boundaries can be seen.</li>
 <li><strong>Ports</strong> (<strong>P</strong> in the Shift+A popup, or <em>3D ▸ Draw ▸ Port</em>). A port is drawn like a sheet —
 two corners on the drawing plane — or made from a face: right-click a flat, rectangular face and choose
-<em>Make Port ▸ Lumped</em> or <em>Wave</em>. It takes the next free number and the last port's Z0. <strong>Which way round it
+<em>Make Port ▸ Lumped</em> or <em>Wave</em> (a wave port takes any flat face, as the rectangle round it). It takes the next free number and the last port's Z0. <strong>Which way round it
 is comes from what it touches</strong>: each edge of the rectangle is tested against every conductor, and exactly
 one pair of opposite edges must each touch exactly one conductor. The end that is ground — the setup's
 Ground net, a placed layout's ground plane, or a PEC face of the air box — is <strong>−</strong>; otherwise the larger
@@ -2109,7 +2124,15 @@ its full width, with its number and a flat arrow painted on it pointing to +; wh
 arrow, or the reason it cannot be one, follows the cursor. Right-click a port for <em>Flip</em>, its kind, <em>Z0…</em>
 and <em>Delete</em>. A wrong polarity turns every transmission term by 180°, so check the arrow before a run.
 A <strong>wave</strong> port must lie on a face of the active setup's air box. Every setup uses every port, and a
-placed cell's own ports are never used: only the parent says where a signal enters.</li>
+placed cell's own ports are never used: only the parent says where a signal enters.
+On a box face met by three or more conductors, or by two or more strips between the box's PEC faces, <em>Make
+Port ▸ Wave</em> makes one port with a <strong>terminal</strong> per conductor besides the reference, named <code>P&lt;n&gt;</code> with the next free numbers, and names the port after the face
+(<code>xmin</code>); the status line says how many terminals it made and which conductor is the reference. Such a port is
+one row of the tree, its tick the whole port's, with a row beneath it for each terminal: its number, name,
+conductor and Z0. Right-click the port for <em>Set Reference</em> (any conductor meeting its region; choosing a
+terminal's conductor swaps it with the reference), <em>Model</em> and <em>Delete</em>; with a terminal's arrow selected, the
+same menu adds <em>Flip</em> and <em>Z0…</em> for that terminal. <em>Flip</em> reverses the terminal's arrow; the reference stays
+the reference.</li>
 <li><strong>Bond wires</strong> (<strong>W</strong> in the Shift+A popup, or <em>3D ▸ Draw ▸ Wire</em>). A wire runs between two metal
 objects or sheets — a die's pad inside a placed cell to a lead in the package is the usual case, which a <code>.wBond</code>
 cannot do because it belongs to one layout. Click any face of the object the wire starts on: each end attaches to

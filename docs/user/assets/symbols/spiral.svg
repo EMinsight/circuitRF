@@ -1,0 +1,7 @@
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 75L78.46 75" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M78.46 75L78.46 42.69L152.31 42.69L152.31 107.31L92.31 107.31L92.31 56.54L138.46 56.54L138.46 93.46L106.15 93.46L106.15 70.38L124.62 70.38L124.62 79.62" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M124.62 79.62L124.62 75L166.15 75" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M166.15 75L212.31 75" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="24" y="71.31" width="7.38" height="7.38" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="208.62" y="71.31" width="7.38" height="7.38" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="93.51, 102.68, 112.29, 118.64, 128.6, 138.68" y="172.32">
+			SPIRAL
+	</text></svg>

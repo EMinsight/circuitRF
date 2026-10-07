@@ -193,9 +193,10 @@ capacitance matrix, <em>Magnetostatic</em> for an inductance matrix, <em>Eigenmo
 </ol>
 </li>
 <li><strong>Ports.</strong> A layout's port labels become ports. In 3D a port is <strong>lumped</strong> by default: a sheet from the
-line down to its return, with the port's Z₀ across it. A <strong>wave port</strong> (<code>Ports3D</code>, Palace only) is fed
-by the line's own mode on the air box's face instead, and has no sheet parasitic.
-<a href="em-setup.html#wave-ports">Wave ports</a>.</li>
+line down to its return, with the port's Z₀ across it. A <strong>wave port</strong> (<code>Ports3D</code>) is fed and measured
+in the line's own field at the air box's face instead, and has no sheet parasitic. Both solvers build
+one, except that openEMS cannot feed a hollow waveguide and Palace cannot give a port with several
+terminals. <a href="em-setup.html#wave-ports">Wave ports</a>.</li>
 <li><strong>Terminals</strong> (<code>Terminals3D</code>, static solves): the matrix's rows and columns, each named by a net.
 Every conductor on that net belongs to the terminal. A magnetostatic terminal also names the port its
 current enters by.</li>
@@ -281,6 +282,12 @@ the other solver's:</p>
 <p><code>results/&lt;setup&gt;.palace/</code> keeps everything the run made: the Gmsh script, the mesh, the Palace
 configuration, both programs' logs, and the saved fields. The run can be repeated by hand from it. An
 unchanged model reuses its mesh.</p>
+<p><strong>A port with two terminals on Palace</strong> (<a href="em-setup.html#wave-port-terminals-palace">On Palace</a>) also keeps
+what its terminal S was converted from, per frequency, in the <code>palace</code> group of <code>&lt;setup&gt;.palace_em.npy</code>:
+<code>modal_S</code> and <code>modal_V</code> (Palace's modal S and the voltage along each terminal's path, port by excitation),
+<code>modal_Zpv</code> and <code>modal_kn</code> (each mode's impedance and wavenumber), and <code>modal_G</code> and <code>modal_K</code> (the fitted
+overlap of a face's modes and its Robin correction). A disputed result can be re-derived from them without
+running Palace again.</p>
 <h2 id="solved">Is this solved?</h2>
 <p>A 3D run takes minutes to hours, so a 3D view (<code>.c3d</code>) says, for each of its setups, whether a run's result still
 matches the model. You can tell without opening the fields, and the answer is still there after you close and reopen
@@ -512,7 +519,9 @@ shows inside a package, under a lid, or through a via's clearance.</p>
 <li><p><strong>Mesh.</strong> After a Palace run, the mesh Gmsh made: the boundary triangles, and the tetrahedra the clip
 plane cuts.</p>
 </li>
-<li><p><strong>Grid.</strong> For an openEMS setup, the FDTD grid on the clip plane and where it meets the metal.</p>
+<li><p><strong>Grid.</strong> For an openEMS setup, the FDTD grid on the clip plane and where it meets the metal. A cylindrical
+grid is drawn as it is: on a clip plane across its axis, a circle at each radius and a spoke at each angle; on a
+plane along it, the radii as lines along the axis; on the metal, where its circles, spokes and planes cross it.</p>
 </li>
 <li><p><strong>Field plots.</strong> After a run that saved them, a field is drawn by a <strong>field plot</strong>: a row of the Object
 Tree's <strong>Field Plots</strong> group, saved with the 3D view like any object, so a plot is still there when the
@@ -523,7 +532,10 @@ file is closed and opened again. Add one with the <strong>+</strong> on the grou
 so switching setups never changes what an existing plot shows; <em>Active</em> follows whichever is active.</li>
 <li><strong>Solution</strong> — what the run saved: a frequency (driven), a mode (eigenmode), a terminal (static), a
 sweep point (thermal). The plot keeps the <strong>value</strong>, not its place in the list, so a later run that saves
-one more frequency never moves it to another. The list ends with <em>Other frequency… (needs a re-run)</em>,
+one more frequency never moves it to another. On Palace, a port with two terminals is solved one <strong>mode</strong>
+of its face at a time, not one terminal, so its choices read <em>5 GHz, Left mode 2 driven</em>: the field of the
+face's second mode launched, which is not terminal 2 driven alone. An openEMS run drives each terminal, and
+its choices name the port. The list ends with <em>Other frequency… (needs a re-run)</em>,
 which adds a frequency to the setup's <em>Save fields at</em> and moves the plot to it.</li>
 <li><strong>Quantity</strong> — only those in the solver's files are offered: the electric field |E|, the surface
 current J_s on the conductors, and for a static solve the potential.</li>

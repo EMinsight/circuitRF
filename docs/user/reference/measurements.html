@@ -46,6 +46,8 @@
       <li><a href="#sparam">S-parameters: 1-based ports</a></li>
       <li><a href="#compose">Composition &amp; scope</a></li>
       <li><a href="#swept">Swept variables</a></li>
+      <li><a href="#freq">Frequency: <code>freq</code></a></li>
+      <li><a href="#spec">Spec checks: the worst value over a band</a></li>
     </ol>
   </nav>
 <h2 id="what">What a measurement is</h2>
@@ -134,7 +136,8 @@ and under <code>circuitrf sparam</code>.</p>
 <p>Measurements are evaluated in declaration order, and each is in scope by name for the ones after
 it — so a complex figure of merit builds from intermediates. Also in scope: every global
 <a href="components.html#var">VAR</a> variable (by name). The element-wise helpers <code>conj</code>, <code>real</code>, <code>imag</code>,
-<code>mag</code>, <code>phase</code>, <code>dB</code>, <code>dB10</code>, <code>dBm</code>, <code>log10</code>, <code>ln</code> broadcast over cubes. Referencing an unknown
+<code>mag</code>, <code>phase</code>, <code>dB</code>, <code>dB10</code>, <code>dBm</code>, <code>log10</code>, <code>ln</code> broadcast over cubes; <code>max_over</code> and
+<code>min_over</code> <a href="#spec">reduce one</a>. Referencing an unknown
 analysis raises an error naming the available ones; a failing measurement is reported as a run
 note and does not fail the whole run.</p>
 <h2 id="swept">Swept variables</h2>
@@ -153,6 +156,30 @@ analysis. <code>freq</code> is reserved — a VAR may not be named <code>freq</c
 different frequency grids, leaves <code>freq</code> unresolved and the measurement's error says which of the
 two it was — rather than silently computing against the wrong grid. Under harmonic balance the
 spectral axis is <code>harmonic</code> (or <code>mixIndex</code>) and a small-signal sweep is <code>ssfreq</code>; neither is <code>freq</code>.</p>
+<h2 id="spec">Spec checks: the worst value over a band</h2>
+<p>A specification line asks for the <strong>worst</strong> value of a quantity over a frequency band: &quot;insertion
+loss ≤ 1 dB from 0.1 to 3 GHz&quot;, &quot;rejection ≥ 20 dB from 6 to 12 GHz&quot;. <code>max_over</code> and <code>min_over</code>
+compute exactly that:</p>
+<pre><code class="language-text">measure  IL_worst  = max_over(-dB(SP1.S(2,1)), 0.1GHz, 3GHz)     the largest loss in the passband
+measure  RL1_worst = min_over(-dB(SP1.S(1,1)), 0.1GHz, 3GHz)     the smallest return loss
+measure  Rej_worst = min_over(-dB(SP1.S(2,1)), 6GHz, 12GHz)      the least rejection in the stopband
+measure  IL_margin = 1 - IL_worst                                 positive means the spec is met
+</code></pre>
+<p><code>max_over(x, lo, hi)</code> is the largest value of <code>x</code> over the points whose frequency lies in
+<code>[lo, hi]</code>, and <code>min_over</code> the smallest. Both ends are <strong>inclusive</strong>, so a band edge that is a grid
+point is part of the band.</p>
+<ul>
+<li><strong>The axis is <code>freq</code></strong> unless you name another as a fourth argument:
+<code>max_over(x, -10, 0, &quot;Pin&quot;)</code>. A value with a single axis is reduced over that axis.</li>
+<li><strong>Every other axis is kept.</strong> Over a parametric sweep you get one worst case per sweep point, a
+curve you can plot against the swept variable. With no other axis you get a single number.</li>
+<li><strong>The values must be real.</strong> Complex numbers have no order, so take <code>dB(…)</code>, <code>mag(…)</code> or
+<code>real(…)</code> first. A complex value is refused, saying so.</li>
+<li><strong>A band with no grid point in it is refused</strong>, naming the axis's extent. An empty band in a spec
+check is almost always a mistyped limit.</li>
+</ul>
+<p>The worst value is only as good as the grid. A narrow notch between two frequency points is not
+seen, so sweep finely enough to resolve the response near each band edge.</p>
 <hr />
 <p class="small">See also: <a href="expressions.html">Expressions</a> (the language) ·
   <a href="components.html#meas">MEAS component</a> · <a href="plot-types.html">Plot types</a>. Full design:

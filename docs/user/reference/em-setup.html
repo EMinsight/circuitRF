@@ -976,6 +976,10 @@ knobs are about wavelength and edges.</p>
 </tr>
 </tbody>
 </table>
+<p>With <strong>Auto</strong> on, the mesher chooses cells per wavelength, edge mesh and edge cells itself and those
+three fields are not read. Every other field in this group is still used. A hand-written <code>.cem</code> that
+states one of the three with <code>&quot;Auto&quot;: true</code> gets a <code>check</code> warning naming it; set <code>&quot;Auto&quot;: false</code> in
+<code>PlanarMesh</code> for it to take effect.</p>
 <p>Below the fields sits the <strong>mesh summary</strong> — unknown count, cells across the narrowest conductor, and the
 mesher's own verdict on whether that is enough — plus the mesh notes. This is the readout that tells you
 a run is about to be too big <em>before</em> you start it.</p>
@@ -1322,6 +1326,97 @@ cells, the smallest cell <strong>and the features that set it</strong>, the time
 openEMS computes its own), the steps and memory the run would take, and every merge. A grid that would
 not fit in memory is refused, naming the feature behind the smallest cell and the setting that would
 relax it.</p>
+<h3 id="openems-cylindrical">A cylindrical grid</h3>
+<p>A round conductor on a rectilinear grid is a staircase, and a staircased coax carries its wave slowly: the
+3D Connector's coax (pin ⌀ 0.4 mm in a 1.34 mm PTFE bore) measured 1 to 2.4 % slow in phase velocity
+depending on the cells across its pin, about 1° over a few millimetres at 10 GHz. A 3D view's own setup can
+ask openEMS for a <strong>cylindrical grid</strong> instead, whose lines are circles about one axis, spokes from it and
+planes along it: a conductor coaxial with that axis then lies exactly on the grid's own circles.</p>
+<table>
+<thead>
+<tr>
+<th>Field (in <code>OpenEms</code>)</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Grid</code></td>
+<td><code>Cartesian</code></td>
+<td><code>Cylindrical</code> asks for the grid below. Never inferred: every existing setup stays Cartesian</td>
+</tr>
+<tr>
+<td><code>Axis</code></td>
+<td><code>Z</code></td>
+<td>The world axis the grid is round about</td>
+</tr>
+<tr>
+<td><code>AxisOriginUm</code></td>
+<td><code>[0, 0, 0]</code></td>
+<td>A point the axis passes through, x, y, z in µm: the centre of the coax's pin</td>
+</tr>
+<tr>
+<td><code>AzimuthLines</code></td>
+<td>the rule below</td>
+<td>Lines round the circle, 0 and 2π both counted</td>
+</tr>
+</tbody>
+</table>
+<p>In the setup panel the openEMS section offers <strong>Grid</strong>, and with <em>Cylindrical</em> chosen, <strong>Axis</strong> and <strong>Axis
+through</strong>. A <code>.cem</code> setup cannot ask for one (a layout problem stays Cartesian) and is refused if it does.</p>
+<p><strong>What suits it.</strong> A problem round about one axis: a coax section, a coax step or bead, a coax-to-coax adapter,
+a pin in a round bore. <strong>A coax meeting a board does not</strong>: openEMS has one grid per run, and around the coax's
+axis the board and its line would be staircased instead. The 3D Connector's <strong>Launch</strong> therefore stays Cartesian
+and keeps the coax's error, about 1 % in phase velocity over its 4.5 mm of coax — roughly 1.4° at 18 GHz. A
+Cartesian run with a coaxial wave port says so in a note, with the setting that removes it when it can be
+removed, or why it cannot; <code>circuitrf check</code> suggests the setting when every wave port is coaxial about one line.</p>
+<p><strong>The domain</strong> is the cylinder inscribed in the air box's cross-section about the axis. The box's two faces the
+axis crosses are its ends; its four side faces become one outer radius and must share one boundary kind. A
+dielectric reaching past that radius is refused; metal may cross it, as a shield ending on the wall does.</p>
+<p><strong>Where ρ starts.</strong> At the surface of a metal solid that contains the axis along the whole box — a pin — so the
+grid wastes no cells inside it. With none, it starts on the axis itself and openEMS treats the axis: correct,
+and slow, because the innermost ring's tiny arc sets the time step. Measured on the same coax: identical
+impedance and phase, at a time step 25 times smaller.</p>
+<p><strong>How many azimuth lines.</strong> The impedance error is first order in the azimuth step and does not depend on
+frequency; the phase is exact at any count. Measured on the 3D Connector's coax (20 µm radial cells), against
+the closed form's 50.021 Ω:</p>
+<table>
+<thead>
+<tr>
+<th>Azimuth cells</th>
+<th>70</th>
+<th>140</th>
+<th>210</th>
+<th>280</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Z error</td>
+<td>+0.71 Ω</td>
+<td>+0.35 Ω</td>
+<td>+0.22 Ω</td>
+<td>+0.16 Ω</td>
+</tr>
+</tbody>
+</table>
+<p>The default makes the arc at the outermost conductor radius no longer than the radial cell there, rounded up to
+a multiple of four; <code>circuitrf explain</code> names the radius and the cell that set it. A finer inner grid on the
+axis side (openEMS's <em>multi-grid</em>) roughly doubles the time step but measured no faster, so it is not used.</p>
+<p><strong>How shapes are written.</strong> A cylinder coaxial with the axis is written in the grid's own coordinates, which
+fills its circle exactly. A Boolean <strong>Subtract</strong> whose Blank and Tools are plain shapes — the 3D Connector's
+housing with its bore — is written as the Blank with each coaxial Tool cut out above it by priority, the bore
+in the kept Tool's own material or in the background's, so the bore too lies on a circle. That is done only
+where it is exactly the Boolean: when another solid below the housing in precedence overlaps a Tool (PTFE
+drawn as its own solid in a bore that is not kept), the housing is written as its tessellation instead and the
+run's notes say why. Every other shape is written as on a Cartesian grid and fills the same cells it would there.</p>
+<p><strong>Wave ports</strong> must be coaxial terminals on the two faces the axis crosses, centred on the axis: their source is
+openEMS's own radial one, and their current probes are full discs about the axis. Refused, each naming the fix:
+a lumped port, a terminal that is not coaxial or not on the axis, a radiation pattern (openEMS's far-field box
+is written on a Cartesian grid only). No field is saved for the 3D view, whose field plots read a Cartesian
+grid; the run says so. Measured end to end through <code>circuitrf em</code>: the coax section above within 0.4 Ω of its
+closed form, and its transmission phase within 0.01° of the line's.</p>
 <h3 id="openems-run">Running openEMS</h3>
 <p>With openEMS chosen the panel shows the grid settings above and two of its own, each a field of the
 <code>.cem</code>'s <code>OpenEms</code> section; a blank box is the default. <code>SaveFieldsGHz</code> and <code>SaveH</code> are written in the <code>.cem</code> itself.</p>
@@ -1441,9 +1536,15 @@ in engineering units, and <code>circuitrf explain</code> lists which conductors 
 <h3 id="wave-ports">Wave ports</h3>
 <p>A 3D port is <strong>lumped</strong> by default: a sheet from the line down (or up) to its return, with the port's
 Z0 across it. A lumped sheet has a small series inductance of its own, and on a tall sheet it shows as
-a step in S11 at the top of the band. A <strong>wave port</strong> has none: it is a region of the air box's face,
-fed by the line's own mode, which Palace computes on that face at every frequency. Palace only; a setup
-naming openEMS or both solvers is refused, and so is its <code>check</code>.</p>
+a step in S11 at the top of the band. A <strong>wave port</strong> has none: it is a region of the air box's face where
+the line is fed and measured in its own field. Both solvers build one, each its own way: Palace computes
+the line's mode on that face at every frequency, and openEMS feeds the line from behind the face and
+measures it with probes (<em>On openEMS</em>, below). The <strong>3D Wave Ports</strong> example walks through one on each solver
+(<a href="../new-user-guide/index.html#wave-ports-3d">A first wave port</a>).</p>
+<p>In a 3D view a wave port's two ends are the conductors that meet its region, and its voltage path runs straight
+across the gap between them. A conductor <strong>enclosed</strong> by another, a coax's pin inside its housing, has its path
+inferred along a ray from the outer to the inner, through the inner's centre. The 3D editor has no field for a
+voltage path; a geometry the ray gets wrong states <code>VoltagePath</code> in the <code>.c3d</code>, and a stated path always wins.</p>
 <p>The port table in the <strong>Solver</strong> group lists every port the layout labels, and it is the one place a
 3D setup's ports are configured — the planar <strong>Ports</strong> group is hidden while a 3D solver is chosen. Each
 row sets the port's reference impedance <strong>Z₀</strong> and its kind (<code>Ports3D</code>). Lumped and wave ports may be
@@ -1459,20 +1560,127 @@ board outline or another conductor reaches further — is refused, naming the po
 height above its return. Blank takes the sizing rule: 10 line widths (10 substrate heights for a line
 narrower than its substrate) by 8 heights. The answer does not depend on them: ±20 % of the region
 moved |S21| on a 50 Ω microstrip by under 0.02 dB.</li>
-<li><strong>OffsetUm</strong> moves the reference plane that far into the structure; Palace de-embeds the line between.
-<code>circuitrf explain</code> says where each port's reference plane is.</li>
-<li><strong>What the numbers are referred to.</strong> Palace refers a wave port's S-parameters to the port's own mode
+<li><strong>OffsetUm</strong> moves the reference plane that far into the structure. Both solvers measure there, so the
+line between is de-embedded. <code>circuitrf explain</code> says where each port's reference plane is.</li>
+<li><strong>What the numbers are referred to, on Palace.</strong> Palace refers a wave port's S-parameters to the port's own mode
 at unit power — that is, to the mode's impedance, which changes with frequency (it is Palace's
 <em>Z_PV</em>, measured along a line from the return up to the strip). The Touchstone file states one real
 reference impedance per port, so circuitRF renormalises each wave port to its <strong>Z0</strong> and the file's
 header says so. On a 50 Ω microstrip the mode impedance is within a few ohms of 50; on a waveguide it
 is several hundred ohms, so set Z0 to the mode impedance the run reports if you want a matched file.</li>
-<li><strong>One mode.</strong> A wave port excites and measures its first mode. If the port's region is large enough
+<li><strong>One mode, on Palace.</strong> A wave port excites and measures its first mode. If the port's region is large enough
 for a second mode to propagate at the top of the sweep, the run warns — its S-parameters then leave
 out the power that mode carries. Make the region smaller, or lower the sweep's top.</li>
 </ul>
 <p>A wave port needs Palace's eigensolver (every Palace build has one) and GSLIB (the <code>+gslib</code> variant, on
 by default). A build without either is refused before anything meshes, naming the variant.</p>
+<p><strong>On openEMS.</strong> openEMS computes no mode. It builds the port the way a transmission-line port is built on
+an FDTD grid:</p>
+<ul>
+<li><strong>The line is fed from a short extension behind the face.</strong> The grid grows outward past the face, the
+face's own cross-section continues through it, and a source at its far end is shaped to the line: a
+radial field across a coax's dielectric, a sheet from a strip to its reference plane (one sheet over a
+ground, two for a strip between two planes). The feed is at least 4.5 times the largest distance on the
+face from a conductor to its reference, and at least ten cells. The run's notes give its length, and
+the 3D view's openEMS grid draws it, with the source plane and the reference plane marked.</li>
+<li><strong>The face is absorbing for openEMS</strong> whatever the setup says, because the extension ends in PML. A
+face the setup states as PEC or PMC stays so for Palace, and the run's notes say so.</li>
+<li><strong>Voltage and current are measured around the reference plane</strong>: the voltage on three planes one cell
+apart, the middle one on the reference plane, and the current on the two planes between them, averaged.
+The result is referred to Z0 directly, with no renormalisation.</li>
+<li><strong>The run reports the line's own impedance and ε_eff</strong> per port, measured from the same probes
+(<code>Terminal P1: the line measured Z 50.4 Ω, ε_eff 2.20.</code>). On openEMS's Cartesian grid a round
+conductor is a staircase, and a coax reads slightly slow there: an ε_eff a few percent above its
+dielectric's is that, not the port.</li>
+<li><strong>A hollow waveguide is refused</strong>: a region met by one conductor has no voltage between conductors, and
+openEMS would need a mode-matching port, which circuitRF does not build yet. Run it on Palace.</li>
+<li><strong>Keep PEC side walls away from the line.</strong> Two PEC walls beside a line make a box with modes of its
+own; one near the band is excited by the feed's source and carries voltage but no current on the line.
+The run notes it when the empty cross-section's first mode is below 1.5 times the sweep's top. Make
+those faces PMC or Absorbing. A PEC face that is the line's own reference plane is not a side wall.</li>
+<li><strong>The current probe needs room</strong>: its loop round each conductor must lie in dielectric with one grid
+cell to spare from any other conductor, corners included, or it reads a fraction of the current. A port
+whose loop cannot be placed is refused, naming the conductor it would touch and the clearance needed;
+refine the openEMS grid there or move the conductors apart.</li>
+</ul>
+<h4 id="wave-port-terminals">Several conductors on one face</h4>
+<p>When a wave port's region is met by <strong>several signal conductors and one reference</strong> — a coupled pair over
+a ground, two strips inside one shield — it is one port with a <strong>terminal</strong> per signal conductor. Each
+terminal is a port of the result in every way a port is: it has its own number in the Touchstone file,
+its own Z0, and its own row in the port map. These are <strong>terminal</strong> S-parameters, the voltage and current
+on each conductor. A coupled pair with a two-terminal wave port at each end is a four-port: with terminals
+1 and 2 at one end and 3 and 4 at the other, 1 and 3 on one strip, S31 is its thru, S21 its near-end and S41
+its far-end coupling, just as for any four lumped ports. The <strong>3D Wave Ports</strong> example's <em>Pair</em> is exactly this,
+run on openEMS against Cohn's ideal line, and its <em>Coupled Microstrip</em> runs two unequal microstrip lines on both
+solvers (<a href="../new-user-guide/index.html#wave-ports-3d">its walk-through</a>).</p>
+<p>The <strong>reference</strong> is the conductor every terminal's voltage is measured from. Left unstated it is the
+conductor meeting the region that is in the ground set (the setup's Ground net, or a PEC face of the air
+box); failing that, the one with the largest surface. The air box's PEC faces count as <strong>one</strong> reference,
+named by the first of them in the order xmin, xmax, ymin, ymax, zmin, zmax. Two candidates with equal
+surfaces among drawn conductors are refused, asking for <code>Reference</code>. Each terminal's voltage path runs from
+the reference to its conductor, inferred as a single wave port's is, or stated.</p>
+<p>So strips whose ground planes are the air box's PEC faces, as in the example's <em>Pair</em>, take a terminal each:
+<em>Make Port ▸ Wave</em> on that face writes one per strip, referenced to the box. A bare wave port already in a
+file there keeps its own reading, one port from one strip to the other, and <code>circuitrf check</code> adds a note
+saying what the gesture would write.</p>
+<p>In a <code>.c3d</code> the port carries <code>Reference</code> (optional) and <code>Terminals</code>; it states no <code>Number</code>, <code>Z0</code>,
+<code>Positive</code>, <code>Negative</code>, <code>VoltagePath</code> or <code>Flip</code> of its own, and each terminal states its own:</p>
+<pre><code>{ &quot;Name&quot;: &quot;Left&quot;, &quot;Kind&quot;: &quot;Wave&quot;, &quot;Plane&quot;: &quot;YZ&quot;, &quot;Offset&quot;: 0, &quot;Rect&quot;: { ... },
+  &quot;Reference&quot;: &quot;gnd&quot;,
+  &quot;Terminals&quot;: [
+    { &quot;Number&quot;: 1, &quot;Name&quot;: &quot;P1&quot;, &quot;Conductor&quot;: &quot;strip_a&quot;, &quot;Z0&quot;: &quot;50&quot; },
+    { &quot;Number&quot;: 2, &quot;Name&quot;: &quot;P2&quot;, &quot;Conductor&quot;: &quot;strip_b&quot;, &quot;Z0&quot;: &quot;50&quot; } ] }
+</code></pre>
+<ul>
+<li>A terminal's number shares one namespace with every other port and terminal of the 3D view.</li>
+<li>Each terminal's conductor must meet the region and is never the reference; two terminals on one
+conductor are refused, and so is a conductor on the face that is neither a terminal nor the reference.</li>
+<li>One terminal is refused: write the ordinary wave port. A lumped port has one gap and takes no terminals.</li>
+<li>Terminals are never invented when a file is read: a wave port without <code>Terminals</code> whose region three or
+more conductors meet is refused, naming them and the fix. <em>Make Port ▸ Wave</em> writes them for you
+(<a href="drawing-in-3d.html#simulate">Drawing in 3D ▸ Simulating</a>).</li>
+<li><code>Model</code> turns the whole port off, every terminal with it.</li>
+<li>A <code>.cem</code> cannot state one: a layout's edge port is one conductor. Terminal ports are drawn in a 3D view.</li>
+</ul>
+<p><strong>On openEMS</strong>, each terminal is fed and measured on its own, one run per terminal, and S comes from all
+the runs together: a coupled pair whose lines end in the feed's absorber is terminated in the pair's own
+impedances, not in each terminal's Z0, so no single run gives a column of S by itself. Any number of
+terminals runs.</p>
+<p><a id="wave-port-terminals-palace"></a><strong>On Palace</strong>, a port with <strong>two terminals</strong> runs when its lines' modes travel
+at <strong>different speeds</strong>: a microstrip pair, or any pair over a dielectric that does not fill the cross-section, the two
+lines alike or not. Palace takes a wave port's modes from its face, so circuitRF gives each end <strong>one port face carrying
+both terminals</strong>: the face's two modes are solved together, each is launched in turn, and circuitRF converts Palace's S
+between modes into <strong>terminal S</strong>, one port per terminal at its own Z0, in the same <code>.sNp</code> an openEMS run writes. It
+corrects for the port absorbing the second mode at the first one's speed, which is what Palace's port does.</p>
+<p><strong>Lines whose modes travel at one speed are refused on Palace</strong>, naming openEMS: a stripline, or any pair in a
+homogeneous fill. Palace returns two such modes in an arbitrary mixture, draws it again every time it solves the face
+(for each excitation and frequency of a sweep), and on some meshes returns nearly the same field twice, so no conversion
+can recover two terminals from them. The run finds this out before the 3D solve, from Palace's own solve of the face's
+modes (seconds), and says the two wavenumbers it found.</p>
+<p>It costs one solve per terminal at every frequency Palace solves: a pair at each end is four solves, and the whole
+cross-section is meshed. The sweep is Palace's ordinary adaptive one. It writes no wavenumber for the modes, so the run
+solves each terminal face's modes on their own at five of the sweep's frequencies and interpolates between them. The
+face's ground must be one conductor on the face: a face whose ground planes are separate conductors there carries a
+mode per extra conductor, which two terminals cannot account for, and the run's check for a mode past the terminals'
+own says so.</p>
+<p>Also refused on Palace, each naming openEMS: <strong>three or more terminals</strong> on one face, a <strong>reference plane moved off the
+face</strong> (the terminal voltages Palace writes are measured at the face), and a <strong>lumped port</strong> in the same problem. A
+setup naming both solvers then runs on openEMS, and the run says Palace was skipped or refused.</p>
+<p>What a Palace run says about the conversion:</p>
+<ul>
+<li>A <strong>note</strong> naming the route, per port: <em>Port 'Left': terminals P1, P2 as modes 1 and 2 of one Palace
+wave port, converted to terminal S (modes not degenerate, Robin correction K = 1.079 to 1.086)</em>, and one
+giving each terminal's power |S_jj|² + Σ|S_ij|² and the singular values of S.</li>
+<li><strong>The problem has no loss mechanism, yet its terminal S is not lossless</strong> (more than 0.2 %): every
+conductor perfect, every dielectric lossless and no absorbing face, so the power that went missing is
+the conversion's. Refine the mesh at the port face.</li>
+<li><strong>A terminal's own voltage does not give Palace's mode impedance</strong>: the installed Palace states its
+modes' power differently from the version circuitRF was checked against. Use a validated version.</li>
+<li><strong>A terminal reads another port face's modes</strong>: two port faces are coupled through their modes. Move
+them apart.</li>
+<li><strong>The face supports a mode past its terminals' own</strong> at the top of the sweep: that mode's power is not
+in the result. Make the port region smaller, or lower the sweep's top.</li>
+</ul>
 <h3 id="eigenmodes">Eigenmodes</h3>
 <p><strong>Problem</strong> <em>Eigenmode</em> finds the structure's resonant frequencies and their Q — &quot;is there a lid
 resonance inside my band?&quot;. <code>Eigenmode</code> sets how many modes (<code>Count</code>, default 3) above which frequency
@@ -1488,6 +1696,13 @@ eigenmode solve treats as its resistance, a load. With lumped ports, <strong>Q_e
 <li><strong>Participation</strong> is the fraction of each mode's electric energy in each meshed region: it is what
 says where a mode lives.</li>
 </ul>
+<p><strong>Worked example.</strong> <strong>Tools ▸ Examples ▸ 3D Eigenmode</strong> asks the question on its own: a 50 Ω line through an
+aluminium housing, in the band 8–12 GHz. The empty cavity's closed form puts its lowest mode at 10.13 GHz, an upper
+bound, since the laminate on the floor pulls the mode down. The cavity's first mode is at <strong>9.956 GHz</strong> (Q <strong>539</strong>),
+inside the band, and the driven S21 has a <strong>−11.69 dB</strong> notch there. With a grounded post beside the line, the mode is
+at <strong>12.84 GHz</strong>, above the band, and the notch is gone. <strong>The post does not damp the mode; it shortens the cavity the
+mode sees</strong>, so the mode's frequency rises (its Q goes up, not down). The example's mode tables also show rows with a Q
+near 1: those are the line between its two ports, not resonances.</p>
 <p>The result is <code>results/&lt;name&gt;.palace_eig.npy</code> and no Touchstone file; <code>circuitrf em</code> prints the mode
 table and the panel shows it after a run. Palace's own files stay in the run folder.</p>
 <h3 id="palace-fields">Fields for the 3D view</h3>
