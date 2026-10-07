@@ -162,7 +162,44 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<RenderFieldPlotJson>? FieldPlots = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ImpedanceLineJson? ImpedanceLine = null);
+        ImpedanceLineJson? ImpedanceLine = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<SolverJson>? Solvers = null);
+
+    /// <summary>
+    /// One external solver as <c>solver list</c> reports it — the Settings ▸ Solvers row. Carried as data
+    /// because a caller deciding whether a 3D problem can run here (an eigenmode solve, a wave port) has
+    /// no other way to learn it short of running one and being refused.
+    /// </summary>
+    /// <param name="Tool">The id <c>solver install</c> and <c>em --solver</c> take: palace, gmsh, openems.</param>
+    /// <param name="State"><c>not found</c>, <c>found</c> or <c>installed by circuitRF</c>.</param>
+    /// <param name="Summary">The row's own sentence.</param>
+    /// <param name="Validated">Whether the version found is one circuitRF has run its references
+    /// through. Null when nothing was found.</param>
+    /// <param name="Capabilities">Each capability a run could ask of it, probed on the program found.
+    /// Empty when nothing was found or the tool has none to probe.</param>
+    /// <param name="Install">The command that would install it here, when one would.</param>
+    public sealed record SolverJson(
+        string Tool,
+        string Name,
+        string State,
+        string Summary,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Path,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Version,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Route,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        bool? Validated,
+        IReadOnlyList<SolverCapabilityJson> Capabilities,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Install);
+
+    /// <param name="Capability">A stable id — <c>driven</c>, <c>wave-ports</c>, <c>eigenmode</c>.</param>
+    /// <param name="Description">What it means, as the terminal prints it.</param>
+    /// <param name="Detail">Why it is or is not available.</param>
+    public sealed record SolverCapabilityJson(string Capability, string Description, bool Available, string Detail);
 
     /// <summary>
     /// What an <c>NDF=yes</c> run found (brief-wsprobe-6 R-wsp6-2): the right-half-plane pole count

@@ -159,6 +159,9 @@ internal static class JsonRun
     /// <summary>What <c>render --list-fields</c> found (brief-em3d-84): a 3D view's field plots.</summary>
     public static IReadOnlyList<RenderFieldPlotJson>? FieldPlots;
 
+    /// <summary>What <c>solver list</c> found — each external solver and what its build can do.</summary>
+    public static IReadOnlyList<SolverJson>? Solvers;
+
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
     ///
@@ -205,6 +208,7 @@ internal static class JsonRun
         ImpedanceSurvey     = null;
         ImpedanceLine       = null;
         FieldPlots          = null;
+        Solvers             = null;
         _summaryOnly        = false;
         _diagnosticsSummary = false;
         Malformed           = null;
@@ -428,11 +432,11 @@ internal static class JsonRun
         if (Check is not null || Explain is not null || Document is not null || Reference is not null
          || History is not null || Render is not null || Find is not null || Smith is not null
          || Lvs is not null || Impedance is not null || ImpedanceSurvey is not null || FieldPlots is not null
-         || ImpedanceLine is not null)
+         || ImpedanceLine is not null || Solvers is not null)
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
                                      Find: Find, Smith: Smith, Lvs: Lvs, Impedance: Impedance,
                                      ImpedanceSurvey: ImpedanceSurvey, FieldPlots: FieldPlots,
-                                     ImpedanceLine: ImpedanceLine);
+                                     ImpedanceLine: ImpedanceLine, Solvers: Solvers);
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and
         // the report is the domain shape §2.4 asks for — so a refused run still answers with its

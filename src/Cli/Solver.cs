@@ -1,6 +1,7 @@
 using CircuitRF.Design.Em3d;
 using CircuitRF.Design.Em3d.Install;
 using CircuitRF.Engine;
+using RfCore.Export;
 
 namespace CircuitRF.Cli;
 
@@ -68,9 +69,17 @@ internal static class Solver
     {
         if (args.Length > 0) return JsonRun.Fail(CliDiagnostics.SolverUnknownOption("list", args[0]));
 
+        var report = new List<SolverJson>();
         foreach (var tool in Enum.GetValues<SolverTool>())
         {
             var s = SolverStatus.Of(tool);
+            string state = s.Found is null ? "not found" : s.InstalledByCircuitRf ? "installed by circuitRF" : "found";
+            report.Add(new SolverJson(
+                SolverHomes.ToolId(tool), s.Name, state, s.Summary,
+                s.Found?.Where, s.Found?.Version, s.Found is { } f ? Route(f.HowFound) : null, s.Found?.Validated,
+                [.. s.Capabilities.Select(c => new SolverCapabilityJson(CapabilityId(c.Capability), Describe(c.Capability),
+                                                                        c.Available, c.Detail))],
+                s.OfferInstall ? $"circuitrf solver install {SolverHomes.ToolId(tool)}" : null));
             Console.WriteLine($"{s.Name}: {(s.Found is null ? "not found" : s.InstalledByCircuitRf ? "installed by circuitRF" : "found")}");
             Console.WriteLine($"  {s.Summary}");
             if (s.Found is { } found)
@@ -91,6 +100,7 @@ internal static class Solver
             else if (s.Recipe is null && !SolverInstallPlan.HasRoute(tool) && s.Found is not { Validated: true })
                 Console.WriteLine($"  no install recipe for this machine; recipes exist for {SolverRecipes.PlatformsFor(tool)}");
         }
+        JsonRun.Solvers = report;
         return 0;
     }
 
@@ -103,6 +113,14 @@ internal static class Solver
         SolverHowFound.DefaultDirectory => "default-directory",
         SolverHowFound.Spack            => "spack",
         _                               => "conda",
+    };
+
+    /// <summary>The capability's id in the result document — stable, unlike the sentence beside it.</summary>
+    private static string CapabilityId(SolverCapability c) => c switch
+    {
+        SolverCapability.DrivenLumpedPorts => "driven",
+        SolverCapability.WavePorts         => "wave-ports",
+        _                                  => "eigenmode",
     };
 
     private static string Describe(SolverCapability c) => c switch

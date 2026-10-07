@@ -231,6 +231,16 @@ internal sealed class McpServer
                 "which is also the reference to check your own authoring against; with toSchematic it " +
                 "runs the other way and draws a .cnl you wrote as a readable .csch.\n" +
                 "\n" +
+                // The 3D EM half: nothing above it so much as names a .cem, so an agent learned that
+                // circuitRF solves cavity resonances only by noticing one enum value in a 54 kB topic.
+                "3D EM: 'run analysis=em' takes a .cem or a .c3d (name an embedded setup with setup). " +
+                "The setup's Problem3D picks the problem: Driven (S-parameters), Electrostatic or " +
+                "Magnetostatic (a C or L matrix), Eigenmode (cavity and package resonances: f, Q, " +
+                "unloaded Q and where each mode's energy sits; set Eigenmode.Count and TargetGHz) or " +
+                "Thermal. The formats are 'reference em-setup' and '3d-view'. Eigenmode and static " +
+                "problems run on Palace only; 'solver' says whether Palace is installed here and " +
+                "whether its build does eigenmode solves.\n" +
+                "\n" +
                 "End to end. Nothing here writes a document — use your own file tools for step 3.\n" +
                 "  1. create   what=workspace path=<root> name=demo      -> <root>/demo/.cws\n" +
                 "  2. reference topic=analyses type=sparam               -> every legal key, with defaults\n" +

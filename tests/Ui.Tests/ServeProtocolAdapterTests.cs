@@ -586,6 +586,30 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         Assert.Contains("reference", result["instructions"]!.GetValue<string>(), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// An agent can learn that circuitRF solves cavity resonances, and whether it can here, without
+    /// running one: the instructions name the eigenmode problem and the tool that answers the second
+    /// half, and that tool reports each solver's capabilities as ids rather than only as sentences.
+    /// </summary>
+    [Fact]
+    public void Eigenmode_IsDiscoverable_AndSolverReportsEachToolsCapabilities()
+    {
+        using var server = Start(Root);
+        string instructions = JsonNode.Parse(server.Request("initialize", new JsonObject()))!["instructions"]!.GetValue<string>();
+        Assert.Contains("Eigenmode", instructions, StringComparison.Ordinal);
+        Assert.Contains("'solver'", instructions, StringComparison.Ordinal);
+
+        var doc = JsonNode.Parse(server.Call("solver", new JsonObject()))!;
+        Assert.Equal(0, doc["exitCode"]!.GetValue<int>());
+        var solvers = doc["result"]!["solvers"]!.AsArray();
+        Assert.Equal(["palace", "gmsh", "openems"], solvers.Select(s => s!["tool"]!.GetValue<string>()));
+
+        // What this machine has installed is not this test's business; what a FOUND Palace reports is.
+        var palace = solvers[0]!;
+        if (palace["state"]!.GetValue<string>() != "not found")
+            Assert.Contains("eigenmode", palace["capabilities"]!.AsArray().Select(c => c!["capability"]!.GetValue<string>()));
+    }
+
     // ══ §5.2 — stdout purity ═════════════════════════════════════════════════════════════════════
 
     /// <summary>
@@ -850,7 +874,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         // `impedance` is the Trace Impedance Analysis — a board review an agent can run on artwork it
         // did not draw.
         Assert.Equal(["run", "check", "explain", "create", "import", "convert", "render", "netlist", "plot",
-                      "find", "lvs", "impedance", "read", "history", "reference", "batch"],
+                      "find", "lvs", "impedance", "read", "history", "solver", "reference", "batch"],
                      tools);
 
         Assert.Equal(0, server.Close());
@@ -944,6 +968,8 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             // which is a real answer rather than a usage error. Both of its positionals are therefore
             // probed as arguments below, which is what this gate is for.
             ["reference/"]        = [],
+            // `solver list` only: install and remove download or delete behind the person's consent.
+            ["solver/"]           = [],
             // RC-5's three history nouns (revision-control.md §5.3d) — CLI verbs like every other
             // row here, so the same gate applies to them.
             ["history/checkpoint"] = ["path"],

@@ -108,7 +108,7 @@ internal sealed record ToolSpec(
 /// <summary>
 /// The tool surface, and the ONLY thing that translates a tool call into a command line.
 ///
-/// <para><b>Small and broad (R-aut5-4, R-aut-9).</b> FOURTEEN tools, not one per verb — the thirteen
+/// <para><b>Small and broad (R-aut5-4, R-aut-9).</b> SEVENTEEN tools, not one per verb — the sixteen
 /// here plus <c>HistoryBatch</c>'s, which is advertised beside them because it is the one tool that is
 /// not a command line. A client that discovers tools up front carries every description for the whole
 /// session whether or not it calls one, so the surface is a standing cost paid on every interaction.
@@ -257,7 +257,7 @@ internal static class ToolCatalog
         => arguments?[AttachImageArgument] is { } node
         && node.GetValue<JsonElement>().ValueKind == JsonValueKind.True;
 
-    // ── the eleven tools ─────────────────────────────────────────────────────
+    // ── the sixteen tools ─────────────────────────────────────────────────────
 
     public static readonly ToolSpec[] Tools =
     [
@@ -270,7 +270,9 @@ internal static class ToolCatalog
           + "sparam, dc, hb and em return the values inline as well; lp and lpp return their "
           + "one-row-per-grid-point summary instead, and hand over the cubes when asked with all, "
           + "only or group. Narrow a large result with at, range or result=summary rather than "
-          + "receiving it whole.",
+          + "receiving it whole. A 3D em setup's Problem3D decides what comes back: Driven an S-matrix, "
+          + "Electrostatic/Magnetostatic a C or L matrix, Eigenmode the modes (f, Q, Participation) and "
+          + "no Touchstone, Thermal temperatures.",
             "analysis",
             "Which analysis to run.",
             [
@@ -302,9 +304,19 @@ internal static class ToolCatalog
                     "Loadpull pursuit: searches for the MXP and MXE terminations. Returns the optima and the "
                   + "result's shape; ask for the cubes with all, only or group."),
                 new("em", ["em"],
-                    [new("path", true, "The .cem to run; with component, the workspace folder (or .cws, or .ctech) "
-                                     + "whose technology the part is drawn on.")],
+                    [new("path", true, "The .cem or .c3d to run; with component, the workspace folder (or .cws, "
+                                     + "or .ctech) whose technology the part is drawn on.")],
                     [Output, .. Narrowing,
+                     // brief-em3d-42 R-em3d42-6 — every shipped eigenmode example embeds a Driven setup
+                     // beside its eigenmode one, so without this a .c3d run over MCP could only be refused.
+                     new("setup", "--setup", OptKind.Str,
+                         "Which of a .c3d's embedded setups to run, by name. Needed when it embeds several; "
+                       + "explain lists them."),
+                     new("force", "--force", OptKind.Flag,
+                         "Start a Palace run whose memory estimate is past 150 % of this machine's, which is "
+                       + "otherwise refused."),
+                     // A thermal setup driven from a circuit: one of the CIRCUIT's globals (brief-em3d-79).
+                     Set,
                      new("workspace", "--workspace", OptKind.Path,
                          "The .cws paths resolve against. Default: the nearest one above the .cem."),
                      new("solver", "--solver", OptKind.Str,
@@ -315,8 +327,10 @@ internal static class ToolCatalog
                        + "Needs output."),
                      new("freq", "--freq", OptKind.Str,
                          "With component: the sweep, start:stop:step, e.g. 1GHz:20GHz:1GHz. Default 1-20 GHz.")],
-                    "Electromagnetic extraction of the layout the .cem names, or of one component's drawn part. Writes "
-                  + "a Touchstone and a .npy; a 3D setup run with both solvers writes each one's and a comparison .npy."),
+                    "Electromagnetic extraction of the layout the .cem names, a .c3d's embedded setup, or one "
+                  + "component's drawn part. Writes a Touchstone and a .npy; a 3D setup run with both solvers "
+                  + "writes each one's and a comparison .npy; a static, eigenmode or thermal setup writes the "
+                  + ".npy only."),
             ]),
 
         new("check",
@@ -939,6 +953,18 @@ internal static class ToolCatalog
                     [new("point", "--point", OptKind.Integer,
                          "Which restore point, as the number 'list' reports.")],
                     "Put the workspace back to one restore point. The state being replaced is kept first."),
+            ]),
+
+        // The external 3D solvers: what is installed and what each build can do. `install` and `remove`
+        // stay off this surface — both download or delete on the user's machine behind a consent that
+        // is the PERSON's to give, and a tool call is not that person.
+        new("solver",
+            "Which external 3D solvers (Palace, Gmsh, openEMS) are installed here and what each build can do: "
+          + "driven solves, wave ports, eigenmode solves. Ask before writing a 3D setup that needs one. "
+          + "Reads no file and writes nothing.",
+            null, null,
+            [
+                new("", [ "solver", "list" ], [], [], ""),
             ]),
 
         new("reference",

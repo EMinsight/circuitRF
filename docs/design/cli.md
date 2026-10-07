@@ -1322,10 +1322,10 @@ was checked rather than assumed.
 
 ### 11.3 The tool surface
 
-**Sixteen tools, and the count is the point** (R-aut-9). A client that discovers tools up front
+**Seventeen tools, and the count is the point** (R-aut-9). A client that discovers tools up front
 carries every description for the whole session whether or not it calls one, so the surface is a
-standing cost paid on every interaction. Fifteen come out of `ToolCatalog`'s one table; the
-sixteenth, `batch`, is advertised beside them by `HistoryBatch` because it is the only one that is
+standing cost paid on every interaction. Sixteen come out of `ToolCatalog`'s one table; the
+seventeenth, `batch`, is advertised beside them by `HistoryBatch` because it is the only one that is
 not a command line.
 
 **`import` and `convert` are two tools because they are two verbs** (2026-10-06). They were one,
@@ -1336,7 +1336,7 @@ be found by its name.
 
 | Tool | Becomes |
 |---|---|
-| `run` | `sparam` / `dc` / `hb` / `lp` / `lpp` / `em`, selected by an argument — one tool, not six |
+| `run` | `sparam` / `dc` / `hb` / `lp` / `lpp` / `em`, selected by an argument — one tool, not six. `em` takes a `.cem` or a `.c3d`, whose embedded setup `setup` names — every shipped eigenmode example embeds two |
 | `check` | `check` |
 | `explain` | `explain`, including RND-3's `--cells` / `--layers` / `--extents` and `--footprints` |
 | `create` | `new workspace` / `new cell` |
@@ -1350,6 +1350,7 @@ be found by its name.
 | `impedance` | `impedance` — a drawn layout's traces, or (`tech`) the line calculator with nothing drawn |
 | `read` | `read` |
 | `history` | `history checkpoint` / `list` / `restore` (RC-5, `revision-control.md` §5.3d) |
+| `solver` | `solver list` only — which 3D solvers are installed and what each build can do (§22). `install` and `remove` stay off: both download or delete behind a consent that is the person's to give |
 | `reference` | `reference` — the same bytes the resources below serve, for a client that does not surface resources to the model |
 | `batch` | none. Session state this process holds; see §11.6 |
 
@@ -1448,6 +1449,12 @@ Most of what the exercise behind this series learned by trial and error is in th
 worked example is the one form of documentation a client does not have to know to go and ask for. It
 is ~1 kB per session against `tools/list`'s 20 kB, which is the proportion that makes it worth the
 standing cost. **The example is a real one** — it was written out and run before it was written down.
+
+**A second, shorter paragraph names the 3D EM half** (2026-10-07). Nothing else in the instructions
+mentioned a `.cem`, so an agent could learn that circuitRF solves cavity and package resonances only by
+spotting `Eigenmode` among `Problem3D`'s values in a 54 kB format topic. It says `run analysis=em` takes
+a `.cem` or a `.c3d`, lists what each `Problem3D` returns, names the two format topics, and points at
+`solver` for whether this machine's Palace can do it — about 600 bytes.
 
 ### 11.3a Resources — the cheaper channel for the same bytes
 
@@ -3222,6 +3229,10 @@ which the Settings row and a 3D run's *Install …* action call too. `src/Cli/So
 parsing, the consent refusal, progress on stderr and reporting; a comment-stripped source scan in
 `SolverInstallTests` holds it (and the GUI runner) to that.
 
+- **`list --json` is `solvers`**: per tool its id, state, path, version, route, whether the version is
+  validated, the install command when one would work, and each probed capability with a stable id —
+  `driven`, `wave-ports`, `eigenmode`. That id is how an agent learns, before writing a 3D setup,
+  whether an eigenmode or wave-port run can happen on this machine; the MCP `solver` tool is this.
 - **Nothing is fetched without `--yes`.** Without it the verb prints the consent text on stderr — the
   program and version, every upstream URL and how each is checked, where it installs, what it cost when
   measured and on what machine, the ParMETIS sentence for Palace — and exits 1
