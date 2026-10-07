@@ -304,7 +304,9 @@ public static partial class AnalysisDirectiveSchema
     public static IReadOnlyDictionary<string, AnalysisDirectiveKey> LegalKeys(AnalysisDirectiveSpec spec)
         => _legalKeyCache.TryGetValue(spec.Type, out var m) ? m : BuildLegalKeys(spec);
 
-    private static readonly Dictionary<string, IReadOnlyDictionary<string, AnalysisDirectiveKey>> _legalKeyCache = [];
+    // Concurrent: netlists are read on several threads at once (brief-tuneopt-2 R-to2-5), and a plain
+    // Dictionary written by two of them can corrupt itself.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, IReadOnlyDictionary<string, AnalysisDirectiveKey>> _legalKeyCache = new();
 
     private static IReadOnlyDictionary<string, AnalysisDirectiveKey> BuildLegalKeys(AnalysisDirectiveSpec spec)
     {

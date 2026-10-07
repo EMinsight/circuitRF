@@ -1,0 +1,6 @@
+# run.npy that Simulate wrote for each example BEFORE brief-tuneopt-2 extracted the run into
+# src/Design/Circuit/CircuitEvaluation.cs. One line per platform the capture was made on:
+# <rid> <example cell> <bytes> <sha256>. Read by CircuitEvaluationParityTests.
+osx-arm64 Amplifier 42639 72431cfe77b2b90523e5bc3aab255d244a4e5ceee96e4edfb3b5a8c219e2e581
+osx-arm64 Loadpull 1570220 ea7eaecf6bd8a812bce3bb13a9ca4fe9e32fd32a505ab8600e8243bf54bd2532
+osx-arm64 PowerAmplifier 90831 354518b962e54b4acaf5c45f92eb4271baf090c3ba0711619713eb9a41c8e874

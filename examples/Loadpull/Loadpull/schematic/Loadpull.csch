@@ -392,7 +392,7 @@
       "Enabled": true,
       "LpLoadTunerName": "LoadTuner1",
       "LpSourceTunerName": "SourceTuner1",
-      "LpGridPath": "load_grid.gam",
+      "LpGridPath": "Loadpull/schematic/load_grid.gam",
       "LpToneExpr": "RFfreq",
       "LpToneUnit": "GHz",
       "LpPinStartExpr": "-10",

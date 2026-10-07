@@ -45,14 +45,33 @@ public sealed class MeasurementEvaluator
     /// Returns per-measurement error strings for any that failed; successful cubes are always emitted.
     /// </summary>
     public IReadOnlyList<string> EvaluateInto(DataSet ds)
-        => Evaluate((m, result) => ds.Add(m.Name, ToCube(m, result)));
+        => Evaluate((m, result) => ds.Add(m.Name, ToCube(m, result)), true, null, null);
+
+    /// <summary>
+    /// <see cref="EvaluateInto(DataSet)"/>, then each of <paramref name="expressions"/> in the same
+    /// measurement scope — after the measurements, so an expression may name one (an optimizer goal
+    /// written over a measurement). <paramref name="measurements"/> false evaluates the expressions
+    /// alone. An expression that fails comes back with its error rather than throwing, one outcome per
+    /// expression in the order given.
+    /// </summary>
+    public IReadOnlyList<string> EvaluateInto(
+        DataSet ds, IReadOnlyList<string> expressions, bool measurements,
+        out IReadOnlyList<ExpressionOutcome> outcomes)
+    {
+        var list = new List<ExpressionOutcome>(expressions.Count);
+        outcomes = list;
+        return Evaluate((m, result) => ds.Add(m.Name, ToCube(m, result)), measurements, expressions, list);
+    }
 
     // ── Shared evaluation core ───────────────────────────────────────────────────
 
-    private IReadOnlyList<string> Evaluate(Action<Measurement, Value> emit)
+    private IReadOnlyList<string> Evaluate(
+        Action<Measurement, Value> emit, bool measurements,
+        IReadOnlyList<string>? expressions, List<ExpressionOutcome>? outcomes)
     {
         var errors = new List<string>();
-        if (_tb.Measurements.Count == 0) return errors;
+        var declared = measurements ? _tb.Measurements : [];
+        if (declared.Count == 0 && expressions is not { Count: > 0 }) return errors;
 
         var ctx  = new MeasurementContext(_analysisResults, _backSolvers);
         var eval = new Evaluator(ctx);
@@ -133,7 +152,7 @@ public sealed class MeasurementEvaluator
         // Measurement scope: child of globals; used to inject computed measurement cubes.
         var mScope = new Scope("measurements", globalScope);
 
-        foreach (var m in _tb.Measurements)
+        foreach (var m in declared)
         {
             Value result;
             try { result = eval.Eval(m.Expression, mScope, m.Unit); }
@@ -156,6 +175,18 @@ public sealed class MeasurementEvaluator
             catch (Exception ex)
             {
                 errors.Add($"Measurement '{m.Name}': failed to emit result: {ex.Message}");
+            }
+        }
+
+        foreach (var text in expressions ?? [])
+        {
+            try { outcomes!.Add(new ExpressionOutcome(text, eval.Eval(text, mScope, null), null)); }
+            catch (Exception ex)
+            {
+                var why = ex is UnresolvedNameException { Name: FreqName } && freqHint is not null
+                        ? $"{ex.Message} — {freqHint}"
+                        : ex.Message;
+                outcomes!.Add(new ExpressionOutcome(text, null, why));
             }
         }
         return errors;
@@ -185,3 +216,6 @@ public sealed class MeasurementEvaluator
             $"Measurement '{m.Name}' produced an unsupported value kind: {result.Kind}")
     };
 }
+
+/// <summary>One expression evaluated in a run's measurement scope: its value, or why it has none.</summary>
+public sealed record ExpressionOutcome(string Expression, Value? Value, string? Error);

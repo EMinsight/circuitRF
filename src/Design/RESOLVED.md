@@ -18424,3 +18424,56 @@ bumping. Verified by removing pin 4 again at version 2: it fails.
   `throw new …Exception("…")` below the UI firewall; the `.cnl` refusals are `TuningDirectiveDiagnostics`
   (thrown inside a `TuningDirectiveException`, which `CnlReader` wraps with the line) and the rules are
   `TuningDiagnostics`, returned by `TuningValidator`. `check` reports them as `check.tuning.*`.
+
+## Tuning TO-2: the circuit run moved below the firewall; concurrency audit (2026-10-07)
+
+- **`Circuit/CircuitEvaluation.cs` is Simulate's run, moved, not copied.** `SchematicRunService` (src/Ui)
+  is now three one-line calls into it; the only thing the GUI adds is the crash-reporter breadcrumb,
+  passed in as an `Action<string>`. `RunStatus`/`RunResult`/`RunPlan`/`AnalysisResult` and
+  `ParametricSweepRunSummary` moved with it (namespace `CircuitRF.Design.Circuit`, global-used in
+  `src/Ui` and `tests/Ui.Tests`). Gate: `run.npy` for the S-Parameters Amplifier, Harmonic Balance
+  PowerAmplifier and Loadpull examples equals, byte for byte, the bytes the pre-extraction service
+  wrote (`testdata/circuit-evaluation/old-gui-path.sha256`, captured on osx-arm64 before any code moved).
+  The capture is per platform: a different libm or vector width moves the last bits, so a platform
+  with no line checks only that the one-call `Evaluate` agrees with plan+execute.
+- **`PreparedCircuit` reads once; every evaluation elaborates a COPY.** `TunableOverrides.Apply` makes the
+  copy even with no tuned values, because `ParametricSweepEngine` writes the swept variable into the
+  bench's `GlobalVariables` per point and restores it afterwards — two evaluations sharing one bench
+  would read each other's sweep points. The copy shares every unchanged `Instance`/`Cell`/`Analysis`.
+- **The plan's netlist is now disposed after `Execute`** (it was left for the GC). Only
+  `ExternalDeviceModel` is disposable; it holds an instance in a worker process with a bounded pool,
+  and an optimizer evaluates thousands of times. `ParametricSweepEngine` already disposed per point
+  on the same reasoning; what a run returns is a DataSet of numbers.
+- **Concurrency audit (R-to2-5)**, over everything a circuit run reaches:
+  - Per run, nothing shared: the elaborated netlist, every engine instance, HB's continuation seed and
+    WSProbe cache (`HbEngine` is constructed with `wspCache: null`), a sweep's `WireThermalSession`.
+  - Thread-static: `NonlinearEvalDiagnostics`, `AdWarnings`, `SddModel`'s grid threshold, `HbGridBuffers`,
+    `HbNewton`/`NonlinearDcEngine` counters.
+  - Concurrent caches, safe: `TouchstoneCache`, `MicrostripKlopfModel`'s geometry/section tables, `HbApft`.
+    `SParameterEngine`'s frequency-parallel path already elaborates one netlist per worker from one
+    `Library`/`TestBench`, which is the same sharing an evaluation does.
+  - **Fixed:** `AnalysisDirectiveSchema._legalKeyCache` was a plain `Dictionary` filled lazily by the
+    `.cnl` reader; two threads reading netlists could corrupt it. Now a `ConcurrentDictionary`.
+  - Not a hazard today: `ComponentModelFactory._registry` is written only by `Register`, which nothing
+    calls; `RFNetwork.OnWarning` has no subscriber.
+  - **Not reentrant: a design with an `ExtDevice` or `VerilogA` instance.** Its devices live in a worker
+    process — one request in flight per pipe, a bounded instance pool. `PreparedCircuit.NotReentrantReason`
+    names the instance; callers run such a design one evaluation at a time. Detected structurally from
+    the parsed bench and every cell, so it is known before the first evaluation.
+- **The CLI's `sparam`/`dc`/`hb` stay CLI verbs and were NOT moved onto the service.** The owner's
+  rule: a verb behaves like a command line and is not restricted to what the window does — it picks
+  one chain, takes `--freq`/`--max-iter`/`--gmin`, regularises conductance always. Two differences
+  were defects and are fixed in `src/Cli` (see `src/Cli/RESOLVED.md`): `dc` evaluated no measurements,
+  and `sparam` expanded frequencies without `GlobalsWithExplicitUnit`. The measurement evaluation and
+  merge the verbs share was already one function (`HbCircuitRun`).
+- **Optimizable = plottable.** The owner's rule for what a goal may name. Every cube of the grouped run
+  DataSet is reachable from an expression (`HB1.V("n")`, `SP1.S(2,1)`, any cube by `Analysis.Cube()`,
+  a measurement by name), and that DataSet is what the Data Display plots. `hb` handing measurements
+  the linear back-solver adds nothing plottable: since hb-linear-nodes-in-cube the HB `V` cube already
+  carries every user node, so the back-solver fallback in `Evaluator` only reaches `__` internal nodes,
+  which the Data Display never shows. The service therefore keeps Simulate's measurement call.
+- **Loadpull example grid path.** `Grid=` resolves against the workspace root (the Loadpull card stores
+  a picked grid that way, through `SnpPathPolicy.ToStored`), but the example said `load_grid.gam` and
+  the file sits in `Loadpull/schematic/`, so the shipped example could not run. Now
+  `Loadpull/schematic/load_grid.gam`. The parity gate's hash was unchanged by the fix — the path is
+  not in the `.npy`.

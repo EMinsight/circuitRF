@@ -1,7 +1,7 @@
 using System.Globalization;
 using CircuitRF.Core.Design;
 
-namespace CircuitRF.Ui.Schematic;
+namespace CircuitRF.Design.Circuit;
 
 /// <summary>
 /// The one-line account of what a parametric sweep is actually about to simulate.
@@ -21,7 +21,7 @@ namespace CircuitRF.Ui.Schematic;
 /// </summary>
 public static class ParametricSweepRunSummary
 {
-    /// <summary>Matches <c>SchematicRunService.RootInnerName</c>'s own bound — a malformed chain must
+    /// <summary>Matches <c>CircuitEvaluation.RootInnerName</c>'s own bound — a malformed chain must
     /// not be walked forever, and no real design nests anywhere near this deep.</summary>
     private const int MaxDepth = 64;
 

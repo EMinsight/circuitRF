@@ -116,7 +116,7 @@ convention behind both.</p>
 | Verb | Takes | Runs | Writes |
 |---|---|---|---|
 | `sparam` | `.cnl` or `.csch` | The linear S-parameter engine over a frequency sweep | A Touchstone `.sNp`, always |
-| `dc` | `.cnl` or `.csch` | The nonlinear DC engine | Node voltages and probe currents, to stdout |
+| `dc` | `.cnl` or `.csch` | The nonlinear DC engine | Node voltages, probe currents and measurements, to stdout |
 | `hb` | `.cnl` or `.csch` | Harmonic balance, single- or multi-tone | Spectra tables to stdout; `-o .mat/.npy/.txt` |
 | `lp` | `.cnl` or `.csch` | Loadpull over the directive's Γ grid | A per-Γ-point table; `-o .mat/.npy/.txt/.spl/.lpcwave` |
 | `lpp` | `.cnl` or `.csch` | Loadpull **pursuit** — searches for the optima | Optima + the follow-on grid; `-o` as `hb`; `--out-grid` writes a `.gam` |
@@ -264,7 +264,9 @@ Node voltages:
 ```
 
 `--set var=expr` overrides a global before elaboration, [as `hb` does](#set); it is repeatable. It
-prints the converged node voltages and any probe currents, and
+prints the converged node voltages, any probe currents and the netlist's `measure` lines — a
+measurement names the result by the DC analysis that declares it (`DC1.V("n_drain")`), as it does in
+the window — and
 [exits 2](#exit) if the solve did not converge — the operating point is the one thing every nonlinear
 analysis is built on, so a non-converged DC is a failed run, not a partial one.
 

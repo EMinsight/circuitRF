@@ -18,6 +18,7 @@ global using CircuitRF.Design.Theming;
 global using CircuitRF.Design.Workspace;
 global using CircuitRF.Design.Schematic;
 global using CircuitRF.Design.Symbol;
+global using CircuitRF.Design.Circuit;
 
 // And the same for the renderers, which moved to CircuitRF.Render in RND-1
 // (brief-render-1-render-layer-below-the-firewall.md). Gate 5 of that brief asks that the

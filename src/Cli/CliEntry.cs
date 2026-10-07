@@ -330,7 +330,9 @@ static int RunSparam(string[] args)
         if (spa is not null && !freqExplicit)
         {
             JsonRun.Analysis = spa.Name;
-            freqs = spa.Expand(nl.ResolvedGlobals);
+            // With the globals that carry their own unit, as Simulate expands it: without them a bound
+            // written as `F1` with F1 = 2 GHz took the site unit a second time (2e18 Hz).
+            freqs = spa.Expand(nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
             Console.Error.WriteLine(
                 $"S-parameter analysis '{spa.Name}': {freqs.Length} points, " +
                 $"{freqs[0]/1e9:G4}–{freqs[^1]/1e9:G4} GHz " +
@@ -482,7 +484,14 @@ static int RunDc(string[] args)
         // else. Both it and the table below read the one DcResult, so they cannot disagree about a
         // number; what they cannot share is a selection step, because the table has none (it prints
         // every node and every probe).
-        JsonRun.Data = DcResultPacker.Pack(result, nl);
+        var dcDs = DcResultPacker.Pack(result, nl);
+
+        // The bench's `measure` lines, through the evaluator every other run verb and the GUI use. A
+        // measurement names its DC result by the analysis that declares it (DC1.V("mid")), as it does
+        // in the window; a netlist with no DC directive has no such name, so "DC" stands in.
+        string dcName = tb.Analyses.OfType<DcAnalysis>().FirstOrDefault()?.Name ?? "DC";
+        var dcMeas = EvaluateMeasurements(tb, nl, dcName, dcDs, run: null);
+        JsonRun.Data = dcMeas is { Cubes.Count: > 0 } ? MergeForExport(dcDs, dcMeas) : dcDs;
 
         // AGAIN, AFTER THE RUN. Elaboration is not the only thing that has something to say: the DC
         // engine reports what it finds while building the system — a thermal node with no thermal
@@ -510,6 +519,13 @@ static int RunDc(string[] args)
             Console.WriteLine("Probe currents (A):");
             foreach (var (name, current) in result.ProbeCurrents.OrderBy(p => p.Key, StringComparer.Ordinal))
                 Console.WriteLine($"  {name,-28} {current,14:G6}");
+        }
+
+        if (dcMeas is { Cubes.Count: > 0 })
+        {
+            Console.WriteLine("Measurements:");
+            foreach (var (name, cube) in dcMeas.Cubes.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                PrintCube($"  {name}", cube, maxRows: 24, allPoints: false);
         }
 
         return result.Converged ? 0 : 2;

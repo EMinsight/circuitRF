@@ -37,6 +37,10 @@ global using CircuitRF.Design.Workspace;
 global using CircuitRF.Design.Schematic;
 global using CircuitRF.Design.Symbol;
 
+// The circuit run itself (brief-tuneopt-2 R-to2-1): Simulate's plan/execute, extracted from
+// SchematicRunService so tuning, the optimizer and the CLI run the same function.
+global using CircuitRF.Design.Circuit;
+
 // The 3D view's document (brief-em3d-41): born below the firewall, never here, so `circuitrf check`
 // and `new cell --views 3d` read and write the same `.c3d` the Project Tree lists.
 global using CircuitRF.Design.ThreeD;

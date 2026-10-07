@@ -238,7 +238,7 @@ public sealed class ThermalExamplesTests(ITestOutputHelper output) : IDisposable
         string cnl = Path.Combine(_tmp, "amplifier-wires.cnl");
         File.WriteAllText(cnl, CircuitRF.Core.Netlist.CnlWriter.Write(extracted.TestBench, extracted.Library));
         var run = CircuitRF.Ui.Schematic.SchematicRunService.RunNetlist(cnl, baseDirectory: Path.GetDirectoryName(schematic));
-        Assert.True(run.Status == CircuitRF.Ui.Schematic.RunStatus.Success, run.StatusMessage);
+        Assert.True(run.Status == CircuitRF.Design.Circuit.RunStatus.Success, run.StatusMessage);
         var ds = Assert.Single(run.DataSets);
 
         var t = ds["WireTemp"];

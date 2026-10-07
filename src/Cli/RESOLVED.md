@@ -3024,3 +3024,15 @@ brief-agent-authoring-overview.md AA-6. `NetlistSchematic.Build` in `src/Design/
   circuit, which reads better and no longer works around anything.
 
 Gate: `tests/Ui.Tests/Cli/NetlistToSchematicTests.cs`.
+
+## `dc` evaluates measurements; `sparam` scaled a unit-carrying bound twice (2026-10-07)
+
+- **`dc` now evaluates the bench's `measure` lines** through `HbCircuitRun.Measure`, the evaluator the
+  other run verbs use, prints them under `Measurements:` and merges them into `--json`'s data. The DC
+  result is named by the declared DC analysis (`DC1.V("mid")`), as Simulate names it; a netlist with no
+  DC directive has nothing to name, so `DC` stands in. A failing measurement is a stderr line and a
+  `--json` note, as in `hb`.
+- **`sparam` expanded the frequency list without `GlobalsWithExplicitUnit`.** A bound written as a
+  variable that carries its own unit (`F1 = 2 GHz`, `start="F1" startUnit=GHz`) took the site unit a
+  second time: the run went from 2E+09 GHz with no error. Simulate always passed the set. Gate:
+  `tests/Ui.Tests/Cli/DcMeasureAndSparamUnitCliTests.cs`.
