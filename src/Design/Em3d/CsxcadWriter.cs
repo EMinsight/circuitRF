@@ -696,7 +696,9 @@ public static partial class CsxcadWriter
     /// <summary>
     /// R-em3d116-2b/c — the terminal's probes: on each voltage plane the path from the reference to the conductor with the
     /// lumped port's weight −1 (a stripline's two halves as <c>_up</c>/<c>_dn</c>, each weight 1 in magnitude, averaged by the
-    /// reader), and on each half-cell plane between them the current box, its sign making I flow into the device.
+    /// reader), and on each half-cell plane between them the current box, its sign making I flow into the device. A strip
+    /// on an interface (brief-em3d-125, <see cref="FdtdTerminal.VoltageHalf"/>) still writes both halves, so the model is
+    /// unchanged, but names only the half toward its reference for the reader.
     /// </summary>
     private static OpenEmsProbeNames WaveProbes(StringBuilder props, ref int id, FdtdTerminalElements t)
     {
@@ -710,7 +712,7 @@ public static partial class CsxcadWriter
             {
                 var q = t.Voltage[plane * halves + h];
                 string name = VoltageProbe(k, PlaneNames[plane], q.Suffix);
-                names[plane].Add(name);
+                if (t.Terminal.VoltageHalf is not { } half || q.Suffix == half) names[plane].Add(name);
                 OpenProbe(props, id++, name, type: 0, weight: -1, normDir: -1);
                 AppendPrimitives(props, Box(0, q.From, q.To));
                 props.Append("            </ProbeBox>\n");

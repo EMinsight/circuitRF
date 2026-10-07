@@ -200,6 +200,11 @@ internal static class ExplainEm3d
                 string shape = t.Shape switch
                 {
                     FdtdTerminalShape.Coaxial    => $"coaxial: a radial source ∝ 1/ρ over the annulus from {L(t.InnerRadiusM)} to {L(t.OuterRadiusM)}",
+                    FdtdTerminalShape.Stripline when t.Interface is { } m
+                                                 => "a strip between two reference planes, on an interface (" +
+                                                    $"{(m.Below is { } b ? $"'{b}'" : "vacuum")} on its − side, {(m.Above is { } o ? $"'{o}'" : "vacuum")} on its + side): " +
+                                                    "two sheets across it, strip to each plane, pointing away from it; its voltage is the half from the strip " +
+                                                    $"to its reference ({(t.VoltageHalf == "_up" ? "+" : "−")} side), since on an interface the two halves differ",
                     FdtdTerminalShape.Stripline  => "a strip between two reference planes: two sheets across it, strip to each plane, pointing away " +
                                                     "from it; its voltage is the mean of the two halves",
                     FdtdTerminalShape.Microstrip => "a strip over one reference plane: one sheet across it, strip to the plane",

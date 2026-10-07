@@ -61,6 +61,20 @@ public sealed record FdtdTerminal(
     /// <summary>The terminal's name in a sentence: its own label (<c>P1</c>), else its port's.</summary>
     public string Label => FdtdWavePorts.Label(Port);
 
+    /// <summary>
+    /// brief-em3d-125 — a stripline's media just past the strip on its − and + sides along the path axis (a material name,
+    /// or null for the box's vacuum), set only when they differ: the strip lies on an interface, as a microstrip under a lid
+    /// does. Null for a strip in one medium.
+    /// </summary>
+    public (string? Below, string? Above)? Interface { get; init; }
+
+    /// <summary>
+    /// brief-em3d-125 — the one voltage half the terminal's U is read from (<c>_up</c> or <c>_dn</c>: the half toward its
+    /// reference), or null for the mean of both. Set exactly when <see cref="Interface"/> is: on an interface the mode is
+    /// quasi-TEM and the two halves differ, and the voltage a terminal is defined by is strip → its stated reference.
+    /// </summary>
+    public string? VoltageHalf { get; init; }
+
     /// <summary>The foot's centre on <paramref name="axis"/> (one of <see cref="U"/>, <see cref="V"/>).</summary>
     public double Centre(int axis) => axis == U ? (Foot.U0 + Foot.U1) / 2 : (Foot.V0 + Foot.V1) / 2;
 }
@@ -214,7 +228,7 @@ public static class FdtdWavePorts
 
             var terminals = new List<FdtdTerminal>();
             foreach (var p in onFace)
-                terminals.Add(Classify(p, sections, ground, u, v, tol));
+                terminals.Add(OnInterface(problem, axis, sliceAt, Classify(p, sections, ground, u, v, tol), tol));
             double sMax = terminals.Max(t => t.SMaxM);
 
             // The lattice cell: no wider than the grid's own cell at the face (CellsPerWavelength in the densest medium
@@ -259,6 +273,12 @@ public static class FdtdWavePorts
                 notes.Add($"{string.Join(", ", terminals.Where(t => t.Shape == FdtdTerminalShape.Line).Select(t => $"Terminal {t.Label}"))} on the {face} " +
                           "face is neither coaxial nor a strip over or between reference planes, so openEMS feeds it along its voltage path. " +
                           "That source launches more evanescent field than a shaped one; the feed may need to be longer.");
+            if (terminals.Where(t => t.Interface is not null).ToList() is { Count: > 0 } onIf)
+                notes.Add($"{(onIf.Count == 1 ? "Terminal" : "Terminals")} {string.Join(", ", onIf.Select(t => t.Label))} on the {face} face " +
+                          $"{(onIf.Count == 1 ? "is a strip" : "are strips")} between two reference planes on an interface " +
+                          $"({string.Join("; ", onIf.Select(t => t.Interface!.Value).Distinct().Select(m => $"{Medium(m.Below)} and {Medium(m.Above)}"))}), " +
+                          "so each voltage is the half from the strip to its reference, not the mean of both: on an interface the mode is " +
+                          "quasi-TEM and the two halves differ.");
             if (SideWallNote(problem, feed, kinds, axis, u, v, tol) is { } side) notes.Add(side);
         }
         return new(feeds, notes, null);
@@ -573,6 +593,51 @@ public static class FdtdWavePorts
         }
         return new FdtdTerminal(p, FdtdTerminalShape.Line, pathLen, u, v, f, pathAxis, refSide, null, null, 0, 0);
     }
+
+    /// <summary>
+    /// brief-em3d-125 — a stripline whose strip lies on an interface: the medium just past the strip on each side along the
+    /// path axis, at the strip's centre across, read from the dielectrics' sections by the face plane (the higher
+    /// construction order winning, as it wins the volume). Different media make the mode quasi-TEM, so the strip → lid half
+    /// no longer equals the strip → reference half, and the terminal reads the latter (measured against Palace,
+    /// src/Design/RESOLVED.md § brief-em3d-125). In one medium both halves agree and the mean stays, which also keeps brief
+    /// 116's cancellation of the parallel-plate mode a stripline with open sides supports. The source is unchanged.
+    /// </summary>
+    private static FdtdTerminal OnInterface(Em3dProblem problem, int axis, double at, FdtdTerminal t, double tol)
+    {
+        if (t.Shape != FdtdTerminalShape.Stripline || t.PathAxis is not int pa) return t;
+        int across = pa == t.U ? t.V : t.U;
+        double lo = pa == t.U ? t.Foot.U0 : t.Foot.V0, hi = pa == t.U ? t.Foot.U1 : t.Foot.V1, c = t.Centre(across);
+        double d = Math.Max(1e-3 * Math.Min(t.Below!.Value, t.Above!.Value), 10 * tol);
+        Point2 At(double along) => pa == t.U ? new(along, c) : new(c, along);
+        string? below = MediumAt(problem, axis, at, t.U, t.V, At(lo - d)), above = MediumAt(problem, axis, at, t.U, t.V, At(hi + d));
+        if (SameMedium(problem, below, above)) return t;
+        return t with { Interface = (below, above), VoltageHalf = t.RefSide > 0 ? "_up" : "_dn" };
+    }
+
+    /// <summary>The material at <paramref name="p"/> on the face plane: the highest-order non-conductor solid containing it,
+    /// else the box's fill (null: vacuum).</summary>
+    private static string? MediumAt(Em3dProblem problem, int axis, double at, int u, int v, Point2 p)
+    {
+        foreach (var s in problem.Solids.Where(s => s.Role != Em3dRole.Conductor).OrderByDescending(s => s.Order))
+        {
+            var b = Em3dProblem.Bounds(s.Primitive);
+            double lo = axis == 0 ? b.X0 : axis == 1 ? b.Y0 : b.Z0, hi = axis == 0 ? b.X1 : axis == 1 ? b.Y1 : b.Z1;
+            if (lo > at || hi < at) continue;
+            if (Inside(Slice(Em3dTessellation.Of(s), axis, at, u, v), p)) return s.Material;
+        }
+        return problem.Boundary.Material;
+    }
+
+    private static bool SameMedium(Em3dProblem problem, string? a, string? b)
+    {
+        if (a == b) return true;
+        (double Er, double Mur, IReadOnlyList<double>? Tensor) Of(string? name)
+            => name is not null && problem.Materials.FirstOrDefault(m => m.Name == name) is { } m ? (m.Epsr, m.Mur, m.EpsrTensor) : (1, 1, null);
+        var (x, y) = (Of(a), Of(b));
+        return x.Er == y.Er && x.Mur == y.Mur && x.Tensor is not { Count: > 0 } && y.Tensor is not { Count: > 0 };
+    }
+
+    private static string Medium(string? name) => name is null ? "vacuum" : $"'{name}'";
 
     /// <summary>Whether the path's reference end is its <c>To</c> (the terminal is flipped) — the end farther from the foot.</summary>
     private static bool ReferenceEndIsTo((double U0, double V0, double U1, double V1) f, Em3dSegment vp, int u, int v)

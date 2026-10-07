@@ -346,9 +346,10 @@ on pairs of lines that end on one face, where each line becomes a port of its ow
 5. Open **Coupled Microstrip**: two microstrip lines of different widths (1.2 mm and 2 mm) in a closed housing, with the
    same kind of port at each end, numbered as Pair's. **Run** *Palace* and *openEMS* and plot dB(S11) and dB(S22), the
    two lines' reflections. They differ, on both solvers: at 2 GHz Palace reads **−21.74 dB** and **−15.48 dB**, openEMS
-   **−21.25 dB** and **−15.55 dB**. At 10 GHz Palace reads **−17.38 dB** and **−16.08 dB**, openEMS **−23.84 dB** and
-   **−11.86 dB**: above about 8 GHz openEMS's port measures each strip's voltage to the lid as well as to the floor, and
-   the README shows that with the floor alone the two agree to 0.03 across the band.
+   **−21.00 dB** and **−15.72 dB**. At 10 GHz Palace reads **−17.38 dB** and **−16.08 dB**, openEMS **−17.82 dB** and
+   **−15.30 dB**, and across the band the two agree to 0.03. Each strip has the lid above it as well as the floor below,
+   and openEMS's port reads its voltage to the floor alone, as Palace does, because a strip on the laminate with air
+   above it is a microstrip.
 
 **What each solver did.** Palace solved the coax's mode on the face and reports its impedance, **49.18 to 49.31 Ω**
 at the *Draft* preset and **50.13 to 50.26 Ω** at element order 2 (8 min 30 s and 8.9 GB instead of a minute; |S11|

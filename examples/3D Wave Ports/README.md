@@ -95,7 +95,7 @@ launch itself.
    Each terminal's arrow runs up from the floor (`airbox/zmin`, the reference) to its strip.
 2. Run *Palace*, then *openEMS* (2–12 GHz in 21 points). Plot dB(S11) and dB(S22) from both on one Data Display: the
    two lines reflect differently, which no symmetry route could have produced. At 2 GHz Palace reads **−21.74 dB** and
-   **−15.48 dB**, openEMS **−21.25 dB** and **−15.55 dB**.
+   **−15.48 dB**, openEMS **−21.00 dB** and **−15.72 dB**.
 3. Read Palace's notes: one per port says its terminals were converted from the face's two modes (*modes not
    degenerate, Robin correction K = 1.048 to 1.060*), and one gives each terminal's power and the singular values of S.
 
@@ -137,13 +137,14 @@ adaptive sweep writes no wavenumber, so the run also solved each face's modes on
 frequencies, a few seconds each. Its own check warns at 12 GHz that terminal 4's voltage is 0.11 % off Palace's mode
 impedance, just past the 0.1 % it warns at: that is the copper's loss, which the conversion was not measured with.
 
-**On Coupled Microstrip, openEMS** fed each strip on its own as for Pair. The two agree to max |ΔS| 0.009–0.026 from
-2 to 8 GHz and part above it, to 0.11 at 11 GHz: at 10 GHz Palace reads |S11| **−17.38 dB** and |S22| **−16.08 dB**,
-openEMS **−23.84 dB** and **−11.86 dB**. There are two reasons:
-- **The lid.** A strip with PEC on both sides of it is a stripline to openEMS's port, so its voltage is the mean of
-  strip to floor and strip to lid, and under a lid those are not equal for a microstrip. Rebuilt from the run's own
-  probe files with the strip-to-floor voltage alone (Palace's path), openEMS agrees with Palace to 0.008–0.027 over the
-  whole band. Brief 125 decides what openEMS's port should do here.
+**On Coupled Microstrip, openEMS** fed each strip on its own as for Pair. The two agree to max |ΔS| 0.008–0.027 over
+the whole band: at 10 GHz Palace reads |S11| **−17.38 dB** and |S22| **−16.08 dB**, openEMS **−17.82 dB** and
+**−15.30 dB**. Two things to know:
+- **The lid.** Each strip has PEC on both sides of it, the floor below and the lid above, so openEMS's port feeds it
+  from both, as it feeds a stripline. But a strip on the laminate with air above it is a microstrip, and its voltage to
+  the lid is not its voltage to the floor, so the port reads the floor's alone: the reference the terminal's arrow runs
+  from, as Palace does. The run's notes say so for each end face. A strip with one material on both sides, as in Pair,
+  is read to both planes.
 - **The loss.** The laminate's loss tangent is a conductivity to openEMS, exact at the band's centre only, and the
   strips are **copper**, the technology's metal, which each solver models its own way on a sheet of zero thickness:
   Palace's terminals keep 97.9–99.1 % of their power, openEMS's 96.4–100.1 %. Perfect-conductor strips would take that
@@ -164,12 +165,12 @@ machine will differ. They are also in `expected-numbers.json`, with **every** fr
 | Coupled Microstrip | Time | Size | \|S11\| / \|S22\| at 2 GHz | at 6 GHz | at 10 GHz |
 |---|---|---|---|---|---|
 | Palace (element order 2, no refinement passes) | 14 min 34 s | 5.1 GB | −21.74 / −15.48 dB | −24.31 / −18.63 dB | −17.38 / −16.08 dB |
-| openEMS (300 cells per wavelength) | 7 min 28 s | 6,053,568 cells | −21.25 / −15.55 dB | −26.21 / −17.08 dB | −23.84 / −11.86 dB |
+| openEMS (300 cells per wavelength) | 7 min 28 s | 6,053,568 cells | −21.00 / −15.72 dB | −24.05 / −18.27 dB | −17.82 / −15.30 dB |
 
 | Coupled Microstrip, thru \|S31\| / near-end \|S21\| / far-end \|S41\| | at 2 GHz | at 6 GHz | at 10 GHz |
 |---|---|---|---|
 | Palace | −0.149 / −19.10 / −35.94 dB | −0.139 / −21.31 / −24.19 dB | −0.314 / −16.63 / −19.57 dB |
-| openEMS | −0.092 / −19.60 / −35.59 dB | −0.062 / −22.65 / −23.49 dB | −0.110 / −21.70 / −19.33 dB |
+| openEMS | −0.096 / −19.43 / −35.56 dB | −0.077 / −21.56 / −23.52 dB | −0.218 / −17.43 / −19.07 dB |
 
 | Pair, openEMS (90 cells per wavelength), at 10 GHz | Time | Size | \|S31\| thru | \|S21\| near-end | \|S41\| far-end |
 |---|---|---|---|---|---|

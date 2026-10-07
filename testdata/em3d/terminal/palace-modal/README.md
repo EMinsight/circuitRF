@@ -64,10 +64,10 @@ lid, absorbing x faces; one two-terminal wave port per end referenced to `airbox
 | `asym-lossless` | 1.1 / 1.32 mm | none | 2, 4, 6 GHz |
 | `asym-lossy` | 1.1 / 1.32 mm | tanδ 0.02, **written by circuitRF as a conductivity exact at 4 GHz only** | 2, 4, 6 GHz |
 
-`PairB.s4p` is the run's Touchstone, `em-notes.txt` the run's notes and warnings. `probes.npz` holds the probe signals
+`PairB.s4p` is the run's Touchstone, `em-notes.txt` the run's notes and warnings. `sym-lossless/probes-dn.json` (brief 125) is `probes.py`'s strip → ground re-assembly of its `probes.npz` at 2, 4 and 6 GHz, full precision, which `OpenEmsInterfaceVoltageTests` holds the product's reader and transform to. `probes.npz` holds the probe signals
 the re-assembly uses, as (time, value) arrays named `p<j>_port<i>_<signal>` for the run exciting terminal j: the
 reference plane's two voltage halves (`u_up` strip → lid, `u_dn` strip → ground) and the two current planes (`ia`, `ib`).
 The outer voltage planes, which only feed circuitRF's own line-Z note, are not kept. `oems/probes.py` re-assembles S
 from it: with the two halves averaged it reproduces `PairB.s4p` to 2e-10; with `u_dn` alone it uses Palace's voltage
 path. **The lid makes circuitRF's openEMS port treat each strip as a stripline**
-(a PEC face above it), so its terminal voltage is the mean of the strip → ground and strip → lid integrals.
+(a PEC face above it), so these runs' terminal voltage, and every `PairB.s4p` here, is the mean of the strip → ground and strip → lid integrals. Since brief 125 a strip on an interface (substrate below, air above) reads the strip → ground half alone, so a run of these workspaces today writes what `probes.py … dn` re-assembles.

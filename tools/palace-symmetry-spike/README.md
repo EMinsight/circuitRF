@@ -21,7 +21,7 @@ are git-ignored.
 
 | Script | What it does |
 |---|---|
-| `gen.py` | The meshes: geometry A (air stripline pair) and B (microstrip pair), port faces `touch` / `gap` / `half`, `r` refinement, `edge` = [size, distmin, distmax] strip-edge field, `wa`/`wb` strip widths, `fullport`. A Gmsh-Python transcription of Palace's `examples/cpw/mesh/mesh.jl` |
+| `gen.py` | The meshes: geometry A (air stripline pair) and B (microstrip pair), port faces `touch` / `gap` / `half`, `r` refinement, `edge` = [size, distmin, distmax] strip-edge field, `wa`/`wb` strip widths, `fullport`, `lid` (B's lid height above the substrate, default 3 mm; brief 125). A Gmsh-Python transcription of Palace's `examples/cpw/mesh/mesh.jl` |
 | `cfg.py` | The Palace config for a mesh: which ports, which excited, `cut` PMC/PEC, `shield` (B's absorbing faces PEC), `fullport` |
 | `run.sh` | Mesh, config and Palace into `runs/<name>/` |
 | `ana.py` | Readers for `port-S.csv` / `port-Z.csv`, renormalisation, the §3 combination, the ideal coupled line, line extraction |
@@ -33,7 +33,7 @@ are git-ignored.
 | `modal.py` | Brief 124: the shared-face transform (Palace's modal S + `V_wp` + Z_PV + the log's kₙ → terminal S), the Gram fit (`GRAM=real\|complex\|none`) and the Robin correction (`ROBIN=1\|0`) |
 | `shared.py` | Brief 124: a shared-face run through `modal.py` against the 2D reference (`A`, optionally also route B on another run pair), the exact asymmetric line (`asym <wb>`) or a Touchstone file (`B <file.s4p>`) |
 | `touch.py` | A minimal Touchstone reader for circuitRF's `.sNp` |
-| `oems/gen_c3d.py` | Brief 124: geometry B (microstrip pair in 119's shielded box) as a `.c3d` workspace for `circuitrf em` |
+| `oems/gen_c3d.py` | Brief 124: geometry B (microstrip pair in 119's shielded box) as a `.c3d` workspace for `circuitrf em`; an optional last argument sets the lid height above the substrate (brief 125) |
 | `oems/probes.py` | Brief 124: openEMS's terminal S re-assembled from a run's probe files or a fixture's `probes.npz` (reproduces the `.s4p` to 2e-10), with the voltage as the mean of the two halves, the strip → ground half alone (Palace's path) or the strip → lid half |
 
 ## Reproducing the fixtures

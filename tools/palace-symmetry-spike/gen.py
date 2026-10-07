@@ -13,7 +13,7 @@ remainder PEC (B); 12 gap strip; 13 cut plane.
 """
 import sys, json, gmsh
 
-def build(path, geom="A", mode="touch", g=0.0, r=2, wa=None, wb=None, verbose=0, edge=None, fullport=False, Y=None):
+def build(path, geom="A", mode="touch", g=0.0, r=2, wa=None, wb=None, verbose=0, edge=None, fullport=False, Y=None, lid=3.0):
     occ = gmsh.model.occ
     gmsh.initialize(); gmsh.option.setNumber("General.Verbosity", verbose)
     gmsh.model.add("m")
@@ -30,7 +30,7 @@ def build(path, geom="A", mode="touch", g=0.0, r=2, wa=None, wb=None, verbose=0,
         h, t, S = 0.508, 0.017, 0.3
         W = 1.1; wa = wa or W; wb = wb or W
         Y = Y or S / 2 + max(wa, wb) + 3.0
-        z0, z1 = 0.0, h + 3.0
+        z0, z1 = 0.0, h + lid              # lid: PEC lid height above the substrate (brief 125)
         zs0, zs1 = h, h + t
         lnear, lfar, dmin, dmax = 1.1 * 2.0 ** -r, 2.0 * 2.0 ** -r, W, 3.0
         pz0, pz1, py = 0.0, h + 2.54, S / 2 + max(wa, wb) + 2.54

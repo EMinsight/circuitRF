@@ -1,12 +1,14 @@
 """brief-em3d-124: geometry B (microstrip pair) as a .c3d workspace for `circuitrf em`, matching gen.py's Palace mesh:
 substrate εr 3.5 (LossTan as given), h 0.508, strips t 0.017 mm as PEC boxes on the substrate, ℓ 15 mm, 119's shielded
-box (PEC sides ±4.25 mm, PEC ground, PEC lid at 3.508 mm). One two-terminal wave port per end, reference the ground.
+box (PEC sides ±4.25 mm, PEC ground, PEC lid 3 mm above the substrate unless stated). One two-terminal wave port per end, reference the ground.
 Terminals numbered in ana.py's order: 1 line-1 near, 2 line-1 far, 3 line-2 near, 4 line-2 far.
-  gen_c3d.py <workspace dir> <wa mm> <wb mm> <tan d> <cells per wavelength> <min cell µm> [freqs GHz, comma]"""
+  gen_c3d.py <workspace dir> <wa mm> <wb mm> <tan d> <cells per wavelength> <min cell µm> [freqs GHz, comma] [lid mm]
+The lid is its height above the substrate (default 3; brief 125)."""
 import json, os, sys
 ws, wa, wb, tand, cpw, mincell = sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4]), float(sys.argv[5]), float(sys.argv[6])
 freqs = [float(v) for v in (sys.argv[7] if len(sys.argv) > 7 else "2,4,6").split(",")]
-S, h, t, L, Y, LID = 0.3, 0.508, 0.017, 15.0, 4.25, 3.508
+S, h, t, L, Y = 0.3, 0.508, 0.017, 15.0, 4.25
+LID = h + (float(sys.argv[8]) if len(sys.argv) > 8 else 3.0)
 U = 1000 * 1000           # DBU per mm (DbuPerMicron 1000)
 D = lambda mm: int(round(mm * U))
 os.makedirs(os.path.join(ws, "PairB", "3d"), exist_ok=True)

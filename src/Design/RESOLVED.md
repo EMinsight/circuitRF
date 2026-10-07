@@ -17846,3 +17846,96 @@ written as drawn, so a port with nothing to snap is byte-identical; the port's o
   some other field was malformed, so the GUI's "unknown component type Capacitor" line is misleading in
   that case; the audit's wrong-shape finding names the actual cause beside it. Run verbs do not refuse a
   schematic with error findings — the same terms as `.clay`'s `LayoutLoadAudit`.
+
+## openEMS: a microstrip terminal under a PEC lid — brief-em3d-125 (2026-10-06)
+
+Measured first (§1), then the owner's decision below. Run times are deliberately not recorded: the machine was shared
+with other work, so they would not be the solver's. Sizes are given instead.
+
+**Fixture.** Brief 115's Coupled Microstrip openEMS run (300 cells per wavelength, 5 µm, 6,053,568 cells, 2–12 GHz in 21
+points) is now `testdata/em3d/terminal/coupled-microstrip/`: `openems/probes.npz` packed as 124's (`p<j>_port<i>_{u_up,
+u_dn,ia,ib}`), the run's `.s4p`, and the Palace run's `.s4p` beside it. With the mean, `oems/probes.py` reproduces the
+openEMS `.s4p` to 1.2e-10 at all 21 points.
+
+**R-em3d125-1a — 124's shielded pair (lid 3 mm above the substrate), openEMS against Palace's shared-face runs** (Palace
+through `shared.py`'s transform). max |ΔS|, with the voltage as the mean (today), strip → ground (`dn`, Palace's path) and
+strip → lid (`up`):
+
+| pair | GHz | mean | dn | up | per entry above −30 dB, mean → dn |
+|---|---|---|---|---|---|
+| symmetric | 2 | 0.0096 | 0.0103 | 0.0137 | S31 −0.58 → −0.33 dB; S41 −1.4° → −2.5° (S11 −31 dB: \|ΔS\| 0.0051 → 0.0103) |
+| | 4 | **0.0240** | **0.0089** | 0.0400 | S11 +2.71 dB / −9.1° → −1.89 dB / +3.6°; S31 −1.43 → −0.50 dB |
+| | 6 | 0.0040 | 0.0025 | 0.0075 | S41 −0.18 → −0.14 dB (S11, S31 below −30 dB) |
+| asymmetric | 2 | 0.0095 | 0.0101 | 0.0138 | S31 −0.62 → −0.34 dB; S41 −2.7° → −3.5°; S33 −0.18 → −0.61 dB |
+| | 4 | **0.0243** | **0.0087** | 0.0411 | S11 +2.81 dB / −9.7° → −1.90 dB / +3.6°; S33 +1.13 → −0.29 dB |
+| | 6 | 0.0048 | 0.0025 | 0.0091 | S41 −0.18 → −0.17 dB |
+
+At 2 GHz the worst entry is S11/S33 at −31 dB, where openEMS's grid error dominates and the three voltages are within its
+0.0089–0.0103. At 4 GHz `dn` is closer by 0.015, past that grid error.
+
+**Coupled Microstrip** (εr 2.2, lid 3 mm, strips 1.2 / 2 mm), against Palace over the band: `dn` 0.008–0.027 at every
+point; the mean equals it to 3 GHz, is 0.017–0.026 from 4 to 8 GHz, then **0.046 at 8.5 GHz rising to 0.115 at 11 GHz**;
+`up` reaches 0.215. |S22| at 10 GHz: Palace −16.08, mean −11.86, `dn` −15.30, `up` −9.17 dB.
+
+**R-em3d125-1b/1c — lid height, symmetric pair**, openEMS (`oems/gen_c3d.py`'s new lid argument) against a Palace run per
+height and frequency (`gen.py`'s new `lid`). The rebuilt 3 mm / 2 GHz Palace mesh reproduces 124's committed run to 4e-12
+(1,570,622 unknowns), so the harness is 124's. Sizes: openEMS 878,800 / 1,715,000 / 4,208,200 cells at 1.5 / 3 / 6 mm
+(the feed grows with the terminal-to-reference distance); Palace 1,333,748 / 1,570,622 / 2,036,690 unknowns.
+
+| lid | GHz | up/dn driven strip | up/dn passive strip | mean | dn | up |
+|---|---|---|---|---|---|---|
+| 1.5 mm | 2 | 0.986 ∠0.0° | 0.923 ∠−0.6° | 0.0102 | 0.0095 | 0.0144 |
+| | 4 | 0.950 ∠0.0° | 0.735 ∠−3.6° | **0.0274** | **0.0122** | 0.0434 |
+| | 6 | 0.894 ∠+0.2° | 0.491 ∠−14.4° | 0.0021 | 0.0022 | 0.0020 |
+| 3 mm | 2 | 0.986 ∠0.0° | 0.933 ∠−0.6° | 0.0096 | 0.0103 | 0.0137 |
+| | 4 | 0.947 ∠+0.2° | 0.771 ∠−5.8° | **0.0240** | **0.0089** | 0.0400 |
+| | 6 | 0.895 ∠+0.4° | 0.652 ∠−17.9° | 0.0040 | 0.0025 | 0.0075 |
+| 6 mm | 2 | 0.986 ∠0.0° | 0.943 ∠−1.2° | 0.0091 | 0.0106 | 0.0132 |
+| | 4 | 0.948 ∠+0.3° | 0.848 ∠−6.8° | **0.0222** | **0.0080** | 0.0378 |
+| | 6 | 0.894 ∠+1.1° | 0.790 ∠−13.8° | 0.0043 | 0.0025 | 0.0083 |
+
+- **The lid's distance does not matter to the driven strip.** Its up/dn is 0.986 / 0.95 / 0.894 at 2 / 4 / 6 GHz at all
+  three heights. The brief expected the mean to converge on `dn` as the lid recedes; it does not. The two halves differ
+  because a microstrip's mode is quasi-TEM (the substrate–air interface gives the transverse field a curl), not because
+  the lid is near. So there is no clean break to put a threshold on: option 3 has nothing to stand on.
+- **Worst case over frequency, `dn` is closer than the mean at every height**: 0.0122 / 0.0103 / 0.0106 against 0.0274 /
+  0.0240 / 0.0222. The 2 GHz rows, where the mean is ahead at 3 and 6 mm by 0.0007 and 0.0015, are inside openEMS's grid
+  error.
+
+**What a stripline does with the same choice.** The 3D Wave Ports Pair (PTFE stripline, PMC sides, the two planes separate
+conductors) was run on openEMS from a scratch copy of the example (209 × 291 × 17 = 1,033,923 cells, today's code). up/dn
+is 1.000 ∠0.0° on both strips at every frequency from 2 to 18 GHz; against Cohn's line max |ΔS| is 0.0013–0.0021 for all
+three voltages alike, and `dn` moves Pair's S from the mean by at most **6.0e-7** over 2–18 GHz. Brief 116 averaged the
+halves to cancel the parallel-plate mode such a stripline also supports; on Pair, the symmetric two-sheet source already
+excites none of it, so the voltage choice is immaterial there. That is a statement about the VOLTAGE only. **Reclassifying
+the terminal (option 1 as the brief words it) would also change the SOURCE to one sheet**, and Pair's stated reference is
+`airbox/zmin` with the second plane `airbox/zmax`, the same topology as the lidded microstrip, so it would be reclassified
+too and its source would then excite the parallel-plate mode that its PMC sides let propagate.
+
+**Decision (owner, from the three options plus a fourth drawn from the above): the medium decides the VOLTAGE; the
+classification and the source stay.** A strip between two reference planes whose media just past it on its two sides differ
+(a strip on an interface) reads its voltage from the half toward its reference; a strip with one medium on both sides keeps
+the mean. "Differ" is εr, μr or an anisotropic tensor, not the name, so two names for one dielectric do not trip it.
+- `FdtdWavePorts.OnInterface` (after `Classify`, in `Plan`): reads the medium a hair past the strip on each side along the
+  path axis, at its centre across, from the non-conductor solids' sections by the face plane (the higher construction order
+  winning, as it wins the volume), else the box's fill. It sets `FdtdTerminal.Interface` and `VoltageHalf` (`_up`/`_dn`, the
+  side of the path's reference end). The two-sheet source and every probe are written as before, so **the model XML is
+  byte-identical**; `CsxcadWriter.WaveProbes` only names that one half (on all three voltage planes, so the line-Z note
+  reads the same voltage) for `OpenEmsRun.ReadPort`.
+- A run note per face names the terminals and both media; `explain`'s terminal line says "on an interface (… on its − side,
+  … on its + side) … its voltage is the half from the strip to its reference".
+- **Pair** (PTFE on both sides) keeps the mean and every byte; 124's box and Coupled Microstrip read strip → floor.
+
+**Gates** (`tests/Ui.Tests/Em3d/OpenEmsInterfaceVoltageTests.cs`, no solver): gate 1 lowers 124's committed `PairB.c3d` and
+the example's Coupled Microstrip (each probe set names only `_dn`, the model still writes both halves) and Pair (both
+halves). Gate 2 writes a committed `probes.npz` back as openEMS probe files, reads them through `OpenEmsRun.ReadPort` with
+the names the lowering chose and solves with `FdtdPortTransform.Solve`, against `probes.py`'s strip → ground re-assembly
+(`probes-dn.json` beside each `probes.npz`): **6.7e-11** (124's pair, 2/4/6 GHz) and **6.4e-11** (Coupled Microstrip, 21
+points), against the mean's ~0.02. The existing openEMS wave-port, backend (lumped goldens byte for byte), cylindrical-grid
+and example classes pass unchanged.
+
+**The example, re-run** (`circuitrf em … --setup openEMS` from a scratch copy, the same 6,053,568-cell grid): it reproduces
+the old run's strip → floor re-assembly to **3.0e-5** at every point, and against Palace max |ΔS| is 0.008–0.027 over 2–12
+GHz. `expected-numbers.json`'s openEMS rows, the README (its lid paragraph and tables) and the new-user guide's walk-through
+carry the new numbers: |S11| / |S22| at 2 GHz −21.00 / −15.72 dB, at 10 GHz −17.82 / −15.30 dB (Palace −17.38 / −16.08).
+The README keeps the first run's time: the grid and the solve are unchanged, only which probe files are read.
