@@ -353,7 +353,8 @@ internal static class ExplainEm3d
                          $"{ports} times one run." : "");
         return new("openems", "exact", g.Cells, null, g.TimeStepEstimateS, g.MemoryBytes, note,
                    [g.X.Lines.Count, g.Y.Lines.Count, g.Z.Lines.Count], s.SmallestCellM, axis, features, g.Steps,
-                   g.Merges.Select(m => m.Sentence).ToList(), g.Warnings, g.Refusal);
+                   g.Merges.Select(m => m.Sentence).ToList(), g.Warnings, g.Refusal,
+                   g.Snaps.Count == 0 ? null : g.Snaps.Select(m => m.Sentence).ToList());
     }
 
     /// <summary>brief-em3d-120 R-em3d120-5 — a cylindrical grid: its axis and origin, ρ range, azimuth count and why, the smallest
@@ -528,6 +529,7 @@ internal static class ExplainEm3d
         {
             Console.WriteLine($"    {z.Backend,-10} {z.Kind}: {z.Note}");
             foreach (var m in z.Merges ?? []) Console.WriteLine($"    {"",-10} merged: {m}");
+            foreach (var m in z.Snaps ?? []) Console.WriteLine($"    {"",-10} snapped: {m}");
             foreach (var w in z.GridWarnings ?? []) Console.WriteLine($"    {"",-10} warning: {w}");
             if (z.Refusal is { } no) Console.WriteLine($"    {"",-10} a run would stop here: {no}");
         }

@@ -55,8 +55,8 @@
       "Setup": "openEMS",
       "Quantity": "S11_dB",
       "AtGHz": 18,
-      "Expected": -23.481,
-      "Readme": "−23.48 dB"
+      "Expected": -19.028,
+      "Readme": "−19.03 dB"
     }
   ],
   "Lines": [
@@ -73,8 +73,8 @@
       "Setup": "openEMS",
       "What": "the coax line's Z and ε_eff at 10 GHz",
       "Readme": [
-        "56.72 Ω",
-        "ε_eff 3.17"
+        "54.59 Ω",
+        "ε_eff 3.08"
       ]
     },
     {
@@ -157,29 +157,29 @@
     {
       "Cell": "Launch",
       "Setup": "openEMS",
-      "Preset": "the default grid: 20 cells per wavelength, grading 1.3",
+      "Preset": "20 cells per wavelength, grading 1.15",
       "Readme": [
-        "1 min 43 s",
-        "660,192 cells"
+        "2 min 17 s",
+        "937,440 cells"
       ],
       "Values": [
         {
           "Quantity": "S11_dB",
           "AtGHz": 10,
-          "Expected": -15.582,
-          "Readme": "−15.58 dB"
+          "Expected": -19.361,
+          "Readme": "−19.36 dB"
         },
         {
           "Quantity": "S11_dB",
           "AtGHz": 18,
-          "Expected": -21.206,
-          "Readme": "−21.21 dB"
+          "Expected": -21.38,
+          "Readme": "−21.38 dB"
         },
         {
           "Quantity": "S21_dB",
           "AtGHz": 18,
-          "Expected": -0.4689,
-          "Readme": "−0.469 dB"
+          "Expected": -0.4519,
+          "Readme": "−0.452 dB"
         }
       ],
       "Tolerance": {
@@ -190,33 +190,33 @@
       "Recorded": [
         {
           "GHz": 2.0,
-          "S11_dB": -27.519,
-          "S21_dB": -0.0167,
-          "S22_dB": -27.681
+          "S11_dB": -28.863,
+          "S21_dB": -0.0142,
+          "S22_dB": -28.964
         },
         {
           "GHz": 6.0,
-          "S11_dB": -20.605,
-          "S21_dB": -0.0692,
-          "S22_dB": -20.994
+          "S11_dB": -25.696,
+          "S21_dB": -0.041,
+          "S22_dB": -26.253
         },
         {
           "GHz": 10.0,
-          "S11_dB": -15.582,
-          "S21_dB": -0.23,
-          "S22_dB": -16.481
+          "S11_dB": -19.361,
+          "S21_dB": -0.1537,
+          "S22_dB": -20.629
         },
         {
           "GHz": 14.0,
-          "S11_dB": -15.895,
-          "S21_dB": -0.4499,
-          "S22_dB": -19.023
+          "S11_dB": -18.062,
+          "S21_dB": -0.3937,
+          "S22_dB": -22.038
         },
         {
           "GHz": 18.0,
-          "S11_dB": -21.206,
-          "S21_dB": -0.4689,
-          "S22_dB": -27.143
+          "S11_dB": -21.38,
+          "S21_dB": -0.4519,
+          "S22_dB": -25.003
         }
       ]
     },

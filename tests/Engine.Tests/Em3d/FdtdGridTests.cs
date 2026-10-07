@@ -17,8 +17,14 @@ public sealed class FdtdGridTests(ITestOutputHelper output)
 
     // ── 1. Microstrip: the thirds rule, and lines exactly where they must be ────────────────────
 
+    /// <summary>
+    /// R-em3d8's rule, as brief-em3d-123 restated it: a port's extents are lines — EXCEPT one inside a thirds pair, which
+    /// snaps. The ports here run across the strip's full width, so their x extents lie on its edges: the edges keep their
+    /// pairs and nothing else (a line on the edge between them is the grid the rule exists to avoid), and the port is
+    /// written on the pair's inside line, a third of a cell into the strip, which the grid's snaps name.
+    /// </summary>
     [Fact]
-    public void Gate1_Microstrip_ThirdsRule_SubstrateAndGround_PortsOnLines()
+    public void Gate1_Microstrip_ThirdsRule_SubstrateAndGround_PortsOnLinesOrSnappedToTheThirdsLine()
     {
         var p = Microstrip();
         const double w = 600 * Um, hSub = 254 * Um;
@@ -34,13 +40,26 @@ public sealed class FdtdGridTests(ITestOutputHelper output)
         AssertLine(x, -w / 2 - 2 * h / 3);
         Assert.Contains(on.X.Required, l => l.Sources.Any(s => s.Feature == "strip" && s.Kind == FdtdLineKind.ThirdsInside));
 
-        // Ports sit ON lines, on every axis (their extents), as do the substrate top and the ground.
+        // Ports sit ON lines where no thirds pair holds them (their plane on y, their height on z), as do the substrate top
+        // and the ground. Across x they lie on the strip's edges, inside its pairs: no line on either edge, and each extent
+        // lands on its edge's inside line.
         foreach (var port in p.Ports)
         {
-            AssertLine(on.X.Lines, port.Min.X); AssertLine(on.X.Lines, port.Max.X);
             AssertLine(on.Y.Lines, port.Min.Y);
             AssertLine(on.Z.Lines, port.Min.Z); AssertLine(on.Z.Lines, port.Max.Z);
         }
+        Assert.DoesNotContain(on.X.Lines, v => Math.Abs(Math.Abs(v) - w / 2) < 1e-9);
+        AssertNoSnappableLineInAPair(p, on);
+        Assert.Equal(2 * p.Ports.Count, on.Snaps.Count);
+        Assert.All(on.Snaps, sn =>
+        {
+            Assert.Equal(FdtdAxis.X, sn.Axis);
+            Assert.Equal(FdtdLineKind.PortExtent, sn.Source.Kind);
+            Assert.Equal("strip", sn.Edge.Feature);
+            Assert.Equal(Math.Sign(sn.Source.FeatureAtM) * (w / 2 - h / 3), sn.LandsOnM, 1e-12);
+            Assert.Equal(sn.LandsOnM, FdtdGrid.SnapToLine(on.X.Lines, sn.Source.FeatureAtM));
+        });
+        output.WriteLine(on.Snaps[0].Sentence);
         AssertLine(on.Z.Lines, 0);
         AssertLine(on.Z.Lines, hSub);
         Assert.Contains(0.0, on.Z.Lines);       // exactly: the PEC floor is a face, and faces never move
@@ -318,6 +337,13 @@ public sealed class FdtdGridTests(ITestOutputHelper output)
         Assert.Contains(s.SmallestCellFeatures, f => f.Feature.StartsWith("via/1/", StringComparison.Ordinal));
         Assert.True(s.SmallestCellM > 10 * Um, $"smallest cell {s.SmallestCellM}");
         Assert.Empty(g.Warnings);
+
+        // brief-em3d-123 — every port extent and laminate face on a copper edge snaps, and no pair is split. The line pairs
+        // at y = ±200 µm still hold the via's barrel and pad extremes, which cannot move, and keep them.
+        AssertNoSnappableLineInAPair(p, g);
+        AssertNoSplitPair(g, "case B");
+        Assert.Contains(g.Snaps, sn => sn.Source.Kind == FdtdLineKind.MaterialFace);
+        Assert.Contains(g.Snaps, sn => sn.Source.Kind == FdtdLineKind.PortExtent);
     }
 
     // ── 11. A thirds pair is never split by the fill (brief-em3d-122) ───────────────────────────
@@ -524,6 +550,30 @@ public sealed class FdtdGridTests(ITestOutputHelper output)
 
     private static void AssertLine(IReadOnlyList<double> lines, double at)
         => Assert.True(lines.Any(v => Math.Abs(v - at) <= 1e-12), $"no line at {at:R}");
+
+    /// <summary>brief-em3d-123 — no required line inside any thirds pair is only a port's extent across its width, a material
+    /// face, or the pair's own conductor's face on its edge: those snap.</summary>
+    private static void AssertNoSnappableLineInAPair(Em3dProblem p, FdtdGridResult g)
+    {
+        foreach (var axis in new[] { g.X, g.Y, g.Z })
+            foreach (var line in axis.Required)
+                foreach (var inside in line.Sources.Where(q => q.Kind == FdtdLineKind.ThirdsInside))
+                {
+                    var outside = axis.Required.SingleOrDefault(o => o.Sources.Any(q => q.Kind == FdtdLineKind.ThirdsOutside &&
+                        q.Feature == inside.Feature && q.FeatureAtM == inside.FeatureAtM &&
+                        Math.Sign(o.PositionM - q.FeatureAtM) == -Math.Sign(line.PositionM - inside.FeatureAtM)));
+                    if (outside is null) continue;
+                    double lo = Math.Min(line.PositionM, outside.PositionM), hi = Math.Max(line.PositionM, outside.PositionM);
+                    double tol = 1e-9 * (hi - lo);
+                    var bad = axis.Required.Where(r => r.PositionM > lo + tol && r.PositionM < hi - tol && r.Sources.All(q =>
+                        q.Kind == FdtdLineKind.PortExtent && p.Ports.Any(o => o.Name == q.Feature && FdtdGrid.PortWidthAxis(o) == (int)axis.Axis) ||
+                        q.Kind == FdtdLineKind.MaterialFace ||
+                        q.Kind == FdtdLineKind.MetalExtreme && q.Feature == inside.Feature &&
+                        Math.Abs(r.PositionM - inside.FeatureAtM) <= tol)).ToList();
+                    Assert.True(bad.Count == 0, $"{inside.Describe(axis.Axis)}: " +
+                        string.Join("; ", bad.SelectMany(r => r.Sources).Select(q => q.Describe(axis.Axis))) + " inside its pair");
+                }
+    }
 
     private static void AssertNoSplitPair(FdtdGridResult g, string what)
     {

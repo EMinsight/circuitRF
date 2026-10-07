@@ -17811,3 +17811,12 @@ wavelength and 5 µm (7 min 28 s, 6.05 M cells), 2–12 GHz in 21 points.
   strips is left open by the owner; the README says so.
 - **S11 ≠ S33** in the brief is 124's numbering (1 and 2 one line); this example numbers 1 and 2 at one end, so the two
   lines' reflections are S11 and S22. They differ by 6.3 dB at 2 GHz on Palace (5.7 on openEMS).
+
+## openEMS: a lumped port's width is written on the grid's line (brief-em3d-123, 2026-10-06)
+
+`CsxcadWriter` writes a lumped port's extent ACROSS its width (`FdtdGrid.PortWidthAxis`) through `FdtdGrid.SnapToLine`:
+an extent inside a thirds pair is no longer a grid line (src/Engine/RESOLVED.md, brief-em3d-123), and openEMS treats the
+three things a port is made of differently — `Operator::SnapBox2Mesh` snaps the `LumpedElement` box and the probes to the
+nearest line, but `Operator_Ext_Excitation` excites every E edge whose Yee position lies geometrically inside the box, with
+no snap. Written as drawn, the element and the excitation could span different edges. A coordinate already on a line is
+written as drawn, so a port with nothing to snap is byte-identical; the port's own plane and its drive axis never snap.

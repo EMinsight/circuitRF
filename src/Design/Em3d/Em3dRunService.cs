@@ -1249,6 +1249,7 @@ public static class Em3dRunService
         if (grid.Refusal is { } tooBig) { stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-grid", tooBig)); return null; }
         log.Warnings.AddRange(grid.Warnings);
         log.Notes.AddRange(grid.Merges.Select(m => m.Sentence));
+        log.Notes.AddRange(grid.Snaps.Select(m => m.Sentence));
 
         var lowering = CsxcadWriter.Write(problem, grid, gridSettings, runSettings, farFieldHz);
         if (!lowering.Ok) { stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-lowering", lowering.Refusal)); return null; }

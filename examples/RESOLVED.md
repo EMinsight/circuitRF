@@ -770,3 +770,13 @@ were written as JSON (every object a Box, Sheet or Cylinder a user draws with th
 - **Port rectangles are numbers**, as 3D Package's and 3D Wave Ports' are. While building this, `explain` reported "P1's
   rectangle has no area (0 × 0 DBU)" for a Rect written as expressions where `check` resolved it; fixed the same day
   (`src/Cli/RESOLVED.md`, "explain measured an unresolved port rectangle").
+
+## 3D Wave Ports' Launch states an openEMS grading of 1.15 (brief-em3d-123, 2026-10-06)
+
+Once a lumped port's extent stopped being a grid line inside a thirds pair, the openEMS grid round the connector's pin
+lost the fine cells it had inherited from the board line's edge, and the Launch's coax wave port was refused: its current
+probe needs a cell of clearance from the housing and had 0.87 of one. More cells per wavelength does not help — the cells
+in the bore are set by the pin's lines and the grading — so the setup states `GradingRatio` 1.15, the largest that clears
+(1.2 gives 0.99 cells). The README says why and what it costs (937,440 cells against 526,768). The 3D Connector keeps the
+default grid on purpose, and its `check` now lists the bore as staircased; both are in its README. Detail:
+`src/Engine/RESOLVED.md`, brief-em3d-123 R-2.

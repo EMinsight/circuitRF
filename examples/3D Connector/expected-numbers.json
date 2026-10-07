@@ -161,69 +161,69 @@
       "Variant": "fillet",
       "Preset": "the default grid: 20 cells per wavelength, grading 1.3",
       "Readme": [
-        "1 min 45 s",
-        "510,291 cells"
+        "1 min 20 s",
+        "360,360 cells"
       ],
       "Values": [
         {
           "Quantity": "S11_dB",
           "AtGHz": 10,
-          "Expected": -18.231,
+          "Expected": -17.249,
           "Tolerance": 0.05,
-          "Readme": "−18.23 dB"
+          "Readme": "−17.25 dB"
         },
         {
           "Quantity": "S11_dB",
           "AtGHz": 18,
-          "Expected": -23.481,
+          "Expected": -19.028,
           "Tolerance": 0.05,
-          "Readme": "−23.48 dB"
+          "Readme": "−19.03 dB"
         },
         {
           "Quantity": "S21_dB",
           "AtGHz": 10,
-          "Expected": -0.118,
+          "Expected": -0.1329,
           "Tolerance": 0.005,
-          "Readme": "−0.118 dB"
+          "Readme": "−0.133 dB"
         },
         {
           "Quantity": "S21_dB",
           "AtGHz": 18,
-          "Expected": -0.4287,
+          "Expected": -0.4565,
           "Tolerance": 0.005,
-          "Readme": "−0.429 dB"
+          "Readme": "−0.457 dB"
         }
       ],
       "Recorded": [
         {
           "GHz": 2,
-          "S11_dB": -33.719,
-          "S21_dB": -0.0094,
-          "S22_dB": -33.902
+          "S11_dB": -26.066,
+          "S21_dB": -0.0194,
+          "S22_dB": -26.216
         },
         {
           "GHz": 6,
-          "S11_dB": -25.048,
-          "S21_dB": -0.0925,
-          "S22_dB": -28.022
+          "S11_dB": -20.676,
+          "S21_dB": -0.1175,
+          "S22_dB": -22.321
         },
         {
           "GHz": 10,
-          "S11_dB": -18.231,
-          "S21_dB": -0.118,
-          "S22_dB": -18.711
+          "S11_dB": -17.249,
+          "S21_dB": -0.1329,
+          "S22_dB": -17.725
         },
         {
           "GHz": 14,
-          "S11_dB": -16.739,
-          "S21_dB": -0.3764,
-          "S22_dB": -19.278
+          "S11_dB": -16.298,
+          "S21_dB": -0.3907,
+          "S22_dB": -19.105
         },
         {
           "GHz": 18,
-          "S11_dB": -23.481,
-          "S21_dB": -0.4287,
-          "S22_dB": -24.289
+          "S11_dB": -19.028,
+          "S21_dB": -0.4565,
+          "S22_dB": -21.389
         }
       ]
     },
@@ -232,55 +232,55 @@
       "Variant": "no fillet",
       "Preset": "the default grid: 20 cells per wavelength, grading 1.3",
       "Readme": [
-        "1 min 34 s",
-        "449,748 cells"
+        "1 min 18 s",
+        "326,040 cells"
       ],
       "Values": [
         {
           "Quantity": "S11_dB",
           "AtGHz": 10,
-          "Expected": -18.317,
+          "Expected": -17.708,
           "Tolerance": 0.05,
-          "Readme": "−18.32 dB"
+          "Readme": "−17.71 dB"
         },
         {
           "Quantity": "S11_dB",
           "AtGHz": 18,
-          "Expected": -24.322,
+          "Expected": -19.75,
           "Tolerance": 0.05,
-          "Readme": "−24.32 dB"
+          "Readme": "−19.75 dB"
         }
       ],
       "Recorded": [
         {
           "GHz": 2,
-          "S11_dB": -34.086,
-          "S21_dB": -0.0096,
-          "S22_dB": -34.499
+          "S11_dB": -26.821,
+          "S21_dB": -0.0169,
+          "S22_dB": -26.993
         },
         {
           "GHz": 6,
-          "S11_dB": -25.343,
-          "S21_dB": -0.0915,
-          "S22_dB": -28.399
+          "S11_dB": -21.611,
+          "S21_dB": -0.1105,
+          "S22_dB": -23.465
         },
         {
           "GHz": 10,
-          "S11_dB": -18.317,
-          "S21_dB": -0.117,
-          "S22_dB": -18.795
+          "S11_dB": -17.708,
+          "S21_dB": -0.1247,
+          "S22_dB": -18.199
         },
         {
           "GHz": 14,
-          "S11_dB": -16.711,
-          "S21_dB": -0.3793,
-          "S22_dB": -19.157
+          "S11_dB": -16.369,
+          "S21_dB": -0.3907,
+          "S22_dB": -19.099
         },
         {
           "GHz": 18,
-          "S11_dB": -24.322,
-          "S21_dB": -0.4263,
-          "S22_dB": -24.973
+          "S11_dB": -19.75,
+          "S21_dB": -0.4491,
+          "S22_dB": -22.459
         }
       ]
     }
@@ -355,23 +355,23 @@
       "Variant": "fillet",
       "Preset": "30 cells per wavelength",
       "Readme": [
-        "4 min 46 s",
-        "692,300 cells"
+        "1 min 21 s",
+        "355,971 cells"
       ],
       "Values": [
         {
           "Quantity": "S11_dB",
           "AtGHz": 10,
-          "Expected": -18.729,
+          "Expected": -17.497,
           "Tolerance": 0.05,
-          "Readme": "−18.73 dB"
+          "Readme": "−17.50 dB"
         },
         {
           "Quantity": "S11_dB",
           "AtGHz": 18,
-          "Expected": -22.759,
+          "Expected": -18.648,
           "Tolerance": 0.05,
-          "Readme": "−22.76 dB"
+          "Readme": "−18.65 dB"
         }
       ]
     }

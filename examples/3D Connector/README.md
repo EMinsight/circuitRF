@@ -95,10 +95,10 @@ machine will differ.
 The numbers are also in `expected-numbers.json`, beside this file, with the tolerance each is held to — and with
 **every** frequency's |S11|, |S21| and |S22| for the four shipped runs, which the regression test below holds.
 
-**`check`** on this workspace reports no error and one warning, from the openEMS setup:
-*"openEMS will not represent the 100 µm fillet on 'pin' (fillet(side|top)): the grid cell there is 110.688 µm, so the
-edge is solved as sharp."* That warning
-is the subject of the next section, not a fault.
+**`check`** on this workspace reports no error and two warnings, both from the openEMS setup:
+*"openEMS will not represent the 100 µm fillet on 'pin' (fillet(side|top)): the grid cell there is 200 µm, so the
+edge is solved as sharp."* and *"openEMS staircases the 670 µm radius of 'housing' (bore:side) with about 3 cells"*.
+They are the subject of the next section, not a fault.
 
 ## Palace and openEMS, with and without the fillet
 
@@ -109,21 +109,23 @@ object tree — disabled is exactly as if the fillet were not there).
 |---|---|---|---|---|
 | Palace, fillet | 1 min 10 s | 4.0 GB | −16.71 dB | −40.75 dB |
 | Palace, no fillet | 1 min 9 s | 4.3 GB | −16.69 dB | −40.90 dB |
-| openEMS, fillet | 1 min 45 s | 510,291 cells | −18.23 dB | −23.48 dB |
-| openEMS, no fillet | 1 min 34 s | 449,748 cells | −18.32 dB | −24.32 dB |
+| openEMS, fillet | 1 min 20 s | 360,360 cells | −17.25 dB | −19.03 dB |
+| openEMS, no fillet | 1 min 18 s | 326,040 cells | −17.71 dB | −19.75 dB |
 
 |S21| through the launch, fillet enabled: Palace **−0.246 dB** at 10 GHz and **−0.518 dB** at 18 GHz; openEMS
-**−0.118 dB** and **−0.429 dB**.
+**−0.133 dB** and **−0.457 dB**.
 
 **Palace meshes the fillet as the curved surface it is** — second-order curved elements, sized to the radius: its note
 says the fillet *"puts elements of about 52.36 µm on it"*, about three along the quarter-circle. Enabling it moves
 |S11| by 0.02 dB at 10 GHz and 0.15 dB at 18 GHz.
 
-**openEMS does not see it.** Its warning says the cell at the tip is 110.688 µm, wider than the 100 µm radius, so the
-edge is solved as sharp. Its two runs still differ — by 0.84 dB at 18 GHz — but not because of the fillet: the fillet's
-faces add grid lines of their own (510,291 cells with it, 449,748 without), and it is **the grid that moved**. Refining
-the grid one step (below) moves |S11| at 18 GHz by 0.72 dB on its own, as much as the A/B does. At this grid the
-staircase cannot resolve this fillet; the difference between the variants is the grid's, not the geometry's.
+**openEMS does not see it.** Its warning says the cell at the tip is 200 µm, twice the 100 µm radius, so the edge is
+solved as sharp. Its two runs still differ — by 0.72 dB at 18 GHz — but not because of the fillet: the fillet's faces
+add grid lines of their own (360,360 cells with it, 326,040 without), and it is **the grid that moved**. At this grid
+the staircase cannot resolve this fillet, nor the bore round it (the second warning); the difference between the
+variants is the grid's, not the geometry's. The cells round the pin are set by the pin's own lines and the grading from
+them, not by the wavelength: the 3D Wave Ports example's copy of this launch states a grading of 1.15 instead of 1.3,
+which its coax port needs, and puts a 143 µm cell on the tip.
 
 **So does the fillet matter?** Not at this connector's band. Palace, which does represent it, sees it change |S11| by
 at most 0.25 dB (at element order 2, below: −31.95 dB with it, −32.20 dB without, at 18 GHz), where the match is
@@ -131,7 +133,7 @@ already 32 dB down, and |S21| by under 0.001 dB — and it sees that same small 
 element orders. A 0.1 mm rounding on a 0.4 mm pin is electrically negligible up to 18 GHz. The example demonstrates
 where each solver's resolution sits; `tip_r` was not enlarged to make a difference appear.
 
-**Palace against openEMS.** |S21| differs by 0.13 dB at 10 GHz (Palace −0.246 dB, openEMS −0.118 dB). The run's own
+**Palace against openEMS.** |S21| differs by 0.11 dB at 10 GHz (Palace −0.246 dB, openEMS −0.133 dB). The run's own
 note names the cause: openEMS writes the housing, the pin and the copper as **perfect conductors** — an FDTD grid does
 not resolve a skin depth — so its answer has no conductor loss, where Palace gives each metal its conductivity. |S11|
 differs by more, and element order moves Palace's by as much (next section): at these settings neither solver's |S11|
@@ -146,17 +148,17 @@ Both setups are chosen so a first Simulate finishes in under two minutes. What t
 | Palace as shipped (Draft, element order 1) | 1 min 10 s | 4.0 GB | −16.71 dB | −40.75 dB |
 | Palace, element order **2**, fillet | 10 min 43 s | 10.1 GB | −18.55 dB | −31.95 dB |
 | Palace, element order **2**, no fillet | 8 min 32 s | 10.7 GB | −18.53 dB | −32.20 dB |
-| openEMS as shipped (20 cells per wavelength) | 1 min 45 s | 510,291 cells | −18.23 dB | −23.48 dB |
-| openEMS, **30** cells per wavelength | 4 min 46 s | 692,300 cells | −18.73 dB | −22.76 dB |
+| openEMS as shipped (20 cells per wavelength) | 1 min 20 s | 360,360 cells | −17.25 dB | −19.03 dB |
+| openEMS, **30** cells per wavelength | 1 min 21 s | 355,971 cells | −17.50 dB | −18.65 dB |
 
 At element order 2 Palace's |S21| is **−0.207 dB** at 10 GHz and **−0.503 dB** at 18 GHz. **Is it converged?** Not at
 the shipped settings: one step finer moves Palace's |S11| by 1.8 dB at 10 GHz and 8.8 dB at 18 GHz (where the match is
-deepest, and a deep null is the most sensitive number a solve produces), and openEMS's by 0.5 and 0.7 dB. |S21| moves
+deepest, and a deep null is the most sensitive number a solve produces), and openEMS's by 0.25 and 0.38 dB. |S21| moves
 by 0.04 dB (Palace) and under 0.01 dB (openEMS). Element order 2 needs 10 GB, which is most of a 16 GB laptop; *Standard*
 quality (adaptive refinement) was not run. Nor was a full sweep: the shipped setups have five points so that each run
-of the A/B is quick, and a finer sweep (Setup Analyses ▸ the setup's frequency) was not measured here. openEMS at 30 cells per wavelength still puts a 113 µm cell on the fillet: the grid
-there is set by its grading from the pin, not by the wavelength, and representing the fillet would take a finer
-grid near the pin itself — or Palace.
+of the A/B is quick, and a finer sweep (Setup Analyses ▸ the setup's frequency) was not measured here. openEMS at 30 cells per wavelength still puts a 200 µm cell on the fillet, and its grid is no larger: the
+cells beside the metal are set by its edges and the grading from them, not by the wavelength, so representing the
+fillet would take a finer grid near the pin itself — or Palace.
 
 ## The regression test
 

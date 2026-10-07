@@ -202,6 +202,22 @@ public sealed record FdtdThirdsViolation(
         string.Join(", ", Between.Select(FdtdGrid.FormatLength)) + ".";
 }
 
+/// <summary>
+/// brief-em3d-123 R-em3d123-2 — a port extent or a material face lying inside a thirds pair (<paramref name="Edge"/> is the
+/// pair's edge), which is therefore not a grid line, and the line it lands on: the line a lumped port is written on.
+/// </summary>
+public sealed record FdtdSnap(FdtdAxis Axis, FdtdLineSource Source, FdtdLineSource Edge, double LandsOnM)
+{
+    public string Sentence =>
+        $"On {FdtdGrid.AxisName(Axis)}: {Source.Describe(Axis)} lies inside the thirds pair of '{Edge.Feature}' edge at " +
+        $"{FdtdGrid.AxisName(Axis)} = {FdtdGrid.FormatLength(Edge.FeatureAtM)}, so it is not a grid line; " +
+        (Source.Kind == FdtdLineKind.PortExtent
+            ? $"the port is written on the line at {FdtdGrid.AxisName(Axis)} = {FdtdGrid.FormatLength(LandsOnM)}, " +
+              $"{FdtdGrid.FormatLength(Math.Abs(LandsOnM - Source.FeatureAtM))} from where it is drawn."
+            : $"openEMS averages the material over the cells beside it, the nearest line at {FdtdGrid.AxisName(Axis)} = " +
+              $"{FdtdGrid.FormatLength(LandsOnM)}.");
+}
+
 /// <summary>One axis of the grid, with the reasons behind it (R-em3d8-5a).</summary>
 /// <param name="Lines">Sorted, metres, PML included.</param>
 /// <param name="Required">The required lines after merging — the anchors the fill ran between.</param>
@@ -250,6 +266,10 @@ public sealed record FdtdGridResult(
     string?                    Refusal)
 {
     public FdtdAxisGrid Axis(FdtdAxis a) => a switch { FdtdAxis.X or FdtdAxis.Rho => X, FdtdAxis.Y or FdtdAxis.Alpha => Y, _ => Z };
+
+    /// <summary>brief-em3d-123 R-em3d123-2 — the port extents and material faces that lie inside a thirds pair and so are not
+    /// lines, each with the line it lands on. Empty for a grid with none (and for a cylindrical grid).</summary>
+    public IReadOnlyList<FdtdSnap> Snaps { get; init; } = [];
 
     /// <summary>brief-em3d-120 — the cylindrical grid this is, or null for a Cartesian one. On a cylindrical grid <see cref="X"/>
     /// holds ρ (metres), <see cref="Y"/> α (radians, 0 to 2π; its <see cref="FdtdAxisGrid.SmallestCellM"/> is the smallest
@@ -347,18 +367,24 @@ public static partial class FdtdGrid
         }
         var merges = new List<FdtdMerge>();
         var warnings = new List<string>();
+        var snaps = new List<FdtdSnap>();
 
         FdtdAxisGrid Axis(FdtdAxis a)
         {
             // brief-em3d-122 R-em3d122-2 — a thirds pair the fill split is repaired by lowering that edge's local cell and
             // building the axis again. A grid with no split pair is built exactly once, exactly as before.
             var localCells = new Dictionary<ThirdsEdge, (double H, string? By)>();
+            var keepLines = new HashSet<ThirdsEdge>();
+            var acrossPorts = problem.Ports.Where(p => PortWidthAxis(p) == (int)a).Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
             for (int pass = 0; ; pass++)
             {
                 var axisMerges = new List<FdtdMerge>();
                 var axisWarnings = new List<string>();
-                var required = Merge([.. CollectRequired(problem, a, settings, ctx.MinCell, localCells), .. wavePorts.ExtraLines(a)],
-                                     a, ctx.MinCell, axisMerges, axisWarnings);
+                // brief-em3d-123 R-em3d123-2 — a port extent, a material face or a kernel solid's own face inside a thirds pair
+                // is not a line: it snaps, as upstream's ports do.
+                var (collected, snapped, snappedEdges) = SnapIntoThirdsPairs([.. CollectRequired(problem, a, settings, ctx.MinCell, localCells),
+                                                                              .. wavePorts.ExtraLines(a)], keepLines, acrossPorts);
+                var required = Merge(collected, a, ctx.MinCell, axisMerges, axisWarnings);
                 var (lo, hi) = ctx.Faces(a);
                 var lines = Fill(required, iv => ctx.MaxCell(a, iv.Lo, iv.Hi), settings.GradingRatio,
                                  lo == Em3dBoundaryKind.Absorbing ? settings.PmlCells : 0,
@@ -369,11 +395,22 @@ public static partial class FdtdGrid
                 {
                     merges.AddRange(axisMerges);
                     warnings.AddRange(axisWarnings);
+                    snaps.AddRange(snapped.Select(x => new FdtdSnap(a, x.Source, x.Edge, SnapToLine(grid.Lines, x.Source.FeatureAtM)))
+                                          .Where(x => x.LandsOnM != x.Source.FeatureAtM));
                     return grid;
                 }
                 if (pass >= MaxThirdsRepairPasses || !RepairThirds(grid, broken, localCells, settings.GradingRatio))
                     throw new InvalidOperationException("The FDTD grid's thirds pairs could not be kept whole — a defect in " +
                                                         "FdtdGrid: " + string.Join(" ", broken.Select(v => v.Sentence)));
+                // brief-em3d-123 — a repair that takes a snapped edge's cell below the rule's floor would leave that edge one line
+                // and no pair, which measured worst of all. That edge keeps its feature's line and its own pair instead, exactly
+                // as it was before features snapped.
+                foreach (var e in snappedEdges)
+                    if (localCells.TryGetValue(e, out var lowered) && !(lowered.H >= ThirdsMinCells * ctx.MinCell))
+                    {
+                        localCells.Remove(e);
+                        keepLines.Add(e);
+                    }
             }
         }
 
@@ -398,7 +435,7 @@ public static partial class FdtdGrid
         long limit = availableMemoryBytes ?? GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
 
         var result = new FdtdGridResult(x, y, z, ctx.MinCell, cells, dt, pulse, steps, memory, merges, warnings, null)
-                     { WavePorts = wavePorts };
+                     { WavePorts = wavePorts, Snaps = snaps };
         // brief-em3d-65 R-em3d65-4d — a kernel solid's rounded features the grid will not respect, beside the oblique-face
         // warning above; the NOTE rows are the writer's (CsxcadLowering.Notes), so a run says each row once.
         warnings.AddRange(Em3dFidelity.For(problem, Em3dFidelitySolver.OpenEms, result)
@@ -906,6 +943,82 @@ public static partial class FdtdGrid
         return cells;
     }
 
+    // ── a feature's line inside a thirds pair (brief-em3d-123 R-em3d123-2) ──────────────────────
+
+    /// <summary>
+    /// Removes from <paramref name="raw"/> every line strictly inside a thirds pair that is only a port extent, a material face,
+    /// or the pair's own conductor's face ON its edge (a kernel solid's: <see cref="KernelLines"/> puts a line on every planar
+    /// face, and the ring path never does on a thirds edge — D3). Such a line, almost always on the edge itself, gave the edge
+    /// three lines with the middle one on it: the grid the rule exists to avoid. Measured against closed forms (RESOLVED.md,
+    /// brief-em3d-123), keeping the pair and letting the feature snap — as upstream's MSL_NotchFilter tutorial leaves its port
+    /// extents off the lines — took a strip's Z₀ from 6-19 % low to within 2.5 %, with fewer cells and a longer time step.
+    /// <para>A port extent snaps only ACROSS the port (<see cref="PortWidthAxis"/>): its plane and the two ends it drives between
+    /// stay lines, since moving the plane a third of a cell moves the reference plane with it. Any other line inside a pair
+    /// (an air-box face, a sheet plane, a wave port's feed, another solid's edge or extreme, another pair's line) stays, and
+    /// so does the pair: dropping the pair for an edge line instead measured worst of all.</para>
+    /// <para>The removed port extents and material faces come back as snaps, so a run's notes and <c>explain</c> say where
+    /// each one landed; <c>CsxcadWriter</c> writes a lumped port on the line <see cref="SnapToLine"/> names, since openEMS's
+    /// excitation, unlike its lumped element, does not snap.</para>
+    /// </summary>
+    private static (List<FdtdRequiredLine> Lines, List<(FdtdLineSource Source, FdtdLineSource Edge)> Snapped, List<ThirdsEdge> Edges)
+        SnapIntoThirdsPairs(List<FdtdRequiredLine> raw, IReadOnlySet<ThirdsEdge> keepLines, IReadOnlySet<string> acrossPorts)
+    {
+        var snapped = new List<(FdtdLineSource, FdtdLineSource)>();
+        var edges = new List<ThirdsEdge>();
+        var drop = new HashSet<FdtdRequiredLine>(ReferenceEqualityComparer.Instance);
+        foreach (var pair in ThirdsPairs(raw))
+        {
+            var edge = new ThirdsEdge(pair.Source.Feature, pair.Source.FeatureAtM, pair.MetalSide);
+            if (keepLines.Contains(edge)) continue;
+            double lo = Math.Min(pair.InsideM, pair.OutsideM), hi = Math.Max(pair.InsideM, pair.OutsideM);
+            double tol = 1e-9 * (hi - lo);
+            foreach (var line in raw)
+            {
+                if (!(line.PositionM > lo + tol && line.PositionM < hi - tol) || drop.Contains(line)) continue;
+                bool onEdge = Math.Abs(line.PositionM - pair.Source.FeatureAtM) <= tol;
+                if (!line.Sources.All(src => src.Kind == FdtdLineKind.PortExtent && acrossPorts.Contains(src.Feature) ||
+                                             src.Kind == FdtdLineKind.MaterialFace ||
+                                             src.Kind == FdtdLineKind.MetalExtreme && src.Feature == pair.Source.Feature && onEdge))
+                    continue;
+                drop.Add(line);
+                if (!edges.Contains(edge)) edges.Add(edge);
+                foreach (var src in line.Sources)
+                    if (src.Kind is FdtdLineKind.PortExtent or FdtdLineKind.MaterialFace) snapped.Add((src, pair.Source));
+            }
+        }
+        return drop.Count == 0 ? (raw, snapped, edges) : ([.. raw.Where(l => !drop.Contains(l))], snapped, edges);
+    }
+
+    /// <summary>
+    /// The axis a rectangular lumped port spans ACROSS — neither its sheet's normal (its extent there is zero) nor the axis it
+    /// drives along — or null for a wave port, a coaxial one, or a sheet with no such axis. Only this extent snaps.
+    /// </summary>
+    public static int? PortWidthAxis(Em3dPort p)
+    {
+        if (p.Kind != Em3dPortKind.Lumped || p.Annulus is not null) return null;
+        double[] lo = [p.Min.X, p.Min.Y, p.Min.Z], hi = [p.Max.X, p.Max.Y, p.Max.Z], d = [p.Direction.X, p.Direction.Y, p.Direction.Z];
+        int? axis = null;
+        for (int i = 0; i < 3; i++)
+            if (hi[i] > lo[i] && Math.Abs(d[i]) < 0.5)
+            {
+                if (axis is not null) return null;
+                axis = i;
+            }
+        return axis;
+    }
+
+    /// <summary>
+    /// The grid line a coordinate is written on: <paramref name="at"/> itself when a line lies there (to rounding), else the
+    /// nearest line — for an extent inside a thirds pair, the pair's inside line, a third of a cell away against two thirds.
+    /// openEMS snaps a lumped element's box the same way (<c>Operator::SnapBox2Mesh</c>, nearest line).
+    /// </summary>
+    public static double SnapToLine(IReadOnlyList<double> lines, double at)
+    {
+        if (lines.Count == 0) return at;
+        double nearest = lines.MinBy(l => Math.Abs(l - at));
+        return Math.Abs(nearest - at) <= CoincidenceTolerance(lines[^1] - lines[0]) ? at : nearest;
+    }
+
     // ── the thirds pair's invariant (brief-em3d-122 R-em3d122-1) ─────────────────────────────
 
     /// <summary>
@@ -914,9 +1027,9 @@ public static partial class FdtdGrid
     /// same edge, and the edge between them — read from the required lines after merging, which is where they actually are.
     /// The rule exists to put the edge a third of a cell into ONE cell; a line between them grids the edge as if there were
     /// no rule, and nothing else would say so.
-    /// <para>A pair with another REQUIRED line between its two (a port extent or a material face on the edge itself) is not
-    /// one: that line is a feature's, every cell size keeps it there, and it is where the problem put it. What this finds is
-    /// a line nothing asked for — one the fill made.</para>
+    /// <para>A pair with another REQUIRED line between its two is not one: that line is a feature's that cannot move (a port
+    /// extent or a material face snaps instead — brief-em3d-123), every cell size keeps it there, and it is where the problem
+    /// put it. What this finds is a line nothing asked for — one the fill made.</para>
     /// </summary>
     public static IReadOnlyList<FdtdThirdsViolation> ThirdsViolations(FdtdAxisGrid axis)
     {

@@ -2788,3 +2788,155 @@ facing strip, the box face or the material face. No warning (D3).
 over 2–18 GHz (was 0.26), far-end at 18 GHz −58.6 dB (was −12.6; ideal −75.5), every thru/near/far within tolerance.
 `explain` on it: 209 × 283 × 17 = 1,005,499 cells, smallest 90 µm on y, set by the four gap thirds lines.
 The examples' Benchmark gates were not re-run: their grids took the unchanged first pass (no split pair, traced above).
+
+### brief-em3d-123 R-1 — a required line inside a thirds pair, measured (2026-10-06; no code changed)
+
+**The kinds (R-1.1)**, traced over 122's R-1.3 set plus `CaseB()` (each distinct pair counted once). The brief's three
+sources are all there, and three it did not list:
+
+| kind inside the pair | pairs | where |
+|---|---|---|
+| a port extent ON the edge | 71 | every fixture with a lumped port across a strip's full width (microstrip, stripline gate 7, case B, the goldens) |
+| a material face ON the edge | 51 | case B's laminate (x = ±5 mm, y = ±2.5 mm), the Board fixture's laminate at x = 5.08 mm, gate 2's layouts |
+| a kernel solid's own face ON the edge | 10 | the 3D Connector housing, every pair on it |
+| **another pair's line** (two pairs overlapping) | 89 | the housing's z-edges at −1500 and −774.5 µm (725 µm apart, h ≈ 833 µm), and gate 2's seeded layouts |
+| **another solid's extreme or edge, off the edge** | 29 | case B's line pairs (h 240 µm at y = ±200 µm hold the barrel's extreme at ±150 and the pads' at ±300); the Launch's board line at y = ±787 µm holds the bore's extreme at ±670 |
+| **the same conductor's curved extreme, off the edge** | 8 | the via golden's merged copper: the line pair at ±200 µm holds its own pad's extreme at ±299.757 |
+
+Also off the edge: material faces (14) and a port extent (2). Of the 21 openEMS Ui grids, 15 have such a pair, as 122 found.
+
+**Accuracy (R-1.2).** Three variants, each a scratch switch: V0 today; V1 drop the pair, keep the edge line; V2 keep the pair
+and do not force a port extent, material face or kernel own face inside it. **V2 needs the WRITER to snap a lumped port
+explicitly.** openEMS snaps a `LumpedElement` box and the probes to the nearest line (`Operator::SnapBox2Mesh`, nearest by
+dual line), but **the excitation does not snap**: `Operator_Ext_Excitation` takes every E edge whose Yee position lies
+geometrically inside the box. A port's own plane (zero width along the line) is inside the strip-end edge's x-pair, so
+with no line there no edge is excited and the solve refuses ("the port matrix is singular"). Snapped to the nearest line,
+which is always the pair's inside line (h/3 against 2h/3), the result is the same as openEMS's own snap where that works
+(52.474 against 52.478 Ω). Z₀ comes from the two-line eigenvectors, (Z₊ − Z₋)/2, and ε_eff from the eigenvalue (10 and 30 mm).
+**Z₀ is not identifiable from two lines alone** (an ideal transformer in the error boxes commutes with the line), so this
+assumes each port's error box tends to identity at low frequency; the spread between the 10 and 30 mm lines' own
+√(B/C) at 1 GHz, about 1 %, is taken as the extraction's uncertainty.
+
+The default grid puts 2-3 cells through the stripline's 1 mm stack and ONE cell through the microstrip's substrate, and that
+error dominates everything, so the z cell was also capped by a scratch knob (25 µm; 50 µm agrees to 0.1 Ω) with y and x at
+the shipped 20 cells per wavelength. Errors against the closed form (Cohn t = 0 for the stripline, 51.18 Ω and εr; Hammerstad–Jensen
+t = 0, 30.21 Ω, ±0.2 %, and Kirschning–Jansen ε_eff(f), ±0.6 %, for the microstrip). The strips are 1 µm sheets.
+
+| case | variant | Z₀ error | ε_eff error | cells (10 mm) | smallest, Δt | run (30 mm) |
+|---|---|---|---|---|---|---|
+| (a) stripline, z resolved, 1-4 GHz | V0 | −6.0 to −7.3 % | 0.4-0.9 % | 26,650 | 25 µm z, 82 fs | 17 s |
+| | V1 | −30.6 to −32.2 % | 0.4-0.9 % | 10,250 | 25 µm z, 83 fs | 8 s |
+| | **V2** | **+1.3 to +2.5 %** | −0.1-1.0 % | 14,350 | 25 µm z, 83 fs | 17 s |
+| (a) stripline, shipped grid | V0 | −18.6 to −19.9 % | 0.6-0.9 % | 1,950 | 141 µm y, 452 fs | 1 s |
+| | V1 | −33.9 to −35.5 % | 0.4-0.8 % | 750 | 500 µm z, 1394 fs | 1 s |
+| | **V2** | **−7.1 to −8.4 %** | 0.3-0.8 % | 1,050 | 480 µm y, 1144 fs | 1 s |
+| (b) microstrip 600/254 µm εr 9.8, z resolved, 1-10 GHz | V0 | −4.3 to −6.2 % | +1.1 to +1.5 % | 216,600 | 21 µm z, 69 fs | 122 s |
+| | V1 | −16.6 to −17.5 % | +4.2 to +5.1 % | 139,200 | 21 µm z, 71 fs | 111 s |
+| | **V2** | **+1.3 to +2.5 %** | +0.8 to +1.7 % | 134,400 | 21 µm z, 71 fs | 86 s |
+| (b) microstrip, shipped grid | V0 | −12.5 to −13.8 % | +3.3 to +3.7 % | 32,490 | 106 µm y, 264 fs | 17 s |
+| | V1 | −20.2 to −21.1 % | +5.2 to +6.1 % | 20,880 | 228 µm z, 532 fs | 9 s |
+| | **V2** | **−2.4 to −3.5 %** | +2.4 to +2.8 % | 20,160 | 228 µm z, 576 fs | 8 s |
+
+So in (a) and (b) **V2 beats V0 by 3.5-11 points of Z₀**, far past both closed forms' accuracy and the extraction's ~1 %, with
+fewer cells and a time step 2.2-2.5× longer. ε_eff barely discriminates (a TEM line's is εr on any grid). **V1 is the worst
+everywhere**: an edge line with no pair leaves a 600-800 µm strip one or two cells wide. That contradicts D4's default
+(V1 for a line that cannot move), so a fix should leave such a pair as it is (V0), not drop it. At 240 cells per wavelength the
+stripline's three variants are one grid: the cell (210 µm) is below three MinCells (MinCell is a tenth of the 800 µm strip), so
+the thirds rule steps aside on its own.
+
+**(c) the 3D Connector's Launch, openEMS (fillet), against the recorded Palace runs.** |S11| at 2/6/10/14/18 GHz:
+
+| run | 2 | 6 | 10 | 14 | 18 GHz | cells | time |
+|---|---|---|---|---|---|---|---|
+| Palace, Draft (recorded) | −30.06 | −19.45 | −16.71 | −19.02 | −40.75 | | |
+| Palace, element order 2 (README) | | | −18.55 | | −31.95 | | |
+| V0 | −33.55 | −25.06 | −18.23 | −16.74 | −23.53 | 510,291 | 102 s |
+| V1 | −28.16 | −20.23 | −15.51 | −15.43 | −17.25 | 172,584 | 53 s |
+| V2 (V1 where a line cannot move) | −28.13 | −20.23 | −15.97 | −15.81 | −17.23 | 211,680 | 59 s |
+| V2, leaving a pair with an unmovable line as it is | −26.05 | −20.95 | −17.13 | −16.07 | −17.92 | 356,004 | 80 s |
+
+|S21| at 10 GHz: V0 −0.118, V2 −0.167 dB, Palace −0.246 (Palace's includes conductor loss; openEMS's metals are PEC). Snapping
+moves the answer toward Palace at 2-10 GHz and away from it at 14-18 GHz, and Palace's own |S11| moves 1.8 dB at 10 GHz and
+8.8 dB at 18 GHz between element orders 1 and 2, so **(c) does not discriminate**. It does show that a fix moves this example's
+recorded openEMS numbers by up to 6 dB (D5), and that the board line's pair in the Launch holds the bore's extreme, so D4's
+V1 would grid the launch's own microstrip the worst way measured above.
+
+Harness: a scratch xUnit class driving `EmRunService.Run` on `PalaceBackendTests.Stripline` and a microstrip of the same form,
+with `CRF_V123` / `CRF_ZMAX123` switches in `FdtdGrid` and a nearest-line snap of the lumped port in `CsxcadWriter`; reverted.
+
+### brief-em3d-123 R-2 — the fix: a port's width, a material face and a kernel solid's own face snap (2026-10-06)
+
+Owner decisions after R-1: V2 for port extents, material faces and a kernel solid's own face on the edge; a line that cannot
+move leaves its pair as it is (D4 reversed — V1 measured worst); the 3D Connector's openEMS numbers re-recorded (D5).
+
+- **`FdtdGrid.SnapIntoThirdsPairs`**, between `CollectRequired` and `Merge` in the Cartesian `Build` only (the cylindrical
+  grid's axial `CollectRequired` call is untouched): a raw line strictly inside a thirds pair whose every source is a port's
+  extent ACROSS its width, a material face, or the pair's own conductor's `MetalExtreme` exactly on the edge (D3 — only a
+  kernel solid makes one) is dropped. Another line inside the same pair (an air-box face, a sheet plane, a feed line,
+  another solid's edge or extreme, another pair's line) stays, and so does the pair. A dropped port extent or material face
+  comes back as an `FdtdSnap` on `FdtdGridResult.Snaps` with the line it lands on (the nearest; a snap that lands where
+  another line already is is not reported), and both the run's notes and `explain` print it ("snapped:").
+- **Only a port's WIDTH snaps** (`FdtdGrid.PortWidthAxis`: neither its sheet's normal nor its drive axis; null for a wave or
+  coaxial port). R-1's V2 also snapped the port's own plane, which sits on the strip END's edge and inside that edge's
+  x-pair; the two-length method cancels it, so R-1 could not see it, but the microstrip golden's port 1 moved from x = 0 to
+  x = 261 µm — the reference plane a third of a cell into the line. The plane and the two ends it drives between stay lines.
+- **The writer snaps the width explicitly** (`CsxcadWriter`, `FdtdGrid.SnapToLine`): openEMS snaps a `LumpedElement` box
+  and its probes to the nearest line, but its excitation takes every E edge geometrically inside the box, so element and
+  excitation would otherwise span different edges wherever the nearest line fell outside the drawn box. A coordinate already
+  on a line (to the merge's coincidence tolerance) is written as drawn, so a port with nothing to snap is byte-identical.
+- **A snapped edge the 122 repair would take below the rule's floor keeps its line** (`keepLines` in `Build`). With nothing
+  inside the pair, 122's repair now works on every snapped edge, and on gate 1b's tee (a 600 µm strip with a tab edge 200 µm
+  in from one side, MinCell 60 µm so the floor is 180 µm) it needs h′ = 150 µm to make the interior whole: the pair would be
+  dropped for an edge line, which is V1. Such an edge is put back exactly as it was before features snapped (its feature's
+  line, its unlowered pair) and is never snapped again in that build.
+
+**Gates.** `FdtdGridTests.Gate1_…_PortsOnLinesOrSnappedToTheThirdsLine` (the rule restated: the strip's edges carry only
+their pairs, each port extent across x lands on the inside line, ±(W/2 − h/3), and `SnapToLine` names the same line);
+`Gate10` (case B: no snappable line inside a pair, no split pair, snaps of both kinds — its line pairs at ±200 µm keep the
+via's barrel and pad extremes, which cannot move). `OpenEmsThirdsAccuracyTests` (Benchmark, 10 s and 59 s): the 800 µm
+stripline in 1 mm of εr 2.2 and the 600/254 µm microstrip on εr 9.8 against Cohn and Hammerstad–Jensen/Kirschning–Jansen,
+each dielectric drawn as 50 µm / 25.4 µm layers of one material with `MinCellUm` 10 so z is resolved by required lines and x
+and y are the shipped grid. Measured: stripline Z₀ +1.2 to +2.5 %, ε_eff ≤ 0.9 %; microstrip Z₀ +1.4 to +3.4 %, ε_eff +1.1 to
++2.3 %. **Both fail with the snap disabled** (stripline −7.6 %, microstrip −6.2 %), so they hold the fix.
+**Goldens** (`testdata/em3d/openems-goldens`): microstrip — each port's y extent ±550 → ±330 µm (the 1.1 mm strip's inside
+lines, h = 660 µm), 137 → 128 x lines, 124 → 116 y lines, 392,220 → 386,640 steps; via — y ±200 → ±183.4 µm, 86 → 76 x lines,
+101 → 75 y lines, **1,409,220 → 380,480 steps** (the edge's middle line set the time step).
+
+**The examples (D5).** Their openEMS grids lost the line each lumped port's extent put on the board line's edge. That line,
+with its pair either side, made a three-line cluster of 55-64 µm cells at y = ±787 µm, and those cells graded into the
+bore and pin: **the resolution round the connector's pin was a side effect of the defect.** With the pair whole, the pin is
+one 200 µm cell across on y, at 20 and at 30 cells per wavelength alike (the cells there are set by the pin's own lines
+and the grading, not by the wavelength).
+- **3D Connector** (setups unchanged, the shipped default grid on purpose): openEMS 510,291 → 360,360 cells (no fillet
+  449,748 → 326,040; at 30 cells per wavelength 692,300 → 355,971), each run ~105 → ~80 s. |S11| with the fillet at
+  2/6/10/14/18 GHz: −33.72/−25.05/−18.23/−16.74/−23.48 → −26.07/−20.67/−17.25/−16.29/−19.03 dB; |S21| at 10 GHz −0.118 →
+  −0.133 dB. Palace's runs reproduced to 0.0005 dB. `check` gains a second warning, the bore staircased with about 3
+  cells, and the fillet's cell is 200 µm (was 110.688). Palace (order 1 −40.75, order 2 −31.95 dB at 18 GHz) cannot say
+  which openEMS answer is better (R-1 (c)); the README and the EM Solvers page say what moved and why.
+- **3D Wave Ports, Launch on openEMS: the run was REFUSED** after the fix — its coax face's current probe needs one cell
+  of clearance from the housing round the pin, and with the cluster gone it had 0.87 of one (0.46 at 25-40 cells per
+  wavelength, where the grid near the pin is coarser still — more cells per wavelength does not help here). The setup now
+  states `GradingRatio` 1.15 (1.2 falls short, 0.99 cells): 937,440 cells (was 660,192), 2 min 17 s, |S11| 10/18 GHz
+  −19.36/−21.38 dB, |S21| 18 GHz −0.452 dB, the line measured 54.59 Ω ε_eff 3.08 (was 56.72 Ω, 3.17; the coax is
+  50.02 Ω), no bore warning, fillet cell 143 µm. Re-run twice, reproducing to 0.002 dB. At 1.15 openEMS also takes the
+  1.34 mm square port the README used to say it refuses. Pair and Coupled Microstrip: same cell counts and no snap, so
+  their grids are unchanged and their recorded runs (and the 15-minute Palace one) were not re-run.
+
+**Owner check (§5).** `explain` on the 3D Connector's Launch, setup openEMS — before: 59 × 93 × 93 = 510,291 cells, smallest
+15.632 µm on z (the top copper's face and port 1's extent), Δt about 4.9e-14 s. After: 63 × 65 × 88 = 360,360 cells, the same
+smallest cell and feature, Δt about 4.7e-14 s, and four "snapped:" lines — port 2's y extents at ±787.4 µm written on
+the lines at ±758.05 µm (29.35 µm in; the board line's pair, local cell 88 µm after 122's repair) and the laminate's faces
+at y = ±2.54 mm. The microstrip with a full-width lumped port: `FdtdGridTests.Gate1` and `OpenEmsThirdsAccuracyTests`
+print it — on the 800 µm stripline, "'port/1' port extent at y = −400 µm lies inside the thirds pair of 'Strip/1' edge at
+y = −400 µm, so it is not a grid line; the port is written on the line at y = −240 µm, 160 µm from where it is drawn."
+
+**Not this brief's** (seen in the scoped run, in code it does not touch): `PowerRailExampleTests` (two: the README's
+"Fast drop" 47.656 against 65.07 produced) and `ExampleWorkspacesTests.EveryDesignDocumentAnExampleShipsIsAViewOfACell`
+('Thermal: Output Wires' ships a .csch outside a cell's schematic/ folder).
+
+**openEMS is not repeatable to the 3D Connector's 0.05 dB tolerance**, before this brief or after it. Gate 6 run twice on
+identical code read the fillet run's |S11| at 18 GHz 0.055 dB apart and |S22| at 2 GHz 0.046 dB apart (R-1's unchanged V0
+run had already landed 0.047 dB from the old record); the two runs of each port stopped differently — one on the ports'
+decay, one on openEMS's energy criterion — which moves the last few hundredths of a dB. The connector's openEMS rows are
+therefore recorded as the MEAN of the two runs, each run within 0.028 dB of it. The tolerance was left as it was; if it
+fails by a few hundredths again, this is why, and it says nothing about the grid.

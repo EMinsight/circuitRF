@@ -1391,7 +1391,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<string>? GridWarnings = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string? Refusal = null);
+        string? Refusal = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? Snaps = null);
 
     /// <summary>
     /// One program a 3D run needs, as discovery found it (brief-em3d-6 R-em3d6-4c): the same answer the

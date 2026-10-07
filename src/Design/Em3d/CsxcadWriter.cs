@@ -324,6 +324,15 @@ public static partial class CsxcadWriter
             }
             probeNames.Add(new OpenEmsProbeNames(p.Number, [VoltageProbe(p.Number)], [CurrentProbe(p.Number)]));
             var (start, stop, axis, sign) = Terminals(p);
+            // brief-em3d-123 R-em3d123-2 — an extent inside a thirds pair is not a line (FdtdGrid.Snaps says where it lands).
+            // openEMS snaps a LumpedElement's box and the probes to the nearest line, but its excitation takes every E edge
+            // lying geometrically inside the box. So the port's width is written ON the line, the same one openEMS would snap
+            // the element to, and excitation, element and probes all span the same edges.
+            if (FdtdGrid.PortWidthAxis(p) is int across)
+            {
+                start = With(start, across, FdtdGrid.SnapToLine(grid.Axis((FdtdAxis)across).Lines, Get(start, across)));
+                stop = With(stop, across, FdtdGrid.SnapToLine(grid.Axis((FdtdAxis)across).Lines, Get(stop, across)));
+            }
             Open(props, "LumpedElement", id++, $"port{p.Number}_resist", Colors.Port,
                  $" Direction=\"{axis}\" Caps=\"1\" R=\"{R(p.Z0.Real)}\" LEtype=\"0\"");
             AppendPrimitives(props, Box(portPriority, start, stop));

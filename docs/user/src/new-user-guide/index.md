@@ -332,7 +332,7 @@ on pairs of lines that end on one face, where each line becomes a port of its ow
    2 mm square round the axis, and the same arrow is inferred, along a ray from the bore's wall to the pin, because the
    housing encloses the pin. The coax's closed-form impedance is **50.02 Ω**.
 2. **Run** *Palace*, then *openEMS*. Compare |S11| at 18 GHz with §13's lumped gap port: it read **−40.75 dB** on Palace
-   and **−23.48 dB** on openEMS; the wave port reads **−19.53 dB** and **−21.21 dB**. The deep null was the gap's
+   and **−19.03 dB** on openEMS; the wave port reads **−19.53 dB** and **−21.38 dB**. The deep null was the gap's
    capacitance, not the connector.
 3. Open **Pair**: two strips in PTFE between two ground planes, with a wave port at each end whose **two numbered
    arrows** are its **terminals**, one per strip. Delete both ports and right-click each end face ▸ *Make Port ▸ Wave*
@@ -354,7 +354,7 @@ on pairs of lines that end on one face, where each line becomes a port of its ow
 at the *Draft* preset and **50.13 to 50.26 Ω** at element order 2 (8 min 30 s and 8.9 GB instead of a minute; |S11|
 then reads −25.02 dB at 10 GHz and −21.44 dB at 18 GHz).
 openEMS fed the line from behind the face and measured its voltage and current there; on the Launch its square cells
-leave the round pin unresolved, and it says so: the line measured **56.72 Ω**, **ε_eff 3.17**, so on that cell
+leave the round pin unresolved, and it says so: the line measured **54.59 Ω**, **ε_eff 3.08**, so on that cell
 Palace is the answer to trust. On Pair, openEMS fed each strip on its own and built S from the four runs together;
 each terminal's line measured **50.17 Ω**, **ε_eff 2.10**. Pair is openEMS's: Palace runs a port with two terminals only where
 the lines' modes travel at different speeds, and a stripline's travel at one, which Palace returns in an arbitrary mixture
@@ -363,7 +363,7 @@ the lines' modes travel at different speeds, and a stripline's travel at one, wh
 | Run | Time | Size | Measured |
 |---|---|---|---|
 | Launch, Palace | 1 min 5 s | 4.5 GB | \|S11\| −21.71 dB at 10 GHz, \|S21\| −0.562 dB at 18 GHz |
-| Launch, openEMS | 1 min 43 s | 660,192 cells | \|S11\| −15.58 dB at 10 GHz, \|S21\| −0.469 dB at 18 GHz |
+| Launch, openEMS | 2 min 17 s | 937,440 cells | \|S11\| −19.36 dB at 10 GHz, \|S21\| −0.452 dB at 18 GHz |
 | Pair, openEMS | 52 s | 1,033,923 cells | four runs, one per terminal |
 | Coupled Microstrip, Palace | 14 min 34 s | 5.1 GB | each face's two modes converted to one port per strip |
 | Coupled Microstrip, openEMS | 7 min 28 s | 6,053,568 cells | four runs, one per terminal |

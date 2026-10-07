@@ -56,12 +56,13 @@ and 4 (strip b): **S21 is the near-end coupling, S31 the thru and S41 the far-en
    wall to the pin, and the status line says so: *"… the path runs from 'housing' to 'pin' along a ray, because
    'housing' encloses 'pin' on the face."* Read the arrow before a run.
    Right-clicking the bore's end face (the PTFE disc round the pin) and choosing *Make Port ▸ Wave* makes the same port
-   on the 1.34 mm square round the disc. Palace runs that one; openEMS at this setup's grid refuses it, because its
-   current probe round the pin needs a grid cell of room from the housing, and the 2 mm rectangle's grid lines are what
-   give it that room.
+   on the 1.34 mm square round the disc. Both solvers run that one too. openEMS's current probe round the pin needs a
+   grid cell of room from the housing, which is why this setup's openEMS section states a grading ratio of **1.15**: at
+   the default 1.3 the cells in the bore grow too fast from the pin, and openEMS refuses either rectangle, naming the
+   clearance it is short of.
 3. **Simulate ▸ Setup Analyses…**: run *Palace*, then make *openEMS* the active setup and run it.
 4. Compare |S11| with the 3D Connector's (its *fillet* runs, below). At 18 GHz the lumped gap port read **−40.75 dB**
-   on Palace and **−23.48 dB** on openEMS; the wave port reads **−19.53 dB** on Palace and **−21.21 dB** on openEMS.
+   on Palace and **−19.03 dB** on openEMS; the wave port reads **−19.53 dB** on Palace and **−21.38 dB** on openEMS.
 
 The deep null the 3D Connector showed at 18 GHz on Palace was the gap's capacitance tuning out the launch's own
 reactance. With the gap gone, the launch's |S11| is about −20 dB across the upper band on both solvers: that is the
@@ -108,9 +109,9 @@ note says it renormalised the port to 50 Ω. That 1.7 % is the *Draft* preset's 
 
 **On the Launch, openEMS** computed no mode. It grew its grid out past the face, carried the coax through that
 extension, fed it from the far end with a radial source, and measured voltage and current on three planes around the
-face. The run's note reports what that line measured: **56.72 Ω**, **ε_eff 3.17**, where the coax is 50.02 Ω and
-2.1. **On this grid openEMS does not resolve the coax**: its Cartesian cells staircase the round pin, and at the
-connector's grid (20 cells per wavelength) the pin is 3 cells across. The run's note names the staircase; its error
+face. The run's note reports what that line measured: **54.59 Ω**, **ε_eff 3.08**, where the coax is 50.02 Ω and
+2.1. **On this grid openEMS does not resolve the coax**: its Cartesian cells staircase the round pin, and at this
+setup's grid (20 cells per wavelength, grading 1.15) the pin is 3 cells across. The run's note names the staircase; its error
 falls with the cell, but a coax needs about 20 cells across its pin to come within a few percent, and openEMS's grid
 has one largest cell for the whole problem: at 20 cells across the pin, this one would be 137 million cells. A cylindrical grid, which is exact
 for a coax, cannot be used either: the coax meets a board. **So on this cell, Palace's answer is the one to trust**, and
@@ -158,7 +159,7 @@ machine will differ. They are also in `expected-numbers.json`, with **every** fr
 | Run | Time | Size | \|S11\| at 10 GHz | \|S11\| at 18 GHz | \|S21\| at 18 GHz |
 |---|---|---|---|---|---|
 | Launch, Palace (Draft) | 1 min 5 s | 4.5 GB | −21.71 dB | −19.53 dB | −0.562 dB |
-| Launch, openEMS (20 cells per wavelength) | 1 min 43 s | 660,192 cells | −15.58 dB | −21.21 dB | −0.469 dB |
+| Launch, openEMS (20 cells per wavelength, grading 1.15) | 2 min 17 s | 937,440 cells | −19.36 dB | −21.38 dB | −0.452 dB |
 
 | Coupled Microstrip | Time | Size | \|S11\| / \|S22\| at 2 GHz | at 6 GHz | at 10 GHz |
 |---|---|---|---|---|---|
@@ -180,9 +181,12 @@ machine will differ. They are also in `expected-numbers.json`, with **every** fr
 estimate; that is the estimate disagreeing, not the answer.
 
 **Settings, and what they trade.** The Launch's setups are the 3D Connector's: Palace's *Draft* preset (element order 1,
-no refinement passes) and openEMS's default grid, each 2–18 GHz in 5 points, so a first run takes a minute or two.
-Palace at element order 2 is above: eight times the time and twice the memory, and |S11| moves by 3.3 dB at 10 GHz and 1.9 dB at 18 GHz. openEMS's
-finer grids are no way out for this coax (above). The Pair's setup is 2–18 GHz in 33 points, which costs openEMS nothing (one run
+no refinement passes) and openEMS's default grid but for its grading ratio, 1.15 against the default 1.3, each 2–18 GHz in
+5 points, so a first run takes a minute or two.
+Palace at element order 2 is above: eight times the time and twice the memory, and |S11| moves by 3.3 dB at 10 GHz and 1.9 dB at 18 GHz. The grading is
+the one openEMS setting this coax needs (above): it buys the current probe its cell of room for 937,440 cells against
+526,768, and more cells per wavelength would not, since the cells in the bore are set by the grading from the pin, not by
+the wavelength. The Pair's setup is 2–18 GHz in 33 points, which costs openEMS nothing (one run
 covers the band) and shows the coupling's shape; its 90 cells per wavelength are the cost of 8 cells per strip height.
 Coupled Microstrip's Palace setup is the *Standard* preset's element order 2 with no refinement passes (with Standard's
 two passes the estimate is 8.5 GB) and four mesh regions, 20 µm boxes along the strips' edges; its openEMS setup takes

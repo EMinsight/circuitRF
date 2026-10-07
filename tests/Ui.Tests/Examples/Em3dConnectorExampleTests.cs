@@ -42,8 +42,10 @@ public sealed class Em3dConnectorExampleTests(ITestOutputHelper output) : IDispo
         Assert.Empty(errors);
         string readme = File.ReadAllText(Path.Combine(Root(), "README.md"));
         foreach (string w in warnings) output.WriteLine(w);
-        Assert.All(warnings, w => Assert.Contains("will not represent the 100 µm fillet on 'pin'", w));
-        Assert.Contains("will not represent the 100 µm fillet on 'pin'", readme);
+        // The two fidelity rows the README quotes: the fillet under one cell, and the bore staircased.
+        string[] listed = ["will not represent the 100 µm fillet on 'pin'", "staircases the 670 µm radius of 'housing' (bore:side)"];
+        Assert.All(warnings, w => Assert.Contains(listed, l => w.Contains(l, StringComparison.Ordinal)));
+        Assert.All(listed, l => Assert.Contains(l, readme));
     }
 
     // ── 2. elaboration ──────────────────────────────────────────────────────────────────────────
