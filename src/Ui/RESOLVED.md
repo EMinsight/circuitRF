@@ -38967,3 +38967,17 @@ the render, never after it.
 - `CellUsageScanner.CountReferencingCells(…, removedAlongside)` does not count a referrer that goes to
   the Trash in the same operation.
 - Gates: `ProjectTreeSelectionTests` (7), `CellUsageScannerTests.AReferrerRemovedAlongside_IsNotCounted`.
+
+## A µm PCell row stored a typed number as METRES (MMIC passives, 2026-10-07)
+
+Owner report: a SPIRAL's Din changed from 100 to 200 in the layout's Component Properties read back
+as 200000000 µm and drew a 200 m coil. `LayoutShapePropertiesViewModel.TryParsePCellParamValue`
+looked the row's unit up in `Units.Scale` as stored — the GLYPH "µm" — and that table is ASCII-only,
+so it found no scale and stored the bare 200 as SI metres. The display side (`ToDisplayValue`) does
+normalize, so it divided by 1e-6. The same trap `ToDisplayValue`'s own comment records for the other
+direction; every length on the four MMIC passives is a "µm" row, which is the first time a built-in
+PCell row carried a micro-sign unit rather than "mm" (which takes the display-unit branch). The
+parser now normalizes through `UnitNormalizer.ToEngineUnit` before both the suffix strip and the
+scale, so "200", "200 um", "200 µm" and "200 μm" (Greek mu) all mean 200 µm. Gate:
+`PCellPropertiesInspectorParameterListTests.AnMmicPartsMicronRow_TakesABareNumberAsMicrons`, every
+µm row of all four parts through the real commit path.

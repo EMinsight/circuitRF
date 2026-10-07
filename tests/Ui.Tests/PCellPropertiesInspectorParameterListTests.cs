@@ -225,6 +225,78 @@ public sealed class PCellPropertiesInspectorParameterListTests : IDisposable
         finally { PCellRegistry.ClearResolvers(); }
     }
 
+    // ── The MMIC passives' µm rows (owner report, 2026-10-07) ────────────────
+
+    /// <summary>
+    /// <b>A bare number typed into a µm row is micrometres.</b> OWNER REPORT: a spiral's Din changed
+    /// from 100 to 200 read back as 200000000 µm and drew a 200 m coil. The parser looked the row's
+    /// "µm" glyph up in the ASCII-only unit table, found no scale and stored 200 METRES; the display
+    /// normalized and divided by 1e-6. Every length on all four MMIC parts is a µm row.
+    /// </summary>
+    [Theory]
+    [InlineData(SymbolKind.MimCap,    "MIMCAP")]
+    [InlineData(SymbolKind.Spiral,    "SPIRAL")]
+    [InlineData(SymbolKind.Tfr,       "TFR")]
+    [InlineData(SymbolKind.Airbridge, "AIRBRIDGE")]
+    public void AnMmicPartsMicronRow_TakesABareNumberAsMicrons(SymbolKind kind, string generatorId)
+    {
+        var (vm, props) = Setup("Mmic" + generatorId);
+        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(kind, 0);
+        string cellDir = GeneratedCellStore.GetOrCreate(_root, generatorId, defaults, null, null, PCellLayerSelection.Default);
+        vm.Model.Instances.Add(new LayoutInstance
+            { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 0, Y = 0, Mag = 1.0 });
+        vm.SelectInstance(0);
+
+        var micronRows = ComponentTypeRegistry.DefaultParameters(kind, 0).Where(p => p.Unit == "µm").Select(p => p.Name).ToList();
+        Assert.NotEmpty(micronRows);
+        foreach (var name in micronRows)
+        {
+            RowNamed(props, name).Commit("200");
+
+            var edited = CellLayoutResolver
+                .Resolve(vm.Model.Instances[0].CellRef, vm.InstanceBaseDir).View!.PCellOrigin!.Parameters[name];
+            Assert.Equal(200e-6, edited.AsReal(), 12);
+            Assert.Equal("200 µm", RowNamed(props, name).ValueText);
+        }
+
+        // The ASCII and Greek-mu spellings strip against the same row.
+        RowNamed(props, micronRows[0]).Commit("150 um");
+        RowNamed(props, micronRows[0]).Commit("120 μm");
+        Assert.Equal("120 µm", RowNamed(props, micronRows[0]).ValueText);
+    }
+
+    /// <summary>A TFR's R, a MIMCAP's C and a spiral's L are listed after the geometry as computed rows
+    /// — a readout, not an input — and follow an edit to it.</summary>
+    [Theory]
+    [InlineData(SymbolKind.Tfr,       "TFR",     "R")]
+    [InlineData(SymbolKind.MimCap,    "MIMCAP",  "C")]
+    [InlineData(SymbolKind.Spiral,    "SPIRAL",  "L")]
+    [InlineData(SymbolKind.OctSpiral, "OSPIRAL", "L")]
+    public void AnMmicReadoutRow_IsComputedAndFollowsTheGeometry(SymbolKind kind, string generatorId, string readout)
+    {
+        var (vm, props) = Setup("Readout" + generatorId);
+        var defaults = SchematicToLayoutGenerator.ResolveDefaultParameters(kind, 0);
+        string cellDir = GeneratedCellStore.GetOrCreate(_root, generatorId, defaults, null, null, PCellLayerSelection.Default);
+        vm.Model.Instances.Add(new LayoutInstance
+            { CellRef = Path.GetRelativePath(vm.InstanceBaseDir, cellDir), X = 0, Y = 0, Mag = 1.0 });
+        vm.SelectInstance(0);
+
+        var names = Enumerable.Range(0, props.PCellParamRows!.Count).Select(i => props.PCellParamRows[i].Name).ToList();
+        string follows = MmicPassiveInjection.ReadoutFollows(kind);
+        Assert.Equal(names.IndexOf(follows) + 1, names.IndexOf(readout));
+        var row = RowNamed(props, readout);
+        Assert.True(row.IsComputed);
+        string before = row.ValueText;
+        Assert.StartsWith("≈ ", before);
+
+        RowNamed(props, follows).Commit("80");
+        Assert.NotEqual(before, RowNamed(props, readout).ValueText);
+        if (kind == SymbolKind.Tfr)   // no technology: the standalone 50 Ω/sq film
+            Assert.Equal("≈ 400 Ω (8 sq × 50 Ω/sq)", RowNamed(props, readout).ValueText);
+        if (readout == "L")
+            Assert.EndsWith(" nH (estimate)", RowNamed(props, readout).ValueText);
+    }
+
     /// <summary>A resolver standing in for a kit: it declares the DIMENSIONS a real one declares on
     /// the wire, and draws one rectangle whose width is the parameter, so the geometry moves with the
     /// value the way a real cell's does.</summary>

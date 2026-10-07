@@ -106,19 +106,36 @@ public static class MmicPassiveFormulas
     /// (src/Design/RESOLVED.md, AA-1).</para>
     /// </summary>
     public static double ModifiedWheelerInductance(double turns, double w, double s, double din)
+        => ModifiedWheelerInductance(turns, w, s, din, octagonal: false);
+
+    /// <summary>
+    /// <see cref="ModifiedWheelerInductance(double, double, double, double)"/> for a square or an
+    /// OCTAGONAL coil — the paper's own coefficients for each: <c>K₁ = 2.34, K₂ = 2.75</c> square,
+    /// <c>K₁ = 2.25, K₂ = 3.55</c> octagonal, with the diameters measured across the flats. A closed
+    /// form, so microseconds: cheap enough to follow every keystroke in a properties panel.
+    /// </summary>
+    public static double ModifiedWheelerInductance(double turns, double w, double s, double din, bool octagonal)
     {
         double dout = SpiralOuterDiameter(turns, w, s, din);
         double davg = (dout + din) / 2;
         double rho = dout + din > 0 ? (dout - din) / (dout + din) : 0.0;
-        return 2.34 * Mu0 * turns * turns * davg / (1.0 + 2.75 * rho);
+        var (k1, k2) = octagonal ? (2.25, 3.55) : (2.34, 2.75);
+        return k1 * Mu0 * turns * turns * davg / (1.0 + k2 * rho);
     }
 
     /// <summary>The trace length of a square spiral, <c>4·N·d_avg</c>, m — the four sides of a lap
     /// at the coil's average diameter, N times.</summary>
     public static double SpiralTraceLength(double turns, double w, double s, double din)
+        => SpiralTraceLength(turns, w, s, din, octagonal: false);
+
+    /// <summary>The trace length of a square or octagonal spiral, m: N laps at the coil's average
+    /// diameter across the flats — a square lap is <c>4·d</c>, a regular octagon's <c>8·tan(π/8)·d</c>
+    /// (about 17 % shorter).</summary>
+    public static double SpiralTraceLength(double turns, double w, double s, double din, bool octagonal)
     {
         double dout = SpiralOuterDiameter(turns, w, s, din);
-        return 4 * turns * (dout + din) / 2;
+        double lap = octagonal ? 8 * Math.Tan(Math.PI / 8) : 4.0;
+        return lap * turns * (dout + din) / 2;
     }
 
     // ── Ribbon (air bridge) ────────────────────────────────────────────────────────────────────

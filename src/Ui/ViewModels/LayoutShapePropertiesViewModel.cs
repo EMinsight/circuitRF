@@ -1429,6 +1429,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             _pcellEntryModeSelectionIndex = indices[0];
             IsMklopfTarget = ResolveSelectedInstancePCellComponentName() == SymbolKind.Mklopf;
             IsMlinTarget = ResolveSelectedInstancePCellComponentName() == SymbolKind.Mlin;
+            _mmicReadoutKind = ResolveSelectedInstancePCellComponentName() is { } rk && MmicPassiveInjection.HasReadout(rk) ? rk : null;
             MklopfEntryModeAvailable = IsMklopfTarget && TryResolveMklopfSubstrate(out _, out _, out _);
             OnPropertyChanged(nameof(MklopfImpedanceToggleLabel));
             OnPropertyChanged(nameof(MklopfLengthToggleLabel));
@@ -1481,6 +1482,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             PCellParamRows = null; _pcellParamGeneratedCellDir = null;
             IsMklopfTarget = false; MklopfEntryModeAvailable = false;
             IsMlinTarget = false;
+            _mmicReadoutKind = null;
             MklopfUsesWidthEntry = false; MklopfUsesF3dbEntry = false;
             _pcellEntryModeSelectionIndex = null;
             ToggleMklopfImpedanceEntryCommand.NotifyCanExecuteChanged();
@@ -1732,6 +1734,13 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     /// </summary>
     internal const string MlinZ0Row = "Z0";
 
+    /// <summary>A selected TFR or MIMCAP — the parts with a computed "R"/"C" row after L (the
+    /// resistance or capacitance W×L comes out to; <c>MmicPassiveInjection.Readout</c>).
+    /// Null for anything else.</summary>
+    private SymbolKind? _mmicReadoutKind;
+
+    private string? MmicReadoutRow => _mmicReadoutKind is { } k ? MmicPassiveInjection.ReadoutName(k) : null;
+
     /// <summary>R-L5g-1's own "disable with a reason" requirement: the Z1/Z2⇄W1/W2 and L⇄F3db
     /// conversions both need a resolved substrate (H/T/Er) — <see cref="TryResolveMklopfSubstrate"/>
     /// is the ONE place that resolution happens, the SAME <see cref="SubstrateResolver.ResolveElectrical"/>
@@ -1828,6 +1837,12 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             if (iW >= 0 && !ordered.Contains(MlinZ0Row)) ordered.Insert(iW + 1, MlinZ0Row);
         }
 
+        if (MmicReadoutRow is { } readout && !ordered.Contains(readout))
+        {
+            int after = ordered.IndexOf(MmicPassiveInjection.ReadoutFollows(_mmicReadoutKind!.Value));
+            ordered.Insert(after >= 0 ? after + 1 : ordered.Count, readout);
+        }
+
         if (IsMklopfTarget)
         {
             if (MklopfUsesWidthEntry)
@@ -1886,6 +1901,10 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             return new PCellParamRowViewModel(this, name, pseudoUnit);
         if (IsMlinTarget && name == MlinZ0Row)
             return new PCellParamRowViewModel(this, name, "Ω");
+        if (name == MmicReadoutRow)
+            return new PCellParamRowViewModel(this, name, "", computed: true,
+                tip: "Computed from the geometry on the layout's technology — a readout, not an input. "
+                   + "Hover the row for what the estimate leaves out.");
 
         // What the GENERATOR says about this parameter, from its two independent sources: the
         // declaration (labels, enumerations, bounds, the DIMENSION — asked of the script) and the run
@@ -2008,6 +2027,18 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         // instance's real one. W3/W4/L never matched, which is why only some rows misbehaved.
         // The pseudo-name rewrite in OrderedParamNames is already gated on IsMklopfTarget; these
         // consumers are the mirror of it and must carry the same gate.
+        if (row.Name == MmicReadoutRow)
+        {
+            // Live during a W/L grip drag, like every other row.
+            var geometry = new Dictionary<string, double>(StringComparer.Ordinal);
+            foreach (var (pname, pvalue) in ParametersForDisplay(origin.Parameters))
+                if (SchematicToLayoutGenerator.TryAsNumber(pvalue, out double v)) geometry[pname] = v;
+            string? readout = MmicPassiveInjection.Readout(_vm.Technology, _mmicReadoutKind!.Value, geometry, out string? note);
+            row.Error = note;
+            row.ShowValue(readout ?? "—", null);
+            return;
+        }
+
         if (IsMlinTarget && row.Name == MlinZ0Row)
         {
             if (!TryResolveMklopfSubstrate(out double mh, out double mt, out double mer))
@@ -2162,8 +2193,12 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         }
 
         // Strip a trailing unit suffix the display itself would have appended (e.g. "50 Ω", "90 deg").
-        if (!string.IsNullOrEmpty(unit) && trimmed.EndsWith(unit, System.StringComparison.Ordinal))
-            trimmed = trimmed[..^unit.Length].TrimEnd();
+        // Compared in the engine's ASCII spelling on both sides, so "200 um", "200 µm" (micro sign)
+        // and "200 μm" (Greek mu) all strip against a "µm" row.
+        string engineUnit = CircuitRF.Core.Expressions.UnitNormalizer.ToEngineUnit(unit);
+        string engineText = CircuitRF.Core.Expressions.UnitNormalizer.ToEngineUnit(trimmed);
+        if (engineUnit.Length > 0 && engineText.EndsWith(engineUnit, System.StringComparison.Ordinal))
+            trimmed = engineText[..^engineUnit.Length].TrimEnd();
         if (!NumericText.TryParseDouble(trimmed, out double raw))
             return false;
         // "deg"/Ω/dimensionless pass through unchanged (Units.Scale is 1.0 for Ω and undefined for a
@@ -2172,10 +2207,13 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         // unit (fixed R-L5g-1: previously this branch never scaled at all, silently wrong for a unit
         // like "GHz" whose scale isn't 1 — latent until F3db's entry-mode row exposed it, since every
         // pre-existing PCell param unit here happened to have scale 1) is the exact inverse of
-        // ToDisplayValue's own division — multiply back by the same Units.Scale.
-        if (!string.IsNullOrEmpty(unit) && !string.Equals(unit, "deg", System.StringComparison.Ordinal))
+        // ToDisplayValue's own division — multiply back by the same Units.Scale. NORMALIZED, as
+        // ToDisplayValue normalizes: Units.Scale is ASCII-only, so an unnormalized "µm" (every MMIC
+        // passive's length unit) found no scale, a typed 200 was stored as 200 METRES, and the display
+        // — which does normalize — read it back as 200000000 µm.
+        if (engineUnit.Length > 0 && !string.Equals(engineUnit, "deg", System.StringComparison.Ordinal))
         {
-            double? scale = CircuitRF.Core.Expressions.Units.Scale(unit);
+            double? scale = CircuitRF.Core.Expressions.Units.Scale(engineUnit);
             if (scale is > 0) raw *= scale.Value;
         }
         siValue = raw;

@@ -1419,6 +1419,11 @@ built-in layout cell of the same name, so a schematic of them generates a layout
 microstrip does, with every terminal on the metal that lies on the substrate.</p>
 <p>On a technology that lacks what a part needs — a board has no MIM film, for instance — the run says
 which piece is missing and uses the shipped GaAs process's numbers instead.</p>
+<p>The properties panels show what the geometry comes out to, as a value you read rather than type: a
+TFR's resistance, a MIMCAP's capacitance and a spiral's inductance, each computed by the same model a
+run uses, on the technology's process. It follows every edit as you type. In a layout's Inspector and
+Component Properties it is the greyed row after the geometry. A schematic's Parameters panel also
+shows a spiral's series resistance, at DC and at 10 GHz, where the skin effect has raised it.</p>
 <h3 id="mimcap">MIM Capacitor (MIMCAP)</h3>
 <figure class="symbol"><span class="frame">
 <span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 75L110.77 75" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M129.23 75L212.31 75" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M110.77 47.31L110.77 102.69" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M129.23 47.31L129.23 102.69" /><rect fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" x="114.46" y="52.85" width="11.08" height="44.31" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="24" y="71.31" width="7.38" height="7.38" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="208.62" y="71.31" width="7.38" height="7.38" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="89.91, 102.17, 108.51, 120.77, 130.4, 140.48" y="172.32">
@@ -1459,10 +1464,13 @@ middle. Terminal 1 is the outer end; terminal 2 is the inner end, brought out ov
 air-bridge metal.</p>
 <div class="callout note">
 <span class="label">The inductance is an estimate</span>
-<p>It comes from a published closed form for the coil alone (the modified Wheeler formula), which does
-not include the escape and leads of the drawn part or the ground plane under it. On the shipped GaAs
-process the default coil reads about 16 % low against an EM extraction of the drawn part. For a value
-to rely on, extract the drawn coil and use the result in its place:</p>
+<p>It is summed over the coil exactly as the layout draws it — every side, the escape over the turns
+and the landing pad — together with the coil's mirror image in the ground plane under the substrate.
+Each conductor is treated as a line along its centre, so current crowding toward the edges and the
+skin effect are not in the inductance. On the shipped GaAs process the default coil reads 1.50 nH
+against 1.72 nH from a coarse EM extraction of the drawn part. About half of that difference is the
+extraction treating the metal as a sheet with no thickness. For a value to rely on, extract the drawn
+coil and use the result in its place:</p>
 <p><code>circuitrf em &lt;workspace&gt; --component "SPIRAL N=2.5 W=10 um S=10 um Din=100 um" --freq 1GHz:20GHz:1GHz -o L1.s2p</code></p>
 <p>Port 1 of the file is terminal 1, so it drops into the schematic as an SnP in the part's place.</p>
 </div>
@@ -1475,10 +1483,42 @@ to rely on, extract the drawn coil and use the result in its place:</p>
 <table class="param-table">
 <thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr><td>N</td><td><code>2.5</code></td><td>&mdash;</td><td>shown</td><td>Turns. The layout draws whole quarter turns. The modified Wheeler inductance is an estimate, fitted for spacing up to about three widths and a coil far from ground; a ground plane under the coil lowers the real value.</td></tr>
+<tr><td>N</td><td><code>2.5</code></td><td>&mdash;</td><td>shown</td><td>Turns. The layout draws whole quarter turns, and the inductance is summed over exactly the coil it draws — an estimate.</td></tr>
 <tr><td>W</td><td><code>10</code></td><td>&#181;m</td><td>shown</td><td>Trace width.</td></tr>
-<tr><td>S</td><td><code>10</code></td><td>&#181;m</td><td>&mdash;</td><td>Spacing between turns. The inductance estimate is fitted for S up to about 3&#183;W.</td></tr>
+<tr><td>S</td><td><code>10</code></td><td>&#181;m</td><td>&mdash;</td><td>Spacing between turns.</td></tr>
 <tr><td>Din</td><td><code>100</code></td><td>&#181;m</td><td>&mdash;</td><td>Inner clear opening across the first pair of sides.</td></tr>
+</tbody></table>
+<h3 id="octspiral">Octagonal Spiral Inductor (OSPIRAL)</h3>
+<figure class="symbol"><span class="frame">
+<span class="sym-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 78.69L80.77 78.69" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M80.77 78.69L80.77 64.85L102.92 42.69L132.46 42.69L152.31 63L152.31 89.77L134.31 107.31L110.31 107.31L94.62 91.62L94.62 70.85L108.46 57L126.46 57L138.46 68.54L138.46 83.77L128.77 93.46L116.31 93.46L108.46 86.08L108.46 78.69" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M108.46 78.69L212.31 78.69" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="24" y="75" width="7.38" height="7.38" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="208.62" y="75" width="7.38" height="7.38" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="88.17, 98.85, 108.02, 117.63, 123.98, 133.94, 144.01" y="172.32">
+			OSPIRAL
+	</text></svg></span>
+<span class="sym-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 78.69L80.77 78.69" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M80.77 78.69L80.77 64.85L102.92 42.69L132.46 42.69L152.31 63L152.31 89.77L134.31 107.31L110.31 107.31L94.62 91.62L94.62 70.85L108.46 57L126.46 57L138.46 68.54L138.46 83.77L128.77 93.46L116.31 93.46L108.46 86.08L108.46 78.69" /><path fill="none" stroke="#9684FA" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M108.46 78.69L212.31 78.69" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="24" y="75" width="7.38" height="7.38" /><rect fill="none" stroke="#F07846" stroke-width="1" stroke-miterlimit="4" x="208.62" y="75" width="7.38" height="7.38" /><text fill="#8CAEFF" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="88.17, 98.85, 108.02, 117.63, 123.98, 133.94, 144.01" y="172.32">
+			OSPIRAL
+	</text></svg></span>
+</span><figcaption>OSPIRAL</figcaption></figure>
+<p>The square spiral with its corners cut: the same <code>N</code>, <code>W</code>, <code>S</code> and <code>Din</code>, meaning the same things,
+with <code>Din</code> measured across the innermost pair of parallel flats. Every side is a constant <code>S</code> from
+the turn beside it, diagonals included. For the same footprint the winding is shorter than a square
+one's, which costs some inductance and saves more resistance. Its corners are 45° rather than 90°,
+which spreads the current that crowds into a square spiral's corners. <code>N</code> counts from the inner end,
+at the middle of the innermost flat, and the layout draws whole eighth turns.</p>
+<p>The inductance is the same estimate as the square spiral's, summed over the octagonal coil as drawn.
+Extract the drawn coil for a value to rely on:
+<code>circuitrf em &lt;workspace&gt; --component &quot;OSPIRAL N=2.5 W=10 um S=10 um Din=100 um&quot; -o L1.s2p</code>.</p>
+<table class="param-table">
+<thead><tr><th>Net</th><th>Terminal</th></tr></thead><tbody>
+<tr><td>1</td><td>1</td></tr>
+<tr><td>2</td><td>2</td></tr>
+</tbody></table>
+<p class="small">The nets of an instance line, in this order. Not interchangeable in the drawn part: terminal 1 is the outer end and terminal 2 the inner end, brought out over the turns on the bridge metal. The model itself is symmetric.</p>
+<table class="param-table">
+<thead><tr><th>Name</th><th>Default</th><th>Unit</th><th>On schematic</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td>N</td><td><code>2.5</code></td><td>&mdash;</td><td>shown</td><td>Turns, from the inner end at the middle of the innermost flat. The layout draws whole eighth turns, and the inductance is summed over exactly the coil it draws — an estimate.</td></tr>
+<tr><td>W</td><td><code>10</code></td><td>&#181;m</td><td>shown</td><td>Trace width.</td></tr>
+<tr><td>S</td><td><code>10</code></td><td>&#181;m</td><td>&mdash;</td><td>Spacing between turns.</td></tr>
+<tr><td>Din</td><td><code>100</code></td><td>&#181;m</td><td>&mdash;</td><td>Inner clear opening across the innermost pair of parallel flats.</td></tr>
 </tbody></table>
 <h3 id="tfr">Thin-Film Resistor (TFR)</h3>
 <figure class="symbol"><span class="frame">
@@ -4001,6 +4041,7 @@ in the same multi-line editor as VAR. No fixed parameters.</p>
 <tr><td><a href="#viagnd">VIAGND</a></td><td>ViaGnd</td><td>Microstrip</td></tr>
 <tr><td><a href="#mimcap">MIMCAP</a></td><td>MimCap</td><td>Mmic</td></tr>
 <tr><td><a href="#spiral">SPIRAL</a></td><td>Spiral</td><td>Mmic</td></tr>
+<tr><td><a href="#octspiral">OSPIRAL</a></td><td>OctSpiral</td><td>Mmic</td></tr>
 <tr><td><a href="#tfr">TFR</a></td><td>Tfr</td><td>Mmic</td></tr>
 <tr><td><a href="#airbridge">AIRBRIDGE</a></td><td>Airbridge</td><td>Mmic</td></tr>
 <tr><td><a href="#veriloga">VerilogA</a></td><td>VerilogA</td><td>Devices</td></tr>

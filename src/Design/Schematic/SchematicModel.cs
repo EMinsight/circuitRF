@@ -567,6 +567,11 @@ public enum SymbolKind
 
     /// <summary>Air bridge (engine "AIRBRIDGE"). Terminals 1 and 2 the landings, 3 the line crossed.</summary>
     Airbridge,
+
+    /// <summary>Octagonal spiral inductor (engine "OSPIRAL"): <see cref="Spiral"/> with its corners cut,
+    /// the same parameters meaning the same things. Terminal 1 the outer end, 2 the inner end brought
+    /// out on the bridge metal.</summary>
+    OctSpiral,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

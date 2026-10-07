@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, TFR, thin-film resistor, AIRBRIDGE, air bridge
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -732,6 +732,12 @@ microstrip does, with every terminal on the metal that lies on the substrate.
 On a technology that lacks what a part needs — a board has no MIM film, for instance — the run says
 which piece is missing and uses the shipped GaAs process's numbers instead.
 
+The properties panels show what the geometry comes out to, as a value you read rather than type: a
+TFR's resistance, a MIMCAP's capacitance and a spiral's inductance, each computed by the same model a
+run uses, on the technology's process. It follows every edit as you type. In a layout's Inspector and
+Component Properties it is the greyed row after the geometry. A schematic's Parameters panel also
+shows a spiral's series resistance, at DC and at 10 GHz, where the skin effect has raised it.
+
 ### MIM Capacitor (MIMCAP) {#mimcap}
 
 {{symbol: mimcap}}
@@ -754,15 +760,35 @@ air-bridge metal.
 
 <div class="callout note">
 <span class="label">The inductance is an estimate</span>
-<p>It comes from a published closed form for the coil alone (the modified Wheeler formula), which does
-not include the escape and leads of the drawn part or the ground plane under it. On the shipped GaAs
-process the default coil reads about 16 % low against an EM extraction of the drawn part. For a value
-to rely on, extract the drawn coil and use the result in its place:</p>
+<p>It is summed over the coil exactly as the layout draws it — every side, the escape over the turns
+and the landing pad — together with the coil's mirror image in the ground plane under the substrate.
+Each conductor is treated as a line along its centre, so current crowding toward the edges and the
+skin effect are not in the inductance. On the shipped GaAs process the default coil reads 1.50 nH
+against 1.72 nH from a coarse EM extraction of the drawn part. About half of that difference is the
+extraction treating the metal as a sheet with no thickness. For a value to rely on, extract the drawn
+coil and use the result in its place:</p>
 <p><code>circuitrf em &lt;workspace&gt; --component "SPIRAL N=2.5 W=10 um S=10 um Din=100 um" --freq 1GHz:20GHz:1GHz -o L1.s2p</code></p>
 <p>Port 1 of the file is terminal 1, so it drops into the schematic as an SnP in the part's place.</p>
 </div>
 
 {{table: components/Spiral}}
+
+### Octagonal Spiral Inductor (OSPIRAL) {#octspiral}
+
+{{symbol: ospiral}}
+
+The square spiral with its corners cut: the same `N`, `W`, `S` and `Din`, meaning the same things,
+with `Din` measured across the innermost pair of parallel flats. Every side is a constant `S` from
+the turn beside it, diagonals included. For the same footprint the winding is shorter than a square
+one's, which costs some inductance and saves more resistance. Its corners are 45° rather than 90°,
+which spreads the current that crowds into a square spiral's corners. `N` counts from the inner end,
+at the middle of the innermost flat, and the layout draws whole eighth turns.
+
+The inductance is the same estimate as the square spiral's, summed over the octagonal coil as drawn.
+Extract the drawn coil for a value to rely on:
+`circuitrf em <workspace> --component "OSPIRAL N=2.5 W=10 um S=10 um Din=100 um" -o L1.s2p`.
+
+{{table: components/OctSpiral}}
 
 ### Thin-Film Resistor (TFR) {#tfr}
 

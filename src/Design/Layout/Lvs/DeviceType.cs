@@ -148,6 +148,7 @@ public static class DeviceTypes
             // The MMIC passives (AA-1): each generator is keyed by its component's own token.
             ["MIMCAP"]    = SymbolKind.MimCap,
             ["SPIRAL"]    = SymbolKind.Spiral,
+            ["OSPIRAL"]   = SymbolKind.OctSpiral,
             ["TFR"]       = SymbolKind.Tfr,
             ["AIRBRIDGE"] = SymbolKind.Airbridge,
         };
@@ -251,7 +252,7 @@ public static class DeviceTypes
         // MIMCAP in the layout pairs with a C in the schematic and the other way about.
         SymbolKind.Resistor  or SymbolKind.Tfr    => DeviceKind.Resistor,
         SymbolKind.Capacitor or SymbolKind.MimCap => DeviceKind.Capacitor,
-        SymbolKind.Inductor  or SymbolKind.Spiral => DeviceKind.Inductor,
+        SymbolKind.Inductor  or SymbolKind.Spiral or SymbolKind.OctSpiral => DeviceKind.Inductor,
 
         // Every microstrip element, plus the ideal line: one kind, because the artwork does not
         // distinguish them either — what tells a tee from a cross is its terminal COUNT, which the

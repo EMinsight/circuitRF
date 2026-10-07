@@ -27,6 +27,7 @@ public static class PCellRegistry
             // The MMIC passives (brief-agent-authoring-overview.md AA-1).
             { MimCapPCell.GeneratorId,    MimCapPCell.Generate    },
             { SpiralPCell.GeneratorId,    SpiralPCell.Generate    },
+            { OctSpiralPCell.GeneratorId, OctSpiralPCell.Generate },
             { TfrPCell.GeneratorId,       TfrPCell.Generate       },
             { AirbridgePCell.GeneratorId, AirbridgePCell.Generate },
         };

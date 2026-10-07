@@ -97,12 +97,16 @@ public sealed class ThinFilmResistorModel : ComponentModel, IReportsWarnings
     public override int PortCount => 2;
     public override ModelKind Kind => ModelKind.Linear;
 
+    public double W { get; }
+    public double L { get; }
+    public double SheetResistance { get; }
     public double Resistance { get; }
     public double ShuntCapacitance { get; }
     private readonly LumpedValidityWarning _warning;
 
     public ThinFilmResistorModel(double w, double l, double sheetResistance, double substrateH, double substrateEpsR)
     {
+        W = w; L = l; SheetResistance = sheetResistance;
         Resistance = Math.Max(MmicPassiveFormulas.ThinFilmResistance(sheetResistance, w, l), 1e-9);
         ShuntCapacitance = MmicPassiveFormulas.ParallelPlateCapacitance(substrateEpsR, w, l, substrateH);
         _warning = new LumpedValidityWarning("TFR", "film", l, (substrateEpsR + 1) / 2);
@@ -126,14 +130,14 @@ public sealed class ThinFilmResistorModel : ComponentModel, IReportsWarnings
 }
 
 /// <summary>
-/// <c>SPIRAL</c> — a square spiral inductor. Terminal 1 is the OUTER end, terminal 2 the INNER end,
-/// brought out over the turns on the bridge metal.
+/// <c>SPIRAL</c> — a square spiral inductor, and <c>OSPIRAL</c>, the octagonal one. Terminal 1 is the
+/// OUTER end, terminal 2 the INNER end, brought out over the turns on the bridge metal.
 ///
 /// <para><b>Topology.</b> The usual π: the coil's <c>R(f) + jωL</c> between the terminals, with the
 /// crossing's overlap capacitance across it, and half the trace's capacitance through the substrate
-/// to node 0 at each end. The inductance is the modified Wheeler estimate
-/// (<see cref="MmicPassiveFormulas.ModifiedWheelerInductance"/>) — an ESTIMATE, which takes no account
-/// of the ground plane under the coil; an EM extraction of the drawn coil is the reference.</para>
+/// to node 0 at each end. The inductance is the partial-inductance sum over the drawn path and its
+/// image in the ground plane (<see cref="PartialInductance"/>) — an ESTIMATE; an EM extraction of the
+/// drawn coil is the reference.</para>
 /// </summary>
 public sealed class SpiralInductorModel : ComponentModel, IReportsWarnings
 {
@@ -147,22 +151,51 @@ public sealed class SpiralInductorModel : ComponentModel, IReportsWarnings
     public double Sigma { get; }
     public double T { get; }
 
+    /// <summary>True for <c>OSPIRAL</c>: the same coil with its corners cut.</summary>
+    public bool Octagonal { get; }
+
+    /// <summary>The series inductance, H: the drawn current path's partial-inductance sum over the ground
+    /// plane (<see cref="PartialInductance"/>). An estimate — see that type for what it leaves out.</summary>
     public double Inductance { get; }
+
+    /// <summary>The modified Wheeler estimate of the coil alone in free space, H — kept for comparison.</summary>
+    public double WheelerInductance { get; }
+
+    /// <summary>The drawn coil's centreline length, m.</summary>
     public double TraceLength { get; }
     public double ShuntCapacitance { get; }
     public double CrossingCapacitance { get; }
     private readonly LumpedValidityWarning _warning;
 
     public SpiralInductorModel(double turns, double w, double s, double din, double sigma, double t,
-                               double substrateH, double substrateEpsR, double bridgeH, double bridgeEpsR)
+                               double substrateH, double substrateEpsR, double bridgeH, double bridgeEpsR,
+                               bool octagonal = false)
     {
-        Turns = turns; W = w; S = s; Din = din; Sigma = sigma; T = t;
-        Inductance = MmicPassiveFormulas.ModifiedWheelerInductance(turns, w, s, din);
-        TraceLength = MmicPassiveFormulas.SpiralTraceLength(turns, w, s, din);
+        Turns = turns; W = w; S = s; Din = din; Sigma = sigma; T = t; Octagonal = octagonal;
+        // The DRAWN part: the walk the layout generator draws, its escape and its landing pad, summed
+        // segment by segment over the ground plane under the substrate (PartialInductance). Modified
+        // Wheeler — the coil alone, in free space — is kept beside it for comparison.
+        var path = SpiralWalk.Path(turns, w, s, din, bridgeH, octagonal);
+        Inductance = PartialInductance.OfPath(path, w, t, substrateH);
+        WheelerInductance = MmicPassiveFormulas.ModifiedWheelerInductance(turns, w, s, din, octagonal);
+        // The coil's own drawn length, which is what the series R and the shunt C are of; the escape is on
+        // the bridge metal and the pad is a lead, so neither is counted.
+        TraceLength = 0;
+        for (int i = 0; i < path.Count - 2; i++) TraceLength += path[i].Length;
         ShuntCapacitance = MmicPassiveFormulas.ParallelPlateCapacitance(substrateEpsR, TraceLength, w, substrateH);
-        CrossingCapacitance = Crossings(turns) * MmicPassiveFormulas.ParallelPlateCapacitance(bridgeEpsR, w, w, bridgeH);
-        _warning = new LumpedValidityWarning("SPIRAL", "trace", TraceLength, (substrateEpsR + 1) / 2);
+        int crossings = octagonal ? OctagonalCrossings(turns) : Crossings(turns);
+        CrossingCapacitance = crossings * MmicPassiveFormulas.ParallelPlateCapacitance(bridgeEpsR, w, w, bridgeH);
+        _warning = new LumpedValidityWarning(octagonal ? "OSPIRAL" : "SPIRAL", "trace", TraceLength, (substrateEpsR + 1) / 2);
     }
+
+    /// <summary>An octagonal coil drawn in whole SIDES: <paramref name="turns"/> rounded to the nearest
+    /// eighth turn, at least one side. The layout generator draws exactly this many.</summary>
+    public static int OctagonalSides(double turns) => Math.Max((int)Math.Round(8 * turns, MidpointRounding.AwayFromZero), 1);
+
+    /// <summary>How many turns an octagonal coil's escape crosses: it leaves the middle of the innermost
+    /// flat straight outward, crossing that flat's counterpart on every later lap — one per side numbered
+    /// 8, 16, 24… that is drawn. The layout generator draws exactly this crossing.</summary>
+    public static int OctagonalCrossings(double turns) => (OctagonalSides(turns) - 1) / 8;
 
     /// <summary>The coil drawn in whole SIDES: <paramref name="turns"/> rounded to the nearest quarter
     /// turn, at least one side. The layout generator draws exactly this many.</summary>

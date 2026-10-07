@@ -18326,3 +18326,55 @@ for each). Three defects, the first one older than the gdstk series — no strea
 Held by `GdsiiImportTests.Import_LayerAnsweredAddToTechnology_IsNamedAndVisible_AndReportedAsAdded` (native
 route; the OASIS and GDSII (gdstk) routes end in the same `StreamLayoutImport`). The GUI half has no headless
 harness — `WorkspaceViewModel` cannot be constructed in a test — and was not seen on screen.
+
+## MMIC readouts (R, C, L) and the octagonal spiral OSPIRAL (2026-10-07)
+
+**Readouts.** `MmicPassiveInjection.Readout` gives a TFR's R, a MIMCAP's C and a SPIRAL/OSPIRAL's L as
+panel text. It builds the model through `ComponentModelFactory.TryCreate` with `Build`'s own injected
+overrides — the VIA readout's pattern — so it cannot disagree with a run, and every one is a closed
+form (microseconds), so it runs on the UI thread on every keystroke. Shown in the schematic Parameters
+panel (`ParameterEditorViewModel.MmicReadout.cs`) and as a `Computed` pseudo-row in the layout
+Inspector / Component Properties (`LayoutShapePropertiesViewModel`, after `L` or `Din`). A spiral's is
+labelled "(estimate)" and its note says what modified Wheeler leaves out; that note is the row's
+tooltip on the layout side.
+
+**OSPIRAL** (`SymbolKind.OctSpiral`, appended to the enum) is SPIRAL with its corners cut, after the
+example kit's KIT_OSPIRAL: the same N/W/S/Din, the same stack, escape and pins. Model: Mohan et al.'s
+octagonal coefficients (K1 2.25, K2 3.55) and a lap of 8·tan(π/8)·d. Artwork: side k is placed by its
+normal (270° + 45°k) and distance a + k·p/8, corners where consecutive sides cross, so spacing is exact
+on the diagonals too. **The inner end is the middle of the innermost flat, not the corner the kit
+starts from**, because the escape here runs straight outward on the bridge metal. From the corner it
+is only 0.41·p from where the next lap's diagonal meets its flat (8.3 µm at W = S = 10 µm, against
+17 µm needed to clear it), so an outer lap ending on that diagonal clipped the escape. From the middle
+it crosses each flat squarely. `SpiralInductorModel.OctagonalCrossings` is the one count both the
+crossing capacitance and the artwork use, as `Crossings` is for the square coil.
+
+## SPIRAL/OSPIRAL inductance: partial-inductance sum over the drawn path (2026-10-07)
+
+The model's L (and so every readout) is now `PartialInductance.OfPath` over `SpiralWalk.Path`: the
+coil the generator draws, its escape on the bridge metal and its landing pad, minus the coupling to
+their image in the ground plane under the substrate (Greenhouse/Ruehli). Modified Wheeler stays as
+`WheelerInductance`, quoted in the readout's note. Both PCells now take their centreline from
+`SpiralWalk.Centreline` (src/Core), so the drawn coil and the summed coil are one walk;
+`MmicPassiveTests.TheSummedPath_IsTheDrawnCoil` holds the escape and pad to the generators' pin 2.
+
+- **Every mutual is closed form, no quadrature.** Parallel filaments use Grover's asinh form (3D
+  distance, floored at the strip's own GMD 0.2235·(w+t) for collinear pairs). Every other pair lies in
+  horizontal planes, and Neumann's integral has the elementary antiderivative
+  `x·ln(y−cx+R) + y·ln(x−cy+R) − (h/s)·atan((c·h² + x·y·s²)/(h·s·R))`, which is exact both in one plane
+  and across parallel planes (an octagon's diagonal against an image, or against the bridge). Verified
+  against brute-force Neumann sums to 1e-4. `ln(u+R)` is evaluated as `ln(rest/(R−u))` for negative u
+  to avoid cancellation. Measured: 0.03 ms for the default coil, 2 ms for a 10-turn octagon (82
+  segments), 8 ms at 20 turns. It runs on the UI thread on every keystroke.
+- **Numbers on the shipped GaAs default coil (N 2.5, W = S = 10 µm, Din 100 µm):** SPIRAL 1.50 nH
+  (Wheeler 1.44), OSPIRAL 1.39 nH (Wheeler 1.23). The coarse planar EM read 1.72 nH. **The ground
+  image LOWERS L** (1.58 → 1.50); the escape and pad add about 2 %. The EM treats metal as a zero-
+  thickness sheet, and with t = 0 the sum gives 1.58 nH, so roughly half the remaining gap is the EM's
+  geometry rather than the estimate's. That EM run's own low-frequency rise (3.88 nH at 1 GHz) is
+  still unexplained (AA-1 above), so it is not a reference to tune toward.
+- **TraceLength is now the drawn coil's centreline length**, not the average-diameter formula. It is
+  what R and the shunt C are of; the escape (bridge metal) and the pad are not counted in it.
+- **A sanity value that was wrong from memory:** the square-loop constant. Built from four self terms
+  less two antiparallel sides (Grover's parallel-filament form at d = l), a square loop is
+  `(2µ₀a/π)·[ln(2a/(w+t)) + 0.033 + 0.2235(w+t)/a]`; it is not the −0.726 recalled from a table.
+  `PartialInductanceTests` writes the derivation out.

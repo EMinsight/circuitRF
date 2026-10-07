@@ -73,6 +73,69 @@ public sealed class MmicPassiveTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(50.0 * 25 / 10, 1 / y11.Real, 1e-9);     // the shipped film is 50 Ω/sq
     }
 
+    /// <summary>The properties panels' readout is the model's own value, from the instance's µm rows on
+    /// the technology: a TFR's R as squares × sheet resistance, a MIMCAP's C as the model computes it.</summary>
+    [Fact]
+    public void Readout_IsTheModelsValue_FromTheMicronRows()
+    {
+        var tech = ShippedTechnologies.Load(GaAs);
+        static EditableParameter Um(string name, string value) => new() { Name = name, Expression = value, Unit = "µm" };
+
+        Assert.Equal("≈ 125 Ω (2.5 sq × 50 Ω/sq)",
+            MmicPassiveInjection.Readout(tech, SymbolKind.Tfr, [Um("W", "10"), Um("L", "25")], out var tfrNote));
+        Assert.Null(tfrNote);
+
+        var c = Model<MimCapModel>(SymbolKind.MimCap, ("W", 60e-6), ("L", 40e-6)).Capacitance;
+        Assert.Equal("≈ " + (c * 1e12).ToString("0.###", CultureInfo.InvariantCulture) + " pF",
+            MmicPassiveInjection.Readout(tech, SymbolKind.MimCap, [Um("W", "60"), Um("L", "40")], out _));
+    }
+
+    /// <summary>OSPIRAL's free-space comparison value is the modified Wheeler estimate with the paper's
+    /// OCTAGONAL coefficients (K1 2.25, K2 3.55), written out here independently.</summary>
+    [Fact]
+    public void OctagonalSpiral_ComparesAgainstTheOctagonalWheelerFormula()
+    {
+        double n = 2.5, w = 10e-6, s = 10e-6, din = 100e-6;
+        double dout = din + 2 * n * w + 2 * (n - 1) * s, davg = (dout + din) / 2, rho = (dout - din) / (dout + din);
+        double expected = 2.25 * 4e-7 * Math.PI * n * n * davg / (1 + 3.55 * rho);
+
+        var oct = Model<SpiralInductorModel>(SymbolKind.OctSpiral, ("N", n), ("W", w), ("S", s), ("Din", din));
+        Assert.True(oct.Octagonal);
+        Assert.Equal(expected, oct.WheelerInductance, expected * 1e-6);
+        var sq = Model<SpiralInductorModel>(SymbolKind.Spiral, ("N", n), ("W", w), ("S", s), ("Din", din));
+        output.WriteLine($"on GaAs: OSPIRAL L = {oct.Inductance * 1e9:F3} nH (Wheeler {oct.WheelerInductance * 1e9:F3}), "
+            + $"SPIRAL L = {sq.Inductance * 1e9:F3} nH (Wheeler {sq.WheelerInductance * 1e9:F3})");
+    }
+
+    /// <summary>The inductance is summed over the coil the layout draws: the shared walk, its escape and
+    /// its pad (SpiralWalk.Path), run in DBU, puts terminal 2 exactly where each generator's pin 2 is
+    /// relative to its pin 1.</summary>
+    [Theory]
+    [InlineData(false, 2.5)]
+    [InlineData(false, 3.25)]
+    [InlineData(true, 2.5)]
+    [InlineData(true, 2.875)]
+    public void TheSummedPath_IsTheDrawnCoil(bool octagonal, double turns)
+    {
+        var tech = ShippedTechnologies.Load(GaAs);
+        var p = new Dictionary<string, PCellValue>
+        {
+            ["N"] = PCellValue.Real(turns), ["W"] = PCellValue.Real(10e-6), ["S"] = PCellValue.Real(10e-6), ["Din"] = PCellValue.Real(100e-6),
+        };
+        var art = octagonal ? OctSpiralPCell.Generate(p, tech, PCellLayerSelection.Default)
+                            : SpiralPCell.Generate(p, tech, PCellLayerSelection.Default);
+        var pin1 = art.Pins.Single(q => q.Name == "1");
+        var pin2 = art.Pins.Single(q => q.Name == "2");
+
+        var path = SpiralWalk.Path(turns, 10_000, 10_000, 100_000, bridgeHeight: 0, octagonal);   // DBU
+        var outer = path[0];
+        double len = outer.Length, ux = (outer.X1 - outer.X2) / len, uy = (outer.Y1 - outer.Y2) / len;
+        double p1x = outer.X1 + ux * 5_000, p1y = outer.Y1 + uy * 5_000;                         // half a width past
+        var end = path[^1];
+        Assert.Equal(pin2.X - pin1.X, end.X2 - p1x, 1.0);
+        Assert.Equal(pin2.Y - pin1.Y, end.Y2 - p1y, 1.0);
+    }
+
     // ── the technology binding ─────────────────────────────────────────────────────────────────
 
     /// <summary>A hand-written .cnl inside a GaAs workspace takes the process from the technology,
@@ -111,7 +174,7 @@ public sealed class MmicPassiveTests(ITestOutputHelper output) : IDisposable
     public void EveryMmicGenerator_PinsAreTheSchematicTerminals_OnTheBaseMetal()
     {
         var tech = ShippedTechnologies.Load(GaAs);
-        foreach (var kind in new[] { SymbolKind.MimCap, SymbolKind.Spiral, SymbolKind.Tfr, SymbolKind.Airbridge })
+        foreach (var kind in new[] { SymbolKind.MimCap, SymbolKind.Spiral, SymbolKind.OctSpiral, SymbolKind.Tfr, SymbolKind.Airbridge })
         {
             Assert.True(PCellRegistry.TryGet(ComponentTypeRegistry.EngineReference(kind), out var gen), kind.ToString());
             var art = gen(new Dictionary<string, PCellValue>(), tech, PCellLayerSelection.Default);
@@ -150,6 +213,15 @@ public sealed class MmicPassiveTests(ITestOutputHelper output) : IDisposable
             var bridge = spiral.Shapes.OfType<RectShape>().Single(r => r.Layer == new LayerKey(2, 0));
             var coil = spiral.Shapes.OfType<PolygonShape>().Single();
             Assert.Equal(SpiralInductorModel.Crossings(turns), CrossingsUnder(coil, bridge));
+        }
+
+        // OSPIRAL's escape leaves the middle of the innermost flat and crosses each later lap's flat.
+        foreach (double turns in new[] { 1.0, 2.5, 2.875, 3.125 })
+        {
+            var oct = OctSpiralPCell.Generate(P(("N", turns), ("W", 10e-6), ("S", 10e-6), ("Din", 100e-6)), tech, PCellLayerSelection.Default);
+            var bridge = oct.Shapes.OfType<RectShape>().Single(r => r.Layer == new LayerKey(2, 0));
+            var coil = oct.Shapes.OfType<PolygonShape>().Single();
+            Assert.Equal(SpiralInductorModel.OctagonalCrossings(turns), CrossingsUnder(coil, bridge));
         }
     }
 

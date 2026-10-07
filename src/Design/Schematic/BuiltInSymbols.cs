@@ -98,6 +98,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _viaGnd        = BuildViaGnd();
     private static readonly Symbol _mimCap        = BuildMimCap();
     private static readonly Symbol _spiral        = BuildSpiral();
+    private static readonly Symbol _octSpiral     = BuildOctSpiral();
     private static readonly Symbol _tfr           = BuildTfr();
     private static readonly Symbol _airbridge     = BuildAirbridge();
     private static readonly Symbol _termG         = BuildTermG();
@@ -218,6 +219,7 @@ public static class BuiltInSymbols
             case SymbolKind.ViaGnd:     return _viaGnd;
             case SymbolKind.MimCap:     return _mimCap;
             case SymbolKind.Spiral:     return _spiral;
+            case SymbolKind.OctSpiral:  return _octSpiral;
             case SymbolKind.Tfr:        return _tfr;
             case SymbolKind.Airbridge:  return _airbridge;
             case SymbolKind.Vdc:        return _vdcSrc;
@@ -2096,6 +2098,15 @@ public static class BuiltInSymbols
         PLine(10, 10, 10, 0, 100, 0),          // the escape from the inner end
         L( 100,   0, 200,   0),
     ], SymbolKind.Spiral);
+
+    // OSPIRAL: the same coil with its corners cut — two octagonal laps, the outer end leaving left and
+    // the inner end brought out right over the turns on a bridge, as SPIRAL's is.
+    private static Symbol BuildOctSpiral() => Sym([
+        L(-200,   0, -85,   0),
+        PLine(-85, 0,  -85, -30,  -37, -78,  27, -78,  70, -34,  70, 24,  31, 62,  -21, 62,  -55, 28,
+              -55, -17,  -25, -47,  14, -47,  40, -22,  40, 11,  19, 32,  -8, 32,  -25, 16,  -25, 0),
+        L( -25,   0, 200,   0),               // the escape from the inner end, over the turns
+    ], SymbolKind.OctSpiral);
 
     // TFR: a resistor zig-zag inside the outline of the film it is cut from.
     private static Symbol BuildTfr() => Sym([

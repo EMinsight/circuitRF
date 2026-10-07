@@ -763,6 +763,33 @@
                                Foreground="{DynamicResource CrfWarningBrush}"/>
                 </Grid>
 
+                <!-- TFR / MIMCAP only: the resistance or capacitance W×L comes out to on the workspace's
+                     technology — a readout, not an input (ParameterEditorViewModel.MmicReadout.cs). -->
+                <Grid IsVisible="{Binding IsMmicReadoutTarget}" Margin="4,2" RowDefinitions="Auto,Auto,Auto">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition SharedSizeGroup="ParamName" Width="Auto" MinWidth="40"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding MmicReadoutLabel}" FontSize="11"
+                               Margin="0,0,4,0" VerticalAlignment="Center"/>
+                    <SelectableTextBlock Grid.Row="0" Grid.Column="1" Text="{Binding MmicReadoutText}"
+                                         FontSize="11" Padding="4,3" VerticalAlignment="Center"
+                                         Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                         ToolTip.Tip="Computed from the geometry on the technology's process — a readout, not an input."/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="R" FontSize="11"
+                               IsVisible="{Binding HasMmicResistance}"
+                               Margin="0,0,4,0" VerticalAlignment="Center"/>
+                    <SelectableTextBlock Grid.Row="1" Grid.Column="1" Text="{Binding MmicResistanceText}"
+                                         IsVisible="{Binding HasMmicResistance}"
+                                         FontSize="11" Padding="4,3" VerticalAlignment="Center"
+                                         Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                         ToolTip.Tip="The coil's series resistance from the drawn trace length and the metal's conductivity — computed, not an input."/>
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding MmicReadoutNote}"
+                               IsVisible="{Binding HasMmicReadoutNote}"
+                               FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0"
+                               Foreground="{DynamicResource CrfWarningBrush}"/>
+                </Grid>
+
                 <!-- SpiceModel custom panel: which FILE, which DEFINITION in it, and — for a
                      .subckt only — how its box is laid out. The generic rows above are the chosen
                      subcircuit's own declared parameters. -->

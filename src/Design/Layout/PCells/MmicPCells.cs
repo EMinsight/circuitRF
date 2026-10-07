@@ -187,15 +187,11 @@ public static class SpiralPCell
         long p = w + s, half = w / 2;
         long a0 = din / 2 + half;                       // the innermost centreline's half-size
 
-        // The centreline: from the inner end, side k of length 2·a0 + ⌊k/2⌋·p in direction k mod 4.
-        var pts = new List<(long X, long Y)> { (-a0, -a0) };
+        // The centreline: the walk the model's inductance is summed over (SpiralWalk), in DBU. Every
+        // input is a whole number of DBU, so every point is exact.
+        var pts = SpiralWalk.Centreline(a0, p, sides, octagonal: false)
+            .Select(q => ((long)Math.Round(q.X), (long)Math.Round(q.Y))).ToList();
         (long Dx, long Dy)[] dirs = [(1, 0), (0, 1), (-1, 0), (0, -1)];
-        for (int k = 0; k < sides; k++)
-        {
-            long len = 2 * a0 + (k / 2) * p;
-            var (x, y) = pts[^1];
-            pts.Add((x + dirs[k % 4].Dx * len, y + dirs[k % 4].Dy * len));
-        }
 
         var shapes = new List<LayoutShape> { ThickPath(coil, pts, w) };
 
@@ -281,6 +277,127 @@ public static class SpiralPCell
                 for (int i = 0; i + 1 < poly.Xy.Length; i += 2) { poly.Xy[i] += dx; poly.Xy[i + 1] += dy; }
                 break;
         }
+    }
+}
+
+/// <summary>
+/// OSPIRAL artwork: <see cref="SpiralPCell"/>'s coil with its corners cut — the same stack, the same
+/// escape, the same pins, and only the walk different (<see cref="SpiralWalk.Centreline"/>, which keeps
+/// the spacing S exact on the diagonals as well as the flats — the walk the PDK example kit's octagonal
+/// spiral makes). N is drawn in whole eighth turns.
+///
+/// <para><b>The inner end is the MIDDLE of the innermost flat, not its corner.</b> The escape leaves it
+/// straight outward across every later lap's matching flat. From the corner, the escape lands within
+/// a width of where the next lap's diagonal side meets its flat, and an outer lap ending on that
+/// diagonal clips it; from the middle, it crosses each flat squarely, far from both ends. So N counts
+/// from the middle of the innermost flat.</para>
+/// </summary>
+public static class OctSpiralPCell
+{
+    public const string GeneratorId = "OSPIRAL";
+
+    public static PCellResult Generate(IReadOnlyDictionary<string, PCellValue> parameters, Technology? technology,
+                                       PCellLayerSelection layerSelection)
+    {
+        var stack = MmicStackResolver.Resolve(technology);
+        var coil   = ResolvedMmicStack.Key(stack.BaseMetal, MmicStackResolver.FallbackLayers.Base);
+        var bridge = ResolvedMmicStack.Key(stack.BridgeMetal, MmicStackResolver.FallbackLayers.Bridge);
+        var post   = ResolvedMmicStack.Key(stack.BridgeVia, MmicStackResolver.FallbackLayers.BridgeVia);
+
+        long f = MmicArt.MinFeature(technology, coil);
+        double turns = parameters.Real("N", 2.5);
+        long w   = Math.Max(MmicArt.Dbu(parameters.Real("W", 10e-6)), f);
+        long s   = Math.Max(MmicArt.Dbu(parameters.Real("S", 10e-6)), f);
+        long din = Math.Max(MmicArt.Dbu(parameters.Real("Din", 100e-6)), f);
+        int sides = SpiralInductorModel.OctagonalSides(turns);
+        int crossings = SpiralInductorModel.OctagonalCrossings(turns);
+
+        long p = w + s, half = w / 2;
+        double a = din / 2 + half;                      // the innermost side's centreline from the centre
+
+        // The walk the model's inductance is summed over (SpiralWalk), in DBU; its first point is the
+        // middle of the innermost flat, rounded onto the grid for the escape that leaves it.
+        var pts = SpiralWalk.Centreline(a, p, sides, octagonal: true);
+        long ix = (long)Math.Round(pts[0].X);
+        long a0 = (long)Math.Round(a);
+        pts[0] = (ix, -a0);
+
+        var shapes = new List<LayoutShape> { MiteredPath(coil, pts, w) };
+
+        // The escape, exactly SpiralPCell's: a post on the inner end, the bridge metal straight down (−Y)
+        // across every later lap's bottom flat, a second post clear of the lowest one by a spacing, and
+        // the landing pad.
+        long yE = -a0 - crossings * p - w - s;
+        long lead = 2 * w;
+        shapes.Add(MmicArt.Rect(post,   ix - half, -a0 - half, ix - half + w, -a0 - half + w));
+        shapes.Add(MmicArt.Rect(bridge, ix - half, yE - half,  ix - half + w, -a0 - half + w));
+        shapes.Add(MmicArt.Rect(post,   ix - half, yE - half,  ix - half + w, yE - half + w));
+        shapes.Add(MmicArt.Rect(coil,   ix - half, yE - half - lead, ix - half + w, yE - half + w));
+
+        // Pin 1 on the outer end's metal edge, facing along the last side — axial or diagonal.
+        var (qx, qy) = pts[^1];
+        var (px, py) = pts[^2];
+        double len = Math.Sqrt((qx - px) * (qx - px) + (qy - py) * (qy - py));
+        double ux = (qx - px) / len, uy = (qy - py) / len;
+        long p1x = (long)Math.Round(qx + ux * w / 2.0), p1y = (long)Math.Round(qy + uy * w / 2.0);
+        double p1deg = (Math.Atan2(uy, ux) * 180 / Math.PI + 360) % 360;
+        p1deg = Math.Round(p1deg / 45) * 45 % 360;
+        long p2x = ix, p2y = yE - half - lead;
+
+        foreach (var shape in shapes) SpiralPCell.Translate(shape, -p1x, -p1y);
+        var pins = new[]
+        {
+            new PCellPin("1", 0, 0, coil, w, p1deg),
+            new PCellPin("2", p2x - p1x, p2y - p1y, coil, w, 270.0),
+        };
+
+        var notes = MmicArt.Notes(technology, stack, MmicPart.Spiral);
+        if (Math.Abs(8 * turns - sides) > 1e-9)
+            notes.Add($"N = {turns:G6} is drawn as {sides / 8.0:G6} turns: the coil is drawn in whole eighth turns");
+        return new PCellResult(shapes, pins, Diagnostics: notes.Count > 0 ? notes : null);
+    }
+
+    /// <summary>
+    /// A centreline of any directions, <paramref name="w"/> wide, as ONE polygon (the coil is one
+    /// conductor; see <see cref="SpiralPCell.ThickPath"/>). Each corner's offset is the miter of its two
+    /// segments' half-width normals, <c>(n₁ + n₂)/(1 + n₁·n₂)</c> — at 45° that reaches 1.08 half-widths,
+    /// so the two pieces meet on the miter with nothing left over. Each free end is carried half a width
+    /// past its point and cut square.
+    /// </summary>
+    internal static PolygonShape MiteredPath(LayerKey layer, IReadOnlyList<(double X, double Y)> pts, long w)
+    {
+        double h = w / 2.0;
+        int n = pts.Count;
+        (double X, double Y) Dir(int i)
+        {
+            double dx = pts[i + 1].X - pts[i].X, dy = pts[i + 1].Y - pts[i].Y, l = Math.Sqrt(dx * dx + dy * dy);
+            return (dx / l, dy / l);
+        }
+        var left = new List<long>();
+        var right = new List<(long, long)>();
+        for (int i = 0; i < n; i++)
+        {
+            var din = i > 0 ? Dir(i - 1) : Dir(0);
+            var dout = i < n - 1 ? Dir(i) : Dir(n - 2);
+            double px = pts[i].X, py = pts[i].Y, ox, oy;
+            if (i == 0 || i == n - 1)
+            {
+                var d = i == 0 ? dout : din;
+                double sign = i == 0 ? -1 : 1;
+                px += sign * d.X * h; py += sign * d.Y * h;
+                ox = -d.Y * h; oy = d.X * h;            // the left normal, half a width
+            }
+            else
+            {
+                double n1x = -din.Y, n1y = din.X, n2x = -dout.Y, n2y = dout.X;
+                double k = h / (1 + n1x * n2x + n1y * n2y);
+                ox = (n1x + n2x) * k; oy = (n1y + n2y) * k;
+            }
+            left.Add((long)Math.Round(px + ox)); left.Add((long)Math.Round(py + oy));
+            right.Add(((long)Math.Round(px - ox), (long)Math.Round(py - oy)));
+        }
+        for (int i = right.Count - 1; i >= 0; i--) { left.Add(right[i].Item1); left.Add(right[i].Item2); }
+        return new PolygonShape { Layer = layer, Xy = [.. left] };
     }
 }
 

@@ -124,7 +124,7 @@ public sealed partial class PCellParamRowViewModel : ObservableObject
 
     internal PCellParamRowViewModel(LayoutShapePropertiesViewModel owner, string name, string unit,
                                     PCellParameterInfo? info = null, bool computed = false,
-                                    bool unread = false)
+                                    bool unread = false, string? tip = null)
     {
         _owner   = owner;
         Name     = name;
@@ -149,7 +149,7 @@ public sealed partial class PCellParamRowViewModel : ObservableObject
             ? [.. info!.Choices!.Select(FormatChoice)]
             : [];
 
-        Tip = BuildTip(owner, unit, info, Editor, name, unread);
+        Tip = tip ?? BuildTip(owner, unit, info, Editor, name, unread);
         RefreshFromInstance();
     }
 

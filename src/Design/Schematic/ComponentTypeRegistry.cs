@@ -718,6 +718,10 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Mmic,
             SearchTerms: ["SPIRAL", "spiral", "spiral inductor", "square spiral", "inductor", "coil", "MMIC",
                           "Wheeler"]),
+        [SymbolKind.OctSpiral]    = new("OSPIRAL", "OSPL",
+            Category: ComponentCategory.Mmic,
+            SearchTerms: ["OSPIRAL", "octagonal spiral", "octagon", "spiral", "spiral inductor", "inductor",
+                          "coil", "MMIC", "Wheeler"]),
         [SymbolKind.Tfr]          = new("TFR", "TFR",
             Category: ComponentCategory.Mmic,
             SearchTerms: ["TFR", "thin film resistor", "resistor", "sheet resistance", "ohms per square",
@@ -910,6 +914,10 @@ public static class ComponentTypeRegistry
             "Not interchangeable in the drawn part: terminal 1 is the outer end and terminal 2 the "
           + "inner end, brought out over the turns on the bridge metal. The model itself is symmetric.",
 
+        SymbolKind.OctSpiral =>
+            "Not interchangeable in the drawn part: terminal 1 is the outer end and terminal 2 the "
+          + "inner end, brought out over the turns on the bridge metal. The model itself is symmetric.",
+
         SymbolKind.Tfr =>
             "Interchangeable: the two ends of the film.",
 
@@ -1045,6 +1053,7 @@ public static class ComponentTypeRegistry
         SymbolKind.ViaGnd        => "VIAGND",
         SymbolKind.MimCap        => "MIMCAP",
         SymbolKind.Spiral        => "SPIRAL",
+        SymbolKind.OctSpiral     => "OSPIRAL",
         SymbolKind.Tfr           => "TFR",
         SymbolKind.Airbridge     => "AIRBRIDGE",
         SymbolKind.Diode         => "Diode",
@@ -1262,12 +1271,19 @@ public static class ComponentTypeRegistry
           + "dielectric loss from the film's tanD; the bottom plate's capacitance through the substrate to "
           + "ground. Lumped while the longer side is under a twentieth of a wavelength in the film.",
         SymbolKind.Spiral =>
-            "AN ESTIMATE. L by the modified Wheeler formula (Mohan et al. 1999) for the coil alone, fitted "
-          + "for S <= 3·W; it does not include the escape and leads of the drawn part, nor the ground plane "
-          + "under it. Against a planar EM extraction of the default 2.5-turn coil on the shipped GaAs it "
-          + "read 16 % low (1.44 against 1.72 nH). R from the trace length with skin effect; trace-to-ground "
-          + "and crossing capacitance as parallel plates. For a value to rely on, EM-extract the drawn coil: "
-          + "circuitrf em --component.",
+            "AN ESTIMATE. L by partial-inductance summation (Greenhouse 1974) over the drawn coil, its escape "
+          + "and its pad, with their images in the ground plane under the substrate; each conductor is a "
+          + "line on its centre, with no current crowding. Against a coarse planar EM extraction of the "
+          + "default 2.5-turn coil on the shipped GaAs it read 13 % low (1.50 against 1.72 nH); the EM's "
+          + "zero-thickness sheet accounts for about half of that. R from the drawn trace length with skin "
+          + "effect; trace-to-ground and crossing capacitance as parallel plates. For a value to rely on, "
+          + "EM-extract the drawn coil: circuitrf em --component.",
+        SymbolKind.OctSpiral =>
+            "AN ESTIMATE. L by partial-inductance summation (Greenhouse 1974) over the drawn coil, its escape "
+          + "and its pad, with their images in the ground plane under the substrate; each conductor is a "
+          + "line on its centre, with no current crowding. R from the drawn trace length with skin effect; "
+          + "trace-to-ground and crossing capacitance as parallel plates. For a value to rely on, EM-extract "
+          + "the drawn coil: circuitrf em --component.",
         SymbolKind.Tfr =>
             "R = sheet resistance × L/W from the technology's resistor film; contacts and end overlap not "
           + "included; the film's capacitance to ground split between the ends.",
@@ -1285,12 +1301,17 @@ public static class ComponentTypeRegistry
         (SymbolKind.MimCap, "W") => "Top-plate width, across the feed. C is the film's ε·W·L/t with Palmer's edge "
                                   + "fringing, valid while W and L are each at least ten film thicknesses.",
         (SymbolKind.MimCap, "L") => "Top-plate length, along the feed. The plates' series resistance grows with L/W.",
-        (SymbolKind.Spiral, "N") => "Turns. The layout draws whole quarter turns. The modified Wheeler inductance is "
-                                  + "an estimate, fitted for spacing up to about three widths and a coil far from "
-                                  + "ground; a ground plane under the coil lowers the real value.",
+        (SymbolKind.Spiral, "N") => "Turns. The layout draws whole quarter turns, and the inductance is summed over "
+                                  + "exactly the coil it draws — an estimate.",
         (SymbolKind.Spiral, "W") => "Trace width.",
-        (SymbolKind.Spiral, "S") => "Spacing between turns. The inductance estimate is fitted for S up to about 3·W.",
+        (SymbolKind.Spiral, "S") => "Spacing between turns.",
         (SymbolKind.Spiral, "Din") => "Inner clear opening across the first pair of sides.",
+        (SymbolKind.OctSpiral, "N") => "Turns, from the inner end at the middle of the innermost flat. The layout draws "
+                                     + "whole eighth turns, and the inductance is summed over exactly the coil it "
+                                     + "draws — an estimate.",
+        (SymbolKind.OctSpiral, "W") => "Trace width.",
+        (SymbolKind.OctSpiral, "S") => "Spacing between turns.",
+        (SymbolKind.OctSpiral, "Din") => "Inner clear opening across the innermost pair of parallel flats.",
         (SymbolKind.Tfr, "W") => "Film width. R is the film's sheet resistance times L/W squares; the contacts "
                                + "and the metal overlap at each end are not included.",
         (SymbolKind.Tfr, "L") => "Film length between the contacts.",
@@ -2808,6 +2829,7 @@ public static class ComponentTypeRegistry
                 return [new("W", "50", "µm", true, UnitDimension.Length),
                         new("L", "50", "µm", true, UnitDimension.Length)];
             case SymbolKind.Spiral:
+            case SymbolKind.OctSpiral:
                 return [new("N",   "2.5", "",   true,  UnitDimension.None),
                         new("W",   "10",  "µm", true,  UnitDimension.Length),
                         new("S",   "10",  "µm", false, UnitDimension.Length),
@@ -2937,6 +2959,7 @@ public static class ComponentTypeRegistry
             case "VIAGND":   kind = SymbolKind.ViaGnd;       return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
             case "SPIRAL":   kind = SymbolKind.Spiral;       return true;
+            case "OSPIRAL":  kind = SymbolKind.OctSpiral;    return true;
             case "TFR":      kind = SymbolKind.Tfr;          return true;
             case "AIRBRIDGE": kind = SymbolKind.Airbridge;   return true;
             case "MBEND":

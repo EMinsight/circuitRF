@@ -191,6 +191,7 @@ public partial class ParameterEditorViewModel
     {
         OnPropertyChanged(nameof(IsMicrostripTarget));
         RefreshViaReadout();
+        RefreshMmicReadout();
         if (!IsMicrostripTarget)
         {
             // A via takes the same technology picker, and has its own readout instead of a substrate.

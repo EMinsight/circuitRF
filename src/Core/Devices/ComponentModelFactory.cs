@@ -87,7 +87,7 @@ public static class ComponentModelFactory
             "VIA", "VIAGND",
             // The four MMIC passives (brief-agent-authoring-overview.md AA-1), each bound to the
             // technology's stackup at extraction as MLIN is.
-            "MIMCAP", "SPIRAL", "TFR", "AIRBRIDGE",
+            "MIMCAP", "SPIRAL", "OSPIRAL", "TFR", "AIRBRIDGE",
             "ExtDevice", "wBond", "Match", "Mixer",
             // The ideal system blocks (brief-sys-2, brief-sys-3). One IdealSBlockModel subclass
             // each; "Switch" serves both switch tiles, with the throw count a parameter, and
@@ -189,6 +189,8 @@ public static class ComponentModelFactory
             return CreateMimCapModel(parameters);
         if (typeName.Equals("SPIRAL", StringComparison.OrdinalIgnoreCase))
             return CreateSpiralModel(parameters);
+        if (typeName.Equals("OSPIRAL", StringComparison.OrdinalIgnoreCase))
+            return CreateSpiralModel(parameters, octagonal: true);
         if (typeName.Equals("TFR", StringComparison.OrdinalIgnoreCase))
             return CreateThinFilmResistorModel(parameters);
         if (typeName.Equals("AIRBRIDGE", StringComparison.OrdinalIgnoreCase))
@@ -2173,11 +2175,11 @@ public static class ComponentModelFactory
                GetReal(p, "SigmaBot", DefaultMmicSigma), GetReal(p, "Tbot", DefaultMmicMetalThickness),
                GetReal(p, "H", DefaultMmicSubstrateH), GetReal(p, "ErSub", DefaultMmicSubstrateEpsR));
 
-    private static SpiralInductorModel CreateSpiralModel(IReadOnlyDictionary<string, Value> p)
+    private static SpiralInductorModel CreateSpiralModel(IReadOnlyDictionary<string, Value> p, bool octagonal = false)
         => new(GetReal(p, "N", 2.5), GetReal(p, "W", 10e-6), GetReal(p, "S", 10e-6), GetReal(p, "Din", 100e-6),
                GetReal(p, "Sigma", DefaultMmicSigma), GetReal(p, "T", DefaultMmicMetalThickness),
                GetReal(p, "H", DefaultMmicSubstrateH), GetReal(p, "ErSub", DefaultMmicSubstrateEpsR),
-               GetReal(p, "Hb", DefaultBridgeHeight), GetReal(p, "Erb", 1.0));
+               GetReal(p, "Hb", DefaultBridgeHeight), GetReal(p, "Erb", 1.0), octagonal);
 
     private static ThinFilmResistorModel CreateThinFilmResistorModel(IReadOnlyDictionary<string, Value> p)
         => new(GetReal(p, "W", 10e-6), GetReal(p, "L", 20e-6), GetReal(p, "Rs", DefaultSheetResistance),

@@ -110,6 +110,7 @@ public static class SymbolArtworkGenerator
         // The MMIC passives (brief-agent-authoring-overview AA-1).
         (SymbolKind.MimCap,          "mimcap",            2),
         (SymbolKind.Spiral,          "spiral",            2),
+        (SymbolKind.OctSpiral,       "ospiral",           2),
         (SymbolKind.Tfr,             "tfr",               2),
         (SymbolKind.Airbridge,       "airbridge",         3),
         (SymbolKind.VerilogA,        "verilog-a",         3),

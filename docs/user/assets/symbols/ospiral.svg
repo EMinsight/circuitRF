@@ -1,0 +1,7 @@
+<!-- GENERATED FILE - do not edit. Regenerate every component symbol with:
+     dotnet run ––project src/Ui –– ––generate-symbols docs/user/assets/symbols
+     (the flags above are ordinary double hyphens; XML comments cannot contain them.)
+     Source: src/Ui/Diagnostics/SymbolArtworkGenerator.cs -->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="240" height="186" viewBox="0 0 240 186"><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M27.69 78.69L80.77 78.69" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M80.77 78.69L80.77 64.85L102.92 42.69L132.46 42.69L152.31 63L152.31 89.77L134.31 107.31L110.31 107.31L94.62 91.62L94.62 70.85L108.46 57L126.46 57L138.46 68.54L138.46 83.77L128.77 93.46L116.31 93.46L108.46 86.08L108.46 78.69" /><path fill="none" stroke="#2D14C3" stroke-width="1.38" stroke-linecap="round" stroke-linejoin="round" d="M108.46 78.69L212.31 78.69" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="24" y="75" width="7.38" height="7.38" /><rect fill="none" stroke="#CE4A24" stroke-width="1" stroke-miterlimit="4" x="208.62" y="75" width="7.38" height="7.38" /><text fill="#6A8EF6" font-size="15" font-weight="600" font-family="IBM Plex Sans" x="88.17, 98.85, 108.02, 117.63, 123.98, 133.94, 144.01" y="172.32">
+			OSPIRAL
+	</text></svg>
