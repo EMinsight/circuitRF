@@ -15637,6 +15637,18 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
     // ---- Active-document tracking (Properties region) ───────────────────────
 
+    /// <summary>
+    /// Where a tuning session's results go (brief-tuneopt-3): every OPEN Data Display, under the
+    /// results path Simulate writes for this schematic, and on Stop that file itself. The libraries are
+    /// looked up at each call, so a display opened mid-session starts receiving results.
+    /// </summary>
+    internal Tuning.DisplayTuneSink TuneSinkFor(string baseDir, string schematicKey, string? fileNameOverride,
+                                                string chip = DataSourceLibraryViewModel.TuningChip)
+        => new(baseDir, schematicKey, fileNameOverride,
+               () => _openDocsByPath.Values.OfType<DataDisplayDocument>().Concat(_scratchDataDisplays)
+                         .Select(dd => dd.ViewModel.Window.DataSourceLibrary).ToList(),
+               Messages, chip);
+
     private async Task RefreshOpenDataDisplaysAsync(IReadOnlyList<string> changedPaths)
     {
         if (changedPaths.Count == 0) return;

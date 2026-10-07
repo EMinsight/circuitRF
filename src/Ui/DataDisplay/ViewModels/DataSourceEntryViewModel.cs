@@ -424,6 +424,43 @@ public partial class DataSourceEntryViewModel : ViewModelBase
         ClassifyZ0FromData();
     }
 
+    // ---- A published in-memory version (brief-tuneopt-3 R-to3-5) ----------
+    //
+    //  A live tuning session hands the display a DataSet the run never wrote. It stands in for the
+    //  file's through the SAME in-place refresh a re-run takes (RefreshNpy), so every trace, SNP and
+    //  network view bound to this entry keeps its identity and simply reads the newer data. The
+    //  path is still the identity; only the bytes come from memory.
+
+    private DataSet? _fileData;
+
+    /// <summary>True while a published DataSet stands in for the file's.</summary>
+    public bool IsPublished { get; private set; }
+
+    /// <summary>Shows <paramref name="data"/> in place of the file's DataSet, remembering the file's
+    /// so <see cref="RestoreFile"/> can return to it without reading the disk.</summary>
+    internal void ApplyPublished(DataSet data)
+    {
+        if (!IsPublished) { _fileData = _data; IsPublished = true; }
+        RefreshNpy(data, _filePath!);
+    }
+
+    /// <summary>Returns to the file's DataSet as it was before the first publication.</summary>
+    internal void RestoreFile()
+    {
+        if (!IsPublished) return;
+        var file = _fileData;
+        ForgetPublication();
+        if (file is not null) RefreshNpy(file, _filePath!);
+    }
+
+    /// <summary>Ends the publication WITHOUT restoring — the file changed on disk and is about to be
+    /// re-read, so the remembered version is stale.</summary>
+    internal void ForgetPublication()
+    {
+        _fileData   = null;
+        IsPublished = false;
+    }
+
     /// <summary>Called by DataSourceLibraryViewModel after an in-place restore.</summary>
     internal void NotifyBrokenStateChanged() => OnPropertyChanged(nameof(IsBroken));
 

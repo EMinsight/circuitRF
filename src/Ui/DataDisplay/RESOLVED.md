@@ -2451,3 +2451,34 @@ Three Avalonia traps, all of which fail quietly:
   avoid. The popup's cells are square and pinned by the `grid-pick` style in `SegmentedSelect.axaml`,
   whose width MUST track `IconSelectButton.GridCellPx`; a wrap panel otherwise sizes each cell to
   its own glyph and the columns come out ragged.
+
+## brief-tuneopt-3 — published in-memory sources, frame coalescing, snapshot ghosts (2026-10-07)
+
+- **The results path is flat.** The brief says `results/<key>/run.npy`; the real path has been
+  `results/<key>.npy` since R-res-11. `DisplayTuneSink.ResultsPath` resolves it through
+  `RunResultsWriter.ResolveFileName`, the same as Simulate, so the bench's results-file override is honoured.
+- **A publication goes through `RefreshNpy`**, the in-place refresh a re-run takes, so SNP, network-view and
+  placeholder identity survive exactly as they do on a re-run. The entry keeps the file's DataSet and
+  `RestoreFile` returns to it with no disk read. `ReloadAsync` forgets a publication only AFTER a
+  successful read, so a failed reload never leaves published data with nothing to return to.
+- **A broken entry (file not written yet) is never published over.** It has no version to return to on
+  Revert, and refilling the placeholder in place cannot be undone without throwing away the SNP that
+  bound traces hold. The session's Stop writes the file instead.
+- **The library publishes a SHALLOW COPY.** Reading `entry.Data` adds virtual Z/Y cubes to the DataSet
+  in place, and the session's own DataSet is the one Stop writes. Without the copy, the written file would
+  have gained Z/Y cubes a normal run never writes.
+- **Stop keeps the publication as the file's version** (`KeepPublishedAsFile`) rather than unpublishing
+  and reloading. Unpublishing first briefly restored the OLD run before the async reload landed.
+- **`Plot.GhostTraces` is replaced whole, never edited in place.** `Plot.RenderSnapshot` is a memberwise
+  clone, so a list refilled in place would be read mid-refill by a frame (the same hazard the trace list
+  copy there already guards against). Copy and export from the GUI draw ghosts because they draw the live
+  `Plot`. `circuitrf render` builds its plots in `PlotConfigLoader` and never has any. A Table builds none.
+- **Frame end in the app** is a `Dispatcher.UIThread.Post` at `Background` priority, behind the render
+  pass. With no `Application` (tests, headless) a frame ends at once, so `FrameScheduler` is set only when
+  `Application.Current` exists.
+- **A publish can resize a Rect plot** (aspect coercion on `PlotStructureChanged`), which changes the `.cdd`
+  geometry for a reason that has nothing to do with ghosts. `SnapshotGhostTests` takes its baseline save
+  after the publish for that reason.
+- **For TO-4:** `TuneSession.ForCircuit` takes a `PreparedCircuit`, which is read once. After Push writes
+  values into the schematic, the session's prepared circuit still holds the pre-push text, so Push should
+  re-prepare (or carry the pushed values as the new baseline).

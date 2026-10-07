@@ -368,8 +368,17 @@ namespace CircuitRF.Render.DataDisplay
             if (plot.PlotType == PlotType.Polar && plot.Traces.Any(t => t.IsWspTrace))
                 DrawWspCriticalPoints(canvas, tf, theme);
 
-            // ---- Traces --------------------------------------------------
+            // ---- Tuning snapshot ghosts (brief-tuneopt-3 R-to3-9) ----------
+            //
+            //  UNDER the live curves: the ghost is the "before" a live curve is read against. Each
+            //  already carries its own faded opacity and no point markers (SnapshotGhost), so this
+            //  is the ordinary trace draw.
             bool plotIsRect = plot.PlotType == PlotType.Rect;
+            foreach (var ghost in plot.GhostTraces)
+                TraceRenderer.Draw(canvas, canvasSize, ghost, tf, theme,
+                    stemMode: plotIsRect && (ghost.IsHarmonicStem || ghost.IsMixIndexStem));
+
+            // ---- Traces --------------------------------------------------
             foreach (var trace in plot.Traces)
             {
                 if (trace.IsContourTrace)

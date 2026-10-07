@@ -1018,6 +1018,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         if (_library != null)
         {
             _library.LibraryChanged            += OnLibraryChanged;
+            _library.SnapshotChanged           += OnSnapshotChanged;
             _library.Entries.CollectionChanged += (_, _) => RefreshAddCommand();
             _library.SelectedDataSourceChanged += (_, _) => RefreshAddCommand();
         }
@@ -1101,9 +1102,38 @@ public partial class PlotInspectorViewModel : ViewModelBase
         _harmonicWarned = false;   // new source → re-warn once if harmonic cubes found
         _plot.Autoscale();
         if (IsSummaryTable) RebuildSummary();
+        RebuildGhosts();
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
         PlotStructureChanged?.Invoke(this, EventArgs.Empty);
         RefreshAddCommand();
+    }
+
+    // ---- Snapshot ghosts (brief-tuneopt-3 R-to3-9) ------------------------
+
+    private void OnSnapshotChanged(object? sender, EventArgs e)
+    {
+        RebuildGhosts();
+        PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>
+    /// One faded ghost per trace whose source has a snapshot, resolved against the frozen data. The
+    /// list is replaced whole (see <see cref="Plot.GhostTraces"/>) and nothing but the renderer reads
+    /// it, so a ghost is never saved, autoscaled, listed in the legend or hit.
+    /// </summary>
+    internal void RebuildGhosts()
+    {
+        if (_library is null) return;
+        var ghosts = new System.Collections.Generic.List<Trace>();
+        // A Table has no curve to fade: it draws through TableRenderer, which never reads ghosts.
+        foreach (var t in _plot.PlotType == PlotType.Table ? Enumerable.Empty<Trace>() : _plot.Traces)
+        {
+            var path = t.IsCubeBound ? t.SourcePath : t.Data?.FilePath ?? t.SourcePath;
+            if (_library.SnapshotFor(path) is not { } snap) continue;
+            if (SnapshotGhost.Of(t, snap, _plot.PlotType, _plot.FreqUnits) is { } ghost) ghosts.Add(ghost);
+        }
+        if (ghosts.Count == 0 && _plot.GhostTraces.Count == 0) return;
+        _plot.GhostTraces = ghosts;
     }
 
     // ---- Trace management -----------------------------------------------

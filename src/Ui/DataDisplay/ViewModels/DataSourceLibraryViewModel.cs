@@ -454,6 +454,8 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
             try { data = (await Task.Run(() => DataSetImporter.Import(entry.FilePath!))).DataSet; }
             catch { return; }
 
+            // The file on disk is the newer version now, published or not (R-to3-5).
+            ForgetPublication(entry);
             entry.RefreshNpy(data, entry.FilePath!);
             LibraryChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -551,6 +553,7 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
     public void Remove(DataSourceEntryViewModel entry)
     {
         Gesture.Note("library.remove", $"{Entries.Count} source(s) before");
+        ForgetPublication(entry);
         Entries.Remove(entry);
         UpdateDisplayNames();
         LibraryChanged?.Invoke(this, EventArgs.Empty);

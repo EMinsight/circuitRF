@@ -216,6 +216,17 @@ namespace CircuitRF.Render.DataDisplay
         private ObservableCollection<Trace> _traces = new();
         public ObservableCollection<Trace> Traces => _traces;
 
+        /// <summary>
+        /// Faded copies of <see cref="Traces"/> drawn from a tuning SNAPSHOT (brief-tuneopt-3 R-to3-9),
+        /// under the live curves. Session-only by construction: nothing that writes a <c>.cdd</c> or
+        /// autoscales, lists a legend or hit-tests reads this list — they all read
+        /// <see cref="Traces"/> — and <c>circuitrf render</c> never fills it. See
+        /// <see cref="SnapshotGhost"/>.
+        /// <para>REPLACED whole, never edited in place, so <see cref="RenderSnapshot"/>'s memberwise
+        /// copy hands a frame a list nobody is refilling under it.</para>
+        /// </summary>
+        public IReadOnlyList<Trace> GhostTraces { get; set; } = [];
+
         /// <summary>Depth of the <see cref="BeginTraceBatch"/> scopes currently open.</summary>
         private int _traceBatchDepth;
 

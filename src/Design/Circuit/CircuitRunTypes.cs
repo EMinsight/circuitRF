@@ -126,6 +126,11 @@ public sealed class RunPlan
     /// <summary>Total leaf work units across every planned analysis. 0 = nothing countable.</summary>
     public long TotalWorkUnits { get; }
 
+    /// <summary>Points across every parametric sweep the plan dispatches (the whole chain of each);
+    /// 0 when none. What a live tuning session warns about before each slider move costs a sweep
+    /// (brief-tuneopt-3 R-to3-4).</summary>
+    public long SweepPoints { get; init; }
+
     internal Library?          Lib           { get; init; }
     internal TestBench?        Tb            { get; init; }
     internal ElaboratedNetlist? Nl           { get; init; }

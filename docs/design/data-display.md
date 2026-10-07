@@ -78,9 +78,27 @@ entry handling). "This schematic's latest results" is the well-known per-run `.n
 overwrites it, bound traces refresh — no special in-memory coupling.
 
 > **Why file-addressed (not in-memory handle):** it makes free-floating, cross-file overlay, persistence,
-> and the VendorA-style on-disk dataset all fall out of one mechanism. A future optimization may plot the
-> in-memory `RunResult.DataSet` directly to avoid the write→read latency, but the file address stays the
+> and the VendorA-style on-disk dataset all fall out of one mechanism. The file address stays the
 > canonical, persistable identity of a trace's data.
+
+**In-memory results under a file's path (built, brief-tuneopt-3).** A live tuning session or an optimizer
+plots its results with no write→read round trip: it **publishes** a `DataSet` under the schematic's own
+results path (`DataSourceLibraryViewModel.Publish`), and every trace bound to that path re-resolves
+against it with no change to the trace — the path is still the identity, only the bytes come from
+memory. A publication is a newer version of the source until the session drops it (the display returns
+to the file as it was) or the file changes on disk (the file wins). On Stop the last displayed result is
+written to the file with a `__TunedValues` cube listing the tuned values. Only a source the display
+already holds, from a `.npy` that exists, can be published over.
+- **Frames coalesce:** a publication arriving while the display is still drawing the previous one
+  replaces whatever was waiting, so the display redraws once more, for the newest; the library counts
+  redraws and skipped frames.
+- **Chip:** while a source shows published data the toolbar carries a small **Tuning** (or
+  **Optimizing**) chip.
+- **Snapshot ghosts:** a snapshot freezes what a source shows; every trace bound to it draws a faded
+  copy of itself (same colour, reduced opacity, no markers) under the live curve — `Plot.GhostTraces`,
+  which nothing that saves, autoscales, lists the legend or hit-tests reads. The GUI's copy and export
+  draw them, because they draw the live plot; `circuitrf render` never does, because it builds its plots
+  from the `.cdd`. A Table draws no ghosts.
 
 ### 2.3 Trace = source + cube + slice + transform
 A trace references: data source (path), cube name, a **slice spec** (per named axis: pin-to-index /

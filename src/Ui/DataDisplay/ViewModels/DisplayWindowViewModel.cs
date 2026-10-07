@@ -147,6 +147,9 @@ public partial class DisplayWindowViewModel : ViewModelBase
             ? $"{Path.GetFileNameWithoutExtension(DataSourceLibrary.SelectedDataSourceRef)} \u2014 not yet run"
             : null;
 
+    /// <summary>"Tuning" or "Optimizing" while this display shows published data (R-to3-8); null otherwise.</summary>
+    public string? LiveChip => DataSourceLibrary.PublishedChip;
+
     /// <summary>Pass-through: enumerate results + workspace Touchstone without loading any file.</summary>
     public void RefreshAvailableDataSources()
     {
@@ -338,6 +341,14 @@ public partial class DisplayWindowViewModel : ViewModelBase
 
         // Tab-level undo state changes must also refresh the Undo/Redo commands.
         TabUndoRedo.StateChanged += OnUndoRedoStateChanged;
+
+        // R-to3-8: the Tuning / Optimizing chip follows the library's publications. In the application
+        // a published frame ends behind the render pass, so a burst of results coalesces to the newest
+        // (R-to3-6); headless (no Application) a frame ends at once.
+        DataSourceLibrary.PublicationChanged += (_, _) => OnPropertyChanged(nameof(LiveChip));
+        if (Application.Current is not null)
+            DataSourceLibrary.FrameScheduler = endFrame =>
+                Avalonia.Threading.Dispatcher.UIThread.Post(endFrame, Avalonia.Threading.DispatcherPriority.Background);
 
         // Keep the combo selection in sync with the library selection.
         DataSourceLibrary.SelectedDataSourceChanged += (_, _) =>

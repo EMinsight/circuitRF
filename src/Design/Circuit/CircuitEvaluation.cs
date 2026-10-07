@@ -168,6 +168,7 @@ public static class CircuitEvaluation
         var lines     = new List<string>();
         var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var tops      = new List<Analysis>();
+        long sweepPoints = 0;
 
         if (request.Analyses is { } names)
         {
@@ -233,6 +234,7 @@ public static class CircuitEvaluation
 
             planned.Add(new PlannedAnalysis(top, null, resultName, units, selfTicks));
             lines.Add(desc);
+            if (top is ParametricSweepAnalysis) sweepPoints += units;
         }
 
         foreach (var raw in tb.RawDirectives)
@@ -273,6 +275,7 @@ public static class CircuitEvaluation
                            lines, total, notes)
         {
             Lib = lib, Tb = tb, Nl = nl, BaseDirectory = circuit.BaseDirectory, Analyses = planned,
+            SweepPoints = sweepPoints,
         };
     }
 
