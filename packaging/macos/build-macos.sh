@@ -93,6 +93,19 @@ OCCT_VERSION=$(sed -n 's/^OCCT_VERSION=//p' "$KERNEL_RECIPE")
 KERNEL_RIDS=$(sed -n 's/^KERNEL_RIDS=//p' "$KERNEL_RECIPE")
 NO_KERNEL=""
 
+# ── The gdstk worker (brief-oasis-gdstk.md §4e) ───────────────────────────────
+#
+# gdstk, qhull and zlib in ONE statically linked program, Contents/MacOS/gdstk-kernel/gdstk-worker: the
+# OASIS import and export and the second GDSII route. The geometry kernel's rule exactly: `dotnet build`
+# only copies it out of the per-user cache, so this script BUILDS it per RID with --strict (well under a
+# minute, once) and fails at the end when a RID in tools/gdstk-worker/recipe.env's KERNEL_RIDS came out
+# without it. Set CRF_ALLOW_NO_GDSTK=1 to package without it on purpose (nothing is fetched or built
+# then). Only circuitRF ships it; harmonicaRF and wBond drop the folder in their own bundle scripts.
+GDSTK_RECIPE="${ROOT}/tools/gdstk-worker/recipe.env"
+GDSTK_VERSION=$(sed -n 's/^GDSTK_VERSION=//p' "$GDSTK_RECIPE")
+GDSTK_RIDS=$(sed -n 's/^KERNEL_RIDS=//p' "$GDSTK_RECIPE")
+NO_GDSTK=""
+
 # THE VM IMAGE IS BUILT HERE EVEN THOUGH A PLAIN BUILD LEAVES IT ALONE. Compiled device models are
 # Linux libraries — nothing on macOS can load one — so circuitRF runs the worker inside the small
 # Linux VM it ships, and the kernel and initramfs are part of that. Building them from scratch pulls
@@ -343,6 +356,16 @@ for ARCH in $ARCHES; do
             || echo "⚠️  The geometry kernel did not build for ${RID} (see above); this is reported again at the end."
     fi
 
+    SHIPS_GDSTK=0
+    if [ "$APP" = circuitrf ]; then
+        case " $GDSTK_RIDS " in *" $RID "*) SHIPS_GDSTK=1 ;; esac
+    fi
+    if [ "$SHIPS_GDSTK" = 1 ] && [ "${CRF_ALLOW_NO_GDSTK:-}" != 1 ]; then
+        echo "🧊 Building the gdstk worker (${RID})..."
+        "${ROOT}/tools/gdstk-worker/build.sh" --strict --rid "$RID" \
+            || echo "⚠️  The gdstk worker did not build for ${RID} (see above); this is reported again at the end."
+    fi
+
     echo "📦 Building ${NAME}.app (${RID})..."
     ( cd "${ROOT}/src/Ui" && bash "./${BUNDLE_SCRIPT}" )
 
@@ -393,6 +416,12 @@ for ARCH in $ARCHES; do
         NO_KERNEL="${NO_KERNEL} ${ARCH}"
     fi
 
+    # ── The gdstk worker is in the bundle ─────────────────────────────────────
+    GDSTK_WORKER="${APP_BUNDLE}/Contents/MacOS/gdstk-kernel/gdstk-worker"
+    if [ "$SHIPS_GDSTK" = 1 ] && [ ! -f "$GDSTK_WORKER" ]; then
+        NO_GDSTK="${NO_GDSTK} ${ARCH}"
+    fi
+
     # ── Architecture, measured rather than assumed ────────────────────────────
     #
     # Mirrors what build-linux.sh does with the worker's ELF header, and for the same reason: a binary
@@ -408,7 +437,8 @@ for ARCH in $ARCHES; do
     KERNEL_FILES=""
     [ -d "${APP_BUNDLE}/Contents/MacOS/geometry-kernel" ] \
         && KERNEL_FILES=$(cd "${APP_BUNDLE}/Contents/MacOS" && ls geometry-kernel/geometry-worker geometry-kernel/*.dylib 2>/dev/null)
-    for f in "${NAME}" crf-vmhost osdi-worker $KERNEL_FILES; do
+    # The gdstk worker is per architecture too (one cache build per RID).
+    for f in "${NAME}" crf-vmhost osdi-worker $KERNEL_FILES gdstk-kernel/gdstk-worker; do
         path="${APP_BUNDLE}/Contents/MacOS/${f}"
         [ -f "$path" ] || continue
         archs=$(lipo -archs "$path" 2>/dev/null || echo "?")
@@ -480,7 +510,14 @@ KPY
             else
                 KERNEL_SMOKE=(--no-kernel "not shipped on ${RID}")
             fi
-            dotnet "$SMOKE_DLL" "${APP_BUNDLE}/Contents/MacOS/${NAME}" "$VERSION" "${KERNEL_SMOKE[@]}" || {
+            if [ -f "$GDSTK_WORKER" ]; then
+                GDSTK_SMOKE=(--gdstk "$GDSTK_VERSION")
+            elif [ "$SHIPS_GDSTK" = 1 ]; then
+                GDSTK_SMOKE=(--no-gdstk "built without it; reported at the end")
+            else
+                GDSTK_SMOKE=(--no-gdstk "not shipped on ${RID}")
+            fi
+            dotnet "$SMOKE_DLL" "${APP_BUNDLE}/Contents/MacOS/${NAME}" "$VERSION" "${KERNEL_SMOKE[@]}" "${GDSTK_SMOKE[@]}" || {
                 echo "❌ The command line in ${NAME}.app (${ARCH}) does not answer (see above)."
                 echo "   This bundle must not be imaged."
                 exit 1
@@ -648,6 +685,20 @@ if [ -n "$NO_KERNEL" ]; then
     echo ""
 fi
 
+if [ -n "$NO_GDSTK" ]; then
+    echo "⚠️  NO GDSTK WORKER in:${NO_GDSTK}. Those packages have no OASIS import or export and no"
+    echo "   GDSII (gdstk) route; \`convert\` refuses the oasis format there."
+    if [ "${CRF_ALLOW_NO_GDSTK:-}" = 1 ]; then
+        echo "   CRF_ALLOW_NO_GDSTK=1 says that is intended."
+    else
+        echo "   Build it and run this again -- tools/gdstk-worker/build.sh --rid osx-<arch> (needs cmake and"
+        echo "   Xcode's command line tools; well under a minute per architecture) -- or set"
+        echo "   CRF_ALLOW_NO_GDSTK=1 to ship without it knowingly."
+        NO_GDSTK_FAIL=1
+    fi
+    echo ""
+fi
+
 if [ "$NOTARISED" = 1 ]; then
     echo "   Signed and notarised. These open with no prompt, on any Mac, offline."
 elif [ "$SIGN_IDENTITY" != "-" ]; then
@@ -689,4 +740,5 @@ crf_report_release_key "${ROOT}/src/Ui/Updates/ReleaseKeys.cs"
 
 [ "${UNSMOKED_FAIL:-0}" = 1 ] && exit 1
 [ "${NO_KERNEL_FAIL:-0}" = 1 ] && exit 1
+[ "${NO_GDSTK_FAIL:-0}" = 1 ] && exit 1
 exit 0

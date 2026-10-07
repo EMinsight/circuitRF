@@ -197,6 +197,38 @@ Windows; `CRF_OCCT_CACHE` moves it; no space in the path).
 
 `tools/geometry-worker/README.md` has the protocol, the recipe and the licence position.
 
+<a id="gdstk-worker"></a>
+
+### The gdstk worker — OASIS, and a second GDSII route
+
+OASIS import and export, and the **GDSII (gdstk)** import and export beside circuitRF's own GDSII, run in
+`tools/gdstk-worker`: one small C++ program with **gdstk**, **Qhull** and **zlib** linked into it
+statically (all permissively licensed — see `THIRD-PARTY-NOTICES.md`). It ships in every installer as one
+file, `gdstk-kernel/gdstk-worker[.exe]`, beside the application. **No source of theirs is in this
+repository**: `tools/gdstk-worker/recipe.env` names each archive and its SHA-256, and `build.sh` fetches,
+checks and builds them into a per-user cache:
+
+```bash
+tools/gdstk-worker/build.sh                      # macOS / Linux, this machine's architecture
+tools/gdstk-worker/build.sh --rid osx-x64        # macOS builds either architecture
+```
+```powershell
+tools\gdstk-worker\build.cmd                     # Windows (--rid win-arm64 / win-x86 for the others)
+```
+
+It needs what the geometry kernel needs (CMake and a C++ compiler; on Windows llvm-mingw, CMake and
+Ninja) and takes **well under a minute** per architecture. The cache is `~/.circuitRF-build/gdstk/<version>/<rid>/`
+(`%LOCALAPPDATA%\circuitRF-build\gdstk\...` on Windows; `CRF_GDSTK_CACHE` moves it; no space in the path).
+
+- **`dotnet build` never fetches anything for it.** It compiles the worker against the cache (seconds) and
+  copies it into `bin/`; with an empty cache it prints one warning and succeeds, and circuitRF runs with the
+  (gdstk) commands disabled. Skip it with `-p:CrfSkipGdstkWorker=true`.
+- **The packaging scripts build it** for every architecture they ship, with `--strict`, and **fail at the
+  end** when an architecture listed in its `recipe.env`'s `KERNEL_RIDS` came out without it. Set
+  `CRF_ALLOW_NO_GDSTK=1` to package without it knowingly.
+
+`tools/gdstk-worker/README.md` has the protocol and the recipe.
+
 ## The command line is run out of every build
 
 The installed `circuitRF` executable is also the command line (`circuitrf check .`,

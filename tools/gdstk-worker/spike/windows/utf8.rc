@@ -1,0 +1,2 @@
+// The manifest as resource 1 of type RT_MANIFEST (24): what the loader reads for an .exe.
+1 24 "utf8.manifest"

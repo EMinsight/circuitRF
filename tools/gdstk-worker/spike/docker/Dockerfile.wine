@@ -1,0 +1,9 @@
+# Wine for the spike's first pass over the Windows builds (brief-oasis-gdstk.md §3 Q1, "Running the Windows
+# builds before real Windows"): Debian 12's Wine with BOTH wine64 and wine32, so win-x64 and win-x86 run.
+# An amd64 image, run under Docker Desktop's emulation on an arm64 Mac. Wine cannot run ARM64 Windows
+# programs; win-arm64 is build-only here.
+FROM --platform=linux/amd64 debian:12
+RUN dpkg --add-architecture i386 && apt-get update && apt-get install -y --no-install-recommends \
+      wine wine64 wine32 python3 ca-certificates && rm -rf /var/lib/apt/lists/*
+ENV WINEDEBUG=-all
+RUN wineboot --init >/dev/null 2>&1 || true

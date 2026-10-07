@@ -105,6 +105,9 @@ OCCT-*.tar.gz
 occt-*.tar.gz
 OCCT-[0-9]*/
 tools/geometry-worker/build/
+# The gdstk worker (brief-oasis-gdstk.md): ensure-built.sh compiles and stages here; gdstk, qhull and zlib
+# themselves live only in the per-user cache (tools/gdstk-worker/recipe.env), never in the repository.
+tools/gdstk-worker/build/
 tools/geometry-worker/occt/build/
 tools/geometry-worker/occt/install/
 libTK*.dylib

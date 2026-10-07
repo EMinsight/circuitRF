@@ -1,0 +1,5 @@
+runs/
+__pycache__/
+GdsiiDump/obj/
+GdsiiDump/bin/
+gdstk-worker-selftest*.oas

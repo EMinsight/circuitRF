@@ -72,6 +72,23 @@
                 </TextBlock>
 
                 <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">gdstk</Run>
+                    <Run> — Reads and writes OASIS and GDSII for the (gdstk) import and export commands. © Lucas Heitzmann Gabrielli. Boost Software License. It carries Clipper 6.4.2 (© Angus Johnson, Boost Software License).</Run>
+                    <LineBreak/>
+                    <Run Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="11">Linked statically, with Qhull and zlib, into the one program in the gdstk-kernel folder beside the application.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">Qhull</Run>
+                    <Run> — Convex hulls, used by gdstk. © C.B. Barber and The Geometry Center, University of Minnesota. Qhull licence; its original source code may be obtained from www.qhull.org.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
+                    <Run FontWeight="SemiBold">zlib</Run>
+                    <Run> — Compression, used by gdstk for OASIS. © Jean-loup Gailly and Mark Adler. zlib licence.</Run>
+                </TextBlock>
+
+                <TextBlock TextWrapping="Wrap" FontSize="12" LineHeight="18">
                     <Run FontWeight="SemiBold">PureHDF</Run>
                     <Run> — HDF5 library for .NET. MIT License.</Run>
                 </TextBlock>

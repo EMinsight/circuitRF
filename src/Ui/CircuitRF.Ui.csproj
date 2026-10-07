@@ -541,6 +541,32 @@
   </Target>
 
   <!--
+    EVERY platform: the gdstk worker (tools/gdstk-worker, brief-oasis-gdstk.md G1) - gdstk, qhull and zlib
+    statically linked into ONE executable, which reads and writes OASIS and GDSII out of process:
+    $(OutDir)gdstk-kernel/gdstk-worker[.exe].
+
+    THE GEOMETRY KERNEL'S RULE, UNCHANGED (R-oas-1c): this step reads a cache and nothing else. When
+    ~/.circuitRF-build/gdstk/<version>/<rid>/ (Windows: %LOCALAPPDATA%\circuitRF-build\...) holds the built
+    dependencies, the worker is compiled against them if its source is newer (seconds) and copied here;
+    when it does not, ONE warning says so and the build succeeds. circuitRF builds, tests and runs with no
+    gdstk anywhere (D6) - the (gdstk) commands and `convert`'s oasis format are then disabled. Only
+    tools/gdstk-worker/build.sh (build.cmd) fetches anything, run deliberately. Never fails the build
+    unless told to be strict, which only the packaging scripts do. Skip with -p:CrfSkipGdstkWorker=true.
+  -->
+  <Target Name="EnsureGdstkWorker"
+          AfterTargets="Build"
+          Condition="'$(CrfSkipGdstkWorker)' != 'true'">
+    <Exec Condition="!$([MSBuild]::IsOSPlatform('Windows'))"
+          Command="&quot;$(MSBuildProjectDirectory)/../../tools/gdstk-worker/ensure-built.sh&quot; --dest &quot;$(MSBuildProjectDirectory)/$(OutDir.TrimEnd('/'))&quot; $(_CrfKernelRidFlag)"
+          ContinueOnError="WarnAndContinue"
+          StandardOutputImportance="high" />
+    <Exec Condition="$([MSBuild]::IsOSPlatform('Windows'))"
+          Command="&quot;$(MSBuildProjectDirectory)\..\..\tools\gdstk-worker\ensure-built.cmd&quot; --dest &quot;$(MSBuildProjectDirectory)\$(OutDir.TrimEnd('\'))&quot; $(_CrfKernelRidFlag)"
+          ContinueOnError="WarnAndContinue"
+          StandardOutputImportance="high" />
+  </Target>
+
+  <!--
     ...and into the PUBLISHED tree, which is a separate question from landing beside the assemblies.
 
     A file an Exec drops into $(OutDir) is not an MSBuild item, and `dotnet publish` copies ITEMS,
@@ -591,6 +617,13 @@
       <_CrfGeometryKernel Include="$(OutDir)geometry-kernel/**/*" />
       <ResolvedFileToPublish Include="@(_CrfGeometryKernel)">
         <RelativePath>geometry-kernel/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+
+      <!-- The gdstk worker: its folder, whatever it holds (one statically linked executable today). -->
+      <_CrfGdstkKernel Include="$(OutDir)gdstk-kernel/**/*" />
+      <ResolvedFileToPublish Include="@(_CrfGdstkKernel)">
+        <RelativePath>gdstk-kernel/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
       </ResolvedFileToPublish>
     </ItemGroup>

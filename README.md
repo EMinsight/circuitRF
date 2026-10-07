@@ -463,6 +463,7 @@ rule on learning from GPL simulators without copying them.
 - **[NumFlat](https://github.com/sinshu/numflat)** (dense linear algebra — MIT)
 - **[FftFlat](https://github.com/sinshu/FftFlat)** (FFT — MIT)
 - **[Clipper2](https://github.com/AngusJohnson/Clipper2)** (integer-coordinate polygon clipping and offsetting, used by the layout editor — Boost Software License)
+- **[gdstk](https://github.com/heitzmann/gdstk)** (OASIS and GDSII reading and writing for the (gdstk) import and export commands, run by `tools/gdstk-worker` — Boost Software License), with its bundled Clipper 6.4.2 (Boost Software License), **[Qhull](http://www.qhull.org)** (Qhull licence) and **[zlib](https://zlib.net)** (zlib licence), all linked statically into the one worker program
 - **[CommunityToolkit.MVVM](https://github.com/CommunityToolkit/dotnet)** (MIT)
 - **[Dock.Avalonia](https://github.com/wieslawsoltes/Dock)** (docking — MIT)
 - **[Material.Icons.Avalonia](https://github.com/SKProCH/Material.Icons)** (icon set — MIT)

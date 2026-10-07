@@ -140,6 +140,11 @@ if [ -d "${MAC_OS_DIR}/geometry-kernel" ]; then
     echo "   dropping geometry-kernel (circuitRF's; wBond does not load it)"
     rm -rf "${MAC_OS_DIR}/geometry-kernel"
 fi
+# The gdstk worker likewise (brief-oasis-gdstk.md §4d): OASIS and the (gdstk) GDSII route are circuitRF's.
+if [ -d "${MAC_OS_DIR}/gdstk-kernel" ]; then
+    echo "   dropping gdstk-kernel (circuitRF's; wBond does not load it)"
+    rm -rf "${MAC_OS_DIR}/gdstk-kernel"
+fi
 
 # -- Nothing under Contents/MacOS may have a DOT in a DIRECTORY name --------------------------
 #

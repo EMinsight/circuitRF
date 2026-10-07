@@ -205,6 +205,19 @@ $noKernel     = @()
 $kernelLeftOut = @()
 $kernelFail   = $false
 
+# == The gdstk worker (brief-oasis-gdstk.md 4e) ===================================
+#
+# gdstk, qhull and zlib in ONE statically linked program, <publish>\gdstk-kernel\gdstk-worker.exe: the
+# OASIS import and export and the second GDSII route. The geometry kernel's rule exactly: built per
+# architecture with --strict (well under a minute, once, with the same llvm-mingw, CMake and Ninja), and
+# the run fails at the end when an architecture in tools\gdstk-worker\recipe.env's KERNEL_RIDS came out
+# without it. Set CRF_ALLOW_NO_GDSTK=1 to package without it on purpose.
+$gdstkRecipeLines = Get-Content -LiteralPath (Join-Path $root 'tools\gdstk-worker\recipe.env')
+$gdstkVersion = (($gdstkRecipeLines | Where-Object { $_ -match '^GDSTK_VERSION=' }) -replace '^GDSTK_VERSION=', '')
+$gdstkRids    = (($gdstkRecipeLines | Where-Object { $_ -match '^KERNEL_RIDS=' }) -replace '^KERNEL_RIDS=', '') -split ' '
+$noGdstk      = @()
+$gdstkFail    = $false
+
 # == The kernel's toolchain, checked once, and offered for install ================
 #
 # tools\geometry-worker\find-toolchain.cmd is the one place that looks for llvm-mingw, CMake and Ninja
@@ -212,10 +225,13 @@ $kernelFail   = $false
 # missing and someone is at the keyboard, it offers to install exactly those with winget, instead of
 # letting every architecture fail the same way minutes later. Declined, or with nobody to ask, the run
 # carries on: build.cmd refuses per architecture, and the summary at the end says so.
-$kernelArches = @($arches | Where-Object { $kernelRids -contains "win-$_" })
-if ($kernelArches.Count -gt 0 -and $env:CRF_ALLOW_NO_KERNEL -ne '1') {
+# The gdstk worker builds with the same three tools, so one check covers both.
+$kernelArches = @($arches | Where-Object { $kernelRids -contains "win-$_" -and $env:CRF_ALLOW_NO_KERNEL -ne '1' })
+$gdstkArches  = @($arches | Where-Object { $gdstkRids -contains "win-$_" -and $env:CRF_ALLOW_NO_GDSTK -ne '1' })
+$toolArches   = @($kernelArches + $gdstkArches | Select-Object -Unique)
+if ($toolArches.Count -gt 0) {
     $findToolchain = Join-Path $root 'tools\geometry-worker\find-toolchain.cmd'
-    $toolRid = "win-$($kernelArches[0])"
+    $toolRid = "win-$($toolArches[0])"
     function Get-KernelToolGaps {
         $gaps = @{ missing = ''; winget = '' }
         foreach ($line in (& $findToolchain $toolRid --report)) {
@@ -228,7 +244,7 @@ if ($kernelArches.Count -gt 0 -and $env:CRF_ALLOW_NO_KERNEL -ne '1') {
     if ($gaps.missing) {
         $ids = @($gaps.winget -split ' ' | Where-Object { $_ })
         Write-Host ''
-        Write-Host "The geometry kernel needs tools this machine does not have: $($gaps.missing)."
+        Write-Host "The geometry kernel and the gdstk worker need tools this machine does not have: $($gaps.missing)."
         Write-Host '  It builds with llvm-mingw, CMake and Ninja - no Visual Studio.'
         $canAsk = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
         $haveWinget = [bool](Get-Command winget -ErrorAction SilentlyContinue)
@@ -407,6 +423,15 @@ foreach ($Arch in $arches) {
         }
     }
 
+    $shipsGdstk = $gdstkRids -contains $rid
+    if ($shipsGdstk -and $env:CRF_ALLOW_NO_GDSTK -ne '1') {
+        Write-Host "Building the gdstk worker ($rid) ..."
+        & (Join-Path $root 'tools\gdstk-worker\build.cmd') --strict --rid $rid
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "WARNING: the gdstk worker did not build for $rid (see above); reported again at the end."
+        }
+    }
+
     Write-Host "Publishing $rid ..."
     if (Test-Path $publish) { Remove-Item $publish -Recurse -Force }
     dotnet publish (Join-Path $root 'src\Ui\CircuitRF.Ui.csproj') `
@@ -573,6 +598,25 @@ To package deliberately without a working one: set CRF_ALLOW_NO_DEVICE_WORKER=1
                    elseif ($shipsKernel)       { @('--no-kernel', 'built without it; reported at the end') }
                    else                        { @('--no-kernel', "not shipped on $rid") }
 
+    # == The gdstk worker, read back the same way ====================================
+    $gdstkDir    = Join-Path $publish 'gdstk-kernel'
+    $gdstkWorker = Join-Path $gdstkDir 'gdstk-worker.exe'
+    if (Test-Path $gdstkWorker) {
+        $wantGdstk = switch ($Arch) { 'arm64' { 0xAA64 } 'x86' { 0x014C } default { 0x8664 } }
+        if ((Get-PeMachine $gdstkWorker) -ne $wantGdstk) {
+            Write-Host "WARNING: the gdstk worker in publish\$rid is not a $Arch binary; leaving it out."
+            Remove-Item $gdstkDir -Recurse -Force
+        }
+    }
+    if (-not $shipsGdstk -and (Test-Path $gdstkDir)) {
+        Write-Host "NOTE: $rid is not in tools\gdstk-worker\recipe.env's KERNEL_RIDS; leaving the gdstk worker out."
+        Remove-Item $gdstkDir -Recurse -Force
+    }
+    if ($shipsGdstk -and -not (Test-Path $gdstkWorker)) { $noGdstk += $Arch }
+    $gdstkSmoke = if (Test-Path $gdstkWorker) { @('--gdstk', $gdstkVersion) }
+                  elseif ($shipsGdstk)       { @('--no-gdstk', 'built without it; reported at the end') }
+                  else                       { @('--no-gdstk', "not shipped on $rid") }
+
     # == The command line, run out of THIS publish tree =============================
     #
     # THE GATE THAT WAS MISSING FOR 32 RELEASES (brief-automation-13-installed-cli.md). Every
@@ -621,7 +665,7 @@ To package deliberately without a working one: set CRF_ALLOW_NO_DEVICE_WORKER=1
             Write-Host "Smoke-testing the command line in publish\$rid directly (no stub for $Arch) ..."
         }
 
-        & dotnet $smokeDll $smokeTarget $CrfVersion @kernelSmoke
+        & dotnet $smokeDll $smokeTarget $CrfVersion @kernelSmoke @gdstkSmoke
         $smokeCode = $LASTEXITCODE
         Remove-Item $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
         if ($smokeCode -ne 0) {
@@ -791,6 +835,20 @@ if ($noKernel.Count -gt 0) {
     }
 }
 
+if ($noGdstk.Count -gt 0) {
+    Write-Host ''
+    Write-Host "NO GDSTK WORKER in: $($noGdstk -join ', '). Those packages have no OASIS import or export and no"
+    Write-Host '  GDSII (gdstk) route; convert refuses the oasis format there.'
+    if ($env:CRF_ALLOW_NO_GDSTK -eq '1') {
+        Write-Host '  CRF_ALLOW_NO_GDSTK=1 says that is intended.'
+    } else {
+        Write-Host '  Build it and run this again - tools\gdstk-worker\build.cmd --rid win-<arch> (needs llvm-mingw,'
+        Write-Host '  CMake and Ninja; well under a minute per architecture) - or'
+        Write-Host '  set CRF_ALLOW_NO_GDSTK=1 to ship without it knowingly.'
+        $gdstkFail = $true
+    }
+}
+
 if ($unsmoked.Count -gt 0) {
     Write-Host ''
     Write-Host "NOT SMOKE-TESTED: $($unsmoked -join ', ') - this $hostArch machine cannot execute them, so"
@@ -866,3 +924,4 @@ if ($pub.Length -gt 0) {
 
 # Reported with the rest above, and decided last, so nothing else the run has to say is lost.
 if ($kernelFail) { exit 1 }
+if ($gdstkFail) { exit 1 }

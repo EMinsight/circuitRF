@@ -202,7 +202,11 @@ None of these impose obligations beyond retaining their notices.
 | PureHDF | MIT | https://github.com/Apollo3zehn/PureHDF |
 | Svg.Skia | MIT | https://github.com/wieslawsoltes/Svg.Skia |
 | Clipper2 | Boost Software License 1.0 | https://github.com/AngusJohnson/Clipper2 |
-| libc++ and libunwind (`libc++.dll`, `libunwind.dll`) — the C++ runtime the Windows geometry worker and its OCCT libraries share, from llvm-mingw; licence text [`licenses/Apache-2.0-with-LLVM-exceptions.txt`](licenses/Apache-2.0-with-LLVM-exceptions.txt) | Apache-2.0 WITH LLVM-exception | https://github.com/mstorsjo/llvm-mingw |
+| gdstk 1.0.1 (in `gdstk-kernel/gdstk-worker`, linked statically; reads and writes GDSII and OASIS) — Copyright 2020 Lucas Heitzmann Gabrielli | Boost Software License 1.0 | https://github.com/heitzmann/gdstk |
+| Clipper 6.4.2 (inside gdstk, and used only by gdstk) — Copyright Angus Johnson 2010-2017 | Boost Software License 1.0 | https://sourceforge.net/projects/polyclipping/ |
+| Qhull 2020.2 (linked statically into the gdstk worker) — Copyright (c) 1993-2020 C.B. Barber and The Geometry Center, University of Minnesota; licence text [`licenses/Qhull.txt`](licenses/Qhull.txt). The original source code may be obtained from http://www.qhull.org | Qhull licence | http://www.qhull.org |
+| zlib 1.3.2 (linked statically into the gdstk worker) — Copyright (C) 1995-2026 Jean-loup Gailly and Mark Adler; licence text [`licenses/Zlib.txt`](licenses/Zlib.txt) | zlib licence | https://zlib.net |
+| libc++ and libunwind (`libc++.dll`, `libunwind.dll`) — the C++ runtime the Windows geometry worker and its OCCT libraries share, and that the gdstk worker links statically, from llvm-mingw; licence text [`licenses/Apache-2.0-with-LLVM-exceptions.txt`](licenses/Apache-2.0-with-LLVM-exceptions.txt) | Apache-2.0 WITH LLVM-exception | https://github.com/mstorsjo/llvm-mingw |
 | Markdig | BSD-2-Clause | https://github.com/xoofx/markdig |
 | Svg (svg-net) | Microsoft Public License (MS-PL) | https://github.com/svg-net/SVG |
 | xunit, Microsoft.NET.Test.Sdk, coverlet.collector | MIT / Apache-2.0 | *(test-time only; not shipped)* |

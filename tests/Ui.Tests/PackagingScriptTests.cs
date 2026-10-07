@@ -82,6 +82,7 @@ public class PackagingScriptTests
     [InlineData("senior-worker",   "ensure-built.sh", "ensure-built.cmd")]
     [InlineData("osdi-worker",     "build.sh",        "build.cmd")]
     [InlineData("geometry-worker", "ensure-built.sh", "ensure-built.cmd")]
+    [InlineData("gdstk-worker",    "ensure-built.sh", "ensure-built.cmd")]
     public void EveryHelper_IsBuiltOnWindowsToo(string tool, string posixScript, string windowsScript)
     {
         Assert.True(File.Exists(RepoFile("tools", tool, posixScript)),   $"{tool}/{posixScript} is missing.");
@@ -1553,5 +1554,133 @@ public class PackagingScriptTests
         Assert.Matches(@"<None Include=""[^""]*\.\./\.\./THIRD-PARTY-NOTICES\.md[^""]*"">\s*<Link>%\(Filename\)%\(Extension\)</Link>\s*<CopyToOutputDirectory>", project);
         Assert.Matches(@"<None Include=""\.\./\.\./licenses/\*\.txt"">\s*<Link>licenses/%\(Filename\)%\(Extension\)</Link>\s*<CopyToOutputDirectory>", project);
         Assert.True(File.Exists(RepoFile("licenses", "OCCT-exception-1.0.txt")));
+    }
+    // ── The gdstk worker (brief-oasis-gdstk.md G1) ───────────────────────────────────────────────
+
+    /// <summary>
+    /// <b>The gdstk worker is published as one folder, and the folder is what the build scripts stage
+    /// into</b> (R-oas-1d) — read from both scripts and compared with the <c>.csproj</c> and the smoke
+    /// test, which looks for the worker by the same path.
+    /// </summary>
+    [Fact]
+    public void TheGdstkWorkerFolder_IsWhatTheScriptsStage_AndIsPublishedWhole()
+    {
+        string sh  = File.ReadAllText(RepoFile("tools", "gdstk-worker", "ensure-built.sh"));
+        string cmd = File.ReadAllText(RepoFile("tools", "gdstk-worker", "ensure-built.cmd"));
+        string project = File.ReadAllText(RepoFile("src", "Ui", "CircuitRF.Ui.csproj"));
+
+        string shFolder  = Regex.Match(sh,  @"stage=""\$work/([A-Za-z0-9._-]+)""").Groups[1].Value;
+        string cmdFolder = Regex.Match(cmd, @"set ""stage=%work%\\([A-Za-z0-9._-]+)""").Groups[1].Value;
+        Assert.Equal("gdstk-kernel", shFolder);
+        Assert.Equal(shFolder, cmdFolder);
+        Assert.DoesNotContain('.', shFolder);   // codesign reads a dotted directory under Contents/MacOS as a bundle
+
+        Assert.Contains($"<_CrfGdstkKernel Include=\"$(OutDir){shFolder}/**/*\" />", project, StringComparison.Ordinal);
+        Assert.Contains($"<RelativePath>{shFolder}/%(RecursiveDir)%(Filename)%(Extension)</RelativePath>", project, StringComparison.Ordinal);
+        Assert.Contains($"\"{shFolder}\"", File.ReadAllText(RepoFile("tools", "CliSmoke", "Program.cs")), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b><c>dotnet build</c> reads the gdstk cache and nothing else</b> (R-oas-1c): only
+    /// <c>build.sh</c>/<c>build.cmd</c>, run deliberately, may fetch gdstk, qhull or zlib.
+    /// </summary>
+    [Fact]
+    public void TheBuildsGdstkStep_NeverDownloads()
+    {
+        string project = File.ReadAllText(RepoFile("src", "Ui", "CircuitRF.Ui.csproj"));
+        string target = Regex.Match(project, @"<Target Name=""EnsureGdstkWorker""[\s\S]*?</Target>").Value;
+        Assert.NotEmpty(target);
+        var urls = File.ReadAllLines(RepoFile("tools", "gdstk-worker", "recipe.env"))
+                       .Where(l => Regex.IsMatch(l, "^[A-Z]+_URL=")).Select(l => l[(l.IndexOf('=') + 1)..]).ToList();
+        Assert.Equal(3, urls.Count);   // gdstk, qhull, zlib
+
+        foreach (var (name, text) in new[]
+                 {
+                     ("ensure-built.sh",  File.ReadAllText(RepoFile("tools", "gdstk-worker", "ensure-built.sh"))),
+                     ("ensure-built.cmd", File.ReadAllText(RepoFile("tools", "gdstk-worker", "ensure-built.cmd"))),
+                     ("the EnsureGdstkWorker target", target),
+                 })
+        {
+            foreach (var tool in new[] { "curl", "wget", "Invoke-WebRequest", "Start-BitsTransfer", "_URL" }.Concat(urls))
+                Assert.False(text.Contains(tool, StringComparison.OrdinalIgnoreCase),
+                             $"{name} names '{tool}'. The build's gdstk step must read the cache and nothing else; "
+                             + "only tools/gdstk-worker/build.sh / build.cmd may fetch anything.");
+        }
+        Assert.Contains("CrfSkipGdstkWorker", target, StringComparison.Ordinal);
+        Assert.Contains("ContinueOnError=\"WarnAndContinue\"", target, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>One statically linked file</b> (D3): Linux links libstdc++ and libgcc statically, Windows links
+    /// llvm-mingw's libc++ statically, and both staging scripts refuse a worker that names a library the
+    /// system does not provide — so a toolchain that silently dropped a flag cannot ship a worker that
+    /// asks for a DLL nothing installs.
+    /// </summary>
+    [Fact]
+    public void TheGdstkWorker_IsOneStaticallyLinkedFile()
+    {
+        string cmake = Code(File.ReadAllText(RepoFile("tools", "gdstk-worker", "CMakeLists.txt")));
+        Assert.Matches(@"Linux""\)\s*target_link_options\(gdstk-worker PRIVATE -static-libstdc\+\+ -static-libgcc\)", cmake);
+        Assert.Matches(@"elseif\(WIN32\)\s*target_link_options\(gdstk-worker PRIVATE -static\)", cmake);
+
+        string sh  = Code(File.ReadAllText(RepoFile("tools", "gdstk-worker", "ensure-built.sh")));
+        string cmd = Code(File.ReadAllText(RepoFile("tools", "gdstk-worker", "ensure-built.cmd")));
+        Assert.Contains("otool -L", sh, StringComparison.Ordinal);
+        Assert.Contains("(NEEDED)", sh, StringComparison.Ordinal);
+        Assert.Contains("DLL Name", sh, StringComparison.Ordinal);
+        Assert.Contains("DLL Name:", cmd, StringComparison.Ordinal);
+        // Nothing is copied beside it: unlike the geometry kernel, there is no runtime DLL to stage.
+        Assert.DoesNotContain("libc++.dll", cmd, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>Each packaging script builds the gdstk worker, smoke-tests it, and fails without it</b>
+    /// (R-oas-1e), with <c>CRF_ALLOW_NO_GDSTK</c> its one escape and the shipping RIDs read from its recipe.
+    /// </summary>
+    [Theory]
+    [InlineData("packaging/macos/build-macos.sh",      "tools/gdstk-worker/build.sh",      "tools/gdstk-worker/recipe.env")]
+    [InlineData("packaging/linux/build-linux.sh",      "tools/gdstk-worker/build.sh",      "tools/gdstk-worker/recipe.env")]
+    [InlineData("packaging/windows/build-windows.ps1", "tools\\gdstk-worker\\build.cmd", "tools\\gdstk-worker\\recipe.env")]
+    public void EachPlatformScript_BuildsTheGdstkWorkerStrictly_AndFailsWithoutIt(string script, string builder, string recipe)
+    {
+        string text = Code(File.ReadAllText(RepoFile(script.Split('/'))));
+        Assert.Contains(builder, text, StringComparison.Ordinal);
+        Assert.Matches(Regex.Escape(builder) + @"[^\n]*--strict", text);
+        Assert.Contains(recipe, text, StringComparison.Ordinal);                  // KERNEL_RIDS read, not restated
+        Assert.Contains("CRF_ALLOW_NO_GDSTK", text, StringComparison.Ordinal);     // the one escape hatch
+        Assert.Contains("--gdstk", text, StringComparison.Ordinal);                // CliSmoke's fifth check
+        Assert.Matches(@"(?i)gdstkFail|NO_GDSTK_FAIL", text);
+    }
+
+    /// <summary>
+    /// <b>macOS signs the gdstk worker on its own before the re-seal</b> (R-oas-1d); harmonicaRF and wBond
+    /// do not load it, so they drop it.
+    /// </summary>
+    [Fact]
+    public void MacBundles_SignTheGdstkWorker_OrDropIt()
+    {
+        string circuit = Code(File.ReadAllText(RepoFile("src", "Ui", "bundleForMacOS.sh"))).Replace("\\\n", " ");
+        int worker = circuit.IndexOf("gdstk-kernel/gdstk-worker", StringComparison.Ordinal);
+        int reseal = circuit.IndexOf("if [ \"$RESEAL\" = 1 ]", StringComparison.Ordinal);
+        Assert.True(worker >= 0 && reseal > worker, "bundleForMacOS.sh must sign the gdstk worker before the re-seal");
+        Assert.Matches(@"codesign[^\n]*""\$GDSTK_WORKER""", circuit[worker..reseal]);
+
+        foreach (var other in new[] { "bundleForHarmonicaMacOS.sh", "bundleForWBondMacOS.sh" })
+            Assert.Contains("rm -rf \"${MAC_OS_DIR}/gdstk-kernel\"", File.ReadAllText(RepoFile("src", "Ui", other)), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <b>The gdstk worker's licence texts ship</b> (R-oas-1f): qhull's <c>COPYING.txt</c> must travel with
+    /// any copy (its condition 2), and zlib's notice may not be removed; both are copied by the existing
+    /// <c>licenses/*.txt</c> step, and the notices name every component linked into the worker.
+    /// </summary>
+    [Fact]
+    public void TheGdstkWorkersLicenceTexts_AreShipped()
+    {
+        Assert.Contains("A copy of this text file must be distributed", File.ReadAllText(RepoFile("licenses", "Qhull.txt")), StringComparison.Ordinal);
+        Assert.Contains("Jean-loup Gailly", File.ReadAllText(RepoFile("licenses", "Zlib.txt")), StringComparison.Ordinal);
+        string notices = File.ReadAllText(RepoFile("THIRD-PARTY-NOTICES.md"));
+        foreach (var name in new[] { "gdstk 1.0.1", "Clipper 6.4.2", "Qhull 2020.2", "zlib 1.3.2", "licenses/Qhull.txt", "licenses/Zlib.txt" })
+            Assert.Contains(name, notices, StringComparison.Ordinal);
     }
 }

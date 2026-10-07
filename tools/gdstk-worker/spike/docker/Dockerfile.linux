@@ -1,0 +1,9 @@
+# The spike's Linux build host (brief-oasis-gdstk.md §3 Q1): Debian 12, its g++, the cross g++ for the
+# other architecture, and CMake >= 3.26 (Debian 12's is 3.25; gdstk asks for 3.26) from Kitware's
+# release tarball. Built for the host architecture; linux-x64 is cross-compiled from linux-arm64.
+FROM debian:12
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential crossbuild-essential-amd64 \
+      ca-certificates curl python3 file binutils binutils-x86-64-linux-gnu && rm -rf /var/lib/apt/lists/*
+ARG CMAKE_VERSION=3.31.8
+RUN curl -fsSL https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-aarch64.tar.gz \
+      | tar -xz -C /opt && ln -s /opt/cmake-${CMAKE_VERSION}-linux-aarch64/bin/* /usr/local/bin/

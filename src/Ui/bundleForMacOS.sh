@@ -239,6 +239,20 @@ if [ -d "$KERNEL_DIR" ]; then
     RESEAL=1
 fi
 
+# ── The gdstk worker, the same way (brief-oasis-gdstk.md §4d) ─────────────────────────────────────
+#
+# Contents/MacOS/gdstk-kernel/gdstk-worker: one statically linked executable (gdstk, qhull, zlib), so
+# there are no libraries to sign before it. Signed on its own with the bundle's identity for the reason
+# the geometry kernel is: `--deep` gave it circuitRF's entitlements, which it does not need. The folder
+# name has no dot in it (a dotted directory under Contents/MacOS reads to codesign as a nested bundle).
+GDSTK_WORKER="${MAC_OS_DIR}/gdstk-kernel/gdstk-worker"
+if [ -f "$GDSTK_WORKER" ]; then
+    echo "🔐 Signing the gdstk worker individually..."
+    codesign --force --sign "$SIGN_IDENTITY" $RUNTIME_FLAG $TIMESTAMP_FLAG "$GDSTK_WORKER" || {
+        echo "❌ Could not sign gdstk-worker."; exit 1; }
+    RESEAL=1
+fi
+
 if [ "$RESEAL" = 1 ]; then
     codesign --force --sign "$SIGN_IDENTITY" --entitlements "$ENTITLEMENTS" \
              $RUNTIME_FLAG $TIMESTAMP_FLAG "$BUNDLE_DIR" || {

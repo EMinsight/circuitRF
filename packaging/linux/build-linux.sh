@@ -109,6 +109,18 @@ OCCT_VERSION=$(sed -n 's/^OCCT_VERSION=//p' "$KERNEL_RECIPE")
 KERNEL_RIDS=$(sed -n 's/^KERNEL_RIDS=//p' "$KERNEL_RECIPE")
 NO_KERNEL=""
 
+# -- The gdstk worker (brief-oasis-gdstk.md 4e) --------------------------------
+#
+# gdstk, qhull and zlib in ONE statically linked program, <publish>/gdstk-kernel/gdstk-worker: the OASIS
+# import and export and the second GDSII route. The geometry kernel's rule exactly: built per RID with
+# --strict (well under a minute, once), and the run fails at the end when a RID in
+# tools/gdstk-worker/recipe.env's KERNEL_RIDS came out without it. The same toolchain builds it, so the
+# package check below covers both. Set CRF_ALLOW_NO_GDSTK=1 to package without it on purpose.
+GDSTK_RECIPE="${ROOT}/tools/gdstk-worker/recipe.env"
+GDSTK_VERSION=$(sed -n 's/^GDSTK_VERSION=//p' "$GDSTK_RECIPE")
+GDSTK_RIDS=$(sed -n 's/^KERNEL_RIDS=//p' "$GDSTK_RECIPE")
+NO_GDSTK=""
+
 case "$(uname -m)" in
     x86_64)        HOST_ARCH=x64   ;;
     aarch64|arm64) HOST_ARCH=arm64 ;;
@@ -124,9 +136,16 @@ esac
 # build.sh refuses, and the summary at the end says so.
 KERNEL_PKGS=""
 need_pkg() { case " $KERNEL_PKGS " in *" $1 "*) ;; *) KERNEL_PKGS="${KERNEL_PKGS:+$KERNEL_PKGS }$1" ;; esac; }
-if [ "${CRF_ALLOW_NO_KERNEL:-}" != 1 ]; then
+if [ "${CRF_ALLOW_NO_KERNEL:-}" != 1 ] || [ "${CRF_ALLOW_NO_GDSTK:-}" != 1 ]; then
     for ARCH in $ARCHES; do
-        case " $KERNEL_RIDS " in *" linux-${ARCH} "*) ;; *) continue ;; esac
+        WANTED=0
+        if [ "${CRF_ALLOW_NO_KERNEL:-}" != 1 ]; then
+            case " $KERNEL_RIDS " in *" linux-${ARCH} "*) WANTED=1 ;; esac
+        fi
+        if [ "${CRF_ALLOW_NO_GDSTK:-}" != 1 ]; then
+            case " $GDSTK_RIDS " in *" linux-${ARCH} "*) WANTED=1 ;; esac
+        fi
+        [ "$WANTED" = 1 ] || continue
         command -v cmake >/dev/null 2>&1 || need_pkg cmake
         { command -v make >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1; } || need_pkg build-essential
         command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || need_pkg curl
@@ -140,7 +159,7 @@ if [ "${CRF_ALLOW_NO_KERNEL:-}" != 1 ]; then
 fi
 if [ -n "$KERNEL_PKGS" ]; then
     echo ""
-    echo "The geometry kernel needs packages this machine does not have: ${KERNEL_PKGS}"
+    echo "The geometry kernel and the gdstk worker need packages this machine does not have: ${KERNEL_PKGS}"
     ANSWER=n
     if [ -t 0 ] && command -v apt-get >/dev/null 2>&1; then
         read -r -p "  Install them now with apt-get (sudo)? [Y/n] " ANSWER || ANSWER=n
@@ -178,6 +197,14 @@ for ARCH in $ARCHES; do
         echo "Building the geometry kernel (${RID})..."
         "${ROOT}/tools/geometry-worker/build.sh" --strict --rid "$RID" \
             || echo "WARNING: the geometry kernel did not build for ${RID} (see above); reported again at the end."
+    fi
+
+    SHIPS_GDSTK=0
+    case " $GDSTK_RIDS " in *" $RID "*) SHIPS_GDSTK=1 ;; esac
+    if [ "$SHIPS_GDSTK" = 1 ] && [ "${CRF_ALLOW_NO_GDSTK:-}" != 1 ]; then
+        echo "Building the gdstk worker (${RID})..."
+        "${ROOT}/tools/gdstk-worker/build.sh" --strict --rid "$RID" \
+            || echo "WARNING: the gdstk worker did not build for ${RID} (see above); reported again at the end."
     fi
 
     PUBLISH="${ROOT}/publish/${RID}"
@@ -319,6 +346,35 @@ for ARCH in $ARCHES; do
         KERNEL_SMOKE=(--no-kernel "not shipped on ${RID}")
     fi
 
+    # -- The gdstk worker ----------------------------------------------------
+    #
+    # The same reading-back: an ELF of the package's architecture, dropped when this RID does not ship it.
+    GDSTK_DIR="${PUBLISH}/gdstk-kernel"
+    GDSTK_WORKER="${GDSTK_DIR}/gdstk-worker"
+    if [ -f "$GDSTK_WORKER" ]; then
+        elf="$(od -An -tx1 -N4        "$GDSTK_WORKER" | tr -d ' ')"
+        machine="$(od -An -tx1 -j18 -N2 "$GDSTK_WORKER" | tr -d ' ')"
+        case "${elf}:${RID}:${machine}" in
+            7f454c46:linux-x64:3e00|7f454c46:linux-arm64:b700) ;;
+            *) echo "WARNING: the gdstk worker in the publish tree is not a ${RID} binary; leaving it out."
+               rm -rf "$GDSTK_DIR" ;;
+        esac
+    fi
+    if [ "$SHIPS_GDSTK" = 0 ] && [ -d "$GDSTK_DIR" ]; then
+        echo "NOTE: ${RID} is not in tools/gdstk-worker/recipe.env's KERNEL_RIDS; leaving the gdstk worker out."
+        rm -rf "$GDSTK_DIR"
+    fi
+    if [ "$SHIPS_GDSTK" = 1 ] && [ ! -f "$GDSTK_WORKER" ]; then
+        NO_GDSTK="${NO_GDSTK} ${ARCH}"
+    fi
+    if [ -f "$GDSTK_WORKER" ]; then
+        GDSTK_SMOKE=(--gdstk "$GDSTK_VERSION")
+    elif [ "$SHIPS_GDSTK" = 1 ]; then
+        GDSTK_SMOKE=(--no-gdstk "built without it; reported at the end")
+    else
+        GDSTK_SMOKE=(--no-gdstk "not shipped on ${RID}")
+    fi
+
     # -- The command line, run out of THIS publish tree ----------------------
     #
     # THE GATE THAT WAS MISSING FOR 32 RELEASES (brief-automation-13-installed-cli.md). Every release
@@ -339,7 +395,7 @@ for ARCH in $ARCHES; do
 
     if [ "$ARCH" = "$HOST_ARCH" ] || [ -e "$QEMU_BINFMT" ]; then
         echo "Smoke-testing the command line in ${PUBLISH} ..."
-        dotnet "$SMOKE_DLL" "${PUBLISH}/circuitRF" "$CRF_VERSION" "${KERNEL_SMOKE[@]}" || {
+        dotnet "$SMOKE_DLL" "${PUBLISH}/circuitRF" "$CRF_VERSION" "${KERNEL_SMOKE[@]}" "${GDSTK_SMOKE[@]}" || {
             echo "ERROR: the command line in ${PUBLISH} does not answer (see above)."
             echo "       This tree must not be packaged."
             exit 1
@@ -413,6 +469,7 @@ for ARCH in $ARCHES; do
             [ -f "${APPDIR}/senior_worker" ] && chmod +x "${APPDIR}/senior_worker"
             [ -f "${APPDIR}/osdi-worker" ]   && chmod +x "${APPDIR}/osdi-worker"
             [ -f "${APPDIR}/geometry-kernel/geometry-worker" ] && chmod +x "${APPDIR}/geometry-kernel/geometry-worker"
+            [ -f "${APPDIR}/gdstk-kernel/gdstk-worker" ] && chmod +x "${APPDIR}/gdstk-kernel/gdstk-worker"
             # The uninstaller rides INSIDE the version directory too (brief-em3d-25): the updater installs
             # only app-<ver>/ out of this archive, so a copy beside it never reaches an updated install,
             # and the documented uninstall is current/install.sh --uninstall.
@@ -483,6 +540,21 @@ if [ -n "$NO_KERNEL" ]; then
     fi
 fi
 
+NO_GDSTK_FAIL=0
+if [ -n "$NO_GDSTK" ]; then
+    echo ""
+    echo "NO GDSTK WORKER in:${NO_GDSTK}. Those packages have no OASIS import or export and no GDSII (gdstk)"
+    echo "  route; \`convert\` refuses the oasis format there."
+    if [ "${CRF_ALLOW_NO_GDSTK:-}" = 1 ]; then
+        echo "  CRF_ALLOW_NO_GDSTK=1 says that is intended."
+    else
+        echo "  Build it and run this again - tools/gdstk-worker/build.sh --rid linux-<arch> (needs cmake and a"
+        echo "  C++ compiler, and for the other architecture crossbuild-essential-amd64 or -arm64; well under a"
+        echo "  minute per architecture) - or set CRF_ALLOW_NO_GDSTK=1 to ship without it knowingly."
+        NO_GDSTK_FAIL=1
+    fi
+fi
+
 # Whether these artifacts can ever be installed as an AUTOMATIC UPDATE is decided by the release key
 # compiled into the binary, not by anything this script did - so it is stated here, where someone is
 # already reading the output, rather than discovered when a published release reaches nobody.
@@ -491,4 +563,5 @@ crf_report_release_key "${ROOT}/src/Ui/Updates/ReleaseKeys.cs"
 
 [ "$UNSMOKED_FAIL" = 1 ] && exit 1
 [ "$NO_KERNEL_FAIL" = 1 ] && exit 1
+[ "$NO_GDSTK_FAIL" = 1 ] && exit 1
 exit 0
