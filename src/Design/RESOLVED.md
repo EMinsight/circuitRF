@@ -18095,3 +18095,62 @@ changed. The points below are what a future reader of `Interchange/` would trip 
   64-bit offsets. A script client on Windows PowerShell 5.1 must give the worker's stdin an encoding with no
   preamble: on a UTF-8 code page, .NET Framework writes a byte-order mark that the worker reads as a 297 MB frame
   length.
+
+## OASIS and gdstk — one import path and one export path (brief-oasis-gdstk G2, R-oas-2, 2026-10-06)
+
+**The split.** `GdsiiImport.Import` is now `GdsiiReader` + `StreamLayoutImport.Import`, which holds everything after
+the read (rescaling, reconciliation and the mapping callback, naming, both cell-folder passes, pin inference, "top")
+unchanged except that its two format-naming messages take `formatName`. `GdsiiWriter`'s per-shape work (flattening,
+keyholing, via pads, placeholder renumbering, the overflow refusal) moved to `StreamLowering.Lower`, which yields
+`StreamPolygon`/`StreamPath`/`StreamLabel`/`StreamReference` in DBU; `GdsiiWriter` serialises them and
+`GdsiiExport.Analyze` takes its counts from the lowering instead of a dry write into `Stream.Null`. The gdstk route is
+`Interchange/Gdstk/`: `GdstkWorker` (discovery, start, one bounded request), `GdstkSession` (one method per protocol
+request), `GdstkFrame` (a cell inside the geometry worker's frame codec, reused), `GdstkMapping` (the rules, as a
+table in its doc comment), `GdstkImport`, `GdstkExport`, `GdstkDiagnostics`. `GdstkImport` ends in
+`StreamLayoutImport`, `GdstkExport` starts from `GdsiiExport.Analyze`'s plan and `StreamLowering`.
+`GdsiiImport.ImportResult` stayed where it is (the shared function returns it) so no caller or test changed.
+
+**Native export is byte-identical.** `tests/Ui.Tests/Interchange/GdsiiExportByteIdentityTests` pins six SHA-256s
+taken from the writer at 75770824 BEFORE the refactor, over a corpus reaching every lowering branch (each shape kind,
+holes, curves, each path end, port/rotated/45° labels, vias with and without a pad and a tech stackup, placeholder
+layers, SREF/rotated/mirrored/AREF/dangling references, 1 nm and 0.25 nm). BGNLIB/BGNSTR timestamps are zeroed before
+hashing. It runs in milliseconds, so it was kept.
+
+**Every worker request is bounded** (`tools/gdstk-worker/RESOLVED.md`): a deadline of 30 s + 1 s per MB of the file read
+or bytes sent, and a memory watch polling the working set every 250 ms against max(2 GB, 50 × input) — both from G0's
+recommendation. Missing either kills the process; cancellation kills it. `GeometryKernelProcessWorker` gained one
+read-only property, `WorkingSetBytes`, for the watch. Every cell is read before `StreamLayoutImport` creates anything,
+so a crash, hang, refusal or runaway mid-file creates nothing. Paths go to the worker as they are (it adds `\\?\`).
+Discovery: `CIRCUITRF_GDSTK_WORKER`, then `<base>/gdstk-kernel/`, then (only if that folder is absent) the source
+tree's `tools/gdstk-worker/build/<rid>/gdstk-kernel/` — which is how `tests/Ui.Tests` finds it.
+
+**Failures are coded diagnostics** (`GdstkDiagnostics`, the `StepImportException` pattern): the firewall's
+user-facing-text gate flagged six plain `throw new InvalidDataException("…")` sentences in the first draft, and §5
+asks for the worker-stopped message as a diagnostic, not an allow-list line. Ids: `gdstk.worker.{not-found,
+start-failed,protocol,stopped,timed-out,out-of-memory,already-stopped}`, `gdstk.refused` (the worker's code and
+detail forwarded), `gdstk.reply.malformed` (a non-integral coordinate is a protocol disagreement, never rounded
+here), `gdstk.import.expansion-limit`, `gdstk.export.dangling-reference`.
+
+**Departures and decisions for the owner (G3 will meet each in the comparison tests):**
+- **A path extension other than width/2 is approximated as `Extended`, not converted to a polygon** as §6c says.
+  The native reader approximates the same file with the same message; a polygon on one route and an approximated path
+  on the other would make the two readers disagree on one file, which is what G3 test 1 checks. G0 finding 5 stands.
+- **Label height travels as magnification on the gdstk route.** gdstk's TEXT carries no `WIDTH`, so the export
+  writes `MAG = Height / 1000` and the import reads `Height = 1000 × |MAG|` — the native reader's own D5 rule for a
+  TEXT with no WIDTH, so both readers recover the height from either writer. Consequence: a NATIVE-written label
+  (WIDTH = H, no MAG) read through gdstk comes back at height 1000, because gdstk ignores WIDTH on TEXT.
+- **The port flag does not cross the gdstk route**: the worker sends properties as a count and writes none. Import
+  counts them in the one properties message; export says how many port labels were written as plain text.
+- **A dangling reference is refused by the gdstk export** (the worker answers `write.missing-cell`, because its OASIS
+  writer numbers references through cell pointers); the native writer writes it as a dangling name.
+- **Element order differs**: gdstk writes a cell's polygons, then paths, then labels; the native writer keeps shape
+  order. Content, not order — §8b's equality is a multiset.
+- **The expansion limit is the native reader's 100,000** (`GdstkMapping.MaxExpanded`), shared so both routes refuse
+  the same file; G4 sets OASIS's own (G0 proposes 10⁶).
+- **Angles are snapped to 1e-9°** on import: gdstk holds radians, so ANGLE 30 returns as 29.999999999999996.
+
+Tests: `tests/Ui.Tests/Interchange/GdstkSharedPathTests` (skips via `GdstkFact` with no worker) — a native GDSII file
+imported through gdstk gives byte-identical cell folders and messages to `GdsiiImport`; the gdstk export reports the
+plan's counts and reads back, through `GdsiiReader`, as the native file does; an unreadable file fails and creates
+nothing; a missed deadline and a dying worker are reported with their ids; discovery with no worker says the
+disabled-command sentence; a dangling reference is refused before the worker starts.

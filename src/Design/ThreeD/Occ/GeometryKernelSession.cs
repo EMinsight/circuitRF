@@ -99,6 +99,18 @@ public sealed class GeometryKernelProcessWorker : IGeometryKernelWorker
         get { lock (_stderrGate) return string.Join("\n", _stderr); }
     }
 
+    /// <summary>The process's working set in bytes, or 0 once it has gone — the gdstk worker's memory
+    /// watch reads it (brief-oasis-gdstk.md §5: a corrupt OASIS block can make gdstk allocate without
+    /// bound, and a kill is the only stop).</summary>
+    public long WorkingSetBytes
+    {
+        get
+        {
+            try { _process.Refresh(); return _process.HasExited ? 0 : _process.WorkingSet64; }
+            catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException) { return 0; }
+        }
+    }
+
     public GeometryKernelMessage Exchange(GeometryKernelMessage request)
     {
         try

@@ -1,8 +1,9 @@
 // GDSII export orchestrator (docs/sonnet-briefs/brief-L4a-gdsii-interchange.md §2.3, R-L4a-3). Walks
-// a design's cell hierarchy from a root cell folder into InterchangeStructures, then runs the SAME
-// GdsiiWriter.Write path (a dry run into Stream.Null) to produce the pre-flight fidelity plan the
+// a design's cell hierarchy from a root cell folder into InterchangeStructures, then lowers them with
+// the SAME StreamLowering.Lower every write runs first, to produce the pre-flight fidelity plan the
 // export dialog shows BEFORE any bytes are written — the preview can never disagree with the real
-// write because it IS the real write, just discarded.
+// write because the write serialises exactly what the preview counted. The plan is format-agnostic
+// (brief-oasis-gdstk §6b): GdstkExport writes the same plan through the gdstk worker.
 
 
 using CircuitRF.Design.Cells;
@@ -76,11 +77,11 @@ public static class GdsiiExport
 
         try
         {
-            var summary = GdsiiWriter.Write(Stream.Null, structures, units, tech);
+            var lowered = StreamLowering.Lower(structures, tech);
             return new ExportPlan(
-                summary.CurvedShapesFlattened, summary.HolesKeyholed, summary.BitmapsSkipped,
-                [], unresolvedRefs, nameByCellName, structures, units, tech, summary.LabelRecordsWritten,
-                summary.ViaPadsSkipped, summary.LayersRenumbered);
+                lowered.CurvedShapesFlattened, lowered.HolesKeyholed, lowered.BitmapsSkipped,
+                [], unresolvedRefs, nameByCellName, structures, units, tech, lowered.LabelRecordsWritten,
+                lowered.ViaPadsSkipped, lowered.LayersRenumbered);
         }
         catch (GdsiiExportException ex)
         {

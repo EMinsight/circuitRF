@@ -3,6 +3,10 @@
 // primitives are flattened (§3.2 R9e) and holes are keyholed (§3.1a). Format-specific: touches only
 // bytes and records; the caller (GdsiiExport) supplies already-mangled structure names and already
 // rebased CellRef values — this file has no CellFolder/Messages/dialog concerns.
+//
+// The flattening, keyholing, via pads and placeholder renumbering are StreamLowering's (brief-oasis-gdstk
+// §6b): this file serialises the elements it produces, and the gdstk route sends the same elements to
+// its worker.
 
 using System.Linq;
 
@@ -33,15 +37,12 @@ public sealed record GdsiiExportSummary(
 public static class GdsiiWriter
 {
     public static GdsiiExportSummary Write(
-        Stream stream, IReadOnlyList<InterchangeStructure> structures, GdsiiUnits units, Technology? tech)
+        Stream stream, IReadOnlyList<InterchangeStructure> structures, GdsiiUnits units, Technology? tech) =>
+        Write(stream, StreamLowering.Lower(structures, tech), units);
+
+    /// <summary>Serialises an already-lowered library. Its counts are the summary's.</summary>
+    public static GdsiiExportSummary Write(Stream stream, StreamLibrary library, GdsiiUnits units)
     {
-        var (renumber, renumbered, unnumbered) = RenumberPlaceholderLayers(structures, tech);
-        var offenders = GdsiiCoordinateValidation.CheckOverflow(structures, tech).Concat(unnumbered).ToList();
-        if (offenders.Count > 0) throw new GdsiiExportException(offenders);
-
-        int curveCount = 0, holeCount = 0, bitmapCount = 0, labelCount = 0, viaPadsSkipped = 0;
-        var diagnostics = new List<string>(renumbered);
-
         var w = new GdsiiRecordWriter(stream);
         var time = BuildTimeFields(DateTime.UtcNow);
 
@@ -52,142 +53,47 @@ public static class GdsiiWriter
         // unit in metres — GdsiiReader.ReadPreamble takes the quotient back.
         w.WriteReal8Array(GdsiiRecordType.Units, [units.DbUnitMeters / units.UserUnitMeters, units.DbUnitMeters]);
 
-        foreach (var s in structures)
+        foreach (var s in library.Structures)
         {
             w.WriteInt16Array(GdsiiRecordType.BgnStr, time);
             w.WriteAscii(GdsiiRecordType.StrName, s.Name);
 
-            foreach (var shape in s.Shapes)
-                WriteShape(w, shape, tech, renumber, s.Name, diagnostics, ref curveCount, ref holeCount, ref bitmapCount, ref labelCount, ref viaPadsSkipped);
+            foreach (var element in s.Shapes)
+            {
+                switch (element)
+                {
+                    case StreamPolygon p: WriteBoundary(w, p); break;
+                    case StreamPath path: WritePath(w, path); break;
+                    case StreamLabel label: WriteText(w, label); break;
+                }
+            }
 
-            foreach (var inst in s.Instances)
-                WriteInstance(w, inst);
+            foreach (var reference in s.References)
+                WriteInstance(w, reference);
 
             w.WriteNoData(GdsiiRecordType.EndStr);
         }
 
         w.WriteNoData(GdsiiRecordType.EndLib);
 
-        return new GdsiiExportSummary(curveCount, holeCount, bitmapCount, diagnostics, labelCount, viaPadsSkipped, renumbered);
+        return new GdsiiExportSummary(
+            library.CurvedShapesFlattened, library.HolesKeyholed, library.BitmapsSkipped, library.Diagnostics,
+            library.LabelRecordsWritten, library.ViaPadsSkipped, library.LayersRenumbered);
     }
 
-    // ── Placeholder layers (D7) ────────────────────────────────────────────────
+    // ── Elements ───────────────────────────────────────────────────────────────
 
-    /// <summary>A DXF or board import gives a layer the destination technology had no number for a
-    /// NEGATIVE placeholder key (<c>DxfLayerReconciliation</c>, <c>PcbLayerReconciliation</c>). GDSII
-    /// numbers layers 0–65535, so each placeholder layer number is written as the lowest layer number
-    /// this export does not already use, datatype kept, and the choice is reported — never wrapped to
-    /// 65535 in silence. Most-recent placeholder first (−1, −2, …), so the answer does not depend on
-    /// shape order.</summary>
-    private static (IReadOnlyDictionary<int, int> Renumber, List<string> Renumbered, List<string> Unnumbered)
-        RenumberPlaceholderLayers(IReadOnlyList<InterchangeStructure> structures, Technology? tech)
+    private static void WriteBoundary(GdsiiRecordWriter w, StreamPolygon p)
     {
-        var used = new HashSet<int>();
-        var placeholders = new SortedSet<int>(Comparer<int>.Create((a, b) => b.CompareTo(a)));
-        foreach (var shape in structures.SelectMany(s => s.Shapes))
-        {
-            if (shape is BitmapShape) continue; // never exported
-            foreach (var key in GdsiiCoordinateValidation.LayerKeysWritten(shape, tech))
-                if (key.Layer < 0) placeholders.Add(key.Layer); else used.Add(key.Layer);
-        }
-
-        var renumber = new Dictionary<int, int>();
-        var renumbered = new List<string>();
-        var unnumbered = new List<string>();
-        int next = 0;
-        foreach (int placeholder in placeholders)
-        {
-            while (used.Contains(next)) next++;
-            string name = tech?.Layers.FirstOrDefault(l => l.Key.Layer == placeholder)?.Name is { } n
-                ? $"Layer \"{n}\"" : $"Layer {placeholder}";
-            if (next > GdsiiCoordinateValidation.MaxLayerNumber)
-            {
-                unnumbered.Add($"{name} has no GDSII number, and every number 0–{GdsiiCoordinateValidation.MaxLayerNumber} is in use.");
-                continue;
-            }
-            renumber[placeholder] = next;
-            renumbered.Add($"{name} has no GDSII number; written as GDSII layer {next}.");
-            used.Add(next);
-        }
-        return (renumber, renumbered, unnumbered);
-    }
-
-    private static LayerKey Gds(LayerKey key, IReadOnlyDictionary<int, int> renumber) =>
-        key.Layer < 0 && renumber.TryGetValue(key.Layer, out int n) ? new LayerKey(n, key.Datatype) : key;
-
-    // ── Shapes ─────────────────────────────────────────────────────────────────
-
-    private static void WriteShape(
-        GdsiiRecordWriter w, LayoutShape shape, Technology? tech, IReadOnlyDictionary<int, int> renumber,
-        string structureName, List<string> diagnostics,
-        ref int curveCount, ref int holeCount, ref int bitmapCount, ref int labelCount, ref int viaPadsSkipped)
-    {
-        switch (shape)
-        {
-            case BitmapShape:
-                bitmapCount++; // §3.1b R10e — never exported; the count IS the report
-                return;
-            case LabelShape label:
-                labelCount++; // item 6/R-fix-5 — see GdsiiExportSummary.LabelRecordsWritten's doc comment
-                WriteText(w, label, renumber);
-                return;
-            case PathShape path:
-                WritePath(w, path, tech, renumber, ref curveCount);
-                return;
-            case ViaShape via:
-                WriteViaAsBoundary(w, via, tech, renumber, structureName, diagnostics, ref curveCount, ref holeCount, ref viaPadsSkipped);
-                return;
-            default:
-                WriteBoundaryLike(w, shape, tech, renumber, ref curveCount, ref holeCount);
-                return;
-        }
-    }
-
-    private static void WriteBoundaryLike(
-        GdsiiRecordWriter w, LayoutShape shape, Technology? tech, IReadOnlyDictionary<int, int> renumber,
-        ref int curveCount, ref int holeCount)
-    {
-        long tol = LayoutFlattener.ResolveTolDbu(shape, tech);
-        var rings = LayoutFlattener.Flatten(shape, tol);
-
-        if (IsCurvedPrimitive(shape)) curveCount++;
-
-        long[] outRing;
-        if (rings.Count == 1)
-        {
-            outRing = rings[0];
-        }
-        else
-        {
-            // §3.1a — one self-touching contour, a zero-width slit per inner ring.
-            outRing = Keyhole(rings[0], rings.Skip(1).ToList());
-            holeCount += rings.Count - 1;
-        }
-
-        var key = Gds(shape.Layer, renumber);
         w.WriteNoData(GdsiiRecordType.Boundary);
-        w.WriteInt16Array(GdsiiRecordType.Layer, [(short)key.Layer]);
-        w.WriteInt16Array(GdsiiRecordType.Datatype, [(short)key.Datatype]);
-        w.WriteInt32Array(GdsiiRecordType.Xy, ToClosedIntArray(outRing)); // §2.1 item 3 — explicitly closed
+        w.WriteInt16Array(GdsiiRecordType.Layer, [(short)p.Layer.Layer]);
+        w.WriteInt16Array(GdsiiRecordType.Datatype, [(short)p.Layer.Datatype]);
+        w.WriteInt32Array(GdsiiRecordType.Xy, ToClosedIntArray(p.Xy)); // §2.1 item 3 — explicitly closed
         w.WriteNoData(GdsiiRecordType.EndEl);
     }
 
-    private static bool IsCurvedPrimitive(LayoutShape shape) => shape switch
+    private static void WritePath(GdsiiRecordWriter w, StreamPath path)
     {
-        CircleShape => true,
-        RoundedRectShape => true,
-        CurveShape c => c.Edges is { } edges && edges.Any(e => e.Kind != EdgeKind.Line),
-        _ => false,
-    };
-
-    private static void WritePath(
-        GdsiiRecordWriter w, PathShape path, Technology? tech, IReadOnlyDictionary<int, int> renumber, ref int curveCount)
-    {
-        long tol = LayoutFlattener.ResolveTolDbu(path, tech);
-        bool curved = path.Edges is { } edges && edges.Any(e => e.Kind != EdgeKind.Line);
-        long[] centerline = LayoutFlattener.FlattenOpenEdgeList(path.Xy, path.Edges, tol);
-        if (curved) curveCount++;
-
         int pathType = path.End switch
         {
             PathEndStyle.Flush => 0,
@@ -201,39 +107,30 @@ public static class GdsiiWriter
         // ENDEXTN], XY, ENDEL — PATHTYPE before WIDTH, not the other way around. A strict reader
         // (KLayout) enforces this exact order and desyncs its own element parser when it isn't
         // followed, even though every individual record here is otherwise correctly framed.
-        var key = Gds(path.Layer, renumber);
         w.WriteNoData(GdsiiRecordType.Path);
-        w.WriteInt16Array(GdsiiRecordType.Layer, [(short)key.Layer]);
-        w.WriteInt16Array(GdsiiRecordType.Datatype, [(short)key.Datatype]);
+        w.WriteInt16Array(GdsiiRecordType.Layer, [(short)path.Layer.Layer]);
+        w.WriteInt16Array(GdsiiRecordType.Datatype, [(short)path.Layer.Datatype]);
         w.WriteInt16Array(GdsiiRecordType.PathType, [(short)pathType]);
         w.WriteInt32Array(GdsiiRecordType.Width, [(int)path.Width]);
         if (pathType == 4)
         {
-            // Design decision (docs/sonnet-briefs/brief-L4a-gdsii-interchange.md plan): symmetric
-            // Width/2 extension on both ends — genuinely exercises BGNEXTN/ENDEXTN rather than
-            // reusing PATHTYPE 2's implicit square cap.
-            long ext = path.Width / 2;
-            w.WriteInt32Array(GdsiiRecordType.BgnExtn, [(int)ext]);
-            w.WriteInt32Array(GdsiiRecordType.EndExtn, [(int)ext]);
+            w.WriteInt32Array(GdsiiRecordType.BgnExtn, [(int)path.Extension]);
+            w.WriteInt32Array(GdsiiRecordType.EndExtn, [(int)path.Extension]);
         }
-        w.WriteInt32Array(GdsiiRecordType.Xy, ToOpenIntArray(centerline));
+        w.WriteInt32Array(GdsiiRecordType.Xy, ToOpenIntArray(path.Xy));
         w.WriteNoData(GdsiiRecordType.EndEl);
     }
 
-    private static void WriteText(GdsiiRecordWriter w, LabelShape label, IReadOnlyDictionary<int, int> renumber)
+    private static void WriteText(GdsiiRecordWriter w, StreamLabel label)
     {
-        // Labels have no mirror field — reflect is always false for a LabelShape.
-        var (_, angle) = GdsiiTransformCodec.ToGdsii(false, label.RotationDegrees);
-
-        var key = Gds(label.Layer, renumber);
         w.WriteNoData(GdsiiRecordType.Text);
-        w.WriteInt16Array(GdsiiRecordType.Layer, [(short)key.Layer]);
-        w.WriteInt16Array(GdsiiRecordType.TextType, [(short)key.Datatype]); // D1: TEXTTYPE is the datatype
+        w.WriteInt16Array(GdsiiRecordType.Layer, [(short)label.Layer.Layer]);
+        w.WriteInt16Array(GdsiiRecordType.TextType, [(short)label.Layer.Datatype]); // D1: TEXTTYPE is the datatype
         // GDSII has no native text-height record; WIDTH on a TEXT element is this codebase's own,
         // internally-consistent convention for carrying LabelShape.Height (GdsiiReader reads it back).
         w.WriteInt32Array(GdsiiRecordType.Width, [(int)label.Height]);
         w.WriteBitArray(GdsiiRecordType.Strans, 0);
-        w.WriteReal8Array(GdsiiRecordType.Angle, [angle]);
+        w.WriteReal8Array(GdsiiRecordType.Angle, [label.AngleDegrees]);
         w.WriteInt32Array(GdsiiRecordType.Xy, [(int)label.X, (int)label.Y]);
         w.WriteAscii(GdsiiRecordType.StringRec, label.Text);
         if (label.IsPort)
@@ -246,55 +143,17 @@ public static class GdsiiWriter
         w.WriteNoData(GdsiiRecordType.EndEl);
     }
 
-    /// <summary>§4.3/R-via-9: a <see cref="ViaShape"/> emits one flattened-circle BOUNDARY per mapped
-    /// layer it participates in — the barrel (<see cref="LayoutShape.Layer"/>, ALWAYS present) and the
-    /// pad (<see cref="ViaSpanResolver.PadLayer"/> — the shape's own <see cref="ViaShape.LandingLayer"/>
-    /// when an importer set one, otherwise the TOP conductor of the span its stackup via entry states,
-    /// because the layout editor's Via tool has never set the per-shape field and a via that lost its
-    /// pad on the way out is a via with no annular ring). GDSII has no via primitive at all, so
-    /// "mapped" here means simply "has a pad layer to draw on" — GDSII writes a raw
-    /// <c>(layer, datatype)</c> key directly with no name lookup, unlike DXF, so there is no separate
-    /// "layer known to this technology" failure mode to check. Reuses <see cref="WriteBoundaryLike"/>
-    /// (via a synthetic <see cref="CircleShape"/>) rather than a hand-rolled square, so the pad/barrel
-    /// go through the SAME flatten-and-count path every other curved primitive does — never a second
-    /// circle-to-polygon implementation.</summary>
-    private static void WriteViaAsBoundary(
-        GdsiiRecordWriter w, ViaShape via, Technology? tech, IReadOnlyDictionary<int, int> renumber,
-        string structureName, List<string> diagnostics,
-        ref int curveCount, ref int holeCount, ref int viaPadsSkipped)
+    private static void WriteInstance(GdsiiRecordWriter w, StreamReference inst)
     {
-        var barrel = new CircleShape { Layer = via.Layer, Net = via.Net, Cx = via.X, Cy = via.Y, R = Math.Max(via.DrillSize, 2) / 2 };
-        WriteBoundaryLike(w, barrel, tech, renumber, ref curveCount, ref holeCount);
+        ushort stransBits = inst.Reflect ? (ushort)0x8000 : (ushort)0;
 
-        if (ViaSpanResolver.PadLayer(via, tech) is { } landing)
-        {
-            var pad = new CircleShape { Layer = landing, Net = via.Net, Cx = via.X, Cy = via.Y, R = Math.Max(via.PadSize, 2) / 2 };
-            WriteBoundaryLike(w, pad, tech, renumber, ref curveCount, ref holeCount);
-        }
-        else
-        {
-            viaPadsSkipped++;
-            diagnostics.Add($"{structureName}: via at ({via.X},{via.Y}) has no pad layer — " +
-                            (ViaSpanResolver.Explain(via.Layer, tech) ?? "no landing layer is set.") +
-                            " Pad not exported.");
-        }
-    }
-
-    // ── Instances ──────────────────────────────────────────────────────────────
-
-    private static void WriteInstance(GdsiiRecordWriter w, LayoutInstance inst)
-    {
-        var (reflect, angle) = GdsiiTransformCodec.ToGdsii(inst.MirrorX, inst.RotationDegrees);
-        ushort stransBits = reflect ? (ushort)0x8000 : (ushort)0;
-        bool isArray = inst.Rows > 1 || inst.Cols > 1;
-
-        w.WriteNoData(isArray ? GdsiiRecordType.ARef : GdsiiRecordType.SRef);
-        w.WriteAscii(GdsiiRecordType.SName, inst.CellRef);
+        w.WriteNoData(inst.IsArray ? GdsiiRecordType.ARef : GdsiiRecordType.SRef);
+        w.WriteAscii(GdsiiRecordType.SName, inst.Cell);
         w.WriteBitArray(GdsiiRecordType.Strans, stransBits);
         w.WriteReal8Array(GdsiiRecordType.Mag, [inst.Mag]);
-        w.WriteReal8Array(GdsiiRecordType.Angle, [angle]);
+        w.WriteReal8Array(GdsiiRecordType.Angle, [inst.AngleDegrees]);
 
-        if (isArray)
+        if (inst.IsArray)
         {
             w.WriteInt16Array(GdsiiRecordType.ColRow, [(short)inst.Cols, (short)inst.Rows]);
             // §2.1 item 5 — COLROW plus the three already-transformed reference points: origin, the
@@ -314,48 +173,6 @@ public static class GdsiiWriter
             w.WriteInt32Array(GdsiiRecordType.Xy, [(int)inst.X, (int)inst.Y]);
         }
         w.WriteNoData(GdsiiRecordType.EndEl);
-    }
-
-    // ── Keyholing (§3.1a) ──────────────────────────────────────────────────────
-
-    /// <summary>Bridges each hole ring into the outer ring via a zero-width slit (nearest-point
-    /// bridge), producing one self-touching contour — exactly what every GDSII writer does, since the
-    /// format cannot express a hole any other way.</summary>
-    private static long[] Keyhole(long[] outer, List<long[]> holes)
-    {
-        var combined = new List<long>(outer);
-        foreach (var hole in holes)
-        {
-            int combinedPoints = combined.Count / 2;
-            int holePoints = hole.Length / 2;
-            int bestOuterIdx = 0, bestHoleIdx = 0;
-            long bestDistSq = long.MaxValue;
-
-            for (int oi = 0; oi < combinedPoints; oi++)
-            {
-                long ox = combined[oi * 2], oy = combined[oi * 2 + 1];
-                for (int hi = 0; hi < holePoints; hi++)
-                {
-                    long dx = ox - hole[hi * 2], dy = oy - hole[hi * 2 + 1];
-                    long distSq = dx * dx + dy * dy;
-                    if (distSq < bestDistSq) { bestDistSq = distSq; bestOuterIdx = oi; bestHoleIdx = hi; }
-                }
-            }
-
-            long bridgeX = combined[bestOuterIdx * 2], bridgeY = combined[bestOuterIdx * 2 + 1];
-            var insertion = new List<long>();
-            for (int k = 0; k <= holePoints; k++)
-            {
-                int idx = (bestHoleIdx + k) % holePoints;
-                insertion.Add(hole[idx * 2]);
-                insertion.Add(hole[idx * 2 + 1]);
-            }
-            insertion.Add(bridgeX);
-            insertion.Add(bridgeY); // slit closes back at the outer bridge point
-
-            combined.InsertRange((bestOuterIdx + 1) * 2, insertion);
-        }
-        return combined.ToArray();
     }
 
     // ── Small helpers ──────────────────────────────────────────────────────────
