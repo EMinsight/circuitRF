@@ -13146,7 +13146,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             saveLabel:     "Remove Reference",
             dontSaveLabel: null,
             cancelLabel:   "Cancel",
-            title:         "Remove Workspace Reference");
+            title:         "Remove Workspace Reference",
+            destructive:   true);
         await dlg.ShowDialog(window);
         if (dlg.Result != SaveChangesResult.Save) return;
 
@@ -13250,7 +13251,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             saveLabel:     "Remove Reference",
             dontSaveLabel: null,
             cancelLabel:   "Cancel",
-            title:         "Remove Cell Reference");
+            title:         "Remove Cell Reference",
+            destructive:   true);
         await dlg.ShowDialog(window);
         if (dlg.Result != SaveChangesResult.Save) return;
 
@@ -14412,7 +14414,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                              : "Remove Technology",
             dontSaveLabel: replacement is not null ? "Remove Only" : null,
             cancelLabel:   "Cancel",
-            title:         "Remove Technology");
+            title:         "Remove Technology",
+            destructive:   true);
         await dlg.ShowDialog(window);
         if (dlg.Result == SaveChangesResult.Cancel) return;
 
@@ -14551,39 +14554,154 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             saveLabel:     "Remove Cell",
             dontSaveLabel: null,
             cancelLabel:   "Cancel",
-            title:         "Remove Cell");
+            title:         "Remove Cell",
+            destructive:   true);
         await dlg.ShowDialog(window);
         if (dlg.Result != SaveChangesResult.Save) return;
 
         var cellPath = cellNode.AbsolutePath;
-        var doomedSessions = CaptureSessionsUnder(cellPath);
+        if (!TrashClosingDocuments(cellPath, retireSessions: true, out var err))
+        {
+            Messages.Error($"Remove cell failed: {err}");
+            return;
+        }
 
-        // Close any open tabs/sessions under the cell dir.
+        Messages.Info($"Removed cell (moved to Trash): {cellPath}");
+        _factory.ProjectTreeTool?.Refresh();
+    }
+
+    /// <summary>
+    /// Closes every open tab at or under <paramref name="path"/> — with no save prompt, the file is
+    /// going away — moves it to the Trash, and discards the sessions it held. The one sequence every
+    /// tree removal runs, one row or many.
+    /// </summary>
+    /// <param name="retireSessions">Retire a closed schematic's or layout's session here and now,
+    /// as Remove Cell always has, rather than leaving it to <c>OnDockableClosed</c>.</param>
+    private bool TrashClosingDocuments(string path, bool retireSessions, out string? error)
+    {
+        var doomedSessions = CaptureSessionsUnder(path);
+
         var keysToClose = _openDocsByPath
-            .Where(kvp => IsPathOrUnder(kvp.Key, cellPath))
+            .Where(kvp => IsPathOrUnder(kvp.Key, path))
             .Select(kvp => (kvp.Key, kvp.Value))
             .ToList();
 
         foreach (var (key, dockable) in keysToClose)
         {
             _factory.ForceCloseDockable(dockable);
+            // OnDockableClosed fires via DockableClosed event and cleans up _openDocsByPath.
+            // For .csch tabs, RetireSessionIfUnreferenced is also called there.
+            if (!retireSessions) continue;
             if (key.EndsWith(".csch", StringComparison.OrdinalIgnoreCase))
                 RetireSessionIfUnreferenced(key);
             else if (key.EndsWith(".clay", StringComparison.OrdinalIgnoreCase))
                 RetireLayoutSessionIfUnreferenced(key);
         }
 
-        if (!SystemTrash.TryMoveToTrash(cellPath, out var err))
+        if (!SystemTrash.TryMoveToTrash(path, out error)) return false;
+
+        DiscardRemovedSessions(doomedSessions);
+        return true;
+    }
+
+    /// <inheritdoc/>
+    public async Task RemoveSelectionAsync(IReadOnlyList<ProjectTreeNodeViewModel> selection)
+    {
+        if (selection.Count == 0) return;
+
+        if (selection.Count == 1)
         {
-            Messages.Error($"Remove cell failed: {err}");
+            var only = selection[0];
+            switch (ProjectTreeSelection.SingleRemoveCommand(only))
+            {
+                case IAsyncRelayCommand command: await command.ExecuteAsync(null); break;
+                case { } command:                command.Execute(null);            break;
+                default: Messages.Info($"'{only.Name}' has nothing Delete can remove."); break;
+            }
             return;
         }
 
-        DiscardRemovedSessions(doomedSessions);
+        if (ProjectTreeSelection.BulkRemoveRefusal(selection) is { } refusal)
+        {
+            Messages.Warning(refusal + " Nothing was removed.");
+            return;
+        }
 
-        Messages.Info($"Removed cell (moved to Trash): {cellPath}");
+        if (CurrentWorkspacePath is null) return;
+        var workspaceRoot = Path.GetDirectoryName(CurrentWorkspacePath)!;
+        // All or nothing: refusing one row and trashing the rest would leave the user to work out
+        // which of what they chose actually went.
+        if (selection.Any(n => !OwnedByThisWorkspace(n.AbsolutePath, workspaceRoot, "remove"))) return;
+
+        var window = ResolveOwner(null);
+        if (window is null) return;
+
+        var msg = new System.Text.StringBuilder($"Remove {selection.Count} items?\n\n");
+        msg.Append(NameList(selection.Select(BulkRemovalLabel).ToList(), workspaceRoot));
+        msg.Append("\n\nThey move to the Trash/Recycle Bin. There is no in-app undo.");
+
+        // The same consequences the one-row removes state, per row — except that a cell placed only
+        // by cells ALSO going to the Trash is not left with a broken reference, so it is not counted.
+        var removedPaths = selection.Select(n => n.AbsolutePath).ToList();
+        var otherRoots   = OtherOpenWorkspaceRoots();
+        foreach (var node in selection)
+        {
+            string warning;
+            if (node.IsOwnCell)
+            {
+                var usage = CellUsageScanner.CountReferencingCells(
+                    workspaceRoot, node.AbsolutePath, otherRoots, removedPaths);
+                warning = usage.Count == 0 ? "" :
+                    $"\n⚠ Used in {usage.Count} cell{(usage.Count == 1 ? "" : "s")} that "
+                  + $"{(usage.Count == 1 ? "stays" : "stay")}; removing it breaks "
+                  + $"{(usage.Count == 1 ? "that reference" : "those references")}."
+                  + (usage.OtherWorkspaceRoots.Count > 0
+                        ? " References come from: " + string.Join(", ", usage.OtherWorkspaceRoots.Select(r =>
+                              Path.GetFileName(r.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)))) + "."
+                        : "");
+            }
+            else
+            {
+                var plan = node.Kind == NodeKind.ViewFile ? PrimaryViewRepair.Plan(node.AbsolutePath) : default;
+                warning = FileRemovalWarnings(node, plan).Replace("\n\n", "\n");
+            }
+            if (warning.Length > 0) msg.Append($"\n\n{node.Name}:{warning}");
+        }
+
+        var dlg = new Views.Dialogs.SaveChangesDialog(
+            msg.ToString(),
+            saveLabel:     $"Remove {selection.Count} Items",
+            dontSaveLabel: null,
+            cancelLabel:   "Cancel",
+            title:         "Remove Items",
+            destructive:   true);
+        await dlg.ShowDialog(window);
+        if (dlg.Result != SaveChangesResult.Save) return;
+
+        foreach (var node in selection)
+        {
+            // Planned per row, right before that row goes: two schematics of one cell removed together
+            // must not have the first repair promote the second, which is itself about to be trashed.
+            var plan = node.Kind == NodeKind.ViewFile ? PrimaryViewRepair.Plan(node.AbsolutePath) : default;
+            var path = node.AbsolutePath;
+            if (!TrashClosingDocuments(path, retireSessions: node.IsOwnCell, out var err))
+            {
+                Messages.Error($"Remove failed for '{node.Name}': {err}");
+                continue;
+            }
+            Messages.Info($"Removed (moved to Trash): {path}");
+            ApplyPrimaryRepair(plan);
+        }
+
         _factory.ProjectTreeTool?.Refresh();
     }
+
+    /// <summary>A row of the multi-remove confirmation: its path, with a folder marked as one and a
+    /// cell named as one — a cell folder and a user folder look alike as paths.</summary>
+    private static string BulkRemovalLabel(ProjectTreeNodeViewModel node) =>
+        node.IsOwnCell                     ? $"{node.AbsolutePath}  (cell)"
+      : node.Kind == NodeKind.UserFolder   ? $"{node.AbsolutePath}  (folder and everything in it)"
+      :                                      node.AbsolutePath;
 
     /// <inheritdoc/>
     public void RemoveFile(ProjectTreeNodeViewModel node)
@@ -14596,6 +14714,19 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var plan = node.Kind == NodeKind.ViewFile
             ? PrimaryViewRepair.Plan(node.AbsolutePath)
             : default;
+
+        msg += FileRemovalWarnings(node, plan);
+
+        _ = RemoveNodeToTrashAsync(node, msg, node.RemoveHeader, plan);
+    }
+
+    /// <summary>
+    /// What removing this document breaks, as "\n\n⚠ …" blocks — empty when it breaks nothing.
+    /// Shared by the one-row Remove and the multi-selection one, so both say the same thing.
+    /// </summary>
+    private string FileRemovalWarnings(ProjectTreeNodeViewModel node, PrimaryRepairPlan plan)
+    {
+        var msg = "";
 
         if (plan.WasPrimary)
             msg += "\n\n" + PrimaryRemovalWarning(plan, node);
@@ -14617,7 +14748,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             msg += "\n\n⚠ This is the color theme this workspace activates when it opens. "
                  + "Removing it falls back to the application preference.";
 
-        _ = RemoveNodeToTrashAsync(node, msg, node.RemoveHeader, plan);
+        return msg;
     }
 
     /// <summary>
@@ -14686,34 +14817,17 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             saveLabel:     "Remove",
             dontSaveLabel: null,
             cancelLabel:   "Cancel",
-            title:         dialogTitle);
+            title:         dialogTitle,
+            destructive:   true);
         await dlg.ShowDialog(window);
         if (dlg.Result != SaveChangesResult.Save) return;
 
         var path = node.AbsolutePath;
-        var doomedSessions = CaptureSessionsUnder(path);
-
-        // Close any open tabs that reference this path (file) or a path under it (directory).
-        // ForceCloseDockable bypasses the dirty-save prompt — the file is going away.
-        var keysToClose = _openDocsByPath
-            .Where(kvp => IsPathOrUnder(kvp.Key, path))
-            .Select(kvp => (kvp.Key, kvp.Value))
-            .ToList();
-
-        foreach (var (key, dockable) in keysToClose)
-        {
-            _factory.ForceCloseDockable(dockable);
-            // OnDockableClosed fires via DockableClosed event and cleans up _openDocsByPath.
-            // For .csch tabs, RetireSessionIfUnreferenced is also called there.
-        }
-
-        if (!SystemTrash.TryMoveToTrash(path, out var err))
+        if (!TrashClosingDocuments(path, retireSessions: false, out var err))
         {
             Messages.Error($"Remove failed: {err}");
             return;
         }
-
-        DiscardRemovedSessions(doomedSessions);
 
         Messages.Info($"Removed (moved to Trash): {path}");
 

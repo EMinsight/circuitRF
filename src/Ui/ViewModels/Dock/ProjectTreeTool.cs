@@ -69,6 +69,37 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
     [ObservableProperty] private ProjectTreeNodeViewModel? _selectedItem;
 
     /// <summary>
+    /// Every selected row — the TreeView's <c>SelectedItems</c>, which it fills and empties itself
+    /// (<c>SelectionMode="Multiple"</c>). <see cref="SelectedItem"/> stays the one row the
+    /// inspector follows.
+    /// </summary>
+    public ObservableCollection<object> SelectedNodes { get; } = new();
+
+    /// <summary>
+    /// The selection as rows, nested ones folded into their selected ancestor. Read from
+    /// <see cref="SelectedNodes"/> ONLY — never <see cref="SelectedItem"/>, which a rebuild leaves
+    /// pointing at a discarded row (the TreeView nulls it on a Remove, not on a Reset).
+    /// </summary>
+    public IReadOnlyList<ProjectTreeNodeViewModel> Selection =>
+        ProjectTreeSelection.TopMost(SelectedNodes.OfType<ProjectTreeNodeViewModel>());
+
+    /// <summary>Delete/Backspace, and the multi-selection menu's Remove.</summary>
+    public Task RemoveSelectionAsync()
+    {
+        var selection = Selection;
+        return selection.Count == 0 || _actions is null
+            ? Task.CompletedTask
+            : _actions.RemoveSelectionAsync(selection);
+    }
+
+    /// <summary>The multi-selection menu's Open: each row opens as a double-click would open it.</summary>
+    public void OpenSelection()
+    {
+        foreach (var node in Selection.Where(ProjectTreeSelection.CanOpen))
+            node.ActivateCommand.Execute(null);
+    }
+
+    /// <summary>
     /// Workspace folder name shown in the in-view header; resets to "No workspace open" when
     /// no workspace is open.  A separate [ObservableProperty] because Tool.Title (Dock base)
     /// fires its own PropertyChanged which Avalonia compiled bindings don't reliably pick up.
@@ -707,6 +738,9 @@ public partial class ProjectTreeTool : Tool, IActivatableTool
     private void RebuildVmTree(HashSet<string> expandedPaths)
     {
         if (_workspaceModel is null) return;
+        // The rows about to be thrown away must not stay SELECTED: nothing on screen would show it,
+        // and Delete would then remove a row the user can no longer see is chosen.
+        SelectedNodes.Clear();
         RootItems.Clear();
         var root = new ProjectTreeNodeViewModel(
             _workspaceModel.RootNode, FilterState, expandedPaths, _actions,

@@ -50,13 +50,18 @@ public static class CellUsageScanner
     /// nothing said. A referrer in a workspace nobody has open still cannot be found, which is why
     /// the caller's wording has to be "no other OPEN workspace references this."
     /// </param>
+    /// <param name="removedAlongside">Cell folders and folders going to the Trash in the SAME
+    /// operation (a multi-selection removed at once). A referrer at or under one of them is not
+    /// counted: it is not left behind with a broken reference, it is gone too.</param>
     public static CellUsage CountReferencingCells(
         string workspaceRootDir, string targetCellDir,
-        IEnumerable<string>? otherOpenWorkspaceRoots = null)
+        IEnumerable<string>? otherOpenWorkspaceRoots = null,
+        IReadOnlyCollection<string>? removedAlongside = null)
     {
         string target = Normalize(targetCellDir);
+        var removed = removedAlongside?.Select(Normalize).ToList() ?? [];
 
-        int count = CountIn(workspaceRootDir, target);
+        int count = CountIn(workspaceRootDir, target, removed);
         List<string>? others = null;
 
         foreach (var root in otherOpenWorkspaceRoots ?? [])
@@ -64,7 +69,7 @@ public static class CellUsageScanner
             if (string.IsNullOrWhiteSpace(root)) continue;
             if (string.Equals(Normalize(root), Normalize(workspaceRootDir), StringComparison.OrdinalIgnoreCase))
                 continue;
-            int n = CountIn(root, target);
+            int n = CountIn(root, target, removed);
             if (n == 0) continue;
             count += n;
             (others ??= []).Add(root);
@@ -125,12 +130,16 @@ public static class CellUsageScanner
         return false;
     }
 
-    private static int CountIn(string workspaceRootDir, string normalizedTargetCellDir)
+    private static int CountIn(
+        string workspaceRootDir, string normalizedTargetCellDir, IReadOnlyList<string> normalizedRemoved)
     {
         var count = 0;
         foreach (var cellDir in EnumerateCellFolders(workspaceRootDir))
         {
-            if (string.Equals(Normalize(cellDir), normalizedTargetCellDir, StringComparison.OrdinalIgnoreCase))
+            var normalized = Normalize(cellDir);
+            if (string.Equals(normalized, normalizedTargetCellDir, StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (normalizedRemoved.Any(r => IsSameOrUnder(normalized, r)))
                 continue;
 
             if (CellReferencesTarget(cellDir, normalizedTargetCellDir))
@@ -206,6 +215,12 @@ public static class CellUsageScanner
         }
         catch { return path; }
     }
+
+    /// <summary>Both arguments normalized. "Under" is on a separator boundary, so <c>amp2</c> is not
+    /// under <c>amp</c>.</summary>
+    private static bool IsSameOrUnder(string path, string dir) =>
+        string.Equals(path, dir, StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith(dir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
 
     // Enumerate every cell folder (contains .ccell) under rootDir, recursively.
     private static IEnumerable<string> EnumerateCellFolders(string rootDir)

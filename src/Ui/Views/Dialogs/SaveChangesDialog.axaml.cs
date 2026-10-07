@@ -23,12 +23,17 @@ public partial class SaveChangesDialog : Window
     /// <param name="saveLabel">Label for the primary (Save/default) button. Default "Save".</param>
     /// <param name="dontSaveLabel">Label for the secondary button. Null = hide the button entirely.</param>
     /// <param name="cancelLabel">Label for the cancel button. Default "Cancel".</param>
+    /// <param name="destructive">The primary button DESTROYS something (a remove, a move to the
+    /// Trash): Cancel becomes the default button, answers Enter and Escape, and holds the focus.
+    /// A removal can now be started from the keyboard (Delete in the Workspace panel), and a confirm
+    /// that Enter accepts turns a stray Delete-then-Enter into a deleted cell.</param>
     public SaveChangesDialog(
         string  message,
         string  saveLabel     = "Save",
         string? dontSaveLabel = "Don't Save",
         string  cancelLabel   = "Cancel",
-        string  title         = "Save Changes") : this()
+        string  title         = "Save Changes",
+        bool    destructive   = false) : this()
     {
         Title                = title;
         MessageText.Text     = message;
@@ -38,6 +43,18 @@ public partial class SaveChangesDialog : Window
             DontSaveButton.IsVisible = false;
         else
             DontSaveButton.Content = dontSaveLabel;
+
+        if (destructive)
+        {
+            SaveButton.IsDefault   = false;
+            SaveButton.Classes.Remove("accent");
+            CancelButton.IsDefault = true;
+            CancelButton.IsCancel  = true;
+            CancelButton.Classes.Add("accent");
+            // A focused button takes Enter itself, ahead of IsDefault — so the focus has to be on
+            // Cancel too, or whichever button the window happened to focus first would answer it.
+            Opened += (_, _) => CancelButton.Focus();
+        }
     }
 
     private void OnCancelClick(object? sender, RoutedEventArgs e)

@@ -275,8 +275,15 @@
                           Focusable="True" IsTabStop="False"
                           HorizontalScrollBarVisibility="Auto"
                           IsVisible="{Binding HasWorkspace}">
+                <!-- Multiple: Shift+click selects a range, ⌘+click (Ctrl+click off macOS) adds or
+                     removes one row — Avalonia's own TreeView rules, which follow each platform's
+                     file manager. SelectedItems is the view model's collection, which the TreeView
+                     fills and empties itself; SelectedItem stays the one row the inspector follows.
+                     See ProjectTreeView.Selection.cs. -->
                 <TreeView x:Name="TheTreeView"
                           ItemsSource="{Binding TopLevelItems}"
+                          SelectionMode="Multiple"
+                          SelectedItems="{Binding SelectedNodes}"
                           SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
 
                     <TreeView.Resources>

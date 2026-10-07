@@ -38939,3 +38939,31 @@ the render, never after it.
   tab shows, each once, with the `.clay` path it is registered under (so a sub-cell's own `TechRef` is resolved against
   its own file). All three loops use it through `WorkspaceViewModel.AllLayoutSessions`.
 - Gate: `LayoutDocumentHierarchyTests.TechnologyChange_ReachesThePushedInSubCell_WithItsOwnClayPath`.
+
+## Workspace panel: several rows at once, and Delete/Backspace removing them (2026-10-07)
+
+- **Asked for.** Removing a cell or folder needed the context menu; the panel selected one row; and a
+  delete key must never reach a cell while the user is working in an editor.
+- **Selection.** `TreeView SelectionMode="Multiple"`, `SelectedItems` bound to `ProjectTreeTool.SelectedNodes`.
+  Avalonia 12.0.3's own rules (read from the assembly): Shift = range, the platform COMMAND modifier
+  (⌘ on macOS, Ctrl elsewhere) = toggle, and a right-click inside the selection keeps it.
+- **Trap: a rebuild left a stale, invisible selection.** `TreeView` nulls `SelectedItem` when its
+  `SelectedItems` sees a REMOVE, but not a RESET — and `RebuildVmTree` replaces every row. Delete would
+  then have acted on a row no longer on screen. `RebuildVmTree` clears `SelectedNodes`, and
+  `ProjectTreeTool.Selection` reads that collection only, never `SelectedItem`.
+- **Focus.** The key handler is on the `TreeView`, bubbling — not a window binding — so it fires only
+  with keyboard focus inside the tree; every editor canvas takes focus on the press that selects a shape.
+  The selection is accent while the tree has the keyboard and `CrfInactiveSelectedRowBrush` otherwise,
+  swapped through the Fluent keys `TreeViewItemBackgroundSelected{,PointerOver,Pressed}` (present in
+  `Avalonia.Themes.Fluent` 12.0.3) rather than a style on a guessed template part.
+- **Every tree removal confirmation is `destructive`** (`SaveChangesDialog`): Cancel is the default,
+  answers Enter and Escape, and holds focus — Delete-then-Enter cancels.
+- **One row = that row's own remove** (`ProjectTreeSelection.SingleRemoveCommand`). **Several rows** are
+  removed together only when every one is an own cell, a user folder or a trashable document; a
+  technology or a reference is refused BY NAME, and nothing is touched. A Known File has no Delete: its
+  Remove Reference asks nothing first.
+- **The multi-selection menu** replaces the row's menu by handling `ContextRequested` in the TUNNEL on
+  the TreeView: `ContextMenu.ControlContextRequested` opens only `if (!e.Handled)`.
+- `CellUsageScanner.CountReferencingCells(…, removedAlongside)` does not count a referrer that goes to
+  the Trash in the same operation.
+- Gates: `ProjectTreeSelectionTests` (7), `CellUsageScannerTests.AReferrerRemovedAlongside_IsNotCounted`.

@@ -106,6 +106,13 @@
              for the reason CrfTileBorderBrush above records. -->
         <SolidColorBrush x:Key="CrfSelectedRowBrush" Color="{DynamicResource SystemAccentColor}" Opacity="0.28"/>
 
+        <!-- A selection in a panel that does NOT have the keyboard — the Workspace panel's rows while
+             focus is in an editor. Neutral rather than accent, so the accent means "Delete acts
+             here". The base colour at half its own 40% alpha: about #C2C2C2 on the light chrome and
+             #454545 on the dark one, so it stays visible on both (SystemChrome* keys collapse to the
+             panel's own colour under the light variant — see above). -->
+        <SolidColorBrush x:Key="CrfInactiveSelectedRowBrush" Color="{DynamicResource SystemBaseMediumLowColor}" Opacity="0.5"/>
+
 <!-- Converters registered as application-level resources so all views can use them -->
         <conv:TreeItemIconConverter           x:Key="TreeItemIconConverter"/>
         <conv:StubKindIsSchematicConverter    x:Key="StubKindIsSchematicConverter"/>

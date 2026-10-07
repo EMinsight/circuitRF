@@ -132,6 +132,16 @@ public interface ITreeActions
     Task RemoveCellAsync(ProjectTreeNodeViewModel cellNode);
 
     /// <summary>
+    /// Remove the Workspace panel's SELECTION — what Delete/Backspace and the multi-selection menu's
+    /// Remove both do. One row runs that row's own remove (<see cref="ProjectTreeSelection.SingleRemoveCommand"/>),
+    /// confirmation and all. Several rows are removed in ONE operation: one confirmation listing every
+    /// one of them, then each moved to the Trash — and only when every row is a kind
+    /// <see cref="ProjectTreeSelection.BulkRemoveRefusal"/> accepts; otherwise the refusal is posted
+    /// and nothing is touched.
+    /// </summary>
+    Task RemoveSelectionAsync(IReadOnlyList<ProjectTreeNodeViewModel> selection);
+
+    /// <summary>
     /// The <c>.cws</c> of the workspace this node's files actually live in, when that is a DIFFERENT
     /// workspace from the one open in this window — a cell under a Referenced Workspace sub-tree, a
     /// library cell that happens to sit inside someone else's workspace, or the Referenced Workspace

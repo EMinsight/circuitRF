@@ -73,6 +73,21 @@ public class CellUsageScannerTests : IDisposable
         Assert.Equal(2, result);
     }
 
+    // A multi-row removal: a referrer going to the Trash in the same operation is not left with a
+    // broken reference, so the confirmation must not count it.
+    [Fact]
+    public void AReferrerRemovedAlongside_IsNotCounted()
+    {
+        var cellA = CreateCell("cellA");
+        var cellB = CreateCell("cellB");
+        var cellC = CreateCell("cellC");
+        SaveSchematicWithCellRef(cellB, "../../cellA");
+        SaveSchematicWithCellRef(cellC, "../../cellA");
+
+        int result = CellUsageScanner.CountReferencingCells(_ws, cellA, removedAlongside: [cellA, cellB]).Count;
+        Assert.Equal(1, result);
+    }
+
     [Fact]
     public void CountsTwoInstancesInOneCellAsOne()
     {

@@ -96,6 +96,9 @@ public partial class ProjectTreeView : UserControl
         // Right-click on empty space: the workspace's own commands, arranged (ProjectTreeView.BlankMenu.cs).
         WireBlankSpaceMenu();
         WireNoWorkspaceMenu();
+
+        // Several rows at once, Delete/Backspace, and the multi-selection menu (ProjectTreeView.Selection.cs).
+        WireSelection();
     }
 
     // ── Activation focus (owner, 2026-08-25) ──────────────────────────────────
@@ -236,6 +239,15 @@ public partial class ProjectTreeView : UserControl
         // exclude them from double-click activation tracking so rapid expand→collapse doesn't
         // accidentally open a document.
         if (IsOnExpander(source)) return;
+
+        // Shift or ⌘/Ctrl is a SELECTION gesture — extending a range, or adding or removing one row.
+        // Two of them on one row in quick succession toggle it in and out; they must not open it,
+        // and they are not the start of a drag either.
+        if ((e.KeyModifiers & (KeyModifiers.Shift | KeyModifiers.Control | KeyModifiers.Meta)) != 0)
+        {
+            _lastPressVm = null;
+            return;
+        }
 
         // Double-click detection: two left-presses on the same node within DoubleClickMs.
         var vm   = GetAnyNodeFromSource(source);
