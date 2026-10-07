@@ -21,7 +21,8 @@
 // the convergence trace have nothing to do.
 //
 // So this is NonlinearDcEngine's linear pass with the dense array removed, and it deliberately
-// keeps every convention that pass sets: Port and Term are inert at DC, a gmin shunt sits on every
+// keeps every convention that pass sets: a Port or Term is its termination at DC (Re Z to its
+// reference, unless the caller says its ports are observation points — the PDN mesh's are), a gmin shunt sits on every
 // voltage row, mutual inductance is stamped after everything else, and a branch current flows from
 // its element's FIRST node to its SECOND.
 
@@ -98,7 +99,14 @@ public static class LinearDcEngine
     public const double DefaultGmin = NonlinearDcEngine.DefaultGmin;
 
     /// <summary>Solves <paramref name="netlist"/> at ω = 0, or refuses and says why.</summary>
-    public static LinearDcResult Run(ElaboratedNetlist netlist, double gmin = DefaultGmin)
+    /// <param name="portsTerminate">
+    /// True (the default, and the owner's rule for a circuit): a top-level Port or Term loads Re(Z) to its reference
+    /// node, as it does in <see cref="NonlinearDcEngine"/>. False: every Port and Term is inert — for a netlist whose
+    /// ports are OBSERVATION points rather than terminations, which is what the PDN extractor's are (each one is "an
+    /// observation port — it states no current and draws none"; the load current is its own source beside it). Loading
+    /// those with 50 Ω drew ~70 mA of phantom current through every rail.
+    /// </param>
+    public static LinearDcResult Run(ElaboratedNetlist netlist, double gmin = DefaultGmin, bool portsTerminate = true)
     {
         int nodeCount = netlist.Nodes.Count - 1;
         if (nodeCount <= 0)
@@ -126,10 +134,11 @@ public static class LinearDcEngine
 
             // A Term or a Port's 0 V branch is the S-parameter engine's drive — at DC it would short the
             // very drop being measured. What DC sees is the termination, Re(Z) to its reference node, as
-            // in NonlinearDcEngine's own linear pass (PortModel.TerminationAdmittance).
+            // in NonlinearDcEngine's own linear pass (PortModel.TerminationAdmittance) — unless the caller's ports
+            // only observe.
             if (ec.Model is PortModel or TermModel)
             {
-                if (PortModel.TerminationAdmittance(ec, 0.0) is { } yPort)
+                if (portsTerminate && PortModel.TerminationAdmittance(ec, 0.0) is { } yPort)
                     mna.AddAdmittance(ec.Nodes[0], ec.Nodes[1], yPort);
                 continue;
             }

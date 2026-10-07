@@ -203,6 +203,9 @@ public sealed class TechMaterialsTests(ITestOutputHelper output) : IDisposable
             // brief-em3d-45/47: a new sheet's default thickness is the conductor layer's of the SAME NAME — the name read
             // to find a layer, never to pick an electrical value (R-em3d2-2b's rule).
             "CircuitRF.Ui.ThreeD.C3dEditorViewModel",
+            // AA (agent authoring): `reference technologies` REPORTS each stack entry's material name, which is what an
+            // author writes back; the electrical numbers beside it are the loader's resolved ones, never re-picked.
+            "CircuitRF.Cli.Reference",
         ];
 
         var readers = new List<string>();

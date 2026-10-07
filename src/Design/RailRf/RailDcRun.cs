@@ -402,7 +402,9 @@ public static class RailDcRun
         if (request.Control is { } solving)
             solving.Stage = $"Rail '{railName}': {what}";
 
-        var solve = LinearDcEngine.Run(pdn.Netlist);
+        // The extraction's ports observe; the load current is its own source. A port loading its Z would be a 50 Ω
+        // resistor from every load pin to its reference that no board has.
+        var solve = LinearDcEngine.Run(pdn.Netlist, portsTerminate: false);
         solution = solve.Solution!;
         return solve.Refusal;
     }

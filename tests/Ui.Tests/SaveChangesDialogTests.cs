@@ -5,7 +5,8 @@ using Xunit;
 namespace CircuitRF.Ui.Tests;
 
 /// <summary>
-/// Gate: SaveChangesDialog title parameter exists, is last, and defaults to "Save Changes".
+/// Gate: SaveChangesDialog title parameter exists, is the last string, and defaults to "Save Changes".
+/// Only <c>destructive</c> follows it (a remove's confirm, where Cancel answers Enter).
 /// Constructing the dialog requires the Avalonia runtime (Window ctor), so we verify the
 /// API contract via reflection rather than constructing an instance.
 /// </summary>
@@ -13,12 +14,13 @@ public sealed class SaveChangesDialogTests
 {
     private static ParameterInfo TitleParam()
     {
-        // 5-string overload: (message, saveLabel, dontSaveLabel, cancelLabel, title)
+        // (message, saveLabel, dontSaveLabel, cancelLabel, title, destructive)
         var ctor = typeof(SaveChangesDialog).GetConstructor(
-            [typeof(string), typeof(string), typeof(string), typeof(string), typeof(string)]);
+            [typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(bool)]);
         Assert.NotNull(ctor);
         var p = ctor.GetParameters();
-        Assert.Equal(5, p.Length);
+        Assert.Equal(6, p.Length);
+        Assert.Equal("destructive", p[5].Name);
         return p[4];
     }
 

@@ -921,6 +921,12 @@ public sealed class NdfTests(ITestOutputHelper output)
         ["MicrostripKlopfModel"]  = Activity.Passive,
         ["ViaModel"]              = Activity.Passive,
         ["ViaGroundModel"]        = Activity.Passive,
+        // The four MMIC passives (AA-1): R, L and C networks of non-negative elements with a
+        // dielectric loss, all stamped as a plain admittance block — passive by construction.
+        ["MimCapModel"]           = Activity.Passive,
+        ["ThinFilmResistorModel"] = Activity.Passive,
+        ["SpiralInductorModel"]   = Activity.Passive,
+        ["AirbridgeModel"]        = Activity.Passive,
         ["ShortModel"]            = Activity.Passive,
         ["IProbeModel"]           = Activity.Passive,
         ["WSProbeModel"]          = Activity.Passive,

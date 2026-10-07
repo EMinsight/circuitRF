@@ -32,7 +32,14 @@ public class LayerMappingDialogSourceTests
             .Select(m => m.Groups[1].Value)
             .ToList();
 
-        Assert.Equal(["Board", "Component", "DXF", "GDSII", "Gerber"], formats.Order(StringComparer.Ordinal));
+        Assert.Equal(["Board", "Component", "DXF", "Gerber"], formats.Order(StringComparer.Ordinal));
+
+        // The stream formats (brief-oasis-gdstk G2/G4) share one call site, which names the ROUTE it read through —
+        // GDSII, GDSII (gdstk) or OASIS (gdstk) — rather than a literal.
+        Assert.Single(Regex.Matches(source, @"ResolveImportLayerMappingAsync\(window, route\.DisplayName\(\)"));
+        Assert.Equal(["GDSII", "GDSII (gdstk)", "OASIS (gdstk)"],
+            Enum.GetValues<CircuitRF.Design.Layout.Interchange.StreamRoute>()
+                .Select(r => CircuitRF.Design.Layout.Interchange.StreamInterchange.DisplayName(r)));
         Assert.DoesNotContain("Import GDSII — Layer Mapping", source, StringComparison.Ordinal);
     }
 

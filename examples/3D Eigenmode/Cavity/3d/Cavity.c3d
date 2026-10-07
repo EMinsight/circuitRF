@@ -8,64 +8,15 @@
 			"$type": "Box",
 			"Name": "floor",
 			"Material": "Aluminium",
-			"Min": [
-				{
-					"Expr": "-a/2 - wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "-d/2 - wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "-wall",
-					"Unit": "Mm"
-				}
-			],
-			"Size": [
-				{
-					"Expr": "a + 2*wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "d + 2*wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "wall",
-					"Unit": "Mm"
-				}
-			]
+			"Min": [{ "Expr": "-a/2 - wall", "Unit": "Mm" }, { "Expr": "-d/2 - wall", "Unit": "Mm" }, { "Expr": "-wall", "Unit": "Mm" }],
+			"Size": [{ "Expr": "a + 2*wall", "Unit": "Mm" }, { "Expr": "d + 2*wall", "Unit": "Mm" }, { "Expr": "wall", "Unit": "Mm" }]
 		},
 		{
 			"$type": "Box",
 			"Name": "substrate",
 			"Material": "PTFE-glass laminate",
-			"Min": [
-				{
-					"Expr": "-a/2",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "-d/2",
-					"Unit": "Mm"
-				},
-				0
-			],
-			"Size": [
-				{
-					"Expr": "a",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "d",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "t_sub",
-					"Unit": "Mm"
-				}
-			]
+			"Min": [{ "Expr": "-a/2", "Unit": "Mm" }, { "Expr": "-d/2", "Unit": "Mm" }, 0],
+			"Size": [{ "Expr": "a", "Unit": "Mm" }, { "Expr": "d", "Unit": "Mm" }, { "Expr": "t_sub", "Unit": "Mm" }]
 		},
 		{
 			"$type": "Sheet",
@@ -73,185 +24,46 @@
 			"Material": "Perfect conductor",
 			"Role": "Conductor",
 			"Plane": "XY",
-			"Offset": {
-				"Expr": "t_sub",
-				"Unit": "Mm"
-			},
+			"Offset": { "Expr": "t_sub", "Unit": "Mm" },
 			"Rect": {
-				"Min": [
-					{
-						"Expr": "-(a/2 - port_gap)",
-						"Unit": "Mm"
-					},
-					{
-						"Expr": "-w/2",
-						"Unit": "Mm"
-					}
-				],
-				"Size": [
-					{
-						"Expr": "a - 2*port_gap",
-						"Unit": "Mm"
-					},
-					{
-						"Expr": "w",
-						"Unit": "Mm"
-					}
-				]
+				"Min": [{ "Expr": "-(a/2 - port_gap)", "Unit": "Mm" }, { "Expr": "-w/2", "Unit": "Mm" }],
+				"Size": [{ "Expr": "a - 2*port_gap", "Unit": "Mm" }, { "Expr": "w", "Unit": "Mm" }]
 			}
 		},
 		{
 			"$type": "Box",
 			"Name": "wall_w",
 			"Material": "Aluminium",
-			"Min": [
-				{
-					"Expr": "-a/2 - wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "-d/2 - wall",
-					"Unit": "Mm"
-				},
-				0
-			],
-			"Size": [
-				{
-					"Expr": "wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "d + 2*wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "h",
-					"Unit": "Mm"
-				}
-			]
+			"Min": [{ "Expr": "-a/2 - wall", "Unit": "Mm" }, { "Expr": "-d/2 - wall", "Unit": "Mm" }, 0],
+			"Size": [{ "Expr": "wall", "Unit": "Mm" }, { "Expr": "d + 2*wall", "Unit": "Mm" }, { "Expr": "h", "Unit": "Mm" }]
 		},
 		{
 			"$type": "Box",
 			"Name": "wall_e",
 			"Material": "Aluminium",
-			"Min": [
-				{
-					"Expr": "a/2",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "-d/2 - wall",
-					"Unit": "Mm"
-				},
-				0
-			],
-			"Size": [
-				{
-					"Expr": "wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "d + 2*wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "h",
-					"Unit": "Mm"
-				}
-			]
+			"Min": [{ "Expr": "a/2", "Unit": "Mm" }, { "Expr": "-d/2 - wall", "Unit": "Mm" }, 0],
+			"Size": [{ "Expr": "wall", "Unit": "Mm" }, { "Expr": "d + 2*wall", "Unit": "Mm" }, { "Expr": "h", "Unit": "Mm" }]
 		},
 		{
 			"$type": "Box",
 			"Name": "wall_s",
 			"Material": "Aluminium",
-			"Min": [
-				{
-					"Expr": "-a/2",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "-d/2 - wall",
-					"Unit": "Mm"
-				},
-				0
-			],
-			"Size": [
-				{
-					"Expr": "a",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "h",
-					"Unit": "Mm"
-				}
-			]
+			"Min": [{ "Expr": "-a/2", "Unit": "Mm" }, { "Expr": "-d/2 - wall", "Unit": "Mm" }, 0],
+			"Size": [{ "Expr": "a", "Unit": "Mm" }, { "Expr": "wall", "Unit": "Mm" }, { "Expr": "h", "Unit": "Mm" }]
 		},
 		{
 			"$type": "Box",
 			"Name": "wall_n",
 			"Material": "Aluminium",
-			"Min": [
-				{
-					"Expr": "-a/2",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "d/2",
-					"Unit": "Mm"
-				},
-				0
-			],
-			"Size": [
-				{
-					"Expr": "a",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "h",
-					"Unit": "Mm"
-				}
-			]
+			"Min": [{ "Expr": "-a/2", "Unit": "Mm" }, { "Expr": "d/2", "Unit": "Mm" }, 0],
+			"Size": [{ "Expr": "a", "Unit": "Mm" }, { "Expr": "wall", "Unit": "Mm" }, { "Expr": "h", "Unit": "Mm" }]
 		},
 		{
 			"$type": "Box",
 			"Name": "lid",
 			"Material": "Aluminium",
-			"Min": [
-				{
-					"Expr": "-a/2 - wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "-d/2 - wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "h",
-					"Unit": "Mm"
-				}
-			],
-			"Size": [
-				{
-					"Expr": "a + 2*wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "d + 2*wall",
-					"Unit": "Mm"
-				},
-				{
-					"Expr": "wall",
-					"Unit": "Mm"
-				}
-			]
+			"Min": [{ "Expr": "-a/2 - wall", "Unit": "Mm" }, { "Expr": "-d/2 - wall", "Unit": "Mm" }, { "Expr": "h", "Unit": "Mm" }],
+			"Size": [{ "Expr": "a + 2*wall", "Unit": "Mm" }, { "Expr": "d + 2*wall", "Unit": "Mm" }, { "Expr": "wall", "Unit": "Mm" }]
 		}
 	],
 	"Variables": [
@@ -299,14 +111,8 @@
 			"Plane": "YZ",
 			"Offset": -10800000,
 			"Rect": {
-				"Min": [
-					-390000,
-					0
-				],
-				"Size": [
-					780000,
-					254000
-				]
+				"Min": [-390000, 0],
+				"Size": [780000, 254000]
 			},
 			"Z0": "50"
 		},
@@ -317,16 +123,23 @@
 			"Plane": "YZ",
 			"Offset": 10800000,
 			"Rect": {
-				"Min": [
-					-390000,
-					0
-				],
-				"Size": [
-					780000,
-					254000
-				]
+				"Min": [-390000, 0],
+				"Size": [780000, 254000]
 			},
 			"Z0": "50"
+		}
+	],
+	"FieldPlots": [
+		{
+			"Name": "Cavity mode",
+			"Setup": "Modes",
+			"Solution": {
+				"Mode": 1
+			},
+			"Quantity": "E",
+			"On": "ClipPlane",
+			"Axis": "Z",
+			"Offset": 127000
 		}
 	],
 	"Setups": [
@@ -456,19 +269,6 @@
 				"ElementOrder": 2,
 				"LinearSolver": "Direct"
 			}
-		}
-	],
-	"FieldPlots": [
-		{
-			"Name": "Cavity mode",
-			"Setup": "Modes",
-			"Solution": {
-				"Mode": 1
-			},
-			"Quantity": "E",
-			"On": "ClipPlane",
-			"Axis": "Z",
-			"Offset": 127000
 		}
 	]
 }

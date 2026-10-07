@@ -126,9 +126,7 @@ internal static partial class Reference
             .Where(l => l.Kind is StackupKind.Conductor or StackupKind.Via)
             .SelectMany(l => l.DrawingLayers).ToHashSet();
 
-        var materials = tech.Materials.Select(m => m.Name)
-            .Concat(tech.LibraryMaterials.Select(m => m.Material.Name))
-            .Distinct(StringComparer.Ordinal).ToList();
+        var materials = tech.ResolvedMaterials.Select(m => m.Name).ToList();
 
         return new ReferenceTechnologyJson(
             entry.Id, tech.Name, entry.Id == ShippedTechnologies.DefaultId,

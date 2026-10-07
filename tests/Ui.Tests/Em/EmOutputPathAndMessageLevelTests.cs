@@ -175,9 +175,10 @@ public class EmMessageLevelRoutingSourceTests
     public void EachChannelIsPostedAtItsOwnLevel_NeverAllAsWarnings()
     {
         string body = RunEmSetupBody();
-        Assert.Contains("result.Notes ?? [])    Messages.Info(", body, StringComparison.Ordinal);
-        Assert.Contains("result.Warnings)       Messages.Warning(", body, StringComparison.Ordinal);
-        Assert.Contains("result.Errors ?? [])   Messages.Error(", body, StringComparison.Ordinal);
+        // Each sentence is posted through PostEmSentence (brief-em3d-97), which posts at the level it is handed.
+        Assert.Contains("result.Notes ?? [])    PostEmSentence(Messages, MessageLevel.Info,", body, StringComparison.Ordinal);
+        Assert.Contains("result.Warnings)       PostEmSentence(Messages, MessageLevel.Warning,", body, StringComparison.Ordinal);
+        Assert.Contains("result.Errors ?? [])   PostEmSentence(Messages, MessageLevel.Error,", body, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -61,8 +61,9 @@ public class TechPersistenceTests
         var tech = StarterTechnologies.MmicGaAs();
         Assert.Equal(LayoutUnit.Um, tech.DefaultDisplayUnit);
         Assert.Equal(LayoutUnits.ToDbu(5m, LayoutUnit.Nm, LayoutUnits.DefaultDbuPerMicron), tech.DefaultSnapDbu);
-        // 8 interconnect drawing layers + MIM-2's two module layers (MIM Metal, MIM Via).
-        Assert.Equal(10, tech.Layers.Count);
+        // 8 interconnect drawing layers + MIM-2's two module layers (MIM Metal, MIM Via) + AA-2's two drawn-only
+        // markers the LVS recognition deck reads (Line Marker, Inductor Marker).
+        Assert.Equal(12, tech.Layers.Count);
         // brief-via-primitive-and-stackup.md §3.1/R-via-4: Metal2 / Air / Metal1 / GaAs / Backside Metal
         // (5 physical layers, replacing the old single "Plated Gold" conductor that wrongly merged
         // Metal1+Metal2) plus two Via entries (Backside Via, Metal1-Metal2 Post) = 7; MIM-2's

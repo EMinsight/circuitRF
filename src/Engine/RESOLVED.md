@@ -2708,6 +2708,12 @@ reference node; the 0 V drive branch is still never stamped there.
   Harmonica, Core and Ui); no hero or shipped example has a Term in one. Gate:
   `TermScopingTests.HarmonicBalance_ATermIsItsZ_AtEveryHarmonic_AndRealAtDc` (Z = 50+25j: V₁ = I·Z, V₀ = Idc·Re Z).
 
+- **Not on railRF's PDN mesh (2026-10-07).** The extractor puts a `Port` at every load as an OBSERVATION point —
+  "it states no current and draws none"; the load current is its own `I_1Tone` beside it. Loading those with Re(Z)
+  hung 50 Ω from every load pin to its reference: ~72 mA of phantom current on a 3.6 V rail, so every DC drop,
+  source share and the Power Rail example's published figures moved (eleven Ui.Tests, none run at the time).
+  `LinearDcEngine.Run` takes `portsTerminate` (default true, the owner's rule); `RailDcRun` passes false. Its only
+  caller is railRF, but the default stays the circuit rule so a future circuit caller inherits the decision above.
 
 ## openEMS grid: a thirds pair broken by grading in a narrow gap (brief-em3d-117, 2026-10-06; fixed by brief-em3d-122)
 

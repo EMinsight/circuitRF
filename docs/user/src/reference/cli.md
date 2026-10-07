@@ -1249,7 +1249,7 @@ answering it — never a guess.</p>
 circuitRF owns is readable, versioned JSON — see [File formats](file-formats.html) — and that file
 *is* the interface.
 
-<h3 id="new-add">`new` is one verb with a noun</h3>
+<h3 id="new-add"><code>new</code> is one verb with a noun</h3>
 
 `new workspace` and `new cell` are two nouns of one verb, not two verbs. It reads better and, more to
 the point, the number of top-level verbs is a cost every reader of `--help` pays.
@@ -1353,7 +1353,7 @@ drawn in pixels, at a size with a floor, so they have no world extent until a pa
 fitted symbol page is therefore wider than the box [`explain --extents`](#explain-extents) reports,
 which is the box you want when you are sizing a `--window` yourself.
 
-<h3 id="render-detail">Size, and what `--detail` costs</h3>
+<h3 id="render-detail">Size, and what <code>--detail</code> costs</h3>
 
 | Option | What it does |
 |---|---|
@@ -1498,7 +1498,7 @@ is empty" and "the plot read the wrong run" look identical.
 
 A 3D setup's model — a `.cem` with a 3D solver, or a `.c3d` — is drawn as a section with
 `--section z=35um` (or `xz@y=…`, `yz@x=…`; every length carries a unit) or as an outline with `--iso`.
-A `.c3d` also keeps its [field plots](em-3d.md) as records, so a plot can be drawn with no window. A
+A `.c3d` also keeps its [field plots](em-3d.html) as records, so a plot can be drawn with no window. A
 clip-plane plot **is** a section: it is drawn on its own axis at its own position, with the field under
 the model's outlines and its legend beside it.
 
@@ -1521,7 +1521,7 @@ the model's outlines and its legend beside it.
   refusal on any other. The phase is never written to the file.
 - **A hidden plot draws the same.** Hiding only chooses which plot the window draws; `--field` names one.
 - **The plot's drive is applied**, and its legend states it, as in the window. There is no flag for it:
-  set it on the plot. See [what drive a field is shown at](em-3d.md#field-drive).
+  set it on the plot. See [what drive a field is shown at](em-3d.html#field-drive).
 - A `--section` that is not the plot's own plane is a refusal naming both.
 - **A surfaces or faces plot is drawn as the 3D view shows it, from a direction you give**, because the
   window's camera is not saved with the plot: `--iso` (the 3D view's *Standard Views ▸ Isometric*),
@@ -1564,7 +1564,7 @@ the model's outlines and its legend beside it.
 
 <h4 id="render-transparency">A see-through object for one picture</h4>
 
-A `.c3d`'s objects are drawn at the [transparency](drawing-in-3d.md#transparency) each states: a section fills
+A `.c3d`'s objects are drawn at the [transparency](drawing-in-3d.html#transparency) each states: a section fills
 each one at it, and a surfaces or faces plot shades the model around the field with it. An outline (`--iso`)
 fills nothing, so it looks the same whatever an object states. `--transparency` sets one **for this render
 only** — the file on disk is never written:
@@ -1580,7 +1580,7 @@ only** — the file on disk is never written:
 
 <h4 id="render-realistic">A realistic picture</h4>
 
-`--look realistic` draws a `.c3d` as its [realistic view](drawing-in-3d.md#realistic) looks, as a `.png`, with no window. It is
+`--look realistic` draws a `.c3d` as its [realistic view](drawing-in-3d.html#realistic) looks, as a `.png`, with no window. It is
 what Export Picture makes in the realistic view:
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf render pkg/3d/pkg.c3d -o shot.png --look realistic --iso
@@ -1607,7 +1607,7 @@ what Export Picture makes in the realistic view:
 
 <h4 id="render-images">Reference images</h4>
 
-A `.c3d`'s [reference images](drawing-in-3d.md#images) — image sheets, and images mapped onto faces — are drawn by
+A `.c3d`'s [reference images](drawing-in-3d.html#images) — image sheets, and images mapped onto faces — are drawn by
 `--iso` exactly as the 3D view's *Copy as Vector* draws them, from the same code: under every line, each clipped to its
 sheet or its face, at its transparency. An image sheet is usually not modelled and has no material, so a run leaves it
 out; the picture puts it back and frames it whole. An SVG carries each picture as an `<image>`; a PDF stays vector apart
@@ -1716,13 +1716,13 @@ useless. Two states are warnings on purpose: a cell folder holding several views
 primary, and a layout that resolves no technology. Both are normal.</p>
 </div>
 
-On a `.c3d`, a [reference image](drawing-in-3d.md#images) is drawing only, so what is wrong with one is a **warning**,
+On a `.c3d`, a [reference image](drawing-in-3d.html#images) is drawing only, so what is wrong with one is a **warning**,
 never an error — a design does not fail `check` because a photo moved: an image file that is missing or does not decode
 (`c3d.image.unreadable`, naming the object and the path it resolved to), an image mapped onto a face its object no longer
 has (`c3d.image.face-missing` — the record is kept, never dropped), two images on one face (`c3d.image.face-twice`), a
 face image whose Width or Height is not positive (`c3d.image.face-size`) and `"Locked"` on a sheet with no image
 (`c3d.image.locked-without-image`). An object that is not modelled and has no material raises no *has no material*
-warning: only what a run solves is warned of. The [realistic view's `Look`](drawing-in-3d.md#realistic) is display too: an
+warning: only what a run solves is warned of. The [realistic view's `Look`](drawing-in-3d.html#realistic) is display too: an
 `Exposure` or `Intensity` out of range (`c3d.look.range`), a `Background` (`c3d.look.background`) or an `Environment`
 (`c3d.look.environment`) spelled in no form the view reads is an error, and a `.hdr` that is missing or does not read is a
 warning (`c3d.look.hdr-unreadable`): the view lights the scene with Studio instead.
@@ -1788,7 +1788,7 @@ What each finding means, and the limits of the causality measurement, are on the
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain &lt;path&gt; [--expr "&lt;expression&gt;"] [--set var=expr]
                             [--analysis [&lt;name&gt;]] [--ref &lt;relative-ref&gt;]
                             [--cells [--all]] [--layers] [--extents] [--view &lt;name&gt;]
-                            [--footprints]</code></pre>
+                            [--footprints] [--setup &lt;name&gt;] [--object &lt;name&gt;] [--look]</code></pre>
 
 `check` answers "is something wrong". `explain` answers the question that is **not** a failure: which
 technology did this layout get, which analysis would actually run, what does this expression evaluate
@@ -1857,7 +1857,15 @@ that a run refuses the face, before its 3D solve, if its modes travel at one spe
 terminals, a reference plane moved off the face) says `a run would stop here:` and why; on both solvers it
 says Palace will be skipped.
 
-<h3 id="explain-analysis">`--analysis` — which chain would run</h3>
+<h3 id="explain-object">A 3D view: <code>--object</code> — how does this object look?</h3>
+
+On a `.c3d`, `--object <name>` walks the [appearance](drawing-in-3d.html#appearance) the realistic view draws that object
+with: one line per field, each saying which statement decided it — the object's own, an instance's (innermost first),
+its material's, the material's colour, or the role's default. The name is a top-level object's, which answers for every
+solid it elaborates to, or an elaborated one (`U1/trace`). Nothing in it is read from εr or σ: an appearance is drawing
+only. `--look` lists the Look itself and every appearance in the view the same way.
+
+<h3 id="explain-analysis"><code>--analysis</code> — which chain would run</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain pa.cnl --analysis
 <span class="output">SWEEP1   parametric_sweep   enabled  runnable  root   → dispatched by hb
@@ -1891,7 +1899,7 @@ report says which:
     nothing. It reports what it can establish and stays quiet about the rest.</p>
   </div>
 
-<h3 id="explain-touchstone">`explain` on a Touchstone file — what IS this part?</h3>
+<h3 id="explain-touchstone"><code>explain</code> on a Touchstone file — what IS this part?</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain part.s2p
 <span class="output">part.s2p  (touchstone)
@@ -1912,7 +1920,7 @@ unlabelled one — above, the series reading finds no resonance at all and puts 
 magnitude out, so the part is plainly a shunt-mounted capacitor. The equations behind each reading are
 on the [Derived Metrics](derived-metrics.html#fixture) page.
 
-<h3 id="explain-expr">`--expr` — evaluate in the design's scope</h3>
+<h3 id="explain-expr"><code>--expr</code> — evaluate in the design's scope</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain pa.cnl --expr "Zopt*2" --set Zopt=12.5
 <span class="output">Zopt*2 = 25   (real)</span></code></pre>
@@ -1920,7 +1928,7 @@ on the [Derived Metrics](derived-metrics.html#fixture) page.
 Through the one expression engine, in the design's resolved scope — never by substitution — with
 `--set` applied first exactly as a run verb applies it. The kind is reported, never coerced.
 
-<h3 id="explain-ref">`--ref` — where does this reference land</h3>
+<h3 id="explain-ref"><code>--ref</code> — where does this reference land</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Stage1.csch --ref ../parts/SOT-23-3
 <span class="output">../parts/SOT-23-3 → /home/you/designs/parts/SOT-23-3   resolved
@@ -1929,7 +1937,7 @@ Through the one expression engine, in the design's resolved scope — never by s
 Where resolution fails, **that is the answer** — a sentence naming what was looked for and where it
 was looked. You are usually running this verb precisely because something did not resolve.
 
-<h3 id="explain-cells">`--cells` — what cells are in here?</h3>
+<h3 id="explain-cells"><code>--cells</code> — what cells are in here?</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain ~/designs/Amp --cells
 <span class="output">Amp  (workspace)
@@ -1965,7 +1973,7 @@ compose with `render`: ask what views a cell has, then render one. `--all` inclu
 which are hidden by default exactly as the project tree hides them. This is the same enumeration
 `render --cell` resolves through, so a cell listed here is a cell that verb can draw.
 
-<h3 id="explain-layers">`--layers` — what may I ask for?</h3>
+<h3 id="explain-layers"><code>--layers</code> — what may I ask for?</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Stage1.clay --layers
 <span class="output">  technology   /home/you/designs/Amp/tech/pcb-2layer_FR-4_70mil_1oz.ctech
@@ -1996,7 +2004,7 @@ Two things it cannot tell you, both worth knowing:
   would report a document as drawing on layers it does not and hide the ones it does. The generated
   name is a name [`render --layers`](#render-layers) accepts.
 
-<h3 id="explain-footprints">`--footprints` — what artwork does each part state?</h3>
+<h3 id="explain-footprints"><code>--footprints</code> — what artwork does each part state?</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Board1/schematic/Board1.csch --footprints
 <span class="output">  footprints: 3
@@ -2033,7 +2041,7 @@ it never reaches the simulator. Asking the netlist about it would report every d
 none.</p>
 </div>
 
-<h3 id="explain-extents">`--extents` — how big is it?</h3>
+<h3 id="explain-extents"><code>--extents</code> — how big is it?</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Stage1.clay --extents
 <span class="output">  extents      0 -0.003 .. 0.02 0.00376719  (0.02 x 0.00676719 m, scale 1E-06)

@@ -448,12 +448,11 @@ public class EmPanelDeclutterTests
         Assert.Equal(2, completes.Count);
         Assert.NotEqual(completes[0], completes[1]);
 
-        // Warnings and per-file errors come BEFORE the run's own error, which is posted last.
-        int warnings = block.IndexOf("Messages.Warning(w)", StringComparison.Ordinal);
-        int errors   = block.IndexOf("Messages.Errors", StringComparison.Ordinal);
-        int fileErrs = block.IndexOf("Messages.Error(e)", StringComparison.Ordinal);
+        // Warnings and per-file errors come BEFORE the run's own error, which is posted last. Each sentence goes
+        // through PostEmSentence (brief-em3d-97: a row naming .wslconfig gains an action), at its own level.
+        int warnings = block.IndexOf("PostEmSentence(Messages, MessageLevel.Warning, result, w,", StringComparison.Ordinal);
+        int fileErrs = block.IndexOf("PostEmSentence(Messages, MessageLevel.Error, result, e,", StringComparison.Ordinal);
         int theError = block.IndexOf("Messages.Error(result.Error", StringComparison.Ordinal);
-        _ = errors;
         Assert.True(warnings > 0 && fileErrs > warnings, "warnings must still be reported, first");
         Assert.True(theError > fileErrs, "the run's own error must be posted last");
 

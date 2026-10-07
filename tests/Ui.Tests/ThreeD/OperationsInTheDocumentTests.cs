@@ -36,11 +36,13 @@ public sealed class OperationsInTheDocumentTests : IDisposable
         var fake = new FakeKernel();
         using var kernel = fake.Create();
         // brief-em3d-70 — the 3D Connector example uses the kernel on purpose, and the Hierarchy example carries its own copy
-        // of that launch; every OTHER shipped 3D view holds no kernel object, and those are what this gate is about.
+        // of that launch, as does the 3D Wave Ports example (its flange unchanged, its launch's back end opened to a wave
+        // port); every OTHER shipped 3D view holds no kernel object, and those are what this gate is about.
         string examples = Path.Combine(RepoRoot(), "examples");
         var all = Directory.GetFiles(examples, "*.c3d", SearchOption.AllDirectories);
         var usesKernel = all.Where(f => C3dKernelUse.Of(C3dPersistence.LoadFromFile(f)).Count > 0).ToList();
-        Assert.Equal(["3D Connector/Flange/3d/Flange.c3d", "3D Connector/Launch/3d/Launch.c3d", "Hierarchy/Launch/3d/Launch.c3d"],
+        Assert.Equal(["3D Connector/Flange/3d/Flange.c3d", "3D Connector/Launch/3d/Launch.c3d",
+                       "3D Wave Ports/Flange/3d/Flange.c3d", "3D Wave Ports/Launch/3d/Launch.c3d", "Hierarchy/Launch/3d/Launch.c3d"],
             usesKernel.Select(f => Path.GetRelativePath(examples, f).Replace(Path.DirectorySeparatorChar, '/')).Order(StringComparer.Ordinal));
         // The Hierarchy Assembly holds no kernel object but PLACES that launch, so its elaboration reaches the kernel too.
         bool Places(string f) => C3dPersistence.LoadFromFile(f).Instances.Any(i =>

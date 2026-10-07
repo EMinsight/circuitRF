@@ -345,13 +345,17 @@ namespace CircuitRF.Render.DataDisplay
         /// <summary>
         /// The single iso-line color actually drawn: the user's <paramref name="lineColor"/> when
         /// <paramref name="lineColorOverridden"/>, otherwise a high-contrast color auto-derived from the
-        /// colormap midpoint (luminance-inverted then capped at 0.45 so it stays readable). Shared with the
+        /// colormap midpoint (luminance-inverted then capped at 0.45 so it stays readable) — except Bone, whose
+        /// line is a fixed #0B1F33. Shared with the
         /// trace card's color-swatch so the indicator matches the rendered lines.
         /// </summary>
         internal static SKColor ResolveBaseLineColor(SKColor lineColor, bool lineColorOverridden,
             ContourColorMap colorMap)
         {
             if (lineColorOverridden) return lineColor;
+
+            // Bone's derived line came out a neutral grey; the owner chose a dark navy instead.
+            if (colorMap == ContourColorMap.Bone) return new SKColor(0x0B, 0x1F, 0x33, lineColor.Alpha);
 
             var mapColor = ContourColormaps.Sample(colorMap, 0.5);
             float lum = (0.299f * mapColor.Red + 0.587f * mapColor.Green + 0.114f * mapColor.Blue) / 255f;
