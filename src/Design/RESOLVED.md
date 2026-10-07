@@ -18154,3 +18154,48 @@ imported through gdstk gives byte-identical cell folders and messages to `GdsiiI
 plan's counts and reads back, through `GdsiiReader`, as the native file does; an unreadable file fails and creates
 nothing; a missed deadline and a dying worker are reported with their ids; discovery with no worker says the
 disabled-command sentence; a dangling reference is refused before the worker starts.
+
+## OASIS and gdstk — menus, the engine choice and the comparison tests (brief-oasis-gdstk G3, R-oas-3, 2026-10-06)
+
+**One route type, two entry functions.** `StreamRoute` (`Gdsii`, `GdsiiGdstk`, `OasisGdstk`) and
+`StreamInterchange.Import`/`Write` in `Interchange/StreamRoute.cs` are what File ▸ Import / Export and
+`convert --engine` call; neither the view model nor `src/Cli` branches on the engine itself. The view model has
+one `ImportStreamLibraryAsync(owner, route)` behind three commands, and the layout editor one
+`OnExportGdsiiAsync(route)` (fidelity dialog, DRC- and LVS-before-export, save picker) behind three menu entries
+— `LayoutDocument.ExportGdsiiRequested` now carries the route. The toolbar button stays native.
+`GdsiiExport.Write` now returns its `GdsiiExportSummary` (it was `void`); the bytes are unchanged
+(`GdsiiExportByteIdentityTests` green).
+
+**Availability is asked once.** `WorkspaceViewModel.GdstkUnavailableReason` is a `Lazy` over discovery: the worker
+does not appear or vanish while the application runs. The (gdstk) entries' tooltips say
+`GdstkWorker.NotInstalledSentence` when it is absent. The two OASIS entries exist in all three menus (and the
+project tree's blank-area Import list, which `ProjectTreeBlankMenuTests` holds to File ▸ Import) with a
+constant-false `CanExecute`; G4 changes the predicate, nothing else.
+
+**The export dialog blocks what gdstk cannot write.** An unresolved instance reference is a warning on the
+native route (it writes a dangling name) and a block on a gdstk route (`StreamRoute.BlockingReferences`), so the
+refusal comes before the save picker instead of after it. Titles and sentences name the route; the counts are
+the plan's on every route.
+
+**`convert --engine native|gdstk`.** Refused (`convert.engine.not-gdsii`) when neither end is GDSII — for
+`native` too, so the flag never silently means nothing; refused (`convert.engine.unavailable`) with discovery's
+sentence when the worker is absent; an unknown value is `convert.args.engine`. Both checks run before anything is
+read. A gdstk failure mid-run reports the worker's own coded diagnostic (`gdstk.*`); a cancellation exits 130.
+The banner names the route (`GDSII (gdstk) -> DXF`), which is what the 9 `--engine gdstk` all-pairs rows assert,
+so a row that quietly ran the native code fails.
+
+**The comparison (§7c), `tests/Ui.Tests/Interchange/GdstkGdsiiComparisonTests` — 45 cases, all green on
+osx-arm64, no difference to classify:**
+1. Same file, both readers: every §7c simple fixture as gdstk wrote it (`8a/*.gdstk.gds`) — including `labels`,
+   whose MAG 2 both readers turn into height 2000, and whose mirror both drop.
+2. Native writer → gdstk reader, 3. gdstk writer → native reader, 4. both writers → native reader: equal over
+   `GdstkCorpus` (the same 11 cases, built as `InterchangeStructure`s).
+5. Both routes report the plan's counts (circle + via pad = 2 curves, 1 hole, 1 bitmap, 1 via pad).
+
+Comparison is at the READ level (the structures the two readers hand `StreamLayoutImport`), because everything
+after that is one function by construction (G2) and the structures are what §8b defines equality over.
+`InterchangeEquality` rounds rotation and magnification to 1e-9 rather than §8b's 1e-12: the gdstk route snaps
+angles to 1e-9° on import (G2), so a tighter tolerance would report the snap. **The corpus labels are height
+1000 on purpose**: circuitRF's writer carries a label's height as `WIDTH`, which gdstk ignores on TEXT, so any
+other height reads back through gdstk as 1000 — G2's recorded difference (the spec leaves `WIDTH` on TEXT
+undefined, so it is classified ambiguous, not either side's defect), not one to rediscover in every case.

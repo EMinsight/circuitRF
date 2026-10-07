@@ -381,7 +381,22 @@ internal static class CliDiagnostics
         "       formats: clay | gdsii | dxf | gerber | board; step (a source: -o <new>.c3d)\n" +
         "       step:  --material <part>=<name> (repeatable)  --part <path> (repeatable)  --tech <path.ctech>\n" +
         "       gltf:  -o <file>.glb from a .c3d  --gltf-assembly  --gltf-field <plot>  --region <name>\n" +
+        "       --engine native|gdstk  the GDSII reader or writer for a gdsii source or target (default native)\n" +
         "       --no-coalesce  keep a painted pour's individual strokes");
+
+    // ── brief-oasis-gdstk.md §7d — --engine ──────────────────────────────────────────────────────────
+
+    public static Diagnostic ConvertUnknownEngine(string value) => Diagnostic.Create(
+        "convert.args.engine", DiagnosticSeverity.Error, "--engine takes native or gdstk, not '{value}'.", ("value", value));
+
+    /// <summary>--engine picks a GDSII reader or writer: with no GDSII end there is nothing for it to pick.</summary>
+    public static Diagnostic ConvertEngineNeedsGdsii() => new(
+        "convert.engine.not-gdsii", DiagnosticSeverity.Error,
+        "--engine applies to a gdsii source or target only, and this conversion has neither.");
+
+    /// <summary>D6 — the gdstk route without the worker. <paramref name="reason"/> is discovery's sentence.</summary>
+    public static Diagnostic ConvertEngineUnavailable(string reason) => Diagnostic.Create(
+        "convert.engine.unavailable", DiagnosticSeverity.Error, "--engine gdstk cannot run: {reason}", ("reason", reason));
 
     /// <summary>brief-em3d-68 R-em3d68-7a — a STEP file becomes a NEW .c3d and nothing else.</summary>
     public static Diagnostic ConvertStepTarget(string output) => Diagnostic.Create(

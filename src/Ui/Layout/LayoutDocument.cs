@@ -58,11 +58,13 @@ public sealed class LayoutDocument : Document, IUndoableDocument, IActivatableDo
     // reference to call that logic on directly. Mirrors CanvasInteracted's own shape exactly: the VM
     // layer only RAISES the request; the view (already subscribed for CanvasInteracted/activation
     // focus) is what actually runs the export.
-    public event Action? ExportGdsiiRequested;
+    /// <summary>Carries the route (brief-oasis-gdstk.md §7a): circuitRF's own GDSII writer, or gdstk's GDSII
+    /// or OASIS writer — one export in the view, whichever File ▸ Export entry asked.</summary>
+    public event Action<StreamRoute>? ExportGdsiiRequested;
     public event Action? ExportDxfRequested;
     public event Action? ExportGerberRequested;
     public event Action? ExportBoardRequested;
-    public void RequestExportGdsii() => ExportGdsiiRequested?.Invoke();
+    public void RequestExportGdsii(StreamRoute route = StreamRoute.Gdsii) => ExportGdsiiRequested?.Invoke(route);
     public void RequestExportDxf() => ExportDxfRequested?.Invoke();
     public void RequestExportGerber() => ExportGerberRequested?.Invoke();
     public void RequestExportBoard() => ExportBoardRequested?.Invoke();

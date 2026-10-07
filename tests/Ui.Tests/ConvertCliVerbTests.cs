@@ -23,6 +23,7 @@ using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Ui.Layout;
+using CircuitRF.Ui.Tests.Interchange;
 using Xunit.Abstractions;
 
 namespace CircuitRF.Ui.Tests;
@@ -60,16 +61,49 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
     }
 
     [Theory, MemberData(nameof(Pairs))]
-    public void EveryFormatConvertsToEveryOther(string from, string to)
+    public void EveryFormatConvertsToEveryOther(string from, string to) => ConvertsPair(from, to);
+
+    /// <summary>brief-oasis-gdstk.md §7d: every pair with a GDSII end, through gdstk's reader or writer.</summary>
+    public static TheoryData<string, string> GdsiiPairs
+    {
+        get
+        {
+            var d = new TheoryData<string, string>();
+            foreach (var row in Pairs)
+                if ((string)row[0] == "gdsii" || (string)row[1] == "gdsii") d.Add((string)row[0], (string)row[1]);
+            return d;
+        }
+    }
+
+    [GdstkTheory, MemberData(nameof(GdsiiPairs))]
+    public void EveryGdsiiPairConverts_ThroughGdstk(string from, string to) => ConvertsPair(from, to, "--engine", "gdstk");
+
+    /// <summary>--engine picks a GDSII reader or writer, so a conversion with no GDSII end refuses it rather
+    /// than ignoring it — and writes nothing. Needs no worker: the refusal comes first.</summary>
+    [Fact]
+    public void Engine_WithNoGdsiiEnd_IsRefused()
+    {
+        string target = Path.Combine(_root, "no-gdsii.dxf");
+
+        var (code, _, stderr) = RunCli("convert", SourceIn("clay"), "-o", target, "--engine", "gdstk");
+
+        Assert.Equal(1, code);
+        Assert.Contains("--engine applies to a gdsii source or target only", stderr);
+        Assert.False(File.Exists(target));
+    }
+
+    private void ConvertsPair(string from, string to, params string[] extra)
     {
         string source = SourceIn(from);
         string target = TargetPath(to, $"{from}-to-{to}");
 
-        var (code, stdout, stderr) = RunCli("convert", source, "-o", target, "--to", to,
-                                            "--accept-inferred-drill-format");
+        var (code, stdout, stderr) = RunCli(["convert", source, "-o", target, "--to", to,
+                                             "--accept-inferred-drill-format", .. extra]);
 
         output.WriteLine($"{from} -> {to}: exit {code}\n{stderr}");
         Assert.Equal(0, code);
+        // The run names its route, so a gdstk row that quietly ran circuitRF's own reader or writer fails here.
+        if (extra.Contains("gdstk")) Assert.Contains("GDSII (gdstk)", stderr);
 
         // stdout is the RESULT (§3.1's split): the paths written, one per line, and nothing else.
         // Everything above — notes, warnings, what the import understood — went to stderr.

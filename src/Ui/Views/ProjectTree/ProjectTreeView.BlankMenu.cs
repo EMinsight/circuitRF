@@ -46,6 +46,8 @@ public partial class ProjectTreeView
     [
         ("_Data…", nameof(WorkspaceViewModel.ImportDataCommand), null),
         ("_GDSII…", nameof(WorkspaceViewModel.ImportGdsiiLibraryCommand), null),
+        ("GDSII (gdstk)…", nameof(WorkspaceViewModel.ImportGdsiiGdstkCommand), "{Binding " + nameof(WorkspaceViewModel.GdstkImportGdsiiTip) + "}"),
+        ("OASIS (gdstk)…", nameof(WorkspaceViewModel.ImportOasisGdstkCommand), "{Binding " + nameof(WorkspaceViewModel.GdstkImportOasisTip) + "}"),
         ("_DXF…", nameof(WorkspaceViewModel.ImportDxfLibraryCommand), null),
         ("_Board…", nameof(WorkspaceViewModel.ImportBoardCommand),
             "Import a .kicad_pcb board: its stackup, nets, tracks, vias, zone fills and footprints. The file's version is reported, never branched on — every epoch reads."),

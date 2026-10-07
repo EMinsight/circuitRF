@@ -16,6 +16,17 @@ public sealed class GdstkFactAttribute : FactAttribute
     {
         if (Reason.Value is { } why) Skip = why;
     }
+
+    internal static string? SkipReason => Reason.Value;
+}
+
+/// <summary><see cref="GdstkFactAttribute"/> for a theory.</summary>
+public sealed class GdstkTheoryAttribute : TheoryAttribute
+{
+    public GdstkTheoryAttribute()
+    {
+        if (GdstkFactAttribute.SkipReason is { } why) Skip = why;
+    }
 }
 
 /// <summary>brief-oasis-gdstk.md G2 (R-oas-2): the gdstk route reads and writes through the SAME

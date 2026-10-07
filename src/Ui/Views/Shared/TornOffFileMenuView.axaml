@@ -142,6 +142,14 @@
                 <MenuItem Header="_GDSII…"
                           Command="{Binding ImportGdsiiLibraryCommand}"
                           CommandParameter="{Binding $parent[Window]}"/>
+                <MenuItem Header="GDSII (gdstk)…"
+                          Command="{Binding ImportGdsiiGdstkCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="{Binding GdstkImportGdsiiTip}"/>
+                <MenuItem Header="OASIS (gdstk)…"
+                          Command="{Binding ImportOasisGdstkCommand}"
+                          CommandParameter="{Binding $parent[Window]}"
+                          ToolTip.Tip="{Binding GdstkImportOasisTip}"/>
                 <MenuItem Header="_DXF…"
                           Command="{Binding ImportDxfLibraryCommand}"
                           CommandParameter="{Binding $parent[Window]}"/>
@@ -170,6 +178,12 @@
                 <MenuItem Header="_GDSII"
                           Command="{Binding ExportGdsiiCommand}"
                           ToolTip.Tip="Requires an active layout document."/>
+                <MenuItem Header="GDSII (gdstk)"
+                          Command="{Binding ExportGdsiiGdstkCommand}"
+                          ToolTip.Tip="{Binding GdstkExportGdsiiTip}"/>
+                <MenuItem Header="OASIS (gdstk)"
+                          Command="{Binding ExportOasisGdstkCommand}"
+                          ToolTip.Tip="{Binding GdstkExportOasisTip}"/>
                 <MenuItem Header="D_XF"
                           Command="{Binding ExportDxfCommand}"
                           ToolTip.Tip="Requires an active layout document."/>

@@ -92,11 +92,11 @@ public static class GdsiiExport
     /// <summary>Writes a previously-analyzed plan. Throws <see cref="GdsiiExportException"/> (never
     /// writes a partial file) if <see cref="ExportPlan.CanWrite"/> is false — callers should check
     /// that first and block the write in the UI rather than relying on this exception alone.</summary>
-    public static void Write(string filePath, ExportPlan plan)
+    public static GdsiiExportSummary Write(string filePath, ExportPlan plan)
     {
         if (!plan.CanWrite) throw new GdsiiExportException(plan.CoordinateOverflowOffenders);
         using var stream = File.Create(filePath);
-        GdsiiWriter.Write(stream, plan.Structures, plan.Units, plan.Tech);
+        return GdsiiWriter.Write(stream, plan.Structures, plan.Units, plan.Tech);
     }
 
     private static (List<InterchangeStructure> Structures, IReadOnlyDictionary<string, string> NameByCellName,

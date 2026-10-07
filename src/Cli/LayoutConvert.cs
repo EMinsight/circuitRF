@@ -19,6 +19,7 @@
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Interchange;
+using CircuitRF.Design.Layout.Interchange.Gdstk;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.ThreeD.Occ;
 using CircuitRF.Design.ThreeD.Step;
@@ -42,6 +43,13 @@ public static class LayoutConvert
         public Fmt? From, To;
         public bool ListCells;
         public int DbuPerMicron = 1000;
+
+        // brief-oasis-gdstk.md §7d — which GDSII reader or writer a gdsii source or target goes through.
+        // Null: not given, which is circuitRF's own (D5).
+        public StreamRoute? Engine;
+
+        /// <summary>The route a GDSII end of this conversion takes.</summary>
+        public StreamRoute GdsiiRoute => Engine ?? StreamRoute.Gdsii;
 
         // DXF
         public DxfAcadVersion AcadVersion = DxfAcadVersion.R2018;
@@ -98,6 +106,14 @@ public static class LayoutConvert
                 case "--tech" when i + 1 < args.Length: o.TechPath = args[++i]; break;
                 case "--workspace" when i + 1 < args.Length: o.Cws = args[++i]; break;
                 case "--keep-cells" when i + 1 < args.Length: o.KeepCells = args[++i]; break;
+                case "--engine" when i + 1 < args.Length:
+                    switch (args[++i].ToLowerInvariant())
+                    {
+                        case "native": o.Engine = StreamRoute.Gdsii; break;
+                        case "gdstk": o.Engine = StreamRoute.GdsiiGdstk; break;
+                        default: return JsonRun.Fail(CliDiagnostics.ConvertUnknownEngine(args[i]));
+                    }
+                    break;
                 case "--dbu" when i + 1 < args.Length && int.TryParse(args[i + 1], out int dbu):
                     o.DbuPerMicron = Math.Max(1, dbu); i++; break;
 
@@ -188,6 +204,16 @@ public static class LayoutConvert
         if (!File.Exists(o.Input) && !Directory.Exists(o.Input))
             return JsonRun.Fail(CliDiagnostics.ConvertInputNotFound(o.Input));
 
+        // brief-oasis-gdstk.md §7d — --engine picks a GDSII reader or writer, so it needs a GDSII end, and
+        // the gdstk one needs the worker. Both are refused here, before anything is read or written.
+        if (o.Engine is { } engine)
+        {
+            bool gdsiiEnd = (o.From ?? DetectSource(o.Input)) == Fmt.Gdsii
+                            || (o.Output is not null && (o.To ?? DetectTarget(o.Output)) == Fmt.Gdsii);
+            if (!gdsiiEnd) return JsonRun.Fail(CliDiagnostics.ConvertEngineNeedsGdsii());
+            if (engine.Unavailable() is { } missing) return JsonRun.Fail(CliDiagnostics.ConvertEngineUnavailable(missing));
+        }
+
         // The source format is inferable from what the path IS — a folder is a Gerber file set, and a
         // file with no telling extension is classified by CONTENT through the same classifier the
         // Gerber import itself uses, so `convert` and the import can never disagree about what a file
@@ -241,7 +267,7 @@ public static class LayoutConvert
         if (to == Fmt.Clay && ClayDirectoryRefusal(o.Output!) is { } clayRefusal)
             return clayRefusal;
 
-        Console.Error.WriteLine($"[circuitRF] {Name(from)} -> {Name(to.Value)}");
+        Console.Error.WriteLine($"[circuitRF] {RouteName(o, from)} -> {RouteName(o, to.Value)}");
 
         string? scratch = null;
         try
@@ -274,6 +300,12 @@ public static class LayoutConvert
             }
 
             return Export(o, to.Value, src);
+        }
+        catch (OperationCanceledException)
+        {
+            // Only the gdstk route reads the token; its worker is killed and nothing is written or created.
+            Console.Error.WriteLine("[circuitRF] cancelled; nothing was written");
+            return 130;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -558,8 +590,18 @@ public static class LayoutConvert
 
     private static Source? ImportGdsii(Options o, string staging, Technology? destTech, string name)
     {
-        using var stream = File.OpenRead(o.Input!);
-        var r = GdsiiImport.Import(stream, staging, destTech, o.DbuPerMicron, preferSourceResolution: true);
+        GdsiiImport.ImportResult r;
+        try
+        {
+            r = StreamInterchange.Import(o.GdsiiRoute, o.Input!, staging, destTech, o.DbuPerMicron,
+                preferSourceResolution: true, token: RunHost.Cancellation);
+        }
+        catch (GdstkException ex)
+        {
+            // The worker's own sentence: it names the file, and a crash, hang or refusal created nothing.
+            JsonRun.Report(ex.Diagnostic);
+            return null;
+        }
         Report(r.Messages);
         if (r.Cancelled) return Refused();
 
@@ -792,8 +834,13 @@ public static class LayoutConvert
                     foreach (var c in plan.CoordinateOverflowOffenders) Console.Error.WriteLine($"       {c}");
                     return 1;
                 }
-                GdsiiExport.Write(output, plan);
+                GdsiiExportSummary summary;
+                try { summary = StreamInterchange.Write(o.GdsiiRoute, output, plan, token: RunHost.Cancellation); }
+                catch (GdstkException ex) { return JsonRun.Fail(ex.Diagnostic); }
                 JsonRun.AddOutput("gdsii", output);
+                // What the gdstk route adds to say (a port flag it cannot carry, the worker's notes). The native
+                // writer's own diagnostics repeat the plan's counts, which are reported just below.
+                if (o.GdsiiRoute.UsesGdstk()) Report(summary.Diagnostics);
                 Note(plan.CurvedShapesFlattened, "curved shape", "flattened to polygons");
                 Note(plan.HolesKeyholed, "hole", "keyholed");
                 Note(plan.BitmapsSkipped, "bitmap", "skipped — GDSII carries no raster");
@@ -998,6 +1045,9 @@ public static class LayoutConvert
 
     private static int BadFormat(string s) => JsonRun.Fail(CliDiagnostics.ConvertUnknownFormat(s));
 
+    /// <summary><see cref="Name"/>, naming the gdstk route on a GDSII end that takes it.</summary>
+    private static string RouteName(Options o, Fmt f) => f == Fmt.Gdsii ? o.GdsiiRoute.DisplayName() : Name(f);
+
     internal static string Name(Fmt f) => f switch
     {
         Fmt.Clay => "clay", Fmt.Gdsii => "GDSII", Fmt.Dxf => "DXF",
@@ -1039,6 +1089,7 @@ public static class LayoutConvert
     {
         Console.Error.WriteLine("Usage: circuitrf convert <input> -o <output> [--from f] [--to f] [--cell name]");
         Console.Error.WriteLine("       formats: clay | gdsii | dxf | gerber | board | step | gltf");
+        Console.Error.WriteLine("       --engine native|gdstk  the GDSII reader or writer for a gdsii source or target (default native)");
         Console.Error.WriteLine("       step source (-o <new>.c3d):  --material <part>=<name> (repeatable)  --part <path> (repeatable)  --tech <path.ctech>");
         Console.Error.WriteLine("       step target (-o <file>.step; from a .c3d, .clay, cell folder or any format above):");
         Console.Error.WriteLine("              --assembly  --as-drawn  --thicken-sheets  --include-airbox  --schema ap214|ap242  --view 3d|layout  --tech <path.ctech>");

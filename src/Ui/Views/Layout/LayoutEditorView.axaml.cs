@@ -891,7 +891,7 @@ public partial class LayoutEditorView : UserControl
     // export entry point (item 5/R-fix-4's own "route every entry point through the same accessor").
     private void OnPlaceCellInstanceRequestedFromMenu() => _ = BeginInstancePlacementAsync();
 
-    private void OnExportGdsiiRequestedFromMenu() => _ = OnExportGdsiiAsync();
+    private void OnExportGdsiiRequestedFromMenu(StreamRoute route) => _ = OnExportGdsiiAsync(route);
     private void OnExportDxfRequestedFromMenu() => _ = OnExportDxfAsync();
     private void OnExportGerberRequestedFromMenu() => _ = OnExportGerberAsync();
     private void OnExportBoardRequestedFromMenu() => _ = OnExportBoardAsync();
@@ -1721,17 +1721,23 @@ public partial class LayoutEditorView : UserControl
         vm.ReportWarning("Open the Impedance panel from the main window — a torn-off layout window has no panels.");
     }
 
-    private async void OnExportGdsii(object? sender, RoutedEventArgs e) => await OnExportGdsiiAsync();
+    // The toolbar button is circuitRF's own GDSII writer, always (brief-oasis-gdstk.md §7a): the (gdstk)
+    // routes are reached from File ▸ Export only.
+    private async void OnExportGdsii(object? sender, RoutedEventArgs e) => await OnExportGdsiiAsync(StreamRoute.Gdsii);
 
-    private async Task OnExportGdsiiAsync()
+    /// <summary>Every stream export — circuitRF's own GDSII writer, or gdstk's GDSII or OASIS writer — through
+    /// one path: the same plan, the same fidelity dialog, the same DRC/LVS-before-export prompts. Only the
+    /// writer at the end is the route's (<see cref="StreamInterchange.Write"/>).</summary>
+    private async Task OnExportGdsiiAsync(StreamRoute route)
     {
         if (Vm is not { } vm) return;
         var owner = TopLevel.GetTopLevel(this) as Window;
         if (owner is null) return;
 
+        string title = $"Export {route.DisplayName()}";
         if (vm.CurrentCellDir is not { Length: > 0 } cellDir)
         {
-            vm.ReportError("Export GDSII: save this layout to a cell before exporting.");
+            vm.ReportError($"{title}: save this layout to a cell before exporting.");
             return;
         }
 
@@ -1744,7 +1750,7 @@ public partial class LayoutEditorView : UserControl
         }
         catch (Exception ex)
         {
-            vm.ReportError($"Export GDSII: {ex.Message}");
+            vm.ReportError($"{title}: {ex.Message}");
             return;
         }
 
@@ -1752,38 +1758,47 @@ public partial class LayoutEditorView : UserControl
         // before writing — when nothing will (ExportPlan.HasNothingToReport), showing a dialog that
         // says "nothing will change" only trains users to dismiss dialogs unread, which defeats the
         // ones that actually matter. Skip straight to the save picker in that case.
+        bool canWrite = plan.CanWrite && route.BlockingReferences(plan).Count == 0;
         if (!plan.HasNothingToReport)
         {
-            var confirmed = await new GdsiiExportFidelityDialog(plan).ShowDialog<bool>(owner);
-            if (!confirmed || !plan.CanWrite) return;
+            var confirmed = await new GdsiiExportFidelityDialog(plan, route).ShowDialog<bool>(owner);
+            if (!confirmed || !canWrite) return;
         }
-        else if (!plan.CanWrite) return;
+        else if (!canWrite) return;
 
-        if (!await ConfirmDesignRulesBeforeExportAsync(vm, owner, "GDSII")) return;
-        if (!await ConfirmLayoutVersusSchematicBeforeExportAsync(vm, owner, "GDSII")) return;
+        if (!await ConfirmDesignRulesBeforeExportAsync(vm, owner, route.DisplayName())) return;
+        if (!await ConfirmLayoutVersusSchematicBeforeExportAsync(vm, owner, route.DisplayName())) return;
 
         var cellName = Path.GetFileName(cellDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
-            Title             = "Export GDSII",
-            DefaultExtension  = "gds",
+            Title             = title,
+            DefaultExtension  = route.Extension(),
             SuggestedFileName = cellName,
-            FileTypeChoices   = [new FilePickerFileType("GDSII Stream") { Patterns = ["*.gds"] }],
+            FileTypeChoices   =
+            [
+                new FilePickerFileType(route == StreamRoute.OasisGdstk ? "OASIS" : "GDSII Stream") { Patterns = [$"*.{route.Extension()}"] },
+            ],
         });
         if (file is null) return;
 
         try
         {
-            GdsiiExport.Write(file.Path.LocalPath, plan);
+            // The gdstk routes start a worker process and wait on it, so the write runs off the UI thread.
+            var summary = await Task.Run(() => StreamInterchange.Write(route, file.Path.LocalPath, plan));
             vm.ReportMessage(
-                $"Exported GDSII · {plan.CurvedShapesFlattened} curve(s) flattened, " +
-                $"{plan.HolesKeyholed} hole(s) keyholed, {plan.BitmapsSkipped} bitmap(s) skipped, " +
-                $"{plan.LabelRecordsWritten} label(s) written.",
+                $"Exported {route.DisplayName()} · {summary.CurvedShapesFlattened} curve(s) flattened, " +
+                $"{summary.HolesKeyholed} hole(s) keyholed, {summary.BitmapsSkipped} bitmap(s) skipped, " +
+                $"{summary.LabelRecordsWritten} label(s) written.",
                 file.Path.LocalPath);
+            // What the gdstk route adds to say (a port flag it cannot carry, the worker's own notes); the
+            // native writer's diagnostics are the plan's, which the dialog already showed.
+            if (route.UsesGdstk())
+                foreach (var d in summary.Diagnostics) vm.ReportWarning($"{title}: {d}");
         }
         catch (Exception ex)
         {
-            vm.ReportError($"Export GDSII: {ex.Message}");
+            vm.ReportError($"{title}: {ex.Message}");
         }
     }
 

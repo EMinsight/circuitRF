@@ -125,7 +125,9 @@ public class DrcExportGateAndPanelWiringTests
     {
         string view = Read("src/Ui/Views/Layout/LayoutEditorView.axaml.cs");
 
-        Assert.Contains("ConfirmDesignRulesBeforeExportAsync(vm, owner, \"GDSII\")", view);
+        // Every stream route (GDSII, GDSII (gdstk), OASIS (gdstk)) goes through one export method, which
+        // names the route it is running (brief-oasis-gdstk.md §7a).
+        Assert.Contains("ConfirmDesignRulesBeforeExportAsync(vm, owner, route.DisplayName())", view);
         Assert.Contains("ConfirmDesignRulesBeforeExportAsync(vm, owner, \"DXF\")", view);
         Assert.Contains("ConfirmDesignRulesBeforeExportAsync(vm, owner, \"Gerber\")", view);
 

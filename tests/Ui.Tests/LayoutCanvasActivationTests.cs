@@ -43,7 +43,7 @@ public sealed class LayoutCanvasActivationTests
     {
         var doc = new LayoutDocument("Test", new LayoutEditorViewModel(new LayoutView { DbuPerMicron = 1000 }));
         bool raised = false;
-        doc.ExportGdsiiRequested += () => raised = true;
+        doc.ExportGdsiiRequested += _ => raised = true;
 
         doc.RequestExportGdsii();
 

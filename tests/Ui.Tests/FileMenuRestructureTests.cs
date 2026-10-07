@@ -338,7 +338,9 @@ public class FileMenuRestructureTests
             // (R-PL1-3).
             // "STEP" (brief-em3d-68) is the one geometry importer whose destination is the ACTIVE 3D view, not a new
             // cell: a connector body's parts land in the .c3d being edited, so it is disabled with no 3D editor active.
-            "Data", "GDSII", "DXF", "Board", "Gerber", "STEP", "Component", "PDK", "Model or Subcircuit", "Technology", "Into Open Technology",
+            // "GDSII (gdstk)" and "OASIS (gdstk)" (brief-oasis-gdstk.md §7a) sit under circuitRF's own GDSII
+            // entry: the same kind of file through a second reader, which stays opt-in.
+            "Data", "GDSII", "GDSII (gdstk)", "OASIS (gdstk)", "DXF", "Board", "Gerber", "STEP", "Component", "PDK", "Model or Subcircuit", "Technology", "Into Open Technology",
             "Wirebond Table", "Wirebond Wires", "Wirebond as Cell",
         ];
 

@@ -531,6 +531,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "convert.args.drill-units",
         "convert.args.drill-zeros",
         "convert.args.dxf-version",
+        // brief-oasis-gdstk.md §7d — --engine native|gdstk on a gdsii source or target.
+        "convert.args.engine",
         "convert.args.list-cells-not-applicable",
         "convert.args.multiple-inputs",
         "convert.args.output-required",
@@ -544,6 +546,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "convert.cell.not-found",
         "convert.clay-to-clay",
         "convert.drill.format-unstated",
+        "convert.engine.not-gdsii",
+        "convert.engine.unavailable",
         "convert.failed",
         "convert.gdsii.coordinate-overflow",
         "convert.gerber.archive-not-opened",

@@ -414,6 +414,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         ReferenceWorkspaceCommand.NotifyCanExecuteChanged();
         AddCellToWorkspaceCommand.NotifyCanExecuteChanged();
         ImportGdsiiLibraryCommand.NotifyCanExecuteChanged();
+        ImportGdsiiGdstkCommand.NotifyCanExecuteChanged();
         ImportDxfLibraryCommand.NotifyCanExecuteChanged();
         ImportBoardCommand.NotifyCanExecuteChanged();
         ImportGerberCommand.NotifyCanExecuteChanged();
@@ -4647,26 +4648,57 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     // ── Import GDSII Library (docs/sonnet-briefs/brief-L4a-gdsii-interchange.md §8) ──────────────
-    // GdsiiImport does the actual read/reconcile/CellFolder-creation work; this method is only file
-    // picking (UI firewall), workspace/technology context, and the layer-mapping dialog bridge.
+    // StreamInterchange.Import does the actual read/reconcile/CellFolder-creation work, through the
+    // route the menu entry names (brief-oasis-gdstk.md §7b: circuitRF's own GDSII reader, or gdstk's
+    // GDSII or OASIS reader); this method is only file picking (UI firewall), workspace/technology
+    // context, and the layer-mapping dialog bridge — ONE method for every route, never a copy each.
 
     [RelayCommand(CanExecute = nameof(CanImportGdsiiLibrary))]
-    private Task ImportGdsiiLibrary(Window? owner) => ImportGdsiiLibraryAsync(owner);
+    private Task ImportGdsiiLibrary(Window? owner) => ImportStreamLibraryAsync(owner, StreamRoute.Gdsii);
     private bool CanImportGdsiiLibrary() => CurrentWorkspacePath is not null;
 
-    private async Task ImportGdsiiLibraryAsync(Window? owner)
+    /// <summary>File ▸ Import ▸ GDSII (gdstk)…: the same import through the gdstk worker, disabled when
+    /// this build has none (D6).</summary>
+    [RelayCommand(CanExecute = nameof(CanImportGdsiiGdstk))]
+    private Task ImportGdsiiGdstk(Window? owner) => ImportStreamLibraryAsync(owner, StreamRoute.GdsiiGdstk);
+    private bool CanImportGdsiiGdstk() => CurrentWorkspacePath is not null && GdstkUnavailableReason is null;
+
+    /// <summary>File ▸ Import ▸ OASIS (gdstk)…: shown, and disabled until OASIS import is enabled
+    /// (brief-oasis-gdstk.md G4).</summary>
+    [RelayCommand(CanExecute = nameof(CanImportOasisGdstk))]
+    private Task ImportOasisGdstk(Window? owner) => ImportStreamLibraryAsync(owner, StreamRoute.OasisGdstk);
+    private static bool CanImportOasisGdstk() => false;
+
+    /// <summary>Why the (gdstk) entries are disabled in this build, or null when the worker is here. Asked
+    /// once: the worker does not appear or vanish while the application runs.</summary>
+    public static string? GdstkUnavailableReason => s_gdstkUnavailable.Value;
+    private static readonly Lazy<string?> s_gdstkUnavailable = new(() => StreamRoute.GdsiiGdstk.Unavailable() is null
+        ? null : CircuitRF.Design.Layout.Interchange.Gdstk.GdstkWorker.NotInstalledSentence);
+
+    public string GdstkImportGdsiiTip => GdstkUnavailableReason ??
+        "Import a GDSII library through gdstk, the second GDSII reader. circuitRF's own GDSII… entry stays the default; try this one when a file reads differently than expected.";
+
+    public string GdstkImportOasisTip => GdstkUnavailableReason ?? "OASIS import is not enabled in this build.";
+
+    public string GdstkExportGdsiiTip => GdstkUnavailableReason ??
+        "Write GDSII through gdstk, the second GDSII writer. Requires an active layout document.";
+
+    public string GdstkExportOasisTip => GdstkUnavailableReason ?? "OASIS export is not enabled in this build.";
+
+    private async Task ImportStreamLibraryAsync(Window? owner, StreamRoute route)
     {
         if (CurrentWorkspacePath is null) return;
         var window = ResolveOwner(owner);
         if (window is null) return;
 
+        string title = $"Import {route.DisplayName()}";
         var files = await window.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title          = "Import GDSII Library",
+            Title          = route == StreamRoute.OasisGdstk ? title : $"{title} Library",
             AllowMultiple  = false,
             FileTypeFilter =
             [
-                new FilePickerFileType("GDSII Stream") { Patterns = ["*.gds", "*.gdsii", "*.sf"] },
+                new FilePickerFileType(route == StreamRoute.OasisGdstk ? "OASIS" : "GDSII Stream") { Patterns = [.. route.FilePatterns()] },
                 new FilePickerFileType("All Files")    { Patterns = ["*.*"] },
             ],
         });
@@ -4680,8 +4712,6 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         {
             result = await Task.Run(() =>
             {
-                using var stream = File.OpenRead(files[0].Path.LocalPath);
-
                 // The kit's own statement about its pins, if it ships one, read from beside the GDSII
                 // file rather than from the workspace: it describes THAT kit, and travels with it.
                 // Absent is silent (nearly every kit states nothing); present-but-unreadable is
@@ -4692,14 +4722,14 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 if (rulesProblem is not null)
                     Dispatcher.UIThread.Post(() => Messages.Warning(rulesProblem));
 
-                return CircuitRF.Design.Layout.Interchange.GdsiiImport.Import(
-                    stream, workspaceDir, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
+                return StreamInterchange.Import(
+                    route, files[0].Path.LocalPath, workspaceDir, techRes.Tech, LayoutUnits.DefaultDbuPerMicron,
                     preferSourceResolution: false,
                     pinRules: pinRules,
                     resolveLayerMapping: rows =>
                     {
                         var settled = Dispatcher.UIThread
-                            .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "GDSII", techRes.Tech, rows))
+                            .InvokeAsync(() => ResolveImportLayerMappingAsync(window, route.DisplayName(), techRes.Tech, rows))
                             .GetAwaiter().GetResult();
                         return settled is null ? null : LayoutLayerMapping.BuildChoices(settled);
                     });
@@ -4707,13 +4737,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         }
         catch (Exception ex)
         {
-            Messages.Error($"Import GDSII: {ex.Message}");
+            Messages.Error($"{title}: {ex.Message}");
             return;
         }
 
         if (result.Cancelled)
         {
-            Messages.Info("Import GDSII cancelled — nothing was created.");
+            Messages.Info($"{title} cancelled — nothing was created.");
             return;
         }
 
@@ -9725,7 +9755,21 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void ClearAllRulers() => ResolveDrcTargetLayout()?.ClearAllRulers();
 
     [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
-    private void ExportGdsii() => (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportGdsii();
+    private void ExportGdsii() => ExportStream(StreamRoute.Gdsii);
+
+    /// <summary>File ▸ Export ▸ GDSII (gdstk): the same export through the gdstk worker (brief-oasis-gdstk.md
+    /// §7a), disabled when this build has none.</summary>
+    [RelayCommand(CanExecute = nameof(CanExportGdsiiGdstk))]
+    private void ExportGdsiiGdstk() => ExportStream(StreamRoute.GdsiiGdstk);
+    private bool CanExportGdsiiGdstk() => IsLayoutDocumentActive() && GdstkUnavailableReason is null;
+
+    /// <summary>File ▸ Export ▸ OASIS (gdstk): shown, and disabled until OASIS export is enabled (G4).</summary>
+    [RelayCommand(CanExecute = nameof(CanExportOasisGdstk))]
+    private void ExportOasisGdstk() => ExportStream(StreamRoute.OasisGdstk);
+    private static bool CanExportOasisGdstk() => false;
+
+    /// <summary>Every stream export, one entry point: the active layout runs ITS OWN export for the route.</summary>
+    private void ExportStream(StreamRoute route) => (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportGdsii(route);
 
     [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
     private void ExportDxf() => (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportDxf();
@@ -16060,6 +16104,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         // Export GDSII/DXF (item 8) are enabled only when a layout document is active.
         ExportGdsiiCommand.NotifyCanExecuteChanged();
+        ExportGdsiiGdstkCommand.NotifyCanExecuteChanged();
         // Standing gotcha (see this file's own L5 note): a [RelayCommand(CanExecute=...)] gated on
         // the active document type is NOT re-evaluated on its own — it must be added to BOTH
         // fan-outs, or it silently stays stuck at whatever it was on construction.
@@ -16365,6 +16410,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (doc is IEditHistoryDocument focusedHistory) SetActiveUndoTarget(focusedHistory);
 
         ExportGdsiiCommand.NotifyCanExecuteChanged();
+        ExportGdsiiGdstkCommand.NotifyCanExecuteChanged();
         PlaceCellInstanceCommand.NotifyCanExecuteChanged();
         NewThreeDViewFromLayoutCommand.NotifyCanExecuteChanged();
         // Standing gotcha (see this file's own L5 note): a [RelayCommand(CanExecute=...)] gated on
