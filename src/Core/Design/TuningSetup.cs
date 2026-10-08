@@ -196,6 +196,11 @@ public sealed class OptimizationGoal
 
     public double Weight { get; set; } = 1.0;
 
+    /// <summary>What one unit of violation is worth, as value text; null for the default — the band's
+    /// width for <c>in</c>/<c>out</c>, otherwise the larger of |limit| and 1 in the limit's own unit
+    /// (docs/design/tuning-optimization.md §10).</summary>
+    public string? Scale { get; set; }
+
     public bool Enabled { get; set; } = true;
 
     /// <summary>Keys this build does not know, kept verbatim.</summary>
@@ -204,7 +209,7 @@ public sealed class OptimizationGoal
     public OptimizationGoal Clone() => new()
     {
         Name = Name, Expression = Expression, Analysis = Analysis, Range = Range?.Clone(), Type = Type,
-        Limit = Limit, UpperLimit = UpperLimit, LimitAtHi = LimitAtHi, Weight = Weight, Enabled = Enabled,
+        Limit = Limit, UpperLimit = UpperLimit, LimitAtHi = LimitAtHi, Weight = Weight, Scale = Scale, Enabled = Enabled,
         Extra = TunableEntry.CloneMap(Extra),
     };
 }

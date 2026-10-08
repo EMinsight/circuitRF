@@ -80,6 +80,10 @@ public static class TuningDiagnostics
         ("who", who), ("lo", lo), ("hi", hi), ("axis", axis), ("analysis", analysis),
         ("gridMin", gridMin), ("gridMax", gridMax));
 
+    public static Diagnostic GoalScaleNotPositive(string who, string scale) => Diagnostic.Create(
+        "tuning.goal.scale", DiagnosticSeverity.Error,
+        "{who}: scale={scale} must be above zero.", ("who", who), ("scale", scale));
+
     public static Diagnostic UnknownAlgorithm(string algorithm, string known) => Diagnostic.Create(
         "tuning.optimize.algorithm", DiagnosticSeverity.Error,
         "optimize: algorithm={algorithm} is not one of {known}.", ("algorithm", algorithm), ("known", known));

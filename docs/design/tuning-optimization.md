@@ -1,8 +1,8 @@
 # Tuning and optimization
 
-**Status:** TO-1 … TO-5 built (model, file format, catalog, in-memory overrides, `check`/`explain`/`reference`;
-evaluation service; live session and Data Display; the Tuning panel; presets).
-TO-2 … TO-12 briefed (`docs/sonnet-briefs/brief-tuneopt-*.md`). The overview brief
+**Status:** TO-1 … TO-6 built (model, file format, catalog, in-memory overrides, `check`/`explain`/`reference`;
+evaluation service; live session and Data Display; the Tuning panel; presets; the optimizer core).
+TO-7 … TO-12 briefed (`docs/sonnet-briefs/brief-tuneopt-*.md`). The overview brief
 (`brief-tuneopt-0-overview.md`) holds the decisions D1–D17 in full and is binding; this note is the
 standing reference for what is built, and restates the decisions only as far as the code depends on them.
 
@@ -21,6 +21,8 @@ standing reference for what is built, and restates the decisions only as far as 
 | In-memory overrides | `src/Design/Optimization/TunableOverrides.cs` | The design to elaborate with tuned values substituted. Writes nothing. |
 | Rules | `src/Design/Optimization/TuningValidator.cs` + `TuningDiagnostics.cs` | What `check` reports and the windows refuse on. |
 | CLI | `check`, `explain --tunables`, `reference tuning`, `reference goals` | See `cli.md`. |
+| Optimizer algorithms | `src/Engine/Optimization/` | Ask/tell state machines over the unit box: `RandomSearch`, `NelderMead`, `LevenbergMarquardt`, `BfgsB` (§10). |
+| Optimizer run | `src/Design/Optimization/OptimizationRun.cs` + `OptimizationVariables`, `GoalResiduals`, `OptimizationDiagnostics` | Decode, goals → residuals, cache, parallel batches, stopping, pause, progress, history (§10). |
 
 **Why the model is in `src/Core` and not `src/Design/Optimization`.** The brief placed the model classes
 in `src/Design/Optimization`. A `TestBench` carries the setup and the `.cnl` reader and writer live in
@@ -131,7 +133,7 @@ tune <key> [min=<v> [unit]] [max=<v> [unit]] [scale=auto|lin|log] [step=<v> [uni
 preset "<name>" [created=<yyyy-MM-ddTHH:mm:ssZ>] [lasttuned=1] [cost=<c>] <key>=<v> [unit] ...
 goal <Name> = <expression> [analysis=<A>] [over=<axis> lo=<v> [unit] hi=<v> [unit]]
      (le|ge|eq) <limit> [unit] [to <limit> [unit]]  |  (in|out) <a> [unit] <b> [unit]
-     [weight=<w>] [enabled=false]
+     [weight=<w>] [scale=<v> [unit]] [enabled=false]
 optimize [algorithm=<id>] [maxiter=<n>] [maxevals=<n>] [timelimit=<v> s|ms|min|h]
          [cost=lsq|minimax] [analyses=goals|all] [seed=<n>] [parallel=<n>] [alg.<option>=<v>] ...
 ```
@@ -247,3 +249,99 @@ keep unknown keys, so a tolerance can be added to a `tune` line without a format
 - **The drop-down** orders Last tuned first, then by `Created`, newest first. Compare takes the schematic,
   or the preset earlier in the file, as the first side; the difference is second − first, per tuned part for a complex
   value (all four when none is tuned).
+
+## 10. The optimizer core (TO-6)
+
+**Shape.** Every algorithm is an ask/tell state machine over the unit box [0, 1]ⁿ
+(`IOptimizerAlgorithm`): `Ask` hands out a batch, `Tell` gives back a cost, a residual vector and a
+failed flag per point. No algorithm calls the simulator. Each is written as ONE iterator whose locals
+hold all of its state (`AskTellAlgorithm`), so `Capture` is the list of batches told and `Restore` is a
+replay of them into a fresh instance, checked point for point — plain numbers a checkpoint can hold.
+`SplitMix64` is the seeded generator: its output is fixed by the seed on every platform.
+
+**Variables (`OptimizationVariables`).** Each opt-enabled entry is one coordinate: linear, or
+logarithmic per its effective `Scale` (a phase is always linear). Integers and steps are applied when a
+point is DECODED, so the cache and the history see the value simulated. A decoded value is written as
+the parameter's value text (`G15`, its own unit); a complex value is composed WHOLE by
+`ComplexValue.Compose` from its start and written in the schematic's form. An entry with no range uses
+the catalog's default and says so. A start outside its range is moved to the nearest bound and
+reported; a complex start outside its region is moved to the nearest point of the start's own
+coordinate paths (`ComplexRegion.Move` from the feasible grid point nearest the start), reported.
+
+**Goal residuals (`GoalResiduals`) — the rule users read.**
+- *Violation per grid point*: `le` max(0, x − L); `ge` max(0, L − x); `eq` |x − L|; `in` [a, b] the
+  distance to the interval; `out` [a, b] the distance to the nearer edge when inside, else 0. A sloped
+  limit interpolates L linearly along the range axis.
+- *Scale*: the goal's `scale=` when given; otherwise the band's width b − a for `in`/`out`, and
+  **max(|L|, 1) in the limit's own unit** for the others (the larger end of a sloped limit). So −15 dB
+  is worth 15 dB, a limit of 0.5 is worth 1, and 2 pF is worth 2 pF rather than 1 F.
+- *Residual*: violation ÷ scale × weight ÷ √(points), so a 201-point goal and a scalar goal weigh alike.
+- *Cost*: least squares Σ r² (default) or minimax max r over the concatenated residual vector.
+- *Met*: a violation within 1e-9 of the goal's scale counts as zero. Least squares approaches a one-sided
+  limit from the violating side and lands on it only to rounding (|S11| = 1e-4 + 5e-15 against
+  `le 1e-4`), so without it "all goals met" would never fire on an inequality.
+- A complex result, a range axis the value does not have, a range holding no grid point, a non-finite
+  value: errors (`opt.goal.*`). A goal that cannot be scored at the START point is a refusal (exit 1),
+  not a hundred failed evaluations.
+- A goal with no analysis reads variables only and costs no simulation; when no goal names an analysis
+  nothing is simulated at all.
+
+**Failures and infeasible points.** A failed evaluation (status not Success, an analysis reporting
+`Converged = false`, a goal error) costs **10·(1 + the largest successful cost seen)**, assigned after
+the batch in batch order so concurrency cannot change it. An infeasible complex point is not simulated
+and costs that plus its normalized distance to the region. Both reach the algorithm as `Failed`:
+Levenberg–Marquardt and BFGS-B shrink the step; Nelder–Mead and Random rank it.
+
+**Counters.** `Evaluations` = simulations run; `CacheHits` = points the cache (keyed by the decoded
+value vector) or an earlier point of the same batch answered; `Infeasible`; `Failures`.
+
+**Parallel.** A batch's uncached points run concurrently up to `parallel=` (default cores − 1, capped by
+the batch), only when `PreparedCircuit.IsReentrant`; otherwise one at a time, noted once
+(`opt.parallel.serial`).
+
+**Stopping (first that applies).** Every enabled goal met (best cost 0); the algorithm's own finish;
+`maxiter` (default **100**); `maxevals` (simulations); `timelimit`; **stall** — the best cost improved by
+less than `alg.stall_tol` (default 1e-9) of itself over `alg.stall_iters` (default 25) iterations; Stop.
+Cancellation abandons the run (exit 130) and reports no best.
+
+**Pause (D16).** `Pause` holds after the batch in flight; `Resume` continues. The run is identical,
+evaluation for evaluation, to an unpaused one with the same seed.
+
+**Outcome (D15).** `GoalsMet` 0 · `GoalsUnmet` 3 (each goal reported with its worst violation, where on
+its axis, and the value there) · `Refused` 1 · `NoConvergence` 2 (no evaluation succeeded) ·
+`Cancelled` 130.
+
+**Progress (R-to6-9)** — `OptimizationProgress`, after every iteration: iteration, evaluations,
+failures, infeasible, cache hits, elapsed, the iteration's best cost, the best cost, the best values,
+per-goal worst violation and met at the best point, railed values, and the best point's `DataSet`.
+
+**Railed (D17).** A coordinate within 0.5 % of the box of a bound; a complex value held within 0.5 %
+of ANOTHER part's range is reported against that part (`RailedVariable.Against`).
+
+**History (R-to6-10)** — group `opt`: over `eval` (every point told, in order) `cost`, `failed`,
+`infeasible`, `cached` and one cube per value key in base SI (complex for a complex value); over
+`iter` `best_cost` and `worst_<goal>`. The caller decides whether to write it.
+
+**Algorithms and options** (`alg.<name>=` on the `optimize` line):
+
+| Id | Batch | Options |
+|---|---|---|
+| `random` | `batch` points per iteration (default max(8, 2n)), the first carrying the start | `batch`, `lhs` (1 = Latin hypercube, default; 0 = uniform) |
+| `simplex` | 1 (n+1 to build, n to shrink) | `step` (0.1), `xtol` (1e-6), `restarts` (1) — Gao–Han adaptive coefficients, projection onto the box |
+| `lm` | n for the forward-difference Jacobian, then 1 per trial | `fdstep` (1e-6), `lambda` (1e-3) |
+| `bfgsb` | n for the gradient, then 1 per line-search point | `fdstep` (1e-6), `memory` (5) |
+
+- **Levenberg–Marquardt uses Levenberg's damping (JᵀJ + λ·s·I), not Marquardt's diag(JᵀJ).** The unit
+  box already puts the coordinates on one scale; Marquardt's scaling lengthens the step along the
+  coordinate the residuals barely feel, and with one goal over two values it stalled 7 % short of a
+  reachable limit. Bounds: a coordinate on a bound whose gradient points outward is held and left out
+  of the solve. A failed difference point is retried on the other side. `cost=minimax` is refused for
+  `lm` (`opt.algorithm.lsq-only`).
+- **BFGS-B** is limited-memory BFGS on the free coordinates with a projected backtracking (Armijo)
+  line search; a direction that is not downhill resets the memory to steepest descent.
+- **The difference step is 1e-6 of the box.** 1e-4 left the gradient error larger than the gradient
+  itself near a Rosenbrock optimum and BFGS-B stopped at cost 0.01. A discrete or stepped coordinate
+  decodes both sides of a difference to one value (a cache hit) and so has no gradient — a known limit
+  of the gradient methods until TO-8's re-polish.
+- **Auto** runs Levenberg–Marquardt (Nelder–Mead under `cost=minimax`) and says so (`opt.algorithm.auto`)
+  until TO-8 adds its global stage. Algorithms not built yet are refused naming those that are.

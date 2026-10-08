@@ -1073,3 +1073,13 @@ src/Engine/Em3d/ModalTerminalTransform.cs|The sample's matrices, the faces and t
 # exception message (CnlReadException and its kin); converting this one alone to a Diagnostic would
 # split one failure channel in two.
 src/Design/Schematic/CnlTechnologyBinding.cs|{label} names {Describe(namedLayers, Text)}, but {why}. Put the netlist in a workspace whose technology has that layer, or state {substrate} on the line.
+
+# ── Optimizer ask/tell contract (brief-tuneopt-6, 2026-10-07) ─────────────────────────
+# Misuse of the IOptimizerAlgorithm API by a caller (Tell before Ask, a result count that does not
+# match the batch, restoring a state into a differently-built algorithm) and a NaN coordinate are
+# programming errors no user can cause from a design; they are thrown, never shown.
+src/Engine/Optimization/OptimizerAlgorithm.cs|A '{state.Algorithm}' state cannot continue a '{Id}' run.
+src/Engine/Optimization/OptimizerAlgorithm.cs|An optimizer produced a NaN coordinate.
+src/Engine/Optimization/OptimizerAlgorithm.cs|Tell was called with no batch asked for.
+src/Engine/Optimization/OptimizerAlgorithm.cs|The state was captured from a run with different arguments.
+src/Engine/Optimization/OptimizerAlgorithm.cs|{results.Count} results for a batch of {_pending.Length} points.

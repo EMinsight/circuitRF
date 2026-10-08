@@ -81,7 +81,7 @@ public static partial class AnalysisDirectiveSchema
 
         new("goal", GoalsTopic,
             "goal <Name> = <expression> [analysis=<A>] [over=<axis> lo=<v> [unit] hi=<v> [unit]] <type> <limit(s)> " +
-            "[weight=<w>] [enabled=false]",
+            "[weight=<w>] [scale=<v> [unit]] [enabled=false]",
             "One optimization goal. The expression is written in the measure language and is evaluated on the " +
             "named analysis; quote it if it contains a word this table uses. over= restricts it to one swept axis " +
             "(freq by default), lo..hi inclusive, and the range must hold at least one grid point. A goal with no " +
@@ -93,6 +93,7 @@ public static partial class AnalysisDirectiveSchema
                 new("lo",       Summary: "Low end of the range on that axis, inclusive."),
                 new("hi",       Summary: "High end of the range, inclusive."),
                 new("weight",   Default: "1", Summary: "Multiplies this goal's violation in the cost."),
+                new("scale",    Summary: "What one unit of violation is worth. Default: the band's width for in/out, otherwise the larger of |limit| and 1 in the limit's own unit."),
                 new("enabled",  Default: "true", Summary: "false keeps the goal without optimizing for it."),
             ],
             [

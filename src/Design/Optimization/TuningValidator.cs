@@ -86,6 +86,9 @@ public static class TuningValidator
                 if (g.Range is null) f.Add(TuningDiagnostics.SlopeNeedsRange(who));
             }
 
+            if (g.Scale is { } sc && Number(sc, who, "scale", f) is <= 0)
+                f.Add(TuningDiagnostics.GoalScaleNotPositive(who, sc));
+
             if (g.Range is { } r) RangeRule(g, r, tb, netlist, f);
         }
 

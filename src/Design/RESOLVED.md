@@ -18497,3 +18497,34 @@ phase. Three things worth knowing:
   [nearest point, farthest vertex], so the magnitude range meets it or not. A sampled test would call a thin
   feasible sliver empty and refuse an edit that has a valid answer. A slider's move scans its path before
   bisecting, so it stops at the FIRST wall rather than jumping a gap to a later one.
+
+## Tuning TO-6: the optimizer core — four findings the gates turned up (2026-10-07)
+
+`OptimizationRun` (+ `OptimizationVariables`, `GoalResiduals`) here, the algorithms in `src/Engine/Optimization`.
+Detail in `docs/design/tuning-optimization.md` §10.
+
+- **Marquardt's diag(JᵀJ) damping stalled on an ordinary match.** One goal (|S11| ≤ 1e-4) over a complex load's
+  magnitude and phase is one residual over two coordinates. Marquardt's scaling divides each coordinate's step by
+  how strongly the residual feels it, so it kept lengthening the step along the coordinate the residual barely
+  felt — where the linear model is worst — every trial raised the cost, λ grew until the step fell below
+  tolerance, and the run stopped at |S11| = 1.07e-4 with a better point sitting in its own difference batch.
+  Levenberg's identity damping (scaled by the largest diagonal of JᵀJ, so λ has no units) is right in the unit
+  box, where the coordinates already share one scale; as λ grows it tends to steepest descent, which always
+  makes progress.
+- **Least squares never crosses a one-sided limit.** With the damping fixed the same run converged to
+  |S11| = 1e-4 + 5e-15 — onto the limit from the violating side, as a Gauss–Newton step on max(0, x − L) does —
+  and still reported the goal unmet. A violation within 1e-9 of the goal's scale now counts as zero
+  (`GoalResiduals.MetTolerance`).
+- **A forward-difference step of 1e-4 of the box was too long.** Near the Rosenbrock optimum the difference
+  error (h/2 times the curvature) exceeded the gradient itself, the BFGS-B direction stopped being downhill and
+  the line search gave up at cost 0.01. 1e-6 is the default for both gradient methods; a stepped or integer
+  coordinate decodes both sides of a difference to one value (a cache hit) and so has no gradient — a limit
+  until the Discrete phase's re-polish.
+- **The goal `scale=` key did not exist.** The brief expected TO-1 to have added it; it is added here (model,
+  `.cnl` reader and writer, the `goal` grammar table, a `check` rule that it is above zero). The `.csch` binds the
+  model directly, so it needed no change of its own.
+
+Two calls the owner may revisit: **Auto** runs Levenberg–Marquardt (Nelder–Mead under `cost=minimax`) and says
+so, rather than refusing the default setting, until its global stage exists; and a goal that cannot be scored at
+the START point (a complex value, an axis the value lacks) ends the run as a refusal (exit 1) instead of costing
+a full run of identical failures.

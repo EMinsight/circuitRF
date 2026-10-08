@@ -180,6 +180,7 @@ public static class TuningDirectiveText
                         throw Refuse(TuningDirectiveDiagnostics.ValueInvalid(key, value, "a number"));
                     g.Weight = w;
                     break;
+                case "scale":    g.Scale = value; break;
                 case "enabled":  g.Enabled = Bool(key, value); break;
                 default:
                     (g.Extra ??= new(StringComparer.Ordinal))[key] = value;
@@ -313,6 +314,7 @@ public static class TuningDirectiveText
         else if (g.LimitAtHi is { } atHi)
             sb.Append(" to ").Append(Value(atHi, goalLine: true));
         if (g.Weight != 1.0) sb.Append(" weight=").Append(g.Weight.ToString("R", CultureInfo.InvariantCulture));
+        Opt(sb, "scale", g.Scale, goalLine: true);
         if (!g.Enabled) sb.Append(" enabled=false");
         Extra(sb, g.Extra, "");
         return sb.ToString();
