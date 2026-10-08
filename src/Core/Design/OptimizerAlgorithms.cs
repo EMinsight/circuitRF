@@ -74,7 +74,7 @@ public static class OptimizerAlgorithms
     public static IReadOnlyList<OptimizerAlgorithmInfo> All { get; } =
     [
         new(Auto, "Auto",
-            "When there is no reason to prefer another: a global search, then a local polish.",
+            "When there is no reason to prefer another: CMA-ES for a modest budget, a local polish, then preferred values when any value is discrete.",
             [], Both, NeedsGradients: true),
 
         new("lm", "Gradient (Levenberg–Marquardt)",
@@ -154,12 +154,19 @@ public static class OptimizerAlgorithms
             Both, NeedsGradients: false),
 
         new("bayes", "Bayesian (slow simulations)",
-            "When one simulation takes minutes: it spends computation choosing each point.",
-            [], Both, NeedsGradients: false),
+            "When each simulation takes seconds or more (HB, loadpull, EM): it spends computation choosing each point, O(N³) in the points it keeps.",
+            [O("initial", "auto", "Initial Latin-hypercube points, the start among them; auto is 2n+1."),
+             O("archive", "500",  "Most points the surrogate is fitted to; the most recent are kept, and the best."),
+             O("batch",   "1",    "Points chosen per iteration by the constant liar; the run sets it to parallel= when the setup states one."),
+             O("tr_dims", "10",   "Above this many variables a trust-region variant replaces the global surrogate.")],
+            Both, NeedsGradients: false),
 
         new("discrete", "Discrete",
             "When every variable is an integer, a step or a preferred value: it searches that grid itself.",
-            [], Both, NeedsGradients: false),
+            [O("cap",      "2000", "Grids of at most this many points are searched exhaustively."),
+             O("block",    "auto", "Grid points per batch; auto is a twentieth of the grid."),
+             O("restarts", "10",   "Random restarts of the coordinate descent a larger grid gets.")],
+            Both, NeedsGradients: false),
     ];
 
     /// <summary>Every id, in menu order.</summary>

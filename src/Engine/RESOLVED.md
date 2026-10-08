@@ -2946,3 +2946,16 @@ run had already landed 0.047 dB from the old record); the two runs of each port 
 decay, one on openEMS's energy criterion — which moves the last few hundredths of a dB. The connector's openEMS rows are
 therefore recorded as the MEAN of the two runs, each run within 0.028 dB of it. The tolerance was left as it was; if it
 fails by a few hundredths again, this is why, and it says nothing about the grid.
+
+## Bayesian optimization models the raw cost, not a log warp of it (brief-tuneopt-8, 2026-10-07)
+
+A log warp, ln(cost − lowest + δ), is the usual advice for a least-squares cost that spans decades on
+its way to zero. Measured on Branin, a 2-D Rosenbrock and an L-section match (40 evaluations, six seeds
+each) at δ = 1e-3, 1e-2 and 1e-1 of the spread to the median, it was worse than the raw standardized
+cost on all three — on Branin seed 5 it stalled 2.3 above the optimum. The warp turns the best point
+into an outlier far below the rest, the GP fits a narrow well there, and expected improvement stops
+exploring. `Bayesian` therefore has no `warp` option; the class remark records why.
+
+**A related limit seen while gating Auto:** Levenberg–Marquardt on the L-section stalls at
+|S11| = 1.2e-6 against a `le 1e-6` goal — its 1e-6-of-the-box difference step is too coarse for a
+log-scaled 50:1 range at that depth. Not Auto's defect; the Auto gate uses 1e-5.

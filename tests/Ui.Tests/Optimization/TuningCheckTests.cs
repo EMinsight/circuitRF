@@ -10,6 +10,7 @@ public sealed class TuningCheckTests
     private const string Bench = """
         Rx = 25 Ohm
         Zs = 40+15j Ohm
+        Wl = 300 um
         Port:P1 in 0 Num=1 Z=50 Ohm
         R:R1 in out R=50 Ohm
         R:R2 out 0 R=Rx
@@ -30,6 +31,8 @@ public sealed class TuningCheckTests
     [InlineData("tune real(Zs) min=90 Ohm max=120 Ohm\ntune mag(Zs) min=20 Ohm max=80 Ohm",   true,  "no complex value lies inside")]
     [InlineData("optimize algorithm=de alg.populaton=40",                                     false, "alg.populaton is not an option of Differential evolution")]
     [InlineData("optimize algorithm=lm cost=minimax",                                         true,  "cannot use cost=minimax")]
+    [InlineData("tune real(Zs) min=30 Ohm max=50 Ohm discrete=integer",                      true,  "is not offered on a part")]
+    [InlineData("tune Wl min=100 um max=500 um discrete=preferred",                          true,  "has no preferred-value ladder")]
     public void EachRuleIsReported(string line, bool isError, string fragment)
     {
         var (lib, tb) = new CnlReader().Read(Bench + "\n" + line);

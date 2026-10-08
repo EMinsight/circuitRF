@@ -12,6 +12,18 @@ namespace CircuitRF.Design.Optimization;
 /// </summary>
 public static class TunableValue
 {
+    /// <summary>
+    /// The <c>discrete=</c> choices an entry for <paramref name="t"/> offers (brief-tuneopt-8 R-to8-2/7):
+    /// a part of a complex value only <c>none</c> — a part is continuous; otherwise <c>none</c> and
+    /// <c>integer</c>, and <c>preferred</c> only when the parameter's unit names a quantity with a
+    /// ladder (a capacitance, an inductance, a resistance). A choice not listed is ABSENT from the
+    /// row, not greyed, and a hand-written line naming it is a <c>check</c> error.
+    /// </summary>
+    public static IReadOnlyList<TuneDiscrete> DiscreteChoices(Tunable t)
+        => t.Part is not null ? [TuneDiscrete.None]
+         : CircuitRF.Design.Matching.PreferredValues.QuantityOfUnit(t.Unit) is null ? [TuneDiscrete.None, TuneDiscrete.Integer]
+         : [TuneDiscrete.None, TuneDiscrete.Integer, TuneDiscrete.Preferred];
+
     private static readonly Regex _plain = new(
         @"^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*([A-Za-zΩµμ%°]+)?\s*$",
         RegexOptions.Compiled);

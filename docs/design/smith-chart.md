@@ -794,7 +794,10 @@ whatever read the file next.
   or a `PRC` is an ESR or a leakage term, measured rather than ordered, and a preferred-value ladder
   would state something untrue about it. `Z0`, an electrical length and a `Z1P`'s two parts are
   continuous by construction. The rule is written once, in `SmithPreferredValues.LadderFor`, so a
-  vocabulary that grows a member cannot grow a snap nobody decided on.
+  vocabulary that grows a member cannot grow a snap nobody decided on. The ladder ARITHMETIC — the
+  series, the snap, the list text — is `PreferredValues` (`src/Design/Matching`), shared with the
+  optimizer's `discrete=preferred` (tuning-optimization.md §12); `SmithPreferredValues` keeps only the
+  rule about which Smith values are on a ladder, and calls it.
 - **Nearest is by RATIO.** A ladder is geometric — 1.0 to 1.2 pF is 0.2 pF and 68 to 82 pF is 14 pF —
   so the midpoint between two rungs is their geometric mean, which is what a ±5 % tolerance is
   symmetric about. 1.09 pF snaps down to 1.0 and 1.11 pF up to 1.2. A value past either end lands ON
@@ -823,9 +826,10 @@ it, once, and every design they open afterwards is measured against their own li
 #### The list is per-USER, and the toggle is per-DOCUMENT
 
 `SmithDesign.SnapToPreferredValues` is in the `.csmith`; the ladders are in `preferences.json`
-(`SmithPreferredValueStore`). A `.csmith` carrying its own copy would open on another machine snapping
-to a parts drawer its owner never chose, with nothing on screen to tell it from their own — so the file
-stores whether, and the installation stores what.
+(`SmithPreferredValueStore`; the resistor ladder as `preferred_resistors_ohm`). A `.csmith` carrying
+its own copy would open on another machine snapping to a parts drawer its owner never chose, with
+nothing on screen to tell it from their own — so the file stores whether, and the installation stores
+what.
 
 **A preference of null IS the shipped ladder, and that is the whole of *Revert*.** Nothing copies the
 shipped tables into the preferences file on first run, so reverting writes null and a user who reverts
@@ -836,13 +840,16 @@ untouched inductors, and storing those would silently freeze that user on today'
 #### The editor — the VAR dialog's own two modes
 
 Right-click the toggle (the slider rows' own *right-click ▸ Set range…* idiom one control along), which
-works whether it is on or off. **Text** pastes a whole column or a comma-separated row; **Rows** edits
+works whether it is on or off. **It has three tabs — Capacitors, Inductors and Resistors.** The resistor
+ladder (shipped E24, 1 Ω … 10 MΩ; *E24* and *E96* buttons fill it) is the optimizer's: the Smith Chart
+never snaps a resistance, but one parts drawer is edited in one place, and the optimizer reads all three
+from the same store. **Text** pastes a whole column or a comma-separated row; **Rows** edits
 one value at a time with an `×` and an *Add value*, committing on focus loss or Enter — the VAR
 editor's contract, taken rather than invented, because the owner asked for that pair by name. It is a
 `Window` and therefore lives in `Views/Dialogs` and not in `Views/Smith`, which R-smith4-1's own gate
 forbids a window class in.
 
-**Nothing is stored until Apply**, and Apply commits both ladders or neither: writing through on every
+**Nothing is stored until Apply**, and Apply commits every ladder or none: writing through on every
 committed row would put a preferences write and an undo entry on the open design behind every keystroke
 of a table edit, which is the Match Designer's entry-per-notification defect wearing a different hat,
 and a half-applied pair would leave the capacitors replaced and the inductors not with one message to

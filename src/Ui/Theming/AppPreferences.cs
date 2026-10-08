@@ -647,6 +647,14 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<double>? SmithPreferredInductorsHenry { get; set; }
 
+    /// <summary>The resistor ladder, <b>in OHMS</b> — what an optimizer entry with
+    /// <c>discrete=preferred</c> on a resistance snaps to (brief-tuneopt-8 R-to8-2). Null is the
+    /// shipped ladder — E24, 1 Ω … 10 MΩ. The Smith Chart never snaps a resistance (its §5.6a), so
+    /// it reads only the other two. See <see cref="SmithPreferredCapacitorsFarad"/>.</summary>
+    [JsonPropertyName("preferred_resistors_ohm")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<double>? PreferredResistorsOhm { get; set; }
+
     // brief-oasis-gdstk.md R-oas-4b: the OASIS (gdstk) export dialog's four options, remembered from one
     // export to the next. Null is the default (OasisWriteOptions.Default: compression 6, rectangles and
     // trapezoids detected, CRC32, no standard properties). Per USER for CheckDrcOnExport's own reason:

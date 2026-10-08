@@ -9,7 +9,8 @@ namespace CircuitRF.Ui.Smith;
 
 /// <summary>
 /// The discrete ladders in force — the shipped ones, or the user's own
-/// (<c>docs/design/smith-chart.md</c> §5.6a).
+/// (<c>docs/design/smith-chart.md</c> §5.6a). Shared with the optimizer's <c>discrete=preferred</c>
+/// (brief-tuneopt-8 R-to8-2), which also reads the resistor ladder the Smith Chart does not.
 /// </summary>
 /// <remarks>
 /// <b>A preference of null IS the shipped ladder, and that is the whole of "revert".</b> Nothing
@@ -35,14 +36,24 @@ public static class SmithPreferredValueStore
         => Sane(AppPreferencesIo.Load().SmithPreferredInductorsHenry)
            ?? SmithPreferredValues.ShippedInductorsHenry;
 
+    /// <summary>The resistance ladder, ohms, ascending — the optimizer's only; the Smith Chart never
+    /// snaps a resistance.</summary>
+    public static IReadOnlyList<double> Resistors
+        => Sane(AppPreferencesIo.Load().PreferredResistorsOhm)
+           ?? PreferredValues.ShippedResistorsOhm;
+
+    /// <summary>All three, as the argument an optimization run takes.</summary>
+    public static PreferredLadders Ladders => new(Capacitors, Inductors, Resistors);
+
     /// <summary>The ladder for one parameter, or null for a parameter that is not on one.</summary>
     public static IReadOnlyList<double>? LadderFor(SmithParameter p)
         => SmithPreferredValues.LadderFor(p, Capacitors, Inductors);
 
-    /// <summary>True when either ladder has been replaced — what greys out <i>Revert</i>.</summary>
+    /// <summary>True when any ladder has been replaced — what greys out <i>Revert</i>.</summary>
     public static bool IsCustomized
         => Sane(AppPreferencesIo.Load().SmithPreferredCapacitorsFarad) is not null
-        || Sane(AppPreferencesIo.Load().SmithPreferredInductorsHenry)  is not null;
+        || Sane(AppPreferencesIo.Load().SmithPreferredInductorsHenry)  is not null
+        || Sane(AppPreferencesIo.Load().PreferredResistorsOhm)         is not null;
 
     /// <summary>
     /// Replaces one ladder — or, when what is handed in <b>IS</b> the shipped ladder, stores
@@ -61,16 +72,15 @@ public static class SmithPreferredValueStore
         var stored = values.Where(v => v > 0 && double.IsFinite(v)).OrderBy(v => v).ToList();
         if (stored.Count == 0) return;
 
-        var shipped = quantity == MatchQuantity.Capacitance
-            ? SmithPreferredValues.ShippedCapacitorsFarad
-            : SmithPreferredValues.ShippedInductorsHenry;
+        var shipped = PreferredValues.Shipped(quantity) ?? SmithPreferredValues.ShippedInductorsHenry;
 
         List<double>? write = SameLadder(stored, shipped) ? null : stored;
 
         AppPreferencesIo.Update(p =>
         {
-            if (quantity == MatchQuantity.Capacitance) p.SmithPreferredCapacitorsFarad = write;
-            else                                       p.SmithPreferredInductorsHenry  = write;
+            if (quantity == MatchQuantity.Capacitance)     p.SmithPreferredCapacitorsFarad = write;
+            else if (quantity == MatchQuantity.Resistance) p.PreferredResistorsOhm         = write;
+            else                                           p.SmithPreferredInductorsHenry  = write;
         });
     }
 
@@ -79,12 +89,13 @@ public static class SmithPreferredValueStore
     private static bool SameLadder(IReadOnlyList<double> a, IReadOnlyList<double> b)
         => a.Count == b.Count && !a.Where((v, i) => Math.Abs(v / b[i] - 1.0) > 1e-9).Any();
 
-    /// <summary>Puts one ladder — or, with no argument, both — back to what circuitRF ships.</summary>
+    /// <summary>Puts one ladder — or, with no argument, all three — back to what circuitRF ships.</summary>
     public static void Revert(MatchQuantity? quantity = null)
         => AppPreferencesIo.Update(p =>
         {
-            if (quantity != MatchQuantity.Inductance)  p.SmithPreferredCapacitorsFarad = null;
-            if (quantity != MatchQuantity.Capacitance) p.SmithPreferredInductorsHenry  = null;
+            if (quantity is null or MatchQuantity.Capacitance) p.SmithPreferredCapacitorsFarad = null;
+            if (quantity is null or MatchQuantity.Inductance)  p.SmithPreferredInductorsHenry  = null;
+            if (quantity is null or MatchQuantity.Resistance)  p.PreferredResistorsOhm         = null;
         });
 
     /// <summary>A stored list that could not be snapped to reads as ABSENT rather than as a refusal:

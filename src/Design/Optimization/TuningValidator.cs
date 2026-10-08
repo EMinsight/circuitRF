@@ -27,6 +27,13 @@ public static class TuningValidator
             string who = $"tune {e.Key}";
             KeyRule(e.Key, who, f, catalog, inPreset: false);
 
+            // A part is continuous, and preferred needs a ladder (brief-tuneopt-8 R-to8-2/7).
+            if (e.Discrete != TuneDiscrete.None && catalog.Find(e.Key) is { } t
+                && !TunableValue.DiscreteChoices(t).Contains(e.Discrete))
+                f.Add(t.Part is not null
+                    ? OptimizationDiagnostics.DiscreteOnPart(e.Key, e.Discrete == TuneDiscrete.Integer ? "integer" : "preferred")
+                    : OptimizationDiagnostics.PreferredNoLadder(e.Key, t.Unit));
+
             double? min = Number(e.Min, who, "min", f), max = Number(e.Max, who, "max", f);
             if (min is { } lo && max is { } hi)
             {

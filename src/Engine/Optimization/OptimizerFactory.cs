@@ -10,8 +10,11 @@ namespace CircuitRF.Engine.Optimization;
 public static class OptimizerFactory
 {
     /// <summary>The algorithm for <paramref name="id"/>, or null when this build has none.</summary>
+    /// <param name="levels">Per coordinate, the unit-box positions a discrete coordinate may take
+    /// (<see cref="Discrete"/> reads them; every other algorithm ignores them).</param>
     public static IOptimizerAlgorithm? Create(string id, double[] start, ulong seed,
-                                              IReadOnlyDictionary<string, string>? options = null) => id switch
+                                              IReadOnlyDictionary<string, string>? options = null,
+                                              IReadOnlyList<double[]>? levels = null) => id switch
     {
         LevenbergMarquardt.AlgorithmId    => new LevenbergMarquardt(start, options),
         BfgsB.AlgorithmId                 => new BfgsB(start, options),
@@ -23,6 +26,8 @@ public static class OptimizerFactory
         DifferentialEvolution.AlgorithmId => new DifferentialEvolution(start, seed, options),
         ParticleSwarm.AlgorithmId         => new ParticleSwarm(start, seed, options),
         CmaEs.AlgorithmId                 => new CmaEs(start, seed, options),
+        Bayesian.AlgorithmId              => new Bayesian(start, seed, options),
+        Discrete.AlgorithmId              => new Discrete(start, seed, levels, options),
         _                                 => null,
     };
 

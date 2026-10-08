@@ -183,7 +183,8 @@ other axes are checked at run time); an expression that does not parse; an `in`/
 limits or with an inverted band; a sloped limit with no range; a key naming a value D1 does not offer
 (a complex value named whole, or a part of a value that is not complex, included); a phase range wider
 than 360°; ranges of one complex value's parts that leave no value inside all of them (D18);
-an unknown algorithm id; a `timelimit` that is not a duration. **Warning:** a key — in a `tune` line or a
+`discrete=integer|preferred` on a part of a complex value, and `discrete=preferred` on a value whose unit
+names no ladder (§12); an unknown algorithm id; a `timelimit` that is not a duration. **Warning:** a key — in a `tune` line or a
 preset — that names nothing. An unknown function name in a goal expression parses, exactly as in a
 `measure` line; it is reported where `measure` reports one.
 
@@ -346,10 +347,9 @@ the registry and printed by `reference optimizers` — not repeated here, so the
   line search; a direction that is not downhill resets the memory to steepest descent.
 - **The difference step is 1e-6 of the box.** 1e-4 left the gradient error larger than the gradient
   itself near a Rosenbrock optimum and BFGS-B stopped at cost 0.01. A discrete or stepped coordinate
-  decodes both sides of a difference to one value (a cache hit) and so has no gradient — a known limit
-  of the gradient methods until TO-8's re-polish.
-- **Auto** runs Levenberg–Marquardt (Minimax under `cost=minimax`) and says so (`opt.algorithm.auto`)
-  until TO-8 adds its global stage. Algorithms not built yet are refused naming those that are.
+  decodes both sides of a difference to one value (a cache hit) and so has no gradient — which is what
+  snap-and-polish (§12) is for.
+- **Auto** is TO-8's (§12). Algorithms not built are refused naming those that are.
 
 ## 11. Global and derivative-free algorithms, and the registry (TO-7)
 
@@ -361,7 +361,7 @@ the value given, else the registry's numeric default, else the `auto` value the 
 and reading an option the registry does not list throws. So a default printed by `reference optimizers`
 is the default that runs. The stall options are `CommonOptions`. `OptimizerFactory.Create` is the one
 id → algorithm switch; `OptimizationRun.Available` is the registry filtered by `OptimizerFactory.IsBuilt`
-(`bayes` and `discrete` are TO-8, listed and marked "not in this build").
+(every id on the menu is built since TO-8).
 
 **Cost form.** A method accepting one form SETS it: choosing `minimax` runs minimax whatever `cost=`
 says, because least squares is the default form and cannot be told apart from an unstated one. A
@@ -391,3 +391,80 @@ arrives. Minimax lands the minimax line through eᵗ on [0, 1], its two worst re
 0.10593. `AlgorithmRegistryTests` holds the registry, the build, the `optimize` schema's summary and
 the `reference optimizers` page to each other; `PopulationComplexTests` runs DE on a `real`/`mag`
 pair with infeasible points on both sides of the feasible band and ends feasible, reporting the count.
+
+## 12. Bayesian, Discrete, preferred values, snap and polish, Auto, sensitivity (TO-8)
+
+**Preferred values (R-to8-2).** The ladder arithmetic left `SmithPreferredValues` for a shared
+`PreferredValues` (`src/Design/Matching`): the IEC 60063 series E12, E24 and E96, the snap (nearest by
+RATIO), the bracket either side of a value, and the list text the editor reads and writes. The Smith Chart
+calls it unchanged and still snaps only L and C (smith-chart.md §5.6a). A **resistor** ladder joined the
+capacitor and inductor ones — shipped E24 over 1 Ω … 10 MΩ, E96 over the same span one button away in the
+editor (the Smith Chart's Preferred Values dialog, now with a Resistors tab). The ladders stay per-USER
+(`SmithPreferredValueStore`, `preferences.json`); a run takes them as an ARGUMENT
+(`OptimizationOptions.Ladders`, `PreferredLadders`) — null is the shipped set, which is what a headless
+run uses. `discrete=preferred` snaps by the parameter's unit: F → capacitors, H → inductors, Ω →
+resistors. `TunableValue.DiscreteChoices` is the one statement of what a row offers: a part of a complex
+value offers only `none` (a part is continuous — R-to8-7; `step=` stays allowed), and `preferred` is absent
+where the unit has no ladder. `check` and the run refuse either in a hand-written line
+(`opt.discrete.part`, `opt.discrete.no-ladder`), and a preferred entry whose range holds no rung is refused
+(`opt.discrete.none-in-range`).
+
+**Levels.** A coordinate that takes only listed values carries them (`OptimizationCoordinate.Levels`, in
+its unit): an integer's integers, a step's grid (each at most 100,000), or the ladder's rungs inside the
+range. Integers and steps are applied on every decode, as before; a preferred value only when the run
+asks (`Decode(u, snapPreferred)`) — a continuous algorithm optimizes it continuously and says so once
+(`opt.discrete.preferred`), and Discrete, snap-and-polish and Auto's snap stage put it on a rung.
+
+**Bayesian (`bayes`, R-to8-1).** `GaussianProcess`: zero mean on the standardized cost, Matérn 5/2 with one
+length scale per variable, a noise variance; θ fitted by maximum likelihood with the analytic gradient and
+a small projected BFGS, from the previous fit, a fixed start and (up to 100 points) two seeded ones; the
+factor is NumFlat's Cholesky. Expected improvement (in logs, with an erfc accurate in relative terms so
+z·Φ + φ stays meaningful far into the tail) maximized by 200n uniform candidates (≤ 2,000) plus
+perturbations of the five best, the four best refined by compass search. The first batch is a Latin
+hypercube of `initial` = 2n+1 points carrying the start. Batch = 1, or `parallel=` points when the setup
+states one, by the constant liar. Above `tr_dims` = 10 variables the trust-region variant runs (a local
+surrogate, a box around the best scaled by the length scales, doubled after 3 successes, halved after
+max(4, n) failures, a fresh hypercube when it falls below 2⁻⁷). Failed and infeasible points are not
+observations: the global variant takes no candidate within 0.02 of one; in the trust region they count
+as failures. Only the `archive` (500) most recent points are fitted, the best always among them — a fit
+is O(N³). **A log warp of the cost was measured and not kept**: at δ = 1e-3/1e-2/1e-1 of the spread it was
+worse than the raw cost on Branin, a 2-D Rosenbrock and an L-section match (40 evaluations, six seeds).
+Gate: 2-D Branin from the box centre, seed 1, within 1e-3 of 0.397887 in 40 evaluations (8.6e-6 measured).
+
+**Discrete (`discrete`, R-to8-3).** Every optimized value must have levels; otherwise the run is refused
+naming the continuous ones (`opt.discrete.continuous`), or saying that every value is a part
+(`opt.discrete.only-parts`) — `OptimizationVariables.DiscreteUnavailable()` is the sentence the menu's
+disabled entry shows. A grid of at most `cap` (2,000) points is searched exhaustively in blocks of a
+twentieth, the start's point first; a larger one by coordinate-wise descent (every coordinate alone, 1, 2,
+4 and 8 levels either side, one batch per iteration) with `restarts` (10) random restarts. The run's stall
+rule applies to it as to any algorithm.
+
+**Snap and polish (R-to8-4).** `OptimizationOptions.SnapAndPolish` (the CLI's flag) runs it after the
+algorithm; `OptimizationRun.SnapAndPolish()` (the Optimizer's action) runs it on a finished run, its limits
+counted afresh and without the time limit. Each integer, stepped and preferred value goes to the legal
+values either side of where the continuous run left it (`PreferredValues.Bracket`); with k ≤ 6 of them all
+2^k combinations are evaluated as one batch, else the nearest only. **From then on the run's best is a
+snapped point** — the continuous one is not a design anyone can build. The continuous values (parts of
+complex values included) are then re-optimized from the best snapped point with the snapped ones held —
+Levenberg–Marquardt, or Minimax under `cost=minimax` — over the sub-box of those coordinates.
+`OptimizationResult.Snap` holds the cost before, at the snap and after the polish, and a note says the same
+(`opt.snap.report`). The snap runs after any end but Stop, a goals-met continuous point included; the
+polish only within the limits. Gate: an L-section optimized continuously, snapped to E24 C and E12 L, ends
+on the pair the closed-form cost ranks best of its four neighbours.
+
+**Auto (R-to8-5).** CMA-ES for 50(n + 1) evaluations, or half of `maxevals` when that is fewer; then
+Levenberg–Marquardt (Minimax under `cost=minimax`) from its best point; then snap-and-polish when any value
+is discrete. A stage ends on its own finish, its budget or a stall (counted within the stage); every goal
+met skips to the snap; a run limit or Stop ends the run. `OptimizationProgress.Stage` names the stage
+(`OptimizationStages`), and `OptimizationResult.Stages` lists those that ran. Iterations count across
+stages; `maxiter`, `maxevals` and `timelimit` are the whole run's. Gate: the L-section at |S11| ≤ 1e-5
+runs the global stage, then the polish, and meets it (the global stage alone does not reach 1e-5; LM alone
+stalls at 1.2e-6 against 1e-6 on its 1e-6 difference step).
+
+**Sensitivity (R-to8-6).** `OptimizationRun.Sensitivity(at)` — never run unasked. One batch at the best
+point (or `at`): a forward difference of 1e-4 of the box per continuous coordinate, the next level for a
+discrete one, backward at the top; evaluated through the cache, so a known point is free, and recorded
+nowhere — the run's best and log do not move. Each coordinate's ∂cost/∂u (the cost change across its whole
+range in its own scale, to first order) and its share of the total; per goal, the coordinate that moves
+that goal's cost most. A part of a complex value is its own coordinate, so ∂cost/∂mag(ZL) and
+∂cost/∂phase(ZL) are reported, never a whole value.

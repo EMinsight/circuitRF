@@ -9,8 +9,9 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace CircuitRF.Ui.Smith;
 
-/// <summary>Which of the two ladders the editor is showing.</summary>
-public enum SmithPreferredLadder { Capacitors = 0, Inductors = 1 }
+/// <summary>Which of the three ladders the editor is showing. Resistors are the optimizer's only
+/// (brief-tuneopt-8 R-to8-2) — the Smith Chart never snaps a resistance.</summary>
+public enum SmithPreferredLadder { Capacitors = 0, Inductors = 1, Resistors = 2 }
 
 /// <summary>Text (paste a whole list) or Rows (one value at a time) — the VAR editor's own pair.</summary>
 public enum SmithPreferredValuesMode { Text = 0, Rows = 1 }
@@ -70,6 +71,7 @@ public sealed partial class SmithPreferredValuesViewModel : ObservableObject
 
     private string _capacitorText;
     private string _inductorText;
+    private string _resistorText;
 
     public SmithPreferredValuesViewModel(Action? onApplied = null)
     {
@@ -78,6 +80,8 @@ public sealed partial class SmithPreferredValuesViewModel : ObservableObject
                                                      MatchQuantity.Capacitance);
         _inductorText  = SmithPreferredValues.Format(SmithPreferredValueStore.Inductors,
                                                      MatchQuantity.Inductance);
+        _resistorText  = PreferredValues.Format(SmithPreferredValueStore.Resistors,
+                                                MatchQuantity.Resistance);
         RebuildRows();
     }
 
@@ -87,11 +91,13 @@ public sealed partial class SmithPreferredValuesViewModel : ObservableObject
 
     public bool IsCapacitors => Ladder == SmithPreferredLadder.Capacitors;
     public bool IsInductors  => Ladder == SmithPreferredLadder.Inductors;
+    public bool IsResistors  => Ladder == SmithPreferredLadder.Resistors;
 
     partial void OnLadderChanged(SmithPreferredLadder oldValue, SmithPreferredLadder newValue)
     {
         OnPropertyChanged(nameof(IsCapacitors));
         OnPropertyChanged(nameof(IsInductors));
+        OnPropertyChanged(nameof(IsResistors));
         OnPropertyChanged(nameof(Buffer));
         OnPropertyChanged(nameof(Hint));
         RebuildRows();
@@ -100,10 +106,15 @@ public sealed partial class SmithPreferredValuesViewModel : ObservableObject
 
     [RelayCommand] private void ShowCapacitors() => Ladder = SmithPreferredLadder.Capacitors;
     [RelayCommand] private void ShowInductors()  => Ladder = SmithPreferredLadder.Inductors;
+    [RelayCommand] private void ShowResistors()  => Ladder = SmithPreferredLadder.Resistors;
 
     /// <summary>The quantity the ladder on show is — what parses and formats its entries.</summary>
-    public MatchQuantity Quantity
-        => IsCapacitors ? MatchQuantity.Capacitance : MatchQuantity.Inductance;
+    public MatchQuantity Quantity => Ladder switch
+    {
+        SmithPreferredLadder.Capacitors => MatchQuantity.Capacitance,
+        SmithPreferredLadder.Resistors  => MatchQuantity.Resistance,
+        _                               => MatchQuantity.Inductance,
+    };
 
     /// <summary>The unit a bare number in this ladder is read as — and the smallest one a formatted
     /// entry reaches for. One statement of it, in <see cref="SmithPreferredValues.BareUnit"/>, so
@@ -111,9 +122,12 @@ public sealed partial class SmithPreferredValuesViewModel : ObservableObject
     public string DefaultUnit => SmithPreferredValues.BareUnit(Quantity);
 
     /// <summary>The line under the editor — what the field takes, in the field's own terms.</summary>
-    public string Hint => IsCapacitors
-        ? "One capacitance per line, or separated by commas. A bare number is read as pF."
-        : "One inductance per line, or separated by commas. A bare number is read as nH.";
+    public string Hint => Ladder switch
+    {
+        SmithPreferredLadder.Capacitors => "One capacitance per line, or separated by commas. A bare number is read as pF.",
+        SmithPreferredLadder.Resistors  => "One resistance per line, or separated by commas. A bare number is read as Ω. Used by the optimizer's preferred values.",
+        _                               => "One inductance per line, or separated by commas. A bare number is read as nH.",
+    };
 
     // ── text or rows ─────────────────────────────────────────────────────────
 
@@ -137,15 +151,40 @@ public sealed partial class SmithPreferredValuesViewModel : ObservableObject
     /// <summary>The working list for the ladder on show, as text. Two-way bound in Text mode.</summary>
     public string Buffer
     {
-        get => IsCapacitors ? _capacitorText : _inductorText;
+        get => Ladder switch
+        {
+            SmithPreferredLadder.Capacitors => _capacitorText,
+            SmithPreferredLadder.Resistors  => _resistorText,
+            _                               => _inductorText,
+        };
         set
         {
             if (Buffer == value) return;
-            if (IsCapacitors) _capacitorText = value;
-            else              _inductorText  = value;
+            if (IsCapacitors)     _capacitorText = value;
+            else if (IsResistors) _resistorText  = value;
+            else                  _inductorText  = value;
             OnPropertyChanged();
             Validate();
         }
+    }
+
+    /// <summary>Fills the resistor list with E24 across the shipped span, 1 Ω … 10 MΩ (the shipped
+    /// ladder). Like any edit, nothing is stored until Apply.</summary>
+    [RelayCommand]
+    private void FillE24()
+    {
+        if (!IsResistors) return;
+        Buffer = PreferredValues.Format(PreferredValues.ShippedResistorsOhm, MatchQuantity.Resistance);
+        RebuildRows();
+    }
+
+    /// <summary>Fills the resistor list with E96 (1 %) across the same span.</summary>
+    [RelayCommand]
+    private void FillE96()
+    {
+        if (!IsResistors) return;
+        Buffer = PreferredValues.Format(PreferredValues.ResistorsE96Ohm, MatchQuantity.Resistance);
+        RebuildRows();
     }
 
     public ObservableCollection<SmithPreferredValueRowViewModel> Rows { get; } = [];
@@ -245,9 +284,9 @@ public sealed partial class SmithPreferredValuesViewModel : ObservableObject
     // ── committing ───────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Stores both ladders. <b>Neither is written unless both parse</b> — a half-applied pair would
+    /// Stores all three ladders. <b>None is written unless all parse</b> — a half-applied set would
     /// leave the user's capacitors replaced and their inductors not, with one error message to
-    /// explain it and no way to tell which half landed.
+    /// explain it and no way to tell which part landed.
     /// </summary>
     [RelayCommand]
     private void Apply()
@@ -268,11 +307,21 @@ public sealed partial class SmithPreferredValuesViewModel : ObservableObject
             return;
         }
 
+        if (!PreferredValues.TryParse(_resistorText, MatchQuantity.Resistance, "Ω",
+                                      out var ress, out string? resErr))
+        {
+            Ladder = SmithPreferredLadder.Resistors;
+            Error  = resErr;
+            return;
+        }
+
         SmithPreferredValueStore.Set(MatchQuantity.Capacitance, caps);
         SmithPreferredValueStore.Set(MatchQuantity.Inductance,  inds);
+        SmithPreferredValueStore.Set(MatchQuantity.Resistance,  ress);
 
         _capacitorText = SmithPreferredValues.Format(caps, MatchQuantity.Capacitance);
         _inductorText  = SmithPreferredValues.Format(inds, MatchQuantity.Inductance);
+        _resistorText  = PreferredValues.Format(ress, MatchQuantity.Resistance);
         Error = null;
         OnPropertyChanged(nameof(Buffer));
         RebuildRows();
@@ -280,7 +329,7 @@ public sealed partial class SmithPreferredValuesViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Both ladders back to what circuitRF ships, <b>stored at once</b>. The escape hatch the whole
+    /// All three ladders back to what circuitRF ships, <b>stored at once</b>. The escape hatch the whole
     /// feature needs: a list somebody has pasted a spreadsheet into is one keystroke from useless,
     /// and an editor with no way back would make that permanent.
     /// </summary>
@@ -292,6 +341,8 @@ public sealed partial class SmithPreferredValuesViewModel : ObservableObject
                                                      MatchQuantity.Capacitance);
         _inductorText  = SmithPreferredValues.Format(SmithPreferredValueStore.Inductors,
                                                      MatchQuantity.Inductance);
+        _resistorText  = PreferredValues.Format(SmithPreferredValueStore.Resistors,
+                                                MatchQuantity.Resistance);
         Error = null;
         OnPropertyChanged(nameof(Buffer));
         RebuildRows();

@@ -1,6 +1,7 @@
 using System.Numerics;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Design.Matching;
 using CircuitRF.Diagnostics;
 
 namespace CircuitRF.Design.Optimization;
@@ -20,12 +21,36 @@ public sealed record OptimizationCoordinate(
     double?      Step,
     bool         Integer)
 {
+    /// <summary>
+    /// The values a DISCRETE coordinate may take, ascending, in <see cref="Unit"/> (brief-tuneopt-8):
+    /// the integers of the range, the step's grid, or the preferred values inside the range. Null for
+    /// a continuous coordinate, and for an integer or a step whose range holds more than
+    /// <see cref="MaxLevels"/> of them.
+    /// </summary>
+    public IReadOnlyList<double>? Levels { get; init; }
+
+    /// <summary>Whether <see cref="Levels"/> are preferred values — snapped only when a run asks
+    /// (<see cref="Decode(double, bool)"/>); an integer or a step is always applied.</summary>
+    public bool Preferred { get; init; }
+
+    /// <summary>The most levels a coordinate lists.</summary>
+    public const int MaxLevels = 100_000;
+
     /// <summary>The value a unit coordinate decodes to: linear or logarithmic across the range, then
     /// snapped to an integer or a step — so the cache and the history see the value simulated.</summary>
-    public double Decode(double u)
+    public double Decode(double u) => Decode(u, snapPreferred: false);
+
+    /// <summary>
+    /// <see cref="Decode(double)"/>, and with <paramref name="snapPreferred"/> a preferred coordinate
+    /// lands on its nearest preferred value by ratio. A continuous run optimizes a preferred value
+    /// continuously; Discrete, snap-and-polish and Auto's last stage snap it.
+    /// </summary>
+    public double Decode(double u, bool snapPreferred)
     {
         u = Math.Clamp(u, 0, 1);
         double v = Scale == TuneScale.Log ? Min * Math.Pow(Max / Min, u) : Min + u * (Max - Min);
+        if (Preferred)
+            return snapPreferred && Levels is { Count: > 0 } ladder ? PreferredValues.Snap(v, ladder) : v;
         if (Integer)
         {
             v = Math.Round(v);
@@ -132,8 +157,12 @@ public sealed class OptimizationVariables
     /// <paramref name="refusal"/> when the run cannot start: no opt-enabled value, more than two parts
     /// of one complex value, a swept value, a complex value whose ranges cannot be reached.
     /// </summary>
-    public static OptimizationVariables? Build(TuningSetup setup, TunableCatalog catalog, out Diagnostic? refusal)
+    /// <param name="ladders">The preferred-value ladders a <c>discrete=preferred</c> entry snaps to
+    /// (a per-user preference, passed in — <c>src/Design/CLAUDE.md</c>); null is the shipped ones.</param>
+    public static OptimizationVariables? Build(TuningSetup setup, TunableCatalog catalog, out Diagnostic? refusal,
+                                               PreferredLadders? ladders = null)
     {
+        ladders ??= PreferredLadders.Shipped;
         refusal = null;
         var notes  = new List<Diagnostic>();
         var coords = new List<OptimizationCoordinate>();
@@ -156,11 +185,45 @@ public sealed class OptimizationVariables
             double lo = min ?? 0, hi = max ?? 1;
             var scale = t.Part == ComplexPart.Phase ? TuneScale.Lin : TunableValue.Effective(e.Scale, lo, hi);
             if (scale == TuneScale.Log && lo <= 0) scale = TuneScale.Lin;
-            if (e.Discrete == TuneDiscrete.Preferred) notes.Add(OptimizationDiagnostics.PreferredContinuous(e.Key));
+            // A part is continuous (overview D18, brief-tuneopt-8 R-to8-7).
+            if (t.Part is not null && e.Discrete != TuneDiscrete.None)
+            {
+                refusal = OptimizationDiagnostics.DiscreteOnPart(e.Key, DiscreteToken(e.Discrete));
+                return null;
+            }
+            double? step = TunableValue.InUnit(e.Step, t.Unit);
+            bool integer = t.Part is null && (e.Discrete == TuneDiscrete.Integer || t.IsInteger);
+            IReadOnlyList<double>? levels = null;
+            bool preferred = e.Discrete == TuneDiscrete.Preferred;
+            if (preferred)
+            {
+                if (PreferredValues.QuantityOfUnit(t.Unit) is not { } quantity || ladders.For(quantity) is not { } ladder)
+                {
+                    refusal = OptimizationDiagnostics.PreferredNoLadder(e.Key, t.Unit);
+                    return null;
+                }
+                double unitScale = Units.Scale(t.Unit) ?? 1;
+                levels = [.. ladder.Select(r => r / unitScale).Where(r => r >= lo * (1 - 1e-12) && r <= hi * (1 + 1e-12)).Order()];
+                if (levels.Count == 0)
+                {
+                    refusal = OptimizationDiagnostics.PreferredNoneInRange(e.Key,
+                        TunableValue.Format(lo, t.Unit), TunableValue.Format(hi, t.Unit));
+                    return null;
+                }
+            }
+            else if (integer)
+            {
+                double first = Math.Ceiling(lo), last = Math.Floor(hi);
+                if (last >= first && last - first < OptimizationCoordinate.MaxLevels)
+                    levels = [.. Enumerable.Range(0, (int)(last - first) + 1).Select(k => first + k)];
+            }
+            else if (step is > 0 and var s && (hi - lo) / s < OptimizationCoordinate.MaxLevels)
+                levels = [.. Enumerable.Range(0, (int)Math.Floor((hi - lo) / s + 1e-9) + 1).Select(k => lo + k * s)];
 
-            var c = new OptimizationCoordinate(e.Key, t.ValueKey, t.Part, t.Unit, lo, hi, scale,
-                                               TunableValue.InUnit(e.Step, t.Unit),
-                                               t.Part is null && (e.Discrete == TuneDiscrete.Integer || t.IsInteger));
+            var c = new OptimizationCoordinate(e.Key, t.ValueKey, t.Part, t.Unit, lo, hi, scale, step, integer)
+            {
+                Levels = levels, Preferred = preferred,
+            };
             int index = coords.Count;
             coords.Add(c);
 
@@ -327,8 +390,29 @@ public sealed class OptimizationVariables
         return Math.Abs(c) < 1e-12 ? Math.Abs(rect.Value) / Width(rect.Key) : Math.Abs(rect.Value / c) / Width(rect.Key);
     }
 
+    /// <summary>The coordinates that take only listed values (<see cref="OptimizationCoordinate.Levels"/>).</summary>
+    public IEnumerable<int> DiscreteCoordinates
+        => Enumerable.Range(0, Coordinates.Count).Where(i => Coordinates[i].Levels is not null);
+
+    /// <summary>
+    /// Why the <b>Discrete</b> algorithm cannot run on these variables — null when every optimized
+    /// value is an integer, a step or a preferred value (brief-tuneopt-8 R-to8-3/7). The Optimizer's
+    /// menu shows it on the disabled entry; a run with <c>algorithm=discrete</c> refuses with it.
+    /// </summary>
+    public Diagnostic? DiscreteUnavailable()
+    {
+        var continuous = Coordinates.Where(c => c.Levels is null).ToList();
+        if (continuous.Count == 0) return null;
+        if (Coordinates.All(c => c.Part is not null)) return OptimizationDiagnostics.DiscreteOnlyParts();
+        return OptimizationDiagnostics.DiscreteHasContinuous(string.Join(", ", continuous.Select(c => c.Key)));
+    }
+
     /// <summary>The design's view of point <paramref name="u"/>.</summary>
-    public DecodedPoint Decode(double[] u)
+    public DecodedPoint Decode(double[] u) => Decode(u, snapPreferred: false);
+
+    /// <summary>The design's view of point <paramref name="u"/>, preferred values snapped when
+    /// <paramref name="snapPreferred"/> (see <see cref="OptimizationCoordinate.Decode(double, bool)"/>).</summary>
+    public DecodedPoint Decode(double[] u, bool snapPreferred)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         var quantities = new Dictionary<string, Complex>(StringComparer.Ordinal);
@@ -349,13 +433,15 @@ public sealed class OptimizationVariables
                 continue;
             }
             int c = Index(key);
-            double x = Coordinates[c].Decode(u[c]);
+            double x = Coordinates[c].Decode(u[c], snapPreferred);
             quantities[key] = x;
             values[key] = Coordinates[c].Text(x);
         }
         string cacheKey = string.Join("\n", values.Select(kv => kv.Key + "=" + kv.Value));
         return new DecodedPoint(values, quantities, cacheKey, infeasible, distance);
     }
+
+    private static string DiscreteToken(TuneDiscrete d) => d == TuneDiscrete.Integer ? "integer" : "preferred";
 
     private int Index(string valueKey)
     {

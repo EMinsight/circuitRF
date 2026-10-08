@@ -3,6 +3,7 @@ using System.Numerics;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Circuit;
+using CircuitRF.Design.Matching;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine;
 using CircuitRF.Engine.Optimization;
@@ -24,7 +25,50 @@ public sealed record OptimizationOptions
 
     /// <summary>Cancelling abandons the run (exit 130); Stop keeps the best point.</summary>
     public CancellationToken Cancellation { get; init; }
+
+    /// <summary>The preferred-value ladders <c>discrete=preferred</c> snaps to — the user's, from the
+    /// preferences, in the GUI; null is the shipped ones (brief-tuneopt-8 R-to8-2).</summary>
+    public PreferredLadders? Ladders { get; init; }
+
+    /// <summary>After a continuous run, snap every integer, stepped and preferred value and polish
+    /// the rest (R-to8-4) — the CLI's flag. The Optimizer's action calls
+    /// <see cref="OptimizationRun.SnapAndPolish"/> on a finished run instead.</summary>
+    public bool SnapAndPolish { get; init; }
 }
+
+/// <summary>The stages a run names in its progress (brief-tuneopt-8 R-to8-5). A run of one named
+/// algorithm has no stage (null).</summary>
+public static class OptimizationStages
+{
+    public const string Global     = "global search (CMA-ES)";
+    public const string PolishLm   = "local polish (Levenberg–Marquardt)";
+    public const string PolishMax  = "local polish (Minimax)";
+    public const string Snap       = "snap to legal values";
+    public const string SnapPolish = "polish the continuous values";
+}
+
+/// <summary>
+/// What snap-and-polish did (R-to8-4): the cost at the continuous best, at the best snapped
+/// neighbour, and after polishing the continuous values (the snapped cost when there were none).
+/// </summary>
+/// <param name="Snapped">The integer, stepped and preferred values snapped.</param>
+/// <param name="Neighbours">The snapped points evaluated: 2^k when k ≤ 6, else the nearest only.</param>
+public sealed record SnapResult(int Snapped, int Neighbours, double CostBefore, double CostSnapped, double CostAfter, bool Polished);
+
+/// <summary>One coordinate's sensitivity at a point (R-to8-6).</summary>
+/// <param name="Key">The entry — a part of a complex value is its own coordinate.</param>
+/// <param name="PerRange">∂cost/∂u: the cost change across the variable's whole range, in its own
+/// scale (lin or log), to first order — the normalized derivative.</param>
+/// <param name="Share">|PerRange| as a fraction of the sum over all coordinates.</param>
+public sealed record VariableSensitivity(string Key, double PerRange, double Share);
+
+/// <summary>Per goal, the coordinate that moves its cost most, and by how much per range.</summary>
+public sealed record GoalSensitivity(string Goal, string? MostSensitive, double PerRange);
+
+/// <summary>A sensitivity pass (R-to8-6): n difference evaluations at one point, cached ones free.</summary>
+public sealed record SensitivityReport(
+    double Cost, IReadOnlyList<VariableSensitivity> Variables, IReadOnlyList<GoalSensitivity> Goals,
+    long Evaluations, long CacheHits);
 
 /// <summary>How a run ended (overview D15 gives each its exit code).</summary>
 public enum OptimizationOutcome
@@ -57,7 +101,8 @@ public sealed record OptimizationProgress(
     IReadOnlyDictionary<string, string> BestValues,
     IReadOnlyList<GoalReport>           Goals,
     IReadOnlyList<RailedVariable>       Railed,
-    DataSet?                            BestData);
+    DataSet?                            BestData,
+    string?                             Stage = null);
 
 /// <summary>One point the algorithm was told about, in order.</summary>
 public sealed record EvaluationRecord(
@@ -86,6 +131,13 @@ public sealed class OptimizationResult
     public Diagnostic? Refusal { get; init; }
 
     public string Algorithm { get; init; } = "";
+
+    /// <summary>The stages that ran, in order (Auto, snap-and-polish); empty for one algorithm alone.</summary>
+    public IReadOnlyList<string> Stages { get; init; } = [];
+
+    /// <summary>What snap-and-polish did; null when it did not run.</summary>
+    public SnapResult? Snap { get; init; }
+
     public IReadOnlyList<Diagnostic> Notes { get; init; } = [];
 
     /// <summary>The best point's tuned values, value key → text (a complex value whole) — what lock-in
@@ -165,10 +217,28 @@ public sealed class OptimizationRun
     private DataSet? _bestData;
     private Diagnostic? _firstFailure;
 
+    // Per-run state the stages share (brief-tuneopt-8): the decode mode, the iteration count across
+    // stages, the limits and where this invocation's count of them started.
+    private readonly PreferredLadders _ladders;
+    private bool _snapPreferred;
+    private int _iterations;
+    private string? _stage;
+    private readonly List<string> _stages = [];
+    private SnapResult? _snapResult;
+    private Stopwatch _sw = new();
+    private Dictionary<string, string>? _algOptions;
+    private ulong _seed = 1;
+    private int _maxIter = DefaultMaxIterations, _iterBase;
+    private long _evalBase;
+    private double? _limitS;
+    private double _stallTol;
+    private int _stallIters;
+
     private OptimizationRun(PreparedCircuit circuit, OptimizationOptions options)
     {
         _circuit = circuit;
         _options = options;
+        _ladders = options.Ladders ?? PreferredLadders.Shipped;
 
         if (circuit.ReadError is { } readError || circuit.Lib is not { } lib || circuit.Tb is not { } tb)
         {
@@ -197,7 +267,7 @@ public sealed class OptimizationRun
         _goals.AddRange(_setup.Goals.Where(g => g.Enabled));
         if (_goals.Count == 0) { Refusal = OptimizationDiagnostics.NoGoals(); return; }
 
-        Variables = OptimizationVariables.Build(_setup, catalog, out var refusal);
+        Variables = OptimizationVariables.Build(_setup, catalog, out var refusal, _ladders);
         if (refusal is not null || Variables is null) { Refusal = refusal ?? OptimizationDiagnostics.NoVariables(); return; }
         _notes.AddRange(Variables.Notes);
 
@@ -209,12 +279,16 @@ public sealed class OptimizationRun
                 : TuningDiagnostics.UnknownAlgorithm(AlgorithmId, string.Join(", ", OptimizerAlgorithms.Ids));
             return;
         }
-        if (AlgorithmId == OptimizerAlgorithms.Auto)
+        if (AlgorithmId == Discrete.AlgorithmId && Variables.DiscreteUnavailable() is { } notDiscrete)
         {
-            // The global stage of Auto (overview D13) is not built; its local polish is.
-            AlgorithmId = _settings.Cost == OptimizerCost.Minimax ? Minimax.AlgorithmId : LevenbergMarquardt.AlgorithmId;
-            _notes.Add(OptimizationDiagnostics.AutoRuns(OptimizerAlgorithms.Find(AlgorithmId)!.Label));
+            Refusal = notDiscrete;
+            return;
         }
+        // A preferred value a continuous run will leave between rungs says so once (R-to8-2).
+        bool snaps = AlgorithmId is OptimizerAlgorithms.Auto or Discrete.AlgorithmId || options.SnapAndPolish;
+        if (!snaps)
+            foreach (var c in Variables.Coordinates.Where(c => c.Preferred))
+                _notes.Add(OptimizationDiagnostics.PreferredContinuous(c.Key));
 
         // The cost form (R-to7-6, R-to7-7): choosing Minimax sets minimax — least squares is the
         // default form, never one a setup can be said to insist on — while a least-squares method
@@ -243,7 +317,7 @@ public sealed class OptimizationRun
     public Diagnostic? Refusal { get; }
     public OptimizationVariables? Variables { get; }
 
-    /// <summary>The algorithm that runs (Auto resolved).</summary>
+    /// <summary>The algorithm the setup names (<c>auto</c> runs the stages <see cref="OptimizationStages"/> lists).</summary>
     public string AlgorithmId { get; } = "";
 
     /// <summary>What the run noted: a key that names nothing, a start moved into range, one point at a
@@ -275,86 +349,378 @@ public sealed class OptimizationRun
         if (Refusal is not null || Variables is null) return Refused(Refusal ?? OptimizationDiagnostics.NoVariables());
 
         var ct = _options.Cancellation;
-        var sw = Stopwatch.StartNew();
-        ulong seed = (ulong)(_settings.Seed ?? 1);
-        var options = _settings.Options is null ? null
+        _sw = Stopwatch.StartNew();
+        _seed = (ulong)(_settings.Seed ?? 1);
+        _algOptions = _settings.Options is null ? null
             : _settings.Options.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
         // A population schedule planned for an evaluation budget plans for the run's own limit.
         if (_settings.MaxEvaluations is { } maxEvals
             && OptimizerAlgorithms.Find(AlgorithmId)?.Option("budget") is not null
-            && options?.ContainsKey("budget") != true)
-            (options ??= new Dictionary<string, string>(StringComparer.Ordinal))["budget"] =
+            && _algOptions?.ContainsKey("budget") != true)
+            (_algOptions ??= new Dictionary<string, string>(StringComparer.Ordinal))["budget"] =
                 maxEvals.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var alg = OptimizerFactory.Create(AlgorithmId, Variables.Start, seed, options)!;
+        // Bayesian chooses one point per iteration unless the setup asks for parallel runs (R-to8-1).
+        if (AlgorithmId == Bayesian.AlgorithmId && _settings.Parallelism is > 1 and var par
+            && _algOptions?.ContainsKey("batch") != true)
+            (_algOptions ??= new Dictionary<string, string>(StringComparer.Ordinal))["batch"] =
+                par.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-        int maxIter     = _settings.MaxIterations ?? DefaultMaxIterations;
-        double? limitS  = _settings.TimeLimit is { } tl ? TuningValidator.TimeLimitSeconds(tl) : null;
-        double stallTol = Option(options, "stall_tol");
-        int stallIters  = (int)Option(options, "stall_iters");
+        _maxIter    = _settings.MaxIterations ?? DefaultMaxIterations;
+        _limitS     = _settings.TimeLimit is { } tl ? TuningValidator.TimeLimitSeconds(tl) : null;
+        _stallTol   = Option(_algOptions, "stall_tol");
+        _stallIters = (int)Option(_algOptions, "stall_iters");
+        _iterBase   = 0;
+        _evalBase   = 0;
 
         string reason;
-        bool first = true;
-        int lastIteration = 0;
         try
         {
-            while (true)
+            if (AlgorithmId == OptimizerAlgorithms.Auto)
             {
-                if (_stop) { reason = "stopped"; break; }
-                if (!_resume.IsSet)
-                {
-                    _held.Set();
-                    _resume.Wait(ct);
-                    _held.Reset();
-                    if (_stop) { reason = "stopped"; break; }
-                }
-                ct.ThrowIfCancellationRequested();
-
-                var batch = alg.Ask();
-                if (batch.Count == 0) { reason = alg.FinishReason ?? "the algorithm finished"; break; }
-                int before = _log.Count;
-                var results = EvaluateBatch(batch, ct);
-
-                // A goal that cannot be scored at the start point (a complex value, an axis it does not
-                // have) will not be scored anywhere: that is a refusal, not 100 failed evaluations.
-                if (first)
-                {
-                    first = false;
-                    if (_cache.TryGetValue(_log[before].Decoded.CacheKey, out var start) && start.GoalError)
-                        return Refused(start.Error!);
-                }
-
-                alg.Tell(results);
-                if (alg.Iterations > lastIteration)
-                {
-                    lastIteration = alg.Iterations;
-                    RecordIteration(lastIteration, sw.Elapsed, before);
-                }
-
-                if (BestCost() == 0)                                  { reason = "every enabled goal is met"; break; }
-                if (alg.IsFinished)                                   { reason = alg.FinishReason ?? "the algorithm finished"; break; }
-                if (lastIteration >= maxIter)                         { reason = $"the iteration limit ({maxIter}) was reached"; break; }
-                if (_settings.MaxEvaluations is { } me && Evaluations >= me) { reason = $"the evaluation limit ({me}) was reached"; break; }
-                if (limitS is { } s && sw.Elapsed.TotalSeconds >= s)  { reason = $"the time limit ({_settings.TimeLimit}) was reached"; break; }
-                if (Stalled(stallIters, stallTol))
-                {
-                    reason = $"the best cost improved by less than {stallTol:G3} of itself over {stallIters} iterations";
-                    break;
-                }
+                var (why, refused) = RunAuto(ct);
+                if (refused is { } r) return Refused(r);
+                reason = why;
+            }
+            else
+            {
+                _snapPreferred = AlgorithmId == Discrete.AlgorithmId;
+                var alg = Create(AlgorithmId, Variables.Start, sub: null);
+                var end = RunStage(alg, null, null, null, firstOfRun: true, ct);
+                if (end.Refusal is { } r) return Refused(r);
+                reason = end.Reason;
+                if (_options.SnapAndPolish && AlgorithmId != Discrete.AlgorithmId && end.Kind != StageEnd.Stopped
+                    && _bestIndex >= 0 && Variables.DiscreteCoordinates.Any())
+                    reason = SnapStage(ct) ?? reason;
             }
         }
         catch (OperationCanceledException)
         {
-            return Finish(OptimizationOutcome.Cancelled, "cancelled", alg.Iterations, null);
+            return Finish(OptimizationOutcome.Cancelled, "cancelled", null);
         }
+        return Complete(reason);
+    }
 
+    /// <summary>
+    /// Snap and polish (brief-tuneopt-8 R-to8-4) on a finished run — the Optimizer's action: every
+    /// integer, stepped and preferred value to its legal neighbours, the best of them kept, the
+    /// continuous values re-optimized from there. The run's limits apply afresh, without its time
+    /// limit; the result replaces the run's.
+    /// </summary>
+    public OptimizationResult SnapAndPolish(CancellationToken ct = default)
+    {
+        if (Refusal is not null || Variables is null) return Refused(Refusal ?? OptimizationDiagnostics.NoVariables());
+        if (_bestIndex < 0 || !Variables.DiscreteCoordinates.Any()) return Refused(OptimizationDiagnostics.NothingToSnap());
+        _sw = Stopwatch.StartNew();
+        _limitS = null;
+        _iterBase = _iterations;
+        _evalBase = Evaluations;
+        _stop = false;
+        string reason;
+        try { reason = SnapStage(ct) ?? "snapped"; }
+        catch (OperationCanceledException) { return Finish(OptimizationOutcome.Cancelled, "cancelled", null); }
+        return Complete(reason);
+    }
+
+    private OptimizationResult Complete(string reason)
+    {
         if (_bestIndex < 0)
-            return Finish(OptimizationOutcome.NoConvergence, reason, alg.Iterations,
+            return Finish(OptimizationOutcome.NoConvergence, reason,
                           OptimizationDiagnostics.NoneConverged(Evaluations,
                               _firstFailure?.Render() ?? "every point was infeasible"));
-
         var best = _cache[_log[_bestIndex].Decoded.CacheKey];
         return Finish(best.Scores.All(s => s.Met) ? OptimizationOutcome.GoalsMet : OptimizationOutcome.GoalsUnmet,
-                      reason, alg.Iterations, null);
+                      reason, null);
+    }
+
+    // ── Stages ───────────────────────────────────────────────────────────────
+
+    private enum StageEnd { GoalsMet, Finished, Budget, Stalled, Limit, Stopped }
+
+    private sealed record StageOutcome(StageEnd Kind, string Reason, Diagnostic? Refusal = null)
+    {
+        /// <summary>Whether the run ends here, whatever stages remain.</summary>
+        public bool EndsRun => Kind is StageEnd.Limit or StageEnd.Stopped;
+    }
+
+    /// <summary>The algorithm for this run's options and seed, over <paramref name="sub"/>'s
+    /// coordinates (all when null), with the discrete levels it needs.</summary>
+    private IOptimizerAlgorithm Create(string id, double[] start, int[]? sub)
+    {
+        IReadOnlyList<double[]>? levels = null;
+        if (id == Discrete.AlgorithmId)
+            levels = [.. Variables!.Coordinates.Select(c => (c.Levels ?? []).Select(c.Encode).ToArray())];
+        return OptimizerFactory.Create(id, sub is null ? start : [.. sub.Select(i => start[i])], _seed, _algOptions, levels)!;
+    }
+
+    /// <summary>
+    /// Auto (R-to8-5): CMA-ES for a modest budget — 50(n + 1) evaluations, or half the run's
+    /// <c>maxevals</c> when that is fewer — then Levenberg–Marquardt (Minimax under minimax) from its
+    /// best point, then snap-and-polish when any value is integer, stepped or preferred. A stage ends
+    /// on its own finish, its budget or a stall; every enabled goal met skips to the snap, and a run
+    /// limit or Stop ends the run.
+    /// </summary>
+    private (string Reason, Diagnostic? Refusal) RunAuto(CancellationToken ct)
+    {
+        int n = Variables!.Coordinates.Count;
+        long budget = 50L * (n + 1);
+        if (_settings.MaxEvaluations is { } me) budget = Math.Min(budget, Math.Max(1, me / 2));
+
+        _snapPreferred = false;
+        var global = RunStage(Create(CmaEs.AlgorithmId, Variables.Start, null), null, OptimizationStages.Global,
+                              budget, firstOfRun: true, ct);
+        if (global.Refusal is { } r) return ("refused", r);
+        var last = global;
+
+        if (!global.EndsRun && global.Kind != StageEnd.GoalsMet && _bestIndex >= 0)
+        {
+            bool minimax = _cost == OptimizerCost.Minimax;
+            string id = minimax ? Minimax.AlgorithmId : LevenbergMarquardt.AlgorithmId;
+            last = RunStage(Create(id, _log[_bestIndex].Point, null), null,
+                            minimax ? OptimizationStages.PolishMax : OptimizationStages.PolishLm, null, false, ct);
+        }
+
+        string reason = last.Reason;
+        if (last.Kind != StageEnd.Stopped && _bestIndex >= 0 && Variables.DiscreteCoordinates.Any())
+            reason = SnapStage(ct) ?? reason;
+        return (reason, null);
+    }
+
+    /// <summary>
+    /// The snap (R-to8-4): the continuous best's integer, stepped and preferred values to the legal
+    /// values either side — every combination (2^k points) when k ≤ 6, else the nearest only — the
+    /// best kept, then the continuous values re-optimized from it with the snapped ones held. From
+    /// here on the run's best is a SNAPPED point: the continuous best is not a design anyone can build.
+    /// Returns the reason the last stage ended, or null when no polish ran.
+    /// </summary>
+    private string? SnapStage(CancellationToken ct)
+    {
+        var vars = Variables!;
+        var discrete = vars.DiscreteCoordinates.ToArray();
+        var from = _log[_bestIndex];
+        double before = from.Cost;
+
+        // Each discrete coordinate's legal values either side of where the continuous run left it.
+        var choices = new List<double[]>();
+        foreach (int i in discrete)
+        {
+            var c = vars.Coordinates[i];
+            double v = c.Scale == TuneScale.Log ? c.Min * Math.Pow(c.Max / c.Min, from.Point[i]) : c.Min + from.Point[i] * (c.Max - c.Min);
+            var (below, above) = PreferredValues.Bracket(v, c.Levels!);
+            choices.Add(below == above ? [c.Encode(below)] : [c.Encode(below), c.Encode(above)]);
+        }
+        var batch = new List<double[]>();
+        if (discrete.Length <= 6)
+        {
+            int combos = choices.Aggregate(1, (p, ch) => p * ch.Length);
+            for (int k = 0; k < combos; k++)
+            {
+                var x = (double[])from.Point.Clone();
+                int rest = k;
+                for (int d = 0; d < discrete.Length; d++)
+                {
+                    x[discrete[d]] = choices[d][rest % choices[d].Length];
+                    rest /= choices[d].Length;
+                }
+                batch.Add(x);
+            }
+        }
+        else
+        {
+            var x = (double[])from.Point.Clone();
+            foreach (int i in discrete)
+            {
+                var c = vars.Coordinates[i];
+                double v = c.Decode(x[i]);
+                x[i] = c.Encode(c.Preferred ? PreferredValues.Snap(v, c.Levels!) : NearestLevel(c, v));
+            }
+            batch.Add(x);
+        }
+
+        // From here the best is among snapped points only.
+        _snapPreferred = true;
+        _bestIndex = -1;
+        _bestData = null;
+        _stage = OptimizationStages.Snap;
+        _stages.Add(_stage);
+        ct.ThrowIfCancellationRequested();
+        int first = _log.Count;
+        EvaluateBatch(batch, ct);
+        _iterations++;
+        RecordIteration(_iterations, _sw.Elapsed, first);
+        if (_bestIndex < 0)
+        {
+            _snapResult = new SnapResult(discrete.Length, batch.Count, before, double.NaN, double.NaN, false);
+            return "no snapped point could be evaluated";
+        }
+        double snapped = _log[_bestIndex].Cost;
+
+        // Polish the continuous values with the snapped ones held.
+        var continuous = Enumerable.Range(0, vars.Coordinates.Count).Except(discrete).ToArray();
+        string? reason = null;
+        bool polished = false;
+        if (continuous.Length > 0 && snapped > 0 && !_stop && !LimitReached(out _))
+        {
+            bool minimax = _cost == OptimizerCost.Minimax;
+            var basePoint = _log[_bestIndex].Point;
+            var alg = Create(minimax ? Minimax.AlgorithmId : LevenbergMarquardt.AlgorithmId, basePoint, continuous);
+            var end = RunStage(alg, (continuous, basePoint), OptimizationStages.SnapPolish, null, false, ct);
+            reason = end.Reason;
+            polished = true;
+        }
+        double after = _log[_bestIndex].Cost;
+        _snapResult = new SnapResult(discrete.Length, batch.Count, before, snapped, after, polished);
+        _notes.Add(OptimizationDiagnostics.SnapReport(discrete.Length, before, snapped, after, polished));
+        return reason ?? (snapped == 0 ? "every enabled goal is met" : $"the best of {batch.Count} snapped point(s) was kept");
+    }
+
+    private static double NearestLevel(OptimizationCoordinate c, double v)
+    {
+        double best = c.Levels![0];
+        foreach (double l in c.Levels) if (Math.Abs(l - v) < Math.Abs(best - v)) best = l;
+        return best;
+    }
+
+    /// <summary>
+    /// One stage: ask, evaluate, tell, until the algorithm finishes, the stage's evaluation
+    /// <paramref name="budget"/> is spent, it stalls, every goal is met, a run limit is reached, or
+    /// Stop. <paramref name="sub"/> embeds an algorithm over some coordinates into the full point.
+    /// </summary>
+    private StageOutcome RunStage(IOptimizerAlgorithm alg, (int[] Coords, double[] Base)? sub, string? stage,
+                                  long? budget, bool firstOfRun, CancellationToken ct)
+    {
+        _stage = stage;
+        if (stage is not null) _stages.Add(stage);
+        long evalStart = Evaluations;
+        int historyStart = _iterHistory.Count;
+        int algIterations = 0;
+        bool first = firstOfRun;
+
+        while (true)
+        {
+            if (_stop) return new(StageEnd.Stopped, "stopped");
+            if (!_resume.IsSet)
+            {
+                _held.Set();
+                _resume.Wait(ct);
+                _held.Reset();
+                if (_stop) return new(StageEnd.Stopped, "stopped");
+            }
+            ct.ThrowIfCancellationRequested();
+
+            var asked = alg.Ask();
+            if (asked.Count == 0) return new(StageEnd.Finished, alg.FinishReason ?? "the algorithm finished");
+            var batch = sub is { } e ? asked.Select(x => Embed(x, e.Coords, e.Base)).ToList() : asked;
+            int before = _log.Count;
+            var results = EvaluateBatch(batch, ct);
+
+            // A goal that cannot be scored at the start point (a complex value, an axis it does not
+            // have) will not be scored anywhere: that is a refusal, not 100 failed evaluations.
+            if (first)
+            {
+                first = false;
+                if (_cache.TryGetValue(_log[before].Decoded.CacheKey, out var start) && start.GoalError)
+                    return new(StageEnd.Stopped, "refused", start.Error!);
+            }
+
+            alg.Tell(results);
+            if (alg.Iterations > algIterations)
+            {
+                _iterations += alg.Iterations - algIterations;
+                algIterations = alg.Iterations;
+                RecordIteration(_iterations, _sw.Elapsed, before);
+            }
+
+            if (BestCost() == 0)                       return new(StageEnd.GoalsMet, "every enabled goal is met");
+            if (alg.IsFinished)                        return new(StageEnd.Finished, alg.FinishReason ?? "the algorithm finished");
+            if (LimitReached(out var limit))           return new(StageEnd.Limit, limit!);
+            if (budget is { } b && Evaluations - evalStart >= b)
+                return new(StageEnd.Budget, $"its budget of {b} evaluations was spent");
+            if (Stalled(_stallIters, _stallTol, historyStart))
+                return new(StageEnd.Stalled, $"the best cost improved by less than {_stallTol:G3} of itself over {_stallIters} iterations");
+        }
+    }
+
+    private static double[] Embed(double[] x, int[] coords, double[] basePoint)
+    {
+        var full = (double[])basePoint.Clone();
+        for (int k = 0; k < coords.Length; k++) full[coords[k]] = x[k];
+        return full;
+    }
+
+    /// <summary>The run's iteration, evaluation and time limits, counted from this invocation's start.</summary>
+    private bool LimitReached(out string? reason)
+    {
+        reason = null;
+        if (_iterations - _iterBase >= _maxIter) reason = $"the iteration limit ({_maxIter}) was reached";
+        else if (_settings.MaxEvaluations is { } me && Evaluations - _evalBase >= me) reason = $"the evaluation limit ({me}) was reached";
+        else if (_limitS is { } s && _sw.Elapsed.TotalSeconds >= s) reason = $"the time limit ({_settings.TimeLimit}) was reached";
+        return reason is not null;
+    }
+
+    // ── Sensitivity (R-to8-6) ────────────────────────────────────────────────
+
+    /// <summary>
+    /// The sensitivity at the run's best point (or <paramref name="at"/>): one batch of n
+    /// forward-difference points — 1e-4 of the box for a continuous coordinate, the next legal value
+    /// for a discrete one, backward at the top — evaluated through the cache, so a point already known
+    /// costs nothing. Nothing it evaluates changes the run's best or its log. Null when the point has
+    /// no successful evaluation.
+    /// </summary>
+    public SensitivityReport? Sensitivity(double[]? at = null, CancellationToken ct = default)
+    {
+        if (Variables is null) return null;
+        var u0 = at ?? (_bestIndex >= 0 ? _log[_bestIndex].Point : null);
+        if (u0 is null) return null;
+        long evals0 = Evaluations, hits0 = _cacheHits;
+
+        var points = new List<double[]> { u0 };
+        var du = new double[u0.Length];
+        for (int i = 0; i < u0.Length; i++)
+        {
+            var c = Variables.Coordinates[i];
+            var x = (double[])u0.Clone();
+            if (c.Levels is { Count: > 1 } levels)
+            {
+                double v = c.Decode(u0[i], _snapPreferred);
+                int k = 0;
+                for (int j = 1; j < levels.Count; j++) if (Math.Abs(levels[j] - v) < Math.Abs(levels[k] - v)) k = j;
+                x[i] = c.Encode(levels[k + 1 < levels.Count ? k + 1 : k - 1]);
+            }
+            else x[i] = u0[i] + (u0[i] + 1e-4 <= 1 ? 1e-4 : -1e-4);
+            du[i] = x[i] - u0[i];
+            points.Add(x);
+        }
+        EvaluateBatch(points, ct, record: false);
+
+        var keys = points.Select(p => Variables.Decode(p, _snapPreferred)).ToArray();
+        if (keys[0].Infeasible || !_cache.TryGetValue(keys[0].CacheKey, out var o0) || o0.Failed) return null;
+
+        double GoalCost(PointOutcome o, int g)
+        {
+            var r = o.Scores[g].Residuals;
+            return _cost == OptimizerCost.Minimax ? (r.Length == 0 ? 0 : r.Max()) : r.Sum(v => v * v);
+        }
+        var perRange = new double[u0.Length];
+        var perGoal = new double[_goals.Count, u0.Length];
+        for (int i = 0; i < u0.Length; i++)
+        {
+            if (du[i] == 0 || keys[i + 1].Infeasible || !_cache.TryGetValue(keys[i + 1].CacheKey, out var oi) || oi.Failed)
+            { perRange[i] = double.NaN; continue; }
+            perRange[i] = (oi.Cost - o0.Cost) / du[i];
+            for (int g = 0; g < _goals.Count; g++) perGoal[g, i] = (GoalCost(oi, g) - GoalCost(o0, g)) / du[i];
+        }
+        double total = perRange.Where(double.IsFinite).Sum(Math.Abs);
+        var variables = Variables.Coordinates.Select((c, i) => new VariableSensitivity(c.Key, perRange[i],
+            double.IsFinite(perRange[i]) && total > 0 ? Math.Abs(perRange[i]) / total : 0)).ToList();
+        var goals = new List<GoalSensitivity>();
+        for (int g = 0; g < _goals.Count; g++)
+        {
+            int arg = -1;
+            for (int i = 0; i < u0.Length; i++)
+                if (double.IsFinite(perGoal[g, i]) && perGoal[g, i] != 0 && (arg < 0 || Math.Abs(perGoal[g, i]) > Math.Abs(perGoal[g, arg]))) arg = i;
+            goals.Add(new GoalSensitivity(_goals[g].Name, arg < 0 ? null : Variables.Coordinates[arg].Key, arg < 0 ? 0 : perGoal[g, arg]));
+        }
+        return new SensitivityReport(o0.Cost, variables, goals, Evaluations - evals0, _cacheHits - hits0);
     }
 
     // ── One batch ────────────────────────────────────────────────────────────
@@ -363,9 +729,10 @@ public sealed class OptimizationRun
     /// Evaluates one batch: decode, skip what is infeasible, take what the cache holds, simulate the
     /// rest (concurrently when the design allows), then assign penalties in batch order.
     /// </summary>
-    internal IReadOnlyList<Evaluation> EvaluateBatch(IReadOnlyList<double[]> batch, CancellationToken ct = default)
+    internal IReadOnlyList<Evaluation> EvaluateBatch(IReadOnlyList<double[]> batch, CancellationToken ct = default,
+                                                     bool record = true)
     {
-        var decoded = batch.Select(Variables!.Decode).ToArray();
+        var decoded = batch.Select(u => Variables!.Decode(u, _snapPreferred)).ToArray();
         var cached  = new bool[batch.Count];
         var toRun   = new List<(string Key, DecodedPoint Point)>();
         var queued  = new HashSet<string>(StringComparer.Ordinal);
@@ -400,6 +767,7 @@ public sealed class OptimizationRun
 
         double penalty = 10 * (1 + _maxFeasible);
         var results = new Evaluation[batch.Count];
+        if (!record) return results;
         for (int k = 0; k < batch.Count; k++)
         {
             var d = decoded[k];
@@ -510,9 +878,9 @@ public sealed class OptimizationRun
 
     private double BestCost() => _bestIndex < 0 ? double.PositiveInfinity : _log[_bestIndex].Cost;
 
-    private bool Stalled(int k, double tol)
+    private bool Stalled(int k, double tol, int from = 0)
     {
-        if (k <= 0 || _iterHistory.Count <= k) return false;
+        if (k <= 0 || _iterHistory.Count - from <= k) return false;
         double then = _iterHistory[^(k + 1)].Best, now = _iterHistory[^1].Best;
         return double.IsFinite(then) && then - now <= tol * Math.Abs(then);
     }
@@ -536,7 +904,7 @@ public sealed class OptimizationRun
         progress(new OptimizationProgress(
             iteration, Evaluations, Failures, _infeasible, _cacheHits, elapsed, current, BestCost(),
             _bestIndex < 0 ? new Dictionary<string, string>() : _log[_bestIndex].Decoded.Values,
-            goals, _bestIndex < 0 ? [] : Variables!.Railed(_log[_bestIndex].Point), _bestData));
+            goals, _bestIndex < 0 ? [] : Variables!.Railed(_log[_bestIndex].Point), _bestData, _stage));
     }
 
     private OptimizationResult Refused(Diagnostic why) => new()
@@ -546,8 +914,9 @@ public sealed class OptimizationRun
         Evaluations = Evaluations, Failures = Failures, Infeasible = _infeasible, CacheHits = _cacheHits,
     };
 
-    private OptimizationResult Finish(OptimizationOutcome outcome, string reason, int iterations, Diagnostic? refusal)
+    private OptimizationResult Finish(OptimizationOutcome outcome, string reason, Diagnostic? refusal)
     {
+        int iterations = _iterations;
         bool cancelled = outcome == OptimizationOutcome.Cancelled;
         var bestRecord = _bestIndex >= 0 && !cancelled ? _log[_bestIndex] : null;
         return new OptimizationResult
@@ -556,6 +925,8 @@ public sealed class OptimizationRun
             FinishReason = reason,
             Refusal      = refusal,
             Algorithm    = AlgorithmId,
+            Stages       = [.. _stages],
+            Snap         = _snapResult,
             Notes        = _notes,
             BestValues   = bestRecord?.Decoded.Values ?? new Dictionary<string, string>(),
             BestPoint    = bestRecord?.Point,

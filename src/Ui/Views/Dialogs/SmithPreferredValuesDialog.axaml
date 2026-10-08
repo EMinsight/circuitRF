@@ -24,9 +24,9 @@
          at once and Rows edits one value at a time. The owner asked for exactly that pair, by name,
          and a third shape would be a third thing to learn for the same job.
 
-         ONE APPLY FOR BOTH LADDERS. Capacitors and inductors are two buffers behind one editor, and
-         Apply commits both — see the view model for why a half-applied pair is worse than a
-         refusal. -->
+         ONE APPLY FOR EVERY LADDER. Capacitors, inductors and resistors are three buffers behind one
+         editor, and Apply commits all of them — see the view model for why a half-applied set is
+         worse than a refusal. -->
 
     <Window.Styles>
         <Style Selector="TextBox">
@@ -63,6 +63,13 @@
                         Classes="mode-btn"
                         Classes.active="{Binding IsInductors}"
                         Command="{Binding ShowInductorsCommand}"
+                        CornerRadius="0"/>
+                <!-- Resistors are the optimizer's (brief-tuneopt-8 R-to8-2): the Smith Chart never
+                     snaps a resistance, but one parts drawer is edited in one place. -->
+                <Button Content="Resistors"
+                        Classes="mode-btn"
+                        Classes.active="{Binding IsResistors}"
+                        Command="{Binding ShowResistorsCommand}"
                         CornerRadius="0,4,4,0"/>
             </StackPanel>
 
@@ -167,9 +174,19 @@
                     Content="Revert to shipped values"
                     Command="{Binding RevertToShippedCommand}"
                     FontSize="11" Padding="10,4" MinHeight="0"
-                    ToolTip.Tip="Puts both lists back to the E12 (IEC 60063) ladders circuitRF ships — 0.1 pF to 100 nF, and 0.1 nH to 100 µH. Takes effect at once."/>
+                    ToolTip.Tip="Puts all three lists back to what circuitRF ships — E12 (IEC 60063) from 0.1 pF to 100 nF and from 0.1 nH to 100 µH, and E24 from 1 Ω to 10 MΩ. Takes effect at once."/>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                <Button Content="E24"
+                        IsVisible="{Binding IsResistors}"
+                        Command="{Binding FillE24Command}"
+                        FontSize="11" Padding="10,4" MinHeight="0"
+                        ToolTip.Tip="Fills the list with the E24 series (IEC 60063), 1 Ω to 10 MΩ — what circuitRF ships. Stored on Apply."/>
+                <Button Content="E96"
+                        IsVisible="{Binding IsResistors}"
+                        Command="{Binding FillE96Command}"
+                        FontSize="11" Padding="10,4" MinHeight="0"
+                        ToolTip.Tip="Fills the list with the E96 series (IEC 60063, 1 %), 1 Ω to 10 MΩ. Stored on Apply."/>
                 <Button Content="Tidy"
                         Command="{Binding TidyCommand}"
                         FontSize="11" Padding="10,4" MinHeight="0"
@@ -177,7 +194,7 @@
                 <Button Content="Apply"
                         Command="{Binding ApplyCommand}"
                         FontSize="11" Padding="10,4" MinHeight="0"
-                        ToolTip.Tip="Stores both lists. A design with the discrete toggle on is re-snapped onto them, as one undo entry."/>
+                        ToolTip.Tip="Stores all three lists. A design with the discrete toggle on is re-snapped onto them, as one undo entry."/>
                 <Button Content="Close"
                         FontSize="11" Padding="10,4" MinHeight="0"
                         Click="OnCloseClick"/>

@@ -58,7 +58,7 @@ public static partial class AnalysisDirectiveSchema
                 new("max",      Summary: "Upper bound."),
                 new("scale",    Default: "auto", Summary: "auto | lin | log. auto is log when min > 0 and max/min >= 10."),
                 new("step",     Summary: "Slider step. Absent = continuous."),
-                new("discrete", Default: "none", Summary: "none | integer | preferred (standard component values)."),
+                new("discrete", Default: "none", Summary: "none | integer | preferred — preferred snaps a capacitance, inductance or resistance to the user's preferred-value ladder (shipped: E12 C and L, E24 R). Not on a part of a complex value."),
                 new("tune",     Default: "0", Summary: "1 = offered in the Tuning window."),
                 new("opt",      Default: "0", Summary: "1 = varied by the optimizer."),
             ],

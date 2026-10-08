@@ -50,7 +50,7 @@ public sealed class RandomSearch : AskTellAlgorithm
 
     /// <summary>One point in each of <paramref name="count"/> equal slices of every coordinate, the
     /// slices paired at random.</summary>
-    private static double[][] LatinHypercube(SplitMix64 rng, int count, int n)
+    internal static double[][] LatinHypercube(SplitMix64 rng, int count, int n)
     {
         var pts = new double[count][];
         for (int k = 0; k < count; k++) pts[k] = new double[n];

@@ -43,9 +43,6 @@ public static class OptimizationDiagnostics
         "{label} minimizes the sum of squared violations and cannot use cost=minimax; choose Minimax or Auto, or set cost=lsq.",
         ("label", label));
 
-    public static Diagnostic AutoRuns(string algorithm) => Diagnostic.Create(
-        "opt.algorithm.auto", DiagnosticSeverity.Info,
-        "Auto runs {algorithm}.", ("algorithm", algorithm));
 
     public static Diagnostic StartMoved(string key, string value, string min, string max, string start) => Diagnostic.Create(
         "opt.start.outside", DiagnosticSeverity.Warning,
@@ -63,8 +60,47 @@ public static class OptimizationDiagnostics
 
     public static Diagnostic PreferredContinuous(string key) => Diagnostic.Create(
         "opt.discrete.preferred", DiagnosticSeverity.Info,
-        "{key}: discrete=preferred is optimized continuously; the Discrete algorithm snaps to preferred values.",
+        "{key}: discrete=preferred is optimized continuously by this algorithm; Snap and polish, Auto and Discrete put it on a preferred value.",
         ("key", key));
+
+    // ── Discrete and preferred values (brief-tuneopt-8) ─────────────────────
+
+    public static Diagnostic DiscreteOnPart(string key, string discrete) => Diagnostic.Create(
+        "opt.discrete.part", DiagnosticSeverity.Error,
+        "{key}: discrete={discrete} is not offered on a part of a complex value — a part is continuous; use step= instead.",
+        ("key", key), ("discrete", discrete));
+
+    public static Diagnostic PreferredNoLadder(string key, string unit) => Diagnostic.Create(
+        "opt.discrete.no-ladder", DiagnosticSeverity.Error,
+        "{key}: discrete=preferred needs a capacitance, an inductance or a resistance; a value in '{unit}' has no preferred-value ladder.",
+        ("key", key), ("unit", unit));
+
+    public static Diagnostic PreferredNoneInRange(string key, string min, string max) => Diagnostic.Create(
+        "opt.discrete.none-in-range", DiagnosticSeverity.Error,
+        "{key}: no preferred value lies in its range {min} .. {max}; widen the range or edit the ladder.",
+        ("key", key), ("min", min), ("max", max));
+
+    public static Diagnostic DiscreteOnlyParts() => Diagnostic.Create(
+        "opt.discrete.only-parts", DiagnosticSeverity.Error,
+        "Discrete needs integer, stepped or preferred values; every optimized value here is a part of a complex value, and a part is continuous.");
+
+    public static Diagnostic DiscreteHasContinuous(string keys) => Diagnostic.Create(
+        "opt.discrete.continuous", DiagnosticSeverity.Error,
+        "Discrete needs every optimized value to be an integer, a step or a preferred value; these are continuous: {keys}. Give each discrete= or step=, or choose another algorithm.",
+        ("keys", keys));
+
+    public static Diagnostic SnapReport(int snapped, double before, double snappedCost, double after, bool polished) => Diagnostic.Create(
+        "opt.snap.report", DiagnosticSeverity.Info,
+        polished
+            ? "Snapping {snapped} value(s) to legal values moved the cost from {before} to {snappedCost}; polishing the continuous values brought it to {after}."
+            : "Snapping {snapped} value(s) to legal values moved the cost from {before} to {snappedCost}.",
+        ("snapped", snapped), ("before", before.ToString("G4", System.Globalization.CultureInfo.InvariantCulture)),
+        ("snappedCost", snappedCost.ToString("G4", System.Globalization.CultureInfo.InvariantCulture)),
+        ("after", after.ToString("G4", System.Globalization.CultureInfo.InvariantCulture)));
+
+    public static Diagnostic NothingToSnap() => Diagnostic.Create(
+        "opt.snap.nothing", DiagnosticSeverity.Error,
+        "Snap and polish needs an integer, stepped or preferred value among the optimized values, and a run that found a point.");
 
     public static Diagnostic Serial(string reason) => Diagnostic.Create(
         "opt.parallel.serial", DiagnosticSeverity.Info,
