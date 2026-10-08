@@ -850,7 +850,10 @@ public sealed class Elaborator
                         $"{Temperature.AbsoluteParamName} is used and " +
                         $"{Temperature.DeltaParamName} is ignored.");
 
-                var model          = ComponentModelFactory.TryCreate(inst.Reference, resolvedParams, _functions, _ambientC)
+                ComponentModel? created;
+                try { created = ComponentModelFactory.TryCreate(inst.Reference, resolvedParams, _functions, _ambientC); }
+                catch (ParameterRefusalException ex) { throw new ParameterRefusalException($"'{childPath}': {ex.Message}"); }
+                var model          = created
                                      ?? throw new InvalidOperationException(
                                          $"Failed to create model for primitive '{inst.Reference}' at '{childPath}'");
 

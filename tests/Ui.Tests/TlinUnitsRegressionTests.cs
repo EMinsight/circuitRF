@@ -48,6 +48,21 @@ public sealed class TlinUnitsRegressionTests
         Assert.Equal(Math.PI / 2.0, ec.Parameters["E"].AsReal(), 6);
     }
 
+    // brief-artsch-2: the physical form's L takes the generic length path — mil reaches the model as metres.
+    [Fact]
+    public void PhysicalForm_LengthInMil_ReachesTheModelInMetres()
+    {
+        var tb = new TestBench("tb");
+        tb.Instances.Add(new Instance("TL1", "TLIN",
+            new List<string> { "in", "out" },
+            new List<ParameterAssignment> { new("Z", "50", "Ohm"), new("L", "1000", "mil"), new("Eeff", "2", null) }));
+
+        var line = (TLineModel)new Elaborator().Elaborate(tb).Components.Single(c => c.ComponentType == "TLIN").Model;
+
+        Assert.True(line.IsPhysical);
+        Assert.Equal(0.0254, line.LengthMeters, 15);
+    }
+
     [Fact]
     public void QuarterWaveLine_S21_Is_Minus90Degrees_AtDesignFreq()
     {

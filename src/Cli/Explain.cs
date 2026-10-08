@@ -212,6 +212,7 @@ internal static class Explain
                 // reference of its own. Reported anyway, because "which workspace" is the context
                 // every other answer is read against.
                 Workspace(path, walks);
+                if (kind is DocumentKind.Netlist or DocumentKind.Schematic) PhysicalLines(path, kind, walks);
                 break;
             case DocumentKind.Interchange:
                 walks.Add(new ResolutionStepJson(
@@ -1418,6 +1419,36 @@ internal static class Explain
     /// `.cnl` round trip, which is not cosmetic (see <see cref="CircuitSource"/>). Reported through
     /// this verb's own diagnostic when the read fails.
     /// </summary>
+    /// <summary>
+    /// brief-artsch-2 R-as2-4: a TLIN stated by its physical length reports the electrical length it
+    /// resolved to — the number a designer used to type, and the one a schematic drawn from artwork
+    /// never shows. Only when such a line is there, because it costs an elaboration; one that fails is
+    /// <c>check</c>'s to report, so nothing is said here.
+    /// </summary>
+    private static void PhysicalLines(string path, DocumentKind kind, List<ResolutionStepJson> walks)
+    {
+        if (CircuitSource.Read(path, kind) is not var (lib, tb)) return;
+        bool any = tb.Instances.Concat(lib.Cells.SelectMany(c => c.Instances))
+            .Any(i => i.Reference.Equals("TLIN", StringComparison.OrdinalIgnoreCase) && i.Overrides.Any(o => o.Name == "L"));
+        if (!any) return;
+
+        ElaboratedNetlist nl;
+        try { nl = new Elaborator(lib).Elaborate(tb); }
+        catch (Exception) { return; }
+
+        foreach (var c in nl.Components)
+        {
+            if (c.Model is not TLineModel { IsPhysical: true } line) continue;
+            double f = line.ReferenceFrequencyHz > 0 ? line.ReferenceFrequencyHz : 1e9;
+            double deg = line.ElectricalLengthRad(f) * 180.0 / Math.PI;
+            walks.Add(new ResolutionStepJson($"TLIN {c.InstancePath}", path,
+                $"θ = {deg.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}° at {Check.Hz(f)}",
+                $"2π·F·L·√Eeff/c₀ with L = {(line.LengthMeters * 1e3).ToString("G6", System.Globalization.CultureInfo.InvariantCulture)} mm, "
+              + $"Eeff = {line.Eeff.ToString("G6", System.Globalization.CultureInfo.InvariantCulture)}"
+              + (line.ReferenceFrequencyHz > 0 ? "" : "; the line states no F, so at 1 GHz")));
+        }
+    }
+
     private static (Library Lib, TestBench Tb)? ReadCircuit(string path, DocumentKind kind)
         => CircuitSource.Read(path, kind,
                message => JsonRun.Report(CliDiagnostics.ExplainUnreadable(path, message)));

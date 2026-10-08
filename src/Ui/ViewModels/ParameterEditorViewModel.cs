@@ -840,6 +840,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
 
     private void SetTarget(EditableComponent? comp)
     {
+        bool targetChanged = !ReferenceEquals(_target, comp);
         // Ground / null / empty → empty state (single guard point per spec)
         if (comp is null || comp.Symbol == SymbolKind.Ground)
         {
@@ -849,6 +850,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             OnPropertyChanged(nameof(AllowsAddParameter));
             OnPropertyChanged(nameof(ShowAddSddEquation));
             NotifyMklopfState();
+            NotifyTlinState(targetChanged);
             RefreshMicrostripSubstrate();
             UpdateCanRemoveTopGroup();
             return;
@@ -972,6 +974,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(AllowsAddParameter));
         OnPropertyChanged(nameof(ShowAddSddEquation));
         NotifyMklopfState();
+        NotifyTlinState(targetChanged);
         RefreshMicrostripSubstrate();
         UpdateCanRemoveTopGroup();
         RefreshFootprintPanel();

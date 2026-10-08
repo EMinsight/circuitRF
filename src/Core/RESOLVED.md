@@ -3439,3 +3439,16 @@ Every number here is against `testdata/planar-lines/physics-references.txt` (a s
 - **Frankel's dispersion cannot serve a far coplanar ground**: G_f = exp(u·ln(W/G) + v) → 0 as W/G does, putting
   ε(f) at εr for every f > 0. The microstrip branch therefore takes MLIN's Kirschning-Jansen.
 - **The offset stripline's parallel combination is +1.2 % at H₂/H₁ = 2 and +3.4 % at 4**; the reporter warns past 2.
+
+## brief-artsch-2 — TLIN's physical form (2026-10-08)
+
+- **`ComponentModelFactory` never knows which instance it is building**, so a refusal thrown there could only
+  say "TLIN states …" with nothing to find it by. `ParameterRefusalException` is the seam: the factory throws
+  it, `Elaborator` catches exactly that type and rethrows with `'<instance path>':` in front, so `check` and a
+  run name the line as well as the keys. Other factory exceptions are untouched; a new parameter refusal
+  should throw this type rather than a bare `InvalidOperationException`.
+- **The angle form's arithmetic is kept literally as it was**, `E·(F ≠ 0 ? f/F : 0)`, not rewritten to
+  `F ≠ 0 ? E·f/F : 0` — the latter gives −0.0 for a negative E at F = 0, which is not byte-identical.
+- **Anything that reads a TLIN's `E` directly does not see a physical-form line.** The Smith paste recogniser
+  is one: it reads `E` and returns "cannot read" for a line stated by `L`, which is a refusal rather than a
+  wrong answer, so it was left.

@@ -123,7 +123,7 @@ Touchstone/SNP blocks, the impedance block, the ideal transmission line, and use
 Sourcing of the matrix is unchanged by the choice of form:
 - **Touchstone/SNP** — interpolate the stored network to `ω` and obtain `Z(ω)` (or `Y(ω)`) via **RfCore** (which holds the `SNP` and does S/Z/Y conversion and interpolation, data-model §6). The embedded-SNP case Hero 1 exercises.
 - **Impedance block** — evaluate the `Z[i,j](ω)` expressions (the expression engine, with `freq` in scope) and assemble `Z(ω)` directly — the native-Z case, stamped by expansion.
-- **Transmission line (TLIN)** — closed-form 2-port from its characteristic impedance, electrical length, and reference frequency, in whichever of `Z`/`Y` is natural.
+- **Transmission line (TLIN)** — closed-form 2-port from its characteristic impedance and γl = αl + jθ, stamped as `Y` (`TLineModel.StampUniformLine`). Two equivalent forms (brief-artsch-2): **angle** — θ(f) = E·f/F, αl = (A/8.686)·f/F with `A` the total dB at `F`; **physical** — θ(f) = 2π·f·L·√Eeff/c₀, αl = (Ac·√(f/F) + Ad·f/F)·L/8.686 with `Ac`/`Ad` in dB/m at `F`. The physical form is exact for a non-dispersive TEM line and is the general fallback when a line read off artwork has no circuit model for its cross-section. A mixture of the two forms (`E` with `L`, `A` with `L`, a physical-only key without `L`), `Eeff < 1`, and `Ac`/`Ad` without `F` are refused by the factory and reported with the instance path.
 - **User frequency model** — its evaluated `Z(ω)` or `Y(ω)`; a native-`Y` model takes the admittance stamp.
 
 ### 4.2 RF power source — available power to source voltage

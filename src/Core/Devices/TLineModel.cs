@@ -1,4 +1,5 @@
 using System.Numerics;
+using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Elaboration;
 
 namespace CircuitRF.Core.Devices;
@@ -42,6 +43,12 @@ namespace CircuitRF.Core.Devices;
 /// stamps this general form; this class is one of its two callers.
 /// stamped as the 2×2 nodal block on (Nodes[0], Nodes[1]) with ground as the common return.
 ///
+/// <b>The physical form</b> (brief-artsch-2): <c>L</c> (metres) and <c>Eeff</c> instead of <c>E</c>, so a line
+/// read off artwork is stated as what it is. θ(f) = 2π·f·L·√Eeff / c₀ — exact for a non-dispersive TEM
+/// line, with no reference frequency in it. Its loss is per length and scales physically:
+///   αl(f) = (Ac·√(f/F) + Ad·(f/F))·L / 8.686   [Ac conductor, Ad dielectric, both dB/m at F]
+/// <see cref="ComponentModelFactory"/> decides the form and refuses a mixture; this class only stamps it.
+///
 /// Resonance guard: at θ = kπ with αl≈0 (sinh(γl) → 0) the open/short Y-parameters diverge.
 /// <see cref="StampUniformLine"/> clamps |sinh γl| to a small floor; this class additionally
 /// warns once per instance (research-tool philosophy: warn-and-continue, matching
@@ -58,6 +65,25 @@ public sealed class TLineModel : ComponentModel
     private readonly double _eRad;      // electrical length at F (RADIANS — elaborator already applied deg→rad)
     private readonly double _fRefHz;    // reference frequency F (Hz)
     private readonly double _aDb;       // total attenuation at F, in dB (0 = lossless, the pre-existing behavior)
+
+    // The physical form (brief-artsch-2). _lengthM is NaN in the angle form, which is what IsPhysical reads.
+    private readonly double _lengthM = double.NaN;
+    private readonly double _eeff = 1.0;
+    private readonly double _acDbPerM;  // conductor attenuation at F, dB/m, ∝ √f
+    private readonly double _adDbPerM;  // dielectric attenuation at F, dB/m, ∝ f
+
+    /// <summary>True when the line was stated by <c>L</c>/<c>Eeff</c> rather than <c>E</c>/<c>F</c>.</summary>
+    public bool IsPhysical => !double.IsNaN(_lengthM);
+
+    /// <summary>The physical length in metres; NaN in the angle form.</summary>
+    public double LengthMeters => _lengthM;
+
+    /// <summary>The effective permittivity of the physical form; 1 in the angle form.</summary>
+    public double Eeff => _eeff;
+
+    /// <summary>The reference frequency in Hz, or 0 where none applies (a lossless physical line
+    /// that states no <c>F</c>).</summary>
+    public double ReferenceFrequencyHz => _fRefHz;
 
     // Warn once per instance (not once per frequency point).
     private bool _warnedDegenerate;
@@ -83,6 +109,37 @@ public sealed class TLineModel : ComponentModel
         _ = name;   // reserved for future diagnostics; instance path is used for warnings
     }
 
+    /// <summary>The physical form: a line of <paramref name="lengthMeters"/> in a medium of effective
+    /// permittivity <paramref name="eeff"/>, with conductor and dielectric attenuation stated in dB/m at
+    /// <paramref name="refFreqHz"/> (which may be 0 when both are 0). Validation is the factory's.</summary>
+    public static TLineModel Physical(double z0Ohms, double lengthMeters, double eeff, double refFreqHz,
+        double conductorDbPerM, double dielectricDbPerM, string name)
+        => new(z0Ohms, lengthMeters, eeff, refFreqHz, conductorDbPerM, dielectricDbPerM, name);
+
+    private TLineModel(double z0Ohms, double lengthMeters, double eeff, double refFreqHz,
+        double conductorDbPerM, double dielectricDbPerM, string name)
+        : this(z0Ohms, 0.0, refFreqHz, name)
+    {
+        _lengthM  = lengthMeters;
+        _eeff     = eeff;
+        _acDbPerM = conductorDbPerM;
+        _adDbPerM = dielectricDbPerM;
+    }
+
+    /// <summary>The electrical length θ in radians at <paramref name="freqHz"/>, in either form.</summary>
+    public double ElectricalLengthRad(double freqHz)
+        => IsPhysical ? 2.0 * Math.PI * freqHz * _lengthM * Math.Sqrt(_eeff) / MicrostripLoss.SpeedOfLight
+         : _eRad * (_fRefHz != 0.0 ? freqHz / _fRefHz : 0.0);
+
+    /// <summary>The total attenuation αl in nepers at <paramref name="freqHz"/>, in either form.</summary>
+    private double AttenuationNp(double freqHz)
+    {
+        double freqRatio = _fRefHz != 0.0 ? freqHz / _fRefHz : 0.0;
+        if (!IsPhysical) return (_aDb / DbPerNp) * freqRatio;
+        if (_acDbPerM == 0.0 && _adDbPerM == 0.0) return 0.0;
+        return (_acDbPerM * Math.Sqrt(freqRatio) + _adDbPerM * freqRatio) * _lengthM / DbPerNp;
+    }
+
     public override void Stamp(IMnaContext mna, ElaboratedComponent c, double omega)
     {
         double freqHz = omega / (2.0 * Math.PI);
@@ -91,9 +148,9 @@ public sealed class TLineModel : ComponentModel
         // elaborator applied the deg→rad unit). For an ideal line β ∝ f, so the reference (E, F)
         // pair fixes the delay and θ scales linearly with frequency.
         // Guard a zero/unset reference frequency (avoid divide-by-zero): treat as θ = 0, αl = 0.
-        double freqRatio = _fRefHz != 0.0 ? freqHz / _fRefHz : 0.0;
-        double theta = _eRad * freqRatio;
-        double alphaLNp = (_aDb / DbPerNp) * freqRatio;
+        // The physical form needs no F for θ: 2π·f·L·√Eeff / c₀.
+        double theta = ElectricalLengthRad(freqHz);
+        double alphaLNp = AttenuationNp(freqHz);
 
         // Resonance / DC degeneracy warning: only meaningful in the lossless case (a real αl > 0
         // already keeps sinh(γl) away from zero on its own).

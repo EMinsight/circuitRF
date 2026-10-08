@@ -621,8 +621,24 @@ harmonic-balance testbench and it behaves as a passive termination like the othe
 
 {{symbol: tline}}
 
-An ideal, lossless transmission line specified by characteristic impedance `Z` and electrical length
-`E` at a reference frequency `F`.
+An ideal transmission line of characteristic impedance `Z`, stated one of two ways:
+
+- **Electrical** (the default): electrical length `E` at a reference frequency `F`. Optional loss `A`
+  is the total in dB at `F`, scaling in proportion to frequency.
+- **Physical**: length `L` with effective permittivity `Eeff` (default 1, an air line), so the
+  electrical length is θ(f) = 2π·f·L·√Eeff / c₀ with no reference frequency needed. Loss is per unit
+  length: `Ac` (conductor, scaling as √f) and `Ad` (dielectric, scaling as f), both in dB/m at `F` and
+  both 0 by default.
+
+A line states `E` or `L`, never both; `Eeff` below 1, `A` together with `L`, and `Ac` or `Ad` without
+`F` are refused. In the parameters dialog, **Use physical length** / **Use electrical length** switches
+form, converting at `F` (or at 1 GHz when there is none) so the line does not change; the new `L` is
+written in the technology's length unit. For a physical-form line, `circuitrf explain` reports the
+electrical length it resolves to at `F`.
+
+```
+TLIN:TL1 a b Z=50 Ohm L=25 mm Eeff=3.2 Ac=4 Ad=2 F=2 GHz
+```
 
 {{table: components/Tline}}
 

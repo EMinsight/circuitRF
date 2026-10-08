@@ -2039,6 +2039,16 @@ public static class ComponentModelFactory
         string name = parameters.TryGetValue("TLineName", out var nm) && nm.Kind == ValueKind.String
             ? nm.AsString() : "TLIN";
 
+        // brief-artsch-2: E (+ F) is the angle form, L (+ Eeff) the physical one. Both is a refusal; a
+        // physical-form key without L is one too, because it would otherwise be ignored in silence.
+        string[] physicalOnly = ["Eeff", "Ac", "Ad"];
+        if (parameters.ContainsKey("L"))
+            return CreatePhysicalTLineModel(parameters, name);
+        if (physicalOnly.FirstOrDefault(parameters.ContainsKey) is { } stray)
+            throw new ParameterRefusalException(
+                $"TLIN states {stray} but no L. {stray} belongs to the physical form (L with Eeff, loss as Ac/Ad "
+              + $"in dB/m); the angle form is E at F with its total loss as A. State L, or remove {stray}.");
+
         // Units already applied by the elaborator: Z in Ω, F in Hz, and E in RADIANS.
         // The elaborator's generic parameter path multiplies the authored value by the angle
         // unit's scale (Units.Scale("deg") = π/180), so an authored "E=90 deg" arrives here as
@@ -2052,6 +2062,38 @@ public static class ComponentModelFactory
         double aDb    = GetReal(parameters, "A", 0.0);
 
         return new TLineModel(z0, eRad, fRefHz, name, aDb);
+    }
+
+    /// <summary>TLIN's physical form (brief-artsch-2): θ(f) = 2π·f·L·√Eeff/c₀, loss per length
+    /// αl(f) = (Ac·√(f/F) + Ad·(f/F))·L/8.686. L is metres after the elaborator's unit scale.</summary>
+    private static TLineModel CreatePhysicalTLineModel(IReadOnlyDictionary<string, Value> parameters, string name)
+    {
+        if (parameters.ContainsKey("E"))
+            throw new ParameterRefusalException(
+                "TLIN states both E (the electrical length at F) and L (the physical length). A line is stated "
+              + "one way: keep E with F, or L with Eeff.");
+        if (parameters.ContainsKey("A"))
+            throw new ParameterRefusalException(
+                "TLIN states A (the angle form's total loss at F) with L. The physical form states its loss per "
+              + "length: Ac (conductor) and Ad (dielectric), in dB/m at F.");
+
+        double eeff = GetReal(parameters, "Eeff", 1.0);
+        if (!(eeff >= 1.0))
+            throw new ParameterRefusalException(
+                $"TLIN states Eeff = {eeff.ToString("G6", CultureInfo.InvariantCulture)}. An effective "
+              + "permittivity is at least 1, which is an air line.");
+
+        double ac = GetReal(parameters, "Ac", 0.0);
+        double ad = GetReal(parameters, "Ad", 0.0);
+        bool hasF = parameters.ContainsKey("F");
+        if ((ac != 0.0 || ad != 0.0) && !hasF)
+            throw new ParameterRefusalException(
+                $"TLIN states {(ac != 0.0 && ad != 0.0 ? "Ac and Ad" : ac != 0.0 ? "Ac" : "Ad")} but no F, "
+              + "the frequency that loss is given at. State F.");
+
+        return TLineModel.Physical(
+            GetReal(parameters, "Z", 50.0), GetReal(parameters, "L", 0.0), eeff,
+            hasF ? GetReal(parameters, "F", 1e9) : 0.0, ac, ad, name);
     }
 
     // ── MLIN / MBend / MTee / MCross (brief-L5a-pcell-contract-and-microstrip.md) ────────────────

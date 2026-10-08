@@ -89,9 +89,9 @@
         <!-- ── Row 1: Label-visibility flags ──────────────────────────────── -->
         <StackPanel Grid.Row="1"
                     IsVisible="{Binding IsNotEmptyState}"
-                    Orientation="Horizontal"
-                    Spacing="12"
                     Margin="6,0,6,4">
+        <StackPanel Orientation="Horizontal"
+                    Spacing="12">
             <CheckBox IsChecked="{Binding ShowTypeLabel}"
                       Content="Type label"
                       FontSize="11"/>
@@ -111,6 +111,20 @@
                     Padding="6,2"
                     ToolTip.Tip="Switch between length (L) and 3dB-cutoff-frequency (F3db) entry — converts the current design to the equivalent value, it does not reset it"
                     Command="{Binding ToggleMklopfLengthEntryCommand}"/>
+            <!-- TLIN entry-mode switch: Electrical (E at F) <-> Physical (L, Eeff), converted at F -->
+            <Button Content="{Binding TlinEntryToggleLabel}"
+                    IsVisible="{Binding IsTlinTarget}"
+                    FontSize="10"
+                    Padding="6,2"
+                    ToolTip.Tip="Switch between electrical length (E at F) and physical length (L with Eeff) — converts at F, so the line does not change"
+                    Command="{Binding ToggleTlinEntryCommand}"/>
+        </StackPanel>
+        <TextBlock Text="{Binding TlinEntryNote}"
+                   IsVisible="{Binding HasTlinEntryNote}"
+                   FontSize="10"
+                   Opacity="0.7"
+                   TextWrapping="Wrap"
+                   Margin="0,4,0,0"/>
         </StackPanel>
 
         <!-- ── Row 2: Scrollable parameter list ───────────────────────────── -->

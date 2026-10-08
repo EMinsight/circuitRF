@@ -27,6 +27,33 @@ public class TLineModelLossTests
         Assert.Equal(1.0 / 50.0, mna.Entries[(1, 2)].Imaginary, 1e-9);
     }
 
+    // brief-artsch-2 R-as2-2: θ = 2π·f·L·√Eeff/c₀ and αl = (Ac·√(f/F) + Ad·f/F)·L/8.686, through the factory.
+    [Fact]
+    public void PhysicalForm_WithAcAndAd_MatchesTheClosedForm()
+    {
+        const double z0 = 42.0, l = 0.037, eeff = 2.7, fRef = 2e9, ac = 3.5, ad = 1.25;
+        var model = ComponentModelFactory.TryCreate("TLIN", new Dictionary<string, Value>
+        {
+            ["Z"] = new Value(z0), ["L"] = new Value(l), ["Eeff"] = new Value(eeff),
+            ["F"] = new Value(fRef), ["Ac"] = new Value(ac), ["Ad"] = new Value(ad),
+        })!;
+
+        foreach (double f in new[] { 0.5e9, 2e9, 7.3e9 })
+        {
+            var mna = new CapturingMnaContext();
+            model.Stamp(mna, MakeEc(model, [1, 2]), 2 * Math.PI * f);
+
+            double theta = 2 * Math.PI * f * l * Math.Sqrt(eeff) / 2.99792458e8;
+            double alphaL = (ac * Math.Sqrt(f / fRef) + ad * f / fRef) * l / (20 / Math.Log(10));
+            var gl = new Complex(alphaL, theta);
+            Complex y11 = Complex.Cosh(gl) / (z0 * Complex.Sinh(gl));
+            Complex y12 = -1.0 / (z0 * Complex.Sinh(gl));
+
+            Assert.True((mna.Entries[(1, 1)] - y11).Magnitude <= 1e-12 * y11.Magnitude, $"Y11 at {f:G3} Hz");
+            Assert.True((mna.Entries[(1, 2)] - y12).Magnitude <= 1e-12 * y12.Magnitude, $"Y12 at {f:G3} Hz");
+        }
+    }
+
     [Fact]
     public void PositiveAttenuation_ProducesRealPartInY11()
     {

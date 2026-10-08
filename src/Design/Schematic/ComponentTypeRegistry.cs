@@ -1236,6 +1236,7 @@ public static class ComponentTypeRegistry
          : MmicParameterDescription(kind, parameterName) is { Length: > 0 } mmicDesc ? mmicDesc
          : WBondParameterDescription(kind, parameterName) is { Length: > 0 } wbDesc ? wbDesc
          : PlanarLineParameterDescription(kind, parameterName) is { Length: > 0 } plDesc ? plDesc
+         : TlineParameterDescription(kind, parameterName) is { Length: > 0 } tlDesc ? tlDesc
          : kind is not SymbolKind.VerilogA ? "" : parameterName switch
         {
             "File"  => "The model to load: a compiled model (.osdi), or Verilog-A source (.va, .vams) "
@@ -1251,6 +1252,21 @@ public static class ComponentTypeRegistry
                       + "result small.",
             _       => "",
         };
+
+    /// <summary>TLIN's two forms (brief-artsch-2). A placed TLIN carries the angle form's rows; the
+    /// physical form's keys are named here because no row of a fresh instance shows them.</summary>
+    private static string TlineParameterDescription(SymbolKind kind, string parameterName) => (kind, parameterName) switch
+    {
+        (SymbolKind.Tline, "Z") => "Characteristic impedance, real.",
+        (SymbolKind.Tline, "E") => "Electrical length at F (the angle form). Or state the line physically instead: L, its "
+                                 + "length, with Eeff, the effective permittivity (default 1, an air line; below 1 is refused), "
+                                 + "so θ(f) = 2π·f·L·√Eeff/c₀. E and L together are refused. The angle form's loss is A, "
+                                 + "total dB at F, ∝ f; the physical form's is Ac (conductor, ∝ √f) and Ad (dielectric, ∝ f), "
+                                 + "both dB/m at F, both default 0. A with L is refused.",
+        (SymbolKind.Tline, "F") => "Reference frequency: where E is stated, and where A, Ac and Ad are given. A physical "
+                                 + "line needs it only for Ac or Ad, and is refused without it then.",
+        _ => "",
+    };
 
     /// <summary>CPWG's and SLIN's parameters (brief-artsch-1): what each dimension is, and where the
     /// substrate comes from, since none of it is a row.</summary>
@@ -2684,6 +2700,8 @@ public static class ComponentTypeRegistry
 
             // TLIN: ideal lossless transmission line. Z = characteristic impedance (real, lossless),
             // E = electrical length in degrees at reference frequency F. All three show on the schematic.
+            // The physical form (L, Eeff, Ac, Ad — brief-artsch-2) is reached by the parameter editor's
+            // Electrical/Physical switch; a fresh TLIN stays in the angle form.
             case SymbolKind.Tline:
                 return [new("Z", "50", "Ω",   true, UnitDimension.Resistance),
                         new("E", "90", "deg", true, UnitDimension.Angle),
