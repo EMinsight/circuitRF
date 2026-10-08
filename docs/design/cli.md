@@ -3503,12 +3503,12 @@ generated from the schema and the template catalog).
 
 ## 25. `yield` — Monte Carlo and yield, headless
 
-**brief-yield-5.** `circuitrf yield mc|estimate|trial <path.csch|path.cnl>` runs the tolerances on the
+**brief-yield-5.** `circuitrf yield mc|estimate|trial|corners <path.csch|path.cnl>` runs the tolerances on the
 design's `tune` lines, its kit's distribution calls and its `statistics` line (`reference statistics`)
 and reports the spread, the yield or one trial. It follows the run-verb anatomy (§3). **One verb with
 nouns** — the `new`/`history` rule: `mc` (the spread alone, every enabled goal scored, no target),
-`estimate` (pass/fail against the `use=yield|both` goals), `trial` (one trial re-run alone). YA-6 adds
-`corners` and YA-11 `center` as nouns, not verbs. It landed **before any UI** (yield overview D12), so an
+`estimate` (pass/fail against the `use=yield|both` goals), `trial` (one trial re-run alone), `corners` (every
+enabled corner, §25.7). YA-11 adds `center` as a noun, not a verb. It landed **before any UI** (yield overview D12), so an
 agent can set up and run a yield with nothing but the MCP tools.
 
 ### 25.1 It owns no statistics
@@ -3595,3 +3595,32 @@ progress arrives per batch, a cancelled call answers 130 and writes nothing), `Y
 page lists every schema key, flag and noun, and every MCP field is a verb flag) and
 `YieldAgentWalkthroughTests` (the walk-through's MCP calls, in order, on a fresh workspace, end with a yield
 and no error).
+
+### 25.7 `yield corners` (brief-yield-6)
+
+`yield corners <path>` runs `CornerRun` (`docs/design/yield.md` §10): the nominal and every enabled corner, one batch,
+scored against the yield specs. stdout is the **corner × goal margin table** — corner, temp, each goal's margin with
+`✗` on a failing cell, and a status (`passes`, `FAILS`, `did not evaluate`) — then each goal's worst corner and every
+corner that did not evaluate with its reason. The result is `<design>.corners.npy` (`-o` moves it); `--json` carries
+`result.corners`. Exit (D13): **0** every goal met at every corner · **3** a goal fails at a corner (or, under
+`nonconverged=fail`, a corner did not evaluate) · **1** refused · **2** nothing evaluated · **130** cancelled.
+
+- `--corners a,b` narrows to those enabled corners; an unknown name is a refusal listing the enabled ones.
+- `--mc` runs a Monte Carlo at each corner instead — a yield when the design has an enabled yield goal — with the
+  kit's process draws off at a corner; the table is a yield per corner and the worst corner. `mc` and `estimate`
+  do the same when `--corners` is given or the statistics line says `corners=all|<names>`. The file is then
+  `<design>.yield.npy` with a `corner` axis outside `trial`.
+- A statistical corner replays its trial from `<design>.yield.npy` when that file is the run it names (same seed and
+  sampling), naming any stream the design no longer has; otherwise it is drawn afresh, with a note saying so.
+- `--generate "axis=a,b;temp=-40,25,85;Vdd=3.0,3.6"` prints the corners the cross product makes and **writes
+  nothing** — `corner` lines for a `.cnl`, the tuning block's JSON for a `.csch` (a kit axis selection has no `.cnl`
+  spelling). `--write` appends them to a `.csch` after a history checkpoint, refusing names the design already has;
+  on a `.cnl` it is refused, the lines being the caller's to add (D12). More than 256 corners is a refusal naming the
+  count.
+- A `.csch` in a kit workspace extracts with the workspace's corner axes bound, as Simulate extracts it, so a corner's
+  kit selections reach the run headlessly.
+
+Over MCP it is `run analysis=corners` (`corners`, `mc`, `generate`, `write`, `output`); progress is one
+notification per corner. Gate: `tests/Ui.Tests/Statistics/CornerTests.cs` — `CornerRunTests`,
+`CornerMonteCarloTests`, `StatisticalCornerTests`, `CornerGeneratorTests`, `CornerCliTests`.
+

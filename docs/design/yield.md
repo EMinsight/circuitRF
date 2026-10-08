@@ -99,8 +99,9 @@ selections with — and for each corner binds the corner's selections **overlaid
 bound constant goes into the corner's `Values` (a value the corner states itself wins), and the selections
 are dropped, so the `.cnl` corner line binds values and never names a kit file. A selection that does not
 resolve is reported as `Corner '<name>': ` followed by that function's own sentence — only what the corner's
-selections add, since the design's own are reported where they are applied. With no binder (the CLI, which
-has no workspace corner axes at hand today) a corner's kit selections are reported as not applied.
+selections add, since the design's own are reported where they are applied. With no binder (a schematic belonging
+to no workspace, or one whose workspace offers no kit corner axes) a corner's kit selections are reported as not
+applied. The CLI binds them too since YA-6 (§10.1).
 
 ## 4. YA-1 — `check` (`StatisticsValidator`)
 
@@ -317,7 +318,7 @@ section would read its model library each time. `KitStatistics.NothingVaries(set
 (`yield.run.nothing-varies`): an enabled yield goal, no tolerance and no distribution call. `check`'s
 `yield.goal.nothing-varies` warning counts distribution calls too (the elaborated calls when `check` has them, the
 testbench's own text otherwise). `explain --analysis` adds a `distributions` object — counts and every stream. The
-CLI has no workspace corner axes, so it names no sections; YA-4's run report takes them from `WorkspaceCorners.Bind`.
+CLI's yield report names no sections; YA-4's run report takes them from `WorkspaceCorners.Bind`.
 
 **Not covered.** A distribution inside a FREQUENCY-DEPENDENT expression is evaluated at stamp time by the model's
 own evaluator, which has no trial context, so it stays at its nominal. The other simulator dialect's
@@ -454,6 +455,107 @@ slice leaves and evaluates once; the result's single remaining axis is the X. `c
 for the refusal a run would give, and `explain --analysis` reports the chains a yield run evaluates under each
 `analyses=` scope and its cost in nominal evaluations.
 
+## 10. Corners (brief-yield-6)
+
+| Piece | Where |
+|---|---|
+| One evaluation per corner, a Monte Carlo at each | `CornerRun.cs` |
+| The corner `DataSet` and the stacker | `CornerDataSet.cs`; names in `results-dataset-layout.md` §"Corners" |
+| Statistical corners: proposing, replaying | `StatisticalCorner.cs`, `StatisticalRun.Replay`, `RecordedTrial` |
+| The cross product | `CornerGenerator.cs` |
+| Kit corner binding | `WorkspaceCorners` — moved to `src/Design/Workspace` |
+
+### 10.1 A corner is a value map
+
+A `.cnl` corner line binds values and a temperature (D10): a `.csch` corner's kit axis selections were resolved at
+extraction (§3) into the values the line binds, the schematic's other axes as the schematic has them, since the
+binder overlays the corner's selections on the design's. So `CornerRun` evaluates a corner as the value map
+`CornerRun.BindingsOf` gives — its values, then `temp` as the ambient global — through `TunableOverrides.Apply`, the
+tuned-value door: a VAR value replaces the variable, a tunable key the instance's assignment. **`temp` on a design that
+never wrote it adds the global**, as typing it would (`Elaborator` reads the ambient by name either way); every other
+key naming nothing is skipped with the note it always had. A corner naming a variable `--set` also sets is the refusal
+`yield.corner.set-conflict`, checked when the run is created rather than per point.
+
+**The headless extraction binds kit corners now.** `WorkspaceCorners` (axes, `Bind`, `BindingsFor`) was in `src/Ui`
+only because nothing below the firewall had needed it; it moved to `src/Design/Workspace` unchanged except that it
+resolves a kit path itself (rooted as stored, otherwise under the workspace root — `WorkspaceRefs.Resolve`'s rule,
+which stays in `src/Ui`). `WorkspaceCorners.ForDocument(path)` reads the axes of the workspace a document belongs to,
+and `SchematicCircuit.ExtractInWorkspace` binds the design's selections and passes the corner binder exactly as
+`WorkspaceViewModel.WriteNetlist` does. Every path-based extraction — the run verbs' `.csch` input, `netlist`, `check`
+— goes through it, so a schematic in a kit workspace runs headlessly at the corners Simulate runs it at. A workspace
+offering no axes extracts exactly as before, byte for byte.
+
+### 10.2 One run, every corner (R-ya6-1, R-ya6-2)
+
+The nominal (tagged `nominal`) and every enabled corner (or `--corners` names; an unknown name is
+`yield.corner.unknown`, none at all `yield.corner.none`) are ONE batch of `OptimizationRun.EvaluateValues` — in
+parallel, each tagged `corner <name>` so two corners whose maps coincide are still two simulations. They are scored
+against the **yield specs** (`GoalUse.Yield`): a corner analysis verifies the specs, and an opt-only goal is a design
+target the yield goals are deliberately looser than (D4). A corner that does not evaluate is a fail under
+`nonconverged=fail` (D7) and is reported with its reason either way.
+
+Outcome: `Finished` (exit 0) when every goal is met at every corner, `BelowTarget` (exit 3) when one is not,
+`NoneEvaluated` (exit 2) when nothing evaluated, the nominal included. The result carries each corner's evaluation and,
+per goal, its **worst corner** — the smallest margin. The `DataSet` (§"Corners" of the layout note) has an outer
+`corner` axis labelled with the names, the nominal first, and is written to `<design>.corners.npy`
+(`CornerRun.ResultPathFor`) — never `run.npy` or the Monte Carlo file.
+
+### 10.3 A Monte Carlo at each corner (R-ya6-3)
+
+`CornerOptions.MonteCarlo` runs a `StatisticalRun` per corner, the nominal first, each with the corner's bindings as
+`StatisticalOptions.Bindings`: applied to the nominal and every trial, and the nominal each spread is drawn around
+(`SampleValues.Nominals` at the moved values), so a percent spread on a value the corner moves follows it. **At a
+corner the kit's process draws are off** — the corner is the process answer; drawing process too would count one
+question twice — while mismatch draws as configured; the nominal row is the ordinary run, process included. `check`
+warns `yield.corner.process-double-counted` when the statistics line says `corners=` with `process=1` written. A
+statistical corner is one trial and has no Monte Carlo of its own; it is left out with a note.
+
+The per-corner results stack under the `corner` axis (`CornerDataSet.Stack`): every cube with an outer `trial` axis is
+padded with NaN to the longest corner's trial count (auto-stop ends corners at different counts), a cube whose shape
+differs any other way is left out, and the file is `<design>.yield.npy`. The outcome is `BelowTarget` when any corner's
+yield is below its target; the result names the corner with the lowest yield. `statistics corners=all|<names>` (or
+`--corners`) makes `yield mc|estimate` this run.
+
+### 10.4 Statistical corners (R-ya6-4)
+
+`corner <Name> trial=n seed=s sampling=m trials=N` replays trial n against the CURRENT nominal.
+`StatisticalCorner.Replay` builds a `StatisticalRun` at the corner's seed, sampling and trial count (and the setup's
+current process, mismatch and σ scale; auto-stop off) with the corner's own bindings, and asks it for trial n:
+
+- **With the run's record** — `RecordedTrial`, from a run in memory (`RecordedTrial.Of`) or from the `.yield.npy`
+  beside the design when its seed and sampling match and it holds the trial (`RecordedTrial.FromDataSet`; a rank-1
+  `z:` cube per stream) — the recorded z-vector is used AS IT STANDS. An entry or distribution call the recording has
+  no draw for takes its nominal (`ExpressionDraws`'s `unplannedAtNominal`), and a recorded stream the design no longer
+  has is named in the warning `yield.corner.streams-gone`.
+- **Without one**, the trial is drawn afresh from (seed, trial, stream) — the same draws for every stream the run had
+  under `random` and `lhs`, whose streams are independent — and the note `yield.corner.not-recorded` says a renamed or
+  added variable cannot be told apart. Under `sobol` a changed stream set moves the dimension mapping, which only the
+  record avoids.
+
+Because the stored form is z (D5), the same vector over a moved nominal is the same relative deviation for a percent
+spread and the same absolute one for an absolute spread; correlated entries keep their correlation, the vector being
+the one drawn after it. `StatisticalCorner.FromRun(result, goal, k)` proposes the k worst trials of a goal as corner
+definitions named `<goal>_t<trial>`, with the run's effective seed, sampling and trial count
+(`StatisticalResult.Settings`) — what "save as corner" uses.
+
+### 10.5 The generator (R-ya6-5)
+
+`CornerGenerator.CrossProduct(axes, temps, values)` crosses kit axes × options, temperatures and variable values into
+explicit `CornerDefinition`s, named from their parts joined by `_`: a kit option as written, a temperature as its
+number (`-` → `m`, `.` → `p`; `t25`, `tm40` when it starts the name), a variable or key as its letters and digits with
+its value's number (`Vdd3p0`, `R2R1100`). Duplicates (the same bindings) are dropped and a name collision gets `_2`.
+More than 256 corners is the refusal `yield.corner.generate-too-many` naming the count. `CornerGenerator.Parse` reads
+the CLI's `axis=a,b;temp=-40,25;Vdd=3.0,3.6`: a name is a kit axis when one of the workspace's axes answers to it (its
+label, file stem or key), `temp` the ambient, anything else a variable or tunable key — checked by `check` with the
+rest of the corner lines. It writes lines; it is not a grammar.
+
+### 10.6 `explain` (R-ya6-7)
+
+`explain --analysis` lists each corner's bindings in base SI with the base unit (`temp` in °C; a bare number takes the
+unit of what it binds) and, for a `.csch` in a kit workspace, each kit axis's section at that corner and whether the
+corner sets it or inherits the schematic's selection (the axis's first section when the schematic chose none, as
+`WorkspaceCorners.Bind` binds it).
+
 ## Later phases
 
-Each phase appends its section above this one as it lands: YA-6/7 corners, YA-8/9 the display, YA-10 the panel, YA-11/12 centering.
+Each phase appends its section above this one as it lands: YA-7 corners in the optimizer, YA-8/9 the display, YA-10 the panel, YA-11/12 centering.

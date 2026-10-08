@@ -414,6 +414,9 @@ public static class TuningDirectiveText
         return sb.ToString();
     }
 
+    /// <summary>One corner as its <c>.cnl</c> line — what <c>yield corners --generate</c> prints (brief-yield-6).</summary>
+    public static string CornerLine(CornerDefinition c) => WriteCorner(c);
+
     /// <summary>One corner as its <c>.cnl</c> line. Kit axis selections are not written: extraction has
     /// already resolved them into values (yield overview D10).</summary>
     private static string WriteCorner(CornerDefinition c)

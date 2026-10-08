@@ -41,6 +41,6 @@ public sealed partial class AnalysesTool : Tool
 
     /// <summary>Called by WorkspaceViewModel whenever the referenced kits are (re)loaded. Empty for
     /// every workspace whose kits declare no corners, which keeps the block out of the panel.</summary>
-    public void SetCornerAxes(System.Collections.Generic.IReadOnlyList<Schematic.WorkspaceCornerAxis> axes)
+    public void SetCornerAxes(System.Collections.Generic.IReadOnlyList<WorkspaceCornerAxis> axes)
         => ListVm.SetCornerAxes(axes);
 }

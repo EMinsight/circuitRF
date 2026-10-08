@@ -1,4 +1,5 @@
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Devices;
 
 namespace CircuitRF.Design.Optimization;
 
@@ -78,6 +79,14 @@ public static class TunableOverrides
             if (key.IsVariable)
             {
                 int vi = variables.FindIndex(v => v.Name == key.Name);
+                if (vi < 0 && key.Cell is null && key.Name == Temperature.AmbientGlobalName)
+                {
+                    // The ambient is readable by name whether or not the design states it (Elaborator), so a corner's
+                    // temp (brief-yield-6) on a design that never wrote `temp` is the global typing it would add.
+                    var (texpr, tunit) = TunableValue.Split(value, null);
+                    variables.Add(new Variable(key.Name, texpr, tunit));
+                    continue;
+                }
                 if (vi < 0) { notes.Add($"'{keyText}' names no variable; skipped."); continue; }
                 var (expr, unit) = TunableValue.Split(value, variables[vi].Unit);
                 variables[vi] = new Variable(key.Name, expr, unit);

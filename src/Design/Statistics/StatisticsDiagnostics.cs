@@ -193,4 +193,50 @@ public static class StatisticsDiagnostics
     public static Diagnostic ContributionNothingVaries() => Diagnostic.Create(
         "yield.contrib.nothing-varies", DiagnosticSeverity.Error,
         "No statistical variable was drawn in the run, so nothing can contribute.");
+
+    // ── YA-6: corners ──────────────────────────────────────────────────────
+
+    public static Diagnostic ReplayStreamsGone(int trial, IReadOnlyList<string> streams) => Diagnostic.Create(
+        "yield.corner.streams-gone", DiagnosticSeverity.Warning,
+        "Trial {trial} drew {streams}, which this design no longer has (renamed or removed); the corner is replayed without.",
+        ("trial", trial), ("streams", string.Join(", ", streams)));
+
+    public static Diagnostic ReplayNotRecorded(string corner) => Diagnostic.Create(
+        "yield.corner.not-recorded", DiagnosticSeverity.Info,
+        "corner {corner}: the run it names is not at hand, so its trial is drawn afresh from its seed — the same draws for every stream the run had, but a renamed or added variable cannot be told apart.",
+        ("corner", corner));
+
+    public static Diagnostic CornerUnknown(string name, string known) => Diagnostic.Create(
+        "yield.corner.unknown", DiagnosticSeverity.Error,
+        "There is no enabled corner '{name}'; the enabled corners are: {known}.", ("name", name), ("known", known));
+
+    public static Diagnostic CornerNone() => Diagnostic.Create(
+        "yield.corner.none", DiagnosticSeverity.Error,
+        "The design has no enabled corner to run; add a corner line (yield corners --generate writes some).");
+
+    public static Diagnostic CornerSetConflict(string corner, string name) => Diagnostic.Create(
+        "yield.corner.set-conflict", DiagnosticSeverity.Error,
+        "'{name}' is set both by --set and by corner {corner}; remove one of the two.", ("corner", corner), ("name", name));
+
+    public static Diagnostic CornerProcessDoubleCounted() => Diagnostic.Create(
+        "yield.corner.process-double-counted", DiagnosticSeverity.Warning,
+        "statistics: corners= with process=1 — a process corner and a process draw answer one question, so a Monte Carlo at each corner draws mismatch only and leaves process at the corner.");
+
+    public static Diagnostic CornerNominalFailed(string reason) => Diagnostic.Create(
+        "yield.corner.nominal-failed", DiagnosticSeverity.Error,
+        "No corner evaluated, the nominal included; the nominal: {reason}.", ("reason", reason));
+
+    public static Diagnostic GeneratorTooMany(int count, int cap) => Diagnostic.Create(
+        "yield.corner.generate-too-many", DiagnosticSeverity.Error,
+        "That cross product is {count} corners; at most {cap} are generated. Fewer options, temperatures or values.",
+        ("count", count), ("cap", cap));
+
+    public static Diagnostic GeneratorMalformed(string part, string why) => Diagnostic.Create(
+        "yield.corner.generate-malformed", DiagnosticSeverity.Error,
+        "'{part}': {why}", ("part", part), ("why", why));
+
+    public static Diagnostic CornerStatisticalNoMonteCarlo(string corner) => Diagnostic.Create(
+        "yield.corner.statistical-no-mc", DiagnosticSeverity.Info,
+        "corner {corner} is one trial of a run, so it has no Monte Carlo of its own; it is left out of this one.",
+        ("corner", corner));
 }

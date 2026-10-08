@@ -506,7 +506,7 @@ internal static class Check
         // reported a hierarchical design as clean while the thing it was checking had its device
         // silently removed — and every run verb agreed with it, because they extracted the same way.
         NetExtractor.ExtractionResult extracted;
-        try { extracted = NetExtractor.Extract(model, Path.GetFileNameWithoutExtension(path), DiskCellResolver.Instance); }
+        try { extracted = SchematicCircuit.ExtractInWorkspace(model, Path.GetFileNameWithoutExtension(path), DiskCellResolver.Instance, path); }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 
         foreach (var conflict in extracted.Conflicts)
@@ -519,9 +519,9 @@ internal static class Check
         TestBench tb;
         try
         {
-            (lib, tb) = CircuitSource.FromSchematic(
-                model, Path.GetFileNameWithoutExtension(path),
-                Path.GetDirectoryName(Path.GetFullPath(path)));
+            string name = Path.GetFileNameWithoutExtension(path);
+            (lib, tb) = SchematicCircuit.RoundTrip(SchematicCircuit.CnlTextOf(extracted, name), name,
+                                                   Path.GetDirectoryName(Path.GetFullPath(path)));
         }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 

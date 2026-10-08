@@ -1,0 +1,8 @@
+* Synthetic corner file for the corner-run tests (brief-yield-6): one axis, two sections.
+.LIB r1_typ
+.param r1val = 1000
+.ENDL r1_typ
+
+.LIB r1_hi
+.param r1val = 1100
+.ENDL r1_hi

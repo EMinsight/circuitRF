@@ -15,6 +15,9 @@ namespace CircuitRF.Design.Statistics;
 /// nominally first and read <c>StatisticalCalls</c>) passes their z in <c>planned</c>, and those win: that is how
 /// <c>lhs</c> and <c>sobol</c> reach expression streams too.</para>
 ///
+/// <para>A statistical corner's replay sets <c>unplannedAtNominal</c>: a stream absent from <c>planned</c> (the
+/// recorded z-vector) evaluates at its nominal rather than drawing — it did not exist when the trial was drawn.</para>
+///
 /// <para><c>process=0</c> / <c>mismatch=0</c> switch a kind off, which evaluates it at its nominal;
 /// <c>sigmascale</c> multiplies every spread.</para>
 /// </summary>
@@ -25,10 +28,11 @@ public sealed class ExpressionDraws : IStatisticalDraws
 
     private readonly ulong _seed;
     private readonly IReadOnlyDictionary<string, double>? _planned;
+    private readonly bool _unplannedAtNominal;
     private readonly ConcurrentDictionary<string, (StatisticalKind Kind, double Z)> _drawn = new(StringComparer.Ordinal);
 
     public ExpressionDraws(int seed, int trial, bool process = true, bool mismatch = true, double sigmaScale = 1.0,
-                           IReadOnlyDictionary<string, double>? planned = null)
+                           IReadOnlyDictionary<string, double>? planned = null, bool unplannedAtNominal = false)
     {
         if (trial < 1) throw new ArgumentOutOfRangeException(nameof(trial), "Trials are numbered from 1.");
         _seed      = unchecked((ulong)seed);
@@ -37,11 +41,12 @@ public sealed class ExpressionDraws : IStatisticalDraws
         Mismatch   = mismatch;
         SigmaScale = sigmaScale;
         _planned   = planned;
+        _unplannedAtNominal = unplannedAtNominal;
     }
 
     /// <summary>The draws of <paramref name="trial"/> under a setup's <c>statistics</c> settings.</summary>
     public static ExpressionDraws For(StatisticsSettings? settings, int trial,
-                                      IReadOnlyDictionary<string, double>? planned = null)
+                                      IReadOnlyDictionary<string, double>? planned = null, bool unplannedAtNominal = false)
     {
         var s = settings ?? new StatisticsSettings();
         return new ExpressionDraws(s.EffectiveSeed, trial, s.Process ?? true, s.Mismatch ?? true,
@@ -59,6 +64,8 @@ public sealed class ExpressionDraws : IStatisticalDraws
     public StatisticalDraw? Draw(StatisticalKind kind, string stream)
     {
         if (kind == StatisticalKind.Process ? !Process : !Mismatch) return null;
+        // A replayed trial (brief-yield-6 R-ya6-4): a stream the recording has no draw for is one the run never had.
+        if (_unplannedAtNominal && (_planned is null || !_planned.ContainsKey(stream))) return null;
 
         double z = _planned is not null && _planned.TryGetValue(stream, out double p)
             ? p

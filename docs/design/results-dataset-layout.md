@@ -186,3 +186,22 @@ Display, the Yield panel) reads them and computes nothing of its own. Values are
 
 **Trial order is drawing order** (1…N), and every per-trial cube is slotted by trial number, so the `DataSet` is
 identical for any `parallel=`. With auto-stop the trial axis ends where the rule decided.
+
+## Corners (brief-yield-6)
+
+A corner run (`CornerRun`, `src/Design/Statistics`) writes ONE grouped `DataSet` to **`<design>.corners.npy` beside the
+schematic or netlist**. Every cube has an outer **`corner`** axis whose LABELS are the corner names, the nominal first
+as `nominal`; its values are 1…N.
+
+| Group | Cube | Axes | What |
+|---|---|---|---|
+| each analysis (`SP1`, `DC1`, …) | as Simulate names them | `[corner, …]` | each corner's results; NaN where a corner did not evaluate. A cube whose shape differs between corners is left out |
+| `corners` | `goal:<g>:pass` | `[corner]` | 1/0; a corner that did not evaluate is 0 under `nonconverged=fail`, NaN under `warn` |
+| `corners` | `goal:<g>:margin`, `goal:<g>:worst` | `[corner]` | the margin and the expression's value at the tightest point, as in `trials` |
+| `corners` | `pass` | `[corner]` | every goal met (same 0/NaN rule); absent when no goal is scored |
+| `corners` | `temp` | `[corner]` | the corner's ambient in °C (`degC`); NaN where it sets none |
+| `corners` | `status`, `reasons` | `[corner]`, `[reason]` | as in `trials` |
+
+A **Monte Carlo at each corner** writes `<design>.yield.npy` with the Monte Carlo layout above stacked under the same
+`corner` axis: `[corner, trial, …]`, `trials.*` as `[corner, trial]`, `yield.*` as `[corner]`. Corners that stopped at
+different trial counts are padded with NaN to the longest.

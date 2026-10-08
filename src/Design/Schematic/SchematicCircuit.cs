@@ -49,9 +49,8 @@ public static class SchematicCircuit
     /// </summary>
     public static (Library Lib, TestBench Tb) FromSchematic(string cschPath)
     {
-        var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
-        return FromSchematic(model, Path.GetFileNameWithoutExtension(cschPath),
-                             ReferenceBaseOf(cschPath));
+        string name = Path.GetFileNameWithoutExtension(cschPath);
+        return RoundTrip(CnlTextOf(cschPath), name, ReferenceBaseOf(cschPath));
     }
 
     /// <inheritdoc cref="FromSchematic(string)"/>
@@ -107,7 +106,28 @@ public static class SchematicCircuit
     public static string CnlTextOf(string cschPath)
     {
         var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
-        return CnlTextOf(model, Path.GetFileNameWithoutExtension(cschPath));
+        string name = Path.GetFileNameWithoutExtension(cschPath);
+        return CnlTextOf(ExtractInWorkspace(model, name, DiskCellResolver.Instance, cschPath), name);
+    }
+
+    /// <summary>
+    /// The extraction a schematic AT A PATH gets — with the kit corners of the workspace it belongs to bound as
+    /// Simulate binds them (<c>WorkspaceViewModel.WriteNetlist</c>): the design's own selections, and the binder a
+    /// named corner's kit selections resolve through (brief-yield-6 R-ya6-1, docs/design/yield.md §10). A workspace
+    /// offering no corner axes extracts exactly as before, byte for byte.
+    /// </summary>
+    public static NetExtractor.ExtractionResult ExtractInWorkspace(
+        SchematicEditModel model, string testBenchName, ICellResolver cells, string cschPath)
+    {
+        var axes = WorkspaceCorners.ForDocument(cschPath);
+        if (axes.Count == 0) return NetExtractor.Extract(model, testBenchName, cells);
+
+        var problems = new List<string>();
+        var bound = WorkspaceCorners.Bind(axes, model.CornerSelections, problems);
+        var result = NetExtractor.Extract(model, testBenchName, cells, bound.Variables,
+            (selections, found) => WorkspaceCorners.BindingsFor(axes, selections, found), bound.Sections);
+        return problems.Count == 0 ? result
+            : result with { Conflicts = [.. problems, .. result.Conflicts] };
     }
 
     /// <summary>
@@ -121,7 +141,7 @@ public static class SchematicCircuit
         var (model, _, _) = SchematicPersistence.LoadFromFile(cschPath);
         string name = Path.GetFileNameWithoutExtension(cschPath);
         var watch = new WatchedResolver(Path.GetFullPath(cschPath));
-        string text = CnlTextOf(NetExtractor.Extract(model, name, watch), name);
+        string text = CnlTextOf(ExtractInWorkspace(model, name, watch, cschPath), name);
         return (text, watch.Files);
     }
 

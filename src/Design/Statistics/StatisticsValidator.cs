@@ -200,6 +200,8 @@ public static class StatisticsValidator
 
     private static void Settings(StatisticsSettings? s, List<Diagnostic> f)
     {
+        // A Monte Carlo at each corner draws mismatch only (brief-yield-6 R-ya6-3); process=1 asked for both.
+        if (s is { Process: true } && s.CornerNames is not { Count: 0 }) f.Add(StatisticsDiagnostics.CornerProcessDoubleCounted());
         if (s is null || !s.AutoStop) return;
         if (s.Sampling == StatSampling.Lhs) f.Add(StatisticsDiagnostics.LhsWithAutoStop());
         if (s.Target is null) f.Add(StatisticsDiagnostics.AutoStopNeedsTarget());

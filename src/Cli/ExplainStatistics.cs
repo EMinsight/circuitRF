@@ -5,6 +5,7 @@ using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Optimization;
+using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Statistics;
 using RfCore.Export;
 
@@ -77,11 +78,13 @@ internal static class ExplainStatistics
     }
 
     /// <summary>The statistical report of a testbench; null when its setup has no statistical content.</summary>
-    public static ExplainStatisticsJson? Collect(Library lib, TestBench tb)
+    /// <param name="path">The document explained; a <c>.csch</c>'s corners report each kit axis they set or inherit.</param>
+    public static ExplainStatisticsJson? Collect(Library lib, TestBench tb, string? path = null)
     {
         if (tb.Tuning is not { } setup || !HasStatistics(setup)) return null;
         var s = setup.Statistics ?? new StatisticsSettings();
         var (halfWidth, trialsFor) = StatisticsSummary.ExpectedInterval(s.EffectiveTrials, s.EffectiveConfidence);
+        var kit = path is not null && DocumentKinds.Classify(path) == DocumentKind.Schematic ? KitCorners.Of(path) : null;
 
         ExplainCorrelationJson? correlation = null;
         if (StatisticsValidator.CorrelationOf(setup) is { } m)
@@ -102,7 +105,8 @@ internal static class ExplainStatistics
             [.. setup.Goals.Select(g => new ExplainGoalUseJson(g.Name, AnalysisDirectiveSchema.UseTokens[(int)g.Use], g.Enabled))],
             [.. setup.Corners.Select(c => new ExplainCornerJson(
                 c.Name, c.Enabled, c.IsStatistical ? "statistical" : "value", c.Temp,
-                new Dictionary<string, string>(c.Values, StringComparer.Ordinal), c.Trial))],
+                new Dictionary<string, string>(c.Values, StringComparer.Ordinal), c.Trial,
+                Bindings(lib, tb, c), kit?.Axes(c.Name)))],
             correlation, StatisticsSummary.QuotedYield, halfWidth, trialsFor, YieldRun(lib, tb, setup, s));
     }
 
@@ -122,6 +126,65 @@ internal static class ExplainStatistics
                           $"{parallel} trials (an estimate)";
         return new ExplainYieldRunJson(goals, all, s.Scope == OptimizerScope.All ? "all" : "goals",
                                        trials + 1, parallel, batches, estimate, run.Refusal?.Render());
+    }
+
+    /// <summary>
+    /// R-ya6-7: every binding a corner makes — its temp (°C) and each value — in base SI with its base unit. A bare
+    /// number takes the unit of what it binds (the tunable's, or the variable's).
+    /// </summary>
+    private static IReadOnlyList<ExplainCornerBindingJson> Bindings(Library lib, TestBench tb, CornerDefinition c)
+    {
+        var list = new List<ExplainCornerBindingJson>();
+        if (c.Temp is { } temp)
+            list.Add(new ExplainCornerBindingJson(Core.Devices.Temperature.AmbientGlobalName, temp,
+                double.TryParse(temp.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double t) ? t : null, "°C"));
+        if (c.Values.Count == 0) return list;
+        TunableCatalog? catalog = null;
+        try { catalog = TunableCatalog.FromNetlist(tb, lib); } catch (Exception) { /* units then come from the text alone */ }
+        foreach (var (key, text) in c.Values)
+        {
+            string known = catalog?.FindValue(key)?.Unit ?? tb.GlobalVariables.FirstOrDefault(v => v.Name == key)?.Unit ?? "";
+            if (!TunableValue.TryParse(text, out double n, out string unit, out double si))
+            {
+                list.Add(new ExplainCornerBindingJson(key, text, null, known.Length == 0 ? "" : Units.BaseUnit(known)));
+                continue;
+            }
+            if (unit.Length == 0 && known.Length > 0) { unit = known; si = n * (Units.Scale(known) ?? 1); }
+            list.Add(new ExplainCornerBindingJson(key, text, si, unit.Length == 0 ? "" : Units.BaseUnit(unit)));
+        }
+        return list;
+    }
+
+    /// <summary>A schematic's corners against its workspace's kit axes: per corner, each axis's section and whether the
+    /// corner sets it or inherits the schematic's selection (R-ya6-7).</summary>
+    private sealed class KitCorners
+    {
+        private readonly IReadOnlyList<CircuitRF.Design.Workspace.WorkspaceCornerAxis> _axes;
+        private readonly SchematicEditModel _model;
+
+        private KitCorners(IReadOnlyList<CircuitRF.Design.Workspace.WorkspaceCornerAxis> axes, SchematicEditModel model)
+        { _axes = axes; _model = model; }
+
+        public static KitCorners? Of(string cschPath)
+        {
+            var axes = CircuitRF.Design.Workspace.WorkspaceCorners.ForDocument(cschPath);
+            if (axes.Count == 0) return null;
+            try { return new KitCorners(axes, CircuitRF.Design.Schematic.SchematicPersistence.LoadFromFile(cschPath).model); }
+            catch (Exception) { return null; }
+        }
+
+        public IReadOnlyList<ExplainCornerAxisJson> Axes(string corner)
+        {
+            var own = _model.Tuning?.Corners.FirstOrDefault(c => c.Name == corner)?.AxisSelections;
+            return [.. _axes.Select(a =>
+            {
+                if (own is not null && own.TryGetValue(a.Key, out var set) && !string.IsNullOrWhiteSpace(set))
+                    return new ExplainCornerAxisJson(a.Label, set, true);
+                string inherited = _model.CornerSelections.TryGetValue(a.Key, out var chosen) && !string.IsNullOrWhiteSpace(chosen)
+                    ? chosen : a.Options[0];
+                return new ExplainCornerAxisJson(a.Label, inherited, false);
+            })];
+        }
     }
 
     private static bool HasStatistics(TuningSetup setup)
@@ -150,6 +213,10 @@ internal static class ExplainStatistics
             string what = c.Kind == "statistical" ? $"trial {c.Trial}"
                         : string.Join(" ", (c.Temp is { } temp ? new[] { $"temp={temp}" } : []).Concat(c.Values.Select(kv => $"{kv.Key}={kv.Value}")));
             Console.WriteLine($"  corner {c.Name}{(c.Enabled ? "" : " (disabled)")}: {what}");
+            foreach (var b in c.Bindings ?? [])
+                Console.WriteLine($"    {b.Name} = {(b.Si is { } si ? N(si) + (b.Unit.Length > 0 ? " " + b.Unit : "") : b.Written)}");
+            foreach (var a in c.KitAxes ?? [])
+                Console.WriteLine($"    {a.Axis}: {a.Section} ({(a.Sets ? "set by the corner" : "the schematic's")})");
         }
         if (r.Correlation is { } m)
         {

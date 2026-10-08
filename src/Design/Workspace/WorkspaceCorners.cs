@@ -1,11 +1,7 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Pdk;
 
-namespace CircuitRF.Ui.Schematic;
+namespace CircuitRF.Design.Workspace;
 
 /// <summary>
 /// One corner choice a WORKSPACE offers: an axis a referenced kit declares, resolved to where its
@@ -45,7 +41,9 @@ public sealed record WorkspaceCornerAxis(
 /// What corners a workspace offers, and what choosing them binds.
 ///
 /// <para>Framework-free on purpose: whether a corner exists, whether a recorded one is still offered,
-/// and what it binds are all decisions a test must be able to make without a window.</para>
+/// and what it binds are all decisions a test must be able to make without a window — and, since
+/// brief-yield-6, decisions a headless run makes too (the extraction <c>circuitrf</c> performs, and
+/// <c>CornerRun</c>'s kit corners), which is why it lives below the firewall.</para>
 /// </summary>
 public static class WorkspaceCorners
 {
@@ -75,7 +73,8 @@ public static class WorkspaceCorners
         {
             if (r.Corners is null || r.Corners.Count == 0) continue;
 
-            string kitRoot = WorkspaceRefs.Resolve(r.Path, workspaceRootDir);
+            // Rooted → as stored; relative → under the workspace root (WorkspaceRefs.Resolve's rule).
+            string kitRoot = Path.IsPathRooted(r.Path) ? r.Path : CircuitRF.Core.RefPath.Resolve(workspaceRootDir, r.Path);
             foreach (var c in r.Corners)
             {
                 if (string.IsNullOrWhiteSpace(c.AxisId) || c.Options is null || c.Options.Count == 0)
@@ -97,6 +96,21 @@ public static class WorkspaceCorners
                           .ToList();
 
         return [.. ordered.Select(a => a with { Label = Disambiguate(a, ordered) })];
+    }
+
+    /// <summary>
+    /// The axes the workspace a document belongs to offers — the nearest ancestor <c>.cws</c> above
+    /// <paramref name="documentPath"/>, read as the window reads it when that workspace is open. Empty for a
+    /// document belonging to no workspace, or a <c>.cws</c> that cannot be read (the headless reader has no
+    /// Messages panel to say so in; a run then reports a kit selection as not applied, which is the
+    /// repairable outcome).
+    /// </summary>
+    public static IReadOnlyList<WorkspaceCornerAxis> ForDocument(string documentPath)
+    {
+        if (WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(Path.GetFullPath(documentPath))) is not { } cws)
+            return [];
+        try { return From(Path.GetDirectoryName(cws)!, WorkspacePersistence.LoadFromFile(cws).PdkRefs); }
+        catch (Exception) { return []; }
     }
 
     /// <summary>

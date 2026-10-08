@@ -123,6 +123,7 @@ convention behind both.</p>
 | `em` | `.cem` | The EM kernel the setup resolves to | A Touchstone `.sNp` **and** a grouped `.npy`, where **Simulate** writes them |
 | `opt` | `.csch` or `.cnl` | The schematic's saved optimization — the [Optimizer](optimization.html)'s own run | The best values and each goal's result to stdout; **nothing** in the design (`--save-preset` adds a preset) |
 | `yield mc`, `yield estimate`, `yield trial` | `.csch` or `.cnl` | A Monte Carlo or yield run over the tolerances on the tune lines, the kit's statistics and the `statistics` line | The yield, each goal's result and the spread to stdout; the trials to `<design>.yield.npy`; **nothing** in the design (`--save-preset`, `--save-corner` with `--trial`) |
+| `yield corners` | `.csch` or `.cnl` | The design at every enabled corner, or a Monte Carlo at each (`--mc`) | A corner × goal margin table to stdout; the corners to `<design>.corners.npy`; **nothing** in the design (`--generate … --write` on a `.csch`) |
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
 | `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | The same comparison the [LVS panel](lvs.html)'s **Compare** button calls | **Nothing** — the report to stdout; `-o report.txt` |
@@ -724,7 +725,7 @@ specification either. Over [MCP](ai-agents.html) the same run is `run analysis=o
 ## `yield` — Monte Carlo and yield from the command line {#yield}
 
 ```text
-circuitrf yield mc|estimate|trial <schematic.csch | netlist.cnl> [flags]
+circuitrf yield mc|estimate|trial|corners <schematic.csch | netlist.cnl> [flags]
 ```
 
 `yield` draws the design's tolerances — the `dist=` keys on its tune lines, and its kit's process and
@@ -775,10 +776,49 @@ first, and `plot` draws the statistics functions directly — `--trace "cube=his
 **It never changes the design's values.** Exit **0** means the run finished and the yield met
 `--target` (or there was none); **3**, that it finished below the target; **1**, that it was refused;
 **2**, that no trial evaluated; **130**, that it was cancelled, with nothing written. Over
-[MCP](ai-agents.html) the same runs are `run analysis=montecarlo` and `run analysis=yield`, and
+[MCP](ai-agents.html) the same runs are `run analysis=montecarlo`, `run analysis=yield` and `run analysis=corners`, and
 `reference statistics` says how to write tolerances, yield specs and the `statistics` line.
 `explain <file> --analysis` reports how wide the interval of the configured trial count will be and
 roughly how long the run takes, before you start it.
+
+### Corners {#yield-corners}
+
+`yield corners` checks the design at every enabled `corner` line — a kit corner selection, a temperature, values —
+in one run, and prints one row per corner with each goal's margin:
+
+```text
+$ circuitrf yield corners div.cnl
+Corners: div.cnl
+  a goal FAILS at a corner
+
+  corner   temp  Vout margin  status
+  nominal        0.08         passes
+  cold     -40   0.1572       passes
+  hot      125   -0.002045 ✗  FAILS
+  hiR2     85    0.05158      passes
+
+Worst corner per goal:
+  Vout: hot (margin -0.002045, FAILS)
+```
+
+It exits **3** when a goal fails at any corner, and writes `<design>.corners.npy`. A corner made from a Monte Carlo
+trial (`--save-corner`) replays that trial's draws around the design's current values, so it follows the design as
+you tune it.
+
+| Flag | |
+|---|---|
+| `--corners name,name` | Only these corners. On `mc` and `estimate`, a run at each of them. |
+| `--mc` | A Monte Carlo — a yield, when the design has a yield goal — at each corner, with the kit's process draws off there: the corner is the process. The table is then a yield per corner. |
+| `--generate "spec"` | Print the corners a cross product makes and write nothing, e.g. `"proc=tt,ss;temp=-40,25,85;Vdd=3.0,3.6"` — a kit axis by its name, `temp`, any variable or tunable value. |
+| `--write` | With `--generate`, on a schematic: add the generated corners to it. |
+
+```text
+$ circuitrf yield corners div.cnl --generate "temp=-40,25,85;R2.R=900 Ohm,1100 Ohm"
+corner tm40_R2R900 temp=-40 R2.R=900 Ohm
+corner tm40_R2R1100 temp=-40 R2.R=1100 Ohm
+corner t25_R2R900 temp=25 R2.R=900 Ohm
+...
+```
 
 ## `rail` — power integrity, headless {#rail}
 

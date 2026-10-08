@@ -3932,4 +3932,22 @@ internal static class CliDiagnostics
     public static Diagnostic YieldCancelled() => Diagnostic.Create(
         "cli.yield.cancelled", DiagnosticSeverity.Error,
         "yield: cancelled — nothing was written.");
+
+    // ── `yield corners` (brief-yield-6) ─────────────────────────────────────────
+
+    /// <summary>A corners flag on a noun that does not take it.</summary>
+    public static Diagnostic YieldCornerFlag(string flag, string takes) => Diagnostic.Create(
+        "cli.yield.corner-flag", DiagnosticSeverity.Error,
+        "yield: {flag} belongs to {takes}.", ("flag", flag), ("takes", takes));
+
+    /// <summary><c>--write</c> on a netlist: the generated corners are lines its author adds (D12).</summary>
+    public static Diagnostic YieldGenerateWriteNeedsSchematic(string path) => Diagnostic.Create(
+        "cli.yield.generate-write-needs-schematic", DiagnosticSeverity.Error,
+        "yield corners: --write appends to a schematic's tuning block, and '{path}' is a netlist. Add the printed corner lines to it instead.",
+        ("path", path));
+
+    public static Diagnostic YieldGenerateNamesTaken(string names) => Diagnostic.Create(
+        "cli.yield.generate-names-taken", DiagnosticSeverity.Error,
+        "yield corners: the design already has corners named {names}; nothing was written. Rename or remove those first.",
+        ("names", names));
 }

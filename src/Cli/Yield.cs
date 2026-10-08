@@ -34,7 +34,7 @@ namespace CircuitRF.Cli;
 /// <para><b>Exit codes (D13):</b> 0 finished (and the yield met the target, or there was none) · 3 the yield is below
 /// <c>--target</c> · 1 refused · 2 no trial evaluated · 130 cancelled, writing nothing.</para>
 /// </summary>
-internal static class Yield
+internal static partial class Yield
 {
     private const string Verb = "yield";
 
@@ -44,6 +44,7 @@ internal static class Yield
         ("mc",       "Monte Carlo: the spread alone. Needs no goal and scores every enabled goal; exits 0 unless it could not run."),
         ("estimate", "Yield against the enabled use=yield|both goals, with its interval; exit 3 when below --target."),
         ("trial",    "Re-runs one trial (--trial n) and prints what it drew and how it scored; -o writes its analysis results."),
+        ("corners",  "Evaluates every enabled corner and prints a corner x goal margin table; exit 3 when a goal fails at a corner. --mc runs a Monte Carlo at each, --generate prints corner lines."),
     ];
 
     /// <summary>Every flag the verb reads — the table <c>reference statistics</c> renders, so a flag added here
@@ -70,6 +71,10 @@ internal static class Yield
         ("--contributions","",                   "Also report what drives each goal's and measurement's spread (--json)."),
         ("--save-preset",  "name",               "A .csch, with --trial: add that trial's values as a preset."),
         ("--save-corner",  "name",               "A .csch, with --trial: add a statistical corner naming that trial."),
+        ("--corners",      "c,c",                "corners, mc, estimate: only these enabled corners (mc/estimate: a run at each)."),
+        ("--mc",           "",                   "corners: a Monte Carlo (a yield, when the design has a yield goal) at each corner, process draws off there."),
+        ("--generate",     "spec",               "corners: print the corners a cross product makes, e.g. \"axis=tt,ss;temp=-40,25,85;Vdd=3.0,3.6\"; writes nothing."),
+        ("--write",        "",                   "corners --generate, a .csch: append the generated corners, after a history checkpoint."),
         ("-o",             "out.npy",            "Where the result is written; default <design>.yield.npy beside the design."),
         ("-q",             "",                   "No progress line on stderr."),
     ];
@@ -83,7 +88,7 @@ internal static class Yield
             return code;
         }
         string noun = args[0].ToLowerInvariant();
-        if (noun is not ("mc" or "estimate" or "trial"))
+        if (noun is not ("mc" or "estimate" or "trial" or "corners"))
         {
             int code = JsonRun.Fail(CliDiagnostics.YieldNoun(args[0]));
             Usage();
@@ -95,8 +100,9 @@ internal static class Yield
         int? trials = null, seed = null, parallel = null, trial = null;
         double? target = null, confidence = null, sigmaScale = null;
         bool? process = null, mismatch = null;
-        bool autostop = false, contributions = false, quiet = false;
-        List<string>? vars = null, goals = null;
+        bool autostop = false, contributions = false, quiet = false, perCorner = false, write = false;
+        List<string>? vars = null, goals = null, corners = null;
+        string? generate = null;
         var sets = new List<(string Name, string Expr)>();
 
         for (int i = 1; i < args.Length; i++)
@@ -128,6 +134,10 @@ internal static class Yield
                 case "--vars" when hasValue:        vars = List(args[++i]); break;
                 case "--goals" when hasValue:       goals = List(args[++i]); break;
                 case "--autostop":                  autostop = true; break;
+                case "--corners" when hasValue:     corners = List(args[++i]); break;
+                case "--mc":                        perCorner = true; break;
+                case "--generate" when hasValue:    generate = args[++i]; break;
+                case "--write":                     write = true; break;
                 case "--contributions":             contributions = true; break;
                 case "-q" or "--quiet":             quiet = true; break;
                 case "-o" or "--output" when hasValue: output = args[++i]; break;
@@ -159,6 +169,7 @@ internal static class Yield
 
         // ── flag values and combinations, before anything is read ─────────────────
         var mode = noun == "mc" ? StatisticalMode.MonteCarlo : StatisticalMode.Yield;
+        if (CornerFlagProblem(noun, perCorner, generate, write, corners, trial) is { } cornerFlag) return JsonRun.Fail(cornerFlag);
         if (mode == StatisticalMode.MonteCarlo && (target is not null || autostop))
             return JsonRun.Fail(CliDiagnostics.YieldMcHasNoTarget(target is not null ? "--target" : "--autostop"));
         if (noun == "trial" && trial is null) return JsonRun.Fail(CliDiagnostics.YieldTrialRequired());
@@ -184,6 +195,7 @@ internal static class Yield
         foreach (var (flag, name) in new[] { ("--save-preset", presetName), ("--save-corner", cornerName) })
             if (name is not null && kind != DocumentKind.Schematic)
                 return JsonRun.Fail(CliDiagnostics.YieldSaveNeedsSchematic(flag, input));
+        if (generate is not null) return Generate(input, Path.GetFullPath(input), kind, generate, write);
 
         // ── 1. The circuit, prepared as Simulate prepares it ─────────────────────
         string full = Path.GetFullPath(input);
@@ -229,6 +241,15 @@ internal static class Yield
             return JsonRun.Fail(CliDiagnostics.YieldSaveName("--save-corner", cornerProblem));
 
         foreach (var (name, expr) in sets) Console.Error.WriteLine($"[circuitRF] set {name} = {expr}");
+
+        // ── corners: one evaluation at each, or a run at each (brief-yield-6) ─────
+        if (noun == "corners")
+            return RunCorners(input, full, circuit, changed ? setup : null, sets, corners, perCorner,
+                              perCorner ? McModeOf(setup) : StatisticalMode.Yield, output, quiet);
+        // statistics corners=all|<names> (or --corners) makes mc/estimate a run at each corner (R-ya6-3).
+        if (trial is null && (corners is not null || st.CornerNames is not { Count: 0 }))
+            return RunCorners(input, full, circuit, changed ? setup : null, sets,
+                              corners ?? (st.CornerNames is { } listed ? [.. listed] : null), true, mode, output, quiet);
 
         // ── 3. The run ────────────────────────────────────────────────────────────
         var ct = RunHost.Cancellation;
@@ -697,11 +718,12 @@ internal static class Yield
 
     private static void Usage()
     {
-        Console.Error.WriteLine("Usage: circuitrf yield mc|estimate|trial <file.csch|file.cnl> [--trials n] [--seed n]");
+        Console.Error.WriteLine("Usage: circuitrf yield mc|estimate|trial|corners <file.csch|file.cnl> [--trials n] [--seed n]");
         Console.Error.WriteLine("                     [--sampling random|lhs|sobol] [--target p%] [--confidence p%] [--autostop]");
         Console.Error.WriteLine("                     [--nonconverged fail|warn] [--save scalars|all|n|auto] [--process 0|1] [--mismatch 0|1]");
         Console.Error.WriteLine("                     [--sigma-scale k] [--parallel n] [--analyses goals|all] [--set var=expr]");
         Console.Error.WriteLine("                     [--vars k,k] [--goals g,g] [--trial n] [--contributions] [-o out.npy] [-q]");
         Console.Error.WriteLine("                     [--save-preset name --trial n] [--save-corner name --trial n]");
+        Console.Error.WriteLine("                     corners: [--corners c,c] [--mc] [--generate \"axis=a,b;temp=-40,25;Vdd=3.0,3.6\" [--write]]");
     }
 }

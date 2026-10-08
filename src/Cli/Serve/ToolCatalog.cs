@@ -252,6 +252,7 @@ internal static class ToolCatalog
         new("savePreset",   "--save-preset",  OptKind.Str,     "A .csch only, with trial: add that trial's values as a preset of this name."),
         new("saveCorner",   "--save-corner",  OptKind.Str,     "A .csch only, with trial: add a statistical corner of this name naming that trial."),
         new("output",       "-o",             OptKind.Path,    "The result .npy; default <design>.yield.npy beside the design. With trial: that trial's results."),
+        new("corners",      "--corners",      OptKind.StrList, "Run at each of these enabled corners (the statistics line's corners= otherwise), process draws off there; result.corners."),
     ];
 
     /// <summary>
@@ -301,7 +302,8 @@ internal static class ToolCatalog
           + "margin. With showIterations it also returns each iteration and sends a progress notification per iteration. "
           + "montecarlo and yield run the tolerances on the tune lines (and a kit's statistics) and return result.yield — "
           + "the yield with its interval, each goal's yield and worst trial, the spread of every margin and measurement; "
-          + "trial=<n> re-runs one trial.",
+          + "trial=<n> re-runs one trial. corners evaluates every enabled corner and returns result.corners — a corner × goal "
+          + "margin table and each goal's worst corner; generate returns the corner lines a cross product makes.",
             "analysis",
             "Which analysis to run.",
             [
@@ -372,6 +374,19 @@ internal static class ToolCatalog
                      .. YieldOptions],
                     "Yield against the yield specs, with its Clopper-Pearson interval. Exit 3: below target — "
                   + "result.yield.goals says which goal and its worst trial. A progress notification per batch."),
+                // brief-yield-6 R-ya6-6: `yield corners`, the same verb's fourth noun.
+                new("corners", ["yield", "corners"],
+                    [new("path", true, "The .csch or .cnl whose corner lines, goals and statistics line to run.")],
+                    [Set,
+                     new("corners",  "--corners",  OptKind.StrList, "Only these enabled corners."),
+                     new("mc",       "--mc",       OptKind.Flag,    "A Monte Carlo (a yield, with a yield goal) at each corner instead of one evaluation; result.corners.yields."),
+                     new("generate", "--generate", OptKind.Str,     "Return the corners a cross product makes instead of running, e.g. \"axis=tt,ss;temp=-40,25,85;Vdd=3.0,3.6\" "
+                                                                  + "(a kit axis by its name; temp; any variable or tunable key). Writes nothing."),
+                     new("write",    "--write",    OptKind.Flag,    "With generate, a .csch only: append the generated corners after a history checkpoint."),
+                     new("output",   "-o",         OptKind.Path,    "The result .npy; default <design>.corners.npy (with mc, <design>.yield.npy).")],
+                    "Corner analysis: the design at every enabled corner (kit corner selections, temp, values; a statistical "
+                  + "corner replays its trial). Exit 0: every goal met at every corner. Exit 3: a goal fails at a corner — "
+                  + "result.corners.worst names the corner per goal. Exit 2: no corner evaluated."),
                 new("em", ["em"],
                     [new("path", true, "The .cem or .c3d to run; with component, the workspace folder (or .cws, "
                                      + "or .ctech) whose technology the part is drawn on.")],

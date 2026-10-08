@@ -45,7 +45,64 @@ public sealed record StatisticalOptions
     public Action<DataSet>? Publish { get; init; }
 
     public TimeSpan PublishInterval { get; init; } = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>A corner's bindings (brief-yield-6 R-ya6-3): key → value text, applied to the nominal and every trial,
+    /// and the nominal each spread is drawn around. Null for none.</summary>
+    public IReadOnlyDictionary<string, string>? Bindings { get; init; }
 }
+
+/// <summary>
+/// The z-vector a run recorded for one trial (yield overview D5) — what a statistical corner replays when the run that
+/// made it is at hand (brief-yield-6 R-ya6-4).
+/// </summary>
+/// <param name="EntryZ">Statistical entry key → its standard normal after correlation.</param>
+/// <param name="KitZ">Distribution-call stream → its standard normal.</param>
+public sealed record RecordedTrial(IReadOnlyDictionary<string, double> EntryZ, IReadOnlyDictionary<string, double> KitZ)
+{
+    /// <summary>A trial of a run held in memory.</summary>
+    public static RecordedTrial Of(TrialRecord record)
+        => new(record.Z, record.Kit.ToDictionary(kv => kv.Key, kv => kv.Value.Z, StringComparer.Ordinal));
+
+    /// <summary>
+    /// Trial <paramref name="trial"/> of a run's result file (<c>&lt;design&gt;.yield.npy</c>) — when that file is the
+    /// run the corner names: the same seed and sampling, and the trial in it. Null otherwise; a later run with other
+    /// settings overwrites the file, and its trial n is a different trial.
+    /// </summary>
+    public static RecordedTrial? FromDataSet(DataSet data, CornerDefinition corner)
+    {
+        if (corner.Trial is not { } t || !data.ContainsGroup(StatisticalDataSet.YieldGroup) || !data.ContainsGroup(StatisticalDataSet.TrialsGroup))
+            return null;
+        var yield = data.CubesIn(StatisticalDataSet.YieldGroup);
+        if (!yield.TryGetValue("seed", out var seed) || seed.RealValues[0] != (corner.Seed ?? StatisticsSettings.DefaultSeed)) return null;
+        string sampling = (corner.Sampling ?? StatSampling.Random).ToString().ToLowerInvariant();
+        if (!yield.TryGetValue("sampling", out var sc) || sc.Axes[0].Labels is not { Length: > 0 } labels || labels[0] != sampling) return null;
+
+        var entries = new Dictionary<string, double>(StringComparer.Ordinal);
+        var kit     = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var (name, cube) in data.CubesIn(StatisticalDataSet.TrialsGroup))
+        {
+            if (!name.StartsWith("z:", StringComparison.Ordinal) || cube.Rank != 1 || t > cube.Axes[0].Length) continue;
+            double z = cube.RealValues[t - 1];
+            if (double.IsNaN(z)) continue;
+            string stream = name[2..];
+            if (stream.StartsWith("process:", StringComparison.Ordinal)) kit[stream["process:".Length..]] = z;
+            else if (stream.StartsWith("mismatch:", StringComparison.Ordinal)) kit[stream["mismatch:".Length..]] = z;
+            else entries[stream] = z;
+        }
+        return entries.Count + kit.Count == 0 ? null : new RecordedTrial(entries, kit);
+    }
+}
+
+/// <summary>
+/// A statistical corner replayed (brief-yield-6 R-ya6-4): the value map and expression draws to evaluate, what the replay
+/// noticed (streams the design no longer has), and why it cannot be evaluated, if it cannot.
+/// </summary>
+public sealed record StatisticalReplay(
+    int                                 Trial,
+    IReadOnlyDictionary<string, string> Values,
+    ExpressionDraws?                    Draws,
+    IReadOnlyList<Diagnostic>           Notes,
+    Diagnostic?                         Refusal);
 
 /// <summary>One goal's yield.</summary>
 public sealed record GoalYield(string Goal, YieldEstimate Estimate);
@@ -183,4 +240,8 @@ public sealed class StatisticalResult
 
     /// <summary>Where <see cref="Data"/> was written; null when it was not.</summary>
     public string? WrittenPath { get; init; }
+
+    /// <summary>The statistics settings the run applied — the seed, sampling and trial count that identify its trials
+    /// (a statistical corner names them). Null when refused or cancelled.</summary>
+    public StatisticsSettings? Settings { get; init; }
 }

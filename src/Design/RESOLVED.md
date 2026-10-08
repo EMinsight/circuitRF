@@ -18665,3 +18665,31 @@ forms; a Monte Carlo run with no goal reports no yield and writes no `pass` cube
 100 %; a trial that did not evaluate is NaN in the analysis cubes (the `trial` axis stays 1…K) and 0 or
 NaN in `pass` by the `nonconverged` policy; contributions take a kit stream a trial did not draw as z = 0
 (its nominal); a mismatch contributor is the stream's site less its parameter (`X1.R1.R` → `X1.R1`).
+
+## brief-yield-6 — corners (2026-10-08)
+
+**The headless extraction never bound kit corners.** `SchematicCircuit` (every `.csch` run verb, `netlist`,
+`check`) called `NetExtractor.Extract` with no corner variables and no binder, so a schematic in a kit workspace
+ran headlessly at no corner at all — its process constants unbound — while Simulate bound the design's
+selections first. Nothing said so except the "no workspace kit corners are available here" note a named corner
+produced. `WorkspaceCorners` moved from `src/Ui/Schematic` to `src/Design/Workspace` (its only UI dependency was
+`WorkspaceRefs.Resolve`'s two-line rooted-or-relative rule, now inlined), `WorkspaceCorners.ForDocument` reads the
+axes of the workspace a document belongs to, and `SchematicCircuit.ExtractInWorkspace` binds exactly as
+`WorkspaceViewModel.WriteNetlist` does. A workspace with no axes extracts byte-identically to before.
+
+**`temp` on a corner had nowhere to go.** `TunableOverrides.Apply` skips a VAR key naming no variable, and most
+designs never write `temp` — the elaborator reads the ambient by name whether or not it is declared. Apply now ADDS
+the `temp` global when a top-level value names it and the bench has none, which is what typing it would do; every
+other unknown key is still skipped with its note.
+
+**A corner run must not append to the note list it handed out at construction.** The CLI prints
+`result.Notes.Skip(run.Notes.Count)` — the notes the run added — and `CornerRun.Notes` was the same `List` the run
+appended a statistical corner's replay warnings to, so the count grew with them and the warnings were skipped.
+Run-time notes go only into the result's own list.
+
+**A statistical corner's record is the `.yield.npy`, when it is the run the corner names.** The corner line holds
+only trial, seed, sampling and trial count; which streams existed then is not in it. Under `random` and `lhs` a
+stream's draw does not depend on the others, so drawing afresh reproduces the trial — but a renamed instance draws a
+NEW stream silently, and under `sobol` a changed stream set moves every dimension. So the replay prefers the recorded
+z-vector (`RecordedTrial.FromDataSet`, matched by seed and sampling) and names a recorded stream the design lacks;
+without the file it draws afresh and says it could not check.

@@ -357,6 +357,11 @@ public static class SchematicPersistence
 
     // ── Write ─────────────────────────────────────────────────────────────────
 
+    /// <summary>Corner definitions as a schematic's tuning block holds them — what <c>yield corners --generate</c> prints
+    /// for a <c>.csch</c> (brief-yield-6), the file's own spelling.</summary>
+    public static string CornersJson(IReadOnlyList<CornerDefinition> corners)
+        => JsonSerializer.Serialize(corners, _jsonOpts);
+
     public static string Serialize(SchematicEditModel model, string cellName = "",
                                    double panX = 0, double panY = 0, double zoom = 1.0)
     {

@@ -168,7 +168,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         OptimizeReportJson? Optimize = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        YieldReportJson? Yield = null);
+        YieldReportJson? Yield = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        CornerReportJson? Corners = null);
 
     /// <summary>
     /// One external solver as <c>solver list</c> reports it — the Settings ▸ Solvers row. Carried as data
@@ -804,6 +806,51 @@ namespace RfCore.Export
         IReadOnlyDictionary<string, double> Measurements);
 
     public sealed record YieldTrialGoalJson(string Name, bool Met, double? Margin, double? Worst);
+
+    // ── `yield corners` (brief-yield-6 R-ya6-6) ──────────────────────────────────────────────
+
+    /// <summary>What <c>yield corners</c> found: a corner × goal table of margins (one evaluation per corner), or a
+    /// yield per corner (<c>--mc</c>), or the corners <c>--generate</c> wrote.</summary>
+    /// <param name="Outcome"><c>finished</c> (every goal met at every corner, every yield at its target),
+    /// <c>failed</c> (a goal failed at a corner, a yield below its target), <c>refused</c>, <c>noneEvaluated</c>.</param>
+    public sealed record CornerReportJson(
+        string                             Document,
+        string                             Outcome,
+        IReadOnlyList<string>              Goals,
+        IReadOnlyList<CornerRowJson>       Corners,
+        IReadOnlyList<CornerWorstJson>     Worst,
+        long                               Evaluations,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<CornerYieldJson>?    Yields = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                            WorstYield = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>?             Generated = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                            Output = null);
+
+    /// <summary>One corner: whether it evaluated, why not, and each goal's margin there (in the goal's unit; a margin
+    /// below 0 fails).</summary>
+    public sealed record CornerRowJson(
+        string                                Name,
+        bool                                  Statistical,
+        bool                                  Evaluated,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        bool?                                 Pass,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                               Reason,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                               Temp,
+        IReadOnlyDictionary<string, string>   Values,
+        IReadOnlyList<CornerGoalJson>         Goals);
+
+    public sealed record CornerGoalJson(string Name, bool Met, double? Margin, double? Worst);
+
+    /// <summary>A goal's worst corner — where its margin is smallest.</summary>
+    public sealed record CornerWorstJson(string Goal, string? Corner, double? Margin, bool Met);
+
+    /// <summary>One corner's Monte Carlo or yield (<c>--mc</c>): the run's own report, under the corner's name.</summary>
+    public sealed record CornerYieldJson(string Corner, YieldReportJson Run);
 
     // ── `lvs`: what the comparison concluded (brief-lvs-11-cli-verb.md R-lvs11-3c) ───────────
     //
@@ -1685,7 +1732,24 @@ namespace RfCore.Export
         string? Temp,
         IReadOnlyDictionary<string, string> Values,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        int?   Trial);
+        int?   Trial,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ExplainCornerBindingJson>? Bindings = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<ExplainCornerAxisJson>?    KitAxes = null);
+
+    /// <summary>One binding a corner makes (brief-yield-6 R-ya6-7): as written, and in base SI with its base unit —
+    /// <c>temp</c> in °C, the ambient global's unit. <paramref name="Si"/> is null for a value that is not a number.</summary>
+    public sealed record ExplainCornerBindingJson(
+        string  Name,
+        string  Written,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Si,
+        string  Unit);
+
+    /// <summary>A kit corner axis at one corner: the section in force, and whether the corner SETS it or inherits the
+    /// schematic's own selection.</summary>
+    public sealed record ExplainCornerAxisJson(string Axis, string Section, bool Sets);
 
     /// <summary>The correlation matrix a run uses, over <paramref name="Keys"/>; repaired to the nearest
     /// valid one when <paramref name="Repaired"/>, with the largest change that made.</summary>
