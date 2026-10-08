@@ -244,6 +244,8 @@ public partial class PlotContainerViewModel : ViewModelBase
         PlotVM    = plotVM;
         Inspector = inspector;
         _parent   = parent;
+        // A trace card's Statistics ▸ Contributions adds a Pareto plot beside this one (brief-yield-9 R-ya9-5).
+        Inspector.AddPresetPlot = pc => parent.AddPresetPlotAsync(pc);
 
         UpdateLabelStrips();
         SyncTableWidth();    // size the box correctly if this container starts as a Table plot

@@ -287,6 +287,38 @@ interval.
 **Draw style.** Any trace on a rectangular plot can be drawn as a line, as bars or as a step; bars stand on
 zero and a family of them stands side by side within each bin.
 
+## Monte Carlo trials {#trials}
+
+A trace over every trial — a family with one curve per trial — shows *which* trials fail. The
+**Statistics** button adds:
+
+| Entry | Does |
+|---|---|
+| **Colour By** ▸ **Pass / Fail** | draws passing trials faded in the trace's colour and failing ones in red after them, so a failure is never hidden under the passes; a trial that did not evaluate is not drawn. The label counts them: `S21 — 471 pass · 29 fail`. A goal's own pass/fail is offered too |
+| **Envelope** ▸ min–max, P1–P99, P5–P95, mean ± 1σ, mean ± 3σ | a shaded band across the trials at each X, with the median (or mean) as a line |
+| **Show Curves** | with an envelope on, turn the individual trials off and keep the band — the readable view of thousands of trials |
+| **Show Nominal** | the nominal design's curve, drawn over the trials in the trace's full colour (on by default) |
+| **Scatter vs** ▸ a variable or measure | plots this per-trial value against another — `goal:S21:worst` against `R1.R`, say — as points coloured by pass/fail |
+| **Fit Line** | on a scatter, the least-squares line, with its R² in the label |
+| **Contributions** ▸ a goal | adds a Pareto chart of which statistical variables drive that goal: each one's share as a bar, largest first, and the running total on the right axis. Computed once and kept in the result |
+
+An envelope is offered on rectangular plots only: on a Smith or Polar plot every point is a complex value,
+and a band between two of them at each frequency is not a region.
+
+**Selecting a trial.** Click a trial's curve, a scatter point or a histogram bar (a bar selects every
+trial in it). The same trial lights up in every plot of that result, in every Data Display, and the rest
+dim; the toolbar shows `Trial 417` or `23 trials`. **Esc** clears it. With one trial selected, the plot's
+right-click menu has a **Trial** submenu:
+
+- **Send Trial to Tuning** — loads that trial's values into the Tuning sliders of the schematic, so you can
+  tune from where it failed.
+- **Re-run Trial** — runs that trial again in full and draws its result as a faded ghost on every plot of
+  the result.
+- **Copy Values** — the trial's values as text.
+- **Save as Corner…** — adds a statistical corner that replays this trial, to tune and optimize against.
+
+The same pictures are available headlessly: `circuitrf plot … --trace cube=SP1.S,i=2,j=1,y=db,colorby=pass,envelope=p:1`.
+
 ## Load-pull contours {#contours}
 
 {{ui: plot-loadpull-contours}}

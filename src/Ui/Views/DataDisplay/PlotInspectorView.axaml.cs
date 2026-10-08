@@ -147,6 +147,13 @@ public partial class PlotInspectorView : UserControl
                 item.Click += (_, _) => run();
             else
                 item.IsEnabled = false;
+            if (entry.Tooltip is { } tip)
+            {
+                // The reason an entry is refused (brief-yield-9: an envelope on a Smith or Polar plot) — readable on
+                // the greyed item itself.
+                ToolTip.SetTip(item, tip);
+                ToolTip.SetShowOnDisabled(item, true);
+            }
             return item;
         }
     }

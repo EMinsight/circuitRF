@@ -268,6 +268,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private Trace?   _rightClickedTrace;
         private MenuItem? _addMarkerMenuItem;
         private MenuItem? _addAsGoalMenuItem;
+        private MenuItem? _trialMenuItem;
         private MenuItem? _selectAllMarkersMenuItem;
         private MenuItem? _plotPropertiesMenuItem;
         private MenuItem? _deletePlotMenuItem;
@@ -478,6 +479,14 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 return;
             }
 
+            // ---- Escape clears the trial selection (brief-yield-9 R-ya9-6) ----
+            if (e.Key == Key.Escape && TrialSelection.Shared.All.Count > 0)
+            {
+                TrialSelection.Shared.Clear();
+                e.Handled = true;
+                return;
+            }
+
             if (_plot is not null && _plot.PlotType.IsRect() &&
                 e.Key is Key.Up or Key.Down or Key.Left or Key.Right)
             {
@@ -546,6 +555,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             icon = new MaterialIcon { Kind = MaterialIconKind.Target };
             _addAsGoalMenuItem = new MenuItem { Header = "Add as Goal", Icon = icon };
 
+            icon = new MaterialIcon { Kind = MaterialIconKind.Dice5Outline };
+            _trialMenuItem = new MenuItem { Header = "Trial", Icon = icon, IsVisible = false };
+
             icon = new MaterialIcon { Kind = MaterialIconKind.SelectGroup };
             var itemSelectAll = new MenuItem
             {
@@ -594,6 +606,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             menu.Items.Add(new Separator());
             menu.Items.Add(item4);
             menu.Items.Add(_addAsGoalMenuItem);
+            menu.Items.Add(_trialMenuItem);
             menu.Items.Add(itemSelectAll);
             menu.Items.Add(item5);
             menu.Items.Add(item6);
@@ -927,6 +940,52 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             _addAsGoalMenuItem.Opacity   = any ? 1.0 : 0.4;
             if (!any) return;
             foreach (var t in traces) _addAsGoalMenuItem.Items.Add(AddAsGoalItem(t, t.Description));
+        }
+
+        /// <summary>
+        /// The single selected trial's actions (brief-yield-9 R-ya9-6) — Send Trial to Tuning, Re-run Trial, Copy
+        /// Values, Save as Corner… — shown only while exactly one trial is selected in a source this plot draws.
+        /// </summary>
+        private void RefreshTrialSubmenu()
+        {
+            if (_trialMenuItem is null) return;
+            _trialMenuItem.Items.Clear();
+            var one = _plot is null ? null : TrialActions.SingleSelected(_plot);
+            _trialMenuItem.IsVisible = one is not null && _library is not null;
+            if (one is not { } sel || _library is not { } lib) return;
+            var (source, trial) = sel;
+            _trialMenuItem.Header = $"Trial {trial}";
+
+            var send = new MenuItem { Header = "Send Trial to Tuning", IsEnabled = lib.SendTrialToTuning is not null };
+            send.Click += (_, _) => TrialActions.SendToTuning(lib, source, trial);
+            var rerun = new MenuItem { Header = "Re-run Trial" };
+            rerun.Click += async (_, _) =>
+            {
+                if (await TrialActions.RerunAsync(lib, source, trial) is { } why) lib.TrialMessage?.Invoke(why);
+            };
+            var copy = new MenuItem { Header = "Copy Values" };
+            copy.Click += async (_, _) =>
+            {
+                if (lib.DataFor(source) is { } ds && TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard)
+                    await clipboard.SetTextAsync(TrialActions.ValuesText(ds, trial));
+            };
+            var corner = new MenuItem { Header = "Save as Corner…", IsEnabled = lib.SaveTrialAsCorner is not null };
+            corner.Click += (_, _) =>
+            {
+                if (lib.DataFor(source) is { } ds) lib.SaveTrialAsCorner?.Invoke(source, trial, ds);
+            };
+            foreach (var item in new[] { send, rerun, copy, corner }) _trialMenuItem.Items.Add(item);
+        }
+
+        /// <summary>Selects the trial(s) under <paramref name="pos"/> in their source; false when the click hit none.</summary>
+        private bool TryPickTrial(Point pos)
+        {
+            if (_plot is null || _plot.PlotType is PlotType.Table or PlotType.Surface3D) return false;
+            var tf = PlotRenderer.BuildTransforms(_plot, (Bounds.Width, Bounds.Height));
+            if (TrialPick.At(_plot, tf, new SkiaSharp.SKPoint((float)pos.X, (float)pos.Y)) is not { } hit
+                || hit.Trace.SourcePath is not { } source) return false;
+            TrialSelection.Shared.Select(source, hit.Trials);
+            return true;
         }
 
         /// <summary>The "Add as Goal" row for one trace, enabled, or greyed with its reason.</summary>
@@ -1384,6 +1443,11 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     return;
                 }
 
+                // A click on a family member, a scatter point or a histogram bar selects its trial(s) in that
+                // source, in every display (brief-yield-9 R-ya9-6). NOT handled: the plot is still selected and
+                // dragged exactly as before — a trial pick rides along with the click rather than replacing it.
+                TryPickTrial(e.GetPosition(this));
+
                 // A left-drag inside the plot is EITHER an axis pan OR the container's
                 // move/select gesture — one gesture, and Axes.LockedPanning decides which owns it.
                 // Locked (every new plot): fall through unhandled so PlotContainerView's own
@@ -1787,6 +1851,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     _contextMenu ??= BuildContextMenu();
                     RefreshAddMarkerSubmenu();
                     RefreshAddAsGoalSubmenu();
+                    RefreshTrialSubmenu();
                     RefreshContextMenuState();
                     _contextMenu.Open(this);
                 }

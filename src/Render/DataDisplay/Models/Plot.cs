@@ -366,6 +366,26 @@ namespace CircuitRF.Render.DataDisplay
         public bool SpecLinesOn => ShowSpecLines ?? true;
 
         /// <summary>
+        /// The names a categorical X axis is labelled with (brief-yield-9 R-ya9-5): the labels of the bars a Rect plot
+        /// draws over a labelled axis whose values are 1…N — a contribution Pareto's contributors — or null when the
+        /// plot's X is a number. Every bar trace on the plot must agree, or the axis stays numeric.
+        /// </summary>
+        public IReadOnlyList<string>? XCategoryLabels()
+        {
+            if (PlotType != PlotType.Rect) return null;
+            IReadOnlyList<string>? labels = null;
+            foreach (var t in Traces)
+            {
+                if (!t.DrawsBars) continue;
+                if (t.CubeXLabels is not { Count: > 0 } l || t.CubeXValues is not { } xs || xs.Count != l.Count) return null;
+                for (int k = 0; k < xs.Count; k++) if (xs[k] != k + 1) return null;
+                if (labels is not null && !labels.SequenceEqual(l)) return null;
+                labels = l;
+            }
+            return labels;
+        }
+
+        /// <summary>
         /// Markers on this plot are placed <b>anywhere</b> rather than on a curve — see
         /// <see cref="Marker.FreePosition"/>, which is the per-marker flag this one sets on the
         /// markers the plot creates.

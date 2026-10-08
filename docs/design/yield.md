@@ -697,6 +697,103 @@ Gates: `tests/Ui.Tests/Statistics/DisplayStatisticsTests.cs` — `BarsRenderTest
 `SpecLineTests`, `YieldSensitivityTests`, `HistogramPlotParityTests` (the CLI's SVG against the in-process
 composer's, byte for byte, a histogram with spec lines and a fit).
 
+## 13. The Data Display's trials (brief-yield-9)
+
+**Which trials fail, and why.** §12 summarises the trials; this section draws them one by one — every trial's response
+coloured by pass/fail with the nominal on top, an envelope where a thousand curves no longer read, scatters coloured
+the same way, a contribution Pareto, and one selected trial highlighted in every plot of every display. As in §12,
+nothing new is a statistic: categories are the result's own cubes, bands are §8's functions, a fit is
+`Engine.Statistics.Regression` and a ranking is R-ya4-9's.
+
+| Piece | Where |
+|---|---|
+| Authored views — `ColorBy`, `ShowNominal`, `Envelope`, `ShowCurves`, `ShowFitLine` (`.cdd` `ColorBy`, `Nominal`, `Envelope`, `Curves`, `FitLine`, each written only off its default) | `src/Render/DataDisplay/Models/Trace.Trials.cs` |
+| Resolved — categories, counts, the nominal's points, the band, the fit, which trial each curve/point/bar is | `TrialResolve.cs`, called at the end of `TraceResolve.SetCubeDataFrom` |
+| Drawing — the band, then `FamilyPlan` (passes, others, fails, nominal, selection) | `Renderers/TrialRenderer.cs`; bars dim in `StatisticsRenderer.DrawBars` |
+| The menu as functions — colour-by choices, envelope refusal, Scatter vs | `TrialViews.cs` |
+| A click → trials; a trial's values | `TrialPick.cs` |
+| Contributions from a saved result; the Pareto | `src/Design/Statistics/ResultContributions.cs`; `ContributionParetoPreset.cs` |
+| Re-run a trial; a trial as a corner | `src/Design/Statistics/TrialReplay.cs` |
+| The shared selection, the trial actions, the chip | `src/Ui/DataDisplay/TrialSelection.cs`, `TrialActions.cs`, `DisplayWindowViewModel.TrialChip` |
+
+### 13.1 Colour by and the nominal (R-ya9-1, R-ya9-2)
+
+`ColorBy` names a per-member cube on the family axis: `pass` (the source's `trials.pass`), any address such as
+`trials.goal:S21:pass`, or `corner` (a family over `corner`, each member its own wheel colour). A member reads 1 →
+pass, 0 → fail, NaN → did not evaluate; and a member whose `trials.status` is not 0 did not evaluate WHATEVER its pass
+reads — under `nonconverged=fail` such a trial's pass is 0, and drawing it as a fail would show a curve that was never
+computed. Passes draw in the trace's colour at `TrialRenderer.PassOpacity` (0.35), fails in `RenderTheme.FailColor`
+(the limit colour), did-not-evaluate members not at all. The legend (the Y-axis label) reads `S21 — 471 pass · 29
+fail` (`· n not evaluated` when there are any), counted over the WHOLE axis. The draw order is `FamilyPlan`: passes,
+then members with no pass/fail, then fails, then the nominal — the trace re-read from `nominal.<cube>` with the trial
+axis dropped from its slice — in the trace's full colour and width (**Show Nominal**, on by default).
+
+A trial family is capped at `Trace.MaxTrialFamilyCurves` (2,000) rather than the general 101: at 101 a failing trial
+300 would never be drawn while the picture claimed to be every trial.
+
+### 13.2 Envelopes (R-ya9-3)
+
+`Envelope` is `minmax`, `p:<p>` (the Pp–P(100−p) band) or `sigma:<k>`, spelled the same in the `.cdd` and on
+`plot --trace`. Per X point, over the family axis (`TrialResolve.EnvelopeExpressions`):
+
+| Envelope | Lower | Upper | Line |
+|---|---|---|---|
+| `minmax` | `pctl_over(op, 0, "trial")` | `pctl_over(op, 100, "trial")` | `median_over` |
+| `p:<p>` | `pctl_over(op, p, …)` | `pctl_over(op, 100 − p, …)` | `median_over` |
+| `sigma:<k>` | `mean_over − k·std_over` | `mean_over + k·std_over` | `mean_over` |
+
+`op` is the family read with both its family axis and its X kept (`TrialResolve.FamilyOperand`, the card's own
+`PickerBody` and transform). **Min–max is percentiles 0 and 100, not `min_over`/`max_over`:** those two propagate a
+NaN by design (a bad grid point in a band must not be hidden), and a trial that did not evaluate is a NaN on every X —
+one such trial would blank the whole band. The band fills behind the members at the theme's fill opacity; **Curves:
+off** draws the band and its line alone, which is one evaluation of three reductions however many trials there are.
+On a Smith or Polar plot the envelope is refused — a pointwise band of complex values is not a region — with
+`TrialResolve.ComplexPlaneRefusal` as the greyed menu item's tooltip and on `Trace.EnvelopeRefusal`.
+
+### 13.3 Scatter (R-ya9-4)
+
+A trace whose X is the `trial` axis offers **Scatter vs ▸** each `trials.stat:<key>`, each goal's
+`trials.goal:<g>:worst` and each scalar measure. `TrialViews.ApplyScatter` writes an ordinary Plot Versus spec
+(`XSpec`), turns the line off and the markers on, and colours by `pass` where the source scores goals. Each point is a
+trial through the sample index the versus replaced (`Trace.SampleAxis`), so colour-by and selection apply point by
+point (fails drawn after passes). **Fit Line** draws the least-squares line, `Regression.Fit` on the drawn points with
+its standardized slope taken back to the plot's units, and puts `R² = …` in the legend.
+
+### 13.4 Contributions (R-ya9-5)
+
+Never computed unasked. **Statistics ▸ Contributions ▸ `<goal or measure>`** ranks it once through
+`ResultContributions.Of` — which rebuilds the trials from the result's `z:` cubes, `goal:<g>:worst`, scalar measures
+and `status`, and hands them to `StatisticalContributions.Of`, the run's own ranking — stores it as
+`yield.contrib:<name>` (shares, largest first) and `yield.contrib:<name>:cumulative` over a labelled `contributor`
+axis, writes the source back so a saved display redraws without recomputing, and adds a plot: the shares as bars in
+percent, the running total as a line on the right axis. A Rect plot whose bars all stand on a labelled 1…N axis labels
+its X ticks with the names (`Plot.XCategoryLabels`).
+
+### 13.5 Linked trial selection (R-ya9-6)
+
+A click on a family member, a scatter point or a histogram bar (every trial in its bin — the value on a shared edge
+belongs to the bar on its right, as the histogram counts it) selects trials in that SOURCE (`TrialPick.At`, within 6 px).
+The selection is `TrialSelection.Shared`, keyed by the source's full path, above every display — each display has a
+library of its own, and a selection is a source's. Plots copy it onto their traces (`Trace.SelectedTrials`, never
+persisted); selected elements draw last and highlighted, the rest at `TrialRenderer.DimOpacity`. The toolbar chip reads
+`Trial 417` or `23 trials`; Esc clears. The click is not consumed — the plot is still selected and dragged as before.
+
+With exactly one trial selected, the plot's context menu offers **Trial n ▸**: **Send Trial to Tuning** (the trial's
+drawn values, `TrialPick.ValuesOf`, through `TuningPanelViewModel.LoadValues` on the schematic the result came from),
+**Re-run Trial** (`TrialReplay.Run` — the design beside the result, `StatisticalRun.EvaluateTrial` — shown as the
+snapshot ghost of every bound trace in every display, the result stacked on a one-long `trial` axis so the traces'
+slices resolve unchanged), **Copy Values** and **Save as Corner…** (`TrialReplay.CornerOf`: the result's seed,
+sampling and trial count, as `yield --save-corner` writes, added as one undo step). The Yield panel's trial table
+(YA-10) calls the same `TrialActions`.
+
+### 13.6 Headless (R-ya9-7)
+
+`plot --trace …,colorby=pass|corner|<cube>,envelope=minmax|p:1|sigma:3,curves=0|1,nominal=0|1[,fitline=1]` set the
+fields the window writes; selection is interactive only. Gates: `tests/Ui.Tests/Statistics/DisplayTrialsTests.cs` —
+`FamilyColourByTests`, `EnvelopeTests`, `ScatterTests`, `TrialSelectionTests`, `TrialPlotParityTests` (the CLI's SVG
+against the in-process composer's for a pass/fail family with a P1–P99 envelope), `ContributionParetoTests`. Both
+parity tests mask Skia's `clipPath` ids, which come from a counter in the process (see `RailZMapTests.WithoutSkiaIds`).
+
 ## Later phases
 
-Each phase appends its section above this one as it lands: YA-9 the trial display, YA-10 the panel, YA-11/12 centering.
+Each phase appends its section above this one as it lands: YA-10 the panel, YA-11/12 centering.

@@ -98,6 +98,13 @@ internal static class PlotVerb
         public bool    NormalFit;
         public string? StatOptionGiven;   // the first statistics option typed, for the no-stat refusal
 
+        // brief-yield-9 R-ya9-7 — the trial views, as the trace card sets them.
+        public string?        ColorBy;
+        public TrialEnvelope? Envelope;
+        public bool?          Curves;
+        public bool?          Nominal;
+        public bool           FitLine;
+
         public string? Set;
         public string? Metric;
         public string? Z0;
@@ -354,6 +361,9 @@ internal static class PlotVerb
             "  a statistic of a Monte Carlo result, rewritten as the trace card's Statistics menu does:\n" +
             "                      stat=histogram|cdf|quantile|yieldsens [over=<axis>] [bins=n] [percent=1]\n" +
             "                      [fit=normal] [param=<stat key>] (yieldsens), and style=line|bars|step\n" +
+            "  every trial of a Monte Carlo result, as a family (cube=SP1.S,i=2,j=1,y=db):\n" +
+            "                      colorby=pass|corner|<cube> envelope=minmax|p:1|sigma:3 curves=0|1\n" +
+            "                      nominal=0|1, and fitline=1 on a scatter (cube=a vs b over trial)\n" +
             "  --spec-lines | --no-spec-lines   the limits of the goals the result records (default: on)\n" +
             "  a WSProbe quantity: cube=<analysis>.wsp probe=<label> metric=<name> [with=<label>]\n" +
             "                      [set=A;B] [z0=50] [side=G|L] [gi=1]\n" +
@@ -702,6 +712,27 @@ internal static class PlotVerb
                     if (!value.Equals("normal", StringComparison.OrdinalIgnoreCase))
                         return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStatOptionMalformed(raw, key, value)));
                     spec.NormalFit = true; spec.StatOptionGiven ??= key;
+                    break;
+                case "colorby":
+                    if (value.Length == 0 || value.Any(char.IsWhiteSpace))
+                        return (null, JsonRun.Fail(CliDiagnostics.PlotTraceTrialOptionMalformed(raw, key, value,
+                            "pass, corner, or a per-trial cube such as trials.goal:S21:pass")));
+                    spec.ColorBy = value;
+                    break;
+                case "envelope":
+                {
+                    if (!TrialEnvelope.TryParse(value, out var env, out _))
+                        return (null, JsonRun.Fail(CliDiagnostics.PlotTraceTrialOptionMalformed(raw, key, value,
+                            "minmax, p:<p> (0 ≤ p < 50), sigma:<k> or off")));
+                    spec.Envelope = env;
+                    break;
+                }
+                case "curves" or "nominal" or "fitline":
+                    if (value is not ("0" or "1"))
+                        return (null, JsonRun.Fail(CliDiagnostics.PlotTraceTrialOptionMalformed(raw, key, value, "0 or 1")));
+                    if (key == "curves") spec.Curves = value == "1";
+                    else if (key == "nominal") spec.Nominal = value == "1";
+                    else spec.FitLine = value == "1";
                     break;
                 case "over":  spec.Over  = value; spec.StatOptionGiven ??= key; break;
                 case "param": spec.Param = value; spec.StatOptionGiven ??= key; break;
@@ -1167,6 +1198,12 @@ internal static class PlotVerb
         }
         if (spec.Style is { } style) tc.Properties.DrawStyle = style;
         if (spec.NormalFit) tc.NormalFit = true;
+        // The trial views (R-ya9-7), in the fields the window writes — absent ones keep the defaults.
+        if (spec.ColorBy is { } by) tc.ColorBy = by;
+        if (spec.Envelope is { } env) tc.Envelope = env.Spelling;
+        if (spec.Curves is { } curves) tc.Curves = curves ? null : false;
+        if (spec.Nominal is { } nominal) tc.Nominal = nominal ? null : false;
+        if (spec.FitLine) tc.FitLine = true;
         return (companion, null);
     }
 

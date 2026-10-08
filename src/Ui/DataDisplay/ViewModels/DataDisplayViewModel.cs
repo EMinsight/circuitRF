@@ -679,6 +679,19 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         return container;
     }
 
+    /// <summary>
+    /// Adds a plot a preset built (a contribution Pareto, brief-yield-9 R-ya9-5), placed as Add Plot places one, as
+    /// one undo step — the same steps <see cref="AddStatisticsTableAsync"/> takes.
+    /// </summary>
+    public async Task<PlotContainerViewModel> AddPresetPlotAsync(PlotContainerConfig pc)
+    {
+        (pc.Left, pc.Top) = ComputeNewPlotPosition(pc.Width, pc.Height);
+        var container = await LoadPlotContainerConfigAsync(pc, configDir: "");
+        InternalRemoveContainer(container);
+        UndoRedo.Do(new AddPlotCommand(container, this));
+        return container;
+    }
+
     // ---- New-plot auto-placement ------------------------------------
     //
     //  Goal (per spec): drop a newly-added plot somewhere convenient.
@@ -1720,6 +1733,9 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 Epsilon              = cd.Epsilon,
             };
         }
+
+        // The trial views (brief-yield-9), written only where they differ from the default.
+        tc.SetTrialViews(t);
 
         // Summary column authoring state (7.5).
         if (t.SummaryColumn is { } sc)

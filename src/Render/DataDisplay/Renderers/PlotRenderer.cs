@@ -297,7 +297,8 @@ namespace CircuitRF.Render.DataDisplay
             switch (plot.PlotType)
             {
                 case PlotType.Rect:
-                    AxesRenderer.DrawRectGrid(canvas, canvasSize, plot.Axes, tf, detail, theme);
+                    AxesRenderer.DrawRectGrid(canvas, canvasSize, plot.Axes, tf, detail, theme,
+                                              xCategories: plot.XCategoryLabels());
                     break;
                 case PlotType.Polar:
                     AxesRenderer.DrawPolarGrid(canvas, canvasSize, plot.Axes, tf, theme, plot.PatternScale,
@@ -405,6 +406,9 @@ namespace CircuitRF.Render.DataDisplay
                 // Bars and steps (brief-yield-8 R-ya8-1) are a Rect plot's; elsewhere the style is inert.
                 if (plotIsRect && trace.DrawsBars)
                     StatisticsRenderer.DrawBars(canvas, canvasSize, trace, tf, theme, plot.FreqUnits);
+                // A family or scatter drawn by trial (brief-yield-9): pass/fail, band, nominal, selection.
+                else if (TrialRenderer.Handles(trace))
+                    TrialRenderer.Draw(canvas, canvasSize, trace, plot, tf, theme);
                 else
                     TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme,
                         stemMode: plotIsRect && (trace.IsHarmonicStem || trace.IsMixIndexStem));

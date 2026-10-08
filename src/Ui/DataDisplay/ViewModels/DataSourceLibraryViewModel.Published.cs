@@ -203,6 +203,19 @@ public partial class DataSourceLibraryViewModel
         return true;
     }
 
+    /// <summary>
+    /// Shows <paramref name="data"/> as the snapshot at <paramref name="absPath"/> — a re-run trial's full result
+    /// (brief-yield-9 R-ya9-6), drawn as the ghost of every trace bound to that source. False when this library
+    /// holds nothing at that path.
+    /// </summary>
+    public bool ShowSnapshot(string absPath, DataSet data)
+    {
+        if (FindEntry(absPath) is null) return false;
+        _snapshots[Path.GetFullPath(absPath)] = data;
+        SnapshotChanged?.Invoke(this, EventArgs.Empty);
+        return true;
+    }
+
     /// <summary>Removes the snapshot at <paramref name="absPath"/>.</summary>
     public void ClearSnapshot(string absPath)
     {
@@ -220,6 +233,25 @@ public partial class DataSourceLibraryViewModel
     /// argument is that source's path. Null where there is no workspace, which greys the item out.
     /// </summary>
     public Action<CircuitRF.Core.Design.OptimizationGoal, string?>? AddAsGoal { get; set; }
+
+    /// <summary>
+    /// "Send trial to Tuning" (brief-yield-9 R-ya9-6): loads a trial's values into the Tuning sliders of the schematic
+    /// the source was run from — set by the workspace; the second argument is the source's path and the third the
+    /// label the panel reports. Null where there is no workspace, which greys the item out.
+    /// </summary>
+    public Action<IReadOnlyDictionary<string, string>, string, string>? SendTrialToTuning { get; set; }
+
+    /// <summary>"Save as corner…" (brief-yield-9 R-ya9-6, YA-6): adds a statistical corner naming the trial to the
+    /// schematic the source was run from — set by the workspace, which asks for the name. Null greys it out.</summary>
+    public Action<string, int, DataSet>? SaveTrialAsCorner { get; set; }
+
+    /// <summary>Where a trial action's sentence goes when it could not do what was asked — the Messages panel, set by
+    /// the workspace.</summary>
+    public Action<string>? TrialMessage { get; set; }
+
+    /// <summary>Every open display's library — where a re-run trial's ghost is shown, so it appears in every display
+    /// bound to the source. Set by the workspace; null means this library alone.</summary>
+    public Func<IEnumerable<DataSourceLibraryViewModel>>? AllLibraries { get; set; }
 
     /// <summary>The DataSet the source at <paramref name="absPath"/> currently holds, or null — what
     /// "Add as goal…" reads a trace's analysis and S cube from.</summary>

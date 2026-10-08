@@ -56,6 +56,9 @@ namespace CircuitRF.Render.DataDisplay
         /// <summary>The colour a goal's limit is drawn in — a spec line (brief-yield-8 R-ya8-3).</summary>
         public SKColor LimitColor => DarkMode ? new SKColor(240, 110, 90) : new SKColor(200, 40, 40);
 
+        /// <summary>The colour a failing trial is drawn in (brief-yield-9 R-ya9-1) — the limit it failed against.</summary>
+        public SKColor FailColor => LimitColor;
+
         /// <summary>The opacity an area is filled at under its own outline — a histogram's bars (R-ya8-1).</summary>
         public double FillOpacity => 0.35;
 

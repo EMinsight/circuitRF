@@ -2439,16 +2439,22 @@ they carry is full of commas.
 | `stat` | `histogram`, `cdf`, `quantile` or `yieldsens` — rewrites the trace exactly as the trace card's Statistics menu does (`TraceStatistics.Build`, brief-yield-8); the `.cdd` written carries the same expression, style and origin. |
 | `over`, `bins`, `percent`, `param`, `fit` | the statistic's options: the axis (default `trial`), the bin count (default Freedman–Diaconis), `percent=1`, a yield sensitivity's statistical variable (`R1.R`), `fit=normal` for a histogram's fitted normal. Refused without `stat=` (a fit is also accepted on a typed `histogram(…)`). |
 | `style` | `line`, `bars` or `step`. |
+| `colorby` | colour a family's members (or a scatter's points) by a per-member cube (brief-yield-9 R-ya9-1): `pass` (the result's `trials.pass`), `corner` (a family over `corner`, one colour each), or any cube on the family axis such as `trials.goal:S21:pass`. Passes draw in the trace's colour at reduced opacity, fails in the fail colour after them, a trial that did not evaluate not at all; the legend counts them. |
+| `envelope` | `minmax`, `p:<p>` (the Pp–P(100−p) band) or `sigma:<k>` (mean ± kσ): a shaded band per X point from `pctl_over`/`median_over`/`mean_over`/`std_over` over the family axis, the median (or mean) as a line. A Rect plot's only. |
+| `curves`, `nominal` | `0` draws the envelope without the members; `nominal=0` hides the nominal's curve that a yield result's family draws over its trials. Both default to `1`. |
+| `fitline` | `1`: a scatter's least-squares line, its R² in the legend. |
 
 **`--spec-lines` / `--no-spec-lines`** turn the goals' limits on or off (brief-yield-8 R-ya8-3); absent is the
 window's default, on, and a line exists only where the result records its goals — a `.yield.npy`. `--spec-lines` on a
 result that records none is refused (`plot.spec-lines.no-goals`) rather than drawn without them. The gate
 `HistogramPlotParityTests` compares the verb's SVG of a histogram with spec lines to the in-process composer's, byte
-for byte.
+for byte. `TrialPlotParityTests` does the same for a pass/fail family with a P1–P99 envelope (brief-yield-9
+R-ya9-7). Selecting a trial is the window's alone — a picture has no one to click it.
 
 ```
 circuitrf plot div.yield.npy -o h.svg --trace cube=trials.goal:Vout:worst,stat=histogram,fit=normal --spec-lines
 circuitrf plot div.yield.npy -o ys.svg --trace cube=trials.pass,stat=yieldsens,param=R1.R
+circuitrf plot lpf.yield.npy -o fam.svg --trace cube=SP1.S,i=2,j=1,y=db,colorby=pass,envelope=p:1
 ```
 
 **An integer on an `i`/`j` axis is a PORT NUMBER, not an index** — `S[:,2,1]` is S21, which is what

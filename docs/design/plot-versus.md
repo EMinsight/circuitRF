@@ -196,6 +196,12 @@ A versus **family** on a Table emits an **(X, Y) column pair per curve**
 nuance:* a Table marker resolves its row by nearest X value, so on data with a genuinely repeated X
 value it may report the first of the two rows.
 
+**A scatter of trials (brief-yield-9).** Both sides on a Monte Carlo result's `trial` axis
+(`trials.goal:S21:worst vs trials.stat:R1.R`) is a scatter: the trace card's **Statistics ▸ Scatter vs** writes the
+versus spec, turns the line off and the markers on (`TrialViews.ApplyScatter`). Each point stays a trial through
+`Trace.SampleAxis` — the Y side's own axis, recorded before the X spec replaces it — so colour-by, selection and the
+least-squares **Fit Line** (R² in the legend) work point by point. `yield.md` §13.3.
+
 ## 7. Gates (what is refused, and what it says)
 
 | Condition | Message |

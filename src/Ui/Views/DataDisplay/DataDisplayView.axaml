@@ -108,6 +108,14 @@
                     <TextBlock Text="{Binding ViewModel.Window.LiveChip}" FontSize="11"/>
                 </Border>
 
+                <!-- brief-yield-9 R-ya9-6: the trials selected in a source this display holds. -->
+                <Border IsVisible="{Binding ViewModel.Window.TrialChip, Converter={x:Static ObjectConverters.IsNotNull}}"
+                        CornerRadius="8" Padding="6,1" Margin="4,0,0,0" VerticalAlignment="Center"
+                        ToolTip.Tip="Selected in every plot of this result · Esc clears"
+                        Background="{DynamicResource SystemControlHighlightListAccentLowBrush}">
+                    <TextBlock Text="{Binding ViewModel.Window.TrialChip}" FontSize="11"/>
+                </Border>
+
                 <!-- Separator -->
                 <Border Width="1" VerticalAlignment="Stretch" Margin="2,3"
                         Background="{DynamicResource SystemControlForegroundBaseLowBrush}"/>

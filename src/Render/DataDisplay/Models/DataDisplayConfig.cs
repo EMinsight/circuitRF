@@ -360,6 +360,49 @@ public sealed class TraceConfig
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public StatisticsOriginConfig? StatisticsOrigin { get; set; }
 
+    // ── The trial views (brief-yield-9). Each is written only when it differs from the default, so a display that
+    //    uses none of them saves the bytes it saved before they existed. ────────────────────────────────────────
+
+    /// <summary>Colour the family's members by a per-member cube — <c>pass</c>, a cube address, or <c>corner</c>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ColorBy { get; set; }
+
+    /// <summary>False hides the nominal over a trial family; null (not written) is the default, shown.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Nominal { get; set; }
+
+    /// <summary>The envelope as <c>plot --trace</c> spells it — <c>minmax</c>, <c>p:1</c>, <c>sigma:3</c>.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Envelope { get; set; }
+
+    /// <summary>False draws the envelope without the members; null (not written) draws them.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? Curves { get; set; }
+
+    /// <summary>A scatter's least-squares line. Not written when off.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool FitLine { get; set; }
+
+    /// <summary>Copies a trace's trial views into this config, writing only what differs from the default.</summary>
+    public void SetTrialViews(Trace t)
+    {
+        ColorBy  = t.ColorBy;
+        Nominal  = t.ShowNominal ? null : false;
+        Envelope = t.Envelope.Spelling;
+        Curves   = t.ShowCurves ? null : false;
+        FitLine  = t.ShowFitLine;
+    }
+
+    /// <summary>Applies this config's trial views to a trace; an envelope it cannot read is left off.</summary>
+    public void ApplyTrialViews(Trace t)
+    {
+        t.ColorBy     = ColorBy;
+        t.ShowNominal = Nominal ?? true;
+        t.Envelope    = TrialEnvelope.TryParse(Envelope, out var e, out _) ? e : TrialEnvelope.Off;
+        t.ShowCurves  = Curves ?? true;
+        t.ShowFitLine = FitLine;
+    }
+
     /// <summary>
     /// Keep this trace out of the plot's autoscale — see <see cref="Trace.ExcludeFromAutoscale"/>.
     /// </summary>

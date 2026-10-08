@@ -843,6 +843,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "plot.trace.stat-refused",
         "plot.trace.stat-unknown",
         "plot.trace.style-unknown",
+        "plot.trace.trial-option-malformed",
         "plot.trace.unknown-key",
         "plot.trace.unresolved",
         "plot.trace.wsp-metric-required",

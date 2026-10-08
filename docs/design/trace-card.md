@@ -460,6 +460,9 @@ A condensed cheat-sheet to expand into end-user docs:
 - **Operating points (no sweep):** values are scalars — view them on a **Table**.
 - **A Monte Carlo result:** the **Statistics** button turns a trace into a histogram, CDF, normal quantile or yield
   sensitivity; **Back to Curves** undoes it. A goal's limits are drawn as dashed spec lines.
+- **Every trial of a Monte Carlo result:** **Statistics ▸ Colour By ▸ Pass / Fail**, **Envelope**, **Show Curves**,
+  **Show Nominal**, **Scatter vs**, **Fit Line**, **Contributions**; click a trial to select it everywhere, Esc to clear
+  (`yield.md` §13).
 - **A WSProbe node:** pick the run's `▸ WSProbe` group, then the quantity; the section below chooses
   which probe it is taken at. `1/H0` and `1/Y0` on a Polar plot are the document's own stability
   reading, and the card reports the crossings it finds beside them.

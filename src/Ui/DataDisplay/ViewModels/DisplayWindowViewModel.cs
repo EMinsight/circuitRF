@@ -27,7 +27,7 @@ using CircuitRF.Ui.DataDisplay;
 
 namespace CircuitRF.Ui.DataDisplay.ViewModels;
 
-public partial class DisplayWindowViewModel : ViewModelBase
+public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionListener
 {
     // ---- Data source library -----------------------------------------------
 
@@ -149,6 +149,23 @@ public partial class DisplayWindowViewModel : ViewModelBase
 
     /// <summary>"Tuning" or "Optimizing" while this display shows published data (R-to3-8); null otherwise.</summary>
     public string? LiveChip => DataSourceLibrary.PublishedChip;
+
+    /// <summary>
+    /// <c>Trial 417</c> or <c>23 trials</c> while a source this display holds has trials selected (brief-yield-9
+    /// R-ya9-6); null otherwise. Esc clears the selection.
+    /// </summary>
+    public string? TrialChip
+    {
+        get
+        {
+            var mine = DataSourceLibrary.Entries.Select(e => e.FilePath).OfType<string>()
+                .Select(p => TrialSelection.Shared.For(p)).OfType<IReadOnlySet<int>>().ToList();
+            return mine.Count == 0 ? null : TrialPick.ChipText([.. mine.SelectMany(s => s)]);
+        }
+    }
+
+    /// <inheritdoc/>
+    public void OnTrialSelectionChanged() => OnPropertyChanged(nameof(TrialChip));
 
     /// <summary>Pass-through: enumerate results + workspace Touchstone without loading any file.</summary>
     public void RefreshAvailableDataSources()
@@ -346,6 +363,7 @@ public partial class DisplayWindowViewModel : ViewModelBase
         // a published frame ends behind the render pass, so a burst of results coalesces to the newest
         // (R-to3-6); headless (no Application) a frame ends at once.
         DataSourceLibrary.PublicationChanged += (_, _) => OnPropertyChanged(nameof(LiveChip));
+        TrialSelection.Shared.Subscribe(this);
         if (Application.Current is not null)
             DataSourceLibrary.FrameScheduler = endFrame =>
                 Avalonia.Threading.Dispatcher.UIThread.Post(endFrame, Avalonia.Threading.DispatcherPriority.Background);

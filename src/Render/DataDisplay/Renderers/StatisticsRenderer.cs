@@ -77,9 +77,16 @@ namespace CircuitRF.Render.DataDisplay
                     Color = RenderTheme.ToSKColor(props.LineColor, theme.FillOpacity * opacity),
                     Style = SKPaintStyle.Fill, IsAntialias = true,
                 };
+                // A selected trial (brief-yield-9 R-ya9-6) lights its bar; the rest dim. Bars are indexed as the
+                // points are, and only a single histogram carries the trials each one holds.
+                bool sel = trace.HasTrialSelection && trace.ElementKind == TrialElements.Bars;
                 foreach (var curve in BarRects(trace, tf, freqUnit))
-                    foreach (var r in curve)
+                    for (int k = 0; k < curve.Count; k++)
                     {
+                        var r = curve[k];
+                        double dim = sel && !trace.ElementSelected(k) ? TrialRenderer.DimOpacity : 1.0;
+                        fill.Color    = RenderTheme.ToSKColor(props.LineColor, theme.FillOpacity * opacity * dim * (sel && dim == 1 ? 2 : 1));
+                        outline.Color = RenderTheme.ToSKColor(props.LineColor, opacity * dim);
                         canvas.DrawRect(r, fill);
                         if (props.LineEnabled) canvas.DrawRect(r, outline);
                     }

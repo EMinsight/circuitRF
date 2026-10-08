@@ -35,6 +35,12 @@ public static class SnapshotGhost
             var ghost = new Trace(source, includeMarkers: false);
             ghost.Properties.LineOpacity   = source.Properties.LineOpacity * OpacityFactor;
             ghost.Properties.MarkerEnabled = false;
+            // A ghost is the plain "before" curve: no pass/fail colouring, band or nominal of its own (brief-yield-9).
+            ghost.ColorBy     = null;
+            ghost.Envelope    = TrialEnvelope.Off;
+            ghost.ShowNominal = false;
+            ghost.ShowCurves  = true;
+            ghost.ShowFitLine = false;
 
             if (source.IsCubeBound)
             {

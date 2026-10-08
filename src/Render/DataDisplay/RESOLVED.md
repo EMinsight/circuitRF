@@ -1217,3 +1217,30 @@ Bars/step draw style, the trace card's Statistics menu, spec lines, the normal f
 - **Found while gating, not caused here:** `CliStructuredOutputTests.DiagnosticIds_AreTheCommittedSet…` was already
   red at HEAD — YA-6 added `cli.yield.corner-flag`, `cli.yield.generate-names-taken` and
   `cli.yield.generate-write-needs-schematic` without registering them. Registered alongside this phase's `plot.*` ids.
+
+## Monte Carlo trials in the Data Display (brief-yield-9), 2026-10-08
+
+Pass/fail families, the nominal, envelopes, scatters, the contribution Pareto and linked trial selection. Design:
+`docs/design/yield.md` §13. Findings worth keeping:
+
+- **A min–max envelope is `pctl_over(op, 0)`/`pctl_over(op, 100)`, never `min_over`/`max_over`.** Those two propagate
+  a NaN on purpose (a bad grid point in a band must not be hidden), and a trial that did not evaluate is a NaN at
+  EVERY X — one such trial blanked the whole band. The percentiles skip it, as every statistic over trials does.
+- **A did-not-evaluate trial is read from `trials.status`, not from `pass`.** Under `nonconverged=fail` its pass is 0,
+  so colouring by pass alone drew a curve that was never computed, in the fail colour. Status ≠ 0 wins.
+- **`Trace.MaxFamilyCurves` (101) silently hid most trials.** A 500-trial family drew trials 1–101 while its legend
+  (counted over the whole axis) said 29 fails — the fails past 101 were simply never drawn. A family over `trial`
+  now takes `MaxTrialFamilyCurves` (2,000); every other family keeps 101.
+- **A versus trace forgets its own sample axis.** `SetCubeData` is handed the X spec as the X axis, so after resolve a
+  scatter no longer knew its points were trials. `Trace.SampleAxis` records the Y side's axis before the swap
+  (expression and single-cube paths both), and the point→trial map reads it through `SampleIndexOf`.
+- **YA-8's `HistogramPlotParityTests` was order-dependent.** It compared raw SVG bytes, but Skia's SVG device numbers
+  `clipPath` ids from a counter in the PROCESS (the trap `RailZMapTests.WithoutSkiaIds` already records), so it passed
+  alone and failed whenever another SVG render ran first in the same test process — which `TrialPlotParityTests` now
+  does. Both mask `cl_<hex>` and compare everything else verbatim.
+- **Each Data Display has a library of its own**, so the trial selection — a SOURCE's, shown in every display —
+  lives above them in `TrialSelection.Shared` (src/Ui), held with weak listeners: an inspector has no dispose path,
+  and a process-wide strong list would keep every closed display alive.
+- **Contributions from a file go through the run's own ranking.** `ResultContributions.Of` rebuilds `TrialRecord`s
+  from the result's `z:` cubes, worst values, measures and status and calls `StatisticalContributions.Of`, rather
+  than re-implementing the regression grouping (mismatch streams per instance) a second time.

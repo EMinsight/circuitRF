@@ -324,6 +324,7 @@ public static class PlotConfigLoader
         ApplyProperties(traceConfig.Properties, trace.Properties);
         trace.ShowNormalFit    = traceConfig.NormalFit;
         trace.StatisticsOrigin = traceConfig.StatisticsOrigin?.ToOrigin();
+        traceConfig.ApplyTrialViews(trace);
 
         // OUT OF THE AUTOSCALE WHEN THE CONFIG SAYS SO. Absent in every `.cdd` written before
         // this field, so those files keep the framing they had; the Smith Chart tool's own

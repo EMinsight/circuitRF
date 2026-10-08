@@ -128,6 +128,13 @@ re-expands to its N curves.
   updates the plotted X axis on the next Run automatically (previously it kept the stale X until the user
   pressed Enter in the expression box).
 
+- **A family over trials (brief-yield-9).** A family over a Monte Carlo result's `trial` axis can be coloured by a
+  per-member cube (`Trace.ColorBy` — pass/fail, a goal's pass, or `corner`), carries the nominal's curve on top and an
+  optional envelope band (`Trace.Envelope`, behind the members, or alone with `ShowCurves` off), and its members are
+  selectable trials. It is capped at `Trace.MaxTrialFamilyCurves` (2,000) instead of 101, because the point of the
+  picture is every trial. `TrialResolve` fills the resolved half and `TrialRenderer.FamilyPlan` the draw order.
+  Detail: `yield.md` §13.
+
 ## Key files
 
 - `docs/design/plot-versus.md` — the `vs` separator; per-curve X (`FamilyCurve.RawX`) for a versus family.

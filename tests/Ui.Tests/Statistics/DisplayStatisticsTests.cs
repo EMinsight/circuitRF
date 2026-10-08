@@ -292,6 +292,9 @@ public sealed class HistogramPlotParityTests
             canvas => PlotComposer.Render(canvas, [placed], RenderTheme.Light, settings, PagePlacement.Letter),
             PagePlacement.Letter);
 
-        Assert.Equal(new System.Text.UTF8Encoding(false).GetBytes(mine), File.ReadAllBytes(svg));
+        // Byte for byte but for Skia's clipPath ids, which come from a counter in the PROCESS (RailZMapTests'
+        // WithoutSkiaIds): a second SVG rendered in one test process writes cl_9 where the CLI's fresh process wrote cl_3.
+        static string WithoutSkiaIds(string s) => System.Text.RegularExpressions.Regex.Replace(s, @"\bcl_[0-9a-fA-F]+\b", "cl_");
+        Assert.Equal(WithoutSkiaIds(mine), WithoutSkiaIds(File.ReadAllText(svg, new System.Text.UTF8Encoding(false))));
     }
 }

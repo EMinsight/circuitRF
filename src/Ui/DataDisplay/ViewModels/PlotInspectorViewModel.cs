@@ -1041,6 +1041,10 @@ public partial class PlotInspectorViewModel : ViewModelBase
         }
 
         if (IsSummaryTable) RebuildSummary();
+
+        // The trials selected in each source, shared by every display (brief-yield-9 R-ya9-6).
+        TrialSelection.Shared.Subscribe(this);
+        ApplyTrialSelection();
     }
 
     // ---- Close-action seam (flyout vs Properties pane) -----------------
@@ -1395,6 +1399,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
     {
         foreach (var t in _plot.Traces) ResolveOrRebuild(t);
         _plot.Autoscale();
+        ApplyTrialSelection();
         foreach (var vm in Traces) vm.RefreshDescription();
         OnPropertyChanged(nameof(ShowSpecLinesToggle));
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);

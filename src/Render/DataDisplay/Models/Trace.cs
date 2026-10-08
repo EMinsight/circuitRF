@@ -859,6 +859,14 @@ namespace CircuitRF.Render.DataDisplay
         // one Message past it. Raise/lower here for perf testing.
         public const int MaxFamilyCurves = 101;
 
+        /// <summary>
+        /// The cap for a family over a Monte Carlo result's <c>trial</c> axis (brief-yield-9). A trial family exists to
+        /// show EVERY trial coloured by pass/fail — at 101 a failing trial 300 would never be drawn and the picture
+        /// would claim otherwise — so it takes the trials a run normally keeps; past this the envelope (with Curves
+        /// off) is the view, and the legend's counts always cover the whole axis.
+        /// </summary>
+        public const int MaxTrialFamilyCurves = 2000;
+
         /// <summary>Axis name emitted by HbEngine for the single-tone spectral axis.
         /// Matched case-sensitively against CubeXAxisName to drive stem rendering.</summary>
         public const string HarmonicAxisName = "harmonic";
@@ -1538,6 +1546,7 @@ namespace CircuitRF.Render.DataDisplay
             if (IsCubeBound && PatternValueInvalid && !baseLabel.Contains("<invalid"))
                 baseLabel += " <invalid: a pattern radius is dB — set dB20 (field) or dB10 (power)>";
             if (dimensionMismatch) baseLabel += " dimension mismatch";
+            baseLabel += TrialLegendSuffix;   // brief-yield-9: "— 471 pass · 29 fail", "— R² = 0.93"
             if (IsZ0ReReferenced) baseLabel += " @ Z0=" + ComplexStringHelper.Format(_z0) + "Ω";
             // NOT the reference-level suffix: this method appends to the caller's MINIMAL label,
             // which TraceLabeler has already put it on. Added here too it would read twice.
@@ -1783,6 +1792,13 @@ namespace CircuitRF.Render.DataDisplay
             // numbers, the bar width and the spec lines are a resolve's, and the copy re-resolves.
             StatisticsOrigin = src.StatisticsOrigin;
             ShowNormalFit    = src.ShowNormalFit;
+            // The trial views (brief-yield-9): what is authored. What they resolve to is the copy's own
+            // resolve's, and a selection is the window's to set.
+            ColorBy          = src.ColorBy;
+            ShowNominal      = src.ShowNominal;
+            Envelope         = src.Envelope;
+            ShowCurves       = src.ShowCurves;
+            ShowFitLine      = src.ShowFitLine;
             _pinnedSpectralName   = src._pinnedSpectralName;
             _pinnedSpectralLabel  = src._pinnedSpectralLabel;
             _pinnedSpectralFreqHz = src._pinnedSpectralFreqHz;

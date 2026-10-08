@@ -109,6 +109,7 @@ public static class TraceResolve
         var probe = new ResolveProbe();
         t.BarWidth  = null;
         t.NormalFit = null;
+        t.SampleAxis = null;
         try
         {
             SetCubeDataFromCore(t, ds, plotType, freqUnit, xDs, probe);
@@ -121,6 +122,9 @@ public static class TraceResolve
                 t.SpecLines = SpecLineResolve.For(t, ds);
             }
             else t.SpecLines = [];
+            // The trial views (brief-yield-9): colour by, the nominal, the envelope, the fit, and which trial
+            // each curve, point or bar is — from the same DataSet, by the same expression engine.
+            TrialResolve.Apply(t, ds, plotType, freqUnit);
         }
         catch (Exception ex)
         {
@@ -426,6 +430,8 @@ public static class TraceResolve
                         t.Points.Clear();
                         return;
                     }
+                    // The samples' own axis — a scatter's trial — before the X spec replaces it (brief-yield-9).
+                    t.SampleAxis = new Axis(xName, xVals, xUnit ?? "", xLabels);
                     xVals = vx; xName = t.XSpec!; xUnit = null; xLabels = null;
                 }
                 t.ExpressionError = null;
@@ -639,6 +645,7 @@ public static class TraceResolve
                 return;
             }
             t.SetSpectrumFundamentals(null);
+            t.SampleAxis = xAxis;   // a scatter's trial axis, before the X spec replaces it (brief-yield-9)
             // No unit: cube VALUES carry none anywhere in the data model (only axes do), so a versus
             // X axis is labelled by its spec text alone — same as every Y label already is.
             // The mask indexes SAMPLES of the cube's own swept axis, which is what vx re-coordinates
@@ -914,7 +921,7 @@ public static class TraceResolve
         if (fDim < 0 || xDim < 0) { t.Points.Clear(); t.FamilyCurves.Clear(); return; }
 
         var fAxis = cube.Axes[fDim];
-        int count = Math.Min(fAxis.Length, Trace.MaxFamilyCurves);
+        int count = Math.Min(fAxis.Length, fAxis.Name == Evaluator.TrialAxis ? Trace.MaxTrialFamilyCurves : Trace.MaxFamilyCurves);
 
         double[]? xVals = null; string xName = ""; string? xUnit = null;
         var curves = new List<(double, string?, System.Numerics.Complex[]?, double[]?)>(count);

@@ -11042,6 +11042,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         lib.KnownTouchstoneProvider = GetKnownTouchstoneFiles;
         lib.KnownLoadpullProvider   = GetKnownLoadpullFiles;
         lib.AddAsGoal               = AddGoalFromTrace;
+        // brief-yield-9 R-ya9-6: what a selected trial's context menu does.
+        lib.SendTrialToTuning       = SendTrialToTuning;
+        lib.SaveTrialAsCorner       = (source, trial, ds) => _ = SaveTrialAsCornerAsync(source, trial, ds);
+        lib.TrialMessage            = text => Messages.Warning(text);
+        lib.AllLibraries            = () => _openDocsByPath.Values.OfType<DataDisplayDocument>().Concat(_scratchDataDisplays)
+                                                .Select(dd => dd.ViewModel.Window.DataSourceLibrary).ToList();
     }
 
     /// <summary>

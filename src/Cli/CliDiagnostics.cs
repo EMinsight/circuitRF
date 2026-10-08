@@ -3015,6 +3015,12 @@ internal static class CliDiagnostics
         "plot: in --trace '{trace}', stat='{value}' is not histogram, cdf, quantile or yieldsens.",
         ("trace", trace), ("value", value));
 
+    /// <summary>A trial-view option (brief-yield-9 R-ya9-7) whose value is not one it takes.</summary>
+    public static Diagnostic PlotTraceTrialOptionMalformed(string trace, string key, string value, string takes) => Diagnostic.Create(
+        "plot.trace.trial-option-malformed", DiagnosticSeverity.Error,
+        "plot: in --trace '{trace}', {key}='{value}' is not what it takes: {takes}.",
+        ("trace", trace), ("key", key), ("value", value), ("takes", takes));
+
     public static Diagnostic PlotTraceStatOptionMalformed(string trace, string key, string value) => Diagnostic.Create(
         "plot.trace.stat-option-malformed", DiagnosticSeverity.Error,
         "plot: in --trace '{trace}', {key}='{value}' is not what it takes: bins= a whole number of at least 1, "

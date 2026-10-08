@@ -677,6 +677,14 @@ spec lines (`Plot.ShowSpecLines`, on by default), a histogram can carry a fitted
 group is a Table preset. All of it resolves in `TraceResolve`, so the window and `plot`/`render` agree byte for
 byte. Detail: `yield.md` §12.
 
+### Trials (brief-yield-9)
+
+A family over a Monte Carlo result's `trial` axis can be coloured by pass/fail (passes faded, fails after them, the
+nominal on top), drawn with an envelope band, or reduced to the band alone; a trace over trials becomes a scatter
+against another per-trial quantity, coloured the same way, with an optional fit; a goal's contributions become a
+Pareto. Clicking a member, point or bar selects that trial in its source across every display, with a chip and Esc to
+clear. Detail: `yield.md` §13.
+
 ### Table with multiple X axes (trace-sweep-conformance, 2026-06-17)
 
 The `Table` plot type supports multiple, distinct X axes — one per trace group. Implementation in

@@ -194,6 +194,17 @@ public static class StatisticsDiagnostics
         "yield.contrib.nothing-varies", DiagnosticSeverity.Error,
         "No statistical variable was drawn in the run, so nothing can contribute.");
 
+    // ── YA-9: a trial re-run from the Data Display ─────────────────────────
+
+    public static Diagnostic ReplayNoDesign(string result) => Diagnostic.Create(
+        "yield.replay.no-design", DiagnosticSeverity.Error,
+        "{result} has no design beside it to run the trial again from — a result is re-run from the schematic or netlist of the same name.",
+        ("result", result));
+
+    public static Diagnostic ReplayNoData(int trial) => Diagnostic.Create(
+        "yield.replay.no-data", DiagnosticSeverity.Error,
+        "Trial {trial} ran but produced no analysis result to show.", ("trial", trial));
+
     // ── YA-6: corners ──────────────────────────────────────────────────────
 
     public static Diagnostic ReplayStreamsGone(int trial, IReadOnlyList<string> streams) => Diagnostic.Create(
