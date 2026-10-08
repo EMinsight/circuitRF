@@ -21,7 +21,7 @@ electromagnetic solver** over the layout's own substrate stackup. **3D editor** 
 circuitRF is for RF practitioners or researchers who can't justify the cost of traditional tools (or find those tools too heavy for a quick investigation): **power-amplifier, LNA, and mixer designers; RF EDA and device-modeling engineers; academic researchers; and capable hobbyists.** It is written in **C# / .NET 10**, with an **Avalonia 12** GUI rendered through **SkiaSharp**, and it was built largely **AI-assisted** (see
 [AI-assisted development](#ai-assisted-development)).
 
-> **Status:** 1.0.6. Please file issues.
+> **Status:** 1.0.7. Please file issues.
 
 ## Features
 - schematic + circuit simulation (DC, S-param, HB, Loadpull)
@@ -37,8 +37,7 @@ circuitRF is for RF practitioners or researchers who can't justify the cost of t
 - command line and MCP server ([use it from an AI agent](#use-circuitrf-from-an-ai-agent))
 - Documentation with examples
 
-What is *not* in it yet:
-> [the open green fields](#what-circuitrf-doesnt-do).
+[What circuitRF doesn't do yet](#what-circuitrf-doesnt-do)
 
 ---
 
@@ -80,29 +79,29 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 ## Download
 
-> **circuitRF 1.0.6 is the current stable release.** Beta versions are published as GitHub
+> **circuitRF 1.0.7 is the current stable release.** Beta versions are published as GitHub
 > pre-releases, and *Settings ▸ Security & Permissions ▸ Include beta releases* is what puts them on
 > your update channel. It is ticked by default — untick it to receive stable releases only.
 
 | Platform | Download |
 |---|---|
-| Windows, Intel/AMD | [circuitRF-1.0.6-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.6/circuitRF-1.0.6-win-x64-user.msi) |
-| Windows, ARM | [circuitRF-1.0.6-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.6/circuitRF-1.0.6-win-arm64-user.msi) |
-| Windows, 32-bit | [circuitRF-1.0.6-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.6/circuitRF-1.0.6-win-x86-user.msi) |
+| Windows, Intel/AMD | [circuitRF-1.0.7-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.7/circuitRF-1.0.7-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.0.7-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.7/circuitRF-1.0.7-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.0.7-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.7/circuitRF-1.0.7-win-x86-user.msi) |
 |  |  |
-| macOS, Apple Silicon | [circuitRF-1.0.6-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.6/circuitRF-1.0.6-arm64.dmg) |
-| macOS, Intel | [circuitRF-1.0.6-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.6/circuitRF-1.0.6-x64.dmg) |
+| macOS, Apple Silicon | [circuitRF-1.0.7-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.7/circuitRF-1.0.7-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.0.7-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.7/circuitRF-1.0.7-x64.dmg) |
 |  |  |
-| Linux, Intel/AMD | [circuitRF-1.0.6-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.6/circuitRF-1.0.6-linux-x64.tar.gz) |
-| Linux, ARM | [circuitRF-1.0.6-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.6/circuitRF-1.0.6-linux-arm64.tar.gz) |
+| Linux, Intel/AMD | [circuitRF-1.0.7-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.7/circuitRF-1.0.7-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.0.7-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.0.7/circuitRF-1.0.7-linux-arm64.tar.gz) |
 
 
 **Linux** — unpack and run `install.sh`. It writes only inside `~/.local`, puts `circuitrf` on your PATH
 and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
-tar xzf circuitRF-1.0.6-linux-x64.tar.gz
-./circuitRF-1.0.6/install.sh
+tar xzf circuitRF-1.0.7-linux-x64.tar.gz
+./circuitRF-1.0.7/install.sh
 ```
 
 **Installing for everyone on the machine?** The Windows `.msi` files without `-user`, and the `.deb`
