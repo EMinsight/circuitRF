@@ -125,12 +125,16 @@ public sealed class TuningPreset
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool IsLastTuned { get; set; }
 
+    /// <summary>The optimizer's cost at these values, when the Optimizer locked them in; null for a
+    /// preset a person locked in.</summary>
+    public double? Cost { get; set; }
+
     /// <summary>Key → value text, in the order the preset lists them.</summary>
     public OrderedDictionary<string, string> Values { get; set; } = new(StringComparer.Ordinal);
 
     public TuningPreset Clone() => new()
     {
-        Name = Name, Created = Created, IsLastTuned = IsLastTuned,
+        Name = Name, Created = Created, IsLastTuned = IsLastTuned, Cost = Cost,
         Values = TunableEntry.CloneMap(Values)!,
     };
 
@@ -139,6 +143,9 @@ public sealed class TuningPreset
         var utc = v.Kind == DateTimeKind.Local ? v.ToUniversalTime() : DateTime.SpecifyKind(v, DateTimeKind.Utc);
         return new DateTime(utc.Ticks - utc.Ticks % TimeSpan.TicksPerSecond, DateTimeKind.Utc);
     }
+
+    /// <summary>The name of the automatic preset (overview D6).</summary>
+    public const string LastTunedName = "Last tuned";
 
     /// <summary>The spelling both serializations use for <see cref="Created"/>.</summary>
     public static string FormatCreated(DateTime utc)

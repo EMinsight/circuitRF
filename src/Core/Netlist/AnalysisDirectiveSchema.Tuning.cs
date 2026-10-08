@@ -66,14 +66,15 @@ public static partial class AnalysisDirectiveSchema
             "tune R1.R min=10 Ohm max=200 Ohm scale=log tune=1 opt=1"),
 
         new("preset", TuningTopic,
-            "preset \"<name>\" [created=<UTC>] [lasttuned=1] <key>=<v> [unit] ...",
+            "preset \"<name>\" [created=<UTC>] [lasttuned=1] [cost=<c>] <key>=<v> [unit] ...",
             "A named set of tuned values. The values are the text the schematic would hold, so recalling one is " +
             "the same as typing it — a complex value whole, under its own key (Zsrc=40+15j Ohm), never by its parts. " +
-            "created and lasttuned come before the values. A key that names nothing in the " +
+            "created, lasttuned and cost come before the values. A key that names nothing in the " +
             "design is skipped when the preset is recalled, and check reports it as a warning.",
             [
                 new("created",   Summary: "When it was locked in: yyyy-MM-ddTHH:mm:ssZ."),
                 new("lasttuned", Default: "0", Summary: "1 = the automatic \"Last tuned\" preset (at most one)."),
+                new("cost",      Summary: "The optimizer's cost at these values, when the Optimizer locked them in."),
             ],
             [],
             "preset \"wide band\" created=2026-10-07T12:00:00Z R1.R=47 Ohm DUT:Wline=212 um"),

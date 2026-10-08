@@ -102,6 +102,13 @@ public static class TuningDirectiveText
                 p.IsLastTuned = Bool(key, value);
                 continue;
             }
+            if (!inValues && key.Equals("cost", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double cost))
+                    throw Refuse(TuningDirectiveDiagnostics.ValueInvalid(key, value, "a number"));
+                p.Cost = cost;
+                continue;
+            }
             inValues = true;
             if (!TunableKey.TryParse(key, out _))
                 throw Refuse(TuningDirectiveDiagnostics.KeyMalformed(key));
@@ -247,7 +254,7 @@ public static class TuningDirectiveText
     public static IEnumerable<string> Write(TuningSetup setup)
     {
         foreach (var e in setup.Variables) yield return WriteTune(e);
-        foreach (var p in setup.Presets)   yield return WritePreset(p);
+        foreach (var p in setup.Presets)   yield return WritePresetLine(p);
         foreach (var g in setup.Goals)     yield return WriteGoal(g);
         if (setup.Optimizer is { } o)      yield return WriteOptimize(o);
     }
@@ -266,11 +273,25 @@ public static class TuningDirectiveText
         return sb.ToString();
     }
 
-    private static string WritePreset(TuningPreset p)
+    /// <summary>One preset as its <c>.cnl</c> line — what "Copy as .cnl" puts on the clipboard.</summary>
+    public static string WritePreset(TuningPreset p) => WritePresetLine(p);
+
+    /// <summary>Reads one <c>preset …</c> line back — the inverse of <see cref="WritePreset"/>. A
+    /// malformed line throws <see cref="TuningDirectiveException"/>.</summary>
+    public static TuningPreset ReadPresetLine(string line)
+    {
+        string s = line.Trim();
+        if (!s.StartsWith("preset", StringComparison.Ordinal) || s.Length < 7 || !char.IsWhiteSpace(s[6]))
+            throw Refuse(TuningDirectiveDiagnostics.Malformed("preset", "the line does not start with 'preset'."));
+        return ReadPreset(s[7..]);
+    }
+
+    private static string WritePresetLine(TuningPreset p)
     {
         var sb = new StringBuilder("preset \"").Append(p.Name).Append('"');
         if (p.Created is { } c) sb.Append(" created=").Append(TuningPreset.FormatCreated(c));
         if (p.IsLastTuned) sb.Append(" lasttuned=1");
+        if (p.Cost is { } cost) sb.Append(" cost=").Append(cost.ToString("R", CultureInfo.InvariantCulture));
         foreach (var (k, v) in p.Values) Opt(sb, k, v);
         return sb.ToString();
     }

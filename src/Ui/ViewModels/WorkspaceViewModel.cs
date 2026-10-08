@@ -12499,6 +12499,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var window = ResolveOwner(null);
         if (window is null) return;
 
+        StoreLastTuned(doc);
         if (!doc.IsDirty)
         {
             Messages.Info("Nothing to save.");
@@ -13428,6 +13429,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void SaveSchematicByPath(string absPath)
     {
         var key = Path.GetFullPath(absPath);
+        if (_registry.TryGet(key, out var tunedVm) && tunedVm is not null) StoreLastTuned(tunedVm);
         if (!_registry.TryGet(key, out var vm) || vm is null || !vm.UndoRedo.IsModified) return;
         try
         {
@@ -16818,6 +16820,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     // Shown before one dockable is removed. Returns true = proceed, false = cancel.
     private async Task<bool> ConfirmCloseDockable(IDockable dockable)
     {
+        if (dockable is SchematicDocument closing) StoreLastTuned(closing);
         var window = ResolveOwner(null);
         if (window is null) return true;
         if (!IsDockableDirtyForClose(dockable)) return true; // clean doc — no prompt needed
@@ -16849,6 +16852,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private async Task<IReadOnlyCollection<IDockable>> ConfirmCloseDockables(IReadOnlyList<IDockable> targets)
     {
+        foreach (var closing in targets.OfType<SchematicDocument>()) StoreLastTuned(closing);
         var dirty = targets.Where(IsDockableDirtyForClose).ToList();
         if (dirty.Count == 0) return targets;
 
@@ -17048,6 +17052,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     {
         var window = ResolveOwner(owner);
         if (window is null) return;
+        StoreLastTuned();
         // RC-5 R-rc5-4a: circuitRF is about to write a design file into this workspace, which is what
         // "would record something" means for a workspace that has never recorded anything. Noted here
         // rather than derived from the disk later — a file manager touching the folder is not
@@ -17507,6 +17512,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     public async Task<bool> PromptSaveBeforeClose(Window owner, string context = "closing", bool includeFloated = true)
     {
+        StoreLastTuned();
         // A floated document that the workspace switch is about to CLOSE counts as if it were docked —
         // see the note above. Only a foreign float (which survives) is skipped.
         bool Keep(IDockable d) => includeFloated || IsDockableDocked(d) || FloatedDocumentClosesWithWorkspace(d);
@@ -17767,6 +17773,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private async Task<bool> SaveSingleDocument(SchematicDocument doc, Window owner)
     {
+        StoreLastTuned(doc);
         if (doc.IsScratch)
         {
             var builder  = new SavePlanBuilder(CurrentWorkspacePath, _lastWorkspaceParentDir,
@@ -17976,6 +17983,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     /// </summary>
     private async Task SaveSchematicAs(SchematicDocument doc, Window window)
     {
+        StoreLastTuned(doc);
         if (CurrentWorkspacePath is not null)
             await SaveLooseToWorkspace(doc, window);
         else

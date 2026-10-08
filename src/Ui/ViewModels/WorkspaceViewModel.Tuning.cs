@@ -65,6 +65,31 @@ public partial class WorkspaceViewModel
         panel.ExistingSessionFor = d => SessionForTunedDrawing(d, openTab: false);
         panel.PointsOf           = TunePointsOf;
         panel.RevealOnCanvas     = RevealTunable;
+        panel.ReportRecall       = (summary, lines) =>
+        {
+            Messages.Info(summary);
+            foreach (var line in lines) Messages.Info("  " + line);
+        };
+    }
+
+    // ── "Last tuned" (brief-tuneopt-5 R-to5-5, overview D6) ────────────────
+
+    /// <summary>
+    /// The tuned schematic is about to be saved or closed: its unpushed values go into the "Last tuned"
+    /// preset first, so the save writes them and a close asks about them. Every save and close path of
+    /// a schematic calls this; it does nothing for any other document or when nothing differs.
+    /// </summary>
+    private void StoreLastTuned(SchematicDocument? doc = null)
+    {
+        if (_factory.TuningTool?.Panel is not { Tuned: { } tuned } panel) return;
+        if (doc is not null && !doc.NavFrames.Any(f => ReferenceEquals(f.Session, tuned))) return;
+        panel.StoreLastTuned();
+    }
+
+    /// <summary><see cref="StoreLastTuned(SchematicDocument?)"/> for a save that names the session.</summary>
+    private void StoreLastTuned(SchematicViewModel vm)
+    {
+        if (_factory.TuningTool?.Panel is { } panel && ReferenceEquals(panel.Tuned, vm)) panel.StoreLastTuned();
     }
 
     // ── The session: Simulate's own extraction, in memory ───────────────────

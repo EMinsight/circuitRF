@@ -16,6 +16,9 @@
 //  ranges of all that value's parts, and a range edit that would leave
 //  no value inside all of them is refused.
 //
+//  Presets — lock in, recall, "Last tuned", compare — are the
+//  .Presets.cs partial (TO-5).
+//
 //  Headless: the workspace supplies the session, the sub-cell sessions
 //  and the canvas reveal through delegates, so every claim here is
 //  tested without a shell.
@@ -134,8 +137,12 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         StatusText  = "";
         RunOnReleaseSuggested = false;
         Rows.Clear();
+        _presetsBuiltFrom = null;
+        Presets.Clear();
+        CloseComparison();
 
         if (tuned is not null) RefreshNow();
+        else OnPropertyChanged(nameof(HasPresets));
         ScopeSettings.Reload();
         OnPropertyChanged(nameof(Tuned));
         OnPropertyChanged(nameof(HasSchematic));
@@ -212,9 +219,11 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
                      t?.WholeKey is { } wk && _complex.TryGetValue(wk, out var z) ? z : null);
         }
 
+        RebuildPresets();
         UpdateLag();
         UpdateCanvas();
         if (Add.IsOpen) Add.Refresh();
+        LockInCommand.NotifyCanExecuteChanged();
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -534,6 +543,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         PushCommand.NotifyCanExecuteChanged();
         SnapshotCommand.NotifyCanExecuteChanged();
         ClearSnapshotCommand.NotifyCanExecuteChanged();
+        LockInCommand.NotifyCanExecuteChanged();
     }
 
     // ---- The canvas tells the truth (R-to4-7) ---------------------------------

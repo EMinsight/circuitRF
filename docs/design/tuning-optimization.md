@@ -1,7 +1,7 @@
 # Tuning and optimization
 
-**Status:** TO-1 … TO-4 built (model, file format, catalog, in-memory overrides, `check`/`explain`/`reference`;
-evaluation service; live session and Data Display; the Tuning panel).
+**Status:** TO-1 … TO-5 built (model, file format, catalog, in-memory overrides, `check`/`explain`/`reference`;
+evaluation service; live session and Data Display; the Tuning panel; presets).
 TO-2 … TO-12 briefed (`docs/sonnet-briefs/brief-tuneopt-*.md`). The overview brief
 (`brief-tuneopt-0-overview.md`) holds the decisions D1–D17 in full and is binding; this note is the
 standing reference for what is built, and restates the decisions only as far as the code depends on them.
@@ -128,7 +128,7 @@ The authoritative table is `AnalysisDirectiveSchema.TuningDirectives`; `circuitr
 ```
 tune <key> [min=<v> [unit]] [max=<v> [unit]] [scale=auto|lin|log] [step=<v> [unit]]
            [discrete=none|integer|preferred] [tune=1] [opt=1]
-preset "<name>" [created=<yyyy-MM-ddTHH:mm:ssZ>] [lasttuned=1] <key>=<v> [unit] ...
+preset "<name>" [created=<yyyy-MM-ddTHH:mm:ssZ>] [lasttuned=1] [cost=<c>] <key>=<v> [unit] ...
 goal <Name> = <expression> [analysis=<A>] [over=<axis> lo=<v> [unit] hi=<v> [unit]]
      (le|ge|eq) <limit> [unit] [to <limit> [unit]]  |  (in|out) <a> [unit] <b> [unit]
      [weight=<w>] [enabled=false]
@@ -148,8 +148,9 @@ Settled details:
 - **`timelimit`** takes `s`, `ms`, `min` or `h`. These are local to this grammar: the shared unit table
   has no time units, and adding a bare `s` there would change what a bare word after an instance-line value
   means.
-- **`created`/`lasttuned` come before a preset's values**; once a value key is seen, every later
-  `key=value` is a value.
+- **`created`/`lasttuned`/`cost` come before a preset's values**; once a value key is seen, every later
+  `key=value` is a value. (So a preset whose FIRST value is a VAR named `created`, `lasttuned` or `cost`
+  does not round-trip — the same limit `created` always had.)
 - **Booleans** read `1/0/true/false/yes/no`; the writer writes `1` and omits defaults.
 - **Unknown keys** are a warning naming the key (`cnl.tuning.unknown-key`) and are **kept** in the
   record's `Extra` map and written back — the room yield's tolerances will need (overview §5).
@@ -219,3 +220,30 @@ keep unknown keys, so a tolerance can be added to a `tune` line without a format
 - **A layout saved before TO-4** gains the panel beside wherever it put Analyses
   (`DockLayoutDefaults.WithMissingPanelsFilled`'s `TabbedBehind` rule), not at the default column.
 
+## 9. Presets (TO-5)
+
+| Piece | Where |
+|---|---|
+| Recall | `src/Design/Optimization/PresetRecall.cs` — `Apply(preset, catalog, setup)` → values to load, a per-key report, and the setup with recalled keys tune-enabled and ranges widened |
+| Edits | `src/Design/Optimization/TuningPresets.cs` — `LockIn`, `WithLastTuned`, `Rename`/`Duplicate`/`Delete` (by INDEX: a hand-written file may repeat a name), `Compare`, `CnlText` |
+| `.cnl` line | `TuningDirectiveText.WritePreset` / `ReadPresetLine` — "Copy as .cnl" and its inverse |
+| Panel | `TuningPanelViewModel.Presets.cs` + `TuningPresetItemViewModel`; the drop-down and Compare table in `TuningToolView.axaml` |
+| Last tuned | `TuningPanelViewModel.StoreLastTuned`, called by `WorkspaceViewModel.StoreLastTuned` from every schematic save and close path |
+
+- **Recall never refuses.** Each key is *applied*, *widened* (outside its entry's range: applied, and the
+  bound moved to the value), *missing* (names nothing), *no longer tunable* (now an expression, a value
+  that is not complex any more, or swept), or *no longer applicable* (not a number; complex parts no value
+  has). The report is one sentence (`Applied 11 of 12 · R7 no longer exists`) plus one line per key.
+- **Recall loads; it does not push.** Values go into the panel (and the running session). The only document
+  edit is the setup's: a recalled key that was not tune-enabled is turned on — a complex value with no tuned
+  part gets real + imaginary, or magnitude + phase when written `polar(…)` — and widened ranges. One undo
+  step. Widening only grows a complex value's region, so it never makes a D18 conflict.
+- **Lock in stores every tune-enabled row**, moved or not — the schematic's own text for an unmoved one, a
+  complex value once and whole. `TuningPreset.Cost` is the Optimizer's (TO-10), null for a person's.
+- **Last tuned** is written only when some row differs from the schematic, and not again when it already
+  holds the same values (so a second save does not dirty the document). Writing it is an ordinary undoable
+  setup edit, so closing a clean schematic with unpushed values asks to save. Renaming "Last tuned" makes it
+  an ordinary preset; the next save writes a new one.
+- **The drop-down** orders Last tuned first, then by `Created`, newest first. Compare takes the schematic,
+  or the preset earlier in the file, as the first side; the difference is second − first, per tuned part for a complex
+  value (all four when none is tuned).

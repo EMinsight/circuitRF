@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -31,7 +32,7 @@ public partial class TuningToolView : UserControl
         // An in-place box takes the caret the moment it appears, with its text selected.
         Visual.IsVisibleProperty.Changed.AddClassHandler<TextBox>((box, _) =>
         {
-            if (box.IsVisible && box.Classes.Contains("tuningBound"))
+            if (box.IsVisible && (box.Classes.Contains("tuningBound") || box.Classes.Contains("presetRename")))
                 Dispatcher.UIThread.Post(() => { box.Focus(); box.SelectAll(); }, DispatcherPriority.Background);
         });
     }
@@ -58,14 +59,21 @@ public partial class TuningToolView : UserControl
         base.OnDataContextChanged(e);
         if (_panel is not null)
         {
-            _panel.PropertyChanged     -= OnPanelChanged;
-            _panel.Add.PropertyChanged -= OnAddChanged;
+            _panel.PropertyChanged       -= OnPanelChanged;
+            _panel.Add.PropertyChanged   -= OnAddChanged;
+            _panel.PresetNamingRequested -= OnPresetNamingRequested;
+            _panel.CopyText = null;
         }
         _panel = (DataContext as TuningTool)?.Panel;
         if (_panel is not null)
         {
-            _panel.PropertyChanged     += OnPanelChanged;
-            _panel.Add.PropertyChanged += OnAddChanged;
+            _panel.PropertyChanged       += OnPanelChanged;
+            _panel.Add.PropertyChanged   += OnAddChanged;
+            _panel.PresetNamingRequested += OnPresetNamingRequested;
+            _panel.CopyText = text =>
+            {
+                if (TopLevel.GetTopLevel(this)?.Clipboard is { } clipboard) _ = clipboard.SetTextAsync(text);
+            };
         }
         PaintStatus();
     }
@@ -82,6 +90,9 @@ public partial class TuningToolView : UserControl
     {
         if (e.PropertyName == nameof(TuningAddViewModel.IsOpen) && _panel is { Add.IsOpen: false }) AddFlyout.Hide();
     }
+
+    // A preset was just locked in: open the drop-down with its name ready to type (R-to5-1).
+    private void OnPresetNamingRequested(object? sender, EventArgs e) => PresetsButton.Flyout?.ShowAt(PresetsButton);
 
     /// <summary>Idle grey, running green, lagging amber — and beside it the last evaluation's time, or
     /// how far behind the displayed result is.</summary>
@@ -115,6 +126,13 @@ public partial class TuningToolView : UserControl
         {
             _panel.Add.AddSelectedCommand.Execute(null);
             e.Handled = true;
+            return;
+        }
+
+        if (source is TextBox { DataContext: TuningPresetItemViewModel preset } rename && rename.Classes.Contains("presetRename"))
+        {
+            if (e.Key == Key.Enter)  { preset.CommitRename(); e.Handled = true; }
+            if (e.Key == Key.Escape) { preset.CancelRename(); e.Handled = true; }
             return;
         }
 
@@ -165,6 +183,9 @@ public partial class TuningToolView : UserControl
     {
         switch (e.Source)
         {
+            case TextBox { DataContext: TuningPresetItemViewModel preset } box when box.Classes.Contains("presetRename"):
+                preset.CommitRename();
+                break;
             case TextBox { Tag: TuningRowViewModel row } box when box.Classes.Contains("tuningValue"):
                 row.RevertValueText();
                 break;

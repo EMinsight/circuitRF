@@ -548,8 +548,19 @@ you choose and re-simulates as you move it, with every open Data Display followi
 - **Status.** The dot is grey when idle, green while tuning and amber when the display is behind the
   sliders; behind rows are tinted. While tuning, the canvas draws each changed value in the tuned colour.
 - **Push** writes the values into the schematic — one undo step per document, inside sub-cells too —
-  and **Revert** returns every slider to the schematic. Until you Push, nothing is changed or marked
-  unsaved. Snapshot keeps the current traces as faded ghosts for comparison.
+  and **Revert** returns every slider to the schematic. Until you Push, the schematic's values are not
+  changed. Snapshot keeps the current traces as faded ghosts for comparison.
+- **Presets.** The lock button keeps the current value of every tuned row as a preset, named
+  *Preset 1*, *Preset 2* … and ready to rename. Pick one in the **Presets** list to load it into the
+  sliders; it does not change the schematic until you Push (**⋮ ▸ Recall and Push** does both). A preset
+  outlives edits to the schematic: a value whose part was deleted or renamed is skipped, one that is now an
+  expression is skipped, and one outside its row's range is loaded and the range widened — the status line
+  says which, and hovering it lists every value. **⋮** also renames, duplicates, deletes and copies a
+  preset as a `.cnl` `preset` line. Tick two presets, or one and *Schematic*, and choose **Compare** for a
+  table of both values and the difference.
+- **Last tuned.** Saving or closing the schematic while sliders differ from it keeps their values as the
+  preset *Last tuned*, pinned at the top of the list — overwritten each time, never duplicated. Closing
+  then asks whether to save, as for any other change.
 
 ---
 
