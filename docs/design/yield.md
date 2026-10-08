@@ -329,7 +329,107 @@ over a real kit's corner files (a git-ignored `testdata/kit-statistics`, skipped
 section read live is the nominal read modulo the distributions' spelling, and every global and subcircuit
 expression evaluates to the same bits.
 
+## 8. YA-4 — the run service
+
+`StatisticalRun` (`src/Design/Statistics`) is the one Monte Carlo and yield implementation: the GUI, the CLI and MCP
+call it, and it evaluates through the optimizer's evaluator (D11).
+
+| Piece | Where |
+|---|---|
+| The run, pause/resume/stop, re-run one trial, contributions, worst trials | `StatisticalRun.cs` |
+| Options, progress, the trial record, the result | `StatisticalTypes.cs` |
+| The result `DataSet` (D9) | `StatisticalDataSet.cs`; names in `results-dataset-layout.md` §"Monte Carlo and yield" |
+| Contributions | `StatisticalContributions.cs` over `Regression` (`src/Engine/Statistics`) |
+| Yield, interval, auto-stop | `YieldEstimate` over `ClopperPearson` (`src/Engine/Statistics`) |
+| The statistics functions | `Evaluator.Reductions.cs`, `SampleStatistics` (`src/Core/Expressions`); `measurements.md` "Reductions over an axis" |
+
+### 8.1 Creating a run
+
+`StatisticalRun.Create(circuit, options)` builds `OptimizationRun.ForEvaluation` with `GoalUse.Yield` (mode `Yield`:
+the `use=yield|both` goals) or `GoalUse.Both` (mode `MonteCarlo`: every enabled goal) — so the setup is validated by
+the rule set `check` runs and a refusal is `check`'s sentence. It then refuses `yield.run.no-yield-goal` (a yield run
+with no yield goal) and `yield.run.nothing-varies` (no statistical entry and no distribution call — in either mode).
+`analyses=goals|all` is the evaluator's (§6). The design is elaborated once, nominally, to list its distribution
+calls (`KitCalls`).
+
+### 8.2 Trials
+
+The nominal is evaluated first (tag `nominal`); a nominal that does not evaluate is the refusal
+`yield.run.nominal-failed`. Trial t is then drawn and evaluated in three steps, each a pure function of t:
+`StatisticalSampler.Sample(t)` → `SampleValues.Apply` (entries, at `sigmascale`) → `ExpressionDraws.For(settings, t,
+planned)` (distribution calls). A trial whose sample is refused (`yield.trial.*`) did not evaluate and costs no
+simulation.
+
+- **Kit streams in the plan.** Under `random` a distribution call draws natively from its own stream (slot 1).
+  Under `lhs`/`sobol` the nominal's calls join the plan as `kit:<stream>` — one plan across every stream, or two
+  plans' Sobol dimensions would coincide — and their z is handed to `ExpressionDraws` as `planned`. A call a trial
+  reaches that the nominal did not draws natively.
+- **Draws reach every elaboration.** `CircuitEvaluationRequest.Statistics` puts the trial's draws on the evaluation's
+  own bench copy (`TestBench.StatisticalDraws`, run-time only, never written), and `Elaborator.Elaborate` takes them
+  from there when it has none of its own — so a parametric sweep's per-point elaboration and a parallel S-parameter
+  run's per-worker elaboration draw the trial's values too, not the nominal. A draw that could not be made fails the
+  evaluation with `yield.trial.draw-failed`.
+- **The cache.** A `ValuePoint` carries a tag (`trial <n>`) appended to its cache key: two trials whose values happen
+  to coincide (a `discrete` draw, or kit draws alone with an empty value map) are still two simulations, and a cached
+  answer would carry no results. `EvaluateTrial(n)` tags `trial <n> (re-run)` and so always simulates afresh.
+- **Batches.** `parallel=` trials at a time by default (`StatisticalOptions.BatchSize` overrides), through
+  `OptimizationRun.EvaluateValues`, numbered in the order drawn and slotted by number, so the result does not depend
+  on parallelism (`YieldDeterminismTests`). A circuit that is not re-entrant runs one trial at a time with the
+  optimizer's note.
+- **Did not evaluate (D7).** The trial's reason is kept; `nonconverged=fail` counts it in the denominator as a fail,
+  `warn` leaves it out. Either way the result notes `yield.run.did-not-evaluate` with the count. No trial evaluating at
+  all is outcome `NoneEvaluated` (exit 2).
+
+### 8.3 Yield, interval, auto-stop (D8)
+
+`YieldEstimate.Of(passes, counted, confidence)` — the Clopper–Pearson interval of §5 — overall and per goal. A trial
+passes when it evaluated and every scored goal is met. With no goal (a Monte Carlo of the spread alone) there is no
+yield: the estimate is NaN and the `pass` cube is not written.
+
+**Auto-stop** (`autostop=1`, yield mode, a target) is decided after each batch **at every trial count the batch
+reached, in trial order**: the run stops at the first count n ≥ 50 counted trials whose lower bound is at or above the
+target (`Above`) or whose upper bound is below it (`Below`), and the trials of that batch past n are discarded. So the
+count it stops at is a function of the draws alone — the same for any batch size (`AutoStopTests`: a design at 100 %
+yield against 95 % stops at ⌈ln 0.025 / ln 0.95⌉ = 72). Outcome: `BelowTarget` (exit 3) when auto-stop said `Below`,
+or, without an auto-stop verdict, when the yield is below the target; otherwise `Finished` (exit 0). A Monte Carlo run
+has no target.
+
+### 8.4 Save policy and writing (R-ya4-5, R-ya4-6)
+
+The nominal's cubes give the size of one trial's analysis results (real 8 bytes, complex 16; scalar measurements and
+`__` metadata excluded — the scalars are kept for every trial anyway). `save=scalars` keeps none, `all` every trial's,
+`<n>` the first n, `auto` all when they fit in 256 MB and otherwise the largest leading count that does. The result
+notes `yield.run.saved` with the sentence saying which. `ResultPathFor(source)` is `<design>.yield.npy` beside the
+source; the run writes there when `StatisticalOptions.ResultPath` is set and it finishes or is stopped, never when
+cancelled. `StatisticalOptions.Publish` receives the result so far at most once per `PublishInterval` (250 ms) after a
+batch and once at the end — the in-memory Data Display source's feed (D14), which the panel (YA-10) wires.
+
+### 8.5 Re-running one trial (R-ya4-7)
+
+`EvaluateTrial(n)` draws trial n exactly as the run does and evaluates it with its results kept, whatever the save
+policy — equal, value for value, to trial n inside a run (`YieldDeterminismTests`). Under `lhs` a trial past the plan's
+count is `yield.trial.out-of-range`.
+
+### 8.6 Contributions and worst trials (R-ya4-9, R-ya4-10)
+
+`Contributions(name)` regresses a goal's value at its tightest point (or a scalar measurement) over the evaluated trials
+on every stream's z — entries' correlated z, and the kit streams' (0 where a trial did not draw one) — standardized.
+Ordinary least squares with at least 5 trials per stream; otherwise ridge with a penalty of 0.01 per trial on the
+standardized normal equations, flagged `Underdetermined`. Each contributor reports its standardized coefficient, its
+**share** of the explained variance by Pratt's measure β·r/R² (the shares sum to 1; with independent streams it is
+β²/Σβ²), and its Spearman rank correlation with the scalar. A kit process stream is one contributor; **an instance's
+mismatch streams are one contributor**, named by the instance (the stream's site less its parameter and `#n`), with
+the root sum square of its coefficients, its streams' summed share and the rank correlation of its fitted linear
+part. Never run unasked. `WorstTrials(goal, k = 10)` lists the evaluated trials with the smallest margin, with their
+values.
+
+### 8.7 Not covered here
+
+The statistics functions reduce whatever cube they are given; a Data Display TRACE expression is evaluated point by
+point (`TraceExpression`) and does not take them yet — YA-5 (`plot`) and YA-8 (the trace card) add that. The measurement
+scope reads the trial's drawn globals (`ResolvedGlobals` come from the trial's elaboration); a stamp-time,
+frequency-dependent expression stays nominal (§7).
+
 ## Later phases
 
-Each phase appends its section above this one as it lands: YA-4 the run service and
-result, YA-5 the CLI and MCP, YA-6/7 corners, YA-8/9 the display, YA-10 the panel, YA-11/12 centering.
+Each phase appends its section above this one as it lands: YA-5 the CLI and MCP, YA-6/7 corners, YA-8/9 the display, YA-10 the panel, YA-11/12 centering.

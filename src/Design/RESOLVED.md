@@ -18629,3 +18629,39 @@ ones); a `lognorm`'s nominal is its MEDIAN (YA-1's "σ/nominal is the log's σ")
 above the nominal; the embedded Sobol table stops at 1111 dimensions (where Property A holds), past which
 streams are drawn at random with a warning; a value map's cache key is its lines in the map's own order, so
 the same values listed in another order are simulated again rather than answered by the cache.
+
+## Yield YA-4: the run service — findings (2026-10-08)
+
+**A trial's draws must ride on the BENCH, not on one elaborator.** `Elaborator.Statistics` reaches only
+the elaboration that set it, but the engines re-elaborate the bench themselves — `ParametricSweepEngine`
+per sweep point, `SParameterEngine` and `HbEngine` once per parallel worker — with a fresh
+`new Elaborator(lib)`. Setting the draws on the first elaboration alone would have run every swept or
+parallel point at the NOMINAL, converged and plausible. `CircuitEvaluation.Plan` now puts
+`request.Statistics` on its own bench copy (`TestBench.StatisticalDraws`, `[JsonIgnore]`, never written by
+`CnlWriter`), and `Elaborate` falls back to it when the elaborator has none.
+
+**A cached answer carries no results, so trials need their own cache keys.** Two trials can produce the
+same value map — a `discrete` entry, or a design whose only variation is distribution calls (empty map
+every trial) — and the evaluator's cache would answer the second from the first: right scores, no
+`DataSet`, and with kit draws not even the right scores. `ValuePoint.Tag` is appended to the key
+(`trial <n>`; `trial <n> (re-run)` for `EvaluateTrial`, which must simulate afresh).
+
+**Auto-stop decided per BATCH would make the trial count depend on `parallel=`.** It is decided at every
+trial count the batch reached, in trial order, and the trials past the deciding count are discarded — so
+the run stops at the same n for any batch size, and that n is the closed-form one in `AutoStopTests`.
+
+**The user-facing-text gate (`tests/Firewall.Tests`) was already failing** on three YA-3 messages in
+`Evaluator.Statistical.cs` that were never allowlisted; they are listed now with this phase's expression
+errors, and the seven `max_over`/`min_over` lines moved with their code to `Evaluator.Reductions.cs`.
+
+**A NaN means "missing" to the statistics but "bad point" to the spec checks.** `mean_over` and the rest
+skip NaN (a trial that did not evaluate), while `max_over`/`min_over` keep propagating it, as their own
+documentation always promised. The descriptive statistics live in `src/Core/Expressions/SampleStatistics`
+rather than `src/Engine/Statistics` because the evaluator may not reference the numeric layer.
+
+Calls the owner may revisit: `cpk`'s omitted limit is spelled `"none"` (the expression grammar has no
+empty argument); `skew_over`/`kurt_over` are the moment coefficients (divisor n), not the bias-adjusted
+forms; a Monte Carlo run with no goal reports no yield and writes no `pass` cube rather than a vacuous
+100 %; a trial that did not evaluate is NaN in the analysis cubes (the `trial` axis stays 1…K) and 0 or
+NaN in `pass` by the `nonconverged` policy; contributions take a kit stream a trial did not draw as z = 0
+(its nominal); a mismatch contributor is the stream's site less its parameter (`X1.R1.R` → `X1.R1`).

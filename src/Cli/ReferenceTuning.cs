@@ -160,6 +160,20 @@ internal static partial class Reference
             $"trial count that narrows it to under +-{StatisticsSummary.QuotedHalfWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)} %.", 96))
             sb.AppendLine("  " + line);
         sb.AppendLine();
+        sb.AppendLine("The statistics of a run");
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "A run writes <design>.yield.npy: every analysis cube with an outer trial axis, the trials group " +
+            "(stat:<key>, z:<key>, goal:<name>:pass|margin|worst, pass, status), the nominal group and the yield " +
+            "summary. These reduce over the trial axis by default (else freq), skipping a trial with no value: " +
+            "mean_over, std_over, median_over, pctl_over(x, p), skew_over, kurt_over, " +
+            "yield_over(condition), cpk(x, lo, hi) (either limit \"none\"), sigma_to(x, limit) — min_over and " +
+            "max_over take the same default axis but keep a missing value missing; and these build an " +
+            "axis: histogram(x, bins[, lo, hi]), cdf(x), yield_sens(pass, x, bins). They work in measure lines " +
+            "and goals. A goal written over the trials' spread (std_over of a trial-stacked " +
+            "quantity) is legal, but scoring it takes a whole Monte Carlo run per evaluation.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
 
         sb.AppendLine("Worked example");
         sb.AppendLine();

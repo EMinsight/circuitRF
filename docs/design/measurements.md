@@ -197,6 +197,45 @@ Under mismatch, `wsp_loadpull_margin` returns `{…, gS, gL, freq, env}` and
 NDF locus and `wsp_loadpull_ndf_enc` the Real encirclement count. The pairs are two functions rather
 than one because a cube is single-kind and the two answers of each pair differ in rank or kind.
 
+### 4. Reductions over an axis, and the statistics of a sample
+
+`Evaluator.Reductions.cs`. Every reduction takes `f(x [, fixed…] [, lo, hi] [, "axis"])`: the axis defaults to
+**`trial`** (a Monte Carlo or yield run's, `yield.md` §8), then `freq`, then a rank-1 cube's only axis; `lo, hi`
+keep the points whose axis value lies in the range (inclusive to a relative 1e-9); the axis is reduced away and
+every other axis kept, so a swept run gives one value per sweep point. Real values only — a complex cube is
+refused, naming `dB`/`mag`/`real`.
+
+| Function | Value | NaN |
+|---|---|---|
+| `max_over`, `min_over` | the band worst case (the spec check) | **propagates** — a bad grid point is never hidden |
+| `mean_over`, `median_over`, `std_over` (n − 1) | in the operand's unit | skipped |
+| `pctl_over(x, p)` | p from 0 to 100, linear between order statistics at rank (n − 1)·p/100 | skipped |
+| `skew_over`, `kurt_over` | moment coefficients m₃/m₂^{3/2} and m₄/m₂² − 3 (divisor n, not bias-adjusted) | skipped |
+| `yield_over(cond)` | fraction of non-zero values | skipped |
+| `cpk(x, lo, hi)` | min((hi − μ)/3σ, (μ − lo)/3σ) over the limits given; either may be `"none"` | skipped |
+| `sigma_to(x, limit)` | (limit − μ)/σ | skipped |
+
+**A NaN is a missing value to the statistics** — over trials it is a trial that did not evaluate — so they skip it
+(`SampleStatistics`, `src/Core/Expressions`; in Core rather than `src/Engine/Statistics` because the evaluator may
+not reference the numeric layer).
+
+**Three build a new axis** from a rank-1 operand (anything else is refused, naming its axes):
+`histogram(x, bins[, lo, hi])` — counts over a `bin` axis of centres (equal widths over [lo, hi] or the values'
+extent; a bin holds its lower edge, the last its upper); `cdf(x)` — a `value` axis of the sorted present values
+against i/n; `yield_sens(pass, x, bins)` — per bin of x, the fraction of trials with a non-zero pass (NaN for an
+empty bin), counting only trials where both are present.
+
+**Companions.** What an axis-building call has to say beyond one cube — the bin `width`, the per-bin `count` of
+`yield_sens` — it leaves in `Evaluator.TakeCompanions()`, and `MeasurementEvaluator` stores each beside the
+measurement as `<name>:<companion>` (a `measure H = histogram(…)` line yields `H` and `H:width`).
+
+**Comparisons and logic over cubes.** `<`, `<=`, `>`, `>=`, `==`, `!=` with a cube on either side are taken element
+by element, broadcast as arithmetic is, and give a real cube of 1 and 0 (a NaN element stays NaN); `&&`, `||` and
+`!` with a cube take non-zero as true and do not short-circuit. A scalar comparison is unchanged.
+
+These are ordinary functions, so they work in `measure` lines and in goals. A goal written over the spread of a
+run's trials is legal, and each evaluation of it costs a Monte Carlo run (`reference statistics` says so).
+
 ## Current state (honest inventory)
 
 What works (end-to-end on a UI run):

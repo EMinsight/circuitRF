@@ -200,8 +200,10 @@ measure  IL_margin = 1 - IL_worst                                 positive means
 `[lo, hi]`, and `min_over` the smallest. Both ends are **inclusive**, so a band edge that is a grid
 point is part of the band.
 
-- **The axis is `freq`** unless you name another as a fourth argument:
-  `max_over(x, -10, 0, "Pin")`. A value with a single axis is reduced over that axis.
+- **The axis is `freq`** unless you name another as the last argument:
+  `max_over(x, -10, 0, "Pin")`. A value with a single axis is reduced over that axis, and a Monte
+  Carlo result's values over their `trial` axis (below). Leave the range out to take every point:
+  `max_over(x, "Pin")`.
 - **Every other axis is kept.** Over a parametric sweep you get one worst case per sweep point, a
   curve you can plot against the swept variable. With no other axis you get a single number.
 - **The values must be real.** Complex numbers have no order, so take `dB(…)`, `mag(…)` or
@@ -211,6 +213,42 @@ point is part of the band.
 
 The worst value is only as good as the grid. A narrow notch between two frequency points is not
 seen, so sweep finely enough to resolve the response near each band edge.
+
+## Statistics over trials {#statistics}
+
+A Monte Carlo or yield run stacks every trial on a `trial` axis. These functions reduce that axis
+(or, on a value with none, `freq`, or a single axis's only one; name another as the last argument,
+and give `lo, hi` before it to take part of the axis):
+
+| Function | Gives |
+|---|---|
+| `mean_over(x)`, `median_over(x)` | the mean, the median |
+| `std_over(x)` | the sample standard deviation |
+| `pctl_over(x, p)` | the p-th percentile, p from 0 to 100 |
+| `skew_over(x)`, `kurt_over(x)` | the skewness and the excess kurtosis (0 for a normal distribution) |
+| `yield_over(condition)` | the fraction of trials for which the condition holds: `yield_over(Gain > 14)` |
+| `cpk(x, lo, hi)` | the process capability index; write either limit as `"none"` for a one-sided spec |
+| `sigma_to(x, limit)` | how many standard deviations the limit lies from the mean (positive above it) |
+
+Three build a new axis from a value over the trials:
+
+| Function | Gives |
+|---|---|
+| `histogram(x, bins)`, `histogram(x, bins, lo, hi)` | counts over a `bin` axis of bin centres |
+| `cdf(x)` | the values sorted, against the fraction of trials at or below each |
+| `yield_sens(pass, x, bins)` | per bin of `x`, the fraction of trials that pass |
+
+A `measure` line built on `histogram` or `yield_sens` also stores what does not fit in one curve
+beside it: `<name>:width` (the bin width) and, for `yield_sens`, `<name>:count` (the trials in each
+bin).
+
+- **A trial with no value is skipped.** A trial that did not evaluate has no value, and the
+  statistics are over the trials that do. (`max_over` and `min_over` are spec checks and do not
+  skip: a missing value in a band makes the worst case missing too.)
+- **A comparison between values over the trials is taken trial by trial**, giving 1 or 0 for each,
+  so `yield_over(x > 3 && x < 5)` counts the trials inside a window.
+- **A goal may use them.** A goal written over the spread of the trials is legal, but each
+  evaluation of it is a whole Monte Carlo run.
 
 ---
 

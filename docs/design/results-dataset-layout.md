@@ -157,3 +157,32 @@ Each stage builds + tests green before the next; stage 1 is independently testab
 3. **Bare-name specs across groups.** Confirm bare `Cube` resolving "in the sole group" is the desired
    convenience for a single-analysis run (so a one-analysis run still plots `V[:, 0]` without a prefix),
    with the qualified form required only once there are ≥2 groups.
+
+## Monte Carlo and yield (brief-yield-4)
+
+A Monte Carlo or yield run (`StatisticalRun`, `src/Design/Statistics`) writes ONE grouped `DataSet` to
+**`<design>.yield.npy` beside the schematic or netlist** — never `results/<key>.npy`, which Simulate owns — when it
+finishes or is stopped, never when cancelled. The names are fixed here; every consumer (the CLI, MCP, the Data
+Display, the Yield panel) reads them and computes nothing of its own. Values are in base SI.
+
+| Group | Cube | Axes | What |
+|---|---|---|---|
+| each analysis (`SP1`, `DC1`, …) | as Simulate names them | `[trial, …]` | the trials the save policy keeps (1…K); a trial that did not evaluate is NaN. `__`-metadata cubes pass through unstacked |
+| `measurements` | a real scalar | `[trial]` | kept for EVERY trial whatever the save policy, being a scalar |
+| `measurements` | anything else | `[trial, …]` | as an analysis cube; a `histogram`/`yield_sens` measure brings `<name>:width` (and `<name>:count`) |
+| `trials` | `stat:<key>` | `[trial]` | the drawn value of each statistical entry (base SI, the base unit on the cube) |
+| `trials` | `z:<key>` | `[trial]` | its standard normal after correlation — what statistical corners and centering replay |
+| `trials` | `z:process:<stream>`, `z:mismatch:<stream>` | `[trial]` | each kit/expression distribution call's standard normal; NaN where a trial did not draw it |
+| `trials` | `goal:<g>:pass` | `[trial]` | 1/0; a trial that did not evaluate is 0 under `nonconverged=fail`, NaN under `warn` |
+| `trials` | `goal:<g>:margin`, `goal:<g>:worst` | `[trial]` | the margin (GoalScore's, in the expression's unit) and the expression's value at the tightest point |
+| `trials` | `pass` | `[trial]` | every scored goal met (same 0/NaN rule); absent when the run scores no goal |
+| `trials` | `status` | `[trial]` | 0 evaluated; k ≥ 1 the k-th row of `reasons` |
+| `trials` | `reasons` | `[reason]` | labelled with each distinct reason sentence; present only when some trial did not evaluate |
+| `nominal` | `<group>.<cube>` | as the nominal | the nominal design's cubes with no trial axis, named by their own address: a cube's nominal is `nominal.` + its address (`nominal.SP1.S`, `nominal.trials.pass`) |
+| `yield` | `trials`, `did_not_evaluate`, `passes`, `counted`, `yield`, `lower`, `upper` | scalar | overall; yield and interval as fractions, NaN with no goal |
+| `yield` | `goal:<g>:passes` … `goal:<g>:upper` | scalar | the same per goal |
+| `yield` | `confidence`, `target`, `seed`, `saved_trials` | scalar | fractions; `target` NaN when none |
+| `yield` | `mode`, `sampling`, `nonconverged`, `save`, `stopped` | `[<name>]` | one point whose axis LABEL is the text (`random`, the save sentence, the finish reason) |
+
+**Trial order is drawing order** (1…N), and every per-trial cube is slotted by trial number, so the `DataSet` is
+identical for any `parallel=`. With auto-stop the trial axis ends where the rule decided.

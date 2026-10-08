@@ -114,6 +114,9 @@ public sealed class Elaborator
         foreach (var fn in _functions)
             _evaluator.RegisterFunction(fn);
         _voltageProbes.Clear();
+        // A trial's draws ride on the bench (TestBench.StatisticalDraws), so an engine's own re-elaboration of
+        // it draws the same values; one set on this elaborator wins.
+        _evaluator.Statistics ??= tb.StatisticalDraws;
 
         var netlist     = new ElaboratedNetlist();
 

@@ -145,6 +145,17 @@ public sealed record PointEvaluation(
     public bool Pass => Status == PointStatus.Evaluated && Goals.All(g => g.Met);
 }
 
+/// <summary>
+/// One point for <see cref="OptimizationRun.EvaluateValues(IReadOnlyList{ValuePoint}, bool, CancellationToken)"/>:
+/// a value map, and optionally one Monte Carlo trial's draws for the design's distribution calls
+/// (<see cref="CircuitEvaluationRequest.Statistics"/>) and a tag that keeps its cache key apart from every other
+/// point's. A point with draws needs a tag: its value map alone does not say what it simulates.
+/// </summary>
+public sealed record ValuePoint(
+    IReadOnlyDictionary<string, string> Values,
+    IStatisticalDraws?                  Draws = null,
+    string?                             Tag   = null);
+
 /// <summary>What a run produced.</summary>
 public sealed class OptimizationResult
 {
@@ -425,6 +436,10 @@ public sealed class OptimizationRun
 
     public long Evaluations => Interlocked.Read(ref _evaluations);
     public long Failures    => Interlocked.Read(ref _failures);
+
+    /// <summary>How many points an evaluation runs at once: the setup's <c>parallel=</c>, or the cores less one;
+    /// 1 when the circuit is not re-entrant (<see cref="PreparedCircuit.NotReentrantReason"/>).</summary>
+    public int Parallelism => _simulates && _circuit.NotReentrantReason is not null ? 1 : _parallelism;
     public long Infeasible  => _infeasible;
     public long CacheHits   => _cacheHits;
 
@@ -837,22 +852,35 @@ public sealed class OptimizationRun
     /// </summary>
     public IReadOnlyList<PointEvaluation> EvaluateValues(
         IReadOnlyList<IReadOnlyDictionary<string, string>> points, bool keepData = true, CancellationToken ct = default)
+        => EvaluateValues([.. points.Select(p => new ValuePoint(p))], keepData, ct);
+
+    /// <summary>
+    /// <see cref="EvaluateValues(IReadOnlyList{IReadOnlyDictionary{string, string}}, bool, CancellationToken)"/> over
+    /// points that may carry a trial's draws: each is simulated with them, and its cache key is its value map's plus
+    /// its <see cref="ValuePoint.Tag"/>.
+    /// </summary>
+    public IReadOnlyList<PointEvaluation> EvaluateValues(
+        IReadOnlyList<ValuePoint> points, bool keepData = true, CancellationToken ct = default)
     {
         if (Refusal is { } refused)
-            return [.. points.Select(p => new PointEvaluation(p, PointStatus.DidNotEvaluate, refused, [], double.NaN, null, false))];
+            return [.. points.Select(p => new PointEvaluation(p.Values, PointStatus.DidNotEvaluate, refused, [], double.NaN, null, false))];
 
-        var core = EvaluateKeyed([.. points.Select(p => ((string, IReadOnlyDictionary<string, string>)?)(CacheKeyOf(p), p))],
+        var core = EvaluateKeyed([.. points.Select(p => (KeyedPoint?)new KeyedPoint(
+                                     p.Tag is null ? CacheKeyOf(p.Values) : CacheKeyOf(p.Values) + "\n#" + p.Tag, p.Values, p.Draws))],
                                  keepData, ct);
         var result = new PointEvaluation[points.Count];
         for (int k = 0; k < points.Count; k++)
         {
             var (o, data, cached, _) = core[k];
             result[k] = o.Failed
-                ? new PointEvaluation(points[k], PointStatus.DidNotEvaluate, o.Error, o.Scores, double.NaN, null, cached)
-                : new PointEvaluation(points[k], PointStatus.Evaluated, null, o.Scores, o.Cost, data, cached);
+                ? new PointEvaluation(points[k].Values, PointStatus.DidNotEvaluate, o.Error, o.Scores, double.NaN, null, cached)
+                : new PointEvaluation(points[k].Values, PointStatus.Evaluated, null, o.Scores, o.Cost, data, cached);
         }
         return result;
     }
+
+    /// <summary>A point the evaluator runs: its cache key, its value map, its trial's draws.</summary>
+    private sealed record KeyedPoint(string Key, IReadOnlyDictionary<string, string> Values, IStatisticalDraws? Draws = null);
 
     /// <summary>A value map's cache key: its lines <c>key=value</c> in the map's own order — the form a
     /// decoded unit-box point's key has always had.</summary>
@@ -869,7 +897,7 @@ public sealed class OptimizationRun
         var decoded = batch.Select(u => Variables!.Decode(u, _snapPreferred)).ToArray();
         foreach (var d in decoded) if (d.Infeasible) _infeasible++;
         var core = EvaluateKeyed(
-            [.. decoded.Select(d => d.Infeasible ? null : ((string, IReadOnlyDictionary<string, string>)?)(d.CacheKey, d.Values))],
+            [.. decoded.Select(d => d.Infeasible ? null : (KeyedPoint?)new KeyedPoint(d.CacheKey, d.Values))],
             keepData: true, ct);
 
         double penalty = 10 * (1 + _maxFeasible);
@@ -905,10 +933,10 @@ public sealed class OptimizationRun
     /// in this batch.
     /// </summary>
     private (PointOutcome Outcome, DataSet? Data, bool Cached, bool RanHere)[] EvaluateKeyed(
-        IReadOnlyList<(string Key, IReadOnlyDictionary<string, string> Values)?> points, bool keepData, CancellationToken ct)
+        IReadOnlyList<KeyedPoint?> points, bool keepData, CancellationToken ct)
     {
         var cached = new bool[points.Count];
-        var toRun  = new List<(string Key, IReadOnlyDictionary<string, string> Values)>();
+        var toRun  = new List<KeyedPoint>();
         var queued = new HashSet<string>(StringComparer.Ordinal);
         for (int k = 0; k < points.Count; k++)
         {
@@ -926,10 +954,10 @@ public sealed class OptimizationRun
             _notes.Add(OptimizationDiagnostics.Serial(serialWhy));
         }
         if (serialWhy is not null || degree <= 1)
-            for (int i = 0; i < toRun.Count; i++) outcomes[i] = Keep(EvaluatePoint(toRun[i].Values, ct));
+            for (int i = 0; i < toRun.Count; i++) outcomes[i] = Keep(EvaluatePoint(toRun[i].Values, toRun[i].Draws, ct));
         else
             Parallel.For(0, toRun.Count, new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = ct },
-                         i => outcomes[i] = Keep(EvaluatePoint(toRun[i].Values, ct)));
+                         i => outcomes[i] = Keep(EvaluatePoint(toRun[i].Values, toRun[i].Draws, ct)));
 
         var ran = new Dictionary<string, DataSet?>(StringComparer.Ordinal);
         for (int i = 0; i < toRun.Count; i++)
@@ -952,12 +980,13 @@ public sealed class OptimizationRun
         (PointOutcome, DataSet?) Keep((PointOutcome Outcome, DataSet? Data) o) => keepData ? o : (o.Outcome, null);
     }
 
-    private (PointOutcome, DataSet?) EvaluatePoint(IReadOnlyDictionary<string, string> values, CancellationToken ct)
+    private (PointOutcome, DataSet?) EvaluatePoint(IReadOnlyDictionary<string, string> values, IStatisticalDraws? draws,
+                                                   CancellationToken ct)
     {
         Interlocked.Increment(ref _evaluations);
         try
         {
-            var (goalValues, errors, data, failure) = _simulates ? Simulate(values, ct) : VariablesOnly(values);
+            var (goalValues, errors, data, failure) = _simulates ? Simulate(values, draws, ct) : VariablesOnly(values, draws);
             if (failure is not null)
             {
                 Interlocked.Increment(ref _failures);
@@ -982,10 +1011,12 @@ public sealed class OptimizationRun
         }
     }
 
-    private (Value?[] Values, string?[] Errors, DataSet? Data, Diagnostic? Failure) Simulate(IReadOnlyDictionary<string, string> tuned, CancellationToken ct)
+    private (Value?[] Values, string?[] Errors, DataSet? Data, Diagnostic? Failure) Simulate(
+        IReadOnlyDictionary<string, string> tuned, IStatisticalDraws? draws, CancellationToken ct)
     {
         var rr = CircuitEvaluation.Evaluate(_circuit, new CircuitEvaluationRequest
         {
+            Statistics   = draws,
             Sets         = _options.Sets,
             Tunables     = tuned,
             Analyses     = _analyses,
@@ -1012,7 +1043,8 @@ public sealed class OptimizationRun
 
     /// <summary>Goals that read only variables cost no simulation (D10): they are evaluated in the
     /// bench's own variable scope with the tuned values applied.</summary>
-    private (Value?[] Values, string?[] Errors, DataSet? Data, Diagnostic? Failure) VariablesOnly(IReadOnlyDictionary<string, string> point)
+    private (Value?[] Values, string?[] Errors, DataSet? Data, Diagnostic? Failure) VariablesOnly(
+        IReadOnlyDictionary<string, string> point, IStatisticalDraws? draws = null)
     {
         var tuned = TunableOverrides.Apply(_circuit.Tb!, _circuit.Lib!, point,
                                            _options.Sets.Select(s => s.Name).ToHashSet(StringComparer.Ordinal));
@@ -1022,7 +1054,7 @@ public sealed class OptimizationRun
 
         var scope = new Scope("globals");
         foreach (var v in tb.GlobalVariables) scope.Bind(v.Name, v.Expression, v.Unit);
-        var ev = new Evaluator();
+        var ev = new Evaluator { Statistics = draws };
         foreach (var fn in tb.Functions) ev.RegisterFunction(fn);
 
         var values = new Value?[_goals.Count];

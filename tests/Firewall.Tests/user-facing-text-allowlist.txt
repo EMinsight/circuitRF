@@ -159,13 +159,6 @@ src/Core/Expressions/Evaluator.cs|at(): the index must be a number, e.g. at(x, \
 src/Core/Expressions/Evaluator.cs|at(): this value is a single number, so it has no '{axis}' axis to pin 
 # max_over/min_over (the band reductions a spec check needs) refuse in the evaluator's own voice, as
 # at() above does: a measurement error is reported as a run note carrying the evaluator's sentence.
-src/Core/Expressions/Evaluator.cs|{name}(): no '{axisName}' point lies in [{lo:G6}, {hi:G6}]; the axis runs from {extent}.
-src/Core/Expressions/Evaluator.cs|{name}(): no axis named '{axisName}'. Its axes are: {axes}.
-src/Core/Expressions/Evaluator.cs|{name}(): the range ends must be numbers, e.g. {name}(x, 0.1GHz, 3GHz).
-src/Core/Expressions/Evaluator.cs|{name}(): the range is empty — {lo:G6} is above {hi:G6}. Give the low end first.
-src/Core/Expressions/Evaluator.cs|{name}(): the values are complex, which have no order. Reduce a real quantity: dB(…), mag(…) or real(…) of it.
-src/Core/Expressions/Evaluator.cs|{name}(): this value has no 'freq' axis; name the axis to reduce as a fourth argument. Its axes are: {axes}.
-src/Core/Expressions/Evaluator.cs|{name}(): this value is a single number, so it has no axis to reduce over.
 src/Core/Expressions/Evaluator.cs|complex() imaginary part must be Real
 src/Core/Expressions/Evaluator.cs|complex() real part must be Real
 src/Core/Expressions/Evaluator.cs|if() condition must be Bool, got {cond.Kind}
@@ -1105,3 +1098,36 @@ src/Engine/Optimization/ParticleSwarm.cs|pso: topology={topology} is not ring or
 # YA-2 (2026-10-08): the Sobol table is an embedded resource of the same assembly; its absence is a
 # broken build, not a condition a user can meet or act on.
 src/Engine/Statistics/Sobol.cs|The Sobol direction numbers are not embedded.
+
+# ── Yield YA-3 / YA-4 (2026-10-08) ─────────────────────────────────────────────────
+# Expression errors: thrown as ExpressionException and reported as a measurement's or a goal's own error
+# text, the family the band reductions (max_over/min_over) already belonged to — those moved from
+# Evaluator.cs into Evaluator.Reductions.cs with the statistics functions. The three YA-3 distribution-call
+# lines were never listed when that phase landed. Regression and SampleStatistics guard internal invariants.
+src/Core/Expressions/Evaluator.Statistical.cs|'limit' requires real arguments
+src/Core/Expressions/Evaluator.Statistical.cs|'{cl.Name}' draws a real value only; argument {i + 1} is {v.Kind}
+src/Core/Expressions/Evaluator.Statistical.cs|Function '{cl.Name}' expects {(sigmaForm ? 
+src/Core/Expressions/Evaluator.Reductions.cs|cdf(): the value has no points that are numbers.
+src/Core/Expressions/Evaluator.Reductions.cs|cpk(): a limit must be a number, or \"none\" for a one-sided specification.
+src/Core/Expressions/Evaluator.Reductions.cs|cpk(): give at least one limit, e.g. cpk(x, \"none\", 5).
+src/Core/Expressions/Evaluator.Reductions.cs|histogram(): the range ends must be numbers, e.g. histogram(x, 20, 10, 20).
+src/Core/Expressions/Evaluator.Reductions.cs|pctl_over(): the percentile must be a number from 0 to 100, e.g. pctl_over(x, 95).
+src/Core/Expressions/Evaluator.Reductions.cs|sigma_to(): the limit must be a number, e.g. sigma_to(x, 14).
+src/Core/Expressions/Evaluator.Reductions.cs|yield_sens(): the pass/fail value has {pass.Axes[0].Length} points and the parameter {x.Axes[0].Length}; give both over the same trials.
+src/Core/Expressions/Evaluator.Reductions.cs|{name}(): no '{axisName}' point lies in [{lo:G6}, {hi:G6}]; the axis runs from {extent}.
+src/Core/Expressions/Evaluator.Reductions.cs|{name}(): no axis named '{axisName}'. Its axes are: {axes}.
+src/Core/Expressions/Evaluator.Reductions.cs|{name}(): the '{axisName}' axis has no points.
+src/Core/Expressions/Evaluator.Reductions.cs|{name}(): the bin count must be a whole number of at least 1, e.g. {name}(…, 20).
+src/Core/Expressions/Evaluator.Reductions.cs|{name}(): the range ends must be numbers, e.g. {name}(x, 0.1GHz, 3GHz).
+src/Core/Expressions/Evaluator.Reductions.cs|{name}(): the range is empty — {lo:G6} is above {hi:G6}. Give the low end first.
+src/Core/Expressions/Evaluator.Reductions.cs|{name}(): the values are complex, which have no order. Reduce a real quantity: dB(…), mag(…) or real(…) of it.
+src/Core/Expressions/Evaluator.Reductions.cs|{name}(): the values are complex. Take a real quantity: dB(…), mag(…) or real(…) of it.
+src/Core/Expressions/Evaluator.Reductions.cs|{name}(): this value has no 'trial' or 'freq' axis; name the axis to reduce as the last argument. Its axes are: {axes}.
+src/Core/Expressions/Evaluator.Reductions.cs|{name}(): this value has the axes {string.Join(
+src/Core/Expressions/Evaluator.Reductions.cs|{name}(): this value is a single number, so it has no axis to reduce over.
+src/Core/Expressions/Evaluator.Reductions.cs|{name}(): this value is a single number; it needs a cube over one axis (the trials).
+src/Core/Expressions/SampleStatistics.cs|Cpk needs at least one limit.
+src/Core/Expressions/Value.cs|Operator '{op}' requires Bool or a cube of truth values, got {v.Kind}
+src/Core/Expressions/Value.cs|Operator '{op}' requires real operands, got a complex cube
+src/Core/Expressions/Value.cs|Operator '{op}' requires real operands, got {(v.Kind == ValueKind.Cube ? 
+src/Engine/Statistics/Regression.cs|A regression needs at least two observations.

@@ -150,4 +150,47 @@ public static class StatisticsDiagnostics
     public static Diagnostic TrialDrawFailed(string problem) => Diagnostic.Create(
         "yield.trial.draw-failed", DiagnosticSeverity.Error,
         "A distribution could not be drawn ({problem}); the trial does not evaluate.", ("problem", problem));
+
+    // ── YA-4: the run ──────────────────────────────────────────────────────
+
+    public static Diagnostic RunNoYieldGoal() => Diagnostic.Create(
+        "yield.run.no-yield-goal", DiagnosticSeverity.Error,
+        "A yield run needs an enabled goal with use=yield or use=both to pass or fail each trial against; run a Monte Carlo to see the spread alone.");
+
+    public static Diagnostic RunNominalFailed(string reason) => Diagnostic.Create(
+        "yield.run.nominal-failed", DiagnosticSeverity.Error,
+        "The nominal design does not evaluate ({reason}), so no trial would mean anything.", ("reason", reason));
+
+    public static Diagnostic RunNoneEvaluated(int trials, string first) => Diagnostic.Create(
+        "yield.run.none-evaluated", DiagnosticSeverity.Error,
+        "None of the {trials} trials evaluated; the first: {first}.", ("trials", trials), ("first", first));
+
+    public static Diagnostic RunDidNotEvaluate(int count, int trials, bool counted) => Diagnostic.Create(
+        "yield.run.did-not-evaluate", DiagnosticSeverity.Warning,
+        counted ? "{count} of {trials} trials did not evaluate — counted as fails."
+                : "{count} of {trials} trials did not evaluate — excluded from the yield (nonconverged=warn).",
+        ("count", count), ("trials", trials));
+
+    public static Diagnostic RunSaved(string sentence) => Diagnostic.Create(
+        "yield.run.saved", DiagnosticSeverity.Info, "{sentence}", ("sentence", sentence));
+
+    public static Diagnostic RunWriteFailed(string path, string reason) => Diagnostic.Create(
+        "yield.run.write-failed", DiagnosticSeverity.Warning,
+        "The results could not be written to {path}: {reason}", ("path", path), ("reason", reason));
+
+    public static Diagnostic TrialOutOfRange(int trial, string why) => Diagnostic.Create(
+        "yield.trial.out-of-range", DiagnosticSeverity.Error,
+        "There is no trial {trial}: {why}", ("trial", trial), ("why", why));
+
+    public static Diagnostic ContributionUnknown(string name, string known) => Diagnostic.Create(
+        "yield.contrib.unknown", DiagnosticSeverity.Error,
+        "'{name}' is neither a goal the run scored nor a scalar measurement; it scored: {known}.", ("name", name), ("known", known));
+
+    public static Diagnostic ContributionTooFew(string name, int trials) => Diagnostic.Create(
+        "yield.contrib.too-few", DiagnosticSeverity.Error,
+        "'{name}' has a value in {trials} trial(s); contributions need at least three.", ("name", name), ("trials", trials));
+
+    public static Diagnostic ContributionNothingVaries() => Diagnostic.Create(
+        "yield.contrib.nothing-varies", DiagnosticSeverity.Error,
+        "No statistical variable was drawn in the run, so nothing can contribute.");
 }

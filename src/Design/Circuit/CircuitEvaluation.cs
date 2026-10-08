@@ -40,6 +40,11 @@ public sealed record CircuitEvaluationRequest
     /// <summary>Cancellation and progress.</summary>
     public RunControl? Control { get; init; }
 
+    /// <summary>One Monte Carlo trial's draws for the distribution calls the design holds (docs/design/yield.md
+    /// §7–8), or null — Simulate's nominal. Every elaboration of this evaluation draws them, an engine's own
+    /// re-elaboration included; a draw that cannot be made fails the evaluation.</summary>
+    public IStatisticalDraws? Statistics { get; init; }
+
     /// <summary>Where a breadcrumb line goes as each analysis starts and ends — the GUI's crash
     /// reporter. Null discards them.</summary>
     public Action<string>? Breadcrumb { get; init; }
@@ -128,6 +133,7 @@ public static class CircuitEvaluation
         notes.AddRange(tuned.Notes);
         foreach (var (name, expr) in request.Sets)
             HbCircuitRun.ApplySet(tb, name, expr);
+        tb.StatisticalDraws = request.Statistics;
 
         // ── 3. Elaborate ───────────────────────────────────────────────────────
         ElaboratedNetlist nl;
@@ -139,6 +145,14 @@ public static class CircuitEvaluation
         catch (Exception ex)
         {
             return new RunPlan(RunStatus.EngineError, $"Elaboration failed: {ex.Message}");
+        }
+        // A draw that could not be made is a trial that did not evaluate (yield overview D7): some parameter
+        // paths fall back to the verbatim text when evaluation throws, so the list is the reliable signal.
+        if (request.Statistics is not null && nl.StatisticalProblems.Count > 0)
+        {
+            nl.Dispose();
+            return new RunPlan(RunStatus.EngineError,
+                Statistics.StatisticsDiagnostics.TrialDrawFailed(string.Join("; ", nl.StatisticalProblems)).Render());
         }
 
         // ── 3b. wBond coupling audit (WB30 / WB30a, R-wbb2-4) ──────────────────

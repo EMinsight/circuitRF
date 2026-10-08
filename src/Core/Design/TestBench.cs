@@ -62,6 +62,15 @@ public sealed class TestBench(string name)
     /// NodeMap.LabeledNames by the Elaborator and persisted in the __LabeledNodes DataCube.
     /// </summary>
     public HashSet<string> LabeledNets { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The draws of one Monte Carlo trial (docs/design/yield.md §8), or null for an ordinary run. A RUN-TIME
+    /// attachment, never written: it rides on the bench rather than on one <c>Elaborator</c> because an engine
+    /// re-elaborates the same bench — a parametric sweep per point, a parallel S-parameter run per worker — and
+    /// every one of those elaborations must draw the trial's values, not the nominal.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public Expressions.IStatisticalDraws? StatisticalDraws { get; set; }
 }
 
 /// <summary>

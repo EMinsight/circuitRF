@@ -184,30 +184,35 @@ public readonly struct Value
 
     public static Value LessThan(Value a, Value b)
     {
+        if (a.Kind == ValueKind.Cube || b.Kind == ValueKind.Cube) return CompareCubes(a, b, "<", d => d < 0);
         RequireReal(a, "<"); RequireReal(b, "<");
         return new Value(a._real < b._real);
     }
 
     public static Value LessOrEqual(Value a, Value b)
     {
+        if (a.Kind == ValueKind.Cube || b.Kind == ValueKind.Cube) return CompareCubes(a, b, "<=", d => d <= 0);
         RequireReal(a, "<="); RequireReal(b, "<=");
         return new Value(a._real <= b._real);
     }
 
     public static Value GreaterThan(Value a, Value b)
     {
+        if (a.Kind == ValueKind.Cube || b.Kind == ValueKind.Cube) return CompareCubes(a, b, ">", d => d > 0);
         RequireReal(a, ">"); RequireReal(b, ">");
         return new Value(a._real > b._real);
     }
 
     public static Value GreaterOrEqual(Value a, Value b)
     {
+        if (a.Kind == ValueKind.Cube || b.Kind == ValueKind.Cube) return CompareCubes(a, b, ">=", d => d >= 0);
         RequireReal(a, ">="); RequireReal(b, ">=");
         return new Value(a._real >= b._real);
     }
 
     public static Value Equal(Value a, Value b)
     {
+        if (a.Kind == ValueKind.Cube || b.Kind == ValueKind.Cube) return CompareCubes(a, b, "==", d => d == 0);
         if (a.Kind == ValueKind.Bool || b.Kind == ValueKind.Bool)
             throw new ExpressionException("Cannot compare Bool values with ==");
 
@@ -231,6 +236,7 @@ public readonly struct Value
 
     public static Value NotEqual(Value a, Value b)
     {
+        if (a.Kind == ValueKind.Cube || b.Kind == ValueKind.Cube) return CompareCubes(a, b, "!=", d => d != 0);
         var eq = Equal(a, b);
         return new Value(!eq._bool);
     }
@@ -239,6 +245,7 @@ public readonly struct Value
 
     public static Value Not(Value a)
     {
+        if (a.Kind == ValueKind.Cube) return new Value(MapTruth(a._cube!, "!", t => t == 0 ? 1 : 0));
         RequireBool(a, "!");
         return new Value(!a._bool);
     }
@@ -253,6 +260,55 @@ public readonly struct Value
     {
         RequireBool(a, "||"); RequireBool(b, "||");
         return new Value(a._bool || b._bool);
+    }
+
+    // ── Comparisons over cubes ───────────────────────────────────────────────
+
+    /// <summary>
+    /// A comparison with a cube on either side is taken ELEMENT BY ELEMENT and gives a real cube of 1 (true) and 0
+    /// (false), broadcast as arithmetic is — so <c>yield_over(goal:G:worst &gt; 14)</c> counts the trials above a
+    /// limit (docs/design/measurements.md "Reductions over an axis"). Real values only, as for scalars; a NaN element (a trial with no
+    /// value) stays NaN, so a reduction that skips NaN skips it rather than counting it false.
+    /// </summary>
+    private static Value CompareCubes(Value a, Value b, string op, Func<double, bool> holds)
+    {
+        foreach (var v in new[] { a, b })
+            if (v.Kind == ValueKind.Cube ? v._cube!.DataKind != RfCore.Data.DataKind.Real : v.Kind != ValueKind.Real)
+                throw new ExpressionException($"Operator '{op}' requires real operands, got {(v.Kind == ValueKind.Cube ? "a complex cube" : v.Kind)}");
+        var diff = Sub(a, b).AsCube();
+        var d = diff.RealValues;
+        var r = new double[d.Length];
+        for (int i = 0; i < d.Length; i++) r[i] = double.IsNaN(d[i]) ? double.NaN : holds(d[i]) ? 1 : 0;
+        return new Value(new RfCore.Data.DataCube([.. diff.Axes], r));
+    }
+
+    /// <summary>
+    /// <c>&amp;&amp;</c>, <c>||</c> with a cube on either side: element by element over truth values (non-zero is
+    /// true; a Bool scalar broadcasts), no short circuit — every element needs both sides.
+    /// </summary>
+    internal static Value LogicCubes(Value a, Value b, string op)
+    {
+        static RfCore.Data.DataCube Truth(Value v, string op) => v.Kind switch
+        {
+            ValueKind.Cube => MapTruth(v._cube!, op, t => t),
+            ValueKind.Bool => RfCore.Data.DataCube.Scalar(v._bool ? 1.0 : 0.0),
+            _              => throw new ExpressionException($"Operator '{op}' requires Bool or a cube of truth values, got {v.Kind}"),
+        };
+        var l = Truth(a, op);
+        var r = Truth(b, op);
+        // a·b is AND over 0/1; a + b − a·b is OR. NaN propagates through both, as a comparison's does.
+        var prod = l * r;
+        return new Value(op == "&&" ? prod : l + r - prod);
+    }
+
+    private static RfCore.Data.DataCube MapTruth(RfCore.Data.DataCube c, string op, Func<double, double> f)
+    {
+        if (c.DataKind != RfCore.Data.DataKind.Real)
+            throw new ExpressionException($"Operator '{op}' requires real operands, got a complex cube");
+        var d = c.RealValues;
+        var r = new double[d.Length];
+        for (int i = 0; i < d.Length; i++) r[i] = double.IsNaN(d[i]) ? double.NaN : f(d[i] != 0 ? 1 : 0);
+        return new RfCore.Data.DataCube([.. c.Axes], r);
     }
 
     // ── Guards ───────────────────────────────────────────────────────────────

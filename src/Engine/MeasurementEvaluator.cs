@@ -45,7 +45,7 @@ public sealed class MeasurementEvaluator
     /// Returns per-measurement error strings for any that failed; successful cubes are always emitted.
     /// </summary>
     public IReadOnlyList<string> EvaluateInto(DataSet ds)
-        => Evaluate((m, result) => ds.Add(m.Name, ToCube(m, result)), true, null, null);
+        => Evaluate((m, result) => ds.Add(m.Name, ToCube(m, result)), ds.Add, true, null, null);
 
     /// <summary>
     /// <see cref="EvaluateInto(DataSet)"/>, then each of <paramref name="expressions"/> in the same
@@ -60,13 +60,13 @@ public sealed class MeasurementEvaluator
     {
         var list = new List<ExpressionOutcome>(expressions.Count);
         outcomes = list;
-        return Evaluate((m, result) => ds.Add(m.Name, ToCube(m, result)), measurements, expressions, list);
+        return Evaluate((m, result) => ds.Add(m.Name, ToCube(m, result)), ds.Add, measurements, expressions, list);
     }
 
     // ── Shared evaluation core ───────────────────────────────────────────────────
 
     private IReadOnlyList<string> Evaluate(
-        Action<Measurement, Value> emit, bool measurements,
+        Action<Measurement, Value> emit, Action<string, DataCube> emitCompanion, bool measurements,
         IReadOnlyList<string>? expressions, List<ExpressionOutcome>? outcomes)
     {
         var errors = new List<string>();
@@ -155,6 +155,7 @@ public sealed class MeasurementEvaluator
         foreach (var m in declared)
         {
             Value result;
+            eval.TakeCompanions();
             try { result = eval.Eval(m.Expression, mScope, m.Unit); }
             catch (Exception ex)
             {
@@ -171,7 +172,14 @@ public sealed class MeasurementEvaluator
             mScope.Bind(m.Name, result.ToString()!);
             eval.InjectResolved("measurements", m.Name, result);
 
-            try { emit(m, result); }
+            try
+            {
+                emit(m, result);
+                // What an axis-building function had to say beside its cube (a histogram's bin width), stored as
+                // <name>:<companion> — measurements.md "Reductions over an axis".
+                foreach (var (suffix, companion) in eval.TakeCompanions())
+                    emitCompanion($"{m.Name}:{suffix}", companion);
+            }
             catch (Exception ex)
             {
                 errors.Add($"Measurement '{m.Name}': failed to emit result: {ex.Message}");
