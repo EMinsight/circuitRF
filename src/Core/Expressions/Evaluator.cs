@@ -207,6 +207,10 @@ public sealed partial class Evaluator
         // than folded into it because there are three dozen of them and every one is a cube map.
         if (IsWspBuiltin(cl.Name)) return EvalWspCall(cl, scope);
 
+        // The network metrics, group delay and VSWR (Evaluator.Network.cs) — one goal expression away
+        // from every quantity the Data Display derives from an S cube.
+        if (IsNetworkBuiltin(cl.Name)) return EvalNetworkCall(cl, scope);
+
         // built-ins — cube-aware variants handle DataCube args; scalars fall through to normal math
         return cl.Name switch
         {

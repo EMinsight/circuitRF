@@ -161,7 +161,19 @@ order. The full table — equations, arguments and return shapes — is in
 `wsp_impedance`, `wsp_gain`, `GainDEFs`, `wsp_rc_renorm_s`, `wsp_zo_renorm_s`, and the twelve
 immittance conversions `z_to_pr/pc/pl/sr/sc/sl` and `y_to_pr/pc/pl/sr/sc/sl`.
 
-They are reserved like every other built-in (§2). Three of them are worth knowing about from the
+**Network metrics** (measurement context only; brief-tuneopt-9): `mu(S)`, `mu_prime(S)`, `K(S)`,
+`delta_mag(S)`, `max_gain(S)` (MAG/MSG in dB), `max_gain_lin(S)` (the same as a power ratio) and
+`passivity(S)` (σ_max of the whole network), each also as `f(S, in, out)` with an ordered 1-based
+input/output port pair — required on an N-port, implied (1, 2) on a two-port; `passivity(S, in, out)` is
+that of the extracted two-port, not of the network. `S` must be an analysis's own S cube (`SP1.S`): the
+metric needs that run's per-port reference impedances, which it renormalizes to a uniform real reference
+first exactly as the Data Display does (`NetworkMetrics`), so a sliced or computed cube is refused. Each
+returns `{…, freq}`. `group_delay(z)` is −dφ/dω along `freq` of a complex cube, phase unwrapped, in
+**seconds**; `group_delay(S, in, out)` is the delay from port `in` to port `out` after the same
+renormalization. `vswr(Γ)` is (1 + |Γ|)/(1 − |Γ|) element-wise, +∞ at and beyond |Γ| = 1. A name such
+as `K` stays usable as a variable or measurement: only a CALL `K(…)` is the function.
+
+They are reserved like every other built-in (§2). Three of the WSProbe functions are worth knowing about from the
 grammar's side alone: **`_dB` is a legal identifier** (the tokenizer has always accepted a leading
 underscore) and is `10·log10|M|`, a POWER dB, which is why it is not `dB`; the `y_to_*`/`z_to_*`
 family returns **farads and henries**, never the document's picofarads and nanohenries; and the

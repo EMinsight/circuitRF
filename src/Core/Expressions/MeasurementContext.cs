@@ -48,6 +48,23 @@ public sealed class MeasurementContext
     }
 
     /// <summary>
+    /// The analysis whose <paramref name="cubeName"/> cube IS <paramref name="cube"/> (reference
+    /// equality, as <see cref="TryFindWspOwner"/>) — so a network metric handed <c>SP1.S</c> can read
+    /// that run's per-port reference impedances (<c>SP1.Z0</c>) without a second argument.
+    /// </summary>
+    public bool TryFindOwner(DataCube cube, string cubeName, out DataSet? owner)
+    {
+        foreach (var ds in _results.Values)
+            if (ds.Contains(cubeName) && ReferenceEquals(ds[cubeName], cube))
+            {
+                owner = ds;
+                return true;
+            }
+        owner = null;
+        return false;
+    }
+
+    /// <summary>
     /// Try to get the linear back-solver for the named analysis.
     /// Returns false (and null solver) when no back-solver is available.
     /// </summary>

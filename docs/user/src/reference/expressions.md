@@ -95,12 +95,16 @@ may not shadow them.
       <tr><td>Misc</td><td><code>min(a,b) max(a,b) sign(x)</code>, <code>if(cond,then,else)</code></td></tr>
       <tr><td>Complex → Real</td><td><code>real(z) imag(z) abs(z) mag(z)</code> (= abs) <code>phase(z)</code> (degrees) <code>phase_rad(z)</code> (radians)</td></tr>
       <tr><td>Real,Real → Complex</td><td><code>polar(mag, phase_deg)</code> — e.g. <code>polar(0.1, 10)</code> is 0.1∠10°</td></tr>
+      <tr><td>Network metrics</td><td><code>mu(S) mu_prime(S) K(S) delta_mag(S) max_gain(S)</code> (dB) <code>max_gain_lin(S) passivity(S)</code>, each also <code>(S, in, out)</code> for an N-port — <code>S</code> is an analysis's S cube, e.g. <code>mu(SP1.S)</code></td></tr>
+      <tr><td>Delay / match</td><td><code>group_delay(z)</code> (seconds; or <code>group_delay(S, in, out)</code>) <code>vswr(Γ)</code></td></tr>
     </tbody>
     <caption><code>phase</code> and the <code>.phase</code> cube transform both use <strong>degrees</strong>.
     <code>dB</code>/<code>dBm</code> are <a href="measurements.html">measurement</a> functions, not general
     built-ins (and so are never unit suffixes). So are <code>max_over(x, lo, hi)</code> and
     <code>min_over(x, lo, hi)</code>, the <a href="measurements.html#spec">worst value over a band</a> —
-    unlike <code>min(a,b)</code>/<code>max(a,b)</code>, which compare two values.</caption>
+    unlike <code>min(a,b)</code>/<code>max(a,b)</code>, which compare two values. The network metrics,
+    <code>group_delay</code> and <code>vswr</code> are measurement functions too; a metric reads the
+    analysis's own port reference impedances, so pass <code>SP1.S</code> itself, not a slice of it.</caption>
   </table>
 
 ## Units {#units}

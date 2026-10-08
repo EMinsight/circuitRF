@@ -1603,18 +1603,7 @@ namespace CircuitRF.Render.DataDisplay
         /// <see cref="BuildPickerExpression"/> appends the <c>vs X</c> half on top of this.</summary>
         private string BuildPickerYExpression()
         {
-            // WSP-4: a WSProbe trace names itself the way a measure line would (overview D-5), not
-            // by the slice through the raw wsp matrix its values are computed FROM. `mag(SP1.wsp[:,
-            // 0, 0])` is a true description of the read and a false description of the quantity.
-            if (IsWspTrace)
-            {
-                string body = WspMetrics.AccessorText(Wsp!, CubeName);
-                return Transform == CubeTransform.None
-                    ? body
-                    : $"{TransformFunctionName(Transform)}({body})";
-            }
-
-            if (CubeName is null || Slice is null)
+            if (PickerBody() is not { } body)
             {
                 // The fallback description can itself be a "Y vs X" string (it reads Expression),
                 // so take only its Y half — otherwise re-appending the X side would compound into
@@ -1622,15 +1611,30 @@ namespace CircuitRF.Render.DataDisplay
                 string d = ShortDescription;
                 return VersusSpec.TrySplit(d, out var yHalf, out _, out _) ? yHalf : d;
             }
-            if (Slice.Length == 0)   // scalar (rank-0) cube — no axes to slice
-                return Transform == CubeTransform.None
-                    ? CubeName
-                    : $"{TransformFunctionName(Transform)}({CubeName})";
+            return Transform == CubeTransform.None
+                ? body
+                : $"{TransformFunctionName(Transform)}({body})";
+        }
+
+        /// <summary>
+        /// What a picker trace reads, WITHOUT its transform — <c>SP1.S[:, 2, 1]</c>, or a WSProbe
+        /// metric's measure-line call — or null for a trace the picker did not author.
+        /// <paramref name="forExpression"/> writes a narrowed X as a whole axis (<c>:</c>): the
+        /// card's <c>a..b</c> is its own spelling, not the expression language's, and a goal states
+        /// its range separately ("Add as goal…", brief-tuneopt-9 R-to9-4).
+        /// </summary>
+        internal string? PickerBody(bool forExpression = false)
+        {
+            // WSP-4: a WSProbe trace names itself the way a measure line would (overview D-5), not
+            // by the slice through the raw wsp matrix its values are computed FROM. `mag(SP1.wsp[:,
+            // 0, 0])` is a true description of the read and a false description of the quantity.
+            if (IsWspTrace) return WspMetrics.AccessorText(Wsp!, CubeName);
+
+            if (CubeName is null || Slice is null) return null;
+            if (Slice.Length == 0) return CubeName;   // scalar (rank-0) cube — no axes to slice
             // A single whole-axis X (e.g. "PDC[:]") reads better bare.
-            if (Slice.Length == 1 && Slice[0].Role == AxisRole.KeepAsX && !Slice[0].IsNarrowedRange)
-                return Transform == CubeTransform.None
-                    ? CubeName
-                    : $"{TransformFunctionName(Transform)}({CubeName})";
+            if (Slice.Length == 1 && Slice[0].Role == AxisRole.KeepAsX && (forExpression || !Slice[0].IsNarrowedRange))
+                return CubeName;
             var parts = Slice.Select(s =>
                 // A narrowed X must re-emit as "a..b", the same end-exclusive spelling
                 // SliceTokenParser reads back. Emitting a bare ":" here was the other half of the
@@ -1638,7 +1642,7 @@ namespace CircuitRF.Render.DataDisplay
                 // mapping widened the range anyway, so anything that regenerates the spec text —
                 // an S/Z/Y toggle, a signal reselection — silently threw the narrowing away
                 // mid-session, with no edit by the user.
-                s.IsNarrowedRange                  ? $"{s.RangeStart}..{s.RangeEndExclusive}"
+                s.IsNarrowedRange && !forExpression ? $"{s.RangeStart}..{s.RangeEndExclusive}"
                 : s.Role == AxisRole.KeepAsX       ? ":"
                 : s.Role == AxisRole.FamilyIterate ? "~"
                 // 1-based port number (S[:, 2, 1] = S21); the WSProbe matrix's row/col read the
@@ -1650,10 +1654,7 @@ namespace CircuitRF.Render.DataDisplay
                 : PinnedAxisSpecToken(s.AxisName) is { Length: > 0 } spec ? spec
                 : s.AxisName == "port"             ? (s.Index + 1).ToString()
                 :                                    s.Index.ToString());
-            var inner = string.Join(", ", parts);
-            if (Transform == CubeTransform.None)
-                return $"{CubeName}[{inner}]";
-            return $"{TransformFunctionName(Transform)}({CubeName}[{inner}])";
+            return $"{CubeName}[{string.Join(", ", parts)}]";
         }
 
         /// <summary>Maps a CubeTransform to the exact expression-engine function name.

@@ -11039,6 +11039,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         lib.ResultsRootProvider     = GetResultsRoot;
         lib.KnownTouchstoneProvider = GetKnownTouchstoneFiles;
         lib.KnownLoadpullProvider   = GetKnownLoadpullFiles;
+        lib.AddAsGoal               = AddGoalFromTrace;
     }
 
     /// <summary>

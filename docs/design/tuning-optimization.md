@@ -1,8 +1,9 @@
 # Tuning and optimization
 
-**Status:** TO-1 … TO-7 built (model, file format, catalog, in-memory overrides, `check`/`explain`/`reference`;
+**Status:** TO-1 … TO-9 built (model, file format, catalog, in-memory overrides, `check`/`explain`/`reference`;
 evaluation service; live session and Data Display; the Tuning panel; presets; the optimizer core; the
-global and derivative-free algorithms and the algorithm registry). TO-8 … TO-12 briefed (`docs/sonnet-briefs/brief-tuneopt-*.md`). The overview brief
+global and derivative-free algorithms and the algorithm registry; Bayesian, Discrete and Auto; goal
+functions, templates and "Add as goal"). TO-10 … TO-12 briefed (`docs/sonnet-briefs/brief-tuneopt-*.md`). The overview brief
 (`brief-tuneopt-0-overview.md`) holds the decisions D1–D17 in full and is binding; this note is the
 standing reference for what is built, and restates the decisions only as far as the code depends on them.
 
@@ -24,6 +25,8 @@ standing reference for what is built, and restates the decisions only as far as 
 | CLI | `check`, `explain --tunables`, `reference tuning`, `reference goals`, `reference optimizers` | See `cli.md`. |
 | Optimizer algorithms | `src/Engine/Optimization/` | Ask/tell state machines over the unit box: `RandomSearch`, `NelderMead`, `LevenbergMarquardt`, `BfgsB` (§10); `Minimax`, `TrustRegionModel`, `PatternSearch`, `DifferentialEvolution`, `ParticleSwarm`, `CmaEs` (§11). `OptimizerFactory` builds one from its id. |
 | Optimizer run | `src/Design/Optimization/OptimizationRun.cs` + `OptimizationVariables`, `GoalResiduals`, `OptimizationDiagnostics` | Decode, goals → residuals, cache, parallel batches, stopping, pause, progress, history (§10). |
+| Goal templates | `src/Design/Optimization/GoalTemplates.cs` | The catalog the goal editor lists: S-parameter, WSProbe, measurement and custom templates (§13). |
+| Trace → goal | `src/Design/Optimization/TraceToGoal.cs` + `src/Render/DataDisplay/TraceGoalReader.cs` | "Add as goal" on a Data Display trace (§13). |
 
 **Why the model is in `src/Core` and not `src/Design/Optimization`.** The brief placed the model classes
 in `src/Design/Optimization`. A `TestBench` carries the setup and the `.cnl` reader and writer live in
@@ -468,3 +471,40 @@ nowhere — the run's best and log do not move. Each coordinate's ∂cost/∂u (
 range in its own scale, to first order) and its share of the total; per goal, the coordinate that moves
 that goal's cost most. A part of a complex value is its own coordinate, so ∂cost/∂mag(ZL) and
 ∂cost/∂phase(ZL) are reported, never a whole value.
+
+## 13. Goal functions, the template catalog and "Add as goal" (TO-9)
+
+**Network metrics are expression built-ins** (`src/Core/Expressions/Evaluator.Network.cs`): `mu`,
+`mu_prime`, `K`, `delta_mag`, `max_gain` (dB), `max_gain_lin`, `passivity`, `group_delay`, `vswr` — the
+list and spellings are in `expressions.md` §7. Each takes the analysis's S cube (`SP1.S`) and an optional
+ordered (input, output) port pair, and computes nothing itself: it calls `NetworkMetrics`' matrix-level
+overloads, the same ones the Data Display's µ/K/MAG/σ/group-delay traces call. **The reference
+impedances come from the analysis that owns the cube**, found by reference
+(`MeasurementContext.TryFindOwner`, the WSProbe functions' precedent), because the metrics are only
+defined after renormalizing to a uniform real reference and an S cube does not carry its Z0. A cube no
+analysis owns — sliced or computed — is therefore refused rather than assumed to be 50 Ω. A parametric
+sweep's stacked Z0 (`[sweep…, port]`) is read per sweep point.
+
+**Templates** (`GoalTemplates.For(circuit or bench)`): per S-parameter analysis |Sij| in dB or linear,
+phase, group delay, VSWR, µ, µ′, K and max gain (ports from the bench's `Port` instances); per
+S-parameter analysis of a circuit with WSProbes, the single-probe metrics of `stability-wsprobe.md` §5.2,
+a complex one through a chosen part; every `measure` row by name, its analysis found through its own text
+(`AnalysisReferencedBy`, following measure names); and a custom expression (`Validate` gives the
+parser's own message). **There is no HB family on purpose** — an output power, efficiency or PAE goal is a
+`measure` row the user writes and then picks by name. A template fills the analysis's swept range and a
+suggested type (transmission ≥, reflection ≤, µ/µ′/K ≥ 1); a limit only where one is conventional.
+
+**"Add as goal" (R-to9-4).** `TraceGoalReader` (in `src/Render`, beside the `Trace` model) reads what a
+trace is; `TraceToGoal` (headless) turns that into a goal: the trace's group as the analysis, its read
+plus its transform as an expression, the plot's visible X range clipped to the data, and the first
+visible marker's value as the limit. **The card's transform is translated, not copied**: its `dB20` is a
+measure line's `dB()`, and its plain `dB` is a POWER dB, so it becomes `dB10()` — copying the name would
+make every power goal 3 dB wrong. A narrowed X slice is written as `:` (the goal's range says it), and a
+family's `~` as `:`. Refused with a reason (the menu row greyed, the reason on its tooltip): a complex trace
+with no reducing transform and `conj`, stability circles and the passive readouts, a "versus" trace, a
+trace renormalized by the plot's Z0 override, Z/Y, and a source that is not a simulation's results. The
+menu is the plot menu's **Add as Goal** submenu (one row per curve), the marker menu and a Table's
+trace-header menu. **Until TO-10's goal editor exists** the workspace adds the goal straight to the open
+schematic the results came from (`WorkspaceViewModel.AddGoalFromTrace`, one undo step), disabled when
+the trace gave it no limit; TO-10 replaces that body with opening the editor pre-filled.
+

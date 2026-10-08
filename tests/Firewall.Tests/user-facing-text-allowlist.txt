@@ -803,6 +803,18 @@ src/Engine/SParameterEngine.cs|wsprobe.port-short: port {port.PortNum} has Z0 = 
 # to change for every message at once; and each of these sentences names the argument position and
 # the spelling that fixes it, which is the information a Diagnostic would carry as typed arguments.
 # Convert them with the rest of Evaluator.cs, in one pass, when that family is converted.
+src/Core/Expressions/Evaluator.Network.cs|group_delay(): the argument is a single number, so it has no 'freq' axis to differentiate along.
+src/Core/Expressions/Evaluator.Network.cs|group_delay(): the argument must be complex — a transmission coefficient such as SP1.S(2, 1) — 
+src/Core/Expressions/Evaluator.Network.cs|group_delay(): the value has no 'freq' axis; its axes are {string.Join(
+src/Core/Expressions/Evaluator.Network.cs|vswr(): the argument must be a reflection coefficient.
+src/Core/Expressions/Evaluator.Network.cs|{cl.Name}(): argument {i + 1} must be a 1-based port number.
+src/Core/Expressions/Evaluator.Network.cs|{cl.Name}(): pass the analysis's S cube itself (SP1.S). This value is not one an analysis 
+src/Core/Expressions/Evaluator.Network.cs|{cl.Name}(): port {p} is outside 1..{n}.
+src/Core/Expressions/Evaluator.Network.cs|{cl.Name}(): the S cube must be laid out {{…, freq, i, j}}; this one's axes are 
+src/Core/Expressions/Evaluator.Network.cs|{cl.Name}(): the analysis's Z0 cube holds {zv.Length} values, which is not one per port 
+src/Core/Expressions/Evaluator.Network.cs|{cl.Name}(): the first argument must be an S cube (complex), e.g. SP1.S.
+src/Core/Expressions/Evaluator.Network.cs|{cl.Name}(): the first argument must be an analysis's S cube — SP1.S — not a single number.
+src/Core/Expressions/Evaluator.Network.cs|{cl.Name}(): the input and output port must differ; both are {i}.
 src/Core/Expressions/Evaluator.Wsp.cs|{cl.Name}: argument 2 is the kind, a quoted string — \"BI\", \"UNI\" (or \"FOR\"), 
 src/Core/Expressions/Evaluator.Wsp.cs|{cl.Name}: argument {i + 1} must be a probe index — SP1.idx(\"GATE\") or an 
 src/Core/Expressions/Evaluator.Wsp.cs|{cl.Name}: argument {i + 1} must be {what}, not a single number. 

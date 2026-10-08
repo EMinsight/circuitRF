@@ -18556,3 +18556,27 @@ Calls the owner may revisit: choosing **Minimax** sets the minimax cost form eve
 `lm` is still refused; **Auto** under `cost=minimax` now runs Minimax instead of Nelder–Mead; **DE's `budget`**
 (the evaluations its population schedule plans for) defaults to the run's `maxevals` when stated, else 1000n;
 **CMA-ES** handles bounds by re-sampling, then projection after 100 draws.
+
+## Tuning TO-9: goal functions, templates, "Add as goal" — findings (2026-10-07)
+
+**The trace card's plain `dB` transform is a POWER dB; a measure line's `dB()` is 20·log10.** The card has
+`dB20`, `dB10` and `dB`, and `dB` renders as `DbFloor.Db10` — while the expression engine's `dB` is the
+`dB20` alias. Copying the card's name into a goal would make every goal on a power-dB trace 3 dB wrong and
+still evaluate. `TraceToGoal` maps `dB20 → dB()`, `dB10 → dB10()`, `dB → dB10()`; the gate is
+`TraceToGoalTests.ACubeTransform_BecomesTheMeasureFunction`.
+
+**A network metric needs the cube's OWNER, not just the cube.** `mu(SP1.S)` has to renormalize with that
+run's per-port Z0, which an S cube does not carry. `MeasurementContext.TryFindOwner` finds it by reference,
+as the WSProbe functions find their probe labels; a sliced or computed cube is refused with a sentence
+rather than assumed 50 Ω. A parametric sweep stacks Z0 as `[sweep…, port]`, read per sweep point. The
+Amplifier example's hand-written Rollett K measure agrees with `K(SP1.S)` to 1e-9 (`GoalTemplateTests`).
+
+**`wsp_loopgain` takes the reduced two-port, `(Y, kind [, Z0])`.** The WSProbe template first wrote the
+Data Display label's spelling `wsp_loopgain(SP1.wsp, idx, "BI")`, which the engine refuses (argument 2 must
+be the kind). The label itself was wrong in the same way for all nine loop-gain metrics and was corrected in
+`WspMetrics.AccessorText` (src/Render) — label text only; nothing parses it back.
+
+Calls the owner may revisit: until TO-10's goal editor exists, "Add as goal" adds the goal straight to the
+open schematic the results came from (one undo step), **disabled** when no visible marker gave it a limit;
+the analysis of a measurement trace is the first analysis its measure text names. Templates suggest a type
+(transmission ≥, reflection ≤, µ/µ′/K ≥ 1, phase =) and a limit only for µ/µ′/K.

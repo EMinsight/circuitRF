@@ -267,6 +267,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         private Marker?  _rightClickedMarker;
         private Trace?   _rightClickedTrace;
         private MenuItem? _addMarkerMenuItem;
+        private MenuItem? _addAsGoalMenuItem;
         private MenuItem? _selectAllMarkersMenuItem;
         private MenuItem? _plotPropertiesMenuItem;
         private MenuItem? _deletePlotMenuItem;
@@ -542,6 +543,9 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             var item4 = new MenuItem { Header = "Add Marker", Icon = icon };
             _addMarkerMenuItem = item4;
 
+            icon = new MaterialIcon { Kind = MaterialIconKind.Target };
+            _addAsGoalMenuItem = new MenuItem { Header = "Add as Goal", Icon = icon };
+
             icon = new MaterialIcon { Kind = MaterialIconKind.SelectGroup };
             var itemSelectAll = new MenuItem
             {
@@ -589,6 +593,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             menu.Items.Add(itemAdmittance);
             menu.Items.Add(new Separator());
             menu.Items.Add(item4);
+            menu.Items.Add(_addAsGoalMenuItem);
             menu.Items.Add(itemSelectAll);
             menu.Items.Add(item5);
             menu.Items.Add(item6);
@@ -904,6 +909,50 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 (_library?.Entries.Count(e => e.Snp is not null && !e.Snp.IsEmpty) ?? 0) > 1);
             await PlotExporter.CopyPlotToClipboardAsync(
                 this, _plot, _theme, showFilePrefix, ContainerProvider?.Invoke());
+        }
+
+        /// <summary>
+        /// "Add as Goal" (brief-tuneopt-9 R-to9-4): one row per curve, each handing on the goal
+        /// pre-filled from that trace — its analysis, its expression, the visible X range and the
+        /// visible marker's value as the limit. A trace with no expression equivalent stays in the
+        /// list, greyed, with the reason on its tooltip.
+        /// </summary>
+        private void RefreshAddAsGoalSubmenu()
+        {
+            if (_addAsGoalMenuItem is null) return;
+            _addAsGoalMenuItem.Items.Clear();
+            var traces = _plot?.Traces.Where(t => !t.IsAnnotation).ToList() ?? [];
+            bool any = traces.Count > 0 && _plot!.PlotType != PlotType.Surface3D;
+            _addAsGoalMenuItem.IsEnabled = any;
+            _addAsGoalMenuItem.Opacity   = any ? 1.0 : 0.4;
+            if (!any) return;
+            foreach (var t in traces) _addAsGoalMenuItem.Items.Add(AddAsGoalItem(t, t.Description));
+        }
+
+        /// <summary>The "Add as Goal" row for one trace, enabled, or greyed with its reason.</summary>
+        private MenuItem AddAsGoalItem(Trace trace, string header)
+        {
+            var item = new MenuItem { Header = header };
+            string? reason;
+            CircuitRF.Core.Design.OptimizationGoal? goal = null;
+            if (_plot is null || _library?.AddAsGoal is null)
+                reason = "There is no schematic here to add a goal to.";
+            else
+            {
+                var result = TraceGoalReader.Translate(trace, _plot, _library.DataFor(trace.EffectiveSourcePath));
+                goal = result.Goal;
+                reason = result.Reason;
+            }
+            if (goal is null)
+            {
+                item.IsEnabled = false;
+                ToolTip.SetTip(item, reason);
+                ToolTip.SetShowOnDisabled(item, true);
+                return item;
+            }
+            string? source = trace.EffectiveSourcePath;
+            item.Click += (_, _) => _library?.AddAsGoal?.Invoke(goal, source);
+            return item;
         }
 
         private void RefreshAddMarkerSubmenu()
@@ -1737,6 +1786,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 {
                     _contextMenu ??= BuildContextMenu();
                     RefreshAddMarkerSubmenu();
+                    RefreshAddAsGoalSubmenu();
                     RefreshContextMenuState();
                     _contextMenu.Open(this);
                 }
@@ -2464,6 +2514,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     InvalidateVisual();
                     PlotChanged?.Invoke(this, EventArgs.Empty);
                 });
+            menu.Items.Add(new Separator());
+            menu.Items.Add(AddAsGoalItem(trace, "Add as Goal…"));
             menu.Close(); // a second right-click while the menu is still up replaces, not re-opens
             menu.Open(this);
         }
@@ -2521,6 +2573,8 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             if (!trace.IsCubeBound && trace.Data is { } d && !d.IsEmpty)
                 menu.Items.Add(matrixTypeMenu);
             menu.Items.Add(matrixFmtMenu);
+            menu.Items.Add(new Separator());
+            menu.Items.Add(AddAsGoalItem(trace, "Add as Goal…"));
             menu.Close(); // a second right-click while the menu is still up replaces, not re-opens
             menu.Open(this);
         }

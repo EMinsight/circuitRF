@@ -181,6 +181,17 @@ public partial class DataSourceLibraryViewModel
     public DataSet? SnapshotFor(string? absPath) =>
         absPath is not null && _snapshots.TryGetValue(Path.GetFullPath(absPath), out var s) ? s : null;
 
+    /// <summary>
+    /// What "Add as goal…" on a trace does with the goal it pre-filled (brief-tuneopt-9 R-to9-4) —
+    /// set by the workspace, which owns the schematic the trace's source came from; the second
+    /// argument is that source's path. Null where there is no workspace, which greys the item out.
+    /// </summary>
+    public Action<CircuitRF.Core.Design.OptimizationGoal, string?>? AddAsGoal { get; set; }
+
+    /// <summary>The DataSet the source at <paramref name="absPath"/> currently holds, or null — what
+    /// "Add as goal…" reads a trace's analysis and S cube from.</summary>
+    public DataSet? DataFor(string? absPath) => absPath is null ? null : FindEntry(absPath)?.Data;
+
     // ---- helpers -------------------------------------------------------------
 
     private DataSourceEntryViewModel? FindEntry(string absPath)
