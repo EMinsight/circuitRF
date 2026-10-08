@@ -84,8 +84,9 @@ public static class TuningValidator
             {
                 if (g.UpperLimit is null)
                     f.Add(TuningDiagnostics.BandNeedsTwoLimits(who, g.Type.ToString().ToLowerInvariant()));
-                else if (limit is { } l && Number(g.UpperLimit, who, "upper limit", f) is { } u && l >= u)
-                    f.Add(TuningDiagnostics.BandInverted(who, g.Limit, g.UpperLimit));
+                // Edges given high-first are simply read the other way round (GoalResiduals.Score).
+                else if (limit is { } l && Number(g.UpperLimit, who, "upper limit", f) is { } u && l == u)
+                    f.Add(TuningDiagnostics.BandEmpty(who, g.Limit));
             }
             else if (g.LimitAtHi is { } atHi)
             {
@@ -168,7 +169,7 @@ public static class TuningValidator
         string who = $"goal {g.Name}";
         double? lo = Number(r.Lo, who, "range's lo", f), hi = Number(r.Hi, who, "range's hi", f);
         if (lo is not { } a || hi is not { } b) return;
-        if (a > b) { f.Add(TuningDiagnostics.GoalRangeInverted(who, r.Lo, r.Hi)); return; }
+        if (a > b) (a, b) = (b, a);   // ends given high-first are read the other way round
 
         if (netlist is null || g.Analysis is null) return;
         var grid = GridOf(tb, g.Analysis, r.Axis, netlist);

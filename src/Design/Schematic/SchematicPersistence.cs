@@ -65,12 +65,16 @@ public sealed class CschTuning
     public List<OptimizationGoal>? Goals     { get; set; }
     public OptimizerSettings?      Optimizer { get; set; }
 
+    /// <summary>The panels' significant digits (<see cref="TuningSetup.Digits"/>); absent at the default.</summary>
+    public int? Digits { get; set; }
+
     public static CschTuning? From(TuningSetup? s) => s is null || s.IsEmpty ? null : new()
     {
         Variables = s.Variables.Count > 0 ? [.. s.Variables.Select(v => v.Clone())] : null,
         Presets   = s.Presets.Count   > 0 ? [.. s.Presets.Select(p => p.Clone())]   : null,
         Goals     = s.Goals.Count     > 0 ? [.. s.Goals.Select(g => g.Clone())]     : null,
         Optimizer = s.Optimizer?.Clone(),
+        Digits    = s.Digits,
     };
 
     public TuningSetup ToSetup() => new()
@@ -79,6 +83,7 @@ public sealed class CschTuning
         Presets   = Presets   ?? [],
         Goals     = Goals     ?? [],
         Optimizer = Optimizer,
+        Digits    = Digits,
     };
 }
 

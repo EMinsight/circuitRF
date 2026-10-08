@@ -556,6 +556,9 @@ While paused or after a run:
 - **Push** writes them into the schematic — one undo step per document, inside sub-cells too.
 - **Send to Tuning** loads them into the Tuning panel's sliders, to explore around the answer by hand.
 
+All three use the digits chosen with the button at the right of the header — the same setting as the
+[Tuning panel's](tuning.html#rows) — so what is kept is what the variable list shows.
+
 ## From the command line, and from an agent {#headless}
 
 `circuitrf opt <schematic.csch>` runs the schematic's saved setup headless and reports the same best

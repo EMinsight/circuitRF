@@ -4,6 +4,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Optimization;
 using CircuitRF.Ui.Tuning;
 using CircuitRF.Ui.ViewModels.Dock;
@@ -27,6 +28,7 @@ public partial class OptimizerToolView : UserControl
 
         AddHandler(KeyDownEvent, OnKeyDownTunnel, RoutingStrategies.Tunnel);
         AddHandler(LostFocusEvent, OnLostFocus, RoutingStrategies.Bubble);
+        EscapeCancelsEdit.Attach(this);   // after the tunnel above, so a box's own Esc meaning runs first
         GoalList.DoubleTapped += OnGoalDoubleTapped;
 
         AddFlyout.Opened += (_, _) => { if (_panel is { } p) p.Add.IsOpen = true; AddSearch.Focus(); };

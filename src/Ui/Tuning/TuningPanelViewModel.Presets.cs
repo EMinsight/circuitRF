@@ -90,7 +90,7 @@ public sealed partial class TuningPanelViewModel
                 values[row.Key] = row.DiffersFromSchematic ? row.ValueText : t.ValueText;
             else if (!values.ContainsKey(t.WholeKey))
                 values[t.WholeKey] = _complex.TryGetValue(t.WholeKey, out var z)
-                    ? ComplexValue.Format(z, t.WholeUnit, t.Form)
+                    ? ComplexValue.Format(z, t.WholeUnit, t.Form, TuningDigits.NumberFormat(Digits))
                     : ComplexValue.Format(t.Whole, t.WholeUnit, t.Form, "G15");
         }
         return values;
@@ -104,7 +104,7 @@ public sealed partial class TuningPanelViewModel
         if (_tuned is null) return;
         var (setup, _) = TuningPresets.LockIn(_tuned.EditModel.Tuning, LockInValues(), UtcNow());
         _renameIndex = setup.Presets.Count - 1;
-        _tuned.Execute(new SetTuningSetupCommand(_tuned.EditModel, setup, "Lock in preset"));
+        ExecuteEdit(new SetTuningSetupCommand(_tuned.EditModel, setup, "Lock in preset"));
         RefreshNow();
         StatusText = $"Locked in {setup.Presets[^1].Name}";
         PresetNamingRequested?.Invoke(this, EventArgs.Empty);
@@ -151,7 +151,7 @@ public sealed partial class TuningPanelViewModel
         }
 
         if (result.Setup is { } setup)
-            _tuned.Execute(new SetTuningSetupCommand(_tuned.EditModel, setup, $"Recall preset {preset.Name}"));
+            ExecuteEdit(new SetTuningSetupCommand(_tuned.EditModel, setup, $"Recall preset {preset.Name}"));
         RefreshNow();
 
         StatusText   = result.Summary;
@@ -177,14 +177,14 @@ public sealed partial class TuningPanelViewModel
             return;
         }
         if (TuningPresets.Rename(setup, item.Index, name) is { } next)
-            _tuned.Execute(new SetTuningSetupCommand(_tuned.EditModel, next, "Rename preset"));
+            ExecuteEdit(new SetTuningSetupCommand(_tuned.EditModel, next, "Rename preset"));
         RefreshNow();
     }
 
     internal void DuplicatePreset(TuningPresetItemViewModel item)
     {
         if (_tuned?.EditModel.Tuning is not { } setup) return;
-        _tuned.Execute(new SetTuningSetupCommand(_tuned.EditModel,
+        ExecuteEdit(new SetTuningSetupCommand(_tuned.EditModel,
             TuningPresets.Duplicate(setup, item.Index, UtcNow()), $"Duplicate preset {item.Name}"));
         RefreshNow();
     }
@@ -192,7 +192,7 @@ public sealed partial class TuningPanelViewModel
     internal void DeletePreset(TuningPresetItemViewModel item)
     {
         if (_tuned?.EditModel.Tuning is not { } setup) return;
-        _tuned.Execute(new SetTuningSetupCommand(_tuned.EditModel,
+        ExecuteEdit(new SetTuningSetupCommand(_tuned.EditModel,
             TuningPresets.Delete(setup, item.Index), $"Delete preset {item.Name}"));
         RefreshNow();
     }
@@ -259,6 +259,7 @@ public sealed partial class TuningPanelViewModel
     {
         if (_tuned is null || !Rows.Any(r => r.Tunable is not null && !r.IsDisabled && r.DiffersFromSchematic)) return false;
         if (TuningPresets.WithLastTuned(_tuned.EditModel.Tuning, LockInValues(), UtcNow()) is not { } next) return false;
+        // Not ExecuteEdit: this runs on save and on close, and must not leave Undo pinned to a closing tab.
         _tuned.Execute(new SetTuningSetupCommand(_tuned.EditModel, next, "Store last tuned values"));
         RefreshNow();
         return true;

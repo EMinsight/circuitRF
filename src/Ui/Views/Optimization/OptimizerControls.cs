@@ -4,6 +4,8 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
+using CircuitRF.Core.Design;
 using CircuitRF.Ui.Optimization;
 
 namespace CircuitRF.Ui.Views.Optimization;
@@ -138,6 +140,29 @@ public sealed class GoalPreviewPlot : Control
         Point P(double x, double y) => new(6 + (b.Width - 12) * (x - xlo) / (xhi - xlo),
                                            6 + (b.Height - 12) * (yhi - y) / (yhi - ylo));
 
+        // Where the goal FAILS, hatched under the limit lines: above a ≤ limit, below a ≥ one, outside an
+        // `in` band, between the edges of an `out` one. An `=` goal fails everywhere but on its line.
+        if (p.LimitLo is { } lo0 && p.LimitHi is { } hi0)
+        {
+            double top = yhi, bottom = ylo;
+            switch (p.Type)
+            {
+                case GoalType.Le:
+                    Hatch(ctx, b, P(xlo, top), P(xhi, top), P(xhi, hi0), P(xlo, lo0));
+                    break;
+                case GoalType.Ge:
+                    Hatch(ctx, b, P(xlo, lo0), P(xhi, hi0), P(xhi, bottom), P(xlo, bottom));
+                    break;
+                case GoalType.In when p.Upper is { } up:
+                    Hatch(ctx, b, P(xlo, top), P(xhi, top), P(xhi, up), P(xlo, up));
+                    Hatch(ctx, b, P(xlo, lo0), P(xhi, lo0), P(xhi, bottom), P(xlo, bottom));
+                    break;
+                case GoalType.Out when p.Upper is { } up:
+                    Hatch(ctx, b, P(xlo, up), P(xhi, up), P(xhi, lo0), P(xlo, lo0));
+                    break;
+            }
+        }
+
         var limitPen = new Pen(new SolidColorBrush(Color.FromRgb(0xD9, 0x4F, 0x4F)), 1, new DashStyle([4, 3], 0));
         if (p.LimitLo is { } a && p.LimitHi is { } c) ctx.DrawLine(limitPen, P(xlo, a), P(xhi, c));
         if (p.Upper is { } u) ctx.DrawLine(limitPen, P(xlo, u), P(xhi, u));
@@ -161,5 +186,24 @@ public sealed class GoalPreviewPlot : Control
             if (open) g.EndFigure(false);
         }
         ctx.DrawGeometry(null, pen, geo);
+    }
+
+    private static readonly IPen HatchPen = new ImmutablePen(new ImmutableSolidColorBrush(Color.FromArgb(0x70, 0xD9, 0x4F, 0x4F)), 1);
+
+    /// <summary>Diagonal hatching, 6 px apart, inside the quadrilateral a, b, c, d.</summary>
+    private static void Hatch(DrawingContext ctx, Rect bounds, Point a, Point b, Point c, Point d)
+    {
+        var region = new StreamGeometry();
+        using (var g = region.Open())
+        {
+            g.BeginFigure(a, true);
+            g.LineTo(b); g.LineTo(c); g.LineTo(d);
+            g.EndFigure(true);
+        }
+        using (ctx.PushGeometryClip(region))
+        {
+            double w = bounds.Width, h = bounds.Height;
+            for (double x = -h; x < w; x += 6) ctx.DrawLine(HatchPen, new Point(x, h), new Point(x + h, 0));
+        }
     }
 }

@@ -30,27 +30,28 @@ public partial class WorkspaceViewModel
     internal ITuningSurface TuningSurface => _tuningSurface ??= new TuningSurfaceRelay(() => _factory.TuningTool?.Panel);
 
     /// <summary>
-    /// Points the Tuning panel at <paramref name="document"/>'s TOP frame for a schematic, and clears it
-    /// for anything else (R-to4-2) — with one exception: a Data Display taking focus while a session
-    /// runs keeps the panel where it is. That display is where the session's results are being looked
-    /// at, and stopping the session because someone clicked it would make live tuning unusable.
+    /// Points the Tuning panel at <paramref name="document"/>'s TOP frame for a schematic. Any other
+    /// document — a Data Display above all, which is where tuned results are watched — leaves the panel
+    /// on the last schematic that had focus, and a panel that has none yet takes the retained one the
+    /// Analyses panel runs. Only closing the tuned schematic empties it (<see cref="ClearTuningPanel"/>),
+    /// so the panel is blank only when no schematic has been open.
     /// </summary>
     private void RouteTuningPanel(IDockable? document)
     {
         WireTuningPanel();
         if (_factory.TuningTool?.Panel is not { } panel) return;
 
-        switch (document)
-        {
-            case SchematicDocument sd:
-                panel.SetActiveSchematic(sd.NavFrames[0].Session, InstancesRootHeaderOf(sd));
-                break;
-            case DataDisplayDocument when panel.IsRunning:
-                break;
-            default:
-                panel.SetActiveSchematic(null, null);
-                break;
-        }
+        if (document is SchematicDocument sd)
+            panel.SetActiveSchematic(sd.NavFrames[0].Session, InstancesRootHeaderOf(sd));
+        else if (!panel.HasSchematic && _lastActiveSchematicDoc is { } kept)
+            panel.SetActiveSchematic(kept.NavFrames[0].Session, InstancesRootHeaderOf(kept));
+    }
+
+    /// <summary>The tuned schematic has closed: the panel has nothing left to tune.</summary>
+    private void ClearTuningPanel()
+    {
+        WireTuningPanel();
+        _factory.TuningTool?.Panel.SetActiveSchematic(null, null);
     }
 
     private void WireTuningPanel()
@@ -60,6 +61,9 @@ public partial class WorkspaceViewModel
         _wiredTuningPanel = panel;
 
         panel.Defer = a => Avalonia.Threading.Dispatcher.UIThread.Post(a, Avalonia.Threading.DispatcherPriority.Background);
+        // ⌘Z after a Push (or any edit) made here undoes it with the panel still focused — the
+        // Analyses panel's pin on the session the edit landed on.
+        panel.EditCommitted     += OnAnalysesEditCommitted;
         panel.CreateSession      = CreateTuneSession;
         panel.SessionForDrawing  = d => SessionForTunedDrawing(d, openTab: true);
         panel.ExistingSessionFor = d => SessionForTunedDrawing(d, openTab: false);

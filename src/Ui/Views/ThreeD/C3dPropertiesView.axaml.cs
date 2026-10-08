@@ -3,6 +3,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.ThreeD;
 
 namespace CircuitRF.Ui.Views.ThreeD;
@@ -15,16 +16,12 @@ namespace CircuitRF.Ui.Views.ThreeD;
 public partial class C3dPropertiesView : UserControl
 {
     private C3dPropertiesViewModel? _vm;
-    private (TextBox Box, string? Text)? _focusText;
 
     public C3dPropertiesView()
     {
         InitializeComponent();
-        Focusable = true;
-        // 3D editor round 1 — Esc in a field cancels the edit and leaves the field. The window binds Esc to a command that
-        // marks it handled before a focused control sees it, so this listens on the tunnel with handled events too.
-        AddHandler(GotFocusEvent, OnAnyGotFocus, RoutingStrategies.Bubble, handledEventsToo: true);
-        AddHandler(KeyDownEvent, OnEscapeTunnel, RoutingStrategies.Tunnel, handledEventsToo: true);
+        // 3D editor round 1 — Esc in a field cancels the edit and leaves the field.
+        EscapeCancelsEdit.Attach(this);
         // brief-em3d-92 — the slider previews while it moves and writes on release: the pointer let go (its thumb captures it,
         // so the release may arrive as a lost capture) or an arrow key let go.
         TransparencySlider.AddHandler(PointerReleasedEvent, (_, _) => _vm?.CommitTransparencySlider(), RoutingStrategies.Bubble, handledEventsToo: true);
@@ -38,22 +35,6 @@ public partial class C3dPropertiesView : UserControl
         PlotOffsetSlider.AddHandler(PointerReleasedEvent, (_, _) => _vm?.CommitPlotOffsetSlider(), RoutingStrategies.Bubble, handledEventsToo: true);
         PlotOffsetSlider.AddHandler(PointerCaptureLostEvent, (_, _) => _vm?.CommitPlotOffsetSlider(), RoutingStrategies.Bubble, handledEventsToo: true);
         PlotOffsetSlider.AddHandler(KeyUpEvent, (_, _) => _vm?.CommitPlotOffsetSlider(), RoutingStrategies.Bubble, handledEventsToo: true);
-    }
-
-    private void OnAnyGotFocus(object? sender, FocusChangedEventArgs e)
-    {
-        if (e.Source is TextBox tb) _focusText = (tb, tb.Text);
-    }
-
-    /// <summary>The field gets back the text it had when it took focus, THEN loses focus — so its lost-focus commit finds
-    /// nothing changed and writes nothing.</summary>
-    private void OnEscapeTunnel(object? sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Escape || _focusText is not { } f || !f.Box.IsFocused || !this.IsVisualAncestorOf(f.Box)) return;
-        f.Box.Text = f.Text;
-        _focusText = null;
-        Focus();
-        e.Handled = true;
     }
 
     protected override void OnDataContextChanged(EventArgs e)

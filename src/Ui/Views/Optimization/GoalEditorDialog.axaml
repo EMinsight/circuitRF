@@ -24,11 +24,25 @@
             <Setter Property="Padding" Value="4,2"/>
             <Setter Property="MinHeight" Value="0"/>
         </Style>
+        <!-- The five goal types: square, the size of a schematic toolbar button (a 16 px glyph in
+             6,3 padding), each glyph a 16 px path so it sits exactly centred whatever the font. The
+             stroke follows the button's foreground, so a checked (accent) button draws it white. -->
         <Style Selector="ToggleButton.type">
-            <Setter Property="Padding" Value="8,1"/>
-            <Setter Property="MinWidth" Value="34"/>
-            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Width" Value="28"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Margin" Value="0,0,2,0"/>
+        </Style>
+        <Style Selector="ToggleButton.type Path">
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Stretch" Value="None"/>
+            <Setter Property="StrokeThickness" Value="1.5"/>
+            <Setter Property="StrokeLineCap" Value="Round"/>
+            <Setter Property="StrokeJoin" Value="Round"/>
+            <Setter Property="Stroke" Value="{Binding $parent[ToggleButton].Foreground}"/>
         </Style>
     </Window.Styles>
 
@@ -113,11 +127,23 @@
                 <!-- Type: five toggles, then the limit boxes that type reads. -->
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="Type" Classes="label"/>
-                    <ToggleButton Classes="type" Content="≤" IsChecked="{Binding IsLe}" ToolTip.Tip="At or below the limit"/>
-                    <ToggleButton Classes="type" Content="≥" IsChecked="{Binding IsGe}" ToolTip.Tip="At or above the limit"/>
-                    <ToggleButton Classes="type" Content="=" IsChecked="{Binding IsEq}" ToolTip.Tip="At the limit"/>
-                    <ToggleButton Classes="type" Content="in" IsChecked="{Binding IsIn}" ToolTip.Tip="Inside a band"/>
-                    <ToggleButton Classes="type" Content="out" IsChecked="{Binding IsOut}" ToolTip.Tip="Outside a band"/>
+                    <ToggleButton Classes="type" IsChecked="{Binding IsLe}" ToolTip.Tip="At or below the limit (le)">
+                        <Path Data="M12,2.5 L4,6.5 L12,10.5 M4,13.5 L12,13.5"/>
+                    </ToggleButton>
+                    <ToggleButton Classes="type" IsChecked="{Binding IsGe}" ToolTip.Tip="At or above the limit (ge)">
+                        <Path Data="M4,2.5 L12,6.5 L4,10.5 M4,13.5 L12,13.5"/>
+                    </ToggleButton>
+                    <ToggleButton Classes="type" IsChecked="{Binding IsEq}" ToolTip.Tip="At the limit (eq)">
+                        <Path Data="M3,6 L13,6 M3,10 L13,10"/>
+                    </ToggleButton>
+                    <!-- Inside: the band's two edges, chevrons pointing in from each. -->
+                    <ToggleButton Classes="type" IsChecked="{Binding IsIn}" ToolTip.Tip="Inside a band (in)">
+                        <Path Data="M1.5,2.5 L14.5,2.5 M1.5,13.5 L14.5,13.5 M5,5 L8,7.5 L11,5 M5,11 L8,8.5 L11,11"/>
+                    </ToggleButton>
+                    <!-- Outside: a narrow band, chevrons pointing away from it. -->
+                    <ToggleButton Classes="type" IsChecked="{Binding IsOut}" ToolTip.Tip="Outside a band (out)">
+                        <Path Data="M1.5,6.5 L14.5,6.5 M1.5,9.5 L14.5,9.5 M5,4 L8,1.5 L11,4 M5,12 L8,14.5 L11,12"/>
+                    </ToggleButton>
                 </StackPanel>
                 <WrapPanel>
                     <TextBlock Text="Limit" Classes="label" IsVisible="{Binding !IsBand}"/>

@@ -73,7 +73,7 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
     /// <summary>The best point's value, in <see cref="Unit"/> — the schematic's before any run.</summary>
     public double Best => _best;
 
-    public string BestText => TuningRowViewModel.FormatValue(_best, "");
+    public string BestText => TuningDigits.Format(_best, "", _panel.Digits);
 
     /// <summary>Where <see cref="Best"/> sits on the range bar, 0..1.</summary>
     public double BestPosition => TuningSliderMapping.ToPosition(_best, Min, Max, Scale);

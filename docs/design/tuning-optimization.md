@@ -188,7 +188,8 @@ Errors: min ≥ max; `scale=log` with min ≤ 0; a bound, limit or range end tha
 whose analysis is not declared; a goal range that holds no point of the analysis's grid (computed for
 `freq` of an S-parameter sweep, also through a wrapping parametric sweep, and for a sweep's own variable;
 other axes are checked at run time); an expression that does not parse; an `in`/`out` goal without two
-limits or with an inverted band; a sloped limit with no range; a key naming a value D1 does not offer
+limits, or whose two limits are equal (two limits, or a range's two ends, given high-first are read
+low-first — a sloped limit keeps the end it was written against); a sloped limit with no range; a key naming a value D1 does not offer
 (a complex value named whole, or a part of a value that is not complex, included); a phase range wider
 than 360°; ranges of one complex value's parts that leave no value inside all of them (D18);
 `discrete=integer|preferred` on a part of a complex value, and `discrete=preferred` on a value whose unit

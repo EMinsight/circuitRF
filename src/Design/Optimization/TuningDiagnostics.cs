@@ -60,18 +60,13 @@ public static class TuningDiagnostics
         "tuning.goal.band-incomplete", DiagnosticSeverity.Error,
         "{who}: '{type}' needs two limits.", ("who", who), ("type", type));
 
-    public static Diagnostic BandInverted(string who, string lower, string upper) => Diagnostic.Create(
-        "tuning.goal.band-inverted", DiagnosticSeverity.Error,
-        "{who}: the band's lower limit {lower} is not below its upper limit {upper}.",
-        ("who", who), ("lower", lower), ("upper", upper));
+    public static Diagnostic BandEmpty(string who, string limit) => Diagnostic.Create(
+        "tuning.goal.band-empty", DiagnosticSeverity.Error,
+        "{who}: both edges of the band are {limit}.", ("who", who), ("limit", limit));
 
     public static Diagnostic SlopeNeedsRange(string who) => Diagnostic.Create(
         "tuning.goal.slope-without-range", DiagnosticSeverity.Error,
         "{who}: a sloped limit needs a range (over=… lo=… hi=…) to slope across.", ("who", who));
-
-    public static Diagnostic GoalRangeInverted(string who, string lo, string hi) => Diagnostic.Create(
-        "tuning.goal.range-inverted", DiagnosticSeverity.Error,
-        "{who}: lo={lo} is above hi={hi}.", ("who", who), ("lo", lo), ("hi", hi));
 
     public static Diagnostic GoalRangeEmpty(string who, string lo, string hi, string axis, string analysis,
                                             double gridMin, double gridMax) => Diagnostic.Create(

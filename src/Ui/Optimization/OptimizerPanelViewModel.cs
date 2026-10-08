@@ -131,6 +131,23 @@ public sealed partial class OptimizerPanelViewModel : ObservableObject, ITunable
 
     private TuningSetup? Setup => _tuned?.EditModel.Tuning;
 
+    // ---- Digits (the Tuning panel's setting, on the same schematic) ----------------
+
+    /// <summary>The significant digits a best value is shown and kept with (<see cref="TuningDigits"/>).</summary>
+    public int Digits => TuningDigits.Of(Setup);
+
+    public IReadOnlyList<TuningDigitsChoice> DigitsChoices
+        => [.. TuningDigits.Choices.Select(d => new TuningDigitsChoice(d, d == Digits, SetDigitsCommand))];
+
+    [RelayCommand(CanExecute = nameof(HasSchematic))]
+    private void SetDigits(int digits)
+    {
+        if (_tuned is null || digits == Digits) return;
+        var next = Setup?.Clone() ?? new TuningSetup();
+        next.Digits = digits == TuningDigits.Default ? null : digits;
+        Execute(next, $"Show {TuningDigits.Label(digits)}");
+    }
+
     // ---- Following focus (overview §3) ------------------------------------------
 
     /// <summary>The focused tab's top-frame session for a <c>.csch</c>; null for anything else. A
@@ -157,6 +174,8 @@ public sealed partial class OptimizerPanelViewModel : ObservableObject, ITunable
         if (tuned is not null) RefreshNow();
         OnPropertyChanged(nameof(Tuned));
         OnPropertyChanged(nameof(HasSchematic));
+        OnPropertyChanged(nameof(DigitsChoices));
+        SetDigitsCommand.NotifyCanExecuteChanged();
         NotifyRunCommands();
     }
 
@@ -221,6 +240,9 @@ public sealed partial class OptimizerPanelViewModel : ObservableObject, ITunable
             row.ShowRailed(_lastRailed?.FirstOrDefault(r => r.Key == row.Key));
         }
 
+        OnPropertyChanged(nameof(Digits));
+        OnPropertyChanged(nameof(DigitsChoices));
+
         // The algorithm the document names.
         _syncingAlgorithm = true;
         string id = Settings?.Algorithm ?? OptimizerAlgorithms.Auto;
@@ -260,10 +282,15 @@ public sealed partial class OptimizerPanelViewModel : ObservableObject, ITunable
     }
 
     /// <summary>Replaces the tuned schematic's tuning block as one undo step.</summary>
+    /// <summary>Raised after an edit from this panel lands on a schematic's undo stack, with the session
+    /// it landed on — so ⌘Z works with the panel focused (the Tuning panel's <c>EditCommitted</c>).</summary>
+    public event Action<SchematicViewModel>? EditCommitted;
+
     private void Execute(TuningSetup next, string description)
     {
         if (_tuned is null) return;
         _tuned.Execute(new SetTuningSetupCommand(_tuned.EditModel, next, description));
+        EditCommitted?.Invoke(_tuned);
         if (Defer is not null) RefreshNow();
     }
 

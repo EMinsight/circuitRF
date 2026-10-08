@@ -12,6 +12,28 @@
          icon buttons, then one row per tune-enabled entry. Readouts carry no prose: a value, or a
          short status, and a sentence only where there is no value at all. -->
 
+    <!-- The Fluent slider reserves 15 px above and below its track and a 32 px minimum, so it lays
+         out 50 px tall around a 20 px thumb — and the value box beside it stretched to the row that
+         made. These zero the reserve and take a 16 px thumb: the slider is as tall as its thumb, which
+         stays centred on the track (measured headlessly, 2026-10-07). A negative margin only shrank
+         the footprint and left the row tall. -->
+    <UserControl.Resources>
+        <GridLength x:Key="SliderPreContentMargin">0</GridLength>
+        <GridLength x:Key="SliderPostContentMargin">0</GridLength>
+        <x:Double x:Key="SliderHorizontalHeight">0</x:Double>
+        <x:Double x:Key="SliderHorizontalThumbHeight">16</x:Double>
+        <x:Double x:Key="SliderHorizontalThumbWidth">16</x:Double>
+        <!-- The header's digits menu: one radio item per choice (TuningDigitsChoice). -->
+        <ControlTheme x:Key="DigitsMenuItem" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}"
+                      x:DataType="tun:TuningDigitsChoice">
+            <Setter Property="Header" Value="{Binding Label}"/>
+            <Setter Property="ToggleType" Value="Radio"/>
+            <Setter Property="IsChecked" Value="{Binding IsChecked, Mode=OneWay}"/>
+            <Setter Property="Command" Value="{Binding Command}"/>
+            <Setter Property="CommandParameter" Value="{Binding Digits}"/>
+        </ControlTheme>
+    </UserControl.Resources>
+
     <UserControl.Styles>
         <Style Selector="Button.tb">
             <Setter Property="Padding" Value="3,2"/>
@@ -56,7 +78,7 @@
               DataContext="{Binding Panel}" x:DataType="tun:TuningPanelViewModel">
 
             <!-- Header: schematic, status dot, last evaluation time / how far behind. -->
-            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="6,4,6,1">
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" Margin="6,4,2,1">
                 <TextBlock Grid.Column="0" Text="{Binding HeaderLabel}"
                            FontWeight="SemiBold" FontSize="12"
                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
@@ -64,6 +86,13 @@
                          VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="2" x:Name="StatusTime" FontSize="11" Opacity="0.7"
                            VerticalAlignment="Center"/>
+                <Button Grid.Column="3" Classes="tb" Margin="4,0,0,0" VerticalAlignment="Center"
+                        ToolTip.Tip="Significant digits for tuned and optimized values">
+                    <mi:MaterialIcon Kind="DecimalDecrease"/>
+                    <Button.Flyout>
+                        <MenuFlyout ItemsSource="{Binding DigitsChoices}" ItemContainerTheme="{StaticResource DigitsMenuItem}"/>
+                    </Button.Flyout>
+                </Button>
             </Grid>
 
             <!-- Toolbar. -->
@@ -326,12 +355,12 @@
 
                                     <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="1"
                                             Value="{Binding Position}" IsVisible="{Binding IsEnabled}"
-                                            Classes="tuning" Margin="0,-8" VerticalAlignment="Center"
+                                            Classes="tuning" VerticalAlignment="Center"
                                             Focusable="True" Tag="{Binding}"/>
                                     <TextBox Grid.Row="0" Grid.Column="2" Text="{Binding ValueBoxText}"
                                              IsVisible="{Binding IsEnabled}" Classes="tuningValue"
                                              Width="64" FontSize="12" Padding="4,1" MinHeight="0" Margin="4,0,2,0"
-                                             HorizontalContentAlignment="Right" Tag="{Binding}"/>
+                                             VerticalAlignment="Center" HorizontalContentAlignment="Right" Tag="{Binding}"/>
                                     <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding Unit}" FontSize="11"
                                                IsVisible="{Binding IsEnabled}" VerticalAlignment="Center" MinWidth="16"/>
 

@@ -137,6 +137,21 @@ public sealed class GoalResidualTests
     }
 
     [Fact]
+    public void ABandOrRangeWrittenHighFirst_ScoresAsIfWrittenLowFirst()
+    {
+        var ordered = GoalResiduals.Score(Goal(GoalType.In, "-15", "-8"), new Value(Cube), null);
+        var swapped = GoalResiduals.Score(Goal(GoalType.In, "-8", "-15", lo: "4 GHz", hi: "1 GHz"), new Value(Cube), null);
+        Assert.Null(swapped.Error);
+        Assert.Equal(ordered.Residuals, swapped.Residuals);
+        Assert.Equal(GoalResiduals.Scale(Goal(GoalType.In, "-15", "-8")), GoalResiduals.Scale(Goal(GoalType.In, "-8", "-15")));
+
+        // A sloped limit keeps the end it was written against: −5 at lo=4 GHz, −20 at hi=2 GHz.
+        var sloped = GoalResiduals.Score(Goal(GoalType.Le, "-5", atHi: "-20", lo: "4 GHz", hi: "2 GHz"), new Value(Cube), null);
+        Assert.Equal(8, sloped.WorstViolation, 12);
+        Assert.Equal(2e9, sloped.WorstAt);
+    }
+
+    [Fact]
     public void ASlopedLimit_InterpolatesAcrossTheRange_AndTheWeightMultiplies()
     {
         // Over 2..4 GHz the limit runs −20 → −5: −20, −12.5, −5 against −12, −20, −5.

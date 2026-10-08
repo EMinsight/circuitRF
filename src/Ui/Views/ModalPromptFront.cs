@@ -54,6 +54,13 @@ internal static class ModalPromptFront
         return _open.Any(e => ReferenceEquals(e.Owner, owner));
     }
 
+    /// <summary>True when any prompt attached here is open, over whichever window.</summary>
+    internal static bool HasAnyOpenPrompt()
+    {
+        _open.RemoveAll(e => e.Dialog.PlatformImpl is null);
+        return _open.Count > 0;
+    }
+
     /// <summary>
     /// Call from the prompt's constructor. A window that is never shown modally has no owner, so
     /// there is no group to raise and nothing is recorded — attaching is harmless either way.

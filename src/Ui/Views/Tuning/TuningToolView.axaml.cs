@@ -9,6 +9,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Tuning;
 using CircuitRF.Ui.ViewModels.Dock;
 
@@ -44,6 +45,7 @@ public partial class TuningToolView : UserControl
         AddHandler(KeyDownEvent, OnKeyDownTunnel, RoutingStrategies.Tunnel);
         AddHandler(PointerReleasedEvent, OnPointerReleasedAnywhere, RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(LostFocusEvent, OnLostFocus, RoutingStrategies.Bubble);
+        EscapeCancelsEdit.Attach(this);   // after the tunnel above, so a box's own Esc meaning runs first
 
         AddFlyout.Opened      += (_, _) => { if (_panel is { } p) p.Add.IsOpen = true; AddSearch.Focus(); };
         AddFlyout.Closed      += (_, _) => { if (_panel is { } p) p.Add.IsOpen = false; };

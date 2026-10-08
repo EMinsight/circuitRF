@@ -108,8 +108,10 @@ public sealed partial class TuningRowViewModel : ObservableObject
     /// <summary>The middle of the range — which turn a phase row reads its angle in.</summary>
     private double Centre => (Min + Max) / 2;
 
-    /// <summary>The value as the session and Push spell it: <c>1.8 pF</c>.</summary>
-    public string ValueText => FormatValue(_value, Unit);
+    /// <summary>The value as the session and Push spell it, to the panel's digits: <c>1.8 pF</c>.</summary>
+    public string ValueText => Spell(_value, Unit);
+
+    private string Spell(double v, string unit) => TuningDigits.Format(v, unit, _panel.Digits);
 
     /// <summary>The number box. Typing changes nothing until Enter (<see cref="CommitValueText"/>).</summary>
     [ObservableProperty] private string _valueBoxText = "";
@@ -157,7 +159,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
         MinText      = FormatValue(Min, "");
         MaxText      = FormatValue(Max, "");
         StepText     = Step is { } st ? FormatValue(st, "") : "";
-        ValueBoxText = FormatValue(_value, "");
+        ValueBoxText = Spell(_value, "");
         _syncing = false;
         OnPropertyChanged(string.Empty);
     }
@@ -196,7 +198,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
     private void RaiseValue()
     {
         _syncing = true;
-        ValueBoxText = FormatValue(_value, "");
+        ValueBoxText = Spell(_value, "");
         _syncing = false;
         OnPropertyChanged(nameof(Value));
         OnPropertyChanged(nameof(ValueText));
@@ -218,7 +220,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
     }
 
     /// <summary>Esc in the number box.</summary>
-    public void RevertValueText() => ValueBoxText = FormatValue(_value, "");
+    public void RevertValueText() => ValueBoxText = Spell(_value, "");
 
     /// <summary>An arrow, Shift+arrow or Page key on the focused slider.</summary>
     public void Nudge(int direction, TuningNudge size)

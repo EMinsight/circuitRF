@@ -39031,3 +39031,56 @@ scale, so "200", "200 um", "200 µm" and "200 μm" (Greek mu) all mean 200 µm. 
 - Gates: `tests/Ui.Tests/OptimizerPanel/` — `OptimizerPanelRunTests` (5), `GoalEditorTests` (4),
   `OptimizerPublishTests` (2), `RailedWidenTests` (2), `OptimizerDockLayoutTests` (1); `TuningCheckTests`
   +1 case.
+
+## Tuning / Optimizer UI round 1 (2026-10-07)
+
+**The Fluent Slider is 50 px tall around a 20 px thumb, and a negative margin does not fix it.** Measured
+headlessly (Avalonia.Headless 12.0.3): the horizontal template reserves `SliderPreContentMargin` and
+`SliderPostContentMargin` (15 px each, `GridLength`) above and below the track and holds a
+`SliderHorizontalHeight` (32) minimum. `Margin="0,-8"` only pulls the FOOTPRINT in to 34 px, so the row
+stayed 34 px and a `TextBox` beside it (default `VerticalAlignment` Stretch) grew from its natural 18 px
+to 34, which is the oversized value box the owner reported. The fix is resources, not margins: those three set to 0
+(and here `SliderHorizontalThumbHeight/Width` 16) make the slider exactly as tall as its thumb, still
+centred on the track. Declared in `TuningToolView`'s `UserControl.Resources`, so only that view's
+sliders change. Reach for the same five keys wherever a slider row is too tall.
+
+**Esc in a text field is one shared helper now: `Controls/EscapeCancelsEdit.Attach(view)`.** It is the
+C3d Properties pattern moved out of that view (text remembered on focus; Esc puts it back, then the view
+takes focus so a lost-focus commit writes nothing; tunnel with handled events too). A box inside one of
+the view's FLYOUTS only gets its text back and the key is left unhandled — moving focus to the view
+would leave the flyout open with the keyboard outside it, and Esc closing the flyout is what the user
+expects there. The Optimizer's ⚙ flyout commits on close, so that order is also what makes Esc a
+cancel there. Attach it AFTER a view's own tunnel handler, so a box's own Esc meaning runs first.
+
+**A floating tool panel was raised only when the SHELL activated.** A torn-off document (a Data Display)
+is a peer, not owned (R-dock-14), so clicking one covered a floating Tuning or Optimizer panel with
+nothing bringing it back. `CrfHostWindow` now raises its workspace's tool floats when a DOCUMENT float
+activates, the shell's idiom (activate the panels, re-activate the initiator, guard released a dispatcher
+pass later), and stands down while a modal prompt is open (`ModalPromptFront.HasAnyOpenPrompt`).
+Not verified on screen — z-order is a platform fact this session cannot observe.
+
+**Tuning and Optimizer keep the last schematic when focus goes elsewhere.** Any non-schematic document
+leaves both panels where they were (a panel with none yet takes the retained `_lastActiveSchematicDoc`);
+only closing the tuned schematic clears them (`ClearTuningPanel`/`ClearOptimizerPanel`).
+
+**`TuningSetup.Digits` is the SPELLING of a tuned value, not a display filter.** The tuning session
+evaluates `row.ValueText` and Push/Lock-in write it, so rounding only the screen would have shown one
+number and simulated and pushed another. One setting per `.csch`, shared by both panels, default 6
+(written as absent), not part of the `.cnl`. Range bounds and steps keep `FormatValue`'s G6: they are
+typed, and re-spelling them would turn opening and closing a bound box into a range edit.
+
+**A goal's band and range are read low-first whichever way round they are written** (owner request):
+`GoalResiduals.Score` swaps, the validator no longer refuses either, and a sloped limit keeps the end it
+was written against (`lo=` owns the first limit wherever it lies). Only a band with two EQUAL edges is
+still an error (`tuning.goal.band-empty`).
+
+**Undo after a Push needed a click on the schematic first — the Analyses panel's bug again.** The shell's
+Undo follows the active DOCUMENT; a tool panel never is one. Both panels now raise `EditCommitted` with
+the session an edit landed on (a Push names the tuned schematic when it was written, else the last
+sub-cell — `TuningPushReport.UndoSession`), and the workspace pins Undo there through the Analyses
+panel's own `OnAnalysesEditCommitted`. The one exception is "Store last tuned values": it runs on save
+and on close, and pinning Undo to a tab that is closing would leave ⌘Z aimed at nothing on screen.
+A FLOATING tool panel is a second window, and the shell's Ctrl+Z KeyBinding is on the workspace window,
+so `CrfHostWindow` forwards Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y to the workspace's Undo/Redo on bubble
+(a focused text box keeps its own). Only for tool floats — a document float binds its own document's
+history — and never ⌘ on macOS, where the app menu's key equivalent already reaches every window.

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Threading;
@@ -77,6 +78,88 @@ public class CrfHostWindow : HostWindow
         // that would clear it is swallowed by the platform's own window-drag loop — so the window sits
         // at half opacity until some later click happens to release inside it. See HostWindowDragLatch.
         Views.HostWindowDragLatch.Attach(this);
+
+        Activated += (_, _) => RaiseToolWindowsAboveThisDocument();
+
+        // Undo/Redo from a floating TOOL panel: the shell's KeyBindings live on the WORKSPACE window, so
+        // with a floating panel focused Ctrl+Z reached nothing — a Push from a floating Tuning panel could
+        // not be undone without clicking the schematic first. A DOCUMENT float binds its own document's
+        // history instead (WorkspaceViewModel's float key bindings) and is left alone. BUBBLE, so a
+        // focused text box keeps its own Ctrl+Z.
+        AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (OwningWorkspace is not { } ws || !FloatsAnyTool()) return;
+            var command = UndoRedoGesture(e.Key, e.KeyModifiers, OperatingSystem.IsMacOS()) switch
+            {
+                true  => ws.UndoCommand,
+                false => ws.RedoCommand,
+                null  => null,
+            };
+            if (command is null) return;
+            if (command.CanExecute(null)) command.Execute(null);
+            e.Handled = true;
+        }, Avalonia.Interactivity.RoutingStrategies.Bubble);
+    }
+
+    /// <summary>
+    /// True for the shell's Undo gesture, false for its Redo gestures, null for anything else. ⌘ is left
+    /// to the application menu on macOS, whose key equivalents already reach every window of the app;
+    /// handling it here as well would undo twice.
+    /// </summary>
+    internal static bool? UndoRedoGesture(Avalonia.Input.Key key, Avalonia.Input.KeyModifiers mods, bool macOs)
+    {
+        var command = mods & ~Avalonia.Input.KeyModifiers.Shift;
+        bool primary = command == Avalonia.Input.KeyModifiers.Control
+                       || (!macOs && command == Avalonia.Input.KeyModifiers.Meta);
+        if (!primary) return null;
+        bool shift = mods.HasFlag(Avalonia.Input.KeyModifiers.Shift);
+        return key switch
+        {
+            Avalonia.Input.Key.Z => !shift,
+            Avalonia.Input.Key.Y when !shift => false,
+            _ => null,
+        };
+    }
+
+    // One raise at a time across every float: our own Activate() calls re-raise Activated.
+    private static bool _raisingTools;
+
+    /// <summary>
+    /// A torn-off DOCUMENT window coming forward brings its workspace's floating TOOL windows with it,
+    /// as the shell does on its own <c>Activated</c> (R-dock-14, <c>WorkspaceWindow.RaiseFloatingToolWindows</c>).
+    /// A document float is a peer of the shell, so without this a Data Display torn off beside a
+    /// floating Tuning or Optimizer panel covered the panel the moment it was clicked, and the panel
+    /// stayed behind it. Focus comes straight back to this window (R-dock-15). Only this workspace's
+    /// panels move; another workspace's are left where they are.
+    /// </summary>
+    private void RaiseToolWindowsAboveThisDocument()
+    {
+        if (_raisingTools || OwningWorkspace is null || FloatsAnyTool()) return;
+        // A quit or save prompt outranks the panels, for the shell's reason (ModalPromptFront).
+        if (Views.ModalPromptFront.HasAnyOpenPrompt()) return;
+        if (Avalonia.Application.Current?.ApplicationLifetime is not Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop) return;
+
+        var tools = desktop.Windows.OfType<CrfHostWindow>()
+            .Where(w => w.PlatformImpl is not null && ReferenceEquals(w.OwningWorkspace, OwningWorkspace) && w.FloatsAnyTool())
+            .ToList();
+        if (tools.Count == 0) return;
+
+        _raisingTools = true;
+        try
+        {
+            foreach (var tool in tools) tool.Activate();
+            Activate();
+        }
+        catch (Exception ex)
+        {
+            OwningWorkspace.Messages.Warning($"Could not raise the floating panels: {ex.Message}");
+        }
+        finally
+        {
+            // Released a dispatcher pass later, for the shell's reason: the Activated events these
+            // calls produce arrive asynchronously, and must land while the guard is still set.
+            Dispatcher.UIThread.Post(() => _raisingTools = false, DispatcherPriority.Background);
+        }
     }
 
     /// <summary>

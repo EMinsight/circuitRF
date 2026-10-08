@@ -52,6 +52,10 @@ public sealed record GoalScore(
 /// it only to rounding: a matching run reached |S11| = 1e-4 + 5e-15 against <c>le 1e-4</c> and could
 /// not report the goal met.</para>
 ///
+/// <para><b>Either order.</b> A band's two edges, and a range's two ends, are read lowest-first whichever
+/// way round they were written. A sloped limit keeps the end it was written against: the first limit
+/// belongs to <c>lo=</c>, wherever <c>lo=</c> lies.</para>
+///
 /// <para><b>Cost.</b> Least squares Σ r², or minimax max r, over the concatenated residual vector.</para>
 /// </summary>
 public static class GoalResiduals
@@ -70,7 +74,7 @@ public static class GoalResiduals
         if (g.Type is GoalType.In or GoalType.Out)
         {
             if (g.UpperLimit is null || !TunableValue.TryParse(g.UpperLimit, out _, out _, out double hi)) return null;
-            return hi - lo > 0 ? hi - lo : unitScale;
+            return hi != lo ? Math.Abs(hi - lo) : unitScale;
         }
 
         // max(|L|, 1) in the limit's own unit, i.e. max(|L|, one of that unit) in base SI.
@@ -97,6 +101,7 @@ public static class GoalResiduals
             return Fail(OptimizationDiagnostics.GoalLimitNotANumber(g.Name, g.UpperLimit ?? ""));
         if (g.LimitAtHi is { } atHi && !TunableValue.TryParse(atHi, out _, out _, out limitHi))
             return Fail(OptimizationDiagnostics.GoalLimitNotANumber(g.Name, atHi));
+        if (g.Type is GoalType.In or GoalType.Out && limit > upper) (limit, upper) = (upper, limit);
 
         // ── The points: (axis value, x) for every element in the range ──────
         var points = new List<(double? At, double X)>();
@@ -137,13 +142,14 @@ public static class GoalResiduals
                 int stride = 1;
                 for (int d = cube.Rank - 1; d > a; d--) stride *= cube.Axes[d].Length;
                 double tol = 1e-9 * Math.Max(Math.Abs(lo), Math.Abs(hi));
+                double first = Math.Min(lo, hi), last = Math.Max(lo, hi);
                 for (int e = 0; e < data.Length; e++)
                 {
                     double at = axis.Values[e / stride % axis.Length];
-                    if (at >= lo - tol && at <= hi + tol) points.Add((at, data[e]));
+                    if (at >= first - tol && at <= last + tol) points.Add((at, data[e]));
                 }
                 if (points.Count == 0)
-                    return Fail(OptimizationDiagnostics.GoalRangeEmpty(g.Name, axisName, lo, hi, axis.Values.Min(), axis.Values.Max()));
+                    return Fail(OptimizationDiagnostics.GoalRangeEmpty(g.Name, axisName, first, last, axis.Values.Min(), axis.Values.Max()));
                 break;
             }
             default:
@@ -162,7 +168,7 @@ public static class GoalResiduals
             var (at, x) = points[k];
             if (!double.IsFinite(x)) return Fail(OptimizationDiagnostics.GoalNonFinite(g.Name));
             double L = limit;
-            if (g.LimitAtHi is not null && at is { } t && hi > lo) L = limit + (limitHi - limit) * (t - lo) / (hi - lo);
+            if (g.LimitAtHi is not null && at is { } t && hi != lo) L = limit + (limitHi - limit) * (t - lo) / (hi - lo);
 
             double viol = g.Type switch
             {

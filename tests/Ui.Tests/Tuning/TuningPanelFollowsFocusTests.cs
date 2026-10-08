@@ -29,7 +29,7 @@ public sealed class TuningPanelFollowsFocusTests
     }
 
     [Fact]
-    public void Schematic_Populates_AnythingElse_Clears()
+    public void Schematic_Populates_AnythingElse_Keeps_CloseClears()
     {
         var f = new TuningPanelFixture();
         f.Panel.SetTuned("R1.R", true);
@@ -37,16 +37,17 @@ public sealed class TuningPanelFollowsFocusTests
         Assert.Equal("tb.csch", f.Panel.HeaderLabel);
         Assert.Single(f.Panel.Rows);
 
-        f.Panel.SetActiveSchematic(null, null);         // a layout, a 3D view, the welcome tab
+        f.Panel.SetActiveSchematic(null, null);         // the tuned schematic closed
         Assert.False(f.Panel.HasSchematic);
         Assert.Empty(f.Panel.Rows);
 
-        // The routing: a schematic sets its TOP frame, anything else clears — except a Data Display while
-        // a session runs, which is where its results are being watched.
+        // The routing: a schematic sets its TOP frame; any other document keeps the last schematic (a
+        // Data Display is where tuned results are watched), and only closing the schematic clears it.
         string src = WorkspaceTuningSource();
         Assert.Contains("panel.SetActiveSchematic(sd.NavFrames[0].Session", src);
-        Assert.Contains("case DataDisplayDocument when panel.IsRunning:", src);
-        Assert.Contains("panel.SetActiveSchematic(null, null);", src);
+        Assert.Contains("else if (!panel.HasSchematic && _lastActiveSchematicDoc is { } kept)", src);
+        Assert.DoesNotContain("default:", src);
+        Assert.Contains("Panel.SetActiveSchematic(null, null);", src);
     }
 
     [Fact]

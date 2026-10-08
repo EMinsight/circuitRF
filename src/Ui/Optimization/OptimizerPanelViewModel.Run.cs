@@ -419,11 +419,16 @@ public sealed partial class OptimizerPanelViewModel
 
     private bool CanKeep() => (IsPaused || IsFinished) && _bestValues is { Count: > 0 };
 
+    /// <summary>The best values as Lock in, Push and Send to Tuning write them: to the panel's digits,
+    /// the figures the rows show.</summary>
+    private IReadOnlyDictionary<string, string>? KeptValues()
+        => _bestValues is { } values ? TuningDigits.Round(values, Digits) : null;
+
     /// <summary>Lock in (TO-5): the best values as a new preset, with the cost they scored.</summary>
     [RelayCommand(CanExecute = nameof(CanKeep))]
     private void LockIn()
     {
-        if (_tuned is null || _bestValues is not { } values) return;
+        if (_tuned is null || KeptValues() is not { } values) return;
         var (setup, preset) = TuningPresets.LockIn(Setup, values, UtcNow(), _bestCost);
         Execute(setup, "Lock in optimizer result");
         StatusText = $"Locked in {preset.Name}";
@@ -434,8 +439,9 @@ public sealed partial class OptimizerPanelViewModel
     [RelayCommand(CanExecute = nameof(CanKeep))]
     private void Push()
     {
-        if (_tuned is null || _bestValues is not { } values || Catalog is not { } catalog) return;
+        if (_tuned is null || KeptValues() is not { } values || Catalog is not { } catalog) return;
         var report = TuningPush.Push(catalog, values, _tuned, SessionForDrawing ?? (_ => null));
+        if (report.UndoSession(_tuned) is { } undo) EditCommitted?.Invoke(undo);
         _catalog = null;
         RefreshNow();
         StatusText = report.StatusLine;
@@ -445,7 +451,7 @@ public sealed partial class OptimizerPanelViewModel
     [RelayCommand(CanExecute = nameof(CanKeep))]
     private void SendToTuning()
     {
-        if (_bestValues is not { } values || SendToTuningTarget is null) return;
+        if (KeptValues() is not { } values || SendToTuningTarget is null) return;
         SendToTuningTarget(values);
         StatusText = $"Sent {values.Count} value{(values.Count == 1 ? "" : "s")} to Tuning";
     }

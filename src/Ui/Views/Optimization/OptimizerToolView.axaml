@@ -13,6 +13,18 @@
          small icon buttons, the cost line, then Goals and Variables each with its own small toolbar.
          Readouts carry no prose: a value or a short status. -->
 
+    <UserControl.Resources>
+        <!-- The header's digits menu: one radio item per choice (TuningDigitsChoice). -->
+        <ControlTheme x:Key="DigitsMenuItem" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}"
+                      x:DataType="tun:TuningDigitsChoice">
+            <Setter Property="Header" Value="{Binding Label}"/>
+            <Setter Property="ToggleType" Value="Radio"/>
+            <Setter Property="IsChecked" Value="{Binding IsChecked, Mode=OneWay}"/>
+            <Setter Property="Command" Value="{Binding Command}"/>
+            <Setter Property="CommandParameter" Value="{Binding Digits}"/>
+        </ControlTheme>
+    </UserControl.Resources>
+
     <UserControl.Styles>
         <Style Selector="Button.tb">
             <Setter Property="Padding" Value="3,2"/>
@@ -73,11 +85,18 @@
               DataContext="{Binding Panel}" x:DataType="opt:OptimizerPanelViewModel">
 
             <!-- Header: schematic, and the run's iteration / evaluations / elapsed / stage. -->
-            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="6,4,6,1">
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" Margin="6,4,2,1">
                 <TextBlock Grid.Column="0" Text="{Binding HeaderLabel}" FontWeight="SemiBold" FontSize="12"
                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
                 <TextBlock Grid.Column="1" Text="{Binding RunStatusText}" FontSize="11" Opacity="0.7"
                            VerticalAlignment="Center" Margin="6,0,0,0" TextTrimming="CharacterEllipsis"/>
+                <Button Grid.Column="2" Classes="tb" Margin="4,0,0,0" VerticalAlignment="Center"
+                        ToolTip.Tip="Significant digits for tuned and optimized values">
+                    <mi:MaterialIcon Kind="DecimalDecrease"/>
+                    <Button.Flyout>
+                        <MenuFlyout ItemsSource="{Binding DigitsChoices}" ItemContainerTheme="{StaticResource DigitsMenuItem}"/>
+                    </Button.Flyout>
+                </Button>
             </Grid>
 
             <!-- Toolbar. -->

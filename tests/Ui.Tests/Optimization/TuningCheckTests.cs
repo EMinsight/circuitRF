@@ -45,4 +45,12 @@ public sealed class TuningCheckTests
         Assert.Equal(isError, f.Severity == CircuitRF.Diagnostics.DiagnosticSeverity.Error);
         Assert.Contains(fragment, f.Render());
     }
+
+    [Fact]
+    public void ABandAndARangeWrittenHighFirst_AreAccepted()
+    {
+        var (lib, tb) = new CnlReader().Read(Bench + "\ngoal G = dB(SP1.S(2,1)) analysis=SP1 over=freq lo=2 GHz hi=1 GHz in 0 -3");
+        using var nl = new Elaborator(lib).Elaborate(tb);
+        Assert.Empty(TuningValidator.Validate(tb, TunableCatalog.FromNetlist(tb, lib), nl));
+    }
 }

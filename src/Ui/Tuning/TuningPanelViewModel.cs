@@ -33,6 +33,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Design;
 using CircuitRF.Design.Optimization;
+using CircuitRF.Ui.Commands;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Schematic;
 using CircuitRF.Ui.ViewModels;
@@ -146,6 +147,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         ScopeSettings.Reload();
         OnPropertyChanged(nameof(Tuned));
         OnPropertyChanged(nameof(HasSchematic));
+        OnPropertyChanged(nameof(DigitsChoices));
         NotifyCommands();
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -222,6 +224,8 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         RebuildPresets();
         UpdateLag();
         UpdateCanvas();
+        OnPropertyChanged(nameof(Digits));
+        OnPropertyChanged(nameof(DigitsChoices));
         if (Add.IsOpen) Add.Refresh();
         LockInCommand.NotifyCanExecuteChanged();
         Changed?.Invoke(this, EventArgs.Empty);
@@ -307,9 +311,23 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         if (changed == 0) return;
 
         string what = changed == 1 ? keys.First() : $"{changed} values";
-        _tuned.Execute(new SetTuningSetupCommand(_tuned.EditModel, setup,
+        ExecuteEdit(new SetTuningSetupCommand(_tuned.EditModel, setup,
             on ? $"Tune {what}" : $"Stop tuning {what}"));
         if (!on && IsRunning) Request(final: true);
+    }
+
+    /// <summary>
+    /// Raised after an edit from this panel lands on a schematic's undo stack, with the session it landed
+    /// on — the Analyses panel's <c>EditCommitted</c>, for the same reason: the panel is a tool, never the
+    /// active document, so without it ⌘Z after a Push undid nothing until the schematic was clicked.
+    /// </summary>
+    public event Action<SchematicViewModel>? EditCommitted;
+
+    private void ExecuteEdit(IUiCommand command)
+    {
+        if (_tuned is null) return;
+        _tuned.Execute(command);
+        EditCommitted?.Invoke(_tuned);
     }
 
     /// <summary>A change to one row's entry — range, scale, step — as one undo step (R-to4-10).</summary>
@@ -324,7 +342,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
             return;
         }
         if (row.Tunable?.Part is null) _values[row.Key] = row.Value;
-        _tuned.Execute(new SetTuningSetupCommand(_tuned.EditModel, next, description));
+        ExecuteEdit(new SetTuningSetupCommand(_tuned.EditModel, next, description));
     }
 
     internal void RevealRow(TuningRowViewModel row)
@@ -353,9 +371,31 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         {
             if (row.Tunable is not { } t || row.IsDisabled) continue;
             if (t.WholeKey is null) values[row.Key] = row.ValueText;
-            else if (_complex.TryGetValue(t.WholeKey, out var z)) values[t.WholeKey] = ComplexValue.Format(z, t.WholeUnit, t.Form);
+            else if (_complex.TryGetValue(t.WholeKey, out var z))
+                values[t.WholeKey] = ComplexValue.Format(z, t.WholeUnit, t.Form, TuningDigits.NumberFormat(Digits));
         }
         return values;
+    }
+
+    // ---- Digits (shared with the Optimizer panel) ---------------------------
+
+    /// <summary>The significant digits a tuned value is spelled with (<see cref="TuningDigits"/>).</summary>
+    public int Digits => TuningDigits.Of(_tuned?.EditModel.Tuning);
+
+    /// <summary>The header's digits menu.</summary>
+    public IReadOnlyList<TuningDigitsChoice> DigitsChoices
+        => [.. TuningDigits.Choices.Select(d => new TuningDigitsChoice(d, d == Digits, SetDigitsCommand))];
+
+    /// <summary>Spells tuned values with <paramref name="digits"/> figures — one undo step, written to
+    /// the schematic so it is the same next time, and read by the Optimizer panel too.</summary>
+    [RelayCommand(CanExecute = nameof(HasSchematic))]
+    private void SetDigits(int digits)
+    {
+        if (_tuned is null || digits == Digits) return;
+        var next = _tuned.EditModel.Tuning?.Clone() ?? new TuningSetup();
+        next.Digits = digits == TuningDigits.Default ? null : digits;
+        ExecuteEdit(new SetTuningSetupCommand(_tuned.EditModel, next, $"Show {TuningDigits.Label(digits)}"));
+        if (IsRunning) Request(final: true);
     }
 
     internal void OnRowValueChanged(TuningRowViewModel row, bool final)
@@ -447,6 +487,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         var values = CurrentValues();
         var report = TuningPush.Push(catalog, values, _tuned, SessionForDrawing ?? (_ => null));
         StatusText = report.StatusLine;
+        if (report.UndoSession(_tuned) is { } undo) EditCommitted?.Invoke(undo);
 
         // What was written is now the schematic's own value; what was skipped stays tuned.
         foreach (var key in report.WrittenKeys)
@@ -548,6 +589,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         SnapshotCommand.NotifyCanExecuteChanged();
         ClearSnapshotCommand.NotifyCanExecuteChanged();
         LockInCommand.NotifyCanExecuteChanged();
+        SetDigitsCommand.NotifyCanExecuteChanged();
     }
 
     // ---- The canvas tells the truth (R-to4-7) ---------------------------------

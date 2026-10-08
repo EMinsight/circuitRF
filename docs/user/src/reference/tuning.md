@@ -83,6 +83,10 @@ Each row has a slider, a box holding the current value, the unit, and the range 
 **One range per value, for both panels.** The Optimizer's variables are the same entries: a range
 changed in either panel is changed in both.
 
+**Digits.** The button at the right of the header sets how many significant digits a tuned value is
+written with — 3, 4, 5, 6 (the default) or all of them. The value is simulated and pushed exactly as
+shown. The choice is saved with the schematic and applies to the Optimizer panel too.
+
 While a session runs, the canvas draws each value that differs from the schematic in the tuned colour.
 
 ## Complex values: tuned by their parts {#complex}

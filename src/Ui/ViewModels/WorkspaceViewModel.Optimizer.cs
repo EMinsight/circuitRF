@@ -30,24 +30,23 @@ public partial class WorkspaceViewModel
 {
     private OptimizerPanelViewModel? _wiredOptimizerPanel;
 
+    /// <summary>The Tuning panel's rule (<see cref="RouteTuningPanel"/>): a schematic sets the panel, any
+    /// other document keeps the last one, and only closing it empties the panel.</summary>
     private void RouteOptimizerPanel(IDockable? document)
     {
         WireOptimizerPanel();
         if (_factory.OptimizerTool?.Panel is not { } panel) return;
 
-        switch (document)
-        {
-            case SchematicDocument sd:
-                panel.SetActiveSchematic(sd.NavFrames[0].Session, InstancesRootHeaderOf(sd));
-                break;
-            // A Data Display taking focus while a run is live keeps the panel: that display is where the
-            // run is being watched (the Tuning panel's rule).
-            case DataDisplayDocument when panel.IsRunActive:
-                break;
-            default:
-                panel.SetActiveSchematic(null, null);
-                break;
-        }
+        if (document is SchematicDocument sd)
+            panel.SetActiveSchematic(sd.NavFrames[0].Session, InstancesRootHeaderOf(sd));
+        else if (!panel.HasSchematic && _lastActiveSchematicDoc is { } kept)
+            panel.SetActiveSchematic(kept.NavFrames[0].Session, InstancesRootHeaderOf(kept));
+    }
+
+    private void ClearOptimizerPanel()
+    {
+        WireOptimizerPanel();
+        _factory.OptimizerTool?.Panel.SetActiveSchematic(null, null);
     }
 
     private void WireOptimizerPanel()
@@ -58,6 +57,7 @@ public partial class WorkspaceViewModel
 
         panel.Defer             = a => Avalonia.Threading.Dispatcher.UIThread.Post(a, Avalonia.Threading.DispatcherPriority.Background);
         panel.PostToUi          = a => Avalonia.Threading.Dispatcher.UIThread.Post(a);
+        panel.EditCommitted    += OnAnalysesEditCommitted;   // ⌘Z with the panel focused (Tuning's rule)
         panel.PrepareCircuit    = tuned => PrepareTunedCircuit(tuned)?.Circuit;
         panel.DisplayFor        = OptimizerDisplayFor;
         panel.SessionForDrawing = d => SessionForTunedDrawing(d, openTab: true);
@@ -122,8 +122,10 @@ public partial class WorkspaceViewModel
         if (rr.Expressions.Count == 0 || rr.Expressions[0].Value is not { } v) return null;
         double? Num(string? text) => text is { } t && TunableValue.TryParse(t, out _, out _, out double si) ? si : null;
         double? lo = Num(goal.Limit), hi = goal.LimitAtHi is null ? lo : Num(goal.LimitAtHi), up = Num(goal.UpperLimit);
+        // A band written high-first is scored low-first (GoalResiduals.Score), and drawn that way.
+        if (goal.Type is GoalType.In or GoalType.Out && lo > up) (lo, hi, up) = (up, up, lo);
 
-        if (v.Kind == Core.Expressions.ValueKind.Real) return new GoalPreview([0], [v.AsReal()], lo, hi, up);
+        if (v.Kind == Core.Expressions.ValueKind.Real) return new GoalPreview([0], [v.AsReal()], lo, hi, up, goal.Type);
         if (v.Kind != Core.Expressions.ValueKind.Cube) return null;
         var cube = v.AsCube();
         if (cube.Rank != 1 || cube.DataKind != DataKind.Real) return null;
@@ -131,10 +133,11 @@ public partial class WorkspaceViewModel
         var y = cube.RealValues;
         if (goal.Range is { } r && Num(r.Lo) is { } rlo && Num(r.Hi) is { } rhi)
         {
+            if (rlo > rhi) (rlo, rhi) = (rhi, rlo);
             var keep = Enumerable.Range(0, x.Length).Where(i => x[i] >= rlo && x[i] <= rhi).ToArray();
             if (keep.Length > 0) { x = [.. keep.Select(i => x[i])]; y = [.. keep.Select(i => y[i])]; }
         }
-        return new GoalPreview(x, y, lo, hi, up);
+        return new GoalPreview(x, y, lo, hi, up, goal.Type);
     }
 
     /// <summary>Send to Tuning (R-to10-8): the Tuning panel, on the same schematic, takes the values.</summary>

@@ -34,8 +34,14 @@ public sealed record TuningPushReport(
     IReadOnlyList<(string Cell, int Count)> PerCell,
     int SkippedReadOnly,
     int SkippedOther,
-    IReadOnlyList<string> WrittenKeys)
+    IReadOnlyList<string> WrittenKeys,
+    IReadOnlyList<SchematicViewModel>? Sessions = null)
 {
+    /// <summary>The session a Push leaves Undo on: the tuned schematic's when it was written, else the
+    /// last sub-cell written; null when nothing was.</summary>
+    public SchematicViewModel? UndoSession(SchematicViewModel tuned)
+        => Sessions is not { Count: > 0 } s ? null : s.Contains(tuned) ? tuned : s[^1];
+
     /// <summary><c>Pushed 5 values · DUT: 2 · skipped 1 read-only</c>.</summary>
     public string StatusLine
     {
@@ -105,6 +111,7 @@ public static class TuningPush
         int written = 0;
         var perCell = new List<(string, int)>();
         var keys    = new List<string>();
+        var sessions = new List<SchematicViewModel>();
         foreach (var drawing in order)
         {
             var (cell, commands, groupKeys) = byDrawing[drawing];
@@ -114,10 +121,11 @@ public static class TuningPush
             session.Execute(new CommandBatch(
                 $"Push {commands.Count} tuned value{(commands.Count == 1 ? "" : "s")}", commands));
             written += commands.Count;
+            sessions.Add(session);
             keys.AddRange(groupKeys);
             if (cell.Length > 0) perCell.Add((cell, commands.Count));
         }
-        return new TuningPushReport(written, perCell, readOnly, other, keys);
+        return new TuningPushReport(written, perCell, readOnly, other, keys, sessions);
     }
 
     /// <summary>The edit that makes <paramref name="drawing"/> hold <paramref name="expr"/>

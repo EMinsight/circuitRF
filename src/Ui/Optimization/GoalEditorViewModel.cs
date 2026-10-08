@@ -30,7 +30,9 @@ namespace CircuitRF.Ui.Optimization;
 /// <param name="LimitLo">The limit (or the band's lower edge) at the first point.</param>
 /// <param name="LimitHi">The limit at the last point — the same as <paramref name="LimitLo"/> unless sloped.</param>
 /// <param name="Upper">The band's upper edge for <c>in</c>/<c>out</c>; null otherwise.</param>
-public sealed record GoalPreview(double[] X, double[] Y, double? LimitLo, double? LimitHi, double? Upper);
+/// <param name="Type">The goal's type — which side of the limit lines the preview hatches as failing.</param>
+public sealed record GoalPreview(double[] X, double[] Y, double? LimitLo, double? LimitHi, double? Upper,
+                                 GoalType Type = GoalType.Le);
 
 /// <summary>One section of the template list.</summary>
 public sealed record GoalTemplateSection(string Title, IReadOnlyList<GoalTemplate> Templates);

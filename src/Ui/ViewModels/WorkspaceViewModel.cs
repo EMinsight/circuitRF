@@ -16985,10 +16985,10 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // Closing the tuned bench ends its session, wherever focus went (TO-3 cancels on close).
         if (dockable is SchematicDocument closedTuned
             && ReferenceEquals(closedTuned.NavFrames[0].Session, _factory.TuningTool?.Panel.Tuned))
-            RouteTuningPanel(null);
+            ClearTuningPanel();
         if (dockable is SchematicDocument closedOptimized
             && ReferenceEquals(closedOptimized.NavFrames[0].Session, _factory.OptimizerTool?.Panel.Tuned))
-            RouteOptimizerPanel(null);
+            ClearOptimizerPanel();
 
         // If the retained schematic is closed, blank the Analyses panel.
         if (ReferenceEquals(dockable, _lastActiveSchematicDoc))

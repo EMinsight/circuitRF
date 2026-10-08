@@ -263,8 +263,14 @@ public sealed class TuningSetup
     public List<OptimizationGoal> Goals     { get; set; } = [];
     public OptimizerSettings?     Optimizer { get; set; }
 
+    /// <summary>How many significant digits the Tuning and Optimizer panels spell a tuned or optimized
+    /// value with — what they show, simulate and push. Null is the panels' default; display only, so
+    /// it is not part of the <c>.cnl</c>.</summary>
+    public int? Digits { get; set; }
+
     [JsonIgnore]
-    public bool IsEmpty => Variables.Count == 0 && Presets.Count == 0 && Goals.Count == 0 && Optimizer is null;
+    public bool IsEmpty => Variables.Count == 0 && Presets.Count == 0 && Goals.Count == 0 && Optimizer is null
+                           && Digits is null;
 
     public TuningSetup Clone() => new()
     {
@@ -272,6 +278,7 @@ public sealed class TuningSetup
         Presets   = [.. Presets.Select(p => p.Clone())],
         Goals     = [.. Goals.Select(g => g.Clone())],
         Optimizer = Optimizer?.Clone(),
+        Digits    = Digits,
     };
 }
 
