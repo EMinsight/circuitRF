@@ -124,11 +124,13 @@ is the single place a value written in the dialect is rewritten into circuitRF's
 - Whitespace outside quotes is removed — a hard requirement, not tidying: circuitRF's own instance
   parser splits on whitespace and reads bare words as nets, so an unquoted value containing a space
   becomes a value plus phantom nets, which shifts every later node index and **still runs**.
-- **The one change of meaning:** a statistical distribution call is reduced to its first argument
-  (its nominal) and the reduction is *reported* through `SpiceNetlistResult.Statistics`. circuitRF
-  does not sample distributions; running at nominal is what the user almost certainly wants; doing
-  it in silence is not acceptable, because the resulting number is indistinguishable from a value
-  that carried no distribution at all.
+- **The one construct whose translation depends on where the text goes:** a statistical
+  distribution call (`agauss`, `gauss`, `aunif`, `unif`, two-argument `limit`). Kept LIVE it is
+  circuitRF's own call with the dialect's meaning — its nominal in every ordinary run, a draw in a
+  Monte Carlo trial (`docs/design/yield.md` §7); reduced to NOMINAL it is its first argument. Which
+  form each path writes is §8.4's table. Either way every call is *reported* through
+  `SpiceNetlistResult.Statistics`, because a design carrying statistics is something a run report and
+  `explain` have to be able to say.
 
 `.param` becomes a `Variable` (outside a subcircuit) or a `ParameterDeclaration` with a default
 (inside one — this dialect lets a call site override one, and reading it as a sealed internal
@@ -516,6 +518,38 @@ clamp. Today all 65 are read as the distribution, all 65 are reported in
 `SpiceNetlistResult.Statistics` (so the run is at least *labelled* a nominal-corner run), and every
 clamp is silently gone.
 
+**As built:** the arity rule holds — three arguments is rewritten to `min(max(x,lo),hi)`, two stays a
+distribution and is reported — and circuitRF's expression engine now implements `limit` both ways
+itself, so a design may write either.
+
+#### Which form each path writes (yield series, YA-3)
+
+`SpiceDistributions` (`Live` / `Nominal`) is the reader's argument. The rule: **text only circuitRF
+regenerates may carry the live call; text a user keeps must still simulate in a circuitRF that
+predates the distribution functions.** No format version moves, because nothing a user keeps carries
+one.
+
+| Path | Writes to | Form |
+|---|---|---|
+| `NetExtractor` reading a part's netlist (`NetlistImports.Load`) | `netlist.cnl`, every run | **Live** |
+| `PdkCorners.SectionFor` / `BindingsFor` — a corner section's bindings and definitions | `netlist.cnl` | **Live** |
+| `SpiceModelPeek` — a `.model`/`.subckt` placed straight on a schematic | `netlist.cnl` | **Live** |
+| `circuitrf netlist -o` | the same bytes as `netlist.cnl` (a run's input, regenerated on demand) | **Live** |
+| `SpiceCellImport.Scan` — Copy to Workspace as Cell, File ▸ Import ▸ Model or Subcircuit | the user's `.csch` / `.ccell` | **Nominal** |
+| A placed part's parameter rows — the kit importer's `SeededParameter`, the Parameter dialog's `DeclaredParametersOf` | the user's `.csch` | **blank** where the default holds a distribution |
+| A `.if` condition; a controlled source's `VALUE` (a device equation) | read-time decision; the SDD evaluators | **Nominal** |
+
+- **Why a seeded row is blank rather than nominal.** A row is an instance OVERRIDE, evaluated in the
+  parent scope. A nominal there would replace the subcircuit's per-instance mismatch draw with a fixed
+  value; a live call there would be a process draw in the wrong scope and would not open in an older
+  build. Blank is "unset — the file's own default stands", which the extraction already honours.
+- **Why a condition and a device equation are nominal.** A `.if` is decided once, at read time, and no
+  trial can revisit it. A device equation is evaluated by `SddEvaluator` and its compiled forms, which
+  carry a derivative beside every value and have no trial to draw in.
+- **A spread that does not read** (a kit's own typo — measured: one library writes
+  `gauss(x, 0.0235  num_sigmas)`, comma missing) reads at its nominal with a note on that line, rather
+  than failing at Simulate for a mistake in a library the user cannot edit. Reduced, it always parsed.
+
 ### 8.5 A nested `{…}` inside an expression (2 lines)
 
 `.FUNC TAU_X(T) {LIMIT((TX1*((T+t0)/300)**{ETX1}),-1e12,1e12)}` — the inner `{ETX1}` is a parameter
@@ -623,6 +657,25 @@ a placed `SpiceModel` to ask for one and no UI anywhere surfaced `Sections`. **B
 optional `section`** (§10), and blank is treated as *no section* rather than as a section named "" —
 the value arrives from a stored parameter and from a combo box, both of which spell "unset" as an
 empty string.
+
+**A section brings definitions as well as bindings** (`PdkCorners.SectionFor`). A kit's statistical
+section binds process globals whose values are distributions — those reach the run as bindings. Its
+mismatch section includes a VARIANT of the model library whose subcircuits carry per-instance draws
+(`w='agauss(w, …)'` on a device), and bindings alone would select it and change nothing.
+`KitCornerVariants.Apply`, called as the extraction loads a part's netlist, puts the section's
+subcircuits and cards in place of the part library's same-named ones — **only when the section does not
+include the part library itself**, decided by content because a workspace keeps its own copy of a
+kit's netlists. A nominal or plain process section includes the part's own library, so it changes
+nothing and every nominal netlist stays byte-identical. A named corner's kit selections (`corner`
+lines, yield overview D10) bind values only; a variant's definitions come from the design's own
+selection.
+
+**The seam for the other simulator dialect's statistics.** That dialect states statistics as a block —
+`statistics { process { vary … } mismatch { vary … } }` — rather than as functions in expressions. It
+is not read (owner: later, if a kit needs it). When it is, it lands as a reader of those blocks that
+emits the SAME distribution calls into globals (`process`) and into the subcircuits (`mismatch`), so
+everything downstream of `SpiceDistributions.Live` — the scope rule, the streams, `explain`, the run —
+is unchanged.
 
 ---
 

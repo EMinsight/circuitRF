@@ -3394,3 +3394,29 @@ Gate: `tests/Core.Tests/Expressions/BandReductionTests.cs`.
   a net name — the class of bug the root notes list under "a bare word after a key=value param".
 - **A goal line's own words are never units**: after `hi=2`, a following `in` is the goal type, not
   inches. The reference page says so (spell inches `inch` there).
+
+## Distributions kept live in the expression engine (YA-3, 2026-10-08)
+
+The SPICE reader used to reduce `agauss`/`gauss`/`aunif`/`unif`/two-argument `limit` to their first argument;
+they are now circuitRF built-ins, nominal outside a Monte Carlo trial and a draw inside one
+(`docs/design/yield.md` §7). Four things cost time to find and would again:
+
+- **A real kit ships a malformed spread, and the old reduction hid it.** One statistical library writes
+  `gauss(x_norm, 0.0235  num_sigmas)` — a comma missing. Reduced, the spread was discarded and the line parsed;
+  kept live it is `0.0235num_sigmas`, a parse error at Simulate in a generated file. `SpiceExpression.Rewrite`
+  now falls back to the nominal (with a note on the kit's line) when the live form does not parse and the
+  nominal does. It was caught only by comparing every expression of every section of a real kit, live against
+  reduced — `KitStatisticsNominalIdentityTests`' fixture half. Keep that comparison when touching the reader.
+- **A unit rule must read the NOMINAL view.** `IsUnitBearing` asks whether any reference in an expression is
+  unit-bearing; a spread naming a unit-bearing variable would flip a nominal's site unit off, silently changing
+  a value that used to be just the nominal. `Evaluator.NominalView` replaces each distribution by its first
+  argument before the unit rules look, and the bare-operand scaler treats a distribution as its nominal (an
+  absolute spread takes the site unit beside a unit-bearing nominal).
+- **`SpiceCellImport.Scan` was two doors.** The import gestures (files a user keeps) and `SpiceModelPeek` (a
+  model placed straight on a schematic, run from its file at every extraction) both read through it. Giving
+  the import its nominal form froze every placed model's distributions until the form became a parameter:
+  `Scan` defaults to nominal, the peek asks for live.
+- **A seeded parameter row is an OVERRIDE, evaluated in the parent scope.** The kit importer and the Parameter
+  dialog seed a placed part's rows from the subcircuit's defaults. A distribution there, nominal or live, would
+  replace the subcircuit's per-instance (mismatch) draw — with a constant, or with a draw in the wrong scope —
+  so such a row is seeded blank, which the extraction already reads as "the file's own default stands".

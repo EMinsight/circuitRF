@@ -41,12 +41,17 @@ public static class SpiceNetlistReader
     /// pass is exactly how a caller learns what a file offers before asking for one
     /// (<see cref="SpiceNetlistResult.Sections"/>).</para>
     /// </summary>
-    public static SpiceNetlistResult ReadFile(string path, string? section = null)
+    /// <param name="distributions">
+    /// What a distribution call becomes (<see cref="SpiceDistributions"/>): kept live for text only circuitRF
+    /// regenerates, reduced to its nominal for text a user keeps. docs/design/spice-models.md §8.4 records which.
+    /// </param>
+    public static SpiceNetlistResult ReadFile(string path, string? section = null,
+                                              SpiceDistributions distributions = SpiceDistributions.Live)
     {
         string full  = Path.GetFullPath(path);
         var    lines = File.ReadAllLines(full);
 
-        var session = new Session();
+        var session = new Session(distributions);
         // The root file is registered as open BEFORE it is read, so a file that includes its way
         // back to the top is caught by the same rule as any other cycle. Registering only what
         // inclusion opens would leave the root as the one file that can be entered twice.
@@ -62,10 +67,11 @@ public static class SpiceNetlistReader
     /// circuitRF happened to be started.
     /// </summary>
     public static SpiceNetlistResult Read(
-        string text, string? sourceDirectory = null, string fileLabel = "<text>", string? section = null)
+        string text, string? sourceDirectory = null, string fileLabel = "<text>", string? section = null,
+        SpiceDistributions distributions = SpiceDistributions.Live)
     {
         var lines = text.Split('\n').Select(l => l.TrimEnd('\r')).ToArray();
-        var session = new Session();
+        var session = new Session(distributions);
         session.Run(lines, fileLabel, sourceDirectory, Blank(section), depth: 0);
         return session.Finish(lines.Length);
     }
@@ -83,8 +89,12 @@ public static class SpiceNetlistReader
     //  the reader's state
     // ─────────────────────────────────────────────────────────────────────────
 
-    private sealed class Session
+    private sealed class Session(SpiceDistributions distributions)
     {
+        /// <summary>What a distribution call in a VALUE becomes. A condition and a device equation always take
+        /// the nominal — see <see cref="RewriteNominal"/>.</summary>
+        private readonly SpiceDistributions _distributions = distributions;
+
         private readonly Library                    _library    = new("spice");
         private readonly List<SpiceNetlistNote>     _notes      = [];
         private readonly List<Variable>             _globals    = [];
@@ -672,7 +682,7 @@ public static class SpiceNetlistReader
         /// </summary>
         private bool? Evaluate(string condition, string file, int number)
         {
-            string text = Rewrite(condition);
+            string text = SpiceExpression.Rewrite(condition, _statistics, null, SpiceDistributions.Nominal);
             if (text.Length == 0) return null;
 
             try
@@ -875,7 +885,7 @@ public static class SpiceNetlistReader
             {
                 string? value = TryReadControlledSource(name, letter, rest, assignments, file, number);
                 if (value is null) return;
-                overrides.Add(new ParameterAssignment(SourceValueParameter, Rewrite(value, file, number)));
+                overrides.Add(new ParameterAssignment(SourceValueParameter, RewriteNominal(value, file, number)));
             }
 
             foreach (var (k, v) in assignments)
@@ -1260,16 +1270,28 @@ public static class SpiceNetlistReader
 
         // ── shared plumbing ───────────────────────────────────────────────────
 
-        private string Rewrite(string value) => SpiceExpression.Rewrite(value, _statistics);
+        private string Rewrite(string value) => SpiceExpression.Rewrite(value, _statistics, null, _distributions);
 
         /// <summary>
         /// Rewrites a value and reports every INTERPRETATION it needed at the line it was written
         /// on. The plain overload above is for values whose line is not in hand; prefer this one.
         /// </summary>
         private string Rewrite(string value, string file, int number)
+            => Rewrite(value, file, number, _distributions);
+
+        /// <summary>
+        /// A value whose distributions are ALWAYS its nominal, whatever the read keeps elsewhere: a conditional,
+        /// which this reader decides once at read time and no trial can revisit, and a controlled source's
+        /// expression, which becomes a device equation — evaluated by the equation evaluators, which carry a
+        /// derivative beside every value and have no trial to draw in.
+        /// </summary>
+        private string RewriteNominal(string value, string file, int number)
+            => Rewrite(value, file, number, SpiceDistributions.Nominal);
+
+        private string Rewrite(string value, string file, int number, SpiceDistributions distributions)
         {
             var notes = new List<string>();
-            string expr = SpiceExpression.Rewrite(value, _statistics, notes);
+            string expr = SpiceExpression.Rewrite(value, _statistics, notes, distributions);
             foreach (string n in notes) Note(file, number, n);
             return expr;
         }

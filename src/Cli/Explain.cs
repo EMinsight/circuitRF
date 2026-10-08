@@ -182,6 +182,7 @@ internal static class Explain
         IReadOnlyList<CircuitRF.Design.ThreeD.SetupSolveStatus>? solved = null;
         ExplainTunablesJson?                tunables = null;
         ExplainStatisticsJson?              statistics = null;
+        ExplainDistributionsJson?           distributions = null;
 
         // The document's OWN resolution always runs, whatever was asked: "which workspace, which
         // technology" is context for every other answer, and a report that omitted it would leave a
@@ -311,7 +312,8 @@ internal static class Explain
                     var (rows, analysisExit) = ExplainAnalyses(lib, tb, analysisName);
                     analyses = rows;
                     exit    |= analysisExit;
-                    statistics = ExplainStatistics.Collect(tb);
+                    statistics    = ExplainStatistics.Collect(tb);
+                    distributions = ExplainStatistics.Distributions(lib, tb);
                 }
                 if (expr is not null) exit |= ExplainExpression(lib, tb, expr, out value);
             }
@@ -319,13 +321,14 @@ internal static class Explain
 
         JsonRun.Explain = new ExplainReportJson(
             path, DocumentKinds.Name(kind), walks, analyses, value, refRes, cells, layers, extents,
-            footprints, em3d, solved is null ? null : Solved.ForExplain(solved), tunables, statistics);
+            footprints, em3d, solved is null ? null : Solved.ForExplain(solved), tunables, statistics, distributions);
 
         Print(path, kind, walks, analyses, value, refRes, cells, layers, extents, footprints);
         if (em3d is not null) ExplainEm3d.Print(em3d);
         if (solved is not null) Solved.Print(solved);
         if (tunables is not null) ExplainTunables.Print(tunables);
         if (statistics is not null) ExplainStatistics.Print(statistics);
+        if (distributions is not null) ExplainStatistics.PrintDistributions(distributions);
         return exit;
     }
 

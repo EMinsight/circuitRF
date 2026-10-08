@@ -1,5 +1,6 @@
 using System.Numerics;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Schematic;
 
@@ -348,7 +349,12 @@ public sealed class TunableCatalog
                         }
                         return;
                     }
-                    notOffered[key] = $"its value '{text}' is not a plain number — tune the variable it reads instead";
+                    // A distribution is an expression (tuning D1) — and the one a user is most likely to ask about,
+                    // since its nominal is a number: it varies in a Monte Carlo trial, and only a plain value tunes.
+                    notOffered[key] = Evaluator.ContainsStatisticalCall(expression)
+                        ? $"its value '{text}' is a distribution, which varies in a Monte Carlo trial and is not tuned — " +
+                          "write its nominal as a plain value with a tolerance (dist=) to tune and vary it"
+                        : $"its value '{text}' is not a plain number — tune the variable it reads instead";
                     return;
                 }
 

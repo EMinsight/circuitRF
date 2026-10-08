@@ -135,4 +135,19 @@ public static class StatisticsDiagnostics
     public static Diagnostic TrialNoComplexValue(string key) => Diagnostic.Create(
         "yield.trial.complex", DiagnosticSeverity.Error,
         "{key}: no complex value has the drawn parts; the trial does not evaluate.", ("key", key));
+
+    // ── YA-3: kit and expression statistics ─────────────────────────────────
+
+    public static Diagnostic RunNothingVaries() => Diagnostic.Create(
+        "yield.run.nothing-varies", DiagnosticSeverity.Error,
+        "Nothing varies: no tune entry has a tolerance (dist=) and the design holds no distribution call, so every trial would be the nominal.");
+
+    public static Diagnostic StatisticalSectionNotSelected(string axis, string sections) => Diagnostic.Create(
+        "yield.kit.section-not-selected", DiagnosticSeverity.Info,
+        "Kit corner {axis}: statistical {sections} not selected, so its models do not vary.",
+        ("axis", axis), ("sections", sections));
+
+    public static Diagnostic TrialDrawFailed(string problem) => Diagnostic.Create(
+        "yield.trial.draw-failed", DiagnosticSeverity.Error,
+        "A distribution could not be drawn ({problem}); the trial does not evaluate.", ("problem", problem));
 }

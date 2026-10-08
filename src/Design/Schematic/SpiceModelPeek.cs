@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using CircuitRF.Core.Netlist.Spice;
 
 namespace CircuitRF.Design.Schematic;
 
@@ -171,7 +172,9 @@ public static class SpiceModelPeek
     private static SpiceModelFile Build(string absolutePath, string? section)
     {
         SpiceCellScan scan;
-        try { scan = SpiceCellImport.Scan(absolutePath, section); }
+        // LIVE: a placed model runs from its file at every extraction, and nothing of this translation is kept
+        // in the user's schematic but the rows the Parameter dialog seeds, which leave a distribution blank.
+        try { scan = SpiceCellImport.Scan(absolutePath, section, SpiceDistributions.Live); }
         catch (Exception ex)
         {
             return SpiceModelFile.Empty with

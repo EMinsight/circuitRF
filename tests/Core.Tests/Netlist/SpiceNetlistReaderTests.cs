@@ -570,22 +570,24 @@ public sealed class SpiceNetlistReaderTests
     // ── S19 — statistics ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// The numbers from a card carrying a distribution are a nominal run, and the caller has to be
-    /// able to say so. Silently returning the nominal value while a card asked for a distribution is
-    /// the bad outcome — it is indistinguishable from a card that asked for nothing.
+    /// A card carrying a distribution keeps it as circuitRF's own call — its nominal in an ordinary run, a
+    /// draw in a Monte Carlo trial (docs/design/yield.md §7) — and the read reports it, so a caller can say
+    /// the design carries statistics. Read for a file a user keeps, it is reduced to the nominal instead.
     /// </summary>
     [Fact]
-    public void S19_AStatisticalCardIsReadAtNominalAndReportsThatItWas()
+    public void S19_AStatisticalCardIsKeptLive_AndReported()
     {
-        var r = Read("""
-            .model nfet nmos (vth0=agauss(0.4, 0.02, 3) tox=2.5n)
-            """);
+        const string card = ".model nfet nmos (vth0=agauss(0.4, 0.02, 3) tox=2.5n)";
+        var r = Read(card);
 
-        Assert.Equal("0.4", Assert.Single(r.ModelCards).Parameters["vth0"]);
+        Assert.Equal("agauss(0.4,0.02,3)", Assert.Single(r.ModelCards).Parameters["vth0"]);
 
         var use = Assert.Single(r.Statistics);
         Assert.Equal("agauss", use.Function);
         Assert.Equal("0.4", use.Nominal);
+
+        var kept = SpiceNetlistReader.Read(card, distributions: SpiceDistributions.Nominal);
+        Assert.Equal("0.4", Assert.Single(kept.ModelCards).Parameters["vth0"]);
     }
 
     // ── S20 — structural errors that must not be read past ────────────────────

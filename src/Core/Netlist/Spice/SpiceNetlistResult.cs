@@ -72,8 +72,9 @@ public sealed record SpiceModelCard(
 /// the circuit the file wrote.
 /// </param>
 /// <param name="Statistics">
-/// Every statistical distribution that was reduced to its nominal value. Empty for the ordinary
-/// case; non-empty means the numbers are a nominal-corner run and the caller must say so.
+/// Every statistical distribution call the read met, kept live or reduced to its nominal value
+/// (<see cref="SpiceDistributions"/>). Empty for the ordinary case; non-empty means the netlist carries
+/// statistics, which an ordinary run evaluates at their nominal and a Monte Carlo trial draws.
 /// </param>
 /// <param name="FilesRead">Every file that contributed, including those pulled in by inclusion.</param>
 public sealed record SpiceNetlistResult(

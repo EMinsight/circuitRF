@@ -1393,7 +1393,22 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ExplainTunablesJson?                Tunables = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainStatisticsJson?              Statistics = null);
+        ExplainStatisticsJson?              Statistics = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainDistributionsJson?           Distributions = null);
+
+    /// <summary>
+    /// <c>explain --analysis</c>: the distribution calls the design holds — a kit's models, a VAR's
+    /// <c>agauss(…)</c> — grouped as process (one draw per trial, shared) and mismatch (one per instance), each
+    /// with its stream (docs/design/yield.md §7). Every ordinary run evaluates them at their nominal.
+    /// </summary>
+    public sealed record ExplainDistributionsJson(
+        int Process,
+        int Mismatch,
+        IReadOnlyList<ExplainDistributionJson> Streams);
+
+    /// <summary>One distribution call: its function, <c>process</c> or <c>mismatch</c>, and its stream.</summary>
+    public sealed record ExplainDistributionJson(string Function, string Kind, string Stream);
 
     /// <summary>
     /// <c>explain --tunables</c> — every value of a schematic that can be tuned, at any depth

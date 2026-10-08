@@ -174,11 +174,22 @@ public static class WorkspaceCorners
         IReadOnlyList<WorkspaceCornerAxis>  axes,
         IReadOnlyDictionary<string, string> selections,
         List<string>                        problems)
+        => Bind(axes, selections, problems).Variables;
+
+    /// <summary>
+    /// <see cref="BindingsFor"/>, and the section reads themselves — whose subcircuits a statistical or mismatch
+    /// section brings with it (<see cref="PdkCorners.SectionFor"/>). Simulate hands both to the extraction.
+    /// </summary>
+    public static WorkspaceCornerBinding Bind(
+        IReadOnlyList<WorkspaceCornerAxis>  axes,
+        IReadOnlyDictionary<string, string> selections,
+        List<string>                        problems)
     {
         ArgumentNullException.ThrowIfNull(axes);
         ArgumentNullException.ThrowIfNull(problems);
 
-        var bound = new List<Variable>();
+        var bound    = new List<Variable>();
+        var sections = new List<PdkCornerSection>();
         selections ??= new Dictionary<string, string>();
 
         // A selection naming an axis the workspace no longer offers is reported here rather than in
@@ -219,7 +230,9 @@ public static class WorkspaceCorners
                 continue;
             }
 
-            var vars = PdkCorners.BindingsFor(axis.AbsoluteFile, section, out var readNotes);
+            var read = PdkCorners.SectionFor(axis.AbsoluteFile, section, out var readNotes);
+            var vars = read?.Variables ?? [];
+            if (read is not null) sections.Add(read);
 
             // WHAT THE READER NOTICED ABOUT THE KIT'S OWN FILES IS NOT A PROBLEM WITH THE CORNER,
             // and reporting it as one buries the messages that are.
@@ -263,6 +276,10 @@ public static class WorkspaceCorners
             }
         }
 
-        return bound;
+        return new WorkspaceCornerBinding(bound, sections);
     }
 }
+
+/// <summary>What a design's corner selections bind (<see cref="WorkspaceCorners.Bind"/>): the variables, and
+/// each section as read.</summary>
+public sealed record WorkspaceCornerBinding(IReadOnlyList<Variable> Variables, IReadOnlyList<PdkCornerSection> Sections);

@@ -1952,6 +1952,16 @@ report says which:
     nothing. It reports what it can establish and stays quiet about the rest.</p>
   </div>
 
+A design whose expressions call a distribution — a kit's statistical models, or a variable such as
+`Rsh = agauss(50, 2.5, 1)` — also lists each one, as a **process** draw (in a global, shared by every
+instance) or a **mismatch** draw (in a cell, one per instance), with the stream that names it:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain mc.cnl --analysis
+<span class="output">Distributions: 1 process, 2 mismatch — nominal in every run but a Monte Carlo trial
+  process  agauss Rnom
+  mismatch agauss X1.R
+  mismatch agauss X2.R</span></code></pre>
+
 <h3 id="explain-touchstone"><code>explain</code> on a Touchstone file — what IS this part?</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain part.s2p

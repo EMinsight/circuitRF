@@ -3,6 +3,7 @@ using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Devices.External;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Core.Netlist.Spice;
+using CircuitRF.Core.Pdk;
 using CircuitRF.WBond;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
@@ -90,13 +91,20 @@ public static class NetExtractor
     /// Null where no workspace knowledge is at hand: a corner's kit selections are then reported, not
     /// applied.
     /// </param>
+    /// <param name="cornerSections">
+    /// The selected corner sections as read (<c>WorkspaceCorners.Bind</c>). A section that includes a VARIANT of a
+    /// part's model library — a kit's statistical or mismatch section — supplies that variant's subcircuits and
+    /// cards in place of the part library's own, which is what makes the kit's mismatch draws reach the run
+    /// (docs/design/spice-models.md §8.11). A section that includes the part's own library changes nothing.
+    /// </param>
     public static ExtractionResult Extract(
         SchematicEditModel model, string testBenchName = "tb", ICellResolver? cells = null,
         IReadOnlyList<Variable>? cornerVariables = null,
-        Func<IReadOnlyDictionary<string, string>, List<string>, IReadOnlyList<Variable>>? cornerBinder = null)
+        Func<IReadOnlyDictionary<string, string>, List<string>, IReadOnlyList<Variable>>? cornerBinder = null,
+        IReadOnlyList<PdkCornerSection>? cornerSections = null)
     {
         var lib        = new Library("netlist");
-        var imports    = new NetlistImports();
+        var imports    = new NetlistImports(cornerSections);
         var conflicts  = new List<string>();
         var scope      = new CellScope();
         var labeled    = new HashSet<string>(StringComparer.Ordinal);
@@ -719,6 +727,11 @@ public static class NetExtractor
         private readonly Dictionary<string, Netlist> _byPath =
             new(StringComparer.OrdinalIgnoreCase);
 
+        private readonly IReadOnlyList<PdkCornerSection> _cornerSections;
+
+        public NetlistImports(IReadOnlyList<PdkCornerSection>? cornerSections = null)
+            => _cornerSections = cornerSections ?? [];
+
         /// <summary>
         /// Cell names this extraction has minted from a SPICE file, and which file each came from.
         ///
@@ -749,7 +762,7 @@ public static class NetExtractor
                     var (library, bench) = CnlTechnologyBinding.ReadFile(path);
                     read = new Netlist(library, bench, []);
                 }
-                else read = LooksLikeSpice(path) ? ReadSpiceNetlist(path) : ReadKitNetlists(path);
+                else read = LooksLikeSpice(path) ? WithCornerVariants(path, ReadSpiceNetlist(path)) : ReadKitNetlists(path);
 
                 _byPath[path] = read;
                 CollectDeclarations(path, read.TestBench);
@@ -760,6 +773,15 @@ public static class NetExtractor
                 problem = ex.Message;
                 return null;
             }
+        }
+
+        /// <summary>The part library read from <paramref name="path"/>, with any selected corner section's variant
+        /// definitions in place of its own (<see cref="KitCornerVariants.Apply"/>).</summary>
+        private Netlist WithCornerVariants(string path, Netlist read)
+        {
+            if (_cornerSections.Count == 0) return read;
+            var cards = KitCornerVariants.Apply(path, read.Library, read.ModelCards, _cornerSections);
+            return ReferenceEquals(cards, read.ModelCards) ? read : read with { ModelCards = cards };
         }
 
         /// <summary>

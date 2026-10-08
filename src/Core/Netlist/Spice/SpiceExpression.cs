@@ -4,11 +4,28 @@ using CircuitRF.Core.Expressions;
 namespace CircuitRF.Core.Netlist.Spice;
 
 /// <summary>
-/// One thing a rewritten expression had to give up, so it can be reported instead of hidden.
+/// One distribution call a rewritten expression held — reported whichever form it was written in
+/// (<see cref="SpiceDistributions"/>), because a kit's statistical content is something a run report has to be
+/// able to say is there.
 /// </summary>
-/// <param name="Function">The function whose value was not computed.</param>
-/// <param name="Nominal">What was used in its place.</param>
+/// <param name="Function">The distribution function.</param>
+/// <param name="Nominal">Its nominal argument — what every ordinary run evaluates it to.</param>
 public sealed record SpiceStatisticalUse(string Function, string Nominal);
+
+/// <summary>
+/// What a translated value does with a distribution call (<c>agauss</c>, <c>gauss</c>, <c>aunif</c>, <c>unif</c>,
+/// two-argument <c>limit</c>) — the one decision docs/design/spice-models.md §8.4 records per path.
+/// </summary>
+public enum SpiceDistributions
+{
+    /// <summary>Kept as circuitRF's own call, which evaluates to its nominal outside a Monte Carlo trial and draws
+    /// inside one (yield overview D6). For text only circuitRF regenerates — the extraction's <c>netlist.cnl</c>.</summary>
+    Live,
+
+    /// <summary>Reduced to the nominal argument. For text a USER keeps (an imported cell, a kit part's seeded
+    /// defaults), which must still simulate in a circuitRF that predates the distribution functions.</summary>
+    Nominal,
+}
 
 /// <summary>
 /// The one place an expression written in the SPICE dialect is translated into circuitRF's own
@@ -80,20 +97,50 @@ public static class SpiceExpression
         };
 
     /// <summary>
-    /// Rewrites one value. <paramref name="statistics"/> collects every distribution that was
-    /// reduced to its nominal value.
+    /// Rewrites one value. <paramref name="statistics"/> collects every distribution call met.
     ///
-    /// <para><b>The reduction is the one change of MEANING here, and it is why it is reported rather
-    /// than performed quietly.</b> circuitRF does not sample distributions, so a card asking for one
-    /// gets its nominal value — which is a perfectly ordinary simulation, and is what the user
-    /// almost certainly wants. What is not acceptable is doing that in silence: the resulting number
-    /// is indistinguishable from a value that carried no distribution at all.</para>
+    /// <para><b>A distribution is the one construct whose translation depends on where the text is going</b>
+    /// (<paramref name="distributions"/>). Kept live, it is circuitRF's own call with the dialect's meaning: its
+    /// nominal in every ordinary run, a draw in a Monte Carlo trial. Reduced, it is its nominal argument — an
+    /// ordinary run all the same, and what an older circuitRF can read. Either way each call is REPORTED, because a
+    /// kit's statistical content is something a run report and <c>explain</c> have to be able to say is there.</para>
     /// </summary>
     public static string Rewrite(string value, ICollection<SpiceStatisticalUse>? statistics = null,
-                                 ICollection<string>? notes = null)
+                                 ICollection<string>? notes = null,
+                                 SpiceDistributions distributions = SpiceDistributions.Live)
+    {
+        var found = new List<SpiceStatisticalUse>();
+        string live = Translate(value, found, notes, distributions);
+        foreach (var use in found) statistics?.Add(use);
+
+        // A distribution whose SPREAD does not read — a kit's own typo, `gauss(x, 0.0235  n)` with a comma
+        // missing — reads at its nominal and says so. Reduced, it parsed and ran before distributions were kept
+        // live, and every nominal result must stay what it was; kept live it would fail at Simulate, in a
+        // generated file, for a mistake in a library the user cannot edit.
+        if (distributions == SpiceDistributions.Live && found.Count > 0 && !Parses(live))
+        {
+            string nominal = Translate(value, null, null, SpiceDistributions.Nominal);
+            if (Parses(nominal))
+            {
+                notes?.Add($"'{found[0].Function}(…)' has a spread that does not read, so it is taken at its " +
+                           "nominal value and does not vary in a Monte Carlo trial.");
+                return nominal;
+            }
+        }
+        return live;
+    }
+
+    private static bool Parses(string expr)
+    {
+        try { Parser.Parse(expr); return true; }
+        catch (Exception) { return false; }
+    }
+
+    private static string Translate(string value, ICollection<SpiceStatisticalUse>? statistics,
+                                    ICollection<string>? notes, SpiceDistributions distributions)
     {
         string s = Unwrap(value.Trim());
-        s = ReplaceStatistical(s, statistics);
+        s = ReplaceStatistical(s, statistics, distributions);
         s = RewritePowerOperator(s);
         s = RewriteLogicalOperators(s);
         s = RewriteTernary(s);
@@ -107,6 +154,15 @@ public static class SpiceExpression
         s = RewriteTimeConditions(s, notes);
         return StripWhitespace(s);
     }
+
+    /// <summary>
+    /// <paramref name="text"/> with every distribution call reduced to its nominal argument — the form every value
+    /// took before distributions were kept live, and still the form <see cref="SpiceDistributions.Nominal"/> writes.
+    /// Applies to any text holding circuitRF expressions, a whole <c>.cnl</c> included: a distribution is a call by
+    /// name, and nothing else in the grammar is spelled that way.
+    /// </summary>
+    public static string ReduceDistributions(string text)
+        => ReplaceStatistical(text, null, SpiceDistributions.Nominal);
 
     /// <summary>
     /// Whether a rewritten expression still names the transient time variable.
@@ -279,16 +335,20 @@ public static class SpiceExpression
 
     // ── statistical distributions ─────────────────────────────────────────────
 
-    private static string ReplaceStatistical(string expr, ICollection<SpiceStatisticalUse>? statistics)
+    private static string ReplaceStatistical(
+        string expr, ICollection<SpiceStatisticalUse>? statistics, SpiceDistributions distributions)
     {
         string s = expr;
+        int from = 0;
 
-        for (int guard = 0; guard < 64; guard++)
+        // Each pass rewrites one call, and there cannot be more calls than characters — so this bounds the loop
+        // without capping how many calls a long text (a whole .cnl) may hold.
+        for (int guard = 0; guard <= expr.Length; guard++)
         {
             int open = -1, nameStart = -1;
             string name = "";
 
-            for (int i = 0; i < s.Length && open < 0; i++)
+            for (int i = from; i < s.Length && open < 0; i++)
             {
                 if (s[i] != '(') continue;
 
@@ -325,17 +385,29 @@ public static class SpiceExpression
                 string x  = args[0].Trim();
                 string lo = args[1].Trim();
                 string hi = args[2].Trim();
-                s = s[..nameStart] + $"min(max({x},{lo}),{hi})" + s[(close + 1)..];
+                s    = s[..nameStart] + $"min(max({x},{lo}),{hi})" + s[(close + 1)..];
+                from = nameStart + "min(max(".Length;      // a distribution inside the clamp is next
                 continue;
             }
 
             string nominal = args.FirstOrDefault()?.Trim() ?? "0";
             statistics?.Add(new SpiceStatisticalUse(name, nominal));
 
+            if (distributions == SpiceDistributions.Live)
+            {
+                // circuitRF's spelling of the same call: the name lower-case, the arguments as written. The
+                // scan resumes INSIDE it, so a distribution nested in an argument is found and kept too.
+                string lower = name.ToLowerInvariant();
+                s    = s[..nameStart] + lower + "(" + string.Join(",", args.Select(a => a.Trim())) + ")" + s[(close + 1)..];
+                from = nameStart + lower.Length + 1;
+                continue;
+            }
+
             // Bracketed only when the nominal is compound. A single literal or name needs no
             // grouping, and wrapping one turns a model card's plain value into `(0.4)` — arithmetic
             // that is right and a value nobody would recognise as what the card said.
-            s = s[..nameStart] + (IsAtomic(nominal) ? nominal : "(" + nominal + ")") + s[(close + 1)..];
+            s    = s[..nameStart] + (IsAtomic(nominal) ? nominal : "(" + nominal + ")") + s[(close + 1)..];
+            from = nameStart;                                 // the nominal may itself hold a distribution
         }
 
         return s;

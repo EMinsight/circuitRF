@@ -1,5 +1,7 @@
 using System.Globalization;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Elaboration;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Optimization;
 using CircuitRF.Design.Statistics;
@@ -30,6 +32,47 @@ internal static class ExplainStatistics
         return new ExplainStatJson(
             AnalysisDirectiveSchema.DistTokens[(int)e.Distribution], e.Stat, text,
             Core.Expressions.Units.BaseUnit(t.Unit), r?.Sigma, r?.Lo, r?.Hi, r?.Step, r?.Trunc, written);
+    }
+
+    /// <summary>
+    /// The distribution calls the design holds, grouped process/mismatch (docs/design/yield.md §7); null when
+    /// it holds none. Elaborated only when the text names a distribution somewhere, so a design without one
+    /// pays nothing for the question.
+    /// </summary>
+    public static ExplainDistributionsJson? Distributions(Library lib, TestBench tb)
+    {
+        if (!MentionsDistribution(lib, tb)) return null;
+        IReadOnlyList<StatisticalCall> calls;
+        try
+        {
+            using var nl = new Elaborator(lib).Elaborate(tb);
+            calls = nl.StatisticalCalls;
+        }
+        catch (Exception) { return null; }   // elaboration failures are check's to report
+        if (calls.Count == 0) return null;
+
+        static string KindOf(StatisticalCall c) => c.Kind == StatisticalKind.Process ? "process" : "mismatch";
+        return new ExplainDistributionsJson(
+            calls.Count(c => c.Kind == StatisticalKind.Process),
+            calls.Count(c => c.Kind == StatisticalKind.Mismatch),
+            [.. calls.OrderBy(c => c.Kind).Select(c => new ExplainDistributionJson(c.Function, KindOf(c), c.Stream))]);
+    }
+
+    private static bool MentionsDistribution(Library lib, TestBench tb)
+    {
+        static bool Any(IEnumerable<string?> texts) => texts.Any(t => t is not null && Evaluator.ContainsStatisticalCall(t));
+        return Any(tb.GlobalVariables.Select(v => v.Expression))
+            || Any(tb.Instances.SelectMany(i => i.Overrides).Select(o => o.Expression))
+            || lib.Cells.Any(c => Any(c.Variables.Select(v => v.Expression))
+                               || Any(c.Parameters.Select(p => p.DefaultExpression))
+                               || Any(c.Instances.SelectMany(i => i.Overrides).Select(o => o.Expression)));
+    }
+
+    public static void PrintDistributions(ExplainDistributionsJson d)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"Distributions: {d.Process} process, {d.Mismatch} mismatch — nominal in every run but a Monte Carlo trial");
+        foreach (var s in d.Streams) Console.WriteLine($"  {s.Kind,-8} {s.Function,-6} {s.Stream}");
     }
 
     /// <summary>The statistical report of a testbench; null when its setup has no statistical content.</summary>

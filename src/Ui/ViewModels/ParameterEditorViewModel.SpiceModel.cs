@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Ui.Commands.Schematic;
 using CircuitRF.Ui.Schematic;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -293,7 +294,10 @@ public sealed partial class ParameterEditorViewModel
             .Select(d => new EditableParameter
             {
                 Name            = d.Name,
-                Expression      = d.DefaultExpression,
+                // A default holding a distribution is seeded blank, so the file's own default stands: the row is
+                // written into this schematic, and a value there would replace the subcircuit's per-instance draw
+                // (docs/design/spice-models.md §8.4).
+                Expression      = Evaluator.ContainsStatisticalCall(d.DefaultExpression) ? "" : d.DefaultExpression,
                 ShowOnSchematic = false,
             })];
     }

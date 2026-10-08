@@ -55,6 +55,7 @@ public sealed partial class Evaluator
         }
 
         _resolving.Add(name);
+        PushStatFrame(owningScope, name);   // a distribution in this binding draws on the binding's own stream
         try
         {
             // A binding's own unit is a site unit like any other, and var-unit-wins applies to it: `b = 2*a`
@@ -67,6 +68,7 @@ public sealed partial class Evaluator
         }
         finally
         {
+            PopStatFrame();
             _resolving.Remove(name);
         }
     }
@@ -210,6 +212,11 @@ public sealed partial class Evaluator
         // The network metrics, group delay and VSWR (Evaluator.Network.cs) — one goal expression away
         // from every quantity the Data Display derives from an S cube.
         if (IsNetworkBuiltin(cl.Name)) return EvalNetworkCall(cl, scope);
+
+        // The distribution functions (Evaluator.Statistical.cs): their nominal outside a trial, a draw inside one.
+        // `limit` with three arguments is the clamp, told apart by its arity.
+        if (IsStatisticalCall(cl)) return EvalStatistical(cl, scope);
+        if (cl.Name == "limit")    return EvalClamp(cl, scope);
 
         // built-ins — cube-aware variants handle DataCube args; scalars fall through to normal math
         return cl.Name switch

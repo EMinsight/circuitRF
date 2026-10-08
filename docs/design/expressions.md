@@ -180,6 +180,29 @@ family returns **farads and henries**, never the document's picofarads and nanoh
 frequency argument of `wsp_zsrc`, `wsp_zprc` and the six frequency-dependent conversions **may be
 omitted**, in which case the cube's own `freq` (or `ssfreq`) axis is used.
 
+**Distributions** (parameter and variable expressions; not in device equations — `docs/design/yield.md` §7). The SPICE
+dialect's statistical functions, with its argument meaning; real-valued:
+
+| Call | Draw | Outside a trial |
+|---|---|---|
+| `agauss(nom, dev[, k])` | normal, σ = dev/k (dev absolute, at k σ; k defaults to 1) | `nom` |
+| `gauss(nom, rel[, k])` | normal, σ = nom·rel/k (relative) | `nom` |
+| `aunif(nom, dev)` | uniform on nom ± dev | `nom` |
+| `unif(nom, rel)` | uniform on nom·(1 ± rel) | `nom` |
+| `limit(nom, dev)` | nom − dev or nom + dev, equally likely | `nom` |
+| `limit(x, lo, hi)` | — a clamp, `min(max(x, lo), hi)`; three arguments is never a distribution | the clamp |
+
+- **Outside a Monte Carlo trial a distribution is its first argument, evaluated alone** — its kind and unit are that
+  argument's, and the spread is not even read, so a spread naming something that does not resolve costs an ordinary
+  run nothing. The unit rules (§8) read the same view: a distribution is unit-bearing exactly when its nominal is,
+  and an absolute spread beside a unit-bearing nominal takes the site unit like any operand that must agree with it.
+- **Inside a trial** the evaluator is handed the trial's draws (`Evaluator.Statistics`, an `IStatisticalDraws` the
+  elaborator passes down — never a global). k = 0 is no spread, the reading a kit relies on to switch mismatch off;
+  `sigmascale` multiplies every spread.
+- **Process or mismatch is the scope's, not the function's**: evaluated in the testbench's global scope, a draw is
+  shared by every instance in a trial; in a cell instance's scope (`Scope.InstancePath`), it is drawn per instance.
+- A VAR holding a distribution is an expression, so it is not tunable — `explain --tunables` says so when asked.
+
 The set is intentionally close to what other tools' equation-defined devices provide, so hero SDD equations transcribe cleanly (§14). Functions beyond that common set are allowed for non-hero use but should be added knowingly.
 
 ---

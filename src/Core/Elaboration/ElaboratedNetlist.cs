@@ -25,6 +25,16 @@ public sealed class ElaboratedNetlist : IDisposable
     public double AmbientC { get; internal set; } = Devices.Temperature.NominalC;
 
     /// <summary>
+    /// Every distribution call (<c>agauss</c>, <c>gauss</c>, …) the elaboration evaluated, once per stream, with
+    /// whether it is a process or a mismatch draw — the "this design has statistics" signal the run report and
+    /// <c>explain</c> read (docs/design/yield.md §7). Recorded whether or not the elaboration was a trial.
+    /// </summary>
+    public IReadOnlyList<Expressions.StatisticalCall> StatisticalCalls { get; internal set; } = [];
+
+    /// <summary>Every draw a trial elaboration could not make, by stream. Non-empty means the trial did not evaluate.</summary>
+    public IReadOnlyList<string> StatisticalProblems { get; internal set; } = [];
+
+    /// <summary>
     /// brief-wbond-wire-temperature R-wbt-3e/4e — the memory a SWEEP carries from one point's wBond wire
     /// temperatures to the next: each array's last converged state (a warm start) and the drive it was found at,
     /// which a runaway warning names. Set by the sweep on each point's netlist; null for a run with no sweep,

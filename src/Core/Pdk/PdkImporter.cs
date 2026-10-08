@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.RegularExpressions;
 using CircuitRF.Core.Devices.External;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Netlist.Spice;
 
 namespace CircuitRF.Core.Pdk;
@@ -802,8 +803,7 @@ public static class PdkImporter
                     yield return new SubcircuitDef(
                         cell.Name,
                         cell.Ports.Count,
-                        [.. cell.Parameters.Select(p => new PdkPartParameter(
-                            p.Name, p.DefaultExpression, IsText: !IsNumericText(p.DefaultExpression)))],
+                        [.. cell.Parameters.Select(p => SeededParameter(p.Name, p.DefaultExpression))],
                         relativePath);
                 yield break;
             }
@@ -822,6 +822,18 @@ public static class PdkImporter
                                           relativePath);
         }
     }
+
+    /// <summary>
+    /// A subcircuit parameter as a placed part's row is seeded with. A default holding a distribution is seeded
+    /// BLANK, which leaves the subcircuit's own default standing: the row is written into the user's schematic,
+    /// so a live call there would not open in a circuitRF that predates distributions, and even its nominal
+    /// would turn the subcircuit's per-instance mismatch draw into a fixed override (docs/design/spice-models.md
+    /// §8.4).
+    /// </summary>
+    private static PdkPartParameter SeededParameter(string name, string expression)
+        => Evaluator.ContainsStatisticalCall(expression)
+            ? new PdkPartParameter(name, "", IsText: !IsNumericText(SpiceExpression.ReduceDistributions(expression)))
+            : new PdkPartParameter(name, expression, IsText: !IsNumericText(expression));
 
     /// <summary>
     /// Reads the <c>parameters</c> declaration belonging to the subcircuit that starts at

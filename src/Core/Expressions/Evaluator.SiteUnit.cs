@@ -30,7 +30,11 @@ public sealed partial class Evaluator
     /// that was already the rule before literals existed, and following it would change existing documents' values.
     /// </summary>
     public static bool IsUnitBearing(Expr ast, Scope scope)
-        => ContainsUnitLiteral(ast) || AstWalker.CollectRefs(ast).Any(n => NameIsUnitBearing(n, scope, null));
+    {
+        // A distribution call is its nominal argument as far as units go — its spread must not decide it.
+        ast = NominalView(ast);
+        return ContainsUnitLiteral(ast) || AstWalker.CollectRefs(ast).Any(n => NameIsUnitBearing(n, scope, null));
+    }
 
     /// <summary><see cref="IsUnitBearing(Expr, Scope)"/> for expression text; false when the text does not parse.</summary>
     public static bool IsUnitBearing(string expression, Scope scope)
@@ -199,6 +203,7 @@ public sealed partial class Evaluator
 
         private Result Call(CallExpr cl)
         {
+            if (IsStatisticalCall(cl)) return Distribution(cl);
             var args = cl.Args.Select(Scale).ToArray();
             string name = cl.Name;
             if (name is "min" or "max" && args.Length > 0 && args.FirstOrDefault(a => !a.Bare) is { Bare: false } bearing)
@@ -216,6 +221,25 @@ public sealed partial class Evaluator
                 _                            => double.NaN,
             };
             return Result.Of(ce, power);
+        }
+
+        // A distribution is its nominal for units: bare or bearing as its first argument is. An ABSOLUTE spread
+        // (agauss/aunif/limit's second argument) is in the nominal's unit, so a bare one beside a unit-bearing
+        // nominal takes the site unit like any operand that must agree with it; a relative spread and k are
+        // dimensionless and are left alone.
+        private Result Distribution(CallExpr cl)
+        {
+            if (cl.Args.Length == 0) return Result.OfBare(cl);
+            var nominal = Scale(cl.Args[0]);
+            var args    = cl.Args.ToArray();
+            args[0] = nominal.Expr;
+            if (!nominal.Bare && cl.Name is "agauss" or "aunif" or "limit" && args.Length > 1)
+            {
+                var spread = Scale(cl.Args[1]);
+                args[1] = spread.Bare ? Scaled(spread.Expr, nominal.Power) : spread.Expr;
+            }
+            var ce = args.Select((a, i) => Same(cl.Args[i], a)).All(x => x) ? cl : cl with { Args = args };
+            return nominal.Bare ? Result.OfBare(ce) : Result.Of(ce, nominal.Power);
         }
 
         // Two operands that must agree in dimension: a bare one beside a unit-bearing one of known power takes the site

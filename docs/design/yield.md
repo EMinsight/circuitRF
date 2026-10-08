@@ -127,7 +127,7 @@ have seen).
 | `yield.corner.trial-incomplete` | error | `trial=` without `seed`, `sampling` and `trials` |
 | `yield.dist.nonphysical` | warning | §1.1 |
 | `yield.dist.off` | warning | a distribution with `stat=0` |
-| `yield.goal.nothing-varies` | warning | an enabled `use=yield` goal and no statistical entry (YA-3 adds: and no kit statistical section selected) |
+| `yield.goal.nothing-varies` | warning | an enabled `use=yield` goal, no statistical entry and no distribution call (§7) |
 | `yield.correlate.repair` | warning | the correlations are not positive definite; reports the largest change |
 
 **The correlation matrix** (`StatisticsValidator.CorrelationOf`) is over the keys the `correlate` lines name,
@@ -241,7 +241,95 @@ are shared. A cache hit returns its scores and no `DataSet` (the cache keeps sco
 **Nothing nominal changes** (R-ya2-7): with no statistical entry nothing in this section runs during
 Simulate, Tuning or Optimization; the optimizer's own classes pass unchanged.
 
+## 7. YA-3 — kit statistics and distribution functions
+
+**The functions** (`Evaluator.Statistical.cs`, `src/Core/Expressions`). `agauss(nom, dev[, k])`,
+`gauss(nom, rel[, k])`, `aunif(nom, dev)`, `unif(nom, rel)` and `limit(nom, dev)` are circuitRF built-ins with
+the SPICE dialect's meaning; `limit(x, lo, hi)` is the clamp (`expressions.md` §7 has the table). Outside a trial
+each is its **first argument, evaluated alone** — the spread is never read — and the unit rules read the same
+nominal view (`Evaluator.NominalView`), so a nominal result is the one the importer's old reduction gave, bit for
+bit. Inside a trial the evaluator holds an `IStatisticalDraws` (`Evaluator.Statistics`, set through
+`Elaborator.Statistics` — per elaboration, never global) and computes:
+
+| Call | Value at the stream's draw (z, u = Φ(z), s = `sigmascale`) |
+|---|---|
+| `agauss(nom, dev, k)` | nom + (s·dev/k)·z |
+| `gauss(nom, rel, k)` | nom·(1 + (s·rel/k)·z) |
+| `aunif(nom, dev)` | nom + s·dev·(2u − 1) |
+| `unif(nom, rel)` | nom·(1 + s·rel·(2u − 1)) |
+| `limit(nom, dev)` | nom − s·dev if u < ½, else nom + s·dev |
+
+k defaults to 1; **k = 0 is no spread** — a kit writes `(mm_ok != 1 ? 0 : 1)` as k to switch its mismatch off,
+and that is the only reading that does not divide by zero; k < 0 is refused. A draw on a complex argument, a wrong
+arity or a spread that does not evaluate throws, and is also recorded in `StatisticalProblems` (on the evaluator and
+on `ElaboratedNetlist`) — some parameter paths fall back to verbatim text when evaluation throws, so YA-4 treats a
+non-empty list as a trial that did not evaluate (D7; `yield.trial.draw-failed`).
+
+**Process and mismatch** (D6) are the scope's. `Scope.InstancePath` is null for the testbench's global scope and the
+instance's full path for a cell scope (inherited by a user function's call frame). The evaluator keeps a stack of
+SITES: resolving a named binding pushes (owner's instance path, name); an instance parameter's override is evaluated
+through `Evaluator.EvalParameter` with site `<instance>.<param>` (`Elaborator.EvalOverride`, every per-device
+resolver). A call's kind is its site's scope — no path is **process**, a path is **mismatch** — and its stream is
+`<path>.<name>`, or `<name>` alone in the global scope, with `#2`, `#3` … for later calls in one site:
+
+| Written | Stream | Kind |
+|---|---|---|
+| global `Rnom = agauss(100, 10, 1)` | `Rnom` | process — memoised, so one draw per trial shared by every instance |
+| cell `sub` default `R=agauss(Rnom,5,1)`, instance `X1` | `X1.R` | mismatch |
+| inside `X1`, `R1 a b R='agauss(…)'` | `X1.R1.R` | mismatch |
+| top-level `R1 in 0 R=agauss(…)` | `R1.R` | process (testbench scope; one instance, so one draw either way) |
+
+`ElaboratedNetlist.StatisticalCalls` lists every call reached, once per stream, nominal or not.
+
+**The draws** (`ExpressionDraws`, `src/Design/Statistics`). A stream's z is `StatStreams.Normal(seed, trial, Id(stream))`
+at **slot k = 1** — slot 0 belongs to the setup's statistical entries, so a stream that happens to be spelled like an
+entry's key never shares its draw. `process=0` / `mismatch=0` make that kind evaluate at its nominal; `sigmascale`
+is passed with every draw. Streams are discovered during elaboration, after any plan exists, so they draw at
+`random`; a caller that elaborates nominally first can plan them (`StatisticalCalls` names them) and pass their z in
+`planned`, which win — that is how YA-4 reaches `lhs`/`sobol` for them. `Drawn` records each stream's kind and z, the
+per-stream record YA-4's result keeps.
+
+**The SPICE reader** (`SpiceDistributions`, `spice-models.md` §8.4 has the per-path table). The extraction's read
+and a corner section's read keep the call LIVE, in circuitRF's spelling; the import gestures, which write files a
+user keeps, reduce it to the NOMINAL; a placed part's parameter rows are seeded BLANK where the default holds a
+distribution, so the file's own default — and its per-instance draw — stands. A `.if` condition and a controlled
+source's equation are always nominal. `SpiceExpression.ReduceDistributions` is the nominal form of any text.
+
+**Kit sections** (`spice-models.md` §8.11). A kit's statistical section binds process globals whose values are
+distributions — they reach the run as corner bindings. Its mismatch section includes a VARIANT model library whose
+subcircuits carry the per-instance draws; `PdkCorners.SectionFor` returns the section's definitions with its
+bindings, `WorkspaceCorners.Bind` returns both for the design's selections, and `KitCornerVariants.Apply` (called as
+the extraction loads a part's SPICE netlist) puts the variant's subcircuits in place of the part library's — only
+when the section does not include the part library itself (by content), so a nominal section moves no byte. A
+SPICE model placed straight on a schematic runs the file it names; its distributions are live, but no section
+substitutes its definitions.
+
+**Not tunable** (R-ya3-4): a value holding a distribution is an expression, and `TunableCatalog.WhyNotOffered`
+says so in its own words ("its value '…' is a distribution, which varies in a Monte Carlo trial and is not tuned —
+write its nominal as a plain value with a tolerance (dist=) to tune and vary it").
+
+**Discovery and refusal** (`KitStatistics`, R-ya3-5). `KitStatistics.Report(calls, selected sections, axes)` gives
+the process and mismatch counts, the selected sections that brought statistics (`r_stat (rCorners.lib)`), and an
+Info note per kit axis whose statistical section is not selected (`yield.kit.section-not-selected`, naming the
+axis and the section). Which sections are statistical is a TEXT scan (`PdkCorners.StatisticalSections`): a
+distribution call outside a comment, in the section's own lines or a file it includes or requests — reading every
+section would read its model library each time. `KitStatistics.NothingVaries(setup, calls)` is the run's refusal
+(`yield.run.nothing-varies`): an enabled yield goal, no tolerance and no distribution call. `check`'s
+`yield.goal.nothing-varies` warning counts distribution calls too (the elaborated calls when `check` has them, the
+testbench's own text otherwise). `explain --analysis` adds a `distributions` object — counts and every stream. The
+CLI has no workspace corner axes, so it names no sections; YA-4's run report takes them from `WorkspaceCorners.Bind`.
+
+**Not covered.** A distribution inside a FREQUENCY-DEPENDENT expression is evaluated at stamp time by the model's
+own evaluator, which has no trial context, so it stays at its nominal. The other simulator dialect's
+`statistics { process {…} mismatch {…} }` blocks are not read (`spice-models.md` §8.11 names the seam).
+
+**Nominal identity** (R-ya3-6, `KitStatisticsNominalIdentityTests`): every example extracts a netlist with no
+distribution in it; a kit-shaped design runs bit-identically live and reduced, and a nominal section moves no byte;
+over a real kit's corner files (a git-ignored `testdata/kit-statistics`, skipped with a reason when absent) every
+section read live is the nominal read modulo the distributions' spelling, and every global and subcircuit
+expression evaluates to the same bits.
+
 ## Later phases
 
-Each phase appends its section above this one as it lands: YA-3 kit statistics, YA-4 the run service and
+Each phase appends its section above this one as it lands: YA-4 the run service and
 result, YA-5 the CLI and MCP, YA-6/7 corners, YA-8/9 the display, YA-10 the panel, YA-11/12 centering.

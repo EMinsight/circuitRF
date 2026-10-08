@@ -124,7 +124,7 @@ public static class TuningValidator
         }
 
         // The statistical part — tolerances, correlations, statistics settings, corners (docs/design/yield.md).
-        f.AddRange(Statistics.StatisticsValidator.Validate(tb, catalog));
+        f.AddRange(Statistics.StatisticsValidator.Validate(tb, catalog, netlist));
         return f;
     }
 

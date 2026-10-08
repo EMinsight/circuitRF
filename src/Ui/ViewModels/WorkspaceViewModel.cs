@@ -4244,11 +4244,12 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // file that has moved — comes back as a conflict rather than as silence, because a design
         // running at a corner nobody chose produces numbers that are wrong and entirely plausible.
         var cornerProblems = new List<string>();
-        var cornerVars = WorkspaceCorners.BindingsFor(
+        var corners = WorkspaceCorners.Bind(
             AvailableCornerAxes, model.CornerSelections, cornerProblems);
 
-        var result = NetExtractor.Extract(model, testBenchName, cells: this, cornerVariables: cornerVars,
-            cornerBinder: (selections, problems) => WorkspaceCorners.BindingsFor(AvailableCornerAxes, selections, problems));
+        var result = NetExtractor.Extract(model, testBenchName, cells: this, cornerVariables: corners.Variables,
+            cornerBinder: (selections, problems) => WorkspaceCorners.BindingsFor(AvailableCornerAxes, selections, problems),
+            cornerSections: corners.Sections);
         var conflicts = cornerProblems.Count == 0
             ? result.Conflicts
             : (IReadOnlyList<string>)[.. cornerProblems, .. result.Conflicts];

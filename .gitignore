@@ -117,3 +117,6 @@ TK*.dll
 TK*.lib
 TK*.pdb
 /.vscode
+
+# A kit fixture (a SPICE-dialect model folder holding corner files), linked locally — never committed.
+/testdata/kit-statistics

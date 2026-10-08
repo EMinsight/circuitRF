@@ -86,12 +86,12 @@ public sealed class SpiceExpressionTests
     // ── statistical distributions ─────────────────────────────────────────────
 
     /// <summary>
-    /// circuitRF does not sample distributions, so a card asking for one gets its nominal value.
-    /// That is an ordinary and useful run — what is not acceptable is doing it in silence, because
-    /// the number that comes out is indistinguishable from one that carried no distribution at all.
+    /// Outside a Monte Carlo trial a distribution evaluates to its nominal value — an ordinary and useful
+    /// run. It is still REPORTED, because a design carrying statistics is something a run report and
+    /// <c>explain</c> have to be able to say.
     /// </summary>
     [Fact]
-    public void ADistributionIsReducedToItsNominal_AndSaidSoOutLoud()
+    public void ADistributionEvaluatesToItsNominal_AndIsReported()
     {
         var used = new List<SpiceStatisticalUse>();
 
@@ -115,9 +115,9 @@ public sealed class SpiceExpressionTests
         Assert.Single(used);
     }
 
-    /// <summary>A distribution nested inside arithmetic is reduced in place, not around.</summary>
+    /// <summary>A distribution nested inside arithmetic is its nominal in place, not around.</summary>
     [Fact]
-    public void ADistributionInsideArithmeticIsReducedInPlace()
+    public void ADistributionInsideArithmeticIsItsNominalInPlace()
     {
         var used = new List<SpiceStatisticalUse>();
         Assert.Equal(6.0, Value(SpiceExpression.Rewrite("2 * agauss(b, 0.1, 3)", used)), 12);

@@ -64,6 +64,16 @@ public sealed class Elaborator
         => _libraries = libraries;
 
     /// <summary>
+    /// The draws of one Monte Carlo trial, or null (the default) for an ordinary elaboration, where every
+    /// distribution call evaluates to its nominal. Passed to THIS elaboration's evaluator — never a global.
+    /// </summary>
+    public IStatisticalDraws? Statistics
+    {
+        get => _evaluator.Statistics;
+        init => _evaluator.Statistics = value;
+    }
+
+    /// <summary>
     /// The global scope this elaboration built and resolved through, or null before
     /// <see cref="Elaborate"/> has run.
     ///
@@ -173,6 +183,9 @@ public sealed class Elaborator
             }
             catch { /* skip variables that cannot resolve (e.g. forward refs) */ }
         }
+
+        netlist.StatisticalCalls    = [.. _evaluator.StatisticalCalls];
+        netlist.StatisticalProblems = [.. _evaluator.StatisticalProblems];
 
         // Layer-3 linter: check top-level Terms for Num consistency. The Num parameter is meaningful
         // ONLY to S-parameter analysis, so this lint runs only when an S-parameter analysis will
@@ -677,9 +690,11 @@ public sealed class Elaborator
         return scope;
     }
 
-    private Scope BuildCellScope(Cell cell, Scope parentScope, IEnumerable<ParameterAssignment> overrides, string scopeName)
+    private Scope BuildCellScope(Cell cell, Scope parentScope, IEnumerable<ParameterAssignment> overrides, string scopeName,
+                                 string instanceName)
     {
-        var cellScope = new Scope(scopeName, parentScope);
+        // The scope's instance path is what makes a distribution in the cell a MISMATCH draw (yield overview D6).
+        var cellScope = new Scope(scopeName, parentScope) { InstancePath = scopeName };
 
         // Load parameter defaults (evaluated lazily in the cell's own scope).
         foreach (var pd in cell.Parameters)
@@ -714,7 +729,7 @@ public sealed class Elaborator
                 continue;
             }
 
-            var resolved = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
+            var resolved = _evaluator.EvalParameter(ov.Expression, parentScope, ov.Unit, $"{instanceName}.{ov.Name}");
             cellScope.Bind(ov.Name, "__resolved__");
             _evaluator.InjectResolved(scopeName, ov.Name, resolved);
         }
@@ -1111,7 +1126,8 @@ public sealed class Elaborator
                     subCell,
                     parentScope: currentScope,
                     overrides:   inst.Overrides,
-                    scopeName:   childPath);
+                    scopeName:   childPath,
+                    instanceName: inst.InstanceName);
 
                 FlattenCell(subCell, childPath, subPortMap, subScope, globalScope, netlist);
             }
@@ -1119,6 +1135,13 @@ public sealed class Elaborator
     }
 
     // ── Parameter resolution ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// One instance parameter's override, evaluated in the parent scope — with the instance and parameter named
+    /// as the site, so a distribution call in it draws on the stream <c>&lt;path&gt;.&lt;instance&gt;.&lt;param&gt;</c>.
+    /// </summary>
+    private Value EvalOverride(Instance inst, ParameterAssignment ov, Scope parentScope)
+        => _evaluator.EvalParameter(ov.Expression, parentScope, ov.Unit, $"{inst.InstanceName}.{ov.Name}");
 
     private IReadOnlyDictionary<string, Value> ResolveParameters(
         Instance inst,
@@ -1187,7 +1210,7 @@ public sealed class Elaborator
                     $"but a '{inst.Reference}' takes a single value that cannot vary with frequency. " +
                     "Only Chain (A/B/C/D), Z_Port (Z[i,j]) and SDD (H[w]) are evaluated per frequency.");
 
-            result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
+            result[ov.Name] = EvalOverride(inst, ov, parentScope);
         }
 
         ValidatePortPairNetCount(inst, result);
@@ -1300,7 +1323,7 @@ public sealed class Elaborator
             if (enumNamed.Any(n => ov.Name.Equals(n, StringComparison.OrdinalIgnoreCase)))
                 result[ov.Name] = new Value(Unquote(ov.Expression));
             else
-                result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
+                result[ov.Name] = EvalOverride(inst, ov, parentScope);
         }
 
         ValidatePortPairNetCount(inst, result);
@@ -1338,7 +1361,7 @@ public sealed class Elaborator
             }
             else
             {
-                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                try { result[ov.Name] = EvalOverride(inst, ov, parentScope); }
                 catch { /* not an expression this layer owns */ }
             }
         }
@@ -1665,7 +1688,7 @@ public sealed class Elaborator
 
             try
             {
-                result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
+                result[ov.Name] = EvalOverride(inst, ov, parentScope);
             }
             catch
             {
@@ -1782,7 +1805,7 @@ public sealed class Elaborator
             else
             {
                 // Regular numeric parameter — resolve normally.
-                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                try { result[ov.Name] = EvalOverride(inst, ov, parentScope); }
                 catch { /* skip unresolvable params */ }
             }
         }
@@ -1838,7 +1861,7 @@ public sealed class Elaborator
                 // Try to resolve as a number; if it fails (it's a variable ref), store as string.
                 try
                 {
-                    var val = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
+                    var val = EvalOverride(inst, ov, parentScope);
                     result[ov.Name] = val;
                     // Also store as string so the model can re-evaluate on sweep updates.
                     // Detect if expression was a non-literal by trying to parse and check for refs.
@@ -1872,7 +1895,7 @@ public sealed class Elaborator
             else
             {
                 // Freq, NumFreqs, etc. — resolve normally.
-                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                try { result[ov.Name] = EvalOverride(inst, ov, parentScope); }
                 catch { /* skip */ }
             }
         }
@@ -1945,7 +1968,7 @@ public sealed class Elaborator
             else
             {
                 // NumPorts and any other numeric override — evaluate normally.
-                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                try { result[ov.Name] = EvalOverride(inst, ov, parentScope); }
                 catch { /* skip unresolvable; factory will error if a required numeric is missing */ }
             }
         }
@@ -1999,7 +2022,7 @@ public sealed class Elaborator
             }
             else
             {
-                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                try { result[ov.Name] = EvalOverride(inst, ov, parentScope); }
                 catch { /* an echo parameter is display only; the design itself carries the truth */ }
             }
         }
@@ -2076,7 +2099,7 @@ public sealed class Elaborator
             }
             else
             {
-                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                try { result[ov.Name] = EvalOverride(inst, ov, parentScope); }
                 catch { /* skip unresolvable; the factory errors if a required numeric is missing */ }
             }
         }
@@ -2121,12 +2144,12 @@ public sealed class Elaborator
             // Z[k] and G[k] may be complex; store as-is for the factory to parse.
             if (RxP1ToneZEntry.IsMatch(ov.Name) || RxP1ToneGEntry.IsMatch(ov.Name))
             {
-                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                try { result[ov.Name] = EvalOverride(inst, ov, parentScope); }
                 catch { /* skip unresolvable */ }
             }
             else
             {
-                try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+                try { result[ov.Name] = EvalOverride(inst, ov, parentScope); }
                 catch { /* skip unresolvable */ }
             }
         }
@@ -2146,7 +2169,7 @@ public sealed class Elaborator
         // Phase[i] in deg, Z/Z[k] in Ω). Evaluate each with its declared unit, like P1Tone.
         foreach (var ov in inst.Overrides)
         {
-            try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+            try { result[ov.Name] = EvalOverride(inst, ov, parentScope); }
             catch { /* skip unresolvable — degrades gracefully */ }
         }
 
@@ -2192,7 +2215,7 @@ public sealed class Elaborator
             }
 
             // Regular parameter (unlikely for SDD in v1, but supported for future use).
-            result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
+            result[ov.Name] = EvalOverride(inst, ov, parentScope);
         }
 
         return result;

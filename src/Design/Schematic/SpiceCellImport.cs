@@ -89,12 +89,19 @@ public static class SpiceCellImport
     /// <see cref="SpiceCellScan.SectionNames"/> — which is exactly the pass a caller uses to find out
     /// what to offer before asking for one.
     /// </param>
-    public static SpiceCellScan Scan(string path, string? section = null)
+    /// <param name="distributions">
+    /// What a distribution call becomes. <see cref="SpiceDistributions.Nominal"/> (the default) for the import
+    /// gestures, which build a cell the USER keeps and which must still simulate in a circuitRF that predates the
+    /// distribution functions; <see cref="SpiceDistributions.Live"/> for <see cref="SpiceModelPeek"/>, whose
+    /// translation reaches only the extraction's <c>netlist.cnl</c> (docs/design/spice-models.md §8.4).
+    /// </param>
+    public static SpiceCellScan Scan(string path, string? section = null,
+                                     SpiceDistributions distributions = SpiceDistributions.Nominal)
     {
         SpiceNetlistResult result;
         try
         {
-            result = SpiceNetlistReader.ReadFile(path, section);
+            result = SpiceNetlistReader.ReadFile(path, section, distributions);
         }
         catch (Exception ex)
         {

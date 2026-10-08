@@ -1,4 +1,6 @@
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Elaboration;
+using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Optimization;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine.Statistics;
@@ -17,7 +19,10 @@ public static class StatisticsValidator
     /// <summary>A draw at or below zero more likely than this is a warning (yield overview D2).</summary>
     public const double NonPhysicalThreshold = 1e-9;
 
-    public static IReadOnlyList<Diagnostic> Validate(TestBench tb, TunableCatalog catalog)
+    /// <param name="netlist">The design elaborated, when the caller has it: its distribution calls are what
+    /// varies besides the tolerances. Without it the testbench's own text is read for one.</param>
+    public static IReadOnlyList<Diagnostic> Validate(TestBench tb, TunableCatalog catalog,
+                                                     ElaboratedNetlist? netlist = null)
     {
         var f = new List<Diagnostic>();
         if (tb.Tuning is not { } setup) return f;
@@ -28,11 +33,18 @@ public static class StatisticsValidator
         Settings(setup.Statistics, f);
         Corners(setup, tb, catalog, f);
 
-        if (!setup.Variables.Any(e => e.IsStatistical))
+        if (!setup.Variables.Any(e => e.IsStatistical) && !HoldsDistribution(tb, netlist))
             foreach (var g in setup.Goals.Where(g => g.Enabled && g.Use == GoalUse.Yield))
                 f.Add(StatisticsDiagnostics.NothingVaries(g.Name));
         return f;
     }
+
+    // A kit's or a VAR's distribution call varies too (docs/design/yield.md §7).
+    private static bool HoldsDistribution(TestBench tb, ElaboratedNetlist? netlist)
+        => netlist is not null
+            ? netlist.StatisticalCalls.Count > 0
+            : tb.GlobalVariables.Any(v => Evaluator.ContainsStatisticalCall(v.Expression))
+              || tb.Instances.Any(i => i.Overrides.Any(o => Evaluator.ContainsStatisticalCall(o.Expression)));
 
     // ── One entry ────────────────────────────────────────────────────────────
 
