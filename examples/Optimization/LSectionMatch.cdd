@@ -1,0 +1,96 @@
+{
+  "FormatVersion": 2,
+  "SelectedDataSource": "LSectionMatch.npy",
+  "SourceAliases": {},
+  "Tabs": [
+    {
+      "Name": "Match",
+      "ZoomLevel": 1,
+      "ViewOffsetX": 0,
+      "ViewOffsetY": 0,
+      "Plots": [
+        {
+          "Left": 0,
+          "Top": 0,
+          "Width": 520,
+          "Height": 380,
+          "PlotType": "Rect",
+          "FreqUnit": "GHz",
+          "CustomTitle": "Match: |S11| (goal \u2264 \u221220 dB, 0.95\u20131.05 GHz)",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "LSectionMatch.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Db",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 1,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 1,
+                "MarkerType": "Circle"
+              }
+            }
+          ],
+          "CustomYLabel": "dB",
+          "CustomYLabelOn": true
+        },
+        {
+          "Left": 540,
+          "Top": 0,
+          "Width": 380,
+          "Height": 380,
+          "PlotType": "Smith",
+          "FreqUnit": "GHz",
+          "CustomTitle": "S11",
+          "CustomTitleOn": true,
+          "Traces": [
+            {
+              "SourcePath": "LSectionMatch.npy",
+              "Row": 0,
+              "Col": 0,
+              "MatrixType": "S",
+              "Derived": "None",
+              "InputPort": 1,
+              "OutputPort": 2,
+              "YAxis": "Complex",
+              "UseSecondaryAxis": false,
+              "Z0": "50",
+              "Z0Override": false,
+              "CubeName": null,
+              "CubeSlice": [],
+              "CubeTransform": "None",
+              "Expression": null,
+              "Properties": {
+                "LineEnabled": true,
+                "LineWidth": 2,
+                "LineColorIndex": 1,
+                "LineType": "Solid",
+                "MarkerEnabled": false,
+                "MarkerSize": 1.5,
+                "MarkerColorIndex": 1,
+                "MarkerType": "Circle"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "ActiveTabIndex": 0
+}

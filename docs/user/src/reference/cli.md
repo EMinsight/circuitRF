@@ -121,6 +121,7 @@ convention behind both.</p>
 | `lp` | `.cnl` or `.csch` | Loadpull over the directive's Γ grid | A per-Γ-point table; `-o .mat/.npy/.txt/.spl/.lpcwave` |
 | `lpp` | `.cnl` or `.csch` | Loadpull **pursuit** — searches for the optima | Optima + the follow-on grid; `-o` as `hb`; `--out-grid` writes a `.gam` |
 | `em` | `.cem` | The EM kernel the setup resolves to | A Touchstone `.sNp` **and** a grouped `.npy`, where **Simulate** writes them |
+| `opt` | `.csch` or `.cnl` | The schematic's saved optimization — the [Optimizer](optimization.html)'s own run | The best values and each goal's result to stdout; **nothing** in the design (`--save-preset` adds a preset) |
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
 | `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | The same comparison the [LVS panel](lvs.html)'s **Compare** button calls | **Nothing** — the report to stdout; `-o report.txt` |
@@ -669,6 +670,54 @@ analyse. Point this EM setup at a layout that exists.
 | **No layout** | The layout reference did not resolve | 1 |
 | **Engine error** | The solve failed | 1 |
 | **Cancelled** | Stopped at a work boundary | 130 |
+
+## `opt` — optimizing from the command line {#opt}
+
+```text
+circuitrf opt <schematic.csch | netlist.cnl> [flags]
+```
+
+`opt` runs the optimization a schematic saves — its tuned values' ranges, its goals and its algorithm,
+as the [Optimizer](optimization.html) panel sets them up — and reports what it found. It is the
+panel's own run, not a second one: the same schematic and the same seed give the same best values,
+cost and simulation count headless as they do in the window. On the *Tuning and Optimization* example:
+
+```text
+$ circuitrf opt LSectionMatch/schematic/LSectionMatch.csch
+Optimization: lm   (LSectionMatch/schematic/LSectionMatch.csch)
+Finished:  every enabled goal is met
+Best cost: 0   (12 iterations, 39 evaluations)
+
+Variables:
+  key   start   best                 min     max    railed
+  L1.L  5 nH    12.7087915391915 nH  1 nH    50 nH
+  C1.C  0.5 pF  1.48508255273602 pF  0.1 pF  10 pF
+
+Goals:
+  name   met  value  at               margin
+  Match  yes  -20    freq = 1.05E+09  0
+```
+
+Each best value is the text the schematic would hold, at full precision; a part of a complex value is
+followed by the whole value, in the form the schematic writes it. A met goal reports its tightest
+point and the margin there; an unmet one its worst point, with a negative margin.
+
+| Flag | |
+|---|---|
+| `--algorithm`, `--max-iter`, `--max-evals`, `--time`, `--cost lsq\|minimax`, `--analyses goals\|all`, `--parallel`, `--seed` | Override the saved settings, for this run only. |
+| `--vars key,key`, `--goals name,name` | Optimize only these of the saved variables, against only these goals. A complex value is named by its parts (`mag(Zs)`), never whole. |
+| `--snap` | [Snap and polish](optimization.html#snap) at the end. |
+| `--sensitivity` | A sensitivity pass at the best point. |
+| `--show-iterations` | Every iteration as well, one line each on stderr (and in `--json`). The default is the final result only. |
+| `--save-preset <name>` | Add the best values to the schematic as a preset. The one thing `opt` writes; refused for a `.cnl`, where the preset is a line you add. |
+| `-o out.npy` | The best point's results, and the run's history in an `opt` group. |
+| `--set var=expr` | As for every run verb. |
+
+**It never changes the design's values.** To put the best point in the schematic, push it in the
+panel, recall a saved preset, or write the values into the file. An exit code of **3** means the run
+finished with at least one goal unmet — not a failure of the run, but not a design that meets its
+specification either. Over [MCP](ai-agents.html) the same run is `run analysis=optimize`, and
+`reference goals`, `reference tuning` and `reference optimizers` say what may be written.
 
 ## `rail` — power integrity, headless {#rail}
 
@@ -2839,6 +2888,7 @@ would.
 | **0** | Ran, and produced something usable |
 | **1** | Could not run — bad arguments, a missing file, no matching analysis, a refusal, an exception |
 | **2** | Ran, but did not converge |
+| **3** | `opt` only: finished, with at least one goal unmet |
 | **130** | Stopped — a run cancelled at a work boundary, by `em`'s own stop or by a `serve` client's cancellation |
 
 **`2` is deliberately not the same test for every verb.** `hb` and `dc` fail on any non-converged

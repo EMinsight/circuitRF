@@ -1157,11 +1157,14 @@ internal static class Check
                     path, reference, string.Join(", ", searched)));
 
         // A trace that names neither a cube nor an expression draws nothing and says nothing about
-        // why — the one defect in a display that survives being opened.
+        // why — the one defect in a display that survives being opened. A trace with a source and no
+        // cube is not that: it reads the source's network by its MatrixType (S, Y, Z and the metrics
+        // derived from them), which is how the trace card writes every network trace.
         foreach (var tab in tabs)
         foreach (var pc in tab.Plots)
         foreach (var tc in pc.Traces)
-            if (string.IsNullOrWhiteSpace(tc.CubeName) && string.IsNullOrWhiteSpace(tc.Expression)
+            if (string.IsNullOrWhiteSpace(tc.SourcePath)
+                && string.IsNullOrWhiteSpace(tc.CubeName) && string.IsNullOrWhiteSpace(tc.Expression)
                 && tc.WsProbe is null && tc.ContourTrace is null && tc.SummaryColumn is null)
                 f.Add(CliDiagnostics.CheckDataDisplayEmptyTrace(
                     path, pc.CustomTitle is { Length: > 0 } ? pc.CustomTitle : tab.Name));

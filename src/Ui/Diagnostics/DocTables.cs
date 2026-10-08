@@ -247,6 +247,33 @@ public static class DocTables
         return sb.ToString();
     }
 
+    /// <summary>
+    /// The Optimizer's algorithm menu, read from <see cref="CircuitRF.Core.Design.OptimizerAlgorithms.All"/>
+    /// — the list the menu, its tooltips, <c>check</c> and <c>reference optimizers</c> read — so the
+    /// page's use-when sentences are the tooltips a reader sees, in the menu's order.
+    /// </summary>
+    public static string Optimizers()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("<table class=\"param-table\">");
+        sb.AppendLine("<thead><tr><th>Menu</th><th><code>algorithm=</code></th><th>Use it</th>"
+                    + "<th>Cost</th><th>Derivatives</th></tr></thead><tbody>");
+
+        foreach (var a in CircuitRF.Core.Design.OptimizerAlgorithms.All)
+        {
+            string costs = string.Join(", ", a.Costs.Select(c =>
+                c == CircuitRF.Core.Design.OptimizerCost.Minimax ? "minimax" : "least squares"));
+            sb.AppendLine($"<tr><td><b>{E(a.Label)}</b></td>"
+                        + $"<td class=\"nowrap\"><code>{E(a.Id)}</code></td>"
+                        + $"<td>{E(a.UseWhen)}</td>"
+                        + $"<td>{E(costs)}</td>"
+                        + $"<td>{(a.NeedsGradients ? "yes" : "no")}</td></tr>");
+        }
+
+        sb.AppendLine("</tbody></table>");
+        return sb.ToString();
+    }
+
     /// <summary>The case table's OWN millimetre spelling — two decimals, three only where a third
     /// one is real, so a row here reads exactly as the same number reads in the picker.</summary>
     private static string Mm(decimal v)

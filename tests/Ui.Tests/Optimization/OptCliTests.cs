@@ -167,15 +167,16 @@ public sealed class OptCliVerbTests
 }
 
 /// <summary>R-to11-4: the verb and the Optimizer panel's headless view model run one code path — same
-/// seed, same best values and cost, exactly. A stochastic algorithm, so the seed is what is compared.</summary>
+/// setup, same best values, cost and evaluation count, exactly. The circuit is the Optimization example's
+/// L-section (TO-12), run with the algorithm and seed its schematic saves.</summary>
 public sealed class OptParityTests
 {
     [Fact]
     public async Task TheVerb_AndThePanel_FindTheSameBestPoint()
     {
-        string text = OptCircuits.LSection("de", "maxevals=60 seed=7");
-        string cnl = OptCli.Write(OptCli.Dir(), "lsec.cnl", text);
-        var (exit, stdout, stderr) = OptCli.Run("opt", cnl, "--json");
+        string csch = Examples.OptimizationExampleTests.Csch("LSectionMatch");
+        string text = SchematicCircuit.CnlTextOf(csch);
+        var (exit, stdout, stderr) = OptCli.Run("opt", csch, "--json");
         Assert.True(exit is 0 or 3, stderr);
         var verb = OptCli.Report(stdout);
 

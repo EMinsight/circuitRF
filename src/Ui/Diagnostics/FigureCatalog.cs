@@ -754,6 +754,20 @@ public static class FigureCatalog
           + "coordinates, with the generator end terminated as port 1 carrying the generator "
           + "impedance at the design frequency and the load end as port 2 carrying the chart's Z0."),
 
+        // ── Tuning and Optimization ─────────────────────────────────────────────
+        // Both panels on the Optimization example's amplifier, at the width of the dock column the
+        // Analyses panel they are tabbed behind gets (analyses-all-types).
+
+        new("tuning-panel", DocTuningFixtures.TuningPanel, 430, 420, null,
+            "The Tuning panel on the Optimization example's amplifier: the two stabilizing resistors "
+          + "and the magnitude and phase of the complex source impedance, each slider at the "
+          + "schematic's value with its range under it."),
+
+        new("optimizer-panel", DocTuningFixtures.OptimizerPanel, 430, 640, null,
+            "The Optimizer panel after the amplifier's run. Rstab ended at the top of a range drawn "
+          + "too narrow and is marked railed, with Widen beside it; neither goal is met at the best "
+          + "point the run could reach inside that range."),
+
         new("match-form-glyphs", DocMatchFixtures.FormGlyphs, 780, 150, null,
             "The five Match glyphs. A slash across a wave means that part of the spectrum is blocked; "
           + "two or three smaller bandpass groups mean two or three bands."),

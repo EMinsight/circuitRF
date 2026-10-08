@@ -3420,9 +3420,9 @@ The run is `OptimizationRun` (`src/Design/Optimization`), the object the Optimiz
 `PreparedCircuit` Simulate prepares — `FromSchematic` for a `.csch`, `FromFile` for a `.cnl`. The best
 point's full results come from `CircuitEvaluation.Evaluate`, as the panel's finish re-evaluates it.
 `src/Cli/Optimize.cs` is argument parsing, the flag overrides, the two narrowing flags, reporting and the
-one opt-in write. The gate `OptParityTests` runs the verb and the panel's headless view model on one
-stochastic setup (differential evolution, `seed=7`) and compares best values, cost and evaluation count
-exactly.
+one opt-in write. The gate `OptParityTests` runs the verb and the panel's headless view model on the `Optimization`
+example's L-section (TO-12), with the algorithm and seed its schematic saves, and compares best values,
+cost and evaluation count exactly.
 
 ### 24.2 Flags override the file for this run only
 

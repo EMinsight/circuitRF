@@ -1,11 +1,11 @@
 # Tuning and optimization
 
-**Status:** TO-1 … TO-9 built (model, file format, catalog, in-memory overrides, `check`/`explain`/`reference`;
-evaluation service; live session and Data Display; the Tuning panel; presets; the optimizer core; the
-global and derivative-free algorithms and the algorithm registry; Bayesian, Discrete and Auto; goal
-functions, templates and "Add as goal"). TO-10 … TO-12 briefed (`docs/sonnet-briefs/brief-tuneopt-*.md`). The overview brief
-(`brief-tuneopt-0-overview.md`) holds the decisions D1–D17 in full and is binding; this note is the
-standing reference for what is built, and restates the decisions only as far as the code depends on them.
+**Status:** the series is built, TO-1 … TO-12 (`docs/sonnet-briefs/brief-tuneopt-*.md`): the model and
+file format, the evaluation service, the live session and Data Display, the Tuning panel, presets, the
+optimizer core, every algorithm on the menu, goal functions and "Add as goal", the Optimizer panel, the
+`opt` verb and the MCP run, and the user pages with the `Optimization` example. The overview brief
+(`brief-tuneopt-0-overview.md`) holds the decisions D1–D18 in full; §17 says how each was built, and
+this note is the standing reference for what exists.
 
 ---
 
@@ -27,6 +27,11 @@ standing reference for what is built, and restates the decisions only as far as 
 | Optimizer run | `src/Design/Optimization/OptimizationRun.cs` + `OptimizationVariables`, `GoalResiduals`, `OptimizationDiagnostics` | Decode, goals → residuals, cache, parallel batches, stopping, pause, progress, history (§10). |
 | Goal templates | `src/Design/Optimization/GoalTemplates.cs` | The catalog the goal editor lists: S-parameter, WSProbe, measurement and custom templates (§13). |
 | Trace → goal | `src/Design/Optimization/TraceToGoal.cs` + `src/Render/DataDisplay/TraceGoalReader.cs` | "Add as goal" on a Data Display trace (§13). |
+| Tuning panel | `src/Ui/Tuning/` + `src/Ui/Views/Tuning/` | Sliders, ranges, Push, presets, the live session (§8, §9). |
+| Optimizer panel | `src/Ui/Optimization/` + `src/Ui/Views/Optimization/` | Variables, goals and the goal editor, run/pause/stop, keeping the result (§15). |
+| `opt` verb, MCP | `src/Cli/Optimize.cs` | The headless run (§14; `cli.md` §24). |
+| Example | `examples/Optimization/` | Three benches: an L-section, a minimax bandpass filter, an amplifier with a complex source impedance and a railed range (§16). |
+| User pages | `docs/user/src/reference/tuning.md`, `optimization.md`, `cli.md#opt` | With two captured figures (`DocTuningFixtures`) and the algorithm table generated from the registry (`{{table: optimizers}}`, §16). |
 
 **Why the model is in `src/Core` and not `src/Design/Optimization`.** The brief placed the model classes
 in `src/Design/Optimization`. A `TestBench` carries the setup and the `.cnl` reader and writer live in
@@ -523,3 +528,121 @@ the run's own words; `explain --analysis` reports each analysis's scopes through
 `OptimizationRun.AnalysesUnder`. The goals reference page lists the template catalog run over a fixed
 bench (`Reference.FunctionsBench`), so a template added to `GoalTemplates` appears there unedited.
 
+## 15. The Optimizer panel (TO-10)
+
+| Piece | Where |
+|---|---|
+| Panel state | `OptimizerPanelViewModel` (+ `.Run.cs`), `OptimizerVariableRowViewModel`, `OptimizerGoalRowViewModel`, `OptimizerSettingsViewModel`, `GoalEditorViewModel` — `src/Ui/Optimization/` |
+| Dock + views | `OptimizerTool`, `DockPanelIds.Optimizer` (tabbed behind Tuning), `src/Ui/Views/Optimization/` (`OptimizerToolView`, `GoalEditorDialog`) |
+| Shell wiring | `WorkspaceViewModel.Optimizer.cs` — the same `PrepareTunedCircuit` the tuning session uses, the display, the goal context and preview, Send to Tuning |
+| Display | `IOptimizerDisplay`, implemented by `DisplayTuneSink` |
+
+- **One list of entries (D4).** The Variables list is every entry that is tune- OR opt-enabled; the
+  check is the `opt` flag. Unticking a row keeps it until focus moves, so it does not vanish under the
+  click. The ＋ popup is Tuning's, generalized through `ITunableAddHost`.
+- **The run is `OptimizationRun`**, over the circuit Simulate would prepare, on a background thread the
+  view model starts through an injectable `StartBackground` (inline in tests and in the documentation
+  fixtures). Progress is posted to the UI thread; the readouts after a finish carry no elapsed time.
+- **The display follows the best point** only when it improves. Under `analyses=goals`, a published best
+  point carries only the goals' analyses: the display merges the file groups it has and draws the
+  others dimmed (`Plot.DimmedTraces`, ~40 % alpha) until the finish, when the best point is evaluated
+  ONCE with every enabled analysis and written as the schematic's results with tuned-values provenance.
+- **Add as Goal opens the editor pre-filled** (TO-9's interim direct add is now only the fallback).
+- **Keeping the result**: Lock in (`TuningPresets.LockIn`, the preset records the cost), Push (TO-4's
+  `TuningPush`), Send to Tuning (`TuningPanelViewModel.LoadValues`), Snap and polish and Sensitivity on a
+  finished run. The optimizer toolbar has no Presets list of its own: presets are recalled in Tuning.
+- **Widen** (D17) doubles the span on the railed side — by ratio on a log range, by width on a linear
+  one — of the entry whose range holds the value (the other part's, when a complex value railed against
+  it); refused only when the value's ranges already conflict.
+
+## 16. The example and the user pages (TO-12)
+
+**`examples/Optimization/`** — three test-bench cells, each drawn from a `.cnl` by `netlist
+--to-schematic` and each with an authored Data Display (`<cell>.cdd` beside the `.cws`, the
+`ResultsWriter.AuthoredDisplayPath` a finished run opens) plotting its goals' quantities:
+
+| Cell | Variables | Goals | Saved algorithm | Outcome (seed 1) |
+|---|---|---|---|---|
+| `LSectionMatch` | `L1.L`, `C1.C` | \|S11\| ≤ −20 dB, 0.95–1.05 GHz | `lm` | met, 39 evaluations |
+| `BandpassFilter` | VARs `Lp`, `Cp`, `Ls`, `Cs` (six parts) | passband `in` −0.5…0 dB, two stopbands ≤ −25 dB | `minimax` | met, 85 evaluations; presets *As drawn* and *Equiripple* (the latter written by `opt --save-preset`) |
+| `StabilityAndGain` | `Rstab` (1–3 Ω, too narrow on purpose), `Rshunt`, `mag(Zs)`, `phase(Zs)` of `Zs = polar(50, 0) Ohm` | `mu(SP1.S)` ≥ 1.05 over 0.5–10 GHz, gain ≥ 13 dB over 2–3 GHz | `auto` | exit 3, Rstab railed at max; met after two Widens (1–9 Ω) |
+
+The gate is `tests/Ui.Tests/Examples/OptimizationExampleTests.cs`: `check` on the workspace is clean;
+the L-section and the filter meet every goal within an evaluation bound (100, 200), the filter's
+*Equiripple* preset equals that run's best point; the amplifier exits 3 with `Rstab` railed at max.
+`OptParityTests` (TO-11) now runs on the example's L-section. **The filter's 151-point grid is the
+setting traded for speed**: on 1,501 points the *Equiripple* passband dips to −0.509 dB between two
+coarse points; the README says so.
+
+**User pages.** `reference/tuning.html` and `reference/optimization.html` (both in the Simulate section
+of `_nav.txt`), a `#opt` section in `cli.html` with exit code 3, short pointers left at
+`simulations.html#tuning` and `#optimizer`. The two panels' Help buttons open the new pages
+(`DocAnchors.WholePages`). Figures `tuning-panel` and `optimizer-panel` are `DocTuningFixtures` rows in
+`FigureCatalog`, captured on the example's amplifier — the Optimizer figure runs the optimizer inline
+(deterministic: the saved seed fixes every evaluation). The algorithm table is
+`{{table: optimizers}}` → `DocTables.Optimizers()`, read from `OptimizerAlgorithms.All`, so the page's
+use-when sentences are the menu's tooltips. **Not generated in this phase**: DocGen is run once at the end
+of the series, so `DocsFactoryTests`' figure-exists and deep-link gates fail for these two pages and two
+figures until it is.
+
+**Found while doing it.** `check` warned that every network trace in a `.cdd` "names no cube and no
+expression" — a trace with a source and no `CubeName` reads the source's network by `MatrixType`, which
+is how the trace card writes every S-parameter trace (the S-Parameters example had nine of them). The
+rule now applies only to a trace with no source (`src/Cli/RESOLVED.md`).
+
+## 17. The decisions as built
+
+| | Decision | As built |
+|---|---|---|
+| D1 | What is tunable | As decided; integers flagged by name (`m`, `Nf`, `NumFingers`, `Fingers`); identity numbers (`Num`, `NumPorts`, `NumFreqs`) not offered (§2). |
+| D2 | Hierarchy | As decided; the catalog walks the EXTRACTED netlist but offers only values the drawing holds (§2). |
+| D3 | Keys | As decided; the cell part is `CellScope.NameFor` — the `.cnl` instance-type spelling (§3). |
+| D4 | One entry, one range | As decided; a negative value's default range is [1.5v, 0.5v] (§2). |
+| D5 | Stored in the tuned `.csch` | As decided; the model is in `src/Core/Design` because the `.cnl` reader is in Core (§1). |
+| D6 | Last tuned | As decided; written only when some row differs and not again for the same values (§9). |
+| D7 | Newest-wins, no cancel | As decided; Run on release suggested after a 2 s evaluation (`TuneSession.SlowEvaluation`). |
+| D8 | In-memory Data Display | As decided; plus dimmed traces for analyses an optimizer evaluation did not run (§15). |
+| D9 | Snapshot ghosts | As decided; GUI copy/export draws ghosts, CLI render does not, tables never. |
+| D10 | Goals | As decided; a `scale=` key added (TO-6) (§4, §10). |
+| D11 | Cost | Normalization: violation ÷ scale × weight ÷ √points; met within 1e-9 of scale (§10). |
+| D12 | Architecture | As decided; the panels and the verb share `OptimizationRun` and `PreparedCircuit` (gated by `OptParityTests`). |
+| D13 | Algorithms | Every menu entry built (§18). |
+| D14 | Headless writes nothing | As decided; `--save-preset` the one write, `.csch` only. |
+| D15 | Exit codes | As decided. |
+| D16 | Pause and stop | As decided; a paused run is evaluation-for-evaluation identical to an unpaused one. |
+| D17 | Railed | 0.5 % of the normalized range; Widen doubles the span on that side (§15). |
+| D18 | Complex values by parts | As decided; `ComplexValue` / `ComplexRegion`; more than two opt-enabled parts refused; infeasible points not simulated and ranked last (§2a, §10). A part is always continuous (`discrete=` refused on it). |
+
+**Not built, and worth knowing:** there is no panel control for `discrete=integer|preferred` — an
+integer-typed parameter is detected and `step=` has ⋮ ▸ Step…, but `discrete=preferred` is set only in
+the file text (`.cnl`, or a `.csch` round-tripped through `netlist --to-schematic`).
+
+## 18. The algorithm menu as built
+
+The registry `OptimizerAlgorithms.All` is authoritative (labels, use-when sentences, options, cost forms)
+and `reference optimizers` and the user page's table print it. In menu order:
+
+| Menu | Id | Family | Built in |
+|---|---|---|---|
+| Auto | `auto` | CMA-ES → LM (Minimax under minimax) → snap and polish | TO-8 (§12) |
+| Gradient (Levenberg–Marquardt) | `lm` | Newton family, forward-difference Jacobian, Levenberg damping | TO-6 (§10) |
+| Quasi-Newton (BFGS-B) | `bfgsb` | limited-memory BFGS, projected Armijo line search | TO-6 |
+| Minimax | `minimax` | trust-region sequential LP on signed residuals | TO-7 (§11) |
+| Simplex (Nelder–Mead) | `simplex` | adaptive coefficients, projection onto the box | TO-6 |
+| Trust-region model | `trust_region` | least-change quadratic model, no derivatives | TO-7 |
+| Pattern search | `pattern` | OrthoMADS + quadratic model search | TO-7 |
+| Random | `random` | Latin hypercube or uniform | TO-6 |
+| Differential evolution | `de` | L-SHADE | TO-7 |
+| Particle swarm | `pso` | constriction factor, ring or global | TO-7 |
+| CMA-ES | `cmaes` | IPOP restarts, bounds by re-sampling | TO-7 |
+| Bayesian (slow simulations) | `bayes` | GP (Matérn 5/2) + expected improvement; trust region above 10 variables | TO-8 |
+| Discrete | `discrete` | exhaustive grid ≤ 2,000 points, else coordinate descent with restarts | TO-8 |
+
+## 19. For the yield series — the seams overview §5 reserved
+
+| Seam | Held? |
+|---|---|
+| A tolerance on a complex value's part needs nothing new | **Held.** A part is an ordinary entry with its own key, and `ComplexValue.Compose` composes any set of parts into the whole value — the rule a sample would use. |
+| A variable entry can grow a tolerance without a format break | **Held.** `TunableEntry`, `OptimizationGoal` and `OptimizerSettings` carry an `Extra` map; the `.cnl` and `.csch` readers keep unknown keys and write them back (`cnl.tuning.unknown-key` is a warning, not a refusal). A preset has no `Extra` — a sample set is not a preset. |
+| Goals evaluable on many points in one batch | **Held, behind an internal door.** `OptimizationRun.EvaluateBatch` takes a batch of unit-box points, runs the uncached ones concurrently, caches by decoded value and scores every goal per point. It is `internal` and takes unit-box coordinates; yield needs a public entry that takes values (or decodes samples drawn in physical units) over the same method — not a second evaluator. |
+| The evaluation service safe for concurrent evaluations | **Held, with the known exception.** `PreparedCircuit` is read once and evaluated concurrently; a circuit holding an external device or a Verilog-A model is not re-entrant (`NotReentrantReason`) and runs one point at a time with a note. A yield run over such a circuit will be serial for the same reason. |

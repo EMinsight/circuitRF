@@ -525,6 +525,14 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         // at — narrow.axis.unknown and its three siblings — are RfCore.Export.NarrowingDiagnostics'
         // own, so they are not in this file's set.
         "cli.narrow.malformed",
+        "cli.opt.cancelled",
+        "cli.opt.flag-value",
+        "cli.opt.goals-unknown",
+        "cli.opt.output-not-npy",
+        "cli.opt.preset-name",
+        "cli.opt.preset-needs-schematic",
+        "cli.opt.vars-not-optimized",
+        "cli.opt.vars-whole-complex",
         "cli.run.failed",
         "cli.verb.none",
         "cli.verb.unknown",

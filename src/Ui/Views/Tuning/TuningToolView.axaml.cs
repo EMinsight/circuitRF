@@ -226,5 +226,5 @@ public partial class TuningToolView : UserControl
         return false;
     }
 
-    private void OnHelp(object? sender, RoutedEventArgs e) => DocLauncher.OpenAnalysis("tuning");
+    private void OnHelp(object? sender, RoutedEventArgs e) => DocLauncher.Open("reference/tuning.html");
 }

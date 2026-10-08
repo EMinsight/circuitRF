@@ -780,3 +780,22 @@ in the bore are set by the pin's lines and the grading — so the setup states `
 (1.2 gives 0.99 cells). The README says why and what it costs (937,440 cells against 526,768). The 3D Connector keeps the
 default grid on purpose, and its `check` now lists the bore as staircased; both are in its README. Detail:
 `src/Engine/RESOLVED.md`, brief-em3d-123 R-2.
+
+## Optimization (brief-tuneopt-12)
+
+**Each bench was written as a `.cnl` and drawn with `netlist --to-schematic`**, so the drawing is the
+extraction's own inverse and the `tune`/`goal`/`optimize` lines reach the `.csch`'s tuning block with no
+hand-editing. The *Equiripple* preset was written by `opt --save-preset`, the same `TuningPresets.LockIn`
+the Optimizer's Lock in calls; the gate holds it equal to the run's best point.
+
+**The amplifier's range is too narrow on purpose, and the numbers were chosen for the lesson.** With
+`Rstab` at 1–3 Ω the Auto run rails it at 3 Ω and misses both goals; the panel's Widen (doubling the
+span on a linear range) gives 1–5 Ω, which rails again, and 1–9 Ω, which meets both. With a 50 Ω lower
+bound on `Rshunt` both resistors railed together, which teaches nothing, so its range starts at 20 Ω.
+Least squares and Levenberg–Marquardt approach a `ge` limit from the violating side and stopped 1e-8
+short of "met" on an earlier version of this bench; Auto, Minimax and the population methods land
+inside.
+
+**A filter's passband goal is only held at the grid.** On its own 151 points the minimax optimum sits at
+exactly −0.50 dB at both band edges and its deepest ripple; on 1,501 points it dips to −0.509 dB at
+1.045 GHz. The README states this as the setting traded for speed.

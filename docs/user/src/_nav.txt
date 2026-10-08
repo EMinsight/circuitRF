@@ -49,6 +49,8 @@ reference/simulations.html  | DC, S-parameters, harmonic balance, parametric swe
 reference/measurements.html | Post-processing a run into named quantities.
 reference/netlist.html      | The .cnl elaborated-netlist format.
 reference/data-display.html | Plots, tables, trace cards and markers.
+reference/tuning.html       | Sliders on any value, with every Data Display following them as you drag.
+reference/optimization.html | Goals, variables and algorithms: letting circuitRF find values that meet the specification.
 reference/derived-metrics.html | Stability, passivity, group delay and the passive impedance readouts — with the equations.
 reference/wsprobe.html      | The WSProbe: nodal transfer functions for stability and in-situ design — with an appendix on stability itself.
 reference/plot-types.html   | Rectangular, Smith, Polar and Table — and which data each will accept.

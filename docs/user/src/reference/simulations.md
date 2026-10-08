@@ -525,77 +525,18 @@ and per-band `Z[k]` to the whole multi-tone spectrum this way.
 
 ## Tuning {#tuning}
 
-The **Tuning** panel (tabbed behind Analyses; also View ▸ Panels ▸ Tuning) puts a slider on any value
-you choose and re-simulates as you move it, with every open Data Display following along.
-
-- **Choosing values.** Click **＋** to search everything tunable in the focused schematic — tick
-  *Include sub-cells* to reach inside its sub-circuits — or use the tune toggle beside a row in the
-  Properties panel, or right-click a parameter value on the canvas ▸ **Tune**. A value that is an
-  expression is not tunable; tune the VAR it reads instead.
-- **Complex values.** A complex number written with numbers only — `40+15j`, `complex(40,15)` or
-  `polar(42.7,20.6)` — is tuned by its parts: pick **Real**, **Imaginary**, **Magnitude** or **Phase**
-  (in degrees), once each for as many as you want. Real and imaginary together, or magnitude and phase,
-  cover the whole number; any other mix works too. Moving real keeps imaginary where it is, and moving
-  magnitude keeps the phase; the other rows follow. The ranges of all of a number's parts always hold: a
-  slider stops where another part reaches its limit, and a range that leaves no value inside all of them
-  is refused. A complex value that reads another variable, such as `4+j*X`, is not tunable — tune `X`.
-- **Start / Stop.** Nothing is simulated until **▶**. Stop keeps the last result as the schematic's
-  results file. **⚙** chooses which analyses run per move and turns on *Run on release* — simulate
-  only when a slider is let go; a badge on ⚙ suggests it when runs are slow.
-- **Rows.** Drag the slider, type a value and press Enter, or use the arrow keys (Shift for ten steps,
-  Page Up/Down for a tenth of the range). Click the minimum or maximum under a slider to change it;
-  **⋮** sets linear or log spacing, a step, re-centres or resets the range, or reveals the part.
-- **Status.** The dot is grey when idle, green while tuning and amber when the display is behind the
-  sliders; behind rows are tinted. While tuning, the canvas draws each changed value in the tuned colour.
-- **Push** writes the values into the schematic — one undo step per document, inside sub-cells too —
-  and **Revert** returns every slider to the schematic. Until you Push, the schematic's values are not
-  changed. Snapshot keeps the current traces as faded ghosts for comparison.
-- **Presets.** The lock button keeps the current value of every tuned row as a preset, named
-  *Preset 1*, *Preset 2* … and ready to rename. Pick one in the **Presets** list to load it into the
-  sliders; it does not change the schematic until you Push (**⋮ ▸ Recall and Push** does both). A preset
-  outlives edits to the schematic: a value whose part was deleted or renamed is skipped, one that is now an
-  expression is skipped, and one outside its row's range is loaded and the range widened — the status line
-  says which, and hovering it lists every value. **⋮** also renames, duplicates, deletes and copies a
-  preset as a `.cnl` `preset` line. Tick two presets, or one and *Schematic*, and choose **Compare** for a
-  table of both values and the difference.
-- **Last tuned.** Saving or closing the schematic while sliders differ from it keeps their values as the
-  preset *Last tuned*, pinned at the top of the list — overwritten each time, never duplicated. Closing
-  then asks whether to save, as for any other change.
+The **Tuning** panel puts a slider on any value you choose and re-simulates as you move it, with every
+open Data Display following along. Nothing in the schematic changes until you Push. The whole chapter —
+choosing values, ranges, complex values by their parts, presets, snapshots — is [Tuning](tuning.html).
 
 ---
 
 ## Optimizer {#optimizer}
 
-The **Optimizer** panel (tabbed behind Tuning; also View ▸ Panels ▸ Optimizer) searches the values you
-choose for the ones that meet your goals, with every open Data Display following the best point found
-so far.
-
-- **Variables** are the same entries as Tuning's, with the same ranges: a range changed here is changed
-  there. Tick a row to let the optimizer move it; **＋** adds more, from the same search Tuning uses.
-  Each row shows the best value on its range bar. A value that ends at an edge of its range is marked
-  ⚠ with **Widen**, which doubles the range on that side (by ratio on a log range) as one undo step. For
-  a complex value, optimize at most two of its parts; every part's row shows the value the run found.
-- **Goals.** **＋** opens the goal editor: pick a template on the left (|Sij| in dB or linear, phase,
-  group delay, VSWR, μ, μ′, K, maximum gain, WSProbe metrics, any `measure` row, or a custom expression)
-  and adjust the fields — the expression (checked as you type), its analysis, the range of the swept
-  axis that counts, the type (≤, ≥, =, in a band, outside a band), the limit or limits, a weight, and
-  optionally a sloped limit. In a Data Display, right-click a trace ▸ **Add as Goal** opens the same
-  editor already filled in. Each goal row shows, at the best point, a bar (green when met), the worst
-  value and ✓ or ✕.
-- **Algorithm and ⚙.** Choose the algorithm from the list — its tooltip says when to use it. ⚙ sets the
-  iteration, evaluation and time limits, the cost (least squares, or minimax for the worst violation),
-  whether each evaluation runs only the goals' analyses or every enabled one, parallel evaluations, the
-  seed, and the algorithm's own options. All of it is saved with the schematic.
-- **▶ / ⏸ / ■.** Run checks the setup first and says in the status line why it cannot start. While it
-  runs, the header shows the iteration, evaluations and elapsed time, and the sparkline the best cost.
-  Pause holds the run after the simulations in flight; press it again to resume. Stop ends the run and
-  keeps the best point. When only the goals' analyses run, plots of the other analyses keep their old
-  data and are drawn dimmed until the run finishes; then the best point is simulated once with every
-  enabled analysis and saved as the schematic's results.
-- **Keeping the result** (while paused or after the run): lock it in as a preset (the preset records
-  the cost), **Push** it into the schematic (one undo step per document), **Send to Tuning** to
-  hand-tune from it, or — when a value is an integer, has a step or uses preferred values — **Snap and
-  polish**. The sensitivity button shows how much each variable moves the cost at the best point.
+The **Optimizer** panel searches the values you choose for ones that meet your goals, each goal a limit
+on an expression over one analysis, with every open Data Display following the best point found so far.
+Variables, goals, the algorithms and when to use each, railed variables and snap and polish are in
+[Optimization](optimization.html).
 
 ---
 

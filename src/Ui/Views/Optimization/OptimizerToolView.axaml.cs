@@ -121,5 +121,5 @@ public partial class OptimizerToolView : UserControl
         return false;
     }
 
-    private void OnHelp(object? sender, RoutedEventArgs e) => DocLauncher.OpenAnalysis("optimizer");
+    private void OnHelp(object? sender, RoutedEventArgs e) => DocLauncher.Open("reference/optimization.html");
 }

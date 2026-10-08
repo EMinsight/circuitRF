@@ -23,6 +23,7 @@ namespace CircuitRF.DocGen.Pipeline;
 ///   <item><term><c>{{toolbar: layout}}</c></term><description>the toolbar figure AND its generated per-button table</description></item>
 ///   <item><term><c>{{snapglyph: pin}}</c></term><description>one geometry-snap glyph, inline, for a table cell</description></item>
 ///   <item><term><c>{{table: components/Resistor}}</c></term><description>a parameter table read from the live registry</description></item>
+///   <item><term><c>{{table: optimizers}}</c></term><description>the Optimizer's algorithm menu, read from <c>OptimizerAlgorithms.All</c></description></item>
 ///   <item><term><c>{{anchor: components#sdd}}</c></term><description>a checked cross-link; add <c>|Link text</c> to word it</description></item>
 ///   <item><term><c>{{toc: site}}</c></term><description>the complete table of contents, from the reading order</description></item>
 ///   <item><term><c>{{regions: workspace}}</c></term><description>the numbered legend of the workspace figure</description></item>
@@ -195,8 +196,10 @@ public sealed class Placeholders
             // should re-type into a page, and the imperial/metric twin is the column that stops a
             // reader taking a code the other way (brief-footprint-0 §1e).
             ["footprints"]           => DocTables.FootprintCases(),
+            // The Optimizer's algorithm menu, from the registry the menu itself reads (TO-12).
+            ["optimizers"]           => DocTables.Optimizers(),
             _ => throw new InvalidOperationException(
-                    $"unknown table '{spec}'. Supported: components, components/<SymbolKind>, footprints."),
+                    $"unknown table '{spec}'. Supported: components, components/<SymbolKind>, footprints, optimizers."),
         };
     }
 

@@ -3078,3 +3078,18 @@ per iteration and nothing between them — checked, nothing to change.
 preferences, which a headless run does not read (`src/Design`'s rule: a preference is an argument). A
 `discrete=preferred` run can therefore snap differently from the window on a machine whose user edited
 the ladders.
+
+## `check`: a network trace in a `.cdd` is not an unbound trace (brief-tuneopt-12)
+
+`check` warned `check.cdd.trace-unbound` — "names no cube and no expression, so it draws nothing" — on
+every trace that had no `CubeName` and no `Expression`. That is not an unbound trace: a trace with a
+`SourcePath` and no cube reads the source's network by its `MatrixType` (S, Y, Z, and every metric derived
+from them — μ, K, maximum gain), and it is exactly how the trace card writes every S-parameter trace. The
+shipped S-Parameters example carried nine of these false warnings, and the new Optimization example's
+"check is clean" gate failed on them although `render` drew every one. The rule now applies only to a
+trace that names no source either. No test pinned the old behaviour (`CliStructuredOutputTests` lists the
+code, nothing more).
+
+**Also fixed in passing:** TO-11's eight `cli.opt.*` diagnostic ids were missing from
+`CliStructuredOutputTests`' committed set, so `DiagnosticIds_AreTheCommittedSet_UniqueAndCaseDistinct`
+failed from that commit on. Added.
