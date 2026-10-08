@@ -390,11 +390,22 @@ public sealed class OptimizationRun
     /// promotes it; <see cref="OptimizerScope.All"/> is every runnable chain. Names of the chains' top
     /// analyses, in the bench's order; a goal naming no declared analysis contributes nothing.
     /// </summary>
-    public static IReadOnlyList<string> AnalysesUnder(TestBench tb, TuningSetup setup, OptimizerScope scope)
+    /// <param name="use">Whose goals: the optimizer's (<see cref="GoalUse.Opt"/>, the default), a yield run's
+    /// (<see cref="GoalUse.Yield"/>) or a Monte Carlo's (<see cref="GoalUse.Both"/>, every enabled goal) — with none,
+    /// a statistical run evaluates every runnable chain, as <see cref="ForEvaluation"/> does.</param>
+    public static IReadOnlyList<string> AnalysesUnder(TestBench tb, TuningSetup setup, OptimizerScope scope,
+                                                      GoalUse use = GoalUse.Opt)
     {
-        if (scope == OptimizerScope.All) return [.. AnalysisChain.RunnableTops(tb).Select(a => a.Name)];
+        var goals = setup.Goals.Where(g => g.Enabled && use switch
+        {
+            GoalUse.Opt   => g.ForOptimizer,
+            GoalUse.Yield => g.ForYield,
+            _             => true,
+        }).ToList();
+        if (scope == OptimizerScope.All || (use != GoalUse.Opt && goals.Count == 0))
+            return [.. AnalysisChain.RunnableTops(tb).Select(a => a.Name)];
         var tops = new List<string>();
-        foreach (var name in setup.Goals.Where(g => g.Enabled && g.ForOptimizer).Select(g => g.Analysis).OfType<string>())
+        foreach (var name in goals.Select(g => g.Analysis).OfType<string>())
         {
             var one = tb.Analyses.FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
             if (one is null || !one.Enabled || !AnalysisChain.IsChainRunnable(one, tb)) continue;

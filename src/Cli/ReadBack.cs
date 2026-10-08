@@ -94,6 +94,7 @@ internal static class ReadBack
         try
         {
             var (ds, _) = DataSetImporter.Import(path);
+            if (IsYieldResult(ds)) return PublishYield(ds, path);
             return Publish(ds, path, "npy");
         }
         catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.ReadFileUnreadable(path, ex.Message)); }
@@ -136,6 +137,46 @@ internal static class ReadBack
             }
         }
         return 0;
+    }
+
+    // ── a Monte Carlo or yield result (brief-yield-5 R-ya5-6) ───────────────────
+
+    private const string YieldGroup = "yield";
+
+    /// <summary>A <c>&lt;design&gt;.yield.npy</c>: a <c>yield</c> group holding the run's summary.</summary>
+    private static bool IsYieldResult(DataSet ds)
+        => ds.ContainsGroup(YieldGroup) && ds.CubesIn(YieldGroup).ContainsKey("trials") && ds.CubesIn(YieldGroup).ContainsKey("mode");
+
+    /// <summary>
+    /// The summary group FIRST — in the listing and in the document's groups — then the cubes as for any result.
+    /// It is the answer a caller opened the file for; the trial-stacked cubes are the evidence. The numbers are the
+    /// group's own cubes, read back, never recomputed.
+    /// </summary>
+    private static int PublishYield(DataSet ds, string path)
+    {
+        var ordered = new DataSet();
+        foreach (var (name, cube) in ds.CubesIn(YieldGroup)) ordered.AddToGroup(YieldGroup, name, cube);
+        foreach (string group in ds.Groups.Where(g => g != YieldGroup))
+            foreach (var (name, cube) in ds.CubesIn(group)) ordered.AddToGroup(group, name, cube);
+
+        var y = ds.CubesIn(YieldGroup);
+        double Num(string name) => y.TryGetValue(name, out var c) && c.Rank == 0 ? c.RealValues[0] : double.NaN;
+        string Text(string name) => y.TryGetValue(name, out var c) && c.Rank == 1 && c.Axes[0].Labels is { Length: > 0 } l ? l[0] : "";
+        static string Pct(double f) => double.IsFinite(f) ? (f * 100).ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + " %" : "—";
+
+        Console.WriteLine($"{path}  ({Text("mode")} result)");
+        Console.WriteLine($"  {Num("trials"):0} trials · {Num("did_not_evaluate"):0} did not evaluate · seed {Num("seed"):0} · " +
+                          $"sampling {Text("sampling")} · {Text("stopped")}");
+        if (double.IsFinite(Num("yield")))
+            Console.WriteLine($"  yield {Pct(Num("yield"))} ({Pct(Num("confidence"))} interval {Pct(Num("lower"))} – {Pct(Num("upper"))})" +
+                              (double.IsFinite(Num("target")) ? $" · target {Pct(Num("target"))}" : ""));
+        foreach (var name in y.Keys.Where(k => k.StartsWith("goal:", StringComparison.Ordinal) && k.EndsWith(":yield", StringComparison.Ordinal)))
+        {
+            string prefix = name[..^"yield".Length];
+            Console.WriteLine($"  {name["goal:".Length..^":yield".Length]}: {Pct(Num(name))} " +
+                              $"({Pct(Num(prefix + "lower"))} – {Pct(Num(prefix + "upper"))})");
+        }
+        return Publish(ordered, path, "npy");
     }
 
     // ── circuitRF's own documents ────────────────────────────────────────────

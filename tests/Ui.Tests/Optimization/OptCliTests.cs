@@ -238,7 +238,7 @@ public sealed class OptMcpTests
     }
 
     /// <summary>A bare <c>serve</c> process: requests out, every frame in.</summary>
-    private sealed class Serve : IDisposable
+    internal sealed class Serve : IDisposable
     {
         private readonly Process _proc;
         private readonly System.Collections.Concurrent.BlockingCollection<JsonObject> _frames = new();

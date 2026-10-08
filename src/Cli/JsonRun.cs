@@ -166,6 +166,10 @@ internal static class JsonRun
     /// <c>-o</c>/<c>--history</c> file: the document is the answer, not the data.</summary>
     public static OptimizeReportJson? Optimize;
 
+    /// <summary>What <c>yield</c> found (brief-yield-5 R-ya5-2). Its cubes travel only in the written
+    /// <c>.yield.npy</c>: the document is the answer, not the data.</summary>
+    public static YieldReportJson? Yield;
+
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
     ///
@@ -214,6 +218,7 @@ internal static class JsonRun
         FieldPlots          = null;
         Solvers             = null;
         Optimize            = null;
+        Yield               = null;
         _summaryOnly        = false;
         _diagnosticsSummary = false;
         Malformed           = null;
@@ -437,11 +442,12 @@ internal static class JsonRun
         if (Check is not null || Explain is not null || Document is not null || Reference is not null
          || History is not null || Render is not null || Find is not null || Smith is not null
          || Lvs is not null || Impedance is not null || ImpedanceSurvey is not null || FieldPlots is not null
-         || ImpedanceLine is not null || Solvers is not null || Optimize is not null)
+         || ImpedanceLine is not null || Solvers is not null || Optimize is not null || Yield is not null)
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
                                      Find: Find, Smith: Smith, Lvs: Lvs, Impedance: Impedance,
                                      ImpedanceSurvey: ImpedanceSurvey, FieldPlots: FieldPlots,
-                                     ImpedanceLine: ImpedanceLine, Solvers: Solvers, Optimize: Optimize);
+                                     ImpedanceLine: ImpedanceLine, Solvers: Solvers, Optimize: Optimize,
+                                     Yield: Yield);
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and
         // the report is the domain shape §2.4 asks for — so a refused run still answers with its

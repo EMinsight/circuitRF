@@ -192,6 +192,10 @@ return JsonRun.Finish(Dispatch(JsonRun.Verb) is { } run ? run(args[1..]) : Unkno
     // src/Design/Optimization's OptimizationRun, the object the panel drives. Writes nothing to the
     // design's values; --save-preset is its one opt-in write.
     "opt"    => CircuitRF.Cli.Optimize.Run,
+    // Monte Carlo and yield, headless (brief-yield-5): ONE verb with nouns. It owns no statistics — the run is
+    // src/Design/Statistics' StatisticalRun, the object the Yield panel drives, and it writes nothing to the
+    // design's values but the two opt-in writes.
+    "yield"  => CircuitRF.Cli.Yield.Run,
     // The whole railRF window, with no display (brief-railrf-10-cli-verb.md). It owns no analysis:
     // every number comes out of src/Design/RailRf and every pixel out of CircuitRF.Render, which is
     // what lets a BOARD be gated in CI rather than only looked at (railrf.md §5).
@@ -2427,6 +2431,7 @@ static int PrintHelp()
     Console.WriteLine("  lpp    <file.cnl|.csch>   (loadpull pursuit: searches for MXP / MXE)");
     Console.WriteLine("  em     <file.cem>   (electromagnetic extraction of the layout it names)");
     Console.WriteLine("  opt    <file.cnl|.csch>   (optimize: the tune, goal and optimize lines; exit 3 = a goal unmet)");
+    Console.WriteLine("  yield  mc|estimate|trial <file.cnl|.csch>   (Monte Carlo / yield; exit 3 = below --target)");
     Console.WriteLine("  rail   <file.crail> (railRF: the DC drop, the ranked breakdown, the vias)");
     Console.WriteLine("  smith  <file.csmith> (the matching cascade: the reading, and the walk node by node)");
     Console.WriteLine("  elab   <file.cnl|.csch>   (dump elaborated netlist)");

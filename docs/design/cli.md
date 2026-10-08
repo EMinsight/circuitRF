@@ -46,6 +46,7 @@ framework, not the GUI referencing the CLI — and `CircuitRF.Cli.Verbs` has its
 | `rail` | `.crail` (or a `.clay` / `.csch` / cell folder with one beside it) | `RailOrder` + `RailDcRun` — the extractor, the solve and the via check `src/Design/RailRf` already holds | stdout tables; `-o .csv/.npy/.mat/.txt` for the numbers and `.svg/.pdf` for the report page — §17 |
 | `smith` | `.csmith` | `SmithCascade` + `SmithReadings` + `SmithBand` — the evaluator the Smith Chart window's status strip reads on every edit | stdout reading + the per-node walk; `-o .s1p` for the load Γ and `.svg/.pdf/.png` for the chart — §18 |
 | `opt` | `.cnl` or `.csch` | `OptimizationRun` — the Optimizer window's run — over the `tune`, `goal` and `optimize` lines | stdout result tables; `-o .npy` the best point's full results plus the `opt` history group; `--history .npy`; `--save-preset` the one write to the design — §24 |
+| `yield` | `.cnl` or `.csch` | `StatisticalRun` — the Yield panel's run — over the tolerances, the yield-spec goals and the `statistics` line; nouns `mc`, `estimate`, `trial` | stdout yield, goals, statistics and worst-trial tables; writes `<design>.yield.npy` (`-o` moves it); `--save-preset`/`--save-corner` with `--trial` the two writes to the design — §25 |
 | `elab` | `.cnl` or `.csch` | elaboration only | the elaborated netlist, for development |
 
 **A run verb takes a SCHEMATIC as well as a netlist, and extracts it in memory** (§14). Any other
@@ -467,8 +468,8 @@ symptom and not the cause.
 | 0 | ran, and produced something usable |
 | 1 | could not run — bad arguments, missing file, no matching analysis, a refusal, an exception |
 | 2 | ran, but did not converge |
-| 3 | `opt` only: finished, and at least one enabled goal is unmet (§24.3) |
-| 130 | stopped — `em`, `render`, `rail`, `smith`, `lvs` and `opt`, and only when the run was cancelled at a work boundary (§8.4, §13.6, §17.5, §18.6, §19.4, §24.3). All of them write NOTHING on a cancellation |
+| 3 | `opt`: finished, and at least one enabled goal is unmet (§24.3) · `yield estimate`: finished, and the yield is below `--target` (§25.3) |
+| 130 | stopped — `em`, `render`, `rail`, `smith`, `lvs`, `opt` and `yield`, and only when the run was cancelled at a work boundary (§8.4, §13.6, §17.5, §18.6, §19.4, §24.3, §25.3). All of them write NOTHING on a cancellation |
 
 `2` is deliberately **not** the same test for every verb. `hb` and `dc` fail on any non-converged
 solve. A loadpull grid in which some points do not converge is a normal, useful result — the edge of
@@ -476,7 +477,8 @@ a Γ grid routinely will not — so `lp` returns `2` only when **every** grid po
 only when neither optimum converged and there is no follow-on grid. A rule that failed the whole run
 on one bad point would make the exit code useless in a script.
 
-**`3` exists for one verb and one reason** (brief-tuneopt-11 R-to11-3, overview D15). An optimization
+**`3` exists for one reason** (brief-tuneopt-11 R-to11-3, overview D15; `yield` takes the same table, yield
+overview D13). An optimization
 that ran to its end without meeting its spec is neither a refusal (1: it could not run) nor a solver
 failure (2: nothing converged), and a script must be able to tell all three apart — "the design cannot
 meet this" is the answer it asked for, not an error in asking. Reusing 1 or 2 for it would make a CI job
@@ -3498,3 +3500,98 @@ one preset and nothing else byte for byte, a complex load prints its whole best 
 refuses naming the parts), `OptParityTests`, `OptMcpTests` (the protocol returns the verb's object,
 progress arrives, a cancelled call answers 130 with no outputs) and `OptReferenceTests` (the goals page is
 generated from the schema and the template catalog).
+
+## 25. `yield` — Monte Carlo and yield, headless
+
+**brief-yield-5.** `circuitrf yield mc|estimate|trial <path.csch|path.cnl>` runs the tolerances on the
+design's `tune` lines, its kit's distribution calls and its `statistics` line (`reference statistics`)
+and reports the spread, the yield or one trial. It follows the run-verb anatomy (§3). **One verb with
+nouns** — the `new`/`history` rule: `mc` (the spread alone, every enabled goal scored, no target),
+`estimate` (pass/fail against the `use=yield|both` goals), `trial` (one trial re-run alone). YA-6 adds
+`corners` and YA-11 `center` as nouns, not verbs. It landed **before any UI** (yield overview D12), so an
+agent can set up and run a yield with nothing but the MCP tools.
+
+### 25.1 It owns no statistics
+
+The run is `StatisticalRun` (`src/Design/Statistics`), the object the Yield panel drives, over the
+`PreparedCircuit` Simulate prepares; the result file is the one that run writes, at
+`StatisticalRun.ResultPathFor` — `<design>.yield.npy`, never `run.npy` — unless `-o` moves it. The setup
+is handed to the run only when a flag changed it, so a plain run IS the in-process one: `YieldParityTests`
+compares the verb's `.npy` with `StatisticalRun.Run`'s for the same file and seed **byte for byte**.
+`src/Cli/Yield.cs` is argument parsing, the flag overrides, the two narrowing flags, reporting and the
+two opt-in writes. The verb's noun and flag tables (`Yield.Nouns`, `Yield.Flags`) are what `reference
+statistics` renders, so a flag added there is documented with nothing else to edit.
+
+### 25.2 Flags override the file for this run only
+
+`--trials`, `--seed`, `--sampling`, `--target p%`, `--confidence p%`, `--autostop`, `--nonconverged`,
+`--save`, `--process 0|1`, `--mismatch 0|1`, `--sigma-scale`, `--parallel`, `--analyses goals|all`
+replace the `statistics` line's keys; `--set` overrides a global as every run verb does. `--vars k,k`
+draws only those statistical entries (the rest keep their distribution and stay at nominal, as `stat=0`
+keeps them) and `--goals g,g` scores only those enabled goals; a name outside the set is a refusal
+listing it. **`--target` and `--autostop` on `mc` are refused**, not ignored: a Monte Carlo has no target,
+and a flag that silently does nothing is a run answering a different question. Settings the run itself
+refuses (`lhs` with auto-stop) are refused in its own words, because the run validates the setup.
+
+`--trial n` re-runs ONE trial — the same draws and the same evaluation as inside a full run
+(`StatisticalRun.EvaluateTrial`) — and prints what it drew (`R1.R = 979.9 Ohm`) and how it scored; `-o`
+then writes that trial's analysis results. `trial` needs it; `mc` and `estimate` take it too, choosing
+which goals score it. **Nothing is written to the design's values** (D12): `--save-preset <name>` adds the
+trial's values as a preset (`TuningPresets.LockIn`), and `--save-corner <name>` adds one statistical
+corner, `corner <name> trial=n seed=s sampling=m trials=N`, naming the run the trial came from — both to
+a `.csch` only, both with `--trial`, both after a `BeforeBatch` checkpoint exactly as `opt --save-preset`
+takes one (`Optimize.CheckpointBefore`), every other byte as the file's persistence writes it (gated). A
+`.cnl` is refused: the line is the caller's to add.
+
+### 25.3 Output and exit codes
+
+stdout: the mode and settings line (seed, sampling, trials run of the cap, the stop reason); the yield as
+a percent with one decimal, its interval and the target verdict; a per-goal table (yield, interval, worst
+margin and its trial); the did-not-evaluate count with each reason and its trials; a statistics table —
+mean, σ, min, max, median — per goal margin (with Cpk against the margin's limit of 0) and per real scalar
+measurement (in its unit); each goal's five tightest trials with their values; and the kit statistics in
+use (process / mismatch stream counts). stderr: one progress line per batch
+(`trials 64/500 · yield 84.4 % [75.1 %, 91.2 %] · 2 did not evaluate`), suppressed by `-q`. `--json`
+carries the same as `result.yield` — a yield is a FRACTION there — plus, with `--contributions` and never
+unasked, what drives each goal's and measurement's spread (R-ya4-9).
+
+Exit (D13, §7): **0** finished, the yield met `--target` or there was none · **3** finished below the
+target · **1** refused · **2** no trial evaluated · **130** cancelled, writing nothing — a file the run
+wrote as the cancellation landed is deleted.
+
+### 25.4 Over the protocol
+
+`run analysis=montecarlo` is `yield mc` and `run analysis=yield` is `yield estimate` (§11.1): every flag
+is an argument (`trials`, `target`, `trial`, `savePreset`, `saveCorner` …) and the result is the verb's
+`result.yield`. **A progress notification per batch** goes through the existing token — the batch is the
+run's natural unit and a yield run's few dozen batches are what a client wants to see, unlike `opt`'s
+hundreds of iterations — with the trial count as `progress` and the cap as `total`. Progress is delivered
+on the run's own thread (a `Progress<T>` would race the result frame, `RunHost`'s reason), and
+`JsonRpc` takes its lock per frame, so nothing is held between notifications. Cancellation is the
+existing path. The server's `instructions` carry a seven-step yield walk-through beside the optimize one.
+
+### 25.5 `check`, `explain`, `read` and `plot`
+
+`check` reports a statistical setup the run would refuse — nothing varies, a yield run with no
+`use=yield|both` goal — in the run's own words, asking `StatisticalRun.Create` (which evaluates nothing);
+a setup with a target or a yield-only goal is asked as a yield run, one with only tolerances or a
+statistics line as a Monte Carlo. `explain --analysis` adds which chains a yield run evaluates under
+`analyses=goals` and `analyses=all` (`OptimizationRun.AnalysesUnder` over the yield specs) and the trial
+cost — **in nominal evaluations, labelled an estimate**: `explain` runs nothing, so it cannot time one;
+the cost is the nominal plus ⌈trials ÷ parallelism⌉ batches at the parallelism the run would use.
+`read` of a `.yield.npy` prints the `yield` summary first and puts that group first in the document;
+`--at trial=417` narrows to one trial. `plot` takes the statistics functions in a trace (`cube=histogram(
+trials.goal:S21:worst, 20)`): an expression calling an axis function is evaluated ONCE over the cubes it
+names (`TraceExpression`, not per sample), and its one remaining axis is the X; the drawing styles a
+histogram wants arrive in YA-8, until then it is a line over its `bin` axis.
+
+### 25.6 The gate
+
+`tests/Ui.Tests/Statistics/YieldCliTests.cs`: `YieldCliVerbTests` (on a divider: `estimate` exits 0 at a
+reachable target and 3 at an unreachable one naming the goal; `mc` with no goal exits 0; `trial --trial 7`
+draws the full run's values exactly; `plot` takes a histogram; `--save-corner` adds one corner line and
+nothing else byte for byte), `YieldParityTests`, `YieldMcpTests` (the protocol returns the verb's object,
+progress arrives per batch, a cancelled call answers 130 and writes nothing), `YieldReferenceTests` (the
+page lists every schema key, flag and noun, and every MCP field is a verb flag) and
+`YieldAgentWalkthroughTests` (the walk-through's MCP calls, in order, on a fresh workspace, end with a yield
+and no error).

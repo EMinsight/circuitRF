@@ -316,14 +316,7 @@ internal static class Optimize
     /// </summary>
     private static Diagnostic? SavePreset(string cschPath, string name, OptimizationResult result)
     {
-        string? root = WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(cschPath));
-        if (root is not null
-            && WorkspaceRevisionSetting.Read(WorkspaceRevisionSetting.CwsPathFor(root)) != false
-            && GitCommand.For(root) is { } git && git.IsRepositoryRoot())
-        {
-            var taken = WorkspaceCheckpoints.Take(git, CheckpointOrigin.BeforeBatch, $"opt --save-preset {name}", attended: false);
-            if (taken.Diagnostics.FirstOrDefault(d => d.Severity == DiagnosticSeverity.Error) is { } failed) return failed;
-        }
+        if (CheckpointBefore(cschPath, $"opt --save-preset {name}") is { } failed) return failed;
 
         var (model, view, cellName) = SchematicPersistence.LoadFromFile(cschPath);
         var (next, _) = TuningPresets.LockIn(model.Tuning, result.BestValues, DateTime.UtcNow, result.BestCost, name);
@@ -331,6 +324,22 @@ internal static class Optimize
         SchematicPersistence.SaveToFile(cschPath, model, cellName, view.PanX, view.PanY, view.Zoom);
         Console.WriteLine($"Saved preset \"{name}\" to {cschPath}");
         JsonRun.AddOutput("schematic", cschPath);
+        return null;
+    }
+
+    /// <summary>A history checkpoint before a headless write to <paramref name="cschPath"/>, when its workspace
+    /// keeps a history — what <c>opt --save-preset</c> and <c>yield --save-preset|--save-corner</c> take first.
+    /// The checkpoint's own error when it could not be taken; null otherwise.</summary>
+    internal static Diagnostic? CheckpointBefore(string cschPath, string intent)
+    {
+        string? root = WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(cschPath));
+        if (root is not null
+            && WorkspaceRevisionSetting.Read(WorkspaceRevisionSetting.CwsPathFor(root)) != false
+            && GitCommand.For(root) is { } git && git.IsRepositoryRoot())
+        {
+            var taken = WorkspaceCheckpoints.Take(git, CheckpointOrigin.BeforeBatch, intent, attended: false);
+            if (taken.Diagnostics.FirstOrDefault(d => d.Severity == DiagnosticSeverity.Error) is { } failed) return failed;
+        }
         return null;
     }
 

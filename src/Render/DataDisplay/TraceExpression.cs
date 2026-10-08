@@ -131,6 +131,12 @@ public static class TraceExpression
             return false;
         }
 
+        // A function that reads a whole axis (mean_over, histogram, cdf, …) cannot be evaluated a sample at a
+        // time: the expression is evaluated ONCE over the cubes it names, and its result's one axis is the X.
+        if (Evaluator.CallsAxisFunction(expression))
+            return TryEvaluateWhole(expression, ds, plotType, uniqueRefs, substitutions,
+                                    out xValues, out complexValues, out realValues, out xAxisName, out xUnit, out xLabels, out error);
+
         // ── Step 2: Slice each unique ref to a rank-1 array ──────────────────
         foreach (var info in uniqueRefs)
         {
@@ -316,6 +322,104 @@ public static class TraceExpression
             ? null
             : uniqueRefs[0].XAxis!.Unit;
         xLabels   = uniqueRefs[0].XAxis!.Labels;   // e.g. the two-tone "(k1,k2)" mix-product labels
+        return true;
+    }
+
+    /// <summary>
+    /// An expression calling an axis function (<see cref="Evaluator.AxisFunctions"/>): each reference is bound as the
+    /// cube its slice leaves — any number of axes kept, a bare name the whole cube — and the expression is evaluated
+    /// once. The result must keep exactly one axis, which is the trace's X: <c>histogram(x, 20)</c> its <c>bin</c>
+    /// axis, <c>mean_over(SP1.S[:, :, 2, 1])</c> the frequency axis the mean over trials leaves.
+    /// </summary>
+    private static bool TryEvaluateWhole(
+        string expression, DataSet ds, PlotType plotType, List<CubeRefInfo> refs,
+        List<(int start, int end, int pIdx)> substitutions,
+        out double[] xValues, out Complex[]? complexValues, out double[]? realValues,
+        out string xAxisName, out string? xUnit, out string[]? xLabels, out string error)
+    {
+        xValues = []; complexValues = null; realValues = null; xAxisName = ""; xUnit = null; xLabels = null; error = "";
+
+        var bound = new Value[refs.Count];
+        for (int k = 0; k < refs.Count; k++)
+        {
+            var info = refs[k];
+            if (!ds.Contains(info.CubeName)) { error = $"No cube '{info.CubeName}' in dataset."; return false; }
+            var cube   = ds[info.CubeName];
+            if (cube.Rank == 0) { bound[k] = new Value(cube); continue; }
+            var tokens = SliceTokenParser.SplitTokens(info.SliceTokensStr);
+            if (tokens.Length != cube.Rank)
+            {
+                error = $"'{info.RefStr}': expected {cube.Rank} axis token(s), got {tokens.Length}.";
+                return false;
+            }
+            var args = new object[cube.Rank];
+            for (int d = 0; d < tokens.Length; d++)
+            {
+                var axis = cube.Axes[d];
+                var t = SliceTokenParser.Parse(tokens[d], axis.Length, axis.Labels, axis.Name, axis.Values, out error);
+                switch (t.Kind)
+                {
+                    case SliceTokenParser.Kind.KeepWhole: args[d] = Range.All; break;
+                    case SliceTokenParser.Kind.KeepRange: args[d] = new Range(t.RangeStart, t.RangeEndExclusive); break;
+                    case SliceTokenParser.Kind.PinIndex:  args[d] = t.Index; break;
+                    case SliceTokenParser.Kind.Family:
+                        error = $"'{info.RefStr}': the family marker '~' is only valid in single-cube picker specs, not expressions."; return false;
+                    default:
+                        error = $"'{info.RefStr}': {error}"; return false;
+                }
+            }
+            var sliced = cube[args];
+            bound[k] = sliced.IsCube    ? new Value(sliced.Cube!)
+                     : sliced.IsComplex ? new Value(sliced.ComplexValue!.Value)
+                     : new Value(sliced.RealValue!.Value);
+        }
+
+        var sb = new System.Text.StringBuilder(expression);
+        foreach (var (start, end, pIdx) in substitutions.OrderByDescending(s => s.start))
+            sb.Remove(start, end - start).Insert(start, $"__c{pIdx}");
+
+        Value result;
+        try
+        {
+            var ast   = Parser.Parse(sb.ToString());
+            var scope = new Scope("te");
+            var ev    = new Evaluator();
+            for (int k = 0; k < refs.Count; k++)
+            {
+                scope.Bind($"__c{k}", "0");
+                ev.InjectResolved("te", $"__c{k}", bound[k]);
+            }
+            result = ev.EvalExpr(ast, scope);
+        }
+        catch (ParseException ex)           { error = $"Couldn't parse '{expression}': {ex.Message}"; return false; }
+        catch (UnknownFunctionException ex) { error = $"Unknown function '{ex.Name}' in '{expression}'."; return false; }
+        catch (ExpressionException ex)      { error = ex.Message; return false; }
+
+        if (result.Kind != ValueKind.Cube)
+        {
+            error = $"'{expression}' is one number, not a curve — every axis it read was reduced away.";
+            return false;
+        }
+        var outCube = result.AsCube();
+        if (outCube.Rank != 1)
+        {
+            error = $"'{expression}' keeps {outCube.Rank} axes ({string.Join(", ", outCube.Axes.Select(a => a.Name))}); " +
+                    "a trace needs exactly one — pin the others with a slice.";
+            return false;
+        }
+
+        if (outCube.DataKind == DataKind.Complex) complexValues = outCube.ComplexValues;
+        else                                      realValues    = outCube.RealValues;
+        if (plotType.IsComplex() && realValues != null)
+        {
+            error = "Smith/Polar needs a complex expression; result is real-valued.";
+            return false;
+        }
+        var x = outCube.Axes[0];
+        xValues   = x.Values;
+        xAxisName = x.Name;
+        xUnit     = string.IsNullOrEmpty(x.Unit) ? null : x.Unit;
+        xLabels   = x.Labels;
         return true;
     }
 

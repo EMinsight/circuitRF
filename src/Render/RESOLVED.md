@@ -4971,3 +4971,13 @@ new contour trace, or a file with no kernel field, picks up the new default. The
 so on a new trace they can land on a slightly different grid point than they did before. `Rbf2D`'s own parameter default
 and harmonicaRF's `ContourKernel` stay multiquadric; neither is the Data Display. Gate:
 `DataDisplayRound12Tests.TheContourRbfDefaultsAreSmooth0Point1AndEpsilon0Point5`.
+
+## A trace expression calling an axis function is evaluated whole (brief-yield-5, 2026-10-08)
+
+`TraceExpression` evaluates per X sample with each reference bound to one scalar — which cannot work for
+`mean_over`, `histogram`, `cdf` and the rest (`Evaluator.AxisFunctions`): each reads a whole axis. An
+expression that calls one now takes `TryEvaluateWhole`: each reference is bound as the CUBE its slice
+leaves (any number of kept axes; a bare name is the whole cube) and the expression is evaluated once.
+The result must keep exactly one axis, which is the trace's X — a histogram's `bin`, the `freq` a mean
+over trials leaves. A rank-0 result or one with several axes is refused with the axes named, because a
+trace drawn from either would be an empty or arbitrary picture.

@@ -263,6 +263,15 @@ internal sealed class McpServer
                 "3. check. 4. run analysis=optimize path=<f> -> result.optimize: the best values as text to write " +
                 "back, each goal's margin; exit 3 = a goal unmet. 5. read the output= .npy for the best point's " +
                 "results and the opt history.\n" +
+                // brief-yield-5 R-ya5-7: Monte Carlo and yield, beside the optimizer it follows.
+                "Yield: 1. explain path=<f> tunables=true -> the keys. 2. write tolerances on tune lines (tune R1.R " +
+                "dist=gauss sd=2%) and a yield spec (goal Vout = DC1.V(\"out\") analysis=DC1 in 0.49 0.51 use=yield), " +
+                "optionally a statistics line (statistics trials=500 target=95%); 'reference statistics' holds the " +
+                "grammar. 3. check. 4. explain path=<f> analysis=\"\" -> the interval width the trial count buys and " +
+                "the trial cost. 5. run analysis=yield path=<f> trials=500 -> result.yield: the yield, its interval, " +
+                "each goal's worst trial; exit 3 = below target. 6. read the written <design>.yield.npy (yield group " +
+                "first). 7. run analysis=yield path=<f> trial=<worst> -> what that trial drew. analysis=montecarlo " +
+                "is the spread alone.\n" +
                 "On an instance line the NETS come first and every 'Key=value' after them; how many " +
                 "nets each type takes is the 'nets' field of reference components, which is not the " +
                 "same number as its symbol's pin count; 'reference component-index' lists every type " +

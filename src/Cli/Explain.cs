@@ -312,7 +312,7 @@ internal static class Explain
                     var (rows, analysisExit) = ExplainAnalyses(lib, tb, analysisName);
                     analyses = rows;
                     exit    |= analysisExit;
-                    statistics    = ExplainStatistics.Collect(tb);
+                    statistics    = ExplainStatistics.Collect(lib, tb);
                     distributions = ExplainStatistics.Distributions(lib, tb);
                 }
                 if (expr is not null) exit |= ExplainExpression(lib, tb, expr, out value);

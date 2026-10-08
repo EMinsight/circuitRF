@@ -29,7 +29,8 @@ internal static partial class Reference
         "Generated from the schema the .cnl reader validates against: a tolerance on a tune line (each " +
         "distribution, its spread, percent or absolute, truncation), correlate, statistics and corner with every " +
         "key and default, statistical corners, goal use=, how a trial passes and how yield and its interval are " +
-        "reported, with a worked example.";
+        "reported, the yield verb's nouns, flags and exit codes, the result file's layout, with a worked example " +
+        "and one run per mode.";
 
     private const string TuningTitle = "Tuning directives";
     private const string GoalsTitle  = "Optimization goals";
@@ -175,12 +176,61 @@ internal static partial class Reference
             sb.AppendLine("  " + line);
         sb.AppendLine();
 
+        // brief-yield-5 R-ya5-7: the run, generated from the verb's own noun and flag tables.
+        sb.AppendLine("Running it");
+        sb.AppendLine();
+        sb.AppendLine("    circuitrf yield mc|estimate|trial <file.csch|file.cnl> [flags]");
+        sb.AppendLine();
+        foreach (var (noun, summary) in Yield.Nouns)
+            sb.AppendLine($"  {noun,-16} {summary}");
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "Each flag overrides the file's statistics line for this run only, and nothing is written to the design's " +
+            "values: --save-preset and --save-corner are the only writes, to a .csch, after a history checkpoint. " +
+            "Over MCP: run analysis=montecarlo or analysis=yield, with these flags as fields (trials, seed, sampling, " +
+            "target, autostop, nonconverged, save, output, contributions, trial, savePreset, saveCorner); a progress " +
+            "notification arrives per batch.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        foreach (var (flag, takes, summary) in Yield.Flags)
+            sb.AppendLine($"  {(flag + (takes.Length > 0 ? " " + takes : "")),-30} {summary}");
+        sb.AppendLine();
+        sb.AppendLine("Exit codes");
+        sb.AppendLine();
+        sb.AppendLine("  0    finished; the yield met --target, or there was no target (mc has none)");
+        sb.AppendLine("  3    finished, and the yield is below --target");
+        sb.AppendLine("  1    refused before the first trial");
+        sb.AppendLine("  2    no trial evaluated");
+        sb.AppendLine("  130  cancelled; nothing is written");
+        sb.AppendLine();
+        sb.AppendLine("The result file");
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "<design>.yield.npy beside the design (never run.npy, which Simulate owns). Every analysis group the nominal " +
+            "produced, each cube with an outer trial axis (1..N) over the trials the save policy kept, a real scalar " +
+            "measurement for every trial; trials: stat:<key> (base SI), z:<key>, z:process:<stream>, " +
+            "z:mismatch:<stream>, goal:<name>:pass, goal:<name>:margin, goal:<name>:worst, pass, status (0 evaluated, " +
+            "k the k-th entry of reasons) and reasons; nominal: each cube with no trial axis, named by its address " +
+            "(SP1.S, trials.pass); yield: trials, did_not_evaluate, passes, counted, yield, lower, upper, the same per " +
+            "goal as goal:<name>:yield, and confidence, target, seed, saved_trials, mode, sampling, nonconverged, save, " +
+            "stopped. read prints the yield group first; --at trial=417 narrows to one trial.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+
         sb.AppendLine("Worked example");
         sb.AppendLine();
         foreach (var line in StatisticsExample) sb.AppendLine(line.Length == 0 ? "" : "    " + line);
         sb.AppendLine();
+        sb.AppendLine("  and one run of each mode on it:");
+        sb.AppendLine();
+        sb.AppendLine("    circuitrf yield mc       pad.cnl --trials 200                  # the spread of S21, no pass/fail");
+        sb.AppendLine("    circuitrf yield estimate pad.cnl --target 95% --autostop --sampling sobol");
+        sb.AppendLine("    circuitrf yield trial    pad.cnl --trial 417                   # what the worst trial drew");
+        sb.AppendLine("    circuitrf plot pad.yield.npy -o s21.svg --trace \"cube=histogram(trials.goal:S21:worst, 20)\"");
+        sb.AppendLine();
         sb.AppendLine("See also: reference tuning (the rest of a tune line), reference goals (what a goal can say);");
-        sb.AppendLine("explain <file> --tunables shows each tolerance in numbers, --analysis the statistics settings.");
+        sb.AppendLine("explain <file> --tunables shows each tolerance in numbers, --analysis the statistics settings,");
+        sb.AppendLine("the analyses a yield run evaluates and its cost.");
         return sb.ToString();
     }
 

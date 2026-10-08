@@ -230,6 +230,30 @@ internal static class ToolCatalog
         new("outGrid",     "--out-grid",    OptKind.Path,    "lpp only: where found terminations are written."),
     ];
 
+    /// <summary>What both statistical run modes take (brief-yield-5 R-ya5-5) — every one a flag the verb's own
+    /// loop reads. They override the file's statistics line for this run only.</summary>
+    private static readonly ToolOption[] YieldOptions =
+    [
+        new("trials",       "--trials",       OptKind.Integer, "Trials to run; with autostop, the most it runs."),
+        new("seed",         "--seed",         OptKind.Integer, "The seed every draw is a function of, with the trial number."),
+        new("sampling",     "--sampling",     OptKind.Str,     "random, lhs or sobol."),
+        new("confidence",   "--confidence",   OptKind.Str,     "The confidence of the yield interval, as a percent (95%)."),
+        new("nonconverged", "--nonconverged", OptKind.Str,     "fail (a trial that does not evaluate counts as a fail) or warn (left out)."),
+        new("save",         "--save",         OptKind.Str,     "scalars, all, a trial count, or auto: which trials keep their full results."),
+        new("process",      "--process",      OptKind.Str,     "1 or 0: kit process draws on or off."),
+        new("mismatch",     "--mismatch",     OptKind.Str,     "1 or 0: kit mismatch draws on or off."),
+        new("sigmaScale",   "--sigma-scale",  OptKind.Number,  "Scales every kit sigma."),
+        new("parallel",     "--parallel",     OptKind.Integer, "Trials evaluated at once."),
+        new("analyses",     "--analyses",     OptKind.Str,     "goals (only the analyses a goal names) or all."),
+        new("vars",         "--vars",         OptKind.StrList, "Draw only these statistical entries; the rest stay at nominal."),
+        new("goals",        "--goals",        OptKind.StrList, "Score only these of the enabled goals."),
+        new("contributions","--contributions",OptKind.Flag,    "Also return what drives each goal's and measurement's spread."),
+        new("trial",        "--trial",        OptKind.Integer, "Re-run only this trial and return what it drew and how it scored (result.yield.trial)."),
+        new("savePreset",   "--save-preset",  OptKind.Str,     "A .csch only, with trial: add that trial's values as a preset of this name."),
+        new("saveCorner",   "--save-corner",  OptKind.Str,     "A .csch only, with trial: add a statistical corner of this name naming that trial."),
+        new("output",       "-o",             OptKind.Path,    "The result .npy; default <design>.yield.npy beside the design. With trial: that trial's results."),
+    ];
+
     /// <summary>
     /// The largest rendered file handed back inside a tool result (R-rnd5-4).
     ///
@@ -274,7 +298,10 @@ internal static class ToolCatalog
           + "Electrostatic/Magnetostatic a C or L matrix, Eigenmode the modes (f, Q, Participation) and "
           + "no Touchstone, Thermal temperatures. optimize runs the design's tune, goal and optimize lines "
           + "and returns result.optimize — the best values as the text to write into the file, each goal's "
-          + "margin. With showIterations it also returns each iteration and sends a progress notification per iteration.",
+          + "margin. With showIterations it also returns each iteration and sends a progress notification per iteration. "
+          + "montecarlo and yield run the tolerances on the tune lines (and a kit's statistics) and return result.yield — "
+          + "the yield with its interval, each goal's yield and worst trial, the spread of every margin and measurement; "
+          + "trial=<n> re-runs one trial.",
             "analysis",
             "Which analysis to run.",
             [
@@ -330,6 +357,21 @@ internal static class ToolCatalog
                     "Optimization. These arguments override the file's optimize line for this run only; nothing is "
                   + "written to the design's values. Exit 0: every goal met. Exit 3: it ran and a goal is unmet — "
                   + "result.optimize.goals says which, by how much and where. Exit 2: no evaluation converged."),
+                // brief-yield-5 R-ya5-5: the `yield` verb's two run nouns, so the document is the verb's `--json`
+                // object and nothing here reshapes it. `trial` re-runs one trial in place of the run.
+                new("montecarlo", ["yield", "mc"],
+                    [new("path", true, "The .csch or .cnl whose tune tolerances, goals and statistics line to run.")],
+                    [Set, .. YieldOptions],
+                    "Monte Carlo: the spread alone, scoring every enabled goal. Exit 0 unless it could not run; exit 2: "
+                  + "no trial evaluated. A progress notification per batch."),
+                new("yield", ["yield", "estimate"],
+                    [new("path", true, "The .csch or .cnl whose tune tolerances, use=yield|both goals and statistics line to run.")],
+                    [Set,
+                     new("target",    "--target",    OptKind.Str,  "The yield to meet, as a percent (95%). Exit 3 below it."),
+                     new("autostop",  "--autostop",  OptKind.Flag, "Stop once the interval clears target either way (not with lhs)."),
+                     .. YieldOptions],
+                    "Yield against the yield specs, with its Clopper-Pearson interval. Exit 3: below target — "
+                  + "result.yield.goals says which goal and its worst trial. A progress notification per batch."),
                 new("em", ["em"],
                     [new("path", true, "The .cem or .c3d to run; with component, the workspace folder (or .cws, "
                                      + "or .ctech) whose technology the part is drawn on.")],

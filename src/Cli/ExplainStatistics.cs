@@ -3,6 +3,7 @@ using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Core.Netlist;
+using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Optimization;
 using CircuitRF.Design.Statistics;
 using RfCore.Export;
@@ -76,7 +77,7 @@ internal static class ExplainStatistics
     }
 
     /// <summary>The statistical report of a testbench; null when its setup has no statistical content.</summary>
-    public static ExplainStatisticsJson? Collect(TestBench tb)
+    public static ExplainStatisticsJson? Collect(Library lib, TestBench tb)
     {
         if (tb.Tuning is not { } setup || !HasStatistics(setup)) return null;
         var s = setup.Statistics ?? new StatisticsSettings();
@@ -102,7 +103,25 @@ internal static class ExplainStatistics
             [.. setup.Corners.Select(c => new ExplainCornerJson(
                 c.Name, c.Enabled, c.IsStatistical ? "statistical" : "value", c.Temp,
                 new Dictionary<string, string>(c.Values, StringComparer.Ordinal), c.Trial))],
-            correlation, StatisticsSummary.QuotedYield, halfWidth, trialsFor);
+            correlation, StatisticsSummary.QuotedYield, halfWidth, trialsFor, YieldRun(lib, tb, setup, s));
+    }
+
+    /// <summary>
+    /// R-ya5-8: which chains a yield run executes under each <c>analyses=</c> scope, through the run's own rule
+    /// (<see cref="OptimizationRun.AnalysesUnder"/> over the yield specs), and its cost in nominal evaluations at the
+    /// parallelism the run would use — asked of <see cref="StatisticalRun.Create"/>, which evaluates nothing.
+    /// </summary>
+    private static ExplainYieldRunJson YieldRun(Library lib, TestBench tb, TuningSetup setup, StatisticsSettings s)
+    {
+        var goals = OptimizationRun.AnalysesUnder(tb, setup, OptimizerScope.GoalAnalyses, GoalUse.Yield);
+        var all   = OptimizationRun.AnalysesUnder(tb, setup, OptimizerScope.All, GoalUse.Yield);
+        var run   = StatisticalRun.Create(PreparedCircuit.FromBench(lib, tb, null), new StatisticalOptions { Mode = StatisticalMode.Yield });
+        int trials = s.EffectiveTrials, parallel = run.Parallelism;
+        int batches = (trials + parallel - 1) / parallel;
+        string estimate = $"about {batches + 1} times one nominal evaluation: the nominal, then {batches} batch(es) of up to " +
+                          $"{parallel} trials (an estimate)";
+        return new ExplainYieldRunJson(goals, all, s.Scope == OptimizerScope.All ? "all" : "goals",
+                                       trials + 1, parallel, batches, estimate, run.Refusal?.Render());
     }
 
     private static bool HasStatistics(TuningSetup setup)
@@ -140,5 +159,12 @@ internal static class ExplainStatistics
         }
         Console.WriteLine($"  at a yield of {N(r.AtYield)} %, {r.Trials} trials resolve it to ±{N(r.ExpectedHalfWidth)} %" +
                           (r.TrialsForTwoPercent is { } n ? $"; {n} trials resolve it to under ±{N(StatisticsSummary.QuotedHalfWidth)} %" : ""));
+        if (r.Run is { } run)
+        {
+            Console.WriteLine($"  a yield run evaluates: goals → {(run.UnderGoals.Count == 0 ? "none" : string.Join(", ", run.UnderGoals))}" +
+                              $" · all → {(run.UnderAll.Count == 0 ? "none" : string.Join(", ", run.UnderAll))} (setup={run.Selected})");
+            Console.WriteLine($"  cost: {run.Evaluations} evaluations, {run.Parallel} at once — {run.Estimate}");
+            if (run.Refusal is { } refused) Console.WriteLine($"  a yield run would be refused: {refused}");
+        }
     }
 }

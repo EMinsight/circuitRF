@@ -1350,8 +1350,26 @@ internal static class Check
         // is refused here in the run's own words, because the question goes to the run's own
         // constructor (no evaluation happens there). Asked only when the rules above found no error,
         // since the run refuses on the first of those itself and would only say it twice.
-        if (setup.Optimizer is null || findings.Any(d => d.Severity == DiagnosticSeverity.Error)) return;
-        var run = OptimizationRun.Create(PreparedCircuit.FromBench(lib, tb, null));
-        if (run.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
+        if (findings.Any(d => d.Severity == DiagnosticSeverity.Error)) return;
+        if (setup.Optimizer is not null)
+        {
+            var run = OptimizationRun.Create(PreparedCircuit.FromBench(lib, tb, null));
+            if (run.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
+        }
+
+        // brief-yield-5 R-ya5-8: a statistical setup the yield verb would refuse — nothing varies, a yield run with
+        // no use=yield|both goal — is refused here in the run's own words, asked of StatisticalRun.Create (which
+        // evaluates nothing). A setup that names a target or a yield-only goal is asked as a yield run; one that
+        // only carries tolerances or a statistics line, as a Monte Carlo.
+        bool yieldRun = setup.Statistics?.Target is not null || setup.Goals.Any(g => g.Enabled && g.Use == GoalUse.Yield);
+        if (yieldRun || setup.Statistics is not null || setup.Variables.Any(e => e.Distribution != StatDistribution.None))
+        {
+            var stat = Design.Statistics.StatisticalRun.Create(PreparedCircuit.FromBench(lib, tb, null),
+                new Design.Statistics.StatisticalOptions
+                {
+                    Mode = yieldRun ? Design.Statistics.StatisticalMode.Yield : Design.Statistics.StatisticalMode.MonteCarlo,
+                });
+            if (stat.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
+        }
     }
 }

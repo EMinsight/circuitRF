@@ -3871,4 +3871,65 @@ internal static class CliDiagnostics
     public static Diagnostic OptCancelled() => Diagnostic.Create(
         "cli.opt.cancelled", DiagnosticSeverity.Error,
         "opt: cancelled — nothing was written.");
+
+    // ── `yield` (brief-yield-5) ──────────────────────────────────────────────────
+
+    /// <summary>The noun is missing or is not one of the verb's.</summary>
+    public static Diagnostic YieldNoun(string noun) => Diagnostic.Create(
+        "cli.yield.noun", DiagnosticSeverity.Error,
+        "yield: expected mc, estimate or trial before the path, got '{noun}'.", ("noun", noun));
+
+    public static Diagnostic YieldFlagValue(string flag, string text, string expected) => Diagnostic.Create(
+        "cli.yield.flag-value", DiagnosticSeverity.Error,
+        "yield: {flag} expects {expected}, got '{text}'.",
+        ("flag", flag), ("text", text), ("expected", expected));
+
+    /// <summary>A Monte Carlo has no target: <c>--target</c>/<c>--autostop</c> belong to <c>estimate</c>.</summary>
+    public static Diagnostic YieldMcHasNoTarget(string flag) => Diagnostic.Create(
+        "cli.yield.mc-no-target", DiagnosticSeverity.Error,
+        "yield mc: {flag} belongs to a yield estimate — a Monte Carlo has no target. Use 'yield estimate'.", ("flag", flag));
+
+    public static Diagnostic YieldTrialRequired() => Diagnostic.Create(
+        "cli.yield.trial-required", DiagnosticSeverity.Error,
+        "yield trial: name the trial to re-run with --trial n.");
+
+    /// <summary>A write that saves a trial needs the trial named.</summary>
+    public static Diagnostic YieldSaveNeedsTrial(string flag) => Diagnostic.Create(
+        "cli.yield.save-needs-trial", DiagnosticSeverity.Error,
+        "yield: {flag} saves one trial — name it with --trial n.", ("flag", flag));
+
+    /// <summary>The two writes go to a schematic's tuning block; a netlist is text the caller writes (D12).</summary>
+    public static Diagnostic YieldSaveNeedsSchematic(string flag, string path) => Diagnostic.Create(
+        "cli.yield.save-needs-schematic", DiagnosticSeverity.Error,
+        "yield: {flag} writes to a schematic's tuning block, and '{path}' is a netlist. Add the line to it instead " +
+        "(a preset line, or corner <name> trial=<n> seed=<s> sampling=<m> trials=<N>).",
+        ("flag", flag), ("path", path));
+
+    public static Diagnostic YieldSaveName(string flag, string problem) => Diagnostic.Create(
+        "cli.yield.save-name", DiagnosticSeverity.Error,
+        "yield: {flag}: {problem}.", ("flag", flag), ("problem", problem));
+
+    public static Diagnostic YieldOutputNotNpy(string path) => Diagnostic.Create(
+        "cli.yield.output-not-npy", DiagnosticSeverity.Error,
+        "yield: -o writes a .npy DataSet, and '{path}' is not one.", ("path", path));
+
+    public static Diagnostic YieldVarsNotStatistical(string key, string statistical) => Diagnostic.Create(
+        "cli.yield.vars-not-statistical", DiagnosticSeverity.Error,
+        "yield: --vars names '{key}', which is not a statistical entry. The statistical entries are: {statistical}.",
+        ("key", key), ("statistical", statistical));
+
+    public static Diagnostic YieldGoalsUnknown(string name, string enabled) => Diagnostic.Create(
+        "cli.yield.goals-unknown", DiagnosticSeverity.Error,
+        "yield: --goals names '{name}', which is not an enabled goal. The enabled goals are: {enabled}.",
+        ("name", name), ("enabled", enabled));
+
+    /// <summary>A trial whose values could not be drawn has nothing to save as a preset.</summary>
+    public static Diagnostic YieldTrialHasNoValues(int trial) => Diagnostic.Create(
+        "cli.yield.trial-no-values", DiagnosticSeverity.Error,
+        "yield: trial {trial} drew no values, so there is no preset to save.", ("trial", trial));
+
+    /// <summary>The run was cancelled: nothing was written (exit 130).</summary>
+    public static Diagnostic YieldCancelled() => Diagnostic.Create(
+        "cli.yield.cancelled", DiagnosticSeverity.Error,
+        "yield: cancelled — nothing was written.");
 }

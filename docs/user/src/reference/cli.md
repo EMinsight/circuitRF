@@ -122,6 +122,7 @@ convention behind both.</p>
 | `lpp` | `.cnl` or `.csch` | Loadpull **pursuit** — searches for the optima | Optima + the follow-on grid; `-o` as `hb`; `--out-grid` writes a `.gam` |
 | `em` | `.cem` | The EM kernel the setup resolves to | A Touchstone `.sNp` **and** a grouped `.npy`, where **Simulate** writes them |
 | `opt` | `.csch` or `.cnl` | The schematic's saved optimization — the [Optimizer](optimization.html)'s own run | The best values and each goal's result to stdout; **nothing** in the design (`--save-preset` adds a preset) |
+| `yield mc`, `yield estimate`, `yield trial` | `.csch` or `.cnl` | A Monte Carlo or yield run over the tolerances on the tune lines, the kit's statistics and the `statistics` line | The yield, each goal's result and the spread to stdout; the trials to `<design>.yield.npy`; **nothing** in the design (`--save-preset`, `--save-corner` with `--trial`) |
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
 | `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | The same comparison the [LVS panel](lvs.html)'s **Compare** button calls | **Nothing** — the report to stdout; `-o report.txt` |
@@ -719,6 +720,65 @@ finished with at least one goal unmet — not a failure of the run, but not a de
 specification either. Over [MCP](ai-agents.html) the same run is `run analysis=optimize`, and
 `reference goals`, `reference tuning` and `reference optimizers` say what may be written;
 `reference statistics` covers tolerances, correlations, the statistics settings and corners.
+
+## `yield` — Monte Carlo and yield from the command line {#yield}
+
+```text
+circuitrf yield mc|estimate|trial <schematic.csch | netlist.cnl> [flags]
+```
+
+`yield` draws the design's tolerances — the `dist=` keys on its tune lines, and its kit's process and
+mismatch statistics — and simulates each draw. **`mc`** reports the spread alone; **`estimate`**
+counts how many trials pass the goals marked `use=yield` or `use=both` and reports that yield with its
+confidence interval; **`trial`** re-runs one trial and says what it drew. Every trial is a function of
+the seed and its own number, so the same file and seed give the same trials on any machine, at any
+parallelism.
+
+```text
+$ circuitrf yield estimate div.cnl --target 80%
+Yield estimate: div.cnl
+  seed 1 · sampling random · 200 of 200 trials · 200 trials
+Yield: 88.0 % (95 % interval 82.7 % – 92.2 %; 176 of 200 counted trials pass) · target 80.0 %: met
+
+Goals:
+  name  yield   interval         worst margin  trial
+  Vout  88.0 %  82.7 % – 92.2 %  -0.01022      58
+
+Statistics over the evaluated trials:
+  of                n    mean      sigma     min       max       median    Cpk
+  goal:Vout:margin  200  0.004593  0.004064  -0.01022  0.009956  0.005223  0.3767
+  Vo                200  0.5003    0.006768  0.4817    0.5202    0.5005
+
+Worst trials for Vout:
+  trial 58     margin -0.01022   R1.R=979.902516568072 Ohm  R2.R=1062.49587500816 Ohm
+  ...
+```
+
+A progress line per batch goes to stderr (`-q` silences it). The trials are written to
+`<design>.yield.npy` beside the design: every analysis result with an outer `trial` axis, each trial's
+drawn values, margins and pass/fail, the nominal, and a `yield` summary. `read` prints that summary
+first, and `plot` draws the statistics functions directly — `--trace "cube=histogram(trials.goal:Vout:worst, 20)"`.
+
+| Flag | |
+|---|---|
+| `--trials`, `--seed`, `--sampling random\|lhs\|sobol`, `--confidence p%`, `--nonconverged fail\|warn`, `--save scalars\|all\|n\|auto`, `--parallel`, `--analyses goals\|all` | Override the `statistics` line, for this run only. |
+| `--target p%`, `--autostop` | `estimate` only: the yield to meet, and stopping as soon as the interval is clear of it either way. |
+| `--process 0\|1`, `--mismatch 0\|1`, `--sigma-scale k` | The kit's process and mismatch draws, and a scale on every kit sigma. |
+| `--vars key,key`, `--goals name,name` | Draw only these tolerances (the rest stay at nominal); score only these goals. |
+| `--trial n` | Re-run only trial `n`. `-o out.npy` then writes its results. |
+| `--save-preset <name> --trial n` | Add that trial's values to the schematic as a preset. Refused for a `.cnl`. |
+| `--save-corner <name> --trial n` | Add a corner naming that trial, so later runs can replay it. Refused for a `.cnl`. |
+| `--contributions` | With `--json`: which tolerances drive each goal's and measurement's spread. |
+| `-o out.npy` | Where the trials are written. |
+| `--set var=expr` | As for every run verb. |
+
+**It never changes the design's values.** Exit **0** means the run finished and the yield met
+`--target` (or there was none); **3**, that it finished below the target; **1**, that it was refused;
+**2**, that no trial evaluated; **130**, that it was cancelled, with nothing written. Over
+[MCP](ai-agents.html) the same runs are `run analysis=montecarlo` and `run analysis=yield`, and
+`reference statistics` says how to write tolerances, yield specs and the `statistics` line.
+`explain <file> --analysis` reports how wide the interval of the configured trial count will be and
+roughly how long the run takes, before you start it.
 
 ## `rail` — power integrity, headless {#rail}
 

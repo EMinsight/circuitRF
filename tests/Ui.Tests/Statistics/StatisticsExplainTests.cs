@@ -11,13 +11,13 @@ public sealed class StatisticsExplainTests
     [Fact]
     public void TheExpectedInterval_IsTheClopperPearsonHalfWidth()
     {
-        var (_, tb) = new CnlReader().Read("""
+        var (lib, tb) = new CnlReader().Read("""
             R:R1 a 0 R=50 Ohm
             tune R1.R dist=gauss sd=2%
             statistics trials=500
             """);
 
-        var report = ExplainStatistics.Collect(tb)!;
+        var report = ExplainStatistics.Collect(lib, tb)!;
 
         Assert.Equal(500, report.Trials);
         Assert.Equal(90, report.AtYield);

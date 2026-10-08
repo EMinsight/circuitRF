@@ -25,6 +25,33 @@ public sealed partial class Evaluator
     /// <summary>The axis a Monte Carlo or yield run stacks its trials on, and the reductions' default.</summary>
     public const string TrialAxis = "trial";
 
+    /// <summary>Every function here: each reads a WHOLE cube along one axis, so an expression calling one cannot be
+    /// evaluated a sample at a time — a trace expression evaluates it once over the cubes it names (YA-5 R-ya5-6).</summary>
+    public static IReadOnlySet<string> AxisFunctions { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "max_over", "min_over", "mean_over", "std_over", "median_over", "pctl_over", "skew_over", "kurt_over",
+        "yield_over", "cpk", "sigma_to", "histogram", "cdf", "yield_sens",
+    };
+
+    /// <summary>Whether <paramref name="expression"/> calls one of <see cref="AxisFunctions"/> — a name followed by
+    /// <c>(</c>, not part of a longer identifier.</summary>
+    public static bool CallsAxisFunction(string expression)
+    {
+        for (int i = 0; i < expression.Length; i++)
+        {
+            if (!(char.IsLetter(expression[i]) || expression[i] == '_') || (i > 0 && IsNamePart(expression[i - 1]))) continue;
+            int end = i;
+            while (end < expression.Length && IsNamePart(expression[end])) end++;
+            int open = end;
+            while (open < expression.Length && expression[open] == ' ') open++;
+            if (open < expression.Length && expression[open] == '(' && AxisFunctions.Contains(expression[i..end])) return true;
+            i = end;
+        }
+        return false;
+
+        static bool IsNamePart(char c) => char.IsLetterOrDigit(c) || c is '_' or '.' or ':';
+    }
+
     private Dictionary<string, DataCube>? _companions;
 
     /// <summary>The companions the last axis-building call left (<c>width</c>, <c>count</c>), cleared by taking.</summary>

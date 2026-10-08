@@ -124,6 +124,12 @@ public sealed class StatisticalRun
 
     public IReadOnlyList<Diagnostic> Notes => _notes;
 
+    /// <summary>The statistics settings the run applies — the setup's, defaults held as null.</summary>
+    public StatisticsSettings Settings => _settings;
+
+    /// <summary>Trials a batch evaluates at once: the statistics line's <c>parallel=</c>, else the evaluator's.</summary>
+    public int Parallelism => Math.Max(1, _options.BatchSize ?? _eval?.Parallelism ?? 1);
+
     /// <summary>Simulations actually run (the nominal, trials, re-runs).</summary>
     public long Evaluations => _eval?.Evaluations ?? 0;
 

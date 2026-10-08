@@ -120,6 +120,7 @@ usually needs them:
 | `analyses` | before declaring any analysis | every `type=` and every key it accepts, with defaults |
 | `tuning`, `goals` | before writing a tune, preset, goal or optimize line | which values can vary and how they are named; the goal grammar; each with a complete worked example |
 | `optimizers` | before choosing an algorithm | every algorithm the `optimize` line can name, when to use it, and its options with their defaults |
+| `statistics` | before writing a tolerance, a yield spec or a `statistics` line | the distributions and their spreads, `goal … use=yield`, the run's options, exit codes and result layout, with an example per mode |
 | `component-index` | when choosing parts | every component type in one line each: nets, category, name |
 | `components <TYPE>` | before using a component type | its nets, terminals and parameters |
 | `units`, `expressions` | when writing values or measurements | SI suffixes, functions, conditionals |
@@ -156,6 +157,25 @@ The order below keeps every expensive step behind a cheap check.
    and how large the problem is. See the next section.
 6. **Run EM** once the size is acceptable, then `read` the Touchstone and compare it with step 3.
 7. **Export** the artwork with `convert`, for example a `.clay` in and a `.gds` out.
+
+## Yield: tolerances, Monte Carlo and the worst trial {#yield}
+
+An agent can set up and run a yield analysis with the MCP tools alone:
+
+1. `explain` with `tunables=true` lists the values that can carry a tolerance, by key.
+2. Write the tolerances on tune lines, `tune R1.R dist=gauss sd=2%`, and the spec as a goal marked for
+   yield, `goal Vout = DC1.V("out") analysis=DC1 in 0.49 0.51 use=yield`. A `statistics` line sets the
+   trial count and target: `statistics trials=500 target=95%`. `reference statistics` has the grammar.
+3. `check` the file. A setup the run would refuse, such as one where nothing varies, is reported here.
+4. `explain` with `analysis` reports how wide the yield's interval will be at that trial count and what
+   the run will cost, in nominal simulations.
+5. `run` with `analysis=yield` and `trials=500` returns the yield, its interval and each goal's worst
+   trial. An exit code of 3 means the yield is below the target.
+6. `read` the `.yield.npy` it wrote for the summary and every trial.
+7. `run` with `analysis=yield` and `trial=<the worst trial>` shows what that trial drew.
+
+`analysis=montecarlo` is the spread alone, with no pass or fail. Neither changes the design: a trial's
+values become a preset only with `savePreset`, and a corner only with `saveCorner`, both on a `.csch`.
 
 ## EM runs: check the cost first {#em}
 

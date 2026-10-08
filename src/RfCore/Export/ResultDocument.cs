@@ -166,7 +166,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<SolverJson>? Solvers = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        OptimizeReportJson? Optimize = null);
+        OptimizeReportJson? Optimize = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        YieldReportJson? Yield = null);
 
     /// <summary>
     /// One external solver as <c>solver list</c> reports it — the Settings ▸ Solvers row. Carried as data
@@ -674,6 +676,134 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? MostSensitive,
         double PerRange);
+
+    // ── `yield` / MCP `run analysis=montecarlo|yield` (brief-yield-5 R-ya5-2) ──────────────────
+    //
+    // A PROJECTION of `StatisticalResult` — the verb and the MCP tool return this one object. A yield is a
+    // fraction (0…1) here and a percent on screen; values are the text a schematic would hold.
+
+    /// <summary>What one Monte Carlo or yield run found.</summary>
+    /// <param name="Mode"><c>montecarlo</c> or <c>yield</c>.</param>
+    /// <param name="Outcome"><c>finished</c>, <c>belowTarget</c>, <c>refused</c>, <c>noneEvaluated</c> or
+    /// <c>cancelled</c> — the exit code's reason (0, 3, 1, 2, 130).</param>
+    /// <param name="Target">The yield target as a fraction; null with none (and always for montecarlo).</param>
+    /// <param name="Yield">Overall; null with no goal scored.</param>
+    /// <param name="Statistics">Per goal margin and per real scalar measurement: mean, σ, min, max, median, Cpk.</param>
+    /// <param name="Worst">Per goal, its tightest trials, tightest first.</param>
+    /// <param name="Contributions">Only with <c>--contributions</c>: what drives each goal's and measurement's spread.</param>
+    /// <param name="Trial">Only for a single-trial re-run (<c>yield trial</c>): that trial.</param>
+    public sealed record YieldReportJson(
+        string                            Document,
+        string                            Mode,
+        string                            Outcome,
+        string                            FinishReason,
+        YieldSettingsJson                 Settings,
+        int                               Trials,
+        int                               DidNotEvaluate,
+        IReadOnlyList<YieldReasonJson>    Reasons,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                           Target,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        YieldEstimateJson?                Yield,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        bool?                             TargetMet,
+        IReadOnlyList<YieldGoalJson>      Goals,
+        IReadOnlyList<YieldStatisticJson> Statistics,
+        IReadOnlyList<YieldWorstJson>     Worst,
+        YieldKitJson                      Kit,
+        long                              Evaluations,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                           Output = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<YieldContributionJson>? Contributions = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        YieldTrialJson?                   Trial = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                           SavedPreset = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                           SavedCorner = null);
+
+    /// <summary>The settings the run used — the file's statistics line with this run's flags over it.</summary>
+    public sealed record YieldSettingsJson(
+        int     Trials,
+        int     Seed,
+        string  Sampling,
+        double  Confidence,
+        bool    AutoStop,
+        string  NonConverged,
+        string  Save,
+        bool    Process,
+        bool    Mismatch,
+        double  SigmaScale,
+        int     Parallel,
+        string  Analyses);
+
+    /// <summary>A yield and its Clopper–Pearson interval, as fractions.</summary>
+    public sealed record YieldEstimateJson(int Passes, int Counted, double? Yield, double? Lower, double? Upper);
+
+    /// <summary>One goal's yield, and its worst margin over the trials (in the goal's own unit) and where.</summary>
+    public sealed record YieldGoalJson(
+        string            Name,
+        YieldEstimateJson Yield,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?           WorstMargin,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?              WorstTrial);
+
+    /// <summary>Why trials did not evaluate: the reason and the trials.</summary>
+    public sealed record YieldReasonJson(string Reason, int Count, IReadOnlyList<int> Trials);
+
+    /// <summary>The descriptive statistics of one quantity over the evaluated trials.</summary>
+    /// <param name="Of"><c>goal:&lt;name&gt;:margin</c> or a measurement's name.</param>
+    /// <param name="Cpk">For a goal margin: against its limit (a margin below 0 fails); null otherwise.</param>
+    public sealed record YieldStatisticJson(
+        string  Of,
+        string  Unit,
+        int     Count,
+        double? Mean,
+        double? Sigma,
+        double? Min,
+        double? Max,
+        double? Median,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Cpk);
+
+    /// <summary>One goal's tightest trials (R-ya4-10).</summary>
+    public sealed record YieldWorstJson(string Goal, IReadOnlyList<YieldWorstTrialJson> Trials);
+
+    /// <param name="Values">The trial's drawn values, as the schematic would hold them.</param>
+    public sealed record YieldWorstTrialJson(int Trial, double Margin, double Worst, IReadOnlyDictionary<string, string> Values);
+
+    /// <summary>The kit statistics in use: the distribution calls the nominal design reached.</summary>
+    public sealed record YieldKitJson(int Process, int Mismatch, IReadOnlyList<string> Sections);
+
+    /// <summary>What drives one quantity's spread (R-ya4-9).</summary>
+    public sealed record YieldContributionJson(
+        string Of,
+        double RSquared,
+        bool   Underdetermined,
+        IReadOnlyList<YieldContributorJson> Contributors,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Refused = null);
+
+    public sealed record YieldContributorJson(string Name, string Kind, double Coefficient, double Share, double Spearman);
+
+    /// <summary>One trial re-run alone (R-ya4-7): what it drew and how it scored.</summary>
+    /// <param name="Values">Every statistical entry's drawn value, as the schematic would hold it.</param>
+    /// <param name="Draws">The same, as numbers in base SI.</param>
+    public sealed record YieldTrialJson(
+        int Trial,
+        bool Evaluated,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        bool? Pass,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Reason,
+        IReadOnlyDictionary<string, string> Values,
+        IReadOnlyDictionary<string, double> Draws,
+        IReadOnlyList<YieldTrialGoalJson>   Goals,
+        IReadOnlyDictionary<string, double> Measurements);
+
+    public sealed record YieldTrialGoalJson(string Name, bool Met, double? Margin, double? Worst);
 
     // ── `lvs`: what the comparison concluded (brief-lvs-11-cli-verb.md R-lvs11-3c) ───────────
     //
@@ -1519,7 +1649,29 @@ namespace RfCore.Export
         double  AtYield,
         double  ExpectedHalfWidth,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        int?    TrialsForTwoPercent);
+        int?    TrialsForTwoPercent,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainYieldRunJson? Run = null);
+
+    /// <summary>
+    /// What a yield run would execute and cost (brief-yield-5 R-ya5-8): the analysis chains under <c>analyses=goals</c>
+    /// and under <c>analyses=all</c>, which of the two the setup selects, and the trial cost — an ESTIMATE, in units of
+    /// one nominal evaluation, since <c>explain</c> runs nothing to time one.
+    /// </summary>
+    /// <param name="Evaluations">The nominal plus every trial.</param>
+    /// <param name="Batches">Trials ÷ parallelism, rounded up; the run takes about one more than this many nominal
+    /// evaluations, the nominal running first and alone.</param>
+    /// <param name="Refusal">What the run would refuse, in its own words; null when it would start.</param>
+    public sealed record ExplainYieldRunJson(
+        IReadOnlyList<string> UnderGoals,
+        IReadOnlyList<string> UnderAll,
+        string                Selected,
+        int                   Evaluations,
+        int                   Parallel,
+        int                   Batches,
+        string                Estimate,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?               Refusal = null);
 
     /// <summary>One goal and what it serves: <c>opt</c>, <c>yield</c> or <c>both</c>.</summary>
     public sealed record ExplainGoalUseJson(string Name, string Use, bool Enabled);

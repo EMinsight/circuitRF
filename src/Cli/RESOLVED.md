@@ -3093,3 +3093,36 @@ code, nothing more).
 **Also fixed in passing:** TO-11's eight `cli.opt.*` diagnostic ids were missing from
 `CliStructuredOutputTests`' committed set, so `DiagnosticIds_AreTheCommittedSet_UniqueAndCaseDistinct`
 failed from that commit on. Added.
+
+## `yield` and `run analysis=montecarlo|yield` (brief-yield-5, 2026-10-08)
+
+`docs/design/cli.md` §25 has the design; these are the things that turned out to be true.
+
+**The setup goes to `StatisticalRun` only when a flag changed it.** Handing it a clone on every call
+would route even a plain run through the run's "options carry a setup" branch, which rebuilds a bench
+for the catalog — equivalent today, but the byte-identity gate (`YieldParityTests`) is only meaningful
+if a flag-less verb run IS the in-process call, not a second path that happens to agree.
+
+**Progress is delivered synchronously.** `StatisticalOptions.Progress` is an `IProgress<T>`; a
+`Progress<T>` posts to the thread pool when there is no synchronization context, which is every CLI and
+`serve` worker thread, so a batch's notification could land after the result frame. `Yield.Synchronous`
+is the same answer `RunHost` gives for `RunProgress`.
+
+**A cancelled call can arrive before the run starts.** `serve` runs calls on one worker, so a call
+cancelled while queued begins with its token already set; the nominal's evaluation may then come back
+as a refusal rather than throwing. The verb therefore tests the TOKEN after the run, not only the
+outcome, and deletes a result file a run wrote as the cancellation landed — 130 always means nothing
+was written.
+
+**`explain`'s trial cost is in nominal evaluations, not seconds.** The brief's formula is nominal
+evaluation time × trials ÷ parallelism, and `explain` runs nothing, so it has no time to multiply. It
+reports the nominal plus ⌈trials ÷ parallelism⌉ batches, at the parallelism `StatisticalRun.Create`
+reports (the statistics line's `parallel=`, else the evaluator's, 1 for a non-re-entrant circuit),
+labelled an estimate.
+
+**`plot --trace` split a statistics call at its comma.** `SplitFields` tracked only `[ ]` depth, so
+`cube=histogram(x, 20)` became two fields and the second was an unknown key. It tracks `( )` too now.
+The expression itself is not a cube spec: `BareCubeName` would have taken `x, 20` as a cube name and
+refused it, so an axis function (`Evaluator.AxisFunctions`) is detected first and the trace is written
+as a `.cdd` EXPRESSION — validated through `TraceExpression` before the picture is drawn, so a scalar
+result (`mean_over` of a column) is a refusal naming it, not an empty plot.

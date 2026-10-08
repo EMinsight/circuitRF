@@ -713,8 +713,8 @@ internal static class PlotVerb
         {
             char c = text[i];
             if (c == '"') quoted = !quoted;
-            else if (!quoted && c == '[') depth++;
-            else if (!quoted && c == ']') depth--;
+            else if (!quoted && c is '[' or '(') depth++;
+            else if (!quoted && c is ']' or ')') depth--;
             else if (!quoted && depth == 0 && c == ',')
             {
                 if (i > start) fields.Add(text[start..i].Trim());
@@ -735,6 +735,36 @@ internal static class PlotVerb
         TraceSpec spec, DataSet data, string sourceRef, int index, PlotType plotType)
     {
         string text = spec.Text;
+
+        // An axis function (mean_over, histogram, cdf, … — YA-5 R-ya5-6) reads whole cubes, so the trace is an
+        // EXPRESSION, evaluated once by the trace card's own evaluator; its one remaining axis is the X. Checked
+        // here so a refusal names the problem instead of a picture with no curve in it.
+        if (CircuitRF.Core.Expressions.Evaluator.CallsAxisFunction(text))
+        {
+            if (spec.I is not null || spec.J is not null || spec.Cut is not null || spec.Port is not null || spec.FreqHz is not null)
+                return (null, JsonRun.Fail(CliDiagnostics.PlotTracePortsWithSlice(spec.Raw)));
+            if (spec.YText is { } fy)
+                text = fy.ToLowerInvariant() switch
+                {
+                    "imaginary" => $"imag({text})",
+                    "db20"      => $"dB20({text})",
+                    "db10"      => $"dB10({text})",
+                    var f       => $"{f}({text})",
+                };
+            if (!TraceExpression.TryEvaluate(text, data, plotType, out _, out _, out _, out _, out _, out _, out string exprError))
+                return (null, JsonRun.Fail(CliDiagnostics.PlotTraceUnresolved(spec.Raw, text, exprError)));
+            return (new TraceConfig
+            {
+                SourcePath       = sourceRef,
+                Expression       = text,
+                UseSecondaryAxis = spec.Secondary,
+                Properties       = new TracePropertiesConfig
+                {
+                    LineColorIndex   = WheelColor(index),
+                    MarkerColorIndex = WheelColor(index),
+                },
+            }, null);
+        }
 
         // The cube NAME, checked first and in every branch. The parser's own answer for a bare name
         // it does not recognise is "Missing '['" — correct from where it stands, and useless to a

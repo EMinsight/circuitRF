@@ -425,11 +425,35 @@ values.
 
 ### 8.7 Not covered here
 
-The statistics functions reduce whatever cube they are given; a Data Display TRACE expression is evaluated point by
-point (`TraceExpression`) and does not take them yet — YA-5 (`plot`) and YA-8 (the trace card) add that. The measurement
+The statistics functions reduce whatever cube they are given. A Data Display TRACE expression that calls one is
+evaluated once over the cubes it names rather than point by point (`TraceExpression`, §9.3), so `plot` and the trace
+card take them; the drawing styles a histogram wants are YA-8's. The measurement
 scope reads the trial's drawn globals (`ResolvedGlobals` come from the trial's elaboration); a stamp-time,
 frequency-dependent expression stays nominal (§7).
 
+## 9. The `yield` verb and MCP (brief-yield-5)
+
+### 9.1 One verb, three nouns
+
+`circuitrf yield mc|estimate|trial <path>` (`docs/design/cli.md` §25) runs `StatisticalRun` and nothing else:
+`mc` in `StatisticalMode.MonteCarlo`, `estimate` in `StatisticalMode.Yield`, and `trial` (or `--trial n` on either)
+`EvaluateTrial(n)`. Its flags override the `statistics` line for one run, and the setup reaches the run only when a
+flag changed it, so a flag-less run's `.yield.npy` is byte for byte the in-process run's. Over MCP it is `run
+analysis=montecarlo|yield`, with a progress notification per batch.
+
+### 9.2 The two writes
+
+`--save-preset <name> --trial n` locks a trial's values in as a preset (`TuningPresets.LockIn`); `--save-corner <name>
+--trial n` adds `corner <name> trial=n seed=s sampling=m trials=N` — the run's EFFECTIVE seed, sampling and trial
+count, flags included, since those three identify the trial (§3). A `.csch` only, after a history checkpoint (D12).
+
+### 9.3 Statistics functions in a trace
+
+`TraceExpression` binds each reference of an expression that calls one of `Evaluator.AxisFunctions` as the cube its
+slice leaves and evaluates once; the result's single remaining axis is the X. `check` asks `StatisticalRun.Create`
+for the refusal a run would give, and `explain --analysis` reports the chains a yield run evaluates under each
+`analyses=` scope and its cost in nominal evaluations.
+
 ## Later phases
 
-Each phase appends its section above this one as it lands: YA-5 the CLI and MCP, YA-6/7 corners, YA-8/9 the display, YA-10 the panel, YA-11/12 centering.
+Each phase appends its section above this one as it lands: YA-6/7 corners, YA-8/9 the display, YA-10 the panel, YA-11/12 centering.
