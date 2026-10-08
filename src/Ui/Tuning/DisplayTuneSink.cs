@@ -26,16 +26,25 @@ public sealed class DisplayTuneSink(
     public string ResultsPath { get; } = Path.GetFullPath(Path.Combine(
         ResultsWriter.ResultsDirectory(baseDir), RunResultsWriter.ResolveFileName(fileNameOverride, schematicKey)));
 
+    private readonly string _baseChip = chip;
+    private string _chip = chip;
+
+    /// <summary>The chip the display shows on what is published: <c>Tuning</c>, or at a corner
+    /// <c>Tuning · ss_85</c> (brief-yield-7 R-ya7-4).</summary>
+    public string Chip => _chip;
+
     public void Publish(DataSet data)
     {
-        foreach (var lib in openLibraries()) lib.Publish(ResultsPath, data, chip);
+        foreach (var lib in openLibraries()) lib.Publish(ResultsPath, data, _chip);
     }
+
+    public void AtCorner(string? corner) => _chip = corner is null ? _baseChip : $"{_baseChip} · {corner}";
 
     /// <summary>The Optimizer's best point; <paramref name="partial"/> when it ran only the goals'
     /// analyses, so the others keep the file's data and draw dimmed (brief-tuneopt-10 R-to10-7).</summary>
     public void Publish(DataSet data, bool partial)
     {
-        foreach (var lib in openLibraries()) lib.Publish(ResultsPath, data, chip, partial);
+        foreach (var lib in openLibraries()) lib.Publish(ResultsPath, data, _chip, partial);
     }
 
     public void Commit(DataSet data, IReadOnlyDictionary<string, string> values)

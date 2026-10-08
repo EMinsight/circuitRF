@@ -164,6 +164,13 @@
                                     <RadioButton GroupName="OptScope" Content="Every enabled analysis" FontSize="12"
                                                  IsChecked="{Binding AllAnalyses}"/>
                                     <Separator Margin="0,2"/>
+                                    <!-- brief-yield-7: meet every goal at each of these corners at once. -->
+                                    <TextBlock Text="Corners" Classes="section"/>
+                                    <TextBox Text="{Binding Corners}" PlaceholderText="none — all, or names: ss_hot, ff_cold"
+                                             FontSize="12" Padding="4,1" MinHeight="0"
+                                             ToolTip.Tip="Every goal must be met at each of these corners — one evaluation per corner per point"/>
+                                    <CheckBox Content="Include the nominal" FontSize="12" IsChecked="{Binding IncludeNominal}"/>
+                                    <Separator Margin="0,2"/>
                                     <TextBlock Text="{Binding AlgorithmLabel}" Classes="section" IsVisible="{Binding HasOptions}"/>
                                     <ItemsControl ItemsSource="{Binding Options}">
                                         <ItemsControl.ItemTemplate>
@@ -260,7 +267,7 @@
                      x:Name="GoalList" MinHeight="40" Background="Transparent">
                 <ListBox.ItemTemplate>
                     <DataTemplate x:DataType="opt:OptimizerGoalRowViewModel">
-                        <Grid ColumnDefinitions="Auto,Auto,*,60,Auto,Auto" Background="Transparent"
+                        <Grid ColumnDefinitions="Auto,Auto,*,60,Auto,Auto,Auto" Background="Transparent"
                               ToolTip.Tip="{Binding Summary}">
                             <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" MinWidth="0" Padding="0"
                                       Margin="0,0,4,0" ToolTip.Tip="Enabled"/>
@@ -273,7 +280,9 @@
                             <TextBlock Grid.Column="4" Text="{Binding WorstText}" FontSize="11" MinWidth="36"
                                        HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center"
                                        IsVisible="{Binding HasResult}"/>
-                            <Panel Grid.Column="5" Margin="4,0,0,0" IsVisible="{Binding HasResult}">
+                            <TextBlock Grid.Column="5" Text="{Binding CornerText}" Classes="muted" Margin="4,0,0,0"
+                                       VerticalAlignment="Center" ToolTip.Tip="The binding corner: where this goal is worst"/>
+                            <Panel Grid.Column="6" Margin="4,0,0,0" IsVisible="{Binding HasResult}">
                                 <mi:MaterialIcon Kind="Check" Width="13" Height="13" Foreground="#FF3CB371"
                                                  IsVisible="{Binding IsMet}"/>
                                 <mi:MaterialIcon Kind="Close" Width="13" Height="13" Foreground="#FFD94F4F"

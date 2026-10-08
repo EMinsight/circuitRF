@@ -350,6 +350,8 @@ internal static class ToolCatalog
                      new("seed",       "--seed",       OptKind.Integer, "Random seed, for a repeatable run."),
                      new("vars",       "--vars",       OptKind.StrList, "Optimize only these of the file's opt=1 keys. A complex value is named by its parts: mag(ZL), phase(ZL)."),
                      new("goals",      "--goals",      OptKind.StrList, "Count only these of the file's enabled goals."),
+                     new("corners",    "--corners",    OptKind.Str,     "all, none, or corner names separated by commas: meet every goal at the nominal and at each corner at once "
+                                                                     + "(one evaluation per corner per point). result.optimize.goals names each goal's binding corner."),
                      new("snap",       "--snap",       OptKind.Flag,    "Snap integer, stepped and preferred values at the end and polish the rest."),
                      new("sensitivity","--sensitivity",OptKind.Flag,    "Report each variable's sensitivity at the best point (n more evaluations)."),
                      new("showIterations","--show-iterations",OptKind.Flag, "Also return each iteration's state (result.optimize.perIteration) and send a progress notification per iteration. Default: the final result only."),

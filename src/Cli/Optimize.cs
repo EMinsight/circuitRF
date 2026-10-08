@@ -43,6 +43,7 @@ internal static class Optimize
         string? algorithm = null, cost = null, analyses = null, time = null;
         int? maxIter = null, maxEvals = null, parallel = null, seed = null;
         List<string>? vars = null, goals = null;
+        string? corners = null;
         bool snap = false, sensitivity = false, showIterations = false;
         var sets = new List<(string Name, string Expr)>();
 
@@ -62,6 +63,7 @@ internal static class Optimize
                 case "--seed" when hasValue:       if (!Int(a, args[++i], out seed, out int r4)) return r4; break;
                 case "--vars" when hasValue:       vars = List(args[++i]); break;
                 case "--goals" when hasValue:      goals = List(args[++i]); break;
+                case "--corners" when hasValue:    corners = args[++i]; break;
                 case "--snap":                     snap = true; break;
                 case "--sensitivity":              sensitivity = true; break;
                 case "--show-iterations":          showIterations = true; break;
@@ -137,6 +139,21 @@ internal static class Optimize
             settings.Scope = analyses == "all" ? OptimizerScope.All : OptimizerScope.GoalAnalyses;
         }
 
+        if (corners is not null)
+        {
+            // none, all or names — the optimize line's corners= (brief-yield-7 R-ya7-6); a name the design lacks is
+            // the run's own refusal, which lists the enabled corners.
+            var names = List(corners);
+            if (names.Count == 0 || names.Any(n => n.Contains(' ')))
+                return JsonRun.Fail(CliDiagnostics.OptFlagValue("--corners", corners, "none, all or corner names separated by commas"));
+            settings.Corners = corners.Trim().ToLowerInvariant() switch
+            {
+                "none" => null,
+                "all"  => "all",
+                _      => string.Join(',', names),
+            };
+        }
+
         var catalog = TunableCatalog.FromNetlist(tb, lib);
         if (vars is not null && NarrowVariables(setup, catalog, vars) is { } varRefusal) return JsonRun.Fail(varRefusal);
         if (goals is not null && NarrowGoals(setup, goals) is { } goalRefusal) return JsonRun.Fail(goalRefusal);
@@ -154,9 +171,17 @@ internal static class Optimize
         // stderr, an entry in the document's perIteration and, over the protocol, a progress
         // notification. Unasked, a long run would hand a client hundreds of lines it did not want.
         var perIteration = new List<OptimizeIterationJson>();
+        // The run statistical corners came from, when it is beside the design: its recorded z-vectors replay as they
+        // stand (brief-yield-7 R-ya7-3), as yield corners replays them.
+        DataSet? recorded = null;
+        string yieldFile = Design.Statistics.StatisticalRun.ResultPathFor(full);
+        if (settings.CornerNames is not { Count: 0 } && File.Exists(yieldFile))
+            try { recorded = DataSetImporter.Import(yieldFile).DataSet; } catch (Exception) { /* drawn afresh, with its note */ }
+
         var run = OptimizationRun.Create(circuit, new OptimizationOptions
         {
             Setup         = setup,
+            Recorded      = recorded,
             Sets          = sets,
             Cancellation  = ct,
             SnapAndPolish = snap,
@@ -174,7 +199,9 @@ internal static class Optimize
         foreach (var note in run.Notes) Report(note);
 
         Console.Error.WriteLine($"[circuitRF] optimizing {run.Variables!.Coordinates.Count} variable(s) against " +
-                                $"{enabledGoals} goal(s) with {run.AlgorithmId}");
+                                $"{enabledGoals} goal(s) with {run.AlgorithmId}" +
+                                (run.EvaluationsPerPoint > 1
+                                    ? $" at {string.Join(", ", run.CornerNames)} ({run.EvaluationsPerPoint} evaluations per point)" : ""));
         var result = run.Run();
         foreach (var note in result.Notes.Skip(run.Notes.Count)) Report(note);
 
@@ -372,8 +399,10 @@ internal static class Optimize
         }
 
         var goals = r.Goals.Select(g => new OptimizeGoalJson(g.Name, g.Met, Finite(g.WorstValue), g.WorstAt, g.Axis,
-                                                               Finite(g.Margin))).ToList();
-
+                                                               Finite(g.Margin), g.Corner,
+            g.PerCorner is null ? null : [.. g.PerCorner.Select(c => new OptimizeGoalCornerJson(c.Corner, c.Met, Finite(c.WorstValue),
+                                                                                                   c.WorstAt, Finite(c.Margin)))])).ToList();
+        bool across = run.EvaluationsPerPoint > 1 || run.CornerNames[0] != Design.Statistics.CornerRun.NominalName;
 
         return new OptimizeReportJson(
             input, r.Algorithm, r.Stages, OutcomeWord(r.Outcome), r.FinishReason, r.BestCost,
@@ -382,7 +411,8 @@ internal static class Optimize
             sens is null ? null : new OptimizeSensitivityJson(sens.Cost,
                 [.. sens.Variables.Select(v => new OptimizeSensitivityVariableJson(v.Key, v.PerRange, v.Share))],
                 [.. sens.Goals.Select(g => new OptimizeSensitivityGoalJson(g.Goal, g.MostSensitive, g.PerRange))]),
-            saved, perIteration);
+            saved, perIteration,
+            across ? run.CornerNames : null, across ? run.EvaluationsPerPoint : null);
     }
 
     private static double? Finite(double v) => double.IsFinite(v) ? v : null;
@@ -403,6 +433,8 @@ internal static class Optimize
         Console.WriteLine($"Optimization: {r.Algorithm}   ({r.Document})");
         if (r.Stages.Count > 0) Console.WriteLine($"Stages:    {string.Join(" → ", r.Stages)}");
         Console.WriteLine($"Finished:  {r.FinishReason}");
+        if (r.Corners is { } corners)
+            Console.WriteLine($"Corners:   {string.Join(", ", corners)}   ({r.EvaluationsPerPoint} evaluations per point)");
         Console.WriteLine($"Best cost: {(r.BestCost is { } c ? G(c) : "—")}   " +
                           $"({r.Iterations} iterations, {r.Evaluations} evaluations" +
                           (r.Failures > 0 ? $", {r.Failures} failed" : "") +
@@ -422,12 +454,14 @@ internal static class Optimize
 
         Console.WriteLine();
         Console.WriteLine("Goals:");
-        Table(["name", "met", "value", "at", "margin"],
+        // Across corners every column is the binding corner's (brief-yield-7 R-ya7-2).
+        string[] header = r.Corners is null ? ["name", "met", "value", "at", "margin"] : ["name", "met", "value", "at", "margin", "binding"];
+        Table(header,
               r.Goals.Select(g => new[]
               {
                   g.Name, g.Met ? "yes" : "NO", g.Value is { } v ? G(v) : "—",
-                  g.At is { } at ? $"{g.Axis} = {G(at)}" : "", g.Margin is { } m ? G(m) : "—",
-              }));
+                  g.At is { } at ? $"{g.Axis} = {G(at)}" : "", g.Margin is { } m ? G(m) : "—", g.Corner ?? "",
+              }.Take(header.Length).ToArray()));
 
         if (r.Snap is { } s)
             Console.WriteLine($"\nSnap: {s.Snapped} value(s) snapped, cost {G(s.CostBefore)} → {G(s.CostSnapped)}" +
@@ -454,7 +488,8 @@ internal static class Optimize
     {
         Console.Error.WriteLine("Usage: circuitrf opt <file.csch|file.cnl> [--algorithm id] [--max-iter n] [--max-evals n] [--time s]");
         Console.Error.WriteLine("                     [--cost lsq|minimax] [--analyses goals|all] [--parallel n] [--seed n] [--set var=expr]");
-        Console.Error.WriteLine("                     [--vars key,key] [--goals name,name] [--snap] [--sensitivity] [--show-iterations]");
+        Console.Error.WriteLine("                     [--vars key,key] [--goals name,name] [--corners all|none|c,c] [--snap] [--sensitivity]");
+        Console.Error.WriteLine("                     [--show-iterations]");
         Console.Error.WriteLine("                     [-o out.npy] [--history out.npy] [--save-preset name]");
     }
 }

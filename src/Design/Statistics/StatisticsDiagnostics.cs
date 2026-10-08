@@ -239,4 +239,14 @@ public static class StatisticsDiagnostics
         "yield.corner.statistical-no-mc", DiagnosticSeverity.Info,
         "corner {corner} is one trial of a run, so it has no Monte Carlo of its own; it is left out of this one.",
         ("corner", corner));
+
+    // ── YA-7: tune and optimize across corners ─────────────────────────────
+
+    public static Diagnostic CornerReplayRefused(string corner, string reason) => Diagnostic.Create(
+        "yield.corner.replay-refused", DiagnosticSeverity.Error,
+        "corner {corner} cannot be replayed: {reason}", ("corner", corner), ("reason", reason));
+
+    public static Diagnostic CornerPointFailed(string corner, string reason) => Diagnostic.Create(
+        "yield.corner.point-failed", DiagnosticSeverity.Error,
+        "at corner {corner}: {reason}", ("corner", corner), ("reason", reason));
 }

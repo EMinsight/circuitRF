@@ -1028,13 +1028,16 @@ internal static class Explain
 
         // brief-tuneopt-11 R-to11-7: which chains an optimization evaluates under each analyses= scope,
         // through the run's own rule (OptimizationRun.AnalysesUnder) rather than a restatement of it.
-        IReadOnlyList<string>? underGoals = null, underAll = null;
+        IReadOnlyList<string>? underGoals = null, underAll = null, optimizeAt = null;
         string setupScope = "";
         if (tb.Tuning is { } tuning && tuning.Goals.Any(g => g.Enabled))
         {
             underGoals = Design.Optimization.OptimizationRun.AnalysesUnder(tb, tuning, OptimizerScope.GoalAnalyses);
             underAll   = Design.Optimization.OptimizationRun.AnalysesUnder(tb, tuning, OptimizerScope.All);
             setupScope = tuning.Optimizer?.Scope == OptimizerScope.All ? "setup=all" : "setup=goals";
+            // brief-yield-7 R-ya7-5: what one optimizer point costs across corners.
+            var at = Design.Optimization.OptimizationRun.EvaluationPointsOf(tuning);
+            if (at.Count != 1 || at[0] != Design.Statistics.CornerRun.NominalName) optimizeAt = at;
         }
         IReadOnlyList<string>? OptimizeScopes(string name) => underGoals is null ? null :
         [
@@ -1161,7 +1164,8 @@ internal static class Explain
                 WsProbes: isSparam ? wsProbes : null,
                 MarginThreshold: MarginThresholdOf(a),
                 Ndf: isSparam && ndfByAnalysis.TryGetValue(a.Name, out var ndfRow) ? ndfRow : null,
-                Optimize: OptimizeScopes(a.Name)));
+                Optimize: OptimizeScopes(a.Name),
+                OptimizeAt: OptimizeScopes(a.Name) is { Count: > 1 } ? optimizeAt : null));
         }
 
         return (rows, exit);
@@ -1557,7 +1561,8 @@ internal static class Explain
                     var scopes = opt.Take(opt.Count - 1).ToList();
                     Console.WriteLine(scopes.Count == 0
                         ? $"      optimize: not run under analyses=goals or all ({opt[^1]})"
-                        : $"      optimize: run under analyses={string.Join(" and ", scopes)} ({opt[^1]})");
+                        : $"      optimize: run under analyses={string.Join(" and ", scopes)} ({opt[^1]})" +
+                          (a.OptimizeAt is { } at ? $" at {string.Join(", ", at)} — {at.Count} evaluations per point" : ""));
                 }
 
                 if (a.Sweep is { } s)

@@ -556,6 +556,66 @@ unit of what it binds) and, for a `.csch` in a kit workspace, each kit axis's se
 corner sets it or inherits the schematic's selection (the axis's first section when the schematic chose none, as
 `WorkspaceCorners.Bind` binds it).
 
+## 11. Tune and optimize across corners (brief-yield-7)
+
+### 11.1 A corner, evaluable at any point
+
+`CornerPoint` (`src/Design/Statistics`) is one corner made ready to be evaluated at ANY point of the design — the
+optimizer's candidates, the Tuning panel's sliders. `CornerPoint.Prepare(circuit, setup, names, nominal, recorded,
+sets)` makes the list: the nominal first unless `nominal=0`, then each named ENABLED corner in the order named (null:
+every enabled one, in setup order). A name that is no enabled corner (`yield.corner.unknown`, listing them), a corner
+binding a `--set` name, and a statistical corner that cannot be replayed (`yield.corner.replay-refused`) are refusals.
+A setup that is not the netlist's own (the Optimizer panel's, the schematic's) takes the EXTRACTED corner of the same
+name, since only extraction resolves a kit axis selection into values (§10.1).
+
+`At(values)` is the map a point evaluates at that corner. **A value corner is its bindings OVER the point's values —
+the corner is the condition, so a value it binds wins over the optimizer's or the slider's.** A statistical corner is
+prepared once (its `StatisticalRun`, its recorded vector) and replays its trial **around the point's values**
+(R-ya7-3): `StatisticalRun.Replay(trial, recorded, at)` computes the nominals at the moved design
+(`SampleValues.Nominals` over the point's values with the corner's bindings over them), so a percent spread moves with
+the candidate. A draw that is not physical at a point refuses that point at that corner, not the run.
+
+### 11.2 The optimizer across corners (R-ya7-1, R-ya7-2, R-ya7-5)
+
+`optimize corners=none|all|<names> [nominal=0]` — default `none`, which is today's run byte for byte (the corner path
+is a separate branch of `EvaluateBatch`). With corners, every candidate is evaluated at every point of the list
+through the batch door: the batch × corners is ONE call to the evaluator, so it runs in parallel, and **the cache keys
+by (values, corner)** — `<values key>\n#corner <name>`. Per candidate the outcomes merge:
+
+- **The residual vector is every corner's residuals in turn**, so least squares and minimax keep their meaning;
+  minimax then minimizes the worst violation over the corners — ordinary worst-case design.
+- **A goal is met only when met at every corner.** Its `GoalReport` is the BINDING corner's — the largest violation,
+  or when met everywhere the smallest margin — with `Corner` naming it and `PerCorner` the goal at each corner.
+- **A corner that fails fails the candidate**, its reason prefixed `at corner <name>:`; the penalty for a failed point
+  is computed from the largest MERGED cost, so it still ranks below every real point.
+- `Evaluations` counts simulations: a point costs `EvaluationsPerPoint` = 1 + corners. Auto's global-stage budget is
+  50(n + 1) POINTS, so it is multiplied by that; the user's own `maxevals` stays in simulations. Sensitivity (TO-8)
+  goes through the same batch door, so it is over the same corner set. The results kept per point (and published) are
+  the first corner's — the nominal's, when it is evaluated. Railing is unchanged.
+
+`OptimizationRun.EvaluationPointsOf(setup)` is the list a run would evaluate at, without preparing it — what
+`explain --analysis` prints (`at nominal, hot — 2 evaluations per point`) and the Optimizer panel's status shows
+(`Iter 4 · 26 evals (2 per point)`).
+
+### 11.3 Tuning at a corner (R-ya7-4)
+
+The Tuning panel's toolbar has an **Evaluate at** picker — Nominal, or any enabled corner of the schematic — shown
+only when there is a corner. `TuneSession.EvaluateAt(name)` resolves it through the session's prepared circuit
+(`CornerPoint.For`), cancels the evaluation in flight and evaluates the sliders' values again there; each later
+request is evaluated at the corner. **Push still writes the sliders' values alone.** The Data Display chip reads
+`Tuning · <corner>` (`ITuneResultSink.AtCorner`), and the canvas's tuned labels end `@ <corner>`. A statistical corner
+replays the run beside the schematic (`<design>.yield.npy`) when it is there.
+
+### 11.4 Headless (R-ya7-6)
+
+`opt --corners all|none|a,b` overrides the file; the binding corner is the goals table's `binding` column, and
+`--json` carries `corner` and `perCorner` per goal plus the run's `corners` and `evaluationsPerPoint`. A statistical
+corner replays the `<design>.yield.npy` beside the design when its seed and sampling match. MCP:
+`run analysis=optimize corners=…`.
+
+Gates: `tests/Ui.Tests/Statistics/CornerOptimizationTests.cs` (`CornerOptimizationTests`,
+`CornerOptimizationCacheTests`, `TuneAtCornerTests`) and `OptCliVerbTests.Corners_ReportsTheBindingCorner`.
+
 ## Later phases
 
-Each phase appends its section above this one as it lands: YA-7 corners in the optimizer, YA-8/9 the display, YA-10 the panel, YA-11/12 centering.
+Each phase appends its section above this one as it lands: YA-8/9 the display, YA-10 the panel, YA-11/12 centering.

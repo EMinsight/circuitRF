@@ -69,8 +69,13 @@ public sealed partial class OptimizerGoalRowViewModel : ObservableObject
         OnPropertyChanged(nameof(Summary));
     }
 
+    /// <summary>Across corners, the binding corner — <c>@ hot</c> — where the goal's worst violation (met: its
+    /// tightest margin) is (brief-yield-7 R-ya7-2); empty otherwise.</summary>
+    [ObservableProperty] private string _cornerText = "";
+
     internal void ShowReport(GoalReport? report)
     {
+        CornerText = report?.Corner is { } corner ? "@ " + corner : "";
         if (report is null)
         {
             HasResult = false;

@@ -564,6 +564,6 @@ public sealed partial class OptimizerPanelViewModel : ObservableObject, ITunable
             => s.Options is null ? "" : string.Join(";", s.Options.Select(kv => kv.Key + "=" + kv.Value));
         return a.Algorithm == b.Algorithm && a.MaxIterations == b.MaxIterations && a.MaxEvaluations == b.MaxEvaluations
             && a.TimeLimit == b.TimeLimit && a.Cost == b.Cost && a.Scope == b.Scope && a.Seed == b.Seed
-            && a.Parallelism == b.Parallelism && Opts(a) == Opts(b);
+            && a.Parallelism == b.Parallelism && a.Corners == b.Corners && a.Nominal == b.Nominal && Opts(a) == Opts(b);
     }
 }

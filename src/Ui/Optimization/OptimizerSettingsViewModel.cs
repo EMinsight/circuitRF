@@ -39,6 +39,13 @@ public sealed partial class OptimizerSettingsViewModel(OptimizerPanelViewModel p
     [ObservableProperty] private bool _isMinimax;
     [ObservableProperty] private bool _allAnalyses;
 
+    /// <summary>The corners every goal must be met at (brief-yield-7 R-ya7-1): empty for none, <c>all</c>, or names
+    /// separated by commas.</summary>
+    [ObservableProperty] private string _corners = "";
+
+    /// <summary>With corners, whether the nominal is evaluated too.</summary>
+    [ObservableProperty] private bool _includeNominal = true;
+
     /// <summary>The algorithm accepts one cost form only, which it sets (TO-7 R-to7-6).</summary>
     [ObservableProperty] private bool _costLocked;
 
@@ -83,6 +90,8 @@ public sealed partial class OptimizerSettingsViewModel(OptimizerPanelViewModel p
         Parallelism    = s.Parallelism?.ToString(CultureInfo.InvariantCulture) ?? "";
         Seed           = s.Seed?.ToString(CultureInfo.InvariantCulture) ?? "";
         AllAnalyses    = s.Scope == OptimizerScope.All;
+        Corners        = s.Corners ?? "";
+        IncludeNominal = s.Nominal != false;
         CostLocked     = alg.Costs.Count == 1;
         IsMinimax      = CostLocked ? alg.Costs[0] == OptimizerCost.Minimax : s.Cost == OptimizerCost.Minimax;
         AlgorithmLabel = alg.Label;
@@ -106,6 +115,10 @@ public sealed partial class OptimizerSettingsViewModel(OptimizerPanelViewModel p
         s.Parallelism    = Int(Parallelism);
         s.Seed           = Int(Seed, allowZero: true);
         s.Scope          = AllAnalyses ? OptimizerScope.All : OptimizerScope.GoalAnalyses;
+        var corners      = Corners.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        s.Corners        = corners.Length == 0 || corners is ["none" or "None"] ? null
+                         : corners is ["all" or "All"] ? "all" : string.Join(',', corners);
+        s.Nominal        = IncludeNominal ? null : false;
         // A one-form algorithm sets its form when it runs; the file keeps the user's own choice.
         if (!CostLocked) s.Cost = IsMinimax ? OptimizerCost.Minimax : OptimizerCost.LeastSquares;
 

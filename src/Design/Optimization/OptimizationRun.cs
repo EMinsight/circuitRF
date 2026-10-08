@@ -4,6 +4,7 @@ using CircuitRF.Core.Design;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Matching;
+using CircuitRF.Design.Statistics;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine;
 using CircuitRF.Engine.Optimization;
@@ -34,6 +35,10 @@ public sealed record OptimizationOptions
     /// the rest (R-to8-4) — the CLI's flag. The Optimizer's action calls
     /// <see cref="OptimizationRun.SnapAndPolish"/> on a finished run instead.</summary>
     public bool SnapAndPolish { get; init; }
+
+    /// <summary>The run statistical corners came from (<c>&lt;design&gt;.yield.npy</c>), when at hand: their recorded
+    /// z-vectors are replayed as they stand (brief-yield-7 R-ya7-3). Null draws them afresh, with a note.</summary>
+    public DataSet? Recorded { get; init; }
 }
 
 /// <summary>The stages a run names in its progress (brief-tuneopt-8 R-to8-5). A run of one named
@@ -87,9 +92,19 @@ public enum OptimizationOutcome
 
 /// <summary>One goal at the best point: its worst violation, where, and whether it is met. A met goal
 /// reports its tightest point instead, and <paramref name="Margin"/> how far inside its limit that is
-/// (<see cref="GoalScore.Margin"/>).</summary>
+/// (<see cref="GoalScore.Margin"/>). Across corners (brief-yield-7 R-ya7-2) every member is the
+/// <paramref name="Corner"/>'s — the BINDING corner, where the worst violation (met: the tightest margin) is — and
+/// <paramref name="PerCorner"/> is the goal at each corner, in evaluation order. Both null without corners.</summary>
 public sealed record GoalReport(string Name, double WorstViolation, double? WorstAt, string? Axis, double WorstValue, bool Met,
-                                double Margin = double.NaN);
+                                double Margin = double.NaN, string? Corner = null,
+                                IReadOnlyList<CornerGoalScore>? PerCorner = null);
+
+/// <summary>One goal at one corner of a point (brief-yield-7 R-ya7-2).</summary>
+public sealed record CornerGoalScore(string Corner, bool Met, double WorstViolation, double WorstValue, double? WorstAt, double Margin)
+{
+    internal static CornerGoalScore Of(string corner, GoalScore s)
+        => new(corner, s.Met, s.WorstViolation, s.WorstValue, s.WorstAt, s.Margin);
+}
 
 /// <summary>What a run reports after every iteration (R-to6-9). The Optimizer window and MCP read the same one.</summary>
 public sealed record OptimizationProgress(
@@ -244,7 +259,14 @@ public sealed class OptimizationRun
         [.. OptimizerAlgorithms.Ids.Where(OptimizerFactory.IsBuilt)];
 
     private sealed record PointOutcome(
-        bool Failed, Diagnostic? Error, double Cost, double[] Residuals, IReadOnlyList<GoalScore> Scores, bool GoalError);
+        bool Failed, Diagnostic? Error, double Cost, double[] Residuals, IReadOnlyList<GoalScore> Scores, bool GoalError)
+    {
+        /// <summary>Across corners: per goal, the binding corner's name.</summary>
+        public IReadOnlyList<string>? Binding { get; init; }
+
+        /// <summary>Across corners: each corner's goal scores, in evaluation order.</summary>
+        public IReadOnlyList<(string Corner, IReadOnlyList<GoalScore> Scores)>? PerCorner { get; init; }
+    }
 
     private readonly PreparedCircuit _circuit;
     private readonly OptimizationOptions _options;
@@ -257,6 +279,13 @@ public sealed class OptimizationRun
     private readonly int _parallelism;
     private readonly List<Diagnostic> _notes = [];
     private readonly Dictionary<string, PointOutcome> _cache = new(StringComparer.Ordinal);
+
+    // Across corners (brief-yield-7): the points each candidate is evaluated at, the nominal first when it is one;
+    // the merged outcome of each candidate, by its own key (_cache holds one entry per (values, corner)); the
+    // replay notes already reported.
+    private readonly IReadOnlyList<CornerPoint>? _corners;
+    private readonly Dictionary<string, PointOutcome> _combined = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _cornerNotes = new(StringComparer.Ordinal);
     private readonly List<EvaluationRecord> _log = [];
     private readonly List<(double Best, double[] Worst)> _iterHistory = [];
     private readonly ManualResetEventSlim _resume = new(true);
@@ -381,6 +410,30 @@ public sealed class OptimizationRun
         _analyses  = _settings.Scope == OptimizerScope.All ? null : named;
 
         _parallelism = Math.Max(1, _settings.Parallelism ?? cores);
+
+        // Across corners (brief-yield-7 R-ya7-1): every goal met at the nominal and at each corner at once.
+        var cornerNames = _settings.CornerNames;
+        if (cornerNames is not { Count: 0 })
+        {
+            var prepared = CornerPoint.Prepare(circuit, _setup, cornerNames, _settings.Nominal != false, options.Recorded, options.Sets);
+            if (prepared.Refusal is { } cornerRefusal) { Refusal = cornerRefusal; return; }
+            _corners = prepared.Points;
+            _notes.AddRange(prepared.Notes);
+        }
+    }
+
+    /// <summary>
+    /// The points one optimizer point is evaluated at under <paramref name="setup"/>'s optimize line (brief-yield-7
+    /// R-ya7-5): <c>nominal</c> and the corners <c>corners=</c> names (all: every enabled one), or the nominal alone.
+    /// Its count is what one point costs — what the Optimizer's status and <c>explain --analysis</c> show; a name
+    /// that is not an enabled corner is counted, and refused when the run starts.
+    /// </summary>
+    public static IReadOnlyList<string> EvaluationPointsOf(TuningSetup setup)
+    {
+        var s = setup.Optimizer ?? new OptimizerSettings();
+        if (s.CornerNames is { Count: 0 }) return [CornerRun.NominalName];
+        var names = s.CornerNames ?? [.. setup.Corners.Where(c => c.Enabled).Select(c => c.Name)];
+        return s.Nominal == false ? [.. names] : [CornerRun.NominalName, .. names];
     }
 
     /// <summary>
@@ -434,6 +487,12 @@ public sealed class OptimizationRun
 
     /// <summary>The goals this run scores, in setup order.</summary>
     public IReadOnlyList<OptimizationGoal> Goals => _goals;
+
+    /// <summary>The points each candidate is evaluated at (brief-yield-7): <c>nominal</c> alone without corners.</summary>
+    public IReadOnlyList<string> CornerNames => _corners is null ? [CornerRun.NominalName] : [.. _corners.Select(c => c.Name)];
+
+    /// <summary>Simulations one optimizer point costs: 1, or one per point of <see cref="CornerNames"/>.</summary>
+    public int EvaluationsPerPoint => _corners?.Count ?? 1;
 
     public Diagnostic? Refusal { get; }
     public OptimizationVariables? Variables { get; }
@@ -552,7 +611,7 @@ public sealed class OptimizationRun
             return Finish(OptimizationOutcome.NoConvergence, reason,
                           OptimizationDiagnostics.NoneConverged(Evaluations,
                               _firstFailure?.Render() ?? "every point was infeasible"));
-        var best = _cache[_log[_bestIndex].Decoded.CacheKey];
+        var best = OutcomeOf(_log[_bestIndex].Decoded.CacheKey);
         return Finish(best.Scores.All(s => s.Met) ? OptimizationOutcome.GoalsMet : OptimizationOutcome.GoalsUnmet,
                       reason, null);
     }
@@ -587,7 +646,8 @@ public sealed class OptimizationRun
     private (string Reason, Diagnostic? Refusal) RunAuto(CancellationToken ct)
     {
         int n = Variables!.Coordinates.Count;
-        long budget = 50L * (n + 1);
+        // Fifty points per coordinate, whatever each point costs: across corners a point is several evaluations.
+        long budget = 50L * (n + 1) * EvaluationsPerPoint;
         if (_settings.MaxEvaluations is { } me) budget = Math.Min(budget, Math.Max(1, me / 2));
 
         _snapPreferred = false;
@@ -743,7 +803,7 @@ public sealed class OptimizationRun
             if (first)
             {
                 first = false;
-                if (_cache.TryGetValue(_log[before].Decoded.CacheKey, out var start) && start.GoalError)
+                if (TryOutcome(_log[before].Decoded.CacheKey, out var start) && start.GoalError)
                     return new(StageEnd.Stopped, "refused", start.Error!);
             }
 
@@ -818,7 +878,7 @@ public sealed class OptimizationRun
         EvaluateBatch(points, ct, record: false);
 
         var keys = points.Select(p => Variables.Decode(p, _snapPreferred)).ToArray();
-        if (keys[0].Infeasible || !_cache.TryGetValue(keys[0].CacheKey, out var o0) || o0.Failed) return null;
+        if (keys[0].Infeasible || !TryOutcome(keys[0].CacheKey, out var o0) || o0.Failed) return null;
 
         double GoalCost(PointOutcome o, int g)
         {
@@ -829,7 +889,7 @@ public sealed class OptimizationRun
         var perGoal = new double[_goals.Count, u0.Length];
         for (int i = 0; i < u0.Length; i++)
         {
-            if (du[i] == 0 || keys[i + 1].Infeasible || !_cache.TryGetValue(keys[i + 1].CacheKey, out var oi) || oi.Failed)
+            if (du[i] == 0 || keys[i + 1].Infeasible || !TryOutcome(keys[i + 1].CacheKey, out var oi) || oi.Failed)
             { perRange[i] = double.NaN; continue; }
             perRange[i] = (oi.Cost - o0.Cost) / du[i];
             for (int g = 0; g < _goals.Count; g++) perGoal[g, i] = (GoalCost(oi, g) - GoalCost(o0, g)) / du[i];
@@ -907,9 +967,10 @@ public sealed class OptimizationRun
     {
         var decoded = batch.Select(u => Variables!.Decode(u, _snapPreferred)).ToArray();
         foreach (var d in decoded) if (d.Infeasible) _infeasible++;
-        var core = EvaluateKeyed(
-            [.. decoded.Select(d => d.Infeasible ? null : (KeyedPoint?)new KeyedPoint(d.CacheKey, d.Values))],
-            keepData: true, ct);
+        var core = _corners is null
+            ? EvaluateKeyed([.. decoded.Select(d => d.Infeasible ? null : (KeyedPoint?)new KeyedPoint(d.CacheKey, d.Values))],
+                            keepData: true, ct)
+            : EvaluateAtCorners(decoded, ct);
 
         double penalty = 10 * (1 + _maxFeasible);
         var results = new Evaluation[batch.Count];
@@ -989,6 +1050,106 @@ public sealed class OptimizationRun
         return result;
 
         (PointOutcome, DataSet?) Keep((PointOutcome Outcome, DataSet? Data) o) => keepData ? o : (o.Outcome, null);
+    }
+
+    // ── Across corners (brief-yield-7) ───────────────────────────────────────
+
+    /// <summary>A candidate's outcome by its own key: the merged one across corners, else the cache's.</summary>
+    private bool TryOutcome(string key, out PointOutcome outcome)
+        => (_corners is null ? _cache : _combined).TryGetValue(key, out outcome!);
+
+    private PointOutcome OutcomeOf(string key) => (_corners is null ? _cache : _combined)[key];
+
+    /// <summary>
+    /// <see cref="EvaluateKeyed"/> for candidates across corners (R-ya7-1): each feasible candidate at each corner is
+    /// one keyed point — its values at that corner (a statistical corner replayed around them, R-ya7-3), keyed by
+    /// (values, corner) — and the whole batch × corners goes through the evaluator at once, in parallel. Per
+    /// candidate, the merged outcome (<see cref="Combine"/>); the results kept are the first corner's (the nominal's,
+    /// when it is evaluated). A corner that fails fails the candidate.
+    /// </summary>
+    private (PointOutcome Outcome, DataSet? Data, bool Cached, bool RanHere)[] EvaluateAtCorners(
+        IReadOnlyList<DecodedPoint> decoded, CancellationToken ct)
+    {
+        var corners = _corners!;
+        int n = corners.Count;
+        var keyed   = new List<KeyedPoint?>(decoded.Count * n);
+        var refused = new Diagnostic?[decoded.Count * n];
+        for (int k = 0; k < decoded.Count; k++)
+            for (int c = 0; c < n; c++)
+            {
+                var d = decoded[k];
+                if (d.Infeasible) { keyed.Add(null); continue; }
+                var at = corners[c].At(d.Values);
+                foreach (var note in at.Notes)
+                    if (_cornerNotes.Add(corners[c].Name + "\n" + note.Render())) _notes.Add(note);
+                if (at.Refusal is { } why) { refused[k * n + c] = why; keyed.Add(null); continue; }
+                keyed.Add(new KeyedPoint(d.CacheKey + "\n#corner " + corners[c].Name, at.Values, at.Draws));
+            }
+        var core = EvaluateKeyed(keyed, keepData: true, ct);
+
+        var result = new (PointOutcome, DataSet?, bool, bool)[decoded.Count];
+        for (int k = 0; k < decoded.Count; k++)
+        {
+            if (decoded[k].Infeasible) continue;
+            PointOutcome? failed = null;
+            bool cached = true;
+            for (int c = 0; c < n && failed is null; c++)
+            {
+                string name = corners[c].Name;
+                if (refused[k * n + c] is { } why)
+                {
+                    Interlocked.Increment(ref _failures);
+                    failed = new PointOutcome(true, StatisticsDiagnostics.CornerPointFailed(name, why.Render()), 0, [], [], false);
+                    break;
+                }
+                var o = core[k * n + c].Outcome;
+                cached &= core[k * n + c].Cached;
+                if (o.Failed)
+                    failed = o with
+                    {
+                        Error = corners[c].Definition is null || o.Error is null ? o.Error
+                              : StatisticsDiagnostics.CornerPointFailed(name, o.Error.Render()),
+                    };
+            }
+            var merged = failed ?? Combine([.. Enumerable.Range(0, n).Select(c => (corners[c].Name, core[k * n + c].Outcome))]);
+            _combined[decoded[k].CacheKey] = merged;
+            if (merged.Failed) _firstFailure ??= merged.Error;
+            else _maxFeasible = Math.Max(_maxFeasible, merged.Cost);
+            result[k] = (merged, core[k * n].Data, failed is null && cached, core[k * n].RanHere);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// One candidate's corners merged (R-ya7-1, R-ya7-2): the residual vector is every corner's residuals in turn, so
+    /// least squares and minimax keep their meaning — minimax then minimizes the worst violation over the corners. Per
+    /// goal: met only when met at every corner; its report is the binding corner's — the largest violation, or when
+    /// met everywhere the smallest margin.
+    /// </summary>
+    private PointOutcome Combine(IReadOnlyList<(string Corner, PointOutcome Outcome)> at)
+    {
+        double[] residuals = [.. at.SelectMany(x => x.Outcome.Residuals)];
+        var scores  = new List<GoalScore>(_goals.Count);
+        var binding = new List<string>(_goals.Count);
+        for (int g = 0; g < _goals.Count; g++)
+        {
+            int bind = 0;
+            for (int c = 1; c < at.Count; c++)
+            {
+                GoalScore s = at[c].Outcome.Scores[g], b = at[bind].Outcome.Scores[g];
+                bool worse = s.WorstViolation > b.WorstViolation
+                          || (s.WorstViolation == b.WorstViolation && b.Met && (double.IsNaN(b.Margin) || s.Margin < b.Margin));
+                if (worse) bind = c;
+            }
+            var bound = at[bind].Outcome.Scores[g];
+            scores.Add(bound with { Residuals = [.. at.SelectMany(x => x.Outcome.Scores[g].Residuals)] });
+            binding.Add(at[bind].Corner);
+        }
+        return new PointOutcome(false, null, GoalResiduals.Cost(residuals, _cost), residuals, scores, false)
+        {
+            Binding   = binding,
+            PerCorner = [.. at.Select(x => (x.Corner, x.Outcome.Scores))],
+        };
     }
 
     private (PointOutcome, DataSet?) EvaluatePoint(IReadOnlyDictionary<string, string> values, IStatisticalDraws? draws,
@@ -1092,8 +1253,9 @@ public sealed class OptimizationRun
     private IReadOnlyList<GoalReport> BestGoals()
     {
         if (_bestIndex < 0) return [];
-        return [.. _cache[_log[_bestIndex].Decoded.CacheKey].Scores
-            .Select(s => new GoalReport(s.Name, s.WorstViolation, s.WorstAt, s.Axis, s.WorstValue, s.Met, s.Margin))];
+        var o = OutcomeOf(_log[_bestIndex].Decoded.CacheKey);
+        return [.. o.Scores.Select((s, g) => new GoalReport(s.Name, s.WorstViolation, s.WorstAt, s.Axis, s.WorstValue, s.Met, s.Margin,
+            o.Binding?[g], o.PerCorner is null ? null : [.. o.PerCorner.Select(pc => CornerGoalScore.Of(pc.Corner, pc.Scores[g]))]))];
     }
 
     private void RecordIteration(int iteration, TimeSpan elapsed, int firstOfIteration)

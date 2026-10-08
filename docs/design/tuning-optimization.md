@@ -639,6 +639,14 @@ and `reference optimizers` and the user page's table print it. In menu order:
 | Bayesian (slow simulations) | `bayes` | GP (Matérn 5/2) + expected improvement; trust region above 10 variables | TO-8 |
 | Discrete | `discrete` | exhaustive grid ≤ 2,000 points, else coordinate descent with restarts | TO-8 |
 
+## 18a. Across corners (brief-yield-7)
+
+`optimize corners=none|all|<names> [nominal=0]` makes the optimizer meet every goal at the nominal and at each corner
+at once: one evaluation per corner per point, the residual vectors concatenated (so minimax is worst-case design), a
+goal met only when met everywhere, and its report the BINDING corner's. The Tuning panel's **Evaluate at** picker
+evaluates the sliders at a corner; Push still writes the values alone. The design and its rules are
+`docs/design/yield.md` §11.
+
 ## 19. For the yield series — the seams overview §5 reserved
 
 The yield series' design note is **`docs/design/yield.md`**; each seam below says which of its phases took it.

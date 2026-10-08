@@ -128,8 +128,17 @@ public partial class WorkspaceViewModel
 
         var key  = RunResultsWriter.SchematicKey(p.Doc.FilePath, p.Doc.Id);
         var sink = TuneSinkFor(p.BaseDir, key, tuned.EditModel.ResultsFileName);
+        // A statistical corner chosen in Evaluate at replays its run's recorded draws when the run is beside the
+        // schematic (brief-yield-7 R-ya7-4), as the yield verb's corners do.
+        string? yieldFile = p.Doc.FilePath is { } path ? CircuitRF.Design.Statistics.StatisticalRun.ResultPathFor(path) : null;
         return TuneSession.ForCircuit(p.Circuit, sink,
-            a => Avalonia.Threading.Dispatcher.UIThread.Post(a), analyses);
+            a => Avalonia.Threading.Dispatcher.UIThread.Post(a), analyses,
+            () =>
+            {
+                if (yieldFile is null || !File.Exists(yieldFile)) return null;
+                try { return RfCore.Export.DataSetImporter.Import(yieldFile).DataSet; }
+                catch (Exception) { return null; }
+            });
     }
 
     /// <summary>What one slider move costs per analysis (the ⚙ list): leaf points and sweep points.</summary>

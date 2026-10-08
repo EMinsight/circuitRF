@@ -108,6 +108,20 @@ public sealed class OptCliVerbTests
         Assert.Equal(each.Count, shownErr.Split('\n').Count(l => l.StartsWith("iter ", StringComparison.Ordinal)));
     }
 
+    /// <summary>brief-yield-7 R-ya7-6: <c>--corners</c> overrides the file and the report names the binding corner.</summary>
+    [Fact]
+    public void Corners_ReportsTheBindingCorner()
+    {
+        string cnl = OptCli.Write(OptCli.Dir(), "rc.cnl", Statistics.CornerOptCircuits.LowPass());
+        var (exit, stdout, stderr) = OptCli.Run("opt", cnl, "--corners", "all", "--json");
+        Assert.True(exit == 0, stderr);
+        var r = OptCli.Report(stdout);
+        Assert.Equal(2, r["evaluationsPerPoint"]!.GetValue<int>());
+        var goal = r["goals"]!.AsArray().Single()!;
+        Assert.Equal("hot", goal["corner"]!.GetValue<string>());
+        Assert.Equal(["nominal", "hot"], goal["perCorner"]!.AsArray().Select(c => c!["corner"]!.GetValue<string>()));
+    }
+
     [Fact]
     public void AnUnreachableGoal_ExitsThree_NamingIt()
     {

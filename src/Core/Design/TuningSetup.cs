@@ -323,14 +323,28 @@ public sealed class OptimizerSettings
     /// <summary>How many evaluations may run at once; null lets the evaluator decide.</summary>
     public int? Parallelism { get; set; }
 
+    /// <summary>The corners every goal must be met at (brief-yield-7 R-ya7-1): <c>all</c>, or names separated by
+    /// commas; null for none — the nominal alone.</summary>
+    public string? Corners { get; set; }
+
+    /// <summary>With <see cref="Corners"/>, whether the nominal is evaluated too (<c>nominal=0</c> omits it); null
+    /// is yes.</summary>
+    public bool? Nominal { get; set; }
+
     /// <summary>Keys this build does not know, kept verbatim.</summary>
     public OrderedDictionary<string, string>? Extra { get; set; }
+
+    /// <summary>The corner names a run is evaluated at; empty for none, null for every enabled corner.</summary>
+    [JsonIgnore]
+    public IReadOnlyList<string>? CornerNames => Corners is null ? []
+        : Corners.Equals("all", StringComparison.OrdinalIgnoreCase) ? null
+        : Corners.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
     public OptimizerSettings Clone() => new()
     {
         Algorithm = Algorithm, Options = TunableEntry.CloneMap(Options), MaxIterations = MaxIterations,
         MaxEvaluations = MaxEvaluations, TimeLimit = TimeLimit, Cost = Cost, Scope = Scope, Seed = Seed,
-        Parallelism = Parallelism, Extra = TunableEntry.CloneMap(Extra),
+        Parallelism = Parallelism, Corners = Corners, Nominal = Nominal, Extra = TunableEntry.CloneMap(Extra),
     };
 }
 

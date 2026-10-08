@@ -45,6 +45,7 @@ public sealed class StatisticalRun
     private readonly StatisticsSettings _settings = new();
     private readonly List<TunableEntry> _entries = [];
     private readonly IReadOnlyList<Tunable> _nominals = [];
+    private readonly TunableCatalog? _catalog;
     private readonly IReadOnlyDictionary<string, string> _bindings = new Dictionary<string, string>();
     private readonly Dictionary<string, Tunable> _byKey = new(StringComparer.Ordinal);
     private readonly StatisticalSampler? _sampler;
@@ -89,7 +90,8 @@ public sealed class StatisticalRun
         // A corner's bindings (brief-yield-6 R-ya6-3) are the nominal every spread is drawn around: a percent
         // spread on a value the corner moves follows it, as it follows a value centering moves.
         _bindings = options.Bindings ?? _bindings;
-        _nominals = SampleValues.Nominals(TunableCatalog.FromNetlist(bench, lib), _bindings);
+        _catalog  = TunableCatalog.FromNetlist(bench, lib);
+        _nominals = SampleValues.Nominals(_catalog, _bindings);
         foreach (var t in _nominals) _byKey.TryAdd(t.Key, t);
 
         // Kit streams join the plan only where the plan places trials jointly (lhs, sobol); under random each
@@ -289,7 +291,8 @@ public sealed class StatisticalRun
 
     /// <summary>Trial <paramref name="t"/>'s draws — a pure function of t: the plan's sample, the entries' values at
     /// it, and the expression draws.</summary>
-    private (SampledValues Values, StatisticalSample Sample, ExpressionDraws Draws) Draw(int t, double scale)
+    private (SampledValues Values, StatisticalSample Sample, ExpressionDraws Draws) Draw(int t, double scale,
+                                                                                       IReadOnlyList<Tunable>? nominals = null)
     {
         var sample = _sampler!.Sample(t);
         var entryZ = new Dictionary<string, double>(StringComparer.Ordinal);
@@ -300,17 +303,31 @@ public sealed class StatisticalRun
             else entryZ[stream] = z;
         }
         var entrySample = new StatisticalSample(t, entryZ);
-        return (SampleValues.Apply(_entries, _nominals, entrySample, scale), entrySample,
+        return (SampleValues.Apply(_entries, nominals ?? _nominals, entrySample, scale), entrySample,
                 ExpressionDraws.For(_settings, t, kitZ.Count == 0 ? null : kitZ));
     }
 
-    /// <summary>The value map a point evaluates: the corner's bindings, then the trial's drawn values over them.</summary>
-    private IReadOnlyDictionary<string, string> PointValues(IReadOnlyDictionary<string, string> drawn)
+    /// <summary>The value map a point evaluates: the moved design's values, the corner's bindings over them, then the
+    /// trial's drawn values over those.</summary>
+    private IReadOnlyDictionary<string, string> PointValues(IReadOnlyDictionary<string, string> drawn,
+                                                            IReadOnlyDictionary<string, string>? at = null)
     {
-        if (_bindings.Count == 0) return drawn;
-        var map = new Dictionary<string, string>(_bindings, StringComparer.Ordinal);
+        if (_bindings.Count == 0 && at is not { Count: > 0 }) return drawn;
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (at is not null) foreach (var (k, v) in at) map[k] = v;
+        foreach (var (k, v) in _bindings) map[k] = v;
         foreach (var (k, v) in drawn) map[k] = v;
         return map;
+    }
+
+    /// <summary>The nominals at a moved design (<paramref name="at"/>, a candidate's values) with the corner's
+    /// bindings over them — what a percent spread is drawn around there (brief-yield-7 R-ya7-3).</summary>
+    private IReadOnlyList<Tunable> NominalsAt(IReadOnlyDictionary<string, string>? at)
+    {
+        if (at is not { Count: > 0 } || _catalog is null) return _nominals;
+        var moved = new Dictionary<string, string>(at, StringComparer.Ordinal);
+        foreach (var (k, v) in _bindings) moved[k] = v;
+        return SampleValues.Nominals(_catalog, moved);
     }
 
     /// <summary>
@@ -318,19 +335,23 @@ public sealed class StatisticalRun
     /// the CURRENT nominal. With <paramref name="recorded"/> — the z-vector the run that made the corner recorded —
     /// that vector is used as it stands: an entry or distribution call the recording has no draw for takes its nominal,
     /// and a recorded stream the design no longer has is named in a warning. Without one, the vector is drawn afresh
-    /// from (seed, trial, stream) — the same numbers wherever the streams are the ones the run had.
+    /// from (seed, trial, stream) — the same numbers wherever the streams are the ones the run had. With
+    /// <paramref name="at"/> — a moved design's values, an optimizer's candidate or the Tuning panel's sliders — the
+    /// vector is applied to THAT nominal, and the map evaluated holds those values under the corner's (brief-yield-7
+    /// R-ya7-3).
     /// </summary>
-    internal StatisticalReplay Replay(int trial, RecordedTrial? recorded)
+    internal StatisticalReplay Replay(int trial, RecordedTrial? recorded, IReadOnlyDictionary<string, string>? at = null)
     {
         if (Refusal is { } refused) return new StatisticalReplay(trial, new Dictionary<string, string>(), null, [], refused);
         if (trial < 1 || (_settings.Sampling == StatSampling.Lhs && trial > _settings.EffectiveTrials))
             return new StatisticalReplay(trial, new Dictionary<string, string>(), null, [], StatisticsDiagnostics.TrialOutOfRange(trial,
                 trial < 1 ? "trials are numbered from 1." : $"a Latin hypercube of {_settings.EffectiveTrials} trials places no more."));
         double scale = _settings.SigmaScale ?? 1;
+        var nominals = NominalsAt(at);
         if (recorded is null)
         {
-            var (values, _, draws) = Draw(trial, scale);
-            return new StatisticalReplay(trial, PointValues(values.Values), draws, [], values.Refusal);
+            var (values, _, draws) = Draw(trial, scale, nominals);
+            return new StatisticalReplay(trial, PointValues(values.Values, at), draws, [], values.Refusal);
         }
 
         var notes = new List<Diagnostic>();
@@ -341,10 +362,10 @@ public sealed class StatisticalRun
 
         var kept = _entries.Where(e => recorded.EntryZ.ContainsKey(e.Key)).ToList();
         var sample = new StatisticalSample(trial, recorded.EntryZ);
-        var drawn = SampleValues.Apply(kept, _nominals, sample, scale);
+        var drawn = SampleValues.Apply(kept, nominals, sample, scale);
         var replayDraws = new ExpressionDraws(_settings.EffectiveSeed, trial, _settings.Process ?? true, _settings.Mismatch ?? true,
                                               scale, recorded.KitZ, unplannedAtNominal: true);
-        return new StatisticalReplay(trial, PointValues(drawn.Values), replayDraws, notes, drawn.Refusal);
+        return new StatisticalReplay(trial, PointValues(drawn.Values, at), replayDraws, notes, drawn.Refusal);
     }
 
     private TrialRecord Record(int trial, PointStatus status, Diagnostic? reason, SampledValues values, StatisticalSample sample,

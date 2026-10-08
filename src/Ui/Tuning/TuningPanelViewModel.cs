@@ -143,7 +143,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         CloseComparison();
 
         if (tuned is not null) RefreshNow();
-        else OnPropertyChanged(nameof(HasPresets));
+        else { OnPropertyChanged(nameof(HasPresets)); RefreshCornerChoices(); }
         ScopeSettings.Reload();
         OnPropertyChanged(nameof(Tuned));
         OnPropertyChanged(nameof(HasSchematic));
@@ -222,6 +222,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         }
 
         RebuildPresets();
+        RefreshCornerChoices();
         UpdateLag();
         UpdateCanvas();
         OnPropertyChanged(nameof(Digits));
@@ -442,6 +443,11 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         if (session is null) return;
 
         session.RunOnRelease = RunOnRelease;
+        if (CornerName is { } corner && session.EvaluateAt(corner) is { } refused)
+        {
+            StatusText = $"Refused: {refused}.";
+            EvaluateAt = NominalChoice;
+        }
         session.Changed               += OnSessionChanged;
         session.RunOnReleaseSuggested += OnRunOnReleaseSuggested;
         _session = session;
@@ -507,6 +513,51 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
 
     [RelayCommand(CanExecute = nameof(IsRunning))]
     private void ClearSnapshot() => _session?.ClearSnapshot();
+
+    // ---- Evaluate at (brief-yield-7 R-ya7-4) -----------------------------------
+
+    /// <summary>The picker's first entry: the design as it stands.</summary>
+    public const string NominalChoice = "Nominal";
+
+    /// <summary>The toolbar's Evaluate at choices: <see cref="NominalChoice"/>, then each enabled corner of the
+    /// tuned schematic.</summary>
+    public IReadOnlyList<string> EvaluateAtChoices { get; private set; } = [NominalChoice];
+
+    /// <summary>Whether there is any corner to choose — the picker shows only then.</summary>
+    public bool HasCorners => EvaluateAtChoices.Count > 1;
+
+    /// <summary>Where the live session evaluates: Nominal, or a corner — its bindings over the sliders' values (a
+    /// statistical corner replayed around them). Push still writes the sliders' values alone.</summary>
+    [ObservableProperty] private string _evaluateAt = NominalChoice;
+
+    /// <summary>The chosen corner's name; null at the nominal.</summary>
+    public string? CornerName => EvaluateAt == NominalChoice ? null : EvaluateAt;
+
+    partial void OnEvaluateAtChanged(string value)
+    {
+        // A picker whose items were replaced may write back an empty selection.
+        if (value is null) { EvaluateAt = NominalChoice; return; }
+        if (_session is { } s && s.EvaluateAt(CornerName) is { } refused)
+        {
+            StatusText = $"Refused: {refused}.";
+            EvaluateAt = NominalChoice;
+            return;
+        }
+        OnPropertyChanged(nameof(CornerName));
+        UpdateCanvas();
+    }
+
+    private void RefreshCornerChoices()
+    {
+        IReadOnlyList<string> next = [NominalChoice, .. (_tuned?.EditModel.Tuning?.Corners ?? []).Where(c => c.Enabled).Select(c => c.Name)];
+        if (!next.SequenceEqual(EvaluateAtChoices))
+        {
+            EvaluateAtChoices = next;
+            OnPropertyChanged(nameof(EvaluateAtChoices));
+            OnPropertyChanged(nameof(HasCorners));
+        }
+        if (!EvaluateAtChoices.Contains(EvaluateAt)) EvaluateAt = NominalChoice;
+    }
 
     // ---- Run on release and the badge (R-to4-6, D7) --------------------------
 
@@ -612,6 +663,8 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
                 if (drawing is null) continue;
                 var vm = ReferenceEquals(drawing, _tuned.EditModel) ? _tuned : ExistingSessionFor?.Invoke(drawing);
                 string text = current.GetValueOrDefault(t.ValueKey) ?? row.ValueText;
+                // At a corner the tuned label says where it is evaluated (brief-yield-7 R-ya7-4).
+                if (CornerName is { } corner) text += " @ " + corner;
                 if (vm is null || TunedLabel(drawing, t, text) is not { } label) continue;
 
                 if (!byVm.TryGetValue(vm, out var labels)) byVm[vm] = labels = [];

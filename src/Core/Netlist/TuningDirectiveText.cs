@@ -345,6 +345,8 @@ public static class TuningDirectiveText
                 case "timelimit": o.TimeLimit = value; break;
                 case "seed":      o.Seed = Int(key, value); break;
                 case "parallel":  o.Parallelism = Int(key, value); break;
+                case "corners":   o.Corners = CornersValue(key, value); break;
+                case "nominal":   o.Nominal = Bool(key, value) ? null : false; break;
                 case "cost":
                     o.Cost = value.ToLowerInvariant() switch
                     {
@@ -519,6 +521,8 @@ public static class TuningDirectiveText
         if (o.Scope != OptimizerScope.GoalAnalyses) sb.Append(" analyses=").Append(AnalysisDirectiveSchema.ScopeTokens[(int)o.Scope]);
         if (o.Seed        is { } s) sb.Append(" seed=").Append(s.ToString(CultureInfo.InvariantCulture));
         if (o.Parallelism is { } n) sb.Append(" parallel=").Append(n.ToString(CultureInfo.InvariantCulture));
+        Opt(sb, "corners", o.Corners);
+        if (o.Nominal == false) sb.Append(" nominal=0");
         Extra(sb, o.Options, AnalysisDirectiveSchema.AlgorithmOptionPrefix);
         Extra(sb, o.Extra, "");
         return sb.ToString();

@@ -3437,7 +3437,10 @@ since a complex value is optimized by its parts (overview D18). A narrowed-out e
 because a complex value's ranges hold together whatever the flags. `--snap` is TO-8's snap and polish at
 the end; `--sensitivity` adds a sensitivity pass at the best point (n more evaluations, never unasked);
 `--show-iterations` reports every iteration as well (§24.3). Preferred values snap to the SHIPPED ladders: the
-user's own live in the GUI's preferences, which a headless run has none of.
+user's own live in the GUI's preferences, which a headless run has none of. `--corners all|none|a,b` replaces the
+optimize line's `corners=` (brief-yield-7): every goal must then be met at the nominal and at each corner at once,
+one evaluation per corner per point; a statistical corner replays the `<design>.yield.npy` beside the design when it
+is the run the corner names (`yield.md` §11).
 
 **Nothing is written to the design's values** (overview D14). The values are REPORTED as the text the
 schematic would hold, so an agent that wants them writes the file. **`--save-preset <name>`** is the one
@@ -3451,11 +3454,13 @@ a line the caller adds. A preset name Lock in would refuse is refused before the
 stdout: the finish reason, the best cost, a variables table (key, start, best, min, max, railed — a part
 of a complex value is its own row, followed by one line per value, `ZL  80+0j Ohm → 107.551763917658-48.0049696570421j Ohm` — the
 text Push would write, at its full precision) and
-a goals table (name, met, value, where on the axis, margin). **A met goal reports its TIGHTEST point** —
+a goals table (name, met, value, where on the axis, margin — and, across corners, the `binding` corner, whose
+values every other column is; `Corners:` above it names the points and what one costs). **A met goal reports its TIGHTEST point** —
 the one closest to its limit — and its margin, the slack there in the expression's own unit; an unmet
 goal reports its worst point and −(violation). `--json` carries the same as `result.optimize` plus the
 snap and the sensitivity when they ran, and — for a part — the `whole` value beside it, as `explain
---tunables` does.
+--tunables` does. Across corners each goal carries `corner` (the binding one) and `perCorner` (met, value, at and
+margin at each), and the report `corners` and `evaluationsPerPoint`.
 
 **The final result is the default, and the whole default** (owner decision, 2026-10-07): an optimization
 of a few hundred iterations would otherwise hand a script or an agent hundreds of lines it did not ask
@@ -3490,7 +3495,8 @@ the run's own words, by asking `OptimizationRun.Create` (which evaluates nothing
 tuning rules found no error, since the run refuses on the first of those itself.
 `explain --analysis` says, per analysis, whether an optimization runs it under `analyses=goals`, under
 `analyses=all`, and which scope the optimize line chose — through `OptimizationRun.AnalysesUnder`, the
-promotion an evaluation applies.
+promotion an evaluation applies — and, when the line names corners, the points each candidate is evaluated at and
+what one point costs (`optimizeAt`; `OptimizationRun.EvaluationPointsOf`).
 
 ### 24.6 The gate
 

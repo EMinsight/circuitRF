@@ -219,6 +219,12 @@
                     <Button Classes="tb" Click="OnHelp" ToolTip.Tip="Help">
                         <mi:MaterialIcon Kind="HelpCircleOutline"/>
                     </Button>
+
+                    <!-- Evaluate at (brief-yield-7): the nominal, or one of the schematic's enabled corners. -->
+                    <ComboBox ItemsSource="{Binding EvaluateAtChoices}" SelectedItem="{Binding EvaluateAt}"
+                              IsVisible="{Binding HasCorners}" FontSize="11" MinHeight="22" Padding="6,1"
+                              Margin="4,0,0,0" VerticalAlignment="Center"
+                              ToolTip.Tip="Evaluate at — the sliders' values at this corner. Push still writes the values alone."/>
                 </StackPanel>
 
                 <!-- Presets (TO-5): "Last tuned" pinned first, then newest first. Click a name to recall it;

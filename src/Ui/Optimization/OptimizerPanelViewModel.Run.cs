@@ -205,10 +205,15 @@ public sealed partial class OptimizerPanelViewModel
         _snapAfterStop = false;
         StatusText = "";
         State = OptimizerRunState.Running;
-        RunStatusText = "Starting…";
+        _perPoint = run.EvaluationsPerPoint;
+        RunStatusText = _perPoint > 1 ? $"Starting… {_perPoint} evaluations per point ({string.Join(", ", run.CornerNames)})" : "Starting…";
 
         _task = StartBackground(() => Background(run, circuit, cts.Token, () => run.Run()));
     }
+
+    // Cost honesty across corners (brief-yield-7 R-ya7-5): what one point costs, beside the evaluation count.
+    private int _perPoint = 1;
+    private string PerPointText => _perPoint > 1 ? $" ({_perPoint} per point)" : "";
 
     private bool CanRun() => _tuned is not null && !IsRunActive && PrepareCircuit is not null;
 
@@ -242,7 +247,7 @@ public sealed partial class OptimizerPanelViewModel
         var parts = new List<string>
         {
             $"Iter {p.Iteration}",
-            $"{p.Evaluations} eval{(p.Evaluations == 1 ? "" : "s")}",
+            $"{p.Evaluations} eval{(p.Evaluations == 1 ? "" : "s")}" + PerPointText,
             Clock(p.Elapsed),
         };
         if (p.Stage is { } stage) parts.Add(stage);
@@ -309,7 +314,7 @@ public sealed partial class OptimizerPanelViewModel
         }
 
         ShowBest(result.BestValues, result.BestCost, result.Goals, result.Railed);
-        RunStatusText = $"Iter {result.Iterations} · {result.Evaluations} evals"
+        RunStatusText = $"Iter {result.Iterations} · {result.Evaluations} evals" + PerPointText
                         + (result.Failures > 0 ? $" · {result.Failures} failed" : "")
                         + (result.Infeasible > 0 ? $" · {result.Infeasible} infeasible" : "");
         State = OptimizerRunState.Finished;

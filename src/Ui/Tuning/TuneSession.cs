@@ -20,6 +20,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CircuitRF.Design.Circuit;
+using CircuitRF.Design.Statistics;
 using CircuitRF.Engine;
 using RfCore.Data;
 
@@ -42,6 +43,10 @@ public interface ITuneResultSink
 
     /// <summary>Removes the ghost.</summary>
     void ClearSnapshot();
+
+    /// <summary>The session now evaluates at <paramref name="corner"/> (null: the nominal) — the display's chip says
+    /// so (brief-yield-7 R-ya7-4).</summary>
+    void AtCorner(string? corner) { }
 }
 
 public sealed class TuneSession : IDisposable
@@ -70,6 +75,10 @@ public sealed class TuneSession : IDisposable
     private long  _evaluations;
     private IReadOnlyDictionary<string, string>? _requested;
 
+    // Evaluate at (brief-yield-7 R-ya7-4): how a corner name becomes a point to evaluate at, and the one chosen.
+    private Func<string, (CornerPoint? Point, string? Refusal)>? _cornerFor;
+    private volatile CornerPoint? _corner;
+
     public TuneSession(Evaluator evaluate, ITuneResultSink? sink, Action<Action> postToUi,
                        IReadOnlyList<string>? analyses = null, long sweepPoints = 0,
                        Func<DateTime>? clock = null)
@@ -86,16 +95,31 @@ public sealed class TuneSession : IDisposable
     /// A session over a prepared design: every evaluation is one <see cref="CircuitEvaluation.Evaluate"/>
     /// of <paramref name="circuit"/> with the requested values as tunables, so nothing is re-read.
     /// </summary>
+    /// <param name="recorded">The run statistical corners came from, when at hand — read only when one is chosen.</param>
     public static TuneSession ForCircuit(PreparedCircuit circuit, ITuneResultSink? sink, Action<Action> postToUi,
-                                         IReadOnlyList<string>? analyses = null)
+                                         IReadOnlyList<string>? analyses = null, Func<RfCore.Data.DataSet?>? recorded = null)
     {
         var plan = CircuitEvaluation.Plan(circuit, new CircuitEvaluationRequest { Analyses = analyses });
-        return new TuneSession(
-            (values, scope, control) => CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest
+        TuneSession? session = null;
+        session = new TuneSession(
+            (values, scope, control) =>
             {
-                Tunables = values, Analyses = scope, Control = control,
-            }),
+                // At a corner the sliders' values are the point the corner is evaluated at: its bindings over them,
+                // or its trial replayed around them (brief-yield-7 R-ya7-4).
+                var at = session!._corner is { } corner ? corner.At(values) : new CornerPointValues(values, null, [], null);
+                if (at.Refusal is { } why) return new RunResult(RunStatus.EngineError, why.Render());
+                return CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest
+                {
+                    Tunables = at.Values, Statistics = at.Draws, Analyses = scope, Control = control,
+                });
+            },
             sink, postToUi, analyses, plan.SweepPoints);
+        session._cornerFor = name =>
+        {
+            var (point, _, refusal) = CornerPoint.For(circuit, name, recorded?.Invoke());
+            return (point, refusal?.Render());
+        };
+        return session;
     }
 
     // ---- What the session reports (R-to3-2, R-to3-4) -------------------------
@@ -128,6 +152,42 @@ public sealed class TuneSession : IDisposable
 
     /// <summary>The sliders are ahead of the display: the requested values are not the displayed ones.</summary>
     public bool IsLagging => !SameValues(RequestedValues, DisplayedValues);
+
+    /// <summary>The corner the session evaluates at (brief-yield-7 R-ya7-4); null at the nominal.</summary>
+    public string? Corner => _corner?.Name;
+
+    /// <summary>
+    /// Evaluates at <paramref name="corner"/> from now on — null or <see cref="CornerRun.NominalName"/> for the
+    /// nominal: the in-flight evaluation is cancelled and the requested values evaluated again there. Push still
+    /// writes the sliders' values alone. The refusal, when the corner cannot be evaluated here; the session then
+    /// stays where it was.
+    /// </summary>
+    public string? EvaluateAt(string? corner)
+    {
+        CornerPoint? point = null;
+        if (corner is not null && !corner.Equals(CornerRun.NominalName, StringComparison.OrdinalIgnoreCase))
+        {
+            if (_cornerFor is null) return "this session cannot evaluate at a corner";
+            var (found, refusal) = _cornerFor(corner);
+            if (found is null) return refusal ?? $"there is no corner '{corner}'";
+            point = found;
+        }
+        lock (_gate)
+        {
+            if (_disposed) return null;
+            _corner = point;
+            CancelLocked();
+            // The cancelled run starts the pending request when it returns; with nothing in flight, start now.
+            if (_requested is { } values)
+            {
+                if (_inFlight) _pending = values;
+                else StartLocked(values);
+            }
+        }
+        _sink?.AtCorner(point?.Name);
+        Changed?.Invoke(this, EventArgs.Empty);
+        return null;
+    }
 
     /// <summary>Evaluations started — the counter the coalescing claim is tested on.</summary>
     public long Evaluations => Interlocked.Read(ref _evaluations);

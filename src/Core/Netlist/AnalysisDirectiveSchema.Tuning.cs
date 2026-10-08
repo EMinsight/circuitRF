@@ -150,7 +150,7 @@ public static partial class AnalysisDirectiveSchema
 
         new("optimize", TuningTopic,
             "optimize [algorithm=<id>] [maxiter=<n>] [maxevals=<n>] [timelimit=<v> [unit]] [cost=…] [analyses=…] " +
-            "[seed=<n>] [parallel=<n>] [alg.<option>=<v>] ...",
+            "[seed=<n>] [parallel=<n>] [corners=…] [nominal=0] [alg.<option>=<v>] ...",
             "The optimizer's settings. At most one line. Keys starting alg. are the chosen algorithm's own options.",
             [
                 new("algorithm", Default: "auto", Summary: "One of: " + string.Join(", ", CircuitRF.Core.Design.OptimizerAlgorithms.Ids) + ". reference optimizers describes each."),
@@ -161,6 +161,9 @@ public static partial class AnalysisDirectiveSchema
                 new("analyses",  Default: "goals", Summary: "goals (only the analyses a goal names) | all."),
                 new("seed",      Summary: "Random seed, for a repeatable run."),
                 new("parallel",  Summary: "How many evaluations may run at once."),
+                new("corners",   Default: "none", Summary: "none | all | corner names separated by commas: every goal must be met at the " +
+                                                           "nominal and at each of these corners at once — one evaluation per corner per point."),
+                new("nominal",   Default: "1", Summary: "With corners, 0 leaves the nominal out: the corners alone are scored."),
                 new(AlgorithmOptionPrefix + "<option>", Summary: "An option of the chosen algorithm."),
             ],
             [],

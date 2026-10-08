@@ -602,7 +602,15 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string?                           SavedPreset = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<OptimizeIterationJson>? PerIteration = null);
+        IReadOnlyList<OptimizeIterationJson>? PerIteration = null,
+        /// <summary>The points each candidate was evaluated at — <c>nominal</c> and the corners (brief-yield-7
+        /// R-ya7-1); null without corners.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>?            Corners = null,
+        /// <summary>Simulations one candidate cost: one per entry of <see cref="Corners"/> (R-ya7-5); null without
+        /// corners, where it is one.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?                              EvaluationsPerPoint = null);
 
     /// <summary>One iteration of an optimization, as its progress line reports it.</summary>
     /// <param name="BestCost">The best cost so far; null before any point succeeded.</param>
@@ -648,6 +656,9 @@ namespace RfCore.Export
     /// <param name="Value">The expression's value at the worst point (unmet) or the tightest one (met).</param>
     /// <param name="At">Where that is on <paramref name="Axis"/>, in base SI; null for a single number.</param>
     /// <param name="Margin">How far inside its limit, in the expression's unit: −(violation) when unmet.</param>
+    /// <param name="Corner">Across corners (brief-yield-7 R-ya7-2): the BINDING corner — where the worst violation
+    /// is, or when met everywhere the tightest margin; every other member is that corner's. Null without corners.</param>
+    /// <param name="PerCorner">Across corners: the goal at each corner, in evaluation order.</param>
     public sealed record OptimizeGoalJson(
         string  Name,
         bool    Met,
@@ -656,6 +667,19 @@ namespace RfCore.Export
         double? At,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? Axis,
+        double? Margin,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Corner = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<OptimizeGoalCornerJson>? PerCorner = null);
+
+    /// <summary>One goal at one corner of the best point (brief-yield-7 R-ya7-2).</summary>
+    public sealed record OptimizeGoalCornerJson(
+        string  Corner,
+        bool    Met,
+        double? Value,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? At,
         double? Margin);
 
     /// <summary>What snap-and-polish did (<c>--snap</c>, or Auto's last stage).</summary>
@@ -1256,7 +1280,12 @@ namespace RfCore.Export
         /// optimize line chose, last, as <c>setup=goals</c> or <c>setup=all</c> (brief-tuneopt-11
         /// R-to11-7). Null when the design has no enabled goal.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<string>? Optimize = null);
+        IReadOnlyList<string>? Optimize = null,
+        /// <summary>The points an optimization evaluates each candidate at when its optimize line names corners —
+        /// <c>nominal</c> and the corners — so its count is the evaluations one point costs (brief-yield-7 R-ya7-5).
+        /// Null without corners, or where <see cref="Optimize"/> is.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? OptimizeAt = null);
 
     /// <summary>
     /// <c>explain --analysis</c>'s answer to "what would the NDF do here" — the way to see a
