@@ -49,6 +49,7 @@ public sealed class StatisticalRun
     private readonly IReadOnlyDictionary<string, string> _bindings = new Dictionary<string, string>();
     private readonly Dictionary<string, Tunable> _byKey = new(StringComparer.Ordinal);
     private readonly StatisticalSampler? _sampler;
+    private readonly List<string> _streams = [];
     private readonly IReadOnlyList<StatisticalCall> _calls = [];
     private readonly List<Diagnostic> _notes = [];
     private readonly object _evalLock = new();
@@ -99,6 +100,7 @@ public sealed class StatisticalRun
         var streams = _entries.Select(e => e.Key).ToList();
         if (_settings.Sampling != StatSampling.Random)
             streams.AddRange(_calls.Select(c => KitStreamPrefix + c.Stream));
+        _streams.AddRange(streams);
         _sampler = new StatisticalSampler(streams, _settings.Sampling, _settings.EffectiveSeed, _settings.EffectiveTrials,
                                           StatisticsValidator.CorrelationOf(_setup));
         _notes.AddRange(_sampler.Notes);
@@ -290,6 +292,121 @@ public sealed class StatisticalRun
             var (i, values, sample, draws) = slots[k];
             var p = evaluated[k];
             result[i] = Record(points[i].Trial, p.Status, p.Reason, values, sample, draws, p, false);
+        }
+        return result;
+    }
+
+    // ── z-space (brief-yield-12) ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The coordinates a surrogate sees (R-ya12-2): each statistical entry, each kit process stream, and ONE per
+    /// instance for all of its kit mismatch streams — YA-4 R-ya4-9's grouping. An instance's coordinate moves every
+    /// one of its streams by x/√n, so it is itself a standard normal (Σz/√n of n independent ones). A kind switched
+    /// off (<c>process=0</c>, <c>mismatch=0</c>) draws nothing and has no coordinate.
+    /// </summary>
+    internal IReadOnlyList<SurrogateDimension> SurrogateDimensions()
+    {
+        var dims = new List<SurrogateDimension>();
+        foreach (var e in _entries) dims.Add(new SurrogateDimension(e.Key, SurrogateDimensionKind.Entry, [e.Key]));
+        var streams = _calls.GroupBy(c => c.Stream, StringComparer.Ordinal).Select(g => g.First()).ToList();
+        if (_settings.Process ?? true)
+            foreach (var c in streams.Where(c => c.Kind == StatisticalKind.Process).OrderBy(c => c.Stream, StringComparer.Ordinal))
+                dims.Add(new SurrogateDimension(c.Stream, SurrogateDimensionKind.Process, [c.Stream]));
+        if (_settings.Mismatch ?? true)
+            foreach (var g in streams.Where(c => c.Kind == StatisticalKind.Mismatch)
+                                     .GroupBy(c => StatisticalContributions.InstanceOf(c.Stream), StringComparer.Ordinal)
+                                     .OrderBy(g => g.Key, StringComparer.Ordinal))
+                dims.Add(new SurrogateDimension(g.Key, SurrogateDimensionKind.Mismatch, [.. g.Select(c => c.Stream)]));
+        return dims;
+    }
+
+    /// <summary>A trial's place on <paramref name="dims"/>: entries and process streams by their own z, an instance's
+    /// mismatch by Σz/√n. A stream the trial did not draw sat at its nominal (z = 0).</summary>
+    internal static double[] CoordinatesOf(IReadOnlyList<SurrogateDimension> dims, IReadOnlyDictionary<string, double> entryZ,
+                                           Func<string, double> kitZ)
+    {
+        var x = new double[dims.Count];
+        for (int i = 0; i < dims.Count; i++)
+        {
+            var d = dims[i];
+            if (d.Kind == SurrogateDimensionKind.Entry) { x[i] = entryZ.TryGetValue(d.Name, out double z) ? z : 0; continue; }
+            double sum = 0;
+            foreach (var s in d.Streams) sum += kitZ(s);
+            x[i] = sum / Math.Sqrt(d.Streams.Count);
+        }
+        return x;
+    }
+
+    /// <summary>
+    /// The first <paramref name="count"/> trials of this run's seed and sampling as coordinates on
+    /// <paramref name="dims"/> — the surrogate's virtual trials (R-ya12-2), drawn exactly as trials 1…count would be
+    /// (under <c>random</c>, trials 1…M ARE the common trials).
+    /// </summary>
+    internal double[][] VirtualCoordinates(IReadOnlyList<SurrogateDimension> dims, int count)
+    {
+        var sampler = count == _settings.EffectiveTrials
+            ? _sampler!
+            : new StatisticalSampler(_streams, _settings.Sampling, _settings.EffectiveSeed, count, StatisticsValidator.CorrelationOf(_setup));
+        ulong seed = unchecked((ulong)_settings.EffectiveSeed);
+        var result = new double[count][];
+        for (int t = 1; t <= count; t++)
+        {
+            var z = sampler.Sample(t).Z;
+            int trial = t;
+            result[t - 1] = CoordinatesOf(dims, z, stream =>
+                z.TryGetValue(KitStreamPrefix + stream, out double planned) ? planned
+                    : StatStreams.Normal(seed, trial, StatStreams.Id(stream), ExpressionDraws.StreamSlot));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Points of z-space evaluated at moved designs (R-ya12-2): coordinate vector x on <paramref name="dims"/> applied
+    /// to the nominal at <c>at</c>, as a trial's z-vector is. One batch through the evaluator; nothing is kept. The
+    /// records carry trial number 0 — a design point is not a trial.
+    /// </summary>
+    internal TrialRecord[] EvaluateAtZ(IReadOnlyList<SurrogateDimension> dims,
+                                       IReadOnlyList<(double[] X, IReadOnlyDictionary<string, string> At)> points, CancellationToken ct)
+    {
+        var result = new TrialRecord[points.Count];
+        var batch  = new List<ValuePoint>();
+        var slots  = new List<(int Index, SampledValues Values, StatisticalSample Sample, ExpressionDraws Draws)>();
+        var moved  = new Dictionary<IReadOnlyDictionary<string, string>, IReadOnlyList<Tunable>>(ReferenceEqualityComparer.Instance);
+        double scale = _settings.SigmaScale ?? 1;
+        for (int i = 0; i < points.Count; i++)
+        {
+            var (x, at) = points[i];
+            if (!moved.TryGetValue(at, out var nominals)) moved[at] = nominals = NominalsAt(at);
+            var entryZ = new Dictionary<string, double>(StringComparer.Ordinal);
+            var kitZ   = new Dictionary<string, double>(StringComparer.Ordinal);
+            for (int k = 0; k < dims.Count; k++)
+            {
+                var d = dims[k];
+                if (d.Kind == SurrogateDimensionKind.Entry) entryZ[d.Name] = x[k];
+                else foreach (var s in d.Streams) kitZ[s] = x[k] / Math.Sqrt(d.Streams.Count);
+            }
+            foreach (var e in _entries) entryZ.TryAdd(e.Key, 0);
+            var sample = new StatisticalSample(0, entryZ);
+            var values = SampleValues.Apply(_entries, nominals, sample, scale);
+            if (values.Refused)
+            {
+                result[i] = Record(0, PointStatus.DidNotEvaluate, values.Refusal, values, sample, null, null, false);
+                continue;
+            }
+            var draws = new ExpressionDraws(_settings.EffectiveSeed, 1, _settings.Process ?? true, _settings.Mismatch ?? true,
+                                            scale, kitZ, unplannedAtNominal: true);
+            slots.Add((i, values, sample, draws));
+            string tag = "z " + string.Join(",", x.Select(v => v.ToString("R", System.Globalization.CultureInfo.InvariantCulture)));
+            batch.Add(new ValuePoint(PointValues(values.Values, at), draws, tag));
+        }
+
+        IReadOnlyList<PointEvaluation> evaluated;
+        lock (_evalLock) evaluated = _eval!.EvaluateValues(batch, keepData: false, ct);
+        for (int k = 0; k < slots.Count; k++)
+        {
+            var (i, values, sample, draws) = slots[k];
+            var p = evaluated[k];
+            result[i] = Record(0, p.Status, p.Reason, values, sample, draws, p, false);
         }
         return result;
     }

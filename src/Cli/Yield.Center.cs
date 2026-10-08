@@ -1,5 +1,6 @@
 using System.Globalization;
 using CircuitRF.Core.Design;
+using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Optimization;
 using CircuitRF.Design.Schematic;
@@ -24,7 +25,7 @@ internal static partial class Yield
     private sealed record CenterFlags(
         string? Algorithm, int? Trials, int? Verify, int? MaxIter, int? MaxEvals, string? Time, double? Width,
         int? Parallel, int? Seed, double? Target, double? Confidence, int Sampling, int NonConverged, string? Save,
-        bool? Process, bool? Mismatch, double? SigmaScale, int Scope);
+        bool? Process, bool? Mismatch, double? SigmaScale, int Scope, int Surrogate);
 
     /// <summary>A flag that means nothing to centering: one trial, a statistical corner, auto-stop, corners.</summary>
     private static Diagnostic? CenterFlagProblem(int? trial, string? cornerName, bool autostop, List<string>? corners, bool contributions)
@@ -57,6 +58,7 @@ internal static partial class Yield
         if (f.Width is not null)     C(() => center.Width = f.Width);
         if (f.Parallel is not null)  C(() => center.Parallelism = f.Parallel);
         if (f.Seed is not null)      C(() => center.Seed = f.Seed);
+        if (f.Surrogate >= 0)        C(() => center.Surrogate = f.Surrogate == 0 ? null : (CenteringSurrogate)f.Surrogate);
         if (f.Target is not null)     S(() => st.Target = f.Target);
         if (f.Confidence is not null) S(() => st.Confidence = f.Confidence);
         if (f.Sampling >= 0)          S(() => st.Sampling = (StatSampling)f.Sampling);
@@ -156,7 +158,8 @@ internal static partial class Yield
     internal static string CenterProgressLine(CenteringProgress p)
         => p.Stage == "verify"
             ? $"verifying the start and the best point · {p.Evaluations} simulations so far"
-            : $"iteration {p.Iteration} · best yield {Pct(p.BestYield)} · smooth {G(Finite(p.BestObjective))} · {p.Evaluations} simulations";
+            : $"iteration {p.Iteration} · best yield {Pct(p.BestYield)} · smooth {G(Finite(p.BestObjective))} · {p.Evaluations} simulations" +
+              (p.RSquared is { Count: > 0 } r2 ? $" · fit R² {G(r2.Values.Min())}" : "");
 
     private static CenterReportJson ProjectCenter(string input, CenteringRun run, CenteringResult r)
     {
@@ -175,7 +178,12 @@ internal static partial class Yield
             r.Best is { } b2 ? Finite(b2.Objective) : null,
             v is null ? null : new CenterVerificationJson(v.Seed, v.Trials, Estimate(v.Start), Estimate(v.Best), v.WithinOverlap, v.Sentence),
             run.Target is { } tp ? tp / 100 : null,
-            [.. r.History.Select(h => new CenterIterationJson(h.Iteration, Finite(h.BestYield), Finite(h.BestObjective), h.Evaluations))]);
+            [.. r.History.Select(h => new CenterIterationJson(h.Iteration, Finite(h.BestYield), Finite(h.BestObjective), h.Evaluations,
+                                                              h.RSquared is null ? null : new SortedDictionary<string, double>(h.RSquared.ToDictionary(), StringComparer.Ordinal)))])
+        {
+            Surrogate      = r.Surrogate == CenteringSurrogate.None ? null : AnalysisDirectiveSchema.SurrogateTokens[(int)r.Surrogate],
+            SwitchedBackAt = r.SwitchedBackAt,
+        };
     }
 
     private static string CenterOutcomeWord(CenteringOutcome o) => o switch
@@ -192,6 +200,9 @@ internal static partial class Yield
         Console.WriteLine($"Design centering: {r.Document}");
         Console.WriteLine($"  {r.Algorithm} · {r.Trials} common trials (seed {r.Seed}) · {r.Iterations} iterations · " +
                           $"{r.Evaluations} simulations · {r.FinishReason}");
+        if (r.Surrogate is { } surrogate)
+            Console.WriteLine($"  surrogate {surrogate}: candidates scored on {QuadraticSurrogate.VirtualTrials} virtual trials of the fit" +
+                              (r.SwitchedBackAt is { } at ? $", then on simulated trials after iteration {at}" : ""));
         if (r.Verification is { } v)
         {
             string verdict = r.Target is { } tg
@@ -199,7 +210,8 @@ internal static partial class Yield
             Console.WriteLine($"Verified: {v.Sentence}{verdict}");
         }
         if (r.StartYield is { } sy && r.BestYield is { } by)
-            Console.WriteLine($"On the common trials: yield {Pct(sy.Yield)} → {Pct(by.Yield)} · smooth {G(r.StartObjective)} → {G(r.BestObjective)}");
+            Console.WriteLine($"{(r.Surrogate is null ? "On the common trials" : "Searched (not verified)")}: yield {Pct(sy.Yield)} → {Pct(by.Yield)} · " +
+                              $"smooth {G(r.StartObjective)} → {G(r.BestObjective)}");
 
         if (r.BestValues.Count > 0)
         {
@@ -216,9 +228,10 @@ internal static partial class Yield
         if (r.History.Count > 0)
         {
             Console.WriteLine();
-            Console.WriteLine("Yield vs iteration (common trials):");
+            Console.WriteLine($"Yield vs iteration ({(r.Surrogate is null ? "common trials" : "virtual trials, simulated after a switch back")}):");
             foreach (var h in r.History)
-                Console.WriteLine($"  {h.Iteration,4}  yield {Pct(h.BestYield),-8} smooth {G(h.BestObjective),-10} {h.Evaluations} simulations");
+                Console.WriteLine($"  {h.Iteration,4}  yield {Pct(h.BestYield),-8} smooth {G(h.BestObjective),-10} {h.Evaluations} simulations" +
+                                  (h.RSquared is { Count: > 0 } r2 ? "  R² " + string.Join(", ", r2.Select(kv => $"{kv.Key} {G(kv.Value)}")) : ""));
         }
     }
 }

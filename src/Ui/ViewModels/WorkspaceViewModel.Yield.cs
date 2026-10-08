@@ -72,6 +72,7 @@ public partial class WorkspaceViewModel
         panel.OpenCornerPicker = () => ShowToolPanelCore(DockPanelIds.Analyses);
         panel.EditGoalInOptimizer = EditGoalInOptimizer;
         panel.SendToTuningTarget  = (values, label) => SendYieldTrialToTuning(panel, values, label);
+        panel.SessionForDrawing   = d => SessionForTunedDrawing(d, openTab: true);   // Push of centred nominals
         panel.RerunTrial     = RerunYieldTrialAsync;
         panel.CopyText       = text => _ = CopyTextAsync(text);
         panel.SaveTrialAsCorner = (_, trial, result) =>

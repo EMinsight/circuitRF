@@ -403,6 +403,7 @@ internal static class ToolCatalog
                      new("maxEvals",  "--max-evals", OptKind.Integer, "Simulation limit, verification not counted."),
                      new("time",      "--time",      OptKind.Str,     "Wall-clock limit: seconds, or a number and s, ms, min or h."),
                      new("width",     "--width",     OptKind.Number,  "The smooth yield's logistic width, a fraction of each goal's scale (default 0.05)."),
+                     new("surrogate", "--surrogate", OptKind.Str,     "none (default) or quadratic: score each candidate on a quadratic fit of its yield-goal margins and 10,000 virtual trials — fewer simulations with few statistical variables and smooth margins; the reported yield is still the simulated verification."),
                      new("parallel",  "--parallel",  OptKind.Integer, "Simulations evaluated at once."),
                      new("seed",      "--seed",      OptKind.Integer, "The common trials' seed; the verification uses the next."),
                      new("target",    "--target",    OptKind.Str,     "The yield the verified best point must reach, as a percent (95%). Exit 3 below it."),

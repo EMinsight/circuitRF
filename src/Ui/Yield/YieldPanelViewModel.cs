@@ -33,8 +33,8 @@ using CircuitRF.Ui.ViewModels;
 
 namespace CircuitRF.Ui.Yield;
 
-/// <summary>What the panel does (R-ya10-2). YA-12 adds Centering.</summary>
-public enum YieldMode { MonteCarlo, Yield, Corners }
+/// <summary>What the panel does (R-ya10-2, R-ya12-1).</summary>
+public enum YieldMode { MonteCarlo, Yield, Corners, Centering }
 
 public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddHost, IToleranceSurface
 {
@@ -89,8 +89,8 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
     // ---- Mode (R-ya10-2) --------------------------------------------------------
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsMonteCarlo), nameof(IsYield), nameof(IsCorners), nameof(ShowTrials),
-                              nameof(ShowYieldReadout), nameof(RunTip))]
+    [NotifyPropertyChangedFor(nameof(IsMonteCarlo), nameof(IsYield), nameof(IsCorners), nameof(IsCentering), nameof(ShowTrials),
+                              nameof(ShowYieldReadout), nameof(ShowVariableTolerances), nameof(RunTip))]
     private YieldMode _mode = YieldMode.Yield;
 
     public bool IsMonteCarlo { get => Mode == YieldMode.MonteCarlo; set { if (value) Mode = YieldMode.MonteCarlo; } }
@@ -100,13 +100,14 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
     /// <summary>The trial table and its readouts belong to a Monte Carlo or a yield run.</summary>
     public bool ShowTrials => Mode != YieldMode.Corners;
 
-    /// <summary>A yield readout needs yield goals; a Monte Carlo reports spread only.</summary>
-    public bool ShowYieldReadout => Mode == YieldMode.Yield;
+    /// <summary>A yield readout needs yield goals; a Monte Carlo reports spread only. Centering shows its verified yield.</summary>
+    public bool ShowYieldReadout => Mode is YieldMode.Yield or YieldMode.Centering;
 
     public string RunTip => Mode switch
     {
         YieldMode.MonteCarlo => "Run a Monte Carlo",
         YieldMode.Yield      => "Run a yield analysis",
+        YieldMode.Centering  => "Centre the design — move the designable nominals to maximize yield",
         _                    => "Evaluate every enabled corner",
     };
 
@@ -168,6 +169,7 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
         Variables.Clear();
         Goals.Clear();
         Corners.Clear();
+        CenterRows.Clear();
         if (tuned is not null) RefreshNow();
         RefreshKit();
         OnPropertyChanged(nameof(Tuned));
@@ -229,7 +231,9 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
         SelectedGoal = Goals.FirstOrDefault(g => g.Name == selected);
 
         RefreshCorners();
+        RefreshCenterRows();
         RefreshSettings();
+        RefreshCenterSettings();
         if (Add.IsOpen) Add.Refresh();
         NotifyRunCommands();
         Changed?.Invoke(this, EventArgs.Empty);

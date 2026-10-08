@@ -159,7 +159,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
     [ObservableProperty] private string _etaText = "";
 
     /// <summary>The target as a fraction — the bar's marker; null for none, or outside yield mode.</summary>
-    public double? TargetFraction => Mode == YieldMode.Yield && Settings.Target is { } t ? t / 100 : null;
+    public double? TargetFraction => Mode is YieldMode.Yield or YieldMode.Centering && Settings.Target is { } t ? t / 100 : null;
 
     public bool HasTarget => TargetFraction is not null;
 
@@ -186,6 +186,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         SelectedTrial = null;
         CornerGrid.Clear();
         CornerGoals.Clear();
+        ClearCenterReadouts();
         State = YieldRunState.Idle;
         foreach (var g in Goals) g.ShowYield(null, TargetFraction);
         foreach (var v in Variables) v.ShowShare(null);
@@ -204,6 +205,11 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         if (circuit.ReadError is { } readError) { StatusText = $"Refused: {readError}"; return; }
         string? source = SourcePathFor?.Invoke(_tuned);
 
+        if (Mode == YieldMode.Centering)
+        {
+            RunCentering(circuit, source);
+            return;
+        }
         if (Mode == YieldMode.Corners || Settings.CornerNames is not { Count: 0 })
         {
             RunCorners(circuit, source);
@@ -357,28 +363,33 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
 
     // ---- Pause, Resume and Stop (D14) ---------------------------------------------
 
-    private bool CanPause() => IsRunActive && _run is not null;
+    private bool CanPause() => IsRunActive && (_run is not null || _centerRun is not null);
 
     /// <summary>Pause finishes the trials in flight and holds; Resume continues as if never paused. One button.</summary>
     [RelayCommand(CanExecute = nameof(CanPause))]
     private void PauseResume()
     {
-        if (_run is not { } run) return;
+        // A yield run and a centering run pause alike: between batches, or between iterations.
+        (Action Pause, Action Resume, WaitHandle Held, object Run)? target =
+            _run is { } run ? (run.Pause, run.Resume, run.Held, run)
+            : _centerRun is { } center ? (center.Pause, center.Resume, center.Held, center)
+            : null;
+        if (target is not { } t) return;
         if (IsPaused)
         {
-            run.Resume();
+            t.Resume();
             State = YieldRunState.Running;
             StatusText = "";
             return;
         }
-        run.Pause();
+        t.Pause();
         State = YieldRunState.Paused;
         StatusText = "Pausing…";
         var ct = _cts?.Token ?? CancellationToken.None;
         _ = Task.Run(() =>
         {
-            WaitHandle.WaitAny([run.Held, ct.WaitHandle]);
-            PostToUi(() => { if (ReferenceEquals(run, _run) && IsPaused) StatusText = "Paused"; });
+            WaitHandle.WaitAny([t.Held, ct.WaitHandle]);
+            PostToUi(() => { if ((ReferenceEquals(t.Run, _run) || ReferenceEquals(t.Run, _centerRun)) && IsPaused) StatusText = "Paused"; });
         });
     }
 
@@ -392,6 +403,13 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
             State = YieldRunState.Running;
             StatusText = "Stopping…";
         }
+        else if (_centerRun is { } center)
+        {
+            // Stop keeps the best point and still verifies it (YA-11).
+            center.Stop();
+            State = YieldRunState.Running;
+            StatusText = "Stopping — verifying the best point…";
+        }
         else if (_cornerRun is not null)
         {
             _cts?.Cancel();
@@ -404,9 +422,11 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
     {
         _cts?.Cancel();
         _run?.Stop();
+        _centerRun?.Stop();
         _display?.Drop();
         _run = null;
         _cornerRun = null;
+        _centerRun = null;
         State = YieldRunState.Idle;
     }
 
@@ -572,6 +592,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         NewSeedCommand.NotifyCanExecuteChanged();
         GenerateCornersCommand.NotifyCanExecuteChanged();
         NotifyTrialCommands();
+        NotifyCenterCommands();
         OnPropertyChanged(nameof(HasTarget));
         OnPropertyChanged(nameof(TargetFraction));
     }

@@ -82,6 +82,7 @@ internal static partial class Yield
         ("--max-evals",    "n",                  "center: simulation limit, verification not counted."),
         ("--time",         "limit",              "center: wall-clock limit — seconds, or a number and s, ms, min or h."),
         ("--width",        "w",                  "center: the smooth yield's logistic width, a fraction of each goal's scale."),
+        ("--surrogate",    "none|quadratic",     "center: quadratic scores each candidate on a quadratic fit of its margins (2k+1 simulations and a few trials) and 10,000 virtual trials; the result's yield is still simulated."),
         ("-o",             "out.npy",            "Where the result is written; default <design>.yield.npy beside the design (center: the best point's verification)."),
         ("-q",             "",                   "No progress line on stderr."),
     ];
@@ -113,6 +114,7 @@ internal static partial class Yield
         string? algorithm = null, time = null;
         int? verify = null, maxIter = null, maxEvals = null;
         double? width = null;
+        string? surrogate = null;
         var centerOnly = new List<string>();
         var sets = new List<(string Name, string Expr)>();
 
@@ -160,6 +162,7 @@ internal static partial class Yield
                 case "--verify" when hasValue:      if (!Int(a, args[++i], 1, out verify, out int r9)) return r9; centerOnly.Add(a); break;
                 case "--max-iter" when hasValue:    if (!Int(a, args[++i], 1, out maxIter, out int r10)) return r10; centerOnly.Add(a); break;
                 case "--max-evals" when hasValue:   if (!Int(a, args[++i], 1, out maxEvals, out int r11)) return r11; centerOnly.Add(a); break;
+                case "--surrogate" when hasValue:   surrogate = args[++i]; centerOnly.Add(a); break;
                 case "--width" when hasValue:
                 {
                     string text = args[++i];
@@ -208,7 +211,9 @@ internal static partial class Yield
             if (name is not null && trial is null && noun != "center") return JsonRun.Fail(CliDiagnostics.YieldSaveNeedsTrial(flag));
         if (output is not null && !output.EndsWith(".npy", StringComparison.OrdinalIgnoreCase))
             return JsonRun.Fail(CliDiagnostics.YieldOutputNotNpy(output));
-        int samplingIndex = -1, ncIndex = -1, scopeIndex = -1;
+        int samplingIndex = -1, ncIndex = -1, scopeIndex = -1, surrogateIndex = -1;
+        if (surrogate is not null && (surrogateIndex = Token(AnalysisDirectiveSchema.SurrogateTokens, surrogate)) < 0)
+            return JsonRun.Fail(CliDiagnostics.YieldFlagValue("--surrogate", surrogate, "none or quadratic"));
         if (sampling is not null && (samplingIndex = Token(AnalysisDirectiveSchema.SamplingTokens, sampling)) < 0)
             return JsonRun.Fail(CliDiagnostics.YieldFlagValue("--sampling", sampling, "random, lhs or sobol"));
         if (nonconverged is not null && (ncIndex = Token(AnalysisDirectiveSchema.NonConvergedTokens, nonconverged)) < 0)
@@ -239,7 +244,7 @@ internal static partial class Yield
         if (noun == "center")
             return RunCenter(input, full, circuit, tb, sets, presetName, output, quiet, vars, goals, new CenterFlags(
                 algorithm, trials, verify, maxIter, maxEvals, time, width, parallel, seed,
-                target, confidence, samplingIndex, ncIndex, save, process, mismatch, sigmaScale, scopeIndex));
+                target, confidence, samplingIndex, ncIndex, save, process, mismatch, sigmaScale, scopeIndex, surrogateIndex));
 
         // ── 2. The file's setup, with this run's flags over it ───────────────────
         // Handed to the run only when a flag changed it, so a plain run is exactly the in-process one.
@@ -762,6 +767,7 @@ internal static partial class Yield
         Console.Error.WriteLine("                     [--save-preset name --trial n] [--save-corner name --trial n]");
         Console.Error.WriteLine("                     corners: [--corners c,c] [--mc] [--generate \"axis=a,b;temp=-40,25;Vdd=3.0,3.6\" [--write]]");
         Console.Error.WriteLine("                     center: [--algorithm id] [--trials M] [--verify n] [--max-iter n] [--max-evals n]");
-        Console.Error.WriteLine("                             [--time limit] [--width w] [--target p%] [--save-preset name]");
+        Console.Error.WriteLine("                             [--time limit] [--width w] [--surrogate none|quadratic] [--target p%]");
+        Console.Error.WriteLine("                             [--save-preset name]");
     }
 }

@@ -893,6 +893,9 @@ namespace RfCore.Export
     /// <param name="BestYield">The best point's plain yield on the common trials.</param>
     /// <param name="Verification">The independent check; null when nothing evaluated.</param>
     /// <param name="History">Per iteration: the best plain yield, the best smooth objective, the simulations so far.</param>
+    /// <param name="Surrogate"><c>quadratic</c> when the search ran on the quadratic surrogate (brief-yield-12); absent
+    /// otherwise. StartYield/BestYield are then counted on its virtual trials, and only Verification is simulated.</param>
+    /// <param name="SwitchedBackAt">The iteration after which poor fits switched the search back to simulated trials.</param>
     public sealed record CenterReportJson(
         string                               Document,
         string                               Outcome,
@@ -924,14 +927,22 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string?                              Output = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string?                              SavedPreset = null);
+        string?                              SavedPreset = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                              Surrogate = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?                                 SwitchedBackAt = null);
 
     /// <summary>The start and the best point on the same fresh trials, each with its interval.</summary>
     /// <param name="WithinOverlap">The intervals overlap: the gain is not resolved at this many trials.</param>
     public sealed record CenterVerificationJson(
         int Seed, int Trials, YieldEstimateJson Start, YieldEstimateJson Best, bool WithinOverlap, string Sentence);
 
-    public sealed record CenterIterationJson(int Iteration, double? BestYield, double? BestObjective, long Evaluations);
+    /// <param name="RSquared">Under the surrogate, the poorest fit R² per yield goal over the iteration's candidates.</param>
+    public sealed record CenterIterationJson(
+        int Iteration, double? BestYield, double? BestObjective, long Evaluations,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyDictionary<string, double>? RSquared = null);
 
     // ── `lvs`: what the comparison concluded (brief-lvs-11-cli-verb.md R-lvs11-3c) ───────────
     //
@@ -1813,7 +1824,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? Estimate,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string? Refusal = null);
+        string? Refusal = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Surrogate = null);
 
     /// <summary>
     /// What a yield run would execute and cost (brief-yield-5 R-ya5-8): the analysis chains under <c>analyses=goals</c>

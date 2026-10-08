@@ -43,6 +43,7 @@ public static partial class AnalysisDirectiveSchema
     public static readonly IReadOnlyList<string> UseTokens      = ["both", "opt", "yield"];
     public static readonly IReadOnlyList<string> SamplingTokens = ["random", "lhs", "sobol"];
     public static readonly IReadOnlyList<string> NonConvergedTokens = ["fail", "warn"];
+    public static readonly IReadOnlyList<string> SurrogateTokens = ["none", "quadratic"];
 
     /// <summary>Each distribution a <c>tune</c> line's <c>dist=</c> names: the spread keys it reads, what
     /// they mean, and one line as the writer writes it (yield overview D2).</summary>
@@ -207,7 +208,7 @@ public static partial class AnalysisDirectiveSchema
 
         new("center", StatisticsTopic,
             "center [algorithm=<id>] [trials=<M>] [verify=<n>] [maxiter=<n>] [maxevals=<n>] [timelimit=<v> [unit]] " +
-            "[width=<w>] [parallel=<n>] [seed=<n>]",
+            "[width=<w>] [parallel=<n>] [seed=<n>] [surrogate=none|quadratic]",
             "Design centering: moves the nominals of the opt=1 entries, within their ranges, to maximize the yield " +
             "against the use=yield|both goals, while their tolerances ride along (a percent spread follows the moved " +
             "nominal). Every candidate is scored on ONE fixed set of M trials, so two candidates differ by the design and " +
@@ -229,6 +230,12 @@ public static partial class AnalysisDirectiveSchema
                 new("width",     Default: "0.05", Summary: "The logistic's width, as a fraction of each goal's scale."),
                 new("parallel",  Summary: "How many simulations may run at once."),
                 new("seed",      Default: "1", Summary: "The seed of the common trials; the verification uses the next one."),
+                new("surrogate", Default: "none",
+                                 Summary: "quadratic: each candidate's yield-goal margins are fitted as a quadratic in the " +
+                                          "statistical variables from 2k+1 simulations (plus the cross terms when k <= 12) " +
+                                          "and a few common trials, and the yield is estimated on 10,000 virtual trials of " +
+                                          "the fit. A search accelerator: the result's yield is always the simulated " +
+                                          "verification, and three poor fits running switch back to simulated trials."),
             ],
             [],
             "center algorithm=cmaes trials=200 verify=1000 maxiter=40"),

@@ -35,7 +35,10 @@ public sealed record CenteringOptions
 
 /// <summary>One iteration of the search (R-ya11-7): the best point's plain yield and smooth objective on the common
 /// trials, and the simulations run so far.</summary>
-public sealed record CenteringIteration(int Iteration, double BestYield, double BestObjective, long Evaluations);
+/// <param name="RSquared">Under the quadratic surrogate (brief-yield-12 R-ya12-3), the poorest fit R² per yield goal over
+/// the iteration's candidates; null when the iteration's candidates were simulated.</param>
+public sealed record CenteringIteration(int Iteration, double BestYield, double BestObjective, long Evaluations,
+                                        IReadOnlyDictionary<string, double>? RSquared = null);
 
 /// <summary>What a centering run reports after every iteration (R-ya11-8), and once as the verification starts.</summary>
 /// <param name="Stage"><c>search</c>, or <c>verify</c> for the closing verification.</param>
@@ -47,7 +50,8 @@ public sealed record CenteringProgress(
     double                              BestYield,
     double                              BestObjective,
     IReadOnlyDictionary<string, string> BestValues,
-    IReadOnlyList<RailedVariable>       Railed);
+    IReadOnlyList<RailedVariable>       Railed,
+    IReadOnlyDictionary<string, double>? RSquared = null);
 
 /// <summary>One candidate scored on the common trials (R-ya11-2/3).</summary>
 /// <param name="Values">The candidate's designable values, as the schematic would hold them.</param>
@@ -66,6 +70,10 @@ public sealed record CandidateScore(
     /// <summary>Nothing could be scored: infeasible, or no trial evaluated (and, under <c>nonconverged=fail</c>,
     /// every trial failed to).</summary>
     public bool Failed => Infeasible || double.IsNaN(Objective) || Records.Count == DidNotEvaluate;
+
+    /// <summary>Scored on the quadratic surrogate's virtual trials (brief-yield-12): the fit R² per yield goal. Null
+    /// when the candidate was simulated on the common trials; its <see cref="Records"/> are then the design's points.</summary>
+    public IReadOnlyDictionary<string, double>? Fit { get; init; }
 }
 
 /// <summary>The closing verification (R-ya11-5): the start and the best point on the same fresh trials.</summary>
@@ -118,6 +126,13 @@ public sealed class CenteringResult
     public IReadOnlyList<Diagnostic> Notes { get; init; } = [];
 
     public string Algorithm { get; init; } = "";
+
+    /// <summary>The search accelerator the run was asked for (brief-yield-12).</summary>
+    public CenteringSurrogate Surrogate { get; init; }
+
+    /// <summary>The iteration after which three poor fits running switched the search back to simulated trials;
+    /// null when it never did.</summary>
+    public int? SwitchedBackAt { get; init; }
 
     public int Iterations { get; init; }
 
@@ -178,6 +193,13 @@ public sealed class CenteringRun
     private readonly double[] _scales = [];
     private readonly int[] _trialNumbers = [];
 
+    // brief-yield-12: the quadratic surrogate — its coordinates, design, check trials and virtual trials.
+    private readonly IReadOnlyList<SurrogateDimension> _dims = [];
+    private readonly IReadOnlyList<double[]> _design = [];
+    private readonly int[] _checkTrials = [];
+    private double[][]? _virtual;
+    private bool _surrogate;
+
     private readonly ManualResetEventSlim _resume = new(true);
     private readonly ManualResetEventSlim _held = new(false);
     private volatile bool _stop;
@@ -232,6 +254,26 @@ public sealed class CenteringRun
 
         _scales = [.. _trials.Goals.Select(g => GoalResiduals.Scale(g) is { } s && s > 0 ? s : 1.0)];
         _trialNumbers = [.. Enumerable.Range(1, _center.EffectiveTrials)];
+
+        // R-ya12-2: the surrogate's coordinates — kit mismatch grouped per instance — and a design no cheaper than the
+        // common trials is refused with the counts, never truncated.
+        if (_center.EffectiveSurrogate == CenteringSurrogate.Quadratic)
+        {
+            _dims = _trials.SurrogateDimensions();
+            int k = _dims.Count, per = QuadraticSurrogate.PointsPerCandidate(k);
+            if (per >= _center.EffectiveTrials)
+            {
+                Refusal = StatisticsDiagnostics.CenterSurrogateTooMany(
+                    k, _dims.Count(d => d.Kind == SurrogateDimensionKind.Entry), _dims.Count(d => d.Kind == SurrogateDimensionKind.Process),
+                    _dims.Where(d => d.Kind == SurrogateDimensionKind.Mismatch).Sum(d => d.Streams.Count),
+                    _dims.Count(d => d.Kind == SurrogateDimensionKind.Mismatch), per, _center.EffectiveTrials);
+                return;
+            }
+            if (!QuadraticSurrogate.IsFull(k)) _notes.Add(StatisticsDiagnostics.CenterSurrogateDiagonal(k, QuadraticSurrogate.FullQuadraticLimit));
+            _design = QuadraticSurrogate.Design(k);
+            _checkTrials = [.. Enumerable.Range(1, QuadraticSurrogate.CheckTrials(k))];
+            _surrogate = true;
+        }
     }
 
     /// <summary>Prepares a centering run of <paramref name="circuit"/>'s setup. A run that cannot start carries its
@@ -257,6 +299,13 @@ public sealed class CenteringRun
     public IReadOnlyList<int> TrialNumbers => _trialNumbers;
 
     public CenteringSettings Settings => _center;
+
+    /// <summary>The surrogate's coordinates (brief-yield-12); empty when the run simulates every candidate.</summary>
+    public IReadOnlyList<SurrogateDimension> SurrogateDimensions => _dims;
+
+    /// <summary>Whether candidates are being scored on the quadratic surrogate — false from the start without one, and
+    /// after three poor fits running switched the search back to simulated trials.</summary>
+    public bool UsesSurrogate => _surrogate;
 
     /// <summary>The statistics line's yield target in percent — what the verified yield is held to; null for none.</summary>
     public double? Target => _statistics.Target;
@@ -290,6 +339,10 @@ public sealed class CenteringRun
     public CandidateScore Score(double[] u, CancellationToken ct = default) => ScoreBatch([u], ct)[0];
 
     private CandidateScore[] ScoreBatch(IReadOnlyList<double[]> batch, CancellationToken ct)
+        => _surrogate ? SurrogateBatch(batch, ct) : SimulatedBatch(batch, ct);
+
+    /// <summary>Each candidate simulated on all M common trials (brief-yield-11).</summary>
+    private CandidateScore[] SimulatedBatch(IReadOnlyList<double[]> batch, CancellationToken ct)
     {
         var decoded = batch.Select(u => Variables!.Decode(u)).ToArray();
         var points = new List<(int, IReadOnlyDictionary<string, string>)>();
@@ -312,6 +365,80 @@ public sealed class CenteringRun
             scores[k] = ScoreOf(decoded[k].Values, mine);
         }
         return scores;
+    }
+
+    /// <summary>
+    /// R-ya12-2: each candidate's design points and check trials as one batch each; per yield goal a quadratic fit over
+    /// them; the smooth objective and the yield on the virtual trials. A candidate whose design did not evaluate whole
+    /// — a point that failed, a goal with no value — is simulated on the common trials instead.
+    /// </summary>
+    private CandidateScore[] SurrogateBatch(IReadOnlyList<double[]> batch, CancellationToken ct)
+    {
+        var decoded = batch.Select(u => Variables!.Decode(u)).ToArray();
+        var zPoints = new List<(double[], IReadOnlyDictionary<string, string>)>();
+        var checks  = new List<(int, IReadOnlyDictionary<string, string>)>();
+        foreach (var d in decoded)
+        {
+            if (d.Infeasible) continue;
+            foreach (var x in _design) zPoints.Add((x, d.Values));
+            foreach (int t in _checkTrials) checks.Add((t, d.Values));
+        }
+        var designRecords = _trials!.EvaluateAtZ(_dims, zPoints, ct);
+        var checkRecords  = _trials.EvaluateAt(checks, ct);
+        _virtual ??= _trials.VirtualCoordinates(_dims, QuadraticSurrogate.VirtualTrials);
+
+        var scores = new CandidateScore[batch.Count];
+        var simulate = new List<int>();
+        int nextZ = 0, nextC = 0;
+        for (int k = 0; k < batch.Count; k++)
+        {
+            if (decoded[k].Infeasible)
+            {
+                scores[k] = new CandidateScore(decoded[k].Values, double.NaN, YieldEstimate.None, 0, [], true);
+                continue;
+            }
+            var design = designRecords.AsSpan(nextZ, _design.Count).ToArray();
+            var trials = checkRecords.AsSpan(nextC, _checkTrials.Length).ToArray();
+            nextZ += _design.Count;
+            nextC += _checkTrials.Length;
+            if (SurrogateScoreOf(decoded[k].Values, design, trials) is { } s) scores[k] = s;
+            else simulate.Add(k);
+        }
+        if (simulate.Count > 0)
+        {
+            var simulated = SimulatedBatch([.. simulate.Select(k => batch[k])], ct);
+            for (int i = 0; i < simulate.Count; i++) scores[simulate[i]] = simulated[i];
+        }
+        return scores;
+    }
+
+    /// <summary>The fits and the virtual-trial score of one candidate; null when a point or a goal has no value.</summary>
+    private CandidateScore? SurrogateScoreOf(IReadOnlyDictionary<string, string> values, TrialRecord[] design, TrialRecord[] checks)
+    {
+        var all = design.Concat(checks).ToArray();
+        if (all.Any(r => !r.Evaluated)) return null;
+        var z = new List<double[]>(_design);
+        foreach (var r in checks)
+            z.Add(StatisticalRun.CoordinatesOf(_dims, r.Z, s => r.Kit.TryGetValue(s, out var d) ? d.Z : 0));
+
+        var goals = Goals;
+        var models = new QuadraticModel[goals.Count];
+        var rules  = new Func<double, double>[goals.Count];
+        var fit    = new Dictionary<string, double>(StringComparer.Ordinal);
+        for (int g = 0; g < goals.Count; g++)
+        {
+            var scored = all.Select(r => r.Goals.FirstOrDefault(x => x.Name == goals[g].Name)).ToArray();
+            if (scored.Any(x => x is null || x.Error is not null)) return null;
+            bool value = scored.All(x => QuadraticSurrogate.FitsValue(x!));
+            var y = scored.Select(x => QuadraticSurrogate.Fitted(x!, value)).ToArray();
+            if (y.Any(v => !double.IsFinite(v))) return null;
+            models[g] = QuadraticSurrogate.Fit(z, y);
+            rules[g]  = QuadraticSurrogate.MarginRule(goals[g], value);
+            fit[goals[g].Name] = models[g].RSquared;
+        }
+        var v = QuadraticSurrogate.Score(models, rules, _scales, _center.EffectiveWidth, _virtual!);
+        var yield = YieldEstimate.Of(v.Passes, v.Trials, _statistics.EffectiveConfidence / 100);
+        return new CandidateScore(values, v.Objective, yield, 0, all, false) { Fit = fit };
     }
 
     /// <summary>
@@ -360,13 +487,16 @@ public sealed class CenteringRun
         if (Refusal is not null || Variables is null) return null;
         int m = _center.EffectiveTrials, verify = _center.EffectiveVerify;
         int population = Math.Max(1, CreateAlgorithm().Ask().Count);
-        long perIteration = (long)population * m;
+        // brief-yield-12: under the surrogate a candidate costs its design and check trials, not M.
+        int perCandidate = _surrogate ? QuadraticSurrogate.PointsPerCandidate(_dims.Count) : m;
+        string what = _surrogate ? $"{perCandidate} surrogate points" : $"{m} trials";
+        long perIteration = (long)population * perCandidate;
         int maxIter = _center.MaxIterations ?? OptimizationRun.DefaultMaxIterations;
         long search = perIteration * maxIter;
         if (_center.MaxEvaluations is { } me) search = Math.Min(search, me);
-        long total = m + search + 2L * verify;
-        string sentence = $"about {total} simulations: the start on the {m} common trials, up to {maxIter} iterations of " +
-                          $"{population} candidate(s) × {m} trials ({perIteration} each)" +
+        long total = perCandidate + search + 2L * verify;
+        string sentence = $"about {total} simulations: the start on the {(_surrogate ? what : what.Replace("trials", "common trials"))}, " +
+                          $"up to {maxIter} iterations of {population} candidate(s) × {what} ({perIteration} each)" +
                           (_center.MaxEvaluations is { } cap ? $", at most {cap} in all," : "") +
                           $" then {verify} verification trials at each of the start and the best point (an estimate; " +
                           "a candidate seen before costs nothing)";
@@ -399,6 +529,11 @@ public sealed class CenteringRun
         double stallTol = OptionDefault("stall_tol"), stallIters = OptionDefault("stall_iters");
         double? limitS = _center.TimeLimit is { } tl ? TuningValidator.TimeLimitSeconds(tl) : null;
         int maxIter = _center.MaxIterations ?? OptimizationRun.DefaultMaxIterations;
+        var notes = new List<Diagnostic>(_notes);
+        // R-ya12-3: the poorest fit per goal over the iteration in flight, and the poor iterations running.
+        var iterationFit = new Dictionary<string, double>(StringComparer.Ordinal);
+        int poorRunning = 0;
+        int? switchedAt = null;
 
         try
         {
@@ -431,16 +566,37 @@ public sealed class CenteringRun
                     // above every real one.
                     results[k] = s.Failed ? new Evaluation(1, null, Failed: true) : new Evaluation(-s.Objective);
                     if (!s.Failed && (best is null || s.Objective > best.Objective)) (best, bestU) = (s, asked[k]);
+                    if (s.Fit is { } fit)
+                        foreach (var (goal, r2) in fit)
+                            iterationFit[goal] = iterationFit.TryGetValue(goal, out double low) ? Math.Min(low, r2) : r2;
                 }
                 alg.Tell(results);
                 if (alg.Iterations > told)
                 {
                     iterations += alg.Iterations - told;
                     told = alg.Iterations;
-                    history.Add(new CenteringIteration(iterations, best?.Yield.Yield ?? double.NaN, best?.Objective ?? double.NaN, Evaluations));
+                    IReadOnlyDictionary<string, double>? r2s = iterationFit.Count > 0 ? new Dictionary<string, double>(iterationFit) : null;
+                    iterationFit.Clear();
+                    history.Add(new CenteringIteration(iterations, best?.Yield.Yield ?? double.NaN, best?.Objective ?? double.NaN, Evaluations, r2s));
                     _options.Progress?.Invoke(new CenteringProgress("search", iterations, Evaluations, sw.Elapsed,
                         best?.Yield.Yield ?? double.NaN, best?.Objective ?? double.NaN,
-                        best?.Values ?? new Dictionary<string, string>(), bestU is null ? [] : Variables.Railed(bestU)));
+                        best?.Values ?? new Dictionary<string, string>(), bestU is null ? [] : Variables.Railed(bestU), r2s));
+
+                    // R-ya12-3: a fit below 0.9 on any goal is a warning on the iteration; three running, the search
+                    // continues on simulated trials, the best point re-scored on them so it competes on equal terms.
+                    if (_surrogate && r2s is not null)
+                    {
+                        var poor = QuadraticSurrogate.PoorFits(r2s);
+                        foreach (var (goal, r2) in poor) notes.Add(StatisticsDiagnostics.CenterSurrogatePoorFit(iterations, goal, r2));
+                        poorRunning = poor.Count > 0 ? poorRunning + 1 : 0;
+                        if (poorRunning >= QuadraticSurrogate.PoorFitsBeforeSwitch)
+                        {
+                            _surrogate = false;
+                            switchedAt = iterations;
+                            notes.Add(StatisticsDiagnostics.CenterSurrogateSwitchedBack(iterations, QuadraticSurrogate.PoorFitsBeforeSwitch));
+                            if (bestU is not null && SimulatedBatch([bestU], ct)[0] is { Failed: false } rescored) best = rescored;
+                        }
+                    }
                 }
 
                 if (alg.IsFinished) { reason = alg.FinishReason ?? "the algorithm finished"; break; }
@@ -454,7 +610,7 @@ public sealed class CenteringRun
         }
         catch (OperationCanceledException)
         {
-            return Result = new CenteringResult { Outcome = CenteringOutcome.Cancelled, FinishReason = "cancelled", Algorithm = Algorithm, Notes = _notes };
+            return Result = new CenteringResult { Outcome = CenteringOutcome.Cancelled, FinishReason = "cancelled", Algorithm = Algorithm, Notes = notes };
         }
 
         long searchEvaluations = Evaluations;
@@ -463,7 +619,8 @@ public sealed class CenteringRun
             var first = start.Records.FirstOrDefault(r => r.Reason is not null)?.Reason?.Render() ?? "every candidate was infeasible";
             return Result = new CenteringResult
             {
-                Outcome = CenteringOutcome.NoneEvaluated, FinishReason = reason, Algorithm = Algorithm, Notes = _notes,
+                Outcome = CenteringOutcome.NoneEvaluated, FinishReason = reason, Algorithm = Algorithm, Notes = notes,
+                Surrogate = _center.EffectiveSurrogate, SwitchedBackAt = switchedAt,
                 Refusal = StatisticsDiagnostics.CenterNoneEvaluated(searchEvaluations, first), Iterations = iterations,
                 Evaluations = searchEvaluations, History = history, Start = start,
             };
@@ -473,7 +630,6 @@ public sealed class CenteringRun
         var railed = Variables!.Railed(bestU);
         _options.Progress?.Invoke(new CenteringProgress("verify", iterations, searchEvaluations, sw.Elapsed,
                                                         best.Yield.Yield, best.Objective, best.Values, railed));
-        var notes = new List<Diagnostic>(_notes);
         var (startRun, startVerified) = Verify(start.Values, null, notes, "start");
         var (bestRun, bestVerified) = Verify(best.Values, _options.ResultPath, notes, "best");
         if (startVerified?.Outcome == StatisticalOutcome.Cancelled || bestVerified?.Outcome == StatisticalOutcome.Cancelled
@@ -503,6 +659,7 @@ public sealed class CenteringRun
         return Result = new CenteringResult
         {
             Outcome = outcome, FinishReason = reason, Algorithm = Algorithm, Notes = notes, Iterations = iterations,
+            Surrogate = _center.EffectiveSurrogate, SwitchedBackAt = switchedAt,
             Evaluations = searchEvaluations, VerifyEvaluations = (startRun?.Evaluations ?? 0) + (bestRun?.Evaluations ?? 0),
             History = history, Start = start, Best = best, Railed = railed, Verification = verification, Verified = bestVerified,
         };

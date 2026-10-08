@@ -4,14 +4,14 @@ slug: reference/yield.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Yield
 lede: Give values a tolerance, mark which goals are specs, and find out how many builds of the design meet them — and which ones do not.
-keywords: yield, monte carlo, tolerance, tolerances, distribution, gaussian, uniform, lognormal, discrete, truncation, spread, correlation, specs, trials, seed, sampling, latin hypercube, sobol, auto-stop, confidence, interval, corners, statistical corner, contributions, sensitivity, histogram, kit statistics, process, mismatch
+keywords: yield, design centering, centering, surrogate, monte carlo, tolerance, tolerances, distribution, gaussian, uniform, lognormal, discrete, truncation, spread, correlation, specs, trials, seed, sampling, latin hypercube, sobol, auto-stop, confidence, interval, corners, statistical corner, contributions, sensitivity, histogram, kit statistics, process, mismatch
 ---
 
 <nav class="toc">
 <h2>On this page</h2>
 <ol>
 <li><a href="#what">What the Yield panel does</a></li>
-<li><a href="#modes">Monte Carlo, Yield and Corners</a></li>
+<li><a href="#modes">The four modes</a></li>
 <li><a href="#tolerances">Tolerances</a></li>
 <li><a href="#spread">Writing a spread</a></li>
 <li><a href="#correlations">Correlations</a></li>
@@ -22,6 +22,7 @@ keywords: yield, monte carlo, tolerance, tolerances, distribution, gaussian, uni
 <li><a href="#trials">The trial table</a></li>
 <li><a href="#display">The yield display</a></li>
 <li><a href="#corners">Corners</a></li>
+<li><a href="#centering">Centering</a></li>
 <li><a href="#headless">From the command line, and from an agent</a></li>
 </ol>
 </nav>
@@ -37,15 +38,16 @@ Everything you set here — tolerances, correlations, which goals are specs, the
 corners — is saved with the schematic, marks it changed and can be undone, one step per change. A run
 and its trial table are not: they belong to the session. A run never changes the schematic's values.
 
-## Monte Carlo, Yield and Corners {#modes}
+## The four modes {#modes}
 
-The three buttons at the top choose what **▶** does:
+The four buttons at the top choose what **▶** does:
 
 | Mode | What a run reports |
 |---|---|
 | **Monte Carlo** | The spread of every measurement and goal value over the trials. No pass or fail. |
 | **Yield** | The fraction of trials meeting every spec, with its confidence interval, overall and per spec. |
 | **Corners** | Every enabled corner evaluated once — or, with **MC at each corner**, a Monte Carlo at each. |
+| **Centering** | The designable values moved to where the most trials meet the specs, then checked on fresh trials. |
 
 ## Tolerances {#tolerances}
 
@@ -177,8 +179,34 @@ and the values you type, and shows how many before it writes them. **▶** evalu
 and shows a grid of corner × spec: the margin in each cell, failing cells red, each spec's worst corner
 in bold. With **MC at each corner**, the grid shows each spec's yield at each corner instead.
 
+## Centering {#centering}
+
+Centering moves the values you let the [Optimizer](optimization.html) move — those with **Opt** ticked,
+within their ranges — to wherever the most trials meet the specs, while their tolerances move with them.
+The list shows each such value with its range and its tolerance beside it, and the toleranced values
+that stay put.
+
+Every position the search tries is judged on the same set of trials, so two positions differ by the
+design and not by luck. The chart beside the status line is the best yield found at each iteration. At
+the end, the starting values and the centred ones are each run on the same set of fresh trials, and the
+panel shows both: **start yield [interval] → centred yield [interval]**. That pair — never the search's
+own figure — is the result. If the two intervals overlap, the gain is not resolved at that many trials;
+raise **Verify** to settle it.
+
+The chevron opens the centering settings: the search method, the trials each position is judged on,
+the trials of the final check, the iteration and simulation limits, and **Surrogate**. With
+**quadratic**, each position costs a dozen simulations or so instead of one per trial: circuitRF fits
+each spec to a smooth curve through a few runs and counts the yield on the curve. It is much faster
+with a handful of toleranced values and specs that change gently, and it never decides the answer —
+the final check is still simulated. When the curve fits a spec poorly for three iterations running,
+the search goes back to simulating every trial and says so.
+
+When it finishes, **Lock in** keeps the centred values as a preset, **Push** writes them into the
+schematic (one undo step), and **Send to Tuning** loads them into the Tuning sliders.
+
 ## From the command line, and from an agent {#headless}
 
 Everything the panel runs, `circuitrf yield` runs too — `yield mc`, `yield estimate`,
-`yield corners` and `yield trial` — and an agent runs the same through MCP. See
+`yield corners`, `yield center` (with `--surrogate quadratic`) and `yield trial` — and an agent runs
+the same through MCP. See
 [the command line](cli.html) and [AI agents](ai-agents.html#yield).

@@ -117,7 +117,8 @@ internal static class ExplainStatistics
         var run = CenteringRun.Create(PreparedCircuit.FromBench(lib, tb, null));
         var e = run.Estimate();
         return new ExplainCenterJson(c.EffectiveAlgorithm, c.EffectiveTrials, c.EffectiveVerify, c.EffectiveWidth, c.EffectiveSeed,
-            e?.Variables, e?.PointsPerIteration, e?.EvaluationsPerIteration, e?.Total, e?.Estimate, run.Refusal?.Render());
+            e?.Variables, e?.PointsPerIteration, e?.EvaluationsPerIteration, e?.Total, e?.Estimate, run.Refusal?.Render(),
+            c.EffectiveSurrogate == CenteringSurrogate.None ? null : AnalysisDirectiveSchema.SurrogateTokens[(int)c.EffectiveSurrogate]);
     }
 
     /// <summary>
@@ -245,9 +246,11 @@ internal static class ExplainStatistics
         }
         if (r.Center is { } ctr)
         {
-            Console.WriteLine($"  centering: {ctr.Algorithm} · {ctr.Trials} common trials · verify {ctr.Verify} · width {N(ctr.Width)} · seed {ctr.Seed}");
+            Console.WriteLine($"  centering: {ctr.Algorithm} · {ctr.Trials} common trials · verify {ctr.Verify} · width {N(ctr.Width)} · seed {ctr.Seed}" +
+                              (ctr.Surrogate is { } sg ? $" · surrogate {sg}" : ""));
             if (ctr.Estimate is { } estimate)
-                Console.WriteLine($"  centering cost: {ctr.EvaluationsPerIteration} simulations per iteration ({ctr.PointsPerIteration} candidate(s) × {ctr.Trials}) — {estimate}");
+                Console.WriteLine($"  centering cost: {ctr.EvaluationsPerIteration} simulations per iteration ({ctr.PointsPerIteration} candidate(s) × " +
+                                  $"{(ctr.Surrogate is null ? ctr.Trials : ctr.EvaluationsPerIteration / Math.Max(1, ctr.PointsPerIteration ?? 1))}) — {estimate}");
             if (ctr.Refusal is { } refused) Console.WriteLine($"  centering would be refused: {refused}");
         }
     }

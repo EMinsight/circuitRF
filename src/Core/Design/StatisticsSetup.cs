@@ -146,9 +146,15 @@ public sealed class CenteringSettings
     /// <summary>The seed of the common trial set; the verification draws from the next seed.</summary>
     public int? Seed { get; set; }
 
+    /// <summary>The search accelerator (brief-yield-12 R-ya12-2); null is <see cref="CenteringSurrogate.None"/> —
+    /// every candidate simulated on the common trials.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public CenteringSurrogate? Surrogate { get; set; }
+
     /// <summary>Keys this build does not know, kept verbatim.</summary>
     public OrderedDictionary<string, string>? Extra { get; set; }
 
+    [JsonIgnore] public CenteringSurrogate EffectiveSurrogate => Surrogate ?? CenteringSurrogate.None;
     [JsonIgnore] public string EffectiveAlgorithm => Algorithm ?? DefaultAlgorithm;
     [JsonIgnore] public int    EffectiveTrials    => Trials ?? DefaultTrials;
     [JsonIgnore] public int    EffectiveVerify    => Verify ?? DefaultVerify;
@@ -159,8 +165,18 @@ public sealed class CenteringSettings
     {
         Algorithm = Algorithm, Trials = Trials, Verify = Verify, MaxIterations = MaxIterations,
         MaxEvaluations = MaxEvaluations, TimeLimit = TimeLimit, Width = Width, Parallelism = Parallelism, Seed = Seed,
-        Extra = TunableEntry.CloneMap(Extra),
+        Surrogate = Surrogate, Extra = TunableEntry.CloneMap(Extra),
     };
+}
+
+/// <summary>How design centering scores a candidate (brief-yield-12 R-ya12-2).</summary>
+public enum CenteringSurrogate
+{
+    /// <summary>Every candidate simulated on the M common trials — the default.</summary>
+    None,
+    /// <summary>Each yield goal's margin fitted as a quadratic in z from a small design of simulations, and the yield
+    /// estimated on virtual trials of the fit. A search accelerator only: the result's yield is always simulated.</summary>
+    Quadratic,
 }
 
 /// <summary>A correlation between two statistical entries (yield overview D3) — the <c>correlate</c> line.</summary>

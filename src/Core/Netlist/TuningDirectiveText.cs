@@ -158,6 +158,10 @@ public static class TuningDirectiveText
                     break;
                 case "parallel":  c.Parallelism = Positive(key, value); break;
                 case "seed":      c.Seed = Default(StatInt(key, value), CenteringSettings.DefaultSeed); break;
+                case "surrogate":
+                    var sg = StatEnum<CenteringSurrogate>(key, value, AnalysisDirectiveSchema.SurrogateTokens);
+                    c.Surrogate = sg == CenteringSurrogate.None ? null : sg;
+                    break;
                 default:
                     (c.Extra ??= new(StringComparer.Ordinal))[key] = value;
                     unknown(key);
@@ -471,6 +475,8 @@ public static class TuningDirectiveText
         if (c.Width is { } w)          sb.Append(" width=").Append(w.ToString("R", CultureInfo.InvariantCulture));
         if (c.Parallelism is { } p)    sb.Append(" parallel=").Append(p.ToString(CultureInfo.InvariantCulture));
         if (c.Seed is { } seed)        sb.Append(" seed=").Append(seed.ToString(CultureInfo.InvariantCulture));
+        if (c.Surrogate is { } sg && sg != CenteringSurrogate.None)
+            sb.Append(" surrogate=").Append(AnalysisDirectiveSchema.SurrogateTokens[(int)sg]);
         Extra(sb, c.Extra, "");
         return sb.ToString();
     }

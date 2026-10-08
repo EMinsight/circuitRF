@@ -889,7 +889,7 @@ evaluated. Stop keeps the best point and still verifies it; cancelling writes no
 ### 15.5 The `center` line and headless (R-ya11-6, R-ya11-8)
 
 `center [algorithm=<id>] [trials=<M>] [verify=<n>] [maxiter=<n>] [maxevals=<n>] [timelimit=<d>] [width=<w>]
-[parallel=<n>] [seed=<n>]` — `CenteringSettings` on `TuningSetup.Centering`, the `.csch` block's `Centering`, at most
+[parallel=<n>] [seed=<n>] [surrogate=none|quadratic]` (`surrogate` is §16) — `CenteringSettings` on `TuningSetup.Centering`, the `.csch` block's `Centering`, at most
 one line, defaults held as null and never written. `explain --analysis` states the estimated total before anything
 runs — the algorithm's first batch (its population, asked of the algorithm itself) × M per iteration, times the
 iteration limit (or the evaluation limit), plus the start and both verifications. `circuitrf yield center` takes the
@@ -897,6 +897,71 @@ line's settings as flags (`cli.md` §25.8), `--save-preset` stores the centred n
 `run analysis=center` reports a progress notification per iteration. Gates: `tests/Ui.Tests/Statistics/CenteringTests.cs`
 — `CenteringDividerTests`, `CommonRandomNumbersTests`, `CenteringSettingsRoundTripTests`, `CenterCliVerbTests`.
 
+## 16. The Centering mode and the quadratic surrogate (brief-yield-12)
+
+### 16.1 The panel's Centering mode (R-ya12-1)
+
+`YieldMode.Centering`, the fourth mode (`YieldPanelViewModel.Centering.cs`). The variable list shows the `opt=1` and
+`stat=1` entries together (`YieldCenterRowViewModel`): a designable value's range, the tolerance beside it, and after
+a run start → centred with its mark on the range and a railed end (the Optimizer's `RangeMarkBar`). The `center` line
+is edited through a summary line with a chevron, as the statistics line is (R-ya10-5): algorithm (the registry's
+`ForNoisyObjective` ∩ built), common trials, verify, iteration and simulation limits, surrogate — each edit one undo
+step through `TuningSetupEdits.WithCentering`, which keeps the line even at every default (its presence is the design
+saying it is centred). ▶ creates `CenteringRun` with `Setup = null` — the bench's own setup, as `yield center` reads
+it — so the panel's centred nominals are the verb's for the same seed (`CenteringPanelTests` compares them with the
+verb run as a process). The yield-vs-iteration chart is the Optimizer's `CostSparkline` with `LogScale=False`; the
+verification reads `start [interval] → centred [interval]`, and the trial table and the yield bar are the best
+point's verification run's. Pause, Resume and Stop are the yield run's (Stop keeps the best point and still verifies
+it). **Lock in** (`TuningPresets.LockIn`), **Push** (`TuningPush`, one undo step per document — the workspace supplies
+`SessionForDrawing` exactly as for the Optimizer) and **Send to Tuning** act on the centred nominals as the Optimizer's
+act on its best point.
+
+### 16.2 The surrogate (R-ya12-2)
+
+`center surrogate=none|quadratic` (`CenteringSettings.Surrogate`, null = none; `--surrogate` and MCP `surrogate`).
+The z-space is `StatisticalRun.SurrogateDimensions`: one coordinate per statistical entry, per kit process stream, and
+ONE per instance for all of its kit mismatch streams (YA-4 R-ya4-9's grouping) — the instance's coordinate x moves each
+of its n streams by x/√n, so it is itself a standard normal (Σz/√n). A kind switched off has no coordinate. For each
+candidate, `QuadraticSurrogate.Design(k)` places the centre and ±δ (δ = 1) on each coordinate, and, when
+k ≤ 12, one cross point (+δ, +δ) per pair — exactly the 1 + 2k + k(k−1)/2 coefficients of a full quadratic; beyond 12
+the fit is diagonal and a note says so. Those points are evaluated through `StatisticalRun.EvaluateAtZ` (the trial
+door with the z-vector given rather than drawn; trial number 0; a cache tag of the coordinates), and **k + 2 of the
+common trials** are simulated beside them through `EvaluateAt`. The check trials are what makes the fit a least-squares
+fit at all: the design alone determines the quadratic exactly, so its R² would be 1 by construction.
+
+Each yield goal is fitted separately by Householder QR (`LeastSquares`, `src/Engine/Statistics` — no normal equations,
+so an exact quadratic fits to round-off). **A goal on a single number is fitted on its VALUE**, and its margin computed
+from the predicted value by the goal's own rule (`QuadraticSurrogate.MarginRule`: the distance inside
+`GoalResiduals.ValueLimits` for ge/le/in, `GoalResiduals.Score` itself for eq/out): a window's margin
+`min(x − lo, hi − x)` has a kink at the window's centre that no quadratic follows, which is exactly where centering
+ends up, while the value is smooth. A goal over a sweep is fitted on its margin. The smooth objective and the yield are
+then counted on 10,000 virtual trials — `StatisticalRun.VirtualCoordinates`, the first 10,000 trials of the centering
+seed and sampling (under `random`, trials 1…M ARE the common trials), mismatch aggregated as above — through the same
+logistic of width w as §15.2; a virtual trial passes when every predicted margin is ≥ 0. A candidate whose design did
+not evaluate whole (a point that failed, a goal with no value) is simulated on the common trials instead.
+
+A design no cheaper than the common trials (2k + 1 [+ cross] + k + 2 ≥ M) is refused with the counts —
+`yield.center.surrogate-too-many` names the coordinates, the toleranced values, the process draws, and the mismatch
+draws with the instances they group into. Nothing is truncated.
+
+### 16.3 Honesty (R-ya12-3)
+
+The surrogate chooses where to look; it never answers. The verification (§15.4) is unchanged — the start and the best
+point simulated on fresh trials — and that is the yield the result, the exit code and the report carry. A surrogate
+candidate's `CandidateScore.Fit` holds its R² per goal; each `CenteringIteration` and progress report carries the
+poorest per goal over the iteration's candidates. Below 0.9 on any goal is a warning on that iteration
+(`yield.center.surrogate-poor-fit`); three iterations running switch the rest of the search to simulated trials
+(`yield.center.surrogate-switched-back`, `CenteringResult.SwitchedBackAt`), and the best point is re-scored on the
+common trials at the switch so it competes on equal terms. The report labels the search's yields as virtual ("Searched
+(not verified)"), and `result.center.surrogate`/`switchedBackAt`/`history[].rSquared` carry the same in JSON.
+
+On the divider (§15's bench, M = 200, 15 iterations of CMA-ES) the surrogate ran 610 simulations against 12,200 and
+both verified at 84.3 % [81.9 %, 86.5 %] — the exact yield of a centred window. Gates:
+`tests/Ui.Tests/Statistics/SurrogateTests.cs` — `QuadraticSurrogateTests` (an exact quadratic fits to R² = 1 within
+1e-12 and its virtual yield and objective equal the true ones on the same trials; a cubic fits to R² = 0.876 and is a
+poor fit), `SurrogateCenteringTests` (same verified yield within the intervals, fewer simulations — a counter),
+`CenteringPanelTests` (the panel's centred nominals equal the verb's; Push is one undo step).
+
 ## Later phases
 
-Each phase appends its section above this one as it lands: YA-12 the Centering mode and the surrogate.
+Each phase appends its section above this one as it lands: YA-13 the documentation and the example.

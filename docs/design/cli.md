@@ -3665,3 +3665,11 @@ table. The file is the best point's verification, `<design>.yield.npy` (`-o` mov
 checkpoint. Exit (D13): **0** · **3** the verified yield is below `--target` · **1** refused · **2** no candidate
 evaluated · **130** cancelled, nothing written. Over MCP it is `run analysis=center`.
 
+`--surrogate quadratic` (brief-yield-12, `yield.md` §16) scores each candidate on a quadratic fit of its yield-goal
+margins — 2k + 1 points in z-space plus the cross terms when k ≤ 12, and k + 2 common trials — and 10,000 virtual
+trials, instead of M simulations. The report then states the surrogate, labels the search's yields as not verified,
+adds each iteration's poorest fit R² to the progress line and the history (`history[].rSquared`), and says when three
+poor fits switched the search back to simulated trials (`switchedBackAt`). The verification, the exit code and the
+result file are unchanged: they are always simulated. A design whose surrogate would cost no fewer simulations than M is
+refused with the counts. MCP: `surrogate`.
+

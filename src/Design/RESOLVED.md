@@ -18700,3 +18700,21 @@ discrete mode only, so unticking Tune on a value that also carried a tolerance d
 requires no stat flag, no distribution and no spread too. A tolerance-only entry is created with NO range (a range is
 noise on a `tune` line that does not tune), so the test also reads a missing min/max as the default one, and the first
 tune or opt gives such an entry the D4 default range.
+
+## brief-yield-12 — the Centering mode and the quadratic surrogate (2026-10-08)
+
+- **A window goal's MARGIN is not quadratic where centering ends up.** `GoalResiduals`' margin for `in lo hi` is
+  `min(x − lo, hi − x)` — a tent with its kink at the window's centre, which is exactly the point centering converges
+  to. A quadratic fitted to that margin is poor precisely at the answer. The surrogate therefore fits a goal on a
+  single number by its VALUE (smooth in the parts) and derives the margin from the predicted value by the goal's own
+  limits (`QuadraticSurrogate.MarginRule`); only a goal over a sweep is fitted on its margin.
+- **The brief's design determines the quadratic exactly, so its R² would be 1 by construction.** 2k + 1 axial points
+  plus k(k−1)/2 cross points equal the 1 + 2k + k(k−1)/2 coefficients of a full quadratic (and 2k + 1 equals the
+  diagonal one's). A least-squares fit and an R² that means anything need surplus points: k + 2 of the common trials
+  are simulated beside the design. They are real trials, so their full kit draws (including mismatch components the
+  per-instance aggregate cannot see) are what a poor R² reports.
+- **Parsing a goal's limits per virtual trial is the hot path.** `GoalResiduals.Score` re-parses the limit text on every
+  call; 10,000 virtual trials × goals × candidates made that dominant. `MarginRule` reads `ValueLimits` once and
+  returns a closure; only eq/out (no passing side) still go through `Score`.
+- Measured on the divider (M = 200, 15 CMA-ES iterations): 610 simulations against 12,200, both verified at
+  84.3 % [81.9 %, 86.5 %].

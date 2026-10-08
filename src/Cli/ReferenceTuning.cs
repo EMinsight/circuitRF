@@ -209,6 +209,36 @@ internal static partial class Reference
             sb.AppendLine("  " + line);
         sb.AppendLine();
 
+        // brief-yield-12 R-ya12-4: the quadratic surrogate — when it helps, and when it does not.
+        sb.AppendLine("The quadratic surrogate (center surrogate=quadratic, --surrogate quadratic)");
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "A search accelerator for centering. For each candidate, the design is simulated at 2k+1 points in the " +
+            "statistical variables' z-space (the centre and +/-1 on each), plus one cross point per pair when k <= " +
+            $"{QuadraticSurrogate.FullQuadraticLimit} (a full quadratic; beyond that the fit is diagonal and the report says so), " +
+            "plus k+2 of the common trials so the least-squares fit is over-determined. Each yield goal is fitted as a " +
+            "quadratic in z — a goal on a single number on its value, its margin then computed by the goal's own rule; a " +
+            "goal over a sweep on its margin — and the smooth yield and the yield are counted on " +
+            $"{QuadraticSurrogate.VirtualTrials:N0} virtual trials of the fits, drawn from the center seed. k counts each " +
+            "toleranced value, each kit process draw, and each instance's kit mismatch draws as ONE coordinate (they move " +
+            "together by x/sqrt(n)); a design whose points per candidate are no fewer than M is refused with the counts. " +
+            "Every iteration reports the fit's R² per goal: below 0.9 is a warning on that iteration, and three running " +
+            "switch the search back to simulated trials with a note. The result's yield is ALWAYS the simulated " +
+            "verification; the surrogate only chooses where to look.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "It helps when the statistical variables are few (a handful of toleranced values), the margins are smooth in " +
+            "them (a gain, a return loss, a centre frequency moving gently with the parts), and a simulation is expensive " +
+            "(HB, a long sweep): a candidate then costs a dozen simulations instead of M. It does not help with many " +
+            "statistical variables (kit mismatch on many instances), a margin that is a min over a sweep whose worst point " +
+            "jumps between frequencies, a pass/fail that switches abruptly (a mode hop, an oscillation), or a cheap " +
+            "simulation where M trials cost little anyway — leave surrogate=none there.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        sb.AppendLine("    circuitrf yield center amp.csch --surrogate quadratic --trials 200 --verify 1000");
+        sb.AppendLine();
+
         // brief-yield-5 R-ya5-7: the run, generated from the verb's own noun and flag tables.
         sb.AppendLine("Running it");
         sb.AppendLine();

@@ -13,18 +13,29 @@ namespace CircuitRF.Ui.Views.Optimization;
 // The Optimizer panel's four small drawings (brief-tuneopt-10 §2). Each paints from one or two
 // properties and nothing else, so a run's per-iteration update is a property set and a redraw.
 
-/// <summary>The best cost per iteration on a log scale — the header's sparkline.</summary>
+/// <summary>The best cost per iteration on a log scale — the header's sparkline. With <see cref="LogScale"/> off it is
+/// the Yield panel's yield-vs-iteration chart (brief-yield-12 R-ya12-1): linear, 0 to 1.</summary>
 public sealed class CostSparkline : Control
 {
     public static readonly StyledProperty<IReadOnlyList<double>?> ValuesProperty =
         AvaloniaProperty.Register<CostSparkline, IReadOnlyList<double>?>(nameof(Values));
 
-    static CostSparkline() => AffectsRender<CostSparkline>(ValuesProperty);
+    public static readonly StyledProperty<bool> LogScaleProperty =
+        AvaloniaProperty.Register<CostSparkline, bool>(nameof(LogScale), true);
+
+    static CostSparkline() => AffectsRender<CostSparkline>(ValuesProperty, LogScaleProperty);
 
     public IReadOnlyList<double>? Values
     {
         get => GetValue(ValuesProperty);
         set => SetValue(ValuesProperty, value);
+    }
+
+    /// <summary>A cost spans decades; a yield is a fraction, drawn on a fixed 0…1 axis.</summary>
+    public bool LogScale
+    {
+        get => GetValue(LogScaleProperty);
+        set => SetValue(LogScaleProperty, value);
     }
 
     public override void Render(DrawingContext ctx)
@@ -34,10 +45,21 @@ public sealed class CostSparkline : Control
         if (Values is not { Count: > 0 } values) return;
 
         // A cost of zero (every goal met) sits on the floor of the scale.
-        double floor = values.Where(v => v > 0).DefaultIfEmpty(1e-12).Min() / 10;
-        var logs = values.Select(v => Math.Log10(Math.Max(v, floor))).ToArray();
-        double lo = logs.Min(), hi = logs.Max();
-        if (hi - lo < 1e-9) { hi += 0.5; lo -= 0.5; }
+        double[] logs;
+        double lo, hi;
+        if (LogScale)
+        {
+            double floor = values.Where(v => v > 0).DefaultIfEmpty(1e-12).Min() / 10;
+            logs = values.Select(v => Math.Log10(Math.Max(v, floor))).ToArray();
+            lo = logs.Min();
+            hi = logs.Max();
+            if (hi - lo < 1e-9) { hi += 0.5; lo -= 0.5; }
+        }
+        else
+        {
+            logs = values.Select(v => Math.Clamp(v, 0, 1)).ToArray();
+            (lo, hi) = (0, 1);
+        }
         double w = b.Width - 4, h = b.Height - 4;
         var pen = new Pen(new SolidColorBrush(Color.FromRgb(0x3C, 0x8D, 0xD9)), 1.2);
         var geo = new StreamGeometry();

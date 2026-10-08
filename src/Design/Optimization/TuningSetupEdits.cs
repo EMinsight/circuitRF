@@ -160,6 +160,15 @@ public static class TuningSetupEdits
         return next;
     }
 
+    /// <summary>The <c>center</c> line replaced (brief-yield-12). Kept even at every default: the line's presence is the
+    /// design saying it is centred, and the panel writes one only when a setting is edited.</summary>
+    public static TuningSetup WithCentering(TuningSetup? setup, CenteringSettings settings)
+    {
+        var next = setup?.Clone() ?? new TuningSetup();
+        next.Centering = settings.Clone();
+        return next;
+    }
+
     /// <summary>True when <paramref name="s"/> says nothing a default does not.</summary>
     public static bool IsDefault(StatisticsSettings s)
         => s.Trials is null && s.Seed is null && s.Sampling == StatSampling.Random && s.Target is null && s.Confidence is null

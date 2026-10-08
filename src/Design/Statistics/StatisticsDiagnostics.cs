@@ -280,4 +280,32 @@ public static class StatisticsDiagnostics
     public static Diagnostic CenterVerifyFailed(string point, string reason) => Diagnostic.Create(
         "yield.center.verify-failed", DiagnosticSeverity.Warning,
         "The verification of the {point} point did not run: {reason}", ("point", point), ("reason", reason));
+
+    // ── YA-12: the quadratic surrogate ─────────────────────────────────────
+
+    public static Diagnostic CenterSurrogateTooMany(int k, int entries, int process, int mismatchStreams, int instances,
+                                                    int perCandidate, int trials) => Diagnostic.Create(
+        "yield.center.surrogate-too-many", DiagnosticSeverity.Error,
+        "surrogate=quadratic is refused for this design: its {k} statistical coordinates ({entries} toleranced values, " +
+        "{process} kit process draws, {mismatch} kit mismatch draws grouped into {instances} instances) need {per} " +
+        "simulations per candidate, no fewer than the {trials} common trials it would replace. Centre with surrogate=none, " +
+        "or narrow the drawn values with --vars.",
+        ("k", k), ("entries", entries), ("process", process), ("mismatch", mismatchStreams), ("instances", instances),
+        ("per", perCandidate), ("trials", trials));
+
+    public static Diagnostic CenterSurrogateDiagonal(int k, int limit) => Diagnostic.Create(
+        "yield.center.surrogate-diagonal", DiagnosticSeverity.Info,
+        "The surrogate fits {k} statistical coordinates without cross terms (a diagonal quadratic): a full one is fitted up " +
+        "to {limit}.", ("k", k), ("limit", limit));
+
+    public static Diagnostic CenterSurrogatePoorFit(int iteration, string goal, double rSquared) => Diagnostic.Create(
+        "yield.center.surrogate-poor-fit", DiagnosticSeverity.Warning,
+        "iteration {iteration}: the surrogate's fit of goal {goal} has R² {r2}, below 0.9.",
+        ("iteration", iteration), ("goal", goal),
+        ("r2", rSquared.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture)));
+
+    public static Diagnostic CenterSurrogateSwitchedBack(int iteration, int running) => Diagnostic.Create(
+        "yield.center.surrogate-switched-back", DiagnosticSeverity.Warning,
+        "After {running} poor surrogate fits running (to iteration {iteration}), centering switched back to simulated " +
+        "trials for the rest of the search.", ("running", running), ("iteration", iteration));
 }

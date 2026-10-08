@@ -4,6 +4,7 @@
              xmlns:yld="using:CircuitRF.Ui.Yield"
              xmlns:tun="using:CircuitRF.Ui.Tuning"
              xmlns:yldv="using:CircuitRF.Ui.Views.Yield"
+             xmlns:optv="using:CircuitRF.Ui.Views.Optimization"
              xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
              x:Class="CircuitRF.Ui.Views.Yield.YieldToolView"
              x:DataType="dockVm:YieldTool"
@@ -131,6 +132,8 @@
                              ToolTip.Tip="The fraction of trials meeting every yield spec, with its interval"/>
                 <RadioButton Classes="mode" GroupName="YieldMode" Content="Corners" IsChecked="{Binding IsCorners}"
                              ToolTip.Tip="Every enabled corner, once each — or a Monte Carlo at each"/>
+                <RadioButton Classes="mode" GroupName="YieldMode" Content="Centering" IsChecked="{Binding IsCentering}"
+                             ToolTip.Tip="Move the designable nominals to maximize yield, then verify on fresh trials"/>
 
                 <Border Classes="divider"/>
 
@@ -146,6 +149,20 @@
                 <Button Classes="tb" Command="{Binding StopCommand}" ToolTip.Tip="Stop — keeps every finished trial">
                     <mi:MaterialIcon Kind="Stop"/>
                 </Button>
+
+                <!-- Centering: keep the centred nominals as the Optimizer keeps its best point. -->
+                <StackPanel Orientation="Horizontal" IsVisible="{Binding IsCentering}">
+                    <Border Classes="divider"/>
+                    <Button Classes="tb" Command="{Binding LockInCentredCommand}" ToolTip.Tip="Lock in — keep the centred nominals as a preset">
+                        <mi:MaterialIcon Kind="LockOutline"/>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding PushCentredCommand}" ToolTip.Tip="Push the centred nominals into the schematic (undoable)">
+                        <mi:MaterialIcon Kind="TrayArrowDown"/>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding SendCentredToTuningCommand}" ToolTip.Tip="Send the centred nominals to Tuning">
+                        <mi:MaterialIcon Kind="TuneVertical"/>
+                    </Button>
+                </StackPanel>
 
                 <Border Classes="divider"/>
 
@@ -177,6 +194,20 @@
 
             <!-- What the last action did, and the one-time display offer. -->
             <StackPanel Grid.Row="3" Margin="6,0,6,2" Spacing="2">
+                <!-- Centering: yield vs iteration (the Optimizer's chart, yield on its axis), the best so far, the fit,
+                     and the simulated verification. -->
+                <Grid ColumnDefinitions="*,Auto,Auto" IsVisible="{Binding HasYieldHistory}">
+                    <optv:CostSparkline Grid.Column="0" Values="{Binding YieldHistory}" LogScale="False" Height="16" MinWidth="60"
+                                        ToolTip.Tip="Best yield per iteration"/>
+                    <TextBlock Grid.Column="1" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"
+                               Text="{Binding SearchYieldText, StringFormat='{}{0} (search)'}"
+                               ToolTip.Tip="The best yield the search has found — on the common trials, or the surrogate's virtual ones"/>
+                    <TextBlock Grid.Column="2" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center" Opacity="0.75"
+                               Text="{Binding FitText}" ToolTip.Tip="The surrogate's poorest fit this iteration"/>
+                </Grid>
+                <TextBlock FontSize="11" IsVisible="{Binding HasVerification}" TextTrimming="CharacterEllipsis"
+                           Text="{Binding VerificationText}"
+                           ToolTip.Tip="Start → centred, each verified on the same fresh trials, with its interval"/>
                 <TextBlock Text="{Binding StatusText}" FontSize="11" Opacity="0.75"
                            TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusDetail}"
                            IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
@@ -246,6 +277,51 @@
                     <TextBox Grid.Row="4" Grid.Column="1" Classes="cell commit" PlaceholderText="auto" Margin="0,1"
                              Text="{Binding ParallelText, UpdateSourceTrigger=LostFocus}"/>
                 </Grid>
+
+                <!-- Centering settings: the center line, one summary line, expanded by its chevron. -->
+                <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsCentering}">
+                    <Button Classes="tb" Command="{Binding ToggleCenterSettingsCommand}" ToolTip.Tip="Centering settings">
+                        <Panel>
+                            <mi:MaterialIcon Kind="ChevronRight" IsVisible="{Binding !CenterSettingsExpanded}"/>
+                            <mi:MaterialIcon Kind="ChevronDown" IsVisible="{Binding CenterSettingsExpanded}"/>
+                        </Panel>
+                    </Button>
+                    <TextBlock Grid.Column="1" Text="{Binding CenterSettingsSummary}" FontSize="11" Opacity="0.8"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </Grid>
+                <Grid ColumnDefinitions="Auto,90,Auto,*" RowDefinitions="Auto,Auto,Auto" Margin="20,2,0,2">
+                    <Grid.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="IsCentering"/>
+                            <Binding Path="CenterSettingsExpanded"/>
+                        </MultiBinding>
+                    </Grid.IsVisible>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Algorithm" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ComboBox Grid.Row="0" Grid.Column="1" Classes="cell" Margin="0,1" HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding CenterAlgorithmChoices}" SelectedIndex="{Binding CenterAlgorithmIndex}"/>
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Surrogate" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
+                    <ComboBox Grid.Row="0" Grid.Column="3" Classes="cell" Width="96" HorizontalAlignment="Left" Margin="0,1"
+                              ItemsSource="{Binding SurrogateChoices}" SelectedIndex="{Binding SurrogateIndex}"
+                              ToolTip.Tip="quadratic: search on a quadratic fit of the margins — the result is still verified by simulation"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Common trials" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" Classes="cell commit" PlaceholderText="200" Margin="0,1"
+                             Text="{Binding CenterTrialsText, UpdateSourceTrigger=LostFocus}"
+                             ToolTip.Tip="M — the trials every candidate is scored on"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" Text="Verify" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
+                    <TextBox Grid.Row="1" Grid.Column="3" Classes="cell commit" Width="70" HorizontalAlignment="Left"
+                             PlaceholderText="1000" Margin="0,1"
+                             Text="{Binding CenterVerifyText, UpdateSourceTrigger=LostFocus}"
+                             ToolTip.Tip="Fresh trials the start and the centred point are each verified on"/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Max iterations" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Grid.Row="2" Grid.Column="1" Classes="cell commit" PlaceholderText="100" Margin="0,1"
+                             Text="{Binding CenterMaxIterText, UpdateSourceTrigger=LostFocus}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="2" Text="Max simulations" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
+                    <TextBox Grid.Row="2" Grid.Column="3" Classes="cell commit" Width="70" HorizontalAlignment="Left"
+                             PlaceholderText="none" Margin="0,1"
+                             Text="{Binding CenterMaxEvalsText, UpdateSourceTrigger=LostFocus}"/>
+                </Grid>
             </StackPanel>
 
             <ScrollViewer Grid.Row="5" HorizontalScrollBarVisibility="Disabled">
@@ -296,7 +372,13 @@
                     </Grid>
 
                     <!-- Kit statistics: what the kits' statistical sections draw. -->
-                    <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="6,1,4,1" IsVisible="{Binding HasKitStatistics}">
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="6,1,4,1">
+                        <Grid.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="HasKitStatistics"/>
+                                <Binding Path="ShowVariableTolerances"/>
+                            </MultiBinding>
+                        </Grid.IsVisible>
                         <TextBlock Grid.Column="0" Text="Kit statistics" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
                         <CheckBox Grid.Column="1" Content="Process" FontSize="11" IsChecked="{Binding KitProcess}" Margin="0,0,6,0"/>
                         <CheckBox Grid.Column="2" Content="Mismatch" FontSize="11" IsChecked="{Binding KitMismatch}" Margin="0,0,6,0"/>
@@ -307,7 +389,40 @@
                                 ToolTip.Tip="{Binding KitNote}"/>
                     </Grid>
 
-                    <ItemsControl ItemsSource="{Binding Variables}">
+                    <!-- Centering: the designable nominals with their ranges and the tolerances beside them, start → best. -->
+                    <ItemsControl ItemsSource="{Binding CenterRows}" IsVisible="{Binding IsCentering}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="yld:YieldCenterRowViewModel">
+                                <Grid ColumnDefinitions="Auto,Auto,*,Auto,60" Margin="6,1,4,1">
+                                    <TextBlock Grid.Column="0" Text="{Binding Key}" FontSize="12" MinWidth="64"
+                                               VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding RangeText}" Classes="muted" ToolTip.Tip="Range"/>
+                                        <TextBlock Text="{Binding ToleranceText}" Classes="muted" IsVisible="{Binding HasTolerance}"
+                                                   ToolTip.Tip="Tolerance"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center"
+                                                IsVisible="{Binding HasBest}" Margin="6,0">
+                                        <TextBlock Text="{Binding StartText}" FontSize="11" Opacity="0.7" ToolTip.Tip="Start"/>
+                                        <TextBlock Text="→" FontSize="11" Opacity="0.7"/>
+                                        <TextBlock Text="{Binding BestText}" FontSize="11" ToolTip.Tip="Centred"/>
+                                    </StackPanel>
+                                    <optv:RangeMarkBar Grid.Column="4" Height="14" VerticalAlignment="Center"
+                                                       Position="{Binding BestPosition}" RailedMin="{Binding RailedMin}"
+                                                       RailedMax="{Binding RailedMax}">
+                                        <optv:RangeMarkBar.IsVisible>
+                                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                                <Binding Path="HasBest"/>
+                                                <Binding Path="IsDesignable"/>
+                                            </MultiBinding>
+                                        </optv:RangeMarkBar.IsVisible>
+                                    </optv:RangeMarkBar>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <ItemsControl ItemsSource="{Binding Variables}" IsVisible="{Binding ShowVariableTolerances}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="yld:YieldVariableRowViewModel">
                                 <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,50,Auto" Margin="6,1,4,1"
