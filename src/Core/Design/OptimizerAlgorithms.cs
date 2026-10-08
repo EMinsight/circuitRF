@@ -48,6 +48,11 @@ public sealed record OptimizerAlgorithmInfo(
 {
     public bool Accepts(OptimizerCost cost) => Costs.Contains(cost);
 
+    /// <summary>Whether it suits a noisy or piecewise-flat objective — a yield over finitely many trials, which design
+    /// centering maximizes (brief-yield-11 R-ya11-4). A method that differentiates does not: a finite difference of a
+    /// yield is zero almost everywhere.</summary>
+    public bool SuitsNoisyObjective { get; init; }
+
     /// <summary>The option called <paramref name="name"/>, or null.</summary>
     public OptimizerOptionInfo? Option(string name) => Options.FirstOrDefault(o => o.Name == name);
 }
@@ -103,7 +108,7 @@ public static class OptimizerAlgorithms
             [O("step",     "0.1",  "Initial simplex edge, as a fraction of each variable's range."),
              O("xtol",     "1e-6", "A simplex smaller than this has collapsed."),
              O("restarts", "1",    "Times a collapsed simplex is rebuilt around its best point.")],
-            Both, NeedsGradients: false),
+            Both, NeedsGradients: false) { SuitsNoisyObjective = true },
 
         new("trust_region", "Trust-region model",
             "For 2 to 20 variables when each simulation is expensive and the response is smooth; no derivatives.",
@@ -118,7 +123,7 @@ public static class OptimizerAlgorithms
              O("minpoll",     "1e-6", "The run ends when the poll size falls below this."),
              O("speculative", "1",    "1 tries twice a successful step again beside the next poll; 0 does not."),
              O("model",       "1",    "1 adds the point a quadratic fit through the last poll predicts; 0 does not.")],
-            Both, NeedsGradients: false),
+            Both, NeedsGradients: false) { SuitsNoisyObjective = true },
 
         new("random", "Random",
             "To survey the box or find a start for another method; it never converges, so set a limit.",
@@ -155,7 +160,7 @@ public static class OptimizerAlgorithms
              O("restarts", "9",     "Restarts allowed."),
              O("tolfun",   "1e-12", "A run whose recent costs all lie within this of each other has stalled."),
              O("tolx",     "1e-11", "A run whose step size has fallen below this has stalled.")],
-            Both, NeedsGradients: false),
+            Both, NeedsGradients: false) { SuitsNoisyObjective = true },
 
         new("bayes", "Bayesian (slow simulations)",
             "When each simulation takes seconds or more (HB, loadpull, EM): it spends computation choosing each point, O(N³) in the points it keeps.",
@@ -163,18 +168,21 @@ public static class OptimizerAlgorithms
              O("archive", "500",  "Most points the surrogate is fitted to; the most recent are kept, and the best."),
              O("batch",   "1",    "Points chosen per iteration by the constant liar; the run sets it to parallel= when the setup states one."),
              O("tr_dims", "10",   "Above this many variables a trust-region variant replaces the global surrogate.")],
-            Both, NeedsGradients: false),
+            Both, NeedsGradients: false) { SuitsNoisyObjective = true },
 
         new("discrete", "Discrete",
             "When every variable is an integer, a step or a preferred value: it searches that grid itself.",
             [O("cap",      "2000", "Grids of at most this many points are searched exhaustively."),
              O("block",    "auto", "Grid points per batch; auto is a twentieth of the grid."),
              O("restarts", "10",   "Random restarts of the coordinate descent a larger grid gets.")],
-            Both, NeedsGradients: false),
+            Both, NeedsGradients: false) { SuitsNoisyObjective = true },
     ];
 
     /// <summary>Every id, in menu order.</summary>
     public static IReadOnlyList<string> Ids { get; } = [.. All.Select(a => a.Id)];
+
+    /// <summary>The ids that suit a noisy objective, in menu order — what design centering offers.</summary>
+    public static IReadOnlyList<string> ForNoisyObjective { get; } = [.. All.Where(a => a.SuitsNoisyObjective).Select(a => a.Id)];
 
     /// <summary>The entry for <paramref name="id"/>, or null.</summary>
     public static OptimizerAlgorithmInfo? Find(string id) => All.FirstOrDefault(a => a.Id == id);

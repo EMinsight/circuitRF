@@ -25,7 +25,7 @@ namespace CircuitRF.Cli;
 ///
 /// <para><b>One verb with nouns</b> (the <c>new</c>/<c>history</c> rule): <c>mc</c> is the spread alone and scores
 /// every enabled goal; <c>estimate</c> is a yield against the <c>use=yield|both</c> goals; <c>trial</c> re-runs one
-/// trial. YA-6 adds <c>corners</c>, YA-11 <c>center</c>.</para>
+/// trial; <c>corners</c> evaluates the corners (YA-6); <c>center</c> centres the design for yield (YA-11).</para>
 ///
 /// <para><b>It writes nothing to the design's values (D12).</b> <c>--save-preset</c> and <c>--save-corner</c> are
 /// the two writes — a trial's values as a preset, or a statistical corner naming the trial — to a <c>.csch</c>,
@@ -45,16 +45,17 @@ internal static partial class Yield
         ("estimate", "Yield against the enabled use=yield|both goals, with its interval; exit 3 when below --target."),
         ("trial",    "Re-runs one trial (--trial n) and prints what it drew and how it scored; -o writes its analysis results."),
         ("corners",  "Evaluates every enabled corner and prints a corner x goal margin table; exit 3 when a goal fails at a corner. --mc runs a Monte Carlo at each, --generate prints corner lines."),
+        ("center",   "Design centering: moves the opt=1 nominals to maximize yield on M common trials, then verifies the start and the best point on fresh trials; exit 3 when the verified yield is below --target."),
     ];
 
     /// <summary>Every flag the verb reads — the table <c>reference statistics</c> renders, so a flag added here
     /// appears there with nothing else to edit. Each is also a literal in <see cref="Run"/>'s parser.</summary>
     internal static readonly (string Flag, string Takes, string Summary)[] Flags =
     [
-        ("--trials",       "n",                  "Trials to run; with --autostop, the most it runs."),
-        ("--seed",         "n",                  "The seed every draw is a function of, with the trial number."),
+        ("--trials",       "n",                  "Trials to run; with --autostop, the most it runs. center: M, the common trials every candidate is scored on."),
+        ("--seed",         "n",                  "The seed every draw is a function of, with the trial number. center: the common trials' seed; verification uses the next."),
         ("--sampling",     "random|lhs|sobol",   "How trials are placed."),
-        ("--target",       "p%",                 "estimate: the yield to meet (exit 3 below it)."),
+        ("--target",       "p%",                 "estimate, center: the yield to meet (exit 3 below it; center: the verified yield)."),
         ("--confidence",   "p%",                 "The confidence of the yield interval."),
         ("--autostop",     "",                   "estimate: stop once the interval clears --target either way (not with lhs)."),
         ("--nonconverged", "fail|warn",          "A trial that does not evaluate counts as a fail, or is left out of the count."),
@@ -62,20 +63,26 @@ internal static partial class Yield
         ("--process",      "0|1",                "Kit process draws on or off."),
         ("--mismatch",     "0|1",                "Kit mismatch draws on or off."),
         ("--sigma-scale",  "k",                  "Scales every kit sigma."),
-        ("--parallel",     "n",                  "Trials evaluated at once."),
+        ("--parallel",     "n",                  "Trials evaluated at once (center: simulations)."),
         ("--analyses",     "goals|all",          "Only the analyses the goals name, or every runnable one."),
         ("--set",          "var=expr",           "Override a global before elaboration, as every run verb does."),
         ("--vars",         "k,k",                "Draw only these of the statistical entries; the rest stay at nominal."),
         ("--goals",        "g,g",                "Score only these of the enabled goals."),
         ("--trial",        "n",                  "Re-run only trial n (trial needs it; mc and estimate take it too)."),
         ("--contributions","",                   "Also report what drives each goal's and measurement's spread (--json)."),
-        ("--save-preset",  "name",               "A .csch, with --trial: add that trial's values as a preset."),
+        ("--save-preset",  "name",               "A .csch, with --trial: add that trial's values as a preset. center: add the centred nominals as a preset."),
         ("--save-corner",  "name",               "A .csch, with --trial: add a statistical corner naming that trial."),
         ("--corners",      "c,c",                "corners, mc, estimate: only these enabled corners (mc/estimate: a run at each)."),
         ("--mc",           "",                   "corners: a Monte Carlo (a yield, when the design has a yield goal) at each corner, process draws off there."),
         ("--generate",     "spec",               "corners: print the corners a cross product makes, e.g. \"axis=tt,ss;temp=-40,25,85;Vdd=3.0,3.6\"; writes nothing."),
         ("--write",        "",                   "corners --generate, a .csch: append the generated corners, after a history checkpoint."),
-        ("-o",             "out.npy",            "Where the result is written; default <design>.yield.npy beside the design."),
+        ("--algorithm",    "id",                 "center: the search, one of " + string.Join(", ", OptimizerAlgorithms.ForNoisyObjective) + " (default cmaes)."),
+        ("--verify",       "n",                  "center: fresh trials the start and the best point are each verified on."),
+        ("--max-iter",     "n",                  "center: iteration limit."),
+        ("--max-evals",    "n",                  "center: simulation limit, verification not counted."),
+        ("--time",         "limit",              "center: wall-clock limit — seconds, or a number and s, ms, min or h."),
+        ("--width",        "w",                  "center: the smooth yield's logistic width, a fraction of each goal's scale."),
+        ("-o",             "out.npy",            "Where the result is written; default <design>.yield.npy beside the design (center: the best point's verification)."),
         ("-q",             "",                   "No progress line on stderr."),
     ];
 
@@ -88,7 +95,7 @@ internal static partial class Yield
             return code;
         }
         string noun = args[0].ToLowerInvariant();
-        if (noun is not ("mc" or "estimate" or "trial" or "corners"))
+        if (noun is not ("mc" or "estimate" or "trial" or "corners" or "center"))
         {
             int code = JsonRun.Fail(CliDiagnostics.YieldNoun(args[0]));
             Usage();
@@ -103,6 +110,10 @@ internal static partial class Yield
         bool autostop = false, contributions = false, quiet = false, perCorner = false, write = false;
         List<string>? vars = null, goals = null, corners = null;
         string? generate = null;
+        string? algorithm = null, time = null;
+        int? verify = null, maxIter = null, maxEvals = null;
+        double? width = null;
+        var centerOnly = new List<string>();
         var sets = new List<(string Name, string Expr)>();
 
         for (int i = 1; i < args.Length; i++)
@@ -143,6 +154,21 @@ internal static partial class Yield
                 case "-o" or "--output" when hasValue: output = args[++i]; break;
                 case "--save-preset" when hasValue: presetName = args[++i]; break;
                 case "--save-corner" when hasValue: cornerName = args[++i]; break;
+                // brief-yield-11: the center line's own settings.
+                case "--algorithm" when hasValue:   algorithm = args[++i]; centerOnly.Add(a); break;
+                case "--time" when hasValue:        time = args[++i]; centerOnly.Add(a); break;
+                case "--verify" when hasValue:      if (!Int(a, args[++i], 1, out verify, out int r9)) return r9; centerOnly.Add(a); break;
+                case "--max-iter" when hasValue:    if (!Int(a, args[++i], 1, out maxIter, out int r10)) return r10; centerOnly.Add(a); break;
+                case "--max-evals" when hasValue:   if (!Int(a, args[++i], 1, out maxEvals, out int r11)) return r11; centerOnly.Add(a); break;
+                case "--width" when hasValue:
+                {
+                    string text = args[++i];
+                    if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double w) || !(w > 0) || !double.IsFinite(w))
+                        return JsonRun.Fail(CliDiagnostics.YieldFlagValue(a, text, "a number above zero"));
+                    width = w;
+                    centerOnly.Add(a);
+                    break;
+                }
                 case "--set" when hasValue:
                 {
                     string kv = args[++i];
@@ -170,11 +196,16 @@ internal static partial class Yield
         // ── flag values and combinations, before anything is read ─────────────────
         var mode = noun == "mc" ? StatisticalMode.MonteCarlo : StatisticalMode.Yield;
         if (CornerFlagProblem(noun, perCorner, generate, write, corners, trial) is { } cornerFlag) return JsonRun.Fail(cornerFlag);
+        if (noun != "center" && centerOnly.Count > 0) return JsonRun.Fail(CliDiagnostics.YieldCornerFlag(centerOnly[0], "yield center"));
+        if (noun == "center" && CenterFlagProblem(trial, cornerName, autostop, corners, contributions) is { } centerFlag)
+            return JsonRun.Fail(centerFlag);
+        if (time is not null && TuningValidator.TimeLimitSeconds(time) is null)
+            return JsonRun.Fail(CliDiagnostics.YieldFlagValue("--time", time, "seconds, or a number and s, ms, min or h"));
         if (mode == StatisticalMode.MonteCarlo && (target is not null || autostop))
             return JsonRun.Fail(CliDiagnostics.YieldMcHasNoTarget(target is not null ? "--target" : "--autostop"));
         if (noun == "trial" && trial is null) return JsonRun.Fail(CliDiagnostics.YieldTrialRequired());
         foreach (var (flag, name) in new[] { ("--save-preset", presetName), ("--save-corner", cornerName) })
-            if (name is not null && trial is null) return JsonRun.Fail(CliDiagnostics.YieldSaveNeedsTrial(flag));
+            if (name is not null && trial is null && noun != "center") return JsonRun.Fail(CliDiagnostics.YieldSaveNeedsTrial(flag));
         if (output is not null && !output.EndsWith(".npy", StringComparison.OrdinalIgnoreCase))
             return JsonRun.Fail(CliDiagnostics.YieldOutputNotNpy(output));
         int samplingIndex = -1, ncIndex = -1, scopeIndex = -1;
@@ -204,6 +235,11 @@ internal static partial class Yield
             : PreparedCircuit.FromFile(full, Path.GetDirectoryName(full));
         if (circuit.ReadError is not null || circuit.Lib is null || circuit.Tb is not { } tb)
             return JsonRun.Fail(CliDiagnostics.RunFailed(circuit.ReadError ?? "the design could not be read"));
+
+        if (noun == "center")
+            return RunCenter(input, full, circuit, tb, sets, presetName, output, quiet, vars, goals, new CenterFlags(
+                algorithm, trials, verify, maxIter, maxEvals, time, width, parallel, seed,
+                target, confidence, samplingIndex, ncIndex, save, process, mismatch, sigmaScale, scopeIndex));
 
         // ── 2. The file's setup, with this run's flags over it ───────────────────
         // Handed to the run only when a flag changed it, so a plain run is exactly the in-process one.
@@ -718,12 +754,14 @@ internal static partial class Yield
 
     private static void Usage()
     {
-        Console.Error.WriteLine("Usage: circuitrf yield mc|estimate|trial|corners <file.csch|file.cnl> [--trials n] [--seed n]");
+        Console.Error.WriteLine("Usage: circuitrf yield mc|estimate|trial|corners|center <file.csch|file.cnl> [--trials n] [--seed n]");
         Console.Error.WriteLine("                     [--sampling random|lhs|sobol] [--target p%] [--confidence p%] [--autostop]");
         Console.Error.WriteLine("                     [--nonconverged fail|warn] [--save scalars|all|n|auto] [--process 0|1] [--mismatch 0|1]");
         Console.Error.WriteLine("                     [--sigma-scale k] [--parallel n] [--analyses goals|all] [--set var=expr]");
         Console.Error.WriteLine("                     [--vars k,k] [--goals g,g] [--trial n] [--contributions] [-o out.npy] [-q]");
         Console.Error.WriteLine("                     [--save-preset name --trial n] [--save-corner name --trial n]");
         Console.Error.WriteLine("                     corners: [--corners c,c] [--mc] [--generate \"axis=a,b;temp=-40,25;Vdd=3.0,3.6\" [--write]]");
+        Console.Error.WriteLine("                     center: [--algorithm id] [--trials M] [--verify n] [--max-iter n] [--max-evals n]");
+        Console.Error.WriteLine("                             [--time limit] [--width w] [--target p%] [--save-preset name]");
     }
 }

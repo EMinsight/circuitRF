@@ -1371,5 +1371,13 @@ internal static class Check
                 });
             if (stat.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
         }
+
+        // brief-yield-11 R-ya11-1: a center line the run would refuse — no opt=1 entry, no yield goal, nothing that
+        // varies, an algorithm centering does not offer — in the run's own words, from its constructor.
+        if (setup.Centering is not null)
+        {
+            var center = Design.Statistics.CenteringRun.Create(PreparedCircuit.FromBench(lib, tb, null));
+            if (center.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
+        }
     }
 }

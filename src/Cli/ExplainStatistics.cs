@@ -107,7 +107,17 @@ internal static class ExplainStatistics
                 c.Name, c.Enabled, c.IsStatistical ? "statistical" : "value", c.Temp,
                 new Dictionary<string, string>(c.Values, StringComparer.Ordinal), c.Trial,
                 Bindings(lib, tb, c), kit?.Axes(c.Name)))],
-            correlation, StatisticsSummary.QuotedYield, halfWidth, trialsFor, YieldRun(lib, tb, setup, s));
+            correlation, StatisticsSummary.QuotedYield, halfWidth, trialsFor, YieldRun(lib, tb, setup, s), Center(lib, tb, setup));
+    }
+
+    /// <summary>R-ya11-6: a center line's estimated total, asked of <see cref="CenteringRun"/>, which evaluates nothing.</summary>
+    private static ExplainCenterJson? Center(Library lib, TestBench tb, TuningSetup setup)
+    {
+        if (setup.Centering is not { } c) return null;
+        var run = CenteringRun.Create(PreparedCircuit.FromBench(lib, tb, null));
+        var e = run.Estimate();
+        return new ExplainCenterJson(c.EffectiveAlgorithm, c.EffectiveTrials, c.EffectiveVerify, c.EffectiveWidth, c.EffectiveSeed,
+            e?.Variables, e?.PointsPerIteration, e?.EvaluationsPerIteration, e?.Total, e?.Estimate, run.Refusal?.Render());
     }
 
     /// <summary>
@@ -190,7 +200,7 @@ internal static class ExplainStatistics
     private static bool HasStatistics(TuningSetup setup)
         => setup.Statistics is not null || setup.Correlations.Count > 0 || setup.Corners.Count > 0
         || setup.Variables.Any(e => e.Distribution != StatDistribution.None)
-        || setup.Goals.Any(g => g.Use != GoalUse.Both);
+        || setup.Goals.Any(g => g.Use != GoalUse.Both) || setup.Centering is not null;
 
     public static void Print(ExplainStatisticsJson r)
     {
@@ -232,6 +242,13 @@ internal static class ExplainStatistics
                               $" · all → {(run.UnderAll.Count == 0 ? "none" : string.Join(", ", run.UnderAll))} (setup={run.Selected})");
             Console.WriteLine($"  cost: {run.Evaluations} evaluations, {run.Parallel} at once — {run.Estimate}");
             if (run.Refusal is { } refused) Console.WriteLine($"  a yield run would be refused: {refused}");
+        }
+        if (r.Center is { } ctr)
+        {
+            Console.WriteLine($"  centering: {ctr.Algorithm} · {ctr.Trials} common trials · verify {ctr.Verify} · width {N(ctr.Width)} · seed {ctr.Seed}");
+            if (ctr.Estimate is { } estimate)
+                Console.WriteLine($"  centering cost: {ctr.EvaluationsPerIteration} simulations per iteration ({ctr.PointsPerIteration} candidate(s) × {ctr.Trials}) — {estimate}");
+            if (ctr.Refusal is { } refused) Console.WriteLine($"  centering would be refused: {refused}");
         }
     }
 }

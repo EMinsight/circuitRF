@@ -173,6 +173,9 @@ internal static class JsonRun
     /// <summary>What <c>yield corners</c> found (brief-yield-6 R-ya6-6).</summary>
     public static CornerReportJson? Corners;
 
+    /// <summary>What <c>yield center</c> found (brief-yield-11 R-ya11-8).</summary>
+    public static CenterReportJson? Center;
+
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
     ///
@@ -223,6 +226,7 @@ internal static class JsonRun
         Optimize            = null;
         Yield               = null;
         Corners             = null;
+        Center              = null;
         _summaryOnly        = false;
         _diagnosticsSummary = false;
         Malformed           = null;
@@ -446,12 +450,13 @@ internal static class JsonRun
         if (Check is not null || Explain is not null || Document is not null || Reference is not null
          || History is not null || Render is not null || Find is not null || Smith is not null
          || Lvs is not null || Impedance is not null || ImpedanceSurvey is not null || FieldPlots is not null
-         || ImpedanceLine is not null || Solvers is not null || Optimize is not null || Yield is not null || Corners is not null)
+         || ImpedanceLine is not null || Solvers is not null || Optimize is not null || Yield is not null || Corners is not null
+         || Center is not null)
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
                                      Find: Find, Smith: Smith, Lvs: Lvs, Impedance: Impedance,
                                      ImpedanceSurvey: ImpedanceSurvey, FieldPlots: FieldPlots,
                                      ImpedanceLine: ImpedanceLine, Solvers: Solvers, Optimize: Optimize,
-                                     Yield: Yield, Corners: Corners);
+                                     Yield: Yield, Corners: Corners, Center: Center);
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and
         // the report is the domain shape §2.4 asks for — so a refused run still answers with its

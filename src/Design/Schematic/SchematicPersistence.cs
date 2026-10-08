@@ -73,6 +73,7 @@ public sealed class CschTuning
     public List<StatCorrelation>?  Correlations { get; set; }
     public StatisticsSettings?     Statistics   { get; set; }
     public List<CornerDefinition>? Corners      { get; set; }
+    public CenteringSettings?      Centering    { get; set; }
 
     public static CschTuning? From(TuningSetup? s) => s is null || s.IsEmpty ? null : new()
     {
@@ -84,6 +85,7 @@ public sealed class CschTuning
         Correlations = s.Correlations.Count > 0 ? [.. s.Correlations.Select(c => c.Clone())] : null,
         Statistics   = s.Statistics?.Clone(),
         Corners      = s.Corners.Count      > 0 ? [.. s.Corners.Select(c => c.Clone())]      : null,
+        Centering    = s.Centering?.Clone(),
     };
 
     public TuningSetup ToSetup() => new()
@@ -96,6 +98,7 @@ public sealed class CschTuning
         Correlations = Correlations ?? [],
         Statistics   = Statistics,
         Corners      = Corners      ?? [],
+        Centering    = Centering,
     };
 }
 

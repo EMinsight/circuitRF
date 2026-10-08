@@ -260,4 +260,24 @@ public static class StatisticsDiagnostics
     public static Diagnostic CornerPointFailed(string corner, string reason) => Diagnostic.Create(
         "yield.corner.point-failed", DiagnosticSeverity.Error,
         "at corner {corner}: {reason}", ("corner", corner), ("reason", reason));
+
+    // ── YA-11: design centering ────────────────────────────────────────────
+
+    public static Diagnostic CenterNoDesignable() => Diagnostic.Create(
+        "yield.center.no-designable", DiagnosticSeverity.Error,
+        "Centering moves the nominals of the opt=1 entries, and this setup has none: add opt=1 and a range to the tune line of each value to centre.");
+
+    public static Diagnostic CenterAlgorithm(string id, string suited) => Diagnostic.Create(
+        "yield.center.algorithm", DiagnosticSeverity.Error,
+        "center algorithm={id} is not one centering offers: a yield over a fixed set of trials is flat between them, " +
+        "so it takes one of the methods that need no derivative — {suited}.", ("id", id), ("suited", suited));
+
+    public static Diagnostic CenterNoneEvaluated(long evaluations, string first) => Diagnostic.Create(
+        "yield.center.none-evaluated", DiagnosticSeverity.Error,
+        "No candidate evaluated a single trial in {evaluations} simulations; the first: {first}.",
+        ("evaluations", evaluations), ("first", first));
+
+    public static Diagnostic CenterVerifyFailed(string point, string reason) => Diagnostic.Create(
+        "yield.center.verify-failed", DiagnosticSeverity.Warning,
+        "The verification of the {point} point did not run: {reason}", ("point", point), ("reason", reason));
 }

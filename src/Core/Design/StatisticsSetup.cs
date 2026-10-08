@@ -106,6 +106,63 @@ public sealed class StatisticsSettings
     };
 }
 
+/// <summary>
+/// The design-centering settings — the <c>center</c> line (brief-yield-11 R-ya11-6). Centering moves the nominals of
+/// the <c>opt=1</c> entries to maximize yield against the <c>use=yield|both</c> goals, every candidate scored on ONE
+/// fixed set of <see cref="Trials"/> trials (common random numbers), then verifies the start and the best point on
+/// <see cref="Verify"/> fresh trials. Every property is null at its default, and the defaults are the constants below.
+/// </summary>
+public sealed class CenteringSettings
+{
+    public const int    DefaultTrials    = 200;
+    public const int    DefaultVerify    = 1000;
+    public const double DefaultWidth     = 0.05;
+    public const int    DefaultSeed      = 1;
+    public const string DefaultAlgorithm = "cmaes";
+
+    /// <summary>A registry id whose algorithm suits a noisy objective; null is CMA-ES.</summary>
+    public string? Algorithm { get; set; }
+
+    /// <summary>M — the trials every candidate is scored on.</summary>
+    public int? Trials { get; set; }
+
+    /// <summary>The trials of the closing verification, each of the start and the best point.</summary>
+    public int? Verify { get; set; }
+
+    public int? MaxIterations { get; set; }
+
+    /// <summary>The simulation limit — one candidate costs M of them.</summary>
+    public int? MaxEvaluations { get; set; }
+
+    /// <summary>Wall-clock limit as value text (<c>10 min</c>).</summary>
+    public string? TimeLimit { get; set; }
+
+    /// <summary>The smooth pass indicator's logistic width, as a fraction of each goal's scale.</summary>
+    public double? Width { get; set; }
+
+    /// <summary>How many simulations may run at once; null lets the evaluator decide.</summary>
+    public int? Parallelism { get; set; }
+
+    /// <summary>The seed of the common trial set; the verification draws from the next seed.</summary>
+    public int? Seed { get; set; }
+
+    /// <summary>Keys this build does not know, kept verbatim.</summary>
+    public OrderedDictionary<string, string>? Extra { get; set; }
+
+    [JsonIgnore] public string EffectiveAlgorithm => Algorithm ?? DefaultAlgorithm;
+    [JsonIgnore] public int    EffectiveTrials    => Trials ?? DefaultTrials;
+    [JsonIgnore] public int    EffectiveVerify    => Verify ?? DefaultVerify;
+    [JsonIgnore] public double EffectiveWidth     => Width ?? DefaultWidth;
+    [JsonIgnore] public int    EffectiveSeed      => Seed ?? DefaultSeed;
+
+    public CenteringSettings Clone() => new()
+    {
+        Algorithm = Algorithm, Trials = Trials, Verify = Verify, MaxIterations = MaxIterations,
+        MaxEvaluations = MaxEvaluations, TimeLimit = TimeLimit, Width = Width, Parallelism = Parallelism, Seed = Seed,
+        Extra = TunableEntry.CloneMap(Extra),
+    };
+}
+
 /// <summary>A correlation between two statistical entries (yield overview D3) — the <c>correlate</c> line.</summary>
 public sealed class StatCorrelation
 {

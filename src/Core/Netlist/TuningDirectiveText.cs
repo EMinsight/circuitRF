@@ -7,7 +7,7 @@ namespace CircuitRF.Core.Netlist;
 
 /// <summary>
 /// Reads and writes the <c>tune</c>, <c>preset</c>, <c>goal</c> and <c>optimize</c> directives, and the
-/// statistical <c>correlate</c>, <c>statistics</c> and <c>corner</c> (docs/design/yield.md) — the
+/// statistical <c>correlate</c>, <c>statistics</c>, <c>center</c> and <c>corner</c> (docs/design/yield.md) — the
 /// <c>.cnl</c> spelling of a <see cref="TuningSetup"/>. The grammar is
 /// <see cref="AnalysisDirectiveSchema.TuningDirectives"/>; the writer's output reads back to the same
 /// setup and writes the same bytes again.
@@ -19,9 +19,9 @@ namespace CircuitRF.Core.Netlist;
 /// </summary>
 public static class TuningDirectiveText
 {
-    /// <summary>The seven keywords.</summary>
+    /// <summary>The eight keywords.</summary>
     public static bool IsKeyword(string word)
-        => word is "tune" or "preset" or "goal" or "optimize" or "correlate" or "statistics" or "corner";
+        => word is "tune" or "preset" or "goal" or "optimize" or "correlate" or "statistics" or "center" or "corner";
 
     // ── Read ─────────────────────────────────────────────────────────────────
 
@@ -49,6 +49,11 @@ public static class TuningDirectiveText
                 if (setup.Statistics is not null)
                     throw Refuse(TuningDirectiveDiagnostics.SecondStatistics());
                 setup.Statistics = ReadStatistics(rest, Unknown);
+                break;
+            case "center":
+                if (setup.Centering is not null)
+                    throw Refuse(TuningDirectiveDiagnostics.SecondCenter());
+                setup.Centering = ReadCenter(rest, Unknown);
                 break;
             case "corner": setup.Corners.Add(ReadCorner(rest)); break;
         }
@@ -129,6 +134,42 @@ public static class TuningDirectiveText
         }
         return s;
     }
+
+    private static CenteringSettings ReadCenter(string rest, Action<string> unknown)
+    {
+        var t = Tokens(rest);
+        var c = new CenteringSettings();
+        for (int i = 0; i < t.Count; i++)
+        {
+            var (key, value) = KeyValue(t, ref i, unitsAllowed: true);
+            // A default is never held, so neither serialization ever writes one.
+            switch (key.ToLowerInvariant())
+            {
+                case "algorithm": c.Algorithm = value == CenteringSettings.DefaultAlgorithm ? null : value; break;
+                case "trials":    c.Trials = Default(Positive(key, value), CenteringSettings.DefaultTrials); break;
+                case "verify":    c.Verify = Default(Positive(key, value), CenteringSettings.DefaultVerify); break;
+                case "maxiter":   c.MaxIterations = Positive(key, value); break;
+                case "maxevals":  c.MaxEvaluations = Positive(key, value); break;
+                case "timelimit": c.TimeLimit = value; break;
+                case "width":
+                    double w = StatDouble(key, value);
+                    if (!(w > 0)) throw Refuse(TuningDirectiveDiagnostics.StatisticsValueInvalid(key, value, "a number above zero"));
+                    c.Width = Default(w, CenteringSettings.DefaultWidth);
+                    break;
+                case "parallel":  c.Parallelism = Positive(key, value); break;
+                case "seed":      c.Seed = Default(StatInt(key, value), CenteringSettings.DefaultSeed); break;
+                default:
+                    (c.Extra ??= new(StringComparer.Ordinal))[key] = value;
+                    unknown(key);
+                    break;
+            }
+        }
+        return c;
+    }
+
+    private static int Positive(string key, string value)
+        => StatInt(key, value) is var n && n >= 1 ? n
+           : throw Refuse(TuningDirectiveDiagnostics.StatisticsValueInvalid(key, value, "a whole number, 1 or more"));
 
     private static StatCorrelation ReadCorrelate(string rest, Action<string> unknown)
     {
@@ -375,7 +416,7 @@ public static class TuningDirectiveText
     // ── Write ────────────────────────────────────────────────────────────────
 
     /// <summary>The directive lines for <paramref name="setup"/>, in the order tune, preset, goal,
-    /// optimize, correlate, statistics, corner. Empty for an empty setup.</summary>
+    /// optimize, correlate, statistics, center, corner. Empty for an empty setup.</summary>
     public static IEnumerable<string> Write(TuningSetup setup)
     {
         foreach (var e in setup.Variables)    yield return WriteTune(e);
@@ -384,6 +425,7 @@ public static class TuningDirectiveText
         if (setup.Optimizer is { } o)         yield return WriteOptimize(o);
         foreach (var c in setup.Correlations) yield return WriteCorrelate(c);
         if (setup.Statistics is { } st)       yield return WriteStatistics(st);
+        if (setup.Centering is { } center)    yield return WriteCenter(center);
         foreach (var c in setup.Corners)      yield return WriteCorner(c);
     }
 
@@ -413,6 +455,23 @@ public static class TuningDirectiveText
         if (s.Scope != OptimizerScope.GoalAnalyses) sb.Append(" analyses=").Append(AnalysisDirectiveSchema.ScopeTokens[(int)s.Scope]);
         Opt(sb, "corners", s.Corners);
         Extra(sb, s.Extra, "");
+        return sb.ToString();
+    }
+
+    /// <summary>The <c>center</c> line, keys in the order the grammar lists them, defaults never written.</summary>
+    private static string WriteCenter(CenteringSettings c)
+    {
+        var sb = new StringBuilder("center");
+        Opt(sb, "algorithm", c.Algorithm);
+        if (c.Trials is { } m)         sb.Append(" trials=").Append(m.ToString(CultureInfo.InvariantCulture));
+        if (c.Verify is { } v)         sb.Append(" verify=").Append(v.ToString(CultureInfo.InvariantCulture));
+        if (c.MaxIterations is { } mi) sb.Append(" maxiter=").Append(mi.ToString(CultureInfo.InvariantCulture));
+        if (c.MaxEvaluations is { } me) sb.Append(" maxevals=").Append(me.ToString(CultureInfo.InvariantCulture));
+        Opt(sb, "timelimit", c.TimeLimit);
+        if (c.Width is { } w)          sb.Append(" width=").Append(w.ToString("R", CultureInfo.InvariantCulture));
+        if (c.Parallelism is { } p)    sb.Append(" parallel=").Append(p.ToString(CultureInfo.InvariantCulture));
+        if (c.Seed is { } seed)        sb.Append(" seed=").Append(seed.ToString(CultureInfo.InvariantCulture));
+        Extra(sb, c.Extra, "");
         return sb.ToString();
     }
 

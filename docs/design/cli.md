@@ -3650,3 +3650,18 @@ Over MCP it is `run analysis=corners` (`corners`, `mc`, `generate`, `write`, `ou
 notification per corner. Gate: `tests/Ui.Tests/Statistics/CornerTests.cs` — `CornerRunTests`,
 `CornerMonteCarloTests`, `StatisticalCornerTests`, `CornerGeneratorTests`, `CornerCliTests`.
 
+### 25.8 `yield center` (brief-yield-11)
+
+`yield center <path>` runs `CenteringRun` (`docs/design/yield.md` §15): the `opt=1` nominals moved to maximize yield,
+every candidate scored on M common trials, then the start and the best point verified on fresh trials. Flags are the
+`center` line's — `--algorithm`, `--trials` (M), `--verify`, `--max-iter`, `--max-evals`, `--time`, `--width`,
+`--parallel`, `--seed` — plus the statistics line's that still apply (`--target`, `--confidence`, `--nonconverged`,
+`--sampling`, `--save`, the kit switches) and `--vars`/`--goals`; `--trial`, `--save-corner`, `--autostop`,
+`--corners` and `--contributions` are refused as belonging to another noun, and the `center`-only flags are refused on
+the others. stderr carries the estimate, then one line per iteration; stdout the verified `start [interval] →
+centred [interval]` sentence, the centred nominals beside the start with railed marks, and the yield-vs-iteration
+table. The file is the best point's verification, `<design>.yield.npy` (`-o` moves it); `--json` carries
+`result.center`. `--save-preset <name>` adds the centred nominals as one preset to a `.csch` after a history
+checkpoint. Exit (D13): **0** · **3** the verified yield is below `--target` · **1** refused · **2** no candidate
+evaluated · **130** cancelled, nothing written. Over MCP it is `run analysis=center`.
+

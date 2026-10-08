@@ -836,6 +836,67 @@ reverse translation the spec lines use, so the family chosen is a curve the goal
 no swept axis (one number per trial) is drawn as its worst value against the trial number. The workspace writes the
 document as `<design>.yield.cdd` beside the result and opens it; a display that exists is focused instead.
 
+## 15. Design centering (brief-yield-11)
+
+`CenteringRun` (`src/Design/Statistics`) moves the nominals of the `opt=1` entries to maximize yield against the
+`use=yield|both` goals while the tolerances ride along. The designable variables are `OptimizationVariables` — the
+optimizer's own decode of the unit box, one range per variable (tuning D4), the same scales, steps, preferred values
+and complex parts. The statistical variables are the `stat=1` entries and the kit draws; an entry that is both is the
+usual case, and its percent spread is drawn around its CANDIDATE nominal (`SampleValues`, R-ya2-5). No `opt=1` entry,
+no yield goal, nothing that varies, or an algorithm centering does not offer is a refusal from the constructor, which
+`check` asks too.
+
+### 15.1 Common random numbers (R-ya11-2)
+
+The trials are an ordinary `StatisticalRun` over the setup with its statistics line set to `trials=M` and the centering
+seed (no auto-stop, no corners). Each candidate is evaluated through `StatisticalRun.EvaluateAt`: trial t's z-vector —
+a pure function of (seed, t, stream), D5 — re-applied around the candidate's nominal, its values under the trial's
+draws, one evaluator batch per iteration (population × M points) through the optimizer's cache and parallelism. So two
+candidates' yields differ by the design, not by sampling noise, and a candidate seen before costs nothing.
+
+### 15.2 The smooth objective (R-ya11-3)
+
+Per trial: the smallest normalized margin over the yield goals, `m = min_g margin_g / scale_g` (the goal's
+`GoalResiduals.Scale` — its `scale=`, or the default users already read), through a logistic of width `w` (default
+0.05): `1 / (1 + exp(−m / w))`. The objective is the mean over the counted trials; a trial that did not evaluate scores
+0 and is counted under `nonconverged=fail`, and is left out under `warn` (D7). The algorithm minimizes the NEGATED
+objective — not `1 − objective`, which rounds to 1 for a candidate many widths outside a window and would make the
+whole region far from the specs flat; the logistic's tail keeps ranking those down to about e^−700. A failed candidate
+(infeasible, or no trial counted) costs 1 with `Failed` set, below every real point. The plain yield on the same
+trials, with its interval, is reported beside the objective; the best point is the best objective.
+
+### 15.3 Algorithms (R-ya11-4)
+
+From the registry, as ask/tell over the unit box: `OptimizerAlgorithmInfo.SuitsNoisyObjective` marks the ones a
+piecewise-flat objective suits — `simplex`, `pattern` (mesh adaptive direct search), `cmaes` (the default), `bayes`
+and `discrete` — and `OptimizerAlgorithms.ForNoisyObjective` is the menu, the directive's summary and the reference's
+list. Gradient methods are not offered: at finite M a finite difference of a yield is zero almost everywhere. Limits:
+`maxiter` (default 100), `maxevals` (simulations, verification not counted), `timelimit`, and the optimizer's stall
+rule (`stall_tol`, `stall_iters` from `OptimizerAlgorithms.CommonOptions`) on the best objective.
+
+### 15.4 Verification and results (R-ya11-5, R-ya11-7)
+
+At the end the start and the best point are each run by an ordinary `StatisticalRun` (Yield mode) with the point's
+values as its `Bindings` — the nominal each spread is drawn around — on `verify` trials (default 1,000) at seed + 1,
+an independent draw. Both use the same trials, so the comparison is like for like; `CenteringVerification` carries
+both Clopper–Pearson estimates and whether the intervals overlap (the gain is then not resolved at that many trials).
+The best point's run writes `<schematic>.yield.npy` — its full YA-4 DataSet, so every display of §12–13 reads a
+centred design's yield with nothing new. The result also holds the per-iteration history (best plain yield, best
+objective, simulations), the best nominals as value text, and the railed variables (`OptimizationVariables.Railed`,
+tuning D17). Exit (D13): 0, or 3 when the VERIFIED yield is below the statistics `target`; 2 when no candidate
+evaluated. Stop keeps the best point and still verifies it; cancelling writes nothing.
+
+### 15.5 The `center` line and headless (R-ya11-6, R-ya11-8)
+
+`center [algorithm=<id>] [trials=<M>] [verify=<n>] [maxiter=<n>] [maxevals=<n>] [timelimit=<d>] [width=<w>]
+[parallel=<n>] [seed=<n>]` — `CenteringSettings` on `TuningSetup.Centering`, the `.csch` block's `Centering`, at most
+one line, defaults held as null and never written. `explain --analysis` states the estimated total before anything
+runs — the algorithm's first batch (its population, asked of the algorithm itself) × M per iteration, times the
+iteration limit (or the evaluation limit), plus the start and both verifications. `circuitrf yield center` takes the
+line's settings as flags (`cli.md` §25.8), `--save-preset` stores the centred nominals (D12), and MCP
+`run analysis=center` reports a progress notification per iteration. Gates: `tests/Ui.Tests/Statistics/CenteringTests.cs`
+— `CenteringDividerTests`, `CommonRandomNumbersTests`, `CenteringSettingsRoundTripTests`, `CenterCliVerbTests`.
+
 ## Later phases
 
-Each phase appends its section above this one as it lands: YA-11/12 centering.
+Each phase appends its section above this one as it lands: YA-12 the Centering mode and the surrogate.

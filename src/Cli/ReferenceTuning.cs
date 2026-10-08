@@ -176,10 +176,43 @@ internal static partial class Reference
             sb.AppendLine("  " + line);
         sb.AppendLine();
 
+        // brief-yield-11 R-ya11-8: design centering, beside the runs it is built from.
+        sb.AppendLine("Design centering");
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "Centering moves the nominals of the opt=1 entries, within their ranges, to maximize the yield against the " +
+            "use=yield|both goals; an entry that is both opt=1 and toleranced is the usual case, and its percent spread " +
+            "follows the moved nominal. Every candidate is scored on the same M trials (center trials=, default " +
+            $"{CenteringSettings.DefaultTrials}): trial t's standard-normal draws are fixed once, from the center seed, and " +
+            "re-applied around each candidate, so two candidates' yields differ by the design and not by sampling noise. " +
+            "The search sees a smooth yield: per trial, the smallest margin over the yield goals divided by each goal's " +
+            "scale (the goal's scale=, or its default), through a logistic of width w (default " +
+            $"{CenteringSettings.DefaultWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)}), averaged over the " +
+            "trials; the plain yield on the same trials is reported beside it. A trial that does not evaluate scores as a " +
+            "fail, or is left out with nonconverged=warn. The algorithms are the optimizer's that need no derivative, since " +
+            "a yield over finitely many trials is flat between them: " +
+            string.Join(", ", OptimizerAlgorithms.ForNoisyObjective) + " (default " + CenteringSettings.DefaultAlgorithm + "). " +
+            "One iteration costs its candidates × M simulations; explain <file> --analysis states the estimated total " +
+            "before anything runs. At the end the start and the best point are each run on the same verify= fresh trials " +
+            "(the next seed) with their intervals, so 'yield 71 % -> 94 %' compares like with like, and the report says " +
+            "whether the gain lies within the intervals' overlap. The best point's verification is the result file, " +
+            "<design>.yield.npy. Stop keeps the best point and still verifies it.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        sb.AppendLine("    circuitrf yield center pad.cnl --trials 200 --verify 1000 --target 95%");
+        sb.AppendLine("    circuitrf yield center amp.csch --save-preset centred      # the centred nominals as a preset");
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "Over MCP: run analysis=center with the same fields (algorithm, trials, verify, maxIter, maxEvals, time, width, " +
+            "target, savePreset, output); a progress notification arrives per iteration, then read the verified yield " +
+            "in result.center.verification and the written <design>.yield.npy. Exit 3: the verified yield is below target.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+
         // brief-yield-5 R-ya5-7: the run, generated from the verb's own noun and flag tables.
         sb.AppendLine("Running it");
         sb.AppendLine();
-        sb.AppendLine("    circuitrf yield mc|estimate|trial <file.csch|file.cnl> [flags]");
+        sb.AppendLine("    circuitrf yield mc|estimate|trial|corners|center <file.csch|file.cnl> [flags]");
         sb.AppendLine();
         foreach (var (noun, summary) in Yield.Nouns)
             sb.AppendLine($"  {noun,-16} {summary}");

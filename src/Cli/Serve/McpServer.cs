@@ -271,7 +271,8 @@ internal sealed class McpServer
                 "the trial cost. 5. run analysis=yield path=<f> trials=500 -> result.yield: the yield, its interval, " +
                 "each goal's worst trial; exit 3 = below target. 6. read the written <design>.yield.npy (yield group " +
                 "first). 7. run analysis=yield path=<f> trial=<worst> -> what that trial drew. analysis=montecarlo " +
-                "is the spread alone.\n" +
+                "is the spread alone. 8. to centre it: opt=1 with a range on the toleranced lines, then run " +
+                "analysis=center and read the verified yield.\n" +
                 "On an instance line the NETS come first and every 'Key=value' after them; how many " +
                 "nets each type takes is the 'nets' field of reference components, which is not the " +
                 "same number as its symbol's pin count; 'reference component-index' lists every type " +

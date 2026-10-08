@@ -303,7 +303,9 @@ internal static class ToolCatalog
           + "montecarlo and yield run the tolerances on the tune lines (and a kit's statistics) and return result.yield — "
           + "the yield with its interval, each goal's yield and worst trial, the spread of every margin and measurement; "
           + "trial=<n> re-runs one trial. corners evaluates every enabled corner and returns result.corners — a corner × goal "
-          + "margin table and each goal's worst corner; generate returns the corner lines a cross product makes.",
+          + "margin table and each goal's worst corner; generate returns the corner lines a cross product makes. "
+          + "center moves the opt=1 nominals to maximize yield and returns result.center — the centred values as text, "
+          + "the yield vs iteration, and the start and centred yields verified on the same fresh trials.",
             "analysis",
             "Which analysis to run.",
             [
@@ -389,6 +391,31 @@ internal static class ToolCatalog
                     "Corner analysis: the design at every enabled corner (kit corner selections, temp, values; a statistical "
                   + "corner replays its trial). Exit 0: every goal met at every corner. Exit 3: a goal fails at a corner — "
                   + "result.corners.worst names the corner per goal. Exit 2: no corner evaluated."),
+                // brief-yield-11 R-ya11-8: `yield center`, the same verb's fifth noun. A progress notification per
+                // iteration (iteration, best yield, simulations).
+                new("center", ["yield", "center"],
+                    [new("path", true, "The .csch or .cnl whose opt=1 ranges, tolerances, use=yield|both goals and center line to run.")],
+                    [Set,
+                     new("algorithm", "--algorithm", OptKind.Str,     "The search: " + string.Join(", ", CircuitRF.Core.Design.OptimizerAlgorithms.ForNoisyObjective) + " (default cmaes)."),
+                     new("trials",    "--trials",    OptKind.Integer, "M, the common trials every candidate is scored on (default 200)."),
+                     new("verify",    "--verify",    OptKind.Integer, "Fresh trials the start and the best point are each verified on (default 1000)."),
+                     MaxIter,
+                     new("maxEvals",  "--max-evals", OptKind.Integer, "Simulation limit, verification not counted."),
+                     new("time",      "--time",      OptKind.Str,     "Wall-clock limit: seconds, or a number and s, ms, min or h."),
+                     new("width",     "--width",     OptKind.Number,  "The smooth yield's logistic width, a fraction of each goal's scale (default 0.05)."),
+                     new("parallel",  "--parallel",  OptKind.Integer, "Simulations evaluated at once."),
+                     new("seed",      "--seed",      OptKind.Integer, "The common trials' seed; the verification uses the next."),
+                     new("target",    "--target",    OptKind.Str,     "The yield the verified best point must reach, as a percent (95%). Exit 3 below it."),
+                     new("confidence","--confidence",OptKind.Str,     "The confidence of the yield intervals, as a percent (95%)."),
+                     new("nonconverged","--nonconverged",OptKind.Str, "fail (a trial that does not evaluate counts as a fail) or warn (left out)."),
+                     new("vars",      "--vars",      OptKind.StrList, "Draw only these statistical entries; the rest stay at nominal."),
+                     new("goals",     "--goals",     OptKind.StrList, "Score only these of the enabled goals."),
+                     new("savePreset","--save-preset",OptKind.Str,    "A .csch only: add the centred nominals as a preset of this name. The only write to the design."),
+                     new("output",    "-o",          OptKind.Path,    "The best point's verification .npy; default <design>.yield.npy beside the design.")],
+                    "Design centering (yield optimization): every candidate is scored on the same common trials; the start and the "
+                  + "best point are then verified on fresh trials, each with its interval. Exit 0: done (and the verified yield met "
+                  + "target). Exit 3: the verified yield is below target. Exit 2: no candidate evaluated. A progress notification "
+                  + "per iteration."),
                 new("em", ["em"],
                     [new("path", true, "The .cem or .c3d to run; with component, the workspace folder (or .cws, "
                                      + "or .ctech) whose technology the part is drawn on.")],

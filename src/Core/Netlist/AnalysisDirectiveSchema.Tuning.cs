@@ -2,7 +2,7 @@ namespace CircuitRF.Core.Netlist;
 
 /// <summary>
 /// One of the directives of a TestBench's tuning setup — <c>tune</c>, <c>preset</c>, <c>goal</c>,
-/// <c>optimize</c>, and the statistical <c>correlate</c>, <c>statistics</c> and <c>corner</c> — with every
+/// <c>optimize</c>, and the statistical <c>correlate</c>, <c>statistics</c>, <c>center</c> and <c>corner</c> — with every
 /// key it takes and the bare words its grammar uses.
 /// </summary>
 /// <param name="Keyword">The line's first word.</param>
@@ -205,6 +205,34 @@ public static partial class AnalysisDirectiveSchema
             [],
             "statistics trials=500 seed=7 sampling=lhs target=95%"),
 
+        new("center", StatisticsTopic,
+            "center [algorithm=<id>] [trials=<M>] [verify=<n>] [maxiter=<n>] [maxevals=<n>] [timelimit=<v> [unit]] " +
+            "[width=<w>] [parallel=<n>] [seed=<n>]",
+            "Design centering: moves the nominals of the opt=1 entries, within their ranges, to maximize the yield " +
+            "against the use=yield|both goals, while their tolerances ride along (a percent spread follows the moved " +
+            "nominal). Every candidate is scored on ONE fixed set of M trials, so two candidates differ by the design and " +
+            "not by sampling noise. The algorithm sees a smooth yield — per trial, the smallest margin over the yield " +
+            "goals divided by each goal's scale, through a logistic of width w — and the plain yield on the same trials " +
+            "is reported beside it. The best point and the start are then each run on verify fresh trials (the next " +
+            "seed) with their intervals. At most one line, and a default is never written.",
+            [
+                new("algorithm", Default: CircuitRF.Core.Design.CenteringSettings.DefaultAlgorithm,
+                                 Summary: "One of: " + string.Join(", ", CircuitRF.Core.Design.OptimizerAlgorithms.ForNoisyObjective) +
+                                          " — the registry's algorithms that suit a yield's piecewise-flat objective."),
+                new("trials",    Default: CircuitRF.Core.Design.CenteringSettings.DefaultTrials.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                                 Summary: "M: the common trials every candidate is scored on. One candidate costs M simulations."),
+                new("verify",    Default: CircuitRF.Core.Design.CenteringSettings.DefaultVerify.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                                 Summary: "Fresh trials the start and the best point are each verified on."),
+                new("maxiter",   Default: "100", Summary: "Iteration limit."),
+                new("maxevals",  Summary: "Simulation limit, verification not counted."),
+                new("timelimit", Summary: "Wall-clock limit: a number and s, ms, min or h."),
+                new("width",     Default: "0.05", Summary: "The logistic's width, as a fraction of each goal's scale."),
+                new("parallel",  Summary: "How many simulations may run at once."),
+                new("seed",      Default: "1", Summary: "The seed of the common trials; the verification uses the next one."),
+            ],
+            [],
+            "center algorithm=cmaes trials=200 verify=1000 maxiter=40"),
+
         new("corner", StatisticsTopic,
             "corner <Name> [enabled=0] [trial=<n> seed=<n> sampling=… trials=<n>] [temp=<v>] <key>=<v> [unit] ...",
             "A named corner: a value for the ambient temperature (temp, in degC) and for any global variable or " +
@@ -224,7 +252,7 @@ public static partial class AnalysisDirectiveSchema
             "corner SS_hot temp=85 Vdd=3.0 V R1.R=47 Ohm"),
     ];
 
-    /// <summary>The seven directives, in the order a <c>.cnl</c> writes them.</summary>
+    /// <summary>The eight directives, in the order a <c>.cnl</c> writes them.</summary>
     public static IReadOnlyList<TuningDirectiveSpec> TuningDirectives => _tuning;
 
     /// <summary>The directive spec for a keyword, or null.</summary>

@@ -256,6 +256,44 @@ public sealed class StatisticalRun
         return EvaluateTrials([trial], keepData: true, int.MaxValue, ct, rerun: true)[0];
     }
 
+    /// <summary>
+    /// Trials evaluated at moved designs (brief-yield-11 R-ya11-2): each (trial, at) pair draws trial t's z-vector —
+    /// the same numbers whatever the design — applied to the nominal at <c>at</c>, a candidate's values, which the map
+    /// evaluated holds under the trial's draws. The pairs run as one batch through the evaluator; no analysis results
+    /// are kept. Design centering's door: two candidates scored on the same trials differ by the design alone.
+    /// </summary>
+    internal TrialRecord[] EvaluateAt(IReadOnlyList<(int Trial, IReadOnlyDictionary<string, string> At)> points, CancellationToken ct)
+    {
+        var result  = new TrialRecord[points.Count];
+        var batch   = new List<ValuePoint>();
+        var slots   = new List<(int Index, SampledValues Values, StatisticalSample Sample, ExpressionDraws Draws)>();
+        var moved   = new Dictionary<IReadOnlyDictionary<string, string>, IReadOnlyList<Tunable>>(ReferenceEqualityComparer.Instance);
+        double scale = _settings.SigmaScale ?? 1;
+        for (int i = 0; i < points.Count; i++)
+        {
+            var (t, at) = points[i];
+            if (!moved.TryGetValue(at, out var nominals)) moved[at] = nominals = NominalsAt(at);
+            var (values, entrySample, draws) = Draw(t, scale, nominals);
+            if (values.Refused)
+            {
+                result[i] = Record(t, PointStatus.DidNotEvaluate, values.Refusal, values, entrySample, null, null, false);
+                continue;
+            }
+            slots.Add((i, values, entrySample, draws));
+            batch.Add(new ValuePoint(PointValues(values.Values, at), draws, $"trial {t}"));
+        }
+
+        IReadOnlyList<PointEvaluation> evaluated;
+        lock (_evalLock) evaluated = _eval!.EvaluateValues(batch, keepData: false, ct);
+        for (int k = 0; k < slots.Count; k++)
+        {
+            var (i, values, sample, draws) = slots[k];
+            var p = evaluated[k];
+            result[i] = Record(points[i].Trial, p.Status, p.Reason, values, sample, draws, p, false);
+        }
+        return result;
+    }
+
     // ── Trials ──────────────────────────────────────────────────────────────────────
 
     private TrialRecord[] EvaluateTrials(IReadOnlyList<int> trials, bool keepData, int keptLimit, CancellationToken ct,

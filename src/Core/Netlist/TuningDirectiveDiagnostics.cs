@@ -54,6 +54,10 @@ public static class TuningDirectiveDiagnostics
         "cnl.statistics.repeated", DiagnosticSeverity.Error,
         "A netlist states at most one 'statistics' line.");
 
+    public static Diagnostic SecondCenter() => new(
+        "cnl.statistics.center-repeated", DiagnosticSeverity.Error,
+        "A netlist states at most one 'center' line.");
+
     public static Diagnostic CornerMalformed(string corner, string problem) => Diagnostic.Create(
         "cnl.corner.malformed", DiagnosticSeverity.Error,
         "corner {corner}: {problem}", ("corner", corner), ("problem", problem));

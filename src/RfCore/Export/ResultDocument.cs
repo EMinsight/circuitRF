@@ -170,7 +170,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         YieldReportJson? Yield = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        CornerReportJson? Corners = null);
+        CornerReportJson? Corners = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        CenterReportJson? Center = null);
 
     /// <summary>
     /// One external solver as <c>solver list</c> reports it — the Settings ▸ Solvers row. Carried as data
@@ -875,6 +877,61 @@ namespace RfCore.Export
 
     /// <summary>One corner's Monte Carlo or yield (<c>--mc</c>): the run's own report, under the corner's name.</summary>
     public sealed record CornerYieldJson(string Corner, YieldReportJson Run);
+
+    // ── `yield center` / MCP `run analysis=center` (brief-yield-11 R-ya11-7/8) ─────────────────
+    //
+    // A PROJECTION of `CenteringResult`. Yields are fractions; values are the text a schematic would hold.
+
+    /// <summary>What one design-centering run found.</summary>
+    /// <param name="Outcome"><c>finished</c>, <c>belowTarget</c>, <c>refused</c>, <c>noneEvaluated</c> or
+    /// <c>cancelled</c> — the exit code's reason (0, 3, 1, 2, 130).</param>
+    /// <param name="Evaluations">Simulations the search ran on the common trials.</param>
+    /// <param name="StartValues">The designable values the search started from.</param>
+    /// <param name="BestValues">The centred nominals — what <c>--save-preset</c> stores.</param>
+    /// <param name="Railed">Designable values within 0.5 % of a bound, as <c>key@min</c> or <c>key@max</c>.</param>
+    /// <param name="StartYield">The start's plain yield on the common trials.</param>
+    /// <param name="BestYield">The best point's plain yield on the common trials.</param>
+    /// <param name="Verification">The independent check; null when nothing evaluated.</param>
+    /// <param name="History">Per iteration: the best plain yield, the best smooth objective, the simulations so far.</param>
+    public sealed record CenterReportJson(
+        string                               Document,
+        string                               Outcome,
+        string                               FinishReason,
+        string                               Algorithm,
+        int                                  Trials,
+        int                                  Verify,
+        double                               Width,
+        int                                  Seed,
+        int                                  Iterations,
+        long                                 Evaluations,
+        long                                 VerifyEvaluations,
+        IReadOnlyDictionary<string, string>  StartValues,
+        IReadOnlyDictionary<string, string>  BestValues,
+        IReadOnlyList<string>                Railed,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        YieldEstimateJson?                   StartYield,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        YieldEstimateJson?                   BestYield,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                              StartObjective,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                              BestObjective,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        CenterVerificationJson?              Verification,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                              Target,
+        IReadOnlyList<CenterIterationJson>   History,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                              Output = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                              SavedPreset = null);
+
+    /// <summary>The start and the best point on the same fresh trials, each with its interval.</summary>
+    /// <param name="WithinOverlap">The intervals overlap: the gain is not resolved at this many trials.</param>
+    public sealed record CenterVerificationJson(
+        int Seed, int Trials, YieldEstimateJson Start, YieldEstimateJson Best, bool WithinOverlap, string Sentence);
+
+    public sealed record CenterIterationJson(int Iteration, double? BestYield, double? BestObjective, long Evaluations);
 
     // ── `lvs`: what the comparison concluded (brief-lvs-11-cli-verb.md R-lvs11-3c) ───────────
     //
@@ -1727,7 +1784,36 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         int?    TrialsForTwoPercent,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainYieldRunJson? Run = null);
+        ExplainYieldRunJson? Run = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainCenterJson? Center = null);
+
+    /// <summary>
+    /// What a design-centering run would cost (brief-yield-11 R-ya11-6), stated before anything runs: evaluations per
+    /// iteration are the algorithm's first batch of candidates × M common trials. Present when the setup has a
+    /// <c>center</c> line.
+    /// </summary>
+    /// <param name="Total">The start, the iteration limit's worth of iterations (or the evaluation limit) and both
+    /// verification runs, in simulations.</param>
+    /// <param name="Refusal">What the run would refuse, in its own words; the numbers are then absent.</param>
+    public sealed record ExplainCenterJson(
+        string  Algorithm,
+        int     Trials,
+        int     Verify,
+        double  Width,
+        int     Seed,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?    Variables,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?    PointsPerIteration,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        long?   EvaluationsPerIteration,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        long?   Total,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Estimate,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Refusal = null);
 
     /// <summary>
     /// What a yield run would execute and cost (brief-yield-5 R-ya5-8): the analysis chains under <c>analyses=goals</c>
