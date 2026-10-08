@@ -54,3 +54,46 @@ boundary, so a clipped edge is a cut and a piece that merely stops inside is not
 
 R-as3-6 says a connector's designator *starts* with J, P or X. Read literally, `PS1` (a power supply) and `PWR1` are
 connectors. `PortDiscovery.IsConnectorRefdes` requires the letter to be followed by a digit.
+
+---
+
+## AS-4 — parts and the parts table
+
+### The land-pattern references are generated on a technology of their own
+
+`ChipLandPatternGenerator` refuses a technology whose top conductor does not sit directly on a dielectric — a board
+with a via row between Top and its core in the stackup list reads as "not a laminate surface" and gets no lands. So the
+references are generated once on a minimal two-row technology (front copper on a core, a soldermask by purpose) inside
+`LandPatternMatch.References`, and the test boards' own land helper strips the via row for the same reason. The board
+under recognition is never asked to be generator-friendly.
+
+### A 30 % scaling is not a guaranteed miss
+
+The case table is dense. An 0603 grown by 30 % lies within 20 % of the two-pad crystal's least-density land
+(`XTAL3216@L`, RMS 0.12), an 0805 shrunk by 30 % fits `0603@L`, and an 0402 shrunk by 30 % fits `0201@M`. Those are
+correct readings of geometry no table could tell apart, which is why the runner-up note exists. The gate scales an 0805
+up, which fits nothing.
+
+### "In a row" had to be strict
+
+The first rule (a like pad on the pair's line within 0.5–1.5 pitches) rejected two chip parts placed end to end at
+about one pitch, which is an ordinary layout. A package row is pads of one size at one gap, so the rule is now: same
+size within 10 %, on the line, and the gap to the nearer end equal to the pair's own gap within 10 %.
+
+### `PartModelResolution` is taken
+
+railRF's `PartModelResolution` record (one part number in one `.crlib`) already lives in `CircuitRF.Design.RailRf`, and
+recognition calls it. The brief's file name is kept; the class is `PartModelResolver`, so a file importing both
+namespaces compiles.
+
+### `NF` is a not-fitted marker only in capitals
+
+`BomTablePaste`'s do-not-populate words do not include `NF`, and adding it there would make a pasted table's unit
+column (`nF`) read as not fitted — its comparison lower-cases. The bill-of-materials check accepts the exact capital
+`NF` beside the shared recogniser instead.
+
+### A placement row lands by the body box railRF draws
+
+A Gerber-only board has no pads by designator, so `PdnAttachments` finds none for a placement row; `RailPartMarks.For`
+still returns the body box (the row's point ± `PadReachDbu`), and that box is what decides which land pattern the row
+names — the same box the railRF window marks the part with.

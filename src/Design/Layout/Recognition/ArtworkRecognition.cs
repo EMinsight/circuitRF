@@ -53,8 +53,11 @@ public sealed record RecognitionInput
     /// <summary>A bill of materials (AS-4 reads it).</summary>
     public BomTable? Bom { get; init; }
 
-    /// <summary>An edited parts table (AS-4).</summary>
+    /// <summary>An edited parts table, laid over the parts read from the board (AS-4 R-as4-8).</summary>
     public string? PartsCsvPath { get; init; }
+
+    /// <summary>Further sources of evidence about parts — AS-10's silkscreen (R-as4-1 (4)).</summary>
+    public IReadOnlyList<IPartEvidenceSource> EvidenceSources { get; init; } = [];
 
     /// <summary>Which part of the artwork is read (R-as3-7).</summary>
     public RecognitionScope Scope { get; init; } = RecognitionScope.Whole;
@@ -93,7 +96,7 @@ public sealed record RecognitionInput
     }
 }
 
-/// <summary>What a recognition produced. AS-4 adds the parts, AS-5 the line elements.</summary>
+/// <summary>What a recognition produced. AS-5 adds the line elements.</summary>
 /// <param name="Board">The board graph; null only when the artwork could not be read at all.</param>
 /// <param name="Report">Every guess and omission, with counts.</param>
 /// <param name="Refusal">Why nothing can be generated, or null.</param>
@@ -101,6 +104,9 @@ public sealed record RecognitionResult(BoardGraph? Board, RecognitionReport Repo
 {
     /// <summary>True when the board graph can be built on.</summary>
     public bool Ok => Refusal is null && Board is not null;
+
+    /// <summary>The parts table (AS-4), with an edited table laid over it; empty when there is no board.</summary>
+    public PartsTable Parts { get; init; } = PartsTable.Empty;
 }
 
 /// <summary>The recognition, written once (D2).</summary>
@@ -118,6 +124,13 @@ public static class ArtworkRecognition
             return new RecognitionResult(null, report,
                 "The layout resolves no technology, so it has no stackup: recognition needs to know which layers " +
                 "are copper and what a via joins. Give the layout a technology, or open it in a workspace that has one.");
+
+        // A companion file handed in and refused is never quietly dropped: an unstated placement origin
+        // is the user's to state (the CLI names the flag), never a guess (R-as4-1 (2)).
+        if (input.Placement is { Refusal: { } placementRefusal })
+            return new RecognitionResult(null, report, $"The placement file cannot be used: {placementRefusal}");
+        if (input.Bom is { Refusal: { } bomRefusal })
+            return new RecognitionResult(null, report, $"The bill of materials cannot be used: {bomRefusal}");
 
         var fmt = RailLengthFormat.For(input.View);
         int dbu = input.View.DbuPerMicron;
@@ -144,9 +157,11 @@ public static class ArtworkRecognition
         // ── the scope ──────────────────────────────────────────────────────────────────────────────
         Paths64? scope = input.Scope.IsWhole ? null : input.Scope.Paths();
         var board = whole;
+        IReadOnlyList<LayoutShape> scopedShapes = input.Shapes;
         if (scope is not null)
         {
             var clipped = Clip(input.Shapes, scope, tech);
+            scopedShapes = clipped;
             var pieces = CopperPieces.Build(clipped, tech, format: fmt);
             if (!pieces.Any) return new RecognitionResult(null, report, "There is no copper in the selected region.");
             board = new BoardCopper(pieces, tech, clipped, dbu, widest);
@@ -233,6 +248,7 @@ public static class ArtworkRecognition
         var ports = PortDiscovery.Discover(portCtx, out var notOnSignal);
         foreach (var port in ports) signal[port.Island] = !isPadGround[port.Island];
         ReportPorts(ports, notOnSignal, report, fmt);
+        token.ThrowIfCancellationRequested();
 
         // ── the islands, recorded ────────────────────────────────────────────────────────────────────
         var islands = new List<BoardIsland>(islandCount);
@@ -262,10 +278,38 @@ public static class ArtworkRecognition
                                         shorted[i] || (onGroundNet[i] && !isPadGround[i]), separatePour[i])
                         { Pieces = piecesOf[i] });
         }
-        ReportIslands(islands, report, fmt);
-
         var graph = new BoardGraph(ground, islands, vias, ports, dbu) { Copper = board.Pieces, IslandOfPiece = islandOf };
-        return new RecognitionResult(graph, report, ports.Count == 0 ? PortDiscovery.NoPortRefusal : null);
+
+        // ── parts (AS-4): every evidence source, then the user's table laid over them ─────────────────
+        control?.BeginStage("Reading parts");
+        TraceImpedanceReport? review = null;
+        var parts = PartReading.Read(new PartReadingContext
+        {
+            Input = input, Board = graph, Copper = board, Shapes = scopedShapes, Scope = scope, PlacedPads = placed,
+            TraceRuns = () => (review ??= TraceImpedanceAnalysis.Analyze(scopedShapes, tech, dbu, new TraceImpedanceOptions(), control))
+                              .Layers.SelectMany(l => l.Traces).ToList(),
+            Format = fmt,
+        }, report);
+        if (input.PartsCsvPath is { } csv)
+        {
+            var edited = PartsTableCsv.ReadFile(csv, parts);
+            if (edited.Refusal is { } why) return new RecognitionResult(graph, report, why);
+            parts = edited.Table!;
+            report.Add(RecognitionFindingClass.PartsCsvNotes, edited.Notes.Count, string.Join(" ", edited.Notes));
+            report.Add(RecognitionFindingClass.PartsCsvRefdesNotOnBoard, edited.NotOnBoard.Count,
+                $"The parts table names {Plural(edited.NotOnBoard.Count, "part", "parts")} the board does not have, and " +
+                $"{(edited.NotOnBoard.Count == 1 ? "it was" : "they were")} ignored: {string.Join(", ", edited.NotOnBoard)}.");
+        }
+
+        // A part's pads make their copper a node: an island read as nothing that a modelled part lands on
+        // is promoted (AS-3 kept it in the graph for exactly this).
+        var promoted = parts.Rows.Where(r => r.IsModelled).SelectMany(r => r.Terminals).Select(t => t.Island)
+                            .Where(i => i >= 0 && islands[i].Kind == IslandKind.Nothing).ToHashSet();
+        if (promoted.Count > 0)
+            graph = graph with { Islands = [.. islands.Select(i => promoted.Contains(i.Id) ? i with { Kind = IslandKind.Signal } : i)] };
+        ReportIslands([.. graph.Islands], report, fmt);
+
+        return new RecognitionResult(graph, report, ports.Count == 0 ? PortDiscovery.NoPortRefusal : null) { Parts = parts };
     }
 
     // ── islands ─────────────────────────────────────────────────────────────────────────────────────

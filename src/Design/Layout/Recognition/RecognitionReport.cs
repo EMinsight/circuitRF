@@ -66,6 +66,62 @@ public enum RecognitionFindingClass
 
     /// <summary>The scope cuts a ground pour or plane; ground was read from the whole board.</summary>
     ScopeCutGround,
+
+    // ── AS-4: parts (R-as4-9) ───────────────────────────────────────────────────────────────────
+
+    /// <summary>Parts read from placed footprint instances.</summary>
+    PartsFromInstances,
+
+    /// <summary>Parts named by the placement file on land patterns found on the board.</summary>
+    PartsFromPlacement,
+
+    /// <summary>Parts named by the silkscreen (AS-10).</summary>
+    PartsFromSilkscreen,
+
+    /// <summary>Parts found from land patterns alone, given generated designators.</summary>
+    PartsFromLandPatternOnly,
+
+    /// <summary>Parts whose kind is unknown — generated as a capacitor.</summary>
+    PartKindsUnknown,
+
+    /// <summary>Parts whose value is unknown — each a variable with a transparent starting value.</summary>
+    PartValuesUnknown,
+
+    /// <summary>Bill-of-materials values in the wrong dimension for the part's kind, not used.</summary>
+    PartValueWrongDimension,
+
+    /// <summary>Parts modelled by a Touchstone file.</summary>
+    PartModelsSnp,
+
+    /// <summary>Land patterns that fit more than one case about as well.</summary>
+    LandPatternAmbiguous,
+
+    /// <summary>Parts with both pads on ground, left out.</summary>
+    PartsShortedLeftOut,
+
+    /// <summary>Parts with both pads on one signal island, left out.</summary>
+    PartsBridgedLeftOut,
+
+    /// <summary>Parts with a pad on no copper in scope, left out.</summary>
+    PartsOffCopper,
+
+    /// <summary>Multi-pin parts and connectors, cut out (D9).</summary>
+    MultiPinPartsCut,
+
+    /// <summary>Bill-of-materials designators that name no part found on the board.</summary>
+    BomRowsNotOnBoard,
+
+    /// <summary>Placement rows that land on no two-pad land pattern.</summary>
+    PlacementRowsNotOnBoard,
+
+    /// <summary>No mask or paste layer on a side: land patterns were read from the copper.</summary>
+    MaskPasteAbsent,
+
+    /// <summary>Edits in a parts table that were not applied, and measured columns that differed.</summary>
+    PartsCsvNotes,
+
+    /// <summary>Designators a parts table names that the board does not have.</summary>
+    PartsCsvRefdesNotOnBoard,
 }
 
 /// <summary>A place a finding is about, DBU, with the drawing layer when one is known.</summary>

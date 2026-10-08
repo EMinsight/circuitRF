@@ -3,14 +3,19 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using CircuitRF.Design.Layout;
+using CircuitRF.Design.Layout.Footprints;
+using CircuitRF.Design.Layout.Interchange;
+using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Design.Layout.Recognition;
 
 namespace CircuitRF.Ui.Tests.Recognition;
 
 internal static class RecognitionBoards
 {
-    public static readonly LayerKey Top = new(1, 0), Bottom = new(2, 0), Plane = new(3, 0), Inner = new(4, 0), Via = new(9, 0);
+    public static readonly LayerKey Top = new(1, 0), Bottom = new(2, 0), Plane = new(3, 0), Inner = new(4, 0), Via = new(9, 0),
+                                    Mask = new(5, 0);
 
     public static long Um(double um) => (long)Math.Round(um * LayoutUnits.DefaultDbuPerMicron);
 
@@ -44,6 +49,36 @@ internal static class RecognitionBoards
         ];
         tech.Stackup.Layers[3].IsGroundReference = true;
         return tech;
+    }
+
+    /// <summary><see cref="TwoLayer"/> with a top solder mask, so land patterns read from its openings.</summary>
+    public static Technology TwoLayerWithMask()
+    {
+        var tech = TwoLayer();
+        tech.Layers = [.. tech.Layers, new LayerDef { Key = Mask, Name = "Soldermask Top", Purpose = "soldermask" }];
+        return tech;
+    }
+
+    /// <summary>
+    /// A case's land pattern at a density as the generator draws it — two copper lands on Top and two
+    /// mask openings — centred at (<paramref name="cxUm"/>, <paramref name="cyUm"/>), along x or along y.
+    /// </summary>
+    public static List<RectShape> Land(string code, DensityLevel density, double cxUm, double cyUm,
+                                       bool vertical = false, double scale = 1)
+    {
+        // The generator draws on a front copper that sits on the laminate; the boards' via row sits between.
+        var tech = TwoLayerWithMask();
+        tech.Stackup.Layers = [.. tech.Stackup.Layers.Where(l => l.Kind != StackupKind.Via)];
+        var result = ChipLandPatternGenerator.Generate(
+            FootprintRef.For(SmtCaseTable.Find(code)!, density), tech, PCellLayerSelection.Default);
+        long cx = Um(cxUm), cy = Um(cyUm);
+        return [.. result.Shapes.OfType<RectShape>().Where(r => r.Layer == Top || r.Layer == Mask).Select(r =>
+        {
+            long x1 = (long)(r.X1 * scale), y1 = (long)(r.Y1 * scale), x2 = (long)(r.X2 * scale), y2 = (long)(r.Y2 * scale);
+            return vertical
+                ? new RectShape { Layer = r.Layer, X1 = cx + y1, Y1 = cy + x1, X2 = cx + y2, Y2 = cy + x2 }
+                : new RectShape { Layer = r.Layer, X1 = cx + x1, Y1 = cy + y1, X2 = cx + x2, Y2 = cy + y2 };
+        })];
     }
 
     /// <summary>Top, an inner ground plane (the reference), an inner signal layer and Bottom.</summary>
@@ -127,6 +162,67 @@ internal static class RecognitionBoards
         view.Shapes.Add(Line(Top, x1, x2, 5_000));
         return view;
     }
+
+    /// <summary>
+    /// A 40 × 20 mm board for the parts gates, every land an 0603 drawn with its mask openings:
+    /// <list type="bullet">
+    /// <item>R1, series, between a line from the left edge and a stub;</item>
+    /// <item>C2, shunt, standing on the stub with its far pad strapped to the top ground pour;</item>
+    /// <item>C3, bridged, both pads on one line that runs on to the right edge.</item>
+    /// </list>
+    /// The placement file names all three; the bill of materials gives R1 4R7, C2 10nH and C3 DNP.
+    /// </summary>
+    public static (LayoutView View, PlacementTable Placement, BomTable Bom) PartsBoard()
+    {
+        var view = new LayoutView();
+        view.Shapes.Add(Rect(Bottom, 0, 0, 40_000, 20_000));
+        view.Shapes.Add(Rect(Top, 0, 12_000, 40_000, 20_000));
+        for (int i = 0; i < 8; i++) view.Shapes.Add(ViaAt(2_500 + 5_000 * i, 16_000));
+
+        var r1 = Land("0603", DensityLevel.Nominal, 12_000, 5_000);
+        var (l1, r) = Ends(r1);
+        view.Shapes.AddRange(r1);
+        view.Shapes.Add(Rect(Top, 0, 4_525, l1, 5_475));
+        view.Shapes.Add(Rect(Top, r, 4_525, 26_000, 5_475));
+
+        double pitch = r - l1;
+        var c2 = Land("0603", DensityLevel.Nominal, 20_000, 5_000 + pitch / 2, vertical: true);
+        view.Shapes.AddRange(c2);
+        view.Shapes.Add(Rect(Top, 19_700, 5_000 + pitch, 20_300, 12_500));
+
+        view.Shapes.AddRange(Land("0603", DensityLevel.Nominal, 33_000, 5_000));
+        view.Shapes.Add(Rect(Top, 28_000, 4_525, 40_000, 5_475));
+
+        PlacementRow Row(string refdes, double x, double y) => new(refdes, Um(x), Um(y), 0, false, "0603", 1);
+        var placement = new PlacementTable(
+            "board.pos", null, PlacementOrigin.BodyCentre, PlacementOriginEvidence.Chosen, LayoutUnit.Mm,
+            BoardNetlistUnitsEvidence.Declared, ',',
+            [Row("R1", 12_000, 5_000), Row("C2", 20_000, 5_000 + pitch / 2), Row("C3", 33_000, 5_000)],
+            3, 0, DrillExtents.Empty, []);
+        var bom = new BomTable(
+            "board.csv", null, ',',
+            [
+                new BomRow("R1", "PN-R1", "4R7", "0603", "Resistor"),
+                new BomRow("C2", null, "10nH", "0603", "Capacitor"),
+                new BomRow("C3", null, "DNP", "0603", "Capacitor"),
+            ],
+            3, 0, [], []);
+        return (view, placement, bom);
+    }
+
+    /// <summary>The two land centres along x of a horizontal land, µm.</summary>
+    public static (double Left, double Right) Ends(List<RectShape> land)
+    {
+        var copper = land.Where(s => s.Layer == Top).OrderBy(s => s.X1).ToList();
+        return ((copper[0].X1 + copper[0].X2) / 2.0 / LayoutUnits.DefaultDbuPerMicron,
+                (copper[1].X1 + copper[1].X2) / 2.0 / LayoutUnits.DefaultDbuPerMicron);
+    }
+
+    public static RecognitionResult RecognizeParts(LayoutView view, PlacementTable? placement, BomTable? bom) =>
+        ArtworkRecognition.Recognize(new RecognitionInput
+        {
+            View = view, Technology = TwoLayerWithMask(), Shapes = view.Shapes, Placement = placement, Bom = bom,
+        });
 
     public static RecognitionResult Recognize(
         LayoutView view, Technology tech, RecognitionOptions? options = null, RecognitionScope? scope = null,

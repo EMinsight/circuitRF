@@ -174,3 +174,86 @@ copper read as nothing, conflicting net names, ports by source, ports on no sign
 `RecognitionCountersTests` (the 200-via board reads its partition once — a counter on the `ConnectivityCache`), and
 `ArtworkRecognitionFieldTests` (`FixtureFact` over the git-ignored `testdata/artwork-boards/<board>/`, each with a
 hand-written `expected.json`: `{ "clay": "<path to the .clay>", "ports": <count> }`).
+
+---
+
+## 5. AS-4 — parts and the parts table
+
+`PartReading.Read`, called by `ArtworkRecognition.Recognize` after the board graph is built; the result carries a
+`PartsTable` (`RecognitionResult.Parts`). Files: `PartReading.cs`, `LandPatternMatch.cs`, `PartEvidence.cs`,
+`PartsTable.cs`, `PartsTableCsv.cs`, `PartModelResolution.cs` (class `PartModelResolver` — railRF already has a record
+named `PartModelResolution`, the one-library resolution this calls).
+
+### 5.1 Evidence (R-as4-1, D10)
+
+Strongest first, and every field of a row records which source gave it (`Evidence`: `refdes=placement;kind=refdes;
+case=land;value=bom;pn=bom;model=file`):
+
+1. **Placed instances** — `PlacedPins` (railRF's and LVS's walk) gives each designated part's pads on their own land
+   layer; `LayoutPartKind.Of` the declared kind; the land-pattern cell's name the case (`smt-<case>@<density>_<hash>`
+   parsed exactly, else any unambiguous token through `FootprintTokens`).
+2. **Placement + bill of materials** — passed in already read, refusals intact: a refused placement or BOM refuses the
+   recognition with the reader's own sentence, so an unstated origin is never guessed. A placement row lands where
+   `RailPartMarks.For` puts the part's body (the row's point ± `PadReachDbu`), on the nearest unnamed land pattern whose
+   centre or a pad is inside it. A row naming a placed instance only adds its case. BOM rows are taken by designator;
+   several rows with different part numbers or values give neither, with a note.
+3. **Land patterns** (`LandPatternMatch`) on pads no instance claims. Pad outlines come from the side's **paste**
+   openings, else its **solder-mask** openings (by board-format alias, purpose, then a name carrying the side), each a
+   union of the layer's shapes kept where it is at least 82 % of its bounding box and has copper of that side under its
+   centre. A side with neither reads **copper**: pad-shaped pieces by the trace review's own pad rule, and the copper
+   ahead of every trace end the review names `"pad"` (an axis-aligned window as long and wide as the largest land). The
+   reference lands and mask openings are **generated** — `ChipLandPatternGenerator` draws every case at every density
+   once on a minimal board technology — never tabulated. A pair matches a case when both pads' along/across extents and
+   the gap are each within 20 %, at 0° or 90°; smallest RMS error wins; a different case within 5 points is the
+   runner-up, named in the row's notes. Candidates resolve best fit first; a pad is in one part at most. A third pad of
+   the same size continuing the pair's line with the pair's own gap (±10 %) makes the pair two pins of a package row.
+4. **Further sources** through `IPartEvidenceSource` (AS-10's silkscreen): a `PartClaim` names the nearest unnamed part
+   within its reach.
+5. **Nothing**: generated designators `C_A1`, `C_A2`, … top to bottom, left to right.
+
+### 5.2 Kind, value, connection, model (R-as4-2 … R-as4-6)
+
+- **Kind**: designator prefix (`R`; `L`/`FB`/`FL`; `C`; `J`/`P`/`X` → Connector; a two-pad `D`/`Q`/`U`/`IC`/`Y`/`SW`/`TP`
+  is `Ignore` with a note, more pads `MultiPin`), then the placed `PartKind`, then the BOM description's type word
+  (`BomTablePaste.ReadTypeWord`, shared). More than two pads is `MultiPin` unless a connector. A BOM not-fitted marker
+  (`BomTablePaste.IsNotFittedMarker`, plus a capital `NF`) is `Open`; a jumper case or an R whose value is 0 Ω is `Short`.
+- **Value**: the BOM value column, else its description, through `BomTablePaste.TryReadValue` (SI prefixes, the
+  letter-as-decimal `4R7` / `10n0`), in base SI. A value of another dimension than the kind is a note and a
+  `PartValueWrongDimension` finding, and is not used.
+- **Unknown value** → `Variable = <Refdes>_<Param>` on every modelled R/L/C/unknown row without a value or a measured
+  model; `PartRow.TransparentValue` is its starting value (series C 100 pF, L 0.1 nH, R 0 Ω; shunt C 0.01 pF, L 1 µH,
+  R 1 MΩ).
+- **Connection**: the two terminals are paired by `RailPartDiscovery.SeriesTerminals`, and each is looked up in the
+  board graph — an island, ground copper (a body piece, or a `PadGround` island) or no copper. One end on ground is
+  `Shunt` (terminals ordered signal end first); both on ground `Shorted`; both on one island `Bridged`; otherwise
+  `Series`; an end on no copper `Unplaced`. Shorted, bridged and unplaced parts are left out (`PartRow.IsModelled`).
+  A modelled part's island that AS-3 read as `Nothing` is promoted to `Signal`.
+- **Model**: a BOM part number whose row in any workspace `.crlib` attaches a Touchstone file, else a workspace `.sNp`
+  whose name begins with it (shortest name wins, the others noted). Dot-folders are not searched. A file with other
+  than two ports is not used and the row says so.
+
+### 5.3 The table and its CSV (R-as4-7, R-as4-8)
+
+Columns `Refdes, Kind, Connection, Case, Value, Variable, Model, ModelFile, PartNumber, X, Y, Evidence, Confidence,
+Notes`, UTF-8, comma-delimited, natural designator order, LF line ends. Values are written `4.7 Ohm`, `100 pF`,
+`1 uH` — the spelling the BOM value reader reads back. `X`/`Y` are in the layout's display unit with the unit stated.
+`ModelFile` is relative to the workspace root (the layout's folder when there is none). Confidence: `high` for a placed
+instance or a BOM row on a part the placement landed; `low` for a land pattern alone of unknown kind; `medium` otherwise.
+
+Reading back is an overlay on a fresh recognition: `Kind`, `Value`, `Variable`, `Model`, `ModelFile` are applied (a
+value clears the variable; a kind change keeps a value only within the same dimension; an SnP file is checked for two
+ports); `Connection`, `Case`, `X`, `Y`, `Evidence`, `Confidence` and `PartNumber` are measured and ignored, with a note
+where they differ; `Notes` is ignored. An unknown column is a refusal naming it; a designator the board does not have
+is reported and ignored. Write then read is the identity.
+
+### 5.4 The report (R-as4-9)
+
+Parts by source (instances, placement, silkscreen, land pattern alone), unknown kinds, unknown values (the variables),
+values in the wrong dimension, SnP models, land-pattern ambiguities, shorted / bridged / off-copper parts left out,
+multi-pin parts and connectors cut out (with their part numbers, for Import Component), BOM designators and placement
+rows not found on the board, sides with no mask or paste layer, and a parts table's notes and unknown designators.
+
+### 5.5 Gates
+
+`LandPatternMatchTests`, `PartReadingTests`, `PartModelResolutionTests`, `PartsTableCsvTests`, and
+`PartReadingFieldTests` (`FixtureFact`; the field board's `expected.json` gains `"parts"`, `"series"`, `"shunt"`).

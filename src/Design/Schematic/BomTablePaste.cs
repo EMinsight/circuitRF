@@ -597,6 +597,53 @@ public static class BomTablePaste
         return -1;
     }
 
+    // ── shared with artwork recognition (brief-artsch-4-parts-and-parts-table.md R-as4-2/4) ──
+    //
+    // A bill of materials read beside the artwork names its parts in the same words a pasted table
+    // does, so it is read by the same recognisers — these four entry points, not a second copy.
+
+    /// <summary>A type word (or a free-text description's first word) → its kind, or the
+    /// do-not-populate marker. Single letters are not read: in a description they are noise.</summary>
+    internal static (SymbolKind? Kind, bool Dnp) ReadTypeWord(string? cell) =>
+        cell is { Length: > 0 } c ? ClassifyType(c, allowSingleLetter: false) : (null, false);
+
+    /// <summary>Whether the whole cell is a do-not-populate marker (DNP, DNF, "not fitted", …).</summary>
+    internal static bool IsNotFittedMarker(string? cell) => cell is { Length: > 0 } c && IsDnpWord(c);
+
+    /// <summary>
+    /// A value with its unit — "100 pF", "4R7", "10n0", "49.9Ω" — in base SI, with the dimension the
+    /// unit states. <paramref name="description"/> reads the cell piece by piece as a description is
+    /// read; otherwise the whole cell must be the value. The dimension is RETURNED, not checked: a
+    /// "10nH" read for a capacitor comes back as an inductance so the caller can say so.
+    /// </summary>
+    internal static bool TryReadValue(string? cell, SymbolKind? kind, bool description,
+                                      out double si, out UnitDimension dim)
+    {
+        si = 0;
+        dim = UnitDimension.None;
+        if (cell is not { Length: > 0 }) return false;
+
+        string? value, unit;
+        if (description)
+        {
+            if (DescriptionValue(cell, kind) is not { } found) return false;
+            (value, unit, dim) = found;
+        }
+        else if (!TryParseValue(cell, kind, out value, out unit, out dim)) return false;
+
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double n)) return false;
+        si = n * PrefixScale(unit![..^1]);
+        return double.IsFinite(si);
+    }
+
+    /// <summary>The SI multiplier of a unit's prefix, as <see cref="ParseUnit"/> spells them.</summary>
+    private static double PrefixScale(string prefix) => prefix switch
+    {
+        "f" => 1e-15, "p" => 1e-12, "n" => 1e-9, "µ" => 1e-6, "m" => 1e-3,
+        "k" => 1e3, "M" => 1e6, "G" => 1e9,
+        _ => 1,
+    };
+
     // ── recognisers ───────────────────────────────────────────────────────────
 
     private static bool IsRefsWord(string word)
