@@ -55,7 +55,7 @@ public sealed class CschFile
 }
 
 /// <summary>
-/// The <c>.csch</c> spelling of a <see cref="TuningSetup"/>: the same four parts, each list omitted
+/// The <c>.csch</c> spelling of a <see cref="TuningSetup"/>: the same parts, each list omitted
 /// when empty. The elements are the model's own types — plain data, bound directly.
 /// </summary>
 public sealed class CschTuning
@@ -68,22 +68,34 @@ public sealed class CschTuning
     /// <summary>The panels' significant digits (<see cref="TuningSetup.Digits"/>); absent at the default.</summary>
     public int? Digits { get; set; }
 
+    // The statistical parts (docs/design/yield.md) — each absent when empty, so a schematic with no
+    // statistical content writes the bytes it always did; no FormatVersion bump, by the same convention.
+    public List<StatCorrelation>?  Correlations { get; set; }
+    public StatisticsSettings?     Statistics   { get; set; }
+    public List<CornerDefinition>? Corners      { get; set; }
+
     public static CschTuning? From(TuningSetup? s) => s is null || s.IsEmpty ? null : new()
     {
-        Variables = s.Variables.Count > 0 ? [.. s.Variables.Select(v => v.Clone())] : null,
-        Presets   = s.Presets.Count   > 0 ? [.. s.Presets.Select(p => p.Clone())]   : null,
-        Goals     = s.Goals.Count     > 0 ? [.. s.Goals.Select(g => g.Clone())]     : null,
-        Optimizer = s.Optimizer?.Clone(),
-        Digits    = s.Digits,
+        Variables    = s.Variables.Count    > 0 ? [.. s.Variables.Select(v => v.Clone())]    : null,
+        Presets      = s.Presets.Count      > 0 ? [.. s.Presets.Select(p => p.Clone())]      : null,
+        Goals        = s.Goals.Count        > 0 ? [.. s.Goals.Select(g => g.Clone())]        : null,
+        Optimizer    = s.Optimizer?.Clone(),
+        Digits       = s.Digits,
+        Correlations = s.Correlations.Count > 0 ? [.. s.Correlations.Select(c => c.Clone())] : null,
+        Statistics   = s.Statistics?.Clone(),
+        Corners      = s.Corners.Count      > 0 ? [.. s.Corners.Select(c => c.Clone())]      : null,
     };
 
     public TuningSetup ToSetup() => new()
     {
-        Variables = Variables ?? [],
-        Presets   = Presets   ?? [],
-        Goals     = Goals     ?? [],
-        Optimizer = Optimizer,
-        Digits    = Digits,
+        Variables    = Variables    ?? [],
+        Presets      = Presets      ?? [],
+        Goals        = Goals        ?? [],
+        Optimizer    = Optimizer,
+        Digits       = Digits,
+        Correlations = Correlations ?? [],
+        Statistics   = Statistics,
+        Corners      = Corners      ?? [],
     };
 }
 

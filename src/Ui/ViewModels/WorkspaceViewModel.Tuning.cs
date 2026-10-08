@@ -106,7 +106,8 @@ public partial class WorkspaceViewModel
         var model     = tuned.EditModel;
         var problems  = new List<string>();
         var corners   = WorkspaceCorners.BindingsFor(AvailableCornerAxes, model.CornerSelections, problems);
-        var extracted = NetExtractor.Extract(model, doc.Id, cells: this, cornerVariables: corners);
+        var extracted = NetExtractor.Extract(model, doc.Id, cells: this, cornerVariables: corners,
+            cornerBinder: (selections, found) => WorkspaceCorners.BindingsFor(AvailableCornerAxes, selections, found));
         foreach (var p in problems.Concat(extracted.Conflicts)) Messages.Warning($"Tuning: {p}");
 
         var baseDir = RunBaseDirectory();

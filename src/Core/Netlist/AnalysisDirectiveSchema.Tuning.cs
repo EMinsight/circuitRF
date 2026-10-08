@@ -1,11 +1,12 @@
 namespace CircuitRF.Core.Netlist;
 
 /// <summary>
-/// One of the four tuning/optimization directives a TestBench may carry — <c>tune</c>, <c>preset</c>,
-/// <c>goal</c>, <c>optimize</c> — with every key it takes and the bare words its grammar uses.
+/// One of the directives of a TestBench's tuning setup — <c>tune</c>, <c>preset</c>, <c>goal</c>,
+/// <c>optimize</c>, and the statistical <c>correlate</c>, <c>statistics</c> and <c>corner</c> — with every
+/// key it takes and the bare words its grammar uses.
 /// </summary>
 /// <param name="Keyword">The line's first word.</param>
-/// <param name="Topic">The reference topic that prints it: <c>tuning</c> or <c>goals</c>.</param>
+/// <param name="Topic">The reference topic that prints it: <c>tuning</c>, <c>goals</c> or <c>statistics</c>.</param>
 /// <param name="Syntax">The line's shape, for the reference page.</param>
 /// <param name="Summary">One paragraph: what the line says.</param>
 /// <param name="Keys">Every <c>key=value</c> key the reader knows, in the order the writer writes them.</param>
@@ -28,6 +29,9 @@ public static partial class AnalysisDirectiveSchema
     /// <summary>The <c>goals</c> reference topic's name.</summary>
     public const string GoalsTopic = "goals";
 
+    /// <summary>The <c>statistics</c> reference topic's name (docs/design/yield.md).</summary>
+    public const string StatisticsTopic = "statistics";
+
     // Enum spellings — the reader parses against these and the page prints them, so the two
     // cannot disagree about what is legal.
     public static readonly IReadOnlyList<string> ScaleTokens    = ["auto", "lin", "log"];
@@ -35,6 +39,32 @@ public static partial class AnalysisDirectiveSchema
     public static readonly IReadOnlyList<string> GoalTypeTokens = ["le", "ge", "eq", "in", "out"];
     public static readonly IReadOnlyList<string> CostTokens     = ["lsq", "minimax"];
     public static readonly IReadOnlyList<string> ScopeTokens    = ["goals", "all"];
+    public static readonly IReadOnlyList<string> DistTokens     = ["none", "gauss", "unif", "lognorm", "discrete"];
+    public static readonly IReadOnlyList<string> UseTokens      = ["both", "opt", "yield"];
+    public static readonly IReadOnlyList<string> SamplingTokens = ["random", "lhs", "sobol"];
+    public static readonly IReadOnlyList<string> NonConvergedTokens = ["fail", "warn"];
+
+    /// <summary>Each distribution a <c>tune</c> line's <c>dist=</c> names: the spread keys it reads, what
+    /// they mean, and one line as the writer writes it (yield overview D2).</summary>
+    public static readonly IReadOnlyList<(string Dist, string Spread, string Meaning, string Example)> Distributions =
+    [
+        ("gauss", "sd=<v> | tol=<v> sigmas=<k> [trunc=<k>]",
+         "Normal around the nominal. sd is 1 sigma; tol is the spread at sigmas sigma, so tol=5% sigmas=3 is sigma = 5/3 %.",
+         "tune R1.R dist=gauss sd=2%"),
+        ("unif", "tol=<v> | lo=<v> hi=<v>",
+         "Uniform on nominal +- tol, or on [lo, hi]. On a whole-number value the draw is rounded.",
+         "tune C1.C dist=unif tol=0.1 pF"),
+        ("lognorm", "sd=<v> | tol=<v> sigmas=<k> [trunc=<k>]",
+         "The value's logarithm is normal; sd is the value's relative 1 sigma. Positive values only, and it never draws one at or below zero.",
+         "tune L1.L dist=lognorm tol=5% sigmas=3"),
+        ("discrete", "lo=<v> hi=<v> by=<v>",
+         "Equally likely values lo, lo+by, ... up to hi; by must step from lo to hi a whole number of times.",
+         "tune X1.Nf dist=discrete lo=4 hi=8 by=2"),
+    ];
+
+    /// <summary>The keys of a <c>tune</c> line that state its statistical part, in the order the writer
+    /// writes them.</summary>
+    public static readonly IReadOnlyList<string> StatKeys = ["stat", "dist", "sd", "tol", "sigmas", "lo", "hi", "by", "trunc"];
 
     /// <summary>The prefix of an algorithm option key on an <c>optimize</c> line: <c>alg.popsize=20</c>.</summary>
     public const string AlgorithmOptionPrefix = "alg.";
@@ -42,7 +72,8 @@ public static partial class AnalysisDirectiveSchema
     private static readonly TuningDirectiveSpec[] _tuning =
     [
         new("tune", TuningTopic,
-            "tune <key> [min=<v> [unit]] [max=<v> [unit]] [scale=…] [step=<v> [unit]] [discrete=…] [tune=1] [opt=1]",
+            "tune <key> [min=<v> [unit]] [max=<v> [unit]] [scale=…] [step=<v> [unit]] [discrete=…] [tune=1] [opt=1] " +
+            "[dist=… <spread>] [stat=0]",
             "Makes one value tunable and states its range. <key> is Instance.Parameter (R1.R), a variable's name " +
             "(Wline), or either of those inside a sub-cell as Cell:… (DUT:R3.R, DUT:Wline), where Cell is spelled as " +
             "the cell's instance lines spell its type. An instance's own cell parameter is Instance.Parameter " +
@@ -52,7 +83,8 @@ public static partial class AnalysisDirectiveSchema
             "its own: real(<key>), imag(<key>), mag(<key>) and phase(<key>), the phase in deg. Any parts may be " +
             "combined; moving one holds its partner (real with imag, mag with phase), and the ranges of all of a " +
             "value's parts always hold together, so ranges that leave no value inside all of them are an error. " +
-            "A complex value that reads a name (4+j*X) is an expression. One range serves both tuning and optimizing.",
+            "A complex value that reads a name (4+j*X) is an expression. One range serves both tuning and optimizing. " +
+            "dist= and its spread give the value a tolerance for Monte Carlo and yield; reference statistics describes them.",
             [
                 new("min",      Summary: "Lower bound, in the value's own unit."),
                 new("max",      Summary: "Upper bound."),
@@ -61,9 +93,18 @@ public static partial class AnalysisDirectiveSchema
                 new("discrete", Default: "none", Summary: "none | integer | preferred — preferred snaps a capacitance, inductance or resistance to the user's preferred-value ladder (shipped: E12 C and L, E24 R). Not on a part of a complex value."),
                 new("tune",     Default: "0", Summary: "1 = offered in the Tuning window."),
                 new("opt",      Default: "0", Summary: "1 = varied by the optimizer."),
+                new("stat",     Default: "1 with dist", Summary: "0 keeps the distribution but does not draw it."),
+                new("dist",     Default: "none", Summary: "gauss | unif | lognorm | discrete — the distribution a Monte Carlo trial draws from."),
+                new("sd",       Summary: "gauss, lognorm: 1 sigma, a percent of the nominal (2%) or a value in the parameter's unit."),
+                new("tol",      Summary: "gauss, lognorm: the spread at sigmas sigma. unif: the half-width around the nominal."),
+                new("sigmas",   Summary: "gauss, lognorm: how many sigma tol is (tol=5% sigmas=3 is sigma = 5/3 %). Needed with tol."),
+                new("lo",       Summary: "unif, discrete: the lower end, absolute or a percent of the nominal."),
+                new("hi",       Summary: "unif, discrete: the upper end."),
+                new("by",       Summary: "discrete: the step from lo to hi."),
+                new("trunc",    Summary: "gauss, lognorm: truncate at +-trunc sigma, by sampling the truncated distribution."),
             ],
             [],
-            "tune R1.R min=10 Ohm max=200 Ohm scale=log tune=1 opt=1"),
+            "tune R1.R min=10 Ohm max=200 Ohm scale=log tune=1 opt=1 dist=gauss sd=2%"),
 
         new("preset", TuningTopic,
             "preset \"<name>\" [created=<UTC>] [lasttuned=1] [cost=<c>] <key>=<v> [unit] ...",
@@ -81,7 +122,7 @@ public static partial class AnalysisDirectiveSchema
 
         new("goal", GoalsTopic,
             "goal <Name> = <expression> [analysis=<A>] [over=<axis> lo=<v> [unit] hi=<v> [unit]] <type> <limit(s)> " +
-            "[weight=<w>] [scale=<v> [unit]] [enabled=false]",
+            "[weight=<w>] [scale=<v> [unit]] [enabled=false] [use=opt|yield]",
             "One optimization goal. The expression is written in the measure language and is evaluated on the " +
             "named analysis; quote it if it contains a word this table uses. over= restricts it to one swept axis " +
             "(freq by default), lo..hi inclusive, and the range must hold at least one grid point. A goal with no " +
@@ -95,6 +136,7 @@ public static partial class AnalysisDirectiveSchema
                 new("weight",   Default: "1", Summary: "Multiplies this goal's violation in the cost."),
                 new("scale",    Summary: "What one unit of violation is worth. Default: the band's width for in/out, otherwise the larger of |limit| and 1 in the limit's own unit."),
                 new("enabled",  Default: "true", Summary: "false keeps the goal without optimizing for it."),
+                new("use",      Default: "both", Summary: "opt | yield | both — the optimizer aims for it, a yield trial passes only when it is met, or both."),
             ],
             [
                 ("le",  "le <limit> [to <limit>] — at or below. With to, the limit slopes linearly from lo to hi."),
@@ -123,9 +165,63 @@ public static partial class AnalysisDirectiveSchema
             ],
             [],
             "optimize algorithm=lm maxiter=200 seed=1"),
+
+        new("correlate", StatisticsTopic,
+            "correlate <key> <key> rho=<v>",
+            "Correlates two statistical entries, of any distributions, through a Gaussian copula: the two draws are " +
+            "correlated standard normals, each mapped through its own distribution. -1 < rho < 1. A set of " +
+            "correlations that is not a valid correlation matrix is repaired to the nearest one, and the repair is " +
+            "reported with its largest change.",
+            [
+                new("rho", Summary: "The correlation coefficient, strictly between -1 and 1."),
+            ],
+            [],
+            "correlate R1.R R2.R rho=0.9"),
+
+        new("statistics", StatisticsTopic,
+            "statistics [trials=<n>] [seed=<n>] [sampling=…] [target=<p>%] [confidence=<p>%] [autostop=1] " +
+            "[nonconverged=…] [save=…] [process=0] [mismatch=0] [sigmascale=<k>] [parallel=<n>] [analyses=…] [corners=…]",
+            "The Monte Carlo and yield settings. At most one line, and a default is never written.",
+            [
+                new("trials",       Default: CircuitRF.Core.Design.StatisticsSettings.DefaultTrials.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                                    Summary: "How many trials; with autostop=1, the most it runs."),
+                new("seed",         Default: "1", Summary: "The random seed: the same seed draws the same trials."),
+                new("sampling",     Default: "random", Summary: "random | lhs (Latin hypercube; not with autostop) | sobol (scrambled low-discrepancy)."),
+                new("target",       Summary: "The yield the design must reach, a percent (95%)."),
+                new("confidence",   Default: "95%", Summary: "The confidence of the yield interval."),
+                new("autostop",     Default: "0", Summary: "1 = stop once the yield interval is wholly above or below target (needs target)."),
+                new("nonconverged", Default: "fail", Summary: "fail (a trial that does not evaluate counts as a fail) | warn (it is left out of the yield)."),
+                new("save",         Default: "auto", Summary: "auto | scalars | all | <n> — which trials keep their whole sweep."),
+                new("process",      Default: "1", Summary: "0 = no kit process draws."),
+                new("mismatch",     Default: "1", Summary: "0 = no kit mismatch draws."),
+                new("sigmascale",   Default: "1", Summary: "Multiplies every kit sigma."),
+                new("parallel",     Summary: "How many trials may run at once."),
+                new("analyses",     Default: "goals", Summary: "goals (only the analyses a yield goal names) | all."),
+                new("corners",      Default: "none", Summary: "none | all | <name>,<name> — the corners each trial runs at."),
+            ],
+            [],
+            "statistics trials=500 seed=7 sampling=lhs target=95%"),
+
+        new("corner", StatisticsTopic,
+            "corner <Name> [enabled=0] [trial=<n> seed=<n> sampling=… trials=<n>] [temp=<v>] <key>=<v> [unit] ...",
+            "A named corner: a value for the ambient temperature (temp, in degC) and for any global variable or " +
+            "tunable key. A schematic's corner also selects the kit's own corner sections, and netlisting it writes " +
+            "the values those sections bind. A statistical corner names a trial of a Monte Carlo run instead — " +
+            "trial= with that run's seed, sampling and trials — and replays its draws around the current nominal. " +
+            "enabled and the trial keys come before the values.",
+            [
+                new("enabled",  Default: "1", Summary: "0 keeps the corner without running it."),
+                new("trial",    Summary: "A statistical corner: the trial to replay, from 1."),
+                new("seed",     Summary: "With trial: the seed of the run it came from."),
+                new("sampling", Summary: "With trial: the sampling of the run it came from."),
+                new("trials",   Summary: "With trial: the trial count of the run it came from."),
+                new("temp",     Summary: "The ambient temperature, in degC."),
+            ],
+            [],
+            "corner SS_hot temp=85 Vdd=3.0 V R1.R=47 Ohm"),
     ];
 
-    /// <summary>The four directives, in the order a <c>.cnl</c> writes them.</summary>
+    /// <summary>The seven directives, in the order a <c>.cnl</c> writes them.</summary>
     public static IReadOnlyList<TuningDirectiveSpec> TuningDirectives => _tuning;
 
     /// <summary>The directive spec for a keyword, or null.</summary>

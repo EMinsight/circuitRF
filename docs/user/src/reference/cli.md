@@ -717,7 +717,8 @@ point and the margin there; an unmet one its worst point, with a negative margin
 panel, recall a saved preset, or write the values into the file. An exit code of **3** means the run
 finished with at least one goal unmet — not a failure of the run, but not a design that meets its
 specification either. Over [MCP](ai-agents.html) the same run is `run analysis=optimize`, and
-`reference goals`, `reference tuning` and `reference optimizers` say what may be written.
+`reference goals`, `reference tuning` and `reference optimizers` say what may be written;
+`reference statistics` covers tolerances, correlations, the statistics settings and corners.
 
 ## `rail` — power integrity, headless {#rail}
 
@@ -2439,6 +2440,7 @@ direction and a 4 kB page and an 84 kB one should not look alike:
   analyses            8.5 kB  Analysis directives
   tuning              3.8 kB  Tuning directives
   goals               2.7 kB  Optimization goals
+  statistics          8.7 kB  Monte Carlo, yield and corners
   components         91.3 kB  Component types
 
   circuitrf reference components &lt;TYPE&gt;   one primitive

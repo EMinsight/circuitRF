@@ -3,8 +3,8 @@ using CircuitRF.Diagnostics;
 namespace CircuitRF.Core.Netlist;
 
 /// <summary>
-/// What the <c>.cnl</c> reader says about a <c>tune</c>, <c>preset</c>, <c>goal</c> or <c>optimize</c>
-/// line it cannot read (<see cref="TuningDirectiveText"/>).
+/// What the <c>.cnl</c> reader says about a <c>tune</c>, <c>preset</c>, <c>goal</c>, <c>optimize</c>,
+/// <c>correlate</c>, <c>statistics</c> or <c>corner</c> line it cannot read (<see cref="TuningDirectiveText"/>).
 /// </summary>
 public static class TuningDirectiveDiagnostics
 {
@@ -38,6 +38,30 @@ public static class TuningDirectiveDiagnostics
     public static Diagnostic SecondOptimize() => new(
         "cnl.tuning.optimize-repeated", DiagnosticSeverity.Error,
         "A netlist states at most one 'optimize' line.");
+
+    // ── The statistical directives (docs/design/yield.md) ─────────────────────
+
+    public static Diagnostic StatisticsMalformed(string keyword, string shape) => Diagnostic.Create(
+        "cnl.statistics.malformed", DiagnosticSeverity.Error,
+        "'{keyword}' is not written the way it reads: {shape}",
+        ("keyword", keyword), ("shape", shape));
+
+    public static Diagnostic StatisticsValueInvalid(string key, string value, string expected) => Diagnostic.Create(
+        "cnl.statistics.value-invalid", DiagnosticSeverity.Error,
+        "{key}={value} is not {expected}.", ("key", key), ("value", value), ("expected", expected));
+
+    public static Diagnostic SecondStatistics() => new(
+        "cnl.statistics.repeated", DiagnosticSeverity.Error,
+        "A netlist states at most one 'statistics' line.");
+
+    public static Diagnostic CornerMalformed(string corner, string problem) => Diagnostic.Create(
+        "cnl.corner.malformed", DiagnosticSeverity.Error,
+        "corner {corner}: {problem}", ("corner", corner), ("problem", problem));
+
+    public static Diagnostic CornerValueInvalid(string corner, string key, string value, string expected) => Diagnostic.Create(
+        "cnl.corner.value-invalid", DiagnosticSeverity.Error,
+        "corner {corner}: {key}={value} is not {expected}.",
+        ("corner", corner), ("key", key), ("value", value), ("expected", expected));
 }
 
 /// <summary>A tuning directive the reader refuses, carrying the diagnostic that says why. The

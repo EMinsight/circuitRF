@@ -267,7 +267,8 @@ public sealed class OptimizationRun
             _notes.Add(d);
         }
 
-        _goals.AddRange(_setup.Goals.Where(g => g.Enabled));
+        // A use=yield goal is a yield spec only (yield overview D4); the optimizer does not aim for it.
+        _goals.AddRange(_setup.Goals.Where(g => g.Enabled && g.ForOptimizer));
         if (_goals.Count == 0) { Refusal = OptimizationDiagnostics.NoGoals(); return; }
 
         Variables = OptimizationVariables.Build(_setup, catalog, out var refusal, _ladders);
@@ -323,7 +324,7 @@ public sealed class OptimizationRun
     {
         if (scope == OptimizerScope.All) return [.. AnalysisChain.RunnableTops(tb).Select(a => a.Name)];
         var tops = new List<string>();
-        foreach (var name in setup.Goals.Where(g => g.Enabled).Select(g => g.Analysis).OfType<string>())
+        foreach (var name in setup.Goals.Where(g => g.Enabled && g.ForOptimizer).Select(g => g.Analysis).OfType<string>())
         {
             var one = tb.Analyses.FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
             if (one is null || !one.Enabled || !AnalysisChain.IsChainRunnable(one, tb)) continue;

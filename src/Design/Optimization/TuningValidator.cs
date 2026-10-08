@@ -123,6 +123,8 @@ public static class TuningValidator
                 f.Add(TuningDiagnostics.TimeLimitInvalid(limit));
         }
 
+        // The statistical part — tolerances, correlations, statistics settings, corners (docs/design/yield.md).
+        f.AddRange(Statistics.StatisticsValidator.Validate(tb, catalog));
         return f;
     }
 

@@ -235,6 +235,7 @@ public sealed partial class GoalEditorViewModel : ObservableObject
         Weight     = g.Weight.ToString("G6", CultureInfo.InvariantCulture);
         Scale      = g.Scale ?? "";
         Enabled    = g.Enabled;
+        _use       = g.Use;
         _extraFrom = g.Extra is null ? null : g.Clone();
         _filling = false;
         RefreshPreview();
@@ -242,6 +243,9 @@ public sealed partial class GoalEditorViewModel : ObservableObject
 
     // The goal whose unknown keys (written by a later version) the result carries over.
     private OptimizationGoal? _extraFrom;
+
+    // What the goal serves (use=); the Yield panel sets it, this editor carries it through.
+    private GoalUse _use;
 
     /// <summary>The axes a goal over <paramref name="analysis"/> can range over: a parametric sweep's
     /// variable, then the inner analysis's own (<c>freq</c> for S-parameters and harmonic balance).</summary>
@@ -302,6 +306,7 @@ public sealed partial class GoalEditorViewModel : ObservableObject
             Weight     = weight > 0 ? weight : 1,
             Scale      = Scale.Trim().Length == 0 ? null : Scale.Trim(),
             Enabled    = Enabled,
+            Use        = _use,
             Extra      = _extraFrom?.Clone().Extra,
         };
     }

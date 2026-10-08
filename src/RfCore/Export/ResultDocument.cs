@@ -1391,7 +1391,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyList<ExplainSolvedJson>?   Solved = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainTunablesJson?                Tunables = null);
+        ExplainTunablesJson?                Tunables = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainStatisticsJson?              Statistics = null);
 
     /// <summary>
     /// <c>explain --tunables</c> — every value of a schematic that can be tuned, at any depth
@@ -1437,7 +1439,94 @@ namespace RfCore.Export
         bool    Tune,
         bool    Opt,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string? Whole = null);
+        string? Whole = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainStatJson? Stat = null);
+
+    /// <summary>
+    /// A tunable's statistical part (docs/design/yield.md): its distribution in words and numbers. The
+    /// spread is in base SI (<paramref name="Unit"/>) and, in <paramref name="Written"/>, as written —
+    /// a percent of the nominal or a value with its unit.
+    /// </summary>
+    /// <param name="Distribution"><c>gauss</c>, <c>unif</c>, <c>lognorm</c> or <c>discrete</c>.</param>
+    /// <param name="On">Drawn in a trial; false for <c>stat=0</c>.</param>
+    /// <param name="Text">The spread in words: <c>gauss σ = 1 Ohm (2 %)</c>.</param>
+    /// <param name="Sigma">gauss, lognorm: 1σ.</param>
+    /// <param name="Lo">unif, discrete: the lower end.</param>
+    /// <param name="Hi">unif, discrete: the upper end.</param>
+    /// <param name="Step">discrete: the step.</param>
+    /// <param name="Trunc">gauss, lognorm: the truncation, in σ.</param>
+    public sealed record ExplainStatJson(
+        string Distribution,
+        bool   On,
+        string Text,
+        string Unit,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Sigma,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Lo,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Hi,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Step,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Trunc,
+        IReadOnlyDictionary<string, string> Written);
+
+    /// <summary>
+    /// <c>explain --analysis</c>'s statistical part (docs/design/yield.md): the effective statistics
+    /// settings, the goals by what they serve, the corners, the correlation matrix a run would use, and
+    /// what the configured trial count can resolve — the expected half-width of the yield interval at a
+    /// yield of <paramref name="AtYield"/> %, and the trial count that brings it under ±2 %.
+    /// </summary>
+    public sealed record ExplainStatisticsJson(
+        int     Trials,
+        int     Seed,
+        string  Sampling,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? Target,
+        double  Confidence,
+        bool    AutoStop,
+        string  NonConverged,
+        string  Save,
+        bool    Process,
+        bool    Mismatch,
+        double  SigmaScale,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?    Parallel,
+        string  Analyses,
+        string  Corners,
+        IReadOnlyList<string>                 StatisticalEntries,
+        IReadOnlyList<ExplainGoalUseJson>     Goals,
+        IReadOnlyList<ExplainCornerJson>      CornerList,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ExplainCorrelationJson?               Correlation,
+        double  AtYield,
+        double  ExpectedHalfWidth,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?    TrialsForTwoPercent);
+
+    /// <summary>One goal and what it serves: <c>opt</c>, <c>yield</c> or <c>both</c>.</summary>
+    public sealed record ExplainGoalUseJson(string Name, string Use, bool Enabled);
+
+    /// <summary>One corner: <c>value</c> or <c>statistical</c>, and what it binds.</summary>
+    public sealed record ExplainCornerJson(
+        string Name,
+        bool   Enabled,
+        string Kind,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Temp,
+        IReadOnlyDictionary<string, string> Values,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?   Trial);
+
+    /// <summary>The correlation matrix a run uses, over <paramref name="Keys"/>; repaired to the nearest
+    /// valid one when <paramref name="Repaired"/>, with the largest change that made.</summary>
+    public sealed record ExplainCorrelationJson(
+        IReadOnlyList<string>                Keys,
+        IReadOnlyList<IReadOnlyList<double>> Matrix,
+        bool   Repaired,
+        double LargestChange);
 
     /// <summary>
     /// brief-em3d-98 R-em3d98-8 — one (setup, solver leg) of a 3D view: whether it has a result of the model as it is now

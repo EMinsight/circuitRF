@@ -2,6 +2,7 @@ using System.Text;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Optimization;
+using CircuitRF.Design.Statistics;
 using CircuitRF.Engine.Optimization;
 using RfCore.Export;
 
@@ -22,6 +23,13 @@ internal static partial class Reference
         "Generated from the algorithm registry the optimizer reads its defaults from: every algorithm= id " +
         "with its menu label, when to use it, the cost forms it accepts, whether it estimates gradients, " +
         "and every alg.<option> with its default.";
+
+    private const string StatisticsTitle = "Monte Carlo, yield and corners";
+    private const string StatisticsPageSummary =
+        "Generated from the schema the .cnl reader validates against: a tolerance on a tune line (each " +
+        "distribution, its spread, percent or absolute, truncation), correlate, statistics and corner with every " +
+        "key and default, statistical corners, goal use=, how a trial passes and how yield and its interval are " +
+        "reported, with a worked example.";
 
     private const string TuningTitle = "Tuning directives";
     private const string GoalsTitle  = "Optimization goals";
@@ -47,6 +55,139 @@ internal static partial class Reference
         Console.Out.Write(text);
         return 0;
     }
+
+    private static int StatisticsTopicRun()
+    {
+        string text = RenderStatistics();
+        JsonRun.Reference = new ReferenceReportJson(
+            null, new ReferenceTopicJson(AnalysisDirectiveSchema.StatisticsTopic, StatisticsTitle, StatisticsPageSummary,
+                                         ByteLength(text), text), null);
+        Console.Out.Write(text);
+        return 0;
+    }
+
+    /// <summary>
+    /// The <c>statistics</c> page (docs/design/yield.md): the tune line's statistical keys and goal's
+    /// <c>use=</c> out of their own specs, the three statistical directives, the distribution table, and
+    /// the rules a run applies — every key and default from the schema the reader reads against.
+    /// </summary>
+    internal static string RenderStatistics()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Monte Carlo, yield and corners — a tolerance is part of a tune line, a yield spec is a goal,");
+        sb.AppendLine("and correlate, statistics and corner lines sit beside them in a .cnl. A schematic holds the");
+        sb.AppendLine("same content in its \"Tuning\" block. A key this page does not list is kept and reported as a");
+        sb.AppendLine("warning naming it; a default is never written.");
+        sb.AppendLine();
+
+        sb.AppendLine("A tolerance on a tune line");
+        sb.AppendLine();
+        var tune = AnalysisDirectiveSchema.FindTuningDirective("tune")!;
+        foreach (var k in tune.Keys.Where(k => AnalysisDirectiveSchema.StatKeys.Contains(k.Name)))
+            sb.AppendLine($"  {k.Name,-16} {k.Default ?? "-",-12} {k.Summary}".TrimEnd());
+        sb.AppendLine();
+        sb.AppendLine("Distributions");
+        sb.AppendLine();
+        foreach (var (dist, spread, meaning, example) in AnalysisDirectiveSchema.Distributions)
+        {
+            sb.AppendLine($"  {dist,-10} {spread}");
+            foreach (var line in Wrap(meaning, 92)) sb.AppendLine("             " + line);
+            sb.AppendLine("             e.g.  " + example);
+        }
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "Percent or absolute. A spread value is a percent of the nominal (2%), which follows the nominal when " +
+            "tuning or centering moves it, or a value in the parameter's unit (0.1 pF, or 0.1 meaning the parameter's own " +
+            "unit), which does not. A percent lo, hi or by is that percent OF the nominal: lo=90% hi=110% is 0.9 to 1.1 " +
+            "times it. The line is written back in the form it was written.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "Truncation. trunc=k (gauss, lognorm) draws from the distribution truncated at +-k sigma — the probability is " +
+            "renormalized over the window, never clipped onto its edges. A value that must be positive (a resistance, " +
+            "capacitance, inductance, conductance, length or magnitude) and can be drawn at or below zero with " +
+            $"probability above {StatisticsValidator.NonPhysicalThreshold.ToString("G2", System.Globalization.CultureInfo.InvariantCulture)} " +
+            "is a check warning naming trunc= and lognorm; a gaussian resistance wider than about 16 % untruncated is " +
+            "one. stat=0 keeps the distribution without drawing it. A whole-number value takes discrete or unif only. " +
+            "On a complex value, a tolerance goes on one part or on a same-system pair (real with imag, mag with " +
+            "phase), each drawn independently; real with mag is refused.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+
+        foreach (var spec in AnalysisDirectiveSchema.TuningDirectives.Where(d => d.Topic == AnalysisDirectiveSchema.StatisticsTopic))
+        {
+            sb.AppendLine("    " + spec.Syntax);
+            sb.AppendLine();
+            foreach (var line in Wrap(spec.Summary, 96)) sb.AppendLine("  " + line);
+            sb.AppendLine();
+            foreach (var k in spec.Keys)
+                sb.AppendLine($"  {k.Name,-16} {k.Default ?? "-",-12} {k.Summary}".TrimEnd());
+            sb.AppendLine();
+            sb.AppendLine("  e.g.  " + spec.Example);
+            sb.AppendLine();
+        }
+
+        foreach (var line in Wrap(
+            "Statistical corners. corner <Name> trial=<n> seed=<s> sampling=<m> trials=<N> replays trial n of the run " +
+            "those three identify. A trial is stored as its standard-normal draws, so replaying it against a moved " +
+            "nominal applies the same relative deviation — the corner moves with tuning and centering. Kit corners: " +
+            "a schematic's corner also selects kit corner sections, and netlisting it writes what they bind.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+
+        var use = AnalysisDirectiveSchema.FindTuningDirective("goal")!.Keys.First(k => k.Name == "use");
+        sb.AppendLine("Yield specs are goals");
+        sb.AppendLine();
+        sb.AppendLine($"  {use.Name,-16} {use.Default ?? "-",-12} {use.Summary}");
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "A trial passes a goal when the goal is met at that trial — the optimizer's own rule: its worst violation is " +
+            $"within {GoalResiduals.MetTolerance.ToString("G2", System.Globalization.CultureInfo.InvariantCulture)} of its " +
+            "scale. It passes when it passes every enabled goal whose use is yield or both. Centre the design against " +
+            "tight goals, then loosen them (or keep tight copies with use=opt) for yield.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        sb.AppendLine("How yield is reported");
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "Yield is passes / counted trials, overall and per goal, with a Clopper-Pearson interval at confidence=. " +
+            "A trial that does not evaluate (no convergence, a non-physical draw, an engine error) counts as a fail " +
+            "and is reported apart with nonconverged=fail; with nonconverged=warn it is left out of the count and " +
+            "reported as a warning. With autostop=1 the run stops once the interval's lower end reaches target (pass) " +
+            "or its upper end falls below it (fail), never before 50 counted trials; trials= is the most it runs. " +
+            "explain <file> --analysis reports how wide the interval of the configured trial count is expected to be " +
+            $"at a yield of {StatisticsSummary.QuotedYield.ToString(System.Globalization.CultureInfo.InvariantCulture)} %, and the " +
+            $"trial count that narrows it to under +-{StatisticsSummary.QuotedHalfWidth.ToString(System.Globalization.CultureInfo.InvariantCulture)} %.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+
+        sb.AppendLine("Worked example");
+        sb.AppendLine();
+        foreach (var line in StatisticsExample) sb.AppendLine(line.Length == 0 ? "" : "    " + line);
+        sb.AppendLine();
+        sb.AppendLine("See also: reference tuning (the rest of a tune line), reference goals (what a goal can say);");
+        sb.AppendLine("explain <file> --tunables shows each tolerance in numbers, --analysis the statistics settings.");
+        return sb.ToString();
+    }
+
+    private static readonly string[] StatisticsExample =
+    [
+        "Vdd = 3.3 V",
+        "Port:P1 in 0 Num=1 Z=50 Ohm",
+        "R:R1 in mid R=50 Ohm",
+        "R:R2 mid 0 R=50 Ohm",
+        "C:C1 mid out C=2 pF",
+        "Port:P2 out 0 Num=2 Z=50 Ohm",
+        "analysis SP1 type=sparam start=1 stop=2 npts=11 Unit=GHz",
+        "tune R1.R min=25 Ohm max=100 Ohm opt=1 dist=gauss sd=2%",
+        "tune R2.R dist=gauss tol=5% sigmas=3 trunc=3",
+        "tune C1.C dist=unif tol=0.1 pF",
+        "goal S21 = dB(SP1.S(2,1)) analysis=SP1 over=freq lo=1 GHz hi=2 GHz ge -10 use=yield",
+        "correlate R1.R R2.R rho=0.9",
+        "statistics trials=500 seed=7 sampling=lhs target=95%",
+        "corner Hot temp=85 Vdd=3.0 V R1.R=47 Ohm",
+        "corner Worst_S21 trial=417 seed=7 sampling=lhs trials=500",
+    ];
 
     private static int OptimizersTopicRun()
     {

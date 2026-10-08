@@ -136,6 +136,30 @@ its default is omitted. A key this build does not know is reported by the load a
 does not use, so they survive the round trip. `NetExtractor` emits the same content as `tune`, `preset`,
 `goal` and `optimize` lines, and `netlist --to-schematic` reads them back into this block.
 
+**The statistical part of the tuning block** *(YA-1, added 2026-10-07)*. The same `"Tuning"` object
+carries Monte Carlo, yield and corner content (`docs/design/yield.md`) — there is no second block. A
+variable entry gains `Stat`, `Distribution` (`None|Gauss|Unif|LogNorm|Discrete`) and a `Spread` object
+holding whichever of `Sd`, `Tol`, `Sigmas`, `Lo`, `Hi`, `By`, `Trunc` were written, each as its text
+(`"2%"`, `"0.1 pF"`) — the text is its form; a goal gains `Use` (`Both|Opt|Yield`); and the block gains
+`Correlations`, `Statistics` and `Corners`. Each is omitted at its default or when empty, so a schematic
+with no statistical content writes exactly the bytes it wrote before. **No `FormatVersion` bump**, by the
+same additive rule as the block itself. A corner here also records **kit axis selections**
+(`AxisSelections`, keyed as `CornerSelections` is); `NetExtractor` resolves them into bound values, so the
+`.cnl` `corner` line never names a kit file.
+
+```json
+"Variables": [ { "Key": "R1.R", "Opt": true, "Min": "10 Ohm", "Max": "200 Ohm", "Stat": true,
+                 "Distribution": "Gauss", "Spread": { "Sd": "2%" } } ],
+"Goals": [ { "Name": "S21", "...": "...", "Use": "Yield" } ],
+"Correlations": [ { "First": "R1.R", "Second": "R2.R", "Rho": 0.9 } ],
+"Statistics": { "Trials": 500, "Seed": 7, "Sampling": "Lhs", "Target": 95 },
+"Corners": [
+  { "Name": "SS_hot", "Enabled": true, "AxisSelections": { "TestKit|models/capCorners.lib": "cap_wcs" },
+    "Temp": "85", "Values": { "Vdd": "3.0 V" } },
+  { "Name": "Worst_S21", "Enabled": true, "Values": {}, "Trial": 417, "Seed": 7, "Sampling": "Lhs", "Trials": 500 }
+]
+```
+
 **What `.csch` does NOT contain:** the elaborated netlist, matrices, results, or anything the engine
 computes. It is purely the editable schematic. Results are `DataSet`s (Phase 5 export/import); the netlist is
 the derived `.cnl`/design model.

@@ -82,9 +82,18 @@ public static class NetExtractor
     /// statement about its process; a variable the user wrote is a statement about their design, and
     /// the design is the thing being simulated.</para>
     /// </param>
+    /// <param name="cornerBinder">
+    /// What a set of corner selections binds — the GUI passes <c>WorkspaceCorners.BindingsFor</c> over the
+    /// workspace's axes, the very function that resolved <paramref name="cornerVariables"/>. It resolves
+    /// the kit axis selections of the tuning setup's named corners (docs/design/yield.md, overview D10),
+    /// each overlaid on the design's own selections, into the values the <c>.cnl</c> corner line binds.
+    /// Null where no workspace knowledge is at hand: a corner's kit selections are then reported, not
+    /// applied.
+    /// </param>
     public static ExtractionResult Extract(
         SchematicEditModel model, string testBenchName = "tb", ICellResolver? cells = null,
-        IReadOnlyList<Variable>? cornerVariables = null)
+        IReadOnlyList<Variable>? cornerVariables = null,
+        Func<IReadOnlyDictionary<string, string>, List<string>, IReadOnlyList<Variable>>? cornerBinder = null)
     {
         var lib        = new Library("netlist");
         var imports    = new NetlistImports();
@@ -142,12 +151,63 @@ public static class NetExtractor
         // The tuning block rides along unchanged, so the `.cnl` says what the `.csch` says (overview D5).
         // A copy: the netlist is handed to runs that must not reach back into the open document.
         if (model.Tuning is { IsEmpty: false } tuning)
+        {
             tb.Tuning = tuning.Clone();
+            ResolveCorners(tb.Tuning, model.CornerSelections, cornerBinder, conflicts);
+        }
 
         return new ExtractionResult(tb, conflicts)
         {
             CellPorts = cellPorts, Library = lib, CellKeys = scope.LibraryNameToKey(),
         };
+    }
+
+    /// <summary>
+    /// A named corner's kit axis selections, resolved into the values its <c>.cnl</c> line binds (yield
+    /// overview D10): the corner's selections overlaid on the design's own, bound by the same function
+    /// Simulate binds the design's selections with, so a corner reads exactly as the design would read
+    /// with those selections made. A <c>.cnl</c> corner therefore never names a kit file. A value the
+    /// corner states itself wins over a kit binding of the same name.
+    ///
+    /// <para>A selection that does not resolve is reported in that function's own words, once per
+    /// corner — and only what the corner's own selections add, since the design's selections are
+    /// reported where they are applied.</para>
+    /// </summary>
+    private static void ResolveCorners(
+        TuningSetup setup, IReadOnlyDictionary<string, string> designSelections,
+        Func<IReadOnlyDictionary<string, string>, List<string>, IReadOnlyList<Variable>>? binder,
+        List<string> conflicts)
+    {
+        List<string>? baseline = null;
+        foreach (var corner in setup.Corners)
+        {
+            if (corner.AxisSelections is not { Count: > 0 } selections) continue;
+            corner.AxisSelections = null;
+
+            if (binder is null)
+            {
+                conflicts.Add($"Corner '{corner.Name}' selects kit corners ({string.Join(", ", selections.Values)}), " +
+                              "and no workspace kit corners are available here. They were NOT applied.");
+                continue;
+            }
+
+            if (baseline is null) binder(designSelections, baseline = []);
+
+            var effective = new Dictionary<string, string>(designSelections, StringComparer.Ordinal);
+            foreach (var (axis, section) in selections) effective[axis] = section;
+
+            var problems = new List<string>();
+            var bound    = binder(effective, problems);
+            foreach (var p in problems.Where(p => !baseline.Contains(p)))
+                conflicts.Add($"Corner '{corner.Name}': {p}");
+
+            var values = new OrderedDictionary<string, string>(StringComparer.Ordinal);
+            foreach (var v in bound)
+                if (!corner.Values.ContainsKey(v.Name))
+                    values[v.Name] = string.IsNullOrEmpty(v.Unit) ? v.Expression : $"{v.Expression} {v.Unit}";
+            foreach (var (k, v) in corner.Values) values[k] = v;
+            corner.Values = values;
+        }
     }
 
     /// <summary>

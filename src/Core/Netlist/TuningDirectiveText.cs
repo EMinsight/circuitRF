@@ -6,7 +6,8 @@ using CircuitRF.Core.Expressions;
 namespace CircuitRF.Core.Netlist;
 
 /// <summary>
-/// Reads and writes the <c>tune</c>, <c>preset</c>, <c>goal</c> and <c>optimize</c> directives — the
+/// Reads and writes the <c>tune</c>, <c>preset</c>, <c>goal</c> and <c>optimize</c> directives, and the
+/// statistical <c>correlate</c>, <c>statistics</c> and <c>corner</c> (docs/design/yield.md) — the
 /// <c>.cnl</c> spelling of a <see cref="TuningSetup"/>. The grammar is
 /// <see cref="AnalysisDirectiveSchema.TuningDirectives"/>; the writer's output reads back to the same
 /// setup and writes the same bytes again.
@@ -18,8 +19,9 @@ namespace CircuitRF.Core.Netlist;
 /// </summary>
 public static class TuningDirectiveText
 {
-    /// <summary>The four keywords.</summary>
-    public static bool IsKeyword(string word) => word is "tune" or "preset" or "goal" or "optimize";
+    /// <summary>The seven keywords.</summary>
+    public static bool IsKeyword(string word)
+        => word is "tune" or "preset" or "goal" or "optimize" or "correlate" or "statistics" or "corner";
 
     // ── Read ─────────────────────────────────────────────────────────────────
 
@@ -42,6 +44,13 @@ public static class TuningDirectiveText
                     throw Refuse(TuningDirectiveDiagnostics.SecondOptimize());
                 setup.Optimizer = ReadOptimize(rest, Unknown);
                 break;
+            case "correlate": setup.Correlations.Add(ReadCorrelate(rest, Unknown)); break;
+            case "statistics":
+                if (setup.Statistics is not null)
+                    throw Refuse(TuningDirectiveDiagnostics.SecondStatistics());
+                setup.Statistics = ReadStatistics(rest, Unknown);
+                break;
+            case "corner": setup.Corners.Add(ReadCorner(rest)); break;
         }
     }
 
@@ -54,6 +63,7 @@ public static class TuningDirectiveText
             throw Refuse(TuningDirectiveDiagnostics.KeyMalformed(t[0].Text));
 
         var e = new TunableEntry { Key = t[0].Text };
+        bool? stat = null;
         for (int i = 1; i < t.Count; i++)
         {
             var (key, value) = KeyValue(t, ref i, unitsAllowed: true);
@@ -66,13 +76,124 @@ public static class TuningDirectiveText
                 case "discrete": e.Discrete = Enum<TuneDiscrete>(key, value, AnalysisDirectiveSchema.DiscreteTokens); break;
                 case "tune":     e.Tune = Bool(key, value); break;
                 case "opt":      e.Opt = Bool(key, value); break;
+                // The statistical part (yield overview D2).
+                case "stat":     stat = Bool(key, value); break;
+                case "dist":     e.Distribution = StatEnum<StatDistribution>(key, value, AnalysisDirectiveSchema.DistTokens); break;
+                case "sd":       (e.Spread ??= new()).Sd     = SpreadValue(key, value); break;
+                case "tol":      (e.Spread ??= new()).Tol    = SpreadValue(key, value); break;
+                case "lo":       (e.Spread ??= new()).Lo     = SpreadValue(key, value); break;
+                case "hi":       (e.Spread ??= new()).Hi     = SpreadValue(key, value); break;
+                case "by":       (e.Spread ??= new()).By     = SpreadValue(key, value); break;
+                case "sigmas":   (e.Spread ??= new()).Sigmas = PlainNumber(key, value); break;
+                case "trunc":    (e.Spread ??= new()).Trunc  = PlainNumber(key, value); break;
                 default:
                     (e.Extra ??= new(StringComparer.Ordinal))[key] = value;
                     unknown(key);
                     break;
             }
         }
+        // stat defaults to 1 when a distribution is stated (D2), wherever on the line stat= sits.
+        e.Stat = stat ?? e.Distribution != StatDistribution.None;
         return e;
+    }
+
+    private static StatisticsSettings ReadStatistics(string rest, Action<string> unknown)
+    {
+        var t = Tokens(rest);
+        var s = new StatisticsSettings();
+        for (int i = 0; i < t.Count; i++)
+        {
+            var (key, value) = KeyValue(t, ref i, unitsAllowed: false);
+            // A default is never held, so neither serialization ever writes one.
+            switch (key.ToLowerInvariant())
+            {
+                case "trials":       s.Trials = Default(StatInt(key, value), StatisticsSettings.DefaultTrials); break;
+                case "seed":         s.Seed = Default(StatInt(key, value), StatisticsSettings.DefaultSeed); break;
+                case "sampling":     s.Sampling = StatEnum<StatSampling>(key, value, AnalysisDirectiveSchema.SamplingTokens); break;
+                case "target":       s.Target = Percent(key, value); break;
+                case "confidence":   s.Confidence = Default(Percent(key, value), StatisticsSettings.DefaultConfidence); break;
+                case "autostop":     s.AutoStop = Bool(key, value); break;
+                case "nonconverged": s.NonConverged = StatEnum<NonConvergedPolicy>(key, value, AnalysisDirectiveSchema.NonConvergedTokens); break;
+                case "save":         s.Save = SaveValue(key, value); break;
+                case "process":      s.Process = Bool(key, value) ? null : false; break;
+                case "mismatch":     s.Mismatch = Bool(key, value) ? null : false; break;
+                case "sigmascale":   s.SigmaScale = Default(StatDouble(key, value), 1.0); break;
+                case "parallel":     s.Parallelism = StatInt(key, value); break;
+                case "analyses":     s.Scope = StatEnum<OptimizerScope>(key, value, AnalysisDirectiveSchema.ScopeTokens); break;
+                case "corners":      s.Corners = CornersValue(key, value); break;
+                default:
+                    (s.Extra ??= new(StringComparer.Ordinal))[key] = value;
+                    unknown(key);
+                    break;
+            }
+        }
+        return s;
+    }
+
+    private static StatCorrelation ReadCorrelate(string rest, Action<string> unknown)
+    {
+        const string shape = "two tunable keys, then rho= — correlate R1.R R2.R rho=0.9";
+        var t = Tokens(rest);
+        if (t.Count < 2 || t[0].Text.Contains('=') || t[1].Text.Contains('='))
+            throw Refuse(TuningDirectiveDiagnostics.StatisticsMalformed("correlate", shape));
+        foreach (var k in t.Take(2))
+            if (!TunableKey.TryParse(k.Text, out _)) throw Refuse(TuningDirectiveDiagnostics.KeyMalformed(k.Text));
+
+        var c = new StatCorrelation { First = t[0].Text, Second = t[1].Text };
+        bool rho = false;
+        for (int i = 2; i < t.Count; i++)
+        {
+            var (key, value) = KeyValue(t, ref i, unitsAllowed: false);
+            if (key.Equals("rho", StringComparison.OrdinalIgnoreCase))
+            {
+                c.Rho = StatDouble(key, value);
+                rho = true;
+                continue;
+            }
+            (c.Extra ??= new(StringComparer.Ordinal))[key] = value;
+            unknown(key);
+        }
+        if (!rho) throw Refuse(TuningDirectiveDiagnostics.StatisticsMalformed("correlate", shape));
+        return c;
+    }
+
+    /// <summary>A corner line owns enabled, trial, seed, sampling, trials and temp wherever they sit;
+    /// every other key is a value it binds. A global variable with one of those names cannot be bound by
+    /// a corner — <c>temp</c> is that global already.</summary>
+    private static CornerDefinition ReadCorner(string rest)
+    {
+        var t = Tokens(rest);
+        if (t.Count == 0 || t[0].Text.Contains('='))
+            throw Refuse(TuningDirectiveDiagnostics.CornerMalformed("?", "a name comes first — corner SS_hot temp=85 Vdd=3.0 V"));
+        string name = t[0].Text;
+        if (!IsIdentifier(name)) throw Refuse(TuningDirectiveDiagnostics.CornerMalformed(name, "a corner's name is one word."));
+
+        var c = new CornerDefinition { Name = name };
+        for (int i = 1; i < t.Count; i++)
+        {
+            var (key, value) = KeyValue(t, ref i, unitsAllowed: true);
+            switch (key.ToLowerInvariant())
+            {
+                case "enabled":  c.Enabled = CornerBool(name, key, value); break;
+                case "trial":    c.Trial = CornerInt(name, key, value); break;
+                case "seed":     c.Seed = CornerInt(name, key, value); break;
+                case "trials":   c.Trials = CornerInt(name, key, value); break;
+                case "temp":     c.Temp = value; break;
+                case "sampling":
+                    c.Sampling = TryEnum<StatSampling>(value, AnalysisDirectiveSchema.SamplingTokens)
+                        ?? throw Refuse(TuningDirectiveDiagnostics.CornerValueInvalid(name, key, value,
+                               "one of " + string.Join(", ", AnalysisDirectiveSchema.SamplingTokens)));
+                    break;
+                default:
+                    if (!IsIdentifier(key) && !TunableKey.TryParse(key, out _))
+                        throw Refuse(TuningDirectiveDiagnostics.CornerMalformed(name,
+                            $"'{key}' is neither a variable's name nor a tunable key."));
+                    if (!c.Values.TryAdd(key, value))
+                        throw Refuse(TuningDirectiveDiagnostics.CornerMalformed(name, $"it binds {key} twice."));
+                    break;
+            }
+        }
+        return c;
     }
 
     private static TuningPreset ReadPreset(string rest)
@@ -182,6 +303,7 @@ public static class TuningDirectiveText
                     break;
                 case "scale":    g.Scale = value; break;
                 case "enabled":  g.Enabled = Bool(key, value); break;
+                case "use":      g.Use = StatEnum<GoalUse>(key, value, AnalysisDirectiveSchema.UseTokens); break;
                 default:
                     (g.Extra ??= new(StringComparer.Ordinal))[key] = value;
                     unknown(key);
@@ -251,14 +373,63 @@ public static class TuningDirectiveText
     // ── Write ────────────────────────────────────────────────────────────────
 
     /// <summary>The directive lines for <paramref name="setup"/>, in the order tune, preset, goal,
-    /// optimize. Empty for an empty setup.</summary>
+    /// optimize, correlate, statistics, corner. Empty for an empty setup.</summary>
     public static IEnumerable<string> Write(TuningSetup setup)
     {
-        foreach (var e in setup.Variables) yield return WriteTune(e);
-        foreach (var p in setup.Presets)   yield return WritePresetLine(p);
-        foreach (var g in setup.Goals)     yield return WriteGoal(g);
-        if (setup.Optimizer is { } o)      yield return WriteOptimize(o);
+        foreach (var e in setup.Variables)    yield return WriteTune(e);
+        foreach (var p in setup.Presets)      yield return WritePresetLine(p);
+        foreach (var g in setup.Goals)        yield return WriteGoal(g);
+        if (setup.Optimizer is { } o)         yield return WriteOptimize(o);
+        foreach (var c in setup.Correlations) yield return WriteCorrelate(c);
+        if (setup.Statistics is { } st)       yield return WriteStatistics(st);
+        foreach (var c in setup.Corners)      yield return WriteCorner(c);
     }
+
+    private static string WriteCorrelate(StatCorrelation c)
+    {
+        var sb = new StringBuilder("correlate ").Append(c.First).Append(' ').Append(c.Second)
+            .Append(" rho=").Append(c.Rho.ToString("R", CultureInfo.InvariantCulture));
+        Extra(sb, c.Extra, "");
+        return sb.ToString();
+    }
+
+    private static string WriteStatistics(StatisticsSettings s)
+    {
+        var sb = new StringBuilder("statistics");
+        if (s.Trials is { } n)        sb.Append(" trials=").Append(n.ToString(CultureInfo.InvariantCulture));
+        if (s.Seed is { } seed)       sb.Append(" seed=").Append(seed.ToString(CultureInfo.InvariantCulture));
+        if (s.Sampling != StatSampling.Random) sb.Append(" sampling=").Append(AnalysisDirectiveSchema.SamplingTokens[(int)s.Sampling]);
+        if (s.Target is { } target)   sb.Append(" target=").Append(PercentText(target));
+        if (s.Confidence is { } conf) sb.Append(" confidence=").Append(PercentText(conf));
+        if (s.AutoStop)               sb.Append(" autostop=1");
+        if (s.NonConverged != NonConvergedPolicy.Fail) sb.Append(" nonconverged=").Append(AnalysisDirectiveSchema.NonConvergedTokens[(int)s.NonConverged]);
+        Opt(sb, "save", s.Save);
+        if (s.Process == false)       sb.Append(" process=0");
+        if (s.Mismatch == false)      sb.Append(" mismatch=0");
+        if (s.SigmaScale is { } k)    sb.Append(" sigmascale=").Append(k.ToString("R", CultureInfo.InvariantCulture));
+        if (s.Parallelism is { } p)   sb.Append(" parallel=").Append(p.ToString(CultureInfo.InvariantCulture));
+        if (s.Scope != OptimizerScope.GoalAnalyses) sb.Append(" analyses=").Append(AnalysisDirectiveSchema.ScopeTokens[(int)s.Scope]);
+        Opt(sb, "corners", s.Corners);
+        Extra(sb, s.Extra, "");
+        return sb.ToString();
+    }
+
+    /// <summary>One corner as its <c>.cnl</c> line. Kit axis selections are not written: extraction has
+    /// already resolved them into values (yield overview D10).</summary>
+    private static string WriteCorner(CornerDefinition c)
+    {
+        var sb = new StringBuilder("corner ").Append(c.Name);
+        if (!c.Enabled)            sb.Append(" enabled=0");
+        if (c.Trial is { } trial)  sb.Append(" trial=").Append(trial.ToString(CultureInfo.InvariantCulture));
+        if (c.Seed is { } seed)    sb.Append(" seed=").Append(seed.ToString(CultureInfo.InvariantCulture));
+        if (c.Sampling is { } smp) sb.Append(" sampling=").Append(AnalysisDirectiveSchema.SamplingTokens[(int)smp]);
+        if (c.Trials is { } n)     sb.Append(" trials=").Append(n.ToString(CultureInfo.InvariantCulture));
+        Opt(sb, "temp", c.Temp);
+        foreach (var (k, v) in c.Values) Opt(sb, k, v);
+        return sb.ToString();
+    }
+
+    private static string PercentText(double percent) => percent.ToString("R", CultureInfo.InvariantCulture) + "%";
 
     private static string WriteTune(TunableEntry e)
     {
@@ -270,6 +441,20 @@ public static class TuningDirectiveText
         if (e.Discrete != TuneDiscrete.None) sb.Append(" discrete=").Append(AnalysisDirectiveSchema.DiscreteTokens[(int)e.Discrete]);
         if (e.Tune) sb.Append(" tune=1");
         if (e.Opt)  sb.Append(" opt=1");
+        if (e.Distribution != StatDistribution.None)
+            sb.Append(" dist=").Append(AnalysisDirectiveSchema.DistTokens[(int)e.Distribution]);
+        if (e.Spread is { } sp)
+        {
+            Opt(sb, "sd", sp.Sd);
+            Opt(sb, "tol", sp.Tol);
+            Opt(sb, "sigmas", sp.Sigmas);
+            Opt(sb, "lo", sp.Lo);
+            Opt(sb, "hi", sp.Hi);
+            Opt(sb, "by", sp.By);
+            Opt(sb, "trunc", sp.Trunc);
+        }
+        // stat is implied by dist (D2): written only where it says something else.
+        if (e.Stat != (e.Distribution != StatDistribution.None)) sb.Append(e.Stat ? " stat=1" : " stat=0");
         Extra(sb, e.Extra, "");
         return sb.ToString();
     }
@@ -316,6 +501,7 @@ public static class TuningDirectiveText
         if (g.Weight != 1.0) sb.Append(" weight=").Append(g.Weight.ToString("R", CultureInfo.InvariantCulture));
         Opt(sb, "scale", g.Scale, goalLine: true);
         if (!g.Enabled) sb.Append(" enabled=false");
+        if (g.Use != GoalUse.Both) sb.Append(" use=").Append(AnalysisDirectiveSchema.UseTokens[(int)g.Use]);
         Extra(sb, g.Extra, "");
         return sb.ToString();
     }
@@ -485,6 +671,85 @@ public static class TuningDirectiveText
     private static int Int(string key, string value)
         => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)
             ? n : throw Refuse(TuningDirectiveDiagnostics.ValueInvalid(key, value, "a whole number"));
+
+    // ── The statistical values (refused with cnl.statistics.* / cnl.corner.*) ──
+
+    private static TEnum? TryEnum<TEnum>(string value, IReadOnlyList<string> tokens) where TEnum : struct, Enum
+    {
+        for (int k = 0; k < tokens.Count; k++)
+            if (tokens[k].Equals(value, StringComparison.OrdinalIgnoreCase)) return (TEnum)(object)k;
+        return null;
+    }
+
+    private static TEnum StatEnum<TEnum>(string key, string value, IReadOnlyList<string> tokens) where TEnum : struct, Enum
+        => TryEnum<TEnum>(value, tokens)
+           ?? throw Refuse(TuningDirectiveDiagnostics.StatisticsValueInvalid(key, value, "one of " + string.Join(", ", tokens)));
+
+    private static int StatInt(string key, string value)
+        => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)
+            ? n : throw Refuse(TuningDirectiveDiagnostics.StatisticsValueInvalid(key, value, "a whole number"));
+
+    private static double StatDouble(string key, string value)
+        => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) && double.IsFinite(v)
+            ? v : throw Refuse(TuningDirectiveDiagnostics.StatisticsValueInvalid(key, value, "a number"));
+
+    private static double Percent(string key, string value)
+        => StatSpread.Percent(value) is { } p && double.IsFinite(p)
+            ? p : throw Refuse(TuningDirectiveDiagnostics.StatisticsValueInvalid(key, value, "a percent, written 95%"));
+
+    private static T? Default<T>(T value, T @default) where T : struct, IEquatable<T>
+        => value.Equals(@default) ? null : value;
+
+    /// <summary>A spread value: a percent of the nominal (<c>2%</c>) or a number with an optional unit
+    /// after a space (<c>0.1 pF</c>). Kept as written — the text is its form.</summary>
+    private static string SpreadValue(string key, string value)
+    {
+        if (StatSpread.IsPercent(value))
+            return StatSpread.Percent(value) is not null ? value
+                : throw Refuse(TuningDirectiveDiagnostics.StatisticsValueInvalid(key, value, "a percent (2%) or a value with its unit"));
+        var parts = value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        bool ok = parts.Length is 1 or 2
+               && double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out _)
+               && (parts.Length == 1 || Units.IsRecognizedUnit(UnitNormalizer.ToEngineUnit(parts[1])));
+        return ok ? value
+            : throw Refuse(TuningDirectiveDiagnostics.StatisticsValueInvalid(key, value, "a percent (2%) or a value with its unit"));
+    }
+
+    private static string PlainNumber(string key, string value)
+    {
+        StatDouble(key, value);
+        return value;
+    }
+
+    private static string? SaveValue(string key, string value)
+    {
+        string lower = value.ToLowerInvariant();
+        if (lower == "auto") return null;
+        if (lower is "scalars" or "all") return lower;
+        return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out int n) && n > 0 ? value
+            : throw Refuse(TuningDirectiveDiagnostics.StatisticsValueInvalid(key, value, "auto, scalars, all or a trial count"));
+    }
+
+    private static string? CornersValue(string key, string value)
+    {
+        string lower = value.ToLowerInvariant();
+        if (lower == "none") return null;
+        if (lower == "all") return lower;
+        var names = value.Split(',', StringSplitOptions.TrimEntries);
+        return names.All(IsIdentifier) ? string.Join(',', names)
+            : throw Refuse(TuningDirectiveDiagnostics.StatisticsValueInvalid(key, value, "none, all or corner names separated by commas"));
+    }
+
+    private static bool CornerBool(string corner, string key, string value) => value.ToLowerInvariant() switch
+    {
+        "1" or "true" or "yes"  => true,
+        "0" or "false" or "no"  => false,
+        _ => throw Refuse(TuningDirectiveDiagnostics.CornerValueInvalid(corner, key, value, "1 or 0")),
+    };
+
+    private static int CornerInt(string corner, string key, string value)
+        => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)
+            ? n : throw Refuse(TuningDirectiveDiagnostics.CornerValueInvalid(corner, key, value, "a whole number"));
 
     private static TuningDirectiveException Refuse(CircuitRF.Diagnostics.Diagnostic d) => new(d);
 

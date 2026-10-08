@@ -38,6 +38,9 @@ public enum TuneDiscrete
 /// <c>in</c> inside [a, b], <c>out</c> outside [a, b].</summary>
 public enum GoalType { Le, Ge, Eq, In, Out }
 
+/// <summary>What a goal serves (yield overview D4). <see cref="Both"/> is the default.</summary>
+public enum GoalUse { Both, Opt, Yield }
+
 /// <summary>How per-point violations combine into one cost.</summary>
 public enum OptimizerCost
 {
@@ -53,6 +56,53 @@ public enum OptimizerScope
     /// <summary>Only the analyses some enabled goal names.</summary>
     GoalAnalyses,
     All,
+}
+
+/// <summary>The distribution a statistical entry draws from (docs/design/yield.md, overview D2).</summary>
+public enum StatDistribution
+{
+    None,
+    /// <summary>Normal: <c>sd</c> is 1σ, or <c>tol</c> at <c>sigmas</c> σ.</summary>
+    Gauss,
+    /// <summary>Uniform on nominal ± <c>tol</c>, or on [<c>lo</c>, <c>hi</c>].</summary>
+    Unif,
+    /// <summary>The value's log is normal; <c>sd</c> is the value's relative 1σ.</summary>
+    LogNorm,
+    /// <summary>Equally likely values <c>lo</c>, <c>lo+by</c>, … ≤ <c>hi</c>.</summary>
+    Discrete,
+}
+
+/// <summary>
+/// A statistical entry's spread — whichever of the keys were written, each kept as the TEXT written,
+/// which is also its form: a percent of the nominal (<c>2%</c>) or an absolute value in the parameter's
+/// unit (<c>0.1 pF</c>). <see cref="Sigmas"/> and <see cref="Trunc"/> are plain numbers.
+/// </summary>
+public sealed class StatSpread
+{
+    public string? Sd     { get; set; }
+    public string? Tol    { get; set; }
+    public string? Sigmas { get; set; }
+    public string? Lo     { get; set; }
+    public string? Hi     { get; set; }
+    public string? By     { get; set; }
+    public string? Trunc  { get; set; }
+
+    [JsonIgnore]
+    public bool IsEmpty => Sd is null && Tol is null && Sigmas is null && Lo is null && Hi is null && By is null
+                           && Trunc is null;
+
+    public StatSpread Clone() => new()
+    {
+        Sd = Sd, Tol = Tol, Sigmas = Sigmas, Lo = Lo, Hi = Hi, By = By, Trunc = Trunc,
+    };
+
+    /// <summary>True when value text is a percent of the nominal (<c>2%</c>).</summary>
+    public static bool IsPercent(string? text) => text is { Length: > 1 } t && t.TrimEnd().EndsWith('%');
+
+    /// <summary>The number of a percent (<c>2%</c> → 2), or null when the text is not one.</summary>
+    public static double? Percent(string? text)
+        => IsPercent(text) && double.TryParse(text!.Trim()[..^1], NumberStyles.Float, CultureInfo.InvariantCulture, out double v)
+            ? v : null;
 }
 
 /// <summary>
@@ -86,14 +136,34 @@ public sealed class TunableEntry
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public TuneDiscrete Discrete { get; set; }
 
+    /// <summary>The statistical flag (yield overview D1/D2): the entry's distribution is drawn in a
+    /// Monte Carlo trial. Reading <c>dist=</c> sets it unless the line says <c>stat=0</c>; an entry with
+    /// no distribution is not statistical whatever this says.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Stat { get; set; }
+
+    /// <summary>The distribution a trial draws the value from; <see cref="StatDistribution.None"/> for
+    /// an entry with no tolerance.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public StatDistribution Distribution { get; set; }
+
+    /// <summary>The distribution's spread, as written; null when the entry has none.</summary>
+    public StatSpread? Spread { get; set; }
+
+    /// <summary>The entry carries a distribution that a trial draws (<see cref="Stat"/> and a
+    /// distribution).</summary>
+    [JsonIgnore]
+    public bool IsStatistical => Stat && Distribution != StatDistribution.None;
+
     /// <summary>Keys this build does not know, kept verbatim so a file written by a later version
-    /// (a yield tolerance, say) survives a round trip through this one.</summary>
+    /// survives a round trip through this one.</summary>
     public OrderedDictionary<string, string>? Extra { get; set; }
 
     public TunableEntry Clone() => new()
     {
         Key = Key, Tune = Tune, Opt = Opt, Min = Min, Max = Max, Scale = Scale, Step = Step,
-        Discrete = Discrete, Extra = CloneMap(Extra),
+        Discrete = Discrete, Stat = Stat, Distribution = Distribution, Spread = Spread?.Clone(),
+        Extra = CloneMap(Extra),
     };
 
     internal static OrderedDictionary<string, string>? CloneMap(OrderedDictionary<string, string>? m)
@@ -203,6 +273,10 @@ public sealed class OptimizationGoal
 
     public bool Enabled { get; set; } = true;
 
+    /// <summary>What the goal serves (yield overview D4): the optimizer, the yield analysis, or both.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public GoalUse Use { get; set; }
+
     /// <summary>Keys this build does not know, kept verbatim.</summary>
     public OrderedDictionary<string, string>? Extra { get; set; }
 
@@ -210,8 +284,16 @@ public sealed class OptimizationGoal
     {
         Name = Name, Expression = Expression, Analysis = Analysis, Range = Range?.Clone(), Type = Type,
         Limit = Limit, UpperLimit = UpperLimit, LimitAtHi = LimitAtHi, Weight = Weight, Scale = Scale, Enabled = Enabled,
-        Extra = TunableEntry.CloneMap(Extra),
+        Use = Use, Extra = TunableEntry.CloneMap(Extra),
     };
+
+    /// <summary>The optimizer aims for it.</summary>
+    [JsonIgnore]
+    public bool ForOptimizer => Use != GoalUse.Yield;
+
+    /// <summary>A yield trial passes only when it is met.</summary>
+    [JsonIgnore]
+    public bool ForYield => Use != GoalUse.Opt;
 }
 
 /// <summary>The optimizer's own settings — the algorithm and what stops it.</summary>
@@ -263,6 +345,15 @@ public sealed class TuningSetup
     public List<OptimizationGoal> Goals     { get; set; } = [];
     public OptimizerSettings?     Optimizer { get; set; }
 
+    /// <summary>Correlations between statistical entries (yield overview D3).</summary>
+    public List<StatCorrelation>  Correlations { get; set; } = [];
+
+    /// <summary>The Monte Carlo / yield settings; null when the design states none.</summary>
+    public StatisticsSettings?    Statistics { get; set; }
+
+    /// <summary>Named corners (yield overview D10).</summary>
+    public List<CornerDefinition> Corners { get; set; } = [];
+
     /// <summary>How many significant digits the Tuning and Optimizer panels spell a tuned or optimized
     /// value with — what they show, simulate and push. Null is the panels' default; display only, so
     /// it is not part of the <c>.cnl</c>.</summary>
@@ -270,15 +361,18 @@ public sealed class TuningSetup
 
     [JsonIgnore]
     public bool IsEmpty => Variables.Count == 0 && Presets.Count == 0 && Goals.Count == 0 && Optimizer is null
-                           && Digits is null;
+                           && Digits is null && Correlations.Count == 0 && Statistics is null && Corners.Count == 0;
 
     public TuningSetup Clone() => new()
     {
-        Variables = [.. Variables.Select(v => v.Clone())],
-        Presets   = [.. Presets.Select(p => p.Clone())],
-        Goals     = [.. Goals.Select(g => g.Clone())],
-        Optimizer = Optimizer?.Clone(),
-        Digits    = Digits,
+        Variables    = [.. Variables.Select(v => v.Clone())],
+        Presets      = [.. Presets.Select(p => p.Clone())],
+        Goals        = [.. Goals.Select(g => g.Clone())],
+        Optimizer    = Optimizer?.Clone(),
+        Digits       = Digits,
+        Correlations = [.. Correlations.Select(c => c.Clone())],
+        Statistics   = Statistics?.Clone(),
+        Corners      = [.. Corners.Select(c => c.Clone())],
     };
 }
 

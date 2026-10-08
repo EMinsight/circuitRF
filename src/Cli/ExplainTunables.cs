@@ -58,7 +58,8 @@ internal static class ExplainTunables
                 t.IsDefault, t.ReadOnlyReason, t.DisabledReason,
                 entry?.Min ?? t.DefaultMin, entry?.Max ?? t.DefaultMax, entry is null && t.RangeGuessed,
                 entry?.Tune ?? false, entry?.Opt ?? false,
-                t.Part is null ? null : Design.Optimization.ComplexValue.Format(t.Whole, t.WholeUnit, t.Form));
+                t.Part is null ? null : Design.Optimization.ComplexValue.Format(t.Whole, t.WholeUnit, t.Form),
+                ExplainStatistics.Stat(entry, t));
         }).ToList();
 
         return (new ExplainTunablesJson(rows, catalog.UnresolvedKeys), 0);
@@ -88,6 +89,7 @@ internal static class ExplainTunables
             string line = $"  {t.Key.PadRight(keyWidth)}  {t.Location.PadRight(locWidth)}  {t.Value,-14}  {t.Min} .. {t.Max}";
             if (flags.Count > 0) line += "  [" + string.Join("; ", flags) + "]";
             Console.WriteLine(line);
+            if (t.Stat is { } stat) Console.WriteLine($"  {"".PadRight(keyWidth)}  {"".PadRight(locWidth)}  {stat.Text}");
         }
 
         if (report.Unresolved.Count > 0)

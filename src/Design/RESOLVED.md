@@ -18580,3 +18580,27 @@ Calls the owner may revisit: until TO-10's goal editor exists, "Add as goal" add
 open schematic the results came from (one undo step), **disabled** when no visible marker gave it a limit;
 the analysis of a measurement trace is the first analysis its measure text names. Templates suggest a type
 (transmission ≥, reflection ≤, µ/µ′/K ≥ 1, phase =) and a limit only for µ/µ′/K.
+
+## Yield YA-1: tolerances, correlations, statistics settings, corners, goal use — findings (2026-10-07)
+
+**The goal editor rebuilds a goal from its fields, so a field it does not show is dropped on OK.**
+`GoalEditorViewModel.Build` constructs a fresh `OptimizationGoal`; without carrying `Use` through, editing a
+`use=yield` goal's limit in the Optimizer would have silently turned it back into `use=both` and made the
+optimizer aim for a yield spec. It now carries `Use` as it carries `Extra`. The optimizer itself takes only
+`ForOptimizer` goals (`OptimizationRun`), since D4 makes `use=yield` a yield spec only.
+
+**Headless extraction has never applied kit corner selections.** `NetExtractor.Extract` takes the corner
+bindings from its caller, and only the GUI has the workspace's corner axes (`WorkspaceCorners` is in
+`src/Ui`); the CLI passes none, so a `.csch` with `CornerSelections` netlists at the kit's nominal sections
+headlessly. YA-1 follows the same shape — a `cornerBinder` the GUI supplies — and a named corner's kit
+selections extracted with no binder are REPORTED as not applied rather than dropped silently. Moving
+`WorkspaceCorners`/`WorkspaceRefs` below the firewall would close both gaps for the CLI; not done here.
+
+**`tol` was the round-trip test's example of an unknown key.** `TuningSetupRoundTripTests` parked `tol=5` in
+`Extra` to prove a later version's key survives; it is a known key now, so the example became `later`.
+
+Calls the owner may revisit: the default `trials` is **100** (the overview named none); a percent `lo`/`hi`
+is that percent OF the nominal (`lo=90%` is 0.9× nominal), not an offset; a corner line owns `enabled`,
+`trial`, `seed`, `sampling`, `trials` and `temp` wherever they sit, so a global with one of those names
+cannot be bound by a corner; a `.csch` corner's kit selections are written into the `.cnl` as EVERY constant
+the overlaid selections bind, not only those that differ from the design's own.

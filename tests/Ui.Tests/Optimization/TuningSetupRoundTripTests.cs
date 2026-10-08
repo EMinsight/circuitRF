@@ -17,7 +17,7 @@ public sealed class TuningSetupRoundTripTests
             new TunableEntry
             {
                 Key = "R1.R", Tune = true, Opt = true, Min = "10 Ohm", Max = "200 Ohm", Scale = TuneScale.Log,
-                Step = "1 Ohm", Discrete = TuneDiscrete.Preferred, Extra = new() { ["tol"] = "5" },
+                Step = "1 Ohm", Discrete = TuneDiscrete.Preferred, Extra = new() { ["later"] = "5" },
             },
             new TunableEntry { Key = "DUT:Wline", Opt = true, Min = "50 um", Max = "400 um", Discrete = TuneDiscrete.Integer },
         ],
@@ -88,7 +88,7 @@ public sealed class TuningSetupRoundTripTests
 
         // The three keys this version does not know are each reported by name, and kept.
         Assert.Equal(3, tb.ReadWarnings.Count);
-        Assert.All(["'tol'", "'note'", "'future'"], k => Assert.Contains(tb.ReadWarnings, w => w.Contains(k)));
+        Assert.All(["'later'", "'note'", "'future'"], k => Assert.Contains(tb.ReadWarnings, w => w.Contains(k)));
         Assert.Equal(TuningLines(cnl1), TuningLines(CnlWriter.Write(tb, lib)));
 
         var back = NetlistSchematic.Build(lib, tb).Schematic!;

@@ -4247,7 +4247,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         var cornerVars = WorkspaceCorners.BindingsFor(
             AvailableCornerAxes, model.CornerSelections, cornerProblems);
 
-        var result = NetExtractor.Extract(model, testBenchName, cells: this, cornerVariables: cornerVars);
+        var result = NetExtractor.Extract(model, testBenchName, cells: this, cornerVariables: cornerVars,
+            cornerBinder: (selections, problems) => WorkspaceCorners.BindingsFor(AvailableCornerAxes, selections, problems));
         var conflicts = cornerProblems.Count == 0
             ? result.Conflicts
             : (IReadOnlyList<string>)[.. cornerProblems, .. result.Conflicts];
