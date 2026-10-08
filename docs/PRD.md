@@ -1,7 +1,9 @@
 # circuitRF — Project Requirements Document (PRD)
 
-**Status:** Approved — v3.1 · **Owner:** (you) · **Date:** 2026-10-07
+**Status:** Approved — v3.2 · **Owner:** (you) · **Date:** 2026-10-08
 **Scope of this document:** defines *what* circuitRF must do and how we'll know it's done. It began as the v1 baseline; the product has since moved past v3 (the 3D geometry editor, 3D full-wave EM and 3D thermal), and sections that still say "v1" describe the baseline they were written for. It does **not** specify the data model or algorithms (those live in `docs/design/`).
+
+> **v3.1 → v3.2 (2026-10-08):** recorded **yield analysis** as delivered (§2, §5.2, §9, §10): tolerances and correlations on the tuning variables, Monte Carlo and yield with a confidence interval, kit process and mismatch statistics, corners and statistical corners, optimizing across corners, design centering, and design of experiments. High-sigma yield estimation stays out of scope. No change to the five heroes.
 
 > **v1.4 → v3.1 (2026-10-07):** brought the document up to the product as it ships. The v1 non-goals that have since been delivered are recorded as delivered (§2): the **Verilog-A/OSDI device path**, the **3D geometry editor** (`.c3d`), **3D full-wave EM** through external open-source solvers run as separate processes, and **native 3D thermal**. Added **tuning and optimization** as a functional requirement (§5.1, §9, §10) — the "no optimization engine" non-goal is retired. **Yield analysis (Monte Carlo, design centering, yield optimization) is the planned follow-on** and is not yet in scope. No change to the five heroes, which remain the engine's acceptance anchors.
 
@@ -35,13 +37,14 @@ circuitRF is deliberately bounded. The following are **not** in scope today:
 - **No layout auto-router.** Schematic→layout places components; the user routes. Obstacle-aware auto-routing applies to schematic wiring only.
 - **A third-party cell database is not the storage layer.** circuitRF uses its own human-readable native format. An optional third-party *cell import/export bridge* may come later; full support is out of scope.
 - **No co-simulation and no system/behavioral-level model generation** (e.g., X-parameter generation).
-- **No yield engine yet.** Monte Carlo yield analysis, design centering and yield optimization are the **planned follow-on to tuning and optimization** (§5.1) and build on its variables and goals; they are not in scope until briefed.
+- **No high-sigma yield estimation** (scaled-sigma sampling, worst-case distance, learned fast Monte Carlo). Yield is estimated by Monte Carlo (§5.2), so a yield is resolved only as finely as the trial count allows.
 
 **Non-goals of the v1 baseline that have since been delivered** (kept here so the history of the scope is legible):
 
 - **Verilog-A** — delivered through the OSDI external-device path (§6.1's architectural requirement is what it exercises).
 - **3D geometry, FEM and 3D thermal** (v1.4 placed them at v2-at-the-earliest, possibly v3) — delivered: a **3D geometry editor** (`.c3d` documents), **3D full-wave EM** driven through external open-source solvers run as **separate processes** (§15), and a **native 3D thermal** solver. **The layout database is still 2D**: 3D geometry lives in its own document, and a wirebond is still a parametric component whose layout view is its 2D projection. Design detail in [`design/em-3d.md`](design/em-3d.md).
 - **Optimization** — in scope from v3.1 (§5.1).
+- **Yield** — Monte Carlo, yield, corners, design centering and design of experiments, delivered in v3.2 (§5.2).
 
 ## 3. Users & jobs-to-be-done
 
@@ -113,6 +116,20 @@ These circuits define "done" for the v1 engine; every proposed feature is gated 
 - **Optimizer** — a choice of algorithms (local gradient, local derivative-free, global population-based and surrogate-based for expensive simulations, discrete/standard-value), persisted per schematic; maximum iterations/evaluations; pause, resume and stop at any point; best-so-far tracking; per-iteration feedback on how far each goal is from being met; and an indication when a variable has railed at its min or max.
 - **Headless** — the optimizer runs from the CLI and the MCP server with the same goals and the same result as the GUI. It reports values; it never rewrites the design's values unasked.
 
+### 5.2 Yield (v3.2)
+
+- **Tolerances** — any tunable value (§5.1) can carry a distribution — Gaussian, uniform, lognormal or discrete, its spread a percent of the nominal or an absolute value, Gaussian ones optionally truncated — and pairs of them a correlation. A tolerance lives on the same variable entry as its tuning range.
+- **Specs are goals** — a goal (§5.1) is marked for the optimizer, for the yield, or for both, so a design is centred against tight goals and judged against looser ones.
+- **Monte Carlo and yield** — a run draws every trial from the seed and its own number, reproducibly on any machine and at any parallelism; reports the yield overall and per spec with a Clopper–Pearson interval; can stop as soon as the interval clears a target; and counts a trial that does not simulate as a fail unless told to leave it out. Random, Latin-hypercube and low-discrepancy sampling.
+- **Kit statistics** — a kit's own distribution functions are live in a trial (process once per trial, mismatch per instance) and nominal everywhere else, selected through the kit's statistical corner section.
+- **Corners** — named corners of kit sections, temperature and values, generated as cross products; statistical corners that replay one trial; the optimizer meeting every goal at every corner; tuning evaluated at a corner.
+- **Design centering** — the designable values moved to maximize yield on common random numbers, with the result verified on fresh trials; an optional quadratic surrogate.
+- **Design of experiments** — full, fractional, Plackett–Burman and composite designs, effects judged against Lenth's margin, and a model optimum confirmed by simulation.
+- **Display** — histograms, CDF, normal quantile, yield sensitivity, pass/fail families, envelopes, scatter and contributions in the Data Display, linked trial selection, and a one-click yield display.
+- **Headless** — `circuitrf yield` (`mc`, `estimate`, `trial`, `corners`, `center`, `doe`) and the MCP server run the same as the Yield window and write the same result file; they never rewrite the design's values unasked.
+
+**Acceptance** is held by the `tests/Ui.Tests/Statistics/` suite — among them reproducible streams at any parallelism, the Clopper–Pearson interval against binomial tail sums, a design whose exact yield is known analytically, nominal identity of every kit-statistics path, the panel's result byte-identical to the CLI's, and corner, centering and DOE runs on closed-form circuits — and by `tests/Ui.Tests/Examples/YieldExampleTests.cs`, which runs the shipped *Yield, Corners and Centering* example's three benches at their own settings and asserts the outcomes its README states. Design detail in [`design/yield.md`](design/yield.md).
+
 ## 6. Components (functional requirements)
 
 Each component declares a variable number of typed parameters (with units). Adding a new component type must be straightforward — a single device interface (ports + linear `Stamp` and/or nonlinear `Evaluate`) plus factory registration.
@@ -177,11 +194,12 @@ Cells live in **Libraries**; circuitRF can reference many libraries simultaneous
 - **Data Display** — native `DataCube`-driven plots and tables (Smith, polar, rectangular, table); **measured-vs-simulated overlay**.
 - **Variable / parameter / sweep setup** — define variables and cell parameters, set instance overrides, and choose sweep axes (§7).
 - **Tuning and Optimizer windows** (§5.1) — dockable tool panels that follow the focused schematic, docked by default behind the Analyses panel (Tuning) and behind Tuning (Optimizer), with the same compact toolbar-button style as the Analyses panel.
+- **Yield window** (§5.2) — a dockable tool panel in the same style, docked by default behind the Optimizer, with Monte Carlo, Yield, Corners, Centering and DOE modes.
 - **Advanced settings** — all solver/analysis settings present and quickly findable, without cluttering the "easy" path.
 
 ## 10. Command-line interface (functional requirement)
 
-A CLI accepts an input netlist and/or JSON circuit description plus an output file. It is also the **engine's primary test harness**: the engine must be fully drivable and validated headless, before and independently of the GUI. **The optimizer (§5.1) is a CLI verb and an MCP capability**, discoverable from the MCP reference topics, so an AI agent can write goals and run it without the GUI.
+A CLI accepts an input netlist and/or JSON circuit description plus an output file. It is also the **engine's primary test harness**: the engine must be fully drivable and validated headless, before and independently of the GUI. **The optimizer (§5.1) and the yield analyses (§5.2) are CLI verbs and MCP capabilities**, discoverable from the MCP reference topics, so an AI agent can write goals and run it without the GUI.
 
 ## 11. File formats & data export (functional requirements)
 
@@ -267,6 +285,9 @@ Dominant risks: **HB convergence and two-tone frequency indexing** (now with a h
 - **3D geometry, 3D full-wave EM and 3D thermal → delivered** (the v1.4 entries above describe the plan they were delivered against).
 - **Tuning and optimization → in scope** (§5.1). Tuning and optimization share one variable list with one range per variable; goals are authored only in the Optimizer window (no goal schematic component); presets live in the `.csch`; the headless optimizer reports values and writes nothing back to the design's values. Brief series: `docs/sonnet-briefs/brief-tuneopt-0-overview.md`.
 - **Yield (Monte Carlo, design centering, yield optimization) → the planned follow-on series**, not part of the tuning/optimization series.
+
+**Resolved (v3.2, 2026-10-08):**
+- **Yield → delivered** (§5.2). A tolerance is part of the tuning variable's entry and a spec is a goal marked `use=`; a trial that does not simulate counts as a fail by default; a quadratic surrogate is offered for centering only; design of experiments is included. Out of scope: high-sigma estimation, and another simulator dialect's statistics blocks in a kit. Brief series: `docs/sonnet-briefs/brief-yield-0-overview.md`.
 
 **Remaining open items:**
 1. **Hero 2/4/5 power-sweep range** — TBD pending the chosen SDD FET model (small-signal start, compression depth, and the drive level(s) used for the Hero-5 IM check).

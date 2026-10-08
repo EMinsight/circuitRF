@@ -1,0 +1,607 @@
+{
+  "FormatVersion": 2,
+  "CellName": "BandpassYield",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "P1",
+      "Symbol": "Term",
+      "X": 0,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "1",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "L1",
+      "Symbol": "Inductor",
+      "X": 800,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "L",
+          "Expression": "1.052",
+          "Unit": "nH",
+          "ShowOnSchematic": true,
+          "Dimension": "Inductance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          276,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "C1",
+      "Symbol": "Capacitor",
+      "X": 1600,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "24.44",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          280,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "L2",
+      "Symbol": "Inductor",
+      "X": 2200,
+      "Y": 0,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "L",
+          "Expression": "44.67",
+          "Unit": "nH",
+          "ShowOnSchematic": true,
+          "Dimension": "Inductance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "C2",
+      "Symbol": "Capacitor",
+      "X": 3400,
+      "Y": 0,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "0.5712",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "L3",
+      "Symbol": "Inductor",
+      "X": 4000,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "L",
+          "Expression": "1.052",
+          "Unit": "nH",
+          "ShowOnSchematic": true,
+          "Dimension": "Inductance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          276,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "C3",
+      "Symbol": "Capacitor",
+      "X": 4800,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "C",
+          "Expression": "24.44",
+          "Unit": "pF",
+          "ShowOnSchematic": true,
+          "Dimension": "Capacitance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          280,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "P2",
+      "Symbol": "Term",
+      "X": 5600,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Num",
+          "Expression": "2",
+          "Unit": "",
+          "ShowOnSchematic": true,
+          "Dimension": "None"
+        },
+        {
+          "Name": "Z",
+          "Expression": "50",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          285,
+          -361
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": 0,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 5600,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND3",
+      "Symbol": "Ground",
+      "X": 800,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND4",
+      "Symbol": "Ground",
+      "X": 1600,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND5",
+      "Symbol": "Ground",
+      "X": 4000,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND6",
+      "Symbol": "Ground",
+      "X": 4800,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          2400,
+          0
+        ],
+        [
+          3200,
+          0
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          2000,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          800,
+          0
+        ],
+        [
+          800,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          1600,
+          0
+        ],
+        [
+          1600,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          3600,
+          0
+        ],
+        [
+          5600,
+          0
+        ],
+        [
+          5600,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          4000,
+          0
+        ],
+        [
+          4000,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          4800,
+          0
+        ],
+        [
+          4800,
+          300
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": 1000,
+      "Y": 0,
+      "Name": "in",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 2800,
+      "Y": 0,
+      "Name": "mid",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 4600,
+      "Y": 0,
+      "Name": "out",
+      "OwnerWireIndex": 4,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "sp",
+      "Name": "SP1",
+      "Enabled": true,
+      "Sweeps": [
+        {
+          "StartExpr": "0.5",
+          "StopExpr": "2",
+          "NumPoints": 151,
+          "Mode": "PointCount",
+          "Kind": "Linear",
+          "StartUnit": "GHz",
+          "StopUnit": "GHz"
+        }
+      ]
+    }
+  ],
+  "Tuning": {
+    "Variables": [
+      {
+        "Key": "L1.L",
+        "Tune": true,
+        "Opt": true,
+        "Min": "0.5 nH",
+        "Max": "2 nH",
+        "Stat": true,
+        "Distribution": "Gauss",
+        "Spread": {
+          "Tol": "2%",
+          "Sigmas": "3",
+          "Trunc": "3"
+        }
+      },
+      {
+        "Key": "C1.C",
+        "Tune": true,
+        "Opt": true,
+        "Min": "10 pF",
+        "Max": "50 pF",
+        "Stat": true,
+        "Distribution": "Gauss",
+        "Spread": {
+          "Tol": "2%",
+          "Sigmas": "3",
+          "Trunc": "3"
+        }
+      },
+      {
+        "Key": "L2.L",
+        "Tune": true,
+        "Opt": true,
+        "Min": "20 nH",
+        "Max": "80 nH",
+        "Stat": true,
+        "Distribution": "Gauss",
+        "Spread": {
+          "Tol": "2%",
+          "Sigmas": "3",
+          "Trunc": "3"
+        }
+      },
+      {
+        "Key": "C2.C",
+        "Tune": true,
+        "Opt": true,
+        "Min": "0.3 pF",
+        "Max": "1.2 pF",
+        "Stat": true,
+        "Distribution": "Gauss",
+        "Spread": {
+          "Tol": "2%",
+          "Sigmas": "3",
+          "Trunc": "3"
+        }
+      },
+      {
+        "Key": "L3.L",
+        "Tune": true,
+        "Opt": true,
+        "Min": "0.5 nH",
+        "Max": "2 nH",
+        "Stat": true,
+        "Distribution": "Gauss",
+        "Spread": {
+          "Tol": "2%",
+          "Sigmas": "3",
+          "Trunc": "3"
+        }
+      },
+      {
+        "Key": "C3.C",
+        "Tune": true,
+        "Opt": true,
+        "Min": "10 pF",
+        "Max": "50 pF",
+        "Stat": true,
+        "Distribution": "Gauss",
+        "Spread": {
+          "Tol": "2%",
+          "Sigmas": "3",
+          "Trunc": "3"
+        }
+      }
+    ],
+    "Goals": [
+      {
+        "Name": "Passband",
+        "Expression": "dB(SP1.S(2,1))",
+        "Analysis": "SP1",
+        "Range": {
+          "Axis": "freq",
+          "Lo": "0.9 GHz",
+          "Hi": "1.1 GHz"
+        },
+        "Type": "In",
+        "Limit": "-0.5",
+        "UpperLimit": "0",
+        "Weight": 1,
+        "Enabled": true,
+        "Use": "Opt"
+      },
+      {
+        "Name": "StopLow",
+        "Expression": "dB(SP1.S(2,1))",
+        "Analysis": "SP1",
+        "Range": {
+          "Axis": "freq",
+          "Lo": "0.5 GHz",
+          "Hi": "0.7 GHz"
+        },
+        "Type": "Le",
+        "Limit": "-25",
+        "Weight": 1,
+        "Enabled": true,
+        "Use": "Opt"
+      },
+      {
+        "Name": "StopHigh",
+        "Expression": "dB(SP1.S(2,1))",
+        "Analysis": "SP1",
+        "Range": {
+          "Axis": "freq",
+          "Lo": "1.35 GHz",
+          "Hi": "2 GHz"
+        },
+        "Type": "Le",
+        "Limit": "-25",
+        "Weight": 1,
+        "Enabled": true,
+        "Use": "Opt"
+      },
+      {
+        "Name": "PassbandSpec",
+        "Expression": "dB(SP1.S(2,1))",
+        "Analysis": "SP1",
+        "Range": {
+          "Axis": "freq",
+          "Lo": "0.9 GHz",
+          "Hi": "1.1 GHz"
+        },
+        "Type": "Ge",
+        "Limit": "-1",
+        "Weight": 1,
+        "Enabled": true,
+        "Use": "Yield"
+      },
+      {
+        "Name": "StopHighSpec",
+        "Expression": "dB(SP1.S(2,1))",
+        "Analysis": "SP1",
+        "Range": {
+          "Axis": "freq",
+          "Lo": "1.35 GHz",
+          "Hi": "2 GHz"
+        },
+        "Type": "Le",
+        "Limit": "-22",
+        "Weight": 1,
+        "Enabled": true,
+        "Use": "Yield"
+      }
+    ],
+    "Optimizer": {
+      "Algorithm": "minimax",
+      "Seed": 1
+    },
+    "Correlations": [
+      {
+        "First": "C1.C",
+        "Second": "C3.C",
+        "Rho": 0.9
+      }
+    ],
+    "Statistics": {
+      "Trials": 500,
+      "Target": 80
+    }
+  }
+}

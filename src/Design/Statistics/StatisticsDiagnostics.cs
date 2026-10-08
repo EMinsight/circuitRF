@@ -26,6 +26,11 @@ public static class StatisticsDiagnostics
         "yield.spread.not-a-number", DiagnosticSeverity.Error,
         "{who}: {key}={text} is not a number, a percent or a value with its unit.", ("who", who), ("key", key), ("text", text));
 
+    public static Diagnostic SpreadWrongUnit(string who, string key, string text, string unit) => Diagnostic.Create(
+        "yield.spread.wrong-unit", DiagnosticSeverity.Error,
+        "{who}: {key}={text} is not in the value's own kind of unit, {unit} — write it in {unit}, or as a percent.",
+        ("who", who), ("key", key), ("text", text), ("unit", unit));
+
     public static Diagnostic SpreadNotPositive(string who, string key, string text) => Diagnostic.Create(
         "yield.spread.not-positive", DiagnosticSeverity.Error,
         "{who}: {key}={text} must be above zero.", ("who", who), ("key", key), ("text", text));

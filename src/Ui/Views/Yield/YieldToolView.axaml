@@ -507,10 +507,11 @@
                                                    VerticalAlignment="Center"/>
                                     </StackPanel>
                                     <ComboBox Grid.Column="2" Classes="cell" Width="92" ItemsSource="{Binding Distributions}"
-                                              SelectedItem="{Binding Distribution}" ToolTip.Tip="Distribution"/>
+                                              SelectedItem="{Binding Distribution}" VerticalAlignment="Center"
+                                              ToolTip.Tip="Distribution"/>
                                     <TextBox Grid.Column="3" Classes="cell spread" Margin="4,0" MinWidth="70"
                                              Text="{Binding SpreadText, Mode=OneWay}"
-                                             ToolTip.Tip="Spread: ± 2 %, ± 5 % at 3σ, σ 1 Ω, 45 … 55 Ω, 4 … 8 by 2, then , trunc 3σ"/>
+                                             ToolTip.Tip="Spread: ± 2 %, ± 5 % at 3σ, σ 1 Ω (Gaussian); 45 … 55 Ω (Uniform); 4 … 8 by 2 (Discrete); then , trunc 3σ"/>
                                     <TextBlock Grid.Column="4" Text="{Binding NominalText}" FontSize="11" Opacity="0.8"
                                                VerticalAlignment="Center" Margin="2,0,6,0" ToolTip.Tip="Nominal"/>
                                     <yldv:FractionBar Grid.Column="5" Height="12" IsVisible="{Binding HasShare}"
@@ -608,7 +609,7 @@
                                                Margin="0,0,6,0"/>
                                     <TextBlock Grid.Column="1" Text="{Binding Summary}" Classes="muted" VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis"/>
-                                    <ComboBox Grid.Column="2" Classes="cell" Width="64" ItemsSource="{Binding Uses}"
+                                    <ComboBox Grid.Column="2" Classes="cell" Width="72" ItemsSource="{Binding Uses}"
                                               SelectedItem="{Binding Use}" Margin="4,0"
                                               ToolTip.Tip="Used by the optimizer, the yield, or both"/>
                                     <TextBlock Grid.Column="3" Text="{Binding YieldText}" FontSize="11" MinWidth="46"

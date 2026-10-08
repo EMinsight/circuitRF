@@ -130,6 +130,8 @@ public sealed class ExampleWorkspacesTests(ITestOutputHelper output) : IDisposab
     [InlineData(".cwsuser", "one person's dock layout and screen geometry")]
     [InlineData(".crf-*", "circuitRF's own per-session bookkeeping — the advisory open-notice and "
         + "the write probe")]
+    [InlineData("*.npy", "a yield, corner or DOE result, which those runs write beside the schematic "
+        + "rather than under results/")]
     public void TheItemGroupDoesNotShipMachineLocalState(string excluded, string why)
     {
         string proj = File.ReadAllText(Path.Combine(RepoRoot(), "src", "Ui", "CircuitRF.Ui.csproj"));

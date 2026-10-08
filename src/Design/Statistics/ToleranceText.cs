@@ -79,19 +79,41 @@ public static partial class ToleranceText
     {
         string v = value.Trim();
         if (v.EndsWith('%')) return v[..^1].TrimEnd() + " %";
-        return Regex.Replace(v, @"(?<=\d|\s)Ohm\b", "Ω");
+        return Regex.Replace(v, @"(?<=(?:\d|\s)[fpnuµmkMGT]?)Ohm\b", "Ω");
     }
 
     // ── Reading ─────────────────────────────────────────────────────────────────────
 
-    [GeneratedRegex(@",?\s*\btrunc\s*(?<k>[0-9.eE+\-]+)\s*σ?\s*", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@",?\s*\btrunc\s*(?<k>[0-9.eE+\-]+)\s*(?:σ|sigmas?\b)?\s*", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex TruncPart();
 
-    [GeneratedRegex(@"\s*(?:\bat\b|/)\s*(?<k>[0-9.eE+\-]+)\s*σ\s*$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\s*(?:\bat\b|/)\s*(?<k>[0-9.eE+\-]+)\s*(?:σ|sigmas?)\s*$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex SigmasPart();
 
     [GeneratedRegex(@"\s+by\s+", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex ByPart();
+
+    /// <summary>A standard deviation's lead: <c>σ</c>, <c>sd</c> or the word <c>sigma</c>.</summary>
+    [GeneratedRegex(@"^(?:σ|sigma(?![a-z])|sd(?![a-z]))\s*", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex SdPart();
+
+    /// <summary>
+    /// Why <paramref name="sp"/>, as parsed, is the wrong SHAPE for a <paramref name="d"/> draw — a range typed on a
+    /// Gaussian, a σ on a uniform — in words that name the distribution it needs; null when the shape fits. The
+    /// values themselves are the validator's to judge.
+    /// </summary>
+    public static string? WrongShape(StatSpread sp, StatDistribution d) => d switch
+    {
+        StatDistribution.Gauss or StatDistribution.LogNorm when sp.Lo is not null || sp.Hi is not null
+            => "a range like 45 … 55 Ω needs a Uniform or Discrete distribution — choose one first, or write ± 5 % or σ 1 Ω",
+        StatDistribution.Unif when sp.Sd is not null
+            => "a σ needs a Gaussian or Lognormal distribution — choose one first, or write ± 5 % or 45 … 55 Ω",
+        StatDistribution.Unif when sp.By is not null
+            => "a step (by) needs a Discrete distribution — choose it first, or write 45 … 55 Ω",
+        StatDistribution.Discrete when sp.Lo is null || sp.Hi is null || sp.By is null
+            => "a Discrete distribution needs its values as a range with a step, like 4 … 8 by 2",
+        _ => null,
+    };
 
     /// <summary>
     /// What <paramref name="text"/> says for a <paramref name="d"/> draw, over <paramref name="old"/>'s σ count when a
@@ -122,9 +144,9 @@ public static partial class ToleranceText
             if (d is StatDistribution.Gauss or StatDistribution.LogNorm) sp.Sigmas ??= old?.Sigmas ?? DefaultSigmas;
             return sp.Tol is null ? null : sp;
         }
-        if (t.StartsWith('σ') || t.StartsWith("sd", StringComparison.OrdinalIgnoreCase))
+        if (SdPart().Match(t) is { Success: true } sdm)
         {
-            sp.Sd = Value(t.TrimStart('σ').Trim() is var rest && rest.StartsWith("sd", StringComparison.OrdinalIgnoreCase) ? rest[2..] : rest);
+            sp.Sd = Value(t[sdm.Length..]);
             return sp.Sd is null ? null : sp;
         }
 
@@ -168,7 +190,10 @@ public static partial class ToleranceText
         if (!m.Success) return v;
         string n = m.Groups["n"].Value;
         if (!m.Groups["u"].Success) return n;
-        return $"{n} {UnitNormalizer.ToEngineUnit(m.Groups["u"].Value.Trim())}";
+        string u = UnitNormalizer.ToEngineUnit(m.Groups["u"].Value.Trim());
+        // `ohm`, `kohm`: the engine's spelling is Ohm, which is what the line keeps and what is shown as Ω.
+        if (u.EndsWith("ohm", StringComparison.OrdinalIgnoreCase)) u = u[..^3] + "Ohm";
+        return $"{n} {u}";
     }
 
     private static string? UnitOf(string value)

@@ -39084,3 +39084,40 @@ A FLOATING tool panel is a second window, and the shell's Ctrl+Z KeyBinding is o
 so `CrfHostWindow` forwards Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y to the workspace's Undo/Redo on bubble
 (a focused text box keeps its own). Only for tool floats — a document float binds its own document's
 history — and never ⌘ on macOS, where the app menu's key equivalent already reaches every window.
+
+## Yield panel crashed the application on activation (owner, 2026-10-08)
+
+Owner report: clicking through the Tuning / Optimizer / Yield tabs — with or without a workspace open — took
+the whole application down on activating Yield, with `ArgumentException: '0' cannot be greater than -2` from
+`FractionBar.Render`.
+
+**The cause.** `FractionBar` (`src/Ui/Views/Yield/YieldControls.cs`, the interval bar and the per-variable share
+bars) clamped its value tick with `Math.Clamp(x, 0, w - 2)` and its target marker with `Math.Clamp(x, 1, w - 1)`.
+A tab being activated renders its controls before layout has given them a width, so `w` is 0 and the clamp's
+range is inverted — and `Math.Clamp` THROWS on an inverted range rather than returning either end. An exception
+inside `Render` is not caught by anything: it unwinds the compositor's commit and ends the process.
+
+**The fix** returns before drawing anything when the bar is narrower than its 2-pixel tick (`!(w >= 2)`, which
+also refuses a NaN width). The Optimizer's own drawn controls (`OptimizerControls.cs`) clamp only to a fixed
+0…1 and could not invert. **Rule for any control that draws itself: a clamp whose bounds come from `Bounds`
+needs a guard first** — the first frame of a newly shown panel is zero-sized. Not covered by a test: `Ui.Tests`
+has no headless renderer to call `Render` with.
+
+## Data Display Σ (Add Statistics Table) did nothing (owner, 2026-10-08)
+
+Owner report: after running an example, Σ in the Data Display did nothing.
+
+**The cause was two silences.** Σ tables the `statistics` group of the SELECTED source, which only a Monte Carlo or
+yield result carries — and those results (`<design>.yield.npy`, and the corner and DOE results) are written BESIDE the
+schematic, while the source list scanned only the flat `results/` folder. So the only display that could ever have one
+selected was the one the Yield panel opens for it. With any other source, `AddStatisticsTableAsync` returned null and
+the button, enabled regardless, did nothing visible.
+
+**The fix.** `StatisticalResultFiles.In` (`src/Design/Results`) finds those results in the workspace's `schematic/`
+view folders (hidden folders and links skipped, depth-bounded, so 3D run folders cost a directory listing only); the
+library lists them through `KnownStatisticalResultsProvider`, referred to relative to the results root
+(`../Amp/schematic/Amp.yield.npy`) like every other `.npy`. Σ has a `CanExecute` on the selected source carrying
+statistics, re-evaluated on selection and on a reload, and its tooltip shows while disabled and names what it needs.
+The source combo also matches the selection by resolved path, so the Yield panel's display — which names its result by
+full path — shows its source instead of a blank. Gate: `StatisticsTableSourceTests` in
+`tests/Ui.Tests/Statistics/DisplayStatisticsTests.cs`.

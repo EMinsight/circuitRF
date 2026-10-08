@@ -29,6 +29,7 @@ public sealed class StatisticsCheckTests
     [InlineData("tune R1.R dist=gauss tol=5%",                                   "yield.spread.missing", true)]
     [InlineData("tune R1.R dist=gauss sd=2% lo=1 Ohm",                           "yield.spread.extra", true)]
     [InlineData("tune R1.R dist=gauss sd=0%",                                    "yield.spread.not-positive", true)]
+    [InlineData("tune R1.R dist=gauss sd=3 pF",                                  "yield.spread.wrong-unit", true)]
     [InlineData("tune R1.R dist=unif lo=60 Ohm hi=40 Ohm",                       "yield.spread.inverted", true)]
     [InlineData("tune R1.R dist=discrete lo=40 Ohm hi=60 Ohm by=0 Ohm",          "yield.spread.not-positive", true)]
     [InlineData("tune R1.R dist=discrete lo=40 Ohm hi=60 Ohm by=7 Ohm",          "yield.spread.step", true)]

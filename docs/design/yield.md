@@ -114,6 +114,7 @@ have seen).
 | `yield.dist.not-tunable` | error | a distribution on a key the catalog does not offer |
 | `yield.spread.missing` / `.extra` | error | the spread keys are not exactly the distribution's (`gauss` with `lo`; `tol` without `sigmas`) |
 | `yield.spread.not-a-number` | error | a spread value that resolves to no number |
+| `yield.spread.wrong-unit` | error | a spread value in a unit of another quantity than the parameter's (`sd=3 pF` on a resistance) — it would convert to a meaningless number; a bare SI prefix, a percent or a unitless parameter is never refused |
 | `yield.spread.not-positive` | error | `sd`, `tol`, `sigmas`, `trunc` or `by` ≤ 0 |
 | `yield.spread.inverted` | error | `lo` ≥ `hi` |
 | `yield.spread.step` | error | `by` does not step from `lo` to `hi` a whole number of times (to 1e-6) |
@@ -1071,6 +1072,69 @@ C active, an inert resistor not; the line round-trips byte-stable through `.cnl`
 (a `ccf` of an exact quadratic lands on the analytic optimum and the confirmation matches the prediction),
 `DoeCliVerbTests` (the verb as a process; `--json` carries the alias sets; `check` refuses), `DoePanelTests`.
 
-## Later phases
+## 18. The example, the user pages, and the series as built (brief-yield-13)
 
-Each phase appends its section above this one as it lands: YA-13 the documentation and the example.
+### 18.1 The example (R-ya13-1, R-ya13-4)
+
+`examples/Yield/` — **Tools ▸ Examples ▸ Yield, Corners and Centering** — holds one test bench per question:
+
+| Cell | What it shows | The outcome at its own settings, seed 1 |
+|---|---|---|
+| `BandpassYield` | the Optimization example's minimax bandpass at its equiripple point, each part its own value at ± 2 % (3σ, truncated at 3σ), `C1`/`C3` correlated ρ = 0.9; three `use=opt` goals and two looser `use=yield` specs; `BandpassYield.yield.cdd` saved beside the schematic | 86.4 % [83.1 %, 89.3 %] of 500, every failure the passband's; target 80 % met |
+| `AmplifierCorners` | a Statz FET whose `Betatc` makes it lose gain hot; six corners generated from −40/25/85 °C × `Vdd` 3.0/3.6 V, the statistical corner `WorstGain` saved from trial 131, `optimize corners=all` | only `t85_Vdd3p0` fails, on gain (−0.23 dB); across corners LM meets both goals in 128 simulations with that corner binding |
+| `DividerCentering` | a 1 V → 0.5 V divider, both resistors ± 3 % (3σ), `Vout` in 0.49 … 0.51 V, `R1` designable | estimate 70.8 %; centering verifies 73 % → 99.1 % on 1000 fresh trials (99.5 % with the surrogate, 410 simulations instead of 4,100) |
+
+Each bench was authored as a `.cnl`, drawn with `netlist --to-schematic` (the bandpass reuses the Optimization
+example's drawing), its corners generated and its statistical corner saved through the verbs themselves, and every
+`.csch` re-saved through `SchematicPersistence` so it is byte-canonical. The `.cdd` is `YieldDisplayPreset.Build`
+over the bench's own run with a results-root-relative source, `../BandpassYield/schematic/BandpassYield.yield.npy`
+— a display waiting for its run, as every shipped example's is.
+
+**A yield result lands beside its schematic, not under `results/`**, so the app's examples item group
+(`src/Ui/CircuitRF.Ui.csproj`) now excludes `examples/**/*.npy` as well; running an example in place would otherwise
+have shipped the bandpass's 4.6 MB result. `ExampleWorkspacesTests.TheItemGroupDoesNotShipMachineLocalState` holds
+it.
+
+Gate: `tests/Ui.Tests/Examples/YieldExampleTests.cs` — one test per bench, the CLI as a process on the shipped
+`.csch` with results redirected to a temporary folder: the bandpass's yield inside [0.83, 0.90] with only the specs
+scored and the saved display's plots those `YieldDisplayPreset` composes; the amplifier's single failing corner by
+name and the optimizer's binding corner; the divider's verified start and centred yields. All three run in about
+two seconds, so none is a benchmark.
+
+### 18.2 Decisions as built
+
+| Decision | As built | Where |
+|---|---|---|
+| D1 a tolerance is part of the entry | `TunableEntry.Stat`/`Distribution`/`Spread`; one row per key in Tuning, Optimizer and Yield | §1, §14 |
+| D2 distributions | `gauss`, `unif`, `lognorm`, `discrete`; percent vs absolute kept as text; truncation by sampling the truncated distribution; the non-physical warning at 1e-9 | §1.1, §6 |
+| D3 correlation | Gaussian copula; Higham repair, reported with its largest change | §4, §6 |
+| D4 specs are goals | `use=opt\|yield\|both`; the optimizer scores `ForOptimizer`, a run `ForYield` | §2, §4 |
+| D5 sampling | counter-based streams (seed, trial, stream); `random`, `lhs`, `sobol` (Joe–Kuo table); a trial stored as z | §6 |
+| D6 kit statistics | distribution built-ins, nominal = first argument; process/mismatch by scope; statistical sections by text scan; mismatch variants swapped in | §7 |
+| D7 did not evaluate | counted as a fail by default, `nonconverged=warn` excludes; reasons kept per trial | §8.2 |
+| D8 yield and confidence | Clopper–Pearson; auto-stop per trial count, never before 50 | §5, §8.3 |
+| D9 results | `<design>.yield.npy`, outer `trial` axis, `trials`/`nominal`/`statistics`/`contributions` groups; `<design>.corners.npy`, `<design>.doe.npy` | §8.4, `results-dataset-layout.md` |
+| D10 corners | value maps; kit selections bound at extraction; generator writes lines; statistical corners replay recorded z | §3, §10 |
+| D11 architecture | numerics in `src/Engine/Statistics`, orchestration in `src/Design/Statistics`, the panel in `src/Ui/Yield`; one evaluator (`OptimizationRun`'s batch door) | §6, §8 |
+| D12 headless writes nothing | `--save-preset`, `--save-corner`, `--write` are the only writes | §9, §10.5 |
+| D13 exit codes | 0 / 3 below target or failing corner / 1 / 2 / 130; DOE has no 3 | §9, §17.6 |
+| D14 pause, stop, live | counter-based draws make pause a hold; the Data Display follows with a Yield chip | §14.2 |
+| Centering (YA-11/12) | common random numbers, smoothed yield, noisy-objective algorithms, simulated verification; quadratic surrogate optional | §15, §16 |
+| DOE (YA-14, optional) | full/fractional/Plackett–Burman/composite designs, Lenth's margin, model optimum with a confirming simulation | §17 |
+
+### 18.3 What is left
+
+Each item names the seam it would take; none needs a format change.
+
+- **High-sigma estimation** (scaled-sigma sampling, worst-case distance, a learned fast Monte Carlo) for yields
+  beyond what a plain Monte Carlo can resolve. Seam: `StatisticalRun.EvaluateAtZ` already evaluates any point in
+  z-space, and the surrogate's `VirtualCoordinates` shows how a run scores trials it did not simulate; a new
+  `StatisticalMode` with its own estimator would sit beside `YieldEstimate`, and `statistics` would gain a
+  `method=` key (an unknown key is already a kept warning, so older readers survive it).
+- **The other simulator dialect's `statistics { process { … } mismatch { … } }` blocks.** Seam:
+  `PdkCorners.StatisticalSections` and `SpiceDistributions` read only the SPICE functions; a reader for those blocks
+  would turn each `vary` into the same process or mismatch stream (`ExpressionDraws`) a SPICE kit's call becomes, so
+  nothing downstream changes (`spice-models.md` §8.11).
+- **A distribution inside a frequency-dependent expression** stays at its nominal: the model's own evaluator has no
+  trial context at stamp time (§7). Seam: `Evaluator.Statistics` would be carried into that evaluator.
+- **Design of experiments** — built as YA-14 (§17).

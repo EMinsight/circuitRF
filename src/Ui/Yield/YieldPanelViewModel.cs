@@ -357,6 +357,12 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
             RefreshNow();
             return StatusText;
         }
+        if (ToleranceText.WrongShape(spread, d) is { } shape)
+        {
+            StatusText = $"Refused: {shape}.";
+            RefreshNow();
+            return StatusText;
+        }
         if (ToleranceText.Format(d, spread) == ToleranceText.Format(d, entry?.Spread)) return null;
         return Execute(TuningSetupEdits.WithEntry(Setup, row.Key, row.Tunable, e => e.Spread = spread),
                        $"Set the spread of {row.Key}");

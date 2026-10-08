@@ -134,6 +134,27 @@ public sealed record ResolvedSpread(
          : StatSpread.Percent(text) is { } p ? nominal * p / 100
          : Absolute(text, unit);
 
+    /// <summary>
+    /// Whether <paramref name="text"/> carries a unit of a different quantity from <paramref name="unit"/>, the
+    /// parameter's own — <c>3 pF</c> for a resistance. A percent, a bare number and a bare SI prefix (<c>2 k</c>) carry
+    /// none, and a parameter with no unit of its own accepts any.
+    /// </summary>
+    internal static bool ForeignUnit(string text, string unit)
+    {
+        if (unit.Length == 0 || StatSpread.Percent(text) is not null) return false;
+        if (!TunableValue.TryParse(text, out _, out string written, out _) || written.Length == 0) return false;
+        return Quantity(written) is { } q && q != Quantity(unit);
+    }
+
+    /// <summary>A unit's quantity — its base unit, spelled one way (<c>ohm</c> is <c>Ohm</c>); null for a bare prefix.</summary>
+    private static string? Quantity(string unit)
+    {
+        string b = Units.BaseUnit(unit);
+        if (b == unit && unit.Length == 1 && Units.Scale(unit) is { } s && s != 1) return null;
+        if (b is "deg" or "rad") return "angle";
+        return b.Equals("Ohm", StringComparison.OrdinalIgnoreCase) ? "Ohm" : b;
+    }
+
     private static double? Absolute(string text, string unit)
     {
         if (TunableValue.InUnit(text, unit) is not { } n) return null;

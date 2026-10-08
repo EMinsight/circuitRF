@@ -31,6 +31,9 @@ public sealed class FractionBar : Control
     {
         var b = Bounds;
         double y = (b.Height - 6) / 2, w = b.Width;
+        // A bar not laid out yet (a tab being activated) is zero wide, and the clamps below would be inverted ranges,
+        // which Math.Clamp throws on — inside Render, so the whole application went down.
+        if (!(w >= 2)) return;
         static double C(double v) => double.IsFinite(v) ? Math.Clamp(v, 0, 1) : 0;
         ctx.DrawRectangle(new SolidColorBrush(Color.FromArgb(0x30, 0x80, 0x80, 0x80)), null, new Rect(0, y, w, 6), 2, 2);
         var fill = IsBad ? Color.FromRgb(0xD9, 0x4F, 0x4F) : Color.FromRgb(0x3C, 0x8D, 0xD9);

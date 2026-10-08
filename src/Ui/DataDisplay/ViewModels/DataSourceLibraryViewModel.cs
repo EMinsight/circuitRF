@@ -47,6 +47,11 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
     /// <summary>Returns absolute paths of workspace-tracked loadpull known files (.spl/.lpcwave).</summary>
     public Func<IReadOnlyList<string>>? KnownLoadpullProvider { get; set; }
 
+    /// <summary>Returns absolute paths of the Monte Carlo, yield, corner and DOE results the workspace's schematics
+    /// wrote beside themselves (<see cref="CircuitRF.Design.Results.StatisticalResultFiles"/>), newest first. They are
+    /// not under <c>results/</c>, so the scan of that folder never finds them.</summary>
+    public Func<IReadOnlyList<string>>? KnownStatisticalResultsProvider { get; set; }
+
     /// <summary>Logical id persisted in .cdd (e.g. flat "ampA.npy" under results/, or abs Touchstone path).</summary>
     public string? SelectedDataSourceRef { get; private set; }
 
@@ -115,6 +120,15 @@ public partial class DataSourceLibraryViewModel : ViewModelBase
                 string name = Path.GetFileNameWithoutExtension(logicalId);
                 AvailableDataSources.Add(new DataSourceItem(name, logicalId, abs, SourceKind.Npy));
             }
+        }
+
+        // Monte Carlo, yield, corner and DOE results, beside their schematics. Referred to RELATIVE to the results
+        // root ("../Amp/schematic/Amp.yield.npy") like every other .npy, so a display saved over one travels with the
+        // workspace.
+        foreach (string abs in KnownStatisticalResultsProvider?.Invoke() ?? Array.Empty<string>())
+        {
+            string logicalId = root is null ? abs : Path.GetRelativePath(root, abs).Replace('\\', '/');
+            AvailableDataSources.Add(new DataSourceItem(Path.GetFileNameWithoutExtension(abs), logicalId, abs, SourceKind.Npy));
         }
 
         // Workspace known Touchstone files, sorted by name.

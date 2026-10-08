@@ -177,6 +177,23 @@ An agent can set up and run a yield analysis with the MCP tools alone:
 `analysis=montecarlo` is the spread alone, with no pass or fail. Neither changes the design: a trial's
 values become a preset only with `savePreset`, and a corner only with `saveCorner`, both on a `.csch`.
 
+The rest of the workflow is reachable the same way:
+
+8. **Corners.** `run` with `analysis=corners` and `generate="temp=-40,25,85;Vdd=3.0,3.6"` returns the
+   corners that cross product makes and writes nothing; adding `write=true` on a `.csch` appends them.
+   `run analysis=corners` then evaluates every enabled corner and names each goal's worst; with `mc=true`
+   it runs a yield at each corner instead.
+9. **Optimizing across corners.** `run` with `analysis=optimize` and `corners=all` meets every goal at
+   the nominal and at every corner at once, and each goal's result names the corner that binds it.
+10. **Centering.** Put `opt=1` and a range on the toleranced lines whose values may move, then `run`
+    with `analysis=center`. The verified start and centred yields are the result; `surrogate=quadratic`
+    makes each step cheaper when there are few toleranced values.
+11. **Which values matter.** `run` with `analysis=doe` and `design=pb` screens many values in a few
+    runs; `design=ccf` on the few that matter fits a curved model, and `optimum=true` confirms that
+    model's best point with a simulation.
+
+The *Yield, Corners and Centering* example is a working copy of each of these steps.
+
 ## EM runs: check the cost first {#em}
 
 An EM run is the one step that can take hours. Before starting one, the agent should run `check` on

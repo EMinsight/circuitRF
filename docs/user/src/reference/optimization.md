@@ -87,6 +87,12 @@ A template fills in the fields; change any of them:
 | **Scale** (Advanced) | What one unit of violation is worth ([below](#cost)). |
 | **Enabled** | A disabled goal is kept but not scored. |
 
+A goal also serves the [Yield](yield.html#specs) panel, as a spec. Its **Use** — set there — says
+which: **Opt**, the optimizer aims for it and the yield ignores it; **Yield**, the yield counts it and
+the optimizer ignores it; **Both**, the default. A design is usually centred against tight goals marked
+*Opt*, and judged for yield against looser copies of them marked *Yield*. The goal list here shows only
+the goals the optimizer aims for. In a `.cnl` it is `use=opt` or `use=yield` at the end of the goal line.
+
 When results exist, the editor previews the expression over the range with the limit drawn on it.
 
 Each goal row in the panel shows, at the best point so far, a bar (green when met), the worst value
@@ -471,11 +477,26 @@ every variable's count of allowed values.
 | **Time limit** | Empty: no limit. |
 | **Cost** | Least squares, or Minimax (worst violation). |
 | **Each evaluation runs** | *The goals' analyses only* (the default) or *every enabled analysis*. |
+| **Corners** | Meet every goal at these [corners](yield.html#corners) too: `all`, or names separated by commas. Empty: the nominal only. |
+| **Include the nominal** | With corners, whether the design as it stands is one of the points as well. On by default. |
 | **Parallel evaluations** | How many points of one step are simulated at once. Default: one fewer than the machine's cores. |
 | **Seed** | Fixes the random choices of the algorithms that make them, so a run can be repeated exactly. |
 | **Advanced** | The chosen algorithm's own options. |
 
 A run also stops when the best cost has not improved for 25 iterations.
+
+### Optimizing across corners {#corners}
+
+With **Corners** set, every point the optimizer tries is simulated once at each corner (and at the
+nominal), and a goal is met only when it is met at all of them. The status line says how many
+simulations one point costs. Each goal row then shows, after **@**, the corner that binds it — where it
+is worst. In the `.cnl` it is `corners=` on the optimize line: `optimize algorithm=lm corners=all`, with
+`nominal=0` to leave the nominal out.
+
+Meeting a goal at a corner is meeting it with that corner's values at their nominal. Any tolerance on
+top of that is a [yield](yield.html#corners) question: a goal met at its worst corner with no margin
+fails at that corner for about half of the parts built. In the *Yield, Corners and Centering* example
+the amplifier's gain goal, met with no margin hot at low supply, has a yield of 43 % there.
 
 ## Running, pausing, and reading the progress {#running}
 

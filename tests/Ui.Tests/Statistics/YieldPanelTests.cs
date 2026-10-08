@@ -262,3 +262,30 @@ public sealed class YieldPanelDockTests
         Assert.True(yield.Order > opt.Order);
     }
 }
+
+/// <summary>The Spread box (owner report 2026-10-08): a unit of another quantity is refused rather than read as a
+/// meaningless number, a range on a Gaussian (or a σ on a uniform) is refused naming the distribution it needs, the word
+/// sigma reads as σ, and ohm is kept and shown as Ω.</summary>
+public sealed class YieldSpreadEditTests
+{
+    [Fact]
+    public void TheSpreadBox_RefusesAForeignUnitAndAMisshapedSpread_AndReadsSigmaAndOhm()
+    {
+        var f = new YieldPanelFixture();
+        var r1 = f.Panel.Variables.Single(v => v.Key == "R1.R");
+        string before = r1.SpreadText;
+
+        r1.CommitSpread("± 3 pF");
+        Assert.Equal(before, r1.SpreadText);
+        Assert.Contains("is not in the value's own kind of unit, Ohm", f.Panel.StatusText);
+
+        r1.CommitSpread("900 … 1100 Ohm");
+        Assert.Equal(before, r1.SpreadText);
+        Assert.Contains("needs a Uniform or Discrete distribution", f.Panel.StatusText);
+
+        r1.CommitSpread("± 3 % at 2 sigma");
+        Assert.Equal("± 3 % at 2σ", r1.SpreadText);
+        r1.CommitSpread("sd 1 kohm");
+        Assert.Equal("σ 1 kΩ", r1.SpreadText);
+    }
+}

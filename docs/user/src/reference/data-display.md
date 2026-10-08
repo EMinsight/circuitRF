@@ -319,6 +319,17 @@ right-click menu has a **Trial** submenu:
 
 The same pictures are available headlessly: `circuitrf plot … --trace cube=SP1.S,i=2,j=1,y=db,colorby=pass,envelope=p:1`.
 
+### The yield and DOE displays {#yield-displays}
+
+The [Yield](yield.html#display) panel's **Open yield display** writes a display beside the result,
+`<design>.yield.cdd`, made of the plots above: for each spec, its trials coloured by pass and fail
+against the spec's limits, and a histogram of its worst value; the yield against the value that drives
+the first spec most; and the statistics table. A design of experiments' result opens as
+`<design>.doe.cdd` instead: for each spec and measurement, its effects as bars largest first with the
+noise level as a line, its value at each factor's low, centre and high, and its strongest interaction.
+Both are ordinary displays — change them as you would any other. While a run is going, every display
+holding its result follows it, with a **Yield** chip.
+
 ## Load-pull contours {#contours}
 
 {{ui: plot-loadpull-contours}}

@@ -127,6 +127,9 @@ public static class StatisticsValidator
         // Each written value must be one, and the widths positive.
         foreach (var (key, text) in Written(sp))
         {
+            // A unit of another quantity converts to a number, and a meaningless one: 3 pF on a resistance is 3e-12 Ω.
+            if (key is not ("sigmas" or "trunc") && ResolvedSpread.ForeignUnit(text, t.Unit))
+            { f.Add(StatisticsDiagnostics.SpreadWrongUnit(who, key, text, t.Unit)); shapeOk = false; continue; }
             double? v = key is "sigmas" or "trunc" ? ResolvedSpread.Number(text)
                       : key is "lo" or "hi" ? ResolvedSpread.Point(text, nominal, t.Unit)
                       : ResolvedSpread.Width(text, nominal, t.Unit);

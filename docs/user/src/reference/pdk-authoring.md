@@ -21,6 +21,7 @@ This chapter is about **producing** a kit. If you are consuming one, read
 <li><a href="#spiral">A second example: a spiral inductor</a></li>
 <li><a href="#declaring">Declaring your generators to circuitRF</a></li>
 <li><a href="#schematic-symbol">Giving a generated cell a schematic side</a></li>
+<li><a href="#statistics">Statistics: process and mismatch</a></li>
 <li><a href="#traps">Traps worth a callout</a></li>
 </ol>
 </nav>
@@ -348,6 +349,46 @@ Three consequences worth knowing:
 The symbol buys the schematic side, not a model: a cell with artwork and a glyph still has no device
 equations, and a run says so. Supply those the way [The four things a part needs](#four-halves)
 describes.
+
+## Statistics: process and mismatch {#statistics}
+
+A kit's models can carry their own spread, which a [Monte Carlo or yield](yield.html#kit) run draws.
+Write it in the SPICE model files with the distribution functions:
+
+| Function | In a trial |
+|---|---|
+| `agauss(nom, dev, k)` | Gaussian around `nom`, with `dev` at `k` σ |
+| `gauss(nom, rel, k)` | the same, `rel` a fraction of `nom` |
+| `aunif(nom, dev)`, `unif(nom, rel)` | uniform within ± `dev`, or ± `rel` × `nom` |
+| `limit(nom, dev)` | `nom − dev` or `nom + dev`, equally likely |
+
+`k` defaults to 1, and **`k = 0` means no spread** — which is how a kit switches its mismatch off with a
+flag, `agauss(vth0, 0.01, (mm_ok != 1 ? 0 : 1))`. **Outside a trial each call is its first argument**,
+evaluated alone, so every ordinary simulation, corner and optimization sees the kit's nominal model,
+bit for bit.
+
+**Where a call is written decides what kind of spread it is.** A call in a global parameter is
+**process**: drawn once per trial and shared by every device that reads it. A call inside a subcircuit —
+a parameter default, or a device line in its body — is **mismatch**: drawn afresh for each instance.
+Nothing else marks the difference, so put the process spread in the globals and the per-device spread in
+the subcircuits.
+
+**Put the statistical globals in a section of their own** in the corner library — `.lib stat`, beside
+`.lib tt` and `.lib ss` — that redefines the process globals as distributions. circuitRF finds the
+statistical sections by reading the library for distribution calls, and offers them with the kit's other
+corners. Choosing one in the corner picker makes a Monte Carlo draw it; the Yield panel's **Kit
+statistics** row says when the kit has a statistical section that is not chosen. A **mismatch** section
+can include a second copy of the part library whose subcircuits carry the per-instance draws: when that
+section is chosen, circuitRF uses those subcircuits in place of the ordinary ones. A section that holds no
+distribution changes nothing.
+
+Three things to know when writing them:
+
+- A distribution inside a **frequency-dependent** expression stays at its nominal in every trial.
+- A parameter whose value is a distribution **cannot be tuned or optimized** — it is an expression. A
+  user who wants to tune it writes its nominal as a plain value with a tolerance of their own.
+- Only the SPICE functions above are read. A `statistics { process { … } mismatch { … } }` block in
+  another simulator's syntax is not.
 
 ## Traps worth a callout {#traps}
 

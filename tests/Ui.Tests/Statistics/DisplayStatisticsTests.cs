@@ -298,3 +298,39 @@ public sealed class HistogramPlotParityTests
         Assert.Equal(WithoutSkiaIds(mine), WithoutSkiaIds(File.ReadAllText(svg, new System.Text.UTF8Encoding(false))));
     }
 }
+
+/// <summary>R-ya8-5, owner report 2026-10-08: Σ did nothing after a yield run, because a yield result lives beside its
+/// schematic and the source list scanned only <c>results/</c>. It is listed now, Σ is enabled only while such a result
+/// is the source, and a display naming the result by its full path shows it in the source list.</summary>
+public sealed class StatisticsTableSourceTests
+{
+    [Fact]
+    public async Task AYieldResultBesideItsSchematic_IsListed_AndSigmaIsEnabledOnlyWhileItIsTheSource()
+    {
+        string ws = OptCli.Dir();
+        Directory.CreateDirectory(Path.Combine(ws, "results"));
+        string npy = Path.Combine(ws, "Div", "schematic", "Div.yield.npy");
+        Directory.CreateDirectory(Path.GetDirectoryName(npy)!);
+        var run = StatisticalRun.Create(PreparedCircuit.FromText(YieldCircuits.Divider("trials=40"), null, null),
+                                        new StatisticalOptions { ResultPath = npy });
+        Assert.Null(run.Refusal);
+        run.Run();
+        Assert.True(File.Exists(npy));
+
+        var vm  = new CircuitRF.Ui.DataDisplay.ViewModels.DisplayWindowViewModel();
+        var lib = vm.DataSourceLibrary;
+        lib.ResultsRootProvider             = () => Path.Combine(ws, "results");
+        lib.KnownStatisticalResultsProvider = () => CircuitRF.Design.Results.StatisticalResultFiles.In(ws);
+        lib.RefreshAvailableDataSources();
+
+        var item = Assert.Single(lib.AvailableDataSources);
+        Assert.Equal("../Div/schematic/Div.yield.npy", item.LogicalId);
+        Assert.False(vm.AddStatisticsTableCommand.CanExecute(null));
+
+        await lib.SelectDataSourceAsync(item.LogicalId);
+        Assert.True(vm.AddStatisticsTableCommand.CanExecute(null));
+
+        await lib.SelectDataSourceAsync(npy);                            // the Yield panel's display names it rooted
+        Assert.Equal(item, vm.SelectedDataSourceItem);
+    }
+}

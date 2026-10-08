@@ -127,8 +127,14 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     /// </summary>
     public DataSourceItem? SelectedDataSourceItem
     {
+        // By logical id, else by the file it resolves to: the Yield panel's own display names its result by its full
+        // path, and the list names the same file relative to the results root.
         get => DataSourceLibrary.AvailableDataSources
-                   .FirstOrDefault(i => i.LogicalId == DataSourceLibrary.SelectedDataSourceRef);
+                   .FirstOrDefault(i => i.LogicalId == DataSourceLibrary.SelectedDataSourceRef)
+            ?? (DataSourceLibrary.SelectedDataSourceAbs is { } abs
+                   ? DataSourceLibrary.AvailableDataSources.FirstOrDefault(i =>
+                         string.Equals(Path.GetFullPath(i.AbsolutePath), Path.GetFullPath(abs), StringComparison.OrdinalIgnoreCase))
+                   : null);
         set
         {
             if (value is null) return;
@@ -373,8 +379,11 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
         {
             OnPropertyChanged(nameof(SelectedDataSourceItem));
             OnPropertyChanged(nameof(AwaitingRunText));
+            AddStatisticsTableCommand.NotifyCanExecuteChanged();
             RaiseDirtyChanged();
         };
+        // A run finishing reloads the selected file in place — it may only now carry its statistics.
+        DataSourceLibrary.LibraryChanged += (_, _) => AddStatisticsTableCommand.NotifyCanExecuteChanged();
 
         UpdateThemeFromSystem();
         if (Application.Current is not null)
@@ -503,11 +512,16 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
     [RelayCommand] private void AddPolarPlot() => DataDisplay?.AddPlot(PlotType.Polar);
     [RelayCommand] private void AddTablePlot() => DataDisplay?.AddPlot(PlotType.Table);
 
-    /// <summary>The statistics table of the selected Monte Carlo result (brief-yield-8 R-ya8-5).</summary>
-    [RelayCommand] private async Task AddStatisticsTable()
+    /// <summary>The statistics table of the selected Monte Carlo result (brief-yield-8 R-ya8-5). Disabled, rather than
+    /// pressed to no effect, while the selected source carries no statistics — its tooltip says what it needs.</summary>
+    [RelayCommand(CanExecute = nameof(CanAddStatisticsTable))]
+    private async Task AddStatisticsTable()
     {
         if (DataDisplay is { } d) await d.AddStatisticsTableAsync();
     }
+
+    /// <summary>Whether the selected source is a result with a statistics table — a Monte Carlo or yield run's.</summary>
+    public bool CanAddStatisticsTable => StatisticsTablePreset.Available(DataSourceLibrary.SelectedEntry?.Data);
 
     /// <summary>
     /// <b>ANT-10's 3D pattern, ADDABLE.</b> Reported 2026-09-11: the 3D pattern is only reachable

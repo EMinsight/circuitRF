@@ -135,6 +135,10 @@ back as `polar(42.4,21.3) Ohm`, not as a rectangular number.
   taking more than about two seconds, a badge on ⚙ suggests it.
 - **Every open Data Display bound to the schematic's results follows**, with a small *Tuning* chip
   while it shows tuned results. No trace needs to be changed for this.
+- **Evaluate at**, in the toolbar when the schematic has [corners](yield.html#corners), chooses where
+  each move is simulated: *Nominal*, or one corner — its temperature, kit sections and values laid over
+  the sliders' values. A statistical corner replays its trial's draws around them. The chip then reads
+  *Tuning · hot*, say. **Push** still writes the sliders' values alone, never the corner's.
 
 **■ Stop** ends the session and writes the last result shown as the schematic's results file, marked
 as coming from tuned values and which ones. Closing the schematic, Revert and Push also stop it.

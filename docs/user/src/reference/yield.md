@@ -4,14 +4,14 @@ slug: reference/yield.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Yield
 lede: Give values a tolerance, mark which goals are specs, and find out how many builds of the design meet them — and which ones do not.
-keywords: yield, design centering, centering, surrogate, monte carlo, tolerance, tolerances, distribution, gaussian, uniform, lognormal, discrete, truncation, spread, correlation, specs, trials, seed, sampling, latin hypercube, sobol, auto-stop, confidence, interval, corners, statistical corner, contributions, sensitivity, histogram, kit statistics, process, mismatch
+keywords: yield, design centering, centering, surrogate, monte carlo, tolerance, tolerances, distribution, gaussian, uniform, lognormal, discrete, truncation, spread, correlation, specs, trials, seed, sampling, latin hypercube, sobol, auto-stop, confidence, interval, corners, statistical corner, contributions, sensitivity, histogram, kit statistics, process, mismatch, cdf, normal quantile, envelope, scatter, design of experiments, doe, optimizing across corners, evaluate at
 ---
 
 <nav class="toc">
 <h2>On this page</h2>
 <ol>
 <li><a href="#what">What the Yield panel does</a></li>
-<li><a href="#modes">The four modes</a></li>
+<li><a href="#modes">The five modes</a></li>
 <li><a href="#tolerances">Tolerances</a></li>
 <li><a href="#spread">Writing a spread</a></li>
 <li><a href="#correlations">Correlations</a></li>
@@ -21,8 +21,12 @@ keywords: yield, design centering, centering, surrogate, monte carlo, tolerance,
 <li><a href="#running">Running, pausing and reading the yield</a></li>
 <li><a href="#trials">The trial table</a></li>
 <li><a href="#display">The yield display</a></li>
+<li><a href="#plots">Which plot answers which question</a></li>
 <li><a href="#corners">Corners</a></li>
+<li><a href="#optimizing-corners">Optimizing and tuning across corners</a></li>
 <li><a href="#centering">Centering</a></li>
+<li><a href="#doe">Design of experiments</a></li>
+<li><a href="#example">The example</a></li>
 <li><a href="#headless">From the command line, and from an agent</a></li>
 </ol>
 </nav>
@@ -49,6 +53,11 @@ The five buttons at the top choose what **▶** does:
 | **Corners** | Every enabled corner evaluated once — or, with **MC at each corner**, a Monte Carlo at each. |
 | **Centering** | The designable values moved to where the most trials meet the specs, then checked on fresh trials. |
 | **DOE** | A design of experiments: which values move each spec and measurement, and how they interact. |
+
+**Monte Carlo or Yield?** A Monte Carlo answers *how much does it vary* — the spread of every
+measurement, whether or not anything is a spec. A Yield run answers *how many pass*, and needs at least
+one goal used as a spec. Both draw the same trials from the same seed, so a Yield run's spread is the
+Monte Carlo's.
 
 ## Tolerances {#tolerances}
 
@@ -90,7 +99,10 @@ Type into the Spread box and press Enter:
 | `4 … 8 by 2` | Discrete: 4, 6 or 8, equally likely. |
 | `σ 2 %, trunc 3σ` | A Gaussian cut off at ± 3σ — drawn from the truncated distribution, never clipped. |
 
-A percentage follows the nominal when the nominal moves; an absolute value does not.
+A percentage follows the nominal when the nominal moves; an absolute value does not. An absolute value
+must be in the value's own kind of unit — a capacitance in pF, nF or F, say; `± 3 pF` on a resistor is
+refused. A range needs **Uniform** or **Discrete**, a σ needs **Gaussian** or **Lognormal**, and a step
+needs **Discrete**: choose the distribution first. `sigma` may be written for σ.
 
 ## Correlations {#correlations}
 
@@ -100,10 +112,17 @@ that cannot all hold at once is shown with the nearest set that can — which is
 
 ## Kit statistics {#kit}
 
-When the design's kits carry statistical model sections, a **Kit statistics** row appears: **Process**
-(one draw per trial, shared by every device) and **Mismatch** (a draw per device per trial) can be
-switched off independently. When a kit offers a statistical section that is not selected, **Choose a
-corner…** opens the corner picker in the Analyses panel.
+A kit can carry its own spread: model parameters written as distributions, which every ordinary
+simulation reads at their nominal and a trial draws. Most kits keep them in a **statistical section** of
+their corner library — chosen in the Analyses panel's corner picker like any other corner (a `stat`
+section beside `tt` and `ss`, say). With it chosen, a Monte Carlo draws the kit's statistics as well
+as your own tolerances.
+
+When the design's kits carry statistics, a **Kit statistics** row appears: **Process** (one draw per
+trial, shared by every device) and **Mismatch** (a draw per device per trial) can be switched off
+independently — to see how much of the spread each one causes. When a kit offers a statistical section
+that is not selected, **Choose a corner…** opens the corner picker in the Analyses panel. How a kit
+writes its statistics is in [PDK authoring](pdk-authoring.html#statistics).
 
 ## Specs {#specs}
 
@@ -144,6 +163,19 @@ shows trials done, elapsed time and an estimate of the time left. In Yield mode 
 yield, its interval as a bar with the target marked on it, and how many trials did not evaluate. Every
 open Data Display holding the result follows the run live, with a **Yield** chip.
 
+**Reading the yield.** The yield is the fraction of trials that met every spec, and the interval
+around it is where the true yield lies, at the chosen confidence, given only that many trials: 86.4 %
+[83.1 %, 89.3 %] from 500 trials. The interval narrows with the square root of the trial count — four
+times the trials for half the width. The target is met when the yield is at or above it; when the
+interval still straddles the target, the trial count cannot tell the two apart, and more trials, or
+**Auto-stop**, will. With Auto-stop on, the run ends as soon as the interval lies wholly on one side of
+the target, so a design far from the target stops early and one close to it runs to the trial limit.
+
+**Trials that did not evaluate.** A trial whose simulation did not converge has no value to judge. By
+default it counts as a fail, because a part that does not simulate is rarely a part that works; with
+**Did not evaluate: Warn** it is left out of the count instead. Either way the count is shown beside the
+yield and every such trial is listed in the table with the reason.
+
 The result is written beside the schematic as `<name>.yield.npy` — the same file
 `circuitrf yield` writes for the same schematic and seed, byte for byte.
 
@@ -171,6 +203,27 @@ histogram of each spec's worst value with its limits; a yield sensitivity over t
 the first spec most; and the statistics table. Every plot is an ordinary one: change it as you would
 any other — see [the Data Display](data-display.html).
 
+## Which plot answers which question {#plots}
+
+Every plot below is on a trace card's **Statistics** button, over any trace of the result — see
+[Monte Carlo statistics](data-display.html#statistics) and [trials](data-display.html#trials) for the
+menus.
+
+| Question | Plot |
+|---|---|
+| How is a spec's worst value spread, and how far is it from the limit? | **Histogram** of `goal:<spec>:worst`, with the limit as a dashed line |
+| What fraction of parts land below a value? | **CDF** — read the yield at any limit straight off it |
+| Is the spread Gaussian, or does a tail reach further? | **Normal Quantile** — a straight line when it is Gaussian |
+| Which nominal would give more yield? | **Yield Sensitivity vs** a value — the yield in each bin of that value; the nominal sits best under the tallest bars |
+| Where across the band do parts fail? | The trials as a family, **Colour By ▸ Pass / Fail** |
+| What does the band look like across thousands of trials? | **Envelope** (P1–P99, say) with **Show Curves** off |
+| Does one value drive a spec, and in which direction? | **Scatter vs** that value, with **Fit Line** |
+| Which values matter most? | **Contributions** — each value's share, largest first |
+
+A contribution is a straight-line fit. When a spec gets worse whichever way a value moves — a filter's
+passband edge as a resonator is detuned either way, say — the fit explains little (a low R² in the label)
+and the shares say little; the scatter shows the shape.
+
 ## Corners {#corners}
 
 In Corners mode the panel lists the schematic's corners — name, enabled, the kit sections, the
@@ -179,6 +232,22 @@ temperature and the values each binds; a statistical corner shows the trial it r
 and the values you type, and shows how many before it writes them. **▶** evaluates every enabled corner
 and shows a grid of corner × spec: the margin in each cell, failing cells red, each spec's worst corner
 in bold. With **MC at each corner**, the grid shows each spec's yield at each corner instead.
+
+**A statistical corner** replays one trial. **Save as corner…** on a trial's row (or on a plot) makes a
+corner that applies that trial's draws — the offset of each toleranced value from its nominal, and the
+kit's draws — around whatever the design's values are now, so it follows the design as you tune it.
+Save the worst trial of a run as a corner, and the optimizer can design against it.
+
+## Optimizing and tuning across corners {#optimizing-corners}
+
+The [Optimizer](optimization.html#corners) can meet every goal at every corner at once: set **Corners**
+in its settings to `all`, or to names. Each point it tries then costs one simulation per corner, and
+each goal names the corner that binds it. In [Tuning](tuning.html#running), **Evaluate at** moves the
+sliders' simulations to one corner, so you can tune where the design is worst.
+
+A goal met at a corner with no margin is met there only at the corner's nominal: the parts' tolerances
+still push about half of the builds below it. Run **MC at each corner** after optimizing to see that
+corner's yield, and give the goal margin where it binds.
 
 ## Centering {#centering}
 
@@ -238,6 +307,15 @@ just those. **Model optimum** (crosshair) then searches the fitted model for whe
 met inside the ranges, and checks that point with one real simulation — the panel shows what the model
 predicted beside what the simulation gave. **Send to Tuning** loads the point into the Tuning sliders;
 **Send to Optimizer** makes it where the Optimizer's next run starts.
+
+## The example {#example}
+
+**Tools ▸ Examples ▸ Yield, Corners and Centering** is a workspace with one bench per part of this
+page, each run taking a second or two: a bandpass filter estimated against specs loosened from its
+optimizer goals, with its one-click yield display saved; an amplifier with six generated temperature and
+supply corners and a statistical corner, failing hot at low supply until it is optimized across all of
+them; and a bias divider centred from 73 % to 99 %. Its README walks through each with the numbers a run
+gives.
 
 ## From the command line, and from an agent {#headless}
 

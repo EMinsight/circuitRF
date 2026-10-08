@@ -10989,6 +10989,13 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private string? GetResultsRoot()
         => RunResultsWriter.ResolveResultsRoot(CurrentWorkspacePath, _recovery.SessionDir);
 
+    /// <summary>The Monte Carlo, yield, corner and DOE results beside the workspace's schematics — what the Yield
+    /// panel and <c>circuitrf yield</c> write, and what the Data Display's Σ button tables.</summary>
+    private IReadOnlyList<string> GetKnownStatisticalResults()
+        => CurrentWorkspacePath is { } cwsPath && System.IO.Path.GetDirectoryName(cwsPath) is { } root
+            ? CircuitRF.Design.Results.StatisticalResultFiles.In(root)
+            : Array.Empty<string>();
+
     private IReadOnlyList<string> GetKnownTouchstoneFiles()
     {
         if (CurrentWorkspacePath is not { } cwsPath) return Array.Empty<string>();
@@ -11042,6 +11049,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         lib.ResultsRootProvider     = GetResultsRoot;
         lib.KnownTouchstoneProvider = GetKnownTouchstoneFiles;
         lib.KnownLoadpullProvider   = GetKnownLoadpullFiles;
+        lib.KnownStatisticalResultsProvider = GetKnownStatisticalResults;
         lib.AddAsGoal               = AddGoalFromTrace;
         // brief-yield-9 R-ya9-6: what a selected trial's context menu does.
         lib.SendTrialToTuning       = SendTrialToTuning;

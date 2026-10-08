@@ -1,0 +1,215 @@
+{
+  "FormatVersion": 2,
+  "CellName": "DividerCentering",
+  "GridSize": 100,
+  "GridSnap": true,
+  "AuthorGridDivisor": 20,
+  "Components": [
+    {
+      "InstanceName": "V1",
+      "Symbol": "Vdc",
+      "X": 0,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "Vdc",
+          "Expression": "1",
+          "Unit": "V",
+          "ShowOnSchematic": true,
+          "Dimension": "Voltage"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          270,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "R1",
+      "Symbol": "Resistor",
+      "X": 600,
+      "Y": -0,
+      "Rotation": "R270",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "1000",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ]
+    },
+    {
+      "InstanceName": "R2",
+      "Symbol": "Resistor",
+      "X": 1200,
+      "Y": 500,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [
+        {
+          "Name": "R",
+          "Expression": "1033",
+          "Unit": "Ohm",
+          "ShowOnSchematic": true,
+          "Dimension": "Resistance"
+        }
+      ],
+      "LabelOffsets": [
+        [
+          260,
+          -325
+        ]
+      ]
+    },
+    {
+      "InstanceName": "GND1",
+      "Symbol": "Ground",
+      "X": 0,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    },
+    {
+      "InstanceName": "GND2",
+      "Symbol": "Ground",
+      "X": 1200,
+      "Y": 700,
+      "Rotation": "R0",
+      "MirrorX": false,
+      "Disable": "None",
+      "Parameters": [],
+      "ShowTypeLabel": false,
+      "ShowInstanceName": false
+    }
+  ],
+  "Wires": [
+    {
+      "Points": [
+        [
+          400,
+          0
+        ],
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          300
+        ]
+      ]
+    },
+    {
+      "Points": [
+        [
+          800,
+          0
+        ],
+        [
+          1200,
+          0
+        ],
+        [
+          1200,
+          300
+        ]
+      ]
+    }
+  ],
+  "NetLabels": [
+    {
+      "X": 200,
+      "Y": 0,
+      "Name": "in",
+      "OwnerWireIndex": 0,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    },
+    {
+      "X": 1000,
+      "Y": 0,
+      "Name": "out",
+      "OwnerWireIndex": 1,
+      "SegmentIndex": 0,
+      "AlongT": 0.5,
+      "OffsetX": 0,
+      "OffsetY": 0
+    }
+  ],
+  "Dots": [],
+  "CanvasObjects": [],
+  "View": {
+    "PanX": 0,
+    "PanY": 0,
+    "Zoom": 1
+  },
+  "Analyses": [
+    {
+      "Type": "dc",
+      "Name": "DC1",
+      "Enabled": true
+    }
+  ],
+  "Tuning": {
+    "Variables": [
+      {
+        "Key": "R1.R",
+        "Tune": true,
+        "Opt": true,
+        "Min": "500 Ohm",
+        "Max": "2000 Ohm",
+        "Stat": true,
+        "Distribution": "Gauss",
+        "Spread": {
+          "Tol": "3%",
+          "Sigmas": "3"
+        }
+      },
+      {
+        "Key": "R2.R",
+        "Stat": true,
+        "Distribution": "Gauss",
+        "Spread": {
+          "Tol": "3%",
+          "Sigmas": "3"
+        }
+      }
+    ],
+    "Goals": [
+      {
+        "Name": "Vout",
+        "Expression": "DC1.V(\u0022out\u0022)",
+        "Analysis": "DC1",
+        "Type": "In",
+        "Limit": "0.49",
+        "UpperLimit": "0.51",
+        "Weight": 1,
+        "Enabled": true
+      }
+    ],
+    "Statistics": {
+      "Trials": 500,
+      "Target": 95
+    },
+    "Centering": {
+      "Trials": 100,
+      "MaxIterations": 10
+    }
+  }
+}

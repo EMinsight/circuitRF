@@ -124,6 +124,8 @@ convention behind both.</p>
 | `opt` | `.csch` or `.cnl` | The schematic's saved optimization — the [Optimizer](optimization.html)'s own run | The best values and each goal's result to stdout; **nothing** in the design (`--save-preset` adds a preset) |
 | `yield mc`, `yield estimate`, `yield trial` | `.csch` or `.cnl` | A Monte Carlo or yield run over the tolerances on the tune lines, the kit's statistics and the `statistics` line | The yield, each goal's result and the spread to stdout; the trials to `<design>.yield.npy`; **nothing** in the design (`--save-preset`, `--save-corner` with `--trial`) |
 | `yield corners` | `.csch` or `.cnl` | The design at every enabled corner, or a Monte Carlo at each (`--mc`) | A corner × goal margin table to stdout; the corners to `<design>.corners.npy`; **nothing** in the design (`--generate … --write` on a `.csch`) |
+| `yield center` | `.csch` or `.cnl` | Design centering — the [Yield](yield.html#centering) panel's Centering run | The verified start and centred yields and the centred values to stdout; the verification to `<design>.yield.npy`; **nothing** in the design (`--save-preset` adds a preset) |
+| `yield doe` | `.csch` or `.cnl` | A design of experiments over the optimizer's or the tolerances' values | Each response's effects to stdout; the runs to `<design>.doe.npy`; **nothing** in the design |
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
 | `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | The same comparison the [LVS panel](lvs.html)'s **Compare** button calls | **Nothing** — the report to stdout; `-o report.txt` |
@@ -708,6 +710,7 @@ point and the margin there; an unmet one its worst point, with a negative margin
 |---|---|
 | `--algorithm`, `--max-iter`, `--max-evals`, `--time`, `--cost lsq\|minimax`, `--analyses goals\|all`, `--parallel`, `--seed` | Override the saved settings, for this run only. |
 | `--vars key,key`, `--goals name,name` | Optimize only these of the saved variables, against only these goals. A complex value is named by its parts (`mag(Zs)`), never whole. |
+| `--corners all\|none\|name,name` | Meet the goals at these [corners](yield.html#corners) as well as the nominal, overriding the saved `corners=`. Each point then costs one simulation per corner, and each goal's result names the corner that binds it. |
 | `--snap` | [Snap and polish](optimization.html#snap) at the end. |
 | `--sensitivity` | A sensitivity pass at the best point. |
 | `--show-iterations` | Every iteration as well, one line each on stderr (and in `--json`). The default is the final result only. |
@@ -725,7 +728,7 @@ specification either. Over [MCP](ai-agents.html) the same run is `run analysis=o
 ## `yield` — Monte Carlo and yield from the command line {#yield}
 
 ```text
-circuitrf yield mc|estimate|trial|corners <schematic.csch | netlist.cnl> [flags]
+circuitrf yield mc|estimate|trial|corners|center|doe <schematic.csch | netlist.cnl> [flags]
 ```
 
 `yield` draws the design's tolerances — the `dist=` keys on its tune lines, and its kit's process and
@@ -819,6 +822,53 @@ corner tm40_R2R1100 temp=-40 R2.R=1100 Ohm
 corner t25_R2R900 temp=25 R2.R=900 Ohm
 ...
 ```
+
+### Centering {#yield-center}
+
+`yield center` moves the values marked `opt=1`, within their ranges, to where the most trials meet the specs, and
+then checks the result: the starting values and the centred ones are each run on the same set of fresh trials. On
+the *Yield, Corners and Centering* example:
+
+```text
+$ circuitrf yield center DividerCentering/schematic/DividerCentering.csch
+Design centering: DividerCentering/schematic/DividerCentering.csch
+  cmaes · 100 common trials (seed 1) · 10 iterations · 4100 simulations · the iteration limit (10) was reached
+Verified: yield 73 % [70.1 %, 75.7 %] → 99.1 % [98.3 %, 99.6 %] on the same 1000 fresh trials; the intervals do not overlap · target 95.0 %: met
+...
+```
+
+The verified pair is the result; the search's own yields, on its common trials, are shown beside it and labelled as
+such. The flags are the `center` line's, for this run only — `--algorithm`, `--trials` (the common trials each
+position is scored on), `--verify`, `--max-iter`, `--max-evals`, `--time`, `--width`, `--parallel`, `--seed` — with
+`--target`, `--confidence`, `--sampling`, the kit switches, `--vars` and `--goals`.
+
+| Flag | |
+|---|---|
+| `--surrogate quadratic` | Score each position on a quadratic fit of the specs' margins instead of simulating every trial — 410 simulations instead of 4,100 on the divider above. The final check is still simulated. |
+| `--save-preset <name>` | Add the centred values to the schematic as a preset. Refused for a `.cnl`. |
+| `-o out.npy` | Where the verification of the centred values is written. |
+
+Exit **0** means the verified yield met `--target`; **3**, that it fell short; **1**, refused; **2**, no position
+evaluated; **130**, cancelled with nothing written. Over MCP it is `run analysis=center`.
+
+### Design of experiments {#yield-doe}
+
+`yield doe` runs the design at a planned set of combinations of its values — the `opt=1` values at the ends of
+their ranges, or with `--factors stat` the toleranced values at their nominal ± k σ — and reports, for each spec and
+measurement, each value's effect and each pair's interaction, largest first. An effect larger than the noise level
+estimated from the small ones is starred; an effect a fractional design cannot tell apart from another lists it.
+
+| Flag | |
+|---|---|
+| `--design full2\|frac\|pb\|ccf` | Full factorial, fractional factorial, Plackett–Burman screening, or a face-centred composite for a curved model. |
+| `--resolution 4\|5` | For `frac`. |
+| `--factors opt\|stat`, `--levels range\|sigma:k` | Which values are the factors, and where their low and high ends are. |
+| `--centre n` | Centre points added (`0` adds none). |
+| `--responses goals\|all` | Which goals are responses: the specs, or every enabled goal. Every scalar measurement is a response either way. |
+| `--optimum` | Search the fitted model for the point that best meets the specs, and simulate that point to confirm it. |
+
+It writes `<design>.doe.npy` and nothing in the design. There is no target, so the exit codes are **0**, **1**, **2**
+and **130**. Over MCP it is `run analysis=doe`.
 
 ## `rail` — power integrity, headless {#rail}
 

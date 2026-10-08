@@ -364,7 +364,10 @@
       `.gitignore` and `.gitattributes` are all taken - which matters, because a workspace whose
       `.cws` did not travel is not a workspace. What is deliberately NOT here is any RESULT: an
       example ships its design and its EM setup, and the user runs them. `results/**` is excluded
-      for that reason, and because the antenna's own run is 52 MB.
+      for that reason, and because the antenna's own run is 52 MB. `*.npy` is excluded too: a
+      Monte Carlo, yield, corner or DOE run writes its result BESIDE its schematic
+      (`<cell>.yield.npy`, `<cell>.corners.npy`, `<cell>.doe.npy`), not under `results/`, and the
+      Yield example's bandpass alone is 4.6 MB. No example ships an `.npy`.
 
       NOR IS ANY MACHINE-LOCAL STATE. `examples/` is a tree the owner OPENS, so running circuitRF
       leaves things in it that belong to that machine and not to the release: `.generated-cells/`
@@ -384,7 +387,7 @@
       comment, which is why only the directory matters.
     -->
     <None Include="../../examples/**/*.*"
-          Exclude="../../examples/**/results/**/*.*;../../examples/**/.DS_Store;../../examples/**/.generated-cells/**/*.*;../../examples/**/.cwsuser;../../examples/**/.crf-*;../../examples/**/*.crf-tmp-*">
+          Exclude="../../examples/**/results/**/*.*;../../examples/**/*.npy;../../examples/**/.DS_Store;../../examples/**/.generated-cells/**/*.*;../../examples/**/.cwsuser;../../examples/**/.crf-*;../../examples/**/*.crf-tmp-*">
       <Link>examples/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
