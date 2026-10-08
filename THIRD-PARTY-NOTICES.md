@@ -208,6 +208,7 @@ None of these impose obligations beyond retaining their notices.
 | zlib 1.3.2 (linked statically into the gdstk worker) — Copyright (C) 1995-2026 Jean-loup Gailly and Mark Adler; licence text [`licenses/Zlib.txt`](licenses/Zlib.txt) | zlib licence | https://zlib.net |
 | libc++ and libunwind (`libc++.dll`, `libunwind.dll`) — the C++ runtime the Windows geometry worker and its OCCT libraries share, and that the gdstk worker links statically, from llvm-mingw; licence text [`licenses/Apache-2.0-with-LLVM-exceptions.txt`](licenses/Apache-2.0-with-LLVM-exceptions.txt) | Apache-2.0 WITH LLVM-exception | https://github.com/mstorsjo/llvm-mingw |
 | Markdig | BSD-2-Clause | https://github.com/xoofx/markdig |
+| Sobol direction numbers `new-joe-kuo-6.21201`, first 1111 dimensions (data, embedded in `CircuitRF.Engine` as `src/Engine/Statistics/SobolDirections.txt`) — Copyright (c) 2008, Frances Y. Kuo and Stephen Joe; licence text [`licenses/Joe-Kuo-Sobol.txt`](licenses/Joe-Kuo-Sobol.txt) | BSD-3-Clause-style | https://web.maths.unsw.edu.au/~fkuo/sobol/ |
 | Svg (svg-net) | Microsoft Public License (MS-PL) | https://github.com/svg-net/SVG |
 | xunit, Microsoft.NET.Test.Sdk, coverlet.collector | MIT / Apache-2.0 | *(test-time only; not shipped)* |
 

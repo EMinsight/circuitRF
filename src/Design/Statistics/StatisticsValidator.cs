@@ -114,7 +114,7 @@ public static class StatisticsValidator
 
     /// <summary>A resistance, capacitance, inductance, conductance or length with a positive nominal —
     /// or a magnitude — is non-physical at or below zero.</summary>
-    private static bool MustBePositive(Tunable t, double nominal)
+    internal static bool MustBePositive(Tunable t, double nominal)
     {
         if (nominal <= 0) return false;
         if (t.Part == ComplexPart.Mag) return true;

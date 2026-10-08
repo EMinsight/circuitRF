@@ -161,8 +161,87 @@ hypercube and low-discrepancy samples are not independent and typically estimate
 random sampling does, so the binomial interval is conservative for them. That is said here, once, and not
 on screen (D8).
 
+## 6. YA-2 — sampling and batch evaluation
+
+A trial is produced in three steps, each a pure function, and evaluated through the optimizer's own
+evaluator.
+
+**1. Streams and the plan** (`src/Engine/Statistics`, pure numerics). Each statistical entry is one
+*stream*, identified by `StatStreams.Id` — FNV-1a over the key text's UTF-8, then `SplitMix64.Mix` (the
+optimizer's generator's output mix, made public for this). A draw is `Hash(seed, trial, stream, k)`: each
+input folded in through its own mix, the top 53 bits offset by half a step so the uniform lies in the open
+interval (0, 1) and Φ⁻¹ of it is finite. No generator state exists, so trial N drawn alone equals trial N
+inside a parallel batch, and a new entry moves no other entry's `random` draws (D5). `SamplingPlan` turns
+trial t into one **independent** standard normal per stream:
+
+| `sampling=` | Trial t (1-based), stream s |
+|---|---|
+| `random` | Φ⁻¹(U(seed, t, s)) |
+| `lhs` | Φ⁻¹((π_s(t−1) + v)/N): π_s a Fisher–Yates permutation of 0…N−1 whose draws sit at trial −N (no real trial), v = U(seed, t, s). One draw per stratum per stream. |
+| `sobol` | Φ⁻¹ of point t−1 of a scrambled Sobol sequence, Gray-code order, computed directly from the index. Streams take dimensions in ascending order of their ids, so the mapping does not depend on discovery order. |
+
+**Sobol.** Direction numbers are S. Joe and F. Y. Kuo's `new-joe-kuo-6.21201`, its first 1111 dimensions
+(the range over which the set satisfies Property A), embedded unmodified as
+`src/Engine/Statistics/SobolDirections.txt` with its BSD-style licence (`licenses/Joe-Kuo-Sobol.txt`,
+`THIRD-PARTY-NOTICES.md` §4). Dimension 0 is van der Corput. 32-bit direction numbers: 2³² points. The
+scramble is a **random linear matrix scramble** (per dimension a lower-triangular binary matrix with a unit
+diagonal, each output digit mixing in the digits above it) followed by a **random digital shift**, both drawn
+from the stream hash with the run seed and the dimension; both preserve the net structure. A stream past
+dimension 1111 is drawn at `random` and the sampler reports `yield.sampling.sobol-dimensions`. The unscrambled
+first ten points in three dimensions match those the table's authors publish for their reference generator.
+
+**2. Correlation** (`GaussianCopula`). The plan's normals of the streams named by `correlate` lines pass through
+z ← L·z, L the Cholesky factor of the matrix `StatisticsValidator.CorrelationOf` builds (§4) — restricted to the
+keys that are statistical, a principal submatrix of a valid matrix being valid. Uncorrelated streams skip it.
+A matrix that is not positive definite is repaired (Higham, §4) and the sampler's notes carry
+`yield.correlate.repair` with the largest change. The result is a `StatisticalSample`: the trial number and
+its correlated z per stream key — the stored form of a trial (D5).
+
+**3. Values** (`SampleValues.Apply`, `src/Design/Statistics`). Each entry's spread is resolved
+(`ResolvedSpread`, §1.1) against the nominal it is **given** — `SampleValues.Nominals(catalog, moved)` yields
+the catalog's tunables at a moved design (a real value by its key, a complex value whole) — and its marginal
+(`ResolvedSpread.Marginal`) evaluated at z:
+
+| `dist=` | Value at z | Mean, variance |
+|---|---|---|
+| `gauss` | μ + σ·q(z) | μ; σ²·(1 − 2kφ(k)/(1 − 2Φ(−k))) when truncated at k |
+| `lognorm` | m·exp(s·q(z)), s = σ/m: the **median** is the nominal | m·M(s); m²·(M(2s) − M(s)²), M(t) = E[e^{tY}] of the (truncated) standard normal |
+| `unif` | lo + (hi − lo)·Φ(z) | (lo + hi)/2; (hi − lo)²/12 |
+| `discrete` | rung ⌊Φ(z)·n⌋ of lo, lo + by, … | lo + by(n − 1)/2; by²(n² − 1)/12 |
+
+q(z) is z, or with `trunc=k` the truncated normal sampled **exactly**: Φ⁻¹(Φ(−k) + Φ(z)·(1 − 2Φ(−k))),
+computed from the lower tail by symmetry. Φ⁻¹ is Acklam's approximation plus one Halley step against
+`SpecialFunctions.NormalCdf` (§5), the upper half by Φ⁻¹(p) = −Φ⁻¹(1 − p); `DistributionTests` holds it to
+1e-12 against tabulated quantiles.
+
+- **`sigmascale`** multiplies σ (`gauss`, `lognorm`) and a uniform's half-width about its centre. A
+  `discrete` list is not scaled — its values are the legal ones.
+- **Whole numbers** are rounded half away from zero.
+- **A complex value's parts** are drawn in their own units (a phase in degrees) and composed with the
+  nominal whole by `ComplexValue.Compose`, written back by `ComplexValue.Format` in the form the schematic
+  wrote it (`polar(52,29) Ohm`).
+- **A non-physical draw** — ≤ 0 for a value that must be positive (§1.1's rule) — refuses the **trial**
+  (`yield.trial.nonphysical`); it is never clamped. `SampledValues.Draws` still holds the draw. So do a key
+  that names nothing, a missing draw, a spread that does not resolve at the given nominal (a log-normal of a
+  nominal ≤ 0) and a pair of parts no complex value has (`yield.trial.*`).
+
+**Evaluation** (`OptimizationRun.EvaluateValues`). `OptimizationRun.ForEvaluation(circuit, options, goals)`
+validates the setup as a run does and scores its enabled goals for `GoalUse.Yield` (the default), `Opt` or
+`Both`; it needs no optimized variable and no algorithm. Its analyses are the goals', or every runnable one
+under `statistics analyses=all` or with no goal (a Monte Carlo of spreads alone). `EvaluateValues` takes value
+maps (key → value text) and returns per map a `PointEvaluation`: status (`Evaluated` / `DidNotEvaluate` with
+its reason), every goal's `GoalScore` (worst violation, met, margin), `Pass`, the cost, and the `DataSet`
+unless `keepData: false` drops it after scoring. It is **the** evaluator: the optimizer's unit-box batches are
+now decoded into value maps and handed to the same private method, so the cache (keyed by
+`OptimizationRun.CacheKeyOf` — the map's `key=value` lines in its own order, the form a decoded point's key
+always had), the parallelism, the `NotReentrantReason` serial rule with its note, and the cancellation token
+are shared. A cache hit returns its scores and no `DataSet` (the cache keeps scores, not results).
+`BatchEvaluateTests` holds a map's results bit-identical to Simulate with the same values typed.
+
+**Nothing nominal changes** (R-ya2-7): with no statistical entry nothing in this section runs during
+Simulate, Tuning or Optimization; the optimizer's own classes pass unchanged.
+
 ## Later phases
 
-Each phase appends its section below as it lands: YA-2 sampling, YA-3 kit statistics, YA-4 the run
-service and result, YA-5 the CLI and MCP, YA-6/7 corners, YA-8/9 the display, YA-10 the panel, YA-11/12
-centering.
+Each phase appends its section above this one as it lands: YA-3 kit statistics, YA-4 the run service and
+result, YA-5 the CLI and MCP, YA-6/7 corners, YA-8/9 the display, YA-10 the panel, YA-11/12 centering.

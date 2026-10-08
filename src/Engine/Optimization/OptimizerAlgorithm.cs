@@ -256,9 +256,16 @@ public sealed class SplitMix64(ulong seed)
 {
     private ulong _s = seed;
 
-    public ulong NextULong()
+    /// <summary>The increment the state advances by — the 64-bit golden ratio.</summary>
+    public const ulong Golden = 0x9E3779B97F4A7C15UL;
+
+    public ulong NextULong() => Mix(_s += Golden);
+
+    /// <summary>The output mix: a bijection of 64-bit words that scatters every input bit over every
+    /// output bit. Statistical streams (docs/design/yield.md) hash with it, so a draw is a pure
+    /// function of its inputs on every platform.</summary>
+    public static ulong Mix(ulong z)
     {
-        ulong z = _s += 0x9E3779B97F4A7C15UL;
         z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
         z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
         return z ^ (z >> 31);

@@ -21,6 +21,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The Sobol sequence's direction numbers (published data with its own licence in the file's header;
+         THIRD-PARTY-NOTICES.md section 4). -->
+    <EmbeddedResource Include="Statistics/SobolDirections.txt" LogicalName="CircuitRF.Engine.Statistics.SobolDirections.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="CSparse"   Version="4.3.0" />
     <PackageReference Include="NumFlat"   Version="1.3.0" />
     <PackageReference Include="FftFlat"   Version="1.0.1" />

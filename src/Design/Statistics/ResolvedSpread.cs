@@ -95,6 +95,33 @@ public sealed record ResolvedSpread(
         }
     }
 
+    /// <summary>
+    /// The distribution a trial draws from, in base SI (docs/design/yield.md §6), with
+    /// <paramref name="sigmaScale"/> multiplying the spread: a Gaussian's and a log-normal's σ, and a
+    /// uniform's half-width about its centre. A discrete list is not scaled — its values are the legal
+    /// ones. Null when the spread is incomplete, or for a log-normal of a nominal ≤ 0, which no
+    /// log-normal can describe.
+    /// </summary>
+    public Marginal? Marginal(double sigmaScale = 1)
+    {
+        switch (Distribution)
+        {
+            case StatDistribution.Gauss when Sigma is { } s:
+                return new NormalMarginal(NominalSi, s * sigmaScale, Trunc);
+            case StatDistribution.LogNorm when Sigma is { } s && NominalSi > 0:
+                return new LogNormalMarginal(NominalSi, s * sigmaScale / NominalSi, Trunc);
+            case StatDistribution.Unif when Lo is { } lo && Hi is { } hi:
+            {
+                double mid = (lo + hi) / 2, half = (hi - lo) / 2 * sigmaScale;
+                return new UniformMarginal(mid - half, mid + half);
+            }
+            case StatDistribution.Discrete when Lo is { } dlo && Hi is { } dhi && Step is > 0:
+                return new DiscreteMarginal(dlo, dhi, Step.Value);
+            default:
+                return null;
+        }
+    }
+
     /// <summary>A spread width (sd, tol, by) in base SI: a percent of |nominal|, or a value.</summary>
     internal static double? Width(string? text, double nominal, string unit)
         => text is null ? null

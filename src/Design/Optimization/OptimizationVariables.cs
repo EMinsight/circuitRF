@@ -437,7 +437,7 @@ public sealed class OptimizationVariables
             quantities[key] = x;
             values[key] = Coordinates[c].Text(x);
         }
-        string cacheKey = string.Join("\n", values.Select(kv => kv.Key + "=" + kv.Value));
+        string cacheKey = OptimizationRun.CacheKeyOf(values);
         return new DecodedPoint(values, quantities, cacheKey, infeasible, distance);
     }
 

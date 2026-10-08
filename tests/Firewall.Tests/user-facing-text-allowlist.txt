@@ -1102,3 +1102,6 @@ src/Engine/Optimization/OptimizerAlgorithm.cs|'{Id}' reads option '{name}', whic
 src/Engine/Optimization/OptimizerAlgorithm.cs|'{Id}' option '{name}' defaults to '{info.Default}' and was given no value for it.
 src/Engine/Optimization/Discrete.cs|{_levels.Length} level lists for {start.Length} coordinates.
 src/Engine/Optimization/ParticleSwarm.cs|pso: topology={topology} is not ring or global.
+# YA-2 (2026-10-08): the Sobol table is an embedded resource of the same assembly; its absence is a
+# broken build, not a condition a user can meet or act on.
+src/Engine/Statistics/Sobol.cs|The Sobol direction numbers are not embedded.

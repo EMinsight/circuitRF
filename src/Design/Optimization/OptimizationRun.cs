@@ -111,6 +111,40 @@ public sealed record OptimizationProgress(
 public sealed record EvaluationRecord(
     double[] Point, DecodedPoint Decoded, double Cost, bool Failed, bool Infeasible, bool Cached);
 
+/// <summary>Whether a point evaluated (yield overview D7).</summary>
+public enum PointStatus
+{
+    /// <summary>It simulated and every goal could be scored.</summary>
+    Evaluated,
+    /// <summary>It did not: an analysis failed or did not converge, a goal had no value, or the run
+    /// was refused — <see cref="PointEvaluation.Reason"/> says which.</summary>
+    DidNotEvaluate,
+}
+
+/// <summary>
+/// One value map evaluated through <see cref="OptimizationRun.EvaluateValues"/>.
+/// </summary>
+/// <param name="Values">The value map as given.</param>
+/// <param name="Reason">Why it did not evaluate; null when it did.</param>
+/// <param name="Goals">Each goal's score — its worst violation, whether it is met, its margin
+/// (<see cref="GoalScore.Margin"/>). Empty when the point did not reach scoring.</param>
+/// <param name="Cost">The run's cost form over the goals' residuals; NaN when it did not evaluate.</param>
+/// <param name="Data">The point's grouped results; null when discarded, when the cache answered it
+/// (the cache keeps scores, not results), or when its goals read only variables.</param>
+/// <param name="Cached">The cache answered it, from an earlier call or an identical map in this one.</param>
+public sealed record PointEvaluation(
+    IReadOnlyDictionary<string, string> Values,
+    PointStatus                         Status,
+    Diagnostic?                         Reason,
+    IReadOnlyList<GoalScore>            Goals,
+    double                              Cost,
+    DataSet?                            Data,
+    bool                                Cached)
+{
+    /// <summary>It evaluated and every goal is met (yield overview D4) — vacuously, with no goals.</summary>
+    public bool Pass => Status == PointStatus.Evaluated && Goals.All(g => g.Met);
+}
+
 /// <summary>What a run produced.</summary>
 public sealed class OptimizationResult
 {
@@ -176,6 +210,11 @@ public sealed class OptimizationResult
 /// nothing (<see cref="CacheHits"/>); an infeasible point (D18) is not simulated
 /// (<see cref="Infeasible"/>); a non-converged or failed simulation is a <see cref="Failures"/>.</para>
 ///
+/// <para><b>Two doors, one evaluator.</b> <see cref="EvaluateValues"/> evaluates value maps (key →
+/// value text) — the Monte Carlo and yield runs' door, built with <see cref="ForEvaluation"/>. The
+/// optimizer's own batches are unit-box points, decoded into value maps and handed to the same
+/// method, so the cache, the parallelism and the not-re-entrant rule are shared.</para>
+///
 /// <para><b>Penalties.</b> A failed point costs 10·(1 + the largest successful cost seen so far,
 /// this batch included), so it ranks below every real point; an infeasible one costs that plus its
 /// normalized distance to the region, so ranking pushes toward feasibility. Penalties are assigned
@@ -237,7 +276,7 @@ public sealed class OptimizationRun
     private double _stallTol;
     private int _stallIters;
 
-    private OptimizationRun(PreparedCircuit circuit, OptimizationOptions options)
+    private OptimizationRun(PreparedCircuit circuit, OptimizationOptions options, GoalUse? evaluateFor = null)
     {
         _circuit = circuit;
         _options = options;
@@ -265,6 +304,27 @@ public sealed class OptimizationRun
         {
             if (d.Severity == DiagnosticSeverity.Error) { Refusal = d; return; }
             _notes.Add(d);
+        }
+
+        int cores = Math.Max(1, Environment.ProcessorCount - 1);
+        if (evaluateFor is { } use)
+        {
+            // An evaluation of value maps (EvaluateValues): its goals, no variables, no algorithm. With
+            // no goal — a Monte Carlo of spreads alone — every runnable analysis runs.
+            _goals.AddRange(_setup.Goals.Where(g => g.Enabled && use switch
+            {
+                GoalUse.Opt   => g.ForOptimizer,
+                GoalUse.Yield => g.ForYield,
+                _             => true,
+            }));
+            var scope = use == GoalUse.Opt ? _settings.Scope : _setup.Statistics?.Scope ?? OptimizerScope.GoalAnalyses;
+            var goalAnalyses = _goals.Select(g => g.Analysis).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
+            bool all = scope == OptimizerScope.All || _goals.Count == 0;
+            _simulates = all || goalAnalyses.Count > 0;
+            _analyses  = all ? null : goalAnalyses;
+            _cost      = _settings.Cost;
+            _parallelism = Math.Max(1, (use == GoalUse.Opt ? null : _setup.Statistics?.Parallelism) ?? _settings.Parallelism ?? cores);
+            return;
         }
 
         // A use=yield goal is a yield spec only (yield overview D4); the optimizer does not aim for it.
@@ -309,7 +369,6 @@ public sealed class OptimizationRun
         _simulates = named.Count > 0;
         _analyses  = _settings.Scope == OptimizerScope.All ? null : named;
 
-        int cores = Math.Max(1, Environment.ProcessorCount - 1);
         _parallelism = Math.Max(1, _settings.Parallelism ?? cores);
     }
 
@@ -338,6 +397,21 @@ public sealed class OptimizationRun
     /// its <see cref="Refusal"/>; <see cref="Run"/> then returns it at once.</summary>
     public static OptimizationRun Create(PreparedCircuit circuit, OptimizationOptions? options = null)
         => new(circuit, options ?? new OptimizationOptions());
+
+    /// <summary>
+    /// Prepares an evaluator of value maps (<see cref="EvaluateValues"/>) over <paramref name="circuit"/>:
+    /// the setup is validated as for a run, and its enabled goals for <paramref name="goals"/> are scored —
+    /// <see cref="GoalUse.Yield"/> the yield specs (D4), <see cref="GoalUse.Opt"/> the optimizer's,
+    /// <see cref="GoalUse.Both"/> every enabled goal. It needs no optimized variable and no algorithm, and
+    /// <see cref="Run"/> on it refuses. The analyses are the goals' (or, under the statistics' or the
+    /// optimizer's <c>analyses=all</c>, or with no goal at all, every runnable one).
+    /// </summary>
+    public static OptimizationRun ForEvaluation(PreparedCircuit circuit, OptimizationOptions? options = null,
+                                                GoalUse goals = GoalUse.Yield)
+        => new(circuit, options ?? new OptimizationOptions(), goals);
+
+    /// <summary>The goals this run scores, in setup order.</summary>
+    public IReadOnlyList<OptimizationGoal> Goals => _goals;
 
     public Diagnostic? Refusal { get; }
     public OptimizationVariables? Variables { get; }
@@ -751,44 +825,52 @@ public sealed class OptimizationRun
     // ── One batch ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Evaluates one batch: decode, skip what is infeasible, take what the cache holds, simulate the
-    /// rest (concurrently when the design allows), then assign penalties in batch order.
+    /// Evaluates value maps (key → value text, a complex value whole or by its parts, as
+    /// <see cref="TunableOverrides"/> takes them) — the Monte Carlo and yield door (yield overview D11).
+    /// Each map is evaluated as Simulate would evaluate the design with those values typed, through the
+    /// same cache (keyed by the map's text in its own order), concurrency and not-re-entrant rule as the
+    /// optimizer's own batches; nothing here touches the run's log or best point. With
+    /// <paramref name="keepData"/> false each point's results are dropped once its goals are scored.
+    /// A refused run reports every point as not evaluated, with the refusal. Cancelling throws
+    /// <see cref="OperationCanceledException"/>. One call at a time: a call runs its points in
+    /// parallel itself.
+    /// </summary>
+    public IReadOnlyList<PointEvaluation> EvaluateValues(
+        IReadOnlyList<IReadOnlyDictionary<string, string>> points, bool keepData = true, CancellationToken ct = default)
+    {
+        if (Refusal is { } refused)
+            return [.. points.Select(p => new PointEvaluation(p, PointStatus.DidNotEvaluate, refused, [], double.NaN, null, false))];
+
+        var core = EvaluateKeyed([.. points.Select(p => ((string, IReadOnlyDictionary<string, string>)?)(CacheKeyOf(p), p))],
+                                 keepData, ct);
+        var result = new PointEvaluation[points.Count];
+        for (int k = 0; k < points.Count; k++)
+        {
+            var (o, data, cached, _) = core[k];
+            result[k] = o.Failed
+                ? new PointEvaluation(points[k], PointStatus.DidNotEvaluate, o.Error, o.Scores, double.NaN, null, cached)
+                : new PointEvaluation(points[k], PointStatus.Evaluated, null, o.Scores, o.Cost, data, cached);
+        }
+        return result;
+    }
+
+    /// <summary>A value map's cache key: its lines <c>key=value</c> in the map's own order — the form a
+    /// decoded unit-box point's key has always had.</summary>
+    public static string CacheKeyOf(IEnumerable<KeyValuePair<string, string>> values)
+        => string.Join("\n", values.Select(kv => kv.Key + "=" + kv.Value));
+
+    /// <summary>
+    /// Evaluates one batch of unit-box points: decode each into its value map, then
+    /// <see cref="EvaluateKeyed"/> what is feasible, then assign penalties in batch order.
     /// </summary>
     internal IReadOnlyList<Evaluation> EvaluateBatch(IReadOnlyList<double[]> batch, CancellationToken ct = default,
                                                      bool record = true)
     {
         var decoded = batch.Select(u => Variables!.Decode(u, _snapPreferred)).ToArray();
-        var cached  = new bool[batch.Count];
-        var toRun   = new List<(string Key, DecodedPoint Point)>();
-        var queued  = new HashSet<string>(StringComparer.Ordinal);
-        for (int k = 0; k < batch.Count; k++)
-        {
-            var d = decoded[k];
-            if (d.Infeasible) { _infeasible++; continue; }
-            if (_cache.ContainsKey(d.CacheKey) || !queued.Add(d.CacheKey)) { _cacheHits++; cached[k] = true; continue; }
-            toRun.Add((d.CacheKey, d));
-        }
-
-        var outcomes = new (PointOutcome Outcome, DataSet? Data)[toRun.Count];
-        int degree = Math.Min(_parallelism, toRun.Count);
-        string? serialWhy = _simulates ? _circuit.NotReentrantReason : null;
-        if (serialWhy is not null && degree > 1 && !_serialNoted)
-        {
-            _serialNoted = true;
-            _notes.Add(OptimizationDiagnostics.Serial(serialWhy));
-        }
-        if (serialWhy is not null || degree <= 1)
-            for (int i = 0; i < toRun.Count; i++) outcomes[i] = EvaluatePoint(toRun[i].Point, ct);
-        else
-            Parallel.For(0, toRun.Count, new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = ct },
-                         i => outcomes[i] = EvaluatePoint(toRun[i].Point, ct));
-
-        for (int i = 0; i < toRun.Count; i++)
-        {
-            _cache[toRun[i].Key] = outcomes[i].Outcome;
-            if (outcomes[i].Outcome is { Failed: false } ok) _maxFeasible = Math.Max(_maxFeasible, ok.Cost);
-            else _firstFailure ??= outcomes[i].Outcome.Error;
-        }
+        foreach (var d in decoded) if (d.Infeasible) _infeasible++;
+        var core = EvaluateKeyed(
+            [.. decoded.Select(d => d.Infeasible ? null : ((string, IReadOnlyDictionary<string, string>)?)(d.CacheKey, d.Values))],
+            keepData: true, ct);
 
         double penalty = 10 * (1 + _maxFeasible);
         var results = new Evaluation[batch.Count];
@@ -802,33 +884,87 @@ public sealed class OptimizationRun
                 _log.Add(new EvaluationRecord(batch[k], d, results[k].Cost, false, true, false));
                 continue;
             }
-            var o = _cache[d.CacheKey];
+            var (o, data, cached, ranHere) = core[k];
             results[k] = o.Failed ? new Evaluation(penalty, null, Failed: true) : new Evaluation(o.Cost, o.Residuals);
-            _log.Add(new EvaluationRecord(batch[k], d, results[k].Cost, o.Failed, false, cached[k]));
+            _log.Add(new EvaluationRecord(batch[k], d, results[k].Cost, o.Failed, false, cached));
 
             if (!o.Failed && (_bestIndex < 0 || o.Cost < _log[_bestIndex].Cost))
             {
                 _bestIndex = _log.Count - 1;
-                int run = toRun.FindIndex(t => t.Key == d.CacheKey);
-                if (run >= 0) _bestData = outcomes[run].Data;
+                if (ranHere) _bestData = data;
             }
         }
         return results;
     }
 
-    private (PointOutcome, DataSet?) EvaluatePoint(DecodedPoint point, CancellationToken ct)
+    /// <summary>
+    /// The one evaluator both doors share: take what the cache holds (or an identical key earlier in
+    /// the batch), simulate the rest — concurrently when the design allows — and cache the outcomes.
+    /// A null entry is skipped. Per entry: the outcome; the results when <paramref name="keepData"/> and
+    /// its key was simulated in this batch; whether the cache answered it; whether its key was simulated
+    /// in this batch.
+    /// </summary>
+    private (PointOutcome Outcome, DataSet? Data, bool Cached, bool RanHere)[] EvaluateKeyed(
+        IReadOnlyList<(string Key, IReadOnlyDictionary<string, string> Values)?> points, bool keepData, CancellationToken ct)
+    {
+        var cached = new bool[points.Count];
+        var toRun  = new List<(string Key, IReadOnlyDictionary<string, string> Values)>();
+        var queued = new HashSet<string>(StringComparer.Ordinal);
+        for (int k = 0; k < points.Count; k++)
+        {
+            if (points[k] is not { } p) continue;
+            if (_cache.ContainsKey(p.Key) || !queued.Add(p.Key)) { _cacheHits++; cached[k] = true; continue; }
+            toRun.Add(p);
+        }
+
+        var outcomes = new (PointOutcome Outcome, DataSet? Data)[toRun.Count];
+        int degree = Math.Min(_parallelism, toRun.Count);
+        string? serialWhy = _simulates ? _circuit.NotReentrantReason : null;
+        if (serialWhy is not null && degree > 1 && !_serialNoted)
+        {
+            _serialNoted = true;
+            _notes.Add(OptimizationDiagnostics.Serial(serialWhy));
+        }
+        if (serialWhy is not null || degree <= 1)
+            for (int i = 0; i < toRun.Count; i++) outcomes[i] = Keep(EvaluatePoint(toRun[i].Values, ct));
+        else
+            Parallel.For(0, toRun.Count, new ParallelOptions { MaxDegreeOfParallelism = degree, CancellationToken = ct },
+                         i => outcomes[i] = Keep(EvaluatePoint(toRun[i].Values, ct)));
+
+        var ran = new Dictionary<string, DataSet?>(StringComparer.Ordinal);
+        for (int i = 0; i < toRun.Count; i++)
+        {
+            _cache[toRun[i].Key] = outcomes[i].Outcome;
+            ran[toRun[i].Key] = outcomes[i].Data;
+            if (outcomes[i].Outcome is { Failed: false } ok) _maxFeasible = Math.Max(_maxFeasible, ok.Cost);
+            else _firstFailure ??= outcomes[i].Outcome.Error;
+        }
+
+        var result = new (PointOutcome, DataSet?, bool, bool)[points.Count];
+        for (int k = 0; k < points.Count; k++)
+        {
+            if (points[k] is not { } p) continue;
+            bool ranHere = ran.TryGetValue(p.Key, out var data);
+            result[k] = (_cache[p.Key], data, cached[k], ranHere);
+        }
+        return result;
+
+        (PointOutcome, DataSet?) Keep((PointOutcome Outcome, DataSet? Data) o) => keepData ? o : (o.Outcome, null);
+    }
+
+    private (PointOutcome, DataSet?) EvaluatePoint(IReadOnlyDictionary<string, string> values, CancellationToken ct)
     {
         Interlocked.Increment(ref _evaluations);
         try
         {
-            var (values, errors, data, failure) = _simulates ? Simulate(point, ct) : VariablesOnly(point);
+            var (goalValues, errors, data, failure) = _simulates ? Simulate(values, ct) : VariablesOnly(values);
             if (failure is not null)
             {
                 Interlocked.Increment(ref _failures);
                 return (new PointOutcome(true, failure, 0, [], [], false), null);
             }
 
-            var scores = _goals.Select((g, i) => GoalResiduals.Score(g, values[i], errors[i])).ToList();
+            var scores = _goals.Select((g, i) => GoalResiduals.Score(g, goalValues[i], errors[i])).ToList();
             if (scores.FirstOrDefault(s => s.Error is not null) is { } bad)
             {
                 Interlocked.Increment(ref _failures);
@@ -846,12 +982,12 @@ public sealed class OptimizationRun
         }
     }
 
-    private (Value?[] Values, string?[] Errors, DataSet? Data, Diagnostic? Failure) Simulate(DecodedPoint point, CancellationToken ct)
+    private (Value?[] Values, string?[] Errors, DataSet? Data, Diagnostic? Failure) Simulate(IReadOnlyDictionary<string, string> tuned, CancellationToken ct)
     {
         var rr = CircuitEvaluation.Evaluate(_circuit, new CircuitEvaluationRequest
         {
             Sets         = _options.Sets,
-            Tunables     = point.Values,
+            Tunables     = tuned,
             Analyses     = _analyses,
             Measurements = true,
             Expressions  = [.. _goals.Select(g => g.Expression)],
@@ -876,9 +1012,9 @@ public sealed class OptimizationRun
 
     /// <summary>Goals that read only variables cost no simulation (D10): they are evaluated in the
     /// bench's own variable scope with the tuned values applied.</summary>
-    private (Value?[] Values, string?[] Errors, DataSet? Data, Diagnostic? Failure) VariablesOnly(DecodedPoint point)
+    private (Value?[] Values, string?[] Errors, DataSet? Data, Diagnostic? Failure) VariablesOnly(IReadOnlyDictionary<string, string> point)
     {
-        var tuned = TunableOverrides.Apply(_circuit.Tb!, _circuit.Lib!, point.Values,
+        var tuned = TunableOverrides.Apply(_circuit.Tb!, _circuit.Lib!, point,
                                            _options.Sets.Select(s => s.Name).ToHashSet(StringComparer.Ordinal));
         if (tuned.Refusal is { } refusal || tuned.TestBench is not { } tb)
             return ([], [], null, OptimizationDiagnostics.EvaluationFailed(tuned.Refusal ?? ""));

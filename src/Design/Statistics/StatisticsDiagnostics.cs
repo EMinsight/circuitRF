@@ -108,4 +108,31 @@ public static class StatisticsDiagnostics
         "yield.correlate.repair", DiagnosticSeverity.Warning,
         "The correlations are not a valid correlation matrix; the nearest one is used, which changes an entry by up to {change}.",
         ("change", largestChange.ToString("G3", System.Globalization.CultureInfo.InvariantCulture)));
+
+    // ── YA-2: sampling and trial values ─────────────────────────────────────
+
+    public static Diagnostic SobolPastTable(int dimensions, int rest) => Diagnostic.Create(
+        "yield.sampling.sobol-dimensions", DiagnosticSeverity.Warning,
+        "sampling=sobol has {dimensions} dimensions; the other {rest} statistical variable(s) are drawn at random.",
+        ("dimensions", dimensions), ("rest", rest));
+
+    public static Diagnostic TrialNonPhysical(string key, string value) => Diagnostic.Create(
+        "yield.trial.nonphysical", DiagnosticSeverity.Error,
+        "{key} draws {value}, which is not physical; the trial does not evaluate.", ("key", key), ("value", value));
+
+    public static Diagnostic TrialNoNominal(string key) => Diagnostic.Create(
+        "yield.trial.no-nominal", DiagnosticSeverity.Error,
+        "{key} names no value of this design; the trial does not evaluate.", ("key", key));
+
+    public static Diagnostic TrialNoDraw(string key) => Diagnostic.Create(
+        "yield.trial.no-draw", DiagnosticSeverity.Error,
+        "{key} has no draw in this trial's sample; the trial does not evaluate.", ("key", key));
+
+    public static Diagnostic TrialNoDistribution(string key) => Diagnostic.Create(
+        "yield.trial.no-distribution", DiagnosticSeverity.Error,
+        "{key}: its spread does not resolve to a distribution at this nominal; the trial does not evaluate.", ("key", key));
+
+    public static Diagnostic TrialNoComplexValue(string key) => Diagnostic.Create(
+        "yield.trial.complex", DiagnosticSeverity.Error,
+        "{key}: no complex value has the drawn parts; the trial does not evaluate.", ("key", key));
 }

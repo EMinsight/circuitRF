@@ -18604,3 +18604,28 @@ is that percent OF the nominal (`lo=90%` is 0.9× nominal), not an offset; a cor
 `trial`, `seed`, `sampling`, `trials` and `temp` wherever they sit, so a global with one of those names
 cannot be bound by a corner; a `.csch` corner's kit selections are written into the `.cnl` as EVERY constant
 the overlaid selections bind, not only those that differ from the design's own.
+
+## Yield YA-2: the sampling core and the public batch door — findings (2026-10-08)
+
+**`DataSet.Cubes` is the DEFAULT group only.** A run's grouped results (`RunResult.GroupedResults`) are
+built with `AddToGroup`, so `.Cubes` on them is empty — and a test that compares two results' `.Cubes`
+passes while comparing nothing. `BatchEvaluateTests` first did exactly that; it now walks `Groups` /
+`CubesIn` and asserts `SP1.S` is present before comparing.
+
+**The optimizer's batch became a decode over the value-map door, not a copy of it.** `EvaluateBatch`
+(unit box) decodes each point and hands the value maps to the one private evaluator `EvaluateValues` also
+calls; best-point tracking, penalties and the log stay in the unit-box half. One behaviour had to be carried
+deliberately: the best point's `DataSet` is taken only when its key was SIMULATED in that batch (including a
+duplicate of a point simulated earlier in the same batch), never from the cache — the old
+`toRun.FindIndex` rule, now an explicit `RanHere` flag.
+
+**The Sobol table's licence travels with the binary.** The direction numbers are published data under a
+BSD-style licence whose second clause covers binary redistribution, so they are listed in
+`THIRD-PARTY-NOTICES.md` §4 with the licence text in `licenses/Joe-Kuo-Sobol.txt`, as well as carried in
+the embedded file's own header.
+
+Calls the owner may revisit: `sigmascale` does not scale a `discrete` list (its values are the legal
+ones); a `lognorm`'s nominal is its MEDIAN (YA-1's "σ/nominal is the log's σ"), so its mean sits e^{s²/2}
+above the nominal; the embedded Sobol table stops at 1111 dimensions (where Property A holds), past which
+streams are drawn at random with a warning; a value map's cache key is its lines in the map's own order, so
+the same values listed in another order are simulated again rather than answered by the cache.
