@@ -74,6 +74,7 @@ public sealed class CschTuning
     public StatisticsSettings?     Statistics   { get; set; }
     public List<CornerDefinition>? Corners      { get; set; }
     public CenteringSettings?      Centering    { get; set; }
+    public DoeSettings?            Doe          { get; set; }
 
     public static CschTuning? From(TuningSetup? s) => s is null || s.IsEmpty ? null : new()
     {
@@ -86,6 +87,7 @@ public sealed class CschTuning
         Statistics   = s.Statistics?.Clone(),
         Corners      = s.Corners.Count      > 0 ? [.. s.Corners.Select(c => c.Clone())]      : null,
         Centering    = s.Centering?.Clone(),
+        Doe          = s.Doe?.Clone(),
     };
 
     public TuningSetup ToSetup() => new()
@@ -99,6 +101,7 @@ public sealed class CschTuning
         Statistics   = Statistics,
         Corners      = Corners      ?? [],
         Centering    = Centering,
+        Doe          = Doe,
     };
 }
 

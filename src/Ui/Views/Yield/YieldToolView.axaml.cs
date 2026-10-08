@@ -21,6 +21,9 @@ namespace CircuitRF.Ui.Views.Yield;
 /// </summary>
 public partial class YieldToolView : UserControl
 {
+    /// <summary>An active DOE effect in bold (brief-yield-14).</summary>
+    public static readonly IValueConverter ActiveWeight = new FuncValueConverter<bool, FontWeight>(on => on ? FontWeight.Bold : FontWeight.Normal);
+
     /// <summary>A disabled goal is listed dimmed.</summary>
     public static readonly IValueConverter EnabledOpacity = new FuncValueConverter<bool, double>(on => on ? 1.0 : 0.45);
 

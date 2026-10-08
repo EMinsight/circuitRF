@@ -179,6 +179,100 @@ public enum CenteringSurrogate
     Quadratic,
 }
 
+/// <summary>The structured designs of design of experiments (brief-yield-14 R-ya14-2).</summary>
+public enum DoeDesignKind
+{
+    /// <summary>The two-level full factorial, 2^k runs.</summary>
+    Full2,
+    /// <summary>A two-level fractional factorial 2^(k−p) at a stated resolution.</summary>
+    Frac,
+    /// <summary>A Plackett–Burman screening design of 12, 20 or 24 runs.</summary>
+    Pb,
+    /// <summary>The face-centred central composite: a two-level cube, the axial points on its faces, the centre.</summary>
+    Ccf,
+}
+
+/// <summary>Which entries a design of experiments varies (brief-yield-14 R-ya14-1).</summary>
+public enum DoeFactorSource
+{
+    /// <summary>The <c>opt=1</c> entries, at the ends of their ranges.</summary>
+    Opt,
+    /// <summary>The <c>stat=1</c> entries, at nominal ± k σ.</summary>
+    Stat,
+}
+
+/// <summary>What a design of experiments analyses (brief-yield-14 R-ya14-4).</summary>
+public enum DoeResponseSet
+{
+    /// <summary>The goals the factors are for — <c>use=opt|both</c> with opt factors, <c>use=yield|both</c> with stat
+    /// factors — and every scalar measure.</summary>
+    Goals,
+    /// <summary>Every enabled goal regardless of <c>use</c>, and every scalar measure.</summary>
+    All,
+}
+
+/// <summary>
+/// The design-of-experiments settings — the <c>doe</c> line (brief-yield-14 R-ya14-3). Every property is null at its
+/// default, so neither serialization ever writes one.
+/// </summary>
+public sealed class DoeSettings
+{
+    public const int DefaultResolution = 4;
+    public const int DefaultCentre     = 1;
+    public const double DefaultSigma   = 1;
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public DoeDesignKind? Design { get; set; }
+
+    /// <summary>A fractional factorial's resolution, 4 or 5; null is 4.</summary>
+    public int? Resolution { get; set; }
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public DoeFactorSource? Factors { get; set; }
+
+    /// <summary>The levels as written: <c>range</c> or <c>sigma:&lt;k&gt;</c>; null is the factors' own default —
+    /// <c>range</c> for opt factors, <c>sigma:1</c> for stat factors.</summary>
+    public string? Levels { get; set; }
+
+    /// <summary>Centre points added to the design; null is 1.</summary>
+    public int? Centre { get; set; }
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public DoeResponseSet? Responses { get; set; }
+
+    /// <summary>How many simulations may run at once; null lets the evaluator decide.</summary>
+    public int? Parallelism { get; set; }
+
+    /// <summary>Keys this build does not know, kept verbatim.</summary>
+    public OrderedDictionary<string, string>? Extra { get; set; }
+
+    [JsonIgnore] public DoeDesignKind   EffectiveDesign     => Design ?? DoeDesignKind.Full2;
+    [JsonIgnore] public int             EffectiveResolution => Resolution ?? DefaultResolution;
+    [JsonIgnore] public DoeFactorSource EffectiveFactors    => Factors ?? DoeFactorSource.Opt;
+    [JsonIgnore] public int             EffectiveCentre     => Centre ?? DefaultCentre;
+    [JsonIgnore] public DoeResponseSet  EffectiveResponses  => Responses ?? DoeResponseSet.Goals;
+
+    /// <summary>The levels in force: <c>range</c>, or <c>sigma:&lt;k&gt;</c>.</summary>
+    [JsonIgnore] public string EffectiveLevels => Levels ?? DefaultLevels(EffectiveFactors);
+
+    /// <summary>k of <c>sigma:&lt;k&gt;</c>; null for <c>range</c> (or a spelling the reader would refuse).</summary>
+    [JsonIgnore] public double? SigmaK => SigmaOf(EffectiveLevels);
+
+    public static string DefaultLevels(DoeFactorSource factors) => factors == DoeFactorSource.Stat ? "sigma:1" : "range";
+
+    /// <summary>k of a <c>sigma:&lt;k&gt;</c> spelling, when it is one with k above zero.</summary>
+    public static double? SigmaOf(string levels)
+        => levels.StartsWith("sigma:", StringComparison.OrdinalIgnoreCase)
+           && double.TryParse(levels[6..], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double k)
+           && k > 0 && double.IsFinite(k) ? k : null;
+
+    public DoeSettings Clone() => new()
+    {
+        Design = Design, Resolution = Resolution, Factors = Factors, Levels = Levels, Centre = Centre,
+        Responses = Responses, Parallelism = Parallelism, Extra = TunableEntry.CloneMap(Extra),
+    };
+}
+
 /// <summary>A correlation between two statistical entries (yield overview D3) — the <c>correlate</c> line.</summary>
 public sealed class StatCorrelation
 {

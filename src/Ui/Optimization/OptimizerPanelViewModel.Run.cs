@@ -178,6 +178,7 @@ public sealed partial class OptimizerPanelViewModel
         var circuit = PrepareCircuit?.Invoke(_tuned);
         if (circuit is null) { StatusText = "Refused: the schematic could not be netlisted."; return; }
         if (circuit.ReadError is { } readError) { StatusText = $"Refused: {readError}"; return; }
+        circuit = WithStart(circuit);
 
         var setup = Setup?.Clone() ?? new TuningSetup();
         var cts   = new CancellationTokenSource();

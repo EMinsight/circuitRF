@@ -187,6 +187,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         CornerGrid.Clear();
         CornerGoals.Clear();
         ClearCenterReadouts();
+        ClearDoeReadouts();
         State = YieldRunState.Idle;
         foreach (var g in Goals) g.ShowYield(null, TargetFraction);
         foreach (var v in Variables) v.ShowShare(null);
@@ -208,6 +209,11 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         if (Mode == YieldMode.Centering)
         {
             RunCentering(circuit, source);
+            return;
+        }
+        if (Mode == YieldMode.Doe)
+        {
+            RunDoe(circuit, source);
             return;
         }
         if (Mode == YieldMode.Corners || Settings.CornerNames is not { Count: 0 })
@@ -363,7 +369,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
 
     // ---- Pause, Resume and Stop (D14) ---------------------------------------------
 
-    private bool CanPause() => IsRunActive && (_run is not null || _centerRun is not null);
+    private bool CanPause() => IsRunActive && (_run is not null || _centerRun is not null || _doeRun is not null);
 
     /// <summary>Pause finishes the trials in flight and holds; Resume continues as if never paused. One button.</summary>
     [RelayCommand(CanExecute = nameof(CanPause))]
@@ -373,6 +379,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         (Action Pause, Action Resume, WaitHandle Held, object Run)? target =
             _run is { } run ? (run.Pause, run.Resume, run.Held, run)
             : _centerRun is { } center ? (center.Pause, center.Resume, center.Held, center)
+            : _doeRun is { } doe ? (doe.Pause, doe.Resume, doe.Held, doe)
             : null;
         if (target is not { } t) return;
         if (IsPaused)
@@ -389,7 +396,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         _ = Task.Run(() =>
         {
             WaitHandle.WaitAny([t.Held, ct.WaitHandle]);
-            PostToUi(() => { if ((ReferenceEquals(t.Run, _run) || ReferenceEquals(t.Run, _centerRun)) && IsPaused) StatusText = "Paused"; });
+            PostToUi(() => { if ((ReferenceEquals(t.Run, _run) || ReferenceEquals(t.Run, _centerRun) || ReferenceEquals(t.Run, _doeRun)) && IsPaused) StatusText = "Paused"; });
         });
     }
 
@@ -410,6 +417,13 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
             State = YieldRunState.Running;
             StatusText = "Stopping — verifying the best point…";
         }
+        else if (_doeRun is { } doe)
+        {
+            // Stop keeps the runs done and analyses them (brief-yield-14).
+            doe.Stop();
+            State = YieldRunState.Running;
+            StatusText = "Stopping — analysing the runs done…";
+        }
         else if (_cornerRun is not null)
         {
             _cts?.Cancel();
@@ -423,10 +437,12 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         _cts?.Cancel();
         _run?.Stop();
         _centerRun?.Stop();
+        _doeRun?.Stop();
         _display?.Drop();
         _run = null;
         _cornerRun = null;
         _centerRun = null;
+        _doeRun = null;
         State = YieldRunState.Idle;
     }
 
@@ -593,6 +609,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         GenerateCornersCommand.NotifyCanExecuteChanged();
         NotifyTrialCommands();
         NotifyCenterCommands();
+        NotifyDoeCommands();
         OnPropertyChanged(nameof(HasTarget));
         OnPropertyChanged(nameof(TargetFraction));
     }

@@ -947,6 +947,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["run/yield"]         = ["path"],
             ["run/corners"]       = ["path"],
             ["run/center"]        = ["path"],
+            ["run/doe"]           = ["path"],
             ["check/"]            = ["path"],
             ["explain/"]          = ["path"],
             ["create/workspace"]  = ["path"],

@@ -34,7 +34,7 @@ using CircuitRF.Ui.ViewModels;
 namespace CircuitRF.Ui.Yield;
 
 /// <summary>What the panel does (R-ya10-2, R-ya12-1).</summary>
-public enum YieldMode { MonteCarlo, Yield, Corners, Centering }
+public enum YieldMode { MonteCarlo, Yield, Corners, Centering, Doe }
 
 public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddHost, IToleranceSurface
 {
@@ -89,8 +89,8 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
     // ---- Mode (R-ya10-2) --------------------------------------------------------
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsMonteCarlo), nameof(IsYield), nameof(IsCorners), nameof(IsCentering), nameof(ShowTrials),
-                              nameof(ShowYieldReadout), nameof(ShowVariableTolerances), nameof(RunTip))]
+    [NotifyPropertyChangedFor(nameof(IsMonteCarlo), nameof(IsYield), nameof(IsCorners), nameof(IsCentering), nameof(IsDoe), nameof(ShowTrials),
+                              nameof(ShowYieldReadout), nameof(ShowVariableTolerances), nameof(ShowStatisticsSettings), nameof(RunTip))]
     private YieldMode _mode = YieldMode.Yield;
 
     public bool IsMonteCarlo { get => Mode == YieldMode.MonteCarlo; set { if (value) Mode = YieldMode.MonteCarlo; } }
@@ -98,7 +98,7 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
     public bool IsCorners    { get => Mode == YieldMode.Corners;    set { if (value) Mode = YieldMode.Corners; } }
 
     /// <summary>The trial table and its readouts belong to a Monte Carlo or a yield run.</summary>
-    public bool ShowTrials => Mode != YieldMode.Corners;
+    public bool ShowTrials => Mode is not (YieldMode.Corners or YieldMode.Doe);
 
     /// <summary>A yield readout needs yield goals; a Monte Carlo reports spread only. Centering shows its verified yield.</summary>
     public bool ShowYieldReadout => Mode is YieldMode.Yield or YieldMode.Centering;
@@ -108,10 +108,15 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
         YieldMode.MonteCarlo => "Run a Monte Carlo",
         YieldMode.Yield      => "Run a yield analysis",
         YieldMode.Centering  => "Centre the design — move the designable nominals to maximize yield",
+        YieldMode.Doe        => "Run the design of experiments — which factors matter, and how they interact",
         _                    => "Evaluate every enabled corner",
     };
 
-    partial void OnModeChanged(YieldMode value) => NotifyRunCommands();
+    partial void OnModeChanged(YieldMode value)
+    {
+        NotifyRunCommands();
+        if (value == YieldMode.Doe) RefreshDoePlan();
+    }
 
     // ---- Lists -------------------------------------------------------------------
 
@@ -234,6 +239,7 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
         RefreshCenterRows();
         RefreshSettings();
         RefreshCenterSettings();
+        RefreshDoeSettings();
         if (Add.IsOpen) Add.Refresh();
         NotifyRunCommands();
         Changed?.Invoke(this, EventArgs.Empty);

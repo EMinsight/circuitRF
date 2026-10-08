@@ -50,7 +50,7 @@ public sealed partial class YieldPanelViewModel
     public bool IsCentering { get => Mode == YieldMode.Centering; set { if (value) Mode = YieldMode.Centering; } }
 
     /// <summary>The Monte Carlo / Yield / Corners lists; Centering shows its own.</summary>
-    public bool ShowVariableTolerances => Mode != YieldMode.Centering;
+    public bool ShowVariableTolerances => Mode is not (YieldMode.Centering or YieldMode.Doe);
 
     // ---- The variable list: Opt and Stat together ------------------------------------
 

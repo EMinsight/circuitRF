@@ -95,4 +95,16 @@ public static class SpecialFunctions
         }
         return 0.5 * (lo + hi);
     }
+
+    /// <summary>
+    /// The Student-t quantile: the t at which a t variable with <paramref name="df"/> degrees of freedom (any positive
+    /// real, as Lenth's d = m/3 is) has CDF <paramref name="p"/> — through P(|T| &gt; t) = I_{df/(df+t²)}(df/2, 1/2).
+    /// </summary>
+    public static double StudentTQuantile(double p, double df)
+    {
+        if (p == 0.5) return 0;
+        if (p < 0.5) return -StudentTQuantile(1 - p, df);
+        double x = InverseRegularizedBeta(2 * (1 - p), df / 2, 0.5);
+        return x <= 0 ? double.PositiveInfinity : Math.Sqrt(df * (1 - x) / x);
+    }
 }

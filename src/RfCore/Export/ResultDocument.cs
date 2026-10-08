@@ -172,7 +172,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         CornerReportJson? Corners = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        CenterReportJson? Center = null);
+        CenterReportJson? Center = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        DoeReportJson? Doe = null);
 
     /// <summary>
     /// One external solver as <c>solver list</c> reports it — the Settings ▸ Solvers row. Carried as data
@@ -943,6 +945,96 @@ namespace RfCore.Export
         int Iteration, double? BestYield, double? BestObjective, long Evaluations,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         IReadOnlyDictionary<string, double>? RSquared = null);
+
+    // ── `yield doe` / MCP `run analysis=doe` (brief-yield-14 R-ya14-8) ─────────────────────────
+    //
+    // A PROJECTION of `DoeResult` (and, with --optimum, `DoeOptimum`). Effects are on coded -1/+1 factors.
+
+    /// <summary>What one design of experiments found.</summary>
+    /// <param name="Outcome"><c>finished</c>, <c>refused</c>, <c>noneEvaluated</c> or <c>cancelled</c> — exit 0, 1, 2, 130.</param>
+    /// <param name="Design"><c>full2</c>, <c>frac</c>, <c>pb</c> or <c>ccf</c>.</param>
+    /// <param name="Description">The design in words, with its run count.</param>
+    /// <param name="Generators">A fraction's generators (<c>E=ABCD</c>); empty otherwise.</param>
+    /// <param name="Factors"><c>opt</c> or <c>stat</c>.</param>
+    /// <param name="FactorList">Each factor's letter, key and three levels as value text.</param>
+    /// <param name="Evaluations">Simulations run — repeated centre points are one.</param>
+    /// <param name="Optimum">With --optimum: the fitted model's best point and its confirmation.</param>
+    public sealed record DoeReportJson(
+        string                               Document,
+        string                               Outcome,
+        string                               FinishReason,
+        string                               Design,
+        string                               Description,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?                                 Resolution,
+        IReadOnlyList<string>                Generators,
+        string                               Factors,
+        string                               Levels,
+        IReadOnlyList<DoeFactorJson>         FactorList,
+        int                                  Runs,
+        int                                  Evaluated,
+        long                                 Evaluations,
+        IReadOnlyList<DoeResponseJson>       Responses,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        DoeOptimumJson?                      Optimum,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                              Output = null);
+
+    /// <summary>One factor: its letter in the effect names, the entry, and its low, centre and high levels.</summary>
+    public sealed record DoeFactorJson(string Letter, string Key, string Low, string Centre, string High);
+
+    /// <summary>One response analysed. <c>effects</c> is empty when too few runs evaluated it.</summary>
+    /// <param name="Kind"><c>worst</c> (a goal's value), <c>margin</c> (a goal's margin) or <c>measure</c>.</param>
+    /// <param name="Intercept">The fitted model's constant — the response at the design's centre.</param>
+    /// <param name="LenthPse">Lenth's pseudo-standard-error of the effects.</param>
+    /// <param name="LenthMargin">Lenth's margin of error: an effect beyond it is active.</param>
+    /// <param name="Curvature">A two-level design with centre points: the cube mean less the centre mean.</param>
+    public sealed record DoeResponseJson(
+        string                               Name,
+        string                               Kind,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                              Goal,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                              Intercept,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                              RSquared,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                              LenthPse,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                              LenthMargin,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                              Curvature,
+        bool                                 CurvatureActive,
+        IReadOnlyList<DoeEffectJson>         Effects);
+
+    /// <summary>One effect: twice the coded coefficient, whether it is active, and every effect it is confounded with
+    /// (a partial one with its correlation, <c>BC (-0.33)</c>).</summary>
+    public sealed record DoeEffectJson(string Term, double Effect, double Coefficient, bool Active, IReadOnlyList<string> Aliases);
+
+    /// <summary>The model optimum and its confirmation run.</summary>
+    /// <param name="Values">The point as a schematic would hold it — what Send to Tuning loads.</param>
+    /// <param name="Coded">The point in coded units, after snapping to allowed values.</param>
+    /// <param name="PredictedObjective">The smallest predicted goal margin, each over its scale.</param>
+    /// <param name="Confirmed">The confirmation run evaluated.</param>
+    public sealed record DoeOptimumJson(
+        string                               Algorithm,
+        IReadOnlyDictionary<string, string>  Values,
+        IReadOnlyList<double>                Coded,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                              PredictedObjective,
+        bool                                 Confirmed,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                              Reason,
+        IReadOnlyList<DoeGoalPredictionJson> Goals);
+
+    /// <summary>One goal at the optimum: predicted by the model and simulated by the confirmation.</summary>
+    public sealed record DoeGoalPredictionJson(
+        string Goal,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? PredictedValue,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? PredictedMargin,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? SimulatedValue,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? SimulatedMargin,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Met);
 
     // ── `lvs`: what the comparison concluded (brief-lvs-11-cli-verb.md R-lvs11-3c) ───────────
     //

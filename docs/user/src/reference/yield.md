@@ -38,9 +38,9 @@ Everything you set here — tolerances, correlations, which goals are specs, the
 corners — is saved with the schematic, marks it changed and can be undone, one step per change. A run
 and its trial table are not: they belong to the session. A run never changes the schematic's values.
 
-## The four modes {#modes}
+## The five modes {#modes}
 
-The four buttons at the top choose what **▶** does:
+The five buttons at the top choose what **▶** does:
 
 | Mode | What a run reports |
 |---|---|
@@ -48,6 +48,7 @@ The four buttons at the top choose what **▶** does:
 | **Yield** | The fraction of trials meeting every spec, with its confidence interval, overall and per spec. |
 | **Corners** | Every enabled corner evaluated once — or, with **MC at each corner**, a Monte Carlo at each. |
 | **Centering** | The designable values moved to where the most trials meet the specs, then checked on fresh trials. |
+| **DOE** | A design of experiments: which values move each spec and measurement, and how they interact. |
 
 ## Tolerances {#tolerances}
 
@@ -204,9 +205,43 @@ the search goes back to simulating every trial and says so.
 When it finishes, **Lock in** keeps the centred values as a preset, **Push** writes them into the
 schematic (one undo step), and **Send to Tuning** loads them into the Tuning sliders.
 
+## Design of experiments {#doe}
+
+**DOE** runs the schematic at a planned set of combinations of a few values — its **factors** — and
+works out which of them move each spec and measurement, and how they interact. The factors are the
+values with **Opt** ticked, each set to the low and high ends of its range, or — with **Factors:
+tolerances** — the toleranced values, each set to its nominal ± k σ: a quick look at which tolerances
+matter, in a handful of runs instead of a Monte Carlo.
+
+Before you run, the panel lists the factors with the letter each is called by, their low, centre and
+high values, and how many runs the design takes. The chevron chooses the design:
+
+| Design | Use it for |
+|---|---|
+| **Full factorial** | A few factors (up to 10): every combination of low and high. |
+| **Fractional** | More factors in fewer runs. **IV** keeps each value's own effect apart from the interactions; **V** keeps the interactions apart from each other too. |
+| **Plackett–Burman** | Screening many factors (up to 23) in 12, 20 or 24 runs. |
+| **Composite (ccf)** | A curved model of a few factors — to find where the specs are best met. |
+
+**Centre points** add runs at the middle of every range; they show whether a response curves. A
+simulation gives the same answer every time, so nothing is repeated and the order does not matter.
+
+After a run, the **Effects** list shows, for the chosen spec or measurement, each value's effect — how
+much it changes from low to high — and each pair's interaction, largest first. Effects in **bold** are
+larger than the noise level estimated from the small ones. A fractional or Plackett–Burman design cannot
+tell some effects apart; those are listed beside the effect they are mixed with, and its tooltip has
+the full list. The display button opens, for each spec, the effects as bars with the noise level as a
+line, the response at each value's low, centre and high, and the strongest interaction.
+
+A good order is **Plackett–Burman** first to find the few values that matter, then **Composite** on
+just those. **Model optimum** (crosshair) then searches the fitted model for where the specs are best
+met inside the ranges, and checks that point with one real simulation — the panel shows what the model
+predicted beside what the simulation gave. **Send to Tuning** loads the point into the Tuning sliders;
+**Send to Optimizer** makes it where the Optimizer's next run starts.
+
 ## From the command line, and from an agent {#headless}
 
 Everything the panel runs, `circuitrf yield` runs too — `yield mc`, `yield estimate`,
-`yield corners`, `yield center` (with `--surrogate quadratic`) and `yield trial` — and an agent runs
+`yield corners`, `yield center` (with `--surrogate quadratic`), `yield doe` and `yield trial` — and an agent runs
 the same through MCP. See
 [the command line](cli.html) and [AI agents](ai-agents.html#yield).

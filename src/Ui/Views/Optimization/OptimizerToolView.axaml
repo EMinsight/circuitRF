@@ -233,10 +233,20 @@
                            Text="{Binding GoalsMetText}"/>
             </Grid>
 
-            <!-- What the last action did. -->
-            <TextBlock Grid.Row="3" Text="{Binding StatusText}" FontSize="11" Opacity="0.75"
-                       Margin="6,0,6,2" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusDetail}"
-                       IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            <!-- What the last action did, and a start point handed over (Send to Optimizer). -->
+            <StackPanel Grid.Row="3" Margin="6,0,6,2">
+                <TextBlock Text="{Binding StatusText}" FontSize="11" Opacity="0.75"
+                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusDetail}"
+                           IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasStartFrom}">
+                    <TextBlock Text="{Binding StartFromText}" FontSize="11" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StartFromText}"/>
+                    <Button Grid.Column="1" Classes="tb" Command="{Binding ClearStartFromCommand}"
+                            ToolTip.Tip="Start from the schematic's values again">
+                        <mi:MaterialIcon Kind="Close"/>
+                    </Button>
+                </Grid>
+            </StackPanel>
 
             <!-- Goals header + toolbar (the Analyses panel's set). -->
             <Grid Grid.Row="4" ColumnDefinitions="*,Auto" Margin="6,2,4,0">

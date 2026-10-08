@@ -239,10 +239,56 @@ internal static partial class Reference
         sb.AppendLine("    circuitrf yield center amp.csch --surrogate quadratic --trials 200 --verify 1000");
         sb.AppendLine();
 
+        // brief-yield-14 R-ya14-8: design of experiments.
+        sb.AppendLine("Design of experiments (yield doe, the doe line)");
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "A design of experiments sets the factors at the points of a structured design and analyses which of them " +
+            "move each response. factors=opt (the default) varies the opt=1 entries between the ends of their ranges — " +
+            "the centre is the range's midpoint on the entry's own scale, so a log-scaled one's is geometric; " +
+            "factors=stat varies the stat=1 entries to nominal +- k sigma (levels=sigma:k), a tolerance study in a " +
+            "handful of runs. A whole-number or discrete factor takes its nearest allowed values, and the report says " +
+            "so. Designs: full2 (2^k runs, at most 10 factors), frac (a 2^(k-p) fraction at resolution 4 or 5 from a " +
+            "published minimum-aberration table, 4 to 11 factors), pb (Plackett-Burman, 12, 20 or 24 runs for up to 23 " +
+            "factors) and ccf (the face-centred central composite — cube, face points and centre — for a quadratic " +
+            "model). centre= adds centre points, which check a two-level model for curvature. Simulation is " +
+            "deterministic, so runs are neither replicated nor randomized, and a repeated centre point costs nothing.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "Responses are each goal's worst value and margin and every scalar measure. Each is fitted on coded -1/+1 " +
+            "factors — main effects and two-factor interactions, and the pure quadratics for ccf — and an effect (twice " +
+            "the coded coefficient: the change from low to high) is ACTIVE when it exceeds Lenth's margin, t(0.975; " +
+            "m/3) x 1.5 x the median of the small effects; a deterministic simulation has no pure error to test " +
+            "against. A fractional or Plackett-Burman design cannot tell some effects apart, and every effect it reports " +
+            "carries its alias set: res IV keeps main effects clear of two-factor interactions, res V keeps those clear " +
+            "of each other, Plackett-Burman confounds each main effect partially with the interactions of the others. " +
+            "--optimum searches the fitted model (the optimizer's algorithms, microseconds per evaluation) for the point " +
+            "where the goals are best met inside the ranges, then confirms it by one real simulation, reported as " +
+            "predicted vs simulated for every goal: the model is never the answer, the confirmation is.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "Screen with design=pb first, then design=ccf on the few active factors. The result is <design>.doe.npy: " +
+            "the runs group (coded and actual factors, every response), the effects group (effects, Lenth margin, R², " +
+            "alias sets, the effects-Pareto bars), and the main and interaction groups the plots draw.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        sb.AppendLine("    doe design=pb");
+        sb.AppendLine("    circuitrf yield doe amp.csch --design pb                 # which of many factors matter");
+        sb.AppendLine("    circuitrf yield doe amp.csch --design ccf --optimum      # a response surface and its confirmed best point");
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "Over MCP: run analysis=doe with the same fields (design, resolution, factors, levels, centre, responses, " +
+            "optimum); read result.doe.responses[].effects[] (term, effect, active, aliases) and the written " +
+            "<design>.doe.npy.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+
         // brief-yield-5 R-ya5-7: the run, generated from the verb's own noun and flag tables.
         sb.AppendLine("Running it");
         sb.AppendLine();
-        sb.AppendLine("    circuitrf yield mc|estimate|trial|corners|center <file.csch|file.cnl> [flags]");
+        sb.AppendLine("    circuitrf yield mc|estimate|trial|corners|center|doe <file.csch|file.cnl> [flags]");
         sb.AppendLine();
         foreach (var (noun, summary) in Yield.Nouns)
             sb.AppendLine($"  {noun,-16} {summary}");

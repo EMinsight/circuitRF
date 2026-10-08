@@ -97,17 +97,12 @@ public static class QuadraticSurrogate
     /// <summary>Simulations per candidate: the design plus the check trials.</summary>
     public static int PointsPerCandidate(int k) => Design(k).Count + CheckTrials(k);
 
-    /// <summary>The design's points: the centre, ±δ on each coordinate, then (+δ, +δ) on each pair when full.</summary>
+    /// <summary>The design's points: the centre, ±δ on each coordinate, then (+δ, +δ) on each pair when full.
+    /// The centre and the axial points are <see cref="DoeDesigns.CentreAndAxial"/>, the construction design of
+    /// experiments' face-centred composite shares (brief-yield-14 R-ya14-2).</summary>
     public static IReadOnlyList<double[]> Design(int k)
     {
-        var points = new List<double[]> { new double[k] };
-        for (int i = 0; i < k; i++)
-        {
-            var plus = new double[k]; plus[i] = Delta;
-            var minus = new double[k]; minus[i] = -Delta;
-            points.Add(plus);
-            points.Add(minus);
-        }
+        var points = DoeDesigns.CentreAndAxial(k, Delta);
         if (IsFull(k))
             for (int i = 0; i < k; i++)
                 for (int j = i + 1; j < k; j++)

@@ -208,3 +208,24 @@ as `nominal`; its values are 1…N.
 A **Monte Carlo at each corner** writes `<design>.yield.npy` with the Monte Carlo layout above stacked under the same
 `corner` axis: `[corner, trial, …]`, `trials.*` as `[corner, trial]`, `yield.*` as `[corner]`. Corners that stopped at
 different trial counts are padded with NaN to the longest.
+
+## Design of experiments (brief-yield-14)
+
+A design of experiments (`DoeRun`, `src/Design/Statistics`) writes ONE grouped `DataSet` to **`<design>.doe.npy` beside
+the schematic or netlist**. `<r>` is a response: `goal:<g>:worst`, `goal:<g>:margin`, or a scalar measure's name.
+
+| Group | Cube | Axes | What |
+|---|---|---|---|
+| `runs` | `coded:<key>` | `[run]` | each factor's coded level, −1 … +1 |
+| `runs` | `actual:<key>` | `[run]` | the value set, base SI |
+| `runs` | `<r>` | `[run]` | the response; NaN where the run did not evaluate it |
+| `runs` | `kind`, `status` | `[run]` | 0 cube, 1 axial, 2 centre; 0 evaluated, 1 not |
+| `effects` | `<r>:effect`, `<r>:coefficient`, `<r>:active` | `[term]` (labelled with the terms: `A`, `AB`, `A^2`) | twice the coded coefficient; the coefficient; 1/0 |
+| `effects` | `<r>:abs`, `<r>:margin_line` | `[rank]` (labelled, largest first) | the effects Pareto's bars and its Lenth-margin line |
+| `effects` | `<r>:intercept`, `<r>:lenth_pse`, `<r>:lenth_margin`, `<r>:r2`, `<r>:curvature` | scalar | the fit; curvature NaN without centre points or for `ccf` |
+| `effects` | `aliases` | `[term]` (labelled with each term's alias set) | how many aliases each term has |
+| `main` | `<r>:<key>` | `[level]` | the response's mean at each coded level |
+| `interaction` | `<r>:<keyA>*<keyB>` | `[by_level, level]` | the mean at each (B, A) level pair, B low then high |
+| `doe` | `design`, `factor_source`, `levels`, `generators`, `goal:<g>:spec` | one-point, labelled | the design described, the factor source, the levels, a fraction's generators, each goal's line |
+| `doe` | `factors` | `[factor]` (labelled `A = R1.R: low \| centre \| high`) | the factors |
+| `doe` | `runs`, `centre`, `evaluated`, `did_not_evaluate`, `resolution` | scalar | counts; resolution NaN unless a fraction |

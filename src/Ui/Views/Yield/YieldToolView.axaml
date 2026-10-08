@@ -134,6 +134,8 @@
                              ToolTip.Tip="Every enabled corner, once each — or a Monte Carlo at each"/>
                 <RadioButton Classes="mode" GroupName="YieldMode" Content="Centering" IsChecked="{Binding IsCentering}"
                              ToolTip.Tip="Move the designable nominals to maximize yield, then verify on fresh trials"/>
+                <RadioButton Classes="mode" GroupName="YieldMode" Content="DOE" IsChecked="{Binding IsDoe}"
+                             ToolTip.Tip="Design of experiments — which factors matter, how they interact, and a response model"/>
 
                 <Border Classes="divider"/>
 
@@ -161,6 +163,21 @@
                     </Button>
                     <Button Classes="tb" Command="{Binding SendCentredToTuningCommand}" ToolTip.Tip="Send the centred nominals to Tuning">
                         <mi:MaterialIcon Kind="TuneVertical"/>
+                    </Button>
+                </StackPanel>
+
+                <!-- DOE: the fitted model's best point, confirmed by simulation, then handed on. -->
+                <StackPanel Orientation="Horizontal" IsVisible="{Binding IsDoe}">
+                    <Border Classes="divider"/>
+                    <Button Classes="tb" Command="{Binding FindModelOptimumCommand}"
+                            ToolTip.Tip="Model optimum — search the fitted model for the goals' best point, then confirm it by simulation">
+                        <mi:MaterialIcon Kind="Crosshairs"/>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding SendOptimumToTuningCommand}" ToolTip.Tip="Send the model optimum to Tuning">
+                        <mi:MaterialIcon Kind="TuneVertical"/>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding SendOptimumToOptimizerCommand}" ToolTip.Tip="Send the model optimum to the Optimizer as its start point">
+                        <mi:MaterialIcon Kind="Target"/>
                     </Button>
                 </StackPanel>
 
@@ -222,7 +239,7 @@
 
             <!-- Run settings: one summary line, expanded by the chevron. -->
             <StackPanel Grid.Row="4" Margin="4,0,4,2">
-                <Grid ColumnDefinitions="Auto,*">
+                <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding ShowStatisticsSettings}">
                     <Button Classes="tb" Command="{Binding ToggleSettingsCommand}" ToolTip.Tip="Run settings">
                         <Panel>
                             <mi:MaterialIcon Kind="ChevronRight" IsVisible="{Binding !SettingsExpanded}"/>
@@ -232,8 +249,13 @@
                     <TextBlock Grid.Column="1" Text="{Binding SettingsSummary}" FontSize="11" Opacity="0.8"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                 </Grid>
-                <Grid ColumnDefinitions="Auto,90,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
-                      IsVisible="{Binding SettingsExpanded}" Margin="20,2,0,2">
+                <Grid ColumnDefinitions="Auto,90,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="20,2,0,2">
+                    <Grid.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="SettingsExpanded"/>
+                            <Binding Path="ShowStatisticsSettings"/>
+                        </MultiBinding>
+                    </Grid.IsVisible>
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Trials" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <TextBox Grid.Row="0" Grid.Column="1" Classes="cell commit" PlaceholderText="100" Margin="0,1"
                              Text="{Binding TrialsText, UpdateSourceTrigger=LostFocus}"
@@ -321,6 +343,55 @@
                     <TextBox Grid.Row="2" Grid.Column="3" Classes="cell commit" Width="70" HorizontalAlignment="Left"
                              PlaceholderText="none" Margin="0,1"
                              Text="{Binding CenterMaxEvalsText, UpdateSourceTrigger=LostFocus}"/>
+                </Grid>
+                <!-- DOE settings: the doe line, one summary line, expanded by its chevron. -->
+                <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding IsDoe}">
+                    <Button Classes="tb" Command="{Binding ToggleDoeSettingsCommand}" ToolTip.Tip="Design settings">
+                        <Panel>
+                            <mi:MaterialIcon Kind="ChevronRight" IsVisible="{Binding !DoeSettingsExpanded}"/>
+                            <mi:MaterialIcon Kind="ChevronDown" IsVisible="{Binding DoeSettingsExpanded}"/>
+                        </Panel>
+                    </Button>
+                    <TextBlock Grid.Column="1" Text="{Binding DoeSettingsSummary}" FontSize="11" Opacity="0.8"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </Grid>
+                <Grid ColumnDefinitions="Auto,110,Auto,*" RowDefinitions="Auto,Auto,Auto" Margin="20,2,0,2">
+                    <Grid.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                            <Binding Path="IsDoe"/>
+                            <Binding Path="DoeSettingsExpanded"/>
+                        </MultiBinding>
+                    </Grid.IsVisible>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Design" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ComboBox Grid.Row="0" Grid.Column="1" Classes="cell" Margin="0,1" HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding DoeDesignChoices}" SelectedIndex="{Binding DoeDesignIndex}"
+                              ToolTip.Tip="Full factorial for a few factors; Plackett–Burman to screen many; a composite for a quadratic model"/>
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Resolution" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"
+                               IsVisible="{Binding IsDoeFrac}"/>
+                    <ComboBox Grid.Row="0" Grid.Column="3" Classes="cell" Width="64" HorizontalAlignment="Left" Margin="0,1"
+                              ItemsSource="{Binding DoeResolutionChoices}" SelectedIndex="{Binding DoeResolutionIndex}"
+                              IsVisible="{Binding IsDoeFrac}"
+                              ToolTip.Tip="IV: main effects clear of interactions. V: interactions clear of each other."/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Factors" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ComboBox Grid.Row="1" Grid.Column="1" Classes="cell" Margin="0,1" HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding DoeFactorChoices}" SelectedIndex="{Binding DoeFactorIndex}"
+                              ToolTip.Tip="The Opt rows over their ranges, or the Stat rows at nominal ± k σ"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" Text="± σ" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"
+                               IsVisible="{Binding IsDoeStat}"/>
+                    <TextBox Grid.Row="1" Grid.Column="3" Classes="cell commit" Width="64" HorizontalAlignment="Left"
+                             PlaceholderText="1" Margin="0,1" IsVisible="{Binding IsDoeStat}"
+                             Text="{Binding DoeSigmaText, UpdateSourceTrigger=LostFocus}"
+                             ToolTip.Tip="k — each tolerance's levels are nominal ± k σ"/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Centre points" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Grid.Row="2" Grid.Column="1" Classes="cell commit" PlaceholderText="1" Margin="0,1"
+                             Text="{Binding DoeCentreText, UpdateSourceTrigger=LostFocus}"
+                             ToolTip.Tip="Centre points check a two-level model for curvature"/>
+                    <TextBlock Grid.Row="2" Grid.Column="2" Text="Goals" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
+                    <ComboBox Grid.Row="2" Grid.Column="3" Classes="cell" Width="72" HorizontalAlignment="Left" Margin="0,1"
+                              ItemsSource="{Binding DoeResponseChoices}" SelectedIndex="{Binding DoeResponseIndex}"
+                              ToolTip.Tip="goals: those the factors are for. all: every enabled goal. Scalar measures always."/>
                 </Grid>
             </StackPanel>
 
@@ -457,6 +528,67 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <!-- ── DOE: the plan, the effects, the model optimum ─────────────────── -->
+                    <StackPanel IsVisible="{Binding IsDoe}">
+                        <TextBlock Text="Factors" Classes="section" Margin="6,6,4,0"/>
+                        <TextBlock Text="{Binding DoePlanText}" Classes="muted" TextWrapping="Wrap" Margin="6,0,4,2"/>
+                        <ItemsControl ItemsSource="{Binding DoeFactors}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="yld:DoeFactorRow">
+                                    <Grid ColumnDefinitions="18,*,Auto" Margin="6,1,4,1">
+                                        <TextBlock Grid.Column="0" Text="{Binding Letter}" FontSize="12" FontWeight="SemiBold"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Key}" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="{Binding Low}" Classes="muted"/>
+                                            <TextBlock Text="·" Classes="muted"/>
+                                            <TextBlock Text="{Binding Centre}" Classes="muted"/>
+                                            <TextBlock Text="·" Classes="muted"/>
+                                            <TextBlock Text="{Binding High}" Classes="muted"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Grid ColumnDefinitions="Auto,*" Margin="6,6,4,0" IsVisible="{Binding HasDoeEffects}">
+                            <TextBlock Text="Effects" Classes="section" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Column="1" Classes="cell" Margin="8,0,0,0" HorizontalAlignment="Stretch"
+                                      ItemsSource="{Binding DoeResponses}" SelectedItem="{Binding SelectedDoeResponse}"
+                                      ToolTip.Tip="The response whose effects are listed"/>
+                        </Grid>
+                        <TextBlock Text="{Binding DoeFitText}" Classes="muted" Margin="6,0,4,2" IsVisible="{Binding HasDoeEffects}"
+                                   ToolTip.Tip="An effect beyond Lenth's margin is active (bold)"/>
+                        <ItemsControl ItemsSource="{Binding DoeEffects}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="yld:DoeEffectRow">
+                                    <Grid ColumnDefinitions="44,80,*" Margin="6,0,4,0" ToolTip.Tip="{Binding Aliases}">
+                                        <TextBlock Grid.Column="0" Text="{Binding Term}" FontSize="12"
+                                                   FontWeight="{Binding Active, Converter={x:Static yldv:YieldToolView.ActiveWeight}}"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Effect}" FontSize="12" TextAlignment="Right" Margin="0,0,8,0"
+                                                   FontWeight="{Binding Active, Converter={x:Static yldv:YieldToolView.ActiveWeight}}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding Aliases}" Classes="muted" TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <StackPanel IsVisible="{Binding HasDoeOptimum}" Margin="6,6,4,0">
+                            <TextBlock Text="Model optimum" Classes="section"/>
+                            <TextBlock Text="{Binding DoeOptimumText}" FontSize="11" TextWrapping="Wrap"/>
+                            <ItemsControl ItemsSource="{Binding DoeOptimumGoals}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="yld:DoeOptimumRow">
+                                        <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,1">
+                                            <TextBlock Grid.Column="0" Text="{Binding Goal}" FontSize="12"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Predicted, StringFormat='predicted {0}'}" Classes="muted" Margin="8,0"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding Simulated, StringFormat='simulated {0}'}" FontSize="11"/>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
 
                     <!-- ── Specs ─────────────────────────────────────────────────────── -->
                     <Grid ColumnDefinitions="*,Auto" Margin="6,6,4,0">

@@ -962,6 +962,115 @@ both verified at 84.3 % [81.9 %, 86.5 %] — the exact yield of a centred window
 poor fit), `SurrogateCenteringTests` (same verified yield within the intervals, fewer simulations — a counter),
 `CenteringPanelTests` (the panel's centred nominals equal the verb's; Push is one undo step).
 
+## 17. Design of experiments (brief-yield-14, optional)
+
+A design of experiments sets the factors at the points of a structured design, runs each point once through the one
+evaluator, and analyses which factors move each response. It is a noun on the `yield` verb and a mode of the Yield
+panel, not a fourth run service with its own evaluator: `DoeRun` (`src/Design/Statistics`) evaluates through
+`OptimizationRun.ForEvaluation` / `EvaluateValues`, exactly as a Monte Carlo trial does.
+
+### 17.1 Factors and levels (R-ya14-1)
+
+`factors=opt` (the default) varies the `opt=1` entries through the optimizer's own `OptimizationVariables`: coded −1 is
+u = 0, +1 is u = 1 and the centre u = ½, decoded on the entry's own scale — so a log-scaled entry's centre is
+geometric, and a complex value's parts (tuning D18) are factors like any entry, recomposed whole. Integer, stepped and
+preferred-value entries snap (preferred values too — a DOE level is a value someone could build) and the run notes the
+levels they snapped to (`yield.doe.snapped`). `factors=stat` varies the `stat=1` entries: a level is z = ±k
+(`levels=sigma:k`, default 1) through the entry's OWN distribution via `SampleValues.Apply` — nominal ± k σ exactly for a
+Gaussian, the Φ(±k) quantile for the others — so a tolerance study costs a handful of runs instead of a Monte Carlo.
+Correlations are not applied to the levels (each factor is set on its own; `yield.doe.uncorrelated` says so) and kit
+statistics are not factors. A mixed rectangular/polar pair is refused (`yield.doe.mixed-pair`), as in D2: no corner of
+two non-orthogonal ranges need describe a complex number. `levels=range` with stat factors, or `sigma:` with opt
+factors, is `yield.doe.levels-mismatch`.
+
+### 17.2 Designs (R-ya14-2)
+
+`DoeDesigns` (`src/Engine/Statistics`, pure numerics). Factor letters are the textbook's, A–Z without I.
+
+| `design=` | Points | Limit |
+|---|---|---|
+| `full2` | the 2^k corners in standard order | 10 factors (`yield.doe.too-many` names the run count) |
+| `frac` | 2^(k−p) at `resolution=4\|5`: the fewest-run design in the embedded table whose resolution is at least the one asked | 4–11 factors; none held → `yield.doe.no-fraction`, listing what is |
+| `pb` | Plackett–Burman, 12, 20 or 24 runs, the first k columns | 23 factors |
+| `ccf` | a cube (full up to 4 factors, the table's fewest-run resolution-V fraction beyond), then ±1 on each axis | 10 factors |
+
+The fraction table is Montgomery's "selected 2^(k−p) fractional factorial designs" (*Design and Analysis of
+Experiments*), the minimum-aberration choices of Chen, Sun & Wu (1993); the Plackett–Burman designs are the cyclic
+constructions of Plackett & Burman (1946) — the published first row, its cyclic shifts, a row of every factor low. Both
+are data in the source with their citations. The axial points are `DoeDesigns.CentreAndAxial`, the construction YA-12's
+quadratic surrogate builds its design on (`QuadraticSurrogate.Design` calls it), so the two cannot drift.
+
+`centre=<n>` (default 1) adds centre points. **Simulation is deterministic, so there is no replication and no
+randomized run order** — both exist to average out and decorrelate run-to-run noise a simulation does not have. A
+repeated centre point is simulated once (identical value maps are deduplicated before evaluation); its purpose is the
+curvature check, not an error estimate.
+
+### 17.3 Effects (R-ya14-4)
+
+Responses: each analysed goal's `worst` value and `margin` (§8) and every real scalar measure. `responses=goals` takes
+the goals the factors are for — `use=opt|both` with opt factors, `use=yield|both` with stat factors; `all` takes every
+enabled goal. When the bench has a `measure` line every analysis runs (`analyses=all` on the evaluator), so every scalar
+measure is a response.
+
+`DoeEffects.Model` decides what a design can estimate: `full2` every main effect and two-factor interaction; `frac` the
+main effects, then each two-factor interaction not already in an earlier term's alias chain — one estimate per chain,
+labelled with the whole chain (aliases are listed to three factors, from the defining relation's words); `pb` main
+effects only, each with the two-factor interactions it is PARTIALLY confounded with and their correlation
+(`BC (−0.33)`); `ccf` main effects, two-factor interactions and pure quadratics. An effect is never shown as if it were
+clean.
+
+Each response is fitted by least squares (`LeastSquares`, Householder QR) on coded factors over every run that evaluated
+it; an effect is twice its coded coefficient — for a main effect the change from low to high. **Lenth's method**
+(Lenth 1989) separates active effects from noise-sized ones, since a deterministic simulation has no pure error:
+s0 = 1.5 × median|e|, PSE = 1.5 × median of the |e| below 2.5 s0, margin = t(0.975; m/3) × PSE (`StudentTQuantile`,
+through the regularized incomplete beta). Active means |e| above the margin and above 1e-9 of the largest effect — on a
+response the model reproduces exactly the PSE is 0, and an inert factor's 1e-16 must not read as active. With centre
+points a two-level design reports the curvature (cube mean − centre mean); above the margin it is a warning naming
+`design=ccf` (`yield.doe.curvature`). A response with fewer evaluated runs than coefficients is not fitted
+(`yield.doe.not-fitted`).
+
+### 17.4 Results and plots (R-ya14-5, R-ya14-6)
+
+`<design>.doe.npy` (`DoeRun.ResultPathFor`); the layout is in `results-dataset-layout.md` §"Design of experiments".
+The plots are `DoeDisplayPreset` (`src/Render/DataDisplay`), written beside the result as `<design>.doe.cdd` by the
+panel's display button — composed from ordinary cube traces, nothing new to draw: per response, the **effects Pareto**
+(`effects.<r>:abs` as bars over a `rank` axis labelled with the terms, the Lenth margin as a line), the **main-effects
+plot** (`main.<r>:<key>`, one line per factor over the coded levels; a two-level design's means are its cube's, so a
+centre point does not put the curvature into every factor's line) and the **interaction plot** of the strongest active
+pair (`interaction.<r>:<A>*<B>`, a family over `by_level`). A goal's margin repeats its value's effects with the sign
+turned, so the display draws the value.
+
+### 17.5 The model optimum (R-ya14-7)
+
+`DoeRun.ModelOptimum` searches the fitted models with the optimizer's registry algorithms (differential evolution, then
+BFGS-B from its best, over the unit box; a model evaluation is microseconds) for the point inside the ranges where the
+smallest predicted goal margin over its scale is largest. A goal on one number is predicted from its value's model and
+scored by the goal's own rule (YA-12's `MarginRule`); a goal over a sweep, from its margin's model. A coordinate within
+1e-9 of a range end is put on it (a search that rails stops a hair short), snapped to allowed values, predicted there,
+and **confirmed by one real simulation**, reported as predicted vs simulated for every goal. The model is never the
+answer — the confirmation is (the YA-12 rule). Stat factors are refused (`yield.doe.optimum-needs-opt`): a tolerance
+study has no designable range to search. The panel's **Send to Tuning** loads the point into the sliders; **Send to
+Optimizer** makes it the start of the Optimizer's next runs (`OptimizerPanelViewModel.StartFrom`, applied to the
+prepared bench in memory through `TunableOverrides`, cleared from the panel).
+
+### 17.6 The `doe` line, headless, the panel (R-ya14-3, R-ya14-8, R-ya14-9)
+
+`doe [design=…] [resolution=4|5] [factors=opt|stat] [levels=range|sigma:<k>] [centre=<n>] [responses=goals|all]
+[parallel=<n>]` — `DoeSettings` on `TuningSetup.Doe` and `CschTuning.Doe`; defaults are never held or written (levels
+that are the factors' own default read back as null), a malformed value is `cnl.doe.value-invalid`, a second line
+`cnl.doe.repeated`. `check` asks `DoeRun.Create` and reports its refusal. `circuitrf yield doe <path>` (`cli.md`
+§25.9), MCP `run analysis=doe`; `reference statistics` carries the section with the screening guidance (`pb` first,
+then `ccf` on the active few). The panel's **DOE** mode shows the plan (factors, levels and run count — the
+constructor's answer, nothing simulated) before running, then the effects table per response with active effects in
+bold and their aliases, the one-click display, and Model optimum → confirmation → Send.
+
+Gates (`tests/Ui.Tests/Statistics/DoeTests.cs`): `DoeDesignTests` (the eight corners; the 2^(5−1) V generator
+E = ABCD with no main-effect alias; the 12/20/24-run Plackett–Burman matrices published and orthogonal),
+`DoeEffectsTests` (y = 3a + 2b + ab recovered exactly, the inert factor inactive), `DoeRunTests` (an RC low-pass: R and
+C active, an inert resistor not; the line round-trips byte-stable through `.cnl` and `.csch`), `DoeModelOptimumTests`
+(a `ccf` of an exact quadratic lands on the analytic optimum and the confirmation matches the prediction),
+`DoeCliVerbTests` (the verb as a process; `--json` carries the alias sets; `check` refuses), `DoePanelTests`.
+
 ## Later phases
 
 Each phase appends its section above this one as it lands: YA-13 the documentation and the example.

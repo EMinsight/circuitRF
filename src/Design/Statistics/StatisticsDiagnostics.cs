@@ -308,4 +308,81 @@ public static class StatisticsDiagnostics
         "yield.center.surrogate-switched-back", DiagnosticSeverity.Warning,
         "After {running} poor surrogate fits running (to iteration {iteration}), centering switched back to simulated " +
         "trials for the rest of the search.", ("running", running), ("iteration", iteration));
+
+    // ── YA-14: design of experiments ───────────────────────────────────────
+
+    public static Diagnostic DoeNoFactors(string source) => Diagnostic.Create(
+        "yield.doe.no-factors", DiagnosticSeverity.Error,
+        "doe factors={source} has no factor: mark entries {flag} in the Tuning, Optimizer or Yield panel, or add {flag} to " +
+        "a tune line.", ("source", source), ("flag", source == "stat" ? "with a distribution (stat=1)" : "opt=1"));
+
+    public static Diagnostic DoeTooMany(string design, int k, string runs, string instead) => Diagnostic.Create(
+        "yield.doe.too-many", DiagnosticSeverity.Error,
+        "doe design={design} is refused for {k} factors: it would take {runs} runs. {instead}",
+        ("design", design), ("k", k), ("runs", runs), ("instead", instead));
+
+    public static Diagnostic DoeNoFraction(int k, int resolution, string held) => Diagnostic.Create(
+        "yield.doe.no-fraction", DiagnosticSeverity.Error,
+        "doe design=frac resolution={resolution}: the fractional-factorial table holds no such design for {k} factors. {held}",
+        ("resolution", resolution), ("k", k), ("held", held));
+
+    public static Diagnostic DoeLevelsMismatch(string levels, string factors) => Diagnostic.Create(
+        "yield.doe.levels-mismatch", DiagnosticSeverity.Error,
+        "doe levels={levels} does not go with factors={factors}: opt factors take their ranges (levels=range), stat factors " +
+        "nominal ± k sigma (levels=sigma:<k>).", ("levels", levels), ("factors", factors));
+
+    public static Diagnostic DoeMixedPair(string value, string parts) => Diagnostic.Create(
+        "yield.doe.mixed-pair", DiagnosticSeverity.Error,
+        "doe: {value} has factors on {parts} — one rectangular and one polar part — and no corner of their two ranges need " +
+        "describe a complex number. Make both factors parts of one system (real and imag, or mag and phase).",
+        ("value", value), ("parts", parts));
+
+    public static Diagnostic DoeNoResponse() => new(
+        "yield.doe.no-response", DiagnosticSeverity.Error,
+        "doe: nothing to analyse — no goal the factors are for, and no measure that gives a single number. Add a goal in the " +
+        "Optimizer window, a scalar measure, or responses=all.");
+
+    public static Diagnostic DoeSnapped(string key, string low, string high) => Diagnostic.Create(
+        "yield.doe.snapped", DiagnosticSeverity.Info,
+        "doe: {key} takes only allowed values, so its levels are the nearest of them — low {low}, high {high}.",
+        ("key", key), ("low", low), ("high", high));
+
+    public static Diagnostic DoeUncorrelated(int correlations) => Diagnostic.Create(
+        "yield.doe.uncorrelated", DiagnosticSeverity.Info,
+        "doe factors=stat sets each factor on its own: the {n} correlate line(s) are not applied to the design's levels.",
+        ("n", correlations));
+
+    public static Diagnostic DoeNoneEvaluated(int runs, string first) => Diagnostic.Create(
+        "yield.doe.none-evaluated", DiagnosticSeverity.Error,
+        "None of the {runs} runs evaluated; the first: {first}.", ("runs", runs), ("first", first));
+
+    public static Diagnostic DoeNotFitted(string response, int evaluated, int terms) => Diagnostic.Create(
+        "yield.doe.not-fitted", DiagnosticSeverity.Warning,
+        "doe: {response} is not analysed — {evaluated} runs evaluated it, and its model has {terms} coefficients.",
+        ("response", response), ("evaluated", evaluated), ("terms", terms));
+
+    public static Diagnostic DoeCurvature(string response) => Diagnostic.Create(
+        "yield.doe.curvature", DiagnosticSeverity.Warning,
+        "doe: {response} curves — its centre points sit off the plane through the cube by more than the Lenth margin. A " +
+        "two-level model does not describe it; design=ccf fits the quadratic.", ("response", response));
+
+    public static Diagnostic DoeWriteFailed(string path, string reason) => Diagnostic.Create(
+        "yield.doe.write-failed", DiagnosticSeverity.Warning,
+        "The design-of-experiments result could not be written to {path}: {reason}", ("path", path), ("reason", reason));
+
+    public static Diagnostic DoeOptimumNeedsOpt() => new(
+        "yield.doe.optimum-needs-opt", DiagnosticSeverity.Error,
+        "A model optimum searches the designable ranges, and factors=stat varies tolerances: run the design with factors=opt.");
+
+    public static Diagnostic DoeOptimumNoGoal() => new(
+        "yield.doe.optimum-no-goal", DiagnosticSeverity.Error,
+        "A model optimum aims at the goals, and this design analysed none. Add a goal in the Optimizer window.");
+
+    public static Diagnostic DoeOptimumNotFitted(string goal) => Diagnostic.Create(
+        "yield.doe.optimum-not-fitted", DiagnosticSeverity.Error,
+        "A model optimum needs every goal's model, and goal {goal} has none — too few of its runs evaluated.", ("goal", goal));
+
+    public static Diagnostic DoeConfirmationFailed(string reason) => Diagnostic.Create(
+        "yield.doe.confirmation-failed", DiagnosticSeverity.Warning,
+        "The confirmation run at the model optimum did not evaluate: {reason}", ("reason", reason));
 }

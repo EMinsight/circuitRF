@@ -1379,5 +1379,13 @@ internal static class Check
             var center = Design.Statistics.CenteringRun.Create(PreparedCircuit.FromBench(lib, tb, null));
             if (center.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
         }
+
+        // brief-yield-14 R-ya14-3: a doe line the run would refuse — no factor, too many for full2, a resolution the
+        // fraction table does not hold for k, levels that do not go with the factors — from its constructor.
+        if (setup.Doe is not null)
+        {
+            var doe = Design.Statistics.DoeRun.Create(PreparedCircuit.FromBench(lib, tb, null));
+            if (doe.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
+        }
     }
 }

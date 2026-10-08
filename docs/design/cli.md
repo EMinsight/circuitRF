@@ -3673,3 +3673,19 @@ poor fits switched the search back to simulated trials (`switchedBackAt`). The v
 result file are unchanged: they are always simulated. A design whose surrogate would cost no fewer simulations than M is
 refused with the counts. MCP: `surrogate`.
 
+### 25.9 `yield doe` (brief-yield-14)
+
+`yield doe <path>` runs `DoeRun` (`docs/design/yield.md` §17): the factors — the `opt=1` entries over their ranges, or
+`--factors stat` the `stat=1` entries at nominal ± k σ — at the points of a full factorial, fraction, Plackett–Burman or
+face-centred composite design, each response's effects judged against Lenth's margin. A noun on the verb, not a verb of
+its own: it shares the evaluator, `--set`, `--goals`, `--parallel`, `-o`, `-q`, `--json` and the exit codes. Its own
+flags are the `doe` line's — `--design`, `--resolution`, `--factors`, `--levels`, `--centre`, `--responses` — and
+`--optimum`; every Monte Carlo flag (`--trials`, `--seed`, `--sampling`, `--target`, `--trial`, `--vars`, …) is refused
+as belonging to another noun, and the `doe` flags are refused on the others. stderr carries the design and its
+simulation count, then a line per batch; stdout the factor table, then per response its effects largest first — active
+ones starred, each with its alias set — the Lenth margin, R² and the curvature. `--optimum` adds the fitted model's
+best point and its confirmation: predicted vs simulated per goal. The file is `<design>.doe.npy` (`-o` moves it);
+`--json` carries `result.doe` (`responses[].effects[].aliases`, `optimum`). It writes nothing to the design. Exit: **0**
+· **1** refused (or the optimum refused) · **2** no run evaluated · **130** cancelled, nothing written — there is no
+target, so no 3. Over MCP it is `run analysis=doe`.
+

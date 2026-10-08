@@ -58,6 +58,20 @@ public static class TuningDirectiveDiagnostics
         "cnl.statistics.center-repeated", DiagnosticSeverity.Error,
         "A netlist states at most one 'center' line.");
 
+    // ── The doe line (brief-yield-14 R-ya14-3) ─────────────────────────────────
+
+    public static Diagnostic SecondDoe() => new(
+        "cnl.doe.repeated", DiagnosticSeverity.Error,
+        "A netlist states at most one 'doe' line.");
+
+    public static Diagnostic DoeValueInvalid(string key, string value, string expected) => Diagnostic.Create(
+        "cnl.doe.value-invalid", DiagnosticSeverity.Error,
+        "doe {key}={value} is not {expected}.", ("key", key), ("value", value), ("expected", expected));
+
+    public static Diagnostic DoeMalformed(string shape) => Diagnostic.Create(
+        "cnl.doe.malformed", DiagnosticSeverity.Error,
+        "'doe' is not written the way it reads: {shape}", ("shape", shape));
+
     public static Diagnostic CornerMalformed(string corner, string problem) => Diagnostic.Create(
         "cnl.corner.malformed", DiagnosticSeverity.Error,
         "corner {corner}: {problem}", ("corner", corner), ("problem", problem));

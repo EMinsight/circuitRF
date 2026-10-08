@@ -2,7 +2,7 @@ namespace CircuitRF.Core.Netlist;
 
 /// <summary>
 /// One of the directives of a TestBench's tuning setup — <c>tune</c>, <c>preset</c>, <c>goal</c>,
-/// <c>optimize</c>, and the statistical <c>correlate</c>, <c>statistics</c>, <c>center</c> and <c>corner</c> — with every
+/// <c>optimize</c>, and the statistical <c>correlate</c>, <c>statistics</c>, <c>center</c>, <c>doe</c> and <c>corner</c> — with every
 /// key it takes and the bare words its grammar uses.
 /// </summary>
 /// <param name="Keyword">The line's first word.</param>
@@ -44,6 +44,9 @@ public static partial class AnalysisDirectiveSchema
     public static readonly IReadOnlyList<string> SamplingTokens = ["random", "lhs", "sobol"];
     public static readonly IReadOnlyList<string> NonConvergedTokens = ["fail", "warn"];
     public static readonly IReadOnlyList<string> SurrogateTokens = ["none", "quadratic"];
+    public static readonly IReadOnlyList<string> DoeDesignTokens   = ["full2", "frac", "pb", "ccf"];
+    public static readonly IReadOnlyList<string> DoeFactorTokens   = ["opt", "stat"];
+    public static readonly IReadOnlyList<string> DoeResponseTokens = ["goals", "all"];
 
     /// <summary>Each distribution a <c>tune</c> line's <c>dist=</c> names: the spread keys it reads, what
     /// they mean, and one line as the writer writes it (yield overview D2).</summary>
@@ -240,6 +243,33 @@ public static partial class AnalysisDirectiveSchema
             [],
             "center algorithm=cmaes trials=200 verify=1000 maxiter=40"),
 
+        new("doe", StatisticsTopic,
+            "doe [design=full2|frac|pb|ccf] [resolution=4|5] [factors=opt|stat] [levels=range|sigma:<k>] [centre=<n>] " +
+            "[responses=goals|all] [parallel=<n>]",
+            "Design of experiments: a structured set of runs over the factors — the opt=1 entries at the ends of their " +
+            "ranges, or the stat=1 entries at nominal +- k sigma — then each response's main effects and two-factor " +
+            "interactions on coded -1/+1 factors, with Lenth's margin separating active effects from noise-sized ones. " +
+            "A fractional or Plackett-Burman design reports what each effect is confounded with. Simulation is " +
+            "deterministic, so runs are neither replicated nor randomized. At most one line, and a default is never written.",
+            [
+                new("design",     Default: "full2",
+                                  Summary: "full2 (2^k runs; at most 10 factors) | frac (2^(k-p) at resolution=, from a published " +
+                                           "minimum-aberration table) | pb (Plackett-Burman, 12, 20 or 24 runs: screening many " +
+                                           "factors) | ccf (face-centred central composite: a quadratic model, to find a best point)."),
+                new("resolution", Default: "4", Summary: "frac: 4 (main effects clear of two-factor interactions) | 5 (two-factor interactions clear of each other)."),
+                new("factors",    Default: "opt", Summary: "opt (the opt=1 entries over their ranges) | stat (the stat=1 entries at nominal +- k sigma)."),
+                new("levels",     Default: "range (opt), sigma:1 (stat)",
+                                  Summary: "range with factors=opt; sigma:<k> with factors=stat — the level is z = +-k through the " +
+                                           "entry's own distribution, exactly nominal +- k sigma for a Gaussian."),
+                new("centre",     Default: "1", Summary: "Centre points added — they check for curvature; 0 adds none."),
+                new("responses",  Default: "goals",
+                                  Summary: "goals (the goals the factors are for — use=opt|both with opt factors, use=yield|both " +
+                                           "with stat factors) | all (every enabled goal). Every scalar measure is a response too."),
+                new("parallel",   Summary: "How many simulations may run at once."),
+            ],
+            [],
+            "doe design=frac resolution=5 centre=3"),
+
         new("corner", StatisticsTopic,
             "corner <Name> [enabled=0] [trial=<n> seed=<n> sampling=… trials=<n>] [temp=<v>] <key>=<v> [unit] ...",
             "A named corner: a value for the ambient temperature (temp, in degC) and for any global variable or " +
@@ -259,7 +289,7 @@ public static partial class AnalysisDirectiveSchema
             "corner SS_hot temp=85 Vdd=3.0 V R1.R=47 Ohm"),
     ];
 
-    /// <summary>The eight directives, in the order a <c>.cnl</c> writes them.</summary>
+    /// <summary>The nine directives, in the order a <c>.cnl</c> writes them.</summary>
     public static IReadOnlyList<TuningDirectiveSpec> TuningDirectives => _tuning;
 
     /// <summary>The directive spec for a keyword, or null.</summary>

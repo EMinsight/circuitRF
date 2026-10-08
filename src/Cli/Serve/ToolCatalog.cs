@@ -305,7 +305,10 @@ internal static class ToolCatalog
           + "trial=<n> re-runs one trial. corners evaluates every enabled corner and returns result.corners — a corner × goal "
           + "margin table and each goal's worst corner; generate returns the corner lines a cross product makes. "
           + "center moves the opt=1 nominals to maximize yield and returns result.center — the centred values as text, "
-          + "the yield vs iteration, and the start and centred yields verified on the same fresh trials.",
+          + "the yield vs iteration, and the start and centred yields verified on the same fresh trials. "
+          + "doe runs a design of experiments over the opt=1 ranges (or the tolerances) and returns result.doe — each "
+          + "response's effects, which are active, and what each is confounded with; optimum adds the fitted model's best "
+          + "point and its confirming simulation.",
             "analysis",
             "Which analysis to run.",
             [
@@ -417,6 +420,24 @@ internal static class ToolCatalog
                   + "best point are then verified on fresh trials, each with its interval. Exit 0: done (and the verified yield met "
                   + "target). Exit 3: the verified yield is below target. Exit 2: no candidate evaluated. A progress notification "
                   + "per iteration."),
+                // brief-yield-14 R-ya14-8: `yield doe`, the same verb's sixth noun. A progress notification per batch of runs.
+                new("doe", ["yield", "doe"],
+                    [new("path", true, "The .csch or .cnl whose opt=1 ranges (or stat=1 tolerances), goals, measures and doe line to run.")],
+                    [Set,
+                     new("design",     "--design",     OptKind.Str,     "full2 (default; at most 10 factors), frac (fractional factorial), pb (Plackett-Burman: screen many factors in 12, 20 or 24 runs) or ccf (face-centred central composite: a quadratic model)."),
+                     new("resolution", "--resolution", OptKind.Integer, "frac: 4 (default) or 5."),
+                     new("factors",    "--factors",    OptKind.Str,     "opt (default: the opt=1 entries over their ranges) or stat (the stat=1 entries at nominal +- k sigma)."),
+                     new("levels",     "--levels",     OptKind.Str,     "range (opt factors) or sigma:k (stat factors; default sigma:1)."),
+                     new("centre",     "--centre",     OptKind.Integer, "Centre points added (default 1) — the curvature check."),
+                     new("responses",  "--responses",  OptKind.Str,     "goals (default: the goals the factors are for) or all (every enabled goal). Every scalar measure is a response."),
+                     new("optimum",    "--optimum",    OptKind.Flag,    "factors=opt: search the fitted model for the goals' best point inside the ranges, then confirm it by one simulation — result.doe.optimum gives predicted vs simulated per goal."),
+                     new("parallel",   "--parallel",   OptKind.Integer, "Simulations evaluated at once."),
+                     new("goals",      "--goals",      OptKind.StrList, "Analyse only these of the enabled goals."),
+                     new("output",     "-o",           OptKind.Path,    "The result .npy; default <design>.doe.npy beside the design.")],
+                    "Design of experiments: which factors matter and how they interact. Each response's effects on coded -1/+1 "
+                  + "factors, active when beyond Lenth's margin; a fractional or Plackett-Burman design lists what every effect is "
+                  + "confounded with (result.doe.responses[].effects[].aliases). Screen with design=pb first, then design=ccf on the "
+                  + "few active factors. Exit 0 unless it could not run; exit 2: no run evaluated. Writes nothing to the design."),
                 new("em", ["em"],
                     [new("path", true, "The .cem or .c3d to run; with component, the workspace folder (or .cws, "
                                      + "or .ctech) whose technology the part is drawn on.")],

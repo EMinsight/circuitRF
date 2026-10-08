@@ -46,6 +46,7 @@ internal static partial class Yield
         ("trial",    "Re-runs one trial (--trial n) and prints what it drew and how it scored; -o writes its analysis results."),
         ("corners",  "Evaluates every enabled corner and prints a corner x goal margin table; exit 3 when a goal fails at a corner. --mc runs a Monte Carlo at each, --generate prints corner lines."),
         ("center",   "Design centering: moves the opt=1 nominals to maximize yield on M common trials, then verifies the start and the best point on fresh trials; exit 3 when the verified yield is below --target."),
+        ("doe",      "Design of experiments: runs a structured design over the opt=1 ranges (or the stat=1 tolerances) and prints each response's main effects and interactions, Lenth's margin and the alias sets; --optimum searches the fitted model and confirms its best point by simulation. Exits 0 unless it could not run."),
     ];
 
     /// <summary>Every flag the verb reads — the table <c>reference statistics</c> renders, so a flag added here
@@ -83,7 +84,14 @@ internal static partial class Yield
         ("--time",         "limit",              "center: wall-clock limit — seconds, or a number and s, ms, min or h."),
         ("--width",        "w",                  "center: the smooth yield's logistic width, a fraction of each goal's scale."),
         ("--surrogate",    "none|quadratic",     "center: quadratic scores each candidate on a quadratic fit of its margins (2k+1 simulations and a few trials) and 10,000 virtual trials; the result's yield is still simulated."),
-        ("-o",             "out.npy",            "Where the result is written; default <design>.yield.npy beside the design (center: the best point's verification)."),
+        ("--design",       "full2|frac|pb|ccf",  "doe: the design — full factorial, fractional factorial, Plackett–Burman screening, face-centred composite."),
+        ("--resolution",   "4|5",                "doe --design frac: the resolution."),
+        ("--factors",      "opt|stat",           "doe: the opt=1 entries over their ranges, or the stat=1 entries at nominal ± k sigma."),
+        ("--levels",       "range|sigma:k",      "doe: range with opt factors; sigma:k with stat factors."),
+        ("--centre",       "n",                  "doe: centre points added (0 adds none)."),
+        ("--responses",    "goals|all",          "doe: the goals the factors are for, or every enabled goal; every scalar measure either way."),
+        ("--optimum",      "",                   "doe --factors opt: search the fitted model for the goals' best point and confirm it by one simulation."),
+        ("-o",             "out.npy",            "Where the result is written; default <design>.yield.npy beside the design (center: the best point's verification; doe: <design>.doe.npy)."),
         ("-q",             "",                   "No progress line on stderr."),
     ];
 
@@ -96,7 +104,7 @@ internal static partial class Yield
             return code;
         }
         string noun = args[0].ToLowerInvariant();
-        if (noun is not ("mc" or "estimate" or "trial" or "corners" or "center"))
+        if (noun is not ("mc" or "estimate" or "trial" or "corners" or "center" or "doe"))
         {
             int code = JsonRun.Fail(CliDiagnostics.YieldNoun(args[0]));
             Usage();
@@ -116,6 +124,10 @@ internal static partial class Yield
         double? width = null;
         string? surrogate = null;
         var centerOnly = new List<string>();
+        string? design = null, factors = null, levels = null, responses = null;
+        int? resolution = null, centre = null;
+        bool optimum = false;
+        var doeOnly = new List<string>();
         var sets = new List<(string Name, string Expr)>();
 
         for (int i = 1; i < args.Length; i++)
@@ -163,6 +175,21 @@ internal static partial class Yield
                 case "--max-iter" when hasValue:    if (!Int(a, args[++i], 1, out maxIter, out int r10)) return r10; centerOnly.Add(a); break;
                 case "--max-evals" when hasValue:   if (!Int(a, args[++i], 1, out maxEvals, out int r11)) return r11; centerOnly.Add(a); break;
                 case "--surrogate" when hasValue:   surrogate = args[++i]; centerOnly.Add(a); break;
+                // brief-yield-14: the doe line's own settings.
+                case "--design" when hasValue:     design = args[++i]; doeOnly.Add(a); break;
+                case "--factors" when hasValue:    factors = args[++i]; doeOnly.Add(a); break;
+                case "--levels" when hasValue:     levels = args[++i]; doeOnly.Add(a); break;
+                case "--responses" when hasValue:  responses = args[++i]; doeOnly.Add(a); break;
+                case "--resolution" when hasValue:
+                {
+                    string text = args[++i];
+                    if (text is not ("4" or "5")) return JsonRun.Fail(CliDiagnostics.YieldFlagValue(a, text, "4 or 5"));
+                    resolution = int.Parse(text, CultureInfo.InvariantCulture);
+                    doeOnly.Add(a);
+                    break;
+                }
+                case "--centre" or "--center-points" when hasValue: if (!Int(a, args[++i], 0, out centre, out int r12)) return r12; doeOnly.Add(a); break;
+                case "--optimum":                  optimum = true; doeOnly.Add(a); break;
                 case "--width" when hasValue:
                 {
                     string text = args[++i];
@@ -200,6 +227,9 @@ internal static partial class Yield
         var mode = noun == "mc" ? StatisticalMode.MonteCarlo : StatisticalMode.Yield;
         if (CornerFlagProblem(noun, perCorner, generate, write, corners, trial) is { } cornerFlag) return JsonRun.Fail(cornerFlag);
         if (noun != "center" && centerOnly.Count > 0) return JsonRun.Fail(CliDiagnostics.YieldCornerFlag(centerOnly[0], "yield center"));
+        if (noun != "doe" && doeOnly.Count > 0) return JsonRun.Fail(CliDiagnostics.YieldCornerFlag(doeOnly[0], "yield doe"));
+        if (noun == "doe" && DoeFlagProblem(trial, cornerName, presetName, autostop, corners, contributions, vars, trials, seed, sampling, target) is { } doeFlag)
+            return JsonRun.Fail(doeFlag);
         if (noun == "center" && CenterFlagProblem(trial, cornerName, autostop, corners, contributions) is { } centerFlag)
             return JsonRun.Fail(centerFlag);
         if (time is not null && TuningValidator.TimeLimitSeconds(time) is null)
@@ -240,6 +270,9 @@ internal static partial class Yield
             : PreparedCircuit.FromFile(full, Path.GetDirectoryName(full));
         if (circuit.ReadError is not null || circuit.Lib is null || circuit.Tb is not { } tb)
             return JsonRun.Fail(CliDiagnostics.RunFailed(circuit.ReadError ?? "the design could not be read"));
+
+        if (noun == "doe")
+            return RunDoe(input, full, circuit, tb, sets, output, quiet, goals, optimum, new DoeFlags(design, resolution, factors, levels, centre, responses, parallel));
 
         if (noun == "center")
             return RunCenter(input, full, circuit, tb, sets, presetName, output, quiet, vars, goals, new CenterFlags(
@@ -759,7 +792,7 @@ internal static partial class Yield
 
     private static void Usage()
     {
-        Console.Error.WriteLine("Usage: circuitrf yield mc|estimate|trial|corners|center <file.csch|file.cnl> [--trials n] [--seed n]");
+        Console.Error.WriteLine("Usage: circuitrf yield mc|estimate|trial|corners|center|doe <file.csch|file.cnl> [--trials n] [--seed n]");
         Console.Error.WriteLine("                     [--sampling random|lhs|sobol] [--target p%] [--confidence p%] [--autostop]");
         Console.Error.WriteLine("                     [--nonconverged fail|warn] [--save scalars|all|n|auto] [--process 0|1] [--mismatch 0|1]");
         Console.Error.WriteLine("                     [--sigma-scale k] [--parallel n] [--analyses goals|all] [--set var=expr]");
@@ -769,5 +802,7 @@ internal static partial class Yield
         Console.Error.WriteLine("                     center: [--algorithm id] [--trials M] [--verify n] [--max-iter n] [--max-evals n]");
         Console.Error.WriteLine("                             [--time limit] [--width w] [--surrogate none|quadratic] [--target p%]");
         Console.Error.WriteLine("                             [--save-preset name]");
+        Console.Error.WriteLine("                     doe: [--design full2|frac|pb|ccf] [--resolution 4|5] [--factors opt|stat]");
+        Console.Error.WriteLine("                          [--levels range|sigma:k] [--centre n] [--responses goals|all] [--optimum]");
     }
 }

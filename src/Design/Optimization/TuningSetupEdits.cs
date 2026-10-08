@@ -169,6 +169,14 @@ public static class TuningSetupEdits
         return next;
     }
 
+    /// <summary>The <c>doe</c> line replaced (brief-yield-14). Kept even at every default, as the center line is.</summary>
+    public static TuningSetup WithDoe(TuningSetup? setup, DoeSettings settings)
+    {
+        var next = setup?.Clone() ?? new TuningSetup();
+        next.Doe = settings.Clone();
+        return next;
+    }
+
     /// <summary>True when <paramref name="s"/> says nothing a default does not.</summary>
     public static bool IsDefault(StatisticsSettings s)
         => s.Trials is null && s.Seed is null && s.Sampling == StatSampling.Random && s.Target is null && s.Confidence is null

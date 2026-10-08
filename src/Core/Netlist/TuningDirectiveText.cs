@@ -7,7 +7,7 @@ namespace CircuitRF.Core.Netlist;
 
 /// <summary>
 /// Reads and writes the <c>tune</c>, <c>preset</c>, <c>goal</c> and <c>optimize</c> directives, and the
-/// statistical <c>correlate</c>, <c>statistics</c>, <c>center</c> and <c>corner</c> (docs/design/yield.md) — the
+/// statistical <c>correlate</c>, <c>statistics</c>, <c>center</c>, <c>doe</c> and <c>corner</c> (docs/design/yield.md) — the
 /// <c>.cnl</c> spelling of a <see cref="TuningSetup"/>. The grammar is
 /// <see cref="AnalysisDirectiveSchema.TuningDirectives"/>; the writer's output reads back to the same
 /// setup and writes the same bytes again.
@@ -19,9 +19,9 @@ namespace CircuitRF.Core.Netlist;
 /// </summary>
 public static class TuningDirectiveText
 {
-    /// <summary>The eight keywords.</summary>
+    /// <summary>The nine keywords.</summary>
     public static bool IsKeyword(string word)
-        => word is "tune" or "preset" or "goal" or "optimize" or "correlate" or "statistics" or "center" or "corner";
+        => word is "tune" or "preset" or "goal" or "optimize" or "correlate" or "statistics" or "center" or "doe" or "corner";
 
     // ── Read ─────────────────────────────────────────────────────────────────
 
@@ -54,6 +54,11 @@ public static class TuningDirectiveText
                 if (setup.Centering is not null)
                     throw Refuse(TuningDirectiveDiagnostics.SecondCenter());
                 setup.Centering = ReadCenter(rest, Unknown);
+                break;
+            case "doe":
+                if (setup.Doe is not null)
+                    throw Refuse(TuningDirectiveDiagnostics.SecondDoe());
+                setup.Doe = ReadDoe(rest, Unknown);
                 break;
             case "corner": setup.Corners.Add(ReadCorner(rest)); break;
         }
@@ -169,6 +174,61 @@ public static class TuningDirectiveText
             }
         }
         return c;
+    }
+
+    /// <summary>The <c>doe</c> line (brief-yield-14 R-ya14-3). A malformed value is refused with <c>cnl.doe.*</c>; a
+    /// default is never held, so neither serialization writes one.</summary>
+    private static DoeSettings ReadDoe(string rest, Action<string> unknown)
+    {
+        var t = Tokens(rest);
+        var d = new DoeSettings();
+        T DoeEnum<T>(string key, string value, IReadOnlyList<string> tokens) where T : struct, Enum
+            => TryEnum<T>(value, tokens) ?? throw Refuse(TuningDirectiveDiagnostics.DoeValueInvalid(key, value, "one of " + string.Join(", ", tokens)));
+        int Whole(string key, string value, int min)
+            => int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) && n >= min ? n
+               : throw Refuse(TuningDirectiveDiagnostics.DoeValueInvalid(key, value, min == 0 ? "a whole number, 0 or more" : "a whole number, 1 or more"));
+        for (int i = 0; i < t.Count; i++)
+        {
+            if (!t[i].Text.Contains('=')) throw Refuse(TuningDirectiveDiagnostics.DoeMalformed($"'{t[i].Text}' is not key=value — doe design=frac resolution=5"));
+            var (key, value) = KeyValue(t, ref i, unitsAllowed: false);
+            switch (key.ToLowerInvariant())
+            {
+                case "design":
+                    var design = DoeEnum<DoeDesignKind>(key, value, AnalysisDirectiveSchema.DoeDesignTokens);
+                    d.Design = design == DoeDesignKind.Full2 ? null : design;
+                    break;
+                case "resolution":
+                    d.Resolution = value is "4" or "5" ? Default(int.Parse(value, CultureInfo.InvariantCulture), DoeSettings.DefaultResolution)
+                                 : throw Refuse(TuningDirectiveDiagnostics.DoeValueInvalid(key, value, "4 or 5"));
+                    break;
+                case "factors":
+                    var factors = DoeEnum<DoeFactorSource>(key, value, AnalysisDirectiveSchema.DoeFactorTokens);
+                    d.Factors = factors == DoeFactorSource.Opt ? null : factors;
+                    break;
+                case "levels":
+                    if (value.Equals("range", StringComparison.OrdinalIgnoreCase)) d.Levels = "range";
+                    else if (DoeSettings.SigmaOf(value) is { } k) d.Levels = "sigma:" + k.ToString("R", CultureInfo.InvariantCulture);
+                    else throw Refuse(TuningDirectiveDiagnostics.DoeValueInvalid(key, value, "range, or sigma:<k> with k above zero"));
+                    break;
+                case "centre":
+                    d.Centre = Default(Whole(key, value, 0), DoeSettings.DefaultCentre);
+                    break;
+                case "responses":
+                    var responses = DoeEnum<DoeResponseSet>(key, value, AnalysisDirectiveSchema.DoeResponseTokens);
+                    d.Responses = responses == DoeResponseSet.Goals ? null : responses;
+                    break;
+                case "parallel":
+                    d.Parallelism = Whole(key, value, 1);
+                    break;
+                default:
+                    (d.Extra ??= new(StringComparer.Ordinal))[key] = value;
+                    unknown(key);
+                    break;
+            }
+        }
+        // The levels the factors take anyway are the default, wherever on the line factors= sits.
+        if (d.Levels == DoeSettings.DefaultLevels(d.EffectiveFactors)) d.Levels = null;
+        return d;
     }
 
     private static int Positive(string key, string value)
@@ -420,7 +480,7 @@ public static class TuningDirectiveText
     // ── Write ────────────────────────────────────────────────────────────────
 
     /// <summary>The directive lines for <paramref name="setup"/>, in the order tune, preset, goal,
-    /// optimize, correlate, statistics, center, corner. Empty for an empty setup.</summary>
+    /// optimize, correlate, statistics, center, doe, corner. Empty for an empty setup.</summary>
     public static IEnumerable<string> Write(TuningSetup setup)
     {
         foreach (var e in setup.Variables)    yield return WriteTune(e);
@@ -430,6 +490,7 @@ public static class TuningDirectiveText
         foreach (var c in setup.Correlations) yield return WriteCorrelate(c);
         if (setup.Statistics is { } st)       yield return WriteStatistics(st);
         if (setup.Centering is { } center)    yield return WriteCenter(center);
+        if (setup.Doe is { } doe)             yield return WriteDoe(doe);
         foreach (var c in setup.Corners)      yield return WriteCorner(c);
     }
 
@@ -478,6 +539,24 @@ public static class TuningDirectiveText
         if (c.Surrogate is { } sg && sg != CenteringSurrogate.None)
             sb.Append(" surrogate=").Append(AnalysisDirectiveSchema.SurrogateTokens[(int)sg]);
         Extra(sb, c.Extra, "");
+        return sb.ToString();
+    }
+
+    /// <summary>The <c>doe</c> line, keys in the order the grammar lists them, defaults never written.</summary>
+    private static string WriteDoe(DoeSettings d)
+    {
+        var sb = new StringBuilder("doe");
+        if (d.Design is { } design && design != DoeDesignKind.Full2)
+            sb.Append(" design=").Append(AnalysisDirectiveSchema.DoeDesignTokens[(int)design]);
+        if (d.Resolution is { } r)     sb.Append(" resolution=").Append(r.ToString(CultureInfo.InvariantCulture));
+        if (d.Factors is { } f && f != DoeFactorSource.Opt)
+            sb.Append(" factors=").Append(AnalysisDirectiveSchema.DoeFactorTokens[(int)f]);
+        Opt(sb, "levels", d.Levels);
+        if (d.Centre is { } c)         sb.Append(" centre=").Append(c.ToString(CultureInfo.InvariantCulture));
+        if (d.Responses is { } rs && rs != DoeResponseSet.Goals)
+            sb.Append(" responses=").Append(AnalysisDirectiveSchema.DoeResponseTokens[(int)rs]);
+        if (d.Parallelism is { } p)    sb.Append(" parallel=").Append(p.ToString(CultureInfo.InvariantCulture));
+        Extra(sb, d.Extra, "");
         return sb.ToString();
     }
 

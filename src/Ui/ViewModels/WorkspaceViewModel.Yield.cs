@@ -72,6 +72,7 @@ public partial class WorkspaceViewModel
         panel.OpenCornerPicker = () => ShowToolPanelCore(DockPanelIds.Analyses);
         panel.EditGoalInOptimizer = EditGoalInOptimizer;
         panel.SendToTuningTarget  = (values, label) => SendYieldTrialToTuning(panel, values, label);
+        panel.SendToOptimizerTarget = (values, label) => SendDoeOptimumToOptimizer(panel, values, label);
         panel.SessionForDrawing   = d => SessionForTunedDrawing(d, openTab: true);   // Push of centred nominals
         panel.RerunTrial     = RerunYieldTrialAsync;
         panel.CopyText       = text => _ = CopyTextAsync(text);
@@ -139,6 +140,16 @@ public partial class WorkspaceViewModel
         tuning.LoadValues(values, label);
     }
 
+    /// <summary>Send to Optimizer from the DOE mode (brief-yield-14 R-ya14-7): the Optimizer, on the same schematic,
+    /// starts its next runs from the model optimum.</summary>
+    private void SendDoeOptimumToOptimizer(YieldPanelViewModel panel, IReadOnlyDictionary<string, string> values, string label)
+    {
+        if (_factory.OptimizerTool?.Panel is not { } optimizer || panel.Tuned is not { } bench) return;
+        if (!ReferenceEquals(optimizer.Tuned, bench)) optimizer.SetActiveSchematic(bench, panel.HeaderLabel);
+        ShowToolPanelCore(DockPanelIds.Optimizer);
+        optimizer.StartFrom(values, label);
+    }
+
     /// <summary>Re-run trial: the snapshot of every display holding the result (YA-9's action), or — with none open —
     /// the trial run again and reported, so the button never does nothing.</summary>
     private async Task<string?> RerunYieldTrialAsync(string path, int trial)
@@ -173,7 +184,10 @@ public partial class WorkspaceViewModel
         string cdd = YieldDisplayPath(resultPath);
         if (!_openDocsByPath.ContainsKey(cdd) && !File.Exists(cdd))
         {
-            var config = YieldDisplayPreset.Build(result, Path.GetFullPath(resultPath));
+            // A design of experiments' result draws the DOE display (brief-yield-14 R-ya14-6); every other, the yield's.
+            var config = DoeDisplayPreset.Responses(result).Count > 0
+                ? DoeDisplayPreset.Build(result, Path.GetFullPath(resultPath))
+                : YieldDisplayPreset.Build(result, Path.GetFullPath(resultPath));
             try
             {
                 await File.WriteAllTextAsync(cdd, JsonSerializer.Serialize(config, DataDisplayJson.Options),
