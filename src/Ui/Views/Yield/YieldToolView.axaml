@@ -1,0 +1,515 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dockVm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:yld="using:CircuitRF.Ui.Yield"
+             xmlns:tun="using:CircuitRF.Ui.Tuning"
+             xmlns:yldv="using:CircuitRF.Ui.Views.Yield"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Yield.YieldToolView"
+             x:DataType="dockVm:YieldTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- brief-yield-10 §2. Header (schematic + run status), the mode, a toolbar of the Analyses panel's own small
+         icon buttons, the live yield readout, the run settings collapsed to one line, then Variables, Specs and
+         either the trial table or the corners. Readouts carry no prose: a value or a short status. -->
+
+    <UserControl.Styles>
+        <Style Selector="Button.tb">
+            <Setter Property="Padding" Value="3,2"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Margin" Value="0,0,1,0"/>
+        </Style>
+        <Style Selector="Button.tb mi|MaterialIcon">
+            <Setter Property="Width" Value="14"/>
+            <Setter Property="Height" Value="14"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
+        <Style Selector="Button.tb:disabled mi|MaterialIcon">
+            <Setter Property="Opacity" Value="0.35"/>
+        </Style>
+        <Style Selector="ToggleButton.tb">
+            <Setter Property="Padding" Value="3,2"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="MinHeight" Value="0"/>
+        </Style>
+        <Style Selector="ToggleButton.tb mi|MaterialIcon">
+            <Setter Property="Width" Value="14"/>
+            <Setter Property="Height" Value="14"/>
+        </Style>
+        <Style Selector="RadioButton.mode">
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="bd" Padding="8,2" CornerRadius="3" Background="Transparent"
+                            BorderBrush="{DynamicResource SystemBaseLowColor}" BorderThickness="1" Margin="0,0,2,0">
+                        <ContentPresenter Content="{TemplateBinding Content}" FontSize="11" VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="RadioButton.mode:checked /template/ Border#bd">
+            <Setter Property="Background" Value="{DynamicResource SystemAccentColor}"/>
+        </Style>
+        <Style Selector="RadioButton.mode:checked /template/ ContentPresenter">
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Opacity" Value="0.6"/>
+        </Style>
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Opacity" Value="0.8"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBox.cell">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="3,0"/>
+            <Setter Property="MinHeight" Value="0"/>
+        </Style>
+        <Style Selector="ComboBox.cell">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="4,0"/>
+            <Setter Property="MinHeight" Value="0"/>
+        </Style>
+        <Style Selector="ListBox.rows ListBoxItem">
+            <Setter Property="Padding" Value="6,1"/>
+            <Setter Property="MinHeight" Value="0"/>
+        </Style>
+        <Style Selector="ListBox.AddRows ListBoxItem">
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay, x:DataType=tun:TuningAddRow}"/>
+        </Style>
+        <Style Selector="Border.divider">
+            <Setter Property="Width" Value="1"/>
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="Margin" Value="2,0,3,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="{DynamicResource SystemBaseLowColor}"/>
+        </Style>
+        <Style Selector="TextBlock.gridcell">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Width" Value="70"/>
+            <Setter Property="TextAlignment" Value="Right"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+        </Style>
+        <Style Selector="TextBlock.gridcell.fail">
+            <Setter Property="Foreground" Value="#FFD94F4F"/>
+        </Style>
+        <Style Selector="TextBlock.gridcell.worst">
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Panel>
+        <TextBlock IsVisible="{Binding !Panel.HasSchematic}"
+                   Text="{x:Static yld:YieldPanelViewModel.NoSchematicText}"
+                   Margin="8" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*" IsVisible="{Binding HasSchematic}"
+              DataContext="{Binding Panel}" x:DataType="yld:YieldPanelViewModel">
+
+            <!-- Header: schematic, and the run's trials / elapsed / time left. -->
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="6,4,4,1">
+                <TextBlock Grid.Column="0" Text="{Binding HeaderLabel}" FontWeight="SemiBold" FontSize="12"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding TrialsDoneText}" FontSize="11" Opacity="0.75"
+                               ToolTip.Tip="Trials done / cap"/>
+                    <TextBlock Text="{Binding ElapsedText}" FontSize="11" Opacity="0.75" ToolTip.Tip="Elapsed"/>
+                    <TextBlock Text="{Binding EtaText}" FontSize="11" Opacity="0.75"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Mode and toolbar. -->
+            <WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="4,0,4,2">
+                <RadioButton Classes="mode" GroupName="YieldMode" Content="Monte Carlo" IsChecked="{Binding IsMonteCarlo}"
+                             ToolTip.Tip="The spread of every measurement — no pass/fail"/>
+                <RadioButton Classes="mode" GroupName="YieldMode" Content="Yield" IsChecked="{Binding IsYield}"
+                             ToolTip.Tip="The fraction of trials meeting every yield spec, with its interval"/>
+                <RadioButton Classes="mode" GroupName="YieldMode" Content="Corners" IsChecked="{Binding IsCorners}"
+                             ToolTip.Tip="Every enabled corner, once each — or a Monte Carlo at each"/>
+
+                <Border Classes="divider"/>
+
+                <Button Classes="tb" Command="{Binding RunCommand}" ToolTip.Tip="{Binding RunTip}">
+                    <mi:MaterialIcon Kind="Play"/>
+                </Button>
+                <Button Classes="tb" Command="{Binding PauseResumeCommand}" ToolTip.Tip="{Binding PauseResumeTip}">
+                    <Panel>
+                        <mi:MaterialIcon Kind="Pause" IsVisible="{Binding !IsPaused}"/>
+                        <mi:MaterialIcon Kind="PlayPause" IsVisible="{Binding IsPaused}"/>
+                    </Panel>
+                </Button>
+                <Button Classes="tb" Command="{Binding StopCommand}" ToolTip.Tip="Stop — keeps every finished trial">
+                    <mi:MaterialIcon Kind="Stop"/>
+                </Button>
+
+                <Border Classes="divider"/>
+
+                <Button Classes="tb" Command="{Binding OpenDisplayCommand}"
+                        ToolTip.Tip="Open yield display — trials, histograms, sensitivity and the statistics table">
+                    <mi:MaterialIcon Kind="ChartBoxOutline"/>
+                </Button>
+                <Button Classes="tb" Click="OnHelp" ToolTip.Tip="Help">
+                    <mi:MaterialIcon Kind="HelpCircleOutline"/>
+                </Button>
+            </WrapPanel>
+
+            <!-- The yield: value, interval bar against the target, did-not-evaluate. -->
+            <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" Margin="6,0,6,2">
+                <Grid.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="HasYield"/>
+                        <Binding Path="ShowYieldReadout"/>
+                    </MultiBinding>
+                </Grid.IsVisible>
+                <TextBlock Grid.Column="0" Text="{Binding YieldText}" FontSize="14" FontWeight="SemiBold"
+                           VerticalAlignment="Center" Margin="0,0,8,0" ToolTip.Tip="{Binding IntervalText}"/>
+                <yldv:FractionBar Grid.Column="1" Height="14" MinWidth="60" VerticalAlignment="Center"
+                                  Lower="{Binding YieldLower}" Upper="{Binding YieldUpper}" Value="{Binding YieldEstimate}"
+                                  Target="{Binding TargetFraction}" ToolTip.Tip="{Binding IntervalText}"/>
+                <TextBlock Grid.Column="2" Text="{Binding DidNotEvaluateText}" FontSize="11" Margin="8,0,0,0"
+                           VerticalAlignment="Center" Foreground="#FFD98C2F"/>
+            </Grid>
+
+            <!-- What the last action did, and the one-time display offer. -->
+            <StackPanel Grid.Row="3" Margin="6,0,6,2" Spacing="2">
+                <TextBlock Text="{Binding StatusText}" FontSize="11" Opacity="0.75"
+                           TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusDetail}"
+                           IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding OfferYieldDisplay}">
+                    <Button Content="Open yield display" FontSize="11" Padding="6,1" MinHeight="0"
+                            Command="{Binding OpenDisplayCommand}"/>
+                    <Button Classes="tb" Command="{Binding DismissDisplayOfferCommand}" ToolTip.Tip="Dismiss">
+                        <mi:MaterialIcon Kind="Close"/>
+                    </Button>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Run settings: one summary line, expanded by the chevron. -->
+            <StackPanel Grid.Row="4" Margin="4,0,4,2">
+                <Grid ColumnDefinitions="Auto,*">
+                    <Button Classes="tb" Command="{Binding ToggleSettingsCommand}" ToolTip.Tip="Run settings">
+                        <Panel>
+                            <mi:MaterialIcon Kind="ChevronRight" IsVisible="{Binding !SettingsExpanded}"/>
+                            <mi:MaterialIcon Kind="ChevronDown" IsVisible="{Binding SettingsExpanded}"/>
+                        </Panel>
+                    </Button>
+                    <TextBlock Grid.Column="1" Text="{Binding SettingsSummary}" FontSize="11" Opacity="0.8"
+                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                </Grid>
+                <Grid ColumnDefinitions="Auto,90,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                      IsVisible="{Binding SettingsExpanded}" Margin="20,2,0,2">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Trials" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Classes="cell commit" PlaceholderText="100" Margin="0,1"
+                             Text="{Binding TrialsText, UpdateSourceTrigger=LostFocus}"
+                             ToolTip.Tip="The number of trials — with auto-stop, the cap"/>
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Seed" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
+                    <StackPanel Grid.Row="0" Grid.Column="3" Orientation="Horizontal">
+                        <TextBox Classes="cell commit" Width="70" PlaceholderText="1" Margin="0,1"
+                                 Text="{Binding SeedText, UpdateSourceTrigger=LostFocus}"
+                                 ToolTip.Tip="The same seed draws the same trials"/>
+                        <Button Classes="tb" Command="{Binding NewSeedCommand}" ToolTip.Tip="A new seed">
+                            <mi:MaterialIcon Kind="DiceMultipleOutline"/>
+                        </Button>
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Sampling" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ComboBox Grid.Row="1" Grid.Column="1" Classes="cell" Margin="0,1" HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding SamplingChoices}" SelectedIndex="{Binding SamplingIndex}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" Text="Target %" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
+                    <TextBox Grid.Row="1" Grid.Column="3" Classes="cell commit" Width="70" HorizontalAlignment="Left"
+                             PlaceholderText="none" Margin="0,1"
+                             Text="{Binding TargetText, UpdateSourceTrigger=LostFocus}"/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Confidence %" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Grid.Row="2" Grid.Column="1" Classes="cell commit" PlaceholderText="95" Margin="0,1"
+                             Text="{Binding ConfidenceText, UpdateSourceTrigger=LostFocus}"/>
+                    <CheckBox Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="2" Content="Auto-stop at the target" FontSize="11"
+                              Margin="10,0,0,0" IsChecked="{Binding AutoStop}"
+                              ToolTip.Tip="Stop once the interval lies wholly above or below the target (50 trials at least)"/>
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Did not evaluate" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <ComboBox Grid.Row="3" Grid.Column="1" Classes="cell" Margin="0,1" HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding NonConvergedChoices}" SelectedIndex="{Binding NonConvergedIndex}"
+                              ToolTip.Tip="Fail: counted as a fail. Warn: left out of the yield."/>
+                    <TextBlock Grid.Row="3" Grid.Column="2" Text="Save" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
+                    <TextBox Grid.Row="3" Grid.Column="3" Classes="cell commit" Width="70" HorizontalAlignment="Left"
+                             PlaceholderText="auto" Margin="0,1"
+                             Text="{Binding SaveText, UpdateSourceTrigger=LostFocus}"
+                             ToolTip.Tip="auto, scalars, all, or the first N trials' sweeps"/>
+
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Parallel" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBox Grid.Row="4" Grid.Column="1" Classes="cell commit" PlaceholderText="auto" Margin="0,1"
+                             Text="{Binding ParallelText, UpdateSourceTrigger=LostFocus}"/>
+                </Grid>
+            </StackPanel>
+
+            <ScrollViewer Grid.Row="5" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="0,0,0,6">
+
+                    <!-- ── Variables ───────────────────────────────────────────────── -->
+                    <Grid ColumnDefinitions="*,Auto" Margin="6,4,4,0">
+                        <TextBlock Text="Variables" Classes="section"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button Classes="tb" x:Name="AddButton" ToolTip.Tip="Add tolerances…">
+                                <mi:MaterialIcon Kind="Plus"/>
+                                <Button.Flyout>
+                                    <Flyout Placement="BottomEdgeAlignedRight">
+                                        <Grid RowDefinitions="Auto,Auto,*" Width="320" Height="300"
+                                              DataContext="{Binding Add}" x:DataType="tun:TuningAddViewModel">
+                                            <TextBox Grid.Row="0" x:Name="AddSearch" Text="{Binding SearchText}"
+                                                     PlaceholderText="Name, instance, parameter or cell" FontSize="12">
+                                                <TextBox.InnerLeftContent>
+                                                    <mi:MaterialIcon Kind="Magnify" Width="14" Height="14" Margin="6,0,0,0" Opacity="0.6"/>
+                                                </TextBox.InnerLeftContent>
+                                            </TextBox>
+                                            <CheckBox Grid.Row="1" Content="Include sub-cells" FontSize="12" Margin="0,4"
+                                                      IsChecked="{Binding IncludeSubCells}"/>
+                                            <ListBox Grid.Row="2" x:Name="AddList" Classes="AddRows"
+                                                     ItemsSource="{Binding Results}" SelectionMode="Multiple,Toggle">
+                                                <ListBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="tun:TuningAddRow">
+                                                        <Grid ColumnDefinitions="*,Auto">
+                                                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                                                                <TextBlock Text="{Binding Key}" FontSize="12"/>
+                                                                <TextBlock Text="{Binding Location}" Classes="muted" VerticalAlignment="Center"/>
+                                                            </StackPanel>
+                                                            <TextBlock Grid.Column="1" Text="{Binding ValueText}" FontSize="11"
+                                                                       Opacity="0.8" Margin="8,0,0,0"/>
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ListBox.ItemTemplate>
+                                            </ListBox>
+                                        </Grid>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                            <Button Classes="tb" Command="{Binding EditCorrelationsCommand}"
+                                    ToolTip.Tip="Correlations… between toleranced values">
+                                <mi:MaterialIcon Kind="VectorLink"/>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Kit statistics: what the kits' statistical sections draw. -->
+                    <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto" Margin="6,1,4,1" IsVisible="{Binding HasKitStatistics}">
+                        <TextBlock Grid.Column="0" Text="Kit statistics" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <CheckBox Grid.Column="1" Content="Process" FontSize="11" IsChecked="{Binding KitProcess}" Margin="0,0,6,0"/>
+                        <CheckBox Grid.Column="2" Content="Mismatch" FontSize="11" IsChecked="{Binding KitMismatch}" Margin="0,0,6,0"/>
+                        <TextBlock Grid.Column="3" Classes="muted" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                   Text="{Binding KitSectionsText}" ToolTip.Tip="{Binding KitStreamsText}"/>
+                        <Button Grid.Column="4" Content="Choose a corner…" FontSize="11" Padding="4,0" MinHeight="0"
+                                IsVisible="{Binding KitNeedsSection}" Command="{Binding ShowCornerPickerCommand}"
+                                ToolTip.Tip="{Binding KitNote}"/>
+                    </Grid>
+
+                    <ItemsControl ItemsSource="{Binding Variables}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="yld:YieldVariableRowViewModel">
+                                <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,50,Auto" Margin="6,1,4,1"
+                                      ToolTip.Tip="{Binding DisabledReason}">
+                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsStat}" MinWidth="0" Padding="0"
+                                              Margin="0,0,4,0" ToolTip.Tip="Draw this value in every trial"/>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" MinWidth="64"
+                                                VerticalAlignment="Center" Margin="0,0,4,0">
+                                        <TextBlock Text="{Binding Key}" FontSize="12"/>
+                                        <TextBlock Text="{Binding Location}" Classes="muted" IsVisible="{Binding HasLocation}"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                    <ComboBox Grid.Column="2" Classes="cell" Width="92" ItemsSource="{Binding Distributions}"
+                                              SelectedItem="{Binding Distribution}" ToolTip.Tip="Distribution"/>
+                                    <TextBox Grid.Column="3" Classes="cell spread" Margin="4,0" MinWidth="70"
+                                             Text="{Binding SpreadText, Mode=OneWay}"
+                                             ToolTip.Tip="Spread: ± 2 %, ± 5 % at 3σ, σ 1 Ω, 45 … 55 Ω, 4 … 8 by 2, then , trunc 3σ"/>
+                                    <TextBlock Grid.Column="4" Text="{Binding NominalText}" FontSize="11" Opacity="0.8"
+                                               VerticalAlignment="Center" Margin="2,0,6,0" ToolTip.Tip="Nominal"/>
+                                    <yldv:FractionBar Grid.Column="5" Height="12" IsVisible="{Binding HasShare}"
+                                                      Upper="{Binding ShareValue}" VerticalAlignment="Center"
+                                                      ToolTip.Tip="{Binding ShareText}"/>
+                                    <Button Grid.Column="6" Classes="tb" ToolTip.Tip="More">
+                                        <mi:MaterialIcon Kind="DotsVertical"/>
+                                        <Button.Flyout>
+                                            <MenuFlyout>
+                                                <MenuItem Header="Remove tolerance" Command="{Binding RemoveCommand}"/>
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- ── Specs ─────────────────────────────────────────────────────── -->
+                    <Grid ColumnDefinitions="*,Auto" Margin="6,6,4,0">
+                        <TextBlock Text="Specs" Classes="section"/>
+                        <Button Grid.Column="1" Classes="tb" Command="{Binding EditGoalsCommand}"
+                                ToolTip.Tip="Edit goals… in the Optimizer">
+                            <mi:MaterialIcon Kind="Pencil"/>
+                        </Button>
+                    </Grid>
+                    <ListBox Classes="rows" ItemsSource="{Binding Goals}" SelectedItem="{Binding SelectedGoal}"
+                             Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="yld:YieldGoalRowViewModel">
+                                <Grid ColumnDefinitions="Auto,*,Auto,Auto,60" ToolTip.Tip="{Binding Summary}"
+                                      Opacity="{Binding IsEnabled, Converter={x:Static yldv:YieldToolView.EnabledOpacity}}">
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
+                                               Margin="0,0,6,0"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Summary}" Classes="muted" VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"/>
+                                    <ComboBox Grid.Column="2" Classes="cell" Width="64" ItemsSource="{Binding Uses}"
+                                              SelectedItem="{Binding Use}" Margin="4,0"
+                                              ToolTip.Tip="Used by the optimizer, the yield, or both"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding YieldText}" FontSize="11" MinWidth="46"
+                                               TextAlignment="Right" VerticalAlignment="Center" Margin="0,0,4,0"
+                                               ToolTip.Tip="{Binding IntervalText}"/>
+                                    <yldv:FractionBar Grid.Column="4" Height="12" IsVisible="{Binding HasYield}"
+                                                      Lower="{Binding Lower}" Upper="{Binding Upper}" Value="{Binding Estimate}"
+                                                      Target="{Binding Target}" IsBad="{Binding BelowTarget}"
+                                                      VerticalAlignment="Center" ToolTip.Tip="{Binding IntervalText}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <!-- ── Trials (Monte Carlo and Yield) ───────────────────────────────── -->
+                    <StackPanel IsVisible="{Binding ShowTrials}">
+                        <Grid ColumnDefinitions="*,Auto" Margin="6,6,4,0" IsVisible="{Binding HasTrials}">
+                            <TextBlock Text="Trials" Classes="section"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <ToggleButton Classes="tb" IsChecked="{Binding FailOnly}" ToolTip.Tip="Fails only">
+                                    <mi:MaterialIcon Kind="FilterOutline"/>
+                                </ToggleButton>
+                                <Button Classes="tb" Command="{Binding SortByTrialCommand}" ToolTip.Tip="Sort by trial">
+                                    <mi:MaterialIcon Kind="SortNumericAscending"/>
+                                </Button>
+                                <Button Classes="tb" Command="{Binding SortByMarginCommand}" ToolTip.Tip="Sort by margin, tightest first">
+                                    <mi:MaterialIcon Kind="SortAscending"/>
+                                </Button>
+                                <Button Classes="tb" Command="{Binding ContributionsCommand}"
+                                        ToolTip.Tip="Contributions — which variables drive the selected spec">
+                                    <mi:MaterialIcon Kind="ChartBar"/>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                        <ListBox x:Name="TrialList" Classes="rows" ItemsSource="{Binding Trials}" MaxHeight="260"
+                                 SelectedItem="{Binding SelectedTrial}" Background="Transparent"
+                                 IsVisible="{Binding HasTrials}">
+                            <ListBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Send trial to Tuning" Command="{Binding SendTrialToTuningCommand}"/>
+                                    <MenuItem Header="Re-run trial" Command="{Binding RerunSelectedTrialCommand}"/>
+                                    <MenuItem Header="Copy values" Command="{Binding CopyTrialValuesCommand}"/>
+                                    <MenuItem Header="Save as corner…" Command="{Binding SaveTrialAsCornerCommand}"/>
+                                </ContextMenu>
+                            </ListBox.ContextMenu>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="yld:YieldTrialRowViewModel">
+                                    <Grid ColumnDefinitions="44,40,*,64" ToolTip.Tip="{Binding Reason}">
+                                        <TextBlock Grid.Column="0" Text="{Binding Trial}" FontSize="11" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding PassText}" FontSize="11" VerticalAlignment="Center"
+                                                   Foreground="{Binding IsFail, Converter={x:Static yldv:YieldToolView.FailBrush}}"/>
+                                        <TextBlock Grid.Column="2" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                   Text="{Binding WorstGoal}" IsVisible="{Binding !DidNotEvaluate}"/>
+                                        <TextBlock Grid.Column="2" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                                   Text="{Binding Reason}" Opacity="0.7" IsVisible="{Binding DidNotEvaluate}"/>
+                                        <TextBlock Grid.Column="3" Text="{Binding MarginText}" FontSize="11" TextAlignment="Right"
+                                                   VerticalAlignment="Center" ToolTip.Tip="Margin on the tightest spec"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+
+                    <!-- ── Corners ────────────────────────────────────────────────────── -->
+                    <StackPanel IsVisible="{Binding IsCorners}">
+                        <Grid ColumnDefinitions="*,Auto" Margin="6,6,4,0">
+                            <TextBlock Text="Corners" Classes="section"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                                <CheckBox Content="MC at each corner" FontSize="11" IsChecked="{Binding MonteCarloAtEachCorner}"
+                                          ToolTip.Tip="A Monte Carlo at each corner — mismatch drawn around each"/>
+                                <Button Classes="tb" Command="{Binding GenerateCornersCommand}"
+                                        ToolTip.Tip="Generate… corners from kit sections, temperatures and values">
+                                    <mi:MaterialIcon Kind="TableLarge"/>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Corners}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="yld:YieldCornerRowViewModel">
+                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="6,1,4,1">
+                                        <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" MinWidth="0" Padding="0"
+                                                  Margin="0,0,4,0" ToolTip.Tip="Enabled"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
+                                                   Margin="0,0,8,0"/>
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding KitText}" Classes="muted"/>
+                                            <TextBlock Text="{Binding TempText}" Classes="muted"/>
+                                            <TextBlock Text="{Binding ValuesText}" Classes="muted" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding TrialText}" Classes="muted" FontStyle="Italic"
+                                                       IsVisible="{Binding IsStatistical}"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="3" Classes="tb" ToolTip.Tip="More">
+                                            <mi:MaterialIcon Kind="DotsVertical"/>
+                                            <Button.Flyout>
+                                                <MenuFlyout>
+                                                    <MenuItem Header="Remove corner" Command="{Binding RemoveCommand}"/>
+                                                </MenuFlyout>
+                                            </Button.Flyout>
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- The result: corner × goal, failing cells red, each goal's worst corner bold. -->
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                                      IsVisible="{Binding HasCornerGrid}" Margin="6,6,4,0">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Width="90" Text="" />
+                                    <ItemsControl ItemsSource="{Binding CornerGoals}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="x:String">
+                                                <TextBlock Classes="gridcell" Text="{Binding}" FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                                <ItemsControl ItemsSource="{Binding CornerGrid}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="yld:CornerGridRow">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Width="90" Text="{Binding Corner}" FontSize="11"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <ItemsControl ItemsSource="{Binding Cells}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="yld:CornerGridCell">
+                                                            <TextBlock Classes="gridcell" Text="{Binding Text}"
+                                                                       Classes.fail="{Binding Fails}" Classes.worst="{Binding IsWorst}"/>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Panel>
+</UserControl>

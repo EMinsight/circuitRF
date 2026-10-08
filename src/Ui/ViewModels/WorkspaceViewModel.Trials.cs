@@ -42,11 +42,18 @@ public partial class WorkspaceViewModel
             Messages.Warning("Save as corner: open the schematic these results came from, then save the corner again.");
             return;
         }
+        await SaveTrialAsCornerAsync(sd.ViewModel, trial, result);
+    }
+
+    /// <summary>Save as corner… on a known schematic — the Yield panel's trial table (brief-yield-10 R-ya10-7), which
+    /// knows the schematic it ran rather than finding it by the result's name.</summary>
+    internal async Task SaveTrialAsCornerAsync(SchematicViewModel vm, int trial, DataSet result)
+    {
         if (ResolveOwner(null) is not { } owner) return;
         var name = (await new InputNameDialog("Save as Corner", "Corner name:", $"Trial{trial}").ShowDialog<string?>(owner))?.Trim();
         if (string.IsNullOrEmpty(name)) return;
 
-        var model = sd.ViewModel.EditModel;
+        var model = vm.EditModel;
         var setup = model.Tuning?.Clone() ?? new TuningSetup();
         if (setup.Corners.Any(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
         {
@@ -54,7 +61,7 @@ public partial class WorkspaceViewModel
             return;
         }
         setup.Corners.Add(TrialReplay.CornerOf(result, name, trial));
-        sd.ViewModel.Execute(new SetTuningSetupCommand(model, setup, $"Save corner {name}"));
+        vm.Execute(new SetTuningSetupCommand(model, setup, $"Save corner {name}"));
         Messages.Info($"Saved corner {name} (trial {trial}).");
     }
 

@@ -531,6 +531,19 @@ public partial class SchematicView : UserControl
             tuning.SetTuned(key, !tuning.IsTuned(key));
     }
 
+    /// <summary>Tolerance…: adds the value's tolerance (or switches it off) and shows the Yield panel on it.</summary>
+    private void OnCtxTolerance(object? sender, RoutedEventArgs e)
+    {
+        var id   = SchematicCanvasCtrl.ContextMenuTargetId;
+        var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
+        if (TuneKeysOfContextTarget(comp) is [var key] && Vm?.Tolerance is { } tolerance)
+        {
+            bool on = !tolerance.IsToleranced(key);
+            tolerance.SetToleranced(key, on);
+            if (on) tolerance.Reveal(key);
+        }
+    }
+
     private void OnContextMenuOpening(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         bool hasTarget = !string.IsNullOrEmpty(SchematicCanvasCtrl.ContextMenuTargetId);
@@ -583,6 +596,11 @@ public partial class SchematicView : UserControl
                 CtxTune.Items.Add(item);
             }
         }
+
+        // Tolerance…: a plain number the Tuning catalog offers, in a session with a Yield panel.
+        CtxTolerance.IsVisible = tuneKeys.Count == 1 && Vm?.Tolerance is not null;
+        if (tuneKeys is [var tolKey] && Vm?.Tolerance is { } tol)
+            CtxTolerance.Header = tol.IsToleranced(tolKey) ? "Remove Tolerance" : "Tolerance…";
 
         // GND is a special symbol — hide the items that have no meaning for it.
         bool isGnd  = comp?.Symbol == SymbolKind.Ground;

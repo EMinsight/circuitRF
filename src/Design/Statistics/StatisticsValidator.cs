@@ -27,16 +27,43 @@ public static class StatisticsValidator
         var f = new List<Diagnostic>();
         if (tb.Tuning is not { } setup) return f;
 
-        foreach (var e in setup.Variables) Entry(e, catalog, f);
-        ComplexParts(setup, f);
-        Correlations(setup, f);
-        Settings(setup.Statistics, f);
+        f.AddRange(ValidateSetup(setup, catalog));
         Corners(setup, tb, catalog, f);
 
         if (!setup.Variables.Any(e => e.IsStatistical) && !HoldsDistribution(tb, netlist))
             foreach (var g in setup.Goals.Where(g => g.Enabled && g.Use == GoalUse.Yield))
                 f.Add(StatisticsDiagnostics.NothingVaries(g.Name));
         return f;
+    }
+
+    /// <summary>
+    /// The findings a tuning block holds on its own — every entry's tolerance, the complex parts, the correlations and
+    /// the statistics line — without the testbench its corners bind against. What a panel edit is checked with, so the
+    /// Yield panel refuses an edit in <c>check</c>'s own words.
+    /// </summary>
+    public static IReadOnlyList<Diagnostic> ValidateSetup(TuningSetup setup, TunableCatalog catalog)
+    {
+        var f = new List<Diagnostic>();
+        foreach (var e in setup.Variables) Entry(e, catalog, f);
+        ComplexParts(setup, f);
+        Correlations(setup, f);
+        Settings(setup.Statistics, f);
+        return f;
+    }
+
+    /// <summary>
+    /// The first error <paramref name="after"/> holds that <paramref name="before"/> did not: the refusal an edit from
+    /// <paramref name="before"/> to <paramref name="after"/> states (brief-yield-10 R-ya10-3). Null when the edit adds no
+    /// error — a problem the setup already had is not this edit's to refuse.
+    /// </summary>
+    public static Diagnostic? EditRefusal(TuningSetup? before, TuningSetup after, TunableCatalog catalog)
+    {
+        var had = before is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : ValidateSetup(before, catalog).Where(d => d.Severity == DiagnosticSeverity.Error)
+                                            .Select(d => d.Render()).ToHashSet(StringComparer.Ordinal);
+        return ValidateSetup(after, catalog)
+            .FirstOrDefault(d => d.Severity == DiagnosticSeverity.Error && !had.Contains(d.Render()));
     }
 
     // A kit's or a VAR's distribution call varies too (docs/design/yield.md §7).

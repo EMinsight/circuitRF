@@ -623,6 +623,15 @@
                                                   ToolTip.Tip="Tune — adds this value to the Tuning panel">
                                         <mi:MaterialIcon Kind="TuneVertical" Width="13" Height="13"/>
                                     </ToggleButton>
+                                    <!-- brief-yield-10 R-ya10-3: the same entry's tolerance, on the same rows. -->
+                                    <ToggleButton IsVisible="{Binding CanTolerance}"
+                                                  IsChecked="{Binding IsToleranced}"
+                                                  Padding="2" MinWidth="0" MinHeight="0"
+                                                  Background="Transparent" BorderThickness="0"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip.Tip="Tolerance — adds this value to the Yield panel">
+                                        <mi:MaterialIcon Kind="ChartBellCurve" Width="13" Height="13"/>
+                                    </ToggleButton>
                                     <!-- overview D18: a complex value is tuned by its parts, so its
                                          button opens a menu of the four rather than toggling. -->
                                     <Button IsVisible="{Binding CanTuneParts}"

@@ -794,6 +794,48 @@ fields the window writes; selection is interactive only. Gates: `tests/Ui.Tests/
 against the in-process composer's for a pass/fail family with a P1–P99 envelope), `ContributionParetoTests`. Both
 parity tests mask Skia's `clipPath` ids, which come from a counter in the process (see `RailZMapTests.WithoutSkiaIds`).
 
+## 14. The Yield panel (brief-yield-10)
+
+`src/Ui/Yield/` — `YieldPanelViewModel` (lists and edits; `.Run.cs` the run, the readouts, the trial table and the
+trial actions; `.Corners.cs` Corners mode), tabbed behind the Optimizer (`DockPanelIds.Yield = "Yield"`, a file
+format; `DockLayoutDefaults.TabbedBehind` gives a layout saved before it the panel beside the Optimizer). It follows
+the focused schematic on Tuning's rule.
+
+### 14.1 Edits
+
+Every edit is a pure function in `TuningSetupEdits` (`WithStat`, `WithoutTolerance`, `WithDistribution`,
+`WithGoalUse`, `WithStatistics`, `WithCorrelations`, `WithCorners`) wrapped in one `SetTuningSetupCommand`. Before it
+lands, `StatisticsValidator.EditRefusal(before, after, catalog)` returns the first ERROR the edit adds — the setup-only
+half of `check` (`ValidateSetup`: entries, complex parts, correlations, settings) — so the refusal is `check`'s own
+sentence and a problem the setup already had is not this edit's to refuse. A tolerance on a key with no entry creates
+one with `tune`/`opt` off and NO range (the first tune or opt gives it the D4 default range); an entry carrying a
+tolerance is never dropped as "default-shaped" when its tune and opt flags clear. The compact spread editor is
+`ToleranceText` (`src/Design/Statistics`): `± 2 % at 3σ`, `σ 1 Ω`, `45 … 55 Ω`, `4 … 8 by 2`, `, trunc 3σ` to and from
+the `tune` line's keys — it moves text only; validity is the validator's. The Inspector's toggle and the canvas's
+right-click ▸ Tolerance… go through `IToleranceSurface`, keyed by the Tuning surface's keys.
+
+### 14.2 The run (R-ya10-10)
+
+`Run` creates `StatisticalRun` exactly as `yield` does — the bench prepared as Simulate netlists it, `Setup = null`
+so the extracted tuning block is what runs, `ResultPath = StatisticalRun.ResultPathFor(<schematic>)` — on a background
+thread; progress and frames are posted to the UI thread. The trial table is read from the frames
+(`YieldTrialRowViewModel.From`: `trials.pass`, `trials.status` + `reasons`, each `goal:<g>:margin`), so it is the same
+function of the same cubes during and after the run. Corners mode (and a `statistics corners=` line) drives
+`CornerRun`; a corner sweep has no pause, and Stop cancels it. Gates: `tests/Ui.Tests/Statistics/YieldPanelTests.cs` —
+the panel's file is the verb's byte for byte; paused and resumed it is an uninterrupted run's; stopped it keeps
+exactly the trials an uninterrupted run of that many draws produces.
+
+### 14.3 The yield display (R-ya10-8)
+
+`YieldDisplayPreset` (`src/Render/DataDisplay`) composes, never draws: per goal a pass/fail family over the `trial`
+axis, a histogram of `trials.goal:<g>:worst` (`TraceStatistics.Build`), a yield sensitivity over the first goal's top
+`entry` contributor, and `StatisticsTablePreset`. The family's cube is FOUND, not guessed: every slice of every
+trial-stacked cube in the goal's analysis group is tried (the goal's range axis kept as X, ports and labels pinned
+in turn, each transform a goal can name) until `TraceGoalReader.GoalExpressionOf` reads the goal's quantity — the same
+reverse translation the spec lines use, so the family chosen is a curve the goal's spec lines land on. A goal with
+no swept axis (one number per trial) is drawn as its worst value against the trial number. The workspace writes the
+document as `<design>.yield.cdd` beside the result and opens it; a display that exists is focused instead.
+
 ## Later phases
 
-Each phase appends its section above this one as it lands: YA-10 the panel, YA-11/12 centering.
+Each phase appends its section above this one as it lands: YA-11/12 centering.

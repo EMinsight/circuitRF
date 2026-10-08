@@ -32,6 +32,9 @@ public partial class DataSourceLibraryViewModel
     /// <summary>The chip a display carries while it shows optimizer data (TO-10).</summary>
     public const string OptimizingChip = "Optimizing";
 
+    /// <summary>The chip a display carries while it shows a running Monte Carlo or yield run (brief-yield-10, D14).</summary>
+    public const string YieldChip = "Yield";
+
     private readonly Dictionary<string, (DataSet Data, string Chip)> _pendingFrames =
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _publishedChips = new(StringComparer.OrdinalIgnoreCase);

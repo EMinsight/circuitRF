@@ -430,6 +430,14 @@ public static class DockPanelIds
     public const string Optimizer = "Optimizer";
 
     /// <summary>
+    /// brief-yield-10's Yield panel — tolerances, yield specs, a Monte Carlo / yield / corner run and its trial table.
+    /// <b>In both shipped default layouts, tabbed BEHIND Optimizer</b>: its tolerances are the same variable entries
+    /// and its specs the same goals (yield overview D1, D4); a saved layout that never heard of it gains it beside
+    /// wherever that layout put the Optimizer.
+    /// </summary>
+    public const string Yield = "Yield";
+
+    /// <summary>
     /// <b>The two ids RC-10 retired, and they must keep resolving</b> (R-rc10-3).
     ///
     /// <para><c>RestorePoints</c> and <c>VersionHistory</c> are written into every <c>.cwsuser</c> in
@@ -448,7 +456,7 @@ public static class DockPanelIds
     public static readonly string[] All =
     [
         ProjectTree, Palette, Properties, Analyses, Messages, Drc, Lvs, WBondProfile,
-        WBondInductance, History, Instances, Impedance, Tuning, Optimizer,
+        WBondInductance, History, Instances, Impedance, Tuning, Optimizer, Yield,
     ];
 
     /// <summary>

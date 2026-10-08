@@ -1,4 +1,5 @@
 using CircuitRF.Core.Design;
+using CircuitRF.Design.Statistics;
 
 namespace CircuitRF.Design.Optimization;
 
@@ -32,6 +33,8 @@ public static class TuningSetupEdits
             entry = NewEntry(tunable);
             next.Variables.Add(entry);
         }
+        // A tolerance-only entry carries no range (WithStat); the first tune or opt gives it the D4 default.
+        if (on && entry.Min is null && entry.Max is null) { entry.Min = tunable.DefaultMin; entry.Max = tunable.DefaultMax; }
         set(entry, on);
         if (!entry.Tune && !entry.Opt && IsDefaultShaped(entry, tunable)) next.Variables.Remove(entry);
         return next;
@@ -78,7 +81,105 @@ public static class TuningSetupEdits
         return next;
     }
 
+    // A tolerance is the user's too (yield overview D1): an entry carrying one is never dropped for being otherwise default.
     private static bool IsDefaultShaped(TunableEntry e, Tunable t)
-        => e.Min == t.DefaultMin && e.Max == t.DefaultMax && e.Scale == DefaultScale(t) && e.Step is null
-           && e.Discrete == (t.IsInteger ? TuneDiscrete.Integer : TuneDiscrete.None) && e.Extra is null;
+        => (e.Min is null || e.Min == t.DefaultMin) && (e.Max is null || e.Max == t.DefaultMax) && e.Scale == DefaultScale(t) && e.Step is null
+           && e.Discrete == (t.IsInteger ? TuneDiscrete.Integer : TuneDiscrete.None) && e.Extra is null
+           && !e.Stat && e.Distribution == StatDistribution.None && e.Spread is null;
+
+    // ── The statistical part (brief-yield-10 R-ya10-3) ──────────────────────────────
+
+    /// <summary>
+    /// Sets or clears the <c>stat</c> flag of <paramref name="tunable"/> — the Yield panel's half of the shared entry
+    /// (yield overview D1). Turning it on for a key with no entry creates one with <c>tune</c> and <c>opt</c> off and no
+    /// range (a tolerance needs none; the first tune or opt gives it the default); an
+    /// entry with no distribution yet gets <see cref="ToleranceText.DefaultDistribution"/> and its default spread.
+    /// Turning it off keeps the distribution, as <c>stat=0</c> does (D2).
+    /// </summary>
+    public static TuningSetup WithStat(TuningSetup? setup, Tunable tunable, bool on)
+    {
+        var next  = setup?.Clone() ?? new TuningSetup();
+        var entry = next.Variables.FirstOrDefault(v => v.Key == tunable.Key);
+        if (entry is null)
+        {
+            if (!on) return next;
+            entry = NewEntry(tunable);
+            entry.Min = entry.Max = null;
+            next.Variables.Add(entry);
+        }
+        if (on && entry.Distribution == StatDistribution.None)
+        {
+            entry.Distribution = ToleranceText.DefaultDistribution(tunable);
+            entry.Spread       = ToleranceText.DefaultSpread(entry.Distribution);
+        }
+        entry.Stat = on;
+        return next;
+    }
+
+    /// <summary>
+    /// The tolerance removed from <paramref name="key"/>'s entry — flag, distribution and spread — with every
+    /// correlation naming it. The entry itself goes when nothing else of it is set.
+    /// </summary>
+    public static TuningSetup WithoutTolerance(TuningSetup? setup, string key, Tunable? tunable)
+    {
+        var next  = setup?.Clone() ?? new TuningSetup();
+        var entry = next.Variables.FirstOrDefault(v => v.Key == key);
+        if (entry is null) return next;
+        entry.Stat = false;
+        entry.Distribution = StatDistribution.None;
+        entry.Spread = null;
+        next.Correlations.RemoveAll(c => c.First == key || c.Second == key);
+        if (!entry.Tune && !entry.Opt && (tunable is null || IsDefaultShaped(entry, tunable))) next.Variables.Remove(entry);
+        return next;
+    }
+
+    /// <summary>A new distribution on <paramref name="key"/>'s entry, its spread carried across where the new one reads
+    /// the same keys (<see cref="ToleranceText.Convert"/>).</summary>
+    public static TuningSetup WithDistribution(TuningSetup? setup, string key, Tunable? tunable, StatDistribution dist)
+        => WithEntry(setup, key, tunable, e =>
+        {
+            e.Spread = ToleranceText.Convert(e.Spread, dist);
+            e.Distribution = dist;
+            if (dist == StatDistribution.None) e.Stat = false;
+        });
+
+    /// <summary>Sets a goal's <c>use=</c> (yield overview D4).</summary>
+    public static TuningSetup WithGoalUse(TuningSetup? setup, string goal, GoalUse use)
+    {
+        var next = setup?.Clone() ?? new TuningSetup();
+        if (next.Goals.FirstOrDefault(g => g.Name == goal) is { } g) g.Use = use;
+        return next;
+    }
+
+    /// <summary>The <c>statistics</c> line replaced — dropped when every setting is at its default, so a panel that
+    /// only looked at the defaults writes nothing.</summary>
+    public static TuningSetup WithStatistics(TuningSetup? setup, StatisticsSettings settings)
+    {
+        var next = setup?.Clone() ?? new TuningSetup();
+        next.Statistics = IsDefault(settings) ? null : settings.Clone();
+        return next;
+    }
+
+    /// <summary>True when <paramref name="s"/> says nothing a default does not.</summary>
+    public static bool IsDefault(StatisticsSettings s)
+        => s.Trials is null && s.Seed is null && s.Sampling == StatSampling.Random && s.Target is null && s.Confidence is null
+           && !s.AutoStop && s.NonConverged == NonConvergedPolicy.Fail && s.Save is null && s.Process is null
+           && s.Mismatch is null && s.SigmaScale is null && s.Parallelism is null && s.Scope == OptimizerScope.GoalAnalyses
+           && s.Corners is null && s.Extra is null;
+
+    /// <summary>The <c>correlate</c> lines replaced, in the order given; a ρ of zero is no line.</summary>
+    public static TuningSetup WithCorrelations(TuningSetup? setup, IEnumerable<StatCorrelation> correlations)
+    {
+        var next = setup?.Clone() ?? new TuningSetup();
+        next.Correlations = [.. correlations.Where(c => c.Rho != 0).Select(c => c.Clone())];
+        return next;
+    }
+
+    /// <summary>The <c>corner</c> lines replaced, in the order given.</summary>
+    public static TuningSetup WithCorners(TuningSetup? setup, IEnumerable<CornerDefinition> corners)
+    {
+        var next = setup?.Clone() ?? new TuningSetup();
+        next.Corners = [.. corners.Select(c => c.Clone())];
+        return next;
+    }
 }

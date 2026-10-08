@@ -18693,3 +18693,10 @@ stream's draw does not depend on the others, so drawing afresh reproduces the tr
 NEW stream silently, and under `sobol` a changed stream set moves every dimension. So the replay prefers the recorded
 z-vector (`RecordedTrial.FromDataSet`, matched by seed and sampling) and names a recorded stream the design lacks;
 without the file it draws afresh and says it could not check.
+
+**An entry carrying a tolerance was dropped when its tune and opt flags cleared** (brief-yield-10). `TuningSetupEdits`'
+"default-shaped" test — the one that removes an entry nobody set anything on — compared the range, scale, step and
+discrete mode only, so unticking Tune on a value that also carried a tolerance deleted the tolerance with it. It now
+requires no stat flag, no distribution and no spread too. A tolerance-only entry is created with NO range (a range is
+noise on a `tune` line that does not tune), so the test also reads a missing min/max as the default one, and the first
+tune or opt gives such an entry the D4 default range.

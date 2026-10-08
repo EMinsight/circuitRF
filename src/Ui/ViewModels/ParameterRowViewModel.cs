@@ -676,6 +676,24 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         }
     }
 
+    // ── Tolerance (brief-yield-10 R-ya10-3) ──────────────────────────────────
+
+    /// <summary>The row carries a tolerance toggle: a plain number the catalog offers, in a session with a Yield panel.</summary>
+    public bool CanTolerance => TuneKey is not null && _schematicVm.Tolerance is not null;
+
+    /// <summary>The toggle: adds a tolerance (the default spread, tune and opt off) or switches it off — one undo
+    /// step, the same effect as the Yield panel's ＋ and the canvas's right-click ▸ Tolerance.</summary>
+    public bool IsToleranced
+    {
+        get => TuneKey is { } key && _schematicVm.Tolerance?.IsToleranced(key) == true;
+        set
+        {
+            if (_isRefreshing || TuneKey is not { } key || value == IsToleranced) return;
+            _schematicVm.Tolerance?.SetToleranced(key, value);
+            OnPropertyChanged();
+        }
+    }
+
     /// <summary>Re-asks the tuning surface what this row is — on build and on every model change.</summary>
     internal void RefreshTuning()
     {
@@ -686,6 +704,8 @@ public sealed partial class ParameterRowViewModel : ObservableObject
         OnPropertyChanged(nameof(CanTune));
         OnPropertyChanged(nameof(CanTuneParts));
         OnPropertyChanged(nameof(IsTuned));
+        OnPropertyChanged(nameof(CanTolerance));
+        OnPropertyChanged(nameof(IsToleranced));
     }
 
     /// <summary>Parses an expression as an enum-option index; falls back to 0 (the first option)

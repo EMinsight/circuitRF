@@ -102,6 +102,7 @@ public static class DockLayoutDefaults
             new CwsDockPanel { Id = DockPanelIds.Analyses,    Side = DockSide.Left,   Group = 1, Order = 1, Active = false, Proportion = PropertiesGroupProportion  },
             new CwsDockPanel { Id = DockPanelIds.Tuning,      Side = DockSide.Left,   Group = 1, Order = 2, Active = false, Proportion = PropertiesGroupProportion  },
             new CwsDockPanel { Id = DockPanelIds.Optimizer,   Side = DockSide.Left,   Group = 1, Order = 3, Active = false, Proportion = PropertiesGroupProportion  },
+            new CwsDockPanel { Id = DockPanelIds.Yield,       Side = DockSide.Left,   Group = 1, Order = 4, Active = false, Proportion = PropertiesGroupProportion  },
             new CwsDockPanel { Id = DockPanelIds.Messages,    Side = DockSide.Bottom, Group = 0, Order = 0, Active = true,  Proportion = MessagesProportion         },
             new CwsDockPanel { Id = DockPanelIds.Drc,         Side = DockSide.Bottom, Group = 0, Order = 1, Active = false, Proportion = MessagesProportion         },
             new CwsDockPanel { Id = DockPanelIds.Lvs,         Side = DockSide.Bottom, Group = 0, Order = 2, Active = false, Proportion = MessagesProportion         },
@@ -134,6 +135,7 @@ public static class DockLayoutDefaults
             new CwsDockPanel { Id = DockPanelIds.Analyses,    Side = DockSide.Left,   Group = 1, Order = 1, Active = false, Proportion = PropertiesGroupAloneProportion },
             new CwsDockPanel { Id = DockPanelIds.Tuning,      Side = DockSide.Left,   Group = 1, Order = 2, Active = false, Proportion = PropertiesGroupAloneProportion },
             new CwsDockPanel { Id = DockPanelIds.Optimizer,   Side = DockSide.Left,   Group = 1, Order = 3, Active = false, Proportion = PropertiesGroupAloneProportion },
+            new CwsDockPanel { Id = DockPanelIds.Yield,       Side = DockSide.Left,   Group = 1, Order = 4, Active = false, Proportion = PropertiesGroupAloneProportion },
             new CwsDockPanel { Id = DockPanelIds.Palette,     Side = DockSide.Right,  Group = 0, Order = 0, Active = true,  Proportion = 1.0                            },
             new CwsDockPanel { Id = DockPanelIds.Messages,    Side = DockSide.Bottom, Group = 0, Order = 0, Active = true,  Proportion = MessagesProportion             },
             new CwsDockPanel { Id = DockPanelIds.Drc,         Side = DockSide.Bottom, Group = 0, Order = 1, Active = false, Proportion = MessagesProportion             },
@@ -165,6 +167,7 @@ public static class DockLayoutDefaults
     {
         [DockPanelIds.Tuning]    = DockPanelIds.Analyses,
         [DockPanelIds.Optimizer] = DockPanelIds.Tuning,
+        [DockPanelIds.Yield]     = DockPanelIds.Optimizer,
     };
 
     /// <summary>

@@ -1,0 +1,47 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:yld="using:CircuitRF.Ui.Yield"
+        x:Class="CircuitRF.Ui.Views.Yield.CornerGeneratorDialog"
+        x:DataType="yld:CornerGeneratorViewModel"
+        Title="Generate Corners"
+        Width="440" SizeToContent="Height" MaxHeight="700"
+        WindowStartupLocation="CenterOwner"
+        KeyDown="OnKeyDown">
+
+    <!-- brief-yield-10 R-ya10-9: YA-6's generator — every combination of the kit sections ticked, the
+         temperatures and the values typed, counted before anything is written. -->
+
+    <StackPanel Margin="12" Spacing="8">
+        <TextBlock Text="Kit corners" FontWeight="SemiBold" FontSize="12" IsVisible="{Binding HasAxes}"/>
+        <ItemsControl ItemsSource="{Binding Axes}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="yld:GeneratorAxisRow">
+                    <StackPanel Margin="0,0,0,4">
+                        <TextBlock Text="{Binding Label}" FontSize="11" Opacity="0.8"/>
+                        <ItemsControl ItemsSource="{Binding Options}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="yld:GeneratorOption">
+                                    <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked}" FontSize="11" Margin="0,0,8,0"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock Text="Temperatures (°C)" FontWeight="SemiBold" FontSize="12"/>
+        <TextBox Text="{Binding Temperatures}" PlaceholderText="-40, 25, 85" FontSize="12"/>
+        <TextBlock Text="Values" FontWeight="SemiBold" FontSize="12"/>
+        <TextBox Text="{Binding Values}" PlaceholderText="Vdd=3.0 V,3.6 V; Rbias=1k,2k" FontSize="12"/>
+        <TextBlock Text="{Binding CountText}" FontSize="12"/>
+        <TextBlock Text="{Binding Refusal}" FontSize="11" Foreground="#FFD94F4F" TextWrapping="Wrap"
+                   IsVisible="{Binding Refusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
+            <Button Content="Write corners" Click="OnWrite" IsDefault="True"/>
+            <Button Content="Cancel" Click="OnCancel"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

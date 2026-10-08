@@ -1,0 +1,66 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:yld="using:CircuitRF.Ui.Yield"
+        x:Class="CircuitRF.Ui.Views.Yield.CorrelationsDialog"
+        x:DataType="yld:CorrelationsEditorViewModel"
+        Title="Correlations"
+        SizeToContent="WidthAndHeight" MinWidth="320" MaxWidth="900" MaxHeight="700"
+        WindowStartupLocation="CenterOwner"
+        KeyDown="OnKeyDown">
+
+    <!-- brief-yield-10 R-ya10-3: ρ of each pair of toleranced values. A cell above the diagonal edits its pair;
+         the one below mirrors it. A matrix that is not positive definite shows the repair a run will make. -->
+
+    <StackPanel Margin="12" Spacing="8">
+        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" MaxHeight="520">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Width="110" Text=""/>
+                    <ItemsControl ItemsSource="{Binding Keys}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Width="64" Text="{Binding}" FontSize="11" FontWeight="SemiBold"
+                                           TextAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+                <ItemsControl ItemsSource="{Binding Rows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="yld:CorrelationRow">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Width="110" Text="{Binding Key}" FontSize="11" FontWeight="SemiBold"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                <ItemsControl ItemsSource="{Binding Cells}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="yld:CorrelationCell">
+                                            <TextBox Width="60" Margin="2" FontSize="11" Padding="3,1" MinHeight="0"
+                                                     HorizontalContentAlignment="Right"
+                                                     Text="{Binding Text}" IsEnabled="{Binding IsEditable}"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </ScrollViewer>
+        <TextBlock Text="{Binding RepairText}" FontSize="11" Foreground="#FFD98C2F" TextWrapping="Wrap" MaxWidth="480"
+                   IsVisible="{Binding RepairText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+        <TextBlock Text="{Binding Problem}" FontSize="11" Foreground="#FFD94F4F" TextWrapping="Wrap" MaxWidth="480"
+                   IsVisible="{Binding Problem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+        <TextBlock Text="{Binding Refusal}" FontSize="11" Foreground="#FFD94F4F" TextWrapping="Wrap" MaxWidth="480"
+                   IsVisible="{Binding Refusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="6">
+            <Button Content="OK" Click="OnOk" IsDefault="True"/>
+            <Button Content="Cancel" Click="OnCancel"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

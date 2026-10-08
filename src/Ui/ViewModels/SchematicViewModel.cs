@@ -151,6 +151,10 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// </summary>
     public Tuning.ITuningSurface? Tuning { get; set; }
 
+    /// <summary>The Yield panel's half of the Inspector's tolerance toggle and the canvas's right-click ▸ Tolerance
+    /// (brief-yield-10 R-ya10-3); null where there is no panel. The keys are <see cref="Tuning"/>'s.</summary>
+    public Yield.IToleranceSurface? Tolerance { get; set; }
+
     // ── Tool state ────────────────────────────────────────────────────────────
 
     public enum Tool { Select, Pan, Wire, Place, ZoomBox, MoveLabels }
