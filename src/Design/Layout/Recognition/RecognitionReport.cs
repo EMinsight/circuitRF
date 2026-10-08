@@ -122,6 +122,38 @@ public enum RecognitionFindingClass
 
     /// <summary>Designators a parts table names that the board does not have.</summary>
     PartsCsvRefdesNotOnBoard,
+
+    // ── AS-5: lines (R-as5-9) ───────────────────────────────────────────────────────────────────
+
+    /// <summary>The line elements read from the traces, by type.</summary>
+    LineElements,
+
+    /// <summary>Lines no circuit model covers, written as TLIN, by reason.</summary>
+    TlinFallbacks,
+
+    /// <summary>Segments read as CPWG under the coplanar reading in force.</summary>
+    LinesReadAsGcpw,
+
+    /// <summary>Segments read as MLIN under the coplanar reading in force.</summary>
+    LinesReadAsMlin,
+
+    /// <summary>Junctions with more than four arms, written as a plain node.</summary>
+    JunctionsOverFourArms,
+
+    /// <summary>Bends, junctions and steps outside microstrip, which have no discontinuity model. Said once.</summary>
+    DiscontinuitiesNotModelled,
+
+    /// <summary>Line ends that land on no part, via or port: open-ended lines.</summary>
+    OpenEnds,
+
+    /// <summary>Short pieces and lines with no length left, absorbed into a neighbour.</summary>
+    SliversAbsorbed,
+
+    /// <summary>Pairs of lines close and parallel for more than λ/20: coupled, modelled uncoupled.</summary>
+    CoupledPairs,
+
+    /// <summary>Segments with no solved cross-section, written as TLIN at a neighbour's Z and εeff.</summary>
+    UnsolvedSegments,
 }
 
 /// <summary>A place a finding is about, DBU, with the drawing layer when one is known.</summary>

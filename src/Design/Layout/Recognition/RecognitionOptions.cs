@@ -44,7 +44,22 @@ public sealed record RecognitionOptions
     /// port, µm (R-as3-6's priority order).</summary>
     public double PortMergeMicrons { get; init; } = DefaultPortMergeMicrons;
 
+    /// <summary>How a line with side ground close by is read (AS-5 R-as5-2).</summary>
+    public CoplanarReading Coplanar { get; init; } = CoplanarReading.Auto;
+
+    /// <summary>Under <see cref="CoplanarReading.Auto"/>, a line is grounded coplanar when both side gaps are
+    /// at most this many substrate heights — the trace review's own threshold by default, re-applied per cut
+    /// so it can be changed without touching the review.</summary>
+    public double CoplanarGapFactor { get; init; } = DefaultCoplanarGapFactor;
+
+    /// <summary>The top of the analysis range, Hz — a TLIN's <c>F</c> and the frequency coupled pairs are
+    /// judged at (D15). Null: the EM setup's stop frequency where it states one as a number, else
+    /// <see cref="DefaultTopFrequencyHz"/>.</summary>
+    public double? TopFrequencyHz { get; init; }
+
     public const int DefaultMaxGroundViasPerPad = 4;
+    public const double DefaultCoplanarGapFactor = 3;
+    public const double DefaultTopFrequencyHz = 6e9;
     public const double DefaultEdgeReachMicrons = 500;
     public const double DefaultPortMergeMicrons = 1000;
 }

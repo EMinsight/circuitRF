@@ -257,3 +257,123 @@ rows not found on the board, sides with no mask or paste layer, and a parts tabl
 
 `LandPatternMatchTests`, `PartReadingTests`, `PartModelResolutionTests`, `PartsTableCsvTests`, and
 `PartReadingFieldTests` (`FixtureFact`; the field board's `expected.json` gains `"parts"`, `"series"`, `"shunt"`).
+
+---
+
+## 6. AS-5 — traces to line elements
+
+`LineRecognition.Recognize`, called by `ArtworkRecognition.Recognize` after the parts; the result carries a
+`LineRecognitionResult` (`RecognitionResult.Lines`): the elements and the nodes between them. Files: `LineRecognition.cs`
+(the orchestration and the report), `LineSegmentation.cs` (one trace → its elements), `LineJunctions.cs`,
+`LineTypeChoice.cs` (D13 and the coplanar option, and `LineBinder` — the stackup asked whether a component binds),
+`LineElement.cs` (the output records).
+
+### 6.1 The reader (R-as5-1)
+
+**One** trace review per recognition, shared with AS-4's part reading (`RecognitionResult.ReviewRuns` holds it at one).
+It is run with a scope of one region round all the copper in scope: a chain a selector chooses is a trace from
+`SelectedMinAspect` (2) widths rather than `MinAspect` (4), so a short line between two parts is a line and not a pad.
+Its target, tolerance and findings are not read.
+
+What recognition needed and the review did not return was **added to its output records**, computed where the review
+already has the geometry:
+
+- `TraceStation.H` — the height the classifier's coplanar threshold is measured against;
+- `TraceRun.Corners` (`TraceCorner`) — every join between consecutive pieces that turns by `CornerMinDeg` (15°) or more:
+  the point the centre lines meet, the signed turn, the width, and the chamfer measured by walking out along the outward
+  bisector to the copper's edge (a chamfer edge pairs with nothing, so the pieces of a mitred and a square corner are the
+  same);
+- `TraceLayerResult.Junctions` (`TraceJunction`) with `TraceRun.StartJunction` / `EndJunction` — each junction's member
+  traces and its centre, the least-squares meeting point of every member piece's centre line, read in the chaining step
+  while every member piece is still known.
+
+### 6.2 Line type (R-as5-2, D13)
+
+Each cut is read again from what the review returns — the references either side, both side gaps and H — so the user's
+choice applies without touching the review:
+
+| References | Reading |
+|---|---|
+| below only | MLIN; CPWG under **Auto** when both gaps ≤ `CoplanarGapFactor`·H (default 3, the review's own), under **Gcpw** when both gaps are measured at all; never under **Microstrip** |
+| both sides | SLIN; TLIN ("stripline with coplanar ground") when a side gap is within the factor |
+| above only | TLIN ("… (reference above)") |
+| none | TLIN ("coplanar waveguide (no ground plane)") |
+
+An MLIN, CPWG or SLIN the stackup cannot bind — `SubstrateResolver.ResolveElectrical` with the trace's conductor and its
+**measured** reference, or `ResolveStripline` — is a TLIN naming the resolver's reason. A cut with no Z0 is *unsolved*.
+A run of one reading shorter than max(2·W, 0.5 mm) takes its neighbours' (both, where they agree; else the longer). A
+CPWG whose mean gaps differ by more than 1.5× is a TLIN. Every MLIN and CPWG records the measured gaps, length-weighted,
+whatever was chosen (D12, D19).
+
+### 6.3 Segmentation (R-as5-3 … R-as5-5)
+
+One walk along each trace's pieces and joins:
+
+- **Straight.** Pieces of one reading and one width class (`MergeToleranceMicrons`) are one line. A piece shorter than
+  max(W, 100 µm) between straight joins takes its longer neighbour's width and reading; its length stays in the line.
+- **A straight join** is a jog (one line), a **step** (the lines abut at the join's middle), or — between two microstrip
+  pieces of different width — an **MTAPER** (W1, W2, L = the join) when the join is at least 2·W of its narrow end. The
+  piece finder sees no piece in a linear ramp (its edges are not parallel), so a taper *is* a join.
+- **A corner** in a microstrip region is an **MBEND**: `Angle` the unsigned turn, `Miter` the nearest of the model's
+  options (none, 0.5·W, `MicrostripDiscontinuities.MiterCutLength(W, h)`) to the measured chamfer. A 90° corner made as
+  two 45° corners is two MBENDs with the diagonal between them an MLIN. Anywhere else a corner is centre-line length.
+- **Reference planes.** An MBEND owns its corner square: each adjoining line stops W/2 short of the corner point (so the
+  two lines and W make the centre line). A trace's end at a **pad** stops at the pad's edge — where the review's end trim
+  already put it. At a **via** it stops at the land's edge. At a **junction** see §6.4. A line left with no length is
+  absorbed: its two nodes become one, and it is counted.
+- **Taps.** A part's terminal, a via or a port the trace runs *through* — within a width of its centre line, more than a
+  width from either end — splits the line there: a shunt part's pad standing on a line is a node in it, not at its end.
+
+### 6.4 Junctions (R-as5-4, R-as5-5)
+
+Three arms that are all MLIN are an **MTEE**: the two most nearly collinear arms are the through line, the branch is on
+the right of travel from pin 1 to pin 2 (the model's through along +X, branch along −Y). Four are an **MCROSS**, pins
+counter-clockwise from the arm nearest +X. The arm lengths follow the models' own reference planes, which are where their
+artwork stops: `MTeePCell` admits a through arm no shorter than W3/2 and a branch no shorter than max(W1, W2)/2, and
+`MicrostripTeeModel`'s star network carries "no reference-plane shift beyond what the star itself represents";
+`MCrossPCell`'s arms stop half the crossing arms' width out. So each arm runs from the trace's end to the centre, less
+half the crossing arm's width. More than four arms, or any arm not microstrip, is a **plain node**: every arm runs to the
+centre and the report says so.
+
+A junction of **two** arms is how the review reads a sliver between two collinear pieces (both of its ends meet both
+neighbours); the sliver is dropped as a pad-length chain, so the two arms of one type and width class are merged back into
+one line and the sliver is counted as absorbed.
+
+### 6.5 Ends and nodes (R-as5-6)
+
+Nodes are named for what they are: `R1.2` (a part's terminal, AS-4's row and terminal), `V4.1` (a kept via's end on one
+island), `P1` (a port), `J2` / `J2.3` (a plain junction / an MTEE or MCROSS arm), `T5_2` (between two elements of trace
+T5), `O1` (an open end). A trace's end attaches to the nearest part terminal, port or via on its island within
+2·W + 1 mm (a via within its land's radius plus a width); else to another loose end within two widths on the island
+(a gentle bend the review did not join); else it is an **open end** — an open line, no open-end model, listed. A part
+terminal, via or port no line reaches joins the nearest line end on its island, or the island's other attachments.
+`LineRecognitionResult.NodeOf(name)` gives the node any of those names ended up as.
+
+### 6.6 Parameters (R-as5-7)
+
+SI, named as the components name them; the substrate is never written (injected at extraction from `SignalLayer` and the
+measured `GroundReference` each element carries):
+
+- MLIN `W`, `L`; MBEND `W`, `Angle`, `Miter`; MTEE `W1`–`W3`; MCROSS `W1`–`W4`; MTAPER `W1`, `W2`, `L`;
+- CPWG `W`, `L`, `G` (the mean of the two mean gaps); SLIN `W`, `L`;
+- TLIN `Z`, `Eeff` (length-weighted over the solved cuts), `L`, `F` (D15's top frequency: the option, else the `.cem`'s
+  stop where it is a plain number, else 6 GHz), `Ad` = (π·f/c₀)·(Er/√Eeff)·((Eeff−1)/(Er−1))·tanδ and
+  `Ac` = Rs/(Z0·W), both in dB/m. **`Ac` is an estimate**: the strip's own surface resistance over its width, with no
+  current crowding, no ground-return loss and no roughness. Er, tanδ and σ are the stackup's between the trace and its
+  reference. Every element also carries its drawn `Width`, so a TLIN swapped to another type (D19) keeps W.
+- A segment with no solved cut is a TLIN at the nearest solved segment's Z and εeff on the same trace (else the layer's),
+  marked unsolved.
+
+### 6.7 Coupled pairs and the report (R-as5-8, R-as5-9)
+
+Two straight segments on one layer, parallel within 2°, edges within 3 mean widths, overlapping for more than λ/20 at the
+top frequency (λ from their mean εeff) are one *coupled, modelled uncoupled* finding naming both. Nothing in the circuit
+changes. The report adds: elements by type; TLIN fallbacks by reason; segments read as CPWG and as MLIN under the coplanar
+reading in force (and how many MLINs had ground both sides); junctions over four arms; bends, junctions and steps outside
+microstrip (one finding); open ends; slivers and lines absorbed; coupled pairs; unsolved segments.
+
+### 6.8 Gates
+
+`LineSegmentationTests`, `LineJunctionTests`, `LineTypeChoiceTests`, `LineRecognitionCountersTests` (a 40 mm line solves
+one cut; the review runs once) and `LineRecognitionFieldTests` (`FixtureFact`; the field board's `expected.json` gains
+`"lines": { "MLIN": [min, max], … }`).

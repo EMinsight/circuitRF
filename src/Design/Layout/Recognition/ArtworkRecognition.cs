@@ -2,7 +2,7 @@
 // overview D1-D3, D16; docs/design/artwork-to-schematic.md.
 //
 // artwork (.clay + .ctech [+ .cem] [+ placement/BOM])
-//    ├─ AS-3  board graph   — ground, via classes, signal islands, ports, scope     ← this phase
+//    ├─ AS-3  board graph   — ground, via classes, signal islands, ports, scope
 //    ├─ AS-4  parts         — evidence → parts table
 //    ├─ AS-5  lines         — trace chains → line elements
 //    └─ AS-6  emit          — TestBench → NetlistSchematic.Build → .csch
@@ -96,7 +96,7 @@ public sealed record RecognitionInput
     }
 }
 
-/// <summary>What a recognition produced. AS-5 adds the line elements.</summary>
+/// <summary>What a recognition produced.</summary>
 /// <param name="Board">The board graph; null only when the artwork could not be read at all.</param>
 /// <param name="Report">Every guess and omission, with counts.</param>
 /// <param name="Refusal">Why nothing can be generated, or null.</param>
@@ -107,6 +107,15 @@ public sealed record RecognitionResult(BoardGraph? Board, RecognitionReport Repo
 
     /// <summary>The parts table (AS-4), with an edited table laid over it; empty when there is no board.</summary>
     public PartsTable Parts { get; init; } = PartsTable.Empty;
+
+    /// <summary>The line elements and the nodes between them (AS-5); empty when there is no board.</summary>
+    public LineRecognitionResult Lines { get; init; } = LineRecognitionResult.Empty;
+
+    /// <summary>The trace review the parts and the lines were read from — ONE run per recognition (R-as5-1).</summary>
+    public TraceImpedanceReport? Review { get; init; }
+
+    /// <summary>How many times the trace review ran for this recognition — the counter R-as5-9's gate holds at one.</summary>
+    internal int ReviewRuns { get; init; }
 }
 
 /// <summary>The recognition, written once (D2).</summary>
@@ -283,11 +292,16 @@ public static class ArtworkRecognition
         // ── parts (AS-4): every evidence source, then the user's table laid over them ─────────────────
         control?.BeginStage("Reading parts");
         TraceImpedanceReport? review = null;
+        int reviews = 0;
+        TraceImpedanceReport Review()
+        {
+            if (review is null) { reviews++; review = ReviewOf(scopedShapes, tech, board, dbu, control); }
+            return review;
+        }
         var parts = PartReading.Read(new PartReadingContext
         {
             Input = input, Board = graph, Copper = board, Shapes = scopedShapes, Scope = scope, PlacedPads = placed,
-            TraceRuns = () => (review ??= TraceImpedanceAnalysis.Analyze(scopedShapes, tech, dbu, new TraceImpedanceOptions(), control))
-                              .Layers.SelectMany(l => l.Traces).ToList(),
+            TraceRuns = () => Review().Layers.SelectMany(l => l.Traces).ToList(),
             Format = fmt,
         }, report);
         if (input.PartsCsvPath is { } csv)
@@ -308,8 +322,53 @@ public static class ArtworkRecognition
         if (promoted.Count > 0)
             graph = graph with { Islands = [.. islands.Select(i => promoted.Contains(i.Id) ? i with { Kind = IslandKind.Signal } : i)] };
         ReportIslands([.. graph.Islands], report, fmt);
+        token.ThrowIfCancellationRequested();
 
-        return new RecognitionResult(graph, report, ports.Count == 0 ? PortDiscovery.NoPortRefusal : null) { Parts = parts };
+        // ── lines (AS-5): the same review, read into line elements ───────────────────────────────────
+        control?.BeginStage("Reading lines");
+        var lines = LineRecognition.Recognize(new LineRecognitionContext
+        {
+            Board = graph, Parts = parts, Review = Review(), Technology = tech, Options = options,
+            TopFrequencyHz = TopFrequency(input), Format = fmt,
+        }, report);
+
+        return new RecognitionResult(graph, report, ports.Count == 0 ? PortDiscovery.NoPortRefusal : null)
+        {
+            Parts = parts, Lines = lines, Review = review, ReviewRuns = reviews,
+        };
+    }
+
+    /// <summary>
+    /// The trace review recognition reads (R-as5-1): every trace in scope, the SHORT ones too — a region
+    /// round the whole of the copper selects every chain, and a chain a selector chooses is a trace from
+    /// <see cref="TraceImpedanceAnalysis.SelectedMinAspect"/> widths, so a 2–4-width line between two parts is a
+    /// line and not a pad. Its target and tolerance do not matter here and its findings are not read.
+    /// </summary>
+    private static TraceImpedanceReport ReviewOf(IReadOnlyList<LayoutShape> shapes, Technology tech, BoardCopper board,
+                                                 int dbu, RunControl? control)
+    {
+        var box = board.CopperBounds();
+        long m = 1000L * dbu;
+        long x0 = box.MinX - m, y0 = box.MinY - m, x1 = box.MaxX + m, y1 = box.MaxY + m;
+        var everything = new TraceImpedanceScope { Regions = [new TraceScopeRegion(null, [x0, y0, x1, y0, x1, y1, x0, y1])] };
+        return TraceImpedanceAnalysis.Analyze(shapes, tech, dbu, new TraceImpedanceOptions { Scope = everything }, control);
+    }
+
+    /// <summary>D15's top frequency: the option, else the EM setup's stop where it is a plain number with a
+    /// unit, else 6 GHz.</summary>
+    private static double TopFrequency(RecognitionInput input)
+    {
+        if (input.Options.TopFrequencyHz is { } f && f > 0 && double.IsFinite(f)) return f;
+        if (input.EmSetup?.Frequency is { } spec
+            && double.TryParse(spec.StopExpr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double stop))
+        {
+            double scale = spec.StopUnit.Trim().ToLowerInvariant() switch
+            {
+                "thz" => 1e12, "ghz" => 1e9, "mhz" => 1e6, "khz" => 1e3, "hz" => 1, _ => double.NaN,
+            };
+            if (stop * scale is var hz && hz > 0 && double.IsFinite(hz)) return hz;
+        }
+        return RecognitionOptions.DefaultTopFrequencyHz;
     }
 
     // ── islands ─────────────────────────────────────────────────────────────────────────────────────

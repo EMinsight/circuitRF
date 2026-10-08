@@ -1,0 +1,526 @@
+// Traces to line elements — brief-artsch-5-traces-to-line-elements.md; overview D3, D13, D14, D16, D19;
+// docs/design/artwork-to-schematic.md §6.
+//
+// Every signal island's copper between parts, ports and vias becomes a chain of line elements, connected node to
+// node to what AS-3 and AS-4 found. The trace review is the READER (R-as5-1): its pieces, chains, end kinds,
+// stations, corners and junctions are taken as they are, and nothing here walks the copper a second time.
+//
+//   1. the attachments — every modelled part's terminals, every kept via's ends, every port — each a node;
+//   2. each trace segmented (LineSegmentation), its ends still placeholders;
+//   3. each junction resolved (LineJunctions): an MTEE or MCROSS, or a plain node;
+//   4. each remaining end attached: the nearest attachment on its island within reach — a via's line stops at
+//      its land's edge — else the nearest other loose end within two widths, else an open end, listed;
+//   5. a line with no length left is absorbed (its nodes become one), and anything on an island no line
+//      reached joins the nearest line end there, or the island's other attachments;
+//   6. the elements written in SI, a TLIN's Z, εeff and loss from its cuts (R-as5-7);
+//   7. coupled pairs (R-as5-8) and the report (R-as5-9).
+
+using CircuitRF.Design.Layout.Em;
+using CircuitRF.Design.RailRf;
+
+namespace CircuitRF.Design.Layout.Recognition;
+
+/// <summary>What line recognition reads.</summary>
+internal sealed record LineRecognitionContext
+{
+    public required BoardGraph Board { get; init; }
+    public required PartsTable Parts { get; init; }
+    public required TraceImpedanceReport Review { get; init; }
+    public required Technology Technology { get; init; }
+    public required RecognitionOptions Options { get; init; }
+
+    /// <summary>The top of the analysis range (D15) — a TLIN's <c>F</c> and the coupled-pair λ.</summary>
+    public required double TopFrequencyHz { get; init; }
+
+    public required RailLengthFormat Format { get; init; }
+}
+
+/// <summary>R-as5-1 … R-as5-9, written once.</summary>
+public static class LineRecognition
+{
+    /// <summary>An end attaches to a part, port or via within this many of its widths plus
+    /// <see cref="AttachReachMicrons"/>.</summary>
+    public const double AttachReachWidths = 2;
+    public const double AttachReachMicrons = 1000;
+
+    /// <summary>Two loose ends on one island within this many widths are one node.</summary>
+    public const double LooseEndWidths = 2;
+
+    /// <summary>Two segments are a coupled pair within this angle, edge gap (in mean widths) and overlap
+    /// (a fraction of the wavelength at the top frequency) — R-as5-8.</summary>
+    public const double CoupledParallelDeg = 2;
+    public const double CoupledGapWidths = 3;
+    public const double CoupledOverlapWavelengths = 1.0 / 20;
+
+    private const double C0 = 299_792_458.0;
+    private const double Mu0 = 4e-7 * Math.PI;
+    private const double DbPerNeper = 8.685889638065035;
+
+    private sealed record Attachment(string Name, LineNodeKind Kind, int Island, long X, long Y, LayerKey? Layer)
+    {
+        public string? Refdes { get; init; }
+        public int Terminal { get; init; } = -1;
+        public int Via { get; init; } = -1;
+        public int Port { get; init; }
+        public double LandRadius { get; init; }
+    }
+
+    internal static LineRecognitionResult Recognize(LineRecognitionContext ctx, RecognitionReport report)
+    {
+        var board = ctx.Board;
+        var options = ctx.Options;
+        var tech = ctx.Technology;
+        int dbu = board.DbuPerMicron;
+        var fmt = ctx.Format;
+
+        // ── 1. the attachments ───────────────────────────────────────────────────────────────────────
+        var attachments = new List<Attachment>();
+        foreach (var row in ctx.Parts.Rows.Where(r => r.IsModelled))
+            for (int t = 0; t < row.Terminals.Count; t++)
+                if (row.Terminals[t] is { Island: >= 0 } term)
+                    attachments.Add(new Attachment($"{row.Refdes}.{t + 1}", LineNodeKind.PartTerminal, term.Island, term.X, term.Y, term.Layer)
+                                    { Refdes = row.Refdes, Terminal = t });
+        for (int v = 0; v < board.Vias.Count; v++)
+        {
+            var via = board.Vias[v];
+            if (via.Element == ViaElement.None) continue;
+            double r = 0.5 * Math.Max(via.PadDbu, via.DrillDbu);
+            for (int i = 0; i < via.Islands.Count; i++)
+                attachments.Add(new Attachment($"V{v + 1}.{i + 1}", LineNodeKind.Via, via.Islands[i], via.X, via.Y, null)
+                                { Via = v, LandRadius = r });
+        }
+        foreach (var port in board.Ports)
+            attachments.Add(new Attachment($"P{port.Number}", LineNodeKind.Port, port.Island, port.X, port.Y, port.Layer) { Port = port.Number });
+        var attachmentOf = attachments.ToDictionary(a => a.Name);
+
+        // ── 2. every trace on a signal island, segmented ─────────────────────────────────────────────
+        var counts = new SegmentationCounts();
+        var traces = new List<TraceLines>();
+        var binders = new Dictionary<LayerKey, LineBinder>();
+        foreach (var layer in ctx.Review.Layers)
+        {
+            string? conductor = tech.Stackup.Layers.FirstOrDefault(
+                l => l.Kind == StackupKind.Conductor && l.DrawingLayers.Contains(layer.Layer))?.Name;
+            if (conductor is null) continue;
+            var binder = binders[layer.Layer] = new LineBinder(tech, conductor);
+            foreach (var run in layer.Traces)
+            {
+                if (run.Pieces.Count == 0) continue;
+                var p = run.Pieces[0];
+                if (board.IslandAt((p.X0 + p.X1) / 2, (p.Y0 + p.Y1) / 2, run.Layer) is not { Kind: IslandKind.Signal } island) continue;
+                var onIsland = attachments.Where(a => a.Island == island.Id).Select(a => (a.Name, a.X, a.Y)).ToList();
+                traces.Add(LineSegmentation.Segment(run, island.Id, options, binder, dbu, counts, onIsland));
+            }
+        }
+
+        // ── 3. the junctions ─────────────────────────────────────────────────────────────────────────
+        var junctionElements = new List<LineDraft>();
+        var plainJunctions = new List<(TraceJunction Junction, string Why)>();
+        var continuations = new List<(TraceJunction Junction, JunctionArm A, JunctionArm B)>();
+        var resolved = new HashSet<(TraceLines, bool)>();
+        var byId = traces.ToDictionary(t => t.Run.Id);
+        var islandOfJunction = new Dictionary<string, int>();
+        foreach (var junction in ctx.Review.Layers.SelectMany(l => l.Junctions))
+        {
+            var arms = new List<JunctionArm>();
+            foreach (var arm in junction.Arms)
+            {
+                if (!byId.TryGetValue(arm.TraceId, out var t)) continue;
+                arms.Add(new JunctionArm(arm.AtStart ? t.First : t.Last, arm.AtStart, arm.AtStart ? t.Start : t.End));
+                resolved.Add((t, arm.AtStart));
+                islandOfJunction[junction.Id] = t.Island;
+            }
+            if (arms.Count == 0) continue;
+            var reading = LineJunctions.Resolve(junction, arms);
+            if (reading.Element is { } e) junctionElements.Add(e);
+            if (reading.Plain is { } why) plainJunctions.Add((junction, why));
+            if (arms.Count == 2) continuations.Add((junction, arms[0], arms[1]));
+        }
+
+        // ── 4. the other ends ────────────────────────────────────────────────────────────────────────
+        var parent = new Dictionary<string, string>();
+        string Find(string x)
+        {
+            while (parent.TryGetValue(x, out var p) && p != x) x = parent[x] = parent.GetValueOrDefault(p, p);
+            return x;
+        }
+        void Union(string a, string b)
+        {
+            string ra = Find(a), rb = Find(b);
+            if (ra == rb) return;
+            if (Rank(ra) <= Rank(rb)) parent[rb] = ra; else parent[ra] = rb;
+        }
+        int Rank(string name) => attachmentOf.TryGetValue(name, out var a) ? (int)a.Kind
+                               : name.StartsWith('J') ? (int)LineNodeKind.Junction
+                               : name.StartsWith('O') ? (int)LineNodeKind.Open : (int)LineNodeKind.Between;
+
+        var reached = traces.SelectMany(t => t.Taps).ToHashSet();
+        var loose = new List<(TraceLines T, bool AtStart, ChainEnd End, string Placeholder)>();
+        foreach (var t in traces)
+        {
+            foreach (var (atStart, end, placeholder) in new[] { (true, t.Start, t.StartNode), (false, t.End, t.EndNode) })
+            {
+                if (resolved.Contains((t, atStart))) continue;
+                var line = atStart ? t.First : t.Last;
+                double reach = AttachReachWidths * end.Width + AttachReachMicrons * dbu;
+                Attachment? best = null;
+                double bestD = double.MaxValue;
+                foreach (var a in attachments)
+                {
+                    if (a.Island != t.Island) continue;
+                    double d = Math.Sqrt(Sq(a.X - end.X) + Sq(a.Y - end.Y));
+                    double limit = a.Kind == LineNodeKind.Via ? a.LandRadius + end.Width : reach;
+                    if (d <= limit && d < bestD) { best = a; bestD = d; }
+                }
+                if (best is null) { loose.Add((t, atStart, end, placeholder)); continue; }
+                // A via owns its land: the line stops at the land's edge (R-as5-5).
+                if (best.Kind == LineNodeKind.Via)
+                    line.L += (best.X - end.X) * end.Dx + (best.Y - end.Y) * end.Dy - best.LandRadius;
+                SetEnd(line, atStart, best.Name);
+                reached.Add(best.Name);
+            }
+        }
+
+        // Loose ends: two within two widths on one island are one node; the rest are open ends.
+        var openEnds = new List<(string Node, ChainEnd End)>();
+        int open = 0, joint = 0;
+        var looseNode = new string?[loose.Count];
+        for (int i = 0; i < loose.Count; i++)
+        {
+            if (looseNode[i] is not null) continue;
+            var (ti, si, ei, _) = loose[i];
+            for (int j = i + 1; j < loose.Count; j++)
+            {
+                var (tj, sj, ej, _) = loose[j];
+                if (tj.Island != ti.Island || ReferenceEquals(ti, tj)) continue;
+                if (Math.Sqrt(Sq(ej.X - ei.X) + Sq(ej.Y - ei.Y)) > LooseEndWidths * Math.Max(ei.Width, ej.Width)) continue;
+                looseNode[i] ??= $"N{++joint}";
+                looseNode[j] = looseNode[i];
+            }
+            if (looseNode[i] is null)
+            {
+                looseNode[i] = $"O{++open}";
+                openEnds.Add((looseNode[i]!, ei));
+            }
+        }
+        for (int i = 0; i < loose.Count; i++)
+        {
+            var (t, atStart, _, _) = loose[i];
+            SetEnd(atStart ? t.First : t.Last, atStart, looseNode[i]!);
+        }
+
+        // A "junction" of two arms is the review's reading of a sliver between two pieces — both ends of a
+        // short piece near both of its neighbours. The piece is gone but its length is in the arms, run to the
+        // centre; where they are one line type and one width they are ONE line, and the sliver is absorbed.
+        var merged = new HashSet<LineDraft>();
+        foreach (var (junction, a, b) in continuations)
+        {
+            var (into, from) = (a.Line, b.Line);
+            if (into == from || merged.Contains(into) || merged.Contains(from) || into.Kind != from.Kind
+                || !LineSegmentation.SameClass(into.W, from.W, dbu)) continue;
+            string far = b.AtStart ? from.Nodes[^1] : from.Nodes[0];
+            if (a.AtStart) into.Nodes[0] = far; else into.Nodes[^1] = far;
+            into.Absorb(from, a.AtStart, b.AtStart);
+            merged.Add(from);
+            counts.Slivers.Add((junction.X, junction.Y));
+        }
+
+        // ── 5. every draft, in order; a line with no length left is absorbed ───────────────────────────
+        var drafts = traces.SelectMany(t => t.Drafts).Concat(junctionElements).Where(d => !merged.Contains(d)).ToList();
+        var absorbed = new List<(long X, long Y)>();
+        foreach (var d in drafts.Where(d => d.IsLine && d.L <= 0).ToList())
+        {
+            Union(d.Nodes[0], d.Nodes[1]);
+            drafts.Remove(d);
+            if (d.Anchor.Count > 0) absorbed.Add(d.Anchor[0]);
+        }
+
+        // Attachments no line reached: the nearest line end on their island, else the island's first attachment.
+        var endsOnIsland = new Dictionary<int, List<(string Node, double X, double Y)>>();
+        foreach (var t in traces)
+        {
+            if (!endsOnIsland.TryGetValue(t.Island, out var list)) endsOnIsland[t.Island] = list = [];
+            list.Add((t.First.Nodes[0], t.Start.X, t.Start.Y));
+            list.Add((t.Last.Nodes[^1], t.End.X, t.End.Y));
+        }
+        foreach (var j in junctionElements)
+            if (islandOfJunction.TryGetValue(j.Source, out int ji))
+                endsOnIsland[ji].Add((j.Nodes[0], j.Anchor[0].X, j.Anchor[0].Y));
+        var firstOnIsland = new Dictionary<int, string>();
+        foreach (var a in attachments.Where(a => !reached.Contains(a.Name)))
+        {
+            if (endsOnIsland.TryGetValue(a.Island, out var ends) && ends.Count > 0)
+                Union(a.Name, ends.MinBy(e => Sq(e.X - a.X) + Sq(e.Y - a.Y)).Node);
+            else if (firstOnIsland.TryGetValue(a.Island, out var first)) Union(a.Name, first);
+            else firstOnIsland[a.Island] = a.Name;
+        }
+
+        // ── 6. the elements ─────────────────────────────────────────────────────────────────────────
+        var conductorOf = binders.ToDictionary(kv => kv.Key, kv => kv.Value.SignalConductor);
+        var layerName = ctx.Review.Layers.ToDictionary(l => l.Layer, l => l.Name);
+        var elements = new List<LineElement>();
+        var numbering = new Dictionary<LineElementType, int>();
+        var lineDrafts = drafts.Where(d => d.IsLine).ToList();
+        foreach (var d in drafts)
+        {
+            numbering[d.Type] = numbering.GetValueOrDefault(d.Type) + 1;
+            var reference = d.ReferenceBelow ?? d.ReferenceAbove;
+            var binder = binders.GetValueOrDefault(d.Layer);
+            elements.Add(new LineElement
+            {
+                Name = $"{d.Type}{numbering[d.Type]}",
+                Type = d.Type,
+                Nodes = [.. d.Nodes.Select(Find)],
+                Parameters = ParametersOf(d, ctx, binder, lineDrafts, dbu, out bool unsolved),
+                Layer = d.Layer,
+                LayerName = layerName.GetValueOrDefault(d.Layer, ""),
+                SignalLayer = conductorOf.GetValueOrDefault(d.Layer),
+                GroundReference = binder?.GroundOverride(reference),
+                Source = d.Source,
+                Anchor = [.. d.Anchor],
+                GapLeft = d.Type is LineElementType.MLIN or LineElementType.CPWG ? Metres(d.GapLeft, dbu) : null,
+                GapRight = d.Type is LineElementType.MLIN or LineElementType.CPWG ? Metres(d.GapRight, dbu) : null,
+                Width = d.IsLine ? d.W / dbu * 1e-6 : null,
+                Z0 = d.Z0,
+                Eeff = d.Eeff,
+                Fallback = d.Type == LineElementType.TLIN ? (unsolved ? LineTypeChoice.UnsolvedReason : d.Reason) : null,
+                Unsolved = unsolved,
+            });
+        }
+        // A CPWG whose gaps differ by more than 1.5× is a TLIN (D13) — decided on the segment's mean gaps.
+        for (int i = 0; i < elements.Count; i++)
+        {
+            var e = elements[i];
+            if (e.Type != LineElementType.CPWG) continue;
+            if (e.GapLeft is { } gl && e.GapRight is { } gr && Math.Max(gl, gr) <= LineTypeChoice.MaxGapRatio * Math.Min(gl, gr)) continue;
+            var d = drafts[i];
+            d.Type = LineElementType.TLIN;
+            d.Reasons.Clear();
+            d.Reasons[LineTypeChoice.AsymmetricReason] = 1;
+            numbering[LineElementType.TLIN] = numbering.GetValueOrDefault(LineElementType.TLIN) + 1;
+            elements[i] = e with
+            {
+                Name = $"TLIN{numbering[LineElementType.TLIN]}", Type = LineElementType.TLIN,
+                Parameters = ParametersOf(d, ctx, binders.GetValueOrDefault(d.Layer), lineDrafts, dbu, out _),
+                Fallback = LineTypeChoice.AsymmetricReason, GapLeft = null, GapRight = null,
+            };
+        }
+
+        var nodes = new Dictionary<string, LineNode>();
+        void AddNode(string name, LineNodeKind kind, int island, long x, long y, LayerKey? layer, Attachment? a = null)
+        {
+            string final = Find(name);
+            if (nodes.ContainsKey(final)) return;
+            if (final != name && attachmentOf.TryGetValue(final, out var rep))
+                nodes[final] = Node(rep);
+            else
+                nodes[final] = a is null ? new LineNode(final, kind, island, x, y, layer) : Node(a);
+        }
+        LineNode Node(Attachment a) => new(a.Name, a.Kind, a.Island, a.X, a.Y, a.Layer)
+        { Refdes = a.Refdes, Terminal = a.Terminal, Via = a.Via, Port = a.Port };
+        foreach (var a in attachments) AddNode(a.Name, a.Kind, a.Island, a.X, a.Y, a.Layer, a);
+        foreach (var t in traces)
+            foreach (var d in t.Drafts)
+                for (int i = 0; i < d.Nodes.Count; i++)
+                {
+                    var (x, y) = d.Anchor.Count == 0 ? (0L, 0L) : i == 0 ? d.Anchor[0] : d.Anchor[^1];
+                    string name = d.Nodes[i];
+                    var kind = name.StartsWith('O') ? LineNodeKind.Open : name.StartsWith('J') ? LineNodeKind.Junction : LineNodeKind.Between;
+                    AddNode(name, kind, t.Island, x, y, t.Run.Layer);
+                }
+        foreach (var j in junctionElements)
+            foreach (var name in j.Nodes)
+                AddNode(name, LineNodeKind.Junction, islandOfJunction.GetValueOrDefault(j.Source, -1), j.Anchor[0].X, j.Anchor[0].Y, j.Layer);
+
+        var joined = parent.Keys.Concat(nodes.Keys).Concat(attachments.Select(a => a.Name)).Distinct()
+                           .ToDictionary(k => k, Find);
+        var result = new LineRecognitionResult(elements, [.. nodes.Values]) { Joined = joined };
+
+        // ── 7. coupled pairs, and the report ──────────────────────────────────────────────────────────
+        var coupled = CoupledPairs(elements, ctx.TopFrequencyHz, dbu);
+        Report(result, report, options, counts, plainJunctions, openEnds, absorbed, coupled, fmt);
+        return result;
+    }
+
+    private static void SetEnd(LineDraft line, bool atStart, string node)
+    {
+        if (atStart) line.Nodes[0] = node;
+        else line.Nodes[^1] = node;
+    }
+
+    /// <summary>R-as5-7: an element's parameters, SI.</summary>
+    private static Dictionary<string, double> ParametersOf(LineDraft d, LineRecognitionContext ctx, LineBinder? binder,
+                                                           List<LineDraft> lines, int dbu, out bool unsolved)
+    {
+        unsolved = false;
+        double M(double v) => v / dbu * 1e-6;
+        switch (d.Type)
+        {
+            case LineElementType.MLIN:
+            case LineElementType.SLIN:
+                return new() { ["W"] = M(d.W), ["L"] = M(d.L) };
+            case LineElementType.CPWG:
+                double g = d.GapLeft is { } gl && d.GapRight is { } gr ? 0.5 * (gl + gr) : d.GapLeft ?? d.GapRight ?? 0;
+                return new() { ["W"] = M(d.W), ["L"] = M(d.L), ["G"] = M(g) };
+            case LineElementType.MBEND:
+                return new() { ["W"] = M(d.W), ["Angle"] = d.Angle, ["Miter"] = (int)d.Miter };
+            case LineElementType.MTAPER:
+                return new() { ["W1"] = M(d.W), ["W2"] = M(d.W2), ["L"] = M(d.L) };
+            case LineElementType.MTEE:
+                return new() { ["W1"] = M(d.Widths[0]), ["W2"] = M(d.Widths[1]), ["W3"] = M(d.Widths[2]) };
+            case LineElementType.MCROSS:
+                return new() { ["W1"] = M(d.Widths[0]), ["W2"] = M(d.Widths[1]), ["W3"] = M(d.Widths[2]), ["W4"] = M(d.Widths[3]) };
+        }
+
+        // TLIN, physical form (AS-2): Z and εeff from the cuts — a neighbour's where none was solved.
+        double? z = d.Z0, eeff = d.Eeff;
+        if (z is null)
+        {
+            unsolved = true;
+            var near = lines.Where(o => o.Source == d.Source && o.Z0 is not null)
+                            .MinBy(o => Math.Abs(lines.IndexOf(o) - lines.IndexOf(d)))
+                       ?? lines.Where(o => o.Layer == d.Layer && o.Z0 is not null).FirstOrDefault();
+            z = near?.Z0 ?? 50;
+            eeff = near?.Eeff ?? 1;
+        }
+        double f = ctx.TopFrequencyHz;
+        double ad = 0, ac = 0;
+        if (binder?.Substrate(d.ReferenceBelow, d.ReferenceAbove) is var (er, tanD, sigma))
+        {
+            double e = eeff!.Value;
+            // The microstrip filling factor; 1 for a homogeneous line (Eeff = Er), where it is exact.
+            double fill = Math.Abs(er - 1) < 1e-9 ? 1 : Math.Clamp((e - 1) / (er - 1) * er / e, 0, er);
+            ad = Math.PI * f / C0 * Math.Sqrt(e) * fill * tanD * DbPerNeper;
+            if (sigma > 0 && d.W > 0)
+                ac = Math.Sqrt(Math.PI * f * Mu0 / sigma) / (z!.Value * M(d.W)) * DbPerNeper;   // Rs/(Z0·W): an estimate
+        }
+        return new() { ["Z"] = z!.Value, ["L"] = M(d.L), ["Eeff"] = eeff!.Value, ["F"] = f, ["Ac"] = ac, ["Ad"] = ad };
+    }
+
+    private static double? Metres(double? dbuValue, int dbu) => dbuValue is { } v ? v / dbu * 1e-6 : null;
+
+    /// <summary>R-as5-8: pairs of straight line segments on one layer, parallel within 2°, their edges within 3
+    /// mean widths, overlapping for more than λ/20 at the top frequency.</summary>
+    private static List<(LineElement A, LineElement B, (long X, long Y) At)> CoupledPairs(
+        List<LineElement> elements, double topHz, int dbu)
+    {
+        var lines = elements.Where(e => e.Type is LineElementType.MLIN or LineElementType.CPWG or LineElementType.SLIN or LineElementType.TLIN
+                                        && e.Anchor.Count >= 2 && e.Parameters.ContainsKey("L")).ToList();
+        double cosTol = Math.Cos(CoupledParallelDeg * Math.PI / 180);
+        var pairs = new List<(LineElement, LineElement, (long, long))>();
+        for (int i = 0; i < lines.Count; i++)
+            for (int j = i + 1; j < lines.Count; j++)
+            {
+                var a = lines[i]; var b = lines[j];
+                if (a.Layer != b.Layer || a.Nodes.Intersect(b.Nodes).Any()) continue;
+                double wa = (a.Width ?? 0) * 1e6 * dbu, wb = (b.Width ?? 0) * 1e6 * dbu;
+                double eeff = 0.5 * ((a.Eeff ?? 1) + (b.Eeff ?? 1));
+                double minOverlap = CoupledOverlapWavelengths * C0 / (topHz * Math.Sqrt(eeff)) * 1e6 * dbu;
+                bool found = false;
+                for (int s = 0; s + 1 < a.Anchor.Count && !found; s++)
+                    for (int t = 0; t + 1 < b.Anchor.Count && !found; t++)
+                    {
+                        var (ax0, ay0) = a.Anchor[s]; var (ax1, ay1) = a.Anchor[s + 1];
+                        var (bx0, by0) = b.Anchor[t]; var (bx1, by1) = b.Anchor[t + 1];
+                        double la = Math.Sqrt(Sq(ax1 - ax0) + Sq(ay1 - ay0)), lb = Math.Sqrt(Sq(bx1 - bx0) + Sq(by1 - by0));
+                        if (la <= 0 || lb <= 0) continue;
+                        double ux = (ax1 - ax0) / la, uy = (ay1 - ay0) / la;
+                        if (Math.Abs(ux * (bx1 - bx0) / lb + uy * (by1 - by0) / lb) < cosTol) continue;
+                        double gap = Math.Abs(-(bx0 - ax0) * uy + (by0 - ay0) * ux) - 0.5 * (wa + wb);
+                        if (gap > CoupledGapWidths * 0.5 * (wa + wb)) continue;
+                        double p0 = (bx0 - ax0) * ux + (by0 - ay0) * uy, p1 = (bx1 - ax0) * ux + (by1 - ay0) * uy;
+                        double overlap = Math.Min(la, Math.Max(p0, p1)) - Math.Max(0, Math.Min(p0, p1));
+                        if (overlap <= minOverlap) continue;
+                        pairs.Add((a, b, ((ax0 + ax1) / 2, (ay0 + ay1) / 2)));
+                        found = true;
+                    }
+            }
+        return pairs;
+    }
+
+    // ── the report ──────────────────────────────────────────────────────────────────────────────────
+
+    private static void Report(
+        LineRecognitionResult result, RecognitionReport report, RecognitionOptions options, SegmentationCounts counts,
+        List<(TraceJunction Junction, string Why)> plain, List<(string Node, ChainEnd End)> openEnds,
+        List<(long X, long Y)> absorbed, List<(LineElement A, LineElement B, (long X, long Y) At)> coupled,
+        RailLengthFormat fmt)
+    {
+        var elements = result.Elements;
+        static RecognitionAnchor A(LineElement e) =>
+            new(e.Anchor.Count == 0 ? 0 : (e.Anchor[0].X + e.Anchor[^1].X) / 2, e.Anchor.Count == 0 ? 0 : (e.Anchor[0].Y + e.Anchor[^1].Y) / 2, e.Layer);
+
+        var byType = elements.GroupBy(e => e.Type).OrderBy(g => g.Key).ToList();
+        report.Add(RecognitionFindingClass.LineElements, elements.Count,
+            $"{Plural(elements.Count, "line element", "line elements")} read from the traces: " +
+            string.Join(", ", byType.Select(g => $"{g.Count()} {g.Key}")) + ".");
+
+        var fallbacks = elements.Where(e => e.Type == LineElementType.TLIN && !e.Unsolved).ToList();
+        report.Add(RecognitionFindingClass.TlinFallbacks, fallbacks.Count,
+            $"{Plural(fallbacks.Count, "line is a TLIN", "lines are TLINs")} because no circuit model covers the cross-section: " +
+            string.Join("; ", fallbacks.GroupBy(e => e.Fallback ?? "").Select(g => $"{g.Count()} {g.Key}")) +
+            ". Z and εeff are the solved cross-section's; the conductor loss is an estimate (Rs / (Z0·W)).",
+            [.. fallbacks.Select(A)]);
+
+        string under = options.Coplanar switch
+        {
+            CoplanarReading.Auto => $"under Auto (both side gaps within {options.CoplanarGapFactor:0.##}·H)",
+            CoplanarReading.Microstrip => "with every coplanar line read as microstrip",
+            _ => "with every line gapped on both sides read as GCPW",
+        };
+        var gcpw = elements.Where(e => e.Type == LineElementType.CPWG).ToList();
+        report.Add(RecognitionFindingClass.LinesReadAsGcpw, gcpw.Count,
+            $"{Plural(gcpw.Count, "segment reads", "segments read")} as grounded coplanar (CPWG) {under}.", [.. gcpw.Select(A)]);
+        var mlin = elements.Where(e => e.Type == LineElementType.MLIN).ToList();
+        int gapped = mlin.Count(e => e.GapLeft is not null && e.GapRight is not null);
+        report.Add(RecognitionFindingClass.LinesReadAsMlin, mlin.Count,
+            $"{Plural(mlin.Count, "segment reads", "segments read")} as microstrip (MLIN) {under}" +
+            (gapped > 0 ? $"; {gapped} of them {(gapped == 1 ? "has" : "have")} ground on both sides, recorded for a swap to CPWG." : "."),
+            [.. mlin.Select(A)]);
+
+        var many = plain.Where(p => p.Why == LineJunctions.TooManyArms).ToList();
+        report.Add(RecognitionFindingClass.JunctionsOverFourArms, many.Count,
+            $"{Plural(many.Count, "junction has", "junctions have")} more than four arms and {(many.Count == 1 ? "is" : "are")} a plain node.",
+            [.. many.Select(p => new RecognitionAnchor(p.Junction.X, p.Junction.Y, p.Junction.Layer))]);
+
+        int bends = counts.UnmodelledBends.Count, steps = counts.UnmodelledSteps.Count;
+        var notMs = plain.Where(p => p.Why == LineJunctions.NotMicrostrip).ToList();
+        int unmodelled = bends + steps + notMs.Count;
+        var parts = new List<string>();
+        if (bends > 0) parts.Add($"{Plural(bends, "bend is", "bends are")} centre-line length");
+        if (notMs.Count > 0) parts.Add($"{Plural(notMs.Count, "junction is a plain node", "junctions are plain nodes")}");
+        if (steps > 0) parts.Add($"{Plural(steps, "width step abuts", "width steps abut")}");
+        report.Add(RecognitionFindingClass.DiscontinuitiesNotModelled, unmodelled,
+            $"Outside microstrip there are no discontinuity models: {string.Join(", ", parts)}.",
+            [.. counts.UnmodelledBends.Concat(counts.UnmodelledSteps).Select(p => new RecognitionAnchor(p.X, p.Y))
+               .Concat(notMs.Select(p => new RecognitionAnchor(p.Junction.X, p.Junction.Y, p.Junction.Layer)))]);
+
+        report.Add(RecognitionFindingClass.OpenEnds, openEnds.Count,
+            $"{Plural(openEnds.Count, "line ends", "lines end")} on nothing a part, a via or a port lands on, and " +
+            $"{(openEnds.Count == 1 ? "is" : "are")} left open (there is no open-end model): " +
+            string.Join(", ", openEnds.Take(6).Select(o => fmt.Point((long)Math.Round(o.End.X), (long)Math.Round(o.End.Y))))
+            + (openEnds.Count > 6 ? ", …" : "") + ".",
+            [.. openEnds.Select(o => new RecognitionAnchor((long)Math.Round(o.End.X), (long)Math.Round(o.End.Y)))]);
+
+        int slivers = counts.Slivers.Count + absorbed.Count;
+        report.Add(RecognitionFindingClass.SliversAbsorbed, slivers,
+            $"{Plural(slivers, "short piece of line was", "short pieces of line were")} absorbed into a neighbour " +
+            "(a sliver taking its neighbour's width, or a line left with no length past a bend, junction, pad or via); " +
+            "none was dropped.",
+            [.. counts.Slivers.Concat(absorbed).Select(p => new RecognitionAnchor(p.X, p.Y))]);
+
+        report.Add(RecognitionFindingClass.CoupledPairs, coupled.Count,
+            $"{Plural(coupled.Count, "pair of lines runs", "pairs of lines run")} close and parallel for more than λ/20 — " +
+            "coupled, modelled uncoupled: " + string.Join(", ", coupled.Select(c => $"{c.A.Name} and {c.B.Name}")) + ".",
+            [.. coupled.SelectMany(c => new[] { A(c.A), A(c.B) })]);
+
+        var unsolved = elements.Where(e => e.Unsolved).ToList();
+        report.Add(RecognitionFindingClass.UnsolvedSegments, unsolved.Count,
+            $"{Plural(unsolved.Count, "segment has", "segments have")} no solved cross-section and {(unsolved.Count == 1 ? "is a TLIN" : "are TLINs")} " +
+            "at a neighbour's Z and εeff.", [.. unsolved.Select(A)]);
+    }
+
+    private static string Plural(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";
+
+    private static double Sq(double v) => v * v;
+}

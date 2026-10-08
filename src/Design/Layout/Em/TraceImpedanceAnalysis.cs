@@ -175,9 +175,39 @@ public sealed record TraceStation
     public double? GapLeft { get; init; }
     public double? GapRight { get; init; }
 
+    /// <summary>The dielectric height the classifier's coplanar threshold is measured against, DBU — to the
+    /// reference below, else above, else the width (<c>TraceCut.HDbu</c>). Artwork recognition re-applies
+    /// that threshold with a factor of its own (brief-artsch-5 R-as5-2).</summary>
+    public double? H { get; init; }
+
     /// <summary>Why there is no Z0 here, or null.</summary>
     public string? Refusal { get; init; }
 }
+
+/// <summary>
+/// A bend between two pieces of one trace (brief-artsch-5 R-as5-1): where the centre lines meet, how far
+/// the trace turns there, and the chamfer measured on the outer corner. DBU.
+/// </summary>
+/// <param name="After">The piece before the corner, an index into <see cref="TraceRun.Pieces"/>.</param>
+/// <param name="X">The corner point — the two pieces' centre lines meet here.</param>
+/// <param name="Y">DBU.</param>
+/// <param name="TurnDeg">How far the trace turns, degrees: positive to the left (counter-clockwise), 0
+/// straight on, ±90 a right angle.</param>
+/// <param name="Width">The trace's width at the corner — the mean of the two pieces'.</param>
+/// <param name="CutLeg">The chamfer on the outer corner, measured along each outer edge back from where the
+/// sharp corner would be (<c>MicrostripDiscontinuities.MiterCutLength</c>'s own measure); 0 for a square
+/// corner.</param>
+public sealed record TraceCorner(int After, long X, long Y, double TurnDeg, double Width, double CutLeg);
+
+/// <summary>One arm of a <see cref="TraceJunction"/>: a trace, and which of its ends is there.</summary>
+public sealed record TraceJunctionArm(string TraceId, bool AtStart);
+
+/// <summary>
+/// Where three traces or more meet (brief-artsch-5 R-as5-1): the point their centre lines come closest to
+/// (least squares), DBU, and every trace with an end there. A member the review left out — a pad-length
+/// stub, a trace outside the scope — is not listed, so a junction may have fewer arms than copper meets it.
+/// </summary>
+public sealed record TraceJunction(string Id, LayerKey Layer, long X, long Y, IReadOnlyList<TraceJunctionArm> Arms);
 
 /// <summary>A trace's result. <see cref="Warning"/> is APPENDED rather than placed between Pass and
 /// Fail, so a number stored anywhere keeps its meaning.</summary>
@@ -200,6 +230,10 @@ public sealed record TraceRun
     /// one straight piece, with the gaps between pairs being bends, jogs or steps. DBU.</summary>
     public IReadOnlyList<(long X0, long Y0, long X1, long Y1, double Width)> Pieces { get; init; } = [];
 
+    /// <summary>The bends between consecutive pieces — a turn of <see cref="TraceImpedanceAnalysis.CornerMinDeg"/>
+    /// or more — in order along the trace.</summary>
+    public IReadOnlyList<TraceCorner> Corners { get; init; } = [];
+
     public long StartX { get; init; }
     public long StartY { get; init; }
     public long EndX { get; init; }
@@ -208,6 +242,10 @@ public sealed record TraceRun
     /// <summary>What each end is: "via", "pad", "junction", "open end" or "continues".</summary>
     public string StartsAt { get; init; } = "";
     public string EndsAt { get; init; } = "";
+
+    /// <summary>The <see cref="TraceJunction.Id"/> the start (end) is on, or null.</summary>
+    public string? StartJunction { get; init; }
+    public string? EndJunction { get; init; }
 
     public double Length { get; init; }
     public double WidthMin { get; init; }
@@ -268,6 +306,9 @@ public sealed record TraceLayerResult
     public LayerKey Layer { get; init; }
     public string Name { get; init; } = "";
     public IReadOnlyList<TraceRun> Traces { get; init; } = [];
+
+    /// <summary>Where three traces or more meet on this layer.</summary>
+    public IReadOnlyList<TraceJunction> Junctions { get; init; } = [];
 
     /// <summary>The layer's unioned copper, as flat x,y rings in DBU — what the page draws under the
     /// map.</summary>
@@ -522,6 +563,10 @@ public static partial class TraceImpedanceAnalysis
     /// never disagree. A trace's own width drifts by far less; a land is rarely under a fifth wider.</summary>
     internal const double PadWidthStep = 1.2;
 
+    /// <summary>Two pieces whose directions differ by this or more meet at a <see cref="TraceCorner"/>; a
+    /// smaller change is a jog or a facet of a curve, and the trace runs straight on through it.</summary>
+    public const double CornerMinDeg = 15;
+
     /// <summary>Cuts per width along a piece.</summary>
     public const double StationsPerWidth = 1;
 
@@ -648,7 +693,7 @@ public static partial class TraceImpedanceAnalysis
         // is cancelled still has every layer it FINISHED — and the report is written for those
         // (owner, 2026-09-25: a long run cancelled part-way must not throw away what it has done).
         // Progress: Completed/Total counts layers; the stage counts the layer's solves.
-        int id = 0, stationCount = 0, solveCount = 0;
+        int id = 0, jid = 0, stationCount = 0, solveCount = 0;
         var layers = new List<TraceLayerResult>();
         bool cancelled = false;
         for (int li = 0; li < analysed.Count; li++)
@@ -715,13 +760,31 @@ public static partial class TraceImpedanceAnalysis
                 solveCount += keys.Length;
 
                 var runs = new List<TraceRun>();
+                var junctionIds = new Dictionary<int, string>();
+                var arms = new Dictionary<int, List<TraceJunctionArm>>();
                 foreach (var chain in lw.Chains)
-                    runs.Add(Assemble(chain, lw, answers, options, dbuPerMicron, ref id));
+                {
+                    var run = Assemble(chain, lw, answers, options, dbuPerMicron, ref id);
+                    string? JunctionOf(int key, bool atStart)
+                    {
+                        if (key < 0) return null;
+                        if (!junctionIds.TryGetValue(key, out var jName)) { junctionIds[key] = jName = $"J{++jid}"; arms[key] = []; }
+                        arms[key].Add(new TraceJunctionArm(run.Id, atStart));
+                        return jName;
+                    }
+                    runs.Add(run with { StartJunction = JunctionOf(chain.StartKey, true), EndJunction = JunctionOf(chain.EndKey, false) });
+                }
+                var junctions = junctionIds.Select(kv =>
+                {
+                    var (jx, jy) = lw.JunctionCentres[kv.Key];
+                    return new TraceJunction(kv.Value, lw.Key, (long)Math.Round(jx), (long)Math.Round(jy), arms[kv.Key]);
+                }).ToList();
                 layers.Add(new TraceLayerResult
                 {
                     Layer = lw.Key,
                     Name = lw.Name,
                     Traces = runs,
+                    Junctions = junctions,
                     PoursSkipped = lw.Pours,
                     OutOfScope = outOfScope,
                     OutOfScopeTraceKeys = outOfScopeKeys,
@@ -1237,9 +1300,10 @@ public static partial class TraceImpedanceAnalysis
         foreach (var b in barrels.GetValueOrDefault(band.Index) ?? [])
             if (cu.Contains(b.X, b.Y)) transitionVias.Add(b);
 
-        return new LayerWork(key, name, band, cu, Chain(pieces, cu, islandOfRing), pours, maxW)
+        var chains = Chain(pieces, cu, islandOfRing, out var junctionCentres);
+        return new LayerWork(key, name, band, cu, chains, pours, maxW)
         {
-            Vias = bandVias, TransitionVias = transitionVias, IslandOfRing = islandOfRing,
+            Vias = bandVias, TransitionVias = transitionVias, IslandOfRing = islandOfRing, JunctionCentres = junctionCentres,
         };
     }
 
@@ -1432,6 +1496,9 @@ public static partial class TraceImpedanceAnalysis
         public List<StationWork> Stations { get; } = [];
         public string StartsAt = "", EndsAt = "";
         public bool StartJunction, EndJunction;
+
+        /// <summary>The junction each end is on — a key into <see cref="LayerWork.JunctionCentres"/> — or -1.</summary>
+        public int StartKey = -1, EndKey = -1;
         public double LastX, LastY, Length;
 
         /// <summary>Shorter than <see cref="MinAspect"/> widths: a trace only where a selector chooses it.</summary>
@@ -1454,9 +1521,13 @@ public static partial class TraceImpedanceAnalysis
         /// <see cref="Vias"/>, the pads that are this layer's own copper.</summary>
         public List<(double X, double Y, double R)> TransitionVias { get; init; } = [];
         public int[] IslandOfRing { get; init; } = [];
+
+        /// <summary>Each junction's centre, by its key (<see cref="ChainWork.StartKey"/>).</summary>
+        public Dictionary<int, (double X, double Y)> JunctionCentres { get; init; } = [];
     }
 
-    private static List<ChainWork> Chain(List<Piece> pieces, TraceCopper cu, int[] islandOfRing)
+    private static List<ChainWork> Chain(List<Piece> pieces, TraceCopper cu, int[] islandOfRing,
+                                         out Dictionary<int, (double X, double Y)> junctionCentres)
     {
         int m = pieces.Count;
         // Ends: 2i is piece i's A end, 2i+1 its B end.
@@ -1513,11 +1584,31 @@ public static partial class TraceImpedanceAnalysis
             link[k] = j;
         }
 
+        // Which junction each junction end is on: the ends joined by candidate links, all of them junction
+        // ends, are one junction (brief-artsch-5 R-as5-1). Its centre is the point the member pieces'
+        // centre lines come closest to — the crossing of a T's through line and its branch — read here,
+        // where every member piece is still known, before a trim or the scope drops one.
+        var root = new int[2 * m];
+        for (int k = 0; k < 2 * m; k++) root[k] = k;
+        int Root(int x) { while (root[x] != x) x = root[x] = root[root[x]]; return x; }
+        for (int k = 0; k < 2 * m; k++)
+            if (junction[k])
+                foreach (int j in candidates[k])
+                    if (junction[j]) root[Root(j)] = Root(k);
+        junctionCentres = [];
+        foreach (var group in Enumerable.Range(0, 2 * m).Where(k => junction[k]).GroupBy(Root))
+            junctionCentres[group.Key] = Closest([.. group.Select(k =>
+            {
+                var (x, y) = End(k);
+                var (ox, oy) = End(k ^ 1);
+                return (x, y, ox - x, oy - y);
+            })]);
+
         var used = new bool[m];
         var chains = new List<ChainWork>();
         void Walk(int startEnd)
         {
-            var chain = new ChainWork { StartJunction = junction[startEnd] };
+            var chain = new ChainWork { StartJunction = junction[startEnd], StartKey = junction[startEnd] ? Root(startEnd) : -1 };
             int end = startEnd;
             while (true)
             {
@@ -1528,6 +1619,7 @@ public static partial class TraceImpedanceAnalysis
                 chain.Pieces.Add((pieces[p], reversed));
                 int exit = end ^ 1;
                 chain.EndJunction = junction[exit];
+                chain.EndKey = junction[exit] ? Root(exit) : -1;
                 if (link[exit] < 0) break;
                 end = link[exit];
             }
@@ -1554,8 +1646,8 @@ public static partial class TraceImpedanceAnalysis
             || (end.Piece.Width > PadWidthStep * next.Piece.Width && end.Piece.Length < MinAspect * end.Piece.Width);
         foreach (var c in chains)
         {
-            while (c.Pieces.Count > 1 && Land(c.Pieces[0], c.Pieces[1])) { c.Pieces.RemoveAt(0); c.StartJunction = false; }
-            while (c.Pieces.Count > 1 && Land(c.Pieces[^1], c.Pieces[^2])) { c.Pieces.RemoveAt(c.Pieces.Count - 1); c.EndJunction = false; }
+            while (c.Pieces.Count > 1 && Land(c.Pieces[0], c.Pieces[1])) { c.Pieces.RemoveAt(0); c.StartJunction = false; c.StartKey = -1; }
+            while (c.Pieces.Count > 1 && Land(c.Pieces[^1], c.Pieces[^2])) { c.Pieces.RemoveAt(c.Pieces.Count - 1); c.EndJunction = false; c.EndKey = -1; }
         }
 
         // A chain shorter than SelectedMinAspect widths is a pad; one piece shorter than a width is a
@@ -1570,6 +1662,71 @@ public static partial class TraceImpedanceAnalysis
             kept.Add(c);
         }
         return kept;
+    }
+
+    /// <summary>The point closest, in least squares, to every line (x, y) + t·(dx, dy); the mean of the
+    /// points when the lines are (nearly) parallel and have no such point.</summary>
+    private static (double X, double Y) Closest(IReadOnlyList<(double X, double Y, double Dx, double Dy)> lines)
+    {
+        double a = 0, b = 0, c = 0, rx = 0, ry = 0;
+        foreach (var (x, y, dx, dy) in lines)
+        {
+            double l = Math.Sqrt(dx * dx + dy * dy);
+            if (l <= 0) continue;
+            double ux = dx / l, uy = dy / l;
+            // (I − u uᵀ) p = (I − u uᵀ) q for each line, summed.
+            double m00 = 1 - ux * ux, m01 = -ux * uy, m11 = 1 - uy * uy;
+            a += m00; b += m01; c += m11;
+            rx += m00 * x + m01 * y; ry += m01 * x + m11 * y;
+        }
+        double det = a * c - b * b;
+        if (Math.Abs(det) < 1e-6 * Math.Max(1, a * c))
+            return (lines.Average(l => l.X), lines.Average(l => l.Y));
+        return ((c * rx - b * ry) / det, (a * ry - b * rx) / det);
+    }
+
+    /// <summary>
+    /// The bends of a chain (brief-artsch-5 R-as5-1): every join between consecutive pieces that turns by
+    /// <see cref="CornerMinDeg"/> or more, at the point the two centre lines meet, with the chamfer the outer
+    /// corner carries — measured by walking out from the corner point along the outward bisector to the
+    /// copper's edge, against where a square corner's edge would be.
+    /// </summary>
+    private static List<TraceCorner> Corners(ChainWork chain, TraceCopper copper)
+    {
+        var corners = new List<TraceCorner>();
+        for (int i = 1; i < chain.Pieces.Count; i++)
+        {
+            var (p, pr) = chain.Pieces[i - 1];
+            var (q, qr) = chain.Pieces[i];
+            var (pax, pay, pbx, pby) = pr ? (p.Bx, p.By, p.Ax, p.Ay) : (p.Ax, p.Ay, p.Bx, p.By);
+            var (qax, qay, qbx, qby) = qr ? (q.Bx, q.By, q.Ax, q.Ay) : (q.Ax, q.Ay, q.Bx, q.By);
+            double d1x = (pbx - pax) / p.Length, d1y = (pby - pay) / p.Length;
+            double d2x = (qbx - qax) / q.Length, d2y = (qby - qay) / q.Length;
+            double cross = d1x * d2y - d1y * d2x, dot = d1x * d2x + d1y * d2y;
+            double turn = Math.Atan2(cross, dot) * 180 / Math.PI;
+            if (Math.Abs(turn) < CornerMinDeg) continue;
+
+            // Where the centre lines meet: pb + t·d1 = qa − u·d2.
+            double w = 0.5 * (p.Width + q.Width);
+            double ex = qax - pbx, ey = qay - pby;
+            double t = (ex * d2y - ey * d2x) / cross;
+            double cx = pbx + t * d1x, cy = pby + t * d1y;
+            if (Math.Abs(t) > 3 * w) { cx = 0.5 * (pbx + qax); cy = 0.5 * (pby + qay); }
+
+            // The outer corner lies along d1 − d2 at (w/2)/cos(θ/2); a chamfer of leg m brings the copper's
+            // edge m·cos(θ/2) nearer along that line.
+            double half = 0.5 * Math.Abs(turn) * Math.PI / 180;
+            double bx = d1x - d2x, by = d1y - d2y, bl = Math.Sqrt(bx * bx + by * by);
+            double leg = 0;
+            if (bl > 0 && copper.ChordAt(cx, cy, bx / bl, by / bl, 4 * w) is { E1: >= 0 } chord)
+            {
+                double outer = 0.5 * w / Math.Cos(half);
+                leg = Math.Max(0, (outer - chord.T1) / Math.Cos(half));
+                if (leg < 0.02 * w) leg = 0;
+            }
+            corners.Add(new TraceCorner(i - 1, (long)Math.Round(cx), (long)Math.Round(cy), turn, w, leg));
+        }
+        return corners;
     }
 
     // ── 5. findings ─────────────────────────────────────────────────────────────────────────────
@@ -1677,6 +1834,7 @@ public static partial class TraceImpedanceAnalysis
                 ReferenceBelow = cut?.LowerRef?.Layer.Name ?? (cut?.Plane == true ? "stackup bottom ground" : null),
                 ReferenceAbove = cut?.UpperRef?.Layer.Name,
                 GapLeft = cut?.GapL, GapRight = cut?.GapR,
+                H = cut?.HDbu,
                 Refusal = refusal,
             });
         }
@@ -1877,6 +2035,7 @@ public static partial class TraceImpedanceAnalysis
             Pieces = [.. chain.Pieces.Select(p => p.Reversed
                 ? ((long)Math.Round(p.Piece.Bx), (long)Math.Round(p.Piece.By), (long)Math.Round(p.Piece.Ax), (long)Math.Round(p.Piece.Ay), p.Piece.Width)
                 : ((long)Math.Round(p.Piece.Ax), (long)Math.Round(p.Piece.Ay), (long)Math.Round(p.Piece.Bx), (long)Math.Round(p.Piece.By), p.Piece.Width))],
+            Corners = Corners(chain, lw.Copper!),
             StartX = ends.X0, StartY = ends.Y0, EndX = ends.X1, EndY = ends.Y1,
             StartsAt = startsAt, EndsAt = endsAt,
             Length = chain.Length,

@@ -97,3 +97,55 @@ column (`nF`) read as not fitted — its comparison lower-cases. The bill-of-mat
 A Gerber-only board has no pads by designator, so `PdnAttachments` finds none for a placement row; `RailPartMarks.For`
 still returns the body box (the row's point ± `PadReachDbu`), and that box is what decides which land pattern the row
 names — the same box the railRF window marks the part with.
+
+---
+
+## AS-5 — traces to line elements
+
+### The review drops a short line between two parts unless something selects it
+
+A chain shorter than `MinAspect` (4) widths is kept by the trace review only where a selector chooses it — a wide line
+cut into sections by series parts is two to four widths long between them. Recognition runs the review with one region
+round all the copper, so every chain is chosen and `SelectedMinAspect` (2) applies. AS-4's part reading had its own lazy
+run with no scope; it now shares this one, which is what holds the review at one run per recognition.
+
+### A taper is a gap, not a piece
+
+The piece finder pairs edges anti-parallel within 2°; a linear ramp's edges are tilted by atan((W2−W1)/2L) — 26.6° for
+the gate's 1 mm ramp from 0.5 to 1.5 mm — so the ramp has no piece and the chain joins straight across it. The join is
+therefore what an MTAPER is read from. The gate's ramp is exactly 2·W of its narrow end, so the brief's "more than 2·W"
+is read as "at least 2·W" (with 1 µm of slack); anything shorter is a step.
+
+### A wide end piece is trimmed as a land
+
+The review's end trim takes a chain's last piece off as a pad when it is 1.2× wider than its neighbour and shorter than
+four of its own widths. A taper's wide side therefore has to run on for at least four widths, or it is read as a pad and
+the trace ends at the ramp.
+
+### A sliver between two collinear pieces reads as a junction
+
+Both ends of a piece shorter than its neighbours' join distance (1.25 widths) meet both neighbours, so each end has two
+candidates and all three are junction ends; the sliver is then dropped as a chain shorter than two widths. Its length is
+not lost — each neighbour runs to the junction's centre — but it is two lines. Recognition merges a two-arm junction of one
+type and width class back into one line, and counts the sliver as absorbed.
+
+### A pad standing on a line does not end the trace
+
+A shunt part whose pad sits on a line (AS-4's board: C2 on R1's output line) leaves the line's edges unbroken, so the trace
+runs straight through the pad and the part's terminal is in the middle of it. Attaching that terminal to the nearest
+trace END put the part at the open end of the line, 6 mm away. Recognition now splits a line at any terminal, via or
+port within a width of its centre line and more than a width from either end ("taps").
+
+### A chamfer is invisible in the pieces
+
+A mitred corner's 45° edge has no anti-parallel partner, and for any chamfer up to a full width the outer edge still runs
+past the inner corner, so the pieces of a mitred and a square corner are identical. The chamfer is measured in the review
+(`TraceCorner.CutLeg`) by walking out from the corner point along the outward bisector to the copper's edge: a leg m brings
+that edge m·cos(θ/2) nearer than the sharp corner's (W/2)/cos(θ/2).
+
+### The square corner's pieces already end at the reference planes
+
+For a right-angle bend the inner edges end W/2 short of the corner point on each side, and for a T the through pieces end
+at the branch's edges and the branch at the through line's — exactly the MBEND's corner square and the MTEE's arm planes.
+Recognition still measures every end against the corner point or the junction centre explicitly, because at any other
+angle the pieces end somewhere else (a 45° bend's inner corner is 0.21·W from the corner point, not 0.5·W).
