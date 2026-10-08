@@ -26,14 +26,14 @@ public partial class WorkspaceViewModel
 {
     /// <summary>Posts <see cref="TechnologyDivergenceReport"/>'s sentence, when it has one. The RULE
     /// and the wording live there, framework-free and therefore testable; what stays here is the
-    /// decision to say it at this moment, and the two resolutions it needs — the schematic's
-    /// technology is always the workspace default, the layout's is its own <c>TechRef</c> first.</summary>
+    /// decision to say it at this moment, and the two resolutions it needs — each half's own
+    /// <c>TechRef</c> first, the workspace default only without one.</summary>
     private void ReportTechnologyDivergence(
         SchematicEditModel schematic, string schematicDir, LayoutEditorViewModel layoutVm)
     {
         if (TechnologyDivergenceReport.Describe(
                 schematic,
-                MicrostripSubstrateInjection.ResolveWorkspaceTechnologyPath(schematicDir),
+                SchematicTechnology.Resolve(schematicDir, schematic.TechRef) is { Error: null, Path: { } p } ? p : null,
                 layoutVm.ResolvedTechPath) is { } warning)
             Messages.Warning(warning);
     }

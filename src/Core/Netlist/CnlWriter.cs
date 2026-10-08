@@ -31,6 +31,14 @@ public static class CnlWriter
             sb.AppendLine();
         }
 
+        // The netlist's own technology, before anything that binds to it (brief-artsch-6 R-as6-1).
+        // Nothing at all when it states none, so every netlist written before it existed is unchanged.
+        if (tb.Technology is { Length: > 0 } technology)
+        {
+            sb.AppendLine($"technology \"{technology.Replace('\\', '/')}\"");
+            sb.AppendLine();
+        }
+
         // Cell definitions first (define-before-use; reader is order-independent)
         if (library is { Cells.Count: > 0 })
         {

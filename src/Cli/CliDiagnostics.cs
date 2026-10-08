@@ -1269,6 +1269,13 @@ internal static class CliDiagnostics
         ("pads", pads), ("ports", ports));
 
     /// <summary><c>NetExtractor</c>'s own non-fatal naming conflicts.</summary>
+    /// <summary>A schematic names its own technology (<c>TechRef</c>) and it does not resolve (brief-artsch-6
+    /// R-as6-1). An ERROR: its lines would otherwise be computed on no stackup at all, and quietly taking the
+    /// workspace default instead is the wrong substrate the reference exists to avoid.</summary>
+    public static Diagnostic CheckSchematicTechnologyUnresolved(string path, string text) => Diagnostic.Create(
+        "check.schematic.technology-unresolved", DiagnosticSeverity.Error,
+        "{path}: {text}", ("path", path), ("text", text));
+
     public static Diagnostic CheckExtractionConflict(string path, string text) => Diagnostic.Create(
         "check.schematic.conflict", DiagnosticSeverity.Warning,
         "{path}: {text}", ("path", path), ("text", text));

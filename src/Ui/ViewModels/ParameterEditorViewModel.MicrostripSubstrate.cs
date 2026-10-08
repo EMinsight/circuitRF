@@ -198,7 +198,7 @@ public partial class ParameterEditorViewModel
             if (IsViaTarget)
             {
                 string? dir = _schematicVm?.EditModel.SchematicDirectory;
-                var viaTech = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(dir);
+                var viaTech = _schematicVm is { } svmVia ? SchematicTechnology.Of(svmVia.EditModel) : null;
                 RefreshTechnologyOptions(dir);
                 MicrostripTechnologyText    = viaTech?.Name is { Length: > 0 } vn ? vn : "No technology";
                 MicrostripSubstrateWarning  = "";
@@ -216,7 +216,7 @@ public partial class ParameterEditorViewModel
         }
 
         string? schematicDir = _schematicVm?.EditModel.SchematicDirectory;
-        Technology? tech = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(schematicDir);
+        Technology? tech = _schematicVm is { } svmMs ? SchematicTechnology.Of(svmMs.EditModel) : null;
         RefreshTechnologyOptions(schematicDir);
 
         // The instance's OWN layer choices participate: SignalLayer / GroundReference pick which

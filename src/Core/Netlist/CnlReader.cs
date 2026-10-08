@@ -17,6 +17,7 @@ namespace CircuitRF.Core.Netlist;
 ///   end [CellName]            — end of cell definition block
 ///   analysis Name ...         — raw directive → RawDirective("analysis", ...)
 ///   measure Name ...          — raw directive → RawDirective("measure", ...)
+///   technology "path"         — the netlist's own technology (TestBench.Technology)
 ///
 /// Unknown lines are skipped (real-world exports may have header lines), and each one is recorded in
 /// <see cref="TestBench.ReadWarnings"/> so a misspelled statement is reported rather than lost.
@@ -55,7 +56,7 @@ public sealed class CnlReader
                 if (!TryParseLine(trimmed))
                 {
                     // Skipped, as before — an imported netlist may carry header lines — but SAID: a
-                    // misspelled or invented statement (`technology "x.ctech"`) used to vanish and
+                    // misspelled or invented statement (`technologies "x.ctech"`) used to vanish and
                     // the run went ahead without it, which `check` then called clean.
                     _testBench!.ReadWarnings.Add(
                         $"line {_lineNumber}: '{(trimmed.Length > 80 ? trimmed[..80] + "…" : trimmed)}' " +
@@ -184,6 +185,27 @@ public sealed class CnlReader
                 : "";
             foreach (var net in rest.Split(' ', System.StringSplitOptions.RemoveEmptyEntries))
                 _testBench!.LabeledNets.Add(net);
+            return true;
+        }
+
+        // The netlist's own technology (brief-artsch-6 R-as6-1): "technology "<path>"", relative to the
+        // .cnl. Top level only and at most once — a second one would leave which one binds to reading order.
+        if ((line.StartsWith("technology ", StringComparison.Ordinal) ||
+             line.Equals("technology", StringComparison.Ordinal))
+            && !line["technology".Length..].TrimStart().StartsWith('='))   // "technology = 3" is a variable
+        {
+            if (_currentCell is not null)
+                throw new CnlReadException(_lineNumber, line,
+                    "'technology' is only valid at top level, not inside a define block.");
+            string path = StripInlineComment(line["technology".Length..]).Trim();
+            if (path.Length >= 2 && path[0] == '"' && path[^1] == '"') path = path[1..^1];
+            if (path.Length == 0)
+                throw new CnlReadException(_lineNumber, line,
+                    "'technology' names no file — write technology \"<path to a .ctech>\".");
+            if (_testBench!.Technology is { } first)
+                throw new CnlReadException(_lineNumber, line,
+                    $"a second 'technology' statement; the netlist already names \"{first}\".");
+            _testBench.Technology = path;
             return true;
         }
 

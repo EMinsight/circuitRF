@@ -4256,6 +4256,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             ? result.Conflicts
             : (IReadOnlyList<string>)[.. cornerProblems, .. result.Conflicts];
 
+        // The technology statement is relative to the schematic's own workspace root; restated for where this
+        // file actually lands (another workspace's root, or the scratch folder with none open).
+        result.TestBench.Technology = SchematicTechnology.Rebase(
+            result.TestBench.Technology, SchematicTechnology.NetlistBaseOf(model), destDir);
+
         var header = $"netlist.cnl — generated from TestBench \"{testBenchName}\"" +
                      $" at {DateTime.UtcNow:O}";
         var text = CnlWriter.Write(result.TestBench, result.Library, header);

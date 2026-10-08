@@ -42,7 +42,7 @@ public partial class ParameterEditorViewModel
         string text = "", note = "", resistance = "";
         if (IsMmicReadoutTarget)
         {
-            var tech = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(_schematicVm?.EditModel.SchematicDirectory);
+            var tech = (_schematicVm is { } svmTech ? SchematicTechnology.Of(svmTech.EditModel) : null);
             text = MmicPassiveInjection.Readout(tech, _target!.Symbol, _target.Parameters, out string? n) ?? "";
             note = n ?? "";
             if (text.Length > 0 && MmicPassiveInjection.GeometryOf(_target.Parameters) is { } geometry)

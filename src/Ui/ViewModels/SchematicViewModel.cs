@@ -3564,7 +3564,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         if (ViaSubstrateInjection.IsViaKind(kind))
         {
             string unit = MicrostripSubstrateInjection.LengthUnitFor(
-                MicrostripSubstrateInjection.ResolveWorkspaceTechnology(EditModel.SchematicDirectory));
+                SchematicTechnology.Of(EditModel));
             foreach (var p in comp.Parameters)
                 if (p.Name is "Drill" or "Pad" or "Antipad" && p.Expression.Length == 0) p.Unit = unit;
         }
@@ -3616,7 +3616,7 @@ public sealed partial class SchematicViewModel : ObservableObject
     /// </summary>
     private void ApplyDefaultFootprint(EditableComponent comp)
     {
-        var technology = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(EditModel.SchematicDirectory);
+        var technology = SchematicTechnology.Of(EditModel);
         if (FootprintDefaults.For(comp.Symbol, technology) is not { Length: > 0 } value) return;
         if (comp.Parameters.Any(p => p.Name.Equals(ArtworkParameters.FootprintName,
                                                    StringComparison.OrdinalIgnoreCase))) return;

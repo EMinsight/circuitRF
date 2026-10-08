@@ -49,6 +49,26 @@ public sealed record CheckpointOutcome(
 public static class WorkspaceCheckpoints
 {
     /// <summary>
+    /// A checkpoint before a write to <paramref name="documentPath"/> that nobody is there to confirm, when the
+    /// document's workspace keeps a history — what <c>opt --save-preset</c>, the <c>yield</c> writes and
+    /// Create Schematic from Artwork's replace (brief-artsch-6 R-as6-6) take first. Unattended: a large new
+    /// file is left out rather than asked about. The checkpoint's own error when it could not be taken; null
+    /// otherwise, including for a workspace that keeps no history (there is nothing to take one in).
+    /// </summary>
+    public static Diagnostic? BeforeWrite(string documentPath, string intent, CheckpointOrigin origin = CheckpointOrigin.BeforeBatch)
+    {
+        string? root = Workspace.WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(Path.GetFullPath(documentPath)));
+        if (root is not null
+            && WorkspaceRevisionSetting.Read(WorkspaceRevisionSetting.CwsPathFor(root)) != false
+            && GitCommand.For(root) is { } git && git.IsRepositoryRoot())
+        {
+            var taken = Take(git, origin, intent, attended: false);
+            if (taken.Diagnostics.FirstOrDefault(d => d.Severity == DiagnosticSeverity.Error) is { } failed) return failed;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Records the workspace at a boundary.
     /// </summary>
     /// <param name="attended">

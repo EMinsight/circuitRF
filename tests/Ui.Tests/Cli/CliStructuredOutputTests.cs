@@ -472,6 +472,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.schematic.conflict",
         "check.schematic.measurements-not-evaluated",
         "check.schematic.missing-symbol",
+        "check.schematic.technology-unresolved",
         "check.schematic.unknown-field",
         "check.schematic.unknown-symbol",
         "check.schematic.wrong-shape",

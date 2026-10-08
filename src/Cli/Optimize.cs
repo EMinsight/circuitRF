@@ -358,17 +358,7 @@ internal static class Optimize
     /// keeps a history — what <c>opt --save-preset</c> and <c>yield --save-preset|--save-corner</c> take first.
     /// The checkpoint's own error when it could not be taken; null otherwise.</summary>
     internal static Diagnostic? CheckpointBefore(string cschPath, string intent)
-    {
-        string? root = WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(cschPath));
-        if (root is not null
-            && WorkspaceRevisionSetting.Read(WorkspaceRevisionSetting.CwsPathFor(root)) != false
-            && GitCommand.For(root) is { } git && git.IsRepositoryRoot())
-        {
-            var taken = WorkspaceCheckpoints.Take(git, CheckpointOrigin.BeforeBatch, intent, attended: false);
-            if (taken.Diagnostics.FirstOrDefault(d => d.Severity == DiagnosticSeverity.Error) is { } failed) return failed;
-        }
-        return null;
-    }
+        => WorkspaceCheckpoints.BeforeWrite(cschPath, intent);
 
     // ── the report ─────────────────────────────────────────────────────────────
 

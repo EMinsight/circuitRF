@@ -420,20 +420,21 @@ public class CnlReaderTests
     /// An unrecognised line is still skipped (an imported netlist may carry header lines), but it is
     /// recorded, and the elaborator reports it as a run warning. Before, a statement the reader did
     /// not know — <c>technology "x.ctech"</c>, the one an agent invented — vanished, and the run and
-    /// <c>check</c> both went ahead as though it had never been written.
+    /// <c>check</c> both went ahead as though it had never been written. (That statement is a real one
+    /// since brief-artsch-6 R-as6-1; the claim is held with one the reader still does not know.)
     /// </summary>
     [Fact]
     public void AnUnknownLine_IsSkipped_AndReportedAsAWarningByTheRun()
     {
         var (lib, tb) = new CnlReader().Read("""
-            technology "../tech/process.ctech"
+            stackup "../tech/process.ctech"
             R:R1 a 0 R=50 Ohm
             """);
 
         Assert.Single(tb.Instances);
         string warning = Assert.Single(tb.ReadWarnings);
         Assert.Contains("line 1", warning);
-        Assert.Contains("technology", warning);
+        Assert.Contains("stackup", warning);
 
         using var nl = new Elaborator(lib).Elaborate(tb);
         Assert.Contains(warning, nl.Warnings);

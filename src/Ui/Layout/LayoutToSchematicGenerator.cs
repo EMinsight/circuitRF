@@ -211,9 +211,26 @@ public static class LayoutToSchematicGenerator
             return name;
         }
 
+        // brief-artsch-6 R-as6-7 (D5): a placement naming a component that MODELS EXISTING ARTWORK — by its
+        // link or by its own designator — is that component's copper. It creates and edits nothing; creating
+        // would put a second C6 beside the recognised one.
+        var fromArtwork = new HashSet<string>(
+            schematic.Components.Where(c => c.FromArtwork && c.InstanceName.Length > 0).Select(c => c.InstanceName),
+            StringComparer.Ordinal);
+
         int newSlot = 0;
         foreach (var inst in source.Instances)
         {
+            if (fromArtwork.Count > 0
+                && (inst.SchematicId is { Length: > 0 } sidA && fromArtwork.Contains(sidA) ? sidA
+                    : inst.RefDes is { Length: > 0 } rdA && fromArtwork.Contains(rdA) ? rdA : null) is { } modelled)
+            {
+                lines.Add(new SchematicToLayoutGenerator.ReportLine(modelled,
+                    $"{modelled} is modelled from artwork — unchanged", SchematicToLayoutGenerator.ReportSeverity.Info));
+                unchanged++;
+                continue;
+            }
+
             var res = CellLayoutResolver.Resolve(inst.CellRef, layoutBaseDir);
             if (res.State != CellLayoutState.Resolved)
                 continue; // broken instance — the layout editor already marks it; nothing to write

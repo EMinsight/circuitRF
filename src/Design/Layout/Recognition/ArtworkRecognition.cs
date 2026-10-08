@@ -119,7 +119,7 @@ public sealed record RecognitionResult(BoardGraph? Board, RecognitionReport Repo
 }
 
 /// <summary>The recognition, written once (D2).</summary>
-public static class ArtworkRecognition
+public static partial class ArtworkRecognition
 {
     /// <summary>Recognises <paramref name="input"/>'s artwork.</summary>
     public static RecognitionResult Recognize(RecognitionInput input, RunControl? control = null)

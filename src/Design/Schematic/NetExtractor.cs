@@ -112,6 +112,11 @@ public static class NetExtractor
         var (instances, cellPorts, topVars, topMeas) = ExtractModel(model, cells, lib, imports, scope, conflicts, labeled);
 
         var tb = new TestBench(testBenchName);
+        // The schematic's own technology, as the netlist's `technology` statement (R-as6-1) — RELATIVE to the
+        // base the text is read back against (SchematicCircuit.ReferenceBaseOf: the workspace root, else the
+        // schematic's folder), which is where Simulate writes it and what every other relative reference in it
+        // resolves against. Absent without a TechRef, so the text is unchanged.
+        tb.Technology = SchematicTechnology.NetlistRef(model);
         tb.Instances.AddRange(instances);
         tb.GlobalVariables.AddRange(OwnCellParameterDefaults(model, topVars));
         tb.GlobalVariables.AddRange(topVars);
@@ -277,7 +282,13 @@ public static class NetExtractor
         // schematic frame shares its own document's workspace technology. A sub-cell schematic
         // resolves its OWN SchematicDirectory (this method runs once per recursion level), so a
         // sub-cell living in a different workspace still gets its own substrate, matching §5A.2.
-        var microstripTech = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(model.SchematicDirectory);
+        //
+        // brief-artsch-6 R-as6-1: the schematic's own TechRef FIRST, then the workspace default — one resolver
+        // (SchematicTechnology) for every injection below. A TechRef that does not resolve is said, and the
+        // lines are left on no technology rather than quietly moved onto the workspace default's substrate.
+        var techResolution = SchematicTechnology.Resolve(model);
+        if (techResolution.Error is { } techError) conflicts.Add(techError);
+        var microstripTech = techResolution.Technology;
 
         // Detached-port synthetic keys — each detached port gets a unique key that can never
         // be produced by QK() for any finite schematic coordinate, so it will never union with

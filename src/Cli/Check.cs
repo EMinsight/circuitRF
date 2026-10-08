@@ -509,8 +509,13 @@ internal static class Check
         try { extracted = SchematicCircuit.ExtractInWorkspace(model, Path.GetFileNameWithoutExtension(path), DiskCellResolver.Instance, path); }
         catch (Exception ex) { f.Add(CliDiagnostics.CheckUnreadable(path, ex.Message)); return; }
 
+        // brief-artsch-6 R-as6-1: a TechRef that does not resolve is an ERROR naming it — the extraction also
+        // says so among its conflicts, which are warnings, so that one sentence is not repeated as one.
+        string? techError = model.TechRef is { Length: > 0 } ? SchematicTechnology.Resolve(model).Error : null;
+        if (techError is not null) f.Add(CliDiagnostics.CheckSchematicTechnologyUnresolved(path, techError));
+
         foreach (var conflict in extracted.Conflicts)
-            f.Add(CliDiagnostics.CheckExtractionConflict(path, conflict));
+            if (conflict != techError) f.Add(CliDiagnostics.CheckExtractionConflict(path, conflict));
 
         // Elaboration runs on what the `.cnl` round trip produces, not on the extraction directly —
         // see CircuitSource for why those are not the same TestBench, and for the four shipped

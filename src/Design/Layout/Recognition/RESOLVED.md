@@ -149,3 +149,47 @@ For a right-angle bend the inner edges end W/2 short of the corner point on each
 at the branch's edges and the branch at the through line's — exactly the MBEND's corner square and the MTEE's arm planes.
 Recognition still measures every end against the corner point or the junction centre explicitly, because at any other
 angle the pieces end somewhere else (a 45° bend's inner corner is 0.21·W from the corner point, not 0.5·W).
+
+## AS-6 — emit, the target cell, the per-schematic technology (brief-artsch-6, 2026-10-08)
+
+### The extracted `.cnl` names its technology relative to the WORKSPACE ROOT, not to the `.csch`
+
+A schematic's `TechRef` is relative to the `.csch`, but the text a schematic extracts to is read back against
+`SchematicCircuit.ReferenceBaseOf` — the schematic's workspace root, else its own folder — which is also where Simulate
+writes `netlist.cnl` and what every other relative reference in that text (a Touchstone file) resolves against. So the
+`technology` statement is relative to that base (`SchematicTechnology.NetlistRef`); a `.csch`-relative spelling would
+resolve against the wrong folder whenever the schematic is not at the root. Simulate's `WriteNetlist` restates it for
+where the file actually lands (`SchematicTechnology.Rebase`) — another workspace's root, or the scratch folder with no
+workspace open. A first version wrote the absolute path; the owner requires a relative one. Recognition's own `.cnl`
+(`RecognitionCircuit.CnlText`) is relative to where it is going.
+
+### A layer name is written bare when it can be
+
+`SignalLayer="Top"` reads correctly in a `.cnl` (the binding unquotes it), but the drawing carries the expression through
+as text and a schematic's extractor does NOT unquote — so a drawn MLIN would have asked for a layer called `"Top"`, quotes
+and all. The emit writes the name bare and quotes only a name with a space or a quote in it.
+
+### A TechRef that does not resolve never falls back to the workspace default
+
+`SchematicTechnology` answers no technology and an error, and the extraction lists it among its conflicts; `check`
+promotes it to `check.schematic.technology-unresolved` (an error) and drops the duplicate warning. For a `.cnl` the
+binding refuses the netlist outright, which `check` reports as unreadable. Falling back would compute every recognised
+line on the workspace default's substrate, which is the failure D20 exists to remove.
+
+### The divergence report compares stackups too (`StackupComparison`)
+
+`TechnologyDivergenceReport` asked only `ExternalWorkspaceGate.CompareTechnologies`, which compares the two technologies'
+LAYER TABLES — the placement gate's question, what a layout view means, and it leaves the stackup out on purpose. Two
+technologies with the same layers and different substrates (1.6 mm of FR-4 against 0.5 mm of εr 3.5, AS-6's own gate)
+compared equal, so a schematic and its layout on those two said nothing. Found writing `TechnologyDivergenceReportTests`;
+the owner ruled the stackup must be compared. `StackupComparison.Difference` (`src/Design/Layout`) compares the conductor
+and dielectric entries in order — kind, thickness, εr, tanδ, μr, conductivity, ground designation — and the two
+boundaries, not names or drawing layers. The report asks it only for a schematic holding a stackup-bound line, since a
+footprint resolves layers alone; the placement gate is unchanged.
+
+### The checkpoint before a headless write moved below the firewall
+
+`Optimize.CheckpointBefore` (`opt --save-preset`, the `yield` writes) is now `WorkspaceCheckpoints.BeforeWrite` in
+`src/Design/Revision`, with the CLI's helper delegating to it, because recognition's replace needs the same floor and the
+GUI command will call it from `src/Ui`. A replace takes it as a `SavePoint` with the intent "Create Schematic from
+Artwork"; a workspace with no history records nothing and the replace goes ahead.

@@ -71,7 +71,7 @@ public partial class ParameterEditorViewModel
     /// </summary>
     private (double H, double T, double Er) ResolveMlinSubstrate()
     {
-        var tech = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(_schematicVm?.EditModel.SchematicDirectory);
+        var tech = (_schematicVm is { } svmTech ? SchematicTechnology.Of(svmTech.EditModel) : null);
         var overrides = MicrostripSubstrateInjection.BuildOverrides(
             tech, out _, NonDefaultLayerChoice("SignalLayer"), NonDefaultLayerChoice("GroundReference"));
 
@@ -237,7 +237,7 @@ public partial class ParameterEditorViewModel
     private IPlanarLineModel? PlanarLineAt(double w)
     {
         if (_target is null) return null;
-        var tech = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(_schematicVm?.EditModel.SchematicDirectory);
+        var tech = (_schematicVm is { } svmTech ? SchematicTechnology.Of(svmTech.EditModel) : null);
         var binding = PlanarLineSubstrateInjection.Build(tech, _target.Symbol, NonDefaultLayerChoice("SignalLayer"),
             _target.Symbol == SymbolKind.Cpwg ? NonDefaultLayerChoice("GroundReference") : null);
         double Get(string name, double fallback)

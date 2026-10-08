@@ -377,3 +377,80 @@ microstrip (one finding); open ends; slivers and lines absorbed; coupled pairs; 
 `LineSegmentationTests`, `LineJunctionTests`, `LineTypeChoiceTests`, `LineRecognitionCountersTests` (a 40 mm line solves
 one cut; the review runs once) and `LineRecognitionFieldTests` (`FixtureFact`; the field board's `expected.json` gains
 `"lines": { "MLIN": [min, max], … }`).
+
+---
+
+## 7. AS-6 — the circuit, the drawing, the target cell
+
+`ArtworkRecognition.Run(input, target, options)` is the one entry point the GUI command and the CLI verb call: recognise,
+emit, draw, write. Files: `RecognitionEmit.cs` (the circuit), `RecognitionProvenance.cs` (the component fields and the
+provenance block), `RecognitionTarget.cs` (the target and `Run`); in `src/Design/Schematic`, `SchematicTechnology.cs`
+(the per-schematic technology) and `ArtworkProvenance.cs`.
+
+### 7.1 The per-schematic technology (R-as6-1, D20)
+
+A `.csch` may carry `TechRef` (relative to the `.csch`, the `.clay`'s spelling) and a `.cnl` a `technology "<path>"`
+statement (relative to the `.cnl`; top level, once). `SchematicTechnology.Resolve` takes the document's own reference
+first and the workspace default only without one — the order a layout uses — and every stackup injection is handed what
+it returns: `NetExtractor` (MLIN family, CPWG, SLIN, VIA/VIAGND, MMIC passives), `CnlTechnologyBinding`, and the
+parameter editor's readouts. A reference that does not resolve is an error naming the path, never a fall back to the
+workspace default: `check` reports `check.schematic.technology-unresolved`, and a netlist naming a missing file is refused
+by the binding. A schematic with a `TechRef` writes the statement into the text it extracts to, relative to the base that text is read
+back against (its workspace root, else its own folder — where Simulate writes `netlist.cnl`; Simulate restates it when the
+file lands elsewhere);
+`NetlistSchematic.Build` turns a netlist's statement back into the drawing's `TechRef`. `TechnologyDivergenceReport`
+compares the layout's technology with the schematic's RESOLVED one, and for a schematic with a stackup-bound line compares
+the two STACKUPS as well as the layer tables (`StackupComparison`); `explain` reports a schematic's and a netlist's
+technology as a `technology` walk step. Without a reference, everything is byte-identical to before.
+
+### 7.2 The circuit (R-as6-2)
+
+`RecognitionEmit.Build` turns the result into a `TestBench`:
+
+- **Instances**: ports as AS-3 named them, parts by designator, lines `TL…`, bends `B…`, tees `TEE…`, crosses `X…`, tapers
+  `TP…`, CPWG `CP…`, SLIN `SL…`, TLIN fallbacks `TF…`, vias `V…` / `VG…` — numbered in the order a breadth-first walk
+  from port 1 meets them. A designator that collides with a series name keeps it and the series skips it.
+- **Nets**: a port's net is its name in lower case, ground `0`, every other `n<k>` in the walk's order. A `Short` part and
+  a via under `vias=ground` merge their nodes (with ground, for the via); `Open` and `Ignore` parts are nothing.
+- **Lines** carry W, L (in mm), the bend's angle and miter, a TLIN's Z, Eeff, F and losses, and `SignalLayer` /
+  `GroundReference` — never a substrate value. **Vias** carry Drill, Pad and `FromLayer` / `ToLayer` (the conductor of
+  each end's island within the via's span); `GroundLayer` is left to the injection's default.
+- **Parts**: R/L/C with the value, or with the variable's name; an SnP two-port with its file (port 2 on ground for a
+  shunt part). Each variable is a global at its transparent start with a `tune` entry: tune on, optimize off, ×0.1…×10,
+  or 0…10 Ω / 0…1 nH for the zero-ish series R and L.
+- **SP1**: the `.cem`'s sweep, else 100 MHz – 6 GHz, 201 points; `--start/--stop/--npts` through `RecognitionEmitOptions`.
+- **The technology statement** names the artwork's `.ctech`.
+
+`RecognitionCircuit.CnlText(dir)` is the `.cnl` with the technology and every model file relative to where it is going.
+
+### 7.3 The drawing (R-as6-3)
+
+`NetlistSchematic.Build(lib, tb, dir, hints)` draws it. With hints (each instance's artwork point, y up), the hangers of
+one main-line net are ordered by their projection on the artwork's travel there (read from the path elements either side),
+and a two-pin hanger whose copper lies on the left of that travel is drawn above the line. Hints that agree with the
+default drawing change no byte of it; no hints is the default code path.
+
+### 7.4 The component fields and the provenance (R-as6-4, R-as6-5)
+
+`EditableComponent.FromArtwork`, `ArtworkAnchor` (DBU points) and `ArtworkMeasured` (line Z0, Eeff, side gaps; a TLIN's
+W) are persisted in the `.csch`, written only when set, and never reach the elaborator. They are laid on the drawing by
+instance name after `Build`; the drawing's own ground symbols get none. The schematic's `ArtworkSource` block records the
+source `.clay` (relative), the scope and its rings, the options, the parts CSV's SHA-256, the version and the time.
+
+### 7.5 The target (R-as6-6) and the L5 commands (R-as6-7)
+
+`NewCell(name)` creates the cell beside the artwork's with `CellCreate.Create` (schematic only; an existing name or one
+`NameValidator` rejects is a refusal). `ArtworkCell` writes the artwork cell's primary schematic, offered only while it
+has no schematic view. `Replace(cell)` rewrites a primary schematic that carries `ArtworkSource`, after
+`WorkspaceCheckpoints.BeforeWrite` (a `SavePoint`, intent "Create Schematic from Artwork"); one without it is refused —
+*"<cell>'s schematic was not created from artwork; choose a new cell"*. The `.clay` is never written.
+
+Update Layout from Schematic skips a `FromArtwork` component before resolution (no add, update, orphan report or ground)
+and says *"N components model existing artwork — not generated"*. Update Schematic from Layout leaves a placement whose
+`SchematicId` or `RefDes` names a `FromArtwork` component alone and says *"C6 is modelled from artwork — unchanged"*.
+
+### 7.6 Gates
+
+`SchematicTechRefTests`, `TechnologyDivergenceReportTests`, `RecognitionEmitTests` (the board checks with 0 errors and
+simulates), `NetlistSchematicHintTests`, `RecognitionTargetTests` (the `.clay` byte-identical throughout; the checkpoint
+a counter), `FromArtworkSyncTests` — all in `tests/Ui.Tests/Recognition/`.

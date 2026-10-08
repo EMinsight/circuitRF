@@ -1672,7 +1672,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
     /// </summary>
     private (double H, double T, double Er, string LengthUnit) ResolveMklopfSubstrate()
     {
-        var tech = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(_schematicVm?.EditModel.SchematicDirectory);
+        var tech = (_schematicVm is { } svmTech ? SchematicTechnology.Of(svmTech.EditModel) : null);
         var overrides = MicrostripSubstrateInjection.BuildOverrides(tech, out _);
 
         double h = ComponentModelFactory.DefaultSubstrateHMeters;

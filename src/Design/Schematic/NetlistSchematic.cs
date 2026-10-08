@@ -151,7 +151,13 @@ public static class NetlistSchematic
     /// <param name="schematicDirectory">Where the drawing will be written, when known. The netlist
     /// reader resolves a Touchstone <c>File</c> to an absolute path; a schematic stores it relative to
     /// its own folder, so it is rewritten relative to this one. Null leaves it absolute.</param>
-    public static NetlistSchematicResult Build(Library lib, TestBench tb, string? schematicDirectory = null)
+    /// <param name="hints">Where each instance's copper is in the artwork it was recognised from, by instance
+    /// name (brief-artsch-6 R-as6-3) — a layout point, y up. With hints, the elements hanging from one net of
+    /// the main line are ordered along the artwork's path, and a two-pin one whose artwork lies on the left of
+    /// the path's travel (above a line drawn left to right) is drawn ABOVE the line. Null draws exactly as
+    /// before, byte for byte.</param>
+    public static NetlistSchematicResult Build(Library lib, TestBench tb, string? schematicDirectory = null,
+                                               IReadOnlyDictionary<string, (long X, long Y)>? hints = null)
     {
         ArgumentNullException.ThrowIfNull(lib);
         ArgumentNullException.ThrowIfNull(tb);
@@ -178,12 +184,18 @@ public static class NetlistSchematic
         var model = new SchematicEditModel();
         foreach (var it in items) model.Components.Add(it.Comp);
 
-        var placed = Place(items, notes);
+        var placed = Place(items, notes, hints);
         var grounds = PlaceGrounds(model, placed);
         Wire(model, placed, grounds, notes);
         PlaceDirectives(model, tb);
 
         foreach (var a in tb.Analyses) model.Analyses.Add(a);
+
+        // The netlist's own technology becomes the schematic's (R-as6-1), relative to where it is written.
+        if (tb.Technology is { Length: > 0 } technology)
+            model.TechRef = schematicDirectory is not null && System.IO.Path.IsPathRooted(technology)
+                ? SchematicTechnology.StoredRef(technology, schematicDirectory)
+                : technology;
         if (tb.Tuning is { IsEmpty: false } tuning) model.Tuning = tuning.Clone();
 
         if (tb.Functions.Count > 0)
@@ -376,7 +388,8 @@ public static class NetlistSchematic
     /// so each main-line net is seeded by a path pin and drawn as one straight run that everything
     /// else then Ts onto.
     /// </summary>
-    private static List<Item> Place(List<Item> items, List<string> notes)
+    private static List<Item> Place(List<Item> items, List<string> notes,
+                                    IReadOnlyDictionary<string, (long X, long Y)>? hints = null)
     {
         var order = new List<Item>();
         if (items.Count == 0) return order;
@@ -417,6 +430,13 @@ public static class NetlistSchematic
             MoveTo(start, first: true);
             if (end is not null && !ReferenceEquals(end, start)) MoveTo(end, first: false);
 
+            // With artwork hints (R-as6-3): each net's hangers in the order the artwork runs, and a two-pin
+            // hanger whose copper lies on the left of the artwork's travel drawn above the line.
+            var above = new HashSet<Item>(ReferenceEqualityComparer.Instance);
+            if (hints is not null)
+                for (int k = 0; k < pathNets.Count; k++)
+                    OrderByArtwork(pathNets[k], k, hangers[pathNets[k]], path, start, end, hints, above);
+
             // `cursor` is where the main line has got to: the last element's exit, or 0.
             double cursor = 0;
             for (int k = 0; k < pathNets.Count; k++)
@@ -428,19 +448,20 @@ public static class NetlistSchematic
                 for (int h = 0; h < row.Count; h++)
                 {
                     var it = row[h];
-                    PlaceHanger(it, net, x, HangerDrop);
+                    bool up = above.Contains(it);
+                    PlaceHanger(it, net, x, HangerDrop, up);
                     if (h == 0 && k > 0)
                     {
                         // Clear of the previous element's labels as well as its glyph.
                         double shift = Snap(Math.Max(0, cursor - P - (it.Comp.X + it.Full.MinX)));
-                        if (shift > 0) { PlaceHanger(it, net, x + shift, HangerDrop); first += shift; }
+                        if (shift > 0) { PlaceHanger(it, net, x + shift, HangerDrop, up); first += shift; }
                     }
                     last = it.Pin(Array.IndexOf(it.Nets, net)).X;
                     order.Add(it);
                     if (h + 1 < row.Count)
                     {
                         var nx = row[h + 1];
-                        PlaceHanger(nx, net, 0, HangerDrop);   // orient, to measure it
+                        PlaceHanger(nx, net, 0, HangerDrop, above.Contains(nx));   // orient, to measure it
                         // With its pin at x = 0, nx's left edge is at nx.Comp.X + nx.Full.MinX.
                         double clear = it.Comp.X + it.Full.MaxX + 2 * P - (nx.Comp.X + nx.Full.MinX);
                         x = Math.Max(last + HangerPitch, Snap(clear));
@@ -693,16 +714,64 @@ public static class NetlistSchematic
         return Math.Max(it.Pin(step.OutPin).X, rightmost - P);
     }
 
-    /// <summary>A hanging element: its signal pin uppermost at (x, <paramref name="drop"/>).</summary>
-    private static void PlaceHanger(Item it, string net, double x, double drop)
+    /// <summary>A hanging element: its signal pin uppermost at (x, <paramref name="drop"/>) — or, drawn
+    /// <paramref name="up"/>, lowermost at (x, −<paramref name="drop"/>), standing above the line.</summary>
+    private static void PlaceHanger(Item it, string net, double x, double drop, bool up = false)
     {
         int top = Array.IndexOf(it.Nets, net);
         int other = it.Local.Length == 2 ? 1 - top : -1;
+        if (up && other >= 0)
+        {
+            Orient(it, other, top, horizontal: false);
+            var (ux, uy) = it.Offset(top);
+            it.Comp.X = Snap(x - ux);
+            it.Comp.Y = Snap(-drop - uy);
+            it.Placed = true;
+            return;
+        }
         Orient(it, top, other, horizontal: false);
         var (ox, oy) = it.Offset(top);
         it.Comp.X = Snap(x - ox);
         it.Comp.Y = Snap(drop - oy);
         it.Placed = true;
+    }
+
+    /// <summary>
+    /// R-as6-3: the hangers of path net <paramref name="k"/> sorted by where their copper lies along the
+    /// artwork's travel there, and those on its left marked to be drawn above the line. The travel is read
+    /// from the hints of the path elements either side of the net (the end fixtures at the two ends); a net
+    /// with no two such hints is left in its drawn order. The end fixtures keep their places.
+    /// </summary>
+    private static void OrderByArtwork(
+        string net, int k, List<Item> row, List<Step> path, Item? start, Item? end,
+        IReadOnlyDictionary<string, (long X, long Y)> hints, HashSet<Item> above)
+    {
+        (long X, long Y)? Hint(Item? it) =>
+            it is not null && hints.TryGetValue(it.Comp.InstanceName, out var h) ? h : null;
+
+        var before = k > 0 ? Hint(path[k - 1].Item) : Hint(start);
+        var after  = k < path.Count ? Hint(path[k].Item) : Hint(end);
+        if (before is not { } a || after is not { } b) return;
+        double dx = b.X - a.X, dy = b.Y - a.Y, len = Math.Sqrt(dx * dx + dy * dy);
+        if (len <= 0) return;
+        dx /= len; dy /= len;
+
+        var fixedEnds = row.Where(i => ReferenceEquals(i, start) || ReferenceEquals(i, end)).ToList();
+        var free = row.Where(i => !fixedEnds.Contains(i)).ToList();
+        var along = new Dictionary<Item, double>(ReferenceEqualityComparer.Instance);
+        foreach (var it in free)
+        {
+            if (Hint(it) is not { } h) { along[it] = double.MaxValue; continue; }
+            double rx = h.X - a.X, ry = h.Y - a.Y;
+            along[it] = rx * dx + ry * dy;
+            // Left of travel in a y-up layout is above a line drawn left to right.
+            if (it.Local.Length == 2 && dx * ry - dy * rx > 0) above.Add(it);
+        }
+        var sorted = free.OrderBy(i => along[i]).ToList();   // stable: unhinted ones keep their order, last
+        row.Clear();
+        if (start is not null && fixedEnds.Contains(start)) row.Add(start);
+        row.AddRange(sorted);
+        if (end is not null && fixedEnds.Contains(end) && !ReferenceEquals(end, start)) row.Add(end);
     }
 
     /// <summary>

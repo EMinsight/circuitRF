@@ -34,7 +34,7 @@ public sealed partial class ParameterEditorViewModel
     {
         if (_target is null || _schematicVm is null || !IsTlinTarget) return;
 
-        var tech = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(_schematicVm.EditModel.SchematicDirectory);
+        var tech = SchematicTechnology.Of(_schematicVm.EditModel);
         var (parameters, note) = TlinEntryConversion.Switch(_target.Parameters, MicrostripSubstrateInjection.LengthUnitFor(tech));
         _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, parameters));
         TlinEntryNote = note;

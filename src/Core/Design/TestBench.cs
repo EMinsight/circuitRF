@@ -20,6 +20,14 @@ public sealed class TestBench(string name)
     public List<Variable>     GlobalVariables { get; } = [];
 
     /// <summary>
+    /// The netlist's own technology — the <c>technology "&lt;path&gt;"</c> statement, a path relative to the
+    /// <c>.cnl</c> (or absolute). Null when the netlist states none, which is every netlist written before it
+    /// existed: its microstrip, via and planar lines then take the workspace default, as they always did.
+    /// Nothing in a run reads it; the reader of a stackup-bound line does (brief-artsch-6 R-as6-1, D20).
+    /// </summary>
+    public string? Technology { get; set; }
+
+    /// <summary>
     /// User-defined expression functions declared at netlist top level (`name(a, b) = expr`).
     /// The expression engine has supported these since v1; this is where a .cnl declares them.
     /// </summary>

@@ -20,8 +20,8 @@ namespace CircuitRF.Design.Schematic;
 ///
 /// <para><b>The rule is the schematic's rule, applied to whatever the line leaves unstated.</b> A
 /// substrate parameter the line states is the line's. One it leaves unstated follows the
-/// technology, resolved by the same walk-up a schematic in that folder would use
-/// (<see cref="MicrostripSubstrateInjection.ResolveWorkspaceTechnology"/>). The layer-choice
+/// technology — the netlist's own <c>technology "&lt;path&gt;"</c> statement when it has one (brief-artsch-6
+/// R-as6-1), else the same walk-up a schematic in that folder would use (<see cref="SchematicTechnology"/>). The layer-choice
 /// parameters (<c>SignalLayer</c>, <c>GroundReference</c>, <c>FromLayer</c>, <c>ToLayer</c>,
 /// <c>GroundLayer</c>) are resolution INPUTS, so they are consumed here and never reach the engine,
 /// exactly as the extractor drops them. A line that already states every substrate parameter, which
@@ -61,6 +61,12 @@ public static class CnlTechnologyBinding
     {
         var cellNames = new HashSet<string>(lib.Cells.Select(c => c.Name), StringComparer.Ordinal);
         var context   = new Context(directory, cellNames, tb);
+
+        // brief-artsch-6 R-as6-1: a netlist that NAMES its technology is bound to it, ahead of the walk-up —
+        // and one that names a file that is not there is refused, whether or not any line needs it, because
+        // the alternative is the workspace default's substrate under a statement that says otherwise.
+        if (tb.Technology is { Length: > 0 } && context.Resolution.Error is { } error)
+            throw new InvalidOperationException(error);
 
         BindAll(tb.Instances, context);
         foreach (var cell in lib.Cells) BindAll(cell.Instances, context);
@@ -249,30 +255,21 @@ public static class CnlTechnologyBinding
         return s.Length >= 2 && s[0] == '"' && s[^1] == '"' ? s[1..^1] : s;
     }
 
-    /// <summary>The technology is resolved once per netlist, and only when an instance needs it.</summary>
+    /// <summary>The technology is resolved once per netlist, and only when an instance needs it — the netlist's
+    /// own <c>technology</c> statement first, then the workspace walk (<see cref="SchematicTechnology"/>).</summary>
     private sealed class Context(string? directory, HashSet<string> cellNames, TestBench tb)
     {
-        private bool _resolved;
-        private Technology? _technology;
+        private SchematicTechResolution? _resolution;
 
         public HashSet<string> CellNames { get; } = cellNames;
         public TestBench Tb { get; } = tb;
 
-        public Technology? Technology
-        {
-            get
-            {
-                if (!_resolved)
-                {
-                    _technology = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(directory);
-                    _resolved   = true;
-                }
-                return _technology;
-            }
-        }
+        public SchematicTechResolution Resolution => _resolution ??= SchematicTechnology.Resolve(directory, Tb.Technology);
+
+        public Technology? Technology => Resolution.Technology;
 
         public string TechnologyName =>
-            MicrostripSubstrateInjection.ResolveWorkspaceTechnologyPath(directory) is { } p
+            Resolution.Path is { } p
                 ? $"'{Path.GetFileNameWithoutExtension(p)}'"
                 : "of this workspace";
     }

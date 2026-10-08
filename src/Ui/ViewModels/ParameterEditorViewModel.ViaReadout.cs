@@ -45,7 +45,7 @@ public partial class ParameterEditorViewModel
             return;
         }
 
-        var tech = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(_schematicVm?.EditModel.SchematicDirectory);
+        var tech = (_schematicVm is { } svmTech ? SchematicTechnology.Of(svmTech.EditModel) : null);
         var injection = ViaSubstrateInjection.Build(tech, _target!.Symbol, _target.Parameters);
         var e = ViaSubstrateInjection.Evaluate(tech, _target.Symbol, _target.Parameters, out string? note);
         ViaReadoutText = e is null ? "" : Describe(e, injection.Span, _target.Symbol == SymbolKind.ViaGnd);

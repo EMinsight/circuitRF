@@ -52,6 +52,14 @@ public sealed class CschFile
     /// An optional field with null as its default — no <c>FormatVersion</c> bump, by the convention
     /// every optional field this format has gained follows.</summary>
     public CschTuning? Tuning { get; set; }
+
+    /// <summary>The schematic's own technology, relative to the <c>.csch</c> (brief-artsch-6 R-as6-1). Absent
+    /// for every schematic that takes the workspace default — no <c>FormatVersion</c> bump, by the same
+    /// convention as every optional field.</summary>
+    public string? TechRef { get; set; }
+
+    /// <summary>The provenance block of a schematic created from artwork (R-as6-5); absent otherwise.</summary>
+    public ArtworkProvenance? ArtworkSource { get; set; }
 }
 
 /// <summary>
@@ -177,6 +185,15 @@ public sealed class CschComponent
     /// </summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? CellInterfaceHash { get; set; }
+
+    /// <summary>Models existing artwork (brief-artsch-6 R-as6-4); written only when true.</summary>
+    public bool? FromArtwork { get; set; }
+
+    /// <summary>The artwork anchor, DBU, as [[x,y], …]; absent when empty.</summary>
+    public List<long[]>? ArtworkAnchor { get; set; }
+
+    /// <summary>What was measured off the artwork, name → SI value; absent when empty.</summary>
+    public SortedDictionary<string, double>? ArtworkMeasured { get; set; }
 }
 
 public sealed class CschParameter
@@ -551,6 +568,10 @@ public static class SchematicPersistence
             // implemented nothing. Accept (an explicit gesture) is the one thing that rewrites it.
             if (c.CellInterfaceHash is not null) cc.CellInterfaceHash = c.CellInterfaceHash;
             if (c.DetachedPorts.Count > 0) cc.DetachedPorts = c.DetachedPorts.OrderBy(i => i).ToList();
+            // Each written only when it says something, so a schematic not made from artwork is unchanged.
+            if (c.FromArtwork) cc.FromArtwork = true;
+            if (c.ArtworkAnchor.Count > 0) cc.ArtworkAnchor = [.. c.ArtworkAnchor.Select(p => new[] { p.X, p.Y })];
+            if (c.ArtworkMeasured.Count > 0) cc.ArtworkMeasured = new(c.ArtworkMeasured, StringComparer.Ordinal);
             file.Components.Add(cc);
         }
 
@@ -599,6 +620,8 @@ public static class SchematicPersistence
             file.CornerSelections = new Dictionary<string, string>(m.CornerSelections, StringComparer.Ordinal);
 
         file.Tuning = CschTuning.From(m.Tuning);
+        file.TechRef = string.IsNullOrEmpty(m.TechRef) ? null : m.TechRef;
+        file.ArtworkSource = m.ArtworkSource;
 
         return file;
     }
@@ -638,6 +661,12 @@ public static class SchematicPersistence
             if (cc.CellInterfaceHash is not null) c.CellInterfaceHash = cc.CellInterfaceHash;
             if (cc.DetachedPorts is not null)
                 foreach (var idx in cc.DetachedPorts) c.DetachedPorts.Add(idx);
+            c.FromArtwork = cc.FromArtwork == true;
+            if (cc.ArtworkAnchor is not null)
+                foreach (var pt in cc.ArtworkAnchor)
+                    if (pt.Length >= 2) c.ArtworkAnchor.Add((pt[0], pt[1]));
+            if (cc.ArtworkMeasured is not null)
+                foreach (var (k, v) in cc.ArtworkMeasured) c.ArtworkMeasured[k] = v;
             m.Components.Add(c);
         }
 
@@ -694,6 +723,9 @@ public static class SchematicPersistence
 
         if (file.Tuning?.ToSetup() is { IsEmpty: false } tuning)
             m.Tuning = tuning;
+
+        m.TechRef = string.IsNullOrWhiteSpace(file.TechRef) ? null : file.TechRef;
+        m.ArtworkSource = file.ArtworkSource;
 
         return m;
     }

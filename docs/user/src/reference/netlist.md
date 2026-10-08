@@ -379,6 +379,23 @@ Records which nets the user explicitly named (versus auto-numbered nodes like `n
 Display uses this to default its node picker to the meaningful nets, so you see `VDD`, `Vin`, and
 `Vout` first rather than every internal node.
 
+### 8 · The netlist's technology {#w-technology}
+
+```netlist
+technology "../board/board.ctech"
+```
+
+Names the technology the netlist's stackup-bound parts — MLIN and its bends, tees, crosses and tapers,
+CPWG, SLIN, VIA, VIAGND and the MMIC passives — take their substrate from. The path is relative to the
+`.cnl` (an absolute one is taken as it is). Without the line, they take the workspace's default
+technology, found by walking up from the netlist's folder to the nearest `.cws`.
+
+A netlist states it at the top level, at most once. A path that does not lead to a technology file is
+an error naming it: the netlist is not run on the workspace default instead. A schematic that names its
+own technology writes this line into the netlist it extracts to, and **Create Schematic from Artwork**
+names the imported board's technology here, so the recognised lines are computed on the board's own
+stackup.
+
 ---
 
 <p class="small">See also: <a href="simulations.html">Simulations</a> for the full analysis settings and

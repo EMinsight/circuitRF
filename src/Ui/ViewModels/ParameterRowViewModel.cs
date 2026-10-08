@@ -266,7 +266,7 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     {
         var known = new List<string> { DefaultLayerChoiceLabel };
         var tech = LayerChoiceKind is not null
-            ? MicrostripSubstrateInjection.ResolveWorkspaceTechnology(_schematicVm.EditModel.SchematicDirectory)
+            ? SchematicTechnology.Of(_schematicVm.EditModel)
             : null;
         if (tech is not null)
         {

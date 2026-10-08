@@ -658,6 +658,25 @@ public sealed class EditableComponent
     /// Persisted in .csch. Clears on the component's next move (lifecycle in MoveCommand).
     /// </summary>
     public HashSet<int>   DetachedPorts { get; } = new();
+
+    /// <summary>
+    /// This component MODELS COPPER THAT ALREADY EXISTS (brief-artsch-6 R-as6-4, overview D5): Create Schematic
+    /// from Artwork set it. Layout sync neither creates, updates nor deletes artwork for it — Update Layout from
+    /// Schematic skips it, Update Schematic from Layout does not duplicate it. Clearing it hands the component
+    /// back to ordinary sync and changes nothing else. Persisted; the elaborator never sees it.
+    /// </summary>
+    public bool FromArtwork { get; set; }
+
+    /// <summary>Where in the source layout this component's copper is, DBU (D12): one point for a part or a
+    /// discontinuity, the centre line for a line. Empty for a component that did not come from artwork. What
+    /// the cross-probe follows; persisted, never elaborated.</summary>
+    public List<(long X, long Y)> ArtworkAnchor { get; } = new();
+
+    /// <summary>What was MEASURED off the artwork that is not a parameter of this component — a line's side
+    /// gaps (<c>GapLeft</c>, <c>GapRight</c>, metres), its solved <c>Z0</c> and <c>Eeff</c> (R-as6-4). Swap
+    /// Line Type (AS-11) reads it. Persisted, never elaborated.</summary>
+    public SortedDictionary<string, double> ArtworkMeasured { get; } = new(StringComparer.Ordinal);
+
     /// <summary>True when port <paramref name="portIndex"/> is explicitly detached.</summary>
     public bool IsPortDetached(int portIndex) => DetachedPorts.Contains(portIndex);
     /// <summary>Per-label world-offset from default position. Index matches Labels list (0=type,1=name,2+=params).</summary>
@@ -1384,6 +1403,17 @@ public sealed class SchematicEditModel
     /// schematic, even for a tunable that lives in a sub-cell (overview D5).
     /// </summary>
     public TuningSetup? Tuning { get; set; }
+
+    /// <summary>
+    /// The schematic's own technology, relative to its <c>.csch</c> (the <c>.clay</c>'s spelling) — null, the
+    /// normal case, takes the workspace default exactly as before (brief-artsch-6 R-as6-1, D20). Resolved by
+    /// <see cref="SchematicTechnology"/>, ahead of the workspace default, by every stackup injection.
+    /// </summary>
+    public string? TechRef { get; set; }
+
+    /// <summary>Where a schematic Create Schematic from Artwork wrote came from (D12); null for every other
+    /// schematic. Its presence is what lets a re-run replace this schematic (D4).</summary>
+    public ArtworkProvenance? ArtworkSource { get; set; }
 
     /// <summary>
     /// User-specified results file name (schematic-level — a run writes ONE grouped file for the

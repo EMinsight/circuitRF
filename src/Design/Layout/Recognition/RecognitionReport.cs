@@ -154,6 +154,18 @@ public enum RecognitionFindingClass
 
     /// <summary>Segments with no solved cross-section, written as TLIN at a neighbour's Z and εeff.</summary>
     UnsolvedSegments,
+
+    // ── AS-6: the circuit, the drawing and the target (R-as6-2 … R-as6-6) ────────────────────────
+
+    /// <summary>What the circuit could not carry: a part with too few terminals measured, a via that joins nothing
+    /// the circuit has.</summary>
+    EmitOmissions,
+
+    /// <summary>What the drawing does not carry or carries differently (<c>NetlistSchematic.Build</c>'s notes).</summary>
+    DrawingNotes,
+
+    /// <summary>Where the schematic was written, and the history checkpoint taken before a replace.</summary>
+    SchematicWritten,
 }
 
 /// <summary>A place a finding is about, DBU, with the drawing layer when one is known.</summary>

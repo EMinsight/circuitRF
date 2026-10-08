@@ -212,6 +212,7 @@ internal static class Explain
                 // reference of its own. Reported anyway, because "which workspace" is the context
                 // every other answer is read against.
                 Workspace(path, walks);
+                if (kind is DocumentKind.Netlist or DocumentKind.Schematic) CircuitTechnology(path, kind, walks);
                 if (kind is DocumentKind.Netlist or DocumentKind.Schematic) PhysicalLines(path, kind, walks);
                 break;
             case DocumentKind.Interchange:
@@ -458,6 +459,30 @@ internal static class Explain
                 ? "nearest ancestor .cws — none found, so references resolve against the document's own directory"
                 : "nearest ancestor .cws"));
         return cws;
+    }
+
+    /// <summary>
+    /// brief-artsch-6 R-as6-1 — which technology a schematic or a netlist resolved, and through which walk: its
+    /// own reference (a <c>.csch</c>'s <c>TechRef</c>, a <c>.cnl</c>'s <c>technology</c> statement) first, the
+    /// workspace default only without one. Resolved by <see cref="SchematicTechnology"/>, the resolver the
+    /// extraction and the netlist binding use, so this reports what a run would use.
+    /// </summary>
+    private static void CircuitTechnology(string path, DocumentKind kind, List<ResolutionStepJson> walks)
+    {
+        string full = Path.GetFullPath(path);
+        string dir = Path.GetDirectoryName(full)!;
+        string? techRef;
+        try
+        {
+            techRef = kind == DocumentKind.Schematic
+                ? SchematicPersistence.LoadFromFile(full).model.TechRef
+                : CircuitRF.Core.Netlist.CnlReader.ReadFile(full).TestBench.Technology;
+        }
+        catch (Exception) { return; }   // the walk is context; a document that does not read is reported elsewhere
+
+        var res = SchematicTechnology.Resolve(dir, techRef);
+        walks.Add(new ResolutionStepJson("technology", techRef ?? DocumentKinds.AncestorCws(full), res.Path, res.Walk));
+        if (res.Error is { } error) JsonRun.Report(CliDiagnostics.CheckResolverNote(path, error));
     }
 
     /// <summary>

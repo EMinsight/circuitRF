@@ -162,7 +162,12 @@ public static class SchematicToLayoutGenerator
             scope.Bind(v.Name, v.Expression, v.Unit);
         var evaluator = new Evaluator();
 
-        var physical = model.Components.Where(IsPhysical).ToList();
+        // brief-artsch-6 R-as6-7 (D5): a component that MODELS EXISTING ARTWORK — Create Schematic from Artwork
+        // made it — is skipped before resolution: no add, no update, no orphan report or deletion, no ground
+        // drawn for it. Without this a recognised schematic in the artwork's own cell would have its MLINs
+        // generated as PCell copper on top of the imported board. Clearing the flag hands it back.
+        var fromArtwork = model.Components.Where(c => c.FromArtwork && IsPhysical(c)).ToList();
+        var physical = model.Components.Where(c => IsPhysical(c) && !c.FromArtwork).ToList();
 
         var existingBySchematicId = new Dictionary<string, (int Index, LayoutInstance Instance)>(StringComparer.Ordinal);
         for (int i = 0; i < target.Instances.Count; i++)
@@ -183,7 +188,8 @@ public static class SchematicToLayoutGenerator
 
         var renamedFrom = PairRenames(physical, existingBySchematicId, ResolveOnce);
 
-        var seenSchematicIds = new HashSet<string>(StringComparer.Ordinal);
+        var seenSchematicIds = new HashSet<string>(
+            fromArtwork.Select(c => c.InstanceName).Where(n => n.Length > 0), StringComparer.Ordinal);
         var newInstances = new List<(int Slot, LayoutInstance Instance)>();
         var deleteIndices = new List<int>();
         var lines = new List<ReportLine>();
@@ -381,6 +387,8 @@ public static class SchematicToLayoutGenerator
 
         if (unlinkedDiffering > 0)
             lines.Add(new ReportLine("", UnlinkedRotationNote(unlinkedDiffering), ReportSeverity.Info));
+        if (fromArtwork.Count > 0)
+            lines.Add(new ReportLine("", FromArtworkNote(fromArtwork.Count), ReportSeverity.Info));
 
         // R-L5-4: report, never auto-delete, an instance whose schematic component is gone.
         int removed = 0;
@@ -1328,6 +1336,11 @@ public static class SchematicToLayoutGenerator
     /// <c>NetExtractor.ExtractModel</c>'s own instance-emission skip set exactly, so "reported as
     /// missing a layout view" never fires for the schematic's own meta-components (a VAR row or a
     /// Ground symbol has no layout existence to report as missing).</summary>
+    /// <summary>R-as6-7's one run-level line.</summary>
+    internal static string FromArtworkNote(int count) =>
+        count == 1 ? "1 component models existing artwork — not generated"
+                   : $"{count} components model existing artwork — not generated";
+
     private static bool IsPhysical(EditableComponent comp) =>
         comp.Disable is not (DisableState.Open or DisableState.Short)
         && comp.Symbol is not (SymbolKind.Ground or SymbolKind.Pin or SymbolKind.Var or SymbolKind.Meas
