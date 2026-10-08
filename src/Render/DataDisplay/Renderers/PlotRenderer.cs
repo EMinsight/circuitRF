@@ -115,6 +115,9 @@ namespace CircuitRF.Render.DataDisplay
 
     public static class PlotRenderer
     {
+        /// <summary>The layer a stale trace is drawn through (brief-tuneopt-10 R-to10-7): ~40 % opacity.</summary>
+        private static readonly SKPaint DimPaint = new() { Color = new SKColor(0, 0, 0, 100) };
+
         // ---- Complex-plot viewport margin constants ---------------------
 
         /// <summary>Fractional side (left + right) margin around the chart circle.</summary>
@@ -396,8 +399,12 @@ namespace CircuitRF.Render.DataDisplay
                     ContourRenderer.DrawOptimaMarkers(canvas, cd, tf, canvasSize);
                     continue;
                 }
+                // A trace whose analysis the optimizer is not running is stale (R-to10-7): dimmed.
+                bool dim = plot.DimmedTraces.Contains(trace);
+                if (dim) canvas.SaveLayer(DimPaint);
                 TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme,
                     stemMode: plotIsRect && (trace.IsHarmonicStem || trace.IsMixIndexStem));
+                if (dim) canvas.Restore();
             }
 
             // ---- The overlay seam (brief-smith-5-chart.md R-smith5-6) ----

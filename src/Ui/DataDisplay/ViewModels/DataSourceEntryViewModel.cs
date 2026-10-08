@@ -436,6 +436,9 @@ public partial class DataSourceEntryViewModel : ViewModelBase
     /// <summary>True while a published DataSet stands in for the file's.</summary>
     public bool IsPublished { get; private set; }
 
+    /// <summary>The file's own DataSet — the one before any publication.</summary>
+    internal DataSet? FileData => IsPublished ? _fileData : _data;
+
     /// <summary>Shows <paramref name="data"/> in place of the file's DataSet, remembering the file's
     /// so <see cref="RestoreFile"/> can return to it without reading the disk.</summary>
     internal void ApplyPublished(DataSet data)

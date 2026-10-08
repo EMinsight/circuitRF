@@ -6,9 +6,13 @@
 //  top level, as the Instances panel's check does. Enter adds the
 //  selected rows — or the first one shown when none is selected — in
 //  one undo step.
+//
+//  The Optimizer panel's ＋ is the same popup over the same catalog;
+//  only the flag it sets differs (ITunableAddHost).
 // ================================================================
 
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -17,7 +21,20 @@ using CircuitRF.Design.Optimization;
 
 namespace CircuitRF.Ui.Tuning;
 
-public sealed partial class TuningAddViewModel(TuningPanelViewModel panel) : ObservableObject
+/// <summary>What the Add… popup lists from and what adding sets: <c>tune</c> for the Tuning panel,
+/// <c>opt</c> for the Optimizer's (brief-tuneopt-10 R-to10-2).</summary>
+public interface ITunableAddHost
+{
+    TunableCatalog? Catalog { get; }
+
+    /// <summary>The key already carries this panel's flag, so the popup does not offer it.</summary>
+    bool IsActive(string key);
+
+    /// <summary>Sets this panel's flag on every key, as one undo step.</summary>
+    void Activate(IReadOnlyCollection<string> keys);
+}
+
+public sealed partial class TuningAddViewModel(ITunableAddHost panel) : ObservableObject
 {
     [ObservableProperty] private bool   _isOpen;
     [ObservableProperty] private string _searchText = "";
@@ -40,7 +57,7 @@ public sealed partial class TuningAddViewModel(TuningPanelViewModel panel) : Obs
         foreach (var t in catalog.Tunables)
         {
             if (t.Cell is not null && !IncludeSubCells) continue;
-            if (panel.IsTuned(t.Key)) continue;
+            if (panel.IsActive(t.Key)) continue;
             if (q.Length > 0 && !Matches(t, q)) continue;
             Results.Add(new TuningAddRow(t));
         }
@@ -58,7 +75,7 @@ public sealed partial class TuningAddViewModel(TuningPanelViewModel panel) : Obs
         var keys = Results.Where(r => r.IsSelected).Select(r => r.Key).ToList();
         if (keys.Count == 0 && Results.Count > 0) keys.Add(Results[0].Key);
         if (keys.Count == 0) return;
-        panel.SetTuned(keys, on: true);
+        panel.Activate(keys);
         IsOpen = false;
         SearchText = "";
     }

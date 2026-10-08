@@ -1,0 +1,365 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:dockVm="using:CircuitRF.Ui.ViewModels.Dock"
+             xmlns:opt="using:CircuitRF.Ui.Optimization"
+             xmlns:tun="using:CircuitRF.Ui.Tuning"
+             xmlns:optv="using:CircuitRF.Ui.Views.Optimization"
+             xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Views.Optimization.OptimizerToolView"
+             x:DataType="dockVm:OptimizerTool"
+             Background="{DynamicResource SystemChromeLowColor}">
+
+    <!-- brief-tuneopt-10 §2. Header (schematic + run status), a toolbar of the Analyses panel's own
+         small icon buttons, the cost line, then Goals and Variables each with its own small toolbar.
+         Readouts carry no prose: a value or a short status. -->
+
+    <UserControl.Styles>
+        <Style Selector="Button.tb">
+            <Setter Property="Padding" Value="3,2"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Margin" Value="0,0,1,0"/>
+        </Style>
+        <Style Selector="Button.tb mi|MaterialIcon">
+            <Setter Property="Width" Value="14"/>
+            <Setter Property="Height" Value="14"/>
+            <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}"/>
+        </Style>
+        <Style Selector="Button.tb:disabled mi|MaterialIcon">
+            <Setter Property="Opacity" Value="0.35"/>
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Opacity" Value="0.6"/>
+        </Style>
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Opacity" Value="0.8"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBox.optBound">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Padding" Value="2,0"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Width" Value="52"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ListBox.Goals ListBoxItem">
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="MinHeight" Value="0"/>
+        </Style>
+        <Style Selector="ListBox.AddRows ListBoxItem">
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay, x:DataType=tun:TuningAddRow}"/>
+        </Style>
+        <Style Selector="Border.divider">
+            <Setter Property="Width" Value="1"/>
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="Margin" Value="2,0,3,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Background" Value="{DynamicResource SystemBaseLowColor}"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Panel>
+        <TextBlock IsVisible="{Binding !Panel.HasSchematic}"
+                   Text="{x:Static opt:OptimizerPanelViewModel.NoSchematicText}"
+                   Margin="8" FontSize="12" Opacity="0.6" TextWrapping="Wrap"/>
+
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto" IsVisible="{Binding HasSchematic}"
+              DataContext="{Binding Panel}" x:DataType="opt:OptimizerPanelViewModel">
+
+            <!-- Header: schematic, and the run's iteration / evaluations / elapsed / stage. -->
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="6,4,6,1">
+                <TextBlock Grid.Column="0" Text="{Binding HeaderLabel}" FontWeight="SemiBold" FontSize="12"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="1" Text="{Binding RunStatusText}" FontSize="11" Opacity="0.7"
+                           VerticalAlignment="Center" Margin="6,0,0,0" TextTrimming="CharacterEllipsis"/>
+            </Grid>
+
+            <!-- Toolbar. -->
+            <WrapPanel Grid.Row="1" Orientation="Horizontal" Margin="4,0,4,2">
+                <Button Classes="tb" Command="{Binding RunCommand}" ToolTip.Tip="Run the optimizer">
+                    <mi:MaterialIcon Kind="Play"/>
+                </Button>
+                <Button Classes="tb" Command="{Binding PauseResumeCommand}" ToolTip.Tip="{Binding PauseResumeTip}">
+                    <Panel>
+                        <mi:MaterialIcon Kind="Pause" IsVisible="{Binding !IsPaused}"/>
+                        <mi:MaterialIcon Kind="PlayPause" IsVisible="{Binding IsPaused}"/>
+                    </Panel>
+                </Button>
+                <Button Classes="tb" Command="{Binding StopCommand}" ToolTip.Tip="Stop — keeps the best point">
+                    <mi:MaterialIcon Kind="Stop"/>
+                </Button>
+
+                <Border Classes="divider"/>
+
+                <ComboBox ItemsSource="{Binding Algorithms}" SelectedItem="{Binding SelectedAlgorithm}"
+                          FontSize="11" Padding="6,1" MinHeight="0" MinWidth="150" MaxWidth="220"
+                          VerticalAlignment="Center" ToolTip.Tip="Algorithm">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="opt:OptimizerAlgorithmItem">
+                            <TextBlock Text="{Binding Label}" FontSize="11" ToolTip.Tip="{Binding UseWhen}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+
+                <!-- ⚙: limits, cost form, analysis scope, parallelism, seed, the algorithm's options. -->
+                <Button Classes="tb" x:Name="SettingsButton" ToolTip.Tip="Optimizer settings">
+                    <mi:MaterialIcon Kind="CogOutline"/>
+                    <Button.Flyout>
+                        <Flyout Placement="BottomEdgeAlignedLeft">
+                            <ScrollViewer MaxHeight="460" HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Width="300" Spacing="4" DataContext="{Binding SettingsEditor}"
+                                            x:DataType="opt:OptimizerSettingsViewModel">
+                                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto" >
+                                        <TextBlock Grid.Row="0" Text="Max iterations" FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding MaxIterations}" Width="90" FontSize="12"
+                                                 PlaceholderText="100" Padding="4,1" MinHeight="0" Margin="0,1"/>
+                                        <TextBlock Grid.Row="1" Text="Max evaluations" FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding MaxEvaluations}" Width="90" FontSize="12"
+                                                 PlaceholderText="none" Padding="4,1" MinHeight="0" Margin="0,1"/>
+                                        <TextBlock Grid.Row="2" Text="Time limit" FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding TimeLimit}" Width="90" FontSize="12"
+                                                 PlaceholderText="none (60 s)" Padding="4,1" MinHeight="0" Margin="0,1"/>
+                                        <TextBlock Grid.Row="3" Text="Parallel evaluations" FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding Parallelism}" Width="90" FontSize="12"
+                                                 PlaceholderText="auto" Padding="4,1" MinHeight="0" Margin="0,1"/>
+                                        <TextBlock Grid.Row="4" Text="Seed" FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Seed}" Width="90" FontSize="12"
+                                                 PlaceholderText="1" Padding="4,1" MinHeight="0" Margin="0,1"/>
+                                    </Grid>
+                                    <Separator Margin="0,2"/>
+                                    <TextBlock Text="Cost" Classes="section"/>
+                                    <RadioButton GroupName="OptCost" Content="Least squares" FontSize="12"
+                                                 IsChecked="{Binding IsLeastSquares}" IsEnabled="{Binding !CostLocked}"/>
+                                    <RadioButton GroupName="OptCost" Content="Minimax (worst violation)" FontSize="12"
+                                                 IsChecked="{Binding IsMinimax}" IsEnabled="{Binding !CostLocked}"/>
+                                    <Separator Margin="0,2"/>
+                                    <TextBlock Text="Each evaluation runs" Classes="section"/>
+                                    <RadioButton GroupName="OptScope" Content="The goals' analyses only" FontSize="12"
+                                                 IsChecked="{Binding GoalAnalysesOnly}"/>
+                                    <RadioButton GroupName="OptScope" Content="Every enabled analysis" FontSize="12"
+                                                 IsChecked="{Binding AllAnalyses}"/>
+                                    <Separator Margin="0,2"/>
+                                    <TextBlock Text="{Binding AlgorithmLabel}" Classes="section" IsVisible="{Binding HasOptions}"/>
+                                    <ItemsControl ItemsSource="{Binding Options}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="opt:OptimizerOptionRow">
+                                                <Grid ColumnDefinitions="*,Auto" ToolTip.Tip="{Binding Summary}" Margin="0,1">
+                                                    <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"/>
+                                                    <TextBox Grid.Column="1" Text="{Binding Value}" PlaceholderText="{Binding Default}"
+                                                             Width="90" FontSize="12" Padding="4,1" MinHeight="0"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <Expander Header="Advanced" FontSize="12" Padding="0">
+                                        <ItemsControl ItemsSource="{Binding CommonOptions}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="opt:OptimizerOptionRow">
+                                                    <Grid ColumnDefinitions="*,Auto" ToolTip.Tip="{Binding Summary}" Margin="0,1">
+                                                        <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"/>
+                                                        <TextBox Grid.Column="1" Text="{Binding Value}" PlaceholderText="{Binding Default}"
+                                                                 Width="90" FontSize="12" Padding="4,1" MinHeight="0"/>
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Expander>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+
+                <Border Classes="divider"/>
+
+                <Button Classes="tb" Command="{Binding LockInCommand}" ToolTip.Tip="Lock in — keep the best values as a preset">
+                    <mi:MaterialIcon Kind="LockOutline"/>
+                </Button>
+                <Button Classes="tb" Command="{Binding PushCommand}" ToolTip.Tip="Push the best values into the schematic (undoable)">
+                    <mi:MaterialIcon Kind="TrayArrowDown"/>
+                </Button>
+                <Button Classes="tb" Command="{Binding SendToTuningCommand}" ToolTip.Tip="Send the best values to Tuning">
+                    <mi:MaterialIcon Kind="TuneVertical"/>
+                </Button>
+                <Button Classes="tb" Command="{Binding SnapAndPolishCommand}"
+                        ToolTip.Tip="Snap and polish — snap integer, stepped and preferred values, then re-optimize the rest">
+                    <mi:MaterialIcon Kind="Magnet"/>
+                </Button>
+
+                <Button Classes="tb" Click="OnHelp" ToolTip.Tip="Help">
+                    <mi:MaterialIcon Kind="HelpCircleOutline"/>
+                </Button>
+            </WrapPanel>
+
+            <!-- Cost: the sparkline (log, best cost per iteration), the best cost, goals met. -->
+            <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" Margin="6,0,6,2" IsVisible="{Binding HasRunReadouts}">
+                <optv:CostSparkline Grid.Column="0" Values="{Binding CostHistory}" Height="16" MinWidth="60"
+                                    ToolTip.Tip="Best cost per iteration (log scale)"/>
+                <TextBlock Grid.Column="1" FontSize="11" Margin="6,0,0,0" VerticalAlignment="Center"
+                           Text="{Binding BestCostText, StringFormat='{}{0} (best)'}"/>
+                <TextBlock Grid.Column="2" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" Opacity="0.8"
+                           Text="{Binding GoalsMetText}"/>
+            </Grid>
+
+            <!-- What the last action did. -->
+            <TextBlock Grid.Row="3" Text="{Binding StatusText}" FontSize="11" Opacity="0.75"
+                       Margin="6,0,6,2" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding StatusDetail}"
+                       IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+            <!-- Goals header + toolbar (the Analyses panel's set). -->
+            <Grid Grid.Row="4" ColumnDefinitions="*,Auto" Margin="6,2,4,0">
+                <TextBlock Text="Goals" Classes="section"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Classes="tb" Command="{Binding AddGoalCommand}" ToolTip.Tip="Add goal">
+                        <mi:MaterialIcon Kind="Plus"/>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding EditGoalCommand}" ToolTip.Tip="Edit selected goal">
+                        <mi:MaterialIcon Kind="Pencil"/>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding DuplicateGoalCommand}" ToolTip.Tip="Duplicate selected goal">
+                        <mi:MaterialIcon Kind="ContentCopy"/>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding RemoveGoalCommand}" ToolTip.Tip="Remove selected goal">
+                        <mi:MaterialIcon Kind="Delete"/>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding MoveGoalUpCommand}" ToolTip.Tip="Move up">
+                        <mi:MaterialIcon Kind="ChevronUp"/>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding MoveGoalDownCommand}" ToolTip.Tip="Move down">
+                        <mi:MaterialIcon Kind="ChevronDown"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <ListBox Grid.Row="5" Classes="Goals" ItemsSource="{Binding Goals}" SelectedItem="{Binding SelectedGoal}"
+                     x:Name="GoalList" MinHeight="40" Background="Transparent">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="opt:OptimizerGoalRowViewModel">
+                        <Grid ColumnDefinitions="Auto,Auto,*,60,Auto,Auto" Background="Transparent"
+                              ToolTip.Tip="{Binding Summary}">
+                            <CheckBox Grid.Column="0" IsChecked="{Binding IsEnabled}" MinWidth="0" Padding="0"
+                                      Margin="0,0,4,0" ToolTip.Tip="Enabled"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="12" VerticalAlignment="Center"
+                                       Margin="0,0,6,0"/>
+                            <TextBlock Grid.Column="2" Text="{Binding Summary}" Classes="muted" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <optv:MarginBar Grid.Column="3" Fraction="{Binding Margin}" IsMet="{Binding IsMet}"
+                                            IsVisible="{Binding HasResult}" Height="10" Margin="6,0,4,0"/>
+                            <TextBlock Grid.Column="4" Text="{Binding WorstText}" FontSize="11" MinWidth="36"
+                                       HorizontalAlignment="Right" TextAlignment="Right" VerticalAlignment="Center"
+                                       IsVisible="{Binding HasResult}"/>
+                            <Panel Grid.Column="5" Margin="4,0,0,0" IsVisible="{Binding HasResult}">
+                                <mi:MaterialIcon Kind="Check" Width="13" Height="13" Foreground="#FF3CB371"
+                                                 IsVisible="{Binding IsMet}"/>
+                                <mi:MaterialIcon Kind="Close" Width="13" Height="13" Foreground="#FFD94F4F"
+                                                 IsVisible="{Binding !IsMet}"/>
+                            </Panel>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <!-- Variables header + toolbar. -->
+            <Grid Grid.Row="6" ColumnDefinitions="*,Auto" Margin="6,4,4,0">
+                <TextBlock Text="Variables" Classes="section"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Classes="tb" x:Name="AddButton" ToolTip.Tip="Add values to optimize…">
+                        <mi:MaterialIcon Kind="Plus"/>
+                        <Button.Flyout>
+                            <Flyout Placement="BottomEdgeAlignedRight">
+                                <Grid RowDefinitions="Auto,Auto,*" Width="320" Height="300"
+                                      DataContext="{Binding Add}" x:DataType="tun:TuningAddViewModel">
+                                    <TextBox Grid.Row="0" x:Name="AddSearch" Text="{Binding SearchText}"
+                                             PlaceholderText="Name, instance, parameter or cell" FontSize="12">
+                                        <TextBox.InnerLeftContent>
+                                            <mi:MaterialIcon Kind="Magnify" Width="14" Height="14" Margin="6,0,0,0" Opacity="0.6"/>
+                                        </TextBox.InnerLeftContent>
+                                    </TextBox>
+                                    <CheckBox Grid.Row="1" Content="Include sub-cells" FontSize="12" Margin="0,4"
+                                              IsChecked="{Binding IncludeSubCells}"/>
+                                    <ListBox Grid.Row="2" x:Name="AddList" Classes="AddRows"
+                                             ItemsSource="{Binding Results}" SelectionMode="Multiple,Toggle">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate x:DataType="tun:TuningAddRow">
+                                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                                    <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                                                        <TextBlock Text="{Binding Key}" FontSize="12"/>
+                                                        <TextBlock Text="{Binding Location}" Classes="muted" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="1" Text="{Binding ValueText}" FontSize="11"
+                                                               Opacity="0.8" Margin="8,0,0,0"/>
+                                                    <mi:MaterialIcon Grid.Column="2" Kind="LockOutline" Width="12" Height="12"
+                                                                     Margin="4,0,0,0" Opacity="0.6"
+                                                                     IsVisible="{Binding IsReadOnly}"
+                                                                     ToolTip.Tip="{Binding ReadOnlyReason}"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </Grid>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                    <Button Classes="tb" Command="{Binding SensitivityCommand}"
+                            ToolTip.Tip="Sensitivity at the best point">
+                        <mi:MaterialIcon Kind="ChartBellCurve"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <ScrollViewer Grid.Row="7" HorizontalScrollBarVisibility="Disabled" MaxHeight="320">
+                <ItemsControl ItemsSource="{Binding Variables}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="opt:OptimizerVariableRowViewModel">
+                            <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto" Margin="6,1,4,1">
+                                <CheckBox Grid.Column="0" IsChecked="{Binding IsOptimized}" MinWidth="0" Padding="0"
+                                          Margin="0,0,4,0" ToolTip.Tip="Optimize this value"/>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" MinWidth="64"
+                                            VerticalAlignment="Center" Margin="0,0,4,0">
+                                    <TextBlock Text="{Binding Key}" FontSize="12"/>
+                                    <TextBlock Text="{Binding Location}" Classes="muted" IsVisible="{Binding HasLocation}"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBox Grid.Column="2" Classes="optBound" Tag="min" Text="{Binding MinText, Mode=OneWay}"
+                                         HorizontalContentAlignment="Right" ToolTip.Tip="Minimum"/>
+                                <optv:RangeMarkBar Grid.Column="3" Position="{Binding BestPosition}" Height="14"
+                                                   MinWidth="40" RailedMin="{Binding IsRailedMin}" RailedMax="{Binding IsRailedMax}"/>
+                                <TextBox Grid.Column="4" Classes="optBound" Tag="max" Text="{Binding MaxText, Mode=OneWay}"
+                                         ToolTip.Tip="Maximum"/>
+                                <TextBlock Grid.Column="5" FontSize="12" VerticalAlignment="Center" Margin="4,0,0,0"
+                                           MinWidth="56" TextAlignment="Right">
+                                    <Run Text="{Binding BestText}"/>
+                                    <Run Text="{Binding Unit}" FontSize="10"/>
+                                </TextBlock>
+                                <TextBlock Grid.Column="6" Text="{Binding SensitivityText}" Classes="muted"
+                                           VerticalAlignment="Center" Margin="6,0,0,0"/>
+                                <StackPanel Grid.Column="7" Orientation="Horizontal" IsVisible="{Binding IsRailed}"
+                                            VerticalAlignment="Center" Margin="4,0,0,0" Spacing="2">
+                                    <mi:MaterialIcon Kind="AlertOutline" Width="12" Height="12" Foreground="#FFFFA000"/>
+                                    <TextBlock Text="{Binding RailedText}" FontSize="10" VerticalAlignment="Center"/>
+                                    <Button Content="Widen" FontSize="10" Padding="4,0" MinHeight="0"
+                                            Command="{Binding WidenCommand}"
+                                            ToolTip.Tip="Double the range on this side (undoable)"/>
+                                </StackPanel>
+                                <Button Grid.Column="8" Classes="tb" ToolTip.Tip="More">
+                                    <mi:MaterialIcon Kind="DotsVertical"/>
+                                    <Button.Flyout>
+                                        <MenuFlyout>
+                                            <MenuItem Header="Remove from optimizer" Command="{Binding RemoveCommand}"/>
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+    </Panel>
+</UserControl>

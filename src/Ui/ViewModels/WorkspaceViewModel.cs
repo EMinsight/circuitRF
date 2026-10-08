@@ -16167,6 +16167,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         // brief-tuneopt-4 R-to4-2 — the Tuning panel follows the same rule, on the bench's TOP frame.
         RouteTuningPanel(activeDockable);
 
+        // brief-tuneopt-10 — the Optimizer panel follows the same rule.
+        RouteOptimizerPanel(activeDockable);
+
         // wbond.md §10.1 — the two wBond panels follow the same rule, for the same reason: a wire
         // profile shown beside a schematic is worse than an empty panel that says so.
         _factory.WBondProfileTool?.SetActiveWBond(null);
@@ -16983,6 +16986,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (dockable is SchematicDocument closedTuned
             && ReferenceEquals(closedTuned.NavFrames[0].Session, _factory.TuningTool?.Panel.Tuned))
             RouteTuningPanel(null);
+        if (dockable is SchematicDocument closedOptimized
+            && ReferenceEquals(closedOptimized.NavFrames[0].Session, _factory.OptimizerTool?.Panel.Tuned))
+            RouteOptimizerPanel(null);
 
         // If the retained schematic is closed, blank the Analyses panel.
         if (ReferenceEquals(dockable, _lastActiveSchematicDoc))

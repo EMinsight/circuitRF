@@ -5,6 +5,7 @@ using System.Linq;
 using CircuitRF.Core.Design;
 using CircuitRF.Design.Optimization;
 using CircuitRF.Ui.Commands.Schematic;
+using CircuitRF.Ui.Docking;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.ViewModels;
@@ -13,9 +14,9 @@ namespace CircuitRF.Ui.ViewModels;
 public partial class WorkspaceViewModel
 {
     /// <summary>
-    /// Receives the goal a trace pre-filled and adds it to the schematic whose run the trace is drawn
-    /// from, as one undo step. This is the seam the Optimizer window's goal editor (TO-10) replaces:
-    /// until that editor exists the goal goes straight into the document, and a goal the trace gave no
+    /// Receives the goal a trace pre-filled for the schematic whose run the trace is drawn from, and opens
+    /// it in the Optimizer's goal editor (brief-tuneopt-10) on that schematic. Where no editor can be
+    /// shown, the goal goes straight into the document as one undo step — and a goal the trace gave no
     /// limit (no visible marker) is added DISABLED, since an enabled goal with no limit is a check error.
     /// </summary>
     internal void AddGoalFromTrace(OptimizationGoal pre, string? sourcePath)
@@ -24,6 +25,16 @@ public partial class WorkspaceViewModel
         {
             Messages.Warning("Add as goal: open the schematic these results came from, then add the goal again.");
             return;
+        }
+
+        ShowToolPanelCore(DockPanelIds.Optimizer);
+        if (_factory.OptimizerTool?.Panel is { } optimizer)
+        {
+            var bench = sd.NavFrames[0].Session;
+            if (!ReferenceEquals(optimizer.Tuned, bench)) optimizer.SetActiveSchematic(bench, InstancesRootHeaderOf(sd));
+            var prefilled = pre.Clone();
+            prefilled.Analysis ??= GoalTemplates.AnalysisReferencedBy(prefilled.Expression, bench.EditModel.Analyses, bench.EditModel.Measurements);
+            if (optimizer.EditNewGoal(prefilled)) return;
         }
 
         var model = sd.ViewModel.EditModel;

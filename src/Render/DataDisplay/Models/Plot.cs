@@ -227,6 +227,13 @@ namespace CircuitRF.Render.DataDisplay
         /// </summary>
         public IReadOnlyList<Trace> GhostTraces { get; set; } = [];
 
+        /// <summary>
+        /// Traces of <see cref="Traces"/> whose data is older than the rest of the plot — an analysis the
+        /// optimizer is not running (brief-tuneopt-10 R-to10-7) — drawn dimmed. Session-only, like
+        /// <see cref="GhostTraces"/>, and replaced whole for the same reason.
+        /// </summary>
+        public IReadOnlySet<Trace> DimmedTraces { get; set; } = new HashSet<Trace>();
+
         /// <summary>Depth of the <see cref="BeginTraceBatch"/> scopes currently open.</summary>
         private int _traceBatchDepth;
 

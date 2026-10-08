@@ -422,6 +422,14 @@ public static class DockPanelIds
     public const string Tuning = "Tuning";
 
     /// <summary>
+    /// brief-tuneopt-10's Optimizer panel — goals, the opt-enabled variables, the algorithm, and a run
+    /// the Data Display follows. <b>In both shipped default layouts, tabbed BEHIND Tuning</b>: it edits
+    /// the same variable entries Tuning does, so it sits beside them; a saved layout that never heard
+    /// of it gains it beside wherever that layout put Tuning.
+    /// </summary>
+    public const string Optimizer = "Optimizer";
+
+    /// <summary>
     /// <b>The two ids RC-10 retired, and they must keep resolving</b> (R-rc10-3).
     ///
     /// <para><c>RestorePoints</c> and <c>VersionHistory</c> are written into every <c>.cwsuser</c> in
@@ -440,7 +448,7 @@ public static class DockPanelIds
     public static readonly string[] All =
     [
         ProjectTree, Palette, Properties, Analyses, Messages, Drc, Lvs, WBondProfile,
-        WBondInductance, History, Instances, Impedance, Tuning,
+        WBondInductance, History, Instances, Impedance, Tuning, Optimizer,
     ];
 
     /// <summary>

@@ -1132,8 +1132,40 @@ public partial class PlotInspectorViewModel : ViewModelBase
             if (_library.SnapshotFor(path) is not { } snap) continue;
             if (SnapshotGhost.Of(t, snap, _plot.PlotType, _plot.FreqUnits) is { } ghost) ghosts.Add(ghost);
         }
+        RebuildDimmed();
         if (ghosts.Count == 0 && _plot.GhostTraces.Count == 0) return;
         _plot.GhostTraces = ghosts;
+    }
+
+    /// <summary>
+    /// The traces that read an analysis the optimizer is not running (brief-tuneopt-10 R-to10-7): their
+    /// data is the file's, older than the rest of the plot, so they draw dimmed. A cube-bound trace is
+    /// stale when its cube or expression names a stale group (<c>HB1.</c>); a network trace reads no
+    /// one analysis and is never marked.
+    /// </summary>
+    private void RebuildDimmed()
+    {
+        var dimmed = new System.Collections.Generic.HashSet<Trace>();
+        foreach (var t in _plot.Traces)
+        {
+            if (!t.IsCubeBound) continue;
+            var stale = _library!.StaleGroupsFor(t.SourcePath);
+            if (stale.Count == 0) continue;
+            if (stale.Any(g => ReadsGroup(t.CubeName, g) || ReadsGroup(t.Expression, g))) dimmed.Add(t);
+        }
+        if (dimmed.Count == 0 && _plot.DimmedTraces.Count == 0) return;
+        _plot.DimmedTraces = dimmed;
+    }
+
+    /// <summary><paramref name="text"/> qualifies a name with <paramref name="group"/> (<c>SP1.S</c>) as
+    /// a whole word.</summary>
+    private static bool ReadsGroup(string? text, string group)
+    {
+        if (string.IsNullOrEmpty(text)) return false;
+        string q = group + ".";
+        for (int i = text.IndexOf(q, StringComparison.Ordinal); i >= 0; i = text.IndexOf(q, i + 1, StringComparison.Ordinal))
+            if (i == 0 || !(char.IsLetterOrDigit(text[i - 1]) || text[i - 1] == '_')) return true;
+        return false;
     }
 
     // ---- Trace management -----------------------------------------------

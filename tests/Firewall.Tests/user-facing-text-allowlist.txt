@@ -1095,3 +1095,10 @@ src/Engine/Optimization/OptimizerAlgorithm.cs|An optimizer produced a NaN coordi
 src/Engine/Optimization/OptimizerAlgorithm.cs|Tell was called with no batch asked for.
 src/Engine/Optimization/OptimizerAlgorithm.cs|The state was captured from a run with different arguments.
 src/Engine/Optimization/OptimizerAlgorithm.cs|{results.Count} results for a batch of {_pending.Length} points.
+# The same kind (brief-tuneopt-7/8): an algorithm reading an option its registry entry does not
+# list, a level list per coordinate, and a word option outside its Choices — which `check` and
+# OptimizationRun refuse first (tuning.optimize.option-value), so no run reaches the throw.
+src/Engine/Optimization/OptimizerAlgorithm.cs|'{Id}' reads option '{name}', which the algorithm registry does not list.
+src/Engine/Optimization/OptimizerAlgorithm.cs|'{Id}' option '{name}' defaults to '{info.Default}' and was given no value for it.
+src/Engine/Optimization/Discrete.cs|{_levels.Length} level lists for {start.Length} coordinates.
+src/Engine/Optimization/ParticleSwarm.cs|pso: topology={topology} is not ring or global.

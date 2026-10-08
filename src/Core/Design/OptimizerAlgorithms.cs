@@ -20,6 +20,10 @@ namespace CircuitRF.Core.Design;
 /// default depends on the number of variables (the summary says how).</summary>
 public sealed record OptimizerOptionInfo(string Name, string Default, string Summary)
 {
+    /// <summary>The words a word option accepts; null for a number option. A value outside them is a
+    /// refusal at <c>check</c> and at Run, so an algorithm never receives one.</summary>
+    public IReadOnlyList<string>? Choices { get; init; }
+
     /// <summary>The default as a number, or null when it is a word or <c>auto</c>.</summary>
     public double? NumericDefault
         => double.TryParse(Default, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : null;
@@ -136,7 +140,7 @@ public static class OptimizerAlgorithms
         new("pso", "Particle swarm",
             "Like differential evolution, a global search from a bad start; often faster when variables interact weakly.",
             [O("swarm",    "auto", "Particles; auto is max(30, 10n)."),
-             O("topology", "ring", "ring (each particle follows its two neighbours) or global (all follow the best)."),
+             O("topology", "ring", "ring (each particle follows its two neighbours) or global (all follow the best).") with { Choices = ["ring", "global"] },
              O("vmax",     "0.5",  "Velocity limit, as a fraction of each variable's range per step."),
              O("c1",       "2.05", "Pull toward a particle's own best."),
              O("c2",       "2.05", "Pull toward its neighbourhood's best."),

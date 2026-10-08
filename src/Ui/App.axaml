@@ -16,6 +16,7 @@
              xmlns:impv="using:CircuitRF.Ui.Views.Impedance"
              xmlns:instv="using:CircuitRF.Ui.Views.Instances"
              xmlns:tunv="using:CircuitRF.Ui.Views.Tuning"
+             xmlns:optv="using:CircuitRF.Ui.Views.Optimization"
              xmlns:revv="using:CircuitRF.Ui.Views.Revision"
              xmlns:wbondv="using:CircuitRF.Ui.Views.WBond"
              xmlns:av="using:CircuitRF.Ui.Views.Analyses"
@@ -101,6 +102,9 @@
         <!-- brief-tuneopt-4 — sliders over the focused schematic's tune-enabled values. -->
         <DataTemplate DataType="{x:Type dockVm:TuningTool}">
             <tunv:TuningToolView/>
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type dockVm:OptimizerTool}">
+            <optv:OptimizerToolView/>
         </DataTemplate>
         <!-- RC-10's one history panel (§5.10). It replaced two, and the merge is why there is one row
              here: §5's argument is about two kinds of ENTRY and rev 2 spent it as an argument for two

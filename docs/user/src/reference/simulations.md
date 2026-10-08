@@ -564,6 +564,41 @@ you choose and re-simulates as you move it, with every open Data Display followi
 
 ---
 
+## Optimizer {#optimizer}
+
+The **Optimizer** panel (tabbed behind Tuning; also View ▸ Panels ▸ Optimizer) searches the values you
+choose for the ones that meet your goals, with every open Data Display following the best point found
+so far.
+
+- **Variables** are the same entries as Tuning's, with the same ranges: a range changed here is changed
+  there. Tick a row to let the optimizer move it; **＋** adds more, from the same search Tuning uses.
+  Each row shows the best value on its range bar. A value that ends at an edge of its range is marked
+  ⚠ with **Widen**, which doubles the range on that side (by ratio on a log range) as one undo step. For
+  a complex value, optimize at most two of its parts; every part's row shows the value the run found.
+- **Goals.** **＋** opens the goal editor: pick a template on the left (|Sij| in dB or linear, phase,
+  group delay, VSWR, μ, μ′, K, maximum gain, WSProbe metrics, any `measure` row, or a custom expression)
+  and adjust the fields — the expression (checked as you type), its analysis, the range of the swept
+  axis that counts, the type (≤, ≥, =, in a band, outside a band), the limit or limits, a weight, and
+  optionally a sloped limit. In a Data Display, right-click a trace ▸ **Add as Goal** opens the same
+  editor already filled in. Each goal row shows, at the best point, a bar (green when met), the worst
+  value and ✓ or ✕.
+- **Algorithm and ⚙.** Choose the algorithm from the list — its tooltip says when to use it. ⚙ sets the
+  iteration, evaluation and time limits, the cost (least squares, or minimax for the worst violation),
+  whether each evaluation runs only the goals' analyses or every enabled one, parallel evaluations, the
+  seed, and the algorithm's own options. All of it is saved with the schematic.
+- **▶ / ⏸ / ■.** Run checks the setup first and says in the status line why it cannot start. While it
+  runs, the header shows the iteration, evaluations and elapsed time, and the sparkline the best cost.
+  Pause holds the run after the simulations in flight; press it again to resume. Stop ends the run and
+  keeps the best point. When only the goals' analyses run, plots of the other analyses keep their old
+  data and are drawn dimmed until the run finishes; then the best point is simulated once with every
+  enabled analysis and saved as the schematic's results.
+- **Keeping the result** (while paused or after the run): lock it in as a preset (the preset records
+  the cost), **Push** it into the schematic (one undo step per document), **Send to Tuning** to
+  hand-tune from it, or — when a value is an integer, has a step or uses preferred values — **Snap and
+  polish**. The sensitivity button shows how much each variable moves the cost at the best point.
+
+---
+
 ## Running an analysis from the command line {#cli}
 
 Everything above is driven from the GUI's Run button, and everything above also runs headless. The

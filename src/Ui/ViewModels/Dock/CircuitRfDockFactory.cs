@@ -95,6 +95,8 @@ public class CircuitRfDockFactory : Factory
 
     /// <summary>brief-tuneopt-4's Tuning panel, following the focused schematic and tabbed behind Analyses.</summary>
     public TuningTool?       TuningTool       { get; private set; }
+    /// <summary>brief-tuneopt-10's Optimizer panel, following the focused schematic and tabbed behind Tuning.</summary>
+    public OptimizerTool?    OptimizerTool    { get; private set; }
 
     /// <summary>
     /// RC-10's one history panel (§5.10) — the versions and the restore points in one list.
@@ -206,6 +208,7 @@ public class CircuitRfDockFactory : Factory
             InstancesTool   = new InstancesTool();
             ImpedanceTool   = new ImpedanceTool();
             TuningTool      = new TuningTool();
+            OptimizerTool   = new OptimizerTool();
             HistoryTool = new HistoryTool();
             WBondProfileTool    = new WBondProfileTool();
             WBondInductanceTool = new WBondInductanceTool();
@@ -224,6 +227,7 @@ public class CircuitRfDockFactory : Factory
             InstancesTool   ??= new InstancesTool();
             ImpedanceTool   ??= new ImpedanceTool();
             TuningTool      ??= new TuningTool();
+            OptimizerTool   ??= new OptimizerTool();
             HistoryTool ??= new HistoryTool();
             WBondProfileTool    ??= new WBondProfileTool();
             WBondInductanceTool ??= new WBondInductanceTool();
@@ -247,6 +251,7 @@ public class CircuitRfDockFactory : Factory
             DockPanelIds.Instances   => InstancesTool,
             DockPanelIds.Impedance   => ImpedanceTool,
             DockPanelIds.Tuning      => TuningTool,
+            DockPanelIds.Optimizer   => OptimizerTool,
             DockPanelIds.History     => HistoryTool,
             DockPanelIds.WBondProfile    => WBondProfileTool,
             DockPanelIds.WBondInductance => WBondInductanceTool,
@@ -770,6 +775,7 @@ public class CircuitRfDockFactory : Factory
         DockPanelIds.Instances   => InstancesTool,
         DockPanelIds.Impedance   => ImpedanceTool,
         DockPanelIds.Tuning      => TuningTool,
+        DockPanelIds.Optimizer   => OptimizerTool,
         DockPanelIds.History     => HistoryTool,
         DockPanelIds.WBondProfile    => WBondProfileTool,
         DockPanelIds.WBondInductance => WBondInductanceTool,
@@ -781,6 +787,7 @@ public class CircuitRfDockFactory : Factory
     [
         ProjectTreeTool, PaletteTool, PropertiesTool, AnalysesTool, MessagesTool, DrcTool, LvsTool,
         WBondProfileTool, WBondInductanceTool, HistoryTool, InstancesTool, ImpedanceTool, TuningTool,
+        OptimizerTool,
     ];
 
     // ── Auto-hidden panels ────────────────────────────────────────────────────

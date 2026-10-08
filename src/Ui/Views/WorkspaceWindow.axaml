@@ -515,6 +515,7 @@
                                     <NativeMenuItem Header="Properties"   Command="{Binding ShowToolPanelCommand}" CommandParameter="Properties"/>
                                     <NativeMenuItem Header="Analyses"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Analyses"/>
                                     <NativeMenuItem Header="Tuning"       Command="{Binding ShowToolPanelCommand}" CommandParameter="Tuning"/>
+                                    <NativeMenuItem Header="Optimizer"    Command="{Binding ShowToolPanelCommand}" CommandParameter="Optimizer"/>
                                     <NativeMenuItem Header="Messages"     Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages"/>
                                     <NativeMenuItem Header="DRC"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Drc"/>
                                     <NativeMenuItem Header="LVS"          Command="{Binding ShowToolPanelCommand}" CommandParameter="Lvs"/>
@@ -1463,6 +1464,11 @@
                     <MenuItem Header="T_uning"
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="Tuning">
                         <MenuItem.Icon><mi:MaterialIcon Kind="TuneVertical" Width="16" Height="16"/></MenuItem.Icon>
+                    </MenuItem>
+                    <!-- brief-tuneopt-10. Tabbed behind Tuning in both shipped default layouts. -->
+                    <MenuItem Header="O_ptimizer"
+                              Command="{Binding ShowToolPanelCommand}" CommandParameter="Optimizer">
+                        <MenuItem.Icon><mi:MaterialIcon Kind="TargetVariant" Width="16" Height="16"/></MenuItem.Icon>
                     </MenuItem>
                     <MenuItem Header="_Messages"
                               Command="{Binding ShowToolPanelCommand}" CommandParameter="Messages">

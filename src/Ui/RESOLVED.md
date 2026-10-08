@@ -38999,3 +38999,35 @@ scale, so "200", "200 um", "200 µm" and "200 μm" (Greek mu) all mean 200 µm. 
 - **Flyouts get no generated field from `x:Name`** — they are not in the control namescope; reach one
   through its button's `Flyout`.
 
+
+## Optimizer panel (brief-tuneopt-10, 2026-10-07)
+
+- **The Variables list is every entry with `tune` OR `opt`, and the check is the `opt` flag** — not
+  "opt-enabled only". The brief says both that the list is filtered to opt-enabled entries and that
+  each row has an enable check, and D18 asks a tune-only part to show the value the run gave it; only
+  the wider list satisfies all three. A row unticked in this panel that has no `tune` flag is kept as a
+  row until focus moves (`_unticked`), because `TuningSetupEdits.WithOpt` drops a default-shaped entry
+  with neither flag and the row would vanish under the click.
+- **"Goal analyses only" needed the display to MERGE, not replace.** `ApplyPublished` swaps the whole
+  DataSet, so a best point that ran only SP1 blanked every HB plot. `DataSourceLibraryViewModel.Publish(…,
+  partial: true)` carries every group the file holds and the publication lacks, and records them in
+  `StaleGroupsFor`; `PlotInspectorViewModel.RebuildDimmed` marks the cube-bound traces whose cube or
+  expression names a stale group (`HB1.`), and `PlotRenderer` draws those through a ~40 % alpha layer.
+  `Plot.DimmedTraces` is session-only like `GhostTraces`. Tuning's "Only these" scope has the same
+  blanking and was left as it was.
+- **The finished run's full re-run happens on the run's thread**, before the UI hop, so the window never
+  blocks on it; `FinalEvaluations` counts it and the publish test holds it to one.
+- **"Add as Goal" on a trace now opens the goal editor** on the trace's schematic (the panel is pointed
+  at it even when a Data Display has focus). When no view is listening — the panel was never shown — it
+  falls back to TO-9's direct, undoable add.
+- **Not built:** the brief's toolbar sketch shows a Presets ▾ drop-down; presets stay in the Tuning
+  panel (Lock in here writes one, with its cost). **Elapsed time keeps counting while paused** —
+  `OptimizationRun`'s stopwatch is not paused, so a time limit includes the pause.
+- **Firewall gate** (fixed in the same change): the four `src/Engine/Optimization` throws TO-7/TO-8 added
+  were not allow-listed. Three are API invariants and are listed with the ask/tell family. The fourth —
+  `alg.topology` outside ring/global — was user input reaching an engine throw; `OptimizerOptionInfo`
+  gained `Choices`, and `TuningValidator` refuses a value outside them (`tuning.optimize.option-value`)
+  in `check` and at Run, so the throw is now unreachable and listed as an invariant too.
+- Gates: `tests/Ui.Tests/OptimizerPanel/` — `OptimizerPanelRunTests` (5), `GoalEditorTests` (4),
+  `OptimizerPublishTests` (2), `RailedWidenTests` (2), `OptimizerDockLayoutTests` (1); `TuningCheckTests`
+  +1 case.

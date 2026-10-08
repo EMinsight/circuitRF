@@ -117,10 +117,25 @@ public sealed partial class TuningPanelViewModel
     /// <summary>Loads a preset into the sliders and, when running, the session. The schematic is not
     /// changed — except that a range a value fell outside grows to include it, and a key not tuned yet
     /// is turned on, both as one undo step. <paramref name="push"/> then pushes, as its own step.</summary>
-    internal void RecallPreset(TuningPresetItemViewModel item, bool push)
+    internal void RecallPreset(TuningPresetItemViewModel item, bool push) => Recall(item.Preset, push);
+
+    /// <summary>
+    /// The Optimizer's "Send to Tuning" (brief-tuneopt-10 R-to10-8): loads <paramref name="values"/> into
+    /// the sliders exactly as a recall would — a key not tuned yet is turned on, a range a value fell
+    /// outside grows — so the user hand-tunes on from the optimizer's best point. The schematic's values
+    /// are not changed.
+    /// </summary>
+    public void LoadValues(IReadOnlyDictionary<string, string> values, string from)
+    {
+        var preset = new TuningPreset { Name = from };
+        foreach (var (k, v) in values) preset.Values[k] = v;
+        Recall(preset, push: false);
+    }
+
+    private void Recall(TuningPreset preset, bool push)
     {
         if (_tuned is null || Catalog is not { } catalog) return;
-        var result = PresetRecall.Apply(item.Preset, catalog, _tuned.EditModel.Tuning);
+        var result = PresetRecall.Apply(preset, catalog, _tuned.EditModel.Tuning);
 
         foreach (var (key, text) in result.Values)
         {
@@ -136,12 +151,12 @@ public sealed partial class TuningPanelViewModel
         }
 
         if (result.Setup is { } setup)
-            _tuned.Execute(new SetTuningSetupCommand(_tuned.EditModel, setup, $"Recall preset {item.Name}"));
+            _tuned.Execute(new SetTuningSetupCommand(_tuned.EditModel, setup, $"Recall preset {preset.Name}"));
         RefreshNow();
 
         StatusText   = result.Summary;
         StatusDetail = string.Join(Environment.NewLine, result.Lines);
-        ReportRecall?.Invoke($"Tuning: recalled '{item.Name}' — {result.Summary}", result.Lines);
+        ReportRecall?.Invoke($"Tuning: recalled '{preset.Name}' — {result.Summary}", result.Lines);
         AfterValueChange(final: true);
 
         if (!push) return;

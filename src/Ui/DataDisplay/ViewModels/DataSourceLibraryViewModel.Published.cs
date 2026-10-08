@@ -36,6 +36,7 @@ public partial class DataSourceLibraryViewModel
         new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _publishedChips = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DataSet> _snapshots = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, HashSet<string>> _staleGroups = new(StringComparer.OrdinalIgnoreCase);
     private bool _frameInFlight;
 
     /// <summary>
@@ -70,12 +71,35 @@ public partial class DataSourceLibraryViewModel
     /// update, and a not-yet-written file has no version to return to on Revert (the session's Stop
     /// writes it, and the ordinary re-run refresh picks it up). Returns false when nothing was taken.
     /// </summary>
-    public bool Publish(string absPath, DataSet data, string chip = TuningChip)
+    public bool Publish(string absPath, DataSet data, string chip = TuningChip) => Publish(absPath, data, chip, partial: false);
+
+    /// <summary>
+    /// <see cref="Publish(string, DataSet, string)"/> for a DataSet that holds only SOME of the source's
+    /// analyses (the Optimizer's "goal analyses only", brief-tuneopt-10 R-to10-7) when
+    /// <paramref name="partial"/>: every group the file holds and <paramref name="data"/> does not is
+    /// carried over from the file, and is STALE — the traces bound to it keep their old data and draw
+    /// dimmed (<see cref="StaleGroupsFor"/>).
+    /// </summary>
+    public bool Publish(string absPath, DataSet data, string chip, bool partial)
     {
         var entry = FindEntry(absPath);
         if (entry is null || entry.Kind != SourceKind.Npy || entry.IsBroken) return false;
 
         string key = Path.GetFullPath(absPath);
+        if (partial && entry.FileData is { } file)
+        {
+            var stale  = new HashSet<string>(StringComparer.Ordinal);
+            var merged = ShallowCopy(data);
+            foreach (var group in file.Groups)
+            {
+                if (data.Groups.Contains(group)) continue;
+                stale.Add(group);
+                foreach (var (name, cube) in file.CubesIn(group)) merged.AddToGroup(group, name, cube);
+            }
+            data = merged;
+            if (stale.Count > 0) _staleGroups[key] = stale; else _staleGroups.Remove(key);
+        }
+        else _staleGroups.Remove(key);
         if (_frameInFlight)
         {
             if (_pendingFrames.Remove(key)) SkippedFrames++;
@@ -146,8 +170,17 @@ public partial class DataSourceLibraryViewModel
         SetChip(key, null);
     }
 
+    /// <summary>The groups of <paramref name="absPath"/>'s published DataSet that were carried over from
+    /// the file rather than computed — an analysis the optimizer is not running (R-to10-7). Empty when
+    /// nothing is stale.</summary>
+    public IReadOnlySet<string> StaleGroupsFor(string? absPath) =>
+        absPath is not null && _staleGroups.TryGetValue(Path.GetFullPath(absPath), out var s) ? s : EmptyGroups;
+
+    private static readonly HashSet<string> EmptyGroups = [];
+
     private void SetChip(string key, string? chip)
     {
+        if (chip is null) _staleGroups.Remove(key);
         var before = PublishedChip;
         if (chip is null) _publishedChips.Remove(key);
         else              _publishedChips[key] = chip;

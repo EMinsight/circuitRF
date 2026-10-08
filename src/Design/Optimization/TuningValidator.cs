@@ -114,6 +114,8 @@ public static class TuningValidator
                     foreach (var name in o.Options?.Keys ?? Enumerable.Empty<string>())
                         if (!known.Contains(name))
                             f.Add(TuningDiagnostics.UnknownAlgorithmOption(name, info.Label, string.Join(", ", known)));
+                        else if (info.Option(name)?.Choices is { } choices && !choices.Contains(o.Options![name]))
+                            f.Add(TuningDiagnostics.AlgorithmOptionChoice(name, o.Options![name], string.Join(" or ", choices)));
                 }
             }
             if (o.TimeLimit is { } limit && TimeLimitSeconds(limit) is null)

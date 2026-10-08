@@ -42,7 +42,7 @@ namespace CircuitRF.Ui.Tuning;
 /// <summary>The header's status dot (R-to4-6).</summary>
 public enum TuningStatus { Idle, Running, Lagging }
 
-public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurface
+public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurface, ITunableAddHost
 {
     /// <summary>A parametric sweep above this many points earns a warning in the analysis scope (R-to4-5).</summary>
     public const long SweepWarningPoints = 50;
@@ -264,6 +264,10 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
 
     public bool IsTuned(string key)
         => _tuned?.EditModel.Tuning?.Variables.Any(v => v.Key == key && v.Tune) == true;
+
+    bool ITunableAddHost.IsActive(string key) => IsTuned(key);
+
+    void ITunableAddHost.Activate(IReadOnlyCollection<string> keys) => SetTuned(keys, on: true);
 
     public void SetTuned(string key, bool on) => SetTuned([key], on);
 

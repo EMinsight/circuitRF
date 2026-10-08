@@ -93,6 +93,10 @@ public static class TuningDiagnostics
         "optimize: alg.{option} is not an option of {algorithm} and is ignored; it takes {known}.",
         ("option", option), ("algorithm", algorithm), ("known", known));
 
+    public static Diagnostic AlgorithmOptionChoice(string option, string value, string choices) => Diagnostic.Create(
+        "tuning.optimize.option-value", DiagnosticSeverity.Error,
+        "optimize: alg.{option}={value} is not {choices}.", ("option", option), ("value", value), ("choices", choices));
+
     public static Diagnostic TimeLimitInvalid(string limit) => Diagnostic.Create(
         "tuning.optimize.timelimit", DiagnosticSeverity.Error,
         "optimize: timelimit={limit} is not a duration; write a number and s, ms, min or h.", ("limit", limit));
