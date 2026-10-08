@@ -243,6 +243,16 @@ internal static class DrcConnectivity
         return partition.Pieces;
     }
 
+    /// <summary>
+    /// The whole cached answer — pieces, joins, ground reach and <b>every barrel's touches</b> —
+    /// for a reader that needs all of it from one walk (<c>brief-artsch-3-board-graph.md</c>: a via
+    /// is classified by the pieces at its ends, which only <see cref="ConnectivityPartition.Barrels"/>
+    /// records). The same <see cref="ConnectivityCache"/> read every other form makes.
+    /// </summary>
+    internal static ConnectivityPartition Partition(
+        IReadOnlyDictionary<LayerKey, Paths64> layerRegions,
+        Technology tech) => ConnectivityCache.Get(layerRegions, tech);
+
     /// <summary>A piece with fewer vertices than this is clipped whole, exactly as before
     /// brief-railrf-36 — a grid over a via pad or a trace costs more than the clip it saves.</summary>
     private const int LocalTestMinVertices = 64;

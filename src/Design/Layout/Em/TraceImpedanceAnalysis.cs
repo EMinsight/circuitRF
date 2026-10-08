@@ -1331,6 +1331,23 @@ public static partial class TraceImpedanceAnalysis
         return (minUm * dbuPerMicron, maxUm * dbuPerMicron);
     }
 
+    /// <summary>
+    /// The widest copper this review reads as a trace on each drawing layer bound to a conductor, DBU —
+    /// <see cref="WidthRange"/>'s own number with no width override, so artwork recognition's "pad-sized"
+    /// and "wider than any trace" are the review's (<c>brief-artsch-3-board-graph.md</c> R-as3-4). Empty
+    /// when the stackup is refused.
+    /// </summary>
+    internal static IReadOnlyDictionary<LayerKey, double> WidestTraceDbu(
+        Technology tech, IReadOnlyList<LayoutShape>? shapes, int dbuPerMicron)
+    {
+        var (_, bands, bandOf, refusal) = TraceStack.StackOf(tech, shapes);
+        var widest = new Dictionary<LayerKey, double>();
+        if (refusal is not null) return widest;
+        var options = new TraceImpedanceOptions();
+        foreach (var (key, band) in bandOf) widest[key] = WidthRange(options, bands, band, dbuPerMicron).Max;
+        return widest;
+    }
+
     // ── 1. pieces ───────────────────────────────────────────────────────────────────────────────
 
     private sealed record Piece(double Ax, double Ay, double Bx, double By, double Width, int Ring, int EdgeA, int EdgeB)

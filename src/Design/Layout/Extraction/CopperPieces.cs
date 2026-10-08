@@ -103,6 +103,14 @@ public sealed class CopperPieces
     /// </remarks>
     public IReadOnlyList<PieceJoin> Joins { get; }
 
+    /// <summary>
+    /// Every via-layer piece that touched two or more conductor pieces, with all of them — the
+    /// partition's own record of what its barrel rule found (<c>brief-railrf-38</c>), carried so
+    /// artwork recognition classifies a via by the pieces at its ends without testing a barrel
+    /// again (<c>brief-artsch-3-board-graph.md</c> R-as3-4).
+    /// </summary>
+    internal IReadOnlyList<BarrelTouch> Barrels { get; private init; } = [];
+
     /// <summary>How many galvanically-joined pieces the partition holds.</summary>
     public int Count { get; }
 
@@ -181,7 +189,8 @@ public sealed class CopperPieces
         if (cut is { IsEmpty: false }) layerRegions = cut.ApplyTo(layerRegions);
         if (layerRegions.Count == 0) return Empty;
 
-        var pieces = DrcConnectivity.ExtractWithGround(layerRegions, tech, out var reach, out var joins);
+        var partition = DrcConnectivity.Partition(layerRegions, tech);
+        var (pieces, reach, joins) = (partition.Pieces, partition.Ground, partition.Joins);
         if (pieces.Count == 0) return Empty;
 
         // R-lvs2-3. Built once per run and dropped with the answer — never maintained
@@ -245,7 +254,7 @@ public sealed class CopperPieces
         return new CopperPieces(
             index, pieces, pieceOfShape, nameOfPiece, refusals,
             new GroundReading(reach.ReferenceName, reach.ReferenceDraws, reach.Nets, reach.ViasReached),
-            joins);
+            joins) { Barrels = partition.Barrels };
     }
 
     /// <summary>
