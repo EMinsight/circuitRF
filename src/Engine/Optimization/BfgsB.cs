@@ -14,8 +14,7 @@ namespace CircuitRF.Engine.Optimization;
 ///
 /// <para>One iteration is one gradient and its line search.</para>
 ///
-/// <para>Options: <c>fdstep</c> (difference step in the unit box, default 1e-6), <c>memory</c>
-/// (correction pairs kept, default 5).</para>
+/// <para>Options and their defaults: <c>bfgsb</c> in <see cref="CircuitRF.Core.Design.OptimizerAlgorithms"/>.</para>
 /// </summary>
 public sealed class BfgsB : AskTellAlgorithm
 {
@@ -27,8 +26,8 @@ public sealed class BfgsB : AskTellAlgorithm
     public BfgsB(double[] start, IReadOnlyDictionary<string, string>? options = null)
         : base(AlgorithmId, start)
     {
-        _h      = Math.Clamp(Option(options, "fdstep", LevenbergMarquardt.DefaultStep), 1e-9, 0.1);
-        _memory = Math.Max(1, (int)Option(options, "memory", 5));
+        _h      = Math.Clamp(Option(options, "fdstep"), 1e-9, 0.1);
+        _memory = Math.Max(1, (int)Option(options, "memory"));
     }
 
     protected override IEnumerable<double[][]> Run()

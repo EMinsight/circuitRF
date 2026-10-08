@@ -10,8 +10,7 @@ namespace CircuitRF.Engine.Optimization;
 /// <para>It only ranks costs, so a failed point (a penalty cost) is simply a bad vertex. One
 /// iteration is one reflect / expand / contract / shrink step.</para>
 ///
-/// <para>Options: <c>step</c> (initial simplex edge in the unit box, default 0.1), <c>xtol</c>
-/// (collapse diameter, default 1e-6), <c>restarts</c> (default 1).</para>
+/// <para>Options and their defaults: <c>simplex</c> in <see cref="CircuitRF.Core.Design.OptimizerAlgorithms"/>.</para>
 /// </summary>
 public sealed class NelderMead : AskTellAlgorithm
 {
@@ -23,9 +22,9 @@ public sealed class NelderMead : AskTellAlgorithm
     public NelderMead(double[] start, IReadOnlyDictionary<string, string>? options = null)
         : base(AlgorithmId, start)
     {
-        _step     = Math.Clamp(Option(options, "step", 0.1), 1e-6, 0.5);
-        _xtol     = Option(options, "xtol", 1e-6);
-        _restarts = Math.Max(0, (int)Option(options, "restarts", 1));
+        _step     = Math.Clamp(Option(options, "step"), 1e-6, 0.5);
+        _xtol     = Option(options, "xtol");
+        _restarts = Math.Max(0, (int)Option(options, "restarts"));
     }
 
     protected override IEnumerable<double[][]> Run()

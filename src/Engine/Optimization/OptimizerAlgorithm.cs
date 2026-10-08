@@ -1,3 +1,5 @@
+using CircuitRF.Core.Design;
+
 namespace CircuitRF.Engine.Optimization;
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -24,7 +26,7 @@ public sealed record Evaluation(double Cost, double[]? Residuals = null, bool Fa
 /// <summary>A resumable optimizer over the unit box (brief-tuneopt-6 §2).</summary>
 public interface IOptimizerAlgorithm
 {
-    /// <summary>The stable id (<c>lm</c>, <c>bfgsb</c>, <c>simplex</c>, <c>random</c>).</summary>
+    /// <summary>The stable id, one of <see cref="OptimizerAlgorithms.Ids"/>.</summary>
     string Id { get; }
 
     /// <summary>The number of coordinates.</summary>
@@ -203,12 +205,47 @@ public abstract class AskTellAlgorithm : IOptimizerAlgorithm
         return pts;
     }
 
-    /// <summary>A number option, or <paramref name="fallback"/>.</summary>
-    protected static double Option(IReadOnlyDictionary<string, string>? options, string name, double fallback)
-        => options is not null && options.TryGetValue(name, out var text)
-           && double.TryParse(text, System.Globalization.NumberStyles.Float,
-                              System.Globalization.CultureInfo.InvariantCulture, out double v)
-            ? v : fallback;
+    /// <summary>
+    /// A number option: the value given, else the registry's default for it (R-to7-7), else
+    /// <paramref name="auto"/> — the value an <c>auto</c> default works out to for this many
+    /// variables. Reading an option the registry does not list is a defect, not a fallback: every
+    /// option an algorithm reads is one the reference documents.
+    /// </summary>
+    protected double Option(IReadOnlyDictionary<string, string>? options, string name, double? auto = null)
+    {
+        var info = OptimizerAlgorithms.Find(Id)?.Option(name)
+                   ?? throw new InvalidOperationException($"'{Id}' reads option '{name}', which the algorithm registry does not list.");
+        if (options is not null && options.TryGetValue(name, out var text)
+            && double.TryParse(text, System.Globalization.NumberStyles.Float,
+                               System.Globalization.CultureInfo.InvariantCulture, out double v))
+            return v;
+        return info.NumericDefault ?? auto
+               ?? throw new InvalidOperationException($"'{Id}' option '{name}' defaults to '{info.Default}' and was given no value for it.");
+    }
+
+    /// <summary>A word option: the value given, else the registry's default.</summary>
+    protected string WordOption(IReadOnlyDictionary<string, string>? options, string name)
+    {
+        var info = OptimizerAlgorithms.Find(Id)?.Option(name)
+                   ?? throw new InvalidOperationException($"'{Id}' reads option '{name}', which the algorithm registry does not list.");
+        return options is not null && options.TryGetValue(name, out var text) && text.Length > 0 ? text : info.Default;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="a"/> ranks ahead of <paramref name="b"/> (R-to7-8): a point that was
+    /// evaluated always ranks ahead of one that failed or was infeasible, whatever the two penalty
+    /// costs say — a penalty is finite and only orders failures among themselves.
+    /// </summary>
+    protected static bool Better(Evaluation a, Evaluation b)
+        => a.Failed != b.Failed ? !a.Failed : a.Cost < b.Cost;
+
+    /// <summary>Indices of <paramref name="e"/>, best first by <see cref="Better"/>; stable, so a tie
+    /// keeps the earlier index ahead.</summary>
+    protected static int[] Ranking(IReadOnlyList<Evaluation> e)
+        => [.. Enumerable.Range(0, e.Count).OrderBy(i => e[i].Failed ? 1 : 0).ThenBy(i => e[i].Cost)];
+
+    /// <summary>The largest residual — the minimax cost of a point.</summary>
+    protected static double Worst(double[] r) => r.Length == 0 ? 0 : r.Max();
 }
 
 /// <summary>
@@ -232,6 +269,17 @@ public sealed class SplitMix64(ulong seed)
 
     /// <summary>Uniform integer in [0, n).</summary>
     public int Next(int n) => (int)(NextDouble() * n);
+
+    /// <summary>Standard normal, by Box–Muller (one value per call, so the stream stays a plain
+    /// function of the seed and the call count).</summary>
+    public double NextGaussian()
+    {
+        double u1 = 1.0 - NextDouble(), u2 = NextDouble();
+        return Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
+    }
+
+    /// <summary>Cauchy with location <paramref name="loc"/> and scale <paramref name="scale"/>.</summary>
+    public double NextCauchy(double loc, double scale) => loc + scale * Math.Tan(Math.PI * (NextDouble() - 0.5));
 }
 
 /// <summary>Small dense linear algebra for the methods here (n is the number of optimized values).</summary>
@@ -280,5 +328,59 @@ internal static class DenseLinear
         double s = 0;
         for (int i = 0; i < a.Length; i++) s += a[i] * b[i];
         return s;
+    }
+
+    /// <summary>
+    /// Eigen-decomposition of a symmetric matrix by cyclic Jacobi rotations: <paramref name="a"/> =
+    /// V·diag(values)·Vᵀ, eigenvectors in V's columns. Exact enough and plenty fast for the n of an
+    /// optimization; the input is not modified.
+    /// </summary>
+    public static (double[] Values, double[,] Vectors) SymmetricEigen(double[,] a)
+    {
+        int n = a.GetLength(0);
+        var m = (double[,])a.Clone();
+        var v = new double[n, n];
+        for (int i = 0; i < n; i++) v[i, i] = 1;
+
+        for (int sweep = 0; sweep < 100; sweep++)
+        {
+            double off = 0, diag = 0;
+            for (int p = 0; p < n; p++)
+            {
+                diag += m[p, p] * m[p, p];
+                for (int q = p + 1; q < n; q++) off += m[p, q] * m[p, q];
+            }
+            if (off <= 1e-30 * Math.Max(diag, 1e-300)) break;
+
+            for (int p = 0; p < n - 1; p++)
+                for (int q = p + 1; q < n; q++)
+                {
+                    if (m[p, q] == 0) continue;
+                    double theta = (m[q, q] - m[p, p]) / (2 * m[p, q]);
+                    double t = Math.Sign(theta == 0 ? 1 : theta) / (Math.Abs(theta) + Math.Sqrt(theta * theta + 1));
+                    double c = 1 / Math.Sqrt(t * t + 1), s = t * c;
+                    for (int k = 0; k < n; k++)
+                    {
+                        double mkp = m[k, p], mkq = m[k, q];
+                        m[k, p] = c * mkp - s * mkq;
+                        m[k, q] = s * mkp + c * mkq;
+                    }
+                    for (int k = 0; k < n; k++)
+                    {
+                        double mpk = m[p, k], mqk = m[q, k];
+                        m[p, k] = c * mpk - s * mqk;
+                        m[q, k] = s * mpk + c * mqk;
+                    }
+                    for (int k = 0; k < n; k++)
+                    {
+                        double vkp = v[k, p], vkq = v[k, q];
+                        v[k, p] = c * vkp - s * vkq;
+                        v[k, q] = s * vkp + c * vkq;
+                    }
+                }
+        }
+        var values = new double[n];
+        for (int i = 0; i < n; i++) values[i] = m[i, i];
+        return (values, v);
     }
 }

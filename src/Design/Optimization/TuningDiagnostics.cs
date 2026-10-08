@@ -88,6 +88,11 @@ public static class TuningDiagnostics
         "tuning.optimize.algorithm", DiagnosticSeverity.Error,
         "optimize: algorithm={algorithm} is not one of {known}.", ("algorithm", algorithm), ("known", known));
 
+    public static Diagnostic UnknownAlgorithmOption(string option, string algorithm, string known) => Diagnostic.Create(
+        "tuning.optimize.option", DiagnosticSeverity.Warning,
+        "optimize: alg.{option} is not an option of {algorithm} and is ignored; it takes {known}.",
+        ("option", option), ("algorithm", algorithm), ("known", known));
+
     public static Diagnostic TimeLimitInvalid(string limit) => Diagnostic.Create(
         "tuning.optimize.timelimit", DiagnosticSeverity.Error,
         "optimize: timelimit={limit} is not a duration; write a number and s, ms, min or h.", ("limit", limit));

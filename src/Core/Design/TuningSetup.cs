@@ -252,20 +252,6 @@ public sealed class OptimizerSettings
     };
 }
 
-/// <summary>The optimizer menu's stable ids, in the menu's order (overview D13).</summary>
-public static class OptimizerAlgorithms
-{
-    public const string Auto = "auto";
-
-    /// <summary>Every id, in menu order. A later phase adds the algorithm; the id is fixed here so a
-    /// file written today names the same algorithm tomorrow.</summary>
-    public static IReadOnlyList<string> Ids { get; } =
-    [
-        Auto, "lm", "bfgsb", "minimax", "simplex", "trust_region", "pattern", "random", "de", "pso",
-        "cmaes", "bayes", "discrete",
-    ];
-}
-
 /// <summary>
 /// Everything a schematic says about tuning and optimizing it: the variable entries, the presets,
 /// the goals and the optimizer settings (overview D5). Null on a schematic that never had any.

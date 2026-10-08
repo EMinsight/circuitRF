@@ -87,6 +87,7 @@ internal static partial class Reference
              TuningSummary, ByteLength(RenderTuning(AnalysisDirectiveSchema.TuningTopic))),
             (AnalysisDirectiveSchema.GoalsTopic, GoalsTitle,
              GoalsSummary, ByteLength(RenderTuning(AnalysisDirectiveSchema.GoalsTopic))),
+            (OptimizersTopic, OptimizersTitle, OptimizersSummary, ByteLength(RenderOptimizers())),
             (ComponentIndexTopic, "Component index",
              $"Generated from the live registries: the {catalog.Count} .cnl type tokens, one line each, " +
              "with the nets an instance line binds and what the type is. Read this first, then " +
@@ -135,6 +136,9 @@ internal static partial class Reference
         if (string.Equals(topic, AnalysisDirectiveSchema.TuningTopic, StringComparison.OrdinalIgnoreCase)
             || string.Equals(topic, AnalysisDirectiveSchema.GoalsTopic, StringComparison.OrdinalIgnoreCase))
             return item is null ? TuningTopic(topic.ToLowerInvariant()) : JsonRun.Fail(CliDiagnostics.ReferenceItemNotForTopic(topic));
+
+        if (string.Equals(topic, OptimizersTopic, StringComparison.OrdinalIgnoreCase))
+            return item is null ? OptimizersTopicRun() : JsonRun.Fail(CliDiagnostics.ReferenceItemNotForTopic(topic));
 
         if (string.Equals(topic, ComponentIndexTopic, StringComparison.OrdinalIgnoreCase))
             return item is null ? ComponentIndex() : JsonRun.Fail(CliDiagnostics.ReferenceItemNotForTopic(topic));

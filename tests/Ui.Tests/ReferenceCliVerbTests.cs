@@ -459,7 +459,8 @@ public sealed class ReferenceCliVerbTests(ITestOutputHelper output)
         // index before the catalogue it indexes, and what ships.
         Assert.Equal(
             ReferenceLibrary.TopicNames.Concat(["data-display", "technology", "layout", "em-setup", "wbond",
-                                               "3d-view", "materials", "schematic", "analyses", "component-index",
+                                               "3d-view", "materials", "schematic", "analyses", "tuning", "goals",
+                                               "optimizers", "component-index",
                                                "components", "technologies", "shipped-materials"]),
             names);
 

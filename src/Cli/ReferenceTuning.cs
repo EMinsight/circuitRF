@@ -1,5 +1,7 @@
 using System.Text;
+using CircuitRF.Core.Design;
 using CircuitRF.Core.Netlist;
+using CircuitRF.Engine.Optimization;
 using RfCore.Export;
 
 namespace CircuitRF.Cli;
@@ -7,10 +9,19 @@ namespace CircuitRF.Cli;
 /// <summary>
 /// The <c>tuning</c> and <c>goals</c> reference topics (TO-1 R-to1-8) — generated from
 /// <see cref="AnalysisDirectiveSchema.TuningDirectives"/>, the table <c>CnlReader</c> reads the four
-/// directives against, so the page cannot describe a key the reader does not know or miss one it does.
+/// directives against, so the page cannot describe a key the reader does not know or miss one it does —
+/// and the <c>optimizers</c> topic (brief-tuneopt-7 R-to7-7), generated from
+/// <see cref="OptimizerAlgorithms"/>, the registry the optimizer itself reads its option defaults from.
 /// </summary>
 internal static partial class Reference
 {
+    internal const string OptimizersTopic = "optimizers";
+    private const string OptimizersTitle = "Optimizer algorithms";
+    private const string OptimizersSummary =
+        "Generated from the algorithm registry the optimizer reads its defaults from: every algorithm= id " +
+        "with its menu label, when to use it, the cost forms it accepts, whether it estimates gradients, " +
+        "and every alg.<option> with its default.";
+
     private const string TuningTitle = "Tuning directives";
     private const string GoalsTitle  = "Optimization goals";
 
@@ -36,7 +47,45 @@ internal static partial class Reference
         return 0;
     }
 
-    private static string RenderTuning(string topic)
+    private static int OptimizersTopicRun()
+    {
+        string text = RenderOptimizers();
+        JsonRun.Reference = new ReferenceReportJson(
+            null, new ReferenceTopicJson(OptimizersTopic, OptimizersTitle, OptimizersSummary, ByteLength(text), text), null);
+        Console.Out.Write(text);
+        return 0;
+    }
+
+    /// <summary>The <c>optimizers</c> page: one block per registry entry, in menu order.</summary>
+    internal static string RenderOptimizers()
+    {
+        static string CostToken(OptimizerCost c) => c == OptimizerCost.Minimax ? "minimax" : "lsq";
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Optimizer algorithms — the optimize line names one with algorithm=<id>, and");
+        sb.AppendLine("alg.<option>=<value> sets one of its options. Every coordinate an algorithm moves is a");
+        sb.AppendLine("variable's position in its range, from 0 to 1, so steps and sizes below are fractions of a range.");
+        sb.AppendLine();
+        sb.AppendLine("    optimize algorithm=de maxevals=2000 seed=1 alg.population=40");
+        sb.AppendLine();
+        foreach (var a in OptimizerAlgorithms.All)
+        {
+            sb.AppendLine($"{a.Id,-16}{a.Label}{(OptimizerFactory.IsBuilt(a.Id) ? "" : "  (not in this build)")}");
+            foreach (var line in Wrap(a.UseWhen, 94)) sb.AppendLine("  " + line);
+            sb.AppendLine($"  cost: {string.Join(", ", a.Costs.Select(CostToken))}" +
+                          $"{(a.Costs.Count == 1 ? " (choosing it sets this form)" : "")}" +
+                          $" · gradients: {(a.NeedsGradients ? "finite differences, n extra evaluations a step" : "none")}");
+            foreach (var o in a.Options) sb.AppendLine($"  {o.Name,-16} {o.Default,-8} {o.Summary}".TrimEnd());
+            sb.AppendLine();
+        }
+        sb.AppendLine("Every algorithm also takes:");
+        foreach (var o in OptimizerAlgorithms.CommonOptions) sb.AppendLine($"  {o.Name,-16} {o.Default,-8} {o.Summary}".TrimEnd());
+        sb.AppendLine();
+        sb.AppendLine("See also: reference tuning (the optimize line's other keys), reference goals (what it minimizes).");
+        return sb.ToString();
+    }
+
+    internal static string RenderTuning(string topic)
     {
         bool goals = topic == AnalysisDirectiveSchema.GoalsTopic;
         var sb = new StringBuilder();
@@ -70,7 +119,8 @@ internal static partial class Reference
         sb.AppendLine();
         sb.AppendLine(goals
             ? "See also: reference tuning (which values can vary), reference analyses (what a goal reads)."
-            : "See also: reference goals (what the optimizer aims for); explain <file> --tunables lists every key a design offers.");
+            : "See also: reference goals (what the optimizer aims for), reference optimizers (each algorithm and its options);\n" +
+              "explain <file> --tunables lists every key a design offers.");
         return sb.ToString();
     }
 

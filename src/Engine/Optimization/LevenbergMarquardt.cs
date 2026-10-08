@@ -24,23 +24,19 @@ namespace CircuitRF.Engine.Optimization;
 ///
 /// <para>One iteration is one Jacobian and the trial steps it takes to accept one, or to give up.</para>
 ///
-/// <para>Options: <c>fdstep</c> (difference step in the unit box, default 1e-6), <c>lambda</c>
-/// (initial damping, default 1e-3).</para>
+/// <para>Options and their defaults: <c>lm</c> in <see cref="CircuitRF.Core.Design.OptimizerAlgorithms"/>.</para>
 /// </summary>
 public sealed class LevenbergMarquardt : AskTellAlgorithm
 {
     public const string AlgorithmId = "lm";
-
-    /// <summary>The default difference step, in the unit box.</summary>
-    public const double DefaultStep = 1e-6;
 
     private readonly double _h, _lambda0;
 
     public LevenbergMarquardt(double[] start, IReadOnlyDictionary<string, string>? options = null)
         : base(AlgorithmId, start)
     {
-        _h       = Math.Clamp(Option(options, "fdstep", DefaultStep), 1e-9, 0.1);
-        _lambda0 = Math.Max(1e-12, Option(options, "lambda", 1e-3));
+        _h       = Math.Clamp(Option(options, "fdstep"), 1e-9, 0.1);
+        _lambda0 = Math.Max(1e-12, Option(options, "lambda"));
     }
 
     protected override IEnumerable<double[][]> Run()

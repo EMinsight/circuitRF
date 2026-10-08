@@ -38,9 +38,10 @@ public static class OptimizationDiagnostics
         "algorithm={algorithm} is not available; choose one of {available}.",
         ("algorithm", algorithm), ("available", available));
 
-    public static Diagnostic LeastSquaresOnly() => Diagnostic.Create(
+    public static Diagnostic LeastSquaresOnly(string label) => Diagnostic.Create(
         "opt.algorithm.lsq-only", DiagnosticSeverity.Error,
-        "Gradient (Levenberg–Marquardt) minimizes the sum of squared violations and cannot use cost=minimax; choose Minimax or Auto, or set cost=lsq.");
+        "{label} minimizes the sum of squared violations and cannot use cost=minimax; choose Minimax or Auto, or set cost=lsq.",
+        ("label", label));
 
     public static Diagnostic AutoRuns(string algorithm) => Diagnostic.Create(
         "opt.algorithm.auto", DiagnosticSeverity.Info,

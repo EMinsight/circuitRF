@@ -131,14 +131,12 @@ public sealed class OptimizationRun
     /// <summary>The default iteration limit when the setup states none.</summary>
     public const int DefaultMaxIterations = 100;
 
-    /// <summary>Stall: a run whose best cost improved by less than this fraction over
-    /// <see cref="DefaultStallIterations"/> iterations stops (options <c>stall_tol</c>, <c>stall_iters</c>).</summary>
-    public const double DefaultStallTolerance = 1e-9;
-    public const int    DefaultStallIterations = 25;
+    // Stall — a run whose best cost improved by less than stall_tol of itself over stall_iters
+    // iterations stops — reads its defaults from OptimizerAlgorithms.CommonOptions.
 
-    /// <summary>The algorithms this build has.</summary>
+    /// <summary>The registry's algorithms this build implements, in menu order (R-to7-7).</summary>
     public static IReadOnlyList<string> Available { get; } =
-        [OptimizerAlgorithms.Auto, LevenbergMarquardt.AlgorithmId, BfgsB.AlgorithmId, NelderMead.AlgorithmId, RandomSearch.AlgorithmId];
+        [.. OptimizerAlgorithms.Ids.Where(OptimizerFactory.IsBuilt)];
 
     private sealed record PointOutcome(
         bool Failed, Diagnostic? Error, double Cost, double[] Residuals, IReadOnlyList<GoalScore> Scores, bool GoalError);
@@ -147,6 +145,7 @@ public sealed class OptimizationRun
     private readonly OptimizationOptions _options;
     private readonly TuningSetup _setup = new();
     private readonly OptimizerSettings _settings = new();
+    private readonly OptimizerCost _cost;
     private readonly List<OptimizationGoal> _goals = [];
     private readonly IReadOnlyList<string>? _analyses;
     private readonly bool _simulates;
@@ -213,15 +212,20 @@ public sealed class OptimizationRun
         if (AlgorithmId == OptimizerAlgorithms.Auto)
         {
             // The global stage of Auto (overview D13) is not built; its local polish is.
-            AlgorithmId = _settings.Cost == OptimizerCost.Minimax ? NelderMead.AlgorithmId : LevenbergMarquardt.AlgorithmId;
-            _notes.Add(OptimizationDiagnostics.AutoRuns(AlgorithmId == NelderMead.AlgorithmId
-                ? "Simplex (Nelder–Mead)" : "Gradient (Levenberg–Marquardt)"));
+            AlgorithmId = _settings.Cost == OptimizerCost.Minimax ? Minimax.AlgorithmId : LevenbergMarquardt.AlgorithmId;
+            _notes.Add(OptimizationDiagnostics.AutoRuns(OptimizerAlgorithms.Find(AlgorithmId)!.Label));
         }
-        if (AlgorithmId == LevenbergMarquardt.AlgorithmId && _settings.Cost == OptimizerCost.Minimax)
+
+        // The cost form (R-to7-6, R-to7-7): choosing Minimax sets minimax — least squares is the
+        // default form, never one a setup can be said to insist on — while a least-squares method
+        // refuses an explicit cost=minimax.
+        var info = OptimizerAlgorithms.Find(AlgorithmId)!;
+        if (_settings.Cost == OptimizerCost.Minimax && !info.Accepts(OptimizerCost.Minimax))
         {
-            Refusal = OptimizationDiagnostics.LeastSquaresOnly();
+            Refusal = OptimizationDiagnostics.LeastSquaresOnly(info.Label);
             return;
         }
+        _cost = info.Accepts(_settings.Cost) ? _settings.Cost : info.Costs[0];
 
         var named = _goals.Select(g => g.Analysis).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
         _simulates = named.Count > 0;
@@ -275,18 +279,18 @@ public sealed class OptimizationRun
         ulong seed = (ulong)(_settings.Seed ?? 1);
         var options = _settings.Options is null ? null
             : _settings.Options.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
-        IOptimizerAlgorithm alg = AlgorithmId switch
-        {
-            LevenbergMarquardt.AlgorithmId => new LevenbergMarquardt(Variables.Start, options),
-            BfgsB.AlgorithmId              => new BfgsB(Variables.Start, options),
-            NelderMead.AlgorithmId         => new NelderMead(Variables.Start, options),
-            _                              => new RandomSearch(Variables.Start, seed, options),
-        };
+        // A population schedule planned for an evaluation budget plans for the run's own limit.
+        if (_settings.MaxEvaluations is { } maxEvals
+            && OptimizerAlgorithms.Find(AlgorithmId)?.Option("budget") is not null
+            && options?.ContainsKey("budget") != true)
+            (options ??= new Dictionary<string, string>(StringComparer.Ordinal))["budget"] =
+                maxEvals.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var alg = OptimizerFactory.Create(AlgorithmId, Variables.Start, seed, options)!;
 
         int maxIter     = _settings.MaxIterations ?? DefaultMaxIterations;
         double? limitS  = _settings.TimeLimit is { } tl ? TuningValidator.TimeLimitSeconds(tl) : null;
-        double stallTol = Option(options, "stall_tol", DefaultStallTolerance);
-        int stallIters  = (int)Option(options, "stall_iters", DefaultStallIterations);
+        double stallTol = Option(options, "stall_tol");
+        int stallIters  = (int)Option(options, "stall_iters");
 
         string reason;
         bool first = true;
@@ -438,7 +442,7 @@ public sealed class OptimizationRun
                 return (new PointOutcome(true, bad.Error, 0, [], scores, GoalError: true), null);
             }
             double[] residuals = [.. scores.SelectMany(s => s.Residuals)];
-            double cost = GoalResiduals.Cost(residuals, _settings.Cost);
+            double cost = GoalResiduals.Cost(residuals, _cost);
             return (new PointOutcome(false, null, cost, residuals, scores, false), data);
         }
         catch (OperationCanceledException) { throw; }
@@ -605,8 +609,9 @@ public sealed class OptimizationRun
         return ds;
     }
 
-    private static double Option(IReadOnlyDictionary<string, string>? options, string name, double fallback)
+    /// <summary>One of the registry's common options (stall), the value given or its default.</summary>
+    private static double Option(IReadOnlyDictionary<string, string>? options, string name)
         => options is not null && options.TryGetValue(name, out var text)
            && double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double v)
-            ? v : fallback;
+            ? v : OptimizerAlgorithms.CommonOptions.First(o => o.Name == name).NumericDefault!.Value;
 }

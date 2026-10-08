@@ -94,8 +94,21 @@ public static class TuningValidator
 
         if (setup.Optimizer is { } o)
         {
-            if (!OptimizerAlgorithms.Ids.Contains(o.Algorithm))
+            if (OptimizerAlgorithms.Find(o.Algorithm) is not { } info)
                 f.Add(TuningDiagnostics.UnknownAlgorithm(o.Algorithm, string.Join(", ", OptimizerAlgorithms.Ids)));
+            else
+            {
+                if (o.Cost == OptimizerCost.Minimax && !info.Accepts(OptimizerCost.Minimax))
+                    f.Add(OptimizationDiagnostics.LeastSquaresOnly(info.Label));
+                // Auto's options are those of the methods it runs, so only a named method is checked.
+                if (info.Id != OptimizerAlgorithms.Auto)
+                {
+                    var known = info.Options.Concat(OptimizerAlgorithms.CommonOptions).Select(x => x.Name).ToList();
+                    foreach (var name in o.Options?.Keys ?? Enumerable.Empty<string>())
+                        if (!known.Contains(name))
+                            f.Add(TuningDiagnostics.UnknownAlgorithmOption(name, info.Label, string.Join(", ", known)));
+                }
+            }
             if (o.TimeLimit is { } limit && TimeLimitSeconds(limit) is null)
                 f.Add(TuningDiagnostics.TimeLimitInvalid(limit));
         }

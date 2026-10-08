@@ -1,8 +1,8 @@
 # Tuning and optimization
 
-**Status:** TO-1 … TO-6 built (model, file format, catalog, in-memory overrides, `check`/`explain`/`reference`;
-evaluation service; live session and Data Display; the Tuning panel; presets; the optimizer core).
-TO-7 … TO-12 briefed (`docs/sonnet-briefs/brief-tuneopt-*.md`). The overview brief
+**Status:** TO-1 … TO-7 built (model, file format, catalog, in-memory overrides, `check`/`explain`/`reference`;
+evaluation service; live session and Data Display; the Tuning panel; presets; the optimizer core; the
+global and derivative-free algorithms and the algorithm registry). TO-8 … TO-12 briefed (`docs/sonnet-briefs/brief-tuneopt-*.md`). The overview brief
 (`brief-tuneopt-0-overview.md`) holds the decisions D1–D17 in full and is binding; this note is the
 standing reference for what is built, and restates the decisions only as far as the code depends on them.
 
@@ -12,7 +12,8 @@ standing reference for what is built, and restates the decisions only as far as 
 
 | Piece | Where | What it is |
 |---|---|---|
-| The model | `src/Core/Design/TuningSetup.cs` | `TuningSetup` = `TunableEntry` list + `TuningPreset` list + `OptimizationGoal` list + `OptimizerSettings`. `TunableKey` splits a key. `OptimizerAlgorithms.Ids` fixes the algorithm ids. |
+| The model | `src/Core/Design/TuningSetup.cs` | `TuningSetup` = `TunableEntry` list + `TuningPreset` list + `OptimizationGoal` list + `OptimizerSettings`. `TunableKey` splits a key. |
+| Algorithm registry | `src/Core/Design/OptimizerAlgorithms.cs` | The one list of algorithms: id, menu label, use-when sentence, options with defaults, accepted cost forms, whether it differentiates (§11). |
 | `.cnl` grammar | `src/Core/Netlist/AnalysisDirectiveSchema.Tuning.cs` | The four directives, their keys and bare words — the table the reader checks keys against and the `reference` topics print. |
 | `.cnl` read/write | `src/Core/Netlist/TuningDirectiveText.cs` | Reader and writer of `tune`, `preset`, `goal`, `optimize`. Called by `CnlReader` and `CnlWriter`. |
 | `.csch` block | `SchematicPersistence` (`CschTuning`) | The `"Tuning"` object; see `project-file-formats.md`. |
@@ -20,8 +21,8 @@ standing reference for what is built, and restates the decisions only as far as 
 | Tunable catalog | `src/Design/Optimization/TunableCatalog.cs` | Every tunable of a schematic at any depth, and the setup keys that name nothing. |
 | In-memory overrides | `src/Design/Optimization/TunableOverrides.cs` | The design to elaborate with tuned values substituted. Writes nothing. |
 | Rules | `src/Design/Optimization/TuningValidator.cs` + `TuningDiagnostics.cs` | What `check` reports and the windows refuse on. |
-| CLI | `check`, `explain --tunables`, `reference tuning`, `reference goals` | See `cli.md`. |
-| Optimizer algorithms | `src/Engine/Optimization/` | Ask/tell state machines over the unit box: `RandomSearch`, `NelderMead`, `LevenbergMarquardt`, `BfgsB` (§10). |
+| CLI | `check`, `explain --tunables`, `reference tuning`, `reference goals`, `reference optimizers` | See `cli.md`. |
+| Optimizer algorithms | `src/Engine/Optimization/` | Ask/tell state machines over the unit box: `RandomSearch`, `NelderMead`, `LevenbergMarquardt`, `BfgsB` (§10); `Minimax`, `TrustRegionModel`, `PatternSearch`, `DifferentialEvolution`, `ParticleSwarm`, `CmaEs` (§11). `OptimizerFactory` builds one from its id. |
 | Optimizer run | `src/Design/Optimization/OptimizationRun.cs` + `OptimizationVariables`, `GoalResiduals`, `OptimizationDiagnostics` | Decode, goals → residuals, cache, parallel batches, stopping, pause, progress, history (§10). |
 
 **Why the model is in `src/Core` and not `src/Design/Optimization`.** The brief placed the model classes
@@ -290,7 +291,10 @@ coordinate paths (`ComplexRegion.Move` from the feasible grid point nearest the 
 `Converged = false`, a goal error) costs **10·(1 + the largest successful cost seen)**, assigned after
 the batch in batch order so concurrency cannot change it. An infeasible complex point is not simulated
 and costs that plus its normalized distance to the region. Both reach the algorithm as `Failed`:
-Levenberg–Marquardt and BFGS-B shrink the step; Nelder–Mead and Random rank it.
+Levenberg–Marquardt, BFGS-B and Minimax shrink the step; the trust-region model leaves the point out of
+its interpolation set; pattern search counts it a poll point that did not improve; Nelder–Mead, Random
+and the population methods rank it — and a population method ranks it behind EVERY evaluated point,
+whatever the two penalty costs say (§11).
 
 **Counters.** `Evaluations` = simulations run; `CacheHits` = points the cache (keyed by the decoded
 value vector) or an earlier point of the same batch answered; `Infeasible`; `Failures`.
@@ -322,14 +326,15 @@ of ANOTHER part's range is reported against that part (`RailedVariable.Against`)
 `infeasible`, `cached` and one cube per value key in base SI (complex for a complex value); over
 `iter` `best_cost` and `worst_<goal>`. The caller decides whether to write it.
 
-**Algorithms and options** (`alg.<name>=` on the `optimize` line):
+**Algorithms** (`alg.<name>=` on the `optimize` line sets an option; every option and its default is in
+the registry and printed by `reference optimizers` — not repeated here, so the two cannot drift):
 
-| Id | Batch | Options |
-|---|---|---|
-| `random` | `batch` points per iteration (default max(8, 2n)), the first carrying the start | `batch`, `lhs` (1 = Latin hypercube, default; 0 = uniform) |
-| `simplex` | 1 (n+1 to build, n to shrink) | `step` (0.1), `xtol` (1e-6), `restarts` (1) — Gao–Han adaptive coefficients, projection onto the box |
-| `lm` | n for the forward-difference Jacobian, then 1 per trial | `fdstep` (1e-6), `lambda` (1e-3) |
-| `bfgsb` | n for the gradient, then 1 per line-search point | `fdstep` (1e-6), `memory` (5) |
+| Id | Batch |
+|---|---|
+| `random` | `batch` points per iteration, the first carrying the start; Latin hypercube or uniform |
+| `simplex` | 1 (n+1 to build, n to shrink) — Gao–Han adaptive coefficients, projection onto the box |
+| `lm` | n for the forward-difference Jacobian, then 1 per trial |
+| `bfgsb` | n for the gradient, then 1 per line-search point |
 
 - **Levenberg–Marquardt uses Levenberg's damping (JᵀJ + λ·s·I), not Marquardt's diag(JᵀJ).** The unit
   box already puts the coordinates on one scale; Marquardt's scaling lengthens the step along the
@@ -343,5 +348,46 @@ of ANOTHER part's range is reported against that part (`RailedVariable.Against`)
   itself near a Rosenbrock optimum and BFGS-B stopped at cost 0.01. A discrete or stepped coordinate
   decodes both sides of a difference to one value (a cache hit) and so has no gradient — a known limit
   of the gradient methods until TO-8's re-polish.
-- **Auto** runs Levenberg–Marquardt (Nelder–Mead under `cost=minimax`) and says so (`opt.algorithm.auto`)
+- **Auto** runs Levenberg–Marquardt (Minimax under `cost=minimax`) and says so (`opt.algorithm.auto`)
   until TO-8 adds its global stage. Algorithms not built yet are refused naming those that are.
+
+## 11. Global and derivative-free algorithms, and the registry (TO-7)
+
+**The registry (R-to7-7)** — `OptimizerAlgorithms.All`, in menu order (D13). Each entry: id, label,
+use-when sentence, options (name, default text, summary), accepted cost forms, `NeedsGradients`. It is
+in `src/Core` because the `.cnl` schema and `check` read the ids and Core references nothing above it.
+**The algorithms read their option defaults FROM it**: `AskTellAlgorithm.Option(options, name)` takes
+the value given, else the registry's numeric default, else the `auto` value the caller computes for n —
+and reading an option the registry does not list throws. So a default printed by `reference optimizers`
+is the default that runs. The stall options are `CommonOptions`. `OptimizerFactory.Create` is the one
+id → algorithm switch; `OptimizationRun.Available` is the registry filtered by `OptimizerFactory.IsBuilt`
+(`bayes` and `discrete` are TO-8, listed and marked "not in this build").
+
+**Cost form.** A method accepting one form SETS it: choosing `minimax` runs minimax whatever `cost=`
+says, because least squares is the default form and cannot be told apart from an unstated one. A
+least-squares-only method (`lm`) with an explicit `cost=minimax` is refused — by `check` and by the run,
+with the same sentence. `check` also warns on an `alg.` option the chosen algorithm does not take (not
+for `auto`, whose options are those of what it runs).
+
+**Feasibility-first ranking (R-to7-8).** `AskTellAlgorithm.Better`: an evaluated point always ranks
+ahead of a failed or infeasible one; costs order only like with like. The run's penalty already ranks a
+failure below every success seen SO FAR, but a later success can cost more than an earlier penalty —
+DE's selection, PSO's personal best and CMA-ES's ranking must not keep a penalty over it.
+
+| Id | Batch | Notes |
+|---|---|---|
+| `minimax` | n for the Jacobian (retried backward on failure), then 1 per trial | Trust-region SLP: min t s.t. rᵢ + Jᵢd ≤ t, ‖d‖∞ ≤ Δ, inside the box; dense simplex with Bland's rule, no first phase (t is written U − σ so every right-hand side is non-negative). Works on SIGNED residuals, so it levels the worst ones (equal ripple). |
+| `trust_region` | 2n+1 initial (x₀ ± Δeᵢ, inward near a bound), then 1 | Least-change (minimum Frobenius norm of ΔH) quadratic model, solved as one (p+n+1)-square system in ρ-scaled coordinates; box-and-‖·‖∞ trust region solved by projected gradient on the model; two radii Δ ≥ ρ, ρ only falls, geometry point when a point is beyond 2ρ. |
+| `pattern` | the 2n poll (OrthoMADS directions on the mesh, Δm = Δp²), plus a speculative and a model point | Poll points outside the box are not asked (extreme barrier). **Model search** — the minimum, within 2Δp, of the least-change quadratic through the nearest (n+1)(n+2)/2 evaluated points — shares `TrustRegionModel`'s model and step code. Without it, 4-D Rosenbrock stopped at 1.1e-3 from the optimum (default `minpoll`) or took ~69,000 evaluations (`minpoll` 1e-10); with it, 1,185. |
+| `de` | one generation | L-SHADE: success-history CR/F (weighted Lehmer means, a terminal CR), current-to-pbest/1 with archive, binomial crossover, midpoint-to-parent repair, linear population reduction 18n → 4 over `budget`. **`budget` defaults to the run's `maxevals`** when stated (the run passes it), else 1000n. |
+| `pso` | one swarm step | Constriction form (χ from c₁ + c₂), ring or global topology, velocity clamp, reflection at the bounds. Never finishes on its own until the swarm collapses; the run's limits end it. |
+| `cmaes` | λ | (μ/μ_w, λ) with CSA and rank-one + rank-μ updates; eigen-decomposition by Jacobi each generation. **Bounds by re-sampling** (up to 100 draws, then projection), chosen over a penalty because it needs no penalty weight and every point evaluated is one the design can take. IPOP: a stalled run (tolfun, tolx, condition 1e14, generation limit) restarts at a uniform random mean with 2λ. |
+
+**Gates, by evaluation count** (`tests/Engine.Tests/Optimization/GlobalAndDfoAlgorithmTests.cs`; seed 1):
+4-D Rastrigin on [−4, 6]⁴ from the local minimum at x = 5 — DE reaches cost < 1e-4 at evaluation 3,782
+(budget 4,000), CMA-ES 5,530, PSO 9,127. 4-D Rosenbrock from x = 0 — trust-region model 222
+evaluations, pattern search 1,185, and pattern search with a fixed tenth of the box failing still
+arrives. Minimax lands the minimax line through eᵗ on [0, 1], its two worst residuals level within 1e-6 at
+0.10593. `AlgorithmRegistryTests` holds the registry, the build, the `optimize` schema's summary and
+the `reference optimizers` page to each other; `PopulationComplexTests` runs DE on a `real`/`mag`
+pair with infeasible points on both sides of the feasible band and ends feasible, reporting the count.

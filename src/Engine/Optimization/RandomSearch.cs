@@ -6,8 +6,7 @@ namespace CircuitRF.Engine.Optimization;
 /// limits end it. The first batch carries the start point, so the best is never worse than where the
 /// run began. One batch is one iteration.
 ///
-/// <para>Options: <c>batch</c> (points per batch; default max(8, 2n)), <c>lhs</c> (1 = Latin
-/// hypercube, the default; 0 = independent uniform points).</para>
+/// <para>Options and their defaults: <c>random</c> in <see cref="CircuitRF.Core.Design.OptimizerAlgorithms"/>.</para>
 /// </summary>
 public sealed class RandomSearch : AskTellAlgorithm
 {
@@ -21,7 +20,7 @@ public sealed class RandomSearch : AskTellAlgorithm
         : base(AlgorithmId, start)
     {
         _batch = Math.Max(1, (int)Option(options, "batch", Math.Max(8, 2 * start.Length)));
-        _lhs   = Option(options, "lhs", 1) != 0;
+        _lhs   = Option(options, "lhs") != 0;
         _seed  = seed;
     }
 

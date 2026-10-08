@@ -19,13 +19,8 @@ internal static class Rosenbrock
         return new Evaluation(r[0] * r[0] + r[1] * r[1], r);
     }
 
-    public static IOptimizerAlgorithm Make(string id, ulong seed = 7) => id switch
-    {
-        LevenbergMarquardt.AlgorithmId => new LevenbergMarquardt(Start),
-        BfgsB.AlgorithmId              => new BfgsB(Start),
-        NelderMead.AlgorithmId         => new NelderMead(Start),
-        _                              => new RandomSearch(Start, seed),
-    };
+    public static IOptimizerAlgorithm Make(string id, ulong seed = 7)
+        => OptimizerFactory.Create(id, Start, seed) ?? throw new ArgumentException(id);
 
     /// <summary>Asks and tells until the algorithm finishes or <paramref name="budget"/> points have been
     /// evaluated. Returns every point evaluated, in order, and the best.</summary>
@@ -121,6 +116,12 @@ public sealed class PauseResumeDeterminismTests
     [InlineData(BfgsB.AlgorithmId)]
     [InlineData(NelderMead.AlgorithmId)]
     [InlineData(RandomSearch.AlgorithmId)]
+    [InlineData(Minimax.AlgorithmId)]
+    [InlineData(TrustRegionModel.AlgorithmId)]
+    [InlineData(PatternSearch.AlgorithmId)]
+    [InlineData(DifferentialEvolution.AlgorithmId)]
+    [InlineData(ParticleSwarm.AlgorithmId)]
+    [InlineData(CmaEs.AlgorithmId)]
     public void CaptureThenRestore_ContinuesExactlyAsTheUninterruptedRun(string id)
     {
         var whole = Rosenbrock.Drive(Rosenbrock.Make(id), budget: 120).Points;

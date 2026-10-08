@@ -28,6 +28,8 @@ public sealed class TuningCheckTests
     [InlineData("tune Zs min=1 Ohm max=2 Ohm",                                                true,  "its value is complex")]
     [InlineData("tune phase(Zs) min=0 deg max=400 deg",                                       true,  "more than one turn")]
     [InlineData("tune real(Zs) min=90 Ohm max=120 Ohm\ntune mag(Zs) min=20 Ohm max=80 Ohm",   true,  "no complex value lies inside")]
+    [InlineData("optimize algorithm=de alg.populaton=40",                                     false, "alg.populaton is not an option of Differential evolution")]
+    [InlineData("optimize algorithm=lm cost=minimax",                                         true,  "cannot use cost=minimax")]
     public void EachRuleIsReported(string line, bool isError, string fragment)
     {
         var (lib, tb) = new CnlReader().Read(Bench + "\n" + line);

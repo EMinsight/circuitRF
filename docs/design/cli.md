@@ -1682,9 +1682,11 @@ excluded deliberately** — at 54 kB it is the largest page of them all, and a p
 has every verb's schema from `tools/list`, so it is the one page it needs least.
 
 The generated topics follow: `data-display`, `technology`, `layout`, `em-setup`, `wbond`, `analyses`,
-`tuning`, `goals`, `components`. **`tuning` and `goals`** (TO-1) print the four tuning directives from
+`tuning`, `goals`, `optimizers`, `components`. **`tuning` and `goals`** (TO-1) print the four tuning directives from
 `AnalysisDirectiveSchema.TuningDirectives` — the table the reader checks their keys against — each with a
-worked example that is a complete netlist `check` passes as it stands. The five formats are here because they are documents a client must WRITE and that
+worked example that is a complete netlist `check` passes as it stands. **`optimizers`** (TO-7) prints the
+algorithm registry (`OptimizerAlgorithms`) — the same entries the optimizer reads its option defaults
+from — with an id not built yet marked "not in this build". The five formats are here because they are documents a client must WRITE and that
 `create` does not make (or makes only empty) — `layout`, `em-setup` and `wbond` are the authoring
 surface for EM and wirebond runs, and the one `docs/design/em-3d.md` §4.6 extends to 3D — the
 exercise behind this series got a plot only because an unrelated `.cdd` happened to be on the machine

@@ -111,7 +111,7 @@ public static partial class AnalysisDirectiveSchema
             "[seed=<n>] [parallel=<n>] [alg.<option>=<v>] ...",
             "The optimizer's settings. At most one line. Keys starting alg. are the chosen algorithm's own options.",
             [
-                new("algorithm", Default: "auto", Summary: "One of: " + string.Join(", ", CircuitRF.Core.Design.OptimizerAlgorithms.Ids) + "."),
+                new("algorithm", Default: "auto", Summary: "One of: " + string.Join(", ", CircuitRF.Core.Design.OptimizerAlgorithms.Ids) + ". reference optimizers describes each."),
                 new("maxiter",   Summary: "Iteration limit."),
                 new("maxevals",  Summary: "Evaluation limit."),
                 new("timelimit", Summary: "Wall-clock limit: a number and s, ms, min or h (60 s)."),

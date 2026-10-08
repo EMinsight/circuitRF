@@ -18528,3 +18528,31 @@ Two calls the owner may revisit: **Auto** runs Levenberg–Marquardt (Nelder–M
 so, rather than refusing the default setting, until its global stage exists; and a goal that cannot be scored at
 the START point (a complex value, an axis the value lacks) ends the run as a refusal (exit 1) instead of costing
 a full run of identical failures.
+
+## Tuning TO-7: global and derivative-free algorithms, the registry — findings (2026-10-07)
+
+The six algorithms are in `src/Engine/Optimization`, the registry in `src/Core/Design/OptimizerAlgorithms.cs`.
+Detail in `docs/design/tuning-optimization.md` §11.
+
+- **Pattern search alone cannot follow a curved valley.** Plain OrthoMADS (2n orthogonal poll directions, poll
+  halving on failure) stopped 1.1e-3 from the 4-D Rosenbrock optimum at the default minimum poll — a narrow
+  valley defeats a 2n poll many times in a row, and each failure halves the poll — and took ~69,000 evaluations
+  with the minimum poll lowered to 1e-10. A diagonal model built from the poll's own central differences did
+  not help (over 90,000): the valley is not aligned with any one poll basis. The quadratic-model search step (the
+  least-change model through the nearest (n+1)(n+2)/2 evaluated points, minimized within two poll lengths)
+  brought it to 1,185, and it shares `TrustRegionModel`'s model and step code rather than carrying a copy.
+- **A penalty cost does not rank a failure below every success.** The run's penalty is 10·(1 + the largest
+  successful cost seen so far), so a later success can cost more than an earlier penalty. The population
+  methods compare with `AskTellAlgorithm.Better` — evaluated before failed, cost only among like — so DE's
+  selection, PSO's personal best and CMA-ES's ranking never keep a failed point over an evaluated one.
+- **Option defaults were written twice in TO-6** — in each constructor and in the class comment, with the
+  design note a third copy. They now live only in the registry; `Option()` reads the default from it and throws
+  on an option the registry does not list, so `reference optimizers` prints the default that runs.
+- **`ReferenceCliVerbTests.WithNoArguments_ItListsTheTopicsAndTheirSizes` had not been updated for TO-1's
+  `tuning`/`goals` topics**; it now lists them with TO-7's `optimizers`.
+
+Calls the owner may revisit: choosing **Minimax** sets the minimax cost form even when the line says nothing
+(least squares is the default and cannot be told apart from an unstated form) but an explicit `cost=minimax` on
+`lm` is still refused; **Auto** under `cost=minimax` now runs Minimax instead of Nelder–Mead; **DE's `budget`**
+(the evaluations its population schedule plans for) defaults to the run's `maxevals` when stated, else 1000n;
+**CMA-ES** handles bounds by re-sampling, then projection after 100 draws.
