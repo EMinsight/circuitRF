@@ -6,10 +6,17 @@
 //  step are the entry's and every change to them is handed back to
 //  the panel as a document edit (R-to4-10). Values are in the
 //  tunable's own unit — a pF row's 1.8 is 1.8 pF.
+//
+//  A row for one PART of a complex value (overview D18) does not own
+//  its value: the panel holds the whole complex value, and every part
+//  row of it shows its own view of that one number. Moving the row
+//  asks the panel, which moves the value along this part's path and
+//  stops it at the edge of the ranges of all its parts.
 // ================================================================
 
 using System;
 using System.Globalization;
+using System.Numerics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Design;
@@ -88,8 +95,18 @@ public sealed partial class TuningRowViewModel : ObservableObject
     /// <summary>What the schematic holds, in <see cref="Unit"/>.</summary>
     public double SchematicValue => Tunable?.Value ?? _value;
 
-    /// <summary>The tuned value differs from the schematic's.</summary>
-    public bool DiffersFromSchematic => Tunable is not null && _value != Tunable.Value;
+    /// <summary>A part row: the whole complex value the session holds, or null while it is the
+    /// schematic's.</summary>
+    internal Complex? WholeValue { get; private set; }
+
+    /// <summary>The tuned value differs from the schematic's — for a part row, the WHOLE value does,
+    /// since moving the real part changes what the magnitude row's parameter holds too.</summary>
+    public bool DiffersFromSchematic => Tunable is { Part: not null } p
+        ? WholeValue is { } z && z != p.Whole
+        : Tunable is not null && _value != Tunable.Value;
+
+    /// <summary>The middle of the range — which turn a phase row reads its angle in.</summary>
+    private double Centre => (Min + Max) / 2;
 
     /// <summary>The value as the session and Push spell it: <c>1.8 pF</c>.</summary>
     public string ValueText => FormatValue(_value, Unit);
@@ -117,7 +134,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
 
     /// <summary>Reads the entry's range and the tunable; <paramref name="value"/> is the tuned value to
     /// show, or null to start from the schematic's.</summary>
-    internal void Bind(TunableEntry entry, Tunable? tunable, double? value)
+    internal void Bind(TunableEntry entry, Tunable? tunable, double? value, Complex? whole = null)
     {
         Tunable   = tunable;
         string u  = tunable?.Unit ?? "";
@@ -127,11 +144,15 @@ public sealed partial class TuningRowViewModel : ObservableObject
         Min = InUnit(entry.Min, u) ?? InUnit(tunable?.DefaultMin, u) ?? 0;
         Max = InUnit(entry.Max, u) ?? InUnit(tunable?.DefaultMax, u) ?? 1;
         if (!(Max > Min)) Max = Min + 1;
-        Scale        = entry.Scale;
+        // An angle's range is not a ratio: a phase reads Auto as linear (overview D18).
+        Scale        = entry.Scale == TuneScale.Auto && tunable?.Part == ComplexPart.Phase ? TuneScale.Lin : entry.Scale;
         Step         = InUnit(entry.Step, u) is > 0 and var s ? s : null;
         RangeGuessed = tunable?.RangeGuessed == true && entry.Min == tunable.DefaultMin && entry.Max == tunable.DefaultMax;
 
-        _value = value ?? tunable?.Value ?? Min;
+        WholeValue = tunable?.Part is not null ? whole : null;
+        _value = tunable?.Part is { } part
+            ? ComplexValue.Get(whole ?? tunable.Whole, part, phaseNear: Centre)
+            : value ?? tunable?.Value ?? Min;
         _syncing = true;
         MinText      = FormatValue(Min, "");
         MaxText      = FormatValue(Max, "");
@@ -145,12 +166,27 @@ public sealed partial class TuningRowViewModel : ObservableObject
     internal void ResetToSchematic()
     {
         if (Tunable is null) return;
-        _value = Tunable.Value;
+        WholeValue = null;
+        _value = Tunable.Part is { } part ? ComplexValue.Get(Tunable.Whole, part, phaseNear: Centre) : Tunable.Value;
+        RaiseValue();
+    }
+
+    /// <summary>A part row: shows its view of the whole value <paramref name="z"/>, sending nothing.</summary>
+    internal void ShowWhole(Complex z)
+    {
+        if (Tunable?.Part is not { } part) return;
+        WholeValue = z;
+        _value = ComplexValue.Get(z, part, phaseNear: Centre);
         RaiseValue();
     }
 
     private void SetValue(double v, bool final)
     {
+        if (Tunable?.Part is not null)
+        {
+            _panel.OnPartMoved(this, v, final);
+            return;
+        }
         if (v == _value && !final) return;
         _value = v;
         RaiseValue();
@@ -271,13 +307,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
     }
 
     /// <summary>Value text in <paramref name="unit"/>: a bare number is already in it.</summary>
-    internal static double? ParseInUnit(string? text, string unit)
-    {
-        if (text is null || !TunableValue.TryParse(text, out double n, out string u, out double si)) return null;
-        if (u.Length == 0 || u == unit) return n;
-        if (unit.Length == 0) return si;
-        return Units.Scale(unit) is { } scale and not 0 ? si / scale : null;
-    }
+    internal static double? ParseInUnit(string? text, string unit) => TunableValue.InUnit(text, unit);
 
     private static double? InUnit(string? text, string unit) => ParseInUnit(text, unit);
 }

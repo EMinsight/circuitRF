@@ -78,6 +78,24 @@ ordinary Data Display trace. Callers decide whether to write it.
 - **BFGS-B** — bound-constrained quasi-Newton on the scalar cost (limited-memory form), gradients by the same batched
   finite differences, projected line search.
 
+**R-to6-12 — Complex values (overview D18; amended 2026-10-07).**
+- **Coordinates.** Each opt-enabled part of a complex value is one unit-box coordinate with its own range and scale
+  (a phase is always linear). Decoding groups a value's coordinates and composes the whole with
+  `ComplexValue.Compose` from the value's start: one part holds its partner at the start; two of one system set it;
+  a mixed pair is solved geometrically, the free sign from the start. The cache and the history see the decoded
+  **whole** value, and the decoded value text is written in the schematic's form.
+- **Infeasible points.** A decoded point no complex value satisfies, or one outside the range of ANY entry of that
+  value (tune-only entries included — a range belongs to the entry), is **infeasible**: not simulated, counted
+  separately from failures (progress event field), and given a penalty cost larger than every feasible cost seen plus
+  its normalized distance to the region, so ranking pushes toward feasibility. LM and BFGS-B treat it as R-to6-4's
+  failed step (shrink); Random and Nelder–Mead simply rank it.
+- **Refusal.** More than two opt-enabled parts of one value refuses the run before any evaluation: "real(ZL),
+  imag(ZL) and mag(ZL) are three parts of ZL, which has two degrees of freedom; optimize at most two — the others'
+  ranges still limit it." A start point outside the region is reported and moved to the nearest feasible point of
+  the start's own coordinate paths (`ComplexRegion.Move` from a feasible seed), never silently.
+- **Railed (D17)** on a part means at its own bound; a value held at the edge of ANOTHER part's range is reported as
+  railed against that part, naming it.
+
 ## 4. Gates (minimal; run only these classes)
 Pure numerics (`Engine.Tests`):
 - Each algorithm reaches the optimum of a 2-D Rosenbrock in the box within tolerance from a fixed start (NM, LM on its
@@ -92,3 +110,8 @@ Circuit (`src/Design`'s tests):
   point, and exit semantics 3.
 - `GoalResidualTests` — one per goal type, plus a sloped limit, on a hand-made cube.
 - Assert **evaluation counts**, never times.
+- `ComplexDecodeTests` — real + imaginary and magnitude + phase decode directly; real + magnitude decodes with the
+  start's sign; an infeasible pair is not simulated (evaluation counter unchanged) and ranks last; three opt parts
+  refuse with the sentence.
+- `ComplexLSectionTests` — an L-section match whose load is a complex VAR optimized by `mag`/`phase` reaches the
+  analytic answer with LM, every decoded point inside the parts' ranges.

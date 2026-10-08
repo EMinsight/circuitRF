@@ -80,6 +80,24 @@ equal the schematic, and the session continues.
 **R-to4-10 — Entry edits are document edits** (D5): enabling, ranges, scale, step — each one undo step in the tuned
 schematic, and marks it dirty.
 
+**R-to4-11 — Complex values (overview D18; amended 2026-10-07, built).**
+- **Activating.** A complex literal offers its four parts everywhere the three ways meet: the Add… list shows
+  `real(ZL)`, `imag(ZL)`, `mag(ZL)`, `phase(ZL)` as rows of their own; the Inspector row's tune button opens a menu
+  of checkable **Real / Imaginary / Magnitude / Phase (deg)** items instead of toggling; the canvas right-click ▸
+  **Tune** is a submenu of the same four. `ITuningSurface.KeysFor` (one key for a plain number, four for a complex
+  value) is the one mapping all three use.
+- **Rows.** Each tuned part is its own row in the value's unit (phase in deg). The panel holds ONE complex number per
+  value; a part row's move asks the panel, which moves the value along that part's path with its partner held and
+  **stops at the first edge** of the region every entry of the value allows (`ComplexRegion.Move`); every part row of
+  the value then shows its own view of the result.
+- **Refusals.** A range edit, Re-centre, Reset or first activation that leaves no complex value inside every range of
+  the value is refused with the sentence in the status line ("Refused: real(ZL)'s range leaves no value of ZL inside
+  every range (…)"), no undo step, and the row's boxes back at their old values.
+- **Values out.** `CurrentValues()` carries the value once, whole, under its own key and in the schematic's form, and
+  only once one of its parts has moved; lag, the canvas's tuned text and Push all read that.
+- **Push** writes the whole value in its own form (`polar(50,45)` stays `polar(…)`), one command for the value however
+  many parts moved. Written keys stop being session values, so the rows rest on the schematic's new value.
+
 ## 4. Gates (minimal; run only these classes)
 - `TuningPanelFollowsFocusTests` — schematic → populated; layout/other → cleared; switching stops the session.
 - `TunableActivationTests` — the three ways set the same flag and are each one undo step; an expression parameter
@@ -90,3 +108,6 @@ schematic, and marks it dirty.
   every document clean.
 - `TuningSliderMappingTests` — log/linear value↔position round trip; integer snap; keyboard step sizes.
 - Docking: the new id appears behind Analyses in the default layout and in a migrated older layout.
+- `ComplexTuningPanelTests` — moving the real part holds the imaginary, updates the magnitude row and stops at the
+  magnitude's max; a conflicting range is refused with no undo step; Push writes `polar(…)` back as `polar(…)`.
+- `TunableActivationTests` reads the canvas key through `KeysFor`.

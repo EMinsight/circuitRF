@@ -9,6 +9,7 @@ public sealed class TuningCheckTests
 {
     private const string Bench = """
         Rx = 25 Ohm
+        Zs = 40+15j Ohm
         Port:P1 in 0 Num=1 Z=50 Ohm
         R:R1 in out R=50 Ohm
         R:R2 out 0 R=Rx
@@ -24,6 +25,9 @@ public sealed class TuningCheckTests
     [InlineData("goal G = dB(SP1.S(2,1)) +* 3 analysis=SP1 ge 0",                             true,  "does not parse")]
     [InlineData("preset \"p\" R9.R=1 Ohm",                                                    false, "names nothing in this design")]
     [InlineData("tune R2.R min=1 Ohm max=2 Ohm",                                              true,  "cannot be tuned")]
+    [InlineData("tune Zs min=1 Ohm max=2 Ohm",                                                true,  "its value is complex")]
+    [InlineData("tune phase(Zs) min=0 deg max=400 deg",                                       true,  "more than one turn")]
+    [InlineData("tune real(Zs) min=90 Ohm max=120 Ohm\ntune mag(Zs) min=20 Ohm max=80 Ohm",   true,  "no complex value lies inside")]
     public void EachRuleIsReported(string line, bool isError, string fragment)
     {
         var (lib, tb) = new CnlReader().Read(Bench + "\n" + line);

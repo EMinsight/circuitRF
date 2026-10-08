@@ -7,6 +7,11 @@
 //  sub-cell's into that cell's schematic. A read-only owner is skipped
 //  and counted. Nothing is written for a value that already equals
 //  the schematic's, so a Push after a Push is a no-op.
+//
+//  A complex value arrives whole under its own key (overview D18) and
+//  is written in the form the schematic wrote it — 50+10j stays
+//  rectangular, polar(…) stays polar — so a pushed value reads like a
+//  typed one.
 // ================================================================
 
 using System;
@@ -23,11 +28,13 @@ using CircuitRF.Ui.ViewModels;
 namespace CircuitRF.Ui.Tuning;
 
 /// <summary>What a Push wrote and skipped — the panel's status line.</summary>
+/// <param name="WrittenKeys">The value keys that were written — a complex value's whole key.</param>
 public sealed record TuningPushReport(
     int Written,
     IReadOnlyList<(string Cell, int Count)> PerCell,
     int SkippedReadOnly,
-    int SkippedOther)
+    int SkippedOther,
+    IReadOnlyList<string> WrittenKeys)
 {
     /// <summary><c>Pushed 5 values · DUT: 2 · skipped 1 read-only</c>.</summary>
     public string StatusLine
@@ -59,50 +66,64 @@ public static class TuningPush
         SchematicViewModel tuned, Func<SchematicEditModel, SchematicViewModel?> sessionFor)
     {
         int readOnly = 0, other = 0;
-        var byDrawing = new Dictionary<SchematicEditModel, (string Cell, List<IUiCommand> Commands)>(ReferenceEqualityComparer.Instance);
+        var byDrawing = new Dictionary<SchematicEditModel, (string Cell, List<IUiCommand> Commands, List<string> Keys)>(ReferenceEqualityComparer.Instance);
         var order     = new List<SchematicEditModel>();
 
         foreach (var (key, text) in values)
         {
-            if (catalog.Find(key) is not { } t) { other++; continue; }
+            if (catalog.FindValue(key) is not { } t) { other++; continue; }
             if (t.DisabledReason is not null) continue;            // a swept value is the sweep's, not ours
-            if (!TunableValue.TryParse(text, out double number, out string unit, out _)) { other++; continue; }
-            if (number == t.Value && unit == t.Unit) continue;     // already what the schematic says
+
+            string expr, unit;
+            if (t.Part is null)
+            {
+                if (!TunableValue.TryParse(text, out double number, out unit, out _)) { other++; continue; }
+                if (number == t.Value && unit == t.Unit) continue;     // already what the schematic says
+                expr = number.ToString("G15", CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                if (!ComplexValue.TryParse(text, out var z, out unit, out _)) { other++; continue; }
+                if (z == t.Whole && unit == t.WholeUnit) continue;
+                expr = ComplexValue.FormatExpression(z, t.Form, "G15");
+            }
             if (t.ReadOnlyReason is not null) { readOnly++; continue; }
 
             var drawing = t.Cell is null ? tuned.EditModel : catalog.Drawings.GetValueOrDefault(t.Cell);
-            if (drawing is null || CommandFor(drawing, t, number, unit) is not { } command) { other++; continue; }
+            if (drawing is null || CommandFor(drawing, t, expr, unit) is not { } command) { other++; continue; }
 
             if (!byDrawing.TryGetValue(drawing, out var group))
             {
-                group = (t.Cell ?? "", []);
+                group = (t.Cell ?? "", [], []);
                 byDrawing[drawing] = group;
                 order.Add(drawing);
             }
             group.Commands.Add(command);
+            group.Keys.Add(key);
         }
 
         int written = 0;
         var perCell = new List<(string, int)>();
+        var keys    = new List<string>();
         foreach (var drawing in order)
         {
-            var (cell, commands) = byDrawing[drawing];
+            var (cell, commands, groupKeys) = byDrawing[drawing];
             var session = ReferenceEquals(drawing, tuned.EditModel) ? tuned : sessionFor(drawing);
             if (session is null) { other += commands.Count; continue; }
 
             session.Execute(new CommandBatch(
                 $"Push {commands.Count} tuned value{(commands.Count == 1 ? "" : "s")}", commands));
             written += commands.Count;
+            keys.AddRange(groupKeys);
             if (cell.Length > 0) perCell.Add((cell, commands.Count));
         }
-        return new TuningPushReport(written, perCell, readOnly, other);
+        return new TuningPushReport(written, perCell, readOnly, other, keys);
     }
 
-    /// <summary>The edit that makes <paramref name="drawing"/> hold <paramref name="number"/>
+    /// <summary>The edit that makes <paramref name="drawing"/> hold <paramref name="expr"/>
     /// <paramref name="unit"/> for <paramref name="t"/>, or null when the row is no longer there.</summary>
-    private static IUiCommand? CommandFor(SchematicEditModel drawing, Tunable t, double number, string unit)
+    private static IUiCommand? CommandFor(SchematicEditModel drawing, Tunable t, string expr, string unit)
     {
-        string expr = number.ToString("G15", CultureInfo.InvariantCulture);
 
         if (t.Kind == TunableKind.Variable)
         {

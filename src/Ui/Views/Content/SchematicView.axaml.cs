@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
@@ -512,19 +513,21 @@ public partial class SchematicView : UserControl
 
     // ── Context menu ──────────────────────────────────────────────────────────
 
-    /// <summary>The tunable key of the parameter value the right-click landed on, or null.</summary>
-    private string? TuneKeyOfContextTarget(EditableComponent? comp)
+    /// <summary>The tunable keys of the parameter value the right-click landed on: one for a plain
+    /// number, four parts for a complex value (overview D18), none otherwise.</summary>
+    private IReadOnlyList<string> TuneKeysOfContextTarget(EditableComponent? comp)
     {
-        if (comp is null || Vm is not { Tuning: { } tuning } vm) return null;
-        if (SchematicCanvasCtrl.ContextMenuParamIndex is not { } i || i < 0 || i >= comp.Parameters.Count) return null;
-        return tuning.KeyFor(vm.EditModel, comp, comp.Parameters[i]);
+        if (comp is null || Vm is not { Tuning: { } tuning } vm) return [];
+        if (SchematicCanvasCtrl.ContextMenuParamIndex is not { } i || i < 0 || i >= comp.Parameters.Count) return [];
+        return tuning.KeysFor(vm.EditModel, comp, comp.Parameters[i]);
     }
 
     private void OnCtxTune(object? sender, RoutedEventArgs e)
     {
+        // A complex value's item is a submenu of its parts; only a plain number's toggles here.
         var id   = SchematicCanvasCtrl.ContextMenuTargetId;
         var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
-        if (TuneKeyOfContextTarget(comp) is { } key && Vm?.Tuning is { } tuning)
+        if (TuneKeysOfContextTarget(comp) is [var key] && Vm?.Tuning is { } tuning && ReferenceEquals(e.Source, CtxTune))
             tuning.SetTuned(key, !tuning.IsTuned(key));
     }
 
@@ -558,11 +561,28 @@ public partial class SchematicView : UserControl
         var id   = SchematicCanvasCtrl.ContextMenuTargetId;
         var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
 
-        // Tune: only on a right-click that landed on a parameter value the Tuning panel offers.
-        string? tuneKey = TuneKeyOfContextTarget(comp);
-        CtxTune.IsVisible = tuneKey is not null;
-        if (tuneKey is not null)
+        // Tune: only on a right-click that landed on a parameter value the Tuning panel offers. A
+        // complex value offers its four parts as a submenu (overview D18).
+        var tuneKeys = TuneKeysOfContextTarget(comp);
+        CtxTune.IsVisible = tuneKeys.Count > 0;
+        CtxTune.Items.Clear();
+        if (tuneKeys is [var tuneKey])
             CtxTune.Header = Vm?.Tuning?.IsTuned(tuneKey) == true ? "Stop Tuning" : "Tune";
+        else if (tuneKeys.Count > 1 && Vm?.Tuning is { } tuning)
+        {
+            CtxTune.Header = "Tune";
+            foreach (var key in tuneKeys)
+            {
+                var item = new MenuItem
+                {
+                    Header     = CircuitRF.Ui.Tuning.TunePartText.Label(key),
+                    ToggleType = MenuItemToggleType.CheckBox,
+                    IsChecked  = tuning.IsTuned(key),
+                };
+                item.Click += (_, _) => tuning.SetTuned(key, !tuning.IsTuned(key));
+                CtxTune.Items.Add(item);
+            }
+        }
 
         // GND is a special symbol — hide the items that have no meaning for it.
         bool isGnd  = comp?.Symbol == SymbolKind.Ground;

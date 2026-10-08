@@ -34,7 +34,23 @@ public static class TuningValidator
                     f.Add(TuningDiagnostics.RangeInverted(who, e.Min!, e.Max!));
                 else if (e.Scale == TuneScale.Log && lo <= 0)
                     f.Add(TuningDiagnostics.LogNeedsPositiveMin(who, e.Min!));
+                else if (TunableKey.TryParse(e.Key, out var k) && k.Part == ComplexPart.Phase
+                         && TunableValue.InUnit(e.Max, "deg") - TunableValue.InUnit(e.Min, "deg") > 360)
+                    f.Add(TuningDiagnostics.PhaseSpanTooWide(who, e.Min!, e.Max!));
             }
+        }
+
+        // The ranges of one complex value's parts must leave it somewhere to be (overview D18).
+        var wholes = setup.Variables
+            .Select(e => TunableKey.TryParse(e.Key, out var k) && k.Part is not null ? k.Whole.ToString() : null)
+            .OfType<string>().Distinct(StringComparer.Ordinal);
+        foreach (var whole in wholes)
+        {
+            string unit = catalog.PartsOf(whole).FirstOrDefault()?.WholeUnit ?? "";
+            if (ComplexRegion.Of(setup, whole, unit).IsEmpty)
+                f.Add(TuningDiagnostics.ComplexRangesDisjoint(whole, string.Join(", ", setup.Variables
+                    .Where(e => TunableKey.TryParse(e.Key, out var k) && k.Part is not null && k.Whole.ToString() == whole)
+                    .Select(e => $"{e.Key} {e.Min} .. {e.Max}"))));
         }
 
         foreach (var p in setup.Presets)
@@ -102,7 +118,8 @@ public static class TuningValidator
     /// offered — an expression, a port number — is an error, since it can never be tuned.</summary>
     private static void KeyRule(string key, string who, List<Diagnostic> f, TunableCatalog catalog, bool inPreset)
     {
-        if (catalog.Find(key) is not null) return;
+        // A preset holds a complex value whole, under its own key; an entry names one part of it.
+        if ((inPreset ? catalog.FindValue(key) : catalog.Find(key)) is not null) return;
         f.Add(catalog.WhyNotOffered(key) is { } why
             ? TuningDiagnostics.KeyNotOffered(who, why)
             : TuningDiagnostics.KeyUnresolved(who, inPreset));

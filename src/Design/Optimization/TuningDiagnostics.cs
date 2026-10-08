@@ -32,6 +32,17 @@ public static class TuningDiagnostics
         "tuning.range.log-nonpositive", DiagnosticSeverity.Error,
         "{who}: scale=log needs min above zero, and min={min}.", ("who", who), ("min", min));
 
+    public static Diagnostic PhaseSpanTooWide(string who, string min, string max) => Diagnostic.Create(
+        "tuning.range.phase-span", DiagnosticSeverity.Error,
+        "{who}: min={min} to max={max} is more than one turn; a phase range spans at most 360 deg.",
+        ("who", who), ("min", min), ("max", max));
+
+    /// <summary>The ranges of one complex value's parts leave no value inside all of them (overview D18).</summary>
+    public static Diagnostic ComplexRangesDisjoint(string whole, string entries) => Diagnostic.Create(
+        "tuning.range.complex-disjoint", DiagnosticSeverity.Error,
+        "{whole}: no complex value lies inside every range of its parts ({entries}).",
+        ("whole", whole), ("entries", entries));
+
     public static Diagnostic PresetNameQuote(string name) => Diagnostic.Create(
         "tuning.preset.name-quote", DiagnosticSeverity.Error,
         "preset '{name}': a preset's name cannot contain a double quote.", ("name", name));

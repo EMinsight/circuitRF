@@ -49,6 +49,11 @@ audit in `src/Design/RESOLVED.md`.
 same thing by hand. Do not change their output bytes; where a verb's current output differs from the GUI's for the
 same netlist, stop and report the difference to the owner rather than choosing.
 
+**R-to2-8 — Complex values (overview D18; amended 2026-10-07).** Nothing new in the service: a tunable value it is
+handed may be a whole complex value under its own key (`ZL` → `30+52j Ohm`), and `TunableOverrides.Apply` turns it
+into the netlist text exactly as typing it would. Part keys are folded by `Apply`, never by the service. The reuse
+counter (R-to2-4) must hold for a complex value moving too — it is re-elaboration only, like any other value.
+
 ## 3. Gates (minimal; run only these classes)
 - `CircuitEvaluationParityTests` — for the S-parameter, HB and loadpull examples, `run.npy` from the old GUI path
   (captured once as a fixture before the extraction) equals the new path's byte for byte.

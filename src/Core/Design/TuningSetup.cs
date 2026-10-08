@@ -278,23 +278,70 @@ public sealed class TuningSetup
 }
 
 /// <summary>
-/// A tunable key split into its parts (overview D3): <c>[Cell:]Instance.Parameter</c> or
-/// <c>[Cell:]Variable</c>. <see cref="Cell"/> is the cell as the <c>.cnl</c> spells its instance
-/// type; null at the top level.
+/// One part of a complex value (overview D18). A complex value is never tuned whole: each part is a
+/// tunable of its own, keyed <c>real(K)</c>, <c>imag(K)</c>, <c>mag(K)</c> or <c>phase(K)</c> where
+/// <c>K</c> is the value's own key. The spellings are the expression engine's own functions, so a key
+/// reads as what it measures; <see cref="Phase"/> is in degrees, as <c>phase()</c> is.
 /// </summary>
-public readonly record struct TunableKey(string? Cell, string? Instance, string Name)
+public enum ComplexPart { Real, Imag, Mag, Phase }
+
+/// <summary>
+/// A tunable key split into its parts (overview D3): <c>[Cell:]Instance.Parameter</c> or
+/// <c>[Cell:]Variable</c>, optionally wrapped in a complex part — <c>mag(DUT:ZL)</c>.
+/// <see cref="Cell"/> is the cell as the <c>.cnl</c> spells its instance type; null at the top level.
+/// </summary>
+public readonly record struct TunableKey(string? Cell, string? Instance, string Name, ComplexPart? Part = null)
 {
     public bool IsVariable => Instance is null;
 
-    public override string ToString()
-        => (Cell is null ? "" : Cell + ":") + (Instance is null ? Name : Instance + "." + Name);
+    /// <summary>The key of the whole value a part key names; the key itself when it names no part.</summary>
+    public TunableKey Whole => this with { Part = null };
 
-    /// <summary>Splits a key. False for an empty part (<c>:R1.R</c>, <c>R1.</c>).</summary>
+    public override string ToString()
+    {
+        string whole = (Cell is null ? "" : Cell + ":") + (Instance is null ? Name : Instance + "." + Name);
+        return Part is { } p ? $"{PartWord(p)}({whole})" : whole;
+    }
+
+    /// <summary>The word a part is spelled with: <c>real</c>, <c>imag</c>, <c>mag</c>, <c>phase</c>.</summary>
+    public static string PartWord(ComplexPart part) => part switch
+    {
+        ComplexPart.Real => "real",
+        ComplexPart.Imag => "imag",
+        ComplexPart.Mag  => "mag",
+        _                => "phase",
+    };
+
+    /// <summary>The part of the whole value <paramref name="wholeKey"/>, spelled as a key.</summary>
+    public static string PartKey(string wholeKey, ComplexPart part) => $"{PartWord(part)}({wholeKey})";
+
+    /// <summary>Splits a key. False for an empty part (<c>:R1.R</c>, <c>R1.</c>, <c>mag()</c>).</summary>
     public static bool TryParse(string text, out TunableKey key)
     {
         key = default;
         if (string.IsNullOrWhiteSpace(text)) return false;
         string s = text.Trim();
+
+        ComplexPart? part = null;
+        int open = s.IndexOf('(');
+        if (open > 0 && s[^1] == ')')
+        {
+            part = s[..open] switch
+            {
+                "real"  => ComplexPart.Real,
+                "imag"  => ComplexPart.Imag,
+                "mag"   => ComplexPart.Mag,
+                "phase" => ComplexPart.Phase,
+                _       => null,
+            };
+            if (part is null) return false;
+            s = s[(open + 1)..^1].Trim();
+            if (s.Contains('(') || s.Contains(')')) return false;
+        }
+        else if (s.Contains('(') || s.Contains(')'))
+        {
+            return false;
+        }
 
         string? cell = null;
         int colon = s.IndexOf(':');
@@ -309,13 +356,13 @@ public readonly record struct TunableKey(string? Cell, string? Instance, string 
         if (dot < 0)
         {
             if (s.Length == 0) return false;
-            key = new TunableKey(cell, null, s);
+            key = new TunableKey(cell, null, s, part);
             return true;
         }
 
         string inst = s[..dot], name = s[(dot + 1)..];
         if (inst.Length == 0 || name.Length == 0) return false;
-        key = new TunableKey(cell, inst, name);
+        key = new TunableKey(cell, inst, name, part);
         return true;
     }
 }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Tuning;
@@ -10,8 +11,8 @@ namespace CircuitRF.Ui.Tuning;
 /// </summary>
 public sealed class TuningSurfaceRelay(Func<TuningPanelViewModel?> current) : ITuningSurface
 {
-    public string? KeyFor(SchematicEditModel drawing, EditableComponent component, EditableParameter parameter)
-        => current()?.KeyFor(drawing, component, parameter);
+    public IReadOnlyList<string> KeysFor(SchematicEditModel drawing, EditableComponent component, EditableParameter parameter)
+        => current()?.KeysFor(drawing, component, parameter) ?? [];
 
     public bool IsTuned(string key) => current()?.IsTuned(key) == true;
 

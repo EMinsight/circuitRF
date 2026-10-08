@@ -532,6 +532,13 @@ you choose and re-simulates as you move it, with every open Data Display followi
   *Include sub-cells* to reach inside its sub-circuits — or use the tune toggle beside a row in the
   Properties panel, or right-click a parameter value on the canvas ▸ **Tune**. A value that is an
   expression is not tunable; tune the VAR it reads instead.
+- **Complex values.** A complex number written with numbers only — `40+15j`, `complex(40,15)` or
+  `polar(42.7,20.6)` — is tuned by its parts: pick **Real**, **Imaginary**, **Magnitude** or **Phase**
+  (in degrees), once each for as many as you want. Real and imaginary together, or magnitude and phase,
+  cover the whole number; any other mix works too. Moving real keeps imaginary where it is, and moving
+  magnitude keeps the phase; the other rows follow. The ranges of all of a number's parts always hold: a
+  slider stops where another part reaches its limit, and a range that leaves no value inside all of them
+  is refused. A complex value that reads another variable, such as `4+j*X`, is not tunable — tune `X`.
 - **Start / Stop.** Nothing is simulated until **▶**. Stop keeps the last result as the schematic's
   results file. **⚙** chooses which analyses run per move and turns on *Run on release* — simulate
   only when a slider is let go; a badge on ⚙ suggests it when runs are slow.

@@ -18477,3 +18477,23 @@ bumping. Verified by removing pin 4 again at version 2: it fails.
   the file sits in `Loadpull/schematic/`, so the shipped example could not run. Now
   `Loadpull/schematic/load_grid.gam`. The parity gate's hash was unchanged by the fix — the path is
   not in the `.npy`.
+
+### Complex values are tuned by their parts (tuning overview D18, 2026-10-07)
+
+The owner asked, after TO-4, for complex values to be tunable and optimizable by real, imaginary, magnitude or
+phase. Three things worth knowing:
+
+- **Why the part keys are spelled `mag(ZL)` and not `ZL[mag]` or `ZL.mag`.** A dot already separates instance
+  from parameter (`ZL.mag` would read as parameter `mag` of an instance `ZL`), a colon already separates the cell
+  (`ZL:mag` would read as variable `mag` inside a cell `ZL`), and **parameter names already contain brackets** —
+  P1Tone's `Z[1]`, a tone source's `Freq[2]` — so `P1.Z[1][mag]` would be ambiguous to read and to split. The
+  expression engine's own function names cannot collide with any of them, and they say what the number is.
+- **A complex value is never a session value by its parts.** The panel keeps one `Complex` per value, and the
+  session, a preset and Push see the whole value under its own key in the form the schematic wrote it. Handing
+  the session parts would make the result depend on the order two parts were applied whenever they mix systems
+  (real then magnitude ≠ magnitude then real), and a pushed preset would no longer be the text a user types.
+- **The limits are decided exactly, not by sampling.** `ComplexRegion.IsEmpty` cuts the plane into ≤ 90° wedges;
+  in each, the real/imaginary box and the wedge make a convex polygon, over which the magnitude spans
+  [nearest point, farthest vertex], so the magnitude range meets it or not. A sampled test would call a thin
+  feasible sliver empty and refuse an edit that has a valid answer. A slider's move scans its path before
+  bisecting, so it stops at the FIRST wall rather than jumping a gap to a later one.

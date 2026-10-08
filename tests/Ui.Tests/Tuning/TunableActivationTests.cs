@@ -50,9 +50,9 @@ public sealed class TunableActivationTests
         var f = new TuningPanelFixture();
         var r1 = f.Top.EditModel.Components[0];
         // The right-click's path: the session's surface names the clicked value, then sets it.
-        var key = f.Top.Tuning!.KeyFor(f.Top.EditModel, r1, r1.Parameters[0]);
+        var key = Assert.Single(f.Top.Tuning!.KeysFor(f.Top.EditModel, r1, r1.Parameters[0]));
         Assert.Equal("R1.R", key);
-        f.Top.Tuning.SetTuned(key!, true);
+        f.Top.Tuning.SetTuned(key, true);
         AssertTunedOnceThenUndone(f);
     }
 

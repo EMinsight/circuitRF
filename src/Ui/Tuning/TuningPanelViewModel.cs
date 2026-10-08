@@ -9,6 +9,13 @@
 //  schematic; the tuned VALUES are session state and dirty nothing
 //  until Push.
 //
+//  A complex value is tuned through its parts (overview D18). The
+//  panel holds ONE complex number per value, every part row is a view
+//  of it, and that whole number — never a part — is what the session
+//  evaluates and Push writes. A part's move stops at the edge of the
+//  ranges of all that value's parts, and a range edit that would leave
+//  no value inside all of them is refused.
+//
 //  Headless: the workspace supplies the session, the sub-cell sessions
 //  and the canvas reveal through delegates, so every claim here is
 //  tested without a shell.
@@ -18,6 +25,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Numerics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Design;
@@ -163,6 +171,10 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
     // slider back to the schematic.
     private readonly Dictionary<string, double> _values = new(StringComparer.Ordinal);
 
+    // Tuned complex values by their WHOLE key, for the same reason. Absent while a value is the
+    // schematic's.
+    private readonly Dictionary<string, Complex> _complex = new(StringComparer.Ordinal);
+
     /// <summary>Re-reads the catalog and rebuilds the rows from the tuned schematic's entries.</summary>
     public void RefreshNow()
     {
@@ -179,6 +191,8 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
             Rows.Remove(row);
             _values.Remove(row.Key);
         }
+        var wholes = entries.Select(e => _catalog?.Find(e.Key)?.WholeKey).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        foreach (var w in _complex.Keys.Where(w => !wholes.Contains(w)).ToList()) _complex.Remove(w);
 
         for (int i = 0; i < entries.Count; i++)
         {
@@ -193,7 +207,9 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
             {
                 Rows.Move(Rows.IndexOf(row), i);
             }
-            row.Bind(entry, _catalog?.Find(entry.Key), _values.TryGetValue(entry.Key, out var v) ? v : null);
+            var t = _catalog?.Find(entry.Key);
+            row.Bind(entry, t, _values.TryGetValue(entry.Key, out var v) ? v : null,
+                     t?.WholeKey is { } wk && _complex.TryGetValue(wk, out var z) ? z : null);
         }
 
         UpdateLag();
@@ -234,8 +250,8 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
 
     // ---- Activation, the shared effect of the three ways (R-to4-3) -----------
 
-    public string? KeyFor(SchematicEditModel drawing, EditableComponent component, EditableParameter parameter)
-        => Catalog?.KeyFor(drawing, component, parameter);
+    public IReadOnlyList<string> KeysFor(SchematicEditModel drawing, EditableComponent component, EditableParameter parameter)
+        => Catalog?.KeysFor(drawing, component, parameter) ?? [];
 
     public bool IsTuned(string key)
         => _tuned?.EditModel.Tuning?.Variables.Any(v => v.Key == key && v.Tune) == true;
@@ -250,6 +266,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
 
         var setup   = _tuned.EditModel.Tuning;
         int changed = 0;
+        string? refused = null;
         foreach (var key in keys)
         {
             bool tuned = setup?.Variables.Any(v => v.Key == key && v.Tune) == true;
@@ -258,7 +275,13 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
             if (on)
             {
                 if (t is null) continue;
-                setup = TuningSetupEdits.WithTune(setup, t, true);
+                var next = TuningSetupEdits.WithTune(setup, t, true);
+                if (t.Part is not null && ComplexRegion.Conflict(next, key, t.WholeUnit) is { } why)
+                {
+                    refused = why;
+                    continue;
+                }
+                setup = next;
             }
             else
             {
@@ -267,6 +290,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
             }
             changed++;
         }
+        if (refused is not null) StatusText = $"Not tuned: {refused}.";
         if (changed == 0) return;
 
         string what = changed == 1 ? keys.First() : $"{changed} values";
@@ -279,8 +303,14 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
     internal void EditEntry(TuningRowViewModel row, Action<TunableEntry> change, string description)
     {
         if (_tuned is null) return;
-        _values[row.Key] = row.Value;
         var next = TuningSetupEdits.WithEntry(_tuned.EditModel.Tuning, row.Key, row.Tunable, change);
+        if (row.Tunable is { Part: not null } t && ComplexRegion.Conflict(next, row.Key, t.WholeUnit) is { } why)
+        {
+            StatusText = $"Refused: {why}.";
+            row.CancelRangeEdit();
+            return;
+        }
+        if (row.Tunable?.Part is null) _values[row.Key] = row.Value;
         _tuned.Execute(new SetTuningSetupCommand(_tuned.EditModel, next, description));
     }
 
@@ -298,18 +328,49 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
 
     public bool IsRunning => _session is not null;
 
-    /// <summary>Every movable row's value as value text — what the session evaluates and Push writes.</summary>
+    /// <summary>
+    /// Every movable row's value as value text — what the session evaluates and Push writes. A complex
+    /// value appears ONCE, whole, under its own key and in the form the schematic writes it
+    /// (<c>ZL</c> → <c>30+52j Ohm</c>), and only once one of its parts has moved.
+    /// </summary>
     public IReadOnlyDictionary<string, string> CurrentValues()
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var row in Rows)
-            if (row.Tunable is not null && !row.IsDisabled) values[row.Key] = row.ValueText;
+        {
+            if (row.Tunable is not { } t || row.IsDisabled) continue;
+            if (t.WholeKey is null) values[row.Key] = row.ValueText;
+            else if (_complex.TryGetValue(t.WholeKey, out var z)) values[t.WholeKey] = ComplexValue.Format(z, t.WholeUnit, t.Form);
+        }
         return values;
     }
 
     internal void OnRowValueChanged(TuningRowViewModel row, bool final)
     {
         _values[row.Key] = row.Value;
+        AfterValueChange(final);
+    }
+
+    /// <summary>
+    /// A part row moved to <paramref name="target"/>: the whole value moves along that part's path —
+    /// its partner in the same coordinate system held — and stops at the edge of the ranges of every
+    /// part of the value (overview D18). Every part row of the value then shows the result.
+    /// </summary>
+    internal void OnPartMoved(TuningRowViewModel row, double target, bool final)
+    {
+        if (row.Tunable is not { Part: { } part, WholeKey: { } whole } t) return;
+        var z     = _complex.TryGetValue(whole, out var held) ? held : t.Whole;
+        var moved = ComplexRegion.Of(_tuned?.EditModel.Tuning, whole, t.WholeUnit).Move(z, part, target);
+
+        _complex[whole] = moved;
+        foreach (var r in Rows)
+            if (r.Tunable?.WholeKey == whole) r.ShowWhole(moved);
+        if (moved == z && !final) return;
+        AfterValueChange(final);
+    }
+
+    private void AfterValueChange(bool final)
+    {
         if (IsRunning) Request(final);
         UpdateCanvas();
         UpdateLag();
@@ -353,6 +414,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
     private void Revert()
     {
         _values.Clear();
+        _complex.Clear();
         foreach (var row in Rows) row.ResetToSchematic();
         _session?.Revert();
         StatusText = "Reverted";
@@ -372,6 +434,13 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         var values = CurrentValues();
         var report = TuningPush.Push(catalog, values, _tuned, SessionForDrawing ?? (_ => null));
         StatusText = report.StatusLine;
+
+        // What was written is now the schematic's own value; what was skipped stays tuned.
+        foreach (var key in report.WrittenKeys)
+        {
+            _values.Remove(key);
+            _complex.Remove(key);
+        }
 
         _catalog = null;
         RefreshNow();
@@ -430,10 +499,15 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         LastEvalText = s?.LastDuration is { } d ? $"{d.TotalSeconds:0.0} s" : "";
         BehindText   = s is { IsLagging: true, DisplayedAge: { } age } ? $"{age.TotalSeconds:0.0} s behind" : "";
 
-        var shown = s?.DisplayedValues;
+        var shown   = s?.DisplayedValues;
+        var current = CurrentValues();
         foreach (var row in Rows)
+        {
+            // A part row lags when its WHOLE value does: that is the value the session evaluates.
+            string key = row.Tunable?.ValueKey ?? row.Key;
             row.IsLagging = s is { IsLagging: true }
-                && !(shown is not null && shown.TryGetValue(row.Key, out var v) && v == row.ValueText);
+                && current.GetValueOrDefault(key) != shown?.GetValueOrDefault(key);
+        }
     }
 
     private void Detach(TuneSession s)
@@ -474,13 +548,15 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
 
         if (IsRunning && _tuned is not null && _catalog is { } catalog)
         {
+            var current = CurrentValues();
             foreach (var row in Rows)
             {
                 if (row.Tunable is not { } t || !row.DiffersFromSchematic) continue;
                 var drawing = t.Cell is null ? _tuned.EditModel : catalog.Drawings.GetValueOrDefault(t.Cell);
                 if (drawing is null) continue;
                 var vm = ReferenceEquals(drawing, _tuned.EditModel) ? _tuned : ExistingSessionFor?.Invoke(drawing);
-                if (vm is null || TunedLabel(drawing, t, row.ValueText) is not { } label) continue;
+                string text = current.GetValueOrDefault(t.ValueKey) ?? row.ValueText;
+                if (vm is null || TunedLabel(drawing, t, text) is not { } label) continue;
 
                 if (!byVm.TryGetValue(vm, out var labels)) byVm[vm] = labels = [];
                 var rowsOf = labels.TryGetValue(label.ComponentId, out var existing)

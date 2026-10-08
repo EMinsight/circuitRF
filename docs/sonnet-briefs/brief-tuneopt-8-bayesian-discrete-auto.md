@@ -47,6 +47,15 @@ cached ones free) giving each variable's normalized ∂cost/∂x and, per goal, 
 the Optimizer's variable list and a field in the CLI/MCP result. No new simulation is triggered without the user (or
 caller) asking.
 
+**R-to8-7 — Complex values (overview D18; amended 2026-10-07).**
+- **Discrete is not offered on a part.** A part is continuous: `discrete=integer`/`preferred` is absent from a part
+  row's choices and is a `check` error in a hand-written line; `step=` stays allowed. A problem whose only
+  opt variables are parts cannot select **Discrete** (the menu entry is disabled with that reason).
+- **Bayesian** fits its GP over the part coordinates; infeasible points are not observations — they shrink the
+  trust region (the trust-region variant) or are excluded from the acquisition's feasible box sampling.
+- **Snap and polish** leaves parts alone (nothing to snap) and re-optimizes them with the continuous variables.
+- **Sensitivity** is reported per part coordinate (∂cost/∂mag(ZL) and ∂cost/∂phase(ZL)), never per whole value.
+
 ## 3. Gates (minimal; run only these classes)
 - Bayesian reaches a 2-D Branin minimum within tolerance in ≤ 40 evaluations with a fixed seed (evaluation count).
 - `PreferredValuesTests` — the Smith Chart's existing preferred-value tests pass untouched; R snapping to E24 and E96.

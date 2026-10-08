@@ -57,7 +57,8 @@ internal static class ExplainTunables
                 t.Key, t.Location, t.InstanceCount, KindWord(t.Kind), t.ValueText, t.Value, t.Unit, t.IsInteger,
                 t.IsDefault, t.ReadOnlyReason, t.DisabledReason,
                 entry?.Min ?? t.DefaultMin, entry?.Max ?? t.DefaultMax, entry is null && t.RangeGuessed,
-                entry?.Tune ?? false, entry?.Opt ?? false);
+                entry?.Tune ?? false, entry?.Opt ?? false,
+                t.Part is null ? null : Design.Optimization.ComplexValue.Format(t.Whole, t.WholeUnit, t.Form));
         }).ToList();
 
         return (new ExplainTunablesJson(rows, catalog.UnresolvedKeys), 0);
@@ -68,7 +69,7 @@ internal static class ExplainTunables
         Console.WriteLine();
         Console.WriteLine($"Tunables ({report.Tunables.Count}):");
         if (report.Tunables.Count == 0)
-            Console.WriteLine("  none — no value is a plain number");
+            Console.WriteLine("  none — no value is a plain number or a complex literal");
 
         int keyWidth = Math.Max(8, report.Tunables.Select(t => t.Key.Length).DefaultIfEmpty(0).Max());
         int locWidth = Math.Max(4, report.Tunables.Select(t => t.Location.Length).DefaultIfEmpty(0).Max());
@@ -80,6 +81,7 @@ internal static class ExplainTunables
             if (t.Integer)   flags.Add("integer");
             if (t.IsDefault) flags.Add("cell default");
             if (t.RangeGuessed) flags.Add("range guessed");
+            if (t.Whole is { } w) flags.Add("part of " + w);
             if (t.Disabled is { } d) flags.Add(d);
             if (t.ReadOnly is { } r) flags.Add("read-only: " + r);
 

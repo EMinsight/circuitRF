@@ -47,7 +47,12 @@ public static partial class AnalysisDirectiveSchema
             "(Wline), or either of those inside a sub-cell as Cell:… (DUT:R3.R, DUT:Wline), where Cell is spelled as " +
             "the cell's instance lines spell its type. An instance's own cell parameter is Instance.Parameter " +
             "(X1.Rbias), one key per instance. Only a value written as a plain number with an optional unit can be " +
-            "tuned; an expression cannot, and the variable it reads can. One range serves both tuning and optimizing.",
+            "tuned; an expression cannot, and the variable it reads can. A complex value written with numbers only " +
+            "(40+15j, complex(40,15), polar(42.7,20.6), with an optional unit) is tuned by its parts, each a key of " +
+            "its own: real(<key>), imag(<key>), mag(<key>) and phase(<key>), the phase in deg. Any parts may be " +
+            "combined; moving one holds its partner (real with imag, mag with phase), and the ranges of all of a " +
+            "value's parts always hold together, so ranges that leave no value inside all of them are an error. " +
+            "A complex value that reads a name (4+j*X) is an expression. One range serves both tuning and optimizing.",
             [
                 new("min",      Summary: "Lower bound, in the value's own unit."),
                 new("max",      Summary: "Upper bound."),
@@ -63,7 +68,8 @@ public static partial class AnalysisDirectiveSchema
         new("preset", TuningTopic,
             "preset \"<name>\" [created=<UTC>] [lasttuned=1] <key>=<v> [unit] ...",
             "A named set of tuned values. The values are the text the schematic would hold, so recalling one is " +
-            "the same as typing it. created and lasttuned come before the values. A key that names nothing in the " +
+            "the same as typing it — a complex value whole, under its own key (Zsrc=40+15j Ohm), never by its parts. " +
+            "created and lasttuned come before the values. A key that names nothing in the " +
             "design is skipped when the preset is recalled, and check reports it as a warning.",
             [
                 new("created",   Summary: "When it was locked in: yyyy-MM-ddTHH:mm:ssZ."),

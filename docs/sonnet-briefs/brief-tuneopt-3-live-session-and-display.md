@@ -53,6 +53,10 @@ snapshot; every trace bound to the schematic's source draws a faded copy of itse
 reduced opacity, no markers, excluded from autoscale ties and from the legend's interactive items). `ClearSnapshot()`
 removes it. Not persisted, not exported, not drawn by `render --data`.
 
+**R-to3-10 — Complex values (overview D18; amended 2026-10-07).** The session's requested and displayed values are
+keyed by the **value key** — a complex value once, whole, under its own key — so "lagging" compares whole values, and
+the provenance written on Stop (R-to3-7) lists `ZL=30+52j Ohm`, not its parts. Nothing else changes here.
+
 ## 3. Gates (minimal; run only these classes)
 - `TuneSessionPolicyTests` — with a fake evaluator that blocks on a gate: ten requests during one evaluation produce
   exactly two evaluations (the in-flight one and the newest); Stop cancels; run-on-release evaluates only the final.

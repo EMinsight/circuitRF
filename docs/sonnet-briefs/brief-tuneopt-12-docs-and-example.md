@@ -36,6 +36,12 @@ seams overview §5 reserved and whether each held.
 **R-to12-4 — Vendor check.** Before handing back, grep the series' new files for commercial tool and vendor names
 and remove any found; report what was removed.
 
+**R-to12-5 — Complex values (overview D18; amended 2026-10-07).** The **Stability + gain** cell drives its
+amplifier from a complex source impedance VAR (`Zs = polar(…) Ohm`) whose `mag` and `phase` are tune- and
+opt-enabled, so the example shows a complex value tuned by parts and pushed back in its own form. The *Tuning* and
+*Optimization* pages explain picking a part, the partner-held rule, the always-held ranges and the refusal, the
+two-part limit in the optimizer and infeasible points. The design note's final state records D18 as built.
+
 ## 3. Gates
 - `OptimizationExampleTests` — each example cell's `check` is clean; the L-section and filter optimize to all goals
   met with their saved algorithm and seed (evaluation count bounded, not timed).

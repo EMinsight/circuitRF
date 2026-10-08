@@ -433,6 +433,25 @@ public partial class ParameterEditorView : UserControl
             row.RemoveSelf();
     }
 
+    /// <summary>A complex value's tune button: one checkable item per part (overview D18).</summary>
+    private void OnTunePartsClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Avalonia.Controls.Control { DataContext: ViewModels.ParameterRowViewModel row } button) return;
+        var flyout = new MenuFlyout();
+        foreach (var key in row.TuneKeys)
+        {
+            var item = new MenuItem
+            {
+                Header     = CircuitRF.Ui.Tuning.TunePartText.Label(key),
+                ToggleType = MenuItemToggleType.CheckBox,
+                IsChecked  = row.IsPartTuned(key),
+            };
+            item.Click += (_, _) => row.ToggleTunePart(key);
+            flyout.Items.Add(item);
+        }
+        flyout.ShowAt(button);
+    }
+
     // ── wBond array names ─────────────────────────────────────────────────────
     //
     // Committed on Enter or lost focus — the staged-text idiom every other name field in this

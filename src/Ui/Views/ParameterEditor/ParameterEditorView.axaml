@@ -623,6 +623,16 @@
                                                   ToolTip.Tip="Tune — adds this value to the Tuning panel">
                                         <mi:MaterialIcon Kind="TuneVertical" Width="13" Height="13"/>
                                     </ToggleButton>
+                                    <!-- overview D18: a complex value is tuned by its parts, so its
+                                         button opens a menu of the four rather than toggling. -->
+                                    <Button IsVisible="{Binding CanTuneParts}"
+                                            Padding="2" MinWidth="0" MinHeight="0"
+                                            Background="Transparent" BorderThickness="0"
+                                            VerticalAlignment="Center"
+                                            Click="OnTunePartsClick"
+                                            ToolTip.Tip="Tune a part of this complex value — real, imaginary, magnitude or phase">
+                                        <mi:MaterialIcon Kind="TuneVertical" Width="13" Height="13"/>
+                                    </Button>
                                 </StackPanel>
                                 <!-- Per-row remove. NOT the footer's "−", which removes the last
                                      indexed GROUP — correct for P1Tone's Z[k] and ToneSource's

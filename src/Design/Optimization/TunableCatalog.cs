@@ -1,3 +1,4 @@
+using System.Numerics;
 using CircuitRF.Core.Design;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Schematic;
@@ -32,6 +33,13 @@ public enum TunableKind { Parameter, Variable, CellParameter }
 /// <param name="DefaultMin">The range a first activation gives it (overview D4), in its own unit.</param>
 /// <param name="DefaultMax">Upper end of that range.</param>
 /// <param name="RangeGuessed">The value is zero, so the default range is a guess.</param>
+/// <param name="Part">Which part of a complex value this is (overview D18); null for a real value.
+/// <paramref name="Value"/>, <paramref name="Unit"/> and <paramref name="ValueText"/> are then the
+/// part's — a phase is in <c>deg</c> — and the whole value is in the four parameters after it.</param>
+/// <param name="WholeKey">The key of the whole complex value (<c>ZL</c> for <c>mag(ZL)</c>).</param>
+/// <param name="Whole">The whole value as the design holds it, in <paramref name="WholeUnit"/>.</param>
+/// <param name="WholeUnit">The whole value's unit, "" for none.</param>
+/// <param name="Form">How the design writes it, which is how Push writes it back.</param>
 public sealed record Tunable(
     string      Key,
     string      Location,
@@ -49,7 +57,17 @@ public sealed record Tunable(
     string?     DisabledReason,
     string      DefaultMin,
     string      DefaultMax,
-    bool        RangeGuessed);
+    bool        RangeGuessed,
+    ComplexPart? Part      = null,
+    string?     WholeKey   = null,
+    Complex     Whole      = default,
+    string      WholeUnit  = "",
+    ComplexForm Form       = ComplexForm.Rect)
+{
+    /// <summary>The key a value is written under — in a preset, a session request, a Push: the whole
+    /// value's for a part, since a schematic holds a complex value whole.</summary>
+    public string ValueKey => WholeKey ?? Key;
+}
 
 /// <summary>
 /// Every tunable of a schematic, at any depth, plus the keys its tuning setup names that resolve to
@@ -74,16 +92,19 @@ public sealed class TunableCatalog
 
     private readonly Dictionary<string, Tunable> _byKey;
     private readonly Dictionary<string, string>  _notOffered;
+    private readonly Dictionary<string, List<Tunable>> _parts;
     private IReadOnlyDictionary<string, SchematicEditModel> _drawings =
         new Dictionary<string, SchematicEditModel>(StringComparer.Ordinal);
 
-    private TunableCatalog(List<Tunable> tunables, Dictionary<string, string> notOffered, List<string> unresolved)
+    private TunableCatalog(List<Tunable> tunables, Dictionary<string, string> notOffered)
     {
         Tunables       = tunables;
         _byKey         = tunables.GroupBy(t => t.Key, StringComparer.Ordinal)
                                  .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        _parts         = tunables.Where(t => t.WholeKey is not null)
+                                 .GroupBy(t => t.WholeKey!, StringComparer.Ordinal)
+                                 .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
         _notOffered    = notOffered;
-        UnresolvedKeys = unresolved;
     }
 
     /// <summary>Every tunable, top level first, then each cell in the netlist's own order.</summary>
@@ -91,14 +112,34 @@ public sealed class TunableCatalog
 
     /// <summary>Keys the design's tuning setup names (entries and preset values) that resolve to
     /// nothing at all — a warning, never an error (overview D3).</summary>
-    public IReadOnlyList<string> UnresolvedKeys { get; }
+    public IReadOnlyList<string> UnresolvedKeys { get; private set; } = [];
 
-    /// <summary>The tunable with this key, or null.</summary>
+    /// <summary>The tunable with this key, or null. A complex value's own key finds nothing — its parts
+    /// are the tunables (<see cref="PartsOf"/>).</summary>
     public Tunable? Find(string key) => _byKey.GetValueOrDefault(key);
 
+    /// <summary>The four parts of the complex value <paramref name="wholeKey"/> — real, imaginary,
+    /// magnitude, phase — or empty when it is not a complex value the catalog offers.</summary>
+    public IReadOnlyList<Tunable> PartsOf(string wholeKey)
+        => _parts.TryGetValue(wholeKey, out var parts) ? parts : [];
+
+    /// <summary>
+    /// What a key a value is written under names: the tunable itself, or for a complex value's own key
+    /// its real part, which carries everything about the whole (overview D18). Null when neither.
+    /// </summary>
+    public Tunable? FindValue(string key) => Find(key) ?? PartsOf(key).FirstOrDefault();
+
     /// <summary>Why a key that DOES name a value of the design is not offered (it is an expression,
-    /// a string, a port number); null when it is offered or names nothing.</summary>
-    public string? WhyNotOffered(string key) => _notOffered.GetValueOrDefault(key);
+    /// a string, a port number, a complex value named whole, a part of a value that is not complex);
+    /// null when it is offered or names nothing.</summary>
+    public string? WhyNotOffered(string key)
+    {
+        if (_notOffered.TryGetValue(key, out var why)) return why;
+        if (_byKey.ContainsKey(key) || !TunableKey.TryParse(key, out var k) || k.Part is null) return null;
+        string whole = k.Whole.ToString();
+        if (_byKey.TryGetValue(whole, out var real) && real.Part is null) return "its value is not a complex number";
+        return _notOffered.GetValueOrDefault(whole);
+    }
 
     /// <summary>
     /// The drawing each scope's values live in: <c>""</c> for the tuned schematic itself, otherwise the
@@ -118,18 +159,20 @@ public sealed class TunableCatalog
     }
 
     /// <summary>
-    /// The key of a parameter row as drawn in <paramref name="drawing"/> — a VAR row is its variable,
-    /// anything else <c>instance.parameter</c> — or null when the catalog does not offer it. The one
-    /// mapping the Inspector, the canvas and Push share, so the three cannot disagree on what a row is.
+    /// The keys of a parameter row as drawn in <paramref name="drawing"/> — a VAR row is its variable,
+    /// anything else <c>instance.parameter</c>; a complex value's four parts, real first (overview D18)
+    /// — or empty when the catalog offers nothing of it. The one mapping the Inspector, the canvas and
+    /// Push share, so the three cannot disagree on what a row is.
     /// </summary>
-    public string? KeyFor(SchematicEditModel drawing, EditableComponent component, EditableParameter parameter)
+    public IReadOnlyList<string> KeysFor(SchematicEditModel drawing, EditableComponent component, EditableParameter parameter)
     {
-        if (CellOf(drawing) is not { } cell || string.IsNullOrWhiteSpace(parameter.Name)) return null;
+        if (CellOf(drawing) is not { } cell || string.IsNullOrWhiteSpace(parameter.Name)) return [];
         string prefix = cell.Length == 0 ? "" : cell + ":";
         string key = component.Symbol == SymbolKind.Var
             ? prefix + parameter.Name.Trim()
             : $"{prefix}{component.InstanceName}.{parameter.Name}";
-        return _byKey.ContainsKey(key) ? key : null;
+        if (_byKey.ContainsKey(key)) return [key];
+        return [.. PartsOf(key).Select(t => t.Key)];
     }
 
     /// <summary>
@@ -219,18 +262,19 @@ public sealed class TunableCatalog
             Scope(cell.Name, n, ReadOnlyReason(cell.Name, cellKeys, workspaceRoot), cell.Instances, cell.Variables);
         }
 
+        var catalog    = new TunableCatalog(tunables, notOffered);
         var unresolved = new List<string>();
         if (tb.Tuning is { } setup)
         {
+            // A preset holds a complex value whole, under the value's own key (overview D18).
             var named = setup.Variables.Select(v => v.Key)
                 .Concat(setup.Presets.SelectMany(p => p.Values.Keys));
-            var known = tunables.Select(t => t.Key).ToHashSet(StringComparer.Ordinal);
             foreach (var key in named.Distinct(StringComparer.Ordinal))
-                if (!known.Contains(key) && !notOffered.ContainsKey(key))
+                if (catalog.FindValue(key) is null && catalog.WhyNotOffered(key) is null)
                     unresolved.Add(key);
         }
-
-        return new TunableCatalog(tunables, notOffered, unresolved);
+        catalog.UnresolvedKeys = unresolved;
+        return catalog;
 
         void Scope(string? cell, int count, string? readOnly, IEnumerable<Instance> instances, IEnumerable<Variable> vars)
         {
@@ -281,15 +325,34 @@ public sealed class TunableCatalog
                     notOffered[key] = $"{parameter} is a number that identifies, not a value to tune";
                     return;
                 }
+                string? disabled = cell is null && kind == TunableKind.Variable && swept.TryGetValue(owner, out var sweep)
+                    ? $"swept by {sweep}" : null;
+
                 if (!TunableValue.TryParse(text, out double number, out string displayUnit, out _))
                 {
+                    if (ComplexValue.TryParse(text, out var z, out string zUnit, out var form))
+                    {
+                        // Never offered whole: each part is a tunable of its own (overview D18).
+                        notOffered[key] = $"its value is complex — tune {TunableKey.PartKey(key, ComplexPart.Real)}, "
+                            + $"{TunableKey.PartKey(key, ComplexPart.Imag)}, {TunableKey.PartKey(key, ComplexPart.Mag)} "
+                            + $"or {TunableKey.PartKey(key, ComplexPart.Phase)}";
+                        foreach (var part in Enum.GetValues<ComplexPart>())
+                        {
+                            double v = ComplexValue.Get(z, part);
+                            string u = part == ComplexPart.Phase ? "deg" : zUnit;
+                            var (lo, hi, guess) = TunableValue.DefaultPartRange(part, v, u);
+                            tunables.Add(new Tunable(
+                                TunableKey.PartKey(key, part), location, cell, count, owner, parameter, kind,
+                                TunableValue.Format(v, u, "G6"), v, u, false, isDefault, readOnly, disabled,
+                                lo, hi, guess, part, key, z, zUnit, form));
+                        }
+                        return;
+                    }
                     notOffered[key] = $"its value '{text}' is not a plain number — tune the variable it reads instead";
                     return;
                 }
 
                 var (min, max, guessed) = TunableValue.DefaultRange(number, displayUnit);
-                string? disabled = cell is null && kind == TunableKind.Variable && swept.TryGetValue(owner, out var sweep)
-                    ? $"swept by {sweep}" : null;
 
                 tunables.Add(new Tunable(
                     key, location, cell, count, owner, parameter, kind, text, number, displayUnit,

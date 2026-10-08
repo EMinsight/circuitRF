@@ -1297,6 +1297,8 @@ namespace RfCore.Export
     /// <param name="RangeGuessed">No entry, and the value is zero, so the default range is a guess.</param>
     /// <param name="Tune">The setup offers it in the Tuning window.</param>
     /// <param name="Opt">The setup varies it in the optimizer.</param>
+    /// <param name="Whole">A part of a complex value (<c>mag(ZL)</c>): the whole value as the design holds
+    /// it (<c>40+15j Ohm</c>), which is what a preset stores. Null for a real value.</param>
     public sealed record ExplainTunableJson(
         string  Key,
         string  Location,
@@ -1315,7 +1317,9 @@ namespace RfCore.Export
         string  Max,
         bool    RangeGuessed,
         bool    Tune,
-        bool    Opt);
+        bool    Opt,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Whole = null);
 
     /// <summary>
     /// brief-em3d-98 R-em3d98-8 — one (setup, solver leg) of a 3D view: whether it has a result of the model as it is now

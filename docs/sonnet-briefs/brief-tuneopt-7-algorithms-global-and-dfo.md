@@ -43,6 +43,12 @@ filter responses and worst-case specs. It requires the minimax cost form, and se
 it needs gradients) read by the Optimizer window, the CLI `--algorithm` help, `check`, and the MCP reference — no
 second list anywhere.
 
+**R-to7-8 — Complex values (overview D18; amended 2026-10-07).** No algorithm sees a complex number: the parts are
+ordinary coordinates (TO-6 R-to6-12). Every algorithm here must accept TO-6's **infeasible** results — population
+methods rank them (DE's selection, PSO's personal best and CMA-ES's ranking never prefer one over a feasible point),
+pattern search treats one as a failed poll, the trust-region model leaves it out of its interpolation set, Minimax
+treats it as a failed step. The registry entry (R-to7-7) gains nothing.
+
 ## 3. Gates (minimal; run only these classes)
 - Each population method (DE, PSO, CMA-ES) reaches the global optimum of a 4-D Rastrigin within tolerance, with a
   **fixed seed**, inside a stated evaluation budget. One seed, one test each — not a statistics study.
@@ -51,3 +57,5 @@ second list anywhere.
 - Minimax: an equal-ripple target on a hand-made residual set lands with the two worst residuals equal within tolerance.
 - `AlgorithmRegistryTests` — the registry, the CLI help text and the MCP reference list agree.
 - Evaluation counts, never times.
+- One of the population tests reruns with a complex VAR's `real`/`mag` pair and a ring of infeasible points; the
+  best point is feasible and the infeasible count is reported.

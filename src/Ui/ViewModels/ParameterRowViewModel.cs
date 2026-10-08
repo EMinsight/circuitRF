@@ -639,12 +639,29 @@ public sealed partial class ParameterRowViewModel : ObservableObject
 
     // ── Tuning (brief-tuneopt-4 R-to4-3.2) ───────────────────────────────────
 
-    /// <summary>The tunable key this row is in the focused design, or null when the catalog does not
-    /// offer it — an expression, a string, a row of a schematic nobody is tuning.</summary>
-    public string? TuneKey { get; private set; }
+    /// <summary>The tunable keys this row is in the focused design: one for a plain number, the four
+    /// parts of a complex value (overview D18), none when the catalog does not offer it — an
+    /// expression, a string, a row of a schematic nobody is tuning.</summary>
+    public IReadOnlyList<string> TuneKeys { get; private set; } = [];
+
+    /// <summary>The single key of a plain number, or null.</summary>
+    public string? TuneKey => TuneKeys.Count == 1 ? TuneKeys[0] : null;
 
     /// <summary>The row carries a tune toggle. Absent, never greyed, on a row that is not offered.</summary>
     public bool CanTune => TuneKey is not null;
+
+    /// <summary>The row is a complex value: its tune button offers a menu of the four parts instead.</summary>
+    public bool CanTuneParts => TuneKeys.Count > 1;
+
+    /// <summary>Whether one part of this complex value is tuned.</summary>
+    public bool IsPartTuned(string key) => _schematicVm.Tuning?.IsTuned(key) == true;
+
+    /// <summary>The parts menu's item: tunes or stops tuning one part — one undo step, as the toggle.</summary>
+    public void ToggleTunePart(string key)
+    {
+        if (!TuneKeys.Contains(key) || _schematicVm.Tuning is not { } tuning) return;
+        tuning.SetTuned(key, !tuning.IsTuned(key));
+    }
 
     /// <summary>The toggle: sets or clears the entry's tune flag — one undo step in the tuned schematic,
     /// the same effect as the Tuning panel's Add… and the canvas's right-click ▸ Tune.</summary>
@@ -662,9 +679,12 @@ public sealed partial class ParameterRowViewModel : ObservableObject
     /// <summary>Re-asks the tuning surface what this row is — on build and on every model change.</summary>
     internal void RefreshTuning()
     {
-        TuneKey = _ownerComp is null ? null : _schematicVm.Tuning?.KeyFor(_schematicVm.EditModel, _ownerComp, _param);
+        TuneKeys = _ownerComp is null || _schematicVm.Tuning is not { } tuning
+            ? [] : tuning.KeysFor(_schematicVm.EditModel, _ownerComp, _param);
+        OnPropertyChanged(nameof(TuneKeys));
         OnPropertyChanged(nameof(TuneKey));
         OnPropertyChanged(nameof(CanTune));
+        OnPropertyChanged(nameof(CanTuneParts));
         OnPropertyChanged(nameof(IsTuned));
     }
 

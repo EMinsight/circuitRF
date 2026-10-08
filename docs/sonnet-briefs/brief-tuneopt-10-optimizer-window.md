@@ -74,6 +74,15 @@ any variable is discrete — **Snap and polish** (TO-8 R-to8-4). Available while
 **R-to10-9 — Finish summary** in the status line: reason, all goals met or which not, best cost; full detail in
 Messages. No modal dialog.
 
+**R-to10-10 — Complex values (overview D18; amended 2026-10-07).**
+- The Variables list shows opt-enabled **parts** as rows (`mag(ZL)`, `phase(ZL)`), added through the same search
+  popup and the Inspector/canvas parts menu with the `opt` flag; the best value of every part of a value is the
+  view of ONE decoded complex number, so a part that is not opt-enabled but is tune-enabled shows the value it took.
+- Range edits and **Widen** obey the D18 refusal (Widen only grows a range, so it is refused only when another edit
+  already conflicts). Railed (D17) on a part names the part whose range holds it, when that is another part.
+- Run refuses more than two opt-enabled parts of one value with TO-6's sentence, in the status line.
+- The header and finish summary show infeasible points beside failed ones when > 0 ("12 infeasible").
+
 ## 4. Gates (minimal; run only these classes)
 - `OptimizerPanelRunTests` (headless view model, fake fast evaluator): run → iterations update the goal bars and best
   values; pause holds; resume continues; stop keeps the best; the run validates and refuses a setup with no goals.
@@ -82,3 +91,4 @@ Messages. No modal dialog.
 - `OptimizerPublishTests` — best-point publishes are coalesced (counter); finish re-runs all analyses once.
 - `RailedWidenTests` — railed detection per D17 and Widen as one undo step.
 - Docking: the panel appears behind Tuning by default.
+- `OptimizerPanelRunTests` gains: a `mag`/`phase` pair runs and every row shows the decoded value; three parts refuse.

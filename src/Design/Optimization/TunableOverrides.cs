@@ -24,6 +24,12 @@ public sealed record TunedDesign(
 /// <para>The inputs are not modified. The copies share every object nothing changed — an
 /// <see cref="Instance"/>, a <see cref="Variable"/> and a <see cref="Cell"/> are replaced, never
 /// mutated, so the original keeps its own.</para>
+///
+/// <para><b>A complex value is written whole</b> (overview D18): its own key with the whole value's
+/// text (<c>ZL</c> → <c>30+52j Ohm</c>) is what the tuning window and a preset hand in. A PART key
+/// (<c>mag(ZL)</c>) is accepted too, for a headless caller: the parts given are composed with the
+/// value the design holds by <see cref="ComplexValue.Compose"/> — the optimizer's own rule — and
+/// written back in the form the design wrote it.</para>
 /// </summary>
 public static class TunableOverrides
 {
@@ -41,7 +47,7 @@ public static class TunableOverrides
         library.Cells.AddRange(lib.Cells);
         var copied  = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var (keyText, value) in values)
+        foreach (var (keyText, value) in WholeValues(tb, lib, values, notes))
         {
             if (!TunableKey.TryParse(keyText, out var key))
             {
@@ -108,6 +114,69 @@ public static class TunableOverrides
         }
 
         return new TunedDesign(bench, library, notes, null);
+    }
+
+    /// <summary><paramref name="values"/> with every complex part folded into its whole value.</summary>
+    private static List<KeyValuePair<string, string>> WholeValues(
+        TestBench tb, Library lib, IReadOnlyDictionary<string, string> values, List<string> notes)
+    {
+        var result = new List<KeyValuePair<string, string>>();
+        var parts  = new Dictionary<string, Dictionary<ComplexPart, string>>(StringComparer.Ordinal);
+        foreach (var (k, v) in values)
+        {
+            if (TunableKey.TryParse(k, out var key) && key.Part is { } part)
+            {
+                string whole = key.Whole.ToString();
+                if (!parts.TryGetValue(whole, out var map)) parts[whole] = map = [];
+                map[part] = v;
+            }
+            else result.Add(new(k, v));
+        }
+
+        foreach (var (whole, map) in parts)
+        {
+            int given = result.FindIndex(kv => kv.Key == whole);
+            string? start = given >= 0 ? result[given].Value : StoredText(tb, lib, whole);
+            if (start is null || !ComplexValue.TryParse(start, out var z, out string unit, out var form))
+            {
+                notes.Add($"'{whole}' is not a complex value; its parts were skipped.");
+                continue;
+            }
+
+            var numbers = new Dictionary<ComplexPart, double>();
+            foreach (var (part, text) in map)
+                if (TunableValue.InUnit(text, part == ComplexPart.Phase ? "deg" : unit) is { } n) numbers[part] = n;
+                else notes.Add($"'{TunableKey.PartKey(whole, part)}': '{text}' is not a number; skipped.");
+
+            if (ComplexValue.Compose(z, numbers) is not { } composed)
+            {
+                notes.Add(numbers.Count > 2
+                    ? $"'{whole}': {numbers.Count} parts given, and a complex value has two; skipped."
+                    : $"'{whole}': no complex value has those parts; skipped.");
+                continue;
+            }
+            var entry = new KeyValuePair<string, string>(whole, ComplexValue.Format(composed, unit, form, "G15"));
+            if (given >= 0) result[given] = entry; else result.Add(entry);
+        }
+        return result;
+    }
+
+    /// <summary>The value text the design holds for a key, or null when it names nothing.</summary>
+    private static string? StoredText(TestBench tb, Library lib, string keyText)
+    {
+        if (!TunableKey.TryParse(keyText, out var key)) return null;
+        var cell = key.Cell is null ? null : lib.Find(key.Cell);
+        if (key.Cell is not null && cell is null) return null;
+        var instances = cell?.Instances ?? tb.Instances;
+        var variables = cell?.Variables ?? tb.GlobalVariables;
+
+        if (key.IsVariable)
+            return variables.FirstOrDefault(v => v.Name == key.Name) is { } v ? TunableValue.Text(v.Expression, v.Unit) : null;
+
+        if (instances.FirstOrDefault(i => i.InstanceName == key.Instance) is not { } inst) return null;
+        if (inst.Overrides.FirstOrDefault(o => o.Name == key.Name) is { } ov) return TunableValue.Text(ov.Expression, ov.Unit);
+        return lib.Find(inst.Reference)?.Parameters.FirstOrDefault(p => p.Name == key.Name) is { } decl
+            ? TunableValue.Text(decl.DefaultExpression, decl.Unit) : null;
     }
 
     private static TestBench CopyOf(TestBench tb)

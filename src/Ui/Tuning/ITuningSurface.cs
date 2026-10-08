@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using CircuitRF.Ui.Schematic;
 
 namespace CircuitRF.Ui.Tuning;
@@ -10,9 +11,11 @@ namespace CircuitRF.Ui.Tuning;
 /// </summary>
 public interface ITuningSurface
 {
-    /// <summary>The key of a parameter row as drawn in <paramref name="drawing"/>, or null when the
-    /// focused design does not offer it — the Inspector then shows no toggle at all, never a greyed one.</summary>
-    string? KeyFor(SchematicEditModel drawing, EditableComponent component, EditableParameter parameter);
+    /// <summary>The keys of a parameter row as drawn in <paramref name="drawing"/>: one for a plain
+    /// number, the four parts — real, imaginary, magnitude, phase — for a complex value (overview D18),
+    /// none when the focused design does not offer it; the Inspector then shows no toggle at all, never
+    /// a greyed one.</summary>
+    IReadOnlyList<string> KeysFor(SchematicEditModel drawing, EditableComponent component, EditableParameter parameter);
 
     /// <summary>Whether the entry for <paramref name="key"/> has its tune flag set.</summary>
     bool IsTuned(string key);

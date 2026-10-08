@@ -85,6 +85,7 @@ internal static partial class Reference
         "end DUT",
         "",
         "Rload = 50 Ohm",
+        "Zsrc = 40+15j Ohm",
         "Port:P1 in 0 Num=1 Z=50 Ohm",
         "R:R1 in mid R=50 Ohm",
         "DUT:X1 mid out Rbias=1 kOhm",
@@ -99,7 +100,9 @@ internal static partial class Reference
         "tune Rload min=25 Ohm max=100 Ohm opt=1",
         "tune X1.Rbias min=500 Ohm max=2 kOhm tune=1",
         "tune DUT:R3.R min=5 Ohm max=50 Ohm opt=1",
-        "preset \"wide band\" created=2026-10-07T12:00:00Z R1.R=47 Ohm Rload=60 Ohm",
+        "tune mag(Zsrc) min=20 Ohm max=80 Ohm tune=1",
+        "tune phase(Zsrc) min=-45 deg max=45 deg scale=lin tune=1",
+        "preset \"wide band\" created=2026-10-07T12:00:00Z R1.R=47 Ohm Rload=60 Ohm Zsrc=45+10j Ohm",
         "optimize algorithm=lm maxiter=200 seed=1",
     ];
 

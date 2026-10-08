@@ -37,14 +37,18 @@ public static class TuningSetupEdits
         return next;
     }
 
-    /// <summary>A first activation's entry: the D4 default range, everything else default.</summary>
+    /// <summary>A first activation's entry: the D4 default range, everything else default — except a
+    /// phase, which is linear: an angle's range is not a ratio (overview D18).</summary>
     public static TunableEntry NewEntry(Tunable tunable) => new()
     {
         Key      = tunable.Key,
         Min      = tunable.DefaultMin,
         Max      = tunable.DefaultMax,
+        Scale    = DefaultScale(tunable),
         Discrete = tunable.IsInteger ? TuneDiscrete.Integer : TuneDiscrete.None,
     };
+
+    private static TuneScale DefaultScale(Tunable t) => t.Part == ComplexPart.Phase ? TuneScale.Lin : TuneScale.Auto;
 
     /// <summary>Removes the entry for <paramref name="key"/> outright — the row's "Remove from tuning"
     /// when the optimizer does not use it either; otherwise only its tune flag clears.</summary>
@@ -75,6 +79,6 @@ public static class TuningSetupEdits
     }
 
     private static bool IsDefaultShaped(TunableEntry e, Tunable t)
-        => e.Min == t.DefaultMin && e.Max == t.DefaultMax && e.Scale == TuneScale.Auto && e.Step is null
+        => e.Min == t.DefaultMin && e.Max == t.DefaultMax && e.Scale == DefaultScale(t) && e.Step is null
            && e.Discrete == (t.IsInteger ? TuneDiscrete.Integer : TuneDiscrete.None) && e.Extra is null;
 }

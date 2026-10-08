@@ -38,8 +38,20 @@ deleting it is allowed.
 **R-to5-6 — Comparison.** Selecting two presets (or a preset and "Schematic") and choosing **Compare** shows a small
 table of keys with both values and the differences. No simulation.
 
+**R-to5-7 — Complex values (overview D18; amended 2026-10-07).**
+- Lock in stores a complex value **whole**, under its own key, in the schematic's form (`ZL=30+52j Ohm`) — once,
+  however many of its parts are tuned — so recall and Push are the same as typing it. Copy as `.cnl` writes the same.
+- Recall of a whole value sets the session's complex number; every part row follows. A whole value outside any range
+  of its parts is applied and those ranges are widened to include it (R-to5-2's rule, per part); widening only grows
+  the region, so it can never be a D18 conflict. A part key in a hand-written preset is composed with the
+  schematic's value (`ComplexValue.Compose`); a combination no value satisfies is reported **no longer applicable**
+  and skipped. A value that is no longer a complex literal (now `4+j*X`) is **no longer tunable**, as R-to5-2 says.
+- Compare shows complex values whole, with the difference of each tuned part beside it.
+
 ## 3. Gates (minimal; run only these classes)
 - `PresetRecallTests` — one test each: all present; a deleted instance; a renamed VAR; an out-of-range value (range
   widened, reported); a now-expression parameter (skipped). None throws.
 - `LastTunedPresetTests` — written on save when values differ; not written when equal; overwritten, never duplicated.
 - `PresetCnlTextTests` — "Copy as `.cnl`" text parses back to the same preset.
+- `PresetRecallTests` gains: a whole complex value recalled into two part rows; an out-of-range one widening the
+  part's range; an impossible part-key pair reported and skipped.

@@ -62,6 +62,46 @@ test.
 zero → [0, 1] in the parameter's unit, flagged `RangeGuessed`. `auto` scale is log when min > 0 and
 max/min ≥ 10.
 
+## 2a. Complex values (D18)
+
+A value written as a **complex literal** — numbers only: `40+15j`, `50-j10`, `-3j`, `complex(40,15)` or
+`polar(42.7,20.6)`, with an optional unit after the whole — is tuned and optimized **by its parts**,
+never whole. Anything that reads a name (`4+j*X`) is an expression and is not offered; tune `X`. A plain
+real number stays an ordinary tunable; to tune the imaginary part of `50`, write it `50+0j`.
+`ComplexValue.TryParse` (in `src/Design/Optimization/ComplexValue.cs`) is the one test.
+
+- **Four parts, four keys:** `real(K)`, `imag(K)`, `mag(K)`, `phase(K)`, where `K` is the value's own D3
+  key. The words are the expression engine's own functions; the phase is in **degrees** (`deg`). Each part
+  is an entry of its own — its own `tune`/`opt` flags and range — and **any combination is allowed**:
+  real with imaginary, magnitude with phase, or real with magnitude of the same value.
+- **One value, four views.** The session holds one complex number per value; every part row shows its
+  own view of it. **Moving a part holds its partner in the same coordinate system** — real holds
+  imaginary, imaginary holds real, magnitude holds phase, phase holds magnitude — so each slider is one
+  straight path in the plane whatever else of the value is tuned (`ComplexValue.With`).
+- **The ranges of all of a value's parts always hold, together** (`ComplexRegion`). Every entry of a
+  value constrains it, whatever its flags and in either window: a range belongs to the entry, not to a
+  window. A part's move that would leave the region **stops at the first edge it meets**. A range edit
+  — typed, re-centred, reset, or a first activation's default — that leaves **no** complex value inside
+  every range of that value is **refused**, with a sentence naming the other ranges, and `check` reports
+  the same condition in a hand-written file as an error (`tuning.range.complex-disjoint`). The emptiness
+  test is exact: the plane is cut into ≤ 90° wedges; in each, the real/imaginary box and the wedge make a
+  convex polygon over which the magnitude spans [nearest, farthest], which either meets the magnitude
+  range or does not.
+- **Default ranges:** real, imaginary and magnitude follow D4 (to six significant figures); a phase gets
+  [φ − 90°, φ + 90°] and is **linear** (an angle's range is not a ratio; `auto` reads as `lin` on a phase).
+  A phase range wider than 360° is an error.
+- **A complex value is written whole.** The session request, a preset and Push all carry the WHOLE
+  value under its own key `K` (`Zsrc=45+10j Ohm`), **in the form the schematic wrote it** — rectangular
+  stays rectangular, `complex(…)` and `polar(…)` stay calls — so a pushed value reads as a typed one.
+  `TunableOverrides.Apply` also accepts part keys for a headless caller and composes them with the
+  design's value by `ComplexValue.Compose`, the optimizer's own rule (below).
+- **Optimizing (TO-6):** each opt-enabled part is one coordinate. One part: its partner is held at the
+  start. Two parts of one system set the value directly; a **mixed pair** (real with magnitude, say) is
+  solved geometrically, the free sign taken from the start (`Compose`). A decoded point no complex value
+  satisfies, or one outside any range of the value, is **infeasible**: not simulated, ranked worse than
+  every feasible point. More than two opt-enabled parts of one value is a refusal at Run — a complex
+  value has two degrees of freedom — while the others' ranges still limit it.
+
 ## 3. Keys (D3)
 
 | Key | Names |
@@ -72,6 +112,8 @@ max/min ≥ 10.
 | `DUT:R3.R` | parameter `R` of `R3` inside cell `DUT` — every instance of `DUT` |
 | `DUT:Wline` | VAR `Wline` inside cell `DUT` |
 | `DUT:X5.Wf` | declared parameter `Wf` of instance `X5` inside cell `DUT` |
+| `mag(Zsrc)` | the magnitude of the complex VAR `Zsrc` — likewise `real(…)`, `imag(…)`, `phase(…)` (D18) |
+| `phase(DUT:X5.ZL)` | the phase, in degrees, of a complex parameter inside cell `DUT` |
 
 The cell part is the cell **as the `.cnl` spells its instance type** — `CellScope.NameFor` in
 `NetExtractor`: the cell folder's leaf name, or `name_2`, `name_3` … when two cells with one leaf name
@@ -134,7 +176,9 @@ Errors: min ≥ max; `scale=log` with min ≤ 0; a bound, limit or range end tha
 whose analysis is not declared; a goal range that holds no point of the analysis's grid (computed for
 `freq` of an S-parameter sweep, also through a wrapping parametric sweep, and for a sweep's own variable;
 other axes are checked at run time); an expression that does not parse; an `in`/`out` goal without two
-limits or with an inverted band; a sloped limit with no range; a key naming a value D1 does not offer;
+limits or with an inverted band; a sloped limit with no range; a key naming a value D1 does not offer
+(a complex value named whole, or a part of a value that is not complex, included); a phase range wider
+than 360°; ranges of one complex value's parts that leave no value inside all of them (D18);
 an unknown algorithm id; a `timelimit` that is not a duration. **Warning:** a key — in a `tune` line or a
 preset — that names nothing. An unknown function name in a goal expression parses, exactly as in a
 `measure` line; it is reported where `measure` reports one.
@@ -159,15 +203,17 @@ keep unknown keys, so a tolerance can be added to a `tune` line without a format
 - **The tuned schematic is the focused tab's TOP frame**, so pushing into a sub-cell keeps tuning the
   bench. A non-schematic document clears the panel and stops the session — except a Data Display while a
   session runs, because that is where its results are watched.
-- **One key mapping.** `TunableCatalog.KeyFor(drawing, component, parameter)` is what the Inspector toggle,
-  the canvas's right-click ▸ Tune and the panel agree on; `TunableCatalog.Drawings` gives each scope's
+- **One key mapping.** `TunableCatalog.KeysFor(drawing, component, parameter)` is what the Inspector toggle,
+  the canvas's right-click ▸ Tune and the panel agree on — one key for a plain number, four part keys for
+  a complex value, which the Inspector and the canvas offer as a menu of checkable parts; `TunableCatalog.Drawings` gives each scope's
   drawing — the open session's own model in the GUI, so Push edits what is on screen.
 - **Discovery is lazy.** A schematic with nothing tuned never extracts on an edit; the catalog is computed
   when a row, the Add… list or the Inspector asks.
 - **The session evaluates what Simulate would**: the same `NetExtractor.Extract` with the workspace
   resolver and corner bindings, written by `CnlWriter` and read back in memory (`PreparedCircuit.FromText`)
   rather than through `netlist.cnl`, which Simulate owns.
-- **Push** writes `G15` numbers with the row's own unit spelling where it means the same unit; an
+- **Push** writes `G15` numbers with the row's own unit spelling where it means the same unit (a complex
+  value whole, in the form the schematic wrote it, D18); an
   instance inheriting a cell default gains the override (`AddParameterCommand`). A sub-cell session with no
   tab is opened with `CircuitRfDockFactory.OpenDocumentInBackground`.
 - **A layout saved before TO-4** gains the panel beside wherever it put Analyses

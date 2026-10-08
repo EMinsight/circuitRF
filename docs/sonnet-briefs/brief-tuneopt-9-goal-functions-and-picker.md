@@ -45,6 +45,11 @@ the axis range (the plot's current visible X range on that axis), and a limit ta
 one. Translation lives in `src/Design` (headless), tested without a display. A trace whose transform has no expression
 equivalent shows the item disabled with the reason in its tooltip.
 
+**R-to9-5 — Complex values (overview D18; amended 2026-10-07).** No change to goals: a goal is a measurement, not a
+tunable. A goal expression may read a complex variable as any `measure` line can (`mag(ZL)` in a goal is the
+expression function, evaluated on the tuned whole value, not a tunable key); the goal editor's validation already
+accepts it. "Add as goal…" is unaffected.
+
 ## 3. Gates (minimal; run only these classes)
 - `NetworkMetricFunctionTests` — each new built-in equals `NetworkMetrics` on the same S cube (one test per function,
   including a non-50 Ω reference that forces renormalization).

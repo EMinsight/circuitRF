@@ -1,6 +1,8 @@
 # Brief series — Tuning and Optimization (TO-1 … TO-12)
 
-**Status:** Briefed, not built · **Date:** 2026-10-07 · **Decisions:** locked (§2), owner-reviewed
+**Status:** TO-1…TO-4 built · **Date:** 2026-10-07 · **Decisions:** locked (§2), owner-reviewed ·
+**Amended 2026-10-07:** D18 (complex values) added at the owner's request after TO-4; TO-1…TO-4 were brought up
+to it in the same change, and every later brief carries its part.
 **Scope source:** `docs/PRD.md` v3.1 §5.1, §9, §10, §17 (the "no optimization engine" non-goal is retired)
 **Supersedes:** `brief-agent-authoring-overview.md` §AA-4 (its two open questions are answered in §2 below)
 **Follow-on, NOT in this series:** yield — Monte Carlo, design centering, yield optimization. It will build on this
@@ -35,6 +37,14 @@ already exist in RfCore and should be reused; standard-value snapping should reu
 values; **one shared range** per variable for tuning and optimizing; unpushed tuned values are kept automatically as a
 "Last tuned" preset; yield is a later series; goals are authored **only** in the Optimizer window.
 
+Owner request after TO-4, 2026-10-07 (paraphrased): complex values must be tunable and optimizable. Picking one
+offers its **real**, **imaginary**, **magnitude** or **phase (degrees)** part; a user who wants the whole number adds
+two parts (real + imaginary, or magnitude + phase), and is free to mix them (real and magnitude of one value). The
+**limits of a value's parts are always respected**, in tuning and in optimizing, and a limit change on one part that
+conflicts with the value's other limits is a **refusal**. A complex value partly built from another name
+(`ZL = 4.0 + jX`) is an expression and is not offered. The point is to spare the user two VAR rows and a third that
+combines them. → D18.
+
 ---
 
 ## 1. The phases
@@ -67,7 +77,8 @@ A **tunable** is one of:
 - a **VAR row** whose expression is a plain number with an optional unit.
 
 Anything else is **not offered at all** — not greyed, not listed: an expression (`W=Wvar*2`), a reference to a cell
-parameter, a string, an enum, a bool, a complex value, a file reference. (The way to tune an expression is to tune the
+parameter, a string, an enum, a bool, a file reference. A **complex literal** is offered through its parts (D18), never
+whole. (The way to tune an expression is to tune the
 VAR it reads, and that VAR is offered.) An **integer-typed** parameter (finger count, turns) is offered and snaps to
 integers. A parameter that a **parametric sweep** in the same schematic sweeps is offered but disabled while that sweep
 is enabled, with the reason on its row.
@@ -99,6 +110,8 @@ write) **can be tuned and optimized**; its row says Push is unavailable and why,
 - Top level: `R1.R` (instance.parameter), `Wline` (a VAR variable, by name — it survives moving the row to another VAR).
 - Inside a sub-cell: `DUT:R3.R`, `DUT:Wline`, where `DUT` is the cell reference **spelled exactly as the `.cnl` spells
   that cell's instance type**. TO-1 confirms the spelling against `CnlWriter` and records it in the design note.
+- A part of a complex value (D18): `real(K)`, `imag(K)`, `mag(K)`, `phase(K)`, where `K` is any key above —
+  `mag(Zsrc)`, `phase(DUT:X5.ZL)`.
 - **A key that resolves to nothing is never an error** anywhere in this series: a preset skips it and says so;
   `check` reports it as a **warning**; a run ignores it with a run note.
 
@@ -203,6 +216,41 @@ paused. Stop ends the run and keeps the **best** point, which is what the window
 A variable whose best value is within 0.5 % of its normalized range of a bound is **railed**: the row shows a mark at
 that end of its bar and offers "Widen range". Railing is a hint, never a stop condition.
 
+### D18 — Complex values are tuned and optimized by their parts
+- **What is offered.** A parameter or VAR whose value is a **complex literal** — built from numbers only: numbers,
+  `j`, unary and binary `+ - *` (`40+15j`, `50-j10`, `-3j`), or one `complex(a,b)` / `polar(m,deg)` with number
+  arguments — with an optional unit after the whole. Anything that reads a name (`4+j*X`, `complex(R,X)`) is an
+  expression and is not offered (D1); tuning `X` is how that one is tuned. A plain real number stays a D1 tunable —
+  to tune the imaginary part of `50`, write it `50+0j`.
+- **Never whole; four parts.** `real(K)`, `imag(K)`, `mag(K)`, `phase(K)` (D3), phase in **degrees**. Each part is its
+  own entry (D4) with its own `tune`/`opt` flags, range, scale and step, and **any combination is allowed** — real with
+  imaginary, magnitude with phase, real with magnitude of the same value, or all four.
+- **One value, four views.** A session holds ONE complex number per value; every part row is a view of it. **Moving a
+  part holds its partner in the same coordinate system**: real holds imaginary, imaginary holds real, magnitude holds
+  phase, phase holds magnitude. The other parts' rows follow.
+- **Limits always hold, together.** Every entry of a value constrains it — whatever its flags, in either window, since
+  a range belongs to the entry (D4). A tuning move that would leave the region allowed by all of them **stops at the
+  first edge**. Any edit that leaves **no** complex value inside every range of that value — a typed bound, Re-centre,
+  Reset, Widen, a first activation's default range, a preset recall's widening — is a **refusal** naming the other
+  ranges; `check` reports the same in a hand-written file as an error.
+- **Default ranges.** Real, imaginary, magnitude: D4. Phase: [φ − 90°, φ + 90°], always linear (`auto` reads as `lin`
+  on a phase). A phase range wider than 360° is an error.
+- **Written whole.** A session request, a preset, `.cnl` preset text, Push and `--save-preset` all carry the **whole**
+  value under `K` (`Zsrc=45+10j Ohm`), in **the form the schematic wrote it** (rectangular stays rectangular,
+  `complex(…)` and `polar(…)` stay calls), so a pushed value is byte-identical to a typed one. A part key in a
+  hand-written preset or a headless override is accepted and composed with the design's value by the optimizer's rule.
+- **Optimizing.** Each opt-enabled part is one optimizer coordinate (its own range, its own scale). One part: its
+  partner is held at the start value. Two parts of one system set the value directly; a **mixed pair** is solved
+  geometrically — real + magnitude gives imag = ±√(mag² − real²), the sign taken from the start; real + phase gives
+  mag = real / cos φ; and so on. A decoded point that no complex value satisfies (real larger than magnitude, a phase
+  on the wrong side of the real part), or that falls outside the range of any of the value's entries, is
+  **infeasible**: it is not simulated and ranks worse than every feasible point (TO-6). A complex value has two degrees
+  of freedom, so **more than two opt-enabled parts of one value is a refusal** at Run (and in `check`), naming them;
+  the parts that are not opt-enabled still limit it.
+- **Code.** `ComplexValue` (literal test, form-preserving format, part get/set, `Compose`) and `ComplexRegion`
+  (membership, exact emptiness, the stop-at-the-edge move, the conflict sentence) in `src/Design/Optimization/` — one
+  implementation for the panel, `check`, the overrides and the optimizer.
+
 ---
 
 ## 3. UX principles for both panels
@@ -234,6 +282,8 @@ that end of its bar and offers "Widen range". Railing is a hint, never a stop co
 
 ## 5. Leave room for yield (the next series)
 
+- A complex value's parts (D18) are ordinary entries, so a tolerance on `mag(ZL)` needs nothing new; a sample is
+  composed into the whole value the way an optimizer point is.
 - A variable entry must be able to grow a **tolerance** (± % or ± absolute, distribution) without a format break —
   the `.csch` block and the `tune` directive must accept and ignore unknown keys within a format version.
 - Goals must be evaluable on **many sample points** in one batch (TO-6's evaluator takes a batch of points).

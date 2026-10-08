@@ -56,6 +56,16 @@ non-blocking).
 variables, no enabled goals, an algorithm id that does not exist, a cost form the algorithm rejects) with the same
 sentences. `explain --analysis` reports which analyses an optimization would run under `goals` vs `all`.
 
+**R-to11-8 — Complex values (overview D18; amended 2026-10-07).**
+- `--vars` takes part keys (`--vars "mag(ZL),phase(ZL)"`); a whole complex key there is a refusal naming the four
+  parts. The variables table prints one row per opt-enabled part (start, best, min, max, railed) and the whole value
+  it composes to (`ZL  40+15j Ohm → 33.1+21.4j Ohm`); `--json` adds `whole` beside each part, as `explain --tunables`
+  does. `--save-preset` stores the whole value under its own key.
+- `check` refuses (R-to11-7) more than two opt-enabled parts of one value, with TO-6's sentence.
+- `reference topic=tuning` already documents the part keys and the always-held ranges (TO-1 R-to1-10); the MCP
+  "optimize" walk-through names one complex example line (`tune mag(ZL) … opt=1`). Infeasible points are a field
+  of the progress notification and the result.
+
 ## 3. Gates (minimal; run only these classes)
 - `OptCliVerbTests` — the verb as a process on the L-section `.cnl`: exit 0 and values within tolerance; the
   infeasible goal exits 3 and names the goal; `--save-preset` on a `.csch` adds exactly one preset and changes nothing
@@ -64,3 +74,5 @@ sentences. `explain --analysis` reports which analyses an optimization would run
 - `OptMcpTests` — `run analysis=optimize` returns the `--json` object; progress notifications arrive; cancel stops it.
 - `OptReferenceTests` — the three topics are generated from the schema/registry (a new algorithm appears without
   editing the topic text).
+- `OptCliVerbTests` gains: a `mag`/`phase` optimization of a complex load prints the whole best value; `--vars ZL`
+  refuses naming the parts.

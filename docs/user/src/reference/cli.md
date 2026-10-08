@@ -2048,19 +2048,25 @@ none.</p>
 <h3 id="explain-tunables"><code>--tunables</code> — which values can be tuned?</h3>
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Bench/schematic/Bench.csch --tunables
-<span class="output">Tunables (5):
-  R1.R      top       50 Ohm          10 Ohm .. 200 Ohm  [tune; opt]
-  X1.Rbias  top       1 kOhm          500 Ohm .. 2 kOhm  [tune]
-  Rload     top       50 Ohm          25 Ohm .. 100 Ohm  [opt]
-  DUT:R3.R  DUT · ×2  10 Ohm          5 Ohm .. 50 Ohm
-  DUT:R5.R  DUT · ×2  22 Ohm          11 Ohm .. 44 Ohm  [read-only: it belongs to another workspace]</span></code></pre>
+<span class="output">Tunables (9):
+  R1.R         top       50 Ohm          10 Ohm .. 200 Ohm  [tune; opt]
+  X1.Rbias     top       1 kOhm          500 Ohm .. 2 kOhm  [tune]
+  Rload        top       50 Ohm          25 Ohm .. 100 Ohm  [opt]
+  real(Zsrc)   top       40 Ohm          20 Ohm .. 80 Ohm  [part of 40+15j Ohm]
+  imag(Zsrc)   top       15 Ohm          7.5 Ohm .. 30 Ohm  [part of 40+15j Ohm]
+  mag(Zsrc)    top       42.72 Ohm       20 Ohm .. 80 Ohm  [tune; part of 40+15j Ohm]
+  phase(Zsrc)  top       20.556 deg      -45 deg .. 45 deg  [tune; part of 40+15j Ohm]
+  DUT:R3.R     DUT · ×2  10 Ohm          5 Ohm .. 50 Ohm
+  DUT:R5.R     DUT · ×2  22 Ohm          11 Ohm .. 44 Ohm  [read-only: it belongs to another workspace]</span></code></pre>
 
 Every value of the design that can be tuned or optimized, at any depth, with the **key** a `tune` line
 or a preset names it by. A value is tunable when it is written as a plain number with an optional
 unit; an expression is not, and the variable it reads is. A value inside a cell is named
 `Cell:Instance.Parameter` and moves in **every** instance of that cell — the second column says how
 many share it. A sub-circuit instance's own parameters are listed once per instance (`X1.Rbias`), even
-when the instance is using the cell's default.
+when the instance is using the cell's default. A complex value written with numbers only is listed as
+its four parts — `real(Zsrc)`, `imag(Zsrc)`, `mag(Zsrc)` and `phase(Zsrc)`, the phase in degrees — each
+tuned on its own; a preset still holds the whole value under its own key (`Zsrc=45+10j Ohm`).
 
 The range is the one the schematic's tuning setup gives the value, or the range it would get when you
 first tune it. A value Push cannot write — in a library cell, or another workspace — says why; it can

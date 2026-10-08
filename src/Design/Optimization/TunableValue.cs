@@ -39,6 +39,16 @@ public static class TunableValue
         return true;
     }
 
+    /// <summary>Value text as a number in <paramref name="unit"/>: a bare number is already in it, a
+    /// number with another unit is converted (<c>2000 fF</c> in pF is 2). Null for anything else.</summary>
+    public static double? InUnit(string? text, string unit)
+    {
+        if (text is null || !TryParse(text, out double n, out string u, out double si)) return null;
+        if (u.Length == 0 || u == unit) return n;
+        if (unit.Length == 0) return si;
+        return Units.Scale(unit) is { } scale and not 0 ? si / scale : null;
+    }
+
     /// <summary>The value text an expression and its unit column make together — <c>47 pF</c>.</summary>
     public static string Text(string expression, string? unit)
         => string.IsNullOrEmpty(unit) ? expression.Trim() : $"{expression.Trim()} {unit}";
@@ -60,13 +70,23 @@ public static class TunableValue
     /// value v → [v/2, 2v]; a negative one → [v − |v|/2, v + |v|/2]; zero → [0, 1], which is a guess
     /// and says so.
     /// </summary>
-    public static (string Min, string Max, bool Guessed) DefaultRange(double number, string unit)
+    public static (string Min, string Max, bool Guessed) DefaultRange(double number, string unit, string numberFormat = "G15")
     {
         if (number == 0) return (Format(0, unit), Format(1, unit), true);
         return number > 0
-            ? (Format(number / 2, unit), Format(number * 2, unit), false)
-            : (Format(number * 1.5, unit), Format(number * 0.5, unit), false);
+            ? (Format(number / 2, unit, numberFormat), Format(number * 2, unit, numberFormat), false)
+            : (Format(number * 1.5, unit, numberFormat), Format(number * 0.5, unit, numberFormat), false);
     }
+
+    /// <summary>
+    /// The default range of one part of a complex value (overview D18): a phase gets ±90° around its
+    /// value; the real, imaginary and magnitude parts follow <see cref="DefaultRange"/>. Six significant
+    /// figures: a part is arithmetic on the value (|50+10j| is 50.990195…), and nobody typed those digits.
+    /// </summary>
+    public static (string Min, string Max, bool Guessed) DefaultPartRange(ComplexPart part, double number, string unit)
+        => part == ComplexPart.Phase
+            ? (Format(number - 90, unit, "G6"), Format(number + 90, unit, "G6"), false)
+            : DefaultRange(number, unit, "G6");
 
     /// <summary>The effective scale of a range: <see cref="TuneScale.Auto"/> is log when min &gt; 0
     /// and max/min ≥ 10.</summary>
@@ -74,11 +94,11 @@ public static class TunableValue
         => scale != TuneScale.Auto ? scale : min > 0 && max / min >= 10 ? TuneScale.Log : TuneScale.Lin;
 
     /// <summary>A number in a unit, spelled the way a schematic row holds it.</summary>
-    public static string Format(double number, string unit)
+    public static string Format(double number, string unit, string numberFormat = "G15")
     {
         // G15, not R: a default bound is arithmetic on the value (×1.5 of -0.1 is -0.15000000000000002
         // in binary), and fifteen digits is more than any row is typed with.
-        string n = number.ToString("G15", CultureInfo.InvariantCulture);
+        string n = (number == 0 ? 0.0 : number).ToString(numberFormat, CultureInfo.InvariantCulture);
         return unit.Length == 0 ? n : $"{n} {unit}";
     }
 }

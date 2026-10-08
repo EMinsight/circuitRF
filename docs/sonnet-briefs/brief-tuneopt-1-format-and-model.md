@@ -1,6 +1,6 @@
 # Brief TO-1 — The model and the file format: tunables, presets, goals, optimizer settings
 
-**Series:** `brief-tuneopt-0-overview.md` (read it first; decisions D1–D17 are binding) · **Tag:** `R-to1-<m>`
+**Series:** `brief-tuneopt-0-overview.md` (read it first; decisions D1–D18 are binding) · **Tag:** `R-to1-<m>`
 **Depends on:** nothing · **Unblocks:** every other phase
 **Area:** `src/Design/Schematic/SchematicModel.cs` (the `.csch` model), `src/Design/Schematic/NetExtractor.cs`,
 `src/Core/Netlist/CnlReader.cs` / `CnlWriter.cs` / `AnalysisDirectiveSchema.cs`, `src/Core/Elaboration/`, a new
@@ -79,6 +79,24 @@ an expression-valued key in a hand-written `.cnl`). `explain --tunables` lists t
 **R-to1-9 — Design note.** Write `docs/design/tuning-optimization.md` from the overview (decisions, model, grammar,
 identity rules) and add the `tuning` block to `project-file-formats.md`.
 
+**R-to1-10 — Complex values (overview D18; amended 2026-10-07, built).**
+- `ComplexPart { Real, Imag, Mag, Phase }` and `TunableKey.Part`: a key may be `real(K)`, `imag(K)`, `mag(K)` or
+  `phase(K)`. The `tune` and `preset` grammar takes them unchanged (the tokenizer already keeps `( )` in one token).
+- `ComplexValue.TryParse` is the one literal test: numbers, `j`, `+ - *`, or one `complex(a,b)` / `polar(m,deg)` of
+  numbers, with an optional unit; `4+j*X` is refused. It returns the form (`Rect`/`Call`/`Polar`) so a value is
+  written back as it was written.
+- The catalog offers each complex literal as **four** part tunables (`Part`, `WholeKey`, `Whole`, `WholeUnit`,
+  `Form` on `Tunable`), never the whole: `Find("ZL")` is null and `WhyNotOffered("ZL")` names the four part keys;
+  `WhyNotOffered("real(R1.R)")` says the value is not complex. `PartsOf(K)` and `FindValue(K)` reach the whole.
+  Part default ranges follow D18 (phase ±90°, linear; others D4 to six significant figures).
+- `TunableOverrides.Apply` takes a whole complex value under `K`, and folds part keys into the whole with
+  `ComplexValue.Compose`, written in the design's own form; an impossible combination is a note, not a throw.
+- `check`: a whole complex key in a `tune` line is an error naming the parts; a phase range wider than 360° is an
+  error; ranges of one value's parts that leave no complex value inside all of them are an error
+  (`tuning.range.complex-disjoint`, decided exactly by `ComplexRegion.IsEmpty`). A preset value under `K` resolves.
+- `explain --tunables` lists the parts, each flagged `part of <whole>` (JSON: `whole`). `reference tuning` documents
+  the part keys and the worked example tunes `mag(Zsrc)`/`phase(Zsrc)` and presets `Zsrc` whole.
+
 ## 3. Not in this phase
 UI, live runs, algorithms, measurement functions (`mu` in the example above lands in TO-9 — the parser must accept an
 unknown function name in a goal expression the way it does in `measure`, and `check` reports it the same way).
@@ -93,3 +111,7 @@ unknown function name in a goal expression the way it does in `measure`, and `ch
 - `TunableOverridesTests` — elaborated netlist with overrides == elaborated netlist of the hand-edited design (top,
   VAR, sub-cell); an unresolved key is a note, not a throw.
 - `TuningCheckTests` — one test per `check` rule in R-to1-7.
+- `ComplexTunableTests` — the three literal forms read and write back in their own form; `4+j*X` and a plain number
+  are not literals; the catalog offers four parts and not the whole; region emptiness and the stop-at-the-edge move;
+  a mixed-pair compose and an impossible one; overrides by whole value and by part key keep the design's form.
+- `TuningCheckTests` gains one case each: a whole complex key, a phase span over 360°, disjoint part ranges.
