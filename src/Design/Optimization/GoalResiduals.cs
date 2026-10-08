@@ -12,10 +12,14 @@ namespace CircuitRF.Design.Optimization;
 /// <param name="Residuals">Its part of the residual vector: each grid point's violation divided by the
 /// goal's scale, times its weight, divided by √(points).</param>
 /// <param name="WorstViolation">The largest violation, in the expression's own unit (0 = met).</param>
-/// <param name="WorstAt">Where on the range axis it is, in base SI; null for a single number.</param>
+/// <param name="WorstAt">Where on the range axis it is, in base SI; null for a single number. For a met
+/// goal, the TIGHTEST point — the one closest to its limit.</param>
 /// <param name="Axis">That axis's name; null for a single number.</param>
-/// <param name="WorstValue">The expression's value at the worst point.</param>
+/// <param name="WorstValue">The expression's value at that point.</param>
 /// <param name="Error">Why the goal has no value; the other members are then empty.</param>
+/// <param name="Margin">How far inside its limit the goal is at that point, in the expression's own
+/// unit: positive when met with room, 0 when met at the limit, −(worst violation) when unmet. NaN with
+/// an <paramref name="Error"/>.</param>
 public sealed record GoalScore(
     string      Name,
     double[]    Residuals,
@@ -23,7 +27,8 @@ public sealed record GoalScore(
     double?     WorstAt,
     string?     Axis,
     double      WorstValue,
-    Diagnostic? Error = null)
+    Diagnostic? Error = null,
+    double      Margin = double.NaN)
 {
     public bool Met => Error is null && WorstViolation == 0;
 }
@@ -149,6 +154,9 @@ public static class GoalResiduals
         var residuals = new double[points.Count];
         double norm = g.Weight / scale / Math.Sqrt(points.Count);
         double worst = -1, worstAt = double.NaN, worstX = double.NaN;
+        // The tightest point — least slack to the limit — is what a MET goal reports (brief-tuneopt-11
+        // R-to11-2's margin column); an unmet goal's tightest point is its worst violation.
+        double tight = double.PositiveInfinity, tightAt = double.NaN, tightX = double.NaN;
         for (int k = 0; k < points.Count; k++)
         {
             var (at, x) = points[k];
@@ -164,12 +172,23 @@ public static class GoalResiduals
                 GoalType.In  => x < limit ? limit - x : x > upper ? x - upper : 0,
                 _            => x > limit && x < upper ? Math.Min(x - limit, upper - x) : 0,
             };
+            double slack = g.Type switch
+            {
+                GoalType.Le  => L - x,
+                GoalType.Ge  => x - L,
+                GoalType.Eq  => -Math.Abs(x - L),
+                GoalType.In  => Math.Min(x - limit, upper - x),
+                _            => x <= limit ? limit - x : x >= upper ? x - upper : -Math.Min(x - limit, upper - x),
+            };
             if (viol <= MetTolerance * scale) viol = 0;
             residuals[k] = viol * norm;
             if (viol > worst) (worst, worstAt, worstX) = (viol, at ?? double.NaN, x);
+            if (slack < tight) (tight, tightAt, tightX) = (slack, at ?? double.NaN, x);
         }
+        double margin = worst > 0 ? -worst : Math.Max(0, tight);
+        if (worst == 0) (worstAt, worstX) = (tightAt, tightX);
         return new GoalScore(g.Name, residuals, worst, double.IsNaN(worstAt) ? null : worstAt,
-                             double.IsNaN(worstAt) ? null : axisName, worstX);
+                             double.IsNaN(worstAt) ? null : axisName, worstX, Margin: margin);
     }
 
     /// <summary>The cost of a residual vector: Σ r² (least squares) or max r (minimax).</summary>

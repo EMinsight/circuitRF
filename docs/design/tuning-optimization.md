@@ -508,3 +508,18 @@ trace-header menu. **Until TO-10's goal editor exists** the workspace adds the g
 schematic the results came from (`WorkspaceViewModel.AddGoalFromTrace`, one undo step), disabled when
 the trace gave it no limit; TO-10 replaces that body with opening the editor pre-filled.
 
+## 14. The `opt` verb and the MCP optimizer (TO-11)
+
+`circuitrf opt <path.csch|path.cnl>` and `run analysis=optimize` are one code path (`src/Cli/Optimize.cs`;
+`cli.md` §24): `OptimizationRun` over the `PreparedCircuit` Simulate prepares, flags overriding the
+`optimize` line for one run, `--vars`/`--goals` narrowing to a subset, values reported as the text the
+schematic would hold, `--save-preset` (a `.csch` only, `TuningPresets.LockIn` after a checkpoint) the one
+write. Exit 0 / 3 (a goal unmet) / 1 / 2 / 130. **The final result only by default**; `--show-iterations` (`showIterations`) adds each iteration — stderr lines, `perIteration` in the document and MCP progress notifications. **A met goal reports its tightest point and a margin**:
+`GoalScore.Margin` (and `GoalReport.Margin`) is the slack at the point closest to the limit, in the
+expression's own unit, −(worst violation) when unmet — the Optimizer window's "worst value" for a met
+goal is that point too, where it used to be the first grid point. `check` asks `OptimizationRun.Create`
+whether a setup would start (no evaluation happens there), so a run-time refusal is a check error in
+the run's own words; `explain --analysis` reports each analysis's scopes through
+`OptimizationRun.AnalysesUnder`. The goals reference page lists the template catalog run over a fixed
+bench (`Reference.FunctionsBench`), so a template added to `GoalTemplates` appears there unedited.
+

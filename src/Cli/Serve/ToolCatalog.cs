@@ -272,7 +272,9 @@ internal static class ToolCatalog
           + "only or group. Narrow a large result with at, range or result=summary rather than "
           + "receiving it whole. A 3D em setup's Problem3D decides what comes back: Driven an S-matrix, "
           + "Electrostatic/Magnetostatic a C or L matrix, Eigenmode the modes (f, Q, Participation) and "
-          + "no Touchstone, Thermal temperatures.",
+          + "no Touchstone, Thermal temperatures. optimize runs the design's tune, goal and optimize lines "
+          + "and returns result.optimize — the best values as the text to write into the file, each goal's "
+          + "margin. With showIterations it also returns each iteration and sends a progress notification per iteration.",
             "analysis",
             "Which analysis to run.",
             [
@@ -303,6 +305,31 @@ internal static class ToolCatalog
                     [Analysis, Set, Output, All, .. Narrowing, .. LoadpullSolverOptions, .. LoadpullOptions],
                     "Loadpull pursuit: searches for the MXP and MXE terminations. Returns the optima and the "
                   + "result's shape; ask for the cubes with all, only or group."),
+                // brief-tuneopt-11 R-to11-5: the `opt` verb, so the document is the verb's `--json`
+                // object and nothing here reshapes it. The final result by default; showIterations
+                // asks for each iteration too.
+                new("optimize", ["opt"],
+                    [new("path", true, "The .csch or .cnl whose tune, goal and optimize lines to run.")],
+                    [Set,
+                     new("algorithm",  "--algorithm",  OptKind.Str,     "An algorithm id for this run (reference optimizers lists them)."),
+                     MaxIter,
+                     new("maxEvals",   "--max-evals",  OptKind.Integer, "Evaluation limit for this run."),
+                     new("time",       "--time",       OptKind.Str,     "Wall-clock limit: seconds, or a number and s, ms, min or h."),
+                     new("cost",       "--cost",       OptKind.Str,     "lsq or minimax."),
+                     new("analyses",   "--analyses",   OptKind.Str,     "goals (only the analyses a goal names) or all."),
+                     new("parallel",   "--parallel",   OptKind.Integer, "How many evaluations may run at once."),
+                     new("seed",       "--seed",       OptKind.Integer, "Random seed, for a repeatable run."),
+                     new("vars",       "--vars",       OptKind.StrList, "Optimize only these of the file's opt=1 keys. A complex value is named by its parts: mag(ZL), phase(ZL)."),
+                     new("goals",      "--goals",      OptKind.StrList, "Count only these of the file's enabled goals."),
+                     new("snap",       "--snap",       OptKind.Flag,    "Snap integer, stepped and preferred values at the end and polish the rest."),
+                     new("sensitivity","--sensitivity",OptKind.Flag,    "Report each variable's sensitivity at the best point (n more evaluations)."),
+                     new("showIterations","--show-iterations",OptKind.Flag, "Also return each iteration's state (result.optimize.perIteration) and send a progress notification per iteration. Default: the final result only."),
+                     new("output",     "-o",           OptKind.Path,    "A .npy for the best point's full results plus the opt history group."),
+                     new("history",    "--history",    OptKind.Path,    "A .npy for the opt history group alone."),
+                     new("savePreset", "--save-preset",OptKind.Str,     "A .csch only: add the best values as a preset of this name. The only write to the design.")],
+                    "Optimization. These arguments override the file's optimize line for this run only; nothing is "
+                  + "written to the design's values. Exit 0: every goal met. Exit 3: it ran and a goal is unmet — "
+                  + "result.optimize.goals says which, by how much and where. Exit 2: no evaluation converged."),
                 new("em", ["em"],
                     [new("path", true, "The .cem or .c3d to run; with component, the workspace folder (or .cws, "
                                      + "or .ctech) whose technology the part is drawn on.")],

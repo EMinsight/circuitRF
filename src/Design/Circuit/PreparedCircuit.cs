@@ -23,8 +23,12 @@ public sealed class PreparedCircuit
 {
     private long _elaborations;
 
-    internal Library?   Lib { get; }
-    internal TestBench? Tb  { get; }
+    /// <summary>The library and bench as read — null when the read failed. Shared by every evaluation,
+    /// which works on its own copy (<see cref="CircuitRF.Design.Optimization.TunableOverrides"/>), so a caller reads them and never
+    /// changes them: <c>circuitrf opt</c> reads the bench's tuning setup and catalog from here, the
+    /// circuit the run itself evaluates.</summary>
+    public Library?   Lib { get; }
+    public TestBench? Tb  { get; }
 
     /// <summary>Why the netlist could not be read, or null. A failed read evaluates to
     /// <see cref="RunStatus.EngineError"/> carrying this sentence.</summary>
@@ -90,6 +94,14 @@ public sealed class PreparedCircuit
     public static PreparedCircuit FromText(string cnlText, string? sourceDirectory, string? baseDirectory,
                                            string testBenchName = "tb")
         => FromText(cnlText, sourceDirectory, baseDirectory, testBenchName, []);
+
+    /// <summary>
+    /// A bench already read — what <c>circuitrf check</c> holds when it asks whether an optimization
+    /// would start (brief-tuneopt-11 R-to11-7), so the question goes to the run's own constructor
+    /// rather than to a second copy of its rules. Nothing is read from disk.
+    /// </summary>
+    public static PreparedCircuit FromBench(Library lib, TestBench tb, string? baseDirectory)
+        => new(lib, tb, null, baseDirectory, []);
 
     /// <summary>
     /// A schematic, extracted through the resolver Simulate uses and read back as the netlist Simulate

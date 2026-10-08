@@ -254,6 +254,15 @@ internal sealed class McpServer
                 "  4. check    path=<root>/demo/pad.cnl                  -> 0 errors, 0 warnings\n" +
                 "  5. run      analysis=sparam path=<root>/demo/pad.cnl output=<root>/demo/pad.s2p\n" +
                 "  6. read     path=<root>/demo/pad.s2p                  -> the cubes; narrow with only/at/range\n" +
+                // brief-tuneopt-11 R-to11-6: the optimizer, beside the run it extends. Five steps, one
+                // complex example, and the topics that hold the rest.
+                "Optimize: 1. explain path=<f> tunables=true -> the keys a design offers. 2. write tune lines " +
+                "(tune R1.R min=10 Ohm max=200 Ohm opt=1; a complex value by its parts: tune mag(ZL) min=20 Ohm " +
+                "max=80 Ohm opt=1), goal lines (goal Match = dB(SP1.S(1,1)) analysis=SP1 le -20) and one optimize " +
+                "line (optimize algorithm=auto seed=1); 'reference goals', 'tuning' and 'optimizers' hold the grammar. " +
+                "3. check. 4. run analysis=optimize path=<f> -> result.optimize: the best values as text to write " +
+                "back, each goal's margin; exit 3 = a goal unmet. 5. read the output= .npy for the best point's " +
+                "results and the opt history.\n" +
                 "On an instance line the NETS come first and every 'Key=value' after them; how many " +
                 "nets each type takes is the 'nets' field of reference components, which is not the " +
                 "same number as its symbol's pin count; 'reference component-index' lists every type " +

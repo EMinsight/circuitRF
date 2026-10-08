@@ -162,6 +162,10 @@ internal static class JsonRun
     /// <summary>What <c>solver list</c> found — each external solver and what its build can do.</summary>
     public static IReadOnlyList<SolverJson>? Solvers;
 
+    /// <summary>What <c>opt</c> found (brief-tuneopt-11 R-to11-2). Its cubes travel only in the
+    /// <c>-o</c>/<c>--history</c> file: the document is the answer, not the data.</summary>
+    public static OptimizeReportJson? Optimize;
+
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
     ///
@@ -209,6 +213,7 @@ internal static class JsonRun
         ImpedanceLine       = null;
         FieldPlots          = null;
         Solvers             = null;
+        Optimize            = null;
         _summaryOnly        = false;
         _diagnosticsSummary = false;
         Malformed           = null;
@@ -432,11 +437,11 @@ internal static class JsonRun
         if (Check is not null || Explain is not null || Document is not null || Reference is not null
          || History is not null || Render is not null || Find is not null || Smith is not null
          || Lvs is not null || Impedance is not null || ImpedanceSurvey is not null || FieldPlots is not null
-         || ImpedanceLine is not null || Solvers is not null)
+         || ImpedanceLine is not null || Solvers is not null || Optimize is not null)
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
                                      Find: Find, Smith: Smith, Lvs: Lvs, Impedance: Impedance,
                                      ImpedanceSurvey: ImpedanceSurvey, FieldPlots: FieldPlots,
-                                     ImpedanceLine: ImpedanceLine, Solvers: Solvers);
+                                     ImpedanceLine: ImpedanceLine, Solvers: Solvers, Optimize: Optimize);
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and
         // the report is the domain shape §2.4 asks for — so a refused run still answers with its

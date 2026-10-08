@@ -164,7 +164,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         ImpedanceLineJson? ImpedanceLine = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<SolverJson>? Solvers = null);
+        IReadOnlyList<SolverJson>? Solvers = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        OptimizeReportJson? Optimize = null);
 
     /// <summary>
     /// One external solver as <c>solver list</c> reports it — the Settings ▸ Solvers row. Carried as data
@@ -562,6 +564,116 @@ namespace RfCore.Export
         IReadOnlyList<SmithNodeJson>  Nodes,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         SmithBandJson?                Band);
+
+    // ── `opt` / MCP `run analysis=optimize`: what the optimizer found (brief-tuneopt-11 R-to11-2) ──
+    //
+    // A PROJECTION of `OptimizationResult` — the verb and the MCP tool return this one object, and the
+    // Optimizer window shows the same fields. Values are the text a schematic would hold, so a caller
+    // can write one straight into the file; numbers that are not values (cost, margins) are plain.
+
+    /// <summary>What one optimization run found.</summary>
+    /// <param name="Outcome"><c>goalsMet</c>, <c>goalsUnmet</c>, <c>refused</c>, <c>noConvergence</c> or
+    /// <c>cancelled</c> — the exit code's reason (0, 3, 1, 2, 130).</param>
+    /// <param name="SavedPreset">The preset <c>--save-preset</c> added, when it added one.</param>
+    /// <param name="PerIteration">Each iteration's state, in order — only with <c>--show-iterations</c>
+    /// (<c>showIterations</c> over the protocol); absent otherwise, since the final result is the answer.</param>
+    public sealed record OptimizeReportJson(
+        string                            Document,
+        string                            Algorithm,
+        IReadOnlyList<string>             Stages,
+        string                            Outcome,
+        string                            FinishReason,
+        double?                           BestCost,
+        int                               Iterations,
+        long                              Evaluations,
+        long                              Failures,
+        long                              Infeasible,
+        long                              CacheHits,
+        IReadOnlyList<OptimizeVariableJson> Variables,
+        IReadOnlyList<OptimizeGoalJson>   Goals,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        OptimizeSnapJson?                 Snap = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        OptimizeSensitivityJson?          Sensitivity = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                           SavedPreset = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<OptimizeIterationJson>? PerIteration = null);
+
+    /// <summary>One iteration of an optimization, as its progress line reports it.</summary>
+    /// <param name="BestCost">The best cost so far; null before any point succeeded.</param>
+    /// <param name="GoalsMet">How many enabled goals the best point so far meets.</param>
+    /// <param name="Stage">The stage running (Auto, snap and polish); null for one algorithm alone.</param>
+    /// <param name="BestValues">The best point so far's values, as the schematic would hold them.</param>
+    public sealed record OptimizeIterationJson(
+        int     Iteration,
+        long    Evaluations,
+        double? BestCost,
+        int     GoalsMet,
+        long    Failures,
+        long    Infeasible,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Stage,
+        IReadOnlyDictionary<string, string> BestValues);
+
+    /// <summary>One optimized entry — a part of a complex value is its own row.</summary>
+    /// <param name="Start">The design's value of this key, as text.</param>
+    /// <param name="Best">Its value at the best point; null when nothing succeeded.</param>
+    /// <param name="Railed"><c>min</c> or <c>max</c> when the best value is at that end of a range
+    /// (overview D17); null otherwise.</param>
+    /// <param name="RailedAgainst">The OTHER part whose range holds it there, for a complex value.</param>
+    /// <param name="Whole">For a part: the whole value the best point composes to, as the schematic
+    /// writes it — what <c>explain --tunables</c> puts beside a part.</param>
+    /// <param name="WholeStart">For a part: the whole value the design holds.</param>
+    public sealed record OptimizeVariableJson(
+        string  Key,
+        string  Start,
+        string? Best,
+        string  Min,
+        string  Max,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Railed = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? RailedAgainst = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Whole = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? WholeStart = null);
+
+    /// <summary>One enabled goal at the best point.</summary>
+    /// <param name="Value">The expression's value at the worst point (unmet) or the tightest one (met).</param>
+    /// <param name="At">Where that is on <paramref name="Axis"/>, in base SI; null for a single number.</param>
+    /// <param name="Margin">How far inside its limit, in the expression's unit: −(violation) when unmet.</param>
+    public sealed record OptimizeGoalJson(
+        string  Name,
+        bool    Met,
+        double? Value,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? At,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Axis,
+        double? Margin);
+
+    /// <summary>What snap-and-polish did (<c>--snap</c>, or Auto's last stage).</summary>
+    public sealed record OptimizeSnapJson(int Snapped, int Neighbours, double CostBefore, double CostSnapped,
+                                          double CostAfter, bool Polished);
+
+    /// <summary>A sensitivity pass at the best point (<c>--sensitivity</c>).</summary>
+    public sealed record OptimizeSensitivityJson(
+        double Cost,
+        IReadOnlyList<OptimizeSensitivityVariableJson> Variables,
+        IReadOnlyList<OptimizeSensitivityGoalJson>     Goals);
+
+    /// <param name="PerRange">The cost change across the variable's whole range, to first order.</param>
+    /// <param name="Share">|PerRange| as a fraction of the sum over all variables.</param>
+    public sealed record OptimizeSensitivityVariableJson(string Key, double PerRange, double Share);
+
+    /// <param name="MostSensitive">The variable that moves this goal's cost most; null when none does.</param>
+    public sealed record OptimizeSensitivityGoalJson(
+        string Goal,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? MostSensitive,
+        double PerRange);
 
     // ── `lvs`: what the comparison concluded (brief-lvs-11-cli-verb.md R-lvs11-3c) ───────────
     //
@@ -961,7 +1073,13 @@ namespace RfCore.Export
         /// with <c>NDF=yes</c>, and why the run would be refused when it would (brief-wsprobe-6
         /// R-wsp6-2). Null when the analysis is not one that can carry the knob.</summary>
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        ExplainNdfJson?       Ndf = null);
+        ExplainNdfJson?       Ndf = null,
+        /// <summary>Under which <c>analyses=</c> scopes an optimization runs this chain — <c>goals</c>
+        /// (a goal names it, or an analysis it wraps), <c>all</c> — and which scope the design's
+        /// optimize line chose, last, as <c>setup=goals</c> or <c>setup=all</c> (brief-tuneopt-11
+        /// R-to11-7). Null when the design has no enabled goal.</summary>
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyList<string>? Optimize = null);
 
     /// <summary>
     /// <c>explain --analysis</c>'s answer to "what would the NDF do here" — the way to see a

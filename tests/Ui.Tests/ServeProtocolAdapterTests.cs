@@ -942,6 +942,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["run/lp"]            = ["path"],
             ["run/lpp"]           = ["path"],
             ["run/em"]            = ["path"],
+            ["run/optimize"]      = ["path"],
             ["check/"]            = ["path"],
             ["explain/"]          = ["path"],
             ["create/workspace"]  = ["path"],

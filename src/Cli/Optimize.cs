@@ -1,0 +1,451 @@
+using System.Globalization;
+using CircuitRF.Core.Design;
+using CircuitRF.Design.Circuit;
+using CircuitRF.Design.Optimization;
+using CircuitRF.Design.Results;
+using CircuitRF.Design.Revision;
+using CircuitRF.Design.Schematic;
+using CircuitRF.Design.Workspace;
+using CircuitRF.Diagnostics;
+using CircuitRF.Engine;
+using RfCore.Data;
+using RfCore.Export;
+
+namespace CircuitRF.Cli;
+
+/// <summary>
+/// <c>circuitrf opt &lt;path.csch|path.cnl&gt;</c> — the Optimizer window's run, headless
+/// (brief-tuneopt-11, overview D14/D15; <c>cli.md</c> §24).
+///
+/// <para><b>It owns no optimization.</b> The run is <see cref="OptimizationRun"/> in
+/// <c>src/Design/Optimization</c>, the object the Optimizer panel drives, over the same
+/// <see cref="PreparedCircuit"/> Simulate prepares; the best point's full results come out of
+/// <see cref="CircuitEvaluation.Evaluate"/>, as the panel's finish re-evaluates it. What is here is
+/// argument parsing, the flag overrides of the file's <c>optimize</c> settings, the two narrowing
+/// flags, reporting, and the one opt-in write.</para>
+///
+/// <para><b>It writes nothing to the design's values (D14).</b> It reports them — as the text the
+/// schematic would hold, so a caller can write one into the file. <c>--save-preset</c> is the one
+/// write: a preset added to a <c>.csch</c>'s tuning block, after a history checkpoint when the
+/// workspace keeps history, and every other byte of the file left as it was.</para>
+///
+/// <para><b>Exit codes (D15):</b> 0 every enabled goal met · 3 finished with a goal unmet · 1 refused ·
+/// 2 no evaluation converged · 130 cancelled, writing nothing. 3 exists so a script can tell "ran and
+/// missed the spec" from "could not run".</para>
+/// </summary>
+internal static class Optimize
+{
+    private const string Verb = "opt";
+
+    public static int Run(string[] args)
+    {
+        string? input = null, output = null, historyPath = null, presetName = null;
+        string? algorithm = null, cost = null, analyses = null, time = null;
+        int? maxIter = null, maxEvals = null, parallel = null, seed = null;
+        List<string>? vars = null, goals = null;
+        bool snap = false, sensitivity = false, showIterations = false;
+        var sets = new List<(string Name, string Expr)>();
+
+        for (int i = 0; i < args.Length; i++)
+        {
+            string a = args[i];
+            bool hasValue = i + 1 < args.Length;
+            switch (a)
+            {
+                case "--algorithm" when hasValue:  algorithm = args[++i]; break;
+                case "--cost" when hasValue:       cost = args[++i]; break;
+                case "--analyses" when hasValue:   analyses = args[++i]; break;
+                case "--time" when hasValue:       time = args[++i]; break;
+                case "--max-iter" when hasValue:   if (!Int(a, args[++i], out maxIter, out int r1)) return r1; break;
+                case "--max-evals" when hasValue:  if (!Int(a, args[++i], out maxEvals, out int r2)) return r2; break;
+                case "--parallel" when hasValue:   if (!Int(a, args[++i], out parallel, out int r3)) return r3; break;
+                case "--seed" when hasValue:       if (!Int(a, args[++i], out seed, out int r4)) return r4; break;
+                case "--vars" when hasValue:       vars = List(args[++i]); break;
+                case "--goals" when hasValue:      goals = List(args[++i]); break;
+                case "--snap":                     snap = true; break;
+                case "--sensitivity":              sensitivity = true; break;
+                case "--show-iterations":          showIterations = true; break;
+                case "-o" or "--output" when hasValue: output = args[++i]; break;
+                case "--history" when hasValue:    historyPath = args[++i]; break;
+                case "--save-preset" when hasValue: presetName = args[++i]; break;
+                case "--set" when hasValue:
+                {
+                    string kv = args[++i];
+                    int eq = kv.IndexOf('=');
+                    if (eq <= 0) return JsonRun.Fail(CliDiagnostics.SetMalformed(Verb, kv));
+                    sets.Add((kv[..eq].Trim(), kv[(eq + 1)..].Trim()));
+                    break;
+                }
+                default:
+                    if (a.StartsWith('-')) return JsonRun.Fail(CliDiagnostics.RunUnknownOption(Verb, a));
+                    if (input is not null) return JsonRun.Fail(CliDiagnostics.RunMultipleInputs(Verb, a));
+                    input = a;
+                    break;
+            }
+        }
+
+        if (input is null)
+        {
+            int code = JsonRun.Fail(CliDiagnostics.InputRequired(Verb, ".csch or .cnl"));
+            Usage();
+            return code;
+        }
+        JsonRun.InputPath = input;
+        if (!File.Exists(input)) return JsonRun.Fail(CliDiagnostics.FileNotFound(input));
+
+        var kind = DocumentKinds.Classify(input);
+        if (kind is not (DocumentKind.Netlist or DocumentKind.Schematic))
+            return JsonRun.Fail(CliDiagnostics.RunWrongDocumentKind(Verb, input, DocumentKinds.Name(kind)));
+        if (presetName is not null && kind != DocumentKind.Schematic)
+            return JsonRun.Fail(CliDiagnostics.OptSavePresetNeedsSchematic(input));
+        foreach (var (flag, path) in new[] { ("-o", output), ("--history", historyPath) })
+            if (path is not null && !path.EndsWith(".npy", StringComparison.OrdinalIgnoreCase))
+                return JsonRun.Fail(CliDiagnostics.OptOutputNotNpy(flag, path));
+
+        // ── 1. The circuit, prepared as Simulate prepares it ──────────────────
+        string full = Path.GetFullPath(input);
+        var circuit = kind == DocumentKind.Schematic
+            ? PreparedCircuit.FromSchematic(full)
+            : PreparedCircuit.FromFile(full, Path.GetDirectoryName(full));
+        if (circuit.ReadError is { } readError || circuit.Lib is not { } lib || circuit.Tb is not { } tb)
+            return JsonRun.Fail(CliDiagnostics.RunFailed(circuit.ReadError ?? "the design could not be read"));
+
+        // ── 2. The file's setup, with this run's flags over it ────────────────
+        var setup = tb.Tuning?.Clone() ?? new TuningSetup();
+        var settings = setup.Optimizer ??= new OptimizerSettings();
+        if (algorithm is not null) settings.Algorithm = algorithm;
+        if (maxIter is not null)   settings.MaxIterations = maxIter;
+        if (maxEvals is not null)  settings.MaxEvaluations = maxEvals;
+        if (parallel is not null)  settings.Parallelism = parallel;
+        if (seed is not null)      settings.Seed = seed;
+        if (time is not null)
+        {
+            // A bare number is seconds; a unit may follow, as the optimize line's timelimit= takes one.
+            string text = double.TryParse(time, NumberStyles.Float, CultureInfo.InvariantCulture, out _) ? time + " s" : time;
+            if (TuningValidator.TimeLimitSeconds(text) is null)
+                return JsonRun.Fail(CliDiagnostics.OptFlagValue("--time", time, "seconds, or a number and s, ms, min or h"));
+            settings.TimeLimit = text;
+        }
+        if (cost is not null)
+        {
+            if (cost is not ("lsq" or "minimax")) return JsonRun.Fail(CliDiagnostics.OptFlagValue("--cost", cost, "lsq or minimax"));
+            settings.Cost = cost == "minimax" ? OptimizerCost.Minimax : OptimizerCost.LeastSquares;
+        }
+        if (analyses is not null)
+        {
+            if (analyses is not ("goals" or "all")) return JsonRun.Fail(CliDiagnostics.OptFlagValue("--analyses", analyses, "goals or all"));
+            settings.Scope = analyses == "all" ? OptimizerScope.All : OptimizerScope.GoalAnalyses;
+        }
+
+        var catalog = TunableCatalog.FromNetlist(tb, lib);
+        if (vars is not null && NarrowVariables(setup, catalog, vars) is { } varRefusal) return JsonRun.Fail(varRefusal);
+        if (goals is not null && NarrowGoals(setup, goals) is { } goalRefusal) return JsonRun.Fail(goalRefusal);
+
+        if (presetName is not null && TuningPresets.NameProblem(tb.Tuning, -1, presetName) is { } nameProblem)
+            return JsonRun.Fail(CliDiagnostics.OptPresetName(nameProblem));
+
+        foreach (var (name, expr) in sets) Console.Error.WriteLine($"[circuitRF] set {name} = {expr}");
+
+        // ── 3. The run ────────────────────────────────────────────────────────
+        var ct = RunHost.Cancellation;
+        var observer = RunHost.Observer;
+        int enabledGoals = setup.Goals.Count(g => g.Enabled);
+        // The final result is the answer; each iteration is reported only when asked for — a line on
+        // stderr, an entry in the document's perIteration and, over the protocol, a progress
+        // notification. Unasked, a long run would hand a client hundreds of lines it did not want.
+        var perIteration = new List<OptimizeIterationJson>();
+        var run = OptimizationRun.Create(circuit, new OptimizationOptions
+        {
+            Setup         = setup,
+            Sets          = sets,
+            Cancellation  = ct,
+            SnapAndPolish = snap,
+            Progress      = !showIterations ? null : p =>
+            {
+                string line = ProgressLine(p, enabledGoals);
+                Console.Error.WriteLine(line);
+                observer?.Invoke(new RunProgress(line, p.Iteration, 0));
+                perIteration.Add(new OptimizeIterationJson(
+                    p.Iteration, p.Evaluations, Finite(p.BestCost), p.Goals.Count(g => g.Met), p.Failures, p.Infeasible,
+                    p.Stage, p.BestValues.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal)));
+            },
+        });
+        if (run.Refusal is { } refusal) return JsonRun.Fail(refusal);
+        foreach (var note in run.Notes) Report(note);
+
+        Console.Error.WriteLine($"[circuitRF] optimizing {run.Variables!.Coordinates.Count} variable(s) against " +
+                                $"{enabledGoals} goal(s) with {run.AlgorithmId}");
+        var result = run.Run();
+        foreach (var note in result.Notes.Skip(run.Notes.Count)) Report(note);
+
+        if (result.Outcome == OptimizationOutcome.Cancelled)
+        {
+            JsonRun.Report(CliDiagnostics.OptCancelled());
+            return 130;
+        }
+        if (result.Outcome == OptimizationOutcome.Refused)
+            return JsonRun.Fail(result.Refusal ?? CliDiagnostics.RunFailed(result.FinishReason));
+
+        SensitivityReport? sens = null;
+        if (sensitivity && result.BestPoint is not null)
+        {
+            try { sens = run.Sensitivity(null, ct); }
+            catch (OperationCanceledException) { JsonRun.Report(CliDiagnostics.OptCancelled()); return 130; }
+        }
+
+        // ── 4. Files: the best point's full results, the history, the preset ──
+        int exit = result.ExitCode;
+        if (result.Outcome == OptimizationOutcome.NoConvergence && result.Refusal is { } nc) JsonRun.Report(nc);
+
+        if (output is not null && result.BestValues.Count > 0)
+        {
+            var rr = CircuitEvaluation.Evaluate(circuit, new CircuitEvaluationRequest { Tunables = result.BestValues, Sets = sets });
+            if (ct.IsCancellationRequested) { JsonRun.Report(CliDiagnostics.OptCancelled()); return 130; }
+            var data = rr.Status == RunStatus.Success && rr.GroupedResults is { } grouped ? grouped : new DataSet();
+            if (rr.Status != RunStatus.Success) JsonRun.Report(CliDiagnostics.RunFailed(rr.StatusMessage));
+            Write(TunedProvenance.Stamp(Merge(data, result.History), result.BestValues), output);
+        }
+        if (historyPath is not null && result.History is { } history) Write(history, historyPath);
+
+        string? saved = null;
+        if (presetName is not null && result.BestValues.Count > 0)
+        {
+            if (SavePreset(full, presetName.Trim(), result) is { } failed) { JsonRun.Report(failed); exit = 1; }
+            else saved = presetName.Trim();
+        }
+
+        // ── 5. The report ─────────────────────────────────────────────────────
+        var report = Project(input, run, result, catalog, sens, saved, showIterations ? perIteration : null);
+        JsonRun.Optimize = report;
+        Print(report);
+        return exit;
+    }
+
+    // ── flags ──────────────────────────────────────────────────────────────────
+
+    private static bool Int(string flag, string text, out int? value, out int refusal)
+    {
+        refusal = 0;
+        value   = null;
+        if (int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) && v > 0) { value = v; return true; }
+        refusal = JsonRun.Fail(CliDiagnostics.OptFlagValue(flag, text, "a positive whole number"));
+        return false;
+    }
+
+    private static List<string> List(string text)
+        => [.. text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+
+    /// <summary><c>--vars</c>: only these of the file's opt-enabled entries are optimized; the others
+    /// keep their ranges (a complex value's ranges hold together, D18) and stay at the design's value.</summary>
+    private static Diagnostic? NarrowVariables(TuningSetup setup, TunableCatalog catalog, List<string> keys)
+    {
+        var optimized = setup.Variables.Where(e => e.Opt).Select(e => e.Key).ToList();
+        foreach (var key in keys)
+        {
+            if (optimized.Contains(key, StringComparer.Ordinal)) continue;
+            // A whole complex value is never a variable: name its parts (D18).
+            if (catalog.PartsOf(key).Count > 0 || optimized.Any(k => TunableKey.TryParse(k, out var tk) && tk.Part is not null && tk.Whole.ToString() == key))
+                return CliDiagnostics.OptVarsWholeComplex(key, string.Join(", ",
+                    new[] { ComplexPart.Real, ComplexPart.Imag, ComplexPart.Mag, ComplexPart.Phase }.Select(p => TunableKey.PartKey(key, p))));
+            return CliDiagnostics.OptVarsNotOptimized(key, optimized.Count == 0 ? "none" : string.Join(", ", optimized));
+        }
+        foreach (var e in setup.Variables.Where(e => e.Opt && !keys.Contains(e.Key, StringComparer.Ordinal))) e.Opt = false;
+        return null;
+    }
+
+    /// <summary><c>--goals</c>: only these of the file's enabled goals count.</summary>
+    private static Diagnostic? NarrowGoals(TuningSetup setup, List<string> names)
+    {
+        var enabled = setup.Goals.Where(g => g.Enabled).Select(g => g.Name).ToList();
+        foreach (var name in names)
+            if (!enabled.Contains(name, StringComparer.Ordinal))
+                return CliDiagnostics.OptGoalsUnknown(name, enabled.Count == 0 ? "none" : string.Join(", ", enabled));
+        foreach (var g in setup.Goals.Where(g => g.Enabled && !names.Contains(g.Name, StringComparer.Ordinal))) g.Enabled = false;
+        return null;
+    }
+
+    private static void Report(Diagnostic d)
+    {
+        string prefix = d.Severity switch { DiagnosticSeverity.Warning => "warning: ", DiagnosticSeverity.Error => "", _ => "note: " };
+        Console.Error.WriteLine(prefix + d.Render());
+        JsonRun.Note(d);
+    }
+
+    /// <summary>One iteration, as stderr prints it and an MCP progress notification carries it.</summary>
+    internal static string ProgressLine(OptimizationProgress p, int enabledGoals)
+    {
+        var parts = new List<string>
+        {
+            $"iter {p.Iteration}",
+            $"{p.Evaluations} evals",
+            $"best cost {(double.IsFinite(p.BestCost) ? p.BestCost.ToString("G4", CultureInfo.InvariantCulture) : "—")}",
+            $"goals met {p.Goals.Count(g => g.Met)}/{enabledGoals}",
+        };
+        if (p.Failures > 0)   parts.Add($"{p.Failures} failed");
+        if (p.Infeasible > 0) parts.Add($"{p.Infeasible} infeasible");
+        if (p.Stage is { } s) parts.Add(s);
+        return string.Join(" · ", parts);
+    }
+
+    // ── files ──────────────────────────────────────────────────────────────────
+
+    /// <summary>The best point's results with the run's <c>opt</c> history group beside them.</summary>
+    private static DataSet Merge(DataSet data, DataSet? history)
+    {
+        if (history is null) return data;
+        foreach (var group in history.Groups)
+            foreach (var (name, cube) in history.CubesIn(group))
+                data.AddToGroup(group, name, cube);
+        return data;
+    }
+
+    private static void Write(DataSet ds, string path)
+    {
+        string? dir = Path.GetDirectoryName(Path.GetFullPath(path));
+        if (dir is not null) Directory.CreateDirectory(dir);
+        DataSetExporter.Export(ds, path, ExportFormat.Npy, new ExportOptions(Format: ExportFormat.Npy));
+        Console.WriteLine($"Wrote {path}");
+        JsonRun.AddOutput(JsonRun.KindOf(path), path);
+    }
+
+    /// <summary>
+    /// <c>--save-preset</c> (D14): the best values as a new preset in the schematic's tuning block —
+    /// <see cref="TuningPresets.LockIn"/>, the Optimizer's own Lock in — after a checkpoint when the
+    /// workspace keeps a history. The file is re-read and re-written through its own persistence, so
+    /// every other byte is what that persistence writes for it.
+    /// </summary>
+    private static Diagnostic? SavePreset(string cschPath, string name, OptimizationResult result)
+    {
+        string? root = WorkspaceRootFinder.WorkspaceDirOf(Path.GetDirectoryName(cschPath));
+        if (root is not null
+            && WorkspaceRevisionSetting.Read(WorkspaceRevisionSetting.CwsPathFor(root)) != false
+            && GitCommand.For(root) is { } git && git.IsRepositoryRoot())
+        {
+            var taken = WorkspaceCheckpoints.Take(git, CheckpointOrigin.BeforeBatch, $"opt --save-preset {name}", attended: false);
+            if (taken.Diagnostics.FirstOrDefault(d => d.Severity == DiagnosticSeverity.Error) is { } failed) return failed;
+        }
+
+        var (model, view, cellName) = SchematicPersistence.LoadFromFile(cschPath);
+        var (next, _) = TuningPresets.LockIn(model.Tuning, result.BestValues, DateTime.UtcNow, result.BestCost, name);
+        model.Tuning = next;
+        SchematicPersistence.SaveToFile(cschPath, model, cellName, view.PanX, view.PanY, view.Zoom);
+        Console.WriteLine($"Saved preset \"{name}\" to {cschPath}");
+        JsonRun.AddOutput("schematic", cschPath);
+        return null;
+    }
+
+    // ── the report ─────────────────────────────────────────────────────────────
+
+    private static OptimizeReportJson Project(string input, OptimizationRun run, OptimizationResult r,
+                                              TunableCatalog catalog, SensitivityReport? sens, string? saved,
+                                              IReadOnlyList<OptimizeIterationJson>? perIteration)
+    {
+        var rows = new List<OptimizeVariableJson>();
+        foreach (var c in run.Variables!.Coordinates)
+        {
+            var t = catalog.Find(c.Key);
+            string start = t?.ValueText ?? "";
+            string? best = null, whole = null, wholeStart = null;
+            if (r.BestValues.TryGetValue(c.ValueKey, out var bestText))
+            {
+                if (c.Part is { } part)
+                {
+                    whole = bestText;
+                    if (ComplexValue.TryParse(bestText, out var z, out _, out _))
+                        best = c.Text(ComplexValue.Get(z, part, t?.Value));
+                }
+                else best = bestText;
+            }
+            if (c.Part is not null && t is not null) wholeStart = ComplexValue.Format(t.Whole, t.WholeUnit, t.Form);
+            var railed = r.Railed.FirstOrDefault(x => x.Key == c.Key);
+            rows.Add(new OptimizeVariableJson(c.Key, start, best, c.Text(c.Min), c.Text(c.Max),
+                railed is null ? null : railed.End == RailEnd.Min ? "min" : "max", railed?.Against, whole, wholeStart));
+        }
+
+        var goals = r.Goals.Select(g => new OptimizeGoalJson(g.Name, g.Met, Finite(g.WorstValue), g.WorstAt, g.Axis,
+                                                               Finite(g.Margin))).ToList();
+
+
+        return new OptimizeReportJson(
+            input, r.Algorithm, r.Stages, OutcomeWord(r.Outcome), r.FinishReason, r.BestCost,
+            r.Iterations, r.Evaluations, r.Failures, r.Infeasible, r.CacheHits, rows, goals,
+            r.Snap is { } s ? new OptimizeSnapJson(s.Snapped, s.Neighbours, s.CostBefore, s.CostSnapped, s.CostAfter, s.Polished) : null,
+            sens is null ? null : new OptimizeSensitivityJson(sens.Cost,
+                [.. sens.Variables.Select(v => new OptimizeSensitivityVariableJson(v.Key, v.PerRange, v.Share))],
+                [.. sens.Goals.Select(g => new OptimizeSensitivityGoalJson(g.Goal, g.MostSensitive, g.PerRange))]),
+            saved, perIteration);
+    }
+
+    private static double? Finite(double v) => double.IsFinite(v) ? v : null;
+
+    private static string OutcomeWord(OptimizationOutcome o) => o switch
+    {
+        OptimizationOutcome.GoalsMet      => "goalsMet",
+        OptimizationOutcome.GoalsUnmet    => "goalsUnmet",
+        OptimizationOutcome.Refused       => "refused",
+        OptimizationOutcome.NoConvergence => "noConvergence",
+        _                                 => "cancelled",
+    };
+
+    private static string G(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
+
+    private static void Print(OptimizeReportJson r)
+    {
+        Console.WriteLine($"Optimization: {r.Algorithm}   ({r.Document})");
+        if (r.Stages.Count > 0) Console.WriteLine($"Stages:    {string.Join(" → ", r.Stages)}");
+        Console.WriteLine($"Finished:  {r.FinishReason}");
+        Console.WriteLine($"Best cost: {(r.BestCost is { } c ? G(c) : "—")}   " +
+                          $"({r.Iterations} iterations, {r.Evaluations} evaluations" +
+                          (r.Failures > 0 ? $", {r.Failures} failed" : "") +
+                          (r.Infeasible > 0 ? $", {r.Infeasible} infeasible" : "") + ")");
+
+        Console.WriteLine();
+        Console.WriteLine("Variables:");
+        Table(["key", "start", "best", "min", "max", "railed"],
+              r.Variables.Select(v => new[]
+              {
+                  v.Key, v.Start, v.Best ?? "—", v.Min, v.Max,
+                  v.Railed is null ? "" : v.RailedAgainst is null ? v.Railed : $"{v.Railed} of {v.RailedAgainst}",
+              }));
+        // A complex value's parts compose ONE value: say what it is, start → best (D18).
+        foreach (var w in r.Variables.Where(v => v.WholeStart is not null).GroupBy(v => v.Key[(v.Key.IndexOf('(') + 1)..^1]))
+            Console.WriteLine($"  {w.Key}  {w.First().WholeStart} → {w.First().Whole ?? "—"}");
+
+        Console.WriteLine();
+        Console.WriteLine("Goals:");
+        Table(["name", "met", "value", "at", "margin"],
+              r.Goals.Select(g => new[]
+              {
+                  g.Name, g.Met ? "yes" : "NO", g.Value is { } v ? G(v) : "—",
+                  g.At is { } at ? $"{g.Axis} = {G(at)}" : "", g.Margin is { } m ? G(m) : "—",
+              }));
+
+        if (r.Snap is { } s)
+            Console.WriteLine($"\nSnap: {s.Snapped} value(s) snapped, cost {G(s.CostBefore)} → {G(s.CostSnapped)}" +
+                              (s.Polished ? $" → {G(s.CostAfter)} after polishing" : ""));
+        if (r.Sensitivity is { } sens)
+        {
+            Console.WriteLine();
+            Console.WriteLine($"Sensitivity at the best point (cost {G(sens.Cost)}):");
+            Table(["key", "per range", "share"],
+                  sens.Variables.Select(v => new[] { v.Key, G(v.PerRange), $"{v.Share * 100:F1} %" }));
+        }
+    }
+
+    private static void Table(string[] header, IEnumerable<string[]> rows)
+    {
+        var all = rows.ToList();
+        var width = header.Select((h, i) => Math.Max(h.Length, all.Select(r => r[i].Length).DefaultIfEmpty(0).Max())).ToArray();
+        string Line(string[] cells) => "  " + string.Join("  ", cells.Select((c, i) => c.PadRight(width[i]))).TrimEnd();
+        Console.WriteLine(Line(header));
+        foreach (var row in all) Console.WriteLine(Line(row));
+    }
+
+    private static void Usage()
+    {
+        Console.Error.WriteLine("Usage: circuitrf opt <file.csch|file.cnl> [--algorithm id] [--max-iter n] [--max-evals n] [--time s]");
+        Console.Error.WriteLine("                     [--cost lsq|minimax] [--analyses goals|all] [--parallel n] [--seed n] [--set var=expr]");
+        Console.Error.WriteLine("                     [--vars key,key] [--goals name,name] [--snap] [--sensitivity] [--show-iterations]");
+        Console.Error.WriteLine("                     [-o out.npy] [--history out.npy] [--save-preset name]");
+    }
+}

@@ -1336,9 +1336,19 @@ internal static class Check
     private static void CheckTuning(string path, TestBench tb, Library lib, ElaboratedNetlist? nl,
                                     TunableCatalog? catalog, Findings f)
     {
-        if (tb.Tuning is not { IsEmpty: false }) return;
+        if (tb.Tuning is not { IsEmpty: false } setup) return;
         catalog ??= TunableCatalog.FromNetlist(tb, lib);
-        foreach (var finding in TuningValidator.Validate(tb, catalog, nl))
+        var findings = TuningValidator.Validate(tb, catalog, nl);
+        foreach (var finding in findings)
             f.Add(CliDiagnostics.CheckTuningFinding(path, finding));
+
+        // brief-tuneopt-11 R-to11-7: an optimize line that would be refused at run time — nothing to
+        // optimize, no enabled goal, three parts of one complex value, an algorithm this build lacks —
+        // is refused here in the run's own words, because the question goes to the run's own
+        // constructor (no evaluation happens there). Asked only when the rules above found no error,
+        // since the run refuses on the first of those itself and would only say it twice.
+        if (setup.Optimizer is null || findings.Any(d => d.Severity == DiagnosticSeverity.Error)) return;
+        var run = OptimizationRun.Create(PreparedCircuit.FromBench(lib, tb, null));
+        if (run.Refusal is { } refusal) f.Add(CliDiagnostics.CheckTuningFinding(path, refusal));
     }
 }

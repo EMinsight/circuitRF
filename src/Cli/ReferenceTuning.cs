@@ -1,6 +1,7 @@
 using System.Text;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Netlist;
+using CircuitRF.Design.Optimization;
 using CircuitRF.Engine.Optimization;
 using RfCore.Export;
 
@@ -113,16 +114,83 @@ internal static partial class Reference
             sb.AppendLine();
         }
 
+        if (goals) AppendScoringAndFunctions(sb);
+
         sb.AppendLine("Worked example");
         sb.AppendLine();
         foreach (var line in goals ? GoalsExample : TuningExample) sb.AppendLine(line.Length == 0 ? "" : "    " + line);
         sb.AppendLine();
         sb.AppendLine(goals
-            ? "See also: reference tuning (which values can vary), reference analyses (what a goal reads)."
+            ? "See also: reference tuning (which values can vary), reference analyses (what a goal reads);\n" +
+              "circuitrf opt <file> runs them (run analysis=optimize over the protocol) — exit 3 when a goal is unmet."
             : "See also: reference goals (what the optimizer aims for), reference optimizers (each algorithm and its options);\n" +
-              "explain <file> --tunables lists every key a design offers.");
+              "explain <file> --tunables lists every key a design offers; circuitrf opt <file> runs the optimize line,\n" +
+              "and its flags override it for one run without changing the file.");
         return sb.ToString();
     }
+
+    /// <summary>
+    /// The goals page's two generated sections (brief-tuneopt-11 R-to11-6): how a goal is scored —
+    /// <see cref="GoalResiduals"/>' own rule and tolerance — and the goal functions, which are the
+    /// Optimizer window's template catalog (<see cref="GoalTemplates"/>) run over a bench declaring an
+    /// S-parameter analysis, a WSProbe and an HB efficiency measure, so a template added there is a
+    /// line here with nothing to edit.
+    /// </summary>
+    private static void AppendScoringAndFunctions(StringBuilder sb)
+    {
+        sb.AppendLine("How a goal is scored");
+        sb.AppendLine();
+        foreach (var line in Wrap(
+            "Each grid point's violation is divided by the goal's scale (scale=, else the band's width for in and out, " +
+            "else the larger of |limit| and 1 in the limit's own unit) and multiplied by its weight and by 1/sqrt(points), " +
+            "so dB, degrees and ohms mix and a swept goal weighs the same as a single number. The cost is the sum of " +
+            "their squares (cost=lsq) or the largest one (cost=minimax); a goal is met when its worst violation is within " +
+            $"{GoalResiduals.MetTolerance.ToString("G2", System.Globalization.CultureInfo.InvariantCulture)} of its scale, " +
+            "and every goal met is a cost of 0.", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+
+        sb.AppendLine("Goal functions — the Optimizer's templates, each as the goal line it writes. A template fills");
+        sb.AppendLine("over=, lo= and hi= with the analysis's swept range; <limit> is yours. Output power, efficiency and");
+        sb.AppendLine("PAE are a measure line you write and then name in a goal, as Eff below.");
+        sb.AppendLine();
+        var (_, bench) = new CircuitRF.Core.Netlist.CnlReader().Read(string.Join('\n', FunctionsBench), "tb", null);
+        string? group = null;
+        foreach (var t in GoalTemplates.For(bench))
+        {
+            string heading = t.Group switch
+            {
+                GoalTemplateGroup.SParameters  => "S-parameters",
+                GoalTemplateGroup.WsProbe      => "WSProbe (stability-wsprobe metrics of one probe)",
+                GoalTemplateGroup.Measurements => "Measurements (any measure line, by name)",
+                _                              => "Custom",
+            };
+            if (heading != group) { sb.AppendLine("  " + heading); group = heading; }
+            var g = t.Make();
+            string type = t.Group is GoalTemplateGroup.Measurements or GoalTemplateGroup.Custom
+                ? "le|ge" : g.Type.ToString().ToLowerInvariant();
+            string limit = g.Limit.Length > 0 ? g.Limit : g.Type is GoalType.In or GoalType.Out ? "<a> <b>" : "<limit>";
+            string expr = g.Expression.Length > 0 ? g.Expression : "<expression>";
+            sb.AppendLine($"    {t.Label,-44} goal {g.Name} = {expr}{(g.Analysis is { } a ? $" analysis={a}" : "")} {type} {limit}");
+        }
+        sb.AppendLine();
+    }
+
+    /// <summary>The bench the goal-function list is generated over: one S-parameter analysis with a
+    /// WSProbe, and an HB analysis with an efficiency measure built from two others.</summary>
+    internal static readonly string[] FunctionsBench =
+    [
+        "f0 = 2 GHz",
+        "Port:P1 in 0 Num=1 Z=50 Ohm",
+        "WSProbe:PS in mid",
+        "R:R1 mid out R=10 Ohm",
+        "Port:P2 out 0 Num=2 Z=50 Ohm",
+        "analysis SP1 type=sparam start=1 stop=2 npts=11 Unit=GHz",
+        "analysis HB1 type=hb Tone=f0 MaxHarm=4",
+        "measure Pout_W = 0.5*real(HB1.V(\"out\", 1)*conj(HB1.I(\"P2\", 1)))",
+        "measure Pdc_W = real(HB1.V(\"vdd\", 0)*HB1.I(\"Vdd\", 0))",
+        "measure Eff = 100*Pout_W/Pdc_W",
+    ];
 
     /// <summary>A complete netlist both worked examples build on, so either one can be copied into a
     /// file and checked as it stands.</summary>

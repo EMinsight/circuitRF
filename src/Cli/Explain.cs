@@ -1020,6 +1020,23 @@ internal static class Explain
     {
         int exit = 0;
 
+        // brief-tuneopt-11 R-to11-7: which chains an optimization evaluates under each analyses= scope,
+        // through the run's own rule (OptimizationRun.AnalysesUnder) rather than a restatement of it.
+        IReadOnlyList<string>? underGoals = null, underAll = null;
+        string setupScope = "";
+        if (tb.Tuning is { } tuning && tuning.Goals.Any(g => g.Enabled))
+        {
+            underGoals = Design.Optimization.OptimizationRun.AnalysesUnder(tb, tuning, OptimizerScope.GoalAnalyses);
+            underAll   = Design.Optimization.OptimizationRun.AnalysesUnder(tb, tuning, OptimizerScope.All);
+            setupScope = tuning.Optimizer?.Scope == OptimizerScope.All ? "setup=all" : "setup=goals";
+        }
+        IReadOnlyList<string>? OptimizeScopes(string name) => underGoals is null ? null :
+        [
+            .. underGoals.Contains(name, StringComparer.Ordinal) ? new[] { "goals" } : [],
+            .. underAll!.Contains(name, StringComparer.Ordinal) ? new[] { "all" } : [],
+            setupScope,
+        ];
+
         // R-wsp1-12(b): an S-parameter analysis reports its port count and its WSProbes — label,
         // idx and BOTH terminal nets — which only an elaboration can answer (idx is assigned there,
         // and a probe in a sub-cell is X1.GATE). Elaborated once, only when an S-parameter analysis
@@ -1137,7 +1154,8 @@ internal static class Explain
                 Ports:    isSparam ? ports : null,
                 WsProbes: isSparam ? wsProbes : null,
                 MarginThreshold: MarginThresholdOf(a),
-                Ndf: isSparam && ndfByAnalysis.TryGetValue(a.Name, out var ndfRow) ? ndfRow : null));
+                Ndf: isSparam && ndfByAnalysis.TryGetValue(a.Name, out var ndfRow) ? ndfRow : null,
+                Optimize: OptimizeScopes(a.Name)));
         }
 
         return (rows, exit);
@@ -1526,6 +1544,15 @@ internal static class Explain
 
                 if (a.PromotedFrom is { } from)
                     Console.WriteLine($"      promoted from '{from}' — naming the inner analysis would lose the sweep axis");
+
+                // brief-tuneopt-11 R-to11-7. The last entry is the scope the optimize line chose.
+                if (a.Optimize is { Count: > 0 } opt)
+                {
+                    var scopes = opt.Take(opt.Count - 1).ToList();
+                    Console.WriteLine(scopes.Count == 0
+                        ? $"      optimize: not run under analyses=goals or all ({opt[^1]})"
+                        : $"      optimize: run under analyses={string.Join(" and ", scopes)} ({opt[^1]})");
+                }
 
                 if (a.Sweep is { } s)
                     Console.WriteLine(

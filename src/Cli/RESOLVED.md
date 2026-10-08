@@ -3036,3 +3036,45 @@ Gate: `tests/Ui.Tests/Cli/NetlistToSchematicTests.cs`.
   variable that carries its own unit (`F1 = 2 GHz`, `start="F1" startUnit=GHz`) took the site unit a
   second time: the run went from 2E+09 GHz with no error. Simulate always passed the set. Gate:
   `tests/Ui.Tests/Cli/DcMeasureAndSparamUnitCliTests.cs`.
+
+## `opt` and `run analysis=optimize` (brief-tuneopt-11, 2026-10-07)
+
+`docs/design/cli.md` §24 has the design; these are the things that turned out to be true.
+
+**`PreparedCircuit.Lib`/`Tb` had to become public.** TO-2 made them internal to `src/Design`, which left
+the verb no way to read the tuning setup and catalog of the circuit the run itself evaluates — reading
+the file a second time would have been a second parse that could disagree with the first (a `.csch` is
+extracted, not read). They are documented as read-only: every evaluation works on its own copy.
+`PreparedCircuit.FromBench(lib, tb, baseDir)` was added for `check`, which already holds both.
+
+**A met goal used to report its FIRST grid point as its "worst".** `GoalResiduals.Score` kept the point
+of largest violation, and with every violation 0 that is whichever came first — a meaningless place to
+put the goals table's "where" column. It now reports the tightest point (least slack to the limit) and
+`Margin`, the slack there; for an unmet goal that point is the worst violation, as before (every
+existing assertion on an unmet goal's `WorstAt` still holds). The Optimizer window's met-goal readout
+shows the same point now.
+
+**`check` asks the run rather than restating it.** `TuningValidator` did not refuse a setup with no opt
+entries, no enabled goal or three parts of one complex value — those were the run's constructor's alone.
+`check` now constructs the run (it evaluates nothing) and reports its refusal in its own words, but only
+when the validator found no error, since the constructor runs the validator first and would only repeat
+it.
+
+**Per-iteration output is opt-in, MCP progress included** (owner decision after the first build). The
+first version printed every iteration on stderr (silenced by `-q`), returned a `trajectory` array and sent
+a progress notification per iteration to any client with a progress token. Now the default is the final
+result alone and `--show-iterations` / `showIterations` turns on all three together — the lines, a
+`perIteration` array (which replaces `trajectory`) and the notifications. A progress token alone no
+longer produces notifications from `opt`; `-q` is gone, since quiet is the default.
+
+**Progress carries no total.** An iteration limit is not a denominator: Auto's stages share it, a stall
+ends a run early, and an evaluation or time limit can end it first. A total would be a bar that jumps to
+done. The message is the stderr line, which already names the goals met and the infeasible points.
+
+**`JsonRpc` serializes per FRAME**, so a long optimization holds the writer for one notification's write
+per iteration and nothing between them — checked, nothing to change.
+
+**Headless preferred values are the shipped ladders.** The user's own E-series choices live in the GUI's
+preferences, which a headless run does not read (`src/Design`'s rule: a preference is an argument). A
+`discrete=preferred` run can therefore snap differently from the window on a machine whose user edited
+the ladders.

@@ -45,6 +45,7 @@ framework, not the GUI referencing the CLI — and `CircuitRF.Cli.Verbs` has its
 | `em` | `.cem` | `EmSetupResolver` + `EmRunService` (kernel chosen by `EmKernelRegistry`) | Touchstone `.sNp` + grouped `.npy` at the path Simulate writes; `-o` moves the Touchstone |
 | `rail` | `.crail` (or a `.clay` / `.csch` / cell folder with one beside it) | `RailOrder` + `RailDcRun` — the extractor, the solve and the via check `src/Design/RailRf` already holds | stdout tables; `-o .csv/.npy/.mat/.txt` for the numbers and `.svg/.pdf` for the report page — §17 |
 | `smith` | `.csmith` | `SmithCascade` + `SmithReadings` + `SmithBand` — the evaluator the Smith Chart window's status strip reads on every edit | stdout reading + the per-node walk; `-o .s1p` for the load Γ and `.svg/.pdf/.png` for the chart — §18 |
+| `opt` | `.cnl` or `.csch` | `OptimizationRun` — the Optimizer window's run — over the `tune`, `goal` and `optimize` lines | stdout result tables; `-o .npy` the best point's full results plus the `opt` history group; `--history .npy`; `--save-preset` the one write to the design — §24 |
 | `elab` | `.cnl` or `.csch` | elaboration only | the elaborated netlist, for development |
 
 **A run verb takes a SCHEMATIC as well as a netlist, and extracts it in memory** (§14). Any other
@@ -466,13 +467,20 @@ symptom and not the cause.
 | 0 | ran, and produced something usable |
 | 1 | could not run — bad arguments, missing file, no matching analysis, a refusal, an exception |
 | 2 | ran, but did not converge |
-| 130 | stopped — `em`, `render`, `rail`, `smith` and `lvs`, and only when the run was cancelled at a work boundary (§8.4, §13.6, §17.5, §18.6, §19.4). All of them write NOTHING on a cancellation |
+| 3 | `opt` only: finished, and at least one enabled goal is unmet (§24.3) |
+| 130 | stopped — `em`, `render`, `rail`, `smith`, `lvs` and `opt`, and only when the run was cancelled at a work boundary (§8.4, §13.6, §17.5, §18.6, §19.4, §24.3). All of them write NOTHING on a cancellation |
 
 `2` is deliberately **not** the same test for every verb. `hb` and `dc` fail on any non-converged
 solve. A loadpull grid in which some points do not converge is a normal, useful result — the edge of
 a Γ grid routinely will not — so `lp` returns `2` only when **every** grid point failed, and `lpp`
 only when neither optimum converged and there is no follow-on grid. A rule that failed the whole run
 on one bad point would make the exit code useless in a script.
+
+**`3` exists for one verb and one reason** (brief-tuneopt-11 R-to11-3, overview D15). An optimization
+that ran to its end without meeting its spec is neither a refusal (1: it could not run) nor a solver
+failure (2: nothing converged), and a script must be able to tell all three apart — "the design cannot
+meet this" is the answer it asked for, not an error in asking. Reusing 1 or 2 for it would make a CI job
+treat a spec miss as a broken invocation, or a broken invocation as a spec miss.
 
 ## 7A. The CLI stays English, permanently
 
@@ -1351,7 +1359,7 @@ be found by its name.
 
 | Tool | Becomes |
 |---|---|
-| `run` | `sparam` / `dc` / `hb` / `lp` / `lpp` / `em`, selected by an argument — one tool, not six. `em` takes a `.cem` or a `.c3d`, whose embedded setup `setup` names — every shipped eigenmode example embeds two |
+| `run` | `sparam` / `dc` / `hb` / `lp` / `lpp` / `em` / `opt` (`analysis=optimize`), selected by an argument — one tool, not seven. `em` takes a `.cem` or a `.c3d`, whose embedded setup `setup` names — every shipped eigenmode example embeds two |
 | `check` | `check` |
 | `explain` | `explain`, including RND-3's `--cells` / `--layers` / `--extents`, `--footprints` and `--tunables` |
 | `create` | `new workspace` / `new cell` |
@@ -1470,6 +1478,10 @@ mentioned a `.cem`, so an agent could learn that circuitRF solves cavity and pac
 spotting `Eigenmode` among `Problem3D`'s values in a 54 kB format topic. It says `run analysis=em` takes
 a `.cem` or a `.c3d`, lists what each `Problem3D` returns, names the two format topics, and points at
 `solver` for whether this machine's Palace can do it — about 600 bytes.
+
+**A third names the optimizer** (brief-tuneopt-11 R-to11-6): five steps — `explain --tunables`, write
+`tune` (one complex example, `tune mag(ZL) …`), `goal` and `optimize` lines, `check`, `run
+analysis=optimize`, `read` the `.npy` — and the three topics that hold the grammar. About 650 bytes.
 
 ### 11.3a Resources — the cheaper channel for the same bytes
 
@@ -3396,3 +3408,93 @@ folder written is the application's placement's, byte for byte. Through `serve`,
 is asked once and an Allow rebuilds the cell; a Decline is a refusal and is not asked again; a client
 that cannot ask is never sent the question.
 
+## 24. `opt` — the Optimizer window's run, headless
+
+**brief-tuneopt-11.** `circuitrf opt <path.csch|path.cnl>` runs the design's `tune`, `goal` and
+`optimize` lines (`reference tuning`, `goals`, `optimizers`) and reports what it found. It follows the
+run-verb anatomy (§3): parse, read, run, report, export.
+
+### 24.1 It owns no optimization
+
+The run is `OptimizationRun` (`src/Design/Optimization`), the object the Optimizer panel drives, over the
+`PreparedCircuit` Simulate prepares — `FromSchematic` for a `.csch`, `FromFile` for a `.cnl`. The best
+point's full results come from `CircuitEvaluation.Evaluate`, as the panel's finish re-evaluates it.
+`src/Cli/Optimize.cs` is argument parsing, the flag overrides, the two narrowing flags, reporting and the
+one opt-in write. The gate `OptParityTests` runs the verb and the panel's headless view model on one
+stochastic setup (differential evolution, `seed=7`) and compares best values, cost and evaluation count
+exactly.
+
+### 24.2 Flags override the file for this run only
+
+`--algorithm`, `--max-iter`, `--max-evals`, `--time` (seconds, or a number and `s`/`ms`/`min`/`h`),
+`--cost lsq|minimax`, `--analyses goals|all`, `--parallel`, `--seed` replace the `optimize` line's keys
+for this run; `--set` overrides a global as every run verb does. `--vars key,key` and `--goals name,name`
+narrow to a subset of the file's opt-enabled entries and enabled goals — a name outside that set is a
+refusal listing the set, and **a whole complex key (`--vars ZL`) is a refusal naming its four parts**,
+since a complex value is optimized by its parts (overview D18). A narrowed-out entry keeps its range,
+because a complex value's ranges hold together whatever the flags. `--snap` is TO-8's snap and polish at
+the end; `--sensitivity` adds a sensitivity pass at the best point (n more evaluations, never unasked);
+`--show-iterations` reports every iteration as well (§24.3). Preferred values snap to the SHIPPED ladders: the
+user's own live in the GUI's preferences, which a headless run has none of.
+
+**Nothing is written to the design's values** (overview D14). The values are REPORTED as the text the
+schematic would hold, so an agent that wants them writes the file. **`--save-preset <name>`** is the one
+write: the best values as a preset in a `.csch`'s tuning block — `TuningPresets.LockIn`, the Optimizer's
+own Lock in — after a `BeforeBatch` checkpoint when the workspace keeps a history; the file goes back
+through its own persistence, so every other byte is unchanged (gated). A `.cnl` is refused: the preset is
+a line the caller adds. A preset name Lock in would refuse is refused before the run, not after it.
+
+### 24.3 Output and exit codes
+
+stdout: the finish reason, the best cost, a variables table (key, start, best, min, max, railed — a part
+of a complex value is its own row, followed by one line per value, `ZL  80+0j Ohm → 107.551763917658-48.0049696570421j Ohm` — the
+text Push would write, at its full precision) and
+a goals table (name, met, value, where on the axis, margin). **A met goal reports its TIGHTEST point** —
+the one closest to its limit — and its margin, the slack there in the expression's own unit; an unmet
+goal reports its worst point and −(violation). `--json` carries the same as `result.optimize` plus the
+snap and the sensitivity when they ran, and — for a part — the `whole` value beside it, as `explain
+--tunables` does.
+
+**The final result is the default, and the whole default** (owner decision, 2026-10-07): an optimization
+of a few hundred iterations would otherwise hand a script or an agent hundreds of lines it did not ask
+for. `--show-iterations` adds each iteration — a line on stderr
+(`iter 12 · 140 evals · best cost 0.0123 · goals met 1/2 · 3 infeasible`) and an entry in
+`result.optimize.perIteration` (iteration, evaluations, best cost, goals met, failures, infeasible, stage,
+the best values so far). The document carries no cubes: `-o`
+writes them (`.npy` only — the one format that keeps the results and the `opt` group apart), stamped with
+the tuned-values provenance.
+
+Exit: **0** every enabled goal met · **3** finished with a goal unmet · **1** refused (before the run, or
+a goal that cannot be scored at the start point) · **2** no evaluation converged · **130** cancelled,
+writing nothing (§7).
+
+### 24.4 Over the protocol
+
+`run analysis=optimize` is the same verb (§11.1): every flag is an argument (`maxIter`, `savePreset`,
+`showIterations` …). It returns the final result only; with `showIterations` it returns `perIteration` too
+and sends one `notifications/progress` per iteration, carrying the line stderr prints — **a progress
+token alone does not turn them on**, because the default is the result and nothing else. Total is left out, because an Auto run's stages and a stall make the iteration count
+an upper bound rather than a denominator. Cancellation is the existing path: the token reaches
+`OptimizationRun`, which abandons the run, and the verb answers 130. A long run does not hold the
+writer between notifications: `JsonRpc` takes its lock per frame, so the progress path costs one frame
+write per iteration. The server's `instructions` carry a five-step walk-through beside the end-to-end
+example (§11.3c).
+
+### 24.5 `check` and `explain`
+
+`check` reports an `optimize` setup that would refuse at run time — nothing to optimize, no enabled goal,
+three parts of one complex value, an algorithm this build lacks, a cost form the algorithm refuses — in
+the run's own words, by asking `OptimizationRun.Create` (which evaluates nothing). It asks only when the
+tuning rules found no error, since the run refuses on the first of those itself.
+`explain --analysis` says, per analysis, whether an optimization runs it under `analyses=goals`, under
+`analyses=all`, and which scope the optimize line chose — through `OptimizationRun.AnalysesUnder`, the
+promotion an evaluation applies.
+
+### 24.6 The gate
+
+`tests/Ui.Tests/Optimization/OptCliTests.cs`: `OptCliVerbTests` (the verb as a process — the L-section
+meets its goal at the analytic L and C, the unreachable pad exits 3 naming its goal, `--save-preset` adds
+one preset and nothing else byte for byte, a complex load prints its whole best value and `--vars ZL`
+refuses naming the parts), `OptParityTests`, `OptMcpTests` (the protocol returns the verb's object,
+progress arrives, a cancelled call answers 130 with no outputs) and `OptReferenceTests` (the goals page is
+generated from the schema and the template catalog).

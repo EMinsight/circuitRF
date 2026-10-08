@@ -188,6 +188,10 @@ return JsonRun.Finish(Dispatch(JsonRun.Verb) is { } run ? run(args[1..]) : Unkno
     "lpp" or "loadpull_pursuit" or "pursuit"
                                 => a => RunLoadpull(a, pursuit: true),
     "em"     => RunEm,
+    // The Optimizer window's run, headless (brief-tuneopt-11). It owns no optimization: the run is
+    // src/Design/Optimization's OptimizationRun, the object the panel drives. Writes nothing to the
+    // design's values; --save-preset is its one opt-in write.
+    "opt"    => CircuitRF.Cli.Optimize.Run,
     // The whole railRF window, with no display (brief-railrf-10-cli-verb.md). It owns no analysis:
     // every number comes out of src/Design/RailRf and every pixel out of CircuitRF.Render, which is
     // what lets a BOARD be gated in CI rather than only looked at (railrf.md §5).
@@ -2422,6 +2426,7 @@ static int PrintHelp()
     Console.WriteLine("  lp     <file.cnl|.csch>   (loadpull over the directive's Gamma grid)");
     Console.WriteLine("  lpp    <file.cnl|.csch>   (loadpull pursuit: searches for MXP / MXE)");
     Console.WriteLine("  em     <file.cem>   (electromagnetic extraction of the layout it names)");
+    Console.WriteLine("  opt    <file.cnl|.csch>   (optimize: the tune, goal and optimize lines; exit 3 = a goal unmet)");
     Console.WriteLine("  rail   <file.crail> (railRF: the DC drop, the ranked breakdown, the vias)");
     Console.WriteLine("  smith  <file.csmith> (the matching cascade: the reading, and the walk node by node)");
     Console.WriteLine("  elab   <file.cnl|.csch>   (dump elaborated netlist)");

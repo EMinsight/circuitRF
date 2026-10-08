@@ -85,8 +85,11 @@ public enum OptimizationOutcome
     Cancelled,
 }
 
-/// <summary>One goal at the best point: its worst violation, where, and whether it is met.</summary>
-public sealed record GoalReport(string Name, double WorstViolation, double? WorstAt, string? Axis, double WorstValue, bool Met);
+/// <summary>One goal at the best point: its worst violation, where, and whether it is met. A met goal
+/// reports its tightest point instead, and <paramref name="Margin"/> how far inside its limit that is
+/// (<see cref="GoalScore.Margin"/>).</summary>
+public sealed record GoalReport(string Name, double WorstViolation, double? WorstAt, string? Axis, double WorstValue, bool Met,
+                                double Margin = double.NaN);
 
 /// <summary>What a run reports after every iteration (R-to6-9). The Optimizer window and MCP read the same one.</summary>
 public sealed record OptimizationProgress(
@@ -307,6 +310,27 @@ public sealed class OptimizationRun
 
         int cores = Math.Max(1, Environment.ProcessorCount - 1);
         _parallelism = Math.Max(1, _settings.Parallelism ?? cores);
+    }
+
+    /// <summary>
+    /// The analysis chains an evaluation runs under <paramref name="scope"/> (brief-tuneopt-11 R-to11-7,
+    /// <c>explain --analysis</c>): <see cref="OptimizerScope.GoalAnalyses"/> is the chains of the
+    /// analyses the enabled goals name, each promoted to the sweep that wraps it as an evaluation
+    /// promotes it; <see cref="OptimizerScope.All"/> is every runnable chain. Names of the chains' top
+    /// analyses, in the bench's order; a goal naming no declared analysis contributes nothing.
+    /// </summary>
+    public static IReadOnlyList<string> AnalysesUnder(TestBench tb, TuningSetup setup, OptimizerScope scope)
+    {
+        if (scope == OptimizerScope.All) return [.. AnalysisChain.RunnableTops(tb).Select(a => a.Name)];
+        var tops = new List<string>();
+        foreach (var name in setup.Goals.Where(g => g.Enabled).Select(g => g.Analysis).OfType<string>())
+        {
+            var one = tb.Analyses.FirstOrDefault(a => string.Equals(a.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (one is null || !one.Enabled || !AnalysisChain.IsChainRunnable(one, tb)) continue;
+            string top = AnalysisChain.PromoteToRunnableTop(one, tb).Name;
+            if (!tops.Contains(top, StringComparer.Ordinal)) tops.Add(top);
+        }
+        return tops;
     }
 
     /// <summary>Prepares a run of <paramref name="circuit"/>'s setup. A run that cannot start carries
@@ -889,7 +913,7 @@ public sealed class OptimizationRun
     {
         if (_bestIndex < 0) return [];
         return [.. _cache[_log[_bestIndex].Decoded.CacheKey].Scores
-            .Select(s => new GoalReport(s.Name, s.WorstViolation, s.WorstAt, s.Axis, s.WorstValue, s.Met))];
+            .Select(s => new GoalReport(s.Name, s.WorstViolation, s.WorstAt, s.Axis, s.WorstValue, s.Met, s.Margin))];
     }
 
     private void RecordIteration(int iteration, TimeSpan elapsed, int firstOfIteration)

@@ -3819,4 +3819,56 @@ internal static class CliDiagnostics
 
     public static Diagnostic GeneratedCellNote(string note) => Diagnostic.Create(
         "cli.generated-cell.note", DiagnosticSeverity.Info, "note: {note}", ("note", note));
+
+    // ── opt (brief-tuneopt-11) ─────────────────────────────────────────────────
+
+    /// <summary>A flag of <c>opt</c> whose value is not one it takes.</summary>
+    public static Diagnostic OptFlagValue(string flag, string text, string expected) => Diagnostic.Create(
+        "cli.opt.flag-value", DiagnosticSeverity.Error,
+        "opt: {flag} expects {expected}, got '{text}'.",
+        ("flag", flag), ("text", text), ("expected", expected));
+
+    /// <summary><c>--save-preset</c> on a netlist: a <c>.cnl</c> is text the caller writes, so the
+    /// preset is a line the caller adds (overview D14).</summary>
+    public static Diagnostic OptSavePresetNeedsSchematic(string path) => Diagnostic.Create(
+        "cli.opt.preset-needs-schematic", DiagnosticSeverity.Error,
+        "opt: --save-preset adds a preset to a schematic's tuning block, and '{path}' is a netlist. " +
+        "Add a preset line to it instead: preset \"<name>\" <key>=<value> ...",
+        ("path", path));
+
+    /// <summary>A preset name the Optimizer's own Lock in would refuse.</summary>
+    public static Diagnostic OptPresetName(string problem) => Diagnostic.Create(
+        "cli.opt.preset-name", DiagnosticSeverity.Error,
+        "opt: --save-preset: {problem}.",
+        ("problem", problem));
+
+    /// <summary><c>-o</c>/<c>--history</c> naming anything but a <c>.npy</c> — the one format that
+    /// carries the run's groups.</summary>
+    public static Diagnostic OptOutputNotNpy(string flag, string path) => Diagnostic.Create(
+        "cli.opt.output-not-npy", DiagnosticSeverity.Error,
+        "opt: {flag} writes a .npy, which keeps the results and the opt history as groups; got '{path}'.",
+        ("flag", flag), ("path", path));
+
+    /// <summary><c>--vars</c> naming a key the file does not optimize.</summary>
+    public static Diagnostic OptVarsNotOptimized(string key, string optimized) => Diagnostic.Create(
+        "cli.opt.vars-not-optimized", DiagnosticSeverity.Error,
+        "opt: --vars names '{key}', which the file does not optimize (no opt=1 on its tune line). It optimizes: {optimized}.",
+        ("key", key), ("optimized", optimized));
+
+    /// <summary><c>--vars</c> naming a whole complex value (overview D18): it is optimized by its parts.</summary>
+    public static Diagnostic OptVarsWholeComplex(string key, string parts) => Diagnostic.Create(
+        "cli.opt.vars-whole-complex", DiagnosticSeverity.Error,
+        "opt: '{key}' is a complex value, which is optimized by its parts — name them in --vars: {parts}.",
+        ("key", key), ("parts", parts));
+
+    /// <summary><c>--goals</c> naming a goal the file does not hold enabled.</summary>
+    public static Diagnostic OptGoalsUnknown(string name, string enabled) => Diagnostic.Create(
+        "cli.opt.goals-unknown", DiagnosticSeverity.Error,
+        "opt: --goals names '{name}', which is not an enabled goal of this design. Enabled: {enabled}.",
+        ("name", name), ("enabled", enabled));
+
+    /// <summary>The run was cancelled: nothing was written (exit 130).</summary>
+    public static Diagnostic OptCancelled() => Diagnostic.Create(
+        "cli.opt.cancelled", DiagnosticSeverity.Error,
+        "opt: cancelled — nothing was written.");
 }
