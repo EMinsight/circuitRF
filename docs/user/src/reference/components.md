@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -636,6 +636,33 @@ being stated. The parameters dialog shows the **Z0** (and εeff) the current `W`
 substrate; type a Z0 there instead and `W` is set to the width that gives it, as one undoable edit.
 
 {{table: components/Mlin}}
+
+### Grounded Coplanar Waveguide (CPWG) {#cpwg}
+
+{{symbol: cpwg}}
+
+A coplanar waveguide over a ground plane: a strip of width `W` with ground copper on the same layer a
+gap `G` from each edge, and a plane under the substrate. The substrate and the backing plane come from
+the technology, as an MLIN's do; the gap is the line's own. When the coplanar ground is far from the
+strip the line is a microstrip, and CPWG gives the same answer an MLIN would. The parameters dialog shows
+the **Z0** and εeff at the top frequency of the schematic's S-parameter sweep, and a Z0 typed there sets
+`W`. Against a 2-D field solve its Z0 is within about 2 % over the gaps and widths PCB and MMIC lines
+use.
+
+{{table: components/Cpwg}}
+
+### Stripline (SLIN) {#slin}
+
+{{symbol: slin}}
+
+A strip of width `W` buried between two ground planes, centred or offset. The planes are the nearest
+ground-designated conductors above and below `SignalLayer`, and the dielectric between them sets the two
+heights, εr and the loss — when that dielectric is several layers of different εr, the line uses their
+thickness-weighted mean and says so. A layer without a plane on each side cannot carry a stripline, and
+the line is refused rather than simulated as something else. The parameters dialog shows its **Z0**; a
+Z0 typed there sets `W`.
+
+{{table: components/Slin}}
 
 ### Microstrip Bend (MBEND) {#mbend}
 

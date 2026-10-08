@@ -38,7 +38,7 @@ public static class TechnologyDivergenceReport
     public static string? Describe(
         SchematicEditModel schematic, string? schematicTechPath, string? layoutTechPath)
     {
-        bool hasMicrostrip = schematic.Components.Any(c => MicrostripSubstrateInjection.IsMicrostripKind(c.Symbol));
+        bool hasMicrostrip = schematic.Components.Any(c => PlanarLineSubstrateInjection.IsStackupLineKind(c.Symbol));
         bool hasFootprint  = schematic.Components.Any(c => c.Footprint is { Length: > 0 });
         if (!hasMicrostrip && !hasFootprint) return null;
 

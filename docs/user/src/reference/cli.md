@@ -1074,9 +1074,10 @@ With `--tech` and no layout, `impedance` answers for a line **that is not drawn 
 needs, or the Z0, ε<sub>eff</sub>, loss and guided wavelength a width gives, on one copper layer of a
 technology. Every row has **two answers side by side**:
 
-- **circuit model (MLIN)** &mdash; what an MLIN of that width on that layer simulates as: the substrate
-  the layer resolves to, the static Z0 and ε<sub>eff</sub>, and at `--freq` the dispersive Z0 and
-  ε<sub>eff</sub>, the loss in dB/mm and λ<sub>g</sub>. It is the same number a run uses.
+- **circuit model** &mdash; what a line of that width on that layer simulates as: an **MLIN**, a
+  **CPWG** when `--gap` is given, or an **SLIN** when the layer has a ground plane both above and below.
+  It shows the substrate the layer resolves to, the static Z0 and ε<sub>eff</sub>, and at `--freq` the
+  dispersive Z0 and ε<sub>eff</sub>, the loss in dB/mm and λ<sub>g</sub>. It is the same number a run uses.
 - **cross-section (impedance)** &mdash; what `impedance` would report on a line drawn at that width: the
   quasi-static Z0 and ε<sub>eff</sub>, with λ<sub>g</sub> from that ε<sub>eff</sub>. The solve has no
   dispersion and no loss.
@@ -1084,7 +1085,7 @@ technology. Every row has **two answers side by side**:
 The **difference** column shows how far apart they are. A large gap is worth seeing before you draw: the
 schematic simulates the model, and the drawn line measures the cross-section.
 
-`--z0` gives each column **its own width**. The model width comes from the same synthesis the MLIN
+`--z0` gives each column **its own width**. The model width comes from the same synthesis the
 parameter editor's Z0 field uses. The cross-section width is solved to 1&nbsp;nm, the finest width a
 layout can hold. A *Z0 at the model's W* row shows what a line drawn at the model's width would measure.
 
@@ -1094,7 +1095,7 @@ layout can hold. A *Z0 at the model's W* row shows what a line drawn at the mode
 | `--layer <name>` | One copper layer: a drawing layer's name or a stackup conductor's. A name the technology does not have is refused with the names it does have. |
 | `--width <w>[,<w>…]` | Widths to analyse, one row each. A bare number is µm, or give a unit (`18mil`). |
 | `--z0 <ohms>[,<ohms>…]` | Impedances to find a width for, one row each. |
-| `--gap <g>` | Makes the line **coplanar**, with ground on the same layer this far from each edge. The cross-section is then the only answer, because no circuit component models a coplanar line. |
+| `--gap <g>` | Makes the line **coplanar**, with ground on the same layer this far from each edge; the model is then a CPWG. On a layer with a ground plane both above and below it the line is a stripline with coplanar ground, and the cross-section is the only answer, because no circuit component models one. |
 | `--freq <freq>` | Where the dispersive values, the loss and λ<sub>g</sub> are given, **with its unit** (`10GHz`). Without it, only static values are shown. |
 
 A layout path given with `--tech`, or a flag that only means something for a drawn layout (`--target`,

@@ -26,10 +26,11 @@ namespace CircuitRF.Core.Devices;
 /// R-pc-16/microstrip-models.md R4: out-of-range parameters are reported once per distinct
 /// violation via <see cref="MicrostripValidityReporter"/>, never silently extrapolated.
 /// </summary>
-public sealed class MicrostripLineModel : ComponentModel, IReportsWarnings
+public sealed class MicrostripLineModel : ComponentModel, IPlanarLineModel
 {
     public override int PortCount => 2;
     public override ModelKind Kind => ModelKind.Linear;
+    public string LineKind => "MLIN";
 
     private readonly double _wMeters, _lMeters, _hMeters, _tMeters, _epsR, _sigmaSPerM, _tanD, _roughnessMeters;
     private readonly MicrostripValidityReporter _reporter;

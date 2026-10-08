@@ -82,6 +82,35 @@ public sealed class NetlistToSchematicTests(ITestOutputHelper output) : IDisposa
     }
 
     /// <summary>
+    /// brief-artsch-1: a netlist holding a CPWG and a SLIN draws them as their own symbols and extracts
+    /// back to itself, gap and all.
+    /// </summary>
+    [Fact]
+    public void ACpwgAndASlin_DrawAndRoundTrip()
+    {
+        string dir = Path.Combine(_root, "planar");
+        Directory.CreateDirectory(dir);
+        string cnl = Path.Combine(dir, "planar.cnl");
+        File.WriteAllText(cnl,
+            "Port:P1 a 0 Num=1 Z=50 Ohm\nPort:P2 c 0 Num=2 Z=50 Ohm\n" +
+            "CPWG:C1 a b W=1.4 mm G=0.3 mm L=10 mm\n" +
+            "SLIN:S1 b c W=0.65 mm L=10 mm\n" +
+            "analysis SP1 type=sparam start=1 stop=6 npts=11 Unit=GHz\n");
+        var (lib, tb) = CnlReader.ReadFile(cnl);
+
+        var result = NetlistSchematic.Build(lib, tb, dir);
+        Assert.True(result.Schematic is not null, string.Join(" | ", result.Refusals));
+        Assert.Contains(result.Schematic!.Components, c => c.Symbol == SymbolKind.Cpwg && c.InstanceName == "C1");
+        Assert.Contains(result.Schematic.Components, c => c.Symbol == SymbolKind.Slin && c.InstanceName == "S1");
+
+        string csch = Path.Combine(dir, "planar.csch");
+        SchematicPersistence.SaveToFile(csch, result.Schematic, "planar");
+        var (_, back) = SchematicCircuit.FromSchematic(csch);
+        var differences = Differences(tb, back).ToList();
+        Assert.True(differences.Count == 0, string.Join("\n", differences));
+    }
+
+    /// <summary>
     /// Readable in the two ways a machine can check: no symbol drawn over another, and no wire that
     /// is not horizontal or vertical. Over every netlist the gate draws.
     /// </summary>

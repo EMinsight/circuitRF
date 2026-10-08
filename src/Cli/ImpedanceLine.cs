@@ -15,7 +15,7 @@ namespace CircuitRF.Cli;
 ///
 /// <para><b>It owns no analysis</b>, on <c>src/Cli/Authoring.cs</c>' terms: every number comes out of
 /// <see cref="LineCalculator.Calculate"/> (<c>src/Design/Layout/Em</c>), whose model column IS an
-/// elaborated MLIN and whose cross-section column IS <c>TraceImpedanceAnalysis.Analyze</c>. This file is
+/// elaborated MLIN, CPWG or SLIN and whose cross-section column IS <c>TraceImpedanceAnalysis.Analyze</c>. This file is
 /// the technology lookup, refusals and reporting.</para>
 ///
 /// <para><b>A mode of <c>impedance</c>, not a verb</b> (owner, AA-3): that verb already owns the
@@ -23,7 +23,7 @@ namespace CircuitRF.Cli;
 /// it; a layout path beside it, or a flag that reviews a drawn layout, is refused rather than ignored.</para>
 ///
 /// <para><b>Exit codes.</b> 0 when every row has an answer in every column it can have one in (a coplanar
-/// line has no circuit model, which is said, not failed); 1 when the calculator is refused or a row has no
+/// line between two planes has no circuit model, which is said, not failed); 1 when the calculator is refused or a row has no
 /// answer at all. A row that one column could not answer is <c>impedance.line.unanswered</c>, a warning.</para>
 /// </summary>
 internal static partial class Impedance
@@ -67,7 +67,7 @@ internal static partial class Impedance
         JsonRun.ImpedanceLine = LineJson(result, label);
 
         // A column that should have answered and did not is a warning; a row with no answer is a failure.
-        bool modelExpected = result.GapM is null && result.Substrate is not null;
+        bool modelExpected = result.ModelComponent is not null && (result.Substrate is not null || result.Stripline is not null);
         bool failed = false;
         foreach (var row in result.Rows)
         {
@@ -143,7 +143,12 @@ internal static partial class Impedance
         sb.Append($"Line on {r.LayerName} ({label})");
         if (r.GapM is { } gap) sb.Append($" — coplanar, gap {Len(gap, unit)} to ground on {r.LayerName} either side");
         sb.AppendLine();
-        if (r.Substrate is { } s)
+        if (r.Stripline is { } st)
+            sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
+                $"Model substrate: {st.SignalConductorName} between {st.PlaneAboveName} and {st.PlaneBelowName}, " +
+                $"H1 {Len(st.H1Meters, unit)}, H2 {Len(st.H2Meters, unit)}, T {Len(st.ThicknessMeters, unit)}, " +
+                $"εr {st.RelativePermittivity:0.###}, tanδ {st.LossTangent:0.#####}, σ {st.ConductivitySPerM:0.###e0} S/m"));
+        else if (r.Substrate is { } s)
             sb.AppendLine(string.Create(CultureInfo.InvariantCulture,
                 $"Model substrate: {s.SignalConductorName} over {s.GroundConductorName}, H {Len(s.HeightMeters, unit)}, " +
                 $"T {Len(s.ThicknessMeters, unit)}, εr {s.RelativePermittivity:0.###}, tanδ {s.LossTangent:0.#####}, σ {s.ConductivitySPerM:0.###e0} S/m"));
@@ -157,7 +162,7 @@ internal static partial class Impedance
             sb.AppendLine();
             var m = row.Model;
             var x = row.CrossSection;
-            sb.AppendLine($"{RowName(row, unit),-24}  {"circuit model (MLIN)",-24}  {"cross-section (impedance)",-28}  difference");
+            sb.AppendLine($"{RowName(row, unit),-24}  {$"circuit model ({r.ModelComponent ?? "none"})",-24}  {"cross-section (impedance)",-28}  difference");
             if (row.TargetZ0 is { } target)
             {
                 sb.AppendLine(Row($"W for {target.ToString("0.###", CultureInfo.InvariantCulture)} Ω",
@@ -191,7 +196,7 @@ internal static partial class Impedance
                 sb.AppendLine(Row($"λg at {f}", m?.LambdaGM is { } lm ? Len(lm, unit) : "—",
                     x?.LambdaGM is { } lx ? Len(lx, unit) + " (static εeff)" : "—", ""));
             }
-            sb.AppendLine(Row("line type", m is null ? "—" : "microstrip", x?.Configuration is { Length: > 0 } c ? c : "—", ""));
+            sb.AppendLine(Row("line type", m is null ? "—" : LineTypeOf(m.Component), x?.Configuration is { Length: > 0 } c ? c : "—", ""));
             foreach (string w in m?.Warnings ?? []) sb.AppendLine($"  ? model: {w}");
             foreach (string n in x?.Notes ?? [])
                 if (said.Add(n)) sb.AppendLine($"  · cross-section: {n}");
@@ -200,6 +205,13 @@ internal static partial class Impedance
         }
         return sb.ToString();
 
+        // The trace review's own names, so the two columns' line types compare word for word.
+        static string LineTypeOf(string component) => component switch
+        {
+            "CPWG" => "grounded coplanar waveguide",
+            "SLIN" => "stripline",
+            _      => "microstrip",
+        };
         static string Row(string what, string model, string section, string diff) =>
             $"  {what,-22}  {model,-24}  {section,-28}  {diff}".TrimEnd();
         static string Missing(string? why) => why is null ? "—" : "— (see below)";
@@ -229,10 +241,14 @@ internal static partial class Impedance
                                            x.Configuration, x.Refusal, x.Notes);
         bool f = r.FreqHz is not null;
         var s = r.Substrate;
+        var st = r.Stripline;
         return new ImpedanceLineJson(
-            label, r.LayerName, r.ConductorName, s?.GroundConductorName,
-            s is null ? null : Um(s.HeightMeters), s is null ? null : Um(s.ThicknessMeters),
-            s?.RelativePermittivity, s?.LossTangent, s?.ConductivitySPerM, r.SubstrateRefusal,
+            label, r.LayerName, r.ConductorName,
+            st is not null ? $"{st.PlaneAboveName}/{st.PlaneBelowName}" : s?.GroundConductorName,
+            st is not null ? Um(st.H1Meters) : s is null ? null : Um(s.HeightMeters),
+            st is not null ? Um(st.ThicknessMeters) : s is null ? null : Um(s.ThicknessMeters),
+            st?.RelativePermittivity ?? s?.RelativePermittivity, st?.LossTangent ?? s?.LossTangent,
+            st?.ConductivitySPerM ?? s?.ConductivitySPerM, r.SubstrateRefusal,
             r.GapM is { } g ? Um(g) : null, r.FreqHz,
             [.. r.Rows.Select(row =>
             {
@@ -254,6 +270,8 @@ internal static partial class Impedance
                         ? (row.CrossSection.WidthM - m.WidthM) / m.WidthM * 100 : null,
                     row.CrossSectionSolves);
             })],
-            r.Warnings);
+            r.Warnings,
+            r.ModelComponent,
+            st is null ? null : Um(st.H2Meters));
     }
 }

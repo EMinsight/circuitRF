@@ -3556,7 +3556,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         // in the registry. Rewrite them for the placing workspace's technology: widths synthesised
         // for 50 Ω on ITS substrate, lengths a round number, all in its own unit (mil on a PCB, µm
         // on an MMIC die) and rounded there — so a fresh MLIN reads "42 mil", not "114.1732 mil".
-        if (MicrostripSubstrateInjection.IsMicrostripKind(kind))
+        if (PlanarLineSubstrateInjection.IsStackupLineKind(kind))
             MicrostripSubstrateInjection.ApplyTechnologyDefaults(comp.Parameters, EditModel.SchematicDirectory, kind);
 
         // A via's Drill/Pad/Antipad start EMPTY (follow the technology); a value the user types into

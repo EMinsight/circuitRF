@@ -114,6 +114,8 @@ public static class SymbolPortDefs
             case SymbolKind.Tline:   return [("1", -200f, 0f), ("2", 200f, 0f)];
             // MLIN: horizontal 2-port, matching TLIN's own left/right convention.
             case SymbolKind.Mlin:    return [("1", -200f, 0f), ("2", 200f, 0f)];
+            case SymbolKind.Cpwg:    return [("1", -200f, 0f), ("2", 200f, 0f)];
+            case SymbolKind.Slin:    return [("1", -200f, 0f), ("2", 200f, 0f)];
             // Match: horizontal 2-port on TLIN's convention. Pin ORDER is the contract MatchModel
             // reads — [0] = port 1 = the Termination 1 side, [1] = port 2 — and the design's own
             // ladder is stored Term1-first, so a swap here silently reverses every asymmetric match.

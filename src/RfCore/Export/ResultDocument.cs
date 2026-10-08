@@ -1251,13 +1251,17 @@ namespace RfCore.Export
 
     /// <summary>
     /// What <c>impedance --tech … --layer …</c> (the line calculator) answered: per row, the circuit
-    /// model's answer (an elaborated MLIN) beside the quasi-static cross-section's (what
+    /// model's answer (an elaborated MLIN, CPWG or SLIN) beside the quasi-static cross-section's (what
     /// <c>impedance</c> reports on a drawn line), with nothing drawn. Lengths in µm, loss in dB/mm.
     /// </summary>
     /// <param name="Ground">The conductor the MODEL's substrate is measured to; absent with no
     /// substrate (then <paramref name="SubstrateRefusal"/> says why).</param>
     /// <param name="GapUm">A coplanar line's gap to its ground either side; absent for a microstrip.</param>
     /// <param name="FreqHz">Where the dispersive values, loss and λg are given; absent when not asked.</param>
+    /// <param name="ModelComponent">The circuit model the model column is: MLIN, CPWG (a gap was given) or
+    /// SLIN (the layer has a plane on both sides); absent when no component models the line.</param>
+    /// <param name="SubstrateHeight2Um">A stripline's dielectric to the plane below; then
+    /// <paramref name="SubstrateHeightUm"/> is to the plane above and <paramref name="Ground"/> names both.</param>
     public sealed record ImpedanceLineJson(
         string                               Technology,
         string                               Layer,
@@ -1272,7 +1276,9 @@ namespace RfCore.Export
         double?                              GapUm,
         double?                              FreqHz,
         IReadOnlyList<ImpedanceLineRowJson> Rows,
-        IReadOnlyList<string>                Warnings);
+        IReadOnlyList<string>                Warnings,
+        string?                              ModelComponent = null,
+        double?                              SubstrateHeight2Um = null);
 
     /// <param name="TargetZ0">The impedance a width was synthesised for; absent on a row asked by width.</param>
     /// <param name="CrossSectionAtModelWidth">A synthesis row only: the cross-section of the MODEL's

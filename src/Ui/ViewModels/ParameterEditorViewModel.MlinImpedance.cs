@@ -2,6 +2,7 @@ using System.Globalization;
 using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.Microstrip;
+using CircuitRF.Core.Devices.Planar;
 using CircuitRF.Core.Expressions;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Core.Design;
@@ -33,8 +34,12 @@ namespace CircuitRF.Ui.ViewModels;
 
 public partial class ParameterEditorViewModel
 {
-    /// <summary>True for an MLIN — the one component the Z0 field applies to.</summary>
+    /// <summary>True for an MLIN.</summary>
     public bool IsMlinTarget => _target?.Symbol == SymbolKind.Mlin;
+
+    /// <summary>True for the three lines the Z0 field applies to — MLIN, CPWG and SLIN (brief-artsch-1
+    /// R-as1-8). Drives the field's visibility.</summary>
+    public bool IsLineImpedanceTarget => _target?.Symbol is SymbolKind.Mlin or SymbolKind.Cpwg or SymbolKind.Slin;
 
     private string _mlinZ0Text = "";
 
@@ -102,9 +107,28 @@ public partial class ParameterEditorViewModel
     private void RefreshMlinImpedance()
     {
         OnPropertyChanged(nameof(IsMlinTarget));
+        OnPropertyChanged(nameof(IsLineImpedanceTarget));
         string z0 = "", eeff = "", note = "";
 
-        if (IsMlinTarget)
+        if (_target?.Symbol is SymbolKind.Cpwg or SymbolKind.Slin)
+        {
+            if (!TryReadMlinWidth(out double w, out var row))
+                note = row is null
+                    ? $"This {_target.Symbol.ToString().ToUpperInvariant()} has no W parameter."
+                    : "W is an expression, so its Z0 is known only at run time. Enter a number in W to see it here.";
+            else if (PlanarLineAt(w) is not { } line)
+                note = "G is an expression, so its Z0 is known only at run time. Enter a number in G to see it here.";
+            else
+            {
+                double f = BenchTopFrequencyHz();
+                var p = line.LineParameters(f);
+                z0   = FormatOhm2(p.Z0);
+                eeff = "εeff " + p.Eeff.ToString("0.###", CultureInfo.InvariantCulture)
+                     + (f > 0 ? " at " + FormatGhz(f) : "");
+                note = string.Join(" ", line.DrainWarnings().Select(m => m.Message));
+            }
+        }
+        else if (IsMlinTarget)
         {
             if (!TryReadMlinWidth(out double w, out var row))
             {
@@ -138,7 +162,7 @@ public partial class ParameterEditorViewModel
     /// </summary>
     private void CommitMlinZ0()
     {
-        if (_target is null || _schematicVm is null || !IsMlinTarget) return;
+        if (_target is null || _schematicVm is null || !IsLineImpedanceTarget) return;
 
         string text = (MlinZ0Text ?? "").Trim();
         foreach (var suffix in new[] { "Ohms", "Ohm", "ohms", "ohm", "Ω" })
@@ -154,6 +178,12 @@ public partial class ParameterEditorViewModel
         {
             RefreshMlinImpedance();
             SetMlinNote($"'{MlinZ0TextOrBlank(text)}' is not an impedance in ohms.");
+            return;
+        }
+
+        if (_target.Symbol is SymbolKind.Cpwg or SymbolKind.Slin)
+        {
+            CommitPlanarLineZ0(target, wCur, row);
             return;
         }
 
@@ -193,6 +223,98 @@ public partial class ParameterEditorViewModel
         wRow.Expression = expression;
         wRow.Unit = unit;
         _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, newParams));
+        RefreshMlinImpedance();
+    }
+
+    // ── CPWG / SLIN (brief-artsch-1 R-as1-8) ────────────────────────────────────────────────────
+    // The readout is each line's own MODEL, built with the substrate the extractor injects and asked
+    // for its line parameters at the bench's top S-parameter frequency — so a swap between line types
+    // (AS-11) shows at once what the new type makes of the same geometry. Typing a Z0 synthesises W at
+    // that same frequency, against the same model, so what is written is what the field then shows.
+
+    /// <summary>The CPWG or SLIN this instance elaborates to, at width <paramref name="w"/>; null when a CPWG's
+    /// G is not a plain number.</summary>
+    private IPlanarLineModel? PlanarLineAt(double w)
+    {
+        if (_target is null) return null;
+        var tech = MicrostripSubstrateInjection.ResolveWorkspaceTechnology(_schematicVm?.EditModel.SchematicDirectory);
+        var binding = PlanarLineSubstrateInjection.Build(tech, _target.Symbol, NonDefaultLayerChoice("SignalLayer"),
+            _target.Symbol == SymbolKind.Cpwg ? NonDefaultLayerChoice("GroundReference") : null);
+        double Get(string name, double fallback)
+            => binding.Overrides.FirstOrDefault(o => o.Name == name) is { } o && NumericText.TryParseDouble(o.Expression, out double v) ? v : fallback;
+
+        double t = Get("T", ComponentModelFactory.DefaultSubstrateTMeters);
+        double er = Get("Er", ComponentModelFactory.DefaultSubstrateEpsR);
+        double sigma = Get("Sigma", ComponentModelFactory.DefaultSubstrateSigmaSPerM);
+        double tanD = Get("TanD", ComponentModelFactory.DefaultSubstrateTanD);
+        if (_target.Symbol == SymbolKind.Slin)
+        {
+            double half = ComponentModelFactory.DefaultSubstrateHMeters / 2;
+            return new StriplineModel(w, 1e-3, Get("H1", half), Get("H2", half), t, er, sigma, tanD, _target.InstanceName);
+        }
+
+        var gRow = _target.Parameters.FirstOrDefault(p => p.Name == "G");
+        if (gRow is null || !NumericText.TryParseDouble(gRow.Expression, out double gRaw)) return null;
+        double g = gRaw * (Units.Scale(UnitNormalizer.ToEngineUnit(gRow.Unit)) ?? 1.0);
+        return new CoplanarLineModel(w, g, 1e-3, Get("H", ComponentModelFactory.DefaultSubstrateHMeters), t, er, sigma, tanD,
+                                     _target.InstanceName);
+    }
+
+    /// <summary>The highest frequency the schematic's S-parameter analyses sweep, or 0 when there is none
+    /// (or none that evaluates without the design's variables) — the readout is then the static line.</summary>
+    private double BenchTopFrequencyHz()
+    {
+        double top = 0;
+        foreach (var a in _schematicVm?.EditModel.Analyses ?? [])
+        {
+            if (a is not SParameterAnalysis sp) continue;
+            try { foreach (double f in sp.Expand()) if (f > top && double.IsFinite(f)) top = f; }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or KeyNotFoundException or FormatException) { }
+        }
+        return top;
+    }
+
+    private static string FormatGhz(double hz) => (hz / 1e9).ToString("0.###", CultureInfo.InvariantCulture) + " GHz";
+
+    private void CommitPlanarLineZ0(double target, double wCur, EditableParameter row)
+    {
+        if (PlanarLineAt(wCur) is not { } current)
+        {
+            RefreshMlinImpedance();
+            return;
+        }
+        double f = BenchTopFrequencyHz();
+        if (FormatOhm2(target) == FormatOhm2(current.LineParameters(f).Z0))
+        {
+            RefreshMlinImpedance();
+            return;
+        }
+
+        var reporter = new MicrostripValidityReporter(_target!.InstanceName);
+        double hScale = Math.Max(wCur, 1e-9);
+        double w = PlanarLineSynthesis.SynthesizeWidth(x => PlanarLineAt(x)!.LineParameters(f).Z0, target, hScale,
+                                                       current.LineKind, reporter);
+        var refusal = reporter.Drain();
+        if (refusal.Count > 0)
+        {
+            RefreshMlinImpedance();
+            SetMlinNote(string.Join(" ", refusal.Select(m => m.Message)));
+            return;
+        }
+
+        string unit = string.IsNullOrEmpty(row.Unit) ? "mm" : row.Unit;
+        string expression = FormatLengthInUnit(w, unit);
+        if (Math.Abs(w - wCur) <= 1e-12 || expression == row.Expression.Trim())
+        {
+            RefreshMlinImpedance();
+            return;
+        }
+
+        var newParams = _target.Parameters.Select(p => p.Clone()).ToList();
+        var wRow = newParams.First(p => p.Name == "W");
+        wRow.Expression = expression;
+        wRow.Unit = unit;
+        _schematicVm!.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, newParams));
         RefreshMlinImpedance();
     }
 

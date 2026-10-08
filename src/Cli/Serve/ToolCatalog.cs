@@ -955,10 +955,11 @@ internal static class ToolCatalog
           + "reason and does not count against its trace or the exit code. To accept one headlessly, add it to "
           + "the .clay's ImpedanceAcceptances (reference topic layout); there is no accept argument. "
           + "LINE CALCULATOR: with tech (and no path) nothing is drawn or read: give layers (one copper layer) and "
-          + "width and/or z0, and each row reports the circuit model's answer (an elaborated MLIN: static and "
-          + "dispersive Z0, eeff, loss, guided wavelength) beside the quasi-static cross-section's (what this tool "
-          + "reports on a line drawn at that width), with the difference. z0 synthesises a width in each column. "
-          + "gap makes it coplanar (cross-section only: no circuit component models a coplanar line).",
+          + "width and/or z0, and each row reports the circuit model's answer (an elaborated MLIN, CPWG or SLIN: "
+          + "static and dispersive Z0, eeff, loss, guided wavelength) beside the quasi-static cross-section's (what "
+          + "this tool reports on a line drawn at that width), with the difference. z0 synthesises a width in each "
+          + "column. The model is MLIN, or CPWG when gap is given, or SLIN when the layer has a ground plane on "
+          + "both sides; gap on such a layer is a stripline with coplanar ground, which only the cross-section answers.",
             null, null,
             [
                 new("", [ "impedance" ],

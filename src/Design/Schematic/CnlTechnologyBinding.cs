@@ -83,6 +83,7 @@ public static class CnlTechnologyBinding
         if (!ComponentTypeRegistry.TryParseCode(inst.Reference, out var kind, out _)) return null;
 
         if (MmicPassiveInjection.IsMmicKind(kind)) return BindMmic(inst, kind, context);
+        if (PlanarLineSubstrateInjection.IsPlanarLineKind(kind)) return BindPlanarLine(inst, kind, context);
 
         bool microstrip = MicrostripSubstrateInjection.IsMicrostripKind(kind);
         bool via        = ViaSubstrateInjection.IsViaKind(kind);
@@ -183,6 +184,55 @@ public static class CnlTechnologyBinding
             $"{label}: process from the technology {context.TechnologyName} — " +
             string.Join(", ", added.Select(a => $"{a.Name}={a.Expression}")) + ".");
         return Rebuilt(inst, [.. inst.Overrides, .. added]);
+    }
+
+    /// <summary>
+    /// CPWG and SLIN (brief-artsch-1): the microstrip rule, with SLIN's one difference — inside a technology,
+    /// a SLIN that cannot be given a plane on each side is refused whether or not it named its layer,
+    /// because the fallback board it would otherwise simulate on is a stripline the design does not have.
+    /// </summary>
+    private static Instance? BindPlanarLine(Instance inst, SymbolKind kind, Context context)
+    {
+        var layerParams = PlanarLineSubstrateInjection.LayerParams(kind);
+        var stated = new HashSet<string>(inst.Overrides.Select(o => o.Name), StringComparer.Ordinal);
+        string? Text(string name) => inst.Overrides.LastOrDefault(o => o.Name == name)?.Expression is { } e
+                                     && Unquote(e) is { Length: > 0 } t ? t : null;
+        var namedLayers = layerParams.Where(p => Text(p) is not null).ToArray();
+        var kept = inst.Overrides.Where(o => !layerParams.Contains(o.Name)).ToList();
+        string label = $"{inst.Reference}:{inst.InstanceName}";
+
+        if (PlanarLineSubstrateInjection.InjectedNames(kind).All(stated.Contains))
+        {
+            if (namedLayers.Length == 0) return null;
+            context.Tb.ReadNotes.Add($"{label}: {string.Join(" and ", namedLayers)} not used — the line states its own substrate.");
+            return Rebuilt(inst, kept);
+        }
+
+        var tech = context.Technology;
+        var binding = PlanarLineSubstrateInjection.Build(tech, kind, Text("SignalLayer"),
+                                                         kind == SymbolKind.Cpwg ? Text("GroundReference") : null);
+        if (binding.Refusal is { } refused)
+            throw new InvalidOperationException($"{label} is refused: {refused}.");
+
+        if (binding.Overrides.Count == 0)
+        {
+            if (namedLayers.Length > 0)
+                throw new InvalidOperationException(
+                    $"{label} names {Describe(namedLayers, Text)}, but {(tech is null ? "no technology resolves for this netlist (it is not inside a workspace, or the workspace names no default technology)" : binding.Warnings.FirstOrDefault() ?? "the technology cannot resolve it")}. " +
+                    $"Put the netlist in a workspace whose technology has that layer, or state {string.Join(", ", PlanarLineSubstrateInjection.InjectedNames(kind))} on the line.");
+            if (tech is not null)
+                foreach (var m in binding.Warnings) context.Tb.ReadWarnings.Add($"{label}: {m}");
+            return kept.Count == inst.Overrides.Count ? null : Rebuilt(inst, kept);
+        }
+
+        var added = binding.Overrides.Where(r => !stated.Contains(r.Name)).ToList();
+        kept.AddRange(added);
+        foreach (var m in binding.Warnings) context.Tb.ReadWarnings.Add($"{label}: {m}");
+        if (added.Count > 0)
+            context.Tb.ReadNotes.Add(
+                $"{label}: substrate from the technology {context.TechnologyName} — " +
+                string.Join(", ", added.Select(a => $"{a.Name}={a.Expression}")) + ".");
+        return Rebuilt(inst, kept);
     }
 
     private static Instance Rebuilt(Instance inst, List<ParameterAssignment> overrides)

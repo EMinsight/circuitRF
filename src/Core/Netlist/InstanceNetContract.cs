@@ -52,7 +52,7 @@ public static class InstanceNetContract
         PortModel or TermModel                                                                => 2,
 
         // ── Distributed and transmission-line parts ──
-        TLineModel or MicrostripLineModel or MicrostripBendModel
+        TLineModel or MicrostripLineModel or CoplanarLineModel or StriplineModel or MicrostripBendModel
             or MicrostripTaperModel or MicrostripKlopfModel                                   => 2,
         MicrostripTeeModel                                                                    => 3,
         // A signal via is two terminals over the implicit reference, as MLIN is. A via to ground draws
@@ -286,6 +286,9 @@ public static class InstanceNetContract
             // A tuner with no termination at all is a refusal, and the fundamental's is the one it
             // asks for by name. 50 is the reference impedance, not a chosen value.
             case "TUNER":  p["Z[1]"] = new Expressions.Value(50.0); break;
+
+            // A coplanar line's gap is the one dimension nothing defaults; any positive length stands in.
+            case "CPWG":   p["G"] = new Expressions.Value(1e-4); break;
 
             // The mutual element names two INDUCTORS rather than two nets, so these are the nets'
             // stand-ins: without them there is no element, and with them there are still no nets.

@@ -3420,3 +3420,22 @@ they are now circuitRF built-ins, nominal outside a Monte Carlo trial and a draw
   dialog seed a placed part's rows from the subcircuit's defaults. A distribution there, nominal or live, would
   replace the subcircuit's per-instance (mismatch) draw — with a constant, or with a draw in the wrong scope —
   so such a row is seeded blank, which the extraction already reads as "the file's own default stands".
+
+## brief-artsch-1 — CPWG and SLIN: what the field solve decided (2026-10-08)
+
+Every number here is against `testdata/planar-lines/physics-references.txt` (a scikit-fem solve, outside circuitRF).
+
+- **The CPW effective-width thickness form over-corrects two-fold.** Gupta et al.'s W + Δ, G − Δ with
+  Δ = (1.25t/π)(1 + ln(4πW/t)) — the form the brief named — read Z₀ 2–7 % LOW on 18–35 µm copper; Ghione-Naldi at zero
+  thickness was within 0.3 % on the same rows, so the error was all thickness. Their slot-wall term alone (the 0.7·t/G of
+  the same correction's ε_eff half), added to both capacitances, is within 0.6 %. `GroundedCoplanar` uses that.
+- **Ghione-Naldi has no microstrip limit.** As G → ∞ it keeps only the strip's lower-side capacitance — 86.1 Ω where the
+  microstrip is 71.0 Ω (W/H 1, εr 4.4) — because the strip's upper field reaches the backing plane around the slots and
+  the map drops it. The model takes the branch with the larger C_air (adding grounded conductors cannot lower it), which
+  is MLIN exactly in the limit. Taking max(C) and max(C_air) independently was tried first and pairs branches near the
+  crossover: ε_eff 5.8 % off at G/H = 2, εr 10.2.
+- **The textbooks' 30π and 60π are η₀/4 and η₀/2 with η₀ ≈ 120π** — a 0.07 % offset the field solve's exact-case check
+  showed before anything else; the new models use µ₀c.
+- **Frankel's dispersion cannot serve a far coplanar ground**: G_f = exp(u·ln(W/G) + v) → 0 as W/G does, putting
+  ε(f) at εr for every f > 0. The microstrip branch therefore takes MLIN's Kirschning-Jansen.
+- **The offset stripline's parallel combination is +1.2 % at H₂/H₁ = 2 and +3.4 % at 4**; the reporter warns past 2.

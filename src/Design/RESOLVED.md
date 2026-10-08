@@ -18718,3 +18718,38 @@ tune or opt gives such an entry the D4 default range.
   returns a closure; only eq/out (no passing side) still go through `Score`.
 - Measured on the divider (M = 200, 15 CMA-ES iterations): 610 simulations against 12,200, both verified at
   84.3 % [81.9 %, 86.5 %].
+
+## brief-artsch-1 — CPWG and SLIN: the stackup binding, and every MLIN site audited (2026-10-08)
+
+**The `SymbolKind.Mlin` / `IsMicrostripKind` audit (R-as1-4).** `MicrostripSubstrateInjection.IsMicrostripKind` keeps
+its meaning — the kinds the Hammerstad-Jensen family computes — and `PlanarLineSubstrateInjection.IsStackupLineKind`
+(microstrip + CPWG + SLIN) is the test wherever a site means "a line bound to the technology's stackup". Each site:
+
+| Site | Decision |
+|---|---|
+| `NetExtractor` substrate injection | own branch for CPWG/SLIN (`PlanarLineSubstrateInjection.Build`); MLIN's untouched |
+| `CnlTechnologyBinding` | own branch (`BindPlanarLine`); MLIN's untouched |
+| `ComponentTypeRegistry.LayerChoiceKindFor` | widened to stackup lines — CPWG offers SignalLayer + GroundReference, SLIN SignalLayer only |
+| `TerminalNote` (`Tline or Mlin`) | widened: both are uniform two-ports |
+| Lvs `DeviceType.Of` | both are `TransmissionLine`, as every line is; `GeneratorKinds` unchanged — neither has a PCell |
+| Parameter editor substrate panel (`IsMicrostripTarget`) | widened; CPWG/SLIN resolve through their own binding, and a SLIN refusal is shown as one |
+| Parameter editor Z0 field | widened via `IsLineImpedanceTarget`; `IsMlinTarget` kept for MLIN (a test pins it) |
+| Placement defaults (`SchematicViewModel`, `ApplyTechnologyDefaults`) | widened; W synthesised for 50 Ω on the line's OWN model |
+| `DocumentRemovalImpact`, `TechnologyDivergenceReport` | widened: a CPWG/SLIN depends on the technology as an MLIN does |
+| `SchematicToLayoutGenerator` PCell defaults, `LayoutShapePropertiesViewModel.IsMlinTarget`, `PlanarExtractor`'s MLIN analytic alternative, `PCellRegistry` | unchanged — each is about the MLIN PCell, and neither new line has one (D18) |
+| `ParameterEditorViewModel.ResolveMklopfSubstrate` | unchanged — MKLOPF only |
+| `LibraryCatalog` pinned order | unchanged — both appear in the automatic tail and the Transmission line filter by category |
+
+**A SLIN that cannot bind is refused twice, deliberately.** The extractor can only report a conflict and keep going,
+so it writes the line WITHOUT a substrate and keeps a named `SignalLayer`; the run's own read of that netlist
+(`CnlTechnologyBinding`, inside the same workspace) re-resolves and throws. Dropping the layer name there would have
+let the binding pick the default stripline layer and simulate a different line, silently.
+
+**The trace review does not take an undrawn plane ABOVE a trace as implied** (found here, not fixed). `TraceCrossSection.Cut`
+treats an undrawn ground-designated layer as an implied plane only below the signal (`impliedBelow`); above, it needs
+drawn copper, because the solve's conductors come from drawn copper. A stripline on a layout that leaves its planes
+implied therefore reads as the microstrip under its lower plane — 66.9 Ω for a 51.1 Ω line. Honouring an implied plane
+above means changing the review's conductor assembly, its cache key and the probe's reporting, which is beyond this
+brief; the line calculator draws a SLIN's two planes in its in-memory layout instead. With the planes drawn the review
+agrees with SLIN within 1.5 % and with the field solve within 1.4 % — except a 4:1 offset stripline (W 0.25 mm,
+H1 0.1 mm, H2 0.4 mm, t 35 µm), where the review reads 39.0 Ω against the field solve's 36.1 Ω (+8.2 %).

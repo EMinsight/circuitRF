@@ -8,11 +8,13 @@
 // agree — an outside agent's 67.8 Ω model line measured 64.0 Ω once drawn, and nothing told it until
 // then. So both columns are computed by the code that produces them in the application:
 //
-//  - THE CIRCUIT MODEL is an MLIN instance ELABORATED: a one-instance test bench whose substrate is
-//    MicrostripSubstrateInjection.BuildOverrides for the layer (what a schematic's extraction and a
-//    .cnl's CnlTechnologyBinding inject), run through the Elaborator, and asked
-//    MicrostripLineModel.LineParameters — the function its own Stamp calls. Not the closed forms
-//    called again here: that would be a second evaluation that agrees today and drifts tomorrow.
+//  - THE CIRCUIT MODEL is a line instance ELABORATED: a one-instance test bench whose substrate is
+//    what a schematic's extraction and a .cnl's CnlTechnologyBinding inject for the layer, run through
+//    the Elaborator, and asked IPlanarLineModel.LineParameters — the function its own Stamp calls. Not
+//    the closed forms called again here: that would be a second evaluation that agrees today and drifts
+//    tomorrow. WHICH line is the request's and the stackup's (brief-artsch-1 R-as1-5): a gap is a CPWG, a
+//    layer with a plane on each side is a SLIN, anything else an MLIN; a gap between two planes is a
+//    stripline with coplanar ground, which no component models.
 //  - THE CROSS-SECTION is TraceImpedanceAnalysis.Analyze — what `circuitrf impedance` runs — on a
 //    layout built in memory: one straight line of the width on the layer (and, for a coplanar line,
 //    ground copper either side at the gap), selected by a pick so the ground strips are copper and
@@ -21,9 +23,9 @@
 // ── SYNTHESIS ───────────────────────────────────────────────────────────────────────────────────
 //
 // Each column solves for its own width, because the disagreement IS the answer:
-//  - the model by HammerstadJensen.SynthesizeWidth — bisection on the static Compute the model calls,
-//    over the model's validity range of W/h, 60 halvings (the parameter editor's MLIN Z0 field calls
-//    the same function, so the two never disagree about the width a Z0 needs);
+//  - the model by HammerstadJensen.SynthesizeWidth for an MLIN and PlanarLineSynthesis for a CPWG or
+//    SLIN — bisection on the static closed form the model calls (the parameter editor's Z0 field and
+//    placement defaults call the same functions, so none of them disagree about the width a Z0 needs);
 //  - the cross-section by a bracketed root on the cross-section solve itself: bracket from the model's
 //    width (or the substrate height), then false position on ln W with the Illinois step, to ONE DBU —
 //    the layout's resolution, below which no drawn line can be made. Z0 there is whatever the solve
@@ -35,6 +37,7 @@ using System.Globalization;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices;
 using CircuitRF.Core.Devices.Microstrip;
+using CircuitRF.Core.Devices.Planar;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Design.Layout.PCells;
 using CircuitRF.Design.Schematic;
@@ -57,13 +60,15 @@ public sealed record LineCalcRequest(
     double? GapM = null,
     double? FreqHz = null);
 
-/// <summary>The circuit model's answer at one width: an elaborated MLIN's
+/// <summary>The circuit model's answer at one width: an elaborated line's
 /// <see cref="MicrostripLineParameters"/>, with what its validity reporter said.</summary>
+/// <param name="Component">"MLIN", "CPWG" or "SLIN".</param>
 public sealed record LineCalcModel(
     double WidthM,
     MicrostripLineParameters Line,
     double? LambdaGM,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    string Component = "MLIN");
 
 /// <summary>The cross-section's answer at one width: the station Z0 and ε_eff of a straight line drawn
 /// in memory, through <see cref="TraceImpedanceAnalysis.Analyze"/>.</summary>
@@ -108,6 +113,13 @@ public sealed record LineCalcResult
     /// answer, and <see cref="SubstrateRefusal"/> says why).</summary>
     public ResolvedSubstrate? Substrate { get; init; }
     public string? SubstrateRefusal { get; init; }
+
+    /// <summary>The planes and dielectric a SLIN model is given; <see cref="Substrate"/> is then null.</summary>
+    public ResolvedStripline? Stripline { get; init; }
+
+    /// <summary>Which component the model column is — "MLIN", "CPWG" or "SLIN" — or null when none
+    /// models this line (a gap between two planes).</summary>
+    public string? ModelComponent { get; init; }
 
     public double? GapM { get; init; }
     public double? FreqHz { get; init; }
@@ -181,19 +193,48 @@ public static class LineCalculator
         int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron;
         double metresPerDbu = 1e-6 / dbuPerMicron;
 
-        // The substrate the model gets is the one the schematic's extraction injects for this conductor.
-        var overrides = MicrostripSubstrateInjection.BuildOverrides(tech, out string? substrateWarning, layer.Conductor.Name);
+        // The substrate the model gets is the one the schematic's extraction injects for this conductor, for
+        // the component this line is.
         var (substrate, failure, _) = SubstrateResolver.ResolveElectrical(tech, new PCellLayerSelection(layer.Conductor.Name, null));
+        var stripline = SubstrateResolver.ResolveStripline(tech, layer.Conductor.Name).Stripline;
+        string? component = (request.GapM is not null, stripline is not null) switch
+        {
+            (false, false) => "MLIN",
+            (true,  false) => "CPWG",
+            (false, true)  => "SLIN",
+            _              => null,
+        };
+        IReadOnlyList<ParameterAssignment> overrides = [];
+        string? substrateWarning = null;
+        if (component == "MLIN")
+            overrides = MicrostripSubstrateInjection.BuildOverrides(tech, out substrateWarning, layer.Conductor.Name);
+        else if (component is not null)
+        {
+            var kind = component == "CPWG" ? SymbolKind.Cpwg : SymbolKind.Slin;
+            var binding = PlanarLineSubstrateInjection.Build(tech, kind, layer.Conductor.Name, null);
+            overrides = binding.Overrides;
+            substrateWarning = binding.Refusal ?? (binding.Warnings.Count > 0 ? string.Join(" ", binding.Warnings) : null);
+        }
         var warnings = new List<string>();
         if (substrateWarning is not null && overrides.Count > 0) warnings.Add(substrateWarning);
 
-        string? noModel = request.GapM is not null
-            ? "no circuit component models a coplanar line, so the cross-section is the only answer"
+        string? noModel = component is null
+            ? "no circuit component models a coplanar line between two planes (a stripline with coplanar ground), " +
+              "so the cross-section is the only answer"
             : overrides.Count == 0
                 ? $"the circuit model has no substrate here: {failure?.Reason ?? substrateWarning ?? "the technology resolves none"}"
                 : null;
 
         long? gapDbu = request.GapM is { } gm ? Math.Max(1, (long)Math.Round(gm / metresPerDbu)) : null;
+
+        // A stripline's two planes are DRAWN in the cross-section's layout. The trace review takes an
+        // undrawn ground-designated layer as an implied plane only BELOW a trace; above, it needs copper,
+        // so with nothing drawn a stripline reads as the microstrip under its lower plane (51 Ω read as
+        // 67 Ω). An imported board draws its planes, so this is the board the review would see there.
+        IReadOnlyList<LayerKey> planes = stripline is null || component != "SLIN" ? [] :
+            [.. new[] { stripline.PlaneAboveName, stripline.PlaneBelowName }
+                .Select(n => tech.Stackup.Layers.First(l => l.Kind == StackupKind.Conductor && l.Name == n))
+                .Where(l => l.DrawingLayers.Count > 0).Select(l => l.DrawingLayers[0])];
         double hGuess = substrate?.HeightMeters ?? 100e-6;
 
         var rows = new List<LineCalcRow>();
@@ -204,8 +245,8 @@ public static class LineCalculator
             LineCalcModel? model = null;
             string? modelRefusal = noModel;
             if (noModel is null)
-                (model, modelRefusal) = ModelAt(wDbu * metresPerDbu, overrides, request.FreqHz);
-            var xs = CrossSectionAt(tech, layer, wDbu, gapDbu, request.FreqHz, dbuPerMicron, control);
+                (model, modelRefusal) = ModelAt(component!, wDbu * metresPerDbu, request.GapM, overrides, request.FreqHz);
+            var xs = CrossSectionAt(tech, layer, wDbu, gapDbu, request.FreqHz, dbuPerMicron, control, planes);
             rows.Add(new LineCalcRow(null, model, modelRefusal, xs, null, 1));
         }
 
@@ -214,27 +255,34 @@ public static class LineCalculator
             ct.ThrowIfCancellationRequested();
             LineCalcModel? model = null;
             string? modelRefusal = noModel;
-            if (noModel is null && substrate is not null)
+            if (noModel is null)
             {
                 var reporter = new MicrostripValidityReporter("(line calculator)");
                 // The parameter editor's own synthesis, on the substrate as the model will read it
                 // (the overrides are "R"-formatted, so these are the same doubles).
-                double wModel = HammerstadJensen.SynthesizeWidth(z,
-                    Parse(overrides, "H"), Parse(overrides, "T"), Parse(overrides, "Er"), reporter);
+                double wModel = component switch
+                {
+                    "CPWG" => PlanarLineSynthesis.CpwgWidth(z, request.GapM!.Value,
+                                  Parse(overrides, "H"), Parse(overrides, "T"), Parse(overrides, "Er"), reporter),
+                    "SLIN" => PlanarLineSynthesis.SlinWidth(z,
+                                  Parse(overrides, "H1"), Parse(overrides, "H2"), Parse(overrides, "T"), Parse(overrides, "Er"), reporter),
+                    _      => HammerstadJensen.SynthesizeWidth(z,
+                                  Parse(overrides, "H"), Parse(overrides, "T"), Parse(overrides, "Er"), reporter),
+                };
                 var refusal = reporter.Drain();
                 if (refusal.Count > 0) modelRefusal = string.Join(" ", refusal.Select(m => m.Message));
-                else (model, modelRefusal) = ModelAt(wModel, overrides, request.FreqHz);
+                else (model, modelRefusal) = ModelAt(component!, wModel, request.GapM, overrides, request.FreqHz);
             }
 
             var (xs, solves) = SynthesizeCrossSection(tech, layer, z, model?.WidthM ?? hGuess, gapDbu,
-                                                       request.FreqHz, dbuPerMicron, metresPerDbu, control);
+                                                       request.FreqHz, dbuPerMicron, metresPerDbu, control, planes);
             LineCalcCrossSection? atModel = null;
             if (model is not null)
             {
                 long wm = Math.Max(1, (long)Math.Round(model.WidthM / metresPerDbu));
                 atModel = xs is not null && xs.WidthDbu == wm
                     ? xs
-                    : CrossSectionAt(tech, layer, wm, gapDbu, request.FreqHz, dbuPerMicron, control);
+                    : CrossSectionAt(tech, layer, wm, gapDbu, request.FreqHz, dbuPerMicron, control, planes);
                 if (!ReferenceEquals(atModel, xs)) solves++;
             }
             rows.Add(new LineCalcRow(z, model, modelRefusal, xs, atModel, solves));
@@ -244,8 +292,10 @@ public static class LineCalculator
         {
             LayerName = layer.LayerName,
             ConductorName = layer.Conductor.Name,
-            Substrate = overrides.Count > 0 ? substrate : null,
-            SubstrateRefusal = overrides.Count > 0 ? null : failure?.Reason ?? substrateWarning,
+            Substrate = overrides.Count > 0 && component is "MLIN" or "CPWG" ? substrate : null,
+            Stripline = overrides.Count > 0 && component == "SLIN" ? stripline : null,
+            ModelComponent = component,
+            SubstrateRefusal = overrides.Count > 0 || component is null ? null : substrateWarning ?? failure?.Reason,
             GapM = gapDbu is { } gd ? gd * metresPerDbu : null,
             FreqHz = request.FreqHz,
             DbuPerMicron = dbuPerMicron,
@@ -257,10 +307,10 @@ public static class LineCalculator
     private static double Parse(IReadOnlyList<ParameterAssignment> overrides, string name) =>
         double.Parse(overrides.Single(o => o.Name == name).Expression, CultureInfo.InvariantCulture);
 
-    /// <summary>The MLIN of width <paramref name="wM"/> on the injected substrate, ELABORATED — the
-    /// model a run stamps, asked for its line parameters.</summary>
+    /// <summary>The <paramref name="component"/> line of width <paramref name="wM"/> on the injected
+    /// substrate, ELABORATED — the model a run stamps, asked for its line parameters.</summary>
     private static (LineCalcModel? Model, string? Refusal) ModelAt(
-        double wM, IReadOnlyList<ParameterAssignment> substrate, double? freqHz)
+        string component, double wM, double? gapM, IReadOnlyList<ParameterAssignment> substrate, double? freqHz)
     {
         var tb = new TestBench("line");
         var parameters = new List<ParameterAssignment>
@@ -268,17 +318,18 @@ public static class LineCalculator
             new("W", wM.ToString("R", CultureInfo.InvariantCulture)),
             new("L", "1e-3"),
         };
+        if (component == "CPWG") parameters.Add(new("G", gapM!.Value.ToString("R", CultureInfo.InvariantCulture)));
         parameters.AddRange(substrate);
-        tb.Instances.Add(new Instance("TL1", "MLIN", ["a", "b"], parameters));
+        tb.Instances.Add(new Instance("TL1", component, ["a", "b"], parameters));
         try
         {
             using var netlist = new Elaborator(new Library("line")).Elaborate(tb);
-            if (netlist.Components.Single().Model is not MicrostripLineModel mlin)
-                return (null, "MLIN did not elaborate to a microstrip line model");
-            var line = mlin.LineParameters(freqHz ?? 0.0);
-            var warnings = mlin.DrainWarnings().Select(w => w.Message).ToList();
+            if (netlist.Components.Single().Model is not IPlanarLineModel lineModel)
+                return (null, $"{component} did not elaborate to a line model");
+            var line = lineModel.LineParameters(freqHz ?? 0.0);
+            var warnings = lineModel.DrainWarnings().Select(w => w.Message).ToList();
             double? lambda = freqHz is { } f ? MicrostripLoss.SpeedOfLight / (f * Math.Sqrt(line.Eeff)) : null;
-            return (new LineCalcModel(wM, line, lambda, warnings), null);
+            return (new LineCalcModel(wM, line, lambda, warnings, component), null);
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
         {
@@ -290,7 +341,8 @@ public static class LineCalculator
     /// <see cref="TraceImpedanceAnalysis.Analyze"/> on a layout built in memory.</summary>
     internal static LineCalcCrossSection CrossSectionAt(
         Technology tech, (LayerKey Key, string LayerName, StackupLayer Conductor) layer,
-        long wDbu, long? gapDbu, double? freqHz, int dbuPerMicron, RunControl? control)
+        long wDbu, long? gapDbu, double? freqHz, int dbuPerMicron, RunControl? control,
+        IReadOnlyList<LayerKey>? planes = null)
     {
         double metresPerDbu = 1e-6 / dbuPerMicron;
         long half = (long)Math.Round(0.5 * LengthInWidths * Math.Max(wDbu, (gapDbu ?? 0) + wDbu));
@@ -304,6 +356,11 @@ public static class LineCalculator
             long strip = (long)Math.Round(GroundStripInWidths * (wDbu + g));
             shapes.Add(new RectShape { Layer = layer.Key, X1 = -half, Y1 = y1 + g, X2 = half, Y2 = y1 + g + strip });
             shapes.Add(new RectShape { Layer = layer.Key, X1 = -half, Y1 = y0 - g - strip, X2 = half, Y2 = y0 - g });
+        }
+        foreach (var plane in planes ?? [])
+        {
+            long margin = (long)Math.Round(GroundStripInWidths * wDbu) + 10 * half;
+            shapes.Add(new RectShape { Layer = plane, X1 = -half, Y1 = y0 - margin, X2 = half, Y2 = y1 + margin });
         }
 
         var scope = new TraceImpedanceScope();
@@ -342,7 +399,8 @@ public static class LineCalculator
     /// refusal-carrying section when no width brackets it.</summary>
     private static (LineCalcCrossSection? Section, int Solves) SynthesizeCrossSection(
         Technology tech, (LayerKey Key, string LayerName, StackupLayer Conductor) layer, double target, double startM,
-        long? gapDbu, double? freqHz, int dbuPerMicron, double metresPerDbu, RunControl? control)
+        long? gapDbu, double? freqHz, int dbuPerMicron, double metresPerDbu, RunControl? control,
+        IReadOnlyList<LayerKey> planes)
     {
         int solves = 0;
         var seen = new Dictionary<long, LineCalcCrossSection>();
@@ -350,7 +408,7 @@ public static class LineCalculator
         {
             if (seen.TryGetValue(w, out var hit)) return hit;
             solves++;
-            return seen[w] = CrossSectionAt(tech, layer, w, gapDbu, freqHz, dbuPerMicron, control);
+            return seen[w] = CrossSectionAt(tech, layer, w, gapDbu, freqHz, dbuPerMicron, control, planes);
         }
 
         // Z0 falls as the line widens. Grow a bracket [lo, hi] with Z0(lo) > target > Z0(hi).

@@ -677,6 +677,18 @@ public static class ComponentTypeRegistry
             SearchTerms: ["MLIN", "microstrip", "microstrip line", "line", "hammerstad"],
             IsCommon: true,
             ExtraCategories: [ComponentCategory.TransmissionLine]),
+        // Grounded coplanar waveguide and stripline (brief-artsch-1): transmission lines bound to the stackup
+        // as MLIN is, so TransmissionLine is their primary group; neither is a microstrip.
+        [SymbolKind.Cpwg]          = new("CPWG",  "CPW",
+            Category: ComponentCategory.TransmissionLine,
+            SearchTerms: ["CPWG", "GCPW", "grounded coplanar", "coplanar waveguide", "conductor-backed coplanar",
+                          "coplanar", "CPW", "line", "Ghione"],
+            IsCommon: true),
+        [SymbolKind.Slin]          = new("SLIN",  "SL",
+            Category: ComponentCategory.TransmissionLine,
+            SearchTerms: ["SLIN", "stripline", "strip line", "offset stripline", "buried", "inner layer",
+                          "line", "Wheeler", "Cohn"],
+            IsCommon: true),
         [SymbolKind.MBend]         = new("MBEND", "MB",
             Category: ComponentCategory.Microstrip,
             SearchTerms: ["MBEND", "microstrip bend", "bend", "corner", "miter"],
@@ -868,7 +880,7 @@ public static class ComponentTypeRegistry
                               or SymbolKind.Src or SymbolKind.Prc =>
             "The two terminals are interchangeable — swapping them gives the same circuit.",
 
-        SymbolKind.Tline or SymbolKind.Mlin =>
+        SymbolKind.Tline or SymbolKind.Mlin or SymbolKind.Cpwg or SymbolKind.Slin =>
             "The two terminals are interchangeable: the line is uniform, so neither end is the input.",
 
         SymbolKind.Atten or SymbolKind.Filter =>
@@ -1044,6 +1056,8 @@ public static class ComponentTypeRegistry
         SymbolKind.SourceTuner   => "Tuner",
         SymbolKind.LoadTuner     => "Tuner",
         SymbolKind.Mlin          => "MLIN",
+        SymbolKind.Cpwg          => "CPWG",
+        SymbolKind.Slin          => "SLIN",
         SymbolKind.MBend         => "MBEND",
         SymbolKind.MTee          => "MTEE",
         SymbolKind.MCross        => "MCROSS",
@@ -1221,6 +1235,7 @@ public static class ComponentTypeRegistry
          : ViaParameterDescription(kind, parameterName) is { Length: > 0 } viaDesc ? viaDesc
          : MmicParameterDescription(kind, parameterName) is { Length: > 0 } mmicDesc ? mmicDesc
          : WBondParameterDescription(kind, parameterName) is { Length: > 0 } wbDesc ? wbDesc
+         : PlanarLineParameterDescription(kind, parameterName) is { Length: > 0 } plDesc ? plDesc
          : kind is not SymbolKind.VerilogA ? "" : parameterName switch
         {
             "File"  => "The model to load: a compiled model (.osdi), or Verilog-A source (.va, .vams) "
@@ -1236,6 +1251,26 @@ public static class ComponentTypeRegistry
                       + "result small.",
             _       => "",
         };
+
+    /// <summary>CPWG's and SLIN's parameters (brief-artsch-1): what each dimension is, and where the
+    /// substrate comes from, since none of it is a row.</summary>
+    private static string PlanarLineParameterDescription(SymbolKind kind, string parameterName) => (kind, parameterName) switch
+    {
+        (SymbolKind.Cpwg, "W") => "Centre strip width.",
+        (SymbolKind.Cpwg, "G") => "Gap from the strip's edge to the coplanar ground, the same on both sides. The grounds "
+                                + "themselves are taken as wide. The substrate height to the backing plane, its εr and loss, "
+                                + "and the copper's thickness come from the technology.",
+        (SymbolKind.Cpwg, "L") => "Line length.",
+        (SymbolKind.Cpwg, "SignalLayer") => "The conductor the strip and its coplanar grounds are on. Empty: the technology's top conductor.",
+        (SymbolKind.Cpwg, "GroundReference") => "The plane backing the line. Empty: the nearest ground-designated conductor below the "
+                                              + "signal layer, or above it when there is none below.",
+        (SymbolKind.Slin, "W") => "Strip width.",
+        (SymbolKind.Slin, "L") => "Line length.",
+        (SymbolKind.Slin, "SignalLayer") => "The conductor the strip is on. Its planes are the nearest ground-designated conductors "
+                                          + "above and below it, and the dielectric between them sets H1, H2, εr and loss. Empty: "
+                                          + "the topmost conductor that has a plane on both sides.",
+        _ => "",
+    };
 
     /// <summary>The wBond parameters a generic row shows, where the row alone does not say what an
     /// empty value does.</summary>
@@ -1265,6 +1300,17 @@ public static class ComponentTypeRegistry
     /// </summary>
     public static string ModelValidity(SymbolKind kind) => kind switch
     {
+        SymbolKind.Cpwg =>
+            "Quasi-static: Ghione-Naldi's conductor-backed coplanar map with the slot walls' capacitance for the "
+          + "copper's thickness, or MLIN's Hammerstad-Jensen where its air capacitance is the larger (a far "
+          + "coplanar ground). Against a field solve over W/H 0.19-2.5, G/H 0.3-6, t/G <= 0.18: Z0 within "
+          + "2.3 %; eeff within 0.9 % with the ground close, 4.1 % with it far on thick copper. "
+          + "Frankel dispersion; Wheeler incremental-inductance conductor loss with roughness; filling-factor "
+          + "dielectric loss. Coplanar grounds taken as wide; no lid.",
+        SymbolKind.Slin =>
+            "Cohn's exact centred stripline with Wheeler's (1978) thickness correction, within 0.03 % of a field "
+          + "solve centred; offset as two centred halves in parallel, 1.2 % high at H2/H1 = 2 and 3.4 % at 4. "
+          + "TEM: eeff = er. Wheeler incremental-inductance conductor loss with roughness; tanD dielectric loss.",
         SymbolKind.MimCap =>
             "C from the film's permittivity and thickness with Palmer's edge fringing (W, L >= 10 film "
           + "thicknesses); ESR from both plates' sheet resistance with skin effect, Rs·L/(3W) each; "
@@ -2734,6 +2780,25 @@ public static class ComponentTypeRegistry
                         new("L", "10",  "mm", true, UnitDimension.Length),
                         .. SignalGroundLayerParams];
 
+            // CPWG (brief-artsch-1): W, G, L, the gap being the one dimension the technology has no
+            // opinion on. 1.4 mm / 0.3 mm is ~50 Ω on the 1.6 mm FR-4 fallback substrate (the coplanar
+            // grounds pull it down from MLIN's 2.9 mm). The layer pair is MLIN's: the signal layer and the
+            // plane backing it. PlanarLineSubstrateInjection.ApplyTechnologyDefaults re-synthesises W for
+            // 50 Ω on the placing technology, keeping this gap ratio.
+            case SymbolKind.Cpwg:
+                return [new("W", "1.4", "mm", true, UnitDimension.Length),
+                        new("G", "0.3", "mm", true, UnitDimension.Length),
+                        new("L", "10",  "mm", true, UnitDimension.Length),
+                        .. SignalGroundLayerParams];
+
+            // SLIN (brief-artsch-1): W, L, and only a SignalLayer — both planes are found from it, the
+            // nearest reference conductor above and below, so a GroundReference would name one of two.
+            // 0.65 mm is ~50 Ω centred in 1.6 mm of FR-4 (H1 = H2 = 0.8 mm, the model's fallback).
+            case SymbolKind.Slin:
+                return [new("W", "0.65", "mm", true, UnitDimension.Length),
+                        new("L", "10",   "mm", true, UnitDimension.Length),
+                        SignalGroundLayerParams[0]];
+
             // MBend: microstrip bend — W, Angle (deg, CCW from the input arm), Miter
             // (0=None/square corner, 1=Fifty/50% chamfer, 2=Optimal/Douville-James — brief-
             // mtaper-mklopf.md §1A). Default Optimal (owner follow-up, 2026-07-29 — the real
@@ -2956,6 +3021,9 @@ public static class ComponentTypeRegistry
             case "LDTUNER":  kind = SymbolKind.LoadTuner;    return true;
             case "MLIN":
             case "ML":       kind = SymbolKind.Mlin;         return true;
+            case "CPWG":
+            case "GCPW":     kind = SymbolKind.Cpwg;         return true;
+            case "SLIN":     kind = SymbolKind.Slin;         return true;
             case "VIA":      kind = SymbolKind.Via;          return true;
             case "VIAGND":   kind = SymbolKind.ViaGnd;       return true;
             case "MIMCAP":   kind = SymbolKind.MimCap;       return true;
@@ -3360,7 +3428,7 @@ public static class ComponentTypeRegistry
                 ViaSubstrateInjection.GroundLayerParam => LayerChoiceKind.Ground,
                 _ => null,
             };
-        if (!MicrostripSubstrateInjection.IsMicrostripKind(kind)) return null;
+        if (!PlanarLineSubstrateInjection.IsStackupLineKind(kind)) return null;
         return paramName switch
         {
             "SignalLayer"     => LayerChoiceKind.Signal,

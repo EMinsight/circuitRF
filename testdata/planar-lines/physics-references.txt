@@ -1,0 +1,22 @@
+# Physics references for CPWG and SLIN (brief-artsch-1 R-as1-6), quasi-static 2-D field solve.
+# Produced by testdata/planar-lines/fieldsolve.py, which reads and calls nothing in circuitRF.
+# Python 3.13.1, numpy 2.5.3, scipy 1.18.1, scikit-fem 12.0.2 (BSD-3-Clause); P2 triangles, graded tensor grid.
+# Each answer is Richardson-extrapolated from the two finest levels of a refinement ladder that halves every mesh step; dZ and dE are the size of that extrapolation, relative -- the solve's own error estimate.
+# Checked on two cases with exact answers before use: the zero-thickness centred stripline (Cohn) and the air-filled coplanar line (K(k')/K(k)); both converge first order and extrapolate to them within 1e-6.
+# Lengths in metres.
+#
+# kind  W  G_or_H1  H_or_H2  T  Er  Z0  Eeff  dZ  dE
+CPWG 0.001 0.0002 0.000508 3.5e-05 3.66 43.298102 2.484314 7.14e-07 6.77e-07
+CPWG 0.0005 0.00015 0.000254 1.8e-05 3 50.210449 2.167418 4.03e-07 2.55e-07
+CPWG 0.0003 0.0005 0.0016 3.5e-05 4.4 94.511376 2.596504 1.02e-06 1.37e-06
+CPWG 0.002 0.00025 0.0008 3.5e-05 4.4 34.531149 2.987141 6.59e-07 7.32e-07
+CPWG 7e-05 5e-05 0.0001 3e-06 12.9 42.719814 7.163706 9.05e-07 1.19e-06
+CPWG 0.0004 0.0004 0.0002 1.8e-05 10.2 31.793000 6.932320 1.14e-06 1.74e-06
+CPWG 0.001 0.0015 0.001 3.5e-05 4.4 67.851502 3.021927 3.44e-07 2.66e-07
+CPWG 0.001 0.006 0.001 3.5e-05 4.4 69.558437 3.117340 2.70e-07 3.43e-07
+SLIN 0.0003 0.0003 0.0003 1.7e-05 3.5 51.065422 3.500000 8.03e-07 1.27e-16
+SLIN 0.0012 0.0005 0.0005 3.5e-05 2.2 37.405684 2.200000 4.74e-07 0.00e+00
+SLIN 0.0001 0.0002 0.0002 1.7e-05 4.2 61.845017 4.200000 1.12e-06 0.00e+00
+SLIN 0.0002 0.00015 0.0003 1.7e-05 3.5 49.634708 3.500000 9.56e-07 1.27e-16
+SLIN 0.00025 0.0001 0.0004 3.5e-05 3.5 36.064796 3.500000 1.03e-06 0.00e+00
+SLIN 0.0005 0.0004 0.0004 0 10.2 27.697801 10.200000 4.25e-05 0.00e+00

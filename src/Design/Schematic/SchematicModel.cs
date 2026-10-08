@@ -573,6 +573,14 @@ public enum SymbolKind
     /// the same parameters meaning the same things. Terminal 1 the outer end, 2 the inner end brought
     /// out on the bridge metal.</summary>
     OctSpiral,
+
+    /// <summary>Conductor-backed (grounded) coplanar waveguide (engine "CPWG"), brief-artsch-1. 2-port,
+    /// W/G/L; the substrate under it and the plane backing it come from the technology, as MLIN's do.</summary>
+    Cpwg,
+
+    /// <summary>Stripline, centred or offset (engine "SLIN"), brief-artsch-1. 2-port, W/L; the planes
+    /// above and below the signal layer come from the technology.</summary>
+    Slin,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

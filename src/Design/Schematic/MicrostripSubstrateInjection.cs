@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using CircuitRF.Core.Devices.Microstrip;
+using CircuitRF.Core.Devices.Planar;
 using System.Globalization;
 using CircuitRF.Core.Design;
 using CircuitRF.Design.Layout.PCells;
@@ -303,6 +304,25 @@ public static class MicrostripSubstrateInjection
         // MKlopf's own 50→100 default rather than inventing a second convention).
         double? w50Mm = null, w100Mm = null;
         var (substrate, _, _) = SubstrateResolver.ResolveElectrical(technology, new PCellLayerSelection(null, null));
+        if (kind is SymbolKind.Cpwg or SymbolKind.Slin)
+        {
+            // brief-artsch-1: CPWG and SLIN synthesise their 50 Ω width on their OWN model and binding — a
+            // microstrip width would be the wrong line. CPWG's gap is converted and rounded first, so the width
+            // is the one that gives 50 Ω with the gap the user will actually see.
+            var quietLine = new MicrostripValidityReporter("(placement default width synthesis)");
+            double? gM = null;
+            foreach (var p in parameters)
+                if (p.Name == "G" && p.Unit == DefaultParameterUnit
+                    && double.TryParse(p.Expression, NumberStyles.Float, CultureInfo.InvariantCulture, out double gMm))
+                    gM = ConvertToMm(targetUnit, RoundToStep(ConvertMmTo(targetUnit, gMm), step)) / 1000.0;
+            if (kind == SymbolKind.Cpwg && substrate is not null && gM is { } g)
+                w50Mm = PlanarLineSynthesis.CpwgWidth(50.0, g, substrate.HeightMeters, substrate.ThicknessMeters,
+                                                      substrate.RelativePermittivity, quietLine) * 1000.0;
+            if (kind == SymbolKind.Slin && SubstrateResolver.ResolveStripline(technology, null).Stripline is { } sl)
+                w50Mm = PlanarLineSynthesis.SlinWidth(50.0, sl.H1Meters, sl.H2Meters, sl.ThicknessMeters,
+                                                      sl.RelativePermittivity, quietLine) * 1000.0;
+            substrate = null;   // the microstrip synthesis below is not this line's
+        }
         if (substrate is not null)
         {
             var quiet = new MicrostripValidityReporter("(placement default width synthesis)");
@@ -349,6 +369,8 @@ public static class MicrostripSubstrateInjection
             p.Unit = targetUnit;
         }
     }
+
+    private static double ConvertToMm(string unit, double value) => value / ConvertMmTo(unit, 1.0);
 
     private static double ConvertMmTo(string unit, double mm) => unit switch
     {

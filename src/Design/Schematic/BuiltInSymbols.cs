@@ -89,6 +89,8 @@ public static class BuiltInSymbols
     private static readonly Symbol _sourceTuner   = BuildSourceTuner();
     private static readonly Symbol _loadTuner     = BuildLoadTuner();
     private static readonly Symbol _mlin          = BuildMlin();
+    private static readonly Symbol _cpwg          = BuildCpwg();
+    private static readonly Symbol _slin          = BuildSlin();
     private static readonly Symbol _mbend         = BuildMBend();
     private static readonly Symbol _mtee          = BuildMTee();
     private static readonly Symbol _mcross        = BuildMCross();
@@ -210,6 +212,8 @@ public static class BuiltInSymbols
             case SymbolKind.Tline:      return _tline;
             case SymbolKind.Match:      return _match;
             case SymbolKind.Mlin:       return _mlin;
+            case SymbolKind.Cpwg:       return _cpwg;
+            case SymbolKind.Slin:       return _slin;
             case SymbolKind.MBend:      return _mbend;
             case SymbolKind.MTee:       return _mtee;
             case SymbolKind.MCross:     return _mcross;
@@ -1927,6 +1931,25 @@ public static class BuiltInSymbols
         L(  90,   0,  200,   0),
         RRect(0, 0, 180, 60, 12),   // trace body with thickness, unfilled
     ], SymbolKind.Mlin);
+
+    // CPWG and SLIN (brief-artsch-1) are MLIN's trace with what tells them apart drawn beside it, on the
+    // same pins: CPWG the two coplanar grounds running along both edges, SLIN the two planes, drawn as
+    // lines longer than the trace so they read as planes rather than as more copper beside it.
+    private static Symbol BuildCpwg() => Sym([
+        L(-200,   0,  -90,   0),
+        L(  90,   0,  200,   0),
+        RRect(0,   0, 180, 44, 10),    // the strip
+        RRect(0, -50, 180, 20,  4),    // coplanar ground
+        RRect(0,  50, 180, 20,  4),    // coplanar ground
+    ], SymbolKind.Cpwg);
+
+    private static Symbol BuildSlin() => Sym([
+        L(-200,   0,  -90,   0),
+        L(  90,   0,  200,   0),
+        RRect(0, 0, 180, 44, 10),      // the strip
+        L(-120, -52, 120, -52),        // plane above
+        L(-120,  52, 120,  52),        // plane below
+    ], SymbolKind.Slin);
 
     // A real right-angle bend — pin 1 left (input arm, R-pc-3's own origin/+X convention), pin 2
     // DOWN so wiring to it is a natural vertical run. The body is ONE unfilled outline polygon (the

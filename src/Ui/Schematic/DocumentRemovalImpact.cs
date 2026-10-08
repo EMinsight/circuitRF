@@ -126,8 +126,8 @@ public static class DocumentRemovalImpact
     ///
     /// <para>Read straight out of the JSON rather than through the schematic reader: this runs on a
     /// whole workspace inside a confirmation dialog, and every component only has to be identified by
-    /// its <c>Symbol</c>. <see cref="MicrostripSubstrateInjection.IsMicrostripKind"/> stays the one
-    /// definition of which kinds those are.</para>
+    /// its <c>Symbol</c>. <see cref="PlanarLineSubstrateInjection.IsStackupLineKind"/> stays the one
+    /// definition of which kinds those are — the microstrip family, CPWG and SLIN.</para>
     /// </summary>
     private static IReadOnlyList<string> CellsWithMicrostrip(string root)
     {
@@ -172,7 +172,7 @@ public static class DocumentRemovalImpact
                 var symbol = item?["Symbol"]?.GetValue<string?>();
                 if (symbol is null) continue;
                 if (Enum.TryParse<SymbolKind>(symbol, ignoreCase: true, out var kind)
-                    && MicrostripSubstrateInjection.IsMicrostripKind(kind))
+                    && PlanarLineSubstrateInjection.IsStackupLineKind(kind))
                     return true;
             }
         }

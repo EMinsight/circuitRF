@@ -2296,6 +2296,26 @@ public static class NetExtractor
                 warningsOut?.Add($"{comp.InstanceName}: {warning}");
         }
 
+        // brief-artsch-1: CPWG and SLIN, by PlanarLineSubstrateInjection's rule. A SLIN the technology cannot
+        // give two planes is a refusal: it is reported here, and the line keeps its SignalLayer so the run's
+        // own binding (CnlTechnologyBinding) refuses it again rather than simulating it on the fallback board.
+        if (PlanarLineSubstrateInjection.IsPlanarLineKind(comp.Symbol))
+        {
+            string? signalOverride = NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "SignalLayer")?.Expression);
+            string? groundOverride = comp.Symbol == SymbolKind.Cpwg
+                ? NonEmptyOrNull(comp.Parameters.FirstOrDefault(p => p.Name == "GroundReference")?.Expression)
+                : null;
+            var binding = PlanarLineSubstrateInjection.Build(microstripTech, comp.Symbol, signalOverride, groundOverride);
+            overrides2.AddRange(binding.Overrides);
+            foreach (var w in binding.Warnings) warningsOut?.Add($"{comp.InstanceName}: {w}");
+            if (binding.Refusal is { } refusal)
+            {
+                warningsOut?.Add($"Instance '{comp.InstanceName}' (SLIN) is refused: {refusal}.");
+                if (signalOverride is not null)
+                    overrides2.Add(new ParameterAssignment("SignalLayer", $"\"{signalOverride}\""));
+            }
+        }
+
         // AA-1: the MMIC passives take their process numbers from the same technology, by the same
         // resolution their artwork draws with (MmicPassiveInjection).
         if (MmicPassiveInjection.IsMmicKind(comp.Symbol))

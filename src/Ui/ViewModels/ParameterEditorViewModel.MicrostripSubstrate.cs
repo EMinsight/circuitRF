@@ -41,11 +41,11 @@ namespace CircuitRF.Ui.ViewModels;
 
 public partial class ParameterEditorViewModel
 {
-    /// <summary>True for the six microstrip kinds — the ones whose substrate is injected rather than
-    /// entered. Drives the readout's visibility; <see cref="MicrostripSubstrateInjection.IsMicrostripKind"/>
+    /// <summary>True for the six microstrip kinds, CPWG and SLIN — the ones whose substrate is injected
+    /// rather than entered. Drives the readout's visibility; <see cref="PlanarLineSubstrateInjection.IsStackupLineKind"/>
     /// stays the one definition of which kinds those are.</summary>
     public bool IsMicrostripTarget =>
-        _target is not null && MicrostripSubstrateInjection.IsMicrostripKind(_target.Symbol);
+        _target is not null && PlanarLineSubstrateInjection.IsStackupLineKind(_target.Symbol);
 
     /// <summary>
     /// One technology the workspace holds, as the picker offers it.
@@ -222,16 +222,34 @@ public partial class ParameterEditorViewModel
         // The instance's OWN layer choices participate: SignalLayer / GroundReference pick which
         // conductors of the stackup the substrate is measured between, so a readout that ignored them
         // would describe a different line from the one that is simulated.
-        var overrides = MicrostripSubstrateInjection.BuildOverrides(
-            tech, out string? warning,
-            NonDefaultLayerChoice("SignalLayer"), NonDefaultLayerChoice("GroundReference"));
+        IReadOnlyList<ParameterAssignment> overrides;
+        string? warning, refusal = null;
+        if (PlanarLineSubstrateInjection.IsPlanarLineKind(_target!.Symbol))
+        {
+            // CPWG and SLIN bind through their own rule (a SLIN needs a plane on each side), the one the
+            // extractor applies.
+            var binding = PlanarLineSubstrateInjection.Build(tech, _target.Symbol,
+                NonDefaultLayerChoice("SignalLayer"),
+                _target.Symbol == SymbolKind.Cpwg ? NonDefaultLayerChoice("GroundReference") : null);
+            overrides = binding.Overrides;
+            warning   = binding.Warnings.FirstOrDefault();
+            refusal   = binding.Refusal;
+        }
+        else
+        {
+            overrides = MicrostripSubstrateInjection.BuildOverrides(
+                tech, out warning,
+                NonDefaultLayerChoice("SignalLayer"), NonDefaultLayerChoice("GroundReference"));
+        }
 
         MicrostripTechnologyText    = tech?.Name is { Length: > 0 } n ? n : "No technology";
         MicrostripSubstrateResolved = overrides.Count > 0;
         MicrostripSubstrateWarning  = overrides.Count > 0
             ? ""
-            : (warning ?? "No substrate resolved.")
-            + " These components fall back to the model's own defaults.";
+            : refusal is not null
+                ? refusal + ". This line is refused at run time."
+                : (warning ?? "No substrate resolved.")
+                + " These components fall back to the model's own defaults.";
 
         NotifyMicrostripSubstrate();
         RefreshMlinImpedance();

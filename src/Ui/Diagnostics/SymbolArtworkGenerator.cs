@@ -99,6 +99,8 @@ public static class SymbolArtworkGenerator
         (SymbolKind.Diode,           "diode",             2),
         (SymbolKind.Match,           "match",             2),
         (SymbolKind.Mlin,            "mlin",              2),
+        (SymbolKind.Cpwg,            "cpwg",              2),
+        (SymbolKind.Slin,            "slin",              2),
         (SymbolKind.MBend,           "mbend",             2),
         (SymbolKind.MTee,            "mtee",              3),
         (SymbolKind.MCross,          "mcross",            4),

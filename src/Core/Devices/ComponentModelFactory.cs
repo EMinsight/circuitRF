@@ -83,6 +83,8 @@ public static class ComponentModelFactory
             // sign, and a sign the symbol has to show.
             "JFET_N", "JFET_P",
             "TLIN", "MLIN", "MBEND", "MTEE", "MCROSS", "MTAPER", "MKLOPF", "Chain",
+            // Grounded coplanar waveguide and stripline (brief-artsch-1), bound to the stackup as MLIN is.
+            "CPWG", "SLIN",
             // The two vias (brief-via-component.md): a signal via changing layers, and a via to ground.
             "VIA", "VIAGND",
             // The four MMIC passives (brief-agent-authoring-overview.md AA-1), each bound to the
@@ -171,6 +173,10 @@ public static class ComponentModelFactory
             return CreateTLineModel(parameters);
         if (typeName.Equals("MLIN", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripLineModel(parameters);
+        if (typeName.Equals("CPWG", StringComparison.OrdinalIgnoreCase))
+            return CreateCoplanarLineModel(parameters);
+        if (typeName.Equals("SLIN", StringComparison.OrdinalIgnoreCase))
+            return CreateStriplineModel(parameters);
         if (typeName.Equals("MBEND", StringComparison.OrdinalIgnoreCase))
             return CreateMicrostripBendModel(parameters);
         if (typeName.Equals("MTEE", StringComparison.OrdinalIgnoreCase))
@@ -2082,6 +2088,31 @@ public static class ComponentModelFactory
 
         return new MicrostripLineModel(w, l, h, t, er, sigma, tanD, name, roughness);
     }
+
+    // ── CPWG / SLIN (brief-artsch-1) ───────────────────────────────────────────────────────────
+    // The same SI lengths and the same FR-4 fallback as MLIN. G has no fallback: it is the one dimension
+    // the technology cannot supply and no number would be a sensible guess at a coplanar gap. A bare SLIN
+    // sits centred in the fallback board, H1 = H2 = half of MLIN's 1.6 mm.
+
+    private static CoplanarLineModel CreateCoplanarLineModel(IReadOnlyDictionary<string, Value> parameters)
+    {
+        string name = MicrostripInstanceName(parameters, "CPWG");
+        if (!parameters.ContainsKey("G"))
+            throw new ArgumentException($"CPWG '{name}' states no G — the gap from the strip to the coplanar ground on each side.");
+        return new CoplanarLineModel(
+            GetReal(parameters, "W", 0.0), GetReal(parameters, "G", 0.0), GetReal(parameters, "L", 0.0),
+            GetReal(parameters, "H", DefaultSubstrateHMeters), GetReal(parameters, "T", DefaultSubstrateTMeters),
+            GetReal(parameters, "Er", DefaultSubstrateEpsR), GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM),
+            GetReal(parameters, "TanD", DefaultSubstrateTanD), name, GetReal(parameters, "Roughness", 0.0));
+    }
+
+    private static StriplineModel CreateStriplineModel(IReadOnlyDictionary<string, Value> parameters)
+        => new(
+            GetReal(parameters, "W", 0.0), GetReal(parameters, "L", 0.0),
+            GetReal(parameters, "H1", DefaultSubstrateHMeters / 2), GetReal(parameters, "H2", DefaultSubstrateHMeters / 2),
+            GetReal(parameters, "T", DefaultSubstrateTMeters), GetReal(parameters, "Er", DefaultSubstrateEpsR),
+            GetReal(parameters, "Sigma", DefaultSubstrateSigmaSPerM), GetReal(parameters, "TanD", DefaultSubstrateTanD),
+            MicrostripInstanceName(parameters, "SLIN"), GetReal(parameters, "Roughness", 0.0));
 
     // ── VIA / VIAGND (brief-via-component.md) ──────────────────────────────────────────────────
     // Every length is SI metres. A schematic instance on a technology has its barrel length, materials
