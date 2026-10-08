@@ -30,6 +30,7 @@ circuitRF is for RF practitioners or researchers who can't justify the cost of t
 - hierarchy for all cell view types (including 3D)
 - support for PDKs
 - bondwire geometry editor and mutual inductance calculator
+- Tuning and Optimization UI
 - 2.5D MoM
 - 3D FEM and FDTD (using [Palace](https://github.com/awslabs/palace) and [openEMS](https://github.com/thliebig/openEMS))
 - 3D FEM thermal solver
@@ -342,7 +343,6 @@ var dataset          = SParameterEngine.Run(netlist, freqsHz);   // → a DataSe
 
 ## What circuitRF doesn't do yet
 
-- **UI for Tuning and optimization** — no interactive parameter tuner, and no optimizer.
 - **Noise analysis** — no noise figure, no phase noise, no Fmin / Γopt / Rn extraction.
 - **Transient analysis** — circuitRF is frequency-domain by design; there is no time-domain solver.
 - **Envelope analysis** — no simulation of modulated waveforms (no ACPR, no EVM, no pre-distortion)

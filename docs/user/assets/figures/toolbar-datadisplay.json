@@ -14,7 +14,7 @@
     },
     {
       "Index": 0,
-      "Slot": 1,
+      "Slot": 2,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -23,7 +23,7 @@
     },
     {
       "Index": 2,
-      "Slot": 2,
+      "Slot": 3,
       "Id": "",
       "Tooltip": "Add Rect Plot  (Ctrl\u002BShift\u002BA)",
       "Icon": "ChartLine",
@@ -32,7 +32,7 @@
     },
     {
       "Index": 3,
-      "Slot": 3,
+      "Slot": 4,
       "Id": "",
       "Tooltip": "Add Smith Plot",
       "Icon": "none",
@@ -41,7 +41,7 @@
     },
     {
       "Index": 4,
-      "Slot": 4,
+      "Slot": 5,
       "Id": "",
       "Tooltip": "Add Polar Plot",
       "Icon": "none",
@@ -50,7 +50,7 @@
     },
     {
       "Index": 5,
-      "Slot": 5,
+      "Slot": 6,
       "Id": "",
       "Tooltip": "Add Table",
       "Icon": "TableLarge",
@@ -59,7 +59,7 @@
     },
     {
       "Index": 6,
-      "Slot": 6,
+      "Slot": 7,
       "Id": "",
       "Tooltip": "Add 3D Pattern \u2014 for seeing a pattern is not the shape you assumed, and for the picture that goes in a report. The principal-plane cuts say more about an antenna.",
       "Icon": "Sphere",
@@ -68,7 +68,7 @@
     },
     {
       "Index": 0,
-      "Slot": 7,
+      "Slot": 8,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -77,7 +77,7 @@
     },
     {
       "Index": 7,
-      "Slot": 8,
+      "Slot": 9,
       "Id": "",
       "Tooltip": "New Tab  (Ctrl\u002BT)",
       "Icon": "TabAdd",
@@ -86,7 +86,7 @@
     },
     {
       "Index": 0,
-      "Slot": 9,
+      "Slot": 10,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -95,7 +95,7 @@
     },
     {
       "Index": 8,
-      "Slot": 10,
+      "Slot": 11,
       "Id": "",
       "Tooltip": "Zoom Box  (Z) \u2014 drag a box to zoom to it  (Esc cancels; Ctrl\u002B\u002B steps)",
       "Icon": "SearchPlusOutline",
@@ -104,7 +104,7 @@
     },
     {
       "Index": 9,
-      "Slot": 11,
+      "Slot": 12,
       "Id": "",
       "Tooltip": "Zoom Out  (Ctrl\u002B-)",
       "Icon": "MagnifyMinusOutline",
@@ -113,7 +113,7 @@
     },
     {
       "Index": 10,
-      "Slot": 12,
+      "Slot": 13,
       "Id": "",
       "Tooltip": "Fit All  (F, Ctrl\u002B0)",
       "Icon": "FitToPageOutline",
@@ -122,7 +122,7 @@
     },
     {
       "Index": 0,
-      "Slot": 13,
+      "Slot": 14,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -131,7 +131,7 @@
     },
     {
       "Index": 11,
-      "Slot": 14,
+      "Slot": 15,
       "Id": "",
       "Tooltip": "Undo  (Ctrl\u002BZ)",
       "Icon": "Undo",
@@ -140,7 +140,7 @@
     },
     {
       "Index": 12,
-      "Slot": 15,
+      "Slot": 16,
       "Id": "",
       "Tooltip": "Redo  (Ctrl\u002BShift\u002BZ)",
       "Icon": "Redo",
@@ -149,7 +149,7 @@
     },
     {
       "Index": 0,
-      "Slot": 16,
+      "Slot": 17,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -158,7 +158,7 @@
     },
     {
       "Index": 13,
-      "Slot": 17,
+      "Slot": 18,
       "Id": "",
       "Tooltip": "Save Display (.cdd)",
       "Icon": "ContentSaveOutline",
@@ -167,7 +167,7 @@
     },
     {
       "Index": 14,
-      "Slot": 18,
+      "Slot": 19,
       "Id": "",
       "Tooltip": "Open Display (.cdd)",
       "Icon": "FolderOpenOutline",
@@ -176,7 +176,7 @@
     },
     {
       "Index": 0,
-      "Slot": 19,
+      "Slot": 20,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -185,7 +185,7 @@
     },
     {
       "Index": 15,
-      "Slot": 20,
+      "Slot": 21,
       "Id": "",
       "Tooltip": "Export Data",
       "Icon": "DatabaseExportOutline",

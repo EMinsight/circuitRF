@@ -173,7 +173,7 @@ convention behind both.</p>
 <td><code>dc</code></td>
 <td><code>.cnl</code> or <code>.csch</code></td>
 <td>The nonlinear DC engine</td>
-<td>Node voltages and probe currents, to stdout</td>
+<td>Node voltages, probe currents and measurements, to stdout</td>
 </tr>
 <tr>
 <td><code>hb</code></td>
@@ -198,6 +198,12 @@ convention behind both.</p>
 <td><code>.cem</code></td>
 <td>The EM kernel the setup resolves to</td>
 <td>A Touchstone <code>.sNp</code> <strong>and</strong> a grouped <code>.npy</code>, where <strong>Simulate</strong> writes them</td>
+</tr>
+<tr>
+<td><code>opt</code></td>
+<td><code>.csch</code> or <code>.cnl</code></td>
+<td>The schematic's saved optimization — the <a href="optimization.html">Optimizer</a>'s own run</td>
+<td>The best values and each goal's result to stdout; <strong>nothing</strong> in the design (<code>--save-preset</code> adds a preset)</td>
 </tr>
 <tr>
 <td><code>rail</code></td>
@@ -460,7 +466,9 @@ Node voltages:
   n_drain                                  48
 </code></pre>
 <p><code>--set var=expr</code> overrides a global before elaboration, <a href="#set">as <code>hb</code> does</a>; it is repeatable. It
-prints the converged node voltages and any probe currents, and
+prints the converged node voltages, any probe currents and the netlist's <code>measure</code> lines — a
+measurement names the result by the DC analysis that declares it (<code>DC1.V(&quot;n_drain&quot;)</code>), as it does in
+the window — and
 <a href="#exit">exits 2</a> if the solve did not converge — the operating point is the one thing every nonlinear
 analysis is built on, so a non-converged DC is a failed run, not a partial one.</p>
 <h2 id="hb"><code>hb</code> — harmonic balance</h2>
@@ -924,6 +932,77 @@ analyse. Point this EM setup at a layout that exists.
 </tr>
 </tbody>
 </table>
+<h2 id="opt"><code>opt</code> — optimizing from the command line</h2>
+<pre><code class="language-text">circuitrf opt &lt;schematic.csch | netlist.cnl&gt; [flags]
+</code></pre>
+<p><code>opt</code> runs the optimization a schematic saves — its tuned values' ranges, its goals and its algorithm,
+as the <a href="optimization.html">Optimizer</a> panel sets them up — and reports what it found. It is the
+panel's own run, not a second one: the same schematic and the same seed give the same best values,
+cost and simulation count headless as they do in the window. On the <em>Tuning and Optimization</em> example:</p>
+<pre><code class="language-text">$ circuitrf opt LSectionMatch/schematic/LSectionMatch.csch
+Optimization: lm   (LSectionMatch/schematic/LSectionMatch.csch)
+Finished:  every enabled goal is met
+Best cost: 0   (12 iterations, 39 evaluations)
+
+Variables:
+  key   start   best                 min     max    railed
+  L1.L  5 nH    12.7087915391915 nH  1 nH    50 nH
+  C1.C  0.5 pF  1.48508255273602 pF  0.1 pF  10 pF
+
+Goals:
+  name   met  value  at               margin
+  Match  yes  -20    freq = 1.05E+09  0
+</code></pre>
+<p>Each best value is the text the schematic would hold, at full precision; a part of a complex value is
+followed by the whole value, in the form the schematic writes it. A met goal reports its tightest
+point and the margin there; an unmet one its worst point, with a negative margin.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--algorithm</code>, <code>--max-iter</code>, <code>--max-evals</code>, <code>--time</code>, <code>--cost lsq\|minimax</code>, <code>--analyses goals\|all</code>, <code>--parallel</code>, <code>--seed</code></td>
+<td>Override the saved settings, for this run only.</td>
+</tr>
+<tr>
+<td><code>--vars key,key</code>, <code>--goals name,name</code></td>
+<td>Optimize only these of the saved variables, against only these goals. A complex value is named by its parts (<code>mag(Zs)</code>), never whole.</td>
+</tr>
+<tr>
+<td><code>--snap</code></td>
+<td><a href="optimization.html#snap">Snap and polish</a> at the end.</td>
+</tr>
+<tr>
+<td><code>--sensitivity</code></td>
+<td>A sensitivity pass at the best point.</td>
+</tr>
+<tr>
+<td><code>--show-iterations</code></td>
+<td>Every iteration as well, one line each on stderr (and in <code>--json</code>). The default is the final result only.</td>
+</tr>
+<tr>
+<td><code>--save-preset &lt;name&gt;</code></td>
+<td>Add the best values to the schematic as a preset. The one thing <code>opt</code> writes; refused for a <code>.cnl</code>, where the preset is a line you add.</td>
+</tr>
+<tr>
+<td><code>-o out.npy</code></td>
+<td>The best point's results, and the run's history in an <code>opt</code> group.</td>
+</tr>
+<tr>
+<td><code>--set var=expr</code></td>
+<td>As for every run verb.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>It never changes the design's values.</strong> To put the best point in the schematic, push it in the
+panel, recall a saved preset, or write the values into the file. An exit code of <strong>3</strong> means the run
+finished with at least one goal unmet — not a failure of the run, but not a design that meets its
+specification either. Over <a href="ai-agents.html">MCP</a> the same run is <code>run analysis=optimize</code>, and
+<code>reference goals</code>, <code>reference tuning</code> and <code>reference optimizers</code> say what may be written.</p>
 <h2 id="rail"><code>rail</code> — power integrity, headless</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf rail &lt;board.crail&gt; [--rail NAME] [--accurate] [-o out.{csv,npy,mat,txt,svg,pdf}]</code></pre>
 <p><code>rail</code> runs a <strong><code>.crail</code></strong> — the document the <a href="railrf.html">railRF window</a> edits. It resolves the
@@ -2235,7 +2314,8 @@ about parts you did not author. Naming the file is what checks it.</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain &lt;path&gt; [--expr "&lt;expression&gt;"] [--set var=expr]
                             [--analysis [&lt;name&gt;]] [--ref &lt;relative-ref&gt;]
                             [--cells [--all]] [--layers] [--extents] [--view &lt;name&gt;]
-                            [--footprints] [--setup &lt;name&gt;] [--object &lt;name&gt;] [--look]</code></pre>
+                            [--footprints] [--setup &lt;name&gt;] [--object &lt;name&gt;] [--look]
+                            [--tunables]</code></pre>
 <p><code>check</code> answers &quot;is something wrong&quot;. <code>explain</code> answers the question that is <strong>not</strong> a failure: which
 technology did this layout get, which analysis would actually run, what does this expression evaluate
 to here, what does this cell reference point at, what cells and layers are in here, and how big is it?</p>
@@ -2462,6 +2542,30 @@ places is how that goes unread.</p>
 it never reaches the simulator. Asking the netlist about it would report every design as stating
 none.</p>
 </div>
+<h3 id="explain-tunables"><code>--tunables</code> — which values can be tuned?</h3>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Bench/schematic/Bench.csch --tunables
+<span class="output">Tunables (9):
+  R1.R         top       50 Ohm          10 Ohm .. 200 Ohm  [tune; opt]
+  X1.Rbias     top       1 kOhm          500 Ohm .. 2 kOhm  [tune]
+  Rload        top       50 Ohm          25 Ohm .. 100 Ohm  [opt]
+  real(Zsrc)   top       40 Ohm          20 Ohm .. 80 Ohm  [part of 40+15j Ohm]
+  imag(Zsrc)   top       15 Ohm          7.5 Ohm .. 30 Ohm  [part of 40+15j Ohm]
+  mag(Zsrc)    top       42.72 Ohm       20 Ohm .. 80 Ohm  [tune; part of 40+15j Ohm]
+  phase(Zsrc)  top       20.556 deg      -45 deg .. 45 deg  [tune; part of 40+15j Ohm]
+  DUT:R3.R     DUT · ×2  10 Ohm          5 Ohm .. 50 Ohm
+  DUT:R5.R     DUT · ×2  22 Ohm          11 Ohm .. 44 Ohm  [read-only: it belongs to another workspace]</span></code></pre>
+<p>Every value of the design that can be tuned or optimized, at any depth, with the <strong>key</strong> a <code>tune</code> line
+or a preset names it by. A value is tunable when it is written as a plain number with an optional
+unit; an expression is not, and the variable it reads is. A value inside a cell is named
+<code>Cell:Instance.Parameter</code> and moves in <strong>every</strong> instance of that cell — the second column says how
+many share it. A sub-circuit instance's own parameters are listed once per instance (<code>X1.Rbias</code>), even
+when the instance is using the cell's default. A complex value written with numbers only is listed as
+its four parts — <code>real(Zsrc)</code>, <code>imag(Zsrc)</code>, <code>mag(Zsrc)</code> and <code>phase(Zsrc)</code>, the phase in degrees — each
+tuned on its own; a preset still holds the whole value under its own key (<code>Zsrc=45+10j Ohm</code>).</p>
+<p>The range is the one the schematic's tuning setup gives the value, or the range it would get when you
+first tune it. A value Push cannot write — in a library cell, or another workspace — says why; it can
+still be tuned and optimized. Keys the setup names that match nothing in the design are listed last,
+and ignored.</p>
 <h3 id="explain-extents"><code>--extents</code> — how big is it?</h3>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain Stage1.clay --extents
 <span class="output">  extents      0 -0.003 .. 0.02 0.00376719  (0.02 x 0.00676719 m, scale 1E-06)
@@ -2819,6 +2923,8 @@ direction and a 4 kB page and an 84 kB one should not look alike:</p>
   data-display       12.8 kB  The .cdd data-display format
   technology          6.1 kB  The .ctech technology format
   analyses            8.5 kB  Analysis directives
+  tuning              3.8 kB  Tuning directives
+  goals               2.7 kB  Optimization goals
   components         91.3 kB  Component types
 
   circuitrf reference components &lt;TYPE&gt;   one primitive
@@ -3286,6 +3392,10 @@ would.</p>
 <tr>
 <td><strong>2</strong></td>
 <td>Ran, but did not converge</td>
+</tr>
+<tr>
+<td><strong>3</strong></td>
+<td><code>opt</code> only: finished, with at least one goal unmet</td>
 </tr>
 <tr>
 <td><strong>130</strong></td>

@@ -470,6 +470,17 @@ product lands exactly on the grid and the waveform is exactly periodic — close
 <p class="small">Full design + algorithm: <code>docs/design/harmonic-balance.md</code> and the
   harmonic-termination model in <code>docs/design/p1tone-harmonic-terminations.md</code> (in the repo).</p>
 <hr />
+<h2 id="tuning">Tuning</h2>
+<p>The <strong>Tuning</strong> panel puts a slider on any value you choose and re-simulates as you move it, with every
+open Data Display following along. Nothing in the schematic changes until you Push. The whole chapter —
+choosing values, ranges, complex values by their parts, presets, snapshots — is <a href="tuning.html">Tuning</a>.</p>
+<hr />
+<h2 id="optimizer">Optimizer</h2>
+<p>The <strong>Optimizer</strong> panel searches the values you choose for ones that meet your goals, each goal a limit
+on an expression over one analysis, with every open Data Display following the best point found so far.
+Variables, goals, the algorithms and when to use each, railed variables and snap and polish are in
+<a href="optimization.html">Optimization</a>.</p>
+<hr />
 <h2 id="cli">Running an analysis from the command line</h2>
 <p>Everything above is driven from the GUI's Run button, and everything above also runs headless. The
 command-line driver takes a <code>.cnl</code> netlist — hand-authored, or extracted from a schematic — and runs
