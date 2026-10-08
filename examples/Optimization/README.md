@@ -33,6 +33,17 @@ zero the moment every point meets its limit, so the run stops there rather than 
 best point is −23.4 dB at 1.00 GHz and exactly −20.0 dB at the band edge. If you want margin, ask for
 it: write −22 dB and run again.
 
+Two presets are saved in the schematic — open **Presets** in the Tuning panel:
+
+- **As drawn** — the starting values.
+- **Textbook** — the closed-form L-section for 50 Ω to 200 Ω at 1 GHz (Q = √3: X<sub>L</sub> = 86.6 Ω,
+  B<sub>C</sub> = 8.66 mS). It centres the match at 1 GHz, and its worst point in the band is
+  −22.3 dB at 1.05 GHz: 2.3 dB of margin the optimizer's answer does not have, because the run stopped
+  the moment the goal was met.
+
+Recall one, **Push** it, and run again — or **Reset** in the Optimizer panel to put back what a Push
+wrote — to compare how different algorithms get from the same start to the goal.
+
 This is also the file the command line is checked against —
 `circuitrf opt LSectionMatch/schematic/LSectionMatch.csch` prints the same values, cost and
 simulation count as the panel.

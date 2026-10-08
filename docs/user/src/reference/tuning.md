@@ -76,9 +76,13 @@ Each row has a slider, a box holding the current value, the unit, and the range 
 - **The range** is the minimum and maximum under the slider. Click either one to change it. The first
   time a value is tuned its range is guessed: half to twice the value for a positive number, or 0–1 in
   its own unit for zero. The range is shown in the value's own unit, so pF stays pF.
-- **⋮** sets the spacing — **Log** (the default when the range spans a factor of ten or more and is
-  positive) or **Linear** — sets a **Step**, re-centres the range on the current value, resets the range
-  to its default, reveals the part on the canvas, or removes the row.
+- **⋮** sets how the slider moves, as one choice with a tick beside it: **Log** (the default when the
+  range spans a factor of ten or more and is positive), **Linear**, a **Step** (equal increments), or
+  **Standard values** — E6, E12, E24, E48 or E96, or the Smith Chart's preferred-value lists for a
+  capacitor, inductor or resistor. On a standard-value row the slider and the arrow keys move from one
+  value in the series to the next, and the label under the slider names the series. The same menu
+  re-centres the range on the current value, resets the range to its default, reveals the part on the
+  canvas, or removes the row.
 
 **One range per value, for both panels.** The Optimizer's variables are the same entries: a range
 changed in either panel is changed in both.
@@ -88,6 +92,11 @@ written with — 3, 4, 5, 6 (the default) or all of them. The value is simulated
 shown. The choice is saved with the schematic and applies to the Optimizer panel too.
 
 While a session runs, the canvas draws each value that differs from the schematic in the tuned colour.
+
+**The schematic's value wins when it changes.** A Push from the Optimizer or the Yield panel, or a value
+typed into the schematic, moves that row's slider to the new value. **Running the Optimizer on the same
+schematic stops the session** without writing its result, because the run's result replaces what the
+display shows. The sliders keep their values, and ▶ starts tuning again from them.
 
 ## Complex values: tuned by their parts {#complex}
 

@@ -194,16 +194,16 @@ public sealed class OptimizationVariables
             double? step = TunableValue.InUnit(e.Step, t.Unit);
             bool integer = t.Part is null && (e.Discrete == TuneDiscrete.Integer || t.IsInteger);
             IReadOnlyList<double>? levels = null;
-            bool preferred = e.Discrete == TuneDiscrete.Preferred;
+            // A preferred-value ladder or an E series: searched continuously, then snapped (TO-8).
+            bool preferred = e.Discrete == TuneDiscrete.Preferred || TunableValue.Series.Contains(e.Discrete);
             if (preferred)
             {
-                if (PreferredValues.QuantityOfUnit(t.Unit) is not { } quantity || ladders.For(quantity) is not { } ladder)
+                if (TunableValue.DiscreteLevels(e.Discrete, t.Unit, lo, hi, ladders) is not { } ladder)
                 {
                     refusal = OptimizationDiagnostics.PreferredNoLadder(e.Key, t.Unit);
                     return null;
                 }
-                double unitScale = Units.Scale(t.Unit) ?? 1;
-                levels = [.. ladder.Select(r => r / unitScale).Where(r => r >= lo * (1 - 1e-12) && r <= hi * (1 + 1e-12)).Order()];
+                levels = ladder;
                 if (levels.Count == 0)
                 {
                     refusal = OptimizationDiagnostics.PreferredNoneInRange(e.Key,
@@ -441,7 +441,7 @@ public sealed class OptimizationVariables
         return new DecodedPoint(values, quantities, cacheKey, infeasible, distance);
     }
 
-    private static string DiscreteToken(TuneDiscrete d) => d == TuneDiscrete.Integer ? "integer" : "preferred";
+    private static string DiscreteToken(TuneDiscrete d) => TunableValue.DiscreteToken(d);
 
     private int Index(string valueKey)
     {

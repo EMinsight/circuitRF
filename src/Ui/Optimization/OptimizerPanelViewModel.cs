@@ -166,6 +166,7 @@ public sealed partial class OptimizerPanelViewModel : ObservableObject, ITunable
         _catalog = null;
         _catalogFailed = false;
         _unticked.Clear();
+        _pushedFrom.Clear();
         HeaderLabel = tuned is null ? "" : displayName ?? "";
         StatusText = "";
         ClearRunReadouts();
@@ -468,6 +469,12 @@ public sealed partial class OptimizerPanelViewModel : ObservableObject, ITunable
         if (next is null || row.Index >= next.Goals.Count) return;
         next.Goals[row.Index].Enabled = enabled;
         Execute(next, enabled ? $"Enable goal {row.Name}" : $"Disable goal {row.Name}");
+    }
+
+    internal void SetGoalUse(OptimizerGoalRowViewModel row, GoalUse use)
+    {
+        if (Setup is null || row.Goal.Use == use) return;
+        Execute(TuningSetupEdits.WithGoalUse(Setup, row.Name, use), $"Use goal {row.Name} for optimizing");
     }
 
     [RelayCommand(CanExecute = nameof(HasSchematic))]

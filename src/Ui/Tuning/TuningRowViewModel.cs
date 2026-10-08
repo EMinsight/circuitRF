@@ -15,7 +15,9 @@
 // ================================================================
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -72,10 +74,36 @@ public sealed partial class TuningRowViewModel : ObservableObject
     /// <summary>The range is the zero-value guess (overview D4).</summary>
     public bool RangeGuessed { get; private set; }
 
-    /// <summary>"log" or "lin" — what the slider is actually doing.</summary>
-    public string ScaleLabel => TunableValue.Effective(Scale, Min, Max) == TuneScale.Log ? "log" : "lin";
+    /// <summary>"log", "lin" or the series (<c>E24</c>) — what the slider is actually doing.</summary>
+    public string ScaleLabel => IsSeries ? TunableValue.DiscreteLabel(Discrete) : IsLog ? "log" : "lin";
 
     public bool IsLog => TunableValue.Effective(Scale, Min, Max) == TuneScale.Log;
+
+    /// <summary>The entry's <c>discrete=</c>.</summary>
+    public TuneDiscrete Discrete { get; private set; }
+
+    /// <summary>The values a preferred or E-series row steps along, in <see cref="Unit"/>; null otherwise.</summary>
+    public IReadOnlyList<double>? Levels { get; private set; }
+
+    /// <summary>The row steps along a preferred-value ladder or an E series.</summary>
+    public bool IsSeries => Discrete == TuneDiscrete.Preferred || TunableValue.Series.Contains(Discrete);
+
+    // The ⋮ menu's one choice of how the slider moves — Linear, Log, Step or a series — and its tick.
+    public bool IsModeLinear => !IsSeries && Step is null && !IsLog;
+    public bool IsModeLog    => !IsSeries && Step is null && IsLog;
+    public bool IsModeStep   => !IsSeries && Step is not null;
+    public bool IsE6         => Discrete == TuneDiscrete.E6;
+    public bool IsE12        => Discrete == TuneDiscrete.E12;
+    public bool IsE24        => Discrete == TuneDiscrete.E24;
+    public bool IsE48        => Discrete == TuneDiscrete.E48;
+    public bool IsE96        => Discrete == TuneDiscrete.E96;
+    public bool IsPreferred  => Discrete == TuneDiscrete.Preferred;
+
+    /// <summary>A series is offered: the row is a whole value, not a part (overview D18).</summary>
+    public bool CanSeries => Tunable is { Part: null };
+
+    /// <summary>The Preferences ladder is offered: the unit names a capacitance, inductance or resistance.</summary>
+    public bool CanPreferred => Tunable is { } t && TunableValue.DiscreteChoices(t).Contains(TuneDiscrete.Preferred);
 
     [ObservableProperty] private string _minText = "";
     [ObservableProperty] private string _maxText = "";
@@ -124,7 +152,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
         {
             if (_syncing || IsDisabled) return;
             double v = TuningSliderMapping.Snap(
-                TuningSliderMapping.FromPosition(value, Min, Max, Scale), Min, Max, IsInteger, Step);
+                TuningSliderMapping.FromPosition(value, Min, Max, Scale), Min, Max, IsInteger, Step, Levels);
             SetValue(v, final: false);
         }
     }
@@ -149,6 +177,8 @@ public sealed partial class TuningRowViewModel : ObservableObject
         // An angle's range is not a ratio: a phase reads Auto as linear (overview D18).
         Scale        = entry.Scale == TuneScale.Auto && tunable?.Part == ComplexPart.Phase ? TuneScale.Lin : entry.Scale;
         Step         = InUnit(entry.Step, u) is > 0 and var s ? s : null;
+        Discrete     = tunable?.Part is null ? entry.Discrete : TuneDiscrete.None;
+        Levels       = TunableValue.DiscreteLevels(Discrete, u, Min, Max, _panel.Ladders?.Invoke()) is { Count: > 0 } lv ? lv : null;
         RangeGuessed = tunable?.RangeGuessed == true && entry.Min == tunable.DefaultMin && entry.Max == tunable.DefaultMax;
 
         WholeValue = tunable?.Part is not null ? whole : null;
@@ -214,7 +244,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
     {
         if (IsDisabled) return;
         if (ParseInUnit(ValueBoxText, Unit) is { } v)
-            SetValue(IsInteger ? Math.Round(v) : v, final: true);
+            SetValue(IsInteger ? Math.Round(v) : Levels is { } lv ? CircuitRF.Design.Matching.PreferredValues.Snap(v, lv) : v, final: true);
         else
             RevertValueText();
     }
@@ -226,7 +256,7 @@ public sealed partial class TuningRowViewModel : ObservableObject
     public void Nudge(int direction, TuningNudge size)
     {
         if (IsDisabled) return;
-        SetValue(TuningSliderMapping.Nudge(_value, direction, size, Min, Max, Scale, IsInteger, Step), final: true);
+        SetValue(TuningSliderMapping.Nudge(_value, direction, size, Min, Max, Scale, IsInteger, Step, Levels), final: true);
     }
 
     // ---- Range, scale, step — document edits (R-to4-10) ---------------------
@@ -249,7 +279,9 @@ public sealed partial class TuningRowViewModel : ObservableObject
     {
         IsEditingStep = false;
         if (string.IsNullOrWhiteSpace(StepText)) { _panel.EditEntry(this, e => e.Step = null, "Clear tuning step"); return; }
-        if (ParseInUnit(StepText, Unit) is { } v && v > 0) _panel.EditEntry(this, e => e.Step = FormatValue(v, Unit), "Set tuning step");
+        // A step is linear increments: it replaces Log and a series rather than hiding under them.
+        if (ParseInUnit(StepText, Unit) is { } v && v > 0)
+            _panel.EditEntry(this, e => { e.Step = FormatValue(v, Unit); e.Scale = TuneScale.Lin; ClearSeries(e); }, "Set tuning step");
         else StepText = Step is { } st ? FormatValue(st, "") : "";
     }
 
@@ -266,8 +298,32 @@ public sealed partial class TuningRowViewModel : ObservableObject
     [RelayCommand] private void EditMax()  => IsEditingMax = true;
     [RelayCommand] private void EditStep() => IsEditingStep = true;
 
-    [RelayCommand] private void SetLinear() => _panel.EditEntry(this, e => e.Scale = TuneScale.Lin, "Tune on a linear scale");
-    [RelayCommand] private void SetLog()    => _panel.EditEntry(this, e => e.Scale = TuneScale.Log, "Tune on a log scale");
+    // Linear, Log, Step and a series are ONE choice of how the slider moves, so picking one clears the others:
+    // a step left behind under Log kept every move in equal increments, and Log looked like it did nothing.
+    [RelayCommand]
+    private void SetLinear() => _panel.EditEntry(this, e => { e.Scale = TuneScale.Lin; e.Step = null; ClearSeries(e); }, "Tune on a linear scale");
+
+    [RelayCommand]
+    private void SetLog() => _panel.EditEntry(this, e => { e.Scale = TuneScale.Log; e.Step = null; ClearSeries(e); }, "Tune on a log scale");
+
+    /// <summary>Steps along an E series, or the Preferences ladder (<c>Preferred</c>) — on a log slider, where a
+    /// series' rungs sit evenly.</summary>
+    [RelayCommand]
+    private void SetSeries(string token)
+    {
+        if (!Enum.TryParse<TuneDiscrete>(token, ignoreCase: true, out var d) || d is TuneDiscrete.None or TuneDiscrete.Integer) return;
+        _panel.EditEntry(this, e =>
+        {
+            e.Discrete = d;
+            e.Step     = null;
+            if (Min > 0) e.Scale = TuneScale.Log;
+        }, $"Tune on {TunableValue.DiscreteLabel(d)} values");
+    }
+
+    private static void ClearSeries(TunableEntry e)
+    {
+        if (e.Discrete != TuneDiscrete.Integer) e.Discrete = TuneDiscrete.None;
+    }
 
     /// <summary>Keeps the range's width — its ratio on a log row, its span on a linear one — and
     /// centres it on the current value.</summary>

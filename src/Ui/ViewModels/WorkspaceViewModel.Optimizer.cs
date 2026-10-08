@@ -65,6 +65,7 @@ public partial class WorkspaceViewModel
         panel.GoalContext       = GoalContextFor;
         panel.PreviewSource     = GoalPreviewFor;
         panel.SendToTuningTarget = SendToTuning;
+        panel.TakingDisplay     = tuned => _factory.TuningTool?.Panel.EndSessionFor(tuned, "the Optimizer is running");
         panel.ReportMessages    = (summary, lines) =>
         {
             Messages.Info(summary);

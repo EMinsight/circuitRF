@@ -59,8 +59,11 @@ public sealed class OptimizerPublishTests
 
             long published = f.Panel.BestPublishes + 1;                 // every improvement, and the finish
             Assert.True(f.Panel.BestPublishes >= 3, $"only {f.Panel.BestPublishes} improvements were published");
-            Assert.Equal(1, lib.PublishedRedraws);                      // the display drew once …
-            Assert.Equal(published - 2, lib.SkippedFrames);             // … one waited, the rest were skipped
+            // The display drew once, one frame waited and the rest were skipped — and the one that waited is
+            // the FINISH, which the commit then shows rather than drops (it used to leave the display on an
+            // earlier, worse point while the file held the best one).
+            Assert.Equal(2, lib.PublishedRedraws);
+            Assert.Equal(published - 2, lib.SkippedFrames);
             Assert.Equal(1, f.Panel.FinalEvaluations);                  // ONE full re-run of the best point
             Assert.Null(lib.PublishedChip);                             // written: the file is that version now
             Assert.True(File.GetLastWriteTimeUtc(sink.ResultsPath) >= stampBefore);

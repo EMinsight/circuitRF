@@ -32,6 +32,13 @@ public enum TuneDiscrete
     Integer,
     /// <summary>Standard component values (the Smith Chart tool's preferred-value series).</summary>
     Preferred,
+    // An IEC 60063 series over the entry's range, chosen per entry rather than per quantity. Appended so
+    // the members above keep their ordinals.
+    E6,
+    E12,
+    E24,
+    E48,
+    E96,
 }
 
 /// <summary>How a goal's limit is met: <c>le</c> at or below, <c>ge</c> at or above, <c>eq</c> at,

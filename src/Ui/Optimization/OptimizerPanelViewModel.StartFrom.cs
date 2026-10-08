@@ -37,6 +37,7 @@ public sealed partial class OptimizerPanelViewModel
         _startFor = _tuned;
         StartFromText = $"Starts from the {label}: " + string.Join(", ", values.Select(kv => $"{kv.Key} = {kv.Value}"));
         OnPropertyChanged(nameof(HasStartFrom));
+        ResetCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]

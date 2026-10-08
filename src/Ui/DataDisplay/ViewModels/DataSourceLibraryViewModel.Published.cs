@@ -127,14 +127,23 @@ public partial class DataSourceLibraryViewModel
     }
 
     /// <summary>
-    /// The published DataSet has just been written to the file (a session's Stop, R-to3-7): it IS the
-    /// file's version now. Ends the publication without returning to the older file data and without
-    /// re-reading the disk. A frame still waiting is dropped — the session that sent it has ended.
+    /// The published DataSet has just been written to the file (a session's Stop, R-to3-7; an optimizer's
+    /// finish): it IS the file's version now. Ends the publication without returning to the older file data
+    /// and without re-reading the disk. A frame still waiting is the NEWEST publication — the one just
+    /// written — so it is shown first, never dropped: dropping it left the display on an earlier frame
+    /// while the file held the final one, whenever the last publication arrived mid-draw.
     /// </summary>
     public void KeepPublishedAsFile(string absPath)
     {
-        if (FindEntry(absPath) is { } entry) ForgetPublication(entry);
-        else SetChip(Path.GetFullPath(absPath), null);
+        string key = Path.GetFullPath(absPath);
+        if (FindEntry(absPath) is not { } entry) { SetChip(key, null); return; }
+        if (_pendingFrames.Remove(key, out var waiting) && !entry.IsBroken)
+        {
+            PublishedRedraws++;
+            entry.ApplyPublished(ShallowCopy(waiting.Data));
+            LibraryChanged?.Invoke(this, EventArgs.Empty);
+        }
+        ForgetPublication(entry);
     }
 
     private void DrawFrame(DataSourceEntryViewModel entry, string key, DataSet data, string chip)

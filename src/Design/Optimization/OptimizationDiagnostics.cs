@@ -13,6 +13,12 @@ public static class OptimizationDiagnostics
         "opt.nothing.goals", DiagnosticSeverity.Error,
         "Nothing to optimize: the design has no enabled goal.");
 
+    /// <summary>Goals are enabled, but every one is a yield spec only — the check box alone does not say so.</summary>
+    public static Diagnostic OnlyYieldGoals(string names) => Diagnostic.Create(
+        "opt.nothing.goals-yield-only", DiagnosticSeverity.Error,
+        "Nothing to optimize: every enabled goal is a yield spec only (use=yield), which the optimizer does not aim for: {names}. Set its use to opt or both.",
+        ("names", names));
+
     public static Diagnostic NoVariables() => Diagnostic.Create(
         "opt.nothing.variables", DiagnosticSeverity.Error,
         "Nothing to optimize: no value is enabled for optimizing (opt=1 on a tune line).");
@@ -77,7 +83,7 @@ public static class OptimizationDiagnostics
 
     public static Diagnostic PreferredNoneInRange(string key, string min, string max) => Diagnostic.Create(
         "opt.discrete.none-in-range", DiagnosticSeverity.Error,
-        "{key}: no preferred value lies in its range {min} .. {max}; widen the range or edit the ladder.",
+        "{key}: no preferred or series value lies in its range {min} .. {max}; widen the range or choose another series.",
         ("key", key), ("min", min), ("max", max));
 
     public static Diagnostic DiscreteOnlyParts() => Diagnostic.Create(
@@ -86,7 +92,7 @@ public static class OptimizationDiagnostics
 
     public static Diagnostic DiscreteHasContinuous(string keys) => Diagnostic.Create(
         "opt.discrete.continuous", DiagnosticSeverity.Error,
-        "Discrete needs every optimized value to be an integer, a step or a preferred value; these are continuous: {keys}. Give each discrete= or step=, or choose another algorithm.",
+        "Discrete needs every optimized value to be an integer, a step, a preferred value or an E series; these are continuous: {keys}. Give each discrete= or step=, or choose another algorithm.",
         ("keys", keys));
 
     public static Diagnostic SnapReport(int snapped, double before, double snappedCost, double after, bool polished) => Diagnostic.Create(

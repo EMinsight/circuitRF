@@ -35,7 +35,7 @@ public static partial class AnalysisDirectiveSchema
     // Enum spellings — the reader parses against these and the page prints them, so the two
     // cannot disagree about what is legal.
     public static readonly IReadOnlyList<string> ScaleTokens    = ["auto", "lin", "log"];
-    public static readonly IReadOnlyList<string> DiscreteTokens = ["none", "integer", "preferred"];
+    public static readonly IReadOnlyList<string> DiscreteTokens = ["none", "integer", "preferred", "e6", "e12", "e24", "e48", "e96"];
     public static readonly IReadOnlyList<string> GoalTypeTokens = ["le", "ge", "eq", "in", "out"];
     public static readonly IReadOnlyList<string> CostTokens     = ["lsq", "minimax"];
     public static readonly IReadOnlyList<string> ScopeTokens    = ["goals", "all"];
@@ -94,7 +94,7 @@ public static partial class AnalysisDirectiveSchema
                 new("max",      Summary: "Upper bound."),
                 new("scale",    Default: "auto", Summary: "auto | lin | log. auto is log when min > 0 and max/min >= 10."),
                 new("step",     Summary: "Slider step. Absent = continuous."),
-                new("discrete", Default: "none", Summary: "none | integer | preferred — preferred snaps a capacitance, inductance or resistance to the user's preferred-value ladder (shipped: E12 C and L, E24 R). Not on a part of a complex value."),
+                new("discrete", Default: "none", Summary: "none | integer | preferred | e6 | e12 | e24 | e48 | e96 — preferred snaps a capacitance, inductance or resistance to the user's preferred-value ladder (shipped: E12 C and L, E24 R); e6 … e96 snap any positive value to that IEC 60063 series. Not on a part of a complex value."),
                 new("tune",     Default: "0", Summary: "1 = offered in the Tuning window."),
                 new("opt",      Default: "0", Summary: "1 = varied by the optimizer."),
                 new("stat",     Default: "1 with dist", Summary: "0 keeps the distribution but does not draw it."),

@@ -10,6 +10,7 @@
 using System;
 using System.Globalization;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using CircuitRF.Core.Design;
 using CircuitRF.Design.Optimization;
 
@@ -58,6 +59,14 @@ public sealed partial class OptimizerGoalRowViewModel : ObservableObject
     /// <summary>The expression's value at its worst point, <c>−0.62</c>.</summary>
     [ObservableProperty] private string _worstText = "";
 
+    /// <summary>A yield spec only (<c>use=yield</c>, set in the Yield panel): the optimizer does not aim for it
+    /// however the check box reads, so the row says so.</summary>
+    public bool IsYieldOnly => Goal.Use == GoalUse.Yield;
+
+    /// <summary>The goal serves the optimizer too from now on (<c>use=both</c>).</summary>
+    [RelayCommand]
+    private void UseForOptimizing() => _panel.SetGoalUse(this, GoalUse.Both);
+
     internal void Bind(int index, OptimizationGoal goal)
     {
         Index = index;
@@ -67,6 +76,7 @@ public sealed partial class OptimizerGoalRowViewModel : ObservableObject
         _syncing = false;
         OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(Summary));
+        OnPropertyChanged(nameof(IsYieldOnly));
     }
 
     /// <summary>Across corners, the binding corner — <c>@ hot</c> — where the goal's worst violation (met: its

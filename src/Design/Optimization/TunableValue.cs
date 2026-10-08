@@ -21,8 +21,52 @@ public static class TunableValue
     /// </summary>
     public static IReadOnlyList<TuneDiscrete> DiscreteChoices(Tunable t)
         => t.Part is not null ? [TuneDiscrete.None]
-         : CircuitRF.Design.Matching.PreferredValues.QuantityOfUnit(t.Unit) is null ? [TuneDiscrete.None, TuneDiscrete.Integer]
-         : [TuneDiscrete.None, TuneDiscrete.Integer, TuneDiscrete.Preferred];
+         : CircuitRF.Design.Matching.PreferredValues.QuantityOfUnit(t.Unit) is null ? [TuneDiscrete.None, TuneDiscrete.Integer, .. Series]
+         : [TuneDiscrete.None, TuneDiscrete.Integer, TuneDiscrete.Preferred, .. Series];
+
+    /// <summary>The IEC 60063 series an entry can name, fewest rungs first.</summary>
+    public static IReadOnlyList<TuneDiscrete> Series { get; } =
+        [TuneDiscrete.E6, TuneDiscrete.E12, TuneDiscrete.E24, TuneDiscrete.E48, TuneDiscrete.E96];
+
+    /// <summary>The <c>discrete=</c> spelling of <paramref name="d"/>: <c>preferred</c>, <c>e24</c>.</summary>
+    public static string DiscreteToken(TuneDiscrete d) => CircuitRF.Core.Netlist.AnalysisDirectiveSchema.DiscreteTokens[(int)d];
+
+    /// <summary>What a row or menu calls <paramref name="d"/>: <c>E24</c>, <c>Preferred</c>.</summary>
+    public static string DiscreteLabel(TuneDiscrete d) => d switch
+    {
+        TuneDiscrete.None      => "Continuous",
+        TuneDiscrete.Integer   => "Integer",
+        TuneDiscrete.Preferred => "Preferred",
+        _                      => d.ToString(),
+    };
+
+    /// <summary>
+    /// The values a <paramref name="discrete"/> entry for a value in <paramref name="unit"/> may take inside
+    /// [<paramref name="lo"/>, <paramref name="hi"/>] (both in that unit), ascending — the ONE ladder the
+    /// Tuning slider steps along and the optimizer snaps to. Null for <c>none</c> and <c>integer</c>, and for
+    /// <c>preferred</c> on a unit with no ladder; empty when the range holds no rung.
+    /// </summary>
+    public static IReadOnlyList<double>? DiscreteLevels(TuneDiscrete discrete, string unit, double lo, double hi,
+                                                         CircuitRF.Design.Matching.PreferredLadders? ladders = null)
+    {
+        IReadOnlyList<double>? mantissas = discrete switch
+        {
+            TuneDiscrete.E6  => CircuitRF.Design.Matching.PreferredValues.E6,
+            TuneDiscrete.E12 => CircuitRF.Design.Matching.PreferredValues.E12,
+            TuneDiscrete.E24 => CircuitRF.Design.Matching.PreferredValues.E24,
+            TuneDiscrete.E48 => CircuitRF.Design.Matching.PreferredValues.E48,
+            TuneDiscrete.E96 => CircuitRF.Design.Matching.PreferredValues.E96,
+            _                => null,
+        };
+        if (mantissas is not null) return CircuitRF.Design.Matching.PreferredValues.Between(mantissas, lo, hi);
+        if (discrete != TuneDiscrete.Preferred) return null;
+
+        ladders ??= CircuitRF.Design.Matching.PreferredLadders.Shipped;
+        if (CircuitRF.Design.Matching.PreferredValues.QuantityOfUnit(unit) is not { } quantity
+            || ladders.For(quantity) is not { } ladder) return null;
+        double unitScale = Units.Scale(unit) ?? 1;
+        return [.. ladder.Select(r => r / unitScale).Where(r => r >= lo * (1 - 1e-12) && r <= hi * (1 + 1e-12)).Order()];
+    }
 
     private static readonly Regex _plain = new(
         @"^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*([A-Za-zΩµμ%°]+)?\s*$",

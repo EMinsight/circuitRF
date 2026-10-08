@@ -27,6 +27,9 @@ public static class PreferredValues
     public static readonly IReadOnlyList<double> E12 =
         [1.0, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2];
 
+    /// <summary>The E6 mantissas — IEC 60063's six-per-decade series, every other E12 rung.</summary>
+    public static readonly IReadOnlyList<double> E6 = [1.0, 1.5, 2.2, 3.3, 4.7, 6.8];
+
     /// <summary>The E24 mantissas — IEC 60063's twenty-four-per-decade series.</summary>
     public static readonly IReadOnlyList<double> E24 =
         [1.0, 1.1, 1.2, 1.3, 1.5, 1.6, 1.8, 2.0, 2.2, 2.4, 2.7, 3.0,
@@ -286,6 +289,35 @@ public static class PreferredValues
     };
 
     // ── building a ladder ────────────────────────────────────────────────────
+
+    /// <summary>The E48 mantissas — IEC 60063's forty-eight-per-decade (2 %) series, every other E96 rung.</summary>
+    public static readonly IReadOnlyList<double> E48 = [.. E96.Where((_, i) => i % 2 == 0)];
+
+    /// <summary>
+    /// Every rung of the series <paramref name="mantissas"/> inside [<paramref name="lo"/>,
+    /// <paramref name="hi"/>], ascending — in whatever unit the bounds are in, since a series is the same
+    /// in every decade. Empty when the range holds no rung or does not reach above zero; a range that
+    /// starts at or below zero is taken from three decades under <paramref name="hi"/>.
+    /// </summary>
+    public static IReadOnlyList<double> Between(IReadOnlyList<double> mantissas, double lo, double hi)
+    {
+        var list = new List<double>();
+        if (!(hi > 0) || !double.IsFinite(lo) || !double.IsFinite(hi) || hi < lo) return list;
+        double bottom = lo > 0 ? lo : hi / 1e3;
+        int first = (int)Math.Floor(Math.Log10(bottom)) - 1, last = (int)Math.Ceiling(Math.Log10(hi)) + 1;
+        for (int decade = first; decade <= last; decade++)
+        {
+            double mag = Math.Pow(10.0, decade);
+            foreach (double m in mantissas)
+            {
+                // Rounded to the mantissa's own figures, so 4.7e-9 is not 4.700000000000001e-9.
+                double v = double.Parse((m * mag).ToString("G12", System.Globalization.CultureInfo.InvariantCulture),
+                                        System.Globalization.CultureInfo.InvariantCulture);
+                if (v >= lo * (1 - 1e-12) && v <= hi * (1 + 1e-12)) list.Add(v);
+            }
+        }
+        return list;
+    }
 
     /// <summary>
     /// A series' mantissas across the decades <paramref name="first"/> … <paramref name="last"/>

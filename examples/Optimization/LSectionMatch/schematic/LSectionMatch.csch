@@ -256,6 +256,22 @@
         "Max": "10 pF"
       }
     ],
+    "Presets": [
+      {
+        "Name": "As drawn",
+        "Values": {
+          "L1.L": "5 nH",
+          "C1.C": "0.5 pF"
+        }
+      },
+      {
+        "Name": "Textbook",
+        "Values": {
+          "L1.L": "13.7832 nH",
+          "C1.C": "1.37832 pF"
+        }
+      }
+    ],
     "Goals": [
       {
         "Name": "Match",

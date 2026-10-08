@@ -550,10 +550,13 @@ The best value is reported, pushed and locked in **whole**, in the form the sche
 ## Integers, steps and preferred values: snap and polish {#snap}
 
 A variable can take only some values: an **integer** parameter (a finger count), a value with a
-**step** (⋮ ▸ Step… in the Tuning panel), or a value restricted to **preferred values**, written
-`discrete=preferred` on its `tune` line. Preferred values follow the value's unit — capacitors for F,
-inductors for H, resistors for Ω — from the lists in the Smith Chart's **Preferred Values** dialog (E12,
-E24 and E96, and your own).
+**step** (⋮ ▸ Step… in the Tuning panel), or a value restricted to **standard values**, chosen with
+⋮ ▸ Standard values on its row in either panel. The variable list shows the choice beside the name.
+
+- **E6, E12, E24, E48, E96** — that IEC 60063 series inside the variable's range, for any positive
+  value. Written `discrete=e24` on its `tune` line.
+- **Preferences ladder** — the value's own list from the Smith Chart's **Preferred Values** dialog:
+  capacitors for F, inductors for H, resistors for Ω. Written `discrete=preferred`.
 
 Most algorithms move such a value continuously. **Snap and polish** (in the toolbar, after a run) then:
 
@@ -579,6 +582,12 @@ While paused or after a run:
 
 All three use the digits chosen with the button at the right of the header — the same setting as the
 [Tuning panel's](tuning.html#rows) — so what is kept is what the variable list shows.
+
+**Reset** (beside Stop) clears the result and puts back every value this panel pushed, as one undo
+step. The next run then starts from the design as drawn rather than from the last run's answer, which
+is how to compare two algorithms from the same start. A run always starts from the schematic's values,
+so after a Push without a Reset the next run starts where the last one ended. If that point already
+meets every goal, it stops at once.
 
 ## From the command line, and from an agent {#headless}
 

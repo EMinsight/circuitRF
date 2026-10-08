@@ -369,7 +369,13 @@ public sealed class OptimizationRun
 
         // A use=yield goal is a yield spec only (yield overview D4); the optimizer does not aim for it.
         _goals.AddRange(_setup.Goals.Where(g => g.Enabled && g.ForOptimizer));
-        if (_goals.Count == 0) { Refusal = OptimizationDiagnostics.NoGoals(); return; }
+        if (_goals.Count == 0)
+        {
+            var yieldOnly = _setup.Goals.Where(g => g.Enabled && !g.ForOptimizer).Select(g => g.Name).ToList();
+            Refusal = yieldOnly.Count > 0 ? OptimizationDiagnostics.OnlyYieldGoals(string.Join(", ", yieldOnly))
+                                          : OptimizationDiagnostics.NoGoals();
+            return;
+        }
 
         Variables = OptimizationVariables.Build(_setup, catalog, out var refusal, _ladders);
         if (refusal is not null || Variables is null) { Refusal = refusal ?? OptimizationDiagnostics.NoVariables(); return; }

@@ -61,6 +61,10 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
     /// enabled one). Null leaves Start unavailable.</summary>
     public Func<SchematicViewModel, IReadOnlyList<string>?, TuneSession?>? CreateSession { get; set; }
 
+    /// <summary>The preferred-value ladders a <c>discrete=preferred</c> row steps along (the user's); null is the
+    /// shipped ones.</summary>
+    public Func<CircuitRF.Design.Matching.PreferredLadders?>? Ladders { get; set; }
+
     /// <summary>The session that edits a sub-cell's drawing, opening it as a tab WITHOUT focus when it
     /// has none (overview D2) — Push's only way into another document.</summary>
     public Func<SchematicEditModel, SchematicViewModel?>? SessionForDrawing { get; set; }
@@ -134,6 +138,8 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         _catalog = null;
         _catalogFailed = false;
         _values.Clear();
+        _seenValue.Clear();
+        _seenWhole.Clear();
         HeaderLabel = tuned is null ? "" : displayName ?? "";
         StatusText  = "";
         RunOnReleaseSuggested = false;
@@ -203,6 +209,7 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         var wholes = entries.Select(e => _catalog?.Find(e.Key)?.WholeKey).OfType<string>().ToHashSet(StringComparer.Ordinal);
         foreach (var w in _complex.Keys.Where(w => !wholes.Contains(w)).ToList()) _complex.Remove(w);
 
+        bool followed = false;
         for (int i = 0; i < entries.Count; i++)
         {
             var entry = entries[i];
@@ -217,12 +224,14 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
                 Rows.Move(Rows.IndexOf(row), i);
             }
             var t = _catalog?.Find(entry.Key);
+            if (t is not null && SchematicValueMoved(t)) followed = true;
             row.Bind(entry, t, _values.TryGetValue(entry.Key, out var v) ? v : null,
                      t?.WholeKey is { } wk && _complex.TryGetValue(wk, out var z) ? z : null);
         }
 
         RebuildPresets();
         RefreshCornerChoices();
+        if (followed && IsRunning) Request(final: true);
         UpdateLag();
         UpdateCanvas();
         OnPropertyChanged(nameof(Digits));
@@ -230,6 +239,31 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         if (Add.IsOpen) Add.Refresh();
         LockInCommand.NotifyCanExecuteChanged();
         Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    // The schematic's own value of each key as the rows last read it. When it changes under a tuned
+    // value — the Optimizer's or Yield's Push, Recall and Push, a typed edit, an undo — the schematic is the
+    // newer word: the slider follows it rather than holding an older tuned value whose orange label would
+    // hide the write and whose session would later write its stale result over it.
+    private readonly Dictionary<string, double>  _seenValue = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Complex> _seenWhole = new(StringComparer.Ordinal);
+
+    /// <summary>Drops the tuned value of <paramref name="t"/> when the schematic's value moved since the
+    /// last read; true when one was dropped.</summary>
+    private bool SchematicValueMoved(Tunable t)
+    {
+        bool dropped = false;
+        if (t.WholeKey is { } whole)
+        {
+            if (_seenWhole.TryGetValue(whole, out var before) && before != t.Whole) dropped = _complex.Remove(whole);
+            _seenWhole[whole] = t.Whole;
+        }
+        else
+        {
+            if (_seenValue.TryGetValue(t.Key, out var before) && before != t.Value) dropped = _values.Remove(t.Key);
+            _seenValue[t.Key] = t.Value;
+        }
+        return dropped;
     }
 
     private void OnModelChanged(object? sender, EventArgs e)
@@ -465,6 +499,20 @@ public sealed partial class TuningPanelViewModel : ObservableObject, ITuningSurf
         Detach(s);
         s.Stop();
         StatusText = "Stopped";
+        AfterSessionChange();
+    }
+
+    /// <summary>
+    /// Another panel is taking <paramref name="tuned"/>'s display (an optimizer run): a live session on it ends
+    /// WITHOUT writing its result — the other run's result replaces it, and a session left running would later
+    /// write its own older one over it. The sliders keep their values; Start resumes from them.
+    /// </summary>
+    public void EndSessionFor(SchematicViewModel tuned, string why)
+    {
+        if (!ReferenceEquals(tuned, _tuned) || _session is not { } s) return;
+        Detach(s);
+        s.Dispose();
+        StatusText = $"Stopped — {why}";
         AfterSessionChange();
     }
 

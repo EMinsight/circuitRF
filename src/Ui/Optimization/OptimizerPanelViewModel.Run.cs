@@ -68,6 +68,11 @@ public sealed partial class OptimizerPanelViewModel
     /// <summary>The preferred-value ladders <c>discrete=preferred</c> snaps to (the user's).</summary>
     public Func<PreferredLadders?>? Ladders { get; set; }
 
+    /// <summary>Called as a run (or a snap) takes this schematic's display: the Tuning panel ends a live
+    /// session on the same schematic WITHOUT writing it, since the run's result replaces what it shows and
+    /// a session left running would later write its own older result over the run's.</summary>
+    public Action<SchematicViewModel>? TakingDisplay { get; set; }
+
     // ---- Run state -----------------------------------------------------------
 
     [ObservableProperty]
@@ -198,6 +203,7 @@ public sealed partial class OptimizerPanelViewModel
         }
 
         ClearRunReadouts();
+        TakingDisplay?.Invoke(_tuned);
         _run     = run;
         _cts     = cts;
         _circuit = circuit;
@@ -359,7 +365,7 @@ public sealed partial class OptimizerPanelViewModel
         var lines = new List<string>();
         foreach (var g in r.Goals)
         {
-            string at = g.WorstAt is { } x ? $" at {g.Axis} = {x.ToString("G4", CultureInfo.InvariantCulture)}" : "";
+            string at = g.WorstAt is { } x ? $" at {g.Axis} = {AxisText(x, g.Axis)}" : "";
             lines.Add(g.Met
                 ? $"{g.Name}: met (worst value {g.WorstValue.ToString("G4", CultureInfo.InvariantCulture)}{at})"
                 : $"{g.Name}: not met — worst value {g.WorstValue.ToString("G4", CultureInfo.InvariantCulture)}{at}, " +
@@ -368,6 +374,22 @@ public sealed partial class OptimizerPanelViewModel
         foreach (var (k, v) in r.BestValues) lines.Add($"{k} = {v}");
         foreach (var n in r.Notes) lines.Add(n.Render());
         return (string.Join(" · ", parts), lines);
+    }
+
+    /// <summary>A point on a goal's range axis as a designer reads it: <c>0.95 GHz</c> on a frequency axis
+    /// (WorstAt is base SI), the plain number on any other.</summary>
+    internal static string AxisText(double x, string? axis)
+    {
+        if (axis is not ("freq" or "frequency") || x == 0 || !double.IsFinite(x))
+            return x.ToString("G4", CultureInfo.InvariantCulture);
+        (double scale, string unit) = Math.Abs(x) switch
+        {
+            >= 1e9 => (1e9, "GHz"),
+            >= 1e6 => (1e6, "MHz"),
+            >= 1e3 => (1e3, "kHz"),
+            _      => (1.0, "Hz"),
+        };
+        return (x / scale).ToString("G4", CultureInfo.InvariantCulture) + " " + unit;
     }
 
     private static string Capitalize(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
@@ -446,11 +468,63 @@ public sealed partial class OptimizerPanelViewModel
     private void Push()
     {
         if (_tuned is null || KeptValues() is not { } values || Catalog is not { } catalog) return;
+        var drawn = AsDrawn(catalog, values.Keys);
         var report = TuningPush.Push(catalog, values, _tuned, SessionForDrawing ?? (_ => null));
         if (report.UndoSession(_tuned) is { } undo) EditCommitted?.Invoke(undo);
+        // Reset's way back: the value each key had BEFORE the first Push of this panel, so a second Push
+        // does not make the first one's result the "as drawn".
+        foreach (var key in report.WrittenKeys)
+            if (drawn.TryGetValue(key, out var before)) _pushedFrom.TryAdd(key, before);
         _catalog = null;
         RefreshNow();
         StatusText = report.StatusLine;
+        ResetCommand.NotifyCanExecuteChanged();
+    }
+
+    // Key → the value text the schematic held before this panel first pushed it (Reset puts it back).
+    private readonly Dictionary<string, string> _pushedFrom = new(StringComparer.Ordinal);
+
+    /// <summary>The schematic's own values of <paramref name="keys"/>, spelled as Push spells them.</summary>
+    private static Dictionary<string, string> AsDrawn(TunableCatalog catalog, IEnumerable<string> keys)
+    {
+        var drawn = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var key in keys)
+        {
+            if (catalog.FindValue(key) is not { } t) continue;
+            drawn[key] = t.Part is null
+                ? TunableValue.Format(t.Value, t.Unit)
+                : ComplexValue.Format(t.Whole, t.WholeUnit, t.Form, "G15");
+        }
+        return drawn;
+    }
+
+    private bool CanReset() => _tuned is not null && !IsRunActive
+                               && (HasRunReadouts || _pushedFrom.Count > 0 || HasStartFrom || Result is not null);
+
+    /// <summary>
+    /// Back to the start: the values this panel pushed return to what the schematic held before (one undo
+    /// step), a handed-over start point is cleared, and the run's readouts go — so the next run, with this
+    /// algorithm or another, starts from the design as drawn rather than from the last run's answer.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanReset))]
+    private void Reset()
+    {
+        if (_tuned is null || IsRunActive) return;
+        string status = "Reset";
+        if (_pushedFrom.Count > 0 && Catalog is { } catalog)
+        {
+            var report = TuningPush.Push(catalog, new Dictionary<string, string>(_pushedFrom), _tuned, SessionForDrawing ?? (_ => null));
+            if (report.UndoSession(_tuned) is { } undo) EditCommitted?.Invoke(undo);
+            if (report.Written > 0)
+                status = $"Reset: {report.Written} value{(report.Written == 1 ? "" : "s")} back as drawn";
+            _catalog = null;
+        }
+        _pushedFrom.Clear();
+        if (HasStartFrom) ClearStartFrom();
+        ClearRunReadouts();
+        RefreshNow();
+        StatusText = status;
+        NotifyRunCommands();
     }
 
     /// <summary>Loads the best values into the Tuning session so the user hand-tunes from there.</summary>
@@ -483,6 +557,7 @@ public sealed partial class OptimizerPanelViewModel
     private void SnapAndPolishCore()
     {
         if (_run is not { } run || _circuit is not { } circuit || _cts is null) return;
+        if (_tuned is not null) TakingDisplay?.Invoke(_tuned);
         State = OptimizerRunState.Running;
         StatusText = "Snapping…";
         var ct = _cts.Token;
@@ -522,5 +597,6 @@ public sealed partial class OptimizerPanelViewModel
         SendToTuningCommand.NotifyCanExecuteChanged();
         SnapAndPolishCommand.NotifyCanExecuteChanged();
         SensitivityCommand.NotifyCanExecuteChanged();
+        ResetCommand.NotifyCanExecuteChanged();
     }
 }

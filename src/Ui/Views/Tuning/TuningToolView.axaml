@@ -49,6 +49,10 @@
         <Style Selector="Button.tb:disabled mi|MaterialIcon">
             <Setter Property="Opacity" Value="0.35"/>
         </Style>
+        <!-- Fluent paints a disabled button's presenter grey, which on a borderless icon reads as PRESSED. -->
+        <Style Selector="Button.tb:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
         <Style Selector="Border.row.lagging">
             <Setter Property="Background" Value="#14FFA000"/>
         </Style>
@@ -238,8 +242,8 @@
                     <Button.Flyout>
                         <Flyout Placement="BottomEdgeAlignedRight">
                             <StackPanel Width="300" Spacing="2">
-                                <TextBlock Text="No presets yet." FontSize="12" Opacity="0.6"
-                                           IsVisible="{Binding !HasPresets}"/>
+                                <TextBlock Text="No presets yet. Lock in (the padlock) keeps the sliders' values as one." FontSize="12" Opacity="0.6"
+                                           TextWrapping="Wrap" IsVisible="{Binding !HasPresets}"/>
                                 <ItemsControl ItemsSource="{Binding Presets}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="tun:TuningPresetItemViewModel">
@@ -375,9 +379,37 @@
                                         <mi:MaterialIcon Kind="DotsVertical"/>
                                         <Button.Flyout>
                                             <MenuFlyout>
-                                                <MenuItem Header="Linear" Command="{Binding SetLinearCommand}"/>
-                                                <MenuItem Header="Log" Command="{Binding SetLogCommand}"/>
-                                                <MenuItem Header="Step…" Command="{Binding EditStepCommand}"/>
+                                                <!-- How the slider moves: ONE choice, ticked. -->
+                                                <MenuItem Header="Linear" Command="{Binding SetLinearCommand}">
+                                                    <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsModeLinear}"/></MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="Log" Command="{Binding SetLogCommand}">
+                                                    <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsModeLog}"/></MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="Step…" Command="{Binding EditStepCommand}">
+                                                    <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsModeStep}"/></MenuItem.Icon>
+                                                </MenuItem>
+                                                <MenuItem Header="Standard values" IsVisible="{Binding CanSeries}">
+                                                    <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsSeries}"/></MenuItem.Icon>
+                                                    <MenuItem Header="E6" Command="{Binding SetSeriesCommand}" CommandParameter="E6">
+                                                        <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsE6}"/></MenuItem.Icon>
+                                                    </MenuItem>
+                                                    <MenuItem Header="E12" Command="{Binding SetSeriesCommand}" CommandParameter="E12">
+                                                        <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsE12}"/></MenuItem.Icon>
+                                                    </MenuItem>
+                                                    <MenuItem Header="E24" Command="{Binding SetSeriesCommand}" CommandParameter="E24">
+                                                        <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsE24}"/></MenuItem.Icon>
+                                                    </MenuItem>
+                                                    <MenuItem Header="E48" Command="{Binding SetSeriesCommand}" CommandParameter="E48">
+                                                        <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsE48}"/></MenuItem.Icon>
+                                                    </MenuItem>
+                                                    <MenuItem Header="E96" Command="{Binding SetSeriesCommand}" CommandParameter="E96">
+                                                        <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsE96}"/></MenuItem.Icon>
+                                                    </MenuItem>
+                                                    <MenuItem Header="Preferences ladder" Command="{Binding SetSeriesCommand}" CommandParameter="Preferred" IsVisible="{Binding CanPreferred}">
+                                                        <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding IsPreferred}"/></MenuItem.Icon>
+                                                    </MenuItem>
+                                                </MenuItem>
                                                 <Separator/>
                                                 <MenuItem Header="Re-centre range on value" Command="{Binding RecentreRangeCommand}"/>
                                                 <MenuItem Header="Reset range to default" Command="{Binding ResetRangeCommand}"/>

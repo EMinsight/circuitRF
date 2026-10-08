@@ -15,6 +15,7 @@
 
 using System;
 using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -54,6 +55,39 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
     public TuneScale Scale { get; private set; }
 
     public bool IsLog => TunableValue.Effective(Scale, Min, Max) == TuneScale.Log;
+
+    /// <summary>The entry's <c>discrete=</c>.</summary>
+    public TuneDiscrete Discrete { get; private set; }
+
+    /// <summary>The entry's step as written; null when it has none.</summary>
+    public string? StepText { get; private set; }
+
+    /// <summary>What values the run may give it, when not any: <c>E24</c>, <c>step 1 nH</c>, <c>integer</c>.
+    /// Empty for a continuous value — the Discrete algorithm's refusal names the rows without this.</summary>
+    public string DiscreteText => Discrete switch
+    {
+        TuneDiscrete.None when StepText is { } st => $"step {st}",
+        TuneDiscrete.None                         => "",
+        TuneDiscrete.Integer                      => "integer",
+        var d                                     => TunableValue.DiscreteLabel(d),
+    };
+
+    public bool HasDiscreteText => DiscreteText.Length > 0;
+
+    public bool IsContinuous => Discrete == TuneDiscrete.None && StepText is null;
+    public bool IsE6         => Discrete == TuneDiscrete.E6;
+    public bool IsE12        => Discrete == TuneDiscrete.E12;
+    public bool IsE24        => Discrete == TuneDiscrete.E24;
+    public bool IsE48        => Discrete == TuneDiscrete.E48;
+    public bool IsE96        => Discrete == TuneDiscrete.E96;
+    public bool IsPreferred  => Discrete == TuneDiscrete.Preferred;
+    public bool IsSeries     => Discrete == TuneDiscrete.Preferred || TunableValue.Series.Contains(Discrete);
+
+    /// <summary>A series is offered: the row is a whole value, not a part (overview D18).</summary>
+    public bool CanSeries => Tunable is { Part: null };
+
+    /// <summary>The Preferences ladder is offered: the unit names a capacitance, inductance or resistance.</summary>
+    public bool CanPreferred => Tunable is { } t && TunableValue.DiscreteChoices(t).Contains(TuneDiscrete.Preferred);
 
     public string MinText => TuningRowViewModel.FormatValue(Min, "");
     public string MaxText => TuningRowViewModel.FormatValue(Max, "");
@@ -115,6 +149,8 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
         Max   = TunableValue.InUnit(entry.Max, u) ?? TunableValue.InUnit(tunable?.DefaultMax, u) ?? 1;
         if (!(Max > Min)) Max = Min + 1;
         Scale = entry.Scale == TuneScale.Auto && tunable?.Part == ComplexPart.Phase ? TuneScale.Lin : entry.Scale;
+        Discrete = entry.Discrete;
+        StepText = string.IsNullOrWhiteSpace(entry.Step) ? null : entry.Step;
         _syncing = true;
         IsOptimized = entry.Opt;
         _syncing = false;
@@ -156,6 +192,28 @@ public sealed partial class OptimizerVariableRowViewModel : ObservableObject
     private void Widen() => _panel.Widen(this);
 
     [RelayCommand] private void Remove() => _panel.RemoveVariable(this);
+
+    /// <summary>Any value in the range: no step, no series (an integer parameter stays integer).</summary>
+    [RelayCommand]
+    private void SetContinuous() => _panel.EditRange(this, e =>
+    {
+        e.Step = null;
+        e.Discrete = Tunable?.IsInteger == true ? TuneDiscrete.Integer : TuneDiscrete.None;
+    }, "Optimize continuously");
+
+    /// <summary>Only the values of an E series, or of the Preferences ladder (<c>Preferred</c>) — the same entry
+    /// the Tuning slider steps along.</summary>
+    [RelayCommand]
+    private void SetSeries(string token)
+    {
+        if (!Enum.TryParse<TuneDiscrete>(token, ignoreCase: true, out var d) || d is TuneDiscrete.None or TuneDiscrete.Integer) return;
+        _panel.EditRange(this, e =>
+        {
+            e.Discrete = d;
+            e.Step     = null;
+            if (Min > 0) e.Scale = TuneScale.Log;
+        }, $"Optimize over {TunableValue.DiscreteLabel(d)} values");
+    }
 
     // ---- Range edits (the same entry the Tuning panel edits) -------------------
 

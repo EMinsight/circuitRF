@@ -39121,3 +39121,44 @@ statistics, re-evaluated on selection and on a reload, and its tooltip shows whi
 The source combo also matches the selection by resolved path, so the Yield panel's display — which names its result by
 full path — shows its source instead of a blank. Gate: `StatisticsTableSourceTests` in
 `tests/Ui.Tests/Statistics/DisplayStatisticsTests.cs`.
+
+## Tuning / Optimizer — first designer field trial (2026-10-08)
+
+A designer tried both panels on the Optimization example's LSectionMatch. Reported: Log did nothing, no way to pick
+E12/E24, the optimizer said every goal was met while the plot showed −6 dB, Push said nothing to push, no way to
+start a second algorithm from the original values, Discrete refused, and a toolbar button looked stuck.
+
+**The plot was an earlier frame, by construction.** The optimizer's finish publishes the best point and writes the
+file in one UI-thread turn. When that publication arrives while the previous frame is still drawing it WAITS, and
+`KeepPublishedAsFile` then dropped the waiting frame, leaving the display on whatever it drew last while the file held
+the final point. Fast algorithms (LM, BFGS) hit it every time and Bayesian, slow between improvements, never did,
+which is why only Bayesian seemed to update. `OptimizerPublishTests` had asserted the drop as intended behaviour
+(one redraw, one waiting). The waiting frame is now applied on keep; Tuning's Stop shares the path and had the same
+defect.
+
+**A live Tuning session fought the run.** Both publish under the schematic's one results path. The session's orange
+labels kept showing its own values over what Push wrote, so the first Push worked, looked like it had not, and the
+second found nothing to write. A later Stop then wrote the session's older result over the run's. Two fixes: a run
+(and a snap) ends a session on the same schematic WITHOUT writing it (`TakingDisplay` →
+`TuningPanelViewModel.EndSessionFor`), and the Tuning panel drops a tuned value whenever the schematic's own value of
+that key changes under it (`SchematicValueMoved`), which covers Push from the Optimizer and from Yield's centering,
+Recall and Push, a typed edit and an undo. A range edit leaves the value alone, as before.
+
+**Log looked linear because a step was still set.** Linear, Log and Step read as one choice in the menu but Step was
+independent, so a 1 nH step kept every move linear. They are now one choice with a tick, joined by **Standard
+values**: `discrete=e6|e12|e24|e48|e96` per entry (appended to `TuneDiscrete`, so the older ordinals hold) beside the
+existing `preferred`. `TunableValue.DiscreteLevels` is the one ladder the slider steps along and the optimizer snaps
+to; the Optimizer's variable rows got the same choice and show it beside the name.
+
+**Reset** (Optimizer toolbar) clears the result and pushes back the value each key had before this panel FIRST pushed
+it, one undo step. Disabled `tb` buttons in Tuning, Optimizer and Yield drew Fluent's grey disabled presenter, which on
+a borderless icon reads as pressed; the presenter is now transparent.
+
+Gates: `tests/Ui.Tests/OptimizerPanel/TuningOptimizerHandoffTests.cs`, `FrameCoalescingTests.KeepAsFile_…`.
+
+**Follow-up, same day — "no enabled goal" with the goal ticked.** The goal was `use=yield` (set from the Yield
+panel's per-goal Opt/Yield/Both choice). The optimizer drops such a goal by design (yield overview D4), but its panel
+showed only the `Enabled` check box, and the refusal said the design had no enabled goal. The refusal is now
+`opt.nothing.goals-yield-only`, naming the goals, and a yield-only row in the Optimizer carries a **yield only** tag
+that sets `use=both` in one undoable click. `check` and `circuitrf opt` go through the same `OptimizationRun.Create`,
+so they now say the same thing.

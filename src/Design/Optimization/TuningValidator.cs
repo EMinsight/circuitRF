@@ -31,7 +31,7 @@ public static class TuningValidator
             if (e.Discrete != TuneDiscrete.None && catalog.Find(e.Key) is { } t
                 && !TunableValue.DiscreteChoices(t).Contains(e.Discrete))
                 f.Add(t.Part is not null
-                    ? OptimizationDiagnostics.DiscreteOnPart(e.Key, e.Discrete == TuneDiscrete.Integer ? "integer" : "preferred")
+                    ? OptimizationDiagnostics.DiscreteOnPart(e.Key, TunableValue.DiscreteToken(e.Discrete))
                     : OptimizationDiagnostics.PreferredNoLadder(e.Key, t.Unit));
 
             double? min = Number(e.Min, who, "min", f), max = Number(e.Max, who, "max", f);

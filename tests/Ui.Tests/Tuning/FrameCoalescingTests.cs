@@ -34,4 +34,27 @@ public sealed class FrameCoalescingTests
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
+
+    /// <summary>The optimizer's finish publishes its best point and writes the file in one breath. When that
+    /// last frame arrives mid-draw it is the one the file now holds, so keeping the publication as the file
+    /// must SHOW it — it used to be dropped, leaving the display on an earlier, worse point.</summary>
+    [Fact]
+    public async Task KeepAsFile_WhileTheLastFrameWaits_ShowsThatFrame()
+    {
+        var dir = TuningDisplayFixture.TempDir();
+        try
+        {
+            var path = TuningDisplayFixture.WriteResults(dir, level: 0);
+            var lib = new DataSourceLibraryViewModel { FrameScheduler = _ => { } };   // the first frame never ends
+            await lib.LoadFileAsync(path);
+
+            lib.Publish(path, TuningDisplayFixture.Results(1));
+            lib.Publish(path, TuningDisplayFixture.Results(7));        // waits behind frame 1
+            lib.KeepPublishedAsFile(path);
+
+            Assert.Equal(7, lib.Entries.Single().Data!["Gain"].RealValues[0]);
+            Assert.False(lib.IsPublished(path));
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
 }

@@ -9,6 +9,7 @@
 // ================================================================
 
 using System;
+using System.Collections.Generic;
 using CircuitRF.Core.Design;
 using CircuitRF.Design.Optimization;
 
@@ -55,8 +56,11 @@ public static class TuningSliderMapping
     /// row with a <paramref name="step"/> to the nearest multiple of it counted from
     /// <paramref name="min"/>, and either stays inside [min, max].
     /// </summary>
-    public static double Snap(double value, double min, double max, bool integer, double? step)
+    public static double Snap(double value, double min, double max, bool integer, double? step,
+                              IReadOnlyList<double>? levels = null)
     {
+        // A preferred-value or E-series row: the nearest rung, by ratio (they are inside [min, max] already).
+        if (levels is { Count: > 0 }) return CircuitRF.Design.Matching.PreferredValues.Snap(value, levels);
         double v = value;
         if (step is > 0 and var s) v = min + Math.Round((v - min) / s) * s;
         if (integer) v = Math.Round(v);
@@ -76,11 +80,25 @@ public static class TuningSliderMapping
     /// by less than 1.
     /// </summary>
     public static double Nudge(double value, int direction, TuningNudge size,
-                               double min, double max, TuneScale scale, bool integer, double? step)
+                               double min, double max, TuneScale scale, bool integer, double? step,
+                               IReadOnlyList<double>? levels = null)
     {
         int sign = Math.Sign(direction);
         if (sign == 0) return value;
         int count = size == TuningNudge.TenSteps ? 10 : 1;
+
+        // A series row: an arrow is the next rung, Shift ten rungs, Page a tenth of the ladder.
+        if (levels is { Count: > 0 })
+        {
+            // The first rung past the value in that direction is one step — a value between rungs (typed, or
+            // from before the row had a series) moves to its neighbour, not past it.
+            int rungs = size == TuningNudge.Page ? Math.Max(1, levels.Count / 10) : count;
+            int rung = -1;
+            if (sign > 0) { for (int k = 0; k < levels.Count; k++) if (levels[k] > value * (1 + 1e-12)) { rung = k; break; } }
+            else          { for (int k = levels.Count - 1; k >= 0; k--) if (levels[k] < value * (1 - 1e-12)) { rung = k; break; } }
+            if (rung < 0) return sign > 0 ? levels[^1] : levels[0];
+            return levels[Math.Clamp(rung + sign * (rungs - 1), 0, levels.Count - 1)];
+        }
 
         double next;
         if (size != TuningNudge.Page && (step is > 0 || integer))
