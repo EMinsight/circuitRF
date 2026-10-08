@@ -240,3 +240,38 @@ Findings from work on the 3D viewer's view model. The field model itself (reader
   `CapturePicture` always fills from `Viewer3DViewModel.FieldIndicator` — not from the legend or caption options.
 - **Not seen**: the live overlay's label was not looked at (no window here); its gate is the view model's property under every
   legend/caption combination, and the exported picture's pixels.
+
+## Fit, keyboard navigation and label placement (general designer feedback round 14, 2026-10-08)
+
+A designer on a Windows laptop with a trackpad could not frame the Die to Heatsink example or get closer to it, and its probe
+labels covered one another in the Front and Side views.
+
+- **View ▸ Zoom to Fit (and Ctrl/Cmd+0, the gesture it shows) had no 3D case.** `WorkspaceViewModel.ZoomToFit` dispatched to
+  the schematic, layout, symbol and wBond documents and told a 3D view "no document is focused" in the Messages panel — a
+  message nobody reads while looking at the canvas. It now calls `ThreeDFit`, the 3D menu's own Fit. The window binds no
+  KeyBinding for Ctrl+0 on Windows/Linux (the MenuItem's `InputGesture` is display-only), so the pane answers Ctrl/Cmd+0 itself
+  too.
+- **Fit framed the bounding SPHERE, which ignores the direction.** `Camera3D.FitBounds` sets the distance from the box's
+  half-diagonal, so a 12 × 10 × 1.8 mm stack seen edge-on (Front) filled about a third of the width and Fit looked like it did
+  nothing. `Camera3D.FrameBounds` projects the eight corners onto the current right/up/back axes and solves for the distance
+  at which every corner sits inside both half-angles (perspective) or the half-height (orthographic), FitMargin to spare. Yaw,
+  pitch and projection are kept. **Only the interactive Fit uses it** (Home, the toolbar, 3D ▸ Fit, Zoom to Fit, the standard
+  view keys, which Fit after turning): the FIRST view of a scene and every headless picture (`render`, glTF's camera) still
+  call `Camera3D.Fit`/`FitBounds`, so no CLI output or committed picture moved. A box's corners are symmetric about its centre,
+  so the projected extent is too and the target stays the box centre.
+- **`EditorRound5TreeTests.Fit_FramesOnlyTheVisibleObjects…` asserted `< withoutBox / 2`**, a ratio of sphere radii. The tight
+  fit's ratio for that geometry in iso is ~1.8 (height binds), so it now reads `/ 1.5`; the claim it holds (the hidden box is
+  no longer framed) is carried by the target's x, which is unchanged.
+- **The keyboard camera** (`Viewer3DViewModel.CameraKey`): Ctrl/Cmd +/− zoom one wheel notch about the centre; bare arrows pan
+  by `CanvasArrowPan`'s screen step, the VIEW moving the arrow's way as on every 2D canvas; Shift+arrows orbit 15°, the CAMERA
+  travelling the arrow's way (Up rises over the top). The 2D canvases spend Shift on a coarse pan; a 3D view has a third motion
+  to give it. Nothing in the 3D views nudges a selection with an arrow, so the arrows pan whatever is selected. **The editor
+  view forwards an unused arrow to the pane only from a toolbar button** — an arrow the object tree leaves unhandled at its
+  first or last row would otherwise pan the view.
+- **Labels** (`Viewer3DLabelLayout`): greedy, top of the screen first, each label trying the four corners round its point and
+  then sliding a label-height at a time; the points are obstacles too, except a point at the label's OWN place — two probes on
+  one face share it exactly, and treating the twin's marker as an obstacle blocked every position beside it. A label that
+  moved away from its point gets a leader line.
+- **A face probe's marker was at its SOLID's centre** (`p.Face` fell through to the solid branch), so die/zmax sat inside the
+  die and both flange/zmin probes at the flange's middle. It is now the face's area-weighted centre (`FaceCentre`, from
+  `Scene3DFaces.Triangles`).

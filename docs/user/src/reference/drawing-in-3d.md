@@ -97,8 +97,8 @@ for EM into 3D.
   and this editor share the camera, the clip plane, the mesh and field displays, and every key described in
   [3D EM ▸ The 3D view](em-3d.html#view). The editor adds the drawing.
 
-The camera is the viewer's: drag to orbit; right-, middle-, Alt- or Shift-drag to pan; scroll to zoom;
-**Home** fits; **1** is isometric, **2**–**7** the six orthographic views, **P** toggles perspective, **L** the [realistic view](#realistic); **C**
+The camera is the viewer's: drag to orbit; right-, middle-, Alt- or Shift-drag to pan; scroll to zoom, or
+**Ctrl/Cmd+=** and **Ctrl/Cmd+−**; the arrow keys pan and **Shift+arrow** orbits; **Home** or **Ctrl/Cmd+0** fits; **1** is isometric, **2**–**7** the six orthographic views, **P** toggles perspective, **L** the [realistic view](#realistic); **C**
 turns on the clip plane. A new 3D view opens orthographic. The line along the bottom of the view is the
 **status line**: what the armed tool wants next, or what the last edit did, or why it was refused.
 
@@ -1376,7 +1376,8 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 | **Ctrl/Cmd**-click a face | Draw on that face's plane |
 | **Ctrl/Cmd** while placing | The bottom-centre (die-attach) handle |
 | **Ctrl/Cmd+]**, **Ctrl/Cmd+[** | Push into a placed cell, or enter a boolean to edit its operands; pop out, or leave it |
-| **Home**, **1**–**7**, **P**, **L**, **C** | Fit; standard views; perspective; realistic view; clip plane |
+| **Home** or **Ctrl/Cmd+0**, **1**–**7**, **P**, **L**, **C** | Fit; standard views; perspective; realistic view; clip plane |
+| **Ctrl/Cmd+=**, **Ctrl/Cmd+−**; arrows; **Shift**+arrows | Zoom in, out; pan; orbit 15° |
 | In the object tree: **Shift**-click, **Ctrl**-click (**Cmd** too on a Mac) | Select every row between; add or remove one row |
 
 ## Every control, in detail {#reference}

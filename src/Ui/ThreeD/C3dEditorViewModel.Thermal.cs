@@ -927,6 +927,9 @@ public sealed partial class C3dEditorViewModel
                     at = M(line.From);
                     overlay.ProbeMarks.Add(M(line.To));
                 }
+                // General designer feedback round 14 — a face probe marks its FACE: at its solid's centre, die/zmax and two probes on
+                // flange/zmin sat on the die and flange centres, one above the other, and nothing said which face each one reads.
+                else if (p.Face is [var face, ..] && FaceCentre(face) is { } fc) at = fc;
                 else if ((p.Solid ?? p.Wire ?? (p.Face is [var f0, ..] ? f0[..Math.Max(0, f0.LastIndexOf('/'))] : null)) is { } target && SceneObject(target) is { } so)
                 {
                     var c = Viewer.Scene.ToWorld(so.Centroid);
@@ -1015,6 +1018,27 @@ public sealed partial class C3dEditorViewModel
                 overlay.Selected.Add(new DrawSegment(new Point3(ax, ay, az), new Point3(bx, by, bz)));
             }
         }
+    }
+
+    /// <summary>The area-weighted centre of face <paramref name="face"/> (<c>solid/name</c>), world metres, or null when there is none.</summary>
+    private Point3? FaceCentre(string face)
+    {
+        int slash = face.LastIndexOf('/');
+        if (slash <= 0 || SceneObject(face[..slash]) is not { } o) return null;
+        int fi = -1;
+        for (int k = 0; k < o.FaceNames.Count; k++) if (o.FaceNames[k] == face[(slash + 1)..]) { fi = k; break; }
+        if (fi < 0) return null;
+        double area = 0;
+        var sum = System.Numerics.Vector3.Zero;
+        foreach (var (a, b, c) in Scene3DFaces.Triangles(Viewer.Scene, o.Id, fi))
+        {
+            float t = 0.5f * System.Numerics.Vector3.Cross(b - a, c - a).Length();
+            area += t;
+            sum += t * (a + b + c) / 3;
+        }
+        if (!(area > 0)) return null;
+        var (x, y, z) = Viewer.Scene.ToWorld(sum / (float)area);
+        return new Point3(x, y, z);
     }
 
     private System.Numerics.Vector3? FaceNormal(string face)

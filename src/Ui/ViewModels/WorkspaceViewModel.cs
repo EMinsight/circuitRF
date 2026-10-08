@@ -3707,6 +3707,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             case Layout.LayoutDocument ld: ld.RequestZoomToFit(); break;
             case SymbolEditorDocument symd: symd.RequestZoomToFit(); break;
             case WBond.WBondDocument wbd: wbd.RequestZoomToFit(); break;
+            // General designer feedback round 14 — a 3D view answered "no document is focused": it is the 3D pane's own Fit.
+            case ThreeD.C3dEditorDocument or Viewer3D.Viewer3DDocument: ThreeDFit(); break;
             default: Messages.Info("Zoom to Fit: no document is focused."); break;
         }
     }

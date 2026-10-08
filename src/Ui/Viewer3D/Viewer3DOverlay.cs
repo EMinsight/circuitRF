@@ -365,8 +365,10 @@ public sealed class Viewer3DOverlay : Control
             }
         // brief-em3d-48 R-em3d48-6b — a cell that resolves to nothing: its last known box, dashed, and its name.
         Lines(d.Missing, new Pen(CrossingBrush, 1.4) { DashStyle = new DashStyle([5, 4], 0) });
+        var shown = new List<(Point At, string Text)>();
         foreach (var (at, text) in d.Labels)
-            if (Screen(at) is (var lp, true)) Text(ctx, text, new Point(lp.X + 4, lp.Y - 18), dark ? Brushes.White : Brushes.Black, 11, dark);
+            if (Screen(at) is (var lp, true)) shown.Add((lp, text));
+        DrawingLabels(ctx, shown, w, h, dark);
         Lines(d.Selected, new Pen(new SolidColorBrush(Color.FromRgb(255, 90, 255)), 2));
         if (d.Rubber.Count > 0)
         {
@@ -705,6 +707,28 @@ public sealed class Viewer3DOverlay : Control
         {
             var note = new FormattedText("at the orbit centre", CultureInfo.InvariantCulture, FlowDirection.LeftToRight, Typeface.Default, 9, ink);
             ctx.DrawText(note, new Point(right.X - note.Width, right.Y + 4));
+        }
+    }
+
+    /// <summary>
+    /// General designer feedback round 14 — the drawing's labels, placed by <see cref="Viewer3DLabelLayout"/> so none covers
+    /// another; one moved away from its point is joined back to it by a thin leader line. The box and the text are
+    /// <see cref="Text"/>'s.
+    /// </summary>
+    private static void DrawingLabels(DrawingContext ctx, List<(Point At, string Text)> labels, double w, double h, bool dark)
+    {
+        if (labels.Count == 0) return;
+        IBrush ink = dark ? Brushes.White : Brushes.Black;
+        var texts = labels.Select(l => new FormattedText(l.Text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight, Typeface.Default, 11, ink)).ToList();
+        var boxes = Viewer3DLabelLayout.Place([.. labels.Select(l => l.At)], [.. texts.Select(t => new Size(t.Width + 8, t.Height + 6))], w, h);
+        var leader = new Pen(dark ? new SolidColorBrush(Color.FromArgb(200, 220, 222, 228)) : new SolidColorBrush(Color.FromArgb(200, 60, 64, 72)), 1);
+        var background = new SolidColorBrush(dark ? Color.FromArgb(200, 30, 32, 36) : Color.FromArgb(215, 250, 250, 252));
+        for (int i = 0; i < labels.Count; i++)
+            if (boxes[i].Leader) ctx.DrawLine(leader, labels[i].At, Viewer3DLabelLayout.NearestOnEdge(boxes[i].Box, labels[i].At));
+        for (int i = 0; i < labels.Count; i++)
+        {
+            ctx.FillRectangle(background, boxes[i].Box, 3);
+            ctx.DrawText(texts[i], boxes[i].Box.TopLeft + new Point(4, 3));
         }
     }
 

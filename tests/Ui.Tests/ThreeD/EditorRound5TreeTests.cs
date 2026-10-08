@@ -178,7 +178,26 @@ public sealed class EditorRound5TreeTests : IDisposable
         vm.Viewer.FitCommand.Execute(null);
         var target = vm.Viewer.Scene.ToWorld(vm.Viewer.View.Camera.Target);
         Assert.Equal(75e-6, target.X, 1e-7);                                 // a (0..100 µm) and b (50..150 µm)
-        Assert.True(vm.Viewer.View.Camera.Distance < withoutBox / 2);
+        // a and b are 150 µm across against the 500 µm row: under a third of the width, ~0.55 of the height that binds in iso
+        Assert.True(vm.Viewer.View.Camera.Distance < withoutBox / 1.5);
+    }
+
+    /// <summary>General designer feedback round 14 — View ▸ Zoom to Fit (and Ctrl/Cmd+0, which the window binds to it) on an
+    /// active 3D view is that view's Fit; it answered "no document is focused".</summary>
+    [Fact]
+    public void ViewZoomToFit_OnAnActive3DView_FitsIt()
+    {
+        var vm = Open(Doc(), out _);
+        var doc = new C3dEditorDocument(vm);
+        var ws = new CircuitRF.Ui.ViewModels.WorkspaceViewModel();
+        var dock = ws.Factory.DocumentDock!;
+        dock.VisibleDockables!.Add(doc);
+        dock.ActiveDockable = doc;                                         // the document the shell's commands act on
+        int fits = vm.Viewer.Fits;
+        ws.ZoomToFitCommand.Execute(null);
+        Assert.Equal(fits + 1, vm.Viewer.Fits);
+        Invoke(ws, "ClosedC3dEditor", doc);
+        _open.Remove(vm);
     }
 
     /// <summary>The Analyses panel shows the active .c3d's EM setups — not the last schematic's analyses — and lets go of them

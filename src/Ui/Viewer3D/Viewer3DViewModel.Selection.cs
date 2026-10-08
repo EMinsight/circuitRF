@@ -23,6 +23,7 @@
 using System.Globalization;
 using System.Numerics;
 using Avalonia.Input;
+using CircuitRF.Ui.Controls;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -557,6 +558,7 @@ public sealed partial class Viewer3DViewModel
             SelectAllObjects();
             return true;
         }
+        if (CameraKey(key, modifiers)) return true;
         if (!plain) return false;
         StandardView3D? standard = key switch
         {
@@ -602,6 +604,39 @@ public sealed partial class Viewer3DViewModel
         }
         return false;
     }
+
+    /// <summary>Degrees the view turns per Shift+arrow.</summary>
+    public const float OrbitStepDegrees = 15f;
+
+    /// <summary>
+    /// General designer feedback round 14 — the camera from the keyboard, for a trackpad with no wheel and no middle button.
+    /// Ctrl/Cmd + and − zoom one wheel notch about the view's centre, Ctrl/Cmd 0 is Fit (as View ▸ Zoom to Fit is everywhere
+    /// else); a bare arrow pans by <see cref="CanvasArrowPan"/>'s screen step, as on every 2D canvas, and Shift+arrow orbits
+    /// by <see cref="OrbitStepDegrees"/> — the 2D canvases' Shift is a coarse pan, but a 3D view has a third motion to give
+    /// it. Nothing in the 3D views nudges a selection with an arrow, so the arrows are free whatever is selected.
+    /// </summary>
+    private bool CameraKey(Key key, KeyModifiers modifiers)
+    {
+        bool command = modifiers is KeyModifiers.Control or KeyModifiers.Meta;
+        if (command && key is Key.OemPlus or Key.Add) { ZoomStep(+1); return true; }
+        if (command && key is Key.OemMinus or Key.Subtract) { ZoomStep(-1); return true; }
+        if (command && key is Key.D0 or Key.NumPad0) { FitCommand.Execute(null); return true; }
+        if (modifiers == KeyModifiers.Shift && key is Key.Left or Key.Right or Key.Up or Key.Down)
+        {
+            // As the pan: the CAMERA travels the arrow's way round the target (Up rises over the top), the opposite of a drag.
+            float px = OrbitStepDegrees * MathF.PI / 180f / Camera3D.OrbitRadiansPerPixel;
+            var (dx, dy) = key switch { Key.Left => (px, 0f), Key.Right => (-px, 0f), Key.Up => (0f, px), _ => (0f, -px) };
+            Orbit(dx, dy);
+            return true;
+        }
+        if (CanvasArrowPan.ScreenStep(key, modifiers) is not { } step) return false;
+        // The VIEW moves with the arrow, so what is drawn moves against it — the opposite of a drag, which carries the content.
+        Pan(-(float)step.Dx, -(float)step.Dy, _viewH);
+        return true;
+    }
+
+    /// <summary>One wheel notch in (positive) or out about the centre of the view.</summary>
+    public void ZoomStep(float notches) => Zoom(notches, _viewW * 0.5f, _viewH * 0.5f, _viewW, _viewH);
 
     // ── words ───────────────────────────────────────────────────────────────────────────────
 

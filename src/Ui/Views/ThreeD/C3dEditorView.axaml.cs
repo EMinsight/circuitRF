@@ -423,6 +423,9 @@ public partial class C3dEditorView : UserControl
         if (_vm is null || e.Handled || ReferenceEquals(e.Source, Pane)) return;
         if (e.Key is Key.Escape or Key.Delete or Key.Back) return;
         if (IsTextEntry(e.Source as Visual)) return;
+        // An arrow the tree (or any list) left unused at its first or last row is still the tree's: only a toolbar button
+        // just clicked hands the arrows on to pan and orbit the view.
+        if (e.Key is Key.Left or Key.Right or Key.Up or Key.Down && e.Source is not Button) return;
         if (Pane.ForwardKey(e)) e.Handled = true;
     }
 

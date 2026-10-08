@@ -168,6 +168,35 @@ public struct Camera3D
         Distance = fit;
     }
 
+    /// <summary>
+    /// Frames <paramref name="min"/>..<paramref name="max"/> TIGHTLY from the current direction: the box's eight corners, seen from
+    /// here, fill the viewport with <see cref="FitMargin"/> to spare on whichever axis binds. <see cref="FitBounds"/> frames the
+    /// box's bounding SPHERE, which ignores the direction — a flat stack seen edge-on (a Front view of a board) filled a third of
+    /// the width, and Fit seemed to do nothing (general designer feedback round 14). Yaw, pitch, projection and field of view are
+    /// kept; only the target and the distance move.
+    /// </summary>
+    public void FrameBounds(Vector3 min, Vector3 max, float aspect)
+    {
+        FitBounds(min, max, aspect);
+        float tanY = MathF.Tan((FovY > 0 && FovY < MathF.PI ? FovY : DefaultFovY) * 0.5f);
+        float tanX = tanY * MathF.Max(0.05f, aspect);
+        Vector3 r = Right, u = Up, b = Back, c = Target;
+        float need = 0, deepest = float.MinValue, halfH = 0;
+        for (int k = 0; k < 8; k++)
+        {
+            var d = new Vector3((k & 1) == 0 ? min.X : max.X, (k & 2) == 0 ? min.Y : max.Y, (k & 4) == 0 ? min.Z : max.Z) - c;
+            float x = MathF.Abs(Vector3.Dot(d, r)) * FitMargin, y = MathF.Abs(Vector3.Dot(d, u)) * FitMargin, z = Vector3.Dot(d, b);
+            // Perspective: the corner at depth (Distance − z) from the eye must sit inside both half-angles.
+            need = MathF.Max(need, z + MathF.Max(x / tanX, y / tanY));
+            deepest = MathF.Max(deepest, z);
+            // Orthographic: the half-height at the target (Distance · tanY) is all that matters.
+            halfH = MathF.Max(halfH, MathF.Max(y, x / MathF.Max(0.05f, aspect)));
+        }
+        float fit = Projection == Projection3D.Orthographic ? halfH / tanY : MathF.Max(need, deepest + 1e-3f * SceneRadius);
+        // A degenerate box (a point, a line seen end-on) leaves nothing to fit: the sphere's distance stands.
+        if (fit > 1e-12f && float.IsFinite(fit)) Distance = fit;
+    }
+
     /// <summary>Near and far clip distances along the view direction, bracketing the scene's sphere.</summary>
     public readonly (float Near, float Far) DepthRange()
     {
