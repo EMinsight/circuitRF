@@ -203,7 +203,7 @@ namespace CircuitRF.Render.DataDisplay
     //  Trace
     // ============================================================
 
-    public class Trace
+    public partial class Trace
     {
         // ---- Identity ---------------------------------------------------
 
@@ -1661,7 +1661,7 @@ namespace CircuitRF.Render.DataDisplay
         /// Case matters: the evaluator's function switch is case-sensitive and expects
         /// "dB"/"dB20"/"dB10" (capital B) — lower-casing the enum name (e.g. "db20")
         /// produces an UnknownFunction error. mag/phase/real/imag/conj are already lowercase.</summary>
-        private static string TransformFunctionName(CubeTransform t) => t switch
+        internal static string TransformFunctionName(CubeTransform t) => t switch
         {
             CubeTransform.dB20  => "dB20",
             CubeTransform.dB10  => "dB10",
@@ -1779,6 +1779,10 @@ namespace CircuitRF.Render.DataDisplay
             PatternWholePlane  = src.PatternWholePlane;
             ReferenceInputPowerDbmOverride = src.ReferenceInputPowerDbmOverride;
             BakedReferenceInputPowerDbm    = src.BakedReferenceInputPowerDbm;
+            // The statistics view (brief-yield-8): what it was rewritten from and the fit toggle. The fit's
+            // numbers, the bar width and the spec lines are a resolve's, and the copy re-resolves.
+            StatisticsOrigin = src.StatisticsOrigin;
+            ShowNormalFit    = src.ShowNormalFit;
             _pinnedSpectralName   = src._pinnedSpectralName;
             _pinnedSpectralLabel  = src._pinnedSpectralLabel;
             _pinnedSpectralFreqHz = src._pinnedSpectralFreqHz;

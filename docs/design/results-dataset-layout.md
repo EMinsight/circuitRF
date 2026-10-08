@@ -179,8 +179,10 @@ Display, the Yield panel) reads them and computes nothing of its own. Values are
 | `trials` | `status` | `[trial]` | 0 evaluated; k ≥ 1 the k-th row of `reasons` |
 | `trials` | `reasons` | `[reason]` | labelled with each distinct reason sentence; present only when some trial did not evaluate |
 | `nominal` | `<group>.<cube>` | as the nominal | the nominal design's cubes with no trial axis, named by their own address: a cube's nominal is `nominal.` + its address (`nominal.SP1.S`, `nominal.trials.pass`) |
+| `statistics` | `mean`, `sigma`, `min`, `max`, `median`, `p1`, `p99`, `skew`, `kurtosis`, `cpk`, `sigma_to_limit`, `yield`, `lower`, `upper` | `[quantity]` | the statistics table (brief-yield-8): one row per goal's worst value (labelled `goal:<g>:worst`) and per scalar measure, over the trials that evaluated, by `SampleStatistics`; `cpk`/`sigma_to_limit` against the goal's `GoalResiduals.ValueLimits` (NaN for a measure, or `eq`/`out`); `sigma_to_limit` is signed, positive on the passing side; `yield`/`lower`/`upper` are the goal's own estimate (NaN for a measure). Absent with no goal and no scalar measure |
 | `yield` | `trials`, `did_not_evaluate`, `passes`, `counted`, `yield`, `lower`, `upper` | scalar | overall; yield and interval as fractions, NaN with no goal |
 | `yield` | `goal:<g>:passes` … `goal:<g>:upper` | scalar | the same per goal |
+| `yield` | `goal:<g>:spec` | `[goal:<g>:spec]` | one point whose axis LABEL is the goal's own `goal …` line (`TuningDirectiveText.GoalLine`) — what a display draws the goal's limits from (brief-yield-8) |
 | `yield` | `confidence`, `target`, `seed`, `saved_trials` | scalar | fractions; `target` NaN when none |
 | `yield` | `mode`, `sampling`, `nonconverged`, `save`, `stopped` | `[<name>]` | one point whose axis LABEL is the text (`random`, the save sentence, the finish reason) |
 

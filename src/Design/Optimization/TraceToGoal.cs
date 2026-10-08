@@ -232,6 +232,41 @@ public static class TraceToGoal
         return new GoalRange { Axis = src.Axis, Lo = Number(lo) + u, Hi = Number(hi) + u };
     }
 
+    /// <summary>
+    /// Whether two expressions read the same quantity — a goal's, and the one a trace translates to (brief-yield-8
+    /// R-ya8-3, which uses this translation in REVERSE to find the goal a plotted curve draws). They are compared
+    /// after <see cref="Canonical"/>, so the trace card's slice spelling and a measure line's accessor agree:
+    /// <c>dB(SP1.S[:, :, 2, 1])</c> — a trial family's — is <c>dB(SP1.S(2,1))</c>.
+    /// </summary>
+    public static bool SameQuantity(string a, string b) => Canonical(a) == Canonical(b);
+
+    /// <summary>
+    /// An expression with what does not change the quantity it reads taken out: whitespace; <c>dB20</c>, which is
+    /// <c>dB</c>; a <c>nominal.</c> prefix (a yield result's nominal group); a family's <c>~</c>; every KEPT axis
+    /// of a slice (<c>:</c>, <c>a..b</c>), since a goal's range says which part counts; and the accessor's
+    /// parentheses, so <c>SP1.S(2,1)</c> and <c>SP1.S[2,1]</c> are one spelling.
+    /// </summary>
+    internal static string Canonical(string expression)
+    {
+        var sb = new System.Text.StringBuilder(expression.Length);
+        foreach (char c in expression) if (!char.IsWhiteSpace(c)) sb.Append(c == '~' ? ':' : c);
+        string e = sb.ToString().Replace("dB20(", "dB(", StringComparison.Ordinal);
+        e = System.Text.RegularExpressions.Regex.Replace(e, @"(?<![A-Za-z0-9_.:])nominal\.", "");
+
+        // An accessor — a dotted name (a cube in an analysis group) called like a function — is a slice.
+        e = System.Text.RegularExpressions.Regex.Replace(e, @"((?<![A-Za-z0-9_])[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z0-9_:.]+)\(([^()]*)\)", "$1[$2]");
+
+        // Drop the kept axes from every slice: what is left is what the read PINS.
+        return System.Text.RegularExpressions.Regex.Replace(e, @"\[([^\[\]]*)\]", m =>
+        {
+            var pinned = m.Groups[1].Value.Split(',')
+                .Where(t => t.Length > 0 && t != ":" && !t.Contains("..", StringComparison.Ordinal)
+                            && !t.Equals("All", StringComparison.OrdinalIgnoreCase));
+            string inner = string.Join(",", pinned);
+            return inner.Length == 0 ? "" : $"[{inner}]";
+        });
+    }
+
     /// <summary>Six significant figures — a range edge or a marker reading, not a stored value.</summary>
     private static string Number(double v)
         => Math.Round(v, 12).ToString("G6", CultureInfo.InvariantCulture);

@@ -219,11 +219,14 @@ refused, naming `dB`/`mag`/`real`.
 (`SampleStatistics`, `src/Core/Expressions`; in Core rather than `src/Engine/Statistics` because the evaluator may
 not reference the numeric layer).
 
-**Three build a new axis** from a rank-1 operand (anything else is refused, naming its axes):
-`histogram(x, bins[, lo, hi])` — counts over a `bin` axis of centres (equal widths over [lo, hi] or the values'
-extent; a bin holds its lower edge, the last its upper); `cdf(x)` — a `value` axis of the sorted present values
-against i/n; `yield_sens(pass, x, bins)` — per bin of x, the fraction of trials with a non-zero pass (NaN for an
-empty bin), counting only trials where both are present.
+**Four build a new axis** from a rank-1 operand (anything else is refused, naming its axes):
+`histogram(x, bins[, lo, hi][, "count"|"percent"])` — counts over a `bin` axis of centres (equal widths over
+[lo, hi] or the values' extent; a bin holds its lower edge, the last its upper), or with `"percent"` each bin's share
+of every present value in percent (unit `%`); `cdf(x)` — a `value` axis of the sorted present values against i/n;
+`normq(x)` — the normal probability plot: the same `value` axis against Φ⁻¹ of Blom's plotting position
+(i − 3/8)/(n + 1/4), so a Gaussian sample is a straight line; `yield_sens(pass, x, bins)` — per bin of x, the fraction
+of trials with a non-zero pass (NaN for an empty bin), counting only trials where both are present. Φ⁻¹ is
+`NormalDistribution` in `src/Core/Expressions`, which `Engine.Statistics.SpecialFunctions` forwards to.
 
 **Companions.** What an axis-building call has to say beyond one cube — the bin `width`, the per-bin `count` of
 `yield_sens` — it leaves in `Evaluator.TakeCompanions()`, and `MeasurementEvaluator` stores each beside the

@@ -40,7 +40,29 @@ public static class TraceExpression
         out string?    xUnit,
         out string[]?  xLabels,
         out string     error)
+        => TryEvaluate(expression, ds, plotType, out xValues, out complexValues, out realValues,
+                       out xAxisName, out xUnit, out xLabels, out _, out error);
+
+    /// <summary>
+    /// <see cref="TryEvaluate(string, DataSet, PlotType, out double[], out Complex[], out double[], out string, out string, out string[], out string)"/>,
+    /// with the <paramref name="companions"/> an axis-building function left beside its result — a histogram's
+    /// bin <c>width</c>, a yield sensitivity's <c>count</c> (docs/design/measurements.md "Companions"). Empty for
+    /// an element-wise expression.
+    /// </summary>
+    public static bool TryEvaluate(
+        string      expression,
+        DataSet     ds,
+        PlotType    plotType,
+        out double[]   xValues,
+        out Complex[]? complexValues,
+        out double[]?  realValues,
+        out string     xAxisName,
+        out string?    xUnit,
+        out string[]?  xLabels,
+        out IReadOnlyDictionary<string, DataCube> companions,
+        out string     error)
     {
+        companions    = NoCompanions;
         xValues       = Array.Empty<double>();
         complexValues = null;
         realValues    = null;
@@ -56,86 +78,14 @@ public static class TraceExpression
             return false;
         }
 
-        // ── Step 1: Extract cube refs ─────────────────────────────────────────
-        // Candidate names: analysis-group cubes qualified ("HB1.V"); default- and measurements-group
-        // cubes BARE ("V", "IMD2") — these bare-resolve via DataSet.BareResolve. Sorted longest-first so
-        // a longer name matches before a shorter one it contains (e.g. "HB1.V" before "V").
-        var cubeNames = ds.Groups
-            .SelectMany(g => ds.CubesIn(g).Keys.Select(c =>
-                (g == DataSet.DefaultGroup || g == DataSet.MeasurementsGroup) ? c : $"{g}.{c}"))
-            .Distinct(StringComparer.Ordinal)
-            .OrderByDescending(n => n.Length)
-            .ToList();
-
-        // refMap:   originalRefStr → placeholder index
-        // uniqueRefs: in order of first appearance
-        var refMap      = new Dictionary<string, int>(StringComparer.Ordinal);
-        var uniqueRefs  = new List<CubeRefInfo>();
-        var substitutions = new List<(int start, int end, int pIdx)>();
-
-        static bool IsIdent(char c) => char.IsLetterOrDigit(c) || c == '_' || c == '.';
-
-        int pos = 0;
-        while (pos < expression.Length)
-        {
-            bool matched = false;
-            foreach (var name in cubeNames)
-            {
-                if (pos + name.Length > expression.Length) continue;
-                if (!expression.AsSpan(pos, name.Length).SequenceEqual(name.AsSpan())) continue;
-
-                // Left word boundary: the char before must not continue an identifier, so "V" never
-                // matches inside "Vout"/"RFfreq" and a qualified "HB1.V" matches whole.
-                if (pos > 0 && IsIdent(expression[pos - 1])) continue;
-
-                int after = pos + name.Length;
-
-                string refStr, body;
-                if (after < expression.Length && expression[after] == '[')
-                {
-                    // Bracketed reference CubeName[…].
-                    int closeBracket = expression.IndexOf(']', after + 1);
-                    if (closeBracket < 0) continue;        // unterminated — let a later candidate try
-                    refStr = expression[pos..(closeBracket + 1)];
-                    body   = expression[(after + 1)..closeBracket];
-                }
-                else if (after >= expression.Length || (!IsIdent(expression[after]) && expression[after] != '('))
-                {
-                    // Bare reference CubeName (e.g. a measurement like "IMD2"): keep every axis (all ':')
-                    // and reuse the bracketed slicing path. A trailing '(' is excluded (call-like, not a cube).
-                    refStr = name;
-                    body   = string.Join(", ", Enumerable.Repeat(":", ds[name].Rank));
-                }
-                else
-                {
-                    continue;   // 'name' is a prefix of a longer identifier we don't recognize
-                }
-
-                if (!refMap.TryGetValue(refStr, out int pIdx))
-                {
-                    pIdx = uniqueRefs.Count;
-                    refMap[refStr] = pIdx;
-                    uniqueRefs.Add(new CubeRefInfo(name, refStr, body));
-                }
-                substitutions.Add((pos, pos + refStr.Length, pIdx));
-                pos += refStr.Length;
-                matched = true;
-                break;
-            }
-            if (!matched) pos++;
-        }
-
-        if (uniqueRefs.Count == 0)
-        {
-            error = "No cube references found. Use a cube name (e.g. IMD2) or the form CubeName[:, 0, …].";
-            return false;
-        }
+        if (!ScanRefs(expression, ds, out var uniqueRefs, out var substitutions, out error)) return false;
 
         // A function that reads a whole axis (mean_over, histogram, cdf, …) cannot be evaluated a sample at a
         // time: the expression is evaluated ONCE over the cubes it names, and its result's one axis is the X.
         if (Evaluator.CallsAxisFunction(expression))
             return TryEvaluateWhole(expression, ds, plotType, uniqueRefs, substitutions,
-                                    out xValues, out complexValues, out realValues, out xAxisName, out xUnit, out xLabels, out error);
+                                    out xValues, out complexValues, out realValues, out xAxisName, out xUnit, out xLabels,
+                                    out companions, out error);
 
         // ── Step 2: Slice each unique ref to a rank-1 array ──────────────────
         foreach (var info in uniqueRefs)
@@ -331,13 +281,150 @@ public static class TraceExpression
     /// once. The result must keep exactly one axis, which is the trace's X: <c>histogram(x, 20)</c> its <c>bin</c>
     /// axis, <c>mean_over(SP1.S[:, :, 2, 1])</c> the frequency axis the mean over trials leaves.
     /// </summary>
+    private static readonly IReadOnlyDictionary<string, DataCube> NoCompanions = new Dictionary<string, DataCube>();
+
+    /// <summary>Step 1 of the pipeline: the cube references an expression names, and where each one sits.</summary>
+    private static bool ScanRefs(string expression, DataSet ds, out List<CubeRefInfo> uniqueRefs,
+                                 out List<(int start, int end, int pIdx)> substitutions, out string error)
+    {
+        error = "";
+        // ── Step 1: Extract cube refs ─────────────────────────────────────────
+        // Candidate names: analysis-group cubes qualified ("HB1.V"); default- and measurements-group
+        // cubes BARE ("V", "IMD2") — these bare-resolve via DataSet.BareResolve. Sorted longest-first so
+        // a longer name matches before a shorter one it contains (e.g. "HB1.V" before "V").
+        var cubeNames = ds.Groups
+            .SelectMany(g => ds.CubesIn(g).Keys.Select(c =>
+                (g == DataSet.DefaultGroup || g == DataSet.MeasurementsGroup) ? c : $"{g}.{c}"))
+            .Distinct(StringComparer.Ordinal)
+            .OrderByDescending(n => n.Length)
+            .ToList();
+
+        // refMap:   originalRefStr → placeholder index
+        // uniqueRefs: in order of first appearance
+        var refMap      = new Dictionary<string, int>(StringComparer.Ordinal);
+        uniqueRefs    = new List<CubeRefInfo>();
+        substitutions = new List<(int start, int end, int pIdx)>();
+
+        static bool IsIdent(char c) => char.IsLetterOrDigit(c) || c == '_' || c == '.';
+
+        int pos = 0;
+        while (pos < expression.Length)
+        {
+            bool matched = false;
+            foreach (var name in cubeNames)
+            {
+                if (pos + name.Length > expression.Length) continue;
+                if (!expression.AsSpan(pos, name.Length).SequenceEqual(name.AsSpan())) continue;
+
+                // Left word boundary: the char before must not continue an identifier, so "V" never
+                // matches inside "Vout"/"RFfreq" and a qualified "HB1.V" matches whole.
+                if (pos > 0 && IsIdent(expression[pos - 1])) continue;
+
+                int after = pos + name.Length;
+
+                string refStr, body;
+                if (after < expression.Length && expression[after] == '[')
+                {
+                    // Bracketed reference CubeName[…].
+                    int closeBracket = expression.IndexOf(']', after + 1);
+                    if (closeBracket < 0) continue;        // unterminated — let a later candidate try
+                    refStr = expression[pos..(closeBracket + 1)];
+                    body   = expression[(after + 1)..closeBracket];
+                }
+                else if (after >= expression.Length || (!IsIdent(expression[after]) && expression[after] != '('))
+                {
+                    // Bare reference CubeName (e.g. a measurement like "IMD2"): keep every axis (all ':')
+                    // and reuse the bracketed slicing path. A trailing '(' is excluded (call-like, not a cube).
+                    refStr = name;
+                    body   = string.Join(", ", Enumerable.Repeat(":", ds[name].Rank));
+                }
+                else
+                {
+                    continue;   // 'name' is a prefix of a longer identifier we don't recognize
+                }
+
+                if (!refMap.TryGetValue(refStr, out int pIdx))
+                {
+                    pIdx = uniqueRefs.Count;
+                    refMap[refStr] = pIdx;
+                    uniqueRefs.Add(new CubeRefInfo(name, refStr, body));
+                }
+                substitutions.Add((pos, pos + refStr.Length, pIdx));
+                pos += refStr.Length;
+                matched = true;
+                break;
+            }
+            if (!matched) pos++;
+        }
+
+        if (uniqueRefs.Count == 0)
+        {
+            error = "No cube references found. Use a cube name (e.g. IMD2) or the form CubeName[:, 0, …].";
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Evaluates an expression that calls an axis function (<see cref="Evaluator.AxisFunctions"/>) ONCE over the
+    /// cubes it names, and returns whatever it gives — a single number included. What the Data Display reads a
+    /// statistic of a trace's data with (a histogram's normal fit, a live histogram's held bin range,
+    /// brief-yield-8), so a number drawn on a plot is the expression engine's and nobody else's.
+    /// </summary>
+    public static bool TryEvaluateValue(string expression, DataSet ds, out Value value, out string error)
+    {
+        value = default;
+        expression = expression.Trim();
+        if (!ScanRefs(expression, ds, out var refs, out var subs, out error)) return false;
+        return TryEvaluateWholeValue(expression, ds, refs, subs, out value, out _, out error);
+    }
+
     private static bool TryEvaluateWhole(
         string expression, DataSet ds, PlotType plotType, List<CubeRefInfo> refs,
         List<(int start, int end, int pIdx)> substitutions,
         out double[] xValues, out Complex[]? complexValues, out double[]? realValues,
-        out string xAxisName, out string? xUnit, out string[]? xLabels, out string error)
+        out string xAxisName, out string? xUnit, out string[]? xLabels,
+        out IReadOnlyDictionary<string, DataCube> companions, out string error)
     {
-        xValues = []; complexValues = null; realValues = null; xAxisName = ""; xUnit = null; xLabels = null; error = "";
+        xValues = []; complexValues = null; realValues = null; xAxisName = ""; xUnit = null; xLabels = null;
+        if (!TryEvaluateWholeValue(expression, ds, refs, substitutions, out var result, out companions, out error))
+            return false;
+
+        if (result.Kind != ValueKind.Cube)
+        {
+            error = $"'{expression}' is one number, not a curve — every axis it read was reduced away.";
+            return false;
+        }
+        var outCube = result.AsCube();
+        if (outCube.Rank != 1)
+        {
+            error = $"'{expression}' keeps {outCube.Rank} axes ({string.Join(", ", outCube.Axes.Select(a => a.Name))}); " +
+                    "a trace needs exactly one — pin the others with a slice.";
+            return false;
+        }
+
+        if (outCube.DataKind == DataKind.Complex) complexValues = outCube.ComplexValues;
+        else                                      realValues    = outCube.RealValues;
+        if (plotType.IsComplex() && realValues != null)
+        {
+            error = "Smith/Polar needs a complex expression; result is real-valued.";
+            return false;
+        }
+        var x = outCube.Axes[0];
+        xValues   = x.Values;
+        xAxisName = x.Name;
+        xUnit     = string.IsNullOrEmpty(x.Unit) ? null : x.Unit;
+        xLabels   = x.Labels;
+        return true;
+    }
+
+    /// <summary>Binds each reference as the cube its slice leaves and evaluates the expression once.</summary>
+    private static bool TryEvaluateWholeValue(
+        string expression, DataSet ds, List<CubeRefInfo> refs, List<(int start, int end, int pIdx)> substitutions,
+        out Value result, out IReadOnlyDictionary<string, DataCube> companions, out string error)
+    {
+        result = default; companions = NoCompanions; error = "";
 
         var bound = new Value[refs.Count];
         for (int k = 0; k < refs.Count; k++)
@@ -378,7 +465,6 @@ public static class TraceExpression
         foreach (var (start, end, pIdx) in substitutions.OrderByDescending(s => s.start))
             sb.Remove(start, end - start).Insert(start, $"__c{pIdx}");
 
-        Value result;
         try
         {
             var ast   = Parser.Parse(sb.ToString());
@@ -389,37 +475,12 @@ public static class TraceExpression
                 scope.Bind($"__c{k}", "0");
                 ev.InjectResolved("te", $"__c{k}", bound[k]);
             }
-            result = ev.EvalExpr(ast, scope);
+            result     = ev.EvalExpr(ast, scope);
+            companions = ev.TakeCompanions();
         }
         catch (ParseException ex)           { error = $"Couldn't parse '{expression}': {ex.Message}"; return false; }
         catch (UnknownFunctionException ex) { error = $"Unknown function '{ex.Name}' in '{expression}'."; return false; }
         catch (ExpressionException ex)      { error = ex.Message; return false; }
-
-        if (result.Kind != ValueKind.Cube)
-        {
-            error = $"'{expression}' is one number, not a curve — every axis it read was reduced away.";
-            return false;
-        }
-        var outCube = result.AsCube();
-        if (outCube.Rank != 1)
-        {
-            error = $"'{expression}' keeps {outCube.Rank} axes ({string.Join(", ", outCube.Axes.Select(a => a.Name))}); " +
-                    "a trace needs exactly one — pin the others with a slice.";
-            return false;
-        }
-
-        if (outCube.DataKind == DataKind.Complex) complexValues = outCube.ComplexValues;
-        else                                      realValues    = outCube.RealValues;
-        if (plotType.IsComplex() && realValues != null)
-        {
-            error = "Smith/Polar needs a complex expression; result is real-valued.";
-            return false;
-        }
-        var x = outCube.Axes[0];
-        xValues   = x.Values;
-        xAxisName = x.Name;
-        xUnit     = string.IsNullOrEmpty(x.Unit) ? null : x.Unit;
-        xLabels   = x.Labels;
         return true;
     }
 

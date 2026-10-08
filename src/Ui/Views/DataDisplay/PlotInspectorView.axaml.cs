@@ -121,6 +121,36 @@ public partial class PlotInspectorView : UserControl
     // otherwise re-sync the box to the current model (which the combo may have moved).
     private string _specPristine = "";
 
+    /// <summary>The trace card's Statistics menu (brief-yield-8 R-ya8-2), built from the card's view model on each
+    /// click — its entries depend on the trace and its source.</summary>
+    private void OnStatisticsMenuClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control anchor || anchor.DataContext is not TraceRowViewModel vm) return;
+        var entries = vm.StatisticsMenu();
+        if (entries.Count == 0) return;
+        var menu = new ContextMenu();
+        foreach (var entry in entries) menu.Items.Add(MenuItemOf(entry));
+        menu.Open(anchor);
+
+        static MenuItem MenuItemOf(StatisticsMenuEntry entry)
+        {
+            var item = new MenuItem
+            {
+                Header = entry.Header,
+                Icon   = entry.Checked
+                    ? new Material.Icons.Avalonia.MaterialIcon { Kind = Material.Icons.MaterialIconKind.Check, Width = 12, Height = 12 }
+                    : null,
+            };
+            if (entry.Children is { } children)
+                foreach (var c in children) item.Items.Add(MenuItemOf(c));
+            else if (entry.Run is { } run)
+                item.Click += (_, _) => run();
+            else
+                item.IsEnabled = false;
+            return item;
+        }
+    }
+
     private void OnSpecEditGotFocus(object? sender, RoutedEventArgs e)
     {
         if (sender is TextBox tb) _specPristine = tb.Text ?? "";

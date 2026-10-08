@@ -668,6 +668,15 @@ so 7.1 persistence is designed to not preclude it.
   by name and never lose trace configuration (R-res-5); running an analysis auto-creates and opens a
   non-empty default `.cdd` when none exists (R-res-8/9/10). Spec: `results-dataset-layout.md`.
 
+### Statistical pictures (brief-yield-8)
+
+Histograms, CDFs, normal quantile plots and yield sensitivities are ordinary cube traces over the expression engine's
+statistics functions, drawn with a trace draw style — `Line`, `Bars` (one bar per point, the `width` companion wide;
+a family side by side) or `Step`. The goals a Monte Carlo result records (`yield.goal:<g>:spec`) are drawn as dashed
+spec lines (`Plot.ShowSpecLines`, on by default), a histogram can carry a fitted normal, and the run's `statistics`
+group is a Table preset. All of it resolves in `TraceResolve`, so the window and `plot`/`render` agree byte for
+byte. Detail: `yield.md` §12.
+
 ### Table with multiple X axes (trace-sweep-conformance, 2026-06-17)
 
 The `Table` plot type supports multiple, distinct X axes — one per trace group. Implementation in

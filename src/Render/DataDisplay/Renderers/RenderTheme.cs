@@ -53,6 +53,12 @@ namespace CircuitRF.Render.DataDisplay
         public static SKColor SelectionColorFallback = new SKColor(33, 150, 175);
         public static byte SelectionAlpha = 175;
 
+        /// <summary>The colour a goal's limit is drawn in — a spec line (brief-yield-8 R-ya8-3).</summary>
+        public SKColor LimitColor => DarkMode ? new SKColor(240, 110, 90) : new SKColor(200, 40, 40);
+
+        /// <summary>The opacity an area is filled at under its own outline — a histogram's bars (R-ya8-1).</summary>
+        public double FillOpacity => 0.35;
+
         /// <summary>
         /// Returns <paramref name="c"/> with its alpha replaced by an opacity in [0, 1].
         /// A negative opacity keeps the colour's own alpha.

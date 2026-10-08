@@ -355,6 +355,17 @@ namespace CircuitRF.Render.DataDisplay
         public bool ShowSmithAdmittanceGrid { get; set; }
 
         /// <summary>
+        /// Draw the limits of the goals this plot's traces draw (brief-yield-8 R-ya8-3). <b>Null is the default:
+        /// on</b> — a spec line exists only where a trace's source records its goals, which is a yield result — so
+        /// the toggle is a way to turn them OFF, or to say ON explicitly. A property of the plot, for
+        /// <see cref="ShowSmithAdmittanceGrid"/>'s reason.
+        /// </summary>
+        public bool? ShowSpecLines { get; set; }
+
+        /// <summary>Whether spec lines are drawn: <see cref="ShowSpecLines"/>, defaulting to on.</summary>
+        public bool SpecLinesOn => ShowSpecLines ?? true;
+
+        /// <summary>
         /// Markers on this plot are placed <b>anywhere</b> rather than on a curve — see
         /// <see cref="Marker.FreePosition"/>, which is the per-marker flag this one sets on the
         /// markers the plot creates.
@@ -1110,6 +1121,8 @@ namespace CircuitRF.Render.DataDisplay
                 if (t.ExcludeFromAutoscale) continue;
 
                 var box = t.PathBoundingRect();
+                // Bars stand on zero and are a bin wide (brief-yield-8 R-ya8-1), so the frame includes both.
+                if (PlotType == PlotType.Rect && t.DrawsBars) box = t.BarBounds(box, FreqUnits);
                 if (box.Width <= 0 && box.Height <= 0) continue;
                 if (t.UseSecondaryAxis)
                 {

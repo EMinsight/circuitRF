@@ -61,4 +61,10 @@ public interface IPlotDataSources
     /// contour, a summary column has no per-trace source of its own.
     /// </summary>
     DataSet? SelectedData { get; }
+
+    /// <summary>
+    /// True while a source shows a DataSet a running analysis publishes in memory rather than the file (a Monte Carlo
+    /// run feeding the display, brief-yield-8 R-ya8-7). False by default: a set of files is never live.
+    /// </summary>
+    bool IsLive(string absPath) => false;
 }

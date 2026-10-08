@@ -120,6 +120,39 @@ public static class SampleStatistics
         return (centres, width, index);
     }
 
+    /// <summary>
+    /// The Freedman–Diaconis bin count for a histogram of the present values: width 2·IQR·n^(−1/3), so the count
+    /// is ⌈(max − min)/width⌉, between 1 and <paramref name="max"/>. A sample whose interquartile range is zero
+    /// (most values equal) falls back to Sturges' ⌈log₂ n⌉ + 1, which needs no spread.
+    /// </summary>
+    public static int FreedmanDiaconisBins(IReadOnlyList<double> x, int max = 100)
+    {
+        var s = Present(x);
+        if (s.Length < 2) return 1;
+        double lo = s.Min(), hi = s.Max();
+        if (!(hi > lo)) return 1;
+        double iqr = Percentile(s, 75) - Percentile(s, 25);
+        int bins = iqr > 0
+            ? (int)Math.Ceiling((hi - lo) / (2 * iqr * Math.Pow(s.Length, -1.0 / 3)))
+            : (int)Math.Ceiling(Math.Log2(s.Length)) + 1;
+        return Math.Clamp(bins, 1, max);
+    }
+
+    /// <summary>
+    /// The normal probability plot of the present values: the values sorted, each against Φ⁻¹ of its plotting
+    /// position (i − 3/8)/(n + 1/4) (Blom's, the usual choice for a normal plot). A Gaussian sample lies on a
+    /// straight line of slope 1/σ through (μ, 0).
+    /// </summary>
+    public static (double[] Sorted, double[] Z) NormalScores(IReadOnlyList<double> x)
+    {
+        var sorted = Present(x);
+        Array.Sort(sorted);
+        var z = new double[sorted.Length];
+        for (int i = 0; i < sorted.Length; i++)
+            z[i] = NormalDistribution.InverseCdf((i + 1 - 0.375) / (sorted.Length + 0.25));
+        return (sorted, z);
+    }
+
     private static (int N, double M2, double M3, double M4) CentralMoments(IReadOnlyList<double> x)
     {
         double m = Mean(x), m2 = 0, m3 = 0, m4 = 0; int n = 0;

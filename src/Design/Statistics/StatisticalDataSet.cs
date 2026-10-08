@@ -1,6 +1,7 @@
 using System.Numerics;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Optimization;
 using CircuitRF.Engine.Statistics;
 using RfCore.Data;
@@ -20,7 +21,10 @@ namespace CircuitRF.Design.Statistics;
 /// table;</item>
 /// <item><c>nominal</c> — the nominal's cubes with no trial axis, each named by its own address
 /// (<c>SP1.S</c>, <c>trials.pass</c>), so a cube's nominal is <c>nominal.</c> + its address;</item>
-/// <item><c>yield</c> — the summary: counts, the yield and its interval overall and per goal, the settings.</item>
+/// <item><c>statistics</c> — the statistics table: one row per goal's worst value and scalar measure, one cube per
+/// column (<see cref="StatisticsColumns"/>);</item>
+/// <item><c>yield</c> — the summary: counts, the yield and its interval overall and per goal, the settings, and each
+/// goal's own <c>goal …</c> line as the label of <c>goal:&lt;g&gt;:spec</c>.</item>
 /// </list>
 /// </summary>
 internal static class StatisticalDataSet
@@ -28,6 +32,7 @@ internal static class StatisticalDataSet
     public const string TrialsGroup  = "trials";
     public const string NominalGroup = "nominal";
     public const string YieldGroup   = "yield";
+    public const string StatisticsGroup = "statistics";
 
     public sealed record Inputs(
         StatisticalMode                       Mode,
@@ -137,12 +142,17 @@ internal static class StatisticalDataSet
         if (x.Goals.Count > 0)
             ds.AddToGroup(NominalGroup, $"{TrialsGroup}.pass", DataCube.Scalar(x.Nominal.Pass ? 1.0 : 0.0));
 
+        // ── statistics (the table, brief-yield-8 R-ya8-5) ─────────────────────────
+        Statistics(ds, x, records);
+
         // ── yield (the summary) ──────────────────────────────────────────────────
         var s0 = x.Settings;
         Scalar(ds, "trials", n);
         Scalar(ds, "did_not_evaluate", records.Count(r => !r.Evaluated));
         Estimate(ds, "", x.Overall);
         foreach (var gy in x.PerGoal) Estimate(ds, $"goal:{gy.Goal}:", gy.Estimate);
+        // Each scored goal's own line, so a display reading this file alone can draw its limits (brief-yield-8 R-ya8-3).
+        foreach (var g in x.Goals) Label(ds, $"goal:{g.Name}:spec", TuningDirectiveText.GoalLine(g), 0);
         Scalar(ds, "confidence", s0.EffectiveConfidence / 100);
         Scalar(ds, "target", x.Mode == StatisticalMode.Yield && s0.Target is { } tp ? tp / 100 : double.NaN);
         Scalar(ds, "seed", s0.EffectiveSeed);
@@ -153,6 +163,60 @@ internal static class StatisticalDataSet
         Label(ds, "save", x.Save.Sentence, x.Save.KeptTrials);
         Label(ds, "stopped", x.Finish, x.Verdict is null ? 0 : (int)x.Verdict.Value);
         return ds;
+    }
+
+    /// <summary>The columns of the <c>statistics</c> group, in table order.</summary>
+    public static readonly IReadOnlyList<string> StatisticsColumns =
+        ["mean", "sigma", "min", "max", "median", "p1", "p99", "skew", "kurtosis", "cpk", "sigma_to_limit", "yield", "lower", "upper"];
+
+    /// <summary>
+    /// The statistics table (brief-yield-8 R-ya8-5): one row per goal's <c>worst</c> value and per scalar measure, on
+    /// a <c>quantity</c> axis labelled with each one's name; one cube per column. Every number is
+    /// <see cref="SampleStatistics"/>' — the functions the CLI's statistics table and the <c>mean_over</c> family
+    /// use — over the trials that evaluated, and a goal's yield and interval are its own Clopper–Pearson estimate.
+    /// Cpk and σ-to-limit read the goal's <see cref="GoalResiduals.ValueLimits"/>; a measure has none.
+    /// </summary>
+    private static void Statistics(DataSet ds, Inputs x, IReadOnlyList<TrialRecord> records)
+    {
+        var rows = new List<(string Label, double[] Values, double? Lo, double? Hi, YieldEstimate? Estimate)>();
+        foreach (var g in x.Goals)
+        {
+            var values = records.Select(r => r.Evaluated ? r.Goals.FirstOrDefault(s => s.Name == g.Name)?.WorstValue ?? double.NaN : double.NaN).ToArray();
+            var (lo, hi) = GoalResiduals.ValueLimits(g);
+            rows.Add(($"goal:{g.Name}:worst", values, lo, hi, x.PerGoal.FirstOrDefault(p => p.Goal == g.Name)?.Estimate));
+        }
+        if (x.Nominal.Data is { } nd && nd.ContainsGroup(DataSet.MeasurementsGroup))
+            foreach (var (name, cube) in nd.CubesIn(DataSet.MeasurementsGroup))
+                if (!name.StartsWith("__", StringComparison.Ordinal) && StatisticalRun.IsScalar(cube))
+                    rows.Add((name, [.. records.Select(r => r.Evaluated && r.Scalars.TryGetValue(name, out double v) ? v : double.NaN)], null, null, null));
+        if (rows.Count == 0) return;
+
+        var axis = new Axis("quantity", [.. Enumerable.Range(1, rows.Count).Select(i => (double)i)], "", [.. rows.Select(r => r.Label)]);
+        var columns = StatisticsColumns.ToDictionary(c => c, _ => new double[rows.Count]);
+        for (int k = 0; k < rows.Count; k++)
+        {
+            var (_, v, lo, hi, est) = rows[k];
+            bool spread = SampleStatistics.Present(v).Length > 1;
+            columns["mean"][k]     = SampleStatistics.Mean(v);
+            columns["sigma"][k]    = SampleStatistics.StdDev(v);
+            columns["min"][k]      = SampleStatistics.Percentile(v, 0);
+            columns["max"][k]      = SampleStatistics.Percentile(v, 100);
+            columns["median"][k]   = SampleStatistics.Median(v);
+            columns["p1"][k]       = SampleStatistics.Percentile(v, 1);
+            columns["p99"][k]      = SampleStatistics.Percentile(v, 99);
+            columns["skew"][k]     = SampleStatistics.Skewness(v);
+            columns["kurtosis"][k] = SampleStatistics.ExcessKurtosis(v);
+            columns["cpk"][k]      = spread && (lo is not null || hi is not null) ? SampleStatistics.Cpk(v, lo, hi) : double.NaN;
+            // Signed distance to the nearer limit in standard deviations, positive on the passing side.
+            double toLo = lo is { } l && spread ? -SampleStatistics.SigmaTo(v, l) : double.PositiveInfinity;
+            double toHi = hi is { } h && spread ? SampleStatistics.SigmaTo(v, h) : double.PositiveInfinity;
+            columns["sigma_to_limit"][k] = Math.Min(toLo, toHi) is var d && double.IsPositiveInfinity(d) ? double.NaN : d;
+            columns["yield"][k]    = est?.Yield ?? double.NaN;
+            columns["lower"][k]    = est?.Lower ?? double.NaN;
+            columns["upper"][k]    = est?.Upper ?? double.NaN;
+        }
+        foreach (var c in StatisticsColumns)
+            ds.AddToGroup(StatisticsGroup, c, new DataCube([axis], columns[c]));
     }
 
     private static Axis TrialAxis(int n) => new(Evaluator.TrialAxis, [.. Enumerable.Range(1, n).Select(i => (double)i)]);

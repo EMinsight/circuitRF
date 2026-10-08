@@ -477,6 +477,20 @@ public static class TuningDirectiveText
         return ReadPreset(s[7..]);
     }
 
+    /// <summary>One goal as its <c>.cnl</c> line — what a Monte Carlo result records beside each goal's per-trial
+    /// cubes so a display can draw the goal's limits from the result alone (brief-yield-8 R-ya8-3).</summary>
+    public static string GoalLine(OptimizationGoal g) => WriteGoal(g);
+
+    /// <summary>Reads one <c>goal …</c> line back — the inverse of <see cref="GoalLine"/>. A malformed line throws
+    /// <see cref="TuningDirectiveException"/>; an unknown key is ignored.</summary>
+    public static OptimizationGoal ReadGoalLine(string line)
+    {
+        string s = line.Trim();
+        if (!s.StartsWith("goal", StringComparison.Ordinal) || s.Length < 5 || !char.IsWhiteSpace(s[4]))
+            throw Refuse(TuningDirectiveDiagnostics.Malformed("goal", "the line does not start with 'goal'."));
+        return ReadGoal(s[5..], AnalysisDirectiveSchema.FindTuningDirective("goal")!, _ => { });
+    }
+
     private static string WritePresetLine(TuningPreset p)
     {
         var sb = new StringBuilder("preset \"").Append(p.Name).Append('"');

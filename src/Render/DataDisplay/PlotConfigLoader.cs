@@ -64,6 +64,7 @@ public static class PlotConfigLoader
         plot.PolarDbUnit                 = pc.PolarDbUnit ?? "";
         plot.ShowPolarAngleLabels        = pc.PolarAngleLabels;
         plot.ShowSmithAdmittanceGrid     = pc.SmithAdmittanceGrid;
+        plot.ShowSpecLines               = pc.SpecLines;
         plot.SurfaceCamera               = PatternCamera.New(pc.SurfaceAzimuthDeg, pc.SurfaceElevationDeg, pc.SurfaceZoom);
         plot.SurfaceColorMap             = pc.SurfaceColorMap;
         plot.SurfaceShowGroundDisc       = pc.SurfaceShowGroundDisc;
@@ -321,6 +322,8 @@ public static class PlotConfigLoader
         trace.Z0OverrideEnabled = traceConfig.Z0Override;
 
         ApplyProperties(traceConfig.Properties, trace.Properties);
+        trace.ShowNormalFit    = traceConfig.NormalFit;
+        trace.StatisticsOrigin = traceConfig.StatisticsOrigin?.ToOrigin();
 
         // OUT OF THE AUTOSCALE WHEN THE CONFIG SAYS SO. Absent in every `.cdd` written before
         // this field, so those files keep the framing they had; the Smith Chart tool's own
@@ -397,5 +400,6 @@ public static class PlotConfigLoader
         dst.MarkerSize       = src.MarkerSize;
         dst.MarkerColorIndex = src.MarkerColorIndex;
         dst.MarkerType       = src.MarkerType;
+        dst.DrawStyle        = src.DrawStyle;
     }
 }

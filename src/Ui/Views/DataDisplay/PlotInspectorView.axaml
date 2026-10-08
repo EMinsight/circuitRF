@@ -240,6 +240,13 @@
                  report that: it lays out past its own edge and the last child is simply cut in half.
                  Each label travels with the control it names, so a group that drops to the next line
                  drops whole. -->
+            <!-- brief-yield-8 R-ya8-3: the goals' limits, where a trace draws a goal a result recorded. -->
+            <CheckBox Content="Spec lines"
+                      IsChecked="{Binding SpecLines, Mode=TwoWay}"
+                      IsVisible="{Binding ShowSpecLinesToggle}"
+                      FontSize="11" Margin="0,0,8,2"
+                      ToolTip.Tip="Draw the limits of the goals these traces show"/>
+
             <WrapPanel IsVisible="{Binding HasPatternControls}">
 
                 <!-- The mode switch is the POLAR plot's; a surface's radius is dB by construction and
@@ -1988,14 +1995,24 @@
                                 <!-- HIDDEN, not disabled, on a plot whose trace set belongs to its
                                      owner (Plot.IsFixedReadout) — a permanently grey button is one
                                      the user goes on trying. -->
-                                <Button Grid.Column="1"
-                                        Classes="removeTrace"
-                                        Command="{Binding RemoveCommand}"
-                                        IsVisible="{Binding CanRemove}"
-                                        VerticalAlignment="Top"
-                                        ToolTip.Tip="Remove this trace">
-                                    <mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/>
-                                </Button>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Top" Spacing="2">
+                                    <Button Classes="removeTrace"
+                                            Command="{Binding RemoveCommand}"
+                                            IsVisible="{Binding CanRemove}"
+                                            ToolTip.Tip="Remove this trace">
+                                        <mi:MaterialIcon Kind="TrashCanOutline" Width="14" Height="14"/>
+                                    </Button>
+                                    <!-- brief-yield-8 R-ya8-2: rewrites the trace as a histogram, CDF, normal
+                                         quantile or yield sensitivity. The menu is built per click
+                                         (OnStatisticsMenuClick): its yield-sensitivity entries are the
+                                         source's own statistical variables. -->
+                                    <Button Classes="removeTrace"
+                                            Click="OnStatisticsMenuClick"
+                                            IsVisible="{Binding ShowStatisticsMenu}"
+                                            ToolTip.Tip="Statistics">
+                                        <mi:MaterialIcon Kind="ChartBar" Width="14" Height="14"/>
+                                    </Button>
+                                </StackPanel>
                                 </Grid>
                             </Border>
                         </DataTemplate>

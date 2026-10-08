@@ -485,6 +485,12 @@ public partial class DisplayWindowViewModel : ViewModelBase
     [RelayCommand] private void AddPolarPlot() => DataDisplay?.AddPlot(PlotType.Polar);
     [RelayCommand] private void AddTablePlot() => DataDisplay?.AddPlot(PlotType.Table);
 
+    /// <summary>The statistics table of the selected Monte Carlo result (brief-yield-8 R-ya8-5).</summary>
+    [RelayCommand] private async Task AddStatisticsTable()
+    {
+        if (DataDisplay is { } d) await d.AddStatisticsTableAsync();
+    }
+
     /// <summary>
     /// <b>ANT-10's 3D pattern, ADDABLE.</b> Reported 2026-09-11: the 3D pattern is only reachable
     /// after adding a polar plot, because the plot-type row that carries its icon lives on the

@@ -84,6 +84,28 @@ public static class GoalResiduals
         return scale;
     }
 
+    /// <summary>
+    /// The bounds ONE value of the goal's quantity must lie within to meet it, in base SI — what a value's
+    /// statistics (Cpk, σ to the limit) and a histogram's spec lines are read against (brief-yield-8). A sloped limit
+    /// gives its TIGHTER end: <c>ge</c> the larger, <c>le</c> the smaller. <c>in</c> gives both edges. <c>eq</c> and
+    /// <c>out</c> give none — no single side is the passing one — and so does a limit that is not a number.
+    /// </summary>
+    public static (double? Lower, double? Upper) ValueLimits(OptimizationGoal g)
+    {
+        if (!TunableValue.TryParse(g.Limit, out _, out _, out double lo)) return (null, null);
+        double atHi = lo;
+        if (g.LimitAtHi is { } h && !TunableValue.TryParse(h, out _, out _, out atHi)) return (null, null);
+        switch (g.Type)
+        {
+            case GoalType.Ge: return (Math.Max(lo, atHi), null);
+            case GoalType.Le: return (null, Math.Min(lo, atHi));
+            case GoalType.In:
+                if (g.UpperLimit is null || !TunableValue.TryParse(g.UpperLimit, out _, out _, out double up)) return (null, null);
+                return (Math.Min(lo, up), Math.Max(lo, up));
+            default: return (null, null);
+        }
+    }
+
     /// <summary>Scores <paramref name="g"/> on the value its expression produced (or the error it raised).</summary>
     public static GoalScore Score(OptimizationGoal g, Value? value, string? error)
     {

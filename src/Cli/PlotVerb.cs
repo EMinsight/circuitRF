@@ -88,6 +88,16 @@ internal static class PlotVerb
             Cut = cut, Port = Port, FreqHz = FreqHz,
             Probe = Probe, With = With,
         };
+        // brief-yield-8 R-ya8-6 — the statistical pictures, rewritten through the trace card's own function.
+        public TraceDrawStyle? Style;
+        public TraceStatistic? Stat;
+        public int?    Bins;
+        public bool    Percent;
+        public string? Over;     // the axis a statistic is taken over (default trial)
+        public string? Param;    // a yield sensitivity's statistical variable
+        public bool    NormalFit;
+        public string? StatOptionGiven;   // the first statistics option typed, for the no-stat refusal
+
         public string? Set;
         public string? Metric;
         public string? Z0;
@@ -122,6 +132,7 @@ internal static class PlotVerb
         public bool?           Transparent;
         public bool            Dark;
         public string?         WriteCdd;
+        public bool?           SpecLines;   // null = the default, on where the result records goals
 
         // ANT-7 §2 — the dB radial mode, which the Data Display and this verb gain together.
         public PolarRadialMode      Radial     = PolarRadialMode.Linear;
@@ -244,7 +255,10 @@ internal static class PlotVerb
         {
             var (tc, refusal) = BuildTrace(o.Traces[i], data, Path.GetFileName(o.Result), i, o.Type);
             if (refusal is { } r) return r;
+            var (companion, statRefusal) = ApplyStatistics(o.Traces[i], tc!, data, o.Type);
+            if (statRefusal is { } sr) return sr;
             traces.Add(tc!);
+            if (companion is not null) traces.Add(companion);
 
             // ── A CUT IS A PLANE, SO IT IS TWO TRACES (2026-09-10) ───────────────────────────
             //
@@ -285,6 +299,11 @@ internal static class PlotVerb
                 }
             }
         }
+
+        // --spec-lines draws the goals the RESULT records (brief-yield-8 R-ya8-3); a result recording none would leave
+        // a picture with nothing the flag asked for in it.
+        if (o.SpecLines == true && SpecLineResolve.GoalsOf(data).Count == 0)
+            return JsonRun.Fail(CliDiagnostics.PlotSpecLinesNoGoals(o.Result));
 
         var config = BuildConfig(o, traces);
 
@@ -332,6 +351,10 @@ internal static class PlotVerb
             "                      branch drawn at -theta, on a --radial db polar plot\n" +
             "                      cut=all keeps every phi as a family\n" +
             "  cube= takes the trace card's own shorthand — S[:,1,0], Pout, mag(V[:,\"X1.drain\"])\n" +
+            "  a statistic of a Monte Carlo result, rewritten as the trace card's Statistics menu does:\n" +
+            "                      stat=histogram|cdf|quantile|yieldsens [over=<axis>] [bins=n] [percent=1]\n" +
+            "                      [fit=normal] [param=<stat key>] (yieldsens), and style=line|bars|step\n" +
+            "  --spec-lines | --no-spec-lines   the limits of the goals the result records (default: on)\n" +
             "  a WSProbe quantity: cube=<analysis>.wsp probe=<label> metric=<name> [with=<label>]\n" +
             "                      [set=A;B] [z0=50] [side=G|L] [gi=1]\n" +
             "  its stability envelope: add src=<label> and/or load=<label> with gammaS=/gammaL=\n" +
@@ -552,6 +575,9 @@ internal static class PlotVerb
 
                 case "--write-cdd" when i + 1 < args.Length: o.WriteCdd = args[++i]; continue;
 
+                case "--spec-lines":    o.SpecLines = true;  continue;
+                case "--no-spec-lines": o.SpecLines = false; continue;
+
                 default:
                     if (a.StartsWith('-'))
                     { JsonRun.Report(CliDiagnostics.PlotUnknownOption(a)); return Usage(); }
@@ -643,6 +669,42 @@ internal static class PlotVerb
                     spec.FreqHz = fhz;
                     break;
                 }
+                case "style":
+                    switch (value.ToLowerInvariant())
+                    {
+                        case "line": spec.Style = TraceDrawStyle.Line; break;
+                        case "bars": spec.Style = TraceDrawStyle.Bars; break;
+                        case "step": spec.Style = TraceDrawStyle.Step; break;
+                        default: return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStyleUnknown(raw, value)));
+                    }
+                    break;
+                case "stat":
+                    switch (value.ToLowerInvariant())
+                    {
+                        case "histogram": spec.Stat = TraceStatistic.Histogram; break;
+                        case "cdf":       spec.Stat = TraceStatistic.Cdf; break;
+                        case "quantile":  spec.Stat = TraceStatistic.Quantile; break;
+                        case "yieldsens": spec.Stat = TraceStatistic.YieldSensitivity; break;
+                        default: return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStatUnknown(raw, value)));
+                    }
+                    break;
+                case "bins":
+                    if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int nb) || nb < 1)
+                        return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStatOptionMalformed(raw, key, value)));
+                    spec.Bins = nb; spec.StatOptionGiven ??= key;
+                    break;
+                case "percent":
+                    if (value is not ("0" or "1"))
+                        return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStatOptionMalformed(raw, key, value)));
+                    spec.Percent = value == "1"; spec.StatOptionGiven ??= key;
+                    break;
+                case "fit":
+                    if (!value.Equals("normal", StringComparison.OrdinalIgnoreCase))
+                        return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStatOptionMalformed(raw, key, value)));
+                    spec.NormalFit = true; spec.StatOptionGiven ??= key;
+                    break;
+                case "over":  spec.Over  = value; spec.StatOptionGiven ??= key; break;
+                case "param": spec.Param = value; spec.StatOptionGiven ??= key; break;
                 case "probe":  spec.Probe  = value; break;
                 case "with":   spec.With   = value; break;
                 case "set":    spec.Set    = value; break;
@@ -681,6 +743,9 @@ internal static class PlotVerb
 
         if (spec.Text.Length == 0)
             return (null, JsonRun.Fail(CliDiagnostics.PlotTraceCubeRequired(raw)));
+        // A fit is a histogram's; the other options shape a statistic. Without stat= they would do nothing.
+        if (spec.Stat is null && spec.StatOptionGiven is { } opt && !(opt == "fit" && CircuitRF.Core.Expressions.Evaluator.CallsAxisFunction(spec.Text)))
+            return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStatOptionWithoutStat(raw, opt)));
 
         return (spec, null);
     }
@@ -1046,6 +1111,66 @@ internal static class PlotVerb
     }
 
     /// <summary>
+    /// <c>style=</c>, <c>stat=</c> and <c>fit=</c> on one built trace (brief-yield-8 R-ya8-6). A statistic is
+    /// <see cref="TraceStatistics.Build"/> — the trace card's Statistics menu, as a function — applied to the trace the
+    /// spec built, so the document written here is the one the menu would have written, origin and all. A yield
+    /// sensitivity also returns its companion series (the trials per bin).
+    /// </summary>
+    private static (TraceConfig? Companion, int? Refusal) ApplyStatistics(
+        TraceSpec spec, TraceConfig tc, DataSet data, PlotType plotType)
+    {
+        TraceConfig? companion = null;
+        if (spec.Stat is { } kind)
+        {
+            var trace = new Trace(new SNP([1e9], 2), MatrixType.S, 0, 0, DependentVarFormat.Db, tc.UseSecondaryAxis)
+            {
+                Expression = tc.Expression,
+                CubeName   = tc.CubeName,
+                Slice      = tc.CubeSlice.Count > 0 ? [.. tc.CubeSlice.Select(x => x.ToSlice())] : null,
+                Transform  = tc.CubeTransform,
+            };
+            string? statSpec = spec.Param is null ? null
+                : TraceStatistics.StatSpecs(data).FirstOrDefault(x => x == spec.Param || x == "trials.stat:" + spec.Param
+                                                                    || x == "trials." + spec.Param) ?? spec.Param;
+            var (rewrite, why) = TraceStatistics.Build(trace, data, kind, spec.Over, spec.Bins, spec.Percent, statSpec);
+            if (rewrite is null) return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStatRefused(spec.Raw, why!)));
+            TraceStatistics.Apply(trace, rewrite);
+
+            // Checked here, in the evaluator's own words, rather than drawn as an empty plot.
+            if (!TraceExpression.TryEvaluate(rewrite.Expression, data, plotType, out _, out _, out _, out _, out _, out _, out string err))
+                return (null, JsonRun.Fail(CliDiagnostics.PlotTraceUnresolved(spec.Raw, rewrite.Expression, err)));
+
+            tc.Expression       = trace.Expression;
+            tc.CubeName         = null;
+            tc.CubeSlice        = [];
+            tc.CubeTransform    = CubeTransform.None;
+            tc.StatisticsOrigin = StatisticsOriginConfig.From(trace.StatisticsOrigin);
+            tc.Properties.DrawStyle = rewrite.Style;
+
+            if (rewrite.Companion is { } ce)
+            {
+                var c = TraceStatistics.CompanionOf(trace, ce);
+                companion = new TraceConfig
+                {
+                    SourcePath       = tc.SourcePath,
+                    Expression       = c.Expression,
+                    UseSecondaryAxis = true,
+                    StatisticsOrigin = StatisticsOriginConfig.From(c.StatisticsOrigin),
+                    Properties       = new TracePropertiesConfig
+                    {
+                        LineColorIndex   = tc.Properties.LineColorIndex,
+                        MarkerColorIndex = tc.Properties.MarkerColorIndex,
+                        DrawStyle        = c.Properties.DrawStyle,
+                    },
+                };
+            }
+        }
+        if (spec.Style is { } style) tc.Properties.DrawStyle = style;
+        if (spec.NormalFit) tc.NormalFit = true;
+        return (companion, null);
+    }
+
+    /// <summary>
     /// The cube a spec names, before any slice or transform — the whole of <c>S</c>, <c>S[:,2,1]</c>,
     /// <c>mag(Pout)</c> and <c>db S[:,2,1]</c>. Deliberately loose: it exists only to make a
     /// mistyped NAME a refusal that lists the real ones, and anything it gets wrong falls through to
@@ -1158,6 +1283,7 @@ internal static class PlotVerb
         container.PolarDbReferenceValue = o.DbRefValue;
         container.PolarDbUnit           = o.DbUnit;
         container.PolarAngleLabels      = o.AngleLabels;
+        container.SpecLines             = o.SpecLines;
 
         var cam = o.Camera ?? PatternCamera.Default;
         container.SurfaceAzimuthDeg   = cam.AzimuthDeg;

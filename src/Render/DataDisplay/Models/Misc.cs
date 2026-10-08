@@ -57,6 +57,14 @@ namespace CircuitRF.Render.DataDisplay
     /// and a reading written by an older build must mean what it meant.</summary>
     public enum LineType   { Solid,  Dashed,  Dotted }
 
+    /// <summary>
+    /// How a trace's points are drawn on a Rect plot (brief-yield-8 R-ya8-1): joined by a <see cref="Line"/>, as
+    /// <see cref="Bars"/> — one per point, the width of its bin — or as a <see cref="Step"/> outline of those bars.
+    /// <b>Append only</b>, and <see cref="Line"/> must stay first: a <c>.cdd</c> stores the member, and a trace that
+    /// never chose one writes nothing at all.
+    /// </summary>
+    public enum TraceDrawStyle { Line, Bars, Step }
+
     // ============================================================
     //  PrecisionFormat
     // ============================================================
@@ -238,6 +246,16 @@ namespace CircuitRF.Render.DataDisplay
             set { _markerType = value; Custom = true; }
         }
 
+        // ---- Draw style (brief-yield-8 R-ya8-1) --------------------------
+
+        private TraceDrawStyle _drawStyle = TraceDrawStyle.Line;
+
+        public TraceDrawStyle DrawStyle
+        {
+            get => _drawStyle;
+            set { _drawStyle = value; Custom = true; }
+        }
+
         // ---- Fill -------------------------------------------------------
 
         private int    _fillColorIndex = LineColorOrder[0];
@@ -341,6 +359,7 @@ namespace CircuitRF.Render.DataDisplay
             _fillColorStorage = src._fillColorStorage;
             _fillColorIndex   = src._fillColorIndex;
             _fillOpacity      = src._fillOpacity;
+            _drawStyle        = src._drawStyle;
             Custom            = src.Custom;
         }
 
@@ -356,7 +375,8 @@ namespace CircuitRF.Render.DataDisplay
                 && _markerOpacity    == rhs._markerOpacity
                 && _markerColorStorage == rhs._markerColorStorage
                 && _markerEnabled    == rhs._markerEnabled
-                && _markerType       == rhs._markerType;
+                && _markerType       == rhs._markerType
+                && _drawStyle        == rhs._drawStyle;
         }
 
         public override bool Equals(object? obj) =>

@@ -3001,8 +3001,42 @@ internal static class CliDiagnostics
     public static Diagnostic PlotTraceUnknownKey(string trace, string key) => Diagnostic.Create(
         "plot.trace.unknown-key", DiagnosticSeverity.Error,
         "plot: in --trace '{trace}', '{key}' is not one of cube, i, j, y, axis, probe, with, set, "
-      + "metric, z0, side, gi, ref.",
+      + "metric, z0, side, gi, ref, style, stat, bins, percent, over, param, fit.",
         ("trace", trace), ("key", key));
+
+    // brief-yield-8 R-ya8-6 — the statistical pictures, rewritten exactly as the trace card's menu does.
+
+    public static Diagnostic PlotTraceStyleUnknown(string trace, string value) => Diagnostic.Create(
+        "plot.trace.style-unknown", DiagnosticSeverity.Error,
+        "plot: in --trace '{trace}', style='{value}' is not line, bars or step.", ("trace", trace), ("value", value));
+
+    public static Diagnostic PlotTraceStatUnknown(string trace, string value) => Diagnostic.Create(
+        "plot.trace.stat-unknown", DiagnosticSeverity.Error,
+        "plot: in --trace '{trace}', stat='{value}' is not histogram, cdf, quantile or yieldsens.",
+        ("trace", trace), ("value", value));
+
+    public static Diagnostic PlotTraceStatOptionMalformed(string trace, string key, string value) => Diagnostic.Create(
+        "plot.trace.stat-option-malformed", DiagnosticSeverity.Error,
+        "plot: in --trace '{trace}', {key}='{value}' is not what it takes: bins= a whole number of at least 1, "
+      + "percent=0|1, fit=normal.",
+        ("trace", trace), ("key", key), ("value", value));
+
+    /// <summary>A statistics option with no <c>stat=</c> to apply to — a flag that did nothing would leave a picture
+    /// the caller cannot tell from the one asked for.</summary>
+    public static Diagnostic PlotTraceStatOptionWithoutStat(string trace, string key) => Diagnostic.Create(
+        "plot.trace.stat-option-without-stat", DiagnosticSeverity.Error,
+        "plot: in --trace '{trace}', {key}= applies to a statistic; add stat=histogram, cdf, quantile or yieldsens.",
+        ("trace", trace), ("key", key));
+
+    public static Diagnostic PlotTraceStatRefused(string trace, string reason) => Diagnostic.Create(
+        "plot.trace.stat-refused", DiagnosticSeverity.Error,
+        "plot: in --trace '{trace}': {reason}", ("trace", trace), ("reason", reason));
+
+    public static Diagnostic PlotSpecLinesNoGoals(string result) => Diagnostic.Create(
+        "plot.spec-lines.no-goals", DiagnosticSeverity.Error,
+        "plot: --spec-lines draws the limits of the goals a result records, and '{result}' records none. "
+      + "A Monte Carlo or yield run's .yield.npy records the goals it scored.",
+        ("result", result));
 
     public static Diagnostic PlotTraceRefMalformed(string trace, string value) => Diagnostic.Create(
         "plot.trace.ref-malformed", DiagnosticSeverity.Error,

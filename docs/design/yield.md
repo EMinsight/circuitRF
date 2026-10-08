@@ -616,6 +616,87 @@ corner replays the `<design>.yield.npy` beside the design when its seed and samp
 Gates: `tests/Ui.Tests/Statistics/CornerOptimizationTests.cs` (`CornerOptimizationTests`,
 `CornerOptimizationCacheTests`, `TuneAtCornerTests`) and `OptCliVerbTests.Corners_ReportsTheBindingCorner`.
 
+## 12. The Data Display's statistics (brief-yield-8)
+
+**The numbers are the expression engine's; the Data Display adds drawing.** Every statistical picture is an ordinary
+cube trace whose expression calls one of §8's functions, so the card, `plot`, a `measure` line and `render` compute it
+with one piece of code. No new plot type: these are Rect plots (and a Table), so markers, export, Plot Versus and the
+trace card keep working.
+
+| Piece | Where |
+|---|---|
+| Draw style `Line|Bars|Step` (`TraceProperties.DrawStyle`, `.cdd` `Properties.DrawStyle`, not written when Line) | `src/Render/DataDisplay/Models/Misc.cs` |
+| Bars, steps, normal fit, spec lines | `Renderers/StatisticsRenderer.cs`, called from `PlotRenderer` on Rect plots |
+| The menu as a function — `Build`, `Apply`, `BackToCurves`, `CompanionOf` | `TraceStatistics.cs` |
+| Goals → lines | `SpecLineResolve.cs`; the reverse match is `TraceGoalReader.GoalExpressionOf` + `TraceToGoal.SameQuantity` |
+| The statistics table | the run's `statistics` group (`StatisticalDataSet`), drawn by `StatisticsTablePreset` |
+| `normq`, histogram `"percent"`, Φ⁻¹ | `src/Core/Expressions` (`NormalDistribution`; `Engine.Statistics.SpecialFunctions` forwards to it) |
+
+### 12.1 Bars (R-ya8-1)
+
+A bar is one point, centred on its X, as wide as the expression's `width` companion (`TraceExpression.TryEvaluate`
+now hands companions back, and the resolve stores the width on the trace) or, with none, the smallest X spacing. Fill
+is the trace colour at `RenderTheme.FillOpacity`, outline the line colour. A family's members split each bin evenly
+and stand side by side. **Step** is the bars' outline when there is a width and the post-step through the points when
+there is not (an empirical CDF). Autoscale frames a bar trace down to zero and half a bin past each end.
+
+### 12.2 The Statistics menu (R-ya8-2)
+
+Over the `trial` axis when the trace has one — otherwise one submenu per axis, the chosen axis kept and every other
+axis pinned (a kept one at its first sample, which the expression then shows):
+
+| Entry | Expression | Style |
+|---|---|---|
+| Histogram | `histogram(<operand>, <n>)`, n by Freedman–Diaconis (`SampleStatistics.FreedmanDiaconisBins`) | Bars |
+| Histogram (Percent) | `histogram(<operand>, <n>, "percent")` | Bars |
+| CDF | `cdf(<operand>)` | Step |
+| Normal Quantile | `normq(<operand>)` — values against Φ⁻¹ of Blom's positions; Gaussian is straight | Line |
+| Yield Sensitivity vs ▸ `<key>` | `100*yield_sens(trials.pass, trials.stat:<key>, <n>)`, plus a second series `histogram(trials.stat:<key> + 0*trials.pass, <n>)` — the trials per bin, on the right axis, as a step at half opacity | Bars |
+| Normal Fit (a histogram) | `mean_over`/`std_over` of the operand, scaled to the bars' area | — |
+| Back to Curves | restores the trace exactly | — |
+
+The operand is the card's own reading of the trace (`PickerBody` with its transform), so `mag(…)` stays `mag(…)`.
+The FIRST rewrite records what the trace was (`TraceStatisticsOrigin`: expression, cube, slice, transform, style;
+`.cdd` `StatisticsOrigin`), so Histogram then CDF still reads the original data and Back to Curves goes all the way
+back. The companion's `+ 0*trials.pass` makes a trial with no pass/fail a NaN, which the histogram skips exactly as
+`yield_sens` does — so the two share their bins. The added series carries an EMPTY origin, the mark Back to Curves
+removes it by.
+
+### 12.3 Spec lines (R-ya8-3)
+
+A run records each scored goal's own line as `yield.goal:<g>:spec` (results-dataset-layout.md), so the limits come
+from the result: `plot` has nothing else. A trace draws a goal when it is a histogram/CDF/normal plot of
+`goal:<g>:worst`, or of a quantity a range-less goal reads (vertical lines at the values — a sloped limit at its
+TIGHTER end, `in`/`out` at both edges); or when its "Add as goal…" translation reads the same quantity as the goal
+(`TraceToGoal.Canonical`: whitespace, `dB20`→`dB`, a `nominal.` prefix, `~`, the KEPT axes of a slice and an
+accessor's parentheses do not change the quantity) and its X is the goal's range axis — then the limit is drawn
+across the range, sloped where it slopes. Dashed in `RenderTheme.LimitColor`, as segments (Skia's SVG device drops a
+path effect), labelled `<goal> ≥ <limit>`. `Plot.ShowSpecLines` is null by default, which is ON: a line exists only
+where a source records goals. The inspector shows the toggle only where one exists.
+
+### 12.4 Normal fit (R-ya8-4), the table (R-ya8-5), live (R-ya8-7)
+
+The fit is `A·φ((x − μ)/σ)/σ` with μ, σ from `mean_over`/`std_over` of the histogram's operand and A the bars' area
+(Σ height × width), off by default (`.cdd` `NormalFit`). The table is the run's `statistics` group — one row per goal's
+worst value and scalar measure on a labelled `quantity` axis, columns mean, σ, min, max, median, P1, P99, skew,
+kurtosis, Cpk, σ-to-limit and the goal's yield with its interval, by `SampleStatistics` against
+`GoalResiduals.ValueLimits` — drawn as one Table trace per column (**Add Statistics Table**, the Σ toolbar button).
+While a source is published in memory (`IPlotDataSources.IsLive`), an unranged histogram holds its bin range from the
+first frame with ≥ 30 values (`TraceStatistics.HoldRange`, through `pctl_over`) and is evaluated with that range
+written in; once the source is a file again the range is re-derived. The table follows each frame for free, being
+part of the published DataSet.
+
+### 12.5 Headless (R-ya8-6)
+
+`plot --trace …,stat=histogram|cdf|quantile|yieldsens[,over=<axis>][,bins=n][,percent=1][,param=<key>][,fit=normal]`
+and `style=line|bars|step`; `--spec-lines`/`--no-spec-lines` (absent is the default, on). A statistic is
+`TraceStatistics.Build` applied to the trace the spec built, so the `.cdd` written is the one the menu writes, origin
+included. `--spec-lines` on a result recording no goal is refused (`plot.spec-lines.no-goals`).
+
+Gates: `tests/Ui.Tests/Statistics/DisplayStatisticsTests.cs` — `BarsRenderTests`, `StatisticsMenuTests`,
+`SpecLineTests`, `YieldSensitivityTests`, `HistogramPlotParityTests` (the CLI's SVG against the in-process
+composer's, byte for byte, a histogram with spec lines and a fit).
+
 ## Later phases
 
-Each phase appends its section above this one as it lands: YA-8/9 the display, YA-10 the panel, YA-11/12 centering.
+Each phase appends its section above this one as it lands: YA-9 the trial display, YA-10 the panel, YA-11/12 centering.

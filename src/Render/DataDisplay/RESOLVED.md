@@ -1189,3 +1189,31 @@ now says `-45.12` and `numpy` says `10·log10(U[42, 8, 0, 0]) = -45.117`; the ba
 `-41.6` against `U[42, 8, 180, 0] = -41.596`; broadside agrees to the last digit on both halves.
 The `8.56 GHz` in that readout is also right — the trace pins freq index 42 — and the plot's
 "1.74 GHz" is a custom title the author typed and then switched off.
+
+## Monte Carlo statistics in the Data Display (brief-yield-8), 2026-10-08
+
+Bars/step draw style, the trace card's Statistics menu, spec lines, the normal fit, the statistics table and
+`plot` parity. Design: `docs/design/yield.md` §12. Findings worth keeping:
+
+- **A `.yield.npy` did not say what its goals' limits were**, only each trial's pass, margin and worst value — so a
+  headless `plot` could not have drawn a spec line at all. Each scored goal's own `goal …` line is now the label of
+  `yield.goal:<g>:spec` (`TuningDirectiveText.GoalLine`/`ReadGoalLine`), and `SpecLineResolve` reads the goals from
+  the RESULT, which is what makes the window's picture and the CLI's the same picture.
+- **The trace↔goal link is the "Add as goal…" translation read in reverse**, not a second matcher:
+  `TraceGoalReader.GoalExpressionOf` translates the trace, `TraceToGoal.SameQuantity` compares after `Canonical`.
+  The canonical form has to drop the KEPT axes of a slice — a trial family reads `dB(SP1.S[:, :, 2, 1])` where the
+  goal reads `dB(SP1.S(2,1))`, and the extra leading `:` is the trial axis, not a different quantity.
+- **Φ⁻¹ moved DOWN into `src/Core`** (`NormalDistribution`) because `normq` lives in the expression engine, which may
+  not reference `src/Engine`; `Engine.Statistics.SpecialFunctions` forwards to it rather than keeping a second copy.
+- **A yield sensitivity's trials-per-bin series is `histogram(stat + 0*pass, n)`, not `histogram(stat, n)`.**
+  `yield_sens` bins only the trials whose pass is present, so its bin edges come from THAT extent; `+ 0*pass` turns a
+  trial with no pass into a NaN the histogram skips identically, and the two series share their bins exactly
+  (`YieldSensitivityTests` asserts the widths match).
+- **`TracePropertiesConfig` has no opacity field**, so the companion series' lighter look cannot be a property: it is
+  DERIVED from the series' persisted origin (an empty `StatisticsOrigin` = a series the menu added), and therefore
+  survives a save, a paste and a CLI-written `.cdd` alike.
+- **Dashes are segments again** (`StatisticsRenderer.Dashed`), for `DrawWspMarginReferenceLines`' reason: Skia's SVG
+  device drops `SKPathEffect.CreateDash` on a stroke, and the spec lines are in the SVG byte-identity gate.
+- **Found while gating, not caused here:** `CliStructuredOutputTests.DiagnosticIds_AreTheCommittedSet…` was already
+  red at HEAD — YA-6 added `cli.yield.corner-flag`, `cli.yield.generate-names-taken` and
+  `cli.yield.generate-write-needs-schematic` without registering them. Registered alongside this phase's `plot.*` ids.

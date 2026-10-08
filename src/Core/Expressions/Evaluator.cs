@@ -280,6 +280,7 @@ public sealed partial class Evaluator
             "sigma_to"  => EvalSigmaTo(cl, scope),
             "histogram" => EvalHistogram(cl, scope),
             "cdf"       => EvalCdf(cl, scope),
+            "normq"     => EvalNormq(cl, scope),
             "yield_sens" => EvalYieldSens(cl, scope),
             "dB"        => EvalDB20(cl, scope),     // 20·log10|z|
             "dB20"      => EvalDB20(cl, scope),     // alias: 20·log10|z|

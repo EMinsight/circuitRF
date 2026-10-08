@@ -13,6 +13,7 @@
 // ================================================================
 
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
 using RfCore;
 using RfCore.Loadpull;
@@ -146,6 +147,12 @@ public sealed class PlotContainerConfig
     public ContourColorMap SurfaceColorMap { get; set; } = ContourColorMap.Cool;
     public bool SurfaceShowGroundDisc { get; set; } = true;
     public bool SurfaceShowAxes       { get; set; } = true;
+
+    /// <summary>Draw the limits of the goals the plot's traces draw (brief-yield-8 R-ya8-3). <b>Null — "on where a
+    /// trace's source records goals" — is not written</b>, so a display that never touched it saves the bytes it saved
+    /// before, and a file without it draws the goals of a yield result, which is the default the toggle has.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? SpecLines { get; set; }
 
     /// <summary>The colour bar. <b>True by default</b>, which is what a <c>.cdd</c> written before
     /// 2026-09-11 carries — the legend was unconditional then (below its font threshold) and a
@@ -344,6 +351,15 @@ public sealed class TraceConfig
     public TracePropertiesConfig   Properties { get; set; } = new();
     public List<MarkerConfig>      Markers    { get; set; } = new();
 
+    /// <summary>A fitted normal curve over this histogram (brief-yield-8 R-ya8-4). Not written when off.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool NormalFit { get; set; }
+
+    /// <summary>What the Statistics menu rewrote this trace from, so "Back to curves" survives a save
+    /// (brief-yield-8 R-ya8-2). Not written for a trace that is not a statistics view.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public StatisticsOriginConfig? StatisticsOrigin { get; set; }
+
     /// <summary>
     /// Keep this trace out of the plot's autoscale — see <see cref="Trace.ExcludeFromAutoscale"/>.
     /// </summary>
@@ -373,6 +389,33 @@ public sealed class TraceConfig
 
     /// <summary>Non-null when this trace is a summary-table column (7.5). Mutually exclusive with ContourTrace.</summary>
     public SummaryColumnConfig? SummaryColumn { get; set; }
+}
+
+/// <summary>The persisted <see cref="TraceStatisticsOrigin"/> — the fields that decide what a trace reads and how it
+/// draws, as <see cref="TraceConfig"/> spells them.</summary>
+public sealed class StatisticsOriginConfig
+{
+    public string?               Expression    { get; set; }
+    public string?               CubeName      { get; set; }
+    public List<AxisSliceConfig> CubeSlice     { get; set; } = new();
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public CubeTransform         CubeTransform { get; set; } = CubeTransform.None;
+
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    public TraceDrawStyle        DrawStyle     { get; set; } = TraceDrawStyle.Line;
+
+    public static StatisticsOriginConfig? From(TraceStatisticsOrigin? o) => o is null ? null : new()
+    {
+        Expression    = o.Expression,
+        CubeName      = o.CubeName,
+        CubeSlice     = o.Slice is null ? new() : [.. o.Slice.Select(AxisSliceConfig.From)],
+        CubeTransform = o.Transform,
+        DrawStyle     = o.DrawStyle,
+    };
+
+    public TraceStatisticsOrigin ToOrigin() => new(
+        Expression, CubeName, CubeSlice.Count > 0 ? [.. CubeSlice.Select(s => s.ToSlice())] : null, CubeTransform, DrawStyle);
 }
 
 /// <summary>
@@ -574,4 +617,10 @@ public sealed class TracePropertiesConfig
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public MarkerType MarkerType { get; set; } = MarkerType.Circle;
+
+    /// <summary>Line, bars or step (brief-yield-8 R-ya8-1). <b>Not written when it is Line</b>, so a display that
+    /// draws no bars saves the bytes it saved before the style existed, and a file without it reads as Line.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter))]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public TraceDrawStyle DrawStyle { get; set; } = TraceDrawStyle.Line;
 }

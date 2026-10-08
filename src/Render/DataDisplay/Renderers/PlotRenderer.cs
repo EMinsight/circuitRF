@@ -402,10 +402,23 @@ namespace CircuitRF.Render.DataDisplay
                 // A trace whose analysis the optimizer is not running is stale (R-to10-7): dimmed.
                 bool dim = plot.DimmedTraces.Contains(trace);
                 if (dim) canvas.SaveLayer(DimPaint);
-                TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme,
-                    stemMode: plotIsRect && (trace.IsHarmonicStem || trace.IsMixIndexStem));
+                // Bars and steps (brief-yield-8 R-ya8-1) are a Rect plot's; elsewhere the style is inert.
+                if (plotIsRect && trace.DrawsBars)
+                    StatisticsRenderer.DrawBars(canvas, canvasSize, trace, tf, theme, plot.FreqUnits);
+                else
+                    TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme,
+                        stemMode: plotIsRect && (trace.IsHarmonicStem || trace.IsMixIndexStem));
+                if (plotIsRect && trace.NormalFit is not null)
+                    StatisticsRenderer.DrawNormalFit(canvas, canvasSize, trace, plot, tf);
                 if (dim) canvas.Restore();
             }
+
+            // ---- The goals' spec lines (brief-yield-8 R-ya8-3) --------------
+            //
+            //  Above the curves: a limit is what a curve is judged against, and a histogram's bars would hide one
+            //  drawn beneath them.
+            if (plotIsRect && plot.SpecLinesOn)
+                StatisticsRenderer.DrawSpecLines(canvas, canvasSize, plot, tf, theme);
 
             // ---- The overlay seam (brief-smith-5-chart.md R-smith5-6) ----
             //

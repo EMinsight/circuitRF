@@ -2436,6 +2436,20 @@ they carry is full of commas.
 | `z0` | the reference the circulator, pair and Ohtomo metrics normalise by; absent means the source group's own port-1 Re(Z0), else 50 Ω. |
 | `side` | `G` or `L` — which side of every probe Ohtomo treats as the active subnetwork. |
 | `gi` | which of Ohtomo's `G_i` to draw, 1-based. |
+| `stat` | `histogram`, `cdf`, `quantile` or `yieldsens` — rewrites the trace exactly as the trace card's Statistics menu does (`TraceStatistics.Build`, brief-yield-8); the `.cdd` written carries the same expression, style and origin. |
+| `over`, `bins`, `percent`, `param`, `fit` | the statistic's options: the axis (default `trial`), the bin count (default Freedman–Diaconis), `percent=1`, a yield sensitivity's statistical variable (`R1.R`), `fit=normal` for a histogram's fitted normal. Refused without `stat=` (a fit is also accepted on a typed `histogram(…)`). |
+| `style` | `line`, `bars` or `step`. |
+
+**`--spec-lines` / `--no-spec-lines`** turn the goals' limits on or off (brief-yield-8 R-ya8-3); absent is the
+window's default, on, and a line exists only where the result records its goals — a `.yield.npy`. `--spec-lines` on a
+result that records none is refused (`plot.spec-lines.no-goals`) rather than drawn without them. The gate
+`HistogramPlotParityTests` compares the verb's SVG of a histogram with spec lines to the in-process composer's, byte
+for byte.
+
+```
+circuitrf plot div.yield.npy -o h.svg --trace cube=trials.goal:Vout:worst,stat=histogram,fit=normal --spec-lines
+circuitrf plot div.yield.npy -o ys.svg --trace cube=trials.pass,stat=yieldsens,param=R1.R
+```
 
 **An integer on an `i`/`j` axis is a PORT NUMBER, not an index** — `S[:,2,1]` is S21, which is what
 makes that spelling readable. Off by one here is the quietest possible wrong answer, since S12 and S21

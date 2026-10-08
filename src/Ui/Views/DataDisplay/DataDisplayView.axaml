@@ -138,6 +138,12 @@
                     <mi:MaterialIcon Kind="TableLarge" Width="16" Height="16"/>
                 </Button>
 
+                <Button Command="{Binding ViewModel.Window.AddStatisticsTableCommand}"
+                        ToolTip.Tip="Add Statistics Table — the selected Monte Carlo result's statistics, one row per goal and measure"
+                        Padding="6,3">
+                    <mi:MaterialIcon Kind="Sigma" Width="16" Height="16"/>
+                </Button>
+
                 <!-- ANT-10's 3D pattern. LAST, and with the same tooltip the inspector's own
                      plot-type button carries, because the cuts beside it tell an engineer more
                      about an antenna and this must not read as the better one. It is here at all

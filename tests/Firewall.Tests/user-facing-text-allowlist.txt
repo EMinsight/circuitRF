@@ -1111,6 +1111,8 @@ src/Core/Expressions/Evaluator.Reductions.cs|cdf(): the value has no points that
 src/Core/Expressions/Evaluator.Reductions.cs|cpk(): a limit must be a number, or \"none\" for a one-sided specification.
 src/Core/Expressions/Evaluator.Reductions.cs|cpk(): give at least one limit, e.g. cpk(x, \"none\", 5).
 src/Core/Expressions/Evaluator.Reductions.cs|histogram(): the range ends must be numbers, e.g. histogram(x, 20, 10, 20).
+src/Core/Expressions/Evaluator.Reductions.cs|histogram(): the last argument is \"count\" or \"percent\", e.g. histogram(x, 20, \"percent\").
+src/Core/Expressions/Evaluator.Reductions.cs|normq(): the value has no points that are numbers.
 src/Core/Expressions/Evaluator.Reductions.cs|pctl_over(): the percentile must be a number from 0 to 100, e.g. pctl_over(x, 95).
 src/Core/Expressions/Evaluator.Reductions.cs|sigma_to(): the limit must be a number, e.g. sigma_to(x, 14).
 src/Core/Expressions/Evaluator.Reductions.cs|yield_sens(): the pass/fail value has {pass.Axes[0].Length} points and the parameter {x.Axes[0].Length}; give both over the same trials.

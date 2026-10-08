@@ -230,12 +230,13 @@ and give `lo, hi` before it to take part of the axis):
 | `cpk(x, lo, hi)` | the process capability index; write either limit as `"none"` for a one-sided spec |
 | `sigma_to(x, limit)` | how many standard deviations the limit lies from the mean (positive above it) |
 
-Three build a new axis from a value over the trials:
+Four build a new axis from a value over the trials:
 
 | Function | Gives |
 |---|---|
-| `histogram(x, bins)`, `histogram(x, bins, lo, hi)` | counts over a `bin` axis of bin centres |
+| `histogram(x, bins)`, `histogram(x, bins, lo, hi)` | counts over a `bin` axis of bin centres; add `"percent"` as the last argument for each bin's percent of the trials |
 | `cdf(x)` | the values sorted, against the fraction of trials at or below each |
+| `normq(x)` | the values sorted, against the normal quantile of each one's rank — a straight line when the spread is Gaussian |
 | `yield_sens(pass, x, bins)` | per bin of `x`, the fraction of trials that pass |
 
 A `measure` line built on `histogram` or `yield_sens` also stores what does not fit in one curve

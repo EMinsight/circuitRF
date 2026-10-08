@@ -659,6 +659,26 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
         return container;
     }
 
+    /// <summary>
+    /// Adds the statistics table (brief-yield-8 R-ya8-5) of the selected source — a Monte Carlo result's
+    /// <c>statistics</c> group as a Table plot, one column per statistic and one row per goal and measure — placed as
+    /// Add Plot places one, as one undo step. Null, and nothing added, when the selected source has no table.
+    /// </summary>
+    public async Task<PlotContainerViewModel?> AddStatisticsTableAsync()
+    {
+        if (Library?.SelectedEntry is not { FilePath: { } path } entry || !StatisticsTablePreset.Available(entry.Data))
+            return null;
+        var pc = StatisticsTablePreset.Build(entry.Data!, ComputeSourceKey(path, Library));
+        if (pc is null) return null;
+        (pc.Left, pc.Top) = ComputeNewPlotPosition(pc.Width, pc.Height);
+
+        var container = await LoadPlotContainerConfigAsync(pc, configDir: "");
+        // LoadPlotContainerConfigAsync appends; the command re-adds it, so the add is one undoable step.
+        InternalRemoveContainer(container);
+        UndoRedo.Do(new AddPlotCommand(container, this));
+        return container;
+    }
+
     // ---- New-plot auto-placement ------------------------------------
     //
     //  Goal (per spec): drop a newly-added plot somewhere convenient.
@@ -1512,6 +1532,7 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
             PolarDbUnit                 = plot.PolarDbUnit,
             PolarAngleLabels            = plot.ShowPolarAngleLabels,
             SmithAdmittanceGrid         = plot.ShowSmithAdmittanceGrid,
+            SpecLines                   = plot.ShowSpecLines,
             SurfaceAzimuthDeg           = plot.SurfaceCamera.AzimuthDeg,
             SurfaceElevationDeg         = plot.SurfaceCamera.ElevationDeg,
             SurfaceZoom                 = plot.SurfaceCamera.Zoom,
@@ -1651,7 +1672,10 @@ public partial class DataDisplayViewModel : ViewModelBase, IDisposable
                 MarkerSize       = t.Properties.MarkerSize,
                 MarkerColorIndex = t.Properties.MarkerColorIndex,
                 MarkerType       = t.Properties.MarkerType,
+                DrawStyle        = t.Properties.DrawStyle,
             },
+            NormalFit        = t.ShowNormalFit,
+            StatisticsOrigin = StatisticsOriginConfig.From(t.StatisticsOrigin),
             // Set only in code until the Smith Chart tool's overlays needed to persist it, and false
             // in every `.cdd` written before — which is the framing those files already had.
             ExcludeFromAutoscale = t.ExcludeFromAutoscale,

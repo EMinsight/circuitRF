@@ -251,6 +251,42 @@ on a load-pull contour they read the interpolated **surface** rather than the ne
 is the point of fitting a surface at all. The maximum-power and maximum-efficiency locations are flagged
 on a contour plot automatically.
 
+## Monte Carlo statistics {#statistics}
+
+A Monte Carlo or yield run writes `<design>.yield.npy` beside the design, with every trial on a `trial`
+axis. Open it as a data source and the pictures a yield analysis is read from are a menu away.
+
+**The Statistics button** on a trace card (the bar-chart icon under the trash can, on a rectangular plot)
+rewrites the trace:
+
+| Entry | Draws |
+|---|---|
+| **Histogram** | how many trials fall in each bin, as bars; the bin count starts at the Freedman–Diaconis choice |
+| **Histogram (Percent)** | the same, as a percent of the trials |
+| **CDF** | the fraction of trials at or below each value, as a step |
+| **Normal Quantile** | each value against the normal quantile of its rank — a straight line when the spread is Gaussian, a bend where a tail is not |
+| **Yield Sensitivity vs** ▸ a variable | the yield in each bin of that variable, as bars, with the trials per bin on the right axis; a nominal sits best where the bars are tallest |
+| **Normal Fit** | a normal curve with the data's mean and σ over a histogram |
+| **Back to Curves** | the trace exactly as it was |
+
+Each entry writes an ordinary expression — `histogram(trials.goal:Gain:worst, 23)` — into the trace's spec
+box, where you can see it and edit it (change the bin count, add a range). The statistics are taken over
+the `trial` axis; a trace without one offers a submenu per axis. The same pictures are available
+headlessly: `circuitrf plot … --trace cube=…,stat=histogram`.
+
+**Spec lines.** The run records the goals it scored, and a plot of a goal's value draws that goal's limits
+as dashed lines: on a histogram, CDF or normal plot of `goal:<g>:worst`, a vertical line at each limit (a
+sloped limit at its tighter end); on the curves of every trial over the goal's swept axis, the limit
+across the goal's range, sloped where it slopes. **Spec lines** in the Plot Inspector turns them off.
+
+**The statistics table.** The **Σ** toolbar button adds a table of the selected result: a row for each
+goal's worst value and each scalar measure, with mean, σ, min, max, median, the 1st and 99th percentile,
+skew, kurtosis, Cpk and the distance to the limit in σ, and each goal's yield with its confidence
+interval.
+
+**Draw style.** Any trace on a rectangular plot can be drawn as a line, as bars or as a step; bars stand on
+zero and a family of them stands side by side within each bin.
+
 ## Load-pull contours {#contours}
 
 {{ui: plot-loadpull-contours}}
@@ -292,7 +328,8 @@ constellation are extrapolation.
 {{toolbar: datadisplay}}
 
 The groups, left to right: the **source picker**, which chooses the data source new traces bind to; the
-four **plot types**, which add a plot of that kind; **add trace**; the **zoom and fit** controls; **undo
+four **plot types**, which add a plot of that kind; the **statistics table** of a Monte Carlo result;
+**add trace**; the **zoom and fit** controls; **undo
 and redo**, which cover the whole display and not just the selected plot; and **save**, **open** and
 **export**.
 

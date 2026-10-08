@@ -62,6 +62,8 @@ internal sealed class LibraryDataSources(DataSourceLibraryViewModel? library) : 
 
     public bool HasMultipleSources => library?.HasMultipleSources ?? false;
 
+    public bool IsLive(string absPath) => library?.IsPublished(absPath) ?? false;
+
     public DataSet? SelectedData
     {
         get

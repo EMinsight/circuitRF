@@ -31,34 +31,7 @@ public static class TraceGoalReader
         };
         if (common.Unsupported is not null) return common;
 
-        if (trace.IsCubeBound)
-        {
-            string? body = trace.PickerBody(forExpression: true);
-            var transform = trace.Transform;
-            if (body is null)
-            {
-                // A typed expression already carries its own functions; the card's transform does not apply.
-                body = trace.Expression;
-                transform = CubeTransform.None;
-            }
-            int row = 0, col = 0;
-            if (trace.Slice is { } slice)
-                foreach (var s in slice)
-                {
-                    if (s.Role != AxisRole.PinToIndex) continue;
-                    if (s.AxisName == "i") row = s.Index + 1;
-                    if (s.AxisName == "j") col = s.Index + 1;
-                }
-            return common with
-            {
-                Kind = TraceGoalKind.Cube,
-                Body = body,
-                Transform = Map(transform),
-                ValueIsComplex = trace.CubeDataIsComplex,
-                Analysis = AnalysisOf(trace.CubeName ?? body, source),
-                Row = row, Col = col,
-            };
-        }
+        if (trace.IsCubeBound) return CubeSource(trace, source, common);
 
         string? sCube = source is null ? null : NetworkMetrics.FindSCubeSpec(source);
         var network = common with
@@ -103,6 +76,46 @@ public static class TraceGoalReader
             PassivityWholeNetwork = trace.PassivityWholeNetwork,
             // The card plots group delay in ns; group_delay() is in seconds.
             MarkerUnit = trace.Derived == DerivedParameters.GroupDelay ? "ns" : "",
+        };
+    }
+
+    /// <summary>
+    /// The expression a cube trace's goal would read — <see cref="TraceToGoal"/>'s translation, without a plot's
+    /// window or marker — or null when the trace cannot be a goal. What the spec lines (brief-yield-8 R-ya8-3) match a
+    /// curve to a goal with, so the one place that knows how a trace and a goal correspond is this translation.
+    /// </summary>
+    public static string? GoalExpressionOf(Trace trace, DataSet? source)
+    {
+        if (!trace.IsCubeBound || Unsupported(trace, source) is not null) return null;
+        return TraceToGoal.Translate(CubeSource(trace, source, new TraceGoalSource())).Goal?.Expression;
+    }
+
+    private static TraceGoalSource CubeSource(Trace trace, DataSet? source, TraceGoalSource common)
+    {
+        string? body = trace.PickerBody(forExpression: true);
+        var transform = trace.Transform;
+        if (body is null)
+        {
+            // A typed expression already carries its own functions; the card's transform does not apply.
+            body = trace.Expression;
+            transform = CubeTransform.None;
+        }
+        int row = 0, col = 0;
+        if (trace.Slice is { } slice)
+            foreach (var s in slice)
+            {
+                if (s.Role != AxisRole.PinToIndex) continue;
+                if (s.AxisName == "i") row = s.Index + 1;
+                if (s.AxisName == "j") col = s.Index + 1;
+            }
+        return common with
+        {
+            Kind = TraceGoalKind.Cube,
+            Body = body,
+            Transform = Map(transform),
+            ValueIsComplex = trace.CubeDataIsComplex,
+            Analysis = AnalysisOf(trace.CubeName ?? body, source),
+            Row = row, Col = col,
         };
     }
 

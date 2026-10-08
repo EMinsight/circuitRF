@@ -427,6 +427,15 @@ with `with=`, `set=A;B`, `z0=`, `side=G|L` and `gi=` for the metrics that read t
 `src=`/`load=`/`gammaS=`/`gammaL=`/`theta=`/`passive=` for the envelope. It writes the same `.cdd`
 the window writes, so the byte-identity gate covers probe traces with no new plotting path.
 
+## 9b. The Statistics menu (brief-yield-8)
+
+The chart-bar button under the trash can, on a Rect plot's cube trace. It rewrites the trace as a histogram (count or
+percent), CDF or normal quantile — over `trial` when the trace has that axis, else one submenu per axis — or as a
+yield sensitivity against each of the source's statistical variables, toggles a histogram's normal fit, and goes
+**Back to Curves**. Every entry writes an ORDINARY expression and a draw style, so the spec box shows what was done
+and can edit it; the trace remembers what it was before the first entry (`StatisticsOrigin`). The menu is
+`TraceStatistics` in `src/Render`, which `plot --trace …,stat=` calls too. Table in `yield.md` §12.2.
+
 ---
 
 ## 10. Interface reference (for user documentation)
@@ -449,6 +458,8 @@ A condensed cheat-sheet to expand into end-user docs:
   `Gain vs Pout`. Families follow the Y side automatically; the X side can come from another loaded
   file. See `plot-versus.md`.
 - **Operating points (no sweep):** values are scalars — view them on a **Table**.
+- **A Monte Carlo result:** the **Statistics** button turns a trace into a histogram, CDF, normal quantile or yield
+  sensitivity; **Back to Curves** undoes it. A goal's limits are drawn as dashed spec lines.
 - **A WSProbe node:** pick the run's `▸ WSProbe` group, then the quantity; the section below chooses
   which probe it is taken at. `1/H0` and `1/Y0` on a Polar plot are the document's own stability
   reading, and the card reports the crossings it finds beside them.

@@ -438,6 +438,23 @@ public partial class PlotInspectorViewModel : ViewModelBase
     /// </summary>
     public bool HasPatternControls => IsPolarPlot || IsSurfacePlot;
 
+    /// <summary>The Spec lines toggle (brief-yield-8 R-ya8-3) is offered on a Rect plot where some trace draws a goal
+    /// a result recorded — the only place a spec line exists.</summary>
+    public bool ShowSpecLinesToggle => IsRectPlot && _plot.Traces.Any(t => t.SpecLines.Count > 0);
+
+    /// <summary>Draw the goals' limits on this plot — <see cref="Plot.ShowSpecLines"/>, on by default.</summary>
+    public bool SpecLines
+    {
+        get => _plot.SpecLinesOn;
+        set
+        {
+            if (_plot.SpecLinesOn == value) return;
+            _plot.ShowSpecLines = value;
+            OnPropertyChanged();
+            PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
     /// <summary>
     /// Bearings printed around the rim — <see cref="Plot.ShowPolarAngleLabels"/>. Turning it on
     /// shrinks the disc to make room, so it goes through <see cref="ApplyRadialChange"/> like every
@@ -1341,6 +1358,27 @@ public partial class PlotInspectorViewModel : ViewModelBase
         return trace;
     }
 
+    /// <summary>
+    /// Adds a trace another trace's card made — a yield sensitivity's trials-per-bin series (brief-yield-8 R-ya8-2) —
+    /// resolved and with its own card, exactly as Add Trace finishes one.
+    /// </summary>
+    internal TraceRowViewModel AddResolvedTrace(Trace trace)
+    {
+        if (trace.IsCubeBound)
+            TraceResolve.ResolveCubeTrace(trace, Sources, _plot.PlotType, _plot.FreqUnits);
+        _plot.Traces.Add(trace);
+        _plot.Autoscale();
+        var vm = new TraceRowViewModel(trace, this);
+        Traces.Add(vm);
+        RefreshAddCommand();
+        PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
+        PlotStructureChanged?.Invoke(this, EventArgs.Empty);
+        return vm;
+    }
+
+    /// <summary>The plot this inspector edits.</summary>
+    internal Plot Plot => _plot;
+
     public void RemoveTrace(TraceRowViewModel vm)
     {
         vm.UnsubscribeFromLibrary();
@@ -1358,6 +1396,7 @@ public partial class PlotInspectorViewModel : ViewModelBase
         foreach (var t in _plot.Traces) ResolveOrRebuild(t);
         _plot.Autoscale();
         foreach (var vm in Traces) vm.RefreshDescription();
+        OnPropertyChanged(nameof(ShowSpecLinesToggle));
         PlotNeedsRedraw?.Invoke(this, EventArgs.Empty);
     }
 

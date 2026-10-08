@@ -6,7 +6,7 @@ namespace CircuitRF.Core.Expressions;
 /// Reductions over one axis of a cube (docs/design/measurements.md "Reductions over an axis"): the band worst cases
 /// <c>max_over</c>/<c>min_over</c>, and the statistics of a sample — <c>mean_over</c>, <c>std_over</c>,
 /// <c>median_over</c>, <c>pctl_over</c>, <c>skew_over</c>, <c>kurt_over</c>, <c>yield_over</c>, <c>cpk</c>,
-/// <c>sigma_to</c> — plus three that build a new axis: <c>histogram</c>, <c>cdf</c> and <c>yield_sens</c>.
+/// <c>sigma_to</c> — plus four that build a new axis: <c>histogram</c>, <c>cdf</c>, <c>normq</c> and <c>yield_sens</c>.
 ///
 /// <para><b>One operand rule.</b> <c>f(x [, fixed…] [, lo, hi] [, "axis"])</c>: the axis defaults to <c>trial</c>
 /// (a Monte Carlo run's, docs/design/yield.md §8), then <c>freq</c>, then a rank-1 cube's only axis; a range keeps
@@ -30,7 +30,7 @@ public sealed partial class Evaluator
     public static IReadOnlySet<string> AxisFunctions { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         "max_over", "min_over", "mean_over", "std_over", "median_over", "pctl_over", "skew_over", "kurt_over",
-        "yield_over", "cpk", "sigma_to", "histogram", "cdf", "yield_sens",
+        "yield_over", "cpk", "sigma_to", "histogram", "cdf", "normq", "yield_sens",
     };
 
     /// <summary>Whether <paramref name="expression"/> calls one of <see cref="AxisFunctions"/> — a name followed by
@@ -134,15 +134,28 @@ public sealed partial class Evaluator
 
     // ── Functions that build an axis ────────────────────────────────────────────────────
 
-    /// <summary><c>histogram(x, bins [, lo, hi])</c> — counts over a <c>bin</c> axis of bin centres; companion
-    /// <c>width</c>.</summary>
+    /// <summary><c>histogram(x, bins [, lo, hi] [, "count"|"percent"])</c> — counts (or the percent of the present
+    /// values) over a <c>bin</c> axis of bin centres; companion <c>width</c>.</summary>
     private Value EvalHistogram(CallExpr cl, Scope scope)
     {
-        if (cl.Args.Length is not (2 or 4)) throw new ArityException("histogram", 2, cl.Args.Length);
+        if (cl.Args.Length is < 2 or > 5) throw new ArityException("histogram", 2, cl.Args.Length);
         var x = OneAxis(EvalExpr(cl.Args[0], scope), "histogram");
         int bins = Bins(EvalExpr(cl.Args[1], scope), "histogram");
+        int rest = cl.Args.Length - 2;
+        bool percent = false;
+        if (rest is 1 or 3)
+        {
+            var mode = EvalExpr(cl.Args[^1], scope);
+            string m = mode.Kind == ValueKind.String ? mode.AsString() : "";
+            percent = m switch
+            {
+                "count"   => false,
+                "percent" => true,
+                _ => throw new ExpressionException("histogram(): the last argument is \"count\" or \"percent\", e.g. histogram(x, 20, \"percent\")."),
+            };
+        }
         double? lo = null, hi = null;
-        if (cl.Args.Length == 4)
+        if (rest >= 2)
         {
             var (a, b) = (EvalExpr(cl.Args[2], scope), EvalExpr(cl.Args[3], scope));
             if (a.Kind != ValueKind.Real || b.Kind != ValueKind.Real)
@@ -153,9 +166,16 @@ public sealed partial class Evaluator
         var (centres, width, index) = SampleStatistics.Bin(x.RealValues, bins, lo, hi);
         var counts = new double[bins];
         foreach (int k in index) if (k >= 0) counts[k]++;
+        if (percent)
+        {
+            // Of every value that is a number, inside the range or not — so bars outside [lo, hi] are missing
+            // percent rather than the rest being rescaled to sum to 100.
+            int n = SampleStatistics.Present(x.RealValues).Length;
+            for (int k = 0; k < bins; k++) counts[k] = n == 0 ? double.NaN : 100.0 * counts[k] / n;
+        }
         var axis = new Axis("bin", centres, x.Unit);
         _companions = new() { ["width"] = new DataCube([axis], [.. centres.Select(_ => width)]) { Unit = x.Unit } };
-        return new Value(new DataCube([axis], counts));
+        return new Value(new DataCube([axis], counts) { Unit = percent ? "%" : "" });
     }
 
     /// <summary><c>cdf(x)</c> — the empirical CDF: the present values sorted, as a <c>value</c> axis, against the
@@ -170,6 +190,18 @@ public sealed partial class Evaluator
         var fraction = new double[sorted.Length];
         for (int i = 0; i < sorted.Length; i++) fraction[i] = (i + 1.0) / sorted.Length;
         return new Value(new DataCube([new Axis("value", sorted, x.Unit)], fraction));
+    }
+
+    /// <summary><c>normq(x)</c> — the normal probability plot: the present values sorted, as a <c>value</c> axis,
+    /// against the standard normal quantile of each one's plotting position (<see cref="SampleStatistics.NormalScores"/>).
+    /// A Gaussian sample draws a straight line.</summary>
+    private Value EvalNormq(CallExpr cl, Scope scope)
+    {
+        if (cl.Args.Length != 1) throw new ArityException("normq", 1, cl.Args.Length);
+        var x = OneAxis(EvalExpr(cl.Args[0], scope), "normq");
+        var (sorted, z) = SampleStatistics.NormalScores(x.RealValues);
+        if (sorted.Length == 0) throw new ExpressionException("normq(): the value has no points that are numbers.");
+        return new Value(new DataCube([new Axis("value", sorted, x.Unit)], z));
     }
 
     /// <summary><c>yield_sens(pass, x, bins)</c> — per bin of x, the fraction of trials that pass; companions

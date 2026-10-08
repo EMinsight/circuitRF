@@ -82,6 +82,14 @@ public static class TraceResolve
                       sources.DisplayNameFor(t.XSourcePath!) ?? t.XSourcePath!))
             : null;
 
+        // A LIVE histogram holds its bins (brief-yield-8 R-ya8-7): from the first frame with enough trials the range
+        // is fixed, so the bars grow rather than jump; once the source is a file again it is re-derived.
+        if (ds is not null && t.Expression is { } he && TraceStatistics.IsUnrangedHistogram(he)
+            && t.SourcePath is { } sp && sources.IsLive(sp))
+            t.HeldBinRange ??= TraceStatistics.HoldRange(he, ds);
+        else
+            t.HeldBinRange = null;
+
         SetCubeDataFrom(t, ds, plotType, freqUnit, xDs);
     }
 
@@ -99,9 +107,20 @@ public static class TraceResolve
                                         DataSet? xDs = null)
     {
         var probe = new ResolveProbe();
+        t.BarWidth  = null;
+        t.NormalFit = null;
         try
         {
             SetCubeDataFromCore(t, ds, plotType, freqUnit, xDs, probe);
+            // The statistical pictures' own marks (brief-yield-8): the fit over a histogram, and the limits of the
+            // goals the trace draws. Read from the same DataSet, by the same expression engine, in the window and
+            // in the CLI alike.
+            if (ds is not null)
+            {
+                if (t.ShowNormalFit && t.ExpressionError is null) t.NormalFit = TraceStatistics.NormalFitOf(t, ds);
+                t.SpecLines = SpecLineResolve.For(t, ds);
+            }
+            else t.SpecLines = [];
         }
         catch (Exception ex)
         {
@@ -389,10 +408,14 @@ public static class TraceResolve
             // Only the Y half goes to the evaluator; the X half is resolved separately below.
             string yExpr = VersusSpec.TrySplit(t.Expression, out var ySide, out _, out _)
                 ? ySide : t.Expression;
+            if (t.HeldBinRange is { } held) yExpr = TraceStatistics.WithBinRange(yExpr, held.Lo, held.Hi);
             if (TraceExpression.TryEvaluate(yExpr, ds, plotType,
                     out var xVals, out var cz, out var rz,
-                    out var xName, out var xUnit, out var xLabels, out var exprErr))
+                    out var xName, out var xUnit, out var xLabels, out var companions, out var exprErr))
             {
+                // A histogram's own bin width, which its bars are drawn at (R-ya8-1).
+                if (companions.TryGetValue("width", out var w) && w.RealValues is { Length: > 0 } wv && wv[0] > 0)
+                    t.BarWidth = wv[0];
                 if (t.IsVersus)
                 {
                     int yN = cz?.Length ?? rz?.Length ?? 0;
