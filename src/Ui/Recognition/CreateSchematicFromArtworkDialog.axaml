@@ -9,12 +9,26 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:rec="using:CircuitRF.Ui.Recognition"
+        xmlns:tun="using:CircuitRF.Ui.Tuning"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="CircuitRF.Ui.Recognition.CreateSchematicFromArtworkDialog"
         x:DataType="rec:CreateSchematicFromArtworkViewModel"
         Title="{Binding Title}"
         Width="1060" Height="760"
         MinWidth="760" MinHeight="520"
         WindowStartupLocation="CenterOwner">
+
+    <Window.Resources>
+        <!-- The digits menu: one radio item per choice (TuningDigitsChoice), as the Optimizer's header has. -->
+        <ControlTheme x:Key="DigitsMenuItem" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}"
+                      x:DataType="tun:TuningDigitsChoice">
+            <Setter Property="Header" Value="{Binding Label}"/>
+            <Setter Property="ToggleType" Value="Radio"/>
+            <Setter Property="IsChecked" Value="{Binding IsChecked, Mode=OneWay}"/>
+            <Setter Property="Command" Value="{Binding Command}"/>
+            <Setter Property="CommandParameter" Value="{Binding Digits}"/>
+        </ControlTheme>
+    </Window.Resources>
 
     <Window.Styles>
         <Style Selector="TextBox.invalid">
@@ -119,6 +133,17 @@
             <TextBox Text="{Binding StopText}" Width="90" ToolTip.Tip="Stop, with its unit. Also the frequency a TLIN's F and coupled lines are judged at."/>
             <TextBox Text="{Binding PointsText}" Width="60" Margin="10,0,0,0" ToolTip.Tip="Points."/>
             <TextBlock Classes="label" Text="pts" Margin="6,0,0,0"/>
+
+            <TextBlock Classes="label" Text="Values" Margin="24,0,6,0"/>
+            <Button Padding="6,2" ToolTip.Tip="Significant digits for every value the schematic is created with">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <mi:MaterialIcon Kind="DecimalDecrease" Width="14" Height="14"/>
+                    <TextBlock Text="{Binding DigitsLabel}" FontSize="12" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Button.Flyout>
+                    <MenuFlyout ItemsSource="{Binding DigitsChoices}" ItemContainerTheme="{StaticResource DigitsMenuItem}"/>
+                </Button.Flyout>
+            </Button>
         </StackPanel>
 
         <!-- ── Companion files ──────────────────────────────────────────────────────────────── -->
@@ -196,7 +221,9 @@
         </Border>
 
         <!-- ── The report strip: one line per class, a class with anchors expands to them ───── -->
-        <ScrollViewer Grid.Row="7" MaxHeight="150" VerticalScrollBarVisibility="Auto">
+        <!-- Its height is pinned when a line is expanded (code-behind), so the expansion scrolls inside the strip
+             rather than growing it upward over the parts table. -->
+        <ScrollViewer x:Name="ReportStrip" Grid.Row="7" MaxHeight="150" VerticalScrollBarVisibility="Auto">
             <ItemsControl ItemsSource="{Binding ReportLines}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="rec:RecognitionReportLineViewModel">
@@ -205,6 +232,7 @@
                                 <!-- A fixed column, so a line with nothing to expand still starts where the others do. -->
                                 <Panel Width="18">
                                     <ToggleButton IsChecked="{Binding IsExpanded}" IsVisible="{Binding HasAnchors}"
+                                                  Click="OnReportExpandClick"
                                                   Content="▸" Padding="3,0" MinHeight="0" FontSize="10"/>
                                 </Panel>
                                 <TextBlock Text="{Binding Text}" FontSize="11" TextWrapping="Wrap" MaxWidth="980"/>

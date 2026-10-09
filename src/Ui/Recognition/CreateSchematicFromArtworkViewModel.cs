@@ -32,6 +32,7 @@ using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.Layout.Recognition;
 using CircuitRF.Design.Layout.Recognition.Silkscreen;
 using CircuitRF.Engine;
+using CircuitRF.Ui.Tuning;
 
 namespace CircuitRF.Ui.Recognition;
 
@@ -232,6 +233,25 @@ public sealed partial class CreateSchematicFromArtworkViewModel : ObservableObje
     partial void OnStartTextChanged(string value) => ScheduleRecognition();
     partial void OnStopTextChanged(string value) => ScheduleRecognition();
     partial void OnPointsTextChanged(string value) => ScheduleRecognition();
+
+    /// <summary>The significant figures the circuit's numbers are written with — the CLI's <c>--digits</c>. Only the
+    /// emitted circuit reads it, so a change re-runs nothing.</summary>
+    [ObservableProperty] private int _digits = RecognitionEmitOptions.DefaultDigits;
+
+    /// <summary>The digits menu: the Optimizer's choices, one radio item each.</summary>
+    public IReadOnlyList<TuningDigitsChoice> DigitsChoices
+        => [.. TuningDigits.Choices.Select(d => new TuningDigitsChoice(d, d == Digits, SetDigitsCommand))];
+
+    public string DigitsLabel => TuningDigits.Label(Digits);
+
+    [RelayCommand]
+    private void SetDigits(int digits) => Digits = digits;
+
+    partial void OnDigitsChanged(int value)
+    {
+        OnPropertyChanged(nameof(DigitsChoices));
+        OnPropertyChanged(nameof(DigitsLabel));
+    }
 
     // ── companion files ──────────────────────────────────────────────────────────────────────────────
 
@@ -679,7 +699,7 @@ public sealed partial class CreateSchematicFromArtworkViewModel : ObservableObje
         var start = RecognitionSweep.Parse(StartText) is { } s && !(s.Text == _basis.StartExpr && s.Unit == _basis.StartUnit) ? s : (RecognitionFrequency?)null;
         int? npts = int.TryParse(PointsText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)
                     && n != (_basis.NumPoints ?? RecognitionEmitOptions.DefaultSweep.NumPoints) ? n : null;
-        return new RecognitionEmitOptions { Sweep = RecognitionSweep.Compose(_base.EmSetup, start, StatedStop(), npts) };
+        return new RecognitionEmitOptions { Sweep = RecognitionSweep.Compose(_base.EmSetup, start, StatedStop(), npts), Digits = Digits };
     }
 
     private RecognitionFrequency? StatedStop() =>

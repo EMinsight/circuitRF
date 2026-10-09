@@ -48,6 +48,8 @@ public static class RecognitionProvenance
         if (o.GroundNet is { Length: > 0 } net) options["groundNet"] = net;
         if (o.GroundAt is { } at) options["groundAt"] = $"{at.X},{at.Y}";
         if (o.TopFrequencyHz is { } top) options["topFrequencyHz"] = Num(top);
+        if (emit is { Digits: not RecognitionEmitOptions.DefaultDigits } e)
+            options["digits"] = e.Digits.ToString(CultureInfo.InvariantCulture);
         if (emit?.Sweep is { } sweep)
             options["sweep"] = $"{sweep.StartExpr} {sweep.StartUnit} to {sweep.StopExpr} {sweep.StopUnit}" +
                                (sweep.NumPoints is { } n ? $", {n} points" : $", step {sweep.StepExpr} {sweep.StepUnit}");

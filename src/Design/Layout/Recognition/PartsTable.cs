@@ -224,7 +224,11 @@ public sealed record PartsTable(IReadOnlyList<PartRow> Rows, RailRf.RailLengthFo
 
     /// <summary>A value with its unit, the way the table writes it — <c>4.7 Ohm</c>, <c>100 pF</c>,
     /// <c>1 uH</c> — which the bill-of-materials value reader reads back.</summary>
-    public static string ValueText(double si, PartKind kind)
+    public static string ValueText(double si, PartKind kind) => ValueText(si, kind, null);
+
+    /// <summary><see cref="ValueText(double, PartKind)"/> with the number to <paramref name="digits"/> significant
+    /// figures (<see cref="RecognitionEmitOptions.Spell"/>); null writes every figure the table does.</summary>
+    public static string ValueText(double si, PartKind kind, int? digits)
     {
         string unit = kind switch { PartKind.R => "Ohm", PartKind.L => "H", _ => "F" };
         if (si == 0) return $"0 {unit}";
@@ -233,7 +237,9 @@ public sealed record PartsTable(IReadOnlyList<PartRow> Rows, RailRf.RailLengthFo
             : [(1, ""), (1e-3, "m"), (1e-6, "u"), (1e-9, "n"), (1e-12, "p"), (1e-15, "f")];
         double a = Math.Abs(si);
         var (scale, prefix) = prefixes.FirstOrDefault(p => a >= p.Scale * 0.999_999_999, prefixes[^1]);
-        return $"{(si / scale).ToString("0.############", CultureInfo.InvariantCulture)} {prefix}{unit}";
+        string number = digits is int d ? RecognitionEmitOptions.Spell(si / scale, d)
+                                        : (si / scale).ToString("0.############", CultureInfo.InvariantCulture);
+        return $"{number} {prefix}{unit}";
     }
 
     /// <summary>Natural order: <c>C2</c> before <c>C10</c>, <c>C_A2</c> before <c>C_A10</c>.</summary>

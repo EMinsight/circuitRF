@@ -24,6 +24,18 @@ public partial class CreateSchematicFromArtworkDialog : Window
         vm.PickImportPathAsync = () => PickOpen("Import parts table", new FilePickerFileType("CSV") { Patterns = ["*.csv"] });
         vm.PickExportPathAsync = PickExport;
         Closed += (_, _) => vm.Close();
+        // A new report arrives collapsed: let the strip fit it again.
+        vm.ReportLines.CollectionChanged += (_, _) => ReportStrip.Height = double.NaN;
+    }
+
+    /// <summary>
+    /// Expanding a report line must not grow the strip: in its Auto row it would take the height from the parts
+    /// table above and its top edge would climb until it reached its MaxHeight. Pinning it at its present height
+    /// before the layout pass the toggle causes makes the expansion scroll inside it instead.
+    /// </summary>
+    private void OnReportExpandClick(object? sender, RoutedEventArgs e)
+    {
+        if (double.IsNaN(ReportStrip.Height)) ReportStrip.Height = ReportStrip.Bounds.Height;
     }
 
     private async Task<string?> PickOpen(string title, FilePickerFileType? type)

@@ -103,6 +103,7 @@ is how you model one section of a board without any EM. Ground is always read fr
 | **Ground vias** | **Model as VIAGND** keeps a via that grounds a part's own pad or a line end as a stackup-bound `VIAGND` (at most four per pad). **Plain GND** writes a plain ground instead. Stitching vias are dropped either way. |
 | **Coplanar lines** | How a line with ground close beside it is read: **Auto**, **Microstrip** or **GCPW** &mdash; see [the coplanar choice](#coplanar). |
 | **Frequency** | The S-parameter analysis written with the schematic. Default: the layout's EM setup's sweep, else 100 MHz – 6 GHz in 201 points. The stop frequency is also the frequency coupled lines and each `TLIN` are judged at. |
+| **Values** | The significant digits every number in the schematic is written with &mdash; line widths and lengths, via sizes, part values and tuning ranges: **3**, **4**, **5**, **6** (the default) or **All digits**. |
 
 ## BOM and placement files {#companions}
 

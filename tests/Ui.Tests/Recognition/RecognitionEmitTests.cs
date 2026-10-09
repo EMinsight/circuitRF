@@ -67,6 +67,32 @@ public sealed class RecognitionEmitTests(ITestOutputHelper output) : IDisposable
         Assert.True(File.Exists(s2p));
     }
 
+    [Fact]
+    public void Digits_SetsTheSignificantFiguresEveryNumberIsWrittenWith()
+    {
+        var input = EmitBoards.Saved(_root);
+        var result = ArtworkRecognition.Recognize(input);
+        Assert.True(result.Ok, result.Refusal);
+        var all = RecognitionEmit.Build(result, input, new() { Digits = RecognitionEmitOptions.AllDigits }).TestBench;
+        var two = RecognitionEmit.Build(result, input, new() { Digits = 2 }).TestBench;
+
+        // Every number the 2-digit circuit carries is the full one rounded, and at least one was longer.
+        int shortened = 0;
+        foreach (var (a, b) in all.Instances.Zip(two.Instances))
+            foreach (var (oa, ob) in a.Overrides.Zip(b.Overrides))
+            {
+                if (!double.TryParse(oa.Expression, System.Globalization.NumberStyles.Float,
+                                     System.Globalization.CultureInfo.InvariantCulture, out double full)) continue;
+                Assert.Equal(RecognitionEmitOptions.Spell(full, 2), ob.Expression);
+                if (ob.Expression != oa.Expression) shortened++;
+            }
+        Assert.True(shortened > 0, "the board carries no value longer than two figures");
+
+        // Plain notation at any size: the netlist reads a bare number.
+        Assert.Equal("1200000", RecognitionEmitOptions.Spell(1_234_567, 2));
+        Assert.Equal("0.0000123", RecognitionEmitOptions.Spell(0.0000123456, 3));
+    }
+
     private static int Cli(params string[] args)
     {
         JsonRun.Reset();

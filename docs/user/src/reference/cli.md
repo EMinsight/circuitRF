@@ -997,7 +997,8 @@ example workspace.
 <span class="prompt">  </span>[--parts-out parts.csv] [--parts parts.csv] [--bom FILE] [--placement FILE]
 <span class="prompt">  </span>[--placement-origin symbol|body|pin1] [--placement-unit mm|mil|in]
 <span class="prompt">  </span>[--region x0,y0,x1,y1] [--ground NET | --ground-at x,y] [--vias model|ground]
-<span class="prompt">  </span>[--coplanar auto|microstrip|gcpw] [--coplanar-factor K] [--start F] [--stop F] [--npts N]</code></pre>
+<span class="prompt">  </span>[--coplanar auto|microstrip|gcpw] [--coplanar-factor K] [--start F] [--stop F] [--npts N]
+<span class="prompt">  </span>[--digits N]</code></pre>
 
 `recognize` reads a board's copper and writes the circuit it implements: the ground, the vias that matter,
 the ports, every two-terminal part as an R, L, C or S-parameter file, and every trace as an `MLIN` (with its
@@ -1025,6 +1026,7 @@ and the **parts table** as CSV. Review that table before writing anything:
 | `--vias model\|ground` | Keep vias to ground as `VIAGND` (default), or make them plain grounds. |
 | `--coplanar auto\|microstrip\|gcpw`, `--coplanar-factor K` | How a line with ground close beside it is read. |
 | `--start`, `--stop`, `--npts` | The analysis range, each frequency with its unit. Default: the layout's EM setup's sweep, else 100 MHz – 6 GHz in 201 points. |
+| `--digits N` | The significant digits every number in the circuit is written with, 1 to 15. Default 6. |
 
 **Exit 0** when the board was read (and written, when asked), **1** when it was refused &mdash; no technology,
 no copper in the region, no port &mdash; with nothing written, **130** on a cancellation. With `--json` the

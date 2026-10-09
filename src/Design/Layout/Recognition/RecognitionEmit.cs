@@ -29,6 +29,26 @@ public sealed record RecognitionEmitOptions
 
     /// <summary>100 MHz – 6 GHz, 201 points.</summary>
     public static FrequencySpec DefaultSweep => new("100", "6", 201, SweepKind.Linear, "MHz", "GHz");
+
+    /// <summary>The significant figures every number the circuit carries is written with — a line's widths and
+    /// lengths, a via's sizes, a port's Z, a part's value, a variable's start and its tuning range
+    /// (<c>--digits</c>, the dialog's digits menu).</summary>
+    public int Digits { get; init; } = DefaultDigits;
+
+    /// <summary>What a run that does not say gets.</summary>
+    public const int DefaultDigits = 6;
+
+    /// <summary>Every figure a double carries that survives a round trip as text.</summary>
+    public const int AllDigits = 15;
+
+    /// <summary><paramref name="v"/> to <paramref name="digits"/> significant figures, in plain notation —
+    /// <c>12.3457</c>, never <c>1.23457E+01</c>.</summary>
+    public static string Spell(double v, int digits)
+    {
+        if (v == 0 || !double.IsFinite(v)) return v == 0 ? "0" : v.ToString(CultureInfo.InvariantCulture);
+        double r = double.Parse(v.ToString("G" + Math.Clamp(digits, 1, AllDigits), CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+        return r.ToString("0.###############", CultureInfo.InvariantCulture);
+    }
 }
 
 /// <summary>The recognised circuit and what the drawing needs beside it.</summary>
@@ -107,6 +127,7 @@ public static class RecognitionEmit
         var tech = input.Technology;
         var notes = new List<string>();
         var protos = new List<Proto>();
+        int digits = options.Digits;
         var parent = new Dictionary<string, string>(StringComparer.Ordinal);
 
         string Find(string x)
@@ -131,7 +152,7 @@ public static class RecognitionEmit
                 Anchor = [(port.X, port.Y)], PortNumber = port.Number,
             };
             p.Parameters.Add(new ParameterAssignment("Num", port.Number.ToString(CultureInfo.InvariantCulture)));
-            p.Parameters.Add(new ParameterAssignment("Z", Num(port.Z0.Real), "Ohm"));
+            p.Parameters.Add(new ParameterAssignment("Z", Num(port.Z0.Real, digits), "Ohm"));
             protos.Add(p);
         }
 
@@ -164,7 +185,7 @@ public static class RecognitionEmit
             var part = new Proto { Type = row.ParameterName, Prefix = "", FixedName = name, Nodes = ends, Anchor = [(row.X, row.Y)] };
             if (row.Value is { } value)
             {
-                var (number, unit) = Split(PartsTable.ValueText(value, row.GeneratedKind));
+                var (number, unit) = Split(PartsTable.ValueText(value, row.GeneratedKind, digits));
                 part.Parameters.Add(new ParameterAssignment(row.ParameterName, number, unit));
             }
             else
@@ -191,7 +212,7 @@ public static class RecognitionEmit
                     var p = new Proto { Type = "VIA", Prefix = "V", Nodes = [NodeOf($"V{v + 1}.1"), NodeOf($"V{v + 1}.2")], Anchor = [(via.X, via.Y)] };
                     AddLayer(p, "FromLayer", ConductorOf(tech, board, via, 0));
                     AddLayer(p, "ToLayer", ConductorOf(tech, board, via, 1));
-                    AddViaSize(p, via, board.DbuPerMicron);
+                    AddViaSize(p, via, board.DbuPerMicron, digits);
                     protos.Add(p);
                     continue;
                 }
@@ -199,7 +220,7 @@ public static class RecognitionEmit
                 {
                     var p = new Proto { Type = "VIAGND", Prefix = "VG", Nodes = [NodeOf($"V{v + 1}.1"), Ground], Anchor = [(via.X, via.Y)] };
                     AddLayer(p, "FromLayer", ConductorOf(tech, board, via, 0));
-                    AddViaSize(p, via, board.DbuPerMicron);
+                    AddViaSize(p, via, board.DbuPerMicron, digits);
                     protos.Add(p);
                     continue;
                 }
@@ -219,7 +240,7 @@ public static class RecognitionEmit
                 Type = e.Type.ToString(), Prefix = LinePrefix(e.Type), Nodes = [.. e.Nodes.Select(NodeOf)], Anchor = e.Anchor,
             };
             foreach (var (k, value) in e.Parameters.OrderBy(kv => ParameterOrder(kv.Key)))
-                p.Parameters.Add(LineParameter(k, value));
+                p.Parameters.Add(LineParameter(k, value, digits));
             if (e.Type is not LineElementType.TLIN)
             {
                 AddLayer(p, "SignalLayer", e.SignalLayer);
@@ -279,7 +300,7 @@ public static class RecognitionEmit
         var tb = new TestBench("tb") { Technology = input.TechnologyPath is { } tp ? Path.GetFullPath(tp) : null };
         foreach (var (name, value, kind, _) in variables)
         {
-            var (number, unit) = Split(PartsTable.ValueText(value, kind));
+            var (number, unit) = Split(PartsTable.ValueText(value, kind, digits));
             tb.GlobalVariables.Add(new Variable(name, number, unit));
         }
         var anchors = new Dictionary<string, IReadOnlyList<(long X, long Y)>>(StringComparer.Ordinal);
@@ -307,7 +328,7 @@ public static class RecognitionEmit
                 tb.Tuning.Variables.Add(new TunableEntry
                 {
                     Key = name, Tune = true, Opt = false,
-                    Min = PartsTable.ValueText(lo, kind), Max = PartsTable.ValueText(hi, kind),
+                    Min = PartsTable.ValueText(lo, kind, digits), Max = PartsTable.ValueText(hi, kind, digits),
                 });
             }
         }
@@ -374,14 +395,16 @@ public static class RecognitionEmit
 
     /// <summary>One line parameter in the unit a person reads it in: lengths in mm, an angle in degrees, F in GHz,
     /// Z in Ω; Eeff, Miter and the dB/m losses bare.</summary>
-    private static ParameterAssignment LineParameter(string name, double value) => name switch
+    private static ParameterAssignment LineParameter(string name, double value, int digits) => name switch
     {
-        "W" or "W1" or "W2" or "W3" or "W4" or "G" or "L" => new(name, Num(value * 1e3), "mm"),
-        "Angle" => new(name, Num(value), "deg"),
-        "F" => new(name, Num(value / 1e9), "GHz"),
-        "Z" => new(name, Num(value), "Ohm"),
-        _ => new(name, Num(value)),
+        "W" or "W1" or "W2" or "W3" or "W4" or "G" or "L" => new(name, Num(value * 1e3, digits), "mm"),
+        "Angle" => new(name, Num(value, digits), "deg"),
+        "F" => new(name, Num(value / 1e9, digits), "GHz"),
+        "Z" => new(name, Num(value, digits), "Ohm"),
+        _ => new(name, Num(value, digits)),
     };
+
+    private static string Num(double v, int digits) => RecognitionEmitOptions.Spell(v, digits);
 
     private static void AddLayer(Proto p, string name, string? layer)
     {
@@ -391,10 +414,10 @@ public static class RecognitionEmit
             p.Parameters.Add(new ParameterAssignment(name, layer.Any(c => char.IsWhiteSpace(c) || c is '"' or ';') ? $"\"{layer}\"" : layer));
     }
 
-    private static void AddViaSize(Proto p, RecognizedVia via, int dbuPerMicron)
+    private static void AddViaSize(Proto p, RecognizedVia via, int dbuPerMicron, int digits)
     {
-        if (via.DrillDbu > 0) p.Parameters.Add(new ParameterAssignment("Drill", Num(via.DrillDbu / (double)dbuPerMicron / 1e3), "mm"));
-        if (via.PadDbu > 0) p.Parameters.Add(new ParameterAssignment("Pad", Num(via.PadDbu / (double)dbuPerMicron / 1e3), "mm"));
+        if (via.DrillDbu > 0) p.Parameters.Add(new ParameterAssignment("Drill", Num(via.DrillDbu / (double)dbuPerMicron / 1e3, digits), "mm"));
+        if (via.PadDbu > 0) p.Parameters.Add(new ParameterAssignment("Pad", Num(via.PadDbu / (double)dbuPerMicron / 1e3, digits), "mm"));
     }
 
     /// <summary>The stackup conductor a via's <paramref name="end"/>-th island is on: the island's first drawing
@@ -429,5 +452,4 @@ public static class RecognitionEmit
         return sp < 0 ? (valueText, null) : (valueText[..sp], valueText[(sp + 1)..]);
     }
 
-    private static string Num(double v) => v.ToString("0.#########", CultureInfo.InvariantCulture);
 }

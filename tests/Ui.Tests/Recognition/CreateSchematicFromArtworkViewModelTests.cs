@@ -131,6 +131,18 @@ public sealed class CreateSchematicFromArtworkViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task TheDigitsMenu_ReachesTheEmit_AndChecksItsChoice()
+    {
+        var vm = await Open(Cell("Board", CellViews.Layout), new RecordingRunner());
+        Assert.Equal(RecognitionEmitOptions.DefaultDigits, vm.BuildEmit().Digits);
+
+        vm.SetDigitsCommand.Execute(4);
+        Assert.Equal(4, vm.BuildEmit().Digits);
+        Assert.Equal(4, Assert.Single(vm.DigitsChoices, c => c.IsChecked).Digits);
+        Assert.Equal("4 digits", vm.DigitsLabel);
+    }
+
+    [Fact]
     public async Task APlacementFileThatDoesNotStateItsOrigin_HoldsRecognition_UntilOneIsChosen_AndNoneIsPreselected()
     {
         string placement = Path.Combine(_root, "place.csv");

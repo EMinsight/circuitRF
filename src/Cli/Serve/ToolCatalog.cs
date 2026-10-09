@@ -984,6 +984,8 @@ internal static class ToolCatalog
                         new("start", "--start", OptKind.Str, "Sweep start with its unit, e.g. 100MHz."),
                         new("stop", "--stop", OptKind.Str, "Sweep stop with its unit, e.g. 6GHz."),
                         new("npts", "--npts", OptKind.Integer, "Sweep points. Default 201."),
+                        new("digits", "--digits", OptKind.Integer,
+                            "Significant digits every value in the circuit is written with, 1 to 15. Default 6."),
                     ],
                     ""),
             ]),

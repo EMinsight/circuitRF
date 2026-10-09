@@ -38,6 +38,7 @@ internal static class Recognize
         public double? CoplanarFactor;
         public RecognitionFrequency? Start, Stop;
         public int? Npts;
+        public int? Digits;
     }
 
     public static int Run(string[] args)
@@ -72,7 +73,7 @@ internal static class Recognize
             "                 [--placement-origin symbol|body|pin1] [--placement-unit mm|mil|in]\n" +
             "                 [--region x0,y0,x1,y1] [--ground <net> | --ground-at x,y] [--vias model|ground]\n" +
             "                 [--coplanar auto|microstrip|gcpw] [--coplanar-factor k]\n" +
-            "                 [--start f] [--stop f] [--npts n]\n" +
+            "                 [--start f] [--stop f] [--npts n] [--digits n]\n" +
             "  Writes nothing unless -o, --into or --parts-out is given. Coordinates carry a unit (um, mm, mil).");
         return 1;
     }
@@ -151,6 +152,12 @@ internal static class Recognize
                     if (!int.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) || n < 2)
                         return Bad("a whole number of points, at least 2");
                     o.Npts = n;
+                    continue;
+                case "--digits" when hasValue:
+                    if (!int.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out int d)
+                        || d is < 1 or > RecognitionEmitOptions.AllDigits)
+                        return Bad($"a whole number of significant digits, 1 to {RecognitionEmitOptions.AllDigits}");
+                    o.Digits = d;
                     continue;
                 case "--start" when hasValue:
                     if (RecognitionSweep.Parse(args[++i]) is not { } start) return Bad("a frequency with its unit (Hz, kHz, MHz, GHz)");
@@ -270,7 +277,7 @@ internal static class Recognize
         if (o.Stop is { } top)                 options = options with { TopFrequencyHz = top.Hz };
         input = input with { Options = options };
 
-        var emit = new RecognitionEmitOptions { Sweep = Sweep(o, input) };
+        var emit = new RecognitionEmitOptions { Sweep = Sweep(o, input), Digits = o.Digits ?? RecognitionEmitOptions.DefaultDigits };
 
         // ── recognise and emit; --into writes the schematic, and only after everything else succeeded ─
         RecognitionResult result;
