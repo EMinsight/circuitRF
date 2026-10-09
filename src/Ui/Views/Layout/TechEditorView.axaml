@@ -878,15 +878,39 @@
                         </Panel>
                     </ScrollViewer>
 
-                    <!-- Transparent and 6 px: a grab strip, not a rule. The card Border below already
-                         draws the only line this seam needs. Hidden while either pane is collapsed —
-                         a splitter between a fixed row and a collapsed one moves nothing. -->
+                    <!-- A 6 px grab strip, not a rule: the card Border below already draws the only
+                         line this seam needs. The strip itself stays transparent, but it carries a
+                         centred grip pill — a bare transparent strip on the panel background is a
+                         control nobody can find. The pill darkens under the pointer and while dragged.
+                         Hidden while either pane is collapsed — a splitter between a fixed row and a
+                         collapsed one moves nothing. -->
                     <!-- ResizeBehavior stated rather than inferred: the default resolves it from the
                          splitter's own alignment, which is a property somebody could change for a
                          cosmetic reason and silently re-point what the drag moves. -->
                     <GridSplitter x:Name="StackupSplitter" Grid.Row="2" Height="6" ResizeDirection="Rows"
                                   ResizeBehavior="PreviousAndNext"
-                                  HorizontalAlignment="Stretch" Background="Transparent"/>
+                                  HorizontalAlignment="Stretch" Background="Transparent"
+                                  ToolTip.Tip="{x:Static lay:StackupCardText.StackupSplitterTip}">
+                        <GridSplitter.Styles>
+                            <Style Selector="GridSplitter /template/ Border#Grip">
+                                <Setter Property="Background" Value="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"/>
+                            </Style>
+                            <Style Selector="GridSplitter:pointerover /template/ Border#Grip">
+                                <Setter Property="Background" Value="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            </Style>
+                            <Style Selector="GridSplitter:pressed /template/ Border#Grip">
+                                <Setter Property="Background" Value="{DynamicResource SystemControlForegroundBaseMediumHighBrush}"/>
+                            </Style>
+                        </GridSplitter.Styles>
+                        <GridSplitter.Template>
+                            <ControlTemplate>
+                                <Border Background="{TemplateBinding Background}">
+                                    <Border x:Name="Grip" Width="48" Height="4" CornerRadius="2"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </GridSplitter.Template>
+                    </GridSplitter>
 
                     <!-- ── The cards pane: the filter row and the cards it filters ───────────────── -->
                     <DockPanel Grid.Row="3">

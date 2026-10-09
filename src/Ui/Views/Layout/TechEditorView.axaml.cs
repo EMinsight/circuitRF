@@ -70,6 +70,10 @@ public partial class TechEditorView : UserControl
         StackupDrawing.AddHandler(PointerPressedEvent, OnStackupDrawingPressed,
                                   RoutingStrategies.Bubble, handledEventsToo: true);
 
+        // Double-clicking the stackup splitter fits the drawing. TUNNELLING, so the second press is
+        // seen before the splitter's own handler starts a drag with it.
+        StackupSplitter.AddHandler(PointerPressedEvent, OnStackupSplitterPressed, RoutingStrategies.Tunnel);
+
         // R-stk3-9 — Esc clears the stackup selection, and R-stk4-6 — Esc reverts an open inline
         // editor before it does.
         //
@@ -249,6 +253,39 @@ public partial class TechEditorView : UserControl
         // A splitter between a collapsed pane and a starred one moves nothing, and a grab strip that
         // does nothing is one users pull at.
         if (StackupSplitter is not null) StackupSplitter.IsVisible = drawing && cards;
+    }
+
+    private void OnStackupSplitterPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.ClickCount < 2) return;
+        FitStackupDrawing();
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Moves the stackup splitter to just below the drawing — the drawing gets exactly its own height,
+    /// the whole cross-section with nothing to scroll, and the card pane takes the rest.
+    ///
+    /// <para><b>The CARD row is the one written</b>, and the drawing row stays starred, unlike
+    /// <see cref="ApplyStackupSplitForCapture"/>: the card row is the absolute height the splitter
+    /// owns while both panes are open, so this is the same state a drag would leave, and a collapse
+    /// then remembers it like any other. Neither pane is pushed past its own minimum — a stack too
+    /// tall for the window leaves the cards at theirs and the drawing still scrolls.</para>
+    /// </summary>
+    private void FitStackupDrawing()
+    {
+        if (StackupTabGrid is null || StackupDrawing is null || _subscribedVm is null) return;
+        if (!_subscribedVm.StackupDrawingExpanded || !_subscribedVm.StackupCardsExpanded) return;
+
+        var rows = StackupTabGrid.RowDefinitions;
+        if (rows.Count < 4) return;
+
+        var available = StackupTabGrid.Bounds.Height - rows[0].ActualHeight - rows[2].ActualHeight;
+        var drawing   = Math.Max(StackupDrawing.DesiredSize.Height, TechEditorMetrics.StackupDrawingMinHeight);
+        var cards     = Math.Max(available - drawing, TechEditorMetrics.StackupCardPaneMinHeight);
+
+        rows[3].Height  = new GridLength(cards);
+        _cardPaneHeight = rows[3].Height;
     }
 
     /// <summary>

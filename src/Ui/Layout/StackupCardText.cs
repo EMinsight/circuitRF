@@ -105,6 +105,10 @@ public static class StackupCardText
     public const string CardPaneExpanderTip =
         "Toggle card view.";
 
+    /// <summary>The splitter between the cross-section and the cards.</summary>
+    public const string StackupSplitterTip =
+        "Drag to resize. Double-click to fit the cross-section.";
+
     // ── Copy the drawing (R-stk7-4) ───────────────────────────────────────────────────────────────
 
     /// <summary>

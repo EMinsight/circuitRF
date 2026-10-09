@@ -428,6 +428,28 @@ public class TechEditorStackupTabLayoutTests
         Assert.Contains("if (ReferenceEquals(e.Source, StackupInlineEdit)) return;", code);
     }
 
+    /// <summary>
+    /// The splitter's grab strip is transparent, so it must draw a grip of its own — without one it is
+    /// the panel's colour and nobody can find it. Double-clicking it fits the drawing, taken on the
+    /// TUNNEL so the second press is seen before the splitter starts a drag with it.
+    /// </summary>
+    [Fact]
+    public void TheSplitterDrawsAVisibleGrip_AndDoubleClickFitsTheDrawing()
+    {
+        var tab = StackupTab();
+        int splitter = Require(tab, "<GridSplitter x:Name=\"StackupSplitter\"");
+        int close    = Require(tab[splitter..], "</GridSplitter>") + splitter;
+        var block    = tab[splitter..close];
+
+        Assert.Contains("x:Name=\"Grip\"", block);
+        Assert.Contains("GridSplitter /template/ Border#Grip", block);
+
+        var code = RepoFile(Path.Combine("src", "Ui", "Views", "Layout", "TechEditorView.axaml.cs"));
+        Assert.Contains("StackupSplitter.AddHandler(PointerPressedEvent, OnStackupSplitterPressed, RoutingStrategies.Tunnel);", code);
+        int pressed = Require(code, "private void OnStackupSplitterPressed(");
+        Assert.Contains("FitStackupDrawing();", code[pressed..code.IndexOf("private void FitStackupDrawing()", StringComparison.Ordinal)]);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>The Stackup TabItem's own text, so an assertion cannot accidentally be satisfied by
