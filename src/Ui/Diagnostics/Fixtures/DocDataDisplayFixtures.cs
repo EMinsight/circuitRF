@@ -478,8 +478,17 @@ public static partial class DocDataDisplayFixtures
         return new FigureScene(new PlotInspectorView { DataContext = plot.Inspector });
     }
 
+    /// <summary>
+    /// The document a whole-display figure draws. Pasting a config and Add Plot both leave the new
+    /// plots SELECTED, as they should in the application, and a figure drew that as the accent-blue
+    /// selection ring round the plot — so the selection is cleared here, the one call every such
+    /// figure makes last.
+    /// </summary>
     internal static DataDisplayDocument Document(DataDisplayDocumentViewModel vm, string title)
-        => new(title, vm);
+    {
+        vm.Window.DataDisplay?.SelectOnly((PlotContainerViewModel?)null);
+        return new(title, vm);
+    }
 
     /// <summary>
     /// Wait for an asynchronous view-model call by PUMPING the dispatcher, never by blocking on it.
