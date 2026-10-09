@@ -39241,3 +39241,19 @@ brief-gerber-import-target-technology R-gt-8/R-gt-10.
 - **Checking a figure with Svg.Skia: it ignores `fill-opacity` on `<text>`.** Disabled combo items are written with
   `fill-opacity="0.4"` and render dimmed in a browser, but Svg.Skia drew them at full strength. Rewriting it to
   `opacity` in the scratch rasteriser gives the browser's result.
+
+## Create Schematic from Artwork, round 15: export, the round trip back to a layout, orientation (2026-10-09)
+
+- **Export Parts… wrote the table without the edits just typed.** A Kind or Value edit is held as CSV overlay and does
+  not re-run recognition, so `_table` was behind the screen. Export writes `EditedTable()` — the overlay applied by
+  `PartsTableCsv.Read`, the same reader every re-run uses.
+- **Update Layout from Schematic into the recognised cell's own layout made an empty `.clay`** ("48 components model
+  existing artwork — not generated"). The skip is right only in the layout the schematic was recognised FROM; it is
+  now scoped to the provenance's `Layout` (`GeneratesArtworkModels`), and kept whenever the provenance or the target
+  path is missing. The new layout also takes the schematic's own `TechRef` (it took the workspace default, and the
+  divergence warning fired on the first run).
+- **File ▸ Export ▸ Bill of materials… was layout-only**, projecting placed footprints — which an imported Gerber board
+  has none of. A schematic now exports through `SchematicBom` in `BomWriter`'s columns.
+- **"Link symbol and footprint orientation"** (Settings, per user, default on). Off: `CarryRotation` carries nothing
+  and only advances the baseline, a new placement faces as its cell is drawn, and recognition's drawing does not put a
+  hanger above the line by its artwork side (`RecognitionEmitOptions.ArtworkSides`, CLI `--free-orientation`).

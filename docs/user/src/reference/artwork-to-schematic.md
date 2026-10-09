@@ -108,11 +108,29 @@ is how you model one section of a board without any EM. Ground is always read fr
 
 ## BOM and placement files {#companions}
 
-**BOM…** names a bill of materials: values, part numbers and kinds by designator. **Placement…** names a
+**BOM…** names a bill of materials: values, part numbers and kinds by designator. It reads:
+
+- a bill of materials with a header row &mdash; a column of designators, and any of value, footprint or package,
+  description or type, part number and quantity; grouped designators (`M1,M23`, `C1-C9`) and DNP rows are understood,
+  and a unit in the column after its number (`100`, `pF`) is read with it;
+- the file **File ▸ Export ▸ Bill of materials…** writes, from a layout or [from a schematic](#bom-export);
+- a circuitRF schematic (`.csch`) or netlist (`.cnl`, or a netlist saved under any other name), read as the circuit
+  it is: every resistor, capacitor, inductor and ferrite bead with its value and footprint.
+
+A kind the bill of materials states beats the one a designator implies: a ferrite bead `FB1` listed as `R` with
+`0.01 Ohm` is a resistor of that value. A part you placed on the board keeps its own kind.
+
+**Placement…** names a
 placement file: where each designator sits. A placement file that does not say which point of each part its
 coordinates are shows a three-way **Origin** choice &mdash; the footprint's symbol origin, the part body's
 centre, or pin 1 &mdash; with **nothing chosen**, and recognition waits until you choose. On an 0402 the
 difference is the width of a pad, so it is never guessed.
+
+### A bill of materials from your schematic {#bom-export}
+
+When you have the schematic the board was drawn from, open it and choose **File ▸ Export ▸ Bill of materials…**: it
+writes one row per part to fit &mdash; designator, value, footprint and type, a part disabled as Open listed as `DNP`
+&mdash; in the columns **BOM…** reads. Ports, sources, lines and vias are not listed.
 
 ## The parts table {#parts}
 
@@ -124,7 +142,7 @@ One row per part found on the board. **Kind**, **Value** and **Model** are yours
 | ● | Confidence: green for a placed part or a BOM that agrees with the pads, amber for one source, red for a land pattern alone. Its tooltip lists the evidence. |
 | **Kind** | R, L, C, Short, Open, MultiPin, Connector, Ignore, or `?` &mdash; an unknown kind is generated as a capacitor. |
 | **Connection** | Series, shunt, or why the part is left out (shorted, bridged, multi-pin). |
-| **Case** | The case size the land pattern matches. |
+| **Case** | The case size the land pattern matches. The part is written with that footprint (`smt:0402@N`). |
 | **Value** | With its unit (`10 pF`, `4.7 nH`, `49.9 Ohm`). Empty when unknown, showing the variable that stands for it; a value of the wrong dimension for the kind is outlined in red. |
 | **Model** | Ideal, a two-port Touchstone file found in the workspace, or **Browse…**. |
 | **Part number**, **X**, **Y** | From the BOM and the board. |
@@ -137,7 +155,8 @@ with a tuning entry, so it is a slider in the **Tuning** panel and a variable in
 simulation. Its starting value is chosen to be transparent (a series capacitor 100 pF, a shunt one 0.01 pF), so
 the first run shows the lines alone.
 
-Your edits are kept across every re-run the options cause. **Export Parts…** writes the table as CSV and
+Your edits are kept across every re-run the options cause. **Export Parts…** writes the table as CSV, with your
+edits in it, and
 **Import Parts…** reads an edited one back &mdash; the same file `circuitrf recognize --parts` reads, so a table
 can be corrected in a spreadsheet or by an agent and brought back.
 
@@ -173,6 +192,9 @@ the dialog and from the command line alike. They are kept with your own settings
 | A via grounding a pad or a line end | `VIAGND` (or `GND`) |
 | Stitching and plane-tie vias | Nothing &mdash; counted |
 | A part with more than two pads, a connector | Cut out; its pads on RF lines become ports |
+| Lines reaching no port and no part &mdash; traces to a pin of a part that is not modelled | Left out, and listed in the report |
+
+A `TLIN` is drawn with its Z, length, εeff and reference frequency on the schematic.
 
 Each line runs between the reference planes of the models either side of it: a part's pad edge, a via's land, half
 a width from a bend's corner or a tee's centre. That is where the models stop, so nothing is counted twice.
@@ -218,11 +240,18 @@ then place in the schematic by writing it.
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf recognize Board --placement Board.pos --bom Board.csv --into new:Board_model
 <span class="prompt">$ </span>circuitrf import part downloads/QFN-16.zip --into . --cell QFN-16</code></pre>
 
+### Where the ports go {#ports}
+
+Ports are found in this order: the ports of the layout's EM setup; then port labels and pins you placed on the
+layout; then every line that reaches the board's edge. To put a port where a connector lands &mdash; an SMA's centre
+pin, say &mdash; place a port label on the copper there before you run the command.
+
 ## The report {#report}
 
 After **Create**, the schematic opens focused and the report goes to **Messages**, one line per kind of finding
 with its count: the ground chosen, vias dropped and kept, ports and where they came from, parts by source,
-silkscreen text read and designators that named no part, unknown kinds and values, `TLIN` fallbacks by reason, coupled pairs, copper read as nothing. A line about
+silkscreen text read and designators that named no part, unknown kinds and values, `TLIN` fallbacks by reason, coupled pairs, copper read as nothing, and lines left out because
+they reach no port and no part. A line about
 places on the board has a toggle that expands it to them; **double-click** one to select and zoom the artwork
 there. The same report is in the dialog's bottom strip while you work.
 
@@ -241,11 +270,20 @@ it was created from, the scope and the options, so this works in later sessions 
 Every component the command creates carries a **Models existing artwork** flag, shown as a check box in its
 parameter editor. It means the copper already exists:
 
-- **Update Layout from Schematic** leaves its artwork alone and counts it, so a schematic written into the
-  artwork's own cell never has lines generated over the imported board;
+- **Update Layout from Schematic** into the layout it was recognised from leaves its artwork alone and counts it,
+  so a schematic written into the artwork's own cell never has lines generated over the imported board. Into any
+  other layout &mdash; the new cell's own &mdash; it is generated like any component, on the schematic's technology,
+  so a round trip from the recognised schematic back to a layout is one command;
 - **Update Schematic from Layout** does not place it a second time.
 
 Clear the box to hand that component back to ordinary layout sync; it is one undo step and changes nothing else.
+
+### Drawing the schematic {#drawing}
+
+The schematic is laid out along the signal path, in the order the parts sit along the copper. With **Settings ▸
+Link symbol and footprint orientation** on (the default), a shunt part is drawn on the side of its line its copper is
+on; off, every shunt part is drawn below its line. The same setting decides whether turning a symbol later turns its
+footprint at the next **Update Layout from Schematic**.
 
 ## From the command line {#headless}
 

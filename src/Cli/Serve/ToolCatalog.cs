@@ -986,6 +986,8 @@ internal static class ToolCatalog
                         new("npts", "--npts", OptKind.Integer, "Sweep points. Default 201."),
                         new("digits", "--digits", OptKind.Integer,
                             "Significant digits every value in the circuit is written with, 1 to 15. Default 6."),
+                        new("freeOrientation", "--free-orientation", OptKind.Flag,
+                            "Draw every shunt part below its line, not on the side of the line its copper is on."),
                     ],
                     ""),
             ]),

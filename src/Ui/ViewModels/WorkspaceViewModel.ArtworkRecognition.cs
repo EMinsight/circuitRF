@@ -55,7 +55,10 @@ public partial class WorkspaceViewModel
             return;
         }
 
-        var vm = new CreateSchematicFromArtworkViewModel(input, selection, post: a => Dispatcher.UIThread.Post(a));
+        var vm = new CreateSchematicFromArtworkViewModel(input, selection, post: a => Dispatcher.UIThread.Post(a))
+        {
+            ArtworkSides = CircuitRF.Ui.Theming.AppPreferencesIo.Load().LinkSchematicLayoutOrientation ?? true,
+        };
         vm.PartHighlighted = (rings, focus) =>
         {
             if (rings is null) layoutVm.ClearArtworkProbe();

@@ -255,7 +255,7 @@ say. A silent write-back would make an artwork edit change a simulation.
   density: an IPC level belongs to a land pattern, not to a package.
 - **Exports carry it.** **File ▸ Export ▸ Bill of materials…** writes one row per placement with its
   reference, value and footprint; a board export writes each placement's designator as its
-  reference.
+  reference. From a schematic it writes one row per part to fit, from the schematic alone.
 
 ## Asking about footprints headless {#headless}
 

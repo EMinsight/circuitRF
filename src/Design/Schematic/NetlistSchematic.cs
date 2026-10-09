@@ -156,8 +156,11 @@ public static class NetlistSchematic
     /// the main line are ordered along the artwork's path, and a two-pin one whose artwork lies on the left of
     /// the path's travel (above a line drawn left to right) is drawn ABOVE the line. Null draws exactly as
     /// before, byte for byte.</param>
+    /// <param name="artworkSides">With hints: whether a hanger is drawn on the side of the line its artwork is on.
+    /// False keeps the artwork's ORDER along the line and draws every hanger below it.</param>
     public static NetlistSchematicResult Build(Library lib, TestBench tb, string? schematicDirectory = null,
-                                               IReadOnlyDictionary<string, (long X, long Y)>? hints = null)
+                                               IReadOnlyDictionary<string, (long X, long Y)>? hints = null,
+                                               bool artworkSides = true)
     {
         ArgumentNullException.ThrowIfNull(lib);
         ArgumentNullException.ThrowIfNull(tb);
@@ -184,7 +187,7 @@ public static class NetlistSchematic
         var model = new SchematicEditModel();
         foreach (var it in items) model.Components.Add(it.Comp);
 
-        var placed = Place(items, notes, hints);
+        var placed = Place(items, notes, hints, artworkSides);
         var grounds = PlaceGrounds(model, placed);
         Wire(model, placed, grounds, notes);
         PlaceDirectives(model, tb);
@@ -282,7 +285,9 @@ public static class NetlistSchematic
         };
 
         // Parameters FIRST: a variadic symbol reads its own pin count off one of them.
-        var template = ComponentTypeRegistry.DefaultParameters(kind, 0);
+        var template = kind == SymbolKind.Tline && inst.Overrides.Any(o => o.Name == "L")
+            ? TlinEntryConversion.PhysicalTemplate
+            : ComponentTypeRegistry.DefaultParameters(kind, 0);
         foreach (var o in inst.Overrides)
         {
             var t = template.FirstOrDefault(d => d.Name == o.Name);
@@ -293,7 +298,10 @@ public static class NetlistSchematic
             // .cnl — so the .cnl's quotes are its line syntax, not part of the name ("Top Copper (1 oz)").
             if (IsLayerName(o.Name) && expr.Length >= 2 && expr[0] == '"' && expr[^1] == '"')
                 expr = expr[1..^1];
-            bool show = t.Name is not null ? t.ShowOnSchematic : inst.Overrides.Count <= 2;
+            // A footprint is drawn by its own third label as the case code (FootprintLabelText), never as a row.
+            bool show = o.Name.Equals(ArtworkParameters.FootprintName, StringComparison.OrdinalIgnoreCase) ? false
+                      : t.Name is not null ? t.ShowOnSchematic
+                      : inst.Overrides.Count(x => !x.Name.Equals(ArtworkParameters.FootprintName, StringComparison.OrdinalIgnoreCase)) <= 2;
             comp.Parameters.Add(new EditableParameter
             {
                 Name            = o.Name,
@@ -396,7 +404,7 @@ public static class NetlistSchematic
     /// else then Ts onto.
     /// </summary>
     private static List<Item> Place(List<Item> items, List<string> notes,
-                                    IReadOnlyDictionary<string, (long X, long Y)>? hints = null)
+                                    IReadOnlyDictionary<string, (long X, long Y)>? hints = null, bool artworkSides = true)
     {
         var order = new List<Item>();
         if (items.Count == 0) return order;
@@ -443,6 +451,7 @@ public static class NetlistSchematic
             if (hints is not null)
                 for (int k = 0; k < pathNets.Count; k++)
                     OrderByArtwork(pathNets[k], k, hangers[pathNets[k]], path, start, end, hints, above);
+            if (!artworkSides) above.Clear();
 
             // `cursor` is where the main line has got to: the last element's exit, or 0.
             double cursor = 0;

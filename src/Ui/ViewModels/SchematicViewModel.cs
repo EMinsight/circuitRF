@@ -1786,21 +1786,30 @@ public sealed partial class SchematicViewModel : ObservableObject
             foreach (var (px, py) in info.StartPoints)
                 wire.Points.Add((EditModel.SnapToGrid(px + dx), EditModel.SnapToGrid(py + dy)));
         }
-        else if (info.StartPinned && !info.EndPinned)
+        else if (info.StartPinned != info.EndPinned)
         {
-            var (sx, sy) = info.StartPoints[0];   // fixed start
-            double ex = EditModel.SnapToGrid(info.StartPoints[^1].X + dx);
-            double ey = EditModel.SnapToGrid(info.StartPoints[^1].Y + dy);
-            ApplyOrthoRoute(wire, sx, sy, ex, ey);
-        }
-        else if (!info.StartPinned && info.EndPinned)
-        {
-            double sx = EditModel.SnapToGrid(info.StartPoints[0].X + dx);
-            double sy = EditModel.SnapToGrid(info.StartPoints[0].Y + dy);
-            var (ex, ey) = info.StartPoints[^1];  // fixed end
-            ApplyOrthoRoute(wire, sx, sy, ex, ey);
+            var pts = PinnedWireDragPoints(info, dx, dy);
+            wire.Points.Clear();
+            wire.Points.AddRange(pts);
         }
         // Both pinned: do not move (fully constrained)
+    }
+
+    /// <summary>
+    /// A selected wire held at ONE end by something unselected: it moves WITH the selection and only the legs at the
+    /// held end give — <see cref="WireGeometry.FollowEndpoints"/> applied to the translated wire, carrying its held end
+    /// back to where it is held. Designer report (round 15): it used to be redrawn as a bare L from its moved end to
+    /// the held one, which threw its bends away, so a selected wire tapping it — moved rigidly — came loose from it,
+    /// and the two parts both hung from were left on a wire end in the air.
+    /// </summary>
+    private IReadOnlyList<(double X, double Y)> PinnedWireDragPoints(WireDragInfo info, double dx, double dy)
+    {
+        var moved = info.StartPoints
+            .Select(p => (EditModel.SnapToGrid(p.X + dx), EditModel.SnapToGrid(p.Y + dy)))
+            .ToList<(double X, double Y)>();
+        var (sx, sy) = info.StartPoints[0];
+        var (ex, ey) = info.StartPoints[^1];
+        return WireGeometry.NormalizePoints(WireGeometry.FollowEndpoints(moved, info.StartPinned, sx, sy, info.EndPinned, ex, ey));
     }
 
     /// <summary>
@@ -2024,22 +2033,7 @@ public sealed partial class SchematicViewModel : ObservableObject
                 .Select(p => (EditModel.SnapToGrid(p.X + dx), EditModel.SnapToGrid(p.Y + dy)))
                 .ToList<(double, double)>();
         }
-        if (info.StartPinned && !info.EndPinned)
-        {
-            var (sx, sy) = info.StartPoints[0];
-            return WireGeometry.OrthogonalRoute(
-                sx, sy,
-                EditModel.SnapToGrid(info.StartPoints[^1].X + dx),
-                EditModel.SnapToGrid(info.StartPoints[^1].Y + dy));
-        }
-        if (!info.StartPinned && info.EndPinned)
-        {
-            var (ex, ey) = info.StartPoints[^1];
-            return WireGeometry.OrthogonalRoute(
-                EditModel.SnapToGrid(info.StartPoints[0].X + dx),
-                EditModel.SnapToGrid(info.StartPoints[0].Y + dy),
-                ex, ey);
-        }
+        if (info.StartPinned != info.EndPinned) return PinnedWireDragPoints(info, dx, dy);
         return info.StartPoints; // both pinned — no change
     }
 
@@ -2220,13 +2214,6 @@ public sealed partial class SchematicViewModel : ObservableObject
             (stubs ??= []).Add(route);
         }
         return stubs;
-    }
-
-    private static void ApplyOrthoRoute(EditableWire wire, double sx, double sy, double ex, double ey)
-    {
-        var route = WireGeometry.OrthogonalRoute(sx, sy, ex, ey);
-        wire.Points.Clear();
-        wire.Points.AddRange(route);
     }
 
     private static void RestoreWirePoints(EditableWire wire, IReadOnlyList<(double X, double Y)> pts)

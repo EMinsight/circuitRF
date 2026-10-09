@@ -121,6 +121,12 @@ visible is not the same as absent: you can see that the offer exists.
 The rules themselves, and the panel that lists the violations, are in
 {{anchor: layout-editor.html|the layout editor chapter}}.
 
+**Link symbol and footprint orientation**, on by default, keeps a part's symbol and its footprint turned alike:
+turning a symbol turns its footprint at the next **Update Layout from Schematic**, a part that command places faces
+the way its symbol does, and **Create Schematic from Artwork** draws each shunt part on the side of its line its
+copper is on. Off, the schematic and the layout are arranged independently &mdash; a resistor drawn across the page
+has no reason to sit across the board.
+
 ### Messages
 
 **Timestamps** — how the Messages panel stamps each line: *Time*, *Date + Time*, or *Hidden*. This one

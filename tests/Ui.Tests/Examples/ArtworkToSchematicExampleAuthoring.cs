@@ -9,6 +9,9 @@
 //  technology's stackup typed in as the import asks. The schematic it was drawn from ships beside it as the cell
 //  "Board design", so there is something to compare the recognised schematic against.
 //
+//  The copper is merged into non-overlapping regions on the way out, as a fabricator's CAM output usually is: the bend's
+//  and tee's cells draw arms over the lines beside them, and the imported board showed every overlap (round 15).
+//
 //  Two edits to the companion files, both what an assembly house's files look like rather than circuitRF's own:
 //  the placement and BOM list only what is soldered (circuitRF's writers list every placed instance, lines included),
 //  and L1's BOM row is DELETED, so recognising the board gives L1 a variable to tune.
@@ -52,7 +55,7 @@ public sealed class ArtworkToSchematicExampleAuthoring
             string fab = Path.Combine(ws, "fab");
             string gerbers = Path.Combine(fab, "Board");
             string pos = Path.Combine(fab, "Board.pos"), bom = Path.Combine(fab, "Board-bom.csv");
-            ArtworkRoundTripBoards.WriteFab(cellDir, clay, tech, gerbers, pos, bom);
+            ArtworkRoundTripBoards.WriteFab(cellDir, clay, tech, gerbers, pos, bom, unionCopper: true);
             KeepRows(pos, "C1", "L1", "R1");
             KeepRows(bom, "C1", "R1");
 

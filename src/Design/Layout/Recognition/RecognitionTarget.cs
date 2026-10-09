@@ -134,6 +134,16 @@ public static partial class ArtworkRecognition
     {
         var circuit = RecognitionEmit.Build(result, input, emit);
         result.Report.Add(RecognitionFindingClass.EmitOmissions, circuit.Notes.Count, string.Join(" ", circuit.Notes));
+        if (circuit.StrayLines.Count > 0)
+        {
+            var types = circuit.StrayLines.GroupBy(l => l.Type).OrderBy(g => g.Key, StringComparer.Ordinal)
+                                          .Select(g => $"{g.Count()} {g.Key}");
+            result.Report.Add(RecognitionFindingClass.StrayLines, circuit.StrayLines.Count,
+                $"{circuit.StrayLines.Count} line element{(circuit.StrayLines.Count == 1 ? "" : "s")} ({string.Join(", ", types)}) " +
+                "reach no port and no part — traces to a pin of a part the circuit does not model — and were left out.",
+                [.. circuit.StrayLines.Select(l => ArtworkAnchors.Centre(l.Anchor)).OfType<(long X, long Y)>()
+                                      .Select(c => new RecognitionAnchor(c.X, c.Y, null))]);
+        }
         return circuit;
     }
 
@@ -197,7 +207,8 @@ public static partial class ArtworkRecognition
         var circuit = Emit(result, input, options.Emit);
         var report = result.Report;
 
-        var drawn = NetlistSchematic.Build(new Library("netlist"), circuit.TestBench, schematicDir, circuit.Hints);
+        var drawn = NetlistSchematic.Build(new Library("netlist"), circuit.TestBench, schematicDir, circuit.Hints,
+                                           artworkSides: options.Emit.ArtworkSides);
         if (drawn.Schematic is not { } model)
             return Refused("The recognised circuit cannot be drawn: " + string.Join(" ", drawn.Refusals), circuit);
         report.Add(RecognitionFindingClass.DrawingNotes, drawn.Notes.Count, string.Join(" ", drawn.Notes));

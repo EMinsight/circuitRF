@@ -42,9 +42,12 @@ public sealed class RecognitionEmitTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(["P1", "P2"], tb.Instances.Where(i => i.Reference == "Port").Select(i => i.InstanceName));
         Assert.Equal(["p1", "0"], tb.Instances.Single(i => i.InstanceName == "P1").NetBindings);
         var c1 = Only("C");
-        Assert.Equal(("C1", "10", "pF"), (c1.InstanceName, c1.Overrides.Single().Expression, c1.Overrides.Single().Unit));
+        var c1Value = c1.Overrides.Single(o => o.Name == "C");
+        Assert.Equal(("C1", "10", "pF"), (c1.InstanceName, c1Value.Expression, c1Value.Unit));
         var l = Only("L");
-        Assert.Equal(("L_A1", "L_A1_L"), (l.InstanceName, l.Overrides.Single().Expression));
+        Assert.Equal(("L_A1", "L_A1_L"), (l.InstanceName, l.Overrides.Single(o => o.Name == "L").Expression));
+        // Each part carries the land pattern its case was read as (designer report, round 15: it was read and dropped).
+        Assert.All([c1, l], p => Assert.Equal("smt:0603@N", p.Overrides.Single(o => o.Name == "Footprint").Expression));
         Assert.Equal("0", l.NetBindings[1]);
 
         // The lines, numbered from port 1, carrying their layer and no substrate.
@@ -91,6 +94,33 @@ public sealed class RecognitionEmitTests(ITestOutputHelper output) : IDisposable
         // Plain notation at any size: the netlist reads a bare number.
         Assert.Equal("1200000", RecognitionEmitOptions.Spell(1_234_567, 2));
         Assert.Equal("0.0000123", RecognitionEmitOptions.Spell(0.0000123456, 3));
+    }
+
+    /// <summary>A trace reaching no port and no part changes no S-parameter and drew as a loose element: it is left
+    /// out and reported (designer report, round 15).</summary>
+    [Fact]
+    public void ALineReachingNoPortAndNoPart_IsLeftOutAndReported()
+    {
+        // D1, a two-pad D the circuit leaves out (as the designer's QFN was), and a trace from its pad to nowhere.
+        var input = EmitBoards.Saved(_root);
+        var d1 = RecognitionBoards.Land("0603", CircuitRF.Design.Layout.Footprints.DensityLevel.Nominal, 18_000, 9_000);
+        var (_, right) = RecognitionBoards.Ends(d1);
+        input.View.Shapes.AddRange(d1);
+        input.View.Shapes.Add(RecognitionBoards.Line(RecognitionBoards.Top, right, 28_000, 9_000));
+        var placement = input.Placement! with
+        {
+            Rows = [.. input.Placement!.Rows,
+                    new CircuitRF.Design.Layout.Interchange.PlacementRow("D1", RecognitionBoards.Um(18_000), RecognitionBoards.Um(9_000), 0, false, "0603", 1)],
+        };
+        input = input with { Shapes = input.View.Shapes, Placement = placement };
+        var (result, circuit) = ArtworkRecognition.Circuit(input);
+        Assert.True(result.Ok, result.Refusal);
+
+        Assert.NotEmpty(circuit!.StrayLines);
+        Assert.Equal(circuit.StrayLines.Count, result.Report.Count(RecognitionFindingClass.StrayLines));
+        var (_, plain) = ArtworkRecognition.Circuit(EmitBoards.Saved(Path.Combine(_root, "plain")));
+        Assert.Equal(plain!.TestBench.Instances.Count(i => i.Reference == "MLIN"),
+                     circuit.TestBench.Instances.Count(i => i.Reference == "MLIN"));
     }
 
     private static int Cli(params string[] args)

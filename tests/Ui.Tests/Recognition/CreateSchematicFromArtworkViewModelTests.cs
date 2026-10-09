@@ -110,6 +110,18 @@ public sealed class CreateSchematicFromArtworkViewModelTests : IDisposable
         Assert.False(vm.CreateCommand.CanExecute(null));
     }
 
+    /// <summary>Designer report (round 15): a value typed into the table, with no re-run since, is in Export Parts….</summary>
+    [Fact]
+    public async Task ExportParts_CarriesTheEditsNotYetRecognised()
+    {
+        var vm = await Open(Cell("Board", CellViews.Layout), new RecordingRunner());
+
+        vm.Rows.Single(r => r.Refdes == "C1").ValueText = "10 pF";
+
+        Assert.Null(vm.Table.Row("C1")!.Value);
+        Assert.Equal(10.0, vm.EditedTable().Row("C1")!.Value!.Value * 1e12, 9);
+    }
+
     [Fact]
     public async Task ATableEdit_SurvivesTheReRunAnOptionChangeCauses()
     {

@@ -211,6 +211,15 @@
                                        ToolTip.Tip="Compares this cell's artwork against its schematic before writing GDSII, DXF or Gerber. Off by default, because an artwork-only export is a legitimate thing to do and LVS needs a drawing to compare against."/>
                         </Grid>
 
+                        <!-- Designer report (round 15): the schematic and the layout may be drawn independently. -->
+                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto" Margin="0,4,0,0">
+                            <CheckBox  Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
+                                       Name="LinkOrientationCheck"
+                                       Content="Link symbol and footprint orientation" FontSize="12"
+                                       IsCheckedChanged="OnLinkOrientationChanged"
+                                       ToolTip.Tip="On: turning a symbol turns its footprint at the next Update Layout from Schematic, and Create Schematic from Artwork draws each shunt part on the side of its line its copper is on. Off: the schematic and the layout are arranged independently."/>
+                        </Grid>
+
                         <!-- Import — R-rf3-7. ON by default: an imported board whose pours arrived as
                              tens of thousands of painted scanlines is neither editable copper nor
                              meshable, and the region is what every consumer wants. The switch is here

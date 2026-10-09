@@ -53,6 +53,16 @@ public sealed class ArtworkFieldBoardTests : IDisposable
         if (root.TryGetProperty("lines", out var lines))
             foreach (var type in lines.EnumerateObject())
                 InRange(lines, type.Name, result.Lines.Elements.Count(e => e.Type.ToString() == type.Name), board);
+
+        // Parts the copper keeps apart — a line runs between them — share no signal node (designer report, round 15:
+        // two beads on one supply rail came out on one node, drawn side by side).
+        if (root.TryGetProperty("apart", out var apart))
+            foreach (var pair in apart.EnumerateArray())
+            {
+                string a = pair[0].GetString()!, b = pair[1].GetString()!;
+                string[] Nets(string name) => [.. circuit.TestBench.Instances.Single(i => i.InstanceName == name).NetBindings.Where(n => n != "0")];
+                Assert.True(!Nets(a).Intersect(Nets(b)).Any(), $"{board}: {a} and {b} share a node");
+            }
     }
 
     /// <summary>A count stated as a number is exact; as [min, max], a range. A key the file does not state is not checked.</summary>

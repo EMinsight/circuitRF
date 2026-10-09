@@ -218,7 +218,7 @@ public static class LineRecognition
             // Unless a part's terminal, a via or a port is inside it: a shunt part's pad standing on a line and wider
             // than it is read by the review as two arms meeting there (brief-artsch-9's round trip). The arms stay two
             // lines and meet at the terminal, as a tap on one piece does (R-as5-3).
-            if (islandOfJunction.TryGetValue(junction.Id, out int tapIsland) && TapBetween(a, b, attachments, tapIsland) is { } tap)
+            if (islandOfJunction.TryGetValue(junction.Id, out int tapIsland) && TapBetween(a, b, attachments, tapIsland, dbu) is { } tap)
             {
                 foreach (var arm in new[] { a, b })
                 {
@@ -357,13 +357,17 @@ public static class LineRecognition
 
     /// <summary>The attachment on <paramref name="island"/> between two arms' trace ends — within the wider arm's width
     /// of the line joining them, and past neither end — or null.</summary>
-    private static Attachment? TapBetween(JunctionArm a, JunctionArm b, IReadOnlyList<Attachment> attachments, int island)
+    private static Attachment? TapBetween(JunctionArm a, JunctionArm b, IReadOnlyList<Attachment> attachments, int island, int dbu)
     {
         double ux = b.End.X - a.End.X, uy = b.End.Y - a.End.Y;
         double len = Math.Sqrt(ux * ux + uy * uy);
         if (len <= 0) return null;
         (ux, uy) = (ux / len, uy / len);
         double w = Math.Max(a.Width, b.Width);
+        // A terminal is its pad's centre, and a pad wider than the line — the very thing that split it here — puts that
+        // well off the line: FB2's pad on a 1.2 mm supply rail, 1.7 mm off it, was not found, the two halves merged
+        // into one line, and FB2 joined FB1's node (designer report, round 15). The reach is a line end's.
+        double reach = Math.Max(w, AttachReachWidths * w + AttachReachMicrons * dbu);
         Attachment? best = null;
         double bestOff = double.MaxValue;
         foreach (var at in attachments)
@@ -371,7 +375,7 @@ public static class LineRecognition
             if (at.Island != island) continue;
             double t = (at.X - a.End.X) * ux + (at.Y - a.End.Y) * uy;
             double off = Math.Abs(-(at.X - a.End.X) * uy + (at.Y - a.End.Y) * ux);
-            if (t <= 0 || t >= len || off > w || off >= bestOff) continue;
+            if (t <= 0 || t >= len || off > reach || off >= bestOff) continue;
             best = at;
             bestOff = off;
         }

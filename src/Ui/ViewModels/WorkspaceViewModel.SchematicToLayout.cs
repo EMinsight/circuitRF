@@ -164,9 +164,16 @@ public partial class WorkspaceViewModel
         if (createdNewFile)
         {
             Directory.CreateDirectory(layoutDir);
-            var techRes = ResolveTechFor(null, targetPath);
+            // Designer report (round 15): a schematic that names its own technology — Create Schematic from Artwork
+            // writes the artwork's — had its new layout drawn on the workspace default, and the divergence warning
+            // fired on the very first run. The new layout takes the schematic's technology instead.
+            string? techRef = doc.ViewModel.EditModel.TechRef is { Length: > 0 }
+                              && SchematicTechnology.Resolve(doc.ViewModel.EditModel) is { Error: null, Source: SchematicTechSource.DocumentRef, Path: { } schTech }
+                ? SchematicTechnology.StoredRef(schTech, layoutDir) : null;
+            var techRes = ResolveTechFor(techRef, targetPath);
             var seedModel = new LayoutView
             {
+                TechRef      = techRef,
                 DbuPerMicron = LayoutUnits.DefaultDbuPerMicron,
                 DisplayUnit  = techRes.Tech?.DefaultDisplayUnit ?? LayoutUnit.Um,
                 SnapDbu      = techRes.Tech?.DefaultSnapDbu ?? 1000,
@@ -217,7 +224,8 @@ public partial class WorkspaceViewModel
 
             var result = SchematicToLayoutGenerator.Run(
                 doc.ViewModel.EditModel, layoutVm.Model, schematicDir, workspaceRoot, layoutDir,
-                layoutVm.Technology, layoutVm.ResolvedTechPath, this);
+                layoutVm.Technology, layoutVm.ResolvedTechPath, this, targetLayoutPath: targetPath,
+                linkOrientation: CircuitRF.Ui.Theming.AppPreferencesIo.Load().LinkSchematicLayoutOrientation ?? true);
 
             if (result.Command is not null)
                 layoutVm.Execute(result.Command);

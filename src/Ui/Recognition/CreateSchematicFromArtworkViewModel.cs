@@ -247,6 +247,10 @@ public sealed partial class CreateSchematicFromArtworkViewModel : ObservableObje
     [RelayCommand]
     private void SetDigits(int digits) => Digits = digits;
 
+    /// <summary>Whether a shunt part is drawn on its copper's side of the line — Settings ▸ "Link symbol and footprint
+    /// orientation", set by the window; the CLI's <c>--free-orientation</c> is its false.</summary>
+    public bool ArtworkSides { get; init; } = true;
+
     partial void OnDigitsChanged(int value)
     {
         OnPropertyChanged(nameof(DigitsChoices));
@@ -294,7 +298,7 @@ public sealed partial class CreateSchematicFromArtworkViewModel : ObservableObje
 
     partial void OnBomPathChanged(string value)
     {
-        _bom = value.Trim().Length == 0 ? null : BomFile.ReadFile(value.Trim());
+        _bom = value.Trim().Length == 0 ? null : RecognitionBom.ReadFile(value.Trim());
         RefreshCompanionError();
         ScheduleRecognition();
     }
@@ -523,7 +527,7 @@ public sealed partial class CreateSchematicFromArtworkViewModel : ObservableObje
         if (PickExportPathAsync is not { } pick || await pick() is not { Length: > 0 } path) return;
         try
         {
-            PartsTableCsv.WriteFile(path, _table);
+            PartsTableCsv.WriteFile(path, EditedTable());
             Status = $"Wrote {path}.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -531,6 +535,14 @@ public sealed partial class CreateSchematicFromArtworkViewModel : ObservableObje
             Status = $"The parts table could not be written: {ex.Message}";
         }
     }
+
+    /// <summary>
+    /// The table as the dialog shows it: the last recognition with every held edit laid over it by the CSV reader.
+    /// A Kind or Value edit does not re-run recognition, so <see cref="_table"/> alone can be behind the screen —
+    /// designer report (round 15): Export Parts… wrote the table without the values just typed into it.
+    /// </summary>
+    public PartsTable EditedTable() =>
+        PartsCsvText is { } edits && PartsTableCsv.Read(edits, _table).Table is { } edited ? edited : _table;
 
     [RelayCommand]
     private async Task ImportParts()
@@ -699,7 +711,8 @@ public sealed partial class CreateSchematicFromArtworkViewModel : ObservableObje
         var start = RecognitionSweep.Parse(StartText) is { } s && !(s.Text == _basis.StartExpr && s.Unit == _basis.StartUnit) ? s : (RecognitionFrequency?)null;
         int? npts = int.TryParse(PointsText, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n)
                     && n != (_basis.NumPoints ?? RecognitionEmitOptions.DefaultSweep.NumPoints) ? n : null;
-        return new RecognitionEmitOptions { Sweep = RecognitionSweep.Compose(_base.EmSetup, start, StatedStop(), npts), Digits = Digits };
+        return new RecognitionEmitOptions { Sweep = RecognitionSweep.Compose(_base.EmSetup, start, StatedStop(), npts), Digits = Digits,
+                                           ArtworkSides = ArtworkSides };
     }
 
     private RecognitionFrequency? StatedStop() =>

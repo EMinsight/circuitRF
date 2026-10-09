@@ -153,7 +153,9 @@ public static class SchematicToLayoutGenerator
         string targetLayoutBaseDir,
         Technology? technology,
         string? techIdentity,
-        ICellResolver? cellResolver)
+        ICellResolver? cellResolver,
+        string? targetLayoutPath = null,
+        bool linkOrientation = true)
     {
         var extraction = NetExtractor.Extract(model, "tb", cellResolver);
 
@@ -166,8 +168,15 @@ public static class SchematicToLayoutGenerator
         // made it — is skipped before resolution: no add, no update, no orphan report or deletion, no ground
         // drawn for it. Without this a recognised schematic in the artwork's own cell would have its MLINs
         // generated as PCell copper on top of the imported board. Clearing the flag hands it back.
-        var fromArtwork = model.Components.Where(c => c.FromArtwork && IsPhysical(c)).ToList();
-        var physical = model.Components.Where(c => IsPhysical(c) && !c.FromArtwork).ToList();
+        //
+        // ONLY IN THAT LAYOUT (designer report, round 15). The artwork exists in the layout the schematic was
+        // recognised from — the provenance names it — and nowhere else, so updating any OTHER layout (the new
+        // recognised cell's own, empty one) generates them like any component; skipping them there left an empty
+        // layout and the note "48 components model existing artwork — not generated". A schematic with no stated
+        // provenance, or a run with no target path, keeps the skip: generating copper over a board is the worse error.
+        bool overArtwork = !GeneratesArtworkModels(model, schematicDir, targetLayoutPath);
+        var fromArtwork = overArtwork ? model.Components.Where(c => c.FromArtwork && IsPhysical(c)).ToList() : [];
+        var physical = model.Components.Where(c => IsPhysical(c) && !(overArtwork && c.FromArtwork)).ToList();
 
         var existingBySchematicId = new Dictionary<string, (int Index, LayoutInstance Instance)>(StringComparer.Ordinal);
         for (int i = 0; i < target.Instances.Count; i++)
@@ -271,8 +280,12 @@ public static class SchematicToLayoutGenerator
                 var inst = new LayoutInstance { CellRef = resolvedCellRef, X = 0, Y = 0, Mag = 1.0, SchematicId = schematicId };
                 // Placed facing the way the symbol faces, and linked, so a rotation made on either side
                 // from here on is carried across by the next run.
-                var facing = SchematicLayoutOrientation.FromSchematic((int)comp.Rotation, comp.MirrorX)
-                    .Compose(PinAlignment(comp, schematicDir, resolvedCellRef, targetLayoutBaseDir, technology));
+                // With the orientations unlinked (Settings, designer report round 15) it is placed as the cell is
+                // drawn, and the link records that facing so turning the setting back on carries nothing.
+                var facing = linkOrientation
+                    ? SchematicLayoutOrientation.FromSchematic((int)comp.Rotation, comp.MirrorX)
+                        .Compose(PinAlignment(comp, schematicDir, resolvedCellRef, targetLayoutBaseDir, technology))
+                    : new VisualOrientation(false, 0);
                 inst.MirrorX = facing.Mirror;
                 inst.RotationDegrees = facing.Deg;
                 inst.OrientationLink = SchematicLayoutOrientation.Link((int)comp.Rotation, comp.MirrorX, facing);
@@ -342,7 +355,7 @@ public static class SchematicToLayoutGenerator
             void UpdateExisting(bool reportedThisInstance)
             {
                 var rot = CarryRotation(comp, before, schematicId,
-                    () => PinAlignment(comp, schematicDir, before.CellRef, targetLayoutBaseDir, technology));
+                    () => PinAlignment(comp, schematicDir, before.CellRef, targetLayoutBaseDir, technology), linkOrientation);
                 if (rot.Unlinked) unlinkedDiffering++;
 
                 if (!cellRefChanged && !rot.Changes && oldName is null)
@@ -615,11 +628,15 @@ public static class SchematicToLayoutGenerator
     /// <param name="alignment">The pin alignment (<see cref="SchematicLayoutOrientation.PinAlignment"/>),
     /// asked for only when the pair has no link yet — it resolves the cell's pins.</param>
     internal static RotationCarry CarryRotation(EditableComponent comp, LayoutInstance inst, string schematicId,
-                                                Func<VisualOrientation> alignment)
+                                                Func<VisualOrientation> alignment, bool linked = true)
     {
         int sDeg = (int)comp.Rotation;
         var s = SchematicLayoutOrientation.FromSchematic(sDeg, comp.MirrorX);
         var l = SchematicLayoutOrientation.FromLayout(inst);
+
+        // Unlinked: nothing is carried, and the baseline moves to where both sides are now, so turning the link back on
+        // later carries only what is turned after that.
+        if (!linked) return new(false, l, SchematicLayoutOrientation.Link(sDeg, comp.MirrorX, l), null, false, false);
 
         if (inst.OrientationLink is not { } b)
             return new(false, l, SchematicLayoutOrientation.Link(sDeg, comp.MirrorX, l), null, false,
@@ -1336,6 +1353,16 @@ public static class SchematicToLayoutGenerator
     /// <c>NetExtractor.ExtractModel</c>'s own instance-emission skip set exactly, so "reported as
     /// missing a layout view" never fires for the schematic's own meta-components (a VAR row or a
     /// Ground symbol has no layout existence to report as missing).</summary>
+    /// <summary>Whether the components that model existing artwork are generated into <paramref name="targetLayoutPath"/>:
+    /// yes when the schematic's provenance names a different layout as its artwork, so there is no artwork here.</summary>
+    internal static bool GeneratesArtworkModels(SchematicEditModel model, string schematicDir, string? targetLayoutPath)
+    {
+        if (targetLayoutPath is null || model.ArtworkSource is not { Layout: { Length: > 0 } source }) return false;
+        string artwork = Path.GetFullPath(CircuitRF.Core.RefPath.Resolve(schematicDir, source));
+        return !string.Equals(artwork, Path.GetFullPath(targetLayoutPath),
+                              OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>R-as6-7's one run-level line.</summary>
     internal static string FromArtworkNote(int count) =>
         count == 1 ? "1 component models existing artwork — not generated"

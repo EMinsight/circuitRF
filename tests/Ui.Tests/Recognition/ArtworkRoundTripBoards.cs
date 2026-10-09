@@ -204,11 +204,17 @@ internal static class ArtworkRoundTripBoards
 
     /// <summary>File ▸ Export ▸ Gerber into <paramref name="gerbers"/> (its folder name is what an import calls the
     /// cell), and the placement file and bill of materials where they are named.</summary>
-    public static void WriteFab(string cellDir, string clay, Technology tech, string gerbers, string? placement, string? bom)
+    /// <param name="unionCopper">Merges each copper layer's rectangles and polygons into non-overlapping regions before
+    /// writing — for the shipped example only, whose bends' and tees' cells draw arms over the lines beside them and
+    /// left overlapping copper in the imported board (designer report, round 15). The electrical lengths are the
+    /// schematic's either way: the arms lie on copper the lines already draw.</param>
+    public static void WriteFab(string cellDir, string clay, Technology tech, string gerbers, string? placement, string? bom,
+                                bool unionCopper = false)
     {
         var view = LayoutPersistence.LoadFromFile(clay);
         var plan = GerberExport.Analyze(cellDir, tech, Dbu, view, null);
         Assert.True(plan.CanWrite, string.Join("; ", plan.Diagnostics));
+        if (unionCopper) plan = plan with { Shapes = UnionCopper(plan.Shapes, tech) };
         GerberExport.Write(gerbers, Path.GetFileName(gerbers), plan);
         if (placement is null && bom is null) return;
 
@@ -216,6 +222,22 @@ internal static class ArtworkRoundTripBoards
         Assert.True(projection.Refusal is null, projection.Refusal);
         Assert.True(projection.HasSchematic, string.Join("; ", projection.Notes));
         BoardCompanions.Write(projection, null, placement, bom);
+    }
+
+    private static List<LayoutShape> UnionCopper(IReadOnlyList<LayoutShape> shapes, Technology tech)
+    {
+        var copper = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).SelectMany(l => l.DrawingLayers).ToHashSet();
+        bool Merged(LayoutShape s) => copper.Contains(s.Layer) && s is RectShape or PolygonShape;
+        var result = shapes.Where(s => !Merged(s)).ToList();
+        foreach (var layer in shapes.Where(Merged).GroupBy(s => s.Layer))
+        {
+            var clipper = new Clipper2Lib.Clipper64();
+            foreach (var s in layer) clipper.AddSubject(LayoutClipper.ToClipperPaths(s, 1));
+            var tree = new Clipper2Lib.PolyTree64();
+            clipper.Execute(Clipper2Lib.ClipType.Union, LayoutClipper.Rule, tree);
+            result.AddRange(LayoutClipper.FromClipperTree(tree, layer.Key, null));
+        }
+        return result;
     }
 
     /// <summary>

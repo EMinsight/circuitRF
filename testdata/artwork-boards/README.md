@@ -26,6 +26,7 @@ real copper is a best attempt.
 | `series`, `shunt` | How many of those are series and how many shunt. | `PartReadingFieldTests`, `ArtworkFieldBoardTests` |
 | `lines` | Line elements by type: `{ "MLIN": [8, 14], "MBEND": [2, 6], "MTEE": [1, 1], … }` — a type not named is not checked. | `LineRecognitionFieldTests`, `ArtworkFieldBoardTests` |
 | `silkscreen` | Designators printed on the board: `[{ "refdes": "C3", "x": 12.4, "y": 30.1 }, …]`, the part's centre in mm. | `SilkscreenFieldTests` |
+| `apart` | Pairs of designators the copper keeps apart — a line runs between them: `[["FB1", "FB2"]]`. Each pair must share no signal node. | `ArtworkFieldBoardTests` |
 | `silkscreenFraction` | The share of `silkscreen` that must be read and placed, 0–1. | `SilkscreenFieldTests` |
 
 `ArtworkFieldBoardTests` also requires that every board recognises with no refusal and that the `.cnl` it gives passes

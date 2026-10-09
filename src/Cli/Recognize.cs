@@ -39,6 +39,7 @@ internal static class Recognize
         public RecognitionFrequency? Start, Stop;
         public int? Npts;
         public int? Digits;
+        public bool FreeOrientation;
     }
 
     public static int Run(string[] args)
@@ -73,7 +74,7 @@ internal static class Recognize
             "                 [--placement-origin symbol|body|pin1] [--placement-unit mm|mil|in]\n" +
             "                 [--region x0,y0,x1,y1] [--ground <net> | --ground-at x,y] [--vias model|ground]\n" +
             "                 [--coplanar auto|microstrip|gcpw] [--coplanar-factor k]\n" +
-            "                 [--start f] [--stop f] [--npts n] [--digits n]\n" +
+            "                 [--start f] [--stop f] [--npts n] [--digits n] [--free-orientation]\n" +
             "  Writes nothing unless -o, --into or --parts-out is given. Coordinates carry a unit (um, mm, mil).");
         return 1;
     }
@@ -152,6 +153,9 @@ internal static class Recognize
                     if (!int.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) || n < 2)
                         return Bad("a whole number of points, at least 2");
                     o.Npts = n;
+                    continue;
+                case "--free-orientation":
+                    o.FreeOrientation = true;
                     continue;
                 case "--digits" when hasValue:
                     if (!int.TryParse(args[++i], NumberStyles.Integer, CultureInfo.InvariantCulture, out int d)
@@ -246,7 +250,7 @@ internal static class Recognize
         }
         if (o.Bom is { } bomPath)
         {
-            if (!File.Exists(bomPath) || BomFile.ReadFile(bomPath) is not { } bom)
+            if (!File.Exists(bomPath) || RecognitionBom.ReadFile(bomPath) is not { } bom)
                 return JsonRun.Fail(CliDiagnostics.RecognizeFileNotFound("--bom", bomPath));
             input = input with { Bom = bom };
         }
@@ -277,7 +281,8 @@ internal static class Recognize
         if (o.Stop is { } top)                 options = options with { TopFrequencyHz = top.Hz };
         input = input with { Options = options };
 
-        var emit = new RecognitionEmitOptions { Sweep = Sweep(o, input), Digits = o.Digits ?? RecognitionEmitOptions.DefaultDigits };
+        var emit = new RecognitionEmitOptions { Sweep = Sweep(o, input), Digits = o.Digits ?? RecognitionEmitOptions.DefaultDigits,
+                                              ArtworkSides = !o.FreeOrientation };
 
         // ── recognise and emit; --into writes the schematic, and only after everything else succeeded ─
         RecognitionResult result;

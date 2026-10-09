@@ -178,6 +178,9 @@ public enum RecognitionFindingClass
     /// the circuit has.</summary>
     EmitOmissions,
 
+    /// <summary>Lines and vias left out because the copper they model reaches no port and no part (round 15).</summary>
+    StrayLines,
+
     /// <summary>What the drawing does not carry or carries differently (<c>NetlistSchematic.Build</c>'s notes).</summary>
     DrawingNotes,
 

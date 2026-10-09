@@ -603,9 +603,10 @@ public static class BomTablePaste
     // does, so it is read by the same recognisers — these four entry points, not a second copy.
 
     /// <summary>A type word (or a free-text description's first word) → its kind, or the
-    /// do-not-populate marker. Single letters are not read: in a description they are noise.</summary>
+    /// do-not-populate marker. A single letter is read only when it is the WHOLE cell — circuitRF's own
+    /// bill of materials writes "C", "L" and "R" there — never as one word of a sentence, where it is noise.</summary>
     internal static (SymbolKind? Kind, bool Dnp) ReadTypeWord(string? cell) =>
-        cell is { Length: > 0 } c ? ClassifyType(c, allowSingleLetter: false) : (null, false);
+        cell is { Length: > 0 } c ? ClassifyType(c, allowSingleLetter: true) : (null, false);
 
     /// <summary>Whether the whole cell is a do-not-populate marker (DNP, DNF, "not fitted", …).</summary>
     internal static bool IsNotFittedMarker(string? cell) => cell is { Length: > 0 } c && IsDnpWord(c);

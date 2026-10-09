@@ -456,12 +456,21 @@ public static class ExternalWorkspaceGate
             if (!string.Equals(a!.Name, b!.Name, StringComparison.Ordinal))
                 return $"They differ: layer {Spell(key)} is '{a.Name}' here and '{b.Name}' there.";
 
-            if (!string.Equals(a.Purpose ?? "", b.Purpose ?? "", StringComparison.Ordinal))
+            // Compared as what the layer IS, not as its label: every shipped starter technology says "drawing" for its
+            // copper and lets the stackup make it a conductor, while a Gerber import writes "conductor" — the same layer
+            // either way, and saying "its meaning changes" over it alarmed a designer moving a workspace onto his board's
+            // technology (round 15).
+            if (!string.Equals(EffectivePurpose(mine, a), EffectivePurpose(theirs, b), StringComparison.Ordinal))
                 return $"They differ: layer {Spell(key)} ('{a.Name}') has purpose "
                      + $"'{a.Purpose ?? "(none)"}' here and '{b.Purpose ?? "(none)"}' there.";
         }
         return null;
     }
+
+    private static string EffectivePurpose(Technology tech, LayerDef layer) =>
+        Layout.Interchange.GerberLayerCascade.PurposeOf(tech, layer) is var p
+        && (p == Layout.Interchange.GerberLayerCascade.ConductorPurpose || p == Layout.Interchange.GerberLayerCascade.DrillPurpose)
+            ? p : layer.Purpose ?? "";
 
     /// <summary>Layer key → definition. A table declaring one key twice is malformed; the FIRST
     /// entry wins, which is what <c>LayoutRenderer</c>'s own <c>ToDictionary</c> would throw on and

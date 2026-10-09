@@ -3788,7 +3788,9 @@ model|ground`, `--coplanar auto|microstrip|gcpw`, `--coplanar-factor k`, `--star
 (frequencies with their unit; a flag changes only its own field of the `.cem`'s sweep, else of 100 MHz – 6 GHz
 in 201 points; `--stop` is also the top frequency a TLIN and the coupled-pair check are judged at), `--digits n`
 (the significant figures every number the circuit carries is written with — line widths and lengths, via sizes,
-a port's Z, part values, variables and their tuning range; 1 to 15, default 6; the dialog's digits menu).
+a port's Z, part values, variables and their tuning range; 1 to 15, default 6; the dialog's digits menu),
+`--free-orientation` (every shunt part drawn below its line rather than on its copper's side — the GUI's "Link symbol
+and footprint orientation" setting, off).
 `--json` carries `result.recognize`: the layout, technology and scope, the instance count, each report class
 with its count, sentence and anchors (DBU), the parts table row for row keyed by the CSV's columns, and the
 paths written.

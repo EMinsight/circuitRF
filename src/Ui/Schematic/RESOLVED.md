@@ -1288,3 +1288,14 @@ followed. The result is segment selections with spans (`SchematicSelection.Selec
 the overlay already handle it. Decided, not asked: wire-to-wire T-junctions are followed (the run is the
 wiring between pins, not one polyline). Gate: `tests/Ui.Tests/Schematic/WireRunSelectionTests.cs`
 (`Suite=SchematicConnectivity`). The canvas gesture itself is untested headlessly (no pixels seen).
+
+## A selected wire held at one end threw its bends away, and the wire tapping it came loose (2026-10-09)
+
+Designer report, round 15: dragging two capacitors with their wiring selected "slipped" the trace. The row both hung
+from was held at its far end by an unselected inductor pin, so `ComputeWireDragEndPoints`/`ApplyWireDragLive` redrew it
+as a bare `OrthogonalRoute` L from its moved end to the held one — a different wire — while the selected tail wire that
+tapped the row moved rigidly and was left with an end in the air. The net label on the row kept the netlist right,
+which is why it read as a drawing fault. Both now call `PinnedWireDragPoints`: translate with the selection, then
+`WireGeometry.FollowEndpoints` carries the held end back, so only the legs at that end give. The netlist oracle alone
+did not catch it; `DragSelectedWireKeepsTapsTests` adds a loose-end count (`ComputeLiveConnectivity`), which failed 4
+of 4 wire-selected drags before the change.

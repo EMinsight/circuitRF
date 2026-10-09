@@ -188,6 +188,8 @@ public partial class SettingsView : Window
             // R-lvs12-1e: the LVS gate's default is OFF, deliberately — see AppPreferences.
             CheckLvsOnExportCheck.IsChecked = prefs.CheckLvsOnExport ?? false;
 
+            LinkOrientationCheck.IsChecked = prefs.LinkSchematicLayoutOrientation ?? true;
+
             CoalesceRasterFillCheck.IsChecked = prefs.CoalesceRasterFillOnImport ?? true;
 
             MsgTimestampCombo.ItemsSource   = new[] { "Time", "Date + Time", "Hidden" };
@@ -290,6 +292,12 @@ public partial class SettingsView : Window
     {
         if (_updatingGeneral) return;
         AppPreferencesIo.Update(p => p.CheckLvsOnExport = CheckLvsOnExportCheck.IsChecked);
+    }
+
+    private void OnLinkOrientationChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_updatingGeneral) return;
+        AppPreferencesIo.Update(p => p.LinkSchematicLayoutOrientation = LinkOrientationCheck.IsChecked);
     }
 
     private void OnCoalesceRasterFillChanged(object? sender, RoutedEventArgs e)

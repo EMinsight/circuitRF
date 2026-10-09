@@ -18924,3 +18924,14 @@ Every finding was confirmed against the source before it was changed; none turne
   `is not { Count: > 0 }`. A job file stating only `GeneralSpecs.BoardThickness` still raises no warning; the
   warning is about a stated stackup. `GerberImportTargetTechnologyTests.AJobFileWarnsOnlyWhenItStatesAStackupThatDiffers`
   holds both directions on the example's own set, and its no-stackup case fails against the old guard.
+
+## A technology id with a dot in it, and "drawing" vs "conductor" (2026-10-09, designer round 15)
+
+- **`ShippedTechnologies.Discover` read the id as the text after the LAST dot of the resource name**, which holds only
+  while no file name has a dot. Renaming the 6-layer technology to `pcb-6layer_FR-4_1.6mm_1oz` would have listed it as
+  `6mm_1oz`. The id is now everything after `.resources.technologies.`.
+- **The workspace-technology warning compared layer PURPOSE as text.** Every shipped starter technology labels its
+  copper `drawing` and lets the stackup make it a conductor (`GerberLayerCascade.PurposeOf` already says so); a Gerber
+  import writes `conductor`. Moving a workspace onto a board's imported technology therefore warned that Top Copper
+  "has purpose 'drawing' here and 'conductor' there" — the same layer. `LayerTableDifference` now compares
+  `PurposeOf` where it answers conductor or drill, the raw label otherwise.

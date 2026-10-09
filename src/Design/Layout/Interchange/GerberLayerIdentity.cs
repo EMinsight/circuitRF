@@ -656,7 +656,7 @@ public static class GerberLayerCascade
     /// which every shipped starter technology does. The stackup is the authority: a layer named by a
     /// <see cref="StackupKind.Conductor"/> entry is copper and a layer named by a
     /// <see cref="StackupKind.Via"/> entry is a drill layer, whatever the layer table calls it.</summary>
-    private static string PurposeOf(Technology? tech, LayerDef layer)
+    internal static string PurposeOf(Technology? tech, LayerDef layer)
     {
         if (string.Equals(layer.Purpose, ConductorPurpose, StringComparison.Ordinal) ||
             string.Equals(layer.Purpose, DrillPurpose, StringComparison.Ordinal))

@@ -38,6 +38,11 @@ public sealed record RecognitionEmitOptions
     /// <summary>What a run that does not say gets.</summary>
     public const int DefaultDigits = 6;
 
+    /// <summary>Whether a shunt part is drawn on the side of its line that its copper is on (above or below) — the
+    /// user's "Link symbol and footprint orientation" setting, <c>--free-orientation</c> off it. False draws every one
+    /// below its line, as an unhinted drawing does (designer report, round 15).</summary>
+    public bool ArtworkSides { get; init; } = true;
+
     /// <summary>Every figure a double carries that survives a round trip as text.</summary>
     public const int AllDigits = 15;
 
@@ -68,6 +73,10 @@ public sealed record RecognitionCircuit(TestBench TestBench)
 
     /// <summary>What the emit could not write, one sentence each.</summary>
     public IReadOnlyList<string> Notes { get; init; } = [];
+
+    /// <summary>Lines and vias left out because the copper they model reaches no port and no part — each one's type
+    /// and artwork anchor.</summary>
+    public IReadOnlyList<(string Type, IReadOnlyList<(long X, long Y)> Anchor)> StrayLines { get; init; } = [];
 
     /// <summary>
     /// The <c>.cnl</c> text with every file it names — the technology and each Touchstone model — written
@@ -178,6 +187,7 @@ public static class RecognitionEmit
                 var snp = new Proto { Type = "SnP", Prefix = "", FixedName = name, Nodes = ends, Anchor = [(row.X, row.Y)] };
                 snp.Parameters.Add(new ParameterAssignment("NumPorts", "2"));
                 snp.Parameters.Add(new ParameterAssignment("File", $"\"{file}\""));
+                AddFootprint(snp, row);
                 protos.Add(snp);
                 continue;
             }
@@ -195,6 +205,7 @@ public static class RecognitionEmit
                 if (!variables.Any(v => v.Name == variable))
                     variables.Add((variable, row.TransparentValue, row.GeneratedKind, row.Connection == PartConnection.Shunt));
             }
+            AddFootprint(part, row);
             protos.Add(part);
         }
 
@@ -256,6 +267,7 @@ public static class RecognitionEmit
 
         // ── one walk from port 1 orders the names and the nets ──────────────────────────────────────
         foreach (var p in protos) for (int i = 0; i < p.Nodes.Count; i++) p.Nodes[i] = Find(p.Nodes[i]);
+        var stray = DropStrayLines(protos);
         var (elementOrder, nodeOrder) = Walk(protos);
 
         var taken = new HashSet<string>(protos.Where(p => p.FixedName is not null).Select(p => p.FixedName!), StringComparer.OrdinalIgnoreCase);
@@ -336,7 +348,7 @@ public static class RecognitionEmit
         var sweep = options.Sweep ?? input.EmSetup?.Frequency ?? RecognitionEmitOptions.DefaultSweep;
         tb.Analyses.Add(new SParameterAnalysis(AnalysisName, sweep));
 
-        return new RecognitionCircuit(tb) { Anchors = anchors, Measured = measured, Notes = notes };
+        return new RecognitionCircuit(tb) { Anchors = anchors, Measured = measured, Notes = notes, StrayLines = stray };
     }
 
     private const string Ground = "0";
@@ -345,6 +357,38 @@ public static class RecognitionEmit
     /// Elements in the order a walk from port 1 meets them, and nodes likewise: breadth first over the nets,
     /// each net's elements in the order they were made. Whatever the walk does not reach follows in order.
     /// </summary>
+    /// <summary>
+    /// Removes every group of lines and vias, joined through their non-ground nodes, that holds no port and no part — the
+    /// traces running to a pin of a part the circuit does not model (an IC), or copper between two such pins. They
+    /// change no S-parameter and drew as loose elements nobody could place (designer report, round 15: five of them,
+    /// both ends unconnected). Returns what was removed.
+    /// </summary>
+    private static List<(string Type, IReadOnlyList<(long X, long Y)> Anchor)> DropStrayLines(List<Proto> protos)
+    {
+        var byNode = new Dictionary<string, List<Proto>>(StringComparer.Ordinal);
+        foreach (var p in protos)
+            foreach (var n in p.Nodes.Distinct())
+                if (n != Ground) (byNode.TryGetValue(n, out var l) ? l : byNode[n] = []).Add(p);
+
+        var seen = new HashSet<Proto>(ReferenceEqualityComparer.Instance);
+        var drop = new HashSet<Proto>(ReferenceEqualityComparer.Instance);
+        foreach (var start in protos)
+        {
+            if (!seen.Add(start)) continue;
+            var group = new List<Proto> { start };
+            for (int i = 0; i < group.Count; i++)
+                foreach (var n in group[i].Nodes)
+                    if (n != Ground)
+                        foreach (var q in byNode[n])
+                            if (seen.Add(q)) group.Add(q);
+            // A port or a part has a fixed name; a line or a via is numbered.
+            if (group.All(p => p.FixedName is null)) drop.UnionWith(group);
+        }
+        var removed = protos.Where(drop.Contains).Select(p => (p.Type, p.Anchor)).ToList();
+        protos.RemoveAll(drop.Contains);
+        return removed;
+    }
+
     private static (List<Proto> Elements, List<string> Nodes) Walk(List<Proto> protos)
     {
         var byNode = new Dictionary<string, List<Proto>>(StringComparer.Ordinal);
@@ -375,6 +419,19 @@ public static class RecognitionEmit
                 foreach (var p in byNode[queue.Dequeue()]) Visit(p);
         }
         return (elements, nodes);
+    }
+
+    /// <summary>
+    /// The part's land pattern as a footprint reference, where its case is known — designer report, round 15: the case
+    /// was read (from the placed part, its land pattern, the placement file or the bill of materials) and shown in the
+    /// parts table, and then never reached the schematic, so the parts had no footprint and Update Layout from
+    /// Schematic had nothing to place.
+    /// </summary>
+    private static void AddFootprint(Proto part, PartRow row)
+    {
+        if (row.Case is { } smtCase)
+            part.Parameters.Add(new ParameterAssignment(ArtworkParameters.FootprintName,
+                new Footprints.FootprintRef(smtCase, Footprints.FootprintRef.DefaultDensity).ToString()));
     }
 
     private static string LinePrefix(LineElementType t) => t switch

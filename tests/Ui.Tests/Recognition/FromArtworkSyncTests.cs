@@ -45,6 +45,30 @@ public sealed class FromArtworkSyncTests : IDisposable
         Assert.Equal(("", "2 components model existing artwork — not generated"), (line.InstanceName, line.Text));
     }
 
+    /// <summary>
+    /// Designer report (round 15): the artwork is in the layout the schematic was recognised FROM, and nowhere else. A
+    /// recognised schematic updating its own new cell's empty layout generates its lines; updating the artwork's layout
+    /// still generates nothing.
+    /// </summary>
+    [Fact]
+    public void UpdateLayoutFromSchematic_GeneratesRecognisedLines_IntoAnyLayoutButTheArtworks()
+    {
+        var model = new SchematicEditModel
+        {
+            SchematicDirectory = _root,
+            ArtworkSource = new ArtworkProvenance { Layout = "../Board/layout/Board.clay" },
+        };
+        model.Components.Add(Recognised("TL1", SymbolKind.Mlin));
+        string artwork = Path.Combine(_root, "..", "Board", "layout", "Board.clay");
+        string own = Path.Combine(_root, "Board_model.clay");
+
+        var intoOwn = SchematicToLayoutGenerator.Run(model, new LayoutView(), _root, _root, _root, null, null, null, targetLayoutPath: own);
+        var intoArtwork = SchematicToLayoutGenerator.Run(model, new LayoutView(), _root, _root, _root, null, null, null, targetLayoutPath: artwork);
+
+        Assert.Equal(1, intoOwn.AddedCount);
+        Assert.Equal(0, intoArtwork.AddedCount);
+    }
+
     [Fact]
     public void UpdateSchematicFromLayout_DoesNotDuplicateARecognisedPart()
     {

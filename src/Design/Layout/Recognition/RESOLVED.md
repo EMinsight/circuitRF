@@ -326,3 +326,42 @@ wall. Left open — the fix is in what counts as a conflict, outside this series
 Committing `testdata/artwork-boards/README.md` means the folder is on every clone, so a `FixtureFact` gated on the
 folder no longer skips — the four earlier field tests would have failed `Assert.NotEmpty` on a fresh clone. They are
 gated on `testdata/artwork-boards/*/expected.json` now (`FieldBoards.Gate`; `FixturePaths` resolves one `*` segment).
+
+## Designer report, round 15 — two field boards (2026-10-09)
+
+### A bill of materials had to be a railRF one
+
+`BomFile` (railRF's reader) refuses a header with no part-number, quantity or description column, so a spreadsheet
+headed Component,Type,…,Value,Package was refused outright, and so was circuitRF's own netlist of the drawn schematic.
+`RecognitionBom` is now what the BOM… button and `recognize --bom` read: a `.csch` or a netlist (by extension, or by a
+first statement shaped `Type:Name …`, since the designer's was a `.txt`) as the circuit it is; else `BomFile`; else, on a
+refusal, `BomTablePaste` — which reads each cell by what it looks like, so a unit in the next column works. A file that
+is not UTF-8 is read as Latin-1: Windows-1252's `µ` (0xB5) otherwise decodes to U+FFFD and `0.1`,`µF` loses its unit.
+
+### The designator prefix outranked the bill of materials
+
+The BOM was consulted for the kind only when nothing else gave one, and `FB` → L always did, so a bead the BOM listed
+as `R 0.01 Ohm` stayed an L with its value refused as the wrong dimension. Order is now: placed part, then a kind the
+BOM states, then the prefix; overriding the prefix leaves a note. `ReadTypeWord` reads a single letter when it is the
+WHOLE cell — circuitRF's own BOM writes `C`/`L`/`R` there. A description that is a bead word takes its kind from the
+value's dimension.
+
+### The case was read and never written
+
+`RecognitionEmit` emitted no `Footprint`, so the recognised schematic's parts had none, the BOM export had none, and
+Update Layout from Schematic had nothing to place. Every part with a case now carries `smt:<case>@N`.
+
+### Lines reaching nothing
+
+Traces from the pins of an unmodelled part (the board's QFN) came out as line elements whose every node was their own:
+five floating elements in the drawn schematic. A group of lines and vias joined through non-ground nodes that holds no
+port and no part (nothing with a fixed name) is dropped before the walk, and reported as `StrayLines` with anchors.
+
+### A large pad on a narrow line did not split it
+
+FB2's pad is wider than the 1.2 mm supply rail, so the review split the rail there and `TapBetween` was to keep the
+two arms apart at FB2's terminal — but a terminal is the PAD's centre, 1.67 mm off the rail, and the reach was one
+width. The arms merged into one 22 mm line and FB2 joined FB1's node. Both tap reaches (`TapBetween` and
+`LineSegmentation`'s mid-piece tap) are now a line end's attach reach, `2·W + 1 mm`. A synthetic board did not
+reproduce it — three geometries passed with and without the fix — so the gate is field board `board-c`'s new
+`apart` key in `expected.json` (README updated), which fails without the change.

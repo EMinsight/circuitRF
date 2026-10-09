@@ -1,12 +1,12 @@
 {
   "FormatVersion": 1,
-  "Name": "PCB 6-Layer FR-4 (63mil, 1/0.5oz)",
-  "DefaultDisplayUnit": "Mil",
-  "DefaultSnapDbu": 25400,
+  "Name": "PCB 6-Layer FR-4 (1.6 mm, 1/0.5oz)",
+  "DefaultDisplayUnit": "Mm",
+  "DefaultSnapDbu": 10000,
   "DefaultFlattenTolDbu": 1000,
-  "DefaultLabelHeightDbu": 1016000,
-  "DefaultViaPadDbu": 609600,
-  "DefaultViaDrillDbu": 304800,
+  "DefaultLabelHeightDbu": 1000000,
+  "DefaultViaPadDbu": 600000,
+  "DefaultViaDrillDbu": 300000,
   "Layers": [
     {
       "Key": {

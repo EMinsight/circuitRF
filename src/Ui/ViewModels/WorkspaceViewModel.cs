@@ -9892,9 +9892,46 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     private void ExportPlacement() =>
         (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportPlacement();
 
-    [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
-    private void ExportBom() =>
-        (ResolveActiveDocumentForCommands() as LayoutDocument)?.RequestExportBom();
+    /// <summary>
+    /// File ▸ Export ▸ Bill of materials — a layout's (its placed footprints, through <c>BoardCompanions</c>) or,
+    /// designer report round 15, a SCHEMATIC's: an imported Gerber board places no footprints, and the schematic the
+    /// designer drew beside it is where its values are. Both write <see cref="BomWriter"/>'s columns, which Create
+    /// Schematic from Artwork's BOM… button reads back.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(IsBomExportable))]
+    private async Task ExportBom()
+    {
+        var active = ResolveActiveDocumentForCommands();
+        if (active is LayoutDocument layout) { layout.RequestExportBom(); return; }
+        if (active is not SchematicDocument doc || ResolveOwner(null) is not { } owner) return;
+
+        string name = doc.FilePath is { } p ? Path.GetFileNameWithoutExtension(p) : "schematic";
+        var model = doc.ViewModel.EditModel;
+        if (SchematicBom.Entries(model).Count == 0)
+        {
+            Messages.Warning($"Export Bill of materials: '{name}' places no part to fit — no resistor, capacitor, inductor, bead or footprinted part.");
+            return;
+        }
+        var file = await owner.StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export Bill of Materials",
+            SuggestedFileName = $"{name}-bom",
+            DefaultExtension = "csv",
+            FileTypeChoices = [new FilePickerFileType("Bill of materials") { Patterns = ["*.csv"] }],
+        });
+        if (file is null) return;
+        try
+        {
+            File.WriteAllText(file.Path.LocalPath, SchematicBom.Text(model, name), new System.Text.UTF8Encoding(false));
+            Messages.Success("Exported Bill of materials", file.Path.LocalPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Messages.Error($"Export Bill of materials: {ex.Message}");
+        }
+    }
+
+    private bool IsBomExportable() => ResolveActiveDocumentForCommands() is LayoutDocument or SchematicDocument;
 
     [RelayCommand]
     private void NewDataDisplay()

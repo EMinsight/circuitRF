@@ -50,6 +50,7 @@ public static class RecognitionProvenance
         if (o.TopFrequencyHz is { } top) options["topFrequencyHz"] = Num(top);
         if (emit is { Digits: not RecognitionEmitOptions.DefaultDigits } e)
             options["digits"] = e.Digits.ToString(CultureInfo.InvariantCulture);
+        if (emit is { ArtworkSides: false }) options["freeOrientation"] = "true";
         if (emit?.Sweep is { } sweep)
             options["sweep"] = $"{sweep.StartExpr} {sweep.StartUnit} to {sweep.StopExpr} {sweep.StopUnit}" +
                                (sweep.NumPoints is { } n ? $", {n} points" : $", step {sweep.StepExpr} {sweep.StepUnit}");

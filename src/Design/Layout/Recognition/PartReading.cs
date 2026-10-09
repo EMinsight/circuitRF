@@ -242,10 +242,15 @@ public static class PartReading
             else if (kind != placedKind && kind is PartKind.R or PartKind.L or PartKind.C)
                 notes.Add($"the placed part says {PartsTable.KindText(placedKind)}; its designator says {PartsTable.KindText(kind.Value)}");
         }
-        if (kind is null)
+        // The bill of materials states what was FITTED, and a designator prefix only what is usual — so a kind the
+        // bill of materials states beats the prefix (designer report, round 15: FB1, a ferrite bead listed as an R,
+        // came out an L with its 0.01 Ω value refused). A placed part's own kind still beats both.
+        if (kind is null || evidence[PartField.Kind] == PartEvidenceSource.Refdes)
             foreach (var row in bomRows)
-                if (FromSymbol(BomTablePaste.ReadTypeWord(row.Description).Kind) is { } bomKind)
+                if (BomKind(row) is { } bomKind)
                 {
+                    if (kind is { } prefixKind && prefixKind != bomKind)
+                        notes.Add($"its designator says {PartsTable.KindText(prefixKind)}; the bill of materials says {PartsTable.KindText(bomKind)}, which was taken");
                     kind = bomKind;
                     evidence[PartField.Kind] = PartEvidenceSource.Bom;
                     break;
@@ -353,6 +358,24 @@ public static class PartReading
         {
             Variable = row0.IsModelled && row0.TakesValue && value is null && model == PartModelKind.Ideal ? row0.DefaultVariable : null,
             Model = model, ModelFile = modelFile, Evidence = evidence, Confidence = confidence, Notes = notes,
+        };
+    }
+
+    /// <summary>
+    /// The kind a bill-of-materials row states: its type word, or — for a ferrite bead, which a bill of materials
+    /// lists as whatever the designer models it as — the dimension of its value (0.01 Ω is an R, 600 nH an L).
+    /// </summary>
+    private static PartKind? BomKind(BomRow row)
+    {
+        if (FromSymbol(BomTablePaste.ReadTypeWord(row.Description).Kind) is { } stated) return stated;
+        string words = new([.. (row.Description ?? "").Where(char.IsLetter).Select(char.ToLowerInvariant)]);
+        bool bead = words.StartsWith("bead", StringComparison.Ordinal) || words.StartsWith("ferrite", StringComparison.Ordinal);
+        if (!bead || !BomTablePaste.TryReadValue(row.Value, null, false, out _, out var dim)) return null;
+        return dim switch
+        {
+            UnitDimension.Resistance => PartKind.R,
+            UnitDimension.Inductance => PartKind.L,
+            _ => null,
         };
     }
 

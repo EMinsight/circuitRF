@@ -19,7 +19,7 @@ namespace CircuitRF.Ui.Diagnostics.Fixtures;
 /// </summary>
 public static class DocGerberFixtures
 {
-    public const string SixLayerId  = "pcb-6layer_FR-4_63mil_1oz";
+    public const string SixLayerId  = "pcb-6layer_FR-4_1.6mm_1oz";
     public const string FourLayerId = "pcb-4layer_FR-4_62mil_1oz";
 
     /// <summary>The dialog as it opens on a six-copper set in a workspace whose default is six-layer.</summary>

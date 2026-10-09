@@ -83,7 +83,9 @@ public sealed class ArtworkRoundTripTests(ArtworkRoundTripBoard board, ITestOutp
         {
             var (o, r) = (original.Instances.Single(i => i.InstanceName == part), recognised.Instances.Single(i => i.InstanceName == part));
             Assert.Equal(o.Reference, r.Reference);
-            var (ov, rv) = (o.Overrides.Single(), r.Overrides.Single());
+            // The value; the land pattern each part was read on also comes back, as its footprint (round 15).
+            var (ov, rv) = (o.Overrides.Single(x => x.Name != "Footprint"), r.Overrides.Single(x => x.Name != "Footprint"));
+            Assert.Contains(r.Overrides, x => x.Name == "Footprint");
             Assert.Equal((ov.Name, ov.Expression, ov.Unit), (rv.Name, rv.Expression, rv.Unit));
         }
         Assert.Equal(new Dictionary<string, string> { ["C1"] = "series", ["L1"] = "shunt", ["R1"] = "series" }, Connections(csv));
@@ -126,7 +128,7 @@ public sealed class ArtworkRoundTripTests(ArtworkRoundTripBoard board, ITestOutp
         // Every value a variable <Refdes>_<Param>, a global, with its tune entry.
         foreach (var p in parts)
         {
-            var value = p.Overrides.Single();
+            var value = p.Overrides.Single(x => x.Name != "Footprint");
             Assert.Equal($"{p.InstanceName}_{value.Name}", value.Expression);
             Assert.Contains(recognised.GlobalVariables, v => v.Name == value.Expression);
             Assert.Contains(recognised.Tuning!.Variables, t => t.Key == value.Expression && t.Tune);

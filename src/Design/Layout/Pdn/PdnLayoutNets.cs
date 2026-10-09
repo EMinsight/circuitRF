@@ -273,7 +273,7 @@ public sealed record PdnSchematicNets(
     /// — <c>C</c> on a capacitor, <c>R</c> on a resistor. Taking the first of ALL of them would put
     /// a temperature coefficient in the value column of a part somebody typed one on.</para>
     /// </summary>
-    private static string? ValueOf(EditableComponent? component)
+    internal static string? ValueOf(EditableComponent? component)
     {
         if (component is null) return null;
         foreach (var p in component.LabelParameters())

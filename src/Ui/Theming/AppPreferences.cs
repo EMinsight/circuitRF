@@ -158,6 +158,15 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? CheckLvsOnExport { get; set; }
 
+    // Designer report (round 15): whether a symbol's facing and its footprint's placement angle follow each other.
+    // Null means ON, the behaviour until now: Update Layout from Schematic turns a footprint when its symbol was turned
+    // since the last sync, and Create Schematic from Artwork draws a shunt part above or below its line by the side of
+    // the trace its copper is on. OFF, the two drawings are independent — a resistor drawn across the page has no
+    // reason to sit across the board. Per USER: a way of working, not a property of a design.
+    [JsonPropertyName("link_schematic_layout_orientation")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? LinkSchematicLayoutOrientation { get; set; }
+
     // R-rf3-7. Whether importing artwork turns a PAINTED pour — a copper fill expressed as thousands
     // of abutting scanline strokes — back into the region it paints. Null means the default, which is
     // ON: the region is the shape the renderer, the mesher, the DRC engine and every writer want, and

@@ -23,6 +23,22 @@ public static class TlinEntryConversion
     /// <summary>True when <paramref name="parameters"/> are in the physical form.</summary>
     public static bool IsPhysical(IEnumerable<EditableParameter> parameters) => parameters.Any(p => p.Name == "L");
 
+    /// <summary>
+    /// The physical form's rows as a placed TLIN shows them — <see cref="Switch"/>'s own choices: Z, L, Eeff and F drawn,
+    /// the losses not. What a netlist's physical TLIN is drawn with (designer report, round 15: a recognised TLIN came
+    /// in with L hidden and unit-less, because only the angle form's rows were known, so its length was nowhere on the
+    /// schematic).
+    /// </summary>
+    public static IReadOnlyList<DefaultParam> PhysicalTemplate { get; } =
+    [
+        new("Z", "50", "Ω", true, UnitDimension.Resistance),
+        new("L", "0", "mm", true, UnitDimension.Length),
+        new("Eeff", "1", "", true, UnitDimension.None),
+        new("F", "1", "GHz", true, UnitDimension.Frequency),
+        new("Ac", "0", "", false, UnitDimension.None),
+        new("Ad", "0", "", false, UnitDimension.None),
+    ];
+
     /// <summary>The other form's parameters, and what the switch has to say (empty when nothing).
     /// <paramref name="lengthUnit"/> is the unit a new <c>L</c> is written in — the technology's.</summary>
     public static (List<EditableParameter> Parameters, string Note) Switch(

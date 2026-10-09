@@ -168,7 +168,7 @@ internal static class LineSegmentation
 
     /// <summary>Segments <paramref name="run"/>, on <paramref name="island"/>.</summary>
     /// <param name="onIsland">The parts' terminals, vias' ends and ports on the trace's island: one the trace
-    /// runs THROUGH — within a width of its centre line, more than a width from either end — splits the line there
+    /// runs THROUGH — within a line end's attach reach of its centre line, more than a width from either end — splits the line there
     /// (a shunt part's pad standing on a line, a via in the middle of one).</param>
     public static TraceLines Segment(TraceRun run, int island, RecognitionOptions options, LineBinder binder,
                                      int dbuPerMicron, SegmentationCounts counts,
@@ -250,7 +250,12 @@ internal static class LineSegmentation
                 double t = (x - p.X0) * dir[i].X + (y - p.Y0) * dir[i].Y;
                 double off = Math.Abs(-(x - p.X0) * dir[i].Y + (y - p.Y0) * dir[i].X);
                 double s = s0[i] + t;
-                if (t < 0 || t > len[i] || off > p.Width || s < p.Width || s > total - p.Width) continue;
+                // A terminal is a pad's CENTRE, and a large pad standing on a narrow line puts it well off the centre
+                // line: FB2's 2512 pad on a 1.2 mm supply rail, 1.5 mm off it, was not tapped and joined the line's
+                // start node instead, beside FB1 (designer report, round 15). So the reach is the one a line's END
+                // attaches within (LineRecognition.AttachReach*), and not one width.
+                double reach = Math.Max(p.Width, LineRecognition.AttachReachWidths * p.Width + LineRecognition.AttachReachMicrons * dbuPerMicron);
+                if (t < 0 || t > len[i] || off > reach || s < p.Width || s > total - p.Width) continue;
                 int a = atoms.FindIndex(o => o.S1 >= s);
                 if (a < 0) break;
                 if (s > atoms[a].S0 + 1e-6 && s < atoms[a].S1 - 1e-6) atoms.Insert(a + 1, atoms[a].SplitAt(s, stations));

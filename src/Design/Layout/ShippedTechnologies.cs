@@ -34,6 +34,7 @@ public static class ShippedTechnologies
     public const string DefaultId = "pcb-2layer_RO4350B_20mil_1oz";
 
     private const string ResourceSuffix = ".ctech";
+    private const string ResourceFolder = ".resources.technologies.";
 
     private static readonly Lazy<IReadOnlyList<ShippedTechnologyEntry>> _entries = new(Discover);
 
@@ -88,13 +89,13 @@ public static class ShippedTechnologies
         {
             if (!name.EndsWith(ResourceSuffix, StringComparison.Ordinal)) continue;
             // MSBuild's default embedded-resource naming is <RootNamespace>.<folder.path>.<FileName> —
-            // folder separators become dots, but a filename itself is never split further (none of
-            // our technology filenames contain a literal '.' beyond the ".ctech" extension itself),
-            // so the segment between the LAST remaining dot and ".ctech" is always the exact file
-            // stem, however many namespace/folder segments precede it.
+            // folder separators become dots and a dot in the FILE name stays a dot, so the stem is
+            // everything after the folder path, not after the last dot: "pcb-6layer_FR-4_1.6mm_1oz"
+            // read by its last dot was the id "6mm_1oz".
             string withoutExt = name[..^ResourceSuffix.Length];
-            int lastDot = withoutExt.LastIndexOf('.');
-            string id = lastDot >= 0 ? withoutExt[(lastDot + 1)..] : withoutExt;
+            int folder = withoutExt.IndexOf(ResourceFolder, StringComparison.Ordinal);
+            string id = folder >= 0 ? withoutExt[(folder + ResourceFolder.Length)..]
+                      : withoutExt[(withoutExt.LastIndexOf('.') + 1)..];
             list.Add(new ShippedTechnologyEntry(id, name));
         }
         list.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));

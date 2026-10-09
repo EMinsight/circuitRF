@@ -167,6 +167,27 @@ public sealed class RotationSyncTests : IDisposable
         Assert.DoesNotContain(again.Lines, l => l.Text.Contains("being overwritten"));
     }
 
+    /// <summary>Settings ▸ "Link symbol and footprint orientation" off (designer report, round 15): a new placement takes
+    /// the cell's own facing and a schematic turn is not carried.</summary>
+    [Fact]
+    public void Unlinked_ASchematicTurnIsNotCarried_AndANewPlacementIsNotTurned()
+    {
+        var schematic = new SchematicEditModel { SchematicDirectory = _schematicDir };
+        var comp = Mlin("MLIN1");
+        comp.Rotation = SymbolRotation.R90;
+        schematic.Components.Add(comp);
+        var layout = new LayoutView();
+        SchematicToLayoutGenerator.GenerationResult Unlinked() =>
+            SchematicToLayoutGenerator.Run(schematic, layout, _schematicDir, _root, _layoutDir, null, null, null, linkOrientation: false);
+
+        Unlinked().Command?.Execute();
+        Assert.Equal(0.0, layout.Instances[0].RotationDegrees);
+
+        comp.Rotation = SymbolRotation.R180;
+        Assert.Null(Unlinked().Command);
+        Assert.Equal(0.0, layout.Instances[0].RotationDegrees);
+    }
+
     /// <summary>A placement made before rotations were linked: nothing says which side's orientation
     /// is intended, so neither turns — the link is recorded and the next turn is carried.</summary>
     [Fact]
