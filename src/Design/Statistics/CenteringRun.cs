@@ -338,13 +338,18 @@ public sealed class CenteringRun
     /// </summary>
     public CandidateScore Score(double[] u, CancellationToken ct = default) => ScoreBatch([u], ct)[0];
 
-    private CandidateScore[] ScoreBatch(IReadOnlyList<double[]> batch, CancellationToken ct)
-        => _surrogate ? SurrogateBatch(batch, ct) : SimulatedBatch(batch, ct);
+    private CandidateScore[] ScoreBatch(IReadOnlyList<double[]> batch, CancellationToken ct, bool snap = false)
+        => _surrogate ? SurrogateBatch(batch, ct, snap) : SimulatedBatch(batch, ct, snap);
+
+    /// <summary>A candidate's values: a standard-value nominal on its rung only when <paramref name="snap"/> asks (the
+    /// snap stage), or throughout under Discrete, whose points are rungs already.</summary>
+    private DecodedPoint Decode(double[] u, bool snap)
+        => Variables!.Decode(u, snapPreferred: snap || Algorithm == Discrete.AlgorithmId);
 
     /// <summary>Each candidate simulated on all M common trials (brief-yield-11).</summary>
-    private CandidateScore[] SimulatedBatch(IReadOnlyList<double[]> batch, CancellationToken ct)
+    private CandidateScore[] SimulatedBatch(IReadOnlyList<double[]> batch, CancellationToken ct, bool snap = false)
     {
-        var decoded = batch.Select(u => Variables!.Decode(u)).ToArray();
+        var decoded = batch.Select(u => Decode(u, snap)).ToArray();
         var points = new List<(int, IReadOnlyDictionary<string, string>)>();
         foreach (var d in decoded)
             if (!d.Infeasible)
@@ -372,9 +377,9 @@ public sealed class CenteringRun
     /// them; the smooth objective and the yield on the virtual trials. A candidate whose design did not evaluate whole
     /// — a point that failed, a goal with no value — is simulated on the common trials instead.
     /// </summary>
-    private CandidateScore[] SurrogateBatch(IReadOnlyList<double[]> batch, CancellationToken ct)
+    private CandidateScore[] SurrogateBatch(IReadOnlyList<double[]> batch, CancellationToken ct, bool snap)
     {
-        var decoded = batch.Select(u => Variables!.Decode(u)).ToArray();
+        var decoded = batch.Select(u => Decode(u, snap)).ToArray();
         var zPoints = new List<(double[], IReadOnlyDictionary<string, string>)>();
         var checks  = new List<(int, IReadOnlyDictionary<string, string>)>();
         foreach (var d in decoded)
@@ -406,7 +411,7 @@ public sealed class CenteringRun
         }
         if (simulate.Count > 0)
         {
-            var simulated = SimulatedBatch([.. simulate.Select(k => batch[k])], ct);
+            var simulated = SimulatedBatch([.. simulate.Select(k => batch[k])], ct, snap);
             for (int i = 0; i < simulate.Count; i++) scores[simulate[i]] = simulated[i];
         }
         return scores;
@@ -474,6 +479,61 @@ public sealed class CenteringRun
         var yield = counted == 0 ? YieldEstimate.None : YieldEstimate.Of(passes, counted, _statistics.EffectiveConfidence / 100);
         return new CandidateScore(values, objective, yield, dne, trials, false);
     }
+
+    /// <summary>
+    /// The snap stage: each standard-value nominal of <paramref name="from"/> to the series values either side of it — every
+    /// combination with up to six such nominals, else the nearest only — scored on the same trials, the best kept. Null
+    /// when no coordinate takes standard values; a null point when none of the snapped candidates evaluated.
+    /// </summary>
+    private (int Count, (CandidateScore Score, double[] U)? Best)? SnapPreferred(double[] from, CancellationToken ct)
+    {
+        var vars = Variables!;
+        int[] preferred = [.. Enumerable.Range(0, vars.Coordinates.Count)
+                                        .Where(i => vars.Coordinates[i] is { Preferred: true, Levels.Count: > 0 })];
+        if (preferred.Length == 0) return null;
+
+        var batch = new List<double[]>();
+        if (preferred.Length <= 6)
+        {
+            var choices = preferred.Select(i =>
+            {
+                var c = vars.Coordinates[i];
+                var (below, above) = PreferredValues.Bracket(c.Decode(from[i]), c.Levels!);
+                return below == above ? new[] { c.Encode(below) } : [c.Encode(below), c.Encode(above)];
+            }).ToArray();
+            int combos = choices.Aggregate(1, (p, ch) => p * ch.Length);
+            for (int k = 0; k < combos; k++)
+            {
+                var x = (double[])from.Clone();
+                int rest = k;
+                for (int d = 0; d < preferred.Length; d++)
+                {
+                    x[preferred[d]] = choices[d][rest % choices[d].Length];
+                    rest /= choices[d].Length;
+                }
+                batch.Add(x);
+            }
+        }
+        else
+        {
+            var x = (double[])from.Clone();
+            foreach (int i in preferred)
+            {
+                var c = vars.Coordinates[i];
+                x[i] = c.Encode(PreferredValues.Snap(c.Decode(x[i]), c.Levels!));
+            }
+            batch.Add(x);
+        }
+
+        ct.ThrowIfCancellationRequested();
+        var scores = ScoreBatch(batch, ct, snap: true);
+        int bestK = -1;
+        for (int k = 0; k < scores.Length; k++)
+            if (!scores[k].Failed && (bestK < 0 || scores[k].Objective > scores[bestK].Objective)) bestK = k;
+        return (preferred.Length, bestK < 0 ? null : (scores[bestK], batch[bestK]));
+    }
+
+    private static string Smooth(double objective) => objective.ToString("0.0000", System.Globalization.CultureInfo.InvariantCulture);
 
     // ── The estimate ─────────────────────────────────────────────────────────────────
 
@@ -606,6 +666,20 @@ public sealed class CenteringRun
                 int k0 = history.Count - 1 - (int)stallIters;
                 if (k0 >= 0 && history[^1].BestObjective - history[k0].BestObjective <= stallTol * Math.Abs(history[^1].BestObjective))
                 { reason = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"the best smooth yield improved by less than {stallTol:G3} of itself over {stallIters} iterations"); break; }
+            }
+
+            // A standard-value (E-series) nominal is searched continuously and ends on the series, as the Optimizer's
+            // runs end; the draws around it stay continuous, since a built part varies continuously within its
+            // tolerance. A Stop ends with no snap, as the Optimizer's does.
+            if (!_stop && bestU is not null && best is not null && Algorithm != Discrete.AlgorithmId
+                && SnapPreferred(bestU, ct) is { } snap)
+            {
+                if (snap.Best is { } s)
+                {
+                    notes.Add(StatisticsDiagnostics.CenterSnapped(snap.Count, Smooth(best.Objective), Smooth(s.Score.Objective)));
+                    (best, bestU) = s;
+                }
+                else notes.Add(StatisticsDiagnostics.CenterSnapFailed(snap.Count));
             }
         }
         catch (OperationCanceledException)

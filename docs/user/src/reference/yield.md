@@ -291,6 +291,15 @@ panel shows both: **start yield [interval] → centred yield [interval]**. That 
 own figure — is the result. If the two intervals overlap, the gain is not resolved at that many trials;
 raise **Verify** to settle it.
 
+A value set to a standard series (E6, E24, E96 and so on) is searched continuously, and its centred
+value then lands on the series: the search tries the series values either side of where it stopped and
+keeps whichever scores best. The trials around it still vary continuously within its tolerance, as a
+real part does. After **Stop** the value stays where the search left it.
+
+The digits button beside **Send to Tuning** sets how many significant figures the centred values show.
+**Lock in**, **Push** and **Send to Tuning** keep them to the same figures. It is the same setting as
+the Tuning and Optimizer panels' digits, saved with the schematic.
+
 The chevron opens the centering settings: the search method, the trials each position is judged on,
 the trials of the final check, the iteration and simulation limits, and **Surrogate**. With
 **quadratic**, each position costs a dozen simulations or so instead of one per trial: circuitRF fits

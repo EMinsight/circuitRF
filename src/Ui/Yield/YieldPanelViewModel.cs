@@ -179,6 +179,8 @@ public sealed partial class YieldPanelViewModel : ObservableObject, ITunableAddH
         RefreshKit();
         OnPropertyChanged(nameof(Tuned));
         OnPropertyChanged(nameof(HasSchematic));
+        OnPropertyChanged(nameof(DigitsChoices));
+        SetDigitsCommand.NotifyCanExecuteChanged();
         NotifyRunCommands();
         Changed?.Invoke(this, EventArgs.Empty);
     }

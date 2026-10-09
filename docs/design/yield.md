@@ -888,6 +888,15 @@ list. Gradient methods are not offered: at finite M a finite difference of a yie
 `maxiter` (default 100), `maxevals` (simulations, verification not counted), `timelimit`, and the optimizer's stall
 rule (`stall_tol`, `stall_iters` from `OptimizerAlgorithms.CommonOptions`) on the best objective.
 
+**Standard values.** A `discrete=preferred` or E-series entry is searched continuously, as every algorithm but
+Discrete searches it in the Optimizer, and the search then ends with a snap stage: each such nominal goes to the
+series values either side of where the search left it (`PreferredValues.Bracket`), every combination with up to six
+of them (else the nearest only), each scored on the common trials, the best kept (`yield.center.snapped`, Info; none
+evaluating is `yield.center.snap-failed`, a Warning, and the point stays between rungs). The trials around a snapped
+nominal stay continuous: a built part varies continuously within its tolerance. Discrete is on the series throughout,
+and a Stop ends with no snap, as the Optimizer's does. There is no polish: centering has no fast local method to hold
+the snapped values while it re-searches the rest.
+
 ### 15.4 Verification and results (R-ya11-5, R-ya11-7)
 
 At the end the start and the best point are each run by an ordinary `StatisticalRun` (Yield mode) with the point's

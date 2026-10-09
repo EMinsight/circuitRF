@@ -12,7 +12,8 @@
 //
 //  Lock in, Push and Send to Tuning act on the centred nominals
 //  exactly as the Optimizer's act on its best point: a preset (TO-5),
-//  one undo step per document (TuningPush), the Tuning sliders.
+//  one undo step per document (TuningPush), the Tuning sliders — to
+//  the schematic's digits, the figures the rows show.
 // ================================================================
 
 using System;
@@ -52,6 +53,28 @@ public sealed partial class YieldPanelViewModel
     /// <summary>The Monte Carlo / Yield / Corners lists; Centering shows its own.</summary>
     public bool ShowVariableTolerances => Mode is not (YieldMode.Centering or YieldMode.Doe);
 
+    // ---- Digits (the Tuning and Optimizer panels' setting, on the same schematic) ----------
+
+    /// <summary>The significant digits a centred value is shown and kept with (<see cref="TuningDigits"/>).</summary>
+    public int Digits => TuningDigits.Of(Setup);
+
+    public IReadOnlyList<TuningDigitsChoice> DigitsChoices
+        => [.. TuningDigits.Choices.Select(d => new TuningDigitsChoice(d, d == Digits, SetDigitsCommand))];
+
+    [RelayCommand(CanExecute = nameof(HasSchematic))]
+    private void SetDigits(int digits)
+    {
+        if (_tuned is null || digits == Digits) return;
+        var next = Setup?.Clone() ?? new TuningSetup();
+        next.Digits = digits == TuningDigits.Default ? null : digits;
+        Execute(next, $"Show {TuningDigits.Label(digits)}");
+    }
+
+    /// <summary>The centred nominals as Lock in, Push and Send to Tuning write them: to the panel's digits, the
+    /// figures the rows show.</summary>
+    private IReadOnlyDictionary<string, string>? KeptCentred()
+        => _centred is { } values ? TuningDigits.Round(values, Digits) : null;
+
     // ---- The variable list: Opt and Stat together ------------------------------------
 
     public ObservableCollection<YieldCenterRowViewModel> CenterRows { get; } = [];
@@ -77,6 +100,8 @@ public sealed partial class YieldPanelViewModel
         }
         ShowCentred();
         OnPropertyChanged(nameof(HasCenterRows));
+        OnPropertyChanged(nameof(Digits));
+        OnPropertyChanged(nameof(DigitsChoices));
     }
 
     // ---- The center settings (collapsed to a summary, as R-ya10-5's) -----------------
@@ -352,9 +377,14 @@ public sealed partial class YieldPanelViewModel
 
     private void ShowCentred()
     {
+        int digits = Digits;
+        var best = KeptCentred();
         foreach (var row in CenterRows)
-            row.Show(_centerStart ?? (_centred is null ? null : StartValuesOf(row)), _centred,
+        {
+            var start = _centerStart ?? (_centred is null ? null : StartValuesOf(row));
+            row.Show(start is null ? null : TuningDigits.Round(start, digits), best,
                      _centerRailed.FirstOrDefault(r => r.Key == row.Key));
+        }
     }
 
     /// <summary>Before the result names the start, a row's start is the schematic's own value.</summary>
@@ -369,7 +399,7 @@ public sealed partial class YieldPanelViewModel
     [RelayCommand(CanExecute = nameof(CanKeepCentred))]
     private void LockInCentred()
     {
-        if (_tuned is null || _centred is not { } values) return;
+        if (_tuned is null || KeptCentred() is not { } values) return;
         var (setup, preset) = TuningPresets.LockIn(Setup, values, UtcNow(), null);
         Execute(setup, "Lock in centred nominals");
         StatusText = $"Locked in {preset.Name}";
@@ -379,7 +409,7 @@ public sealed partial class YieldPanelViewModel
     [RelayCommand(CanExecute = nameof(CanKeepCentred))]
     private void PushCentred()
     {
-        if (_tuned is null || _centred is not { } values || Catalog is not { } catalog) return;
+        if (_tuned is null || KeptCentred() is not { } values || Catalog is not { } catalog) return;
         var report = TuningPush.Push(catalog, values, _tuned, SessionForDrawing ?? (_ => null));
         if (report.UndoSession(_tuned) is { } undo) EditCommitted?.Invoke(undo);
         _catalog = null;
@@ -391,7 +421,7 @@ public sealed partial class YieldPanelViewModel
     [RelayCommand(CanExecute = nameof(CanKeepCentred))]
     private void SendCentredToTuning()
     {
-        if (_centred is not { } values || SendToTuningTarget is null) return;
+        if (KeptCentred() is not { } values || SendToTuningTarget is null) return;
         SendToTuningTarget(values, "Centred");
         StatusText = $"Sent {values.Count} value{(values.Count == 1 ? "" : "s")} to Tuning";
     }

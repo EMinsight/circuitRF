@@ -14,6 +14,18 @@
          icon buttons, the live yield readout, the run settings collapsed to one line, then Variables, Specs and
          either the trial table or the corners. Readouts carry no prose: a value or a short status. -->
 
+    <UserControl.Resources>
+        <!-- The centering digits menu: one radio item per choice (TuningDigitsChoice), as the Optimizer's header has. -->
+        <ControlTheme x:Key="DigitsMenuItem" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}"
+                      x:DataType="tun:TuningDigitsChoice">
+            <Setter Property="Header" Value="{Binding Label}"/>
+            <Setter Property="ToggleType" Value="Radio"/>
+            <Setter Property="IsChecked" Value="{Binding IsChecked, Mode=OneWay}"/>
+            <Setter Property="Command" Value="{Binding Command}"/>
+            <Setter Property="CommandParameter" Value="{Binding Digits}"/>
+        </ControlTheme>
+    </UserControl.Resources>
+
     <UserControl.Styles>
         <Style Selector="Button.tb">
             <Setter Property="Padding" Value="3,2"/>
@@ -173,6 +185,12 @@
                     </Button>
                     <Button Classes="tb" Command="{Binding SendCentredToTuningCommand}" ToolTip.Tip="Send the centred nominals to Tuning">
                         <mi:MaterialIcon Kind="TuneVertical"/>
+                    </Button>
+                    <Button Classes="tb" ToolTip.Tip="Significant digits for tuned, optimized and centred values">
+                        <mi:MaterialIcon Kind="DecimalDecrease"/>
+                        <Button.Flyout>
+                            <MenuFlyout ItemsSource="{Binding DigitsChoices}" ItemContainerTheme="{StaticResource DigitsMenuItem}"/>
+                        </Button.Flyout>
                     </Button>
                 </StackPanel>
 

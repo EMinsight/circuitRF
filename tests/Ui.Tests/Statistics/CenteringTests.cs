@@ -58,6 +58,23 @@ public sealed class CenteringDividerTests
     }
 }
 
+/// <summary>An E-series nominal is searched continuously and ends on the series; the trials around it stay continuous.</summary>
+public sealed class CenteringSnapTests
+{
+    [Fact]
+    public void AnE24Nominal_EndsOnTheSeries_AndItsTrialsVaryContinuously()
+    {
+        var cnl = CenteringCircuits.Divider("trials=40 verify=100 maxiter=15")
+            .Replace("opt=1 dist=gauss", "opt=1 discrete=e24 dist=gauss");
+        var r = CenteringCircuits.Create(cnl).Run();
+        Assert.Equal(CenteringOutcome.Finished, r.Outcome);
+
+        Assert.Contains(CenteringCircuits.Ohms(r.BestValues["R1.R"]), new[] { 910.0, 1000.0, 1100.0 });
+        Assert.Contains(r.Notes, n => n.Id == "yield.center.snapped");
+        Assert.True(r.Best!.Records.Select(t => t.Values["R1.R"]).Distinct().Count() > 1);
+    }
+}
+
 /// <summary>R-ya11-2: one fixed set of trials — a candidate scores the same twice, and every candidate sees the same draws.</summary>
 public sealed class CommonRandomNumbersTests
 {

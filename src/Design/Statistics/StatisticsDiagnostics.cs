@@ -330,6 +330,16 @@ public static class StatisticsDiagnostics
         "After {running} poor surrogate fits running (to iteration {iteration}), centering switched back to simulated " +
         "trials for the rest of the search.", ("running", running), ("iteration", iteration));
 
+    public static Diagnostic CenterSnapped(int count, string before, string after) => Diagnostic.Create(
+        "yield.center.snapped", DiagnosticSeverity.Info,
+        "{count} standard-value nominal(s) moved to the series: smooth yield {before} searched continuously, {after} on the series.",
+        ("count", count), ("before", before), ("after", after));
+
+    public static Diagnostic CenterSnapFailed(int count) => Diagnostic.Create(
+        "yield.center.snap-failed", DiagnosticSeverity.Warning,
+        "No candidate with the {count} standard-value nominal(s) on the series could be evaluated; the best point is left between rungs.",
+        ("count", count));
+
     // ── YA-14: design of experiments ───────────────────────────────────────
 
     public static Diagnostic DoeNoFactors(string source) => Diagnostic.Create(

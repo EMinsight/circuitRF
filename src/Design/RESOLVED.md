@@ -18864,3 +18864,17 @@ Every finding was confirmed against the source before it was changed; none turne
   note and its diagnostic were deleted because their sentence was no longer true. It also said `discrete=preferred`
   for an E24 row.
 - **Gate.** `SnapAndPolishTests.AnESeriesRow_UnderAContinuousAlgorithm_EndsOnTheSeries_Unasked`.
+
+## Yield centering — standard-value nominals ended between rungs (2026-10-09)
+
+- **Symptom.** Centering an E-series row under the default `cmaes` gave a centred nominal between rungs. Its
+  verification ran on a value nobody can buy. `CenteringRun` decoded every candidate with `snapPreferred: false`, and
+  only `discrete` stayed on the series (and that only by encoding rungs, so its text could carry float noise).
+- **Fix.** After the search, a snap stage like the Optimizer's (`SnapPreferred`): the bracketing rungs of each preferred
+  nominal, every combination up to six, are scored on the common trials (simulated or surrogate, whichever is active)
+  and the best is kept, so the verified and kept point is buildable. The search itself stays continuous, as asked.
+  So do the Monte Carlo draws around each nominal: `SampleValues` spreads around the candidate's value text, and the
+  snap only changes that text. Discrete now decodes with snapping on, so its values are exact rungs. No polish stage:
+  the noisy-objective menu has no local method to re-search the continuous values with the snapped ones held.
+- **Gate.** `CenteringSnapTests.AnE24Nominal_EndsOnTheSeries_AndItsTrialsVaryContinuously`.
+

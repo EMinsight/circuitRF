@@ -6,6 +6,7 @@ using CircuitRF.Design.Optimization;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Statistics;
 using CircuitRF.Ui.Tests.Optimization;
+using CircuitRF.Ui.Tuning;
 using CircuitRF.Ui.ViewModels;
 using CircuitRF.Ui.Yield;
 
@@ -117,10 +118,15 @@ public sealed class CenteringPanelTests
         var verb = JsonNode.Parse(stdout)!["result"]!["center"]!["bestValues"]!.AsObject();
         Assert.Equal(verb.ToDictionary(kv => kv.Key, kv => kv.Value!.GetValue<string>()), centred.ToDictionary());
 
+        // The digits menu: the row shows, and Push writes, the centred value to the schematic's digits.
+        panel.SetDigitsCommand.Execute(3);
+        string kept = TuningDigits.Round(centred["R1.R"], 3);
+        Assert.Equal(kept, panel.CenterRows.Single(r => r.Key == "R1.R").BestText);
+
         int before = top.UndoRedo.Entries.Count();
         panel.PushCentredCommand.Execute(null);
         Assert.Equal(before + 1, top.UndoRedo.Entries.Count());
         var pushed = TunableCatalog.Discover(model, TuningFixture.Resolver()).Find("R1.R")!;
-        Assert.Equal(TunableValue.InUnit(centred["R1.R"], "Ohm")!.Value, pushed.Value, 9);
+        Assert.Equal(TunableValue.InUnit(kept, "Ohm")!.Value, pushed.Value, 9);
     }
 }

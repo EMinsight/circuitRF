@@ -39204,3 +39204,13 @@ handlers on the search box and the list themselves. Double-click adds the clicke
 already selected (`TuningAddViewModel.AddWith`): two clicks toggle the row twice, so it ends unselected,
 and `AddSelected` alone would have fallen back to the first row shown. **Any key handling for content inside
 a Flyout/Popup belongs on that content, never on the flyout's host.**
+
+## Yield Centering: centred values carried every digit (2026-10-09)
+
+The Centering rows showed and kept the run's `G15` value text. The panel now has the Optimizer's digits menu
+(`DigitsChoices`/`SetDigits`, the `DigitsMenuItem` theme), on the same per-schematic `TuningSetup.Digits` the Tuning
+and Optimizer panels share. One value should read the same in all three panels: it moves between them through Send
+to Tuning and presets. The rows show the start and centred values to those digits, and Lock in, Push and Send to
+Tuning keep them rounded the same way (`KeptCentred`). `CentredValues` stays full precision, since it is what the CLI
+parity test compares against `yield center`. Gate: `CenteringPanelTests`.
+
