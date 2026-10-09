@@ -1116,12 +1116,10 @@ src/Core/Expressions/Evaluator.Reductions.cs|normq(): the value has no points th
 src/Core/Expressions/Evaluator.Reductions.cs|pctl_over(): the percentile must be a number from 0 to 100, e.g. pctl_over(x, 95).
 src/Core/Expressions/Evaluator.Reductions.cs|sigma_to(): the limit must be a number, e.g. sigma_to(x, 14).
 src/Core/Expressions/Evaluator.Reductions.cs|yield_sens(): the pass/fail value has {pass.Axes[0].Length} points and the parameter {x.Axes[0].Length}; give both over the same trials.
-src/Core/Expressions/Evaluator.Reductions.cs|{name}(): no '{axisName}' point lies in [{lo:G6}, {hi:G6}]; the axis runs from {extent}.
 src/Core/Expressions/Evaluator.Reductions.cs|{name}(): no axis named '{axisName}'. Its axes are: {axes}.
 src/Core/Expressions/Evaluator.Reductions.cs|{name}(): the '{axisName}' axis has no points.
 src/Core/Expressions/Evaluator.Reductions.cs|{name}(): the bin count must be a whole number of at least 1, e.g. {name}(…, 20).
 src/Core/Expressions/Evaluator.Reductions.cs|{name}(): the range ends must be numbers, e.g. {name}(x, 0.1GHz, 3GHz).
-src/Core/Expressions/Evaluator.Reductions.cs|{name}(): the range is empty — {lo:G6} is above {hi:G6}. Give the low end first.
 src/Core/Expressions/Evaluator.Reductions.cs|{name}(): the values are complex, which have no order. Reduce a real quantity: dB(…), mag(…) or real(…) of it.
 src/Core/Expressions/Evaluator.Reductions.cs|{name}(): the values are complex. Take a real quantity: dB(…), mag(…) or real(…) of it.
 src/Core/Expressions/Evaluator.Reductions.cs|{name}(): this value has no 'trial' or 'freq' axis; name the axis to reduce as the last argument. Its axes are: {axes}.
@@ -1133,3 +1131,19 @@ src/Core/Expressions/Value.cs|Operator '{op}' requires Bool or a cube of truth v
 src/Core/Expressions/Value.cs|Operator '{op}' requires real operands, got a complex cube
 src/Core/Expressions/Value.cs|Operator '{op}' requires real operands, got {(v.Kind == ValueKind.Cube ? 
 src/Engine/Statistics/Regression.cs|A regression needs at least two observations.
+
+# ── Plain exceptions by their files' own convention (2026-10-09) ─────────────────────
+# TLIN's two forms and CPWG's gap (artwork-to-schematic AS-1/AS-2) are parameter errors on a netlist line, raised the
+# way the 44 other ComponentModelFactory messages above are. CnlTechnologyBinding's two are the same refusal as its
+# entry above, on the second path that reaches it. StrokeFont's is a missing embedded resource and LeastSquares' an
+# empty fit — internal invariants no user reads.
+src/Core/Devices/ComponentModelFactory.cs|CPWG '{name}' states no G — the gap from the strip to the coplanar ground on each side.
+src/Core/Devices/ComponentModelFactory.cs|TLIN states A (the angle form's total loss at F) with L. The physical form states its loss per 
+src/Core/Devices/ComponentModelFactory.cs|TLIN states Eeff = {eeff.ToString(
+src/Core/Devices/ComponentModelFactory.cs|TLIN states both E (the electrical length at F) and L (the physical length). A line is stated 
+src/Core/Devices/ComponentModelFactory.cs|TLIN states {(ac != 0.0 && ad != 0.0 ? 
+src/Core/Devices/ComponentModelFactory.cs|TLIN states {stray} but no L. {stray} belongs to the physical form (L with Eeff, loss as Ac/Ad 
+src/Design/Layout/Text/StrokeFont.cs|the embedded stroke font '{resource}' is missing from {typeof(StrokeFont).Assembly.GetName().Name}
+src/Design/Schematic/CnlTechnologyBinding.cs|{label} is refused: {refused}.
+src/Design/Schematic/CnlTechnologyBinding.cs|{label} names {Describe(namedLayers, Text)}, but {(tech is null ? 
+src/Engine/Statistics/LeastSquares.cs|A fit needs at least one observation and one column.
