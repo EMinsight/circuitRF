@@ -645,3 +645,30 @@ statistics table is split into two stacked tables for the figure — fifteen col
 page. `DocsFactoryTests.TheSearchIndexCarriesProseAndNotFigureGeometry` failed once the CLI page's yield section was
 first indexed: its quoted statistics row is six two-decimal numbers in a row, which the geometry heuristic matched.
 The run length is twelve now; leaked geometry runs to hundreds.
+
+## AN-02's figures: an import and a recognition run on a copy of an example (2026-10-09)
+
+`DocAppNoteGerberFixtures` copies `examples/Artwork to Schematic` to a temporary folder per figure and runs the real
+import, the real Create and real S-parameter runs into it; `Cleanup` deletes the copy. Things worth knowing:
+
+- **The import lands in `Board_2`**, because the example already holds the same import as `Board` and
+  `ImportFolder.UniqueName` suffixes. That is what a reader sees too, so the note says so rather than the fixture
+  importing somewhere else.
+- **A layout opened with its file path shows the "From workspace" banner** when no workspace is open, which in a
+  capture is always. The layout figures pass no path; nothing in them needs one, since the technology is set
+  explicitly.
+- **A recognised schematic's netlist names its technology relative to the WORKSPACE ROOT**
+  (`technology "Board/Board.ctech"`), so run from `DocRunData`'s scratch folder it fails to resolve.
+  `DocRunData.RunNetlistFile` runs a netlist where it is written; the fixture writes it at the copy's root.
+- **The Layer Mapping dialog's answer is rebuilt, not clicked.** Its Continue handler is private and a dialog that is
+  never shown returns nothing, so `Import` builds the same `GerberMappingAnswer` it builds: the choice's rows
+  (`request.Rows`, or `Repropose`) and `GerberTechnologyChoices.Commit`.
+- **Monospace text is drawn in DejaVu Sans at monospace advances.** The dialog's From column is
+  `FontFamily="Courier New,Consolas,monospace"`; headless, the SVG names `DejaVu Sans` but keeps 7.2 px per glyph,
+  so `Board.GTL` reads as "Boar d. GTL" in a browser too. Pre-existing — `artwork-to-schematic-dialog` and the
+  harmonica readout strip show the same — and not fixed here.
+- **The second default trace colour is pure blue**, barely legible as a legend label on the dark plot; `an02-s11`
+  sets that trace to Green through the card's own colour picker.
+- **Two size-to-content dialogs and a panel were measured**, not chosen: rendered tall, the last row of ink found,
+  the dialog's 16 px bottom margin added (scope prompt 162, drill prompt 394, Tuning panel 88).
+- Two separate capture processes produced byte-identical SVGs for all fourteen rows, both variants.

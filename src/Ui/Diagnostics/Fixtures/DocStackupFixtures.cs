@@ -83,6 +83,10 @@ public static class DocStackupFixtures
     /// </summary>
     public static FigureScene PcbCrossSection() => CrossSection(StarterTechnologies.Pcb2Layer());
 
+    /// <summary>Any technology in cross-section, whole — for a figure whose technology is a file it read (AN-02's
+    /// imported board).</summary>
+    internal static FigureScene CrossSectionOf(Technology tech) => CrossSection(tech);
+
     /// <summary>
     /// <b>The capacitor module on its own, MIM-7</b> — the same real technology, windowed to the
     /// bands between the two interconnect metals so the three things a reader of the MIM section

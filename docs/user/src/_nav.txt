@@ -87,3 +87,4 @@ reference/railrf.html      | Power integrity on the board you drew: DC drop, Z(f
 == Application notes
 app-notes/index.html                    | Worked investigations of questions that come up on real boards.
 app-notes/an01-ports-and-coupling.html  | AN-01: how to EM-simulate coupled lines - kernel choice, where the ports go, and how two coupled feeds are calibrated together.
+app-notes/an02-gerber-import.html       | AN-02: a Gerber file set imported, its stackup checked, and its copper read back as a schematic that simulates without an EM run.

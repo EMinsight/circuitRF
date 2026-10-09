@@ -1257,12 +1257,16 @@ public static class GerberImport
                 string.Join(", ", drillCandidates.Select(Path.GetFileName)) +
                 ". They were NOT imported — import them with this set if they belong to it.");
 
+        // The technology is named relative to where the import was put — the workspace in the GUI, the
+        // output folder in `convert` — the way the user would find it, and so that the summary prints no
+        // machine path (a figure of the Messages panel carries this sentence; brief R-an02-6).
         messages.Add(target.UsePath is null
             ? $"This import wrote its own technology, {folderName}.ctech, next to the cell, and left the " +
               "workspace's technology untouched. A Gerber set describes a whole board's drawing layers, and " +
               "grafting them onto a technology other cells share is a permanent cost for a temporary " +
               "convenience."
-            : $"This import uses the technology '{tech.Name}' ({techPath}): the layout references it, no " +
+            : $"This import uses the technology '{tech.Name}' " +
+              $"({Path.GetRelativePath(parentDir, techPath).Replace('\\', '/')}): the layout references it, no " +
               "technology was written, and nothing in that one was changed.");
 
         // R-L4g-17, unchanged from L4d's R-L4d-19: the whole set comes in, unfiltered, because cropping
@@ -1566,7 +1570,10 @@ public static class GerberImport
                 $"Kept as unknown layers, because '{tech.Name}' has no layer for them and nothing is added " +
                 $"to a technology an import uses: {string.Join(", ", kept)}.");
 
-        if (job?.MaterialStackup is null) return;
+        // A job file that states no stackup reads back as an EMPTY list, never null — and an empty list handed to
+        // GerberStackupMapping.Build takes its no-entries branch and mints the FR-4 guess, which would then be
+        // compared against the chosen technology as if the job file had stated it.
+        if (job?.MaterialStackup is not { Count: > 0 }) return;
 
         var nameByKey = tech.Layers.GroupBy(l => l.Key).ToDictionary(g => g.Key, g => g.First().Name);
         var stated = GerberStackupMapping.Build(

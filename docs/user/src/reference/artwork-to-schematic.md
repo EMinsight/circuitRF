@@ -64,7 +64,8 @@ materials has no row for L1, on purpose. Beside it, **Board design** is the sche
 5. Simulate **Board design**: −15.8 dB. In `Board_model`'s **Tuning** panel, click `L1_L`'s minimum, type 1 nH, and
    drag the slider down. At 8.2 nH the two agree &mdash; every other value and every line length came off the board.
 
-The example's README walks the same steps with the dialog's reports in full.
+The example's README walks the same steps with the dialog's reports in full. [AN-02](../app-notes/an02-gerber-import.html) starts
+one step earlier, from the Gerber files, and has a figure for each step.
 
 ## Opening it {#open}
 

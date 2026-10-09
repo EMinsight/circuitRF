@@ -111,6 +111,42 @@ public sealed class GerberImportTargetTechnologyTests : IDisposable
         Assert.False(Directory.Exists(Path.Combine(Workspace(), "board")));
     }
 
+    /// <summary>D7's warning, on the Artwork to Schematic example's own set and workspace technology. Its job file
+    /// states no stackup, which must raise no warning — the import once compared its own FR-4 guess against the
+    /// technology as "the job file's". The same job file given a stackup that disagrees must still raise one.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AJobFileWarnsOnlyWhenItStatesAStackupThatDiffers(bool statesAStackup)
+    {
+        string example = Path.Combine(Em3d.PalaceBackendTests.RepoRoot(), "examples", "Artwork to Schematic");
+        string set = Path.Combine(_root, "Board");
+        Directory.CreateDirectory(set);
+        foreach (string f in Directory.GetFiles(Path.Combine(example, "fab", "Board")))
+            File.Copy(f, Path.Combine(set, Path.GetFileName(f)));
+        string techPath = Path.Combine(_root, "board.ctech");
+        File.Copy(Path.Combine(example, "tech", "board.ctech"), techPath);
+
+        if (statesAStackup)
+        {
+            string job = Path.Combine(set, "Board.gbrjob");
+            var json = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(job))!.AsObject();
+            json["MaterialStackup"] = System.Text.Json.Nodes.JsonNode.Parse("""
+                [ { "Type": "Copper", "Name": "Top", "Thickness": 0.035 },
+                  { "Type": "Dielectric", "Name": "Core", "Thickness": 1.0, "DielectricConstant": 4.5 },
+                  { "Type": "Copper", "Name": "Bottom", "Thickness": 0.035 } ]
+                """);
+            File.WriteAllText(job, json.ToJsonString());
+        }
+
+        var result = ImportInto(techPath, GerberImportEntry.FilesIn(set));
+
+        Assert.False(result.Cancelled, string.Join("\n", result.Messages));
+        var warnings = result.Messages.Where(m => m.Contains("job file states a stackup", StringComparison.Ordinal)).ToList();
+        if (statesAStackup) Assert.Contains("1000 µm in the job file", Assert.Single(warnings));
+        else Assert.Empty(warnings);
+    }
+
     /// <summary>R-gt-2: started against A, re-proposed against B — the rows are a fresh run's against
     /// B, and every file was read exactly once. Reads are counted off the import's own progress
     /// labels, which name each file as it is read.</summary>

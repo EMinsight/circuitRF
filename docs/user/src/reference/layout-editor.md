@@ -662,86 +662,13 @@ suggests **Convert to Via** for it.
 
 #### Import — **File ▸ Import ▸ Gerber…**
 
-Point at a **folder** and you get the whole board. Point at a **single file** and circuitRF asks whether
-its folder was the real intent, telling you what that folder holds — one Gerber file is one layer, with
-no drill data, no other copper and no board outline, which is occasionally what you want and usually
-not. The folder is the default. There is a third option for pointing at a different folder outright, and
-Cancel creates nothing.
-
-**What a file is gets decided by content, never by extension.** Anything in the folder that is not
-artwork or drill data is skipped and named in the summary, so a folder of mixed junk is safe to point at.
-
-**Which layer is which** comes from the strongest source available, in this order:
-
-1. the `.gbrjob` **job file**, if the set has one — it settles set membership and identity together, and
-   carries the stackup;
-2. the file's own **X2 attributes** (`%TF.FileFunction`), which also give the copper's position in the
-   stack;
-3. a **`GerberSuffix` in your technology** that matches the file's extension — this is what closes the
-   loop on a set circuitRF itself exported;
-4. a **generic name heuristic** (copper top/bottom/inner, mask, silk, paste, outline, drill);
-5. the shared **layer-mapping dialog** for anything left.
-
-The summary reports which rung identified each layer, and flags the ones that came from the heuristic —
-that is the rung that can be confidently wrong.
-
-**Drill data.** Excellon files often do not say what their numbers mean, so units and zero suppression
-are inferred from the format comment, the `INCH`/`METRIC` word, `M71`/`M72`, the tool diameters, and a
-cross-check of where the hits land against the artwork's own bounding box. You are only prompted when
-that inference actually had to guess or the cross-check disagrees, and the prompt shows you the evidence.
-Cancelling it cancels the import — a board read at the wrong scale is the worst kind of silent failure.
-
-**Vias are rebuilt** wherever a drill hit and a copper flash share a coordinate exactly: pad diameter,
-drill diameter, barrel and landing layer, back to a real `ViaShape`. Unpaired hits become circles on the
-drill layer, counted in the summary — a lot of them usually means the artwork and the drill file do not
-belong to the same board. Where the files declare via-vs-component drilling (X2 `ViaDrill` /
-`ComponentDrill`) that declaration is used; where they don't, the two are genuinely indistinguishable
-from artwork alone and both come back as vias, and the summary says so.
-
-**Which technology the board lands in** is the first row of the layer-mapping dialog, which every
-Gerber import shows: **Technology**, above the table.
-
-{{ui: gerber-import-technology}}
-
-Choose a technology the workspace already has, or a built-in one, and the layout **uses** it: every file
-is mapped onto that technology's own layers, nothing is added to it and nothing in it changes, and no
-`.ctech` is written. A built-in technology is copied into the workspace's `tech/` folder when you press
-Continue. The choice re-proposes the table as you make it, without reading the files again. A
-technology is offered only when its stackup has as many conductors as the set has copper files —
-the others are listed with their copper count and cannot be chosen — and the import refuses, creating
-nothing, if a copper file lands on a conductor of a different rank, two land on one conductor, or the
-drill data lands on a layer no via in that stackup binds. The dialog opens on the workspace's default
-technology when its copper count matches the set's, and on **New technology from the files** otherwise.
-If the set's job file states a different stackup, the summary says how it differs, and the technology
-you chose is used as it is.
-
-{{ui: gerber-import-technology-choices}}
-
-**What you get** is one **flat cell** — Gerber has no hierarchy, and reconstructing footprints from
-artwork would be guesswork — inside its own import folder. With **New technology from the files** it
-comes with its **own new `.ctech`**, and your workspace technology is read but never modified. Everything
-below about the stackup describes that new technology.
-
-**The stackup is built from the job file when there is one, and from the artwork when there is not** —
-the number of coppers, their order, and which drawing layer each is bound to were all worked out by the
-import already. **What no Gerber file states at all is the substrate**, and rather than leave it blank
-circuitRF fills it in with one ordinary FR-4 board: 35 µm outer copper, 18 µm inner, ε<sub>r</sub> 4.4,
-tan δ 0.02, and the dielectrics sharing out the board thickness the files state — or 1.778 mm when they
-state none.
-
-**Every one of those numbers is named in the import summary, in a paragraph of its own**, kept apart
-from the paragraph reporting what the files actually said. They are guesses about a board circuitRF has
-not seen, and they exist so a board can be opened and looked at rather than hand-typed before anything
-can run. **Check them against your fabricator's stackup before you trust an EM result**, on the
-Technology Editor's Stackup tab. Nothing is ever inferred from the material *names* in the files.
-
-The summary also says what is still needed before the EM path can run — the one thing no artwork file
-can answer is which copper is the ground plane — and reminds you to crop the region of interest first:
-a whole board is not a MoM problem.
-
-Also worth reading in the summary: the **stroke count** per layer. A copper pour that arrived as a few
-thousand parallel strokes is correct artwork but is neither editable copper nor meshable; **Merge** fixes
-it, and the summary names the layer and the count.
+Point at a folder and the whole board comes in as one flat cell, with its vias rebuilt from the drill data. What
+each file is gets decided by its content, never its extension, and which layer it is by the job file, the
+file's X2 attributes, a Gerber suffix in your technology, a name heuristic, or the layer-mapping dialog, in that
+order. The dialog's **Technology** row chooses between a new technology written from the files &mdash; whose
+substrate is a guess, named as one in the import summary &mdash; and a technology you already have, which the
+layout then uses unchanged. [AN-02](../app-notes/an02-gerber-import.html) walks an import through on a real
+board, every dialog included.
 
 #### What a round trip does and does not preserve
 

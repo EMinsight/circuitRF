@@ -148,6 +148,17 @@ public static class DocRunData
         return Finish(key, dir, cnl);
     }
 
+    /// <summary>
+    /// Run a netlist already written WHERE ITS RELATIVE REFERENCES RESOLVE — a recognised schematic names its
+    /// technology relative to the workspace, so AN-02 writes its netlists at the workspace root of the example's
+    /// copy and runs them there. The results land in <see cref="ResultsRoot"/> like every other run's.
+    /// </summary>
+    internal static string RunNetlistFile(string key, string cnlPath)
+    {
+        if (_cache.TryGetValue(key, out var cached)) return cached;
+        return Finish(key, Path.GetDirectoryName(Path.GetFullPath(cnlPath))!, cnlPath);
+    }
+
     // ── The run ───────────────────────────────────────────────────────────────
 
     private static string Run(string key, Action<TestBench> shape,

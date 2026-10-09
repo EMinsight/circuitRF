@@ -409,6 +409,81 @@ public static class FigureCatalog
           + "count differs from the set's is listed but cannot be chosen.",
             MustContainPopup: true),
 
+        // ── AN-02: a Gerber set imported, and turned into a schematic ───────────────────────────────
+        // On a copy of the shipped Artwork to Schematic example, run for real (DocAppNoteGerberFixtures). The scope
+        // and drill prompts size to their content, so their heights are MEASURED off a tall capture (the last row of
+        // ink plus the dialog's 16 px bottom margin), as the Tuning panel's is; the mapping dialog is its declared
+        // 1000x620 less the title bar, as gerber-import-technology is; a window figure is 1100x700.
+
+        new("an02-scope-prompt", DocAppNoteGerberFixtures.ScopePrompt, 540, 162,
+            WindowFrame.Titled("Import Gerber — One File, or the Folder?"),
+            "Board.GTL picked on its own. The question says what the folder holds besides it, counted by "
+          + "content, and Whole Folder is the default."),
+
+        new("an02-layer-mapping", DocAppNoteGerberFixtures.LayerMapping, 1000, 586,
+            WindowFrame.Titled("Import Gerber — Layer Mapping"),
+            "The Layer Mapping dialog for the example's set. The workspace technology has two conductors, as "
+          + "the set has two copper files, so the Technology row opens on it, and every file is matched to "
+          + "one of its layers by name."),
+
+        new("an02-layer-mapping-unidentified", DocAppNoteGerberFixtures.UnidentifiedLayerChoices, 1000, 586,
+            WindowFrame.Titled("Import Gerber — Layer Mapping"),
+            "A made-up set with one file nothing identifies. Its row asks where it goes in the stackup: "
+          + "artwork, or copper at a position in the copper order.",
+            MustContainPopup: true),
+
+        new("an02-drill-format", DocAppNoteGerberFixtures.DrillFormat, 520, 394,
+            WindowFrame.Titled("Import Gerber — Drill Format"),
+            "The drill-format prompt on a made-up drill file that states neither its units nor its zero "
+          + "suppression: the inference, the evidence for it, and where the hits land against the artwork."),
+
+        new("an02-import-summary", DocAppNoteGerberFixtures.ImportSummary, 1100, 650, null,
+            "The Messages panel after the example's set is imported with New technology from the files: the "
+          + "result on the first row, and the import's summary under it."),
+
+        new("an02-imported-layout", DocAppNoteGerberFixtures.ImportedLayout, 1100, 700,
+            WindowFrame.Titled("circuitRF - Board_2"),
+            "The imported board in the layout editor, every layer shown: the bottom ground plane, the top "
+          + "copper, the solder mask openings and the via."),
+
+        new("an02-imported-copper", DocAppNoteGerberFixtures.ImportedCopper, 1100, 700,
+            WindowFrame.Titled("circuitRF - Board_2"),
+            "The same board with only the top copper shown, zoomed on the bend, the tee and its open stub. The "
+          + "line arrives as one polygon per stretch of copper, overlapping where the stretches meet."),
+
+        new("an02-stackup-guessed", DocAppNoteGerberFixtures.StackupGuessed, 980, 1200,
+            WindowFrame.Titled("circuitRF - Board_2"),
+            "The Stackup tab of the technology the import wrote. The two conductors and their order come "
+          + "from the files; the copper thickness, the 1.778 mm FR-4 core, its permittivity and its loss "
+          + "tangent are the import's guess."),
+
+        new("an02-stackup-corrected", DocAppNoteGerberFixtures.StackupCorrected, 960, 264, null,
+            "The example's Board.ctech in cross-section: the same import, with the fabricator's 254 um core "
+          + "and its permittivity of 3.66 typed in."),
+
+        new("an02-parts-row-selected", DocAppNoteGerberFixtures.PartsRowSelected, 1100, 700,
+            WindowFrame.Titled("circuitRF - Board"),
+            "L1's row selected in Create Schematic from Artwork's parts table: its pads are marked on the "
+          + "layout, between the line and the via to ground."),
+
+        new("an02-recognised-schematic", DocAppNoteGerberFixtures.RecognisedSchematic, 1100, 700,
+            WindowFrame.Titled("circuitRF - Board_model"),
+            "Board_model as Create writes it: the lines, the bend and the tee read off the copper, the three "
+          + "parts, the via to ground, and a port where the line leaves each edge of the board."),
+
+        new("an02-show-in-artwork", DocAppNoteGerberFixtures.ShowInArtwork, 1100, 700,
+            WindowFrame.Titled("circuitRF - Board"),
+            "Show in Artwork on the open stub's line in Board_model: the copper it was read from is marked on "
+          + "the layout."),
+
+        new("an02-tuning-l1", DocAppNoteGerberFixtures.TuningL1, 430, 88, null,
+            "The Tuning panel on Board_model with L1_L's minimum lowered to 1 nH and the value at 8.2 nH."),
+
+        new("an02-s11", DocAppNoteGerberFixtures.S11, 820, 520,
+            WindowFrame.Titled("circuitRF - Data Display"),
+            "S11 of Board_model with L1 at its 1 uH starting value, of Board_model with L1 tuned to 8.2 nH, "
+          + "and of Board design (dashed), the schematic the board was drawn from."),
+
         // ── The land patterns the case table generates ────────────────────────────
         // Both are one layout view rather than a row of canvases, so the four sizes share a scale —
         // see DocFootprintFixtures for why that is the whole point of the first one.

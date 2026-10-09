@@ -18907,3 +18907,20 @@ Every finding was confirmed against the source before it was changed; none turne
   file states no boundary condition.
 - **A technology that will not load is a refusal with its reason.** A `.ctech` copied alone without the `.cmat` its
   `MaterialLibraries` names does not load, and the import says so.
+
+## Gerber import: the Use sentence names its technology relatively; a job file with no stackup no longer warns (2026-10-09, AN-02)
+
+- **R-an02-6.** A Use import's closing sentence printed the technology's full path, so a Messages figure of it
+  would carry the generating machine's folder. It now prints the path relative to the import's parent folder: the
+  workspace in the GUI (`tech/board.ctech`), the output folder in `convert` (`../tech/board.ctech`), with `/`
+  separators on every platform. No test asserted the sentence. The CLI's own closing line
+  (`wrote 1 cell(s) to …, referencing <path>`) still prints the full path; it is `src/Cli`'s, not the import's.
+- **A job file with no stackup raised a false warning — fixed.** `ReportJobStackupDifferences` returned early on
+  `job?.MaterialStackup is null`, but `GerberJobFile.Read` hands back an EMPTY list, never null, when the job file
+  has no `MaterialStackup`. The empty list went into `GerberStackupMapping.Build`, which took its no-entries branch
+  and minted the FR-4 guess, and that guess was compared against the chosen technology as "the job file's" stackup.
+  On the Artwork to Schematic example a Use import into `tech/board.ctech` warned that layer 2 "is 254 µm thick in
+  'round-trip' and 1778 µm in the job file" — neither number is in the job file. The guard is now
+  `is not { Count: > 0 }`. A job file stating only `GeneralSpecs.BoardThickness` still raises no warning; the
+  warning is about a stated stackup. `GerberImportTargetTechnologyTests.AJobFileWarnsOnlyWhenItStatesAStackupThatDiffers`
+  holds both directions on the example's own set, and its no-stackup case fails against the old guard.
