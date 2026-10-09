@@ -54,7 +54,7 @@ document kind is a refusal naming what the path holds — `cli.input.wrong-kind`
 to `CnlReader`, which parsed the JSON as netlist text and reported its first key as a missing cell
 name.
 
-Thirteen verbs run no analysis, so none of §3-§6 applies to them and §7's exit codes reduce to 0-or-1:
+Fourteen verbs run no analysis, so none of §3-§6 applies to them and §7's exit codes reduce to 0-or-1:
 
 | Verb | Input | Does | Writes |
 |---|---|---|---|
@@ -70,6 +70,7 @@ Thirteen verbs run no analysis, so none of §3-§6 applies to them and §7's exi
 | `plot` | a result file | builds a one-plot data display and draws it | one `.svg` / `.pdf` / `.png`, and the `.cdd` under `--write-cdd` — §15 |
 | `find` | a directory | enumerates the workspaces, cells, views and analyses under it | **nothing** — §16 |
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | compares the artwork against the drawing, through `LvsRun.Run` | **nothing** unless `-o` names a report — §19 |
+| `recognize` | a `.clay`, a cell folder, or a workspace + `--cell` | reads the artwork as a circuit, through `ArtworkRecognition` | **nothing** unless `-o` (a `.cnl`), `--into` (a schematic) or `--parts-out` (the parts table) — §26 |
 | `serve` | `--root <dir>` | a protocol server on stdin/stdout — §11 | whatever the tool it was asked for writes |
 
 **`convert`'s `clay` target is a directory, and a file-shaped path there is a refusal** (R-aut12-4).
@@ -469,7 +470,7 @@ symptom and not the cause.
 | 1 | could not run — bad arguments, missing file, no matching analysis, a refusal, an exception |
 | 2 | ran, but did not converge |
 | 3 | `opt`: finished, and at least one enabled goal is unmet (§24.3) · `yield estimate`: finished, and the yield is below `--target` (§25.3) |
-| 130 | stopped — `em`, `render`, `rail`, `smith`, `lvs`, `opt` and `yield`, and only when the run was cancelled at a work boundary (§8.4, §13.6, §17.5, §18.6, §19.4, §24.3, §25.3). All of them write NOTHING on a cancellation |
+| 130 | stopped — `em`, `render`, `rail`, `smith`, `lvs`, `opt`, `yield` and `recognize`, and only when the run was cancelled at a work boundary (§8.4, §13.6, §17.5, §18.6, §19.4, §24.3, §25.3, §26.5). All of them write NOTHING on a cancellation |
 
 `2` is deliberately **not** the same test for every verb. `hb` and `dc` fail on any non-converged
 solve. A loadpull grid in which some points do not converge is a normal, useful result — the edge of
@@ -3689,3 +3690,83 @@ best point and its confirmation: predicted vs simulated per goal. The file is `<
 · **1** refused (or the optimum refused) · **2** no run evaluated · **130** cancelled, nothing written — there is no
 target, so no 3. Over MCP it is `run analysis=doe`.
 
+
+## 26. `recognize` — a board's artwork as a circuit, headless
+
+**brief-artsch-7.** `circuitrf recognize <path>` is Create Schematic from Artwork with no display: a board's
+copper becomes a circuit of native components — ground, vias, ports, parts and lines (MLIN and its
+discontinuities, CPWG, SLIN, the TLIN physical form) — with an S-parameter analysis, written as a schematic,
+a `.cnl`, or both. The recognition itself is `docs/design/artwork-to-schematic.md`.
+
+### 26.1 It owns no recognition
+
+Every decision is `ArtworkRecognition`'s (`src/Design/Layout/Recognition`), the function the GUI command
+calls: `Run` (recognise → emit → draw → write, the `--into` path) or `Circuit` (recognise → emit, no write —
+the `-o` path and the read-only default). `src/Cli/Recognize.cs` is argument parsing, refusals and reporting,
+on `Authoring.cs`' terms. A comment-stripped source scan holds it: `src/Cli` names no public type of that
+namespace but the entry point, its options (`RecognitionInput`, `RecognitionOptions`, `RecognitionScope`,
+`RecognitionTarget`, `RecognitionRunOptions`, `RecognitionEmitOptions`, `ViaPolicy`, `CoplanarReading`), its
+result (`RecognitionResult`/`Run`/`Circuit`/`Report`, `PartsTable`) and `PartsTableCsv`.
+
+### 26.2 Input
+
+A `.clay`, a cell folder (its primary layout; several layout files with no primary is a refusal listing
+them), or a workspace with `--cell <name>` — the kind inferred through `DocumentKinds.Classify` as `check`
+and `render` infer it. Any other kind is a refusal **by kind**. The layout is read by
+`RecognitionInput.FromFile`, the walk the trace review and railRF use, so its `.ctech` and its `.cem` (whose
+ports and sweep come first) resolve exactly as they do in the editor.
+
+### 26.3 Read-only by default; the parts round trip
+
+With neither `-o` nor `--into` **nothing is written**: stdout carries the report (one line per class) and the
+parts table as CSV. That is an agent's first call. `--parts-out p.csv` writes the same table (allowed alone);
+edit its `Kind`/`Value`/`Variable`/`Model`/`ModelFile` and pass it back with `--parts p.csv` — a value given
+there replaces the variable that stood for it. The CSV is the contract (`PartsTableCsv`): the dialog's grid,
+`--parts-out` and `--parts` all go through it.
+
+### 26.4 Outputs and options
+
+`-o x.cnl` writes the circuit and nothing else (a non-`.cnl` path is refused); `--into new:<name>` writes a new
+cell beside the artwork's, `--into artwork` the artwork's own cell (refused when it has a schematic view,
+naming `new:`). A target holding a schematic this command wrote needs **`--replace`** (the GUI asks; a build
+machine cannot be asked), and the replace takes a history checkpoint first; a hand-drawn schematic is refused
+whatever the flags. `-o` and `--into` together write both from one recognition. The paths written are the
+result — on stdout and in `outputs`.
+
+Each option absent is the dialog's default: `--bom`, `--placement` (with `--placement-origin
+symbol|body|pin1`, `--placement-unit mm|mil|in`; an origin neither stated nor declared is the reader's own
+refusal, which names the flag), `--region x0,y0,x1,y1` (**every coordinate with a unit; a bare number is a
+refusal** — `render --window`'s rule), `--ground <net>` / `--ground-at x,y` (units required), `--vias
+model|ground`, `--coplanar auto|microstrip|gcpw`, `--coplanar-factor k`, `--start f --stop f --npts n`
+(frequencies with their unit; a flag changes only its own field of the `.cem`'s sweep, else of 100 MHz – 6 GHz
+in 201 points; `--stop` is also the top frequency a TLIN and the coupled-pair check are judged at).
+`--json` carries `result.recognize`: the layout, technology and scope, the instance count, each report class
+with its count, sentence and anchors (DBU), the parts table row for row keyed by the CSV's columns, and the
+paths written.
+
+### 26.5 Exit codes
+
+**0** recognised (and written, when asked) · **1** refused — the recognition's own refusal (no technology, no
+copper in scope, no port, a refused companion file) arrives as `recognize.refused` with its sentence, nothing
+written · **130** cancelled through `RunHost`'s `RunControl`, nothing written (the targets are written last).
+Never 2: nothing here solves a circuit.
+
+### 26.6 Over the protocol, `check` and `explain`
+
+The MCP `recognize` tool has every flag as a field (`output`, `into`, `replace`, `partsOut`, `parts`, …), the
+same read-only default and the same refusals; the server's `instructions` carry a four-step walk-through.
+`check` on a recognised schematic reports nothing new — its components are ordinary. (A layer name the `.cnl`
+quotes for its space is stored bare in the drawn schematic, as every schematic stores one; kept quoted, the
+extraction warned and bound the default layer.) `explain` on one reports the `ArtworkSource` block as plain
+walk lines — the source `.clay` resolved against the schematic, the scope, the options, the parts table's hash,
+the version and time — and `explain --ref <the .clay>` resolves a reference that names a FILE to that file.
+
+### 26.7 The gate
+
+`tests/Ui.Tests/Recognition/RecognizeCliVerbTests.cs`: the verb as a process against `ArtworkRecognition.Run`
+in process on the same synthetic board (the `.csch` byte for byte but the provenance time, the `.cnl` byte for
+byte), the read-only default leaving the tree's files and timestamps unchanged, the parts round trip, the
+refusals (`--region` bare numbers, `--into artwork` on a cell with a schematic, `--into new:x` twice without
+and then with `--replace`), the end to end (`recognize --into` then `sparam` on the schematic, no display), and
+the source scan. `ServeProtocolAdapterTests.Recognize_IsListed_AndItsReadOnlyDefaultWritesNothing` holds the
+tool; `NetlistToSchematicTests.AQuotedLayerName_IsStoredBare` the layer-name fix.

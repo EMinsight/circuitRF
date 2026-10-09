@@ -108,7 +108,7 @@ internal sealed record ToolSpec(
 /// <summary>
 /// The tool surface, and the ONLY thing that translates a tool call into a command line.
 ///
-/// <para><b>Small and broad (R-aut5-4, R-aut-9).</b> SEVENTEEN tools, not one per verb — the sixteen
+/// <para><b>Small and broad (R-aut5-4, R-aut-9).</b> EIGHTEEN tools, not one per verb — the seventeen
 /// here plus <c>HistoryBatch</c>'s, which is advertised beside them because it is the one tool that is
 /// not a command line. A client that discovers tools up front carries every description for the whole
 /// session whether or not it calls one, so the surface is a standing cost paid on every interaction.
@@ -935,6 +935,53 @@ internal static class ToolCatalog
                             "What decides the exit code: warning or error. Default error; warnings "
                           + "are reported either way."),
                         Summary,
+                    ],
+                    ""),
+            ]),
+
+        // brief-artsch-7 R-as7-7: Create Schematic from Artwork, falling out of the `recognize` verb with no second
+        // implementation. The same read-only default, the same refusals, the same result document.
+        new("recognize",
+            "Read a board's artwork (a .clay) as a circuit: ground, vias, ports, parts and lines become native "
+          + "components (MLIN, CPWG, SLIN, TLIN, VIA, parts as R/L/C or an SnP; unknown values as tunable variables) "
+          + "with an S-parameter analysis. Read-only unless into or output is given: the result is the report and "
+          + "the parts table. Review parts (partsOut, edit the CSV, pass it back as parts) before writing. The "
+          + "result is a schematic (into) or a .cnl (output) to simulate with run analysis=sparam.",
+            null, null,
+            [
+                new("", [ "recognize" ],
+                    [new("path", true, "A .clay, a cell folder holding a layout view, or a workspace (with cell).")],
+                    [
+                        new("cell", "--cell", OptKind.Str, "With a workspace path: the cell whose layout to read."),
+                        new("output", "-o", OptKind.Path, "Write the circuit as this .cnl. Nothing else."),
+                        new("into", "--into", OptKind.Str,
+                            "Write the schematic: new:<name> (a new cell beside the artwork's) or artwork (the "
+                          + "artwork's own cell, only when it has no schematic view)."),
+                        new("replace", "--replace", OptKind.Flag,
+                            "Replace a schematic this command wrote earlier (a history checkpoint is taken first). "
+                          + "A hand-drawn schematic is never replaced."),
+                        new("partsOut", "--parts-out", OptKind.Path, "Write the parts table as CSV."),
+                        new("parts", "--parts", OptKind.Path,
+                            "An edited parts table (CSV): its Kind, Value, Variable, Model and ModelFile override "
+                          + "what was read; a value clears the variable."),
+                        new("bom", "--bom", OptKind.Path, "A bill of materials: part values and descriptions."),
+                        new("placement", "--placement", OptKind.Path, "A placement file: where each part sits."),
+                        new("placementOrigin", "--placement-origin", OptKind.Str,
+                            "symbol, body or pin1 — required when the placement file does not declare it."),
+                        new("placementUnit", "--placement-unit", OptKind.Str, "mm, mil or in."),
+                        new("region", "--region", OptKind.Str,
+                            "Read only this rectangle: x0,y0,x1,y1, every coordinate with a unit (um, mm, mil). A "
+                          + "line it cuts becomes a port."),
+                        new("ground", "--ground", OptKind.Str, "The net to read as ground."),
+                        new("groundAt", "--ground-at", OptKind.Str, "x,y with units: the copper there is ground."),
+                        new("vias", "--vias", OptKind.Str, "model (default: VIAGND components) or ground (plain GND)."),
+                        new("coplanar", "--coplanar", OptKind.Str,
+                            "auto (default), microstrip or gcpw: how a line with side ground close by is read."),
+                        new("coplanarFactor", "--coplanar-factor", OptKind.Number,
+                            "Under auto: GCPW when both gaps are at most this many substrate heights. Default 3."),
+                        new("start", "--start", OptKind.Str, "Sweep start with its unit, e.g. 100MHz."),
+                        new("stop", "--stop", OptKind.Str, "Sweep stop with its unit, e.g. 6GHz."),
+                        new("npts", "--npts", OptKind.Integer, "Sweep points. Default 201."),
                     ],
                     ""),
             ]),

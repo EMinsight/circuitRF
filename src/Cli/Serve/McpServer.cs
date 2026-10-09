@@ -275,6 +275,10 @@ internal sealed class McpServer
                 "analysis=center and read the verified yield. 9. which factors matter: a doe line (doe design=pb, then " +
                 "doe design=ccf on the active few) and run analysis=doe -> result.doe, the effects with their alias sets; " +
                 "optimum=true confirms the fitted model's best point by simulation.\n" +
+                // brief-artsch-7 R-as7-7: a board's artwork as a circuit, in the order an agent uses it.
+                "Artwork to circuit: 1. recognize path=<.clay> -> the report and the parts table; writes nothing. " +
+                "2. recognize partsOut=<p.csv>, edit Kind/Value there, pass it back as parts=<p.csv>. 3. recognize " +
+                "into=new:<name> (or output=<x.cnl>) -> the schematic. 4. run analysis=sparam on it.\n" +
                 "On an instance line the NETS come first and every 'Key=value' after them; how many " +
                 "nets each type takes is the 'nets' field of reference components, which is not the " +
                 "same number as its symbol's pin count; 'reference component-index' lists every type " +

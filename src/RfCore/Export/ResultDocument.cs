@@ -174,7 +174,9 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         CenterReportJson? Center = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        DoeReportJson? Doe = null);
+        DoeReportJson? Doe = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        RecognizeReportJson? Recognize = null);
 
     /// <summary>
     /// One external solver as <c>solver list</c> reports it — the Settings ▸ Solvers row. Carried as data
@@ -1322,6 +1324,47 @@ namespace RfCore.Export
         string                Configuration,
         string?               Refusal,
         IReadOnlyList<string> Notes);
+
+    /// <summary>
+    /// What <c>recognize</c> read off a board and what it wrote (brief-artsch-7 R-as7-5). A projection of the
+    /// recognition's own result: the report's classes as the recognition stated them, and the parts table
+    /// row for row in the CSV's own columns — the table <c>--parts-out</c> writes and <c>--parts</c> reads.
+    /// </summary>
+    /// <param name="Layout">The <c>.clay</c> recognised.</param>
+    /// <param name="Scope"><c>whole</c>, or the <c>--region</c> as given.</param>
+    /// <param name="Instances">How many instances the circuit holds; 0 when it was refused.</param>
+    /// <param name="Parts">One object per part, keyed by the parts table's column names.</param>
+    /// <param name="Schematic">The <c>.csch</c> written under <c>--into</c>, or null.</param>
+    /// <param name="Cell">The cell it was written into, or null.</param>
+    /// <param name="Netlist">The <c>.cnl</c> written under <c>-o</c>, or null.</param>
+    /// <param name="PartsTable">The CSV written under <c>--parts-out</c>, or null.</param>
+    /// <param name="CheckpointTaken">A history checkpoint was taken before a replace.</param>
+    public sealed record RecognizeReportJson(
+        string                                             Layout,
+        string?                                            Technology,
+        string                                             Scope,
+        int                                                Instances,
+        IReadOnlyList<RecognizeFindingJson>                Report,
+        IReadOnlyList<IReadOnlyDictionary<string, string>> Parts,
+        string?                                            Schematic,
+        string?                                            Cell,
+        string?                                            Netlist,
+        string?                                            PartsTable,
+        bool                                               CheckpointTaken);
+
+    /// <summary>One class of the recognition's report: how many, its sentence, and the places it is about (DBU).</summary>
+    public sealed record RecognizeFindingJson(
+        string                             Class,
+        int                                Count,
+        string                             Sentence,
+        IReadOnlyList<RecognizeAnchorJson> Anchors);
+
+    /// <summary>A place, DBU, with its drawing layer as <c>layer/datatype</c> when one is known.</summary>
+    public sealed record RecognizeAnchorJson(
+        long    X,
+        long    Y,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Layer);
 
     /// <summary>
     /// What <c>lvs</c> compared, and what it concluded.

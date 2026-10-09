@@ -289,6 +289,10 @@ public static class NetlistSchematic
             string expr = o.Expression;
             if (kind == SymbolKind.Snp && o.Name.Equals("File", StringComparison.OrdinalIgnoreCase))
                 expr = RelativeFile(expr, schematicDirectory);
+            // A layer NAME is stored bare in a schematic — the extraction reads it raw and quotes it as it writes the
+            // .cnl — so the .cnl's quotes are its line syntax, not part of the name ("Top Copper (1 oz)").
+            if (IsLayerName(o.Name) && expr.Length >= 2 && expr[0] == '"' && expr[^1] == '"')
+                expr = expr[1..^1];
             bool show = t.Name is not null ? t.ShowOnSchematic : inst.Overrides.Count <= 2;
             comp.Parameters.Add(new EditableParameter
             {
@@ -308,6 +312,9 @@ public static class NetlistSchematic
 
         return comp;
     }
+
+    private static bool IsLayerName(string parameter) =>
+        parameter is "SignalLayer" or "GroundReference" || ViaSubstrateInjection.LayerParams.Contains(parameter);
 
     /// <summary>A quoted absolute path, relative to <paramref name="dir"/> — what a schematic stores,
     /// and what the extraction's own reader resolves back to the same absolute path.</summary>

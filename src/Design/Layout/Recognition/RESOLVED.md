@@ -193,3 +193,24 @@ footprint resolves layers alone; the placement gate is unchanged.
 `src/Design/Revision`, with the CLI's helper delegating to it, because recognition's replace needs the same floor and the
 GUI command will call it from `src/Ui`. A replace takes it as a `SavePoint` with the intent "Create Schematic from
 Artwork"; a workspace with no history records nothing and the replace goes ahead.
+
+## AS-7 — the `recognize` verb and the MCP tool
+
+### A layer name with a space was drawn into the schematic WITH its .cnl quotes
+
+`RecognitionEmit.AddLayer` quotes a layer name holding a space (`SignalLayer="Top Copper (1 oz)"`) because the `.cnl`
+line would otherwise split there, and `NetlistSchematic.Build` copied every override expression verbatim — so the drawn
+`.csch` stored `"Top Copper (1 oz)"` quotes and all. A schematic stores layer names BARE (the extraction reads them raw
+and quotes them as it writes the `.cnl`), so the substrate binding looked for a conductor named with the quotes, warned,
+and bound the default layer. On the shipped LVS example that was 17 warnings from `check` on a freshly recognised
+schematic; the `.cnl` written by `-o` was clean. Invisible to every AS-3…AS-6 gate because the synthetic technology's
+layers are `Top`/`Bottom`. Fixed in `NetlistSchematic.Build` (it unquotes `SignalLayer`, `GroundReference` and the via
+layer parameters), which also fixes `netlist --to-schematic` on any `.cnl` with such a name; gate
+`NetlistToSchematicTests.AQuotedLayerName_IsStoredBare`.
+
+### `ArtworkRecognition.Circuit` — recognise and emit, write nothing
+
+The verb's `-o` path and its read-only default need the circuit without a target; `Run` always writes. `Circuit` is
+`Run`'s first half (the emit-omissions finding included) and `Run` now calls the same private `Emit`, so the `.cnl` the
+two paths write is one function's output. `RecognitionTarget.NewCellDir` is where a new cell goes, shared by `Run` and the
+verb's `--replace` question rather than worked out twice.

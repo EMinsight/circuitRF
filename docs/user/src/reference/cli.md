@@ -129,6 +129,7 @@ convention behind both.</p>
 | `rail` | `.crail` | The same DC solve and via check [railRF](railrf.html)'s **Run** button calls | The ports, the ranked breakdown and the via check to stdout; `-o .csv/.npy/.mat/.txt/.svg/.pdf` |
 | `smith` | `.csmith` | The same cascade evaluator the Smith Chart window walks on every edit | The reading and the per-node table to stdout; `-o .s1p` for the load Γ, `-o .svg/.pdf/.png` for the chart |
 | `lvs` | a cell folder, a workspace, a `.clay` or a `.csch` | The same comparison the [LVS panel](lvs.html)'s **Compare** button calls | **Nothing** — the report to stdout; `-o report.txt` |
+| `recognize` | a `.clay`, a cell folder, or a workspace with `--cell` | Reads the board's copper as a circuit — ground, vias, ports, parts and lines as native components | **Nothing** — the report and the parts table to stdout; `-o circuit.cnl`, `--into new:<name>` for a schematic, `--parts-out parts.csv` |
 | `impedance` | a `.clay` or a cell folder | The same analysis the layout editor's [Impedance Analysis](layout-editor.html#impedance-analysis) runs | The per-trace report to stdout; `-o report.pdf` |
 | `convert` | any layout format | The same importer and exporter **File ▸ Import/Export** runs | The layout in the format you asked for |
 | `new workspace` | a directory | The same code **File ▸ New Workspace** runs | A `.cws` and, unless you say otherwise, a copied technology |
@@ -985,6 +986,49 @@ slow is a `check` people stop running. What `check` does carry is the
 
 See {{anchor: lvs|the LVS chapter}} for what the findings mean and a worked example on the shipped
 example workspace.
+
+## `recognize` — a board's artwork as a circuit {#recognize}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf recognize &lt;file.clay | cell folder | workspace --cell NAME&gt;
+<span class="prompt">  </span>[-o circuit.cnl] [--into new:NAME | --into artwork] [--replace]
+<span class="prompt">  </span>[--parts-out parts.csv] [--parts parts.csv] [--bom FILE] [--placement FILE]
+<span class="prompt">  </span>[--placement-origin symbol|body|pin1] [--placement-unit mm|mil|in]
+<span class="prompt">  </span>[--region x0,y0,x1,y1] [--ground NET | --ground-at x,y] [--vias model|ground]
+<span class="prompt">  </span>[--coplanar auto|microstrip|gcpw] [--coplanar-factor K] [--start F] [--stop F] [--npts N]</code></pre>
+
+`recognize` reads a board's copper and writes the circuit it implements: the ground, the vias that matter,
+the ports, every two-terminal part as an R, L, C or S-parameter file, and every trace as an `MLIN` (with its
+bends, tees, crosses and tapers), `CPWG`, `SLIN` or `TLIN`, with an S-parameter analysis ready to run. A part
+whose value is not known becomes a global variable with a tuning range, so it is a knob in the Tuning and
+Optimizer panels from the first simulation.
+
+**With no `-o` and no `--into` it writes nothing**: it prints what it found, one line per kind of finding,
+and the **parts table** as CSV. Review that table before writing anything:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf recognize Board --parts-out parts.csv
+<span class="prompt">  </span># edit parts.csv: C6's Value to 10pF, L2's Kind to L …
+<span class="prompt">$ </span>circuitrf recognize Board --parts parts.csv --into new:Board_model
+<span class="prompt">$ </span>circuitrf sparam Board_model/schematic/Board_model.csch -o board.s2p</code></pre>
+
+| Option | Meaning |
+|---|---|
+| `-o circuit.cnl` | Write the circuit as a netlist. Nothing else. |
+| `--into new:NAME` / `--into artwork` | Write the schematic into a new cell beside the artwork's, or into the artwork's own cell (only when that cell has no schematic yet). |
+| `--replace` | Replace a schematic this command wrote earlier; a history checkpoint is taken first. A schematic you drew yourself is never replaced. |
+| `--parts-out` / `--parts` | Write the parts table as CSV; read an edited one back. A value you give replaces the variable that stood for it. |
+| `--bom`, `--placement` | A bill of materials and a placement file. A placement file that does not say which origin it was exported against needs `--placement-origin`. |
+| `--region x0,y0,x1,y1` | Read only this rectangle; a line it cuts becomes a port. **Every coordinate carries a unit** (`um`, `mm`, `mil`) &mdash; a bare number is refused. |
+| `--ground NET`, `--ground-at x,y` | Read this net, or the copper at this point, as ground. |
+| `--vias model\|ground` | Keep vias to ground as `VIAGND` (default), or make them plain grounds. |
+| `--coplanar auto\|microstrip\|gcpw`, `--coplanar-factor K` | How a line with ground close beside it is read. |
+| `--start`, `--stop`, `--npts` | The analysis range, each frequency with its unit. Default: the layout's EM setup's sweep, else 100 MHz – 6 GHz in 201 points. |
+
+**Exit 0** when the board was read (and written, when asked), **1** when it was refused &mdash; no technology,
+no copper in the region, no port &mdash; with nothing written, **130** on a cancellation. With `--json` the
+result carries every finding with its count and where it is on the board, and the parts table row for row.
+
+`explain` on a schematic this command wrote shows where it came from &mdash; the layout, the region and the
+options &mdash; and `explain --ref` resolves the layout's path.
 
 ## `impedance` — every trace against a target Z0 {#impedance}
 

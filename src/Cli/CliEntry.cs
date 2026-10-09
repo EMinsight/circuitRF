@@ -227,6 +227,9 @@ return JsonRun.Finish(Dispatch(JsonRun.Verb) is { } run ? run(args[1..]) : Unkno
     // Trace Impedance Analysis: every trace on the chosen copper layers against a target Z0, as the
     // layout editor's Impedance Analysis runs it. Owns no analysis and no page — see its header.
     "impedance" => CircuitRF.Cli.Impedance.Run,
+    // Create Schematic from Artwork, headless (brief-artsch-7). It owns no recognition — every decision is
+    // ArtworkRecognition's in src/Design, the function the GUI command calls — and writes nothing unless asked.
+    "recognize" or "recognise" => CircuitRF.Cli.Recognize.Run,
     // brief-em3d-24 R-em3d24-7 (owner decision D1: `solver`, one verb with nouns). The install assistant's
     // headless spelling: a build machine installs a 3D solver the way the GUI does, from the same recipe,
     // and the verb holds none of the logic — see its header.
@@ -2443,6 +2446,7 @@ static int PrintHelp()
     Console.WriteLine("  check   <path>         (is it well formed, does it resolve, is it sound)");
     Console.WriteLine("  explain <path>         (what did circuitRF resolve it to, and by which walk)");
     Console.WriteLine("  lvs     <path>         (does the artwork implement the drawing?)");
+    Console.WriteLine("  recognize <file.clay> [-o x.cnl] [--into new:<name>]  (a board's artwork as a circuit)");
     Console.WriteLine("  impedance <layout> [-o report.pdf]  (every trace's Z0 against a target, and its return path)");
     Console.WriteLine("  render  <path> -o out.svg  (a schematic, symbol or layout as a picture)");
     Console.WriteLine("  read    <path>         (a result file as cubes, or a document as its own text)");

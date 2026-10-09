@@ -214,6 +214,7 @@ internal static class Explain
                 Workspace(path, walks);
                 if (kind is DocumentKind.Netlist or DocumentKind.Schematic) CircuitTechnology(path, kind, walks);
                 if (kind is DocumentKind.Netlist or DocumentKind.Schematic) PhysicalLines(path, kind, walks);
+                if (kind is DocumentKind.Schematic) ArtworkSource(path, walks);
                 break;
             case DocumentKind.Interchange:
                 walks.Add(new ResolutionStepJson(
@@ -483,6 +484,33 @@ internal static class Explain
         var res = SchematicTechnology.Resolve(dir, techRef);
         walks.Add(new ResolutionStepJson("technology", techRef ?? DocumentKinds.AncestorCws(full), res.Path, res.Walk));
         if (res.Error is { } error) JsonRun.Report(CliDiagnostics.CheckResolverNote(path, error));
+    }
+
+    /// <summary>
+    /// brief-artsch-7 R-as7-8 — a schematic created from artwork: its <c>ArtworkSource</c> block in plain lines, the
+    /// source <c>.clay</c> resolved against the schematic's own directory (what <c>--ref</c> resolves too).
+    /// </summary>
+    private static void ArtworkSource(string path, List<ResolutionStepJson> walks)
+    {
+        string full = Path.GetFullPath(path);
+        ArtworkProvenance? source;
+        try { source = SchematicPersistence.LoadFromFile(full).model.ArtworkSource; }
+        catch (Exception) { return; }   // a document that does not read is reported elsewhere
+        if (source is null) return;
+
+        string clay = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(full)!, source.Layout));
+        walks.Add(new ResolutionStepJson("artwork source", source.Layout, File.Exists(clay) ? clay : null,
+            File.Exists(clay) ? "the layout this schematic was created from, relative to the schematic"
+                              : "the layout this schematic was created from is not there any more"));
+        walks.Add(new ResolutionStepJson("artwork scope", full,
+            source.Scope + (source.Rings is { Count: > 0 } rings ? $" ({rings.Count} ring(s), DBU)" : ""), "the part of the layout read"));
+        if (source.Options.Count > 0)
+            walks.Add(new ResolutionStepJson("artwork options", full,
+                string.Join(", ", source.Options.Select(kv => $"{kv.Key}={kv.Value}")), "what the recognition was told"));
+        if (source.PartsCsvSha256 is { } sha)
+            walks.Add(new ResolutionStepJson("artwork parts table", full, $"sha256 {sha}", "the edited parts table it read"));
+        walks.Add(new ResolutionStepJson("artwork written", full, $"circuitRF {source.Version}, {source.CreatedUtc}",
+            "a re-run may replace this schematic; one without this block is never replaced"));
     }
 
     /// <summary>
@@ -1019,6 +1047,16 @@ internal static class Explain
 
         var res = CellSymbolResolver.Resolve(reference, from);
         string? resolved = ExternalCellRef.ResolveCellDir(reference, from);
+
+        // A reference naming a FILE — a recognised schematic's source .clay (brief-artsch-7 R-as7-8) — resolves to
+        // that file. Asked only after the cell walk found nothing, so a cell reference reads as it always did.
+        if (res.State == CellSymbolState.NotFound && Path.HasExtension(reference)
+            && Path.GetFullPath(Path.Combine(from, reference)) is var file && File.Exists(file))
+        {
+            string? root = WorkspaceRootFinder.FindAncestorCws(from) is { } ws ? Path.GetDirectoryName(ws) : null;
+            return (new ExplainReferenceJson(reference, from, file, "resolved",
+                root is null ? null : WorkspaceRootFinder.IsOutside(file, root), null), 0);
+        }
 
         string? workspaceRoot = WorkspaceRootFinder.FindAncestorCws(from) is { } cws
             ? Path.GetDirectoryName(cws)

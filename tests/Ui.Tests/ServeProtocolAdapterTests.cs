@@ -872,11 +872,30 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
         // asking whether the artwork implements the drawing is the only way it can find out.
         //
         // `impedance` is the Trace Impedance Analysis — a board review an agent can run on artwork it
-        // did not draw.
+        // did not draw. `recognize` (brief-artsch-7) turns that artwork into a circuit.
         Assert.Equal(["run", "check", "explain", "create", "import", "convert", "render", "netlist", "plot",
-                      "find", "lvs", "impedance", "read", "history", "solver", "reference", "batch"],
+                      "find", "lvs", "recognize", "impedance", "read", "history", "solver", "reference", "batch"],
                      tools);
 
+        Assert.Equal(0, server.Close());
+    }
+
+    /// <summary>brief-artsch-7 R-as7-7: <c>recognize</c> is listed, and its read-only default answers with the report
+    /// and the parts table and writes nothing.</summary>
+    [Fact]
+    public void Recognize_IsListed_AndItsReadOnlyDefaultWritesNothing()
+    {
+        string ws = Path.Combine(Root, "board");
+        string clay = Recognition.EmitBoards.Saved(ws).ClayPath!;
+        var before = Directory.GetFiles(ws, "*", SearchOption.AllDirectories).ToDictionary(f => f, File.GetLastWriteTimeUtc);
+
+        using var server = Start(Root);
+        Assert.Contains("\"recognize\"", server.Request("tools/list", null));
+        var doc = JsonNode.Parse(server.Call("recognize", new JsonObject { ["path"] = clay }))!;
+        Assert.Equal(0, doc["exitCode"]!.GetValue<int>());
+        Assert.NotEmpty(doc["result"]!["recognize"]!["parts"]!.AsArray());
+        Assert.Empty(doc["outputs"]!.AsArray());
+        Assert.Equal(before, Directory.GetFiles(ws, "*", SearchOption.AllDirectories).ToDictionary(f => f, File.GetLastWriteTimeUtc));
         Assert.Equal(0, server.Close());
     }
 
@@ -970,6 +989,8 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
             ["lvs/"]              = ["path"],
             // Trace Impedance Analysis. Single-mode: one layout, its layers named by flag.
             ["impedance/"]        = ["path"],
+            // brief-artsch-7 R-as7-7. Single-mode: one layout, the kind inferred from the path.
+            ["recognize/"]        = ["path"],
             // `reference` has no REQUIRED positional at all: its no-argument form is the topic list,
             // which is a real answer rather than a usage error. Both of its positionals are therefore
             // probed as arguments below, which is what this gate is for.
@@ -1051,6 +1072,7 @@ public sealed class ServeProtocolAdapterTests(ITestOutputHelper output) : IDispo
                     Assert.DoesNotContain("convert.args.multiple-inputs", ids);
                     Assert.DoesNotContain("render.args.multiple-paths", ids);
                     Assert.DoesNotContain("impedance.args.multiple-paths", ids);
+                    Assert.DoesNotContain("recognize.args.multiple-paths", ids);
                 }
             }
         }

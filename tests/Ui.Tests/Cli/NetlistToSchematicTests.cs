@@ -111,6 +111,28 @@ public sealed class NetlistToSchematicTests(ITestOutputHelper output) : IDisposa
     }
 
     /// <summary>
+    /// brief-artsch-7 R-as7-8: a layer name the .cnl quotes because it holds a space is stored BARE in the drawn
+    /// schematic, as the schematic stores every layer name — kept quoted, the extraction looked up a conductor
+    /// named with the quotes and fell back to the default layer.
+    /// </summary>
+    [Fact]
+    public void AQuotedLayerName_IsStoredBare()
+    {
+        string dir = Path.Combine(_root, "layers");
+        Directory.CreateDirectory(dir);
+        string cnl = Path.Combine(dir, "layers.cnl");
+        File.WriteAllText(cnl,
+            "Port:P1 a 0 Num=1 Z=50 Ohm\nPort:P2 b 0 Num=2 Z=50 Ohm\n" +
+            "MLIN:T1 a b W=1 mm L=5 mm SignalLayer=\"Top Copper (1 oz)\" GroundReference=\"Bottom Copper\"\n" +
+            "analysis SP1 type=sparam start=1 stop=6 npts=11 Unit=GHz\n");
+        var (lib, tb) = CnlReader.ReadFile(cnl);
+
+        var line = NetlistSchematic.Build(lib, tb, dir).Schematic!.Components.Single(c => c.InstanceName == "T1");
+        Assert.Equal("Top Copper (1 oz)", line.Parameters.Single(p => p.Name == "SignalLayer").Expression);
+        Assert.Equal("Bottom Copper", line.Parameters.Single(p => p.Name == "GroundReference").Expression);
+    }
+
+    /// <summary>
     /// Readable in the two ways a machine can check: no symbol drawn over another, and no wire that
     /// is not horizontal or vertical. Over every netlist the gate draws.
     /// </summary>

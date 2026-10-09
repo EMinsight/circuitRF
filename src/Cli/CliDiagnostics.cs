@@ -3636,6 +3636,104 @@ internal static class CliDiagnostics
     public static Diagnostic LvsCancelled() => new(
         "lvs.cancelled", DiagnosticSeverity.Error,
         "lvs: cancelled. Nothing was written.");
+
+    // ── recognize (brief-artsch-7-cli-and-mcp.md) ────────────────────────────
+    //
+    // Refusals of the verb's own: an argument it cannot read, a path holding no layout, a target it may not
+    // write. The recognition's OWN refusal (no technology, no copper in scope, no port) arrives as one id
+    // carrying the recognition's sentence, never re-authored here.
+
+    public static Diagnostic RecognizePathRequired() => new(
+        "recognize.args.path-required", DiagnosticSeverity.Error,
+        "recognize: a path is required — a .clay, a cell folder, or a workspace with --cell.");
+
+    public static Diagnostic RecognizeUnknownOption(string option) => Diagnostic.Create(
+        "recognize.args.unknown-option", DiagnosticSeverity.Error,
+        "recognize: unknown option '{option}'.", ("option", option));
+
+    public static Diagnostic RecognizeMultiplePaths() => new(
+        "recognize.args.multiple-paths", DiagnosticSeverity.Error,
+        "recognize: one layout at a time.");
+
+    public static Diagnostic RecognizeBadValue(string option, string text, string expected) => Diagnostic.Create(
+        "recognize.args.value", DiagnosticSeverity.Error,
+        "recognize: {option} takes {expected}, got '{text}'.",
+        ("option", option), ("text", text), ("expected", expected));
+
+    /// <summary><c>--region</c> or <c>--ground-at</c> given a bare number — <c>render --window</c>'s rule: DBU,
+    /// micrometres and millimetres are all plausible readings of the same text.</summary>
+    public static Diagnostic RecognizeCoordinateNeedsUnit(string option, string text) => Diagnostic.Create(
+        "recognize.args.unit-required", DiagnosticSeverity.Error,
+        "recognize: {option} '{text}' is a bare number, and a layout coordinate carries a unit — DBU, "
+      + "micrometres and millimetres differ by orders of magnitude on identical text. Write it as '{text}um' "
+      + "or '{text}mm'.",
+        ("option", option), ("text", text));
+
+    public static Diagnostic RecognizePathNotFound(string path) => Diagnostic.Create(
+        "recognize.path.not-found", DiagnosticSeverity.Error,
+        "No such file or folder: {path}", ("path", path));
+
+    /// <summary>A path whose KIND holds no layout — named, so the caller knows what it pointed at.</summary>
+    public static Diagnostic RecognizeNoLayout(string path, string kind) => Diagnostic.Create(
+        "recognize.path.no-layout", DiagnosticSeverity.Error,
+        "'{path}' is {kind}, and recognize reads a layout. Give a .clay, a cell folder holding a layout view, "
+      + "or a workspace with --cell.",
+        ("path", path), ("kind", kind));
+
+    public static Diagnostic RecognizeCellRequired(string path) => Diagnostic.Create(
+        "recognize.cell.required", DiagnosticSeverity.Error,
+        "'{path}' is a workspace. Say which cell's layout to read with --cell <name>.", ("path", path));
+
+    public static Diagnostic RecognizeNoSuchCell(string workspace, string cell, string known) => Diagnostic.Create(
+        "recognize.cell.not-found", DiagnosticSeverity.Error,
+        "'{workspace}' has no cell called '{cell}'. It holds: {known}",
+        ("workspace", workspace), ("cell", cell), ("known", known));
+
+    public static Diagnostic RecognizeAmbiguousCell(string cell, string paths) => Diagnostic.Create(
+        "recognize.cell.ambiguous", DiagnosticSeverity.Error,
+        "More than one cell is called '{cell}': {paths}. Give the cell folder's path instead.",
+        ("cell", cell), ("paths", paths));
+
+    /// <summary>A cell folder with several layout files and no primary — <c>render</c>'s rule: list them.</summary>
+    public static Diagnostic RecognizeLayoutAmbiguous(string cell, string files) => Diagnostic.Create(
+        "recognize.cell.layout-ambiguous", DiagnosticSeverity.Error,
+        "'{cell}' holds more than one layout ({files}) and names none as primary. Give the .clay's path.",
+        ("cell", cell), ("files", files));
+
+    public static Diagnostic RecognizeFileNotFound(string option, string path) => Diagnostic.Create(
+        "recognize.file.not-found", DiagnosticSeverity.Error,
+        "recognize: {option} '{path}' does not exist or cannot be read.", ("option", option), ("path", path));
+
+    /// <summary>The recognition refused — its own sentence, unchanged.</summary>
+    public static Diagnostic RecognizeRefused(string why) => Diagnostic.Create(
+        "recognize.refused", DiagnosticSeverity.Error,
+        "recognize: {why} Nothing was written.", ("why", why));
+
+    /// <summary>The target holds a schematic this command wrote. The GUI asks; a build machine cannot be asked.</summary>
+    public static Diagnostic RecognizeReplaceRequired(string cell) => Diagnostic.Create(
+        "recognize.target.replace-required", DiagnosticSeverity.Error,
+        "recognize: {cell} already holds a schematic created from artwork. Pass --replace to replace it (a "
+      + "history checkpoint is taken first), or write into another cell with --into new:<name>.",
+        ("cell", cell));
+
+    /// <summary><c>--into artwork</c> on a cell that already has a schematic view the command did not write.</summary>
+    public static Diagnostic RecognizeArtworkHasSchematic(string cell) => Diagnostic.Create(
+        "recognize.target.artwork-has-schematic", DiagnosticSeverity.Error,
+        "recognize: {cell} already has a schematic view, and --into artwork writes only into a cell without one. "
+      + "Write into a new cell with --into new:<name>.",
+        ("cell", cell));
+
+    public static Diagnostic RecognizeOutputNotCnl(string path) => Diagnostic.Create(
+        "recognize.output.not-cnl", DiagnosticSeverity.Error,
+        "recognize: -o writes the circuit as a .cnl, and '{path}' is not one.", ("path", path));
+
+    public static Diagnostic RecognizeOutputFailed(string path, string why) => Diagnostic.Create(
+        "recognize.output.write-failed", DiagnosticSeverity.Error,
+        "recognize: '{path}' was not written: {why}", ("path", path), ("why", why));
+
+    public static Diagnostic RecognizeCancelled() => new(
+        "recognize.cancelled", DiagnosticSeverity.Error,
+        "recognize: cancelled. Nothing was written.");
     // ── impedance (Trace Impedance Analysis) ──────────────────────────────────────────────────
     //
     // Every id here is a REFUSAL of the verb's own. What the analysis FOUND — a trace out of band,

@@ -42,6 +42,15 @@ public sealed record RecognitionTarget(RecognitionTargetKind Kind, string? CellN
     public static string? CellOf(string clayPath) =>
         CellFolder.SiblingView(clayPath, ViewType.Layout, ViewType.Schematic).CellDir;
 
+    /// <summary>Where a new cell called <paramref name="name"/> goes: beside the artwork's cell, where New Cell would
+    /// put it — beside the <c>.clay</c> itself for a loose layout.</summary>
+    public static string NewCellDir(string clayPath, string name)
+    {
+        string clay = Path.GetFullPath(clayPath);
+        string parent = CellOf(clay) is { } cell ? Path.GetDirectoryName(cell)! : Path.GetDirectoryName(clay)!;
+        return Path.Combine(parent, name);
+    }
+
     /// <summary>The name a new cell is offered: <c>&lt;artwork cell&gt;_model</c>.</summary>
     public static string DefaultCellName(string clayPath) =>
         $"{Path.GetFileName(CellOf(clayPath) ?? Path.GetFileNameWithoutExtension(clayPath))}_model";
@@ -109,6 +118,26 @@ public sealed record RecognitionRun(
 public static partial class ArtworkRecognition
 {
     /// <summary>
+    /// Recognise and emit, and write nothing: the circuit <see cref="Run"/> would write, for a caller that wants only
+    /// its <c>.cnl</c> text (<c>recognize -o</c>) or its report and parts table (the read-only default,
+    /// brief-artsch-7 R-as7-3). The circuit is null exactly when the recognition was refused.
+    /// </summary>
+    public static (RecognitionResult Result, RecognitionCircuit? Circuit) Circuit(
+        RecognitionInput input, RecognitionEmitOptions? emit = null, RunControl? control = null)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        var result = Recognize(input, control);
+        return result.Ok ? (result, Emit(result, input, emit ?? new RecognitionEmitOptions())) : (result, null);
+    }
+
+    private static RecognitionCircuit Emit(RecognitionResult result, RecognitionInput input, RecognitionEmitOptions emit)
+    {
+        var circuit = RecognitionEmit.Build(result, input, emit);
+        result.Report.Add(RecognitionFindingClass.EmitOmissions, circuit.Notes.Count, string.Join(" ", circuit.Notes));
+        return circuit;
+    }
+
+    /// <summary>
     /// R-as6-8 — recognise, emit, draw, write: the one function the GUI command and the CLI verb both call.
     /// A refusal at any step writes nothing.
     /// </summary>
@@ -136,10 +165,9 @@ public static partial class ArtworkRecognition
             {
                 string name = (target.CellName ?? "").Trim();
                 if (NameValidator.Validate(name) is { } bad) return Refused($"'{name}' cannot be a cell name: {bad}");
-                string parentDir = artworkCell is not null ? Path.GetDirectoryName(artworkCell)! : Path.GetDirectoryName(clay)!;
-                cellDir = Path.Combine(parentDir, name);
+                cellDir = RecognitionTarget.NewCellDir(clay, name);
                 if (Directory.Exists(cellDir) || File.Exists(cellDir))
-                    return Refused($"A cell named '{name}' already exists in {parentDir}; choose another name.");
+                    return Refused($"A cell named '{name}' already exists in {Path.GetDirectoryName(cellDir)}; choose another name.");
                 cellName = name;
                 break;
             }
@@ -166,9 +194,8 @@ public static partial class ArtworkRecognition
         schematicDir = existing is not null ? Path.GetDirectoryName(existing)! : CellFolder.SubFolderPath(cellDir, ViewType.Schematic);
 
         // ── the circuit, and its drawing ─────────────────────────────────────────────────────────────
-        var circuit = RecognitionEmit.Build(result, input, options.Emit);
+        var circuit = Emit(result, input, options.Emit);
         var report = result.Report;
-        report.Add(RecognitionFindingClass.EmitOmissions, circuit.Notes.Count, string.Join(" ", circuit.Notes));
 
         var drawn = NetlistSchematic.Build(new Library("netlist"), circuit.TestBench, schematicDir, circuit.Hints);
         if (drawn.Schematic is not { } model)
