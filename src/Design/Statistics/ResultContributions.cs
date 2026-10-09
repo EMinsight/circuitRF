@@ -46,6 +46,20 @@ public static class ResultContributions
              : [.. axis.Values.Select(v => v.ToString(System.Globalization.CultureInfo.InvariantCulture))];
     }
 
+    /// <summary>
+    /// One corner of a run at each corner, as the one run it was: every cube whose outer axis is <c>corner</c> taken at
+    /// <paramref name="corner"/>, every other cube as it is. What a display or a ranking made for one run reads.
+    /// </summary>
+    public static DataSet CornerOf(DataSet ds, int corner)
+    {
+        var one = new DataSet();
+        foreach (var group in ds.Groups)
+            foreach (var (name, cube) in ds.CubesIn(group))
+                one.AddToGroup(group, name,
+                    cube.Rank > 0 && cube.Axes[0].Name == CornerAxis ? cube.At(CornerAxis, corner) : cube);
+        return one;
+    }
+
     /// <summary>The goals a result scored — the names of its <c>trials.goal:&lt;g&gt;:worst</c> cubes.</summary>
     public static IReadOnlyList<string> GoalsOf(DataSet ds)
         => ds.ContainsGroup(StatisticalDataSet.TrialsGroup)

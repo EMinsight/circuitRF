@@ -17,6 +17,11 @@
 //  spec lines find a goal for a curve — TraceGoalReader's translation,
 //  compared with TraceToGoal.SameQuantity — so the family a goal gets is
 //  exactly a curve its spec lines land on.
+//
+//  A MONTE CARLO AT EACH CORNER is one tab per corner: each corner's
+//  plots are decided on that corner as one run (ResultContributions.
+//  CornerOf) and every trace pins the corner by name, so the tabs are
+//  the corner picker.
 // ================================================================
 
 using System;
@@ -44,6 +49,9 @@ public static class YieldDisplayPreset
     /// <summary>At most this many slices of one cube are tried when looking for a goal's family.</summary>
     private const int MaxCandidates = 2000;
 
+    /// <summary>The axis a run at each corner stacks its runs under.</summary>
+    private const string CornerAxis = ResultContributions.CornerAxis;
+
     /// <summary>The kinds of plot the display is built from, in the order they are placed.</summary>
     public enum PlotKind { Family, Histogram, YieldSensitivity, StatisticsTable }
 
@@ -52,26 +60,46 @@ public static class YieldDisplayPreset
 
     /// <summary>
     /// The plots of a yield display over <paramref name="ds"/>, every trace bound to <paramref name="sourceRef"/>,
-    /// laid out two to a row. Empty when the source is not a Monte Carlo result.
+    /// laid out two to a row. Empty when the source is not a Monte Carlo result of one run — a run at each corner is
+    /// composed one corner at a time.
     /// </summary>
     public static IReadOnlyList<ComposedPlot> Compose(DataSet ds, string sourceRef)
+        => ResultContributions.StackedCorners(ds) is null ? Compose(ds, ds, sourceRef, null) : [];
+
+    /// <summary>
+    /// The same plots for corner <paramref name="corner"/> of a run at each corner, every trace pinned to that corner
+    /// by name. Empty when <paramref name="ds"/> is not a run at each corner.
+    /// </summary>
+    public static IReadOnlyList<ComposedPlot> Compose(DataSet ds, string sourceRef, int corner)
+        => ResultContributions.StackedCorners(ds) is { } names && corner >= 0 && corner < names.Count
+            ? Compose(ds, ResultContributions.CornerOf(ds, corner), sourceRef,
+                      new AxisSlice(CornerAxis, AxisRole.PinToIndex, corner, Label: names[corner]))
+            : [];
+
+    /// <summary>
+    /// The plots of one run, <paramref name="run"/>, which is <paramref name="source"/> itself or one corner of it.
+    /// What to plot is decided on the run; what a trace evaluates is the source, so a corner's traces pin
+    /// <paramref name="corner"/>.
+    /// </summary>
+    private static IReadOnlyList<ComposedPlot> Compose(DataSet source, DataSet run, string sourceRef, AxisSlice? corner)
     {
         var plots = new List<ComposedPlot>();
-        if (!ds.ContainsGroup(TrialsGroup) || Refusal(ds) is not null) return plots;
-        var goals = SpecLineResolve.GoalsOf(ds);
+        if (!run.ContainsGroup(TrialsGroup)) return plots;
+        var goals = SpecLineResolve.GoalsOf(run);
 
         foreach (var g in goals)
-            if (Family(ds, g, sourceRef) is { } family)
+            if (Family(run, g, sourceRef, corner) is { } family)
                 plots.Add(new ComposedPlot(PlotKind.Family, g.Name, family));
 
         foreach (var g in goals)
-            if (Histogram(ds, g, sourceRef) is { } histogram)
+            if (Histogram(source, run, g, sourceRef, corner) is { } histogram)
                 plots.Add(new ComposedPlot(PlotKind.Histogram, g.Name, histogram));
 
-        if (YieldSensitivity(ds, goals, sourceRef) is { } sensitivity)
+        if (YieldSensitivity(source, run, goals, sourceRef, corner) is { } sensitivity)
             plots.Add(new ComposedPlot(PlotKind.YieldSensitivity, null, sensitivity));
 
-        if (StatisticsTablePreset.Build(ds, sourceRef) is { } table)
+        if ((corner is { } c ? StatisticsTablePreset.Build(source, sourceRef, c.Index)
+                             : StatisticsTablePreset.Build(source, sourceRef)) is { } table)
             plots.Add(new ComposedPlot(PlotKind.StatisticsTable, null, table));
 
         double y = Gap;
@@ -90,13 +118,6 @@ public static class YieldDisplayPreset
         return plots;
     }
 
-    /// <summary>
-    /// Why there is no yield display of <paramref name="ds"/>, or null when there is. A run at each corner stacks one
-    /// run per corner under a <c>corner</c> axis, and every plot here is made for one run's trials, so it is refused by
-    /// name rather than drawn from one corner, or not at all (brief-yield-16 R-ya16-3).
-    /// </summary>
-    public static string? Refusal(DataSet ds) => CornerStackedRefusal(ds, "The yield display");
-
     /// <summary>"<paramref name="what"/> shows one run…" when <paramref name="ds"/> is a run at each corner; null otherwise.</summary>
     public static string? CornerStackedRefusal(DataSet ds, string what)
         => ResultContributions.StackedCorners(ds) is { } corners
@@ -105,13 +126,39 @@ public static class YieldDisplayPreset
               "that pins the corner (plot: corner=<name>), or run mc or estimate without --corners for one run."
             : null;
 
-    /// <summary>The display as a document: one tab of <see cref="Compose"/>'s plots.</summary>
-    public static DataDisplayConfig Build(DataSet ds, string sourceRef) => new()
+    /// <summary>
+    /// The display as a document: one tab of <see cref="Compose(DataSet, string)"/>'s plots — or, for a run at each
+    /// corner, one tab per corner named by it, in the run's order, opening on the corner with the lowest yield. The
+    /// tabs are how a corner is picked: every plot on one is that corner's.
+    /// </summary>
+    public static DataDisplayConfig Build(DataSet ds, string sourceRef)
     {
-        FormatVersion      = DataDisplayConfig.CurrentFormatVersion,
-        SelectedDataSource = sourceRef,
-        Tabs               = [new TabConfig { Name = TabName, Plots = [.. Compose(ds, sourceRef).Select(p => p.Config)] }],
-    };
+        var config = new DataDisplayConfig
+        {
+            FormatVersion      = DataDisplayConfig.CurrentFormatVersion,
+            SelectedDataSource = sourceRef,
+        };
+        if (ResultContributions.StackedCorners(ds) is not { } names)
+        {
+            config.Tabs = [new TabConfig { Name = TabName, Plots = [.. Compose(ds, sourceRef).Select(p => p.Config)] }];
+            return config;
+        }
+        config.Tabs = [.. names.Select((name, k) => new TabConfig { Name = name, Plots = [.. Compose(ds, sourceRef, k).Select(p => p.Config)] })];
+        config.ActiveTabIndex = WorstCorner(ds) ?? 0;
+        return config;
+    }
+
+    /// <summary>The index of the corner whose yield is lowest (<c>yield.yield</c>), or null when none was scored.</summary>
+    public static int? WorstCorner(DataSet ds)
+    {
+        const string spec = "yield.yield";
+        if (!ds.Contains(spec) || ds[spec] is not { Rank: 1 } cube || cube.Axes[0].Name != CornerAxis) return null;
+        int? worst = null;
+        var y = cube.RealValues;
+        for (int k = 0; k < y.Length; k++)
+            if (!double.IsNaN(y[k]) && (worst is null || y[k] < y[worst.Value])) worst = k;
+        return worst;
+    }
 
     // ── A goal's trials as a pass/fail family ──────────────────────────────────────────
 
@@ -120,14 +167,21 @@ public static class YieldDisplayPreset
     /// <c>trial</c> axis of the cube the goal reads. A goal whose value is one number per trial (no swept axis to draw
     /// a curve over) is drawn as its worst value against the trial number instead, which its limits still cross.
     /// </summary>
-    private static PlotContainerConfig? Family(DataSet ds, OptimizationGoal goal, string sourceRef)
+    private static PlotContainerConfig? Family(DataSet run, OptimizationGoal goal, string sourceRef, AxisSlice? corner)
     {
-        if (FindFamily(ds, goal) is { } t)
+        if (FindFamily(run, goal) is { } t)
+        {
+            if (corner is { } c)
+            {
+                t.Slice = [c, .. t.Slice!];
+                t.Expression = t.BuildPickerExpression();
+            }
             return Rect($"{goal.Name}: trials", Cube(t, sourceRef, Trace.ColorByPass));
+        }
 
         string worst = $"{TrialsGroup}.goal:{goal.Name}:worst";
-        if (!ds.Contains(worst)) return null;
-        var points = TraceOver(worst);
+        if (!run.Contains(worst)) return null;
+        var points = TraceOver(worst, corner);
         points.Properties.LineEnabled = false;
         points.Properties.MarkerEnabled = true;
         return Rect($"{goal.Name}: worst value per trial", Cube(points, sourceRef, Trace.ColorByPass));
@@ -203,12 +257,12 @@ public static class YieldDisplayPreset
 
     // ── A goal's worst value as a histogram ────────────────────────────────────────────
 
-    private static PlotContainerConfig? Histogram(DataSet ds, OptimizationGoal goal, string sourceRef)
+    private static PlotContainerConfig? Histogram(DataSet source, DataSet run, OptimizationGoal goal, string sourceRef, AxisSlice? corner)
     {
         string worst = $"{TrialsGroup}.goal:{goal.Name}:worst";
-        if (!ds.Contains(worst)) return null;
-        var t = TraceOver(worst);
-        var (rewrite, _) = TraceStatistics.Build(t, ds, TraceStatistic.Histogram);
+        if (!run.Contains(worst)) return null;
+        var t = TraceOver(worst, corner);
+        var (rewrite, _) = TraceStatistics.Build(t, source, TraceStatistic.Histogram);
         if (rewrite is null) return null;
         TraceStatistics.Apply(t, rewrite);
         return Rect($"{goal.Name}: worst value", Expression(t, sourceRef));
@@ -216,15 +270,16 @@ public static class YieldDisplayPreset
 
     // ── Yield against the variable that drives it most ─────────────────────────────────
 
-    private static PlotContainerConfig? YieldSensitivity(DataSet ds, IReadOnlyList<OptimizationGoal> goals, string sourceRef)
+    private static PlotContainerConfig? YieldSensitivity(
+        DataSet source, DataSet run, IReadOnlyList<OptimizationGoal> goals, string sourceRef, AxisSlice? corner)
     {
-        var stats = TraceStatistics.StatSpecs(ds);
-        if (TraceStatistics.PassSpec(ds) is null || stats.Count == 0) return null;
+        var stats = TraceStatistics.StatSpecs(run);
+        if (TraceStatistics.PassSpec(run) is null || stats.Count == 0) return null;
 
         string spec = stats[0];
         if (goals.Count > 0)
         {
-            var report = ResultContributions.Of(ds, goals[0].Name);
+            var report = ResultContributions.Of(run, goals[0].Name);
             if (report.Refusal is null)
                 foreach (var c in report.Contributors.Where(c => c.Kind == "entry"))
                 {
@@ -233,8 +288,8 @@ public static class YieldDisplayPreset
                 }
         }
 
-        var t = TraceOver(spec);
-        var (rewrite, _) = TraceStatistics.Build(t, ds, TraceStatistic.YieldSensitivity, statSpec: spec);
+        var t = TraceOver(spec, corner);
+        var (rewrite, _) = TraceStatistics.Build(t, source, TraceStatistic.YieldSensitivity, statSpec: spec);
         if (rewrite is null) return null;
         TraceStatistics.Apply(t, rewrite);
         var traces = new List<TraceConfig> { Expression(t, sourceRef) };
@@ -248,12 +303,14 @@ public static class YieldDisplayPreset
 
     private static Trace Bare() => new(new SNP([1e9], 2), MatrixType.S, 0, 0, DependentVarFormat.Db, false);
 
-    /// <summary>A trace reading a per-trial cube over its <c>trial</c> axis.</summary>
-    private static Trace TraceOver(string spec)
+    /// <summary>A trace reading a per-trial cube over its <c>trial</c> axis — at <paramref name="corner"/>, when the
+    /// source is a run at each corner.</summary>
+    private static Trace TraceOver(string spec, AxisSlice? corner = null)
     {
         var t = Bare();
         t.CubeName = spec;
-        t.Slice    = [new AxisSlice(Evaluator.TrialAxis, AxisRole.KeepAsX, 0)];
+        var trial  = new AxisSlice(Evaluator.TrialAxis, AxisRole.KeepAsX, 0);
+        t.Slice    = corner is { } c ? [c, trial] : [trial];
         t.Expression = t.BuildPickerExpression();
         return t;
     }

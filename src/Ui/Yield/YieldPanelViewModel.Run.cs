@@ -86,7 +86,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
     public Func<string, DataSet, Task>? OpenYieldDisplay { get; set; }
 
     /// <summary>Whether a yield display over the result already exists — the one-time offer is made only when not.</summary>
-    public Func<string, bool>? HasYieldDisplay { get; set; }
+    public Func<string, DataSet?, bool>? HasYieldDisplay { get; set; }
 
     // ---- Run state -----------------------------------------------------------
 
@@ -166,6 +166,18 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
     /// <summary>The one-time offer at the end of the first run on a schematic with no yield display (R-ya10-8).</summary>
     [ObservableProperty] private bool _offerYieldDisplay;
 
+    /// <summary>Why the last result has no yield display — a corner run without Monte Carlo has no trials — or null.
+    /// The button is disabled and says this rather than writing an empty display.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(OpenDisplayTip))]
+    private string? _displayUnavailable;
+
+    /// <summary>The yield display button's tooltip: what it opens, or why there is nothing to open.</summary>
+    public string OpenDisplayTip => DisplayUnavailable
+        ?? "Open yield display — trials, histograms, sensitivity and the statistics table";
+
+    partial void OnDisplayUnavailableChanged(string? value) => OpenDisplayCommand.NotifyCanExecuteChanged();
+
     private void ClearRunReadouts()
     {
         _run = null;
@@ -177,6 +189,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         _goalYields = null;
         _shares = null;
         _offeredDisplay = false;
+        DisplayUnavailable = null;
         Result = null;
         CornerResult = null;
         HasRunReadouts = HasYield = OfferYieldDisplay = false;
@@ -344,7 +357,7 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         if (!_offeredDisplay && _resultPath is { } path && result.Data is not null)
         {
             _offeredDisplay = true;
-            OfferYieldDisplay = HasYieldDisplay?.Invoke(path) != true;
+            OfferYieldDisplay = HasYieldDisplay?.Invoke(path, result.Data) != true;
         }
         NotifyRunCommands();
     }
@@ -586,7 +599,8 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
 
     // ---- One-click yield display (R-ya10-8) --------------------------------------------
 
-    private bool CanOpenDisplay() => _lastData is not null && _resultPath is not null && OpenYieldDisplay is not null && !IsRunning;
+    private bool CanOpenDisplay() => _lastData is not null && _resultPath is not null && OpenYieldDisplay is not null && !IsRunning
+                                     && DisplayUnavailable is null;
 
     [RelayCommand(CanExecute = nameof(CanOpenDisplay))]
     private async Task OpenDisplay()

@@ -307,7 +307,7 @@ public sealed partial class YieldPanelViewModel
         StatusText   = summary;
         StatusDetail = string.Join(Environment.NewLine, lines);
         ReportMessages?.Invoke($"DOE: {summary}", lines);
-        if (result.WrittenPath is not null && !_offeredDisplay && HasYieldDisplay?.Invoke(result.WrittenPath) == false)
+        if (result.WrittenPath is not null && !_offeredDisplay && HasYieldDisplay?.Invoke(result.WrittenPath, result.Data) == false)
         {
             OfferYieldDisplay = true;
             _offeredDisplay = true;

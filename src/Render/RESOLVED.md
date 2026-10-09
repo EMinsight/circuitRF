@@ -5032,3 +5032,24 @@ only when it was small enough to need the floor.
   `TableRenderer.FitWidth` — the measurement `CalcFitWidth` (the auto-fit) makes, extracted so a preset with the
   text but no resolved plot can use it — over its header and its formatted values, and the row column over the
   quantity names; the shipped `BandpassYield.yield.cdd` is regenerated from the preset (only those widths moved).
+
+## The yield display of a run at each corner: one tab per corner (2026-10-09)
+
+Supersedes the R-ya16-3 refusal above for the yield display (the Data Display's own statistics-table button and
+`ResultContributions.Of` still refuse a stacked result, since neither has a corner to pick). The refusal reached the
+GUI as a Messages line the user did not see, after a button that looked live. Now `YieldDisplayPreset.Build` writes
+one tab per corner, in the run's order, opening on the lowest `yield.yield`; each tab is `Compose(ds, src, k)`,
+which decides what to plot on `ResultContributions.CornerOf(ds, k)` and pins `corner` by name on every trace.
+- **A pinned corner broke three readers silently, each the same way:** the pass cube is `[corner, trial]`, so
+  `TrialResolve`'s colour-by failed its rank-1 check and drew nothing coloured; `TraceStatistics.Build` refused a
+  yield sensitivity outright; and `TraceGoalReader` read the corner index into the goal expression, so no spec line
+  matched a corner's family. The first reduces by the trace's pins, the second slices at its corner, the third
+  drops a pinned corner (a goal holds at every corner).
+- **A Table column's header is its whole expression,** so twelve columns each read `statistics.mean["t85_Vdd3p0", :]`
+  and truncated to noise. `TableRenderer.SharedPinnedCorner` says a corner every picker column shares once, on the X
+  column; the draw path now uses `BuildColumns`' header rather than recomputing `CubeShorthand`.
+- **Two files, not one:** a plain yield run and a run at each corner write the same `.yield.npy`, so the corner
+  display is `<design>.yield.corners.cdd` — each display's traces fit one shape of the file.
+- **A corner run without MC wrote an EMPTY display** (no `trials` group, `Compose` returned nothing, the file was
+  written anyway). The panel now disables the button with the reason, and the workspace refuses by name as a backstop.
+Gate: `tests/Ui.Tests/Statistics/CornerYieldDisplayTests.cs`.

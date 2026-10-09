@@ -511,6 +511,32 @@ namespace CircuitRF.Render.DataDisplay
         /// exactly the same X axis (same name, unit, sorted values, and point count)
         /// collapse to a single shared XAxis column.
         /// </summary>
+        /// <summary>
+        /// The corner every column of <paramref name="plot"/> is pinned to, when they are all picker traces pinned by
+        /// name to the same corner of a run at each corner — a table of one corner's statistics. The columns then say
+        /// it once, on the X column, rather than each repeating it; null otherwise.
+        /// </summary>
+        private static string? SharedPinnedCorner(Plot plot)
+        {
+            string? shared = null;
+            foreach (var t in plot.Traces)
+            {
+                if (!t.IsCubeBound || t.IsFamily || t.CubeName is null || t.Slice is null
+                    || (t.Expression is { } e && e != t.BuildPickerExpression())) return null;
+                var pin = Array.Find(t.Slice, s => s.AxisName == CornerAxis && s.Role == AxisRole.PinToIndex);
+                if (string.IsNullOrEmpty(pin.Label) || (shared is not null && shared != pin.Label)) return null;
+                shared = pin.Label;
+            }
+            return shared;
+        }
+
+        /// <summary>A pinned picker trace's header with its corner left out (<see cref="SharedPinnedCorner"/>).</summary>
+        private static string WithoutCorner(Trace t)
+            => new Trace(t, includeMarkers: false) { Slice = [.. t.Slice!.Where(s => s.AxisName != CornerAxis)] }
+               .BuildPickerExpression();
+
+        private const string CornerAxis = "corner";
+
         public static List<TableColumn> BuildColumns(Plot plot)
         {
             if (IsSummaryTable(plot)) return BuildSummaryColumns(plot);
@@ -522,6 +548,7 @@ namespace CircuitRF.Render.DataDisplay
             double[]? prevRaw       = null;
             double[]? currentXArray = null;
             bool     prevPairByIndex = false;
+            string?  sharedCorner   = SharedPinnedCorner(plot);
 
             for (int ti = 0; ti < plot.Traces.Count; ti++)
             {
@@ -661,6 +688,7 @@ namespace CircuitRF.Render.DataDisplay
                         : isFreq
                             ? $"{axisName} ({plot.FreqUnits.Description()})"
                             : $"{axisName} ({unit})";
+                    if (sharedCorner is not null) xHeader += $" @ {sharedCorner}";
 
                     result.Add(new TableColumn
                     {
@@ -711,9 +739,9 @@ namespace CircuitRF.Render.DataDisplay
                 else
                 {
                     // Single TraceValue column.
-                    string valHeader = trace.IsCubeBound
-                        ? (trace.CubeShorthand ?? trace.ShortDescription)
-                        : trace.ShortDescription;
+                    string valHeader = !trace.IsCubeBound   ? trace.ShortDescription
+                                     : sharedCorner is not null ? WithoutCorner(trace)
+                                     :                            trace.CubeShorthand ?? trace.ShortDescription;
                     result.Add(new TableColumn
                     {
                         Kind            = TableColKind.TraceValue,
@@ -1519,7 +1547,7 @@ namespace CircuitRF.Render.DataDisplay
                     }
                     else if (trace.IsCubeBound)
                     {
-                        label = trace.CubeShorthand ?? trace.ShortDescription;
+                        label = col.Header;   // BuildColumns' header: the shorthand, less a corner said on X
                         if (showFilePrefix && trace.SourcePath != null)
                             label = System.IO.Path.GetFileNameWithoutExtension(trace.SourcePath) + ".." + label;
                     }

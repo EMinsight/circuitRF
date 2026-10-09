@@ -15,6 +15,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using CircuitRF.Design.Statistics;
 using RfCore;
 using RfCore.Data;
 
@@ -42,8 +43,22 @@ public static class StatisticsTablePreset
     /// <c>quantity</c> axis of <paramref name="sourceRef"/>. Null when the source carries no statistics table.
     /// </summary>
     public static PlotContainerConfig? Build(DataSet ds, string sourceRef)
+        => Available(ds) ? Build(ds, sourceRef, null) : null;
+
+    /// <summary>The table of one corner of a run at each corner: every column pinned to corner
+    /// <paramref name="corner"/> of <paramref name="ds"/>. Null when the source carries no statistics table.</summary>
+    public static PlotContainerConfig? Build(DataSet ds, string sourceRef, int corner)
     {
-        if (!Available(ds)) return null;
+        if (ResultContributions.StackedCorners(ds) is not { } names || corner < 0 || corner >= names.Count) return null;
+        var one = ResultContributions.CornerOf(ds, corner);
+        if (!Available(one)) return null;
+        return Build(one, sourceRef, (corner, names[corner]));
+    }
+
+    /// <summary>The table over <paramref name="ds"/>, one run's; each column also pins <paramref name="corner"/> when
+    /// the source it reads is a run at each corner.</summary>
+    private static PlotContainerConfig? Build(DataSet ds, string sourceRef, (int Index, string Name)? corner)
+    {
         var plot = new PlotContainerConfig();
         var traces = new List<TraceConfig>();
         Axis? rows = null;
@@ -57,7 +72,10 @@ public static class StatisticsTablePreset
             {
                 SourcePath    = sourceRef,
                 CubeName      = spec,
-                CubeSlice     = [new AxisSliceConfig { AxisName = RowAxis, Role = AxisRole.KeepAsX }],
+                CubeSlice     = corner is null
+                    ? [new AxisSliceConfig { AxisName = RowAxis, Role = AxisRole.KeepAsX }]
+                    : [new AxisSliceConfig { AxisName = ResultContributions.CornerAxis, Index = corner.Value.Index, Label = corner.Value.Name },
+                       new AxisSliceConfig { AxisName = RowAxis, Role = AxisRole.KeepAsX }],
                 FormatString  = PrecisionFormat.G,
                 MaximumFractionDigits = Digits,
                 // Wide enough for its header and every value it holds: a clipped column name is a column
@@ -69,7 +87,9 @@ public static class StatisticsTablePreset
         }
         if (traces.Count == 0) return null;
         // The row names — each goal's and measure's quantity — under the axis's own header.
-        double rowColumn = Math.Ceiling(TableRenderer.FitWidth(RowAxis, rows!.Labels ?? [], plot.FontSize, xAxis: true));
+        // A corner's table says its corner once, on this column (TableRenderer.SharedPinnedCorner).
+        string rowHeader = corner is { } c ? $"{RowAxis} @ {c.Name}" : RowAxis;
+        double rowColumn = Math.Ceiling(TableRenderer.FitWidth(rowHeader, rows!.Labels ?? [], plot.FontSize, xAxis: true));
         plot.PlotType        = PlotType.Table;
         plot.Width           = rowColumn + traces.Sum(t => t.ColumnWidth);
         plot.Height          = 360;

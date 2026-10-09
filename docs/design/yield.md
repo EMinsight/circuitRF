@@ -850,6 +850,18 @@ reverse translation the spec lines use, so the family chosen is a curve the goal
 no swept axis (one number per trial) is drawn as its worst value against the trial number. The workspace writes the
 document as `<design>.yield.cdd` beside the result and opens it; a display that exists is focused instead.
 
+**A Monte Carlo at each corner is one tab per corner.** Its cubes are `[corner, trial, …]`; `Compose(ds, src, k)`
+decides what to plot on `ResultContributions.CornerOf(ds, k)` — the one run that corner was, so the family search, the
+goals and the contributions ranking run unchanged — and every trace it emits pins `corner` by name, so it evaluates
+against the stacked file. `Build` writes the tabs in the run's order with `ActiveTabIndex` on the lowest
+`yield.yield`. Three readers learned the pin rather than refusing: `TrialResolve`'s colour-by reduces the pass and
+status cubes at the trace's pinned axes; a yield sensitivity slices `pass` and the stat at the trace's corner;
+`TraceGoalReader` drops a pinned corner, because a goal holds at every corner — which is also what lets a spec line
+land on a corner's family. A Table whose columns all pin one corner says it once, on the X column
+(`quantity @ <corner>`). The file is `<design>.yield.corners.cdd`: a plain yield run writes the same `.yield.npy`,
+and each display's traces are made for one shape of it. A corner run without MC has no `trials` group; the panel
+disables the button with the reason rather than writing an empty display.
+
 ## 15. Design centering (brief-yield-11)
 
 `CenteringRun` (`src/Design/Statistics`) moves the nominals of the `opt=1` entries to maximize yield against the

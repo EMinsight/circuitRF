@@ -212,7 +212,7 @@
                 <Border Classes="divider"/>
 
                 <Button Classes="tb" Command="{Binding OpenDisplayCommand}"
-                        ToolTip.Tip="Open yield display — trials, histograms, sensitivity and the statistics table">
+                        ToolTip.Tip="{Binding OpenDisplayTip}" ToolTip.ShowOnDisabled="True">
                     <mi:MaterialIcon Kind="ChartBoxOutline"/>
                 </Button>
                 <Button Classes="tb" Click="OnHelp" ToolTip.Tip="Help">

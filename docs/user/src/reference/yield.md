@@ -204,6 +204,10 @@ histogram of each spec's worst value with its limits; a yield sensitivity over t
 the first spec most; and the statistics table. Every plot is an ordinary one: change it as you would
 any other — see [the Data Display](data-display.html).
 
+After **Corners** with **MC at each corner**, the display is `<name>.yield.corners.cdd`, with one tab per
+corner holding these plots for that corner's trials, and it opens on the corner with the lowest yield.
+A corner run without Monte Carlo has no trials, so the button is disabled and its tooltip says so.
+
 The figures below are the shipped example's bandpass filter ([The example](#example)), 500 trials at its
 saved seed. Each spec's trials come first, every trial's curve drawn grey when it passes and red when it
 fails, the failures on top so none is hidden, with the nominal design and the spec's limit over them:

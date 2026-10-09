@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using CircuitRF.Design.Optimization;
+using CircuitRF.Design.Statistics;
 using RfCore;
 using RfCore.Data;
 
@@ -92,6 +93,10 @@ public static class TraceGoalReader
 
     private static TraceGoalSource CubeSource(Trace trace, DataSet? source, TraceGoalSource common)
     {
+        // A pinned corner picks which corner of a run at each corner is drawn; a goal holds at every corner, so the
+        // corner is not part of what it reads.
+        if (trace.Slice?.Any(IsPinnedCorner) == true)
+            trace = new Trace(trace, includeMarkers: false) { Slice = [.. trace.Slice.Where(s => !IsPinnedCorner(s))] };
         string? body = trace.PickerBody(forExpression: true);
         var transform = trace.Transform;
         if (body is null)
@@ -118,6 +123,9 @@ public static class TraceGoalReader
             Row = row, Col = col,
         };
     }
+
+    private static bool IsPinnedCorner(AxisSlice s)
+        => s.AxisName == ResultContributions.CornerAxis && s.Role == AxisRole.PinToIndex;
 
     /// <summary>The reasons that hold whatever the trace's transform is.</summary>
     private static string? Unsupported(Trace trace, DataSet? source)

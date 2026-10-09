@@ -133,13 +133,14 @@ public static class TrialResolve
 
         string? spec = by == Trace.ColorByPass ? TraceStatistics.PassSpec(ds) : by;
         if (spec is null || !ds.Contains(spec)) return;
-        var cube = ds[spec];
+        var cube = PinnedAsTrace(ds[spec], t);
         if (cube.Rank != 1 || cube.DataKind != DataKind.Real || cube.Axes[0].Name != memberAxis) return;
         var values = cube.RealValues;
 
         // A trial that did not evaluate is drawn not at all, whatever its pass reads (a fail under nonconverged=fail).
         string statusSpec = spec.Contains('.') ? spec[..spec.LastIndexOf('.')] + ".status" : "status";
-        double[]? status = ds.Contains(statusSpec) && ds[statusSpec] is { Rank: 1 } sc && sc.Axes[0].Length == values.Length
+        double[]? status = ds.Contains(statusSpec) && PinnedAsTrace(ds[statusSpec], t) is { Rank: 1 } sc
+                           && sc.Axes[0].Length == values.Length
             ? sc.RealValues : null;
 
         TrialCategory Of(int i) =>
@@ -158,6 +159,17 @@ public static class TrialResolve
         if (!all.Contains(TrialCategory.Other))
             t.Counts = new TrialCounts(all.Count(c => c == TrialCategory.Pass), all.Count(c => c == TrialCategory.Fail),
                                        all.Count(c => c == TrialCategory.NotEvaluated));
+    }
+
+    /// <summary><paramref name="cube"/> at every axis the trace pins that it also has — the corner of a run at each
+    /// corner, whose pass cube is <c>[corner, trial]</c> — so it reads the members the trace draws.</summary>
+    private static DataCube PinnedAsTrace(DataCube cube, Trace t)
+    {
+        foreach (var s in t.Slice ?? [])
+            if (s.Role == AxisRole.PinToIndex && cube.Rank > 1
+                && cube.Axes.FirstOrDefault(a => a.Name == s.AxisName) is { } axis && s.Index < axis.Length)
+                cube = cube.At(s.AxisName, s.Index);
+        return cube;
     }
 
     // ── the nominal (R-ya9-2) ────────────────────────────────────────────────────

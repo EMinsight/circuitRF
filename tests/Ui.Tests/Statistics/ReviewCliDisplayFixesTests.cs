@@ -109,9 +109,10 @@ public sealed class ReviewCliDisplayFixesTests(BandpassReviewRun bandpass) : ICl
     // ── R-ya16-3 ─────────────────────────────────────────────────────────────────
 
     /// <summary>A Monte Carlo at each corner: the histogram with spec lines is one trace per corner, each pinned;
-    /// the yield display, the statistics table, the ranking and a free-corner statistic each refuse by name.</summary>
+    /// the yield display is one tab per corner; the statistics table, the ranking and a free-corner statistic each refuse
+    /// by name.</summary>
     [Fact]
-    public void ARunAtEachCorner_PlotsOneHistogramPerCorner_AndEveryOneRunDisplayRefusesByName()
+    public void ARunAtEachCorner_PlotsOneHistogramPerCorner_AndEveryOneRunViewIsPerCornerOrRefusesByName()
     {
         string dir = OptCli.Dir();
         string cnl = OptCli.Write(dir, "div.cnl", CornerCircuits.Divider + "\ntune R2.R dist=gauss sd=2%\nstatistics trials=40\n" + CornerCircuits.Corners);
@@ -130,8 +131,8 @@ public sealed class ReviewCliDisplayFixesTests(BandpassReviewRun bandpass) : ICl
         var ds = DataSetImporter.Import(npy).DataSet;
         Assert.Equal(names, ResultContributions.StackedCorners(ds));
         Assert.NotEmpty(SpecLineResolve.GoalsOf(ds));
-        Assert.Contains("'corner' axis", YieldDisplayPreset.Refusal(ds));
-        Assert.Empty(YieldDisplayPreset.Compose(ds, npy));
+        Assert.Empty(YieldDisplayPreset.Compose(ds, npy));          // one run's display; a corner's is composed per corner
+        Assert.Equal(names, YieldDisplayPreset.Build(ds, npy).Tabs.Select(t => t.Name));
         Assert.False(StatisticsTablePreset.Available(ds));
         Assert.Equal("yield.contrib.corner-stacked", ResultContributions.Of(ds, "Vout").Refusal?.Id);
         var free = DisplayFixtures.CubeTrace("trials.goal:Vout:worst",

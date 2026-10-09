@@ -88,6 +88,11 @@ Hot at low supply is the one corner that fails, and only on gain. With **MC at e
 the grid shows each corner's yield instead: 100 % at room temperature, 74.5 % at 85 °C and 3.6 V,
 and **13.5 %** at 85 °C and 3.0 V.
 
+That run has trials to plot. **Open yield display** writes `AmplifierCorners.yield.corners.cdd` beside
+the schematic: one tab per corner, each with that corner's trials, histograms, yield sensitivity and
+statistics table. It opens on `t85_Vdd3p0`, where 27 of the 200 trials pass. The corners run without
+MC has no trials, so there is no display of it.
+
 **`WorstGain` is a statistical corner.** It was saved from a Yield run at the nominal: trial 131
 had the smallest gain margin of the 200 (0.18 dB), and right-click ▸ **Save as corner…** on its row
 made a corner that replays that trial's draws — its `Rfb`, `Beta` and `Vto` offsets — around

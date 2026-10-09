@@ -330,9 +330,11 @@ noise level as a line, its value at each factor's low, centre and high, and its 
 Both are ordinary displays — change them as you would any other. While a run is going, every display
 holding its result follows it, with a **Yield** chip.
 
-A Monte Carlo run at every corner keeps one set of trials per corner, so it has no single yield display
-or statistics table — a message says so. Plot one corner's trials instead; headlessly, a histogram of such
-a result is one histogram per corner, or one corner with `corner=<name>` on the trace.
+A Monte Carlo run at every corner keeps one set of trials per corner. Its yield display,
+`<design>.yield.corners.cdd`, has one tab per corner, named after it, holding that corner's plots, and it
+opens on the corner with the lowest yield. Every trace on a tab is pinned to its corner, so pick another
+corner on a trace card to compare two on one plot. Headlessly, a histogram of such a result is one
+histogram per corner, or one corner with `corner=<name>` on the trace.
 
 ## Load-pull contours {#contours}
 

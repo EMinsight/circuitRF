@@ -21,6 +21,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using CircuitRF.Core.Expressions;
+using CircuitRF.Design.Statistics;
 using RfCore;
 using RfCore.Data;
 
@@ -90,6 +91,15 @@ public static class TraceStatistics
         return transform == CubeTransform.None ? body : $"{Trace.TransformFunctionName(transform)}({body})";
     }
 
+    /// <summary>A pinned corner as a slice token: its quoted name — the pin's own label, else the corner axis's — or
+    /// its index when the axis has no names.</summary>
+    private static string CornerToken(AxisSlice pin, DataSet ds)
+    {
+        if (!string.IsNullOrEmpty(pin.Label)) return $"\"{pin.Label}\"";
+        var names = ResultContributions.StackedCorners(ds);
+        return names is not null && pin.Index < names.Count ? $"\"{names[pin.Index]}\"" : pin.Index.ToString(CultureInfo.InvariantCulture);
+    }
+
     /// <summary>The source's per-trial pass cube (<c>trials.pass</c>), or null when it scores no goal.</summary>
     public static string? PassSpec(DataSet ds) => ds.Contains($"{TrialsGroup}.pass") ? $"{TrialsGroup}.pass" : null;
 
@@ -123,9 +133,17 @@ public static class TraceStatistics
         {
             if (PassSpec(ds) is not { } pass)
                 return (null, "This source scores no goal, so there is no pass/fail to take a yield sensitivity of.");
-            if (YieldDisplayPreset.CornerStackedRefusal(ds, "A yield sensitivity") is { } stacked) return (null, stacked);
             if (statSpec is null || !StatSpecs(ds).Contains(statSpec, StringComparer.Ordinal))
                 return (null, $"Name a statistical variable to bin over: {string.Join(", ", StatSpecs(ds))}.");
+            // A run at each corner: the corner the trace pins, or a refusal — never the first corner silently.
+            if (ResultContributions.StackedCorners(ds) is not null)
+            {
+                if (trace.Slice?.FirstOrDefault(s => s.AxisName == CornerAxis) is not { Role: AxisRole.PinToIndex } pin)
+                    return (null, YieldDisplayPreset.CornerStackedRefusal(ds, "A yield sensitivity"));
+                string at = $"[{CornerToken(pin, ds)}, :]";
+                pass += at;
+                statSpec += at;
+            }
             int n = bins ?? AutoBins($"{statSpec} + 0*{pass}", ds) ?? 10;
             string b = n.ToString(CultureInfo.InvariantCulture);
             // The companion counts the SAME trials over the SAME bins: `+ 0*pass` makes a trial with no pass/fail a

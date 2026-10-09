@@ -184,8 +184,13 @@ public sealed partial class YieldPanelViewModel
         }
 
         CornerResult = result;
-        State = YieldRunState.Finished;
         if (result.Data is { } data) _lastData = data;
+        // Without a Monte Carlo there is one simulation per corner and no trial to plot: the grid is the result.
+        bool trials = result.Data?.ContainsGroup(StatisticalDataSet.TrialsGroup) == true;
+        DisplayUnavailable = trials ? null
+            : "No trials to plot: without MC at each corner a corner run is one simulation per corner, and the corner " +
+              "grid is its result. Tick MC at each corner, or choose Yield, for a yield display.";
+        State = YieldRunState.Finished;
         if (result.WrittenPath is { } written) _display?.Written(written);
         FillCornerGrid(result);
 
@@ -194,6 +199,11 @@ public sealed partial class YieldPanelViewModel
             ? $"{result.Yields.Count} corners · lowest yield at {result.WorstYield}"
             : unmet.Count == 0 ? $"{result.Corners.Count} corners · every goal met" : $"Not met: {string.Join(", ", unmet)}";
         ReportMessages?.Invoke($"Corners: {StatusText}", [.. result.Notes.Select(n => n.Render())]);
+        if (trials && !_offeredDisplay && _resultPath is { } path)
+        {
+            _offeredDisplay = true;
+            OfferYieldDisplay = HasYieldDisplay?.Invoke(path, result.Data) != true;
+        }
         NotifyRunCommands();
     }
 

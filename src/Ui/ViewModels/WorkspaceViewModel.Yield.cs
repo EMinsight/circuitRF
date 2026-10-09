@@ -79,7 +79,8 @@ public partial class WorkspaceViewModel
         panel.SaveTrialAsCorner = (_, trial, result) =>
             panel.Tuned is { } vm ? SaveTrialAsCornerAsync(vm, trial, result) : Task.CompletedTask;
         panel.OpenYieldDisplay = OpenYieldDisplayAsync;
-        panel.HasYieldDisplay  = path => File.Exists(YieldDisplayPath(path)) || _openDocsByPath.ContainsKey(YieldDisplayPath(path));
+        panel.HasYieldDisplay  = (path, data) => YieldDisplayPath(path, data) is var cdd
+                                                 && (File.Exists(cdd) || _openDocsByPath.ContainsKey(cdd));
         panel.ReportMessages   = (summary, lines) =>
         {
             Messages.Info(summary);
@@ -170,9 +171,15 @@ public partial class WorkspaceViewModel
 
     // ── One-click yield display (R-ya10-8) ─────────────────────────────────
 
-    /// <summary>The display beside the result: <c>&lt;design&gt;.yield.cdd</c> next to <c>&lt;design&gt;.yield.npy</c>.</summary>
-    private static string YieldDisplayPath(string resultPath)
-        => Path.ChangeExtension(Path.GetFullPath(resultPath), ".cdd");
+    /// <summary>
+    /// The display beside the result: <c>&lt;design&gt;.yield.cdd</c> next to <c>&lt;design&gt;.yield.npy</c> — or
+    /// <c>&lt;design&gt;.yield.corners.cdd</c> for a run at each corner. A plain yield run and a run at each corner
+    /// write the same <c>.yield.npy</c>, and each display's traces are made for one shape of it, so they are two files:
+    /// opening one never shows the other shape's traces as invalid.
+    /// </summary>
+    private static string YieldDisplayPath(string resultPath, DataSet? result)
+        => Path.ChangeExtension(Path.GetFullPath(resultPath),
+                                result is not null && ResultContributions.StackedCorners(result) is not null ? ".corners.cdd" : ".cdd");
 
     /// <summary>
     /// Focuses the yield display over <paramref name="resultPath"/>, creating it first when it does not exist —
@@ -181,13 +188,13 @@ public partial class WorkspaceViewModel
     /// </summary>
     private async Task OpenYieldDisplayAsync(string resultPath, DataSet result)
     {
-        string cdd = YieldDisplayPath(resultPath);
+        string cdd = YieldDisplayPath(resultPath, result);
         if (!_openDocsByPath.ContainsKey(cdd) && !File.Exists(cdd))
         {
-            // A run at each corner has no one-run display: said by name rather than written empty (R-ya16-3).
-            if (DoeDisplayPreset.Responses(result).Count == 0 && YieldDisplayPreset.Refusal(result) is { } why)
+            // A result with no trials has nothing to plot: said by name rather than written empty.
+            if (DoeDisplayPreset.Responses(result).Count == 0 && !result.ContainsGroup(StatisticalDataSet.TrialsGroup))
             {
-                Messages.Warning(why, resultPath);
+                Messages.Warning("This result has no trials to plot, so there is no yield display of it.", resultPath);
                 return;
             }
             // A design of experiments' result draws the DOE display (brief-yield-14 R-ya14-6); every other, the yield's.
