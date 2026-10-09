@@ -224,7 +224,7 @@
                              below, so the two quantities are never confused again. -->
                         <Grid ColumnDefinitions="56,*">
                             <TextBlock Grid.Column="0" Text="{Binding LabelHeightCaption}" VerticalAlignment="Center" FontSize="11"
-                                       ToolTip.Tip="The height of the label's own text. It has nothing to do with the port's excitation width."
+                                       ToolTip.Tip="The height of the label's own text: a cap height in the Stroke font, an em size in Sans. It has nothing to do with a port's excitation width."
                                        Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
                             <TextBox Grid.Column="1" Text="{Binding LabelHeightText}" Tag="LabelHeight"
                                       Classes.error="{Binding HasLabelHeightError}" ToolTip.Tip="{Binding LabelHeightError}"
@@ -304,6 +304,27 @@
                             <Button Grid.Column="2" Content="Pick" FontSize="11" Padding="6,2"
                                     Command="{Binding PickPortReturnCommand}"
                                     ToolTip.Tip="Click here, then click the conductor this port returns through."/>
+                        </Grid>
+                        <!-- brief-silkscreen-stroke-font.md R-ssf-8: the font, and a stroke label's pen. A blank pen
+                             is the default, which the watermark shows. -->
+                        <Grid ColumnDefinitions="56,*">
+                            <TextBlock Grid.Column="0" Text="Font" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <ComboBox Grid.Column="1"
+                                      ItemsSource="{x:Static vm:LayoutShapePropertiesViewModel.LabelFontOptions}"
+                                      SelectedItem="{Binding LabelFontValue, Mode=TwoWay}"
+                                      ToolTip.Tip="Stroke: the pen font a board shop prints as drawn. Sans: the outline font. Height is a cap height for Stroke and an em size for Sans."
+                                      HorizontalAlignment="Stretch"
+                                      FontSize="11" Padding="4,2"/>
+                        </Grid>
+                        <Grid ColumnDefinitions="56,*" IsVisible="{Binding ShowLabelPenWidth}">
+                            <TextBlock Grid.Column="0" Text="Pen width" VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+                            <TextBox Grid.Column="1" Text="{Binding LabelPenWidthText}" Tag="LabelPenWidth"
+                                      PlaceholderText="{Binding LabelPenWidthPlaceholder}"
+                                      Classes.error="{Binding HasLabelPenWidthError}" ToolTip.Tip="{Binding LabelPenWidthError}"
+                                      GotFocus="OnFieldGotFocus" LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                      FontSize="11" Padding="4,2"/>
                         </Grid>
                         <Grid ColumnDefinitions="56,*">
                             <TextBlock Grid.Column="0" Text="Style" VerticalAlignment="Center" FontSize="11"

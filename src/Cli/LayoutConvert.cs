@@ -962,14 +962,18 @@ public static class LayoutConvert
                 }
 
                 var result = GerberExport.Write(output, stem, plan);
-                Note(plan.LabelsConvertedToGeometry, "label", "converted to geometry — Gerber has no text");
+                Note(plan.StrokeLabelsWritten, "label", "written as stroke-font pen strokes — Gerber has no text");
+                Note(plan.SansLabelsConverted, "Sans label", "converted to filled glyph outlines — Gerber has no text");
+                Note(plan.CharactersBoxed, "character", "not in the stroke font, written as a hollow box");
                 Note(plan.PortLabelsOmitted, "port label", "omitted: a marker, not artwork");
                 Note(plan.BitmapsOmitted, "bitmap", "omitted — Gerber carries no raster");
                 Note(plan.PathsAsRegion, "path", "written as a region: its end style is not a round cap");
                 Note(plan.UnpairedDrillCircles, "bare circle", "on a drill layer drilled a hole with no pad — 'Convert to Via' pairs them");
-                if (plan.LabelsConvertedToGeometry > 0 && !LayoutTextOutline.HasEmbeddedTypefaces)
+                // About the TrueType seam alone, so said only when a Sans label was converted: the stroke font is
+                // data in src/Design and is the same geometry in every process.
+                if (plan.SansLabelsConverted > 0 && !LayoutTextOutline.HasEmbeddedTypefaces)
                     Console.Error.WriteLine(
-                        "note: labels were flattened with the platform default typeface — the embedded faces the " +
+                        "note: Sans labels were flattened with the platform default typeface — the embedded faces the " +
                         "application draws with need a running app, so this glyph artwork differs from the GUI's.");
                 Console.Error.WriteLine(
                     $"[circuitRF] {result.FilesWritten.Count} file(s), " +

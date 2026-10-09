@@ -1,0 +1,37 @@
+hershey-roman-simplex.txt — licence
+===================================
+
+The glyph coordinates in hershey-roman-simplex.txt (in this folder) and in
+../silkscreen-glyphs/hershey-variants.txt are glyphs of the Hershey fonts, converted into circuitRF's
+own format from the Usenet distribution of the fonts. The Hershey fonts are in the public domain. That
+distribution may be used by anyone for any purpose, commercial or otherwise, provided that the
+following acknowledgements are distributed with the font data:
+
+  - The Hershey Fonts were originally created by Dr. A. V. Hershey while working at the U. S.
+    National Bureau of Standards.
+  - The format of the Font data in this distribution was originally created by
+        James Hurt
+        Cognition, Inc.
+        900 Technology Park Drive
+        Billerica, MA 01821
+
+and that the font data is not converted into the format distributed by the U.S. National Technical
+Information Service (NTIS). Neither file is in that format.
+
+What the files hold:
+
+  - hershey-roman-simplex.txt: the Roman Simplex set of the distribution for every printable ASCII
+    character (U+0020 to U+007E), and four glyphs beyond it — the Omega (Hershey 550) and the mu
+    (Hershey 638, standing for the micro sign) of the simplex Greek set, the simplex degree mark
+    (Hershey 718), and the plus-minus of the simplex mathematical symbols.
+  - ../silkscreen-glyphs/hershey-variants.txt: three further glyphs (two 1s and a 3) assembled from the
+    strokes of the Hershey Roman Simplex glyphs and the Hershey serif Roman face, covered by this
+    licence in the same way.
+
+How circuitRF uses them:
+
+  - hershey-roman-simplex.txt is the stroke font circuitRF draws layout labels in — on the layout
+    canvas, in rendered pictures (SVG, PDF, PNG), and as pen strokes in a Gerber export — and it
+    supplies the matching templates Create Schematic from Artwork reads stroked silkscreen
+    designators against.
+  - hershey-variants.txt holds matching templates only: nothing is drawn with those three glyphs.

@@ -27,6 +27,10 @@ public partial class FlattenToPolygonDialog : Window
 
     public FlattenToPolygonDialog() => InitializeComponent();
 
+    /// <summary>D7: true when the user asked for a stroke label's outlines rather than its pen strokes. Read by the
+    /// caller after the dialog closes with a tolerance.</summary>
+    public bool StrokeLabelsAsPolygons => StrokeLabelMode.SelectedIndex == 1;
+
     /// <param name="vm">The layout editor VM.</param>
     /// <param name="selectedIndices">The FULL current selection — not just the curved subset; the
     /// skip count (R-L1h-2) is computed as the difference between this and the curved subset.</param>
@@ -63,6 +67,7 @@ public partial class FlattenToPolygonDialog : Window
             ? $"{what} will become polygon(s); {string.Join("; ", notes)}."
             : $"{what} will become polygon(s).";
         TextBecomesGeometryNote.IsVisible = labelCount > 0;
+        StrokeLabelChoice.IsVisible = curved.Any(i => vm.Model.Shapes[i] is LabelShape { Font: LabelFont.Stroke });
 
         // R-L1h-2b: pre-fill from the FIRST curved shape's resolved tolerance, labelled by which of
         // ResolveTolDbu's two branches actually won — the shape's own explicit value, or the
@@ -84,11 +89,17 @@ public partial class FlattenToPolygonDialog : Window
 
     private void OnToleranceChanged(object? sender, TextChangedEventArgs e) => UpdatePreview();
 
+    // Raised while the XAML loads (SelectedIndex="0"), before the named controls and the view model exist.
+    private void OnStrokeLabelModeChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_vm is not null) UpdatePreview();
+    }
+
     private void UpdatePreview()
     {
         if (_vm is not null && TryReadTolerance(out var dbu))
         {
-            var counts = _vm.PreviewFlattenVertexCounts(_selectedIndices, dbu);
+            var counts = _vm.PreviewFlattenVertexCounts(_selectedIndices, dbu, StrokeLabelsAsPolygons);
             int total = counts.Sum(c => c.VertexCount);
             CountLabel.Text = counts.Count <= 1
                 ? $"{total} vertices"

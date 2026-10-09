@@ -1074,6 +1074,7 @@ public static class LayoutPortDirection
         Layer = port.Layer, X = x, Y = y, Text = port.Text, Height = port.Height,
         Rotation = port.Rotation, IsPort = port.IsPort, PortDirection = port.PortDirection,
         PortLayer = port.PortLayer, PortKind = port.PortKind, Style = port.Style,
+        Font = port.Font, StrokeWidth = port.StrokeWidth,
     };
 
     /// <summary>Top-level shapes only — the cheap form, and all a hand-drawn layout ever needs.

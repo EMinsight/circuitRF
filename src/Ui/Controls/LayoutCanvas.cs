@@ -1669,7 +1669,7 @@ public sealed class LayoutCanvas : Control
 
         if (chosen is { } tolDbu)
         {
-            _viewModel.FlattenSelectionToPolygon(tolDbu);
+            _viewModel.FlattenSelectionToPolygon(tolDbu, dialog.StrokeLabelsAsPolygons);
             InvalidateVisual();
         }
     }

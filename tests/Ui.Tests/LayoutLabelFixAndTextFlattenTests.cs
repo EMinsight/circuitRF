@@ -337,7 +337,9 @@ public class LayoutLabelFixAndTextFlattenTests : IDisposable
     private static LayoutEditorViewModel MakeVmWithLabel(string text, out LabelShape label, bool isPort = false)
     {
         var model = FreshModel(dbuPerMicron: 1000);
-        label = new LabelShape { Layer = Layer1, X = 0, Y = 0, Text = text, Height = 1_000_000, Rotation = LayoutRotation.R0, IsPort = isPort };
+        // Sans: these gates are about the TrueType outline pipeline (holes, nesting); a stroke label flattens to
+        // pen strokes instead, which tests/Ui.Tests/Layout/Text covers (brief-silkscreen-stroke-font.md D7).
+        label = new LabelShape { Layer = Layer1, X = 0, Y = 0, Text = text, Height = 1_000_000, Rotation = LayoutRotation.R0, IsPort = isPort, Font = LabelFont.Sans };
         model.Shapes.Add(label);
         return new LayoutEditorViewModel(model);
     }
@@ -511,7 +513,7 @@ public class LayoutLabelFixAndTextFlattenTests : IDisposable
     {
         var model = FreshModel();
         var before = new RectShape { Layer = Layer1, X1 = -50_000, Y1 = -50_000, X2 = -10_000, Y2 = -10_000 };
-        var label = new LabelShape { Layer = Layer1, X = 0, Y = 0, Text = "O", Height = 1_000_000, Rotation = LayoutRotation.R0 };
+        var label = new LabelShape { Layer = Layer1, X = 0, Y = 0, Text = "O", Height = 1_000_000, Rotation = LayoutRotation.R0, Font = LabelFont.Sans };
         model.Shapes.Add(before);  // index 0
         model.Shapes.Add(label);   // index 1
         var jsonBefore = LayoutPersistence.Serialize(model);

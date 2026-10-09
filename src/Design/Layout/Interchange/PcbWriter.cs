@@ -29,6 +29,7 @@
 // Also not written: pcbplotparams (plot/Gerber output configuration, all defaults), aux_axis_origin,
 // and the tenting/covering flags. All optional; all would be invented.
 
+using CircuitRF.Design.Layout.Text;
 using System.Globalization;
 using System.Text;
 
@@ -625,10 +626,16 @@ public static class PcbWriter
     private static void WriteText(Ctx ctx, LabelShape label, string layer, string prefix = "gr", string indent = "  ")
     {
         double degrees = label.RotationDegrees;
+        // The format's text is a stroke font with a stated thickness, so a stroke label states ITS pen
+        // (brief-silkscreen-stroke-font.md R-ssf-7) and the receiving tool draws the weight circuitRF drew.
+        // A Sans label has no pen; it keeps the eighth of its height it always wrote.
+        long thickness = label.Font == LabelFont.Stroke
+            ? Math.Max(1, (long)Math.Round(StrokeText.PenWidth(label, ctx.Tech)))
+            : Math.Max(label.Height / 8, 1);
         ctx.W.WriteLine(
             $"{indent}({prefix}_text {Quote(label.Text)} (at {ctx.Mm(label.X)} {ctx.My(label.Y)} {ctx.Deg(degrees)}) " +
             $"(layer {Quote(layer)}) (effects (font (size {ctx.Mm(label.Height)} {ctx.Mm(label.Height)}) " +
-            $"(thickness {ctx.Mm(Math.Max(label.Height / 8, 1))})){JustifyClause(label)}))");
+            $"(thickness {ctx.Mm(thickness)})){JustifyClause(label)}))");
         ctx.Texts++;
     }
 

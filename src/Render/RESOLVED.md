@@ -4981,3 +4981,21 @@ leaves (any number of kept axes; a bare name is the whole cube) and the expressi
 The result must keep exactly one axis, which is the trace's X — a histogram's `bin`, the `freq` a mean
 over trials leaves. A rank-0 result or one with several axes is refused with the axes named, because a
 trace drawn from either would be an empty or arbitrary picture.
+
+## A stroke-font label is drawn and measured from `StrokeText` (brief-silkscreen-stroke-font, 2026-10-08)
+
+`DrawLabelText` strokes a stroke label's centre lines (round caps and joins, at its pen) and `MeasureLabelWorldBbox`
+returns `StrokeText.Bounds` for it — the same geometry a Gerber export writes, so the selection box, the hit test and
+`DocumentExtents` follow with no change of their own. Only a Sans label still reaches Skia's glyph metrics.
+
+**The technology now reaches the label draw.** A default pen is never below a plain minimum-width rule on the label's
+layer, so the pen depends on the technology; `DrawLayer`, `DrawDesignators`, `DrawPortGlyphs` and `PortNameKnockout`
+take it (the ghost path already had `ghostTech`). `MeasureLabelWorldBbox` takes it optionally; its callers that have no
+technology measure with the plain `Height / 6.5` pen, which differs only on a layer whose rule raises the pen.
+
+**A port's name knockout for a stroke label** is its centre lines widened to the pen plus the knockout gap on each
+side, not glyph outlines — the hole is exactly the ink plus the gap.
+
+**Two label clones in the renderer copy field by field** (the sub-pixel height floor for a committed label and for the
+ghost); both carry `Font` and `StrokeWidth` now. A clone that dropped `Font` would draw a Sans label in the stroke font
+only when it was small enough to need the floor.

@@ -134,6 +134,7 @@ public static class LayoutCoordinateWalk
             case LabelShape label:
                 (label.X, label.Y) = t.Point(label.X, label.Y);
                 label.Height = t.Magnitude(label.Height);
+                if (label.StrokeWidth is { } pen) label.StrokeWidth = t.Magnitude(pen);
                 break;
             case BitmapShape bmp:
             {

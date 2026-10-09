@@ -330,13 +330,13 @@ is not "is it useful to draw?" but "what exactly ships when this is exported?"
 | `Curve` | layer, closed edge list (see §3.2), optional inner rings | A filled region whose boundary edges may be lines, circular arcs, or cubic Béziers. Spiral inductors, tapers, curved guard structures. |
 | `Path` | layer, centerline **edge list**, width, end style (flush / round / square / extended) | Keeps a trace *parametric*: change the width of a 40-segment route in one edit. The centerline uses the same edge vocabulary as `Curve`, so a **curved trace** — a swept bend, a radiused corner — is a `Path`, not a hand-built polygon. Maps to GDSII PATH and to Gerber D01 stroking. |
 | `Via` | layer(s), position, pad size, drill size | PCB needs a drill file, and a drill is not a polygon. Carrying it explicitly is what makes Excellon export possible without heuristics. |
-| `Label` | layer, position, text, size, rotation, `IsPort`, and — for a port — `PortDirection`, `PortLayer`, `PortReference`, `PortReturn` | Two roles: annotation, and the port/pin marker that §9 and §10.6 key on. The four port fields are all additive and all **null-means-the-old-behaviour**: infer the direction, work out the conductor, return through the stackup's ground plane. |
+| `Label` | layer, position, text, size, rotation, font and pen width (§3.1c), `IsPort`, and — for a port — `PortDirection`, `PortLayer`, `PortReference`, `PortReturn` | Two roles: annotation, and the port/pin marker that §9 and §10.6 key on. The four port fields are all additive and all **null-means-the-old-behaviour**: infer the direction, work out the conductor, return through the stackup's ground plane. |
 | `Bitmap` | layer, placement rect, image **path reference**, opacity, locked | A reference image — a scanned drawing, a die photo, a datasheet figure — to trace over. See §3.1b; it is the one primitive that is not geometry at all. |
 | `Instance` | cell ref, transform (translate + R0/R90/R180/R270 + mirror-X + magnification), optional array (rows, cols, pitch) | §7. Arrays matter enormously for MMIC. |
 
 One thing is deliberately **not** a primitive: **text as geometry.** A `Label` is metadata. If a fab
-needs a text marking as real copper, that is an explicit "convert text to polygons" command using a
-stroked vector font — the same shape of operation as §3.2's flatten.
+needs a text marking as real copper, that is an explicit Flatten to Polygon — the same shape of operation
+as §3.2's flatten — which for a stroke-font label gives its pen strokes (§3.1c).
 
 ### 3.1a Holes
 
@@ -395,6 +395,41 @@ artifact. Selection, move, scale, clipboard and undo all treat it as an ordinary
 Because a bitmap has no vertices, a single selected bitmap shows §6.1's bounding-box scale handles rather
 than vertex handles, and non-uniform scaling is legitimate stretching — there is no arc-to-cubic promotion
 to worry about.
+
+### 3.1c Label fonts — two meanings of `Height`, one geometry *(brief-silkscreen-stroke-font.md)*
+
+**Every label is drawn in a stroke font unless it says otherwise.** `LabelShape.Font` is `Stroke` (the
+default, never written to the file) or `Sans` (written as `"Font": "Sans"`, only on a label a user
+switched). The stroke font is Hershey Roman Simplex — printable ASCII plus `Ω µ ° ±` — carried as plain
+embedded data in `src/Design/resources/stroke-font/` with its licence beside it. It is a pen font: one
+pen, a few centre-line strokes per glyph, which is what a board shop's plotter prints silkscreen with and
+what AS-10's silkscreen reader reads back. A character outside it draws as a hollow box of a digit's
+advance and is **counted** by every export that draws it.
+
+**`Height` means what the font says it means.** For `Stroke` it is the **cap height** — what a fab drawing
+and a board tool mean by text height. For `Sans` it is the TrueType **em size**, unchanged (a capital is
+~0.7 of it). Switching font never rewrites `Height`, so switching back restores the label exactly; a
+`.clay` written before the stroke font therefore draws its labels ~40 % taller, deliberately, and is never
+rewritten to compensate.
+
+**The pen.** `StrokeWidth` (DBU, nullable) states a pen; null is the default `Height / 6.5`, never below a
+plain minimum-width DRC rule on the label's layer, **computed at use and never stored** — so a height edit
+carries a default pen with it. `Style` keeps its four values: Bold multiplies the pen by 1.6, Italic leans
+12°, Condensed scales the advance (and the glyphs) by 0.8.
+
+**One geometry.** `StrokeText.For(label)` (`src/Design/Layout/Text/`) is the ONE place a stroke label
+becomes geometry: alignment in the text's own frame, then rotation (any angle), then the anchor. The
+canvas strokes it with round caps and joins at the pen width; `StrokeText.Bounds` — the strokes grown by
+half the pen — is the selection box, the hit region and `DocumentExtents`' extent, computed below the
+firewall with no Skia; a Gerber export writes the same strokes as D01 through one round aperture of the
+pen; Flatten to Polygon gives them as paths (one per stroke) or, on request, as their united outlines.
+Alignment: `Top`/`Bottom` hang the **inked** cap/descender line on the anchor (half the pen counted, since
+what has to clear a part body or the row above is the ink); `Middle` centres the cap height; the
+horizontal offset is rounded to whole DBU so a string's box is the same size however it is aligned.
+
+GDSII, DXF and the board file still carry the STRING (a text record), not geometry; the board file states
+the pen as its text thickness. An imported text record becomes a stroke label whose height is read as a
+cap height.
 
 ### 3.2 Curved primitives and flattening
 

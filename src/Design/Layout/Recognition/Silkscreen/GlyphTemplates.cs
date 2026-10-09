@@ -1,15 +1,16 @@
 // The characters a silkscreen glyph is matched against — brief-artsch-10-silkscreen-ocr.md R-as10-3, R-as10-5.
 //
 // Two kinds of template, both normalised as StrokeGlyphs normalises a glyph (cap height 1, baseline 0, centred):
-//   - BUILT IN: generated from a public-domain stroke font, carried as an embedded resource with its licence beside it
-//     in the tree (src/Design/resources/silkscreen-glyphs/), plus the few variants of it CAD plotter fonts commonly
-//     draw instead, built from the font's own strokes. CAD stroke fonts are close relatives of it.
+//   - BUILT IN: the designator characters of the stroke font every layout label is drawn in (StrokeFont, its data and
+//     licence in src/Design/resources/stroke-font/ — one copy, brief-silkscreen-stroke-font.md R-ssf-1), plus the few
+//     variants of it CAD plotter fonts commonly draw instead, built from the font's own strokes
+//     (src/Design/resources/silkscreen-glyphs/). CAD stroke fonts are close relatives of it.
 //   - TAUGHT: glyphs a user corrected in the parts table and asked to learn, kept in the per-user state directory
 //     (silkscreen-glyphs/taught.json) and used on every later run. Nothing is written to a workspace.
 
-using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using CircuitRF.Design.Layout.Text;
 
 namespace CircuitRF.Design.Layout.Recognition.Silkscreen;
 
@@ -29,21 +30,19 @@ public sealed class GlyphTemplates
     /// <summary>The <see cref="GlyphTemplate.Source"/> of a taught glyph.</summary>
     public const string TaughtSource = "taught";
 
-    private const string FontResource = "CircuitRF.Design.SilkscreenGlyphs.hershey-roman-simplex.txt";
     private const string FontSource = "hershey-roman-simplex";
     private const string VariantResource = "CircuitRF.Design.SilkscreenGlyphs.hershey-variants.txt";
     private const string VariantSource = "hershey-variants";
 
+    /// <summary>The characters a designator is written in — the font's glyphs that are matching templates. The rest
+    /// of the font (lower case, punctuation) draws labels but is never matched: a designator never holds it, and
+    /// offering it would only give a silkscreen glyph more ways to be read wrong.</summary>
+    public const string DesignatorCharacters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_+";
+
     // The font in its own units: y down, the cap line at -12 and the baseline at 9.
-    private const double FontBaseline = 9, FontCapHeight = 21;
+    private const double FontBaseline = StrokeFont.BaselineUnits, FontCapHeight = StrokeFont.CapUnits;
 
-    private readonly Dictionary<char, (int Left, int Right, List<double[]> Strokes)> _font;
-
-    private GlyphTemplates(IReadOnlyList<GlyphTemplate> all, Dictionary<char, (int, int, List<double[]>)> font)
-    {
-        All = all;
-        _font = font;
-    }
+    private GlyphTemplates(IReadOnlyList<GlyphTemplate> all) => All = all;
 
     /// <summary>Every template.</summary>
     public IReadOnlyList<GlyphTemplate> All { get; }
@@ -61,7 +60,7 @@ public sealed class GlyphTemplates
     public GlyphTemplates With(IEnumerable<GlyphTemplate> more)
     {
         var extra = more.ToList();
-        return extra.Count == 0 ? this : new GlyphTemplates([.. All, .. extra], _font);
+        return extra.Count == 0 ? this : new GlyphTemplates([.. All, .. extra]);
     }
 
     /// <summary>
@@ -88,31 +87,12 @@ public sealed class GlyphTemplates
 
     /// <summary>
     /// <paramref name="text"/> drawn in the built-in font as centre-line strokes: reading along +x from x = 0, the
-    /// baseline on y = 0, cap height <paramref name="capHeight"/>, each character advancing by the font's own bounds.
-    /// A space advances by two thirds of the cap height. What a CAD tool's plotter font writes, for tests and for
-    /// anyone checking a reading by eye.
+    /// baseline on y = 0, cap height <paramref name="capHeight"/> — <see cref="StrokeFont.Layout"/>, the layout every
+    /// stroke label is drawn with. What a CAD tool's plotter font writes, for tests and for anyone checking a reading
+    /// by eye.
     /// </summary>
-    public IReadOnlyList<double[]> Draw(string text, double capHeight)
-    {
-        double s = capHeight / FontCapHeight, pen = 0;
-        var strokes = new List<double[]>();
-        foreach (char ch in text)
-        {
-            if (!_font.TryGetValue(ch, out var g)) { pen += 2.0 / 3 * capHeight; continue; }
-            foreach (var st in g.Strokes)
-            {
-                var xy = new double[st.Length];
-                for (int i = 0; i + 1 < st.Length; i += 2)
-                {
-                    xy[i] = pen + (st[i] - g.Left) * s;
-                    xy[i + 1] = (FontBaseline - st[i + 1]) * s;
-                }
-                strokes.Add(xy);
-            }
-            pen += (g.Right - g.Left) * s;
-        }
-        return strokes;
-    }
+    public IReadOnlyList<double[]> Draw(string text, double capHeight) =>
+        StrokeFont.Layout(text, LabelFontStyle.Regular, capHeight).Strokes;
 
     // ── the built-in font ───────────────────────────────────────────────────────────────────────────────
 
@@ -120,40 +100,16 @@ public sealed class GlyphTemplates
     /// round-topped 3) — templates only: <see cref="Draw"/> writes the font itself.</summary>
     private static GlyphTemplates LoadBuiltIn()
     {
-        var font = new Dictionary<char, (int, int, List<double[]>)>();
         var templates = new List<GlyphTemplate>();
-        foreach (var (ch, left, right, strokes) in ReadFont(FontResource))
-        {
-            font[ch] = (left, right, strokes);
-            templates.Add(new GlyphTemplate(ch, Normalised(strokes), FontSource));
-        }
-        foreach (var (ch, _, _, strokes) in ReadFont(VariantResource))
-            templates.Add(new GlyphTemplate(ch, Normalised(strokes), VariantSource));
-        return new GlyphTemplates(templates, font);
-    }
-
-    private static IEnumerable<(char Char, int Left, int Right, List<double[]> Strokes)> ReadFont(string resource)
-    {
-        using var stream = typeof(GlyphTemplates).Assembly.GetManifestResourceStream(resource)
-            ?? throw new InvalidOperationException($"the embedded stroke font '{resource}' is missing from {typeof(GlyphTemplates).Assembly.GetName().Name}");
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-        var glyphs = new List<(char, int, int, List<double[]>)>();
-        while (reader.ReadLine() is { } line)
-        {
-            if (line.Length == 0 || line[0] == '#') continue;
-            var parts = line[2..].Split(' ', 3);
-            var strokes = parts[2].Split('|', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
-                .Select(st => st.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-                                .SelectMany(p => p.Split(',').Select(v => double.Parse(v, CultureInfo.InvariantCulture)))
-                                .ToArray())
-                .ToList();
-            glyphs.Add((line[0], int.Parse(parts[0], CultureInfo.InvariantCulture), int.Parse(parts[1], CultureInfo.InvariantCulture), strokes));
-        }
-        return glyphs;
+        foreach (char ch in DesignatorCharacters)
+            templates.Add(new GlyphTemplate(ch, Normalised(StrokeFont.Glyphs[ch].Strokes), FontSource));
+        foreach (var g in StrokeFont.ReadGlyphs(VariantResource))
+            templates.Add(new GlyphTemplate((char)g.CodePoint, Normalised(g.Strokes), VariantSource));
+        return new GlyphTemplates(templates);
     }
 
     /// <summary>Font-unit strokes as a glyph: cap height 1, baseline 0, y up, centred on the glyph's own box.</summary>
-    private static Glyph Normalised(List<double[]> strokes)
+    private static Glyph Normalised(IReadOnlyList<double[]> strokes)
     {
         double minX = strokes.SelectMany(Xs).Min(), maxX = strokes.SelectMany(Xs).Max(), cx = (minX + maxX) / 2;
         return new Glyph([.. strokes.Select(st =>

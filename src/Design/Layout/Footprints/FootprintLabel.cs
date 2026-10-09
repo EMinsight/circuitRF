@@ -410,8 +410,10 @@ public static class FootprintLabel
                         into.Add(new LabelShape
                         {
                             Layer = l.Layer, Text = l.Text, HAlign = l.HAlign, VAlign = l.VAlign,
+                            Style = l.Style, Font = l.Font,
                             X = ox + (long)Math.Round((x - ox) * k), Y = oy + (long)Math.Round((y - oy) * k),
                             Height = (long)Math.Round(l.Height * Math.Abs(inst.Mag) * k),
+                            StrokeWidth = l.StrokeWidth is { } pen ? (long)Math.Round(pen * Math.Abs(inst.Mag) * k) : null,
                             RotationDegrees = ReadableAngle(inst.MirrorX ? -a : a),
                         });
                     }

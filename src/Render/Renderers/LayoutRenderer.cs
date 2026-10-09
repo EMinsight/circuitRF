@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using SkiaSharp;
+using CircuitRF.Design.Layout.Text;
 using CircuitRF.Engine.Mom;
 
 namespace CircuitRF.Render;
@@ -883,7 +884,8 @@ public static partial class LayoutRenderer
                               tileDoc is null
                                   ? null
                                   : (tileMergeByLayer ??= LayerMergeMap(view, opts))
-                                        .TryGetValue(def.Key, out var m) && m);
+                                        .TryGetValue(def.Key, out var m) && m,
+                              tech);
                 }
 
                 if (counters.InstancesExamined > 0)
@@ -1002,11 +1004,11 @@ public static partial class LayoutRenderer
                 var designators = CollectDesignators(view, tech, instanceCandidates, instanceDragOverrides,
                                                      opts, scaleUm * ps.DbuToUm);
                 if (designators.Count > 0)
-                    DrawDesignators(canvas, designators, opts, ps, scaleUm, counters);
+                    DrawDesignators(canvas, designators, opts, ps, scaleUm, counters, tech);
 
                 if (deferredPorts.Count > 0)
                     DrawPortGlyphs(canvas, deferredPorts, conductorAt, ps, scaleUm, opts, counters,
-                                   view.DbuPerMicron);
+                                   view.DbuPerMicron, tech);
 
                 if (opts.Overlay?.SelectedIndices is { Count: > 0 } selected)
                 {
@@ -1287,6 +1289,7 @@ public static partial class LayoutRenderer
                 Height = effectiveHeight, RotationDegrees = label.RotationDegrees, IsPort = label.IsPort,
                 PortDirection = label.PortDirection, PortLayer = label.PortLayer,
                 PortReference = label.PortReference, PortReturn = label.PortReturn, PortKind = label.PortKind, Style = label.Style,
+                Font = label.Font, StrokeWidth = label.StrokeWidth,
                 HAlign = label.HAlign, VAlign = label.VAlign,
             };
             // A port ghost carries its own marker, so what the user is placing looks like what
@@ -1307,9 +1310,9 @@ public static partial class LayoutRenderer
                                new LayoutFrameCounters());
                 DrawLabelText(canvas, effective, ps,
                               TintForContrast(color, background, PortMarkerContrastTintAmount),
-                              centred: true);
+                              centred: true, tech: ghostTech);
             }
-            else DrawLabelText(canvas, effective, ps, color);
+            else DrawLabelText(canvas, effective, ps, color, tech: ghostTech);
             return;
         }
 
@@ -1472,7 +1475,7 @@ public static partial class LayoutRenderer
         LayoutRenderOptions opts, LayoutFrameCounters counters, List<DeferredPort> deferredPorts,
         FillPattern? fillPattern = null,
         int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron, bool drawOutlines = true,
-        bool? layerMergesFromFrame = null)
+        bool? layerMergesFromFrame = null, Technology? tech = null)
     {
         var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
 
@@ -1607,6 +1610,7 @@ public static partial class LayoutRenderer
                     Height = effectiveHeight, RotationDegrees = label.RotationDegrees, IsPort = label.IsPort,
                     PortDirection = label.PortDirection, PortLayer = label.PortLayer,
                     PortReference = label.PortReference, PortReturn = label.PortReturn, PortKind = label.PortKind, Style = label.Style,
+                    Font = label.Font, StrokeWidth = label.StrokeWidth,
                     HAlign = label.HAlign, VAlign = label.VAlign,
                 };
                 // ── THE TYPE RIDES ON THE SHAPE, SO A DRAG CANNOT LOSE IT ────────────────────
@@ -1643,7 +1647,7 @@ public static partial class LayoutRenderer
                     continue;
                 }
 
-                DrawLabelText(canvas, effective, ps, color);
+                DrawLabelText(canvas, effective, ps, color, tech: tech);
                 continue;
             }
 
@@ -2060,9 +2064,13 @@ public static partial class LayoutRenderer
     /// <c>label.IsPort</c>. A port's name is drawn centred on its anchor, so measuring it
     /// left-anchored puts the box half a text-width off, which for the clipboard's painted bounds is
     /// a port cropped at the edge of the page.</param>
-    internal static Bbox? MeasureLabelWorldBbox(LabelShape label, bool centred = false)
+    internal static Bbox? MeasureLabelWorldBbox(LabelShape label, bool centred = false, Technology? tech = null)
     {
         if (string.IsNullOrEmpty(label.Text) || label.Height <= 0) return null;
+
+        // A stroke label's box is computed below the firewall from the strokes it draws (R-ssf-5); only a Sans
+        // label still needs Skia's glyph metrics.
+        if (label.Font == LabelFont.Stroke) return StrokeText.Bounds(label, centred, tech);
 
         using var font = new SKFont(LayoutTextOutline.ResolveTypeface(label.Style), label.Height);
         float advance = font.MeasureText(label.Text, out SKRect bounds);
@@ -3456,12 +3464,12 @@ public static partial class LayoutRenderer
     /// </summary>
     private static void DrawPortGlyphs(SKCanvas canvas, List<DeferredPort> ports,
         LayoutPortDirection.ConductorLookup? conductorAt, PathSpace ps, double scaleUm,
-        LayoutRenderOptions opts, LayoutFrameCounters counters, int dbuPerMicron)
+        LayoutRenderOptions opts, LayoutFrameCounters counters, int dbuPerMicron, Technology? tech = null)
     {
         using var knockout = new SKPath();
         foreach (var (_, label, _) in ports)
         {
-            if (PortNameKnockout(label, ps, scaleUm) is not { } k) continue;
+            if (PortNameKnockout(label, ps, scaleUm, tech) is not { } k) continue;
             knockout.AddPath(k);
             k.Dispose();
         }
@@ -3480,7 +3488,7 @@ public static partial class LayoutRenderer
         foreach (var (_, label, layerColor) in ports)
             DrawLabelText(canvas, label, ps,
                           TintForContrast(layerColor, opts.Theme.Background, PortMarkerContrastTintAmount),
-                          centred: true);
+                          centred: true, tech: tech);
     }
 
     /// <summary>
@@ -3536,9 +3544,27 @@ public static partial class LayoutRenderer
     /// place a label's anchor becomes an aligner and a baseline offset — so the hole cannot drift from
     /// the glyphs that fill it.</para>
     /// </summary>
-    private static SKPath? PortNameKnockout(LabelShape label, PathSpace ps, double scaleUm)
+    private static SKPath? PortNameKnockout(LabelShape label, PathSpace ps, double scaleUm, Technology? tech = null)
     {
         if (string.IsNullOrEmpty(label.Text)) return null;
+
+        // A stroke name's footprint is its strokes at its pen, so the hole is the same strokes at the pen
+        // plus the gap on each side — from StrokeText, the geometry DrawLabelText strokes.
+        if (label.Font == LabelFont.Stroke)
+        {
+            var g = StrokeText.For(label, centred: true, tech);
+            using var centreLines = StrokeLabelPath(g, ps);
+            if (centreLines.IsEmpty) return null;
+            var hole = new SKPath();
+            using var widen = new SKPaint
+            {
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = ps.Len(g.PenWidth) + DevicePixelsToPathSpace(scaleUm, 2f * PortNameKnockoutGapDevicePixels),
+                StrokeJoin = SKStrokeJoin.Round, StrokeCap = SKStrokeCap.Round,
+            };
+            widen.GetFillPath(centreLines, hole);
+            return hole;
+        }
 
         float sizeUm = System.Math.Max(0.001f, ps.Len(label.Height));
         using var font = new SKFont(LayoutTextOutline.ResolveTypeface(label.Style), sizeUm);
@@ -3730,9 +3756,26 @@ public static partial class LayoutRenderer
     /// else.</para>
     /// </param>
     private static void DrawLabelText(SKCanvas canvas, LabelShape label, PathSpace ps, SKColor color,
-                                      bool centred = false)
+                                      bool centred = false, Technology? tech = null)
     {
         if (string.IsNullOrEmpty(label.Text)) return;
+
+        // brief-silkscreen-stroke-font.md R-ssf-5: a stroke label is its pen strokes, round caps and joins at
+        // its pen width — StrokeText's geometry, the same a Gerber export writes as D01 strokes.
+        if (label.Font == LabelFont.Stroke)
+        {
+            var g = StrokeText.For(label, centred, tech);
+            using var strokes = StrokeLabelPath(g, ps);
+            if (strokes.IsEmpty) return;
+            using var pen = new SKPaint
+            {
+                IsAntialias = true, Color = color, Style = SKPaintStyle.Stroke,
+                StrokeWidth = ps.Len(g.PenWidth),
+                StrokeCap = SKStrokeCap.Round, StrokeJoin = SKStrokeJoin.Round,
+            };
+            canvas.DrawPath(strokes, pen);
+            return;
+        }
 
         float sizeUm = System.Math.Max(0.001f, ps.Len(label.Height));
         using var font = new SKFont(LayoutTextOutline.ResolveTypeface(label.Style), sizeUm);
@@ -3747,6 +3790,21 @@ public static partial class LayoutRenderer
         var (align, dy) = LayoutTextOutline.ResolveLabelAnchor(label, font, centred);
         canvas.DrawText(label.Text, 0, dy, align, font, paint);
         canvas.Restore();
+    }
+
+    /// <summary>A stroke label's centre lines in path space. A stroke of one point is a zero-length segment,
+    /// which a round cap draws as a dot.</summary>
+    private static SKPath StrokeLabelPath(StrokeLabelGeometry g, PathSpace ps)
+    {
+        var path = new SKPath();
+        foreach (var st in g.Strokes)
+        {
+            if (st.Length < 2) continue;
+            path.MoveTo(ps.X(st[0]), ps.Y(st[1]));
+            if (st.Length == 2) path.LineTo(ps.X(st[0]), ps.Y(st[1]));
+            for (int i = 2; i + 1 < st.Length; i += 2) path.LineTo(ps.X(st[i]), ps.Y(st[i + 1]));
+        }
+        return path;
     }
 
     /// <summary>

@@ -122,7 +122,7 @@ public static partial class LayoutRenderer
     /// — the box around it that says so.
     /// </summary>
     private static void DrawDesignators(SKCanvas canvas, List<DeferredDesignator> designators,
-        LayoutRenderOptions opts, PathSpace ps, double scaleUm, LayoutFrameCounters counters)
+        LayoutRenderOptions opts, PathSpace ps, double scaleUm, LayoutFrameCounters counters, Technology? tech = null)
     {
         var selected = opts.Overlay?.SelectedDesignatorIndices;
         using var selectionPaint = selected is { Count: > 0 }
@@ -136,11 +136,11 @@ public static partial class LayoutRenderer
 
         foreach (var (index, label, color) in designators)
         {
-            DrawLabelText(canvas, label, ps, color);
+            DrawLabelText(canvas, label, ps, color, tech: tech);
             counters.DrawCalls++;
 
             if (selectionPaint is null || selected is null || !selected.Contains(index)) continue;
-            if (DesignatorWorldBbox(label) is not { IsEmpty: false } bb) continue;
+            if (DesignatorWorldBbox(label, tech) is not { IsEmpty: false } bb) continue;
             canvas.DrawRect(
                 NormalizedRect(ps.X(bb.MinX), ps.Y(bb.MinY), ps.X(bb.MaxX), ps.Y(bb.MaxY)), selectionPaint);
             counters.DrawCalls++;
@@ -154,5 +154,6 @@ public static partial class LayoutRenderer
     /// same width to an estimate that counts characters), so this is that same measurement, not a
     /// second one beside it.
     /// </summary>
-    internal static Bbox? DesignatorWorldBbox(LabelShape label) => MeasureLabelWorldBbox(label);
+    internal static Bbox? DesignatorWorldBbox(LabelShape label, Technology? tech = null) =>
+        MeasureLabelWorldBbox(label, tech: tech);
 }

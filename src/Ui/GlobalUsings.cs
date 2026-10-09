@@ -25,6 +25,8 @@ global using CircuitRF.Design.Layout.Interchange;
 global using CircuitRF.Design.Layout.Em;
 global using CircuitRF.Design.Layout.PCells;
 global using CircuitRF.Design.Layout.Footprints;
+// The stroke font every layout label is drawn in (brief-silkscreen-stroke-font.md).
+global using CircuitRF.Design.Layout.Text;
 global using CircuitRF.Design.Results;
 global using CircuitRF.Design.Theming;
 global using CircuitRF.Design.Workspace;

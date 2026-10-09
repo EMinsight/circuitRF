@@ -1,12 +1,14 @@
 // Gerber/Excellon export orchestrator (docs/sonnet-briefs/brief-L4c-gerber-export.md). Closes Phase L4
 // — export only, no Gerber import/reader at all (§8, R-menu-5). Ties together LayoutDesignFlatten
 // (R-L4c-6 — the whole design flattens, since Gerber has no hierarchy), label-to-geometry conversion
-// (R-L4c-5, reusing the SAME stroked-font pipeline the label-flatten feature already built), per-layer
+// (R-L4c-5: a stroke-font label becomes pen strokes through StrokeText, a Sans label filled glyph outlines through
+// the label-flatten pipeline — brief-silkscreen-stroke-font.md R-ssf-6), per-layer
 // grouping, and GerberWriter/ExcellonWriter/GerberJobFile. Analyze runs the exact same write path into
 // Stream.Null (mirrors GdsiiExport/DxfExport's own "the dialog IS the real write, run as a dry run"),
 // so the pre-flight fidelity dialog can never disagree with what Write actually produces.
 
 using System.Linq;
+using CircuitRF.Design.Layout.Text;
 
 namespace CircuitRF.Design.Layout.Interchange;
 
@@ -20,7 +22,9 @@ public static class GerberExport
         IReadOnlyList<LayoutShape> Shapes,
         GerberFormat Format,
         int CubicEdgesFlattened,
-        int LabelsConvertedToGeometry,
+        /// <summary>Labels in the Sans font, whose TrueType glyph outlines were filled as regions — the only labels
+        /// the face a process loaded matters to (brief-silkscreen-stroke-font.md R-ssf-6).</summary>
+        int SansLabelsConverted,
         int PortLabelsOmitted,
         int BitmapsOmitted,
         int PathsAsStroke,
@@ -44,7 +48,13 @@ public static class GerberExport
         /// their drawing layer selects. Their pad flash lands in the barrel layer's own file, which for
         /// a drill layer is copper written into a drill file, so this is reported rather than left to
         /// be discovered at the fab.</summary>
-        int UnspannedViaPads = 0)
+        int UnspannedViaPads = 0,
+        /// <summary>Labels in the stroke font, written as D01 pen strokes at their pen width — no regions
+        /// (brief-silkscreen-stroke-font.md R-ssf-6).</summary>
+        int StrokeLabelsWritten = 0,
+        /// <summary>Characters of stroke labels the font has no glyph for, each written as a hollow box (D5) —
+        /// counted so none is lost without a word.</summary>
+        int CharactersBoxed = 0)
     {
         public bool RequiresMappingConfirmation => PendingCrossTechMappings.Count > 0;
 
@@ -59,7 +69,7 @@ public static class GerberExport
         public bool HasNothingToReport =>
             CanWrite &&
             CubicEdgesFlattened == 0 && TopLevelInstancesFlattened == 0 &&
-            LabelsConvertedToGeometry == 0 && PortLabelsOmitted == 0 && BitmapsOmitted == 0 &&
+            SansLabelsConverted == 0 && StrokeLabelsWritten == 0 && CharactersBoxed == 0 && PortLabelsOmitted == 0 && BitmapsOmitted == 0 &&
             PathsAsRegion == 0 && UnresolvedInstances.Count == 0 && !FormatIsNonDefault &&
             UnpairedDrillCircles == 0 && UnspannedViaPads == 0;
     }
@@ -86,7 +96,7 @@ public static class GerberExport
 
         if (flatten.ExceedsCeiling)
             return new ExportPlan(
-                Shapes: [], Format: defaultFormat, CubicEdgesFlattened: 0, LabelsConvertedToGeometry: 0,
+                Shapes: [], Format: defaultFormat, CubicEdgesFlattened: 0, SansLabelsConverted: 0,
                 PortLabelsOmitted: 0, BitmapsOmitted: 0, PathsAsStroke: 0, PathsAsRegion: 0,
                 TopLevelInstancesFlattened: 0, ShapesContributedByFlatten: 0, UnresolvedInstances: [],
                 PendingCrossTechMappings: flatten.PendingCrossTechMappings, ExceedsHierarchyCeiling: true,
@@ -95,7 +105,7 @@ public static class GerberExport
 
         if (flatten.PendingCrossTechMappings.Count > 0)
             return new ExportPlan(
-                Shapes: [], Format: defaultFormat, CubicEdgesFlattened: 0, LabelsConvertedToGeometry: 0,
+                Shapes: [], Format: defaultFormat, CubicEdgesFlattened: 0, SansLabelsConverted: 0,
                 PortLabelsOmitted: 0, BitmapsOmitted: 0, PathsAsStroke: 0, PathsAsRegion: 0,
                 TopLevelInstancesFlattened: flatten.TopLevelInstancesFlattened,
                 ShapesContributedByFlatten: flatten.ShapesContributedByInstances,
@@ -103,7 +113,7 @@ public static class GerberExport
                 PendingCrossTechMappings: flatten.PendingCrossTechMappings, ExceedsHierarchyCeiling: false,
                 Diagnostics: [], Tech: rootTech);
 
-        int labelsConverted = 0, portLabelsOmitted = 0, bitmapsOmitted = 0;
+        int labelsConverted = 0, strokeLabels = 0, boxed = 0, portLabelsOmitted = 0, bitmapsOmitted = 0;
         var geometry = new List<LayoutShape>(flatten.Shapes.Count);
 
         foreach (var shape in flatten.Shapes)
@@ -117,6 +127,19 @@ public static class GerberExport
                 case LabelShape label when label.IsPort:
                     portLabelsOmitted++; // R-L4c-5: port labels are markers, not artwork
                     break;
+
+                // R-ssf-6: the stroke font is a pen font, so it is written as what a plotter draws — one round
+                // aperture of the label's pen width, D01 strokes along the centre lines — from StrokeText, the
+                // geometry the canvas draws. No regions, and no typeface to have loaded.
+                case LabelShape label when label.Font == LabelFont.Stroke:
+                {
+                    var strokeGeometry = StrokeText.For(label, tech: rootTech);
+                    var paths = StrokeText.ToPaths(label, strokeGeometry);
+                    if (paths.Count > 0) strokeLabels++;
+                    boxed += strokeGeometry.Unknown;
+                    geometry.AddRange(paths);
+                    break;
+                }
 
                 case LabelShape label:
                 {
@@ -143,13 +166,13 @@ public static class GerberExport
         catch (GerberUnitsException ex)
         {
             return new ExportPlan(
-                Shapes: [], Format: defaultFormat, CubicEdgesFlattened: 0, LabelsConvertedToGeometry: labelsConverted,
+                Shapes: [], Format: defaultFormat, CubicEdgesFlattened: 0, SansLabelsConverted: labelsConverted,
                 PortLabelsOmitted: portLabelsOmitted, BitmapsOmitted: bitmapsOmitted, PathsAsStroke: 0, PathsAsRegion: 0,
                 TopLevelInstancesFlattened: flatten.TopLevelInstancesFlattened,
                 ShapesContributedByFlatten: flatten.ShapesContributedByInstances,
                 UnresolvedInstances: flatten.UnresolvedInstances,
                 PendingCrossTechMappings: flatten.PendingCrossTechMappings, ExceedsHierarchyCeiling: true,
-                Diagnostics: [ex.Message], Tech: rootTech);
+                Diagnostics: [ex.Message], Tech: rootTech, StrokeLabelsWritten: strokeLabels, CharactersBoxed: boxed);
         }
 
         var byLayer = GroupByLayer(geometry, rootTech);
@@ -174,7 +197,7 @@ public static class GerberExport
             flatten.TopLevelInstancesFlattened, flatten.ShapesContributedByInstances,
             flatten.UnresolvedInstances, flatten.PendingCrossTechMappings, false,
             [], rootTech, unpairedCircles.Count,
-            vias.Count(v => ViaSpanResolver.PadLayer(v, rootTech) is null));
+            vias.Count(v => ViaSpanResolver.PadLayer(v, rootTech) is null), strokeLabels, boxed);
     }
 
     /// <summary>R-via-5: a drill-function layer is any layer named in a <see cref="StackupKind.Via"/>

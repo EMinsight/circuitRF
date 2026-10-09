@@ -93,21 +93,26 @@ public class GerberExportTests : IDisposable
     // ── Gate 8: labels become geometry; port labels omitted ──────────────────────────────────────
 
     [Fact]
-    public void Analyze_ConvertsNonPortLabel_ToPolygonGeometry_OmitsPortLabel()
+    public void Analyze_ConvertsNonPortLabels_ToGeometry_OmitsPortLabel()
     {
+        // A stroke label (the default font) becomes pen strokes; a Sans label filled glyph outlines
+        // (brief-silkscreen-stroke-font.md R-ssf-6).
         var cellDir = CreateCell("TOP", v =>
         {
             v.Shapes.Add(new LabelShape { Layer = new LayerKey(5, 0), Text = "R1", Height = 5000, X = 0, Y = 0, IsPort = false });
+            v.Shapes.Add(new LabelShape { Layer = new LayerKey(5, 0), Text = "C1", Height = 5000, X = 0, Y = 9000, Font = LabelFont.Sans });
             v.Shapes.Add(new LabelShape { Layer = new LayerKey(5, 0), Text = "port", Height = 5000, X = 100, Y = 100, IsPort = true });
         });
         var view = LayoutPersistence.LoadFromFile(Path.Combine(CellFolder.SubFolderPath(cellDir, ViewType.Layout), "TOP.clay"));
 
         var plan = GerberExport.Analyze(cellDir, null, 1000, view, null);
 
-        Assert.Equal(1, plan.LabelsConvertedToGeometry);
+        Assert.Equal(1, plan.StrokeLabelsWritten);
+        Assert.Equal(1, plan.SansLabelsConverted);
         Assert.Equal(1, plan.PortLabelsOmitted);
         Assert.DoesNotContain(plan.Shapes, s => s is LabelShape);
         Assert.Contains(plan.Shapes, s => s is PolygonShape);
+        Assert.Contains(plan.Shapes, s => s is PathShape { End: PathEndStyle.Round });
     }
 
     // ── Gate 9: Excellon — a Via produces both a copper flash and a drill hit ────────────────────

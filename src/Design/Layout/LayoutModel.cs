@@ -243,6 +243,13 @@ public sealed class ViaShape : LayoutShape
 /// (this file's header: "Layout borrows patterns from Schematic, not types") — same four options.</summary>
 public enum LabelFontStyle { Regular, Bold, Italic, Condensed }
 
+/// <summary>Which font a label is drawn in (brief-silkscreen-stroke-font.md R-ssf-3). <c>Stroke</c> — the
+/// Hershey Roman Simplex pen font in <c>src/Design</c> (<see cref="CircuitRF.Design.Layout.Text.StrokeFont"/>) — is the default and
+/// what every label without a <c>Font</c> key is; <c>Sans</c> is the bundled TrueType face, which a user picks
+/// per label. <see cref="LabelShape.Height"/> means a CAP height for <c>Stroke</c> and an em size for
+/// <c>Sans</c>.</summary>
+public enum LabelFont { Stroke, Sans }
+
 /// <summary>docs/design/layout-view.md §9B.3 — how a ruler's text (and its line weight) is sized.
 /// <c>Fixed</c> is n screen POINTS at every zoom (the temporary-measurement mode); <c>Scaled</c> is a
 /// physical height in the layout, exactly like <see cref="LabelShape.Height"/> (the annotation mode).
@@ -663,6 +670,27 @@ public sealed class LabelShape : LayoutShape
     /// <summary>Additive (no <c>.clay</c> <c>FormatVersion</c> bump) — a newly-placed label always
     /// defaults to Regular; edited via the Properties Inspector.</summary>
     public LabelFontStyle Style { get; set; } = LabelFontStyle.Regular;
+
+    /// <summary>
+    /// <b>The font the label is drawn in</b> (brief-silkscreen-stroke-font.md R-ssf-3, owner decision D1).
+    /// <see cref="LabelFont.Stroke"/> is the default and is never written: every <c>.clay</c> whose labels
+    /// carry no <c>Font</c> key loads as all-stroke and re-saves byte for byte, and <c>"Font": "Sans"</c>
+    /// appears only on a label a user switched. Nothing that creates a label chooses a font.
+    ///
+    /// <para><see cref="Height"/> is read by the font: a CAP height for Stroke, the TrueType em size for
+    /// Sans (D2). Switching never rewrites it, so switching back restores the old size exactly (D3a).</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public LabelFont Font { get; set; } = LabelFont.Stroke;
+
+    /// <summary>
+    /// <b>A stroke label's pen width, in DBU, when the user stated one</b> (R-ssf-3, D4). Null means the
+    /// default, <c>Height / 6.5</c> raised to the layer's minimum-width rule — computed at use
+    /// (<see cref="CircuitRF.Design.Layout.Text.StrokeText.PenWidth"/>) and never stored, so a height edit carries the pen with
+    /// it. Ignored for a Sans label. Omitted from the file when null.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? StrokeWidth { get; set; }
 
     /// <summary>
     /// <b>Which point of the text <see cref="X"/>/<see cref="Y"/> actually names.</b> circuitRF's own

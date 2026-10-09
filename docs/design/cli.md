@@ -96,6 +96,14 @@ tolerance — on stderr with the rest of the import's notes, never on stdout, wh
 document. The GUI's own switch is Settings ▸ General ▸ Import; detail and the two counted conditions
 that decide it are in `src/Design/RESOLVED.md`.
 
+**A label reaching a Gerber target is written by its FONT** (brief-silkscreen-stroke-font.md R-ssf-6). A
+stroke-font label — every label's default — becomes D01 strokes through one round aperture of its pen width,
+from `StrokeText`, the geometry the canvas draws; it is data in `src/Design`, so it is the same geometry in
+every process. A **Sans** label is filled TrueType glyph outlines, as before, and only those depend on the
+face a process could load: the "platform default typeface" note is said **only when a Sans label was
+converted** in a process without the embedded faces. stderr counts the two separately, and counts any
+character the stroke font lacks (drawn as a hollow box) — none is lost without a word.
+
 **`convert part.step -o <cell>/3d/<name>.c3d` makes a NEW 3D view from a STEP file** (brief-em3d-68 R-em3d68-7).
 `step` is a SOURCE with exactly one legal target, a `.c3d` that does not exist yet; importing into an existing one
 is writing its `Step` objects (the format is the contract — `reference topic=c3d` describes every field), so an
@@ -1819,6 +1827,11 @@ would be invisible, because a picture that is *plausible* is indistinguishable f
 
 What `src/Cli/Render.cs` contains is argument parsing, viewport arithmetic, refusals and reporting —
 which is what `src/Cli/Authoring.cs` already established a CLI verb is allowed to be.
+
+**A layout's labels draw in the stroke font unless a label says Sans** (brief-silkscreen-stroke-font.md). The
+stroke font is plain data in `src/Design`, so a stroke label rendered here is the same picture the
+application draws, with no typeface to install; only a Sans label depends on the embedded faces
+`RenderTypefaceInstaller` loads.
 
 ### 13.2 What it takes, and what it refuses to guess
 

@@ -73,6 +73,9 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     public static LayoutRotation[] RotationOptions     { get; } = System.Enum.GetValues<LayoutRotation>();
     public static LabelFontStyle[] LabelStyleOptions   { get; } = System.Enum.GetValues<LabelFontStyle>();
 
+    /// <summary>brief-silkscreen-stroke-font.md R-ssf-8 — Stroke (every label's default) and Sans.</summary>
+    public static LabelFont[] LabelFontOptions          { get; } = System.Enum.GetValues<LabelFont>();
+
     /// <summary>
     /// RP-2b — what an EM port RETURNS THROUGH, as three rows rather than an enum plus a null.
     ///
@@ -181,6 +184,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "PathWidth":    CommitPathWidthText(text); break;
             case "LabelText":    CommitLabelText(text); break;
             case "LabelHeight":  CommitLabelHeightText(text); break;
+            case "LabelPenWidth": CommitLabelPenWidthText(text); break;
             case "LabelX":       CommitLabelXText(text); break;
             case "LabelY":       CommitLabelYText(text); break;
             case "FlattenTol":   CommitFlattenTolText(text); break;
@@ -234,6 +238,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             case "ViaY":         ViaYError = null; break;
             case "PathWidth":    PathWidthError = null; break;
             case "LabelHeight":  LabelHeightError = null; break;
+            case "LabelPenWidth": LabelPenWidthError = null; break;
             case "LabelX":       LabelXError = null; break;
             case "LabelY":       LabelYError = null; break;
             case "FlattenTol":   FlattenTolError = null; break;
@@ -677,7 +682,26 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     /// it is for an ordinary annotation. The caption says so for a port so the question does not
     /// have to be asked again; the excitation width is read-only and shown beneath it.
     /// </summary>
-    public string LabelHeightCaption => ShowPortDirection ? "Text size" : "Height";
+    /// <para><b>And the font decides what the number means</b> (brief-silkscreen-stroke-font.md R-ssf-8, D2): a
+    /// stroke label's height is its CAP height, a Sans label's the TrueType em size. Switching the font keeps the
+    /// stored value, so the caption is what says which of the two it is being read as.</para>
+    public string LabelHeightCaption => ShowPortDirection ? "Text size"
+        : LabelFontValue == LabelFont.Stroke ? "Cap height"
+        : LabelFontValue == LabelFont.Sans ? "Em size"
+        : "Height";
+
+    /// <summary>R-ssf-8: the font. Null when the selection mixes the two.</summary>
+    [ObservableProperty] private LabelFont? _labelFontValue;
+
+    /// <summary>R-ssf-8: the pen width a stroke label states, blank when it uses the default — which
+    /// <see cref="LabelPenWidthPlaceholder"/> shows as the field's watermark.</summary>
+    [ObservableProperty] private string _labelPenWidthText = "";
+    [ObservableProperty] private string? _labelPenWidthError;
+    public bool HasLabelPenWidthError => LabelPenWidthError is not null;
+    [ObservableProperty] private string _labelPenWidthPlaceholder = "";
+
+    /// <summary>The pen width row: shown only when every selected label is in the stroke font.</summary>
+    public bool ShowLabelPenWidth => ShowLabel && LabelFontValue == LabelFont.Stroke;
 
     [ObservableProperty] private string _labelHeightText = "";
     [ObservableProperty] private string? _labelHeightError;
@@ -710,6 +734,25 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (dbu <= 0) { LabelHeightError = "Height must be greater than 0"; return; }
         LabelHeightError = null;
         ApplyToEach<long>("Height", s => ((LabelShape)s).Height, (s, v) => ((LabelShape)s).Height = v, dbu, s => s is LabelShape);
+        RefreshFromVm();
+    }
+
+    /// <summary>R-ssf-8: a blank pen width returns every selected label to the default pen (Height / 6.5, never
+    /// below the layer's minimum-width rule) — computed at use, so it follows the height from then on.</summary>
+    public void CommitLabelPenWidthText(string text)
+    {
+        if (DragBlocksEdits() || _vm is null) return;
+        long? pen = null;
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            if (!LayoutUnits.TryParse(text, _vm.DisplayUnit, _vm.Model.DbuPerMicron, out var dbu))
+            { LabelPenWidthError = "Invalid value"; return; }
+            if (dbu <= 0) { LabelPenWidthError = "Pen width must be greater than 0"; return; }
+            pen = dbu;
+        }
+        LabelPenWidthError = null;
+        ApplyToEach<long?>("Pen width", s => ((LabelShape)s).StrokeWidth, (s, v) => ((LabelShape)s).StrokeWidth = v, pen,
+                           s => s is LabelShape);
         RefreshFromVm();
     }
 
@@ -912,6 +955,19 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             : LayoutUnits.Format(pt.X, _vm.Model.DisplayUnit, _vm.Model.DbuPerMicron) + ", " +
               LayoutUnits.Format(pt.Y, _vm.Model.DisplayUnit, _vm.Model.DbuPerMicron) + " " +
               LayoutUnits.Suffix(_vm.Model.DisplayUnit);
+    }
+
+    /// <summary>R-ssf-8: switching the font keeps <see cref="LabelShape.Height"/> as stored (D3a), so switching
+    /// back restores the label exactly.</summary>
+    partial void OnLabelFontValueChanged(LabelFont? oldValue, LabelFont? newValue)
+    {
+        OnPropertyChanged(nameof(LabelHeightCaption));
+        OnPropertyChanged(nameof(ShowLabelPenWidth));
+        if (_isRefreshing || newValue is null || oldValue == newValue) return;
+        if (DragBlocksEdits()) return;
+        ApplyToEach<LabelFont>("Font", s => ((LabelShape)s).Font,
+            (s, v) => ((LabelShape)s).Font = v, newValue.Value, s => s is LabelShape);
+        RefreshFromVm();
     }
 
     partial void OnLabelStyleValueChanged(LabelFontStyle? oldValue, LabelFontStyle? newValue)
@@ -2600,6 +2656,15 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             LabelRotationValue = rots.Count == 1 ? rots[0] : null;
             var styles = labels.Select(l => l.Style).Distinct().ToList();
             LabelStyleValue = styles.Count == 1 ? styles[0] : null;
+            var fonts = labels.Select(l => l.Font).Distinct().ToList();
+            LabelFontValue = fonts.Count == 1 ? fonts[0] : null;
+            SetTextIfNotFocused("LabelPenWidth", FormatSharedDbu(labels.Select(l => l.StrokeWidth)),
+                                () => LabelPenWidthText, v => LabelPenWidthText = v);
+            // The watermark is the pen a blank field means — the first label's, since a default follows each
+            // label's own height.
+            LabelPenWidthPlaceholder =
+                LayoutUnits.Format((long)System.Math.Round(StrokeText.DefaultPenWidth(labels[0], _vm.Technology)),
+                                   _vm.DisplayUnit, _vm.Model.DbuPerMicron) + " (default)";
             SetTextIfNotFocused("LabelX", FormatSharedDbu(labels.Select(l => (long?)l.X)), () => LabelXText, v => LabelXText = v);
             SetTextIfNotFocused("LabelY", FormatSharedDbu(labels.Select(l => (long?)l.Y)), () => LabelYText, v => LabelYText = v);
 
@@ -2619,6 +2684,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
             ShowPortReturn    = false;
         }
         OnPropertyChanged(nameof(LabelHeightCaption));
+        OnPropertyChanged(nameof(ShowLabelPenWidth));
 
         ShowBitmap = _selected.All(s => s is BitmapShape);
         if (ShowBitmap)
@@ -2677,6 +2743,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         ShowPortReturn = false;
         PortWidthText = PortReturnText = "";
         OnPropertyChanged(nameof(LabelHeightCaption));
+        OnPropertyChanged(nameof(ShowLabelPenWidth));
         ShowPCellParameterList = false;
         PCellParamRows = null; _pcellParamGeneratedCellDir = null;
         _pcellEntryModeSelectionIndex = null;

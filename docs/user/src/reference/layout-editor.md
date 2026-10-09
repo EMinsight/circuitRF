@@ -161,6 +161,31 @@ condition — *"Select 2 or more shapes on the same layer"*. A command that is l
 changes nothing in a particular case (a union of shapes that do not touch) reports that through the
 Messages pane rather than appearing to fail.
 
+### Labels {#labels}
+
+Every label is drawn in a **stroke font** — Hershey Roman Simplex, a pen font of one line width and a few
+strokes per character, the kind a board shop's plotter prints silkscreen with. It covers every printable
+ASCII character plus `Ω`, `µ`, `°` and `±`; any other character draws as a hollow box, and an export that
+draws it says how many there were. The font draws the same on the canvas, in a rendered picture and in a
+Gerber file, and Create Schematic from Artwork reads it back off a silkscreen.
+
+The label's Properties panel holds:
+
+| Field | What it does |
+|---|---|
+| **Cap height** | The height of a capital letter. A designator placed on a footprint defaults to 0.8 mm. |
+| **Font** | **Stroke**, or **Sans** — the outline typeface, for a label that needs that look. The choice is per label. |
+| **Pen width** | The stroke font's line width. Blank uses the default, shown greyed in the field: a sixth and a half of the cap height, raised to the layer's minimum-width rule when the technology has one. A blank pen follows the height when you change it. |
+| **Style** | **Bold** draws with a pen 1.6 times as wide, **Italic** leans the text 12°, **Condensed** narrows it to 0.8 of its width. |
+
+For a **Sans** label the same height field reads **Em size**: the outline typeface's em, of which a capital
+is about seven tenths. Switching a label between the fonts keeps the number as it is, so switching back
+restores the label exactly.
+
+**Flatten to Polygon** on a stroke label gives **paths** — one per pen stroke, at the pen width — or, if
+you choose **Polygons** in the dialog, the strokes' outlines as filled polygons. A Sans label always gives
+filled outlines.
+
 ## Selection and vertex editing {#selection}
 
 **Repeated clicks at the same point cycle through overlapping shapes.** The order is layer Z-order
@@ -706,7 +731,7 @@ pass**: whatever the first cycle collapses, every later cycle preserves exactly,
 | Leaves as | Comes back as |
 |---|---|
 | rectangle, rounded rectangle, curve | polygon |
-| label | polygons (labels become geometry on export) |
+| label | round-capped paths, one per pen stroke (a Sans label: polygons) — labels become geometry on export |
 | path with a non-round end style | region |
 | via | via — but only if the drill file came too |
 | a layer using clear polarity | composited polygons; individual shape identities gone |
@@ -765,7 +790,7 @@ with that angle.
 | `gr_arc` | a path with one arc edge |
 | `gr_poly`, filled / unfilled | a polygon / an outline path |
 | `gr_curve`, `bezier` | a curve or path with a cubic edge |
-| `gr_text` | a label |
+| `gr_text` | a label in the stroke font, its size read as the cap height; on export a label writes its pen width as the text's thickness |
 | `zone` → `filled_polygon` | polygons, with their holes |
 | `footprint` / `module` | one generated cell per distinct definition, one instance per placement |
 | pads: `circle`, `rect`, `oval`, `roundrect`, `trapezoid`, `custom` | real copper geometry — see below |

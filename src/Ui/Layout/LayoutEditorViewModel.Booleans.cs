@@ -546,16 +546,26 @@ public sealed partial class LayoutEditorViewModel
     /// curved-primitive path (0..1 polygon/path). A port label always yields empty — R-lbl-5, and a
     /// defense-in-depth backstop in case a caller ever bypasses the <see cref="HasCurvedGeometryAt"/>
     /// filter that normally excludes it upstream.</summary>
-    private static IReadOnlyList<LayoutShape> FlattenOneShape(LayoutShape shape, long tolDbu)
+    private IReadOnlyList<LayoutShape> FlattenOneShape(LayoutShape shape, long tolDbu, bool strokeLabelsAsPolygons = false)
     {
-        if (shape is LabelShape label) return FlattenLabel(label, tolDbu);
+        if (shape is LabelShape label) return FlattenLabel(label, tolDbu, strokeLabelsAsPolygons);
         var flattened = LayoutFlattenToPolygon.FlattenToPolygon(shape, tolDbu);
         return flattened is null ? [] : [flattened];
     }
 
-    private static IReadOnlyList<PolygonShape> FlattenLabel(LabelShape label, long tolDbu)
+    /// <summary>
+    /// A label as geometry. A STROKE label gives one round-ended path per pen stroke at its pen width by
+    /// default, or the strokes' united outlines when <paramref name="strokeLabelsAsPolygons"/> — both from
+    /// <c>StrokeText</c>, the geometry the canvas draws (brief-silkscreen-stroke-font.md D7, R-ssf-9). A Sans
+    /// label gives its TrueType glyph outlines, as it always has.
+    /// </summary>
+    private IReadOnlyList<LayoutShape> FlattenLabel(LabelShape label, long tolDbu, bool strokeLabelsAsPolygons)
     {
         if (label.IsPort) return [];
+        if (label.Font == LabelFont.Stroke)
+            return strokeLabelsAsPolygons
+                ? StrokeText.ToPolygons(label, tolDbu, Technology)
+                : StrokeText.ToPaths(label, Technology);
         var contours = LayoutTextOutline.BuildGlyphContours(label);
         return LayoutTextFlatten.FlattenContoursToPolygons(contours, tolDbu, label.Layer, label.Net);
     }
@@ -564,17 +574,25 @@ public sealed partial class LayoutEditorViewModel
     /// label this is the TOTAL across every resulting polygon's outer ring + holes (running the full
     /// glyph-outline + Clipper2 pipeline live, same cost the eventual commit pays — the dialog already
     /// recomputes this on every tolerance keystroke for ordinary curved shapes).</summary>
-    public int PreviewFlattenVertexCount(int shapeIndex, long tolDbu)
+    public int PreviewFlattenVertexCount(int shapeIndex, long tolDbu, bool strokeLabelsAsPolygons = false)
     {
         if (shapeIndex < 0 || shapeIndex >= Model.Shapes.Count) return 0;
         var shape = Model.Shapes[shapeIndex];
         if (shape is LabelShape label)
         {
             int total = 0;
-            foreach (var p in FlattenLabel(label, tolDbu))
+            foreach (var g in FlattenLabel(label, tolDbu, strokeLabelsAsPolygons))
             {
-                total += p.Xy.Length / 2;
-                if (p.Holes is not null) foreach (var h in p.Holes) total += h.Length / 2;
+                switch (g)
+                {
+                    case PolygonShape p:
+                        total += p.Xy.Length / 2;
+                        if (p.Holes is not null) foreach (var h in p.Holes) total += h.Length / 2;
+                        break;
+                    case PathShape path:
+                        total += path.Xy.Length / 2;
+                        break;
+                }
             }
             return total;
         }
@@ -585,8 +603,9 @@ public sealed partial class LayoutEditorViewModel
     /// (R-L1h-2) — only shapes that actually have something to flatten (<see cref="HasCurvedGeometryAt"/>,
     /// R-lbl-4 widened to include non-port labels) are included; the caller derives the skip count as
     /// <c>indices.Count - result.Count</c>.</summary>
-    public IReadOnlyList<(int Index, int VertexCount)> PreviewFlattenVertexCounts(IReadOnlyList<int> shapeIndices, long tolDbu) =>
-        shapeIndices.Where(HasCurvedGeometryAt).Select(i => (i, PreviewFlattenVertexCount(i, tolDbu))).ToList();
+    public IReadOnlyList<(int Index, int VertexCount)> PreviewFlattenVertexCounts(IReadOnlyList<int> shapeIndices, long tolDbu,
+                                                                                bool strokeLabelsAsPolygons = false) =>
+        shapeIndices.Where(HasCurvedGeometryAt).Select(i => (i, PreviewFlattenVertexCount(i, tolDbu, strokeLabelsAsPolygons))).ToList();
 
     /// <summary>Flattens every selected shape that has something to flatten, at <paramref name="tolDbu"/> —
     /// silently SKIPS shapes with nothing to flatten (§3.2 R9d), never an error. Port labels (R-lbl-5)
@@ -596,7 +615,7 @@ public sealed partial class LayoutEditorViewModel
     /// is never optional at the call site any more (R-L1h-2: the dialog always prompts) — kept
     /// nullable here only because <c>null</c> is also the harmless "apply nothing, nothing selected"
     /// no-op shape every other Apply* method uses.</summary>
-    public void FlattenSelectionToPolygon(long? tolDbu)
+    public void FlattenSelectionToPolygon(long? tolDbu, bool strokeLabelsAsPolygons = false)
     {
         if (tolDbu is not { } tol) return;
 
@@ -615,7 +634,7 @@ public sealed partial class LayoutEditorViewModel
         foreach (var i in indices)
         {
             var shape = Model.Shapes[i];
-            var flattened = FlattenOneShape(shape, tol);
+            var flattened = FlattenOneShape(shape, tol, strokeLabelsAsPolygons);
             if (flattened.Count == 0) continue;
             removed.Add((i, shape));
             added.AddRange(flattened);

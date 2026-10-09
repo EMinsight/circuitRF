@@ -72,11 +72,17 @@
     <EmbeddedResource Include="resources\technologies\*.cmat" />
   </ItemGroup>
 
-  <!-- brief-artsch-10 R-as10-3: the stroke font the silkscreen reader matches designators against, and its
-       variants, read by GlyphTemplates out of this assembly under a fixed name. Its licence file sits beside it in the tree. -->
+  <!-- brief-silkscreen-stroke-font R-ssf-1: the stroke font every layout label is drawn in, read by StrokeFont out of
+       this assembly under a fixed name; GlyphTemplates takes AS-10's matching templates out of the same copy. Its
+       licence file sits beside it in the tree. -->
   <ItemGroup>
-    <EmbeddedResource Include="resources\silkscreen-glyphs\hershey-roman-simplex.txt"
-                      LogicalName="CircuitRF.Design.SilkscreenGlyphs.hershey-roman-simplex.txt" />
+    <EmbeddedResource Include="resources\stroke-font\hershey-roman-simplex.txt"
+                      LogicalName="CircuitRF.Design.StrokeFont.hershey-roman-simplex.txt" />
+  </ItemGroup>
+
+  <!-- brief-artsch-10 R-as10-3: the variants of the stroke font CAD plotter fonts draw instead — matching templates
+       for the silkscreen reader, never drawn. -->
+  <ItemGroup>
     <EmbeddedResource Include="resources\silkscreen-glyphs\hershey-variants.txt"
                       LogicalName="CircuitRF.Design.SilkscreenGlyphs.hershey-variants.txt" />
   </ItemGroup>

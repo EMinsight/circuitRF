@@ -27,8 +27,12 @@ public partial class GerberExportFidelityDialog : Window
         HierarchyLine.Text = $"• {plan.TopLevelInstancesFlattened} instance(s)/array(s) will flatten into {plan.ShapesContributedByFlatten} shape(s) — Gerber has no hierarchy.";
         HierarchyLine.IsVisible = plan.TopLevelInstancesFlattened > 0;
 
-        LabelsLine.Text = $"• {plan.LabelsConvertedToGeometry} label(s) will convert to stroked-font geometry.";
-        LabelsLine.IsVisible = plan.LabelsConvertedToGeometry > 0;
+        var labelParts = new System.Collections.Generic.List<string>();
+        if (plan.StrokeLabelsWritten > 0) labelParts.Add($"{plan.StrokeLabelsWritten} label(s) will be written as stroke-font pen strokes");
+        if (plan.SansLabelsConverted > 0) labelParts.Add($"{plan.SansLabelsConverted} Sans label(s) will convert to filled glyph outlines");
+        if (plan.CharactersBoxed > 0) labelParts.Add($"{plan.CharactersBoxed} character(s) not in the stroke font will be written as hollow boxes");
+        LabelsLine.Text = "• " + string.Join("; ", labelParts) + ".";
+        LabelsLine.IsVisible = labelParts.Count > 0;
 
         PortLabelsLine.Text = $"• {plan.PortLabelsOmitted} port label(s) will be omitted (markers, not artwork).";
         PortLabelsLine.IsVisible = plan.PortLabelsOmitted > 0;

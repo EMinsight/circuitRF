@@ -18753,3 +18753,45 @@ above means changing the review's conductor assembly, its cache key and the prob
 brief; the line calculator draws a SLIN's two planes in its in-memory layout instead. With the planes drawn the review
 agrees with SLIN within 1.5 % and with the field solve within 1.4 % — except a 4:1 offset stripline (W 0.25 mm,
 H1 0.1 mm, H2 0.4 mm, t 35 µm), where the review reads 39.0 Ω against the field solve's 36.1 Ω (+8.2 %).
+
+## brief-silkscreen-stroke-font — the stroke font every label is drawn in (2026-10-08)
+
+**One copy of the Hershey data, and the matching templates are a SUBSET of it.** `resources/stroke-font/
+hershey-roman-simplex.txt` holds the full printable ASCII set plus `Ω µ ° ±`; AS-10's own copy is gone.
+`GlyphTemplates` takes only the 39 designator characters (`GlyphTemplates.DesignatorCharacters`) out of it: offering
+lower case and punctuation as templates would only give a silkscreen glyph more ways to be read wrong, and keeps AS-10's
+matching exactly what it was. `hershey-variants.txt` stays with AS-10 (templates, never drawn) and its header now points
+at the licence's new home.
+
+**The glyph file needed an escape the AS-10 parser never did.** That parser took `line[0]` as the character and skipped
+any line starting `#` — so a `#` glyph read as a comment and a space glyph had no visible token. The character field is
+now the character itself or `U+XXXX` (`StrokeFont.ReadGlyphs`), used for the space and `#`; a glyph line with no strokes
+(the space) is legal. Ω/µ/° come from the distribution's simplex Greek set (Hershey 550, 638 as the micro sign, 718);
+± from its simplex mathematical symbols, which carry no Hershey numbers in that distribution.
+
+**`namespace CircuitRF.Design.Layout.Text` meets `LabelShape.Text`.** Inside `LabelShape` a cref `Text.StrokeFont` binds
+to the string PROPERTY, not the namespace — and this project treats warnings as errors. Crefs there are fully
+qualified. Nothing else collided: a member always wins over a namespace in lookup.
+
+**Alignment was decided by two existing owner-report tests, not invented.** `LayoutLabelOwnerFollowUpFixesTests`
+asserts that one string has one box width under Left/Center/Right, and that `Top` puts the text wholly below its anchor.
+The stroke layout first missed both by a DBU and by half a pen: the box rounds outward, so a fractional centring offset
+changed its width, and a cap line hung on the anchor leaves half the pen's ink above it. Hence the horizontal offset is
+rounded to whole DBU, and `Top`/`Bottom` hang the INKED edge (cap/descender line ± half the pen) on the anchor — which is
+also the edge a designator has to keep clear of a part body. `Bounds` rounds outward past 1e-6 of float noise so an
+edge exactly on a DBU stays on it.
+
+**`GerberExport.ExportPlan.LabelsConvertedToGeometry` is now `SansLabelsConverted`**, beside `StrokeLabelsWritten` and
+`CharactersBoxed`. The old name was what the CLI's "platform default typeface" note keyed on, and that note is about the
+TrueType seam alone: with the count split, it is said only when a Sans label was converted.
+
+**The shipped example `.clay` files do not re-save byte for byte, for a reason unrelated to labels**: they predate the
+tab indentation of 2026-09-23 and are written with two spaces. `StrokeLabelPersistenceTests` therefore builds its
+"written before the font existed" file in the test (every new field at its default, which the writer omits), rather than
+reading an example.
+
+Every byte-identity gate run that holds a label (`ConvertCliVerbTests`, `RenderCliVerbTests`, the board-file export and
+import classes, the footprint designator classes) compares two outputs of the SAME new code, so none needed expected
+data regenerated. Changed for D1 instead: `LayoutLabelFixAndTextFlattenTests` (its hole/nesting gates are about the
+TrueType pipeline, so their labels now say `Font = Sans`) and `GerberExportTests`' label gate (a stroke label and a Sans
+label, counted separately).
