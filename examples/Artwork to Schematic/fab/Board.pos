@@ -1,0 +1,8 @@
+# Placement projected by circuitRF from the artwork's own placements.
+# Board: Board
+# Units: mm
+# Origin: symbol origin
+Refdes,X,Y,Rotation,Side,Footprint
+C1,7.825,11.35,90,top,smt-0402@N_6aa282f3fc40
+L1,7.425,14.025,180,top,smt-0402@N_6aa282f3fc40
+R1,7.825,17.725,90,top,smt-0603@N_97045f80647e

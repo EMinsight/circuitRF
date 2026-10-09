@@ -4,13 +4,14 @@ slug: reference/artwork-to-schematic.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Create Schematic from Artwork
 lede: Turn a board's copper into a schematic of native components — lines, bends, tees, vias and parts — that simulates in seconds, reviewed first in a parts table you can correct.
-keywords: recognise, recognize, artwork, Gerber, board, parts table, BOM, placement, MLIN, CPWG, SLIN, TLIN, VIAGND, FromArtwork, Show in Artwork, schematic from layout, ground, stitching vias
+keywords: recognise, recognize, artwork, Gerber, board, parts table, BOM, placement, MLIN, CPWG, SLIN, TLIN, VIAGND, FromArtwork, Show in Artwork, schematic from layout, ground, stitching vias, coplanar, GCPW, Swap Line Type, worked example, import part
 ---
 
 <nav class="toc">
 <h2>On this page</h2>
 <ol>
 <li><a href="#what">What it does</a></li>
+<li><a href="#example">A worked example</a></li>
 <li><a href="#open">Opening it</a></li>
 <li><a href="#target">Target</a></li>
 <li><a href="#scope">Scope</a></li>
@@ -18,6 +19,7 @@ keywords: recognise, recognize, artwork, Gerber, board, parts table, BOM, placem
 <li><a href="#companions">BOM and placement files</a></li>
 <li><a href="#parts">The parts table</a></li>
 <li><a href="#recognised">What is recognised, and what is not</a></li>
+<li><a href="#coplanar">Microstrip or coplanar, and Swap Line Type</a></li>
 <li><a href="#ic">A board with an IC on it</a></li>
 <li><a href="#report">The report</a></li>
 <li><a href="#probe">Show in Artwork</a></li>
@@ -42,6 +44,27 @@ native circuitRF components:
 
 It is a best attempt that you then check and clean up. Everything it guessed and everything it left out is
 said, with a count, in the [report](#report).
+
+## A worked example {#example}
+
+**Tools ▸ Examples ▸ Artwork to Schematic** is a small two-layer board as a fabricator receives it: Gerber and
+drill files, a placement file and a bill of materials in its `fab` folder, already imported as the cell **Board**.
+A microstrip line enters at the left edge, turns through a 90° bend, passes a tee with an open stub, a series
+capacitor C1, a shunt inductor L1 to a ground via, and a series resistor R1, and leaves at the top edge. The bill of
+materials has no row for L1, on purpose. Beside it, **Board design** is the schematic the board was drawn from.
+
+1. Open **Board**'s layout. Its technology is the one the import wrote beside it, with the fabricator's stackup
+   typed in on the **Stackup** tab &mdash; a Gerber set carries no stackup, and every line's impedance comes from it.
+2. **Design ▸ Create Schematic from Artwork…**. Name **Placement…** `fab/Board.pos` and **BOM…**
+   `fab/Board-bom.csv`. The report reads ground on the bottom plane, one `VIAGND`, two ports at the board edges,
+   seven `MLIN`s, a bend, a tee and one open end &mdash; the stub.
+3. In the [parts table](#parts), C1 (2.2 pF) and R1 (10 Ohm) have their values from the BOM. L1 is a shunt L of
+   case 0402 with no value: it becomes the variable `L1_L`, starting at a transparent 1 µH.
+4. **Create**. The schematic `Board_model` opens beside the artwork. **Simulate**: at 2 GHz S11 is about −7.7 dB.
+5. Simulate **Board design**: −15.8 dB. In `Board_model`'s **Tuning** panel, click `L1_L`'s minimum, type 1 nH, and
+   drag the slider down. At 8.2 nH the two agree &mdash; every other value and every line length came off the board.
+
+The example's README walks the same steps with the dialog's reports in full.
 
 ## Opening it {#open}
 
@@ -76,10 +99,8 @@ is how you model one section of a board without any EM. Ground is always read fr
 |---|---|
 | **Ground** | **Auto** reads the largest copper on the stackup's reference conductor, and everything joined to it, as ground. **Pick on layout** asks you to click the copper that is ground. |
 | **Ground vias** | **Model as VIAGND** keeps a via that grounds a part's own pad or a line end as a stackup-bound `VIAGND` (at most four per pad). **Plain GND** writes a plain ground instead. Stitching vias are dropped either way. |
-| **Coplanar lines** | How a line with ground close beside it is read: **Auto** (grounded coplanar when both side gaps are within the factor's substrate heights, 3 by default), **Microstrip**, or **GCPW**. |
+| **Coplanar lines** | How a line with ground close beside it is read: **Auto**, **Microstrip** or **GCPW** &mdash; see [the coplanar choice](#coplanar). |
 | **Frequency** | The S-parameter analysis written with the schematic. Default: the layout's EM setup's sweep, else 100 MHz – 6 GHz in 201 points. The stop frequency is also the frequency coupled lines and each `TLIN` are judged at. |
-
-Every MLIN and CPWG records the gaps measured beside it, so a line read the wrong way is one swap away.
 
 ## BOM and placement files {#companions}
 
@@ -134,23 +155,47 @@ the dialog and from the command line alike. They are kept with your own settings
 
 | On the board | In the schematic |
 |---|---|
-| A trace on microstrip | `MLIN`, with `MBEND`, `MTEE`, `MCROSS` and `MTAPER` at its bends, junctions and linear width ramps |
-| A trace with ground close on both sides | `CPWG` |
-| A trace between two planes | `SLIN` |
-| Any other cross-section | `TLIN` in its physical form, with Z0 and εeff from the cross-section solve |
-| A two-pad part | `R`, `L`, `C` or a two-port `SnP` |
+| A trace on microstrip | `MLIN` |
+| &hellip; its corners, tees, crossings and linear width ramps | `MBEND` (with the nearest miter), `MTEE`, `MCROSS`, `MTAPER` |
+| A trace with ground close on both sides | `CPWG` &mdash; see [the coplanar choice](#coplanar) |
+| A trace between two planes | `SLIN`, its heights from the stackup |
+| Any other cross-section | `TLIN` in its physical form, with Z0 and εeff from the cross-section solve; the report says why |
+| A corner or junction on a `CPWG`, `SLIN` or `TLIN` | No discontinuity model: a corner is centre-line length, a junction a plain node |
+| A junction of more than four lines | A plain node |
+| A short piece between two lines | Merged into its neighbours; no line is ever dropped for being short |
+| A two-pad part across a gap in a line | `R`, `L`, `C` or a two-port `SnP`, in series |
+| A two-pad part from a line to ground | The same, shunt; where its pad stands on the line, the line is split there |
 | A via joining two signal layers | `VIA` |
 | A via grounding a pad or a line end | `VIAGND` (or `GND`) |
 | Stitching and plane-tie vias | Nothing &mdash; counted |
 | A part with more than two pads, a connector | Cut out; its pads on RF lines become ports |
 
-Not modelled: coupled lines (a close parallel pair is reported as modelled uncoupled), step, gap and open-end
-discontinuities, case-size parasitics, curved tapers (they become `MTAPER` or stepped lines), and the pads
-themselves &mdash; a line ends at the pad's edge. Nothing is ever written to the layout.
+Each line runs between the reference planes of the models either side of it: a part's pad edge, a via's land, half
+a width from a bend's corner or a tee's centre. That is where the models stop, so nothing is counted twice.
 
-A line read as the wrong type &mdash; a top-side pour close to a microstrip can make it read as `CPWG` &mdash; is
-one [**Swap Line Type**](components.html#swap-line-type) away: the width and length are kept, and a swap to
-`CPWG` takes the gap measured off the board.
+Not modelled: coupled lines (a close parallel pair is reported as modelled uncoupled); step, gap and open-end
+discontinuities (an open stub is an open line); case-size parasitics; devices with more than two pins; Klopfenstein
+and other curved tapers (they become `MTAPER` or stepped lines); and the pads themselves &mdash; a line ends at the
+pad's edge. Nothing is ever written to the layout.
+
+## Microstrip or coplanar, and Swap Line Type {#coplanar}
+
+A line with top-side ground beside it is grounded coplanar waveguide if the ground is close, and microstrip if it is
+far &mdash; and a pour that merely creeps toward a line can make it read as coplanar. **Coplanar lines** decides:
+
+| Choice | A line with ground on both sides is |
+|---|---|
+| **Auto** | `CPWG` when both gaps are within the factor's substrate heights (3 by default), else `MLIN` |
+| **Microstrip** | Always `MLIN` |
+| **GCPW** | `CPWG` whenever both gaps are measured |
+
+Whichever you choose, every `MLIN` and `CPWG` records the two gaps measured beside it.
+
+A line that came out as the wrong type is one [**Swap Line Type**](components.html#swap-line-type) away &mdash;
+right-click it, or pick the type in its parameter editor. `MLIN`, `CPWG`, `SLIN` and `TLIN` swap in place, keeping
+the width and the length; the impedance follows from the new type. A swap to `CPWG` takes the gap measured off the
+board, a swap to `TLIN` computes Z0 and εeff at the analysis's top frequency, and a swap back restores what was set
+aside. A bend, tee or taper beside a line swapped away from `MLIN` is noted, since their models are microstrip ones.
 
 ## A board with an IC on it {#ic}
 
@@ -161,6 +206,13 @@ needs. Pads on ground join ground; bias and control pads are left open and liste
 To bring the device in afterwards, import its symbol and footprint with
 [**File ▸ Import ▸ Component…**](footprints.html#imported), place it, and wire it to those ports &mdash; or put an
 S-parameter file of the device in its place.
+
+From the command line it is two verbs: [`recognize`](cli.html#recognize) writes the networks around the device, and
+[`import part`](cli.html#import) brings the device's footprint and symbol into the workspace as a cell, which you
+then place in the schematic by writing it.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf recognize Board --placement Board.pos --bom Board.csv --into new:Board_model
+<span class="prompt">$ </span>circuitrf import part downloads/QFN-16.zip --into . --cell QFN-16</code></pre>
 
 ## The report {#report}
 

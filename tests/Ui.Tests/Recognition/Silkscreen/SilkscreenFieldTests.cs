@@ -16,17 +16,13 @@ namespace CircuitRF.Ui.Tests.Recognition.Silkscreen;
 
 public sealed class SilkscreenFieldTests
 {
-    private const string Boards = "testdata/artwork-boards";
-
     /// <summary>A part is the one a label names when its centre is this close to the stated one, mm.</summary>
     private const double PlaceToleranceMm = 0.5;
 
-    [FixtureFact(Boards, "the field boards are third-party artwork and are kept outside the repository")]
+    [FixtureFact(FieldBoards.Gate, FieldBoards.Reason)]
     public void EachFieldBoardReadsAndPlacesItsStatedShareOfDesignators()
     {
-        var boards = Directory.GetDirectories(FixturePaths.Require(Boards))
-                              .Where(d => File.Exists(Path.Combine(d, "expected.json"))).ToList();
-        Assert.NotEmpty(boards);
+        var boards = FieldBoards.Dirs();
 
         int checkedBoards = 0;
         foreach (string dir in boards)

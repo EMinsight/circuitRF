@@ -294,3 +294,35 @@ put them back.
 Two 0805-ish caps side by side, vertical, came out as two "parts" each made of one pad from each cap (centres between
 the caps). Not an AS-10 defect — the silkscreen reading then names those phantom parts by the reach rule — but worth
 knowing when a field board names a part oddly. Only 4 two-pad parts were found on that board against ~25 designators.
+
+## AS-9 — the round trip, the field boards, the example (brief-artsch-9, 2026-10-08)
+
+### A shunt part's pad wider than its line was merged away
+
+The round trip's L1 (0402, pad ~0.6 mm across) stands on a 450 µm line. The trace review reads that pad as a JUNCTION
+of two arms (the line either side), and `LineRecognition` merges a two-arm junction back into one line as a sliver —
+so the line came out 4.5 mm whole and L1 attached to its end at C1 instead of its middle. The tap rule in
+`LineSegmentation` never saw it: the terminal lies in no piece. A terminal (part, via or port) between the two arms'
+ends, within the wider arm's width of the line joining them, now stops the merge: the arms stay two lines, each run to
+the terminal (`TapBetween`). The first attempt put the check in `LineSegmentation`'s straight-join walk, which is the
+wrong place — the review had already split the trace there — and changed nothing.
+
+### Generated bends and tees are longer than their models
+
+`MBendPCell`/`MTeePCell` draw 2.5·W arms the lumped models do not carry (their reference planes are W/2 from the corner
+or centre). Lines placed pin-to-pin on those arms make a layout up to 2·W longer per end than its schematic, and the
+recognition, reading the copper, is then "wrong" by exactly that. The round trip ends each line at the reference plane,
+over the arm. Not changed: it is the generator's artwork, and recognising what is drawn is correct.
+
+### A defaulted via plating empties the companions' BOM
+
+A VIAGND on a stackup with no via `WallThicknessDbu` adds "A default is used … Plating = 25 µm" to
+`NetExtractor.Extract`'s `Conflicts`; `PdnLayoutNets.Of` treats ANY conflict as a naming conflict and drops the whole
+schematic, so `BoardCompanions` writes a BOM with no values and pads with no nets. The round trip's technology states the
+wall. Left open — the fix is in what counts as a conflict, outside this series.
+
+### The README makes the field-board folder exist
+
+Committing `testdata/artwork-boards/README.md` means the folder is on every clone, so a `FixtureFact` gated on the
+folder no longer skips — the four earlier field tests would have failed `Assert.NotEmpty` on a fresh clone. They are
+gated on `testdata/artwork-boards/*/expected.json` now (`FieldBoards.Gate`; `FixturePaths` resolves one `*` segment).

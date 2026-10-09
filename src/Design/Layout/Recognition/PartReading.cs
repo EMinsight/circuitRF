@@ -702,8 +702,8 @@ public static class PartReading
             $"{Plural(unknown.Count, "part has", "parts have")} no known kind and will be generated as a capacitor: {Names(unknown)}.");
         var vars = rows.Where(r => r.Variable is not null).ToList();
         Add(RecognitionFindingClass.PartValuesUnknown, vars,
-            $"{Plural(vars.Count, "part has", "parts have")} no known value and become variables with a transparent " +
-            $"starting value: {string.Join(", ", vars.Take(12).Select(r => r.Variable))}{(vars.Count > 12 ? ", …" : "")}.");
+            $"{Plural(vars.Count, "part has no known value and becomes a variable", "parts have no known value and become variables")} " +
+            $"with a transparent starting value: {string.Join(", ", vars.Take(12).Select(r => r.Variable))}{(vars.Count > 12 ? ", …" : "")}.");
         report.Add(RecognitionFindingClass.PartValueWrongDimension, wrongDimension.Count,
             $"{Plural(wrongDimension.Count, "bill-of-materials value is", "bill-of-materials values are")} in the wrong " +
             "dimension for the part's kind and were not used.", wrongDimension);

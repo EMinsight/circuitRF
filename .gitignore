@@ -13,8 +13,9 @@ TestResults/
 /circuitRF_demo
 /testdata/lpwave_test_data
 /testdata/spl_test_data
-# Field boards for Create Schematic from Artwork (brief-artsch-3): third-party artwork, never committed.
-/testdata/artwork-boards
+# Field boards for Create Schematic from Artwork (brief-artsch-3, -9): third-party artwork, never committed. Only the
+# folder's README.md is, which says what goes in each board folder.
+/testdata/artwork-boards/*/
 
 # R-L5g-10 (brief-L5-followups-2.md §4): a workspace's .generated-cells/ folder is a pure, deletable,
 # rebuildable-from-the-layout PCell regeneration cache (GeneratedCellStore/LayoutView.PCellSnapshots) —

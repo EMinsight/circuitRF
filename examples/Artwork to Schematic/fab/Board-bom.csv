@@ -1,0 +1,5 @@
+# Bill of materials projected by circuitRF from the design's components.
+# Board: Board
+Refdes,Value,Footprint,Description
+C1,2.2 pF,smt:0402,C
+R1,10 Ohm,smt:0603,R

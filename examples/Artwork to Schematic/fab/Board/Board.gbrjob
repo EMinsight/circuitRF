@@ -1,0 +1,27 @@
+{
+  "Header": {
+    "GenerationSoftware": {
+      "Vendor": "circuitRF",
+      "Application": "circuitRF",
+      "Version": "1.0.7.0"
+    },
+    "CreationDate": "2026-10-09T03:03:34Z"
+  },
+  "FilesAttributes": [
+    {
+      "Path": "Board.GTL",
+      "FileFunction": "Copper,L1,Top,Signal",
+      "FilePolarity": "Positive"
+    },
+    {
+      "Path": "Board.GBL",
+      "FileFunction": "Copper,L2,Bot,Plane",
+      "FilePolarity": "Positive"
+    },
+    {
+      "Path": "Board.GTS",
+      "FileFunction": "Soldermask,Top",
+      "FilePolarity": "Positive"
+    }
+  ]
+}

@@ -14,14 +14,10 @@ namespace CircuitRF.Ui.Tests.Recognition;
 
 public sealed class PartReadingFieldTests
 {
-    private const string Boards = "testdata/artwork-boards";
-
-    [FixtureFact(Boards, "the field boards are third-party artwork and are kept outside the repository")]
+    [FixtureFact(FieldBoards.Gate, FieldBoards.Reason)]
     public void EachFieldBoardReadsItsPartCountAndSeriesShuntSplit()
     {
-        var boards = Directory.GetDirectories(FixturePaths.Require(Boards))
-                              .Where(d => File.Exists(Path.Combine(d, "expected.json"))).ToList();
-        Assert.NotEmpty(boards);
+        var boards = FieldBoards.Dirs();
 
         int checkedBoards = 0;
         foreach (string dir in boards)

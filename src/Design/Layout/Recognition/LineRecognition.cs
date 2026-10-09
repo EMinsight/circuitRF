@@ -215,6 +215,19 @@ public static class LineRecognition
         var merged = new HashSet<LineDraft>();
         foreach (var (junction, a, b) in continuations)
         {
+            // Unless a part's terminal, a via or a port is inside it: a shunt part's pad standing on a line and wider
+            // than it is read by the review as two arms meeting there (brief-artsch-9's round trip). The arms stay two
+            // lines and meet at the terminal, as a tap on one piece does (R-as5-3).
+            if (islandOfJunction.TryGetValue(junction.Id, out int tapIsland) && TapBetween(a, b, attachments, tapIsland) is { } tap)
+            {
+                foreach (var arm in new[] { a, b })
+                {
+                    arm.Line.L += (tap.X - junction.X) * arm.End.Dx + (tap.Y - junction.Y) * arm.End.Dy;
+                    SetEnd(arm.Line, arm.AtStart, tap.Name);
+                }
+                reached.Add(tap.Name);
+                continue;
+            }
             var (into, from) = (a.Line, b.Line);
             if (into == from || merged.Contains(into) || merged.Contains(from) || into.Kind != from.Kind
                 || !LineSegmentation.SameClass(into.W, from.W, dbu)) continue;
@@ -340,6 +353,29 @@ public static class LineRecognition
         var coupled = CoupledPairs(elements, ctx.TopFrequencyHz, dbu);
         Report(result, report, options, counts, plainJunctions, openEnds, absorbed, coupled, fmt);
         return result;
+    }
+
+    /// <summary>The attachment on <paramref name="island"/> between two arms' trace ends — within the wider arm's width
+    /// of the line joining them, and past neither end — or null.</summary>
+    private static Attachment? TapBetween(JunctionArm a, JunctionArm b, IReadOnlyList<Attachment> attachments, int island)
+    {
+        double ux = b.End.X - a.End.X, uy = b.End.Y - a.End.Y;
+        double len = Math.Sqrt(ux * ux + uy * uy);
+        if (len <= 0) return null;
+        (ux, uy) = (ux / len, uy / len);
+        double w = Math.Max(a.Width, b.Width);
+        Attachment? best = null;
+        double bestOff = double.MaxValue;
+        foreach (var at in attachments)
+        {
+            if (at.Island != island) continue;
+            double t = (at.X - a.End.X) * ux + (at.Y - a.End.Y) * uy;
+            double off = Math.Abs(-(at.X - a.End.X) * uy + (at.Y - a.End.Y) * ux);
+            if (t <= 0 || t >= len || off > w || off >= bestOff) continue;
+            best = at;
+            bestOff = off;
+        }
+        return best;
     }
 
     private static void SetEnd(LineDraft line, bool atStart, string node)

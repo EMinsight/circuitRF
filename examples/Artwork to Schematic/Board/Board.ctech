@@ -1,0 +1,170 @@
+{
+  "FormatVersion": 1,
+  "Name": "Board",
+  "DefaultDisplayUnit": "Mm",
+  "DefaultSnapDbu": 0,
+  "DefaultFlattenTolDbu": 0,
+  "DefaultLabelHeightDbu": 0,
+  "DefaultViaPadDbu": 0,
+  "DefaultViaDrillDbu": 0,
+  "Layers": [
+    {
+      "Key": {
+        "Layer": 1,
+        "Datatype": 0
+      },
+      "Name": "Top",
+      "Color": {
+        "r": 200,
+        "g": 122,
+        "b": 62,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 10,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "conductor",
+      "Interchange": {
+        "GerberSuffix": "GTL",
+        "GerberFileFunction": "Copper,L1,Top,Signal"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 2,
+        "Datatype": 0
+      },
+      "Name": "Bottom",
+      "Color": {
+        "r": 138,
+        "g": 80,
+        "b": 40,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 0,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "conductor",
+      "Interchange": {
+        "GerberSuffix": "GBL",
+        "GerberFileFunction": "Copper,L2,Bot,Plane"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 5,
+        "Datatype": 0
+      },
+      "Name": "Soldermask Top",
+      "Color": {
+        "r": 30,
+        "g": 107,
+        "b": 60,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 1002,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drawing",
+      "Interchange": {
+        "GerberSuffix": "GTS",
+        "GerberFileFunction": "Soldermask,Top"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 9,
+        "Datatype": 0
+      },
+      "Name": "Drill",
+      "Color": {
+        "r": 32,
+        "g": 32,
+        "b": 32,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 1003,
+      "Visible": true,
+      "Selectable": true,
+      "Purpose": "drill",
+      "Interchange": {
+        "GerberSuffix": "drl",
+        "GerberFileFunction": "Plated,1,2,PTH"
+      }
+    }
+  ],
+  "Stackup": {
+    "Top": "Open",
+    "Bottom": "Ground",
+    "Layers": [
+      {
+        "Kind": "Conductor",
+        "Name": "Top",
+        "ThicknessDbu": 35000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 1,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Dielectric",
+        "Name": "Dielectric 1",
+        "ThicknessDbu": 254000,
+        "Epsr": 3.66,
+        "TanD": 0.004,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [],
+        "IsGroundReference": false
+      },
+      {
+        "Kind": "Conductor",
+        "Name": "Bottom",
+        "ThicknessDbu": 35000,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 58000000,
+        "DrawingLayers": [
+          {
+            "Layer": 2,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": true
+      },
+      {
+        "Kind": "Via",
+        "Name": "Drill",
+        "ThicknessDbu": 0,
+        "Epsr": 1,
+        "TanD": 0,
+        "Mur": 1,
+        "SigmaSm": 0,
+        "DrawingLayers": [
+          {
+            "Layer": 9,
+            "Datatype": 0
+          }
+        ],
+        "IsGroundReference": false,
+        "Fill": "Plated",
+        "WallThicknessDbu": 25000,
+        "SpanFromLayer": "Top",
+        "SpanToLayer": "Bottom"
+      }
+    ]
+  },
+  "DrcRules": []
+}

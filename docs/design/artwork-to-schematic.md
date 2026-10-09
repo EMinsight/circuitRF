@@ -6,7 +6,10 @@ the shared copper partition (`src/Design/Layout/Extraction/CopperPieces.cs`, `sr
 the board interchange readers (`src/Design/Layout/Interchange/`), railRF's part discovery, the footprint work, the drawn
 netlist (`src/Design/Schematic/NetlistSchematic.cs`) and the microstrip family's stackup binding.
 
-This note records the decisions and the pipeline, then one section per phase as it lands. AS-3 wrote it.
+This note records the decisions and the pipeline, then one section per phase: the board graph (§4), parts (§5),
+lines (§6), the circuit and its target (§7), the dialog (§8), the silkscreen (§9), Swap Line Type (§10), the line
+models the series added (§11), the command line (§12), and the acceptance gate, field fixtures and example (§13).
+§14 is the known limits. AS-3 wrote it; each phase added its section.
 
 ---
 
@@ -29,11 +32,14 @@ ordinary board, enough to predict a matching network and to compare a datasheet'
 artwork (.clay + .ctech [+ .cem] [+ placement/BOM])
    │
    ├─ AS-3  board graph   — ground net, via classes, signal islands, ports, scope
-   ├─ AS-4  parts         — evidence → parts table (editable; CSV)
-   ├─ AS-5  lines         — TraceImpedanceAnalysis chains → line elements
+   ├─ AS-4  parts         — evidence → parts table (editable; CSV); AS-10 adds the silkscreen as evidence
+   ├─ AS-5  lines         — TraceImpedanceAnalysis chains → line elements (CPWG / SLIN / TLIN from AS-1, AS-2)
    │
    └─ AS-6  emit          — TestBench (+ globals, tune entries, sparam analysis)
                              └─ NetlistSchematic.Build → .csch in the target cell
+
+surfaces: AS-7 `circuitrf recognize` + MCP `recognize` · AS-8 Design ▸ Create Schematic from Artwork…
+afterwards: AS-11 Swap Line Type · gate: AS-9 round trip
 ```
 
 `ArtworkRecognition.Recognize(RecognitionInput, RunControl?)` is the one entry point. It is pure: it reads what it is
@@ -343,7 +349,10 @@ centre and the report says so.
 
 A junction of **two** arms is how the review reads a sliver between two collinear pieces (both of its ends meet both
 neighbours); the sliver is dropped as a pad-length chain, so the two arms of one type and width class are merged back into
-one line and the sliver is counted as absorbed.
+one line and the sliver is counted as absorbed. **Unless a part's terminal, a via or a port lies between the two arms'
+ends** (within the wider arm's width of the line joining them): that is a shunt part's pad standing on a line and wider
+than it, which the review also reads as two arms meeting. The arms then stay two lines and meet at the terminal, as a
+tap on one piece does (§6.3) — the round trip's shunt 0402 on a 450 µm line found it (AS-9).
 
 ### 6.5 Ends and nodes (R-as5-6)
 
@@ -624,3 +633,115 @@ a Messages warning; MBEND/MTEE/MCROSS/MTAPER sharing a net with a line swapped t
 ### 10.4 Gates
 
 `LineTypeSwapTests`, `SwapLineTypeCommandTests` in `tests/Ui.Tests/Schematic/`.
+
+## 11. AS-1 and AS-2 — the line models the recognition needed
+
+A trace that is neither microstrip nor fits a model was the reason for both. The models themselves are documented with
+the other planar lines, not here: `docs/design/planar-line-models.md` and `docs/design/linear-engine.md`.
+
+- **CPWG** (`src/Core/Devices/CoplanarLineModel.cs`, `Planar/GroundedCoplanar.cs`): grounded coplanar waveguide, bound
+  to the stackup as MLIN is (`W`, `L`, `G`). The quasi-static form takes the branch with the larger air capacitance of
+  the coplanar and microstrip readings, so it tends to MLIN exactly as G grows; references (a field solve and
+  independently-coded formulas) are in `testdata/planar-lines/`.
+- **SLIN** (`StriplineModel.cs`, `Planar/Stripline.cs`): symmetric or offset stripline between two ground-reference
+  planes, its heights from the stackup (`SubstrateResolver.ResolveStripline`). A conductor without a reference plane on
+  each side is a refusal naming the missing plane — a stripline with one plane is a microstrip, and answering it as one
+  would be a silent MLIN.
+- **TLIN, physical form** (AS-2): `L` + `Eeff` (θ = 2π·f·L·√Eeff/c₀) with `Ac`/`Ad` in dB/m at `F`, beside the angle
+  form. It is the general fallback (D13): every line recognition cannot model is a TLIN at the solved cross-section's Z0
+  and εeff. A mixture of the two forms is a `ParameterRefusalException`, reported with the instance path.
+
+## 12. AS-7 — the command line and the MCP tool
+
+`circuitrf recognize <layout|cell|workspace>` (`src/Cli/Recognize.cs`) and the MCP `recognize` tool are a command line
+onto `ArtworkRecognition` and nothing else — the verb's full description is `docs/design/cli.md` §26. Read-only by
+default (the report and the parts CSV on stdout); `-o` writes the `.cnl`, `--into new:<name>|artwork [--replace]` the
+schematic, `--parts-out` / `--parts` the parts CSV round trip; `--placement` / `--bom` the companions, read with their
+own refusals; `--region` in SI units. `ArtworkRecognition.Circuit` is recognise + emit with no write. `explain` gained
+the `artwork source` walk step. Its gate is byte identity with the in-process `ArtworkRecognition.Run`, and a source scan
+holds `src/Cli` to naming nothing of the recognition but its entry point, options, result and `PartsTableCsv`
+(`RecognizeCliVerbTests`).
+
+## 13. AS-9 — the acceptance gate, the field boards, the example
+
+### 13.1 The round trip (R-as9-1, R-as9-2)
+
+`tests/Ui.Tests/Recognition/ArtworkRoundTripTests.cs`, its design and steps in `ArtworkRoundTripBoards.cs`. A schematic
+whose answer is known — two ports, an MLIN path with a 90° MBEND and an MTEE to an open stub, a series 0402 C, a shunt
+0402 L standing on the line to a VIAGND pad, a series 0603 R — goes out exactly as a fabricator would receive it and
+comes back recognised, every step through the function the GUI's own command calls:
+
+1. drawn from its netlist (`NetlistSchematic.Build`), footprints on the three parts;
+2. **Update Layout from Schematic** (`SchematicToLayoutGenerator.Run`), the parts arranged as a designer would — each
+   line ending at its part's pad edge, at half a width from a bend's corner or a tee's centre, or at a shunt part's pad
+   centre — a ground plane drawn, and Update Layout again (the VIAGND placed beside its pad);
+3. `GerberExport` (Gerber + Excellon) and `BoardCompanions` (placement + BOM);
+4. `GerberImportEntry.RunFolder` into a fresh workspace, the stackup the import guessed replaced by the fabricator's;
+5. `circuitrf recognize` as a process, `--placement --bom --into new:…`, then again without the companions.
+
+**What is compared, and the tolerances.** Topology: element counts by type; each part's designator, kind, value and
+connection; and every element touching the same elements, and ground, as its counterpart. Geometry: every line's W
+within 1 µm (the Gerber is written at 1 nm and read back exactly), every L within max(1 %, 10 µm) (a length runs
+between reference planes the recognition places, from copper kept to the nanometre). Response, both simulated
+0.1–3 GHz: |ΔS| ≤ 0.02 on every entry at every point, small entries judged by absolute error, and S21's phase within
+±3°. The two circuits share every model; what can still differ is what the geometry tolerance admits (10 µm of line
+is under 0.1° at 3 GHz) and what neither models — the pads (the lines meet the parts at the pad edges, where the
+designer drew them to) and a step for a pad wider than its line (D18). **Measured: identical** — every length to the
+micrometre and |ΔS| = 0. Without the companions the parts come back as three parts of unknown kind, each value a
+variable with its tune entry, the topology and geometry unchanged.
+
+R-as9-2 draws the two lines no generator draws (D18) — a GCPW line with side grounds and two via fences on the
+two-layer technology, and a stripline on the inner layer of a four-layer one — through the same export and import.
+The GCPW line is `CPWG` with W, G and L in tolerance and all 38 fence vias dropped as stitching; under
+`--coplanar microstrip` it is `MLIN` carrying both measured gaps. The stripline is `SLIN` with W and L, its H1/H2 from
+the technology (800 / 200 µm).
+
+**Found by the round trip, and what it means for anyone repeating it.**
+
+- *A shunt part's pad wider than its line* was read as a two-arm junction and merged away, the part attached to the
+  line's end instead of its middle. Fixed in `LineRecognition` (§6.4).
+- *A bend's and a tee's generated artwork are longer than their models.* `MBendPCell` and `MTeePCell` draw arms of
+  2.5·W (`PCellGeometryHelpers.StubLengthFactor`) that the lumped models do not carry — the models' reference planes
+  are half a width from the corner or centre. A layout made by placing lines pin-to-pin on those arms is up to 2·W
+  longer per end than its schematic. The gate's designer ends each line at the reference plane, running over the arm;
+  a layout that does not is still recognised faithfully — the recognition reads the copper, which is the point.
+- *A Gerber set carries no stackup*: the import writes its own technology with an FR-4 guess and says so. The
+  designer types in the fabricator's on the Stackup tab; without it every line is computed on the wrong substrate.
+- *`BoardCompanions` lists every placed instance*, lines included, in the placement and BOM; recognition reports the
+  rows it could not place and carries on.
+- *A VIAGND whose stackup states no plating wall* puts a "default used" note into `NetExtractor.Extract`'s
+  `Conflicts`, and `PdnLayoutNets.Of` treats any conflict as a naming conflict — so the BOM the companions write
+  carries **no values** and the pads no nets. The gate's technology states the wall thickness; the classification is
+  outside this series and is left for the owner.
+
+### 13.2 The field boards (R-as9-3, D17)
+
+`testdata/artwork-boards/<board>/`, git-ignored folder by folder (`/testdata/artwork-boards/*/`); the folder's
+`README.md` is committed and is the schema. Because the README makes the folder exist on every clone, every field test
+is gated on a board being there — `testdata/artwork-boards/*/expected.json`, which `FixturePaths` resolves with one
+`*` segment — not on the folder. `ArtworkFieldBoardTests` is a `FixtureTheory`, one case per board: it recognises with
+no refusal, its `.cnl` passes `check` with no error, and its counts are within `expected.json`'s (ports, parts,
+series/shunt exact; line types as ranges). The earlier phases' field tests read the same file.
+
+### 13.3 The example (R-as9-4)
+
+`examples/Artwork to Schematic/`: the round trip's board, authored in circuitRF and written to `fab/` as Gerber +
+Excellon + placement + BOM, then imported as the cell **Board** — a real flattened board, as a user's would be. The
+placement and BOM list only the soldered parts, and L1's BOM row is deleted so the dialog shows a variable to tune.
+**Board design**, the schematic it was drawn from, ships beside it to compare against: tuned to 8.2 nH, L1 brings the
+recognised schematic's S11 at 2 GHz from −7.7 dB to −15.9 dB against the design's −15.8 dB. The folder is rebuilt by
+`tests/Ui.Tests/Examples/ArtworkToSchematicExampleAuthoring.cs` with `CRF_AUTHOR_ARTWORK=1`.
+
+## 14. Known limits
+
+- **Not modelled** (D18): coupled lines (reported, modelled uncoupled), step, gap and open-end discontinuities, case
+  parasitics and the pads themselves, devices with more than two pins (cut out, D9), Klopfenstein and other curved
+  tapers (MTAPER or stepped lines). CPWG, SLIN and TLIN regions get no bend, junction or step models (D14).
+- **The stackup is the user's.** A recognition is only as right as the technology it reads; an imported Gerber set's
+  is a guess until corrected.
+- **Ground is a heuristic** (D6) with an override; a split ground is a separate pour and a signal island.
+- **Placement origins are never guessed**: a placement file that does not state its origin waits for the user.
+- **Silkscreen** reads stroked text only; designators, never values.
+- **Good to about 2 GHz on an ordinary board** (§1): beyond that the unmodelled pads, steps and coupling grow, and an
+  EM run of the region that matters is the next step — a scope selection makes that region a circuit of its own first.
+
