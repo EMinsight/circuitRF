@@ -2482,3 +2482,14 @@ Three Avalonia traps, all of which fail quietly:
 - **For TO-4:** `TuneSession.ForCircuit` takes a `PreparedCircuit`, which is read once. After Push writes
   values into the schematic, the session's prepared circuit still holds the pre-push text, so Push should
   re-prepare (or carry the pushed values as the new baseline).
+
+## Auto-created display for an unswept DC run opened as Rect with an `<invalid>` trace (2026-10-09)
+
+Simulate on any bench whose only analysis is an unswept DC (the Yield example's DividerCentering is
+one) auto-created a Rect plot whose seeded `DC1.V` trace read `<invalid>`. The Rect/Table choice
+(`HasPlottableData(entry, allowScalars: false)`) treated only a rank-0 cube as a scalar, but
+`V[node]` is rank 1 over a LABEL axis, which `TraceRowViewModel.DefaultXAxis` never makes an X — so the
+trace resolved to a scalar and `ScalarOnNonTableInvalid` fired. `FirstPlottableCubeName` now skips a
+cube with `DefaultXAxis < 0` alongside rank 0 when scalars are not allowed, using the same rule the
+slice builder uses so the two cannot disagree. Gate:
+`AutoCreateDataDisplaySinglePlotTests.DcOperatingPointRun_AutoCreate_IsTable_AndTraceIsValid`.

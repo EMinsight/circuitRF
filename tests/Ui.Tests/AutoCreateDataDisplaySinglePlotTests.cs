@@ -111,6 +111,21 @@ public sealed class AutoCreateDataDisplaySinglePlotTests : IDisposable
         return path;
     }
 
+    // An unswept DC run: V has one axis, but it is the node axis, which is never an X — so the
+    // trace resolves to one value per node, and only a Table can show that.
+    private static string WriteDcOperatingPointNpy(string dir, string fileName)
+    {
+        var ds   = new DataSet();
+        var node = new Axis("node", new[] { 0.0, 1 }, "V", new[] { "in", "out" });
+        ds.AddToGroup("DC1", "V", new DataCube(new[] { node }, new[] { 1.0, 0.508 }));
+        ds.AddToGroup("DC1", "Converged", DataCube.Scalar(1.0));
+        ds.AddToGroup("DC1", "Residual",  DataCube.Scalar(0.0));
+
+        var path = Path.Combine(dir, fileName);
+        DataSetExporter.Export(ds, path, ExportFormat.Npy);
+        return path;
+    }
+
     // A fresh DisplayWindowViewModel's initial tab already seeds one empty Smith plot
     // (DataDisplayViewModel's own "starts empty; user authors it" constructor default) — the
     // premise the auto-create bug fix depends on.
@@ -170,5 +185,23 @@ public sealed class AutoCreateDataDisplaySinglePlotTests : IDisposable
 
         Assert.Single(newVm.Window.DataDisplay!.Plots);   // never two plots
         Assert.Equal(PlotType.Table, newVm.Window.DataDisplay!.Plots[0].Inspector.PlotType);
+    }
+
+    [Fact]
+    public void DcOperatingPointRun_AutoCreate_IsTable_AndTraceIsValid()
+    {
+        var dir  = MakeTempDir();
+        var path = WriteDcOperatingPointNpy(dir, "DcOp.npy");
+
+        var newVm = new DataDisplayDocumentViewModel();
+        newVm.Window.DataSourceLibrary.ResultsRootProvider = () => dir;
+        bool populated = SeedDefaultPlot(newVm, path);
+
+        var plot = newVm.Window.DataDisplay!.Plots[0];
+        Assert.True(populated);
+        Assert.Equal(PlotType.Table, plot.Inspector.PlotType);
+        var trace = plot.Inspector.Traces.Single().Trace;
+        Assert.False(trace.ScalarOnNonTableInvalid);
+        Assert.Null(trace.InvalidSpecText);
     }
 }

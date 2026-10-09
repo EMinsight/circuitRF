@@ -726,7 +726,8 @@ public partial class PlotInspectorViewModel : ViewModelBase
 
     /// <summary>Returns the name of the best cube to seed a trace on, applying the
     /// same skip rules as the trace-signal picker (S/Z0, "__"-prefixed, Converged/Residual,
-    /// node-indexed current). Rank-0 (scalar) cubes are included only when allowScalars is true.
+    /// node-indexed current). Scalar cubes — rank 0, or every axis a label axis (an unswept DC run's
+    /// <c>V[node]</c>, which has no X) — are included only when allowScalars is true.
     ///
     /// <para><b>Best, not merely first</b> (owner, 2026-08-18): an HB run's first cube is <c>V</c>,
     /// indexed by node AND harmonic, so the trace a run auto-seeded was "the voltage at some node at
@@ -763,7 +764,9 @@ public partial class PlotInspectorViewModel : ViewModelBase
                 if (bareName.EndsWith("Converged", StringComparison.Ordinal) ||
                     bareName.EndsWith("Residual",  StringComparison.Ordinal)) continue;
                 if ((bareName == "I" || bareName == "INl") && cube.Axes.Any(a => a.Name == "node")) continue;
-                if (cube.Rank == 0 && !allowScalars) continue;   // scalars are Table-only
+                // Scalars are Table-only — and so is a cube whose every axis is a label axis (an
+                // unswept DC run's V[node]): it has no X, so a Rect plot shows it as <invalid>.
+                if (!allowScalars && (cube.Rank == 0 || TraceRowViewModel.DefaultXAxis(cube) < 0)) continue;
 
                 // Default- AND measurements-group cubes are emitted BARE — they bare-resolve
                 // (DataSet.Resolve tries both), and the same rule is already what the trace picker
