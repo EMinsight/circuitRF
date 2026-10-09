@@ -17,7 +17,7 @@
 
 <header class="doc-header">
   <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
-  <span class="doc-kind">Reference Guide</span>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
   <div class="doc-search" data-crf-search data-root="../" hidden>
     <input type="search" class="search-input" autocomplete="off" spellcheck="false"
            aria-label="Search the documentation" placeholder="Search docs"
@@ -28,7 +28,13 @@
 <hr class="doc-headrule">
 
 <main class="page">
-  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › EM solvers</p>
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › EM solvers</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="em-setup.html" title="Previous: EM Setup"><span class="arrow">‹</span><span class="name">EM Setup</span></a>
+      <a class="next" href="em-3d.html" title="Next: 3D EM"><span class="name">3D EM</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
 
   <h1>EM Solvers: MoM, FEM and FDTD</h1>
   <p class="lede">circuitRF can solve a structure three ways — its own planar method of moments (MoM), Palace&#39;s finite element method (FEM) and openEMS&#39;s finite-difference time-domain method (FDTD). What each one is, why there are three, and which to use for what.</p>

@@ -17,7 +17,7 @@
 
 <header class="doc-header">
   <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
-  <span class="doc-kind">Reference Guide</span>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
   <div class="doc-search" data-crf-search data-root="../" hidden>
     <input type="search" class="search-input" autocomplete="off" spellcheck="false"
            aria-label="Search the documentation" placeholder="Search docs"
@@ -28,7 +28,13 @@
 <hr class="doc-headrule">
 
 <main class="page">
-  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Layout editor</p>
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Layout editor</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="ai-agents.html" title="Previous: Designing with an AI agent"><span class="arrow">‹</span><span class="name">Designing with an AI agent</span></a>
+      <a class="next" href="footprints.html" title="Next: Footprints"><span class="name">Footprints</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
 
   <h1>The Layout Editor</h1>
   <p class="lede">Drawing artwork: the technology, the tools, snapping, and the schematic it belongs to.</p>
@@ -1170,57 +1176,13 @@ changes. A bare circle drawn directly on a drill-function layer still contribute
 never silently dropped — but it is <em>unpaired</em>: no matching pad, no annular-ring data, and the report
 suggests <strong>Convert to Via</strong> for it.</p>
 <h4 id="import-file-import-gerber">Import — <strong>File ▸ Import ▸ Gerber…</strong></h4>
-<p>Point at a <strong>folder</strong> and you get the whole board. Point at a <strong>single file</strong> and circuitRF asks whether
-its folder was the real intent, telling you what that folder holds — one Gerber file is one layer, with
-no drill data, no other copper and no board outline, which is occasionally what you want and usually
-not. The folder is the default. There is a third option for pointing at a different folder outright, and
-Cancel creates nothing.</p>
-<p><strong>What a file is gets decided by content, never by extension.</strong> Anything in the folder that is not
-artwork or drill data is skipped and named in the summary, so a folder of mixed junk is safe to point at.</p>
-<p><strong>Which layer is which</strong> comes from the strongest source available, in this order:</p>
-<ol>
-<li>the <code>.gbrjob</code> <strong>job file</strong>, if the set has one — it settles set membership and identity together, and
-carries the stackup;</li>
-<li>the file's own <strong>X2 attributes</strong> (<code>%TF.FileFunction</code>), which also give the copper's position in the
-stack;</li>
-<li>a <strong><code>GerberSuffix</code> in your technology</strong> that matches the file's extension — this is what closes the
-loop on a set circuitRF itself exported;</li>
-<li>a <strong>generic name heuristic</strong> (copper top/bottom/inner, mask, silk, paste, outline, drill);</li>
-<li>the shared <strong>layer-mapping dialog</strong> for anything left.</li>
-</ol>
-<p>The summary reports which rung identified each layer, and flags the ones that came from the heuristic —
-that is the rung that can be confidently wrong.</p>
-<p><strong>Drill data.</strong> Excellon files often do not say what their numbers mean, so units and zero suppression
-are inferred from the format comment, the <code>INCH</code>/<code>METRIC</code> word, <code>M71</code>/<code>M72</code>, the tool diameters, and a
-cross-check of where the hits land against the artwork's own bounding box. You are only prompted when
-that inference actually had to guess or the cross-check disagrees, and the prompt shows you the evidence.
-Cancelling it cancels the import — a board read at the wrong scale is the worst kind of silent failure.</p>
-<p><strong>Vias are rebuilt</strong> wherever a drill hit and a copper flash share a coordinate exactly: pad diameter,
-drill diameter, barrel and landing layer, back to a real <code>ViaShape</code>. Unpaired hits become circles on the
-drill layer, counted in the summary — a lot of them usually means the artwork and the drill file do not
-belong to the same board. Where the files declare via-vs-component drilling (X2 <code>ViaDrill</code> /
-<code>ComponentDrill</code>) that declaration is used; where they don't, the two are genuinely indistinguishable
-from artwork alone and both come back as vias, and the summary says so.</p>
-<p><strong>What you get</strong> is one <strong>flat cell</strong> — Gerber has no hierarchy, and reconstructing footprints from
-artwork would be guesswork — inside its own import folder, with its <strong>own new <code>.ctech</code></strong>. Your workspace
-technology is read but never modified.</p>
-<p><strong>The stackup is built from the job file when there is one, and from the artwork when there is not</strong> —
-the number of coppers, their order, and which drawing layer each is bound to were all worked out by the
-import already. <strong>What no Gerber file states at all is the substrate</strong>, and rather than leave it blank
-circuitRF fills it in with one ordinary FR-4 board: 35 µm outer copper, 18 µm inner, ε<sub>r</sub> 4.4,
-tan δ 0.02, and the dielectrics sharing out the board thickness the files state — or 1.778 mm when they
-state none.</p>
-<p><strong>Every one of those numbers is named in the import summary, in a paragraph of its own</strong>, kept apart
-from the paragraph reporting what the files actually said. They are guesses about a board circuitRF has
-not seen, and they exist so a board can be opened and looked at rather than hand-typed before anything
-can run. <strong>Check them against your fabricator's stackup before you trust an EM result</strong>, on the
-Technology Editor's Stackup tab. Nothing is ever inferred from the material <em>names</em> in the files.</p>
-<p>The summary also says what is still needed before the EM path can run — the one thing no artwork file
-can answer is which copper is the ground plane — and reminds you to crop the region of interest first:
-a whole board is not a MoM problem.</p>
-<p>Also worth reading in the summary: the <strong>stroke count</strong> per layer. A copper pour that arrived as a few
-thousand parallel strokes is correct artwork but is neither editable copper nor meshable; <strong>Merge</strong> fixes
-it, and the summary names the layer and the count.</p>
+<p>Point at a folder and the whole board comes in as one flat cell, with its vias rebuilt from the drill data. What
+each file is gets decided by its content, never its extension, and which layer it is by the job file, the
+file's X2 attributes, a Gerber suffix in your technology, a name heuristic, or the layer-mapping dialog, in that
+order. The dialog's <strong>Technology</strong> row chooses between a new technology written from the files — whose
+substrate is a guess, named as one in the import summary — and a technology you already have, which the
+layout then uses unchanged. <a href="../app-notes/an02-gerber-import.html">AN-02</a> walks an import through on a real
+board, every dialog included.</p>
 <h4 id="what-a-round-trip-does-and-does-not-preserve">What a round trip does and does not preserve</h4>
 <p>Export → import is <strong>not</strong> lossless, because the format has no such types — but it is <strong>closed after one
 pass</strong>: whatever the first cycle collapses, every later cycle preserves exactly, byte for byte.</p>

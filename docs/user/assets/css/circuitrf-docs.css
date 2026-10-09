@@ -145,6 +145,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
   text-transform: uppercase; color: var(--muted);
   border: 1px solid var(--border); border-radius: 999px; padding: 0.2rem 0.7rem;
 }
+.doc-header a.doc-kind:hover { color: var(--link); border-color: var(--crf-cyan); text-decoration: none; }
 .doc-headrule {                /* thin brand gradient rule under the header */
   height: 3px; border: 0; margin: 0;
   background: linear-gradient(90deg, var(--crf-cyan), var(--crf-coral));
@@ -161,6 +162,11 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 .doc-footer .spacer { margin-left: auto; }
 
 /* ---------------------------------------------------------------- [NAV] --- */
+/* Breadcrumb on the left, the compact Previous/Next pair on the right; they wrap
+   onto two lines when the column is too narrow for both. */
+.page-top { display: flex; flex-wrap: wrap; align-items: baseline;
+  justify-content: space-between; gap: 0.3rem 1rem; margin: 0.4rem 0 0; }
+.page-top .breadcrumb { margin: 0; }
 .breadcrumb { font-size: 0.85rem; color: var(--muted); margin: 0.4rem 0 0; }
 .breadcrumb a { color: var(--muted); }
 .breadcrumb a:hover { color: var(--link); }
@@ -448,7 +454,7 @@ pre.netlist { border-left: 4px solid var(--crf-cyan); }      /* .cnl listings */
 }
 
 @media print {
-  .doc-header .doc-kind, nav.toc, nav.page-nav,
+  .doc-header .doc-kind, nav.toc, nav.page-nav, nav.page-nav-top,
   .doc-search, .search-hero { display: none; }
   a { color: var(--text); text-decoration: underline; }
   body { font-size: 11pt; }
@@ -475,6 +481,17 @@ nav.page-nav .dir {
 }
 nav.page-nav .name { font-weight: 600; color: var(--link); }
 
+/* The compact pair at the top of the page: the same two links as the footer's. */
+nav.page-nav-top { display: flex; gap: 0.4rem; margin-left: auto; font-size: 0.82rem; min-width: 0; }
+nav.page-nav-top a {
+  display: inline-flex; align-items: baseline; gap: 0.3rem; max-width: 15rem;
+  padding: 0.1rem 0.55rem; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--muted); text-decoration: none; white-space: nowrap;
+}
+nav.page-nav-top a:hover { color: var(--link); border-color: var(--crf-cyan); text-decoration: none; }
+nav.page-nav-top .name { overflow: hidden; text-overflow: ellipsis; }
+nav.page-nav-top .arrow { font-weight: 600; }
+
 .site-toc { margin: 1.2rem 0 0; }
 .site-toc h3 {
   margin: 1.6rem 0 0.4rem; font-size: 0.8rem; letter-spacing: 0.06em;
@@ -490,6 +507,7 @@ nav.page-nav .name { font-weight: 600; color: var(--link); }
 @media (max-width: 40rem) {
   nav.page-nav { grid-template-columns: 1fr; }
   nav.page-nav a.next { text-align: left; }
+  nav.page-nav-top a { max-width: 10rem; }
   .site-toc li { grid-template-columns: 1fr; }
 }
 

@@ -17,7 +17,7 @@
 
 <header class="doc-header">
   <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
-  <span class="doc-kind">Reference Guide</span>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
   <div class="doc-search" data-crf-search data-root="../" hidden>
     <input type="search" class="search-input" autocomplete="off" spellcheck="false"
            aria-label="Search the documentation" placeholder="Search docs"
@@ -28,7 +28,13 @@
 <hr class="doc-headrule">
 
 <main class="page">
-  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Optimization</p>
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Optimization</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="tuning.html" title="Previous: Tuning"><span class="arrow">‹</span><span class="name">Tuning</span></a>
+      <a class="next" href="yield.html" title="Next: Yield"><span class="name">Yield</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
 
   <h1>Optimization</h1>
   <p class="lede">State what the design must do, say which values may move, and let circuitRF find values that do it.</p>
@@ -687,15 +693,18 @@ value. Written <code>discrete=e24</code> on its <code>tune</code> line.</li>
 <li><strong>Preferences ladder</strong> — the value's own list from the Smith Chart's <strong>Preferred Values</strong> dialog:
 capacitors for F, inductors for H, resistors for Ω. Written <code>discrete=preferred</code>.</li>
 </ul>
-<p>Most algorithms move such a value continuously. <strong>Snap and polish</strong> (in the toolbar, after a run) then:</p>
+<p>Most algorithms move such a value continuously. <strong>Snap and polish</strong> then:</p>
 <ol>
 <li>tries the allowed values either side of where each one ended — every combination, for up to six of
 them; beyond six, the nearest — and keeps the best;</li>
 <li>holds those values and optimizes the continuous ones again from there.</li>
 </ol>
 <p>From then on the best point is the snapped one, because the continuous one is not a design anyone can
-build. <strong>Discrete</strong> searches the allowed values directly when every variable has them; <strong>Auto</strong> ends
-with a snap and polish whenever any variable does. A part of a complex value is always continuous.</p>
+build. Every run with a standard-value variable ends with a snap and polish, whichever algorithm it
+used, so its result is always on the series; <strong>Auto</strong> does the same for integers and steps too. The
+toolbar button runs it on a finished run — after a Stop, which ends the run without one, or for an
+integer or a step under another algorithm. <strong>Discrete</strong> searches the allowed values directly when every
+variable has them. A part of a complex value is always continuous.</p>
 <p><strong>Sensitivity</strong> (in the toolbar) simulates once more per variable around the best point and shows, on
 each row, how much of the cost that variable moves — which variables matter, and which could be left
 alone.</p>

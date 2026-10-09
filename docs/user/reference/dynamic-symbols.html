@@ -17,7 +17,7 @@
 
 <header class="doc-header">
   <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
-  <span class="doc-kind">Reference Guide</span>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
   <div class="doc-search" data-crf-search data-root="../" hidden>
     <input type="search" class="search-input" autocomplete="off" spellcheck="false"
            aria-label="Search the documentation" placeholder="Search docs"
@@ -28,7 +28,13 @@
 <hr class="doc-headrule">
 
 <main class="page">
-  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Dynamic symbols</p>
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › Dynamic symbols</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="system-components.html" title="Previous: System Components"><span class="arrow">‹</span><span class="name">System Components</span></a>
+      <a class="next" href="symbol-editor.html" title="Next: Symbol Editor"><span class="name">Symbol Editor</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
 
   <h1>Dynamic Symbols (SDD, ZPort, SnP)</h1>
   <p class="lede">Most components have a fixed glyph. Some do not — their symbol is generated from a parameter rather than drawn once. For three of them the pin count itself follows the port count; for others the picture changes while the pins stay put. This chapter explains how those symbols are built and how to control them.</p>

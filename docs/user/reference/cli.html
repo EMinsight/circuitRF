@@ -17,7 +17,7 @@
 
 <header class="doc-header">
   <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
-  <span class="doc-kind">Reference Guide</span>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
   <div class="doc-search" data-crf-search data-root="../" hidden>
     <input type="search" class="search-input" autocomplete="off" spellcheck="false"
            aria-label="Search the documentation" placeholder="Search docs"
@@ -28,7 +28,13 @@
 <hr class="doc-headrule">
 
 <main class="page">
-  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › The command line</p>
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › The command line</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="npy-export.html" title="Previous: Results &amp; Data Export"><span class="arrow">‹</span><span class="name">Results &amp; Data Export</span></a>
+      <a class="next" href="ai-agents.html" title="Next: Designing with an AI agent"><span class="name">Designing with an AI agent</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
 
   <h1>The Command Line</h1>
   <p class="lede">circuitRF runs without the GUI — not just its engines, but authoring, validation, resolution and drawing too. One executable, fifteen verbs — S-parameters, DC, harmonic balance, loadpull, loadpull pursuit, electromagnetic extraction, layout interchange, creating a workspace or a cell, importing a part, rendering a document as a picture, checking a design, explaining what it resolved to, reading a result back, an elaborated-netlist dump, and an MCP server. Every one of them answers --json. This chapter is the operational reference for all of them, including a worked EM run and a worked render, each from an empty folder.</p>
@@ -1460,7 +1466,8 @@ example workspace.</p>
 <span class="prompt">  </span>[--parts-out parts.csv] [--parts parts.csv] [--bom FILE] [--placement FILE]
 <span class="prompt">  </span>[--placement-origin symbol|body|pin1] [--placement-unit mm|mil|in]
 <span class="prompt">  </span>[--region x0,y0,x1,y1] [--ground NET | --ground-at x,y] [--vias model|ground]
-<span class="prompt">  </span>[--coplanar auto|microstrip|gcpw] [--coplanar-factor K] [--start F] [--stop F] [--npts N]</code></pre>
+<span class="prompt">  </span>[--coplanar auto|microstrip|gcpw] [--coplanar-factor K] [--start F] [--stop F] [--npts N]
+<span class="prompt">  </span>[--digits N] [--free-orientation]</code></pre>
 <p><code>recognize</code> reads a board's copper and writes the circuit it implements: the ground, the vias that matter,
 the ports, every two-terminal part as an R, L, C or S-parameter file, and every trace as an <code>MLIN</code> (with its
 bends, tees, crosses and tapers), <code>CPWG</code>, <code>SLIN</code> or <code>TLIN</code>, with an S-parameter analysis ready to run. A part
@@ -1519,6 +1526,14 @@ and the <strong>parts table</strong> as CSV. Review that table before writing an
 <tr>
 <td><code>--start</code>, <code>--stop</code>, <code>--npts</code></td>
 <td>The analysis range, each frequency with its unit. Default: the layout's EM setup's sweep, else 100 MHz – 6 GHz in 201 points.</td>
+</tr>
+<tr>
+<td><code>--digits N</code></td>
+<td>The significant digits every number in the circuit is written with, 1 to 15. Default 6.</td>
+</tr>
+<tr>
+<td><code>--free-orientation</code></td>
+<td>Draws every shunt part below its line. Without it, a shunt part is drawn on the side of its line that its copper is on — the app's <strong>Link symbol and footprint orientation</strong> setting.</td>
 </tr>
 </tbody>
 </table>
@@ -1857,6 +1872,8 @@ that, and <code>--to</code> is <strong>required</strong> when the output is a fo
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert mmic.gds -o mmic.dxf --dxf-version AC1015</code></pre>
 <p>Bring a board in as editable circuitRF cells and keep the technology it declared:</p>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o cells/ --to clay</code></pre>
+<p>Bring a Gerber set in on a stackup you already have, writing no technology of its own:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert fab/ -o cells/ --to clay --into-tech tech/pcb-6layer_FR-4_1.6mm_1oz.ctech</code></pre>
 <div class="callout note">
 <span class="label">A <code>clay</code> target is a <em>folder</em>, not a file</span>
 <p>An import writes one cell <b>folder</b> per structure the source holds, plus the technology beside
@@ -1975,6 +1992,10 @@ otherwise.</li>
 <td>The technology to convert against, instead of the one the layout resolves.</td>
 </tr>
 <tr>
+<td><code>--into-tech &lt;file.ctech&gt;</code></td>
+<td>A Gerber set into a <code>clay</code> folder <strong>using</strong> this technology: the cells reference it, nothing is added to it, and no <code>.ctech</code> is written. Refused together with <code>--tech</code>, and for any source that is not Gerber. See <a href="#convert-tech">below</a>.</td>
+</tr>
+<tr>
 <td><code>--workspace &lt;file.cws&gt;</code></td>
 <td>The workspace a <code>.clay</code>'s references resolve against. Default: the nearest one above it.</td>
 </tr>
@@ -2051,6 +2072,13 @@ a bare number.</p>
 source's layers reconcile against it — matched layers keep your names and your Gerber suffixes,
 unmatched ones are added. Without it, an intermediate technology is invented from the file alone,
 and a Gerber export then names its files from synthetic suffixes.</li>
+<li><strong><code>--into-tech</code> imports a Gerber set into a technology you already have</strong>, the way the Technology
+row of <strong>File ▸ Import ▸ Gerber</strong>'s layer-mapping dialog does. Each file lands on that technology's
+own layer, the cells reference the file you named, and no <code>.ctech</code> is written. It is refused, and
+nothing is created, when the set's copper does not fit that technology's stackup: a different number
+of copper files than conductors, a copper file on a conductor of a different rank, two on one
+conductor, or drill data on a layer no via binds. It takes a <code>clay</code> target only. The other importers
+already keep the stackup of the technology <code>--tech</code> names, so the flag is refused for them.</li>
 <li><strong><code>--keep-cells &lt;dir&gt;</code> leaves a design you can open.</strong> Cells plus the technology they point at —
 the honest way to see what a conversion actually understood before you send the result anywhere.</li>
 </ul>

@@ -17,7 +17,7 @@
 
 <header class="doc-header">
   <a class="brand" href="../index.html"><img class="logo" src="../assets/img/favicon.svg" alt="circuitRF"><span class="wordmark">circuitRF</span></a>
-  <span class="doc-kind">Reference Guide</span>
+  <a class="doc-kind" href="index.html">Reference Guide</a>
   <div class="doc-search" data-crf-search data-root="../" hidden>
     <input type="search" class="search-input" autocomplete="off" spellcheck="false"
            aria-label="Search the documentation" placeholder="Search docs"
@@ -28,7 +28,13 @@
 <hr class="doc-headrule">
 
 <main class="page">
-  <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › File Formats</p>
+  <div class="page-top">
+    <p class="breadcrumb"><a href="../index.html">Docs</a> › <a href="index.html">Reference</a> › File Formats</p>
+    <nav class="page-nav-top" aria-label="Previous and next page">
+      <a class="prev" href="pins-ports-terms.html" title="Previous: Pins, Ports &amp; Terms"><span class="arrow">‹</span><span class="name">Pins, Ports &amp; Terms</span></a>
+      <a class="next" href="history.html" title="Next: History"><span class="name">History</span><span class="arrow">›</span></a>
+    </nav>
+  </div>
 
   <h1>File Formats</h1>
   <p class="lede">circuitRF stores a project as a folder of small, human-readable, text files — diffable and version-control friendly. The core idea: the **schematic** (what you draw) is the source of truth; the **netlist** (what the engine runs) is derived from it.</p>

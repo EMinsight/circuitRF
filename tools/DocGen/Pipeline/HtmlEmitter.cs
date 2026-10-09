@@ -64,15 +64,21 @@ public static class HtmlEmitter
         sb.AppendLine($"  <a class=\"brand\" href=\"{depth}index.html\">"
                     + $"<img class=\"logo\" src=\"{depth}assets/img/favicon.svg\" alt=\"circuitRF\">"
                     + "<span class=\"wordmark\">circuitRF</span></a>");
-        if (page.DocKind.Length > 0)
-            sb.AppendLine($"  <span class=\"doc-kind\">{E(page.DocKind)}</span>");
+        if (page.DocKind.Length > 0) sb.AppendLine(DocKindBadge(page, depth));
         sb.Append(SearchBox(depth, "doc-search", "Search the documentation", "Search docs"));
         sb.AppendLine("</header>");
         sb.AppendLine("<hr class=\"doc-headrule\">");
         sb.AppendLine();
         sb.AppendLine("<main class=\"page\">");
-        if (page.Breadcrumb.Count > 0)
-            sb.AppendLine($"  <p class=\"breadcrumb\">{Breadcrumb(page, depth)}</p>");
+        string topNav = nav is null ? "" : PageNavTop(page.Slug, depth, nav, titles);
+        if (page.Breadcrumb.Count > 0 || topNav.Length > 0)
+        {
+            sb.AppendLine("  <div class=\"page-top\">");
+            if (page.Breadcrumb.Count > 0)
+                sb.AppendLine($"    <p class=\"breadcrumb\">{Breadcrumb(page, depth)}</p>");
+            sb.Append(topNav);
+            sb.AppendLine("  </div>");
+        }
         sb.AppendLine();
         sb.AppendLine($"  <h1>{E(page.Title)}</h1>");
         if (page.Lede.Length > 0)
@@ -119,6 +125,49 @@ public static class HtmlEmitter
         sb.AppendLine("           role=\"combobox\" aria-expanded=\"false\" aria-autocomplete=\"list\">");
         sb.AppendLine("    <div class=\"search-panel\" role=\"listbox\" hidden></div>");
         sb.AppendLine("  </div>");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The guide badge in the header, linked to that guide's contents page — the first directory of
+    /// the slug, so "reference/vias.html" leads to "reference/index.html" and a top-level page to the
+    /// documentation home. On the contents page itself it stays plain text: a page never links to
+    /// itself.
+    /// </summary>
+    private static string DocKindBadge(DocPage page, string depth)
+    {
+        int slash = page.Slug.IndexOf('/');
+        string target = slash < 0 ? "index.html" : page.Slug[..slash] + "/index.html";
+        if (string.Equals(target, page.Slug, StringComparison.Ordinal))
+            return $"  <span class=\"doc-kind\" aria-current=\"page\">{E(page.DocKind)}</span>";
+        return $"  <a class=\"doc-kind\" href=\"{Normalise(depth + target, page.Slug)}\">{E(page.DocKind)}</a>";
+    }
+
+    /// <summary>
+    /// The compact Previous/Next pair at the top of the page, beside the breadcrumb — the same two
+    /// links as <see cref="PageNav"/>, so a reader moving through the set need not scroll to the
+    /// foot of a long page to turn it.
+    /// </summary>
+    private static string PageNavTop(string slug, string depth, SiteNav nav,
+                                     IReadOnlyDictionary<string, string>? titles)
+    {
+        string? prev = nav.Previous(slug), next = nav.Next(slug);
+        if (prev is null && next is null) return "";
+
+        string Label(string s) => titles is not null && titles.TryGetValue(s, out var t)
+            ? t : Path.GetFileNameWithoutExtension(s);
+
+        string Href(string s) => Normalise(depth + s, slug);
+
+        var sb = new StringBuilder();
+        sb.AppendLine("    <nav class=\"page-nav-top\" aria-label=\"Previous and next page\">");
+        if (prev is not null)
+            sb.AppendLine($"      <a class=\"prev\" href=\"{Href(prev)}\" title=\"Previous: {E(Label(prev))}\">"
+                        + $"<span class=\"arrow\">‹</span><span class=\"name\">{E(Label(prev))}</span></a>");
+        if (next is not null)
+            sb.AppendLine($"      <a class=\"next\" href=\"{Href(next)}\" title=\"Next: {E(Label(next))}\">"
+                        + $"<span class=\"name\">{E(Label(next))}</span><span class=\"arrow\">›</span></a>");
+        sb.AppendLine("    </nav>");
         return sb.ToString();
     }
 
