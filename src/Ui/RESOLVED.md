@@ -39162,3 +39162,32 @@ showed only the `Enabled` check box, and the refusal said the design had no enab
 `opt.nothing.goals-yield-only`, naming the goals, and a yield-only row in the Optimizer carries a **yield only** tag
 that sets `use=both` in one undoable click. `check` and `circuitrf opt` go through the same `OptimizationRun.Create`,
 so they now say the same thing.
+
+## Yield panel: the Spread box drew over the Distribution combo when narrow (owner, 2026-10-08)
+
+Below about 400 px the Variables row's star column (the spread) got no width, but the TextBox kept its 70 px
+`MinWidth`. **Avalonia centres a child that is wider than its cell on that cell**, so the box was arranged partly to
+the LEFT of its own column, over the combo. A longer variable name hits the same thing at a wider panel. Fixes in
+`YieldToolView.axaml`:
+
+- The minimum moved from the TextBox to the **star `ColumnDefinition`** (`MinWidth="64"`). The grid then overflows
+  to the right (clipped by the scroll viewer) and nothing is ever drawn over a neighbour.
+- **One line wherever it fits** (owner preference); two lines only as a last resort. A `ContainerQuery` on the
+  ItemsControl (`Container.Name="yieldVars"`) moves the distribution and the spread under the name below 330 px, or
+  below 360 px for a row showing its contribution bar (`Classes.shared="{Binding HasShare}"`). On the first line,
+  the nominal then takes the spread's empty columns, so the star column's minimum is not counted twice.
+- **`Grid.Row`/`Grid.Column` for the moving parts are set in styles, not as attributes.** A local value beats a
+  style setter, so a query cannot move a control whose column is written on the element.
+- The name and nominal columns share widths across rows (`Grid.IsSharedSizeScope`, `SharedSizeGroup`), so the
+  spread boxes line up. The share bar's column is `Auto`, so it takes no space until Contributions has run.
+
+Verified with a headless capture of the Bandpass example's panel at 300–460 px, before and after a run.
+
+**Same day, two more in the same panel:**
+- **The run, Centering and DOE settings grids clipped at the right edge** (Seed and Save cut off near 330 px). Each
+  grid is two label/value pairs wide. A `ContainerQuery` on the settings `StackPanel` (`Container.Name="yieldSettings"`)
+  moves the right-hand pairs (classes `rl`/`rv`, rows `r0`…`r3`) under the left-hand ones as rows 5…8. Each grid's
+  threshold is its own natural width, measured as `DesiredSize` at infinite width (run 366, centering 388, DOE 325 px)
+  less one, so a grid goes to one column only when two genuinely do not fit. The left-hand column never moves.
+- **"Fails only" looked pressed when off.** `ToggleButton.tb` never set a transparent background, so Fluent's grey
+  unchecked fill read as pressed on a borderless icon. Now transparent when off, Fluent's accent fill when on.

@@ -33,7 +33,10 @@
         <Style Selector="Button.tb:disabled /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="Transparent"/>
         </Style>
+        <!-- Transparent when off: Fluent's grey unchecked fill on a borderless icon reads as PRESSED. Checked keeps
+             Fluent's accent fill, which is what says "on". -->
         <Style Selector="ToggleButton.tb">
+            <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Padding" Value="3,2"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="MinHeight" Value="0"/>
@@ -245,7 +248,43 @@
             </StackPanel>
 
             <!-- Run settings: one summary line, expanded by the chevron. -->
-            <StackPanel Grid.Row="4" Margin="4,0,4,2">
+            <!-- Each settings grid is two label/value pairs wide. When that no longer fits, the right-hand pairs (rl/rv)
+                 move under the left-hand ones, in their own order (r0…r3 → rows 5…8), so nothing on the left moves.
+                 Each threshold is that grid's measured natural width (run 366, centering 388, DOE 325 px) less one.
+                 Row and column are set in these styles, not on the elements: a local value would beat the query. -->
+            <StackPanel Grid.Row="4" Margin="4,0,4,2" Container.Name="yieldSettings" Container.Sizing="Width">
+                <StackPanel.Styles>
+                    <Style Selector=":is(Control).rl"><Setter Property="Grid.Column" Value="2"/><Setter Property="Margin" Value="10,0,6,0"/></Style>
+                    <Style Selector=":is(Control).rv"><Setter Property="Grid.Column" Value="3"/></Style>
+                    <Style Selector=":is(Control).r0"><Setter Property="Grid.Row" Value="0"/></Style>
+                    <Style Selector=":is(Control).r1"><Setter Property="Grid.Row" Value="1"/></Style>
+                    <Style Selector=":is(Control).r2"><Setter Property="Grid.Row" Value="2"/></Style>
+                    <Style Selector=":is(Control).r3"><Setter Property="Grid.Row" Value="3"/></Style>
+                    <ContainerQuery Name="yieldSettings" Query="max-width:365">
+                        <Style Selector="Grid.sg-run > :is(Control).rl"><Setter Property="Grid.Column" Value="0"/><Setter Property="Margin" Value="0,0,6,0"/></Style>
+                        <Style Selector="Grid.sg-run > :is(Control).rv"><Setter Property="Grid.Column" Value="1"/></Style>
+                        <Style Selector="Grid.sg-run > :is(Control).r0"><Setter Property="Grid.Row" Value="5"/></Style>
+                        <Style Selector="Grid.sg-run > :is(Control).r1"><Setter Property="Grid.Row" Value="6"/></Style>
+                        <Style Selector="Grid.sg-run > :is(Control).r2"><Setter Property="Grid.Row" Value="7"/></Style>
+                        <Style Selector="Grid.sg-run > :is(Control).r3"><Setter Property="Grid.Row" Value="8"/></Style>
+                    </ContainerQuery>
+                    <ContainerQuery Name="yieldSettings" Query="max-width:387">
+                        <Style Selector="Grid.sg-center > :is(Control).rl"><Setter Property="Grid.Column" Value="0"/><Setter Property="Margin" Value="0,0,6,0"/></Style>
+                        <Style Selector="Grid.sg-center > :is(Control).rv"><Setter Property="Grid.Column" Value="1"/></Style>
+                        <Style Selector="Grid.sg-center > :is(Control).r0"><Setter Property="Grid.Row" Value="5"/></Style>
+                        <Style Selector="Grid.sg-center > :is(Control).r1"><Setter Property="Grid.Row" Value="6"/></Style>
+                        <Style Selector="Grid.sg-center > :is(Control).r2"><Setter Property="Grid.Row" Value="7"/></Style>
+                        <Style Selector="Grid.sg-center > :is(Control).r3"><Setter Property="Grid.Row" Value="8"/></Style>
+                    </ContainerQuery>
+                    <ContainerQuery Name="yieldSettings" Query="max-width:324">
+                        <Style Selector="Grid.sg-doe > :is(Control).rl"><Setter Property="Grid.Column" Value="0"/><Setter Property="Margin" Value="0,0,6,0"/></Style>
+                        <Style Selector="Grid.sg-doe > :is(Control).rv"><Setter Property="Grid.Column" Value="1"/></Style>
+                        <Style Selector="Grid.sg-doe > :is(Control).r0"><Setter Property="Grid.Row" Value="5"/></Style>
+                        <Style Selector="Grid.sg-doe > :is(Control).r1"><Setter Property="Grid.Row" Value="6"/></Style>
+                        <Style Selector="Grid.sg-doe > :is(Control).r2"><Setter Property="Grid.Row" Value="7"/></Style>
+                        <Style Selector="Grid.sg-doe > :is(Control).r3"><Setter Property="Grid.Row" Value="8"/></Style>
+                    </ContainerQuery>
+                </StackPanel.Styles>
                 <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding ShowStatisticsSettings}">
                     <Button Classes="tb" Command="{Binding ToggleSettingsCommand}" ToolTip.Tip="Run settings">
                         <Panel>
@@ -256,7 +295,7 @@
                     <TextBlock Grid.Column="1" Text="{Binding SettingsSummary}" FontSize="11" Opacity="0.8"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                 </Grid>
-                <Grid ColumnDefinitions="Auto,90,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" Margin="20,2,0,2">
+                <Grid Classes="sg-run" ColumnDefinitions="Auto,90,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="20,2,0,2">
                     <Grid.IsVisible>
                         <MultiBinding Converter="{x:Static BoolConverters.And}">
                             <Binding Path="SettingsExpanded"/>
@@ -267,8 +306,8 @@
                     <TextBox Grid.Row="0" Grid.Column="1" Classes="cell commit" PlaceholderText="100" Margin="0,1"
                              Text="{Binding TrialsText, UpdateSourceTrigger=LostFocus}"
                              ToolTip.Tip="The number of trials — with auto-stop, the cap"/>
-                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Seed" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
-                    <StackPanel Grid.Row="0" Grid.Column="3" Orientation="Horizontal">
+                    <TextBlock Classes="rl r0" Text="Seed" FontSize="11" VerticalAlignment="Center"/>
+                    <StackPanel Classes="rv r0" Orientation="Horizontal">
                         <TextBox Classes="cell commit" Width="70" PlaceholderText="1" Margin="0,1"
                                  Text="{Binding SeedText, UpdateSourceTrigger=LostFocus}"
                                  ToolTip.Tip="The same seed draws the same trials"/>
@@ -280,24 +319,24 @@
                     <TextBlock Grid.Row="1" Grid.Column="0" Text="Sampling" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <ComboBox Grid.Row="1" Grid.Column="1" Classes="cell" Margin="0,1" HorizontalAlignment="Stretch"
                               ItemsSource="{Binding SamplingChoices}" SelectedIndex="{Binding SamplingIndex}"/>
-                    <TextBlock Grid.Row="1" Grid.Column="2" Text="Target %" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
-                    <TextBox Grid.Row="1" Grid.Column="3" Classes="cell commit" Width="70" HorizontalAlignment="Left"
+                    <TextBlock Classes="rl r1" Text="Target %" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBox Classes="rv r1 cell commit" Width="70" HorizontalAlignment="Left"
                              PlaceholderText="none" Margin="0,1"
                              Text="{Binding TargetText, UpdateSourceTrigger=LostFocus}"/>
 
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Confidence %" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <TextBox Grid.Row="2" Grid.Column="1" Classes="cell commit" PlaceholderText="95" Margin="0,1"
                              Text="{Binding ConfidenceText, UpdateSourceTrigger=LostFocus}"/>
-                    <CheckBox Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="2" Content="Auto-stop at the target" FontSize="11"
-                              Margin="10,0,0,0" IsChecked="{Binding AutoStop}"
+                    <CheckBox Classes="rl r2" Grid.ColumnSpan="2" Content="Auto-stop at the target" FontSize="11"
+                              IsChecked="{Binding AutoStop}"
                               ToolTip.Tip="Stop once the interval lies wholly above or below the target (50 trials at least)"/>
 
                     <TextBlock Grid.Row="3" Grid.Column="0" Text="Did not evaluate" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <ComboBox Grid.Row="3" Grid.Column="1" Classes="cell" Margin="0,1" HorizontalAlignment="Stretch"
                               ItemsSource="{Binding NonConvergedChoices}" SelectedIndex="{Binding NonConvergedIndex}"
                               ToolTip.Tip="Fail: counted as a fail. Warn: left out of the yield."/>
-                    <TextBlock Grid.Row="3" Grid.Column="2" Text="Save" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
-                    <TextBox Grid.Row="3" Grid.Column="3" Classes="cell commit" Width="70" HorizontalAlignment="Left"
+                    <TextBlock Classes="rl r3" Text="Save" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBox Classes="rv r3 cell commit" Width="70" HorizontalAlignment="Left"
                              PlaceholderText="auto" Margin="0,1"
                              Text="{Binding SaveText, UpdateSourceTrigger=LostFocus}"
                              ToolTip.Tip="auto, scalars, all, or the first N trials' sweeps"/>
@@ -318,7 +357,7 @@
                     <TextBlock Grid.Column="1" Text="{Binding CenterSettingsSummary}" FontSize="11" Opacity="0.8"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                 </Grid>
-                <Grid ColumnDefinitions="Auto,90,Auto,*" RowDefinitions="Auto,Auto,Auto" Margin="20,2,0,2">
+                <Grid Classes="sg-center" ColumnDefinitions="Auto,90,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="20,2,0,2">
                     <Grid.IsVisible>
                         <MultiBinding Converter="{x:Static BoolConverters.And}">
                             <Binding Path="IsCentering"/>
@@ -328,8 +367,8 @@
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="Algorithm" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <ComboBox Grid.Row="0" Grid.Column="1" Classes="cell" Margin="0,1" HorizontalAlignment="Stretch"
                               ItemsSource="{Binding CenterAlgorithmChoices}" SelectedIndex="{Binding CenterAlgorithmIndex}"/>
-                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Surrogate" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
-                    <ComboBox Grid.Row="0" Grid.Column="3" Classes="cell" Width="96" HorizontalAlignment="Left" Margin="0,1"
+                    <TextBlock Classes="rl r0" Text="Surrogate" FontSize="11" VerticalAlignment="Center"/>
+                    <ComboBox Classes="rv r0 cell" Width="96" HorizontalAlignment="Left" Margin="0,1"
                               ItemsSource="{Binding SurrogateChoices}" SelectedIndex="{Binding SurrogateIndex}"
                               ToolTip.Tip="quadratic: search on a quadratic fit of the margins — the result is still verified by simulation"/>
 
@@ -337,8 +376,8 @@
                     <TextBox Grid.Row="1" Grid.Column="1" Classes="cell commit" PlaceholderText="200" Margin="0,1"
                              Text="{Binding CenterTrialsText, UpdateSourceTrigger=LostFocus}"
                              ToolTip.Tip="M — the trials every candidate is scored on"/>
-                    <TextBlock Grid.Row="1" Grid.Column="2" Text="Verify" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
-                    <TextBox Grid.Row="1" Grid.Column="3" Classes="cell commit" Width="70" HorizontalAlignment="Left"
+                    <TextBlock Classes="rl r1" Text="Verify" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBox Classes="rv r1 cell commit" Width="70" HorizontalAlignment="Left"
                              PlaceholderText="1000" Margin="0,1"
                              Text="{Binding CenterVerifyText, UpdateSourceTrigger=LostFocus}"
                              ToolTip.Tip="Fresh trials the start and the centred point are each verified on"/>
@@ -346,8 +385,8 @@
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="Max iterations" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <TextBox Grid.Row="2" Grid.Column="1" Classes="cell commit" PlaceholderText="100" Margin="0,1"
                              Text="{Binding CenterMaxIterText, UpdateSourceTrigger=LostFocus}"/>
-                    <TextBlock Grid.Row="2" Grid.Column="2" Text="Max simulations" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
-                    <TextBox Grid.Row="2" Grid.Column="3" Classes="cell commit" Width="70" HorizontalAlignment="Left"
+                    <TextBlock Classes="rl r2" Text="Max simulations" FontSize="11" VerticalAlignment="Center"/>
+                    <TextBox Classes="rv r2 cell commit" Width="70" HorizontalAlignment="Left"
                              PlaceholderText="none" Margin="0,1"
                              Text="{Binding CenterMaxEvalsText, UpdateSourceTrigger=LostFocus}"/>
                 </Grid>
@@ -362,7 +401,7 @@
                     <TextBlock Grid.Column="1" Text="{Binding DoeSettingsSummary}" FontSize="11" Opacity="0.8"
                                VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
                 </Grid>
-                <Grid ColumnDefinitions="Auto,110,Auto,*" RowDefinitions="Auto,Auto,Auto" Margin="20,2,0,2">
+                <Grid Classes="sg-doe" ColumnDefinitions="Auto,110,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="20,2,0,2">
                     <Grid.IsVisible>
                         <MultiBinding Converter="{x:Static BoolConverters.And}">
                             <Binding Path="IsDoe"/>
@@ -373,9 +412,9 @@
                     <ComboBox Grid.Row="0" Grid.Column="1" Classes="cell" Margin="0,1" HorizontalAlignment="Stretch"
                               ItemsSource="{Binding DoeDesignChoices}" SelectedIndex="{Binding DoeDesignIndex}"
                               ToolTip.Tip="Full factorial for a few factors; Plackett–Burman to screen many; a composite for a quadratic model"/>
-                    <TextBlock Grid.Row="0" Grid.Column="2" Text="Resolution" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"
+                    <TextBlock Classes="rl r0" Text="Resolution" FontSize="11" VerticalAlignment="Center"
                                IsVisible="{Binding IsDoeFrac}"/>
-                    <ComboBox Grid.Row="0" Grid.Column="3" Classes="cell" Width="64" HorizontalAlignment="Left" Margin="0,1"
+                    <ComboBox Classes="rv r0 cell" Width="64" HorizontalAlignment="Left" Margin="0,1"
                               ItemsSource="{Binding DoeResolutionChoices}" SelectedIndex="{Binding DoeResolutionIndex}"
                               IsVisible="{Binding IsDoeFrac}"
                               ToolTip.Tip="IV: main effects clear of interactions. V: interactions clear of each other."/>
@@ -384,9 +423,9 @@
                     <ComboBox Grid.Row="1" Grid.Column="1" Classes="cell" Margin="0,1" HorizontalAlignment="Stretch"
                               ItemsSource="{Binding DoeFactorChoices}" SelectedIndex="{Binding DoeFactorIndex}"
                               ToolTip.Tip="The Opt rows over their ranges, or the Stat rows at nominal ± k σ"/>
-                    <TextBlock Grid.Row="1" Grid.Column="2" Text="± σ" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"
+                    <TextBlock Classes="rl r1" Text="± σ" FontSize="11" VerticalAlignment="Center"
                                IsVisible="{Binding IsDoeStat}"/>
-                    <TextBox Grid.Row="1" Grid.Column="3" Classes="cell commit" Width="64" HorizontalAlignment="Left"
+                    <TextBox Classes="rv r1 cell commit" Width="64" HorizontalAlignment="Left"
                              PlaceholderText="1" Margin="0,1" IsVisible="{Binding IsDoeStat}"
                              Text="{Binding DoeSigmaText, UpdateSourceTrigger=LostFocus}"
                              ToolTip.Tip="k — each tolerance's levels are nominal ± k σ"/>
@@ -395,8 +434,8 @@
                     <TextBox Grid.Row="2" Grid.Column="1" Classes="cell commit" PlaceholderText="1" Margin="0,1"
                              Text="{Binding DoeCentreText, UpdateSourceTrigger=LostFocus}"
                              ToolTip.Tip="Centre points check a two-level model for curvature"/>
-                    <TextBlock Grid.Row="2" Grid.Column="2" Text="Goals" FontSize="11" VerticalAlignment="Center" Margin="10,0,6,0"/>
-                    <ComboBox Grid.Row="2" Grid.Column="3" Classes="cell" Width="72" HorizontalAlignment="Left" Margin="0,1"
+                    <TextBlock Classes="rl r2" Text="Goals" FontSize="11" VerticalAlignment="Center"/>
+                    <ComboBox Classes="rv r2 cell" Width="72" HorizontalAlignment="Left" Margin="0,1"
                               ItemsSource="{Binding DoeResponseChoices}" SelectedIndex="{Binding DoeResponseIndex}"
                               ToolTip.Tip="goals: those the factors are for. all: every enabled goal. Scalar measures always."/>
                 </Grid>
@@ -500,28 +539,101 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
-                    <ItemsControl ItemsSource="{Binding Variables}" IsVisible="{Binding ShowVariableTolerances}">
+                    <!-- One line wherever it fits; the distribution and the spread move to a second line under the
+                         name only as a last resort (below about 330 px, 360 px with the contribution bar). The star
+                         column's MinWidth is what keeps the spread from being arranged over the distribution: a child
+                         wider than its cell is centred on it, i.e. pushed LEFT over its neighbour. Grid.Row/Column
+                         live in the styles because a local value would beat the query's setters. -->
+                    <ItemsControl ItemsSource="{Binding Variables}" IsVisible="{Binding ShowVariableTolerances}"
+                                  Grid.IsSharedSizeScope="True" Container.Name="yieldVars" Container.Sizing="Width">
+                        <ItemsControl.Styles>
+                            <Style Selector="ComboBox.dist">
+                                <Setter Property="Grid.Row" Value="0"/>
+                                <Setter Property="Grid.Column" Value="2"/>
+                                <Setter Property="Margin" Value="0"/>
+                            </Style>
+                            <Style Selector="TextBox.spread">
+                                <Setter Property="Grid.Row" Value="0"/>
+                                <Setter Property="Grid.Column" Value="3"/>
+                                <Setter Property="Grid.ColumnSpan" Value="1"/>
+                                <Setter Property="Margin" Value="4,0"/>
+                            </Style>
+                            <Style Selector="TextBlock.nominal">
+                                <Setter Property="Grid.Column" Value="4"/>
+                                <Setter Property="Grid.ColumnSpan" Value="1"/>
+                            </Style>
+                            <ContainerQuery Name="yieldVars" Query="max-width:330">
+                                <Style Selector="Grid.yv > ComboBox.dist">
+                                    <Setter Property="Grid.Row" Value="1"/>
+                                    <Setter Property="Grid.Column" Value="1"/>
+                                    <Setter Property="Margin" Value="0,2,0,2"/>
+                                </Style>
+                                <Style Selector="Grid.yv > TextBox.spread">
+                                    <Setter Property="Grid.Row" Value="1"/>
+                                    <Setter Property="Grid.Column" Value="2"/>
+                                    <Setter Property="Grid.ColumnSpan" Value="5"/>
+                                    <Setter Property="Margin" Value="4,2,0,2"/>
+                                </Style>
+                                <!-- The nominal takes the spread's empty columns on the first line, so the star column's
+                                     minimum is not paid twice and the row still fits at 300 px. -->
+                                <Style Selector="Grid.yv > TextBlock.nominal">
+                                    <Setter Property="Grid.Column" Value="2"/>
+                                    <Setter Property="Grid.ColumnSpan" Value="2"/>
+                                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                                </Style>
+                            </ContainerQuery>
+                            <!-- A row showing its contribution bar needs 44 px more before it gives up its one line. -->
+                            <ContainerQuery Name="yieldVars" Query="max-width:360">
+                                <Style Selector="Grid.yv.shared > ComboBox.dist">
+                                    <Setter Property="Grid.Row" Value="1"/>
+                                    <Setter Property="Grid.Column" Value="1"/>
+                                    <Setter Property="Margin" Value="0,2,0,2"/>
+                                </Style>
+                                <Style Selector="Grid.yv.shared > TextBox.spread">
+                                    <Setter Property="Grid.Row" Value="1"/>
+                                    <Setter Property="Grid.Column" Value="2"/>
+                                    <Setter Property="Grid.ColumnSpan" Value="5"/>
+                                    <Setter Property="Margin" Value="4,2,0,2"/>
+                                </Style>
+                                <!-- The nominal takes the spread's empty columns on the first line, so the star column's
+                                     minimum is not paid twice and the row still fits at 300 px. -->
+                                <Style Selector="Grid.yv.shared > TextBlock.nominal">
+                                    <Setter Property="Grid.Column" Value="2"/>
+                                    <Setter Property="Grid.ColumnSpan" Value="2"/>
+                                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                                </Style>
+                            </ContainerQuery>
+                        </ItemsControl.Styles>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="yld:YieldVariableRowViewModel">
-                                <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,50,Auto" Margin="6,1,4,1"
+                                <Grid Classes="yv" Classes.shared="{Binding HasShare}" RowDefinitions="Auto,Auto" Margin="6,1,4,1"
                                       ToolTip.Tip="{Binding DisabledReason}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="yvKey"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*" MinWidth="64"/>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="yvNominal"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
                                     <CheckBox Grid.Column="0" IsChecked="{Binding IsStat}" MinWidth="0" Padding="0"
                                               Margin="0,0,4,0" ToolTip.Tip="Draw this value in every trial"/>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" MinWidth="64"
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4"
                                                 VerticalAlignment="Center" Margin="0,0,4,0">
                                         <TextBlock Text="{Binding Key}" FontSize="12"/>
                                         <TextBlock Text="{Binding Location}" Classes="muted" IsVisible="{Binding HasLocation}"
                                                    VerticalAlignment="Center"/>
                                     </StackPanel>
-                                    <ComboBox Grid.Column="2" Classes="cell" Width="92" ItemsSource="{Binding Distributions}"
+                                    <ComboBox Classes="cell dist" Width="92" ItemsSource="{Binding Distributions}"
                                               SelectedItem="{Binding Distribution}" VerticalAlignment="Center"
                                               ToolTip.Tip="Distribution"/>
-                                    <TextBox Grid.Column="3" Classes="cell spread" Margin="4,0" MinWidth="70"
+                                    <TextBox Classes="cell spread" VerticalAlignment="Center"
                                              Text="{Binding SpreadText, Mode=OneWay}"
                                              ToolTip.Tip="Spread: ± 2 %, ± 5 % at 3σ, σ 1 Ω (Gaussian); 45 … 55 Ω (Uniform); 4 … 8 by 2 (Discrete); then , trunc 3σ"/>
-                                    <TextBlock Grid.Column="4" Text="{Binding NominalText}" FontSize="11" Opacity="0.8"
+                                    <TextBlock Classes="nominal" Text="{Binding NominalText}" FontSize="11" Opacity="0.8"
                                                VerticalAlignment="Center" Margin="2,0,6,0" ToolTip.Tip="Nominal"/>
-                                    <yldv:FractionBar Grid.Column="5" Height="12" IsVisible="{Binding HasShare}"
+                                    <yldv:FractionBar Grid.Column="5" Width="44" Height="12" IsVisible="{Binding HasShare}"
                                                       Upper="{Binding ShareValue}" VerticalAlignment="Center"
                                                       ToolTip.Tip="{Binding ShareText}"/>
                                     <Button Grid.Column="6" Classes="tb" ToolTip.Tip="More">
