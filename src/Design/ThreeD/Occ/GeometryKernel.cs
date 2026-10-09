@@ -114,8 +114,10 @@ public sealed record GeometryKernelEdge(string Name, string FaceA, string FaceB,
 }
 
 /// <summary>One part of a STEP file as the worker read it: its occurrence <see cref="Path"/> (<c>1/2</c>), product name,
-/// colour (RGB 0–1, or null), and counts. <see cref="Handle"/> is empty: an import holds nothing in the worker.</summary>
-public sealed record GeometryKernelImportPart(string Handle, string Name, string Path, double[]? Colour, int Solids, int Faces, bool Valid)
+/// colour (RGB 0–1, or null), its solids and its face count. <see cref="Handle"/> is empty: an import holds nothing in the
+/// worker.</summary>
+public sealed record GeometryKernelImportPart(string Handle, string Name, string Path, double[]? Colour,
+                                              IReadOnlyList<GeometryKernelImportSolid> Solids, int Faces, bool Valid)
 {
     /// <summary>brief-em3d-68 R-em3d68-4b — a closed solid after healing: what a Step object may be.</summary>
     public bool Closed { get; init; }
@@ -127,6 +129,16 @@ public sealed record GeometryKernelImportPart(string Handle, string Name, string
     public string Healing { get; init; } = "";
 
     /// <summary>The triangles the viewport would draw it with (R-em3d68-4c); 0 unless asked for.</summary>
+    public long Triangles { get; init; }
+}
+
+/// <summary>brief-em3d-127 — one solid of a part, as <c>C3dStep.Solid = </c><see cref="Index"/> builds it: its own name when
+/// the file gives one, its colour by overview D6 (null with <see cref="Mixed"/> when its faces disagree), its faces,
+/// whether it is a closed solid and why not, its volume (µm³) and its box (µm, x0 y0 z0 x1 y1 z1, where the file places it).</summary>
+public sealed record GeometryKernelImportSolid(int Index, string Name, double[]? Colour, bool Mixed, int Faces, bool Closed, string Why,
+                                               double VolumeUm3, double[] BoxUm)
+{
+    /// <summary>The triangles the viewport would draw this solid with; 0 unless asked for.</summary>
     public long Triangles { get; init; }
 }
 
@@ -713,9 +725,16 @@ public sealed class GeometryKernel : IDisposable
             if (p is null) continue;
             // Rounded to 12 places: OCCT holds a colour LINEAR and the worker re-encodes it to the file's sRGB, a round trip
             // that turns an exact 1 into 0.99999999999999989 — noise no colour carries, and a #rrggbb match must not see.
-            double[]? colour = p["colour"] is JsonArray c ? [.. c.Select(x => Math.Round(x?.GetValue<double>() ?? 0, 12))] : null;
+            static double[]? Colour(JsonNode? n) => n is JsonArray c ? [.. c.Select(x => Math.Round(x?.GetValue<double>() ?? 0, 12))] : null;
+            var solids = new List<GeometryKernelImportSolid>();
+            foreach (var s in p["solids"] as JsonArray ?? [])
+                if (s is not null)
+                    solids.Add(new GeometryKernelImportSolid(solids.Count + 1, s["name"]?.GetValue<string>() ?? "", Colour(s["colour"]),
+                        s["mixed"]?.GetValue<bool>() ?? false, s["faces"]?.GetValue<int>() ?? 0, s["closed"]?.GetValue<bool>() ?? false,
+                        s["why"]?.GetValue<string>() ?? "", s["volume_um3"]?.GetValue<double>() ?? 0, Numbers(s["box_um"]) ?? [])
+                    { Triangles = s["triangles"]?.GetValue<long>() ?? 0 });
             parts.Add(new GeometryKernelImportPart(p["shape"]?.GetValue<string>() ?? "", p["name"]?.GetValue<string>() ?? "",
-                p["path"]?.GetValue<string>() ?? "", colour, p["solids"]?.GetValue<int>() ?? 0, p["faces"]?.GetValue<int>() ?? 0,
+                p["path"]?.GetValue<string>() ?? "", Colour(p["colour"]), solids, p["faces"]?.GetValue<int>() ?? 0,
                 p["valid"]?.GetValue<bool>() ?? false)
             {
                 Closed = p["closed"]?.GetValue<bool>() ?? false, Why = p["why"]?.GetValue<string>() ?? "",

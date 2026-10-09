@@ -18935,3 +18935,34 @@ Every finding was confirmed against the source before it was changed; none turne
   import writes `conductor`. Moving a workspace onto a board's imported technology therefore warned that Top Copper
   "has purpose 'drawing' here and 'conductor' there" — the same layer. `LayerTableDifference` now compares
   `PurposeOf` where it answers conductor or drill, the raw label otherwise.
+
+## One solid of a STEP part: `C3dStep.Solid` (2026-10-09, brief-em3d-127)
+
+- **The worker reads each part's solids.** `ReadPart.solids` lists them in `TopExp_Explorer(part, TopAbs_SOLID)` order
+  AFTER healing, which is what `"solid": k` counts. Name and colour are looked up on the shape AS READ (`ref`'s, before
+  `Moved` and `Heal`), because the reader's sub-shape labels are keyed by those shapes. Healing that keeps the solid
+  count keeps the order; one that changes it is followed through `ShapeFix_Shape::Context()`, and a solid neither
+  route reaches has no name or colour rather than a neighbour's.
+- **A solid's own name needs `ReadSubshapeNames`,** off by default in OCCT: without it a `MANIFOLD_SOLID_BREP('lead',…)`
+  name never reaches a label. It is set on the reader's model after the read and before the transfer (the stream
+  reader takes no parameters). It adds labels and names only; no shape changes.
+- **Colour is overview D6, exactly.** A face with no colour counts as the PART's colour when the part has one, so a
+  body whose faces are all uncoloured inherits the part's, while one coloured face on an otherwise-uncoloured body of
+  an uncoloured part is *mixed*: its faces disagree.
+- **`import-step`'s `solids` is now the list, not a count.** The part's count was the same explorer, so the list's
+  length is it; `GeometryKernelImportPart.Solids` is `IReadOnlyList<GeometryKernelImportSolid>`. Nothing read the old
+  integer.
+- **The read counter is new.** The brief named "the worker's existing read counter"; there was none. `hello` now
+  reports `step_reads` (every `ReadStep` since start), so the one-read-per-file gate counts reads instead of timing
+  them. It talks to the worker raw, because `GeometryKernel`'s own cache would hide a second build.
+- **The cache key is held.** `GeometryKernelTree` writes `"solid"` only when set, so a whole-part tree is the same
+  text as before; `StepSolidTests.Gate2` pins that text and its SHA-256, taken outside circuitRF.
+- **Reload matches a solid by box (within `tolUm`) and volume (1e-6 relative).** The old box and volume come from an
+  `import-step` of the current copy, read once and only when some object names a `Solid`. The accepted re-index is
+  `StepReloadPlan.SolidMoves` (also listed in the editor's reload notes), applied by `ApplyReload`. A solid that
+  changed shape matches nothing and is refused with the object left on the old copy, deliberately.
+  `NewSolids` carries the unclaimed solids of a part addressed solid by solid; **the editor does not offer them yet**,
+  since importing a single solid is brief 128's dialog.
+- **D7 took the recommended default:** no format version bump. A build older than 127 reports `Solid` as an unread
+  key and builds the whole part for each piece.
+- Gate: `tests/Ui.Tests/ThreeD/StepSolidTests.cs`, on `testdata/step/two-solids-one-product{,-revised}.step`.

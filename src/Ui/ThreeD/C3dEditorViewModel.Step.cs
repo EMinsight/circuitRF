@@ -167,6 +167,7 @@ public sealed partial class C3dEditorViewModel
         }
         var notes = new List<string>(plan.Refusals);
         notes.AddRange(plan.Repoints.Select(r => r.ToString()));
+        notes.AddRange(plan.SolidMoves.Select(m => m.ToString()));
         if (plan.Accepted.Count > 0)
         {
             string oldPath = Path.Combine(Path.GetDirectoryName(path)!, file);

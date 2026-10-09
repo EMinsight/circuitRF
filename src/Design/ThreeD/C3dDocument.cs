@@ -527,6 +527,11 @@ public sealed class C3dStep : C3dObject
     /// <summary>The part's occurrence path in the file's assembly, as the worker's STEP reader reports it (<c>1/2</c>).</summary>
     public string Part { get; set; } = "";
 
+    /// <summary>brief-em3d-127 — which solid of <see cref="Part"/>, 1-based in the reader's topological order; null for the whole
+    /// part (legal, and named by `check` when the part has several solids — brief 129). Meaningful for the recorded Hash.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Solid { get; set; }
+
     /// <summary><c>sha256:&lt;hex&gt;</c> of the file's bytes.</summary>
     public string Hash { get; set; } = "";
 

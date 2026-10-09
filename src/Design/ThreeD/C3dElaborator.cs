@@ -1141,7 +1141,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                     C3dBoolean b => $"Boolean {b.Op}",
                     C3dFillet f => $"Fillet of {string.Join(", ", f.Edges)}",
                     C3dChamfer c => $"Chamfer of {string.Join(", ", c.Edges)}",
-                    C3dStep st => $"Step part {st.Part} of {st.File}{(st.Unit is { Length: > 0 } u ? $" (in {u})" : "")}",
+                    C3dStep st => $"Step part {st.Part}{(st.Solid is { } k ? $", solid {k}" : "")} of {st.File}{(st.Unit is { Length: > 0 } u ? $" (in {u})" : "")}",
                     _ => C3dObject.KindOf(o),
                 };
                 string state = o is C3dOperation { Enabled: false } ? " (disabled)" : "";

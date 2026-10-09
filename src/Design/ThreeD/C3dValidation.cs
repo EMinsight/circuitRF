@@ -285,6 +285,8 @@ public static class C3dValidation
     {
         if (string.IsNullOrWhiteSpace(st.File)) { found.Add(C3dDiagnostics.StepShape(label, "names no File")); return; }
         if (string.IsNullOrWhiteSpace(st.Part)) found.Add(C3dDiagnostics.StepShape(label, "names no Part"));
+        // brief-em3d-127 R-em3d127-2b: a solid past the part's last is the worker's refusal, reported where the build is.
+        if (st.Solid is < 1) found.Add(C3dDiagnostics.StepShape(label, $"names Solid {st.Solid}; solids are numbered from 1"));
         if (documentPath is null) return;
         string folder = Path.GetDirectoryName(Path.GetFullPath(documentPath))!;
         string file = Path.GetFullPath(Path.Combine(folder, st.File));

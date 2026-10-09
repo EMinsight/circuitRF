@@ -573,7 +573,11 @@ public static class StepImport
         var accepted = new List<C3dStep>();
         var refusals = new List<string>();
         var repoints = new List<StepRepoint>();
+        var solidMoves = new List<StepSolidMove>();
         var byPart = read.Parts.ToDictionary(p => p.Path, StringComparer.Ordinal);
+        // brief-em3d-127 R-em3d127-4: the current copy's own read, for the box and volume of each solid an object names —
+        // read once, and only when some object names a Solid.
+        GeometryKernelImport? current = null;
         foreach (var obj in objects)
         {
             if (!byPart.TryGetValue(obj.Part, out var np))
@@ -581,15 +585,44 @@ public static class StepImport
                 refusals.Add($"'{obj.Name}' is part {obj.Part} of '{file}', which the revised file no longer has.");
                 continue;
             }
-            if (!np.Closed)
+            int? solid = null;
+            if (obj.Solid is { } k)
+            {
+                // A Solid index is not trusted across a revision: the revised part's ONE solid with the same box and volume.
+                current ??= kernel.ImportStep(File.ReadAllBytes(System.IO.Path.Combine(dir, obj.File)), control);
+                var was = current.Parts.FirstOrDefault(p => p.Path == obj.Part) is { } cp && k >= 1 && k <= cp.Solids.Count ? cp.Solids[k - 1] : null;
+                string named = $"'{obj.Name}' is solid {k} of part {obj.Part} of '{file}'";
+                if (was is null)
+                {
+                    refusals.Add($"{named}, which the file it was imported from never had.");
+                    continue;
+                }
+                var hits = np.Solids.Where(n => SameSolid(was, n, tolUm)).ToList();
+                if (hits.Count != 1)
+                {
+                    refusals.Add(hits.Count == 0
+                        ? $"{named}, which the revised file no longer has: no solid of it has the same box and volume. A solid that " +
+                          "changed shape keeps the old file, so whatever is on it can be checked by a person first."
+                        : $"{named}, which matches {hits.Count} solids of the revised file; circuitRF does not choose one.");
+                    continue;
+                }
+                if (!hits[0].Closed)
+                {
+                    refusals.Add($"{named}, which in the revised file is not a closed solid: {hits[0].Why}.");
+                    continue;
+                }
+                solid = hits[0].Index;
+                if (solid != k) solidMoves.Add(new StepSolidMove(obj.Name, obj.Part, k, hits[0].Index));
+            }
+            else if (!np.Closed)
             {
                 refusals.Add($"'{obj.Name}' is part {obj.Part} of '{file}', which in the revised file is not a closed solid: {np.Why}.");
                 continue;
             }
             var refs = References(doc, obj);
             if (refs.Count == 0) { accepted.Add(obj); continue; }
-            var oldFaces = kernel.Faces(StepTree(obj, System.IO.Path.Combine(dir, obj.File), obj.Hash, doc.DbuPerMicron));
-            var newFaces = kernel.Faces(StepTree(obj, source, hash, doc.DbuPerMicron));
+            var oldFaces = kernel.Faces(StepTree(obj, System.IO.Path.Combine(dir, obj.File), obj.Hash, obj.Solid, doc.DbuPerMicron));
+            var newFaces = kernel.Faces(StepTree(obj, source, hash, solid, doc.DbuPerMicron));
             var map = new Dictionary<int, int>();
             bool ok = true;
             foreach (int n in refs.Select(r => r.Face).Distinct().Order())
@@ -616,9 +649,19 @@ public static class StepImport
         }
         var usedParts = objects.Select(o => o.Part).ToHashSet(StringComparer.Ordinal);
         var newParts = read.Parts.Where(p => !usedParts.Contains(p.Path)).ToList();
+        // R-em3d127-4c: a solid of a part that objects address only by Solid, which no accepted object now lands on.
+        var wholeParts = objects.Where(o => o.Solid is null).Select(o => o.Part).ToHashSet(StringComparer.Ordinal);
+        var landed = accepted.Where(o => o.Solid is not null)
+                             .Select(o => (o.Part, solidMoves.FirstOrDefault(m => m.Object == o.Name)?.To ?? o.Solid!.Value)).ToHashSet();
+        var newSolids = read.Parts.Where(p => usedParts.Contains(p.Path) && !wholeParts.Contains(p.Path))
+                                  .SelectMany(p => p.Solids.Where(x => !landed.Contains((p.Path, x.Index))).Select(x => new StepNewSolid(p.Path, x)))
+                                  .ToList();
+        var accepting = accepted.ToHashSet();
         return new StepReloadPlan(file, source, bytes, hash, false, accepted, refusals, repoints, newParts)
         {
             Maps = accepted.ToDictionary(o => o, o => repoints.Where(r => r.Object == o.Name).GroupBy(r => r.From).ToDictionary(g => g.Key, g => g.First().To)),
+            SolidMoves = [.. solidMoves.Where(m => accepting.Any(o => o.Name == m.Object))],
+            NewSolids = newSolids,
         };
     }
 
@@ -635,6 +678,7 @@ public static class StepImport
         foreach (var obj in plan.Accepted)
         {
             if (plan.Maps.TryGetValue(obj, out var map) && map.Count > 0) Repoint(doc, obj, map);
+            if (plan.SolidMoves.FirstOrDefault(m => m.Object == obj.Name) is { } moved) obj.Solid = moved.To;
             obj.File = System.IO.Path.GetFileName(copy);
             obj.Hash = plan.Hash;
         }
@@ -643,8 +687,18 @@ public static class StepImport
 
     /// <summary>The kernel tree of a Step object's part in <paramref name="file"/>, at identity — the file's own frame, which
     /// is the frame the old and the revised faces are compared in.</summary>
-    private static GeometryKernelTree StepTree(C3dStep obj, string file, string hash, int dbuPerMicron)
-        => GeometryKernelTree.From(new C3dStep { Name = obj.Name, File = System.IO.Path.GetFullPath(file), Hash = hash, Part = obj.Part }, dbuPerMicron);
+    private static GeometryKernelTree StepTree(C3dStep obj, string file, string hash, int? solid, int dbuPerMicron)
+        => GeometryKernelTree.From(new C3dStep { Name = obj.Name, File = System.IO.Path.GetFullPath(file), Hash = hash, Part = obj.Part, Solid = solid },
+                                   dbuPerMicron);
+
+    /// <summary>brief-em3d-127 R-em3d127-4a — two solids are one when their boxes agree within the tolerance and their volumes
+    /// within 1e-6 relative. A solid that changed shape matches nothing, on purpose (R-em3d127-4b).</summary>
+    public static bool SameSolid(GeometryKernelImportSolid a, GeometryKernelImportSolid b, double tolUm)
+    {
+        if (a.BoxUm.Length != 6 || b.BoxUm.Length != 6) return false;
+        for (int i = 0; i < 6; i++) if (Math.Abs(a.BoxUm[i] - b.BoxUm[i]) > tolUm) return false;
+        return Math.Abs(a.VolumeUm3 - b.VolumeUm3) <= 1e-6 * Math.Max(Math.Abs(a.VolumeUm3), Math.Abs(b.VolumeUm3));
+    }
 
     /// <summary>Two faces are one when the kind is the same and the area, centroid and normal agree within the tolerance.</summary>
     public static bool SameFace(GeometryKernelFace a, GeometryKernelFace b, double tolUm)
@@ -783,6 +837,17 @@ public sealed record StepRepoint(string Object, string What, int From, int To)
     public override string ToString() => $"{What}: {Object}/face{From} is face{To} in the revised file.";
 }
 
+/// <summary>brief-em3d-127 R-em3d127-4a — an object whose solid is numbered <paramref name="To"/> in the revised file, matched
+/// by box and volume.</summary>
+public sealed record StepSolidMove(string Object, string Part, int From, int To)
+{
+    public override string ToString() => $"'{Object}' is solid {From} of part {Part}, which is solid {To} in the revised file.";
+}
+
+/// <summary>R-em3d127-4c — a solid of a revised part that objects address solid by solid, which no object names: offered
+/// like a new part, with its index.</summary>
+public sealed record StepNewSolid(string Part, GeometryKernelImportSolid Solid);
+
 /// <summary>What <see cref="StepImport.PlanReload"/> decided.</summary>
 /// <param name="NoChange">The source's bytes are the ones every object already names: nothing to do (R-em3d68-5b).</param>
 /// <param name="Accepted">Objects that move to the revised file.</param>
@@ -795,4 +860,10 @@ public sealed record StepReloadPlan(string File, string SourcePath, byte[] Bytes
 {
     /// <summary>Per accepted object, old face number → new.</summary>
     public IReadOnlyDictionary<C3dStep, Dictionary<int, int>> Maps { get; init; } = new Dictionary<C3dStep, Dictionary<int, int>>();
+
+    /// <summary>brief-em3d-127 — every accepted object whose <c>Solid</c> is numbered differently in the revised file.</summary>
+    public IReadOnlyList<StepSolidMove> SolidMoves { get; init; } = [];
+
+    /// <summary>brief-em3d-127 R-em3d127-4c — solids of a part addressed solid by solid that no object lands on.</summary>
+    public IReadOnlyList<StepNewSolid> NewSolids { get; init; } = [];
 }

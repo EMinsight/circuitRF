@@ -30,7 +30,8 @@
 //   boolean:  "op":"subtract"|"unite"|"intersect","blank":{node},"tools":[{node}…]   (the blank has "name":"")
 //   fillet:   "radius":r,"edges":["xmax|zmax"…],"target":{node}
 //   chamfer:  "distance":d,["distance2":d2,]"edges":[…],"target":{node}
-//   step:     "file":<absolute path>,"hash":"sha256:…","part":"1/2"      (the part's faces are face<n>)
+//   step:     "file":<absolute path>,"hash":"sha256:…","part":"1/2"[,"solid":k]  (faces are face<n>, the solid's own
+//             when "solid" is there; brief-em3d-127 writes it only when set, so a whole part's tree keeps its cache key)
 
 using System.Globalization;
 using System.Security.Cryptography;
@@ -232,6 +233,7 @@ public sealed class GeometryKernelTree
             case C3dStep st:
                 string file = documentDir is null ? st.File : Path.GetFullPath(Path.Combine(documentDir, st.File));
                 w.Key("file").Str(file).Key("hash").Str(st.Hash).Key("part").Str(st.Part);
+                if (st.Solid is { } k) w.Key("solid").Int(k);
                 break;
         }
         w.End();

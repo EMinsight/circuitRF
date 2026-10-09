@@ -123,6 +123,7 @@
 #include <TopLoc_Location.hxx>
 #include <XCAFDoc_DimTolTool.hxx>
 #include <XSControl_Reader.hxx>
+#include <ShapeBuild_ReShape.hxx>
 #include <ShapeFix_Shape.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <Standard_ErrorHandler.hxx>
@@ -237,6 +238,9 @@ using Ancestors = NCollection_IndexedDataMap<TopoDS_Shape, NCollection_List<Topo
 static FILE* g_proto = stdout;
 
 static bool g_testOps = false;
+// Every STEP file read since the worker started (import-step and each build's per-file cache miss), reported by
+// hello so a test can count reads rather than time them (brief 127 R-em3d127-1d).
+static long long g_stepReads = 0;
 
 // ------------------------------------------------------------------------------------------------
 // JSON -- just enough to read a request and write a response
@@ -1593,7 +1597,7 @@ static Frame OpHello(const Json& req)
   r.j.Key("modules").BeginArr();
   for (const char* m : kModules) r.j.Str(m);
   r.j.EndArr();
-  r.j.Bool("test_ops", g_testOps);
+  r.j.Bool("test_ops", g_testOps).Int("step_reads", g_stepReads);
   return r.Finish();
 }
 
@@ -2450,6 +2454,22 @@ static Frame OpWriteStep(const Json& req, const std::map<std::string, std::strin
 // SI unit and for the inch. A unit the reader cannot resolve is a refusal naming what the file says (R-em3d68-2b),
 // never OCCT's silent default -- it would read an unknown unit as a millimetre.
 
+// One solid of a part (brief 127), in TopExp_Explorer(part, TopAbs_SOLID) order after healing: what a Step node's
+// "solid": k names, and what the import's table lists per row.
+struct ReadSolid
+{
+  TopoDS_Shape shape;
+  std::string name;      // the solid's own XCAF name, when the file gives one
+  bool hasColor = false;
+  bool mixed = false;    // no colour because its faces disagree (overview D6), not because nothing is coloured
+  double rgb[3] = {0, 0, 0};
+  bool closed = false;
+  std::string why;
+  int faces = 0;
+  double volume = 0;     // um^3
+  Box6 box{};            // um
+};
+
 struct ReadPart
 {
   std::string name, path;
@@ -2459,9 +2479,11 @@ struct ReadPart
   bool closed = false;   // a closed solid after healing: what a Step object may be
   std::string why;       // why it is not, when it is not
   std::string healing;   // what healing changed, when it ran
+  std::vector<ReadSolid> solids;
 };
 
 struct FileUnit { std::string name; double um = 0; };
+
 
 struct StepRead
 {
@@ -2541,7 +2563,7 @@ static std::vector<FileUnit> LengthUnits(STEPCAFControl_Reader& rd)
 
 // A part's shape, healed only when it fails the validity check: ShapeFix reports "done" for the tolerance touch-ups
 // every translated file needs, which would make every report say every part was repaired. Returns what changed.
-static std::string Heal(TopoDS_Shape& shape)
+static std::string Heal(TopoDS_Shape& shape, occ::handle<ShapeBuild_ReShape>* context = nullptr)
 {
   if (Valid(shape)) return "";
   ShapeAnalysis_ShapeTolerance tol;
@@ -2550,6 +2572,7 @@ static std::string Heal(TopoDS_Shape& shape)
   ShapeFix_Shape fix(shape);
   fix.Perform();
   shape = fix.Shape();
+  if (context != nullptr) *context = fix.Context();
   std::vector<std::string> did;
   static const std::pair<ShapeExtend_Status, const char*> kinds[] = {
     {ShapeExtend_DONE1, "edges"}, {ShapeExtend_DONE2, "wires"}, {ShapeExtend_DONE3, "faces"},
@@ -2586,6 +2609,62 @@ static bool ClosedSolid(const TopoDS_Shape& s, std::string& why)
   return true;
 }
 
+// A label's colour, surface first, in the file's sRGB.
+static bool LabelColour(const occ::handle<XCAFDoc_ColorTool>& ct, const TDF_Label& l, double rgb[3])
+{
+  Quantity_Color c;
+  for (XCAFDoc_ColorType ty : {XCAFDoc_ColorSurf, XCAFDoc_ColorGen, XCAFDoc_ColorCurv})
+    if (ct->GetColor(l, ty, c)) { c.Values(rgb[0], rgb[1], rgb[2], Quantity_TOC_sRGB); return true; }
+  return false;
+}
+
+static bool SameColour(const double a[3], const double b[3])
+{
+  return std::abs(a[0] - b[0]) <= 1e-9 && std::abs(a[1] - b[1]) <= 1e-9 && std::abs(a[2] - b[2]) <= 1e-9;
+}
+
+// One solid's name and colour, looked up on the part's shape AS READ (`ref`'s, before it is located or healed: the
+// sub-shape labels the reader made are keyed by those shapes). The colour is overview D6's, in its order: the solid's
+// own; else the colour every face shares, a face with none counting as the part's; else the part's when no face
+// carries one; else none -- marked mixed when the faces disagree. Never the colour covering most area.
+static void DescribeSolid(const occ::handle<XCAFDoc_ShapeTool>& st, const occ::handle<XCAFDoc_ColorTool>& ct, const TDF_Label& ref,
+                          const TopoDS_Shape& solid, const ReadPart& part, ReadSolid& out)
+{
+  TDF_Label l;
+  bool labelled = st->FindSubShape(ref, solid, l);
+  if (labelled)
+  {
+    occ::handle<TDataStd_Name> nm;
+    if (l.FindAttribute(TDataStd_Name::GetID(), nm)) out.name = TCollection_AsciiString(nm->Get()).ToCString();
+    if (LabelColour(ct, l, out.rgb)) { out.hasColor = true; return; }
+  }
+  bool anyFace = false, agree = true, first = true;
+  double shared[3] = {0, 0, 0};
+  Shapes faces;
+  TopExp::MapShapes(solid, TopAbs_FACE, faces);
+  for (int k = 1; k <= faces.Extent(); ++k)
+  {
+    double rgb[3];
+    TDF_Label fl;
+    bool has = st->FindSubShape(ref, faces(k), fl) && LabelColour(ct, fl, rgb);
+    anyFace = anyFace || has;
+    if (!has)
+    {
+      if (!part.hasColor) { agree = false; continue; }
+      std::copy(part.rgb, part.rgb + 3, rgb);
+    }
+    if (first) { std::copy(rgb, rgb + 3, shared); first = false; }
+    else if (!SameColour(rgb, shared)) agree = false;
+  }
+  if (!anyFace)
+  {
+    if (part.hasColor) { out.hasColor = true; std::copy(part.rgb, part.rgb + 3, out.rgb); }
+    return;
+  }
+  if (agree && !first) { out.hasColor = true; std::copy(shared, shared + 3, out.rgb); return; }
+  out.mixed = true;
+}
+
 // Walks the assembly tree, composing each occurrence's location with its parents' so a part in a sub-assembly lands
 // where the whole file puts it. The occurrence path is the component index at each level, from 1.
 static void Collect(const occ::handle<XCAFDoc_ShapeTool>& st, const occ::handle<XCAFDoc_ColorTool>& ct, const TDF_Label& l,
@@ -2610,12 +2689,47 @@ static void Collect(const occ::handle<XCAFDoc_ShapeTool>& st, const occ::handle<
   for (TDF_Label q : {l, ref})
     for (XCAFDoc_ColorType ty : {XCAFDoc_ColorSurf, XCAFDoc_ColorGen, XCAFDoc_ColorCurv})
       if (!p.hasColor && ct->GetColor(q, ty, c)) { p.hasColor = true; c.Values(p.rgb[0], p.rgb[1], p.rgb[2], Quantity_TOC_sRGB); }
-  p.shape = XCAFDoc_ShapeTool::GetShape(ref).Moved(here);
+  TopoDS_Shape asRead = XCAFDoc_ShapeTool::GetShape(ref);
+  p.shape = asRead.Moved(here);
   // sRGB: the file's own COLOUR_RGB numbers, which is what a material's #rrggbb is compared with (brief 69 found the reader
   // returning OCCT's LINEAR values, so a colour written by any other tool never matched by colour).
   if (!p.hasColor && ct->GetColor(p.shape, XCAFDoc_ColorSurf, c)) { p.hasColor = true; c.Values(p.rgb[0], p.rgb[1], p.rgb[2], Quantity_TOC_sRGB); }
-  p.healing = Heal(p.shape);
+
+  // brief 127: each solid's name and colour, from the shape as read, in its own solid order.
+  std::vector<ReadSolid> described;
+  std::vector<TopoDS_Shape> located;
+  TopExp_Explorer moved(p.shape, TopAbs_SOLID);
+  for (TopExp_Explorer x(asRead, TopAbs_SOLID); x.More(); x.Next(), moved.Next())
+  {
+    ReadSolid d;
+    DescribeSolid(st, ct, ref, x.Current(), p, d);
+    described.push_back(d);
+    located.push_back(moved.Current());
+  }
+
+  occ::handle<ShapeBuild_ReShape> context;
+  p.healing = Heal(p.shape, &context);
   p.closed = ClosedSolid(p.shape, p.why);
+
+  // The solids after healing, which is the order "solid": k counts in. Healing that kept the count kept the order (it
+  // rebuilds a compound in place); one that did not is followed through its own record of what replaced what.
+  std::vector<TopoDS_Shape> healed;
+  for (TopExp_Explorer x(p.shape, TopAbs_SOLID); x.More(); x.Next()) healed.push_back(x.Current());
+  for (size_t k = 0; k < healed.size(); ++k)
+  {
+    ReadSolid s;
+    int from = healed.size() == described.size() ? static_cast<int>(k) : -1;
+    if (from < 0 && !context.IsNull())
+      for (size_t i = 0; i < located.size() && from < 0; ++i)
+        if (context->Value(located[i]).IsSame(healed[k])) from = static_cast<int>(i);
+    if (from >= 0) s = described[from];
+    s.shape = healed[k];
+    s.closed = ClosedSolid(s.shape, s.why);
+    s.faces = Count(s.shape).faces;
+    s.volume = Volume(s.shape);
+    s.box = Tight(s.shape);
+    p.solids.push_back(s);
+  }
   out.push_back(p);
 }
 
@@ -2633,8 +2747,12 @@ static StepRead ReadStep(const std::string* bytes, const std::string* path)
     status = rd.ReadStream("import.step", is);
   }
   else status = rd.ReadFile(path->c_str());
+  ++g_stepReads;
   std::string what = path != nullptr ? "'" + *path + "'" : "the file";
   if (status != IFSelect_RetDone) throw Refuse{"import.failed", "", what + " is not a STEP file the reader can read"};
+  // brief 127: a solid's own name (MANIFOLD_SOLID_BREP('name',...)) lands on its sub-shape label. Off by default in OCCT;
+  // it adds labels and names only, never changes a shape.
+  if (occ::handle<StepData_StepModel> m = rd.ChangeReader().StepModel(); !m.IsNull()) m->InternalParameters.ReadSubshapeNames = true;
 
   StepRead out;
   out.units = LengthUnits(rd);
@@ -2722,8 +2840,28 @@ static Frame OpImportStep(const Json& req, const std::map<std::string, std::stri
     r.j.Key("colour");
     if (p.hasColor) r.j.BeginArr().Num(p.rgb[0]).Num(p.rgb[1]).Num(p.rgb[2]).EndArr();
     else r.j.Null();
-    r.j.Int("solids", c.solids).Int("faces", c.faces).Bool("valid", Valid(p.shape)).Bool("closed", p.closed).Str("why", p.why)
-       .Str("healing", p.healing).Int("triangles", triangles).End();
+    r.j.Int("faces", c.faces).Bool("valid", Valid(p.shape)).Bool("closed", p.closed).Str("why", p.why)
+       .Str("healing", p.healing).Int("triangles", triangles);
+    // brief 127: each solid, as "solid": k would build it. Its length is the part's solid count (Count's own explorer).
+    r.j.Key("solids").BeginArr();
+    for (const ReadSolid& s : p.solids)
+    {
+      long long st = 0;
+      if (displayRel > 0 && s.faces > 0)
+      {
+        const Box6& b = s.box;
+        double diag = std::sqrt((b.x1 - b.x0) * (b.x1 - b.x0) + (b.y1 - b.y0) * (b.y1 - b.y0) + (b.z1 - b.z0) * (b.z1 - b.z0));
+        st = static_cast<long long>(Tessellate(s.shape, std::max(diag * displayRel, 1e-3), 0.5).faceOfTri.size());
+      }
+      r.j.Begin().Str("name", s.name).Key("colour");
+      if (s.hasColor) r.j.BeginArr().Num(s.rgb[0]).Num(s.rgb[1]).Num(s.rgb[2]).EndArr();
+      else r.j.Null();
+      r.j.Bool("mixed", s.mixed).Int("faces", s.faces).Bool("closed", s.closed).Str("why", s.why).Num("volume_um3", s.volume);
+      r.j.Key("box_um").BeginArr().Num(s.box.x0).Num(s.box.y0).Num(s.box.z0).Num(s.box.x1).Num(s.box.y1).Num(s.box.z1).EndArr();
+      r.j.Int("triangles", st).End();
+    }
+    r.j.EndArr();
+    r.j.End();
   }
   r.j.EndArr();
   r.j.Key("healing").BeginArr();
@@ -2751,6 +2889,14 @@ static Named BuildStep(const NodeReader& r)
   if (part.kind != Json::String || part.text.empty()) r.Bad("\"part\" is not an occurrence path");
   std::string hash;
   if (const Json* h = r.node.Get("hash"); h && h->kind == Json::String) hash = h->text;
+  // brief 127: "solid": k, 1-based in the part's solid order after healing; absent for the whole part.
+  long long solid = 0;
+  if (const Json* sv = r.node.Get("solid"))
+  {
+    if (!NodeReader::IsNum(*sv) || sv->number < 1 || sv->number != std::floor(sv->number) || sv->number > 1e9)
+      r.Bad("\"solid\" is not a whole number of at least 1");
+    solid = static_cast<long long>(sv->number);
+  }
   std::string key = file.text + "\n" + hash;
   auto it = g_stepFiles.find(key);
   if (it == g_stepFiles.end())
@@ -2768,6 +2914,22 @@ static Named BuildStep(const NodeReader& r)
   for (const ReadPart& p : it->second.parts)
   {
     if (p.path != part.text) continue;
+    if (solid > 0)
+    {
+      size_t n = p.solids.size();
+      if (static_cast<size_t>(solid) > n)
+        r.Bad("the part has " + std::to_string(n) + (n == 1 ? " solid" : " solids") + "; there is no solid " + std::to_string(solid));
+      const ReadSolid& s = p.solids[solid - 1];
+      std::string which = "solid " + std::to_string(solid) + " of part " + part.text;
+      if (!s.closed) r.Bad(which + " is not a closed solid: " + s.why);
+      if (!p.healing.empty()) g_buildNotes.push_back("part " + part.text + ", solid " + std::to_string(solid) + ": " + p.healing);
+      // Faces are face<n> in THIS solid's own topological order (R-em3d68-1e, applied to the solid).
+      Named n1{s.shape, {}, gp_Trsf()};
+      Shapes faces;
+      TopExp::MapShapes(s.shape, TopAbs_FACE, faces);
+      for (int k = 1; k <= faces.Extent(); ++k) n1.faces.push_back({faces(k), "face" + std::to_string(k)});
+      return n1;
+    }
     if (!p.closed) r.Bad("part " + part.text + " of the file is not a closed solid: " + p.why);
     if (!p.healing.empty()) g_buildNotes.push_back("part " + part.text + ": " + p.healing);
     // Faces are face<n> in the part's own topological order (brief 68 R-em3d68-1e), as import-step names them.

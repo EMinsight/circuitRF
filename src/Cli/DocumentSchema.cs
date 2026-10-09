@@ -826,8 +826,11 @@ internal static class DocumentSchema
                 { "$type": "Chamfer", "Name": "pin", "Distance": 20000, "Edges": ["side|top"],
                   "Target": { "$type": "Cylinder", … } }
                 { "$type": "Step", "Name": "shell", "Material": "Brass", "File": "sma-body.step",
-                  "Part": "1/2", "Hash": "sha256:…", "Unit": "inch",
+                  "Part": "1/2", "Solid": 3, "Hash": "sha256:…", "Unit": "inch",
                   "SourcePath": "../../incoming/sma-body.step" }
+
+            "Solid" (optional, from 1) is one solid of a Part that holds several, in the reader's order;
+            without it the object is the whole Part.
 
             THE WRAPPER TAKES THE NAME: a Boolean is its Blank to the rest of the document, a Fillet or
             Chamfer its Target — the object inside has NO Name (writing one is a check error), and its
