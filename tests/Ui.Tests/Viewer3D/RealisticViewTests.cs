@@ -97,13 +97,17 @@ public sealed class RealisticViewTests : IDisposable
     {
         var (scene, view, mesh) = Fixture();
         var plain = Draws(Plan(scene, view, mesh));
-        foreach (var (row, _) in RealisticLook.Chrome)                                     // the fixture has every row
+        // the fixture has every row but Edges: its only scene lines outside a chrome row were a wireframe's, which are its body
+        foreach (var (row, _) in RealisticLook.Chrome.Where(c => c.Row != Scene3DChrome.Edges))
             Assert.True(plain.Any(d => Scene3DFramePlan.ChromeOf(scene, d) == row),
                         $"{row} missing; drawn: {string.Join(", ", plain.Select(d => $"{d.Pipeline}:{d.Buffer}:{d.Object}:{Scene3DFramePlan.ChromeOf(scene, d)}"))}");
 
         Realistic(view);
         var bare = Draws(Plan(scene, view, mesh));
         Assert.Empty(bare.Where(d => Scene3DFramePlan.ChromeOf(scene, d) is not null));
+        // A wireframe object (no material) IS its edges: they are drawn with the Edges row off, or it is invisible but for hover.
+        foreach (var o in scene.Objects.Where(o => o.Wireframe))
+            Assert.Contains(bare, d => d.Object == o.Id && d.Pipeline == Scene3DPipeline.Lines && d.Buffer == Scene3DBuffer.SceneLines);
         foreach (var o in scene.Objects.Where(o => Scene3DFramePlan.ChromeOfObject(scene, o) is null && o.AppearanceSlot >= 0 && !o.Wireframe && o.Element < 0))
             Assert.True(bare.Any(d => d.Object == o.Id && d.Pipeline is Scene3DPipeline.Pbr or Scene3DPipeline.PbrTranslucent),
                         $"{o.Name} ({o.Kind}): {string.Join(", ", bare.Where(d => d.Object == o.Id).Select(d => d.Pipeline))}; batches " +

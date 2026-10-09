@@ -5053,3 +5053,21 @@ which decides what to plot on `ResultContributions.CornerOf(ds, k)` and pins `co
 - **A corner run without MC wrote an EMPTY display** (no `trials` group, `Compose` returned nothing, the file was
   written anyway). The panel now disables the button with the reason, and the workspace refuses by name as a backstop.
 Gate: `tests/Ui.Tests/Statistics/CornerYieldDisplayTests.cs`.
+
+## A material-less STEP part was invisible in the realistic view, but for its hover highlight (2026-10-09)
+
+Reported against an imported STEP part with no material: it seemed to vanish and reappear while zooming and panning. The
+camera, depth range and geometry were all sound (a scratch harness compared the part's stored bounds against its
+tessellation: identical). What came and went was the **hover highlight**: wheel-zoom and pan move the part under and off
+the cursor. With hover gone, the part was invisible, and only in the realistic view.
+
+A material-less object is a WIREFRAME (3D editor bugs round 1): faces at alpha 0, its edges as `SceneLines` in the ink.
+The realistic view classified every `SceneLines` batch outside a chrome row as the **Edges** row, which `ShowEdges`
+shows and which is OFF by default. So the realistic view hid the wireframe's entire drawing. This is round 2's "only its
+hover highlight showed" again, in the second colour pass. `ColourRealistic` now always draws a wireframe object's
+line batches, and `ChromeOf` no longer calls them Edges.
+
+**Consequence worth knowing:** those were the only scene lines outside a chrome row (a solid's feature edges are
+`EdgeBatches`, drawn only as the hover/selection outline). So `ShowEdges` currently brings back nothing.
+`RealisticViewTests.Gate1` no longer requires an Edges draw from its fixture. It still asserts that the key adds
+exactly the Edges row's draws, which is now none, and that a wireframe's lines are in the bare realistic frame.

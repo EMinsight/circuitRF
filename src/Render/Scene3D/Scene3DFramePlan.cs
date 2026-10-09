@@ -648,13 +648,14 @@ public sealed class Scene3DFramePlan
     }
 
     /// <summary>The chrome row draw <paramref name="d"/> belongs to — null for a material's, a field's or an element's box. A scene line
-    /// batch of an object in no other row is an <see cref="Scene3DChrome.Edges"/> draw.</summary>
+    /// batch of an object in no other row is an <see cref="Scene3DChrome.Edges"/> draw — except a wireframe object's, whose edges are
+    /// its whole drawing and not chrome.</summary>
     public static Scene3DChrome? ChromeOf(Scene3DModel scene, in Scene3DDraw d)
     {
         if (d.Pipeline == Scene3DPipeline.Grid) return Scene3DChrome.Grid;
         if (d.Buffer is Scene3DBuffer.Overlay0 or Scene3DBuffer.Overlay1 or Scene3DBuffer.Overlay2) return Scene3DChrome.Overlays;
         if (d.Pipeline is Scene3DPipeline.Edges or Scene3DPipeline.OnTop || scene.Object(d.Object) is not { } o) return null;
-        return ChromeOfObject(scene, o) ?? (d.Buffer == Scene3DBuffer.SceneLines ? Scene3DChrome.Edges : null);
+        return ChromeOfObject(scene, o) ?? (d.Buffer == Scene3DBuffer.SceneLines && !o.Wireframe ? Scene3DChrome.Edges : null);
     }
 
     private void SizeRealistic(Scene3DModel scene)
@@ -666,7 +667,7 @@ public sealed class Scene3DFramePlan
         {
             var o = scene.Objects[k];
             var row = ChromeOfObject(scene, o);
-            // A wireframe object has no material: it is drawn as the default view draws it (its edges are the Edges row's).
+            // A wireframe object has no material: it is drawn as the default view draws it, its edges always (they are all it is).
             _chromeOf[k] = row is { } r ? (sbyte)r
                          : !o.Wireframe && o.AppearanceSlot >= 0 && o.AppearanceSlot < scene.Appearances.Length ? Material : Unlooked;
             if (_chromeOf[k] != Material) continue;
@@ -728,9 +729,12 @@ public sealed class Scene3DFramePlan
                 }
         // brief-em3d-107 R-em3d107-3 — the ground, after everything opaque (which hides it) and before anything translucent
         if (GroundDrawn) Add(ref Draws, ref DrawCount, Scene3DPipeline.Ground, Scene3DBuffer.None, 0, 6);
+        // A wireframe object (no material) is drawn as its edges ALONE — its faces are alpha 0 — so they are its body, not the Edges
+        // row: hidden with that row, an imported part with no material vanished but for its hover highlight.
         bool edges = look.Shows(Scene3DChrome.Edges);
         foreach (var lb in scene.LineBatches)
-            if (view.IsVisible(lb.ObjectId) && (_chromeOf[lb.ObjectId - 1] >= 0 ? Shows(view, lb.ObjectId) : edges))
+            if (view.IsVisible(lb.ObjectId)
+                && (_chromeOf[lb.ObjectId - 1] >= 0 ? Shows(view, lb.ObjectId) : edges || scene.Objects[lb.ObjectId - 1].Wireframe))
                 AddMoved(preview, lb.ObjectId, Scene3DPipeline.Lines, Scene3DBuffer.SceneLines, lb.FirstVertex, lb.VertexCount, identity: true);
         // an element over the triangle budget stands in for geometry, not chrome: its box is drawn as the default view draws it
         if (LodBoxedElements > 0)
