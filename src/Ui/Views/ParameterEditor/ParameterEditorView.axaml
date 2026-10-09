@@ -34,10 +34,22 @@
               Margin="6,6,6,4">
             <TextBlock Grid.Column="0"
                        Text="{Binding TypeDisplayName}"
+                       IsVisible="{Binding !IsLineSwapTarget}"
                        FontWeight="SemiBold"
                        FontSize="13"
                        VerticalAlignment="Center"
                        Margin="0,0,8,0"/>
+            <!-- brief-artsch-11 R-as11-5: a line's type is a choice among the four line types, and choosing
+                 one swaps it in place (W and L held). The rows are a STATIC list, assigned at load and never
+                 replaced, so the selection never arrives before its items. -->
+            <ComboBox Grid.Column="0"
+                      IsVisible="{Binding IsLineSwapTarget}"
+                      ItemsSource="{x:Static vm:ParameterEditorViewModel.LineTypeOptions}"
+                      SelectedIndex="{Binding LineTypeIndex}"
+                      FontSize="12"
+                      VerticalAlignment="Center"
+                      Margin="0,0,8,0"
+                      ToolTip.Tip="Swap Line Type: the same width and length on another line model."/>
             <TextBox Grid.Column="1"
                      x:Name="InstanceNameBox"
                      Text="{Binding StagedInstanceName}"

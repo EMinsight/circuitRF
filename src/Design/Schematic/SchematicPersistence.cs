@@ -194,6 +194,9 @@ public sealed class CschComponent
 
     /// <summary>What was measured off the artwork, name → SI value; absent when empty.</summary>
     public SortedDictionary<string, double>? ArtworkMeasured { get; set; }
+
+    /// <summary>What a line-type swap set aside, name → [expression, unit] (AS-11); absent when empty.</summary>
+    public SortedDictionary<string, string[]>? SwapRemembered { get; set; }
 }
 
 public sealed class CschParameter
@@ -572,6 +575,9 @@ public static class SchematicPersistence
             if (c.FromArtwork) cc.FromArtwork = true;
             if (c.ArtworkAnchor.Count > 0) cc.ArtworkAnchor = [.. c.ArtworkAnchor.Select(p => new[] { p.X, p.Y })];
             if (c.ArtworkMeasured.Count > 0) cc.ArtworkMeasured = new(c.ArtworkMeasured, StringComparer.Ordinal);
+            if (c.SwapRemembered.Count > 0)
+                cc.SwapRemembered = new(c.SwapRemembered.ToDictionary(kv => kv.Key, kv => new[] { kv.Value.Expression, kv.Value.Unit }),
+                                        StringComparer.Ordinal);
             file.Components.Add(cc);
         }
 
@@ -667,6 +673,9 @@ public static class SchematicPersistence
                     if (pt.Length >= 2) c.ArtworkAnchor.Add((pt[0], pt[1]));
             if (cc.ArtworkMeasured is not null)
                 foreach (var (k, v) in cc.ArtworkMeasured) c.ArtworkMeasured[k] = v;
+            if (cc.SwapRemembered is not null)
+                foreach (var (k, v) in cc.SwapRemembered)
+                    if (v is { Length: >= 1 }) c.SwapRemembered[k] = new RememberedParameter(v[0], v.Length >= 2 ? v[1] : "");
             m.Components.Add(c);
         }
 

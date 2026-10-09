@@ -496,6 +496,21 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
+                        <!-- brief-artsch-11 R-as11-5: a line component only (MLIN, CPWG, SLIN, TLIN), hidden for
+                             every other. Acts on every selected line when the clicked one is selected; the type
+                             they all already are is disabled. -->
+                        <MenuItem x:Name="CtxSwapLineType"
+                                  Header="Swap Line Type"
+                                  IsVisible="False">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="SwapHorizontal" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                            <MenuItem x:Name="CtxSwapToMlin" Header="Microstrip (MLIN)" Tag="Mlin" Click="OnCtxSwapLineType"/>
+                            <MenuItem x:Name="CtxSwapToCpwg" Header="Grounded Coplanar (CPWG)" Tag="Cpwg" Click="OnCtxSwapLineType"/>
+                            <MenuItem x:Name="CtxSwapToSlin" Header="Stripline (SLIN)" Tag="Slin" Click="OnCtxSwapLineType"/>
+                            <MenuItem x:Name="CtxSwapToTlin" Header="Ideal Line (TLIN)" Tag="Tline" Click="OnCtxSwapLineType"/>
+                        </MenuItem>
+
                         <!-- Re-reference Cell… — a BROKEN cell instance only, and hidden otherwise.
                              There is nothing to re-reference on an instance that resolves, and a
                              permanently greyed row on every component's menu would be clutter. -->

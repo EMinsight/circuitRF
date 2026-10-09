@@ -677,6 +677,12 @@ public sealed class EditableComponent
     /// Line Type (AS-11) reads it. Persisted, never elaborated.</summary>
     public SortedDictionary<string, double> ArtworkMeasured { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>What Swap Line Type (AS-11, <see cref="LineTypeSwap"/>) set aside because the new line type has no
+    /// such parameter — a CPWG's <c>G</c> on a swap to MLIN, a TLIN's <c>Z</c>, a layer choice — kept WHOLE (the
+    /// expression and its unit as written), so swapping back restores the row exactly. Persisted, never
+    /// elaborated; empty on anything never swapped.</summary>
+    public SortedDictionary<string, RememberedParameter> SwapRemembered { get; } = new(StringComparer.Ordinal);
+
     /// <summary>True when port <paramref name="portIndex"/> is explicitly detached.</summary>
     public bool IsPortDetached(int portIndex) => DetachedPorts.Contains(portIndex);
     /// <summary>Per-label world-offset from default position. Index matches Labels list (0=type,1=name,2+=params).</summary>

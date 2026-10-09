@@ -47,5 +47,6 @@ public sealed partial class ParameterEditorViewModel
         OnPropertyChanged(nameof(TlinUsesPhysicalEntry));
         OnPropertyChanged(nameof(TlinEntryToggleLabel));
         ToggleTlinEntryCommand.NotifyCanExecuteChanged();
+        NotifyLineSwapState();
     }
 }

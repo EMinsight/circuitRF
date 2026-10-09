@@ -18795,3 +18795,17 @@ import classes, the footprint designator classes) compares two outputs of the SA
 data regenerated. Changed for D1 instead: `LayoutLabelFixAndTextFlattenTests` (its hole/nesting gates are about the
 TrueType pipeline, so their labels now say `Font = Sans`) and `GerberExportTests`' label gate (a stroke label and a Sans
 label, counted separately).
+
+## AS-11 Swap Line Type — two places the brief's letter was not followed (2026-10-08)
+
+**What a swap sets aside is kept WHOLE, in a new `SwapRemembered` field, not as numbers in `ArtworkMeasured` under a
+`Swap.` prefix.** `ArtworkMeasured` holds doubles, and three things a swap must keep are not one: a layer choice (an
+MLIN's `SignalLayer` is a name, and a recognised MLIN always states one — MLIN → TLIN → MLIN would lose it), an
+expression (`G = Gap`), and the unit as spelt (`Z` in `Ohm` from recognition vs the editor's `Ω` — restoring a number
+in a default unit changes the text, so the round trip is no longer the identity the brief gates on). The field is
+additive and optional in the `.csch`; `ArtworkMeasured` is carried untouched.
+
+**A remembered G wins over the measured gap**, where the brief's table lists measured first. Remembered exists only
+when the swap back would NOT have derived the same text (the inverse-swap rule, design note §10.2) — i.e. only when
+the user changed G away from the measured value. Measured-first would discard that edit on CPWG → MLIN → CPWG; with
+remembered-first, the measured gap is still what is used whenever nothing else was said.

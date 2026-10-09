@@ -263,16 +263,7 @@ public partial class ParameterEditorViewModel
     /// <summary>The highest frequency the schematic's S-parameter analyses sweep, or 0 when there is none
     /// (or none that evaluates without the design's variables) — the readout is then the static line.</summary>
     private double BenchTopFrequencyHz()
-    {
-        double top = 0;
-        foreach (var a in _schematicVm?.EditModel.Analyses ?? [])
-        {
-            if (a is not SParameterAnalysis sp) continue;
-            try { foreach (double f in sp.Expand()) if (f > top && double.IsFinite(f)) top = f; }
-            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or KeyNotFoundException or FormatException) { }
-        }
-        return top;
-    }
+        => _schematicVm is { } svm ? LineTypeSwap.BenchTopFrequencyHz(svm.EditModel) : 0;
 
     private static string FormatGhz(double hz) => (hz / 1e9).ToString("0.###", CultureInfo.InvariantCulture) + " GHz";
 

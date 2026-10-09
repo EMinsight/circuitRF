@@ -184,6 +184,7 @@ public partial class SchematicView : UserControl
             _subscribedVm.PropertyChanged   -= OnViewModelPropertyChanged;
             _subscribedVm.Selection.Changed -= OnSelectionChanged;
             _subscribedVm.AutoGenSymbolCallback = null;
+            _subscribedVm.AskCpwgGap = null;
             _subscribedVm = null;
         }
 
@@ -193,6 +194,7 @@ public partial class SchematicView : UserControl
         if (vm is not null)
         {
             _subscribedVm = vm;
+            vm.AskCpwgGap = AskCpwgGapAsync;
             vm.PropertyChanged   += OnViewModelPropertyChanged;
             vm.Selection.Changed += OnSelectionChanged;
             vm.AutoGenSymbolCallback = ShowAutoGenPromptAsync;
@@ -637,6 +639,16 @@ public partial class SchematicView : UserControl
         CtxOpenInNewTab.IsVisible = isCell;
         CtxShowInArtwork.IsVisible = CircuitRF.Ui.Recognition.ArtworkCrossProbe.Offers(comp);
 
+        // Swap Line Type: on a line, for every selected line when the clicked one is selected.
+        var swapTargets = Vm?.LineSwapTargets(id) ?? [];
+        CtxSwapLineType.IsVisible = swapTargets.Count > 0;
+        foreach (var (item, kind) in new[]
+                 {
+                     (CtxSwapToMlin, SymbolKind.Mlin), (CtxSwapToCpwg, SymbolKind.Cpwg),
+                     (CtxSwapToSlin, SymbolKind.Slin), (CtxSwapToTlin, SymbolKind.Tline),
+                 })
+            item.IsEnabled = swapTargets.Any(t => t.Symbol != kind);
+
         // Re-reference — only for an instance whose cell reference does not resolve, and only for a
         // reference that NAMES A FOLDER: a kit part or a wBond also reads NotFound, and pointing at a
         // cell folder is not the repair for either (CellReferenceRepair.IsRepairable is the one place
@@ -793,6 +805,33 @@ public partial class SchematicView : UserControl
         var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
         if (comp is null) return;
         doc.Hierarchy?.ShowInArtwork(doc, comp);
+    }
+
+    /// <summary>Context menu ▸ Swap Line Type ▸ a type (brief-artsch-11). The swap, its one undo step and its
+    /// report are the view model's; a CPWG with no gap to keep asks for one here.</summary>
+    private async void OnCtxSwapLineType(object? sender, RoutedEventArgs e)
+    {
+        if (Vm is not { } vm || sender is not MenuItem { Tag: string tag } || !Enum.TryParse<SymbolKind>(tag, out var kind)) return;
+        var targets = vm.LineSwapTargets(SchematicCanvasCtrl.ContextMenuTargetId);
+        if (targets.Count == 0) return;
+        await vm.SwapLineTypeAsync(targets, kind);
+        SchematicCanvasCtrl.InvalidateVisual();
+    }
+
+    /// <summary>The gap for CPWG lines that have none measured or remembered, metres; null on cancel.</summary>
+    private async Task<double?> AskCpwgGapAsync(IReadOnlyList<string> lines)
+    {
+        if (TopLevel.GetTopLevel(this) is not Window owner || Vm is null) return null;
+        var unit = MicrostripSubstrateInjection.LengthUnitFor(SchematicTechnology.Of(Vm.EditModel)) switch
+        {
+            "mil" => CircuitRF.WBond.WBondUnit.Mil,
+            "um" or "µm" => CircuitRF.WBond.WBondUnit.Um,
+            _ => CircuitRF.WBond.WBondUnit.Mm,
+        };
+        string who = lines.Count == 1 ? lines[0] : $"{lines.Count} lines ({string.Join(", ", lines)})";
+        long? nm = await Dialogs.WBondValuePromptDialog.PromptLengthAsync(
+            owner, "Swap Line Type", $"Gap from the strip to the coplanar ground for {who}:", 250_000, unit);
+        return nm is { } v && v > 0 ? v * 1e-9 : null;
     }
 
     private void OnCtxOpenInNewTab(object? sender, RoutedEventArgs e)

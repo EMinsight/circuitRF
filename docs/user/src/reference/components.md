@@ -680,6 +680,32 @@ Z0 typed there sets `W`.
 
 {{table: components/Slin}}
 
+### Swapping one line type for another {#swap-line-type}
+
+Right-click a TLIN, MLIN, CPWG or SLIN and choose **Swap Line Type** to turn it into one of the others in
+place, or choose the type from the type field at the top of its parameters dialog. With several lines
+selected, the context menu swaps all of them as one undo step; a line that cannot be swapped is named in
+**Messages** and the rest still swap.
+
+The instance name, its wiring and its position stay the same, and so do `W` and `L` &mdash; the impedance
+follows from the new line type, and the parameters dialog shows it.
+
+- **To CPWG**, the gap is the one measured off the artwork when the line came from
+  [Create Schematic from Artwork](artwork-to-schematic.html); otherwise the line's earlier `G`, if it had one;
+  otherwise you are asked for it.
+- **To TLIN**, `Z` and `Eeff` are what the old line has at the top frequency of the schematic's S-parameter
+  sweep, with its loss as `Ac` and `Ad`; the TLIN is in its physical form.
+- **From TLIN**, `W` is the line's earlier width when it had one, and otherwise the width that gives `Z` at
+  that frequency (Messages says when it was worked out this way). An electrical-form TLIN's `E` becomes a
+  length.
+- **To SLIN**, the signal layer needs a plane above and below it; on any other layer the swap is refused and
+  the line is left as it was.
+
+Nothing is lost: a parameter the new type does not have (CPWG's `G`, a TLIN's `Z`, a layer choice) is kept
+with the component, so swapping straight back gives the original line exactly. Each type takes its substrate
+from the technology. An MBEND, MTEE, MCROSS or MTAPER next to a swapped line stays a microstrip
+discontinuity, and Messages says so.
+
 ### Microstrip Bend (MBEND) {#mbend}
 
 {{symbol: mbend}}

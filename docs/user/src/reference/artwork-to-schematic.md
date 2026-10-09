@@ -148,6 +148,10 @@ Not modelled: coupled lines (a close parallel pair is reported as modelled uncou
 discontinuities, case-size parasitics, curved tapers (they become `MTAPER` or stepped lines), and the pads
 themselves &mdash; a line ends at the pad's edge. Nothing is ever written to the layout.
 
+A line read as the wrong type &mdash; a top-side pour close to a microstrip can make it read as `CPWG` &mdash; is
+one [**Swap Line Type**](components.html#swap-line-type) away: the width and length are kept, and a swap to
+`CPWG` takes the gap measured off the board.
+
 ## A board with an IC on it {#ic}
 
 An IC, or any part with more than two pads, is not modelled. Each of its pads that meets an RF line becomes a

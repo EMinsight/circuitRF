@@ -309,7 +309,7 @@ public static class LineCalculator
 
     /// <summary>The <paramref name="component"/> line of width <paramref name="wM"/> on the injected
     /// substrate, ELABORATED — the model a run stamps, asked for its line parameters.</summary>
-    private static (LineCalcModel? Model, string? Refusal) ModelAt(
+    internal static (LineCalcModel? Model, string? Refusal) ModelAt(
         string component, double wM, double? gapM, IReadOnlyList<ParameterAssignment> substrate, double? freqHz)
     {
         var tb = new TestBench("line");

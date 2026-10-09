@@ -584,3 +584,43 @@ placed footprints and the placement file.
 `StrokeGlyphTests`, `RefdesAssociationTests`, `SilkscreenFieldTests` (`FixtureFact`; expected.json gains
 `"silkscreen": [{refdes, x, y}]` in mm and `"silkscreenFraction"`) in `tests/Ui.Tests/Recognition/Silkscreen/`, and
 `PartsTableCsvTests.ARowAtAGuessedPartsPlaceRenamesItButNeverABoardDesignator`.
+
+## 10. AS-11 — Swap Line Type
+
+`LineTypeSwap.Swap(component, toType, context)` in `src/Design/Schematic` is the whole operation: it returns a NEW
+component (the input is untouched) or a refusal. `LineTypeSwapContext` carries the schematic's technology, F (the
+bench's top S-parameter frequency, `LineTypeSwap.BenchTopFrequencyHz` — the same F the parameter editor's Z0
+readout uses, which now calls it) and a gap the user was asked for.
+
+### 10.1 Where each parameter comes from (R-as11-2)
+
+In order: the source's own row of that name, verbatim → what an earlier swap set aside → what was measured off the
+artwork (`ArtworkMeasured` `GapLeft`/`GapRight` mean for G, a recognised TLIN's `W`) → derived. Derived means: a CPWG
+gap asked for (headless: a refusal naming G, `NeedsGap`); a TLIN's Z, Eeff, Ac, Ad computed from the source line at
+F; a width synthesised from a TLIN's Z at F; an electrical-form TLIN's E converted to L at its own F with its εeff
+(the new line's at W when it has none). The line model is `LineCalculator.ModelAt` — the elaborated instance the line
+calculator reports — on the substrate the extraction injects, so the swap, the calculator and a run read one model.
+Synthesis is `PlanarLineSynthesis.SynthesizeWidth` over that model's Z0 at F.
+
+A SLIN the stackup cannot carry is `PlanarLineSubstrateInjection`'s own refusal, before anything is built.
+
+### 10.2 Nothing is lost (R-as11-3)
+
+A row the target has no place for is set aside WHOLE in `EditableComponent.SwapRemembered` (expression, unit, shown),
+persisted as `SwapRemembered` in the `.csch`. It is set aside only when the swap straight back would not derive the
+same text anyway — decided by running that inverse swap — so a swap and its inverse are the identity and memory does
+not pile up. A TLIN's own rows are tied to the W/L/G rows beside them (`TLIN@W` …); a swap back after the geometry
+was edited computes instead of restoring a stale Z, and says so.
+
+### 10.3 The GUI (R-as11-4, R-as11-5)
+
+Context menu ▸ **Swap Line Type** (`SchematicView`), the parameter editor's type combo
+(`ParameterEditorViewModel.LineSwap.cs`) — both call `SchematicViewModel.SwapLineTypeAsync`. All swaps land as one
+`SwapLineTypeCommand`, which rewrites each component IN PLACE (type, rows, label offsets, what was set aside), so its
+Id, its place in the component list, the selection and an open parameter editor still point at it. A refused line is
+a Messages warning; MBEND/MTEE/MCROSS/MTAPER sharing a net with a line swapped to anything but MLIN get one note each
+(`LineTypeSwap.DiscontinuityNotes`).
+
+### 10.4 Gates
+
+`LineTypeSwapTests`, `SwapLineTypeCommandTests` in `tests/Ui.Tests/Schematic/`.
