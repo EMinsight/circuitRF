@@ -205,6 +205,9 @@ public static class Units
         // "m" is deliberately NOT here: it is the SI prefix milli, not a length (see _scales).
         { "mm",  "metre" }, { "um",   "metre" }, { "nm", "metre" }, { "cm", "metre" },
         { "mil", "metre" }, { "in",   "metre" }, { "inch", "metre" },
+        // Angle. "deg" was the one scaled unit missing here, so BaseUnit("deg") returned "deg" while its scale is
+        // π/180: a value converted to SI (radians) was labelled degrees (brief-yield-15 R-ya15-5).
+        { "deg", "rad" },
     };
 
     /// <summary>

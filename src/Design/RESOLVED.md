@@ -18809,3 +18809,44 @@ additive and optional in the `.csch`; `ArtworkMeasured` is carried untouched.
 when the swap back would NOT have derived the same text (the inverse-swap rule, design note §10.2) — i.e. only when
 the user changed G away from the measured value. Measured-first would discard that edit on CPWG → MLIN → CPWG; with
 remembered-first, the measured gap is still what is used whenever nothing else was said.
+
+## brief-yield-15 — review fixes to the statistics core and run services (2026-10-08)
+
+Every finding was confirmed against the source before it was changed; none turned out to be wrong.
+
+- **R-ya15-1, out-of-range settings.** Confirmed: nothing bounded `confidence`, `target`, `trials`, `sigmascale` or
+  `parallel`, and `confidence=100%` reached `ClopperPearson` from inside the batch loop. `StatisticsValidator.Settings`
+  now refuses each (`yield.statistics.range`), and every run reaches it through `OptimizationRun.ForEvaluation`'s
+  `TuningValidator` pass before a sampler is built. The parser stays liberal on purpose: a refusal at read time would
+  be a different sentence from `check`'s and the panel's. `explain` computed the expected interval unconditionally;
+  `StatisticsSummary.ExpectedInterval` now returns NaN/null for settings the validator refuses, the text report omits
+  the line, and the run's refusal line says why. The CLI's `--confidence` bound is open at 100.
+- **R-ya15-2, `LeastSquares`.** Confirmed. A separate pivot-row counter now advances only for a live column.
+- **R-ya15-3, planned trial count.** Confirmed. `yield.planned_trials` is written; `TrialReplay.CornerOf` reads it and
+  falls back to `yield.trials` for older files.
+- **R-ya15-4, Re-run trial.** Confirmed. `TrialReplay.Run` now draws under the RESULT's seed, sampling and planned
+  trial count, read from the held DataSet when the Data Display has it and from the `.yield.npy` otherwise. A result
+  that records none of them is refused (`yield.replay.run-unrecorded`), naming what is missing.
+- **R-ya15-5, the phase unit.** Fixed in `Units.BaseUnit` (`deg` → `rad`) rather than at the yield call sites. Every
+  other caller was read first, and each one labels a value that has already been multiplied by `Scale(unit)`:
+  optimizer history, DOE factor columns, explain bindings and sweeps, and thermal sweep axes. All of them were
+  mislabelled for a degree unit in the same way, and none relied on the old answer. `ResolvedSpread.Quantity` already
+  treated both spellings as one angle. **This also fixes a latent sweep bug.** `ParametricSweepEngine` re-attaches
+  `BaseUnit(effUnit)` to the swept value, which is already in SI. Under `deg` that re-attachment scaled it a second
+  time (the `Scale(BaseUnit(u)) == 1` property `src/Core/CLAUDE.md` names). The trial cube's `rad` label also makes
+  Data Display ▸ Send to Tuning hand a phase back as `0.52 rad`, which `TunableValue.InUnit` converts. Before, it was
+  `0.52 deg`.
+- **R-ya15-6, culture.** Confirmed at the four named sites. The same grep also found `StatisticalRun`'s save-sentence
+  `MB()` (`{x:0.#}`), now invariant too. Nothing else in `src/Design/Statistics` or `src/Engine/Statistics` formats a
+  double without a culture: the remaining interpolations are integers, strings or already-invariant helpers.
+- **R-ya15-7, `sigmascale`.** Confirmed. `NonPhysicalProbability` takes the scale and widens σ, or a uniform's
+  half-width about its centre, the way `Marginal` does.
+- **R-ya15-8, percentile.** Confirmed. The fix returns the order statistic when the rank lands on one, or when the two
+  neighbours are equal, which also covers `[−∞, −∞, …]` between ranks.
+- **R-ya15-9, latent.** `ExpressionDraws.For` now passes `unplannedAtNominal` on rather than dropping it.
+  `CornerGenerator.CrossProduct` stops multiplying once the count passes `int.MaxValue`, so a `long` can no longer
+  wrap past the cap and the refusal still states the exact count. DOE stat levels were changed in code rather than in
+  the doc. A `trunc=` entry's level is now set through its untruncated distribution, with z clipped at ±trunc, so
+  `sigma:1` is 1σ (it was 0.99σ under `trunc=3`), and a level past the truncation stops at the edge the entry can
+  actually draw. `docs/design/yield.md` §17 says so. The user page's "nominal ± k σ" is now true as written and was
+  left alone.

@@ -49,6 +49,9 @@ public static class SampleStatistics
         double h = (s.Length - 1) * p / 100;
         int lo = (int)Math.Floor(h);
         int hi = Math.Min(lo + 1, s.Length - 1);
+        // On an order statistic — or between two equal ones — there is nothing to interpolate, and 0 · (∞ − ∞) would be
+        // NaN where the sample's extreme is infinite (dB of an exact zero; brief-yield-15 R-ya15-8).
+        if (h == lo || s[hi] == s[lo]) return s[lo];
         return s[lo] + (h - lo) * (s[hi] - s[lo]);
     }
 

@@ -148,6 +148,9 @@ internal static class StatisticalDataSet
         // ── yield (the summary) ──────────────────────────────────────────────────
         var s0 = x.Settings;
         Scalar(ds, "trials", n);
+        // The trial count the run was PLANNED for: under lhs every trial's draw depends on it, and a stopped run's `trials`
+        // is the count it reached (brief-yield-15 R-ya15-3).
+        Scalar(ds, "planned_trials", s0.EffectiveTrials);
         Scalar(ds, "did_not_evaluate", records.Count(r => !r.Evaluated));
         Estimate(ds, "", x.Overall);
         foreach (var gy in x.PerGoal) Estimate(ds, $"goal:{gy.Goal}:", gy.Estimate);

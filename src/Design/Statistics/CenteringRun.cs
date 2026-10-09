@@ -605,7 +605,7 @@ public sealed class CenteringRun
                 if (limitS is { } secs && sw.Elapsed.TotalSeconds >= secs) { reason = $"the time limit ({_center.TimeLimit}) was reached"; break; }
                 int k0 = history.Count - 1 - (int)stallIters;
                 if (k0 >= 0 && history[^1].BestObjective - history[k0].BestObjective <= stallTol * Math.Abs(history[^1].BestObjective))
-                { reason = $"the best smooth yield improved by less than {stallTol:G3} of itself over {stallIters} iterations"; break; }
+                { reason = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"the best smooth yield improved by less than {stallTol:G3} of itself over {stallIters} iterations"); break; }
             }
         }
         catch (OperationCanceledException)

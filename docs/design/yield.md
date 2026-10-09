@@ -978,7 +978,10 @@ geometric, and a complex value's parts (tuning D18) are factors like any entry, 
 preferred-value entries snap (preferred values too — a DOE level is a value someone could build) and the run notes the
 levels they snapped to (`yield.doe.snapped`). `factors=stat` varies the `stat=1` entries: a level is z = ±k
 (`levels=sigma:k`, default 1) through the entry's OWN distribution via `SampleValues.Apply` — nominal ± k σ exactly for a
-Gaussian, the Φ(±k) quantile for the others — so a tolerance study costs a handful of runs instead of a Monte Carlo.
+Gaussian, the Φ(±k) quantile for the others — so a tolerance study costs a handful of runs instead of a Monte Carlo. A
+`trunc=` entry is set through its UNtruncated distribution with z clipped at ±trunc: the truncated quantile at z = k is
+not kσ (`trunc=3` puts `sigma:1` at 0.99σ), and a level past the truncation is a value the entry never draws, so it
+stops at the edge.
 Correlations are not applied to the levels (each factor is set on its own; `yield.doe.uncorrelated` says so) and kit
 statistics are not factors. A mixed rectangular/polar pair is refused (`yield.doe.mixed-pair`), as in D2: no corner of
 two non-orthogonal ranges need describe a complex number. `levels=range` with stat factors, or `sigma:` with opt

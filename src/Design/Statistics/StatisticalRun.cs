@@ -219,8 +219,7 @@ public sealed class StatisticalRun
                         if (v == AutoStopVerdict.Continue) continue;
                         verdict = v;
                         records.RemoveRange(i + 1, records.Count - i - 1);
-                        reason = $"auto-stopped after {records.Count} trials: the {_settings.EffectiveConfidence:G4} % interval lies "
-                               + (v == AutoStopVerdict.Above ? "above" : "below") + $" the {target * 100:G4} % target";
+                        reason = AutoStopReason(records.Count, _settings.EffectiveConfidence, v, target!.Value);
                         break;
                     }
                     if (verdict is not null) break;
@@ -553,6 +552,12 @@ public sealed class StatisticalRun
 
     internal static bool IsScalar(DataCube c) => c.Rank == 0 && c.DataKind == DataKind.Real;
 
+    /// <summary>The finish reason of an auto-stopped run — the <c>yield.stopped</c> label and the CLI's line — formatted
+    /// culture-invariantly, so 99.5 % is never written "99,5 %" (brief-yield-15 R-ya15-6).</summary>
+    internal static string AutoStopReason(int trials, double confidencePercent, AutoStopVerdict verdict, double target)
+        => string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"auto-stopped after {trials} trials: the {confidencePercent:G4} % interval lies {(verdict == AutoStopVerdict.Above ? "above" : "below")} the {target * 100:G4} % target");
+
     internal static double UnitScale(string unit) => unit.Length == 0 ? 1 : Units.Scale(unit) ?? 1;
 
     // ── Counting ────────────────────────────────────────────────────────────────────
@@ -588,7 +593,8 @@ public sealed class StatisticalRun
                         perTrial += (long)cube.BufferLength * (cube.DataKind == DataKind.Complex ? 16 : 8);
 
         string text = _settings.Save ?? "auto";
-        static string MB(long b) => b < 1024 * 1024 ? $"{Math.Max(1, b / 1024)} KB" : $"{b / (1024.0 * 1024):0.#} MB";
+        static string MB(long b) => b < 1024 * 1024 ? $"{Math.Max(1, b / 1024)} KB"
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{b / (1024.0 * 1024):0.#} MB");
         switch (text.ToLowerInvariant())
         {
             case "scalars":

@@ -46,11 +46,13 @@ public static class StatisticsSummary
     /// <summary>
     /// What <paramref name="trials"/> trials can resolve: the expected half-width of the Clopper–Pearson
     /// yield interval at a yield of <see cref="QuotedYield"/> %, and the fewest trials that bring it under
-    /// ±<see cref="QuotedHalfWidth"/> %. Both in percent points.
+    /// ±<see cref="QuotedHalfWidth"/> %. Both in percent points. NaN and null for settings the validator refuses — a
+    /// confidence outside (0, 100) % or no trials — which have no interval to quote (brief-yield-15 R-ya15-1).
     /// </summary>
     public static (double HalfWidth, int? TrialsForQuoted) ExpectedInterval(int trials, double confidencePercent)
     {
         double c = confidencePercent / 100;
+        if (!(c > 0 && c < 1) || trials < 1) return (double.NaN, null);
         double hw = ClopperPearson.ExpectedHalfWidth(QuotedYield / 100, trials, c) * 100;
         return (hw, ClopperPearson.TrialsFor(QuotedYield / 100, QuotedHalfWidth / 100, c));
     }

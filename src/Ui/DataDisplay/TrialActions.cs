@@ -54,10 +54,11 @@ public static class TrialActions
     /// </summary>
     public static async Task<string?> RerunAsync(DataSourceLibraryViewModel library, string source, int trial)
     {
-        var mode = library.DataFor(source) is { } ds && ds.Contains("yield.mode")
+        var held = library.DataFor(source);
+        var mode = held is { } ds && ds.Contains("yield.mode")
                    && ds["yield.mode"].Axes[0].Labels is [ "montecarlo", .. ]
             ? StatisticalMode.MonteCarlo : StatisticalMode.Yield;
-        var (data, refusal) = await Task.Run(() => TrialReplay.Run(source, trial, mode));
+        var (data, refusal) = await Task.Run(() => TrialReplay.Run(source, trial, mode, result: held));
         if (data is null) return refusal?.Render() ?? $"Trial {trial} could not be run again.";
         foreach (var lib in library.AllLibraries?.Invoke() ?? [library])
             lib.ShowSnapshot(source, data);

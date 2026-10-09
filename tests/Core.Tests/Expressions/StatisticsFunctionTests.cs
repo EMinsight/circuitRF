@@ -81,4 +81,13 @@ public sealed class StatisticsFunctionTests
         Assert.Equal([4 / 6.0, 0.5], y.RealValues);
         Assert.Equal([6.0, 2], ev.TakeCompanions()["count"].RealValues);
     }
+
+    [Fact]
+    public void APercentileAtAnInfiniteExtreme_IsTheExtreme()
+    {
+        // brief-yield-15 R-ya15-8: on an order statistic there is nothing to interpolate; 0 · (−∞ − −∞) was NaN.
+        double[] worst = [double.NegativeInfinity, 1, 2];
+        Assert.Equal(double.NegativeInfinity, SampleStatistics.Percentile(worst, 0));
+        Assert.Equal(2, SampleStatistics.Percentile(worst, 100));
+    }
 }

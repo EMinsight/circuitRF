@@ -141,7 +141,7 @@ internal static partial class Yield
                 case "--parallel" when hasValue:    if (!Int(a, args[++i], 1, out parallel, out int r3)) return r3; break;
                 case "--trial" when hasValue:       if (!Int(a, args[++i], 1, out trial, out int r4)) return r4; break;
                 case "--target" when hasValue:      if (!Percent(a, args[++i], out target, out int r5)) return r5; break;
-                case "--confidence" when hasValue:  if (!Percent(a, args[++i], out confidence, out int r6)) return r6; break;
+                case "--confidence" when hasValue:  if (!Percent(a, args[++i], out confidence, out int r6, below100: true)) return r6; break;
                 case "--sigma-scale" when hasValue:
                 {
                     string text = args[++i];
@@ -447,13 +447,16 @@ internal static partial class Yield
     }
 
     /// <summary>A percent, with or without its sign: <c>95%</c> or <c>95</c>, above 0 and at most 100.</summary>
-    private static bool Percent(string flag, string text, out double? value, out int refusal)
+    /// <param name="below100">A confidence: 100 % has no interval, so the bound is open (brief-yield-15 R-ya15-1).</param>
+    private static bool Percent(string flag, string text, out double? value, out int refusal, bool below100 = false)
     {
         refusal = 0;
         value   = null;
         string t = text.Trim().TrimEnd('%').Trim();
-        if (double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double p) && p > 0 && p <= 100) { value = p; return true; }
-        refusal = JsonRun.Fail(CliDiagnostics.YieldFlagValue(flag, text, "a percent above 0 and at most 100, such as 95%"));
+        if (double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double p) && p > 0 && (below100 ? p < 100 : p <= 100))
+        { value = p; return true; }
+        refusal = JsonRun.Fail(CliDiagnostics.YieldFlagValue(flag, text,
+            below100 ? "a percent above 0 and below 100, such as 95%" : "a percent above 0 and at most 100, such as 95%"));
         return false;
     }
 

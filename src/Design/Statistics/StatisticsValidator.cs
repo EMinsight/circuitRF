@@ -1,3 +1,4 @@
+using System.Globalization;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
@@ -44,7 +45,10 @@ public static class StatisticsValidator
     public static IReadOnlyList<Diagnostic> ValidateSetup(TuningSetup setup, TunableCatalog catalog)
     {
         var f = new List<Diagnostic>();
-        foreach (var e in setup.Variables) Entry(e, catalog, f);
+        // A non-physical draw is asked of the spread a trial actually draws from, sigmascale applied (R-ya15-7); an
+        // out-of-range scale is the settings' own refusal, so it is not applied here.
+        double sigmaScale = setup.Statistics?.SigmaScale is { } k && k > 0 ? k : 1;
+        foreach (var e in setup.Variables) Entry(e, catalog, sigmaScale, f);
         ComplexParts(setup, f);
         Correlations(setup, f);
         Settings(setup.Statistics, f);
@@ -75,7 +79,7 @@ public static class StatisticsValidator
 
     // ── One entry ────────────────────────────────────────────────────────────
 
-    private static void Entry(TunableEntry e, TunableCatalog catalog, List<Diagnostic> f)
+    private static void Entry(TunableEntry e, TunableCatalog catalog, double sigmaScale, List<Diagnostic> f)
     {
         string who = $"tune {e.Key}";
         var sp = e.Spread ?? new StatSpread();
@@ -150,7 +154,7 @@ public static class StatisticsValidator
             }
         }
 
-        if (e.Stat && MustBePositive(t, nominal) && r.NonPhysicalProbability() is var p && p > NonPhysicalThreshold)
+        if (e.Stat && MustBePositive(t, nominal) && r.NonPhysicalProbability(sigmaScale) is var p && p > NonPhysicalThreshold)
             f.Add(StatisticsDiagnostics.NonPhysical(who, p));
     }
 
@@ -232,7 +236,23 @@ public static class StatisticsValidator
     {
         // A Monte Carlo at each corner draws mismatch only (brief-yield-6 R-ya6-3); process=1 asked for both.
         if (s is { Process: true } && s.CornerNames is not { Count: 0 }) f.Add(StatisticsDiagnostics.CornerProcessDoubleCounted());
-        if (s is null || !s.AutoStop) return;
+        if (s is null) return;
+
+        // Out of range is refused here, before anything draws or counts (brief-yield-15 R-ya15-1): a 100 % interval
+        // has no Clopper–Pearson bound, and zero trials no yield.
+        static string N(double v) => v.ToString("G6", CultureInfo.InvariantCulture);
+        if (s.Confidence is { } c && !(c > 0 && c < 100))
+            f.Add(StatisticsDiagnostics.SettingOutOfRange("confidence", N(c) + "%", "above 0% and below 100%"));
+        if (s.Target is { } t && !(t > 0 && t <= 100))
+            f.Add(StatisticsDiagnostics.SettingOutOfRange("target", N(t) + "%", "above 0% and at most 100%"));
+        if (s.Trials is { } n && n < 1)
+            f.Add(StatisticsDiagnostics.SettingOutOfRange("trials", N(n), "1 or more"));
+        if (s.SigmaScale is { } k && !(k > 0))
+            f.Add(StatisticsDiagnostics.SettingOutOfRange("sigmascale", N(k), "above zero"));
+        if (s.Parallelism is { } p && p < 1)
+            f.Add(StatisticsDiagnostics.SettingOutOfRange("parallel", N(p), "1 or more"));
+
+        if (!s.AutoStop) return;
         if (s.Sampling == StatSampling.Lhs) f.Add(StatisticsDiagnostics.LhsWithAutoStop());
         if (s.Target is null) f.Add(StatisticsDiagnostics.AutoStopNeedsTarget());
     }

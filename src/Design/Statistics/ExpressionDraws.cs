@@ -50,7 +50,7 @@ public sealed class ExpressionDraws : IStatisticalDraws
     {
         var s = settings ?? new StatisticsSettings();
         return new ExpressionDraws(s.EffectiveSeed, trial, s.Process ?? true, s.Mismatch ?? true,
-                                   s.SigmaScale ?? 1.0, planned);
+                                   s.SigmaScale ?? 1.0, planned, unplannedAtNominal);
     }
 
     public int    Trial      { get; }

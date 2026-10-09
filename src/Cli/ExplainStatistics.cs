@@ -235,8 +235,9 @@ internal static class ExplainStatistics
                               (m.Repaired ? $" — repaired to the nearest valid matrix, largest change {N(m.LargestChange)}" : ""));
             foreach (var row in m.Matrix) Console.WriteLine("    " + string.Join("  ", row.Select(v => v.ToString("F4", CultureInfo.InvariantCulture).PadLeft(7))));
         }
-        Console.WriteLine($"  at a yield of {N(r.AtYield)} %, {r.Trials} trials resolve it to ±{N(r.ExpectedHalfWidth)} %" +
-                          (r.TrialsForTwoPercent is { } n ? $"; {n} trials resolve it to under ±{N(StatisticsSummary.QuotedHalfWidth)} %" : ""));
+        if (!double.IsNaN(r.ExpectedHalfWidth))
+            Console.WriteLine($"  at a yield of {N(r.AtYield)} %, {r.Trials} trials resolve it to ±{N(r.ExpectedHalfWidth)} %" +
+                              (r.TrialsForTwoPercent is { } n ? $"; {n} trials resolve it to under ±{N(StatisticsSummary.QuotedHalfWidth)} %" : ""));
         if (r.Run is { } run)
         {
             Console.WriteLine($"  a yield run evaluates: goals → {(run.UnderGoals.Count == 0 ? "none" : string.Join(", ", run.UnderGoals))}" +

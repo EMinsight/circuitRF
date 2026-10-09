@@ -68,21 +68,27 @@ public sealed record ResolvedSpread(
     /// <summary>
     /// The probability a draw is ≤ 0 — non-physical for a value that must be positive (yield overview
     /// D2). A truncated normal is renormalized over its ±k σ window; a log-normal never draws one.
+    /// <paramref name="sigmaScale"/> widens the spread exactly as <see cref="Marginal"/> does, so the answer is
+    /// about the distribution a trial draws from.
     /// </summary>
-    public double NonPhysicalProbability()
+    public double NonPhysicalProbability(double sigmaScale = 1)
     {
         switch (Distribution)
         {
-            case StatDistribution.Gauss when Sigma is > 0:
+            case StatDistribution.Gauss when Sigma is > 0 && sigmaScale > 0:
             {
-                double z = NominalSi / Sigma.Value;           // how many σ from the mean zero sits
+                double z = NominalSi / (Sigma.Value * sigmaScale);   // how many σ from the mean zero sits
                 if (Trunc is not { } k || k <= 0) return SpecialFunctions.NormalCdf(-z);
                 if (z >= k) return 0;
                 double tail = SpecialFunctions.NormalCdf(-k);
                 return (SpecialFunctions.NormalCdf(-z) - tail) / (1 - 2 * tail);
             }
-            case StatDistribution.Unif when Lo is { } lo && Hi is { } hi && hi > lo:
+            case StatDistribution.Unif when Lo is { } ulo && Hi is { } uhi && uhi > ulo:
+            {
+                double mid = (ulo + uhi) / 2, half = (uhi - ulo) / 2 * sigmaScale;
+                double lo = mid - half, hi = mid + half;
                 return lo >= 0 ? 0 : (Math.Min(0, hi) - lo) / (hi - lo);
+            }
             case StatDistribution.Discrete when Lo is { } dlo && Hi is { } dhi && Step is > 0:
             {
                 int n = (int)Math.Floor((dhi - dlo) / Step.Value + 1e-9) + 1;

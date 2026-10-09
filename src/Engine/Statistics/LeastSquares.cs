@@ -29,47 +29,50 @@ public static class LeastSquares
             for (int j = 0; j < p; j++) { m[i, j] = a[i][j]; scale = Math.Max(scale, Math.Abs(a[i][j])); }
         }
 
-        // Householder: column c's reflection zeroes everything below the diagonal and is applied to b as it goes.
+        // Householder: column c's reflection zeroes everything below its pivot row and is applied to b as it goes. The pivot
+        // row advances only for a column that has one (brief-yield-15 R-ya15-2): a dependent column takes no row, so the
+        // next live column reflects from the same row and every row of b still reaches a coefficient.
         var diag = new double[p];
-        var live = new bool[p];
+        var pivotRow = new int[p];
+        Array.Fill(pivotRow, -1);
         double tol = 1e-12 * Math.Max(scale, 1) * Math.Max(n, p);
-        int rows = Math.Min(n, p);
-        for (int c = 0; c < rows; c++)
+        int r = 0;
+        for (int c = 0; c < p && r < n; c++)
         {
             double norm = 0;
-            for (int i = c; i < n; i++) norm += m[i, c] * m[i, c];
+            for (int i = r; i < n; i++) norm += m[i, c] * m[i, c];
             norm = Math.Sqrt(norm);
-            if (norm <= tol) { diag[c] = 0; continue; }
-            double alpha = m[c, c] > 0 ? -norm : norm;
-            m[c, c] -= alpha;
+            if (norm <= tol) continue;
+            double alpha = m[r, c] > 0 ? -norm : norm;
+            m[r, c] -= alpha;
             double vv = 0;
-            for (int i = c; i < n; i++) vv += m[i, c] * m[i, c];
+            for (int i = r; i < n; i++) vv += m[i, c] * m[i, c];
             for (int k = c + 1; k < p; k++)
             {
                 double s = 0;
-                for (int i = c; i < n; i++) s += m[i, c] * m[i, k];
+                for (int i = r; i < n; i++) s += m[i, c] * m[i, k];
                 s = 2 * s / vv;
-                for (int i = c; i < n; i++) m[i, k] -= s * m[i, c];
+                for (int i = r; i < n; i++) m[i, k] -= s * m[i, c];
             }
             double sb = 0;
-            for (int i = c; i < n; i++) sb += m[i, c] * b[i];
+            for (int i = r; i < n; i++) sb += m[i, c] * b[i];
             sb = 2 * sb / vv;
-            for (int i = c; i < n; i++) b[i] -= sb * m[i, c];
+            for (int i = r; i < n; i++) b[i] -= sb * m[i, c];
             diag[c] = alpha;
-            live[c] = true;
+            pivotRow[c] = r++;
         }
 
-        // Back substitution on R; a dependent column (no pivot) explains nothing the others do not.
+        // Back substitution on R; a dependent column (no pivot) explains nothing the others do not, and keeps 0.
         var x = new double[p];
-        int rank = 0;
-        for (int c = rows - 1; c >= 0; c--)
+        for (int c = p - 1; c >= 0; c--)
         {
-            if (!live[c]) continue;
-            rank++;
-            double s = b[c];
-            for (int k = c + 1; k < p; k++) s -= m[c, k] * x[k];
+            int row = pivotRow[c];
+            if (row < 0) continue;
+            double s = b[row];
+            for (int k = c + 1; k < p; k++) s -= m[row, k] * x[k];
             x[c] = s / diag[c];
         }
+        int rank = r;
 
         double mean = y.Average(), ssTot = 0, ssRes = 0;
         for (int i = 0; i < n; i++)

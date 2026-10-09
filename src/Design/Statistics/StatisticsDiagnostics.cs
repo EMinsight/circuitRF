@@ -83,6 +83,10 @@ public static class StatisticsDiagnostics
         "yield.statistics.autostop-target", DiagnosticSeverity.Error,
         "statistics: autostop=1 stops when the yield is confidently above or below target=, and no target is given.");
 
+    public static Diagnostic SettingOutOfRange(string key, string value, string range) => Diagnostic.Create(
+        "yield.statistics.range", DiagnosticSeverity.Error,
+        "statistics: {key}={value} is out of range; it must be {range}.", ("key", key), ("value", value), ("range", range));
+
     public static Diagnostic CornerUnknownKey(string who, string key) => Diagnostic.Create(
         "yield.corner.unknown-key", DiagnosticSeverity.Error,
         "{who}: {key} is neither a variable of this design nor a tunable key it offers.", ("who", who), ("key", key));
@@ -209,6 +213,11 @@ public static class StatisticsDiagnostics
     public static Diagnostic ReplayNoData(int trial) => Diagnostic.Create(
         "yield.replay.no-data", DiagnosticSeverity.Error,
         "Trial {trial} ran but produced no analysis result to show.", ("trial", trial));
+
+    public static Diagnostic ReplayRunUnrecorded(string result, int trial, string missing) => Diagnostic.Create(
+        "yield.replay.run-unrecorded", DiagnosticSeverity.Error,
+        "{result} does not record the {missing} its trials were drawn with, so trial {trial} cannot be drawn again as the same trial.",
+        ("result", result), ("trial", trial), ("missing", missing));
 
     // ── YA-6: corners ──────────────────────────────────────────────────────
 

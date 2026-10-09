@@ -1,3 +1,4 @@
+using System.Globalization;
 using RfCore.Data;
 
 namespace CircuitRF.Core.Expressions;
@@ -269,7 +270,7 @@ public sealed partial class Evaluator
                 throw new ExpressionException($"{name}(): the range ends must be numbers, e.g. {name}(x, 0.1GHz, 3GHz).");
             (lo, hi) = (loVal.AsReal(), hiVal.AsReal());
             if (lo > hi)
-                throw new ExpressionException($"{name}(): the range is empty — {lo:G6} is above {hi:G6}. Give the low end first.");
+                throw new ExpressionException(string.Create(CultureInfo.InvariantCulture, $"{name}(): the range is empty — {lo:G6} is above {hi:G6}. Give the low end first."));
             at += 2;
         }
         string? axisName = null;
@@ -319,9 +320,9 @@ public sealed partial class Evaluator
         {
             if (lo is null)
                 throw new ExpressionException($"{name}(): the '{axisName}' axis has no points.");
-            string extent = $"{axis.Values.Min():G6} to {axis.Values.Max():G6} {axis.Unit}".TrimEnd();
-            throw new ExpressionException(
-                $"{name}(): no '{axisName}' point lies in [{lo:G6}, {hi:G6}]; the axis runs from {extent}.");
+            string extent = string.Create(CultureInfo.InvariantCulture, $"{axis.Values.Min():G6} to {axis.Values.Max():G6} {axis.Unit}").TrimEnd();
+            throw new ExpressionException(string.Create(CultureInfo.InvariantCulture,
+                $"{name}(): no '{axisName}' point lies in [{lo:G6}, {hi:G6}]; the axis runs from {extent}."));
         }
 
         var columns = new double[picked.Count][];

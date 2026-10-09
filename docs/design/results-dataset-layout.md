@@ -184,6 +184,7 @@ Display, the Yield panel) reads them and computes nothing of its own. Values are
 | `yield` | `goal:<g>:passes` … `goal:<g>:upper` | scalar | the same per goal |
 | `yield` | `goal:<g>:spec` | `[goal:<g>:spec]` | one point whose axis LABEL is the goal's own `goal …` line (`TuningDirectiveText.GoalLine`) — what a display draws the goal's limits from (brief-yield-8) |
 | `yield` | `confidence`, `target`, `seed`, `saved_trials` | scalar | fractions; `target` NaN when none |
+| `yield` | `planned_trials` | scalar | the trial count the run was set for (`trials=`, with auto-stop the cap). `trials` above is the count it reached, which a stopped or auto-stopped run makes smaller; under `lhs` every trial's draw depends on the planned count, so a statistical corner saved from this file records this one. Absent from files written before brief-yield-15, where readers fall back to `trials` |
 | `yield` | `contrib:<name>`, `contrib:<name>:cumulative` | `[contributor]` | written only on request (brief-yield-9 R-ya9-5, the Data Display's Statistics ▸ Contributions): each contributor's share of the explained variance of a goal's worst value or a scalar measure, largest first, and the running total; the axis is labelled with the contributors' names, its values 1…N |
 | `yield` | `mode`, `sampling`, `nonconverged`, `save`, `stopped` | `[<name>]` | one point whose axis LABEL is the text (`random`, the save sentence, the finish reason) |
 

@@ -30,10 +30,13 @@ public static class CornerGenerator
     public static CornerGeneration CrossProduct(
         IReadOnlyList<GeneratorAxis> axes, IReadOnlyList<string> temps, IReadOnlyList<GeneratorValues> values)
     {
+        // Multiplied only while it is a count the refusal can state: past int.MaxValue it is refused anyway, and a long
+        // could otherwise wrap to a small number and pass the cap (brief-yield-15 R-ya15-9).
         long count = 1;
-        foreach (var a in axes) count *= Math.Max(1, a.Options.Count);
-        count *= Math.Max(1, temps.Count);
-        foreach (var v in values) count *= Math.Max(1, v.Values.Count);
+        void Times(int n) { if (count <= int.MaxValue) count *= Math.Max(1, n); }
+        foreach (var a in axes) Times(a.Options.Count);
+        Times(temps.Count);
+        foreach (var v in values) Times(v.Values.Count);
         if (count > Cap) return new CornerGeneration([], StatisticsDiagnostics.GeneratorTooMany((int)Math.Min(count, int.MaxValue), Cap));
 
         // Each dimension is a list of (name part, apply) choices; an empty dimension is left out of the product.
