@@ -85,6 +85,20 @@ public class LayoutCurrentLayerSeedingTests
         Assert.Equal("Top Copper", vm.CurrentLayerItem!.Name);
     }
 
+    /// <summary>"Topmost" means the stackup's top-to-bottom order, not ZOrder. A board technology paints
+    /// Bottom Copper beneath Top Copper (the starter PCB technology does exactly this), and seeding by
+    /// ZOrder opened every new layout on the bottom copper.</summary>
+    [Fact]
+    public void Seeding_TakesTheTopmostConductorInStackupOrder_NotTheLowestZOrder()
+    {
+        var tech = GerberImportedBoard();
+        tech.Layers.First(l => l.Key == TopCu).ZOrder = 60;
+        tech.Layers.First(l => l.Key == BottomCu).Visible = true;
+        tech.Layers.First(l => l.Key == BottomCu).Selectable = true;
+
+        Assert.Equal(TopCu, OpenedOn(tech).CurrentLayerKey);
+    }
+
     /// <summary>The floor, stated on its own: a seeded layer must be one the user can see and click.
     /// Drawing onto a hidden, unselectable layer produces artwork that cannot be found afterwards.</summary>
     [Fact]

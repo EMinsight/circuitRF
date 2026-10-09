@@ -30913,6 +30913,13 @@ both visible and selectable** — Visible/Selectable are a floor on what may be 
 judgement `LayoutHitTest.HitStack`, the marquee's gate 8 and Select All already make; an explicit pick
 of a hidden layer is still kept.
 
+**"Topmost" is STACKUP order, not ZOrder** (owner-reported 2026-10-09: new layouts, e.g. from a
+schematic, kept opening on Bottom Copper). `DefaultLayerChoice` used to take the first usable conductor
+in `AvailableLayers`, which is sorted by ZOrder — paint order — and a board technology paints Bottom
+Copper beneath Top Copper (the starter PCB technology: 7 vs 8). It now walks `Stackup.Layers`, which is
+top to bottom. The fallbacks are unchanged: with no usable conductor, the first usable layer, then the
+first layer.
+
 **The Via button was a deadlock, not a second bug.** `ViaToolAvailability` refused correctly on a layer
 no via entry claims — and `MoveToTheOnlyViaLayer`, which exists to fix exactly that where the stackup
 declares one via layer, was reachable only from `OnActiveToolChanged`, which the disabled button

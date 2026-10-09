@@ -3356,8 +3356,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
 
     /// <summary>
     /// The layer to land on when nothing has been picked (or the pick no longer exists): the topmost
-    /// CONDUCTOR that the technology marks both visible and selectable, failing that the topmost
-    /// visible-and-selectable layer of any kind, failing that simply the first.
+    /// CONDUCTOR in stackup order that the technology marks both visible and selectable, failing that
+    /// the first visible-and-selectable layer of any kind (ZOrder order), failing that simply the first.
+    /// No technology, or one with no conductor, lands on those fallbacks.
     ///
     /// <para><b>Visible/Selectable are a floor on what may be seeded, not a preference.</b> A layer
     /// with either switched off is one the user has said they do not work on — seeding it means the
@@ -3377,12 +3378,16 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         bool Usable(LayerPickerItem item) =>
             tech.Layers.FirstOrDefault(l => l.Key == item.Key) is { Visible: true, Selectable: true };
 
-        var conductors = tech.Stackup.Layers
+        // "Topmost" is the STACKUP's order (top to bottom), never ZOrder: ZOrder is paint order, and a
+        // board technology paints Bottom Copper beneath Top Copper — so the lowest ZOrder conductor is
+        // the bottom one, which is where every new layout used to open.
+        var topmostConductor = tech.Stackup.Layers
             .Where(l => l.Kind == StackupKind.Conductor)
             .SelectMany(l => l.DrawingLayers)
-            .ToHashSet();
+            .Select(k => AvailableLayers.FirstOrDefault(i => i.Key == k))
+            .FirstOrDefault(i => i is not null && Usable(i));
 
-        return AvailableLayers.FirstOrDefault(i => Usable(i) && conductors.Contains(i.Key))
+        return topmostConductor
                ?? AvailableLayers.FirstOrDefault(Usable)
                ?? AvailableLayers.FirstOrDefault();
     }
