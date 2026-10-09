@@ -301,8 +301,13 @@ internal static partial class Reference
             "notification arrives per batch.", 96))
             sb.AppendLine("  " + line);
         sb.AppendLine();
-        foreach (var (flag, takes, summary) in Yield.Flags)
-            sb.AppendLine($"  {(flag + (takes.Length > 0 ? " " + takes : "")),-30} {summary}");
+        foreach (var line in Wrap(
+            "Each flag is honoured by the runs in its brackets and refused by every other, by name (mc and estimate "
+          + "with --trial re-run one trial, so they take what trial takes).", 96))
+            sb.AppendLine("  " + line);
+        sb.AppendLine();
+        foreach (var (flag, takes, nouns, summary) in Yield.Flags)
+            sb.AppendLine($"  {(flag + (takes.Length > 0 ? " " + takes : "")),-30} {summary} [{string.Join(", ", nouns)}]");
         sb.AppendLine();
         sb.AppendLine("Exit codes");
         sb.AppendLine();

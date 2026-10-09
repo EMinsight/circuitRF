@@ -3126,3 +3126,47 @@ The expression itself is not a cube spec: `BareCubeName` would have taken `x, 20
 refused it, so an axis function (`Evaluator.AxisFunctions`) is detected first and the trace is written
 as a `.cdd` EXPRESSION — validated through `TraceExpression` before the picture is drawn, so a scalar
 result (`mean_over` of a column) is a refusal naming it, not an empty plot.
+
+## `yield` review fixes (brief-yield-16, 2026-10-08)
+
+Every finding was confirmed against a scratch copy of `examples/Yield` (or, for R-ya16-4, by reading the order of
+the write and the optimum) before it was changed; none turned out wrong. Gate:
+`tests/Ui.Tests/Statistics/ReviewCliDisplayFixesTests.cs`, one test per requirement.
+
+- **The flag table is the refusal (R-ya16-7).** `Yield.Flags` gained a column naming the runs that honour each flag —
+  `mc`, `estimate`, `trial`, `corners`, `corners --mc`, `corners --generate`, `center`, `doe` — and one check
+  (`FlagNotTaken`) refuses any flag given to another, through `cli.yield.corner-flag`. `mc`/`estimate` with `--trial`
+  are the `trial` run. `CornerFlagProblem`, `DoeFlagProblem`, `CenterFlagProblem` and the `centerOnly`/`doeOnly`
+  lists are gone: four places that each said part of the same thing had already drifted (16 ignored pairs, all exit
+  0). `reference statistics` prints the runs in brackets on each flag's line, and the gate checks the page against
+  the table. Deciding every cell turned up more silent pairs than the brief listed — `--sampling`, `--confidence` and
+  `--save` on plain `corners`, `--parallel` on one trial, `--mc` with `--generate` — and they are refused too.
+  Keeping the specific refusals (`--target` on `mc`, `--save-*` without `--trial`) AHEAD of the table matters: the
+  table's sentence is true there but says less.
+- **`--save-corner` dropped what changed the draws (R-ya16-1).** The corner format holds trial, seed, sampling and
+  trial count; `StatisticalCorner.Replay` re-applies the DESIGN's statistics line. So `--vars`, `--sigma-scale`,
+  `--process`, `--mismatch` and `--set` (which moves a nominal a percent spread follows) are each refused by name
+  (`cli.yield.save-corner-uncarried`) rather than stored wrong. `--goals`, `--parallel`, `--analyses` and the
+  confidence/save flags change no draw and stay allowed. The gate replays a saved corner and compares its values to
+  the trial's byte for byte.
+- **`--vars` kept correlations naming the entries it turned off (R-ya16-11)** — `NarrowVariables` now removes a
+  `correlate` touching an excluded entry and keeps one wholly inside the list. `center` shares the function, so it is
+  fixed there too.
+- **`yield trial` was hard-wired to yield mode (R-ya16-14)** and refused a design with no `use=yield` goal, where
+  `mc --trial` ran. It now takes `McModeOf(setup)`, the rule `corners --mc` already used.
+- **`doe --optimum` reported the write before the optimum (R-ya16-4/5).** The optimum now runs first; a cancel
+  inside it deletes the file and exits 130. `--optimum` with stat factors and `--resolution` with any design but
+  `frac` are refused once the file's `doe` line is under the flags, before `DoeRun.Create`. The in-process cancel
+  gate cancels from the observer at the LAST progress tick: `DoeRun.Run` checks the token only at the top of a batch,
+  so the run finishes and writes, and the cancel lands in `ModelOptimum` — exactly the path that leaked.
+- **`--generate` JSON (R-ya16-6)** is `CornerDefinitionJson` for both document kinds: name, temp, values, a
+  schematic's kit axes, a netlist's line. `Generated` changed type from strings; nothing in the repo read it.
+- **`--contributions` had no text output at all** — the flag summary said `(--json)`, so a text run silently printed
+  nothing for it. It now prints a table per goal and measure with each share clamped (owner decision D-a,
+  `docs/design/yield.md` §8.6); `--json` keeps β·r.
+- **`plot` (R-ya16-3, R-ya16-8).** A statistic over a run at each corner is one trace per corner, each with the
+  corner pinned by label (`PinCorners`), or the one `corner=<name>` names — the parser's default left the corner
+  axis free and `TraceStatistics.Operand` pinned it at index 0. `colorby=`/`envelope=` are checked through
+  `TrialViews.ColourByRefusal`/`EnvelopeRefusal`, and each statistic's options against what it reads
+  (`StatOptionsOf`), all as `plot.trace.stat-refused` with the reason — no new plot ids. The usage example's
+  `y=db` (itself refused as ambiguous) is `y=db20`, as are the two doc copies of it.

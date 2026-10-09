@@ -4999,3 +4999,36 @@ side, not glyph outlines — the hole is exactly the ink plus the gap.
 **Two label clones in the renderer copy field by field** (the sub-pixel height floor for a committed label and for the
 ghost); both carry `Font` and `StrokeWidth` now. A clone that dropped `Font` would draw a Sans label in the stroke font
 only when it was small enough to need the floor.
+
+## Yield display review fixes (brief-yield-16, 2026-10-08)
+
+- **Pass and fail were one red band (R-ya16-2).** A pass drew in the trace's colour at 35 % alpha, and the first wheel
+  colour is pure red — next to the limit red. `RenderTheme.PassColor` is a neutral grey per theme and
+  `TrialRenderer.ElementPaint` uses it for every pass, whatever the trace colour.
+- **A run at each corner (R-ya16-3).** Its cubes are `[corner, trial, …]`. `SpecLineResolve.GoalsOf` reads the LAST
+  axis's labels, so a stacked spec line is found. `TraceStatistics.Build` refuses a statistic while a `corner` axis is
+  free (`CornerRefusal`) instead of `Operand` pinning it at index 0, and a yield sensitivity refuses such a result.
+  The yield display, the statistics table (its toolbar tooltip now says why) and `ResultContributions`
+  (`yield.contrib.corner-stacked`) refuse it by name — chosen over building per corner, which would have meant a
+  family, a histogram and a table per corner per goal for a display whose job is one run. `ResultContributions.
+  StackedCorners` is the one detector, reading `trials.status`.
+- **A measurement family drew no nominal (R-ya16-9).** The trace spells it bare (`S21dB`), the result stores
+  `nominal.measurements.S21dB`. `TrialResolve.NominalOf` qualifies a bare name only when the measurements group holds
+  it AND that nominal exists, so a default-group cube keeps `nominal.<name>`.
+- **Contribution shares above 100 % (R-ya16-10, D-a).** `ResultContributions.Store` adds `contrib:<g>:shown` (clamped)
+  and builds `:cumulative` from it, renormalised to end at 1; `contrib:<g>` keeps β·r. The Pareto's bars read
+  `:shown`. `Contributor.ShownShare`/`ShownCumulative` are the one clamp the Pareto, the Yield panel and the CLI share.
+- **A histogram's spec line could be framed out (R-ya16-12).** `Plot.AutoscaleCore` unions every vertical spec line's
+  X into the trace's box; it only runs for an autoscaled axis, so a fixed range stays. Beyond a fixed range the line
+  is an arrow at the edge with its label (`StatisticsRenderer.DrawSpecLines`).
+- **Per-trial goal values had no unit (R-ya16-13).** None of the shipped goals writes a unit on its LIMIT (`-1`, not
+  `-1 dB`), so the limit alone was not enough: `GoalResiduals.ValueUnit` takes the limit's unit, else dB for an
+  expression that is one whole `dB`/`dB20`/`dB10` call (dBm for `dBm`), else a named measurement's unit.
+  `StatisticalDataSet` writes it on `goal:<g>:worst` and `:margin`; the histogram's axis then reads `bin (dB)`.
+  The yield-sensitivity COMPANION's `bin` label is unchanged — its operand `stat + 0*pass` drops the stat's unit in
+  the evaluator's sum, which is the expression engine's rule and outside this brief.
+- **The statistics table clipped its own headers.** `StatisticsTablePreset` gave every column 90 px and the row
+  column 160, and its headers are cube spellings (`statistics.sigma_to_limit`). Each column is now sized by
+  `TableRenderer.FitWidth` — the measurement `CalcFitWidth` (the auto-fit) makes, extracted so a preset with the
+  text but no resolved plot can use it — over its header and its formatted values, and the row column over the
+  quantity names; the shipped `BandpassYield.yield.cdd` is regenerated from the preset (only those widths moved).

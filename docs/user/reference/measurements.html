@@ -169,8 +169,10 @@ measure  IL_margin = 1 - IL_worst                                 positive means
 <code>[lo, hi]</code>, and <code>min_over</code> the smallest. Both ends are <strong>inclusive</strong>, so a band edge that is a grid
 point is part of the band.</p>
 <ul>
-<li><strong>The axis is <code>freq</code></strong> unless you name another as a fourth argument:
-<code>max_over(x, -10, 0, &quot;Pin&quot;)</code>. A value with a single axis is reduced over that axis.</li>
+<li><strong>The axis is <code>freq</code></strong> unless you name another as the last argument:
+<code>max_over(x, -10, 0, &quot;Pin&quot;)</code>. A value with a single axis is reduced over that axis, and a Monte
+Carlo result's values over their <code>trial</code> axis (below). Leave the range out to take every point:
+<code>max_over(x, &quot;Pin&quot;)</code>.</li>
 <li><strong>Every other axis is kept.</strong> Over a parametric sweep you get one worst case per sweep point, a
 curve you can plot against the swept variable. With no other axis you get a single number.</li>
 <li><strong>The values must be real.</strong> Complex numbers have no order, so take <code>dB(…)</code>, <code>mag(…)</code> or
@@ -180,6 +182,87 @@ check is almost always a mistyped limit.</li>
 </ul>
 <p>The worst value is only as good as the grid. A narrow notch between two frequency points is not
 seen, so sweep finely enough to resolve the response near each band edge.</p>
+<h2 id="statistics">Statistics over trials</h2>
+<p>A Monte Carlo or yield run stacks every trial on a <code>trial</code> axis. These functions reduce that axis
+(or, on a value with none, <code>freq</code>, or a single axis's only one; name another as the last argument,
+and give <code>lo, hi</code> before it to take part of the axis):</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Gives</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mean_over(x)</code>, <code>median_over(x)</code></td>
+<td>the mean, the median</td>
+</tr>
+<tr>
+<td><code>std_over(x)</code></td>
+<td>the sample standard deviation</td>
+</tr>
+<tr>
+<td><code>pctl_over(x, p)</code></td>
+<td>the p-th percentile, p from 0 to 100</td>
+</tr>
+<tr>
+<td><code>skew_over(x)</code>, <code>kurt_over(x)</code></td>
+<td>the skewness and the excess kurtosis (0 for a normal distribution)</td>
+</tr>
+<tr>
+<td><code>yield_over(condition)</code></td>
+<td>the fraction of trials for which the condition holds: <code>yield_over(Gain &gt; 14)</code></td>
+</tr>
+<tr>
+<td><code>cpk(x, lo, hi)</code></td>
+<td>the process capability index; write either limit as <code>&quot;none&quot;</code> for a one-sided spec</td>
+</tr>
+<tr>
+<td><code>sigma_to(x, limit)</code></td>
+<td>how many standard deviations the limit lies from the mean (positive above it)</td>
+</tr>
+</tbody>
+</table>
+<p>Four build a new axis from a value over the trials:</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Gives</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>histogram(x, bins)</code>, <code>histogram(x, bins, lo, hi)</code></td>
+<td>counts over a <code>bin</code> axis of bin centres; add <code>&quot;percent&quot;</code> as the last argument for each bin's percent of the trials</td>
+</tr>
+<tr>
+<td><code>cdf(x)</code></td>
+<td>the values sorted, against the fraction of trials at or below each</td>
+</tr>
+<tr>
+<td><code>normq(x)</code></td>
+<td>the values sorted, against the normal quantile of each one's rank — a straight line when the spread is Gaussian</td>
+</tr>
+<tr>
+<td><code>yield_sens(pass, x, bins)</code></td>
+<td>per bin of <code>x</code>, the fraction of trials that pass</td>
+</tr>
+</tbody>
+</table>
+<p>A <code>measure</code> line built on <code>histogram</code> or <code>yield_sens</code> also stores what does not fit in one curve
+beside it: <code>&lt;name&gt;:width</code> (the bin width) and, for <code>yield_sens</code>, <code>&lt;name&gt;:count</code> (the trials in each
+bin).</p>
+<ul>
+<li><strong>A trial with no value is skipped.</strong> A trial that did not evaluate has no value, and the
+statistics are over the trials that do. (<code>max_over</code> and <code>min_over</code> are spec checks and do not
+skip: a missing value in a band makes the worst case missing too.)</li>
+<li><strong>A comparison between values over the trials is taken trial by trial</strong>, giving 1 or 0 for each,
+so <code>yield_over(x &gt; 3 &amp;&amp; x &lt; 5)</code> counts the trials inside a window.</li>
+<li><strong>A goal may use them.</strong> A goal written over the spread of the trials is legal, but each
+evaluation of it is a whole Monte Carlo run.</li>
+</ul>
 <hr />
 <p class="small">See also: <a href="expressions.html">Expressions</a> (the language) ·
   <a href="components.html#meas">MEAS component</a> · <a href="plot-types.html">Plot types</a>. Full design:

@@ -57,7 +57,7 @@ public static class YieldDisplayPreset
     public static IReadOnlyList<ComposedPlot> Compose(DataSet ds, string sourceRef)
     {
         var plots = new List<ComposedPlot>();
-        if (!ds.ContainsGroup(TrialsGroup)) return plots;
+        if (!ds.ContainsGroup(TrialsGroup) || Refusal(ds) is not null) return plots;
         var goals = SpecLineResolve.GoalsOf(ds);
 
         foreach (var g in goals)
@@ -89,6 +89,21 @@ public static class YieldDisplayPreset
         }
         return plots;
     }
+
+    /// <summary>
+    /// Why there is no yield display of <paramref name="ds"/>, or null when there is. A run at each corner stacks one
+    /// run per corner under a <c>corner</c> axis, and every plot here is made for one run's trials, so it is refused by
+    /// name rather than drawn from one corner, or not at all (brief-yield-16 R-ya16-3).
+    /// </summary>
+    public static string? Refusal(DataSet ds) => CornerStackedRefusal(ds, "The yield display");
+
+    /// <summary>"<paramref name="what"/> shows one run…" when <paramref name="ds"/> is a run at each corner; null otherwise.</summary>
+    public static string? CornerStackedRefusal(DataSet ds, string what)
+        => ResultContributions.StackedCorners(ds) is { } corners
+            ? $"{what} shows one run, and this result is a Monte Carlo run at each of {corners.Count} corners " +
+              $"({string.Join(", ", corners)}), stacked under a 'corner' axis. Plot one corner's trials with a trace " +
+              "that pins the corner (plot: corner=<name>), or run mc or estimate without --corners for one run."
+            : null;
 
     /// <summary>The display as a document: one tab of <see cref="Compose"/>'s plots.</summary>
     public static DataDisplayConfig Build(DataSet ds, string sourceRef) => new()

@@ -14,7 +14,7 @@
     },
     {
       "Index": 0,
-      "Slot": 2,
+      "Slot": 3,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -23,7 +23,7 @@
     },
     {
       "Index": 2,
-      "Slot": 3,
+      "Slot": 4,
       "Id": "",
       "Tooltip": "Add Rect Plot  (Ctrl\u002BShift\u002BA)",
       "Icon": "ChartLine",
@@ -32,7 +32,7 @@
     },
     {
       "Index": 3,
-      "Slot": 4,
+      "Slot": 5,
       "Id": "",
       "Tooltip": "Add Smith Plot",
       "Icon": "none",
@@ -41,7 +41,7 @@
     },
     {
       "Index": 4,
-      "Slot": 5,
+      "Slot": 6,
       "Id": "",
       "Tooltip": "Add Polar Plot",
       "Icon": "none",
@@ -50,7 +50,7 @@
     },
     {
       "Index": 5,
-      "Slot": 6,
+      "Slot": 7,
       "Id": "",
       "Tooltip": "Add Table",
       "Icon": "TableLarge",
@@ -59,28 +59,19 @@
     },
     {
       "Index": 6,
-      "Slot": 7,
-      "Id": "",
-      "Tooltip": "Add 3D Pattern \u2014 for seeing a pattern is not the shape you assumed, and for the picture that goes in a report. The principal-plane cuts say more about an antenna.",
-      "Icon": "Sphere",
-      "Command": "RelayCommand",
-      "Kind": "button"
-    },
-    {
-      "Index": 0,
       "Slot": 8,
       "Id": "",
-      "Tooltip": "",
-      "Icon": "separator",
-      "Command": null,
-      "Kind": "separator"
+      "Tooltip": "Add Statistics Table \u2014 one row per goal and measure. Needs a Monte Carlo or yield result as the source (a .yield.npy)",
+      "Icon": "Summation",
+      "Command": "AsyncRelayCommand",
+      "Kind": "button"
     },
     {
       "Index": 7,
       "Slot": 9,
       "Id": "",
-      "Tooltip": "New Tab  (Ctrl\u002BT)",
-      "Icon": "TabAdd",
+      "Tooltip": "Add 3D Pattern \u2014 for seeing a pattern is not the shape you assumed, and for the picture that goes in a report. The principal-plane cuts say more about an antenna.",
+      "Icon": "Sphere",
       "Command": "RelayCommand",
       "Kind": "button"
     },
@@ -97,14 +88,32 @@
       "Index": 8,
       "Slot": 11,
       "Id": "",
+      "Tooltip": "New Tab  (Ctrl\u002BT)",
+      "Icon": "TabAdd",
+      "Command": "RelayCommand",
+      "Kind": "button"
+    },
+    {
+      "Index": 0,
+      "Slot": 12,
+      "Id": "",
+      "Tooltip": "",
+      "Icon": "separator",
+      "Command": null,
+      "Kind": "separator"
+    },
+    {
+      "Index": 9,
+      "Slot": 13,
+      "Id": "",
       "Tooltip": "Zoom Box  (Z) \u2014 drag a box to zoom to it  (Esc cancels; Ctrl\u002B\u002B steps)",
       "Icon": "SearchPlusOutline",
       "Command": "RelayCommand",
       "Kind": "button"
     },
     {
-      "Index": 9,
-      "Slot": 12,
+      "Index": 10,
+      "Slot": 14,
       "Id": "",
       "Tooltip": "Zoom Out  (Ctrl\u002B-)",
       "Icon": "MagnifyMinusOutline",
@@ -112,8 +121,8 @@
       "Kind": "button"
     },
     {
-      "Index": 10,
-      "Slot": 13,
+      "Index": 11,
+      "Slot": 15,
       "Id": "",
       "Tooltip": "Fit All  (F, Ctrl\u002B0)",
       "Icon": "FitToPageOutline",
@@ -122,7 +131,7 @@
     },
     {
       "Index": 0,
-      "Slot": 14,
+      "Slot": 16,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -130,8 +139,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 11,
-      "Slot": 15,
+      "Index": 12,
+      "Slot": 17,
       "Id": "",
       "Tooltip": "Undo  (Ctrl\u002BZ)",
       "Icon": "Undo",
@@ -139,8 +148,8 @@
       "Kind": "button"
     },
     {
-      "Index": 12,
-      "Slot": 16,
+      "Index": 13,
+      "Slot": 18,
       "Id": "",
       "Tooltip": "Redo  (Ctrl\u002BShift\u002BZ)",
       "Icon": "Redo",
@@ -149,7 +158,7 @@
     },
     {
       "Index": 0,
-      "Slot": 17,
+      "Slot": 19,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -157,8 +166,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 13,
-      "Slot": 18,
+      "Index": 14,
+      "Slot": 20,
       "Id": "",
       "Tooltip": "Save Display (.cdd)",
       "Icon": "ContentSaveOutline",
@@ -166,8 +175,8 @@
       "Kind": "button"
     },
     {
-      "Index": 14,
-      "Slot": 19,
+      "Index": 15,
+      "Slot": 21,
       "Id": "",
       "Tooltip": "Open Display (.cdd)",
       "Icon": "FolderOpenOutline",
@@ -176,7 +185,7 @@
     },
     {
       "Index": 0,
-      "Slot": 20,
+      "Slot": 22,
       "Id": "",
       "Tooltip": "",
       "Icon": "separator",
@@ -184,8 +193,8 @@
       "Kind": "separator"
     },
     {
-      "Index": 15,
-      "Slot": 21,
+      "Index": 16,
+      "Slot": 23,
       "Id": "",
       "Tooltip": "Export Data",
       "Icon": "DatabaseExportOutline",

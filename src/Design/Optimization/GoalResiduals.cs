@@ -85,6 +85,45 @@ public static class GoalResiduals
     }
 
     /// <summary>
+    /// The base-SI unit the goal's values are in — its value, worst value and margin (brief-yield-16 R-ya16-13). The
+    /// limit's own unit when it is written with one (<c>le 2.4 GHz</c> → Hz: the limit is parsed to base SI to compare
+    /// with the value); otherwise the expression's: dB for a whole <c>dB</c>, <c>dB20</c> or <c>dB10</c> of something,
+    /// dBm for <c>dBm</c>, and a measurement's own unit when the expression is that measurement's name
+    /// (<paramref name="measurementUnits"/>). Empty when none of these says.
+    /// </summary>
+    public static string ValueUnit(OptimizationGoal g, IReadOnlyDictionary<string, string>? measurementUnits = null)
+    {
+        if (TunableValue.TryParse(g.Limit, out _, out string unit, out _) && unit.Length > 0) return Units.BaseUnit(unit);
+        string e = g.Expression.Trim();
+        if (OuterCall(e) is { } f)
+        {
+            if (f is "dB" or "dB20" or "dB10") return "dB";
+            if (f == "dBm") return "dBm";
+        }
+        return measurementUnits is not null && measurementUnits.TryGetValue(e, out var m) && !string.IsNullOrEmpty(m)
+            ? Units.BaseUnit(m) : "";
+    }
+
+    /// <summary>The function name of an expression that is one call end to end (<c>dB(a)</c>, not <c>dB(a) - b</c>).</summary>
+    private static string? OuterCall(string e)
+    {
+        int open = e.IndexOf('(');
+        if (open <= 0 || !e.EndsWith(')')) return null;
+        int depth = 0;
+        bool quoted = false;
+        for (int i = open; i < e.Length; i++)
+        {
+            char c = e[i];
+            if (c == '"') quoted = !quoted;
+            else if (quoted) continue;
+            else if (c is '(' or '[') depth++;
+            else if (c is ')' or ']' && --depth == 0 && i != e.Length - 1) return null;
+        }
+        string name = e[..open].Trim();
+        return name.Length > 0 && name.All(ch => char.IsLetterOrDigit(ch) || ch == '_') ? name : null;
+    }
+
+    /// <summary>
     /// The bounds ONE value of the goal's quantity must lie within to meet it, in base SI — what a value's
     /// statistics (Cpk, σ to the limit) and a histogram's spec lines are read against (brief-yield-8). A sloped limit
     /// gives its TIGHTER end: <c>ge</c> the larger, <c>le</c> the smaller. <c>in</c> gives both edges. <c>eq</c> and

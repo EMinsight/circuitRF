@@ -203,6 +203,13 @@ public static class StatisticsDiagnostics
         "yield.contrib.nothing-varies", DiagnosticSeverity.Error,
         "No statistical variable was drawn in the run, so nothing can contribute.");
 
+    /// <summary>brief-yield-16 R-ya16-3: a run at each corner holds one run per corner, each with its own trials.</summary>
+    public static Diagnostic ContributionCornerStacked(string name, string corners) => Diagnostic.Create(
+        "yield.contrib.corner-stacked", DiagnosticSeverity.Error,
+        "This result is a Monte Carlo run at each corner ({corners}), stacked under a corner axis, so there is no single "
+      + "set of trials to rank '{name}' over. Rank it on a run at one corner: yield mc or estimate without --corners.",
+        ("name", name), ("corners", corners));
+
     // ── YA-9: a trial re-run from the Data Display ─────────────────────────
 
     public static Diagnostic ReplayNoDesign(string result) => Diagnostic.Create(

@@ -27,17 +27,6 @@ internal static partial class Yield
         int? Parallel, int? Seed, double? Target, double? Confidence, int Sampling, int NonConverged, string? Save,
         bool? Process, bool? Mismatch, double? SigmaScale, int Scope, int Surrogate);
 
-    /// <summary>A flag that means nothing to centering: one trial, a statistical corner, auto-stop, corners.</summary>
-    private static Diagnostic? CenterFlagProblem(int? trial, string? cornerName, bool autostop, List<string>? corners, bool contributions)
-    {
-        if (trial is not null)      return CliDiagnostics.YieldCornerFlag("--trial", "yield trial, mc and estimate");
-        if (cornerName is not null) return CliDiagnostics.YieldCornerFlag("--save-corner", "yield trial, mc and estimate");
-        if (autostop)               return CliDiagnostics.YieldCornerFlag("--autostop", "yield estimate");
-        if (corners is not null)    return CliDiagnostics.YieldCornerFlag("--corners", "yield corners, mc and estimate");
-        if (contributions)          return CliDiagnostics.YieldCornerFlag("--contributions", "yield mc and estimate");
-        return null;
-    }
-
     private static int RunCenter(string input, string full, PreparedCircuit circuit, TestBench tb,
                                  List<(string Name, string Expr)> sets, string? presetName, string? output, bool quiet,
                                  List<string>? vars, List<string>? goals, CenterFlags f)

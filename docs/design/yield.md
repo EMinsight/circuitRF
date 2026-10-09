@@ -425,6 +425,14 @@ the root sum square of its coefficients, its streams' summed share and the rank 
 part. Never run unasked. `WorstTrials(goal, k = 10)` lists the evaluated trials with the smallest margin, with their
 values.
 
+**Owner decision D-a (2026-10-08, brief-yield-16): a share is displayed clamped to 0–100 %.** With correlated entries
+β·r is not bounded — on the shipped Bandpass, `PassbandSpec` ranks `C1.C` at 122.8 % and `C3.C` at −43 %. β·r is the
+honest number and stays unchanged in `--json` and in the result file (`yield.contrib:<goal>`). Every DISPLAY shows
+`Contributor.ShownShare` — clamped to 0–1 — : the Pareto's bars (`yield.contrib:<goal>:shown`), the Yield panel's share
+bars and their tooltips, and the CLI's text `--contributions` table. The Pareto's cumulative line
+(`yield.contrib:<goal>:cumulative`) is the running total of the shown shares renormalised to end at 100 %, so it never
+decreases. The ranking is β·r's and does not change.
+
 ### 8.7 Not covered here
 
 The statistics functions reduce whatever cube they are given. A Data Display TRACE expression that calls one is
@@ -673,7 +681,11 @@ TIGHTER end, `in`/`out` at both edges); or when its "Add as goal…" translation
 accessor's parentheses do not change the quantity) and its X is the goal's range axis — then the limit is drawn
 across the range, sloped where it slopes. Dashed in `RenderTheme.LimitColor`, as segments (Skia's SVG device drops a
 path effect), labelled `<goal> ≥ <limit>`. `Plot.ShowSpecLines` is null by default, which is ON: a line exists only
-where a source records goals. The inspector shows the toggle only where one exists.
+where a source records goals. The inspector shows the toggle only where one exists. **A vertical limit is always in
+the picture** (brief-yield-16): an autoscaled X axis widens to take every vertical limit in, and a range the user fixed
+stays as set, the limit then marked by an arrow at the edge it lies past. A goal's per-trial `worst` and `margin`
+carry the goal's unit — its limit's, else dB for a whole `dB(…)`, else a named measurement's — so a histogram's axis
+reads `bin (dB)` and a frequency goal is scaled to the display unit.
 
 ### 12.4 Normal fit (R-ya8-4), the table (R-ya8-5), live (R-ya8-7)
 
@@ -723,11 +735,12 @@ nothing new is a statistic: categories are the result's own cubes, bands are §8
 `trials.goal:S21:pass`, or `corner` (a family over `corner`, each member its own wheel colour). A member reads 1 →
 pass, 0 → fail, NaN → did not evaluate; and a member whose `trials.status` is not 0 did not evaluate WHATEVER its pass
 reads — under `nonconverged=fail` such a trial's pass is 0, and drawing it as a fail would show a curve that was never
-computed. Passes draw in the trace's colour at `TrialRenderer.PassOpacity` (0.35), fails in `RenderTheme.FailColor`
-(the limit colour), did-not-evaluate members not at all. The legend (the Y-axis label) reads `S21 — 471 pass · 29
+computed. Passes draw in the theme's neutral `RenderTheme.PassColor` at `TrialRenderer.PassOpacity` (0.35) — never the
+trace's own colour, whose first wheel colour is red and drew passes and fails as one red band (brief-yield-16) — fails
+in `RenderTheme.FailColor` (the limit colour), did-not-evaluate members not at all. The legend (the Y-axis label) reads `S21 — 471 pass · 29
 fail` (`· n not evaluated` when there are any), counted over the WHOLE axis. The draw order is `FamilyPlan`: passes,
 then members with no pass/fail, then fails, then the nominal — the trace re-read from `nominal.<cube>` with the trial
-axis dropped from its slice — in the trace's full colour and width (**Show Nominal**, on by default).
+axis dropped from its slice (a measurement, spelled bare on the trace, from `nominal.measurements.<name>`) — in the trace's full colour and width (**Show Nominal**, on by default).
 
 A trial family is capped at `Trace.MaxTrialFamilyCurves` (2,000) rather than the general 101: at 101 a failing trial
 300 would never be drawn while the picture claimed to be every trial.

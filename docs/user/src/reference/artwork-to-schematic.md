@@ -72,6 +72,8 @@ Focus a **saved** layout and choose **Design â–¸ Create Schematic from Artworkâ€
 saved has no cell to write beside, and is refused with a message, as **Update Schematic from Layout** refuses
 it. The dialog reads the layout as it is saved on disk; save first to include recent edits.
 
+{{ui: artwork-to-schematic-dialog}}
+
 The dialog stays open beside the layout: selecting a row of its parts table marks that part on the artwork.
 Recognition runs when the dialog opens, and again whenever the scope, an option or a companion file changes;
 the strip at the bottom shows its progress.

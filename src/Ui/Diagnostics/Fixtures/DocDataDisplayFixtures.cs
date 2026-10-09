@@ -21,7 +21,7 @@ namespace CircuitRF.Ui.Diagnostics.Fixtures;
 /// figure cannot show an arrangement the interface cannot reach. The data comes from
 /// <see cref="DocRunData"/>, which runs the shipped test benches for real.</para>
 /// </summary>
-public static class DocDataDisplayFixtures
+public static partial class DocDataDisplayFixtures
 {
     /// <summary>A Data Display document wired to the documentation's own results directory.</summary>
     private static DataDisplayDocumentViewModel Document()

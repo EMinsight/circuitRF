@@ -49,51 +49,85 @@ internal static partial class Yield
         ("doe",      "Design of experiments: runs a structured design over the opt=1 ranges (or the stat=1 tolerances) and prints each response's main effects and interactions, Lenth's margin and the alias sets; --optimum searches the fitted model and confirms its best point by simulation. Exits 0 unless it could not run."),
     ];
 
-    /// <summary>Every flag the verb reads — the table <c>reference statistics</c> renders, so a flag added here
-    /// appears there with nothing else to edit. Each is also a literal in <see cref="Run"/>'s parser.</summary>
-    internal static readonly (string Flag, string Takes, string Summary)[] Flags =
+    // The run each flag can change, as the table below names it. "trial" is also mc and estimate with --trial, which
+    // re-run one trial; "corners --mc" is a run at each corner and "corners --generate" prints corner lines.
+    private const string NMc = "mc", NEst = "estimate", NTrial = "trial", NCorners = "corners",
+                         NCornersMc = "corners --mc", NGenerate = "corners --generate", NCenter = "center", NDoe = "doe";
+    private static readonly string[] Spread = [NMc, NEst, NTrial, NCornersMc, NCenter];
+    private static readonly string[] Draws  = [NMc, NEst, NTrial, NCorners, NCornersMc, NCenter];
+    private static readonly string[] Runs   = [NMc, NEst, NTrial, NCorners, NCornersMc, NCenter, NDoe];
+    private static readonly string[] Every  = [.. Runs, NGenerate];
+
+    /// <summary>Every flag the verb reads and the runs that honour it — the table <c>reference statistics</c> renders,
+    /// so a flag added here appears there with nothing else to edit. Each is also a literal in <see cref="Run"/>'s
+    /// parser, and a flag given to a run not in its list is refused by name (brief-yield-16 R-ya16-7): a run that
+    /// succeeded while ignoring part of what it was asked is the failure nobody can notice.</summary>
+    internal static readonly (string Flag, string Takes, string[] Nouns, string Summary)[] Flags =
     [
-        ("--trials",       "n",                  "Trials to run; with --autostop, the most it runs. center: M, the common trials every candidate is scored on."),
-        ("--seed",         "n",                  "The seed every draw is a function of, with the trial number. center: the common trials' seed; verification uses the next."),
-        ("--sampling",     "random|lhs|sobol",   "How trials are placed."),
-        ("--target",       "p%",                 "estimate, center: the yield to meet (exit 3 below it; center: the verified yield)."),
-        ("--confidence",   "p%",                 "The confidence of the yield interval."),
-        ("--autostop",     "",                   "estimate: stop once the interval clears --target either way (not with lhs)."),
-        ("--nonconverged", "fail|warn",          "A trial that does not evaluate counts as a fail, or is left out of the count."),
-        ("--save",         "scalars|all|n|auto", "Which trials keep their full analysis results in the result file."),
-        ("--process",      "0|1",                "Kit process draws on or off."),
-        ("--mismatch",     "0|1",                "Kit mismatch draws on or off."),
-        ("--sigma-scale",  "k",                  "Scales every kit sigma."),
-        ("--parallel",     "n",                  "Trials evaluated at once (center: simulations)."),
-        ("--analyses",     "goals|all",          "Only the analyses the goals name, or every runnable one."),
-        ("--set",          "var=expr",           "Override a global before elaboration, as every run verb does."),
-        ("--vars",         "k,k",                "Draw only these of the statistical entries; the rest stay at nominal."),
-        ("--goals",        "g,g",                "Score only these of the enabled goals."),
-        ("--trial",        "n",                  "Re-run only trial n (trial needs it; mc and estimate take it too)."),
-        ("--contributions","",                   "Also report what drives each goal's and measurement's spread (--json)."),
-        ("--save-preset",  "name",               "A .csch, with --trial: add that trial's values as a preset. center: add the centred nominals as a preset."),
-        ("--save-corner",  "name",               "A .csch, with --trial: add a statistical corner naming that trial."),
-        ("--corners",      "c,c",                "corners, mc, estimate: only these enabled corners (mc/estimate: a run at each)."),
-        ("--mc",           "",                   "corners: a Monte Carlo (a yield, when the design has a yield goal) at each corner, process draws off there."),
-        ("--generate",     "spec",               "corners: print the corners a cross product makes, e.g. \"axis=tt,ss;temp=-40,25,85;Vdd=3.0,3.6\"; writes nothing."),
-        ("--write",        "",                   "corners --generate, a .csch: append the generated corners, after a history checkpoint."),
-        ("--algorithm",    "id",                 "center: the search, one of " + string.Join(", ", OptimizerAlgorithms.ForNoisyObjective) + " (default cmaes)."),
-        ("--verify",       "n",                  "center: fresh trials the start and the best point are each verified on."),
-        ("--max-iter",     "n",                  "center: iteration limit."),
-        ("--max-evals",    "n",                  "center: simulation limit, verification not counted."),
-        ("--time",         "limit",              "center: wall-clock limit — seconds, or a number and s, ms, min or h."),
-        ("--width",        "w",                  "center: the smooth yield's logistic width, a fraction of each goal's scale."),
-        ("--surrogate",    "none|quadratic",     "center: quadratic scores each candidate on a quadratic fit of its margins (2k+1 simulations and a few trials) and 10,000 virtual trials; the result's yield is still simulated."),
-        ("--design",       "full2|frac|pb|ccf",  "doe: the design — full factorial, fractional factorial, Plackett–Burman screening, face-centred composite."),
-        ("--resolution",   "4|5",                "doe --design frac: the resolution."),
-        ("--factors",      "opt|stat",           "doe: the opt=1 entries over their ranges, or the stat=1 entries at nominal ± k sigma."),
-        ("--levels",       "range|sigma:k",      "doe: range with opt factors; sigma:k with stat factors."),
-        ("--centre",       "n",                  "doe: centre points added (0 adds none)."),
-        ("--responses",    "goals|all",          "doe: the goals the factors are for, or every enabled goal; every scalar measure either way."),
-        ("--optimum",      "",                   "doe --factors opt: search the fitted model for the goals' best point and confirm it by one simulation."),
-        ("-o",             "out.npy",            "Where the result is written; default <design>.yield.npy beside the design (center: the best point's verification; doe: <design>.doe.npy)."),
-        ("-q",             "",                   "No progress line on stderr."),
+        ("--trials",       "n",                  Spread,                                      "Trials to run; with --autostop, the most it runs. center: M, the common trials every candidate is scored on."),
+        ("--seed",         "n",                  Spread,                                      "The seed every draw is a function of, with the trial number. center: the common trials' seed; verification uses the next."),
+        ("--sampling",     "random|lhs|sobol",   Spread,                                      "How trials are placed."),
+        ("--target",       "p%",                 [NEst, NCornersMc, NCenter],                 "The yield to meet (exit 3 below it; center: the verified yield)."),
+        ("--confidence",   "p%",                 [NMc, NEst, NCornersMc, NCenter],            "The confidence of the yield interval."),
+        ("--autostop",     "",                   [NEst, NCornersMc],                          "Stop once the interval clears --target either way (not with lhs)."),
+        ("--nonconverged", "fail|warn",          [NMc, NEst, NCorners, NCornersMc, NCenter],  "A trial that does not evaluate counts as a fail, or is left out of the count."),
+        ("--save",         "scalars|all|n|auto", [NMc, NEst, NCornersMc, NCenter],            "Which trials keep their full analysis results in the result file."),
+        ("--process",      "0|1",                Draws,                                       "Kit process draws on or off."),
+        ("--mismatch",     "0|1",                Draws,                                       "Kit mismatch draws on or off."),
+        ("--sigma-scale",  "k",                  Draws,                                       "Scales every kit sigma."),
+        ("--parallel",     "n",                  [NMc, NEst, NCorners, NCornersMc, NCenter, NDoe], "Trials evaluated at once (center, doe: simulations)."),
+        ("--analyses",     "goals|all",          Draws,                                       "Only the analyses the goals name, or every runnable one."),
+        ("--set",          "var=expr",           Runs,                                        "Override a global before elaboration, as every run verb does."),
+        ("--vars",         "k,k",                Draws,                                       "Draw only these of the statistical entries; the rest stay at nominal."),
+        ("--goals",        "g,g",                Runs,                                        "Score only these of the enabled goals."),
+        ("--trial",        "n",                  [NTrial],                                    "Re-run only trial n (trial needs it; mc and estimate take it too, and then take what trial takes)."),
+        ("--contributions","",                   [NMc, NEst],                                 "Also report what drives each goal's and measurement's spread."),
+        ("--save-preset",  "name",               [NTrial, NCenter],                           "A .csch, with --trial: add that trial's values as a preset. center: add the centred nominals as a preset."),
+        ("--save-corner",  "name",               [NTrial],                                    "A .csch, with --trial: add a statistical corner naming that trial."),
+        ("--corners",      "c,c",                [NMc, NEst, NCorners, NCornersMc],           "Only these enabled corners (mc/estimate: a run at each)."),
+        ("--mc",           "",                   [NCorners, NCornersMc],                      "corners: a Monte Carlo (a yield, when the design has a yield goal) at each corner, process draws off there."),
+        ("--generate",     "spec",               [NGenerate],                                 "corners: print the corners a cross product makes, e.g. \"axis=tt,ss;temp=-40,25,85;Vdd=3.0,3.6\"; writes nothing."),
+        ("--write",        "",                   [NGenerate],                                 "corners --generate, a .csch: append the generated corners, after a history checkpoint."),
+        ("--algorithm",    "id",                 [NCenter],                                   "center: the search, one of " + string.Join(", ", OptimizerAlgorithms.ForNoisyObjective) + " (default cmaes)."),
+        ("--verify",       "n",                  [NCenter],                                   "center: fresh trials the start and the best point are each verified on."),
+        ("--max-iter",     "n",                  [NCenter],                                   "center: iteration limit."),
+        ("--max-evals",    "n",                  [NCenter],                                   "center: simulation limit, verification not counted."),
+        ("--time",         "limit",              [NCenter],                                   "center: wall-clock limit — seconds, or a number and s, ms, min or h."),
+        ("--width",        "w",                  [NCenter],                                   "center: the smooth yield's logistic width, a fraction of each goal's scale."),
+        ("--surrogate",    "none|quadratic",     [NCenter],                                   "center: quadratic scores each candidate on a quadratic fit of its margins (2k+1 simulations and a few trials) and 10,000 virtual trials; the result's yield is still simulated."),
+        ("--design",       "full2|frac|pb|ccf",  [NDoe],                                      "doe: the design — full factorial, fractional factorial, Plackett–Burman screening, face-centred composite."),
+        ("--resolution",   "4|5",                [NDoe],                                      "doe --design frac: the resolution."),
+        ("--factors",      "opt|stat",           [NDoe],                                      "doe: the opt=1 entries over their ranges, or the stat=1 entries at nominal ± k sigma."),
+        ("--levels",       "range|sigma:k",      [NDoe],                                      "doe: range with opt factors; sigma:k with stat factors."),
+        ("--centre",       "n",                  [NDoe],                                      "doe: centre points added (0 adds none)."),
+        ("--responses",    "goals|all",          [NDoe],                                      "doe: the goals the factors are for, or every enabled goal; every scalar measure either way."),
+        ("--optimum",      "",                   [NDoe],                                      "doe --factors opt: search the fitted model for the goals' best point and confirm it by one simulation."),
+        ("-o",             "out.npy",            Runs,                                        "Where the result is written; default <design>.yield.npy beside the design (center: the best point's verification; doe: <design>.doe.npy)."),
+        ("-q",             "",                   Every,                                       "No progress line on stderr."),
     ];
+
+    /// <summary>The run a command line is, as <see cref="Flags"/> names it.</summary>
+    private static string RunKey(string noun, int? trial, bool mc, string? generate) => noun switch
+    {
+        "corners" => generate is not null ? NGenerate : mc ? NCornersMc : NCorners,
+        "mc" or "estimate" when trial is not null => NTrial,
+        _ => noun,
+    };
+
+    /// <summary>The first flag given that the run does not honour, refused naming the runs that do — and, for mc or
+    /// estimate with --trial, saying that it is the one trial that does not take it.</summary>
+    private static Diagnostic? FlagNotTaken(string noun, string key, IEnumerable<string> given)
+    {
+        foreach (var flag in given)
+            if (Flags.FirstOrDefault(f => f.Flag == flag) is { Flag: not null } row && !row.Nouns.Contains(key))
+                return CliDiagnostics.YieldCornerFlag(flag, "yield " + NounList(row.Nouns)
+                    + (key == NTrial && noun != NTrial ? $", not to one trial re-run with {noun} --trial" : ""));
+        return null;
+    }
+
+    /// <summary>"a, b and c".</summary>
+    internal static string NounList(IReadOnlyList<string> nouns)
+        => nouns.Count <= 1 ? string.Join("", nouns) : string.Join(", ", nouns.Take(nouns.Count - 1)) + " and " + nouns[^1];
 
     public static int Run(string[] args)
     {
@@ -123,11 +157,10 @@ internal static partial class Yield
         int? verify = null, maxIter = null, maxEvals = null;
         double? width = null;
         string? surrogate = null;
-        var centerOnly = new List<string>();
         string? design = null, factors = null, levels = null, responses = null;
         int? resolution = null, centre = null;
         bool optimum = false;
-        var doeOnly = new List<string>();
+        var given = new List<string>();
         var sets = new List<(string Name, string Expr)>();
 
         for (int i = 1; i < args.Length; i++)
@@ -169,34 +202,32 @@ internal static partial class Yield
                 case "--save-preset" when hasValue: presetName = args[++i]; break;
                 case "--save-corner" when hasValue: cornerName = args[++i]; break;
                 // brief-yield-11: the center line's own settings.
-                case "--algorithm" when hasValue:   algorithm = args[++i]; centerOnly.Add(a); break;
-                case "--time" when hasValue:        time = args[++i]; centerOnly.Add(a); break;
-                case "--verify" when hasValue:      if (!Int(a, args[++i], 1, out verify, out int r9)) return r9; centerOnly.Add(a); break;
-                case "--max-iter" when hasValue:    if (!Int(a, args[++i], 1, out maxIter, out int r10)) return r10; centerOnly.Add(a); break;
-                case "--max-evals" when hasValue:   if (!Int(a, args[++i], 1, out maxEvals, out int r11)) return r11; centerOnly.Add(a); break;
-                case "--surrogate" when hasValue:   surrogate = args[++i]; centerOnly.Add(a); break;
+                case "--algorithm" when hasValue:   algorithm = args[++i]; break;
+                case "--time" when hasValue:        time = args[++i]; break;
+                case "--verify" when hasValue:      if (!Int(a, args[++i], 1, out verify, out int r9)) return r9; break;
+                case "--max-iter" when hasValue:    if (!Int(a, args[++i], 1, out maxIter, out int r10)) return r10; break;
+                case "--max-evals" when hasValue:   if (!Int(a, args[++i], 1, out maxEvals, out int r11)) return r11; break;
+                case "--surrogate" when hasValue:   surrogate = args[++i]; break;
                 // brief-yield-14: the doe line's own settings.
-                case "--design" when hasValue:     design = args[++i]; doeOnly.Add(a); break;
-                case "--factors" when hasValue:    factors = args[++i]; doeOnly.Add(a); break;
-                case "--levels" when hasValue:     levels = args[++i]; doeOnly.Add(a); break;
-                case "--responses" when hasValue:  responses = args[++i]; doeOnly.Add(a); break;
+                case "--design" when hasValue:     design = args[++i]; break;
+                case "--factors" when hasValue:    factors = args[++i]; break;
+                case "--levels" when hasValue:     levels = args[++i]; break;
+                case "--responses" when hasValue:  responses = args[++i]; break;
                 case "--resolution" when hasValue:
                 {
                     string text = args[++i];
                     if (text is not ("4" or "5")) return JsonRun.Fail(CliDiagnostics.YieldFlagValue(a, text, "4 or 5"));
                     resolution = int.Parse(text, CultureInfo.InvariantCulture);
-                    doeOnly.Add(a);
                     break;
                 }
-                case "--centre" or "--center-points" when hasValue: if (!Int(a, args[++i], 0, out centre, out int r12)) return r12; doeOnly.Add(a); break;
-                case "--optimum":                  optimum = true; doeOnly.Add(a); break;
+                case "--centre" or "--center-points" when hasValue: if (!Int(a, args[++i], 0, out centre, out int r12)) return r12; break;
+                case "--optimum":                  optimum = true; break;
                 case "--width" when hasValue:
                 {
                     string text = args[++i];
                     if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double w) || !(w > 0) || !double.IsFinite(w))
                         return JsonRun.Fail(CliDiagnostics.YieldFlagValue(a, text, "a number above zero"));
                     width = w;
-                    centerOnly.Add(a);
                     break;
                 }
                 case "--set" when hasValue:
@@ -211,8 +242,9 @@ internal static partial class Yield
                     if (a.StartsWith('-')) return JsonRun.Fail(CliDiagnostics.RunUnknownOption(Verb, a));
                     if (input is not null) return JsonRun.Fail(CliDiagnostics.RunMultipleInputs(Verb, a));
                     input = a;
-                    break;
+                    continue;
             }
+            given.Add(a switch { "--quiet" => "-q", "--output" => "-o", "--center-points" => "--centre", _ => a });
         }
 
         if (input is null)
@@ -225,20 +257,20 @@ internal static partial class Yield
 
         // ── flag values and combinations, before anything is read ─────────────────
         var mode = noun == "mc" ? StatisticalMode.MonteCarlo : StatisticalMode.Yield;
-        if (CornerFlagProblem(noun, perCorner, generate, write, corners, trial) is { } cornerFlag) return JsonRun.Fail(cornerFlag);
-        if (noun != "center" && centerOnly.Count > 0) return JsonRun.Fail(CliDiagnostics.YieldCornerFlag(centerOnly[0], "yield center"));
-        if (noun != "doe" && doeOnly.Count > 0) return JsonRun.Fail(CliDiagnostics.YieldCornerFlag(doeOnly[0], "yield doe"));
-        if (noun == "doe" && DoeFlagProblem(trial, cornerName, presetName, autostop, corners, contributions, vars, trials, seed, sampling, target) is { } doeFlag)
-            return JsonRun.Fail(doeFlag);
-        if (noun == "center" && CenterFlagProblem(trial, cornerName, autostop, corners, contributions) is { } centerFlag)
-            return JsonRun.Fail(centerFlag);
-        if (time is not null && TuningValidator.TimeLimitSeconds(time) is null)
-            return JsonRun.Fail(CliDiagnostics.YieldFlagValue("--time", time, "seconds, or a number and s, ms, min or h"));
-        if (mode == StatisticalMode.MonteCarlo && (target is not null || autostop))
+        // The specific refusals first — they say more than the table's — then every flag against the run it is given to.
+        if (noun == "mc" && trial is null && (target is not null || autostop))
             return JsonRun.Fail(CliDiagnostics.YieldMcHasNoTarget(target is not null ? "--target" : "--autostop"));
         if (noun == "trial" && trial is null) return JsonRun.Fail(CliDiagnostics.YieldTrialRequired());
         foreach (var (flag, name) in new[] { ("--save-preset", presetName), ("--save-corner", cornerName) })
-            if (name is not null && trial is null && noun != "center") return JsonRun.Fail(CliDiagnostics.YieldSaveNeedsTrial(flag));
+            if (name is not null && trial is null && noun is not ("center" or "doe" or "corners")) return JsonRun.Fail(CliDiagnostics.YieldSaveNeedsTrial(flag));
+        if (FlagNotTaken(noun, RunKey(noun, trial, perCorner, generate), given) is { } notTaken) return JsonRun.Fail(notTaken);
+        // R-ya16-1: a statistical corner names a trial by its seed, sampling and trial count, and replays it under the
+        // design's own statistics line. A flag that changed what this run drew is not in the corner, so the corner
+        // would replay a different trial from the one printed — refused rather than saved wrong.
+        if (cornerName is not null && given.FirstOrDefault(f => f is "--vars" or "--sigma-scale" or "--process" or "--mismatch" or "--set") is { } uncarried)
+            return JsonRun.Fail(CliDiagnostics.YieldSaveCornerCannotCarry(uncarried));
+        if (time is not null && TuningValidator.TimeLimitSeconds(time) is null)
+            return JsonRun.Fail(CliDiagnostics.YieldFlagValue("--time", time, "seconds, or a number and s, ms, min or h"));
         if (output is not null && !output.EndsWith(".npy", StringComparison.OrdinalIgnoreCase))
             return JsonRun.Fail(CliDiagnostics.YieldOutputNotNpy(output));
         int samplingIndex = -1, ncIndex = -1, scopeIndex = -1, surrogateIndex = -1;
@@ -320,10 +352,20 @@ internal static partial class Yield
         if (noun == "corners")
             return RunCorners(input, full, circuit, changed ? setup : null, sets, corners, perCorner,
                               perCorner ? McModeOf(setup) : StatisticalMode.Yield, output, quiet);
-        // statistics corners=all|<names> (or --corners) makes mc/estimate a run at each corner (R-ya6-3).
+        // statistics corners=all|<names> (or --corners) makes mc/estimate a run at each corner (R-ya6-3). A run at each
+        // corner ranks nothing, so --contributions there is refused rather than dropped (R-ya16-7).
         if (trial is null && (corners is not null || st.CornerNames is not { Count: 0 }))
+        {
+            if (contributions)
+                return JsonRun.Fail(CliDiagnostics.YieldCornerFlag("--contributions", "yield mc and estimate run once, not at each corner"));
             return RunCorners(input, full, circuit, changed ? setup : null, sets,
                               corners ?? (st.CornerNames is { } listed ? [.. listed] : null), true, mode, output, quiet);
+        }
+
+        // R-ya16-14: `trial` re-runs a trial as the design's own run would score it — a yield when the design has a
+        // yield goal, a Monte Carlo otherwise — so `yield trial` and `yield mc --trial` agree on a Monte Carlo design
+        // rather than the first refusing for want of a yield goal.
+        if (noun == "trial") mode = McModeOf(setup);
 
         // ── 3. The run ────────────────────────────────────────────────────────────
         var ct = RunHost.Cancellation;
@@ -480,7 +522,8 @@ internal static partial class Yield
         => [.. text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
 
     /// <summary><c>--vars</c>: only these statistical entries are drawn; the others keep their distribution and stay
-    /// at nominal, as <c>stat=0</c> keeps them.</summary>
+    /// at nominal, as <c>stat=0</c> keeps them. A correlation that names an entry left out goes with it — it correlates
+    /// nothing that is drawn — and one wholly inside the list is kept (R-ya16-11).</summary>
     private static Diagnostic? NarrowVariables(TuningSetup setup, List<string> keys)
     {
         var statistical = setup.Variables.Where(e => e.IsStatistical).Select(e => e.Key).ToList();
@@ -488,6 +531,7 @@ internal static partial class Yield
             if (!statistical.Contains(key, StringComparer.Ordinal))
                 return CliDiagnostics.YieldVarsNotStatistical(key, statistical.Count == 0 ? "none" : string.Join(", ", statistical));
         foreach (var e in setup.Variables.Where(e => e.IsStatistical && !keys.Contains(e.Key, StringComparer.Ordinal))) e.Stat = false;
+        setup.Correlations.RemoveAll(c => !keys.Contains(c.First, StringComparer.Ordinal) || !keys.Contains(c.Second, StringComparer.Ordinal));
         return null;
     }
 
@@ -593,7 +637,7 @@ internal static partial class Yield
         {
             var margins = records.Where(x => x.Evaluated)
                 .Select(x => x.Goals.FirstOrDefault(s => s.Name == g.Name)?.Margin ?? double.NaN).ToList();
-            stats.Add(Statistic($"goal:{g.Name}:margin", "", margins, cpkLowerLimit: 0));
+            stats.Add(Statistic($"goal:{g.Name}:margin", GoalResiduals.ValueUnit(g), margins, cpkLowerLimit: 0));
         }
         foreach (var name in MeasureNames(records))
         {
@@ -745,6 +789,20 @@ internal static partial class Yield
             Console.WriteLine($"Worst trials for {w.Goal}:");
             foreach (var t in w.Trials)
                 Console.WriteLine($"  trial {t.Trial,-6} margin {G(t.Margin),-10} {string.Join("  ", t.Values.Select(kv => $"{kv.Key}={kv.Value}"))}");
+        }
+
+        // --contributions as text (R-ya16-10). Each share as a display shows it — clamped to 0–100 % (owner decision
+        // D-a) — and ranked as computed; --json carries β·r as it stands.
+        foreach (var c in r.Contributions ?? [])
+        {
+            Console.WriteLine();
+            if (c.Refused is { } refused) { Console.WriteLine($"Contributions to {c.Of}: {refused}"); continue; }
+            Console.WriteLine($"Contributions to {c.Of} (R² {G(c.RSquared)}{(c.Underdetermined ? ", underdetermined" : "")}):");
+            Table(["contributor", "kind", "share", "Spearman"],
+                  c.Contributors.Select(x => new[]
+                  {
+                      x.Name, x.Kind, (100 * Contributor.Shown(x.Share)).ToString("F1", CultureInfo.InvariantCulture) + " %", G(x.Spearman),
+                  }));
         }
 
         Console.WriteLine();

@@ -166,8 +166,7 @@ public static class TrialResolve
     {
         if (!t.ShowNominal || !t.IsFamily || t.IsVersus || t.FamilyAxisName != Evaluator.TrialAxis
             || t.CubeName is null || t.Slice is null) return;
-        string name = $"{NominalGroup}.{t.CubeName}";
-        if (!ds.Contains(name)) return;
+        if (NominalOf(t.CubeName, ds) is not { } name) return;
 
         // The trace itself, read from the nominal's cube — the same slice with the trial axis gone.
         var scratch = new Trace(t, includeMarkers: false)
@@ -179,6 +178,22 @@ public static class TrialResolve
         scratch.Expression = scratch.BuildPickerExpression();
         TraceResolve.SetCubeDataFrom(scratch, ds, plotType, freqUnit);
         if (scratch.ExpressionError is null && !scratch.IsFamily) t.NominalPoints = [.. scratch.Points];
+    }
+
+    /// <summary>
+    /// The nominal's cube for the family cube <paramref name="cubeName"/>: <c>nominal.&lt;address&gt;</c>. A measurement
+    /// is spelled bare on a trace (<c>S21dB</c>) but stored by its group (<c>nominal.measurements.S21dB</c>), so a bare
+    /// name that names a measurement is qualified first (brief-yield-16 R-ya16-9); a cube that really is in the default
+    /// group keeps its bare address. Null when the result kept no nominal of it.
+    /// </summary>
+    public static string? NominalOf(string cubeName, DataSet ds)
+    {
+        if (!cubeName.Contains('.') && ds.ContainsGroup(DataSet.MeasurementsGroup)
+            && ds.CubesIn(DataSet.MeasurementsGroup).ContainsKey(cubeName)
+            && ds.Contains($"{NominalGroup}.{DataSet.MeasurementsGroup}.{cubeName}"))
+            return $"{NominalGroup}.{DataSet.MeasurementsGroup}.{cubeName}";
+        string name = $"{NominalGroup}.{cubeName}";
+        return ds.Contains(name) ? name : null;
     }
 
     // ── the envelope (R-ya9-3) ───────────────────────────────────────────────────

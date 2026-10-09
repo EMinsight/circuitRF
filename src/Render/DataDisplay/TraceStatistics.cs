@@ -43,6 +43,15 @@ public static class TraceStatistics
     /// <summary>The group a Monte Carlo result keeps its per-trial values in (docs/design/results-dataset-layout.md).</summary>
     private const string TrialsGroup = "trials";
 
+    /// <summary>The axis a run at each corner stacks its runs under.</summary>
+    public const string CornerAxis = "corner";
+
+    /// <summary>Why a statistic over the trials of a run at each corner is refused until one corner is chosen.</summary>
+    public const string CornerRefusal =
+        "This result is a run at each corner, so its trials are stacked under a 'corner' axis. Pin one corner on the " +
+        "trace (plot: corner=<name>) before taking a statistic over its trials; without it the statistic would read the " +
+        "first corner alone.";
+
     /// <summary>
     /// The axes the menu can take a statistic over: every axis of the trace's slice except the port pair (<c>i</c>,
     /// <c>j</c>), the <c>trial</c> axis first and the axes the trace keeps next — or, for a typed expression, its X
@@ -114,6 +123,7 @@ public static class TraceStatistics
         {
             if (PassSpec(ds) is not { } pass)
                 return (null, "This source scores no goal, so there is no pass/fail to take a yield sensitivity of.");
+            if (YieldDisplayPreset.CornerStackedRefusal(ds, "A yield sensitivity") is { } stacked) return (null, stacked);
             if (statSpec is null || !StatSpecs(ds).Contains(statSpec, StringComparer.Ordinal))
                 return (null, $"Name a statistical variable to bin over: {string.Join(", ", StatSpecs(ds))}.");
             int n = bins ?? AutoBins($"{statSpec} + 0*{pass}", ds) ?? 10;
@@ -123,6 +133,12 @@ public static class TraceStatistics
             return (new StatisticsRewrite($"100*yield_sens({pass}, {statSpec}, {b})", TraceDrawStyle.Bars,
                                           $"histogram({statSpec} + 0*{pass}, {b})"), null);
         }
+
+        // A run at each corner stacks its trials under a corner axis. Taking a statistic over the trials with that axis
+        // free would silently read the first corner alone (brief-yield-16 R-ya16-3), so it must be pinned first.
+        if (trace.Slice is { } own && axis != CornerAxis
+            && own.FirstOrDefault(s => s.AxisName == CornerAxis) is { } corner && corner.Role != AxisRole.PinToIndex)
+            return (null, CornerRefusal);
 
         var axes = Axes(trace);
         axis ??= axes.Contains(Evaluator.TrialAxis) ? Evaluator.TrialAxis : axes.Count == 1 ? axes[0] : null;

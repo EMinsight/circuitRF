@@ -59,6 +59,13 @@ namespace CircuitRF.Render.DataDisplay
         /// <summary>The colour a failing trial is drawn in (brief-yield-9 R-ya9-1) — the limit it failed against.</summary>
         public SKColor FailColor => LimitColor;
 
+        /// <summary>
+        /// The colour a passing trial is drawn in under colour-by-pass: a neutral grey, whatever the trace's own colour
+        /// (brief-yield-16 R-ya16-2). In the trace's colour, a first trace — red — drew its passes and its fails as one
+        /// red band.
+        /// </summary>
+        public SKColor PassColor => DarkMode ? new SKColor(150, 158, 166) : new SKColor(110, 118, 128);
+
         /// <summary>The opacity an area is filled at under its own outline — a histogram's bars (R-ya8-1).</summary>
         public double FillOpacity => 0.35;
 

@@ -4043,6 +4043,15 @@ internal static class CliDiagnostics
         "cli.yield.save-needs-trial", DiagnosticSeverity.Error,
         "yield: {flag} saves one trial — name it with --trial n.", ("flag", flag));
 
+    /// <summary>brief-yield-16 R-ya16-1: a statistical corner records the trial's seed, sampling and trial count and
+    /// nothing else, so a flag that changed what the run drew would be lost from it.</summary>
+    public static Diagnostic YieldSaveCornerCannotCarry(string flag) => Diagnostic.Create(
+        "cli.yield.save-corner-uncarried", DiagnosticSeverity.Error,
+        "yield: --save-corner cannot be used with {flag}. A statistical corner records only the trial, seed, sampling "
+      + "and trial count, and replays the trial under the design's own statistics line, so it would replay different "
+      + "values from the ones this run drew. Save the values as a preset with --save-preset instead, or drop {flag}.",
+        ("flag", flag));
+
     /// <summary>The two writes go to a schematic's tuning block; a netlist is text the caller writes (D12).</summary>
     public static Diagnostic YieldSaveNeedsSchematic(string flag, string path) => Diagnostic.Create(
         "cli.yield.save-needs-schematic", DiagnosticSeverity.Error,

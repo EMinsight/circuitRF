@@ -44,6 +44,30 @@ public static class TrialViews
          : plotType != PlotType.Rect ? TrialResolve.ComplexPlaneRefusal
          : null;
 
+    /// <summary>
+    /// Why colouring <paramref name="trace"/> by <paramref name="by"/> in <paramref name="ds"/> would draw nothing
+    /// different, or null when it colours — the same early exits <see cref="TrialResolve"/> takes, read from the trace's
+    /// slice before it is resolved, so <c>plot</c> refuses what the picture would silently ignore (brief-yield-16
+    /// R-ya16-8). The members are a family's, or the points along its X.
+    /// </summary>
+    public static string? ColourByRefusal(Trace trace, DataSet ds, string by)
+    {
+        var slice = trace.Slice ?? [];
+        string? family = slice.Where(s => s.Role == AxisRole.FamilyIterate).Select(s => s.AxisName).FirstOrDefault();
+        string? member = family ?? slice.Where(s => s.Role == AxisRole.KeepAsX).Select(s => s.AxisName).FirstOrDefault();
+        if (by == Trace.ColorByCorner)
+            return family == "corner" ? null : "colorby=corner colours a family whose members are corners; this trace has none.";
+        if (member is null) return "Colour by colours a trace's trials, and this trace has no trial axis.";
+        string? spec = by == Trace.ColorByPass ? TraceStatistics.PassSpec(ds) : by;
+        if (spec is null) return "This source scores no goal, so there is no pass or fail to colour by.";
+        if (!ds.Contains(spec)) return $"There is no cube '{spec}' to colour by.";
+        var cube = ds[spec];
+        if (cube.Rank != 1 || cube.DataKind != DataKind.Real || cube.Axes[0].Name != member)
+            return $"'{spec}' is not one real value per {member}, so it cannot colour this trace's members — they are over '{member}'"
+                 + (member == Evaluator.TrialAxis ? "." : "; colour by colours trials.");
+        return null;
+    }
+
     /// <summary>The envelopes the menu offers.</summary>
     public static IReadOnlyList<TrialEnvelope> EnvelopeChoices { get; } =
     [

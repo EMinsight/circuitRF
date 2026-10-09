@@ -206,6 +206,30 @@ convention behind both.</p>
 <td>The best values and each goal's result to stdout; <strong>nothing</strong> in the design (<code>--save-preset</code> adds a preset)</td>
 </tr>
 <tr>
+<td><code>yield mc</code>, <code>yield estimate</code>, <code>yield trial</code></td>
+<td><code>.csch</code> or <code>.cnl</code></td>
+<td>A Monte Carlo or yield run over the tolerances on the tune lines, the kit's statistics and the <code>statistics</code> line</td>
+<td>The yield, each goal's result and the spread to stdout; the trials to <code>&lt;design&gt;.yield.npy</code>; <strong>nothing</strong> in the design (<code>--save-preset</code>, <code>--save-corner</code> with <code>--trial</code>)</td>
+</tr>
+<tr>
+<td><code>yield corners</code></td>
+<td><code>.csch</code> or <code>.cnl</code></td>
+<td>The design at every enabled corner, or a Monte Carlo at each (<code>--mc</code>)</td>
+<td>A corner × goal margin table to stdout; the corners to <code>&lt;design&gt;.corners.npy</code>; <strong>nothing</strong> in the design (<code>--generate … --write</code> on a <code>.csch</code>)</td>
+</tr>
+<tr>
+<td><code>yield center</code></td>
+<td><code>.csch</code> or <code>.cnl</code></td>
+<td>Design centering — the <a href="yield.html#centering">Yield</a> panel's Centering run</td>
+<td>The verified start and centred yields and the centred values to stdout; the verification to <code>&lt;design&gt;.yield.npy</code>; <strong>nothing</strong> in the design (<code>--save-preset</code> adds a preset)</td>
+</tr>
+<tr>
+<td><code>yield doe</code></td>
+<td><code>.csch</code> or <code>.cnl</code></td>
+<td>A design of experiments over the optimizer's or the tolerances' values</td>
+<td>Each response's effects to stdout; the runs to <code>&lt;design&gt;.doe.npy</code>; <strong>nothing</strong> in the design</td>
+</tr>
+<tr>
 <td><code>rail</code></td>
 <td><code>.crail</code></td>
 <td>The same DC solve and via check <a href="railrf.html">railRF</a>'s <strong>Run</strong> button calls</td>
@@ -222,6 +246,12 @@ convention behind both.</p>
 <td>a cell folder, a workspace, a <code>.clay</code> or a <code>.csch</code></td>
 <td>The same comparison the <a href="lvs.html">LVS panel</a>'s <strong>Compare</strong> button calls</td>
 <td><strong>Nothing</strong> — the report to stdout; <code>-o report.txt</code></td>
+</tr>
+<tr>
+<td><code>recognize</code></td>
+<td>a <code>.clay</code>, a cell folder, or a workspace with <code>--cell</code></td>
+<td>Reads the board's copper as a circuit — ground, vias, ports, parts and lines as native components</td>
+<td><strong>Nothing</strong> — the report and the parts table to stdout; <code>-o circuit.cnl</code>, <code>--into new:&lt;name&gt;</code> for a schematic, <code>--parts-out parts.csv</code></td>
 </tr>
 <tr>
 <td><code>impedance</code></td>
@@ -973,6 +1003,10 @@ point and the margin there; an unmet one its worst point, with a negative margin
 <td>Optimize only these of the saved variables, against only these goals. A complex value is named by its parts (<code>mag(Zs)</code>), never whole.</td>
 </tr>
 <tr>
+<td><code>--corners all\|none\|name,name</code></td>
+<td>Meet the goals at these <a href="yield.html#corners">corners</a> as well as the nominal, overriding the saved <code>corners=</code>. Each point then costs one simulation per corner, and each goal's result names the corner that binds it.</td>
+</tr>
+<tr>
 <td><code>--snap</code></td>
 <td><a href="optimization.html#snap">Snap and polish</a> at the end.</td>
 </tr>
@@ -1002,7 +1036,228 @@ point and the margin there; an unmet one its worst point, with a negative margin
 panel, recall a saved preset, or write the values into the file. An exit code of <strong>3</strong> means the run
 finished with at least one goal unmet — not a failure of the run, but not a design that meets its
 specification either. Over <a href="ai-agents.html">MCP</a> the same run is <code>run analysis=optimize</code>, and
-<code>reference goals</code>, <code>reference tuning</code> and <code>reference optimizers</code> say what may be written.</p>
+<code>reference goals</code>, <code>reference tuning</code> and <code>reference optimizers</code> say what may be written;
+<code>reference statistics</code> covers tolerances, correlations, the statistics settings and corners.</p>
+<h2 id="yield"><code>yield</code> — Monte Carlo and yield from the command line</h2>
+<pre><code class="language-text">circuitrf yield mc|estimate|trial|corners|center|doe &lt;schematic.csch | netlist.cnl&gt; [flags]
+</code></pre>
+<p><code>yield</code> draws the design's tolerances — the <code>dist=</code> keys on its tune lines, and its kit's process and
+mismatch statistics — and simulates each draw. <strong><code>mc</code></strong> reports the spread alone; <strong><code>estimate</code></strong>
+counts how many trials pass the goals marked <code>use=yield</code> or <code>use=both</code> and reports that yield with its
+confidence interval; <strong><code>trial</code></strong> re-runs one trial and says what it drew. Every trial is a function of
+the seed and its own number, so the same file and seed give the same trials on any machine, at any
+parallelism.</p>
+<pre><code class="language-text">$ circuitrf yield estimate div.cnl --target 80%
+Yield estimate: div.cnl
+  seed 1 · sampling random · 200 of 200 trials · 200 trials
+Yield: 88.0 % (95 % interval 82.7 % – 92.2 %; 176 of 200 counted trials pass) · target 80.0 %: met
+
+Goals:
+  name  yield   interval         worst margin  trial
+  Vout  88.0 %  82.7 % – 92.2 %  -0.01022      58
+
+Statistics over the evaluated trials:
+  of                n    mean      sigma     min       max       median    Cpk
+  goal:Vout:margin  200  0.004593  0.004064  -0.01022  0.009956  0.005223  0.3767
+  Vo                200  0.5003    0.006768  0.4817    0.5202    0.5005
+
+Worst trials for Vout:
+  trial 58     margin -0.01022   R1.R=979.902516568072 Ohm  R2.R=1062.49587500816 Ohm
+  ...
+</code></pre>
+<p>A progress line per batch goes to stderr (<code>-q</code> silences it). The trials are written to
+<code>&lt;design&gt;.yield.npy</code> beside the design: every analysis result with an outer <code>trial</code> axis, each trial's
+drawn values, margins and pass/fail, the nominal, and a <code>yield</code> summary. <code>read</code> prints that summary
+first, and <code>plot</code> draws the statistics functions directly — <code>--trace &quot;cube=histogram(trials.goal:Vout:worst, 20)&quot;</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--trials</code>, <code>--seed</code>, <code>--sampling random\|lhs\|sobol</code>, <code>--confidence p%</code>, <code>--nonconverged fail\|warn</code>, <code>--save scalars\|all\|n\|auto</code>, <code>--parallel</code>, <code>--analyses goals\|all</code></td>
+<td>Override the <code>statistics</code> line, for this run only.</td>
+</tr>
+<tr>
+<td><code>--target p%</code>, <code>--autostop</code></td>
+<td><code>estimate</code> only: the yield to meet, and stopping as soon as the interval is clear of it either way.</td>
+</tr>
+<tr>
+<td><code>--process 0\|1</code>, <code>--mismatch 0\|1</code>, <code>--sigma-scale k</code></td>
+<td>The kit's process and mismatch draws, and a scale on every kit sigma.</td>
+</tr>
+<tr>
+<td><code>--vars key,key</code>, <code>--goals name,name</code></td>
+<td>Draw only these tolerances (the rest stay at nominal); score only these goals.</td>
+</tr>
+<tr>
+<td><code>--trial n</code></td>
+<td>Re-run only trial <code>n</code>. <code>-o out.npy</code> then writes its results. <code>yield trial</code> scores it as the design's own run would — a yield when there is a yield goal, a Monte Carlo otherwise.</td>
+</tr>
+<tr>
+<td><code>--save-preset &lt;name&gt; --trial n</code></td>
+<td>Add that trial's values to the schematic as a preset. Refused for a <code>.cnl</code>.</td>
+</tr>
+<tr>
+<td><code>--save-corner &lt;name&gt; --trial n</code></td>
+<td>Add a corner naming that trial, so later runs can replay it. Refused for a <code>.cnl</code>, and with <code>--vars</code>, <code>--sigma-scale</code>, <code>--process</code>, <code>--mismatch</code> or <code>--set</code>: a corner replays the trial under the design's own settings, so it would not be the trial you saw.</td>
+</tr>
+<tr>
+<td><code>--contributions</code></td>
+<td>Which tolerances drive each goal's and measurement's spread, largest first. The table shows each share between 0 and 100 %; <code>--json</code> gives the fitted share as it stands, which can pass 100 % or fall below 0 when tolerances are correlated.</td>
+</tr>
+<tr>
+<td><code>-o out.npy</code></td>
+<td>Where the trials are written.</td>
+</tr>
+<tr>
+<td><code>--set var=expr</code></td>
+<td>As for every run verb.</td>
+</tr>
+</tbody>
+</table>
+<p>A flag that a run would not use is refused, naming the runs that take it — <code>--trials</code> on <code>yield corners</code> without
+<code>--mc</code>, say, or <code>--confidence</code> on <code>yield doe</code>. <code>reference statistics</code> lists every flag with the runs that take it.</p>
+<p><strong>It never changes the design's values.</strong> Exit <strong>0</strong> means the run finished and the yield met
+<code>--target</code> (or there was none); <strong>3</strong>, that it finished below the target; <strong>1</strong>, that it was refused;
+<strong>2</strong>, that no trial evaluated; <strong>130</strong>, that it was cancelled, with nothing written. Over
+<a href="ai-agents.html">MCP</a> the same runs are <code>run analysis=montecarlo</code>, <code>run analysis=yield</code> and <code>run analysis=corners</code>, and
+<code>reference statistics</code> says how to write tolerances, yield specs and the <code>statistics</code> line.
+<code>explain &lt;file&gt; --analysis</code> reports how wide the interval of the configured trial count will be and
+roughly how long the run takes, before you start it.</p>
+<h3 id="yield-corners">Corners</h3>
+<p><code>yield corners</code> checks the design at every enabled <code>corner</code> line — a kit corner selection, a temperature, values —
+in one run, and prints one row per corner with each goal's margin:</p>
+<pre><code class="language-text">$ circuitrf yield corners div.cnl
+Corners: div.cnl
+  a goal FAILS at a corner
+
+  corner   temp  Vout margin  status
+  nominal        0.08         passes
+  cold     -40   0.1572       passes
+  hot      125   -0.002045 ✗  FAILS
+  hiR2     85    0.05158      passes
+
+Worst corner per goal:
+  Vout: hot (margin -0.002045, FAILS)
+</code></pre>
+<p>It exits <strong>3</strong> when a goal fails at any corner, and writes <code>&lt;design&gt;.corners.npy</code>. A corner made from a Monte Carlo
+trial (<code>--save-corner</code>) replays that trial's draws around the design's current values, so it follows the design as
+you tune it.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--corners name,name</code></td>
+<td>Only these corners. On <code>mc</code> and <code>estimate</code>, a run at each of them.</td>
+</tr>
+<tr>
+<td><code>--mc</code></td>
+<td>A Monte Carlo — a yield, when the design has a yield goal — at each corner, with the kit's process draws off there: the corner is the process. The table is then a yield per corner.</td>
+</tr>
+<tr>
+<td><code>--generate &quot;spec&quot;</code></td>
+<td>Print the corners a cross product makes and write nothing, e.g. <code>&quot;proc=tt,ss;temp=-40,25,85;Vdd=3.0,3.6&quot;</code> — a kit axis by its name, <code>temp</code>, any variable or tunable value. With <code>--json</code>, each corner's name, temperature and values.</td>
+</tr>
+<tr>
+<td><code>--write</code></td>
+<td>With <code>--generate</code>, on a schematic: add the generated corners to it.</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-text">$ circuitrf yield corners div.cnl --generate &quot;temp=-40,25,85;R2.R=900 Ohm,1100 Ohm&quot;
+corner tm40_R2R900 temp=-40 R2.R=900 Ohm
+corner tm40_R2R1100 temp=-40 R2.R=1100 Ohm
+corner t25_R2R900 temp=25 R2.R=900 Ohm
+...
+</code></pre>
+<h3 id="yield-center">Centering</h3>
+<p><code>yield center</code> moves the values marked <code>opt=1</code>, within their ranges, to where the most trials meet the specs, and
+then checks the result: the starting values and the centred ones are each run on the same set of fresh trials. On
+the <em>Yield, Corners and Centering</em> example:</p>
+<pre><code class="language-text">$ circuitrf yield center DividerCentering/schematic/DividerCentering.csch
+Design centering: DividerCentering/schematic/DividerCentering.csch
+  cmaes · 100 common trials (seed 1) · 10 iterations · 4100 simulations · the iteration limit (10) was reached
+Verified: yield 73 % [70.1 %, 75.7 %] → 99.1 % [98.3 %, 99.6 %] on the same 1000 fresh trials; the intervals do not overlap · target 95.0 %: met
+...
+</code></pre>
+<p>The verified pair is the result; the search's own yields, on its common trials, are shown beside it and labelled as
+such. The flags are the <code>center</code> line's, for this run only — <code>--algorithm</code>, <code>--trials</code> (the common trials each
+position is scored on), <code>--verify</code>, <code>--max-iter</code>, <code>--max-evals</code>, <code>--time</code>, <code>--width</code>, <code>--parallel</code>, <code>--seed</code> — with
+<code>--target</code>, <code>--confidence</code>, <code>--sampling</code>, the kit switches, <code>--vars</code> and <code>--goals</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--surrogate quadratic</code></td>
+<td>Score each position on a quadratic fit of the specs' margins instead of simulating every trial — 410 simulations instead of 4,100 on the divider above. The final check is still simulated.</td>
+</tr>
+<tr>
+<td><code>--save-preset &lt;name&gt;</code></td>
+<td>Add the centred values to the schematic as a preset. Refused for a <code>.cnl</code>.</td>
+</tr>
+<tr>
+<td><code>-o out.npy</code></td>
+<td>Where the verification of the centred values is written.</td>
+</tr>
+</tbody>
+</table>
+<p>Exit <strong>0</strong> means the verified yield met <code>--target</code>; <strong>3</strong>, that it fell short; <strong>1</strong>, refused; <strong>2</strong>, no position
+evaluated; <strong>130</strong>, cancelled with nothing written. Over MCP it is <code>run analysis=center</code>.</p>
+<h3 id="yield-doe">Design of experiments</h3>
+<p><code>yield doe</code> runs the design at a planned set of combinations of its values — the <code>opt=1</code> values at the ends of
+their ranges, or with <code>--factors stat</code> the toleranced values at their nominal ± k σ — and reports, for each spec and
+measurement, each value's effect and each pair's interaction, largest first. An effect larger than the noise level
+estimated from the small ones is starred; an effect a fractional design cannot tell apart from another lists it.</p>
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--design full2\|frac\|pb\|ccf</code></td>
+<td>Full factorial, fractional factorial, Plackett–Burman screening, or a face-centred composite for a curved model.</td>
+</tr>
+<tr>
+<td><code>--resolution 4\|5</code></td>
+<td>For <code>frac</code>.</td>
+</tr>
+<tr>
+<td><code>--factors opt\|stat</code>, <code>--levels range\|sigma:k</code></td>
+<td>Which values are the factors, and where their low and high ends are.</td>
+</tr>
+<tr>
+<td><code>--centre n</code></td>
+<td>Centre points added (<code>0</code> adds none).</td>
+</tr>
+<tr>
+<td><code>--responses goals\|all</code></td>
+<td>Which goals are responses: the specs, or every enabled goal. Every scalar measurement is a response either way.</td>
+</tr>
+<tr>
+<td><code>--optimum</code></td>
+<td>Search the fitted model for the point that best meets the specs, and simulate that point to confirm it.</td>
+</tr>
+</tbody>
+</table>
+<p>It writes <code>&lt;design&gt;.doe.npy</code> and nothing in the design. There is no target, so the exit codes are <strong>0</strong>, <strong>1</strong>, <strong>2</strong>
+and <strong>130</strong>. Over MCP it is <code>run analysis=doe</code>.</p>
 <h2 id="rail"><code>rail</code> — power integrity, headless</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf rail &lt;board.crail&gt; [--rail NAME] [--accurate] [-o out.{csv,npy,mat,txt,svg,pdf}]</code></pre>
 <p><code>rail</code> runs a <strong><code>.crail</code></strong> — the document the <a href="railrf.html">railRF window</a> edits. It resolves the
@@ -1199,6 +1454,79 @@ slow is a <code>check</code> people stop running. What <code>check</code> does c
 <a href="lvs.html#terminals">terminal-map</a> validation, which is cheap and static.</p>
 <p>See <a href="lvs.html">the LVS chapter</a> for what the findings mean and a worked example on the shipped
 example workspace.</p>
+<h2 id="recognize"><code>recognize</code> — a board's artwork as a circuit</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf recognize &lt;file.clay | cell folder | workspace --cell NAME&gt;
+<span class="prompt">  </span>[-o circuit.cnl] [--into new:NAME | --into artwork] [--replace]
+<span class="prompt">  </span>[--parts-out parts.csv] [--parts parts.csv] [--bom FILE] [--placement FILE]
+<span class="prompt">  </span>[--placement-origin symbol|body|pin1] [--placement-unit mm|mil|in]
+<span class="prompt">  </span>[--region x0,y0,x1,y1] [--ground NET | --ground-at x,y] [--vias model|ground]
+<span class="prompt">  </span>[--coplanar auto|microstrip|gcpw] [--coplanar-factor K] [--start F] [--stop F] [--npts N]</code></pre>
+<p><code>recognize</code> reads a board's copper and writes the circuit it implements: the ground, the vias that matter,
+the ports, every two-terminal part as an R, L, C or S-parameter file, and every trace as an <code>MLIN</code> (with its
+bends, tees, crosses and tapers), <code>CPWG</code>, <code>SLIN</code> or <code>TLIN</code>, with an S-parameter analysis ready to run. A part
+whose value is not known becomes a global variable with a tuning range, so it is a knob in the Tuning and
+Optimizer panels from the first simulation.</p>
+<p><strong>With no <code>-o</code> and no <code>--into</code> it writes nothing</strong>: it prints what it found, one line per kind of finding,
+and the <strong>parts table</strong> as CSV. Review that table before writing anything:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf recognize Board --parts-out parts.csv
+<span class="prompt">  </span># edit parts.csv: C6's Value to 10pF, L2's Kind to L …
+<span class="prompt">$ </span>circuitrf recognize Board --parts parts.csv --into new:Board_model
+<span class="prompt">$ </span>circuitrf sparam Board_model/schematic/Board_model.csch -o board.s2p</code></pre>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>-o circuit.cnl</code></td>
+<td>Write the circuit as a netlist. Nothing else.</td>
+</tr>
+<tr>
+<td><code>--into new:NAME</code> / <code>--into artwork</code></td>
+<td>Write the schematic into a new cell beside the artwork's, or into the artwork's own cell (only when that cell has no schematic yet).</td>
+</tr>
+<tr>
+<td><code>--replace</code></td>
+<td>Replace a schematic this command wrote earlier; a history checkpoint is taken first. A schematic you drew yourself is never replaced.</td>
+</tr>
+<tr>
+<td><code>--parts-out</code> / <code>--parts</code></td>
+<td>Write the parts table as CSV; read an edited one back. A value you give replaces the variable that stood for it.</td>
+</tr>
+<tr>
+<td><code>--bom</code>, <code>--placement</code></td>
+<td>A bill of materials and a placement file. A placement file that does not say which origin it was exported against needs <code>--placement-origin</code>.</td>
+</tr>
+<tr>
+<td><code>--region x0,y0,x1,y1</code></td>
+<td>Read only this rectangle; a line it cuts becomes a port. <strong>Every coordinate carries a unit</strong> (<code>um</code>, <code>mm</code>, <code>mil</code>) — a bare number is refused.</td>
+</tr>
+<tr>
+<td><code>--ground NET</code>, <code>--ground-at x,y</code></td>
+<td>Read this net, or the copper at this point, as ground.</td>
+</tr>
+<tr>
+<td><code>--vias model\|ground</code></td>
+<td>Keep vias to ground as <code>VIAGND</code> (default), or make them plain grounds.</td>
+</tr>
+<tr>
+<td><code>--coplanar auto\|microstrip\|gcpw</code>, <code>--coplanar-factor K</code></td>
+<td>How a line with ground close beside it is read.</td>
+</tr>
+<tr>
+<td><code>--start</code>, <code>--stop</code>, <code>--npts</code></td>
+<td>The analysis range, each frequency with its unit. Default: the layout's EM setup's sweep, else 100 MHz – 6 GHz in 201 points.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Exit 0</strong> when the board was read (and written, when asked), <strong>1</strong> when it was refused — no technology,
+no copper in the region, no port — with nothing written, <strong>130</strong> on a cancellation. With <code>--json</code> the
+result carries every finding with its count and where it is on the board, and the parts table row for row.</p>
+<p><code>explain</code> on a schematic this command wrote shows where it came from — the layout, the region and the
+options — and <code>explain --ref</code> resolves the layout's path.</p>
 <h2 id="impedance"><code>impedance</code> — every trace against a target Z0</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]
 <span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--via-transition 400um] [--width "Top Copper=457"]… [--no-scope]
@@ -1334,16 +1662,17 @@ and says on its first page that it was cancelled.</p>
 needs, or the Z0, ε<sub>eff</sub>, loss and guided wavelength a width gives, on one copper layer of a
 technology. Every row has <strong>two answers side by side</strong>:</p>
 <ul>
-<li><strong>circuit model (MLIN)</strong> — what an MLIN of that width on that layer simulates as: the substrate
-the layer resolves to, the static Z0 and ε<sub>eff</sub>, and at <code>--freq</code> the dispersive Z0 and
-ε<sub>eff</sub>, the loss in dB/mm and λ<sub>g</sub>. It is the same number a run uses.</li>
+<li><strong>circuit model</strong> — what a line of that width on that layer simulates as: an <strong>MLIN</strong>, a
+<strong>CPWG</strong> when <code>--gap</code> is given, or an <strong>SLIN</strong> when the layer has a ground plane both above and below.
+It shows the substrate the layer resolves to, the static Z0 and ε<sub>eff</sub>, and at <code>--freq</code> the
+dispersive Z0 and ε<sub>eff</sub>, the loss in dB/mm and λ<sub>g</sub>. It is the same number a run uses.</li>
 <li><strong>cross-section (impedance)</strong> — what <code>impedance</code> would report on a line drawn at that width: the
 quasi-static Z0 and ε<sub>eff</sub>, with λ<sub>g</sub> from that ε<sub>eff</sub>. The solve has no
 dispersion and no loss.</li>
 </ul>
 <p>The <strong>difference</strong> column shows how far apart they are. A large gap is worth seeing before you draw: the
 schematic simulates the model, and the drawn line measures the cross-section.</p>
-<p><code>--z0</code> gives each column <strong>its own width</strong>. The model width comes from the same synthesis the MLIN
+<p><code>--z0</code> gives each column <strong>its own width</strong>. The model width comes from the same synthesis the
 parameter editor's Z0 field uses. The cross-section width is solved to 1 nm, the finest width a
 layout can hold. A <em>Z0 at the model's W</em> row shows what a line drawn at the model's width would measure.</p>
 <table>
@@ -1372,7 +1701,7 @@ layout can hold. A <em>Z0 at the model's W</em> row shows what a line drawn at t
 </tr>
 <tr>
 <td><code>--gap &lt;g&gt;</code></td>
-<td>Makes the line <strong>coplanar</strong>, with ground on the same layer this far from each edge. The cross-section is then the only answer, because no circuit component models a coplanar line.</td>
+<td>Makes the line <strong>coplanar</strong>, with ground on the same layer this far from each edge; the model is then a CPWG. On a layer with a ground plane both above and below it the line is a stripline with coplanar ground, and the cross-section is the only answer, because no circuit component models one.</td>
 </tr>
 <tr>
 <td><code>--freq &lt;freq&gt;</code></td>
@@ -2403,6 +2732,14 @@ report says which:</p>
     "this bench has no bias source" is a property of the solved circuit, and this verb solves
     nothing. It reports what it can establish and stays quiet about the rest.</p>
   </div>
+<p>A design whose expressions call a distribution — a kit's statistical models, or a variable such as
+<code>Rsh = agauss(50, 2.5, 1)</code> — also lists each one, as a <strong>process</strong> draw (in a global, shared by every
+instance) or a <strong>mismatch</strong> draw (in a cell, one per instance), with the stream that names it:</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain mc.cnl --analysis
+<span class="output">Distributions: 1 process, 2 mismatch — nominal in every run but a Monte Carlo trial
+  process  agauss Rnom
+  mismatch agauss X1.R
+  mismatch agauss X2.R</span></code></pre>
 <h3 id="explain-touchstone"><code>explain</code> on a Touchstone file — what IS this part?</h3>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf explain part.s2p
 <span class="output">part.s2p  (touchstone)
@@ -2925,6 +3262,7 @@ direction and a 4 kB page and an 84 kB one should not look alike:</p>
   analyses            8.5 kB  Analysis directives
   tuning              3.8 kB  Tuning directives
   goals               2.7 kB  Optimization goals
+  statistics          8.7 kB  Monte Carlo, yield and corners
   components         91.3 kB  Component types
 
   circuitrf reference components &lt;TYPE&gt;   one primitive

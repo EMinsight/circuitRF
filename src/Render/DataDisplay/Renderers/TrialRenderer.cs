@@ -2,8 +2,9 @@
 //  TrialRenderer.cs  —  a family or scatter drawn by trial (brief-yield-9)
 //
 //  DRAW ORDER IS THE REQUIREMENT (R-ya9-1). Behind everything the
-//  envelope band; then the members that PASS, in the trace's colour at
-//  reduced opacity; then those that FAIL, in the theme's fail colour —
+//  envelope band; then the members that PASS, in the theme's neutral
+//  pass colour at reduced opacity (never the trace's own, which may be
+//  the fail colour's red); then those that FAIL, in the fail colour —
 //  so a failure is never buried under a thousand passes; then the
 //  nominal over all of them in the trace's full colour and width. A
 //  member that did not evaluate is not drawn (the legend counts it).
@@ -78,7 +79,7 @@ namespace CircuitRF.Render.DataDisplay
             if (trace.MemberCategories is not { } cats || k >= cats.Length) return (own, op);
             return cats[k] switch
             {
-                TrialCategory.Pass => (own, op * (trace.IsFamily ? PassOpacity : 1.0)),
+                TrialCategory.Pass => (theme.PassColor, op * (trace.IsFamily ? PassOpacity : 1.0)),
                 TrialCategory.Fail => (theme.FailColor, op),
                 _                  => (own, op),
             };

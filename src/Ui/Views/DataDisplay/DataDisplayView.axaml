@@ -147,7 +147,7 @@
                 </Button>
 
                 <Button Command="{Binding ViewModel.Window.AddStatisticsTableCommand}"
-                        ToolTip.Tip="Add Statistics Table — one row per goal and measure. Needs a Monte Carlo or yield result as the source (a .yield.npy)"
+                        ToolTip.Tip="{Binding ViewModel.Window.AddStatisticsTableTip}"
                         ToolTip.ShowOnDisabled="True"
                         Padding="6,3">
                     <mi:MaterialIcon Kind="Sigma" Width="16" Height="16"/>

@@ -294,13 +294,13 @@ A trace over every trial — a family with one curve per trial — shows *which*
 
 | Entry | Does |
 |---|---|
-| **Colour By** ▸ **Pass / Fail** | draws passing trials faded in the trace's colour and failing ones in red after them, so a failure is never hidden under the passes; a trial that did not evaluate is not drawn. The label counts them: `S21 — 471 pass · 29 fail`. A goal's own pass/fail is offered too |
+| **Colour By** ▸ **Pass / Fail** | draws passing trials faded in grey and failing ones in red after them, so a failure is never hidden under the passes; a trial that did not evaluate is not drawn. The label counts them: `S21 — 471 pass · 29 fail`. A goal's own pass/fail is offered too |
 | **Envelope** ▸ min–max, P1–P99, P5–P95, mean ± 1σ, mean ± 3σ | a shaded band across the trials at each X, with the median (or mean) as a line |
 | **Show Curves** | with an envelope on, turn the individual trials off and keep the band — the readable view of thousands of trials |
 | **Show Nominal** | the nominal design's curve, drawn over the trials in the trace's full colour (on by default) |
 | **Scatter vs** ▸ a variable or measure | plots this per-trial value against another — `goal:S21:worst` against `R1.R`, say — as points coloured by pass/fail |
 | **Fit Line** | on a scatter, the least-squares line, with its R² in the label |
-| **Contributions** ▸ a goal | adds a Pareto chart of which statistical variables drive that goal: each one's share as a bar, largest first, and the running total on the right axis. Computed once and kept in the result |
+| **Contributions** ▸ a goal | adds a Pareto chart of which statistical variables drive that goal: each one's share as a bar between 0 and 100 %, largest first, and the running total on the right axis. Computed once and kept in the result |
 
 An envelope is offered on rectangular plots only: on a Smith or Polar plot every point is a complex value,
 and a band between two of them at each frequency is not a region.
@@ -317,7 +317,7 @@ right-click menu has a **Trial** submenu:
 - **Copy Values** — the trial's values as text.
 - **Save as Corner…** — adds a statistical corner that replays this trial, to tune and optimize against.
 
-The same pictures are available headlessly: `circuitrf plot … --trace cube=SP1.S,i=2,j=1,y=db,colorby=pass,envelope=p:1`.
+The same pictures are available headlessly: `circuitrf plot … --trace cube=SP1.S,i=2,j=1,y=db20,colorby=pass,envelope=p:1`.
 
 ### The yield and DOE displays {#yield-displays}
 
@@ -329,6 +329,10 @@ the first spec most; and the statistics table. A design of experiments' result o
 noise level as a line, its value at each factor's low, centre and high, and its strongest interaction.
 Both are ordinary displays — change them as you would any other. While a run is going, every display
 holding its result follows it, with a **Yield** chip.
+
+A Monte Carlo run at every corner keeps one set of trials per corner, so it has no single yield display
+or statistics table — a message says so. Plot one corner's trials instead; headlessly, a histogram of such
+a result is one histogram per corner, or one corner with `corner=<name>` on the trace.
 
 ## Load-pull contours {#contours}
 

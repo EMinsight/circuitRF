@@ -770,12 +770,15 @@ first, and `plot` draws the statistics functions directly — `--trace "cube=his
 | `--target p%`, `--autostop` | `estimate` only: the yield to meet, and stopping as soon as the interval is clear of it either way. |
 | `--process 0\|1`, `--mismatch 0\|1`, `--sigma-scale k` | The kit's process and mismatch draws, and a scale on every kit sigma. |
 | `--vars key,key`, `--goals name,name` | Draw only these tolerances (the rest stay at nominal); score only these goals. |
-| `--trial n` | Re-run only trial `n`. `-o out.npy` then writes its results. |
+| `--trial n` | Re-run only trial `n`. `-o out.npy` then writes its results. `yield trial` scores it as the design's own run would — a yield when there is a yield goal, a Monte Carlo otherwise. |
 | `--save-preset <name> --trial n` | Add that trial's values to the schematic as a preset. Refused for a `.cnl`. |
-| `--save-corner <name> --trial n` | Add a corner naming that trial, so later runs can replay it. Refused for a `.cnl`. |
-| `--contributions` | With `--json`: which tolerances drive each goal's and measurement's spread. |
+| `--save-corner <name> --trial n` | Add a corner naming that trial, so later runs can replay it. Refused for a `.cnl`, and with `--vars`, `--sigma-scale`, `--process`, `--mismatch` or `--set`: a corner replays the trial under the design's own settings, so it would not be the trial you saw. |
+| `--contributions` | Which tolerances drive each goal's and measurement's spread, largest first. The table shows each share between 0 and 100 %; `--json` gives the fitted share as it stands, which can pass 100 % or fall below 0 when tolerances are correlated. |
 | `-o out.npy` | Where the trials are written. |
 | `--set var=expr` | As for every run verb. |
+
+A flag that a run would not use is refused, naming the runs that take it — `--trials` on `yield corners` without
+`--mc`, say, or `--confidence` on `yield doe`. `reference statistics` lists every flag with the runs that take it.
 
 **It never changes the design's values.** Exit **0** means the run finished and the yield met
 `--target` (or there was none); **3**, that it finished below the target; **1**, that it was refused;
@@ -813,7 +816,7 @@ you tune it.
 |---|---|
 | `--corners name,name` | Only these corners. On `mc` and `estimate`, a run at each of them. |
 | `--mc` | A Monte Carlo — a yield, when the design has a yield goal — at each corner, with the kit's process draws off there: the corner is the process. The table is then a yield per corner. |
-| `--generate "spec"` | Print the corners a cross product makes and write nothing, e.g. `"proc=tt,ss;temp=-40,25,85;Vdd=3.0,3.6"` — a kit axis by its name, `temp`, any variable or tunable value. |
+| `--generate "spec"` | Print the corners a cross product makes and write nothing, e.g. `"proc=tt,ss;temp=-40,25,85;Vdd=3.0,3.6"` — a kit axis by its name, `temp`, any variable or tunable value. With `--json`, each corner's name, temperature and values. |
 | `--write` | With `--generate`, on a schematic: add the generated corners to it. |
 
 ```text

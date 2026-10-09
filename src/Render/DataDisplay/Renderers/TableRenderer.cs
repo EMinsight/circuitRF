@@ -403,35 +403,12 @@ namespace CircuitRF.Render.DataDisplay
             (double W, double H) canvasSize,
             float zoomLevel = 1f)
         {
-            // Measure at unscaled font size so the result is zoom-independent logical units.
-            float fs = (float)plot.FontSize;
-            using var regularFont   = new SKFont(SkiaFonts.PlexRegular,   fs);
-            using var boldFont      = new SKFont(SkiaFonts.PlexBold,      fs);
-            using var dejaVuRegular = new SKFont(SkiaFonts.DejaVuRegular, fs);
-
             var columns = BuildColumns(plot);
             if (colIndex < 0 || colIndex >= columns.Count)
                 return MinColumnWidth;
 
             var col  = columns[colIndex];
-            float maxW = boldFont.MeasureText(col.Header);
-
-            // Sort arrow space on XAxis column headers.
-            if (col.Kind == TableColKind.XAxis)
-            {
-                float spaceW = boldFont.MeasureText(" ");
-                maxW += spaceW * 1.5f + fs * 0.6f + TextCellPaddingX;
-            }
-
-            // Measure every data row in this column.
-            for (int ri = 0; ri < col.XValues.Length; ri++)
-            {
-                string cellText = FormatColumnCell(col, ri, plot);
-                float  cellW    = col.Kind == TableColKind.XAxis
-                    ? regularFont.MeasureText(cellText)
-                    : RendererText.MeasureTextWithFallback(cellText, regularFont, dejaVuRegular);
-                maxW = Math.Max(maxW, cellW);
-            }
+            var cells = Enumerable.Range(0, col.XValues.Length).Select(ri => FormatColumnCell(col, ri, plot));
 
             // If the trace column has any markers, add space for the right-edge marker glyph.
             float markerExtra = 0f;
@@ -441,7 +418,41 @@ namespace CircuitRF.Render.DataDisplay
                     markerExtra = MarkerTriangleSize + TextCellPaddingX;
             }
 
-            return maxW + TextCellPaddingX * 2 + markerExtra + 2;
+            return FitWidth(col.Header, cells, plot.FontSize, col.Kind == TableColKind.XAxis) + markerExtra;
+        }
+
+        /// <summary>
+        /// The logical width a column needs so that neither <paramref name="header"/> nor any of
+        /// <paramref name="cells"/> is clipped, at <paramref name="fontSize"/>: the header in bold (with room for the
+        /// sort arrow on an X-axis column), the cells in the regular face. What <see cref="CalcFitWidth"/> measures,
+        /// for a caller that has the text but not a resolved plot — a preset sizing its own columns.
+        /// </summary>
+        public static float FitWidth(string header, IEnumerable<string> cells, double fontSize, bool xAxis)
+        {
+            // Measure at unscaled font size so the result is zoom-independent logical units.
+            float fs = (float)fontSize;
+            using var regularFont   = new SKFont(SkiaFonts.PlexRegular,   fs);
+            using var boldFont      = new SKFont(SkiaFonts.PlexBold,      fs);
+            using var dejaVuRegular = new SKFont(SkiaFonts.DejaVuRegular, fs);
+
+            float maxW = boldFont.MeasureText(header);
+
+            // Sort arrow space on XAxis column headers.
+            if (xAxis)
+            {
+                float spaceW = boldFont.MeasureText(" ");
+                maxW += spaceW * 1.5f + fs * 0.6f + TextCellPaddingX;
+            }
+
+            foreach (string cellText in cells)
+            {
+                float cellW = xAxis
+                    ? regularFont.MeasureText(cellText)
+                    : RendererText.MeasureTextWithFallback(cellText, regularFont, dejaVuRegular);
+                maxW = Math.Max(maxW, cellW);
+            }
+
+            return maxW + TextCellPaddingX * 2 + 2;
         }
 
         /// <summary>Total logical width of all columns (all XAxis + all trace columns).</summary>

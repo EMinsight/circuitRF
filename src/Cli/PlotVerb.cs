@@ -97,6 +97,8 @@ internal static class PlotVerb
         public string? Param;    // a yield sensitivity's statistical variable
         public bool    NormalFit;
         public string? StatOptionGiven;   // the first statistics option typed, for the no-stat refusal
+        public List<string> StatOptions = new();   // every statistics option typed, for the not-taken refusal
+        public string? Corner;   // corner=<name>: the corner of a run at each corner (brief-yield-16 R-ya16-3)
 
         // brief-yield-9 R-ya9-7 — the trial views, as the trace card sets them.
         public string?        ColorBy;
@@ -262,10 +264,17 @@ internal static class PlotVerb
         {
             var (tc, refusal) = BuildTrace(o.Traces[i], data, Path.GetFileName(o.Result), i, o.Type);
             if (refusal is { } r) return r;
-            var (companion, statRefusal) = ApplyStatistics(o.Traces[i], tc!, data, o.Type);
-            if (statRefusal is { } sr) return sr;
-            traces.Add(tc!);
-            if (companion is not null) traces.Add(companion);
+            var (perCorner, cornerRefusal) = PinCorners(o.Traces[i], tc!, data, i);
+            if (cornerRefusal is { } cr) return cr;
+            foreach (var one in perCorner!)
+            {
+                if (TrialOptionRefusal(o.Traces[i], one, data, o.Type) is { } tr) return tr;
+                var (companion, statRefusal) = ApplyStatistics(o.Traces[i], one, data, o.Type);
+                if (statRefusal is { } sr) return sr;
+                traces.Add(one);
+                if (companion is not null) traces.Add(companion);
+            }
+            tc = perCorner![0];
 
             // ── A CUT IS A PLANE, SO IT IS TWO TRACES (2026-09-10) ───────────────────────────
             //
@@ -361,7 +370,8 @@ internal static class PlotVerb
             "  a statistic of a Monte Carlo result, rewritten as the trace card's Statistics menu does:\n" +
             "                      stat=histogram|cdf|quantile|yieldsens [over=<axis>] [bins=n] [percent=1]\n" +
             "                      [fit=normal] [param=<stat key>] (yieldsens), and style=line|bars|step\n" +
-            "  every trial of a Monte Carlo result, as a family (cube=SP1.S,i=2,j=1,y=db):\n" +
+            "                      on a run at each corner, corner=<name>; without it one trace per corner\n" +
+            "  every trial of a Monte Carlo result, as a family (cube=SP1.S,i=2,j=1,y=db20):\n" +
             "                      colorby=pass|corner|<cube> envelope=minmax|p:1|sigma:3 curves=0|1\n" +
             "                      nominal=0|1, and fitline=1 on a scatter (cube=a vs b over trial)\n" +
             "  --spec-lines | --no-spec-lines   the limits of the goals the result records (default: on)\n" +
@@ -701,17 +711,17 @@ internal static class PlotVerb
                 case "bins":
                     if (!int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int nb) || nb < 1)
                         return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStatOptionMalformed(raw, key, value)));
-                    spec.Bins = nb; spec.StatOptionGiven ??= key;
+                    spec.Bins = nb; spec.StatOptionGiven ??= key; spec.StatOptions.Add(key);
                     break;
                 case "percent":
                     if (value is not ("0" or "1"))
                         return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStatOptionMalformed(raw, key, value)));
-                    spec.Percent = value == "1"; spec.StatOptionGiven ??= key;
+                    spec.Percent = value == "1"; spec.StatOptionGiven ??= key; spec.StatOptions.Add(key);
                     break;
                 case "fit":
                     if (!value.Equals("normal", StringComparison.OrdinalIgnoreCase))
                         return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStatOptionMalformed(raw, key, value)));
-                    spec.NormalFit = true; spec.StatOptionGiven ??= key;
+                    spec.NormalFit = true; spec.StatOptionGiven ??= key; spec.StatOptions.Add(key);
                     break;
                 case "colorby":
                     if (value.Length == 0 || value.Any(char.IsWhiteSpace))
@@ -734,8 +744,9 @@ internal static class PlotVerb
                     else if (key == "nominal") spec.Nominal = value == "1";
                     else spec.FitLine = value == "1";
                     break;
-                case "over":  spec.Over  = value; spec.StatOptionGiven ??= key; break;
-                case "param": spec.Param = value; spec.StatOptionGiven ??= key; break;
+                case "over":  spec.Over  = value; spec.StatOptionGiven ??= key; spec.StatOptions.Add(key); break;
+                case "param": spec.Param = value; spec.StatOptionGiven ??= key; spec.StatOptions.Add(key); break;
+                case "corner": spec.Corner = value; break;
                 case "probe":  spec.Probe  = value; break;
                 case "with":   spec.With   = value; break;
                 case "set":    spec.Set    = value; break;
@@ -777,9 +788,27 @@ internal static class PlotVerb
         // A fit is a histogram's; the other options shape a statistic. Without stat= they would do nothing.
         if (spec.Stat is null && spec.StatOptionGiven is { } opt && !(opt == "fit" && CircuitRF.Core.Expressions.Evaluator.CallsAxisFunction(spec.Text)))
             return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStatOptionWithoutStat(raw, opt)));
+        // …and each statistic reads only its own (brief-yield-16 R-ya16-8): the fit is a histogram's, percent= scales a
+        // histogram's counts, and a yield sensitivity bins its own variable — the rest would be taken and dropped.
+        if (spec.Stat is { } stat)
+        {
+            var (statName, takes) = StatOptionsOf(stat);
+            if (spec.StatOptions.FirstOrDefault(k => !takes.Contains(k)) is { } notTaken)
+                return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStatRefused(raw,
+                    $"{notTaken}= does nothing with stat={statName}, which takes {(takes.Length == 0 ? "none" : string.Join("=, ", takes) + "=")}.")));
+        }
 
         return (spec, null);
     }
+
+    /// <summary>The spelling of <paramref name="stat"/> and the statistics options it reads.</summary>
+    private static (string Name, string[] Takes) StatOptionsOf(TraceStatistic stat) => stat switch
+    {
+        TraceStatistic.Histogram        => ("histogram", ["bins", "percent", "over", "fit"]),
+        TraceStatistic.Cdf              => ("cdf", ["over"]),
+        TraceStatistic.Quantile         => ("quantile", ["over"]),
+        _                               => ("yieldsens", ["bins", "param"]),
+    };
 
     /// <summary>
     /// One side's <c>|\u0393|</c> ladder, semicolon separated as <c>set=</c> is (a comma is the field
@@ -1139,6 +1168,70 @@ internal static class PlotVerb
                 MarkerColorIndex = WheelColor(index),
             },
         }, null);
+    }
+
+    /// <summary>
+    /// A trace over a run at each corner (brief-yield-16 R-ya16-3), whose cubes carry a <c>corner</c> axis outside
+    /// <c>trial</c>: <c>corner=&lt;name&gt;</c> pins that corner; a statistic with no corner named is one trace per corner,
+    /// each pinned — never the first corner alone, which is what leaving the axis free reads. Any other trace is returned
+    /// as it stands.
+    /// </summary>
+    private static (List<TraceConfig>? Traces, int? Refusal) PinCorners(TraceSpec spec, TraceConfig tc, DataSet data, int index)
+    {
+        int at = tc.CubeSlice.FindIndex(x => x.AxisName == TraceStatistics.CornerAxis);
+        var axis = at < 0 || tc.CubeName is null ? null
+                 : data[tc.CubeName].Axes.FirstOrDefault(a => a.Name == TraceStatistics.CornerAxis);
+        string[] names = axis is null ? []
+                       : axis.Labels is { Length: > 0 } l ? l : [.. axis.Values.Select(v => v.ToString(CultureInfo.InvariantCulture))];
+        if (spec.Corner is { } want)
+        {
+            if (axis is null)
+                return (null, JsonRun.Fail(CliDiagnostics.PlotNoPortAxis(tc.CubeName ?? spec.Text, "corner",
+                    tc.CubeName is null ? "none" : AxisNames(data[tc.CubeName]))));
+            int k = Array.IndexOf(names, want);
+            if (k < 0)
+                return (null, JsonRun.Fail(CliDiagnostics.PlotTraceStatRefused(spec.Raw,
+                    $"there is no corner '{want}'. The corners are: {string.Join(", ", names)}.")));
+            return ([Pinned(tc, at, k, names[k], index)], null);
+        }
+        if (spec.Stat is null || axis is null || tc.CubeSlice[at].Role == AxisRole.PinToIndex) return ([tc], null);
+        return ([.. names.Select((n, k) => Pinned(tc, at, k, n, index + k))], null);
+    }
+
+    /// <summary>A copy of <paramref name="tc"/> with slice entry <paramref name="at"/> pinned to corner <paramref name="k"/>,
+    /// in the wheel colour of <paramref name="colour"/>.</summary>
+    private static TraceConfig Pinned(TraceConfig tc, int at, int k, string label, int colour)
+    {
+        var copy = JsonSerializer.Deserialize<TraceConfig>(JsonSerializer.Serialize(tc, DataDisplayJson.Options), DataDisplayJson.Options)!;
+        copy.CubeSlice[at] = new AxisSliceConfig { AxisName = TraceStatistics.CornerAxis, Role = AxisRole.PinToIndex, Index = k, Label = label };
+        copy.Properties.LineColorIndex = copy.Properties.MarkerColorIndex = WheelColor(colour);
+        return copy;
+    }
+
+    /// <summary>
+    /// <c>colorby=</c> and <c>envelope=</c> where they would change nothing (brief-yield-16 R-ya16-8): on a statistic,
+    /// which replaces the trials it would colour; an envelope on a trace that is not a family, or not on a rect plot
+    /// (<see cref="TrialViews.EnvelopeRefusal"/>); a colour that cannot reach the trace's members
+    /// (<see cref="TrialViews.ColourByRefusal"/>).
+    /// </summary>
+    private static int? TrialOptionRefusal(TraceSpec spec, TraceConfig tc, DataSet data, PlotType plotType)
+    {
+        bool envelope = spec.Envelope is { } env && env.IsOn;
+        if (spec.ColorBy is null && !envelope) return null;
+        string key = spec.ColorBy is not null ? "colorby" : "envelope";
+        if (spec.Stat is not null)
+            return JsonRun.Fail(CliDiagnostics.PlotTraceStatRefused(spec.Raw,
+                $"{key}= draws on a trace's trials, and stat= replaces them with a statistic of them."));
+        var trace = new Trace(new SNP([1e9], 2), MatrixType.S, 0, 0, DependentVarFormat.Db, false)
+        {
+            CubeName = tc.CubeName,
+            Slice    = tc.CubeSlice.Count > 0 ? [.. tc.CubeSlice.Select(x => x.ToSlice())] : null,
+        };
+        if (envelope && TrialViews.EnvelopeRefusal(trace, plotType) is { } noBand)
+            return JsonRun.Fail(CliDiagnostics.PlotTraceStatRefused(spec.Raw, noBand));
+        if (spec.ColorBy is { } by && TrialViews.ColourByRefusal(trace, data, by) is { } noColour)
+            return JsonRun.Fail(CliDiagnostics.PlotTraceStatRefused(spec.Raw, noColour));
+        return null;
     }
 
     /// <summary>

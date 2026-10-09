@@ -175,10 +175,28 @@ public sealed record WorstTrial(int Trial, double Margin, double Worst, IReadOnl
 /// instance's mismatch draws together.</summary>
 /// <param name="Coefficient">The standardized regression coefficient; for an instance's group, the root sum of
 /// its streams' squares (unsigned).</param>
-/// <param name="Share">Its share of the explained variance (the shares sum to 1).</param>
+/// <param name="Share">Its share of the explained variance, β·r (the shares sum to 1). With correlated entries one
+/// share can pass 1 and another fall below 0; this is the honest number, and it is what JSON and the result file carry.
+/// A display shows <see cref="ShownShare"/> (owner decision D-a, brief-yield-16).</param>
 /// <param name="Spearman">The rank correlation of the scalar with the contributor (for a group, with its fitted
 /// linear part).</param>
-public sealed record Contributor(string Name, string Kind, double Coefficient, double Share, double Spearman, int Streams);
+public sealed record Contributor(string Name, string Kind, double Coefficient, double Share, double Spearman, int Streams)
+{
+    /// <summary>The share as every display shows it: clamped to 0–1 (D-a).</summary>
+    public double ShownShare => Shown(Share);
+
+    /// <summary><paramref name="share"/> clamped to 0–1; a share that is not a number shows as 0.</summary>
+    public static double Shown(double share) => double.IsFinite(share) ? Math.Clamp(share, 0, 1) : 0;
+
+    /// <summary>A Pareto's running total over <paramref name="shares"/> in ranked order: of the shown shares,
+    /// renormalized so it ends at 1 and never decreases (D-a). All zero when nothing shows.</summary>
+    public static double[] ShownCumulative(IReadOnlyList<double> shares)
+    {
+        var shown = shares.Select(Shown).ToArray();
+        double total = shown.Sum(), sum = 0;
+        return [.. shown.Select(x => total > 0 ? (sum += x) / total : 0)];
+    }
+}
 
 /// <summary>A contribution ranking, largest share first (R-ya4-9).</summary>
 public sealed record ContributionReport(

@@ -73,7 +73,8 @@ public sealed partial class YieldVariableRowViewModel : ObservableObject
 
     // ---- Contribution (R-ya10-7) ------------------------------------------------
 
-    /// <summary>The share of the explained variance, 0..1; null before contributions are computed.</summary>
+    /// <summary>The share of the explained variance as shown, clamped to 0..1 (D-a); null before contributions are
+    /// computed.</summary>
     [ObservableProperty] private double? _share;
 
     public bool HasShare => Share is not null;

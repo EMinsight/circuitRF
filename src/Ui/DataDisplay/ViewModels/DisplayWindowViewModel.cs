@@ -380,10 +380,15 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
             OnPropertyChanged(nameof(SelectedDataSourceItem));
             OnPropertyChanged(nameof(AwaitingRunText));
             AddStatisticsTableCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(AddStatisticsTableTip));
             RaiseDirtyChanged();
         };
         // A run finishing reloads the selected file in place — it may only now carry its statistics.
-        DataSourceLibrary.LibraryChanged += (_, _) => AddStatisticsTableCommand.NotifyCanExecuteChanged();
+        DataSourceLibrary.LibraryChanged += (_, _) =>
+        {
+            AddStatisticsTableCommand.NotifyCanExecuteChanged();
+            OnPropertyChanged(nameof(AddStatisticsTableTip));
+        };
 
         UpdateThemeFromSystem();
         if (Application.Current is not null)
@@ -522,6 +527,10 @@ public partial class DisplayWindowViewModel : ViewModelBase, ITrialSelectionList
 
     /// <summary>Whether the selected source is a result with a statistics table — a Monte Carlo or yield run's.</summary>
     public bool CanAddStatisticsTable => StatisticsTablePreset.Available(DataSourceLibrary.SelectedEntry?.Data);
+
+    /// <summary>The button's tooltip: what it adds, or why the selected source has no table to add (R-ya16-3).</summary>
+    public string AddStatisticsTableTip => StatisticsTablePreset.Refusal(DataSourceLibrary.SelectedEntry?.Data)
+        ?? "Add Statistics Table — one row per goal and measure. Needs a Monte Carlo or yield result as the source (a .yield.npy)";
 
     /// <summary>
     /// <b>ANT-10's 3D pattern, ADDABLE.</b> Reported 2026-09-11: the 3D pattern is only reachable

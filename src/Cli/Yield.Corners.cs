@@ -20,22 +20,6 @@ namespace CircuitRF.Cli;
 /// </summary>
 internal static partial class Yield
 {
-    /// <summary>A corners flag on a noun that does not take it, or a combination that means nothing.</summary>
-    private static Diagnostic? CornerFlagProblem(string noun, bool mc, string? generate, bool write, List<string>? corners, int? trial)
-    {
-        if (noun != "corners")
-        {
-            if (mc) return CliDiagnostics.YieldCornerFlag("--mc", "yield corners (mc and estimate run at each corner with --corners)");
-            if (generate is not null) return CliDiagnostics.YieldCornerFlag("--generate", "yield corners");
-            if (write) return CliDiagnostics.YieldCornerFlag("--write", "yield corners --generate");
-            if (corners is not null && noun == "trial") return CliDiagnostics.YieldCornerFlag("--corners", "yield corners, mc and estimate");
-            return null;
-        }
-        if (write && generate is null) return CliDiagnostics.YieldCornerFlag("--write", "yield corners --generate");
-        if (trial is not null) return CliDiagnostics.YieldCornerFlag("--trial", "yield trial, mc and estimate");
-        return null;
-    }
-
     /// <summary><c>--mc</c>'s run: a yield when the design has an enabled yield goal, a Monte Carlo of the spread otherwise.</summary>
     private static StatisticalMode McModeOf(TuningSetup setup)
         => setup.Goals.Any(g => g.Enabled && g.ForYield) ? StatisticalMode.Yield : StatisticalMode.MonteCarlo;
@@ -76,8 +60,14 @@ internal static partial class Yield
             JsonRun.AddOutput("schematic", full);
         }
 
+        // Each corner in full, one structure for both kinds of document (R-ya16-6): a caller reading JSON sees what the
+        // text shows — a .cnl's line besides, since that is what its author pastes in.
         JsonRun.Corners = new CornerReportJson(input, "finished", [], [], [], 0,
-            Generated: [.. corners.Select(c => kind == DocumentKind.Schematic ? c.Name : TuningDirectiveText.CornerLine(c))]);
+            Generated: [.. corners.Select(c => new CornerDefinitionJson(
+                c.Name, CornerRun.TempOf(c),
+                new SortedDictionary<string, string>(c.Values.ToDictionary(), StringComparer.Ordinal),
+                c.AxisSelections is { Count: > 0 } axes ? new SortedDictionary<string, string>(axes.ToDictionary(), StringComparer.Ordinal) : null,
+                kind == DocumentKind.Schematic ? null : TuningDirectiveText.CornerLine(c)))]);
         return 0;
     }
 

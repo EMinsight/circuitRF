@@ -24,8 +24,27 @@ public static class ResultContributions
     /// variance (a fraction), largest first, over <see cref="ContributorAxis"/>.</summary>
     public static string CubeName(string name) => $"contrib:{name}";
 
-    /// <summary>Its running total, the Pareto's cumulative line.</summary>
+    /// <summary>The shares as a display shows them, each clamped to 0–1 (owner decision D-a, brief-yield-16): the
+    /// Pareto's bars. <see cref="CubeName"/> keeps β·r as it stands.</summary>
+    public static string ShownName(string name) => $"contrib:{name}:shown";
+
+    /// <summary>Its running total, the Pareto's cumulative line — of the shown shares, renormalized to end at 1 (D-a).</summary>
     public static string CumulativeName(string name) => $"contrib:{name}:cumulative";
+
+    /// <summary>The axis a run at each corner stacks its runs under (<c>CornerDataSet.CornerAxis</c>).</summary>
+    public const string CornerAxis = "corner";
+
+    /// <summary>The corners a result was run at, when it is a run at each corner — its per-trial cubes stacked under a
+    /// <c>corner</c> axis outside <c>trial</c> (R-ya6-3) — or null for one run. A display or a ranking made for one run
+    /// reads such a result's cubes one rank too deep (brief-yield-16 R-ya16-3).</summary>
+    public static IReadOnlyList<string>? StackedCorners(DataSet ds)
+    {
+        string status = $"{StatisticalDataSet.TrialsGroup}.status";
+        if (!ds.Contains(status) || ds[status] is not { Rank: 2 } cube || cube.Axes[0].Name != CornerAxis) return null;
+        var axis = cube.Axes[0];
+        return axis.Labels is { Length: > 0 } labels ? labels
+             : [.. axis.Values.Select(v => v.ToString(System.Globalization.CultureInfo.InvariantCulture))];
+    }
 
     /// <summary>The goals a result scored — the names of its <c>trials.goal:&lt;g&gt;:worst</c> cubes.</summary>
     public static IReadOnlyList<string> GoalsOf(DataSet ds)
@@ -47,6 +66,9 @@ public static class ResultContributions
     public static ContributionReport Of(DataSet ds, string name)
     {
         var trials = StatisticalDataSet.TrialsGroup;
+        if (StackedCorners(ds) is { } corners)
+            return new ContributionReport(name, [], double.NaN, false, 0,
+                StatisticsDiagnostics.ContributionCornerStacked(name, string.Join(", ", corners)));
         if (!ds.Contains($"{trials}.status"))
             return new ContributionReport(name, [], double.NaN, false, 0,
                 StatisticsDiagnostics.ContributionUnknown(name, "nothing — this is not a Monte Carlo result"));
@@ -87,8 +109,8 @@ public static class ResultContributions
     }
 
     /// <summary>
-    /// Ranks <paramref name="name"/> and stores the ranking in <paramref name="ds"/> as <see cref="CubeName"/> and
-    /// <see cref="CumulativeName"/> — computed once, on request, so a display drawing it redraws without recomputing.
+    /// Ranks <paramref name="name"/> and stores the ranking in <paramref name="ds"/> as <see cref="CubeName"/>,
+    /// <see cref="ShownName"/> and <see cref="CumulativeName"/> — computed once, on request, so a display drawing it redraws without recomputing.
     /// The report, with its refusal when nothing could be ranked (and then nothing is stored).
     /// </summary>
     public static ContributionReport Store(DataSet ds, string name)
@@ -97,10 +119,10 @@ public static class ResultContributions
         if (report.Refusal is not null || report.Contributors.Count == 0) return report;
         var axis = new Axis(ContributorAxis, [.. Enumerable.Range(1, report.Contributors.Count).Select(i => (double)i)], "",
                             [.. report.Contributors.Select(c => c.Name)]);
-        double sum = 0;
-        var cumulative = report.Contributors.Select(c => sum += c.Share).ToArray();
-        ds.AddToGroup(Group, CubeName(name), new DataCube([axis], [.. report.Contributors.Select(c => c.Share)]));
-        ds.AddToGroup(Group, CumulativeName(name), new DataCube([axis], cumulative));
+        var shares = report.Contributors.Select(c => c.Share).ToArray();
+        ds.AddToGroup(Group, CubeName(name), new DataCube([axis], shares));
+        ds.AddToGroup(Group, ShownName(name), new DataCube([axis], [.. report.Contributors.Select(c => c.ShownShare)]));
+        ds.AddToGroup(Group, CumulativeName(name), new DataCube([axis], Contributor.ShownCumulative(shares)));
         return report;
     }
 }

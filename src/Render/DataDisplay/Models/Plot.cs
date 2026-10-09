@@ -1144,6 +1144,20 @@ namespace CircuitRF.Render.DataDisplay
                 // Bars stand on zero and are a bin wide (brief-yield-8 R-ya8-1), so the frame includes both.
                 if (PlotType == PlotType.Rect && t.DrawsBars) box = t.BarBounds(box, FreqUnits);
                 if (box.Width <= 0 && box.Height <= 0) continue;
+                // A vertical spec line is a limit on the X axis — a histogram's — and a limit framed out of the picture
+                // is a limit nobody sees (brief-yield-16 R-ya16-12). Only an autoscaled axis reaches here; a range the
+                // user fixed stays as set, and the line then marks the edge it lies beyond.
+                if (PlotType == PlotType.Rect && SpecLinesOn)
+                {
+                    double scale = t.CubeXDisplayScale(FreqUnits);
+                    foreach (var line in t.SpecLines)
+                    {
+                        double x = line.X0 * scale;
+                        if (!line.Vertical || !double.IsFinite(x)) continue;
+                        double left = Math.Min(box.Left, x), right = Math.Max(box.Right, x);
+                        box = new PlotRect(left, box.Y, right - left, box.Height);
+                    }
+                }
                 if (t.UseSecondaryAxis)
                 {
                     secondary    = secondarySet ? secondary.Union(box) : box;

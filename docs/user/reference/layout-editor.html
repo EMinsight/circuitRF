@@ -359,6 +359,45 @@ disabled rather than hidden, so their positions stay stable, and a disabled item
 condition — <em>&quot;Select 2 or more shapes on the same layer&quot;</em>. A command that is legitimately enabled but
 changes nothing in a particular case (a union of shapes that do not touch) reports that through the
 Messages pane rather than appearing to fail.</p>
+<h3 id="labels">Labels</h3>
+<p>Every label is drawn in a <strong>stroke font</strong> — Hershey Roman Simplex, a pen font of one line width and a few
+strokes per character, the kind a board shop's plotter prints silkscreen with. It covers every printable
+ASCII character plus <code>Ω</code>, <code>µ</code>, <code>°</code> and <code>±</code>; any other character draws as a hollow box, and an export that
+draws it says how many there were. The font draws the same on the canvas, in a rendered picture and in a
+Gerber file, and Create Schematic from Artwork reads it back off a silkscreen.</p>
+<p>The label's Properties panel holds:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cap height</strong></td>
+<td>The height of a capital letter. A designator placed on a footprint defaults to 0.8 mm.</td>
+</tr>
+<tr>
+<td><strong>Font</strong></td>
+<td><strong>Stroke</strong>, or <strong>Sans</strong> — the outline typeface, for a label that needs that look. The choice is per label.</td>
+</tr>
+<tr>
+<td><strong>Pen width</strong></td>
+<td>The stroke font's line width. Blank uses the default, shown greyed in the field: a sixth and a half of the cap height, raised to the layer's minimum-width rule when the technology has one. A blank pen follows the height when you change it.</td>
+</tr>
+<tr>
+<td><strong>Style</strong></td>
+<td><strong>Bold</strong> draws with a pen 1.6 times as wide, <strong>Italic</strong> leans the text 12°, <strong>Condensed</strong> narrows it to 0.8 of its width.</td>
+</tr>
+</tbody>
+</table>
+<p>For a <strong>Sans</strong> label the same height field reads <strong>Em size</strong>: the outline typeface's em, of which a capital
+is about seven tenths. Switching a label between the fonts keeps the number as it is, so switching back
+restores the label exactly.</p>
+<p><strong>Flatten to Polygon</strong> on a stroke label gives <strong>paths</strong> — one per pen stroke, at the pen width — or, if
+you choose <strong>Polygons</strong> in the dialog, the strokes' outlines as filled polygons. A Sans label always gives
+filled outlines.</p>
 <h2 id="selection">Selection and vertex editing</h2>
 <p><strong>Repeated clicks at the same point cycle through overlapping shapes.</strong> The order is layer Z-order
 descending, then <em>ascending area</em> — so a small shape sitting on a large one is reachable, which is the
@@ -532,6 +571,29 @@ is visible rather than silent.</p>
 component's length-dimensioned parameters take the <strong>technology's own default display unit</strong>
 — mil on a PCB, µm on an MMIC die.</p>
 </div>
+<h3 id="the-design-menus-schematic-and-layout-commands">The Design menu's schematic and layout commands</h3>
+<table>
+<thead>
+<tr>
+<th>Design ▸</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Update Layout from Schematic</strong> (<kbd>⌘U</kbd>)</td>
+<td>Places and updates the layout's instances from the schematic's components.</td>
+</tr>
+<tr>
+<td><strong>Update Schematic from Layout</strong> (<kbd>⇧⌘U</kbd>)</td>
+<td>Places and updates the schematic's components from the layout's linked instances.</td>
+</tr>
+<tr>
+<td><strong>Create Schematic from Artwork…</strong></td>
+<td>Reads artwork that has <strong>no</strong> links — an imported board's copper — as a new schematic of lines, vias and parts, reviewed first in a parts table. See <a href="artwork-to-schematic.html">Create Schematic from Artwork</a>.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="geometry-snap">Geometry snap</h2>
 <p>Two different things are called &quot;snap&quot; and it is worth separating them before anything else.</p>
 <table>
@@ -1176,7 +1238,7 @@ pass</strong>: whatever the first cycle collapses, every later cycle preserves e
 </tr>
 <tr>
 <td>label</td>
-<td>polygons (labels become geometry on export)</td>
+<td>round-capped paths, one per pen stroke (a Sans label: polygons) — labels become geometry on export</td>
 </tr>
 <tr>
 <td>path with a non-round end style</td>
@@ -1306,7 +1368,7 @@ with that angle.</p>
 </tr>
 <tr>
 <td><code>gr_text</code></td>
-<td>a label</td>
+<td>a label in the stroke font, its size read as the cap height; on export a label writes its pen width as the text's thickness</td>
 </tr>
 <tr>
 <td><code>zone</code> → <code>filled_polygon</code></td>

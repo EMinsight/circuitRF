@@ -24,25 +24,6 @@ internal static partial class Yield
     private sealed record DoeFlags(string? Design, int? Resolution, string? Factors, string? Levels, int? Centre,
                                    string? Responses, int? Parallel);
 
-    /// <summary>A flag that means nothing to a design of experiments.</summary>
-    private static Diagnostic? DoeFlagProblem(int? trial, string? cornerName, string? presetName, bool autostop,
-                                              List<string>? corners, bool contributions, List<string>? vars,
-                                              int? trials, int? seed, string? sampling, double? target)
-    {
-        if (trial is not null)      return CliDiagnostics.YieldCornerFlag("--trial", "yield trial, mc and estimate");
-        if (cornerName is not null) return CliDiagnostics.YieldCornerFlag("--save-corner", "yield trial, mc and estimate");
-        if (presetName is not null) return CliDiagnostics.YieldCornerFlag("--save-preset", "yield trial and center");
-        if (autostop)               return CliDiagnostics.YieldCornerFlag("--autostop", "yield estimate");
-        if (corners is not null)    return CliDiagnostics.YieldCornerFlag("--corners", "yield corners, mc and estimate");
-        if (contributions)          return CliDiagnostics.YieldCornerFlag("--contributions", "yield mc and estimate");
-        if (vars is not null)       return CliDiagnostics.YieldCornerFlag("--vars", "yield mc, estimate and center");
-        if (trials is not null)     return CliDiagnostics.YieldCornerFlag("--trials", "yield mc, estimate and center");
-        if (seed is not null)       return CliDiagnostics.YieldCornerFlag("--seed", "yield mc, estimate and center");
-        if (sampling is not null)   return CliDiagnostics.YieldCornerFlag("--sampling", "yield mc, estimate and center");
-        if (target is not null)     return CliDiagnostics.YieldCornerFlag("--target", "yield estimate and center");
-        return null;
-    }
-
     private static int RunDoe(string input, string full, PreparedCircuit circuit, TestBench tb,
                               List<(string Name, string Expr)> sets, string? output, bool quiet,
                               List<string>? goals, bool optimum, DoeFlags f)
@@ -84,6 +65,12 @@ internal static partial class Yield
         if (f.Factors is not null && f.Levels is null && doe.Levels == DoeSettings.DefaultLevels(doe.EffectiveFactors == DoeFactorSource.Opt ? DoeFactorSource.Stat : DoeFactorSource.Opt))
             doe.Levels = null;
         if (changed) setup.Doe = doe;
+        // Two flags the design itself can make meaningless — checked once the file's doe line is under them, before
+        // anything runs (R-ya16-5, R-ya16-7).
+        if (f.Resolution is not null && doe.EffectiveDesign != DoeDesignKind.Frac)
+            return JsonRun.Fail(CliDiagnostics.YieldCornerFlag("--resolution", "yield doe --design frac"));
+        if (optimum && doe.EffectiveFactors != DoeFactorSource.Opt)
+            return JsonRun.Fail(CliDiagnostics.YieldCornerFlag("--optimum", "yield doe --factors opt"));
         if (goals is not null)
         {
             if (NarrowGoals(setup, goals) is { } refusal) return JsonRun.Fail(refusal);
@@ -123,20 +110,28 @@ internal static partial class Yield
             return JsonRun.Fail(result.Refusal ?? CliDiagnostics.RunFailed(result.FinishReason));
         if (result.Outcome == DoeOutcome.NoneEvaluated && result.Refusal is { } none) JsonRun.Report(none);
 
-        if (result.WrittenPath is { } written)
-        {
-            Console.WriteLine($"Wrote {written}");
-            JsonRun.AddOutput(JsonRun.KindOf(written), written);
-        }
-
+        // The optimum before the write is reported: cancelling during it is cancelling the run, which writes nothing
+        // (R-ya16-4) — the file the design wrote is removed on that path as on the run's own.
         int exit = result.ExitCode;
         DoeOptimum? best = null;
         if (optimum && result.Outcome == DoeOutcome.Finished)
         {
             try { best = run.ModelOptimum(result, ct); }
-            catch (OperationCanceledException) { JsonRun.Report(CliDiagnostics.YieldCancelled()); return 130; }
+            catch (OperationCanceledException) { best = null; }
+            if (best is null || ct.IsCancellationRequested)
+            {
+                if (result.WrittenPath is { } partial && File.Exists(partial)) File.Delete(partial);
+                JsonRun.Report(CliDiagnostics.YieldCancelled());
+                return 130;
+            }
             if (best.Refusal is { } why) { JsonRun.Report(why); exit = 1; }
             else if (best.ConfirmationReason is { } failed) Report(failed);
+        }
+
+        if (result.WrittenPath is { } written)
+        {
+            Console.WriteLine($"Wrote {written}");
+            JsonRun.AddOutput(JsonRun.KindOf(written), written);
         }
 
         var report = ProjectDoe(input, run, result, best) with { Output = result.WrittenPath };

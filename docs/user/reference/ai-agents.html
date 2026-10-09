@@ -154,6 +154,11 @@ usually needs them:</p>
 <td>every algorithm the <code>optimize</code> line can name, when to use it, and its options with their defaults</td>
 </tr>
 <tr>
+<td><code>statistics</code></td>
+<td>before writing a tolerance, a yield spec or a <code>statistics</code> line</td>
+<td>the distributions and their spreads, <code>goal … use=yield</code>, the run's options, exit codes and result layout, with an example per mode</td>
+</tr>
+<tr>
 <td><code>component-index</code></td>
 <td>when choosing parts</td>
 <td>every component type in one line each: nets, category, name</td>
@@ -224,6 +229,39 @@ and how large the problem is. See the next section.</li>
 <li><strong>Run EM</strong> once the size is acceptable, then <code>read</code> the Touchstone and compare it with step 3.</li>
 <li><strong>Export</strong> the artwork with <code>convert</code>, for example a <code>.clay</code> in and a <code>.gds</code> out.</li>
 </ol>
+<h2 id="yield">Yield: tolerances, Monte Carlo and the worst trial</h2>
+<p>An agent can set up and run a yield analysis with the MCP tools alone:</p>
+<ol>
+<li><code>explain</code> with <code>tunables=true</code> lists the values that can carry a tolerance, by key.</li>
+<li>Write the tolerances on tune lines, <code>tune R1.R dist=gauss sd=2%</code>, and the spec as a goal marked for
+yield, <code>goal Vout = DC1.V(&quot;out&quot;) analysis=DC1 in 0.49 0.51 use=yield</code>. A <code>statistics</code> line sets the
+trial count and target: <code>statistics trials=500 target=95%</code>. <code>reference statistics</code> has the grammar.</li>
+<li><code>check</code> the file. A setup the run would refuse, such as one where nothing varies, is reported here.</li>
+<li><code>explain</code> with <code>analysis</code> reports how wide the yield's interval will be at that trial count and what
+the run will cost, in nominal simulations.</li>
+<li><code>run</code> with <code>analysis=yield</code> and <code>trials=500</code> returns the yield, its interval and each goal's worst
+trial. An exit code of 3 means the yield is below the target.</li>
+<li><code>read</code> the <code>.yield.npy</code> it wrote for the summary and every trial.</li>
+<li><code>run</code> with <code>analysis=yield</code> and <code>trial=&lt;the worst trial&gt;</code> shows what that trial drew.</li>
+</ol>
+<p><code>analysis=montecarlo</code> is the spread alone, with no pass or fail. Neither changes the design: a trial's
+values become a preset only with <code>savePreset</code>, and a corner only with <code>saveCorner</code>, both on a <code>.csch</code>.</p>
+<p>The rest of the workflow is reachable the same way:</p>
+<ol start="8">
+<li><strong>Corners.</strong> <code>run</code> with <code>analysis=corners</code> and <code>generate=&quot;temp=-40,25,85;Vdd=3.0,3.6&quot;</code> returns the
+corners that cross product makes and writes nothing; adding <code>write=true</code> on a <code>.csch</code> appends them.
+<code>run analysis=corners</code> then evaluates every enabled corner and names each goal's worst; with <code>mc=true</code>
+it runs a yield at each corner instead.</li>
+<li><strong>Optimizing across corners.</strong> <code>run</code> with <code>analysis=optimize</code> and <code>corners=all</code> meets every goal at
+the nominal and at every corner at once, and each goal's result names the corner that binds it.</li>
+<li><strong>Centering.</strong> Put <code>opt=1</code> and a range on the toleranced lines whose values may move, then <code>run</code>
+with <code>analysis=center</code>. The verified start and centred yields are the result; <code>surrogate=quadratic</code>
+makes each step cheaper when there are few toleranced values.</li>
+<li><strong>Which values matter.</strong> <code>run</code> with <code>analysis=doe</code> and <code>design=pb</code> screens many values in a few
+runs; <code>design=ccf</code> on the few that matter fits a curved model, and <code>optimum=true</code> confirms that
+model's best point with a simulation.</li>
+</ol>
+<p>The <em>Yield, Corners and Centering</em> example is a working copy of each of these steps.</p>
 <h2 id="em">EM runs: check the cost first</h2>
 <p>An EM run is the one step that can take hours. Before starting one, the agent should run <code>check</code> on
 the <code>.cem</code> and read its mesh budget: the number of unknowns, the solver's ceiling, and the mesher's

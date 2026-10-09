@@ -46,6 +46,7 @@
 <li><a href="#spiral">A second example: a spiral inductor</a></li>
 <li><a href="#declaring">Declaring your generators to circuitRF</a></li>
 <li><a href="#schematic-symbol">Giving a generated cell a schematic side</a></li>
+<li><a href="#statistics">Statistics: process and mismatch</a></li>
 <li><a href="#traps">Traps worth a callout</a></li>
 </ol>
 </nav>
@@ -388,6 +389,60 @@ is only ever the answer for a cell your kit says nothing else about.</li>
 <p>The symbol buys the schematic side, not a model: a cell with artwork and a glyph still has no device
 equations, and a run says so. Supply those the way <a href="#four-halves">The four things a part needs</a>
 describes.</p>
+<h2 id="statistics">Statistics: process and mismatch</h2>
+<p>A kit's models can carry their own spread, which a <a href="yield.html#kit">Monte Carlo or yield</a> run draws.
+Write it in the SPICE model files with the distribution functions:</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>In a trial</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>agauss(nom, dev, k)</code></td>
+<td>Gaussian around <code>nom</code>, with <code>dev</code> at <code>k</code> σ</td>
+</tr>
+<tr>
+<td><code>gauss(nom, rel, k)</code></td>
+<td>the same, <code>rel</code> a fraction of <code>nom</code></td>
+</tr>
+<tr>
+<td><code>aunif(nom, dev)</code>, <code>unif(nom, rel)</code></td>
+<td>uniform within ± <code>dev</code>, or ± <code>rel</code> × <code>nom</code></td>
+</tr>
+<tr>
+<td><code>limit(nom, dev)</code></td>
+<td><code>nom − dev</code> or <code>nom + dev</code>, equally likely</td>
+</tr>
+</tbody>
+</table>
+<p><code>k</code> defaults to 1, and <strong><code>k = 0</code> means no spread</strong> — which is how a kit switches its mismatch off with a
+flag, <code>agauss(vth0, 0.01, (mm_ok != 1 ? 0 : 1))</code>. <strong>Outside a trial each call is its first argument</strong>,
+evaluated alone, so every ordinary simulation, corner and optimization sees the kit's nominal model,
+bit for bit.</p>
+<p><strong>Where a call is written decides what kind of spread it is.</strong> A call in a global parameter is
+<strong>process</strong>: drawn once per trial and shared by every device that reads it. A call inside a subcircuit —
+a parameter default, or a device line in its body — is <strong>mismatch</strong>: drawn afresh for each instance.
+Nothing else marks the difference, so put the process spread in the globals and the per-device spread in
+the subcircuits.</p>
+<p><strong>Put the statistical globals in a section of their own</strong> in the corner library — <code>.lib stat</code>, beside
+<code>.lib tt</code> and <code>.lib ss</code> — that redefines the process globals as distributions. circuitRF finds the
+statistical sections by reading the library for distribution calls, and offers them with the kit's other
+corners. Choosing one in the corner picker makes a Monte Carlo draw it; the Yield panel's <strong>Kit
+statistics</strong> row says when the kit has a statistical section that is not chosen. A <strong>mismatch</strong> section
+can include a second copy of the part library whose subcircuits carry the per-instance draws: when that
+section is chosen, circuitRF uses those subcircuits in place of the ordinary ones. A section that holds no
+distribution changes nothing.</p>
+<p>Three things to know when writing them:</p>
+<ul>
+<li>A distribution inside a <strong>frequency-dependent</strong> expression stays at its nominal in every trial.</li>
+<li>A parameter whose value is a distribution <strong>cannot be tuned or optimized</strong> — it is an expression. A
+user who wants to tune it writes its nominal as a plain value with a tolerance of their own.</li>
+<li>Only the SPICE functions above are read. A <code>statistics { process { … } mismatch { … } }</code> block in
+another simulator's syntax is not.</li>
+</ul>
 <h2 id="traps">Traps worth a callout</h2>
 <div class="callout warn">
 <span class="label">A parameter declared as text silently ignores a number</span>

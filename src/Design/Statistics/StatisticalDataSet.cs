@@ -94,13 +94,18 @@ internal static class StatisticalDataSet
             ds.AddToGroup(TrialsGroup, $"z:{KindName(kind)}:{stream}",
                 Column(trialAxis, records.Select(r => r.Kit.TryGetValue(stream, out var d) ? d.Z : double.NaN), ""));
 
+        var measurementUnits = nominalData is not null && nominalData.ContainsGroup(DataSet.MeasurementsGroup)
+            ? nominalData.CubesIn(DataSet.MeasurementsGroup).ToDictionary(kv => kv.Key, kv => kv.Value.Unit ?? "", StringComparer.Ordinal)
+            : null;
         foreach (var g in x.Goals)
         {
             GoalScore? Of(TrialRecord r) => r.Goals.FirstOrDefault(s => s.Name == g.Name);
             ds.AddToGroup(TrialsGroup, $"goal:{g.Name}:pass", Column(trialAxis, records.Select(r =>
                 r.Evaluated ? (Of(r)?.Met == true ? 1.0 : 0.0) : countFails ? 0.0 : double.NaN), ""));
-            ds.AddToGroup(TrialsGroup, $"goal:{g.Name}:margin", Column(trialAxis, records.Select(r => r.Evaluated ? Of(r)?.Margin ?? double.NaN : double.NaN), ""));
-            ds.AddToGroup(TrialsGroup, $"goal:{g.Name}:worst", Column(trialAxis, records.Select(r => r.Evaluated ? Of(r)?.WorstValue ?? double.NaN : double.NaN), ""));
+            // In the goal's own unit, the margin too — a histogram's axis then reads dB, or scales a frequency (R-ya16-13).
+            string unit = GoalResiduals.ValueUnit(g, measurementUnits);
+            ds.AddToGroup(TrialsGroup, $"goal:{g.Name}:margin", Column(trialAxis, records.Select(r => r.Evaluated ? Of(r)?.Margin ?? double.NaN : double.NaN), unit));
+            ds.AddToGroup(TrialsGroup, $"goal:{g.Name}:worst", Column(trialAxis, records.Select(r => r.Evaluated ? Of(r)?.WorstValue ?? double.NaN : double.NaN), unit));
         }
         if (x.Goals.Count > 0)
             ds.AddToGroup(TrialsGroup, "pass", Column(trialAxis, records.Select(r =>

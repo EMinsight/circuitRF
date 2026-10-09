@@ -39,14 +39,16 @@ public static class SpecLineResolve
     private static readonly Regex WorstRef = new(@"goal:(?<g>[^:\s,()\[\]]+):worst", RegexOptions.CultureInvariant);
 
     /// <summary>The goals <paramref name="ds"/> records, in the order it holds them. A line that no longer
-    /// parses is skipped — the picture loses that goal's lines, never the trace.</summary>
+    /// parses is skipped — the picture loses that goal's lines, never the trace. A run at each corner stacks the
+    /// line under a <c>corner</c> axis; the line is the same at every corner, so the first is read
+    /// (brief-yield-16 R-ya16-3).</summary>
     public static IReadOnlyList<OptimizationGoal> GoalsOf(DataSet ds)
     {
         var goals = new List<OptimizationGoal>();
         foreach (var g in ds.Groups)
             foreach (var (name, cube) in ds.CubesIn(g))
             {
-                if (!SpecCube.IsMatch(name) || cube.Rank != 1 || cube.Axes[0].Labels is not { Length: > 0 } labels) continue;
+                if (!SpecCube.IsMatch(name) || cube.Rank < 1 || cube.Axes[^1].Labels is not { Length: > 0 } labels) continue;
                 try { goals.Add(TuningDirectiveText.ReadGoalLine(labels[0])); }
                 catch (TuningDirectiveException) { }
             }

@@ -578,7 +578,8 @@ public sealed partial class YieldPanelViewModel : ITrialSelectionListener
         string goal = SelectedGoal?.Name ?? Goals[0].Name;
         var report = ResultContributions.Of(ds, goal);
         if (report.Refusal is { } why) { StatusText = $"No contributions: {why.Render()}"; return; }
-        _shares = report.Contributors.Where(c => c.Kind == "entry").ToDictionary(c => c.Name, c => c.Share, StringComparer.Ordinal);
+        // The bars and their tooltips show each share clamped to 0–100 % (owner decision D-a); the ranking is β·r's.
+        _shares = report.Contributors.Where(c => c.Kind == "entry").ToDictionary(c => c.Name, c => c.ShownShare, StringComparer.Ordinal);
         foreach (var v in Variables) v.ShowShare(_shares.TryGetValue(v.Key, out double s) ? s : 0);
         StatusText = $"Contributions to {goal}: R² {report.RSquared.ToString("0.00", CultureInfo.InvariantCulture)}";
     }

@@ -64,7 +64,7 @@ public sealed class FamilyColourByTests
         var theme = RenderTheme.Light;
         var plan = TrialRenderer.FamilyPlan(t, theme);
         Assert.Equal(11, plan.Count);
-        var passColor = RenderTheme.ToSKColor(t.Properties.LineColor, t.Properties.LineOpacity * TrialRenderer.PassOpacity);
+        var passColor = RenderTheme.ToSKColor(theme.PassColor, t.Properties.LineOpacity * TrialRenderer.PassOpacity);
         var failColor = RenderTheme.ToSKColor(theme.FailColor, t.Properties.LineOpacity);
         int Trial(TrialStroke s) => (int)t.FamilyCurves[s.Member].AxisValue;
 

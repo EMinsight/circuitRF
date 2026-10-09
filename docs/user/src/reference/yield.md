@@ -192,7 +192,8 @@ trial on a plot selects its row. Right-click a row for:
 - **Save as corner…** — a statistical corner that replays this trial's draws around the current design.
 
 **Contributions** (the bar-chart button) ranks, once, which toleranced values drive the selected spec,
-and fills each variable's **Share** bar.
+and fills each variable's **Share** bar. With correlated tolerances a fitted share can come out above
+100 % or below 0; the bar shows it between 0 and 100 %.
 
 ## The yield display {#display}
 
@@ -203,11 +204,28 @@ histogram of each spec's worst value with its limits; a yield sensitivity over t
 the first spec most; and the statistics table. Every plot is an ordinary one: change it as you would
 any other — see [the Data Display](data-display.html).
 
+The figures below are the shipped example's bandpass filter ([The example](#example)), 500 trials at its
+saved seed. Each spec's trials come first, every trial's curve drawn grey when it passes and red when it
+fails, the failures on top so none is hidden, with the nominal design and the spec's limit over them:
+
+{{ui: yield-family}}
+
+Then each spec's worst value as a histogram, with the limit as a dashed line. Read it for how far the
+bulk of the trials sits from the limit, and on which side the tail lies:
+
+{{ui: yield-histograms}}
+
+And the statistics table — mean, σ, the extremes, percentiles and Cpk of each spec's worst value:
+
+{{ui: yield-statistics-table}}
+
 ## Which plot answers which question {#plots}
 
 Every plot below is on a trace card's **Statistics** button, over any trace of the result — see
 [Monte Carlo statistics](data-display.html#statistics) and [trials](data-display.html#trials) for the
-menus.
+menus. It is the bar-chart button under the card's remove button:
+
+{{ui: yield-trace-card}}
 
 | Question | Plot |
 |---|---|
@@ -219,6 +237,16 @@ menus.
 | What does the band look like across thousands of trials? | **Envelope** (P1–P99, say) with **Show Curves** off |
 | Does one value drive a spec, and in which direction? | **Scatter vs** that value, with **Fit Line** |
 | Which values matter most? | **Contributions** — each value's share, largest first |
+
+**Yield Sensitivity vs** a value bins the trials by that value and shows the yield in each bin, with the
+number of trials per bin on the right axis. Bins at the edges hold few trials, so read their yield loosely:
+
+{{ui: yield-sensitivity}}
+
+With thousands of trials an **Envelope** reads better than the curves themselves — here the band 98 % of
+built filters fall inside, around the median, with **Show Curves** off:
+
+{{ui: yield-envelope}}
 
 A contribution is a straight-line fit. When a spec gets worse whichever way a value moves — a filter's
 passband edge as a resonator is detuned either way, say — the fit explains little (a low R² in the label)

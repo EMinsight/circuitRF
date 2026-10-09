@@ -161,7 +161,8 @@ namespace CircuitRF.Render.DataDisplay
 
         /// <summary>
         /// Every trace's spec lines (R-ya8-3), dashed in the theme's limit colour and labelled with the goal and its
-        /// limit. A line two traces both carry is drawn once.
+        /// limit. A line two traces both carry is drawn once. A vertical limit beyond the X range is an arrow at the
+        /// edge it lies past, with its label (brief-yield-16 R-ya16-12).
         /// </summary>
         public static void DrawSpecLines(SKCanvas canvas, (double W, double H) canvasSize, Plot plot, TransformSet tf,
                                          RenderTheme theme)
@@ -193,7 +194,28 @@ namespace CircuitRF.Render.DataDisplay
                         double xd = line.X0 * scale;
                         if (!tf.XIsPlottable(xd)) continue;
                         float x = tf.ToCanvas(xd, 0, sec).X;
-                        if (x < clip.Left || x > clip.Right) continue;
+                        if (x < clip.Left || x > clip.Right)
+                        {
+                            // Beyond a range the user fixed (an autoscaled one takes the limit in, R-ya16-12): an arrow
+                            // at the edge it lies past, and its label, so the limit is never simply absent.
+                            bool left = x < clip.Left;
+                            float ex = left ? clip.Left : clip.Right;
+                            float ey = clip.Top + font.Size * (1.3f + 1.2f * labelRow++);
+                            float h = font.Size * 0.4f, cy = ey - font.Size * 0.35f, dir = left ? 1 : -1;
+                            using (var arrow = new SKPath())
+                            using (var fill = new SKPaint { Color = theme.LimitColor, Style = SKPaintStyle.Fill, IsAntialias = true })
+                            {
+                                arrow.MoveTo(ex, cy);
+                                arrow.LineTo(ex + dir * 2 * h, cy - h);
+                                arrow.LineTo(ex + dir * 2 * h, cy + h);
+                                arrow.Close();
+                                canvas.DrawPath(arrow, fill);
+                            }
+                            float ew = RendererText.MeasureTextWithFallback(line.Label, font, fallback);
+                            float etx = left ? ex + 2 * h + lw * 1.5f : ex - 2 * h - lw * 1.5f - ew;
+                            RendererText.DrawLeftTextWithFallback(canvas, line.Label, etx, ey, font, fallback, textPaint);
+                            continue;
+                        }
                         Dashed(canvas, new SKPoint(x, clip.Top), new SKPoint(x, clip.Bottom), paint, lw);
                         float y = clip.Top + font.Size * (1.3f + 1.2f * labelRow++);
                         float tw = RendererText.MeasureTextWithFallback(line.Label, font, fallback);

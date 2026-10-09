@@ -2468,7 +2468,7 @@ R-ya9-7). Selecting a trial is the window's alone — a picture has no one to cl
 ```
 circuitrf plot div.yield.npy -o h.svg --trace cube=trials.goal:Vout:worst,stat=histogram,fit=normal --spec-lines
 circuitrf plot div.yield.npy -o ys.svg --trace cube=trials.pass,stat=yieldsens,param=R1.R
-circuitrf plot lpf.yield.npy -o fam.svg --trace cube=SP1.S,i=2,j=1,y=db,colorby=pass,envelope=p:1
+circuitrf plot lpf.yield.npy -o fam.svg --trace cube=SP1.S,i=2,j=1,y=db20,colorby=pass,envelope=p:1
 ```
 
 **An integer on an `i`/`j` axis is a PORT NUMBER, not an index** — `S[:,2,1]` is S21, which is what
@@ -3568,7 +3568,8 @@ statistics` renders, so a flag added there is documented with nothing else to ed
 `--save`, `--process 0|1`, `--mismatch 0|1`, `--sigma-scale`, `--parallel`, `--analyses goals|all`
 replace the `statistics` line's keys; `--set` overrides a global as every run verb does. `--vars k,k`
 draws only those statistical entries (the rest keep their distribution and stay at nominal, as `stat=0`
-keeps them) and `--goals g,g` scores only those enabled goals; a name outside the set is a refusal
+keeps them, and a `correlate` line naming an entry left out goes with it) and `--goals g,g` scores only those
+enabled goals; a name outside the set is a refusal
 listing it. **`--target` and `--autostop` on `mc` are refused**, not ignored: a Monte Carlo has no target,
 and a flag that silently does nothing is a run answering a different question. Settings the run itself
 refuses (`lhs` with auto-stop) are refused in its own words, because the run validates the setup.
@@ -3576,7 +3577,8 @@ refuses (`lhs` with auto-stop) are refused in its own words, because the run val
 `--trial n` re-runs ONE trial — the same draws and the same evaluation as inside a full run
 (`StatisticalRun.EvaluateTrial`) — and prints what it drew (`R1.R = 979.9 Ohm`) and how it scored; `-o`
 then writes that trial's analysis results. `trial` needs it; `mc` and `estimate` take it too, choosing
-which goals score it. **Nothing is written to the design's values** (D12): `--save-preset <name>` adds the
+which goals score it — and `trial` itself scores as the design's own run would: a yield when the design has a
+yield goal, a Monte Carlo otherwise, so `yield trial 5` and `yield mc --trial 5` agree on a Monte Carlo design. **Nothing is written to the design's values** (D12): `--save-preset <name>` adds the
 trial's values as a preset (`TuningPresets.LockIn`), and `--save-corner <name>` adds one statistical
 corner, `corner <name> trial=n seed=s sampling=m trials=N`, naming the run the trial came from — both to
 a `.csch` only, both with `--trial`, both after a `BeforeBatch` checkpoint exactly as `opt --save-preset`
@@ -3593,7 +3595,8 @@ measurement (in its unit); each goal's five tightest trials with their values; a
 use (process / mismatch stream counts). stderr: one progress line per batch
 (`trials 64/500 · yield 84.4 % [75.1 %, 91.2 %] · 2 did not evaluate`), suppressed by `-q`. `--json`
 carries the same as `result.yield` — a yield is a FRACTION there — plus, with `--contributions` and never
-unasked, what drives each goal's and measurement's spread (R-ya4-9).
+unasked, what drives each goal's and measurement's spread (R-ya4-9). The text output prints the same ranking with
+each share clamped to 0–100 %; `--json` carries β·r as it stands (owner decision D-a, `yield.md`).
 
 Exit (D13, §7): **0** finished, the yield met `--target` or there was none · **3** finished below the
 target · **1** refused · **2** no trial evaluated · **130** cancelled, writing nothing — a file the run
@@ -3654,7 +3657,8 @@ corner that did not evaluate with its reason. The result is `<design>.corners.np
   sampling), naming any stream the design no longer has; otherwise it is drawn afresh, with a note saying so.
 - `--generate "axis=a,b;temp=-40,25,85;Vdd=3.0,3.6"` prints the corners the cross product makes and **writes
   nothing** — `corner` lines for a `.cnl`, the tuning block's JSON for a `.csch` (a kit axis selection has no `.cnl`
-  spelling). `--write` appends them to a `.csch` after a history checkpoint, refusing names the design already has;
+  spelling). `result.corners.generated[]` carries each corner in full for both — `name`, `temp`, `values`, a
+  schematic's kit `axes`, and a netlist's `line`. `--write` appends them to a `.csch` after a history checkpoint, refusing names the design already has;
   on a `.cnl` it is refused, the lines being the caller's to add (D12). More than 256 corners is a refusal naming the
   count.
 - A `.csch` in a kit workspace extracts with the workspace's corner axes bound, as Simulate extracts it, so a corner's
@@ -3701,7 +3705,36 @@ ones starred, each with its alias set — the Lenth margin, R² and the curvatur
 best point and its confirmation: predicted vs simulated per goal. The file is `<design>.doe.npy` (`-o` moves it);
 `--json` carries `result.doe` (`responses[].effects[].aliases`, `optimum`). It writes nothing to the design. Exit: **0**
 · **1** refused (or the optimum refused) · **2** no run evaluated · **130** cancelled, nothing written — there is no
-target, so no 3. Over MCP it is `run analysis=doe`.
+target, so no 3. Over MCP it is `run analysis=doe`. `--optimum` with stat factors and `--resolution` with any design
+but `frac` are refused once the file's `doe` line is under the flags, before anything runs; a cancel during the optimum
+is a cancel of the run, and the file the design wrote is removed.
+
+### 25.10 No flag is silently ignored (brief-yield-16)
+
+**`Yield.Flags` says which run honours each flag, and every other run refuses it by name** through
+`cli.yield.corner-flag` ("yield: --trials belongs to yield mc, estimate, trial, corners --mc and center."). The runs are
+`mc`, `estimate`, `trial`, `corners`, `corners --mc`, `corners --generate`, `center` and `doe`; `mc` and `estimate` with
+`--trial` are `trial`. `reference statistics` prints the table with each flag's runs in brackets, so the page and the
+verb cannot disagree, and the old per-noun lists (`CornerFlagProblem`, `DoeFlagProblem`, `CenterFlagProblem`) are gone.
+In particular: on `doe` every statistics-line flag (`--confidence`, `--nonconverged`, `--save`, `--process`,
+`--mismatch`, `--sigma-scale`, `--analyses`); on `corners` without `--mc` `--trials`, `--seed`, `--sampling`,
+`--target`, `--confidence`, `--autostop`, `--save` and `--contributions`; on one trial `--corners`, `--target`,
+`--parallel`, `--contributions`. A few refusals say more than the table: `--target` on `mc`, `--save-*` without
+`--trial`, and `--contributions` on a run at each corner, which ranks nothing.
+
+**`--save-corner` is refused with `--vars`, `--sigma-scale`, `--process`, `--mismatch` or `--set`**
+(`cli.yield.save-corner-uncarried`). A statistical corner records the trial, seed, sampling and trial count and replays
+the trial under the design's own statistics line, so a flag that changed the draws would replay different values from
+the ones printed. `--save-preset` keeps the values instead.
+
+**`plot` refuses what would draw nothing** (`plot.trace.stat-refused`, with the reason): `envelope=` on a trace that is
+not a family or on a Smith or polar plot (`TrialViews.EnvelopeRefusal`); `colorby=` whose cube cannot reach the trace's
+members, or on a trace with no trial axis (`TrialViews.ColourByRefusal`, the resolve's own early exits); either one with
+`stat=`; and a statistics option its statistic does not read — `fit=` and `percent=` are a histogram's, `param=` a yield
+sensitivity's, `over=` anything's but a yield sensitivity's. **On a run at each corner** a statistic takes
+`corner=<name>`; without it, it is one trace per corner, each pinned, never the first corner alone. `--spec-lines`
+reads a stacked goal line's first slice (the line is the same at every corner). The yield display, the statistics
+table, contributions and a yield sensitivity refuse such a result by name.
 
 
 ## 26. `recognize` — a board's artwork as a circuit, headless

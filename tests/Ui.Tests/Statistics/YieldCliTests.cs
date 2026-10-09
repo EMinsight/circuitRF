@@ -181,7 +181,7 @@ public sealed class YieldReferenceTests
         string page = CircuitRF.Cli.Reference.RenderStatistics();
         foreach (var d in AnalysisDirectiveSchema.TuningDirectives.Where(d => d.Topic == AnalysisDirectiveSchema.StatisticsTopic))
             foreach (var k in d.Keys) Assert.Contains(k.Name, page);
-        foreach (var (flag, takes, _) in CircuitRF.Cli.Yield.Flags) Assert.Contains($"{flag} {takes}".TrimEnd(), page);
+        foreach (var (flag, takes, _, _) in CircuitRF.Cli.Yield.Flags) Assert.Contains($"{flag} {takes}".TrimEnd(), page);
         foreach (var (noun, _) in CircuitRF.Cli.Yield.Nouns) Assert.Contains($"  {noun} ", page);
 
         var run = CircuitRF.Cli.Serve.ToolCatalog.Tools.Single(t => t.Name == "run");

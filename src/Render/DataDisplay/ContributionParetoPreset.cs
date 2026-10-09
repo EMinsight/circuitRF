@@ -10,6 +10,11 @@
 //  over that cube: the shares as bars (in percent, largest first, the
 //  contributors' names on the X axis) and their running total as a line
 //  on the right axis. Nothing here computes a number.
+//
+//  The bars read the SHOWN shares and the line their renormalized total
+//  (owner decision D-a, brief-yield-16): with correlated entries β·r can
+//  pass 100 % or fall below 0, which a bar cannot honestly draw. The raw
+//  β·r stays in the source beside them.
 // ================================================================
 
 using System.Collections.Generic;
@@ -30,8 +35,9 @@ public static class ContributionParetoPreset
     {
         stored = false;
         string share = $"{ResultContributions.Group}.{ResultContributions.CubeName(name)}";
+        string shown = $"{ResultContributions.Group}.{ResultContributions.ShownName(name)}";
         string cumulative = $"{ResultContributions.Group}.{ResultContributions.CumulativeName(name)}";
-        if (!ds.Contains(share) || !ds.Contains(cumulative))
+        if (!ds.Contains(share) || !ds.Contains(shown) || !ds.Contains(cumulative))
         {
             var report = ResultContributions.Store(ds, name);
             if (report.Refusal is { } why) return (null, why.Render());
@@ -43,7 +49,7 @@ public static class ContributionParetoPreset
         var bars = new TraceConfig
         {
             SourcePath = sourceRef,
-            Expression = $"100*{share}",
+            Expression = $"100*{shown}",
             Properties = new TracePropertiesConfig
             {
                 LineColorIndex = TraceProperties.LineColorOrder[0], MarkerColorIndex = TraceProperties.LineColorOrder[0],

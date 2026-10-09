@@ -548,6 +548,7 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "cli.yield.mc-no-target",
         "cli.yield.noun",
         "cli.yield.output-not-npy",
+        "cli.yield.save-corner-uncarried",
         "cli.yield.save-name",
         "cli.yield.save-needs-schematic",
         "cli.yield.save-needs-trial",

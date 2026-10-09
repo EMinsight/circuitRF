@@ -184,6 +184,12 @@ public partial class WorkspaceViewModel
         string cdd = YieldDisplayPath(resultPath);
         if (!_openDocsByPath.ContainsKey(cdd) && !File.Exists(cdd))
         {
+            // A run at each corner has no one-run display: said by name rather than written empty (R-ya16-3).
+            if (DoeDisplayPreset.Responses(result).Count == 0 && YieldDisplayPreset.Refusal(result) is { } why)
+            {
+                Messages.Warning(why, resultPath);
+                return;
+            }
             // A design of experiments' result draws the DOE display (brief-yield-14 R-ya14-6); every other, the yield's.
             var config = DoeDisplayPreset.Responses(result).Count > 0
                 ? DoeDisplayPreset.Build(result, Path.GetFullPath(resultPath))

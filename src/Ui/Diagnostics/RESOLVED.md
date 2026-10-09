@@ -634,3 +634,14 @@ capture prompted were in the dialog itself:
   the top. The dialog's `.row` style centres every child of a row.
 - A collapsed Fluent `Expander` is 48 px tall, and putting one in a row of 32 px controls sets the
   height of the whole row.
+
+## Yield figures, and a search-index check that read a CLI table as geometry (2026-10-08)
+
+The Yield page's figures (`yield-family`, `-envelope`, `-histograms`, `-sensitivity`, `-statistics-table`,
+`-trace-card`) are `YieldDisplayPreset`'s own plots over the shipped BandpassYield example, pasted into a document
+as a `.cdd` opens (`DocDataDisplayFixtures.Yield.cs`). The family and envelope are zoomed to the passband: with ±2 %
+parts the 500 curves are a fraction of a dB wide, and over the whole sweep the failures' red covered every pass. The
+statistics table is split into two stacked tables for the figure — fifteen columns at a readable size do not fit a
+page. `DocsFactoryTests.TheSearchIndexCarriesProseAndNotFigureGeometry` failed once the CLI page's yield section was
+first indexed: its quoted statistics row is six two-decimal numbers in a row, which the geometry heuristic matched.
+The run length is twelve now; leaked geometry runs to hundreds.

@@ -878,11 +878,13 @@ public class DocsFactoryTests
         foreach (var s in root.GetProperty("s").EnumerateArray())
         {
             string text = s[3].GetString()!;
-            // Three consecutive SVG coordinate pairs: prose does not contain this and path data is
+            // Six consecutive SVG coordinate pairs: prose does not contain this and path data is
             // nothing but this. Two decimals or more, because prose CAN hold a run of one-decimal
             // numbers — the smith-chart page lists the E12 series, "1.0, 1.2, 1.5, 1.8, 2.2, 2.7, …" —
-            // and a figure's coordinates are written with several.
-            if (Regex.IsMatch(text, @"(-?\d+\.\d{2,}[ ,]+){6}"))
+            // and a figure's coordinates are written with several. Twelve numbers, not six: a CLI
+            // statistics table quoted as an example (the yield verb's mean, σ, min, max, median and Cpk
+            // of a margin) is a row of six, while leaked geometry runs to hundreds.
+            if (Regex.IsMatch(text, @"(-?\d+\.\d{2,}[ ,]+){12}"))
                 offenders.Add($"{pages[s[0].GetInt32()]}#{s[1].GetString()}");
         }
 

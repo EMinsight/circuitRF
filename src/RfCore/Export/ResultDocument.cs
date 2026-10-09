@@ -855,9 +855,21 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string?                            WorstYield = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        IReadOnlyList<string>?             Generated = null,
+        IReadOnlyList<CornerDefinitionJson>? Generated = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string?                            Output = null);
+
+    /// <summary>A corner <c>--generate</c> made, in full (brief-yield-16 R-ya16-6): its temperature in °C, the values it
+    /// binds, a schematic's kit corner selections, and for a netlist the <c>corner</c> line that says the same.</summary>
+    public sealed record CornerDefinitionJson(
+        string                                Name,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double?                               Temp,
+        IReadOnlyDictionary<string, string>   Values,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        IReadOnlyDictionary<string, string>?  Axes,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string?                               Line);
 
     /// <summary>One corner: whether it evaluated, why not, and each goal's margin there (in the goal's unit; a margin
     /// below 0 fails).</summary>

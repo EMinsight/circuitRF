@@ -714,6 +714,38 @@ public static class FigureCatalog
           + "against its target, the anti-resonances the run named, and what removing each "
           + "capacitor would cost."),
 
+        // ── The yield display (brief-yield-16 follow-up) ─────────────────────────
+        // Each is one plot of the one-click yield display over the shipped Yield example's bandpass,
+        // 500 trials at its own seed — the run the Yield page's example table quotes.
+        new("yield-family", DocDataDisplayFixtures.YieldFamily, 850, 540,
+            WindowFrame.Titled("circuitRF - Data Display"),
+            "The passband spec's 500 trials coloured by pass, zoomed to the passband: passes grey, the 68 failures red "
+          + "and drawn on top, the nominal in the trace's own colour and the -1 dB limit dashed across the band."),
+
+        new("yield-envelope", DocDataDisplayFixtures.YieldEnvelope, 850, 540,
+            WindowFrame.Titled("circuitRF - Data Display"),
+            "The same trials as a P1-P99 envelope around their median, with the curves turned off: the band that "
+          + "98 % of built filters fall inside."),
+
+        new("yield-trace-card", DocDataDisplayFixtures.YieldTraceCard, 440, 420, null,
+            "The trace card of a trace over a Monte Carlo result. The bar-chart button under the remove button "
+          + "is Statistics: histogram, CDF, normal quantile, yield sensitivity, colour by, envelope and scatter."),
+
+        new("yield-histograms", DocDataDisplayFixtures.YieldHistograms, 1340, 500,
+            WindowFrame.Titled("circuitRF - Data Display"),
+            "Each spec's worst value as a histogram, with its limit. The passband spec straddles its limit, "
+          + "which is where its yield is lost; the high stop band sits 9 dB clear of its own."),
+
+        new("yield-sensitivity", DocDataDisplayFixtures.YieldSensitivity, 850, 540,
+            WindowFrame.Titled("circuitRF - Data Display"),
+            "Yield sensitivity: the yield in each bin of C1.C's drawn value (bars, left axis) and the trials in "
+          + "each bin (right axis)."),
+
+        new("yield-statistics-table", DocDataDisplayFixtures.YieldStatisticsTable, 1100, 400,
+            WindowFrame.Titled("circuitRF - Data Display"),
+            "The statistics table: one row per spec's worst value, one column per statistic. Split in two here to "
+          + "fit the page; in the display it is one table."),
+
         // ── Create Schematic from Artwork ──────────────────────────────────────
         // 1060x726 is the dialog's own declared 1060x760 less the synthetic title bar.
         new("artwork-to-schematic-dialog", DocRecognitionFixtures.CreateSchematicFromArtwork, 1060, 726,
