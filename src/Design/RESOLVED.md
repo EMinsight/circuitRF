@@ -18850,3 +18850,17 @@ Every finding was confirmed against the source before it was changed; none turne
   `sigma:1` is 1σ (it was 0.99σ under `trunc=3`), and a level past the truncation stops at the edge the entry can
   actually draw. `docs/design/yield.md` §17 says so. The user page's "nominal ± k σ" is now true as written and was
   left alone.
+
+## Optimizer — a standard-value row finished between rungs (2026-10-09)
+
+- **Symptom.** With ⋮ ▸ Standard values ▸ E24 on a row, the Optimizer's result was still continuous
+  (`L1.L = 12.7087915391915 nH` on the LSection example). The example's algorithm is `lm`, and by TO-8's design only
+  Auto and Discrete snapped a preferred or E-series coordinate. Every other algorithm posted an Info note
+  (`opt.discrete.preferred`) to Messages and left the value between rungs, so the row's choice looked ignored.
+- **Fix.** `OptimizationRun.Run` now runs `SnapStage` after any named algorithm (Discrete aside) whenever a coordinate
+  is `Preferred`, the same as `OptimizationOptions.SnapAndPolish` asks. So the GUI and `circuitrf opt` agree with no
+  `--snap`. Integers and steps are unchanged: `Decode` applies them on every evaluation, so they never ended
+  off-grid. A Stop still ends with no snap, as Auto's does, and the toolbar's Snap and polish covers that case. The
+  note and its diagnostic were deleted because their sentence was no longer true. It also said `discrete=preferred`
+  for an E24 row.
+- **Gate.** `SnapAndPolishTests.AnESeriesRow_UnderAContinuousAlgorithm_EndsOnTheSeries_Unasked`.

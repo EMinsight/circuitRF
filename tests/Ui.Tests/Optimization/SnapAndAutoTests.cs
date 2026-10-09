@@ -51,6 +51,23 @@ public sealed class SnapAndPolishTests
         Assert.True(snap.CostBefore < snap.CostSnapped && snap.CostAfter == r.BestCost);
         Assert.Equal(OptimizationOutcome.GoalsUnmet, r.Outcome);   // no ladder pair matches to 1e-4
     }
+
+    /// <summary>A standard-value row ends on its series with no snap asked for: a continuous algorithm's
+    /// result between rungs is not the value the row allows.</summary>
+    [Fact]
+    public void AnESeriesRow_UnderAContinuousAlgorithm_EndsOnTheSeries_Unasked()
+    {
+        var r = OptimizationRun.Create(OptCircuits.Prepare(Cnl.Replace("discrete=preferred", "discrete=e24")),
+                                       new OptimizationOptions()).Run();
+
+        var e24 = PreferredValues.Series(PreferredValues.E24, -13, -8);
+        Assert.Equal([OptimizationStages.Snap], r.Stages);
+        foreach (string key in (string[])["L1.L", "C1.C"])
+        {
+            double v = OptCircuits.Si(r, key);
+            Assert.True(e24.Any(rung => Math.Abs(rung - v) <= rung * 1e-9), $"{key} = {v:G15} is not an E24 value");
+        }
+    }
 }
 
 /// <summary>

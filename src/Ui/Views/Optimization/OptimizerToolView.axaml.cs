@@ -8,6 +8,7 @@ using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Optimization;
 using CircuitRF.Ui.Tuning;
 using CircuitRF.Ui.ViewModels.Dock;
+using CircuitRF.Ui.Views.Tuning;
 
 namespace CircuitRF.Ui.Views.Optimization;
 
@@ -33,6 +34,7 @@ public partial class OptimizerToolView : UserControl
 
         AddFlyout.Opened += (_, _) => { if (_panel is { } p) p.Add.IsOpen = true; AddSearch.Focus(); };
         AddFlyout.Closed += (_, _) => { if (_panel is { } p) p.Add.IsOpen = false; };
+        TuningAddPopup.Attach(AddSearch, AddList, () => _panel?.Add);
         SettingsButton.Flyout!.Opened += (_, _) => _panel?.SettingsEditor.Reload();
         SettingsButton.Flyout!.Closed += (_, _) => _panel?.SettingsEditor.Commit();
     }
@@ -81,12 +83,6 @@ public partial class OptimizerToolView : UserControl
     private void OnKeyDownTunnel(object? sender, KeyEventArgs e)
     {
         var source = e.Source as Control;
-        if (_panel is not null && (ReferenceEquals(source, AddSearch) || IsInside(source, AddList)) && e.Key == Key.Enter)
-        {
-            _panel.Add.AddSelectedCommand.Execute(null);
-            e.Handled = true;
-            return;
-        }
         if (source is TextBox { DataContext: OptimizerVariableRowViewModel row } box && box.Classes.Contains("optBound"))
         {
             if (e.Key == Key.Enter)  { CommitBound(row, box); e.Handled = true; }
@@ -114,13 +110,6 @@ public partial class OptimizerToolView : UserControl
         string text = box.Text ?? "";
         if (box.Tag as string == "min") row.CommitMin(text); else row.CommitMax(text);
         box.Text = box.Tag as string == "min" ? row.MinText : row.MaxText;
-    }
-
-    private static bool IsInside(Control? c, Avalonia.Visual container)
-    {
-        for (var v = c as Avalonia.Visual; v is not null; v = v.GetVisualParent())
-            if (ReferenceEquals(v, container)) return true;
-        return false;
     }
 
     private void OnHelp(object? sender, RoutedEventArgs e) => DocLauncher.Open("reference/optimization.html");

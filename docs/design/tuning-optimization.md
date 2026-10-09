@@ -421,8 +421,9 @@ where the unit has no ladder. `check` and the run refuse either in a hand-writte
 **Levels.** A coordinate that takes only listed values carries them (`OptimizationCoordinate.Levels`, in
 its unit): an integer's integers, a step's grid (each at most 100,000), or the ladder's rungs inside the
 range. Integers and steps are applied on every decode, as before; a preferred value only when the run
-asks (`Decode(u, snapPreferred)`) — a continuous algorithm optimizes it continuously and says so once
-(`opt.discrete.preferred`), and Discrete, snap-and-polish and Auto's snap stage put it on a rung.
+asks (`Decode(u, snapPreferred)`) — a continuous algorithm searches it continuously, and the run then
+ends with the snap stage whatever the algorithm, so a preferred or E-series row never finishes between
+rungs; Discrete keeps it on a rung throughout.
 
 **Bayesian (`bayes`, R-to8-1).** `GaussianProcess`: zero mean on the standardized cost, Matérn 5/2 with one
 length scale per variable, a noise variance; θ fitted by maximum likelihood with the analytic gradient and
@@ -449,7 +450,8 @@ twentieth, the start's point first; a larger one by coordinate-wise descent (eve
 rule applies to it as to any algorithm.
 
 **Snap and polish (R-to8-4).** `OptimizationOptions.SnapAndPolish` (the CLI's flag) runs it after the
-algorithm; `OptimizationRun.SnapAndPolish()` (the Optimizer's action) runs it on a finished run, its limits
+algorithm, and every run with a preferred or E-series value runs it without being asked;
+`OptimizationRun.SnapAndPolish()` (the Optimizer's action) runs it on a finished run, its limits
 counted afresh and without the time limit. Each integer, stepped and preferred value goes to the legal
 values either side of where the continuous run left it (`PreferredValues.Bracket`); with k ≤ 6 of them all
 2^k combinations are evaluated as one batch, else the nearest only. **From then on the run's best is a

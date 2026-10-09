@@ -394,12 +394,6 @@ public sealed class OptimizationRun
             Refusal = notDiscrete;
             return;
         }
-        // A preferred value a continuous run will leave between rungs says so once (R-to8-2).
-        bool snaps = AlgorithmId is OptimizerAlgorithms.Auto or Discrete.AlgorithmId || options.SnapAndPolish;
-        if (!snaps)
-            foreach (var c in Variables.Coordinates.Where(c => c.Preferred))
-                _notes.Add(OptimizationDiagnostics.PreferredContinuous(c.Key));
-
         // The cost form (R-to7-6, R-to7-7): choosing Minimax sets minimax — least squares is the
         // default form, never one a setup can be said to insist on — while a least-squares method
         // refuses an explicit cost=minimax.
@@ -578,7 +572,10 @@ public sealed class OptimizationRun
                 var end = RunStage(alg, null, null, null, firstOfRun: true, ct);
                 if (end.Refusal is { } r) return Refused(r);
                 reason = end.Reason;
-                if (_options.SnapAndPolish && AlgorithmId != Discrete.AlgorithmId && end.Kind != StageEnd.Stopped
+                // A standard-value row is searched continuously and must still END on a rung, whatever the
+                // algorithm: a result between rungs is not the value the row asked for.
+                bool snap = _options.SnapAndPolish || Variables.Coordinates.Any(c => c.Preferred);
+                if (snap && AlgorithmId != Discrete.AlgorithmId && end.Kind != StageEnd.Stopped
                     && _bestIndex >= 0 && Variables.DiscreteCoordinates.Any())
                     reason = SnapStage(ct) ?? reason;
             }

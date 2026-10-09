@@ -39191,3 +39191,16 @@ Verified with a headless capture of the Bandpass example's panel at 300–460 px
   less one, so a grid goes to one column only when two genuinely do not fit. The left-hand column never moves.
 - **"Fails only" looked pressed when off.** `ToggleButton.tb` never set a transparent background, so Fluent's grey
   unchecked fill read as pressed on a borderless icon. Now transparent when off, Fluent's accent fill when on.
+
+## Add… popup: Enter toggled rows and double-click did nothing (2026-10-09)
+
+Owner-reported on the Yield panel; the Tuning and Optimizer panels had the same defect, since all three host
+the one `TuningAddViewModel` popup in a `Button.Flyout`. Each view caught Enter with a TUNNEL `KeyDown`
+handler on the panel itself — but **a flyout's content lives under its own popup root, so a key pressed in
+it never routes through the control that owns the flyout.** The handler never ran, the list
+(`SelectionMode="Multiple,Toggle"`) took Enter as "toggle this row", and nothing was ever added. No
+double-click handler existed at all. `TuningAddPopup.Attach` (`src/Ui/Views/Tuning/`) now puts both
+handlers on the search box and the list themselves. Double-click adds the clicked row BY IDENTITY plus any
+already selected (`TuningAddViewModel.AddWith`): two clicks toggle the row twice, so it ends unselected,
+and `AddSelected` alone would have fallen back to the first row shown. **Any key handling for content inside
+a Flyout/Popup belongs on that content, never on the flyout's host.**

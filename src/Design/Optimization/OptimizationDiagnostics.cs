@@ -64,11 +64,6 @@ public static class OptimizationDiagnostics
         "opt.range.assumed", DiagnosticSeverity.Info,
         "{key} states no range; the run uses {min} .. {max}.", ("key", key), ("min", min), ("max", max));
 
-    public static Diagnostic PreferredContinuous(string key) => Diagnostic.Create(
-        "opt.discrete.preferred", DiagnosticSeverity.Info,
-        "{key}: discrete=preferred is optimized continuously by this algorithm; Snap and polish, Auto and Discrete put it on a preferred value.",
-        ("key", key));
-
     // ── Discrete and preferred values (brief-tuneopt-8) ─────────────────────
 
     public static Diagnostic DiscreteOnPart(string key, string discrete) => Diagnostic.Create(

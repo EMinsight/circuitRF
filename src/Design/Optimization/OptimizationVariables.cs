@@ -42,8 +42,8 @@ public sealed record OptimizationCoordinate(
 
     /// <summary>
     /// <see cref="Decode(double)"/>, and with <paramref name="snapPreferred"/> a preferred coordinate
-    /// lands on its nearest preferred value by ratio. A continuous run optimizes a preferred value
-    /// continuously; Discrete, snap-and-polish and Auto's last stage snap it.
+    /// lands on its nearest preferred value by ratio. A continuous algorithm searches a preferred value
+    /// continuously; Discrete puts it on a rung throughout, and every other run ends with the snap stage.
     /// </summary>
     public double Decode(double u, bool snapPreferred)
     {

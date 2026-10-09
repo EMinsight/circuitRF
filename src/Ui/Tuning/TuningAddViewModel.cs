@@ -5,7 +5,7 @@
 //  Typing filters live; "Include sub-cells" widens the list past the
 //  top level, as the Instances panel's check does. Enter adds the
 //  selected rows — or the first one shown when none is selected — in
-//  one undo step.
+//  one undo step; a double-click adds that row with any selected.
 //
 //  The Optimizer panel's ＋ is the same popup over the same catalog;
 //  only the flag it sets differs (ITunableAddHost).
@@ -70,9 +70,14 @@ public sealed partial class TuningAddViewModel(ITunableAddHost panel) : Observab
 
     /// <summary>Adds the selected rows, or the first one shown when none is selected (Enter).</summary>
     [RelayCommand]
-    private void AddSelected()
+    private void AddSelected() => Add(null);
+
+    /// <summary>Double-click: adds this row, along with any rows already selected.</summary>
+    public void AddWith(TuningAddRow row) => Add(row);
+
+    private void Add(TuningAddRow? also)
     {
-        var keys = Results.Where(r => r.IsSelected).Select(r => r.Key).ToList();
+        var keys = Results.Where(r => r.IsSelected || ReferenceEquals(r, also)).Select(r => r.Key).ToList();
         if (keys.Count == 0 && Results.Count > 0) keys.Add(Results[0].Key);
         if (keys.Count == 0) return;
         panel.Activate(keys);

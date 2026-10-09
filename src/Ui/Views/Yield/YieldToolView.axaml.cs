@@ -10,6 +10,7 @@ using Avalonia.VisualTree;
 using CircuitRF.Ui.Controls;
 using CircuitRF.Ui.Tuning;
 using CircuitRF.Ui.ViewModels.Dock;
+using CircuitRF.Ui.Views.Tuning;
 using CircuitRF.Ui.Yield;
 
 namespace CircuitRF.Ui.Views.Yield;
@@ -45,6 +46,7 @@ public partial class YieldToolView : UserControl
 
         AddFlyout.Opened += (_, _) => { if (_panel is { } p) p.Add.IsOpen = true; AddSearch.Focus(); };
         AddFlyout.Closed += (_, _) => { if (_panel is { } p) p.Add.IsOpen = false; };
+        TuningAddPopup.Attach(AddSearch, AddList, () => _panel?.Add);
     }
 
     protected override void OnDataContextChanged(EventArgs e)
@@ -85,12 +87,6 @@ public partial class YieldToolView : UserControl
     private void OnKeyDownTunnel(object? sender, KeyEventArgs e)
     {
         var source = e.Source as Control;
-        if (_panel is not null && (ReferenceEquals(source, AddSearch) || IsInside(source, AddList)) && e.Key == Key.Enter)
-        {
-            _panel.Add.AddSelectedCommand.Execute(null);
-            e.Handled = true;
-            return;
-        }
         if (source is TextBox { DataContext: YieldVariableRowViewModel row } spread && spread.Classes.Contains("spread"))
         {
             if (e.Key == Key.Enter)  { row.CommitSpread(spread.Text ?? ""); spread.Text = row.SpreadText; e.Handled = true; }
@@ -113,13 +109,6 @@ public partial class YieldToolView : UserControl
             row.CommitSpread(box.Text ?? "");
             box.Text = row.SpreadText;
         }
-    }
-
-    private static bool IsInside(Control? c, Avalonia.Visual container)
-    {
-        for (var v = c as Avalonia.Visual; v is not null; v = v.GetVisualParent())
-            if (ReferenceEquals(v, container)) return true;
-        return false;
     }
 
     private void OnHelp(object? sender, RoutedEventArgs e) => DocLauncher.Open("reference/yield.html");

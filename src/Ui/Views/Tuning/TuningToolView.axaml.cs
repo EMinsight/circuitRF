@@ -49,6 +49,7 @@ public partial class TuningToolView : UserControl
 
         AddFlyout.Opened      += (_, _) => { if (_panel is { } p) p.Add.IsOpen = true; AddSearch.Focus(); };
         AddFlyout.Closed      += (_, _) => { if (_panel is { } p) p.Add.IsOpen = false; };
+        TuningAddPopup.Attach(AddSearch, AddList, () => _panel?.Add);
         SettingsButton.Flyout!.Opened += (_, _) => _panel?.ScopeSettings.LoadPoints();
 
         _lagTimer.Tick += (_, _) => { if (_panel is { IsRunning: true } p) p.UpdateLag(); };
@@ -122,14 +123,6 @@ public partial class TuningToolView : UserControl
     private void OnKeyDownTunnel(object? sender, KeyEventArgs e)
     {
         var source = e.Source as Control;
-
-        // The Add… list: Enter adds, from the search box or the list.
-        if (_panel is not null && (ReferenceEquals(source, AddSearch) || IsInside(source, AddList)) && e.Key == Key.Enter)
-        {
-            _panel.Add.AddSelectedCommand.Execute(null);
-            e.Handled = true;
-            return;
-        }
 
         if (source is TextBox { DataContext: TuningPresetItemViewModel preset } rename && rename.Classes.Contains("presetRename"))
         {
@@ -219,13 +212,6 @@ public partial class TuningToolView : UserControl
         for (var v = c as Visual; v is not null; v = v.GetVisualParent())
             if (v is Slider { Classes: var classes } s && classes.Contains("tuning")) return s;
         return null;
-    }
-
-    private static bool IsInside(Control? c, Visual container)
-    {
-        for (var v = c as Visual; v is not null; v = v.GetVisualParent())
-            if (ReferenceEquals(v, container)) return true;
-        return false;
     }
 
     private void OnHelp(object? sender, RoutedEventArgs e) => DocLauncher.Open("reference/tuning.html");

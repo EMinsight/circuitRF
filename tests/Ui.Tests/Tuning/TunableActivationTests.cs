@@ -33,6 +33,21 @@ public sealed class TunableActivationTests
         AssertTunedOnceThenUndone(f);
     }
 
+    /// <summary>A double-click toggles a Multiple,Toggle row twice, so it lands unselected: the clicked row
+    /// is added by identity, never by falling back to the first row shown.</summary>
+    [Fact]
+    public void AddPopup_DoubleClick_AddsTheClickedRow()
+    {
+        var f = new TuningPanelFixture();
+        f.Panel.Add.IsOpen = true;
+        var results = f.Panel.Add.Results;
+        Assert.True(results.Count > 1);
+        var clicked = results[^1];
+        f.Panel.Add.AddWith(clicked);
+        Assert.Equal(clicked.Key, Assert.Single(f.Top.EditModel.Tuning!.Variables).Key);
+        Assert.False(f.Panel.Add.IsOpen);
+    }
+
     [Fact]
     public void InspectorToggle_SetsTheFlag_InOneUndoStep()
     {

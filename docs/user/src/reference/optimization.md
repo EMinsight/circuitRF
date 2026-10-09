@@ -558,15 +558,18 @@ A variable can take only some values: an **integer** parameter (a finger count),
 - **Preferences ladder** — the value's own list from the Smith Chart's **Preferred Values** dialog:
   capacitors for F, inductors for H, resistors for Ω. Written `discrete=preferred`.
 
-Most algorithms move such a value continuously. **Snap and polish** (in the toolbar, after a run) then:
+Most algorithms move such a value continuously. **Snap and polish** then:
 
 1. tries the allowed values either side of where each one ended — every combination, for up to six of
    them; beyond six, the nearest — and keeps the best;
 2. holds those values and optimizes the continuous ones again from there.
 
 From then on the best point is the snapped one, because the continuous one is not a design anyone can
-build. **Discrete** searches the allowed values directly when every variable has them; **Auto** ends
-with a snap and polish whenever any variable does. A part of a complex value is always continuous.
+build. Every run with a standard-value variable ends with a snap and polish, whichever algorithm it
+used, so its result is always on the series; **Auto** does the same for integers and steps too. The
+toolbar button runs it on a finished run — after a Stop, which ends the run without one, or for an
+integer or a step under another algorithm. **Discrete** searches the allowed values directly when every
+variable has them. A part of a complex value is always continuous.
 
 **Sensitivity** (in the toolbar) simulates once more per variable around the best point and shows, on
 each row, how much of the cost that variable moves — which variables matter, and which could be left
