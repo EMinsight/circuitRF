@@ -102,6 +102,63 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
         Assert.False(File.Exists(target));
     }
 
+    // ── --into-tech (brief-gerber-import-target-technology R-gt-7) ──────────────────────────────────
+
+    /// <summary>A Gerber set imported INTO an existing technology writes the same <c>.clay</c> the
+    /// in-process import writes with the same target — byte for byte, TechRef included.</summary>
+    [Fact]
+    public void IntoTech_WritesTheClayTheInProcessImportWrites()
+    {
+        string tech = CircuitRF.Design.Workspace.WorkspaceCreate.InstallTechnology(_root, CircuitRF.Ui.Diagnostics.Fixtures.DocGerberFixtures.SixLayerId);
+        string set = Path.Combine(_root, "set");
+        CircuitRF.Ui.Diagnostics.Fixtures.DocGerberFixtures.WriteSixCopperSet(set);
+
+        string viaCli = Path.Combine(_root, "cli");
+        var (code, stdout, stderr) = RunCli("convert", set, "-o", viaCli, "--to", "clay", "--into-tech", tech,
+                                            "--accept-inferred-drill-format");
+        output.WriteLine(stderr);
+        Assert.Equal(0, code);
+
+        string viaApp = Path.Combine(_root, "app");
+        var app = GerberImport.Import(GerberImportEntry.FilesIn(set), viaApp, "set", null, Dbu,
+                                      target: GerberTechnologyTarget.Use(tech));
+        Assert.False(app.Cancelled, string.Join("\n", app.Messages));
+
+        string cliClay = Directory.EnumerateFiles(stdout.Trim(), "*.clay", SearchOption.AllDirectories).Single();
+        string appClay = Directory.EnumerateFiles(app.CellDir!, "*.clay", SearchOption.AllDirectories).Single();
+        Assert.Equal(File.ReadAllBytes(appClay), File.ReadAllBytes(cliClay));
+        Assert.Empty(Directory.EnumerateFiles(viaCli, "*.ctech", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public void IntoTech_TogetherWithTech_IsRefused()
+    {
+        string set = Path.Combine(_root, "set");
+        CircuitRF.Ui.Diagnostics.Fixtures.DocGerberFixtures.WriteSixCopperSet(set);
+        string target = Path.Combine(_root, "out");
+
+        var (code, _, stderr) = RunCli("convert", set, "-o", target, "--into-tech", "a.ctech", "--tech", "b.ctech");
+
+        Assert.Equal(1, code);
+        Assert.Contains("--into-tech and --tech cannot be given together", stderr);
+        Assert.False(Directory.Exists(target));
+    }
+
+    [Fact]
+    public void IntoTech_OnADxfSource_IsRefusedByFormat()
+    {
+        Directory.CreateDirectory(_root);
+        string dxf = Path.Combine(_root, "drawing.dxf");
+        File.WriteAllText(dxf, "");
+        string target = Path.Combine(_root, "out");
+
+        var (code, _, stderr) = RunCli("convert", dxf, "-o", target, "--into-tech", "a.ctech");
+
+        Assert.Equal(1, code);
+        Assert.Contains("--into-tech applies to a gerber source, and this one is", stderr);
+        Assert.False(Directory.Exists(target));
+    }
+
     private void ConvertsPair(string from, string to, params string[] extra)
     {
         string source = SourceIn(from);

@@ -594,6 +594,8 @@ internal static class ToolCatalog
                         new("name",       "--name",        OptKind.Str,  "What to call the written file set (gerber)."),
                         new("listCells",  "--list-cells",  OptKind.Flag, "Report what the input holds and write nothing."),
                         new("tech",       "--tech",        OptKind.Path, "The technology to convert against."),
+                        new("intoTech",   "--into-tech",   OptKind.Path,
+                            "Gerber source, clay target: import into this .ctech, reference it, and write none. Refused with --tech, and when its copper count or order disagrees with the set's."),
                         new("keepCells",  "--keep-cells",  OptKind.Path, "Keep the cells the import produced, here."),
                         new("workspace",  "--workspace",   OptKind.Path,
                             "The .cws the layers graft onto. Without one a .ctech of its own is written."),

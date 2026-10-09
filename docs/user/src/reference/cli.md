@@ -1268,6 +1268,10 @@ Bring a board in as editable circuitRF cells and keep the technology it declared
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert board.kicad_pcb -o cells/ --to clay</code></pre>
 
+Bring a Gerber set in on a stackup you already have, writing no technology of its own:
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf convert fab/ -o cells/ --to clay --into-tech tech/pcb-6layer_FR-4_63mil_1oz.ctech</code></pre>
+
 <div class="callout note">
 <span class="label">A <code>clay</code> target is a <em>folder</em>, not a file</span>
 <p>An import writes one cell <b>folder</b> per structure the source holds, plus the technology beside
@@ -1373,6 +1377,7 @@ are the same bytes when neither includes a camera.
 | `--list-cells` | Report what the input holds and write nothing. |
 | `--name <stem>` | What to call the written Gerber file set. Default: the cell's name. |
 | `--tech <file.ctech>` | The technology to convert against, instead of the one the layout resolves. |
+| `--into-tech <file.ctech>` | A Gerber set into a `clay` folder **using** this technology: the cells reference it, nothing is added to it, and no `.ctech` is written. Refused together with `--tech`, and for any source that is not Gerber. See [below](#convert-tech). |
 | `--workspace <file.cws>` | The workspace a `.clay`'s references resolve against. Default: the nearest one above it. |
 | `--keep-cells <dir>` | Keep the cells the import produced instead of discarding them. |
 | `--dbu <n>` | Database units per micron for an imported design. Default `1000` — one DBU is one nanometre. |
@@ -1411,6 +1416,13 @@ Two consequences worth knowing:
   source's layers reconcile against it — matched layers keep your names and your Gerber suffixes,
   unmatched ones are added. Without it, an intermediate technology is invented from the file alone,
   and a Gerber export then names its files from synthetic suffixes.
+- **`--into-tech` imports a Gerber set into a technology you already have**, the way the Technology
+  row of **File ▸ Import ▸ Gerber**'s layer-mapping dialog does. Each file lands on that technology's
+  own layer, the cells reference the file you named, and no `.ctech` is written. It is refused, and
+  nothing is created, when the set's copper does not fit that technology's stackup: a different number
+  of copper files than conductors, a copper file on a conductor of a different rank, two on one
+  conductor, or drill data on a layer no via binds. It takes a `clay` target only. The other importers
+  already keep the stackup of the technology `--tech` names, so the flag is refused for them.
 - **`--keep-cells <dir>` leaves a design you can open.** Cells plus the technology they point at —
   the honest way to see what a conversion actually understood before you send the result anywhere.
 

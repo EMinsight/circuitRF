@@ -393,6 +393,22 @@ public static class FigureCatalog
         new("snap-glyphs", DocLayoutFixtures.SnapGlyphs, 1010, 190, null,
             "The six geometry-snap glyphs, each drawn by the editor's own renderer from a real query."),
 
+        // 1000x586 is LayerMappingDialog's declared 1000x620 less the synthetic title bar, as
+        // analyses-setup derives its size. A six-copper set in a workspace whose default technology
+        // is six-layer, so the Technology row opens on that technology (D3).
+        new("gerber-import-technology", DocGerberFixtures.GerberImportTechnology, 1000, 586,
+            WindowFrame.Titled("Import Gerber — Layer Mapping"),
+            "Import Gerber's Layer Mapping dialog for a six-copper set. The Technology row opens on the "
+          + "workspace's six-layer technology, and every file is matched to one of its layers by name. "
+          + "The layout will use that technology, and no technology is written."),
+
+        new("gerber-import-technology-choices", DocGerberFixtures.GerberImportTechnologyChoices, 1000, 586,
+            WindowFrame.Titled("Import Gerber — Layer Mapping"),
+            "The Technology choices: a new technology from the files, every technology in the workspace, "
+          + "and the built-in ones, which are copied into tech/ when chosen. A technology whose copper "
+          + "count differs from the set's is listed but cannot be chosen.",
+            MustContainPopup: true),
+
         // ── The land patterns the case table generates ────────────────────────────
         // Both are one layout view rather than a row of canvases, so the four sizes share a scale —
         // see DocFootprintFixtures for why that is the whole point of the first one.

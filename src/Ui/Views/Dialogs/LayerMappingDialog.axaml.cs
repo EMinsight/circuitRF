@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Ui.Layout;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -130,8 +131,33 @@ public sealed record LayerStackupItem(LayerStackupChoice Choice, string Label)
 
 /// <summary>Result of the shared layer-mapping dialog: every row's settled choice, or null on
 /// cancel. Cancelling abandons the whole caller operation (whole paste, or the whole retarget) —
-/// partially reconciling a fragment or a layout would be more confusing than not proceeding at all.</summary>
-public sealed record LayerMappingDialogResult(IReadOnlyList<LayerMappingRow> Rows);
+/// partially reconciling a fragment or a layout would be more confusing than not proceeding at all.
+/// <para><see cref="Target"/> is the Gerber import's Technology choice (R-gt-8), already committed — a
+/// catalog technology has been copied into <c>tech/</c> by the time this is returned. Null for every
+/// other caller.</para></summary>
+public sealed record LayerMappingDialogResult(IReadOnlyList<LayerMappingRow> Rows, GerberTechnologyTarget? Target = null);
+
+/// <summary>
+/// The table's row view models for one destination technology — framework-free, so what a Technology
+/// choice does to the table (above all R-gt-4: a technology an import USES offers no Add to technology)
+/// is testable without a window.
+/// </summary>
+public static class LayerMappingRows
+{
+    /// <summary>The layers a row may be mapped onto: the destination's own, in paint order.</summary>
+    public static List<LayerPickerItem> Targets(Technology? destTech) => (destTech?.Layers ?? [])
+        .OrderBy(l => l.ZOrder)
+        .Select(l => new LayerPickerItem(l.Key, l.Name, l.Color))
+        .ToList();
+
+    /// <param name="allowAddToTechnology">False for a technology that is used and never changed.</param>
+    public static List<LayerMappingRowViewModel> Build(
+        IReadOnlyList<LayerMappingRow> rows, Technology? destTech, bool allowAddToTechnology)
+    {
+        var targets = Targets(destTech);
+        return rows.Select(r => new LayerMappingRowViewModel(r, targets, allowAddToTechnology)).ToList();
+    }
+}
 
 /// <summary>
 /// One dialog serving both callers (R-L1g-1): cross-technology paste and technology retargeting are
@@ -143,6 +169,12 @@ public sealed record LayerMappingDialogResult(IReadOnlyList<LayerMappingRow> Row
 public partial class LayerMappingDialog : Window
 {
     private List<LayerMappingRowViewModel> _rowVms = [];
+
+    // The Gerber import's Technology row (R-gt-8). Null for every other caller.
+    private GerberMappingRequest? _request;
+    private IReadOnlyList<GerberTechnologyChoice> _choices = [];
+    private Technology? _workspaceTech;
+    private string? _workspaceRoot;
 
     public LayerMappingDialog() => InitializeComponent();
 
@@ -160,6 +192,63 @@ public partial class LayerMappingDialog : Window
     {
         Title = titleText;
         TitleText.Text = titleText;
+        ShowTable(sourceTechName, destTech, rows, allowAddToTechnology: true);
+    }
+
+    /// <summary>
+    /// The Gerber import's form (brief-gerber-import-target-technology R-gt-8): the same table, under a
+    /// <b>Technology</b> row that chooses which technology the import lands in. Changing it re-proposes
+    /// the rows against that technology through <paramref name="request"/> — the import's own post-read
+    /// stage, run again with nothing read twice (R-gt-2).
+    /// </summary>
+    /// <param name="workspaceTech">The workspace's own technology: what New donates layer names from.</param>
+    /// <param name="choices"><see cref="GerberTechnologyChoices.Build"/>'s list.</param>
+    /// <param name="selected"><see cref="GerberTechnologyChoices.DefaultIndex"/> (D3).</param>
+    public LayerMappingDialog(
+        string titleText, Technology? workspaceTech, GerberMappingRequest request,
+        IReadOnlyList<GerberTechnologyChoice> choices, int selected, string? workspaceRoot) : this()
+    {
+        Title = titleText;
+        TitleText.Text = titleText;
+        _request = request;
+        _choices = choices;
+        _workspaceTech = workspaceTech;
+        _workspaceRoot = workspaceRoot;
+
+        TechnologyRow.IsVisible = true;
+        var items = new List<ComboBoxItem>(choices.Count);
+        foreach (var choice in choices)
+        {
+            var item = new ComboBoxItem { Content = choice.Label, IsEnabled = choice.IsEnabled };
+            ToolTip.SetTip(item, choice.ToolTip);
+            items.Add(item);
+        }
+        TechnologyCombo.ItemsSource = items;
+        TechnologyCombo.SelectedIndex = selected;
+        ShowChoice(choices[selected]);
+        TechnologyCombo.SelectionChanged += (_, _) =>
+        {
+            if (TechnologyCombo.SelectedIndex is >= 0 and var i && i < _choices.Count) ShowChoice(_choices[i]);
+        };
+    }
+
+    private GerberTechnologyChoice? SelectedChoice =>
+        TechnologyCombo.SelectedIndex is >= 0 and var i && i < _choices.Count ? _choices[i] : null;
+
+    /// <summary>The rows as the import would propose them for <paramref name="choice"/>, in the table.</summary>
+    private void ShowChoice(GerberTechnologyChoice choice)
+    {
+        var request = _request!;
+        var rows = choice.Kind == GerberTechnologyChoiceKind.New
+            ? (request.Target.IsUse ? request.Repropose(null) : request.Rows)
+            : request.Repropose(choice.Technology);
+        ShowTable("Gerber", choice.Technology ?? _workspaceTech, rows, choice.AllowsAddToTechnology);
+    }
+
+    private void ShowTable(string? sourceTechName, Technology? destTech, IReadOnlyList<LayerMappingRow> rows,
+                           bool allowAddToTechnology)
+    {
+        foreach (var old in _rowVms) old.PropertyChanged -= OnRowChanged;
 
         HeaderText.Text = destTech is null
             ? "This import creates its own technology, so there is nothing to map these layers onto. "
@@ -170,11 +259,9 @@ public partial class LayerMappingDialog : Window
                 ? $"Moving from '{sourceTechName}' to '{destTech.Name}'. Confirm where each layer goes."
                 : $"Moving to '{destTech.Name}'. Confirm where each layer goes.";
 
-        var availableLayers = (destTech?.Layers ?? [])
-            .OrderBy(l => l.ZOrder)
-            .Select(l => new LayerPickerItem(l.Key, l.Name, l.Color))
-            .ToList();
+        var availableLayers = LayerMappingRows.Targets(destTech);
 
+        MapAllUnmatchedCombo.Items.Clear();
         foreach (var l in availableLayers)
             MapAllUnmatchedCombo.Items.Add(new ComboBoxItem { Content = l.Name, Tag = l.Key });
         if (MapAllUnmatchedCombo.Items.Count > 0) MapAllUnmatchedCombo.SelectedIndex = 0;
@@ -189,7 +276,7 @@ public partial class LayerMappingDialog : Window
         BulkActions.IsVisible = reconciling;
         StackupHeader.IsVisible = rows.Any(r => r.StackupConductors is not null);
 
-        _rowVms = rows.Select(r => new LayerMappingRowViewModel(r, availableLayers, techResolved: true)).ToList();
+        _rowVms = LayerMappingRows.Build(rows, destTech, allowAddToTechnology);
         foreach (var rvm in _rowVms)
         {
             rvm.ShowReconciliation = reconciling;
@@ -237,6 +324,19 @@ public partial class LayerMappingDialog : Window
         var settled = _rowVms
             .Select(r => r.Row with { Choice = r.CurrentChoice, Stackup = r.CurrentStackup })
             .ToList();
-        Close(new LayerMappingDialogResult(settled));
+
+        GerberTechnologyTarget? target = null;
+        if (_request is not null && SelectedChoice is { } choice)
+        {
+            // D2: a catalog technology is copied into tech/ NOW, on Continue — never on selection, so
+            // a dialog that is cancelled has written nothing.
+            try { target = GerberTechnologyChoices.Commit(choice, _workspaceRoot); }
+            catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                SummaryText.Text = $"The technology could not be copied into tech/: {ex.Message}";
+                return;
+            }
+        }
+        Close(new LayerMappingDialogResult(settled, target));
     }
 }

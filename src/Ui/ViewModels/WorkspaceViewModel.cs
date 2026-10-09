@@ -4885,6 +4885,36 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         return result?.Rows;
     }
 
+    /// <summary>
+    /// The same shared dialog for a Gerber import, with its Technology row (brief-gerber-import-target-
+    /// technology R-gt-8): the workspace's <c>.ctech</c> files and the catalog's, pre-selected on the
+    /// workspace's own when its conductor count matches the set's copper (D3). A catalog choice is
+    /// copied into <c>tech/</c> by the dialog's Continue, so the answer's target is already a file.
+    /// </summary>
+    private async Task<CircuitRF.Design.Layout.Interchange.GerberMappingAnswer?> ResolveImportLayerMappingAsync(
+        Window owner, string format, TechResolution workspaceTech,
+        CircuitRF.Design.Layout.Interchange.GerberMappingRequest request)
+    {
+        string? root = CurrentWorkspacePath is { } cws ? Path.GetDirectoryName(cws) : null;
+        if (root is null)
+        {
+            // D3's last case: no workspace, no choice — New, with the row hidden.
+            var rows = await ResolveImportLayerMappingAsync(owner, format, workspaceTech.Tech, request.Rows, alwaysAsk: true);
+            return rows is null ? null
+                : new CircuitRF.Design.Layout.Interchange.GerberMappingAnswer(
+                    rows, CircuitRF.Design.Layout.Interchange.GerberTechnologyTarget.New);
+        }
+
+        var choices = GerberTechnologyChoices.Build(root, request.CopperCount, TechnologyCatalog.All);
+        int selected = GerberTechnologyChoices.DefaultIndex(choices, workspaceTech.ResolvedPath);
+        var dialog = new LayerMappingDialog(
+            $"Import {format} — Layer Mapping", workspaceTech.Tech, request, choices, selected, root);
+        var result = await dialog.ShowDialog<LayerMappingDialogResult?>(owner);
+        return result is null ? null
+            : new CircuitRF.Design.Layout.Interchange.GerberMappingAnswer(
+                result.Rows, result.Target ?? CircuitRF.Design.Layout.Interchange.GerberTechnologyTarget.New);
+    }
+
     // ── Import DXF Library (docs/sonnet-briefs/brief-L4b-dxf-interchange.md §2) ───────────────────
     // DxfImport does the actual read/reconcile/CellFolder-creation work; this method is only file
     // picking (UI firewall), workspace/technology context, the units prompt, and the layer-mapping
@@ -5363,8 +5393,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                         // is shown even with NO destination technology, which is the whole point: a
                         // Gerber set imported into a fresh workspace is exactly the case where
                         // nothing had ever asked which unclassified file is the plane.
-                        resolveLayerMapping: rows => Dispatcher.UIThread
-                            .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "Gerber", techRes.Tech, rows, alwaysAsk: true))
+                        // R-gt-2: and it is asked WHICH TECHNOLOGY the board lands in, on every import.
+                        resolveMapping: request => Dispatcher.UIThread
+                            .InvokeAsync(() => ResolveImportLayerMappingAsync(window, "Gerber", techRes, request))
                             .GetAwaiter().GetResult(),
                         resolveDrillFormat: (fileName, inferred, crossCheck, remaining) => Dispatcher.UIThread
                             .InvokeAsync(() => ResolveGerberDrillFormatAsync(window, fileName, inferred, crossCheck, remaining))
@@ -5396,8 +5427,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
 
         if (result.Cancelled)
         {
-            live.Complete(MessageLevel.Info, "Import Gerber cancelled — nothing was created.");
+            // R-gt-3/R-gt-5: a refusal is not a cancellation, and the row says which it was.
+            live.Complete(result.Refusal is null ? MessageLevel.Info : MessageLevel.Error,
+                result.Refusal is null ? "Import Gerber cancelled — nothing was created." : $"Import Gerber: {result.Refusal}");
             ReportGerberImportNotes(result);
+            _factory.ProjectTreeTool?.Refresh();   // a catalog technology may have been copied into tech/
             return;
         }
 

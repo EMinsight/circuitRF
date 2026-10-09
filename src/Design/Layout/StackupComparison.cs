@@ -24,44 +24,61 @@ public static class StackupComparison
     /// <param name="aName">How <paramref name="a"/> is named in the sentence.</param>
     /// <param name="bName">How <paramref name="b"/> is named.</param>
     public static string? Difference(Technology a, Technology b, string aName, string bName)
+        => Differences(a, b, aName, bName).FirstOrDefault();
+
+    /// <summary>
+    /// <see cref="Difference"/>'s comparison, reporting EVERY entry that differs rather than the first — for a
+    /// caller that has to list them (a Gerber import whose job file disagrees with the technology it was imported
+    /// into, brief-gerber-import-target-technology D7). A different count of physical layers is one sentence and
+    /// ends the list: past it there is no entry-by-entry pairing to compare.
+    /// </summary>
+    public static IEnumerable<string> Differences(Technology a, Technology b, string aName, string bName)
     {
         ArgumentNullException.ThrowIfNull(a);
         ArgumentNullException.ThrowIfNull(b);
 
         if (a.Stackup.Top != b.Stackup.Top)
-            return $"Their stackups differ: the top boundary is {a.Stackup.Top} in {aName} and {b.Stackup.Top} in {bName}.";
+            yield return $"Their stackups differ: the top boundary is {a.Stackup.Top} in {aName} and {b.Stackup.Top} in {bName}.";
         if (a.Stackup.Bottom != b.Stackup.Bottom)
-            return $"Their stackups differ: the bottom boundary is {a.Stackup.Bottom} in {aName} and {b.Stackup.Bottom} in {bName}.";
+            yield return $"Their stackups differ: the bottom boundary is {a.Stackup.Bottom} in {aName} and {b.Stackup.Bottom} in {bName}.";
 
         var la = Physical(a);
         var lb = Physical(b);
         if (la.Count != lb.Count)
-            return $"Their stackups differ: {aName} has {la.Count} conductor and dielectric layers and {bName} has {lb.Count}.";
+        {
+            yield return $"Their stackups differ: {aName} has {la.Count} conductor and dielectric layers and {bName} has {lb.Count}.";
+            yield break;
+        }
 
         for (int i = 0; i < la.Count; i++)
         {
             var (x, y) = (la[i], lb[i]);
             string which = $"layer {i + 1} from the top ('{x.Name}' in {aName}, '{y.Name}' in {bName})";
             if (x.Kind != y.Kind)
-                return $"Their stackups differ: {which} is a {Kind(x)} in one and a {Kind(y)} in the other.";
+            {
+                yield return $"Their stackups differ: {which} is a {Kind(x)} in one and a {Kind(y)} in the other.";
+                continue;
+            }
             if (x.ThicknessDbu != y.ThicknessDbu)
-                return $"Their stackups differ: {which} is {Microns(x.ThicknessDbu)} thick in {aName} and {Microns(y.ThicknessDbu)} in {bName}.";
+            {
+                yield return $"Their stackups differ: {which} is {Microns(x.ThicknessDbu)} thick in {aName} and {Microns(y.ThicknessDbu)} in {bName}.";
+                continue;
+            }
 
             if (x.Kind == StackupKind.Dielectric)
             {
-                if (Differs(x.Epsr, y.Epsr)) return $"Their stackups differ: {which} has εr {G(x.Epsr)} in {aName} and {G(y.Epsr)} in {bName}.";
-                if (Differs(x.TanD, y.TanD)) return $"Their stackups differ: {which} has tanδ {G(x.TanD)} in {aName} and {G(y.TanD)} in {bName}.";
-                if (Differs(x.Mur, y.Mur)) return $"Their stackups differ: {which} has μr {G(x.Mur)} in {aName} and {G(y.Mur)} in {bName}.";
+                if (Differs(x.Epsr, y.Epsr)) yield return $"Their stackups differ: {which} has εr {G(x.Epsr)} in {aName} and {G(y.Epsr)} in {bName}.";
+                else if (Differs(x.TanD, y.TanD)) yield return $"Their stackups differ: {which} has tanδ {G(x.TanD)} in {aName} and {G(y.TanD)} in {bName}.";
+                else if (Differs(x.Mur, y.Mur)) yield return $"Their stackups differ: {which} has μr {G(x.Mur)} in {aName} and {G(y.Mur)} in {bName}.";
             }
             else
             {
                 if (Differs(x.SigmaSm, y.SigmaSm))
-                    return $"Their stackups differ: {which} has a conductivity of {G(x.SigmaSm)} S/m in {aName} and {G(y.SigmaSm)} S/m in {bName}.";
-                if (x.IsGroundReference != y.IsGroundReference)
-                    return $"Their stackups differ: {which} is a ground reference in {(x.IsGroundReference ? aName : bName)} only.";
+                    yield return $"Their stackups differ: {which} has a conductivity of {G(x.SigmaSm)} S/m in {aName} and {G(y.SigmaSm)} S/m in {bName}.";
+                else if (x.IsGroundReference != y.IsGroundReference)
+                    yield return $"Their stackups differ: {which} is a ground reference in {(x.IsGroundReference ? aName : bName)} only.";
             }
         }
-        return null;
     }
 
     private static List<StackupLayer> Physical(Technology t) =>

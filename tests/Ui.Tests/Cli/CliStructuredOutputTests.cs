@@ -596,6 +596,10 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "convert.import.cancelled",
         "convert.import.no-cell",
         "convert.input.not-found",
+        // brief-gerber-import-target-technology R-gt-7 — a gerber set imported into an existing technology.
+        "convert.into-tech.not-clay",
+        "convert.into-tech.not-gerber",
+        "convert.into-tech.with-tech",
         "convert.layout.unreadable",
         "convert.note",
         "convert.oasis.flags-not-oasis",

@@ -698,9 +698,29 @@ belong to the same board. Where the files declare via-vs-component drilling (X2 
 `ComponentDrill`) that declaration is used; where they don't, the two are genuinely indistinguishable
 from artwork alone and both come back as vias, and the summary says so.
 
+**Which technology the board lands in** is the first row of the layer-mapping dialog, which every
+Gerber import shows: **Technology**, above the table.
+
+{{ui: gerber-import-technology}}
+
+Choose a technology the workspace already has, or a built-in one, and the layout **uses** it: every file
+is mapped onto that technology's own layers, nothing is added to it and nothing in it changes, and no
+`.ctech` is written. A built-in technology is copied into the workspace's `tech/` folder when you press
+Continue. The choice re-proposes the table as you make it, without reading the files again. A
+technology is offered only when its stackup has as many conductors as the set has copper files —
+the others are listed with their copper count and cannot be chosen — and the import refuses, creating
+nothing, if a copper file lands on a conductor of a different rank, two land on one conductor, or the
+drill data lands on a layer no via in that stackup binds. The dialog opens on the workspace's default
+technology when its copper count matches the set's, and on **New technology from the files** otherwise.
+If the set's job file states a different stackup, the summary says how it differs, and the technology
+you chose is used as it is.
+
+{{ui: gerber-import-technology-choices}}
+
 **What you get** is one **flat cell** — Gerber has no hierarchy, and reconstructing footprints from
-artwork would be guesswork — inside its own import folder, with its **own new `.ctech`**. Your workspace
-technology is read but never modified.
+artwork would be guesswork — inside its own import folder. With **New technology from the files** it
+comes with its **own new `.ctech`**, and your workspace technology is read but never modified. Everything
+below about the stackup describes that new technology.
 
 **The stackup is built from the job file when there is one, and from the artwork when there is not** —
 the number of coppers, their order, and which drawing layer each is bound to were all worked out by the

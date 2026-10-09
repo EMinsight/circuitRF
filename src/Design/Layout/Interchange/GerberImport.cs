@@ -61,6 +61,19 @@ public static class GerberImport
     public delegate IReadOnlyList<LayerMappingRow>? ResolveGerberLayerMapping(
         IReadOnlyList<LayerMappingRow> rows);
 
+    /// <summary>
+    /// The shared layer-mapping dialog, asked ALSO which technology the import lands in
+    /// (brief-gerber-import-target-technology R-gt-2) — the request carries the rows as proposed and a
+    /// way to propose them again against another technology without reading a single file twice.
+    /// </summary>
+    /// <remarks>
+    /// <b>Asked on every import that has rows</b>, not only when a file is unidentified: the
+    /// technology is a question about the whole set, and a set every file of which identified itself
+    /// is exactly the one most likely to belong to a technology the workspace already has. Null
+    /// cancels the whole import.
+    /// </remarks>
+    public delegate GerberMappingAnswer? ResolveGerberMapping(GerberMappingRequest request);
+
     /// <summary>One artwork file's row of R-L4g-15's per-layer summary.</summary>
     public sealed record LayerReport(
         string FileName,
@@ -88,6 +101,11 @@ public static class GerberImport
         IReadOnlyList<string> Messages,
         IReadOnlyList<string> ArchiveCandidates)
     {
+        /// <summary>R-gt-3/R-gt-5: the one sentence an import into a chosen technology refused with,
+        /// or null. A refusal also sets <see cref="Cancelled"/> — nothing was created either way —
+        /// and this is what lets a caller say "refused" rather than "cancelled".</summary>
+        public string? Refusal { get; init; }
+
         public ImportResult(
             bool cancelled, IReadOnlyList<string> createdCellDirs, string? cellDir, string? importDir,
             string? techPath, Technology? technology, IReadOnlyList<LayerReport> layers,
@@ -108,6 +126,14 @@ public static class GerberImport
         IReadOnlyList<string> messages, IReadOnlyList<string>? candidates = null,
         IReadOnlyList<string>? archives = null)
         => new(true, [], null, null, null, null, [], candidates ?? [], [], messages, archives ?? []);
+
+    /// <summary>R-gt-3/R-gt-5: refuses, says why in the summary, and creates nothing.</summary>
+    private static ImportResult Refused(
+        List<string> messages, string refusal, IReadOnlyList<string> candidates, IReadOnlyList<string> archives)
+    {
+        messages.Add(refusal);
+        return Nothing(messages, candidates, archives) with { Refusal = refusal };
+    }
 
     /// <summary>
     /// Imports one Gerber file SET as a single flat cell plus a technology of its own.
@@ -139,6 +165,14 @@ public static class GerberImport
     /// against the source or chasing an import bug needs. The default is on rather than off because
     /// the coalesced document is the one that can be simulated: 29,000 scanline strokes are neither
     /// editable copper nor meshable, and the import already had to say so in words.</param>
+    /// <param name="target">R-gt-1. Null or <see cref="GerberTechnologyTarget.New"/> is the behaviour
+    /// this import always had: a technology of its own beside the cell. <b>Use</b> imports against an
+    /// existing technology, references it from the <c>.clay</c>, writes no <c>.ctech</c> and changes
+    /// nothing in the one it uses (D5) — and refuses when the set's copper does not agree with that
+    /// technology's stackup (R-gt-3, R-gt-5).</param>
+    /// <param name="resolveMapping">R-gt-2. The mapping dialog that also chooses the technology. Given,
+    /// it is asked instead of <paramref name="resolveLayerMapping"/>, and on every import with rows;
+    /// its answer's target overrides <paramref name="target"/>.</param>
     public static ImportResult Import(
         IReadOnlyList<string> filePaths,
         string parentDir,
@@ -149,14 +183,16 @@ public static class GerberImport
         ResolveDrillFormat? resolveDrillFormat = null,
         RunControl? control = null,
         OfferArchive? offerArchive = null,
-        bool coalesceRasterFill = true)
+        bool coalesceRasterFill = true,
+        GerberTechnologyTarget? target = null,
+        ResolveGerberMapping? resolveMapping = null)
     {
         var messages = new List<string>();
         try
         {
             return ImportUnobserved(filePaths, parentDir, importName, destTech, destDbuPerMicron,
                                     resolveLayerMapping, resolveDrillFormat, control, messages, offerArchive,
-                                    coalesceRasterFill);
+                                    coalesceRasterFill, target ?? GerberTechnologyTarget.New, resolveMapping);
         }
         catch (OperationCanceledException)
         {
@@ -200,7 +236,9 @@ public static class GerberImport
         RunControl? control,
         List<string> messages,
         OfferArchive? offerArchive,
-        bool coalesceRasterFill)
+        bool coalesceRasterFill,
+        GerberTechnologyTarget target,
+        ResolveGerberMapping? resolveMapping)
     {
         // ── 1. What is in the set at all (R-L4g-1) ──────────────────────────────────────────────
         // Indeterminate: the classifier reads every candidate file's CONTENT (R-L4g-1 decides by
@@ -277,7 +315,7 @@ public static class GerberImport
                     var inner = ImportUnobserved(
                         extracted.Files, parentDir, importName, destTech, destDbuPerMicron,
                         resolveLayerMapping, resolveDrillFormat, control, messages, offerArchive: null,
-                        coalesceRasterFill);
+                        coalesceRasterFill, target, resolveMapping);
                     if (inner.CellDir is not null) return inner;
                 }
         }
@@ -383,13 +421,14 @@ public static class GerberImport
             return Nothing(messages, drillCandidates, archivePaths);
         }
 
-        // ── 4. The identity cascade (R-L4g-5) ───────────────────────────────────────────────────
-        var identities = new List<GerberLayerIdentity>(reads.Count);
-        foreach (var (file, read) in reads)
-        {
-            jobFunctionByName.TryGetValue(file.FileName, out string? jobFunction);
-            identities.Add(GerberLayerCascade.Identify(file.Path, read, jobFunction, destTech));
-        }
+        // ── 4. The technology the layers are identified against (R-gt-1) ──────────────────────
+        //
+        // Loaded HERE, before any drill file is read, so a technology that cannot be read refuses
+        // before the drill prompt has asked anybody anything. The cascade itself (R-L4g-5) runs in
+        // BuildProposal, because it is part of what a different technology changes (R-gt-2).
+        Technology? useTech = null;
+        if (target.UsePath is { } usePath && (useTech = LoadTarget(usePath, messages)) is null)
+            return Nothing(messages, drillCandidates, archivePaths);
 
         // ── 5. Drill files: read, and mint a drill layer for each (R-L4f, R-L4g-4) ──────────────
         var artworkForExtent = new List<GerberImportedShape>();
@@ -406,7 +445,7 @@ public static class GerberImport
             messages.Add(netlists.Messages[i]);
         netlistMessagesReported = netlists.Messages.Count;
 
-        var drills = new List<(GerberFileClass File, ExcellonReadResult Read, GerberLayerIdentity Identity)>();
+        var drillReads = new List<(GerberFileClass File, ExcellonReadResult Read, string LayerName)>();
         var drillNames = new List<string>();
         DrillFormatChoice? standingFormat = null;   // set once the user says "apply to all"
         for (int drillIndex = 0; drillIndex < drillFiles.Count; drillIndex++)
@@ -554,13 +593,20 @@ public static class GerberImport
                 layerName = $"{layerName} ({Path.GetFileNameWithoutExtension(file.Path)})";
             drillNames.Add(layerName);
 
-            drills.Add((file, read,
-                GerberLayerCascade.IdentifyDrill(file.Path, read.FileFunction, destTech, layerName)));
+            drillReads.Add((file, read, layerName));
         }
+
+        // ── 6-7 (first pass). The post-read stage, against the technology the import starts on ──
+        //
+        // Everything from the identity cascade to the proposed rows, run once here and again only if
+        // the dialog chooses a different technology (R-gt-2) — see BuildProposal. Its messages are
+        // held back until step 6, where they have always been said.
+        var proposal = BuildProposal(reads, drillReads, jobFunctionByName, useTech ?? destTech, useTech is not null);
+        var identities = proposal.Identities;
 
         // R-L4g-4: an artwork set with no drill data imports, and says so — it is a perfectly ordinary
         // thing to want, and it must not read as a failure.
-        if (drills.Count == 0 &&
+        if (drillReads.Count == 0 &&
             !identities.Any(i => string.Equals(i.Purpose, GerberLayerCascade.DrillPurpose, StringComparison.Ordinal)))
         {
             messages.Add(
@@ -594,7 +640,7 @@ public static class GerberImport
             if (declaration.Refusal is not null || declaration.Scope == GerberDeclarationScope.Artwork) continue;
             if (companions.DrillDeclarationFor(declaration.Path) != declaration) continue;   // already reported
 
-            var inFolder = drills.Where(d => SameFolder(d.File.Path, declaration.Path)).ToList();
+            var inFolder = drillReads.Where(d => SameFolder(d.File.Path, declaration.Path)).ToList();
             if (inFolder.Count == 0)
                 messages.Add(
                     $"{declaration.FileName} declares {declaration.Summary} for this job's drill data, " +
@@ -606,111 +652,53 @@ public static class GerberImport
                     "about itself.");
         }
 
-        // ── 6. Layer order (R-L4g-10) ───────────────────────────────────────────────────────────
+        // ── 6-7. Layer order, source layers, rows — and the one question (R-L4g-0, R-gt-2) ──────
         control?.SetStageLabel("working out the layer stack");
-        var conductors = identities.Where(i => i.IsConductor).ToList();
-        // GI1 R-gi1-4. A numeric prefix in the file names, when EVERY conductor has one and they are
-        // all distinct, is what a production output set uses to say its own stack order — and it is a
-        // far better tiebreak than the alphabetical one it replaces here ("Layer_10" sorts before
-        // "Layer_2"). It is applied strictly INSIDE SideRank, so it can only order the layers whose
-        // side is unknown; a file the cascade identified as Top or Bottom keeps that position
-        // whatever its number says. That bound is the whole safety argument: the worst a misleading
-        // prefix can do is shuffle the inner layers, which is the case that was already being
-        // guessed.
-        var prefixes = NumericPrefixes(conductors);
-        var copperTopToBottom = conductors
-            .OrderBy(c => c.CopperIndex ?? SideRank(c.Side))
-            .ThenBy(c => prefixes is null ? 0 : prefixes[c.FilePath])
-            .ThenBy(InnerRank)                                  // "Inner 2" before "Inner 10"
-            .ThenBy(c => c.FileName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        // AFTER the order and BEFORE the report, because the report must name the layers as the rest
-        // of the import will call them. See NameBottomConductor.
-        NameBottomConductor(identities, copperTopToBottom, destTech, messages);
-        var guessedOrder = copperTopToBottom.Where(c => c.CopperIndex is null).ToList();
-
-        if (conductors.Count > 0 && guessedOrder.Count == 0)
-            messages.Add(
-                $"Copper stack order was DECLARED for all {conductors.Count} copper layer(s): " +
-                string.Join(", ", copperTopToBottom.Select(c => c.LayerName)) + ", top to bottom.");
-        else if (guessedOrder.Count > 0)
-            // A silently wrong stack order produces a simulation that runs cleanly and answers a
-            // different question (L4d's R-L4d-5), which is why the guess must never be
-            // indistinguishable from the declaration.
-            //
-            // GI1 R-gi1-5: naming the numeric prefix does NOT promote this out of the guessed class.
-            // A prefix is a convention and a set numbered in export order rather than stack order
-            // exists. But "we had nothing" and "we used the numbering the files carry" are different
-            // guesses and the reader can only check the second one.
-            messages.Add(
-                $"Copper stack order was GUESSED for {guessedOrder.Count} of {conductors.Count} copper layer(s) — " +
-                string.Join(", ", copperTopToBottom.Where(guessedOrder.Contains).Select(g => g.LayerName)) +
-                " — because neither the job file nor %TF.FileFunction ranked them" +
-                (prefixes is null
-                    ? ". The order used, top to "
-                    : ", so the numeric prefix in the file names was used instead. The order used, top to ") +
-                "bottom, is: " + string.Join(", ", copperTopToBottom.Select(c => c.LayerName)) + ".");
-
-        // ── 7. Source layers, and the one reconciliation (R-L4g-0, R-L4g-7, R-L4g-11) ───────────
-        var allIdentities = new List<GerberLayerIdentity>(identities);
-        allIdentities.AddRange(drills.Select(d => d.Identity));
-
-        var (sourceLayers, keyByFile) = BuildSourceLayers(allIdentities, copperTopToBottom, destTech, messages);
-
-        foreach (var ((_, read), identity) in reads.Zip(identities))
-            foreach (var shape in read.Shapes)
-                shape.Shape.Layer = keyByFile[identity.FilePath];
-
-        var allShapes = reads.SelectMany(r => r.Read.Shapes.Select(s => s.Shape)).ToList();
-        // R-rail27-1b: EVEN WITH NO DESTINATION TECHNOLOGY. A Gerber set imported into a fresh
-        // workspace has nothing to reconcile against and used to get no rows at all — so the dialog
-        // never ran, and the one question this import genuinely cannot answer for itself (is that
-        // unclassified file a plane?) was never asked on exactly the path where it matters most.
-        var rows = LayoutLayerMapping.Propose(allShapes, sourceLayers, destTech, evenWithoutDestination: true);
-
-        // WHICH FILE each row is asking about — the one thing the row's own name cannot say here.
-        // A layer is a FILE in this format, and a set's files share the board's stem by construction
-        // (<board>.gtl, <board>.ssb, …), so every row the cascade could not identify is named after
-        // that one stem and the table reads as the same word repeated. The extension is what the
-        // author used to tell the layers apart, so the file name rides along and the dialog shows it.
-        // One key can hold more than one file (a composited read, or two files donated the same
-        // technology layer), so this is a list and not a lookup.
-        var filesByKey = new Dictionary<LayerKey, List<string>>();
-        foreach (var identity in allIdentities)
-        {
-            var key = keyByFile[identity.FilePath];
-            if (!filesByKey.TryGetValue(key, out var named)) filesByKey[key] = named = [];
-            named.Add(identity.FileName);
-        }
-
-        // R-L4g-6: an unmatched row defaults to "Add to technology", following L4b's and L4d's own
-        // divergence from the paste path — a file set's layer names are the author's deliberate intent,
-        // not an accident of a paste.
-        // The dialog is rung 4 and ONLY rung 4: whatever rungs 0-3 identified is settled, and asking
-        // about it would make an exactly-identified set (gates 6 and 7) interrupt for nothing. What is
-        // left is genuinely unidentified, and there is nothing else that can answer for it.
-        var unidentified = identities.Where(i => i.Rung == GerberLayerRung.Unidentified).ToList();
-        var unidentifiedKeys = unidentified.Select(i => keyByFile[i.FilePath]).ToHashSet();
-
-        // R-rail27-1b's offer: the conductors already in order, top to bottom, as the combo lists
-        // them. Only an UNCLASSIFIED row is offered one — rung 4's existing rule is unchanged, and a
-        // file the cascade identified as copper is already in this list.
-        var conductorOffer = copperTopToBottom.Select(c => c.LayerName).ToList();
-
-        rows = [.. rows.Select(r => r with
-        {
-            Choice = r.Match == LayerMatchKind.NoMatch
-                ? new LayoutFragment.LayerReconciliationChoice(LayoutFragment.LayerReconciliationAction.AddToTechnology)
-                : r.Choice,
-            SourceDetail = filesByKey.TryGetValue(r.Source, out var named) ? string.Join(", ", named) : null,
-            StackupConductors = unidentifiedKeys.Contains(r.Source) ? conductorOffer : null,
-            Stackup = unidentifiedKeys.Contains(r.Source) ? LayerStackupChoice.Artwork : null,
-        })];
+        int proposalAt = messages.Count;
+        messages.AddRange(proposal.Messages);
+        var rows = proposal.Rows;
 
         IReadOnlyDictionary<LayerKey, LayoutFragment.LayerReconciliationChoice>? choices = null;
-        if (unidentified.Count > 0 && rows.Count > 0 && resolveLayerMapping is not null)
+        if (resolveMapping is not null && rows.Count > 0)
         {
+            // R-gt-2. Asked on EVERY import with rows, not only one with an unidentified file — which
+            // technology the board lands in is a question about the whole set. Re-proposing runs the
+            // post-read stage again against another technology and reads nothing: the reads above are
+            // the expensive part (~1.8 s Release on a 20-layer set) and the stage is arithmetic.
+            var request = new GerberMappingRequest(
+                rows, proposal.CopperTopToBottom.Count, target,
+                technology => BuildProposal(reads, drillReads, jobFunctionByName,
+                                            technology ?? destTech, technology is not null).Rows);
+            var answer = resolveMapping(request);
+            if (answer is null)
+            {
+                messages.Add("Layer mapping was cancelled, so nothing was imported.");
+                return Nothing(messages, drillCandidates, archivePaths);
+            }
+
+            if (answer.Target != target)
+            {
+                useTech = null;
+                if (answer.Target.UsePath is { } chosenPath && (useTech = LoadTarget(chosenPath, messages)) is null)
+                    return Nothing(messages, drillCandidates, archivePaths);
+                target = answer.Target;
+
+                messages.RemoveRange(proposalAt, proposal.Messages.Count);
+                proposal = BuildProposal(reads, drillReads, jobFunctionByName, useTech ?? destTech, useTech is not null);
+                messages.InsertRange(proposalAt, proposal.Messages);
+            }
+
+            // The dialog may have re-proposed against several technologies before settling, and each
+            // one re-stamped the shapes' source keys; put back the ones this proposal names.
+            AssignSourceLayers(reads, proposal);
+            rows = answer.Rows;
+            choices = LayoutLayerMapping.BuildChoices(rows);
+        }
+        else if (proposal.Unidentified.Count > 0 && rows.Count > 0 && resolveLayerMapping is not null)
+        {
+            // The dialog is rung 4 and ONLY rung 4: whatever rungs 0-3 identified is settled, and
+            // asking about it would make an exactly-identified set (gates 6 and 7) interrupt for
+            // nothing. What is left is genuinely unidentified, and nothing else can answer for it.
             var settled = resolveLayerMapping(rows);
             if (settled is null)
             {
@@ -722,15 +710,42 @@ public static class GerberImport
         }
         choices ??= LayoutLayerMapping.BuildChoices(rows);
 
+        // The technology everything below is resolved against: the one this import USES (R-gt-1), or
+        // the workspace's, which only donates names, keys and colours to the one it mints.
+        var mappingTech = useTech ?? destTech;
+        identities = proposal.Identities;
+        var allIdentities = proposal.AllIdentities;
+        var copperTopToBottom = proposal.CopperTopToBottom;
+        var sourceLayers = proposal.SourceLayers;
+        var keyByFile = proposal.KeyByFile;
+        var unidentified = proposal.Unidentified;
+        var drills = drillReads
+            .Select((d, i) => (d.File, d.Read, Identity: proposal.DrillIdentities[i]))
+            .ToList();
+        var allShapes = reads.SelectMany(r => r.Read.Shapes.Select(s => s.Shape)).ToList();
+
         // R-rail27-1b applied: a row answered "copper, after <conductor>" joins the copper order at
         // the stated position and becomes a conductor everywhere downstream — the stackup, the layer
         // table's purpose, and the z-order the technology sorts by. Done HERE, after the answer and
         // before `copperKeys` is read off `copperTopToBottom`, which is the one place the stackup
         // learns how many conductors there are.
         PromoteAnsweredCopper(rows, keyByFile, identities, allIdentities, copperTopToBottom,
-                              sourceLayers, conductorOffer, messages);
+                              sourceLayers, proposal.ConductorOffer, messages);
 
-        if (rows.Count > 0) messages.Add("Layers: " + LayoutLayerMapping.SummarizeMapping(rows, destTech));
+        if (rows.Count > 0) messages.Add("Layers: " + LayoutLayerMapping.SummarizeMapping(rows, mappingTech));
+
+        // The FINAL key each file's layer landed on — what the new technology must define, and what a
+        // via's barrel and landing must name.
+        var finalKeyByFile = allIdentities.ToDictionary(
+            i => i.FilePath,
+            i => ResolveKey(keyByFile[i.FilePath], choices));
+
+        // R-gt-3 / R-gt-5. Into a technology that already has a stackup, the set's copper must agree
+        // with it — count, binding, one file per conductor and rank — and its drill data must land on
+        // a via layer. Checked before anything is built or written, so a refusal creates nothing.
+        if (useTech is not null &&
+            UseRefusal(useTech, copperTopToBottom, allIdentities, finalKeyByFile, sourceLayers) is { } useRefusal)
+            return Refused(messages, useRefusal, drillCandidates, archivePaths);
 
         var reconciled = LayoutFragment.ApplyReconciliation(allShapes, sourceLayers, choices);
         var artwork = new List<GerberImportedShape>(allShapes.Count);
@@ -756,12 +771,6 @@ public static class GerberImport
                 artworkByRead[ri] = (start, artwork.Count - start);
             }
         }
-
-        // The FINAL key each file's layer landed on — what the new technology must define, and what a
-        // via's barrel and landing must name.
-        var finalKeyByFile = allIdentities.ToDictionary(
-            i => i.FilePath,
-            i => ResolveKey(keyByFile[i.FilePath], choices));
 
         // R-L4g-12: %TO.C and %TO.P ride onto the shapes, and NOTHING here builds hierarchy from them.
         //
@@ -807,7 +816,7 @@ public static class GerberImport
         if (coalesceRasterFill)
         {
             control?.SetStageLabel("coalescing painted fill");
-            long coalesceTol = destTech is { DefaultFlattenTolDbu: > 0 } dtech
+            long coalesceTol = mappingTech is { DefaultFlattenTolDbu: > 0 } dtech
                 ? dtech.DefaultFlattenTolDbu
                 : LayoutRasterFillCoalesce.DefaultToleranceDbu(destDbuPerMicron);
 
@@ -1014,202 +1023,14 @@ public static class GerberImport
             foreach (string note in netlistNets.Messages) messages.Add(note);
         }
 
-        // ── 9. The technology this import mints (R-L4g-8, R-L4g-9) ──────────────────────────────
+        // ── 9. The technology: the one this import USES (R-gt-1), or one it mints (R-L4g-8) ─────
         control?.SetStageLabel("building the technology");
-        var tech = BuildTechnology(importName, allIdentities, copperTopToBottom, finalKeyByFile, destTech, sourceLayers);
-        tech.DefaultDisplayUnit = DisplayUnitFor(reads, drills);
-
-        // GI2 R-gi2-2/R-gi2-6. The skeleton names each conductor entry after the drawing layer it
-        // binds, so the Stackup tab and the layer table read as one document rather than two — and
-        // the mask/paste/legend layers this set imported as ARTWORK are named so their absence from
-        // the stackup is a stated decision. Both are read off the technology this import has just
-        // built, which is the only place the final, reconciled names exist.
-        var nameByKey = tech.Layers
-            .GroupBy(l => l.Key)
-            .ToDictionary(g => g.Key, g => g.First().Name);
-        var copperLayerNames = copperKeys
-            .Select(k => nameByKey.TryGetValue(k, out string? n) ? n : "")
-            .ToList();
-        var maskNames = allIdentities
-            .Where(IsMaskPasteOrLegend)
-            .Select(i => nameByKey.TryGetValue(finalKeyByFile[i.FilePath], out string? n) ? n : i.LayerName)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(n => n, StringComparer.Ordinal)
-            .ToList();
-
-        var stackup = GerberStackupMapping.Build(
-            job?.MaterialStackup, job?.BoardThicknessMm, job?.LayerNumber, copperKeys, destDbuPerMicron,
-            copperLayerNames, maskNames);
-        if (stackup.Stackup is not null) tech.Stackup = stackup.Stackup;
-        messages.AddRange(stackup.Messages);
-
-        ReportLayersLeftOutOfTheStackup(
-            allIdentities, artwork, finalKeyByFile, nameByKey, copperKeys, maskNames, messages);
-
-        // GI3 R-gi3-7. The job file's overall board thickness was read, reported once, and then
-        // DROPPED — so the one number that could have checked a hand-entered stackup never reached the
-        // document anyone enters it in. Carried here rather than inside GerberStackupMapping because it
-        // has to survive the branches where that mapping builds no stackup at all (a drill-only set, a
-        // job file whose stackup declares nothing electrical): the fact is about the BOARD, not about
-        // whether we managed to build rows for it. Nothing derives geometry from it — see
-        // Stackup.BoardThicknessDbu.
-        if (job?.BoardThicknessMm is { } boardMm && boardMm > 0)
-            tech.Stackup.BoardThicknessDbu = PcbUnits.Length(boardMm, destDbuPerMicron);
-
-        // A drill layer is DECLARED by the file set (a drill file was actually read), and a
-        // StackupKind.Via entry is what marks the drawing layer it landed on as one — it carries no
-        // substrate value and nothing simulates it, so it is added in both branches of R-L4g-9. Without
-        // it a bare, unpaired hole re-exports as copper on the drill layer instead of as a drill hit.
-        //
-        // Its SPAN is named from the stackup's own conductor entries when there are any. A through
-        // hole goes from the topmost conductor to the bottommost, which is what the drill files here
-        // are read as (no set declared a span), and naming it is what stops the technology validator
-        // reporting a via that spans nothing on every import that HAS a job file. A set without one
-        // has no conductor entries to name, and inventing two would be a substrate invented under
-        // another name — that import already says, in words, that the technology is incomplete.
-        var conductorEntries = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
-        int platedViaEntries = 0, gerberDrillLayers = 0;
-        foreach (var (drillFile, drillRead, identity) in drills)
-        {
-            // GI1 R-gi1-2. The plating of this file was already settled up in step 5, where it chose
-            // the drawing layer's NAME — and was then thrown away, so every drill file, including one
-            // that declared itself non-plated, minted a Plated via entry. Settle it once, here, by
-            // the same rule, and carry it: PlanarExtractor builds a conductive barrel out of every
-            // via entry it can bind, so a 4 mm non-plated mounting hole modelled as plated shorts
-            // every layer it passes through and the run completes cleanly.
-            bool? plated = drillRead.Plated ?? ExcellonReader.PlatingFromFileName(drillFile.Path);
-
-            // GI1 R-gi1-3. A file that drilled NOTHING and only routed is board outline and cutouts,
-            // not interconnect. The entry itself stays — it is the drawing-layer marker that makes a
-            // bare opening re-export as a routed feature rather than as copper (see the note above) —
-            // but a file that produced no holes is not evidence for a plated barrel spanning the whole
-            // board, so it asserts neither plating nor a span.
-            //
-            // A rout file that says nothing about plating defaults to NON-plated rather than to the
-            // usual "null means plated". That is not a symmetry break for its own sake: a slot IS a
-            // drawn region on the drill layer, and PlanarExtractor's region branch builds a vertical
-            // conductor out of every region on a via-bound layer — so leaving it unstated turns a
-            // board outline and its cutouts into metal shorting the whole stack. A rout file that
-            // DOES declare itself plated (a castellated edge) keeps what it declared.
-            bool routedOnly = drillRead.Hits.Count == 0 && drillRead.Slots.Count > 0;
-            bool? entryPlated = routedOnly ? plated ?? false : plated;
-            bool conductive = entryPlated != false;
-
-            tech.Stackup.Layers.Add(new StackupLayer
-            {
-                Kind = StackupKind.Via,
-                Name = identity.LayerName,
-                DrawingLayers = [finalKeyByFile[identity.FilePath]],
-
-                // Fill is a fill MODEL and only means anything for something that is metal, so it is
-                // left unstated on an entry that is not — rather than reading "Plated" beside a
-                // Plated flag of false.
-                Fill = conductive ? ViaFillKind.Plated : null,
-                Plated = entryPlated,
-
-                // GI5 R-gi5-5. Where a span is actually KNOWN for this file — the drill file declared
-                // one, or the netlist beside it did — the entry names the two conductors that span
-                // reaches instead of the whole stack. A blind or buried hole modelled as through-hole
-                // is a barrel shorting layers it never touches, which is the same class of silent
-                // error as a non-plated mounting hole modelled as metal. No entry is SYNTHESISED per
-                // span, which is R-gi5-5's other half: this is the entry the import already mints.
-                SpanFromLayer = SpanEndName(identity.FilePath, conductive, conductorEntries, spanByDrillFile, true),
-                SpanToLayer = SpanEndName(identity.FilePath, conductive, conductorEntries, spanByDrillFile, false),
-
-                // GI3 R-gi3-4. The default already existed everywhere BUT here: every shipped
-                // technology writes 25 µm and StarterTechnologies writes Um(25), while the one
-                // document guaranteed to need the field — an imported board — minted its via entries
-                // with no wall thickness at all, so it was the only technology in the product that
-                // failed its own validator on a field with a known answer. Written through the same
-                // constant those five documents now read, at THIS import's resolution, and named as a
-                // default in the message below (R-L4d-7's pattern, which the conductivity default in
-                // GerberStackupMapping already follows).
-                //
-                // Only on a conductive entry: wall thickness is a property of metal, and Fill is left
-                // unstated on a non-plated hole for the same reason.
-                WallThicknessDbu = conductive ? ViaDefaults.PlatedWallThicknessDbu(destDbuPerMicron) : null,
-            });
-
-            if (routedOnly)
-                messages.Add(
-                    $"{drillFile.FileName}: this file routed {drillRead.Slots.Count:N0} slot(s) and " +
-                    "drilled no holes, so its layer was marked as a routed layer, not as a plated via " +
-                    "layer — it states nothing about what connects to what, and its openings are not " +
-                    "extracted as conductors. If these slots are plated (a castellated edge), tick " +
-                    "Plated on that stackup entry in the Technology editor.");
-            else if (plated == false)
-                messages.Add(
-                    $"{drillFile.FileName}: these holes are NON-PLATED, so this layer's holes are not " +
-                    "conductors and an EM run will not build vias from them. The holes themselves are " +
-                    "imported and drawn exactly as they are.");
-
-            if (conductive) platedViaEntries++;
-        }
-
-        // Designer feedback 02. A drill layer written as GERBER (an X2 `Plated,1,4,PTH,Drill` or
-        // `NonPlated,…,Drill` FileFunction) is read as artwork — its holes arrive as flashes on a
-        // drill-purpose layer — so the loop above, which walks the Excellon reads, never saw it, and
-        // the board came in with its holes drawn and no Via entry in the stackup. Nothing then built
-        // a barrel out of them. The entry is minted here by the same rules: plating and span from the
-        // file's own FileFunction, the file name when it states neither, through-hole otherwise.
-        //
-        // Skipped when an Excellon file of the same plating was read: a production set commonly
-        // carries both spellings of ONE drill program, and two entries over the same holes would be
-        // two barrels in every hole.
-        foreach (var identity in identities)
-        {
-            if (!string.Equals(identity.Purpose, GerberLayerCascade.DrillPurpose, StringComparison.Ordinal)) continue;
-
-            var (fnPlated, from, to, kind) = identity.FileFunction is { Length: > 0 } fn
-                ? ExcellonReader.ParseFunctionFields(["FileFunction", .. fn.Split(',', StringSplitOptions.TrimEntries)])
-                : (null, null, null, null);
-            bool? plated = fnPlated ?? ExcellonReader.PlatingFromFileName(identity.FilePath);
-            bool conductive = plated != false;
-            if (drills.Any(d => ((d.Read.Plated ?? ExcellonReader.PlatingFromFileName(d.File.Path)) != false) == conductive))
-            {
-                messages.Add(
-                    $"{identity.FileName}: a Gerber drawing of drill holes, imported as artwork on '{identity.LayerName}'. " +
-                    "An Excellon drill file of the same plating in this set already defines these vias, so no " +
-                    "second via entry was added for it.");
-                continue;
-            }
-
-            var spans = new Dictionary<string, DrillSpan>(StringComparer.Ordinal);
-            if (from is not null && to is not null)
-                spans[identity.FilePath] = new DrillSpan(from.Value, to.Value, kind ?? "PTH", plated);
-
-            tech.Stackup.Layers.Add(new StackupLayer
-            {
-                Kind = StackupKind.Via,
-                Name = identity.LayerName,
-                DrawingLayers = [finalKeyByFile[identity.FilePath]],
-                Fill = conductive ? ViaFillKind.Plated : null,
-                Plated = plated,
-                SpanFromLayer = SpanEndName(identity.FilePath, conductive, conductorEntries, spans, true),
-                SpanToLayer = SpanEndName(identity.FilePath, conductive, conductorEntries, spans, false),
-                WallThicknessDbu = conductive ? ViaDefaults.PlatedWallThicknessDbu(destDbuPerMicron) : null,
-            });
-            gerberDrillLayers++;
-            if (conductive) platedViaEntries++;
-            messages.Add(
-                $"{identity.FileName}: drill holes written as Gerber, read as flashes on '{identity.LayerName}' — " +
-                (conductive
-                    ? $"added to the stackup as a plated via layer spanning {SpanEndName(identity.FilePath, true, conductorEntries, spans, true) ?? "the board"}" +
-                      $" to {SpanEndName(identity.FilePath, true, conductorEntries, spans, false) ?? "the board"}, so every hole on it is a barrel."
-                    : "added to the stackup as a NON-PLATED drill layer, so its holes are not conductors."));
-        }
-
-        // GI3 R-gi3-4 — said ONCE for the whole import, not once per drill file: it is one fact about
-        // one process, and the per-file lines above are already the busiest part of this report.
-        if (platedViaEntries > 0)
-            messages.Add(
-                $"Plated via wall thickness is defaulted to {ViaDefaults.PlatedWallThicknessUm:0.###} µm " +
-                $"on {platedViaEntries} via layer(s) and is named here as a default — no Gerber or " +
-                "Excellon file states a plating thickness. It is the same value every technology " +
-                "shipped with circuitRF uses, and it is a PLATING thickness (the metal on the barrel " +
-                "wall), not the hole radius. Above roughly 1 GHz a wall this thick is already many skin " +
-                "depths, so an S-parameter run is insensitive to it; a thermal one is not. Change it on " +
-                "the Technology editor's Stackup tab.");
+        var tech = useTech ?? MintTechnology(
+            importName, identities, allIdentities, copperTopToBottom, copperKeys, finalKeyByFile, destTech,
+            sourceLayers, reads, drills, artwork, job, spanByDrillFile, destDbuPerMicron, messages);
+        if (useTech is not null)
+            ReportUse(useTech, target.UsePath!, rows, allIdentities, copperKeys, finalKeyByFile, job,
+                      destDbuPerMicron, messages);
 
         // ── 10. Write (R-L4g-13) — nothing is created before this point ─────────────────────────
         //
@@ -1230,9 +1051,18 @@ public static class GerberImport
         string techPath;
         try
         {
-            techPath = Path.Combine(importDir, folderName + ".ctech");
-            tech.Name = folderName;
-            TechPersistence.SaveToFile(techPath, tech);
+            if (target.UsePath is { } used)
+            {
+                // R-gt-1, D5: the chosen file is REFERENCED and nothing is written to it — not its
+                // name, not a layer, not a stackup entry. The .clay below is what points at it.
+                techPath = used;
+            }
+            else
+            {
+                techPath = Path.Combine(importDir, folderName + ".ctech");
+                tech.Name = folderName;
+                TechPersistence.SaveToFile(techPath, tech);
+            }
 
             cellDir = CellFolder.CreateCellFolder(importDir, folderName);
             var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
@@ -1357,7 +1187,7 @@ public static class GerberImport
             ? $"a via is written as a copper flash PLUS a drill hit, and the two were rejoined into " +
               $"{vias:N0} via(s) because the drill data came with the artwork — a flash whose hole was " +
               "not in the set stays a plain pad"
-            : gerberDrillLayers > 0
+            : identities.Any(i => string.Equals(i.Purpose, GerberLayerCascade.DrillPurpose, StringComparison.Ordinal))
                 ? "a via is written as a copper flash PLUS a drill hit; this set's holes came as a Gerber " +
                   "drawing, so each is a barrel on its drill layer beside the copper pad it was drawn with"
                 : "a via is written as a copper flash PLUS a drill hit; with no drill file in this set, " +
@@ -1427,11 +1257,13 @@ public static class GerberImport
                 string.Join(", ", drillCandidates.Select(Path.GetFileName)) +
                 ". They were NOT imported — import them with this set if they belong to it.");
 
-        messages.Add(
-            $"This import wrote its own technology, {folderName}.ctech, next to the cell, and left the " +
-            "workspace's technology untouched. A Gerber set describes a whole board's drawing layers, and " +
-            "grafting them onto a technology other cells share is a permanent cost for a temporary " +
-            "convenience.");
+        messages.Add(target.UsePath is null
+            ? $"This import wrote its own technology, {folderName}.ctech, next to the cell, and left the " +
+              "workspace's technology untouched. A Gerber set describes a whole board's drawing layers, and " +
+              "grafting them onto a technology other cells share is a permanent cost for a temporary " +
+              "convenience."
+            : $"This import uses the technology '{tech.Name}' ({techPath}): the layout references it, no " +
+              "technology was written, and nothing in that one was changed.");
 
         // R-L4g-17, unchanged from L4d's R-L4d-19: the whole set comes in, unfiltered, because cropping
         // is an EDIT and the editor already has one.
@@ -1442,6 +1274,537 @@ public static class GerberImport
         return new ImportResult(
             false, [cellDir], cellDir, importDir, techPath, tech,
             layerReports, drillCandidates, skippedNames, messages, archivePaths);
+    }
+
+    /// <summary>
+    /// R-gt-2 — everything between the reads and the dialog, for ONE technology: the identity cascade
+    /// (R-L4g-5), the copper order (R-L4g-10), the source layers and the proposed rows (R-L4g-7).
+    /// </summary>
+    /// <remarks>
+    /// <b>It reads nothing.</b> The reads are the import's cost — ~1.8 s Release on a 20-layer set —
+    /// and this is arithmetic over them, so the dialog can ask for it again each time its Technology
+    /// choice changes and the rows it shows are the rows the import will apply. Its messages are
+    /// returned rather than posted, so the proposal that is NOT used says nothing.
+    ///
+    /// <para>One side effect, on purpose: every artwork shape is stamped with its file's source key,
+    /// because <see cref="LayoutLayerMapping.Propose"/> counts shapes by key. A later proposal
+    /// re-stamps them, which is why the import calls <see cref="AssignSourceLayers"/> once more for
+    /// the proposal it settles on.</para>
+    /// </remarks>
+    /// <param name="use">True when <paramref name="tech"/> is the technology the import will USE
+    /// rather than a donor to the one it mints — an unmatched row then defaults to Keep as unknown,
+    /// since nothing is ever added to a technology that is used (R-gt-4).</param>
+    private static Proposal BuildProposal(
+        IReadOnlyList<(GerberFileClass File, GerberReadResult Read)> reads,
+        IReadOnlyList<(GerberFileClass File, ExcellonReadResult Read, string LayerName)> drillReads,
+        IReadOnlyDictionary<string, string> jobFunctionByName,
+        Technology? tech,
+        bool use)
+    {
+        var messages = new List<string>();
+
+        // ── 4. The identity cascade (R-L4g-5) ───────────────────────────────────────────────────
+        var identities = new List<GerberLayerIdentity>(reads.Count);
+        foreach (var (file, read) in reads)
+        {
+            jobFunctionByName.TryGetValue(file.FileName, out string? jobFunction);
+            identities.Add(GerberLayerCascade.Identify(file.Path, read, jobFunction, tech));
+        }
+        var drillIdentities = drillReads
+            .Select(d => GerberLayerCascade.IdentifyDrill(d.File.Path, d.Read.FileFunction, tech, d.LayerName))
+            .ToList();
+
+        // ── 6. Layer order (R-L4g-10) ───────────────────────────────────────────────────────────
+        var conductors = identities.Where(i => i.IsConductor).ToList();
+        // GI1 R-gi1-4. A numeric prefix in the file names, when EVERY conductor has one and they are
+        // all distinct, is what a production output set uses to say its own stack order — and it is a
+        // far better tiebreak than the alphabetical one it replaces here ("Layer_10" sorts before
+        // "Layer_2"). It is applied strictly INSIDE SideRank, so it can only order the layers whose
+        // side is unknown; a file the cascade identified as Top or Bottom keeps that position
+        // whatever its number says. That bound is the whole safety argument: the worst a misleading
+        // prefix can do is shuffle the inner layers, which is the case that was already being
+        // guessed.
+        var prefixes = NumericPrefixes(conductors);
+        var copperTopToBottom = conductors
+            .OrderBy(c => c.CopperIndex ?? SideRank(c.Side))
+            .ThenBy(c => prefixes is null ? 0 : prefixes[c.FilePath])
+            .ThenBy(InnerRank)                                  // "Inner 2" before "Inner 10"
+            .ThenBy(c => c.FileName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // AFTER the order and BEFORE the report, because the report must name the layers as the rest
+        // of the import will call them. See NameBottomConductor.
+        NameBottomConductor(identities, copperTopToBottom, tech, messages);
+        var guessedOrder = copperTopToBottom.Where(c => c.CopperIndex is null).ToList();
+
+        if (conductors.Count > 0 && guessedOrder.Count == 0)
+            messages.Add(
+                $"Copper stack order was DECLARED for all {conductors.Count} copper layer(s): " +
+                string.Join(", ", copperTopToBottom.Select(c => c.LayerName)) + ", top to bottom.");
+        else if (guessedOrder.Count > 0)
+            // A silently wrong stack order produces a simulation that runs cleanly and answers a
+            // different question (L4d's R-L4d-5), which is why the guess must never be
+            // indistinguishable from the declaration.
+            //
+            // GI1 R-gi1-5: naming the numeric prefix does NOT promote this out of the guessed class.
+            // A prefix is a convention and a set numbered in export order rather than stack order
+            // exists. But "we had nothing" and "we used the numbering the files carry" are different
+            // guesses and the reader can only check the second one.
+            messages.Add(
+                $"Copper stack order was GUESSED for {guessedOrder.Count} of {conductors.Count} copper layer(s) — " +
+                string.Join(", ", copperTopToBottom.Where(guessedOrder.Contains).Select(g => g.LayerName)) +
+                " — because neither the job file nor %TF.FileFunction ranked them" +
+                (prefixes is null
+                    ? ". The order used, top to "
+                    : ", so the numeric prefix in the file names was used instead. The order used, top to ") +
+                "bottom, is: " + string.Join(", ", copperTopToBottom.Select(c => c.LayerName)) + ".");
+
+        // ── 7. Source layers, and the one reconciliation (R-L4g-0, R-L4g-7, R-L4g-11) ───────────
+        var allIdentities = new List<GerberLayerIdentity>(identities);
+        allIdentities.AddRange(drillIdentities);
+
+        var (sourceLayers, keyByFile) = BuildSourceLayers(allIdentities, copperTopToBottom, tech, messages);
+
+        var proposalRows = new List<LayerMappingRow>();
+        var proposal = new Proposal(
+            identities, drillIdentities, allIdentities, copperTopToBottom, sourceLayers, keyByFile,
+            proposalRows, identities.Where(i => i.Rung == GerberLayerRung.Unidentified).ToList(),
+            copperTopToBottom.Select(c => c.LayerName).ToList(), messages);
+        AssignSourceLayers(reads, proposal);
+
+        var allShapes = reads.SelectMany(r => r.Read.Shapes.Select(s => s.Shape)).ToList();
+        // R-rail27-1b: EVEN WITH NO DESTINATION TECHNOLOGY. A Gerber set imported into a fresh
+        // workspace has nothing to reconcile against and used to get no rows at all — so the dialog
+        // never ran, and the one question this import genuinely cannot answer for itself (is that
+        // unclassified file a plane?) was never asked on exactly the path where it matters most.
+        var rows = LayoutLayerMapping.Propose(allShapes, sourceLayers, tech, evenWithoutDestination: true);
+
+        // WHICH FILE each row is asking about — the one thing the row's own name cannot say here.
+        // A layer is a FILE in this format, and a set's files share the board's stem by construction
+        // (<board>.gtl, <board>.ssb, …), so every row the cascade could not identify is named after
+        // that one stem and the table reads as the same word repeated. The extension is what the
+        // author used to tell the layers apart, so the file name rides along and the dialog shows it.
+        // One key can hold more than one file (a composited read, or two files donated the same
+        // technology layer), so this is a list and not a lookup.
+        var filesByKey = new Dictionary<LayerKey, List<string>>();
+        foreach (var identity in allIdentities)
+        {
+            var key = keyByFile[identity.FilePath];
+            if (!filesByKey.TryGetValue(key, out var named)) filesByKey[key] = named = [];
+            named.Add(identity.FileName);
+        }
+
+        var unidentifiedKeys = proposal.Unidentified.Select(i => keyByFile[i.FilePath]).ToHashSet();
+
+        // R-L4g-6: an unmatched row defaults to "Add to technology", following L4b's and L4d's own
+        // divergence from the paste path — a file set's layer names are the author's deliberate intent,
+        // not an accident of a paste. NOT into a technology the import USES (R-gt-4): nothing is ever
+        // added to that one, so an unmatched row stays Keep as unknown, which is Propose's own default.
+        //
+        // R-rail27-1b's offer: the conductors already in order, top to bottom, as the combo lists
+        // them. Only an UNCLASSIFIED row is offered one — rung 4's existing rule is unchanged, and a
+        // file the cascade identified as copper is already in this list.
+        proposalRows.AddRange(rows.Select(r => r with
+        {
+            Choice = r.Match == LayerMatchKind.NoMatch && !use
+                ? new LayoutFragment.LayerReconciliationChoice(LayoutFragment.LayerReconciliationAction.AddToTechnology)
+                : r.Choice,
+            SourceDetail = filesByKey.TryGetValue(r.Source, out var named) ? string.Join(", ", named) : null,
+            StackupConductors = unidentifiedKeys.Contains(r.Source) ? proposal.ConductorOffer : null,
+            Stackup = unidentifiedKeys.Contains(r.Source) ? LayerStackupChoice.Artwork : null,
+        }));
+
+        return proposal;
+    }
+
+    /// <summary>Stamps every artwork shape with the source key <paramref name="proposal"/> gave its
+    /// file — what <see cref="LayoutLayerMapping.Propose"/> counts and what reconciliation maps.</summary>
+    private static void AssignSourceLayers(
+        IReadOnlyList<(GerberFileClass File, GerberReadResult Read)> reads, Proposal proposal)
+    {
+        foreach (var ((_, read), identity) in reads.Zip(proposal.Identities))
+            foreach (var shape in read.Shapes)
+                shape.Shape.Layer = proposal.KeyByFile[identity.FilePath];
+    }
+
+    /// <summary>What <see cref="BuildProposal"/> worked out for one technology.</summary>
+    private sealed record Proposal(
+        List<GerberLayerIdentity> Identities,
+        List<GerberLayerIdentity> DrillIdentities,
+        List<GerberLayerIdentity> AllIdentities,
+        List<GerberLayerIdentity> CopperTopToBottom,
+        List<LayerDef> SourceLayers,
+        Dictionary<string, LayerKey> KeyByFile,
+        IReadOnlyList<LayerMappingRow> Rows,
+        List<GerberLayerIdentity> Unidentified,
+        List<string> ConductorOffer,
+        List<string> Messages);
+
+    /// <summary>The technology a Use target names, or null with the reason said.</summary>
+    private static Technology? LoadTarget(string path, List<string> messages)
+    {
+        if (!File.Exists(path))
+        {
+            messages.Add($"The technology to import into, {path}, does not exist, so nothing was imported.");
+            return null;
+        }
+        try
+        {
+            return TechPersistence.LoadFromFile(path);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException
+                                      or InvalidDataException or NotSupportedException)
+        {
+            messages.Add($"The technology to import into, {path}, could not be read ({ex.Message}), so nothing was imported.");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// R-gt-3 and R-gt-5 — whether this set's copper and drill data agree with the stackup of the
+    /// technology it is being imported INTO, as one sentence naming the files and layers, or null.
+    /// </summary>
+    /// <remarks>
+    /// <b>Why refuse rather than warn.</b> A copper file landing on the wrong conductor of a real
+    /// stackup puts every trace on it over the wrong dielectric, and the run that follows completes
+    /// cleanly. When the import mints its own technology the order is merely reported, because the
+    /// stackup is its own invention and says so; here the stackup is a statement the user chose to
+    /// trust, and a set that contradicts it has to be stopped, not annotated.
+    /// </remarks>
+    private static string? UseRefusal(
+        Technology tech,
+        IReadOnlyList<GerberLayerIdentity> copperTopToBottom,
+        IReadOnlyList<GerberLayerIdentity> allIdentities,
+        IReadOnlyDictionary<string, LayerKey> finalKeyByFile,
+        IReadOnlyList<LayerDef> sourceLayers)
+    {
+        string techName = tech.Name is { Length: > 0 } n ? n : "the chosen technology";
+        var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
+
+        string LayerName(LayerKey key) =>
+            tech.Layers.FirstOrDefault(l => l.Key == key)?.Name
+            ?? sourceLayers.FirstOrDefault(l => l.Key == key)?.Name
+            ?? $"{key.Layer}/{key.Datatype}";
+
+        if (copperTopToBottom.Count != conductors.Count)
+            return
+                $"Refused: this set has {copperTopToBottom.Count} copper file(s) " +
+                $"({string.Join(", ", copperTopToBottom.Select(c => c.FileName))}) and '{techName}' has " +
+                $"{conductors.Count} conductor(s) ({string.Join(", ", conductors.Select(c => c.Name))}), so " +
+                "the set cannot be imported into it. Nothing was created.";
+
+        var landedOn = new Dictionary<int, string>();
+        for (int rank = 0; rank < copperTopToBottom.Count; rank++)
+        {
+            var copper = copperTopToBottom[rank];
+            var key = finalKeyByFile[copper.FilePath];
+            int at = conductors.FindIndex(c => c.DrawingLayers.Contains(key));
+
+            if (at < 0)
+                return
+                    $"Refused: {copper.FileName} is copper and was mapped to '{LayerName(key)}', which no " +
+                    $"conductor in the stackup of '{techName}' binds. Map it to one of " +
+                    $"{string.Join(", ", conductors.Select(c => c.Name))}. Nothing was created.";
+
+            if (landedOn.TryGetValue(at, out string? first))
+                return
+                    $"Refused: {first} and {copper.FileName} are both mapped to conductor " +
+                    $"'{conductors[at].Name}' of '{techName}'. One copper file is one conductor. " +
+                    "Nothing was created.";
+            landedOn[at] = copper.FileName;
+
+            if (at != rank)
+                return
+                    $"Refused: {copper.FileName} is copper layer {rank + 1} from the top of this set, but it " +
+                    $"was mapped to '{LayerName(key)}', which is conductor {at + 1} " +
+                    $"('{conductors[at].Name}') in the stackup of '{techName}'. Its traces would sit over " +
+                    "the wrong dielectric. Nothing was created.";
+        }
+
+        var viaBound = tech.Stackup.Layers
+            .Where(l => l.Kind == StackupKind.Via)
+            .SelectMany(l => l.DrawingLayers)
+            .ToHashSet();
+        foreach (var drill in allIdentities.Where(i =>
+                     string.Equals(i.Purpose, GerberLayerCascade.DrillPurpose, StringComparison.Ordinal)))
+        {
+            var key = finalKeyByFile[drill.FilePath];
+            if (!viaBound.Contains(key))
+                return
+                    $"Refused: {drill.FileName} is drill data and was mapped to '{LayerName(key)}', which no " +
+                    $"via entry in the stackup of '{techName}' binds — its holes would become plain circles " +
+                    "and no via would connect anything. Map it to a via layer of that technology. Nothing " +
+                    "was created.";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// R-gt-6 — what an import INTO an existing technology says in place of the stackup it did not
+    /// build: every layer kept unknown (R-gt-4), and where the set's job file disagrees with the
+    /// chosen stackup, that disagreement (D7). The chosen technology wins; this only says so.
+    /// </summary>
+    private static void ReportUse(
+        Technology tech,
+        string techPath,
+        IReadOnlyList<LayerMappingRow> rows,
+        IReadOnlyList<GerberLayerIdentity> allIdentities,
+        IReadOnlyList<LayerKey> copperKeys,
+        IReadOnlyDictionary<string, LayerKey> finalKeyByFile,
+        GerberJobFile.JobFileContents? job,
+        int destDbuPerMicron,
+        List<string> messages)
+    {
+        var kept = rows
+            .Where(r => r.Choice.Action == LayoutFragment.LayerReconciliationAction.KeepUnknown)
+            .Select(r => (r.SourceName ?? $"{r.Source.Layer}/{r.Source.Datatype}") +
+                         (r.SourceDetail is { Length: > 0 } files ? $" ({files})" : ""))
+            .ToList();
+        if (kept.Count > 0)
+            messages.Add(
+                $"Kept as unknown layers, because '{tech.Name}' has no layer for them and nothing is added " +
+                $"to a technology an import uses: {string.Join(", ", kept)}.");
+
+        if (job?.MaterialStackup is null) return;
+
+        var nameByKey = tech.Layers.GroupBy(l => l.Key).ToDictionary(g => g.Key, g => g.First().Name);
+        var stated = GerberStackupMapping.Build(
+            job.MaterialStackup, job.BoardThicknessMm, job.LayerNumber, copperKeys, destDbuPerMicron,
+            [.. copperKeys.Select(k => nameByKey.TryGetValue(k, out string? n) ? n : "")],
+            [.. allIdentities.Where(IsMaskPasteOrLegend)
+                .Select(i => nameByKey.TryGetValue(finalKeyByFile[i.FilePath], out string? n) ? n : i.LayerName)
+                .Distinct(StringComparer.Ordinal)]);
+        if (stated.Stackup is null) return;
+
+        var fromJob = new Technology { Stackup = stated.Stackup };
+        fromJob.Stackup.Top = tech.Stackup.Top;
+        fromJob.Stackup.Bottom = tech.Stackup.Bottom;
+        var differences = StackupComparison.Differences(tech, fromJob, $"'{tech.Name}'", "the job file").ToList();
+        if (differences.Count > 0)
+            messages.Add(
+                $"WARNING: the set's job file states a stackup that differs from '{tech.Name}' " +
+                $"({Path.GetFileName(techPath)}), and the technology you chose was used as it is. " +
+                string.Join(" ", differences));
+    }
+
+    /// <summary>
+    /// Step 9 of an import that MINTS its technology (R-L4g-8, R-L4g-9) — everything it says about
+    /// the stackup it built, the via entries it added and the layers it left out. Never reached by an
+    /// import that uses an existing technology (R-gt-6): nothing there is built, so none of it is true.
+    /// </summary>
+    private static Technology MintTechnology(
+        string importName,
+        IReadOnlyList<GerberLayerIdentity> identities,
+        IReadOnlyList<GerberLayerIdentity> allIdentities,
+        IReadOnlyList<GerberLayerIdentity> copperTopToBottom,
+        IReadOnlyList<LayerKey> copperKeys,
+        IReadOnlyDictionary<string, LayerKey> finalKeyByFile,
+        Technology? destTech,
+        IReadOnlyList<LayerDef> sourceLayers,
+        IReadOnlyList<(GerberFileClass File, GerberReadResult Read)> reads,
+        IReadOnlyList<(GerberFileClass File, ExcellonReadResult Read, GerberLayerIdentity Identity)> drills,
+        IReadOnlyList<GerberImportedShape> artwork,
+        GerberJobFile.JobFileContents? job,
+        IReadOnlyDictionary<string, DrillSpan> spanByDrillFile,
+        int destDbuPerMicron,
+        List<string> messages)
+    {
+        var tech = BuildTechnology(importName, allIdentities, copperTopToBottom, finalKeyByFile, destTech, sourceLayers);
+        tech.DefaultDisplayUnit = DisplayUnitFor(reads, drills);
+
+        // GI2 R-gi2-2/R-gi2-6. The skeleton names each conductor entry after the drawing layer it
+        // binds, so the Stackup tab and the layer table read as one document rather than two — and
+        // the mask/paste/legend layers this set imported as ARTWORK are named so their absence from
+        // the stackup is a stated decision. Both are read off the technology this import has just
+        // built, which is the only place the final, reconciled names exist.
+        var nameByKey = tech.Layers
+            .GroupBy(l => l.Key)
+            .ToDictionary(g => g.Key, g => g.First().Name);
+        var copperLayerNames = copperKeys
+            .Select(k => nameByKey.TryGetValue(k, out string? n) ? n : "")
+            .ToList();
+        var maskNames = allIdentities
+            .Where(IsMaskPasteOrLegend)
+            .Select(i => nameByKey.TryGetValue(finalKeyByFile[i.FilePath], out string? n) ? n : i.LayerName)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+
+        var stackup = GerberStackupMapping.Build(
+            job?.MaterialStackup, job?.BoardThicknessMm, job?.LayerNumber, copperKeys, destDbuPerMicron,
+            copperLayerNames, maskNames);
+        if (stackup.Stackup is not null) tech.Stackup = stackup.Stackup;
+        messages.AddRange(stackup.Messages);
+
+        ReportLayersLeftOutOfTheStackup(
+            allIdentities, artwork, finalKeyByFile, nameByKey, copperKeys, maskNames, messages);
+
+        // GI3 R-gi3-7. The job file's overall board thickness was read, reported once, and then
+        // DROPPED — so the one number that could have checked a hand-entered stackup never reached the
+        // document anyone enters it in. Carried here rather than inside GerberStackupMapping because it
+        // has to survive the branches where that mapping builds no stackup at all (a drill-only set, a
+        // job file whose stackup declares nothing electrical): the fact is about the BOARD, not about
+        // whether we managed to build rows for it. Nothing derives geometry from it — see
+        // Stackup.BoardThicknessDbu.
+        if (job?.BoardThicknessMm is { } boardMm && boardMm > 0)
+            tech.Stackup.BoardThicknessDbu = PcbUnits.Length(boardMm, destDbuPerMicron);
+
+        // A drill layer is DECLARED by the file set (a drill file was actually read), and a
+        // StackupKind.Via entry is what marks the drawing layer it landed on as one — it carries no
+        // substrate value and nothing simulates it, so it is added in both branches of R-L4g-9. Without
+        // it a bare, unpaired hole re-exports as copper on the drill layer instead of as a drill hit.
+        //
+        // Its SPAN is named from the stackup's own conductor entries when there are any. A through
+        // hole goes from the topmost conductor to the bottommost, which is what the drill files here
+        // are read as (no set declared a span), and naming it is what stops the technology validator
+        // reporting a via that spans nothing on every import that HAS a job file. A set without one
+        // has no conductor entries to name, and inventing two would be a substrate invented under
+        // another name — that import already says, in words, that the technology is incomplete.
+        var conductorEntries = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
+        int platedViaEntries = 0;
+        foreach (var (drillFile, drillRead, identity) in drills)
+        {
+            // GI1 R-gi1-2. The plating of this file was already settled up in step 5, where it chose
+            // the drawing layer's NAME — and was then thrown away, so every drill file, including one
+            // that declared itself non-plated, minted a Plated via entry. Settle it once, here, by
+            // the same rule, and carry it: PlanarExtractor builds a conductive barrel out of every
+            // via entry it can bind, so a 4 mm non-plated mounting hole modelled as plated shorts
+            // every layer it passes through and the run completes cleanly.
+            bool? plated = drillRead.Plated ?? ExcellonReader.PlatingFromFileName(drillFile.Path);
+
+            // GI1 R-gi1-3. A file that drilled NOTHING and only routed is board outline and cutouts,
+            // not interconnect. The entry itself stays — it is the drawing-layer marker that makes a
+            // bare opening re-export as a routed feature rather than as copper (see the note above) —
+            // but a file that produced no holes is not evidence for a plated barrel spanning the whole
+            // board, so it asserts neither plating nor a span.
+            //
+            // A rout file that says nothing about plating defaults to NON-plated rather than to the
+            // usual "null means plated". That is not a symmetry break for its own sake: a slot IS a
+            // drawn region on the drill layer, and PlanarExtractor's region branch builds a vertical
+            // conductor out of every region on a via-bound layer — so leaving it unstated turns a
+            // board outline and its cutouts into metal shorting the whole stack. A rout file that
+            // DOES declare itself plated (a castellated edge) keeps what it declared.
+            bool routedOnly = drillRead.Hits.Count == 0 && drillRead.Slots.Count > 0;
+            bool? entryPlated = routedOnly ? plated ?? false : plated;
+            bool conductive = entryPlated != false;
+
+            tech.Stackup.Layers.Add(new StackupLayer
+            {
+                Kind = StackupKind.Via,
+                Name = identity.LayerName,
+                DrawingLayers = [finalKeyByFile[identity.FilePath]],
+
+                // Fill is a fill MODEL and only means anything for something that is metal, so it is
+                // left unstated on an entry that is not — rather than reading "Plated" beside a
+                // Plated flag of false.
+                Fill = conductive ? ViaFillKind.Plated : null,
+                Plated = entryPlated,
+
+                // GI5 R-gi5-5. Where a span is actually KNOWN for this file — the drill file declared
+                // one, or the netlist beside it did — the entry names the two conductors that span
+                // reaches instead of the whole stack. A blind or buried hole modelled as through-hole
+                // is a barrel shorting layers it never touches, which is the same class of silent
+                // error as a non-plated mounting hole modelled as metal. No entry is SYNTHESISED per
+                // span, which is R-gi5-5's other half: this is the entry the import already mints.
+                SpanFromLayer = SpanEndName(identity.FilePath, conductive, conductorEntries, spanByDrillFile, true),
+                SpanToLayer = SpanEndName(identity.FilePath, conductive, conductorEntries, spanByDrillFile, false),
+
+                // GI3 R-gi3-4. The default already existed everywhere BUT here: every shipped
+                // technology writes 25 µm and StarterTechnologies writes Um(25), while the one
+                // document guaranteed to need the field — an imported board — minted its via entries
+                // with no wall thickness at all, so it was the only technology in the product that
+                // failed its own validator on a field with a known answer. Written through the same
+                // constant those five documents now read, at THIS import's resolution, and named as a
+                // default in the message below (R-L4d-7's pattern, which the conductivity default in
+                // GerberStackupMapping already follows).
+                //
+                // Only on a conductive entry: wall thickness is a property of metal, and Fill is left
+                // unstated on a non-plated hole for the same reason.
+                WallThicknessDbu = conductive ? ViaDefaults.PlatedWallThicknessDbu(destDbuPerMicron) : null,
+            });
+
+            if (routedOnly)
+                messages.Add(
+                    $"{drillFile.FileName}: this file routed {drillRead.Slots.Count:N0} slot(s) and " +
+                    "drilled no holes, so its layer was marked as a routed layer, not as a plated via " +
+                    "layer — it states nothing about what connects to what, and its openings are not " +
+                    "extracted as conductors. If these slots are plated (a castellated edge), tick " +
+                    "Plated on that stackup entry in the Technology editor.");
+            else if (plated == false)
+                messages.Add(
+                    $"{drillFile.FileName}: these holes are NON-PLATED, so this layer's holes are not " +
+                    "conductors and an EM run will not build vias from them. The holes themselves are " +
+                    "imported and drawn exactly as they are.");
+
+            if (conductive) platedViaEntries++;
+        }
+
+        // Designer feedback 02. A drill layer written as GERBER (an X2 `Plated,1,4,PTH,Drill` or
+        // `NonPlated,…,Drill` FileFunction) is read as artwork — its holes arrive as flashes on a
+        // drill-purpose layer — so the loop above, which walks the Excellon reads, never saw it, and
+        // the board came in with its holes drawn and no Via entry in the stackup. Nothing then built
+        // a barrel out of them. The entry is minted here by the same rules: plating and span from the
+        // file's own FileFunction, the file name when it states neither, through-hole otherwise.
+        //
+        // Skipped when an Excellon file of the same plating was read: a production set commonly
+        // carries both spellings of ONE drill program, and two entries over the same holes would be
+        // two barrels in every hole.
+        foreach (var identity in identities)
+        {
+            if (!string.Equals(identity.Purpose, GerberLayerCascade.DrillPurpose, StringComparison.Ordinal)) continue;
+
+            var (fnPlated, from, to, kind) = identity.FileFunction is { Length: > 0 } fn
+                ? ExcellonReader.ParseFunctionFields(["FileFunction", .. fn.Split(',', StringSplitOptions.TrimEntries)])
+                : (null, null, null, null);
+            bool? plated = fnPlated ?? ExcellonReader.PlatingFromFileName(identity.FilePath);
+            bool conductive = plated != false;
+            if (drills.Any(d => ((d.Read.Plated ?? ExcellonReader.PlatingFromFileName(d.File.Path)) != false) == conductive))
+            {
+                messages.Add(
+                    $"{identity.FileName}: a Gerber drawing of drill holes, imported as artwork on '{identity.LayerName}'. " +
+                    "An Excellon drill file of the same plating in this set already defines these vias, so no " +
+                    "second via entry was added for it.");
+                continue;
+            }
+
+            var spans = new Dictionary<string, DrillSpan>(StringComparer.Ordinal);
+            if (from is not null && to is not null)
+                spans[identity.FilePath] = new DrillSpan(from.Value, to.Value, kind ?? "PTH", plated);
+
+            tech.Stackup.Layers.Add(new StackupLayer
+            {
+                Kind = StackupKind.Via,
+                Name = identity.LayerName,
+                DrawingLayers = [finalKeyByFile[identity.FilePath]],
+                Fill = conductive ? ViaFillKind.Plated : null,
+                Plated = plated,
+                SpanFromLayer = SpanEndName(identity.FilePath, conductive, conductorEntries, spans, true),
+                SpanToLayer = SpanEndName(identity.FilePath, conductive, conductorEntries, spans, false),
+                WallThicknessDbu = conductive ? ViaDefaults.PlatedWallThicknessDbu(destDbuPerMicron) : null,
+            });
+            if (conductive) platedViaEntries++;
+            messages.Add(
+                $"{identity.FileName}: drill holes written as Gerber, read as flashes on '{identity.LayerName}' — " +
+                (conductive
+                    ? $"added to the stackup as a plated via layer spanning {SpanEndName(identity.FilePath, true, conductorEntries, spans, true) ?? "the board"}" +
+                      $" to {SpanEndName(identity.FilePath, true, conductorEntries, spans, false) ?? "the board"}, so every hole on it is a barrel."
+                    : "added to the stackup as a NON-PLATED drill layer, so its holes are not conductors."));
+        }
+
+        // GI3 R-gi3-4 — said ONCE for the whole import, not once per drill file: it is one fact about
+        // one process, and the per-file lines above are already the busiest part of this report.
+        if (platedViaEntries > 0)
+            messages.Add(
+                $"Plated via wall thickness is defaulted to {ViaDefaults.PlatedWallThicknessUm:0.###} µm " +
+                $"on {platedViaEntries} via layer(s) and is named here as a default — no Gerber or " +
+                "Excellon file states a plating thickness. It is the same value every technology " +
+                "shipped with circuitRF uses, and it is a PLATING thickness (the metal on the barrel " +
+                "wall), not the hole radius. Above roughly 1 GHz a wall this thick is already many skin " +
+                "depths, so an S-parameter run is insensitive to it; a thermal one is not. Change it on " +
+                "the Technology editor's Stackup tab.");
+
+        return tech;
     }
 
     /// <summary>

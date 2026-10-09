@@ -39214,3 +39214,30 @@ to Tuning and presets. The rows show the start and centred values to those digit
 Tuning keep them rounded the same way (`KeptCentred`). `CentredValues` stays full precision, since it is what the CLI
 parity test compares against `yield center`. Gate: `CenteringPanelTests`.
 
+
+## Import Gerber: the Technology row in the Layer Mapping dialog (2026-10-09)
+
+brief-gerber-import-target-technology R-gt-8/R-gt-10.
+
+- **Choices and rules live in `GerberTechnologyChoices`**, which needs no window: New, every workspace `.ctech`
+  (`WorkspaceTechnologyChoices.Enumerate`), then the catalog. Each technology row carries its copper count and is
+  disabled when that differs from the set's. Continue's catalog copy is `WorkspaceCreate.InstallTechnology`. That
+  function never overwrites `tech/<id>.ctech` and returns the existing file, so a catalog row whose copy already
+  exists with **different** bytes is disabled. Offering it would import against the edited copy under the built-in
+  label. An identical copy is reused and nothing is written.
+- **A catalog copy made by Continue stays** if the import then refuses or is cancelled. The disabled rows make a refusal
+  after a catalog choice unlikely.
+- **`LayerMappingRows.Build`** builds the row view models for one destination. A used technology passes
+  `allowAddToTechnology: false`, so Add to technology is not offered (R-gt-4).
+- **Height 520 → 620.** At 520 the Technology row took about 40 px from the table, and the figure showed 10 of the
+  13 rows with the 11th cut through its text. At 620 all 13 rows of a six-copper set fit with no scroll bar.
+- **The figure generator ignores a dialog's outer margin.** `WindowFrame.Wrap` sets the lifted content's Width/Height
+  to the figure size, so a Grid with `Margin="20,16"` is laid out 40 px wider than the real window and clipped at the
+  right (Continue button included). The existing `analyses-setup` figure shows the same flush-left content.
+  `DocGerberFixtures` moves the margin onto a host Border's padding; other figures were left alone to avoid churn.
+- **`DocFixtures.OpenDropDown` describes the `Popup` control, which draws nothing.** Its child lives in the popup's
+  own top level, so the catalog's "the popup drew" check fails with the list open. It had no callers.
+  `DocGerberFixtures.OpenTechnologyCombo` describes `popup.Child` instead.
+- **Checking a figure with Svg.Skia: it ignores `fill-opacity` on `<text>`.** Disabled combo items are written with
+  `fill-opacity="0.4"` and render dimmed in a browser, but Svg.Skia drew them at full strength. Rewriting it to
+  `opacity` in the scratch rasteriser gives the browser's result.

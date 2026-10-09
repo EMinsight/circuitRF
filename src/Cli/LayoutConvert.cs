@@ -40,6 +40,10 @@ public static class LayoutConvert
     private sealed class Options
     {
         public string? Input, Output, TechPath, Cws, KeepCells, Cell, Name;
+
+        // brief-gerber-import-target-technology R-gt-7 — import a Gerber set INTO this technology: the cells
+        // reference it, and no .ctech is written. The GUI's Technology row, as a flag.
+        public string? IntoTech;
         public Fmt? From, To;
         public bool ListCells;
         public int DbuPerMicron = 1000;
@@ -112,6 +116,7 @@ public static class LayoutConvert
                 case "--name" when i + 1 < args.Length: o.Name = args[++i]; break;
                 case "--list-cells": o.ListCells = true; break;
                 case "--tech" when i + 1 < args.Length: o.TechPath = args[++i]; break;
+                case "--into-tech" when i + 1 < args.Length: o.IntoTech = args[++i]; break;
                 case "--workspace" when i + 1 < args.Length: o.Cws = args[++i]; break;
                 case "--keep-cells" when i + 1 < args.Length: o.KeepCells = args[++i]; break;
                 case "--engine" when i + 1 < args.Length:
@@ -227,6 +232,19 @@ public static class LayoutConvert
         if (!File.Exists(o.Input) && !Directory.Exists(o.Input))
             return JsonRun.Fail(CliDiagnostics.ConvertInputNotFound(o.Input));
 
+        // R-gt-7. Refused as a PAIR with --tech rather than ordered, and refused BY FORMAT for anything that is
+        // not a Gerber set, before anything is read: every other importer already keeps the destination's
+        // stackup (MintTechnology), so the flag would have nothing to do there and a silent no-op is a lie.
+        if (o.IntoTech is not null)
+        {
+            if (o.TechPath is not null) return JsonRun.Fail(CliDiagnostics.ConvertIntoTechWithTech());
+            var intoFrom = o.From ?? DetectSource(o.Input);
+            if (intoFrom != Fmt.Gerber)
+                return JsonRun.Fail(CliDiagnostics.ConvertIntoTechNotGerber(intoFrom is { } f ? Name(f) : "not recognised"));
+            if (o.Output is null || (o.To ?? DetectTarget(o.Output)) != Fmt.Clay)
+                return JsonRun.Fail(CliDiagnostics.ConvertIntoTechNotClay());
+        }
+
         // brief-oasis-gdstk.md §7d — --engine picks a GDSII reader or writer, so it needs a GDSII end, and
         // the gdstk one needs the worker. Both are refused here, before anything is read or written.
         if (o.Engine is { } engine)
@@ -325,7 +343,9 @@ public static class LayoutConvert
             // disk, in the folder the user named, and there is nothing left to write.
             if (to == Fmt.Clay)
             {
-                Console.Error.WriteLine($"[circuitRF] wrote {src.CreatedCellDirs.Count} cell(s) and a technology to {o.Output}");
+                Console.Error.WriteLine(o.IntoTech is { } into
+                    ? $"[circuitRF] wrote {src.CreatedCellDirs.Count} cell(s) to {o.Output}, referencing {Path.GetFullPath(into)}"
+                    : $"[circuitRF] wrote {src.CreatedCellDirs.Count} cell(s) and a technology to {o.Output}");
                 foreach (var d in src.CreatedCellDirs) { Console.WriteLine(d); JsonRun.AddOutput("cell", d); }
                 return 0;
             }
@@ -702,13 +722,16 @@ public static class LayoutConvert
         var r = GerberImport.Import(files, staging, importName, destTech, o.DbuPerMicron,
             resolveDrillFormat: (fileName, inferred, crossCheck, _) => ResolveDrillFormat(o, fileName, inferred, crossCheck),
             offerArchive: archives => OfferArchive(o, archives),
-            coalesceRasterFill: !o.NoCoalesce);
+            coalesceRasterFill: !o.NoCoalesce,
+            target: o.IntoTech is { } into ? GerberTechnologyTarget.Use(into) : null);
         Report(r.Messages);
+        // R-gt-3/R-gt-5: the import's own sentence, as the error it is — not "nothing was converted".
+        if (r.Refusal is { } refusal) { JsonRun.Report(CliDiagnostics.ConvertGerberDiagnostic(refusal)); return null; }
         if (r.Cancelled) return Refused();
         if (r.CellDir is null) { JsonRun.Report(CliDiagnostics.ConvertNoCell()); return null; }
 
-        // Gerber import mints its own .ctech and points the .clay at it (R-L4g-8), so there is nothing
-        // for MintTechnology to do here — this is the one importer that already did it.
+        // Gerber import mints its own .ctech and points the .clay at it (R-L4g-8) — or, with --into-tech,
+        // points it at that one (R-gt-1) — so there is nothing for MintTechnology to do here either way.
         return Finish(r.CellDir, r.Technology, r.CreatedCellDirs);
     }
 
@@ -1138,6 +1161,7 @@ public static class LayoutConvert
         Console.Error.WriteLine("              --assembly  --as-drawn  --thicken-sheets  --include-airbox  --schema ap214|ap242  --view 3d|layout  --tech <path.ctech>");
         Console.Error.WriteLine("       gltf target (-o <file>.glb; from a .c3d):  --gltf-assembly  --gltf-field <plot>  --region <name>");
         Console.Error.WriteLine("       --no-coalesce  keep a painted pour's individual strokes");
+        Console.Error.WriteLine("       gerber source, clay target:  --into-tech <path.ctech>  import into that technology and write none");
         JsonRun.Note(CliDiagnostics.ConvertUsage());
         return 1;
     }

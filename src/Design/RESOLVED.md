@@ -18878,3 +18878,32 @@ Every finding was confirmed against the source before it was changed; none turne
   the noisy-objective menu has no local method to re-search the continuous values with the snapped ones held.
 - **Gate.** `CenteringSnapTests.AnE24Nominal_EndsOnTheSeries_AndItsTrialsVaryContinuously`.
 
+
+## Gerber import into an existing technology (brief-gerber-import-target-technology, 2026-10-09)
+
+- **What changed.** `GerberImport.Import` takes a `GerberTechnologyTarget` (New, or Use a `.ctech`). Use runs the
+  identity cascade, the rows and the layer donation against the chosen file, writes no `.ctech`, and points the
+  `.clay`'s `TechRef` at that file. New is the default and every existing caller, railRF included, is unchanged.
+- **Re-proposing reads nothing.** Steps 4, 6 and 7 (cascade, copper order, source layers, rows) moved into
+  `BuildProposal`, which takes the reads and returns its messages instead of posting them. The mapping dialog calls it
+  again through `GerberMappingRequest.Repropose` when the Technology choice changes. Each proposal re-stamps the
+  artwork shapes' source keys (`Propose` counts shapes by key), so the import calls `AssignSourceLayers` again for the
+  proposal it settles on. A test counts the per-file "reading …" progress labels to show each file is read once.
+- **The dialog was not shown on every Gerber import.** The brief assumed it was. `alwaysAsk: true` only meant "even with
+  no destination technology"; the import itself called the dialog only when a file was unidentified (rung 4). The
+  new `resolveMapping` callback is asked on every import that has rows, since the technology is a question about the
+  whole set. The old `resolveLayerMapping` path keeps the rung-4-only rule.
+- **Refusals (R-gt-3, R-gt-5).** `UseRefusal` checks, in order: copper file count against conductor count; each copper
+  file's final key bound by a Conductor entry; one file per conductor; the file's copper rank equal to the conductor's
+  stackup rank; every drill-purpose layer (Excellon or a Gerber drill drawing) bound by a Via entry. It runs after
+  the mapping settles and before anything is built, so a refusal creates nothing. `ImportResult.Refusal` carries the
+  sentence, so the GUI and CLI can say "refused" instead of "cancelled".
+- **Nothing is written to the chosen technology (D5).** Step 9's minting (stackup, via entries, display unit, board
+  thickness, the plated-wall and FR-4 paragraphs) moved verbatim into `MintTechnology`, which a Use import never
+  calls; the file's bytes are asserted unchanged. `gerberDrillLayers` left that block: the summary only read it when
+  no Excellon file was present, and in that case it equals the count of drill-purpose artwork layers.
+- **Job file vs chosen stackup (D7).** `StackupComparison.Differences` lists every differing entry (`Difference` is now
+  its first item). The job-derived stackup takes the chosen technology's boundaries before comparing, because a job
+  file states no boundary condition.
+- **A technology that will not load is a refusal with its reason.** A `.ctech` copied alone without the `.cmat` its
+  `MaterialLibraries` names does not load, and the import says so.
