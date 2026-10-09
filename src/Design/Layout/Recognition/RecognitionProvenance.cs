@@ -59,7 +59,8 @@ public static class RecognitionProvenance
             Scope = scope.IsWhole ? "whole" : IsRectangle(scope) ? "rectangle" : "polygons",
             Rings = scope.IsWhole ? null : [.. scope.Rings.Select(r => (long[])r.Clone())],
             Options = options,
-            PartsCsvSha256 = input.PartsCsvPath is { } csv && File.Exists(csv) ? Sha256(csv) : null,
+            PartsCsvSha256 = input.PartsCsvText is { } text ? Sha256Text(text)
+                             : input.PartsCsvPath is { } csv && File.Exists(csv) ? Sha256(csv) : null,
             Version = Version,
             CreatedUtc = utcNow.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture),
         };
@@ -93,6 +94,9 @@ public static class RecognitionProvenance
         using var stream = File.OpenRead(path);
         return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
+
+    private static string Sha256Text(string text) =>
+        Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
     private static string Num(double v) => v.ToString("R", CultureInfo.InvariantCulture);
 }

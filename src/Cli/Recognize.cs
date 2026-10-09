@@ -16,7 +16,6 @@
 
 using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 using CircuitRF.Core.Design;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
@@ -37,7 +36,7 @@ internal static class Recognize
         public ViaPolicy? Vias;
         public CoplanarReading? Coplanar;
         public double? CoplanarFactor;
-        public (string Text, string Unit, double Hz)? Start, Stop;
+        public RecognitionFrequency? Start, Stop;
         public int? Npts;
     }
 
@@ -154,11 +153,11 @@ internal static class Recognize
                     o.Npts = n;
                     continue;
                 case "--start" when hasValue:
-                    if (Frequency(args[++i]) is not { } start) return Bad("a frequency with its unit (Hz, kHz, MHz, GHz)");
+                    if (RecognitionSweep.Parse(args[++i]) is not { } start) return Bad("a frequency with its unit (Hz, kHz, MHz, GHz)");
                     o.Start = start;
                     continue;
                 case "--stop" when hasValue:
-                    if (Frequency(args[++i]) is not { } stop) return Bad("a frequency with its unit (Hz, kHz, MHz, GHz)");
+                    if (RecognitionSweep.Parse(args[++i]) is not { } stop) return Bad("a frequency with its unit (Hz, kHz, MHz, GHz)");
                     o.Stop = stop;
                     continue;
 
@@ -173,22 +172,6 @@ internal static class Recognize
         if (o.Output is { } output && !output.EndsWith(".cnl", StringComparison.OrdinalIgnoreCase))
             return JsonRun.Fail(CliDiagnostics.RecognizeOutputNotCnl(output));
         return null;
-    }
-
-    private static readonly Regex FrequencyText =
-        new(@"^\s*([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)\s*(Hz|kHz|MHz|GHz|THz)\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-
-    /// <summary>A frequency with its unit, the unit spelled as an analysis line spells it. A bare number is not one.</summary>
-    private static (string Text, string Unit, double Hz)? Frequency(string text)
-    {
-        var m = FrequencyText.Match(text);
-        if (!m.Success) return null;
-        string unit = m.Groups[2].Value.ToLowerInvariant() switch
-        {
-            "hz" => "Hz", "khz" => "kHz", "mhz" => "MHz", "ghz" => "GHz", _ => "THz",
-        };
-        double scale = unit switch { "Hz" => 1, "kHz" => 1e3, "MHz" => 1e6, "GHz" => 1e9, _ => 1e12 };
-        return (m.Groups[1].Value, unit, double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) * scale);
     }
 
     // ── which layout (R-as7-2) ───────────────────────────────────────────────
@@ -374,16 +357,10 @@ internal static class Recognize
     }
 
     /// <summary>The S-parameter sweep: null (the run's own default — the EM setup's, else D15's) unless a flag
-    /// changes it; a flag changes only its own field.</summary>
-    private static FrequencySpec? Sweep(Options o, RecognitionInput input)
-    {
-        if (o.Start is null && o.Stop is null && o.Npts is null) return null;
-        var basis = input.EmSetup?.Frequency ?? RecognitionEmitOptions.DefaultSweep;
-        var (startText, startUnit) = o.Start is { } s ? (s.Text, s.Unit) : (basis.StartExpr, basis.StartUnit);
-        var (stopText, stopUnit)   = o.Stop  is { } e ? (e.Text, e.Unit) : (basis.StopExpr, basis.StopUnit);
-        return new FrequencySpec(startText, stopText, o.Npts ?? basis.NumPoints ?? RecognitionEmitOptions.DefaultSweep.NumPoints!.Value,
-                                 basis.Kind, startUnit, stopUnit);
-    }
+    /// changes it; a flag changes only its own field. <see cref="RecognitionSweep.Compose"/> is the rule, shared with
+    /// the dialog's Frequency fields.</summary>
+    private static FrequencySpec? Sweep(Options o, RecognitionInput input) =>
+        RecognitionSweep.Compose(input.EmSetup, o.Start, o.Stop, o.Npts);
 
     /// <summary><paramref name="count"/> comma-separated lengths, each with its unit — <c>render --window</c>'s
     /// spelling and its bare-number refusal — in the layout's DBU.</summary>

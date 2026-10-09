@@ -320,6 +320,14 @@ component's length-dimensioned parameters take the <strong>technology's own defa
 — mil on a PCB, µm on an MMIC die.</p>
 </div>
 
+### The Design menu's schematic and layout commands
+
+| Design ▸ | What it does |
+|---|---|
+| **Update Layout from Schematic** (<kbd>⌘U</kbd>) | Places and updates the layout's instances from the schematic's components. |
+| **Update Schematic from Layout** (<kbd>⇧⌘U</kbd>) | Places and updates the schematic's components from the layout's linked instances. |
+| **Create Schematic from Artwork…** | Reads artwork that has **no** links &mdash; an imported board's copper &mdash; as a new schematic of lines, vias and parts, reviewed first in a parts table. See [Create Schematic from Artwork](artwork-to-schematic.html). |
+
 ## Geometry snap {#geometry-snap}
 
 Two different things are called "snap" and it is worth separating them before anything else.

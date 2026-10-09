@@ -1056,6 +1056,10 @@ public static partial class LayoutRenderer
                 if (opts.Overlay?.LvsMarkers is { Count: > 0 } lvsMarkers)
                     DrawLvsMarkers(canvas, lvsMarkers, theme, ps, scaleUm);
 
+                // brief-artsch-8 R-as8-3: Create Schematic from Artwork's probe. Overlay-only, like LVS.
+                if (opts.Overlay?.ArtworkProbe is { Count: > 0 } artworkProbe)
+                    DrawArtworkProbe(canvas, artworkProbe, theme, ps, scaleUm);
+
                 // brief-impedance-3 R-imp3-3: the Impedance panel's results. Overlay-only, like LVS —
                 // results are review state, not document content, so no export ever draws them.
                 if (opts.Overlay?.ImpedanceScope is { } impedanceScope)

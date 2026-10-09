@@ -58,7 +58,7 @@
                          the text before it is constant for the whole run (the analysis name), so
                          there is nothing on the bar's left that can grow and shove it. Putting the
                          counter back into the message text would undo this. -->
-                    <Grid ColumnDefinitions="Auto,*" Margin="4,1">
+                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto" Margin="4,1">
 
                         <!-- Level icon (meaning, not color alone) -->
                         <mi:MaterialIcon Grid.Column="0"
@@ -212,6 +212,20 @@
                                         VerticalAlignment="Center"/>
                             </InlineUIContainer>
 
+                            <!-- brief-artsch-8 R-as8-4: a row that EXPANDS to the places it is about (Create
+                                 Schematic from Artwork's report, one line per class). Absent on every other row. -->
+                            <InlineUIContainer BaselineAlignment="Center">
+                                <ToggleButton Content="{Binding ExpandGlyph}"
+                                              IsChecked="{Binding IsExpanded}"
+                                              IsVisible="{Binding HasItems}"
+                                              Padding="4,0"
+                                              Margin="2,0"
+                                              MinHeight="0"
+                                              FontSize="11"
+                                              Cursor="Arrow"
+                                              ToolTip.Tip="Show the places this line is about; double-click one to go there."/>
+                            </InlineUIContainer>
+
                             <InlineUIContainer BaselineAlignment="TextBottom">
                                 <SelectableTextBlock Text="{Binding FilePath}"
                                                      IsVisible="{Binding FilePath, Converter={StaticResource IsNotNull}}"
@@ -222,6 +236,23 @@
                                                      Tapped="OnRevealPathTapped"/>
                             </InlineUIContainer>
                         </SelectableTextBlock>
+
+                        <ItemsControl Grid.Row="1" Grid.Column="1"
+                                      ItemsSource="{Binding Items}"
+                                      IsVisible="{Binding IsExpanded}"
+                                      Margin="18,0,0,2">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="msg:MessageItem">
+                                    <TextBlock Text="{Binding Text}"
+                                               FontSize="11"
+                                               TextWrapping="Wrap"
+                                               Background="Transparent"
+                                               Cursor="Hand"
+                                               Foreground="{DynamicResource SystemBaseMediumHighColor}"
+                                               DoubleTapped="OnMessageItemDoubleTapped"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </Grid>
                 </DataTemplate>
             </ListBox.ItemTemplate>

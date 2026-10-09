@@ -192,7 +192,7 @@ public static class PartsTableCsv
             }
             else if (!edited.TakesValue)
                 notes.Add($"{row.Refdes} is {PartsTable.KindText(edited.Kind)} and takes no value; '{valueText}' was ignored.");
-            else if (!BomTablePasteValue(valueText, edited.GeneratedKind, out double si, out string? why))
+            else if (!TryReadValue(valueText, edited.GeneratedKind, out double si, out string? why))
                 notes.Add($"{row.Refdes}: {why}; the value was kept.");
             else if (edited.Value is not { } old || Math.Abs(old - si) > 1e-9 * Math.Max(Math.Abs(old), Math.Abs(si)))
             {
@@ -243,7 +243,12 @@ public static class PartsTableCsv
         return edited with { Variable = variable, Evidence = evidence };
     }
 
-    private static bool BomTablePasteValue(string text, PartKind kind, out double si, out string? why)
+    /// <summary>
+    /// A Value cell as the table reads it, for a part generated as <paramref name="kind"/>: a value with its unit in
+    /// the part's own dimension, in base SI. The rule an edited CSV is read with, and the one the dialog's Value cell
+    /// borders red on (brief-artsch-8 R-as8-3) — so the two cannot disagree about what "10nH" on a capacitor is.
+    /// </summary>
+    public static bool TryReadValue(string text, PartKind kind, out double si, out string? why)
     {
         why = null;
         var want = PartReading.DimensionOf(kind);

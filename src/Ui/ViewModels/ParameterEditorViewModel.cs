@@ -138,6 +138,22 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         _schematicVm.Execute(new SetLabelVisibilityCommand(_schematicVm.EditModel, _target, isTypeLabel: false, newValue));
     }
 
+    // ── Models existing artwork (brief-artsch-8 R-as8-5, overview D5) ─────────────────────────────
+
+    /// <summary>The component's <c>FromArtwork</c> flag: it models copper that already exists, so layout sync
+    /// neither creates, updates nor deletes artwork for it. Clearing it is one undo step.</summary>
+    [ObservableProperty] private bool _modelsExistingArtwork;
+
+    /// <summary>Shown for a component Create Schematic from Artwork made — flagged, or carrying the anchor it was
+    /// made with, so the box stays to be ticked again after it is cleared.</summary>
+    public bool ShowModelsExistingArtwork => _target is { } t && (t.FromArtwork || t.ArtworkAnchor.Count > 0);
+
+    partial void OnModelsExistingArtworkChanged(bool oldValue, bool newValue)
+    {
+        if (_isRefreshing || _target is null || _schematicVm is null || _target.FromArtwork == newValue) return;
+        _schematicVm.Execute(new SetFromArtworkCommand(_schematicVm.EditModel, _target, newValue));
+    }
+
     // ── NonlinearC C–V editor ──────────────────────────────────────────────────
 
     public bool ShowCvEditorButton => _target?.Symbol == SymbolKind.NonlinearC;
@@ -871,6 +887,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         StagedInstanceName = comp.InstanceName;
         ShowTypeLabel     = comp.ShowTypeLabel;
         ShowInstanceName  = comp.ShowInstanceName;
+        ModelsExistingArtwork = comp.FromArtwork;
+        OnPropertyChanged(nameof(ShowModelsExistingArtwork));
 
         // Build rows — NumPorts, NumFreqs, blank-name params, and SnP-specific params omitted.
         // SnP components use a custom panel instead of generic rows.
@@ -1833,6 +1851,8 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         StagedInstanceName = _target.InstanceName;
         ShowTypeLabel      = _target.ShowTypeLabel;
         ShowInstanceName   = _target.ShowInstanceName;
+        ModelsExistingArtwork = _target.FromArtwork;
+        OnPropertyChanged(nameof(ShowModelsExistingArtwork));
         foreach (var row in Rows)
             row.RefreshFromModel();
         _isRefreshing = false;

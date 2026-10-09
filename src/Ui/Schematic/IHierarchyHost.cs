@@ -45,4 +45,8 @@ public interface IHierarchyHost
     /// <summary>False when there is no workspace to take a cell into — the picker then offers its
     /// plain folder-browse instead of the reference flow.</summary>
     bool CanReferenceExternalCell { get; }
+
+    /// <summary>brief-artsch-8 R-as8-5: Show in Artwork for a <c>FromArtwork</c> component — opens the layout its
+    /// schematic was created from and marks the component's anchor there. A host with no layouts does nothing.</summary>
+    void ShowInArtwork(SchematicDocument doc, EditableComponent comp) { }
 }

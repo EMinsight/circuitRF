@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -284,6 +285,41 @@ public sealed partial class MessageEntry : ObservableObject
 
     public string TextInline => "  " + Text + "  ";
 
+    // ── items (brief-artsch-8 R-as8-4/R-as8-5) ───────────────────────────────────────────────────
+
+    private IReadOnlyList<MessageItem> _items = [];
+    private bool _isExpanded;
+
+    /// <summary>
+    /// The places this message is about, one row each, shown under it when it is EXPANDED — Create Schematic from
+    /// Artwork's report posts one line per class and lists each class's anchors here. Empty on every ordinary
+    /// message, which then renders exactly as it always has.
+    /// </summary>
+    public IReadOnlyList<MessageItem> Items
+    {
+        get => _items;
+        internal set
+        {
+            _items = value ?? [];
+            OnPropertyChanged(nameof(Items));
+            OnPropertyChanged(nameof(HasItems));
+            OnPropertyChanged(nameof(ExpandGlyph));
+        }
+    }
+
+    /// <summary>Whether the row has items to expand to — the view's only visibility test for the toggle.</summary>
+    public bool HasItems => _items.Count > 0;
+
+    /// <summary>Whether the items are shown. Starts collapsed: a report of thirty classes is thirty lines, not three hundred.</summary>
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set { if (SetProperty(ref _isExpanded, value)) OnPropertyChanged(nameof(ExpandGlyph)); }
+    }
+
+    /// <summary>The toggle's face, with the item count.</summary>
+    public string ExpandGlyph => _items.Count == 0 ? "" : $"{(_isExpanded ? "\u25BE" : "\u25B8")} {_items.Count}";
+
     public static MessageEntry Info(string text, string? filePath = null)
         => new(MessageLevel.Info, text, filePath, DateTime.Now);
 
@@ -296,3 +332,10 @@ public sealed partial class MessageEntry : ObservableObject
     public static MessageEntry Error(string text, string? filePath = null)
         => new(MessageLevel.Error, text, filePath, DateTime.Now);
 }
+
+/// <summary>
+/// One item under an expandable message — its text, and what a double-click on it does (null: nothing). Like
+/// <see cref="MessageEntry.ActionInvoke"/>, a callback rather than a command, so the message model stays free of any
+/// UI-framework type.
+/// </summary>
+public sealed record MessageItem(string Text, Action? Activate = null);

@@ -16315,6 +16315,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         UpdateLayoutFromSchematicCommand.NotifyCanExecuteChanged();
         ImportWirebondWiresCommand.NotifyCanExecuteChanged();
         UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
+        CreateSchematicFromArtworkCommand.NotifyCanExecuteChanged();
         DrawGroundPourCommand.NotifyCanExecuteChanged();
         // Design ▸ Find Instance… — a schematic or a layout; both fan-outs, per the gotcha above.
         FindInstanceCommand.NotifyCanExecuteChanged();
@@ -16614,6 +16615,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         UpdateLayoutFromSchematicCommand.NotifyCanExecuteChanged();
         ImportWirebondWiresCommand.NotifyCanExecuteChanged();
         UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
+        CreateSchematicFromArtworkCommand.NotifyCanExecuteChanged();
         DrawGroundPourCommand.NotifyCanExecuteChanged();
         // Design ▸ Find Instance… — a schematic or a layout; both fan-outs, per the gotcha above.
         FindInstanceCommand.NotifyCanExecuteChanged();

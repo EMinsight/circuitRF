@@ -51,6 +51,14 @@ public partial class MessagesTool : Tool, IMessageSink
         OnUi(() => Insert(entry));
     }
 
+    /// <summary>A message that expands to its items — see <see cref="IMessageSink.PostItems"/>.</summary>
+    public void PostItems(MessageLevel level, string text, System.Collections.Generic.IReadOnlyList<MessageItem> items,
+                          string? filePath = null)
+    {
+        var entry = new MessageEntry(level, text, filePath, System.DateTime.Now) { Items = items };
+        OnUi(() => Insert(entry));
+    }
+
     /// <summary>
     /// The live-message implementation: one real <see cref="MessageEntry"/> in the list, rewritten in
     /// place. Every mutation is marshalled to the UI thread exactly like <see cref="Post"/>, because

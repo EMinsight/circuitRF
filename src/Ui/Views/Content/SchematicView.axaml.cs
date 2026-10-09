@@ -635,6 +635,7 @@ public partial class SchematicView : UserControl
 
         CtxPushIn.IsVisible      = isCell;
         CtxOpenInNewTab.IsVisible = isCell;
+        CtxShowInArtwork.IsVisible = CircuitRF.Ui.Recognition.ArtworkCrossProbe.Offers(comp);
 
         // Re-reference — only for an instance whose cell reference does not resolve, and only for a
         // reference that NAMES A FOLDER: a kit part or a wBond also reads NotFound, and pointing at a
@@ -783,6 +784,15 @@ public partial class SchematicView : UserControl
         if (comp is null) return;
         doc.Hierarchy?.PushIntoCell(doc, comp);
         SchematicCanvasCtrl.InvalidateVisual();
+    }
+
+    private void OnCtxShowInArtwork(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not SchematicDocument doc) return;
+        var id   = SchematicCanvasCtrl.ContextMenuTargetId;
+        var comp = id is not null ? Vm?.EditModel.FindComponent(id) : null;
+        if (comp is null) return;
+        doc.Hierarchy?.ShowInArtwork(doc, comp);
     }
 
     private void OnCtxOpenInNewTab(object? sender, RoutedEventArgs e)

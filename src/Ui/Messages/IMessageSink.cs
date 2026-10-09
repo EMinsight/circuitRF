@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace CircuitRF.Ui.Messages;
@@ -40,6 +41,15 @@ public interface IMessageSink
     /// action is dropped (brief-em3d-97: a memory warning links <c>.wslconfig</c> AND offers to raise it).</para>
     /// </summary>
     void PostAction(MessageLevel level, string text, string actionLabel, Func<Task> action, string? filePath = null)
+        => Post(level, text, filePath);
+
+    /// <summary>
+    /// Posts a message that EXPANDS to <paramref name="items"/> — the places it is about — each of which a
+    /// double-click acts on (brief-artsch-8 R-as8-4: the report goes to Messages one line per class, expandable to
+    /// its anchors). <b>The default drops the items and posts the text</b>, so the line must read correctly alone,
+    /// as <see cref="PostAction"/>'s must.
+    /// </summary>
+    void PostItems(MessageLevel level, string text, IReadOnlyList<MessageItem> items, string? filePath = null)
         => Post(level, text, filePath);
 
     void Info(string text, string? filePath = null)    => Post(MessageLevel.Info, text, filePath);

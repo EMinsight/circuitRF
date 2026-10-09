@@ -98,6 +98,11 @@
             <CheckBox IsChecked="{Binding ShowInstanceName}"
                       Content="Instance name"
                       FontSize="11"/>
+            <CheckBox IsChecked="{Binding ModelsExistingArtwork}"
+                      IsVisible="{Binding ShowModelsExistingArtwork}"
+                      Content="Models existing artwork"
+                      FontSize="11"
+                      ToolTip.Tip="This component models copper that already exists, so Update Layout from Schematic leaves its artwork alone and Update Schematic from Layout does not place it a second time. Clear it to hand the component back to ordinary layout sync."/>
             <!-- MKlopf entry-mode switch: Z1/Z2 <-> W1/W2, L <-> F3db (converts, never resets) -->
             <Button Content="{Binding MklopfImpedanceToggleLabel}"
                     IsVisible="{Binding IsMklopfTarget}"

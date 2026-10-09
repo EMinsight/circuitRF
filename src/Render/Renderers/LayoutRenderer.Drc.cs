@@ -74,6 +74,19 @@ public static partial class LayoutRenderer
                m.Waived, m.Selected)), ps, scaleUm);
 
     /// <summary>
+    /// brief-artsch-8 R-as8-3: Create Schematic from Artwork's probe — the part picked in its parts table, or the
+    /// anchor a cross-probe followed — drawn by the same routine as a SELECTED finding, in the warning colour. Each
+    /// ring is its own marker, so each one too small to see gets its own crosshair: that is how two pads stay two
+    /// findable marks at board zoom rather than one mark between them.
+    /// </summary>
+    internal static void DrawArtworkProbe(
+        SKCanvas canvas, IReadOnlyList<long[]> rings, LayoutRenderTheme theme, PathSpace ps, double scaleUm)
+    {
+        foreach (var ring in rings)
+            DrawFindingMarkers(canvas, [((IReadOnlyList<long[]>)[ring], theme.DrcWarning, false, true)], ps, scaleUm);
+    }
+
+    /// <summary>
     /// One region per marker: a translucent fill so the metal underneath stays readable, a solid
     /// outline so a hairline is visible at any zoom, and the crosshair fallback below.
     /// </summary>

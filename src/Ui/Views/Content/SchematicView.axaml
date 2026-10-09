@@ -484,6 +484,18 @@
                             </MenuItem.Icon>
                         </MenuItem>
 
+                        <!-- brief-artsch-8 R-as8-5: a FromArtwork component only — hidden for every other, as
+                             Flatten to Cell is: it is not an action that exists for a hand-drawn part. -->
+                        <MenuItem x:Name="CtxShowInArtwork"
+                                  Header="Show in Artwork"
+                                  IsVisible="False"
+                                  Click="OnCtxShowInArtwork"
+                                  ToolTip.Tip="Open the layout this schematic was created from and mark where this component's copper is.">
+                            <MenuItem.Icon>
+                                <mi:MaterialIcon Kind="CrosshairsGps" Width="14" Height="14"/>
+                            </MenuItem.Icon>
+                        </MenuItem>
+
                         <!-- Re-reference Cell… — a BROKEN cell instance only, and hidden otherwise.
                              There is nothing to re-reference on an instance that resolves, and a
                              permanently greyed row on every component's menu would be clutter. -->

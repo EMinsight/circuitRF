@@ -73,6 +73,12 @@ public sealed class PartModelResolver
             : PartModelChoice.Ideal(notes);
     }
 
+    /// <summary>Every two-port Touchstone file in the workspace, by path — what the dialog's Model column offers beside
+    /// Ideal (brief-artsch-8 R-as8-3). Judged by extension, as the walk lists them; <see cref="TwoPort"/> still reads a
+    /// chosen one.</summary>
+    public IReadOnlyList<string> TwoPortFiles() =>
+        [.. _touchstones.Value.Where(f => RfCore.TouchstoneIO.ParsePortsFromExtension(f) == 2)];
+
     /// <summary>Whether <paramref name="file"/> is a two-port Touchstone file; a note says why not.</summary>
     public static bool TwoPort(string file, List<string> notes)
     {

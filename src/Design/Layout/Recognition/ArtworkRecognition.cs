@@ -56,6 +56,10 @@ public sealed record RecognitionInput
     /// <summary>An edited parts table, laid over the parts read from the board (AS-4 R-as4-8).</summary>
     public string? PartsCsvPath { get; init; }
 
+    /// <summary>An edited parts table held in memory rather than on disk — the GUI dialog's table edits, carried as
+    /// the CSV text they would be (R-as8-2). Laid over exactly as <see cref="PartsCsvPath"/> is; wins over it.</summary>
+    public string? PartsCsvText { get; init; }
+
     /// <summary>Further sources of evidence about parts — AS-10's silkscreen (R-as4-1 (4)).</summary>
     public IReadOnlyList<IPartEvidenceSource> EvidenceSources { get; init; } = [];
 
@@ -304,9 +308,9 @@ public static partial class ArtworkRecognition
             TraceRuns = () => Review().Layers.SelectMany(l => l.Traces).ToList(),
             Format = fmt,
         }, report);
-        if (input.PartsCsvPath is { } csv)
+        if (input.PartsCsvText is not null || input.PartsCsvPath is not null)
         {
-            var edited = PartsTableCsv.ReadFile(csv, parts);
+            var edited = input.PartsCsvText is { } text ? PartsTableCsv.Read(text, parts) : PartsTableCsv.ReadFile(input.PartsCsvPath!, parts);
             if (edited.Refusal is { } why) return new RecognitionResult(graph, report, why);
             parts = edited.Table!;
             report.Add(RecognitionFindingClass.PartsCsvNotes, edited.Notes.Count, string.Join(" ", edited.Notes));

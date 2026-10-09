@@ -138,6 +138,7 @@ public sealed class RecognizeCliVerbTests(ITestOutputHelper output) : IDisposabl
             "RecognitionScope", "RecognitionTarget", "RecognitionTargetKind", "ViaPolicy", "CoplanarReading",
             "RecognitionResult", "RecognitionRun", "RecognitionCircuit", "RecognitionReport", "RecognitionFinding",
             "RecognitionFindingClass", "RecognitionAnchor", "PartsTable", "PartRow", "PartsTableCsv", "PartsCsvReading",
+            "RecognitionSweep", "RecognitionFrequency",   // the options' sweep, composed once for the CLI and the dialog (AS-8)
         ];
         var declared = Directory.GetFiles(Path.Combine(repo, "src", "Design", "Layout", "Recognition"), "*.cs")
             .SelectMany(f => Regex.Matches(File.ReadAllText(f),

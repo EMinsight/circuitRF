@@ -109,6 +109,15 @@ public partial class MessagesView : UserControl
         catch (Exception) { /* the action reports its own failures where the user can see them */ }
     }
 
+    /// <summary>brief-artsch-8 R-as8-5: a double-click on an item under an expanded message does what its poster said
+    /// — Create Schematic from Artwork's anchors select and zoom the artwork there.</summary>
+    private void OnMessageItemDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not Control { DataContext: MessageItem { Activate: { } activate } }) return;
+        e.Handled = true;
+        activate();
+    }
+
     private void OnRevealPathTapped(object? sender, TappedEventArgs e)
     {
         if (sender is Control { DataContext: MessageEntry { FilePath: { } path } }

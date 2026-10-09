@@ -214,3 +214,32 @@ The verb's `-o` path and its read-only default need the circuit without a target
 `Run`'s first half (the emit-omissions finding included) and `Run` now calls the same private `Emit`, so the `.cnl` the
 two paths write is one function's output. `RecognitionTarget.NewCellDir` is where a new cell goes, shared by `Run` and the
 verb's `--replace` question rather than worked out twice.
+
+## AS-8 — the GUI command
+
+### The dialog's edits travel as CSV text, not as a second table model
+
+The dialog re-runs recognition on every option change and rebuilds its rows from the result, so an edit stored on a row
+would be lost. It is held instead as the override a parts CSV would carry and handed over as
+`RecognitionInput.PartsCsvText`, laid over by the same `PartsTableCsv.Read` the CLI's `--parts` uses. One trap: on an
+edited row every unedited cell must be written as the table already has it, because an EMPTY Value cell is the CSV's
+"clear the value" — writing only the edited column would silently clear every other edited row's value.
+
+### A placement file's origin need comes from the file, read with no origin
+
+Reading with the chosen origin reports `OriginEvidence.Chosen`, which reads as "no origin needed" — the choice would
+disappear the moment it was made. The need is decided from a read with no origin, then the file is re-read with the
+choice.
+
+### The sweep composition moved below the firewall
+
+`RecognitionSweep` (`Parse`, `Basis`, `Compose`) is what `--start/--stop/--npts` did inside `src/Cli/Recognize.cs`;
+the dialog's Frequency fields compose the same way, so a field left at the basis is unstated on both surfaces. The verb's
+source-scan allow list names the two types.
+
+### No `EmRunServiceTests` existed
+
+The brief named it as existing; the run-level refusal tests live in `PortClearanceRefusalTests` and
+`EmCeilingRefusalTests` (the latter tests the mesher, not the run). The new class drives `EmRunService.Run` on the
+committed `testdata/portcal` fixtures — `separated-pair` meshed past the ceiling (refused before any fill, ~0.3 s) and
+`offset-pair`'s port-clearance refusal as the "other" case.

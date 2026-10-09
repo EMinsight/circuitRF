@@ -1,0 +1,225 @@
+<!-- Design ▸ Create Schematic from Artwork… (brief-artsch-8-gui-command.md R-as8-2, R-as8-3).
+
+     NON-MODAL and sized for the parts table, which is the centre of the dialog: selecting a row marks the part on
+     the layout, so the layout has to stay usable behind it. Top to bottom: target, scope, options, companion files,
+     the parts table, the report strip, the status line, the buttons.
+
+     No explanatory prose under readouts (overview §3): values, a short status, and a note only where there is no
+     value. Each option says what it does in its tooltip. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:rec="using:CircuitRF.Ui.Recognition"
+        x:Class="CircuitRF.Ui.Recognition.CreateSchematicFromArtworkDialog"
+        x:DataType="rec:CreateSchematicFromArtworkViewModel"
+        Title="{Binding Title}"
+        Width="1060" Height="760"
+        MinWidth="760" MinHeight="520"
+        WindowStartupLocation="CenterOwner">
+
+    <Window.Styles>
+        <Style Selector="TextBox.invalid">
+            <Setter Property="BorderBrush" Value="#C8463A"/>
+        </Style>
+        <Style Selector="TextBlock.label">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Opacity" Value="0.8"/>
+        </Style>
+        <Style Selector="Button.header">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="2,1"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto" Margin="12" RowSpacing="8">
+
+        <!-- ── Target (D4) ───────────────────────────────────────────────────────────────────── -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10">
+            <TextBlock Classes="label" Text="Target" Width="70"/>
+            <RadioButton GroupName="target" Content="New cell" IsChecked="{Binding TargetNewCell}"
+                         ToolTip.Tip="A new cell beside the artwork's, holding a schematic only."/>
+            <TextBox Text="{Binding NewCellName}" Width="220" IsEnabled="{Binding TargetNewCell}"
+                     Classes.invalid="{Binding NameError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+            <TextBlock Text="{Binding NameError}" Foreground="#C8463A" FontSize="11" VerticalAlignment="Center"
+                       MaxWidth="360" TextWrapping="Wrap"/>
+            <RadioButton GroupName="target" Content="This cell's schematic" IsChecked="{Binding TargetArtworkCell}"
+                         IsVisible="{Binding ArtworkCellOffered}"
+                         ToolTip.Tip="Write the schematic into the artwork's own cell, which has none yet, to check and clean up there."/>
+        </StackPanel>
+
+        <!-- ── Scope (D11) ──────────────────────────────────────────────────────────────────── -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10">
+            <TextBlock Classes="label" Text="Scope" Width="70"/>
+            <RadioButton GroupName="scope" Content="Selection" IsChecked="{Binding ScopeSelection}"
+                         IsEnabled="{Binding SelectionAvailable}"
+                         ToolTip.Tip="Read only the copper inside the layout's selection; a line the outline cuts becomes a port."/>
+            <RadioButton GroupName="scope" Content="Whole layout" IsChecked="{Binding ScopeWhole}"/>
+        </StackPanel>
+
+        <!-- ── Options ───────────────────────────────────────────────────────────────────────── -->
+        <WrapPanel Grid.Row="2" Orientation="Horizontal">
+            <TextBlock Classes="label" Text="Ground" Margin="0,0,6,0"/>
+            <ComboBox ItemsSource="{x:Static rec:CreateSchematicFromArtworkViewModel.GroundOptions}"
+                      SelectedIndex="{Binding GroundIndex}" MinWidth="130" Margin="0,0,4,0"
+                      ToolTip.Tip="Auto reads the largest copper on the stackup's reference conductor as ground. Pick on layout: click the copper that is ground."/>
+            <TextBlock Text="{Binding GroundPointText}" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0"/>
+            <Button Content="Pick…" Command="{Binding PickGroundCommand}" Padding="6,2" Margin="0,0,16,0"
+                    ToolTip.Tip="Click the ground copper on the layout. Escape cancels."/>
+
+            <TextBlock Classes="label" Text="Ground vias" Margin="0,0,6,0"/>
+            <ComboBox ItemsSource="{x:Static rec:CreateSchematicFromArtworkViewModel.ViaOptions}"
+                      SelectedIndex="{Binding ViaIndex}" MinWidth="150" Margin="0,0,16,0"
+                      ToolTip.Tip="A via that grounds a part's own pad or a line end: a stackup-bound VIAGND, or a plain ground. Stitching vias are always dropped."/>
+
+            <TextBlock Classes="label" Text="Coplanar lines" Margin="0,0,6,0"/>
+            <ComboBox ItemsSource="{x:Static rec:CreateSchematicFromArtworkViewModel.CoplanarOptions}"
+                      SelectedIndex="{Binding CoplanarIndex}" MinWidth="110" Margin="0,0,4,0"
+                      ToolTip.Tip="How a line with ground close beside it is read. Auto: grounded coplanar when both gaps are within the factor's substrate heights."/>
+            <Expander Header="Factor" Padding="4,0" Margin="0,0,16,0" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBox Text="{Binding CoplanarFactorText}" Width="50"
+                             ToolTip.Tip="Under Auto, a side gap at most this many substrate heights is coplanar ground."/>
+                    <TextBlock Classes="label" Text="× H"/>
+                </StackPanel>
+            </Expander>
+
+            <TextBlock Classes="label" Text="Frequency" Margin="0,0,6,0"/>
+            <TextBox Text="{Binding StartText}" Width="80" ToolTip.Tip="Start, with its unit."/>
+            <TextBlock Classes="label" Text="to" Margin="4,0"/>
+            <TextBox Text="{Binding StopText}" Width="80" ToolTip.Tip="Stop, with its unit. Also the frequency a TLIN's F and coupled lines are judged at."/>
+            <TextBox Text="{Binding PointsText}" Width="54" Margin="6,0,0,0" ToolTip.Tip="Points."/>
+            <TextBlock Classes="label" Text="pts" Margin="4,0,0,0"/>
+        </WrapPanel>
+
+        <!-- ── Companion files ──────────────────────────────────────────────────────────────── -->
+        <WrapPanel Grid.Row="3" Orientation="Horizontal">
+            <Button Content="BOM…" Command="{Binding PickBomCommand}" Padding="8,2" Margin="0,0,6,0"
+                    ToolTip.Tip="A bill of materials: values, part numbers and kinds by designator."/>
+            <TextBox Text="{Binding BomPath}" Width="260" Margin="0,0,16,0" PlaceholderText="No bill of materials"/>
+            <Button Content="Placement…" Command="{Binding PickPlacementCommand}" Padding="8,2" Margin="0,0,6,0"
+                    ToolTip.Tip="A placement file: where each designator sits."/>
+            <TextBox Text="{Binding PlacementPath}" Width="260" Margin="0,0,8,0" PlaceholderText="No placement file"/>
+            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding PlacementNeedsOrigin}">
+                <TextBlock Classes="label" Text="Origin"/>
+                <ComboBox ItemsSource="{x:Static rec:CreateSchematicFromArtworkViewModel.PlacementOriginLabels}"
+                          SelectedIndex="{Binding PlacementOriginIndex}" MinWidth="200"
+                          PlaceholderText="Choose…"
+                          ToolTip.Tip="The file does not say which point of each part its coordinates are; it is not guessed."/>
+            </StackPanel>
+            <TextBlock Text="{Binding CompanionError}" Foreground="#C8463A" FontSize="11" VerticalAlignment="Center"/>
+        </WrapPanel>
+
+        <!-- ── Filter ───────────────────────────────────────────────────────────────────────── -->
+        <TextBox Grid.Row="4" Text="{Binding FilterText}" PlaceholderText="Filter parts" Width="260" HorizontalAlignment="Left"/>
+
+        <!-- ── The parts table (R-as8-3) ────────────────────────────────────────────────────── -->
+        <Border Grid.Row="5" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1">
+            <Grid RowDefinitions="Auto,*">
+                <Grid Grid.Row="0" ColumnDefinitions="18,72,84,72,62,120,170,130,76,76" Margin="4,2">
+                    <Button Grid.Column="0" Classes="header" Content="●" Command="{Binding SortCommand}" CommandParameter="Confidence"
+                            ToolTip.Tip="Confidence — sort"/>
+                    <Button Grid.Column="1" Classes="header" Content="Refdes" Command="{Binding SortCommand}" CommandParameter="Refdes"/>
+                    <Button Grid.Column="2" Classes="header" Content="Kind" Command="{Binding SortCommand}" CommandParameter="Kind"/>
+                    <Button Grid.Column="3" Classes="header" Content="Connection" Command="{Binding SortCommand}" CommandParameter="Connection"/>
+                    <Button Grid.Column="4" Classes="header" Content="Case" Command="{Binding SortCommand}" CommandParameter="Case"/>
+                    <Button Grid.Column="5" Classes="header" Content="Value" Command="{Binding SortCommand}" CommandParameter="Value"/>
+                    <Button Grid.Column="6" Classes="header" Content="Model" Command="{Binding SortCommand}" CommandParameter="Model"/>
+                    <Button Grid.Column="7" Classes="header" Content="Part number" Command="{Binding SortCommand}" CommandParameter="PartNumber"/>
+                    <Button Grid.Column="8" Classes="header" Content="X" Command="{Binding SortCommand}" CommandParameter="X"/>
+                    <Button Grid.Column="9" Classes="header" Content="Y" Command="{Binding SortCommand}" CommandParameter="Y"/>
+                </Grid>
+                <ListBox Grid.Row="1" ItemsSource="{Binding Rows}" SelectedItem="{Binding SelectedRow}"
+                         Background="Transparent" SelectionMode="Single">
+                    <ListBox.ItemContainerTheme>
+                        <ControlTheme TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                            <Setter Property="Padding" Value="4,1"/>
+                        </ControlTheme>
+                    </ListBox.ItemContainerTheme>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="rec:PartsTableRowViewModel">
+                            <Grid ColumnDefinitions="18,72,84,72,62,120,170,130,76,76">
+                                <Ellipse Grid.Column="0" Width="9" Height="9" Fill="{Binding ConfidenceBrush}"
+                                         HorizontalAlignment="Left" VerticalAlignment="Center"
+                                         ToolTip.Tip="{Binding EvidenceTip}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding Refdes}" VerticalAlignment="Center" FontSize="12"/>
+                                <ComboBox Grid.Column="2" ItemsSource="{x:Static rec:PartsTableRowViewModel.KindOptions}"
+                                          SelectedItem="{Binding KindText}" FontSize="11" MinHeight="0" Padding="4,0"
+                                          HorizontalAlignment="Stretch" Margin="0,0,4,0"/>
+                                <TextBlock Grid.Column="3" Text="{Binding Connection}" VerticalAlignment="Center" FontSize="12"/>
+                                <TextBlock Grid.Column="4" Text="{Binding Case}" VerticalAlignment="Center" FontSize="12"/>
+                                <TextBox Grid.Column="5" Text="{Binding ValueText}" PlaceholderText="{Binding ValueWatermark}"
+                                         Classes.invalid="{Binding ValueError}" FontSize="11" MinHeight="0" Padding="4,1"
+                                         Margin="0,0,4,0"/>
+                                <ComboBox Grid.Column="6" ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding ModelText}"
+                                          FontSize="11" MinHeight="0" Padding="4,0" HorizontalAlignment="Stretch" Margin="0,0,4,0"/>
+                                <TextBlock Grid.Column="7" Text="{Binding PartNumber}" VerticalAlignment="Center" FontSize="12"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Grid.Column="8" Text="{Binding X}" VerticalAlignment="Center" FontSize="12"/>
+                                <TextBlock Grid.Column="9" Text="{Binding Y}" VerticalAlignment="Center" FontSize="12"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- ── The report strip: one line per class, a class with anchors expands to them ───── -->
+        <ScrollViewer Grid.Row="6" MaxHeight="150" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding ReportLines}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="rec:RecognitionReportLineViewModel">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <ToggleButton IsChecked="{Binding IsExpanded}" IsVisible="{Binding HasAnchors}"
+                                              Content="▸" Padding="3,0" MinHeight="0" FontSize="10"/>
+                                <TextBlock Text="{Binding Text}" FontSize="11" TextWrapping="Wrap" MaxWidth="980"/>
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding AnchorTexts}" IsVisible="{Binding IsExpanded}" Margin="22,0,0,2">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="x:String">
+                                        <TextBlock Text="{Binding}" FontSize="11" Opacity="0.8"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- ── Status and progress ──────────────────────────────────────────────────────────── -->
+        <StackPanel Grid.Row="7" Orientation="Horizontal" Spacing="8">
+            <ProgressBar IsIndeterminate="True" Width="90" Height="6" IsVisible="{Binding IsRecognising}"/>
+            <TextBlock Text="{Binding ProgressText}" FontSize="11" Opacity="0.8" IsVisible="{Binding IsRecognising}"/>
+            <TextBlock Text="{Binding Status}" FontSize="12" TextWrapping="Wrap" MaxWidth="980"/>
+        </StackPanel>
+
+        <!-- ── Buttons ──────────────────────────────────────────────────────────────────────── -->
+        <Grid Grid.Row="8" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+            <Button Grid.Column="0" Content="Export Parts…" Command="{Binding ExportPartsCommand}" Margin="0,0,6,0"
+                    ToolTip.Tip="Write the parts table as CSV — the file circuitrf recognize --parts reads."/>
+            <Button Grid.Column="1" Content="Import Parts…" Command="{Binding ImportPartsCommand}"
+                    ToolTip.Tip="Read an edited parts table back; only the Kind, Value, Variable and Model columns change anything."/>
+            <Button Grid.Column="3" Content="Cancel" Click="OnCancelClick" Margin="0,0,6,0" MinWidth="80"/>
+            <Panel Grid.Column="4">
+                <Button Content="Create" Command="{Binding CreateCommand}" MinWidth="90" Classes="accent"
+                        IsVisible="{Binding !IsReplace}"/>
+                <Button Content="Replace" MinWidth="90" IsVisible="{Binding IsReplace}">
+                    <Button.Flyout>
+                        <Flyout Placement="TopEdgeAlignedRight">
+                            <StackPanel Spacing="8" MaxWidth="320">
+                                <TextBlock Text="{Binding ReplaceConfirmText}" TextWrapping="Wrap"/>
+                                <Button Content="Replace" Command="{Binding CreateCommand}" HorizontalAlignment="Right"/>
+                            </StackPanel>
+                        </Flyout>
+                    </Button.Flyout>
+                </Button>
+            </Panel>
+        </Grid>
+    </Grid>
+</Window>

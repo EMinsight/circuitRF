@@ -3556,6 +3556,9 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         // The EM solve-region drag, armed from a .cem editor, owns the press on the same terms.
         if (_emRegionPick is not null) { EmRegionPress(wx, wy); return; }
 
+        // brief-artsch-8: Create Schematic from Artwork's Ground ▸ Pick on layout, on the same terms.
+        if (_artworkPointPick is not null) { ArtworkPointPress(wx, wy); return; }
+
         // brief-impedance-4: a scope gesture armed from the Impedance panel, on the same terms.
         if (ImpedanceScopeArmed) { ImpedanceScopePress(wx, wy, mods); return; }
 
@@ -3791,6 +3794,12 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
         if (_emRegionPick is not null)
         {
             if (key == Key.Escape) CancelEmRegionPick();
+            return;
+        }
+
+        if (_artworkPointPick is not null)
+        {
+            if (key == Key.Escape) CancelArtworkPointPick();
             return;
         }
 
@@ -4512,6 +4521,7 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
             LvsMarkers = BuildLvsMarkers(),
             Impedance = BuildImpedanceOverlay(),
             ImpedanceScope = BuildImpedanceScopeOverlay(),
+            ArtworkProbe = _artworkProbe,
             // pcell-parameter-handles.md: the selected PCell instance's parameter grips, and — while
             // one is being dragged live — the regenerated artwork to draw in that instance's place.
             PCellHandles = BuildPCellHandleMarkers(instanceDragOverrides),

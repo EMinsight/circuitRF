@@ -216,6 +216,15 @@ public sealed record class LayoutOverlay
     /// open, whether or not there are results; the same system layer as <see cref="Impedance"/>.
     /// </summary>
     public ImpedanceScopeOverlay? ImpedanceScope { get; init; }
+
+    /// <summary>
+    /// brief-artsch-8 R-as8-3/R-as8-5: what Create Schematic from Artwork is pointing at on the artwork — the part
+    /// selected in its parts table, or the anchor a cross-probe followed. Flat DBU rings, world coordinates; a
+    /// line's centre line arrives as a ring that runs out and back, so it strokes as the line itself. The same
+    /// system layer as <see cref="LvsMarkers"/> and drawn by the same routine (its hairline crosshair included):
+    /// never a <c>LayerKey</c>, never in <c>LayoutView.Shapes</c>, never reachable by an exporter.
+    /// </summary>
+    public IReadOnlyList<long[]> ArtworkProbe { get; init; } = [];
 }
 
 /// <summary>The review's scope ready to draw — world DBU.</summary>

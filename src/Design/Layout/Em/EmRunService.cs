@@ -146,6 +146,18 @@ public sealed record EmPreflightResult(
 /// </summary>
 public static class EmRunService
 {
+    /// <summary>
+    /// brief-artsch-8 R-as8-6: the one sentence the unknown-ceiling refusal gains. A board refused here is very often
+    /// ordinary lines and parts that never needed an EM run, and the command that models it without one is named.
+    /// <b>Only on this refusal</b>: every other refusal is about the setup or the geometry, and pointing a user who
+    /// mislabelled a port at a different command would be wrong advice.
+    /// </summary>
+    public const string WithoutEmPointer =
+        "A board of ordinary lines and parts can be modelled without EM: Design \u25B8 Create Schematic from Artwork (circuitrf recognize).";
+
+    /// <summary>The mesh-ceiling refusal as reported: the kernel's own sentence, then <see cref="WithoutEmPointer"/>.</summary>
+    internal static string MeshCeilingRefusal(string kernelRefusal) => $"{kernelRefusal} {WithoutEmPointer}";
+
     // ── EM-SEV R-emsev-5 — THE EXTRACT-AND-MESH PHASE, AS A THING A CALLER CAN ASK FOR ────────
     //
     // Every finding in a run's report is produced BEFORE the first frequency point is solved. On the
@@ -1010,9 +1022,10 @@ public static class EmRunService
             // it reads as "circuitRF broke" when the answer is "this mesh is too big, and here is the
             // quantity that made it that big".
             notes.AddRange(ex.Report.Notes);
-            var d = EmDiagnostics.Forwarded("mesh-ceiling", ex.Message);
+            string refusal = MeshCeilingRefusal(ex.Message);
+            var d = EmDiagnostics.Forwarded("mesh-ceiling", refusal);
             return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null,
-                ex.Message, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
+                refusal, warnings, Notes: notes, Errors: errors, Kind: choice.Kind,
                 KernelName: choice.KernelName, Diagnostic: d);
         }
         catch (Exception ex)

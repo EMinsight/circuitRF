@@ -454,3 +454,43 @@ and says *"N components model existing artwork — not generated"*. Update Schem
 `SchematicTechRefTests`, `TechnologyDivergenceReportTests`, `RecognitionEmitTests` (the board checks with 0 errors and
 simulates), `NetlistSchematicHintTests`, `RecognitionTargetTests` (the `.clay` byte-identical throughout; the checkpoint
 a counter), `FromArtworkSyncTests` — all in `tests/Ui.Tests/Recognition/`.
+
+## 8. AS-8 — Design ▸ Create Schematic from Artwork…
+
+The GUI command is a shell round the same three calls the verb makes, behind `IArtworkRecognitionRunner`
+(`src/Ui/Recognition/`): `RecognitionInput.FromFile` on open, `ArtworkRecognition.Circuit` for every preview, and
+`ArtworkRecognition.Run` on Create. The interface exists only so a test can record what the dialog hands across.
+
+### 8.1 The dialog's state is the CLI's options (R-as8-2)
+
+Each control fills a field the verb fills from a flag — `RecognitionOptions` (vias, coplanar reading and factor,
+`GroundAt` from the layout pick, `TopFrequencyHz` from a stated stop), `RecognitionScope` (the selection's outline as
+polygons, or whole), the target, and the sweep. The sweep's composition moved out of `src/Cli/Recognize.cs` into
+`RecognitionSweep` so both surfaces state a field-by-field override of the same basis; a field left at the basis is
+unstated, exactly as an absent flag is. A placement file's origin need is read from the FILE (read with no origin), so
+the three-way choice stays on screen once made; nothing is pre-selected and recognition waits for it.
+
+### 8.2 Table edits are a CSV overlay (R-as8-2, R-as8-3)
+
+`RecognitionInput.PartsCsvText` carries the dialog's held edits as the parts CSV they would be; the recognition lays it
+over the board's table with `PartsTableCsv.Read` — the reader `--parts` uses — so a re-run after an option change keeps
+every edit without the dialog owning any table logic. Only edited rows are written, and on them the untouched cells are
+written as the table has them (an empty Value would clear a value — the CSV's own rule). The provenance hashes the text.
+The Value cell's red border is `PartsTableCsv.TryReadValue`, the CSV reader's own value rule.
+
+### 8.3 Cross-probe (R-as8-3, R-as8-5)
+
+`ArtworkCrossProbe` resolves; the layout editor's `ArtworkProbe` overlay draws, through the DRC/LVS finding-marker
+routine. A part is marked as `RailPartMarks` marks one (pads plus the placement body where one is stated); a line's
+anchor is drawn as a ring that runs out and back along the centre line. Show in Artwork resolves the provenance's
+`Layout` against the schematic's folder. Messages gained expandable rows (`IMessageSink.PostItems`, default: the text
+alone), whose items act on a double-click.
+
+### 8.4 The MoM refusal (R-as8-6)
+
+`EmRunService.MeshCeilingRefusal` appends `WithoutEmPointer` to the unknown-ceiling refusal only.
+
+### 8.5 Gates
+
+`CreateSchematicFromArtworkViewModelTests`, `ArtworkCrossProbeTests` (`tests/Ui.Tests/Recognition/`) and
+`EmRunServiceTests` (`tests/Ui.Tests/Em/`).
