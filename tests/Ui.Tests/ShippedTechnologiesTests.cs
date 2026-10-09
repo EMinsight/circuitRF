@@ -23,6 +23,7 @@ public sealed class ShippedTechnologiesTests
                 "pcb-2layer_RO4350B_20mil_1oz",
                 "pcb-2layer_RO4350B_30mil_1oz",
                 "pcb-4layer_FR-4_62mil_1oz",
+                "pcb-6layer_FR-4_63mil_1oz",
             }.OrderBy(x => x, StringComparer.Ordinal),
             ids);
     }
@@ -41,6 +42,7 @@ public sealed class ShippedTechnologiesTests
     [InlineData("pcb-2layer_RO4350B_20mil_1oz")]
     [InlineData("pcb-2layer_RO4350B_30mil_1oz")]
     [InlineData("pcb-4layer_FR-4_62mil_1oz")]
+    [InlineData("pcb-6layer_FR-4_63mil_1oz")]
     public void ShippedTechnology_Parses_RoundTrips_AndPassesValidation(string id)
     {
         var tech = ShippedTechnologies.Load(id);
@@ -76,6 +78,7 @@ public sealed class ShippedTechnologiesTests
     [InlineData("pcb-2layer_RO4350B_20mil_1oz")]
     [InlineData("pcb-2layer_RO4350B_30mil_1oz")]
     [InlineData("pcb-4layer_FR-4_62mil_1oz")]
+    [InlineData("pcb-6layer_FR-4_63mil_1oz")]
     public void PcbTechnology_HasViaStackupEntry_WithFillModelAndSpan(string id)
     {
         var tech = ShippedTechnologies.Load(id);
