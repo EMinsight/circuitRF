@@ -339,6 +339,32 @@ public class ReleaseNotesFetcherTests
                         ReleaseNotesFetcher.Select([Release("v0.9.0", "old")], "1.0.0", Browse).Outcome);
 
     /// <summary>
+    /// Published bodies open with <c># circuitRF 1.0.8</c>, and the dialog names the version itself,
+    /// so that heading put it on screen twice. Only a first heading naming THIS version goes; any
+    /// other first heading stays, and a body that was only the heading is no notes at all.
+    /// </summary>
+    [Theory]
+    [InlineData("1.0.8", "# circuitRF 1.0.8\n\n## New\n- x", "## New\n- x")]
+    [InlineData("v1.0.8", "\r\n## v1.0.8\r\n- x", "- x")]
+    [InlineData("1.0.8", "## New\n- x", "## New\n- x")]
+    [InlineData("1.0.8", "# circuitRF 1.0.7\n- x", "# circuitRF 1.0.7\n- x")]
+    [InlineData("1.0.8", "#1.0.8\n- x", "#1.0.8\n- x")]
+    [InlineData("1.0.8", "# circuitRF 1.0.8", "")]
+    public void TheBodysOwnVersionHeading_IsDropped(string tag, string body, string expected)
+        => Assert.Equal(expected, ReleaseNotesFetcher.Notes(Release(tag, body)));
+
+    [Fact]
+    public void BothDialogForms_AreHandedTheBodyWithoutIt()
+    {
+        ReleaseInfo[] feed = [Release("1.0.8", "# circuitRF 1.0.8\n- new"), Release("1.0.7", "# circuitRF 1.0.7")];
+
+        Assert.Equal("- new", ReleaseNotesFetcher.Select(feed, "1.0.8", Browse, since: "1.0.6").Markdown);
+        Assert.Equal(["1.0.8"], ReleaseNotesFetcher.Select(feed, "1.0.8", Browse, since: "1.0.6")
+                                                   .Sections.Select(x => x.Version).ToArray());
+        Assert.Equal(["- new"], ReleaseNotesFetcher.SelectLatest(feed, Browse).Sections.Select(x => x.Markdown).ToArray());
+    }
+
+    /// <summary>
     /// The link offered on a failure is DERIVED from the feed URL, so the page the user is sent to and
     /// the endpoint we failed to read can never name different repositories.
     /// </summary>

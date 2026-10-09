@@ -33,8 +33,9 @@ public enum ReleaseNotesOutcome
 /// </summary>
 /// <param name="Version">The version this block's notes belong to — its own banner, since a dialog
 /// showing several of them cannot be labelled by the window heading alone.</param>
-/// <param name="Markdown">That release's body, exactly as published. Never blank: a release with an
-/// empty body is not a section at all (<see cref="ReleaseNotesFetcher.Select"/>).</param>
+/// <param name="Markdown">That release's body as published, less a leading heading that only names
+/// its version (<see cref="ReleaseNotesFetcher.Notes"/>) — the dialog names it already. Never blank: a
+/// release with an empty body is not a section at all (<see cref="ReleaseNotesFetcher.Select"/>).</param>
 public sealed record ReleaseNoteSection(string Version, string Markdown);
 
 /// <summary>What the dialog was handed.</summary>
@@ -239,7 +240,7 @@ public static class ReleaseNotesFetcher
         var published = new List<ReleaseInfo>();
         foreach (ReleaseInfo r in releases)
         {
-            if (r.IsDraft || string.IsNullOrWhiteSpace(r.Body)) continue;
+            if (r.IsDraft || string.IsNullOrWhiteSpace(Notes(r))) continue;
             published.Add(r);
         }
 
@@ -253,7 +254,7 @@ public static class ReleaseNotesFetcher
         foreach (ReleaseInfo r in published)
         {
             if (sections.Count >= take) break;
-            sections.Add(new ReleaseNoteSection(r.VersionText, r.Body));
+            sections.Add(new ReleaseNoteSection(r.VersionText, Notes(r)));
         }
 
         return new ReleaseNotesResult(ReleaseNotesOutcome.Found, "", sections, browseUrl);
@@ -299,17 +300,17 @@ public static class ReleaseNotesFetcher
         foreach (ReleaseInfo r in releases)
             if (!r.IsDraft && r.Version.Equals(running)) { current = r; break; }
 
-        if (current is null || string.IsNullOrWhiteSpace(current.Body))
+        if (current is null || string.IsNullOrWhiteSpace(Notes(current)))
             return new ReleaseNotesResult(ReleaseNotesOutcome.NotPublished, version, [], browseUrl);
 
-        var sections = new List<ReleaseNoteSection> { new(current.VersionText, current.Body) };
+        var sections = new List<ReleaseNoteSection> { new(current.VersionText, Notes(current)) };
 
         if (SemanticVersion.TryParse(since, out SemanticVersion? read) && read is not null && read < running)
         {
             var skipped = new List<ReleaseInfo>();
             foreach (ReleaseInfo r in releases)
             {
-                if (r.IsDraft || string.IsNullOrWhiteSpace(r.Body)) continue;
+                if (r.IsDraft || string.IsNullOrWhiteSpace(Notes(r))) continue;
                 if (r.Version <= read || r.Version >= running) continue;
                 if (r.Version.IsPreRelease && !running.IsPreRelease) continue;
                 skipped.Add(r);
@@ -323,10 +324,48 @@ public static class ReleaseNotesFetcher
             foreach (ReleaseInfo r in skipped)
             {
                 if (sections.Count >= MaxSections) break;
-                sections.Add(new ReleaseNoteSection(r.VersionText, r.Body));
+                sections.Add(new ReleaseNoteSection(r.VersionText, Notes(r)));
             }
         }
 
         return new ReleaseNotesResult(ReleaseNotesOutcome.Found, version, sections, browseUrl);
+    }
+
+    /// <summary>
+    /// A release's body with a leading heading that only names its version removed.
+    ///
+    /// <para>Published bodies open with <c># circuitRF 1.0.8</c>, and the dialog already names the
+    /// version — in the window heading when it shows one release, in a banner above each section
+    /// otherwise — so the body's own copy put the version on screen twice, one line apart. Only a
+    /// FIRST heading whose last word parses as this release's version is dropped: a body opening
+    /// with <c>## Fixed</c>, or naming some other version, is left exactly as published.</para>
+    ///
+    /// <para>A body that was nothing but that heading is empty afterwards, and is therefore not a set
+    /// of notes — the same as an empty body.</para>
+    /// </summary>
+    public static string Notes(ReleaseInfo release)
+    {
+        string body = release.Body ?? "";
+
+        int start = 0;
+        while (start < body.Length && char.IsWhiteSpace(body[start])) start++;
+        if (start >= body.Length || body[start] != '#') return body;
+
+        int end = body.IndexOf('\n', start);
+        string line = (end < 0 ? body[start..] : body[start..end]).Trim();
+
+        // An ATX heading: one to six '#', then a space ("#tag" is not a heading).
+        int hashes = 0;
+        while (hashes < line.Length && line[hashes] == '#') hashes++;
+        if (hashes > 6 || hashes >= line.Length || line[hashes] != ' ') return body;
+        string text = line[hashes..].Trim().TrimEnd('#').Trim();
+
+        int space = text.LastIndexOf(' ');
+        string last = space < 0 ? text : text[(space + 1)..];
+        if (!SemanticVersion.TryParse(last, out SemanticVersion? named) || named is null
+            || !named.Equals(release.Version))
+            return body;
+
+        return end < 0 ? "" : body[(end + 1)..].TrimStart('\r', '\n');
     }
 }
