@@ -1,0 +1,10 @@
+# Variants of Hershey Roman Simplex glyphs that CAD plotter fonts commonly draw differently. Each is built from the
+# strokes of the Hershey fonts themselves, so the licence and acknowledgements in LICENSE-hershey.txt apply to it as
+# well. Same format as hershey-roman-simplex.txt.
+#
+# 1  a plain bar with no flag: the Simplex 1's own stem, at the Simplex 1's advance.
+# 1  a flag and a base serif: the 1 of the Hershey serif Roman face, its doubled stem drawn once.
+# 3  a round top: the Simplex 2's top arc closing on the middle, over the Simplex 3's lower bowl.
+1 -10 10 1,-12 1,9
+1 -10 10 -4,-8 -2,-9 1,-12 1,9 | -4,9 5,9
+3 -10 10 -6,-8 -5,-10 -4,-11 -2,-12 2,-12 4,-11 5,-10 6,-8 6,-6 5,-5 3,-4 0,-4 | 0,-4 3,-4 5,-3 6,-2 7,1 7,3 6,6 4,8 1,9 -2,9 -5,8 -6,7 -7,5

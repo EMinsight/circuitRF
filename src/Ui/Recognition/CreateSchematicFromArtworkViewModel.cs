@@ -30,6 +30,7 @@ using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Interchange;
 using CircuitRF.Design.Layout.Recognition;
+using CircuitRF.Design.Layout.Recognition.Silkscreen;
 using CircuitRF.Engine;
 
 namespace CircuitRF.Ui.Recognition;
@@ -337,6 +338,7 @@ public sealed partial class CreateSchematicFromArtworkViewModel : ObservableObje
 
     partial void OnSelectedRowChanged(PartsTableRowViewModel? value)
     {
+        RefreshLearn();
         if (value is null) { PartHighlighted?.Invoke(null, Bbox.Empty); return; }
         var rings = ArtworkCrossProbe.PartRings(value.Row, _placement is { Refusal: null } p ? p : null);
         PartHighlighted?.Invoke(rings, ArtworkCrossProbe.Extent(rings));
@@ -352,32 +354,90 @@ public sealed partial class CreateSchematicFromArtworkViewModel : ObservableObje
         var sorted = rows.ToList();
         sorted.Sort((a, b) => { int c = by(a, b); return SortAscending ? c : -c; });
 
-        string? keep = SelectedRow?.Refdes;
+        string? keep = SelectedRow?.BoardRefdes;
         Rows.Clear();
         foreach (var r in sorted) Rows.Add(r);
-        var reselect = keep is null ? null : Rows.FirstOrDefault(r => string.Equals(r.Refdes, keep, StringComparison.OrdinalIgnoreCase));
+        var reselect = keep is null ? null : Rows.FirstOrDefault(r => string.Equals(r.BoardRefdes, keep, StringComparison.OrdinalIgnoreCase));
         if (!ReferenceEquals(reselect, SelectedRow)) SelectedRow = reselect;
     }
 
-    /// <summary>A cell edit, held as the CSV override it is (R-as8-2). The Model cell's Browse… asks for a file first.</summary>
+    /// <summary>A cell edit, held as the CSV override it is (R-as8-2), under the designator the board gave the part.
+    /// The Model cell's Browse… asks for a file first; a designator another part already has is refused.</summary>
     private void OnRowEdited(PartsTableRowViewModel row, string column, string text)
     {
+        string key = row.BoardRefdes;
         if (column == "Model")
         {
             if (text == PartsTableRowViewModel.BrowseModel) { _ = BrowseModelFor(row); return; }
-            if (text == "Ideal") { SetEdit(row.Refdes, "Model", "Ideal"); SetEdit(row.Refdes, "ModelFile", ""); }
-            else { SetEdit(row.Refdes, "Model", "SnP"); SetEdit(row.Refdes, "ModelFile", text); }
+            if (text == "Ideal") { SetEdit(key, "Model", "Ideal"); SetEdit(key, "ModelFile", ""); }
+            else { SetEdit(key, "Model", "SnP"); SetEdit(key, "ModelFile", text); }
             return;
         }
-        SetEdit(row.Refdes, column, text);
+        if (column == "Refdes")
+        {
+            string name = text.Trim();
+            if (name.Length == 0 || string.Equals(name, key, StringComparison.OrdinalIgnoreCase))
+            {
+                if (_edits.TryGetValue(key, out var cells)) cells.Remove("Refdes");
+                Status = "";
+            }
+            else if (_rows.Any(r => !ReferenceEquals(r, row) && (string.Equals(r.Refdes, name, StringComparison.OrdinalIgnoreCase)
+                                                             || string.Equals(r.RefdesText.Trim(), name, StringComparison.OrdinalIgnoreCase))))
+                Status = $"{name} is another part's designator; {row.Refdes} was not renamed.";
+            else
+            {
+                SetEdit(key, "Refdes", name);
+                Status = "";
+            }
+            RefreshLearn();
+            return;
+        }
+        SetEdit(key, column, text);
+    }
+
+    // ── Learn these glyphs (brief-artsch-10 R-as10-5) ─────────────────────────────────────────────
+
+    private bool CanLearnGlyphs() => SelectedRow is { } row && SilkscreenText.Lesson(row.Corrected) is not null;
+
+    /// <summary>Whether Learn These Glyphs is offered: the selected part's designator came from the silkscreen and has
+    /// been corrected.</summary>
+    public bool CanLearn => CanLearnGlyphs();
+
+    private void RefreshLearn()
+    {
+        LearnGlyphsCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanLearn));
+    }
+
+    /// <summary>
+    /// The selected row's corrected designator, taught: each silkscreen glyph the correction says is another character
+    /// is kept as a template of that character in the per-user state directory and used on every later recognition.
+    /// Nothing is written to the workspace.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanLearnGlyphs))]
+    private void LearnGlyphs()
+    {
+        if (SelectedRow is not { } row || SilkscreenText.Lesson(row.Corrected) is not { } lesson) return;
+        try
+        {
+            int added = GlyphTemplates.Learn(AppDataRoot.SubDir(GlyphTemplates.TaughtFolder), lesson);
+            Status = added == 0
+                ? $"Those glyphs were already learned."
+                : $"Learned {string.Join(", ", lesson.Select(l => $"'{l.Char}'"))} from {row.RefdesText.Trim()}; recognising again.";
+            ScheduleRecognition();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Status = $"The glyphs could not be saved: {ex.Message}";
+        }
     }
 
     private async Task BrowseModelFor(PartsTableRowViewModel row)
     {
         if (BrowseModelAsync is { } browse && await browse() is { Length: > 0 } file)
         {
-            SetEdit(row.Refdes, "Model", "SnP");
-            SetEdit(row.Refdes, "ModelFile", _table.StoredPath(Path.GetFullPath(file)));
+            SetEdit(row.BoardRefdes, "Model", "SnP");
+            SetEdit(row.BoardRefdes, "ModelFile", _table.StoredPath(Path.GetFullPath(file)));
         }
         ScheduleRecognition();   // re-reads the row, so the cell shows what was applied rather than "Browse…"
     }
@@ -391,25 +451,27 @@ public sealed partial class CreateSchematicFromArtworkViewModel : ObservableObje
     /// <summary>
     /// The held edits as the parts CSV that carries them — null when there are none. Only edited rows are written, and
     /// on each the cells the user did not touch are written as the table already has them, so nothing but the edit
-    /// changes (an empty Value would CLEAR the value — the CSV's own rule).
+    /// changes (an empty Value would CLEAR the value — the CSV's own rule). X and Y are written so a corrected
+    /// designator finds its part (the CSV's rename rule).
     /// </summary>
     public string? PartsCsvText
     {
         get
         {
             if (_edits.Count == 0) return null;
-            string[] columns = ["Refdes", "Kind", "Value", "Model", "ModelFile"];
+            string[] columns = ["Refdes", "Kind", "Value", "Model", "ModelFile", "X", "Y"];
             var sb = new StringBuilder(string.Join(",", columns)).Append('\n');
-            foreach (var (refdes, cells) in _edits.OrderBy(e => e.Key, PartsTable.NaturalOrder))
+            foreach (var (key, cells) in _edits.OrderBy(e => e.Key, PartsTable.NaturalOrder))
             {
-                var row = _table.Row(refdes);
+                var row = _table.Rows.FirstOrDefault(r => string.Equals(r.BoardRefdes, key, StringComparison.OrdinalIgnoreCase));
                 string Current(string column) => row is null ? "" : PartsTableCsv.Cell(_table, row, column);
+                string refdes = cells.TryGetValue("Refdes", out var r) ? r : row?.Refdes ?? key;
                 string kind = cells.TryGetValue("Kind", out var k) ? k : Current("Kind");
                 string value = cells.TryGetValue("Value", out var v) ? v
                              : row is not null && SameDimension(row, kind) ? Current("Value") : "";
                 string model = cells.TryGetValue("Model", out var m) ? m : Current("Model");
                 string file = cells.TryGetValue("ModelFile", out var f) ? f : Current("ModelFile");
-                sb.Append(string.Join(",", new[] { refdes, kind, value, model, file }.Select(Escape))).Append('\n');
+                sb.Append(string.Join(",", new[] { refdes, kind, value, model, file, Current("X"), Current("Y") }.Select(Escape))).Append('\n');
             }
             return sb.ToString();
         }
@@ -460,11 +522,13 @@ public sealed partial class CreateSchematicFromArtworkViewModel : ObservableObje
         if (read.Refusal is { } why) { Status = why; return; }
         foreach (var edited in read.Table!.Rows)
         {
-            if (_table.Row(edited.Refdes) is not { } was) continue;
+            string key = edited.BoardRefdes;
+            if (_table.Rows.FirstOrDefault(r => string.Equals(r.BoardRefdes, key, StringComparison.OrdinalIgnoreCase)) is not { } was) continue;
+            if (!string.Equals(edited.Refdes, was.Refdes, StringComparison.Ordinal)) SetEdit(key, "Refdes", edited.Refdes);
             foreach (string column in new[] { "Kind", "Value", "Model", "ModelFile" })
             {
                 string after = PartsTableCsv.Cell(read.Table, edited, column);
-                if (after != PartsTableCsv.Cell(_table, was, column)) SetEdit(edited.Refdes, column, after);
+                if (after != PartsTableCsv.Cell(_table, was, column)) SetEdit(key, column, after);
             }
         }
         var said = read.Notes.Concat(read.NotOnBoard.Count > 0 ? [$"Not on the board: {string.Join(", ", read.NotOnBoard)}."] : []);

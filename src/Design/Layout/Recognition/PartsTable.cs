@@ -130,6 +130,16 @@ public sealed record PartRow
     /// <summary>The two ends, for a two-pad part — measured on every run, never read from the CSV.</summary>
     public IReadOnlyList<PartTerminal> Terminals { get; init; } = [];
 
+    /// <summary>The silkscreen line the designator was read from, when it was (AS-10) — kept through a correction in
+    /// the parts table, so the glyphs can be learned as what the user said they are (R-as10-5).</summary>
+    public Silkscreen.SilkTextLine? Silk { get; init; }
+
+    /// <summary>The designator the board gave the part, when the parts table renamed it; null otherwise.</summary>
+    public string? RenamedFrom { get; init; }
+
+    /// <summary>The designator the board gave the part — the key a table edit is held under.</summary>
+    public string BoardRefdes => RenamedFrom ?? Refdes;
+
     /// <summary>Whether the part is modelled at all: a shorted or bridged part, a multi-pin part, a
     /// connector and an ignored one are left out of the circuit.</summary>
     public bool IsModelled =>

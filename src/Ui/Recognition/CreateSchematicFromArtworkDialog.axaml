@@ -146,7 +146,13 @@
                                 <Ellipse Grid.Column="0" Width="9" Height="9" Fill="{Binding ConfidenceBrush}"
                                          HorizontalAlignment="Left" VerticalAlignment="Center"
                                          ToolTip.Tip="{Binding EvidenceTip}"/>
-                                <TextBlock Grid.Column="1" Text="{Binding Refdes}" VerticalAlignment="Center" FontSize="12"/>
+                                <Panel Grid.Column="1">
+                                    <TextBlock Text="{Binding Refdes}" VerticalAlignment="Center" FontSize="12"
+                                               IsVisible="{Binding !CanRename}"/>
+                                    <TextBox Text="{Binding RefdesText, UpdateSourceTrigger=LostFocus}" IsVisible="{Binding CanRename}"
+                                             FontSize="11" MinHeight="0" Padding="4,1" Margin="0,0,4,0"
+                                             ToolTip.Tip="Read off the silkscreen or generated: correct it if it is wrong."/>
+                                </Panel>
                                 <ComboBox Grid.Column="2" ItemsSource="{x:Static rec:PartsTableRowViewModel.KindOptions}"
                                           SelectedItem="{Binding KindText}" FontSize="11" MinHeight="0" Padding="4,0"
                                           HorizontalAlignment="Stretch" Margin="0,0,4,0"/>
@@ -200,13 +206,16 @@
         </StackPanel>
 
         <!-- ── Buttons ──────────────────────────────────────────────────────────────────────── -->
-        <Grid Grid.Row="8" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+        <Grid Grid.Row="8" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto">
             <Button Grid.Column="0" Content="Export Parts…" Command="{Binding ExportPartsCommand}" Margin="0,0,6,0"
                     ToolTip.Tip="Write the parts table as CSV — the file circuitrf recognize --parts reads."/>
-            <Button Grid.Column="1" Content="Import Parts…" Command="{Binding ImportPartsCommand}"
-                    ToolTip.Tip="Read an edited parts table back; only the Kind, Value, Variable and Model columns change anything."/>
-            <Button Grid.Column="3" Content="Cancel" Click="OnCancelClick" Margin="0,0,6,0" MinWidth="80"/>
-            <Panel Grid.Column="4">
+            <Button Grid.Column="1" Content="Import Parts…" Command="{Binding ImportPartsCommand}" Margin="0,0,6,0"
+                    ToolTip.Tip="Read an edited parts table back; only the Refdes, Kind, Value, Variable and Model columns change anything."/>
+            <Button Grid.Column="2" Content="Learn These Glyphs" Command="{Binding LearnGlyphsCommand}"
+                    IsVisible="{Binding CanLearn}"
+                    ToolTip.Tip="Remember the selected part's silkscreen glyphs as the characters its corrected designator says they are."/>
+            <Button Grid.Column="4" Content="Cancel" Click="OnCancelClick" Margin="0,0,6,0" MinWidth="80"/>
+            <Panel Grid.Column="5">
                 <Button Content="Create" Command="{Binding CreateCommand}" MinWidth="90" Classes="accent"
                         IsVisible="{Binding !IsReplace}"/>
                 <Button Content="Replace" MinWidth="90" IsVisible="{Binding IsReplace}">

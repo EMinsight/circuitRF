@@ -91,8 +91,8 @@ difference is the width of a pad, so it is never guessed.
 
 ## The parts table {#parts}
 
-One row per part found on the board. **Kind**, **Value** and **Model** are yours to correct; every other column
-is measured on the board.
+One row per part found on the board. **Kind**, **Value** and **Model** are yours to correct, and so is
+**Refdes** where it was read off the silkscreen or made up (`C_A1`); every other column is measured on the board.
 
 | Column | |
 |---|---|
@@ -115,6 +115,20 @@ the first run shows the lines alone.
 Your edits are kept across every re-run the options cause. **Export Parts…** writes the table as CSV and
 **Import Parts…** reads an edited one back &mdash; the same file `circuitrf recognize --parts` reads, so a table
 can be corrected in a spreadsheet or by an agent and brought back.
+
+### Designators on the silkscreen {#silkscreen}
+
+When nothing else names a part &mdash; no placed footprint, no placement file &mdash; the designator printed
+beside it on the silkscreen does. Stroked silkscreen text is read at any rotation, and mirrored on the bottom
+side; each designator goes to the part it stands beside, even where it is printed a little nearer a
+neighbour. Its prefix gives the part's kind (`C`, `L`, `R`, `FB`, &hellip;). Values are never read from the
+silkscreen. Text drawn as filled outlines is not read.
+
+A board's font may draw a character unlike the built-in one, and then a designator is misread or not read at
+all &mdash; the report lists lines that look like designators but have a glyph that fits two characters. Correct
+the **Refdes** of a part named from the silkscreen, or of a made-up one beside such a line, and click **Learn
+These Glyphs**: the glyphs you corrected are remembered as those characters for every later recognition, in
+the dialog and from the command line alike. They are kept with your own settings, never in the workspace.
 
 ## What is recognised, and what is not {#recognised}
 
@@ -148,7 +162,7 @@ S-parameter file of the device in its place.
 
 After **Create**, the schematic opens focused and the report goes to **Messages**, one line per kind of finding
 with its count: the ground chosen, vias dropped and kept, ports and where they came from, parts by source,
-unknown kinds and values, `TLIN` fallbacks by reason, coupled pairs, copper read as nothing. A line about
+silkscreen text read and designators that named no part, unknown kinds and values, `TLIN` fallbacks by reason, coupled pairs, copper read as nothing. A line about
 places on the board has a toggle that expands it to them; **double-click** one to select and zoom the artwork
 there. The same report is in the dialog's bottom strip while you work.
 

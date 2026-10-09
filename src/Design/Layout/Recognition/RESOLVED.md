@@ -243,3 +243,54 @@ The brief named it as existing; the run-level refusal tests live in `PortClearan
 `EmCeilingRefusalTests` (the latter tests the mesher, not the run). The new class drives `EmRunService.Run` on the
 committed `testdata/portcal` fixtures — `separated-pair` meshed past the ceiling (refused before any fill, ~0.3 s) and
 `offset-pair`'s port-clearance refusal as the "other" case.
+
+## AS-10 — designators from the silkscreen
+
+Measured on a field Gerber board (a chamfered plotter font, 1,820 silkscreen strokes, ~0.7 s to read). Design in
+`docs/design/artwork-to-schematic.md` §9.
+
+### The averaged Chamfer distance let a subset glyph win
+
+A 3 lies wholly on the same font's 8, so the 3→8 direction is 0 and the average halves the 8's missing left side. With
+a taught 3 every 8 on the board read as 3. The distance is now the LARGER of the two one-way means (modified Hausdorff).
+It also lifted the built-in reading: the round-topped 3s read with no teaching at all.
+
+### A taught glyph must match near-exactly, or it reads the whole font
+
+A board's own font plotted the same character identically (0.000 to the taught glyph) while its other characters sat
+at 0.017–0.04 — nearer than the Hershey template of the right character, because style dominates the distance. One
+taught 9 at the ordinary 0.1 read every chamfered 8 and 3 as 9. `GlyphTemplates.TaughtReach` = 0.01.
+
+### Words read as designators until three rules held them
+
+`TO`/`NO` upside down → T0/N0, `ST` → S7, `22` → Z2, `RD` → R0. Fixed by refusing a leading zero, never reading a
+letter where a digit fits better, reading a digit where a letter fits better only after a known prefix, and leaving
+word-letter prefixes (`S`, `Z`, `E`, `H`, `M`, `W`) out of `KnownPrefixes`. Rows of ticks and hatching read as
+`IIII…` and are dropped when three quarters bars, unless they are a known-prefix designator (`C11`).
+
+### CAD stroke fonts differ from Hershey in exactly the digits that matter
+
+A flagless 1 (read as `I`, so `C12` came out `CI2`), a serifed 1 (read upside down as `T`, so `R1` came out `T5` at
+180°), a round-topped 3. All three are variants assembled from Hershey strokes (`hershey-variants.txt`, same licence),
+not copied from any CAD font. `I` and the flagless 1 are identical templates — `StrokeGlyphs.Alike` keeps them from
+being each other's runner-up, and position in the designator tells them apart.
+
+### The `Uncertain` count is for designator-shaped lines only
+
+Counting every low-margin glyph listed `PURPOSE`, `ONLY` and every `O`/`0`. It is now the glyphs that failed only the
+margin in a reading that is otherwise a designator under a known prefix. Such a line is attached (not named) to the
+unnamed part beside it so the user can correct that part and learn the glyph.
+
+### The parts CSV renames by position
+
+The parts table was keyed by designator and the designator was not editable, so a correction had nowhere to go. A row
+whose designator the board lacks, at exactly the X/Y of a silkscreen-read or generated part, renames it; the dialog
+holds edits under `PartRow.BoardRefdes` (the designator the board gave) and writes X/Y. The rename treats the row's
+old kind text and old default variable as no edit, or a GUI CSV (which writes every column of an edited row) would
+put them back.
+
+### AS-4 pairs adjacent vertical caps' pads sideways on that board
+
+Two 0805-ish caps side by side, vertical, came out as two "parts" each made of one pad from each cap (centres between
+the caps). Not an AS-10 defect — the silkscreen reading then names those phantom parts by the reach rule — but worth
+knowing when a field board names a part oddly. Only 4 two-pad parts were found on that board against ~25 designators.

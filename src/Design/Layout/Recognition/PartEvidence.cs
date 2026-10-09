@@ -47,15 +47,21 @@ public enum PartField { Refdes, Kind, Case, Value, PartNumber, Model }
 
 /// <summary>
 /// One claim about a part from an evidence source that is not one of the built-in readers — AS-10's
-/// silkscreen designators. A claim names a part at a point; the reading gives the designator to the
-/// unnamed part whose centre is nearest, within <see cref="ReachDbu"/>.
+/// silkscreen designators, and any source plugged in later. A claim names a part at a point; the reading
+/// gives the designators of one source to the unnamed parts one to one, the least total distance from each
+/// claim to its part's body (<see cref="Silkscreen.RefdesAssociation"/>).
 /// </summary>
 /// <param name="Source">Which source made it.</param>
 /// <param name="X">Where, DBU.</param>
 /// <param name="Y">Where, DBU.</param>
 /// <param name="Refdes">The designator claimed.</param>
-/// <param name="ReachDbu">How far from a part's centre the claim may be and still name it.</param>
-public sealed record PartClaim(PartEvidenceSource Source, long X, long Y, string Refdes, long ReachDbu);
+/// <param name="ReachDbu">How far from a part's body the claim may be and still name it; 0 for no limit of the
+/// claim's own — three of the part's body diagonals is always the limit (R-as10-4).</param>
+public sealed record PartClaim(PartEvidenceSource Source, long X, long Y, string Refdes, long ReachDbu)
+{
+    /// <summary>The silkscreen line the claim was read from, when it was — what Learn these glyphs teaches from.</summary>
+    public Silkscreen.SilkTextLine? Line { get; init; }
+}
 
 /// <summary>A source of <see cref="PartClaim"/>s, plugged into <see cref="PartReading"/>.</summary>
 public interface IPartEvidenceSource

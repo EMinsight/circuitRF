@@ -10,7 +10,10 @@
 //   - the MEASURED columns (Connection, Case, X, Y, Evidence, Confidence, PartNumber) are read off the
 //     board again and the table's are ignored — with a note where the two differ, so an edit that did
 //     nothing says so;
-//   - a designator the board does not have is reported and ignored: the table never invents a part;
+//   - a designator the board does not have is reported and ignored: the table never invents a part — except that
+//     a row at the X and Y of a part whose designator was READ off the silkscreen or GENERATED renames that part
+//     (AS-10 R-as10-5): those two designators are recognition's guesses, and correcting one is an edit like any
+//     other. A designator from a placed footprint, a placement file or a BOM is the board's own and is never renamed;
 //   - a column the table does not have is a REFUSAL naming it, because a misspelt "Vaule" would
 //     otherwise do nothing, silently.
 // Write then read is the identity.
@@ -138,7 +141,19 @@ public static class PartsTableCsv
 
             string refdes = Field("Refdes")!;
             if (refdes.Length == 0) { notes.Add($"Line {line.Line} names no part and was ignored."); continue; }
-            if (!rows.TryGetValue(refdes, out var row)) { notOnBoard.Add(refdes); continue; }
+            Func<string, string?> field = Field;
+            if (!rows.TryGetValue(refdes, out var row))
+            {
+                if (Renamed(recognised, rows.Values, seen, Field("X"), Field("Y")) is not { } was) { notOnBoard.Add(refdes); continue; }
+                rows.Remove(was.Refdes);
+                seen.Add(was.Refdes);
+                row = Rename(was, refdes, notes);
+                // The kind and the variable a renamed part takes from its new designator stand unless the row changes
+                // them itself: the kind it states as the board had it and the old default variable are no edit.
+                string wasKind = Cell(recognised, was, "Kind"), wasVariable = was.DefaultVariable;
+                field = c => (c == "Kind" && string.Equals(Field(c), wasKind, StringComparison.OrdinalIgnoreCase))
+                             || (c == "Variable" && string.Equals(Field(c), wasVariable, StringComparison.Ordinal)) ? null : Field(c);
+            }
             if (!seen.Add(refdes)) { notes.Add($"{refdes} is in the table twice; line {line.Line} was ignored."); continue; }
 
             // Measured: the board's answer stands; say so where the table's differs.
@@ -146,11 +161,49 @@ public static class PartsTableCsv
                 if (Field(column) is { } stated && !string.Equals(stated, Cell(recognised, row, column), StringComparison.OrdinalIgnoreCase))
                     notes.Add($"{refdes}: {column} '{stated}' is measured on the board as '{Cell(recognised, row, column)}'; the board's is kept.");
 
-            rows[row.Refdes] = Edit(recognised, row, Field, notes);
+            rows[row.Refdes] = Edit(recognised, row, field, notes);
         }
 
         var table = recognised with { Rows = [.. rows.Values.OrderBy(r => r.Refdes, PartsTable.NaturalOrder)] };
         return new PartsCsvReading(table, notes, notOnBoard, null);
+    }
+
+    /// <summary>The part a row at (<paramref name="x"/>, <paramref name="y"/>) renames: one whose designator was read
+    /// off the silkscreen or generated, written at exactly that X and Y, and not already in the table.</summary>
+    private static PartRow? Renamed(PartsTable table, IEnumerable<PartRow> rows, HashSet<string> seen, string? x, string? y)
+    {
+        if (x is not { Length: > 0 } || y is not { Length: > 0 }) return null;
+        return rows.FirstOrDefault(r =>
+            r.Evidence.TryGetValue(PartField.Refdes, out var src) && src is PartEvidenceSource.Silkscreen or PartEvidenceSource.Generated
+            && !seen.Contains(r.Refdes)
+            && string.Equals(Cell(table, r, "X"), x, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Cell(table, r, "Y"), y, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>A part renamed: the user's designator, and the kind its prefix gives where the kind came from the old
+    /// designator or was unknown. A default variable follows the new name.</summary>
+    private static PartRow Rename(PartRow was, string refdes, List<string> notes)
+    {
+        var evidence = new Dictionary<PartField, PartEvidenceSource>(was.Evidence) { [PartField.Refdes] = PartEvidenceSource.User };
+        var row = was with { Refdes = refdes, RenamedFrom = was.Refdes, Variable = was.Variable == was.DefaultVariable ? null : was.Variable };
+        bool kindFromName = was.Kind == PartKind.Unknown
+                            || (was.Evidence.TryGetValue(PartField.Kind, out var ks) && ks == PartEvidenceSource.Refdes);
+        if (kindFromName && was.PadCount <= 2)
+        {
+            var said = new List<string>();
+            var kind = PartReading.KindFromRefdes(refdes, was.PadCount, said) ?? PartKind.Unknown;
+            if (kind != was.Kind)
+            {
+                bool sameDimension = was.TakesValue && (was with { Kind = kind }).TakesValue && was.GeneratedKind == (was with { Kind = kind }).GeneratedKind;
+                row = row with { Kind = kind, Value = sameDimension ? was.Value : null };
+                if (!sameDimension) evidence.Remove(PartField.Value);
+            }
+            if (kind == PartKind.Unknown) evidence.Remove(PartField.Kind);
+            else evidence[PartField.Kind] = PartEvidenceSource.Refdes;
+            notes.AddRange(said.Select(n => $"{refdes}: {n}."));
+        }
+        notes.Add($"{was.Refdes} was renamed {refdes}.");
+        return row with { Evidence = evidence };
     }
 
     /// <summary>The editable columns of one row applied.</summary>

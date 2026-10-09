@@ -45,6 +45,28 @@ public sealed class PartsTableCsvTests
         Assert.Equal(text, PartsTableCsv.Write(read.Table!));
     }
 
+    /// <summary>AS-10 R-as10-5: a row at a generated part's X and Y renames it, and the kind and the variable follow the
+    /// new designator; a designator the board itself states (here the placement file's) is never renamed.</summary>
+    [Fact]
+    public void ARowAtAGuessedPartsPlaceRenamesItButNeverABoardDesignator()
+    {
+        var (view, placement, bom) = PartsBoard();
+        var guessed = RecognizeParts(view, null, null).Parts;
+        var series = guessed.Rows.Single(r => r.Connection == PartConnection.Series);
+
+        var read = PartsTableCsv.Read(Csv(guessed, (r, c) => r == series.Refdes && c == "Refdes" ? "L4" : null), guessed);
+
+        var l4 = read.Table!.Row("L4")!;
+        Assert.Equal((PartKind.L, series.Refdes, PartEvidenceSource.User, "L4_L"),
+                     (l4.Kind, l4.RenamedFrom, l4.Evidence[PartField.Refdes], l4.Variable));
+        Assert.Null(read.Table.Row(series.Refdes));
+
+        var named = Recognised();
+        var r1 = PartsTableCsv.Read(Csv(named, (r, c) => r == "R1" && c == "Refdes" ? "R9" : null), named);
+        Assert.Equal(["R9"], r1.NotOnBoard);
+        Assert.NotNull(r1.Table!.Row("R1"));
+    }
+
     [Fact]
     public void AnEditedValueClearsTheVariable()
     {

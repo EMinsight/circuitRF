@@ -123,6 +123,23 @@ public enum RecognitionFindingClass
     /// <summary>Designators a parts table names that the board does not have.</summary>
     PartsCsvRefdesNotOnBoard,
 
+    // ── AS-10: silkscreen (R-as10-6) ────────────────────────────────────────────────────────────
+
+    /// <summary>Lines of stroked text read on the silkscreen, and how many are designators.</summary>
+    SilkscreenTextRead,
+
+    /// <summary>Silkscreen designators that name no part within reach, not used.</summary>
+    SilkscreenRefdesNotAssociated,
+
+    /// <summary>Silkscreen glyphs that fit two characters about as well.</summary>
+    SilkscreenGlyphsUncertain,
+
+    /// <summary>Silkscreen strokes that are not text — outlines, logos, marks.</summary>
+    SilkscreenStrokesExcluded,
+
+    /// <summary>Filled silkscreen shapes, which are not read.</summary>
+    SilkscreenFilledNotRead,
+
     // ── AS-5: lines (R-as5-9) ───────────────────────────────────────────────────────────────────
 
     /// <summary>The line elements read from the traces, by type.</summary>

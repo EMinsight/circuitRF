@@ -1,9 +1,10 @@
 // One row of Create Schematic from Artwork's parts table — brief-artsch-8-gui-command.md R-as8-3; overview D10.
 //
-// A PROJECTION of a PartRow, re-made on every recognition. The three editable cells do not change the row: they hand
+// A PROJECTION of a PartRow, re-made on every recognition. The editable cells do not change the row: they hand
 // their text to the dialog, which keeps it as the override a parts CSV would carry and lays it over the next
 // recognition (R-as8-2) — so the CSV stays the contract and a re-run never loses an edit. Every other cell is measured
-// on the board and is read-only, as the CSV's reader treats it.
+// on the board and is read-only, as the CSV's reader treats it. The designator is editable only where recognition
+// guessed it — read off the silkscreen or generated (brief-artsch-10 R-as10-5); the board's own designators are not.
 
 using System;
 using System.Collections.Generic;
@@ -30,7 +31,10 @@ public sealed partial class PartsTableRowViewModel : ObservableObject
         Refdes = row.Refdes;
         Row = row;
         ModelOptions = ["Ideal", .. modelFiles, BrowseModel];
+        CanRename = row.RenamedFrom is not null
+                    || (row.Evidence.TryGetValue(PartField.Refdes, out var source) && source is PartEvidenceSource.Silkscreen or PartEvidenceSource.Generated);
         _refreshing = true;
+        RefdesText = row.Refdes;
         KindText = PartsTable.KindText(row.Kind);
         ValueText = PartsTableCsv.Cell(table, row, "Value");
         ModelText = row.Model == PartModelKind.SnP && row.ModelFile is { Length: > 0 } f ? f : "Ideal";
@@ -53,6 +57,13 @@ public sealed partial class PartsTableRowViewModel : ObservableObject
     public PartRow Row { get; }
 
     public string Refdes { get; }
+
+    /// <summary>The designator the board gave the part — what the dialog holds this row's edits under.</summary>
+    public string BoardRefdes => Row.BoardRefdes;
+
+    /// <summary>Whether the designator is recognition's guess, so the user may correct it.</summary>
+    public bool CanRename { get; }
+
     public string Connection { get; }
     public string Case { get; }
     public string Variable { get; }
@@ -78,6 +89,7 @@ public sealed partial class PartsTableRowViewModel : ObservableObject
     /// <summary>Ideal, the workspace's two-port files, and <see cref="BrowseModel"/>.</summary>
     public List<string> ModelOptions { get; }
 
+    [ObservableProperty] private string _refdesText = "";
     [ObservableProperty] private string _kindText = "";
     [ObservableProperty] private string _valueText = "";
     [ObservableProperty] private string _modelText = "Ideal";
@@ -98,6 +110,17 @@ public sealed partial class PartsTableRowViewModel : ObservableObject
             return !PartsTableCsv.TryReadValue(ValueText, generated, out _, out _);
         }
     }
+
+    partial void OnRefdesTextChanged(string value)
+    {
+        if (!_refreshing) _edited(this, "Refdes", value);
+    }
+
+    /// <summary>The row as the designator cell now says — what Learn these glyphs teaches from, before the next
+    /// recognition has applied the rename.</summary>
+    public PartRow Corrected =>
+        string.Equals(RefdesText.Trim(), Row.Refdes, StringComparison.Ordinal) ? Row
+        : Row with { Refdes = RefdesText.Trim(), RenamedFrom = Row.BoardRefdes };
 
     partial void OnKindTextChanged(string value)
     {

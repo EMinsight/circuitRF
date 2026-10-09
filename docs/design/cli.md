@@ -3721,7 +3721,8 @@ ports and sweep come first) resolve exactly as they do in the editor.
 With neither `-o` nor `--into` **nothing is written**: stdout carries the report (one line per class) and the
 parts table as CSV. That is an agent's first call. `--parts-out p.csv` writes the same table (allowed alone);
 edit its `Kind`/`Value`/`Variable`/`Model`/`ModelFile` and pass it back with `--parts p.csv` — a value given
-there replaces the variable that stood for it. The CSV is the contract (`PartsTableCsv`): the dialog's grid,
+there replaces the variable that stood for it. A `Refdes` read off the silkscreen or generated may be corrected too:
+the row keeps its `X`/`Y`, which is how it finds its part (`artwork-to-schematic.md` §5.3). The CSV is the contract (`PartsTableCsv`): the dialog's grid,
 `--parts-out` and `--parts` all go through it.
 
 ### 26.4 Outputs and options

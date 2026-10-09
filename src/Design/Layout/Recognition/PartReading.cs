@@ -6,7 +6,8 @@
 //   2. a placement file landed on the board's pads, and a bill of materials by designator;
 //   3. land patterns — two pads matching a case's generated lands, from the mask or paste openings where
 //      the technology has those layers, else from pad-shaped copper and the trace review's "pad" ends;
-//   4. silkscreen designators (AS-10, through IPartEvidenceSource);
+//   4. silkscreen designators (AS-10, Silkscreen/), and any IPartEvidenceSource — each source's designators given
+//      to the unnamed parts one to one (RefdesAssociation);
 //   5. nothing — the pads matched, and kind and value are unknown.
 //
 // Nothing here is new knowledge of the board: the pads come from PlacedPins (railRF's and LVS's walk),
@@ -20,6 +21,7 @@ using CircuitRF.Design.Layout.Em;
 using CircuitRF.Design.Layout.Extraction;
 using CircuitRF.Design.Layout.Footprints;
 using CircuitRF.Design.Layout.Interchange;
+using CircuitRF.Design.Layout.Recognition.Silkscreen;
 using CircuitRF.Design.RailRf;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Workspace;
@@ -67,6 +69,8 @@ public static class PartReading
         public SymbolKind? PlacedKind;
         public SmtCase? InstanceCase, LandCase, PlacementCase;
         public LandPatternCandidate? Land;
+        public Bbox Body = Bbox.Empty;
+        public SilkTextLine? Silk;
         public bool Placed;
         public readonly List<string> Notes = [];
 
@@ -108,7 +112,7 @@ public static class PartReading
         {
             var a = outlines[c.A];
             var b = outlines[c.B];
-            var d = new Draft { PadSource = PartEvidenceSource.LandPattern, LandCase = c.Best.Case, Land = c };
+            var d = new Draft { PadSource = PartEvidenceSource.LandPattern, LandCase = c.Best.Case, Land = c, Body = a.Bounds.Union(b.Bounds) };
             d.Pads.Add(new PlacedPin(null, "1", null, a.CentreX, a.CentreY, PinSource.Artwork) { Layer = a.Layer });
             d.Pads.Add(new PlacedPin(null, "2", null, b.CentreX, b.CentreY, PinSource.Artwork) { Layer = b.Layer });
             if (c.RunnersUp.Count > 0)
@@ -147,18 +151,51 @@ public static class PartReading
             }
         }
 
-        // ── 4. any further source (AS-10's silkscreen) names an unnamed part near its claim ────────
-        foreach (var source in input.EvidenceSources)
-            foreach (var claim in source.Claims(input, ctx.Board))
+        // ── 4. the silkscreen, then any further source: each one's designators given to the unnamed parts ──
+        var silk = SilkscreenReading.Empty;
+        var unassociated = new List<PartClaim>();
+        if (drafts.Any(d => d.Refdes is null))
+        {
+            silk = SilkscreenText.Read(input.Shapes, tech, GlyphTemplates.ForUser());
+            Name(silk.Designators.Select(l => new PartClaim(PartEvidenceSource.Silkscreen, l.X, l.Y, l.Refdes!, 0) { Line = l }));
+
+            // A line that would be a designator but for an uncertain glyph names nothing, but goes with the part it
+            // is printed beside: correcting that part's generated designator can then learn the glyph (R-as10-5).
+            var unsure = silk.Lines.Where(l => l.Refdes is null && l.Uncertain > 0)
+                             .Select(l => new PartClaim(PartEvidenceSource.Silkscreen, l.X, l.Y, l.Text, 0) { Line = l }).ToList();
+            var rest = drafts.Where(d => d.Refdes is null && !d.Body.IsEmpty).ToList();
+            var beside = RefdesAssociation.Assign(unsure, [.. rest.Select(d => new RefdesCandidate(d.Body))]);
+            for (int i = 0; i < unsure.Count; i++)
+                if (beside[i] >= 0)
+                {
+                    rest[beside[i]].Silk = unsure[i].Line;
+                    rest[beside[i]].Notes.Add($"the silkscreen beside it reads '{unsure[i].Refdes}', with a glyph that fits two characters");
+                }
+        }
+        foreach (var source in input.EvidenceSources) Name(source.Claims(input, ctx.Board));
+
+        void Name(IEnumerable<PartClaim> from)
+        {
+            // A designator a stronger source already gave is that part's, not a claim on another.
+            var claims = from.Where(c => !byRefdes.ContainsKey(c.Refdes)).ToList();
+            var unnamed = drafts.Where(d => d.Refdes is null && !d.Body.IsEmpty).ToList();
+            var assigned = RefdesAssociation.Assign(claims, [.. unnamed.Select(d => new RefdesCandidate(d.Body))]);
+            // The same designator printed twice names the part nearer its print.
+            var order = Enumerable.Range(0, claims.Count).Where(i => assigned[i] >= 0)
+                                  .OrderBy(i => RefdesAssociation.Distance(claims[i].X, claims[i].Y, unnamed[assigned[i]].Body));
+            var named = new HashSet<int>();
+            foreach (int i in order)
             {
-                if (byRefdes.ContainsKey(claim.Refdes)) continue;
-                var hit = drafts.Where(d => d.Refdes is null && Dist(d.X, d.Y, claim.X, claim.Y) <= claim.ReachDbu)
-                                .OrderBy(d => Dist(d.X, d.Y, claim.X, claim.Y)).FirstOrDefault();
-                if (hit is null) continue;
-                hit.Refdes = claim.Refdes;
-                hit.RefdesSource = claim.Source;
-                byRefdes[claim.Refdes] = hit;
+                if (byRefdes.ContainsKey(claims[i].Refdes)) continue;
+                var hit = unnamed[assigned[i]];
+                hit.Refdes = claims[i].Refdes;
+                hit.RefdesSource = claims[i].Source;
+                hit.Silk = claims[i].Line;
+                byRefdes[claims[i].Refdes] = hit;
+                named.Add(i);
             }
+            unassociated.AddRange(claims.Where((c, i) => !named.Contains(i) && !byRefdes.ContainsKey(c.Refdes) && InScope(ctx, c.X, c.Y)));
+        }
 
         // ── 5. nothing: a generated designator, `_A` so it can never collide with the board's own ──
         int generated = 0;
@@ -182,6 +219,7 @@ public static class PartReading
 
         // ── what the reading says about itself (R-as4-9) ─────────────────────────────────────────
         Report(ctx, rows, bom, byRefdes, placementMissed, wrongDimension, report);
+        ReportSilkscreen(ctx, silk, unassociated, report);
         return new PartsTable(rows, fmt, baseDir);
     }
 
@@ -287,7 +325,7 @@ public static class PartReading
         var row0 = new PartRow
         {
             Refdes = d.Refdes!, Kind = kind.Value, Connection = connection, Case = smt, Value = value,
-            PartNumber = pn, X = d.X, Y = d.Y, PadCount = pads, Terminals = terminals,
+            PartNumber = pn, X = d.X, Y = d.Y, PadCount = pads, Terminals = terminals, Silk = d.Silk,
         };
 
         // ── model ─────────────────────────────────────────────────────────────────────────────────
@@ -401,7 +439,7 @@ public static class PartReading
 
     /// <summary>R-as4-2's designator prefixes. A two-pad D, Q, U, Y, SW or TP is not an R, L or C and is
     /// left out with a note; with more pads it is a multi-pin part.</summary>
-    private static PartKind? KindFromRefdes(string refdes, int pads, List<string> notes)
+    internal static PartKind? KindFromRefdes(string refdes, int pads, List<string> notes)
     {
         string prefix = new string([.. refdes.TakeWhile(char.IsAsciiLetter)]).ToUpperInvariant();
         bool numbered = refdes.Length > prefix.Length && char.IsAsciiDigit(refdes[prefix.Length]);
@@ -714,6 +752,37 @@ public static class PartReading
             $"board: {string.Join(", ", placementMissed.Take(12).Select(r => $"{r.Refdes} at {fmt.Point(r.X, r.Y)}"))}" +
             $"{(placementMissed.Count > 12 ? ", …" : "")}.",
             [.. placementMissed.Select(r => new RecognitionAnchor(r.X, r.Y))]);
+    }
+
+    /// <summary>R-as10-6: what the silkscreen read, what it named, what it could not place, what it left out.</summary>
+    private static void ReportSilkscreen(PartReadingContext ctx, SilkscreenReading silk, List<PartClaim> unassociated, RecognitionReport report)
+    {
+        var fmt = ctx.Format;
+        static RecognitionAnchor At(SilkTextLine l) => new(l.X, l.Y, l.Layer);
+        var lines = silk.Lines.Where(l => InScope(ctx, l.X, l.Y)).ToList();
+        int designators = lines.Count(l => l.Refdes is not null);
+        report.Add(RecognitionFindingClass.SilkscreenTextRead, lines.Count,
+            $"{Plural(lines.Count, "line of text was", "lines of text were")} read on the silkscreen, {designators} of them " +
+            $"designator{(designators == 1 ? "" : "s")}: {string.Join(", ", lines.Take(16).Select(l => l.Refdes ?? $"'{l.Text}'"))}" +
+            $"{(lines.Count > 16 ? ", …" : "")}.", [.. lines.Select(At)]);
+        report.Add(RecognitionFindingClass.SilkscreenRefdesNotAssociated, unassociated.Count,
+            $"{Plural(unassociated.Count, "designator on the silkscreen names", "designators on the silkscreen name")} no part " +
+            $"found within {RefdesAssociation.ReachInBodyDiagonals:0} body diagonals, and {(unassociated.Count == 1 ? "was" : "were")} " +
+            $"not used: {string.Join(", ", unassociated.Take(12).Select(c => $"{c.Refdes} at {fmt.Point(c.X, c.Y)}"))}" +
+            $"{(unassociated.Count > 12 ? ", …" : "")}.", [.. unassociated.Select(c => new RecognitionAnchor(c.X, c.Y, c.Line?.Layer))]);
+        var unsure = lines.Where(l => StrokeGlyphs.LowMarginGlyphs(l) > 0).ToList();
+        int glyphs = unsure.Sum(StrokeGlyphs.LowMarginGlyphs);
+        report.Add(RecognitionFindingClass.SilkscreenGlyphsUncertain, glyphs,
+            $"{Plural(glyphs, "silkscreen glyph fits", "silkscreen glyphs fit")} two characters about as well, so " +
+            $"{(unsure.Count == 1 ? "a line that looks like a designator was" : "lines that look like designators were")} not read as one: " +
+            $"{string.Join(", ", unsure.Take(12).Select(l => $"'{l.Text}'"))}{(unsure.Count > 12 ? ", …" : "")}. " +
+            "Correct one in the parts table and learn its glyphs.", [.. unsure.Select(At)]);
+        report.Add(RecognitionFindingClass.SilkscreenStrokesExcluded, silk.ExcludedStrokes,
+            $"{Plural(silk.ExcludedStrokes, "silkscreen stroke is", "silkscreen strokes are")} not text — outlines, logos and " +
+            "marks — and " + (silk.ExcludedStrokes == 1 ? "was" : "were") + " left out.");
+        report.Add(RecognitionFindingClass.SilkscreenFilledNotRead, silk.FilledShapes,
+            $"{Plural(silk.FilledShapes, "silkscreen shape is", "silkscreen shapes are")} filled rather than stroked and " +
+            $"{(silk.FilledShapes == 1 ? "was" : "were")} not read: text drawn as filled outlines is not read.");
     }
 
     private static string Plural(int n, string one, string many) => $"{n} {(n == 1 ? one : many)}";

@@ -207,8 +207,9 @@ case=land;value=bom;pn=bom;model=file`):
    the gap are each within 20 %, at 0° or 90°; smallest RMS error wins; a different case within 5 points is the
    runner-up, named in the row's notes. Candidates resolve best fit first; a pad is in one part at most. A third pad of
    the same size continuing the pair's line with the pair's own gap (±10 %) makes the pair two pins of a package row.
-4. **Further sources** through `IPartEvidenceSource` (AS-10's silkscreen): a `PartClaim` names the nearest unnamed part
-   within its reach.
+4. **The silkscreen** (AS-10, §9), then any further `IPartEvidenceSource`: each source's `PartClaim`s are given to the
+   unnamed parts one to one by `RefdesAssociation` — never to a part a stronger source named, never a designator a
+   stronger source already gave.
 5. **Nothing**: generated designators `C_A1`, `C_A2`, … top to bottom, left to right.
 
 ### 5.2 Kind, value, connection, model (R-as4-2 … R-as4-6)
@@ -244,7 +245,12 @@ Reading back is an overlay on a fresh recognition: `Kind`, `Value`, `Variable`, 
 value clears the variable; a kind change keeps a value only within the same dimension; an SnP file is checked for two
 ports); `Connection`, `Case`, `X`, `Y`, `Evidence`, `Confidence` and `PartNumber` are measured and ignored, with a note
 where they differ; `Notes` is ignored. An unknown column is a refusal naming it; a designator the board does not have
-is reported and ignored. Write then read is the identity.
+is reported and ignored — unless the row's `X` and `Y` are exactly those of a part whose designator was read off the
+silkscreen or generated, which it then RENAMES (AS-10 R-as10-5): those two designators are recognition's guesses. The
+renamed row's evidence is `refdes=user`, `PartRow.RenamedFrom` keeps the board's designator, its kind follows the new
+prefix where the kind came from the old designator or was unknown, and a default variable follows the new name. A
+designator from a placed footprint, a placement file or a BOM is the board's own and is never renamed. Write then read
+is the identity.
 
 ### 5.4 The report (R-as4-9)
 
@@ -494,3 +500,87 @@ alone), whose items act on a double-click.
 
 `CreateSchematicFromArtworkViewModelTests`, `ArtworkCrossProbeTests` (`tests/Ui.Tests/Recognition/`) and
 `EmRunServiceTests` (`tests/Ui.Tests/Em/`).
+
+## 9. AS-10 — designators from the silkscreen
+
+`src/Design/Layout/Recognition/Silkscreen/`. Evidence source 4 (D10): on a board with no placed footprints and no
+placement or BOM file, the designator printed beside a part is the only statement of what it is. Values are never read
+from silkscreen.
+
+### 9.1 Strokes, not pictures (R-as10-1, R-as10-2)
+
+A Gerber legend's text is drawn by a stroke font, and the import keeps every pen stroke as a path with a centre line.
+Those centre lines are the input — nothing is rasterised, nothing trained, nothing native. `SilkscreenText.Layers`
+finds the silkscreen layers (the `F.SilkS`/`B.SilkS` alias, a silkscreen or legend purpose, else a name saying silk,
+legend or overlay); each layer is read on its own and a bottom layer prefers a mirrored reading. A filled shape on a
+silkscreen layer is not read and is counted (`SilkscreenFilledNotRead`) — text drawn as filled outlines needs a
+different reader.
+
+`StrokeGlyphs`: strokes whose centre lines touch (within 0.3 of the pen width) or cross are one **unit**. A unit is
+TALL in a family — reading along x (0°/180°) or along y (90°/270°) — when its extent across the line is at least
+1/1.6 of its extent along it. Tall units of one height (±35 %) overlapping 70 % across the line, at most 0.6 cap heights
+apart along it, are one **line**; a short unit (`-`, `_`) in the line's band joins it. Each line is offered whole and
+split at its widest gap (recursively), so two designators printed side by side read as two. A line is read in the four
+frames of its family (rotation and mirror); the frame with the least total distance wins. Candidate lines are taken
+best first — a designator, then more glyphs, then a closer fit — one line per unit. Strokes no line takes are
+outlines, logos and marks (`SilkscreenStrokesExcluded`); a line three quarters of whose glyphs are bars (`I`, `1`, `-`,
+`_`) is a row of ticks or a hatch unless it is a designator with a known prefix.
+
+### 9.2 Matching (R-as10-3)
+
+A glyph is normalised to its LINE — cap height 1, the baseline at 0, its own box centred on x = 0 — so a `-` keeps its
+height and an `_` its place. Its centre lines are resampled to 48 points and compared with each template by a
+symmetric Chamfer distance in its **modified-Hausdorff** form: the mean distance from each one's samples to the other's
+segments, the LARGER of the two directions. The larger, not the average: on a field board a taught 3 lay wholly on the
+same font's 8, and the average halved the 8's missing side until every 8 read as the 3.
+
+Templates (`GlyphTemplates`): Hershey Roman Simplex's `A–Z 0–9 - _ +` (`resources/silkscreen-glyphs/`, public domain,
+its licence and required acknowledgements in `LICENSE-hershey.txt` beside it), plus three variants assembled from
+Hershey strokes because CAD plotter fonts commonly draw them so — a flagless `1`, Hershey's serif-face `1` with its base
+serif (without it, that `1` read upside down as a `T`), and a round-topped `3` — plus whatever the user taught.
+
+A line is a designator when it reads `^[A-Z]{1,3}[0-9]{1,4}$` with each glyph matched WITHIN ITS CLASS (a letter
+position against letters, a digit against digits — so `O`/`0` and `I`/`1` are told apart by position), within 0.1 cap
+heights and clear of its in-class runner-up by a margin of 0.2 (1 − best/second). Measured on field boards, three
+further rules keep words from reading as designators: a letter is never read where a digit fits better (`22` as Z2);
+a digit is read where a letter fits better only after a known prefix (`ST` as S7; `CIO` → C10 is fine); the first digit
+is not 0 (`TO`, `NO` as T0, N0). A known prefix also decides between splits (`C`+`12` over `CI`+`2`). `I` and a flagless
+`1` are drawn alike and are never each other's runner-up.
+
+### 9.3 Association (R-as10-4)
+
+`RefdesAssociation.Assign`: distance from the label's centre to each unnamed part's BODY box (the union of its two pad
+outlines); a pair is in reach within three body diagonals (and a claim's own `ReachDbu` where positive). Claims and
+parts are clustered through reachable pairs and each cluster is solved by the Hungarian method (the O(n³) potentials
+form, rectangular), so a label printed nearer a neighbour's body than its own still goes to its own when the
+neighbour's label is there to take the neighbour. A label in reach of no part, or losing the assignment, is listed
+(`SilkscreenRefdesNotAssociated`). A designator a stronger source already gave is no claim.
+
+A line that would be a designator but for an uncertain glyph names nothing, but is attached to the part it stands
+beside (the same assignment), with a note — so correcting that part's generated designator can teach the glyph.
+
+### 9.4 Teaching (R-as10-5)
+
+The dialog's Refdes cell is editable on a row whose designator was read off the silkscreen or generated; the edit is a
+CSV overlay like any other (§5.3's rename rule, the dialog writes `X`/`Y`). `SilkscreenText.Lesson(row)`: each glyph of
+the row's silkscreen line that the corrected designator says is another character — only when the counts agree.
+**Learn These Glyphs** stores them through `GlyphTemplates.Learn` in `<UserStateDirectory>/silkscreen-glyphs/taught.json`
+(never the workspace), and every later recognition — GUI, CLI, MCP — matches against `GlyphTemplates.ForUser()`.
+
+**A taught template counts only within `TaughtReach` (0.01 cap heights).** It is the board's own font, plotted by the
+same instructions every time: on the field board the same character matched it at 0.000 while the font's other
+characters stood 0.017 and more away. Taken at the ordinary 0.1, one taught chamfered 9 read the chamfered 8s and 3s
+as 9s, because a glyph resembles its own font's other characters more than another font's right one.
+
+### 9.5 The report (R-as10-6)
+
+`SilkscreenTextRead` (lines read, how many designators), `PartsFromSilkscreen` (named), `SilkscreenRefdesNotAssociated`,
+`SilkscreenGlyphsUncertain` (glyphs of designator-shaped lines under a known prefix that failed only the margin),
+`SilkscreenStrokesExcluded`, `SilkscreenFilledNotRead`. Silkscreen is read only when some part is still unnamed after
+placed footprints and the placement file.
+
+### 9.6 Gates
+
+`StrokeGlyphTests`, `RefdesAssociationTests`, `SilkscreenFieldTests` (`FixtureFact`; expected.json gains
+`"silkscreen": [{refdes, x, y}]` in mm and `"silkscreenFraction"`) in `tests/Ui.Tests/Recognition/Silkscreen/`, and
+`PartsTableCsvTests.ARowAtAGuessedPartsPlaceRenamesItButNeverABoardDesignator`.

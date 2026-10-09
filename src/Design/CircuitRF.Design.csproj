@@ -72,6 +72,15 @@
     <EmbeddedResource Include="resources\technologies\*.cmat" />
   </ItemGroup>
 
+  <!-- brief-artsch-10 R-as10-3: the stroke font the silkscreen reader matches designators against, and its
+       variants, read by GlyphTemplates out of this assembly under a fixed name. Its licence file sits beside it in the tree. -->
+  <ItemGroup>
+    <EmbeddedResource Include="resources\silkscreen-glyphs\hershey-roman-simplex.txt"
+                      LogicalName="CircuitRF.Design.SilkscreenGlyphs.hershey-roman-simplex.txt" />
+    <EmbeddedResource Include="resources\silkscreen-glyphs\hershey-variants.txt"
+                      LogicalName="CircuitRF.Design.SilkscreenGlyphs.hershey-variants.txt" />
+  </ItemGroup>
+
   <!-- brief-em3d-24 R-em3d24-1: the solver install recipes and their schema, read by SolverRecipes out of
        this assembly. The LogicalName is fixed so a recipe's resource name is its file name, which is what
        SolverInstallTests validates against the schema. A recipe file left out of this glob would compile,
