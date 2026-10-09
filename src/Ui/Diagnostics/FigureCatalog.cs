@@ -714,6 +714,14 @@ public static class FigureCatalog
           + "against its target, the anti-resonances the run named, and what removing each "
           + "capacitor would cost."),
 
+        // ── Create Schematic from Artwork ──────────────────────────────────────
+        // 1060x726 is the dialog's own declared 1060x760 less the synthetic title bar.
+        new("artwork-to-schematic-dialog", DocRecognitionFixtures.CreateSchematicFromArtwork, 1060, 726,
+            WindowFrame.Titled("Create Schematic from Artwork — Board"),
+            "Design > Create Schematic from Artwork on the shipped Artwork to Schematic example, with its "
+          + "placement file and bill of materials given: the options across the top, the parts table "
+          + "with every part the recognition read, and the report strip under it."),
+
         // ── The Smith Chart document ────────────────────────────────────────────
         // 1400x920 rather than the shell's 1200x800. The chart pane takes 65% of the height by the
         // document's own splitter, so the generator column beside it gets that same 65% to fit six

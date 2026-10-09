@@ -616,3 +616,21 @@ Two things generalise:
   is now the guard rather than the description of one.
 - **"This mode writes nothing tracked" is a property worth holding, not assuming.** The exception is
   what made the bug silent, not what made it small.
+
+## A framed dialog figure lost its content margin (2026-10-08)
+
+`WindowFrame.Wrap` sets `Width`/`Height` on the control it is handed. A dialog's root `Grid` that
+carries its own `Margin="12"` then measures as 12 px wider and taller than the frame, and the capture
+shows the content running to the frame's edges, which the dialog never does. Nothing errors. Hand the
+frame a `Panel` wrapping the lifted content (`DocRecognitionFixtures` does), so the margin is inside
+the size the frame sets. An older dialog fixture that lifts `Window.Content` directly may still be
+drawing its content without the margin.
+
+Found while adding `artwork-to-schematic-dialog` to inspect that dialog's layout. The fixes that
+capture prompted were in the dialog itself:
+
+- In a horizontal `WrapPanel` or `StackPanel`, every child stretches to the row's height by default.
+  A `TextBox` then grows to match its tallest neighbour, while a `ComboBox`'s Fluent theme pins it to
+  the top. The dialog's `.row` style centres every child of a row.
+- A collapsed Fluent `Expander` is 48 px tall, and putting one in a row of 32 px controls sets the
+  height of the whole row.

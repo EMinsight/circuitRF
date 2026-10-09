@@ -25,6 +25,31 @@
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="Opacity" Value="0.8"/>
         </Style>
+        <!-- A row of mixed controls centres every one of them on the row: left to stretch, a text box grows to the
+             tallest neighbour and a combo sits on the top edge, so no two baselines agree. -->
+        <Style Selector="WrapPanel.row > :is(Control), StackPanel.row > :is(Control)">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <!-- The parts table's editors: one height, their text centred in it. -->
+        <Style Selector="Grid.cells > TextBox, Grid.cells > Panel > TextBox">
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="4,0"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Grid.cells > ComboBox">
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="6,0,0,0"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
         <Style Selector="Button.header">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -36,16 +61,16 @@
         </Style>
     </Window.Styles>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto" Margin="12" RowSpacing="8">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto" Margin="12" RowSpacing="8">
 
         <!-- ── Target (D4) ───────────────────────────────────────────────────────────────────── -->
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10">
+        <StackPanel Grid.Row="0" Classes="row" Orientation="Horizontal" Spacing="10">
             <TextBlock Classes="label" Text="Target" Width="70"/>
             <RadioButton GroupName="target" Content="New cell" IsChecked="{Binding TargetNewCell}"
                          ToolTip.Tip="A new cell beside the artwork's, holding a schematic only."/>
             <TextBox Text="{Binding NewCellName}" Width="220" IsEnabled="{Binding TargetNewCell}"
                      Classes.invalid="{Binding NameError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-            <TextBlock Text="{Binding NameError}" Foreground="#C8463A" FontSize="11" VerticalAlignment="Center"
+            <TextBlock Text="{Binding NameError}" Foreground="#C8463A" FontSize="11"
                        MaxWidth="360" TextWrapping="Wrap"/>
             <RadioButton GroupName="target" Content="This cell's schematic" IsChecked="{Binding TargetArtworkCell}"
                          IsVisible="{Binding ArtworkCellOffered}"
@@ -53,7 +78,7 @@
         </StackPanel>
 
         <!-- ── Scope (D11) ──────────────────────────────────────────────────────────────────── -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="10">
+        <StackPanel Grid.Row="1" Classes="row" Orientation="Horizontal" Spacing="10">
             <TextBlock Classes="label" Text="Scope" Width="70"/>
             <RadioButton GroupName="scope" Content="Selection" IsChecked="{Binding ScopeSelection}"
                          IsEnabled="{Binding SelectionAvailable}"
@@ -62,13 +87,13 @@
         </StackPanel>
 
         <!-- ── Options ───────────────────────────────────────────────────────────────────────── -->
-        <WrapPanel Grid.Row="2" Orientation="Horizontal">
-            <TextBlock Classes="label" Text="Ground" Margin="0,0,6,0"/>
+        <WrapPanel Grid.Row="2" Classes="row" Orientation="Horizontal">
+            <TextBlock Classes="label" Text="Ground" Width="70" Margin="0,0,10,0"/>
             <ComboBox ItemsSource="{x:Static rec:CreateSchematicFromArtworkViewModel.GroundOptions}"
-                      SelectedIndex="{Binding GroundIndex}" MinWidth="130" Margin="0,0,4,0"
+                      SelectedIndex="{Binding GroundIndex}" MinWidth="130" Margin="0,0,6,0"
                       ToolTip.Tip="Auto reads the largest copper on the stackup's reference conductor as ground. Pick on layout: click the copper that is ground."/>
-            <TextBlock Text="{Binding GroundPointText}" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0"/>
-            <Button Content="Pick…" Command="{Binding PickGroundCommand}" Padding="6,2" Margin="0,0,16,0"
+            <TextBlock Text="{Binding GroundPointText}" FontSize="11" Margin="0,0,6,0"/>
+            <Button Content="Pick…" Command="{Binding PickGroundCommand}" Margin="0,0,16,0"
                     ToolTip.Tip="Click the ground copper on the layout. Escape cancels."/>
 
             <TextBlock Classes="label" Text="Ground vias" Margin="0,0,6,0"/>
@@ -78,47 +103,47 @@
 
             <TextBlock Classes="label" Text="Coplanar lines" Margin="0,0,6,0"/>
             <ComboBox ItemsSource="{x:Static rec:CreateSchematicFromArtworkViewModel.CoplanarOptions}"
-                      SelectedIndex="{Binding CoplanarIndex}" MinWidth="110" Margin="0,0,4,0"
+                      SelectedIndex="{Binding CoplanarIndex}" MinWidth="110" Margin="0,0,10,0"
                       ToolTip.Tip="How a line with ground close beside it is read. Auto: grounded coplanar when both gaps are within the factor's substrate heights."/>
-            <Expander Header="Factor" Padding="4,0" Margin="0,0,16,0" VerticalAlignment="Center">
-                <StackPanel Orientation="Horizontal" Spacing="4">
-                    <TextBox Text="{Binding CoplanarFactorText}" Width="50"
-                             ToolTip.Tip="Under Auto, a side gap at most this many substrate heights is coplanar ground."/>
-                    <TextBlock Classes="label" Text="× H"/>
-                </StackPanel>
-            </Expander>
-
-            <TextBlock Classes="label" Text="Frequency" Margin="0,0,6,0"/>
-            <TextBox Text="{Binding StartText}" Width="80" ToolTip.Tip="Start, with its unit."/>
-            <TextBlock Classes="label" Text="to" Margin="4,0"/>
-            <TextBox Text="{Binding StopText}" Width="80" ToolTip.Tip="Stop, with its unit. Also the frequency a TLIN's F and coupled lines are judged at."/>
-            <TextBox Text="{Binding PointsText}" Width="54" Margin="6,0,0,0" ToolTip.Tip="Points."/>
-            <TextBlock Classes="label" Text="pts" Margin="4,0,0,0"/>
+            <TextBlock Classes="label" Text="Factor" Margin="0,0,6,0" IsEnabled="{Binding CoplanarFactorApplies}"/>
+            <TextBox Text="{Binding CoplanarFactorText}" Width="50" IsEnabled="{Binding CoplanarFactorApplies}"
+                     ToolTip.Tip="Under Auto, a side gap at most this many substrate heights is coplanar ground."/>
+            <TextBlock Classes="label" Text="× H" Margin="4,0,0,0" IsEnabled="{Binding CoplanarFactorApplies}"/>
         </WrapPanel>
 
+        <!-- ── Sweep ─────────────────────────────────────────────────────────────────────────── -->
+        <StackPanel Grid.Row="3" Classes="row" Orientation="Horizontal">
+            <TextBlock Classes="label" Text="Frequency" Width="70" Margin="0,0,10,0"/>
+            <TextBox Text="{Binding StartText}" Width="90" ToolTip.Tip="Start, with its unit."/>
+            <TextBlock Classes="label" Text="to" Margin="6,0"/>
+            <TextBox Text="{Binding StopText}" Width="90" ToolTip.Tip="Stop, with its unit. Also the frequency a TLIN's F and coupled lines are judged at."/>
+            <TextBox Text="{Binding PointsText}" Width="60" Margin="10,0,0,0" ToolTip.Tip="Points."/>
+            <TextBlock Classes="label" Text="pts" Margin="6,0,0,0"/>
+        </StackPanel>
+
         <!-- ── Companion files ──────────────────────────────────────────────────────────────── -->
-        <WrapPanel Grid.Row="3" Orientation="Horizontal">
-            <Button Content="BOM…" Command="{Binding PickBomCommand}" Padding="8,2" Margin="0,0,6,0"
+        <WrapPanel Grid.Row="4" Classes="row" Orientation="Horizontal">
+            <Button Content="BOM…" Command="{Binding PickBomCommand}" Margin="0,0,6,0"
                     ToolTip.Tip="A bill of materials: values, part numbers and kinds by designator."/>
             <TextBox Text="{Binding BomPath}" Width="260" Margin="0,0,16,0" PlaceholderText="No bill of materials"/>
-            <Button Content="Placement…" Command="{Binding PickPlacementCommand}" Padding="8,2" Margin="0,0,6,0"
+            <Button Content="Placement…" Command="{Binding PickPlacementCommand}" Margin="0,0,6,0"
                     ToolTip.Tip="A placement file: where each designator sits."/>
             <TextBox Text="{Binding PlacementPath}" Width="260" Margin="0,0,8,0" PlaceholderText="No placement file"/>
-            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding PlacementNeedsOrigin}">
+            <StackPanel Classes="row" Orientation="Horizontal" Spacing="6" Margin="0,0,8,0" IsVisible="{Binding PlacementNeedsOrigin}">
                 <TextBlock Classes="label" Text="Origin"/>
                 <ComboBox ItemsSource="{x:Static rec:CreateSchematicFromArtworkViewModel.PlacementOriginLabels}"
                           SelectedIndex="{Binding PlacementOriginIndex}" MinWidth="200"
                           PlaceholderText="Choose…"
                           ToolTip.Tip="The file does not say which point of each part its coordinates are; it is not guessed."/>
             </StackPanel>
-            <TextBlock Text="{Binding CompanionError}" Foreground="#C8463A" FontSize="11" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding CompanionError}" Foreground="#C8463A" FontSize="11"/>
         </WrapPanel>
 
         <!-- ── Filter ───────────────────────────────────────────────────────────────────────── -->
-        <TextBox Grid.Row="4" Text="{Binding FilterText}" PlaceholderText="Filter parts" Width="260" HorizontalAlignment="Left"/>
+        <TextBox Grid.Row="5" Text="{Binding FilterText}" PlaceholderText="Filter parts" Width="260" HorizontalAlignment="Left"/>
 
         <!-- ── The parts table (R-as8-3) ────────────────────────────────────────────────────── -->
-        <Border Grid.Row="5" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1">
+        <Border Grid.Row="6" BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1">
             <Grid RowDefinitions="Auto,*">
                 <Grid Grid.Row="0" ColumnDefinitions="18,72,84,72,62,120,170,130,76,76" Margin="4,2">
                     <Button Grid.Column="0" Classes="header" Content="●" Command="{Binding SortCommand}" CommandParameter="Confidence"
@@ -142,7 +167,7 @@
                     </ListBox.ItemContainerTheme>
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="rec:PartsTableRowViewModel">
-                            <Grid ColumnDefinitions="18,72,84,72,62,120,170,130,76,76">
+                            <Grid Classes="cells" ColumnDefinitions="18,72,84,72,62,120,170,130,76,76">
                                 <Ellipse Grid.Column="0" Width="9" Height="9" Fill="{Binding ConfidenceBrush}"
                                          HorizontalAlignment="Left" VerticalAlignment="Center"
                                          ToolTip.Tip="{Binding EvidenceTip}"/>
@@ -150,19 +175,15 @@
                                     <TextBlock Text="{Binding Refdes}" VerticalAlignment="Center" FontSize="12"
                                                IsVisible="{Binding !CanRename}"/>
                                     <TextBox Text="{Binding RefdesText, UpdateSourceTrigger=LostFocus}" IsVisible="{Binding CanRename}"
-                                             FontSize="11" MinHeight="0" Padding="4,1" Margin="0,0,4,0"
                                              ToolTip.Tip="Read off the silkscreen or generated: correct it if it is wrong."/>
                                 </Panel>
                                 <ComboBox Grid.Column="2" ItemsSource="{x:Static rec:PartsTableRowViewModel.KindOptions}"
-                                          SelectedItem="{Binding KindText}" FontSize="11" MinHeight="0" Padding="4,0"
-                                          HorizontalAlignment="Stretch" Margin="0,0,4,0"/>
+                                          SelectedItem="{Binding KindText}"/>
                                 <TextBlock Grid.Column="3" Text="{Binding Connection}" VerticalAlignment="Center" FontSize="12"/>
                                 <TextBlock Grid.Column="4" Text="{Binding Case}" VerticalAlignment="Center" FontSize="12"/>
                                 <TextBox Grid.Column="5" Text="{Binding ValueText}" PlaceholderText="{Binding ValueWatermark}"
-                                         Classes.invalid="{Binding ValueError}" FontSize="11" MinHeight="0" Padding="4,1"
-                                         Margin="0,0,4,0"/>
-                                <ComboBox Grid.Column="6" ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding ModelText}"
-                                          FontSize="11" MinHeight="0" Padding="4,0" HorizontalAlignment="Stretch" Margin="0,0,4,0"/>
+                                         Classes.invalid="{Binding ValueError}"/>
+                                <ComboBox Grid.Column="6" ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding ModelText}"/>
                                 <TextBlock Grid.Column="7" Text="{Binding PartNumber}" VerticalAlignment="Center" FontSize="12"
                                            TextTrimming="CharacterEllipsis"/>
                                 <TextBlock Grid.Column="8" Text="{Binding X}" VerticalAlignment="Center" FontSize="12"/>
@@ -175,14 +196,17 @@
         </Border>
 
         <!-- ── The report strip: one line per class, a class with anchors expands to them ───── -->
-        <ScrollViewer Grid.Row="6" MaxHeight="150" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer Grid.Row="7" MaxHeight="150" VerticalScrollBarVisibility="Auto">
             <ItemsControl ItemsSource="{Binding ReportLines}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="rec:RecognitionReportLineViewModel">
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="4">
-                                <ToggleButton IsChecked="{Binding IsExpanded}" IsVisible="{Binding HasAnchors}"
-                                              Content="▸" Padding="3,0" MinHeight="0" FontSize="10"/>
+                                <!-- A fixed column, so a line with nothing to expand still starts where the others do. -->
+                                <Panel Width="18">
+                                    <ToggleButton IsChecked="{Binding IsExpanded}" IsVisible="{Binding HasAnchors}"
+                                                  Content="▸" Padding="3,0" MinHeight="0" FontSize="10"/>
+                                </Panel>
                                 <TextBlock Text="{Binding Text}" FontSize="11" TextWrapping="Wrap" MaxWidth="980"/>
                             </StackPanel>
                             <ItemsControl ItemsSource="{Binding AnchorTexts}" IsVisible="{Binding IsExpanded}" Margin="22,0,0,2">
@@ -199,14 +223,14 @@
         </ScrollViewer>
 
         <!-- ── Status and progress ──────────────────────────────────────────────────────────── -->
-        <StackPanel Grid.Row="7" Orientation="Horizontal" Spacing="8">
+        <StackPanel Grid.Row="8" Classes="row" Orientation="Horizontal" Spacing="8">
             <ProgressBar IsIndeterminate="True" Width="90" Height="6" IsVisible="{Binding IsRecognising}"/>
             <TextBlock Text="{Binding ProgressText}" FontSize="11" Opacity="0.8" IsVisible="{Binding IsRecognising}"/>
             <TextBlock Text="{Binding Status}" FontSize="12" TextWrapping="Wrap" MaxWidth="980"/>
         </StackPanel>
 
         <!-- ── Buttons ──────────────────────────────────────────────────────────────────────── -->
-        <Grid Grid.Row="8" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto">
+        <Grid Grid.Row="9" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto">
             <Button Grid.Column="0" Content="Export Parts…" Command="{Binding ExportPartsCommand}" Margin="0,0,6,0"
                     ToolTip.Tip="Write the parts table as CSV — the file circuitrf recognize --parts reads."/>
             <Button Grid.Column="1" Content="Import Parts…" Command="{Binding ImportPartsCommand}" Margin="0,0,6,0"

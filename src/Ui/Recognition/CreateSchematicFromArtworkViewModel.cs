@@ -220,7 +220,14 @@ public sealed partial class CreateSchematicFromArtworkViewModel : ObservableObje
     }));
 
     partial void OnViaIndexChanged(int value) => ScheduleRecognition();
-    partial void OnCoplanarIndexChanged(int value) => ScheduleRecognition();
+    partial void OnCoplanarIndexChanged(int value)
+    {
+        OnPropertyChanged(nameof(CoplanarFactorApplies));
+        ScheduleRecognition();
+    }
+
+    /// <summary>The coplanar gap factor is read only under Auto.</summary>
+    public bool CoplanarFactorApplies => CoplanarIndex == 0;
     partial void OnCoplanarFactorTextChanged(string value) => ScheduleRecognition();
     partial void OnStartTextChanged(string value) => ScheduleRecognition();
     partial void OnStopTextChanged(string value) => ScheduleRecognition();
