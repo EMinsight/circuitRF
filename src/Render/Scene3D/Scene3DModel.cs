@@ -52,8 +52,9 @@ public struct Scene3DShadeVertex(float nx, float ny, float nz, uint slot = 0)
     public const int Stride = 16;
     /// <summary>brief-em3d-106 — <see cref="Slot"/>'s low 8 bits are the appearance row; this bit says the vertex colour's alpha is a
     /// STATED coverage (a Transparency, a dimmed context part) that the realistic view multiplies on (overview D12), not a kind's
-    /// default, which the appearance's Transmission replaces.</summary>
-    public const uint StatedAlpha = 0x100, SlotMask = 0xFF;
+    /// default, which the appearance's Transmission replaces. <see cref="Closed"/> says the object is a closed volume (not a sheet, a
+    /// port or a boundary face): faded by an Object-mode selection, its far side is not drawn (scene.wgsl's pbr).</summary>
+    public const uint StatedAlpha = 0x100, Closed = 0x200, SlotMask = 0xFF;
     public float Nx = nx, Ny = ny, Nz = nz;
     public uint Slot = slot;
 }

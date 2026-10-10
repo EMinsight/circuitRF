@@ -1247,10 +1247,11 @@ public static class Scene3DBuilder
                 // brief-em3d-106 R-em3d106-2e (overview D12) — whether the vertex colour's alpha is a STATED coverage (a document's
                 // Transparency, or a dimmed context part): the realistic shader multiplies it on; a kind default it does not.
                 uint stated = o.Transparency is not null || o.Context ? Scene3DShadeVertex.StatedAlpha : 0;
+                uint closed = o.Kind is Scene3DKind.Sheet or Scene3DKind.Port or Scene3DKind.Boundary ? 0 : Scene3DShadeVertex.Closed;
                 for (int v = o.FirstVertex; v < o.FirstVertex + o.VertexCount; v++)
                 {
                     var sv = _shade[v];
-                    sv.Slot = (uint)slots[k] | stated;
+                    sv.Slot = (uint)slots[k] | stated | closed;
                     _shade[v] = sv;
                 }
             }

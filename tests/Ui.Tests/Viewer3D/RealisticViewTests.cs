@@ -390,6 +390,7 @@ public sealed class RealisticViewTests : IDisposable
             Assert.True(Math.Abs((float)F(name) - (float)value) <= 1e-6 * Math.Max(1, Math.Abs(value)), $"{name}: WGSL {consts[name]}, C# {value}");
         Assert.Equal(Scene3DShadeVertex.SlotMask, U("SLOT_MASK"));
         Assert.Equal(Scene3DShadeVertex.StatedAlpha, U("STATED_ALPHA"));
+        Assert.Equal(Scene3DShadeVertex.Closed, U("CLOSED"));
         Assert.Contains($"array<AP, {Pbr.TableRows}>", wgsl);
         Assert.Contains($"sh: array<vec4f, 9>", wgsl);
         // nothing new in the shader that a scan does not compare: brief 107's eight are ShadowsOcclusionExportTests'
@@ -398,7 +399,7 @@ public sealed class RealisticViewTests : IDisposable
         // and brief 109's two are FieldPlotsRealisticTests'
         string[] brief109 = ["FIELD_SHEEN_ROUGHNESS", "SRGB_DECODE_BREAK"];
         Assert.All(brief109, n => Assert.True(consts.ContainsKey(n), n));
-        Assert.Equal(floats.Length + 2 + brief107.Length + brief109.Length, consts.Count);
+        Assert.Equal(floats.Length + 3 + brief107.Length + brief109.Length, consts.Count);
     }
 
     // ── 6. Metal offscreen ────────────────────────────────────────────────────────────────────────────────────────

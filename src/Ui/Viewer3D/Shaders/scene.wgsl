@@ -528,9 +528,11 @@ const PI: f32 = 3.14159265;
 const DIELECTRIC_F0: f32 = 0.04;
 const MIN_ROUGHNESS: f32 = 0.045;
 const MIN_NDOTV: f32 = 1e-4;
-// the shade vertex's slot: the appearance row in the low 8 bits, and a bit saying the colour's alpha is a STATED coverage (D12)
+// the shade vertex's slot: the appearance row in the low 8 bits, a bit saying the colour's alpha is a STATED coverage (D12), and
+// a bit saying the object is a closed volume (not a sheet), whose far side a faded selection does not draw
 const SLOT_MASK: u32 = 0xFFu;
 const STATED_ALPHA: u32 = 0x100u;
+const CLOSED: u32 = 0x200u;
 // the PBR Neutral tone curve (ToneCurve.cs)
 const TONE_START: f32 = 0.76;
 const TONE_DESAT: f32 = 0.15;
@@ -683,6 +685,10 @@ fn highlight_pm(rgb: vec3f, a: f32, id: u32, face: u32) -> vec3f {
 }
 
 fn pbr(i: PVO, front: bool, occ: f32) -> vec4f {
+    // A closed volume selected in Object mode is drawn faded and writes no depth, so its far side's triangles would blend over its
+    // near side in tessellation order — on a sphere, bands of the inside showing through. Its near side alone is drawn; with the
+    // clip on its far side is the cut's cap and stays.
+    if (!front && (i.slot & CLOSED) != 0u && (u.flags & 2u) == 0u && u.mode == 0u && is_selected(i.id, 0u)) { discard; }
     let m = ap.e[i.slot & SLOT_MASK];
     let v = normalize(u.eye.xyz - i.world);
     var n = normalize(i.n);

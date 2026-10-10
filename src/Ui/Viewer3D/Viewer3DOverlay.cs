@@ -72,7 +72,9 @@ public sealed class Viewer3DOverlay : Control
 
     public override void Render(DrawingContext ctx)
     {
-        if (Vm is { } vm) Paint(ctx, vm, Bounds.Width, Bounds.Height, _draw, picture: false);
+        // The silhouette at the GPU outline's two device pixels, whatever the display's scaling.
+        double scaling = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1;
+        if (Vm is { } vm) Paint(ctx, vm, Bounds.Width, Bounds.Height, _draw, picture: false, outlineWidth: 2 / Math.Max(1, scaling));
     }
 
     /// <summary>
@@ -83,7 +85,8 @@ public sealed class Viewer3DOverlay : Control
     /// is doing (the hover label and ring, the snap marker, the move gizmo's handles, the cycle prompt). The field's legend
     /// is left to FieldPicture, which paints it as the export options say.
     /// </summary>
-    internal static void Paint(DrawingContext ctx, Viewer3DViewModel vm, double w, double h, Viewer3DDrawOverlay draw, bool picture)
+    internal static void Paint(DrawingContext ctx, Viewer3DViewModel vm, double w, double h, Viewer3DDrawOverlay draw, bool picture,
+                               double outlineWidth = 2)
     {
         bool dark = ThemeService.CurrentVariant == ColorVariant.Dark;
         IBrush ink = dark ? Brushes.WhiteSmoke : new SolidColorBrush(Color.FromRgb(35, 38, 44));
@@ -147,6 +150,7 @@ public sealed class Viewer3DOverlay : Control
                 Polyline(ctx, vm, hp, w, h, halo, new Pen(RubberBrush, 2.5, lineCap: PenLineCap.Round, lineJoin: PenLineJoin.Round));
         }
         if (picture) SelectionOutline(ctx, vm, w, h);
+        Silhouette(ctx, vm, w, h, outlineWidth);
         if (!picture && vm.CycleText.Length > 0) Text(ctx, vm.CycleText, new Point(10, 8), ink, 12, dark);
 
         if (vm.EditHost is { } host)
@@ -212,6 +216,50 @@ public sealed class Viewer3DOverlay : Control
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// An Object-mode selection's SILHOUETTE (Scene3DSilhouette): the outline of a curved surface from the eye, which its
+    /// feature edges do not draw — a selected sphere's only outline. In fs_edge's colour and as it draws: no depth test,
+    /// nothing on the clipped side; a moving object's follows its preview's copies, as its feature edges do.
+    /// </summary>
+    private static void Silhouette(DrawingContext ctx, Viewer3DViewModel vm, double w, double h, double width)
+    {
+        var view = vm.View;
+        if (vm.SelectMode != CircuitRF.Render.Scene3D.Edit.Scene3DSelectMode.Object || view.Selection.Length == 0) return;
+        var scene = vm.Scene;
+        var cam = view.Camera;
+        var preview = view.Preview;
+        var segments = new List<(Vector3 A, Vector3 B)>();
+        int limit = Math.Min(view.Selection.Length, Scene3DFramePlan.SelectionLimit);
+        var done = new HashSet<uint>();
+        for (int k = 0; k < limit; k++)
+        {
+            uint id = view.Selection[k].Object;
+            if (id < 1 || id > scene.Objects.Length || !view.IsDrawn(id) || !done.Add(id)) continue;
+            if (preview is not null && preview.IsMoving(id))
+            {
+                foreach (var m in preview.Copies) CircuitRF.Render.Scene3D.Edit.Scene3DSilhouette.Collect(scene, id, cam, m, segments);
+                if (!preview.KeepOriginal) continue;
+            }
+            CircuitRF.Render.Scene3D.Edit.Scene3DSilhouette.Collect(scene, id, cam, Matrix4x4.Identity, segments);
+        }
+        if (segments.Count == 0) return;
+        var clip = view.Clip.Enabled ? view.Clip.Equation : (Vector4?)null;
+        var g = new StreamGeometry();
+        using (var c = g.Open())
+            foreach (var (a0, b0) in segments)
+            {
+                var (a, b) = (a0, b0);
+                if (clip is { } cp && !ClipSegment(cp, ref a, ref b)) continue;
+                var (ax, ay, fa) = cam.Project(a, (float)w, (float)h);
+                var (bx, by, fb) = cam.Project(b, (float)w, (float)h);
+                if (!fa || !fb) continue;
+                c.BeginFigure(new Point(ax, ay), false);
+                c.LineTo(new Point(bx, by));
+                c.EndFigure(false);
+            }
+        ctx.DrawGeometry(null, new Pen(new SolidColorBrush(OutlineColour), width, lineCap: PenLineCap.Round), g);
     }
 
     /// <summary>fs_edge's Face-mode test: an edge vertex carries its two faces packed, low and high 16 bits.</summary>

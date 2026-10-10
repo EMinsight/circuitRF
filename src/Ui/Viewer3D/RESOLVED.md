@@ -275,3 +275,21 @@ labels covered one another in the Front and Side views.
 - **A face probe's marker was at its SOLID's centre** (`p.Face` fell through to the solid branch), so die/zmax sat inside the
   die and both flange/zmin probes at the flange's middle. It is now the face's area-weighted centre (`FaceCentre`, from
   `Scene3DFaces.Triangles`).
+
+## A selected sphere: bands in the realistic view, and its silhouette outline (2026-10-09)
+
+- **The bands were the sphere's own far side.** An object selected in Object mode is drawn faded with the translucent ones —
+  depth test, NO depth write, cull none on every backend — so its far-side triangles blend over its near side in INDEX order.
+  A sphere's tessellation runs in latitude rings, so at some angles whole rings of the far side land on top. `fs_color` shades a
+  back face almost as it shades the front, which hides it in the default view; `pbr()` flips a back face's normal and shades
+  the inside, lit and shadowed differently, so the realistic view showed it as horizontal stripes. **Fix:** a shade-slot bit,
+  `Scene3DShadeVertex.Closed` (0x200, every kind but Sheet/Port/Boundary), and `pbr()` discards a back face of a closed,
+  Object-mode-selected object while the clip is off (with the clip on the far side is the cut's cap and must stay). A sheet
+  keeps both sides — seen from behind, its back IS its visible surface. A non-convex solid's near side can still overlap
+  itself and blend in index order; nothing reported, so not addressed.
+- **A curved surface had no selection outline**: the outline is feature edges (face boundaries), and a sphere has none. Its
+  SILHOUETTE is drawn by the overlay (`Scene3DSilhouette` in `src/Render`, `Viewer3DOverlay.Silhouette`), in both views:
+  triangle edges INSIDE one face (vertex Face ids equal — so a box's edges, already drawn by the GPU, are never drawn twice)
+  whose two triangles face opposite ways from the eye. Adjacency is built once per (scene, object), welding by position so a
+  seam's duplicated vertices join; past 200,000 triangles nothing is built. On screen it is `2 / RenderScaling` DIPs, the
+  GPU outline's two device pixels; it follows a drag preview's copies like the feature edges.

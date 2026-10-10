@@ -200,7 +200,7 @@ public sealed class ShadingNormalsTests : IDisposable
         Assert.True(MemoryMarshal.AsBytes(a.Vertices.AsSpan()).SequenceEqual(MemoryMarshal.AsBytes(b.Vertices.AsSpan())));
         // brief-em3d-105 — each slot is now its object's row of the appearance table (it was 0 until 105 filled it).
         Assert.NotEmpty(a.Appearances);
-        Assert.All(a.ShadeVertices, s => Assert.True(s.Slot < a.Appearances.Length));
+        Assert.All(a.ShadeVertices, s => Assert.True((s.Slot & Scene3DShadeVertex.SlotMask) < a.Appearances.Length));
     }
 
     // ── 9. lazy upload ─────────────────────────────────────────────────────────────────────────
