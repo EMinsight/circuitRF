@@ -217,7 +217,9 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
             string before = C3dPersistence.SerializeObject(w), after = C3dPersistence.SerializeObject(seated);
             if (after != before) slots.Add(new C3dEditSlot(false, i, before, after));
         }
-        if (slots.Count > 0) Push(new C3dEdit($"Re-seat wire ends: {string.Join(", ", slots.Select(s => Document.Objects[s.Index].Name))}", slots, ApplySlots));
+        // brief-em3d-133 — a bound end z the seat moves goes through the drag rule at Push, which may refuse (its sentence stays).
+        if (slots.Count > 0 && !Push(new C3dEdit($"Re-seat wire ends: {string.Join(", ", slots.Select(s => Document.Objects[s.Index].Name))}", slots, ApplySlots)))
+            return;
         string none = missing.Count == 0 ? "" : $" Nothing conductive is under {string.Join(", ", missing)}: move {(missing.Count == 1 ? "it" : "them")} onto a pad.";
         StatusMessage = (slots.Count > 0 ? $"Re-seated {slots.Count} wire(s)." : "Every end is already on the top under it.") + none;
     }
@@ -244,22 +246,55 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
 
     /// <summary>
     /// 3D editor round 3 — Properties' typed wire point: point <paramref name="k"/> of the wire at <paramref name="index"/>
-    /// moved to <paramref name="world"/> (a wire's points ARE world points), the feet re-seated exactly as a Vertex-mode
-    /// drag's are, one undo entry. An end moved off every pad is refused; an end's z is its pad's top, so a typed z on an
-    /// end that the seat puts back is said rather than silently ignored. Null on success, else why not.
+    /// moved (a wire's points ARE world points), the feet re-seated exactly as a Vertex-mode drag's are, one undo entry. An
+    /// end moved off every pad is refused; an end's z is its pad's top, so a typed z on an end that the seat puts back is
+    /// said rather than silently ignored. Null on success, else why not.
+    /// <para>brief-em3d-133 R-em3d133-1 — <paramref name="texts"/> holds x, y and z, null for a component left as it is. Each is
+    /// a number in the display unit (a typed number replaces an expression the component held) or an expression, bound at
+    /// its site unit as every dimension field binds one. A typed expression on an end's z is judged by the pad lookup and
+    /// never corrected (R-em3d133-2): it lands on a top, or the edit is refused with the expression in the sentence.</para>
     /// </summary>
-    public string? SetWirePoint(int index, int k, C3dPoint3 world)
+    public string? SetWirePoint(int index, int k, IReadOnlyList<string?> texts)
     {
         if (index < 0 || index >= Document.Objects.Count || Document.Objects[index] is not C3dWire was) return "Select one wire.";
         if (k < 0 || k >= was.Points.Count) return $"{was.Name} has no point {k + 1}.";
-        if (was.Points[k] == world) return null;
         string before = C3dPersistence.SerializeObject(was);
         var moved = (C3dWire)C3dPersistence.DeserializeObject(before);
-        moved.Points[k] = world;
-        if (SeatEditedWire(was, ref moved) is { } refusal) return refusal;
+        var spec = C3dBindings.SpecOf(typeof(C3dWire), nameof(C3dWire.Points))!.ElementAt(k);
+        bool zTypedAsExpression = false;
+        for (int c = 0; c < 3; c++)
+        {
+            if (texts[c]?.Trim() is not { } text) continue;
+            if (text.Length == 0) return "Type a number or an expression.";
+            if (LayoutUnits.TryParse(text, Document.DisplayUnit, Document.DbuPerMicron, out long dbu))
+            {
+                C3dBindings.SetExpr(moved, spec, c, null);
+                C3dBindings.SetNumber(moved, spec, c, dbu);
+                continue;
+            }
+            var (expr, unit) = SplitUnit(text, Document.DisplayUnit);
+            if (!Parses(expr)) return $"'{expr}' is neither a number nor an expression the engine can read.";
+            var e = new C3dExpr(expr, C3dUnits.Stored(unit));
+            if (C3dBindings.GetExpr(was, spec, c) == e) continue;
+            C3dBindings.SetExpr(moved, spec, c, e);
+            zTypedAsExpression |= c == 2;
+            // Its value now, so the seat and the pad lookup see where it puts the point. One that does not evaluate is kept
+            // as typed: the resolver shows it red, and elaboration refuses the wire by name, as for every dimension.
+            try { C3dBindings.SetNumber(moved, spec, c, C3dVariableEdits.Evaluate(Resolution, e, C3dFieldKind.Length) * 1e6 * Document.DbuPerMicron); }
+            catch (Exception) { /* see above */ }
+        }
+        var world = moved.Points[k];
         bool end = k == 0 || k == was.Points.Count - 1;
-        string? zNote = end && moved.Points[k].Z != world.Z
-            ? $"{was.Name}'s {(k == 0 ? "start" : "end")} is bonded to the top of its pad, at z = {Length(moved.Points[k].Z)}: an end's z follows its pad."
+        string which = k == 0 ? "start" : "end";
+        if (end && zTypedAsExpression && PadAt(world) is null)
+        {
+            var q = new Point3(C3dLowering.Metres(world.X, Document.DbuPerMicron), C3dLowering.Metres(world.Y, Document.DbuPerMicron),
+                               C3dLowering.Metres(world.Z, Document.DbuPerMicron));
+            return C3dWires.NoPad(was.Name, which, q, WirePads(), PerDbu, LayoutUnits.AsciiSuffix(Document.DisplayUnit)) + C3dWires.BoundEnd(moved, k);
+        }
+        if (SeatEditedWire(was, ref moved) is { } refusal) return refusal;
+        string? zNote = end && moved.Points[k].Z != world.Z && C3dBindings.GetExpr(moved, spec, 2) is null
+            ? $"{was.Name}'s {which} is bonded to the top of its pad, at z = {Length(moved.Points[k].Z)}: an end's z follows its pad."
             : null;
         string after = C3dPersistence.SerializeObject(moved);
         if (after == before) return zNote;

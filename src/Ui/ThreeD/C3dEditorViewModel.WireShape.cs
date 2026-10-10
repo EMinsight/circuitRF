@@ -40,6 +40,7 @@ public sealed partial class C3dEditorViewModel
         if (index < 0 || index >= Document.Objects.Count || Document.Objects[index] is not C3dWire was) return "Select one wire.";
         var d = C3dDimension.Parse(text, Document.DisplayUnit, Document.DbuPerMicron);
         if (d.Kind != C3dDimensionKind.Value || d.Dbu <= 0) return d.Why ?? "A loop height is a positive length.";
+        if (LoopHeightRefusal(was) is { } bound) return bound;
         long target = d.Dbu;
         if (MeasureAssembly(was) is not { } now)
             return $"{was.Name} lands on no pad, so its loop height — from the pad's top to the top of the wire — has nothing to be " +
@@ -89,12 +90,28 @@ public sealed partial class C3dEditorViewModel
         var wire = ToWBond(was);
         WireEdits.ScaleSpan(wire, (double)d.Dbu / now, moveOutputFoot: true);
         var moved = WithPoints(was, wire);
+        C3dWires.OffsetBoundPoints(was, moved, Document.DisplayUnit, Document.DbuPerMicron);   // brief-em3d-133: D2
         if (SeatEditedWire(was, ref moved) is { } refusal) return refusal;
         string before = C3dPersistence.SerializeObject(was);
         if (!Push(new C3dEdit($"Span of {was.Name}", [new C3dEditSlot(false, index, before, C3dPersistence.SerializeObject(moved))], ApplySlots)))
             return StatusMessage;
         StatusMessage = $"'{was.Name}' spans {Length(d.Dbu)}; its end moved, its start stayed.";
         return null;
+    }
+
+    /// <summary>
+    /// brief-em3d-133 R-em3d133-4 — Loop height rewrites every interior point's z, so it is refused on a wire holding any
+    /// point expression, naming the first, except one whose only expressions are its ends' z: nothing it changes is bound,
+    /// and the ends stay on their pads. The drag rule is not used here: it would rewrite a variable other geometry may use.
+    /// </summary>
+    private static string? LoopHeightRefusal(C3dWire w)
+    {
+        int last = w.Points.Count - 1;
+        var first = C3dBindings.BoundOf(w.Name, w)
+                               .FirstOrDefault(f => f.Spec.Element is { } k && !(f.Component == 2 && (k == 0 || k == last)));
+        return first is null ? null
+            : $"'{w.Name}' {C3dBindings.Label(first.Spec, first.Component, first.Path)} holds {first.Expr.Expr}: Loop height rewrites " +
+              "every point between the ends, so it cannot keep an expression there. Replace it with a number, or edit the expression.";
     }
 
     private static long AxisHeight(C3dWire w) => w.Points.Count == 0 ? 0 : w.Points.Max(p => p.Z) - w.Points.Min(p => p.Z);

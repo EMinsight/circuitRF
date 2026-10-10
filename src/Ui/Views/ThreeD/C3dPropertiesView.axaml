@@ -212,15 +212,23 @@
                     <TextBlock Grid.Column="5" Text="{Binding LengthUnit}" FontSize="11" Opacity="0.7" VerticalAlignment="Center" Margin="4,0,0,0"/>
                 </Grid>
                 <TextBlock Text="Points (x, y, z)" FontSize="11" Opacity="0.7" Margin="0,4,0,0"
-                           ToolTip.Tip="The wire's axis, start to end, in world coordinates. Each end sits on the top of its pad. +▲ and +▼ add a point on the curve through its neighbours; − removes one."/>
+                           ToolTip.Tip="The wire's axis, start to end, in world coordinates: a number or an expression each. Each end sits on the top of its pad. +▲ and +▼ add a point on the curve through its neighbours; − removes one."/>
                 <ItemsControl ItemsSource="{Binding WirePoints}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="t3:C3dWirePointRow">
+                          <!-- brief-em3d-133 R-em3d133-1 — each coordinate a number or an expression, as every dimension is. -->
+                          <StackPanel Spacing="1">
                             <Grid ColumnDefinitions="36,*,3,*,3,*,3,54" Margin="0,1">
                                 <TextBlock Grid.Column="0" Text="{Binding Label}" FontSize="10" Opacity="0.7" VerticalAlignment="Center"/>
-                                <TextBox Grid.Column="1" Text="{Binding X}" FontSize="11" Padding="3,1" KeyDown="OnWirePointKey" LostFocus="OnWirePointLostFocus"/>
-                                <TextBox Grid.Column="3" Text="{Binding Y}" FontSize="11" Padding="3,1" KeyDown="OnWirePointKey" LostFocus="OnWirePointLostFocus"/>
-                                <TextBox Grid.Column="5" Text="{Binding Z}" FontSize="11" Padding="3,1" KeyDown="OnWirePointKey" LostFocus="OnWirePointLostFocus"/>
+                                <TextBox Grid.Column="1" Text="{Binding XField.Text}" Classes="dim" Padding="3,1" ToolTip.Tip="{Binding XField.Label}"
+                                         Classes.error="{Binding XField.Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                         KeyDown="OnWirePointKey" LostFocus="OnWirePointLostFocus"/>
+                                <TextBox Grid.Column="3" Text="{Binding YField.Text}" Classes="dim" Padding="3,1" ToolTip.Tip="{Binding YField.Label}"
+                                         Classes.error="{Binding YField.Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                         KeyDown="OnWirePointKey" LostFocus="OnWirePointLostFocus"/>
+                                <TextBox Grid.Column="5" Text="{Binding ZField.Text}" Classes="dim" Padding="3,1" ToolTip.Tip="{Binding ZField.Label}"
+                                         Classes.error="{Binding ZField.Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                         KeyDown="OnWirePointKey" LostFocus="OnWirePointLostFocus"/>
                                 <!-- Add a point above or below this one, on the curve through its neighbours; remove an interior one. -->
                                 <Grid Grid.Column="7" ColumnDefinitions="18,18,18">
                                     <Button Grid.Column="0" Content="+▲" FontSize="9" Padding="0" HorizontalContentAlignment="Center"
@@ -234,6 +242,11 @@
                                             ToolTip.Tip="Remove this point. The start and the end are bonded to their pads and stay."/>
                                 </Grid>
                             </Grid>
+                            <SelectableTextBlock Text="{Binding Notes}" FontSize="11" Opacity="0.8" TextWrapping="Wrap" Margin="36,0,0,0"
+                                                 IsVisible="{Binding Notes, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <SelectableTextBlock Text="{Binding Errors}" FontSize="11" Foreground="IndianRed" TextWrapping="Wrap" Margin="36,0,0,0"
+                                                 IsVisible="{Binding Errors, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                          </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>

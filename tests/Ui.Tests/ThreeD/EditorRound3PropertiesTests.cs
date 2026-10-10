@@ -1,7 +1,7 @@
 // ================================================================
 //  EditorRound3PropertiesTests.cs — the 3D editor's third round of owner feedback, the Properties half: a box's size is
 //  offered as X, Y and Z size and resizes it; a bond wire's diameter, bonds and every point are editable, each typed
-//  point one undo entry, bad text refused, and an end moved off every pad refused exactly as a drag's is.
+//  point one undo entry, text that does not parse refused, and an end moved off every pad refused exactly as a drag's is.
 // ================================================================
 
 using CircuitRF.Design.Layout;
@@ -90,9 +90,9 @@ public sealed class EditorRound3PropertiesTests : IDisposable
         int entries = vm.UndoEntries;
 
         var mid = p.WirePoints[1];
-        mid.Z = "abc";
+        mid.Z = "1 +";                                                    // brief-em3d-133: a name is an expression now
         p.CommitWirePoint(mid);
-        Assert.StartsWith("A point is three lengths", p.Error, StringComparison.Ordinal);
+        Assert.Equal("'1 +' is neither a number nor an expression the engine can read.", p.Error);
         Assert.Equal(entries, vm.UndoEntries);
 
         mid.Z = "150";

@@ -130,3 +130,46 @@ follow their point, and any other `Points` key shape refuses the edit. Brief 131
 A headless probe showed the camera itself never moves in the view model during a G-move: `Camera.Target`, `Distance`
 and `Yaw` were constant, and the origin carry was not involved. Look in the pane's press classification first when
 this symptom recurs.
+
+## Expressions in a wire's points: the editor (2026-10-09, brief-em3d-133)
+
+**The Inspector.** Each wire point row's x, y and z are `C3dDimensionField`s, built by the same `Field` helper as every
+other dimension (`WirePointFields`). Notes (`z = 200 µm`) and errors sit under the row. A commit passes only the
+components whose text changed (`SetWirePoint(index, k, texts)`). A number replaces an expression; anything else is bound
+at its site unit. Text that does not parse is refused with the shared sentence. A name that does not resolve is stored
+and shown red, as for every dimension. A name is an expression now, so `abc` is no longer a refusal: round 3's test types
+`1 +` instead.
+
+**One rule change makes every wire edit work: `PlanNames` no longer compares a wire's points path by path.** Brief 51's
+rule puts back an expression a tool dropped and solves a bound component whose number changed. For a wire's points
+both are wrong. An insert renumbers `Points[k]`, so a path-by-path comparison put the old point's expression on the new
+point. A translation already wrote the offset (`BakePlacement`, 132), and solving that component as well rewrote the
+variable. `WirePointPlan` replaces it. The edit's own point expressions are authoritative and nothing is put back. A
+bound component whose number no longer equals its expression's value is one the edit moved without rewriting it, as a
+seat does. That component takes the strict drag rule of overview R-em3d131-3: a bare name is solved and written, and
+any other expression refuses the edit, naming the field. Brief 51's general rule solves anything affine in one name;
+points do not. `C3dVariableEdits.Evaluate` is the comparison, and 0.5 DBU is the tolerance.
+
+**Who writes the offset.** Move, Align and Align to Face (and a duplicate's copies) already do, through `BakePlacement`.
+A vertex Move (G) and a Span move numbers directly, so both call `C3dWires.OffsetBoundPoints(was, moved)`. The vertex Move
+calls it in the preview and again at the release, so the scene previews the text the commit writes. Without it, the
+preview's resolver evaluates the old expression and the point does not move.
+- **An end's z is not offset.** The seat decides it (R-em3d133-2). A vertex Move of an end that drifts a little in z
+  would otherwise write `t_die + 3um`, which the seat moves back to the pad top. That z would then no longer equal its
+  expression, and a compound refuses. So `OffsetBoundPoints` keeps a bound end z's number and text. The seat that follows
+  writes nothing when the expression still lands.
+
+**The seat (D1).** `C3dWires.Reseat` leaves a bound end z that already lands on a top (`PadAt`), even when a higher top
+is under it. Re-seating it onto the higher top would rewrite the name. An unbound end keeps the old behaviour (the highest
+top). A bound z that misses is seated, and the drag rule at Push decides: a bare name is rewritten, a compound refuses.
+Re-Seat Wire Ends now returns when Push refuses, so the refusal stays on the status line. Before this, the summary
+overwrote it.
+- **A typed expression on an end's z is judged, never corrected.** When it misses, the edit is refused with
+  `C3dWires.NoPad`'s sentence plus `Its z is t_die + 5um.` Running the drag rule here would rewrite the name the user had
+  just typed. Elaboration's refusal for an end that misses carries the same suffix (`C3dWires.BoundEnd`).
+
+**Loop height (R-em3d133-4)** is refused before anything is computed when any point component is bound, other than an
+end's z. The refusal names the first one (`'w1' point 2 z holds h_loop: …`). A bound end x or y is refused as well,
+because the decision allows only the two ends' z.
+
+Gate: `WirePointExpressionsTests` (11). A mutation that restores the path-by-path rule for wire points fails 6 of them.

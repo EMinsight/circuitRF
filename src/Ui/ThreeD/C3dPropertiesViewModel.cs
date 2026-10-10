@@ -92,8 +92,10 @@ public sealed class C3dDimensionRow(string label, string unit, IReadOnlyList<C3d
 /// <summary>
 /// 3D editor round 3 — one point of a selected bond wire, its world coordinates editable in the display unit. The first
 /// and last are the bonded ends: each sits on the top of its pad, so its z follows the pad.
+/// <para>brief-em3d-133 R-em3d133-1 — each coordinate is a dimension field, a number or an expression, read, refused and
+/// shown exactly as every other dimension is; what an expression resolves to and what refused it are listed under the row.</para>
 /// </summary>
-public sealed partial class C3dWirePointRow : ObservableObject
+public sealed class C3dWirePointRow(IReadOnlyList<C3dDimensionField> fields)
 {
     public required int Index { get; init; }
     public required string Label { get; init; }
@@ -103,10 +105,16 @@ public sealed partial class C3dWirePointRow : ObservableObject
     public bool CanAddBelow { get; init; }
     /// <summary>An interior point: the two ends are bonded to their pads and stay.</summary>
     public bool CanRemove { get; init; }
-    [ObservableProperty] private string _x = "";
-    [ObservableProperty] private string _y = "";
-    [ObservableProperty] private string _z = "";
-    internal (string X, string Y, string Z) Loaded { get; set; }
+    public C3dDimensionField XField { get; } = fields[0];
+    public C3dDimensionField YField { get; } = fields[1];
+    public C3dDimensionField ZField { get; } = fields[2];
+    public string X { get => XField.Text; set => XField.Text = value; }
+    public string Y { get => YField.Text; set => YField.Text = value; }
+    public string Z { get => ZField.Text; set => ZField.Text = value; }
+
+    /// <summary>What each bound coordinate resolves to (<c>z = 254 µm</c>), and what refused one.</summary>
+    public string Notes { get; } = string.Join("\n", fields.Where(f => f.ValueText.Length > 0).Select(f => f.Axis + " " + f.ValueText));
+    public string Errors { get; } = string.Join("\n", fields.Where(f => !string.IsNullOrEmpty(f.Error)).Select(f => f.Axis + ": " + f.Error));
 }
 
 public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : ObservableObject
@@ -812,36 +820,25 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         WireLoopHeight = editor.WireLoopHeightDbu(wire) is { } h ? L(h) : "";
         WireSpan = L(C3dEditorViewModel.WireSpanDbu(wire));
         _wireLoaded = (WireLoopHeight, WireSpan);
-        for (int k = 0; k < wire.Points.Count; k++)
+        int last = wire.Points.Count - 1;
+        for (int k = 0; k <= last; k++)
         {
-            var p = wire.Points[k];
-            string label = k == 0 ? "Start" : k == wire.Points.Count - 1 ? "End" : k.ToString(CultureInfo.InvariantCulture);
-            int last = wire.Points.Count - 1;
-            var row = new C3dWirePointRow
+            string label = k == 0 ? "Start" : k == last ? "End" : k.ToString(CultureInfo.InvariantCulture);
+            WirePoints.Add(new C3dWirePointRow(editor.WirePointFields(wire, k))
             {
-                Index = k, Label = label, X = L(p.X), Y = L(p.Y), Z = L(p.Z),
-                CanAddAbove = k > 0, CanAddBelow = k < last, CanRemove = k > 0 && k < last,
-            };
-            row.Loaded = (row.X, row.Y, row.Z);
-            WirePoints.Add(row);
+                Index = k, Label = label, CanAddAbove = k > 0, CanAddBelow = k < last, CanRemove = k > 0 && k < last,
+            });
         }
     }
 
-    /// <summary>3D editor round 3 — a wire point's Enter or lost focus: three lengths in the display unit (a suffix may name
-    /// another), the point moved there and the feet re-seated exactly as a Vertex-mode drag's are, as one undo entry — or
-    /// the refusal, with the fields left for correcting.</summary>
+    /// <summary>3D editor round 3 — a wire point's Enter or lost focus: the point moved and the feet re-seated exactly as a
+    /// Vertex-mode drag's are, as one undo entry — or the refusal, with the fields left for correcting. brief-em3d-133: each
+    /// changed coordinate is a number or an expression; one left as loaded is not written.</summary>
     public void CommitWirePoint(C3dWirePointRow row)
     {
-        if (!IsWire || ObjectIndex < 0 || (row.X, row.Y, row.Z) == row.Loaded) return;
-        var doc = editor.Document;
-        if (!LayoutUnits.TryParse(row.X, doc.DisplayUnit, doc.DbuPerMicron, out long x) ||
-            !LayoutUnits.TryParse(row.Y, doc.DisplayUnit, doc.DbuPerMicron, out long y) ||
-            !LayoutUnits.TryParse(row.Z, doc.DisplayUnit, doc.DbuPerMicron, out long z))
-        {
-            Error = $"A point is three lengths, in {LayoutUnits.Suffix(doc.DisplayUnit)} unless a unit is written.";
-            return;
-        }
-        Error = editor.SetWirePoint(ObjectIndex, row.Index, new C3dPoint3(x, y, z)) ?? "";
+        C3dDimensionField[] fields = [row.XField, row.YField, row.ZField];
+        if (!IsWire || ObjectIndex < 0 || fields.All(f => f.Text == f.Loaded)) return;
+        Error = editor.SetWirePoint(ObjectIndex, row.Index, [.. fields.Select(f => f.Text == f.Loaded ? null : f.Text)]) ?? "";
     }
 
     /// <summary>A point added between <paramref name="row"/> and the one before it (<paramref name="below"/> false) or after

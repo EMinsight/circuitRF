@@ -335,7 +335,8 @@ public static class C3dWires
         var endPad   = PadAt(pads, axis[^1], tolM);
         foreach (var (pad, which, q) in new[] { (startPad, "start", axis[0]), (endPad, "end", axis[^1]) })
             if (pad is null)
-                return new(null, null, null, startPad, endPad, NoPad(name, which, q, pads, tolM, unit));
+                return new(null, null, null, startPad, endPad,
+                           NoPad(name, which, q, pads, tolM, unit) + BoundEnd(w, which == "start" ? 0 : w.Points.Count - 1));
 
         var startProcess = WireBondProcess.Resolve(dNm, FootNm(w.Start), workspace);
         var endProcess   = WireBondProcess.Resolve(dNm, FootNm(w.End), workspace);
@@ -360,6 +361,17 @@ public static class C3dWires
             : " Nothing conductive is under it: move the end onto a pad.";
         return $"{name}'s {which} is no longer on a pad: no conductor's top surface is at {where}.{under} A wire is not " +
                "re-routed when what it was bonded to moves, because that would change its inductance.";
+    }
+
+    /// <summary>brief-em3d-133 R-em3d133-2 — an end that misses its pad, when it is placed by expressions: the text of each
+    /// bound component, so the refusal says what put it there (<c> Its z is t_sub + t_die.</c>); empty when none is bound.</summary>
+    public static string BoundEnd(C3dWire w, int k)
+    {
+        if (k < 0 || C3dBindings.SpecOf(typeof(C3dWire), nameof(C3dWire.Points)) is not { } spec) return "";
+        var parts = new List<string>();
+        for (int c = 0; c < 3; c++)
+            if (C3dBindings.GetExpr(w, spec.ElementAt(k), c) is { } e) parts.Add($"{(c switch { 0 => "x", 1 => "y", _ => "z" })} is {e.Expr}");
+        return parts.Count == 0 ? "" : $" Its {string.Join(", its ", parts)}.";
     }
 
     private static string Length(double m, string unit)
@@ -424,15 +436,45 @@ public static class C3dWires
         var copy = (C3dWire)C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(w));
         unseated = [];
         double per = C3dLowering.Metres(1, dbuPerMicron);
+        var spec = C3dBindings.SpecOf(typeof(C3dWire), nameof(C3dWire.Points))!;
         for (int e = 0; e < 2 && copy.Points.Count > 0; e++)
         {
             int i = e == 0 ? 0 : copy.Points.Count - 1;
             var q = copy.Points[i];
+            // brief-em3d-133 R-em3d133-2 — a bound z that already lands on a top is never re-seated: not even onto a higher
+            // top under it, which would rewrite the name it holds.
+            if (C3dBindings.GetExpr(copy, spec.ElementAt(i), 2) is not null &&
+                PadAt(pads, new Point3(C3dLowering.Metres(q.X, dbuPerMicron), C3dLowering.Metres(q.Y, dbuPerMicron), C3dLowering.Metres(q.Z, dbuPerMicron)), per) is not null)
+                continue;
             if (PadUnder(pads, C3dLowering.Metres(q.X, dbuPerMicron), C3dLowering.Metres(q.Y, dbuPerMicron), per) is { } pad)
                 copy.Points[i] = q with { Z = (long)Math.Round(pad.TopM / per, MidpointRounding.AwayFromZero) };
             else unseated.Add(e == 0 ? "start" : "end");
         }
         return copy;
+    }
+
+    /// <summary>
+    /// brief-em3d-133 R-em3d133-3 — an edit that moved <paramref name="was"/>'s points to <paramref name="moved"/>'s (a
+    /// vertex Move, a span) keeps every bound component's expression and writes the step into it (overview D2): each bound
+    /// component whose number changed gets <see cref="C3dPointExpressions.OffsetExpression"/> of the change, in
+    /// <paramref name="unit"/>, so the variable it names is never rewritten. An END's z is not offset: the seat decides it
+    /// (R-em3d133-2), so a bound one keeps its number and its text here and the seat that follows writes nothing when the
+    /// expression still lands. Nothing is done when the edit changed the number of points.
+    /// </summary>
+    public static void OffsetBoundPoints(C3dWire was, C3dWire moved, LayoutUnit unit, int dbuPerMicron)
+    {
+        if (was.Points.Count != moved.Points.Count || moved.Exprs is null) return;
+        var spec = C3dBindings.SpecOf(typeof(C3dWire), nameof(C3dWire.Points))!;
+        int last = moved.Points.Count - 1;
+        for (int k = 0; k <= last; k++)
+            for (int c = 0; c < 3; c++)
+            {
+                var element = spec.ElementAt(k);
+                if (C3dBindings.GetExpr(moved, element, c) is not { } e) continue;
+                long from = (long)C3dBindings.GetNumber(was, element, c)!.Value, to = (long)C3dBindings.GetNumber(moved, element, c)!.Value;
+                if (c == 2 && (k == 0 || k == last)) { C3dBindings.SetNumber(moved, element, c, from); continue; }
+                if (to != from) C3dBindings.SetExpr(moved, element, c, C3dPointExpressions.OffsetExpression(e, to - from, unit, dbuPerMicron));
+            }
     }
 
     /// <summary>

@@ -171,6 +171,10 @@ public static class C3dVariableEdits
         return new C3dWrite(name, b.Parameter, C3dExpressionText.Number(x / scale), unit);
     }
 
+    /// <summary>brief-em3d-133 — the field's value (base SI) with every name at its resolved value: what an edit compares a
+    /// written number with, to tell a component it rewrote from one it moved without rewriting.</summary>
+    public static double Evaluate(C3dResolution res, C3dExpr e, C3dFieldKind kind) => Measure(res, e, kind, null, 0);
+
     private static bool Writable(C3dResolution res, string name)
         => res.Names.TryGetValue(name, out var n) && n.Value is not null && n.Source != C3dNameSource.Set;
 

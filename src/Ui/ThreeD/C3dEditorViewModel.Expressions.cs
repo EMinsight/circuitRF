@@ -140,7 +140,6 @@ public sealed partial class C3dEditorViewModel
     public IEnumerable<C3dDimensionField> DimensionFields(object item, string name, Func<string, string> label, Func<string, (string, string)> group)
     {
         var res = Resolution;
-        var unit = Document.DisplayUnit;
         var obj = item as C3dObject;
         foreach (var (prefix, owner) in C3dBindings.OwnersOf(item))
             foreach (var (spec, k, path) in C3dBindings.FieldsOf(owner, prefix))
@@ -153,32 +152,8 @@ public sealed partial class C3dEditorViewModel
                 if (spec.Element is not null) continue;
                 bool wireDefault = obj is C3dWire { DiameterUm: null } && path == nameof(C3dWire.DiameterUm);
                 if (!wireDefault && C3dBindings.GetNumber(owner, spec, k) is not { } n && C3dBindings.GetExpr(owner, spec, k) is null) continue;
-                var e = C3dBindings.GetExpr(owner, spec, k);
-                string text;
-                string value = "";
-                if (e is not null)
-                {
-                    text = e.Expr + (SiteSuffix(spec.Kind, e.Unit) is { } s ? " " + s : "");
-                    if (res.FieldValues.TryGetValue((name, path), out double si))
-                        value = "= " + spec.Kind switch
-                        {
-                            // 3D editor round 4 — a µm field (a wire's diameter, a sheet's thickness) is a length like any
-                            // other on screen: the file keeps µm, the Inspector speaks the display unit.
-                            C3dFieldKind.Length or C3dFieldKind.Microns => C3dUnits.Spell(si, unit),
-                            C3dFieldKind.Angle => (si * 180 / Math.PI).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture) + "°",
-                            _ => si.ToString("0", System.Globalization.CultureInfo.InvariantCulture),
-                        };
-                }
-                else text = SpellNumber(spec.Kind, wireDefault ? C3dWires.DefaultDiameterUm : C3dBindings.GetNumber(owner, spec, k) ?? 0);
-                if (e is null && wireDefault) value = "The default (1 mil)";
                 var (grp, axis) = group(path);
-                string? error = res.FieldErrors.FirstOrDefault(x => x.Item == name && x.Path == path)?.Message;
-                yield return new C3dDimensionField
-                {
-                    Path = path, Label = label(path), Group = grp, Axis = axis, Kind = spec.Kind,
-                    ValueText = value, Error = error,
-                    IsExpression = e is not null, Text = text, Loaded = text,
-                };
+                yield return Field(res, name, owner, spec, k, path, label(path), grp, axis, wireDefault);
             }
         // 3D editor round 4 — a wire with no array is a row of one: its count is offered, and typing more makes the row.
         if (obj is C3dWire { Array: null })
@@ -190,6 +165,52 @@ public sealed partial class C3dEditorViewModel
                 ValueText = "One wire. More makes a row, side by side across its run (its pitch then shows here).",
             };
         }
+    }
+
+    /// <summary>One dimension field: its text (the expression with its site unit, or the number in the display unit), what
+    /// the expression resolves to, and the resolver's error for it.</summary>
+    private C3dDimensionField Field(C3dResolution res, string name, IC3dBindable owner, C3dFieldSpec spec, int k, string path,
+                                    string label, string group, string axis, bool wireDefault = false)
+    {
+        var unit = Document.DisplayUnit;
+        var e = C3dBindings.GetExpr(owner, spec, k);
+        string text;
+        string value = "";
+        if (e is not null)
+        {
+            text = e.Expr + (SiteSuffix(spec.Kind, e.Unit) is { } s ? " " + s : "");
+            if (res.FieldValues.TryGetValue((name, path), out double si))
+                value = "= " + spec.Kind switch
+                {
+                    // 3D editor round 4 — a µm field (a wire's diameter, a sheet's thickness) is a length like any
+                    // other on screen: the file keeps µm, the Inspector speaks the display unit.
+                    C3dFieldKind.Length or C3dFieldKind.Microns => C3dUnits.Spell(si, unit),
+                    C3dFieldKind.Angle => (si * 180 / Math.PI).ToString("0.######", System.Globalization.CultureInfo.InvariantCulture) + "°",
+                    _ => si.ToString("0", System.Globalization.CultureInfo.InvariantCulture),
+                };
+        }
+        else text = SpellNumber(spec.Kind, wireDefault ? C3dWires.DefaultDiameterUm : C3dBindings.GetNumber(owner, spec, k) ?? 0);
+        if (e is null && wireDefault) value = "The default (1 mil)";
+        string? error = res.FieldErrors.FirstOrDefault(x => x.Item == name && x.Path == path)?.Message;
+        return new C3dDimensionField
+        {
+            Path = path, Label = label, Group = group, Axis = axis, Kind = spec.Kind,
+            ValueText = value, Error = error,
+            IsExpression = e is not null, Text = text, Loaded = text,
+        };
+    }
+
+    /// <summary>brief-em3d-133 R-em3d133-1 — point <paramref name="k"/> of a wire as three dimension fields (x, y, z): a number
+    /// or an expression each, read and refused exactly as every other dimension is.</summary>
+    public IReadOnlyList<C3dDimensionField> WirePointFields(C3dWire w, int k)
+    {
+        var spec = C3dBindings.SpecOf(typeof(C3dWire), nameof(C3dWire.Points))!.ElementAt(k);
+        var res = Resolution;
+        return [.. new[] { "x", "y", "z" }.Select((axis, c) =>
+        {
+            string path = $"{nameof(C3dWire.Points)}[{k}][{c}]";
+            return Field(res, w.Name, w, spec, c, path, C3dBindings.Label(spec, c, path), $"point {k + 1}", axis);
+        })];
     }
 
     /// <summary>3D editor round 4 — a new wire row's pitch: across the wire's run in plan, four diameters apart.</summary>
@@ -328,6 +349,7 @@ public sealed partial class C3dEditorViewModel
         var unsolvable = new List<(string, string)>();
         foreach (var f in C3dBindings.BoundOf(item, before).ToList())
         {
+            if (after is C3dWire && f.Spec.Element is not null) continue;      // brief-em3d-133: WirePointPlan
             if (C3dBindings.Find(after, f.Path) is not { } at)
                 return new NamePlan([], $"'{item}' {f.Path} holds {f.Expr.Expr}, and this edit would leave it no such field " +
                                         $"(it becomes a {C3dObject.KindOf(after.GetType()).ToLowerInvariant()}). Replace it with a number first.",
@@ -351,7 +373,47 @@ public sealed partial class C3dEditorViewModel
                                         $"'{item}' uses it in more than one field that moved differently.", [(item, f.Path)]);
             if (!writes.Any(x => x.Name == w.Name)) writes.Add(w);
         }
+        if (after is C3dWire wire && WirePointPlan(item, wire, res, cell, writes, unsolvable) is { } refused) return refused;
         return new NamePlan(writes, null, unsolvable);
+    }
+
+    /// <summary>
+    /// brief-em3d-133 — a wire's points are not compared path by path with the points they replace: an insert or a remove
+    /// renumbers them, a translation rewrites them (overview D2, D4) and a typed number unbinds one, so the expressions the
+    /// edit leaves are what it states, and none is put back. A bound component the edit moved WITHOUT rewriting — its number
+    /// is no longer its expression's value, as when a seat moved an end's z — takes the drag rule in its strict form
+    /// (overview R-em3d131-3): a bare name is written; any other expression refuses the edit, naming the field.
+    /// </summary>
+    private NamePlan? WirePointPlan(string item, C3dWire after, C3dResolution res, C3dCell cell, List<C3dWrite> writes,
+                                    List<(string, string)> unsolvable)
+    {
+        double dbuPerMetre = 1e6 * Document.DbuPerMicron;
+        foreach (var f in C3dBindings.BoundOf(item, after).Where(f => f.Spec.Element is not null).ToList())
+        {
+            double now = C3dBindings.GetNumber(f.Owner, f.Spec, f.Component) ?? 0;
+            double value;
+            try { value = C3dVariableEdits.Evaluate(res, f.Expr, f.Spec.Kind) * dbuPerMetre; }
+            catch (Exception) { continue; }        // an expression that does not evaluate is the resolver's to report, red, by name
+            if (Math.Abs(value - now) <= 0.5) continue;
+            string field = $"'{item}' {C3dBindings.Label(f.Spec, f.Component, f.Path)} holds {f.Expr.Expr}";
+            bool bare;
+            try { bare = CircuitRF.Core.Expressions.Parser.Parse(f.Expr.Expr) is CircuitRF.Core.Expressions.RefExpr; }
+            catch (CircuitRF.Core.Expressions.ExpressionException) { bare = false; }
+            if (!bare)
+            {
+                unsolvable.Add((item, f.Path));
+                return new NamePlan([], $"{field}: this edit would move it, and only an expression that is one name can be rewritten " +
+                                        "to follow. Replace it with a number, or edit the expression.", unsolvable);
+            }
+            string site = C3dUnits.Engine(f.Expr.Unit, out _) ?? LayoutUnits.AsciiSuffix(Document.DisplayUnit);
+            var w = C3dVariableEdits.Solve(res, cell, f.Expr, f.Spec.Kind, now / dbuPerMetre, site, out string? why, item, f.Path);
+            if (w is null) { unsolvable.Add((item, f.Path)); return new NamePlan([], why, unsolvable); }
+            if (writes.FirstOrDefault(x => x.Name == w.Name) is { } other && other.Expression != w.Expression)
+                return new NamePlan([], $"This edit would give '{w.Name}' two values ({other.Expression} and {w.Expression}): " +
+                                        $"'{item}' uses it in more than one field that moved differently.", [(item, f.Path)]);
+            if (!writes.Any(x => x.Name == w.Name)) writes.Add(w);
+        }
+        return null;
     }
 
     /// <summary>

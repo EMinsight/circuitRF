@@ -260,6 +260,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         var r = ft.Evaluate(CursorInput());
         if (r is { Ok: true, Object: { } obj })
         {
+            OffsetWirePoints(ft.Index, obj);
             // brief-em3d-51 R-em3d51-6 — the drag rule: an expression the edit would change writes its name (every object
             // using it previews), or the gesture is refused here, where it first reaches the field.
             if (!PreviewThroughNames(ft.Index, ref obj))
@@ -288,6 +289,14 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         }
         OnPropertyChanged(nameof(ToolPrompt));
         Viewer.RequestFrame();
+    }
+
+    /// <summary>brief-em3d-133 R-em3d133-3 — a vertex Move of a wire's point writes its step into the point's bound components
+    /// (overview D2), the same in the preview as at the release, so the preview shows the text the commit writes.</summary>
+    private void OffsetWirePoints(int index, C3dObject edited)
+    {
+        if (edited is C3dWire moved && ObjectAt(index) is C3dWire was)
+            C3dWires.OffsetBoundPoints(was, moved, Document.DisplayUnit, Document.DbuPerMicron);
     }
 
     /// <summary>A refused solid's edges, world metres, for the overlay's red.</summary>
@@ -329,6 +338,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         _namePreview = null;
         int index = ft.Index;
         bool operand = IsOperandIndex(index);
+        OffsetWirePoints(index, obj);
         string before = C3dPersistence.SerializeObject(operand ? ObjectAt(index)! : Document.Objects[index]);
         // brief-em3d-67 R-em3d67-6e — a disabled chain's target goes back inside its chain.
         if (!operand) obj = Rewrapped(index, obj);

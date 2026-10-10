@@ -1,7 +1,7 @@
 # Brief 133 — Expressions in a wire's points: the editor
 
 **Series:** [131 overview](brief-em3d-131-point-expressions-overview.md) · **Tag:** `R-em3d133-n`
-**Status:** Written 2026-10-09, not started. D1, D2 and D4 are decided.
+**Status:** Written 2026-10-09. Done 2026-10-09; findings in `src/Ui/ThreeD/RESOLVED.md`.
 **Area:** `src/Ui/ThreeD/` (the Inspector's wire rows, `C3dEditorViewModel.Wires.cs` / `.WireShape.cs`, the
 move/rotate/mirror/align paths, the drag rule in `.Expressions.cs`), `src/Design/ThreeD/C3dWires.cs` (seating).
 Findings in `src/Ui/ThreeD/RESOLVED.md`.
