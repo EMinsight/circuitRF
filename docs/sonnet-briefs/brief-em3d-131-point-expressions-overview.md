@@ -63,9 +63,11 @@ generalises it over the property name. **A file with no expression in a point li
 - **A zero offset leaves that component's text byte-identical.**
 - **An unbound component** is still a plain number and simply moves.
 
-**R-em3d131-3 — everything that is not a translation keeps brief 51's drag rule.** For example, a wire's Loop height
-scales points rather than offsetting them. A component the edit changes that holds a bare name writes the name; any
-other expression refuses the edit, naming the field.
+**R-em3d131-3 — everything that is not a translation keeps brief 51's drag rule**, except where a brief says otherwise.
+For example, a wire's Re-seat writes an end's z rather than offsetting it. A component the edit changes that holds a
+bare name writes the name; any other expression refuses the edit, naming the field. **A wire's Loop height is the
+exception** (owner decision, 2026-10-09; 133 R-em3d133-4): it is refused on a wire with any point expression, unless
+the only bound components are its two ends' z.
 
 **R-em3d131-4 — inserting and removing points.** A new point is a plain number, the Catmull–Rom midpoint of its
 neighbours (deb6199f). Later points' entries are renumbered, and a removed point's entries go with it. Both are one

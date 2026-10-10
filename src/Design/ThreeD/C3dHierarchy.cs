@@ -304,8 +304,12 @@ public static class C3dHierarchy
                 var copy = C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(o));
                 if (scale != 1) Scale(copy, scale);
                 copy.Placement = copy.Placement.Then(outer, out bool exact);
-                // brief-em3d-50 — a wire has no placement: the instance's lands on its points.
-                if (!exact || !C3dWires.BakePlacement(copy)) return C3dFlattenResult.Refuse(OffGrid(inst, o.Name));
+                // brief-em3d-50 — a wire has no placement: the instance's lands on its points. brief-em3d-132 — a bound point keeps
+                // its expression (the offset and swap writers), in this document's display unit; any other turn of one is refused.
+                if (!exact) return C3dFlattenResult.Refuse(OffGrid(inst, o.Name));
+                if (C3dWires.BakePlacement(copy, doc.DisplayUnit, doc.DbuPerMicron, out bool whole) is { } turn)
+                    return C3dFlattenResult.Refuse($"Flattening '{inst.Name}' is refused: {turn}");
+                if (!whole) return C3dFlattenResult.Refuse(OffGrid(inst, o.Name));
                 copy.Name = Unique($"{inst.Name}{suffix}_{o.Name}", used);
                 C3dImages.Rebase([copy], file, docPath);     // brief-em3d-101 — an image resolves against its new document
                 objects.Add(copy);
@@ -672,7 +676,7 @@ public static class C3dHierarchy
             var o = C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(doc.Objects[i]));
             o.Placement = o.Placement.Translated(minus);
             o.Group = Below(o.Group);
-            C3dWires.BakePlacement(o);
+            if (C3dWires.BakePlacement(o, doc.DisplayUnit, doc.DbuPerMicron, out _) is { } why) return (null, null, null, why);
             C3dImages.Rebase([o], docPath, newPath);         // brief-em3d-101 — an image resolves against its new document
             child.Objects.Add(o);
         }

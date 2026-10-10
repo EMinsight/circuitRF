@@ -393,7 +393,9 @@ public sealed partial class C3dEditorViewModel
                 // brief-em3d-66 — an entered operand moves in its world form and is written back into its boolean.
                 var copy = C3dBooleans.Copy(obj);
                 copy.Placement = Next(copy.Placement);
-                allExact &= C3dWires.BakePlacement(copy);          // brief-em3d-50: a wire carries its points
+                // brief-em3d-50: a wire carries its points; brief-em3d-132: a bound one may refuse the turn
+                if (C3dWires.BakePlacement(copy, Document.DisplayUnit, Document.DbuPerMicron, out bool whole) is { } why) { StatusMessage = why; return false; }
+                allExact &= whole;
                 moved.Add((target.Index, copy));
             }
         }
@@ -452,7 +454,9 @@ public sealed partial class C3dEditorViewModel
                     foreach (var operand in C3dOperands.SelfAndDescendants(copy).Skip(1).Where(o => o.Name.Length > 0))
                         operand.Name = C3dOperations.NextFreeName(operand.Name, used);
                     copy.Placement = Next(copy.Placement);
-                    allExact &= C3dWires.BakePlacement(copy);      // brief-em3d-50: a wire carries its points
+                    // brief-em3d-50: a wire carries its points; brief-em3d-132: a bound one may refuse the turn
+                    if (C3dWires.BakePlacement(copy, Document.DisplayUnit, Document.DbuPerMicron, out bool whole) is { } why) { StatusMessage = why; return false; }
+                    allExact &= whole;
                     // An operand's copy is a top-level object in its boolean's group; anything else's, in its own (or the copy's).
                     copy.Group = IsOperandIndex(target.Index) ? (TopOf(target.Index, out _) is >= 0 and var top ? Document.Objects[top].Group : null)
                                                               : groupOf(copy.Group);
@@ -540,7 +544,7 @@ public sealed partial class C3dEditorViewModel
             {
                 var copy = C3dBooleans.Copy(obj);
                 copy.Placement = copy.Placement.Translated(by);
-                C3dWires.BakePlacement(copy);
+                if (C3dWires.BakePlacement(copy, Document.DisplayUnit, Document.DbuPerMicron, out _) is { } why) { StatusMessage = why; return; }
                 slots.AddRange(ReplacementSlots([(t.Index, copy)]));
             }
         }

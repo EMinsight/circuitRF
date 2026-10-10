@@ -145,27 +145,6 @@ public sealed class EditorRound3PropertiesTests : IDisposable
         Assert.Equal(original, ((C3dWire)vm.Document.Objects[^1]).Points);
     }
 
-    /// <summary>Should a wire's points ever take expressions, keyed per point (<c>Points[k].…</c>), an insert or a remove
-    /// carries each later point's with it; a Points key of any other shape is refused rather than guessed at.</summary>
-    [Fact]
-    public void AddingOrRemovingAPoint_RenumbersPerPointExpressions_AndRefusesAShapeItCannotRenumber()
-    {
-        static C3dWire With(params string[] keys)
-            => new() { Exprs = keys.ToDictionary(k => k, _ => new C3dExpr?[1], StringComparer.Ordinal) };
-
-        var w = With("Points[0].Z", "Points[1].Z", "Points[2].Z", "DiameterUm");
-        Assert.True(C3dEditorViewModel.RenumberPointExpressions(w, from: 1, removed: null));
-        Assert.Equal(["DiameterUm", "Points[0].Z", "Points[2].Z", "Points[3].Z"], w.Exprs!.Keys.Order(StringComparer.Ordinal));
-
-        w = With("Points[0].Z", "Points[1].Z", "Points[2].Z");
-        Assert.True(C3dEditorViewModel.RenumberPointExpressions(w, from: 2, removed: 1));
-        Assert.Equal(["Points[0].Z", "Points[1].Z"], w.Exprs!.Keys.Order(StringComparer.Ordinal));
-
-        w = With("Points");
-        Assert.False(C3dEditorViewModel.RenumberPointExpressions(w, from: 1, removed: null));
-        Assert.Equal(["Points"], w.Exprs!.Keys);
-    }
-
     /// <summary>Moving a wire's point (G in Vertex mode) never snaps to the wire itself: the point is inside it, so the
     /// cursor is always over it, and snapping there walked the point toward the eye frame after frame.</summary>
     [Fact]

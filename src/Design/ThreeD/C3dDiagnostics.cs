@@ -45,12 +45,20 @@ public static class C3dDiagnostics
     private static string Capital(string s) => s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..];
 
     /// <summary>R-em3d41-2d / brief-em3d-51: a bare string where a number belongs. A dimension's expression is an object
-    /// carrying its unit; a point list holds numbers only.</summary>
+    /// carrying its unit; an outline, a hole or a polyhedron's vertices hold numbers only (brief-em3d-132 binds a wire's
+    /// and a polyline's points).</summary>
     public static Diagnostic ExpressionNotYet(string text) => Diagnostic.Create(
         "c3d.read.expression", DiagnosticSeverity.Error,
-        "\"{text}\" is written where a number belongs. Point lists (Outline, Holes, Points, Vertices) hold numbers only; " +
-        "a named dimension may hold an expression, written {example} with its unit.",
+        "\"{text}\" is written where a number belongs. Outline, Holes and Vertices hold numbers only; " +
+        "a named dimension, or a wire's or a polyline's point, may hold an expression, written {example} with its unit.",
         ("text", text), ("example", Example(text)));
+
+    /// <summary>brief-em3d-132 R-em3d132-2 — a polyline with Points3 ignores its Points, so an expression there would be dropped.</summary>
+    public static Diagnostic IgnoredPointExpression(string polyline, string key) => Diagnostic.Create(
+        "c3d.read.ignored-point-expression", DiagnosticSeverity.Error,
+        "Polyline '{polyline}' has Points3, which is the polyline, so its Points are ignored; {key} holds an expression that " +
+        "would be dropped. Write it in Points3, or delete Points.",
+        ("polyline", polyline), ("key", key));
 
     /// <summary>brief-em3d-51 R-em3d51-1a — an expression written as a bare string in a dimension field.</summary>
     public static Diagnostic ExpressionAsString(string text) => Diagnostic.Create(

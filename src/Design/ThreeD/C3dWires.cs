@@ -438,19 +438,39 @@ public static class C3dWires
     /// <summary>
     /// brief-em3d-50 — a wire's placement applied to its points, and the placement cleared: what every operation that
     /// composes into a placement (move, rotate, mirror, duplicate, array, flatten) ends with for a wire, whose points are
-    /// where it is. False when a point was not a whole DBU and was rounded. Anything else is left alone (true).
+    /// where it is. <paramref name="exact"/> is false when a point was not a whole DBU and was rounded. Anything that is not
+    /// a wire is left alone.
+    /// <para>brief-em3d-132 R-em3d132-5 — a bound component keeps its expression: under a quarter-turn or a mirror the
+    /// component landing on each axis is a signed copy of another plus the translation, written exactly through
+    /// <see cref="C3dPointExpressions.SwapExpression"/> (D4), the offset term in <paramref name="unit"/>. Any other turn of a
+    /// wire with a bound point (or a bound array pitch) is refused, naming the first such field, and nothing is changed —
+    /// the refusal is returned; null on success.</para>
     /// </summary>
-    public static bool BakePlacement(C3dObject o)
+    public static string? BakePlacement(C3dObject o, LayoutUnit unit, int dbuPerMicron, out bool exact)
     {
-        if (o is not C3dWire w || w.Placement.IsDefault) return true;
+        exact = true;
+        if (o is not C3dWire w || w.Placement.IsDefault) return null;
         var t = w.Placement.ToTransform();
-        bool exact = true;
+        int[]? m = t.IntegerMatrix();
+        foreach (var bound in C3dBindings.BoundOf(w.Name, w).Where(f => f.Spec.Element is not null || f.Path.StartsWith("Array.Pitch", StringComparison.Ordinal)))
+        {
+            string field = $"'{w.Name}' {C3dBindings.Label(bound.Spec, bound.Component, bound.Path)} holds {bound.Expr.Expr}";
+            if (m is null)
+                return $"{field}: the turn is not a quarter turn, so no expression can follow it exactly. Replace it with a number to turn the wire.";
+            try { Core.Expressions.Parser.Parse(bound.Expr.Expr); }
+            catch (Core.Expressions.ExpressionException x) { return $"{field}, which does not parse ({x.Message}): it cannot be moved. Correct it first."; }
+        }
+        bool whole = true;
+        long[] offset = [R(t.Tx), R(t.Ty), R(t.Tz)];
+        if (Math.Abs(t.Tx - offset[0]) > 1e-6 || Math.Abs(t.Ty - offset[1]) > 1e-6 || Math.Abs(t.Tz - offset[2]) > 1e-6) whole = false;
+        var spec = C3dBindings.SpecOf(typeof(C3dWire), nameof(C3dWire.Points))!;
         for (int i = 0; i < w.Points.Count; i++)
         {
             var (x, y, z) = t.Apply(w.Points[i]);
             long rx = R(x), ry = R(y), rz = R(z);
-            if (Math.Abs(x - rx) > 1e-6 || Math.Abs(y - ry) > 1e-6 || Math.Abs(z - rz) > 1e-6) exact = false;
+            if (Math.Abs(x - rx) > 1e-6 || Math.Abs(y - ry) > 1e-6 || Math.Abs(z - rz) > 1e-6) whole = false;
             w.Points[i] = new C3dPoint3(rx, ry, rz);
+            if (m is not null) Swap(w, spec.ElementAt(i), m, offset, unit, dbuPerMicron);
         }
         // 3D editor round 4 — a wire array's pitch turns with the wire (rotation and mirror, never the translation), so a
         // rotated row stays a row of the rotated wire.
@@ -458,12 +478,28 @@ public static class C3dWires
         {
             var (px, py, pz) = (t with { Tx = 0, Ty = 0, Tz = 0 }).Apply(wa.Pitch);
             long rx = R(px), ry = R(py), rz = R(pz);
-            if (Math.Abs(px - rx) > 1e-6 || Math.Abs(py - ry) > 1e-6 || Math.Abs(pz - rz) > 1e-6) exact = false;
+            if (Math.Abs(px - rx) > 1e-6 || Math.Abs(py - ry) > 1e-6 || Math.Abs(pz - rz) > 1e-6) whole = false;
             wa.Pitch = new C3dPoint3(rx, ry, rz);
+            if (m is not null) Swap(wa, C3dBindings.SpecOf(typeof(C3dWireArray), nameof(C3dWireArray.Pitch))!, m, [0, 0, 0], unit, dbuPerMicron);
         }
         // A mirror reverses the handedness of nothing a wire has: the axis is the shape, so the points are all of it.
         w.Placement = new C3dPlacement();
-        return exact;
+        exact = whole;
+        return null;
+    }
+
+    /// <summary>One three-component field's expressions under the signed permutation <paramref name="m"/> (row-major): the
+    /// component landing on axis a is s·(the expression on axis b) + offset[a].</summary>
+    private static void Swap(IC3dBindable owner, C3dFieldSpec spec, int[] m, long[] offset, LayoutUnit unit, int dbuPerMicron)
+    {
+        var was = new C3dExpr?[3];
+        for (int b = 0; b < 3; b++) was[b] = C3dBindings.GetExpr(owner, spec, b);
+        if (was.All(e => e is null)) return;
+        for (int a = 0; a < 3; a++)
+        {
+            int b = Array.FindIndex(m, 3 * a, 3, v => v != 0) - 3 * a;
+            C3dBindings.SetExpr(owner, spec, a, was[b] is { } e ? C3dPointExpressions.SwapExpression(e, m[3 * a + b], offset[a], unit, dbuPerMicron) : null);
+        }
     }
 
     private static long R(double v) => (long)Math.Round(v, MidpointRounding.AwayFromZero);

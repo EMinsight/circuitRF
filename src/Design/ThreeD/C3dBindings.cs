@@ -81,6 +81,21 @@ public enum C3dFieldKind
 public sealed record C3dFieldSpec(Type Owner, string Property, int Arity, C3dFieldKind Kind)
 {
     internal PropertyInfo Info { get; } = Owner.GetProperty(Property)!;
+
+    /// <summary>brief-em3d-132 R-em3d132-1 — the property is a LIST of <see cref="Arity"/>-component points (a wire's
+    /// <c>Points</c>, a polyline's <c>Points</c>/<c>Points3</c>), each element bound on its own.</summary>
+    public bool IsList { get; init; }
+
+    /// <summary>On an element of a list spec (<see cref="ElementAt"/>), which point; null on the list spec itself and on
+    /// every fixed-arity field.</summary>
+    public int? Element { get; init; }
+
+    /// <summary>The expression map's key: the property name, or <c>Points[k]</c> for point <c>k</c> of a list (overview
+    /// R-em3d131-1), one slot per component either way.</summary>
+    public string Key => Element is { } k ? $"{Property}[{k}]" : Property;
+
+    /// <summary>Point <paramref name="k"/> of a list spec, as a field of <see cref="Arity"/> components.</summary>
+    public C3dFieldSpec ElementAt(int k) => this with { Element = k };
 }
 
 /// <summary>A path to one component of one bindable field of an item (an object, instance or port):
@@ -96,7 +111,8 @@ public sealed record C3dBoundField(string Item, string Path, IC3dBindable Owner,
 /// <summary>The table of bindable fields, the accessors, and the JSON contract.</summary>
 public static class C3dBindings
 {
-    /// <summary>R-em3d51-1b — every named dimension that may hold an expression. Point lists stay numbers.</summary>
+    /// <summary>R-em3d51-1b — every named dimension that may hold an expression. Of the point lists, a wire's and a
+    /// polyline's take expressions per point (brief-em3d-132); outlines, holes and a polyhedron's vertices stay numbers.</summary>
     public static IReadOnlyList<C3dFieldSpec> Fields { get; } =
     [
         new(typeof(C3dBox), nameof(C3dBox.Min), 3, C3dFieldKind.Length),
@@ -142,6 +158,10 @@ public static class C3dBindings
         new(typeof(C3dSymmetryPlane), nameof(C3dSymmetryPlane.At), 1, C3dFieldKind.Length),
         // brief-em3d-86 R-em3d86-2 — the drawn wires' ground plane
         new(typeof(C3dWireGroundPlane), nameof(C3dWireGroundPlane.Z), 1, C3dFieldKind.Length),
+        // brief-em3d-132 R-em3d132-1 — point lists: a polyline's Points are in its plane (u, v), at its Offset.
+        new(typeof(C3dWire), nameof(C3dWire.Points), 3, C3dFieldKind.Length) { IsList = true },
+        new(typeof(C3dPolyline), nameof(C3dPolyline.Points), 2, C3dFieldKind.Length) { IsList = true },
+        new(typeof(C3dPolyline), nameof(C3dPolyline.Points3), 3, C3dFieldKind.Length) { IsList = true },
     ];
 
     public static C3dFieldSpec? SpecOf(Type owner, string property)
@@ -153,6 +173,8 @@ public static class C3dBindings
     /// unset optional field.</summary>
     public static double? GetNumber(object owner, C3dFieldSpec spec, int k) => spec.Info.GetValue(owner) switch
     {
+        List<C3dPoint3> l when spec.Element is { } e => e < l.Count ? k switch { 0 => l[e].X, 1 => l[e].Y, _ => l[e].Z } : null,
+        List<C3dPoint2> l when spec.Element is { } e => e < l.Count ? (k == 0 ? l[e].U : l[e].V) : null,
         C3dPoint3 p => k switch { 0 => p.X, 1 => p.Y, _ => p.Z },
         C3dPoint2 p => k == 0 ? p.U : p.V,
         long l => l,
@@ -167,6 +189,13 @@ public static class C3dBindings
     {
         long n = (long)Math.Round(value, MidpointRounding.AwayFromZero);
         object? now = spec.Info.GetValue(owner);
+        // brief-em3d-132 — a point of a list is written in place: the list is the property's own.
+        if (spec.Element is { } e)
+        {
+            if (now is List<C3dPoint3> l3 && e < l3.Count) l3[e] = k switch { 0 => l3[e] with { X = n }, 1 => l3[e] with { Y = n }, _ => l3[e] with { Z = n } };
+            else if (now is List<C3dPoint2> l2 && e < l2.Count) l2[e] = k == 0 ? l2[e] with { U = n } : l2[e] with { V = n };
+            return;
+        }
         object next = now switch
         {
             C3dPoint3 p => k switch { 0 => p with { X = n }, 1 => p with { Y = n }, _ => p with { Z = n } },
@@ -188,15 +217,18 @@ public static class C3dBindings
     public static C3dExpr? GetExpr(IC3dBindable owner, string property, int k)
         => owner.Exprs is { } e && e.TryGetValue(property, out var slots) && k < slots.Length ? slots[k] : null;
 
+    /// <summary>Component <paramref name="k"/>'s expression, by the spec's map key (a list element's is <c>Points[k]</c>).</summary>
+    public static C3dExpr? GetExpr(IC3dBindable owner, C3dFieldSpec spec, int k) => GetExpr(owner, spec.Key, k);
+
     /// <summary>Binds (or, with null, unbinds) one component. An owner with nothing bound keeps a null map.</summary>
     public static void SetExpr(IC3dBindable owner, C3dFieldSpec spec, int k, C3dExpr? expr)
     {
         var map = owner.Exprs;
         if (expr is null && map is null) return;
         map ??= new Dictionary<string, C3dExpr?[]>(StringComparer.Ordinal);
-        if (!map.TryGetValue(spec.Property, out var slots)) slots = map[spec.Property] = new C3dExpr?[spec.Arity];
+        if (!map.TryGetValue(spec.Key, out var slots)) slots = map[spec.Key] = new C3dExpr?[spec.Arity];
         slots[k] = expr;
-        if (slots.All(s => s is null)) map.Remove(spec.Property);
+        if (slots.All(s => s is null)) map.Remove(spec.Key);
         owner.Exprs = map.Count == 0 ? null : map;
     }
 
@@ -259,12 +291,23 @@ public static class C3dBindings
         }
     }
 
-    /// <summary>The fields of an owner, as (spec, component, path).</summary>
+    /// <summary>The fields of an owner, as (spec, component, path). A list spec is enumerated from the owner's current
+    /// count, one element spec per point: <c>Points[k][c]</c>.</summary>
     public static IEnumerable<(C3dFieldSpec Spec, int Component, string Path)> FieldsOf(IC3dBindable owner, string prefix)
     {
         foreach (var spec in Fields)
         {
             if (spec.Owner != owner.GetType()) continue;
+            if (spec.IsList)
+            {
+                int count = spec.Info.GetValue(owner) is ICollection list ? list.Count : 0;
+                for (int e = 0; e < count; e++)
+                {
+                    var element = spec.ElementAt(e);
+                    for (int k = 0; k < spec.Arity; k++) yield return (element, k, $"{prefix}{spec.Property}[{e}][{k}]");
+                }
+                continue;
+            }
             if (spec.Arity == 1) { yield return (spec, 0, prefix + spec.Property); continue; }
             for (int k = 0; k < spec.Arity; k++) yield return (spec, k, $"{prefix}{spec.Property}[{k}]");
         }
@@ -299,7 +342,7 @@ public static class C3dBindings
         {
             if (owner.Exprs is null) continue;
             foreach (var (spec, k, path) in FieldsOf(owner, prefix))
-                if (GetExpr(owner, spec.Property, k) is { } e) yield return new C3dBoundField(name, path, owner, spec, k, e);
+                if (GetExpr(owner, spec, k) is { } e) yield return new C3dBoundField(name, path, owner, spec, k, e);
         }
     }
 
@@ -312,6 +355,16 @@ public static class C3dBindings
                 if (p == path) return (owner, spec, k);
         return null;
     }
+
+    /// <summary>
+    /// How a field is named in a sentence: its path, except a point of a list, which reads as the Inspector labels its
+    /// rows — <c>point 2 z</c>, 1-based, with a polyline's in-plane point's components <c>u</c> and <c>v</c>
+    /// (overview R-em3d131-1).
+    /// </summary>
+    public static string Label(C3dFieldSpec spec, int component, string path)
+        => spec.Element is { } e
+            ? $"point {e + 1} {(spec.Arity == 2 ? (component == 0 ? "u" : "v") : component switch { 0 => "x", 1 => "y", _ => "z" })}"
+            : path;
 
     /// <summary>True when the item holds an expression anywhere.</summary>
     public static bool HasAny(object item) => OwnersOf(item).Any(o => o.Owner.Exprs is { Count: > 0 });
@@ -332,6 +385,19 @@ public static class C3dBindings
     {
         bool numbersOnly = spelling == C3dSpelling.NumbersOnly;
         if (info.Kind != JsonTypeInfoKind.Object || !typeof(IC3dBindable).IsAssignableFrom(info.Type)) return;
+        // brief-em3d-132 R-em3d132-2 — Points3 IS the polyline when it is present, and Points is then ignored: an expression
+        // under the ignored list would be dropped without a word, so the read refuses it by name.
+        if (info.Type == typeof(C3dPolyline))
+        {
+            var then = info.OnDeserialized;
+            info.OnDeserialized = o =>
+            {
+                then?.Invoke(o);
+                var l = (C3dPolyline)o;
+                if (l.Points3 is not null && l.Exprs?.Keys.FirstOrDefault(k => k.StartsWith(nameof(C3dPolyline.Points) + "[", StringComparison.Ordinal)) is { } key)
+                    throw new JsonException(C3dDiagnostics.IgnoredPointExpression(l.Name, key).Render());
+            };
+        }
         for (int i = 0; i < info.Properties.Count; i++)
         {
             var p = info.Properties[i];
@@ -343,8 +409,16 @@ public static class C3dBindings
             np.Order = p.Order;
             np.Get = owner =>
             {
-                var slots = numbersOnly ? null : ((IC3dBindable)owner).Exprs?.GetValueOrDefault(spec.Property);
-                return new C3dFieldJson(spec, get(owner), slots) { WithValues = spelling == C3dSpelling.WithValues };
+                var map = numbersOnly ? null : ((IC3dBindable)owner).Exprs;
+                var value = get(owner);
+                var slots = map?.GetValueOrDefault(spec.Property);
+                C3dExpr?[]?[]? points = null;
+                if (spec.IsList && map is not null && value is ICollection list)
+                {
+                    points = new C3dExpr?[]?[list.Count];
+                    for (int k = 0; k < list.Count; k++) points[k] = map.GetValueOrDefault(spec.ElementAt(k).Key);
+                }
+                return new C3dFieldJson(spec, value, slots) { WithValues = spelling == C3dSpelling.WithValues, PointExprs = points };
             };
             np.Set = (owner, v) =>
             {
@@ -353,6 +427,10 @@ public static class C3dBindings
                 if (f.Exprs is { } slots)
                     for (int k = 0; k < slots.Length; k++)
                         if (slots[k] is { } e) SetExpr((IC3dBindable)owner, spec, k, e);
+                if (f.PointExprs is { } points)
+                    for (int p = 0; p < points.Length; p++)
+                        for (int k = 0; k < (points[p]?.Length ?? 0); k++)
+                            if (points[p]![k] is { } e) SetExpr((IC3dBindable)owner, spec.ElementAt(p), k, e);
             };
             np.ShouldSerialize = (owner, v) =>
             {
@@ -389,6 +467,25 @@ public static class C3dBindings
             return new C3dPoint3(Int(parts[0]), Int(parts[1]), Int(parts[2]));
         }
         if (type == typeof(C3dPoint2)) { Arity(2, "[u, v]"); return new C3dPoint2(Int(parts[0]), Int(parts[1])); }
+        // brief-em3d-132 — a point list, with the refusals the number-only list readers give.
+        if (type == typeof(List<C3dPoint3>) || type == typeof(List<C3dPoint2>))
+        {
+            bool three = type == typeof(List<C3dPoint3>);
+            if (raw is null) return null;
+            if (raw is not RawComponents) throw new JsonException(C3dDiagnostics.ArrayExpected(three ? "[[x, y, z], …]" : "[[u, v], …]").Render());
+            string shape = three ? "[x, y, z]" : "[u, v]";
+            int n = three ? 3 : 2;
+            var points3 = new List<C3dPoint3>();
+            var points2 = new List<C3dPoint2>();
+            foreach (var part in parts)
+            {
+                if (part is not RawComponents pc) throw new JsonException(C3dDiagnostics.ArrayExpected(shape).Render());
+                if (pc.Values.Length != n) throw new JsonException(C3dDiagnostics.WrongArity(shape, n, pc.Values.Length).Render());
+                if (three) points3.Add(new C3dPoint3(Int(pc.Values[0]), Int(pc.Values[1]), Int(pc.Values[2])));
+                else points2.Add(new C3dPoint2(Int(pc.Values[0]), Int(pc.Values[1])));
+            }
+            return three ? points3 : points2;
+        }
         if (type == typeof(List<int>))
         {
             if (raw is not RawComponents) throw new JsonException(C3dDiagnostics.ArrayExpected("[integer]").Render());
@@ -426,6 +523,9 @@ public sealed class C3dFieldJson(C3dFieldSpec? spec, object? value, C3dExpr?[]? 
 
     /// <summary>Write each bound component's resolved number beside its expression (<see cref="C3dSpelling.WithValues"/>).</summary>
     public bool WithValues { get; init; }
+
+    /// <summary>brief-em3d-132 — a point list's slots, one array (or null) per point.</summary>
+    public C3dExpr?[]?[]? PointExprs { get; init; }
 }
 
 /// <summary>Writes and reads <see cref="C3dFieldJson"/> — a component is a number or <c>{ "Expr", "Unit" }</c>.</summary>
@@ -439,10 +539,25 @@ internal sealed class C3dFieldJsonConverter : JsonConverter<C3dFieldJson>
         {
             var values = new List<object?>();
             var exprs = new List<C3dExpr?>();
+            List<C3dExpr?[]?>? points = null;
             while (reader.Read())
             {
-                if (reader.TokenType == JsonTokenType.EndArray) return Shape(values, exprs, array: true);
+                if (reader.TokenType == JsonTokenType.EndArray)
+                {
+                    var shaped = Shape(values, exprs, array: true);
+                    return points is { } p && p.Any(e => e is not null) ? new C3dFieldJson(null, shaped.Value, shaped.Exprs) { PointExprs = [.. p] } : shaped;
+                }
+                // brief-em3d-132 — a point list: an array of points, each read as a fixed field's components are.
+                if (reader.TokenType == JsonTokenType.StartArray)
+                {
+                    var inner = Read(ref reader, typeToConvert, options);
+                    values.Add(inner.Value);
+                    exprs.Add(null);
+                    (points ??= []).Add(inner.Exprs);
+                    continue;
+                }
                 ReadComponent(ref reader, values, exprs);
+                points?.Add(null);
             }
             throw new JsonException(C3dDiagnostics.ArrayExpected("[…]").Render());
         }
@@ -498,6 +613,30 @@ internal sealed class C3dFieldJsonConverter : JsonConverter<C3dFieldJson>
     {
         var spec = value.Spec!;
         var slots = value.Exprs;
+        if (spec.IsList)
+        {
+            // brief-em3d-132 R-em3d132-2 — a point per line, as the number-only list converters write it; a point with an
+            // expression is spelled as a fixed field's components are, on its one line.
+            var lines = new List<string>();
+            var items = value.Value switch
+            {
+                List<C3dPoint3> l3 => l3.Select(p => new long[] { p.X, p.Y, p.Z }).ToList(),
+                List<C3dPoint2> l2 => l2.Select(p => new long[] { p.U, p.V }).ToList(),
+                _ => [],
+            };
+            for (int i = 0; i < items.Count; i++)
+            {
+                var point = value.PointExprs is { } pe && i < pe.Length ? pe[i] : null;
+                if (point is null || point.All(e => e is null)) { lines.Add(C3dListLayout.Inline(items[i])); continue; }
+                lines.Add("[" + string.Join(", ", items[i].Select((v, k) => k < point.Length && point[k] is { } e
+                    ? Spell(e, value.WithValues ? v.ToString(CultureInfo.InvariantCulture) : null)
+                    : v.ToString(CultureInfo.InvariantCulture))) + "]");
+            }
+            var sb = new StringBuilder();
+            C3dListLayout.AppendLines(sb, writer, 0, lines);
+            writer.WriteRawValue(sb.ToString(), skipInputValidation: true);
+            return;
+        }
         if (spec.Arity == 1 && value.Value is not List<int>)
         {
             if (slots?[0] is { } e) { writer.WriteRawValue(Spell(e, value.WithValues ? Number(value.Value) : null), skipInputValidation: true); return; }

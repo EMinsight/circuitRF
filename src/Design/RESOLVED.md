@@ -19097,3 +19097,50 @@ the piece's own group.
 On the owner's file all 15 DFN pieces converted, and the document elaborates. Gate:
 `StepPieceEditTests.ALeadWithAZeroThicknessFin_BecomesAPolyhedronAndASheet_InANewGroupInsideItsOwn`. Its STEP is the
 kernel's box export with a hand-built fin solid spliced in (`FinnedLead`). No vendor data is committed.
+
+## Expressions in a wire's and a polyline's points: the core (2026-10-09, brief-em3d-132)
+
+`C3dBindings.Fields` gains three LIST specs (`IsList`): `C3dWire.Points` (3), `C3dPolyline.Points` (2, in the plane) and
+`C3dPolyline.Points3` (3). `FieldsOf` enumerates one ELEMENT spec per current point (`spec.ElementAt(k)`), with paths
+`Points[k][c]` and map key `spec.Key` = `Points[k]`. Everything that walks `Bound`/`FieldsOf` — the resolver, VAR
+rename and delete, fragments and copy/paste, the thermal reader, `Find` — handles points with no change of its own.
+- **Callers that keyed the map by `spec.Property` had to move to `spec.Key`.** There were three, all in
+  `C3dEditorViewModel.Expressions.cs` (the Inspector's dimension list and the drag rule). `GetExpr(owner, spec, k)` is the
+  overload that does it. The Inspector list skips element specs: a point's rows are 133's and 134's to build.
+- **JSON.** A point list is written a point per line, exactly as `C3dPoint3ListJsonConverter` wrote it
+  (`C3dListLayout.AppendLines`), and a point with an expression spells it on that line as a fixed field's components are.
+  `TerminalWavePortTests.Gate5` holds the byte identity. A polyline with `Points3` and an expression under `Points` is a
+  read refusal (`c3d.read.ignored-point-expression`, from `OnDeserialized`), because `Points` is then ignored.
+- **Wording.** A refusal names a point as the Inspector labels its rows: `'w1' point 2 z = h_loop: unknown: h_loop`, and
+  `u`/`v` for a polyline's in-plane points (`C3dBindings.Label`). The machine path (`Points[1][2]`) stays in
+  `FieldProblem.Path` and `FieldValues`.
+- **No printer gives text back as typed.** `FreqDeferral.Render` parenthesises every node, so a move and its inverse
+  could never read back as the original. `C3dPointExpressions` decides on the AST (an addition with a trailing literal,
+  a negation, an atom) and splices at token positions, keeping every other character, then re-parses the result.
+- **Folding.** A trailing literal folds only when the sum is exact in the literal's own unit (a bare literal's unit is the
+  site unit). Otherwise the term is appended: `x + 5mil` moved +20 µm is `x + 5mil + 20um`, not `x + 5.7874015748mil`.
+  A root looser than `+` (a comparison, a logical operator, `?:`) is parenthesised; a unary minus and a power are not.
+- **Negation keeps `-(name)`.** The overview's rule says the parentheses go when what is left is an atom, but its examples
+  and 132's gate (`-(t) - 5um`, `-(ey) + c`) keep them around a name. The gate was followed: a literal takes the sign
+  (`-5um`), a name or a compound is wrapped, `-(e)` negated is `e`.
+- **`BakePlacement` returns the refusal** (`string?`, with `out bool exact`). Under a signed-permutation matrix (a quarter
+  turn or a mirror) each bound point component goes through `SwapExpression` with the translation as its constant, in the
+  document's display unit. Any other turn of a wire with a bound point refuses, naming the first one, and changes nothing.
+  A bound array **pitch** goes through the same writer, with no constant. Before this, a turn left a pitch expression on
+  its old axis. Every caller now passes the unit and stops on the refusal: the editor's move/rotate/mirror, its
+  copies, Align, Flatten and Group into Cell.
+- **`C3dHierarchy.Scale` needs nothing for an expression.** Every length expression carries its site unit (R-em3d51-1a),
+  or is unit-bearing, or is refused by the resolver for stating no unit. Its value in DBU is computed at resolution from
+  the PARENT's `DbuPerMicron`, so it does not depend on the child's grid. The child is read unresolved, so a bound number
+  is 0 when `Scale` multiplies it. That number is a cache the parent's resolution rewrites.
+- **Flatten carries no VARs, for any bound field.** The child's objects come up with their expression text verbatim, and
+  the child's VARs and cell parameters do not. A name the parent lacks is the ordinary `unknown:` refusal when the parent
+  resolves. A name the parent has with a different value takes the parent's value. Points do exactly what brief 51's
+  fields already did. Group into Cell has the same property in the other direction.
+- **`explain --tunables` and `tune` lines do not reach a `.c3d`.** `ExplainTunables.Collect` refuses every kind but a
+  schematic, a cell and a `.cnl`, and no run verb optimises a 3D view. So brief 51's fields are no more tunable than
+  points. Plain `explain x.c3d` now lists each name's fields by path in its name walk (`used by 2 field(s): 'w1' point 2
+  z, …`), and that is what lists a bound point.
+Gate: `PointExpressionsCoreTests` (round trip, both polyline forms, the ignored-Points refusal, the loop height following
+`h_loop`, the two writers, the quarter turn and its inverse, the 30° refusal, Flatten, and `check`/`explain` as a
+process). `RenumberPointExpressions` moved to `C3dPointExpressions`, generalised over the property, with its test.

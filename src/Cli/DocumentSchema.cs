@@ -893,9 +893,24 @@ internal static class DocumentSchema
             The unit is stored so that changing DisplayUnit never changes what an expression means.
             A number may carry its own unit, glued to it (`2*w + 5um`, `10um + 1mil`). An angle's unit is
             Deg; a count has none and must come out a whole number of at least 1 — never rounded.
-            Point lists (Outline, Holes, Points, Points3, Vertices, a wire's Points) hold numbers
-            only. Everything resolves BEFORE any geometry is built; a length is rounded to the DBU
-            once, and `check` notes a rounding that moved it by more than 1e-9.
+            Everything resolves BEFORE any geometry is built; a length is rounded to the DBU once,
+            and `check` notes a rounding that moved it by more than 1e-9.
+          * A WIRE'S AND A POLYLINE'S POINTS may hold expressions too, any component of any point,
+            spelled exactly as a named dimension's components are — the point stays on one line:
+
+                "Points": [
+                    [254000, 0, 50800],
+                    [381000, 0, { "Expr": "h_loop", "Unit": "Mil" }],
+                    [{ "Expr": "x_pad + 50um", "Unit": "Um" }, 0, 50800]
+                ]
+
+            A polyline's Points are [u, v] in its Plane at its Offset; its Points3 are [x, y, z]:
+
+                "Points": [[0, 0], [{ "Expr": "x_v", "Unit": "Mil" }, 254000], [0, 254000]]
+
+            A polyline that has Points3 ignores its Points, so an expression in those is refused on
+            read. `check` names a point that does not resolve as `'w1' point 2 z = h_loop: …`, 1-based.
+            Outline, Holes and a polyhedron's Vertices hold numbers only.
           * UNITS. A field's unit is its SITE unit. It is skipped when the expression is
             unit-bearing — it holds a unit literal (`10mil`) or references a name that carries a
             unit of its own (var-unit-wins) — and it then goes to the bare numbers ADDED to,
@@ -940,8 +955,9 @@ internal static class DocumentSchema
 
         Refused, with the reason named: a file that is not JSON; a FormatVersion newer than this
         build; an object whose "$type" this build does not know (every one is listed); and a string
-        where a number belongs — expressions arrive in a later version. Every other problem is a
-        `check` finding, and `check` lists all of them rather than the first: a duplicate name, an
+        where a number belongs — an expression is an object carrying its unit, never a bare string.
+        Every other problem is a `check` finding, and `check` lists all of them rather than the
+        first: a duplicate name, an
         outline of fewer than three distinct points, an open or non-planar polyhedron, a solid with
         no volume, a material the technology does not define (a warning).
 

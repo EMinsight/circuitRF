@@ -118,7 +118,8 @@ public sealed class WireArrayTests : IDisposable
         var w = Wire();
         w.Array = new C3dWireArray { Count = 2, Pitch = new(0, 15 * Um, 0) };
         w.Placement.Rotate = [new C3dRotation { Axis = C3dAxis.Z, Deg = 90 }];
-        Assert.True(C3dWires.BakePlacement(w));
+        Assert.Null(C3dWires.BakePlacement(w, LayoutUnit.Um, 1000, out bool exact));
+        Assert.True(exact);
         Assert.Equal(new C3dPoint3(-15 * Um, 0, 0), w.Array.Pitch);
     }
 

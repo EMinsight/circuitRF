@@ -740,11 +740,19 @@ internal static class Explain
                 _                         => $"--set '{n.Expression}'",
             };
             int uses = res.Uses.TryGetValue(n.Name, out var list) ? list.Count : 0;
-            walks.Add(new ResolutionStepJson($"name {n.Name}", cell.CcellPath, $"{value}, from {source}; used by {uses} field(s)",
+            // brief-em3d-132 R-em3d132-6 — which fields, by path; a point of a wire or a polyline as `point 2 z`.
+            string which = uses == 0 ? "" : ": " + string.Join(", ", list!.Take(8).Select(u => $"'{u.Item}' {FieldLabel(doc, u.Item, u.Path)}"))
+                                              + (uses > 8 ? $", and {uses - 8} more" : "");
+            walks.Add(new ResolutionStepJson($"name {n.Name}", cell.CcellPath, $"{value}, from {source}; used by {uses} field(s){which}",
                 "a 3D view sees its cell's parameters and its own VARs; a VAR named like a parameter is linked unless Linked is " +
                 "false, and linked means the parameter's value, default included"));
         }
     }
+
+    /// <summary>A field as check names it: its path, or a point's <c>point 2 z</c>.</summary>
+    private static string FieldLabel(C3dDocument doc, string item, string path)
+        => C3dBindings.ItemsOf(doc).FirstOrDefault(i => i.Name == item).Item is { } it && C3dBindings.Find(it, path) is { } f
+            ? C3dBindings.Label(f.Spec, f.Component, path) : path;
 
     /// <summary>brief-em3d-51 — <c>explain x.c3d --expr</c>: the expression in the document's resolved scope.</summary>
     private static int ExplainThreeDExpression(string path, string expression, IReadOnlyList<(string Name, string Expr)> sets,

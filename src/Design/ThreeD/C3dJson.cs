@@ -4,8 +4,9 @@
 // moved vertex is a one-line diff — the rule CoordinatePairsJsonConverter states for .clay. READING:
 // every number is an integer, and a STRING where a number belongs is refused by name (R-em3d41-2d)
 // rather than by System.Text.Json's "could not be converted to System.Int64". Since brief 51 a NAMED
-// dimension may hold an expression — an object carrying its unit, read by C3dBindings, not here; what
-// these readers see is a point list, which holds numbers only, and the refusal says so.
+// dimension may hold an expression — an object carrying its unit, read by C3dBindings, not here — and since brief 132
+// so may a wire's or a polyline's points (C3dBindings too); what these readers see is an outline, a hole or a polyhedron's
+// vertices, which hold numbers only, and the refusal says so.
 
 using System.Buffers;
 using System.Text;

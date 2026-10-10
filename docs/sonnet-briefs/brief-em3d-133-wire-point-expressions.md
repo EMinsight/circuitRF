@@ -45,9 +45,20 @@ variable (`t_sub + t_die`). An end bound to the same expression stays on that su
 | Align to Face (a translation) | every component of every point | D2, offset |
 | Rotate / Mirror of a wire | every component of every point | D4: a quarter-turn or mirror swaps exactly; any other angle refuses |
 | Flatten of an instance holding a wire | every component of every point | 132 R-em3d132-5 |
-| Loop height | the z of every interior point | drag rule (it scales, not an offset) |
+| Loop height | the z of every interior point | refused on a bound wire, except one whose only expressions are its ends' z (R-em3d133-4) |
 | Re-seat Wire Ends | the ends' z (nothing, when a bound z already lands) | drag rule |
 | Add / remove point | none; later points' entries renumber | overview R-em3d131-4 |
+
+**R-em3d133-4 — Loop height on a bound wire (owner decision, 2026-10-09).** Loop height scales every interior point's
+rise above the foot-to-foot chord. It keeps every x and y, and it never moves an end. It is **refused** on a wire that
+holds any point expression, with one exception: a wire whose only bound components are its start's z and its end's z.
+That wire's Loop height runs exactly as an unbound wire's does. Nothing it changes is bound, and the ends stay on their
+pads (D1). The refusal names the first bound component, as `'w1' point 2 z holds h_loop`, and tells the user to replace
+it with a number or to edit the expression. The drag rule is **not** used here. It would rewrite a variable that other
+geometry may use, which D2 rules out for a move.
+- Known consequence, not a defect: on a wire whose ends' z are bound and whose interior is numeric, raising a pad
+  through its variable leaves the interior points where they are, so the measured loop height shrinks. Loop height
+  stays a one-shot edit of numbers, as in brief 50.
 
 A vertex Move preview already goes through `PreviewThroughNames` (`FaceToolChanged`). D2 changes what it writes for a
 translation: the offset term instead of the name. The preview must show the same expression text the commit will write.
@@ -64,8 +75,10 @@ translation: the offset term instead of the name. The preview must show the same
    turn's sign gives) plus its folded constant, and rotating back reads the original text in every component. Mirror
    works the same way. A 30° rotation of a bound wire is refused, naming the first bound field; the same rotation of an
    unbound wire succeeds.
-5. The drag rule for Loop height and Re-seat: a bare name is rewritten; a compound expression is refused, naming the
-   field.
+5. Loop height (R-em3d133-4). A wire with `h_loop` on an interior z is refused, naming `point k z`, and its document
+   and undo count are unchanged. A wire whose only expressions are its two ends' z sets the typed loop height, and both
+   end expressions are byte-identical afterwards. The drag rule for Re-seat: a bare name is rewritten; a compound
+   expression is refused, naming the field.
 6. D1. An end z bound to the pad's own expression follows `t_die`, and a re-seat writes nothing (undo count unchanged).
    An expression that misses gives the "no longer on a pad" refusal carrying the expression text.
 7. Insert and remove on a bound wire carry later points' expressions, and survive undo and redo.

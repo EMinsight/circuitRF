@@ -1,7 +1,7 @@
 # Brief 132 — Point-list expressions: the core
 
 **Series:** [131 overview](brief-em3d-131-point-expressions-overview.md) · **Tag:** `R-em3d132-n`
-**Status:** Written 2026-10-09, not started.
+**Status:** Written 2026-10-09. Done 2026-10-09; findings in `src/Design/RESOLVED.md`.
 **Area:** `src/Design/ThreeD/` only (`C3dBindings`, the `.c3d` JSON contract, the elaborator's field resolution,
 `C3dHierarchy`), the `3d-view` reference topic, `check` / `explain`. No editor UI. Findings in `src/Design/RESOLVED.md`.
 **Depends on:** brief 51.

@@ -148,9 +148,12 @@ public sealed partial class C3dEditorViewModel
                 // 3D editor round 3 — a wire has no placement (every operation bakes it into the points), so its placement
                 // fields are not offered; its diameter is offered even when unstated, at the default it is built with.
                 if (obj is C3dWire && prefix.StartsWith("Placement.", StringComparison.Ordinal)) continue;
+                // brief-em3d-132 — a point list's components are bindable, but their rows are the wire's and the polyline's
+                // own point rows (briefs 133 and 134), not this list.
+                if (spec.Element is not null) continue;
                 bool wireDefault = obj is C3dWire { DiameterUm: null } && path == nameof(C3dWire.DiameterUm);
-                if (!wireDefault && C3dBindings.GetNumber(owner, spec, k) is not { } n && C3dBindings.GetExpr(owner, spec.Property, k) is null) continue;
-                var e = C3dBindings.GetExpr(owner, spec.Property, k);
+                if (!wireDefault && C3dBindings.GetNumber(owner, spec, k) is not { } n && C3dBindings.GetExpr(owner, spec, k) is null) continue;
+                var e = C3dBindings.GetExpr(owner, spec, k);
                 string text;
                 string value = "";
                 if (e is not null)
@@ -329,7 +332,7 @@ public sealed partial class C3dEditorViewModel
                 return new NamePlan([], $"'{item}' {f.Path} holds {f.Expr.Expr}, and this edit would leave it no such field " +
                                         $"(it becomes a {C3dObject.KindOf(after.GetType()).ToLowerInvariant()}). Replace it with a number first.",
                                     [(item, f.Path)]);
-            if (C3dBindings.GetExpr(at.Owner, at.Spec.Property, at.Component) is null) C3dBindings.SetExpr(at.Owner, at.Spec, at.Component, f.Expr);
+            if (C3dBindings.GetExpr(at.Owner, at.Spec, at.Component) is null) C3dBindings.SetExpr(at.Owner, at.Spec, at.Component, f.Expr);
             double was = C3dBindings.GetNumber(f.Owner, f.Spec, f.Component) ?? 0;
             double now = C3dBindings.GetNumber(at.Owner, at.Spec, at.Component) ?? 0;
             if (Math.Abs(now - was) < 1e-9) continue;

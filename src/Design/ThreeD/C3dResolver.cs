@@ -358,7 +358,7 @@ public static class C3dResolver
         switch (f.Spec.Kind)
         {
             case C3dFieldKind.Length or C3dFieldKind.Microns:
-                MilliLiteralWarning(r, $"'{f.Item}' {f.Path}", e.Expr);
+                MilliLiteralWarning(r, $"'{f.Item}' {Where(f)}", e.Expr);
                 unit = C3dUnits.Engine(e.Unit, out error);
                 if (error is null && unit is null && !Evaluator.IsUnitBearing(e.Expr, scope))
                     error = "it states no unit. An expression in a dimension carries the unit it was typed in.";
@@ -381,7 +381,7 @@ public static class C3dResolver
         }
         if (error is null) return;
         r.FieldErrors.Add(new C3dFieldProblem(f.Item, f.Path, e.Expr, error));
-        r.Errors.Add($"'{f.Item}' {f.Path} = {e.Expr}: {error}");
+        r.Errors.Add($"'{f.Item}' {Where(f)} = {e.Expr}: {error}");
     }
 
     /// <summary>
@@ -429,10 +429,10 @@ public static class C3dResolver
                 if (Math.Abs(rounded) > long.MaxValue / 2.0) return "it is too large to be a coordinate.";
                 if (Math.Abs(rounded - raw) > 1e-9 * Math.Abs(raw))
                     r.Notes.Add(string.Create(CultureInfo.InvariantCulture,
-                        $"'{f.Item}' {f.Path} = {f.Expr.Expr} is {raw:0.###} DBU, rounded to {rounded:0}: two expressions meant to meet exactly may not."));
+                        $"'{f.Item}' {Where(f)} = {f.Expr.Expr} is {raw:0.###} DBU, rounded to {rounded:0}: two expressions meant to meet exactly may not."));
                 if (Math.Abs(si) > LargeMetres)
                     r.Warnings.Add(string.Create(CultureInfo.InvariantCulture,
-                        $"'{f.Item}' {f.Path} = {f.Expr.Expr} is {si:0.######} m, above 1 m. A MULTIPLIER is not scaled by the field's unit (`2*w` is twice w), and a name with no unit is in metres; the metre itself is spelled `metre` — a bare `m` is milli."));
+                        $"'{f.Item}' {Where(f)} = {f.Expr.Expr} is {si:0.######} m, above 1 m. A MULTIPLIER is not scaled by the field's unit (`2*w` is twice w), and a name with no unit is in metres; the metre itself is spelled `metre` — a bare `m` is milli."));
                 if (rounded < 0 && IsSize(f)) return string.Create(CultureInfo.InvariantCulture, $"it is {rounded:0} DBU; a size is positive.");
                 // brief-em3d-64 R-em3d64-1c — a fillet's radius and a chamfer's distances round or cut something: zero is as
                 // meaningless as negative, and the kernel would refuse it far from the field that caused it.
@@ -452,13 +452,16 @@ public static class C3dResolver
             default:   // microns
                 value = si * 1e6;
                 if (Math.Abs(si) > LargeMetres)
-                    r.Warnings.Add(string.Create(CultureInfo.InvariantCulture, $"'{f.Item}' {f.Path} = {f.Expr.Expr} is {si:0.######} m, above 1 m."));
+                    r.Warnings.Add(string.Create(CultureInfo.InvariantCulture, $"'{f.Item}' {Where(f)} = {f.Expr.Expr} is {si:0.######} m, above 1 m."));
                 break;
         }
         r.FieldValues[(f.Item, f.Path)] = si;
         C3dBindings.SetNumber(f.Owner, f.Spec, f.Component, value);
         return null;
     }
+
+    /// <summary>The field as a sentence names it: its path, or a point's <c>point 2 z</c> (brief-em3d-132).</summary>
+    private static string Where(C3dBoundField f) => C3dBindings.Label(f.Spec, f.Component, f.Path);
 
     private static bool IsSize(C3dBoundField f)
         => f.Spec.Property is nameof(C3dBox.Size) or nameof(C3dCylinder.Radius);
