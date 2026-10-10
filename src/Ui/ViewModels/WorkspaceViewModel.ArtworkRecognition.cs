@@ -43,6 +43,7 @@ public partial class WorkspaceViewModel
         if (_artworkDialog is { } open) { open.Activate(); return; }
 
         var layoutVm = doc.ActiveViewModel;
+        if (!await SaveWhatRecognitionReads(doc, layoutVm, ResolveOwner(owner))) return;
         if (layoutVm.IsDirty)
             Messages.Warning("Create Schematic from Artwork reads the saved layout; save it to include the edits made since.");
 
@@ -77,6 +78,41 @@ public partial class WorkspaceViewModel
         _artworkDialog = dialog;
         if (ResolveOwner(owner) is { } window) dialog.Show(window);
         else dialog.Show();
+    }
+
+    /// <summary>
+    /// Designer report (round 16): the recognition reads the layout AND its technology from disk, as the CLI does, so
+    /// a stackup built in the Technology editor and not yet saved was invisible to it — it refused with "no copper on
+    /// any conductor of the stackup" while the canvas showed the stack, until something else (archiving the workspace)
+    /// saved it. Either unsaved file is asked about first: Save writes it, Don't Save reads what is on disk, Cancel
+    /// stops. False when the user cancelled.
+    /// </summary>
+    private async Task<bool> SaveWhatRecognitionReads(LayoutDocument doc, LayoutEditorViewModel layoutVm, Window? window)
+    {
+        var tech = _openDocsByPath.Values.OfType<TechDocument>()
+            .FirstOrDefault(t => t.IsDirty && SamePath(t.FilePath, layoutVm.ResolvedTechPath));
+        bool layoutDirty = layoutVm.IsDirty && !IsDocumentReadOnly(doc);
+        if (window is null || (tech is null && !layoutDirty)) return true;
+
+        string what = (layoutDirty, tech) switch
+        {
+            (true, { } t) => $"the layout and its technology '{Path.GetFileName(t.FilePath)}'",
+            (false, { } t) => $"the technology '{Path.GetFileName(t.FilePath)}'",
+            _ => "the layout",
+        };
+        var dlg = new Views.Dialogs.SaveChangesDialog(
+            $"Create Schematic from Artwork reads the saved files, and {what} {(layoutDirty && tech is not null ? "have" : "has")} " +
+            "unsaved changes. Save before reading?", title: "Unsaved Changes");
+        await dlg.ShowDialog(window);
+        switch (dlg.Result)
+        {
+            case Views.Dialogs.SaveChangesResult.Cancel: return false;
+            case Views.Dialogs.SaveChangesResult.Save:
+                tech?.ViewModel.SaveCommand.Execute(null);
+                if (layoutDirty) await SaveMaterializedLayoutDoc(doc, window);
+                return true;
+            default: return true;
+        }
     }
 
     /// <summary>

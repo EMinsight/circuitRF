@@ -365,3 +365,40 @@ width. The arms merged into one 22 mm line and FB2 joined FB1's node. Both tap r
 `LineSegmentation`'s mid-piece tap) are now a line end's attach reach, `2·W + 1 mm`. A synthetic board did not
 reproduce it — three geometries passed with and without the fix — so the gate is field board `board-c`'s new
 `apart` key in `expected.json` (README updated), which fails without the change.
+
+## Designer report, round 16 (2026-10-09)
+
+### "No copper on any conductor" until the workspace was archived
+
+Recognition reads the layout AND its technology from disk (`RecognitionInput.FromFile`, a fresh `TechnologyCache`), as
+the CLI does. The canvas draws the Technology editor's LIVE technology, so a stackup built on an imported board's
+`.ctech` and not yet saved was on screen and not on disk — the disk stackup had no conductors and the refusal was true
+of the file. Archive Workspace prompts to save everything, which is why it "fixed" it. Create Schematic from Artwork now
+asks first when the layout or the open technology it resolves is dirty (`SaveWhatRecognitionReads`: Save / Don't Save
+reads disk / Cancel). Reading the live technology instead was not done: the dialog would then disagree with
+`circuitrf recognize` on the same files.
+
+### A net the layout names is the circuit's net name
+
+Islands already carried `NetName` (from `CopperPieces`); the emitter numbered every net `n<k>` regardless. Every node
+key (line node, port, part terminal, via end) now records its island, and after the union a net whose island is named
+takes that name — first in walk order bare, the rest `_2`, `_3` — ahead of a port's `p<n>`. A root seeing two names
+takes the ordinal-least, deterministically (a Short part can join two named islands).
+
+### Synced back into a new layout: no coplanar lines, and a grid
+
+Two separate causes. There was no `CPWG` (or `SLIN`) generator, so those components resolved "no layout view" and were
+skipped; `CpwgPCell` draws the strip and a side ground of width `Wg` (default `W`) each side, and `SLIN` reuses
+`MlinPCell` on its `SignalLayer`. And new instances were placed on the grid; a `FromArtwork` component now goes to its
+anchor (lines by pin 1 and direction, parts centred). **Part orientation could not come from the schematic**: the
+symbol's rotation composed with `PinAlignment` turned every 2-pad part 90° from the board on field board `board-c`, because the
+drawing's rotation is a drawing decision. The emitter now records `PadAxisDeg` (pad 1 → pad 2) in `ArtworkMeasured`
+and the generator turns the cell's pin 1 → pin 2 axis onto it. Checked by rendering `board-c` and its round trip in
+one window: lines, part centres and orientations (including C5's diagonal) agree; the recognizer's lumped junctions
+leave short gaps between a part pad and the next line start, which is the model, not placement.
+
+### New stackup entries were air
+
+`NewStackupLayer` gave every kind a 1 µm thickness and the model defaults (εr 1, tanδ 0, σ 0). A conductor or
+dielectric now copies the last entry of its kind, or takes `SubstrateDefaults` (FR-4, 35 µm copper) when it is the
+first — the same named generic board an artwork-only import completes a stackup with.

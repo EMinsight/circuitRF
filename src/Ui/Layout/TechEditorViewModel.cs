@@ -1088,12 +1088,45 @@ public sealed partial class TechEditorViewModel : ObservableObject
     /// only version of it that cannot drift is one constructor both paths call — a second initializer
     /// listing the same fields agrees right up until one of them gains another.</para>
     /// </summary>
-    private StackupLayer NewStackupLayer(StackupKind kind) => new()
+    private StackupLayer NewStackupLayer(StackupKind kind)
     {
-        Kind         = kind,
-        Name         = NextFreeStackupName(kind),
-        ThicknessDbu = LayoutUnits.ToDbu(1m, LayoutUnit.Um, LayoutUnits.DefaultDbuPerMicron),
-    };
+        var layer = new StackupLayer
+        {
+            Kind         = kind,
+            Name         = NextFreeStackupName(kind),
+            ThicknessDbu = LayoutUnits.ToDbu(1m, LayoutUnit.Um, LayoutUnits.DefaultDbuPerMicron),
+        };
+        if (kind is StackupKind.Conductor or StackupKind.Dielectric) SeedSubstrate(layer);
+        return layer;
+    }
+
+    /// <summary>
+    /// Designer report (round 16): a new dielectric came in as air (εr 1, tanδ 0) and a new conductor as a 1 µm
+    /// sheet of no metal — numbers that run, and answer a different question. A new conductor or dielectric is the
+    /// same as the last one of its kind already in the stack (a board's layers are mostly alike); the first of its
+    /// kind takes the generic board an artwork-only import completes a stackup with (<see cref="SubstrateDefaults"/>),
+    /// copper for a conductor.
+    /// </summary>
+    private void SeedSubstrate(StackupLayer layer)
+    {
+        int dbu = LayoutUnits.DefaultDbuPerMicron;
+        if (Working.Stackup.Layers.LastOrDefault(l => l.Kind == layer.Kind) is { } like)
+        {
+            layer.ThicknessDbu = like.ThicknessDbu;
+            layer.Material = like.Material;
+            (layer.Epsr, layer.TanD, layer.Mur, layer.SigmaSm) = (like.Epsr, like.TanD, like.Mur, like.SigmaSm);
+        }
+        else if (layer.Kind == StackupKind.Conductor)
+        {
+            layer.ThicknessDbu = LayoutUnits.ToDbu(SubstrateDefaults.OuterConductorUm, LayoutUnit.Um, dbu);
+            layer.SigmaSm = ConductorMaterials.Copper.SigmaSm;
+        }
+        else
+        {
+            layer.ThicknessDbu = LayoutUnits.ToDbu(SubstrateDefaults.DielectricBudgetUm, LayoutUnit.Um, dbu);
+            (layer.Epsr, layer.TanD, layer.Mur) = (SubstrateDefaults.Epsr, SubstrateDefaults.TanD, SubstrateDefaults.Mur);
+        }
+    }
 
     /// <summary>
     /// GI3 R-gi3-8's other half. The flat <c>$"New {kind}"</c> this used to write meant that clicking

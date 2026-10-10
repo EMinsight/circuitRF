@@ -69,6 +69,62 @@ public sealed class FromArtworkSyncTests : IDisposable
         Assert.Equal(0, intoArtwork.AddedCount);
     }
 
+    /// <summary>
+    /// Designer report (round 16): synced back into a new layout, a recognised board came out as a grid, and its
+    /// grounded coplanar lines were missing — nothing could draw one. A recognised line is drawn where the board had
+    /// it: pin 1 on its first anchor point, running toward the second, with its two side grounds.
+    /// </summary>
+    [Fact]
+    public void UpdateLayoutFromSchematic_PlacesARecognisedLineWhereTheBoardHadIt()
+    {
+        var model = new SchematicEditModel
+        {
+            SchematicDirectory = _root,
+            ArtworkSource = new ArtworkProvenance { Layout = "../Board/layout/Board.clay" },
+        };
+        var cp = Recognised("CP1", SymbolKind.Cpwg);
+        cp.ArtworkAnchor.AddRange([(10_000_000, 5_000_000), (10_000_000, 9_000_000)]);
+        model.Components.Add(cp);
+        var layout = new LayoutView();
+
+        var result = SchematicToLayoutGenerator.Run(model, layout, _root, _root, _root, null, null, null,
+                                                    targetLayoutPath: Path.Combine(_root, "Board_model.clay"));
+        result.Command!.Execute();
+
+        var inst = Assert.Single(layout.Instances);
+        Assert.Equal((10_000_000L, 5_000_000L, 90.0), (inst.X, inst.Y, inst.RotationDegrees));
+        var cell = CellLayoutResolver.Resolve(inst.CellRef, _root);
+        Assert.Equal(3, cell.View!.Shapes.OfType<RectShape>().Count());   // the strip and its two side grounds
+    }
+
+    /// <summary>The same report: a recognised part is centred where the board has it and lies the way the board has
+    /// it — pad 1 toward pad 2 along the direction the recognition measured — whatever its symbol's rotation.</summary>
+    [Fact]
+    public void UpdateLayoutFromSchematic_LaysARecognisedPartAsTheBoardHasIt()
+    {
+        var model = new SchematicEditModel
+        {
+            SchematicDirectory = _root,
+            ArtworkSource = new ArtworkProvenance { Layout = "../Board/layout/Board.clay" },
+        };
+        var c = Recognised("C1", SymbolKind.Capacitor);
+        c.Parameters.Add(new EditableParameter { Name = "Footprint", Expression = "smt:0603@N" });
+        c.ArtworkAnchor.Add((5_000_000, 7_000_000));
+        c.ArtworkMeasured[CircuitRF.Design.Layout.Recognition.RecognitionEmit.PadAxisKey] = 0;
+        model.Components.Add(c);
+        var layout = new LayoutView();
+
+        var result = SchematicToLayoutGenerator.Run(model, layout, _root, _root, _root, ShippedTechnologies.Load("pcb-2layer_RO4350B_20mil_1oz"),
+                                                    null, null, targetLayoutPath: Path.Combine(_root, "Board_model.clay"));
+        Assert.True(result.Command is not null, string.Join(" ", result.NoLayoutWarnings));
+        result.Command.Execute();
+
+        var inst = Assert.Single(layout.Instances);
+        var box = CellHierarchy.InstanceBbox(inst, _root);
+        Assert.Equal((5_000_000L, 7_000_000L), ((box.MinX + box.MaxX) / 2, (box.MinY + box.MaxY) / 2));
+        Assert.True(box.MaxX - box.MinX > box.MaxY - box.MinY, "an 0603 with its pads along x is wider than it is tall");
+    }
+
     [Fact]
     public void UpdateSchematicFromLayout_DoesNotDuplicateARecognisedPart()
     {

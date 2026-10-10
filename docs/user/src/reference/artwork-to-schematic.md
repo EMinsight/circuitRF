@@ -71,7 +71,9 @@ one step earlier, from the Gerber files, and has a figure for each step.
 
 Focus a **saved** layout and choose **Design ▸ Create Schematic from Artwork…**. A layout that has never been
 saved has no cell to write beside, and is refused with a message, as **Update Schematic from Layout** refuses
-it. The dialog reads the layout as it is saved on disk; save first to include recent edits.
+it. The dialog reads the layout and its technology as they are saved on disk. When either has unsaved changes
+&mdash; a stackup you have just built in the Technology editor, say &mdash; it asks first: **Save** writes them,
+**Don't Save** reads what is on disk, **Cancel** stops.
 
 {{ui: artwork-to-schematic-dialog}}
 
@@ -154,6 +156,11 @@ pads on the layout and brings it into view.
 with a tuning entry, so it is a slider in the **Tuning** panel and a variable in the **Optimizer** from the first
 simulation. Its starting value is chosen to be transparent (a series capacitor 100 pF, a shunt one 0.01 pF), so
 the first run shows the lines alone.
+
+**A net you named in the layout keeps its name.** Give a trace a **Net** in its properties (`RFin`, `VCC`) and
+the schematic's net there is called that, so the section is easy to find. Where lines divide one named trace into
+several nodes, the first along the signal path takes the name and the rest are numbered: `RFin`, `RFin_2`,
+`RFin_3`. A port on named copper takes the copper's name rather than `p1`.
 
 Your edits are kept across every re-run the options cause. **Export Parts…** writes the table as CSV, with your
 edits in it, and
@@ -273,7 +280,11 @@ parameter editor. It means the copper already exists:
 - **Update Layout from Schematic** into the layout it was recognised from leaves its artwork alone and counts it,
   so a schematic written into the artwork's own cell never has lines generated over the imported board. Into any
   other layout &mdash; the new cell's own &mdash; it is generated like any component, on the schematic's technology,
-  so a round trip from the recognised schematic back to a layout is one command;
+  so a round trip from the recognised schematic back to a layout is one command. Each component is placed where
+  the board has it: a line from its first end toward its second, at its measured length, and a part centred on its
+  pads and turned the way it lies on the board. Microstrip, grounded coplanar and stripline lines are all drawn; a
+  grounded coplanar line has a ground strip as wide as the signal strip along each side, without stitching vias.
+  Anything added to the schematic after it was recognised is laid out in rows below the board;
 - **Update Schematic from Layout** does not place it a second time.
 
 Clear the box to hand that component back to ordinary layout sync; it is one undo step and changes nothing else.

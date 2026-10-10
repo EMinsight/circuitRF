@@ -448,7 +448,7 @@ default drawing change no byte of it; no hints is the default code path.
 ### 7.4 The component fields and the provenance (R-as6-4, R-as6-5)
 
 `EditableComponent.FromArtwork`, `ArtworkAnchor` (DBU points) and `ArtworkMeasured` (line Z0, Eeff, side gaps; a TLIN's
-W) are persisted in the `.csch`, written only when set, and never reach the elaborator. They are laid on the drawing by
+W; a part's `PadAxisDeg`, pad 1 toward pad 2) are persisted in the `.csch`, written only when set, and never reach the elaborator. They are laid on the drawing by
 instance name after `Build`; the drawing's own ground symbols get none. The schematic's `ArtworkSource` block records the
 source `.clay` (relative), the scope and its rings, the options, the parts CSV's SHA-256, the version and the time.
 
@@ -461,7 +461,14 @@ has no schematic view. `Replace(cell)` rewrites a primary schematic that carries
 *"<cell>'s schematic was not created from artwork; choose a new cell"*. The `.clay` is never written.
 
 Update Layout from Schematic skips a `FromArtwork` component before resolution (no add, update, orphan report or ground)
-and says *"N components model existing artwork — not generated"*. Update Schematic from Layout leaves a placement whose
+and says *"N components model existing artwork — not generated"* — into the provenance layout only. Into any other
+layout it generates them, and a new one is placed from its anchor: a straight line (MLIN, CPWG, SLIN, MTAPER) with pin 1
+on its first anchor point, turned toward the second; anything else centred on its anchor, a part turned so its pin 1 →
+pin 2 axis is `PadAxisDeg`. Anchors are scaled from the source layout's DBU. Components with no anchor go in the usual
+rows, below the board.
+
+A net is named from the copper when its island carries a stated name (a shape's `Net`): every node on the island takes
+it, the first in walk order bare and the rest `_2`, `_3`, …, ahead of a port's own `p<n>`. Update Schematic from Layout leaves a placement whose
 `SchematicId` or `RefDes` names a `FromArtwork` component alone and says *"C6 is modelled from artwork — unchanged"*.
 
 ### 7.6 Gates

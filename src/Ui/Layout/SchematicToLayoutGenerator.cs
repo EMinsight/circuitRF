@@ -1,4 +1,5 @@
 using System.Globalization;
+using CircuitRF.Design.Layout.Recognition;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Devices.Microstrip;
 using CircuitRF.Core.Expressions;
@@ -426,8 +427,10 @@ public static class SchematicToLayoutGenerator
         // via that pad's ground runs through, and a via a row-width away from its part grounds nothing.
         var beside = ViaGndPartners(newInstances, physical, extraction, target, existingBySchematicId, replacedAt,
                                     schematicDir, targetLayoutBaseDir, technology);
-        var addedRegion = PlaceNewInstances(newInstances.Where(n => !beside.ContainsKey(n.Instance)).ToList(),
-                                            targetLayoutBaseDir);
+        var unplaced = newInstances.Where(n => !beside.ContainsKey(n.Instance)).ToList();
+        var atArtwork = overArtwork ? Bbox.Empty
+            : PlaceAtArtwork(unplaced, physical, model, schematicDir, target, targetLayoutBaseDir, technology);
+        var addedRegion = PlaceNewInstances(unplaced, targetLayoutBaseDir, below: atArtwork).Union(atArtwork);
         foreach (var (via, partner) in beside)
         {
             var origin = CellHierarchy.InstanceBbox(via, targetLayoutBaseDir);
@@ -818,9 +821,19 @@ public static class SchematicToLayoutGenerator
     /// clicked — so saying where they went is part of writing them.</para>
     /// </summary>
     private static Bbox PlaceNewInstances(
-        List<(int Slot, LayoutInstance Instance)> placed, string targetLayoutBaseDir)
+        List<(int Slot, LayoutInstance Instance)> placed, string targetLayoutBaseDir, Bbox? below = null)
     {
         if (placed.Count == 0) return Bbox.Empty;
+        if (below is { IsEmpty: false } board)
+        {
+            // What the artwork placed is the board; the rest is laid out in rows under it, never over it.
+            var rows = PlaceNewInstances(placed, targetLayoutBaseDir);
+            if (rows.IsEmpty) return rows;
+            long clear = Math.Max(1, (board.MaxY - board.MinY) / 10);
+            long dx = board.MinX - rows.MinX, dy = board.MinY - clear - rows.MaxY;
+            foreach (var (_, inst) in placed) { inst.X += dx; inst.Y += dy; }
+            return new Bbox(rows.MinX + dx, rows.MinY + dy, rows.MaxX + dx, rows.MaxY + dy);
+        }
 
         // Measured at the origin, which is where they still are: an instance's box includes its own
         // placement — the rotation Run gave it included — so the offset below is exact.
@@ -876,6 +889,79 @@ public static class SchematicToLayoutGenerator
         }
         return region;
     }
+
+    /// <summary>
+    /// Designer report (round 16): a schematic recognised from a board, modelled, and synced back into a new layout
+    /// came out as a grid of parts. A component that models artwork carries where it was on the board
+    /// (<see cref="EditableComponent.ArtworkAnchor"/>, the source layout's DBU), so in any layout but the board's own
+    /// it is placed there: a line with pin 1 on its first anchor point and running toward the next, a part centred
+    /// on its anchor, facing as the run already turned it. Those placed are taken out of <paramref name="placed"/>;
+    /// the region they cover is returned.
+    /// </summary>
+    private static Bbox PlaceAtArtwork(
+        List<(int Slot, LayoutInstance Instance)> placed, List<EditableComponent> physical, SchematicEditModel model,
+        string schematicDir, LayoutView target, string targetLayoutBaseDir, Technology? technology)
+    {
+        if (model.ArtworkSource is not { Layout: { Length: > 0 } source }) return Bbox.Empty;
+        string sourcePath = CircuitRF.Core.RefPath.Resolve(schematicDir, source);
+        int sourceDbu = (File.Exists(sourcePath) ? LayoutPersistence.TryReadUnits(sourcePath)?.DbuPerMicron : null)
+                        ?? LayoutUnits.DefaultDbuPerMicron;
+        double scale = (double)target.DbuPerMicron / sourceDbu;
+        (long X, long Y) At((long X, long Y) p) => ((long)Math.Round(p.X * scale), (long)Math.Round(p.Y * scale));
+
+        var region = Bbox.Empty;
+        foreach (var (slot, inst) in placed.ToList())
+        {
+            var comp = physical[slot];
+            if (!comp.FromArtwork || comp.ArtworkAnchor.Count == 0) continue;
+            var anchor = comp.ArtworkAnchor;
+            if (IsStraightLine(comp.Symbol) && anchor.Count >= 2 && anchor[1] != anchor[0])
+            {
+                var (a, b) = (At(anchor[0]), At(anchor[1]));
+                double deg = Math.Atan2(b.Y - a.Y, b.X - a.X) * 180.0 / Math.PI;
+                var facing = new VisualOrientation(false, Math.Round(deg, 6));
+                inst.MirrorX = false;
+                inst.RotationDegrees = facing.Deg;
+                inst.OrientationLink = SchematicLayoutOrientation.Link((int)comp.Rotation, comp.MirrorX, facing);
+                (inst.X, inst.Y) = a;
+            }
+            else
+            {
+                if (comp.ArtworkMeasured.TryGetValue(RecognitionEmit.PadAxisKey, out double padAxis)
+                    && PinAxisDeg(inst, targetLayoutBaseDir, technology) is { } cellAxis)
+                {
+                    var facing = new VisualOrientation(false, Math.Round(padAxis - cellAxis, 6));
+                    inst.MirrorX = false;
+                    inst.RotationDegrees = facing.Deg;
+                    inst.OrientationLink = SchematicLayoutOrientation.Link((int)comp.Rotation, comp.MirrorX, facing);
+                }
+                var c = At(ArtworkAnchors.Centre(anchor)!.Value);
+                var bb = CellHierarchy.InstanceBbox(inst, targetLayoutBaseDir);
+                if (bb.IsEmpty) (inst.X, inst.Y) = c;
+                else (inst.X, inst.Y) = (c.X - (bb.MinX + bb.MaxX) / 2, c.Y - (bb.MinY + bb.MaxY) / 2);
+            }
+            placed.Remove((slot, inst));
+            var box = CellHierarchy.InstanceBbox(inst, targetLayoutBaseDir);
+            if (!box.IsEmpty) region = region.Union(box);
+        }
+        return region;
+    }
+
+    /// <summary>The direction from a cell's pin 1 to its pin 2 as the cell is drawn, degrees; null without both.</summary>
+    private static double? PinAxisDeg(LayoutInstance inst, string targetLayoutBaseDir, Technology? technology)
+    {
+        var cell = CellLayoutResolver.Resolve(inst.CellRef, targetLayoutBaseDir);
+        if (cell.State != CellLayoutState.Resolved) return null;
+        var pins = CellPins.Resolve(cell.View!, technology);
+        if (pins.FirstOrDefault(p => p.Name == "1") is not { } p1 || pins.FirstOrDefault(p => p.Name == "2") is not { } p2
+            || (p1.X == p2.X && p1.Y == p2.Y))
+            return null;
+        return Math.Atan2(p2.Y - p1.Y, p2.X - p1.X) * 180.0 / Math.PI;
+    }
+
+    /// <summary>The lines whose cell starts at pin 1 on the origin and runs along +X to pin 2.</summary>
+    private static bool IsStraightLine(SymbolKind kind) =>
+        kind is SymbolKind.Mlin or SymbolKind.Cpwg or SymbolKind.Slin or SymbolKind.Mtaper;
 
     /// <summary>A VIAGND added this run, and the pad it grounds: the first other part's drawn pin on the VIAGND's own
     /// net whose placement (added this run or already there) and pad resolve. A VIAGND whose net reaches no such pad

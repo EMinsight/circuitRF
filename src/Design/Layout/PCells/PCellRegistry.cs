@@ -22,6 +22,10 @@ public static class PCellRegistry
             { "MCROSS", MCrossPCell.Generate },
             { "MTAPER", MTaperPCell.Generate },
             { "MKLOPF", MKlopfPCell.Generate },
+            // The recognised board's other two lines (designer report, round 16): a stripline is MLIN's strip on its
+            // own layer, and a grounded coplanar line adds its side grounds.
+            { CpwgPCell.GeneratorId, CpwgPCell.Generate },
+            { "SLIN",   MlinPCell.Generate   },
             { ViaPCell.GeneratorId,       ViaPCell.Generate       },
             { ViaPCell.GroundGeneratorId, ViaPCell.GenerateGround },
             // The MMIC passives (brief-agent-authoring-overview.md AA-1).

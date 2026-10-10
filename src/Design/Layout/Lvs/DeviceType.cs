@@ -147,6 +147,8 @@ public static class DeviceTypes
             ["MCROSS"] = SymbolKind.MCross,
             ["MTAPER"] = SymbolKind.Mtaper,
             ["MKLOPF"] = SymbolKind.Mklopf,
+            ["CPWG"]   = SymbolKind.Cpwg,
+            ["SLIN"]   = SymbolKind.Slin,
             ["VIA"]    = SymbolKind.Via,
             ["VIAGND"] = SymbolKind.ViaGnd,
             // The MMIC passives (AA-1): each generator is keyed by its component's own token.

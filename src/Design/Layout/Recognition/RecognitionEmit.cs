@@ -108,6 +108,9 @@ public static class RecognitionEmit
     /// <summary>The analysis the circuit carries.</summary>
     public const string AnalysisName = "SP1";
 
+    /// <summary>The measured key of a part's direction on the board: pad 1 toward pad 2, degrees, the layout's axes.</summary>
+    public const string PadAxisKey = "PadAxisDeg";
+
     private sealed class Proto
     {
         public required string Type { get; init; }          // the .cnl type token
@@ -152,9 +155,16 @@ public static class RecognitionEmit
         }
         string NodeOf(string name) => lines.NodeOf(name);
 
+        // The island every node is on, so a net the artwork NAMES (a shape's Net) names the circuit's net too
+        // (designer report, round 16: a trace labelled in the layout came back as n7).
+        var islandOfNode = new Dictionary<string, int>(StringComparer.Ordinal);
+        void OnIsland(string node, int island) { if (island >= 0) islandOfNode.TryAdd(node, island); }
+        foreach (var node in lines.Nodes) OnIsland(node.Name, node.Island);
+
         // ── ports ────────────────────────────────────────────────────────────────────────────────────
         foreach (var port in board.Ports.OrderBy(p => p.Number))
         {
+            OnIsland(NodeOf($"P{port.Number}"), port.Island);
             var p = new Proto
             {
                 Type = "Port", Prefix = "", FixedName = Identifier(port.Name, "P"), Nodes = [NodeOf($"P{port.Number}"), Ground],
@@ -174,6 +184,7 @@ public static class RecognitionEmit
             {
                 var term = row.Terminals[t];
                 ends.Add(term.Island >= 0 ? NodeOf($"{row.Refdes}.{t + 1}") : Ground);
+                if (term.Island >= 0) OnIsland(ends[^1], term.Island);
             }
             if (ends.Count < 2) { notes.Add($"{row.Refdes}: fewer than two terminals were measured, so it is not in the circuit."); continue; }
 
@@ -181,6 +192,10 @@ public static class RecognitionEmit
             if (row.Kind is PartKind.Open or PartKind.Ignore) continue;
 
             string name = Identifier(row.Refdes, row.ParameterName);
+            // Which way the part lies on the board — pad 1 toward pad 2, degrees — so a layout made back from the
+            // schematic can lay it as the board does (designer report, round 16).
+            var (t1, t2) = (row.Terminals[0], row.Terminals[1]);
+            double padAxis = Math.Round(Math.Atan2(t2.Y - t1.Y, t2.X - t1.X) * 180.0 / Math.PI, 6);
             if (row.Model == PartModelKind.SnP && result.Parts.ResolveModelFile(row) is { } file)
             {
                 // A two-port: port 1 the signal end, port 2 the other end — ground for a shunt part (R-as6-2).
@@ -188,6 +203,7 @@ public static class RecognitionEmit
                 snp.Parameters.Add(new ParameterAssignment("NumPorts", "2"));
                 snp.Parameters.Add(new ParameterAssignment("File", $"\"{file}\""));
                 AddFootprint(snp, row);
+                snp.Measured[PadAxisKey] = padAxis;
                 protos.Add(snp);
                 continue;
             }
@@ -206,6 +222,7 @@ public static class RecognitionEmit
                     variables.Add((variable, row.TransparentValue, row.GeneratedKind, row.Connection == PartConnection.Shunt));
             }
             AddFootprint(part, row);
+            part.Measured[PadAxisKey] = padAxis;
             protos.Add(part);
         }
 
@@ -213,6 +230,7 @@ public static class RecognitionEmit
         for (int v = 0; v < board.Vias.Count; v++)
         {
             var via = board.Vias[v];
+            for (int i = 0; i < via.Islands.Count; i++) OnIsland(NodeOf($"V{v + 1}.{i + 1}"), via.Islands[i]);
             switch (via.Element)
             {
                 case ViaElement.Gnd:
@@ -290,11 +308,29 @@ public static class RecognitionEmit
             p.Name = n;
         }
 
+        // A net the artwork names takes that name: the copper's island names every node on it, so a labelled trace
+        // a line element splits keeps its name on each piece — the first in walk order bare, the rest numbered
+        // (RFin, RFin_2, …) — which is what makes a section findable by the name it was given in the layout.
+        var islandName = board.Islands.Where(i => i.NetName is { Length: > 0 })
+                                      .ToDictionary(i => i.Id, i => Identifier(i.NetName!, "N"));
+        var statedName = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (node, island) in islandOfNode.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            if (islandName.TryGetValue(island, out var stated) && Find(node) is var root && root != Ground
+                && (!statedName.TryGetValue(root, out var had) || string.CompareOrdinal(stated, had) < 0))
+                statedName[root] = stated;
+
         var netName = new Dictionary<string, string>(StringComparer.Ordinal) { [Ground] = Ground };
         var netsTaken = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Ground };
+        string TakeStated(string bare)
+        {
+            string n = bare;
+            for (int k = 2; !netsTaken.Add(n); k++) n = $"{bare}_{k}";
+            return n;
+        }
         foreach (var p in protos.Where(p => p.Type == "Port").OrderBy(p => p.PortNumber))
             if (!netName.ContainsKey(p.Nodes[0]))
             {
+                if (statedName.TryGetValue(p.Nodes[0], out var stated)) { netName[p.Nodes[0]] = TakeStated(stated); continue; }
                 string n = p.Name.ToLowerInvariant();
                 while (!netsTaken.Add(n)) n += "_";
                 netName[p.Nodes[0]] = n;
@@ -303,6 +339,7 @@ public static class RecognitionEmit
         foreach (var node in nodeOrder)
             if (!netName.ContainsKey(node))
             {
+                if (statedName.TryGetValue(node, out var stated)) { netName[node] = TakeStated(stated); continue; }
                 string n;
                 do n = $"n{++nk}"; while (!netsTaken.Add(n));
                 netName[node] = n;

@@ -160,7 +160,7 @@ is described below.
 |---|---|
 | **Top** | The boundary condition above the whole sandwich — `Open` (free space, the usual case) or `Ground`. |
 | **Bottom** | The boundary condition below it — `Ground` (the usual case) or `Open`. |
-| **＋ Dielectric / ＋ Conductor / ＋ Via** | Appends an entry of that kind. A new entry lands at the bottom of the list; the **↑ ↓** buttons on its own row move it to where it belongs. |
+| **＋ Dielectric / ＋ Conductor / ＋ Via** | Appends an entry of that kind. A new entry lands at the bottom of the list; the **↑ ↓** buttons on its own row move it to where it belongs. A new dielectric or conductor copies the thickness and material of the last entry of its kind; the first of its kind starts as a generic FR-4 board &mdash; εr 4.4, tanδ 0.02, 1.778 mm &mdash; or 35 µm copper. |
 
 ### The summary row: what the stack adds up to, and what it is made of
 

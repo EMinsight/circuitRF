@@ -663,7 +663,8 @@ the technology, as an MLIN's do; the gap is the line's own. When the coplanar gr
 strip the line is a microstrip, and CPWG gives the same answer an MLIN would. The parameters dialog shows
 the **Z0** and εeff at the top frequency of the schematic's S-parameter sweep, and a Z0 typed there sets
 `W`. Against a 2-D field solve its Z0 is within about 2 % over the gaps and widths PCB and MMIC lines
-use.
+use. **Update Layout from Schematic** draws the strip, and a ground strip as wide as the strip on each side
+of it; the vias that tie those grounds to the plane are yours to add.
 
 {{table: components/Cpwg}}
 
@@ -676,7 +677,7 @@ ground-designated conductors above and below `SignalLayer`, and the dielectric b
 heights, εr and the loss — when that dielectric is several layers of different εr, the line uses their
 thickness-weighted mean and says so. A layer without a plane on each side cannot carry a stripline, and
 the line is refused rather than simulated as something else. The parameters dialog shows its **Z0**; a
-Z0 typed there sets `W`.
+Z0 typed there sets `W`. **Update Layout from Schematic** draws the strip on `SignalLayer`.
 
 {{table: components/Slin}}
 
