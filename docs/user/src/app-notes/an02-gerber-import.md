@@ -209,8 +209,8 @@ arrives as one polygon per stretch of copper, overlapping where the stretches me
 {{ui: an02-imported-copper}}
 
 The [round-trip table](../reference/layout-editor.html#gerber) lists what survives an export and import and what
-does not. On a board whose pours arrive as thousands of painted strokes, the **Coalesce painted fill into
-regions** setting on the [General page of Settings](../reference/settings.html#general) turns them back into the
+does not. On a board whose pours arrive as thousands of painted strokes, the **Coalesce imported painted fill
+into regions** setting on the [General page of Settings](../reference/settings.html#general) turns them back into the
 regions they paint; it is on by default, and the summary names each layer it coalesced. With it off, the
 summary's per-layer stroke counts show where a pour came in as strokes, and the layout editor's boolean
 [**Union**](../reference/layout-editor.html#tools) turns them into copper you can edit and mesh.

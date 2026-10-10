@@ -97,14 +97,19 @@
             <!-- ── General tab ────────────────────────────────────────────── -->
             <TabItem Header="General">
                 <ScrollViewer Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Spacing="0">
+                    <StackPanel Spacing="0" Grid.IsSharedSizeScope="True">
 
                         <!-- On Launch, and Theme beside it. Two groups on one row because the
                              On Launch column is ~310 px of a ~690 px page and the three theme
                              buttons are ~100 px: stacked, the second group would push Copy / Export
                              and everything under it below the fold for no reason. The middle column
                              is the gutter. -->
-                        <Grid ColumnDefinitions="Auto,40,Auto" Margin="0,0,0,20">
+                        <Grid Margin="0,0,0,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="GeneralLeft"/>
+                                <ColumnDefinition Width="40"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
 
                             <!-- On Launch section -->
                             <StackPanel Grid.Column="0">
@@ -187,52 +192,57 @@
                                        IsCheckedChanged="OnTransparentBgChanged"/>
                         </Grid>
 
-                        <!-- Design Rules — R16d's own "not mandatory, not silent". Also reachable from
-                             the pre-export prompt itself, which is where it matters most; here so a
-                             user whose designs are clean can still find and change it. -->
-                        <TextBlock Text="Design Rules" FontSize="11" FontWeight="SemiBold"
-                                   Opacity="0.55" Margin="0,20,0,6"/>
-                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto">
-                            <CheckBox  Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
-                                       Name="CheckDrcOnExportCheck"
-                                       Content="Run DRC before exporting" FontSize="12"
-                                       IsCheckedChanged="OnCheckDrcOnExportChanged"
-                                       ToolTip.Tip="Runs a design-rule check before writing GDSII, DXF or Gerber. A clean design exports with no interruption; violations are shown first and the export can still go ahead."/>
-                        </Grid>
+                        <!-- Design Rules, and Layout beside it — two columns for the same reason as
+                             On Launch / Theme above: stacked, this page grew a scrollbar. The left
+                             column shares its width with On Launch's (SharedSizeGroup, scope on the
+                             page's StackPanel) so Layout lines up under Theme / 3D Designs. -->
+                        <Grid Margin="0,20,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="GeneralLeft"/>
+                                <ColumnDefinition Width="40"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
 
-                        <!-- brief-lvs-12-gui.md R-lvs12-1e. The same offer, DEFAULT OFF — LVS needs a
-                             schematic, and exporting artwork alone is a legitimate thing to do. Off
-                             with the box visible is not the same as absent. -->
-                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto" Margin="0,4,0,0">
-                            <CheckBox  Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
-                                       Name="CheckLvsOnExportCheck"
-                                       Content="Run LVS before exporting" FontSize="12"
-                                       IsCheckedChanged="OnCheckLvsOnExportChanged"
-                                       ToolTip.Tip="Compares this cell's artwork against its schematic before writing GDSII, DXF or Gerber. Off by default, because an artwork-only export is a legitimate thing to do and LVS needs a drawing to compare against."/>
-                        </Grid>
+                            <!-- Design Rules — R16d's own "not mandatory, not silent". Also reachable from
+                                 the pre-export prompt itself, which is where it matters most; here so a
+                                 user whose designs are clean can still find and change it.
 
-                        <!-- Designer report (round 15): the schematic and the layout may be drawn independently. -->
-                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto" Margin="0,4,0,0">
-                            <CheckBox  Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
-                                       Name="LinkOrientationCheck"
-                                       Content="Link symbol and footprint orientation" FontSize="12"
-                                       IsCheckedChanged="OnLinkOrientationChanged"
-                                       ToolTip.Tip="On: turning a symbol turns its footprint at the next Update Layout from Schematic, and Create Schematic from Artwork draws each shunt part on the side of its line its copper is on. Off: the schematic and the layout are arranged independently."/>
-                        </Grid>
+                                 brief-lvs-12-gui.md R-lvs12-1e: the LVS offer is the same, DEFAULT OFF —
+                                 LVS needs a schematic, and exporting artwork alone is a legitimate thing to
+                                 do. Off with the box visible is not the same as absent. -->
+                            <StackPanel Grid.Column="0" Spacing="4">
+                                <TextBlock Text="Design Rules" FontSize="11" FontWeight="SemiBold"
+                                           Opacity="0.55" Margin="0,0,0,2"/>
+                                <CheckBox  Name="CheckDrcOnExportCheck"
+                                           Content="Run DRC before exporting" FontSize="12"
+                                           IsCheckedChanged="OnCheckDrcOnExportChanged"
+                                           ToolTip.Tip="Runs a design-rule check before writing GDSII, DXF or Gerber. A clean design exports with no interruption; violations are shown first and the export can still go ahead."/>
+                                <CheckBox  Name="CheckLvsOnExportCheck"
+                                           Content="Run LVS before exporting" FontSize="12"
+                                           IsCheckedChanged="OnCheckLvsOnExportChanged"
+                                           ToolTip.Tip="Compares this cell's artwork against its schematic before writing GDSII, DXF or Gerber. Off by default, because an artwork-only export is a legitimate thing to do and LVS needs a drawing to compare against."/>
+                            </StackPanel>
 
-                        <!-- Import — R-rf3-7. ON by default: an imported board whose pours arrived as
-                             tens of thousands of painted scanlines is neither editable copper nor
-                             meshable, and the region is what every consumer wants. The switch is here
-                             for the one case the default cannot serve — comparing an import against
-                             its CAM source, or chasing an import bug. -->
-                        <TextBlock Text="Import" FontSize="11" FontWeight="SemiBold"
-                                   Opacity="0.55" Margin="0,20,0,6"/>
-                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto">
-                            <CheckBox  Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2"
-                                       Name="CoalesceRasterFillCheck"
-                                       Content="Coalesce painted fill into regions" FontSize="12"
-                                       IsCheckedChanged="OnCoalesceRasterFillChanged"
-                                       ToolTip.Tip="Some CAM tools paint a copper pour as thousands of abutting strokes instead of one filled region. Importing Gerber or a board file turns those back into the region they paint, which is the shape that draws quickly, meshes for EM and checks against design rules. Turn it off to get the primitives exactly as they were authored — the import reports every layer it coalesces either way."/>
+                            <!-- Layout.
+                                 Link orientation — designer report (round 15): the schematic and the
+                                 layout may be drawn independently.
+                                 Coalesce — R-rf3-7. ON by default: an imported board whose pours arrived
+                                 as tens of thousands of painted scanlines is neither editable copper nor
+                                 meshable, and the region is what every consumer wants. The switch is here
+                                 for the one case the default cannot serve — comparing an import against
+                                 its CAM source, or chasing an import bug. -->
+                            <StackPanel Grid.Column="2" Spacing="4">
+                                <TextBlock Text="Layout" FontSize="11" FontWeight="SemiBold"
+                                           Opacity="0.55" Margin="0,0,0,2"/>
+                                <CheckBox  Name="LinkOrientationCheck"
+                                           Content="Link symbol and footprint orientation" FontSize="12"
+                                           IsCheckedChanged="OnLinkOrientationChanged"
+                                           ToolTip.Tip="On: turning a symbol turns its footprint at the next Update Layout from Schematic, and Create Schematic from Artwork draws each shunt part on the side of its line its copper is on. Off: the schematic and the layout are arranged independently."/>
+                                <CheckBox  Name="CoalesceRasterFillCheck"
+                                           Content="Coalesce imported painted fill into regions" FontSize="12"
+                                           IsCheckedChanged="OnCoalesceRasterFillChanged"
+                                           ToolTip.Tip="Some CAM tools paint a copper pour as thousands of abutting strokes instead of one filled region. Importing Gerber or a board file turns those back into the region they paint, which is the shape that draws quickly, meshes for EM and checks against design rules. Turn it off to get the primitives exactly as they were authored — the import reports every layer it coalesces either way."/>
+                            </StackPanel>
                         </Grid>
 
                         <!-- Messages section -->

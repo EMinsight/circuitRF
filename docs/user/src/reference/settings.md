@@ -121,11 +121,18 @@ visible is not the same as absent: you can see that the offer exists.
 The rules themselves, and the panel that lists the violations, are in
 {{anchor: layout-editor.html|the layout editor chapter}}.
 
+### Layout
+
 **Link symbol and footprint orientation**, on by default, keeps a part's symbol and its footprint turned alike:
 turning a symbol turns its footprint at the next **Update Layout from Schematic**, a part that command places faces
 the way its symbol does, and **Create Schematic from Artwork** draws each shunt part on the side of its line its
 copper is on. Off, the schematic and the layout are arranged independently &mdash; a resistor drawn across the page
 has no reason to sit across the board.
+
+**Coalesce imported painted fill into regions**, on by default, turns a copper pour that a Gerber or board file
+paints as thousands of abutting strokes back into the one region it paints &mdash; the shape that draws quickly,
+meshes for EM and checks against design rules. Off, every primitive arrives exactly as it was authored. The import
+reports each layer it coalesced either way.
 
 ### Messages
 
