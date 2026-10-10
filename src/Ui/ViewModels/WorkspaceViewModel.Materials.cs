@@ -502,12 +502,19 @@ public partial class WorkspaceViewModel
 
     // ── Paste into a 3D view (brief-em3d-95 R-em3d95-4) ──────────────────────────────────────
 
-    /// <summary>Connects a 3D editor's paste to the Paste dialog, and its report to Messages.</summary>
+    /// <summary>Connects a 3D editor's paste to the Paste dialog, and its report (and a STEP split's) to Messages.</summary>
     private void HookC3dPaste(C3dEditorDocument doc)
     {
         doc.ViewModel.PasteDialogRequested += request => _ = ShowPasteDialogAsync(doc, request);
         // the first line is the summary, which the status line already says
         doc.ViewModel.PasteReported += lines => { foreach (string line in lines.Skip(1)) Messages.Info(line); };
+        // brief-em3d-129 R-em3d129-3b — a split's notes, or every reason it was refused, at once.
+        doc.ViewModel.StepReported += (lines, refused) =>
+        {
+            foreach (string line in lines)
+                if (refused) Messages.Error(line, doc.ViewModel.FilePath);
+                else Messages.Info(line, doc.ViewModel.FilePath);
+        };
     }
 
     /// <summary>

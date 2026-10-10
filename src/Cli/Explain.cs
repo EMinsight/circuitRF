@@ -705,6 +705,7 @@ internal static class Explain
         {
             if (src.Elaboration is not { } elaborated) return JsonRun.Fail(CliDiagnostics.ExplainObjectNotFound(objectName, path));
             if (!AppearanceWalk(elaborated, objectName, walks)) return JsonRun.Fail(CliDiagnostics.ExplainObjectNotFound(objectName, path));
+            StepSolidsWalk(full, objectName, walks);
         }
         em3d = ExplainEm3d.Build(src);
         // brief-em3d-64 R-em3d64-6b — only a document that holds a kernel object asks the kernel anything.
@@ -856,6 +857,43 @@ internal static class Explain
     /// answer is the 3D view's own. <paramref name="name"/> is an elaborated name (<c>U1/trace</c>) or a top-level object's,
     /// which answers for every solid it elaborated to. False when it names nothing.
     /// </summary>
+    /// <summary>
+    /// brief-em3d-129 R-em3d129-1b — a Step object's solids, as the kernel reads its copied file: how many the part holds, and
+    /// each one's colour, face count and volume. How an agent, which edits by writing the document, learns what to write: the
+    /// pieces are <c>Solid = 1..n</c>, and moving the face references onto them is its own work (<c>check</c> names any that
+    /// no longer lands).
+    /// </summary>
+    private static void StepSolidsWalk(string full, string name, List<ResolutionStepJson> walks)
+    {
+        C3dDocument doc;
+        try { doc = C3dPersistence.LoadFromFile(full); }
+        catch { return; }
+        if (doc.Objects.SelectMany(C3dOperands.SelfAndDescendants).OfType<CircuitRF.Design.ThreeD.C3dStep>()
+                .FirstOrDefault(s => s.Name == name) is not { } step) return;
+        CircuitRF.Design.ThreeD.Occ.GeometryKernelImportPart? part;
+        try { part = CircuitRF.Design.ThreeD.Step.StepSplit.PartOf(step, full, CircuitRF.Design.ThreeD.Occ.GeometryKernel.Shared); }
+        catch (CircuitRF.Design.ThreeD.Occ.GeometryKernelException ex)
+        {
+            walks.Add(new ResolutionStepJson("solids", $"{step.File} part {step.Part}", null, ex.Message));
+            return;
+        }
+        if (part is null)
+        {
+            walks.Add(new ResolutionStepJson("solids", $"{step.File} part {step.Part}", null, "the file is not there, or holds no such part"));
+            return;
+        }
+        walks.Add(new ResolutionStepJson("solids", $"{step.File} part {step.Part}", part.Solids.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            step.Solid is { } k ? $"the part's solids, as the kernel reads the copied file; '{name}' is solid {k}"
+            : part.Solids.Count > 1 ? $"the part's solids, as the kernel reads the copied file; '{name}' is all of them in one object, " +
+                                      "so they share one material. Split into Solids, or write one Step object per solid (Solid = 1..n)"
+            : "the part's solids, as the kernel reads the copied file"));
+        foreach (var s in part.Solids)
+            walks.Add(new ResolutionStepJson($"solid {s.Index}", s.Name.Length > 0 ? s.Name : null,
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"colour {CircuitRF.Design.ThreeD.Step.StepSplit.ColourWord(s)}, {s.Faces} faces, volume {s.VolumeUm3 * 1e-18:G6} m³"),
+                s.Closed ? "a closed solid" : $"not a closed solid: {s.Why}"));
+    }
+
     private static bool AppearanceWalk(C3dElaboration e, string name, List<ResolutionStepJson> walks)
     {
         var problem = C3dProblemAssembly.ViewProblem([.. e.Solids, .. e.UnassignedSolids], [.. e.Sheets, .. e.UnassignedSheets], e.Materials, [],

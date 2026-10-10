@@ -45,7 +45,7 @@ public sealed class MenuCleanupTests : IDisposable
     // ── the menu's shape (both spellings) ────────────────────────────────────────────────────
 
     [Fact]
-    public void BothThreeDMenus_HaveSelectAllObjects_NoStepItems_NoShortcutText_AndNoBareNativeKeyEquivalent()
+    public void BothThreeDMenus_HaveSelectAllObjects_NoStepImportOrExport_NoShortcutText_AndNoBareNativeKeyEquivalent()
     {
         var xml = XDocument.Parse(ReadRepoFile("src/Ui/Views/WorkspaceWindow.axaml"));
         var menus = xml.Descendants()
@@ -55,7 +55,9 @@ public sealed class MenuCleanupTests : IDisposable
         foreach (var menu in menus)
         {
             var headers = menu.Descendants().Select(e => (string?)e.Attribute("Header")).OfType<string>().ToList();
-            Assert.DoesNotContain(headers, h => h.Contains("STEP", StringComparison.Ordinal));
+            // Import STEP… and Export STEP… are File's only; 3D ▸ STEP holds what acts on an imported object (brief-em3d-129).
+            Assert.DoesNotContain(headers, h => h.Contains("STEP…", StringComparison.Ordinal));
+            Assert.Contains(headers, h => h.Replace("_", "") == "Split into Solids");
             Assert.Contains(headers, h => h.Replace("_", "") == "Select All Objects");
             Assert.All(headers, h => Assert.DoesNotMatch(@"\(\s*(Ctrl|Cmd|Shift|[A-Z])[^)]*\)$", h));
             Assert.All(headers, h => Assert.DoesNotContain("Ctrl/Cmd", h, StringComparison.Ordinal));

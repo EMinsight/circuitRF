@@ -839,12 +839,23 @@ public partial class WorkspaceViewModel
         ? e.PlotTemperatureRefusal() ?? "Temperature from the active thermal setup's run."
         : "Requires an active 3D editor.";
 
+    /// <summary>brief-em3d-129 — 3D ▸ STEP ▸ Reload from Source: what it does, or why it cannot.</summary>
+    public string ThreeDStepReloadTip => ActiveC3dEditor() is not { } e ? "Requires an active 3D editor."
+        : e.Targets() is [{ Instance: false } t] && !C3dEditorViewModel.IsOperandIndex(t.Index)
+            ? e.ReloadRefusal(e.StepAt(t.Index)) ?? "Read the source file again and move every part of it there, re-checking each face a port, boundary or fillet uses."
+            : "Select one imported STEP object.";
+
+    /// <summary>brief-em3d-129 R-em3d129-3a — 3D ▸ STEP ▸ Split into Solids: what it does, or which condition failed.</summary>
+    public string ThreeDStepSplitTip => ActiveC3dEditor() is not { } e ? "Requires an active 3D editor."
+        : e.SplitSelectionRefusal() ?? "One object per solid of this STEP part, gathered in a group named after it; every face reference moves to the piece whose face it is.";
+
     private static readonly string[] ThreeDSelectionProperties =
     [
         nameof(ThreeDModifyMenuEnabled), nameof(ThreeDTransformMenuEnabled), nameof(ThreeDAlignMenuEnabled),
         nameof(ThreeDOrderMenuEnabled), nameof(ThreeDFaceMenuEnabled), nameof(ThreeDEdgeMenuEnabled),
         nameof(ThreeDVertexMenuEnabled), nameof(ThreeDBooleanMenuEnabled),
         nameof(ThreeDTemperatureMenuEnabled), nameof(ThreeDTemperatureSubmenuEnabled), nameof(ThreeDTemperatureTip),
+        nameof(ThreeDStepReloadTip), nameof(ThreeDStepSplitTip),
     ];
 
     /// <summary>Re-asks every item that depends on the active editor's selection.</summary>

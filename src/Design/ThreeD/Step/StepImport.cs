@@ -25,6 +25,8 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Layout;
@@ -206,6 +208,10 @@ public static class StepDiagnostics
     public static Diagnostic MaterialUnknown(string material, string known) => Diagnostic.Create(
         "step.import.material-unknown", DiagnosticSeverity.Error,
         "--material names '{material}', which the technology does not define. {known}", ("material", material), ("known", known));
+
+    /// <summary>brief-em3d-129 — Split into Solids refused, every reason in one sentence list.</summary>
+    public static Diagnostic Split(string why) => Diagnostic.Create(
+        "step.split", DiagnosticSeverity.Error, "{why}", ("why", why));
 
     public static Diagnostic NotNamed(string file) => Diagnostic.Create(
         "step.reload.not-named", DiagnosticSeverity.Error, "No object names '{file}'.", ("file", file));
@@ -833,7 +839,7 @@ public static class StepImport
         var (copy, created) = CopyInto(dir, plan.File, plan.Bytes, plan.Hash, write: true);
         foreach (var obj in plan.Accepted)
         {
-            if (plan.Maps.TryGetValue(obj, out var map) && map.Count > 0) Repoint(doc, obj, map);
+            if (plan.Maps.TryGetValue(obj, out var map) && map.Count > 0) Repoint(doc, obj, n => map.TryGetValue(n, out int m) ? (null, m) : null);
             if (plan.SolidMoves.FirstOrDefault(m => m.Object == obj.Name) is { } moved) obj.Solid = moved.To;
             obj.File = System.IO.Path.GetFileName(copy);
             obj.Hash = plan.Hash;
@@ -843,7 +849,7 @@ public static class StepImport
 
     /// <summary>The kernel tree of a Step object's part in <paramref name="file"/>, at identity — the file's own frame, which
     /// is the frame the old and the revised faces are compared in.</summary>
-    private static GeometryKernelTree StepTree(C3dStep obj, string file, string hash, int? solid, int dbuPerMicron)
+    internal static GeometryKernelTree StepTree(C3dStep obj, string file, string hash, int? solid, int dbuPerMicron)
         => GeometryKernelTree.From(new C3dStep { Name = obj.Name, File = System.IO.Path.GetFullPath(file), Hash = hash, Part = obj.Part, Solid = solid },
                                    dbuPerMicron);
 
@@ -876,8 +882,10 @@ public static class StepImport
 
     private static readonly Regex FaceField = new(@"^(?<p>.*?)face(?<n>[0-9]+)(?<s>([#.][0-9]+)?)$", RegexOptions.CultureInvariant);
 
-    /// <summary>One reference into <c>face&lt;n&gt;</c> of a Step object, in words for a refusal.</summary>
-    private sealed record FaceRef(int Face, string What);
+    /// <summary>One reference into <c>face&lt;n&gt;</c> of a Step object: the face, in words for a refusal, and how to write it
+    /// onto another face — of the same object (owner null), or of <c>Owner</c>, a top-level object taking it over (brief 129's
+    /// split). Null for a fillet's or chamfer's edge, which <see cref="Repoint"/> rewrites whole.</summary>
+    internal sealed record FaceRef(int Face, string What, Action<C3dObject?, int>? Move);
 
     /// <summary>Where a Step object's faces appear, and under what prefix: each (owner name, prefix) its faces are named by.</summary>
     private static List<(string Owner, string Prefix)> Owners(C3dDocument doc, C3dStep step)
@@ -927,14 +935,27 @@ public static class StepImport
         return list;
     }
 
-    private static List<FaceRef> References(C3dDocument doc, C3dStep step)
+    /// <summary>
+    /// Every reference into <paramref name="step"/>'s faces, wherever the document spells one (brief-em3d-129 audit): an EM face
+    /// boundary, a fillet's or chamfer's edge, a face image on the object holding it, a probe's face and its spot, a field
+    /// plot's face, and an embedded thermal setup's boundary. A port names none — it is a rectangle placed by geometry, and its
+    /// conductors are objects — and neither does a mesh region or an effective block, which are boxes.
+    /// </summary>
+    internal static List<FaceRef> References(C3dDocument doc, C3dStep step)
     {
         var refs = new List<FaceRef>();
         var owners = Owners(doc, step);
         foreach (var fb in doc.FaceBoundaries)
             foreach (var (owner, prefix) in owners)
                 if (string.Equals(fb.Object, owner, StringComparison.OrdinalIgnoreCase) && FaceNumber(fb.Face, prefix) is { } n)
-                    refs.Add(new FaceRef(n, $"the {fb.Kind} boundary on '{fb.Object}'"));
+                {
+                    string p = prefix;
+                    refs.Add(new FaceRef(n, $"the {fb.Kind} boundary on '{fb.Object}'", (to, m) =>
+                    {
+                        if (to is not null) fb.Object = to.Name;
+                        fb.Face = Renamed(fb.Face, p, m);
+                    }));
+                }
         foreach (var (op, prefix) in EdgeOwners(doc, step))
         {
             var edges = op is C3dFillet f ? f.Edges : ((C3dChamfer)op).Edges;
@@ -942,9 +963,97 @@ public static class StepImport
             string name = op.Name.Length > 0 ? $"'{op.Name}'" : "(inner)";
             foreach (string e in edges)
                 foreach (string field in e.Split('|').Take(2))
-                    if (FaceNumber(field, prefix) is { } n) refs.Add(new FaceRef(n, $"the {word} {name}'s edge {e}"));
+                    if (FaceNumber(field, prefix) is { } n) refs.Add(new FaceRef(n, $"the {word} {name}'s edge {e}", null));
+        }
+        foreach (var (owner, prefix) in owners)
+            if (Holder(doc, owner) is { FaceImages: { } images } holder)
+                foreach (var img in images.ToList())
+                    if (FaceNumber(img.Face, prefix) is { } n)
+                    {
+                        string p = prefix;
+                        refs.Add(new FaceRef(n, $"the image on '{owner}'", (to, m) =>
+                        {
+                            img.Face = Renamed(img.Face, p, m);
+                            if (to is null || ReferenceEquals(to, holder)) return;
+                            holder.FaceImages!.Remove(img);
+                            if (holder.FaceImages.Count == 0) holder.FaceImages = null;
+                            (to.FaceImages ??= []).Add(img);
+                        }));
+                    }
+        // "object/face" spellings: a probe's faces and spot, a field plot's faces, a thermal setup's boundaries.
+        void Spelled(string spelled, string what, Action<string> write)
+        {
+            int slash = spelled.LastIndexOf('/');
+            if (slash <= 0) return;
+            string obj = spelled[..slash], face = spelled[(slash + 1)..];
+            foreach (var (owner, prefix) in owners)
+                if (string.Equals(obj, owner, StringComparison.OrdinalIgnoreCase) && FaceNumber(face, prefix) is { } n)
+                {
+                    string p = prefix;
+                    refs.Add(new FaceRef(n, what, (to, m) => write($"{to?.Name ?? obj}/{Renamed(face, p, m)}")));
+                }
+        }
+        foreach (var probe in doc.Probes)
+        {
+            if (probe.Face is { } faces)
+                for (int i = 0; i < faces.Count; i++)
+                {
+                    int k = i;
+                    Spelled(faces[i], $"the probe '{probe.Name}'", v => faces[k] = v);
+                }
+            if (probe.Spot is { } spot) Spelled(spot.Face, $"the probe '{probe.Name}''s spot", v => spot.Face = v);
+        }
+        foreach (var plot in doc.FieldPlots)
+            foreach (var face in plot.Faces)
+                Spelled(face.Face, $"the field plot '{plot.Name}'", v => face.Face = v);
+        for (int i = 0; i < doc.Setups.Count; i++)
+        {
+            if (doc.Setups[i] is not { ValueKind: JsonValueKind.Object } setup) continue;
+            string setupName = setup.TryGetProperty("Name", out var nm) && nm.ValueKind == JsonValueKind.String ? nm.GetString()! : $"#{i + 1}";
+            var faces = ThermalBoundaryFaces(setup);
+            for (int b = 0; b < faces.Count; b++)
+            {
+                var (si, bi) = (i, b);
+                Spelled(faces[b], $"the thermal boundary of setup '{setupName}'",
+                        v => doc.Setups[si] = WithThermalBoundaryFace(doc.Setups[si], bi, v));
+            }
         }
         return refs;
+    }
+
+    /// <summary>The object the name <paramref name="owner"/> names, at any depth — the one a face image is stored on.</summary>
+    private static C3dObject? Holder(C3dDocument doc, string owner)
+        => doc.Objects.SelectMany(C3dOperands.SelfAndDescendants)
+                      .FirstOrDefault(o => string.Equals(o.Name, owner, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>An embedded setup's thermal boundaries' <c>Face</c> strings, in order (a boundary with none is "").</summary>
+    private static List<string> ThermalBoundaryFaces(JsonElement setup)
+    {
+        var list = new List<string>();
+        if (Property(setup, "Thermal") is { ValueKind: JsonValueKind.Object } thermal
+            && Property(thermal, "Boundaries") is { ValueKind: JsonValueKind.Array } boundaries)
+            foreach (var b in boundaries.EnumerateArray())
+                list.Add(b.ValueKind == JsonValueKind.Object && Property(b, "Face") is { ValueKind: JsonValueKind.String } f ? f.GetString()! : "");
+        return list;
+    }
+
+    /// <summary><paramref name="setup"/> with its <paramref name="index"/>-th thermal boundary's Face set to <paramref name="face"/>.</summary>
+    private static JsonElement WithThermalBoundaryFace(JsonElement setup, int index, string face)
+    {
+        var root = JsonNode.Parse(setup.GetRawText())!.AsObject();
+        static JsonNode? Child(JsonObject o, string key) => o.FirstOrDefault(kv => string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase)).Value;
+        var boundary = ((Child(root, "Thermal") as JsonObject) is { } t ? Child(t, "Boundaries") as JsonArray : null)?[index] as JsonObject;
+        if (boundary is null) return setup;
+        string key = boundary.Select(kv => kv.Key).FirstOrDefault(k => string.Equals(k, "Face", StringComparison.OrdinalIgnoreCase)) ?? "Face";
+        boundary[key] = face;
+        return JsonSerializer.SerializeToElement(root);
+    }
+
+    private static JsonElement? Property(JsonElement o, string name)
+    {
+        foreach (var p in o.EnumerateObject())
+            if (string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)) return p.Value;
+        return null;
     }
 
     private static int? FaceNumber(string name, string prefix)
@@ -954,30 +1063,31 @@ public static class StepImport
         return m.Success && m.Groups["p"].Value.Length == 0 && int.TryParse(m.Groups["n"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int n) ? n : null;
     }
 
-    private static string Renamed(string name, string prefix, IReadOnlyDictionary<int, int> map)
+    private static string Renamed(string name, string prefix, int to)
     {
-        if (FaceNumber(name, prefix) is not { } n || !map.TryGetValue(n, out int to)) return name;
+        if (FaceNumber(name, prefix) is null) return name;
         var m = FaceField.Match(name[prefix.Length..]);
         return prefix + "face" + to.ToString(CultureInfo.InvariantCulture) + m.Groups["s"].Value;
     }
 
-    private static void Repoint(C3dDocument doc, C3dStep step, IReadOnlyDictionary<int, int> map)
+    /// <summary>
+    /// Writes every reference into <paramref name="step"/>'s faces onto the face <paramref name="to"/> gives for its number —
+    /// on the same object (a null owner: a reload), or on another top-level object (a split). A number <paramref name="to"/>
+    /// has no answer for is left as it is. An edge's two faces stay on the operation that names them.
+    /// </summary>
+    internal static void Repoint(C3dDocument doc, C3dStep step, Func<int, (C3dObject? Owner, int Face)?> to)
     {
-        var owners = Owners(doc, step);
-        foreach (var fb in doc.FaceBoundaries)
-            foreach (var (owner, prefix) in owners)
-                if (string.Equals(fb.Object, owner, StringComparison.OrdinalIgnoreCase) && FaceNumber(fb.Face, prefix) is not null)
-                {
-                    fb.Face = Renamed(fb.Face, prefix, map);
-                    break;
-                }
-        foreach (var (op, prefix) in EdgeOwners(doc, step))
+        var edgeOwners = EdgeOwners(doc, step);
+        foreach (var r in References(doc, step))
+            if (r.Move is { } move && to(r.Face) is { } t) move(t.Owner, t.Face);
+        foreach (var (op, prefix) in edgeOwners)
         {
             var edges = op is C3dFillet f ? f.Edges : ((C3dChamfer)op).Edges;
             for (int i = 0; i < edges.Count; i++)
             {
                 var fields = edges[i].Split('|');
-                for (int k = 0; k < Math.Min(2, fields.Length); k++) fields[k] = Renamed(fields[k], prefix, map);
+                for (int k = 0; k < Math.Min(2, fields.Length); k++)
+                    if (FaceNumber(fields[k], prefix) is { } n && to(n) is { } t) fields[k] = Renamed(fields[k], prefix, t.Face);
                 // An edge's name sorts its two faces (overview §1g); a re-pointed face can change which comes first.
                 if (fields.Length >= 2 && string.CompareOrdinal(fields[0], fields[1]) > 0) (fields[0], fields[1]) = (fields[1], fields[0]);
                 edges[i] = string.Join('|', fields);

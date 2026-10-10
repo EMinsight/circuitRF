@@ -59,6 +59,10 @@ public sealed partial class C3dEditorViewModel
                 return _entered is null && mode == Scene3DSelectMode.Object && SelectedUnits().Any(u => u.IsGroup);
             case "ReseatWires":
                 return SelectedWires().Count > 0;
+            case "StepReload":     // brief-em3d-129 — 3D ▸ STEP
+                return Targets() is [{ Instance: false } st] && !IsOperandIndex(st.Index) && ReloadRefusal(StepAt(st.Index)) is null;
+            case "StepSplit":
+                return SplitSelectionRefusal() is null;
             case "BooleanSubtract" or "BooleanUnite" or "BooleanIntersect":
                 return BooleanRefusal() is null;
             case "BooleanDissolve":

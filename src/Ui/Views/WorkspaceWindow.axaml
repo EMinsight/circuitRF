@@ -434,7 +434,16 @@
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
                         <!-- 3D menu cleanup — Import STEP… and Export STEP… are File ▸ Import / Export ▸ STEP… only: the 3D menu's
-                             copies were the same commands twice. -->
+                             copies were the same commands twice. brief-em3d-129 — what acts on an imported STEP object is here, mirrored
+                             by the in-window 3D menu below. -->
+                        <NativeMenuItem Header="STEP">
+                            <NativeMenuItem.Menu>
+                                <NativeMenu>
+                                    <NativeMenuItem Header="Reload from Source" ToolTip="{Binding ThreeDStepReloadTip}" Command="{Binding ThreeDModifyCommand}" CommandParameter="StepReload"/>
+                                    <NativeMenuItem Header="Split into Solids" ToolTip="{Binding ThreeDStepSplitTip}" Command="{Binding ThreeDModifyCommand}" CommandParameter="StepSplit"/>
+                                </NativeMenu>
+                            </NativeMenuItem.Menu>
+                        </NativeMenuItem>
                         <NativeMenuItem Header="Measure" ToolTip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document." Command="{Binding ThreeDMeasureCommand}"/>
                         <NativeMenuItem Header="Materials…" ToolTip="The active 3D view's technology, opened on its Materials tab: its own materials and the libraries it names. Requires an active 3D document." Command="{Binding ThreeDMaterialsCommand}"/>
                         <NativeMenuItem Header="Triangle Budget…" ToolTip="How many triangles a frame draws before array elements, farthest first, are drawn as their bounding boxes. Stored per user." Command="{Binding ThreeDTriangleBudgetCommand}"/>
@@ -1350,6 +1359,13 @@
                     <Separator/>
                     <MenuItem Header="_Dissolve Boolean" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanDissolve" ToolTip.Tip="The selected boolean's operands become top-level objects again. Requires an active 3D editor."/>
                     <MenuItem Header="_Edit Operands" Command="{Binding ThreeDModifyCommand}" CommandParameter="BooleanEnter" ToolTip.Tip="Ctrl+], or double-click it: enter the selected boolean to edit its operands; Esc or Ctrl+[ leaves. Requires an active 3D editor."/>
+                </MenuItem>
+                <!-- brief-em3d-129 — mirrors the macOS menu's 3D ▸ STEP above. -->
+                <MenuItem Header="S_TEP">
+                    <MenuItem Header="_Reload from Source" Command="{Binding ThreeDModifyCommand}" CommandParameter="StepReload"
+                              ToolTip.Tip="{Binding ThreeDStepReloadTip}" ToolTip.ShowOnDisabled="True"/>
+                    <MenuItem Header="_Split into Solids" Command="{Binding ThreeDModifyCommand}" CommandParameter="StepSplit"
+                              ToolTip.Tip="{Binding ThreeDStepSplitTip}" ToolTip.ShowOnDisabled="True"/>
                 </MenuItem>
                 <MenuItem Header="Mea_sure" Command="{Binding ThreeDMeasureCommand}"
                           ToolTip.Tip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document.">

@@ -953,6 +953,8 @@ public sealed partial class C3dEditorViewModel
             case "Group": GroupSelection(); break;
             case "Ungroup": UngroupSelection(); break;
             case "ReseatWires": ReseatWireEnds(); break;
+            case "StepReload" when Targets() is [{ Instance: false } st] && StepAt(st.Index) is { } step: _ = ReloadFromSourceAsync(step); break;
+            case "StepSplit" when Targets() is [{ Instance: false } sp]: _ = SplitIntoSolidsAsync(sp.Index); break;
             case "Front": Order(OrderMove.ToFront); break;
             case "Forward": Order(OrderMove.Forward); break;
             case "Backward": Order(OrderMove.Backward); break;

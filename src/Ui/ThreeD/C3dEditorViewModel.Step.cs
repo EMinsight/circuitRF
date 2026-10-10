@@ -1,4 +1,5 @@
-// brief-em3d-68 — STEP parts in the 3D editor: the Import STEP commit, Reload from Source, and the copies a save removes.
+// brief-em3d-68 — STEP parts in the 3D editor: the Import STEP commit, Reload from Source, Split into Solids (brief-em3d-129),
+// and the copies a save removes.
 //
 // EVERY DECISION IS StepImport's (src/Design): which parts, their names, their materials, the copy, the fingerprints. This
 // file runs its reads off the UI thread, pushes ONE undo entry per import or reload, and keeps the copied bytes so an
@@ -198,6 +199,110 @@ public sealed partial class C3dEditorViewModel
             await offer(plan.SourcePath, [.. plan.NewParts.Select(p => p.Path)]);
     }
 
+    // ── Split into Solids (brief-em3d-129) ───────────────────────────────────────────────────
+
+    /// <summary>Splits made — a counter for the gates.</summary>
+    public int StepSplits { get; private set; }
+
+    /// <summary>What a split or a refused one has to say, for the shell to post to the Messages panel: the lines, and whether
+    /// they are refusals.</summary>
+    public event Action<IReadOnlyList<string>, bool>? StepReported;
+
+    /// <summary>
+    /// R-em3d129-3a — why Split into Solids is disabled for the object at <paramref name="index"/>, or null: the kernel, then a
+    /// top-level Step object with no Solid that the elaboration built as more than one solid.
+    /// </summary>
+    public string? SplitRefusal(int index)
+    {
+        if (KernelMissing("Split into Solids") is { } kernel) return kernel;
+        if (IsOperandIndex(index) || index < 0 || index >= Document.Objects.Count) return "Select one imported STEP object.";
+        var obj = Document.Objects[index];
+        if (obj is not C3dStep step)
+            return StepAt(index) is not null
+                ? $"The STEP part in '{obj.Name}' is an operand of it; split a STEP object before it is combined."
+                : $"'{obj.Name}' is not an imported STEP object.";
+        if (step.Solid is { } k) return $"'{step.Name}' is already one solid (solid {k}) of its part.";
+        var built = Elaboration?.KernelBuilds.FirstOrDefault(b => b.Name == step.Name);
+        if (built is null || built.Refusal is not null) return $"'{step.Name}' is not built, so its solids are not counted.";
+        if (built.Solids < 2) return $"'{step.Name}' is one solid; there is nothing to split.";
+        return null;
+    }
+
+    /// <summary>Split into Solids for the view's selection: exactly one object, then <see cref="SplitRefusal"/>.</summary>
+    public string? SplitSelectionRefusal()
+        => Targets() switch
+        {
+            [{ Instance: false } t] => SplitRefusal(t.Index),
+            [] => KernelMissing("Split into Solids") ?? "Select one imported STEP object.",
+            _ => KernelMissing("Split into Solids") ?? "Select exactly one object: Split into Solids acts on one STEP object.",
+        };
+
+    /// <summary>
+    /// R-em3d129-3b — Split into Solids: the plan read off the UI thread, every refusal to Messages at once, a confirmation
+    /// naming any solid that is not closed and would be left out, then ONE undo entry, and the new group selected whole.
+    /// </summary>
+    public async Task SplitIntoSolidsAsync(int index, RunControl? control = null)
+    {
+        if (SplitRefusal(index) is { } why) { StatusMessage = why; return; }
+        string name = Document.Objects[index].Name;
+        string before = C3dPersistence.Serialize(Document);
+        var working = C3dPersistence.Deserialize(before);
+        string path = FilePath;
+        var kernel = Kernel;
+        StepSplitPlan plan;
+        try
+        {
+            plan = await Task.Run(() => StepSplit.Plan(working, path, name, kernel, control));
+        }
+        catch (OperationCanceledException) { StatusMessage = "Split cancelled; nothing changed."; return; }
+        catch (Exception e) when (e is StepImportException or CircuitRF.Design.ThreeD.Occ.GeometryKernelException or IOException)
+        {
+            Report([e.Message], true);
+            return;
+        }
+        if (plan.Refused)
+        {
+            Report([$"'{name}' was not split: {plan.Refusals.Count} reason{(plan.Refusals.Count == 1 ? "" : "s")}.", .. plan.Refusals], true);
+            return;
+        }
+        bool drop = false;
+        if (plan.Dropped.Count > 0)
+        {
+            string question = $"'{name}' has {plan.Pieces.Count + plan.Dropped.Count} solids, and {string.Join("; ", plan.Dropped)} " +
+                              $"{(plan.Dropped.Count == 1 ? "is" : "are")} not a closed solid, so splitting leaves {(plan.Dropped.Count == 1 ? "it" : "them")} out. " +
+                              $"Split '{name}' into the other {plan.Pieces.Count}?";
+            if (Confirm is not { } ask || !await ask(question)) { StatusMessage = "Split cancelled; nothing changed."; return; }
+            drop = true;
+        }
+        if (C3dPersistence.Serialize(Document) != before)
+        {
+            StatusMessage = $"The document changed while '{name}' was being read: split it again.";
+            return;
+        }
+        StepSplit.Apply(plan, working, drop);
+        string description = $"Split {name} into {plan.Pieces.Count} solids";
+        Viewer.SetSelection([]);
+        _selectAfterAdopt = [.. plan.Pieces.Select(p => p.Name)];
+        Push(new C3dDocumentEdit(description, before, C3dPersistence.Serialize(working), null, null, null, ApplyDocumentText));
+        StepSplits++;
+        var notes = new List<string> { $"{description}, gathered in group '{C3dGroups.NameOf(plan.Group)}'." };
+        if (plan.Dropped.Count > 0) notes.Add($"Left out, not closed: {string.Join("; ", plan.Dropped)}.");
+        notes.AddRange(plan.Moves.Select(m => m.ToString()));
+        Report(notes, false);
+    }
+
+    private void Report(IReadOnlyList<string> lines, bool refused)
+    {
+        LastStepNotes = lines;
+        StatusMessage = lines[0] + (lines.Count > 1 ? $" {lines.Count - 1} more in Messages." : "");
+        StepReported?.Invoke(lines, refused);
+    }
+
+    private Viewer3DMenuItem SplitItem(string? why, Action run)
+        => new("Split into Solids", run, Enabled: why is null,
+               Tip: why ?? "One object per solid of this STEP part, gathered in a group named after it; each keeps the placement and material, " +
+                           "and every face reference moves to the piece whose face it is.");
+
     // ── the save (R-em3d68-4d) ───────────────────────────────────────────────────────────────
 
     /// <summary>After a save: every copy this session wrote that no open frame's Step objects name is deleted. Returns the
@@ -231,12 +336,14 @@ public sealed partial class C3dEditorViewModel
 
     // ── the menus ────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>The canvas menu's Reload from Source, for one selected object that is (or holds) a Step part.</summary>
+    /// <summary>The canvas menu's Reload from Source and Split into Solids, for one selected object that is (or holds) a Step part.</summary>
     private IEnumerable<Viewer3DMenuItem> StepMenuItems()
     {
         if (Viewer.SelectMode != Scene3DSelectMode.Object || Targets() is not [{ Instance: false } t] || IsOperandIndex(t.Index)) yield break;
         if (StepAt(t.Index) is not { } step) yield break;
         yield return ReloadItem(step);
+        int index = t.Index;
+        yield return SplitItem(SplitRefusal(index), () => _ = SplitIntoSolidsAsync(index));
     }
 
     private Viewer3DMenuItem ReloadItem(C3dStep step)

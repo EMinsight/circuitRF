@@ -350,6 +350,13 @@ public static class C3dDiagnostics
         "c3d.step.shape", DiagnosticSeverity.Error,
         "The Step part '{name}' {why}.", ("name", name), ("why", why));
 
+    /// <summary>brief-em3d-129 R-em3d129-1a — a Step object with no Solid whose part is several solids: a WARNING when their
+    /// colours differ (probably different materials), a NOTE otherwise.</summary>
+    public static Diagnostic StepManySolids(string name, int solids, string file, string part, bool coloursDiffer) => Diagnostic.Create(
+        "c3d.step.many-solids", coloursDiffer ? DiagnosticSeverity.Warning : DiagnosticSeverity.Info,
+        "'{name}' is {solids} solids of {file} part {part} in one object, so they share one material{colours}. Split into Solids gives each its own.",
+        ("name", name), ("solids", solids), ("file", file), ("part", part), ("colours", coloursDiffer ? "; their colours differ" : ""));
+
     /// <summary>Brief 68 §6's wording: the file changed outside circuitRF, so its face numbers no longer mean what the
     /// references assumed.</summary>
     public static Diagnostic StepHashMismatch(string name, string file) => Diagnostic.Create(

@@ -94,3 +94,15 @@ file has more than one row, and a reload's offer of new parts imports them loose
 The commit needed no new selection code: selecting every object the import made is, by `C3dGroups.Units`, the group taken
 whole. `StepImportGroupUxTests` proves that, a view pick on a piece taking the package, the group's Corner moving every
 piece by one step, and a member's tree-row Material changing that member alone, each one undo entry.
+
+## Split into Solids: the command, and 3D ▸ STEP (2026-10-09, brief-em3d-129)
+
+Enablement reads the elaboration's `C3dKernelBuild.Solids` for the object, so opening a menu never asks the kernel to read
+a file; an object not built yet is disabled with that reason. The plan runs off the UI thread on a copy of the document
+(Reload's shape); the commit is one `C3dDocumentEdit` of the whole text, so one undo restores the document byte for byte.
+A part with a solid that is not closed asks through the editor's `Confirm` hook, and with no hook (headless) the split is
+not made: geometry is never dropped unasked. Refusals and notes reach Messages through `StepReported`.
+
+3D menu cleanup's gate forbade any `STEP` header in the 3D menus, to keep Import/Export STEP… on File only. The brief puts
+Reload from Source and Split into Solids in a 3D ▸ STEP submenu, so `MenuCleanupTests` now forbids `STEP…` (the two
+dialog commands) and requires Split into Solids in both spellings.

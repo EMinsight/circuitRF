@@ -789,9 +789,38 @@ the cursor, which reaches a single piece. Setting a material on the group's own 
 A Step object is a solid like any other: it takes a material, moves, and is a boolean operand or a fillet's
 target. Its faces are `face1`, `face2` … as the file's shape numbers them, and they mean something only for
 those bytes — which is why the object records the file's **Hash**. When the source file changes (a new
-revision from the maker), **Reload from Source** on the object's menu reads it again and re-matches every
-port, boundary and fillet on it **by geometry**, then says what moved; a part the new file no longer has is
-said by name. A part the new file adds is offered in the import table, unchecked.
+revision from the maker), **Reload from Source** on the object's menu (or *3D ▸ STEP*) reads it again and
+re-matches every boundary, probe, plot, image and fillet on it **by geometry**, then says what moved; a part the
+new file no longer has is said by name. A part the new file adds is offered in the import table, unchecked.
+
+### Split into Solids {#split-solids}
+
+A Step object can hold a **whole part of several solids** as one object — a package whose leads and body share
+one material because they are one object. `check` names such an object: a **warning** when its solids' colours
+differ, since they are probably different materials, and a note otherwise. `explain x.c3d --object <name>` lists
+its solids with each one's colour, face count and volume.
+
+**Split into Solids** (the object's right-click menu, or *3D ▸ STEP ▸ Split into Solids*) turns it into what an
+import makes of such a part: **one Step object per solid**, gathered in a [group](#groups) named after the
+object, in the place the object had in the tree and in construction order. A click in the view still takes the
+whole package; each piece then takes its own material from its row.
+
+- **What it keeps.** Each piece keeps the object's placement, material, role, appearance, transparency, visibility
+  and Model setting, and names the same copied file, so nothing moves and no file is written. A piece is named
+  after its solid when the file names it, and `<object>_<k>` otherwise.
+- **References follow, by geometry.** Every face boundary, probe, field plot, face image and thermal boundary on
+  the object moves to the face of the piece that coincides with it. The Messages panel lists each one.
+- **What it refuses**, every reason at once, in Messages: an object that is an operand of a boolean, fillet or
+  chamfer (split it before it is combined); a reference to the **whole** object — a port's conductor, a heat
+  source or probe over its volume, a contact resistance, a static setup's terminal — which no single piece can
+  stand for; a face reference that coincides with no piece's face, or with several; and a piece name the
+  document already uses. A solid of the part that is not closed is left out only after you confirm it.
+
+The command is enabled for one selected Step object with no `Solid` whose part has more than one solid. Its
+tooltip says which condition failed otherwise. It is one undo entry.
+
+From the command line there is no split verb: the pieces are written as Step objects with `Solid` 1 … n (the
+numbers `explain` lists), and `check` names any reference that no longer lands.
 
 **Export STEP…** (*File ▸ Export ▸ STEP…*) writes the active 3D view or layout:
 

@@ -18987,3 +18987,33 @@ Every finding was confirmed against the source before it was changed; none turne
 - Gate: `tests/Ui.Tests/ThreeD/StepImportSolidsTests.cs` (plan, group, opt-out and collision, materials, `convert` as a
   process) on `testdata/step/two-solids-one-product.step` and the hand-written `two-products.step` (that product plus
   `pad`, one blue box, so *Map all of this colour* crosses products).
+
+## Split into Solids, and what references a Step part's faces (2026-10-09, brief-em3d-129)
+
+- **`StepImport.References` knew only what reload had needed: EM face boundaries and fillet/chamfer edges.** The audit
+  found four more spellings of `<object>/face<n>` that a reload left pointing at the old numbers: a **face image** (stored
+  on the object holding the face, `C3dObject.FaceImages`), a **probe's** `Face` list and its `Spot.Face`, a **field plot's**
+  faces, and an embedded **thermal setup's** `Boundaries[].Face` (a JSON element, rewritten through `JsonNode` as
+  `C3dFoldReferences` does). All four are now in the one walker, extended in place, so Reload from Source re-points them
+  too. Each reference carries a `Move(owner, face)`: a null owner keeps the object (reload), an owner moves the reference
+  to another top-level object (a split; a face image moves to that object's own list).
+- **Ports, mesh regions and effective blocks name no face.** A port is a rectangle placed by geometry; what it names are
+  CONDUCTORS (`Positive`, `Negative`, `Reference`, a terminal's `Conductor`) — objects, not faces. A split moves a
+  geometric port with nothing to rewrite, and refuses a conductor that names the whole object, as it refuses a heat source
+  or probe by `Solid`, a contact resistance and a static setup's `Terminals3D[].Objects` (`StepSplit.ObjectReferences`).
+  Letting such a reference name the GROUP instead is the alternative the brief records and does not build: it is a model
+  change for every one of those kinds.
+- **The pieces' faces are matched in the file's own frame** (`StepImport.StepTree`, identity placement) against the whole
+  part's, so the object's placement never enters the comparison, and each piece copies that placement unchanged — the
+  k-th solid is built where the file puts it, so nothing moves (`StepSplitTests.Gate2And3` compares the elaborated
+  extent).
+- **A piece is the old object's serialized text with a new Name, Solid and Group,** so every field the object carries
+  (Material, Role, Appearance, Transparency, Hidden, Model, expressions, unread keys) is kept without a list that could
+  miss one; only `FaceImages` is cleared, because each image follows its face.
+- **A piece's fallback name is refused when taken, not made unique** (`<object>_<k>`), as the brief asks; the solid's own
+  name is used only when it is legal and unused.
+- **The operand refusal does not say "split the result".** No command splits an operation's result, so the sentence
+  points at Dissolve Boolean for a boolean's operand and says "before it is combined" for a fillet's or chamfer's target.
+- **`check`'s finding reads the file only for an object the elaboration built as more than one solid** (`C3dKernelBuild.Solids`),
+  and each file once; a nested Step object, which has no build of its own, is read.
+- Gate: `tests/Ui.Tests/ThreeD/StepSplitTests.cs`.

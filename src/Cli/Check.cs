@@ -623,6 +623,19 @@ internal static class Check
         foreach (string note in e.Notes.Where(x => !said.Contains(x))) f.Add(CliDiagnostics.CheckThreeDNote(path, note));
         foreach (var setup in C3dSetups.Read(doc))
             if (setup.Refusal is { } why) f.Add(CliDiagnostics.CheckThreeDSetup(path, why));
+        // brief-em3d-129 R-em3d129-1a — a Step object holding several solids as one: one material for what is probably several.
+        // Only an object the elaboration built as more than one solid asks the kernel to read its file.
+        if (doc.Objects.SelectMany(C3dOperands.SelfAndDescendants).Any(o => o is C3dStep { Solid: null })
+            && CircuitRF.Design.ThreeD.Occ.GeometryKernel.Shared.Capability.Available)
+        {
+            var built = e.KernelBuilds.GroupBy(k => k.Name, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First().Solids, StringComparer.Ordinal);
+            try
+            {
+                foreach (var d in CircuitRF.Design.ThreeD.Step.StepSplit.Findings(doc, Path.GetFullPath(path), CircuitRF.Design.ThreeD.Occ.GeometryKernel.Shared, built))
+                    f.Add(CliDiagnostics.CheckThreeDFinding(path, d));
+            }
+            catch (CircuitRF.Design.ThreeD.Occ.GeometryKernelException) { /* the elaboration has already said what the kernel refused */ }
+        }
         // brief-em3d-49 R-em3d49-5c — every port's inferred polarity (info) or its refusal (error), and every face
         // boundary that cannot be placed — through the resolution a run makes.
         foreach (var port in C3dPortReports.For(doc, e))
