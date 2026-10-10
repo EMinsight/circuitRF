@@ -13,6 +13,7 @@
 
 using System.Numerics;
 using System.Runtime.InteropServices;
+using CircuitRF.Engine.Em3d;
 using CircuitRF.Render.Scene3D.Edit;
 using CircuitRF.Render.Scene3D.Look;
 
@@ -314,6 +315,8 @@ public sealed class Scene3DFramePlan
          : scene.Objects[id - 1].Kind switch
         {
             Scene3DKind.Dielectric or Scene3DKind.Air => Scene3DDepthTie.Behind,
+            // A .c3d object of a dielectric (a STEP part's mould compound) is a Body; its role is what decides the tie
+            Scene3DKind.Body when scene.Objects[id - 1].Role is Em3dRole.Dielectric or Em3dRole.Air => Scene3DDepthTie.Behind,
             Scene3DKind.Via => Scene3DDepthTie.Via,
             Scene3DKind.Port => Scene3DDepthTie.Port,
             _ => Scene3DDepthTie.None,

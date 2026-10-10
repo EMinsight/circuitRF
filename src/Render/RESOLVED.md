@@ -5071,3 +5071,15 @@ line batches, and `ChromeOf` no longer calls them Edges.
 `EdgeBatches`, drawn only as the hover/selection outline). So `ShowEdges` currently brings back nothing.
 `RealisticViewTests.Gate1` no longer requires an Edges draw from its fixture. It still asserts that the key adds
 exactly the Edges row's draws, which is now none, and that a wireframe's lines are in the bare realistic frame.
+
+## A STEP part's lead ends flickered on the mould's side wall (2026-10-09)
+
+On a saw-cut DFN, the lead frame is cut flush with the mould compound, so each lead end lies exactly in the
+mould's side wall. In the 3D editor, those copper faces z-fought with the mould. **Cause:** round 3's "metal wins
+over dielectric" tie (`Scene3DFramePlan.TieOf`) keyed on `Scene3DKind.Dielectric`. But `C3dElaborator` gives every
+.c3d object that is neither a conductor nor air the origin `Em3dObjectKind.Body`, so a .c3d dielectric reaches the
+scene as `Scene3DKind.Body` and took the metal's tie (None). Two equal ties at one plane fight. The round-3 and
+round-9 gates built their problems with no origins, so this path was never exercised. A `Body` now takes its tie
+from its `Role`: a dielectric or air pushes away from the eye, as a `Dielectric` does. Picking uses the same
+`TieOf`, so a click on the lead end finds the copper. Gate:
+`MetalPrecedenceTests.TheViewport_GivesALeadEndOverAMouldBodysSideWall`.

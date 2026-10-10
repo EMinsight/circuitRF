@@ -124,6 +124,32 @@ public sealed class MetalPrecedenceTests
         Assert.Contains(plan.PickDraws.Take(plan.PickDrawCount), d => !d.Behind);
     }
 
+    /// <summary>A .c3d dielectric reaches the scene as a Body (C3dElaborator's origin), not a Dielectric: a saw-cut package's
+    /// lead, its end flush with the mould's side wall, lost that face to the mould in half the pixels and flickered.</summary>
+    [Fact]
+    public void TheViewport_GivesALeadEndOverAMouldBodysSideWall()
+    {
+        var materials = new[] { new Em3dMaterial("Mold", 3.9, null, 0, 1, 0), new Em3dMaterial("Cu", 1, null, 0, 1, 5.8e7) };
+        var mould = new Em3dSolid("mould", "Mold", Em3dRole.Dielectric, new Em3dBox(new(-0.5 * mm, -0.5 * mm, 0), new(0.5 * mm, 0.5 * mm, 0.4 * mm)), 1);
+        var lead = new Em3dSolid("lead", "Cu", Em3dRole.Conductor, new Em3dBox(new(0.3 * mm, -0.1 * mm, 0), new(0.5 * mm, 0.1 * mm, 0.1 * mm)), 2);
+        var p = Problem(coverLast: false) with { Solids = [mould, lead], Materials = materials, Ports = [] };
+        var origins = new Dictionary<string, Em3dObjectOrigin>
+        {
+            ["mould"] = new(Em3dObjectKind.Body, null, null, null), ["lead"] = new(Em3dObjectKind.Conductor, null, null, null),
+        };
+        var scene = Scene3DBuilder.Build(p, 1, origins);
+        uint mouldId = scene.Objects.Single(o => o.Name == "mould").Id, leadId = scene.Objects.Single(o => o.Name == "lead").Id;
+        Assert.Equal(Scene3DKind.Body, scene.Objects[mouldId - 1].Kind);
+        Assert.Equal(Scene3DDepthTie.Behind, Scene3DFramePlan.TieOf(scene, mouldId));
+        Assert.Equal(Scene3DDepthTie.None, Scene3DFramePlan.TieOf(scene, leadId));
+
+        var cam = Camera3D.Fit(scene.ContentMin, scene.ContentMax, 1, Projection3D.Orthographic);
+        cam.SetStandardView(StandardView3D.Right);
+        const int w = 201, h = 201;
+        var q = cam.Project(scene.ToLocal(0.5 * mm, 0, 0.05 * mm), w, h);
+        Assert.Equal(leadId, Scene3DPicking.Pick(scene, cam, q.X, q.Y, w, h, default).Id);
+    }
+
     /// <summary>3D editor bugs round 9 — a pad on a substrate, a via through both flush with the pad's top, and a lumped
     /// port lying ON the pad's top beside the via: three coincident faces at z 0.2 mm.</summary>
     private static (Scene3DModel Scene, uint Pad, uint Via, uint Port) Stack()
