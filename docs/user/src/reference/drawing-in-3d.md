@@ -297,11 +297,13 @@ walls, a row of pads — is picked, moved and changed as one thing.
   objects, instances or groups — in the view or with **Shift**/**Ctrl**-click in the tree; with one thing selected
   (a single object, or a group on its own) it is greyed out, and its tooltip says why. Placed cells can be members too, and so can other groups: a group
   inside a group stays a group of its own.
-- **A click in the view on any member selects the whole group** — the outermost one it is in — and every
+- **A click in the view on any member selects the whole group** — the outermost one it is in. Hovering a member
+  highlights the whole group too, and the hover line names it first: *PA (group) — Q1*. Every
   Object-mode command acts on all of it: Move, Rotate, Mirror, Duplicate, Array, Align (which lines the group up by
   its own box and moves it as one), Order, Hide, Isolate, Delete, a material, and a boolean — whose panel lists
   every member, so the Blank is chosen there as usual; the result stays in its Blank's group. To pick one member out
-  of a group, click its row in the tree, or press **B** in the view.
+  of a group, **double-click** it in the view, click its row in the tree, or press **B** in the view. A member that is
+  a boolean is entered by double-clicking it again.
 - **In the object tree** groups are listed first, under **Groups**; open one to see the groups and then the objects
   and instances inside it. A member is listed there and nowhere else. The tick beside a group shows or hides all of it.
 - **Properties** shows a group as one thing: its **Name** (rename it there), one **Material** and one **Role** for
@@ -844,6 +846,13 @@ detailed body replaced by a plain block that meshes smaller.
 A model's faces and vertices often disagree by a micrometre or two (the file's own tolerance). The conversion
 puts every vertex on its flat faces, so a body with only flat faces still converts exactly.
 
+Some package models draw a lead's plated end as a **zero-thickness fin** up the side of the mould: two faces of the
+solid back to back on one plane, with a top that is only a line. A fin has no volume, so it cannot be part of a
+polyhedron or a prism. Convert to Polyhedron and Replace with Prism cut the fin out of the solid and keep it as a
+sheet of the same material, named after the piece (*DFN_10_sheet*). The solid's volume does not change. The new
+object and the sheet go in a new group named after the piece, inside the piece's own group. The command says this
+first and converts only when you agree.
+
 Each keeps the piece's name, material, group, placement, appearance and transparency, so nothing moves, and each
 is one undo entry. The copied STEP file is not touched. Every face boundary, probe, field plot, face image and
 thermal boundary on the piece moves to the face of the new object that coincides with it. A reference with no
@@ -887,6 +896,10 @@ face-mode highlights stay, because it is still the editor. A [field plot](#simul
 ordinary view unless you choose otherwise (see [Field plots in the realistic view](#realistic-fields)). An object's stated [transparency](#transparency) still applies;
 a dielectric's ordinary see-through look does not, because the appearance's `Transmission` decides that here.
 *Copy* and *Export Picture…* draw the realistic view without the hover or the selection.
+
+A new 3D view is created with a `Look` that brings all of that chrome back except the air box: its `ShowEdges`,
+`ShowGrid`, `ShowOverlays`, `ShowPorts`, `ShowBoundaries` and `ShowImages` are `true`. Untick any of them in the
+[Look panel](#look-panel). A `.c3d` with no `Look` block hides them all.
 
 **The `Look` block.** How the scene is lit is saved in the `.c3d`, so a picture can be made again later. Every key is
 optional; an omitted key takes the default shown:

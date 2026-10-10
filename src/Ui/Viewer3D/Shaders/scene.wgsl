@@ -36,7 +36,9 @@ struct U {
     // 3D editor bugs round 3 — clip units per pixel, x and y: a thickened edge's pixel offset (vs)
     ppx: f32,
     ppy: f32,
-    pad2: u32,
+    // 3D editor groups — how many entries after the selection's nsel are the rest of the hovered object's group (Object mode):
+    // a click takes them all, so the hover tints them all
+    nhov: u32,
     // (object, face) pairs, two per vec4u: entry k is sel[k / 2].xy or .zw
     sel: array<vec4u, 32>,
     // brief-em3d-96 — one block per drawn plot; a field draw's mx.id.y names its own
@@ -188,6 +190,16 @@ fn is_selected(id: u32, face: u32) -> bool {
     return false;
 }
 
+// Object mode: the hovered object, or one of the group a click on it takes (the entries after the selection's).
+fn is_hovered(id: u32) -> bool {
+    if (id == u.hover) { return true; }
+    if (u.mode != 0u) { return false; }
+    for (var k = u.nsel; k < u.nsel + u.nhov; k = k + 1u) {
+        if (sel_entry(k).x == id) { return true; }
+    }
+    return false;
+}
+
 // Object mode: hover tints the object (its selection is the edge pass's outline). Face mode: hover is a
 // lighter fill on the one face, selection a stronger fill (plus its edges). Vertex mode: no fill — the
 // dots are the 2D overlay's.
@@ -195,7 +207,7 @@ fn highlight(rgb: vec3f, id: u32, face: u32) -> vec3f {
     var c = rgb;
     if (id == 0u) { return c; }
     if (u.mode == 0u) {
-        if (id == u.hover) { c = mix(c, vec3f(0.2, 0.9, 1.0), 0.45); }
+        if (is_hovered(id)) { c = mix(c, vec3f(0.2, 0.9, 1.0), 0.45); }
     } else if (u.mode == 1u) {
         if (id == u.hover && face == u.hover_face) { c = mix(c, vec3f(1.0, 1.0, 1.0), 0.35); }
         if (is_selected(id, face)) { c = mix(c, vec3f(1.0, 0.35, 1.0), 0.6); }
@@ -209,7 +221,7 @@ fn highlight(rgb: vec3f, id: u32, face: u32) -> vec3f {
     // 3D editor bugs round 1 — alpha 0 is a WIREFRAME object's face (no material): drawn only while hovered (Object
     // mode: the whole object; Face mode: the face) or selected (Face mode); its edges are the line pass's.
     if (i.col.a == 0.0) {
-        if (i.id != 0u && u.mode == 0u && i.id == u.hover) { return vec4f(0.2, 0.9, 1.0, 0.18); }
+        if (i.id != 0u && u.mode == 0u && is_hovered(i.id)) { return vec4f(0.2, 0.9, 1.0, 0.18); }
         if (i.id != 0u && u.mode == 1u && is_selected(i.id, i.face)) { return vec4f(1.0, 0.35, 1.0, 0.4); }
         if (i.id != 0u && u.mode == 1u && i.id == u.hover && i.face == u.hover_face) { return vec4f(1.0, 1.0, 1.0, 0.25); }
         discard;
@@ -649,7 +661,7 @@ fn highlight_pm(rgb: vec3f, a: f32, id: u32, face: u32) -> vec3f {
     var c = rgb;
     if (id == 0u) { return c; }
     if (u.mode == 0u) {
-        if (id == u.hover) { c = mix(c, vec3f(0.2, 0.9, 1.0) * a, 0.45); }
+        if (is_hovered(id)) { c = mix(c, vec3f(0.2, 0.9, 1.0) * a, 0.45); }
     } else if (u.mode == 1u) {
         if (id == u.hover && face == u.hover_face) { c = mix(c, vec3f(1.0, 1.0, 1.0) * a, 0.35); }
         if (is_selected(id, face)) { c = mix(c, vec3f(1.0, 0.35, 1.0) * a, 0.6); }

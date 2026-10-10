@@ -435,7 +435,7 @@ public static class Scene3DBuilder
                 Context = dim, Wireframe = wire, Transparency = see,
             }, mesh, wire && s.Primitive is Em3dCylinder c0 ? CylinderGenerators(c0).Select(q => (q, wireEdge)) : null,
                faces: true, features: Features(s.Name, mesh, sheet: false, (s.Primitive as Em3dShapeSolid)?.Edges), wireEdges: wire ? wireEdge : null,
-               look: look);
+               look: look, kernelEdges: s.Primitive is Em3dShapeSolid { Edges.Count: > 0 } shape && ReferenceEquals(mesh.Vertices, shape.Display.Vertices) ? shape : null);
             if (place is { } p0) solidRuns.Prototype(p0, s.Name);
             else solidRuns.Break();
         }
@@ -1065,13 +1065,38 @@ public static class Scene3DBuilder
         public void Defer(int group, int element, int proto, string name, double dx, double dy, double dz)
             => _deferred.Add((group, element, proto, name, dx, dy, dz));
 
+        /// <summary>
+        /// A kernel solid's feature edges: the B-rep's own, each between two different faces, not runs found in its tessellation. The
+        /// tessellation meshes every face on its own, so where a sloppy solid's two faces do not share their points along an edge (or
+        /// a degenerate face meshes to nothing) no two triangles meet there, and the edge would be missing from the drawing.
+        /// </summary>
+        private void KernelEdges(Em3dShapeSolid shape, List<Scene3DVertex> edges, uint id, uint rgba)
+        {
+            var index = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = 0; i < shape.Faces.Count; i++) index.TryAdd(shape.Faces[i].Name, i);
+            foreach (var e in shape.Edges)
+            {
+                if (e.FaceA == e.FaceB || e.Polyline.Count == 0) continue;           // a seam: one face on both sides
+                int f0 = index.GetValueOrDefault(e.FaceA, -1), f1 = index.GetValueOrDefault(e.FaceB, -1);
+                uint packed = (uint)(f0 & 0xFFFF) | ((uint)(f1 & 0xFFFF) << 16);
+                var line = e.Polyline;
+                int n = e.Closed && line.Count > 2 && line[0] != line[^1] ? line.Count + 1 : line.Count;
+                for (int k = 1; k < n; k++)
+                {
+                    var a = local(line[k - 1]); var b = local(line[k % line.Count]);
+                    edges.Add(new Scene3DVertex(a.X, a.Y, a.Z, id, rgba, packed));
+                    edges.Add(new Scene3DVertex(b.X, b.Y, b.Z, id, rgba, packed));
+                }
+            }
+        }
+
         /// <summary><paramref name="faces"/>: tag each vertex with its triangle's face (un-welding a vertex
         /// shared by two faces) and collect the feature edges. <paramref name="sheet"/>: the whole mesh is
         /// face 0.</summary>
         /// <paramref name="wireEdges"/>: also draw the feature edges, always, in that colour — a wireframe object.
         public void Object(Scene3DObject o, Em3dTriangleMesh? mesh, IEnumerable<(Point3 P, uint Rgba)>? lines = null,
                            bool faces = false, bool sheet = false, Scene3DFeatureRef features = default, uint? wireEdges = null,
-                           IReadOnlyList<uint>? vertexRgba = null, Scene3DLook? look = null)
+                           IReadOnlyList<uint>? vertexRgba = null, Scene3DLook? look = null, Em3dShapeSolid? kernelEdges = null)
         {
             _features.Add(features);
             _looks.Add(look);
@@ -1152,7 +1177,8 @@ public static class Scene3DBuilder
                     Edge(t.A, t.B, f); Edge(t.B, t.C, f); Edge(t.C, t.A, f);
                 }
                 var edges = new List<Scene3DVertex>();
-                foreach (var ((a, c), (f0, f1, count)) in edgeFaces)
+                if (kernelEdges is not null) KernelEdges(kernelEdges, edges, id, o.Rgba);
+                else foreach (var ((a, c), (f0, f1, count)) in edgeFaces)
                 {
                     if (f0 == FaceUnknown) continue;                            // a sweep or a sphere: no named faces
                     bool feature = count == 1 ? sheet : f0 != f1;               // a sheet's rim; where two faces meet

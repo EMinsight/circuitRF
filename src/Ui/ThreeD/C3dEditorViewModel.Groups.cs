@@ -86,11 +86,35 @@ public sealed partial class C3dEditorViewModel
     /// </summary>
     public IReadOnlyList<Scene3DItem> PickGroup(Scene3DItem item)
     {
-        if (IsViewOnly || _entered is not null || Viewer.SelectMode != Scene3DSelectMode.Object || item.IsEdge) return [item];
-        if (Viewer.Scene.Object(item.Object) is not { } o || MemberOf(o) is not { } m || C3dGroups.TopOf(C3dGroups.PathOf(Document, m)) is not { } top)
-            return [item];
+        if (item.IsEdge || ClickGroupOf(item.Object) is not { } top) return [item];
         var all = SceneObjectsOfGroup(top).Select(s => Scene3DItem.OfObject(s.Id)).Where(i => i != item);
         return [item, .. all];
+    }
+
+    /// <summary>The path of the top-most group a click on scene object <paramref name="id"/> takes whole, or null: Object mode,
+    /// no boolean entered, and the object (or the instance it is a part of) in a group.</summary>
+    private string? ClickGroupOf(uint id)
+    {
+        if (IsViewOnly || _entered is not null || Viewer.SelectMode != Scene3DSelectMode.Object) return null;
+        return Viewer.Scene.Object(id) is { } o && MemberOf(o) is { } m ? C3dGroups.TopOf(C3dGroups.PathOf(Document, m)) : null;
+    }
+
+    /// <summary>The hover line's group: the name of the group a click on <paramref name="o"/> takes, or null.</summary>
+    private string? HoverGroupName(Scene3DObject o) => ClickGroupOf(o.Id) is { } top ? C3dGroups.NameOf(top) : null;
+
+    /// <summary>
+    /// A double-click on a group's member with no tool armed: that member alone (the double-click's first click took the whole
+    /// group). When the member was already the selection alone, a boolean is entered instead, so a boolean inside a group is
+    /// entered by double-clicking it again. False when the item is in no group, which leaves the double-click to the boolean.
+    /// </summary>
+    private bool DoubleClickMember()
+    {
+        if (Viewer.HoveredItem is not { IsEdge: false } item || ClickGroupOf(item.Object) is not { } top) return false;
+        if (Viewer.SelectionBeforeClick is [var only] && only == item && DoubleClickEnter()) return true;
+        Viewer.SelectOnly(item);
+        if (Viewer.Scene.Object(item.Object) is { } o)
+            StatusMessage = $"'{o.Name}' alone. A click selects all of '{C3dGroups.NameOf(top)}'.";
+        return true;
     }
 
     // ── Group, Ungroup, Rename ──────────────────────────────────────────────────────────────

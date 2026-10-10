@@ -665,6 +665,7 @@ public static class C3dHierarchy
             TechRef = doc.TechRef is { Length: > 0 } tr && !Path.IsPathRooted(tr)
                 ? Path.GetRelativePath(newDir, Path.GetFullPath(Path.Combine(baseDir, tr))).Replace('\\', '/')
                 : doc.TechRef,
+            Look = C3dLook.ForNewDocument(),
         };
         foreach (int i in objectIndices.Order())
         {
@@ -729,6 +730,7 @@ public static class C3dHierarchy
             SnapDbu = view.SnapDbu,
             TechRef = tech.ResolvedPath is { } tp ? Path.GetRelativePath(c3dDir, tp).Replace('\\', '/') : null,
             Instances = [new C3dInstance { Name = InstancePrefix + "1", CellRef = ExternalCellRef.MakeCellRef(c3dDir, cellDir), View = C3dInstanceView.Layout }],
+            Look = C3dLook.ForNewDocument(),
         };
 
         // Every .cem naming this layout: the workspace's own finder when there is a workspace, else the cell's em/ folder.

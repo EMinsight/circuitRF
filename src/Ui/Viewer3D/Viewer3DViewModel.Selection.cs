@@ -212,7 +212,18 @@ public sealed partial class Viewer3DViewModel
     public IViewer3DEditHost? EditHost { get; set; }
 
     /// <summary>What a click would select now, or null.</summary>
-    public Scene3DItem? HoveredItem { get; private set; }
+    public Scene3DItem? HoveredItem
+    {
+        get => _hoveredItem;
+        private set
+        {
+            _hoveredItem = value;
+            // 3D editor groups — a click on a group's member takes the whole group, so the hover tints the whole group.
+            View.HoverGroup = value is { } h && EditHost?.PickGroup(h) is { Count: > 1 } g
+                ? [.. g.Where(i => i != h).Select(i => i.Object).Distinct()] : [];
+        }
+    }
+    private Scene3DItem? _hoveredItem;
 
     /// <summary>brief-em3d-45 — the (object, face) the ID pass last found under the cursor, in any mode; (0, −1) for none.</summary>
     public (uint Object, int Face) LastPick { get; private set; } = (0, -1);
@@ -333,6 +344,7 @@ public sealed partial class Viewer3DViewModel
     /// clears, unless Shift is held.</summary>
     public void Click(bool shift, KeyModifiers modifiers = KeyModifiers.None, int clickCount = 1)
     {
+        if (clickCount == 1) SelectionBeforeClick = View.Selection;
         HitCycle.Reset();
         CycleText = "";
         // brief-em3d-45 — the drawing has the click first: an armed tool places a point, a plane gesture moves the plane.
@@ -357,6 +369,17 @@ public sealed partial class Viewer3DViewModel
             SetSelection(View.Selection.Contains(it) ? View.Selection.Where(s => !picked.Contains(s)) : [.. View.Selection, .. picked]);
         else SetSelection(picked);
         if (_items.TryGetValue(it.Object, out var treeItem)) RevealRequested?.Invoke(treeItem);
+    }
+
+    /// <summary>3D editor groups — the selection as it was before the first click of the latest click or double-click: what a
+    /// double-click's second click compares with, since its first has already changed the selection.</summary>
+    public Scene3DItem[] SelectionBeforeClick { get; private set; } = [];
+
+    /// <summary>3D editor groups — <paramref name="item"/> alone, a group's member though it is, revealed in the tree.</summary>
+    public void SelectOnly(Scene3DItem item)
+    {
+        SetSelection([item]);
+        if (_items.TryGetValue(item.Object, out var treeItem)) RevealRequested?.Invoke(treeItem);
     }
 
     /// <summary>3D editor round 5 — the selectable wire nearest the cursor on screen, within the snap radius, when nothing in

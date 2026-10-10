@@ -516,6 +516,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     /// <summary>brief-em3d-93 — what the owner adds to an object's hover line (the 3D editor's "(not modelled)"), or null.</summary>
     public Func<Scene3DObject, string?>? DescribeSuffix { get; set; }
 
+    /// <summary>3D editor groups — the group a click on this object takes whole, named first on its hover line; or null.</summary>
+    public Func<Scene3DObject, string?>? DescribeGroup { get; set; }
+
     /// <summary>brief-em3d-94 — what the owner knows of an object's material that the scene does not (its record, the active
     /// thermal setup, why it has no values), or null: the 3D editor's.</summary>
     public Func<Scene3DObject, MaterialHoverContext?>? MaterialHoverContext { get; set; }
@@ -526,7 +529,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
     {
         if (o is null) return "";
         // brief-em3d-101 R-em3d101-3d — an image sheet names its file: "image1 — die.png (not modelled)".
-        var t = o.Kind switch { Scene3DKind.Port => $"Port {o.PortNumber}  {o.Name}", _ => o.Name }
+        var t = (DescribeGroup?.Invoke(o) is { } group ? $"{group} (group) — " : "")
+                + o.Kind switch { Scene3DKind.Port => $"Port {o.PortNumber}  {o.Name}", _ => o.Name }
                 + (o.ImageName is { } file ? " — " + file : "") + DescribeSuffix?.Invoke(o);
         // An image sheet with no material is a reference picture: no material line to give.
         var lines = o.ImageName is not null && o.MaterialValues is null ? []

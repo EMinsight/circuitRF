@@ -330,6 +330,18 @@ public sealed class ThreeDViewDocumentTests : IDisposable
         Assert.False(Directory.Exists(CellFolder.SubFolderPath(bare, ViewType.ThreeD)));   // nothing written by asking
     }
 
+    // A new 3D view's realistic Look shows every chrome row but the air box; a document stating no Look still hides them all.
+    [Fact]
+    public void ANewThreeDView_ShowsEveryChromeRowButTheAirBox_InTheRealisticView()
+    {
+        var look = CircuitRF.Render.Scene3D.Look.RealisticLook.From(CellCreate.NewThreeDView(CellFolder.CreateCellFolder(_root, "Look"), null).Look);
+        foreach (var (row, _) in CircuitRF.Render.Scene3D.Look.RealisticLook.Chrome)
+        {
+            Assert.Equal(row != CircuitRF.Render.Scene3D.Look.Scene3DChrome.AirBox, look.Shows(row));
+            Assert.False(CircuitRF.Render.Scene3D.Look.RealisticLook.Default.Shows(row));
+        }
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────────────────────────
 
     private static string Fixture(string name) => name switch

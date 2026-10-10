@@ -26,7 +26,7 @@
         <StackPanel Grid.Row="2" Spacing="2" Margin="0,4,0,6">
             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,2" IsVisible="{Binding ShowGroup}">
                 <TextBlock Text="Group" FontSize="12" VerticalAlignment="Center"/>
-                <TextBox Text="{Binding GroupName}" Width="220" FontSize="12" Watermark="(no group)"
+                <TextBox Text="{Binding GroupName}" Width="220" FontSize="12" PlaceholderText="(no group)"
                          ToolTip.Tip="Every object of this import is gathered in this group: one row in the tree, one click in the view. Empty: no group."/>
             </StackPanel>
             <SelectableTextBlock Text="{Binding GroupError}" IsVisible="{Binding GroupError, Converter={x:Static ObjectConverters.IsNotNull}}"

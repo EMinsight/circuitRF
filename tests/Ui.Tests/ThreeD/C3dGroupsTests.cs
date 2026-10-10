@@ -9,6 +9,7 @@ using System.Numerics;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Workspace;
+using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
 using CircuitRF.Ui.ThreeD;
 using CircuitRF.Ui.ThreeD.Operations;
@@ -235,6 +236,37 @@ public sealed class C3dGroupsTests : IDisposable
         Assert.True(vm.DeleteSelection());
         Assert.Equal(["c", "d", "a2", "b2"], vm.Document.Objects.Select(o => o.Name));
         Assert.Equal("PA2", Assert.Single(vm.Document.Instances).Group);
+    }
+
+    // What the hover shows is what a click takes: the whole group, tinted, and named first on the hover line. A double-click
+    // takes the member alone, and stays on it when repeated.
+    [Fact]
+    public void HoveringAMember_ShowsTheWholeGroup_AndADoubleClickSelectsTheMemberAlone()
+    {
+        var doc = Doc();
+        doc.Objects[0].Group = doc.Objects[3].Group = "PA";
+        var vm = Open(doc, out _);
+        uint a = vm.SceneObject("a")!.Id, d = vm.SceneObject("d")!.Id;
+
+        vm.Viewer.OnPicked(a, 0, Vector3.Zero, true);
+        Assert.Equal([d], vm.Viewer.View.HoverGroup);
+        Assert.StartsWith("PA (group) — a", vm.Viewer.HoverText, StringComparison.Ordinal);
+        var plan = new Scene3DFramePlan();
+        plan.Plan(vm.Viewer.Scene, vm.Viewer.View, 400, 300, false, false, Scene3DOverlay.None, Scene3DOverlay.None, Scene3DOverlay.None);
+        var bits = System.Runtime.InteropServices.MemoryMarshal.Cast<float, uint>(plan.Uniforms.AsSpan());
+        Assert.Equal((0u, 1u, d), (bits[28], bits[31], bits[32]));       // no selection, then the one other member as hovered
+
+        for (int pass = 0; pass < 2; pass++)
+        {
+            vm.Viewer.Click(false, clickCount: 1);                       // the double-click's first click: the group
+            Assert.Equal(["a", "d"], vm.Viewer.SelectedObjects().Select(o => o.Name));
+            vm.Viewer.Click(false, clickCount: 2);
+            Assert.Equal(["a"], vm.Viewer.SelectedObjects().Select(o => o.Name));
+        }
+
+        vm.Viewer.OnPicked(vm.SceneObject("b")!.Id, 0, Vector3.Zero, true);
+        Assert.Empty(vm.Viewer.View.HoverGroup);                         // b is in no group
+        Assert.StartsWith("b", vm.Viewer.HoverText, StringComparison.Ordinal);
     }
 
     // ── fixtures ────────────────────────────────────────────────────────────────────────────

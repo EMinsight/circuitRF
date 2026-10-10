@@ -168,6 +168,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         Viewer.CursorResolved += OnCursorResolvedForOperation;
         Viewer.DescribeSuffix = NotModelledSuffix;              // brief-em3d-93 — "(not modelled)" on the hover
         Viewer.MaterialHoverContext = HoverContextOf;           // brief-em3d-94 — the lines that apply to what the object is
+        Viewer.DescribeGroup = HoverGroupName;                  // 3D editor groups — the group a click takes, named on the hover
         // 3D editor round 1 — the air box's tree tick is the toolbar's air-box switch. Round 3: both are AirBoxShown, the
         // user's choice, which the editor re-applies to every scene it adopts.
         ApplySnapGrid();

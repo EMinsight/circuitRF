@@ -202,6 +202,86 @@ public sealed class StepPieceEditTests : IDisposable
         Assert.Equal(original, C3dPersistence.Serialize(vm.Document));
     }
 
+    // ── a lead with a zero-thickness fin: a polyhedron and a sheet, in a group of their own ──
+
+    // A vendor DFN draws each lead's plated end as a fin up the mould's side wall: two faces back to back on one plane and a top
+    // face that is a line. The pad converts exactly; the fin, which has no volume, is kept as a sheet; both go in a new group
+    // inside the piece's own.
+    [KernelFact]
+    public void ALeadWithAZeroThicknessFin_BecomesAPolyhedronAndASheet_InANewGroupInsideItsOwn()
+    {
+        using var kernel = KernelForTests.New();
+        var (path, doc) = Piece(kernel, new C3dBox { Size = new(400_000, 300_000, 50_000) }, "lead", FinnedLead);
+
+        var plan = StepConvert.Analyse(doc, path, "lead", kernel).Polyhedron;
+        Assert.Empty(plan.Refusals);
+        Assert.False(plan.Exact);                                         // asked first: the piece becomes two objects
+        Assert.Contains("is kept as the sheet 'lead_sheet'", plan.Summary, StringComparison.Ordinal);
+        Assert.Equal(400.0 * 300 * 50, plan.NewVolumeUm3, 1e-3);
+
+        StepConvert.Apply(plan, doc);
+        var poly = Assert.IsType<C3dPolyhedron>(doc.Objects[0]);
+        var sheet = Assert.IsType<C3dSheet>(doc.Objects[1]);
+        Assert.Equal((6, 8), (poly.Faces.Count, poly.Vertices.Count));
+        Assert.Equal(("lead", "Copper", "pkg/lead", Offset), (poly.Name, poly.Material, poly.Group, poly.Placement.Origin));
+        Assert.Equal(("lead_sheet", "Copper", "pkg/lead", Offset), (sheet.Name, sheet.Material, sheet.Group, sheet.Placement.Origin));
+        Assert.Equal((C3dPlane.YZ, 0L), (sheet.Plane, sheet.Offset));
+        var o = sheet.Outline;
+        Assert.Equal(new[] { 0L, 300_000, 50_000, 450_000 }, new[] { o.Min(q => q.U), o.Max(q => q.U), o.Min(q => q.V), o.Max(q => q.V) });
+        Elaborate(kernel, doc, path);
+    }
+
+    /// <summary>The exported box's solid swapped for a 400 × 300 × 50 µm pad with a fin at x = 0 up to z = 450 µm, written as the
+    /// vendor's file writes it: the outer side one face from 0 to 450 µm, the fin's inner side another on the same plane, and a top
+    /// face bounded by two edges between the same two corners.</summary>
+    private static string FinnedLead(string exported)
+    {
+        double[][] v =
+        [
+            [0, 0, 0], [0.4, 0, 0], [0.4, 0.3, 0], [0, 0.3, 0], [0, 0, 0.05], [0.4, 0, 0.05], [0.4, 0.3, 0.05], [0, 0.3, 0.05],
+            [0, 0, 0.45], [0, 0.3, 0.45],
+        ];
+        (int A, int B)[] e =
+        [
+            (0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4), (1, 5), (2, 6), (3, 7),
+            (4, 8), (7, 9), (8, 9), (9, 8),                                              // the fin's sides, its top twice
+        ];
+        // Each face's edges in order, + along the edge, - against it (inward-wound here; written reversed), and its outward normal.
+        (double[] N, int[] Loop)[] faces =
+        [
+            ([0, 0, -1], [1, 2, 3, 4]), ([0, 0, 1], [5, 6, 7, 8]), ([0, -1, 0], [1, 10, -5, -9]), ([0, 1, 0], [3, 12, -7, -11]),
+            ([1, 0, 0], [2, 11, -6, -10]), ([-1, 0, 0], [9, 13, 15, -14, -12, 4]), ([1, 0, 0], [-8, 14, 16, -13]), ([0, 0, 1], [-15, 16]),
+        ];
+        var sb = new System.Text.StringBuilder();
+        int id = 10_000;
+        int Add(string entity) { sb.Append($"#{id} = {entity};\n"); return id++; }
+        static string R(double x) => x.ToString("0.0###", System.Globalization.CultureInfo.InvariantCulture);
+        string Xyz(double[] p) => $"({R(p[0])},{R(p[1])},{R(p[2])})";
+        var points = v.Select(p => Add($"CARTESIAN_POINT('',{Xyz(p)})")).ToArray();
+        var vertices = points.Select(p => Add($"VERTEX_POINT('',#{p})")).ToArray();
+        var edges = e.Select(x =>
+        {
+            double[] d = [.. Enumerable.Range(0, 3).Select(k => v[x.B][k] - v[x.A][k])];
+            double len = Math.Sqrt(d.Sum(c => c * c));
+            int dir = Add($"DIRECTION('',{Xyz([.. d.Select(c => c / len)])})");
+            int line = Add($"LINE('',#{points[x.A]},#{Add($"VECTOR('',#{dir},{R(len)})")})");
+            return Add($"EDGE_CURVE('',#{vertices[x.A]},#{vertices[x.B]},#{line},.T.)");
+        }).ToArray();
+        var faceIds = faces.Select(f =>
+        {
+            var oriented = f.Loop.Reverse().Select(k => Add($"ORIENTED_EDGE('',*,*,#{edges[Math.Abs(k) - 1]},{(k < 0 ? ".T." : ".F.")})"));
+            int loop = Add($"EDGE_LOOP('',({string.Join(",", oriented.ToList().Select(x => $"#{x}"))}))");
+            int origin = points[e[Math.Abs(f.Loop[0]) - 1].A];
+            double[] reference = Math.Abs(f.N[0]) > 0.5 ? [0, 1, 0] : [1, 0, 0];
+            int axes = Add($"AXIS2_PLACEMENT_3D('',#{origin},#{Add($"DIRECTION('',{Xyz(f.N)})")},#{Add($"DIRECTION('',{Xyz(reference)})")})");
+            return Add($"ADVANCED_FACE('',(#{Add($"FACE_OUTER_BOUND('',#{loop},.T.)")}),#{Add($"PLANE('',#{axes})")},.T.)");
+        }).ToList();
+        int shell = Add($"CLOSED_SHELL('',({string.Join(",", faceIds.Select(x => $"#{x}"))}))");
+        string text = System.Text.RegularExpressions.Regex.Replace(exported, @"MANIFOLD_SOLID_BREP\('([^']*)',#\d+\)", $"MANIFOLD_SOLID_BREP('$1',#{shell})");
+        int end = text.LastIndexOf("ENDSEC;", StringComparison.Ordinal);
+        return text[..end] + sb + text[end..];
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────────────────────
 
     /// <summary>A 1 × 0.2 × 0.1 mm strip rounded on one top edge.</summary>

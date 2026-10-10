@@ -173,6 +173,9 @@ public sealed class Viewer3DViewState
     public ClipPlane3D Clip;
     public bool[] Visible = [];
     public uint Hovered;
+    /// <summary>3D editor groups — the other objects a click on the hovered one takes (its group), tinted with it in Object mode.
+    /// The shader reads as many as fit after the selection in its <see cref="Scene3DFramePlan.SelectionLimit"/> slots.</summary>
+    public uint[] HoverGroup = [];
     /// <summary>brief-em3d-43 — the hovered object's face under the cursor (Face mode's hover), or −1.</summary>
     public int HoveredFace = -1;
     /// <summary>brief-em3d-43 R-em3d43-2 — what a click selects.</summary>
@@ -233,6 +236,7 @@ public sealed class Viewer3DViewState
             v[i] = old.TryGetValue(scene.Objects[i].Name, out bool was) ? was : scene.Objects[i].InitiallyVisible;
         Visible = v;
         if (Hovered > v.Length) { Hovered = 0; HoveredFace = -1; }
+        if (HoverGroup.Any(id => id > v.Length)) HoverGroup = [];
         if (Selection.Any(i => i.Object > v.Length)) Selection = [.. Selection.Where(i => i.Object <= v.Length)];
     }
 
@@ -1459,11 +1463,14 @@ public sealed class Scene3DFramePlan
         // 3D editor bugs round 3 — clip units per pixel (x, y), for the vertex shader's pixel offset of a thickened edge.
         u[29] = w > 0 ? 2f / w : 0;
         u[30] = h > 0 ? 2f / h : 0;
-        bits[31] = 0;
+        // 3D editor groups — the rest of the hovered object's group follows the selection in the same slots (Object mode only).
+        int nhov = quiet || view.Mode != Scene3DSelectMode.Object ? 0 : Math.Min(view.HoverGroup.Length, SelectionLimit - nsel);
+        bits[31] = (uint)nhov;
         for (int k = 0; k < SelectionLimit; k++)
         {
             bool on = k < nsel;
-            bits[SelectionAt + 2 * k] = on ? view.Selection[k].Object : 0;
+            bool hov = !on && k < nsel + nhov;
+            bits[SelectionAt + 2 * k] = on ? view.Selection[k].Object : hov ? view.HoverGroup[k - nsel] : 0;
             bits[SelectionAt + 2 * k + 1] = on && view.Selection[k].Face >= 0 ? (uint)view.Selection[k].Face : Scene3DVertex.NoFace;
         }
         view.Field.AsSpan().CopyTo(u.AsSpan(FieldAt));

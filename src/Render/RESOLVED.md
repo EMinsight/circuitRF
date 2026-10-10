@@ -5083,3 +5083,17 @@ round-9 gates built their problems with no origins, so this path was never exerc
 from its `Role`: a dielectric or air pushes away from the eye, as a `Dielectric` does. Picking uses the same
 `TieOf`, so a click on the lead end finds the copper. Gate:
 `MetalPrecedenceTests.TheViewport_GivesALeadEndOverAMouldBodysSideWall`.
+
+## A STEP piece's top edge was not drawn (2026-10-09)
+
+The owner reported that the hover/selection outline of an imported DFN lead had no line along its top. **Cause:** a solid's
+feature edges were found in its display tessellation: an edge was drawn only where two triangles of different faces shared
+both end points, welded by exact position. The kernel meshes each face separately. On this piece the vendor B-rep is
+degenerate. The lead's upright leg has zero thickness: its two side faces lie in one plane, and its top face is a line with
+no area. That face meshed to no triangles, and the two coincident faces split the top edge at different points. So no two
+triangles met there, and the edge was dropped. The kernel itself reported both top edges (`face3|face5`, `face3|face7`).
+**Fix:** `Scene3DBuilder.Accumulator.KernelEdges`. An `Em3dShapeSolid` drawn from its own `Display` mesh now draws the
+B-rep's edges, each with its two faces packed as before. A seam (one face on both sides) is skipped, as the mesh path
+skipped it. A hand-built shape with no edges keeps the mesh path. On the owner's piece this went from 13 edges to 16,
+including the top. Gate: `KernelEdgeTests`: a box whose top face has no triangles draws all twelve edges. Without the fix
+it draws eight.

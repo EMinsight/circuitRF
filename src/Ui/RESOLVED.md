@@ -39264,3 +39264,21 @@ brief-gerber-import-target-technology R-gt-8/R-gt-10.
 - **"Link symbol and footprint orientation"** (Settings, per user, default on). Off: `CarryRotation` carries nothing
   and only advances the baseline, a new placement faces as its cell is drawn, and recognition's drawing does not put a
   hanger above the line by its artwork side (`RecognitionEmitOptions.ArtworkSides`, CLI `--free-orientation`).
+
+## The hover now shows what a click on a group member takes (2026-10-09)
+
+A click on a group member selected the whole group, but the hover tinted only the member, so the highlight did not show
+what a click would take. The owner chose to keep click-takes-the-group. The hover now tints every member and the hover
+line names the group first (`Viewer3DViewModel.DescribeGroup`). A double-click selects the member alone
+(`C3dEditorViewModel.DoubleClickMember`). Shift and Ctrl/Cmd were not usable for this: Shift is add/remove and Ctrl/Cmd is
+the drawing-plane gesture.
+- **The hover tint is a shader uniform compare.** The rest of the group (`Viewer3DViewState.HoverGroup`) goes in the
+  selection's `sel` slots right after `nsel`. Its count is in the old `pad2` word (`nhov`), so the uniform block did not
+  grow. `is_selected` reads only the first `nsel` slots, so a hovered member never counts as selected. Selection and
+  hover group share the 64 slots, and the selection fills them first.
+- **A double-click's second click cannot see the selection the double-click started from**, because its first click
+  already took the group. `Viewer3DViewModel.SelectionBeforeClick` is captured on every first click. A double-click on a
+  member that was already the selection on its own goes on to `DoubleClickEnter`, so a boolean inside a group is still
+  entered.
+Gate: `C3dGroupsTests.HoveringAMember_ShowsTheWholeGroup_AndADoubleClickSelectsTheMemberAlone`. Shaders regenerated with
+`tools/ShaderGen`.

@@ -107,6 +107,13 @@ public sealed class C3dLook
                         && ShowBoundaries is null && ShowImages is null && Shadows is null && AmbientOcclusion is null && Ground is null
                         && Camera is null && FieldStyle is null && FieldOpacity is null && Unread is not { Count: > 0 };
 
+    /// <summary>The Look a NEW <c>.c3d</c> is written with: every chrome row but the air box shown. A key's default (null, hidden)
+    /// is unchanged, so a document written before this — or one whose Look is cleared — still draws as it always did.</summary>
+    public static C3dLook ForNewDocument() => new()
+    {
+        ShowEdges = true, ShowGrid = true, ShowOverlays = true, ShowPorts = true, ShowBoundaries = true, ShowImages = true,
+    };
+
     public C3dLook Clone() => new()
     {
         Environment = Environment, Rotation = Rotation, Intensity = Intensity, Exposure = Exposure, Background = Background,

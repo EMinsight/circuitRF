@@ -11,6 +11,11 @@
 //   Apply         one for all three: the piece replaced AT ITS INDEX, its name, material, role, group, placement, visibility,
 //                 transparency, appearance and solve flag kept, every face reference moved
 //
+// A ZERO-THICKNESS FIN IS KEPT AS A SHEET. A vendor's DFN draws each lead's plated end as a fin up the mould's side wall: two
+// faces of the solid back to back on one plane, and a top face with no area. The fin has no volume, so it cannot be a polyhedron
+// of its own: the polyhedron is what is left once the fin is cut out of both its faces, the fin becomes a C3dSheet of the same
+// material, and the two go in a new group named after the piece, inside the piece's own group (CutFins).
+//
 // THE FRAME. Each is read at identity — the file's own frame, where the piece was built before its placement — and keeps the
 // piece's placement, so nothing moves: a polyhedron's vertices and a prism's outline are the file's points rounded to a DBU.
 //
@@ -27,6 +32,7 @@
 // The Step file is untouched: an object stops naming it, and the copy goes at the next save only if this session wrote it.
 
 using System.Globalization;
+using Clipper2Lib;
 using CircuitRF.Design.ThreeD.Kernel;
 using CircuitRF.Design.ThreeD.Occ;
 using CircuitRF.Engine;
@@ -46,6 +52,13 @@ public sealed record StepConvertPlan(StepConvertKind Kind, string Object, int In
 {
     /// <summary>Old face number → the replacement's face that coincides with it, for every referenced face.</summary>
     public IReadOnlyDictionary<int, string> Map { get; init; } = new Dictionary<int, string>();
+
+    /// <summary>What the piece becomes besides <see cref="Replacement"/>: the sheet each zero-thickness fin is kept as, each after it
+    /// in the object list. With any, the replacement and these are in the new group <see cref="GroupName"/>.</summary>
+    public IReadOnlyList<C3dObject> Extras { get; init; } = [];
+
+    /// <summary>The group the replacement and its <see cref="Extras"/> are put in, inside the piece's own; null when there are none.</summary>
+    public string? GroupName { get; init; }
 
     /// <summary>Every face reference the replacement moves, in words.</summary>
     public IReadOnlyList<StepSplitMove> Moves { get; init; } = [];
@@ -160,8 +173,14 @@ public static class StepConvert
             ? $"its {pr.Curved} {(pr.Curved!.StartsWith("1 ", StringComparison.Ordinal) ? "is" : "are")} cut into {pr.Facets} flat facets, each turning at most " +
               $"{FacetRad * 180 / Math.PI:0}°, {Change(pr.VolumeUm3, volume)} % volume"
             : "";
+        var fins = pr.Fins ?? [];
+        string kept = fins.Count == 0 ? "" : cx.FinWords(fins);
         var polyPlan = poly is null
             ? cx.Refuse(StepConvertKind.Polyhedron, pr.Why!)
+            : fins.Count > 0
+                ? cx.Finish(StepConvertKind.Polyhedron, poly, exact: false,
+                            $"'{name}' becomes a polyhedron of {poly.Faces.Count} flat faces and {cx.SheetCount(fins.Count)}: {kept}" +
+                            (pr.Facets > 0 ? $"; {facetted}." : "."), pr.VolumeUm3, fins)
             : pr.Facets == 0
                 ? cx.Finish(StepConvertKind.Polyhedron, poly, exact: true, $"'{name}' becomes a polyhedron of {poly.Faces.Count} flat faces; nothing changes shape.")
                 : cx.Finish(StepConvertKind.Polyhedron, poly, exact: false, $"'{name}' becomes a polyhedron: {facetted}.", pr.VolumeUm3);
@@ -177,9 +196,10 @@ public static class StepConvert
         else
         {
             char axis = prism.Plane switch { C3dPlane.YZ => 'x', C3dPlane.XZ => 'y', _ => 'z' };
-            prismPlan = cx.Finish(StepConvertKind.Prism, prism, exact: pr.Facets == 0,
+            prismPlan = cx.Finish(StepConvertKind.Prism, prism, exact: pr.Facets == 0 && fins.Count == 0,
                 $"'{name}' becomes a prism along {axis}: an outline of {prism.Outline.Count} points{(prism.Holes.Count > 0 ? $" with {prism.Holes.Count} hole{(prism.Holes.Count == 1 ? "" : "s")}" : "")}, " +
-                $"{Length(Math.Abs(prism.Height) / (double)dbu)} long; " + (pr.Facets > 0 ? facetted + "." : "nothing changes shape."), pr.VolumeUm3);
+                $"{Length(Math.Abs(prism.Height) / (double)dbu)} long; " + (pr.Facets > 0 ? facetted + "." : "nothing changes shape.") +
+                (fins.Count > 0 ? $" It comes with {cx.SheetCount(fins.Count)}: {kept}." : ""), pr.VolumeUm3, fins);
         }
 
         // Replace with Box: the tight box of every face, in the piece's own frame.
@@ -203,8 +223,8 @@ public static class StepConvert
     }
 
     /// <summary>
-    /// The replacement, at the piece's index, with every reference re-pointed. The one function the GUI and any headless path
-    /// call.
+    /// The replacement, at the piece's index, with every reference re-pointed, and its <see cref="StepConvertPlan.Extras"/> after it.
+    /// The one function the GUI and any headless path call.
     /// </summary>
     /// <exception cref="StepImportException">The plan was refused, or no longer fits the document.</exception>
     public static C3dObject Apply(StepConvertPlan plan, C3dDocument doc)
@@ -218,12 +238,13 @@ public static class StepConvert
 
         StepImport.Repoint(doc, old, n => plan.Map.TryGetValue(n, out var face) ? (replacement, face) : null);
         doc.Objects[plan.Index] = replacement;
+        doc.Objects.InsertRange(plan.Index + 1, plan.Extras);
         return replacement;
     }
 
     // ── the plans' shared half ──────────────────────────────────────────────────────────────
 
-    private sealed record Context(C3dDocument Doc, C3dStep Step, int Index, IReadOnlyList<GeometryKernelFace> Faces,
+    private sealed partial record Context(C3dDocument Doc, C3dStep Step, int Index, IReadOnlyList<GeometryKernelFace> Faces,
                                   List<StepImport.FaceRef> Refs, GeometryKernel Kernel, RunControl? Control, double Volume, int Dbu,
                                   double TolUm)
     {
@@ -231,10 +252,24 @@ public static class StepConvert
 
         /// <summary>The replacement carrying the piece's name and the rest, and every referenced face sent to the face of it that
         /// coincides — or a refusal naming each that has none.</summary>
-        public StepConvertPlan Finish(StepConvertKind kind, C3dObject geometry, bool exact, string summary, double? newVolume = null)
+        public StepConvertPlan Finish(StepConvertKind kind, C3dObject geometry, bool exact, string summary, double? newVolume = null,
+                                      IReadOnlyList<StepFin>? fins = null)
         {
             var replacement = Carry(Step, geometry);
             string name = Step.Name;
+            var extras = new List<C3dObject>();
+            if (fins is { Count: > 0 })
+            {
+                string path = Step.Group is { Length: > 0 } g ? g + C3dGroups.Separator + NewGroup : NewGroup;
+                replacement.Group = path;
+                for (int k = 0; k < fins.Count; k++)
+                {
+                    var sheet = Carry(Step, C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(fins[k].Sheet)));
+                    sheet.Name = SheetNames[k];
+                    sheet.Group = path;
+                    extras.Add(sheet);
+                }
+            }
             var refusals = new List<string>();
             var map = new Dictionary<int, string>();
             var moves = new List<StepSplitMove>();
@@ -267,9 +302,72 @@ public static class StepConvert
             }
             return new StepConvertPlan(kind, name, Index, refusals.Count == 0 ? replacement : null, refusals)
             {
-                Map = map, Moves = moves, VolumeUm3 = Volume, NewVolumeUm3 = newVolume ?? Volume, Summary = summary, Exact = exact,
+                Extras = extras, GroupName = extras.Count > 0 ? NewGroup : null, Map = map, Moves = moves, VolumeUm3 = Volume, NewVolumeUm3 = newVolume ?? Volume, Summary = summary, Exact = exact,
             };
         }
+    }
+
+    // ── a fin kept as a sheet ───────────────────────────────────────────────────────────────
+
+    /// <summary>A zero-thickness fin: its outline as a sheet on the plane it lies in (the piece's frame, no name yet), and the faces
+    /// it was cut from.</summary>
+    public sealed record StepFin(C3dSheet Sheet, string Between);
+
+    private sealed partial record Context
+    {
+        /// <summary>The new group's name: the piece's, unless a group is already called that.</summary>
+        public string NewGroup => _group ??= Free(Step.Name, C3dGroups.Names(Doc));
+        private string? _group;
+
+        /// <summary>The sheets' names: <c>&lt;piece&gt;_sheet</c>, or numbered when there are several; none already an object's.</summary>
+        public IReadOnlyList<string> SheetNames => _sheets ??= Sheets();
+        private IReadOnlyList<string>? _sheets;
+
+        private IReadOnlyList<string> Sheets()
+        {
+            var used = Doc.Objects.SelectMany(C3dOperands.SelfAndDescendants).Select(o => o.Name).Concat(Doc.Instances.Select(i => i.Name))
+                          .ToHashSet(StringComparer.Ordinal);
+            int count = Math.Max(1, _finCount);
+            var names = new List<string>();
+            for (int k = 1; k <= count; k++)
+            {
+                string n = Free(count == 1 ? $"{Step.Name}_sheet" : $"{Step.Name}_sheet{k}", used);
+                used.Add(n);
+                names.Add(n);
+            }
+            return names;
+        }
+
+        private int _finCount;
+
+        /// <summary>"a sheet" or "3 sheets" — and how many names <see cref="SheetNames"/> makes.</summary>
+        public string SheetCount(int n) { _finCount = n; return n == 1 ? "a sheet" : $"{n} sheets"; }
+
+        /// <summary>The fins in words: where each was, how big, what it is kept as, and the group.</summary>
+        public string FinWords(IReadOnlyList<StepFin> fins)
+        {
+            SheetCount(fins.Count);
+            var each = fins.Select((f, k) =>
+            {
+                var o = f.Sheet.Outline;
+                double du = (o.Max(p => p.U) - o.Min(p => p.U)) / (double)Dbu, dv = (o.Max(p => p.V) - o.Min(p => p.V)) / (double)Dbu;
+                return $"the zero-thickness fin between {f.Between} ({Dims2(du, dv)}) is kept as the sheet '{SheetNames[k]}'";
+            });
+            string where = Step.Group is { Length: > 0 } g ? $" inside '{C3dGroups.NameOf(g)}'" : "";
+            return $"{string.Join("; ", each)}. It has no volume, so the solid's volume does not change. The polyhedron and " +
+                   $"{(fins.Count == 1 ? "the sheet" : "the sheets")} go in a new group '{NewGroup}'{where}";
+        }
+
+        private static string Free(string stem, ISet<string> used)
+        {
+            if (!used.Contains(stem)) return stem;
+            for (int k = 2; ; k++) if (!used.Contains($"{stem}_{k}")) return $"{stem}_{k}";
+        }
+
+        private static string Dims2(double u, double v)
+            => Math.Min(u, v) >= 100
+                ? $"{(u / 1000).ToString("0.00", CultureInfo.InvariantCulture)} × {(v / 1000).ToString("0.00", CultureInfo.InvariantCulture)} mm"
+                : $"{u.ToString("0.0", CultureInfo.InvariantCulture)} × {v.ToString("0.0", CultureInfo.InvariantCulture)} µm";
     }
 
     /// <summary>All three refused for one reason — what a caller reports when the kernel itself refused.</summary>
@@ -317,7 +415,8 @@ public static class StepConvert
     public const double FacetRad = Math.PI / 12;
 
     /// <summary>A polyhedron, or why not; the curved faces in words, how many facets they became (0: exact) and its volume.</summary>
-    private sealed record Poly(C3dPolyhedron? H, string? Why, string? Curved = null, int Facets = 0, double VolumeUm3 = 0);
+    private sealed record Poly(C3dPolyhedron? H, string? Why, string? Curved = null, int Facets = 0, double VolumeUm3 = 0,
+                               IReadOnlyList<StepFin>? Fins = null);
 
     /// <summary>
     /// The piece as a polyhedron. A flat face k is the polyhedron's face<c>k</c>: from its loops when every face is flat, from the
@@ -350,7 +449,8 @@ public static class StepConvert
             if (!rawAt.TryGetValue(key, out int i)) { rawAt[key] = i = raw.Count; raw.Add([x, y, z]); onPlanes.Add([]); }
             return i;
         }
-        bool Flat(int f) => faces[f].Kind == "plane" && faces[f].Normal.Length == 3 && faces[f].Centroid.Length == 3;
+        // A face with no area (a fin's top, a line) has no plane to snap to: the kernel gives it the origin for a centroid.
+        bool Flat(int f) => faces[f].Kind == "plane" && faces[f].Normal.Length == 3 && faces[f].Centroid.Length == 3 && faces[f].Area > 0;
 
         var rings = new List<List<List<int>>>();       // exact: per face, its loops
         var tris = new List<(int A, int B, int C)>[faces.Count];
@@ -406,22 +506,35 @@ public static class StepConvert
             final[i] = k;
         }
 
-        // 3. The faces.
+        // 3. The faces. Exact: each flat face's loops, less any zero-thickness fin (CutFins), which is kept as a sheet. A face with
+        // no area — a fin's top, a line — encloses nothing and is left out; the closure check below says whether that was right.
         int facets = 0;
-        for (int f = 0; f < faces.Count; f++)
+        var fins = new List<StepFin>();
+        if (mesh is null)
         {
-            string faceName = StepImport.FaceName(f + 1);
-            double[] n = faces[f].Normal.Length == 3 ? faces[f].Normal : [0, 0, 0];
-            if (mesh is null)
+            var flat = new List<(string Name, double[] Normal, List<List<int>> Rings)>();
+            for (int f = 0; f < faces.Count; f++)
             {
+                string faceName = StepImport.FaceName(f + 1);
                 var fr = rings[f].Select(r => Compact(r.Select(i => final[i]))).ToList();
+                if (fr.Count > 0 && (fr[0].Count < 3 || Newell(h.Vertices, fr[0]) == (0, 0, 0))) continue;
                 if (fr.Any(r => r.Count < 3))
                     return new(null, $"'{name}''s {faceName} has a loop that rounds to fewer than three points at a DBU; nothing was converted.");
+                flat.Add((faceName, faces[f].Normal.Length == 3 ? faces[f].Normal : [0, 0, 0], fr));
+            }
+            CutFins(h, at, flat, fins);
+            foreach (var (faceName, n, fr) in flat)
+            {
                 if (Along(h.Vertices, fr[0], n) < 0) fr[0].Reverse();
                 foreach (var hole in fr.Skip(1)) if (Along(h.Vertices, hole, n) > 0) hole.Reverse();
                 h.Faces.Add(new C3dFace { Name = faceName, Outer = fr[0], Holes = [.. fr.Skip(1)] });
-                continue;
             }
+            if (fins.Count > 0) Prune(h);                              // a fin's top corners are no face's now
+        }
+        else for (int f = 0; f < faces.Count; f++)
+        {
+            string faceName = StepImport.FaceName(f + 1);
+            double[] n = faces[f].Normal.Length == 3 ? faces[f].Normal : [0, 0, 0];
             var ft = tris[f].Select(t => (final[t.A], final[t.B], final[t.C])).Where(t => t.Item1 != t.Item2 && t.Item2 != t.Item3 && t.Item1 != t.Item3).ToList();
             if (ft.Count == 0) continue;     // a sliver thinner than a DBU: its neighbours close over it
             if (Flat(f))
@@ -456,7 +569,131 @@ public static class StepConvert
         double vol = (double)b.Volume6 / 6 / ((double)dbu * dbu * dbu);
         if (mesh is null && Math.Abs(vol - volume) > slack)
             return new(null, $"'{name}' as a polyhedron holds {vol:G6} µm³ against the piece's {volume:G6} µm³; nothing was converted.");
-        return new(h, null, curved, facets, vol);
+        return new(h, null, curved, facets, vol, fins);
+    }
+
+    /// <summary>
+    /// Every zero-thickness fin cut out of <paramref name="flat"/>: on each axis-aligned plane where faces of the piece face both
+    /// ways and overlap, the overlap is a fin's two sides back to back. It is cut out of each of those faces (a face left with
+    /// nothing goes; one left in several pieces becomes <c>face&lt;n&gt;.1</c>, <c>.2</c> …), and each region of it is added to
+    /// <paramref name="fins"/> as a sheet on that plane, in the piece's frame. Integer DBU throughout, so the faces left meet their
+    /// neighbours exactly, and collinear points are kept so a neighbour's vertex on an edge is still on it.
+    /// </summary>
+    private static void CutFins(C3dPolyhedron h, Dictionary<C3dPoint3, int> at, List<(string Name, double[] Normal, List<List<int>> Rings)> flat,
+                                List<StepFin> fins)
+    {
+        var v = h.Vertices;
+        static (int B, int C) Others(int a) => a switch { 0 => (1, 2), 1 => (0, 2), _ => (0, 1) };
+        int AxisOf(List<int> ring)
+        {
+            for (int a = 0; a < 3; a++) if (ring.All(i => C3dBrepBuild.Get(v[i], a) == C3dBrepBuild.Get(v[ring[0]], a))) return a;
+            return -1;
+        }
+        Path64 Path(List<int> ring, int a)
+        {
+            var (b, c) = Others(a);
+            return [.. ring.Select(i => new Point64(C3dBrepBuild.Get(v[i], b), C3dBrepBuild.Get(v[i], c)))];
+        }
+        C3dPoint3 Point(Point64 p, int a, long w)
+        {
+            var (b, c) = Others(a);
+            return C3dBrepBuild.With(C3dBrepBuild.With(C3dBrepBuild.With(default, a, w), b, p.X), c, p.Y);
+        }
+        List<int> Lift(Path64 r, int a, long w)
+        {
+            var ring = new List<int>();
+            foreach (var p in r)
+            {
+                var q = Point(p, a, w);
+                if (!at.TryGetValue(q, out int k)) { at[q] = k = v.Count; v.Add(q); }
+                ring.Add(k);
+            }
+            return Compact(ring);
+        }
+
+        var pieces = new Dictionary<int, List<List<List<int>>>>();
+        var planes = Enumerable.Range(0, flat.Count).Select(i => (I: i, A: AxisOf(flat[i].Rings[0])))
+                               .Where(x => x.A >= 0 && Math.Abs(flat[x.I].Normal[x.A]) > 0.5)
+                               .GroupBy(x => (x.A, W: C3dBrepBuild.Get(v[flat[x.I].Rings[0][0]], x.A)));
+        foreach (var g in planes)
+        {
+            int a = g.Key.A;
+            long w = g.Key.W;
+            var up = g.Where(x => flat[x.I].Normal[a] > 0).Select(x => x.I).ToList();
+            var down = g.Where(x => flat[x.I].Normal[a] < 0).Select(x => x.I).ToList();
+            if (up.Count == 0 || down.Count == 0) continue;
+            Paths64 Of(IEnumerable<int> fs) => [.. fs.SelectMany(i => flat[i].Rings).Select(r => Path(r, a))];
+            var overlap = Clip(ClipType.Intersection, Of(up), Of(down));
+            if (overlap.Count == 0) continue;
+            var cut = new Paths64(overlap.SelectMany(p => p));
+            foreach (int i in up.Concat(down))
+                pieces[i] = [.. Clip(ClipType.Difference, Of([i]), cut).Select(p => p.Select(r => Lift(r, a, w)).ToList())];
+            var plane = a switch { 0 => C3dPlane.YZ, 1 => C3dPlane.XZ, _ => C3dPlane.XY };
+            List<C3dPoint2> Ring2(Path64 r) => [.. r.Select(p => { var (u, vv, _) = C3dBrepBuild.ToPlane(plane, Point(p, a, w)); return new C3dPoint2(u, vv); })];
+            foreach (var poly in overlap)
+            {
+                var between = up.Concat(down).Where(i => Clip(ClipType.Intersection, Of([i]), new Paths64(poly)).Count > 0)
+                                .Select(i => flat[i].Name).Order(StringComparer.Ordinal).ToList();
+                fins.Add(new StepFin(new C3dSheet
+                {
+                    Plane = plane, Offset = C3dBrepBuild.ToPlane(plane, Point(poly[0][0], a, w)).W,
+                    Outline = Ring2(poly[0]), Holes = [.. poly.Skip(1).Select(Ring2)],
+                }, string.Join(" and ", between)));
+            }
+        }
+        for (int i = flat.Count - 1; i >= 0; i--)
+        {
+            if (!pieces.TryGetValue(i, out var rest)) continue;
+            var (name, n, _) = flat[i];
+            flat.RemoveAt(i);
+            rest = [.. rest.Where(p => p[0].Count >= 3 && p.All(r => r.Count >= 3))];
+            for (int k = 0; k < rest.Count; k++) flat.Insert(i + k, (rest.Count == 1 ? name : $"{name}.{k + 1}", n, rest[k]));
+        }
+    }
+
+    /// <summary>The vertices no face uses, removed, and every face renumbered.</summary>
+    private static void Prune(C3dPolyhedron h)
+    {
+        var used = h.Faces.SelectMany(f => f.Outer.Concat(f.Holes.SelectMany(x => x))).ToHashSet();
+        var map = new int[h.Vertices.Count];
+        var kept = new List<C3dPoint3>();
+        for (int i = 0; i < map.Length; i++) map[i] = used.Contains(i) ? Add(h.Vertices[i]) : -1;
+        int Add(C3dPoint3 p) { kept.Add(p); return kept.Count - 1; }
+        h.Vertices = kept;
+        foreach (var f in h.Faces)
+        {
+            f.Outer = [.. f.Outer.Select(i => map[i])];
+            f.Holes = [.. f.Holes.Select(x => x.Select(i => map[i]).ToList())];
+        }
+    }
+
+    /// <summary><paramref name="subject"/> clipped by <paramref name="clip"/> (even-odd, so a face's holes are holes), collinear points
+    /// kept: each polygon of the result, its outline first and then its holes.</summary>
+    private static List<List<Path64>> Clip(ClipType type, Paths64 subject, Paths64 clip)
+    {
+        var c = new Clipper64 { PreserveCollinear = true };
+        c.AddSubject(subject);
+        c.AddClip(clip);
+        var tree = new PolyTree64();
+        c.Execute(type, FillRule.EvenOdd, tree);
+        var polys = new List<List<Path64>>();
+        void Collect(PolyPath64 node)
+        {
+            for (int i = 0; i < node.Count; i++)
+            {
+                var solid = node[i];
+                if (solid.Polygon is not { Count: >= 3 } outline || Math.Abs(Clipper.Area(outline)) == 0) continue;
+                var poly = new List<Path64> { outline };
+                for (int j = 0; j < solid.Count; j++)
+                {
+                    if (solid[j].Polygon is { Count: >= 3 } hole) poly.Add(hole);
+                    Collect(solid[j]);
+                }
+                polys.Add(poly);
+            }
+        }
+        Collect(tree);
+        return polys;
     }
 
     /// <summary>

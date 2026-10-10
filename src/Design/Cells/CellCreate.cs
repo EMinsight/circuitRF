@@ -209,6 +209,7 @@ public static class CellCreate
             DisplayUnit  = displayUnit,
             SnapDbu      = model.SnapDbu,
             TechRef      = null,
+            Look         = C3dLook.ForNewDocument(),
         };
     }
 

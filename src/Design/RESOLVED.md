@@ -19074,3 +19074,26 @@ refused for its all-flat body. Box was no use for either.
 - Gate additions in `StepPieceEditTests`: the rounded strip (faceted, still a prism) and a body whose corner the STEP text
   puts 1.5 µm off its four faces (converts exactly, the corner back on them).
 
+
+## A STEP lead with a zero-thickness fin converts to a polyhedron plus a sheet (2026-10-09)
+
+The owner's vendor DFN had 12 leads that Convert to Polyhedron refused: "face3 has a loop that rounds to fewer than three
+points". Each lead is a pad with a FIN up the mould's side wall. The fin has zero thickness: its two sides are faces of one
+plane with opposite normals, and its top is a face with no area, bounded by two distinct edges between the same two corners.
+The owner wanted the fin kept, so it becomes a sheet. The pad and the sheet go in a new group named after the piece, inside
+the piece's own group.
+- **The zero-area face poisoned the vertex snap before anything else ran.** The kernel reports a zero-area face's centroid
+  as the origin. `Snap` then pulled every vertex on it onto the plane through the origin, here z = 0, which collapsed the
+  fin onto the pad's bottom edge. `Flat(f)` now also requires `Area > 0`, so a face with no area has no plane to snap to.
+- `StepConvert.CutFins`: on each axis-aligned plane where faces of the piece face both ways, the overlap of the two sides
+  is cut out of every face there with Clipper2. It runs in integer DBU, even-odd, collinear points kept. Each region of
+  the overlap becomes a `C3dSheet` in the piece's frame. A face with no area is left out before the cut, and the existing
+  closure and volume checks decide whether the result is a solid. A fin on an oblique plane is not handled, and those
+  checks still refuse it.
+- The plan carries `Extras` (the sheets) and `GroupName`. `Finish` sets the group path on the replacement and the sheets.
+  `Apply` inserts the sheets right after the replacement. Group names only have to be unique among groups, so the group
+  takes the piece's own name. The sheets are named `<piece>_sheet`, and are numbered when there is more than one.
+- Such a plan is not `Exact`, so the GUI asks first, even though the solid's volume is unchanged.
+On the owner's file all 15 DFN pieces converted, and the document elaborates. Gate:
+`StepPieceEditTests.ALeadWithAZeroThicknessFin_BecomesAPolyhedronAndASheet_InANewGroupInsideItsOwn`. Its STEP is the
+kernel's box export with a hand-built fin solid spliced in (`FinnedLead`). No vendor data is committed.
