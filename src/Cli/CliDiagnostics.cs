@@ -455,7 +455,7 @@ internal static class CliDiagnostics
 
     public static Diagnostic ConvertStepFlagsWithoutStep() => new(
         "convert.step.flags", DiagnosticSeverity.Error,
-        "--material and --part apply to a STEP source only.");
+        "--material, --part, --group and --list-parts apply to a STEP source only.");
 
     public static Diagnostic ConvertBadMaterialMapping(string text) => Diagnostic.Create(
         "convert.step.material", DiagnosticSeverity.Error,

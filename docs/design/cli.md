@@ -113,7 +113,13 @@ a comment-stripped scan of `src/Cli` holds that. The dialog's defaults are the v
 then by exact colour, else none (a note lists the unmapped parts); a part that is not a closed solid is skipped
 and named. What the dialog would ASK is a flag: `--material <part>=<name>` (repeatable; a part is its occurrence
 path, product name or object name), `--part <path>` (repeatable; import only these) and `--tech <path>` (the new
-document's `TechRef`; otherwise the workspace's default by the usual walk-up). A file's length unit the reader
+document's `TechRef`; otherwise the workspace's default by the usual walk-up). **A product of several solids is one
+`Step` object per solid, all gathered in one group named after the file** (brief-em3d-128): `--part <path>#<k>`
+selects one solid (a CLI spelling only; the document writes `Part` and `Solid`), `--group <name>` names the group
+and `--group ""` makes none — `convert` owns `--group`, which elsewhere narrows a result's cube groups, as `smith`
+owns `--at` — and `--list-parts` prints the table, one line per row with its `--part` spelling, colour, match and
+name, writing nothing. The JSON result's `stepImport` lists each object with its part, solid, name, material, match
+and group. A file's length unit the reader
 cannot resolve is a refusal naming it, never a guess — Excellon's rule. A `.step`/`.stp` is recognised by
 extension, and anything else by its first line (ISO 10303-21's header) through `DetectSource`, the one classifier
 `check` also names a foreign file with. Without the geometry kernel it refuses with the capability's own sentence.

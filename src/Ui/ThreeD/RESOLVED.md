@@ -82,3 +82,15 @@ rectangle's grid lines at ±1 mm are what give the probe its room. The owner cho
 **The status line names why Make Port chose the reference.** `AddPort` resolved the port it had just written, whose
 `Reference` is then stated, so the reason read "the reference is stated". `MakePortFromFace` passes `TerminalsFor`'s reason
 through (`AddPort(port, referenceWhy)`).
+
+## Import STEP: a header row per product of several solids, and the group (2026-10-09, brief-em3d-128)
+
+The dialog draws `Table` — each header row (`StepImportProductRow`) followed by its solids, which are ordinary
+`StepImportRow`s indented — while `Rows` keeps every importable row for the logic. The header's check box is three-state
+(every closed solid, none, some) and its combo is blank when its solids disagree; both act through `StepImport`'s
+`SetProductImport`/`SetProductMaterial`, so the CLI and the gate reach the same rule. The group field shows only when the
+file has more than one row, and a reload's offer of new parts imports them loose: the file's group is already in the view.
+
+The commit needed no new selection code: selecting every object the import made is, by `C3dGroups.Units`, the group taken
+whole. `StepImportGroupUxTests` proves that, a view pick on a piece taking the package, the group's Corner moving every
+piece by one step, and a member's tree-row Material changing that member alone, each one undo entry.

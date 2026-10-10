@@ -18966,3 +18966,24 @@ Every finding was confirmed against the source before it was changed; none turne
 - **D7 took the recommended default:** no format version bump. A build older than 127 reports `Solid` as an unread
   key and builds the whole part for each piece.
 - Gate: `tests/Ui.Tests/ThreeD/StepSolidTests.cs`, on `testdata/step/two-solids-one-product{,-revised}.step`.
+
+## STEP import: one object per solid, gathered in one group (2026-10-09, brief-em3d-128)
+
+- **`StepImportPart`'s old `Solid` bool is now `Closed`,** to free the name for the solid index the brief and the
+  document both call `Solid`. A product of one solid stays one row with `Solid = null` and is written exactly as brief 68
+  wrote it (no `Group`, no `Solid` key — `StepImportSolidsTests.Gate2` compares the serialized object).
+- **A solid row's material matches on the SOLID's name and colour only,** never the product's: a product called
+  `copper` holding a body and leads would otherwise give the body copper by name. A mixed solid has no colour.
+- **Group names and object names are different namespaces** (C3dGroups' header), so the file's group and a product's
+  nested group are made unique against `C3dGroups.Names`, and object names against `UsedNames`; both through
+  `ProposeName`, whose sanitising is `NameValidator`'s rule — the one Group Objects refuses a typed name by.
+- **A product's nested group exists only when more than one of its solids is imported** (`GroupPathOf`): a group of one
+  gathers nothing. Likewise no group at all for an import of one object, whatever the field says.
+- **`Import` is now `PlanImport` + `Apply` + save,** so `convert --list-parts` prints the very plan `convert` would apply
+  (technology resolved by the same walk-up, flags applied) without writing.
+- **`--group` was already taken.** `JsonRun` consumes `--group` before any verb to narrow a result's cube groups, so
+  `convert --group ""` silently kept the default. `convert` produces no DataSet, so `JsonRun` now leaves `--group` to it,
+  the precedent `smith` set for `--at`.
+- Gate: `tests/Ui.Tests/ThreeD/StepImportSolidsTests.cs` (plan, group, opt-out and collision, materials, `convert` as a
+  process) on `testdata/step/two-solids-one-product.step` and the hand-written `two-products.step` (that product plus
+  `pad`, one blue box, so *Map all of this colour* crosses products).

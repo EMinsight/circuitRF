@@ -82,7 +82,9 @@ public sealed partial class C3dEditorViewModel
 
     /// <summary>
     /// The dialog's OK (R-em3d68-4d): the copy written, one Step object per checked row appended, ONE undo entry, and the new
-    /// objects selected, ready to Move. Null on success, else why nothing was imported.
+    /// objects selected, ready to Move — every member of the import's group, which is the group taken whole
+    /// (<see cref="C3dGroups.Units"/>, R-em3d128-2d). Undo removes the objects, so the group with them. Null on success, else
+    /// why nothing was imported.
     /// </summary>
     public string? AcceptStepImport(StepImportPlan plan)
     {
@@ -98,7 +100,9 @@ public sealed partial class C3dEditorViewModel
         if (result.Created) _stepCopiesWritten.Add(result.CopiedPath);
         var before = C3dListsEdit.Of(Document);
         var after = C3dListsEdit.Of(working);
-        string what = result.Objects.Count == 1 ? $"'{result.Objects[0].Name}'" : $"{result.Objects.Count} parts";
+        string what = result.Objects.Count == 1 ? $"'{result.Objects[0].Name}'"
+                    : C3dGroups.TopOf(result.Objects[0].Group) is { } group ? $"'{group}' ({result.Objects.Count} objects)"
+                    : $"{result.Objects.Count} parts";
         string description = $"Import {what} from {Path.GetFileName(plan.SourcePath)}";
         Viewer.SetSelection([]);
         _selectAfterAdopt = [.. result.Objects.Select(o => o.Name)];

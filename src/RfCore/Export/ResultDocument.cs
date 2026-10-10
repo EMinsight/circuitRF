@@ -176,7 +176,33 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         DoeReportJson? Doe = null,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        RecognizeReportJson? Recognize = null);
+        RecognizeReportJson? Recognize = null,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        StepImportReportJson? StepImport = null);
+
+    /// <summary>
+    /// What <c>convert x.step</c> created, or with <c>--list-parts</c> would create (brief-em3d-128 R-em3d128-3b): the
+    /// group the objects are gathered in, and each object with the part and solid it is made from.
+    /// </summary>
+    /// <param name="Group">The import's group; null when it made one object, or was told to make none.</param>
+    /// <param name="Objects">One per object created — under <c>--list-parts</c>, one per row of the table.</param>
+    public sealed record StepImportReportJson(
+        string?                             Group,
+        IReadOnlyList<StepImportObjectJson> Objects);
+
+    /// <summary>One Step object: its occurrence path, its solid (null for a product of one solid, imported whole), its
+    /// name, its material and why (<c>by name</c>, <c>by colour</c>, <c>unmatched</c>, <c>chosen</c>), the group path it is
+    /// in, the colour it was matched by (null: none, or mixed), and whether it is imported.</summary>
+    public sealed record StepImportObjectJson(
+        string  Part,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        int?    Solid,
+        string  Name,
+        string? Material,
+        string  Match,
+        string? Group,
+        string? Colour,
+        bool    Imported);
 
     /// <summary>
     /// One external solver as <c>solver list</c> reports it — the Settings ▸ Solvers row. Carried as data

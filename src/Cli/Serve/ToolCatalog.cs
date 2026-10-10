@@ -581,7 +581,8 @@ internal static class ToolCatalog
         new("convert",
             "Convert artwork from one format to another, in either direction: export a layout (.clay) to "
           + "GDSII, OASIS, Gerber, DXF, a .kicad_pcb board, STEP or glTF, or import the interchange formats to .clay. Formats come from the paths; "
-          + "from and to override. OASIS, and GDSII with engine gdstk, go through the gdstk worker.",
+          + "from and to override. OASIS, and GDSII with engine gdstk, go through the gdstk worker. "
+          + "A STEP product of several solids imports as one object per solid, gathered in a group named after the file.",
             null, null,
             [
                 new("", ["convert"],

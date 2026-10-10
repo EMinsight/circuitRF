@@ -615,7 +615,8 @@ public partial class WorkspaceViewModel
     {
         if (ResolveOwner(owner) is not { } window) return;
         var dialogVm = new StepImportDialogViewModel(source, control => editor.ReadStep(source, control),
-                                                     plan => CircuitRF.Design.ThreeD.Step.StepImport.NamesRefusal(plan, editor.Document), onlyParts);
+                                                     plan => CircuitRF.Design.ThreeD.Step.StepImport.NamesRefusal(plan, editor.Document), onlyParts,
+                                                     plan => CircuitRF.Design.ThreeD.Step.StepImport.GroupRefusal(plan, editor.Document));
         bool ok = await new CircuitRF.Ui.Views.ThreeD.StepImportDialog(dialogVm).ShowDialog<bool>(window);
         if (!ok || dialogVm.Plan is not { } plan) return;
         if (editor.AcceptStepImport(plan) is { } why) { Messages.Error(why); return; }

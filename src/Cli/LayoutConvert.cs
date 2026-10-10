@@ -24,6 +24,7 @@ using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.ThreeD.Occ;
 using CircuitRF.Design.ThreeD.Step;
 using CircuitRF.Design.Workspace;
+using RfCore.Export;
 
 namespace CircuitRF.Cli;
 
@@ -85,6 +86,9 @@ public static class LayoutConvert
         // brief-em3d-68 R-em3d68-7b — STEP: what the Import STEP dialog would have asked.
         public List<(string Part, string Material)> StepMaterials = [];
         public List<string> StepParts = [];
+        // brief-em3d-128 R-em3d128-3a — the group's name (null: the dialog's default; "": none), and the table on stdout.
+        public string? StepGroup;
+        public bool StepListParts;
 
         // brief-em3d-69 R-em3d69-5b — STEP export: the Export STEP dialog's options, one flag each.
         public bool StepAssembly, StepAsDrawn, StepThicken, StepAirBox, StepExportFlags;
@@ -193,6 +197,8 @@ public static class LayoutConvert
                     break;
                 }
                 case "--part" when i + 1 < args.Length: o.StepParts.Add(args[++i]); break;
+                case "--group" when i + 1 < args.Length: o.StepGroup = args[++i]; break;
+                case "--list-parts": o.StepListParts = true; break;
                 case "--assembly": o.StepAssembly = o.StepExportFlags = true; break;
                 case "--as-drawn": o.StepAsDrawn = o.StepExportFlags = true; break;
                 case "--thicken-sheets": o.StepThicken = o.StepExportFlags = true; break;
@@ -279,7 +285,8 @@ public static class LayoutConvert
             if (o.StepExportFlags) return JsonRun.Fail(CliDiagnostics.ConvertStepExportFlagsWithoutStep());
             return ImportStep(o);
         }
-        if (o.StepMaterials.Count > 0 || o.StepParts.Count > 0) return JsonRun.Fail(CliDiagnostics.ConvertStepFlagsWithoutStep());
+        if (o.StepMaterials.Count > 0 || o.StepParts.Count > 0 || o.StepGroup is not null || o.StepListParts)
+            return JsonRun.Fail(CliDiagnostics.ConvertStepFlagsWithoutStep());
 
         // brief-em3d-69 R-em3d69-5a — a STEP TARGET: a .c3d, a .clay or a cell folder exports straight through StepExport;
         // an interchange source is imported into a scratch cell first, exactly as every other target does.
@@ -383,6 +390,7 @@ public static class LayoutConvert
     private static int ImportStep(Options o)
     {
         if (o.ListCells) return JsonRun.Fail(CliDiagnostics.ConvertStepListCells());
+        if (o.StepListParts) return ListStepParts(o);
         if (o.Output is null)
         {
             JsonRun.Report(CliDiagnostics.ConvertOutputRequired());
@@ -397,7 +405,7 @@ public static class LayoutConvert
             return JsonRun.Fail(CliDiagnostics.ConvertFailed(GeometryKernel.NeedsKernel("Import STEP", kernel.Capability)));
 
         Console.Error.WriteLine("[circuitRF] STEP -> 3d");
-        var options = new StepImportOptions { Materials = o.StepMaterials, Parts = o.StepParts, TechPath = o.TechPath };
+        var options = StepOptions(o);
         StepImportResult result;
         try
         {
@@ -423,6 +431,61 @@ public static class LayoutConvert
         Console.WriteLine(c3d);
         JsonRun.AddOutput("3d", c3d);
         JsonRun.AddOutput("step", result.CopiedPath);
+        // R-em3d128-3b — each object created, with its part, solid, name, material, why, and group.
+        JsonRun.StepImport = new StepImportReportJson(C3dGroups.TopOf(result.Objects[0].Group),
+            [.. result.Objects.Select((s, i) => new StepImportObjectJson(s.Part, s.Solid, s.Name, s.Material,
+                                                                          result.Rows[i].MatchText, s.Group, result.Rows[i].Colour, true))]);
+        return 0;
+    }
+
+    private static StepImportOptions StepOptions(Options o)
+        => new() { Materials = o.StepMaterials, Parts = o.StepParts, TechPath = o.TechPath, Group = o.StepGroup };
+
+    /// <summary>
+    /// R-em3d128-3a — <c>--list-parts</c>: the dialog's table on stdout, one line per row (a product of one solid, or one
+    /// solid of a product of several) with its <c>--part</c> spelling, colour, match and name, and the group; writes
+    /// nothing. The plan is <see cref="StepImport.PlanImport"/>'s, the one <see cref="StepImport.Import"/> applies.
+    /// </summary>
+    private static int ListStepParts(Options o)
+    {
+        var kernel = GeometryKernel.Shared;
+        if (!kernel.Capability.Available)
+            return JsonRun.Fail(CliDiagnostics.ConvertFailed(GeometryKernel.NeedsKernel("Import STEP", kernel.Capability)));
+        // Where the document would go decides its technology; without -o, beside the file.
+        string target = o.Output ?? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(o.Input!))!,
+                                                 Path.GetFileNameWithoutExtension(o.Input!) + C3dPersistence.Extension);
+        StepImportPlan plan;
+        try
+        {
+            plan = StepImport.PlanImport(o.Input!, target, StepOptions(o), kernel, control: RunHost.Control).Plan;
+        }
+        catch (OperationCanceledException)
+        {
+            Console.Error.WriteLine("[circuitRF] cancelled");
+            return 130;
+        }
+        catch (StepImportException e)
+        {
+            return JsonRun.Fail(e.Diagnostic);
+        }
+        catch (GeometryKernelException e)
+        {
+            return JsonRun.Fail(CliDiagnostics.ConvertFailed(e.Message));
+        }
+        var chosen = plan.Parts.Where(p => p.Import && p.Closed).ToList();
+        string? group = chosen.Count > 1 && !string.IsNullOrEmpty(plan.Group) ? plan.Group : null;
+        Console.WriteLine(group is null ? "group: (none)" : $"group: {group}");
+        foreach (var p in plan.Parts)
+        {
+            string material = p.Material is { } m ? $"{m} ({p.MatchText})" : p.MatchText;
+            string colour = p.Colour ?? (p.Mixed ? "mixed" : "none");
+            string state = !p.Closed ? $"not a solid: {p.Why}" : p.Import ? "" : "unchecked";
+            Console.WriteLine($"{StepImport.KeyOf(p),-10} {colour,-8} {material,-28} {p.Name}{(state.Length > 0 ? "  [" + state + "]" : "")}");
+        }
+        JsonRun.StepImport = new StepImportReportJson(group,
+            [.. plan.Parts.Select(p => new StepImportObjectJson(p.Path, p.Solid, p.Name, p.Material, p.MatchText,
+                                                                  p.Import && p.Closed ? StepImport.GroupPathOf(plan, chosen, p) : null,
+                                                                  p.Colour, p.Import && p.Closed))]);
         return 0;
     }
 
@@ -1156,7 +1219,8 @@ public static class LayoutConvert
         Console.Error.WriteLine("       formats: clay | gdsii | oasis | dxf | gerber | board | step | gltf");
         Console.Error.WriteLine("       --engine native|gdstk  the GDSII reader or writer for a gdsii source or target (default native)");
         Console.Error.WriteLine("       oasis target:  --oas-compression 0-9  --oas-validation none|crc32|checksum32  --oas-standard-properties");
-        Console.Error.WriteLine("       step source (-o <new>.c3d):  --material <part>=<name> (repeatable)  --part <path> (repeatable)  --tech <path.ctech>");
+        Console.Error.WriteLine("       step source (-o <new>.c3d):  --material <part>=<name> (repeatable)  --part <path>[#<solid>] (repeatable)  --tech <path.ctech>");
+        Console.Error.WriteLine("              --group <name> (\"\" for none)  --list-parts  every row and what it would import as, writing nothing");
         Console.Error.WriteLine("       step target (-o <file>.step; from a .c3d, .clay, cell folder or any format above):");
         Console.Error.WriteLine("              --assembly  --as-drawn  --thicken-sheets  --include-airbox  --schema ap214|ap242  --view 3d|layout  --tech <path.ctech>");
         Console.Error.WriteLine("       gltf target (-o <file>.glb; from a .c3d):  --gltf-assembly  --gltf-field <plot>  --region <name>");

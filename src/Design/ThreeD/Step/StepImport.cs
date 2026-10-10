@@ -8,9 +8,15 @@
 //   PlanReload  a revised source file → which references into it still land, re-pointed by GEOMETRY, never by index
 //   ApplyReload a reload plan → the new copy, its hash, and every reference re-pointed
 //
-// ONE OBJECT PER PART (R-em3d68-1b). A part is one solid with one name, one material, one placement and one face
-// namespace, so every rule a Box obeys a Step part obeys. The assembly's transform is the worker's, applied from the
-// occurrence path; the placement starts at identity, so an imported part lands exactly where its file puts it.
+// ONE OBJECT PER SOLID (R-em3d68-1b, brief-em3d-128). A Step object is one solid with one name, one material, one
+// placement and one face namespace, so every rule a Box obeys a Step part obeys. A product of one solid is one row with no
+// Solid, as brief 68 wrote it; a product of several is one row per solid. The assembly's transform is the worker's,
+// applied from the occurrence path; the placement starts at identity, so an imported part lands exactly where its file
+// puts it.
+//
+// AN IMPORT OF MORE THAN ONE OBJECT IS ONE GROUP (R-em3d128-2), named after the file, so the package acts as one thing
+// (C3dGroups) and each piece is still its own object. In a file of several products, a product of several solids is a
+// group inside it. One object created: no group.
 //
 // MATERIALS BY NAME, THEN BY EXACT COLOUR, THEN NONE (R-em3d68-3a). Nothing fuzzier: a near-colour match would give a
 // gold-coloured plastic a metal's conductivity in silence. No material is not a refusal — it is the ordinary unmapped
@@ -42,7 +48,8 @@ public enum StepMatch
     Chosen,
 }
 
-/// <summary>One part of the file: a row of the dialog's table.</summary>
+/// <summary>One importable object of the file: a row of the dialog's table — a product of one solid, or one solid of a
+/// product of several (brief-em3d-128).</summary>
 public sealed class StepImportPart
 {
     /// <summary>The occurrence path in the file's assembly (<c>1/2</c>) — the object's <c>Part</c>.</summary>
@@ -51,11 +58,28 @@ public sealed class StepImportPart
     /// <summary>The STEP product name, as the file gives it; empty when it gives none.</summary>
     public required string ProductName { get; init; }
 
-    /// <summary><c>#rrggbb</c>, or null when the file gives the part no colour.</summary>
+    /// <summary>brief-em3d-128 — which solid of the product, 1-based: the object's <c>Solid</c>. Null for a product of one
+    /// solid, which is imported whole.</summary>
+    public int? Solid { get; init; }
+
+    /// <summary>How many solids the product has: 1 for a whole-product row.</summary>
+    public int Solids { get; init; } = 1;
+
+    /// <summary>The solid's own name, as the file gives it; empty when it gives none, and for a whole-product row.</summary>
+    public string SolidName { get; init; } = "";
+
+    /// <summary>The solid's faces disagree on a colour, so it has none to match by (overview D6).</summary>
+    public bool Mixed { get; init; }
+
+    /// <summary>R-em3d128-2b — in a file of several products, the group a product of several solids gathers in, inside the
+    /// file's; null otherwise.</summary>
+    public string? SubGroup { get; init; }
+
+    /// <summary><c>#rrggbb</c>, or null when the file gives the part (or the solid) no colour, or the solid is mixed.</summary>
     public string? Colour { get; init; }
 
     /// <summary>A closed solid after healing — importable. Anything else is listed, unchecked and disabled (R-em3d68-4b).</summary>
-    public bool Solid { get; init; }
+    public bool Closed { get; init; }
 
     /// <summary>Why it is not a closed solid, when it is not.</summary>
     public string Why { get; init; } = "";
@@ -74,7 +98,7 @@ public sealed class StepImportPart
 
     public StepMatch Match { get; set; }
 
-    /// <summary>Checked: imported on OK. Always false for a part that is not a solid.</summary>
+    /// <summary>Checked: imported on OK. Always false for a part that is not a closed solid.</summary>
     public bool Import { get; set; }
 
     /// <summary>The match's reason in the table's words.</summary>
@@ -121,6 +145,10 @@ public sealed class StepImportPlan
     public string UnitsLine => StepImport.UnitsLine(Units, UnitMicrons);
 
     public long Triangles => Parts.Where(p => p.Import).Sum(p => p.Triangles);
+
+    /// <summary>R-em3d128-2 — the group the import gathers its objects in when it creates more than one: the file's stem,
+    /// made a legal group name and unique among the document's groups. Null or empty: no group.</summary>
+    public string? Group { get; set; }
 }
 
 /// <summary>What <see cref="StepImport.Apply"/> did.</summary>
@@ -128,7 +156,12 @@ public sealed class StepImportPlan
 /// <param name="Created">True when this import wrote the copy; false when an identical file was already there.</param>
 /// <param name="Objects">The objects added, in the order they were appended.</param>
 /// <param name="Notes">What the import says it did: healing, parts skipped, parts left without a material, PMI.</param>
-public sealed record StepImportResult(string CopiedPath, bool Created, byte[] Bytes, IReadOnlyList<C3dStep> Objects, IReadOnlyList<string> Notes);
+public sealed record StepImportResult(string CopiedPath, bool Created, byte[] Bytes, IReadOnlyList<C3dStep> Objects, IReadOnlyList<string> Notes)
+{
+    /// <summary>The rows each object was made from, parallel to <see cref="Objects"/>: what <c>convert</c>'s JSON reports of
+    /// each (its match, R-em3d128-3b).</summary>
+    public IReadOnlyList<StepImportPart> Rows { get; init; } = [];
+}
 
 /// <summary>A refusal of the import (or a reload) as a whole: a coded diagnostic, its sentence the message.</summary>
 public sealed class StepImportException(Diagnostic diagnostic) : Exception(diagnostic.Render())
@@ -149,6 +182,9 @@ public static class StepDiagnostics
 
     public static Diagnostic Names(string why) => Diagnostic.Create(
         "step.import.name", DiagnosticSeverity.Error, "{why}", ("why", why));
+
+    public static Diagnostic GroupName(string why) => Diagnostic.Create(
+        "step.import.group", DiagnosticSeverity.Error, "{why}", ("why", why));
 
     public static Diagnostic TargetExists(string path) => Diagnostic.Create(
         "step.import.target-exists", DiagnosticSeverity.Error,
@@ -185,8 +221,12 @@ public sealed record StepImportOptions
     /// <summary><c>--material &lt;part&gt;=&lt;name&gt;</c>: a part (occurrence path, product name or object name) → material.</summary>
     public IReadOnlyList<(string Part, string Material)> Materials { get; init; } = [];
 
-    /// <summary><c>--part &lt;path&gt;</c>: import only these occurrence paths; empty imports every solid.</summary>
+    /// <summary><c>--part &lt;path&gt;</c>: import only these occurrence paths, every solid of each; <c>&lt;path&gt;#&lt;k&gt;</c>
+    /// is one solid (a CLI spelling only — the document writes <c>Part</c> and <c>Solid</c>). Empty imports every solid.</summary>
     public IReadOnlyList<string> Parts { get; init; } = [];
+
+    /// <summary><c>--group &lt;name&gt;</c>: the group's name; <c>""</c> is no group; null takes the dialog's default.</summary>
+    public string? Group { get; init; }
 
     /// <summary><c>--tech &lt;path&gt;</c>: the new document's <c>TechRef</c>; null takes the workspace's default.</summary>
     public string? TechPath { get; init; }
@@ -235,9 +275,10 @@ public static class StepImport
     // ── Read ────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Reads <paramref name="sourcePath"/> through the kernel and proposes a row per part: its name made valid and unique
-    /// in <paramref name="target"/>, its material from <paramref name="tech"/> (null is an empty technology, never "no
-    /// destination"), and whether it is checked. Nothing is written.
+    /// Reads <paramref name="sourcePath"/> through the kernel and proposes a row per product of one solid and per solid of
+    /// a product of several: its name made valid and unique in <paramref name="target"/>, its material from
+    /// <paramref name="tech"/> (null is an empty technology, never "no destination"), and whether it is checked — and the
+    /// group the import gathers in. Nothing is written.
     /// </summary>
     /// <exception cref="GeometryKernelException">The kernel refused the file (not STEP, a unit it cannot resolve), crashed, or is absent.</exception>
     /// <exception cref="OperationCanceledException">Cancelled; the worker was killed and nothing changed.</exception>
@@ -248,18 +289,39 @@ public static class StepImport
         var materials = tech?.ResolvedMaterials ?? [];
         var used = UsedNames(target);
         string stem = System.IO.Path.GetFileNameWithoutExtension(sourcePath);
+        // R-em3d128-2a — the file's group, and (2b) in a file of several products one inside it per product of several
+        // solids; group names are unique among groups, never among objects (C3dGroups).
+        var groups = C3dGroups.Names(target);
+        string group = ProposeName(stem, C3dGroups.DefaultStem, groups);
         var parts = new List<StepImportPart>();
         for (int i = 0; i < read.Parts.Count; i++)
         {
             var p = read.Parts[i];
-            string? colour = p.Colour is { Length: 3 } c ? Hex(c) : null;
-            var (material, match) = AutoMatch(p.Name, colour, materials);
-            parts.Add(new StepImportPart
+            if (p.Solids.Count <= 1)
             {
-                Path = p.Path, ProductName = p.Name, Colour = colour, Solid = p.Closed, Why = p.Why, Healing = p.Healing,
-                Faces = p.Faces, Triangles = p.Triangles, Material = material, Match = match, Import = p.Closed,
-                Name = ProposeName(p.Name, $"{stem}_{i + 1}", used),
-            });
+                string? colour = p.Colour is { Length: 3 } c ? Hex(c) : null;
+                var (material, match) = AutoMatch(p.Name, colour, materials);
+                parts.Add(new StepImportPart
+                {
+                    Path = p.Path, ProductName = p.Name, Colour = colour, Closed = p.Closed, Why = p.Why, Healing = p.Healing,
+                    Faces = p.Faces, Triangles = p.Triangles, Material = material, Match = match, Import = p.Closed,
+                    Name = ProposeName(p.Name, $"{stem}_{i + 1}", used),
+                });
+                continue;
+            }
+            string? sub = read.Parts.Count > 1 ? ProposeName(p.Name, $"{stem}_{i + 1}", groups) : null;
+            foreach (var s in p.Solids)
+            {
+                string? colour = s.Colour is { Length: 3 } c ? Hex(c) : null;
+                var (material, match) = AutoMatch(s.Name, colour, materials);
+                parts.Add(new StepImportPart
+                {
+                    Path = p.Path, ProductName = p.Name, Solid = s.Index, Solids = p.Solids.Count, SolidName = s.Name, Mixed = s.Mixed,
+                    SubGroup = sub, Colour = colour, Closed = s.Closed, Why = s.Why, Healing = p.Healing, Faces = s.Faces,
+                    Triangles = s.Triangles, Material = material, Match = match, Import = s.Closed,
+                    Name = SolidName(s.Name, $"{sub ?? group}_{s.Index}", used),
+                });
+            }
         }
         return new StepImportPlan
         {
@@ -267,7 +329,17 @@ public static class StepImport
             Units = read.Units, UnitMicrons = read.UnitMicrons, Parts = parts, Healing = read.Healing, Pmi = read.Pmi,
             Materials = [.. materials.Select(m => m.Name)],
             NoMaterials = materials.Count == 0 ? NoMaterialsReason : null,
+            Group = group,
         };
+    }
+
+    /// <summary>Overview D5 — a solid's object name: its own name when the file gives one that is legal and unused, else
+    /// <paramref name="fallback"/> (<c>&lt;group&gt;_&lt;k&gt;</c>) made unique. The name is added to <paramref name="used"/>.</summary>
+    private static string SolidName(string own, string fallback, ISet<string> used)
+    {
+        own = own.Trim();
+        if (own.Length > 0 && NameValidator.Validate(own) is null && used.Add(own)) return own;
+        return ProposeName(fallback, fallback, used);
     }
 
     /// <summary>R-em3d68-3a — by name (ignoring case), then by exact colour, then none. Nothing fuzzier.</summary>
@@ -280,8 +352,9 @@ public static class StepImport
         return (null, StepMatch.Unmatched);
     }
 
-    /// <summary>R-em3d68-3c — <i>Map all of this colour</i>: every part sharing <paramref name="part"/>'s colour gets
-    /// <paramref name="material"/>. A part with no colour maps alone. Returns how many rows changed.</summary>
+    /// <summary>R-em3d68-3c — <i>Map all of this colour</i>: every row of the file sharing <paramref name="part"/>'s colour —
+    /// a part or a solid, whichever product it is in — gets <paramref name="material"/>. A row with no colour (a mixed
+    /// solid among them) maps alone. Returns how many rows changed.</summary>
     public static int MapColour(StepImportPlan plan, StepImportPart part, string? material)
     {
         int n = 0;
@@ -293,6 +366,26 @@ public static class StepImport
             n++;
         }
         return n;
+    }
+
+    /// <summary>R-em3d128-1b — a product's header row: every solid of the product at <paramref name="path"/> takes
+    /// <paramref name="material"/>, as chosen. Returns how many rows changed.</summary>
+    public static int SetProductMaterial(StepImportPlan plan, string path, string? material)
+    {
+        int n = 0;
+        foreach (var p in plan.Parts.Where(p => p.Path == path && p.Solid is not null))
+        {
+            p.Material = material;
+            p.Match = material is null ? StepMatch.Unmatched : StepMatch.Chosen;
+            n++;
+        }
+        return n;
+    }
+
+    /// <summary>R-em3d128-1b — a product's header check box: every closed solid of the product checked or unchecked.</summary>
+    public static void SetProductImport(StepImportPlan plan, string path, bool import)
+    {
+        foreach (var p in plan.Parts.Where(p => p.Path == path && p.Solid is not null)) p.Import = import && p.Closed;
     }
 
     /// <summary>A colour, RGB 0–1, as <c>#rrggbb</c>: the 8-bit spelling a material's <c>Color</c> is written in.</summary>
@@ -345,28 +438,50 @@ public static class StepImport
         var mine = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var p in plan.Parts.Where(p => p.Import))
         {
-            if (NameValidator.Validate(p.Name) is { } why) return $"'{p.Name}' (part {p.Path}) cannot be a name: {why}";
-            if (used.Contains(p.Name)) return $"'{p.Name}' (part {p.Path}) is already a name in this document.";
+            if (NameValidator.Validate(p.Name) is { } why) return $"'{p.Name}' ({Where(p)}) cannot be a name: {why}";
+            if (used.Contains(p.Name)) return $"'{p.Name}' ({Where(p)}) is already a name in this document.";
             if (!mine.Add(p.Name)) return $"'{p.Name}' names two of the parts being imported.";
         }
         return null;
+    }
+
+    /// <summary>R-em3d128-2c — why the plan's group cannot be used as it stands, or null: no group (empty) is always
+    /// usable; a name is refused as Group Objects refuses a typed one, and so is one a product's own group takes.</summary>
+    public static string? GroupRefusal(StepImportPlan plan, C3dDocument target)
+    {
+        if (string.IsNullOrEmpty(plan.Group)) return null;
+        if (C3dGroups.NameRefusal(target, plan.Group) is { } why) return why;
+        if (plan.Parts.FirstOrDefault(p => p.SubGroup == plan.Group) is { } sub)
+            return $"'{plan.Group}' is the name of the group the solids of {Label(sub)} are gathered in.";
+        return null;
+    }
+
+    /// <summary>The group path each object of <paramref name="chosen"/> is in (R-em3d128-2): none for one object or no group;
+    /// the file's group; or, for a product of several solids in a file of several products, the product's group inside it
+    /// — when more than one of its solids is imported (a group of one is no gathering).</summary>
+    public static string? GroupPathOf(StepImportPlan plan, IReadOnlyList<StepImportPart> chosen, StepImportPart part)
+    {
+        if (chosen.Count < 2 || string.IsNullOrEmpty(plan.Group)) return null;
+        return part.SubGroup is { } sub && chosen.Count(p => p.Path == part.Path) > 1 ? plan.Group + C3dGroups.Separator + sub : plan.Group;
     }
 
     // ── Apply ───────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Copies the file into <paramref name="c3dPath"/>'s folder (D7, R-em3d68-4e) and appends one Step object per checked
-    /// row to <paramref name="doc"/>. The only step that writes: the dialog's OK, and <see cref="Import"/>.
+    /// row to <paramref name="doc"/>, gathered in the plan's group when there is more than one (R-em3d128-2). The only
+    /// step that writes: the dialog's OK, and <see cref="Import"/>.
     /// </summary>
-    /// <exception cref="StepImportException">No row is checked, or a name cannot be used.</exception>
+    /// <exception cref="StepImportException">No row is checked, or a name or the group's name cannot be used.</exception>
     public static StepImportResult Apply(StepImportPlan plan, C3dDocument doc, string c3dPath)
     {
-        var chosen = plan.Parts.Where(p => p.Import && p.Solid).ToList();
+        var chosen = plan.Parts.Where(p => p.Import && p.Closed).ToList();
         if (chosen.Count == 0)
-            throw new StepImportException(plan.Parts.Any(p => p.Solid)
+            throw new StepImportException(plan.Parts.Any(p => p.Closed)
                 ? StepDiagnostics.NothingChecked()
                 : StepDiagnostics.NoSolid(System.IO.Path.GetFileName(plan.SourcePath), ""));
         if (NamesRefusal(plan, doc) is { } bad) throw new StepImportException(StepDiagnostics.Names(bad));
+        if (chosen.Count > 1 && GroupRefusal(plan, doc) is { } badGroup) throw new StepImportException(StepDiagnostics.GroupName(badGroup));
 
         string dir = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(c3dPath))!;
         var (copy, created) = CopyInto(dir, System.IO.Path.GetFileName(plan.SourcePath), plan.Bytes, plan.Hash, write: true);
@@ -376,21 +491,29 @@ public static class StepImport
         {
             var step = new C3dStep
             {
-                Name = p.Name, Material = p.Material, File = System.IO.Path.GetFileName(copy), Part = p.Path, Hash = plan.Hash,
-                Unit = plan.Unit, SourcePath = source,
+                Name = p.Name, Material = p.Material, Group = GroupPathOf(plan, chosen, p), File = System.IO.Path.GetFileName(copy),
+                Part = p.Path, Solid = p.Solid, Hash = plan.Hash, Unit = plan.Unit, SourcePath = source,
             };
             doc.Objects.Add(step);
             added.Add(step);
         }
-        return new StepImportResult(copy, created, plan.Bytes, added, Notes(plan, chosen));
+        return new StepImportResult(copy, created, plan.Bytes, added, Notes(plan, chosen)) { Rows = chosen };
     }
 
-    /// <summary>What the import says it did (R-em3d68-4a/-4b/-3b, §10): healing, parts skipped and why, parts with no
-    /// material, and the product-manufacturing information it did not bring.</summary>
+    /// <summary>What the import says it did (R-em3d68-4a/-4b/-3b, §10, R-em3d128-4): healing, each product imported as
+    /// several solids and the group they are in, parts skipped and why, parts with no material, each mixed solid, and the
+    /// product-manufacturing information it did not bring.</summary>
     public static IReadOnlyList<string> Notes(StepImportPlan plan, IReadOnlyList<StepImportPart> chosen)
     {
         var notes = new List<string>(plan.Healing);
-        var solids = plan.Parts.Where(p => !p.Solid).ToList();
+        foreach (var product in chosen.Where(p => p.Solid is not null).GroupBy(p => p.Path))
+            if (GroupPathOf(plan, chosen, product.First()) is { } group)
+            {
+                var first = product.First();
+                string name = first.ProductName.Length > 0 ? first.ProductName : $"part {first.Path}";
+                notes.Add($"'{name}' is {first.Solids} solids; each is its own object in group '{C3dGroups.NameOf(group)}'.");
+            }
+        var solids = plan.Parts.Where(p => !p.Closed).ToList();
         if (solids.Count > 0)
             notes.Add($"{solids.Count} part{(solids.Count == 1 ? " is" : "s are")} not a closed solid and {(solids.Count == 1 ? "was" : "were")} not imported: " +
                       string.Join("; ", solids.Select(p => $"{Label(p)} — {p.Why}")) + ".");
@@ -399,12 +522,17 @@ public static class StepImport
             notes.Add($"{unmatched.Count} part{(unmatched.Count == 1 ? " has" : "s have")} no material, so {(unmatched.Count == 1 ? "it is" : "they are")} drawn " +
                       $"and ignored by the solver until given one: {string.Join(", ", unmatched.Select(p => p.Name))}." +
                       (plan.NoMaterials is { } why ? " " + why : ""));
+        foreach (var p in chosen.Where(p => p.Mixed))
+            notes.Add($"'{p.Name}' has faces of several colours, so it was not matched by colour.");
         if (plan.Pmi > 0)
             notes.Add($"The file carries {plan.Pmi} dimension{(plan.Pmi == 1 ? "" : "s")}, tolerance{(plan.Pmi == 1 ? "" : "s")} or datum{(plan.Pmi == 1 ? "" : "s")}; none is imported.");
         return notes;
     }
 
-    private static string Label(StepImportPart p) => p.ProductName.Length > 0 ? $"'{p.ProductName}' (part {p.Path})" : $"part {p.Path}";
+    private static string Label(StepImportPart p) => p.ProductName.Length > 0 ? $"'{p.ProductName}' ({Where(p)})" : Where(p);
+
+    /// <summary>A row's place in the file: <c>part 1/2</c>, or <c>part 1/2, solid 3</c>.</summary>
+    private static string Where(StepImportPart p) => p.Solid is { } k ? $"part {p.Path}, solid {k}" : $"part {p.Path}";
 
     /// <summary>
     /// R-em3d68-4e — where the copy goes: <c>&lt;dir&gt;/&lt;name&gt;</c>, reused when a file of that name holds the same
@@ -468,7 +596,31 @@ public static class StepImport
         string full = System.IO.Path.GetFullPath(c3dPath);
         if (File.Exists(full) || Directory.Exists(full))
             throw new StepImportException(StepDiagnostics.TargetExists(c3dPath));
+        var (plan, doc) = PlanImport(sourcePath, full, options, kernel, cache, control);
+        string dir = System.IO.Path.GetDirectoryName(full)!;
+        bool inCell = string.Equals(System.IO.Path.GetFileName(dir), CellFolder.ThreeDSubFolder, StringComparison.OrdinalIgnoreCase);
+        if (!plan.Parts.Any(p => p.Closed))
+            throw new StepImportException(StepDiagnostics.NoSolid(System.IO.Path.GetFileName(sourcePath),
+                                                                  string.Join(" ", plan.Parts.Select(p => $"{Label(p)}: {p.Why}."))));
 
+        Directory.CreateDirectory(dir);
+        var result = Apply(plan, doc, full);
+        C3dPersistence.SaveToFile(full, doc);
+        var notes = result.Notes.ToList();
+        if (!inCell) notes.Add("The document belongs to no cell (it is not in a cell's 3d folder); render, check and em all accept it.");
+        return result with { Notes = notes };
+    }
+
+    /// <summary>
+    /// What <see cref="Import"/> would create at <paramref name="c3dPath"/>, without writing: the new document (its
+    /// technology resolved as the import resolves it) and the plan with <paramref name="options"/> applied. <c>convert
+    /// --list-parts</c> prints this plan; <see cref="Import"/> applies it.
+    /// </summary>
+    /// <exception cref="StepImportException">A flag names nothing, or the technology cannot be read.</exception>
+    public static (StepImportPlan Plan, C3dDocument Doc) PlanImport(string sourcePath, string c3dPath, StepImportOptions options,
+                                                                    GeometryKernel kernel, TechnologyCache? cache = null, RunControl? control = null)
+    {
+        string full = System.IO.Path.GetFullPath(c3dPath);
         string dir = System.IO.Path.GetDirectoryName(full)!;
         bool inCell = string.Equals(System.IO.Path.GetFileName(dir), CellFolder.ThreeDSubFolder, StringComparison.OrdinalIgnoreCase);
         string cellDir = inCell ? System.IO.Path.GetDirectoryName(dir)! : dir;
@@ -487,34 +639,38 @@ public static class StepImport
         doc.TechRef = techRef;
         var plan = Read(sourcePath, kernel, resolution.Tech, doc, control);
 
+        // R-em3d128-3a — `--part <path>` is every solid of that product, `--part <path>#<k>` one of them.
         foreach (string path in options.Parts)
-            if (plan.Parts.All(p => p.Path != path))
-                throw new StepImportException(StepDiagnostics.NoSuchPart(path, string.Join(", ", plan.Parts.Select(p => p.Path))));
+            if (plan.Parts.All(p => !Selects(path, p)))
+                throw new StepImportException(StepDiagnostics.NoSuchPart(path, string.Join(", ", PartKeys(plan))));
         if (options.Parts.Count > 0)
-            foreach (var p in plan.Parts) p.Import = p.Solid && options.Parts.Contains(p.Path);
+            foreach (var p in plan.Parts) p.Import = p.Closed && options.Parts.Any(k => Selects(k, p));
+        if (options.Group is { } g) plan.Group = g;
         foreach (var (key, material) in options.Materials)
         {
-            var hits = plan.Parts.Where(p => p.Path == key || string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase)
+            var hits = plan.Parts.Where(p => Selects(key, p) || string.Equals(p.Name, key, StringComparison.OrdinalIgnoreCase)
                                              || string.Equals(p.ProductName, key, StringComparison.OrdinalIgnoreCase)).ToList();
             if (hits.Count == 0)
-                throw new StepImportException(StepDiagnostics.MaterialPartUnknown(key, string.Join(", ", plan.Parts.Select(p => $"{p.Path} ({p.Name})"))));
+                throw new StepImportException(StepDiagnostics.MaterialPartUnknown(key, string.Join(", ", plan.Parts.Select(p => $"{KeyOf(p)} ({p.Name})"))));
             string? known = plan.Materials.FirstOrDefault(m => string.Equals(m, material, StringComparison.OrdinalIgnoreCase));
             if (known is null)
                 throw new StepImportException(StepDiagnostics.MaterialUnknown(material,
                     plan.Materials.Count == 0 ? NoMaterialsReason : "Its materials: " + string.Join(", ", plan.Materials) + "."));
             foreach (var p in hits) { p.Material = known; p.Match = StepMatch.Chosen; }
         }
-        if (!plan.Parts.Any(p => p.Solid))
-            throw new StepImportException(StepDiagnostics.NoSolid(System.IO.Path.GetFileName(sourcePath),
-                                                                  string.Join(" ", plan.Parts.Select(p => $"{Label(p)}: {p.Why}."))));
-
-        Directory.CreateDirectory(dir);
-        var result = Apply(plan, doc, full);
-        C3dPersistence.SaveToFile(full, doc);
-        var notes = result.Notes.ToList();
-        if (!inCell) notes.Add("The document belongs to no cell (it is not in a cell's 3d folder); render, check and em all accept it.");
-        return result with { Notes = notes };
+        return (plan, doc);
     }
+
+    /// <summary>R-em3d128-3a — the CLI's spelling of a row: <c>&lt;path&gt;</c> for a whole product, <c>&lt;path&gt;#&lt;k&gt;</c> for
+    /// one solid of it.</summary>
+    public static string KeyOf(StepImportPart p) => p.Solid is { } k ? $"{p.Path}#{k.ToString(CultureInfo.InvariantCulture)}" : p.Path;
+
+    /// <summary>Whether <c>--part</c> (or <c>--material</c>'s key) <paramref name="key"/> selects <paramref name="p"/>: its
+    /// product's path selects every solid of it, <c>&lt;path&gt;#&lt;k&gt;</c> one.</summary>
+    public static bool Selects(string key, StepImportPart p) => key == p.Path || key == KeyOf(p);
+
+    private static IEnumerable<string> PartKeys(StepImportPlan plan)
+        => plan.Parts.SelectMany(p => p.Solid == 1 ? new[] { p.Path, KeyOf(p) } : [KeyOf(p)]);
 
     // ── units (R-em3d68-2) ──────────────────────────────────────────────────────────────────────
 

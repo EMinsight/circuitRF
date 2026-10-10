@@ -182,6 +182,9 @@ internal static class JsonRun
     /// <summary>What <c>recognize</c> read and wrote (brief-artsch-7 R-as7-5).</summary>
     public static RecognizeReportJson? Recognize;
 
+    /// <summary>What <c>convert x.step</c> created, or would create with <c>--list-parts</c> (brief-em3d-128 R-em3d128-3b).</summary>
+    public static StepImportReportJson? StepImport;
+
     /// <summary>
     /// Where <see cref="Finish"/> writes, instead of stdout. Set by <c>serve</c> only.
     ///
@@ -235,6 +238,7 @@ internal static class JsonRun
         Center              = null;
         Doe                 = null;
         Recognize           = null;
+        StepImport          = null;
         _summaryOnly        = false;
         _diagnosticsSummary = false;
         Malformed           = null;
@@ -273,6 +277,10 @@ internal static class JsonRun
         // silently, and that is precisely the kind of guess a refusal exists to avoid.
         bool verbOwnsAt = args.Length > 0
                        && args[0].Equals("smith", StringComparison.OrdinalIgnoreCase);
+        // The same, for `convert`'s `--group <name>` (brief-em3d-128 R-em3d128-3a: the group a STEP import gathers in).
+        // `convert` produces no DataSet, so there is no cube group for `--group` to narrow to.
+        bool verbOwnsGroup = args.Length > 0
+                          && args[0].Equals("convert", StringComparison.OrdinalIgnoreCase);
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -284,7 +292,7 @@ internal static class JsonRun
                 case "--only" when i + 1 < args.Length:
                     _onlyCubes = Split(args[++i]);
                     continue;
-                case "--group" when i + 1 < args.Length:
+                case "--group" when i + 1 < args.Length && !verbOwnsGroup:
                     _onlyGroups = Split(args[++i]);
                     continue;
 
@@ -459,13 +467,13 @@ internal static class JsonRun
          || History is not null || Render is not null || Find is not null || Smith is not null
          || Lvs is not null || Impedance is not null || ImpedanceSurvey is not null || FieldPlots is not null
          || ImpedanceLine is not null || Solvers is not null || Optimize is not null || Yield is not null || Corners is not null
-         || Center is not null || Doe is not null || Recognize is not null)
+         || Center is not null || Doe is not null || Recognize is not null || StepImport is not null)
             return new ResultPayload(null, null, Check, Explain, Document, Reference, History, Render,
                                      Find: Find, Smith: Smith, Lvs: Lvs, Impedance: Impedance,
                                      ImpedanceSurvey: ImpedanceSurvey, FieldPlots: FieldPlots,
                                      ImpedanceLine: ImpedanceLine, Solvers: Solvers, Optimize: Optimize,
                                      Yield: Yield, Corners: Corners, Center: Center, Doe: Doe,
-                                     Recognize: Recognize);
+                                     Recognize: Recognize, StepImport: StepImport);
 
         // `rail` is the one verb that carries a report AND a DataSet — the cubes are the field and
         // the report is the domain shape §2.4 asks for — so a refused run still answers with its

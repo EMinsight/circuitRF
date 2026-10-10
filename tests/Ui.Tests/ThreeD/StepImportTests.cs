@@ -142,7 +142,7 @@ public sealed class StepImportTests : IDisposable
         var (doc, path) = NewC3d(ws, "Open");
 
         var plan = StepImport.Read(src, kernel, Tech(ws), doc);
-        var skin = Assert.Single(plan.Parts, p => !p.Solid);
+        var skin = Assert.Single(plan.Parts, p => !p.Closed);
         Assert.False(skin.Import);
         Assert.NotEmpty(skin.Why);
         var result = StepImport.Apply(plan, doc, path);

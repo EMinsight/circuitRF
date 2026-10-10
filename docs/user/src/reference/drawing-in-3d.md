@@ -745,7 +745,9 @@ and writes a 3D view — or a layout — **out as one**. The geometry kernel doe
 commands are disabled with the reason.
 
 **Import STEP…** (*File ▸ Import ▸ STEP…*) reads the file, off the editor's thread
-and cancellable, and opens a table of its parts:
+and cancellable, and opens a table of its parts. A part that is one solid is one row. A part made of
+**several solids** — a package's leads and its body, say — is one row **per solid**, because each solid
+becomes its own object with its own material:
 
 - **Units.** The first line says what the file is in and that it is imported exactly — *File is in
   inches; imported exactly* — because a STEP file states its own unit and every coordinate is converted,
@@ -756,15 +758,33 @@ and cancellable, and opens a table of its parts:
   takes that one. The **⇉** button on a row — **Map all of this colour** — gives every part of the row's
   colour the row's material: a connector's brass parts in one gesture. **(no material)** imports a part
   that is drawn and ignored by the solver, and `check` names it.
+- **A part of several solids** has a **header row** with its name and how many solids it has, and its solids
+  listed beneath it. The header's check box checks or unchecks every solid under it, and its material box gives
+  every solid under it that material. Each solid row has its own name, colour and material, and *Map all of this
+  colour* reaches every solid in the file of that colour, so a package's leads, which share one colour, take
+  copper in one action. A solid whose faces carry several colours shows **mixed**: it has no colour to match by,
+  so give it a material by hand. A solid that is not closed is listed, unchecked and disabled with its reason;
+  the rest of its part imports.
+- **Group.** When the import makes more than one object, they are gathered in one
+  [group](#groups), named in the field above the table. It starts as the file's name, made unique among the
+  view's groups. Empty the field to import the objects loose; a name another group already has is refused there.
+  In a file of several parts, a part of several solids is a group of its own inside the file's.
 - **What is not imported, and why.** Only a closed solid can be solved, so a surface, a wire body or an
   open shell is listed, unchecked and disabled, with its reason on its row. Dimensions, tolerances and
   datums (product manufacturing information) are counted in the notes and not imported: they describe
   how to make a part, not what it is.
 - **Import** copies the file **into the 3D view's own folder** — so the workspace carries it, and a copy
   that holds the same bytes is reused rather than duplicated — and adds one **Step** object per checked
-  part, selected, ready to Move. It is one undo entry, and undoing it removes the copy at the next save.
+  row, gathered in the group and selected as one, ready to Move. It is one undo entry, and undoing it
+  removes the objects, the group with them, and the copy at the next save.
   The part lands exactly where its file puts it: the file's assembly transform is applied, the object's
   own placement starts at nothing.
+
+The imported package is one row in the tree and **one click in the view**: a click on any piece selects the
+whole group, and Move, Rotate, Mirror, Duplicate, Delete, Hide and a material act on all of it. To give **one
+piece** its own material, expand the group's row in the tree and use the piece's row: its right-click
+**Material** submenu, or Properties with the row selected. In the view, **B** steps through what lies under
+the cursor, which reaches a single piece. Setting a material on the group's own row sets every piece.
 
 A Step object is a solid like any other: it takes a material, moves, and is a boolean operand or a fillet's
 target. Its faces are `face1`, `face2` … as the file's shape numbers them, and they mean something only for
