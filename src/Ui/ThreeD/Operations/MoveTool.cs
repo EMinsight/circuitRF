@@ -135,7 +135,7 @@ public sealed class MoveTool : C3dOperationTool
         if (AxisLocked is { } axis) return OnAxis(axis, input, out refusal);
         if (PlaneNormal is { } n)
         {
-            if (input.Snap is { } s && input.SnapOnGeometry) return (DrawingPlane.With(s, n, DrawingPlane.Get(_base, n)), input.SnapExact);
+            if (input.Snap is { } s && input.SnapOnGeometry) return (DrawingPlane.With(Grabbed(s), n, DrawingPlane.Get(_base, n)), input.SnapExact && GrabExact);
             var plane = new DrawingPlane(DrawingPlane.PlaneNormalTo(n), DrawingPlane.Get(_base, n));
             if (!input.HasRay || plane.IsEdgeOn(input.RayDirection!.Value)
                 || plane.Hit(input.RayOrigin!.Value, input.RayDirection!.Value, Host.DbuPerMicron) is not { } hit)
@@ -162,9 +162,35 @@ public sealed class MoveTool : C3dOperationTool
     {
         refusal = null;
         if (Host.Along(_base, axis, input) is not { } w) { refusal = $"The cursor's line of sight runs along {axis}: orbit, or type the distance."; return null; }
-        bool exact = input.Snap is null || !input.SnapOnGeometry || input.SnapExact;
+        if (input.Snap is { } s && input.SnapOnGeometry) w = DrawingPlane.Get(Grabbed(s), axis);
+        bool exact = input.Snap is null || !input.SnapOnGeometry || input.SnapExact && GrabExact;
         return (DrawingPlane.With(_base, axis, w), exact);
     }
+
+    /// <summary>The targets' bounding box in DBU, for a gizmo drag's snap, and whether its faces are whole DBU.</summary>
+    public (C3dPoint3 Min, C3dPoint3 Max, bool Exact)? Extent { get; init; }
+
+    /// <summary>Where the base must go for a geometry snap to land on what is moved. A gizmo drag's base is the point of the
+    /// handle that was grabbed, anywhere along the arrow or across the plane square, so the snap measured from it left the
+    /// selection short of the snap by however far from the selection the handle was grabbed. Along each axis, the face of
+    /// the bounding box NEARER the snap goes onto it: a box dragged up to a corner above it brings its top to the corner's
+    /// height, dragged down onto one its bottom, and a sheet its own height. With no extent, the pivot goes there. A Move's
+    /// base is a point the user picked, already on the geometry, and the snap is where that point goes.</summary>
+    private C3dPoint3 Grabbed(C3dPoint3 snap)
+    {
+        if (!FromGizmo) return snap;
+        long Anchor(C3dAxis a)
+        {
+            if (Extent is not { } e) return DrawingPlane.Get(Pivot, a);
+            long lo = DrawingPlane.Get(e.Min, a), hi = DrawingPlane.Get(e.Max, a), w = DrawingPlane.Get(snap, a);
+            return Math.Abs(w - lo) <= Math.Abs(w - hi) ? lo : hi;
+        }
+        var anchor = new C3dPoint3(Anchor(C3dAxis.X), Anchor(C3dAxis.Y), Anchor(C3dAxis.Z));
+        return snap + (_base - anchor);
+    }
+
+    /// <summary>A snap measured from inexact faces is inexact.</summary>
+    private bool GrabExact => !FromGizmo || Extent is not { } e || e.Exact;
 
     public override C3dOperationTransform? Current(in C3dDrawInput input, out string? refusal)
     {

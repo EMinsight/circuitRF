@@ -831,7 +831,11 @@ public sealed partial class C3dEditorViewModel
         var axis = (C3dAxis)k;
         bool plane = GizmoGeometry.IsPlane(handle);
         var lockTo = plane ? C3dMoveLock.PlaneX + k : C3dMoveLock.AxisX + k;
-        var tool = new MoveTool(this, targets, pivot, lockTo: lockTo) { FromGizmo = true };
+        var extent = BoundsDbu(targets) is { } e
+            ? (new C3dPoint3((long)Math.Round(e.X0), (long)Math.Round(e.Y0), (long)Math.Round(e.Z0)),
+               new C3dPoint3((long)Math.Round(e.X1), (long)Math.Round(e.Y1), (long)Math.Round(e.Z1)), e.Exact)
+            : ((C3dPoint3, C3dPoint3, bool)?)null;
+        var tool = new MoveTool(this, targets, pivot, lockTo: lockTo) { FromGizmo = true, Extent = extent };
         // The base: the point on the axis nearest the cursor at the press — or where the cursor meets the plane.
         var input = CursorInput();
         C3dPoint3 b = pivot;

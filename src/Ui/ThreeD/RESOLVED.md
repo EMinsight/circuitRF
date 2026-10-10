@@ -339,3 +339,19 @@ vanish, including the wire the mistake was on. The owner's rule is now a best at
 - **`render` draws what resolved too.** `Em3dSetupSource.WhatResolved` draws a refused view's elaboration in a box at its
   own extent. Each refusal is reported as `render.em3d.partial` (a warning, on stderr and in `--json`), so a gap in the
   picture is never silent. Exit 0. Gate: `WireHeldShapeTests.Render_OfAViewWithAMistypedName_DrawsWhatResolved_AndARunStillRefuses`.
+
+## A snapped gizmo drag lands the PIVOT on the snap (2026-10-09)
+
+- **Symptom:** a sheet dragged up its Z arrow and snapped to another box's corner ended up at neither height. It stopped
+  short of the corner's z by however far up the arrow the handle had been grabbed.
+- **Cause:** a gizmo drag's base point is where the HANDLE was grabbed (the point on the arrow nearest the cursor, or
+  where the cursor met the plane square), not a point on the selection. `MoveTool` measured a geometry snap from that
+  base, so the selection was moved by `snap − grab` and not by `snap − pivot`. This happened on every axis and on the
+  plane handles. Moving with the G key was correct all along, because there the base is a point the user picked on the
+  geometry.
+- **Fix:** `MoveTool.Grabbed` measures a snap from the selection, not from the grab point, when `FromGizmo`. Along each
+  moved axis, the bounding-box face NEARER the snap lands on it (`MoveTool.Extent`, from `BoundsDbu`). So a box dragged up
+  to a corner above it brings its top to the corner's height, a box dragged down onto one brings its bottom there, and a
+  sheet goes to the snap's height. The first cut moved the bounding-box centre onto the snap, which put a solid's middle at
+  the corner. With no extent it still does that. Without a snap the drag follows the grab point, so the handle stays under
+  the cursor. Gate: `GizmoSnapTests`.
