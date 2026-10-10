@@ -551,6 +551,11 @@ public sealed class Viewer3DPane : Control
     {
         base.OnPointerMoved(e);
         var pos = e.GetPosition(this);
+        // A key pressed while the button is still down and has not moved (G on the vertex just pressed) armed a tool: the
+        // press becomes that tool's click, as if it had started armed — its drag moves what the tool moves and its
+        // release places it. Orbiting it instead turned the camera under the cursor the tool was following.
+        if (_orbiting && !_moved && _vm?.OrbitNeedsCommand == true && (_pressModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0)
+            (_orbiting, _drawPress) = (false, true);
         if (_last is { } last && (_orbiting || _panning))
         {
             var d = pos - last;

@@ -269,6 +269,85 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
         return null;
     }
 
+    /// <summary>
+    /// Properties' "add a point" on a wire's row: a new point between point <paramref name="a"/> and the next, at the
+    /// middle of the cubic (Catmull–Rom) through the points around them, so the wire stays smooth rather than gaining a
+    /// corner. One undo entry; the ends do not move. Null on success, else why not.
+    /// </summary>
+    public string? InsertWirePoint(int index, int a)
+    {
+        if (index < 0 || index >= Document.Objects.Count || Document.Objects[index] is not C3dWire was) return "Select one wire.";
+        if (a < 0 || a + 1 >= was.Points.Count) return $"{was.Name} has no segment after point {a + 1}.";
+        string before = C3dPersistence.SerializeObject(was);
+        var grown = (C3dWire)C3dPersistence.DeserializeObject(before);
+        if (!RenumberPointExpressions(grown, from: a + 1, removed: null)) return PointExpressionRefusal(was.Name);
+        grown.Points.Insert(a + 1, CubicMidpoint(was.Points, a));
+        if (!Push(new C3dEdit($"Add a point to {was.Name}", [new C3dEditSlot(false, index, before, C3dPersistence.SerializeObject(grown))], ApplySlots)))
+            return StatusMessage;
+        StatusMessage = $"Added point {a + 2} to '{was.Name}'.";
+        return null;
+    }
+
+    /// <summary>Properties' "remove" on a wire's row: an interior point taken out, one undo entry. The two ends are bonded
+    /// to their pads and are not removed. Null on success, else why not.</summary>
+    public string? RemoveWirePoint(int index, int k)
+    {
+        if (index < 0 || index >= Document.Objects.Count || Document.Objects[index] is not C3dWire was) return "Select one wire.";
+        if (k <= 0 || k >= was.Points.Count - 1) return $"{was.Name}'s ends are bonded to their pads: only a point between them is removed.";
+        string before = C3dPersistence.SerializeObject(was);
+        var shrunk = (C3dWire)C3dPersistence.DeserializeObject(before);
+        if (!RenumberPointExpressions(shrunk, from: k + 1, removed: k)) return PointExpressionRefusal(was.Name);
+        shrunk.Points.RemoveAt(k);
+        if (!Push(new C3dEdit($"Remove point {k + 1} of {was.Name}", [new C3dEditSlot(false, index, before, C3dPersistence.SerializeObject(shrunk))], ApplySlots)))
+            return StatusMessage;
+        StatusMessage = $"Removed point {k + 1} of '{was.Name}'.";
+        return null;
+    }
+
+    /// <summary>
+    /// A wire's points take no expressions today. Should one ever bind them, it would be keyed by point the way a placement's
+    /// rotations are (<c>Points[k].…</c>), and an inserted or removed point must carry every later point's expressions with
+    /// it: those at index <paramref name="from"/> and above move up one (an insert) or down one (a remove, whose own point
+    /// <paramref name="removed"/> loses its entries). False — nothing changed — for a Points key of any other shape, which
+    /// this cannot renumber and so must not guess at.
+    /// </summary>
+    internal static bool RenumberPointExpressions(C3dWire w, int from, int? removed)
+    {
+        if (w.Exprs is not { } map) return true;
+        const string head = nameof(C3dWire.Points);
+        var moved = new Dictionary<string, C3dExpr?[]>(StringComparer.Ordinal);
+        foreach (var (key, slots) in map)
+        {
+            if (!key.StartsWith(head, StringComparison.Ordinal)) { moved[key] = slots; continue; }
+            int close = key.IndexOf(']', StringComparison.Ordinal);
+            if (key.Length <= head.Length || key[head.Length] != '[' || close < 0 ||
+                !int.TryParse(key.AsSpan(head.Length + 1, close - head.Length - 1), System.Globalization.NumberStyles.None,
+                              System.Globalization.CultureInfo.InvariantCulture, out int k))
+                return false;
+            if (k == removed) continue;
+            int to = k < from ? k : removed is null ? k + 1 : k - 1;
+            moved[$"{head}[{to}]{key[(close + 1)..]}"] = slots;
+        }
+        w.Exprs = moved.Count == 0 ? null : moved;
+        return true;
+    }
+
+    private static string PointExpressionRefusal(string wire)
+        => $"{wire}'s points carry expressions this version cannot renumber: edit the points in the file.";
+
+    /// <summary>The middle of segment <paramref name="a"/>→<paramref name="a"/>+1 on the uniform Catmull–Rom cubic through
+    /// the points either side: (−p₀ + 9p₁ + 9p₂ − p₃) / 16. A missing neighbour past an end is that end's segment carried
+    /// straight on, so a two-point wire gains its plain midpoint.</summary>
+    internal static C3dPoint3 CubicMidpoint(IReadOnlyList<C3dPoint3> p, int a)
+    {
+        var p1 = p[a];
+        var p2 = p[a + 1];
+        var p0 = a > 0 ? p[a - 1] : new C3dPoint3(2 * p1.X - p2.X, 2 * p1.Y - p2.Y, 2 * p1.Z - p2.Z);
+        var p3 = a + 2 < p.Count ? p[a + 2] : new C3dPoint3(2 * p2.X - p1.X, 2 * p2.Y - p1.Y, 2 * p2.Z - p1.Z);
+        static long M(long q0, long q1, long q2, long q3) => (long)Math.Round((-q0 + 9.0 * q1 + 9.0 * q2 - q3) / 16, MidpointRounding.AwayFromZero);
+        return new C3dPoint3(M(p0.X, p1.X, p2.X, p3.X), M(p0.Y, p1.Y, p2.Y, p3.Y), M(p0.Z, p1.Z, p2.Z, p3.Z));
+    }
+
     private IEnumerable<Viewer3DMenuItem> WireMenuItems()
     {
         if (SelectedWires().Count == 0) yield break;

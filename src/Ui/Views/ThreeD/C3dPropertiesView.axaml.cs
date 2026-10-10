@@ -148,6 +148,21 @@ public partial class C3dPropertiesView : UserControl
         if ((sender as Control)?.DataContext is C3dWirePointRow row) _vm?.CommitWirePoint(row);
     }
 
+    private void OnWirePointAddAbove(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is C3dWirePointRow row) _vm?.AddWirePoint(row, below: false);
+    }
+
+    private void OnWirePointAddBelow(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is C3dWirePointRow row) _vm?.AddWirePoint(row, below: true);
+    }
+
+    private void OnWirePointRemove(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as Control)?.DataContext is C3dWirePointRow row) _vm?.RemoveWirePoint(row);
+    }
+
     // 3D editor round 1 — the air box's padding per axis.
     // brief-em3d-75 R-em3d75-1c — a thermal place's field: Enter or lost focus commits it, one undo entry.
     private void OnThermalFieldKey(object? sender, KeyEventArgs e)

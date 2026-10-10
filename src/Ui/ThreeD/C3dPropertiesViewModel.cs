@@ -97,6 +97,12 @@ public sealed partial class C3dWirePointRow : ObservableObject
 {
     public required int Index { get; init; }
     public required string Label { get; init; }
+    /// <summary>A point may be added between this one and the one before it — every row but the start.</summary>
+    public bool CanAddAbove { get; init; }
+    /// <summary>A point may be added between this one and the next — every row but the end.</summary>
+    public bool CanAddBelow { get; init; }
+    /// <summary>An interior point: the two ends are bonded to their pads and stay.</summary>
+    public bool CanRemove { get; init; }
     [ObservableProperty] private string _x = "";
     [ObservableProperty] private string _y = "";
     [ObservableProperty] private string _z = "";
@@ -810,7 +816,12 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         {
             var p = wire.Points[k];
             string label = k == 0 ? "Start" : k == wire.Points.Count - 1 ? "End" : k.ToString(CultureInfo.InvariantCulture);
-            var row = new C3dWirePointRow { Index = k, Label = label, X = L(p.X), Y = L(p.Y), Z = L(p.Z) };
+            int last = wire.Points.Count - 1;
+            var row = new C3dWirePointRow
+            {
+                Index = k, Label = label, X = L(p.X), Y = L(p.Y), Z = L(p.Z),
+                CanAddAbove = k > 0, CanAddBelow = k < last, CanRemove = k > 0 && k < last,
+            };
             row.Loaded = (row.X, row.Y, row.Z);
             WirePoints.Add(row);
         }
@@ -831,6 +842,21 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
             return;
         }
         Error = editor.SetWirePoint(ObjectIndex, row.Index, new C3dPoint3(x, y, z)) ?? "";
+    }
+
+    /// <summary>A point added between <paramref name="row"/> and the one before it (<paramref name="below"/> false) or after
+    /// it, on the cubic through the points around them: one undo entry, or the refusal.</summary>
+    public void AddWirePoint(C3dWirePointRow row, bool below)
+    {
+        if (!IsWire || ObjectIndex < 0) return;
+        Error = editor.InsertWirePoint(ObjectIndex, below ? row.Index : row.Index - 1) ?? "";
+    }
+
+    /// <summary>An interior point taken out: one undo entry, or the refusal.</summary>
+    public void RemoveWirePoint(C3dWirePointRow row)
+    {
+        if (!IsWire || ObjectIndex < 0) return;
+        Error = editor.RemoveWirePoint(ObjectIndex, row.Index) ?? "";
     }
 
     /// <summary>3D editor round 4 — the loop height's Enter or lost focus: one undo entry, or the refusal.</summary>

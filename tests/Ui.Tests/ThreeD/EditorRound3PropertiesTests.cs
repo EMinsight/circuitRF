@@ -8,6 +8,7 @@ using CircuitRF.Design.Layout;
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Render.Scene3D;
+using CircuitRF.Render.Scene3D.Edit;
 using CircuitRF.Ui.ThreeD;
 using CircuitRF.Ui.Viewer3D;
 using CircuitRF.WBond;
@@ -107,6 +108,77 @@ public sealed class EditorRound3PropertiesTests : IDisposable
         Assert.Contains("would be over no pad", p.Error, StringComparison.Ordinal);
         Assert.Equal(650 * Um, ((C3dWire)vm.Document.Objects[^1]).Points[^1].X);
         Assert.Equal(entries + 1, vm.UndoEntries);
+    }
+
+    /// <summary>The rows offer add-above everywhere but the start, add-below everywhere but the end, and remove only between
+    /// the ends; an added point lies on the cubic through its neighbours, each add or remove is one undo entry, and undo
+    /// puts the wire back.</summary>
+    [Fact]
+    public void AWirePoint_AddedOrRemovedInProperties_IsOneUndoEntry_AndAnAddedPointLiesOnTheCubic()
+    {
+        var vm = Open(Wire());
+        Select(vm, "w1");
+        var p = vm.Properties;
+        Assert.Equal([(false, true, false), (true, true, true), (true, false, false)],
+                     p.WirePoints.Select(r => (r.CanAddAbove, r.CanAddBelow, r.CanRemove)));
+        int entries = vm.UndoEntries;
+        var original = ((C3dWire)vm.Document.Objects[^1]).Points.ToList();
+
+        p.AddWirePoint(p.WirePoints[1], below: true);                     // between point 2 and the end
+        Settle(vm);
+        Assert.Equal("", p.Error);
+        var pts = ((C3dWire)vm.Document.Objects[^1]).Points;
+        // p0 = (50, 20, 20), p1 = (350, 20, 200), p2 = (650, 20, 20), p3 = p2 carried on = (950, 20, −160): (−p0 + 9p1 + 9p2 − p3)/16.
+        Assert.Equal(new C3dPoint3(500 * Um, 20 * Um, 132_500), pts[2]);
+        Assert.Equal(4, pts.Count);
+        Assert.Equal(entries + 1, vm.UndoEntries);
+        Assert.Equal(["Start", "1", "2", "End"], p.WirePoints.Select(r => r.Label));
+
+        p.RemoveWirePoint(p.WirePoints[1]);
+        Settle(vm);
+        Assert.Equal([original[0], new C3dPoint3(500 * Um, 20 * Um, 132_500), original[2]], ((C3dWire)vm.Document.Objects[^1]).Points);
+        Assert.Equal(entries + 2, vm.UndoEntries);
+
+        vm.UndoRedo.Undo();
+        vm.UndoRedo.Undo();
+        Settle(vm);
+        Assert.Equal(original, ((C3dWire)vm.Document.Objects[^1]).Points);
+    }
+
+    /// <summary>Should a wire's points ever take expressions, keyed per point (<c>Points[k].…</c>), an insert or a remove
+    /// carries each later point's with it; a Points key of any other shape is refused rather than guessed at.</summary>
+    [Fact]
+    public void AddingOrRemovingAPoint_RenumbersPerPointExpressions_AndRefusesAShapeItCannotRenumber()
+    {
+        static C3dWire With(params string[] keys)
+            => new() { Exprs = keys.ToDictionary(k => k, _ => new C3dExpr?[1], StringComparer.Ordinal) };
+
+        var w = With("Points[0].Z", "Points[1].Z", "Points[2].Z", "DiameterUm");
+        Assert.True(C3dEditorViewModel.RenumberPointExpressions(w, from: 1, removed: null));
+        Assert.Equal(["DiameterUm", "Points[0].Z", "Points[2].Z", "Points[3].Z"], w.Exprs!.Keys.Order(StringComparer.Ordinal));
+
+        w = With("Points[0].Z", "Points[1].Z", "Points[2].Z");
+        Assert.True(C3dEditorViewModel.RenumberPointExpressions(w, from: 2, removed: 1));
+        Assert.Equal(["Points[0].Z", "Points[1].Z"], w.Exprs!.Keys.Order(StringComparer.Ordinal));
+
+        w = With("Points");
+        Assert.False(C3dEditorViewModel.RenumberPointExpressions(w, from: 1, removed: null));
+        Assert.Equal(["Points"], w.Exprs!.Keys);
+    }
+
+    /// <summary>Moving a wire's point (G in Vertex mode) never snaps to the wire itself: the point is inside it, so the
+    /// cursor is always over it, and snapping there walked the point toward the eye frame after frame.</summary>
+    [Fact]
+    public void MovingAWirePoint_ExcludesTheWireItselfFromTheSnap()
+    {
+        var vm = Open(Wire());
+        var v = vm.Viewer;
+        var wire = vm.SceneObject("w1")!;
+        v.SelectMode = Scene3DSelectMode.Vertex;
+        v.SetSelection([Scene3DItem.OfVertex(wire.Id, v.Scene.ToLocal(350e-6, 20e-6, 200e-6))]);
+        vm.StartVertexMove();
+        Assert.NotNull(vm.Tool);
+        Assert.Contains(wire.Id, v.SnapExclusion!.Objects);
     }
 
     private static C3dWire Wire() => new()

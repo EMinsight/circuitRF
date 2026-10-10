@@ -175,6 +175,11 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         var tool = new FaceMoveTool(this, v.Index, v.Obj, v.Vertex, v.Obj is C3dSheet { Image: not null } img ? ImageAspectOf(img) : null);
         BeginFaceEdit(tool, null, -1);
         _snapExcludedPoints.Add(DrawGeometry.Metres(v.World, Document.DbuPerMicron));
+        // A wire's point is on its axis, INSIDE the wire, so the cursor moving it is always over the wire itself: snapping
+        // to that surface put the point on it, which moved the surface, which the next frame snapped to again — the point
+        // walked toward the eye. The wire being edited never attracts its own point.
+        if (v.Obj is C3dWire && !IsOperandIndex(v.Index))
+            foreach (var s in SceneObjectsFor(Document.Objects[v.Index], balls: true)) _snapExcludedObjects.Add(s.Name);
         ApplySnapExclusion();
     }
 

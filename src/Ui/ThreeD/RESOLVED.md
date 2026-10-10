@@ -106,3 +106,27 @@ not made: geometry is never dropped unasked. Refusals and notes reach Messages t
 3D menu cleanup's gate forbade any `STEP` header in the 3D menus, to keep Import/Export STEP… on File only. The brief puts
 Reload from Source and Split into Solids in a 3D ▸ STEP submenu, so `MenuCleanupTests` now forbids `STEP…` (the two
 dialog commands) and requires Split into Solids in both spellings.
+
+## Wire points: add/remove in the Inspector, and the camera turning during a wire-point move (2026-10-09)
+
+**Add/remove.** Each wire point row has +▲ (every row but Start), +▼ (every row but End) and − (interior rows only).
+An added point is the middle of the uniform Catmull–Rom cubic through the points on either side,
+`(−p₀ + 9p₁ + 9p₂ − p₃)/16`. A missing neighbour past an end is that end's segment carried straight on, so a two-point
+wire gains its plain midpoint. Each add or remove is one undo entry (`InsertWirePoint`/`RemoveWirePoint`). Wire points
+take no expressions today. `RenumberPointExpressions` is the fallback should they ever take them: `Points[k]…` entries
+follow their point, and any other `Points` key shape refuses the edit. Brief 131 is the feature.
+
+**The camera turned while a wire point moved.** There were two causes; the first is the one that was reported.
+- *A key that arms a tool during a still press.* The press was classified as an orbit when it went down, before G
+  armed Move. Holding the button and dragging after G therefore orbited the camera, and the point followed the cursor
+  ray as the camera turned under it. `Viewer3DPane.OnPointerMoved` now turns a press that has not moved into the armed
+  tool's click (`_drawPress`), so the drag moves the point and the release places it. A press that has already moved
+  stays an orbit, because mode keys wait for a gesture under way (R-em3d43-2a).
+- *The wire snapped to itself.* A wire's point is on its axis, inside the wire, so the cursor moving it is always over
+  the wire. Geometry snap could take the wire's own surface, which moved the wire, which the next frame snapped to
+  again. `StartVertexMove` now excludes the wire being edited (body, balls, array elements) from the snap, as R-snpf-4
+  intends for anything a gesture moves.
+
+A headless probe showed the camera itself never moves in the view model during a G-move: `Camera.Target`, `Distance`
+and `Yaw` were constant, and the origin carry was not involved. Look in the pane's press classification first when
+this symptom recurs.
