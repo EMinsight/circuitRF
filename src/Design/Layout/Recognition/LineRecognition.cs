@@ -156,22 +156,40 @@ public static class LineRecognition
 
         var reached = traces.SelectMany(t => t.Taps).ToHashSet();
         var loose = new List<(TraceLines T, bool AtStart, ChainEnd End, string Placeholder)>();
+        (Attachment? Best, double D) Nearest(TraceLines t, ChainEnd end, Attachment? except)
+        {
+            double reach = AttachReachWidths * end.Width + AttachReachMicrons * dbu;
+            Attachment? best = null;
+            double bestD = double.MaxValue;
+            foreach (var a in attachments)
+            {
+                if (a.Island != t.Island || ReferenceEquals(a, except)) continue;
+                double d = Math.Sqrt(Sq(a.X - end.X) + Sq(a.Y - end.Y));
+                double limit = a.Kind == LineNodeKind.Via ? a.LandRadius + end.Width : reach;
+                if (d <= limit && d < bestD) { best = a; bestD = d; }
+            }
+            return (best, bestD);
+        }
+
         foreach (var t in traces)
         {
-            foreach (var (atStart, end, placeholder) in new[] { (true, t.Start, t.StartNode), (false, t.End, t.EndNode) })
+            // Each end's nearest attachment — but never ONE attachment for both ends of a trace. A trace shorter than
+            // the reach finds the part, port or via at its near end from its far end too, and became a line from that
+            // node to itself (designer report, round 16: a 0.5 mm stub at a port label read as CPWG P3–P3). The nearer
+            // end keeps it; the other takes its next nearest, or is loose.
+            var start = resolved.Contains((t, true)) ? (Best: (Attachment?)null, D: double.MaxValue) : Nearest(t, t.Start, null);
+            var finish = resolved.Contains((t, false)) ? (Best: (Attachment?)null, D: double.MaxValue) : Nearest(t, t.End, null);
+            if (start.Best is { } shared && ReferenceEquals(shared, finish.Best))
+            {
+                if (start.D <= finish.D) finish = Nearest(t, t.End, shared);
+                else start = Nearest(t, t.Start, shared);
+            }
+
+            foreach (var (atStart, end, placeholder, best) in new[]
+                     { (true, t.Start, t.StartNode, start.Best), (false, t.End, t.EndNode, finish.Best) })
             {
                 if (resolved.Contains((t, atStart))) continue;
                 var line = atStart ? t.First : t.Last;
-                double reach = AttachReachWidths * end.Width + AttachReachMicrons * dbu;
-                Attachment? best = null;
-                double bestD = double.MaxValue;
-                foreach (var a in attachments)
-                {
-                    if (a.Island != t.Island) continue;
-                    double d = Math.Sqrt(Sq(a.X - end.X) + Sq(a.Y - end.Y));
-                    double limit = a.Kind == LineNodeKind.Via ? a.LandRadius + end.Width : reach;
-                    if (d <= limit && d < bestD) { best = a; bestD = d; }
-                }
                 if (best is null) { loose.Add((t, atStart, end, placeholder)); continue; }
                 // A via owns its land: the line stops at the land's edge (R-as5-5).
                 if (best.Kind == LineNodeKind.Via)

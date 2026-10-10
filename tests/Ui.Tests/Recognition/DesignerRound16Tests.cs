@@ -1,6 +1,7 @@
 // Designer report, round 16 — Create Schematic from Artwork and the way back. One test per claim:
 //   * a net the layout names (a shape's Net) names the recognised circuit's net;
-//   * a new stackup conductor or dielectric is like the last of its kind, or the generic board when it is the first.
+//   * a new stackup conductor or dielectric is like the last of its kind, or the generic board when it is the first;
+//   * a line shorter than the attach reach does not take its near end's port at its far end too.
 
 using System;
 using System.IO;
@@ -54,5 +55,23 @@ public sealed class DesignerRound16Tests : IDisposable
         vm.AddDielectricLayerCommand.Execute(null);
         var second = vm.Working.Stackup.Layers[^1];
         Assert.Equal((508_000L, 3.66, 0.0037), (second.ThicknessDbu, second.Epsr, second.TanD));
+    }
+
+    /// <summary>A 0.5 mm stub from a port label, ending on nothing: its far end is within the attach
+    /// reach (2·W + 1 mm) of the port at its own near end, and took it — a line from P1 to P1.</summary>
+    [Fact]
+    public void AShortLine_DoesNotTakeOnePortAtBothEnds()
+    {
+        var view = new LayoutView();
+        view.Shapes.Add(Rect(Bottom, 0, 0, 30_000, 20_000));
+        view.Shapes.Add(Rect(Top, 0, 4_900, 500, 5_100));
+        view.Shapes.Add(new LabelShape { Layer = Top, X = 0, Y = Um(5_000), Text = "1", IsPort = true });
+        var input = new RecognitionInput { View = view, Technology = TwoLayerWithMask(), Shapes = view.Shapes };
+
+        var result = ArtworkRecognition.Recognize(input);
+
+        Assert.True(result.Ok, result.Refusal);
+        var line = Assert.Single(result.Lines.Elements);
+        Assert.Equal(2, line.Nodes.Distinct().Count());
     }
 }

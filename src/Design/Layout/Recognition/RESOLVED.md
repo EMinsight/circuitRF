@@ -402,3 +402,12 @@ leave short gaps between a part pad and the next line start, which is the model,
 `NewStackupLayer` gave every kind a 1 µm thickness and the model defaults (εr 1, tanδ 0, σ 0). A conductor or
 dielectric now copies the last entry of its kind, or takes `SubstrateDefaults` (FR-4, 35 µm copper) when it is the
 first — the same named generic board an artwork-only import completes a stackup with.
+
+### A short line from a port to itself
+
+A 0.5 mm stub at a port label came out as `CPWG P3 P3`. Not port merging (`PortMergeMicrons` merges PORTS only): the
+end-attachment pass gave each end of a trace its nearest attachment within `2·W + 1 mm` independently, and with nothing
+at the far end the nearest was the port at the near end, 0.5 mm back along the line itself. One attachment now never
+takes both ends of a trace: the nearer end keeps it, the other takes its next nearest or is loose (an open end,
+reported as one). On the designer's board that changed this one element and the open-end count, nothing else. The
+end reach was already this size before round 15 widened the TAP reaches to match it.
