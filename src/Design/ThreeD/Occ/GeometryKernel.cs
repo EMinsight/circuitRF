@@ -89,6 +89,15 @@ public sealed record GeometryKernelFace(string Name, string Kind, double[] Box, 
     public double[] Normal { get; init; } = [];
 }
 
+/// <summary>brief-em3d-130 — one boundary loop of a flat face: its vertices, three doubles each in µm, in the wire's order on the
+/// face, whether every edge of it is a straight line, and the B-rep's own tolerance on it (µm): how far its vertices may sit
+/// from its edges and its face.</summary>
+public sealed record GeometryKernelLoop(double[] Points, bool Straight, double ToleranceUm = 0);
+
+/// <summary>brief-em3d-130 — one face's loops, in <see cref="GeometryKernel.Faces"/>' order: whether it is a plane and, when it is,
+/// the outer loop first and then each hole. A curved face has none.</summary>
+public sealed record GeometryKernelFaceLoops(string Name, bool Plane, IReadOnlyList<GeometryKernelLoop> Loops);
+
 /// <summary>One feature edge: its name (overview §1g), the two faces it separates, curve kind, length, smallest radius
 /// (0 for a line) and a polyline for drawing and snapping, three doubles per point.</summary>
 public sealed record GeometryKernelEdge(string Name, string FaceA, string FaceB, string Kind, double Length, double MinRadius, double[] Polyline)
@@ -599,6 +608,39 @@ public sealed class GeometryKernel : IDisposable
             });
         }
         _cache.PutMemory(key, faces, faces.Count * 256L + 256);
+        return faces;
+    }
+
+    /// <summary>brief-em3d-130 — each face's boundary loops (<see cref="GeometryKernelFaceLoops"/>), in the face table's order.</summary>
+    public IReadOnlyList<GeometryKernelFaceLoops> Loops(GeometryKernelTree tree, GeometryKernelBuildOptions? options = null, RunControl? control = null)
+    {
+        var o = options ?? GeometryKernelBuildOptions.Default;
+        var (path, id) = Require($"Reading the faces of '{tree.Object}'");
+        string key = Key("loops", HandleOf(tree, o), "", id);
+        if (_cache.TryMemory(key, out IReadOnlyList<GeometryKernelFaceLoops> hit))
+        {
+            Interlocked.Increment(ref _memoryHits);
+            return hit;
+        }
+        var reply = Guard(key, () =>
+        {
+            string handle = EnsureHeld(_model, path, id, tree, o, control);
+            var r = _model.Send(path, new GeometryKernelMessage(new JsonObject { ["op"] = "loops", ["shape"] = handle }),
+                                Deadlines.Other, control, "reading the faces of", tree.Object);
+            return r.Ok ? r : throw Refused(r, tree.Object);
+        });
+        List<GeometryKernelFaceLoops> faces = [];
+        long points = 0;
+        foreach (var f in reply.Json["faces"] as JsonArray ?? [])
+        {
+            if (f is null) continue;
+            var loops = (f["loops"] as JsonArray ?? []).Where(l => l is not null)
+                .Select(l => new GeometryKernelLoop(Numbers(l!["points"]) ?? [], l!["straight"]?.GetValue<bool>() ?? false,
+                                                    l!["tolerance"]?.GetValue<double>() ?? 0)).ToList();
+            points += loops.Sum(l => l.Points.Length);
+            faces.Add(new GeometryKernelFaceLoops(f["name"]?.GetValue<string>() ?? "", f["plane"]?.GetValue<bool>() ?? false, loops));
+        }
+        _cache.PutMemory(key, faces, points * 8L + faces.Count * 128L + 256);
         return faces;
     }
 

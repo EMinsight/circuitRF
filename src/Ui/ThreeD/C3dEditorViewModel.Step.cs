@@ -1,5 +1,5 @@
 // brief-em3d-68 — STEP parts in the 3D editor: the Import STEP commit, Reload from Source, Split into Solids (brief-em3d-129),
-// and the copies a save removes.
+// Replace with Prism / Box and Convert to Polyhedron (brief-em3d-130), and the copies a save removes.
 //
 // EVERY DECISION IS StepImport's (src/Design): which parts, their names, their materials, the copy, the fingerprints. This
 // file runs its reads off the UI thread, pushes ONE undo entry per import or reload, and keeps the copied bytes so an
@@ -303,6 +303,152 @@ public sealed partial class C3dEditorViewModel
                Tip: why ?? "One object per solid of this STEP part, gathered in a group named after it; each keeps the placement and material, " +
                            "and every face reference moves to the piece whose face it is.");
 
+    // ── Replace with Prism / Box, Convert to Polyhedron (brief-em3d-130) ─────────────────────
+
+    /// <summary>Replacements made — a counter for the gates.</summary>
+    public int StepConverts { get; private set; }
+
+    private Task<StepConvertAnalysis>? _convertAnalysis;
+    private (long Generation, string Name) _convertKey;
+
+    /// <summary>
+    /// Why <paramref name="kind"/> is disabled for the object at <paramref name="index"/>, or null. The cheap conditions first —
+    /// the kernel, a top-level Step object, built as ONE solid — then the analysis of its faces, which is read off the UI thread
+    /// once per elaboration: until it is in, the item says so and is disabled, and the menus are re-asked when it lands.
+    /// </summary>
+    public string? ConvertRefusal(StepConvertKind kind, int index)
+    {
+        if (ConvertBaseRefusal(kind, index) is { } why) return why;
+        var analysis = AnalyseForConvert(index);
+        if (!analysis.IsCompleted) return $"Reading the faces of '{Document.Objects[index].Name}'…";
+        var plan = analysis.Result[kind];
+        return plan.Refused ? string.Join(" ", plan.Refusals) : null;
+    }
+
+    /// <summary><see cref="ConvertRefusal"/> for the view's selection: exactly one object.</summary>
+    public string? ConvertSelectionRefusal(StepConvertKind kind)
+        => Targets() switch
+        {
+            [{ Instance: false } t] => ConvertRefusal(kind, t.Index),
+            [] => KernelMissing(StepConvert.CommandOf(kind)) ?? "Select one imported STEP object.",
+            _ => KernelMissing(StepConvert.CommandOf(kind)) ?? $"Select exactly one object: {StepConvert.CommandOf(kind)} acts on one STEP object.",
+        };
+
+    private string? ConvertBaseRefusal(StepConvertKind kind, int index)
+    {
+        if (KernelMissing(StepConvert.CommandOf(kind)) is { } kernel) return kernel;
+        if (IsOperandIndex(index) || index < 0 || index >= Document.Objects.Count) return "Select one imported STEP object.";
+        var obj = Document.Objects[index];
+        if (obj is not C3dStep step)
+            return StepAt(index) is not null
+                ? $"The STEP part in '{obj.Name}' is an operand of it; replace a STEP object before it is combined."
+                : $"'{obj.Name}' is not an imported STEP object.";
+        var built = Elaboration?.KernelBuilds.FirstOrDefault(b => b.Name == step.Name);
+        if (built is null || built.Refusal is not null) return $"'{step.Name}' is not built, so its faces are not known.";
+        if (built.Solids > 1) return $"'{step.Name}' is {built.Solids} solids; Split into Solids first, then replace each piece.";
+        return null;
+    }
+
+    /// <summary>The three plans for the object at <paramref name="index"/>, read off the UI thread from a copy of the document —
+    /// once per elaboration and object; the menus are re-asked when it completes.</summary>
+    public Task<StepConvertAnalysis> AnalyseForConvert(int index)
+    {
+        var key = (AdoptedGeneration, Document.Objects[index].Name);
+        if (_convertAnalysis is { } running && _convertKey == key) return running;
+        var working = C3dPersistence.Deserialize(C3dPersistence.Serialize(Document));
+        string path = FilePath;
+        var kernel = Kernel;
+        _convertKey = key;
+        var task = Task.Run(() =>
+        {
+            try { return StepConvert.Analyse(working, path, key.Name, kernel); }
+            catch (Exception e) when (e is StepImportException or CircuitRF.Design.ThreeD.Occ.GeometryKernelException or IOException)
+            {
+                return StepConvert.Refused(key.Name, index, e.Message);
+            }
+        });
+        _convertAnalysis = task;
+        task.ContinueWith(_ => _post(RaiseMenuStateChanged), TaskScheduler.Default);
+        return task;
+    }
+
+    /// <summary>
+    /// brief-em3d-130 — Replace with Prism, Replace with Box… or Convert to Polyhedron: a fresh plan read off the UI thread (the
+    /// document it is applied to is the one it was read from), every refusal to Messages at once, a confirmation stating what
+    /// changes for any result that is not the piece exactly (a box's size and volume; a curved face's facets), then ONE undo
+    /// entry, and the object selected.
+    /// </summary>
+    public async Task ReplaceStepAsync(StepConvertKind kind, int index, RunControl? control = null)
+    {
+        if (ConvertBaseRefusal(kind, index) is { } why) { StatusMessage = why; return; }
+        string name = Document.Objects[index].Name;
+        string before = C3dPersistence.Serialize(Document);
+        var working = C3dPersistence.Deserialize(before);
+        string path = FilePath;
+        var kernel = Kernel;
+        StepConvertPlan plan;
+        try
+        {
+            plan = await Task.Run(() => StepConvert.Analyse(working, path, name, kernel, control)[kind]);
+        }
+        catch (OperationCanceledException) { StatusMessage = $"{StepConvert.CommandOf(kind)} cancelled; nothing changed."; return; }
+        catch (Exception e) when (e is StepImportException or CircuitRF.Design.ThreeD.Occ.GeometryKernelException or IOException)
+        {
+            Report([e.Message], true);
+            return;
+        }
+        if (plan.Refused)
+        {
+            Report([$"'{name}' was not changed: {plan.Refusals.Count} reason{(plan.Refusals.Count == 1 ? "" : "s")}.", .. plan.Refusals], true);
+            return;
+        }
+        if (!plan.Exact && (Confirm is not { } ask || !await ask(plan.Summary + (kind == StepConvertKind.Polyhedron ? " Convert it?" : " Replace it?"))))
+        {
+            StatusMessage = $"{StepConvert.CommandOf(kind)} cancelled; nothing changed.";
+            return;
+        }
+        if (C3dPersistence.Serialize(Document) != before)
+        {
+            StatusMessage = $"The document changed while '{name}' was being read: try {StepConvert.CommandOf(kind)} again.";
+            return;
+        }
+        StepConvert.Apply(plan, working);
+        string description = kind switch
+        {
+            StepConvertKind.Prism => $"Replace {name} with a prism",
+            StepConvertKind.Box => $"Replace {name} with its bounding box",
+            _ => $"Convert {name} to a polyhedron",
+        };
+        Viewer.SetSelection([]);
+        _selectAfterAdopt = [name];
+        Push(new C3dDocumentEdit(description, before, C3dPersistence.Serialize(working), null, null, null, ApplyDocumentText));
+        StepConverts++;
+        Report([plan.Summary, .. plan.Moves.Select(m => m.ToString())], false);
+    }
+
+    /// <summary>The three items, each enabled only where it applies and saying why not otherwise.</summary>
+    private IEnumerable<Viewer3DMenuItem> ConvertItems(int index)
+    {
+        foreach (var kind in new[] { StepConvertKind.Prism, StepConvertKind.Box, StepConvertKind.Polyhedron })
+        {
+            string? why = ConvertRefusal(kind, index);
+            var k = kind;
+            yield return new Viewer3DMenuItem(kind == StepConvertKind.Box ? "Replace with Box…" : StepConvert.CommandOf(kind),
+                () => _ = ReplaceStepAsync(k, index), Enabled: why is null, Tip: why ?? ConvertTip(kind));
+        }
+    }
+
+    /// <summary>What each does, for an enabled item.</summary>
+    public static string ConvertTip(StepConvertKind kind) => kind switch
+    {
+        StepConvertKind.Prism => "This piece as a prism along x, y or z: its outline and length become ordinary parameters. A curved face " +
+                                 "is cut into flat facets, stated before anything changes. Every face reference moves to the face that coincides.",
+        StepConvertKind.Box => "This piece as its bounding box, whose size is then a parameter. Where the box is not the piece, the size " +
+                               "and the volume change are stated first; a face reference with no coinciding box face is refused.",
+        _ => "This piece as a polyhedron, so its faces and vertices can be edited: its flat faces exactly, each curved face cut into " +
+             "flat facets, stated before anything changes. Every reference on a flat face stays on it.",
+    };
+
     // ── the save (R-em3d68-4d) ───────────────────────────────────────────────────────────────
 
     /// <summary>After a save: every copy this session wrote that no open frame's Step objects name is deleted. Returns the
@@ -344,6 +490,7 @@ public sealed partial class C3dEditorViewModel
         yield return ReloadItem(step);
         int index = t.Index;
         yield return SplitItem(SplitRefusal(index), () => _ = SplitIntoSolidsAsync(index));
+        foreach (var item in ConvertItems(index)) yield return item;     // brief-em3d-130
     }
 
     private Viewer3DMenuItem ReloadItem(C3dStep step)

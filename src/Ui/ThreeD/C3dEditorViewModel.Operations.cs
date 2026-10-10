@@ -20,6 +20,7 @@ using System.Numerics;
 using Avalonia.Input;
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.ThreeD;
+using CircuitRF.Design.ThreeD.Step;
 using CircuitRF.Engine.Em3d;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
@@ -955,6 +956,9 @@ public sealed partial class C3dEditorViewModel
             case "ReseatWires": ReseatWireEnds(); break;
             case "StepReload" when Targets() is [{ Instance: false } st] && StepAt(st.Index) is { } step: _ = ReloadFromSourceAsync(step); break;
             case "StepSplit" when Targets() is [{ Instance: false } sp]: _ = SplitIntoSolidsAsync(sp.Index); break;
+            case "StepPrism" when Targets() is [{ Instance: false } cp]: _ = ReplaceStepAsync(StepConvertKind.Prism, cp.Index); break;
+            case "StepBox" when Targets() is [{ Instance: false } cb]: _ = ReplaceStepAsync(StepConvertKind.Box, cb.Index); break;
+            case "StepPolyhedron" when Targets() is [{ Instance: false } ch]: _ = ReplaceStepAsync(StepConvertKind.Polyhedron, ch.Index); break;
             case "Front": Order(OrderMove.ToFront); break;
             case "Forward": Order(OrderMove.Forward); break;
             case "Backward": Order(OrderMove.Backward); break;

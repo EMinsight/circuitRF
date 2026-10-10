@@ -19017,3 +19017,60 @@ Every finding was confirmed against the source before it was changed; none turne
 - **`check`'s finding reads the file only for an object the elaboration built as more than one solid** (`C3dKernelBuild.Solids`),
   and each file once; a nested Step object, which has no build of its own, is read.
 - Gate: `tests/Ui.Tests/ThreeD/StepSplitTests.cs`.
+
+## Editing an imported piece: Replace with Prism / Box, Convert to Polyhedron (2026-10-09, brief-em3d-130)
+
+The owner picked option (b) then (a): `src/Design/ThreeD/Step/StepConvert.cs`, a worker op `loops`, and a shell in
+`src/Ui/ThreeD/C3dEditorViewModel.Step.cs`. Option (c), editing a STEP face directly, was not built.
+
+- **The open question was settled before building: a polyhedron face DOES have holes.** `C3dFace.Holes` is honoured end to
+  end (`C3dValidation`'s closure and planarity, `C3dBrepBuild`, the worker's `PlanarFace`, which reverses a hole drawn the
+  same way round as its outline). So a slotted piece converts and nothing is refused for a hole. A prism's `Holes` likewise,
+  so Replace with Prism accepts a cap with a hole, which the brief's "one boundary loop per cap" did not expect.
+- **Prism is the polyhedron, recognised.** Rather than a second face-list test, `PrismOf` builds the exact polyhedron and
+  hands it to `C3dRecognition.ZPrism` (integer equality, already the lowering's) with the candidate axis turned to z by
+  `C3dBrepBuild.ToPlane`. **XZ is the left-handed frame**: its permutation is odd, so every ring is reversed first, or
+  `ZPrism`'s outward-volume check fails on a correct prism. The result must also have the polyhedron's `Volume6` exactly.
+  An extrusion along a tilted axis is refused; the polyhedron keeps it.
+- **The polyhedron is the piece's loops rounded to a DBU, and it is verified, not assumed.** Vertices are shared through the
+  rounded point (one B-rep vertex is one point, so neighbouring faces agree). Each outer loop is turned to agree with the
+  face's outward normal from `faces` and each hole against it, because a wire's own direction depends on the face's
+  orientation. It is refused when `C3dBrep` finds it open, not flat to a DBU, or holding a volume more than area × 1 DBU
+  from the piece's. Faces are named `face<n>` after the piece's own, so references read as they did.
+- **References move by building the replacement at identity and matching faces**, the same rule for all three. The test
+  is looser than `StepImport.SameFace`: the replacement's vertices are rounded, so the centroid is allowed two DBU and the
+  area the change from moving each edge one DBU (relative 1e-6 is too tight at a DBU of 1 nm on a millimetre face). A
+  face with no match is a refusal, never the nearest face.
+- **`StepImport.Repoint` writes a face NAME now, not a number** (`FaceRef.Move` takes the new face's name;
+  `StepImport.FaceName(n)` spells `face<n>` for reload and split), because a box's faces are `xmin` … and a prism's `side3`.
+- **A whole-object reference is no refusal here**, unlike a split: the replacement keeps the name, so a port's conductor or
+  a heat source over it still names it.
+- **The menus' enablement needs the geometry, and that is read off the UI thread.** `AnalyseForConvert` runs all three
+  plans once per (adopted elaboration, object) on a copy of the document and re-asks the menus when it lands; until then the
+  items are disabled with "Reading the faces of …". The command itself plans afresh, because `Apply` moves face images
+  onto the replacement object and a cached plan's object must not be applied twice.
+- **The brief's gate says "a port on a face"; a port names no face** (see 129 above), so the gate moves a face boundary.
+- Gate: `tests/Ui.Tests/ThreeD/StepPieceEditTests.cs` — fixtures written by circuitRF's own STEP writer at test time.
+
+### Same day: a real package's leads and body (owner bug report)
+
+Convert to Polyhedron was disabled for a vendor package's copper lead (a gull-wing: 4 cylindrical bend faces) and
+refused for its all-flat body. Box was no use for either.
+- **The body: a real file is sloppy.** Its B-rep tolerance is 1.7 µm, so the area enclosed by a drafted face's vertices
+  differs from the kernel's face area by ~1e-4, and the volume check (area × 1 DBU) refused it 30× over. `loops` now reports
+  each loop's tolerance (its edges' and vertices' largest); the volume and face-matching checks allow that rather than a DBU.
+- **Then four faces meeting at a corner do not meet in one point.** Snapping a vertex onto three of its planes left the
+  fourth face out of flat by µm (`IsPlanar` is 1 DBU). `Snap` now alternates: each vertex to the least-squares meeting of its
+  flat faces, each face to the mean offset of its vertices, until nothing is off by 1e-5 µm. Faces move only by the file's
+  own sloppiness; the body then converts exactly.
+- **The lead: curved faces are cut into facets** (overriding 130's "flat only" rule for Polyhedron and Prism, with the
+  approximation stated and confirmed as Box's is). From the kernel's tessellation: a flat face is its triangles' boundary
+  (so it shares the bend's edge nodes and nothing gaps), a curved face's coplanar triangles merge into strips named
+  `face<n>.<k>` (the cylinder conversion's `side.<k>` spelling), and a strip not flat to a DBU stays as triangles. A
+  gull-wing lead is then a prism along y.
+- **The mesher's limits do not mean what they say** (measured, scale-free): with a sensible linear deflection it cuts at
+  HALF its angle (15° asked → 7.5° facets), and with a huge one it ignores the angle (30° facets). So it is asked for
+  2 × 15° and a linear deflection of r(1 − cos 15°) on the smallest radius; a 90° bend is then 6 facets.
+- Gate additions in `StepPieceEditTests`: the rounded strip (faceted, still a prism) and a body whose corner the STEP text
+  puts 1.5 µm off its four faces (converts exactly, the corner back on them).
+

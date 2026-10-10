@@ -28,6 +28,7 @@
 //      tessellate   a held shape -> vertices f64, triangles u32, per-triangle face index u32
 //      faces        a held shape -> name, surface kind, tight box, area, min radius per face
 //      edges        a held shape -> name, faces, curve kind, length, min radius, polyline per edge
+//      loops        a held shape -> per face: a plane or not, and a plane's boundary loops in micrometres (brief 130)
 //      export       held shapes -> B-rep, STEP, PLY or STL bytes
 //      write-step   the elaborated model -> one STEP file: parts cut by precedence, assemblies, header (brief 69)
 //      import-step  STEP bytes (or a path) -> one held shape per part, names, colours, units, healing
@@ -84,6 +85,7 @@
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepFill_Generator.hxx>
 #include <BRepTools.hxx>
+#include <BRepTools_WireExplorer.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
@@ -1809,6 +1811,55 @@ static Frame OpFaces(const Json& req)
   return r.Finish();
 }
 
+// brief-em3d-130 -- each face's boundary loops, in the "faces" order: whether the face is a plane, and per wire (the outer
+// first, BRepTools::OuterWire, then the holes) its vertices in micrometres in the wire's order on the face, and whether every edge of
+// it is a straight line. What turns a flat-faced STEP piece into a polyhedron, exactly or not at all; a curved face's loops
+// are left out (nothing reads them).
+static Frame OpLoops(const Json& req)
+{
+  Held& h = Find(req);
+  Shapes faces;
+  TopExp::MapShapes(h.shape, TopAbs_FACE, faces);
+  Reply r;
+  r.j.Key("faces").BeginArr();
+  for (int i = 1; i <= faces.Extent(); ++i)
+  {
+    TopoDS_Face f = TopoDS::Face(faces(i));
+    bool plane = BRepAdaptor_Surface(f).GetType() == GeomAbs_Plane;
+    r.j.Begin().Str("name", h.faceNames[i - 1]).Bool("plane", plane);
+    r.j.Key("loops").BeginArr();
+    if (plane)
+    {
+      TopoDS_Wire outer = BRepTools::OuterWire(f);
+      std::vector<TopoDS_Wire> wires;
+      if (!outer.IsNull()) wires.push_back(outer);
+      for (TopExp_Explorer x(f, TopAbs_WIRE); x.More(); x.Next())
+        if (outer.IsNull() || !x.Current().IsSame(outer)) wires.push_back(TopoDS::Wire(x.Current()));
+      for (const TopoDS_Wire& w : wires)
+      {
+        bool straight = true;
+        double tol = 0;
+        r.j.Begin();
+        r.j.Key("points").BeginArr();
+        for (BRepTools_WireExplorer we(w, f); we.More(); we.Next())
+        {
+          if (BRep_Tool::Degenerated(we.Current())) continue;
+          if (BRepAdaptor_Curve(we.Current()).GetType() != GeomAbs_Line) straight = false;
+          tol = std::max({tol, BRep_Tool::Tolerance(we.Current()), BRep_Tool::Tolerance(we.CurrentVertex())});
+          gp_Pnt p = BRep_Tool::Pnt(we.CurrentVertex());
+          r.j.Num(p.X()).Num(p.Y()).Num(p.Z());
+        }
+        // The B-rep's own tolerance on this loop, um: how far its vertices may sit from its edges and its face -- a file's
+        // sloppiness, which a polyhedron through the vertices inherits.
+        r.j.EndArr().Bool("straight", straight).Num("tolerance", tol).End();
+      }
+    }
+    r.j.EndArr().End();
+  }
+  r.j.EndArr();
+  return r.Finish();
+}
+
 static const char* CurveKind(GeomAbs_CurveType t)
 {
   switch (t)
@@ -3107,6 +3158,7 @@ static Frame Dispatch(const Frame& in, bool& quit)
     if (name == "tessellate") return OpTessellate(req);
     if (name == "faces") return OpFaces(req);
     if (name == "edges") return OpEdges(req);
+    if (name == "loops") return OpLoops(req);
     if (name == "export") return OpExport(req);
     if (name == "write-step") return OpWriteStep(req, blobs);
     if (name == "import-step") return OpImportStep(req, blobs);

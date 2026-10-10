@@ -129,7 +129,7 @@ WARNING when its solids carry different colours (they are probably different mat
 tree menu offers **Split into Solids** (129). *Rejected:* splitting silently on open, because a document must not
 change because it was read.
 
-**D9 (open). Which editing to build (brief 130).** *Recommended:* 130 option **(b)**, *Replace with Box/Prism*, then
+**D9 (settled 2026-10-09: (b) then (a), as recommended; built). Which editing to build (brief 130).** *Recommended:* 130 option **(b)**, *Replace with Box/Prism*, then
 **(a)**, *Convert to Polyhedron*. Option (c), editing a curved STEP face directly, is a spike first. 130 sets out the
 costs.
 

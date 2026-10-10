@@ -6,6 +6,7 @@
 
 using CircuitRF.Design.ThreeD;
 using CircuitRF.Design.ThreeD.Kernel;
+using CircuitRF.Design.ThreeD.Step;
 using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
 using CircuitRF.Ui.ThreeD.Tools;
@@ -63,6 +64,12 @@ public sealed partial class C3dEditorViewModel
                 return Targets() is [{ Instance: false } st] && !IsOperandIndex(st.Index) && ReloadRefusal(StepAt(st.Index)) is null;
             case "StepSplit":
                 return SplitSelectionRefusal() is null;
+            case "StepPrism":      // brief-em3d-130
+                return ConvertSelectionRefusal(StepConvertKind.Prism) is null;
+            case "StepBox":
+                return ConvertSelectionRefusal(StepConvertKind.Box) is null;
+            case "StepPolyhedron":
+                return ConvertSelectionRefusal(StepConvertKind.Polyhedron) is null;
             case "BooleanSubtract" or "BooleanUnite" or "BooleanIntersect":
                 return BooleanRefusal() is null;
             case "BooleanDissolve":

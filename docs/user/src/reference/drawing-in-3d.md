@@ -822,6 +822,36 @@ tooltip says which condition failed otherwise. It is one undo entry.
 From the command line there is no split verb: the pieces are written as Step objects with `Solid` 1 … n (the
 numbers `explain` lists), and `check` names any reference that no longer lands.
 
+### Editing an imported piece {#step-piece-edit}
+
+A Step piece moves, rotates, takes a material and is a boolean operand, but its dimensions are not parameters:
+the face and vertex editor edits a box, a prism or a polyhedron. Three commands on a piece's right-click menu
+(and *3D ▸ STEP*) turn it into one of those, so a lead can be lengthened to meet its pad, a body thinned, or a
+detailed body replaced by a plain block that meshes smaller.
+
+- **Replace with Prism** — offered when the piece is an extrusion along x, y or z: two opposite flat caps with the
+  same outline, and every other face flat and square to them. A slot through it is kept as a hole, and a gull-wing
+  lead counts, its bends cut into facets as below. The outline and the length are then ordinary parameters.
+- **Replace with Box…** — offered for any piece: its bounding box in its own frame. Unless the piece is exactly
+  a box, it first says what changes, for example *'body' is replaced by its bounding box: 6.10 × 9.80 × 1.27 mm,
+  +7.4 % volume*, and replaces it only when you agree.
+- **Convert to Polyhedron** — offered for any piece of one solid, so you can move a face along its normal or drag
+  a vertex. Flat faces, including faces with holes, keep their names, `face1`, `face2` …. Each curved face, such as
+  a lead's bend, is cut into flat facets that each turn at most 15°, named `face9.1`, `face9.2` …. When a piece has
+  curved faces, the command first states how many facets and the volume change, for example *its 4 cylindrical
+  faces are cut into 22 flat facets, each turning at most 15°, −0.1 % volume*, and converts only when you agree.
+
+A model's faces and vertices often disagree by a micrometre or two (the file's own tolerance). The conversion
+puts every vertex on its flat faces, so a body with only flat faces still converts exactly.
+
+Each keeps the piece's name, material, group, placement, appearance and transparency, so nothing moves, and each
+is one undo entry. The copied STEP file is not touched. Every face boundary, probe, field plot, face image and
+thermal boundary on the piece moves to the face of the new object that coincides with it. A reference with no
+such face, such as a box face that the piece's chamfer cut back, stops the command with the reason in Messages;
+it is never moved to the nearest face; a reference on a curved face is refused this way too, since no single
+facet is it. A command that does not apply is disabled, and its tooltip says why: an outline that is not an
+extrusion, for Prism, and a piece of several solids, which needs **Split into Solids** first.
+
 **Export STEP…** (*File ▸ Export ▸ STEP…*) writes the active 3D view or layout:
 
 - **Structure**: **Flattened** writes one product per solid; **As assembly** writes each placed cell as a

@@ -1,7 +1,7 @@
 # Brief 130 — Editing an imported piece (decision brief)
 
 **Series:** [3D EM, ninth series](brief-em3d-126-overview.md) · **Tag:** `R-em3d130-n`
-**Status:** **Decision brief: builds nothing until the owner picks** (overview D9).
+**Status:** **Decided 2026-10-09: the owner picked (b) then (a), as recommended; both built** (§4). Option (c) was not built.
 **Area, depending on the option chosen:** `src/Design/ThreeD/Step/` (a new `StepConvert.cs`), `src/Design/ThreeD/Kernel/`
 (`C3dFaceEdit`/`C3dBrep`), `tools/geometry-worker/geometry_worker.cpp` (option c only), `src/Ui/ThreeD/` (the tree menu and
 the face-edit tool). Findings in `src/Design/RESOLVED.md`.
@@ -101,3 +101,20 @@ Each item becomes a section of this brief, rewritten as a build brief when picke
 6. Gates on hand-written fixtures: an extruded L-section (a prism), a block with a chamfer (box only, with the volume
    change stated), a bent strip with a cylindrical face (refused by (a) and by Replace with Prism, offered Replace
    with Box), and a port on a face moved through each.
+
+## 4. Built (2026-10-09)
+
+- **Holes.** `C3dPolyhedron`'s faces have hole loops, honoured end to end, so a holed face converts and is never refused.
+  `C3dPrism` has holes too, so a cap with a hole is still a prism.
+- **Worker:** `loops`, each face's plane flag and its boundary loops in µm (outer first), with whether every edge is straight.
+- **`src/Design/ThreeD/Step/StepConvert.cs`:** `Analyse` reads the piece once and plans all three; `PrismOf`, `BoxOf`,
+  `PolyhedronOf` pick one; `Apply` is shared. Prism is the exact polyhedron recognised by `C3dRecognition.ZPrism` along z, y
+  or x. Box's `Summary` is the confirmation sentence.
+- **UI:** the tree's and the canvas's menus and *3D ▸ STEP*: Replace with Prism, Replace with Box…, Convert to Polyhedron.
+  Each is disabled with its reason as a tooltip, and each is one undo entry.
+- **Gate:** `tests/Ui.Tests/ThreeD/StepPieceEditTests.cs`. A port names no face, so the gate's reference is a face boundary.
+- Findings: `src/Design/RESOLVED.md`.
+- **After the owner's first trial:** a gull-wing lead was refused (curved bends) and a vendor body too (1.7 µm file
+  tolerance). Convert to Polyhedron and Replace with Prism now cut curved faces into ≤ 15° facets, stated and confirmed,
+  and every vertex is snapped onto its flat faces. Detail in `src/Design/RESOLVED.md`.
+

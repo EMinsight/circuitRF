@@ -175,7 +175,7 @@ public static class StepSplit
         if (StepImport.References(doc, old).FirstOrDefault(r => !plan.Map.ContainsKey(r.Face)) is { } stale)
             throw new StepImportException(StepDiagnostics.Split($"{stale.What} is on {plan.Object}/face{stale.Face}, which the plan did not place: split it again."));
 
-        StepImport.Repoint(doc, old, n => plan.Map.TryGetValue(n, out var t) ? (plan.Pieces[t.Piece], t.Face) : null);
+        StepImport.Repoint(doc, old, n => plan.Map.TryGetValue(n, out var t) ? (plan.Pieces[t.Piece], StepImport.FaceName(t.Face)) : null);
         doc.Objects.RemoveAt(plan.Index);
         doc.Objects.InsertRange(plan.Index, plan.Pieces);
         return plan.Pieces;
@@ -267,7 +267,7 @@ public static class StepSplit
 
     /// <summary>The operation <paramref name="step"/> is a direct operand of, and its role there — or null when it is no
     /// operand.</summary>
-    private static (C3dObject Op, string Role)? OperandOf(C3dDocument doc, C3dStep step)
+    internal static (C3dObject Op, string Role)? OperandOf(C3dDocument doc, C3dStep step)
     {
         foreach (var top in doc.Objects)
             foreach (var o in C3dOperands.SelfAndDescendants(top))
@@ -278,11 +278,12 @@ public static class StepSplit
         return null;
     }
 
-    /// <summary>An operation's operand has no group and no tree row of its own, so there is nothing to split it into.</summary>
-    private static string OperandRefusal(C3dStep step, C3dObject op, string role)
+    /// <summary>An operation's operand has no group and no tree row of its own, so there is nothing to split it into — nor a
+    /// place to put what replaces it (brief 130, whose <paramref name="verb"/> is "replace it").</summary>
+    internal static string OperandRefusal(C3dStep step, C3dObject op, string role, string verb = "split it")
     {
         string label = step.Name.Length > 0 ? $"'{step.Name}'" : $"Part {step.Part} of '{step.File}'";
-        return $"{label} is the {role} of '{op.Name}'; split it before it is combined" +
+        return $"{label} is the {role} of '{op.Name}'; {verb} before it is combined" +
                (op is C3dBoolean ? $" (Dissolve Boolean makes it a top-level object again)." : ".");
     }
 }

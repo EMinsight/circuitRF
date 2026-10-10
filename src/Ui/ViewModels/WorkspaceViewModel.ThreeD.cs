@@ -849,6 +849,15 @@ public partial class WorkspaceViewModel
     public string ThreeDStepSplitTip => ActiveC3dEditor() is not { } e ? "Requires an active 3D editor."
         : e.SplitSelectionRefusal() ?? "One object per solid of this STEP part, gathered in a group named after it; every face reference moves to the piece whose face it is.";
 
+    /// <summary>brief-em3d-130 — 3D ▸ STEP ▸ Replace with Prism / Replace with Box… / Convert to Polyhedron: what each does, or why
+    /// it cannot.</summary>
+    public string ThreeDStepPrismTip => ConvertTip(CircuitRF.Design.ThreeD.Step.StepConvertKind.Prism);
+    public string ThreeDStepBoxTip => ConvertTip(CircuitRF.Design.ThreeD.Step.StepConvertKind.Box);
+    public string ThreeDStepPolyhedronTip => ConvertTip(CircuitRF.Design.ThreeD.Step.StepConvertKind.Polyhedron);
+
+    private string ConvertTip(CircuitRF.Design.ThreeD.Step.StepConvertKind kind) => ActiveC3dEditor() is not { } e ? "Requires an active 3D editor."
+        : e.ConvertSelectionRefusal(kind) ?? C3dEditorViewModel.ConvertTip(kind);
+
     private static readonly string[] ThreeDSelectionProperties =
     [
         nameof(ThreeDModifyMenuEnabled), nameof(ThreeDTransformMenuEnabled), nameof(ThreeDAlignMenuEnabled),
@@ -856,6 +865,7 @@ public partial class WorkspaceViewModel
         nameof(ThreeDVertexMenuEnabled), nameof(ThreeDBooleanMenuEnabled),
         nameof(ThreeDTemperatureMenuEnabled), nameof(ThreeDTemperatureSubmenuEnabled), nameof(ThreeDTemperatureTip),
         nameof(ThreeDStepReloadTip), nameof(ThreeDStepSplitTip),
+        nameof(ThreeDStepPrismTip), nameof(ThreeDStepBoxTip), nameof(ThreeDStepPolyhedronTip),
     ];
 
     /// <summary>Re-asks every item that depends on the active editor's selection.</summary>

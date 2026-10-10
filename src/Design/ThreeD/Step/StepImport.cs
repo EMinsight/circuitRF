@@ -213,6 +213,10 @@ public static class StepDiagnostics
     public static Diagnostic Split(string why) => Diagnostic.Create(
         "step.split", DiagnosticSeverity.Error, "{why}", ("why", why));
 
+    /// <summary>brief-em3d-130 — Replace with Prism / Box or Convert to Polyhedron refused, every reason in one sentence list.</summary>
+    public static Diagnostic Convert(string why) => Diagnostic.Create(
+        "step.convert", DiagnosticSeverity.Error, "{why}", ("why", why));
+
     public static Diagnostic NotNamed(string file) => Diagnostic.Create(
         "step.reload.not-named", DiagnosticSeverity.Error, "No object names '{file}'.", ("file", file));
 
@@ -839,7 +843,7 @@ public static class StepImport
         var (copy, created) = CopyInto(dir, plan.File, plan.Bytes, plan.Hash, write: true);
         foreach (var obj in plan.Accepted)
         {
-            if (plan.Maps.TryGetValue(obj, out var map) && map.Count > 0) Repoint(doc, obj, n => map.TryGetValue(n, out int m) ? (null, m) : null);
+            if (plan.Maps.TryGetValue(obj, out var map) && map.Count > 0) Repoint(doc, obj, n => map.TryGetValue(n, out int m) ? (null, FaceName(m)) : null);
             if (plan.SolidMoves.FirstOrDefault(m => m.Object == obj.Name) is { } moved) obj.Solid = moved.To;
             obj.File = System.IO.Path.GetFileName(copy);
             obj.Hash = plan.Hash;
@@ -885,7 +889,7 @@ public static class StepImport
     /// <summary>One reference into <c>face&lt;n&gt;</c> of a Step object: the face, in words for a refusal, and how to write it
     /// onto another face — of the same object (owner null), or of <c>Owner</c>, a top-level object taking it over (brief 129's
     /// split). Null for a fillet's or chamfer's edge, which <see cref="Repoint"/> rewrites whole.</summary>
-    internal sealed record FaceRef(int Face, string What, Action<C3dObject?, int>? Move);
+    internal sealed record FaceRef(int Face, string What, Action<C3dObject?, string>? Move);
 
     /// <summary>Where a Step object's faces appear, and under what prefix: each (owner name, prefix) its faces are named by.</summary>
     private static List<(string Owner, string Prefix)> Owners(C3dDocument doc, C3dStep step)
@@ -1063,19 +1067,23 @@ public static class StepImport
         return m.Success && m.Groups["p"].Value.Length == 0 && int.TryParse(m.Groups["n"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int n) ? n : null;
     }
 
-    private static string Renamed(string name, string prefix, int to)
+    private static string Renamed(string name, string prefix, string to)
     {
         if (FaceNumber(name, prefix) is null) return name;
         var m = FaceField.Match(name[prefix.Length..]);
-        return prefix + "face" + to.ToString(CultureInfo.InvariantCulture) + m.Groups["s"].Value;
+        return prefix + to + m.Groups["s"].Value;
     }
 
+    /// <summary><c>face&lt;n&gt;</c>: how a Step object's n-th face is named.</summary>
+    internal static string FaceName(int n) => "face" + n.ToString(CultureInfo.InvariantCulture);
+
     /// <summary>
-    /// Writes every reference into <paramref name="step"/>'s faces onto the face <paramref name="to"/> gives for its number —
-    /// on the same object (a null owner: a reload), or on another top-level object (a split). A number <paramref name="to"/>
-    /// has no answer for is left as it is. An edge's two faces stay on the operation that names them.
+    /// Writes every reference into <paramref name="step"/>'s faces onto the face <paramref name="to"/> gives for its number, BY
+    /// NAME — on the same object (a null owner: a reload), or on another top-level object (a split, or brief 130's replacement,
+    /// whose faces are <c>xmin</c>, <c>side3</c> …). A number <paramref name="to"/> has no answer for is left as it is. An
+    /// edge's two faces stay on the operation that names them.
     /// </summary>
-    internal static void Repoint(C3dDocument doc, C3dStep step, Func<int, (C3dObject? Owner, int Face)?> to)
+    internal static void Repoint(C3dDocument doc, C3dStep step, Func<int, (C3dObject? Owner, string Face)?> to)
     {
         var edgeOwners = EdgeOwners(doc, step);
         foreach (var r in References(doc, step))

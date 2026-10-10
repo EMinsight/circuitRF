@@ -441,6 +441,10 @@
                                 <NativeMenu>
                                     <NativeMenuItem Header="Reload from Source" ToolTip="{Binding ThreeDStepReloadTip}" Command="{Binding ThreeDModifyCommand}" CommandParameter="StepReload"/>
                                     <NativeMenuItem Header="Split into Solids" ToolTip="{Binding ThreeDStepSplitTip}" Command="{Binding ThreeDModifyCommand}" CommandParameter="StepSplit"/>
+                                    <NativeMenuItemSeparator/>
+                                    <NativeMenuItem Header="Replace with Prism" ToolTip="{Binding ThreeDStepPrismTip}" Command="{Binding ThreeDModifyCommand}" CommandParameter="StepPrism"/>
+                                    <NativeMenuItem Header="Replace with Box…" ToolTip="{Binding ThreeDStepBoxTip}" Command="{Binding ThreeDModifyCommand}" CommandParameter="StepBox"/>
+                                    <NativeMenuItem Header="Convert to Polyhedron" ToolTip="{Binding ThreeDStepPolyhedronTip}" Command="{Binding ThreeDModifyCommand}" CommandParameter="StepPolyhedron"/>
                                 </NativeMenu>
                             </NativeMenuItem.Menu>
                         </NativeMenuItem>
@@ -1366,6 +1370,13 @@
                               ToolTip.Tip="{Binding ThreeDStepReloadTip}" ToolTip.ShowOnDisabled="True"/>
                     <MenuItem Header="_Split into Solids" Command="{Binding ThreeDModifyCommand}" CommandParameter="StepSplit"
                               ToolTip.Tip="{Binding ThreeDStepSplitTip}" ToolTip.ShowOnDisabled="True"/>
+                    <Separator/>
+                    <MenuItem Header="Replace with _Prism" Command="{Binding ThreeDModifyCommand}" CommandParameter="StepPrism"
+                              ToolTip.Tip="{Binding ThreeDStepPrismTip}" ToolTip.ShowOnDisabled="True"/>
+                    <MenuItem Header="Replace with _Box…" Command="{Binding ThreeDModifyCommand}" CommandParameter="StepBox"
+                              ToolTip.Tip="{Binding ThreeDStepBoxTip}" ToolTip.ShowOnDisabled="True"/>
+                    <MenuItem Header="Convert to Pol_yhedron" Command="{Binding ThreeDModifyCommand}" CommandParameter="StepPolyhedron"
+                              ToolTip.Tip="{Binding ThreeDStepPolyhedronTip}" ToolTip.ShowOnDisabled="True"/>
                 </MenuItem>
                 <MenuItem Header="Mea_sure" Command="{Binding ThreeDMeasureCommand}"
                           ToolTip.Tip="Two snapped points: x, y, z, the deltas and the distance, every number copyable (M). Requires an active 3D document.">

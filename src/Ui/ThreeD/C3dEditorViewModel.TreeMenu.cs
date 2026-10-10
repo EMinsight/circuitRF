@@ -140,6 +140,8 @@ public sealed partial class C3dEditorViewModel
                     items.Add(ReloadItem(step));
                     // brief-em3d-129 R-em3d129-3a — enabled for a top-level Step object of several solids; else says which condition failed.
                     items.Add(SplitItem(SplitRefusal(index), () => _ = SplitIntoSolidsAsync(index)));
+                    // brief-em3d-130 — what a piece can become that the face and vertex editor edits.
+                    items.AddRange(ConvertItems(index));
                     items.Add(Viewer3DMenuItem.Separator);
                 }
                 items.Add(new Viewer3DMenuItem("Rename…", () => ShowProperties(rename: true)));
