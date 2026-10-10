@@ -911,6 +911,14 @@ internal static class DocumentSchema
             A polyline that has Points3 ignores its Points, so an expression in those is refused on
             read. `check` names a point that does not resolve as `'w1' point 2 z = h_loop: …`, 1-based.
             Outline, Holes and a polyhedron's Vertices hold numbers only.
+          * A WIRE'S LoopHeight AND Span may be HELD: `"LoopHeight": { "Expr": "h_loop", "Unit": "Um" }`,
+            `"Span": { "Expr": "s_w", "Unit": "Um" }`. Each is written only when held. Elaboration shapes
+            the points to them, Span first: Span moves the end foot along the run in plan with the
+            start pinned, and LoopHeight (the lower pad's top to the top of the wire at its apex)
+            scales every point's rise above the foot-to-foot chord. So changing the variable changes
+            the wire. The ends keep their z, and an end a held span moves off its pad is refused as any
+            end off its pad is. A held span refuses an expression in any point's x or y but the
+            start's; a held loop height refuses one in an interior point's z.
           * UNITS. A field's unit is its SITE unit. It is skipped when the expression is
             unit-bearing — it holds a unit literal (`10mil`) or references a name that carries a
             unit of its own (var-unit-wins) — and it then goes to the bare numbers ADDED to,

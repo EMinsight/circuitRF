@@ -58,6 +58,10 @@ public sealed partial class C3dVariablesViewModel(C3dEditorViewModel editor) : O
     [ObservableProperty] private string _newExpression = "";
     [ObservableProperty] private string _newUnit = "";
 
+    /// <summary>Names a dimension uses that nothing defines (<c>Used but not defined: mySpan</c>), or empty. The first of them
+    /// is offered in the Add row's name while that is empty, so defining it is a value and Enter.</summary>
+    [ObservableProperty] private string _unknownText = "";
+
     /// <summary>Whether the view is in a cell: Promote and Link need one.</summary>
     public bool InCell => editor.Cell.InCell;
 
@@ -115,6 +119,8 @@ public sealed partial class C3dVariablesViewModel(C3dEditorViewModel editor) : O
             });
         }
         Selected = Rows.FirstOrDefault(r => r.Name == keep);
+        UnknownText = res.Unknown.Count == 0 ? "" : $"Used but not defined: {string.Join(", ", res.Unknown)}";
+        if (NewName.Length == 0 && res.Unknown.Count > 0) NewName = res.Unknown.First();
         OnPropertyChanged(nameof(InCell));
         OnPropertyChanged(nameof(Heading));
     }

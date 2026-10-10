@@ -697,6 +697,10 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         private readonly List<string> _notes = [];
         private readonly List<string> _warnings = [];
         private readonly List<string> _refusals = [];
+        /// <summary>brief-em3d-135 follow-up — the top document's items holding a field that did not resolve, left out of the
+        /// build; and its wires whose only such field is a held loop height or span, built as they stand.</summary>
+        private readonly HashSet<string> _broken = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _unheld = new(StringComparer.Ordinal);
         private readonly Dictionary<string, HashSet<string>> _nets = new(StringComparer.Ordinal);
         private readonly List<string> _groundBand = [];
         private readonly Dictionary<string, Em3dObjectOrigin> _origins = new(StringComparer.Ordinal);
@@ -756,15 +760,22 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             Read(cell.CcellPath);
             ReadTech(tech);
 
-            // brief-em3d-51 R-em3d51-5a — every expression resolves before any geometry is built; a document whose names or
-            // fields do not resolve is refused with the engine's message and builds nothing.
+            // brief-em3d-51 R-em3d51-5a — every expression resolves before any geometry is built, and a document whose names or
+            // fields do not resolve is refused with the engine's message, so nothing runs from it (Ok is false). What resolved
+            // IS built — the owner's rule, a best attempt at drawing what works (brief-em3d-135 follow-up): a mistyped name in
+            // one wire's span blanked the whole drawing, so the one place the mistake was could not be seen either. An item
+            // holding a field that did not resolve is left out (its numbers are not its expression's), except a wire whose only
+            // such fields are its held loop height or span: its points are numbers of their own, so it is drawn as it stands.
             var resolution = C3dResolver.Resolve(doc, cell, null, options.Sets);
             _refusals.AddRange(resolution.Errors);
             _warnings.AddRange(resolution.Warnings);
             _notes.AddRange(resolution.Notes);
             _notes.AddRange(resolution.Infos);
-            if (resolution.Ok)
-                Document(doc, resolution, path, tech, C3dTransform.Identity, "", [(CellOf(path), "", path)], exact: true);
+            foreach (var f in resolution.FieldErrors)
+                if (f.Path is nameof(C3dWire.LoopHeight) or nameof(C3dWire.Span) && doc.Objects.FirstOrDefault(o => o.Name == f.Item) is C3dWire)
+                    _unheld.Add(f.Item);
+                else _broken.Add(f.Item);
+            Document(doc, resolution, path, tech, C3dTransform.Identity, "", [(CellOf(path), "", path)], exact: true);
 
             if (_polylines > 0)
                 _notes.Add($"{_polylines} polyline(s) are construction geometry and are not in the 3D problem.");
@@ -860,6 +871,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                 Steps(obj);
                 if (obj is C3dPolyline) { _polylines++; continue; }
                 if (obj is C3dWire) continue;                       // after the instances: see Wires
+                if (prefix.Length == 0 && _broken.Contains(obj.Name)) continue;
                 _topObject = obj.Name;
                 _transparency = obj.Transparency;
                 _appearance = obj.Appearance;
@@ -879,7 +891,9 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
             }
 
             string baseDir = Path.GetDirectoryName(path)!;
-            foreach (var inst in doc.Instances) Modelled(inst.Model, () => Instance(doc, resolution, inst, baseDir, world, prefix, stack, exact));
+            foreach (var inst in doc.Instances)
+                if (prefix.Length > 0 || !_broken.Contains(inst.Name))
+                    Modelled(inst.Model, () => Instance(doc, resolution, inst, baseDir, world, prefix, stack, exact));
             if (doc.Objects.Any(o => o is C3dWire)) Wires(doc, path, tech, world, prefix);
         }
 
@@ -1184,11 +1198,17 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
         {
             string techName = TechName(tech);
             Know(tech, techName);
-            var elements = doc.Objects.OfType<C3dWire>().SelectMany(src => C3dWires.Elements(src).Select(e => (Source: src, e.Wire))).ToList();
+            var workspace = new WireBondWorkspace(path, WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(path)) ?? workspaceCws);
+            // brief-em3d-135 — a held loop height or span shapes the drawn wire before its elements are copied from it.
+            var held = new Dictionary<C3dWire, string>();
+            bool Top(string name, HashSet<string> set) => prefix.Length == 0 && set.Contains(name);
+            var drawnWires = doc.Objects.OfType<C3dWire>().Where(src => !Top(src.Name, _broken)).ToList();
+            foreach (var src in drawnWires)
+                if (!Top(src.Name, _unheld) && C3dWires.Hold(src, prefix + src.Name, doc.DbuPerMicron, workspace) is { } why) held[src] = why;
+            var elements = drawnWires.SelectMany(src => C3dWires.Elements(src).Select(e => (Source: src, e.Wire))).ToList();
             var wireNames = new HashSet<string>(elements.Select(e => prefix + e.Wire.Name), StringComparer.Ordinal);
             var pads = C3dWires.Pads(_solids, _sheets, prefix, wireNames);
             double tol = C3dLowering.Metres(1, _topDbu);
-            var workspace = new WireBondWorkspace(path, WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(path)) ?? workspaceCws);
             if (elements.Count > 0) Read(workspace.WorkspaceRules().ResolvedPath);
             // 3D editor round 4 — a wire array is one wire per element, each resolved and refused on its own (w1[2]).
             foreach (var (drawn, w) in elements)
@@ -1210,6 +1230,7 @@ public sealed class C3dElaborator(TechnologyCache? technologies = null, Geometry
                               "(Sigma20), so it is not a metal.";
                 else if (w.Role is { } role && role != Em3dRole.Conductor)
                     refusal = $"Wire '{name}' has the role {role}; a wire is a conductor.";
+                refusal ??= held.GetValueOrDefault(drawn);
                 C3dWireResult? result = null;
                 if (refusal is null)
                 {

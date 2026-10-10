@@ -991,6 +991,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "render.em3d.multiple-views",
         "render.em3d.not-3d",
         "render.em3d.not-applicable",
+        // brief-em3d-135 follow-up — a view refused as a whole is drawn from what resolved, each gap said.
+        "render.em3d.partial",
         "render.em3d.planar",
         "render.em3d.problems",
         "render.em3d.scale-bar-iso",

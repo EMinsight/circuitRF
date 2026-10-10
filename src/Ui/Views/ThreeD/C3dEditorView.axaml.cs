@@ -543,6 +543,15 @@ public partial class C3dEditorView : UserControl
     private void OnVariablePromote(object? sender, RoutedEventArgs e) { if (RowOf(sender) is { } r) _vm?.Variables?.Promote(r); }
     private void OnVariableAdd(object? sender, RoutedEventArgs e) => _vm?.Variables?.Add();
 
+    /// <summary>Enter in the Add a VAR row adds it, as Enter sets a row's value: only the + below it did, and a VAR typed and
+    /// Entered was never added — the document stayed clean and the name a dimension used stayed unknown.</summary>
+    private void OnNewVariableKey(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        _vm?.Variables?.Add();
+        e.Handled = true;
+    }
+
     // brief-em3d-48 — the breadcrumb and the Pop Out button: the view model asks about a dirty child.
     private void OnPopOutClick(object? sender, RoutedEventArgs e) => _ = _vm?.PopOutAsync();
 

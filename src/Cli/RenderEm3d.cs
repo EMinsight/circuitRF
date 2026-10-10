@@ -141,6 +141,18 @@ internal static class RenderEm3d
         // A --setup the view does not have is refused naming the setups it does, not read as a planar setup.
         if (req.Setup is not null && loaded.Generated is null && loaded.Refusal is { } notChosen)
             return JsonRun.Fail(CliDiagnostics.EmThreeDSetup(path, notChosen));
+        // brief-em3d-135 follow-up — a picture is a best attempt at what works: a view refused as a whole is drawn from what
+        // resolved, and each refusal is said, so what is missing from the picture is never silent.
+        if (Em3dSetupSource.WhatResolved(loaded) is { } partial)
+        {
+            foreach (string why in loaded.Elaboration!.Refusals)
+            {
+                var d = CliDiagnostics.RenderEm3dPartial(path, why);
+                Console.Error.WriteLine("warning: " + d.Render());
+                JsonRun.Note(d);
+            }
+            loaded = partial;
+        }
         return null;
     }
 

@@ -2111,7 +2111,10 @@ generator pads by λ/8 at the lowest frequency); a face outside the frame is lab
 Conductors take their drawing layer's colour from the technology; `--json` adds `render.em3d` with the
 plane after snapping, in metres, and every object the picture drew. Gate:
 `tests/Ui.Tests/Em3d/Em3dRenderExplainTests.cs` — the verb as a process against the in-process render,
-section and outline, SVG and PDF.
+section and outline, SVG and PDF. **A `.c3d` that does not build as a whole is still drawn**: what
+resolved, in a box at its own extent, with one `render.em3d.partial` warning per thing left out (a
+field naming an undefined variable, a wire off its pad), exit 0. A picture is a best attempt at what
+works; a run of the same file still refuses.
 
 #### 13.8.1 A field plot, headlessly (`--field`, `--list-fields`)
 

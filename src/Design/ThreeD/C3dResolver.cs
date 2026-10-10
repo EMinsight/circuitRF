@@ -464,7 +464,7 @@ public static class C3dResolver
     private static string Where(C3dBoundField f) => C3dBindings.Label(f.Spec, f.Component, f.Path);
 
     private static bool IsSize(C3dBoundField f)
-        => f.Spec.Property is nameof(C3dBox.Size) or nameof(C3dCylinder.Radius);
+        => f.Spec.Property is nameof(C3dBox.Size) or nameof(C3dCylinder.Radius) or nameof(C3dWire.LoopHeight) or nameof(C3dWire.Span);
 
     private static void Use(C3dResolution r, string expr, string item, string path, Scope scope)
     {

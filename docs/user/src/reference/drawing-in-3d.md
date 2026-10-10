@@ -1192,6 +1192,11 @@ one layout.
   scales the wire's rise above its feet and keeps every x and y; a span moves the end foot along the wire's
   direction, the start staying put, and the end must land on a pad. Its **diameter** is in the display unit,
   like every other length there.
+- Type a **variable or an expression** into loop height or span (`h_loop`, `2*pitch`) and the wire holds
+  it: change the variable and the wire reshapes to match. A number sets it once. Clear the field to let go;
+  the wire keeps the shape it has. A name that isn't defined is refused and the field keeps its value, as in
+  every Inspector field: add the variable in Variables first. While a span is held, only the start's x and y can hold an expression;
+  while a loop height is held, the points between the ends can't have an expression in z.
 - **A wire does not follow its pad.** Re-routing would change its inductance without telling you, so a
   wire whose pad has moved is drawn red, flagged in the tree, and refused by a run. *Re-Seat Wire Ends*
   puts each end back on the pad now under it.

@@ -2405,6 +2405,13 @@ internal static class CliDiagnostics
         "render: the 3D problem of '{path}' could not be built, so there is nothing to draw: {reason}",
         ("path", path), ("reason", reason));
 
+    /// <summary>brief-em3d-135 follow-up — a 3D view refused as a whole is drawn from what resolved: one of these per thing
+    /// it left out, so the picture's gaps are said.</summary>
+    public static Diagnostic RenderEm3dPartial(string path, string reason) => Diagnostic.Create(
+        "render.em3d.partial", DiagnosticSeverity.Warning,
+        "'{path}' does not build as a whole, so the picture is what resolved; left out: {reason}",
+        ("path", path), ("reason", reason));
+
     /// <summary>A picture of a problem that fails its own validation is still drawn — it is often
     /// the fastest way to see why — and says so.</summary>
     public static Diagnostic RenderEm3dProblems(string path, int count) => Diagnostic.Create(

@@ -399,6 +399,15 @@ public sealed class C3dWire : C3dObject
     /// Omitted: one wire.</summary>
     public C3dWireArray? Array { get; set; }
 
+    /// <summary>brief-em3d-135 — a HELD loop height, DBU: the assembly loop height (the lower pad's top to the top of the wire
+    /// at its apex, em-3d.md §6.6) the arch is shaped to whenever the document resolves (<see cref="C3dWires.Hold"/>). It is
+    /// what makes <c>h_loop</c> a loop height that follows its variable. Omitted, the points are the whole shape, as before.</summary>
+    public long? LoopHeight { get; set; }
+
+    /// <summary>brief-em3d-135 — a HELD span, DBU: foot to foot in plan, the start pinned and the end moved along the run
+    /// to it whenever the document resolves (<see cref="C3dWires.Hold"/>). Omitted, the points are the whole shape.</summary>
+    public long? Span { get; set; }
+
     /// <summary>A wire is a swept solid with no named faces.</summary>
     public override IReadOnlyList<string> FaceNames() => [];
 }

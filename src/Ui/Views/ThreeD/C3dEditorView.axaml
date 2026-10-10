@@ -1017,9 +1017,12 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                         <TextBlock Text="Add a VAR" FontSize="11" Opacity="0.7"/>
+                        <TextBlock Text="{Binding UnknownText}" FontSize="11" Foreground="IndianRed" TextWrapping="Wrap"
+                                   IsVisible="{Binding UnknownText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                         <Grid ColumnDefinitions="70,4,*,4,70">
-                            <TextBox Grid.Column="0" Text="{Binding NewName}" PlaceholderText="name"/>
-                            <TextBox Grid.Column="2" Text="{Binding NewExpression}" PlaceholderText="value or expression"/>
+                            <TextBox Grid.Column="0" Text="{Binding NewName}" PlaceholderText="name" KeyDown="OnNewVariableKey"/>
+                            <TextBox Grid.Column="2" Text="{Binding NewExpression}" PlaceholderText="value or expression" KeyDown="OnNewVariableKey"
+                                     ToolTip.Tip="Enter or + adds it."/>
                             <ComboBox Grid.Column="4" ItemsSource="{x:Static t3:C3dVariablesViewModel.UnitChoices}" SelectedItem="{Binding NewUnit}" ItemTemplate="{StaticResource LowerUnit}"/>
                         </Grid>
                         <Button Classes="varGlyph" Click="OnVariableAdd" ToolTip.Tip="Add">

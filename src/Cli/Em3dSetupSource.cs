@@ -79,14 +79,16 @@ internal sealed record Em3dSetupSource(
 
     /// <summary>A view drawn from its elaboration alone, in a box at its own extent: a view with no single EM setup to pad
     /// one, or — <paramref name="thermal"/> — a thermal setup, which solves no air.</summary>
-    private static Em3dSetupSource Drawing(string full, EmSetup setup, int embedded, C3dElaboration elaboration, bool thermal)
+    private static Em3dSetupSource Drawing(string full, EmSetup setup, int embedded, C3dElaboration elaboration, bool thermal, bool partial = false)
     {
-        if (!elaboration.Ok || elaboration.Extent() is not { } x)
+        if ((!elaboration.Ok && !partial) || elaboration.Extent() is not { } x)
             return new Em3dSetupSource(full, setup, ResolutionOf(full, elaboration), null,
                 elaboration.Ok ? C3dProblemAssembly.NothingToSolve(elaboration) : string.Join(" ", elaboration.Refusals)) { Elaboration = elaboration };
         var problem = C3dProblemAssembly.ViewProblem(elaboration.Solids, elaboration.Sheets, elaboration.Materials, [],
                                                      C3dProblemAssembly.ExtentBox(x));
-        var notes = elaboration.Notes.Append(thermal
+        var notes = elaboration.Notes.Append(partial
+            ? "Drawn from what resolved, in a box at its own extent: the 3D view does not build as a whole, so nothing can run from it."
+            : thermal
             ? $"Drawn from the 3D view's elaboration: '{setup.Name}' is a thermal setup, which solves the solids alone, in no air box."
             : embedded == 0
             ? "Drawn from the 3D view's elaboration in a box at its own extent: it embeds no setup, so there is no air box to show."
@@ -97,6 +99,18 @@ internal sealed record Em3dSetupSource(
                 Warnings = elaboration.Warnings, Origins = elaboration.Origins, MaterialSources = elaboration.MaterialSources,
                 Wires = elaboration.Wires,
             }, null) { Elaboration = elaboration };
+    }
+
+    /// <summary>
+    /// brief-em3d-135 follow-up — the owner's rule for every picture: a best attempt at drawing what works. A 3D view that is
+    /// refused as a whole (a name that does not resolve, a wire off its pad) still elaborated everything that did, and this is
+    /// that, drawn in a box at its own extent. Null when nothing was built, or <paramref name="refused"/> was not refused.
+    /// A run never comes through here: it keeps the refusal.
+    /// </summary>
+    public static Em3dSetupSource? WhatResolved(Em3dSetupSource refused)
+    {
+        if (refused.Refusal is null || refused.Elaboration is not { Ok: false } e || e.Extent() is null) return null;
+        return Drawing(refused.Path, refused.Setup, 0, e, thermal: false, partial: true);
     }
 
     /// <summary>brief-em3d-42 R-em3d42-5b — a <c>.cem</c> whose LayoutRef names a <c>.c3d</c>: that document,

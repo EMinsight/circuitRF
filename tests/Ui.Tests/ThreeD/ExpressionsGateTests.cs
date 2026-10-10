@@ -218,7 +218,7 @@ public sealed class ExpressionsGateTests : IDisposable
     // ── gate 8 ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void Gate8_CyclesThroughADefaultALinkedVarAndAnOverride_AreRefusedWithTheChain_BeforeAnyGeometry()
+    public void Gate8_CyclesThroughADefaultALinkedVarAndAnOverride_AreRefusedWithTheChain_AndOnlyWhatResolvesIsBuilt()
     {
         string ws = Workspace();
         Cell(ws, "Lid", ("w", "2*h", "mil"));
@@ -239,7 +239,9 @@ public sealed class ExpressionsGateTests : IDisposable
             Instances = [new C3dInstance { Name = "U1", CellRef = "../../Lid", Params = new() { ["w"] = new C3dExpr("a", "Mil") } }],
         });
         var e = C3dElaborator.ElaborateOnce(C3dPersistence.LoadFromFile(top), top, null);
-        Assert.Empty(e.Solids);
+        // brief-em3d-135 follow-up — refused (nothing runs), but what resolved is built: the base, not the instance.
+        Assert.False(e.Ok);
+        Assert.Equal(["base"], e.Solids.Select(s => s.Name));
         Assert.Contains(e.Refusals, x => x.Contains("a → b → a", StringComparison.Ordinal) || x.Contains("b → a → b", StringComparison.Ordinal));
     }
 

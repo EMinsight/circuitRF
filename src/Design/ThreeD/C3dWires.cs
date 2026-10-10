@@ -546,6 +546,177 @@ public static class C3dWires
 
     private static long R(double v) => (long)Math.Round(v, MidpointRounding.AwayFromZero);
 
+    // ── loop height and span (3D editor round 4; held: brief-em3d-135) ──────────────────────────
+
+    /// <summary>A wire's foot-to-foot distance in plan, DBU.</summary>
+    public static long SpanDbu(C3dWire w)
+    {
+        if (w.Points.Count < 2) return 0;
+        double dx = w.Points[^1].X - w.Points[0].X, dy = w.Points[^1].Y - w.Points[0].Y;
+        return (long)Math.Round(Math.Sqrt(dx * dx + dy * dy), MidpointRounding.AwayFromZero);
+    }
+
+    /// <summary>
+    /// <paramref name="w"/>'s points with its span made <paramref name="targetDbu"/>: the END foot moved along the run in
+    /// plan, the start pinned, each interior point keeping its place along the run and its height above the chord — wBond's
+    /// own <see cref="WireEdits.ScaleSpan"/>. Null when the feet are one above the other: there is no run to lengthen along.
+    /// </summary>
+    public static List<C3dPoint3>? WithSpan(C3dWire w, long targetDbu)
+    {
+        long now = SpanDbu(w);
+        if (now <= 0) return null;
+        var wire = ToWBond(w);
+        if (now != targetDbu) WireEdits.ScaleSpan(wire, (double)targetDbu / now, moveOutputFoot: true);
+        return FromWBond(wire);
+    }
+
+    /// <summary>What <see cref="FitLoopHeight"/> made of a loop height.</summary>
+    public enum LoopFit
+    {
+        /// <summary>The points are the arch at that height (or already were).</summary>
+        Done,
+        /// <summary>The wire does not resolve, so there is nothing to measure.</summary>
+        NoMeasure,
+        /// <summary>Below what a straight wire between those feet already measures.</summary>
+        BelowFeet,
+        /// <summary>A straight wire: no rise above its feet to scale.</summary>
+        Straight,
+    }
+
+    /// <summary>
+    /// <paramref name="was"/>'s points with an ASSEMBLY loop height of <paramref name="targetDbu"/> (em-3d.md §6.6): every
+    /// point's rise above the foot-to-foot chord scaled, every x and y kept (<see cref="WireEdits.SetLoopHeightPreservingPath"/>
+    /// on the axis), the axis target corrected by what <paramref name="measure"/> (the resolved solid's assembly height, DBU)
+    /// says until the two agree to half a DBU. <c>FootDrop</c> is the feet's difference in height, for a refusal.
+    /// </summary>
+    public static (LoopFit Outcome, List<C3dPoint3>? Points, long FootDrop) FitLoopHeight(C3dWire was, long targetDbu, Func<C3dWire, double?> measure)
+    {
+        long footDrop = was.Points.Count < 2 ? 0 : Math.Abs(was.Points[^1].Z - was.Points[0].Z);
+        if (measure(was) is not { } now) return (LoopFit.NoMeasure, null, footDrop);
+        if (Math.Abs(now - targetDbu) <= 0.5) return (LoopFit.Done, was.Points, footDrop);
+        double axis = (was.Points.Max(p => p.Z) - was.Points.Min(p => p.Z)) + (targetDbu - now);
+        List<C3dPoint3>? best = null;
+        double bestMiss = double.PositiveInfinity;
+        var candidate = (C3dWire)C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(was));
+        for (int iteration = 0; iteration < 12; iteration++)
+        {
+            long axisTarget = (long)Math.Round(axis, MidpointRounding.AwayFromZero);
+            if (axisTarget <= footDrop) return (LoopFit.BelowFeet, null, footDrop);
+            var wire = ToWBond(was);
+            if (!WireEdits.SetLoopHeightPreservingPath(wire, axisTarget)) return (LoopFit.Straight, null, footDrop);
+            candidate.Points = FromWBond(wire);
+            if (measure(candidate) is not { } got) break;
+            if (Math.Abs(got - targetDbu) < bestMiss) (best, bestMiss) = (candidate.Points, Math.Abs(got - targetDbu));
+            if (bestMiss <= 0.5) break;
+            double next = axis + (targetDbu - got);
+            axis = Math.Abs(next - axis) < 0.5 ? axis + Math.Sign(targetDbu - got) : next;
+        }
+        return best is null ? (LoopFit.NoMeasure, null, footDrop) : (LoopFit.Done, best, footDrop);
+    }
+
+    /// <summary>
+    /// brief-em3d-135 — <paramref name="w"/>'s assembly loop height, DBU, measured on its own feet: each end stands on a
+    /// pad whose top is the end's z, which is what a seated end stands on, so no elaboration is needed to ask. Null when it
+    /// does not resolve.
+    /// </summary>
+    public static double? AssemblyAtFeet(C3dWire w, int dbuPerMicron, WireBondWorkspace workspace)
+    {
+        if (w.Points.Count < 2) return null;
+        double per = C3dLowering.Metres(1, dbuPerMicron);
+        C3dWirePad At(string name, C3dPoint3 q)
+        {
+            double x = q.X * per, y = q.Y * per;
+            const double half = 1.0;   // wide enough that no foot hangs over its edge
+            return new(name, new PlanarPolygon([new(x - half, y - half), new(x + half, y - half), new(x + half, y + half), new(x - half, y + half)]), q.Z * per);
+        }
+        var copy = w.Placement.IsDefault ? w : (C3dWire)C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(w));
+        copy.Placement = new C3dPlacement();
+        var r = Resolve(copy, w.Name, C3dTransform.Identity, dbuPerMicron, [At("start", w.Points[0]), At("end", w.Points[^1])], per, workspace, "um");
+        return r.Resolution?.Report is { } report ? report.AssemblyLoopHeightM / per : null;
+    }
+
+    /// <summary>
+    /// brief-em3d-135 — the first bound point component a held field of <paramref name="w"/> would overwrite, as a refusal;
+    /// null when there is none. A held span moves every point but the start in plan (x and y); a held loop height rewrites
+    /// every interior point's z. An end's z stays the pad's, so it may be bound under either.
+    /// </summary>
+    public static string? HeldConflict(C3dWire w, string name)
+    {
+        if (C3dBindings.SpecOf(typeof(C3dWire), nameof(C3dWire.Points)) is not { } spec) return null;
+        int last = w.Points.Count - 1;
+        foreach (var (held, rewrites, what) in new[]
+                 {
+                     (nameof(C3dWire.Span), (Func<int, int, bool>)((k, c) => k > 0 && c < 2), "moves every point but the start in plan"),
+                     (nameof(C3dWire.LoopHeight), (Func<int, int, bool>)((k, c) => k > 0 && k < last && c == 2), "rewrites the height of every point between the ends"),
+                 })
+        {
+            if (HeldText(w, held) is not { } text) continue;
+            for (int k = 0; k <= last; k++)
+                for (int c = 0; c < 3; c++)
+                    if (rewrites(k, c) && C3dBindings.GetExpr(w, spec.ElementAt(k), c) is { } e)
+                        return $"'{name}' holds its {(held == nameof(C3dWire.Span) ? "span" : "loop height")} at {text}, and its " +
+                               $"{C3dBindings.Label(spec.ElementAt(k), c, "")} holds {e.Expr}: a held {(held == nameof(C3dWire.Span) ? "span" : "loop height")} " +
+                               $"{what}, so that point cannot keep an expression. Replace one of them with a number.";
+        }
+        return null;
+    }
+
+    /// <summary>A held field as a sentence quotes it: its expression, or its number in DBU; null when it is not held.</summary>
+    private static string? HeldText(C3dWire w, string property)
+    {
+        var spec = C3dBindings.SpecOf(typeof(C3dWire), property)!;
+        if (C3dBindings.GetExpr(w, spec, 0) is { } e) return e.Expr;
+        return C3dBindings.GetNumber(w, spec, 0) is { } n ? n.ToString("0", CultureInfo.InvariantCulture) + " DBU" : null;
+    }
+
+    /// <summary>
+    /// brief-em3d-135 — <paramref name="w"/>'s points shaped, in place, to its held <see cref="C3dWire.Span"/> and then its held
+    /// <see cref="C3dWire.LoopHeight"/>, from the numbers the resolver last wrote. Already there, nothing changes — so a held
+    /// wire re-saves byte for byte. The ends keep their z: a span moving the end off its pad is elaboration's ordinary "no
+    /// longer on a pad" refusal, never a silent re-route. Null on success, else the refusal, and the points are untouched.
+    /// </summary>
+    public static string? Hold(C3dWire w, string name, int dbuPerMicron, WireBondWorkspace workspace)
+    {
+        if (w.LoopHeight is null && w.Span is null) return null;
+        if (HeldConflict(w, name) is { } conflict) return conflict;
+        var points = w.Points;
+        if (w.Span is { } span)
+        {
+            if (span <= 0) return $"'{name}' holds its span at {HeldText(w, nameof(C3dWire.Span))}, which is {span} DBU: a span is positive.";
+            if (WithSpan(w, span) is not { } spanned)
+                return $"'{name}' holds its span at {HeldText(w, nameof(C3dWire.Span))}, but its feet are one above the other: there is no run to lengthen it along.";
+            points = spanned;
+        }
+        if (w.LoopHeight is { } loop)
+        {
+            string text = HeldText(w, nameof(C3dWire.LoopHeight))!;
+            if (loop <= 0) return $"'{name}' holds its loop height at {text}, which is {loop} DBU: a loop height is positive.";
+            var shaped = (C3dWire)C3dPersistence.DeserializeObject(C3dPersistence.SerializeObject(w));
+            shaped.Points = points;
+            var (outcome, fitted, footDrop) = FitLoopHeight(shaped, loop, c => AssemblyAtFeet(c, dbuPerMicron, workspace));
+            switch (outcome)
+            {
+                case LoopFit.NoMeasure: return $"'{name}' holds its loop height at {text}, but the wire does not resolve, so it has no height to measure.";
+                case LoopFit.BelowFeet:
+                    return $"'{name}' holds its loop height at {text} ({loop} DBU), below what it can stand at: its feet are {footDrop} DBU " +
+                           "apart in height, and a straight wire already measures that much above the lower pad.";
+                case LoopFit.Straight: return $"'{name}' holds its loop height at {text}, but it is straight: it has no rise above its feet to scale.";
+            }
+            points = fitted!;
+        }
+        if (!ReferenceEquals(points, w.Points)) w.Points = points;
+        return null;
+    }
+
+    private static Wire ToWBond(C3dWire w)
+    {
+        var wire = new Wire();
+        foreach (var p in w.Points) wire.Points.Add(new WPoint3(p.X, p.Y, p.Z));
+        return wire;
+    }
+
+    private static List<C3dPoint3> FromWBond(Wire wire) => [.. wire.Points.Select(p => new C3dPoint3(p.X, p.Y, p.Z))];
+
     // ── the Wire tool's shape ────────────────────────────────────────────────────────────────────
 
     /// <summary>LoopShape's seed arch between two feet (DBU) with an AXIS loop height of <paramref name="axisLoopDbu"/>

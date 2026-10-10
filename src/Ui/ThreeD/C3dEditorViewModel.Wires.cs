@@ -277,7 +277,7 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
         string before = C3dPersistence.SerializeObject(was);
         var moved = (C3dWire)C3dPersistence.DeserializeObject(before);
         var spec = C3dBindings.SpecOf(typeof(C3dWire), nameof(C3dWire.Points))!.ElementAt(k);
-        bool zTypedAsExpression = false;
+        bool zTypedAsExpression = false, anyExpression = false;
         for (int c = 0; c < 3; c++)
         {
             if (texts[c]?.Trim() is not { } text) continue;
@@ -294,11 +294,14 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
             if (C3dBindings.GetExpr(was, spec, c) == e) continue;
             C3dBindings.SetExpr(moved, spec, c, e);
             zTypedAsExpression |= c == 2;
+            anyExpression = true;
             // Its value now, so the seat and the pad lookup see where it puts the point. One that does not evaluate is kept
             // as typed: the resolver shows it red, and elaboration refuses the wire by name, as for every dimension.
             try { C3dBindings.SetNumber(moved, spec, c, C3dVariableEdits.Evaluate(Resolution, e, C3dFieldKind.Length) * 1e6 * Document.DbuPerMicron); }
             catch (Exception) { /* see above */ }
         }
+        // brief-em3d-135 — a held span or loop height rewrites that component on every resolve: it cannot keep an expression.
+        if (anyExpression && C3dWires.HeldConflict(moved, was.Name) is { } held) return held;
         var world = moved.Points[k];
         bool end = k == 0 || k == was.Points.Count - 1;
         string which = k == 0 ? "start" : "end";

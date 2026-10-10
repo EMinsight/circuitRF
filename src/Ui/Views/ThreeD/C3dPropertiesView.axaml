@@ -203,14 +203,20 @@
                 <Grid ColumnDefinitions="Auto,*,8,Auto,*,Auto" Margin="0,2,0,0">
                     <TextBlock Grid.Column="0" Text="Loop height:" FontSize="11" Opacity="0.7" VerticalAlignment="Center" Margin="0,0,4,0"/>
                     <TextBox Grid.Column="1" Text="{Binding WireLoopHeight}" Classes="dim" PlaceholderText="no pad"
+                             Classes.error="{Binding WireLoopHeightRefused}"
                              KeyDown="OnWireLoopHeightKey" LostFocus="OnWireLoopHeightLostFocus"
-                             ToolTip.Tip="From the top of the lower pad to the top of the wire at its apex. Every x and y is kept; the rise above the feet scales."/>
+                             ToolTip.Tip="From the top of the lower pad to the top of the wire at its apex. Every x and y is kept; the rise above the feet scales. A number sets it once; an expression holds it, so the wire follows its variables; empty lets go and keeps the wire as it is."/>
                     <TextBlock Grid.Column="3" Text="Span:" FontSize="11" Opacity="0.7" VerticalAlignment="Center" Margin="0,0,4,0"/>
                     <TextBox Grid.Column="4" Text="{Binding WireSpan}" Classes="dim"
+                             Classes.error="{Binding WireSpanRefused}"
                              KeyDown="OnWireSpanKey" LostFocus="OnWireSpanLostFocus"
-                             ToolTip.Tip="Foot to foot, in plan. The end moves along the wire's direction and lands on the pad under it; the start stays."/>
+                             ToolTip.Tip="Foot to foot, in plan. The end moves along the wire's direction and lands on the pad under it; the start stays. A number sets it once; an expression holds it, so the wire follows its variables; empty lets go and keeps the wire as it is."/>
                     <TextBlock Grid.Column="5" Text="{Binding LengthUnit}" FontSize="11" Opacity="0.7" VerticalAlignment="Center" Margin="4,0,0,0"/>
                 </Grid>
+                <SelectableTextBlock Text="{Binding WireShapeNotes}" FontSize="11" Opacity="0.8" TextWrapping="Wrap"
+                                     IsVisible="{Binding WireShapeNotes, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                <SelectableTextBlock Text="{Binding WireShapeErrors}" FontSize="11" Foreground="IndianRed" TextWrapping="Wrap"
+                                     IsVisible="{Binding WireShapeErrors, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 <TextBlock Text="Points (x, y, z)" FontSize="11" Opacity="0.7" Margin="0,4,0,0"
                            ToolTip.Tip="The wire's axis, start to end, in world coordinates: a number or an expression each. Each end sits on the top of its pad. +▲ and +▼ add a point on the curve through its neighbours; − removes one."/>
                 <ItemsControl ItemsSource="{Binding WirePoints}">

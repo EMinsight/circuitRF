@@ -162,6 +162,9 @@ public static class C3dBindings
         new(typeof(C3dWire), nameof(C3dWire.Points), 3, C3dFieldKind.Length) { IsList = true },
         new(typeof(C3dPolyline), nameof(C3dPolyline.Points), 2, C3dFieldKind.Length) { IsList = true },
         new(typeof(C3dPolyline), nameof(C3dPolyline.Points3), 3, C3dFieldKind.Length) { IsList = true },
+        // brief-em3d-135 — a wire's held loop height and span: the arch is shaped to them when the document resolves.
+        new(typeof(C3dWire), nameof(C3dWire.LoopHeight), 1, C3dFieldKind.Length),
+        new(typeof(C3dWire), nameof(C3dWire.Span), 1, C3dFieldKind.Length),
     ];
 
     public static C3dFieldSpec? SpecOf(Type owner, string property)
@@ -202,6 +205,7 @@ public static class C3dBindings
             C3dPoint2 p => k == 0 ? p with { U = n } : p with { V = n },
             long => n,
             List<int> l => SetAt(l, k, (int)n),
+            null when spec.Info.PropertyType == typeof(long?) => n,   // brief-em3d-135 — an unset held length
             _ => value,   // double, double?, or an unset double?
         };
         spec.Info.SetValue(owner, next);
@@ -493,6 +497,7 @@ public static class C3dBindings
         }
         if (raw is RawComponents) throw new JsonException(C3dDiagnostics.NumberExpected("list").Render());
         if (type == typeof(long)) return Int(raw);
+        if (type == typeof(long?)) return raw is null ? null : Int(raw);
         if (type == typeof(double)) return raw is null ? throw new JsonException(C3dDiagnostics.NumberExpected("null").Render()) : Convert.ToDouble(raw, CultureInfo.InvariantCulture);
         if (type == typeof(double?)) return raw is null ? null : Convert.ToDouble(raw, CultureInfo.InvariantCulture);
         _ = spec;

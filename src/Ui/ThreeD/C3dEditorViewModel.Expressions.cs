@@ -42,6 +42,7 @@ public sealed partial class C3dEditorViewModel
     private void ResolveDocument()
     {
         _resolution = C3dResolver.Resolve(Document, Cell);
+        HoldWires();                                     // brief-em3d-135 — a held loop height or span, from the new numbers
         if (ShowVariables) Variables?.Reload();          // a hidden panel is brought up to date when it is shown
         // brief-em3d-76 R-em3d76-4c — the viewer mirrors a shown temperature across the document's symmetry planes
         double m = C3dLowering.Metres(1, Document.DbuPerMicron);
@@ -150,6 +151,8 @@ public sealed partial class C3dEditorViewModel
                 // brief-em3d-132 — a point list's components are bindable, but their rows are the wire's and the polyline's
                 // own point rows (briefs 133 and 134), not this list.
                 if (spec.Element is not null) continue;
+                // brief-em3d-135 — a wire's held loop height and span are its Loop height and Span fields, not rows here.
+                if (spec.Owner == typeof(C3dWire) && spec.Property is nameof(C3dWire.LoopHeight) or nameof(C3dWire.Span)) continue;
                 bool wireDefault = obj is C3dWire { DiameterUm: null } && path == nameof(C3dWire.DiameterUm);
                 if (!wireDefault && C3dBindings.GetNumber(owner, spec, k) is not { } n && C3dBindings.GetExpr(owner, spec, k) is null) continue;
                 var (grp, axis) = group(path);
@@ -211,6 +214,35 @@ public sealed partial class C3dEditorViewModel
             string path = $"{nameof(C3dWire.Points)}[{k}][{c}]";
             return Field(res, w.Name, w, spec, c, path, C3dBindings.Label(spec, c, path), $"point {k + 1}", axis);
         })];
+    }
+
+    /// <summary>
+    /// The owner's rule for the Inspector (2026-10-09): a typed dimension that names something nothing defines — a mistyped
+    /// VAR, most often — is REFUSED, and the field keeps the value it had. Binding it as typed and showing it red left the
+    /// document refused until the name was found. Null when it is a number, does not parse (the commit says so in its own
+    /// words), or every name it uses is defined.
+    /// </summary>
+    public string? UndefinedNamesIn(string text)
+    {
+        string t = text.Trim();
+        if (t.Length == 0 || LayoutUnits.TryParse(t, Document.DisplayUnit, Document.DbuPerMicron, out _)) return null;
+        var (expr, _) = SplitUnit(t, Document.DisplayUnit);
+        CircuitRF.Core.Expressions.Expr ast;
+        try { ast = CircuitRF.Core.Expressions.Parser.Parse(expr); }
+        catch (CircuitRF.Core.Expressions.ExpressionException) { return null; }
+        var missing = CircuitRF.Core.Expressions.AstWalker.CollectRefs(ast).Where(n => !Resolution.IsDefined(n)).Order(StringComparer.Ordinal).ToList();
+        if (missing.Count == 0) return null;
+        return $"{string.Join(", ", missing.Select(n => $"'{n}'"))} {(missing.Count == 1 ? "is" : "are")} not defined in this 3D view, " +
+               "so the field keeps its value. Check the spelling, or add it in Variables first.";
+    }
+
+    /// <summary>brief-em3d-135 — a wire's held loop height or span as a dimension field (its expression, what it resolves to,
+    /// the resolver's error); null when it is not held.</summary>
+    public C3dDimensionField? WireHeldField(C3dWire w, string property)
+    {
+        var spec = C3dBindings.SpecOf(typeof(C3dWire), property)!;
+        if (C3dBindings.GetNumber(w, spec, 0) is null && C3dBindings.GetExpr(w, spec, 0) is null) return null;
+        return Field(Resolution, w.Name, w, spec, 0, property, property, property, "");
     }
 
     /// <summary>3D editor round 4 — a new wire row's pitch: across the wire's run in plan, four diameters apart.</summary>
@@ -350,6 +382,9 @@ public sealed partial class C3dEditorViewModel
         foreach (var f in C3dBindings.BoundOf(item, before).ToList())
         {
             if (after is C3dWire && f.Spec.Element is not null) continue;      // brief-em3d-133: WirePointPlan
+            // brief-em3d-135 — a held loop height or span is set and let go only by the Inspector's own edit, which states it:
+            // one an edit leaves out was let go, and putting it back (or solving its name) would undo exactly that.
+            if (after is C3dWire && f.Spec.Property is nameof(C3dWire.LoopHeight) or nameof(C3dWire.Span)) continue;
             if (C3dBindings.Find(after, f.Path) is not { } at)
                 return new NamePlan([], $"'{item}' {f.Path} holds {f.Expr.Expr}, and this edit would leave it no such field " +
                                         $"(it becomes a {C3dObject.KindOf(after.GetType()).ToLowerInvariant()}). Replace it with a number first.",

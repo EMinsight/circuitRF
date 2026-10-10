@@ -273,3 +273,69 @@ only by coincidence. Now (`TakeWireDefaults`):
 redirect). So assertions are made against `WBondDefaults.*`, never a literal. A clash test that drew two wires 10 µm
 apart broke on a machine set to 2 mil: the second wire really did pass through the first. Gate:
 `WireGateTests.ANewWire_TakesItsDiameterAndPointsFromSettings_NotFromTheDocumentsLastWire`.
+
+## A wire's Loop height and Span take an expression, and hold it (2026-10-09)
+
+Brief 131 §4 left Loop height and Span as one-shot edits of numbers, because both are worked out from the points.
+`SetWireLoopHeight`/`SetWireSpan` parsed their text with `C3dDimension.Parse`, and anything that was not a value (an
+expression included) fell through to "A loop height is a positive length." The owner chose a real binding over
+evaluate-once: the wire follows the variable.
+
+- **Two optional fields on `C3dWire`, `LoopHeight` and `Span` (DBU), bindable like any dimension** (`C3dBindings.Fields`).
+  Each is written only when held, so every existing file re-saves byte for byte. `SetNumber` learned an unset `long?`, and
+  `ToProperty` reads one.
+- **`C3dWires.Hold` shapes the points to them, Span first**, through the same primitives the one-shot edits use: `WithSpan`
+  (wBond's `ScaleSpan`, the end moving in plan) and `FitLoopHeight` (the assembly-height iteration lifted out of the editor).
+  It runs in TWO places on purpose. The elaborator runs it on each wire before its array elements are copied, which covers
+  `em`, `render`, thermal and child cells. The editor runs it in `ResolveDocument`, so the live points, the overlay and the
+  Inspector agree with what is built. When the wire is already there it changes nothing, so a held wire re-saves unchanged.
+- **The loop height is measured on the wire's own feet** (`AssemblyAtFeet`): a pad under each end with its top at the end's
+  z. `Em3dWires.Resolve` reads a pad's polygon only for the foot-overhang warning, so this is exactly the elaborated
+  measurement for a seated wire, and holding needs no elaboration. That is what lets the editor hold before the first scene.
+- **Holding never re-seats.** A held span that moves the end off its pad gets elaboration's ordinary "no longer on a pad"
+  refusal. Moving it silently would change the wire's inductance, the same rule as everywhere else for wires.
+- **Conflicts are refused, never resolved** (`HeldConflict`). A held span moves every point but the start in plan, so it
+  refuses an expression in any other point's x or y. A held loop height rewrites interior z. The Inspector refuses the
+  binding, `SetWirePoint` refuses the expression, and elaboration refuses a file that has both.
+- **An empty field lets go, as the owner asked, and keeps the wire as it is**: the points are untouched, so the shape keeps
+  the number it had.
+- **Brief 51's drag rule had to skip them.** `PlanNames` puts back an expression an edit dropped, and solves the name when
+  the number changed. Letting go of a held span through a `C3dEdit` therefore came back bound, with `s_w` solved to 0. A
+  wire's held fields are only ever set or released by the Inspector's own edit, which states them, so `PlanNames` takes
+  them as the edit leaves them, as brief 133 already does for the points.
+- A vertex edit of a held wire is re-shaped on the next resolve: the drag changes the profile, and the held value wins.
+- **A name nothing defines is REFUSED in the Inspector, and the field keeps its value** (owner, 2026-10-09). A first
+  follow-up bound such a name as typed and showed it red, as brief 51 binds one. The owner ruled the other way for the
+  Inspector: a mistyped VAR committed there is refused and the old value kept. `UndefinedNamesIn` is checked by every
+  Inspector dimension commit (object fields, wire point x/y/z, loop height, span) before anything is written, and the
+  field's text is put back. The draw tools' typed fields keep their Define strip. Gate:
+  `…AMistypedNameCommittedInTheInspector_IsRefused_AndTheFieldKeepsItsValue`.
+
+Gate: `tests/Ui.Tests/ThreeD/WireHeldShapeTests.cs`.
+
+## The Variables panel's Add row ignored Enter (2026-10-09)
+
+The owner added a VAR, saw the document stay clean, saved, and reopened to find no VAR. The saved file had the wire's
+held `"Span": { "Expr": "mySpan" }` and no `Variables` at all. The VAR never reached the document. Headlessly,
+`C3dVariablesViewModel.Add` was correct (dirty, saved, the row followed). The Add row's name and value boxes had no key
+handler, and only the small + glyph BELOW them added. A value typed and Entered, as every other field in the panel takes
+one, did nothing and said nothing. Now:
+- Enter in either box adds the VAR (`OnNewVariableKey`).
+- The panel lists the names a dimension uses that nothing defines (`UnknownText`), and offers the first in the Add row's
+  empty name. Defining the name a held span already uses is then a value and Enter.
+
+Gate: `WireHeldShapeTests.AVarAddedInTheVariablesPanel_IsOfferedByName_DirtiesTheDocument_AndIsSaved`. The key handler
+itself is view code and is not driven by the gate: the GUI cannot be launched from this shell.
+
+## A field that does not resolve no longer blanks the drawing (2026-10-09)
+
+R-em3d51-5a built NOTHING when any field failed to resolve, so one mistyped name in a wire's span made the whole drawing
+vanish, including the wire the mistake was on. The owner's rule is now a best attempt to draw what works, everywhere:
+- **The elaborator always builds what resolved.** An item holding a field that did not resolve is left out (its numbers
+  are not its expression's). A wire whose only such field is its held loop height or span is drawn as it stands, unheld.
+  The refusals are unchanged, so `Ok` is false, and every run (`em`, thermal, STEP export, glTF convert, problem assembly)
+  still refuses: they all gate on `Ok`. `ExpressionsGateTests.Gate8` now asserts the refusal AND that only the resolving
+  base was built.
+- **`render` draws what resolved too.** `Em3dSetupSource.WhatResolved` draws a refused view's elaboration in a box at its
+  own extent. Each refusal is reported as `render.em3d.partial` (a warning, on stderr and in `--json`), so a gap in the
+  picture is never silent. Exit 0. Gate: `WireHeldShapeTests.Render_OfAViewWithAMistypedName_DrawsWhatResolved_AndARunStillRefuses`.

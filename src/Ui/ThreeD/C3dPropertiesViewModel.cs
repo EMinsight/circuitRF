@@ -180,6 +180,13 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     [ObservableProperty] private string _wireSpan = "";
     private (string LoopHeight, string Span) _wireLoaded;
 
+    /// <summary>brief-em3d-135 — what a held loop height or span resolves to (<c>loop height = 254 µm</c>), and what refused one;
+    /// whether each field's expression is refused, for its red outline.</summary>
+    [ObservableProperty] private string _wireShapeNotes = "";
+    [ObservableProperty] private string _wireShapeErrors = "";
+    [ObservableProperty] private bool _wireLoopHeightRefused;
+    [ObservableProperty] private bool _wireSpanRefused;
+
     /// <summary>The selected wire's points, start to end.</summary>
     public ObservableCollection<C3dWirePointRow> WirePoints { get; } = [];
 
@@ -319,6 +326,8 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         IsPlaced = false;
         IsWire = false;
         WirePoints.Clear();
+        WireShapeNotes = WireShapeErrors = "";
+        WireLoopHeightRefused = WireSpanRefused = false;
         MaterialPlaceholder = NoMaterialPlaceholder;
         IsVertexEditable = false;
         IsGroup = false;
@@ -817,9 +826,18 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
         WireStartStyle = wire.Start.Style;
         WireEndStyle = wire.End.Style;
         string L(long dbu) => Tools.C3dDimension.Spell(dbu, editor.Document.DisplayUnit, editor.Document.DbuPerMicron);
-        WireLoopHeight = editor.WireLoopHeightDbu(wire) is { } h ? L(h) : "";
-        WireSpan = L(C3dEditorViewModel.WireSpanDbu(wire));
+        // brief-em3d-135 — a held field shows what holds it (an expression, with its value listed under the row); an unheld
+        // one shows the shape's own number.
+        var loop = editor.WireHeldField(wire, nameof(C3dWire.LoopHeight));
+        var span = editor.WireHeldField(wire, nameof(C3dWire.Span));
+        WireLoopHeight = loop?.Text ?? (editor.WireLoopHeightDbu(wire) is { } h ? L(h) : "");
+        WireSpan = span?.Text ?? L(C3dEditorViewModel.WireSpanDbu(wire));
         _wireLoaded = (WireLoopHeight, WireSpan);
+        (string, C3dDimensionField?)[] held = [("loop height", loop), ("span", span)];
+        WireShapeNotes = string.Join("\n", held.Where(f => f.Item2 is { ValueText.Length: > 0 }).Select(f => $"{f.Item1} {f.Item2!.ValueText}"));
+        WireShapeErrors = string.Join("\n", held.Where(f => !string.IsNullOrEmpty(f.Item2?.Error)).Select(f => $"{f.Item1}: {f.Item2!.Error}"));
+        WireLoopHeightRefused = !string.IsNullOrEmpty(loop?.Error);
+        WireSpanRefused = !string.IsNullOrEmpty(span?.Error);
         int last = wire.Points.Count - 1;
         for (int k = 0; k <= last; k++)
         {
@@ -838,6 +856,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     {
         C3dDimensionField[] fields = [row.XField, row.YField, row.ZField];
         if (!IsWire || ObjectIndex < 0 || fields.All(f => f.Text == f.Loaded)) return;
+        if (fields.FirstOrDefault(f => f.Text != f.Loaded && RefusedName(f.Text)) is { } named) { named.Text = named.Loaded; return; }
         Error = editor.SetWirePoint(ObjectIndex, row.Index, [.. fields.Select(f => f.Text == f.Loaded ? null : f.Text)]) ?? "";
     }
 
@@ -860,6 +879,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     public void CommitWireLoopHeight()
     {
         if (!IsWire || ObjectIndex < 0 || WireLoopHeight == _wireLoaded.LoopHeight) return;
+        if (RefusedName(WireLoopHeight)) { WireLoopHeight = _wireLoaded.LoopHeight; return; }
         Error = editor.SetWireLoopHeight(ObjectIndex, WireLoopHeight) ?? "";
     }
 
@@ -867,7 +887,17 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     public void CommitWireSpan()
     {
         if (!IsWire || ObjectIndex < 0 || WireSpan == _wireLoaded.Span) return;
+        if (RefusedName(WireSpan)) { WireSpan = _wireLoaded.Span; return; }
         Error = editor.SetWireSpan(ObjectIndex, WireSpan) ?? "";
+    }
+
+    /// <summary>A typed dimension naming something nothing defines: the refusal shown, true — the caller puts the field's
+    /// old text back, so the value it had is what it shows (the owner's rule, 2026-10-09).</summary>
+    private bool RefusedName(string text)
+    {
+        if (editor.UndefinedNamesIn(text) is not { } why) return false;
+        Error = why;
+        return true;
     }
 
     partial void OnWireSectionChanged(WireCrossSection value) => ChangeWire("Section", w => w.Section = value);
@@ -1030,6 +1060,7 @@ public sealed partial class C3dPropertiesViewModel(C3dEditorViewModel editor) : 
     /// when it does not resolve — the field then says why). One undo entry.</summary>
     public void CommitField(C3dDimensionField field)
     {
+        if (field.Text != field.Loaded && RefusedName(field.Text)) { field.Text = field.Loaded; return; }
         if (IsGroup && field.Path.StartsWith(GroupCornerPath, StringComparison.Ordinal))
         {
             if (field.Text != field.Loaded) Error = editor.SetGroupCorner(_groupPath, field.Path[^1] - '0', field.Text) ?? "";
