@@ -507,6 +507,7 @@ public sealed class Viewer3DPane : Control
         if (p.Properties.IsLeftButtonPressed && e.KeyModifiers == KeyModifiers.None && _vm?.PressGizmo() == true)
         {
             _gizmoDrag = true;
+            _moved = false;
             _orbiting = _panning = _rightPressed = _shiftPress = false;
             e.Pointer.Capture(this);
             e.Handled = true;
@@ -556,6 +557,8 @@ public sealed class Viewer3DPane : Control
         // release places it. Orbiting it instead turned the camera under the cursor the tool was following.
         if (_orbiting && !_moved && _vm?.OrbitNeedsCommand == true && (_pressModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0)
             (_orbiting, _drawPress) = (false, true);
+        // A gizmo or point drag: whether it went past the click slop — a point pressed and released in place was a click.
+        if (_gizmoDrag && _pressedAt is { } from && Math.Abs(pos.X - from.X) + Math.Abs(pos.Y - from.Y) > ClickSlopDips) _moved = true;
         if (_last is { } last && (_orbiting || _panning))
         {
             var d = pos - last;
@@ -580,7 +583,8 @@ public sealed class Viewer3DPane : Control
         {
             _gizmoDrag = false;
             e.Pointer.Capture(null);
-            _vm?.ReleaseGizmo();
+            _vm?.ReleaseGizmo(_moved);
+            _last = _pressedAt = null;
             return;
         }
         if (_onTriad && !_moved) { }
@@ -728,7 +732,8 @@ public sealed class Viewer3DPane : Control
     /// Esc in a docked view: the view hosting the pane claims it (tunnel, handled events too) and calls this. A drag
     /// under way is cancelled first (the camera stays where the drag left it — a camera move is not an edit — and the
     /// release is no longer a click); a gizmo drag's move is cancelled; otherwise the view model's ladder runs:
-    /// the tool steps back or disarms, then a measurement goes, then Measure, then the selection.
+    /// the tool steps back or disarms, then a measurement goes, then Measure, then Face/Vertex/Edge mode (back to Object), then
+    /// the selection.
     /// </summary>
     public bool Escape()
     {

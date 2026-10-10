@@ -92,16 +92,39 @@ public sealed partial class Viewer3DViewModel
     /// then routes the drag here rather than orbiting.</summary>
     public bool PressGizmo()
     {
-        if (GizmoHover == GizmoHandle.None || EditHost is not { } host) return false;
+        if (GizmoHover == GizmoHandle.None) return PressPoint();
+        if (EditHost is not { } host) return false;
         if (!host.GizmoDrag(GizmoHover)) return false;
         GizmoActive = GizmoHover;
         FrameRequested?.Invoke();
         return true;
     }
 
-    /// <summary>The release: the move commits where the cursor is.</summary>
-    public void ReleaseGizmo()
+    /// <summary>A point drag is under way (<see cref="PressPoint"/>): the pane routes it as it routes a gizmo drag.</summary>
+    private bool _pointDrag;
+
+    /// <summary>Vertex mode — a press on the vertex under the cursor that the editor drags (a wire's point): the drag moves it
+    /// and the release places it, so moving a point is one gesture and never orbits the camera under it.</summary>
+    private bool PressPoint()
     {
+        if (SelectMode != Scene3DSelectMode.Vertex || HoveredItem is not { Face: < 0, Object: > 0 } vertex || EditHost is not { } host) return false;
+        if (!host.PointDrag(vertex)) return false;
+        _pointDrag = true;
+        FrameRequested?.Invoke();
+        return true;
+    }
+
+    /// <summary>The release: the move commits where the cursor is. <paramref name="moved"/> — whether the drag went past the
+    /// click slop — decides only a point drag's release (a gizmo's handle commits either way).</summary>
+    public void ReleaseGizmo(bool moved = true)
+    {
+        if (_pointDrag)
+        {
+            _pointDrag = false;
+            EditHost?.PointDragRelease(moved);
+            FrameRequested?.Invoke();
+            return;
+        }
         if (GizmoActive == GizmoHandle.None) return;
         GizmoActive = GizmoHandle.None;
         EditHost?.GizmoRelease();
@@ -111,6 +134,13 @@ public sealed partial class Viewer3DViewModel
     /// <summary>The drag was lost (the capture went elsewhere): it ends as if Esc were pressed.</summary>
     public void CancelGizmo()
     {
+        if (_pointDrag)
+        {
+            _pointDrag = false;
+            EditHost?.PointDragCancel();
+            FrameRequested?.Invoke();
+            return;
+        }
         if (GizmoActive == GizmoHandle.None) return;
         GizmoActive = GizmoHandle.None;
         EditHost?.GizmoCancel();

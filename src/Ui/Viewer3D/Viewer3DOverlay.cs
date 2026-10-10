@@ -368,6 +368,9 @@ public sealed class Viewer3DOverlay : Control
 
     private static readonly IBrush RubberBrush = new SolidColorBrush(Color.FromRgb(255, 196, 40));
     private static readonly IBrush CrossingBrush = new SolidColorBrush(Color.FromRgb(235, 40, 40));
+    /// <summary>The scene shader's hover cyan (0.2, 0.9, 1.0), for a tool's target face.</summary>
+    private static readonly IBrush TargetBrush = new SolidColorBrush(Color.FromRgb(51, 230, 255));
+    private static readonly IBrush TargetFill = new SolidColorBrush(Color.FromArgb(90, 51, 230, 255));
 
     /// <summary>brief-em3d-45 — the drawing's chrome: construction dashed, a selected polyline in the selection colour,
     /// the rubber band in amber over a halo, fixed points as dots, a crossing in red.</summary>
@@ -418,6 +421,26 @@ public sealed class Viewer3DOverlay : Control
             if (Screen(at) is (var lp, true)) shown.Add((lp, text));
         DrawingLabels(ctx, shown, w, h, dark);
         Lines(d.Selected, new Pen(new SolidColorBrush(Color.FromRgb(255, 90, 255)), 2));
+        // The face a tool lands on, in the hover's cyan: only that face, never the whole object it belongs to.
+        foreach (var rings in d.TargetFaces)
+        {
+            var g = new StreamGeometry();
+            bool drawn = true;
+            using (var c = g.Open())
+            {
+                c.SetFillRule(FillRule.EvenOdd);
+                foreach (var ring in rings)
+                {
+                    if (ring.Count < 3) continue;
+                    var pts = ring.Select(Screen).ToList();
+                    if (pts.Any(q => !q.Ok)) { drawn = false; break; }
+                    c.BeginFigure(pts[0].P, true);
+                    for (int i = 1; i < pts.Count; i++) c.LineTo(pts[i].P);
+                    c.EndFigure(true);
+                }
+            }
+            if (drawn) ctx.DrawGeometry(TargetFill, new Pen(TargetBrush, 1.6), g);
+        }
         if (d.Rubber.Count > 0)
         {
             Lines(d.Rubber, new Pen(dark ? Brushes.Black : Brushes.White, 3.5, lineCap: PenLineCap.Round));

@@ -9,8 +9,11 @@
 // explicit fix for the vertical case: each end moved in z onto the top now under it, where there is one. Moving a
 // wire's point in Vertex mode re-seats its feet on release, and an END moved to where there is no pad is refused.
 //
-// DEFAULTS (R-em3d50-3b): the last wire drawn, then the workspace's assembly rules (a .wasm's first allowed diameter),
-// then built in (1 mil, Gold where the technology has it, a hexagonal section, wedge–wedge).
+// DEFAULTS: Settings ▸ Wirebonds (WBondDefaults) for the diameter, the metal and the points per wire — the same values the
+// layout view and the wire profile draw with — unless the workspace's assembly rules (a .wasm) do not allow that diameter,
+// when it is their first allowed one. The section and the two bond styles, which Settings does not state, follow the last
+// wire in the document, else a hexagonal section, wedge–wedge. The toolbar's edits stand for the session; a Settings
+// value CHANGED since is taken at the next arm.
 
 using CircuitRF.Design.Layout;
 using CircuitRF.Design.Layout.Em3d;
@@ -21,6 +24,7 @@ using CircuitRF.Render.Scene3D;
 using CircuitRF.Render.Scene3D.Edit;
 using CircuitRF.Ui.ThreeD.Tools;
 using CircuitRF.Ui.Viewer3D;
+using CircuitRF.Ui.WBond;
 using CircuitRF.WBond;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Point3 = CircuitRF.Engine.Em3d.Point3;
@@ -47,6 +51,10 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
     private double _wireDiameterUm = C3dWires.DefaultDiameterUm;
     private long? _lastLoopHeightDbu;
     private bool _wireDefaultsTaken;
+    /// <summary>Settings ▸ Wirebonds as last taken: a change there is taken at the next arm, the toolbar's edits otherwise stand.</summary>
+    private (long DiameterNm, string Material)? _wireSettingsTaken;
+    /// <summary>Points per wire (Settings ▸ Wirebonds), read at each arm.</summary>
+    private int _wirePoints = C3dWires.SeedPoints;
 
     /// <summary>The technology's metals (a material with a conductivity) — what a wire may be made of.</summary>
     public IReadOnlyList<string> WireMetals
@@ -60,33 +68,41 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
         _wireDiameterUm = (double)LayoutUnits.FromDbu(d.Dbu, LayoutUnit.Um, Document.DbuPerMicron);
     }
 
-    /// <summary>The first time the tool is armed: the assembly rules' first allowed diameter, the technology's gold (or its
-    /// first metal). After a wire is drawn its values stay on the toolbar, which is "the last wire drawn".</summary>
+    /// <summary>
+    /// Each arm: Settings ▸ Wirebonds' diameter and metal the first time, and again whenever Settings has changed since (the
+    /// toolbar's own edits stand otherwise); its points per wire every time. A diameter the workspace's assembly rules do not
+    /// allow gives way to their first allowed one. The first time, the section and bond styles follow the document's last wire.
+    /// </summary>
     private void TakeWireDefaults()
     {
         OnPropertyChanged(nameof(WireMetals));
+        _wirePoints = WBondDefaults.Points;
+        var settings = (WBondDefaults.DiameterNm, WBondDefaults.Material);
+        if (_wireSettingsTaken != settings)
+        {
+            _wireSettingsTaken = settings;
+            long nm = settings.DiameterNm;
+            if (WireWorkspace().WorkspaceRules().Rules?.AllowedDiametersNm is [var first, ..] allowed && first > 0 && !allowed.Contains(nm))
+                nm = first;
+            _wireDiameterUm = nm / 1000.0;
+            WireDiameterText = Length((long)Math.Round(_wireDiameterUm * Document.DbuPerMicron, MidpointRounding.AwayFromZero));
+            WireMaterial = settings.Material;
+        }
         if (!_wireDefaultsTaken)
         {
             _wireDefaultsTaken = true;
-            var last = Document.Objects.OfType<C3dWire>().LastOrDefault();
-            if (last is not null)
-            {
-                _wireDiameterUm = last.DiameterUm ?? C3dWires.DefaultDiameterUm;
-                WireMaterial = C3dWires.MaterialOf(last);
+            if (Document.Objects.OfType<C3dWire>().LastOrDefault() is { } last)
                 (WireStartStyle, WireEndStyle, WireSection) = (last.Start.Style, last.End.Style, C3dWires.SectionOf(last));
-            }
-            else if (WireWorkspace().WorkspaceRules().Rules?.AllowedDiametersNm is [var first, ..] && first > 0)
-                _wireDiameterUm = first / 1000.0;
-            WireDiameterText = Length((long)Math.Round(_wireDiameterUm * Document.DbuPerMicron, MidpointRounding.AwayFromZero));
         }
         var metals = WireMetals;
         if (WireMaterial is null || !metals.Contains(WireMaterial))
-            WireMaterial = metals.FirstOrDefault(m => string.Equals(m, WireMaterials.Default.Name, StringComparison.OrdinalIgnoreCase))
+            WireMaterial = metals.FirstOrDefault(m => string.Equals(m, WireMaterial, StringComparison.OrdinalIgnoreCase))
+                           ?? metals.FirstOrDefault(m => string.Equals(m, WireMaterials.Default.Name, StringComparison.OrdinalIgnoreCase))
                            ?? metals.FirstOrDefault() ?? WireMaterials.Default.Name;
     }
 
     public C3dWireTemplate WireTemplate
-        => new(_wireDiameterUm, WireMaterial, WireSection, WireStartStyle, WireEndStyle, _lastLoopHeightDbu);
+        => new(_wireDiameterUm, WireMaterial, WireSection, WireStartStyle, WireEndStyle, _lastLoopHeightDbu, _wirePoints);
 
     private WireBondWorkspace WireWorkspace()
         => new(FilePath, WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(FilePath)) ?? _workspaceCws());
@@ -397,5 +413,107 @@ public sealed partial class C3dEditorViewModel : IC3dWireHost
             }
             if (vertex) foreach (var p in w.Points) overlay.Fixed.Add(DrawGeometry.Metres(p, dbu));
         }
+        if (_tool is WireTool wt && wt.Landing(CursorInput()) is { } landing && LandingFace(landing.Pad, landing.At) is { } face)
+            overlay.TargetFaces.Add(face);
+        if (_tool is WireTool { Step: 2 } && _wireClash is { } clash) overlay.Crossing.AddRange(clash.Segments);
+    }
+
+    /// <summary>
+    /// The loop height offered for the two ends just placed (what a click or an empty Enter takes from above). The loop height is
+    /// measured from the LOWER foot, so the remembered one (150 µm, or the last wire's) can sit below the HIGHER foot when the pads
+    /// differ in height — and that arch runs straight downhill through its own start pad. So it starts at least 150 µm above the
+    /// higher foot, and is raised in steps until the arch passes through nothing; past the last step it is left at the first try,
+    /// and the clash text says what is in the way.
+    /// <para>It errs on the side of no intersection: a height is taken only when the axis clears everything AND the axis lowered
+    /// by the wire's radius does too, between the feet (so the wire's underside clears a top it would otherwise graze), and it
+    /// is rounded UP to a tidy step of the display unit — 0.1 mil (or 0.0001 in), else 1 µm.</para>
+    /// </summary>
+    private void SuggestLoopHeight(WireTool wire)
+    {
+        long floor = WireTool.DefaultAssemblyUm * Document.DbuPerMicron;
+        long tidy = LoopHeightStep();
+        long first = RoundUp(Math.Max(wire.RememberedLoopHeight, Math.Abs(wire.Start.Z - wire.End.Z) + floor), tidy);
+        long step = RoundUp(Math.Max(first / 4, floor / 2), tidy);
+        wire.SuggestionRaised = false;
+        for (int k = 0; k <= 24; k++)
+        {
+            long h = first + k * step;
+            var (shape, _) = wire.Shape(wire.Start, wire.End, h, "w");
+            if (shape.Points.Count < 2 || WireClashes(shape.Points, wire.StartPad, wire.EndPad).Names.Count > 0) continue;
+            long radius = (long)Math.Ceiling(C3dWires.DiameterNm(shape) * Document.DbuPerMicron / 2000.0);
+            var underside = shape.Points.Select(p => p with { Z = p.Z - radius }).ToList();
+            if (WireClashes(underside, wire.StartPad, wire.EndPad, skipEnds: 1, ignorePads: true).Names.Count > 0) continue;
+            wire.SuggestedLoopHeight = h;
+            wire.SuggestionRaised = k > 0;
+            return;
+        }
+        wire.SuggestedLoopHeight = first;
+    }
+
+    /// <summary>The tidy step a suggested loop height is rounded up to, DBU: 0.1 mil when the display unit is mil or inch (2.54 µm),
+    /// else 1 µm.</summary>
+    private long LoopHeightStep()
+        => Document.DisplayUnit is LayoutUnit.Mil or LayoutUnit.Inch ? Math.Max(1, 2540L * Document.DbuPerMicron / 1000) : Document.DbuPerMicron;
+
+    private static long RoundUp(long v, long step) => step <= 1 ? v : (v + step - 1) / step * step;
+
+    /// <summary>The arch the Wire tool shows now (its loop height and ends) and what it passes through.</summary>
+    private (long Assembly, C3dPoint3 A, C3dPoint3 B, List<string> Names, List<DrawSegment> Segments)? _wireClash;
+
+    /// <summary>The Wire tool's loop-height step followed the cursor: what its arch passes through, for the prompt and the red.
+    /// Recomputed only when the arch changed.</summary>
+    private void UpdateWireClash(WireTool wire)
+    {
+        var shown = wire.Track(CursorInput());
+        if (shown.Points.Count < 2) { _wireClash = null; wire.Clash = null; return; }
+        var (a, b) = (shown.Points[0], shown.Points[^1]);
+        if (_wireClash is not { } c || c.Assembly != shown.Assembly || c.A != a || c.B != b)
+        {
+            var (names, segments) = WireClashes(shown.Points, wire.StartPad, wire.EndPad);
+            _wireClash = (shown.Assembly, a, b, names, segments);
+        }
+        wire.Clash = _wireClash.Value.Names;
+    }
+
+    /// <summary>
+    /// What a wire along <paramref name="points"/> (world DBU) passes through — every object its axis crosses a surface of, by
+    /// name, and the axis segments that do (world metres). Air, ports and boundaries are not obstacles; the pads the ends sit on
+    /// are not counted on the foot segments, which start on them. The axis, not the wire's diameter: a wire that only grazes is
+    /// not reported. From above the arch's height cannot be seen at all, so this is the one place that says.
+    /// </summary>
+    /// <param name="skipEnds">Segments at each end not tested (the suggestion's underside test leaves the feet to the axis test).</param>
+    /// <param name="ignorePads">The end pads are not obstacles anywhere, not only on the feet.</param>
+    internal (List<string> Names, List<DrawSegment> Segments) WireClashes(IReadOnlyList<C3dPoint3> points, string startPad, string endPad,
+                                                                         int skipEnds = 0, bool ignorePads = false)
+    {
+        var names = new List<string>();
+        var segments = new List<DrawSegment>();
+        var scene = Viewer.Scene;
+        int dbu = Document.DbuPerMicron;
+        static bool Obstacle(Scene3DObject o) => o.Kind is not (Scene3DKind.Air or Scene3DKind.Boundary or Scene3DKind.Port) && !o.PickLast;
+        for (int k = skipEnds; k + 1 < points.Count - skipEnds; k++)
+        {
+            var a = DrawGeometry.Metres(points[k], dbu);
+            var b = DrawGeometry.Metres(points[k + 1], dbu);
+            bool foot = ignorePads || k == 0 || k + 2 == points.Count;
+            var hits = Scene3DPicking.SegmentCrossings(scene, scene.ToLocal(a.X, a.Y, a.Z), scene.ToLocal(b.X, b.Y, b.Z),
+                                                       o => Obstacle(o) && !(foot && (o.Name == startPad || o.Name == endPad)));
+            if (hits.Count == 0) continue;
+            segments.Add(new DrawSegment(a, b));
+            foreach (var (id, _) in hits)
+                if (scene.Object(id) is { } o && !names.Contains(o.Name)) names.Add(o.Name);
+        }
+        return (names, segments);
+    }
+
+    /// <summary>The top face a wire end at <paramref name="at"/> lands on — pad <paramref name="pad"/>'s outline at its top, world
+    /// metres — or null. A conductor can carry more than one top (a stepped part): the one at the end's height, under it.</summary>
+    private IReadOnlyList<IReadOnlyList<Point3>>? LandingFace(string pad, C3dPoint3 at)
+    {
+        double x = at.X * PerDbu, y = at.Y * PerDbu, z = at.Z * PerDbu;
+        var tops = WirePads().Where(q => q.Name == pad && Math.Abs(q.TopM - z) <= Math.Max(2 * PerDbu, 1e-9)).ToList();
+        if ((tops.FirstOrDefault(q => q.Poly.Contains(x, y)) ?? tops.FirstOrDefault()) is not { } top) return null;
+        IReadOnlyList<Point3> Ring(IReadOnlyList<CircuitRF.Engine.Mom.EmPoint> ring) => [.. ring.Select(p => new Point3(p.X, p.Y, top.TopM))];
+        return [Ring(top.Poly.Outer), .. top.Poly.HoleRings.Select(Ring)];
     }
 }

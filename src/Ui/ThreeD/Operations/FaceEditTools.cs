@@ -272,7 +272,7 @@ public sealed class FaceMoveTool : C3dFaceEditTool
         _vertex = vertex;
         _aspect = aspect;
         var at = WorldOf(Editor.Vertices[vertex]);
-        _mover = new MoveTool(host, [], at);
+        _mover = new MoveTool(host, [], at) { HoldsDepth = source is C3dWire };
         _mover.SetBase(at, Placement.IsIntegral);
         Step = _mover.Step;
     }

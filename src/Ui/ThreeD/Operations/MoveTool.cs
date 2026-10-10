@@ -6,7 +6,8 @@
 //   * X, Y or Z locks the move to that world axis (again unlocks); the displacement is then how far along the axis
 //     the cursor says — a geometry snap projected onto the axis, so a snap still decides HOW FAR, or else the point
 //     of the axis nearest the cursor's ray, on the grid. Shift+X/Y/Z locks it to the plane NORMAL to that axis;
-//   * with nothing locked the target is the snapped point, or the drawing-plane point when nothing is snapped;
+//   * with nothing locked the target is the snapped point, or the drawing-plane point when nothing is snapped (a
+//     wire point's move holds its depth instead, HoldsDepth);
 //     holding SHIFT (3D editor bugs round 3) holds it to the world axis whose line through the base passes nearest
 //     the cursor — an axis lock for as long as Shift is down, chosen by where the cursor went;
 //   * digits open the typed field: dx, dy, dz, or one distance along a locked axis — exact in DBU.
@@ -52,6 +53,11 @@ public sealed class MoveTool : C3dOperationTool
 
     /// <summary>Started by a press on a gizmo handle: the release commits it (R-em3d46-5).</summary>
     public bool FromGizmo { get; init; }
+
+    /// <summary>With nothing locked and nothing snapped, the target stays at the base's depth from the eye (the cursor's ray
+    /// point nearest the base) rather than on the drawing plane. A wire's point is in mid-air: the plane, usually the grid
+    /// at z = 0, dropped it to the floor and far along the ray on the first hover.</summary>
+    public bool HoldsDepth { get; init; }
 
     /// <summary>The base point, once there is one.</summary>
     public C3dPoint3? Base => Step > 0 ? _base : null;
@@ -146,6 +152,7 @@ public sealed class MoveTool : C3dOperationTool
             _shiftAxis = nearest;
             return OnAxis(nearest, input, out refusal);
         }
+        if (HoldsDepth && Host.DepthPoint(_base, input) is { } q) return (q, input.Snap is null || !input.SnapOnGeometry || input.SnapExact);
         if (Host.FreePoint(input, out refusal) is not { } p) return null;
         return (p, input.Snap is null || !input.SnapOnGeometry || input.SnapExact);
     }

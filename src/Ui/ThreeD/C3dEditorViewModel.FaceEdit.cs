@@ -183,6 +183,55 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         ApplySnapExclusion();
     }
 
+    /// <summary>The vertex move a point drag started (<see cref="PointDrag"/>), while it runs.</summary>
+    private FaceMoveTool? _pointDragTool;
+
+    /// <summary>
+    /// Vertex mode — a press on a wire's point drags it: the point is selected and its Move starts at once, the drag moves it
+    /// at its own depth (or onto a snap) and the release places it. G, then a click, still works; this is the same move as one
+    /// gesture, and the press never orbits the camera under the point. Only a wire: a solid's corners stay G's.
+    /// </summary>
+    public bool PointDrag(Scene3DItem vertex)
+    {
+        if (_tool is not null || Viewer.SelectMode != Scene3DSelectMode.Vertex) return false;
+        if (Viewer.Scene.Object(vertex.Object) is not { } o || EditableIndex(o) is not (>= 0 and var i) || EditObjectAt(i) is not C3dWire) return false;
+        Viewer.SetSelection([vertex]);
+        StartVertexMove();
+        if (_tool is not FaceMoveTool { IsVertex: true } tool) return false;
+        _pointDragTool = tool;
+        return true;
+    }
+
+    public void PointDragRelease(bool moved)
+    {
+        if (_pointDragTool is not { } tool || !ReferenceEquals(_tool, tool)) { _pointDragTool = null; return; }
+        _pointDragTool = null;
+        if (!moved)
+        {
+            // A press that stayed put was a click: it selected the point, and nothing moves.
+            Disarm();
+            StatusMessage = "";
+            return;
+        }
+        Apply(tool.Click(CursorInput()));
+        // A refused release (an end off every pad) puts the point back: a drag has no second click to try again with.
+        if (ReferenceEquals(_tool, tool))
+        {
+            string why = StatusMessage;
+            Disarm();
+            StatusMessage = why;
+        }
+    }
+
+    public void PointDragCancel()
+    {
+        if (_pointDragTool is not { } tool) return;
+        _pointDragTool = null;
+        if (!ReferenceEquals(_tool, tool)) return;
+        Disarm();
+        StatusMessage = $"{tool.Name} cancelled.";
+    }
+
     /// <summary>R-em3d47-4 — Extrude to New Solid (Shift+E).</summary>
     public void StartExtrudeFace()
     {
@@ -227,6 +276,7 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
     private string? _facePreviewText;
     private readonly List<DrawSegment> _faceAttempt = [];
     private (string Object, string Face)? _selectFaceAfterAdopt;
+    private (string Object, C3dPoint3 World)? _selectVertexAfterAdopt;
 
     /// <summary>Scenes a face or vertex gesture asked for — gate 7 reads one tessellation per preview, and no more.</summary>
     public int FacePreviews { get; private set; }
@@ -373,8 +423,11 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         // record names: a reference to a result's face names the result).
         var boundaries = operand ? null : BoundariesFollowing(obj, r.Folds);
         var slots = operand ? ReplacementSlots([(index, obj)]) : [new C3dEditSlot(false, index, before, after)];
+        // Before the Push: the scene the Push asks for may be adopted before it returns.
+        if (!operand && ft is FaceMoveTool { IsVertex: true } vt && MovedVertexWorld(obj, vt.Vertex) is { } at) _selectVertexAfterAdopt = (obj.Name, at);
         if (slots.Count == 0 || !Push(new C3dEdit(ft.Describe, slots, ApplySlots, faceBoundaries: boundaries, setBoundaries: SetBoundaries)))
         {
+            _selectVertexAfterAdopt = null;
             string why = StatusMessage;               // the drag rule's refusal (brief-em3d-51)
             SetTool(null);
             StatusMessage = why;
@@ -416,6 +469,27 @@ public sealed partial class C3dEditorViewModel : IC3dFaceHost
         if (SceneObject(want.Object) is not { } o) return;
         for (int f = 0; f < o.FaceNames.Count; f++)
             if (o.FaceNames[f] == want.Face) { Viewer.SetSelection([Scene3DItem.OfFace(o.Id, f)]); return; }
+    }
+
+    /// <summary>Where vertex <paramref name="k"/> of the edited object is now (world DBU), or null when it has no such vertex.</summary>
+    private static C3dPoint3? MovedVertexWorld(C3dObject edited, int k)
+    {
+        var vertices = new C3dFaceEditor(edited).Vertices;
+        if (k < 0 || k >= vertices.Count) return null;
+        var (x, y, z) = edited.Placement.ToTransform().Apply(vertices[k]);
+        return new C3dPoint3(R(x), R(y), R(z));
+    }
+
+    /// <summary>After a vertex Move, the moved vertex is selected where it now is: the selection carries a vertex by its
+    /// position, so the old one kept its highlight on the spot the vertex left.</summary>
+    private void ReselectVertex()
+    {
+        if (_selectVertexAfterAdopt is not { } want || Viewer.SelectMode != Scene3DSelectMode.Vertex) { _selectVertexAfterAdopt = null; return; }
+        if (_facePreview is not null) return;
+        _selectVertexAfterAdopt = null;
+        if (SceneObject(want.Object) is not { } o) return;
+        var m = DrawGeometry.Metres(want.World, Document.DbuPerMicron);
+        Viewer.SetSelection([Scene3DItem.OfVertex(o.Id, Viewer.Scene.ToLocal(m.X, m.Y, m.Z))]);
     }
 
     // ── one-shot commands ────────────────────────────────────────────────────────────────────

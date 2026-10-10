@@ -178,6 +178,9 @@ public sealed class Viewer3DViewState
     public uint[] HoverGroup = [];
     /// <summary>brief-em3d-43 — the hovered object's face under the cursor (Face mode's hover), or −1.</summary>
     public int HoveredFace = -1;
+    /// <summary>The hover draws no tint: a tool that picks something smaller than an object (the Wire tool's landing face)
+    /// shows that itself, and a whole object lit under it would say the tool takes the object.</summary>
+    public bool HoverHidden;
     /// <summary>brief-em3d-43 R-em3d43-2 — what a click selects.</summary>
     public Scene3DSelectMode Mode;
     /// <summary>brief-em3d-43 — the selection, in the order it was made. The shader highlights the first
@@ -1453,8 +1456,9 @@ public sealed class Scene3DFramePlan
         u[20] = c.X; u[21] = c.Y; u[22] = c.Z; u[23] = c.W;
         var bits = MemoryMarshal.Cast<float, uint>(u.AsSpan());
         // brief-em3d-106 R-em3d106-2c — a realistic PICTURE (quiet) draws no hover and no selection.
-        bits[24] = quiet ? 0 : view.Hovered;
-        bits[25] = quiet || view.HoveredFace < 0 ? Scene3DVertex.NoFace : (uint)view.HoveredFace;
+        bool noHover = quiet || view.HoverHidden;
+        bits[24] = noHover ? 0 : view.Hovered;
+        bits[25] = noHover || view.HoveredFace < 0 ? Scene3DVertex.NoFace : (uint)view.HoveredFace;
         bits[26] = flags;
         // brief-em3d-67 — the shaders know three modes; Edge mode draws as Vertex mode does (its highlight is the overlay's).
         bits[27] = (uint)(view.Mode == Scene3DSelectMode.Edge ? Scene3DSelectMode.Vertex : view.Mode);
@@ -1464,7 +1468,7 @@ public sealed class Scene3DFramePlan
         u[29] = w > 0 ? 2f / w : 0;
         u[30] = h > 0 ? 2f / h : 0;
         // 3D editor groups — the rest of the hovered object's group follows the selection in the same slots (Object mode only).
-        int nhov = quiet || view.Mode != Scene3DSelectMode.Object ? 0 : Math.Min(view.HoverGroup.Length, SelectionLimit - nsel);
+        int nhov = noHover || view.Mode != Scene3DSelectMode.Object ? 0 : Math.Min(view.HoverGroup.Length, SelectionLimit - nsel);
         bits[31] = (uint)nhov;
         for (int k = 0; k < SelectionLimit; k++)
         {

@@ -379,6 +379,7 @@ public sealed partial class C3dEditorViewModel : ObservableObject, IViewer3DEdit
         RefreshGridText();
         ReleaseHeldPreview(gen);
         ReselectFace();
+        ReselectVertex();
         FilletSceneAdopted(gen);
         // Published LAST: a reader that waits for this generation (a test's settle) must find the adoption finished — the
         // held preview released and the face reselected — not half done.

@@ -135,6 +135,184 @@ public sealed class WireGateTests : IDisposable
         finally { vm.Viewer.SnapEnabled = snapWas; }
     }
 
+    /// <summary>Picking an end lights the TOP FACE the end will be seated on, not the whole object under the cursor: over the die's
+    /// front face the target is the die's top (its outline at z = 20 µm), and the object's own hover tint is off while the tool is
+    /// armed.</summary>
+    [Fact]
+    public void PickingAnEnd_HighlightsOnlyTheTopFaceItLandsOn()
+    {
+        var vm = OpenPads(0);
+        bool snapWas = vm.Viewer.SnapEnabled;
+        vm.Viewer.SnapEnabled = false;
+        try
+        {
+            vm.Arm(C3dToolKind.Wire);
+            Assert.True(vm.Viewer.View.HoverHidden);
+            HoverAt(vm, 50, 0, 7, withPoint: true);                       // the die's front (y = 0) face
+            var overlay = new Viewer3DDrawOverlay();
+            vm.FillDrawOverlay(overlay);
+            var (picked, pickedFace) = vm.Viewer.LastPick;
+            Assert.Equal("ymin", vm.Viewer.Scene.Object(picked)!.FaceName(pickedFace));   // the cursor is on a SIDE face
+            var rings = Assert.Single(overlay.TargetFaces);
+            var outline = Assert.Single(rings);
+            Assert.All(outline, p => Assert.Equal(20 * UmM, p.Z, 12));    // its top, not the face under the cursor
+            Assert.Equal((0, 100 * UmM), (outline.Min(p => p.X), outline.Max(p => p.X)), new TupleTolerance(1e-12));
+            vm.Disarm();
+            Assert.False(vm.Viewer.View.HoverHidden);
+        }
+        finally { vm.Viewer.SnapEnabled = snapWas; }
+    }
+
+    /// <summary>From Top view the loop height can be neither seen nor set with the mouse: once the second end is placed the
+    /// height field opens on its own, says what Enter takes, and an empty Enter places the wire at that height.</summary>
+    [Fact]
+    public void FromTopView_TheLoopHeightFieldOpensAfterTheSecondEnd_AndEnterTakesTheDefault()
+    {
+        var vm = OpenPads(0);
+        vm.Viewer.StandardViewCommand.Execute(StandardView3D.Top);
+        bool snapWas = vm.Viewer.SnapEnabled;
+        vm.Viewer.SnapEnabled = false;
+        try
+        {
+            vm.Arm(C3dToolKind.Wire);
+            ClickAt(vm, 50, 30, 20);
+            ClickAt(vm, 650, 30, 20);
+            Assert.Equal(2, vm.Tool!.Step);
+            Assert.True(vm.FieldOpen);
+            Assert.Contains("Enter: ", vm.FieldLabel);
+            Assert.Contains("LOOP HEIGHT", vm.ToolPrompt);
+            Assert.DoesNotContain("passes through", vm.ToolPrompt);       // nothing between the pads: no false alarm
+            vm.FieldEnter();                                              // empty: the default
+            Settle(vm);
+            Assert.DoesNotContain("passes through", vm.StatusMessage);
+            var wire = Assert.IsType<C3dWire>(vm.Document.Objects[^1]);
+            Assert.Equal(0, vm.Tool!.Step);                               // still armed, for the next wire
+            Assert.InRange(wire.Points.Max(p => p.Z), 20 * Um + 100 * Um, 20 * Um + 200 * Um);   // ~150 µm above the pads
+        }
+        finally { vm.Viewer.SnapEnabled = snapWas; }
+    }
+
+    /// <summary>A part between the pads taller than the default arch: from above the offered height is raised until the arch
+    /// clears it, and Enter places a clear wire; a height typed lower than the part is placed, named and drawn red.</summary>
+    [Fact]
+    public void FromTopView_TheOfferedHeightClearsAPartBetweenThePads_AndATypedLowerOneIsNamed()
+    {
+        var cap = new C3dBox { Name = "cap", Material = "Gold", Min = new(300 * Um, 0, 0), Size = new(100 * Um, 60 * Um, 400 * Um) };
+        var vm = OpenPads(0, extra: cap);
+        vm.Viewer.StandardViewCommand.Execute(StandardView3D.Top);
+        bool snapWas = vm.Viewer.SnapEnabled;
+        vm.Viewer.SnapEnabled = false;
+        try
+        {
+            vm.Arm(C3dToolKind.Wire);
+            ClickAt(vm, 50, 8, 20);
+            ClickAt(vm, 650, 8, 20);
+            Assert.Contains("raised to clear", vm.ToolPrompt);
+            Assert.DoesNotContain("passes through", vm.ToolPrompt);
+            Assert.Equal(0, ((WireTool)vm.Tool!).SuggestedLoopHeight!.Value % Um);   // rounded up to a whole µm
+            vm.FieldEnter();
+            Settle(vm);
+            var clear = Assert.IsType<C3dWire>(vm.Document.Objects[^1]);
+            Assert.True(clear.Points.Max(p => p.Z) > 400 * Um);
+            Assert.DoesNotContain("passes through", vm.StatusMessage);
+
+            ClickAt(vm, 50, 52, 20);                                      // far enough from the first for any Settings diameter
+            ClickAt(vm, 650, 52, 20);
+            vm.FieldText = "100um";                                       // under the cap's 400 µm
+            vm.FieldEnter();
+            Settle(vm);
+            Assert.Contains("passes through", vm.StatusMessage);
+            Assert.Contains("'cap'", vm.StatusMessage);
+        }
+        finally { vm.Viewer.SnapEnabled = snapWas; }
+    }
+
+    /// <summary>Pads 2 mm apart in height (the owner's case): the loop height is measured from the LOWER foot, so 150 µm sat below
+    /// the higher one and the arch ran straight downhill through its own start pad. The offered height rises above the higher foot.</summary>
+    [Fact]
+    public void FromTopView_PadsAtDifferentHeights_TheOfferedArchRisesAboveTheHigherFoot()
+    {
+        var vm = OpenPads(2000);                                          // the lead's top at 2.02 mm, the die's at 20 µm
+        vm.Viewer.StandardViewCommand.Execute(StandardView3D.Top);
+        bool snapWas = vm.Viewer.SnapEnabled;
+        vm.Viewer.SnapEnabled = false;
+        try
+        {
+            vm.DisplayUnit = LayoutUnit.Mil;
+            vm.Arm(C3dToolKind.Wire);
+            ClickAt(vm, 650, 30, 2020);                                   // start on the HIGH pad
+            ClickAt(vm, 50, 30, 20);
+            Assert.Equal(0, ((WireTool)vm.Tool!).SuggestedLoopHeight!.Value % 2540);   // rounded up to 0.1 mil
+            vm.FieldEnter();
+            Settle(vm);
+            var wire = Assert.IsType<C3dWire>(vm.Document.Objects[^1]);
+            Assert.True(wire.Points.Max(p => p.Z) > 2020 * Um, $"apex {wire.Points.Max(p => p.Z)}");
+            Assert.DoesNotContain("passes through", vm.StatusMessage);
+            Assert.False(vm.Elaboration!.WireRefusals.ContainsKey(wire.Name));
+        }
+        finally { vm.Viewer.SnapEnabled = snapWas; }
+    }
+
+    /// <summary>W arms the Wire tool (as its toolbar button does) and W again puts it away; mid-wire it is not a tool key.</summary>
+    [Fact]
+    public void W_ArmsTheWireTool_AndAgainPutsItAway()
+    {
+        var vm = OpenPads(0);
+        var v = vm.Viewer;
+        Assert.True(v.HandleKey(Avalonia.Input.Key.W, Avalonia.Input.KeyModifiers.None, false));
+        Assert.True(vm.IsWireArmed);
+        Assert.True(v.HandleKey(Avalonia.Input.Key.W, Avalonia.Input.KeyModifiers.None, false));
+        Assert.False(vm.IsWireArmed);
+
+        bool snapWas = v.SnapEnabled;
+        v.SnapEnabled = false;
+        try
+        {
+            v.HandleKey(Avalonia.Input.Key.W, Avalonia.Input.KeyModifiers.None, false);
+            ClickAt(vm, 50, 0, 7);                                         // the start placed: a gesture under way
+            v.HandleKey(Avalonia.Input.Key.W, Avalonia.Input.KeyModifiers.None, false);
+            Assert.True(vm.IsWireArmed);
+            Assert.Equal(1, vm.Tool!.Step);
+        }
+        finally { v.SnapEnabled = snapWas; }
+    }
+
+    /// <summary>A new wire is made with Settings ▸ Wirebonds' diameter and points per wire, as the layout view's and the profile's
+    /// are — not the diameter of the last wire already in the document (here 3.37 mil, which no Settings value is).</summary>
+    [Fact]
+    public void ANewWire_TakesItsDiameterAndPointsFromSettings_NotFromTheDocumentsLastWire()
+    {
+        var old = new C3dWire
+        {
+            Name = "old", Material = "Gold", DiameterUm = 3.37 * 25.4,
+            Points = [new(50 * Um, 50 * Um, 20 * Um), new(350 * Um, 50 * Um, 200 * Um), new(650 * Um, 50 * Um, 20 * Um)],
+        };
+        var vm = OpenPads(0, extra: old);
+        vm.Viewer.StandardViewCommand.Execute(StandardView3D.Top);
+        bool snapWas = vm.Viewer.SnapEnabled;
+        vm.Viewer.SnapEnabled = false;
+        try
+        {
+            vm.Arm(C3dToolKind.Wire);
+            Assert.Equal(CircuitRF.Ui.WBond.WBondDefaults.DiameterNm / 1000.0, vm.WireTemplate.DiameterUm, 6);
+            ClickAt(vm, 50, 20, 20);
+            ClickAt(vm, 650, 20, 20);
+            vm.FieldEnter();
+            Settle(vm);
+            var drawn = Assert.IsType<C3dWire>(vm.Document.Objects[^1]);
+            Assert.NotEqual("old", drawn.Name);
+            Assert.Equal(CircuitRF.Ui.WBond.WBondDefaults.Points, drawn.Points.Count);
+            Assert.Equal(CircuitRF.Ui.WBond.WBondDefaults.DiameterNm / 1000.0, drawn.DiameterUm ?? C3dWires.DefaultDiameterUm, 3);
+        }
+        finally { vm.Viewer.SnapEnabled = snapWas; }
+    }
+
+    private sealed class TupleTolerance(double tol) : IEqualityComparer<(double, double)>
+    {
+        public bool Equals((double, double) a, (double, double) b) => Math.Abs(a.Item1 - b.Item1) <= tol && Math.Abs(a.Item2 - b.Item2) <= tol;
+        public int GetHashCode((double, double) v) => 0;
+    }
+
     // ── 3. across hierarchy ──────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -371,12 +549,19 @@ public sealed class WireGateTests : IDisposable
     /// <summary>A click exactly where world point (µm) lands: the cursor's ray passes through it.</summary>
     private static void ClickAt(C3dEditorViewModel vm, double x, double y, double z)
     {
+        HoverAt(vm, x, y, z);
+        vm.Viewer.Click(false);
+    }
+
+    /// <summary>The cursor exactly where world point (µm) lands, and the ID pass's answer for it — with that point as the hit
+    /// when <paramref name="withPoint"/> (a hover reads it; a click picks again on its own).</summary>
+    private static void HoverAt(C3dEditorViewModel vm, double x, double y, double z, bool withPoint = false)
+    {
         var v = vm.Viewer;
         var (sx, sy, front) = v.View.Camera.Project(v.Scene.ToLocal(x * UmM, y * UmM, z * UmM), W, H);
         Assert.True(front);
         v.Hover(sx, sy);
         var (id, face) = Scene3DPicking.PairAtPixel(v.Scene, v.View.Camera, sx, sy, W, H, v.View.Visible);
-        v.OnPicked(id, face, Vector3.Zero, id != 0);
-        v.Click(false);
+        v.OnPicked(id, face, withPoint ? v.Scene.ToLocal(x * UmM, y * UmM, z * UmM) : Vector3.Zero, id != 0);
     }
 }

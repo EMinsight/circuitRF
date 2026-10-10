@@ -233,6 +233,38 @@ public static class Scene3DPicking
         return best < float.MaxValue ? best : null;
     }
 
+    /// <summary>
+    /// The objects segment <paramref name="a"/>→<paramref name="b"/> (scene-local) crosses a surface of, each with the first
+    /// crossing's fraction along it (0…1) — a wire's axis tested against what it might pass through. Only objects
+    /// <paramref name="consider"/> accepts; a crossing within <paramref name="endFraction"/> of either end is not counted, so a
+    /// segment that starts or ends ON a surface (a foot on its pad) does not cross it there.
+    /// </summary>
+    public static List<(uint Id, float T)> SegmentCrossings(Scene3DModel scene, Vector3 a, Vector3 b, Func<Scene3DObject, bool> consider,
+                                                           float endFraction = 1e-3f)
+    {
+        var hits = new List<(uint Id, float T)>();
+        var d = b - a;
+        var lo = Vector3.Min(a, b);
+        var hi = Vector3.Max(a, b);
+        var verts = scene.Vertices;
+        foreach (var batch in scene.Batches)
+        {
+            var o = scene.Objects[batch.ObjectId - 1];
+            if (!consider(o)) continue;
+            var min = o.Min + batch.Offset;
+            var max = o.Max + batch.Offset;
+            if (hi.X < min.X || lo.X > max.X || hi.Y < min.Y || lo.Y > max.Y || hi.Z < min.Z || lo.Z > max.Z) continue;
+            float first = float.MaxValue;
+            for (int i = batch.FirstIndex; i < batch.FirstIndex + batch.IndexCount; i += 3)
+            {
+                var v0 = P(verts[scene.Indices[i]]) + batch.Offset; var v1 = P(verts[scene.Indices[i + 1]]) + batch.Offset; var v2 = P(verts[scene.Indices[i + 2]]) + batch.Offset;
+                if (Intersect(a, d, v0, v1, v2, out float t) && t > endFraction && t < 1 - endFraction && t < first) first = t;
+            }
+            if (first < float.MaxValue) hits.Add((batch.ObjectId, first));
+        }
+        return hits;
+    }
+
     /// <summary>A screen point's distance to a screen triangle: 0 inside it, else to its nearest side.</summary>
     private static float ScreenDistance(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
     {

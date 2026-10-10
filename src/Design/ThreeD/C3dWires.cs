@@ -570,18 +570,19 @@ public static class C3dWires
     /// returned either way, with its measured height.
     /// </summary>
     public static (List<C3dPoint3> Points, double? MeasuredDbu) ForAssemblyHeight(
-        C3dPoint3 start, C3dPoint3 end, long assemblyDbu, double halfHeightDbu, Func<List<C3dPoint3>, double?> measure)
+        C3dPoint3 start, C3dPoint3 end, long assemblyDbu, double halfHeightDbu, Func<List<C3dPoint3>, double?> measure,
+        int points = SeedPoints)
     {
         double axis = assemblyDbu - halfHeightDbu;
         List<C3dPoint3>? best = null;
         double? bestMeasured = null;
         for (int iteration = 0; iteration < 12; iteration++)
         {
-            var points = Arch(start, end, (long)Math.Round(axis, MidpointRounding.AwayFromZero));
-            var m = measure(points);
-            if (m is not { } got) return (best ?? points, bestMeasured);
+            var arch = Arch(start, end, (long)Math.Round(axis, MidpointRounding.AwayFromZero), points);
+            var m = measure(arch);
+            if (m is not { } got) return (best ?? arch, bestMeasured);
             if (bestMeasured is null || Math.Abs(got - assemblyDbu) < Math.Abs(bestMeasured.Value - assemblyDbu))
-                (best, bestMeasured) = (points, got);
+                (best, bestMeasured) = (arch, got);
             if (Math.Abs(got - assemblyDbu) <= 0.5) break;
             double next = axis + (assemblyDbu - got);
             if (Math.Abs(next - axis) < 0.5) next = axis + Math.Sign(assemblyDbu - got);

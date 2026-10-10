@@ -72,6 +72,10 @@ public interface IC3dDrawHost
     /// closest to the cursor's ray, on the grid. Null when neither says anything (the ray runs along the line).</summary>
     long? Along(C3dPoint3 through, C3dAxis axis, in C3dDrawInput input);
 
+    /// <summary>The cursor's point at <paramref name="through"/>'s depth: a geometry snap as it is, or else the point of the
+    /// cursor's ray nearest <paramref name="through"/>, its step from there on the grid. Null when the ray says nothing.</summary>
+    C3dPoint3? DepthPoint(C3dPoint3 through, in C3dDrawInput input) => null;
+
     string NextName(string prefix);
     string? CurrentMaterial { get; }
 

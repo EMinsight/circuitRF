@@ -173,3 +173,103 @@ end's z. The refusal names the first one (`'w1' point 2 z holds h_loop: …`). A
 because the decision allows only the two ends' z.
 
 Gate: `WirePointExpressionsTests` (11). A mutation that restores the path-by-path rule for wire points fails 6 of them.
+
+## Wire points: dragged at their own depth, one gesture, and Esc leaves Vertex mode (2026-10-09)
+
+**The point fell to the grid.** A vertex Move with nothing locked and nothing snapped took `FreePoint`: the drawing plane,
+usually the grid at z = 0. A wire's point is in mid-air, so the first hover put the apex on the floor, often millimetres
+along the ray. The preview wire was refused (a 179° turn, or an end off its pad) and drawn red. A click in that state
+committed the broken wire, and Esc then had nothing to cancel: the wire stayed red until Undo. The scene's extent also
+jumped with the stray point, which reads as the camera misbehaving. `MoveTool.HoldsDepth` (set for a wire's vertex move)
+takes `IC3dDrawHost.DepthPoint` instead: a geometry snap as it is, else the point of the cursor's ray nearest the base.
+The STEP from the base is rounded to the grid, not the point, so an off-grid apex does not jump on the first hover. A solid's
+corners keep the drawing plane.
+
+**One gesture.** In Vertex mode a plain press on a wire's point (`HoveredItem`) selects it and starts its Move
+(`C3dEditorViewModel.PointDrag`). The pane routes the drag through the gizmo path (`PressGizmo` falls back to `PressPoint`),
+so it never orbits. A release past the click slop commits; one that stayed put was a click, which selects the point and
+moves nothing (`ReleaseGizmo(moved)` — the pane now tracks the slop for a gizmo drag too). A refused release puts the point
+back and keeps the sentence, since a drag has no second click to retry with. G, then a click, still works.
+
+**Esc.** After the tool, the measurement and Measure, Esc in Face, Vertex or Edge mode returns to Object mode (dropping that
+mode's selection); in Object mode it clears the selection as before. A headless probe confirmed Esc always disarmed the
+vertex Move. The red that stayed was a committed refused wire, not a tool still armed.
+
+Gate: `WirePointDragTests` (3). Turning `HoldsDepth` off fails the drag test.
+
+**The highlight stayed behind.** A vertex selection is carried by POSITION (`Scene3DItem.Point`), so after a vertex Move
+the pink ring stayed on the spot the vertex left. `ReselectVertex` (beside `ReselectFace`, run at adoption) selects the
+moved vertex where it now is. The target is recorded BEFORE `Push`, because the scene that Push asks for can be adopted
+before Push returns (synchronously in the tests). It is cleared if the Push is refused. This applies to every vertex Move,
+not only a wire's.
+
+## The Wire tool highlights the top face an end lands on, not the object (2026-10-09)
+
+Picking a wire's start or end lit the whole object under the cursor, which was the ordinary Object-mode hover tint. An end
+is seated on the object's TOP face, whatever face the cursor is over, so the tint showed the wrong thing. While the Wire
+tool is armed, `Viewer3DViewState.HoverHidden` zeroes the hover uniform (`Scene3DFramePlan.Fill`; the group tint goes too),
+and `FillWireOverlay` puts the landing face into `Viewer3DDrawOverlay.TargetFaces`. That face is the pad's outline at its
+`TopM`, holes included, chosen with `WireTool.Landing`, the same `OnPad` lookup the click uses. The overlay fills it in the
+shader's hover cyan. The shader was left alone: Object mode has no per-face hover, and the three backend copies would all
+have had to change for a face index the pad lookup does not even have. The overlay is 2D and has no depth test, so a
+top face hidden behind another object still shows through. That is acceptable for a target marker and is the price of not
+touching the shaders. Gate: `WireGateTests.PickingAnEnd_HighlightsOnlyTheTopFaceItLandsOn` (hovers the die's `ymin` face
+and expects the die's top).
+
+## Drawing a wire from Top view: the loop height is asked for, and a clash is said (2026-10-09)
+
+**The third step was invisible.** Top view is the easy place to put a wire's ends in plan, but there the vertical through
+the arch is seen end-on. The loop height then neither shows nor follows the cursor, and after the second click the tool sat
+waiting with nothing on screen to say so. `WireTool.LooksDown` treats a line of sight within about 11° of vertical
+(|d_z| ≥ 0.98) as "looking down". A nearly end-on vertical is as bad as an exact one, because a pixel becomes millimetres.
+When the second end is placed looking down, the height field opens at once, labelled with what Enter takes (`loop height (µm)
+— Enter: 150 µm`). The prompt says LOOP HEIGHT, and a click or an empty Enter places the wire at the default (the last
+wire's, else 150 µm). The click used to be refused there ("looking straight down; type the loop height") with no field open.
+The field opens empty rather than prefilled: a typed digit is appended to an open field, so a prefilled "150" would become
+"1502".
+
+**A wire through another part could not be seen from above.** `Scene3DPicking.SegmentCrossings` (src/Render) tests a
+segment against the scene's own triangles, behind a per-object AABB prefilter. `WireClashes` runs it over the wire's axis.
+Air, ports, boundaries and the air box are not obstacles. The two end pads are ignored on the FOOT segments only, which
+start on them, and a crossing within 1e-3 of a segment's end is not counted. While the height is set the prompt names what
+the arch passes through and the crossing segments are drawn red (`overlay.Crossing`); this is recomputed only when the arch
+changes. Placing the wire anyway appends the same warning to the status line. The tool warns and never refuses. It tests
+the AXIS, not the diameter, so a wire that only grazes is not reported.
+
+Gates: `WireGateTests.FromTopView_TheLoopHeightFieldOpensAfterTheSecondEnd_AndEnterTakesTheDefault` and
+`…AnArchThroughAnotherPart_IsNamedWhileSettingTheHeight_AndWhenPlaced`.
+
+**The offered height (`SuggestLoopHeight`).** Measured on an owner's design, the default height produced a wire that ran
+straight DOWNHILL through its own start pad. The loop height is measured from the LOWER foot. With pads 2.6 mm apart in
+height, the remembered 150 µm sat far below the higher foot, so the arch was clamped flat. The clash check flagged it
+correctly; the default simply did not avoid it. The offer for the two ends just placed now works like this:
+- It starts at least 150 µm above the HIGHER foot: max(remembered, Δz + 150 µm).
+- It rises in steps (a quarter of the first try, at least 75 µm) for up to 24 steps, until the arch is clear.
+- A height counts as clear only when the axis passes through nothing AND the axis lowered by the wire's radius also clears
+  everything except the end pads, between the feet. So the wire's underside does not graze a top. This errs on the side of
+  no intersection.
+- It is rounded UP to a tidy step of the display unit: 0.1 mil for mil or inch (2.54 µm), else 1 µm.
+
+If nothing clears within reach, it is left at the first try and the clash warning names what is in the way. The prompt says
+"(raised to clear what is under it)" when the search moved it. The clash WARNING still tests the axis alone, so grazing
+does not raise false alarms there. Gates: `WireGateTests.FromTopView_PadsAtDifferentHeights_TheOfferedArchRisesAboveTheHigherFoot`
+(mil, rounding) and `…TheOfferedHeightClearsAPartBetweenThePads_AndATypedLowerOneIsNamed` (µm).
+
+## The 3D Wire tool takes Settings ▸ Wirebonds (2026-10-09)
+
+The 3D Wire tool never read `WBondDefaults`. Its diameter came from the LAST WIRE IN THE DOCUMENT, then the workspace's
+assembly rules, then a built-in 1 mil. A document whose wires state no diameter therefore pinned every new wire at 1 mil,
+whatever Settings said. Its arch was also hard-coded to `C3dWires.SeedPoints` (7), which matched the shipped points-per-wire
+only by coincidence. Now (`TakeWireDefaults`):
+- The diameter and metal are Settings' values, read the first time the tool is armed and again whenever Settings has
+  CHANGED since. The toolbar's own edits stand otherwise.
+- A diameter the workspace's `.wasm` does not allow gives way to its first allowed one.
+- The points per wire are read at every arm and passed through `C3dWireTemplate.Points` to `C3dWires.Arch` and
+  `ForAssemblyHeight` (a new optional parameter, default `SeedPoints`).
+- The section and the bond styles, which Settings does not state, still follow the document's last wire.
+- A Settings metal the technology lacks falls back case-insensitively, then to Gold, then to the first metal.
+
+**The tests read the REAL preferences file**, as the wBond tests always have (there is no global `AppDataRoot`
+redirect). So assertions are made against `WBondDefaults.*`, never a literal. A clash test that drew two wires 10 µm
+apart broke on a machine set to 2 mil: the second wire really did pass through the first. Gate:
+`WireGateTests.ANewWire_TakesItsDiameterAndPointsFromSettings_NotFromTheDocumentsLastWire`.

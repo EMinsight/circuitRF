@@ -101,6 +101,17 @@ public interface IViewer3DEditHost
     /// <summary>The gizmo drag was lost: the move is cancelled.</summary>
     void GizmoCancel() { }
 
+    /// <summary>Vertex mode — a plain press on <paramref name="vertex"/> (the hovered one) that the editor can drag: it is
+    /// selected and its move starts. False leaves the press to the pane (a click, an orbit).</summary>
+    bool PointDrag(Scene3DItem vertex) => false;
+
+    /// <summary>The point drag's release: <paramref name="moved"/> past the click slop commits where the cursor is; a press
+    /// that stayed put was a click, which selected the vertex and moves nothing.</summary>
+    void PointDragRelease(bool moved) { }
+
+    /// <summary>The point drag was lost: the move is cancelled.</summary>
+    void PointDragCancel() { }
+
     /// <summary>brief-em3d-46 R-em3d46-6a — the point a measurement click takes: the snap, as the document's exact
     /// point where it is one; else the drawing plane under the cursor. Null leaves it to the pane.</summary>
     Viewer3DMeasurePoint? MeasurePoint() => null;
@@ -178,9 +189,13 @@ public sealed class Viewer3DDrawOverlay
     public List<DrawSegment> MeshRegions { get; } = [];
     /// <summary>brief-em3d-90 — declared thermal symmetry planes: outline and hatch, in the air box's symmetry colour.</summary>
     public List<DrawSegment> SymmetryPlanes { get; } = [];
+    /// <summary>The face a tool will land on (the Wire tool's pad top), each as its rings — the outline, then any holes —
+    /// filled in the hover's colour.</summary>
+    public List<IReadOnlyList<IReadOnlyList<CircuitRF.Engine.Em3d.Point3>>> TargetFaces { get; } = [];
 
     public void Clear()
     {
+        TargetFaces.Clear();
         Rubber.Clear(); Construction.Clear(); Selected.Clear(); Crossing.Clear(); Fixed.Clear(); Pivots.Clear(); Missing.Clear(); Labels.Clear();
         HeatSources.Clear(); Probes.Clear(); ProbeMarks.Clear(); MeshRegions.Clear(); SymmetryPlanes.Clear();
     }
@@ -615,6 +630,8 @@ public sealed partial class Viewer3DViewModel
                 // then Measure itself, and only then the selection.
                 if (MeasureActive && MeasureP1 is not null) { ClearMeasurement(); return true; }
                 if (MeasureActive || MeasureP1 is not null) { EndMeasure(); return true; }
+                // Then out of Face, Vertex or Edge mode, back to Object (which drops the selection made in that mode).
+                if (SelectMode != Scene3DSelectMode.Object) { SelectMode = Scene3DSelectMode.Object; return true; }
                 HitCycle.Reset();
                 CycleText = "";
                 SetSelection([]);

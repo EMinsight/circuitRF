@@ -1169,17 +1169,25 @@ in [3D EM ▸ How far the dielectric reaches](em-3d.html#dielectrics).
 
 ## Bond wires {#wires}
 
-**Shift+A W** (or *3D ▸ Draw ▸ Wire*). A wire runs between two metal objects: click the one it starts on
+**W** (or **Shift+A W**, or *3D ▸ Draw ▸ Wire*; **W** again puts the tool away). A wire runs between two metal objects: click the one it starts on
 (any face — it lands on that object's **top**, above the point clicked), then the one it ends on, then move
 to set the **loop height** and click, or type it. The toolbar sets the diameter, the metal, each end's bond
-(**ball** or **wedge**) and the section. Across hierarchy is the usual case: the example's wires start on
+(**ball** or **wedge**) and the section; the diameter, the metal and the points per wire start from *Settings ▸
+Wirebonds*, as in the layout view. Across hierarchy is the usual case: the example's wires start on
 the die's pads, inside U1, and end on the package's leads, which a `.wBond` cannot do because it belongs to
 one layout.
 
 - **The loop height you type is the one the wire measures**, the assembly way: from the top of the lower
   pad to the top of the wire at its highest point. The example's are **8 mil**, typed.
-- In Vertex mode a wire's centre-line points are handles; **G** moves one, and the feet are put back on the
-  pads when you let go. Properties lists every point, editable.
+- **From Top view** the loop height can't be seen or set with the mouse, so once the second end is placed the
+  loop-height box opens by itself, showing what **Enter** takes. That height is at least 150 µm above the
+  *higher* pad, raised if needed until the wire clears everything between the pads, and rounded up to 0.1 mil
+  (1 µm in metric units). Enter or a third click takes it; typing a number replaces it.
+- **A wire that passes through another part is named**: while you set the height the prompt says what it
+  goes through and that stretch of the preview is red, and placing it anyway says so on the status line.
+- In Vertex mode a wire's centre-line points are handles: drag one to move it, or select it and press **G**.
+  It moves at its own depth, and the feet are put back on the pads when you let go. **Esc** leaves Vertex
+  mode. Properties lists every point, editable.
 - Properties also takes a wire's **loop height** and **span**, as a wBond or Layout wire does: a loop height
   scales the wire's rise above its feet and keeps every x and y; a span moves the end foot along the wire's
   direction, the start staying put, and the end must land on a pad. Its **diameter** is in the display unit,
@@ -1455,8 +1463,9 @@ Every step above has a command-line spelling, and none of them needs a solver ex
 | **Ctrl/Cmd+A** | Select every shown object (*3D ▸ Select All Objects*); hidden ones are left out |
 | **H** | Hide the selection; show it if any of it is hidden (*3D ▸ Hide / Show Selection*). In the view or the object tree |
 | **Shift+A** then a letter | Box, Sheet, polyGon, polyLine, cYlinder, Port, Wire, Heat source, Temperature probe, Mesh region |
+| **W** | The Wire tool; again puts it away |
 | digits, **Tab**, **Enter** | Type a dimension instead of clicking |
-| **Esc** | Back one step: the typed box, the shape, the tool, the selection |
+| **Esc** | Back one step: the typed box, the shape, the tool, Face/Vertex/Edge mode, the selection |
 | **G**, **R**, **X/Y/Z** | Move, rotate; hold to an axis |
 | **Ctrl/Cmd+D** | Duplicate and move |
 | **Ctrl/Cmd+G**, **Ctrl/Cmd+Shift+G** | Group the selection; ungroup the outermost selected group |
@@ -1628,7 +1637,7 @@ order a pane presents them, with the rules each one follows.
   terminal's conductor swaps it with the reference), *Model* and *Delete*; with a terminal's arrow selected, the
   same menu adds *Flip* and *Z0…* for that terminal. *Flip* reverses the terminal's arrow; the reference stays
   the reference.
-- **Bond wires** (**W** in the Shift+A popup, or *3D ▸ Draw ▸ Wire*). A wire runs between two metal
+- **Bond wires** (**W**, **W** in the Shift+A popup, or *3D ▸ Draw ▸ Wire*). A wire runs between two metal
   objects or sheets — a die's pad inside a placed cell to a lead in the package is the usual case, which a `.wBond`
   cannot do because it belongs to one layout. Click any face of the object the wire starts on: each end attaches to
   its object's **top**, above the point you clicked (a side face lands just inside the top's edge; a snapped corner or

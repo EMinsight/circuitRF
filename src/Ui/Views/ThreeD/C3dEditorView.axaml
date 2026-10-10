@@ -210,7 +210,7 @@
                     <mi:MaterialIcon Kind="ArrowUpBoldBoxOutline" Width="16" Height="16"/>
                 </ToggleButton>
                 <!-- brief-em3d-50 R-em3d50-3 — a bond wire, pad to pad, then its loop height (assembly: lower foot to apex top). -->
-                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsWireArmed}" ToolTip.Tip="Wire: click any face of a metal object or a sheet, then another (inside a placed cell too) — each end attaches to that object's top — then set the loop height — measured from the lower foot to the top of the wire — with the mouse or by typing it  (Shift+A, W)">
+                <ToggleButton IsVisible="{Binding ViewModel.IsEditable}" IsChecked="{Binding ViewModel.IsWireArmed}" ToolTip.Tip="Wire: click any face of a metal object or a sheet, then another (inside a placed cell too) — each end attaches to that object's top — then set the loop height — measured from the lower foot to the top of the wire — with the mouse or by typing it  (W, or Shift+A, W)">
                     <mi:MaterialIcon Kind="VectorCurve" Width="16" Height="16"/>
                 </ToggleButton>
                 <!-- brief-em3d-75 R-em3d75-1a — the thermal places: records beside the ports, drawn in the overlay only. -->

@@ -216,7 +216,7 @@ public sealed partial class C3dEditorViewModel
         if (_tool is C3dOperationTool) OperationChanged();
         else if (_tool is C3dFaceEditTool) FaceToolChanged();
         else if (_tool is Hierarchy.PlaceInstanceTool) { OnPropertyChanged(nameof(ToolPrompt)); Viewer.RequestFrame(); }
-        else if (_tool is WireTool { Step: 2 } wire) { wire.Track(CursorInput()); OnPropertyChanged(nameof(ToolPrompt)); }
+        else if (_tool is WireTool { Step: 2 } wire) { UpdateWireClash(wire); OnPropertyChanged(nameof(ToolPrompt)); Viewer.RequestFrame(); }
     }
 
     /// <summary>The operation's state changed (the cursor, a key): its preview and its prompt follow.</summary>

@@ -339,6 +339,12 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         if (_tool is C3dOperationTool && !ReferenceEquals(_tool, tool)) EndOperation();
         if (_tool is C3dFaceEditTool && !ReferenceEquals(_tool, tool)) EndFaceEdit();
         _tool = tool;
+        // The Wire tool shows the top face an end lands on (FillWireOverlay); the whole object lit under it said otherwise.
+        if (Viewer.View.HoverHidden != tool is WireTool)
+        {
+            Viewer.View.HoverHidden = tool is WireTool;
+            Viewer.RequestFrame();
+        }
         // brief-em3d-46 — one gesture at a time: arming a tool ends a measurement.
         if (tool is not null) Viewer.EndMeasure();
         foreach (string p in new[] { nameof(ArmedTool), nameof(Tool), nameof(IsBoxArmed), nameof(IsSheetArmed), nameof(IsPolygonArmed),
@@ -408,6 +414,28 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         double w = DrawingPlane.Get(through, axis) + t / per;
         long pitch = Viewer.SnapEnabled && Viewer.SnapGridOn ? SnapPitch : 0;
         return pitch > 0 ? (long)Math.Round(w / pitch, MidpointRounding.AwayFromZero) * pitch : (long)Math.Round(w, MidpointRounding.AwayFromZero);
+    }
+
+    public C3dPoint3? DepthPoint(C3dPoint3 through, in C3dDrawInput input)
+    {
+        if (input.Snap is { } s && input.SnapOnGeometry) return s;
+        if (!input.HasRay) return null;
+        var p = DrawGeometry.Metres(through, Document.DbuPerMicron);
+        var o = input.RayOrigin!.Value;
+        var d = input.RayDirection!.Value;
+        double len2 = d.X * d.X + d.Y * d.Y + d.Z * d.Z;
+        if (len2 < 1e-24) return null;
+        double t = ((p.X - o.X) * d.X + (p.Y - o.Y) * d.Y + (p.Z - o.Z) * d.Z) / len2;
+        if (t <= 0) return null;
+        double per = C3dLowering.Metres(1, Document.DbuPerMicron);
+        // The STEP is on the grid, not the point: a point that is off the grid stays where it is until the cursor moves it.
+        long pitch = Viewer.SnapEnabled && Viewer.SnapGridOn ? SnapPitch : 0;
+        long Step(double from, double to)
+        {
+            double w = (to - from) / per;
+            return pitch > 0 ? (long)Math.Round(w / pitch, MidpointRounding.AwayFromZero) * pitch : (long)Math.Round(w, MidpointRounding.AwayFromZero);
+        }
+        return new C3dPoint3(through.X + Step(p.X, o.X + t * d.X), through.Y + Step(p.Y, o.Y + t * d.Y), through.Z + Step(p.Z, o.Z + t * d.Z));
     }
 
     /// <summary>The smallest <c>&lt;prefix&gt;&lt;n&gt;</c> no object or instance is called — unique and renamable.</summary>
@@ -488,10 +516,30 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
                                  [new C3dEditSlot(false, Document.Objects.Count, null, C3dPersistence.SerializeObject(obj))], ApplySlots));
                 ToolCommits++;
                 StatusMessage = $"Drew {C3dObject.KindOf(obj).ToLowerInvariant()} \"{obj.Name}\"" + (obj.Material is { } m ? $" in {m}." : ".") + _evaluatedOnce;
-                if (_tool is WireTool wt) RememberWire(wt);
+                if (_tool is WireTool wt)
+                {
+                    RememberWire(wt);
+                    // Drawn from above, its height was never seen: say what it passes through, as the red in the preview did.
+                    if (obj is C3dWire drawn && WireClashes(drawn.Points, wt.StartPad, wt.EndPad).Names is { Count: > 0 } through)
+                        StatusMessage += $" ⚠ It passes through {string.Join(", ", through.Select(n => $"'{n}'"))}: raise its loop height " +
+                                         "(Properties ▸ Loop height) or undo.";
+                }
             }
             // brief-em3d-51 R-em3d51-3c — a Define strip's definitions and the object they sized are one entry.
             EndGroup();
+        }
+        // A wire's ends placed from above (Top view, the easy way to place them in plan): its loop height cannot be seen or
+        // set with the mouse there, so the height field opens at once, saying what Enter takes — the third step is never
+        // left waiting invisibly.
+        if (step.Advanced && _tool is WireTool { Step: 2 } wire)
+        {
+            SuggestLoopHeight(wire);
+            UpdateWireClash(wire);
+            if (WireTool.LooksDown(CursorInput()))
+            {
+                OpenField(null);
+                FieldLabel = $"loop height ({Suffix}) — Enter: {Length(wire.DefaultLoopHeight)}";
+            }
         }
         OnPropertyChanged(nameof(ToolPrompt));
         Viewer.RequestFrame();
@@ -543,6 +591,12 @@ public sealed partial class C3dEditorViewModel : IC3dDrawHost
         if (_tool is not { InProgress: true } && GroupKey(key, modifiers)) return true;
         // brief-em3d-46 — G, R and Ctrl/Cmd+D start an operation on the selection (no gesture in progress).
         if (_tool is not { InProgress: true } && OperationKey(key, modifiers)) return true;
+        // W arms the Wire tool, as its toolbar button and Shift+A, W do; W again puts it away. Never mid-gesture.
+        if (_tool is not { InProgress: true } && key == Key.W && modifiers == KeyModifiers.None && IsEditable)
+        {
+            IsWireArmed = !IsWireArmed;
+            return true;
+        }
         if (_tool is not { } tool) return false;
         if (tool is C3dOperationTool opTool && opTool.Key(key, modifiers)) { OperationChanged(); return true; }
         if (tool is C3dFaceEditTool faceTool && faceTool.Key(key, modifiers)) { FaceToolChanged(); OnPropertyChanged(nameof(ToolPrompt)); return true; }

@@ -25,7 +25,7 @@ namespace CircuitRF.Ui.ThreeD.Tools;
 
 /// <summary>What a new wire is made with — the toolbar's values (R-em3d50-3b).</summary>
 public sealed record C3dWireTemplate(double DiameterUm, string? Material, WireCrossSection Section, BondStyle StartStyle,
-                                     BondStyle EndStyle, long? LoopHeightDbu);
+                                     BondStyle EndStyle, long? LoopHeightDbu, int Points = C3dWires.SeedPoints);
 
 /// <summary>The editor's side of the Wire tool.</summary>
 public interface IC3dWireHost
@@ -70,19 +70,67 @@ public sealed class WireTool(IC3dDrawHost host, IC3dWireHost wires) : C3dDrawToo
     {
         0 => "Wire: click a metal object or a sheet — any face — where the wire starts. It attaches to that object's top.",
         1 => $"Wire: click where it ends — any face of a metal object or a sheet (from '{_padA}').",
-        _ => _shown is { } s
+        _ when _lookingDown => $"Wire: now its LOOP HEIGHT — looking straight down it cannot follow the cursor: click or press " +
+                               $"Enter for {wires.Length(DefaultLoopHeight)}{(SuggestionRaised ? " (raised to clear what is under it)" : "")}, " +
+                               "or type a height. Esc cancels." + ClashText,
+        _ => (_shown is { } s
             ? $"Wire: loop height {wires.Length(s.Assembly)} (assembly: lower foot to the top of the apex) · axis loop " +
               $"{wires.Length(s.AxisLoop)} — move and click, or type it. Esc cancels."
-            : "Wire: move to set the loop height and click (or type it). Esc cancels.",
+            : "Wire: move to set the loop height and click (or type it). Esc cancels.") + ClashText,
     };
+
+    /// <summary>What the arch the cursor shows now passes through (the editor fills it in), or null — from above it cannot be
+    /// seen, so the prompt says it.</summary>
+    public IReadOnlyList<string>? Clash { get; set; }
+
+    private string ClashText => Clash is { Count: > 0 } c ? $" ⚠ It passes through {string.Join(", ", c.Select(n => $"'{n}'"))}: raise the loop height." : "";
+
+    /// <summary>The pads the ends are on (the start's once placed, the end's once placed).</summary>
+    public string StartPad => _padA;
+    public string EndPad => _padB;
 
     public override IReadOnlyList<string> Dimensions => Step == 2 ? LoopHeight : None;
 
     private long DefaultAssembly => _template.LoopHeightDbu ?? DefaultAssemblyUm * Host.DbuPerMicron;
 
+    /// <summary>The loop height a click or an empty Enter takes when the view cannot show one: the editor's suggestion for these
+    /// two ends (<see cref="SuggestedLoopHeight"/>), else the last wire's, else the default.</summary>
+    public long DefaultLoopHeight => SuggestedLoopHeight ?? DefaultAssembly;
+
+    /// <summary>The last wire's loop height, else 150 µm — what a suggestion starts from.</summary>
+    public long RememberedLoopHeight => DefaultAssembly;
+
+    /// <summary>The editor's loop height for the two ends placed: above the higher foot, raised until the arch passes through
+    /// nothing. Null until the end is placed.</summary>
+    public long? SuggestedLoopHeight { get; set; }
+
+    /// <summary>The suggestion was raised above the first try to clear something under the arch.</summary>
+    public bool SuggestionRaised { get; set; }
+
+    /// <summary>The two ends, once placed (document DBU, seated on their pads).</summary>
+    public C3dPoint3 Start => _a;
+    public C3dPoint3 End => _b;
+
+    /// <summary>The view looked straight down at the last cursor event (Top or Bottom view): a height cannot be read off it.</summary>
+    private bool _lookingDown;
+
+    /// <summary>The line of sight runs within about 11° of vertical — Top or Bottom view, or near it — so the cursor says nothing
+    /// about a height: the vertical through the arch is seen end-on, and a nearly end-on one turns a pixel into millimetres.</summary>
+    public static bool LooksDown(in C3dDrawInput input)
+    {
+        if (!input.HasRay) return false;
+        var d = input.RayDirection!.Value;
+        double len = Math.Sqrt(d.X * d.X + d.Y * d.Y + d.Z * d.Z);
+        return len > 0 && Math.Abs(d.Z) >= 0.98 * len;
+    }
+
+    /// <summary>The loop height for a click or an Enter: the cursor's, or — looking straight down — the default.</summary>
+    private long? HeightFor(in C3dDrawInput input) => Assembly(input) ?? (LooksDown(input) ? DefaultLoopHeight : null);
+
     /// <summary>The cursor's assembly loop height: its z along the vertical through the arch's crest, above the lower pad.</summary>
     private long? Assembly(in C3dDrawInput input)
     {
+        if (LooksDown(input)) return null;
         double s = LoopShape.SeedPeakSpan;
         var crest = new C3dPoint3(_a.X + (long)Math.Round((_b.X - _a.X) * s), _a.Y + (long)Math.Round((_b.Y - _a.Y) * s), Math.Max(_a.Z, _b.Z));
         return Host.Along(crest, C3dAxis.Z, input) is { } z ? Math.Max(0, z - Math.Min(_a.Z, _b.Z)) : null;
@@ -115,6 +163,11 @@ public sealed class WireTool(IC3dDrawHost host, IC3dWireHost wires) : C3dDrawToo
         return null;
     }
 
+    /// <summary>While an end is being picked (the start, then the end): the pad the cursor would land it on and where, else
+    /// null — what the editor highlights, so the user sees the top face the end is seated on rather than the whole object.</summary>
+    public (string Pad, C3dPoint3 At)? Landing(in C3dDrawInput input)
+        => Step < 2 && OnPad(input, out string pad, out _) is { } at ? (pad, at) : null;
+
     public override C3dToolStep Click(in C3dDrawInput input)
     {
         switch (Step)
@@ -130,10 +183,13 @@ public sealed class WireTool(IC3dDrawHost host, IC3dWireHost wires) : C3dDrawToo
                 if (b.X == _a.X && b.Y == _a.Y) return C3dToolStep.Refuse("A wire's two ends are at one plan position: click somewhere else for its end.");
                 _b = b;
                 _shown = null;
+                SuggestedLoopHeight = null;
+                SuggestionRaised = false;
+                _lookingDown = LooksDown(input);
                 Step = 2;
                 return C3dToolStep.Next;
             default:
-                return Assembly(input) is { } h ? Finish(h) : C3dToolStep.Refuse("Wire: the cursor is looking straight down; type the loop height instead.");
+                return HeightFor(input) is { } h ? Finish(h) : C3dToolStep.Refuse("Wire: move over the view to set the loop height, or type it.");
         }
     }
 
@@ -141,7 +197,7 @@ public sealed class WireTool(IC3dDrawHost host, IC3dWireHost wires) : C3dDrawToo
     {
         if (Step != 2) return new(false);
         long? h = values.Length > 0 ? values[0] : null;
-        h ??= Assembly(input);
+        h ??= HeightFor(input);
         if (h is not { } hh) return C3dToolStep.Refuse("Wire: type the loop height.");
         if (hh <= 0) return C3dToolStep.Refuse("A loop height is above the lower foot: type a positive length.");
         return Finish(hh);
@@ -153,7 +209,7 @@ public sealed class WireTool(IC3dDrawHost host, IC3dWireHost wires) : C3dDrawToo
     {
         var w = New(name, []);
         double half = C3dWires.HalfHeightDbu(_template.Section, C3dWires.DiameterNm(w), Host.DbuPerMicron);
-        var (points, measured) = C3dWires.ForAssemblyHeight(a, b, assembly, half, pts => wires.MeasureAssembly(New(name, pts)));
+        var (points, measured) = C3dWires.ForAssemblyHeight(a, b, assembly, half, pts => wires.MeasureAssembly(New(name, pts)), _template.Points);
         w.Points = points;
         return (w, measured);
     }
@@ -190,7 +246,7 @@ public sealed class WireTool(IC3dDrawHost host, IC3dWireHost wires) : C3dDrawToo
         if (Step == 1)
         {
             if ((OnPad(input, out _, out _) ?? Host.FreePoint(input, out _)) is not { } c || (c.X == _a.X && c.Y == _a.Y)) return;
-            arch = C3dWires.Arch(_a, c, DefaultAssembly);
+            arch = C3dWires.Arch(_a, c, DefaultAssembly, _template.Points);
         }
         else
         {
@@ -204,7 +260,8 @@ public sealed class WireTool(IC3dDrawHost host, IC3dWireHost wires) : C3dDrawToo
     /// on every cursor move, so the status bar's two numbers follow the mouse.</summary>
     public (long Assembly, double? Measured, long AxisLoop, List<C3dPoint3> Points) Track(in C3dDrawInput input)
     {
-        long assembly = Assembly(input) ?? DefaultAssembly;
+        _lookingDown = LooksDown(input);
+        long assembly = Assembly(input) ?? DefaultLoopHeight;
         if (_shown is { } s && s.Assembly == assembly) return s;
         var (w, measured) = Shape(_a, _b, assembly, "w");
         _shown = (assembly, measured, AxisLoop(w), w.Points);
