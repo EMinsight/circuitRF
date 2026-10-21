@@ -409,6 +409,11 @@ new, and *reports* — never auto-deletes — what no longer exists in the schem
 after the first generation and run it again after a schematic edit; a generator that stomped your
 placement would be one you used exactly once.
 
+**Bottom-side parts stay on the bottom.** A part you have flipped to the bottom keeps its side through
+every later run, including one that replaces its footprint. Flipping a part does not touch its symbol,
+and a later run does not read the flip as a change to undo. Mirroring the symbol mirrors the part on the
+face it is on.
+
 **Where the layout is written.** A schematic in a cell's `schematic/` folder writes that cell's
 `layout/` folder. A schematic saved **loose** &mdash; at the workspace's root, say &mdash; writes its layout
 beside it, under the same name: `PDN1.csch` updates `PDN1.clay` in the same folder. Update Schematic
@@ -851,8 +856,15 @@ left the board file at the 20211014 epoch — and early enough that every later 
 #### What comes across
 
 Board-level geometry and footprint geometry are both handled; a footprint's items are in its own frame
-and compose through its placement, at an arbitrary angle, with a back-layer part being a mirror combined
-with that angle.
+and compose through its placement, at an arbitrary angle.
+
+**Back-side footprints arrive as [bottom-side parts](#bottom-side) of one footprint.** A part on the back
+of the board is placed on the bottom face, using the same cell as that footprint on the front, so a
+footprint used on both faces is one cell. Every land, mask opening and silkscreen line lands exactly
+where the board file puts it, on the bottom layers. The import's report says how many back-side
+placements it found. Two cases keep a back part as a cell of its own, already flipped and placed on the
+top, as earlier imports did: when the technology has no front layer for something the part draws on its
+back face (the report names the part and the layer), and when the workspace has no technology at all.
 
 | In the board file | Becomes, in circuitRF |
 |---|---|
@@ -867,7 +879,7 @@ with that angle.
 | `gr_curve`, `bezier` | a curve or path with a cubic edge |
 | `gr_text` | a label in the stroke font, its size read as the cap height; on export a label writes its pen width as the text's thickness |
 | `zone` → `filled_polygon` | polygons, with their holes |
-| `footprint` / `module` | one generated cell per distinct definition, one instance per placement |
+| `footprint` / `module` | one generated cell per distinct definition, one instance per placement; a back-side one is a bottom-side placement |
 | pads: `circle`, `rect`, `oval`, `roundrect`, `trapezoid`, `custom` | real copper geometry — see below |
 | images, dimensions, groups, tables, tuning patterns, teardrops | skipped, reported by type with a count |
 

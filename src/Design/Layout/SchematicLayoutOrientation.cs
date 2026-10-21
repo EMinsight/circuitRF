@@ -57,7 +57,26 @@ public static class SchematicLayoutOrientation
     public static VisualOrientation FromSchematic(int schematicDeg, bool mirror) =>
         new(mirror, LayoutAngle.Normalize(-schematicDeg));
 
-    public static VisualOrientation FromLayout(LayoutInstance inst) => new(inst.MirrorX, inst.RotationDegrees);
+    /// <summary>
+    /// The placement's facing as the link compares it: as seen on its OWN face (brief-bsp-4 R-bsp4-5).
+    ///
+    /// <para>A Flip is the board's left–right reflection plus a change of face — rotation to −θ and
+    /// <c>MirrorX</c> toggled — so compared raw, the link would read every flip as a mirror (and, at any
+    /// angle off the horizontal, a turn) made on the layout side, and the next schematic change would
+    /// be carried onto it and un-flip the part. Composing that same reflection back in for a bottom
+    /// placement makes a flip change nothing the link sees, and a symbol mirrored afterwards mirrors
+    /// the part on the face it is on. The reflection is its own inverse, which is why
+    /// <see cref="ToLayout"/> is the same composition.</para>
+    /// </summary>
+    public static VisualOrientation FromLayout(LayoutInstance inst) =>
+        OnFace(new VisualOrientation(inst.MirrorX, inst.RotationDegrees), inst.Side);
+
+    /// <summary>A facing from <see cref="FromLayout"/> back to the <c>MirrorX</c> and rotation a placement on
+    /// <paramref name="side"/> carries.</summary>
+    public static VisualOrientation ToLayout(VisualOrientation facing, PlacementSide side) => OnFace(facing, side);
+
+    private static VisualOrientation OnFace(VisualOrientation v, PlacementSide side) =>
+        side == PlacementSide.Bottom ? new VisualOrientation(true, 0).Compose(v) : v;
 
     /// <summary>The schematic rotation nearest <paramref name="v"/> — a symbol can only take quarter
     /// turns. <paramref name="exact"/> is false when the layout angle had to be rounded to get there.</summary>

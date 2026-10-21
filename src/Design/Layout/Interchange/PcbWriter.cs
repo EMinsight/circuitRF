@@ -1113,7 +1113,7 @@ public static class PcbWriter
     /// <summary>Bakes an instance's mirror into a cell-local shape, per the measurement in
     /// <see cref="WriteFootprint"/>. Negating Y reverses an arc's sense, so every bulge flips sign —
     /// <c>LayoutFlatten.FlipBulgeSigns</c> owns that rule and is reused rather than re-derived.</summary>
-    private static LayoutShape FlipY(LayoutShape shape)
+    internal static LayoutShape FlipY(LayoutShape shape)
     {
         var clone = LayoutGeometry.Clone(shape);
         LayoutCoordinateWalk.Transform(clone, LayoutCoordinateTransform.AxisIndependent(v => v, v => -v, v => v));

@@ -96,9 +96,12 @@ public sealed class PcbFootprintCell
 /// <param name="LabelDy">The Y half of <paramref name="LabelDx"/>.</param>
 /// <param name="LabelRotDeg">The designator's own angle, absolute and CCW in the Y-up frame, when
 /// the file states one.</param>
+/// <param name="Back">The footprint sits on the back copper. Its cell is the format's BAKED flip —
+/// local Y negated, every child on its back layer — and <c>PcbImport</c> decides whether it becomes a
+/// bottom-side placement of the front form (brief-bsp-4 R-bsp4-1) or stays as read.</param>
 public sealed record PcbPlacement(
     string ContentKey, long X, long Y, double RotationDegrees, string? Reference,
-    long? LabelDx = null, long? LabelDy = null, double? LabelRotDeg = null);
+    long? LabelDx = null, long? LabelDy = null, double? LabelRotDeg = null, bool Back = false);
 
 /// <summary>What a stackup entry says, before it becomes a <see cref="StackupLayer"/>.</summary>
 /// <param name="Name">The entry's own name — a copper layer's canonical name, or <c>dielectric 1</c>.</param>

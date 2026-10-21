@@ -730,8 +730,11 @@ public static class SchematicToLayoutGenerator
                                     string targetLayoutBaseDir)
     {
         var was = CellHierarchy.InstanceBbox(before, targetLayoutBaseDir);
-        after.MirrorX = target.Mirror;
-        after.RotationDegrees = target.Deg;
+        // The target is a facing on the part's own face (SchematicLayoutOrientation.FromLayout), so a
+        // bottom part is turned and mirrored on the bottom and stays there.
+        var placed = SchematicLayoutOrientation.ToLayout(target, after.Side);
+        after.MirrorX = placed.Mirror;
+        after.RotationDegrees = placed.Deg;
         var now = CellHierarchy.InstanceBbox(after, targetLayoutBaseDir);
         if (was.IsEmpty || now.IsEmpty) return;
         after.X += (was.MinX + was.MaxX) / 2 - (now.MinX + now.MaxX) / 2;

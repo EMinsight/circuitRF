@@ -1010,7 +1010,24 @@ public static class PcbReader
         ctx.Board.FootprintCells.TryAdd(cell.ContentKey, cell);
         var (labelDx, labelDy, labelRot) = ReferencePlacementOf(node, ctx);
         ctx.Board.Placements.Add(new PcbPlacement(
-            cell.ContentKey, x, y, placementDegrees, ReferenceOf(node), labelDx, labelDy, labelRot));
+            cell.ContentKey, x, y, placementDegrees, ReferenceOf(node), labelDx, labelDy, labelRot,
+            Back: IsBackFace(node.ChildAtom("layer"), ctx.Board.LayerTable)));
+    }
+
+    /// <summary>
+    /// Whether a footprint's own <c>(layer …)</c> names the BACK copper — the last copper entry of the
+    /// file's layer table by ordinal (top-to-bottom order in this format), with <c>B.Cu</c> as the
+    /// spelling when the table says nothing. A renamed copper layer occupies the canonical slot at the
+    /// 20171130 epoch, which is why this goes through the table rather than the name.
+    /// </summary>
+    private static bool IsBackFace(string? layer, IReadOnlyList<PcbLayerTableEntry> table)
+    {
+        if (layer is not { Length: > 0 }) return false;
+        var copper = table.Where(e => e.IsCopper).OrderBy(e => e.Ordinal).ToList();
+        if (copper.Count >= 2)
+            return string.Equals(layer, copper[^1].CanonicalName, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(layer, copper[^1].UserName, StringComparison.OrdinalIgnoreCase);
+        return string.Equals(layer, "B.Cu", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -1560,24 +1577,43 @@ public static class PcbReader
     /// <para>The library NAME is part of the key, so two genuinely different parts that happen to
     /// coincide geometrically stay separate cells; the placement is not, because the geometry hashed
     /// here has already had it removed.</para>
+    ///
+    /// <para><b>It hashes the GEOMETRY, not the way it was written down</b> (brief-bsp-4 R-bsp4-1): the
+    /// shapes are an unordered set, a polygon is its ring wherever it starts and whichever way it
+    /// winds, a two-point stroke either way round, and a pin's facing is an AXIS (it is the pad's long
+    /// axis, so 0° and 180° are one fact). A back-side footprint reflected back to its front form comes
+    /// out with every one of those written differently from the same part read on the front — a
+    /// through-hole pad's copper listed back face first, a reflected ring wound the other way — and
+    /// would otherwise never share the front part's cell.</para>
     /// </summary>
     internal static string ContentKeyOf(PcbFootprintCell cell)
-    {
-        var sb = new StringBuilder();
-        sb.Append(cell.LibraryName).Append('\n');
-        foreach (var s in cell.Shapes)
-        {
-            sb.Append(s.LayerName).Append('|').Append(s.Shape.GetType().Name).Append('|').Append(s.Shape.Net ?? "").Append('|');
-            AppendGeometry(sb, s.Shape);
-            sb.Append('\n');
-        }
-        foreach (var (p, layerName) in cell.Pins)
-            sb.Append("pin|").Append(p.Name).Append('|').Append(layerName).Append('|')
-              .Append(p.X).Append(',').Append(p.Y)
-              .Append('|').Append(p.WidthDbu).Append('|')
-              .Append(p.OutwardDeg.ToString("R", CultureInfo.InvariantCulture)).Append('\n');
+        => ContentKeyOf(cell.LibraryName,
+                        cell.Shapes.Select(s => (s.LayerName, s.Shape)),
+                        cell.Pins.Select(p => (p.Pin, p.LayerName)));
 
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())))[..16];
+    /// <summary><see cref="ContentKeyOf(PcbFootprintCell)"/> over any layer spelling — a source layer
+    /// NAME as read, or a reconciled key once <c>PcbImport</c> has settled them.</summary>
+    internal static string ContentKeyOf(
+        string libraryName, IEnumerable<(string Layer, LayoutShape Shape)> shapes, IEnumerable<(LayoutPin Pin, string Layer)> pins)
+    {
+        var lines = new List<string>();
+        foreach (var (layer, shape) in shapes)
+        {
+            var sb = new StringBuilder();
+            sb.Append(layer).Append('|').Append(shape.GetType().Name).Append('|').Append(shape.Net ?? "").Append('|');
+            AppendGeometry(sb, shape);
+            lines.Add(sb.ToString());
+        }
+        foreach (var (p, layer) in pins)
+            lines.Add(new StringBuilder().Append("pin|").Append(p.Name).Append('|').Append(layer).Append('|')
+                .Append(p.X).Append(',').Append(p.Y)
+                .Append('|').Append(p.WidthDbu).Append('|')
+                .Append((LayoutAngle.Normalize(p.OutwardDeg) % 180.0).ToString("R", CultureInfo.InvariantCulture)).ToString());
+        lines.Sort(StringComparer.Ordinal);
+
+        var all = new StringBuilder().Append(libraryName).Append('\n');
+        foreach (string line in lines) all.Append(line).Append('\n');
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(all.ToString())))[..16];
     }
 
     private static void AppendGeometry(StringBuilder sb, LayoutShape shape)
@@ -1588,11 +1624,52 @@ public static class PcbReader
             case RoundedRectShape rr: sb.Append(rr.X1).Append(',').Append(rr.Y1).Append(',').Append(rr.X2).Append(',').Append(rr.Y2).Append(',').Append(rr.CornerRadius); break;
             case CircleShape c: sb.Append(c.Cx).Append(',').Append(c.Cy).Append(',').Append(c.R); break;
             case ViaShape v: sb.Append(v.X).Append(',').Append(v.Y).Append(',').Append(v.PadSize).Append(',').Append(v.DrillSize); break;
-            case PolygonShape p: AppendXy(sb, p.Xy); break;
+            case PolygonShape p:
+                AppendXy(sb, CanonicalRing(p.Xy));
+                foreach (string hole in (p.Holes ?? []).Select(h => string.Join(',', CanonicalRing(h))).Order(StringComparer.Ordinal))
+                    sb.Append('h').Append(hole);
+                break;
             case CurveShape cu: AppendXy(sb, cu.Xy); AppendEdges(sb, cu.Edges); break;
-            case PathShape pa: AppendXy(sb, pa.Xy); sb.Append('w').Append(pa.Width).Append((int)pa.End); AppendEdges(sb, pa.Edges); break;
+            case PathShape pa:
+                AppendXy(sb, pa.Edges is null or { Count: 0 } ? CanonicalStroke(pa.Xy) : pa.Xy);
+                sb.Append('w').Append(pa.Width).Append((int)pa.End); AppendEdges(sb, pa.Edges); break;
             case LabelShape l: sb.Append(l.X).Append(',').Append(l.Y).Append(',').Append(l.Height).Append(',').Append(l.Text); break;
         }
+    }
+
+    /// <summary>A polygon's ring started at its least vertex and wound counter-clockwise — the same
+    /// ring however it was written.</summary>
+    private static long[] CanonicalRing(long[] xy)
+    {
+        int n = xy.Length / 2;
+        if (n < 3) return xy;
+        double area2 = 0;
+        for (int i = 0; i < n; i++)
+        {
+            int j = (i + 1) % n;
+            area2 += (double)xy[2 * i] * xy[2 * j + 1] - (double)xy[2 * j] * xy[2 * i + 1];
+        }
+        var pts = Enumerable.Range(0, n).Select(i => (X: xy[2 * i], Y: xy[2 * i + 1])).ToList();
+        if (area2 < 0) pts.Reverse();
+        int start = 0;
+        for (int i = 1; i < n; i++)
+            if (pts[i].X < pts[start].X || (pts[i].X == pts[start].X && pts[i].Y < pts[start].Y)) start = i;
+        var ring = new long[xy.Length];
+        for (int k = 0; k < n; k++)
+            (ring[2 * k], ring[2 * k + 1]) = pts[(start + k) % n];
+        return ring;
+    }
+
+    /// <summary>A straight stroke written from its lesser end.</summary>
+    private static long[] CanonicalStroke(long[] xy)
+    {
+        if (xy.Length < 4) return xy;
+        int n = xy.Length / 2;
+        bool reversed = xy[2 * (n - 1)] < xy[0] || (xy[2 * (n - 1)] == xy[0] && xy[2 * (n - 1) + 1] < xy[1]);
+        if (!reversed) return xy;
+        var r = new long[xy.Length];
+        for (int k = 0; k < n; k++) (r[2 * k], r[2 * k + 1]) = (xy[2 * (n - 1 - k)], xy[2 * (n - 1 - k) + 1]);
+        return r;
     }
 
     private static void AppendXy(StringBuilder sb, long[] xy)

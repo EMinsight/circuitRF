@@ -21400,3 +21400,44 @@ question a placement's side does not change; a bottom placement there resolves u
   side swap still finds both coppers in it.
 - `PcbExport` now flattens a footprint definition's own sub-placements with the technology, so a sub-part the cell
   itself puts on the bottom lands on the bottom roles (the last no-technology site BSP-1 left to this brief).
+
+## BSP-4: board import and the schematic round trip keep the side (2026-10-21)
+
+- **A back footprint is un-flipped on reconciled KEYS, after reconciliation, not on source names.** The decision
+  needs the destination technology's surface roles, because a bottom placement is drawn through
+  `SurfaceRoles.Swap`. `PcbImport.PlanSides` builds the technology the import leaves behind (destination layers plus
+  `LayersToAdd`, the effective stackup) and accepts a front layer only when swapping it back gives the very layer
+  the baked cell had. Layers that are not surface roles (inner copper, the drill layer) map to themselves. So every
+  land lands where, and on what, the old import put it; the test compares against the baked import to the DBU.
+- **The geometry is undone with the writer's own `PcbWriter.FlipY`** (now `internal`), so import reverses exactly
+  what export does. circuitRF's MirrorX negates local X and the format's flip negates local Y, so a bottom
+  placement is `MirrorX = true` at the file angle + 180°; the designator's stored offset has its Y negated for the
+  same reason.
+- **`ContentKeyOf` hashes geometry, not its spelling.** Shapes are a sorted set, a polygon ring (and each hole) is
+  started at its least vertex and wound counter-clockwise, a straight stroke is read from its lesser end, and a pin's
+  facing is taken mod 180° (it is the pad's long axis). Without this a reflected front form never matches the same
+  part read on the front: a rotated pad's ring comes back wound the other way, a through-hole pad lists its back copper
+  first, and a tall pad's pin faces 180° away. Only cells that are the same geometry can newly merge.
+- **A through-hole pad's pin stays on the top copper when un-flipped.** The reader names a pad's first copper layer,
+  and a through-hole pad lists the front first on either face. Swapping it would make the front form differ from the
+  same part read on the front.
+- **A through-hole part symmetric in Y was already one cell before this.** Its baked flip has the same copper on the
+  same two layers, so the old content key matched. It now also becomes a bottom placement.
+- **The fallback is the old import, per footprint, reported.** A layer with no counterpart (a back assembly layer on
+  a board whose front draws none) or no bottom copper keeps the baked cell, `Side = Top`, unmirrored; the message
+  names the footprint, its references and the layer. With NO destination technology (the GUI on a workspace that
+  has none) every back part stays baked: the GUI then adds the layers nowhere, and a bottom placement with no
+  technology is drawn on its cell's own layers. `convert` always passes a technology, so it always un-flips.
+- **Gerber import creates no placements** (R-bsp4-4). `PlacementFile` is evidence about the artwork and never
+  geometry, and railRF/recognition read its Side column as a fact. There is no placement to put a side on.
+- **The orientation link compares a placement's facing as seen on its own face.**
+  `SchematicLayoutOrientation.FromLayout` composes the board's left-right reflection back in for a bottom
+  placement, and `ToLayout` (the same composition, since a reflection is its own inverse) converts a carried facing
+  back for `TurnInPlace`. XOR-ing only the mirror is not enough: Flip also turns the part to −θ, so off the horizontal
+  the link would still read a turn.
+- **Update Layout already kept `Side`** (R-bsp4-6): every replace path clones the placement (`LayoutGeometry.Clone`
+  carries `Side` since BSP-1), including a footprint change that regenerates the land pattern. New parts go on the top.
+- **Layout → schematic and recognition never read MirrorX as a face** (R-bsp4-7). `LayoutToSchematicGenerator`
+  resolves through `CellLayoutResolver.Resolve(inst, …, technology)`, and the artwork recognition takes placed pads
+  from `PlacedPins` with each pin's own resolved layer. A bottom part's pins are on Bottom Copper and join the bottom
+  traces through `BoardCopper`'s per-layer pieces.
