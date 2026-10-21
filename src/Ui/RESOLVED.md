@@ -40230,3 +40230,19 @@ an empty value — `CommitExpression` otherwise refuses an empty expression.
   nearer the focus than any host binding (the workspace window's Escape included).
 - Other hosts with Delete/Escape KeyBindings over text boxes were not changed: `DataDisplayView`,
   `MatchDesignerWindow`, `RailRfWindow`, `WorkspaceWindow`.
+
+## PDG-4: the plot dialog's Manual steps (2026-10-21)
+
+- **Which mode the dialog opens in.** `image_dialog_plot_read_mode` holds the user's last choice (`automatic`, or null
+  for Manual). Only Tools ▸ Digitise Plot… honours it; the two Touchstone entries always open in Automatic, and a
+  command opening the dialog never writes it — `PlotSessionViewModel.ReadModeChosen` is raised by the Read toggles'
+  setters only, so opening by a Touchstone entry cannot overwrite a remembered Manual.
+- **Two canvas gestures change meaning in Manual.** A left double-click places a point on the selected curve instead of
+  fitting the picture (F and the button still fit). The right button still pans; a right press on a fixpoint that is
+  released within 4 px of where it went down removes the point instead.
+- **Manual draws none of the overlay.** The session's overlay of a manual plot is still built (the CLI's `--overlay`
+  uses it), but the canvas draws the box, its handles, the edge values, the fixpoints and the dashed sampled curve
+  itself, from `ShownManual` and the session's manual traces — so a fixpoint dragged moves before the re-read lands.
+- **Make: CSV hides the Touchstone's controls in both modes** — Ports, the matrix (`HasMatrix` now false with CSV),
+  the output grid and format, the refusal and its highlights, and the Fit tooltip's Touchstone wording
+  (`PlotTraceRowViewModel.SetCsv`, pushed to every row when Make changes).

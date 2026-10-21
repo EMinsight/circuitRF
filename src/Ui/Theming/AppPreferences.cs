@@ -175,6 +175,12 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? ImageDialogPlotTracesDetailed { get; set; }
 
+    // brief-pdg-4 R-pdg4-5: how the plot dialog reads — "automatic", or null for Manual (by hand). Digitise Plot… opens in
+    // it; the Touchstone entries always open in Automatic. Remembered per user as the traces table's mode is.
+    [JsonPropertyName("image_dialog_plot_read_mode")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ImageDialogPlotReadMode { get; set; }
+
     // Designer report (round 15): whether a symbol's facing and its footprint's placement angle follow each other.
     // Null means ON, the behaviour until now: Update Layout from Schematic turns a footprint when its symbol was turned
     // since the last sync, and Create Schematic from Artwork draws a shunt part above or below its line by the side of

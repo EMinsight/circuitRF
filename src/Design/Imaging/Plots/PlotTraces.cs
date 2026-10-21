@@ -130,18 +130,21 @@ public static class PlotTraces
         double axis = frame.IsChart ? 2 * frame.Radius : frame.Right - frame.Left;
         int minPixels = (int)Math.Max(12, MinTrackShare * axis);
 
+        // A cluster that is a blend of another's colour with the background is that cluster's anti-aliased fringe.
+        int FringeOf(int c) => Enumerable.Range(0, k).FirstOrDefault(o => o != c && o != background && count[o] > count[c]
+            && PlotInk.Distance(clusters.Clusters[o].Rgb, clusters.Clusters[c].Rgb) >= 24
+            && PlotInk.Between(clusters.Clusters[c].Rgb, clusters.Clusters[o].Rgb, ink.Background)
+            && PlotInk.Distance(clusters.Clusters[c].Rgb, ink.Background) < PlotInk.Distance(clusters.Clusters[o].Rgb, ink.Background), -1);
+        bool Fringe(int c) => FringeOf(c) >= 0;
+
+        // A click names the cluster under it — and a click on a curve's anti-aliased edge names the curve, since a fringe
+        // is never traced itself (brief-pdg-4-digitise-by-hand.md R-pdg4-2).
         var followed = new HashSet<int>();
         foreach (var (fx, fy) in hints.Follow)
         {
             int c = NearestInk(clusters, background, (int)fx - x0, (int)fy - y0);
-            if (c >= 0) followed.Add(c);
+            if (c >= 0) followed.Add(FringeOf(c) is var parent and >= 0 ? parent : c);
         }
-
-        // A cluster that is a blend of another's colour with the background is that cluster's anti-aliased fringe.
-        bool Fringe(int c) => Enumerable.Range(0, k).Any(o => o != c && o != background && count[o] > count[c]
-            && PlotInk.Distance(clusters.Clusters[o].Rgb, clusters.Clusters[c].Rgb) >= 24
-            && PlotInk.Between(clusters.Clusters[c].Rgb, clusters.Clusters[o].Rgb, ink.Background)
-            && PlotInk.Distance(clusters.Clusters[c].Rgb, ink.Background) < PlotInk.Distance(clusters.Clusters[o].Rgb, ink.Background));
 
         bool Candidate(int c)
         {

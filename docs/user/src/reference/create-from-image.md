@@ -300,8 +300,14 @@ against frequency, a Smith chart, a polar chart &mdash; is read as **Plot**, and
 | Where | Row |
 |---|---|
 | **File** menu | **Import ▸ Image ▸ As Touchstone…** &mdash; a picture browsed to. The dialog's **Paste** reads the clipboard's. |
-| **Tools** menu | **Digitise Plot…** &mdash; the dialog, empty, in plot mode. |
+| **Tools** menu | **Digitise Plot…** &mdash; the dialog, empty, in plot mode, read by hand (**Manual**). |
 | Right-click a picture file in the **Project** panel | **Create Touchstone from Plot…** |
+
+**Read** is **Automatic** or **Manual**. Automatic finds each plot, reads its tick labels and traces its curves, and
+you correct what it read; the two Touchstone rows open in it. Manual reads nothing off the picture: you draw the plot
+area, type its scale and place each curve's points, so it works on any picture &mdash; see
+[Digitise by hand](#by-hand). **Digitise Plot…** opens in Manual, or in Automatic if that is what you chose there last.
+Switching keeps the picture.
 
 **Several pictures make one file.** A datasheet's S21 and S11 are often separate figures: **Add picture…** under
 **Pictures**, or drop or paste another, adds it to the same session; **✕** takes one out. Plots and traces are
@@ -327,7 +333,7 @@ x number takes the unit the other x labels were read in, and is refused when non
 calibrate it; a third replaces the older of the two. This also corrects an axis calibrated from misread labels: the
 values you give replace what was read. Each value is written into the plot's **x axis** or **y axis** row as a pixel
 position and its value, `120px=1GHz,900px=5GHz`, and the row can be typed directly in that form. A logarithmic axis is
-read as one from its labels.
+read as one from its labels; **Log** beside the row says so when its labels did not read.
 
 **A y axis on the right.** Many datasheets draw two quantities against one frequency axis &mdash; dB(S21) against the
 left axis and its phase against the right, or gain and noise figure. The right axis is read from its own labels, and the
@@ -426,7 +432,40 @@ Display, and its passivity, reciprocity and causality check goes to Messages.
 **CSV** writes the curves exactly as read, in each plot's own units, and never waits: any plot digitises, S-parameters
 or not &mdash; a temperature against time comes out just as well. Its `y_axis` column says which y axis each
 rectangular curve was read against, and its last column, `y_fit`, holds a fitted curve's fit at each point beside the
-value read.
+value read. With **CSV** chosen, **Ports**, the matrix and the output grid are not shown: they are the Touchstone's.
+
+### Digitise by hand {#by-hand}
+
+With **Read: Manual** the right column is six steps, each enabled once the one before it is done.
+
+1. **Plot area.** Drag a box across the plot's axes. Its left and right edges are x low and x high, its bottom and top
+   y low and y high. Drag a corner or an edge handle to resize it. For a scan that is not square, drag the round handle
+   above the box or type its **Angle**. When circuitRF happens to find the plot's frame, the box starts there, dashed:
+   move its edges onto the axes. **Draw box** draws it again.
+2. **Scales.** **One y scale** or **Two y scales** (a second on the right). Type **x low** and **x high** &mdash; a
+   frequency with its unit (`1 GHz`), or a plain number for an x that is not frequency &mdash; and **y low** and **y
+   high**, with a unit after the number if you like (`-40 dB`); that unit is the CSV's `y_unit`. **Log** marks a
+   logarithmic axis. Each value is written beside its edge of the box, so a wrong corner shows at once. Text in the
+   picture is never read: the scale you type is the scale.
+3. **Curves.** **Add curve** for each curve to take. Each row has a name (the CSV's trace column), a colour, **Axis**
+   (with two scales) and **Is**: **Data** &mdash; plain x and y &mdash; or an entry and quantity such as S21 dB.
+4. **Points.** With a curve selected, **double-click** on the picture to add a point, **drag** a point to move it, and
+   **right-click** it, or click it and press **Delete**, to remove it. **Escape** stops placing;
+   **Place points** starts again. While you place or drag
+   a point a 4&times; magnifier follows the pointer, and the readout beside it gives the value under the pointer.
+   **Find curve**, then a click on the curve, follows it by its colour inside the box and places its points for you
+   &mdash; one every 20 pixels and one at every peak and dip &mdash; to edit as you would your own. A click on blank
+   paper finds nothing, and says so. **Undo** (Cmd/Ctrl+Z) puts the box, the curves and the points back one change at a time.
+5. **Sample.** The points are joined and sampled at x values: from the curve's first point to its last, 101 of them,
+   unless you type a start, stop and number of points, or a **step** (`50 MHz`). **Linear** joins the points with
+   straight lines (in log coordinates on a log axis); **Smooth** with a curve through every point that never overshoots
+   between two of them. Nothing is sampled beyond a curve's first and last points. The sampled curve is drawn dashed in
+   its colour over the picture.
+6. **Create.** **Create…** writes the CSV, one row per sampled point. When a curve **Is** an S-parameter quantity on a
+   frequency axis, **Also save as Touchstone…** writes a Touchstone of those curves as well, on the same x values.
+
+The same reading runs from the command line, `circuitrf recognize plot.png --manual-box … --x-range … --y-range …
+--curve … --csv out.csv` (the [command-line reference](cli.md) lists every flag).
 
 | Reads well | Reads less well |
 |---|---|

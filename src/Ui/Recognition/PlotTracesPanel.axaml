@@ -31,9 +31,12 @@
             <Setter Property="Background" Value="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"/>
         </Style>
     </UserControl.Styles>
+    <!-- Read by hand (brief-pdg-4 R-pdg4-5): the six steps in place of the automatic panes. -->
+    <Panel>
+    <rec:ManualDigitisePanel IsVisible="{Binding Manual}"/>
     <!-- Three panes, each scrolling on its own, resized by the grippers between them (PTU-7): the plots, the selected
          plot's traces, and the output — the matrix, the grid, what the Touchstone waits for and the report. -->
-    <Grid Margin="0,0,6,0">
+    <Grid Margin="0,0,6,0" IsVisible="{Binding !Manual}">
         <Grid.RowDefinitions>
             <RowDefinition Height="*" MinHeight="70"/>
             <RowDefinition Height="10"/>
@@ -68,17 +71,20 @@
                                     <TextBlock Text="x axis" FontSize="12" VerticalAlignment="Center" Width="44"/>
                                     <TextBox Text="{Binding XAxisText}" Width="220" PlaceholderText="Click two x labels on the picture"
                                              ToolTip.Tip="Two pixel positions along the x axis and the values there, with units: 120px=1GHz,900px=5GHz. A label clicked on the picture and given its value writes one pair here."/>
+                                    <CheckBox Content="Log" IsChecked="{Binding XLog}" ToolTip.Tip="The x axis is logarithmic, whatever its labels fit."/>
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" Spacing="6" Margin="28,0,0,0" IsVisible="{Binding ShowsY}">
                                     <TextBlock Text="{Binding YLabel}" FontSize="12" VerticalAlignment="Center" MinWidth="44"/>
                                     <TextBox Text="{Binding YAxisText}" Width="220" PlaceholderText="Click two y labels on the picture"
                                              ToolTip.Tip="Two pixel positions along the y axis and the values there, in the axis's own units: 80px=0,560px=-40. A label clicked on the picture and given its value writes one pair here."/>
+                                    <CheckBox Content="Log" IsChecked="{Binding YLog}" ToolTip.Tip="The y axis is logarithmic, whatever its labels fit."/>
                                 </StackPanel>
                                 <!-- A second y axis on the right (R-pdg1-3): the same spelling as y's, shown when it waits or has values. -->
                                 <StackPanel Orientation="Horizontal" Spacing="6" Margin="28,0,0,0" IsVisible="{Binding ShowsY2}">
                                     <TextBlock Text="y2 axis (right)" FontSize="12" VerticalAlignment="Center" MinWidth="44"/>
                                     <TextBox Text="{Binding Y2AxisText}" Width="220" PlaceholderText="Click two right-hand labels on the picture"
                                              ToolTip.Tip="Two pixel positions along the right-hand y axis and the values there, in that axis's own units: 80px=180,560px=-180. A label right of the plot clicked and given its value writes one pair here."/>
+                                    <CheckBox Content="Log" IsChecked="{Binding Y2Log}" ToolTip.Tip="The right-hand y axis is logarithmic, whatever its labels fit."/>
                                 </StackPanel>
                             </StackPanel>
                         </DataTemplate>
@@ -98,8 +104,8 @@
                 <Grid DockPanel.Dock="Top" ColumnDefinitions="Auto,*,Auto" Margin="0,0,0,4">
                     <TextBlock Text="Traces" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
                     <StackPanel Grid.Column="1" Classes="row" Orientation="Horizontal" Spacing="6" Margin="14,0,0,0">
-                        <TextBlock Text="Ports" FontSize="12" Opacity="0.8"/>
-                        <TextBox Text="{Binding PortsText}" Width="44" Height="24" MinHeight="0" Padding="4,0" FontSize="12"
+                        <TextBlock Text="Ports" FontSize="12" Opacity="0.8" IsVisible="{Binding !MakeCsv}"/>
+                        <TextBox Text="{Binding PortsText}" Width="44" Height="24" MinHeight="0" Padding="4,0" FontSize="12" IsVisible="{Binding !MakeCsv}"
                                  VerticalContentAlignment="Center" PlaceholderText="{Binding AutoPortsText}"
                                  Classes.invalid="{Binding PortsInvalid}"
                                  ToolTip.Tip="How many ports the file has, 1 to 4. Empty: the highest port a trace names, at least 2. The entry lists offer S11 up to this; an entry beyond it is kept and waits until it is changed or the ports raised."/>
@@ -346,7 +352,7 @@
                     </Border>
 
                     <!-- ── The output grid and format ─────────────────────────────────────────────── -->
-                    <Border Classes="slot" Classes.wants="{Binding HighlightGrid}" Padding="0">
+                    <Border Classes="slot" Classes.wants="{Binding HighlightGrid}" Padding="0" IsVisible="{Binding !MakeCsv}">
                         <StackPanel Spacing="4">
                             <TextBlock Text="Output" FontWeight="SemiBold" FontSize="12"/>
                             <StackPanel Orientation="Horizontal" Spacing="6">
@@ -363,7 +369,7 @@
 
                     <!-- ── What the Touchstone waits for, and the report ──────────────────────────── -->
                     <SelectableTextBlock Text="{Binding Refusal}" Classes="error" TextWrapping="Wrap"
-                                         IsVisible="{Binding Refusal, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                         IsVisible="{Binding RefusalShown}"/>
                     <ItemsControl ItemsSource="{Binding ReportLines}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="x:String">
@@ -375,4 +381,5 @@
             </ScrollViewer>
         </Border>
     </Grid>
+    </Panel>
 </UserControl>

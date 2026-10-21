@@ -93,22 +93,22 @@
                             ToolTip.Tip="Zoom to Fit  (F)">
                         <mi:MaterialIcon Kind="FitToPage" Width="16" Height="16"/>
                     </Button>
-                    <ToggleButton Click="OnBoxTool" Padding="6,3" VerticalAlignment="Center" IsVisible="{Binding IsPlotPicture}"
+                    <ToggleButton Click="OnBoxTool" Padding="6,3" VerticalAlignment="Center" IsVisible="{Binding IsAutomaticPlotPicture}"
                                   IsChecked="{Binding ReadOnlyHereArmed}"
                                   ToolTip.Tip="Read only here: drag a box around one plot, and the picture is cropped to it and read as if only that part had been given.">
                         <mi:MaterialIcon Kind="CropFree" Width="16" Height="16"/>
                     </ToggleButton>
-                    <ToggleButton Click="OnBoxTool" Padding="6,3" VerticalAlignment="Center" IsVisible="{Binding IsPlotPicture}"
+                    <ToggleButton Click="OnBoxTool" Padding="6,3" VerticalAlignment="Center" IsVisible="{Binding IsAutomaticPlotPicture}"
                                   IsChecked="{Binding IgnoreHereArmed}"
                                   ToolTip.Tip="Ignore here: drag a box over a legend or a note inside a plot, and nothing in it is read as a trace. Click a box and press Delete to remove it.">
                         <mi:MaterialIcon Kind="SelectionRemove" Width="16" Height="16"/>
                     </ToggleButton>
-                    <ToggleButton Click="OnBoxTool" Padding="6,3" VerticalAlignment="Center" IsVisible="{Binding IsPlotPicture}"
+                    <ToggleButton Click="OnBoxTool" Padding="6,3" VerticalAlignment="Center" IsVisible="{Binding IsAutomaticPlotPicture}"
                                   IsChecked="{Binding PointArmed}"
                                   ToolTip.Tip="Point: click on a traced curve to pin a point there; it snaps to the curve and is listed under Points with its values. Escape stops.">
                         <mi:MaterialIcon Kind="Crosshairs" Width="16" Height="16"/>
                     </ToggleButton>
-                    <Border Classes="pill" Margin="0,4" IsVisible="{Binding !HasFailure}">
+                    <Border Classes="pill" Margin="0,4" IsVisible="{Binding LegendShown}">
                         <StackPanel Orientation="Horizontal">
                             <ToggleButton Classes="legend" IsChecked="{Binding ShowCopper}" IsVisible="{Binding IsLayoutPicture}" ToolTip.Tip="Traced copper, outlined in each layer's colour.">
                                 <StackPanel Orientation="Horizontal" Spacing="4"><Rectangle Width="10" Height="10" Fill="#B87333" VerticalAlignment="Center"/><TextBlock Text="Copper"/></StackPanel>

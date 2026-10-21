@@ -3957,6 +3957,40 @@ in-process assembly's but the time line TouchstoneIO writes; a Smith trace with 
 the JSON and a filled `y_fit` in the CSV (brief-pdg-2); the source scan. `TraceProbeTests` runs `--probe 2.4GHz` as a
 process and holds the value to the round-trip bound (brief-pdg-3).
 
+### 26.10 Digitising by hand (brief-pdg-4)
+
+`recognize plot.png --manual-box 120px,40px,900px,560px[@3] --x-range 100MHz..10GHz[:log] --y-range -40..0
+[--y2-range -180..180] --curve "S21=130,300;210,290;…[,axis=right][,is=S21:db]" [--follow S21=400,220] [--sample 101 |
+--sample-step 50MHz] [--method linear|smooth] --csv out.csv [-o out.s2p]` reads the picture as the dialog's **Manual**
+steps do — **no frame is found and no word is read**. The box is the plot area: its left and right edges are the x
+range's low and high, its bottom and top the y range's (and the right-hand scale's, with `--y2-range`); `@deg` turns it
+counter-clockwise about its centre for a skewed scan, which is read by resampling the box onto a level one
+(`ManualPlot.ToBox` / `FromBox`). The flags build the same `ManualPlot` and `ManualCurve` records the dialog builds, into
+the same `PlotReading.Read` (`PlotReadingOptions.Manual`, `ManualCurves`); there is no second path.
+
+| Flag | Takes |
+|---|---|
+| `--manual-box x0px,y0px,x1px,y1px[@deg]` | two opposite corners of the plot area, `px` on every number as `--region`'s; `@deg` turns it |
+| `--x-range <low>..<high>[:log]` | the x values at the box's left and right edges — frequencies with units, or plain numbers for an x that is not frequency |
+| `--y-range`, `--y2-range <low>..<high>[:log]` | the values at the box's bottom and top edges; the second is a right-hand scale (two y scales) |
+| `--curve "<name>=<px>,<py>;…[,axis=left\|right][,is=S21:db]"` | a curve's points in picture pixels (`px` optional — nothing else could be meant). The points **are** the curve; `is=` makes it an S-parameter quantity, otherwise it is data; repeatable |
+| `--follow <name>=<px>,<py>` | one click on a curve: `ManualCurves.Follow` — the existing tracer started from the click, inside the box, matched to the clicked ink's colour — thinned to a fixpoint every 20 px plus every turning point, ahead of any `--curve` points of the same name. A click that follows nothing says so on stderr and adds nothing |
+| `--sample 101`, `--sample-step 50MHz` | each curve sampled at this many x values from its first to its last point, or every step |
+| `--method linear`, `smooth` | straight between points (in log coordinates on a log axis), or a monotone cubic (Fritsch–Carlson) that never overshoots between two points. Nothing is extrapolated: grid points beyond a curve's points are dropped and counted in the report |
+
+`--manual-box` without `--x-range` and `--y-range` is `recognize.plot.manual-needs`, naming the missing flags; a box or
+scale that cannot calibrate (equal values, a log scale reaching zero) is `recognize.plot.manual-refused`; a flag of the
+automatic reading beside them (`--x-axis`, `--x-log`, `--trace`, `--freq`, `--smith-z0` …) is
+`recognize.plot.manual-conflict`, naming the by-hand flag that replaces it; a second picture is
+`recognize.args.several-pictures`. A picture IM-2 reads as some other kind is read as a plot when a by-hand flag is given.
+The CSV is `PlotCsv`'s table with nothing added: one row per sampled point, the curve's name in the `trace` column, its
+assignment `data` unless `is=` named one, `exact` 0. `-o` is offered only by the curves `is=` names, on a frequency x;
+a data curve is never waited for, and the Touchstone's grid is the sampled grid. Over the protocol the flags are the
+fields `manualBox`, `xRange`, `yRange`, `y2Range`, `curve`, `follow`, `sample`, `sampleStep` and `method`. Gate:
+`tests/Ui.Tests/PlotRecognition/ManualDigitiseCliTests.cs` — a box, two ranges and one `--follow` as a process, the CSV
+byte for byte the in-process reading's; the reading itself is `ManualDigitiseTests` (a painted-out picture read to a
+pixel's worth, a 3° box on a turned picture, log axes, two scales, Find curve, the sampling, the CSV and the `.s2p`).
+
 ## 27. A picture as `convert`'s source — the image reader, the scale, the overlay
 
 **brief-img-11.** `convert board.png -o <target>` (or `--from image`; a picture is also recognised by its content)

@@ -15,6 +15,10 @@
 // other call whose Touchstone cannot be made exits 1 with the sentence and the flag that answers it — the dialog's
 // highlighted control, spelled as a flag.
 //
+// BY HAND (brief-pdg-4-digitise-by-hand.md §4): --manual-box with --x-range and --y-range reads the picture as the
+// dialog's Manual steps do — the same ManualPlot and ManualCurve records into the same PlotReading.Read, no frame found
+// and no word read. --follow is ManualCurves.Follow, the dialog's Find curve, run before the reading.
+//
 // NOTHING IS WRITTEN BUT WHAT WAS ASKED, and the Touchstone last: --overlay and --csv (written even when the file is
 // refused, because that is when they are most useful), then -o and the kept source pictures beside it.
 
@@ -58,17 +62,24 @@ internal static partial class Recognize
 
         var inputs = pictures.Select(p => new PlotPictureInput(p.Source, Path.GetFileName(p.Path))).ToList();
         var flags = o.Plot;
+        PlotReadingOptions? manual = null;
+        if (flags.Manual)
+        {
+            var (by, refused) = ManualOptions(flags, pictures);
+            if (refused is { } refusal) return refusal;
+            manual = by;
+        }
 
         // A typed axis's pixels are the FILE's; a reading of a reduced picture is in the reduced picture's pixels. Which
         // picture a plot is on is known only after a reading, so a pre-pass finds it when the pictures differ.
         Func<int, double> factor = _ => pictures[0].Source.Raster.ReductionFactor;
-        if (flags.Clicks.Count > 0 && pictures.Select(p => p.Source.Raster.ReductionFactor).Distinct().Count() > 1)
+        if (manual is null && flags.Clicks.Count > 0 && pictures.Select(p => p.Source.Raster.ReductionFactor).Distinct().Count() > 1)
         {
             var first = PlotReading.Read(inputs, flags.ReadingOptions(_ => 1) with { Axes = [] }, RunHost.Control);
             factor = n => n <= first.Plots.Count ? pictures[first.Plots[n - 1].Picture].Source.Raster.ReductionFactor : 1;
         }
         foreach (var p in pictures) Console.Error.WriteLine($"[circuitRF] reading {p.Path} as a plot picture");
-        var session = PlotReading.Read(inputs, flags.ReadingOptions(factor), RunHost.Control);
+        var session = PlotReading.Read(inputs, manual ?? flags.ReadingOptions(factor), RunHost.Control);
 
         // The overlays and the CSV: written whatever the Touchstone's fate, each fitted trace's fit with them (R-pdg2-3).
         var fits = TraceFit.Session(session, flags.Fits);
@@ -140,6 +151,49 @@ internal static partial class Recognize
         if (built.Refusal is { } no && !((csv is not null || flags.Probes.Count > 0) && o.Output is null))
             return JsonRun.Fail(CliDiagnostics.RecognizePlotRefused(no.Sentence, no.Flag));
         return 0;
+    }
+
+    /// <summary>The by-hand reading's options (brief-pdg-4 §4): the box, the scales, the curves — each --follow followed
+    /// first, its fixpoints ahead of any the --curve of the same name gave — or the refusal.</summary>
+    private static (PlotReadingOptions? Options, int? Refusal) ManualOptions(PlotFlags flags,
+                                                                               IReadOnlyList<(string Path, ImageSource Source, ImageKindResult Kind)> pictures)
+    {
+        if (pictures.Count > 1) return (null, JsonRun.Fail(CliDiagnostics.RecognizeSeveralPictures("a plot read by hand is one picture")));
+        foreach (var (flag, instead) in new[] { ("--x-axis", "--x-range"), ("--y-axis", "--y-range"), ("--y2-axis", "--y2-range"),
+                                                ("--x-log", "--x-range …:log"), ("--y-log", "--y-range …:log"), ("--y2-log", "--y2-range …:log"),
+                                                ("--trace", "--curve …,is=S21:db"), ("--freq", "--x-range"), ("--smith-z0", "a rectangular box") })
+            if (flags.Given.Contains(flag)) return (null, JsonRun.Fail(CliDiagnostics.RecognizeManualConflict(flag, instead)));
+        var missing = new List<string>();
+        if (flags.ManualBox is null) missing.Add("--manual-box");
+        if (flags.XRange is null) missing.Add("--x-range");
+        if (flags.YRange is null) missing.Add("--y-range");
+        if (missing.Count > 0) return (null, JsonRun.Fail(CliDiagnostics.RecognizeManualNeeds(string.Join(", ", missing))));
+
+        var raster = pictures[0].Source.Raster;
+        double f = raster.ReductionFactor;
+        var plot = flags.ManualPlot(f)!;
+        if (plot.Refusal is { } why) return (null, JsonRun.Fail(CliDiagnostics.RecognizeManualRefused(why)));
+
+        var curves = new List<ManualCurve>();
+        var names = flags.Curves.Select(c => c.Name).Concat(flags.Follows.Select(c => c.Name)).Distinct(StringComparer.Ordinal).ToList();
+        for (int k = 0; k < names.Count; k++)
+        {
+            string name = names[k];
+            var given = flags.Curves.LastOrDefault(c => c.Name == name);
+            var points = new List<(double Px, double Py)>();
+            int rgb = PlotFlags.CurveColour(k);
+            foreach (var (_, sx, sy) in flags.Follows.Where(c => c.Name == name))
+            {
+                var followed = ManualCurves.Follow(raster, plot, (sx * f, sy * f));
+                if (followed.Refusal is { } nothing) { Console.Error.WriteLine($"[circuitRF] --follow {name}: {nothing}"); continue; }
+                points.AddRange(followed.Fixpoints);
+                rgb = followed.Rgb;
+            }
+            if (given.Points is not null) points.AddRange(given.Points.Select(p => (p.X * f, p.Y * f)));
+            curves.Add(new ManualCurve(name, 1, points, given.Points is null ? PlotSide.Left : given.Axis,
+                                       given.Points is null ? PlotAssignment.None : given.Assignment, rgb));
+        }
+        return (new PlotReadingOptions { Manual = [plot], ManualCurves = curves }, null);
     }
 
     private static RecognizeReportJson PlotsDocument(IReadOnlyList<(string Path, ImageSource Source, ImageKindResult Kind)> pictures,

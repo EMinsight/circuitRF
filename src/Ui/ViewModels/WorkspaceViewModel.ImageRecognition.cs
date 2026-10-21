@@ -366,8 +366,10 @@ public partial class WorkspaceViewModel : IImageDialogHost
         bool wasOpen = _imageDialog is not null;
         if (!wasOpen) ShowImageDialog(null, makeSchematic: false, owner);
         if (_imageDialog?.DataContext is not ImageSourceViewModel vm) return;
-        if (source is not null) vm.ReadPlot(source, csv);
-        else if (!wasOpen) vm.StartPlotMode(csv);
+        // Digitise Plot… opens read by hand unless the user last chose Automatic there; the Touchstone entries automatically.
+        bool manual = csv && AppPreferencesIo.Load().ImageDialogPlotReadMode != "automatic";
+        if (source is not null) vm.ReadPlot(source, csv, manual);
+        else if (!wasOpen) vm.StartPlotMode(csv, manual);
         _imageDialog.Activate();
     }
 
@@ -437,6 +439,13 @@ public partial class WorkspaceViewModel : IImageDialogHost
             p.ImageDialogAdvancedExpanded = vm.AdvancedExpanded ? true : null;
             AppPreferencesIo.Save(p);
         };
+        // Read: Automatic | Manual (brief-pdg-4 R-pdg4-5) — the user's choice remembered; Digitise Plot… opens in it.
+        vm.Plots.ReadModeChosen += () =>
+        {
+            var p = AppPreferencesIo.Load();
+            p.ImageDialogPlotReadMode = vm.Plots.Manual ? null : "automatic";
+            AppPreferencesIo.Save(p);
+        };
         vm.Plots.Detailed = prefs.ImageDialogPlotTracesDetailed ?? false;
         vm.Plots.PropertyChanged += (_, e) =>
         {
@@ -476,6 +485,7 @@ public partial class WorkspaceViewModel : IImageDialogHost
             ReportTouchstone(path, assembly, kept, session);
             dialog.Close();
         };
+        vm.TouchstoneAlsoSaved += (path, assembly, kept, session) => ReportTouchstone(path, assembly, kept, session);
         vm.PlotCsvCreated += path =>
         {
             Messages.Post(MessageLevel.Success, $"Digitise Plot: wrote {Path.GetFileName(path)}", path);

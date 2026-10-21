@@ -15,6 +15,11 @@
 // A FIT (brief-pdg-2-curve-fit.md R-pdg2-4) is held by trace name too, as the --fit a command line would type, and set on
 // every piece fitted together with the one edited — the pieces TraceJoin joins share one fit. What a fit made comes back
 // with the Touchstone (TouchstoneAssemblyResult.Fits) and is shown under its row and drawn over its trace.
+//
+// READ: AUTOMATIC | MANUAL (brief-pdg-4-digitise-by-hand.md R-pdg4-5). Manual reads every picture by hand: the session's
+// options carry each picture's ManualPlotViewModel as a ManualPlot and its curves as ManualCurves, and the automatic rows
+// above are not shown. Make: CSV hides every Touchstone control in either mode (R-pdg4-6); each axis row in Automatic gains a
+// Log toggle, the CLI's --x-log (R-pdg4-7).
 
 using System;
 using System.Collections.Generic;
@@ -31,6 +36,7 @@ using CircuitRF.Design.Imaging.Plots;
 using CircuitRF.Design.Layout.Recognition;
 using CircuitRF.Design.Schematic.Recognition;
 using RfCore;
+using AxisScale = CircuitRF.Design.Imaging.Plots.AxisScale;
 using FillRule = CircuitRF.Design.Imaging.Plots.FillRule;
 using PlotType = CircuitRF.Design.Imaging.Plots.PlotType;
 
@@ -73,9 +79,15 @@ public sealed partial class PlotFrameRowViewModel : ObservableObject
     private bool _loading = true;
 
     public PlotFrameRowViewModel(PlotRead plot, bool include, string xText, string yText, Action changed, string y2Text = "",
-                                 bool y2Wanted = false)
+                                 bool y2Wanted = false, Func<PlotAxis, bool?>? log = null, Action<PlotAxis, bool>? logChanged = null)
     {
         _changed = changed;
+        _logChanged = logChanged;
+        // A Log toggle shows what the user said, else the scale the labels fit (R-pdg4-7).
+        bool Log(PlotAxis a, AxisCalibration? c) => log?.Invoke(a) ?? c?.Scale == AxisScale.Log;
+        _xLog = Log(PlotAxis.X, plot.Rect?.X);
+        _yLog = Log(PlotAxis.Y, plot.Rect?.Y);
+        _y2Log = Log(PlotAxis.Y2, plot.Rect?.Y2);
         Number = plot.Number;
         Picture = plot.Picture + 1;
         Kind = PlotKind.Name(plot.Type);
@@ -138,6 +150,17 @@ public sealed partial class PlotFrameRowViewModel : ObservableObject
         }
     }
 
+    private readonly Action<PlotAxis, bool>? _logChanged;
+
+    /// <summary>The axis is logarithmic (<c>--x-log</c>, <c>--y-log</c>, <c>--y2-log</c>) — R-pdg4-7.</summary>
+    [ObservableProperty] private bool _xLog;
+    [ObservableProperty] private bool _yLog;
+    [ObservableProperty] private bool _y2Log;
+
+    partial void OnXLogChanged(bool value) { if (!_loading) _logChanged?.Invoke(PlotAxis.X, value); }
+    partial void OnYLogChanged(bool value) { if (!_loading) _logChanged?.Invoke(PlotAxis.Y, value); }
+    partial void OnY2LogChanged(bool value) { if (!_loading) _logChanged?.Invoke(PlotAxis.Y2, value); }
+
     partial void OnIncludeChanged(bool value) { if (!_loading) _changed(); }
     partial void OnXAxisTextChanged(string value) { if (!_loading) _changed(); }
     partial void OnYAxisTextChanged(string value) { if (!_loading) _changed(); }
@@ -193,7 +216,8 @@ public sealed partial class PlotTraceRowViewModel : ObservableObject
     private bool _loading = true;
 
     public PlotTraceRowViewModel(PlotTraceRead t, PlotRead plot, string startText, string stopText, Action<PlotTraceRowViewModel> changed,
-                                 IReadOnlyList<string>? entryChoices = null, FitChoice fitChoice = default, TraceFitResult? fit = null)
+                                 IReadOnlyList<string>? entryChoices = null, FitChoice fitChoice = default, TraceFitResult? fit = null,
+                                 bool csv = false)
     {
         _changed = changed;
         EntryChoices = entryChoices ?? Entries;
@@ -232,9 +256,7 @@ public sealed partial class PlotTraceRowViewModel : ObservableObject
         _fitIndex = IsChart ? 0 : fitChoice.Model;
         _degreeText = fitChoice.Degree ?? "";
         _smoothingText = fitChoice.Smoothing ?? "";
-        FitTip = IsChart
-            ? "A chart trace is not fitted: only a trace on rectangular axes has an x to fit against, so its only fit is None."
-            : "Fit a curve to the trace: the fit replaces the raw reading in the Touchstone and is the CSV's y_fit; the y column stays what was read.";
+        _csv = csv;
         SmoothingWatermark = $"{TraceFit.Num(t.Resolution)}{TraceFit.UnitAfter(t.ResolutionUnit)}";
         Fit = fit;
         _loading = false;
@@ -251,7 +273,21 @@ public sealed partial class PlotTraceRowViewModel : ObservableObject
     [ObservableProperty] private string _smoothingText;
 
     public bool FitEnabled { get; }
-    public string FitTip { get; }
+
+    private bool _csv;
+
+    /// <summary>Make: CSV — the fit's tooltip says nothing of a Touchstone (R-pdg4-6).</summary>
+    public void SetCsv(bool csv)
+    {
+        if (_csv == csv) return;
+        _csv = csv;
+        OnPropertyChanged(nameof(FitTip));
+    }
+
+    public string FitTip => IsChart
+        ? "A chart trace is not fitted: only a trace on rectangular axes has an x to fit against, so its only fit is None."
+        : _csv ? "Fit a curve to the trace: the fit is the CSV's y_fit at each point; the y column stays what was read."
+        : "Fit a curve to the trace: the fit replaces the raw reading in the Touchstone and is the CSV's y_fit; the y column stays what was read.";
 
     /// <summary>The smoothing box's watermark: the resolution default.</summary>
     public string SmoothingWatermark { get; }
@@ -389,6 +425,7 @@ public sealed partial class PlotTraceGroupViewModel : ObservableObject
         foreach (var m in members)
             m.PropertyChanged += (_, e) =>
             {
+                if (e.PropertyName == nameof(PlotTraceRowViewModel.FitTip)) { OnPropertyChanged(nameof(FitTip)); return; }
                 if (e.PropertyName is not (nameof(PlotTraceRowViewModel.EntryIndex) or nameof(PlotTraceRowViewModel.QuantityIndex)
                                            or nameof(PlotTraceRowViewModel.AxisIndex) or nameof(PlotTraceRowViewModel.FitIndex)
                                            or nameof(PlotTraceRowViewModel.DegreeText) or nameof(PlotTraceRowViewModel.SmoothingText))) return;
@@ -629,6 +666,9 @@ public sealed partial class PlotSessionViewModel : ObservableObject
     private readonly Dictionary<(int I, int J), (int Index, string Delay)> _phase = [];
     private readonly List<PlotIgnoreBox> _ignore = [];
 
+    /// <summary>The axes the user said are (or are not) logarithmic, by plot (R-pdg4-7).</summary>
+    private readonly Dictionary<(int Plot, PlotAxis Axis), bool> _log = [];
+
     // ── the port count and the assignment undo (PTU-7) ───────────────────────────────────────────────
 
     /// <summary>The typed port count; empty is <see cref="AutoPorts"/>.</summary>
@@ -708,13 +748,19 @@ public sealed partial class PlotSessionViewModel : ObservableObject
         UndoCommand.NotifyCanExecuteChanged();
     }
 
-    private bool CanUndo() => _undo.Count > 0;
+    private bool CanUndo() => Manual ? ShownManual?.CanUndo == true : _undo.Count > 0;
 
     /// <summary>Puts back the assignments and the port count as they were before the last change to either — a group's
-    /// combo assigning every piece is one step.</summary>
+    /// combo assigning every piece is one step. In Manual, the shown picture's box and fixpoints as they were.</summary>
     [RelayCommand(CanExecute = nameof(CanUndo))]
     private void Undo()
     {
+        if (Manual)
+        {
+            ShownManual?.Undo();
+            UndoCommand.NotifyCanExecuteChanged();
+            return;
+        }
         if (_undo.Count == 0) return;
         var back = _undo.Pop();
         _undoing = true;
@@ -862,6 +908,9 @@ public sealed partial class PlotSessionViewModel : ObservableObject
         // Another picture shown: the plots list follows to its first plot, so the traces listed are the ones on screen.
         if (SelectedFrame is { } f && f.Picture - 1 != value && Frames.FirstOrDefault(r => r.Picture - 1 == value) is { } first)
             SelectedFrame = first;
+        OnPropertyChanged(nameof(ShownManual));
+        SyncTool();
+        UndoCommand.NotifyCanExecuteChanged();
         ShownChanged?.Invoke();
     }
 
@@ -882,6 +931,8 @@ public sealed partial class PlotSessionViewModel : ObservableObject
         _axis.Clear();
         _fill.Clear();
         _phase.Clear();
+        _log.Clear();
+        _manualPlots.Clear();
         ForgetIgnoreBoxes();
         ForgetAllPoints();
         Session = null;
@@ -901,6 +952,8 @@ public sealed partial class PlotSessionViewModel : ObservableObject
         finally { _undoing = false; }
         Add(source, notify: false);
         ShownPicture = 0;
+        OnPropertyChanged(nameof(ShownManual));
+        SyncTool();
         RefreshDerived();
     }
 
@@ -932,7 +985,17 @@ public sealed partial class PlotSessionViewModel : ObservableObject
         _axis.Clear();
         ForgetIgnoreBoxes();
         ForgetPoints(i, shift: true);
+        _log.Clear();
+        _manualPlots.Remove(i);
+        foreach (var k in _manualPlots.Keys.Where(k => k > i).OrderBy(k => k).ToList())
+        {
+            var m = _manualPlots[k];
+            _manualPlots.Remove(k);
+            m.Picture = k - 1;
+            _manualPlots[k - 1] = m;
+        }
         if (ShownPicture >= Pictures.Count) ShownPicture = Pictures.Count - 1;
+        OnPropertyChanged(nameof(ShownManual));
         Changed?.Invoke();
     }
 
@@ -955,6 +1018,9 @@ public sealed partial class PlotSessionViewModel : ObservableObject
         _axis.Clear();
         ForgetIgnoreBoxes();
         ForgetPoints(index, shift: false);
+        _log.Clear();
+        _manualPlots.Remove(index);   // its pixels changed: the box and the points drawn on them are gone with them
+        OnPropertyChanged(nameof(ShownManual));
         Session = null;
         Assembly = null;
         SelectedTrace = null;
@@ -1004,7 +1070,7 @@ public sealed partial class PlotSessionViewModel : ObservableObject
         return null;
     }
 
-    public PlotReadingOptions ReadingOptions() => new()
+    public PlotReadingOptions ReadingOptions() => Manual ? ManualOptions() : new()
     {
         Plots = _excluded.Count == 0 || Session is null ? null : [.. Session.Plots.Select(p => p.Number).Where(n => !_excluded.Contains(n))],
         Axes = [.. _axis.Where(a => a.Value.Trim().Length > 0)
@@ -1018,7 +1084,177 @@ public sealed partial class PlotSessionViewModel : ObservableObject
         Frequencies = [.. _freq.Select(f => (f.Key, R: Range(f.Value.Start, f.Value.Stop))).Where(f => f.R is not null)
                                .Select(f => new PlotFrequencyOverride(f.Key, f.R!.Value.Start, f.R.Value.Stop))],
         Hints = _ignore.GroupBy(b => b.Plot).ToDictionary(g => g.Key, g => new TraceHints([], [.. g.Select(b => b.Box)])),
+        Scales = [.. _log.Select(l => (l.Key.Plot, l.Key.Axis, l.Value))],
     };
+
+    /// <summary>The options of a session read by hand (R-pdg4-1): each picture's box and scales, in picture order, and the
+    /// curves on each — the records the CLI's by-hand flags spell.</summary>
+    private PlotReadingOptions ManualOptions()
+    {
+        var plots = new List<ManualPlot>();
+        var curves = new List<ManualCurve>();
+        foreach (var m in _manualPlots.OrderBy(m => m.Key).Select(m => m.Value))
+        {
+            if (m.Picture >= Pictures.Count || m.Plot() is not { } plot) continue;
+            plots.Add(plot);
+            curves.AddRange(m.CurvesOn(plots.Count));
+        }
+        return new PlotReadingOptions { Manual = plots, ManualCurves = curves };
+    }
+
+    // ── Read: Automatic | Manual (brief-pdg-4-digitise-by-hand.md R-pdg4-5) ─────────────────────────
+
+    private readonly Dictionary<int, ManualPlotViewModel> _manualPlots = [];
+
+    /// <summary>The session is read by hand.</summary>
+    [ObservableProperty] private bool _manual;
+
+    /// <summary>The Read toggles — the user's choice, which is remembered (<see cref="ReadModeChosen"/>).</summary>
+    public bool IsAutomatic
+    {
+        get => !Manual;
+        set { if (value && Manual) { Manual = false; ReadModeChosen?.Invoke(); } }
+    }
+
+    public bool IsManual
+    {
+        get => Manual;
+        set { if (value && !Manual) { Manual = true; ReadModeChosen?.Invoke(); } }
+    }
+
+    /// <summary>Raised when the user chose Automatic or Manual — not when a command opened the dialog in one.</summary>
+    public event Action? ReadModeChosen;
+
+    /// <summary>Make: CSV is chosen (R-pdg4-6): the Touchstone's controls are hidden. Set by the dialog.</summary>
+    [ObservableProperty] private bool _makeCsv;
+
+    /// <summary>What a press on the canvas does in Manual.</summary>
+    [ObservableProperty] private ManualTool _manualTool;
+
+    /// <summary>The shown picture's plot read by hand; null outside Manual.</summary>
+    public ManualPlotViewModel? ShownManual => Manual && ShownPicture >= 0 && ShownPicture < Pictures.Count ? ManualOf(ShownPicture) : null;
+
+    /// <summary>A picture's plot read by hand, made on first use — its box pre-placed on a frame the automatic finder
+    /// happens to find there, as a starting suggestion only (nothing else of the automatic reader is used).</summary>
+    public ManualPlotViewModel ManualOf(int picture)
+    {
+        if (_manualPlots.TryGetValue(picture, out var m)) return m;
+        m = new ManualPlotViewModel(picture, OnManualEdited);
+        m.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ManualPlotViewModel.CanUndo)) UndoCommand.NotifyCanExecuteChanged();
+            if (e.PropertyName == nameof(ManualPlotViewModel.SelectedCurve) && m.SelectedCurve is not null && ManualTool is ManualTool.None or ManualTool.Box)
+                ManualTool = ManualTool.Points;
+        };
+        _manualPlots[picture] = m;
+        if (picture < Pictures.Count
+            && PlotReading.FindPlots(Pictures[picture].Source).FirstOrDefault(f => f.Type == PlotType.Rectangular) is { } frame)
+            m.SuggestBox(frame.Left, frame.Top, frame.Right, frame.Bottom);
+        return m;
+    }
+
+    /// <summary>A picture shown in Manual with no box yet: the canvas's next drag draws one.</summary>
+    private void SyncTool()
+    {
+        if (ShownManual is { HasBox: false }) ManualTool = ManualTool.Box;
+    }
+
+    private void OnManualEdited()
+    {
+        UndoCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(TouchstoneOffered));
+        Changed?.Invoke();
+    }
+
+    partial void OnManualChanged(bool value)
+    {
+        OnPropertyChanged(nameof(IsAutomatic));
+        OnPropertyChanged(nameof(IsManual));
+        OnPropertyChanged(nameof(ShownManual));
+        OnPropertyChanged(nameof(TouchstoneOffered));
+        ManualTool = value ? ManualTool.Points : ManualTool.None;
+        SyncTool();
+        UndoCommand.NotifyCanExecuteChanged();
+        Changed?.Invoke();
+    }
+
+    partial void OnMakeCsvChanged(bool value)
+    {
+        foreach (var t in Traces) t.SetCsv(value);
+        RefreshDerived();
+    }
+
+    /// <summary>Find curve: the next click on the canvas follows the curve under it into the selected curve's points.</summary>
+    [RelayCommand]
+    private void FindCurve()
+    {
+        if (ShownManual?.SelectedCurve is null)
+        {
+            StatusRaised?.Invoke("Add a curve first: Find curve fills the selected curve's points.");
+            return;
+        }
+        ManualTool = ManualTool.Find;
+    }
+
+    /// <summary>A click with Find curve armed, picture pixels: the curve under it followed. The tool goes back to Points.</summary>
+    public bool FindAt(double x, double y)
+    {
+        ManualTool = ManualTool.Points;
+        if (ShownManual is not { } m || ShownPicture >= Pictures.Count) return false;
+        if (m.FindCurve(Pictures[ShownPicture].Source.Raster, x, y) is { } why)
+        {
+            StatusRaised?.Invoke(why);
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>Draw the plot area again: the next drag on the canvas is the box.</summary>
+    [RelayCommand] private void RedrawBox() => ManualTool = ManualTool.Box;
+
+    /// <summary>Place points again after Escape stopped it: the next double-click adds one to the selected curve.</summary>
+    [RelayCommand]
+    private void PlacePoints()
+    {
+        if (ShownManual?.SelectedCurve is null)
+        {
+            StatusRaised?.Invoke("Add a curve first: its points are placed on the picture.");
+            return;
+        }
+        ManualTool = ManualTool.Points;
+    }
+
+    /// <summary>What the scales read at a picture point inside the shown box — the hover readout of Manual — or null.</summary>
+    public string? ManualReadout(double x, double y)
+    {
+        if (ShownManual?.Plot() is not { Refusal: null } plot) return null;
+        var (bx, by) = plot.ToBox(x, y);
+        if (bx < plot.Left || bx > plot.Right || by < plot.Top || by > plot.Bottom) return null;
+        var r = plot.Calibrate();
+        if (r.X is not { } xa || r.Y is not { } ya) return null;
+        string xs = TraceProbe.Fixed(xa.ValueAt(bx) / (plot.XIsFrequency ? plot.XUnit : 1), xa.PerPixel(bx) / (plot.XIsFrequency ? plot.XUnit : 1));
+        string xu = plot.XIsFrequency ? $" {Unit(plot.XUnit)}" : "";
+        string ys = TraceProbe.Fixed(ya.ValueAt(by), ya.PerPixel(by));
+        string y2 = r.Y2 is { } y2a ? $" · {TraceProbe.Fixed(y2a.ValueAt(by), y2a.PerPixel(by))}{(plot.Y2Unit.Length > 0 ? " " + plot.Y2Unit : "")} (right)" : "";
+        return $"{xs}{xu} · {ys}{(plot.YUnit.Length > 0 ? " " + plot.YUnit : "")}{y2}";
+    }
+
+    private static string Unit(double multiplier) => multiplier switch { >= 1e12 => "THz", >= 1e9 => "GHz", >= 1e6 => "MHz", >= 1e3 => "kHz", _ => "Hz" };
+
+    /// <summary>R-pdg4-4: with Make: CSV, a curve said to be an S-parameter quantity on a frequency axis offers a Touchstone
+    /// as well — an offer, never a default.</summary>
+    public bool TouchstoneOffered => Manual && MakeCsv && Session is { } s
+                                     && s.Traces.Any(t => t.Manual && t.Assignment.Assigned && s.Plots[t.Plot - 1].Rect is { XIsFrequency: true });
+
+    /// <summary>Also save as Touchstone…: the dialog asks where and writes it.</summary>
+    [RelayCommand] private void AlsoSaveTouchstone() => TouchstoneAsked?.Invoke();
+
+    public event Action? TouchstoneAsked;
+
+    /// <summary>How many sample rows Create writes, and of how many curves — step 6's summary.</summary>
+    public string ManualSummary => Session is not { } s ? ""
+        : $"{s.Traces.Count(t => t.Manual).ToString(CultureInfo.InvariantCulture)} curve(s), "
+          + $"{s.Traces.Where(t => t.Manual).Sum(t => t.Samples.Count).ToString(CultureInfo.InvariantCulture)} sampled point(s)";
 
     // ── Ignore here (R-ptu6-3) ───────────────────────────────────────────────────────────────────────
 
@@ -1387,7 +1623,9 @@ public sealed partial class PlotSessionViewModel : ObservableObject
             Frames.Add(new PlotFrameRowViewModel(p, !_excluded.Contains(p.Number), _axis.GetValueOrDefault((p.Number, PlotAxis.X), ""),
                                                  _axis.GetValueOrDefault((p.Number, PlotAxis.Y), ""), () => OnFrameEdited(p.Number),
                                                  _axis.GetValueOrDefault((p.Number, PlotAxis.Y2), ""),
-                                                 session.Traces.Any(t => t.Plot == p.Number && t.Axis == PlotSide.Right)));
+                                                 session.Traces.Any(t => t.Plot == p.Number && t.Axis == PlotSide.Right),
+                                                 a => _log.TryGetValue((p.Number, a), out bool l) ? l : null,
+                                                 (a, l) => { _log[(p.Number, a)] = l; Changed?.Invoke(); }));
 
         // The selection is held by name across a re-read, as the choices are: the rows are new objects.
         string? chosen = SelectedTrace?.Name;
@@ -1396,7 +1634,7 @@ public sealed partial class PlotSessionViewModel : ObservableObject
         {
             var (start, stop) = _freq.GetValueOrDefault(t.Name, ("", ""));
             Traces.Add(new PlotTraceRowViewModel(t, session.Plots[t.Plot - 1], start, stop, OnTraceEdited, EntryChoices,
-                                                 _fit.GetValueOrDefault(t.Name, new(0, "", "")), assembly.Fits.GetValueOrDefault(t.Name)));
+                                                 _fit.GetValueOrDefault(t.Name, new(0, "", "")), assembly.Fits.GetValueOrDefault(t.Name), MakeCsv));
         }
         Groups.Clear();
         foreach (var (members, debris) in PlotColourGroups.Group(session))
@@ -1519,15 +1757,19 @@ public sealed partial class PlotSessionViewModel : ObservableObject
     /// <summary>The refusal's kind, so its control is highlighted.</summary>
     public string RefusalKind => Assembly?.Refusal?.Kind ?? "";
 
-    public bool HighlightTraces => RefusalKind is "unassigned" or "frequency" or "empty";
-    public bool HighlightMatrix => RefusalKind == "fill";
-    public bool HighlightGrid => RefusalKind == "range";
-    public bool HighlightFrames => RefusalKind == "axis";
+    /// <summary>What the Touchstone waits for is said, and its control highlighted, only while one is being made (R-pdg4-6).</summary>
+    public bool RefusalShown => !MakeCsv && Refusal is not null;
+
+    public bool HighlightTraces => !MakeCsv && RefusalKind is "unassigned" or "frequency" or "empty";
+    public bool HighlightMatrix => !MakeCsv && RefusalKind == "fill";
+    public bool HighlightGrid => !MakeCsv && RefusalKind == "range";
+    public bool HighlightFrames => !MakeCsv && RefusalKind == "axis";
 
     /// <summary>The file's ports, for the matrix grid's columns.</summary>
     public int Ports => Assembly?.Ports ?? 0;
 
-    public bool HasMatrix => Matrix.Count > 0;
+    /// <summary>The matrix grid is shown: there is one, and Make is Touchstone (R-pdg4-6).</summary>
+    public bool HasMatrix => Matrix.Count > 0 && !MakeCsv;
     public bool HasSmith => Session?.Plots.Any(p => p.Type == PlotType.Smith) == true;
     public bool HasTraces => Session?.Traces.Count > 0;
 
@@ -1540,6 +1782,7 @@ public sealed partial class PlotSessionViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(Refusal));
         OnPropertyChanged(nameof(RefusalKind));
+        OnPropertyChanged(nameof(RefusalShown));
         OnPropertyChanged(nameof(HighlightTraces));
         OnPropertyChanged(nameof(HighlightMatrix));
         OnPropertyChanged(nameof(HighlightGrid));
@@ -1548,6 +1791,8 @@ public sealed partial class PlotSessionViewModel : ObservableObject
         OnPropertyChanged(nameof(HasMatrix));
         OnPropertyChanged(nameof(HasSmith));
         OnPropertyChanged(nameof(HasTraces));
+        OnPropertyChanged(nameof(TouchstoneOffered));
+        OnPropertyChanged(nameof(ManualSummary));
     }
 }
 

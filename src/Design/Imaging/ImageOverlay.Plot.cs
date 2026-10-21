@@ -8,6 +8,10 @@
 // (brief-pdg-2-curve-fit.md R-pdg2-4) thin and dashed over it in a colour that contrasts with the trace's, mapped back
 // through the axes, so a fit that missed is seen at a glance — the trace's own colour is never covered. The dialog's
 // canvas and the CLI's --overlay picture draw these same items.
+//
+// A PLOT DRAWN BY HAND (brief-pdg-4-digitise-by-hand.md R-pdg4-1) is read in its box's own space; every point drawn of it
+// is carried back onto the picture through PlotRead.ToPicture, so a turned box is drawn turned and its curves lie on the
+// picture's curves.
 
 using System.Globalization;
 using CircuitRF.Design.Imaging.Plots;
@@ -43,6 +47,12 @@ public sealed partial class ImageOverlay
             if (f.IsChart)
                 items.Add(new ImageOverlayItem($"plot:{p.Number}", ImageOverlayClass.Plot, [], true, label, null, p.Excluded, null,
                                                new PixelBounds(f.Cx - f.Radius, f.Cy - f.Radius, f.Cx + f.Radius, f.Cy + f.Radius), (f.Cx, f.Cy, f.Radius)));
+            else if (p.Manual is { } m)
+            {
+                IReadOnlyList<(double X, double Y)> quad = [m.Box.TopLeft, m.Box.TopRight, m.Box.BottomRight, m.Box.BottomLeft];
+                items.Add(new ImageOverlayItem($"plot:{p.Number}", ImageOverlayClass.Plot, [quad], true, label, null, p.Excluded || !p.Calibrated, null,
+                                               PixelBounds.Of(quad)));
+            }
             else
             {
                 var box = Box(f.Left, f.Top, f.Right, f.Bottom);
@@ -70,15 +80,16 @@ public sealed partial class ImageOverlay
         var plotsHere = session.Plots.Where(p => p.Picture == picture).Select(p => p.Number).ToHashSet();
         foreach (var t in session.Traces.Where(t => plotsHere.Contains(t.Plot)))
         {
-            var pts = t.Curve.Points;
+            var owner = session.Plots[t.Plot - 1];
+            var pts = owner.Manual is { Axial: false } ? [.. t.Curve.Points.Select(q => owner.ToPicture(q.X, q.Y))] : t.Curve.Points;
             if (pts.Count == 0) continue;
             // Split at the gaps left open; draw each bridged gap dashed.
             var runs = new List<List<(double X, double Y)>> { new() };
             for (int i = 0; i < pts.Count; i++)
             {
-                if (i > 0 && !t.Parametric && pts[i].X - pts[i - 1].X > 1.5)
+                if (i > 0 && !t.Parametric && t.Curve.Points[i].X - t.Curve.Points[i - 1].X > 1.5)
                 {
-                    bool open = t.Curve.Gaps.Any(g => Math.Abs(g.From - pts[i - 1].X) < 0.5);
+                    bool open = t.Curve.Gaps.Any(g => Math.Abs(g.From - t.Curve.Points[i - 1].X) < 0.5);
                     if (!open)
                         items.Add(new ImageOverlayItem($"{GapPrefix}{t.Name}:{i}", ImageOverlayClass.Trace, [[pts[i - 1], pts[i]]], false, null,
                                                        t.Curve.Rgb, false, null, PixelBounds.Of([pts[i - 1], pts[i]]).Inflate(1)));
@@ -94,7 +105,7 @@ public sealed partial class ImageOverlay
                                            PixelBounds.Of(pts).Inflate(2)));
             if (fits is not null && fits.TryGetValue(t.Name, out var fit) && fit.Fitted
                 && session.Plots[t.Plot - 1] is { Rect: { X: { } xa } rect } plot && rect.AxisOn(t.Axis) is { } ya)
-                FitCurve(items, t, fit, xa, ya, plot.Frame);
+                FitCurve(items, t, fit, xa, ya, plot);
             foreach (var (x, y) in t.Curve.Ambiguous)
                 items.Add(new ImageOverlayItem($"ambiguous:{t.Name}:{x.ToString("0", CultureInfo.InvariantCulture)}", ImageOverlayClass.Crossing, [],
                                                true, "ambiguous crossing", Colours.Amber, true, null, new PixelBounds(x - 6, y - 6, x + 6, y + 6), (x, y, 6)));
@@ -110,8 +121,9 @@ public sealed partial class ImageOverlay
 
     /// <summary>The fit of <paramref name="t"/> across its pixel columns, one point a column, broken where a phase fit
     /// changes branch with the trace beneath it.</summary>
-    private static void FitCurve(List<ImageOverlayItem> items, PlotTraceRead t, TraceFitResult fit, AxisCalibration xa, AxisCalibration ya, PlotFrame frame)
+    private static void FitCurve(List<ImageOverlayItem> items, PlotTraceRead t, TraceFitResult fit, AxisCalibration xa, AxisCalibration ya, PlotRead plot)
     {
+        var frame = plot.Frame;
         var under = t.Samples.Where(s => double.IsFinite(s.Y)).OrderBy(s => s.Px).ToList();
         if (under.Count < 2) return;
         var runs = new List<List<(double X, double Y)>> { new() };
@@ -128,7 +140,7 @@ public sealed partial class ImageOverlay
             }
             runs[^1].Add((px, py));
         }
-        var drawn = runs.Where(r => r.Count > 1).ToList();
+        var drawn = runs.Where(r => r.Count > 1).Select(r => plot.Manual is { Axial: false } ? [.. r.Select(q => plot.ToPicture(q.X, q.Y))] : r).ToList();
         if (drawn.Count == 0) return;
         items.Add(new ImageOverlayItem($"{FitPrefix}{t.Name}", ImageOverlayClass.Trace, [.. drawn], false, null, FitColour(t.Curve.Rgb), false, null,
                                        PixelBounds.Of(drawn.SelectMany(r => r))));

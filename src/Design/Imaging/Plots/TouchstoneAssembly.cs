@@ -156,7 +156,9 @@ public static class TouchstoneAssembly
         TouchstoneAssemblyResult Refuse(string kind, string sentence, string flag, string control, int ports = 0, IReadOnlyList<MatrixCell>? matrix = null) =>
             new(null, new AssemblyRefusal(kind, sentence, flag, control), ports, matrix ?? [], null, [], report, null, o.Format) { Fits = fits };
 
-        var traces = session.Traces.Where(t => !t.Assignment.Ignored && !session.Plots[t.Plot - 1].Excluded).ToList();
+        // A curve placed by hand and left as plain data is not waited for: it is a CSV's, never the file's (R-pdg4-4).
+        var traces = session.Traces.Where(t => !t.Assignment.Ignored && !(t.Manual && !t.Assignment.Assigned)
+                                               && !session.Plots[t.Plot - 1].Excluded).ToList();
         // ── refusals: an uncalibrated axis, an unassigned trace, a chart trace with no frequency ──
         foreach (var p in session.Plots.Where(p => !p.Excluded && traces.Any(t => t.Plot == p.Number)))
         {
@@ -224,6 +226,12 @@ public static class TouchstoneAssembly
             grid = g with { StartHz = a, StopHz = b };
             if (a > g.StartHz || b < g.StopHz) report.Add($"grid narrowed to {grid}: the traces have nothing outside {AssemblyGrid.Hz(lo)}..{AssemblyGrid.Hz(hi)}");
         }
+        // Curves placed by hand were sampled on the grid the user asked for (R-pdg4-3): that grid is the file's, as it is.
+        // Its spacing is the spec's, not the axis's: a step grid is linear, and a typed Log overrides the axis.
+        else if (series.All(s => s.Trace.Manual))
+            grid = new AssemblyGrid(lo, hi, Math.Max(2, densest.F.Count(f => f >= lo && f <= hi)),
+                                    session.Plots[densest.Trace.Plot - 1].Manual?.Sampling is { } spec
+                                        ? !(spec.Step > 0) && (spec.Log ?? densest.Log) : densest.Log);
         else grid = DefaultGrid(lo, hi, densest.F.Count(f => f >= lo && f <= hi), densest.Log);
         report.Add($"grid {grid} (the common range starts at {loBy.Name}'s first point and ends at {hiBy.Name}'s last)");
         var freqs = grid.Frequencies();

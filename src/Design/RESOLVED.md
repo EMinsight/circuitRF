@@ -21467,3 +21467,40 @@ question a placement's side does not change; a bottom placement there resolves u
   `Scale` is now nullable: null takes the axis's own (forced, else what its labels fit, else linear), and a pair with a
   value at or below zero falls back to linear unless log was asked for. The CLI still states the scale explicitly
   (`--x-log`, else linear), so its behaviour is unchanged. Gate `RectAxesTests.TypedValuesOnALogAxis_StayLogarithmic`.
+
+## PDG-4: digitise by hand — a plot read from a box and a typed scale (2026-10-21)
+
+- **The session is read by hand when `PlotReadingOptions.Manual` is set, even empty.** Null reads every picture
+  automatically; set, no picture runs `PlotFrames.Find` or `PlotText.Read` — its plots are the boxes given, numbered in
+  picture order — and a picture with no box reads no plot and says so. Mixing a found plot and a drawn one in one session
+  is not supported: the words list of a picture is empty by construction, so a legend or axis title could never be
+  evidence for a manual plot anyway.
+- **Box space is picture space when the box is level.** `ManualPlot.Axial` makes `ToBox`/`FromBox` the identity and
+  `Resample` returns the picture itself, so the common case resamples nothing and every pixel a session reports is the
+  picture's. A turned box's interior is mapped bilinearly onto a level rectangle of its own width and height, centred
+  where the quad is centred; the resampled raster is the picture's size, so box space differs from picture space by a
+  rotation about the box's centre. The session (frames, `Curve.Points`, samples' `Px`/`Py`) is in box space;
+  `ImageOverlay.BuildPlot` and `TraceProbe.Nearest`/`AtX` carry points back through `PlotRead.ToPicture` and in through
+  `FromPicture`, and nothing else had to learn about rotation. A test-side 3° render reads within a pixel's worth.
+- **`TraceHints.Follow` (PlotTraces.cs, the click loop) was wired for the first time and works as a FILTER, not a seed.**
+  A click names the colour cluster under it (`NearestInk`, 4 px), that cluster is traced even when it would not be a
+  candidate, and only the curve passing within 6 px of the click is kept; the tracer is not started at the click. Inside
+  a manual box every cluster that is not faint or shorter than 5 % of the axis is a candidate anyway (there are no frame
+  lines or words to set one aside), so `ManualCurves.Follow` simply keeps the traced curve nearest the click in the
+  clicked ink's colour. **One defect fixed:** a click landing on a curve's anti-aliased edge named the *fringe* cluster,
+  and a fringe is never traced — the click followed nothing whenever the curve itself was not a candidate. The click
+  now names the cluster the fringe belongs to (`FringeOf`). Behaviour without hints is unchanged.
+- **A synthetic frame has no lines.** A manual box's frame carries no `Lines`, so a black curve on a picture whose box
+  edges sit inside the axis lines would share columns with the axis ink; the tracer's `frame.Inside(…, Pen + 0.5)` inset
+  keeps the edges themselves out. Drawn on the axes (the dialog's suggestion from a found frame, or `--manual-box` from
+  the axes' pixels), nothing of the frame is inside.
+- **The analytic S21 of the test picture is not where the plotter drew it to the pixel.** Through the label-calibrated
+  axes it sits 1.5–3.8 px off the curve's ink, growing along x, while the automatic tracer and `Follow` agree with each
+  other exactly. `ManualDigitiseTests` therefore holds a followed fixpoint to the centre of the curve's own ink in its
+  pixel column — independent of the tracer — rather than to the formula.
+- **A manual curve's samples are its sampled grid**, so the probe, the CSV, the fit and the Touchstone take it with no
+  path of their own; `Curve.Points` are the fixpoints joined by the same method at every pixel column, which is what
+  the overlay draws. The assembly takes an all-manual session's grid as sampled (no 1-2-5 rounding), so `-o` writes the
+  x values the CSV holds; a curve left as data is skipped by the assembly rather than waited for. **Its spacing is the
+  sampling spec's, not the x axis's:** taking the axis's (as the first cut did) re-spaced a log grid on a linear axis, or
+  a step grid on a log axis, so the file's frequencies were not the CSV's.

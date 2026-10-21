@@ -18,6 +18,10 @@
 // switch into it, the canvas on whichever of the session's pictures is shown, and Create — which asks where to write,
 // because a Touchstone is a file beside the workspace's cells rather than a cell of its own.
 //
+// READ: AUTOMATIC | MANUAL (brief-pdg-4-digitise-by-hand.md R-pdg4-5): Digitise Plot… opens in Manual (as the user last
+// chose there), the two Touchstone entries in Automatic, and switching keeps the picture. In Manual the box tools of the
+// automatic reading are not offered; the canvas's press is the Manual step's (the box, a point, Find curve).
+//
 // ── FAILURE IS SHOWN ON THE PICTURE (D16) ────────────────────────────────────────────────────────────
 //
 // A picture with no drawing in it, or a reading refused after it was made, is never a message box: the canvas shows the
@@ -157,6 +161,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         Presets = new ObservableCollection<string>(LoadPresets().Select(p => p.Name));
         Overrides.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasOverrides));
         Plots.Changed += ScheduleRecognition;
+        Plots.Changed += () => OnPropertyChanged(nameof(CanvasPrompt));
         Plots.StatusRaised += why => Status = why;
         // A typed tick label reads as typed at once — one value alone blocks the reading until the second (PTU-7).
         Plots.AxisTextChanged += () =>
@@ -178,7 +183,18 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
             if (e.PropertyName == nameof(PlotSessionViewModel.SelectedTrace)) OnTraceSelected();
             // Simple lights the selected trace's whole group on the canvas, Detailed the piece alone (R-ptu5-4).
             else if (e.PropertyName == nameof(PlotSessionViewModel.Detailed)) OnPropertyChanged(nameof(Plots));
+            else if (e.PropertyName is nameof(PlotSessionViewModel.Manual))
+            {
+                if (Plots.Manual) BoxTool = PlotBoxTool.None;
+                OnPropertyChanged(nameof(IsAutomaticPlotPicture));
+                OnPropertyChanged(nameof(IsManualPlotPicture));
+                OnPropertyChanged(nameof(LegendShown));
+                OnPropertyChanged(nameof(CanvasPrompt));
+                RefreshCreate();
+            }
+            else if (e.PropertyName is nameof(PlotSessionViewModel.ManualTool)) OnPropertyChanged(nameof(CanvasPrompt));
         };
+        Plots.TouchstoneAsked += () => _ = WritePlot(csv: false, offer: true);
 
         if (source is not null) Accept(source);
         EndConstruction(_defaultName ?? "", targetOwn: OwnTargetOffered);
@@ -305,18 +321,21 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
     /// A plot picture handed in from outside (File ▸ Import ▸ Image ▸ As Touchstone…, a tree row): read as a plot with Make
     /// Touchstone — or, when the dialog is already reading plots, added to the session (R-im14-13).
     /// </summary>
-    public void ReadPlot(ImageSource source, bool csv = false)
+    public void ReadPlot(ImageSource source, bool csv = false, bool? manual = null)
     {
         if (IsPlotPicture && HasPicture) { Plots.Add(source); return; }
+        Plots.Manual = manual ?? csv;
         MakeIndex = csv ? 3 : 2;
         _commandKind = 3;
         Accept(source);
         KindIndex = 3;
     }
 
-    /// <summary>Tools ▸ Digitise Plot…: the dialog empty, in plot mode, making a CSV.</summary>
-    public void StartPlotMode(bool csv)
+    /// <summary>Tools ▸ Digitise Plot…: the dialog empty, in plot mode, making a CSV — read by hand unless
+    /// <paramref name="manual"/> says otherwise.</summary>
+    public void StartPlotMode(bool csv, bool? manual = null)
     {
+        Plots.Manual = manual ?? csv;
         _wantedMake = csv ? 3 : 2;
         _commandKind = 3;
         KindIndex = 3;
@@ -521,6 +540,10 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         OnPropertyChanged(nameof(ReplaceConfirmText));
         OnPropertyChanged(nameof(CanRestorePicture));
         Scale.IsApplicable = IsLayoutPicture;
+        Plots.MakeCsv = MakeCsv;
+        OnPropertyChanged(nameof(IsAutomaticPlotPicture));
+        OnPropertyChanged(nameof(IsManualPlotPicture));
+        OnPropertyChanged(nameof(LegendShown));
         if (!IsPlotPicture) BoxTool = PlotBoxTool.None;
         if (TargetOwn && !OwnTargetOffered) TargetOwn = false;
         RefreshCreate();
@@ -534,6 +557,12 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
 
     /// <summary>The picture is read as a plot (IM-14) — the plot mode's rows apply, and Create writes a file.</summary>
     public bool IsPlotPicture => HasPicture && EffectiveKind == DrawingKind.Plot;
+
+    /// <summary>A plot read automatically: the box tools and the Point tool apply.</summary>
+    public bool IsAutomaticPlotPicture => IsPlotPicture && !Plots.Manual;
+
+    /// <summary>A plot read by hand (R-pdg4-5): the canvas's press is the Manual step's.</summary>
+    public bool IsManualPlotPicture => IsPlotPicture && Plots.Manual;
 
     /// <summary>The Help button's section of <c>reference/create-from-image.html</c> for what is on screen (brief-ptu-2
     /// R-ptu2-3): a plot, a schematic picture, a board photograph — one Auto read as such, or a layout set square on its
@@ -958,6 +987,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         Scale.CancelToolCommand.Execute(null);
         CancelPick();
         BoxTool = PlotBoxTool.None;
+        Plots.ManualTool = ManualTool.None;   // Escape stops placing (R-pdg4-5)
     }
 
     /// <summary>A box dragged with a box tool armed, in picture pixels: the tool acts on it and is disarmed (R-ptu6-1).</summary>
@@ -1033,6 +1063,11 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
         BoxTool == PlotBoxTool.ReadOnlyHere ? "Drag a box around the plot to read: the picture is cropped to it. Escape cancels."
         : BoxTool == PlotBoxTool.IgnoreHere ? "Drag a box over what is not a trace — a legend, a note — inside a plot. Escape cancels."
         : BoxTool == PlotBoxTool.Point ? "Click on a traced curve to pin a point there. Escape cancels."
+        : IsManualPlotPicture && (Plots.ManualTool == ManualTool.Box || Plots.ShownManual is { HasBox: false })
+            ? "Drag a box across the plot's axes. Drag a corner or an edge to resize it, the round handle to turn it."
+        : IsManualPlotPicture && Plots.ManualTool == ManualTool.Find ? "Click on the curve to follow it. Escape cancels."
+        : IsManualPlotPicture && Plots.ManualTool == ManualTool.Points && Plots.ShownManual?.SelectedCurve is { } curve
+            ? $"Double-click to place a point on {curve.Name}; drag one to move it; right-click or Delete removes it. Escape stops."
         : Scale.Tool != ImageMeasureTool.None ? Scale.ToolPrompt
         : IsLayoutPicture && Scale.NeedsScale && FailureText.Length == 0 ? ImageScaleViewModel.SetScalePrompt
         : "";
@@ -1106,9 +1141,14 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
 
     public bool HasFailure => FailureText.Length > 0;
 
+    /// <summary>The legend of what was read is shown: nothing failed, and the picture is not being read by hand — Manual draws
+    /// no overlay to toggle.</summary>
+    public bool LegendShown => !HasFailure && !IsManualPlotPicture;
+
     partial void OnFailureTextChanged(string value)
     {
         OnPropertyChanged(nameof(HasFailure));
+        OnPropertyChanged(nameof(LegendShown));
         OnPropertyChanged(nameof(CanvasPrompt));
     }
 
@@ -1143,6 +1183,9 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
             if (!HasPicture) return DropPrompt;
             if (FailureText.Length > 0) return FailureText;
             if (EffectiveKind is null) return "Reading the picture…";
+            if (EffectiveKind == DrawingKind.Plot && Plots.Manual && Blocked is null && Plots.Session is { } read
+                && !read.Traces.Any(t => t.Manual && t.Samples.Count > 0))
+                return Plots.ShownManual?.ScalesProblem ?? "Place at least two points on a curve — steps 1 to 4 on the right.";
             if (EffectiveKind == DrawingKind.Plot)
                 return Blocked ?? (Plots.Session is null ? "Reading the picture…"
                     : MakeCsv ? (Plots.HasTraces ? null : "No trace was read on the plots.")
@@ -1297,7 +1340,7 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
             Plots.Apply(plot.Session, plot.Assembly);
             Overlay = Plots.Relabel(ImageOverlay.BuildPlot(plot.Session, Plots.ShownPicture, plot.Assembly.Fits));
             SelectTraceItem();
-            if (plot.Session.Plots.Count == 0)
+            if (plot.Session.Plots.Count == 0 && !Plots.Manual)
                 SetFailure("No plot was found: no rectangular axes with a grid or ticks, and no Smith or polar chart.", offersKind: true);
             RefreshCreate();
             CreatePlotCommand.NotifyCanExecuteChanged();
@@ -1444,6 +1487,10 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
     /// <summary>Raised on the UI thread when a Touchstone was written: its path, the file as built, the kept pictures.</summary>
     public event Action<string, TouchstoneAssemblyResult, IReadOnlyList<KeptPicture>, PlotSession>? TouchstoneCreated;
 
+    /// <summary>Raised on the UI thread when Also save as Touchstone… wrote one beside a CSV run (R-pdg4-4): the dialog
+    /// stays open for the CSV.</summary>
+    public event Action<string, TouchstoneAssemblyResult, IReadOnlyList<KeptPicture>, PlotSession>? TouchstoneAlsoSaved;
+
     /// <summary>Raised on the UI thread when the digitised traces were written as CSV.</summary>
     public event Action<string>? PlotCsvCreated;
 
@@ -1453,10 +1500,14 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
     /// Touchstone (with the pictures kept beside it) or the CSV — TouchstoneAssembly.WriteFile and PlotCsv.WriteFile, the
     /// CLI's -o and --csv.</summary>
     [RelayCommand(CanExecute = nameof(CanCreatePlot))]
-    private async Task CreatePlot()
+    private Task CreatePlot() => WritePlot(MakeCsv);
+
+    /// <summary>The CSV or the Touchstone written — Create's, and Manual's Also save as Touchstone… (R-pdg4-4), which writes
+    /// the Touchstone beside a CSV run only because it was asked.</summary>
+    private async Task WritePlot(bool csv, bool offer = false)
     {
-        if (Plots.Session is not { } session || Plots.Assembly is not { } assembly) return;
-        bool csv = MakeCsv;
+        if (IsCreating || Plots.Session is not { } session || Plots.Assembly is not { } assembly) return;
+        if (!csv && assembly.Refusal is { } no) { Status = $"No Touchstone yet: {no.Sentence}."; return; }
         string name = Plots.DefaultFileName(csv);
         string? path = SavePlotFileAsync is { } ask ? await ask(name, _workspaceDir) : Path.Combine(_workspaceDir, name);
         if (path is null) return;
@@ -1475,7 +1526,12 @@ public sealed partial class ImageSourceViewModel : RecognitionSessionViewModel
             });
             IsCreating = false;
             Status = "";
-            if (csv) PlotCsvCreated?.Invoke(path);
+            if (offer)
+            {
+                Status = $"Wrote {Path.GetFileName(path)}.";
+                TouchstoneAlsoSaved?.Invoke(path, assembly, kept, session);
+            }
+            else if (csv) PlotCsvCreated?.Invoke(path);
             else TouchstoneCreated?.Invoke(path, assembly, kept, session);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)

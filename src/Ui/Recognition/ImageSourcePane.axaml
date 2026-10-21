@@ -96,6 +96,19 @@
 
         <!-- ── A plot session's pictures (brief-img-14 R-im14-12) ────────────────────────── -->
         <WrapPanel Classes="row" Orientation="Horizontal" IsVisible="{Binding IsPlotPicture}">
+            <!-- Read: Automatic | Manual (brief-pdg-4 R-pdg4-5): the frame found and the labels read, or the box and the
+                 scale typed by hand. Switching keeps the picture. -->
+            <TextBlock Classes="label" Text="Read" Width="70" Margin="0,0,6,0"/>
+            <StackPanel Classes="Toolbar" Orientation="Horizontal" Spacing="2" Margin="0,0,18,0">
+                <RadioButton Classes="tool" Theme="{StaticResource {x:Type ToggleButton}}" Content="Automatic" FontSize="12"
+                             IsChecked="{Binding Plots.IsAutomatic}"
+                             ToolTip.Tip="Automatic — the plots are found, their tick labels read and their curves traced; correct what was read."/>
+                <RadioButton Classes="tool" Theme="{StaticResource {x:Type ToggleButton}}" Content="Manual" FontSize="12"
+                             IsChecked="{Binding Plots.IsManual}"
+                             ToolTip.Tip="Manual — draw the plot area, type its scale and place each curve's points (or find a curve from one click). No text in the picture is read."/>
+            </StackPanel>
+        </WrapPanel>
+        <WrapPanel Classes="row" Orientation="Horizontal" IsVisible="{Binding IsPlotPicture}">
             <TextBlock Classes="label" Text="Pictures" Width="70" Margin="0,0,6,0"/>
             <ItemsControl ItemsSource="{Binding Plots.Pictures}">
                 <ItemsControl.ItemsPanel>

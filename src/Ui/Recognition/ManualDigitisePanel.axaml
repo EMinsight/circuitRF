@@ -1,0 +1,220 @@
+<!-- The plot mode's right column read by hand (brief-pdg-4-digitise-by-hand.md R-pdg4-5): the six steps, each enabled
+     when the one before it is done — the plot area, its scales, the curves, their points, the sampling, and what Create
+     writes. Every field is a field of the ManualPlot / ManualCurve records the CLI's by-hand flags fill. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:rec="using:CircuitRF.Ui.Recognition"
+             xmlns:mi="using:Material.Icons.Avalonia"
+             x:Class="CircuitRF.Ui.Recognition.ManualDigitisePanel"
+             x:DataType="rec:PlotSessionViewModel">
+    <UserControl.Styles>
+        <Style Selector="Border.step">
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource SystemControlForegroundBaseLowBrush}"/>
+            <Setter Property="CornerRadius" Value="3"/>
+            <Setter Property="Padding" Value="8,6"/>
+        </Style>
+        <Style Selector="Border.step:disabled">
+            <Setter Property="Opacity" Value="0.45"/>
+        </Style>
+        <Style Selector="TextBlock.step">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+        <Style Selector="Grid.scales > TextBox">
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="MinHeight" Value="0"/>
+            <Setter Property="Padding" Value="4,0"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,6,4"/>
+        </Style>
+        <Style Selector="Grid.scales > TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,6,4"/>
+        </Style>
+        <Style Selector="Grid.scales > CheckBox">
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+    </UserControl.Styles>
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Margin="0,0,6,0">
+        <StackPanel Spacing="8">
+            <StackPanel Spacing="8" DataContext="{Binding ShownManual}" x:DataType="rec:ManualPlotViewModel"
+                        IsVisible="{Binding $parent[UserControl].((rec:PlotSessionViewModel)DataContext).ShownManual, Converter={x:Static ObjectConverters.IsNotNull}}">
+
+                <!-- 1 · the plot area -->
+                <Border Classes="step">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="step" Text="1  Plot area"
+                                   ToolTip.Tip="The box's left and right edges are x low and x high, its bottom and top y low and y high. A dashed box was placed on the frame found on the picture: drag its edges onto the axes."/>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button Content="Draw box" FontSize="12" Padding="8,2"
+                                    Command="{Binding $parent[UserControl].((rec:PlotSessionViewModel)DataContext).RedrawBoxCommand}"
+                                    ToolTip.Tip="Drag a new box across the plot's axes on the picture."/>
+                            <TextBlock Text="Angle" FontSize="12" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                            <TextBox Text="{Binding AngleText}" Width="56" Height="26" MinHeight="0" Padding="4,0" FontSize="12"
+                                     VerticalContentAlignment="Center" IsEnabled="{Binding HasBox}" PlaceholderText="0"
+                                     ToolTip.Tip="How far the box is turned, degrees counter-clockwise — for a scan that is not square. The round handle above the box does the same."/>
+                            <TextBlock Text="°" FontSize="12" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 2 · the scales -->
+                <Border Classes="step" IsEnabled="{Binding StepScalesEnabled}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="step" Text="2  Scales"/>
+                        <StackPanel Classes="Toolbar" Orientation="Horizontal" Spacing="2" Margin="0,0,0,4">
+                            <RadioButton Classes="tool" Theme="{StaticResource {x:Type ToggleButton}}" Content="One y scale" FontSize="12"
+                                         IsChecked="{Binding OneScale}" ToolTip.Tip="One y scale, on the left."/>
+                            <RadioButton Classes="tool" Theme="{StaticResource {x:Type ToggleButton}}" Content="Two y scales" FontSize="12"
+                                         IsChecked="{Binding TwoScales}" ToolTip.Tip="A second y scale on the right; each curve says which it is read on."/>
+                        </StackPanel>
+                        <Grid Classes="scales" ColumnDefinitions="Auto,*,*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="low" Opacity="0.7"/>
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="high" Opacity="0.7"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="x"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding XLowText}" PlaceholderText="1 GHz" Classes.invalid="{Binding XLowInvalid}"
+                                     ToolTip.Tip="The x value at the box's left edge: a frequency with its unit, or a plain number for an x that is not frequency."/>
+                            <TextBox Grid.Row="1" Grid.Column="2" Text="{Binding XHighText}" PlaceholderText="5 GHz" Classes.invalid="{Binding XHighInvalid}"
+                                     ToolTip.Tip="The x value at the box's right edge."/>
+                            <CheckBox Grid.Row="1" Grid.Column="3" Content="Log" IsChecked="{Binding XLog}" ToolTip.Tip="The x axis is logarithmic."/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="y"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding YLowText}" PlaceholderText="-40 dB" Classes.invalid="{Binding YLowInvalid}"
+                                     ToolTip.Tip="The y value at the box's bottom edge. A unit after the number (dB, °, anything) is the CSV's y_unit."/>
+                            <TextBox Grid.Row="2" Grid.Column="2" Text="{Binding YHighText}" PlaceholderText="0 dB" Classes.invalid="{Binding YHighInvalid}"
+                                     ToolTip.Tip="The y value at the box's top edge."/>
+                            <CheckBox Grid.Row="2" Grid.Column="3" Content="Log" IsChecked="{Binding YLog}" ToolTip.Tip="The y axis is logarithmic."/>
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="right y" IsVisible="{Binding TwoScales}"/>
+                            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding Y2LowText}" PlaceholderText="-180 °" IsVisible="{Binding TwoScales}"
+                                     Classes.invalid="{Binding Y2LowInvalid}" ToolTip.Tip="The right-hand scale's value at the box's bottom edge."/>
+                            <TextBox Grid.Row="3" Grid.Column="2" Text="{Binding Y2HighText}" PlaceholderText="180 °" IsVisible="{Binding TwoScales}"
+                                     Classes.invalid="{Binding Y2HighInvalid}" ToolTip.Tip="The right-hand scale's value at the box's top edge."/>
+                            <CheckBox Grid.Row="3" Grid.Column="3" Content="Log" IsChecked="{Binding Y2Log}" IsVisible="{Binding TwoScales}"
+                                      ToolTip.Tip="The right-hand scale is logarithmic."/>
+                        </Grid>
+                        <SelectableTextBlock Text="{Binding ScalesProblem}" Classes="error" FontSize="11" TextWrapping="Wrap"
+                                             IsVisible="{Binding ScalesProblem, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 3 · the curves -->
+                <Border Classes="step" IsEnabled="{Binding StepCurvesEnabled}">
+                    <StackPanel Spacing="4">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Classes="step" Text="3  Curves"/>
+                            <TextBlock Grid.Column="1" Text="{Binding CurveCount}" FontSize="11" Opacity="0.7" VerticalAlignment="Center" Margin="10,0,0,4"/>
+                            <Button Grid.Column="2" Content="Add curve" FontSize="12" Padding="8,2" Command="{Binding AddCurveCommand}" Margin="0,0,0,4"
+                                    ToolTip.Tip="A new curve; its points are placed in step 4."/>
+                        </Grid>
+                        <ListBox ItemsSource="{Binding Curves}" SelectedItem="{Binding SelectedCurve}" SelectionMode="Single" Background="Transparent"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate><StackPanel/></ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+                            <ListBox.ItemContainerTheme>
+                                <ControlTheme TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+                                    <Setter Property="Padding" Value="4,2"/>
+                                </ControlTheme>
+                            </ListBox.ItemContainerTheme>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="rec:ManualCurveViewModel">
+                                    <WrapPanel Orientation="Horizontal">
+                                        <Rectangle Width="14" Height="14" Fill="{Binding Swatch}" Stroke="#808080" StrokeThickness="1"
+                                                   VerticalAlignment="Center" Margin="0,0,6,0" ToolTip.Tip="The curve's colour — a curve found takes the picture's."/>
+                                        <TextBox Text="{Binding Name}" Width="96" Height="26" MinHeight="0" Padding="4,0" FontSize="12"
+                                                 VerticalContentAlignment="Center" Margin="0,0,6,0" ToolTip.Tip="The curve's name: the CSV's trace column."/>
+                                        <ComboBox ItemsSource="{x:Static rec:ManualCurveViewModel.IsChoices}" SelectedIndex="{Binding IsIndex}" MinWidth="76"
+                                                  Margin="0,0,6,0" ToolTip.Tip="Data: just x and y. An entry (S21…) with its quantity makes it a curve a Touchstone can take."/>
+                                        <ComboBox ItemsSource="{x:Static rec:PlotTraceRowViewModel.Quantities}" SelectedIndex="{Binding QuantityIndex}" MinWidth="76"
+                                                  Margin="0,0,6,0" IsVisible="{Binding IsEntry}" ToolTip.Tip="What the curve plots: dB, magnitude, phase…"/>
+                                        <ComboBox ItemsSource="{x:Static rec:PlotTraceRowViewModel.Sides}" SelectedIndex="{Binding AxisIndex}" MinWidth="64"
+                                                  Margin="0,0,6,0" ToolTip.Tip="The y scale the curve is read on."
+                                                  IsVisible="{Binding $parent[ListBox].((rec:ManualPlotViewModel)DataContext).TwoScales}"/>
+                                        <TextBlock Text="{Binding PointCount}" FontSize="11" Opacity="0.75" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                        <Button Command="{Binding RemoveCommand}" Padding="3" Background="Transparent" BorderThickness="0"
+                                                VerticalAlignment="Center" ToolTip.Tip="Remove this curve.">
+                                            <mi:MaterialIcon Kind="Close" Width="12" Height="12"/>
+                                        </Button>
+                                    </WrapPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+                </Border>
+
+                <!-- 4 · the points -->
+                <Border Classes="step" IsEnabled="{Binding StepPointsEnabled}">
+                    <StackPanel Spacing="4">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Classes="step" Text="4  Points"/>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" Margin="0,0,0,4">
+                                <Button Content="Place points" FontSize="12" Padding="8,2"
+                                        Command="{Binding $parent[UserControl].((rec:PlotSessionViewModel)DataContext).PlacePointsCommand}"
+                                        ToolTip.Tip="Double-click on the picture to add a point to the selected curve — again after Escape stopped placing."/>
+                                <Button Content="Find curve" FontSize="12" Padding="8,2"
+                                        Command="{Binding $parent[UserControl].((rec:PlotSessionViewModel)DataContext).FindCurveCommand}"
+                                        ToolTip.Tip="Then click on the curve: it is followed by its colour inside the box and its points placed for the selected curve, to edit."/>
+                                <StackPanel Classes="Toolbar" Orientation="Horizontal">
+                                    <Button Command="{Binding $parent[UserControl].((rec:PlotSessionViewModel)DataContext).UndoCommand}" Padding="6,3"
+                                            ToolTip.Tip="Undo — the box and the points as they were before the last change (Cmd/Ctrl+Z).">
+                                        <mi:MaterialIcon Kind="Undo" Width="16" Height="16"/>
+                                    </Button>
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Text="Double-click to add · drag to move · right-click or Delete to remove" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 5 · sampling -->
+                <Border Classes="step" IsEnabled="{Binding StepSampleEnabled}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="step" Text="5  Sample"/>
+                        <Grid Classes="scales" ColumnDefinitions="*,*,*,*" RowDefinitions="Auto,Auto">
+                            <TextBox Grid.Column="0" Text="{Binding SampleStartText}" PlaceholderText="start"
+                                     ToolTip.Tip="The first x sampled, as x low is typed. Empty: each curve's first point."/>
+                            <TextBox Grid.Column="1" Text="{Binding SampleStopText}" PlaceholderText="stop"
+                                     ToolTip.Tip="The last x sampled. Empty: each curve's last point. Nothing beyond a curve's points is sampled."/>
+                            <TextBox Grid.Column="2" Text="{Binding SamplePointsText}" PlaceholderText="101"
+                                     ToolTip.Tip="How many x values each curve is sampled at."/>
+                            <TextBox Grid.Column="3" Text="{Binding SampleStepText}" PlaceholderText="step"
+                                     ToolTip.Tip="Or a step between x values (50 MHz), in place of the number of points."/>
+                            <CheckBox Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Content="Log spacing" IsChecked="{Binding SampleLog}"
+                                      ToolTip.Tip="The x values spaced logarithmically — always so on a log x axis."/>
+                            <ComboBox Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="2" ItemsSource="{x:Static rec:ManualPlotViewModel.Methods}"
+                                      SelectedIndex="{Binding MethodIndex}" HorizontalAlignment="Stretch"
+                                      ToolTip.Tip="Linear: straight between points (in log coordinates on a log axis). Smooth: a monotone cubic through every point that never overshoots between two of them."/>
+                        </Grid>
+                        <TextBlock Text="The grid needs numbers, with units on a frequency x, and at least 2 points." Classes="error" FontSize="11"
+                                   TextWrapping="Wrap" IsVisible="{Binding SamplingInvalid}"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- 6 · Create -->
+            <Border Classes="step" IsEnabled="{Binding ShownManual.StepCreateEnabled, FallbackValue=False}">
+                <StackPanel Spacing="4">
+                    <TextBlock Classes="step" Text="6  Create"/>
+                    <TextBlock Text="{Binding ManualSummary}" FontSize="12"/>
+                    <Button Content="Also save as Touchstone…" FontSize="12" Padding="8,2" HorizontalAlignment="Left"
+                            Command="{Binding AlsoSaveTouchstoneCommand}" IsVisible="{Binding TouchstoneOffered}"
+                            ToolTip.Tip="The curves said to be S-parameters, as a Touchstone file as well as the CSV. Only when asked."/>
+                    <SelectableTextBlock Text="{Binding Refusal}" Classes="error" FontSize="11" TextWrapping="Wrap"
+                                         IsVisible="{Binding !MakeCsv}"/>
+                </StackPanel>
+            </Border>
+
+            <ItemsControl ItemsSource="{Binding ReportLines}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                        <SelectableTextBlock Text="{Binding}" FontSize="11" Opacity="0.8" TextWrapping="Wrap" Margin="0,0,0,2"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

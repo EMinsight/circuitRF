@@ -22,6 +22,11 @@
 // in order); a start and stop the user typed, spread in proportion to the angle swept about the chart's centre. Markers
 // and a typed range combine. Frequency increases clockwise unless the evidence says otherwise, and the report says
 // which rule set the direction. With neither markers nor a matched trace, the trace WAITS for a typed range.
+//
+// A SESSION READ BY HAND (brief-pdg-4-digitise-by-hand.md R-pdg4-1) — options with Manual set — finds no frame and reads
+// no word on any picture: its plots are the boxes the user drew, calibrated by the scales the user typed, and its traces
+// are the curves the user placed (ManualCurves). Its words lists are empty, so legend, title and label evidence are absent
+// by construction and every assignment and axis is the user's.
 
 using System.Numerics;
 using System.Security.Cryptography;
@@ -69,6 +74,14 @@ public sealed record PlotReadingOptions
 
     /// <summary>Clicks on missed curves and excluded rectangles, per session plot number.</summary>
     public IReadOnlyDictionary<int, TraceHints> Hints { get; init; } = new Dictionary<int, TraceHints>();
+
+    /// <summary>The plots drawn by hand (R-pdg4-1). Null reads every picture automatically; set — even empty — the session
+    /// is read by hand: no frame is found and no word read on any picture, and its plots are these, numbered in picture
+    /// order and then in this order.</summary>
+    public IReadOnlyList<ManualPlot>? Manual { get; init; }
+
+    /// <summary>The curves placed by hand on the manual plots (R-pdg4-2), each naming its plot by session number.</summary>
+    public IReadOnlyList<ManualCurve> ManualCurves { get; init; } = [];
 }
 
 /// <summary>A picture of the session.</summary>
@@ -82,6 +95,16 @@ public sealed record PlotRead(int Number, int Picture, PlotFrame Frame, RectCali
                               PolarCalibration? Polar, bool Excluded, IReadOnlyList<LegendEntry> Legend)
 {
     public PlotType Type => Frame.Type;
+
+    /// <summary>The box and scales it was drawn by hand from (R-pdg4-1); null for a plot that was found. Its frame, its
+    /// traces' points and their samples' pixels are in the box's own space — <see cref="ToPicture"/> carries them back.</summary>
+    public ManualPlot? Manual { get; init; }
+
+    /// <summary>A point of this plot's own pixel space on its picture: through the manual box, else as it is.</summary>
+    public (double X, double Y) ToPicture(double x, double y) => Manual is { Axial: false } m ? m.FromBox(x, y) : (x, y);
+
+    /// <summary>A picture point in this plot's own pixel space.</summary>
+    public (double X, double Y) FromPicture(double x, double y) => Manual is { Axial: false } m ? m.ToBox(x, y) : (x, y);
 
     /// <summary>The plot's axes are calibrated (a chart always is).</summary>
     public bool Calibrated => Type != PlotType.Rectangular || Rect is { Calibrated: true };
@@ -125,6 +148,12 @@ public sealed record PlotTraceRead(int Number, int Plot, TraceCurve Curve, PlotA
 
     /// <summary>On a plot with two y axes, nothing said which one it is read against (R-pdg1-2 (6)).</summary>
     public bool AxisAmbiguous => AxisEvidence == NoAxisEvidence;
+
+    /// <summary>The name a curve placed by hand was given (R-pdg4-2); null for a trace that was read.</summary>
+    public string? ManualName { get; init; }
+
+    /// <summary>Placed by hand: its samples are its sampled grid, and unassigned it is plain data rather than waiting.</summary>
+    public bool Manual => ManualName is not null;
 
     public bool Parametric => Curve.Parametric;
 
@@ -177,6 +206,24 @@ public static class PlotReading
             control?.BeginStage($"Reading picture {pi + 1}");
             token.ThrowIfCancellationRequested();
             var input = pictures[pi];
+            if (o.Manual is { } manual)
+            {
+                // Read by hand: no frame is found and no word read (R-pdg4-1).
+                wordsOf[pi] = [];
+                var mine = new List<int>();
+                foreach (var m in manual.Where(m => m.Picture == pi))
+                {
+                    int number = plots.Count + 1;
+                    mine.Add(number);
+                    bool excluded = o.Plots is { } chosen && !chosen.Contains(number);
+                    plots.Add(new PlotRead(number, pi, m.Frame(mine.Count - 1), m.Calibrate(), null, null, excluded, []) { Manual = m });
+                    DescribeManual(findings, plots[^1]);
+                }
+                if (mine.Count == 0)
+                    findings.Add(new("picture", $"picture {pi + 1}: no plot area drawn — drag a box across the plot's axes"));
+                pics.Add(new PlotPictureRead(pi, input.Name, Sha256(input.Source), input.Source.Raster.Width, input.Source.Raster.Height, mine));
+                continue;
+            }
             var ink = PlotInk.Of(input.Source.Raster);
             inks[pi] = ink;
             var frames = PlotFrames.Find(ink);
@@ -242,6 +289,27 @@ public static class PlotReading
             var assignment = Assign(plot, curve, words, plot.Rect?.TitleOn(side));
             traces.Add(t with { Assignment = assignment, Axis = side, AxisEvidence = axisEvidence });
         }
+        // Curves placed by hand (R-pdg4-2): read through their plot's own box and scales, sampled on its grid.
+        var manualLines = new Dictionary<int, string>();
+        foreach (var c in o.ManualCurves)
+        {
+            if (c.Plot < 1 || c.Plot > plots.Count || plots[c.Plot - 1] is not { Manual: { } mp, Rect: { } rc } plot || plot.Excluded) continue;
+            var (curve, samples, dropped, refusal) = ManualCurves.Read(c, mp, rc, plot.Frame.Index);
+            int number = traces.Count + 1;
+            var ya = rc.AxisOn(c.Axis);
+            double mid = samples.Count > 0 ? samples.Average(s => s.Py) : (mp.Top + mp.Bottom) / 2;
+            string unit = c.Assignment.Assigned ? QuantityUnit(c.Assignment.Quantity) : c.Axis == PlotSide.Right ? mp.Y2Unit : mp.YUnit;
+            traces.Add(new PlotTraceRead(number, c.Plot, curve, c.Assignment, samples, ya?.PerPixel(mid) ?? 0, unit, null, c.Axis,
+                                         rc.TwoY ? "user" : "") { ManualName = c.Name });
+            string range = samples.Count == 0 ? "" : $" from {AxisText(samples[0].X, rc)} to {AxisText(samples[^1].X, rc)}";
+            manualLines[number] = refusal is not null
+                ? $"T{number} ({c.Name}, plot {c.Plot}): not read — {refusal}"
+                : $"T{number} ({c.Name}, plot {c.Plot}): {(c.Assignment.Assigned ? c.Assignment.ToString() : "data")}; {c.Fixpoints.Count} fixpoint(s), "
+                  + $"{samples.Count} sample(s) ({mp.Sampling.Method.ToString().ToLowerInvariant()}){range}"
+                  + (dropped > 0 ? $"; {dropped} grid point(s) beyond the fixpoints dropped" : "")
+                  + (rc.TwoY ? $"; read on the {Side(c.Axis)} scale" : "");
+        }
+
         // Markers onto their traces, by the nearest point.
         foreach (var m0 in markers)
         {
@@ -266,6 +334,7 @@ public static class PlotReading
         for (int i = 0; i < traces.Count; i++)
         {
             var t = traces[i];
+            if (t.Manual) continue;   // a curve placed by hand carries its own
             foreach (var ov in o.Traces)
                 if (ov.Assignment is { } a && Selects(ov.Selector, t))
                     // A chart's trace is complex by its chart, whatever quantity the assignment named.
@@ -274,8 +343,9 @@ public static class PlotReading
             traces[i] = t;
         }
 
-        // Values.
-        for (int i = 0; i < traces.Count; i++) traces[i] = Values(traces[i], plots[traces[i].Plot - 1], plotMarkers);
+        // Values — a manual curve's are its sampled grid already.
+        for (int i = 0; i < traces.Count; i++)
+            if (!traces[i].Manual) traces[i] = Values(traces[i], plots[traces[i].Plot - 1], plotMarkers);
 
         // Frequency along chart traces (R-im14-8).
         for (int i = 0; i < traces.Count; i++)
@@ -283,6 +353,7 @@ public static class PlotReading
 
         foreach (var t in traces)
         {
+            if (manualLines.TryGetValue(t.Number, out var said)) { findings.Add(new("trace", said)); continue; }
             string style = t.Curve.Style == TraceStyle.Solid ? "" : $" {t.Curve.StyleName}";
             string gaps = t.Curve.Gaps.Count > 0 ? $"; {t.Curve.Gaps.Count} gap(s) left open" : "";
             string bridged = t.Curve.Bridged > 0 ? $"; {t.Curve.Bridged} short gap(s) bridged" : "";
@@ -301,6 +372,41 @@ public static class PlotReading
                                        + (m.FrequencyHz is { } f ? $" at {Fmt(f / 1e9)} GHz" : ", no frequency read")));
         return new PlotSession(pics, plots, traces, plotMarkers, findings, wordsOf);
     }
+
+    /// <summary>A manual plot's finding: its box and the scales typed, or why they cannot calibrate it.</summary>
+    private static void DescribeManual(List<PlotFinding> findings, PlotRead p)
+    {
+        var m = p.Manual!;
+        string Scale(ManualAxis a, bool x) =>
+            $"{(x ? AxisValueText(a.Low, m.XIsFrequency) : Fmt(a.Low))} … {(x ? AxisValueText(a.High, m.XIsFrequency) : Fmt(a.High))} {a.Scale.ToString().ToLowerInvariant()}";
+        string angle = Math.Abs(m.Box.AngleDeg) >= 0.05 ? $", turned {Fmt(Math.Round(m.Box.AngleDeg, 2))}°" : "";
+        string y2 = m.Y2 is { } r ? $"; right y {Scale(r, false)}" : "";
+        findings.Add(new("plot", $"plot {p.Number}: rectangular plot drawn by hand ({Fmt(Math.Round(m.Box.Width, 1))} × {Fmt(Math.Round(m.Box.Height, 1))} px{angle}); "
+                                 + $"x {Scale(m.X, true)}; y {Scale(m.Y, false)}{y2}"));
+        if (m.Refusal is { } why) findings.Add(new("axis", $"plot {p.Number}: {why}"));
+    }
+
+    /// <summary>An x value as a sentence says it: a frequency with its unit, else the number.</summary>
+    private static string AxisValueText(double v, bool frequency) => frequency ? AssemblyGrid.Hz(Significant(v)) : Fmt(v);
+
+    /// <summary>To nine significant digits: a value read through a calibration a hair under 1 GHz is said as 1 GHz.</summary>
+    private static double Significant(double v)
+    {
+        if (v == 0 || !double.IsFinite(v)) return v;
+        double step = Math.Pow(10, Math.Floor(Math.Log10(Math.Abs(v))) - 8);
+        return Math.Round(v / step) * step;
+    }
+
+    private static string AxisText(double v, RectCalibration r) => AxisValueText(v, r.XIsFrequency);
+
+    /// <summary>A quantity's unit, as a read trace's resolution is said in.</summary>
+    private static string QuantityUnit(PlotQuantityKind q) => q switch
+    {
+        PlotQuantityKind.Db or PlotQuantityKind.ReturnLoss or PlotQuantityKind.InsertionLoss => "dB",
+        PlotQuantityKind.PhaseDeg => "°",
+        PlotQuantityKind.PhaseRad => "rad",
+        _ => "",
+    };
 
     private static bool? Scale(PlotReadingOptions o, int plot, PlotAxis axis)
     {

@@ -13,6 +13,13 @@
 // selected by a click and removed by Delete. On a plot picture the pointer near a traced curve shows a crosshair and a
 // readout at the snapped point (brief-pdg-3 R-pdg3-2) without changing what a click does; with the Point tool armed a
 // click pins a point there, drawn as a numbered dot, selected by a click and removed by Delete.
+//
+// A plot read by hand (brief-pdg-4-digitise-by-hand.md R-pdg4-5) draws none of the overlay: it draws the box with its
+// handles (corners and edges resize it, the round one above the top edge turns it) and the value typed at each edge, every
+// curve's fixpoints in its colour, the sampled curve dashed over the picture, and a 4× loupe at the pointer while points
+// are placed or dragged. A left-drag on empty picture with the box tool draws the box; a double-click places a point on the
+// selected curve, a drag moves one, a right-click (without a drag) or Delete removes one; with Find curve armed a click
+// follows the curve under it.
 
 using System;
 using System.Collections.Generic;
@@ -65,6 +72,13 @@ public sealed class ImageOverlayCanvas : Control
     private PixelPoint? _hover;
     private CircuitRF.Design.Imaging.Plots.TraceProbeHit? _probe;
     private int _dragCorner = -1;
+    private int _manualHandle = -1;
+    private (ManualCurveViewModel Curve, int Index)? _manualPoint, _rightPress;
+    private string? _manualReadout;
+    private Point _pressPosition;
+
+    /// <summary>How far above the box's top edge its rotation handle stands, screen pixels.</summary>
+    private const double RotationLift = 26;
 
     public ImageOverlayCanvas()
     {
@@ -194,7 +208,7 @@ public sealed class ImageOverlayCanvas : Control
             using (context.PushOpacity(_vm.HasFailure ? FailureOpacity : 1.0))
                 context.DrawImage(_picture!, pictureRect);
 
-            if (!_vm.HasFailure && _vm.Scale.Tool != ImageMeasureTool.Corners) DrawOverlay(context, pictureRect);
+            if (!_vm.HasFailure && _vm.Scale.Tool != ImageMeasureTool.Corners && !_vm.IsManualPlotPicture) DrawOverlay(context, pictureRect);
         }
         context.DrawRectangle(new Pen(new ImmutableSolidColorBrush(Color.Parse("#808080")), 1),
                               new Rect(ToView(0, 0), ToView(raster.Width, raster.Height)));
@@ -436,7 +450,140 @@ public sealed class ImageOverlayCanvas : Control
         if (_dragEnd is { Circle: { } c } && _pressAt is not null)
             context.DrawLine(new Pen(pen.Brush, 1.5, new ImmutableDashStyle([5, 3], 0)), ToView(c.X, c.Y), _lastPointer);
 
-        if (_vm.IsPlotPicture && !_vm.HasFailure) DrawProbes(context);
+        if (_vm.IsManualPlotPicture) DrawManual(context);
+        else if (_vm.IsPlotPicture && !_vm.HasFailure) DrawProbes(context);
+    }
+
+    // ── a plot read by hand (R-pdg4-5) ─────────────────────────────────────────────────────────────────
+
+    private ManualPlotViewModel? Manual => _vm is { IsManualPlotPicture: true } vm ? vm.Plots.ShownManual : null;
+
+    /// <summary>The box, its handles and edge values, the curves' fixpoints, the sampled preview, the readout and the loupe —
+    /// in screen pixels, so they keep their size at any zoom.</summary>
+    private void DrawManual(DrawingContext context)
+    {
+        var plots = _vm!.Plots;
+        if (Manual is not { } m) return;
+
+        // The sampled curves, dashed in their own colours, carried back from the box's space onto the picture.
+        if (plots.Session is { } session)
+            foreach (var t in session.Traces.Where(t => t.Manual && t.Samples.Count > 1))
+            {
+                var plot = session.Plots[t.Plot - 1];
+                if (plot.Picture != plots.ShownPicture) continue;
+                var g = new StreamGeometry();
+                using (var ctx = g.Open())
+                {
+                    for (int i = 0; i < t.Samples.Count; i++)
+                    {
+                        var (x, y) = plot.ToPicture(t.Samples[i].Px, t.Samples[i].Py);
+                        if (i == 0) ctx.BeginFigure(ToView(x, y), false); else ctx.LineTo(ToView(x, y));
+                    }
+                    ctx.EndFigure(false);
+                }
+                context.DrawGeometry(null, new Pen(new ImmutableSolidColorBrush(Rgb(t.Curve.Rgb)), 1.75, new ImmutableDashStyle([4, 3], 0)), g);
+            }
+
+        if (m.Box is { } box)
+        {
+            var corners = box.Quad.Corners.Select(c => ToView(c.X, c.Y)).ToList();
+            var outline = new StreamGeometry();
+            using (var g = outline.Open())
+            {
+                g.BeginFigure(corners[0], true);
+                for (int k = 1; k < 4; k++) g.LineTo(corners[k]);
+                g.EndFigure(true);
+            }
+            var accent = new ImmutableSolidColorBrush(Accent);
+            context.DrawGeometry(null, new Pen(accent, 1.5, m.Suggested ? new ImmutableDashStyle([5, 3], 0) : null), outline);
+            var handles = m.Handles(RotationLift / _zoom).Select(h => ToView(h.X, h.Y)).ToList();
+            context.DrawLine(new Pen(accent, 1), handles[6], handles[8]);
+            for (int k = 0; k < 8; k++)
+                context.DrawRectangle(Brushes.White, new Pen(accent, 1.5), new Rect(handles[k].X - 3.5, handles[k].Y - 3.5, 7, 7));
+            context.DrawEllipse(Brushes.White, new Pen(accent, 1.5), handles[8], 5, 5);
+
+            // Each typed value at its edge, so a wrong corner is seen at once.
+            var (xl, xh, yl, yh, y2l, y2h) = m.EdgeTexts;
+            void Edge(string text, Point at, bool right, bool below)
+            {
+                if (text.Length == 0) return;
+                var t = Text(text, Accent, 1);
+                double x = right ? at.X + 8 : at.X - t.Width - 8, y = below ? at.Y + 6 : at.Y - t.Height / 2;
+                if (below) x = right ? at.X - t.Width : at.X;
+                Readout(context, text, new Point(x, y), Accent);
+            }
+            Edge(xl, corners[0], right: false, below: true);
+            Edge(xh, corners[1], right: true, below: true);
+            Edge(yl, corners[0], right: false, below: false);
+            Edge(yh, corners[3], right: false, below: false);
+            Edge(y2l, corners[1], right: true, below: false);
+            Edge(y2h, corners[2], right: true, below: false);
+        }
+
+        // The fixpoints: every curve's in its colour, the selected curve's larger, the selected point ringed.
+        foreach (var c in m.Curves)
+        {
+            bool mine = ReferenceEquals(c, m.SelectedCurve);
+            var fill = new ImmutableSolidColorBrush(Rgb(c.Rgb));
+            for (int i = 0; i < c.Fixpoints.Count; i++)
+            {
+                var at = ToView(c.Fixpoints[i].X, c.Fixpoints[i].Y);
+                context.DrawEllipse(fill, new Pen(Brushes.White, 1.25), at, mine ? 4.5 : 3.5, mine ? 4.5 : 3.5);
+                if (m.SelectedPoint is { } sp && ReferenceEquals(sp.Curve, c) && sp.Index == i)
+                    context.DrawEllipse(null, new Pen(new ImmutableSolidColorBrush(Accent), 2), at, 7.5, 7.5);
+            }
+        }
+
+        if (_hover is not { } hover || _panning) return;
+        bool placing = plots.ManualTool is ManualTool.Points or ManualTool.Find && m.SelectedCurve is not null;
+        if (placing || _manualPoint is not null) DrawLoupe(context, hover);
+        if (_manualReadout is { } readout && _manualHandle < 0)
+        {
+            var v = ToView(hover.X, hover.Y);
+            Readout(context, readout, new Point(v.X + 12, v.Y + 10), Accent);
+        }
+    }
+
+    /// <summary>A 4× magnifier of the picture around the pointer, beside it: the precision a hand-placed point needs.</summary>
+    private void DrawLoupe(DrawingContext context, PixelPoint at)
+    {
+        if (_picture is null) return;
+        const double r = 46, magnify = 4;
+        var v = ToView(at.X, at.Y);
+        double cx = v.X + r + 22, cy = v.Y - r - 22;
+        if (cx + r > Bounds.Width - 4) cx = v.X - r - 22;
+        if (cy - r < 4) cy = v.Y + r + 22;
+        var dest = new Rect(cx - r, cy - r, 2 * r, 2 * r);
+        double half = r / (magnify * _zoom);
+        var source = new Rect(at.X - half, at.Y - half, 2 * half, 2 * half);
+        using (context.PushClip(new RoundedRect(dest, r)))
+        {
+            context.FillRectangle(Brushes.White, dest);
+            using (context.PushRenderOptions(new RenderOptions { BitmapInterpolationMode = BitmapInterpolationMode.None }))
+                context.DrawImage(_picture, source, dest);
+            var cross = new Pen(new ImmutableSolidColorBrush(Accent), 1);
+            context.DrawLine(cross, new Point(cx - r, cy), new Point(cx - 3, cy));
+            context.DrawLine(cross, new Point(cx + 3, cy), new Point(cx + r, cy));
+            context.DrawLine(cross, new Point(cx, cy - r), new Point(cx, cy - 3));
+            context.DrawLine(cross, new Point(cx, cy + 3), new Point(cx, cy + r));
+        }
+        context.DrawEllipse(null, new Pen(new ImmutableSolidColorBrush(Accent), 1.5), new Point(cx, cy), r, r);
+    }
+
+    /// <summary>The box handle within reach of a control point, or −1.</summary>
+    private int ManualHandleAt(Point at)
+    {
+        if (Manual is not { HasBox: true } m) return -1;
+        var handles = m.Handles(RotationLift / _zoom);
+        int best = -1;
+        double reach = 9 * 9;
+        for (int k = handles.Count - 1; k >= 0; k--)
+        {
+            var v = ToView(handles[k].X, handles[k].Y);
+            double d = (v.X - at.X) * (v.X - at.X) + (v.Y - at.Y) * (v.Y - at.Y);
+            if (d <= reach) { reach = d; best = k; }
+        }
+        return best;
     }
 
     /// <summary>The pinned points as numbered dots, and the hover's crosshair and readout (R-pdg3-2), in screen pixels so
@@ -579,6 +726,17 @@ public sealed class ImageOverlayCanvas : Control
             InvalidateVisual();
             e.Handled = true;
         }
+        else if (e.Key is Key.Delete or Key.Back && Manual is { } manual && manual.RemoveSelectedPoint())
+        {
+            InvalidateVisual();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Z && (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) != 0 && Manual is not null)
+        {
+            _vm!.Plots.UndoCommand.Execute(null);
+            InvalidateVisual();
+            e.Handled = true;
+        }
         else if (e.Key is Key.Delete or Key.Back && _vm is { IsPlotPicture: true } && _vm.Plots.SelectedProbePoint is { } point)
         {
             _vm.Plots.RemoveProbePoint(point);
@@ -621,6 +779,18 @@ public sealed class ImageOverlayCanvas : Control
         Focus();
         var point = e.GetCurrentPoint(this);
         _lastPointer = point.Position;
+        _pressPosition = point.Position;
+        // By hand: a double-click places a point on the selected curve (R-pdg4-5) rather than fitting the picture.
+        if (e.ClickCount == 2 && point.Properties.IsLeftButtonPressed && Manual is { SelectedCurve: not null } placing
+            && _vm!.Plots.ManualTool == ManualTool.Points)
+        {
+            var placed = ToPicture(point.Position);
+            if (placing.PointAt(placed.X, placed.Y, 6 / _zoom) is null) placing.AddPoint(placed.X, placed.Y);
+            _manualPoint = null;
+            InvalidateVisual();
+            e.Handled = true;
+            return;
+        }
         if (e.ClickCount == 2 && point.Properties.IsLeftButtonPressed && _vm?.Scale.Tool == ImageMeasureTool.None)
         {
             Fit();
@@ -632,6 +802,25 @@ public sealed class ImageOverlayCanvas : Control
         _pressAt = point.Properties.IsLeftButtonPressed && !_panning ? point.Position : null;
         _scoping = false;
         _dragCorner = _pressAt is { } press ? CornerAt(press) : -1;
+        _manualHandle = -1;
+        _manualPoint = null;
+        _rightPress = null;
+        if (Manual is { } m)
+        {
+            var pressed = ToPicture(point.Position);
+            if (point.Properties.IsRightButtonPressed) _rightPress = m.PointAt(pressed.X, pressed.Y, 6 / _zoom);
+            else if (_pressAt is { } p0 && _vm!.Plots.ManualTool != ManualTool.Find)
+            {
+                _manualHandle = ManualHandleAt(p0);
+                if (_manualHandle < 0 && m.PointAt(pressed.X, pressed.Y, 6 / _zoom) is { } onPoint)
+                {
+                    _manualPoint = onPoint;
+                    m.SelectedCurve = onPoint.Curve;
+                    m.SelectedPoint = onPoint;
+                }
+                if (_manualHandle >= 0 || _manualPoint is not null) m.BeginEdit();
+            }
+        }
         // A dangling wire end pressed on a schematic picture is dragged, not scoped: dropped on a pin it joins it (R-im10-8).
         _dragEnd = _pressAt is { } at && _vm is { IsSchematicPicture: true } vm0
             ? vm0.Overlay.HitTest(ToPicture(at).X, ToPicture(at).Y, 4 / _zoom, vm0.Shows) is { } hit
@@ -646,9 +835,10 @@ public sealed class ImageOverlayCanvas : Control
         base.OnPointerMoved(e);
         var p = e.GetPosition(this);
         _hover = ToPicture(p);
-        _probe = _vm is { IsPlotPicture: true, HasFailure: false } && !_panning && _dragCorner < 0
+        _probe = _vm is { IsAutomaticPlotPicture: true, HasFailure: false } && !_panning && _dragCorner < 0
             ? _vm.Plots.ProbeAt(_hover.Value.X, _hover.Value.Y, PlotSessionViewModel.SnapScreenPx / _zoom)
             : null;
+        _manualReadout = Manual is not null && !_panning ? _vm!.Plots.ManualReadout(_hover.Value.X, _hover.Value.Y) : null;
         if (_panning)
         {
             _autoFit = false;
@@ -660,9 +850,12 @@ public sealed class ImageOverlayCanvas : Control
             _vm.Scale.MoveCorner(_dragCorner, ToPicture(p));
             ViewChanged?.Invoke();
         }
+        else if (_manualHandle >= 0 && Manual is { } boxed) boxed.DragHandle(_manualHandle, _hover.Value.X, _hover.Value.Y);
+        else if (_manualPoint is { } dragged && Manual is { } placed) placed.DragPoint(dragged.Curve, dragged.Index, _hover.Value.X, _hover.Value.Y);
         else if (_pressAt is { } from && _dragEnd is null
-                 && _vm is { BoxTool: PlotBoxTool.ReadOnlyHere or PlotBoxTool.IgnoreHere }
+                 && (_vm is { BoxTool: PlotBoxTool.ReadOnlyHere or PlotBoxTool.IgnoreHere }
                           or { Scale.Tool: ImageMeasureTool.None, CanvasPick: false, IsLayoutPicture: true }
+                     || (Manual is { } drawing && (_vm!.Plots.ManualTool == ManualTool.Box || !drawing.HasBox)))
                  && (Math.Abs(p.X - from.X) > 4 || Math.Abs(p.Y - from.Y) > 4))
             _scoping = true;
         _lastPointer = p;
@@ -674,10 +867,44 @@ public sealed class ImageOverlayCanvas : Control
         base.OnPointerReleased(e);
         var p = e.GetPosition(this);
         e.Pointer.Capture(null);
-        if (_panning) { _panning = false; return; }
+        if (_panning)
+        {
+            _panning = false;
+            // A right-click on a fixpoint, not a pan, removes it (R-pdg4-5).
+            if (_rightPress is { } doomed && Manual is { } m0 && Math.Abs(p.X - _pressPosition.X) <= 4 && Math.Abs(p.Y - _pressPosition.Y) <= 4)
+            {
+                m0.RemovePoint(doomed.Curve, doomed.Index);
+                InvalidateVisual();
+            }
+            _rightPress = null;
+            return;
+        }
         if (_pressAt is not { } from || _vm is not { } vm) return;
         _pressAt = null;
         if (_dragCorner >= 0) { _dragCorner = -1; return; }
+        if (Manual is { } manual)
+        {
+            if (_manualHandle >= 0 || _manualPoint is not null)
+            {
+                _manualHandle = -1;
+                _manualPoint = null;
+                manual.EndEdit();
+                InvalidateVisual();
+                return;
+            }
+            var a = ToPicture(from);
+            var b = ToPicture(p);
+            if (_scoping)
+            {
+                _scoping = false;
+                manual.DrawBox(a.X, a.Y, b.X, b.Y);
+                if (vm.Plots.ManualTool == ManualTool.Box) vm.Plots.ManualTool = manual.SelectedCurve is null ? ManualTool.None : ManualTool.Points;
+            }
+            else if (vm.Plots.ManualTool == ManualTool.Find) vm.Plots.FindAt(b.X, b.Y);
+            else manual.SelectedPoint = null;
+            InvalidateVisual();
+            return;
+        }
         if (_dragEnd is { } end)
         {
             _dragEnd = null;

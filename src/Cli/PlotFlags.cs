@@ -6,6 +6,11 @@
 //
 // EVERY PICTURE COORDINATE IS IN PIXELS, as --region's are: --x-axis takes `120px=1GHz,900px=5GHz` (the `px` is optional
 // here, because the value side carries the meaning and nothing else on this flag could be a length).
+//
+// DIGITISING BY HAND (brief-pdg-4-digitise-by-hand.md §4) is the same records the dialog's Manual steps build:
+// --manual-box is the ManualPlot's box (--region's spelling, px required, `@deg` turning it about its centre), --x-range /
+// --y-range / --y2-range its typed scales, --curve and --follow its ManualCurves, --sample / --sample-step / --method its
+// grid. A curve's points carry no meaning but pixels, so their `px` is optional, as --x-axis's is.
 
 using System.Globalization;
 using CircuitRF.Design.Imaging.Plots;
@@ -35,6 +40,25 @@ internal sealed class PlotFlags
     public int? Ports;
     public string? Csv;
     public bool KeepSources = true;
+
+    // ── by hand (R-pdg4-1 … R-pdg4-3) ──
+    public (string Text, ManualQuad Quad)? ManualBox;
+    public (ManualAxis Axis, double Unit, bool Frequency)? XRange;
+    public ManualAxis? YRange;
+    public ManualAxis? Y2Range;
+
+    /// <summary>The curves: name, points (file pixels), axis, assignment — in the order given.</summary>
+    public readonly List<(string Name, List<(double X, double Y)> Points, PlotSide Axis, PlotAssignment Assignment)> Curves = [];
+
+    /// <summary>Find curve from one click: the curve's name and the click, file pixels.</summary>
+    public readonly List<(string Name, double X, double Y)> Follows = [];
+    public int? SamplePoints;
+    public double? SampleStep;
+    public ManualSampleMethod? Method;
+
+    /// <summary>A flag of the by-hand reading was given: the picture is read by hand.</summary>
+    public bool Manual => ManualBox is not null || XRange is not null || YRange is not null || Y2Range is not null || Curves.Count > 0
+                          || Follows.Count > 0 || SamplePoints is not null || SampleStep is not null || Method is not null;
 
     /// <summary>The plot flags given, by spelling — refused on any other kind of input.</summary>
     public readonly List<string> Given = [];
@@ -200,6 +224,96 @@ internal sealed class PlotFlags
             case "--csv":
                 Csv = v;
                 break;
+            case "--manual-box":
+            {
+                string t = v.Trim();
+                double angle = 0;
+                int at = t.IndexOf('@');
+                if (at >= 0)
+                {
+                    string deg = t[(at + 1)..].Trim().TrimEnd('°');
+                    if (deg.EndsWith("deg", StringComparison.OrdinalIgnoreCase)) deg = deg[..^3];
+                    if (!double.TryParse(deg, NumberStyles.Float, CultureInfo.InvariantCulture, out angle) || !double.IsFinite(angle))
+                        return Bad("x0px,y0px,x1px,y1px[@deg]: two opposite corners of the plot area, in pixels, turned counter-clockwise by deg");
+                    t = t[..at];
+                }
+                var parts = t.Split(',', StringSplitOptions.TrimEntries);
+                var c = new double[4];
+                bool ok = parts.Length == 4;
+                for (int k = 0; k < 4 && ok; k++)
+                {
+                    if (parts[k].Length > 0 && !char.IsLetter(parts[k][^1]))
+                        return JsonRun.Fail(CliDiagnostics.PictureCoordinateNeedsPx(verb, a, parts[k]));
+                    ok = parts[k].EndsWith("px", StringComparison.OrdinalIgnoreCase) && Px(parts[k]) is { } n && (c[k] = n) == n;
+                }
+                if (!ok || c[0] == c[2] || c[1] == c[3])
+                    return Bad("x0px,y0px,x1px,y1px[@deg]: two opposite corners of the plot area, in pixels, turned counter-clockwise by deg");
+                ManualBox = (v.Trim(), ManualQuad.Rectangle(c[0], c[1], c[2], c[3], angle));
+                break;
+            }
+            case "--x-range":
+            {
+                var (text, log) = LogSuffix(v);
+                int dots = text.IndexOf("..", StringComparison.Ordinal);
+                var lo = dots > 0 ? RangeValue(text[..dots]) : null;
+                var hi = dots > 0 ? RangeValue(text[(dots + 2)..]) : null;
+                if (lo is not { } l || hi is not { } h || l.Frequency != h.Frequency)
+                    return Bad("<low>..<high>[:log]: the values at the plot area's left and right edges — frequencies with their units "
+                             + "(100MHz..10GHz), or plain numbers for an x that is not frequency");
+                XRange = (new ManualAxis(l.Value, h.Value, log ? AxisScale.Log : AxisScale.Linear), h.Unit, h.Frequency);
+                break;
+            }
+            case "--y-range" or "--y2-range":
+            {
+                var (text, log) = LogSuffix(v);
+                int dots = text.IndexOf("..", StringComparison.Ordinal);
+                bool ok = dots > 0;
+                double lo = 0, hi = 0;
+                ok = ok && double.TryParse(text[..dots].Trim().Replace('−', '-'), NumberStyles.Float, CultureInfo.InvariantCulture, out lo)
+                        && double.TryParse(text[(dots + 2)..].Trim().Replace('−', '-'), NumberStyles.Float, CultureInfo.InvariantCulture, out hi)
+                        && double.IsFinite(lo) && double.IsFinite(hi);
+                if (!ok)
+                    return Bad(a == "--y-range" ? "<low>..<high>[:log]: the values at the plot area's bottom and top edges (-40..0)"
+                                                : "<low>..<high>[:log]: the right-hand scale's values at the bottom and top edges (-180..180)");
+                var axis = new ManualAxis(lo, hi, log ? AxisScale.Log : AxisScale.Linear);
+                if (a == "--y-range") YRange = axis; else Y2Range = axis;
+                break;
+            }
+            case "--curve":
+            {
+                if (Curve(v) is not { } curve)
+                    return Bad("<name>=<px>,<py>;<px>,<py>;…[,axis=left|right][,is=S21:db]: a curve's name and its points in pixels, "
+                             + "optionally the y scale it is read on and what it is (data by default)");
+                Curves.Add(curve);
+                break;
+            }
+            case "--follow":
+            {
+                int eq = v.IndexOf('=');
+                var xy = eq > 0 ? v[(eq + 1)..].Split(',', StringSplitOptions.TrimEntries) : [];
+                if (xy.Length != 2 || Px(xy[0]) is not { } fx || Px(xy[1]) is not { } fy || v[..eq].Trim().Length == 0)
+                    return Bad("<name>=<px>,<py>: a curve's name and one click on it, in pixels — the curve is followed from there");
+                Follows.Add((v[..eq].Trim(), fx, fy));
+                break;
+            }
+            case "--sample":
+                if (!int.TryParse(v.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int points) || points < 2)
+                    return Bad("the number of x values each curve is sampled at, at least 2 (101)");
+                SamplePoints = points;
+                break;
+            case "--sample-step":
+            {
+                string t = v.Trim();
+                double? step = double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out double d) ? d : RecognitionSweep.Parse(t)?.Hz;
+                if (step is not { } st || !(st > 0) || !double.IsFinite(st))
+                    return Bad("the step between x values, in the x axis's own units: a frequency with its unit (50MHz), or a number");
+                SampleStep = st;
+                break;
+            }
+            case "--method":
+                Method = v.Trim().ToLowerInvariant() switch { "linear" => ManualSampleMethod.Linear, "smooth" => ManualSampleMethod.Smooth, _ => null };
+                if (Method is null) return Bad("linear or smooth (a monotone cubic: it never overshoots between two points)");
+                break;
             case "--keep-sources":
                 switch (v.Trim().ToLowerInvariant())
                 {
@@ -242,7 +356,85 @@ internal sealed class PlotFlags
         Fits = [.. Fits],
     };
 
+    /// <summary>The plot drawn by hand these flags spell, on picture 0, in reading pixels (<paramref name="factor"/> carries
+    /// file pixels onto a reduced reading). Null without a box and both ranges — the caller refuses that.</summary>
+    public ManualPlot? ManualPlot(double factor)
+    {
+        if (ManualBox is not { } box || XRange is not { } x || YRange is not { } y) return null;
+        var q = box.Quad;
+        (double, double) F((double X, double Y) p) => (p.X * factor, p.Y * factor);
+        return new ManualPlot(0, new ManualQuad(F(q.BottomLeft), F(q.BottomRight), F(q.TopRight), F(q.TopLeft)), x.Axis, y, Y2Range,
+                              x.Frequency ? x.Unit : 1, x.Frequency)
+        {
+            Sampling = new ManualSampleSpec(Points: SamplePoints ?? ManualSampleSpec.DefaultPoints, Step: SampleStep,
+                                            Method: Method ?? ManualSampleMethod.Linear),
+        };
+    }
+
+    /// <summary>A default colour for a curve given only as points: a qualitative palette, by its place in the list.</summary>
+    public static int CurveColour(int index) => Palette[index % Palette.Length];
+
+    private static readonly int[] Palette = [0x1F77B4, 0xD62728, 0x2CA02C, 0x9467BD, 0xFF7F0E, 0x17BECF];
+
     // ── spellings ────────────────────────────────────────────────────────────
+
+    /// <summary><c>text:log</c> → (text, true).</summary>
+    private static (string Text, bool Log) LogSuffix(string v)
+    {
+        string t = v.Trim();
+        if (t.EndsWith(":log", StringComparison.OrdinalIgnoreCase)) return (t[..^4], true);
+        if (t.EndsWith(":lin", StringComparison.OrdinalIgnoreCase) || t.EndsWith(":linear", StringComparison.OrdinalIgnoreCase))
+            return (t[..t.LastIndexOf(':')], false);
+        return (t, false);
+    }
+
+    /// <summary>An x range end: a frequency with its unit (hertz, and the unit's multiplier), or a plain number.</summary>
+    private static (double Value, double Unit, bool Frequency)? RangeValue(string s)
+    {
+        s = s.Trim().Replace('−', '-');
+        if (double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double d) && double.IsFinite(d)) return (d, 1, false);
+        if (RecognitionSweep.Parse(s) is not { } f || !double.IsFinite(f.Hz)) return null;
+        return (f.Hz, f.Unit switch { "kHz" => 1e3, "MHz" => 1e6, "GHz" => 1e9, "THz" => 1e12, _ => 1 }, true);
+    }
+
+    /// <summary><c>S21=120,300;140,290[,axis=right][,is=S21:db]</c>.</summary>
+    private static (string Name, List<(double X, double Y)> Points, PlotSide Axis, PlotAssignment Assignment)? Curve(string v)
+    {
+        int eq = v.IndexOf('=');
+        if (eq <= 0) return null;
+        string name = v[..eq].Trim();
+        var points = new List<(double, double)>();
+        var side = PlotSide.Left;
+        var assignment = PlotAssignment.None;
+        foreach (string part in v[(eq + 1)..].Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            var bits = part.Split(',', StringSplitOptions.TrimEntries);
+            int k = 0;
+            if (bits.Length >= 2 && Px(bits[0]) is { } x && Px(bits[1]) is { } y) { points.Add((x, y)); k = 2; }
+            for (; k < bits.Length; k++)
+            {
+                string b = bits[k];
+                if (b.StartsWith("axis=", StringComparison.OrdinalIgnoreCase))
+                {
+                    switch (b[5..].Trim().ToLowerInvariant())
+                    {
+                        case "left": side = PlotSide.Left; break;
+                        case "right": side = PlotSide.Right; break;
+                        default: return null;
+                    }
+                }
+                else if (b.StartsWith("is=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string what = b[3..].Trim();
+                    if (what.Equals("data", StringComparison.OrdinalIgnoreCase)) assignment = PlotAssignment.None;
+                    else if (PlotQuantity.ParseAssignment(what) is { Assigned: true } got) assignment = got;
+                    else return null;
+                }
+                else return null;
+            }
+        }
+        return name.Length == 0 ? null : (name, points, side, assignment);
+    }
 
     /// <summary>The axis a flag names: <c>--x-…</c>, <c>--y-…</c>, <c>--y2-…</c>.</summary>
     private static PlotAxis AxisOf(string flag) =>

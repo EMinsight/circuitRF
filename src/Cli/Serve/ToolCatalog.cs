@@ -318,6 +318,26 @@ internal static class ToolCatalog
             "Plots: the file's ports, 1-4 (default: the highest port any trace names). A trace naming a port beyond it waits."),
         new("csv",         "--csv",          OptKind.Path,   "Plots: also write the raw digitised traces as CSV, in each plot's own units. Never waits."),
         new("keepSources", "--keep-sources", OptKind.Str,    "Plots: on (default) or off — keep the source pictures beside the Touchstone."),
+        // brief-pdg-4 §4 — digitising by hand: the dialog's Manual steps. No frame is found and no tick label read.
+        new("manualBox",   "--manual-box",   OptKind.Str,
+            "Plots, by hand: the plot area as two opposite corners in pixels, optionally turned counter-clockwise about its centre "
+          + "(120px,40px,900px,560px@3). Its left/right edges are xRange's low/high, its bottom/top yRange's; needs both."),
+        new("xRange",      "--x-range",      OptKind.Str,
+            "Plots, by hand: the x values at the box's left and right edges, <low>..<high>[:log] — frequencies with units "
+          + "(100MHz..10GHz:log) or plain numbers for an x that is not frequency."),
+        new("yRange",      "--y-range",      OptKind.Str,    "Plots, by hand: the y values at the box's bottom and top edges, <low>..<high>[:log] (-40..0)."),
+        new("y2Range",     "--y2-range",     OptKind.Str,    "Plots, by hand: a right-hand y scale's values at the bottom and top edges (-180..180): two y scales."),
+        new("curve",       "--curve",        OptKind.StrRepeat,
+            "Plots, by hand: a curve's points in pixels, <name>=<px>,<py>;<px>,<py>;…[,axis=left|right][,is=S21:db]. The points "
+          + "ARE the curve; is= makes it an S-parameter quantity a Touchstone (output) can take, otherwise it is data."),
+        new("follow",      "--follow",       OptKind.StrRepeat,
+            "Plots, by hand: <name>=<px>,<py> — one click on a curve; it is followed by colour inside the box and thinned to "
+          + "fixpoints for the curve of that name. A click on blank paper follows nothing and says so."),
+        new("sample",      "--sample",       OptKind.Integer, "Plots, by hand: each curve sampled at this many x values between its first and last point (101)."),
+        new("sampleStep",  "--sample-step",  OptKind.Str,    "Plots, by hand: sample every step in x instead (50MHz, or a plain number)."),
+        new("method",      "--method",       OptKind.Str,
+            "Plots, by hand: linear (straight between points, in log coordinates on a log axis) or smooth (a monotone cubic that "
+          + "never overshoots). Nothing is extrapolated."),
     ];
 
     private static readonly ToolOption PictureUnderlay = new("underlay", "--underlay", OptKind.Str,

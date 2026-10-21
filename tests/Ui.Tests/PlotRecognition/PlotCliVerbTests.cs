@@ -90,6 +90,8 @@ public sealed class PlotCliVerbTests(PlotPictureSet pictures, ITestOutputHelper 
             "PlotFitOverride", "TraceFitSpec", "TraceFitModel", "TraceFit", "TraceFitResult",
             // brief-pdg-3's probe: the entry point --probe reads through, and what it returns.
             "TraceProbe", "TraceProbeHit", "TraceProbeText", "TraceProbeReading",
+            // brief-pdg-4's plot read by hand: the records its flags spell, and Find curve's entry point and result.
+            "ManualPlot", "ManualQuad", "ManualAxis", "ManualCurve", "ManualSampleSpec", "ManualSampleMethod", "ManualCurves", "ManualFollowResult",
         ];
         var declared = Directory.GetFiles(Path.Combine(repo, "src", "Design", "Imaging", "Plots"), "*.cs")
             .SelectMany(f => Regex.Matches(File.ReadAllText(f),

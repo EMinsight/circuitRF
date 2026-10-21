@@ -1081,6 +1081,32 @@ result carries every finding with its count and where it is on the board, and th
 `explain` on a schematic this command wrote shows where it came from &mdash; the layout, the region and the
 options &mdash; and `explain --ref` resolves the layout's path.
 
+### A plot digitised by hand {#recognize-by-hand}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf recognize plot.png --manual-box x0px,y0px,x1px,y1px[@deg]
+<span class="prompt">  </span>--x-range LOW..HIGH[:log] --y-range LOW..HIGH[:log] [--y2-range LOW..HIGH[:log]]
+<span class="prompt">  </span>[--curve "NAME=px,py;px,py;…[,axis=right][,is=S21:db]"] [--follow NAME=px,py]
+<span class="prompt">  </span>[--sample N | --sample-step STEP] [--method linear|smooth] --csv out.csv [-o out.s2p]</code></pre>
+
+The dialog's [Digitise by hand](create-from-image.md#by-hand) from the command line. Nothing is read off the picture:
+the box is the plot area and the ranges are the values at its edges.
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf recognize s21.png --manual-box 228px,147px,671px,443px \
+<span class="prompt">  </span>    --x-range 1GHz..5GHz --y-range -36..0 --follow S21=560,193 --csv s21.csv</code></pre>
+
+| Option | Meaning |
+|---|---|
+| `--manual-box x0px,y0px,x1px,y1px[@deg]` | Two opposite corners of the plot area, in pixels, `px` on every number. `@3` turns the box 3° counter-clockwise, for a scan that is not square. |
+| `--x-range`, `--y-range`, `--y2-range` | The values at the box's left and right, and bottom and top, edges. An x range is frequencies with units (`100MHz..10GHz`), or plain numbers for an x that is not frequency. `--y2-range` is a second scale on the right. `:log` marks a logarithmic axis. |
+| `--curve "NAME=px,py;…"` | A curve's points in pixels. `,axis=right` reads it on the right-hand scale; `,is=S21:db` makes it an S-parameter quantity, otherwise it is data. Repeatable. |
+| `--follow NAME=px,py` | One click on a curve: it is followed by its colour inside the box and its points placed, one every 20 pixels and at every peak and dip. |
+| `--sample N`, `--sample-step STEP` | Each curve sampled at N x values (101) from its first point to its last, or every STEP. |
+| `--method linear\|smooth` | Straight between points, or a curve through them that never overshoots. Nothing is sampled beyond a curve's points. |
+| `--csv out.csv`, `-o out.s2p` | The sampled curves as CSV; a Touchstone of the curves `is=` names, on a frequency x. |
+
+A box given without both ranges is refused, naming the one missing. **Exit 0** when the CSV (and the Touchstone, when
+asked) was written, **1** when refused.
+
 ## `impedance` — every trace against a target Z0 {#impedance}
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]

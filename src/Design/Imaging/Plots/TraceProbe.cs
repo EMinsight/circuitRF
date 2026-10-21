@@ -12,6 +12,9 @@
 // NO MORE DIGITS THAN THE PICTURE RESOLVES. Every text here prints a value to about one pixel's worth of its axis
 // (AxisCalibration.PerPixel at the point), so a readout never claims a precision the picture does not have.
 //
+// A PLOT DRAWN BY HAND (brief-pdg-4-digitise-by-hand.md R-pdg4-1) is read in its box's own space: a picture point is
+// carried into it before it is projected, and the hit's pixel carried back, so a turned box reads like any other.
+//
 // Pure: no picture, no reader state. The dialog's hover, its Point tool and the CLI's --probe all call it.
 
 using System.Globalization;
@@ -58,11 +61,12 @@ public static class TraceProbe
             if (t.Plot < 1 || t.Plot > s.Plots.Count) continue;
             var plot = s.Plots[t.Plot - 1];
             if (plot.Picture != picture || plot.Excluded || t.Assignment.Ignored || t.Samples.Count == 0) continue;
-            var (k, u, d) = Project(t.Samples, px, py);
+            var (bx, by) = plot.FromPicture(px, py);
+            var (k, u, d) = Project(t.Samples, bx, by);
             if (d > maxPx) continue;
             bool nearer = best is null || d < best.DistancePx - 1e-9;
             bool tie = best is not null && Math.Abs(d - best.DistancePx) <= 1e-9 && preferPlot == t.Plot && best.Plot != preferPlot;
-            if ((nearer || tie) && At(t, plot, k, u, d) is { } hit) best = hit;
+            if ((nearer || tie) && At(t, plot, k, u, d) is { } hit) best = OnPicture(hit, plot);
         }
         return best;
     }
@@ -84,15 +88,15 @@ public static class TraceProbe
         for (int i = 0; i < p.Count; i++)
         {
             if (Math.Abs(p[i].X - x) <= slack)
-                return new TraceProbeHit(t.Number, t.Plot, p[i].Px, p[i].Py, x, p[i].Y, null, r.XIsFrequency ? x : null, 0);
+                return OnPicture(new TraceProbeHit(t.Number, t.Plot, p[i].Px, p[i].Py, x, p[i].Y, null, r.XIsFrequency ? x : null, 0), plot);
             if (i + 1 >= p.Count) break;
             double x0 = p[i].X, x1 = p[i + 1].X;
             if (!(Math.Min(x0, x1) <= x && x <= Math.Max(x0, x1)) || x0 == x1) continue;
             double u = logX && x0 > 0 && x1 > 0 ? Math.Log(x / x0) / Math.Log(x1 / x0) : (x - x0) / (x1 - x0);
             double y0 = p[i].Y, y1 = p[i + 1].Y;
             double y = logY && y0 > 0 && y1 > 0 ? y0 * Math.Pow(y1 / y0, u) : y0 + u * (y1 - y0);
-            return new TraceProbeHit(t.Number, t.Plot, Lerp(p[i].Px, p[i + 1].Px, u), Lerp(p[i].Py, p[i + 1].Py, u), x, y, null,
-                                     r.XIsFrequency ? x : null, 0);
+            return OnPicture(new TraceProbeHit(t.Number, t.Plot, Lerp(p[i].Px, p[i + 1].Px, u), Lerp(p[i].Py, p[i + 1].Py, u), x, y, null,
+                                               r.XIsFrequency ? x : null, 0), plot);
         }
         return null;
     }
@@ -116,6 +120,14 @@ public static class TraceProbe
             result.Add(new TraceProbeReading(hit, Columns(joined, hit), Readout(joined, hit, fit), y));
         }
         return result;
+    }
+
+    /// <summary>A hit's pixel carried from its plot's own space back onto the picture.</summary>
+    private static TraceProbeHit OnPicture(TraceProbeHit h, PlotRead plot)
+    {
+        if (plot.Manual is not { Axial: false }) return h;
+        var (x, y) = plot.ToPicture(h.Px, h.Py);
+        return h with { Px = x, Py = y };
     }
 
     /// <summary>An x as the axis rows take it: a plain number in the axis's own units (hertz on a frequency axis), or a

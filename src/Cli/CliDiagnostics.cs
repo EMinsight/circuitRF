@@ -3905,6 +3905,21 @@ internal static class CliDiagnostics
         "recognize: no Touchstone yet: {why}. {flag} answers it. Nothing was written but the overlay and the CSV asked for.",
         ("why", why), ("flag", flag));
 
+    /// <summary>brief-pdg-4 §4: a plot read by hand needs its box and both of its scales.</summary>
+    public static Diagnostic RecognizeManualNeeds(string missing) => Diagnostic.Create(
+        "recognize.plot.manual-needs", DiagnosticSeverity.Error,
+        "recognize: a plot read by hand needs {missing}: the box is the plot area and the ranges are the values at its edges — "
+        + "no tick label is read.", ("missing", missing));
+
+    /// <summary>brief-pdg-4 §4: the box and scales typed cannot calibrate the plot.</summary>
+    public static Diagnostic RecognizeManualRefused(string why) => Diagnostic.Create(
+        "recognize.plot.manual-refused", DiagnosticSeverity.Error, "recognize: the plot cannot be read by hand: {why}.", ("why", why));
+
+    /// <summary>brief-pdg-4 §4: a flag of the automatic reading given with the by-hand one.</summary>
+    public static Diagnostic RecognizeManualConflict(string flag, string instead) => Diagnostic.Create(
+        "recognize.plot.manual-conflict", DiagnosticSeverity.Error,
+        "recognize: {flag} belongs to the automatic reading; a plot read by hand takes {instead}.", ("flag", flag), ("instead", instead));
+
     /// <summary>brief-img-14 R-im14-14: several paths are a plot session, and only pictures make one.</summary>
     public static Diagnostic RecognizeSeveralPictures(string why) => Diagnostic.Create(
         "recognize.args.several-pictures", DiagnosticSeverity.Error,

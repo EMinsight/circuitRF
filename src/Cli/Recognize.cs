@@ -135,6 +135,9 @@ internal static partial class Recognize
             "                 [--phase S21=min|zero|delay:<t>] [--fill S12=S21,S22=zero] [--grid <start>..<stop>/<n>[log]]\n" +
             "                 [--prefer S11=chart|rect|T3] [--format db|ma|ri] [--ports n]\n" +
             "                 [--fit <T3|#rrggbb|dashed|all>[@plot]=linear|exp|poly[:n]|spline[:rms]|none] [--probe 2.4GHz]\n" +
+            "    by hand:     --manual-box <x0px,y0px,x1px,y1px>[@deg] --x-range 100MHz..10GHz[:log] --y-range -40..0[:log]\n" +
+            "                 [--y2-range -180..180[:log]] [--curve \"<name>=<px>,<py>;<px>,<py>;…[,axis=right][,is=S21:db]\"]\n" +
+            "                 [--follow <name>=<px>,<py>] [--sample 101 | --sample-step 50MHz] [--method linear|smooth]\n" +
             "  Writes nothing unless -o, --into, --parts-out or --overlay is given. Layout coordinates carry a unit\n" +
             "  (um, mm, mil); picture coordinates are pixels and say so (px).");
         return 1;
@@ -456,6 +459,8 @@ internal static partial class Recognize
         // Four corners say the picture is a photo of a board (IM-13), whatever it read as.
         if (o.Picture.HasCorners && kind.Kind is DrawingKind.None or DrawingKind.Schematic && o.Picture.Kind is null)
             kind = read.Force(DrawingKind.BoardPhoto);
+        // A plot read by hand needs nothing read of the picture to say it is one (brief-pdg-4 §4).
+        if (o.Plot.Manual && kind.Kind != DrawingKind.Plot && o.Picture.Kind is null) kind = read.Force(DrawingKind.Plot);
         if (kind.Kind == DrawingKind.Plot) return RecognisePlots(o, [(path, source, kind)]);
         if (o.Plot.Given.FirstOrDefault() is { } plotFlag)
             return JsonRun.Fail(CliDiagnostics.PictureFlagWrongKind(Verb, plotFlag, "a plot picture", $"a {kind.Name} picture"));
