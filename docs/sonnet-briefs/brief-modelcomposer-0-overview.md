@@ -1,4 +1,4 @@
-# Brief series — Model Composer: nonlinear FET and passive model extraction (MC-1 … MC-24)
+# Brief series — Model Composer: nonlinear FET and passive model extraction (MC-1 … MC-28)
 
 **Status:** written, not started · **Date:** 2026-10-19 · **Decisions:** locked (§2), owner-reviewed
 **Scope source:** owner request of 2026-10-19 (paraphrased in §0)
@@ -61,6 +61,12 @@ Owner request of 2026-10-20 (paraphrased), briefs MC-21 … MC-24:
 - harmonicaRF takes a `.cmodel` as its DUT, offers the same flags, and reads current and voltage at the model's
   intrinsic plane, which is the point of harmonicaRF. Its loadline offers either the intrinsic or the extrinsic I–V.
 - The user page for the `.cmodel` explains the new options.
+
+Owner request of 2026-10-21 (paraphrased), briefs MC-26 … MC-28:
+- A composed FET can also be exported as Verilog-A source, so a model built in circuitRF runs in other simulators. It
+  carries every parameter and switch the `.cmodel` has, and circuitRF, which already runs Verilog-A, compares the two.
+- A model with a table constituent is refused rather than exported.
+- The linear-charge switches take their bias point as instance parameters.
 
 ### 0.1 References
 
@@ -129,6 +135,9 @@ Z. Wang, Y. Guo, "A physics-informed neural network-based scalable model for GaN
 | MC-23 | `brief-modelcomposer-23-harmonicarf-dut.md` | A `.cmodel` as harmonicaRF's DUT, read at its core's intrinsic plane with no mapping; the switches live | MC-21 (MC-22) |
 | MC-24 | `brief-modelcomposer-24-loadline-planes.md` | harmonicaRF's loadline and DCIV family at the intrinsic or the extrinsic plane, for every DUT kind | MC-23 for the composed case |
 | MC-25 | `brief-modelcomposer-25-trap-thermal-hb-convergence.md` | Harmonic balance stalls when a trap node and the thermal node are both present; the example's power sweep converges to 22 dBm and a sweep's non-convergence is visible | MC-9, MC-10, MC-21 |
+| MC-26 | `brief-modelcomposer-26-veriloga-writer.md` | Verilog-A export, the writer and the static core: network, equation and ANN constituents with emitted gradients, guided extrapolation, symmetry, drift, scaling, temperature; tables refused | MC-1, MC-2, MC-7, MC-8, MC-16 |
+| MC-27 | `brief-modelcomposer-27-veriloga-states-and-switches.md` | Verilog-A export: dispersion and trap nodes, self-heating with an optional thermal pin, instance `Rth`/`Cth`/`Temp`, all ten switches, the linear-charge switches at a bias point given as `VgsQ`/`VdsQ`/`TjQ` | MC-26, MC-21, MC-22 |
+| MC-28 | `brief-modelcomposer-28-veriloga-export-ui-cli-docs.md` | Export Verilog-A on the Export step, `model export -o x.va` from a `.cmc` or a `.cmodel`, the MCP tool, the example's `.va` and comparison bench, the user page | MC-27 |
 
 MC-1/MC-2, MC-3/MC-4/MC-5 and MC-6 are three independent tracks. MC-7 and MC-8 can run side by side.
 
@@ -332,6 +341,18 @@ source scan keeps the view models free of a second copy — the pattern of `Auth
 ### D16 — Exit codes
 **0** done · **1** refusal · **3** finished, but a check failed (charge conservation above `--threshold`, or a
 validation tolerance missed) · **130** cancelled, and nothing written.
+
+### D17 — Verilog-A export: no tables
+A composed FET exports as one self-contained Verilog-A module as well as a `.cmodel`. A model with any **table**
+constituent is refused, by name. The compiler circuitRF uses accepts neither arrays nor `$table_model`, and
+`$table_model` would not reproduce the not-a-knot spline anyway. Equation and ANN constituents are written as code and
+must match the `ComposedFET` to rounding.
+
+### D18 — Verilog-A export: parameters and the bias point
+Every instance parameter and switch of a `ComposedFET` is a module parameter with the same meaning, except `File`,
+`Symbol` and `m`. The host simulator's own multiplier is `m`. A module cannot ask its host for the quiescent operating
+point, so the linear-charge switches freeze at **`VgsQ`, `VdsQ` (intrinsic) and `TjQ`, given as parameters**. With a
+switch on and the voltages unset, the run stops with a message rather than guessing.
 
 ---
 
