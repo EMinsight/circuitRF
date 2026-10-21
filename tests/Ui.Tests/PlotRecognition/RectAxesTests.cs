@@ -43,4 +43,25 @@ public sealed class RectAxesTests
         var log = AxisCalibration.FromTwoPoints(100, 1e8, 500, 1e10, AxisScale.Log)!;
         Assert.Equal(1e9, log.ValueAt(300), 3);
     }
+
+    /// <summary>
+    /// A log y axis read from its labels, one label corrected in the dialog: the typed pair keeps the axis's own scale.
+    /// The dialog's typed values used to be mapped linearly whatever the axis was (designer round 24).
+    /// </summary>
+    [Fact]
+    public void TypedValuesOnALogAxis_StayLogarithmic()
+    {
+        var frame = new PlotFrame { Left = 100, Top = 50, Right = 500, Bottom = 350, YTicks = [50, 150, 250, 350] };
+        PlotWord Word(int id, int y, double v) => new(id, new PixelBox(60, y - 6, 90, y + 6), false, v.ToString(), v, 0, 0);
+        PlotWord[] words = [Word(1, 50, 10), Word(2, 150, 1), Word(3, 250, 0.1), Word(4, 350, 0.01)];
+        Assert.Equal(AxisScale.Log, RectAxes.Calibrate(frame, words).Y!.Scale);
+
+        var typed = RectAxes.Calibrate(frame, words, y: new AxisClicks(250, 0.1, 50, 10));
+        Assert.Equal(AxisScale.Log, typed.Y!.Scale);
+        Assert.Equal(1, typed.Y.ValueAt(150), 9);
+
+        // Stated by name, the pair's scale wins; a pair that cannot be logarithmic is linear.
+        Assert.Equal(AxisScale.Linear, RectAxes.Calibrate(frame, words, y: new AxisClicks(250, 0.1, 50, 10, AxisScale.Linear)).Y!.Scale);
+        Assert.Equal(AxisScale.Linear, RectAxes.Calibrate(frame, words, y: new AxisClicks(250, 0, 50, 10)).Y!.Scale);
+    }
 }

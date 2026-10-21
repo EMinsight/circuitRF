@@ -40182,3 +40182,20 @@ an empty value — `CommitExpression` otherwise refuses an empty expression.
   edits a multi-selection; each part not already on the chosen side is flipped about its own origin
   (`SetSelectedInstancesSide`, one `ReplaceInstancesCommand`).
 - Tests comparing two SVG renders must normalise `cl_<n>`: Skia's SVG device numbers clip paths per process.
+
+## Designer feedback round 24 — a net label on an open pin stayed behind when its part moved (2026-10-21)
+
+- **Symptom.** On a schematic made by Create Schematic from Artwork, dragging a CPWG left its "n16" label where the
+  pin had been: the pin showed open, and the label could be neither selected nor dragged back.
+- **Cause.** Recognition draws a net that has no wire (an open line end, a lone terminal) as a label straight on the
+  pin, with no `OwnerWireId`. An unanchored label names the node it is DRAWN on, and nothing moved it: anchored labels
+  follow their owner wire for free, and grounds on a pin already ride it (`GroundRidersOf`, round 22), but labels had
+  no equivalent. A drag of the stranded label is refused by design (`NetLabelDrop`: an unanchored label may only be
+  dropped on a wire of its own net, and its net no longer had one), and a click on it falls through to what is under it.
+- **Fix.** `SchematicGroupTransform.NetLabelRidersOf`: an unanchored label on a moving pin rides it, unless it is
+  also on a pin of a part that stays (then it belongs to that part too and stays; the pin grows a wire back). Rotate
+  and mirror carry it in the transform (`Labels`, applied and reverted with the rest); a drag snapshots the riders
+  (`_dragLabelRiders`), previews them through `NetLabelDragPositions`, and commits one `MoveNetLabelCommand` each in
+  the same undo step. A part carrying a rider is no longer treated as unconnected by the drop-on-a-wire series cut.
+- Gate: `tests/Ui.Tests/Schematic/DesignerRound24Tests.cs` (drag and rotate fail without the fix; the stays case
+  holds either way).

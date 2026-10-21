@@ -21441,3 +21441,29 @@ question a placement's side does not change; a bottom placement there resolves u
   resolves through `CellLayoutResolver.Resolve(inst, …, technology)`, and the artwork recognition takes placed pads
   from `PlacedPins` with each pin's own resolved layer. A bottom part's pins are on Bottom Copper and join the bottom
   traces through `BoardCopper`'s per-layer pieces.
+
+## Designer round 24 — "As on the board" drew a sparse sheet (2026-10-21)
+
+- **Cause.** `NetlistSchematic.BoardPlacement` used ONE board→schematic scale, the least that keeps the closest pair of
+  glyphs (value labels included) apart. On a real board one close pair (a bend beside its line, two 0402s) sets it, so
+  every long line and bare stretch of board grew with it and the sheet ran into `BoardMaxExtent` — with pairs still
+  too close sent to the fallback below the sheet.
+- **Fix.** The scale now only orders things; each axis is then compacted (`Compact`): in board order, each item as far
+  back as it can go, `CompactClearance` (4 cells) clear of earlier items it would overlap across the axis, and — for
+  an earlier item sharing a net — at least 2 cells and up to `JoinedReach` (6 cells) of their scaled board offset.
+  Passes: x and y each against the board's spread, parting only pairs the board has apart along that axis (unless
+  twice as far apart the other way); then y again against the compacted x, parting every overlapping pair.
+- **Measured** on the field board (region / whole board, same scope, HEAD built in a scratch worktree): area −15 % /
+  unchanged; nets joined by label instead of wired 27 → 7 / 29 → 6; parts sent to the fallback 15 → 0 / 9 → 0.
+  The width is set by rows of parts whose value labels sit side by side.
+- **Traps found on the way.** A plain gap cap (scaled gap, capped at a glyph) changed nothing: with ~200 distinct
+  coordinates nearly every gap hits the cap. Pure compaction (2-cell clearance, no reach) halves the area but ties
+  wired neighbours onto one row (`AsOnTheBoard_KeepsNeighboursInTheBoardsOrder…` fails), pushes a part sideways out of
+  the column it shares with the part above it, and levels a decoupling capacitor with the line it hangs from, so its
+  wire loops back (`ABiasChain_IsDrawnWithNoWireDoublingBack`) — the three rules above answer those in that order.
+- **Digitiser: typed axis values on a log axis were mapped linearly.** `AxisClicks.Scale` defaulted to `Linear`, and
+  the dialog (`PlotSessionViewModel.Clicks`) never set it, so correcting one label of a log axis — or clicking a label
+  and typing its value — recalibrated the axis as linear, overriding both the labels' log fit and a forced scale.
+  `Scale` is now nullable: null takes the axis's own (forced, else what its labels fit, else linear), and a pair with a
+  value at or below zero falls back to linear unless log was asked for. The CLI still states the scale explicitly
+  (`--x-log`, else linear), so its behaviour is unchanged. Gate `RectAxesTests.TypedValuesOnALogAxis_StayLogarithmic`.

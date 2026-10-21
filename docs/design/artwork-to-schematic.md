@@ -478,6 +478,19 @@ anchor centre, y up, and its direction: a part's `PadAxisDeg`, a line's trace di
   board points) two grid cells apart along x or y, capped so the sheet stays under 40,000 units — a via beside its pad
   would otherwise scale it without limit. Framed on the hinted instances, so a selection-scoped recognition is placed
   relative to the selection. y is flipped.
+- **Empty board is squeezed out** (designer round 24). One close pair sets that scale, so every long line and bare
+  stretch of board grew with it and the sheet ran to the cap. Each axis is then compacted in board order: an item goes
+  as far back as it can — no further back than the one before it, four grid cells clear of every earlier item it would
+  overlap across the axis, and, for an earlier item it shares a net with, at least two cells and as much of their scaled
+  board offset as six cells allows (a part beside a junction stays beside it, not level with what it hangs from). The
+  first x and y passes part only pairs the board has apart along that axis (unless twice as far apart the other way), so
+  a part straight below another stays below it; a last y pass against the compacted x parts every pair that would
+  overlap, which keeps every pair of glyphs apart, so only straightening can still send a part to the fallback.
+  Measured on the field board the report came from (a 247-part region and the 202-part whole board): area 15 % smaller
+  and unchanged; nets joined by label instead of wired 27 → 7 and 29 → 6; parts sent to the fallback 15 → 0 and 9 → 0.
+  The width is set by rows of parts whose value labels sit side by side. Two cells for both constants halves the area,
+  but joins more nets by label and loops the bias chain's wire round its decoupling capacitor
+  (`ArtworkBoardArrangementTests`).
 - **Orientation.** A two-pin instance with a direction is turned to it to the nearest quarter turn; anything else (a
   port, a via, a tee, a bend) is turned — and mirrored where that scores better — so each signal pin points at the board
   position of what its net joins.

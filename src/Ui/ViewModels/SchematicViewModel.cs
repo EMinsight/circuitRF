@@ -272,6 +272,8 @@ public sealed partial class SchematicViewModel : ObservableObject
     private List<IReadOnlyList<(double X, double Y)>>?                                               _dragTapStubs;
     private Dictionary<string, (double X, double Y)>?                                                 _dragStartObjPositions;
     private List<PinOnPinContact>?                                                                     _dragPinOnPinContacts;
+    // Net labels drawn on a dragged pin with no wire under them, and the part each rides with.
+    private List<(EditableNetLabel Label, string OwnerId)>?                                            _dragLabelRiders;
     // Snapshot of every component's pin geometry at drag start — avoids per-frame resolver calls.
     private Dictionary<string, IReadOnlyList<(float LocalX, float LocalY, int PortIndex)>>?           _dragPortDefs;
 
@@ -1472,12 +1474,16 @@ public sealed partial class SchematicViewModel : ObservableObject
         // A ground drawn straight onto a dragged part's pin, and on nothing else, moves with the
         // part — the same rule rotate follows (SchematicGroupTransform.GroundRidersOf). Left standing,
         // it grew an auto-wire back across the part's own body.
+        // A net label drawn on one with no wire under it rides along the same way.
+        _dragLabelRiders = [];
         if (_dragStartCompPositions.Count > 0)
         {
             var moving = _dragStartCompPositions.Keys.Select(EditModel.FindComponent).OfType<EditableComponent>().ToList();
             var movingWires = _dragWireInfo.Keys.ToHashSet(StringComparer.Ordinal);
             foreach (var (g, _, _) in SchematicGroupTransform.GroundRidersOf(EditModel, moving, movingWires))
                 _dragStartCompPositions[g.Id] = (g.X, g.Y);
+            foreach (var (l, owner, _) in SchematicGroupTransform.NetLabelRidersOf(EditModel, moving))
+                _dragLabelRiders.Add((l, owner.Id));
         }
 
         // Snapshot original points of all UNSELECTED wires (needed to compute re-routes on undo)
@@ -2149,6 +2155,17 @@ public sealed partial class SchematicViewModel : ObservableObject
                     snap.Component, new HashSet<int>(snap.Component.DetachedPorts)));
         }
 
+        // Labels drawn on a moved pin with no wire under them go where the pin went.
+        var labelRiderCmds = new List<MoveNetLabelCommand>();
+        foreach (var (label, ownerId) in _dragLabelRiders ?? [])
+        {
+            var snap = compSnaps.FirstOrDefault(s => s.Component.Id == ownerId);
+            if (snap.Component is null || (snap.EndX == snap.StartX && snap.EndY == snap.StartY)) continue;
+            var place = NetLabelPlace.Of(label);
+            labelRiderCmds.Add(new MoveNetLabelCommand(EditModel, label, place,
+                place with { X = label.X + snap.EndX - snap.StartX, Y = label.Y + snap.EndY - snap.StartY }));
+        }
+
         // Restore everything to start state so MoveCommand.Execute() applies cleanly
         foreach (var s in compSnaps)    { s.Component.X = s.StartX; s.Component.Y = s.StartY; }
         foreach (var s in selWireSnaps) RestoreWirePoints(s.Wire, s.StartPoints);
@@ -2165,7 +2182,7 @@ public sealed partial class SchematicViewModel : ObservableObject
         // does (SeriesPartInsertion); anything already wired in stays a plain move.
         IUiCommand finalCmd = moveCmd;
         if (compSnaps.Count == 1 && selWireSnaps.Count == 0 && objSnaps.Count == 0
-            && followWireSnaps.Count == 0 && autoWireCmds.Count == 0
+            && followWireSnaps.Count == 0 && autoWireCmds.Count == 0 && labelRiderCmds.Count == 0
             && _dragPinOnPinContacts is not { Count: > 0 })
         {
             var snap    = compSnaps[0];
@@ -2178,6 +2195,8 @@ public sealed partial class SchematicViewModel : ObservableObject
         // Chain auto-wires (always empty when mergeCmd is set — mergeCmd requires compSnaps.Count==0)
         foreach (var wc in autoWireCmds)
             finalCmd = new CompositeCommand(finalCmd, wc);
+        foreach (var lc in labelRiderCmds)
+            finalCmd = new CompositeCommand(finalCmd, lc);
 
         if (mergeCmd is not null)
         {
@@ -2742,7 +2761,7 @@ public sealed partial class SchematicViewModel : ObservableObject
             SelectedWireSegments     = Selection.GetSelectedSegments(EditModel).ToHashSet(),
             ComponentDragPositions   = compOverrides,
             WireDragPoints           = wireOverrides,
-            NetLabelDragPositions    = BuildNetLabelDragPositions(wireOverrides),
+            NetLabelDragPositions    = WithLabelRiders(BuildNetLabelDragPositions(wireOverrides)),
             PinOnPinPreviewWires     = popPreviews,
             ConnectionDotsOverride   = liveConn.Dots,
             LivePortConnected        = liveConn.Port,
@@ -2892,9 +2911,23 @@ public sealed partial class SchematicViewModel : ObservableObject
         return result;
     }
 
+    /// <summary><paramref name="positions"/> plus where each label riding a dragged pin is drawn this frame: moved by
+    /// as much as its part has.</summary>
+    private IReadOnlyDictionary<string, (double X, double Y)>? WithLabelRiders(
+        IReadOnlyDictionary<string, (double X, double Y)>? positions)
+    {
+        if (_dragLabelRiders is not { Count: > 0 } || _dragStartCompPositions is null) return positions;
+        var result = positions is null ? new Dictionary<string, (double X, double Y)>() : new Dictionary<string, (double X, double Y)>(positions);
+        foreach (var (label, ownerId) in _dragLabelRiders)
+            if (EditModel.FindComponent(ownerId) is { } c && _dragStartCompPositions.TryGetValue(ownerId, out var start))
+                result[label.Id] = (label.X + c.X - start.X, label.Y + c.Y - start.Y);
+        return result;
+    }
+
     private void ClearDragState()
     {
         _isDragging               = false;
+        _dragLabelRiders          = null;
         _dragStartCompPositions   = null;
         _dragWireInfo             = null;
         _dragUnselectedWirePoints = null;

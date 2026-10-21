@@ -14,6 +14,10 @@ internal readonly record struct CanvasObjectTransformSnapshot(
     double StartX, double StartY, double StartDeg,
     double EndX,   double EndY,   double EndDeg);
 
+/// <summary>A net label drawn on a pin with no wire under it, before/after the pin moved.</summary>
+internal readonly record struct NetLabelRiderSnapshot(
+    EditableNetLabel Label, double StartX, double StartY, double EndX, double EndY);
+
 /// <summary>
 /// <b>Rotate and mirror move the selection as ONE RIGID BODY</b> (owner, 2026-08-26).
 ///
@@ -46,8 +50,9 @@ internal readonly record struct CanvasObjectTransformSnapshot(
 /// and user junction dots that sit on a carried wire and on nothing else. A wire with only ONE end on
 /// a moved pin straddles the boundary and cannot be carried — it is re-routed instead, by
 /// <see cref="PinFollowReroute"/>, which keeps it on the same pin and picks a path that touches
-/// nothing else. Net labels need no snapshot: their draw position is derived from their owner wire's
-/// geometry on every build, so they follow it for free.</para>
+/// nothing else. An anchored net label needs no snapshot: its draw position is derived from its owner
+/// wire's geometry on every build, so it follows for free. A label drawn straight onto a moved pin
+/// with no wire under it rides the pin (<see cref="NetLabelRidersOf"/>).</para>
 /// </summary>
 internal sealed class SchematicGroupTransform
 {
@@ -68,13 +73,14 @@ internal sealed class SchematicGroupTransform
     public List<CanvasObjectTransformSnapshot> Objects    { get; } = [];
     public List<WireMoveSnapshot>              Wires      { get; } = [];
     public List<DotMoveSnapshot>               Dots       { get; } = [];
+    public List<NetLabelRiderSnapshot>         Labels     { get; } = [];
 
     /// <summary>Stub wires the transform adds to keep a pin on what it was attached to — see
     /// <see cref="PinFollowReroute.Build"/>.</summary>
     public List<EditableWire>                  NewWires   { get; } = [];
 
     public bool IsEmpty => Components.Count == 0 && Objects.Count == 0
-                        && Wires.Count == 0 && Dots.Count == 0 && NewWires.Count == 0;
+                        && Wires.Count == 0 && Dots.Count == 0 && Labels.Count == 0 && NewWires.Count == 0;
 
     private SchematicGroupTransform(SchematicEditModel model) => _model = model;
 
@@ -204,6 +210,15 @@ internal sealed class SchematicGroupTransform
                 rider.Comp, rider.EndX, rider.EndY, rider.EndRot, rider.EndMirrorX));
         }
 
+        // ── Net labels riding on a moved pin ─────────────────────────────────
+        foreach (var (label, owner, def) in NetLabelRidersOf(model, moved.Select(m => m.Comp).ToList()))
+        {
+            var m = moved.First(x => ReferenceEquals(x.Comp, owner));
+            var (nx, ny) = SchematicGeometry.LocalToWorld(
+                def.LocalX, def.LocalY, m.NewX, m.NewY, m.NewRotation, m.NewMirrorX);
+            t.Labels.Add(new NetLabelRiderSnapshot(label, label.X, label.Y, nx, ny));
+        }
+
         // ── Wires straddling the boundary ────────────────────────────────────
         var reroute = PinFollowReroute.Build(model, moved, carried);
         t.Wires.AddRange(reroute.Rerouted);
@@ -249,18 +264,7 @@ internal sealed class SchematicGroupTransform
         const double tol = SchematicEditModel.ConnectTolerance;
         var result = new List<(EditableComponent, EditableComponent, (float, float, int))>();
         var movingIds = moving.Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
-
-        var pins = new List<(EditableComponent Owner, (float LocalX, float LocalY, int PortIndex) Def, double X, double Y)>();
-        foreach (var c in moving)
-        {
-            if (ComponentTypeRegistry.DetachesFreely(c.Symbol)) continue;
-            foreach (var def in model.PortDefsOf(c))
-            {
-                if (c.IsPortDetached(def.PortIndex)) continue;
-                var (x, y) = SchematicGeometry.LocalToWorld(def.LocalX, def.LocalY, c.X, c.Y, c.Rotation, c.MirrorX);
-                pins.Add((c, def, x, y));
-            }
-        }
+        var pins = MovingPins(model, moving);
 
         foreach (var g in model.Components)
         {
@@ -285,6 +289,62 @@ internal sealed class SchematicGroupTransform
             if (!shared) result.Add((g, hits[0].Owner, hits[0].Def));
         }
         return result;
+    }
+
+    /// <summary>
+    /// The net labels drawn straight onto a moving pin with no wire under them, each with the pin it is on. That is
+    /// how Create Schematic from Artwork names a net that has no wire — an open line end, a lone terminal — and an
+    /// unanchored label names the node it is DRAWN on, so a drag that left it standing took the pin off its net and
+    /// stranded the label where nothing could take it back (designer report, 2026-10-21). A label that is also on a
+    /// pin of a part that stays belongs to that part as much as this one, and stays; the pin grows a wire back to it.
+    /// Rotate, mirror and drag all carry these with the part.
+    /// </summary>
+    internal static List<(EditableNetLabel Label, EditableComponent Owner, (float LocalX, float LocalY, int PortIndex) Pin)>
+        NetLabelRidersOf(SchematicEditModel model, IReadOnlyCollection<EditableComponent> moving)
+    {
+        const double tol = SchematicEditModel.ConnectTolerance;
+        var result = new List<(EditableNetLabel, EditableComponent, (float, float, int))>();
+        if (model.NetLabels.Count == 0 || moving.Count == 0) return result;
+        var movingIds = moving.Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
+        var pins = MovingPins(model, moving);
+
+        foreach (var l in model.NetLabels)
+        {
+            if (l.IsAnchored) continue;
+            var hit = pins.FirstOrDefault(p => SchematicGeometry.CoincidentPoints(p.X, p.Y, l.X, l.Y, tol));
+            if (hit.Owner is null) continue;
+            bool shared = false;
+            foreach (var c in model.Components)
+            {
+                if (movingIds.Contains(c.Id)) continue;
+                foreach (var def in model.PortDefsOf(c))
+                {
+                    var (cx, cy) = model.PortWorldOf(c, def);
+                    if (SchematicGeometry.CoincidentPoints(cx, cy, l.X, l.Y, tol)) { shared = true; break; }
+                }
+                if (shared) break;
+            }
+            if (!shared) result.Add((l, hit.Owner, hit.Def));
+        }
+        return result;
+    }
+
+    /// <summary>Every attached pin of <paramref name="moving"/>, where it is now.</summary>
+    private static List<(EditableComponent Owner, (float LocalX, float LocalY, int PortIndex) Def, double X, double Y)>
+        MovingPins(SchematicEditModel model, IReadOnlyCollection<EditableComponent> moving)
+    {
+        var pins = new List<(EditableComponent Owner, (float LocalX, float LocalY, int PortIndex) Def, double X, double Y)>();
+        foreach (var c in moving)
+        {
+            if (ComponentTypeRegistry.DetachesFreely(c.Symbol)) continue;
+            foreach (var def in model.PortDefsOf(c))
+            {
+                if (c.IsPortDetached(def.PortIndex)) continue;
+                var (x, y) = SchematicGeometry.LocalToWorld(def.LocalX, def.LocalY, c.X, c.Y, c.Rotation, c.MirrorX);
+                pins.Add((c, def, x, y));
+            }
+        }
+        return pins;
     }
 
     /// <summary>True when both of this wire's ends sit on a pin of a component that is moving.</summary>
@@ -316,6 +376,7 @@ internal sealed class SchematicGroupTransform
         foreach (var s in Objects) { s.Obj.X = s.EndX; s.Obj.Y = s.EndY; s.Obj.RotationDeg = s.EndDeg; }
         foreach (var s in Wires)   { s.Wire.Points.Clear(); s.Wire.Points.AddRange(s.EndPoints); }
         foreach (var s in Dots)    { s.Dot.X = s.EndX; s.Dot.Y = s.EndY; }
+        foreach (var s in Labels)  { s.Label.X = s.EndX; s.Label.Y = s.EndY; }
         foreach (var w in NewWires) _model.Wires.Add(w);
     }
 
@@ -329,6 +390,7 @@ internal sealed class SchematicGroupTransform
         foreach (var s in Objects) { s.Obj.X = s.StartX; s.Obj.Y = s.StartY; s.Obj.RotationDeg = s.StartDeg; }
         foreach (var s in Wires)   { s.Wire.Points.Clear(); s.Wire.Points.AddRange(s.StartPoints); }
         foreach (var s in Dots)    { s.Dot.X = s.StartX; s.Dot.Y = s.StartY; }
+        foreach (var s in Labels)  { s.Label.X = s.StartX; s.Label.Y = s.StartY; }
         foreach (var w in NewWires) _model.Wires.Remove(w);
     }
 }

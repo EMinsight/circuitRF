@@ -319,6 +319,15 @@ public static class NetlistSchematic
     /// <summary>The clearance kept between the closest pair of glyphs, labels included, when the board is scaled.</summary>
     private const double BoardClearance = 2 * P;
 
+    /// <summary>The clearance <see cref="Compact"/> keeps between glyphs: twice <see cref="BoardClearance"/>, which leaves the
+    /// router a lane past each part. With <see cref="JoinedReach"/> at 2 cells as well the sheet takes half the area but a
+    /// bias chain's wire loops round its decoupling part and more nets end up joined by label (design note §7.3.1).</summary>
+    private const double CompactClearance = 4 * P;
+
+    /// <summary>How much of their board offset two instances that share a net keep through <see cref="Compact"/>: all of
+    /// it up to this, so a part beside a junction stays beside it rather than level with what it hangs from.</summary>
+    private const double JoinedReach = 6 * P;
+
     /// <summary>The longest a board's drawing is let grow: a pair of anchors almost on top of each other (a via beside
     /// its pad) would otherwise scale the sheet without limit. A pair still too close falls back, and is reported.</summary>
     private const double BoardMaxExtent = 40_000;
@@ -326,8 +335,9 @@ public static class NetlistSchematic
     /// <summary>
     /// R-dfr22-2-2 — "As on the board": every hinted instance where the board has it, as an <see cref="ExactPlacement"/>
     /// <see cref="Build"/> draws with <see cref="PlaceExact"/>, so a placement that would land on another falls back
-    /// per instance exactly as a picture's does. One uniform scale, the smallest that keeps the closest pair of glyphs
-    /// (labels included, measured as drawn) apart; y flipped; the drawing framed on the hinted instances themselves, so a
+    /// per instance exactly as a picture's does. One scale, the smallest that keeps the closest pair of glyphs
+    /// (labels included, measured as drawn) apart, then each axis squeezed shut in board order (<see cref="Compact"/>);
+    /// y flipped; the drawing framed on the hinted instances themselves, so a
     /// recognition of a selection is placed relative to that selection. A two-pin instance with a direction is turned to
     /// it, to the nearest quarter turn; anything else turns its pins towards what they connect to on the board. Nothing
     /// is wired here: the placement asks for <see cref="ExactPlacement.AutoRoute"/>.
@@ -356,11 +366,32 @@ public static class NetlistSchematic
         }
 
         double scale = BoardScale(items);
-        long x0 = items.Min(i => i.H.X), y1 = items.Max(i => i.H.Y);
-        foreach (var (it, h) in items)
+        double[] xs = [.. items.Select(i => i.H.X * scale)], ys = [.. items.Select(i => -i.H.Y * scale)];
+        double[] ws = [.. items.Select(i => i.It.Full.MaxX - i.It.Full.MinX)], hs = [.. items.Select(i => i.It.Full.MaxY - i.It.Full.MinY)];
+        // Which axes each pair is apart along on the board — along one unless it is at least twice as far apart the other
+        // way, so a diagonal pair is apart along both — and which pairs share a signal net.
+        var apartX = new bool[items.Count, items.Count];
+        var apartY = new bool[items.Count, items.Count];
+        var joined = new bool[items.Count, items.Count];
+        for (int i = 0; i < items.Count; i++)
+            for (int j = 0; j < items.Count; j++)
+            {
+                if (i == j) continue;
+                double dx = Math.Abs(items[i].H.X - items[j].H.X), dy = Math.Abs(items[i].H.Y - items[j].H.Y);
+                apartX[i, j] = 2 * dx >= dy;
+                apartY[i, j] = 2 * dy >= dx;
+                joined[i, j] = items[i].It.SignalNets.Intersect(items[j].It.SignalNets).Any();
+            }
+        // Each axis squeezed against the board's own spread the other way, parting only the pairs the board has apart
+        // along it, so neither axis is favoured and a part straight below another stays below it; then y once more against the
+        // squeezed x, parting every pair that would overlap — the pass that guarantees no two glyphs do.
+        var (sx, sy) = (Compact(xs, ws, ys, hs, apartX, joined), Compact(ys, hs, xs, ws, apartY, joined));
+        (xs, ys) = (sx, Compact(sy, hs, sx, ws, null, joined, apartY));
+        for (int k = 0; k < items.Count; k++)
         {
+            var (it, _) = items[k];
             // The glyph's centre on the board point: the origin is offset by the glyph's own centre.
-            double cx = (h.X - x0) * scale, cy = (y1 - h.Y) * scale;
+            double cx = xs[k], cy = ys[k];
             it.Comp.X = Snap(cx - (it.Box.MinX + it.Box.MaxX) / 2);
             it.Comp.Y = Snap(cy - (it.Box.MinY + it.Box.MaxY) / 2);
         }
@@ -370,6 +401,40 @@ public static class NetlistSchematic
         foreach (var (it, _) in items)
             placed[it.Comp.InstanceName] = new ExactInstance(it.Comp.X, it.Comp.Y, it.Comp.Rotation, it.Comp.MirrorX);
         return new ExactPlacement { Instances = placed, AutoRoute = true };
+    }
+
+    /// <summary>
+    /// One axis of the board squeezed shut (designer report, 2026-10-21: one close pair of parts sets the scale, and
+    /// every long line and bare stretch of board grew with it until the sheet ran into <see cref="BoardMaxExtent"/>).
+    /// Items are taken in their board order along the axis, and each goes as far back as it can: no further back than
+    /// the one before it, so the board's order along the axis is kept, and <see cref="CompactClearance"/> clear of every earlier item it
+    /// would overlap across the axis — of those <paramref name="parted"/> marks, or of all when it is null. An item
+    /// <paramref name="joined"/> to an earlier one it is mostly apart from along this axis (<paramref name="apart"/>,
+    /// else <paramref name="parted"/>) also stays a lead's length past it, so what is wired together keeps its
+    /// direction and as much of its board offset as <see cref="JoinedReach"/> allows. Returns glyph centres from 0; <paramref name="along"/> holds the board centres, which give the order,
+    /// and <paramref name="across"/> the current centres the other way.
+    /// </summary>
+    private static double[] Compact(double[] along, double[] size, double[] across, double[] acrossSize,
+                                    bool[,]? parted, bool[,] joined, bool[,]? apart = null)
+    {
+        var order = Enumerable.Range(0, along.Length).OrderBy(k => along[k]).ToArray();
+        var at = new double[along.Length];
+        for (int n = 0; n < order.Length; n++)
+        {
+            int i = order[n];
+            double pos = n == 0 ? 0 : at[order[n - 1]];
+            for (int m = 0; m < n; m++)
+            {
+                int j = order[m];
+                if (joined[i, j] && (apart ?? parted)![i, j] && along[i] > along[j])
+                    pos = Math.Max(pos, at[j] + Math.Clamp(along[i] - along[j], 2 * P, JoinedReach));
+                if (parted is not null && !parted[i, j]) continue;
+                if (Math.Abs(across[i] - across[j]) >= (acrossSize[i] + acrossSize[j]) / 2 + CompactClearance) continue;
+                pos = Math.Max(pos, at[j] + (size[i] + size[j]) / 2 + CompactClearance);
+            }
+            at[i] = pos;
+        }
+        return at;
     }
 
     /// <summary>

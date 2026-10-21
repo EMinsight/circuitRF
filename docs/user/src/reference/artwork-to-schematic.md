@@ -315,7 +315,8 @@ Clear the box to hand that component back to ordinary layout sync; it is one und
 ### Drawing the schematic {#drawing}
 
 With **Arrange ▸ As on the board** (the default), each part, line and port is drawn roughly where it sits on the
-board, turned the way it lies there, and the wires are routed between them. A part that would land on another is
+board, turned the way it lies there, and the wires are routed between them. Parts keep their order across and down
+the board, but long runs of line and empty board are drawn short, so the sheet stays compact. A part that would land on another is
 drawn below the rest instead, and the report names it. A recognition of a selection is drawn relative to that
 selection. **Update Schematic from Layout** on a layout of bare artwork draws the same way.
 

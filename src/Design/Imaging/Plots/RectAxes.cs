@@ -65,7 +65,10 @@ public sealed record AxisCalibration(AxisScale Scale, double A, double B, double
 
 /// <summary>Two clicks and two typed values for one axis (R-im14-3's fallback).</summary>
 /// <param name="Value0">In the axis's own units — for a frequency axis, hertz.</param>
-public sealed record AxisClicks(double Pixel0, double Value0, double Pixel1, double Value1, AxisScale Scale = AxisScale.Linear);
+/// <param name="Scale">The scale the values are mapped on; null for the axis's own — the forced one, else the one its
+/// labels fit, else linear. The dialog's typed values were mapped linearly whatever the axis was, so correcting one label
+/// of a log axis calibrated it as linear (designer round 24).</param>
+public sealed record AxisClicks(double Pixel0, double Value0, double Pixel1, double Value1, AxisScale? Scale = null);
 
 /// <summary>A rectangular plot's calibration: both axes, their labels and titles.</summary>
 /// <param name="XUnit">The x axis's frequency unit as an SI multiplier (1e9 for GHz); every x value is in hertz.</param>
@@ -195,7 +198,7 @@ public static class RectAxes
 
         var xLabels = Pair(xWords, frame.XTicks, horizontal: true);
         var yLabels = Pair(yWords, frame.YTicks, horizontal: false);
-        var (xCal, xUsed) = x is { } cx ? (AxisCalibration.FromTwoPoints(cx.Pixel0, cx.Value0, cx.Pixel1, cx.Value1, cx.Scale), xLabels)
+        var (xCal, xUsed) = x is { } cx ? (FromClicks(cx, xLog, xLabels), xLabels)
                                         : Fit(xLabels, xLog);
         var y2Labels = Pair(y2Words, frame.Y2Ticks, horizontal: false);
         // The only y axis on the right: not one number read left of the frame, the right labels fitting. Its clicks are
@@ -207,9 +210,9 @@ public static class RectAxes
             y2Words = [];
             y2Labels = [];
         }
-        var (yCal, yUsed) = y is { } cy ? (AxisCalibration.FromTwoPoints(cy.Pixel0, cy.Value0, cy.Pixel1, cy.Value1, cy.Scale), yLabels)
+        var (yCal, yUsed) = y is { } cy ? (FromClicks(cy, yLog, yLabels), yLabels)
                                         : Fit(yLabels, yLog);
-        var (y2Cal, y2Used) = y2 is { } c2 ? (AxisCalibration.FromTwoPoints(c2.Pixel0, c2.Value0, c2.Pixel1, c2.Value1, c2.Scale), y2Labels)
+        var (y2Cal, y2Used) = y2 is { } c2 ? (FromClicks(c2, y2Log ?? yLog, y2Labels), y2Labels)
                                            : Fit(y2Labels, y2Log ?? yLog);
 
         // The frequency unit: typed, else a label's own suffix, else the title's, else assumed GHz.
@@ -272,6 +275,18 @@ public static class RectAxes
             result.Add(new AxisLabel(at, w.Number!.Value, w.Text, false, w.Box));
         }
         return result;
+    }
+
+    /// <summary>An axis calibrated by typed values, on <see cref="AxisClicks.Scale"/> or else the axis's own scale:
+    /// <paramref name="log"/> when forced, else the one <paramref name="labels"/> fit, else linear. A pair that cannot be
+    /// logarithmic (a value at or below zero) is linear unless log was asked for by name.</summary>
+    private static AxisCalibration? FromClicks(AxisClicks c, bool? log, IReadOnlyList<AxisLabel> labels)
+    {
+        var scale = c.Scale ?? (log is { } l ? (l ? AxisScale.Log : AxisScale.Linear) : Fit(labels).Fit?.Scale ?? AxisScale.Linear);
+        var cal = AxisCalibration.FromTwoPoints(c.Pixel0, c.Value0, c.Pixel1, c.Value1, scale);
+        return cal is null && scale == AxisScale.Log && c.Scale is null && log is null
+            ? AxisCalibration.FromTwoPoints(c.Pixel0, c.Value0, c.Pixel1, c.Value1, AxisScale.Linear)
+            : cal;
     }
 
     /// <summary>The better of a linear and a logarithmic consensus fit (or the forced one), and the labels marked
