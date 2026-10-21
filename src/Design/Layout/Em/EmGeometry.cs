@@ -62,7 +62,7 @@ public static class EmGeometry
         ArgumentNullException.ThrowIfNull(setup);
         ArgumentNullException.ThrowIfNull(source);
 
-        var flat = Flatten(source.View, source.AbsolutePath);
+        var flat = Flatten(source.View, source.AbsolutePath, source.Technology);
         if (setup.SolveRegion is null) return flat;
 
         var clip = EmSolveRegionClip.Apply(flat.Shapes, source.View.Shapes, setup.SolveRegion,
@@ -78,7 +78,9 @@ public static class EmGeometry
     /// <c>.clay</c>, which is why the path rather than a directory is taken here: getting that one
     /// level wrong resolves nothing and looks exactly like a missing cell.
     /// </summary>
-    public static Result Flatten(LayoutView view, string clayPath)
+    /// <param name="tech">The layout's technology — what a bottom-side placement's surface roles are
+    /// swapped against (brief-bsp-1 R-bsp1-7).</param>
+    public static Result Flatten(LayoutView view, string clayPath, Technology? tech = null)
     {
         ArgumentNullException.ThrowIfNull(view);
 
@@ -93,7 +95,7 @@ public static class EmGeometry
 
         foreach (var inst in view.Instances)
         {
-            var flat = LayoutFlatten.FlattenAllLevels(inst, baseDir);
+            var flat = LayoutFlatten.FlattenAllLevels(inst, baseDir, tech);
             shapes.AddRange(flat.Shapes);
             unresolved += flat.SurvivingInstances.Count;
         }

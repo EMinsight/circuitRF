@@ -21305,3 +21305,48 @@ read; it imports with connectivity matching both its drawing and its declared ne
   identified at rung 0 in layer order (`Copper,L2,Inr`), every `Other` layer is left to the rungs below. Recognised by its
   structure, never by the program that wrote it. Gate:
   `DesignerRound23ImportTests.AGerberLayerList_NamesEachCopperFileAndItsPlaceInTheStack`.
+
+## BSP-1: the side model — `LayoutInstance.Side`, surface roles, side-aware resolution (2026-10-21)
+
+- **The flatten composes a bottom part's own instances from the view AS STORED** (`CellLayoutResolution.SourceView`).
+  The bottom clone's children already carry the composed side (that is what lets every walk resolve them in their turn
+  with no extra work), so composing them again through `ComposeInstances`' XOR flips them back. `SourceView` is the
+  same instance as `View` for a top placement.
+- **The bottom-view cache is keyed on the swap's VALUE (`SurfaceRoles.Signature`), not on the technology instance.**
+  The layout editor's `DrawTechnology` is a clone made whenever a layer is hidden; keyed on the instance, every hide
+  would have re-cloned and recompiled every bottom part, and hit test (draw technology) and properties (document
+  technology) would have held two different bottom views of one placement.
+- **A generated cell stores no pins and asks its generator for them on the TOP roles** (`CellPins.Resolve`). The clone
+  asks once and stores them swapped; without that a bottom PCell's placed pins report top copper.
+- **`LabelShape` does have a justification** (`HAlign`/`VAlign`, added for imported board text); the anchor is only
+  left-of-baseline when they are null. `LayoutInstanceTransform.TransformLabel` measures the centre through the label's
+  own alignment and font (`LayoutTextOutline.CentreOffset`, `StrokeText.CentreOffset`) and anchors the result
+  Center/Middle there, so any alignment works.
+- **The renderer draws no label inside a placed cell** (the L3a gap `CompileCell` names), so the readable-text rule
+  reaches the screen through nothing there today; it is the flatten (and so every flat consumer) that applies it. Hit
+  test needs nothing: the readable text occupies the box the reflected text would have, which is what the local-frame
+  test already measures.
+- **Bottom copper is `B.Cu`, else the LAST stackup conductor — provided it is not the first and a laminate sits on it.**
+  A bottom `Purpose` match also needs a back side word in the layer's name (a purpose carries no side; the top keeps
+  its old first-match rule), and a bottom role resolving to the top role's own layer counts as absent.
+- **The swap is made against the PARENT's technology, before `LayoutDesignFlatten`'s cross-technology reconciliation.**
+  A sub-cell numbering its layers differently from the board would be swapped by the board's roles. Placement across
+  technologies is already gated (`ExternalWorkspaceGate`); this is recorded, not handled.
+- `LayoutDesignFlatten.FlattenResult` gained `Notes` — side notes, and the rotation notes `FlattenAllLevels` always
+  produced and this driver dropped. Nothing reports them yet; that is the exporters' brief (BSP-3).
+- `Courtyard Bottom` took its top twin's old `ZOrder` and `Courtyard Top` moved up one, so the bottom twin sits just
+  beneath it as every other bottom-surface layer does. `StarterTechnologies.Pcb2Layer` carries it too
+  (`LandPatternRoleSeverityTests` compares the two definitions' aliases).
+
+**Sites that resolve a placed part with no technology (R-bsp1-7).** Each draws nothing on a surface layer, or asks a
+question a placement's side does not change; a bottom placement there resolves unswapped:
+- `CellHierarchy` — `InstanceBbox`/`BasePlacementBbox`, `InstanceBboxOfView`, `CellBboxRecursive` (extents are the same
+  either way, short of an omitted role), `OccupiedLayerKeys` (the cross-workspace gate counts the keys as stored),
+  `CanReach` (cycle check). `ShapeCountsByLayer` takes the technology optionally; `render` and `explain` pass it.
+- `LayoutFlatten.FilesRead`; `LayoutDesignFlatten.ExceedsCeiling` (through `CountResultingShapes`, whose estimate can
+  then only be high).
+- `FootprintLabel.Nested` and `LayoutRenderer.Designators`' "does this cell place parts" lookup; `FootprintLabel.ShapesFor`
+  and the editor's designator measure `SourceView`, the cell as stored, whose silk is on the role they measure.
+- `GeneratedCellsRun.Visit`; `LayoutHierarchyResolver.CanPushInto` (push-in edits the cell as stored);
+  `WBondGeometryEmbedding.Walk`, `WBondReferenceGeometry.Walk` and its missing-cell repair.
+- `PcbExport`'s flatten of a definition's own sub-instances — the export's structure is BSP-3's.

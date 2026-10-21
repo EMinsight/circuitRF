@@ -37,7 +37,9 @@ internal static class LayoutHierarchyResolver
         if (parentVm.InstanceBaseDir is not { Length: > 0 } baseDir)
         { reason = "parent layout has no directory (scratch document)"; return false; }
 
-        var res = CellLayoutResolver.Resolve(instance.CellRef, baseDir);
+        // Push-in edits the CELL as stored, whichever face it is placed on — no technology is needed
+        // to swap anything (brief-bsp-1 R-bsp1-7).
+        var res = CellLayoutResolver.Resolve(instance, baseDir, tech: null);
         if (res.State != CellLayoutState.Resolved)
         {
             reason = res.State switch
@@ -103,7 +105,7 @@ internal static class LayoutHierarchyResolver
         if (string.IsNullOrEmpty(instance.CellRef)) return false;
         if (parentVm.InstanceBaseDir is not { Length: > 0 } baseDir) return false;
 
-        var res = CellLayoutResolver.Resolve(instance.CellRef, baseDir);
+        var res = CellLayoutResolver.Resolve(instance, baseDir, parentVm.Technology);
         return res.State == CellLayoutState.Resolved && res.View!.PCellOrigin is not null;
     }
 }

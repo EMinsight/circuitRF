@@ -65,21 +65,7 @@ public static class StrokeText
 
         double cap = label.Height;
         var laid = StrokeFont.Layout(label.Text, label.Style, cap);
-        var h = centred ? LabelHAlign.Center : label.HAlign ?? LabelHAlign.Left;
-        var v = centred ? LabelVAlign.Middle : label.VAlign ?? LabelVAlign.Baseline;
-        double dx = Math.Round(h switch
-        {
-            LabelHAlign.Center => -laid.Advance / 2,
-            LabelHAlign.Right  => -laid.Advance,
-            _                  => 0,
-        });
-        double dy = v switch
-        {
-            LabelVAlign.Top    => -cap - pen / 2,
-            LabelVAlign.Middle => -cap / 2,
-            LabelVAlign.Bottom => cap * StrokeFont.DescentOverCap + pen / 2,
-            _                  => 0,
-        };
+        var (dx, dy) = AlignmentOffset(label, centred, laid.Advance, pen);
 
         double rad = label.RotationDegrees * Math.PI / 180;
         double cos = Math.Cos(rad), sin = Math.Sin(rad);
@@ -96,6 +82,45 @@ public static class StrokeText
             placed.Add(xy);
         }
         return new StrokeLabelGeometry(placed, pen, laid.Unknown);
+    }
+
+    /// <summary>Where the text's own frame starts relative to the anchor, for the alignment
+    /// <see cref="For"/> applies — the one copy of that arithmetic.</summary>
+    private static (double Dx, double Dy) AlignmentOffset(LabelShape label, bool centred, double advance, double pen)
+    {
+        double cap = label.Height;
+        var h = centred ? LabelHAlign.Center : label.HAlign ?? LabelHAlign.Left;
+        var v = centred ? LabelVAlign.Middle : label.VAlign ?? LabelVAlign.Baseline;
+        double dx = Math.Round(h switch
+        {
+            LabelHAlign.Center => -advance / 2,
+            LabelHAlign.Right  => -advance,
+            _                  => 0,
+        });
+        double dy = v switch
+        {
+            LabelVAlign.Top    => -cap - pen / 2,
+            LabelVAlign.Middle => -cap / 2,
+            LabelVAlign.Bottom => cap * StrokeFont.DescentOverCap + pen / 2,
+            _                  => 0,
+        };
+        return (dx, dy);
+    }
+
+    /// <summary>
+    /// brief-bsp-1 R-bsp1-9 — the vector, in the text's own unrotated frame, from
+    /// <paramref name="label"/>'s anchor to the anchor a Center/Middle copy of it would need to draw
+    /// the same strokes: the label's centre, as the font's own alignment defines it.
+    /// </summary>
+    public static (double Dx, double Dy) CentreOffset(LabelShape label, Technology? tech = null)
+    {
+        ArgumentNullException.ThrowIfNull(label);
+        if (string.IsNullOrEmpty(label.Text) || label.Height <= 0) return (0, 0);
+        double pen = PenWidth(label, tech);
+        double advance = StrokeFont.Layout(label.Text, label.Style, label.Height).Advance;
+        var (ox, oy) = AlignmentOffset(label, centred: false, advance, pen);
+        var (cx, cy) = AlignmentOffset(label, centred: true, advance, pen);
+        return (ox - cx, oy - cy);
     }
 
     /// <summary>The box the label inks: every stroke's points, grown by half the pen (round caps reach exactly

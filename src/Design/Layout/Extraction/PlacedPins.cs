@@ -139,11 +139,13 @@ public static class PlacedPins
             string? refdes = inst.DisplayRefDes is { Length: > 0 } d ? d : null;
             if (refdes is null && scope == PlacementScope.Designated) continue;
 
-            var res = CellLayoutResolver.Resolve(inst.CellRef, layoutDir);
+            // brief-bsp-1 R-bsp1-11: a bottom placement's pins come out of its side-swapped view, so
+            // they report the bottom copper they are on.
+            var res = CellLayoutResolver.Resolve(inst, layoutDir, tech);
             if (res is not { State: CellLayoutState.Resolved, View: { } subView })
             {
                 // R-ab1-1c: the flatten's own sentence, not a second wording of it.
-                notes?.Add(LayoutDesignFlatten.UnresolvedNote(inst.CellRef));
+                notes?.Add(res.Refusal ?? LayoutDesignFlatten.UnresolvedNote(inst.CellRef));
                 continue;
             }
 

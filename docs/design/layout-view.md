@@ -865,6 +865,43 @@ prefixed to its label, so "Not Found" no longer sends the user hunting through t
 colours are literal user-authored `Rgba` and tinting them would corrupt the one thing the reference exists
 to show.
 
+### 7.2 A placement is on the top face or the bottom face *(brief-bsp-1, 2026-10-21)*
+
+`LayoutInstance.Side` (`Top` | `Bottom`, default `Top`) says which face of the board a placement is on.
+**It belongs to the placement, never to the cell**: one footprint cell serves both faces. The `.clay`
+writes `"Side": "Bottom"` and nothing for a top placement, so every file written before the field
+existed has every part on the top face, with no `FormatVersion` bump.
+
+**A board has two surfaces, and a footprint draws on them only.** `SurfaceRoles.For(tech)` finds, for
+each surface role — copper, soldermask, paste, silkscreen, courtyard, assembly — the layer playing it on
+the top surface and the one playing it on the bottom, by the rules `LandPatternLayers` has always used
+for the front (board-format alias, then `Purpose`, then a side word in the layer's name; copper is the
+first/last stackup conductor on a laminate). Nothing is declared: no `LayerDef` field, no pairing table.
+`SurfaceRoles.Swap` moves a role's top layer to its bottom layer and back; **every other layer — inner
+copper, drill, outline — maps to itself**, so a through-hole pad drawn on both copper layers lands on
+both again, and a thermal relief on an inner plane stays on that plane.
+
+**One resolution, used everywhere.** `CellLayoutResolver.Resolve(LayoutInstance, baseDir, tech)` is how
+every reader resolves a placed part — the renderer, hit test, snap, conductor lookup, flatten, placed
+pins, LVS, EM. For a bottom placement it returns a cached clone of the cell's view with every shape's and
+pin's layer swapped and every child instance's side flipped; geometry is untouched, because the
+reflection is the instance's own `MirrorX`, applied by the transform as for any mirror. The clone is
+cached per resolved view, so it goes stale exactly when the resolver's own cache does and the renderer's
+compile cache gives it its own entry. `tech` is the technology the PARENT is drawn in; a caller with
+none passes null, and a bottom placement then resolves unswapped with a note. A source scan forbids
+`Resolve(<x>.CellRef, …)` from coming back.
+
+- **Sides compose** as mirrors do: a bottom placement inside a cell placed on the bottom is on the top.
+- **A role the technology has on one surface only is omitted** from a flipped part and reported, never
+  relocated. **The one refusal**: a technology with no bottom copper — there is nothing to solder to.
+- **Text keeps its reading direction.** A label in a mirrored placement is not reflected: its centre is
+  carried through the transform (`LayoutInstanceTransform.TransformLabel`) and its angle folded into
+  (−90°, 90°], so it reads left to right from above, over the spot of the part the mirror carries it to.
+- **The board is always viewed from the top.** There is no view from below.
+
+The shipped board technologies each carry `Courtyard Bottom` (`B.CrtYd`) beside `Courtyard Top`, so a
+flipped generated land pattern omits nothing.
+
 ---
 
 ## 8. Interchange — GDSII, DXF, Gerber

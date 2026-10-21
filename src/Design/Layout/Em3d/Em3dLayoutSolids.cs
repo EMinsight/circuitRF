@@ -191,7 +191,7 @@ public static class Em3dLayoutSolids
             // An instance takes the whole layout: the solve region is a .cem's, and a sub-cell's .cem is not consulted.
             var geometry = options.RegionSetup is { } regionSetup && !options.Instance
                 ? EmGeometry.ForSetup(regionSetup, source)
-                : EmGeometry.Flatten(source.View, source.AbsolutePath);
+                : EmGeometry.Flatten(source.View, source.AbsolutePath, source.Technology);
             Notes.AddRange(geometry.Notes);
             if (geometry.RegionRefusal is { } regionRefusal) return regionRefusal;
 

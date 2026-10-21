@@ -267,7 +267,7 @@ public class GdsiiImportTests : IDisposable
         Assert.Equal(Path.GetFullPath(aDir), Path.GetFullPath(Path.Combine(CellFolder.SubFolderPath(bDir, ViewType.Layout), bInst.CellRef)));
 
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Path.GetFullPath(aDir) };
-        var walkEx = Record.Exception(() => CellHierarchy.ResolveForWalk(aInst, CellFolder.SubFolderPath(aDir, ViewType.Layout), visiting, 1));
+        var walkEx = Record.Exception(() => CellHierarchy.ResolveForWalk(aInst, CellFolder.SubFolderPath(aDir, ViewType.Layout), visiting, 1, tech: null));
         Assert.Null(walkEx);
     }
 

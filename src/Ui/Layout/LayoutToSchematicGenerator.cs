@@ -231,7 +231,7 @@ public static class LayoutToSchematicGenerator
                 continue;
             }
 
-            var res = CellLayoutResolver.Resolve(inst.CellRef, layoutBaseDir);
+            var res = CellLayoutResolver.Resolve(inst, layoutBaseDir, technology);
             if (res.State != CellLayoutState.Resolved)
                 continue; // broken instance — the layout editor already marks it; nothing to write
 

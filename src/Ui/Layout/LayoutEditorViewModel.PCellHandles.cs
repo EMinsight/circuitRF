@@ -340,7 +340,7 @@ public sealed partial class LayoutEditorViewModel
         if ((uint)idx >= (uint)Model.Instances.Count) return [];
 
         var inst = Model.Instances[idx];
-        var res = CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, InstanceBaseDir, Technology);
         if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } o) return [];
         if (!PCellRegistry.TryGet(o.GeneratorId, out var gen)) return [];
 

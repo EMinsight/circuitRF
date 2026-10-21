@@ -165,7 +165,7 @@ public static class LayoutConductorLookup
                     if (instanceCopper[k].Box.IsEmpty || !Overlaps(instanceCopper[k].Box)) continue;
                     if (instanceCopper[k].Shapes.Count == 0)
                         instanceCopper[k] = (instanceCopper[k].Box,
-                                             LayoutFlatten.FlattenAllLevels(view.Instances[k], baseDir).Shapes);
+                                             LayoutFlatten.FlattenAllLevels(view.Instances[k], baseDir, tech).Shapes);
                     foreach (var s in instanceCopper[k].Shapes)
                         if (s.Layer == best.Layer && LayoutBooleans.IsClipperOperand(s) && Overlaps(LayoutGeometry.BboxOf(s)))
                             operands.Add(s);
@@ -206,7 +206,7 @@ public static class LayoutConductorLookup
             instanceCopper ??= [.. view.Instances.Select(inst =>
                 (CellHierarchy.InstanceBbox(inst, baseDir), (IReadOnlyList<LayoutShape>)[]))];
             if (instanceCopper[k].Shapes.Count == 0)
-                instanceCopper[k] = (instanceCopper[k].Box, LayoutFlatten.FlattenAllLevels(view.Instances[k], baseDir).Shapes);
+                instanceCopper[k] = (instanceCopper[k].Box, LayoutFlatten.FlattenAllLevels(view.Instances[k], baseDir, tech).Shapes);
 
             LayoutShape? found = null;
             double foundArea = double.MaxValue;
@@ -333,7 +333,7 @@ public static class LayoutConductorLookup
     private static LayoutPortDirection.PinFacts? PinAt(LayoutInstance inst, string baseDir, Technology? tech,
                                    long x, long y, long tolDbu)
     {
-        var res = CellLayoutResolver.Resolve(inst.CellRef, baseDir);
+        var res = CellLayoutResolver.Resolve(inst, baseDir, tech);
         if (res.State != CellLayoutState.Resolved) return null;
 
         var pins = CellPins.Resolve(res.View!, tech);

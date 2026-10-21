@@ -944,7 +944,7 @@ internal static class Render
         // No visibility filter: this field is "shapes on that layer in the document, DRAWN OR NOT",
         // which is what makes an empty layer and an excluded one two different answers. Whether it was
         // painted is the `rendered` flag beside it.
-        var counted = CellHierarchy.ShapeCountsByLayer(view, baseDir);
+        var counted = CellHierarchy.ShapeCountsByLayer(view, baseDir, tech: tech);
         var counts  = counted.Shapes;
 
         // ── the layers the technology does NOT define, which are drawn anyway ─────────────────────

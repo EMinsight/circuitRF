@@ -74,7 +74,7 @@ public static class PcbExport
                 // No pins means no pads. Flatten the artwork onto the board rather than writing a
                 // component with nothing to connect to — every board tool would show it as an
                 // unroutable graphic anyway, and this way it at least lands on the right layers.
-                var flattened = LayoutFlatten.FlattenAllLevels(inst, layoutDir);
+                var flattened = LayoutFlatten.FlattenAllLevels(inst, layoutDir, tech);
                 model.BoardShapes.AddRange(flattened.Shapes);
                 shapeCount += flattened.Shapes.Count;
                 flattenedCells++;

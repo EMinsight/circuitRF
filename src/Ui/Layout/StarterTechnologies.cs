@@ -44,6 +44,7 @@ public static class StarterTechnologies
         var drill   = new LayerKey(7, 0);
         var outline = new LayerKey(8, 0);
         var courtyardTop = new LayerKey(9, 0);
+        var courtyardBottom = new LayerKey(10, 0);
 
         var tech = new Technology
         {
@@ -79,7 +80,11 @@ public static class StarterTechnologies
                 // board circuitRF shipped, so the note could not be acted on and could not be avoided
                 // (reported from the field, 2026-09-21). Above the copper, as an assembly outline is
                 // drawn everywhere; it is a 0.05 mm line, not a fill.
-                new LayerDef { Key = courtyardTop, Name = "Courtyard Top", Color = new Rgba(0xC6, 0x78, 0xDD), ZOrder = 9, Purpose = "drawing", Interchange = Pcb("F.CrtYd") },
+                new LayerDef { Key = courtyardTop, Name = "Courtyard Top", Color = new Rgba(0xC6, 0x78, 0xDD), ZOrder = 10, Purpose = "drawing", Interchange = Pcb("F.CrtYd") },
+                // Its bottom twin (brief-bsp-1 R-bsp1-5), so a part flipped to the bottom face keeps its
+                // courtyard rather than omitting it. Darker and just beneath its twin, as every other
+                // bottom-surface layer here is.
+                new LayerDef { Key = courtyardBottom, Name = "Courtyard Bottom", Color = new Rgba(0x8B, 0x54, 0x9B), ZOrder = 9, Purpose = "drawing", Interchange = Pcb("B.CrtYd") },
             ],
             Stackup = new Stackup
             {

@@ -135,7 +135,7 @@ public sealed partial class LayoutEditorViewModel
         if ((uint)instanceIndex >= (uint)Model.Instances.Count) return false;
         var inst = Model.Instances[instanceIndex];
 
-        var res = CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, InstanceBaseDir, Technology);
         if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } origin)
         {
             _messageSink?.Warning("Edit PCell Parameters: this instance's cell is not PCell-generated.");

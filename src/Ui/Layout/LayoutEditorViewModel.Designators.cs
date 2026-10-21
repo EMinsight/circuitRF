@@ -75,7 +75,7 @@ public sealed partial class LayoutEditorViewModel
         var inst = EffectiveInstanceAt(index);
         LayoutView? cellView = null;
         if (inst.LabelDx is null || inst.LabelDy is null)
-            cellView = CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir).View;
+            cellView = CellLayoutResolver.Resolve(inst, InstanceBaseDir, Technology).SourceView;   // measured as stored, as FootprintLabel.ShapesFor does
 
         return FootprintLabel.ShapeFor(inst, cellView, roles, Model.DbuPerMicron, silk);
     }
@@ -365,7 +365,7 @@ public sealed partial class LayoutEditorViewModel
 
         string? prefix = LayoutPartKind.Of(inst) is { } kind
             ? ComponentTypeRegistry.InstancePrefix(kind)
-            : FootprintLabel.PrefixOfCell(CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir).ResolvedCellDir);
+            : FootprintLabel.PrefixOfCell(CellLayoutResolver.Resolve(inst, InstanceBaseDir, Technology).ResolvedCellDir);
 
         inst.RefDes = FootprintLabel.SeedDesignator(TakenDesignators(), prefix);
     }
@@ -448,7 +448,7 @@ public sealed partial class LayoutEditorViewModel
     private string? PastePrefixFor(LayoutInstance inst, string replaced)
         => LayoutPartKind.Of(inst) is { } kind ? ComponentTypeRegistry.InstancePrefix(kind)
          : PrefixOfDesignator(replaced) is { Length: > 0 } fromName ? fromName
-         : FootprintLabel.PrefixOfCell(CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir).ResolvedCellDir);
+         : FootprintLabel.PrefixOfCell(CellLayoutResolver.Resolve(inst, InstanceBaseDir, Technology).ResolvedCellDir);
 
     /// <summary>The leading non-digit run of a designator — <c>ML1</c> gives <c>ML</c>, <c>R12</c>
     /// gives <c>R</c>, <c>Rin</c> gives <c>Rin</c>. Null for an all-digit name, which has no prefix to

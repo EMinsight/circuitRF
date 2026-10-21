@@ -92,8 +92,9 @@ public static partial class LayoutRenderer
             // pattern does not, and costs nothing more below.
             if (!cellViews.TryGetValue(inst.CellRef, out var cellView))
                 cellViews[inst.CellRef] = cellView =
+                    // Only whether the cell places parts is read — a question its side does not change.
                     CellHierarchy.ResolveForWalk(
-                        inst, baseDir, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0).SubView;
+                        inst, baseDir, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0, tech: null).SubView;
 
             // The parts inside a placed module carry designators too — the sub-cell's own text, as pushing in
             // shows it (FootprintLabel.NestedShapesFor). The module's own designator, below, is independent.

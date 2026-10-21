@@ -103,7 +103,8 @@ public sealed class GeneratedCellsRun : IDisposable
 
             // An authored cell: its own placements are the run's too.
             if (!_visitedCells.Add(cellDir)) continue;
-            var res = CellLayoutResolver.Resolve(inst.CellRef, layoutDir);
+            // Which cells a run settles does not depend on a placement's side (brief-bsp-1 R-bsp1-7).
+            var res = CellLayoutResolver.Resolve(inst, layoutDir, tech: null);
             if (res is { State: CellLayoutState.Resolved, View: { } sub, ResolvedCellDir: { } subDir })
                 Visit(sub, CellHierarchy.LayoutBaseDirOf(subDir), ClayOf(subDir) ?? subDir);
         }

@@ -155,7 +155,7 @@ public sealed partial class LayoutEditorViewModel
         {
             if (i < 0 || i >= Model.Instances.Count) continue;
             var inst = Model.Instances[i];
-            var res = CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir);
+            var res = CellLayoutResolver.Resolve(inst, InstanceBaseDir, DrawTechnology);
             if (res is { State: CellLayoutState.Resolved, View: { } sub })
             {
                 int rows = Math.Max(1, inst.Rows), cols = Math.Max(1, inst.Cols);

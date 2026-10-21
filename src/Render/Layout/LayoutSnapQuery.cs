@@ -124,7 +124,7 @@ public static class LayoutSnapQuery
         int topLevelOwnerIndex, int depth, ref SnapQueryCounters counters)
     {
         if (depth >= CellHierarchy.MaxDepth) return;
-        var res = CellLayoutResolver.Resolve(inst.CellRef, baseDir);
+        var res = CellLayoutResolver.Resolve(inst, baseDir, tech);
         if (res.State != CellLayoutState.Resolved) return;
 
         string subBaseDir = CellHierarchy.LayoutBaseDirOf(res.ResolvedCellDir!);
@@ -210,7 +210,7 @@ public static class LayoutSnapQuery
         LayoutInstance inst, string baseDir, Technology? tech, IReadOnlySet<LayerKey>? layers, List<SnapEdge> sink,
         int cap, ref SnapQueryCounters counters)
     {
-        var res = CellLayoutResolver.Resolve(inst.CellRef, baseDir);
+        var res = CellLayoutResolver.Resolve(inst, baseDir, tech);
         if (res.State != CellLayoutState.Resolved) return;
         var layerVisible = new LayerVisibility(tech);
         int rows = Math.Max(1, inst.Rows), cols = Math.Max(1, inst.Cols);

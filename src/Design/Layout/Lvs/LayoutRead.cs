@@ -170,7 +170,7 @@ public static class LayoutRead
         var placed = new PlacedCell[view.Instances.Count];
         for (int i = 0; i < view.Instances.Count; i++)
         {
-            var r = CellLayoutResolver.Resolve(view.Instances[i].CellRef, layoutDir);
+            var r = CellLayoutResolver.Resolve(view.Instances[i], layoutDir, tech);
             placed[i] = r.State == CellLayoutState.Resolved
                 ? new PlacedCell(r.View, r.ResolvedCellDir)
                 : new PlacedCell(null, null);

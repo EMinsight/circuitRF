@@ -106,6 +106,52 @@ public static class LayoutInstanceTransform
         return (sx * c, sy * s, -(sx * s), sy * c);
     }
 
+    // ── A label through a placement (brief-bsp-1 R-bsp1-9) ─────────────────────────────────────
+
+    /// <summary>
+    /// <paramref name="local"/> — a label in the sub-cell's own frame — as it reads in the PARENT's
+    /// frame through array cell (<paramref name="row"/>, <paramref name="col"/>) of
+    /// <paramref name="inst"/>, with its glyphs NOT reflected: text keeps its reading direction under
+    /// a mirror (series overview D4). The one helper the flatten and anything else that places a
+    /// sub-cell's text uses.
+    ///
+    /// <para>The label's CENTRE (<see cref="LayoutTextOutline.CentreOffset"/>) is what is carried
+    /// through the transform — not the anchor, which is the left end of left-aligned text and would put
+    /// the text a text-width away from where the mirror carries it — and the result is anchored
+    /// Center/Middle on that point. Its angle follows the direction the placement carries the text's
+    /// baseline to (under a mirror that is the reflected direction, since a mirror reverses the sense
+    /// the inner angle composes in), folded into (−90°, 90°] so it is never upside down. The box
+    /// the readable text occupies is the box the reflected text would have occupied.</para>
+    ///
+    /// <para>No layer is touched — moving a placement's text to the other surface is
+    /// <c>SurfaceRoles</c>' business, never the transform's.</para>
+    /// </summary>
+    public static LabelShape TransformLabel(LabelShape local, LayoutInstance inst, int row, int col)
+    {
+        ArgumentNullException.ThrowIfNull(local);
+        ArgumentNullException.ThrowIfNull(inst);
+
+        var (dx, dy) = LayoutTextOutline.CentreOffset(local);
+        var (c, s) = LayoutAngle.CosSin(local.RotationDegrees);
+        long cx = local.X + (long)Math.Round(dx * c - dy * s);
+        long cy = local.Y + (long)Math.Round(dx * s + dy * c);
+        var (wx, wy) = TransformPoint(cx, cy, inst, row, col);
+
+        double angle = inst.MirrorX
+            ? inst.RotationDegrees + 180.0 - local.RotationDegrees
+            : inst.RotationDegrees + local.RotationDegrees;
+
+        var placed = (LabelShape)LayoutGeometry.Clone(local);
+        placed.X = wx;
+        placed.Y = wy;
+        placed.Height = (long)Math.Round(local.Height * inst.Mag);
+        if (local.StrokeWidth is { } pen) placed.StrokeWidth = (long)Math.Round(pen * inst.Mag);
+        placed.RotationDegrees = Footprints.FootprintLabel.ReadableAngle(angle);
+        placed.HAlign = LabelHAlign.Center;
+        placed.VAlign = LabelVAlign.Middle;
+        return placed;
+    }
+
     // ── Composition (brief-L3c-flatten-and-group.md §2, "the sub-cell's own instances still become
     //    instances of the parent") ──────────────────────────────────────────────────────────────────
 
@@ -163,6 +209,9 @@ public static class LayoutInstanceTransform
             RotationDegrees = thetaC,   // normalizes into [0, 360)
             MirrorX  = mirrorC,
             Mag      = magC,
+            // brief-bsp-1 R-bsp1-2: sides compose by the same XOR mirrors do — a bottom placement
+            // inside a cell that is itself placed on the bottom is on the top face.
+            Side     = outer.Side == inner.Side ? PlacementSide.Top : PlacementSide.Bottom,
             Rows     = inner.Rows,
             Cols     = inner.Cols,
             PitchX   = (long)Math.Round(inner.PitchX * outer.Mag),

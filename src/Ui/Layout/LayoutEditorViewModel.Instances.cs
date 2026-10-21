@@ -916,7 +916,7 @@ public sealed partial class LayoutEditorViewModel
             if (i < 0 || i >= Model.Instances.Count) continue;
             var inst = Model.Instances[i];
             instances.Add(LayoutGeometry.Clone(inst));
-            var res = CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir);
+            var res = CellLayoutResolver.Resolve(inst, InstanceBaseDir, Technology);
             string? resolvedCellDir = res.State == CellLayoutState.Resolved ? res.ResolvedCellDir : null;
             cellDirs.Add(resolvedCellDir);
 

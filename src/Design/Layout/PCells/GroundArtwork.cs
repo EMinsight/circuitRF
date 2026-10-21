@@ -127,7 +127,7 @@ public static class GroundArtwork
             foreach (var g in grounded)
             {
                 if (!bySchematicId.TryGetValue(g.SchematicId, out var inst)) continue;
-                if (CellOf(inst, layoutBaseDir) is not { } cell) continue;
+                if (CellOf(inst, layoutBaseDir, technology) is not { } cell) continue;
                 var pins = CellPins.Resolve(cell, technology);
                 if (SchematicLayoutOrientation.CellPinFor(g.Terminal, pins) is not { } pin) continue;
                 string key = KeyOf(g.SchematicId, pin.Name);
@@ -140,7 +140,7 @@ public static class GroundArtwork
             {
                 int colon = key.LastIndexOf(':');
                 if (colon <= 0 || !bySchematicId.TryGetValue(key[..colon], out var inst)) continue;
-                if (CellOf(inst, layoutBaseDir) is not { } cell) continue;
+                if (CellOf(inst, layoutBaseDir, technology) is not { } cell) continue;
                 if (CellPins.Resolve(cell, technology).FirstOrDefault(p => p.Name == key[(colon + 1)..]) is not { } pin) continue;
                 if (wantedKeys.Add(key)) wanted.Add((key, inst, cell, pin));
             }
@@ -344,8 +344,10 @@ public static class GroundArtwork
         return (vx, vy, tie);
     }
 
-    private static LayoutView? CellOf(LayoutInstance inst, string layoutBaseDir)
-        => CellLayoutResolver.Resolve(inst.CellRef, layoutBaseDir) is { State: CellLayoutState.Resolved, View: { } v } ? v : null;
+    /// <summary>The placed cell — side-swapped for a bottom placement (brief-bsp-1), so a ground tie
+    /// lands on the copper its pin is actually on.</summary>
+    private static LayoutView? CellOf(LayoutInstance inst, string layoutBaseDir, Technology? technology)
+        => CellLayoutResolver.Resolve(inst, layoutBaseDir, technology) is { State: CellLayoutState.Resolved, View: { } v } ? v : null;
 
     private static bool SameTie(List<LayoutShape> have, PathShape tie)
         => have.OfType<PathShape>().FirstOrDefault() is { } p && p.Layer == tie.Layer && p.Width == tie.Width && p.Xy.SequenceEqual(tie.Xy);

@@ -455,7 +455,7 @@ public static partial class LayoutRenderer
         // placement of THIS cell anywhere else needs no further per-frame recursion at all.
         foreach (var nested in subView.Instances)
         {
-            var step = CellHierarchy.ResolveForWalk(nested, subBaseDir, visiting, depth);
+            var step = CellHierarchy.ResolveForWalk(nested, subBaseDir, visiting, depth, tech);
             if (step.State != InstanceResolutionState.Resolved)
             {
                 var (ox0, oy0) = LayoutInstanceTransform.ArrayCellOrigin(nested, 0, 0);
@@ -860,7 +860,9 @@ public static partial class LayoutRenderer
         // appear halfway through a paint. It also matches the shape of the real failure — a workspace
         // that has lost one library has thousands of instances pointing at a handful of missing cells,
         // so this collapses thousands of stats into a handful.
-        var frameResolutions = new Dictionary<string, InstanceResolutionStep>(StringComparer.Ordinal);
+        // Keyed on the reference AND the side: a bottom placement of a cell resolves to a different
+        // (layer-swapped) view from a top one (brief-bsp-1 R-bsp1-6).
+        var frameResolutions = new Dictionary<(string CellRef, PlacementSide Side), InstanceResolutionStep>();
 
         try
         {
@@ -874,11 +876,11 @@ public static partial class LayoutRenderer
 
             // baseDir is fixed for this whole call (the sub-cell descent happens inside CompileCell,
             // not here), so the reference string alone is the identity.
-            if (!frameResolutions.TryGetValue(inst.CellRef, out var step))
+            if (!frameResolutions.TryGetValue((inst.CellRef, inst.Side), out var step))
             {
                 step = CellHierarchy.ResolveForWalk(
-                    inst, baseDir, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0);
-                frameResolutions[inst.CellRef] = step;
+                    inst, baseDir, new HashSet<string>(StringComparer.OrdinalIgnoreCase), 0, tech);
+                frameResolutions[(inst.CellRef, inst.Side)] = step;
             }
 
             if (step.State != InstanceResolutionState.Resolved)
@@ -1604,7 +1606,7 @@ public static partial class LayoutRenderer
         if (pending.Bbox.IsEmpty) return;
 
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var step = CellHierarchy.ResolveForWalk(pending.Instance, baseDir, visiting, 0);
+        var step = CellHierarchy.ResolveForWalk(pending.Instance, baseDir, visiting, 0, tech);
 
         if (step.State != InstanceResolutionState.Resolved)
         {

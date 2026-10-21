@@ -32,7 +32,8 @@ public static class LayoutDesignFlatten
         int ShapesContributedByInstances,
         IReadOnlyList<string> UnresolvedInstances,
         IReadOnlyDictionary<string, IReadOnlyList<LayerMappingRow>> PendingCrossTechMappings,
-        bool ExceedsCeiling);
+        bool ExceedsCeiling,
+        IReadOnlyList<string>? Notes = null);
 
     /// <summary>
     /// One flattened shape and the breadcrumb <see cref="Flatten"/> throws away —
@@ -127,6 +128,7 @@ public static class LayoutDesignFlatten
         string rootLayoutDir = CellFolder.SubFolderPath(rootCellDir, ViewType.Layout);
         var unresolved = new List<string>();
         var pending = new Dictionary<string, IReadOnlyList<LayerMappingRow>>();
+        var notes = new List<string>();
         int flattenedCount = 0;
 
         if (ExceedsCeiling(rootView, rootLayoutDir))
@@ -135,10 +137,14 @@ public static class LayoutDesignFlatten
         for (int instIndex = 0; instIndex < rootView.Instances.Count; instIndex++)
         {
             var inst = rootView.Instances[instIndex];
-            var res = CellLayoutResolver.Resolve(inst.CellRef, rootLayoutDir);
+            // brief-bsp-1 R-bsp1-10: a bottom-side placement resolves to its side-swapped view, so its
+            // flattened shapes are already on the bottom roles. A board with no bottom copper refuses it.
+            var res = CellLayoutResolver.Resolve(inst, rootLayoutDir, rootTech);
             if (res.State != CellLayoutState.Resolved)
             {
-                unresolved.Add(UnresolvedNote(inst.CellRef));
+                unresolved.Add(res.Refusal is { } refusal
+                    ? $"{refusal} Skipped, no geometry contributed for it."
+                    : UnresolvedNote(inst.CellRef));
                 continue;
             }
 
@@ -168,7 +174,8 @@ public static class LayoutDesignFlatten
                 }
             }
 
-            var allLevels = LayoutFlatten.FlattenAllLevels(inst, rootLayoutDir);
+            var allLevels = LayoutFlatten.FlattenAllLevels(inst, rootLayoutDir, rootTech);
+            if (allLevels.Notes is { } levelNotes) notes.AddRange(levelNotes);
             var reconciled = ApplyCrossTechMapping(subTech, allLevels.Shapes, resolvedRows);
             shapes.AddRange(reconciled);
             if (tags is not null)
@@ -193,7 +200,7 @@ public static class LayoutDesignFlatten
         // already is to the land pattern's own body outline.
         var labels = Footprints.FootprintLabel.ShapesFor(
             rootView, rootLayoutDir, rootTech,
-            inst => CellLayoutResolver.Resolve(inst.CellRef, rootLayoutDir).View).ToList();
+            inst => CellLayoutResolver.Resolve(inst, rootLayoutDir, rootTech).SourceView).ToList();
         // And the parts nested inside the root's placements (2026-10-04): a board placing a MODULE of parts would
         // otherwise put none of their designators on its silkscreen. The screen draws the same ones, from the same
         // function (FootprintLabel.NestedShapesFor).
@@ -207,7 +214,8 @@ public static class LayoutDesignFlatten
         if (tags is not null) for (int i = 0; i < labels.Count; i++) tags.Add("");
 
         int contributed = shapes.Count - rootView.Shapes.Count;
-        return new FlattenResult(shapes, flattenedCount, contributed, unresolved, pending, ExceedsCeiling: false);
+        return new FlattenResult(shapes, flattenedCount, contributed, unresolved, pending, ExceedsCeiling: false,
+                                 notes.Count > 0 ? notes : null);
     }
 
     /// <summary>

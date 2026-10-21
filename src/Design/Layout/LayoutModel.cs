@@ -755,6 +755,10 @@ public sealed class BitmapShape : LayoutShape
 
 // ── Instance ────────────────────────────────────────────────────────────────
 
+/// <summary>The board face a <see cref="LayoutInstance"/> is placed on. <c>Top</c> is the default and
+/// the value every <c>.clay</c> written before brief-bsp-1 means.</summary>
+public enum PlacementSide { Top, Bottom }
+
 /// <summary>A cell-reference placement, optionally an array (rows/cols/pitch = GDSII AREF).</summary>
 public sealed class LayoutInstance
 {
@@ -814,6 +818,19 @@ public sealed class LayoutInstance
 
     public bool MirrorX { get; set; }
     public double Mag { get; set; } = 1.0;
+
+    /// <summary>
+    /// Which face of the board this placement is on (brief-bsp-1 R-bsp1-1). <b>A property of the
+    /// PLACEMENT, never of the cell</b>: one footprint cell serves both faces, and a bottom placement
+    /// is resolved through <c>CellLayoutResolver.Resolve(LayoutInstance, …)</c> into a view whose
+    /// surface-role layers are swapped (<c>SurfaceRoles</c>). The geometry's reflection is
+    /// <see cref="MirrorX"/>, applied by the transform as for any mirror; this field moves layers only.
+    ///
+    /// <para>Written only when <see cref="PlacementSide.Bottom"/> — every <c>.clay</c> written before
+    /// it existed has every part on the top face, with no <c>FormatVersion</c> bump.</para>
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public PlacementSide Side { get; set; }
 
     /// <summary>1×1 = a plain instance. R-via-8 forward hook (docs/sonnet-briefs/
     /// brief-via-primitive-and-stackup.md §5): via fences and thermal via arrays are exactly this —

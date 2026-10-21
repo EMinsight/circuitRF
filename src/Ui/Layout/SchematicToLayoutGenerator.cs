@@ -310,7 +310,7 @@ public static class SchematicToLayoutGenerator
             {
                 target.SchematicPCellSnapshots.TryGetValue(schematicId, out var snapshot);
                 var currentLayoutParams =
-                    CellLayoutResolver.Resolve(before.CellRef, targetLayoutBaseDir) is
+                    CellLayoutResolver.Resolve(before, targetLayoutBaseDir, technology) is
                         { State: CellLayoutState.Resolved, View.PCellOrigin: { } curOrigin }
                         ? curOrigin.Parameters
                         : null;
@@ -676,7 +676,7 @@ public static class SchematicToLayoutGenerator
                                          string schematicId, string newCellRef, string? schematicDir,
                                          string layoutBaseDir, Technology? technology)
     {
-        if (CellLayoutResolver.Resolve(before.CellRef, layoutBaseDir) is not { State: CellLayoutState.Resolved, View: { } oldCell } ||
+        if (CellLayoutResolver.Resolve(before, layoutBaseDir, technology) is not { State: CellLayoutState.Resolved, View: { } oldCell } ||
             CellLayoutResolver.Resolve(newCellRef, layoutBaseDir) is not { State: CellLayoutState.Resolved, View: { } newCell })
             return rot;
         var oldAlign = PinAlignment(comp, schematicDir, oldCell, technology);
@@ -981,7 +981,7 @@ public static class SchematicToLayoutGenerator
     /// <summary>The direction from a cell's pin 1 to its pin 2 as the cell is drawn, degrees; null without both.</summary>
     private static double? PinAxisDeg(LayoutInstance inst, string targetLayoutBaseDir, Technology? technology)
     {
-        var cell = CellLayoutResolver.Resolve(inst.CellRef, targetLayoutBaseDir);
+        var cell = CellLayoutResolver.Resolve(inst, targetLayoutBaseDir, technology);
         if (cell.State != CellLayoutState.Resolved) return null;
         var pins = CellPins.Resolve(cell.View!, technology);
         if (pins.FirstOrDefault(p => p.Name == "1") is not { } p1 || pins.FirstOrDefault(p => p.Name == "2") is not { } p2
@@ -1028,7 +1028,7 @@ public static class SchematicToLayoutGenerator
                 int drawn = Math.Min(other.ToRenderComponent(null, symbol).Ports.Count, otherNets.NetBindings.Count);
                 int k = Enumerable.Range(0, drawn).FirstOrDefault(i => otherNets.NetBindings[i] == net, -1);
                 if (k < 0) continue;
-                if (CellLayoutResolver.Resolve(partner.CellRef, targetLayoutBaseDir) is not
+                if (CellLayoutResolver.Resolve(partner, targetLayoutBaseDir, technology) is not
                         { State: CellLayoutState.Resolved, View: { } cell }) continue;
                 if (SchematicLayoutOrientation.CellPinFor(k + 1, CellPins.Resolve(cell, technology)) is not { } pin) continue;
                 result[via] = (partner, cell, pin);

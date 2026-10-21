@@ -117,7 +117,8 @@ public static class WBondGeometryEmbedding
         {
             if (string.IsNullOrWhiteSpace(instance.CellRef)) continue;
 
-            var resolution = CellLayoutResolver.Resolve(instance.CellRef, baseDir);
+            // Which cells are embedded does not depend on a placement's side (brief-bsp-1 R-bsp1-7).
+            var resolution = CellLayoutResolver.Resolve(instance, baseDir, tech: null);
             if (resolution.State != CellLayoutState.Resolved || resolution.View is null)
             {
                 if (!unresolved.Contains(instance.CellRef)) unresolved.Add(instance.CellRef);

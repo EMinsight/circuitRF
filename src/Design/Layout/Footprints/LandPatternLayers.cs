@@ -44,14 +44,18 @@ public static class LandPatternLayers
             return new LandPatternRoles(null, null, null, null);
         }
 
-        var copper = ResolveCopper(technology, layerSelection, diagnostics);
+        // The TOP surface's roles, by the one resolver both surfaces share (brief-bsp-1 R-bsp1-3).
+        // Copper is resolved here rather than read from the cached SurfaceRoles because it honours
+        // the caller's signal-layer override, which the cache (built on the default) cannot.
+        var copper = SurfaceRoles.ResolveCopper(technology, PlacementSide.Top, layerSelection, diagnostics);
         if (copper is null) return new LandPatternRoles(null, null, null, null);
 
-        var mask = ResolveOptional(technology, "F.Mask", ["soldermask", "solder mask"], "soldermask");
+        var top = SurfaceRoles.For(technology).Top;
+        var mask = top.Soldermask;
         if (mask is null)
             diagnostics.Add(Missing(technology, "soldermask", "F.Mask", "the mask openings were omitted"));
 
-        var silk = ResolveOptional(technology, "F.SilkS", ["silkscreen", "silk"], "silkscreen");
+        var silk = top.Silkscreen;
         if (silk is null)
             diagnostics.Add(Missing(technology, "silkscreen", "F.SilkS", "the body outline was omitted"));
 
@@ -59,8 +63,7 @@ public static class LandPatternLayers
         // courtyard rectangle on it is a routed slot. Where the technology declares no assembly
         // layer, the courtyard is omitted and is NOT relocated. The Power Rail example's technology
         // has neither, which is exactly why this is written down before anyone tries it.
-        var assembly = ResolveOptional(technology, "F.CrtYd", ["courtyard", "assembly"], "courtyard")
-                    ?? ResolveOptional(technology, "F.Fab", ["fabrication"], "assembly");
+        var assembly = top.Courtyard ?? top.Assembly;
         if (assembly is null)
             diagnostics.Add(Missing(technology, "courtyard/assembly", CourtyardAliases,
                                     "the courtyard outline was omitted — it is NOT drawn on the board outline"));
@@ -102,85 +105,7 @@ public static class LandPatternLayers
     /// </summary>
     public static bool IsBoardTechnology(Technology? technology)
         => technology is not null
-           && ResolveCopper(technology, PCellLayerSelection.Default, []) is not null;
-
-    private static LayerKey? ResolveCopper(
-        Technology technology, PCellLayerSelection layerSelection, List<string> diagnostics)
-    {
-        foreach (var layer in technology.Layers)
-            if (string.Equals(layer.Interchange?.PcbLayerName, "F.Cu", StringComparison.OrdinalIgnoreCase))
-                return layer.Key;
-
-        var conductors = technology.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
-        var top = conductors.Count > 0 ? conductors[0] : null;
-        if (top is null || top.DrawingLayers.Count == 0)
-        {
-            diagnostics.Add(
-                $"technology '{technology.Name}' declares no front-copper layer, so there is nothing to put " +
-                "lands on. A land pattern needs a top conductor with a drawing layer, or a layer aliased F.Cu.");
-            return null;
-        }
-
-        int topIndex = technology.Stackup.Layers.IndexOf(top);
-        var beneath = topIndex >= 0 && topIndex + 1 < technology.Stackup.Layers.Count
-            ? technology.Stackup.Layers[topIndex + 1]
-            : null;
-
-        bool onLaminate = beneath is { Kind: StackupKind.Dielectric } && beneath.Epsr > 1.0;
-        if (!onLaminate)
-        {
-            string what = beneath is null
-                ? "nothing beneath it"
-                : beneath.Kind == StackupKind.Dielectric
-                    ? $"the dielectric '{beneath.Name}' (relative permittivity {beneath.Epsr:G4})"
-                    : $"'{beneath.Name}', which is not a dielectric";
-            diagnostics.Add(
-                $"technology '{technology.Name}' has no front-copper layer a part can be soldered to: its topmost " +
-                $"conductor '{top.Name}' sits on {what}, so it is not a laminate surface. A chip land pattern " +
-                "needs a board front copper (F.Cu); this technology is not a board technology.");
-            return null;
-        }
-
-        // The signal-layer override is honoured the same way every other PCell honours it, and by
-        // the same function, so a land pattern and an MLIN on one design never disagree about which
-        // conductor is the top one.
-        return SubstrateResolver.ResolveSignalLayerKey(technology, layerSelection, out _);
-    }
-
-    /// <summary>
-    /// An optional role: the board-format alias first — the technology author's own statement —
-    /// then <see cref="LayerDef.Purpose"/>, then the layer's own NAME. Name matching requires the
-    /// layer to say it is the FRONT side, because a technology declares both sides and putting a
-    /// top-side land pattern's silkscreen on Silk Bottom is a defect that renders perfectly.
-    /// </summary>
-    private static LayerKey? ResolveOptional(
-        Technology technology, string pcbAlias, string[] words, string purpose)
-    {
-        foreach (var layer in technology.Layers)
-            if (string.Equals(layer.Interchange?.PcbLayerName, pcbAlias, StringComparison.OrdinalIgnoreCase))
-                return layer.Key;
-
-        foreach (var layer in technology.Layers)
-            if (layer.Purpose is { Length: > 0 } p &&
-                string.Equals(p.Trim(), purpose, StringComparison.OrdinalIgnoreCase))
-                return layer.Key;
-
-        foreach (var layer in technology.Layers)
-        {
-            string name = layer.Name ?? "";
-            if (string.Equals(name, pcbAlias, StringComparison.OrdinalIgnoreCase)) return layer.Key;
-            if (!IsFrontSide(name)) continue;
-            foreach (string w in words)
-                if (name.Contains(w, StringComparison.OrdinalIgnoreCase)) return layer.Key;
-        }
-
-        return null;
-    }
-
-    private static bool IsFrontSide(string name)
-        => name.StartsWith("F.", StringComparison.OrdinalIgnoreCase) ||
-           name.Contains("top", StringComparison.OrdinalIgnoreCase) ||
-           name.Contains("front", StringComparison.OrdinalIgnoreCase);
+           && SurfaceRoles.ResolveCopper(technology, PlacementSide.Top, PCellLayerSelection.Default, []) is not null;
 
     private static string Missing(Technology technology, string role, string alias, string consequence)
         => $"technology '{technology.Name}' declares no {role} layer ({alias}), so {consequence}. " +

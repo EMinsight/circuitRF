@@ -127,7 +127,7 @@ public sealed partial class LayoutEditorViewModel
     /// wired (a scratch document with no workspace, matching every other seam's null-safe fallback).</summary>
     private Technology? ResolveSubCellTechnology(LayoutInstance inst)
     {
-        var res = CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, InstanceBaseDir, Technology);
         if (res.State != CellLayoutState.Resolved) return null;
         var subCellLayoutDir = CellHierarchy.LayoutBaseDirOf(res.ResolvedCellDir!);
         return ResolveTechAt?.Invoke(res.View!.TechRef, subCellLayoutDir).Tech;
@@ -157,7 +157,7 @@ public sealed partial class LayoutEditorViewModel
         var inst = Model.Instances[_selectedInstanceIndices[0]];
         if (inst.Rows > 1 || inst.Cols > 1) return null;
 
-        var res = CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, InstanceBaseDir, Technology);
         if (res.State != CellLayoutState.Resolved) return null;
 
         var subTech = ResolveSubCellTechnology(inst);
@@ -217,7 +217,7 @@ public sealed partial class LayoutEditorViewModel
         // renderer makes, and the reason a broken reference still draws its designator.
         var cellView = inst.LabelDx is not null && inst.LabelDy is not null
             ? null
-            : CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir).View;
+            : CellLayoutResolver.Resolve(inst, InstanceBaseDir, Technology).SourceView;   // measured as stored, as FootprintLabel.ShapesFor does
         return FootprintLabel.ShapeFor(inst, cellView, roles, Model.DbuPerMicron, silk);
     }
 
@@ -252,10 +252,12 @@ public sealed partial class LayoutEditorViewModel
         if (index < 0 || index >= Model.Instances.Count) return;
         var inst = Model.Instances[index];
 
-        var result = LayoutFlatten.FlattenOneLevel(inst, InstanceBaseDir);
+        var result = LayoutFlatten.FlattenOneLevel(inst, InstanceBaseDir, Technology);
         if (result is null)
         {
-            _messageSink?.Error($"Flatten Hierarchy: '{inst.CellRef}' could not be resolved — nothing was changed.");
+            _messageSink?.Error(CellLayoutResolver.Resolve(inst, InstanceBaseDir, Technology).Refusal is { } refusal
+                ? $"Flatten Hierarchy: {refusal} Nothing was changed."
+                : $"Flatten Hierarchy: '{inst.CellRef}' could not be resolved — nothing was changed.");
             return;
         }
 
@@ -317,7 +319,7 @@ public sealed partial class LayoutEditorViewModel
             return;
         }
 
-        var result = LayoutFlatten.FlattenAllLevels(inst, InstanceBaseDir);
+        var result = LayoutFlatten.FlattenAllLevels(inst, InstanceBaseDir, Technology);
         var shapes = WithFlattenedDesignator(inst, ApplyFlattenReconciliation(inst, result.Shapes, resolvedMapping));
 
         int shapeInsertAt = Model.Shapes.Count;

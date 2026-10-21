@@ -21,6 +21,10 @@ public enum CellLayoutState
     NotFound,
     /// <summary>Cell folder resolves but its primary .clay is absent, contradicted, or fails to parse.</summary>
     PrimaryMissing,
+    /// <summary>The cell resolves, but the placement is on the bottom face of a technology with no
+    /// bottom copper — there is nothing to solder the part to (brief-bsp-1 R-bsp1-4, the one refusal of
+    /// the bottom-side series). <see cref="CellLayoutResolution.Refusal"/> says so.</summary>
+    SideRefused,
 }
 
 /// <summary>Result of a cell-layout resolution attempt.</summary>
@@ -36,6 +40,27 @@ public sealed class CellLayoutResolution
     /// identity key for cycle detection (R-L3a-2) and as the base directory for resolving THIS cell's
     /// own nested instance references.</summary>
     public string?         ResolvedCellDir { get; init; }
+
+    // ── brief-bsp-1: the placement's side (R-bsp1-6) ────────────────────────────────────────────
+
+    /// <summary>The cell's view as STORED. The same instance as <see cref="View"/> for a top-side
+    /// placement; for a bottom-side one, <see cref="View"/> is the layer-swapped clone and this is the
+    /// view it was cloned from — what Flatten Hierarchy composes the sub-cell's own instances against,
+    /// since the clone's have already had the placement's side composed into them.</summary>
+    public LayoutView?     SourceView      { get => _sourceView ?? View; init => _sourceView = value; }
+    private readonly LayoutView? _sourceView;
+
+    /// <summary>The surface roles a bottom-side placement left out because the technology has no
+    /// bottom layer for them (R-bsp1-4) — never relocated. Empty for a top placement.</summary>
+    public IReadOnlyList<Footprints.SurfaceRole> OmittedRoles { get; init; } = [];
+
+    /// <summary>One sentence per thing a caller should report about the placement's side: an omitted
+    /// role (R-bsp1-10), or a bottom placement resolved with no technology to swap against and so drawn
+    /// unswapped (R-bsp1-7). Empty for a top placement.</summary>
+    public IReadOnlyList<string> SideNotes   { get; init; } = [];
+
+    /// <summary>Non-null when <see cref="State"/> is <see cref="CellLayoutState.SideRefused"/>.</summary>
+    public string?         Refusal         { get; init; }
 }
 
 /// <summary>
@@ -81,6 +106,31 @@ public static class CellLayoutResolver
     public static event Action<string>? LiveViewChanged;
 
     // ── Resolve ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// brief-bsp-1 R-bsp1-6 — resolves a PLACED part. <b>Every caller holding a
+    /// <see cref="LayoutInstance"/> resolves through this</b>, never through
+    /// <c>Resolve(inst.CellRef, …)</c>; a source scan holds that shut.
+    ///
+    /// <para>A top-side placement resolves exactly as <see cref="Resolve(string, string)"/>. A
+    /// bottom-side one resolves to a cached clone of the cell's view with every shape's (and pin's)
+    /// layer moved to the other surface by <see cref="Footprints.SurfaceRoles.Swap"/>, shapes on a role
+    /// the technology has no bottom layer for left out, and every child instance's
+    /// <see cref="LayoutInstance.Side"/> flipped — so a walk that resolves the clone's children in
+    /// their turn composes sides with no further work. Geometry is untouched: the reflection is the
+    /// instance's own <see cref="LayoutInstance.MirrorX"/>, applied by the transform as for any
+    /// mirror.</para>
+    /// </summary>
+    /// <param name="tech">The technology the PARENT is drawn in (R-bsp1-7). Null resolves a bottom
+    /// placement unswapped, with a note in <see cref="CellLayoutResolution.SideNotes"/> — drawn where
+    /// it is and reported, never guessed.</param>
+    public static CellLayoutResolution Resolve(LayoutInstance inst, string baseDir, Technology? tech)
+    {
+        ArgumentNullException.ThrowIfNull(inst);
+        var res = Resolve(inst.CellRef, baseDir);
+        if (inst.Side == PlacementSide.Top || res.State != CellLayoutState.Resolved) return res;
+        return PlacementSideViews.Bottom(inst, res, tech);
+    }
 
     public static CellLayoutResolution Resolve(string cellRef, string baseDir)
     {
@@ -178,6 +228,7 @@ public static class CellLayoutResolver
         // <see cref="CellHierarchy.InvalidateShapesBbox"/> is what makes the spatial index and the
         // renderer's LOD re-measure a grown sub-cell from generation alone, with no explicit reindex.
         CellHierarchy.InvalidateShapesBbox(view);
+        PlacementSideViews.Invalidate(view);
         lock (_lock) { _live[clayAbsPath] = view; Generation++; }
         LiveViewChanged?.Invoke(clayAbsPath);
     }

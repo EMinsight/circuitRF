@@ -36,8 +36,13 @@ public static class LayoutFlatten
     /// nested CellRefs are expressed relative to. Returns <c>null</c> when the instance does not
     /// resolve (caller leaves it in place as an instance, per §3's "broken instance survives and is
     /// reported" rule — this same null contract serves both the one-level and all-levels callers).
+    /// A bottom-side placement on a technology with no bottom copper is refused the same way
+    /// (brief-bsp-1 R-bsp1-4/R-bsp1-10).
     /// </summary>
-    public static OneLevelResult? FlattenOneLevel(LayoutInstance inst, string parentBaseDir)
+    /// <param name="tech">The technology the parent is drawn in — what a bottom-side placement's
+    /// surface roles are swapped against (R-bsp1-7). Null flattens a bottom placement unswapped and
+    /// says so in <see cref="OneLevelResult.Notes"/>.</param>
+    public static OneLevelResult? FlattenOneLevel(LayoutInstance inst, string parentBaseDir, Technology? tech = null)
     {
         if (inst.Rows > 1 || inst.Cols > 1)
         {
@@ -51,6 +56,7 @@ public static class LayoutFlatten
                     CellRef = inst.CellRef,
                     X = x, Y = y,
                     RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = inst.Mag,
+                    Side = inst.Side,   // brief-bsp-1 R-bsp1-1: an array of bottom parts is bottom parts
                     Rows = 1, Cols = 1, PitchX = 0, PitchY = 0,
                     CellInterfaceHash = inst.CellInterfaceHash,   // SL3: exploding an array is not a re-placement
                 });
@@ -58,9 +64,13 @@ public static class LayoutFlatten
             return new OneLevelResult([], expanded, WasArray: true);
         }
 
-        var res = CellLayoutResolver.Resolve(inst.CellRef, parentBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, parentBaseDir, tech);
         if (res.State != CellLayoutState.Resolved) return null;
 
+        // R-bsp1-10: the shapes of a bottom placement come out of the side-swapped view, already on
+        // the bottom roles; its own instances are composed from the view as STORED, because the
+        // swapped view's have the placement's side composed into them already and ComposeInstances
+        // composes it again.
         var subView = res.View!;
         var subBaseDir = CellHierarchy.LayoutBaseDirOf(res.ResolvedCellDir!);
 
@@ -90,6 +100,13 @@ public static class LayoutFlatten
                 var carrier = LayoutRotationPromotion.Promote(clone);
                 if (!ReferenceEquals(carrier, clone)) { promoted++; clone = carrier; }
             }
+            // R-bsp1-9: text in a mirrored placement keeps its reading direction — its centre is
+            // carried through the mirror and the glyphs are not reflected.
+            if (inst.MirrorX && clone is LabelShape mirroredLabel)
+            {
+                shapes.Add(LayoutInstanceTransform.TransformLabel(mirroredLabel, inst, 0, 0));
+                continue;
+            }
             LayoutCoordinateWalk.Transform(clone, pointTransform);
             if (inst.MirrorX) FlipBulgeSigns(clone);
             // A label's own angle carries the placement's exactly — LabelShape.RotationDegrees was
@@ -102,9 +119,10 @@ public static class LayoutFlatten
         }
 
         var notes = RotationNotes(instDeg, promoted, bitmapsSkipped);
+        if (res.SideNotes.Count > 0) notes = [.. notes ?? [], .. res.SideNotes];
 
         var instances = new List<LayoutInstance>(subView.Instances.Count);
-        foreach (var subInst in subView.Instances)
+        foreach (var subInst in res.SourceView!.Instances)
         {
             var composed = LayoutInstanceTransform.ComposeInstances(inst, 0, 0, subInst);
             composed.CellRef = RebaseCellRef(subInst.CellRef, subBaseDir, parentBaseDir);
@@ -202,10 +220,11 @@ public static class LayoutFlatten
     /// "too big," never by how much) rather than continuing to accumulate a number that could overflow
     /// <see cref="long"/> for a sufficiently large nested-array design.
     /// </summary>
-    public static long CountResultingShapes(LayoutInstance inst, string parentBaseDir, long ceiling = FlattenAllLevelsHardCeiling)
+    public static long CountResultingShapes(LayoutInstance inst, string parentBaseDir, long ceiling = FlattenAllLevelsHardCeiling,
+                                            Technology? tech = null)
     {
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        return CountRecursive(inst, parentBaseDir, visiting, 0, ceiling, 0.0);
+        return CountRecursive(inst, parentBaseDir, visiting, 0, ceiling, 0.0, tech);
     }
 
     /// <param name="accumulatedDeg">The composed placement angle of every level ABOVE this one. Only
@@ -214,7 +233,7 @@ public static class LayoutFlatten
     /// non-cardinal one — so this accumulates by plain addition rather than reproducing
     /// <see cref="LayoutInstanceTransform.ComposeInstances"/>'s mirror-sensitive rule.</param>
     private static long CountRecursive(LayoutInstance inst, string baseDir, HashSet<string> visiting, int depth, long ceiling,
-                                       double accumulatedDeg)
+                                       double accumulatedDeg, Technology? tech)
     {
         if (depth >= CellHierarchy.MaxDepth) return 0;   // depth-capped instance contributes no shapes, survives as-is
 
@@ -224,9 +243,9 @@ public static class LayoutFlatten
             var oneCell = new LayoutInstance
             {
                 CellRef = inst.CellRef, RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = inst.Mag,
-                Rows = 1, Cols = 1,
+                Side = inst.Side, Rows = 1, Cols = 1,
             };
-            long perCell = CountRecursive(oneCell, baseDir, visiting, depth + 1, ceiling, accumulatedDeg);
+            long perCell = CountRecursive(oneCell, baseDir, visiting, depth + 1, ceiling, accumulatedDeg, tech);
             if (perCell < 0) return -1;
             if (perCell == 0) return 0;
             try
@@ -237,7 +256,7 @@ public static class LayoutFlatten
             catch (OverflowException) { return -1; }
         }
 
-        var res = CellLayoutResolver.Resolve(inst.CellRef, baseDir);
+        var res = CellLayoutResolver.Resolve(inst, baseDir, tech);
         if (res.State != CellLayoutState.Resolved) return 0;   // unresolvable → survives, contributes no shapes
 
         if (!visiting.Add(res.ResolvedCellDir!)) return 0;      // cycle → treated the same as unresolvable
@@ -261,7 +280,7 @@ public static class LayoutFlatten
         }
         foreach (var subInst in res.View.Instances)
         {
-            long sub = CountRecursive(subInst, subBaseDir, visiting, depth + 1, ceiling, effectiveDeg);
+            long sub = CountRecursive(subInst, subBaseDir, visiting, depth + 1, ceiling, effectiveDeg, tech);
             if (sub < 0) { visiting.Remove(res.ResolvedCellDir!); return -1; }
             count += sub;
             if (count > ceiling) { visiting.Remove(res.ResolvedCellDir!); return -1; }
@@ -306,12 +325,12 @@ public static class LayoutFlatten
     /// the two silently disagreed. Any future rule about what does or does not survive a flatten goes
     /// in that one predicate and both sides pick it up.</para>
     /// </summary>
-    public static long? CountOneLevelShapes(LayoutInstance inst, string parentBaseDir)
+    public static long? CountOneLevelShapes(LayoutInstance inst, string parentBaseDir, Technology? tech = null)
     {
         ArgumentNullException.ThrowIfNull(inst);
         if (inst.Rows > 1 || inst.Cols > 1) return null;
 
-        var res = CellLayoutResolver.Resolve(inst.CellRef, parentBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, parentBaseDir, tech);
         if (res.State != CellLayoutState.Resolved) return null;
 
         // R-L3d-6: a non-cardinal placement drops bitmaps, so the PREVIEW must drop them too — the
@@ -342,7 +361,8 @@ public static class LayoutFlatten
             if (depth >= CellHierarchy.MaxDepth) return;
             foreach (var inst in v.Instances)
             {
-                var res = CellLayoutResolver.Resolve(inst.CellRef, baseDir);
+                // Which FILES are read does not depend on a placement's side; no technology is needed.
+                var res = CellLayoutResolver.Resolve(inst, baseDir, tech: null);
                 if (res.State != CellLayoutState.Resolved || res.ResolvedCellDir is not { } dir || !seen.Add(dir)) continue;
                 if (CellFolder.ResolvePrimary(dir, ViewType.Layout).ResolvedName is { } name)
                 {
@@ -372,18 +392,20 @@ public static class LayoutFlatten
     /// itself" — because per §3, a broken instance ANYWHERE in the tree, not excluding the root, is
     /// left in place and reported rather than failing the whole operation.
     /// </summary>
-    public static AllLevelsResult FlattenAllLevels(LayoutInstance inst, string parentBaseDir)
+    /// <param name="tech">The technology the parent is drawn in (brief-bsp-1 R-bsp1-7), passed to every
+    /// level's <see cref="FlattenOneLevel"/>.</param>
+    public static AllLevelsResult FlattenAllLevels(LayoutInstance inst, string parentBaseDir, Technology? tech = null)
     {
         var shapes = new List<LayoutShape>();
         var surviving = new List<LayoutInstance>();
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var notes = new List<string>();
-        FlattenAllRecursive(inst, parentBaseDir, visiting, 0, shapes, surviving, notes);
+        FlattenAllRecursive(inst, parentBaseDir, visiting, 0, shapes, surviving, notes, tech);
         return new AllLevelsResult(shapes, surviving, notes.Count > 0 ? notes : null);
     }
 
     private static void FlattenAllRecursive(LayoutInstance inst, string baseDir, HashSet<string> visiting, int depth,
-        List<LayoutShape> shapes, List<LayoutInstance> surviving, List<string> notes)
+        List<LayoutShape> shapes, List<LayoutInstance> surviving, List<string> notes, Technology? tech)
     {
         if (depth >= CellHierarchy.MaxDepth) { surviving.Add(inst); return; }
 
@@ -391,13 +413,14 @@ public static class LayoutFlatten
         string? resolvedDir = null;
         if (!isArray)
         {
-            var res = CellLayoutResolver.Resolve(inst.CellRef, baseDir);
+            var res = CellLayoutResolver.Resolve(inst, baseDir, tech);
+            if (res.Refusal is { } refusal) notes.Add(refusal);
             if (res.State != CellLayoutState.Resolved) { surviving.Add(inst); return; }
             resolvedDir = res.ResolvedCellDir;
             if (!visiting.Add(resolvedDir!)) { surviving.Add(inst); return; }   // cycle — leave in place
         }
 
-        var oneLevel = FlattenOneLevel(inst, baseDir);
+        var oneLevel = FlattenOneLevel(inst, baseDir, tech);
         if (oneLevel is null)
         {
             surviving.Add(inst);
@@ -408,7 +431,7 @@ public static class LayoutFlatten
         shapes.AddRange(oneLevel.Shapes);
         if (oneLevel.Notes is { } levelNotes) notes.AddRange(levelNotes);
         foreach (var subInst in oneLevel.Instances)
-            FlattenAllRecursive(subInst, baseDir, visiting, depth + 1, shapes, surviving, notes);
+            FlattenAllRecursive(subInst, baseDir, visiting, depth + 1, shapes, surviving, notes, tech);
 
         if (resolvedDir is not null) visiting.Remove(resolvedDir);
     }

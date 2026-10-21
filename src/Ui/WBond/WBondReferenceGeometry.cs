@@ -55,7 +55,8 @@ public static class WBondReferenceGeometry
         {
             if (string.IsNullOrWhiteSpace(instance.CellRef)) continue;
 
-            var resolution = CellLayoutResolver.Resolve(instance.CellRef, baseDir);
+            // Whether a reference resolves does not depend on a placement's side (brief-bsp-1 R-bsp1-7).
+            var resolution = CellLayoutResolver.Resolve(instance, baseDir, tech: null);
             if (resolution.State != CellLayoutState.Resolved || resolution.View is null)
             {
                 if (!missing.Contains(instance.CellRef, StringComparer.Ordinal))
@@ -92,7 +93,7 @@ public static class WBondReferenceGeometry
         foreach (var instance in root.Instances)
         {
             if (string.IsNullOrWhiteSpace(instance.CellRef)) continue;
-            if (CellLayoutResolver.Resolve(instance.CellRef, baseDir).State == CellLayoutState.Resolved)
+            if (CellLayoutResolver.Resolve(instance, baseDir, tech: null).State == CellLayoutState.Resolved)
                 continue;
 
             string name = LastSegment(instance.CellRef);

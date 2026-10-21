@@ -249,10 +249,29 @@
         "a": 255
       },
       "FillOpacity": 0.35,
-      "ZOrder": 1015,
+      "ZOrder": 1016,
       "Purpose": "drawing",
       "Interchange": {
         "PcbLayerName": "F.CrtYd"
+      }
+    },
+    {
+      "Key": {
+        "Layer": 17,
+        "Datatype": 0
+      },
+      "Name": "Courtyard Bottom",
+      "Color": {
+        "r": 139,
+        "g": 84,
+        "b": 155,
+        "a": 255
+      },
+      "FillOpacity": 0.35,
+      "ZOrder": 1015,
+      "Purpose": "drawing",
+      "Interchange": {
+        "PcbLayerName": "B.CrtYd"
       }
     },
     {

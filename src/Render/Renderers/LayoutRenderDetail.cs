@@ -310,7 +310,7 @@ internal static class LayoutRenderDetail
         foreach (var inst in view.Instances)
         {
             long cells = (long)Math.Max(1, inst.Rows) * Math.Max(1, inst.Cols);
-            total += cells * CellVertices(inst, baseDir, hidden, visiting, 0);
+            total += cells * CellVertices(inst, baseDir, hidden, visiting, 0, tech);
             if (total > allowance) return false;
         }
         return true;
@@ -321,11 +321,11 @@ internal static class LayoutRenderDetail
     /// <see cref="LayoutView"/>; <paramref name="hidden"/> is the set of keys the technology declares
     /// and hides, so a key it does not declare at all counts — the renderer draws that shape.</summary>
     private static long CellVertices(
-        LayoutInstance inst, string baseDir, HashSet<LayerKey>? hidden, HashSet<string> visiting, int depth)
+        LayoutInstance inst, string baseDir, HashSet<LayerKey>? hidden, HashSet<string> visiting, int depth, Technology? tech)
     {
         if (depth > MaxCensusDepth) return 0;
 
-        var step = CellHierarchy.ResolveForWalk(inst, baseDir, visiting, depth);
+        var step = CellHierarchy.ResolveForWalk(inst, baseDir, visiting, depth, tech);
         if (step.State != InstanceResolutionState.Resolved || step.SubView is not { } sub) return 0;
 
         var census = CensusOf(sub);
@@ -346,7 +346,7 @@ internal static class LayoutRenderDetail
             foreach (var nested in sub.Instances)
             {
                 long cells = (long)Math.Max(1, nested.Rows) * Math.Max(1, nested.Cols);
-                own += cells * CellVertices(nested, subBase, hidden, visiting, depth + 1);
+                own += cells * CellVertices(nested, subBase, hidden, visiting, depth + 1, tech);
             }
         }
         finally { visiting.Remove(cellDir); }

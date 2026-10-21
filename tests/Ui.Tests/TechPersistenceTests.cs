@@ -47,7 +47,8 @@ public class TechPersistenceTests
         // 8 until 2026-09-21, when Courtyard Top (F.CrtYd) was added: without it every part placed
         // on this technology reported the courtyard role as missing, and that was every board
         // circuitRF ships. LandPatternRoleSeverityTests holds this in step with the .ctech files.
-        Assert.Equal(9, tech.Layers.Count);
+        // 10 since brief-bsp-1 gave it its bottom twin, Courtyard Bottom (B.CrtYd).
+        Assert.Equal(10, tech.Layers.Count);
         // brief-via-primitive-and-stackup.md R-via-4: gains one Via entry (Plated Through-Hole,
         // Top Copper -> Bottom Copper) alongside the original Top Copper / FR-4 / Bottom Copper trio.
         Assert.Equal(4, tech.Stackup.Layers.Count);

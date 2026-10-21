@@ -248,6 +248,7 @@ public static class LayoutGeometry
     public static LayoutInstance Clone(LayoutInstance inst) => new()
     {
         CellRef = inst.CellRef, X = inst.X, Y = inst.Y, RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = inst.Mag,
+        Side = inst.Side,
         Rows = inst.Rows, Cols = inst.Cols, PitchX = inst.PitchX, PitchY = inst.PitchY, SchematicId = inst.SchematicId,
         // SL3 R-sl3-10: a clone carries the recorded interface hash. Every properties-panel edit,
         // every move drag and every paste goes through here, so dropping it would quietly erase the

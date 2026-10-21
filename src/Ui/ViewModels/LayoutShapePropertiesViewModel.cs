@@ -1544,7 +1544,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         if (IsSingleInstanceSelected)
         {
             var inst = _vm!.EffectiveInstanceAt(indices[0]);
-            var resolution = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+            var resolution = CellLayoutResolver.Resolve(inst, _vm.InstanceBaseDir, _vm.Technology);
             ApplyExternalStatus(ExternalCellStatusResolver.Classify(inst.CellRef, _vm.InstanceBaseDir));
             ApplyInterfaceChange(inst.CellRef);
             SelectionSummaryText = InstanceSummary(inst, resolution, ExternalSourceName);
@@ -1993,7 +1993,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
 
     private void RebuildOrRefreshPCellParamRows(LayoutInstance inst, bool forceRebuild = false)
     {
-        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm!.InstanceBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, _vm!.InstanceBaseDir, _vm.Technology);
         if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } origin)
         { PCellParamRows = null; _pcellParamGeneratedCellDir = null; return; }
 
@@ -2095,7 +2095,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     private PCellParameterInfo? DeclaredParamInfo(string name)
     {
         if (_vm is null || SingleSelectedInstance is not { } inst) return null;
-        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, _vm.InstanceBaseDir, _vm.Technology);
         if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } origin) return null;
 
         IReadOnlyList<PCellParameterInfo>? declared;
@@ -2115,7 +2115,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     private bool SelectedInstanceComputes(string name)
     {
         if (_vm is null || SingleSelectedInstance is not { } inst) return false;
-        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, _vm.InstanceBaseDir, _vm.Technology);
         return res is { State: CellLayoutState.Resolved, View.PCellOrigin: { } origin }
                && origin.IsComputed(name);
     }
@@ -2126,7 +2126,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     private bool SelectedInstanceDoesNotRead(string name)
     {
         if (_vm is null || SingleSelectedInstance is not { } inst) return false;
-        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, _vm.InstanceBaseDir, _vm.Technology);
         return res is { State: CellLayoutState.Resolved, View.PCellOrigin: { } origin }
                && origin.IsUnread(name);
     }
@@ -2134,7 +2134,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     private SymbolKind? ResolveSelectedInstancePCellComponentName()
     {
         if (_vm is null || SingleSelectedInstance is not { } inst) return null;
-        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, _vm.InstanceBaseDir, _vm.Technology);
         if (res.State == CellLayoutState.Resolved && res.View!.PCellOrigin is { } origin &&
             LayoutToSchematicGenerator.TryGetSymbolKind(origin.GeneratorId, out var kind))
             return kind;
@@ -2148,7 +2148,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     internal void PopulatePCellParamRow(PCellParamRowViewModel row)
     {
         if (_vm is null || SingleSelectedInstance is not { } inst || _focusedField == row.FieldKey) return;
-        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, _vm.InstanceBaseDir, _vm.Technology);
         if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } origin) return;
 
         // OWNER REPORT: this branch used to key on the NAME alone, with no IsMklopfTarget guard —
@@ -2358,7 +2358,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
     private PCellValueKind CurrentParamKind(string name)
     {
         if (_vm is null || SingleSelectedInstance is not { } inst) return PCellValueKind.Real;
-        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, _vm.InstanceBaseDir, _vm.Technology);
         return res is { State: CellLayoutState.Resolved, View.PCellOrigin: { } origin }
                && origin.Parameters.TryGetValue(name, out var v)
             ? v.Kind : PCellValueKind.Real;
@@ -2472,7 +2472,7 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         { row.Error = "Invalid value"; return; }
 
         var inst = _vm!.Model.Instances[instanceIndex];
-        var res = CellLayoutResolver.Resolve(inst.CellRef, _vm.InstanceBaseDir);
+        var res = CellLayoutResolver.Resolve(inst, _vm.InstanceBaseDir, _vm.Technology);
         if (res.State != CellLayoutState.Resolved || res.View!.PCellOrigin is not { } origin)
         { row.Error = "Instance no longer resolves"; return; }
         if (!TryResolveMklopfSubstrate(out double h, out double t, out double er))

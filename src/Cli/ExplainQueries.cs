@@ -260,7 +260,7 @@ internal static class ExplainQueries
         // OR NOT", which is what makes an empty layer and a hidden one two different answers — the
         // `visible` flag beside it is the other half. Same rule, same walk and therefore the same
         // number as `render --json`'s own layers[].shapes.
-        var counted = CellHierarchy.ShapeCountsByLayer(view, baseDir);
+        var counted = CellHierarchy.ShapeCountsByLayer(view, baseDir, tech: res.Tech);
 
         if (counted.Truncated)
             JsonRun.Report(CliDiagnostics.ExplainLayerCountTruncated(clay));

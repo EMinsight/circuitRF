@@ -139,7 +139,7 @@ public sealed partial class LayoutEditorViewModel
         get
         {
             if (SingleSelectedInstance is not { } inst) return null;
-            if (CellLayoutResolver.Resolve(inst.CellRef, InstanceBaseDir) is not
+            if (CellLayoutResolver.Resolve(inst, InstanceBaseDir, Technology) is not
                 { State: CellLayoutState.Resolved, View.PCellOrigin: { } origin }) return null;
             return FootprintRef.TryParse(origin.GeneratorId, out var reference, out _) ? reference : null;
         }

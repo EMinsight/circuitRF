@@ -187,7 +187,7 @@ public static class LayoutHitTest
                                         ref InstanceHitTestCounters counters)
     {
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var step = CellHierarchy.ResolveForWalk(inst, baseDir, visiting, 0);
+        var step = CellHierarchy.ResolveForWalk(inst, baseDir, visiting, 0, tech);
         if (step.State != InstanceResolutionState.Resolved)
             return ArrayCellsContain(inst, CellHierarchy.PlaceholderBbox(inst), px, py, tolDbu);
 
@@ -320,7 +320,7 @@ public static class LayoutHitTest
 
         foreach (var nested in view.Instances)
         {
-            var step = CellHierarchy.ResolveForWalk(nested, baseDir, visiting, depth);
+            var step = CellHierarchy.ResolveForWalk(nested, baseDir, visiting, depth, tech);
             if (step.State != InstanceResolutionState.Resolved) continue; // a nested broken ref contributes no real geometry to hit
 
             // Same narrowing as the top level (ArrayCellsToTest) — a nested array is where the cost

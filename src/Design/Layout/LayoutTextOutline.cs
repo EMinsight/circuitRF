@@ -169,6 +169,38 @@ public static class LayoutTextOutline
         edges.Add(new LayoutEdge { Kind = EdgeKind.Cubic, C1X = c1.X, C1Y = c1.Y, C2X = c2.X, C2Y = c2.Y });
     }
 
+    /// <summary>
+    /// brief-bsp-1 R-bsp1-9 — the vector, in the text's own unrotated Y-up frame, from
+    /// <paramref name="label"/>'s anchor to its CENTRE: the anchor a Center/Middle copy of the label
+    /// would need to draw the same text, in whichever font it draws with. What a mirrored placement
+    /// carries through its transform instead of the anchor, so the text keeps its reading direction
+    /// and still sits over the spot the mirror carries it to.
+    /// </summary>
+    public static (double Dx, double Dy) CentreOffset(LabelShape label)
+    {
+        ArgumentNullException.ThrowIfNull(label);
+        if (label.Font == LabelFont.Stroke) return Text.StrokeText.CentreOffset(label);
+        if (string.IsNullOrEmpty(label.Text) || label.Height <= 0) return (0, 0);
+
+        using var font = new SKFont(ResolveTypeface(label.Style), label.Height);
+        float width = font.MeasureText(label.Text);
+        (float Dx, float Dy) Offset(bool centred)
+        {
+            var (align, baselineDy) = ResolveLabelAnchor(label, font, centred);
+            float dx = align switch
+            {
+                SKTextAlign.Center => -width / 2f,
+                SKTextAlign.Right  => -width,
+                _                  => 0f,
+            };
+            return (dx, baselineDy);
+        }
+        var o = Offset(false);
+        var c = Offset(true);
+        // The anchor arithmetic is in Skia's Y-down frame; the layout's is Y-up.
+        return (o.Dx - c.Dx, -(o.Dy - c.Dy));
+    }
+
     /// <summary>The anchor arithmetic <c>LayoutRenderer.DrawLabelText</c> draws with and
     /// <see cref="BuildGlyphContours"/> flattens with — ONE copy, so a flattened label can never
     /// land somewhere the rendered one did not.</summary>

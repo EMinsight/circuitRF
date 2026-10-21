@@ -333,7 +333,9 @@ public static class FootprintLabel
         var roles = LandPatternLayers.Resolve(technology, PCells.PCellLayerSelection.Default, []);
         if (roles.Silkscreen is not { } silk) return [];
 
-        resolveCell ??= inst => CellLayoutResolver.Resolve(inst.CellRef, viewLayoutDir).View;
+        // The auto position measures the cell AS STORED (brief-bsp-1): its silk is on the top role
+        // the measurement looks for, and a bottom placement's mirror is the transform's, not the view's.
+        resolveCell ??= inst => CellLayoutResolver.Resolve(inst, viewLayoutDir, technology).SourceView;
 
         var shapes = new List<LabelShape>();
         foreach (var inst in view.Instances)
@@ -376,8 +378,10 @@ public static class FootprintLabel
                                LayerKey silk, List<LabelShape> into, HashSet<string> visiting, int depth)
     {
         if (depth > CellHierarchy.MaxDepth) return;
-        var res = CellLayoutResolver.Resolve(inst.CellRef, parentLayoutDir);
-        if (res.View is not { } cell || res.ResolvedCellDir is not { } cellDir || cell.Instances.Count == 0) return;
+        // The cell as stored: the designators are read from its placements, and no layer of it is drawn
+        // here — so no technology is needed to swap one (brief-bsp-1 R-bsp1-7).
+        var res = CellLayoutResolver.Resolve(inst, parentLayoutDir, tech: null);
+        if (res.SourceView is not { } cell || res.ResolvedCellDir is not { } cellDir || cell.Instances.Count == 0) return;
         if (!visiting.Add(cellDir)) return;   // a cycle draws nothing more; the geometry walk reports it
         try
         {
@@ -388,7 +392,7 @@ public static class FootprintLabel
                 if (child.DesignatorShown && child.DisplayRefDes is { Length: > 0 })
                 {
                     var childCell = child.LabelDx is not null && child.LabelDy is not null
-                        ? null : CellLayoutResolver.Resolve(child.CellRef, cellLayoutDir).View;
+                        ? null : CellLayoutResolver.Resolve(child, cellLayoutDir, tech: null).SourceView;
                     if (ShapeFor(child, childCell, roles, cell.DbuPerMicron, silk) is { } own) local.Add(own);
                 }
                 Nested(child, cellLayoutDir, cell.DbuPerMicron, roles, silk, local, visiting, depth + 1);

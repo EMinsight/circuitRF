@@ -91,17 +91,23 @@ public static class CellHierarchy
     /// method itself only performs the CHECK, not the add, since the caller also needs the directory
     /// to recurse with regardless of outcome.
     /// </summary>
-    public static InstanceResolutionStep ResolveForWalk(LayoutInstance inst, string baseDir, IReadOnlySet<string> visiting, int depth)
+    /// <param name="tech">The technology the walk's ROOT is drawn in (brief-bsp-1 R-bsp1-7) — what a
+    /// bottom-side placement's layers are swapped against. Null for a pure-geometry walk: a bottom
+    /// placement then resolves unswapped, which changes no extent beyond a role it would omit.</param>
+    public static InstanceResolutionStep ResolveForWalk(LayoutInstance inst, string baseDir, IReadOnlySet<string> visiting, int depth,
+                                                        Technology? tech)
     {
         if (depth >= MaxDepth)
             return new InstanceResolutionStep(InstanceResolutionState.DepthExceeded, null, null);
 
-        var res = CellLayoutResolver.Resolve(inst.CellRef, baseDir);
+        var res = CellLayoutResolver.Resolve(inst, baseDir, tech);
         var state = res.State switch
         {
             CellLayoutState.Resolved       => InstanceResolutionState.Resolved,
             CellLayoutState.NotFound       => InstanceResolutionState.NotFound,
             CellLayoutState.PrimaryMissing => InstanceResolutionState.PrimaryMissing,
+            // A bottom placement on a board with no bottom copper draws as the broken placeholder it
+            // is: there is no honest artwork for it (R-bsp1-4).
             _                              => InstanceResolutionState.NotFound,
         };
         if (state != InstanceResolutionState.Resolved)
@@ -155,7 +161,7 @@ public static class CellHierarchy
     public static Bbox BasePlacementBbox(LayoutInstance inst, string baseDir, Func<LayerKey, bool>? layerVisible = null)
     {
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var step = ResolveForWalk(inst, baseDir, visiting, 0);
+        var step = ResolveForWalk(inst, baseDir, visiting, 0, tech: null);
         if (step.State != InstanceResolutionState.Resolved)
             return PlaceholderBbox(inst);
 
@@ -178,7 +184,7 @@ public static class CellHierarchy
     public static Bbox InstanceBboxOfView(LayoutView view, LayoutInstance inst, string baseDir)
     {
         var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var step = ResolveForWalk(inst, baseDir, visiting, 0);
+        var step = ResolveForWalk(inst, baseDir, visiting, 0, tech: null);
         string viewBaseDir = step.State == InstanceResolutionState.Resolved
             ? LayoutBaseDirOf(step.ResolvedCellDir!) : baseDir;
 
@@ -197,7 +203,7 @@ public static class CellHierarchy
 
         foreach (var nested in view.Instances)
         {
-            var step = ResolveForWalk(nested, viewBaseDir, visiting, depth);
+            var step = ResolveForWalk(nested, viewBaseDir, visiting, depth, tech: null);
             if (step.State != InstanceResolutionState.Resolved)
             {
                 bb = bb.Union(ArrayExpand(PlaceholderBbox(nested), nested));
@@ -400,7 +406,7 @@ public static class CellHierarchy
 
         foreach (var inst in view.Instances)
         {
-            var step = ResolveForWalk(inst, viewBaseDir, visited, depth);
+            var step = ResolveForWalk(inst, viewBaseDir, visited, depth, tech: null);
 
             if (step.State == InstanceResolutionState.DepthExceeded) { truncated = true; continue; }
 
@@ -478,7 +484,7 @@ public static class CellHierarchy
     /// well under a second.</param>
     public static LayerShapeCounts ShapeCountsByLayer(
         LayoutView view, string viewBaseDir, Func<LayerKey, bool>? layerVisible = null,
-        long budget = DefaultCountBudget)
+        long budget = DefaultCountBudget, Technology? tech = null)
     {
         var counts = new Dictionary<LayerKey, long>();
         var placements = new Dictionary<LayerKey, int>();
@@ -490,7 +496,7 @@ public static class CellHierarchy
 
         foreach (var inst in view.Instances)
         {
-            var step = ResolveForWalk(inst, viewBaseDir, visiting, 0);
+            var step = ResolveForWalk(inst, viewBaseDir, visiting, 0, tech);
             if (step.State != InstanceResolutionState.Resolved) continue;
 
             // Per PLACEMENT, so the caller can say "this layer comes from two of the four instances"
@@ -500,7 +506,7 @@ public static class CellHierarchy
             long ignored = 0;
             visiting.Add(step.ResolvedCellDir!);
             CountCell(step.SubView!, LayoutBaseDirOf(step.ResolvedCellDir!), visiting, 1, layerVisible,
-                      mine, ref ignored, budget, ref truncated);
+                      mine, ref ignored, budget, ref truncated, tech);
             visiting.Remove(step.ResolvedCellDir!);
 
             long multiplier = (long)Math.Max(1, inst.Rows) * Math.Max(1, inst.Cols);
@@ -535,21 +541,21 @@ public static class CellHierarchy
     private static void CountCell(
         LayoutView view, string viewBaseDir, HashSet<string> visiting, int depth,
         Func<LayerKey, bool>? layerVisible, Dictionary<LayerKey, long> counts,
-        ref long total, long budget, ref bool truncated)
+        ref long total, long budget, ref bool truncated, Technology? tech)
     {
         CountOwnShapes(view, layerVisible, 1, counts, ref total, budget, ref truncated);
         if (truncated) return;
 
         foreach (var nested in view.Instances)
         {
-            var step = ResolveForWalk(nested, viewBaseDir, visiting, depth);
+            var step = ResolveForWalk(nested, viewBaseDir, visiting, depth, tech);
             if (step.State != InstanceResolutionState.Resolved) continue;
 
             var mine = new Dictionary<LayerKey, long>();
             long nestedTotal = 0;
             visiting.Add(step.ResolvedCellDir!);
             CountCell(step.SubView!, LayoutBaseDirOf(step.ResolvedCellDir!), visiting, depth + 1,
-                      layerVisible, mine, ref nestedTotal, budget, ref truncated);
+                      layerVisible, mine, ref nestedTotal, budget, ref truncated, tech);
             visiting.Remove(step.ResolvedCellDir!);
 
             long multiplier = (long)Math.Max(1, nested.Rows) * Math.Max(1, nested.Cols);
@@ -601,7 +607,7 @@ public static class CellHierarchy
 
         foreach (var inst in view.Instances)
         {
-            var step = ResolveForWalk(inst, viewBaseDir, visiting, depth);
+            var step = ResolveForWalk(inst, viewBaseDir, visiting, depth, tech: null);
             if (step.State != InstanceResolutionState.Resolved) continue;
 
             if (string.Equals(step.ResolvedCellDir, targetAbsDir, StringComparison.OrdinalIgnoreCase))
