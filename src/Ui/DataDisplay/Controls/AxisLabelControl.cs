@@ -156,7 +156,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
         {
             if (_trace is null) return;
 
-            var traceColor = RenderTheme.ToSKColor(_trace.Properties.LineColor);
+            var traceColor = _theme.ToSKColor(_trace.Properties.LineColor);
             // Policy priority: AutoLabel (plot-level computed) → ShortDescription (legacy fallback).
             // ShowFilePrefix is kept for the legacy path when neither override is set.
             string fallback  = ShowFilePrefix ? _trace.Description : _trace.ShortDescription;

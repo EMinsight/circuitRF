@@ -115,12 +115,12 @@ namespace CircuitRF.Render.DataDisplay
                 fill.Close();
                 using var fillPaint = new SKPaint
                 {
-                    Color = RenderTheme.ToSKColor(props.LineColor, theme.FillOpacity * props.LineOpacity * (sel ? 0.5 : 1)),
+                    Color = theme.ToSKColor(props.LineColor, theme.FillOpacity * props.LineOpacity * (sel ? 0.5 : 1)),
                     Style = SKPaintStyle.Fill, IsAntialias = true,
                 };
                 canvas.DrawPath(fill, fillPaint);
                 StrokePolyline(canvas, tf, sec, band.X.Select((x, i) => new Vector2((float)x, (float)band.Centre[i])),
-                               RenderTheme.ToSKColor(props.LineColor, props.LineOpacity), strokeW * 0.75f);
+                               theme.ToSKColor(props.LineColor, props.LineOpacity), strokeW * 0.75f);
             }
 
             // ── the members, the nominal, the selection — in plan order ────────────
@@ -146,15 +146,15 @@ namespace CircuitRF.Render.DataDisplay
                 {
                     if (sel && trace.ElementSelected(k)) continue;   // drawn last, highlighted
                     var (color, opacity) = ElementPaint(trace, k, theme);
-                    plan.Add(new(TrialStrokeKind.Member, k, RenderTheme.ToSKColor(color, opacity * (sel ? DimOpacity : 1)), 1f));
+                    plan.Add(new(TrialStrokeKind.Member, k, theme.ToSKColor(color, opacity * (sel ? DimOpacity : 1)), 1f));
                 }
             if (trace.NominalPoints.Count > 1)
                 plan.Add(new(TrialStrokeKind.Nominal, -1,
-                             RenderTheme.ToSKColor(props.LineColor, sel ? props.LineOpacity * 0.6 : 1.0), 1f));
+                             theme.ToSKColor(props.LineColor, sel ? props.LineOpacity * 0.6 : 1.0), 1f));
             if (sel)
                 for (int k = 0; k < trace.FamilyCurves.Count; k++)
                     if (trace.ElementSelected(k))
-                        plan.Add(new(TrialStrokeKind.Selected, k, RenderTheme.ToSKColor(ElementPaint(trace, k, theme).Color, 1.0), 2f));
+                        plan.Add(new(TrialStrokeKind.Selected, k, theme.ToSKColor(ElementPaint(trace, k, theme).Color, 1.0), 2f));
             return plan;
         }
 
@@ -166,7 +166,7 @@ namespace CircuitRF.Render.DataDisplay
             bool sec   = trace.UseSecondaryAxis;
             if (props.LineEnabled && trace.Points.Count > 1)
                 StrokePolyline(canvas, tf, sec, trace.Points,
-                               RenderTheme.ToSKColor(props.LineColor, props.LineOpacity * (sel ? DimOpacity : 1)),
+                               theme.ToSKColor(props.LineColor, props.LineOpacity * (sel ? DimOpacity : 1)),
                                lw * (float)props.LineWidth);
 
             if (trace.Fit is { } fit)
@@ -176,7 +176,7 @@ namespace CircuitRF.Render.DataDisplay
                 var b = tf.ToCanvas(win.Right, fit.Intercept + fit.Slope * win.Right, sec);
                 using var fp = new SKPaint
                 {
-                    Color = RenderTheme.ToSKColor(props.LineColor, 0.9), StrokeWidth = lw * (float)props.LineWidth,
+                    Color = theme.ToSKColor(props.LineColor, 0.9), StrokeWidth = lw * (float)props.LineWidth,
                     Style = SKPaintStyle.Stroke, IsAntialias = true,
                 };
                 canvas.DrawLine(a, b, fp);   // inside the viewport clip every trace is drawn in
@@ -193,7 +193,7 @@ namespace CircuitRF.Render.DataDisplay
                 if (!tf.XIsPlottable(pt.X)) return;
                 if (trace.MemberCategories is { } cats && k < cats.Length && cats[k] == TrialCategory.NotEvaluated) return;
                 var (color, opacity) = ElementPaint(trace, k, theme, marker: true);
-                fillP.Color = RenderTheme.ToSKColor(color, opacity * dim);
+                fillP.Color = theme.ToSKColor(color, opacity * dim);
                 var px = tf.ToCanvas(pt.X, pt.Y, sec);
                 var r  = new SKRect(px.X - size, px.Y - size, px.X + size, px.Y + size);
                 canvas.DrawOval(r, fillP);

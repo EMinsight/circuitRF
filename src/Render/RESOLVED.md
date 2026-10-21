@@ -5165,3 +5165,31 @@ canvas gives up on a path with a coordinate that far out, and the markers surviv
 (Liang–Barsky, in double precision), so the part of each segment inside the plot is drawn exactly and nothing beyond
 the box reaches Skia. Gate: `OutOfRangeLineTests` checks the path's bounds, because a CPU-raster pixel test passes
 without the fix.
+
+## A trace colour now knows the canvas it is drawn on (2026-10-21)
+
+A `.cdd` stores an INDEX into `TraceProperties.ColorLUT`, and Black (index 0), Indigo, Purple, Teal and
+Green read on the white canvas and disappeared on the dark one. `RenderTheme.TraceColor` mirrors
+a colour darker than mid lightness about mid (`l -> 100 - l`, hue and saturation kept) when the theme's
+own BACKGROUND is dark. Dark is decided from the background's Rec. 601 luminance rather than the
+`DarkMode` flag, so a custom background gets the same treatment, the test `LayoutRenderer.Snap`'s snap
+marker already uses. Alpha 0 is returned as is: the palette's "Clear" is `#00FFFFFF` and would otherwise
+mirror white to black.
+
+`RenderTheme.ToSKColor` became an INSTANCE method for this change, not for style. Every trace colour in the
+renderers already went through it, so naming the theme at each of the 24 call sites is what makes a site
+nobody thought about fail to compile; a static version rendered unmapped, silently. The transform must stay
+in that one function. **SkiaSharp's HSL triple is degrees and 0..100, not 0..1**: the first build wrote
+`FromHsl(h, s, 1 - l)` and turned black into `#020202` instead of white, which the gate caught on its first
+run.
+
+The LIGHT theme returns every stored colour unchanged, so no `.cdd` and no light render moved. Contour
+colours (`cd.LineColor`, colormap derived) deliberately do not pass through: `ContourRenderer` enforces its
+own luminance guard. The inspector swatch keeps showing the stored colour, for the reason
+`LayerCanvasContrast`'s own doc gives: a swatch that changed with the theme would disagree with the file it
+edits. Gate: `tests/Ui.Tests/DataDisplay/DarkTraceColourTests.cs`, whose render-level case is the one a
+missed call site fails.
+
+Four `Harmonica` tests fail on this machine with the transform disabled as well
+(`HarmonicaBackdropCacheTests` x3, `PowerSweepPanel_TheY2Label_...`), so they are NOT this change: the
+probe that disables the transform leaves them red.

@@ -64,8 +64,8 @@ public sealed class FamilyColourByTests
         var theme = RenderTheme.Light;
         var plan = TrialRenderer.FamilyPlan(t, theme);
         Assert.Equal(11, plan.Count);
-        var passColor = RenderTheme.ToSKColor(theme.PassColor, t.Properties.LineOpacity * TrialRenderer.PassOpacity);
-        var failColor = RenderTheme.ToSKColor(theme.FailColor, t.Properties.LineOpacity);
+        var passColor = theme.ToSKColor(theme.PassColor, t.Properties.LineOpacity * TrialRenderer.PassOpacity);
+        var failColor = theme.ToSKColor(theme.FailColor, t.Properties.LineOpacity);
         int Trial(TrialStroke s) => (int)t.FamilyCurves[s.Member].AxisValue;
 
         Assert.All(plan.Take(7), s => { Assert.False(TrialFixtures.Fails.Contains(Trial(s))); Assert.Equal(passColor, s.Color); });
@@ -75,7 +75,7 @@ public sealed class FamilyColourByTests
 
         var nominal = plan[^1];
         Assert.Equal(TrialStrokeKind.Nominal, nominal.Kind);
-        Assert.Equal(RenderTheme.ToSKColor(t.Properties.LineColor, 1.0), nominal.Color);
+        Assert.Equal(theme.ToSKColor(t.Properties.LineColor, 1.0), nominal.Color);
         Assert.Equal(TrialFixtures.Value(0, 2), t.NominalPoints[2].Y, 6);
 
         // In the .cdd: a trace with no trial view writes none of the fields; a coloured one reads back coloured.

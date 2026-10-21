@@ -38,8 +38,8 @@ namespace CircuitRF.Render.DataDisplay
 
                 if (stemMode)
                 {
-                    using var stemPaint = BuildStemPaint(props, lw, strokeW);
-                    using var headPaint = BuildHeadPaint(props);
+                    using var stemPaint = BuildStemPaint(props, lw, strokeW, theme);
+                    using var headPaint = BuildHeadPaint(props, theme);
                     foreach (var curve in trace.FamilyCurves)
                         foreach (var pt in curve.Points)
                         {
@@ -51,7 +51,7 @@ namespace CircuitRF.Render.DataDisplay
 
                 using var paint = new SKPaint
                 {
-                    Color       = RenderTheme.ToSKColor(props.LineColor, props.LineOpacity),
+                    Color       = theme.ToSKColor(props.LineColor, props.LineOpacity),
                     StrokeWidth = strokeW,
                     Style       = SKPaintStyle.Stroke,
                     IsAntialias = true,
@@ -82,8 +82,8 @@ namespace CircuitRF.Render.DataDisplay
             {
                 float     strokeW   = lw * (float)props.LineWidth;
                 bool      useSecond = trace.UseSecondaryAxis;
-                using var stemPaint = BuildStemPaint(props, lw, strokeW);
-                using var headPaint = BuildHeadPaint(props);
+                using var stemPaint = BuildStemPaint(props, lw, strokeW, theme);
+                using var headPaint = BuildHeadPaint(props, theme);
                 foreach (var pt in trace.Points)
                 {
                     if (!tf.XIsPlottable(pt.X)) continue;
@@ -99,7 +99,7 @@ namespace CircuitRF.Render.DataDisplay
                 using var path  = BuildPath(trace, tf);
                 using var paint = new SKPaint
                 {
-                    Color       = RenderTheme.ToSKColor(props.LineColor, props.LineOpacity),
+                    Color       = theme.ToSKColor(props.LineColor, props.LineOpacity),
                     StrokeWidth = strokeW,
                     Style       = SKPaintStyle.Stroke,
                     IsAntialias = true,
@@ -120,7 +120,7 @@ namespace CircuitRF.Render.DataDisplay
 
                 using var fillPaint = new SKPaint
                 {
-                    Color       = RenderTheme.ToSKColor(props.MarkerColor, props.MarkerOpacity),
+                    Color       = theme.ToSKColor(props.MarkerColor, props.MarkerOpacity),
                     Style       = SKPaintStyle.Fill,
                     IsAntialias = true
                 };
@@ -189,10 +189,10 @@ namespace CircuitRF.Render.DataDisplay
 
         // ---- Stem rendering helpers ------------------------------------
 
-        private static SKPaint BuildStemPaint(TraceProperties props, float lw, float strokeW)
+        private static SKPaint BuildStemPaint(TraceProperties props, float lw, float strokeW, RenderTheme theme)
             => new SKPaint
             {
-                Color       = RenderTheme.ToSKColor(props.LineColor, props.LineOpacity),
+                Color       = theme.ToSKColor(props.LineColor, props.LineOpacity),
                 StrokeWidth = strokeW,
                 Style       = SKPaintStyle.Stroke,
                 IsAntialias = true,
@@ -211,10 +211,10 @@ namespace CircuitRF.Render.DataDisplay
             _               => null,
         };
 
-        private static SKPaint BuildHeadPaint(TraceProperties props)
+        private static SKPaint BuildHeadPaint(TraceProperties props, RenderTheme theme)
             => new SKPaint
             {
-                Color       = RenderTheme.ToSKColor(props.LineColor, props.LineOpacity),
+                Color       = theme.ToSKColor(props.LineColor, props.LineOpacity),
                 Style       = SKPaintStyle.Fill,
                 IsAntialias = true
             };
@@ -734,7 +734,7 @@ namespace CircuitRF.Render.DataDisplay
 
             using var paint = new SKPaint
             {
-                Color       = RenderTheme.ToSKColor(trace.Properties.LineColor, 0.6f),
+                Color       = theme.ToSKColor(trace.Properties.LineColor, 0.6f),
                 StrokeWidth = lw * 0.8f,
                 Style       = SKPaintStyle.Stroke,
                 IsAntialias = true,

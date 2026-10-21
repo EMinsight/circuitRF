@@ -1375,7 +1375,7 @@ namespace CircuitRF.Render.DataDisplay
                     float rowH   = Math.Min(layout.RowH, canvasH - rowTop);
                     if (rowH <= 0) continue;
 
-                    SKColor color = RenderTheme.ToSKColor(trace.Properties.LineColor);
+                    SKColor color = theme.ToSKColor(trace.Properties.LineColor);
 
                     using var fillPaint = new SKPaint
                     {

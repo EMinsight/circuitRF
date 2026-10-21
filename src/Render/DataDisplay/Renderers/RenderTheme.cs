@@ -70,14 +70,53 @@ namespace CircuitRF.Render.DataDisplay
         public double FillOpacity => 0.35;
 
         /// <summary>
-        /// Returns <paramref name="c"/> with its alpha replaced by an opacity in [0, 1].
-        /// A negative opacity keeps the colour's own alpha.
+        /// Returns <paramref name="c"/> as a TRACE is drawn on this theme, with its alpha replaced by
+        /// an opacity in [0, 1]. A negative opacity keeps the colour's own alpha.
+        ///
+        /// <para><b>Instance, not static, on purpose.</b> Every trace colour in the renderers comes
+        /// through here, so naming the theme at each call site is what makes a colour that needs the
+        /// canvas it is drawn on impossible to pass through unmapped. A static version compiled
+        /// quietly at a site nobody had thought about.</para>
         /// </summary>
-        public static SKColor ToSKColor(SKColor c, double opacity = -1)
+        public SKColor ToSKColor(SKColor c, double opacity = -1)
         {
-            byte a = opacity >= 0 ? (byte)(opacity * 255) : c.Alpha;
-            return new SKColor(c.Red, c.Green, c.Blue, a);
+            SKColor drawn = TraceColor(c);
+            byte a = opacity >= 0 ? (byte)(opacity * 255) : drawn.Alpha;
+            return new SKColor(drawn.Red, drawn.Green, drawn.Blue, a);
         }
+
+        /// <summary>
+        /// The colour a trace is DRAWN in on this canvas.
+        ///
+        /// <para><b>On a dark canvas only, a colour darker than mid is mirrored about mid lightness</b>
+        /// (<c>l -> 100 - l</c>, SkiaSharp's HSL triple being degrees and 0..100) with its hue and
+        /// saturation kept: Black draws as White, Indigo and Purple as their light selves, while
+        /// Red, Blue, Gray, Yellow, White and the accent sit at or above mid and are untouched.
+        /// Channel inversion was the other candidate and was rejected:
+        /// it turns Red into Cyan, so a trace would change its identity with the theme. Blending toward
+        /// white until a luminance floor clears desaturates the same Red to pink.</para>
+        ///
+        /// <para>The stored colour and its palette INDEX are untouched. A `.cdd` means what it meant,
+        /// and the LIGHT theme, which is the reference, renders bit for bit as it always did. The
+        /// colour picker keeps showing the stored colour for the same reason the Layers panel swatch
+        /// does (<c>LayerCanvasContrast</c>): a swatch that changed with the theme would disagree with
+        /// the file it edits.</para>
+        ///
+        /// <para>Dark is decided from the BACKGROUND's own Rec. 601 luminance, not from a flag, so a
+        /// custom background gets the right treatment too (the test `LayoutRenderer`'s snap marker
+        /// uses). Alpha 0 is returned as is: the palette's "Clear" is #00FFFFFF and would otherwise
+        /// mirror white to black.</para>
+        /// </summary>
+        public SKColor TraceColor(SKColor c)
+        {
+            if (c.Alpha == 0) return c;
+            if (!DarkCanvas) return c;
+            c.ToHsl(out float h, out float s, out float l);
+            return l < 50f ? SKColor.FromHsl(h, s, 100f - l, c.Alpha) : c;
+        }
+
+        private bool DarkCanvas =>
+            (0.299 * BackgroundColor.Red + 0.587 * BackgroundColor.Green + 0.114 * BackgroundColor.Blue) < 127.5;
 
         /// <summary>Returns <paramref name="color"/> with alpha set from [0,1] opacity.</summary>
         public static SKColor WithOpacity(SKColor color, double opacity) =>

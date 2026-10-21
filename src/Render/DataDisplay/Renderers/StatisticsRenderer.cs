@@ -66,7 +66,7 @@ namespace CircuitRF.Render.DataDisplay
 
             using var outline = new SKPaint
             {
-                Color = RenderTheme.ToSKColor(props.LineColor, opacity), StrokeWidth = strokeW,
+                Color = theme.ToSKColor(props.LineColor, opacity), StrokeWidth = strokeW,
                 Style = SKPaintStyle.Stroke, IsAntialias = true, StrokeJoin = SKStrokeJoin.Miter,
             };
 
@@ -74,7 +74,7 @@ namespace CircuitRF.Render.DataDisplay
             {
                 using var fill = new SKPaint
                 {
-                    Color = RenderTheme.ToSKColor(props.LineColor, theme.FillOpacity * opacity),
+                    Color = theme.ToSKColor(props.LineColor, theme.FillOpacity * opacity),
                     Style = SKPaintStyle.Fill, IsAntialias = true,
                 };
                 // A selected trial (brief-yield-9 R-ya9-6) lights its bar; the rest dim. Bars are indexed as the
@@ -85,8 +85,8 @@ namespace CircuitRF.Render.DataDisplay
                     {
                         var r = curve[k];
                         double dim = sel && !trace.ElementSelected(k) ? TrialRenderer.DimOpacity : 1.0;
-                        fill.Color    = RenderTheme.ToSKColor(props.LineColor, theme.FillOpacity * opacity * dim * (sel && dim == 1 ? 2 : 1));
-                        outline.Color = RenderTheme.ToSKColor(props.LineColor, opacity * dim);
+                        fill.Color    = theme.ToSKColor(props.LineColor, theme.FillOpacity * opacity * dim * (sel && dim == 1 ? 2 : 1));
+                        outline.Color = theme.ToSKColor(props.LineColor, opacity * dim);
                         canvas.DrawRect(r, fill);
                         if (props.LineEnabled) canvas.DrawRect(r, outline);
                     }
@@ -132,7 +132,7 @@ namespace CircuitRF.Render.DataDisplay
         /// area, so it sits on the bars — y(x) = A·φ((x − μ)/σ)/σ — sampled across the visible X window.
         /// </summary>
         public static void DrawNormalFit(SKCanvas canvas, (double W, double H) canvasSize, Trace trace, Plot plot,
-                                         TransformSet tf)
+                                         TransformSet tf, RenderTheme theme)
         {
             if (trace.NormalFit is not { } fit || !(fit.Sigma > 0)) return;
             double scale = trace.CubeXDisplayScale(plot.FreqUnits);
@@ -153,7 +153,7 @@ namespace CircuitRF.Render.DataDisplay
             }
             using var paint = new SKPaint
             {
-                Color = RenderTheme.ToSKColor(trace.Properties.LineColor, 1.0), StrokeWidth = lw * 1.2f,
+                Color = theme.ToSKColor(trace.Properties.LineColor, 1.0), StrokeWidth = lw * 1.2f,
                 Style = SKPaintStyle.Stroke, IsAntialias = true, StrokeJoin = SKStrokeJoin.Round,
             };
             canvas.DrawPath(path, paint);

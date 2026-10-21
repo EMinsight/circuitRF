@@ -1204,7 +1204,7 @@ namespace CircuitRF.Render.DataDisplay
                         float tw = RendererText.MeasureTextWithFallback(lbl, xFont, xFallback);
                         float tx = vpCenterX - tw / 2f;
                         float ty = top + rowH * i;
-                        paint.Color = RenderTheme.ToSKColor(xTraces[i].Properties.LineColor);
+                        paint.Color = theme.ToSKColor(xTraces[i].Properties.LineColor);
                         RendererText.DrawLeftTextWithFallback(canvas, lbl, tx, ty, xFont, xFallback, paint);
                         if (i == 0)
                             rects.XLabel = new SKRect(tx, ty - xFont.Size, tx + tw,
@@ -1304,7 +1304,7 @@ namespace CircuitRF.Render.DataDisplay
                         if (leftTraces[i].IsContourTrace) continue;
                         float cx = leftAnchor - sw * (col + 0.5f);
                         DrawAt(LabelFor(leftTraces[i]),
-                               RenderTheme.ToSKColor(leftTraces[i].Properties.LineColor),
+                               theme.ToSKColor(leftTraces[i].Properties.LineColor),
                                cx, false);
                         col++;
                     }
@@ -1326,7 +1326,7 @@ namespace CircuitRF.Render.DataDisplay
                         if (rightTraces[i].IsContourTrace) continue;
                         float cx = rightAnchor + sw * (col2 + 0.5f);
                         DrawAt(LabelFor(rightTraces[i]),
-                               RenderTheme.ToSKColor(rightTraces[i].Properties.LineColor),
+                               theme.ToSKColor(rightTraces[i].Properties.LineColor),
                                cx, true);
                         col2++;
                     }
@@ -1456,7 +1456,7 @@ namespace CircuitRF.Render.DataDisplay
                     string sMax  = (scale * max).ToString("G4");
                     label       = $"freq ({sMin} to {sMax} {plot.FreqUnits.Description()})";
                     paint.Color = multiTrace
-                        ? RenderTheme.ToSKColor(nonContourTraces[i].Properties.LineColor)
+                        ? theme.ToSKColor(nonContourTraces[i].Properties.LineColor)
                         : theme.TextColor;
                 }
 

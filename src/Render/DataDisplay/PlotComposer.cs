@@ -314,7 +314,7 @@ public static class PlotComposer
                             : !string.IsNullOrEmpty(autoLabel) ? autoLabel!
                             : (showFilePrefix ? trace.Description : trace.ShortDescription);
         SKColor textColor   = useCustom ? theme.TextColor
-                            : RenderTheme.ToSKColor(trace.Properties.LineColor);
+                            : theme.ToSKColor(trace.Properties.LineColor);
 
         // Per-glyph DejaVu fallback — this is a TRACE label, so it carries whatever the group and
         // cube names carry, and IBM Plex does not cover all of it (U+25B8 "▸", the group separator,

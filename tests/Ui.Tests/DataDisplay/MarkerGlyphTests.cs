@@ -103,7 +103,7 @@ public sealed class MarkerGlyphTests
             canvas.Clear(SKColors.White);
             using var fill = new SKPaint
             {
-                Color       = RenderTheme.ToSKColor(new TraceProperties().MarkerColor, 1.0),
+                Color       = RenderTheme.Light.ToSKColor(new TraceProperties().MarkerColor, 1.0),
                 Style       = SKPaintStyle.Fill,
                 IsAntialias = true
             };

@@ -426,7 +426,7 @@ namespace CircuitRF.Render.DataDisplay
                     TraceRenderer.Draw(canvas, canvasSize, trace, tf, theme,
                         stemMode: plotIsRect && (trace.IsHarmonicStem || trace.IsMixIndexStem));
                 if (plotIsRect && trace.NormalFit is not null)
-                    StatisticsRenderer.DrawNormalFit(canvas, canvasSize, trace, plot, tf);
+                    StatisticsRenderer.DrawNormalFit(canvas, canvasSize, trace, plot, tf, theme);
                 if (dim) canvas.Restore();
             }
 
