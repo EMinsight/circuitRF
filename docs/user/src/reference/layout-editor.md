@@ -282,6 +282,43 @@ Three things are the layout's own:
   cell** does the reverse — hierarchy you can build after the fact, out of artwork you have already
   drawn. Cycles are detected at edit time, not discovered at render time.
 
+## Bottom-side parts {#bottom-side}
+
+A placed part sits on the top face of the board or the bottom one. To move it, select it and press
+<kbd>B</kbd> — or **Edit ▸ Flip to Other Side**, the **Flip** button beside Mirror on the toolbar, or
+**Flip to Bottom** / **Flip to Top** on the canvas context menu (**Flip** when more than one thing is
+selected). It is one undo step, and flipping again brings the part back exactly.
+
+A flip turns the selection over as one piece, about its centre, the way **Mirror** does — and then
+moves it to the other face:
+
+- A part's **lands, soldermask and paste openings, silkscreen, courtyard and assembly drawing** go to
+  the bottom layers of the same kind. Its cell is not changed: the same footprint serves both faces.
+- **Tracks and other shapes selected with it** on one of those layers go to the other face too, so a
+  part and the copper under it flip together. Inner copper, drills and the board outline stay where
+  they are, and a through via keeps its layers.
+- **Text keeps its reading direction.** A bottom part's designator, and any text it carries, reads left
+  to right from above and is never drawn upside down. It moves with the part and stays on the same side
+  of its body.
+
+**Side** in the Properties panel shows which face a part is on — *mixed* when the selected parts are on
+different faces. Changing it turns each part over **in place**, about its own origin, rather than about
+the centre of the selection.
+
+**Mirror** is still a reflection on the same face: the part stays on its layers. Mirror also keeps
+text readable — a mirrored label moves to where the reflection carries it and still reads left to
+right.
+
+**When the technology has no bottom layer for something.** On a technology with no bottom copper
+there is no bottom face, and Flip is refused. If the technology has, say, a top silkscreen but no
+bottom one, a part still flips: its silkscreen is simply not drawn while it is on the bottom, and the
+Messages panel says so once for that part. Flipping it back restores it. A loose shape selected on such
+a layer is different — it would be lost — so Flip is refused while one is selected, and the message
+names it. A blind or buried via in the selection is refused the same way.
+
+The **Layers** panel controls the bottom layers as it does the top: hiding **Silk Bottom** hides a
+bottom part's designator, and hiding **Bottom Copper** hides its lands.
+
 ## Finding an instance {#find}
 
 On a board with hundreds of parts, **Design ▸ Find Instance…** — <kbd>⌘F</kbd> /

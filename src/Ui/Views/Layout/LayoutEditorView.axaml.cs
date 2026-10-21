@@ -717,7 +717,14 @@ public partial class LayoutEditorView : UserControl
         RotateCwBtn.IsEnabled  = canTransform;
         MirrorHBtn.IsEnabled   = canTransform;
         MirrorVBtn.IsEnabled   = canTransform;
+
+        var flip = (DataContext as LayoutDocument)?.ActiveViewModel.FlipAvailability;
+        FlipBtn.IsEnabled = flip?.CanExecute == true;
+        ToolTip.SetTip(FlipBtn, flip is { CanExecute: false, DisabledReason: { } why } && canTransform
+            ? why : FlipDefaultTip);
     }
+
+    private const string FlipDefaultTip = "Flip to Other Side  (B)";
 
     private void OnPopToTop(object? sender, RoutedEventArgs e)
     {
@@ -1286,6 +1293,9 @@ public partial class LayoutEditorView : UserControl
 
     private void OnMirrorH(object? sender, RoutedEventArgs e)
         => (DataContext as LayoutDocument)?.ActiveViewModel?.MirrorSelection(horizontal: true);
+
+    private void OnFlip(object? sender, RoutedEventArgs e)
+        => (DataContext as LayoutDocument)?.ActiveViewModel?.FlipSelection();
 
     private void OnMirrorV(object? sender, RoutedEventArgs e)
         => (DataContext as LayoutDocument)?.ActiveViewModel?.MirrorSelection(horizontal: false);

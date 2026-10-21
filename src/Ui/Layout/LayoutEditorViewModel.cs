@@ -4077,6 +4077,13 @@ public sealed partial class LayoutEditorViewModel : ObservableObject
                 MirrorSelection(horizontal: !mods.HasFlag(KeyModifiers.Shift));
                 return;
             }
+
+            // B flips the selection to the other face of the board (brief-bsp-2) — F is Fit.
+            if (!ctrlOrMeta && key == Key.B && (mods & KeyModifiers.Alt) == 0)
+            {
+                FlipSelection();
+                return;
+            }
             if (key == Key.Delete || key == Key.Back)
             {
                 // §3 "Delete on a selected vertex" takes priority over whole-selection delete when a

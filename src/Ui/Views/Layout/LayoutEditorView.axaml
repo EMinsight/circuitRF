@@ -282,6 +282,12 @@
                                 ToolTip.Tip="Mirror Vertical  (Shift+M)" Padding="6,3">
                             <mi:MaterialIcon Kind="FlipVertical" Width="16" Height="16"/>
                         </Button>
+                        <!-- brief-bsp-2: the selection to the other face of the board. Enabled and
+                             tool-tipped from FlipAvailability, so a refusal reads before the click. -->
+                        <Button x:Name="FlipBtn" Click="OnFlip" IsEnabled="False"
+                                ToolTip.Tip="Flip to Other Side  (B)" Padding="6,3">
+                            <mi:MaterialIcon Kind="SwapVerticalVariant" Width="16" Height="16"/>
+                        </Button>
                         <Button Classes.ToolActive="{Binding ActiveViewModel.ActiveTool, Converter={StaticResource EnumEqualsBool}, ConverterParameter=Instance}"
                                 Click="OnInstanceTool" ToolTip.Tip="Instance… (place a cell reference)" Padding="6,3">
                             <mi:MaterialIcon Kind="ViewGridPlusOutline" Width="16" Height="16"/>

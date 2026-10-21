@@ -206,7 +206,7 @@ public static class LayoutDesignFlatten
         // function (FootprintLabel.NestedShapesFor).
         if (Footprints.LandPatternLayers.Resolve(rootTech, PCells.PCellLayerSelection.Default, []) is { Silkscreen: { } silk } roles)
             foreach (var inst in rootView.Instances)
-                labels.AddRange(Footprints.FootprintLabel.NestedShapesFor(inst, rootLayoutDir, rootView.DbuPerMicron, roles, silk));
+                labels.AddRange(Footprints.FootprintLabel.NestedShapesFor(inst, rootLayoutDir, rootView.DbuPerMicron, roles, silk, rootTech));
         shapes.AddRange(labels);
         // Untagged on purpose. Silk is not a conductor, so the electrical reading never sees one;
         // tagging it with the placement it names would put a device's path on artwork that carries

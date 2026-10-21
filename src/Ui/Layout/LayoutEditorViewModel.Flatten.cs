@@ -218,7 +218,8 @@ public sealed partial class LayoutEditorViewModel
         var cellView = inst.LabelDx is not null && inst.LabelDy is not null
             ? null
             : CellLayoutResolver.Resolve(inst, InstanceBaseDir, Technology).SourceView;   // measured as stored, as FootprintLabel.ShapesFor does
-        return FootprintLabel.ShapeFor(inst, cellView, roles, Model.DbuPerMicron, silk);
+        return FootprintLabel.ShapeFor(inst, cellView, roles, Model.DbuPerMicron,
+                                       FootprintLabel.SilkFor(inst.Side, silk, Technology));
     }
 
     /// <summary>Appends <see cref="FlattenedDesignatorShape"/> to an already-reconciled shape list.

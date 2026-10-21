@@ -1187,6 +1187,11 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
 
     [ObservableProperty] private bool? _instanceMirrorXValue;
 
+    /// <summary>The face the selected placements are on (brief-bsp-2 R-bsp2-5): 0 Top, 1 Bottom, -1 when a
+    /// multi-selection's sides differ (the combo then reads "mixed"). Changing it flips each placement not
+    /// already there about its OWN origin — <see cref="LayoutEditorViewModel.SetSelectedInstancesSide"/>.</summary>
+    [ObservableProperty] private int _instanceSideIndex = -1;
+
     // ── The reference designator (brief-footprint-4b R-fp4b-6d/-6e) ───────────
 
     /// <summary>The designator this placement draws, through the ONE accessor
@@ -1445,6 +1450,14 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
         RefreshFromVm();
     }
 
+    partial void OnInstanceSideIndexChanged(int oldValue, int newValue)
+    {
+        if (_isRefreshing || newValue < 0 || oldValue == newValue || _vm is null) return;
+        SelectPinned();
+        _vm.SetSelectedInstancesSide(newValue == 1 ? PlacementSide.Bottom : PlacementSide.Top);
+        RefreshFromVm();   // a refusal puts the combo back on the side the parts are actually on
+    }
+
     partial void OnInstanceShowRefDesValueChanged(bool? oldValue, bool? newValue)
     {
         if (_isRefreshing || newValue is null || oldValue == newValue || _vm is null) return;
@@ -1541,6 +1554,8 @@ public sealed partial class LayoutShapePropertiesViewModel : ObservableObject
 
         var indices = InstanceIndices;
         IsSingleInstanceSelected = indices.Count == 1;
+        var sides = indices.Select(i => _vm!.EffectiveInstanceAt(i).Side).Distinct().ToList();
+        InstanceSideIndex = sides.Count == 1 ? (int)sides[0] : -1;
         if (IsSingleInstanceSelected)
         {
             var inst = _vm!.EffectiveInstanceAt(indices[0]);

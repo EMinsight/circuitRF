@@ -49,8 +49,8 @@ public static partial class LayoutRenderer
     ///
     /// <para>Returns an empty list — having resolved nothing and read no cell — whenever there is
     /// nothing to draw: no instance carries a designator, the technology declares no silkscreen role
-    /// (R-fp4b-4c: nothing drawn, nothing RELOCATED to soldermask or the board outline), or that
-    /// layer is switched off. The last of those is deliberately not a separate visibility switch:
+    /// (R-fp4b-4c: nothing drawn, nothing RELOCATED to soldermask or the board outline). A designator
+    /// whose silkscreen — top or bottom, by its placement's side — is switched off is skipped. That is deliberately not a separate visibility switch:
     /// R-fp4b-6d rules out a global toggle, and hiding the silk layer already hides the body outlines
     /// these designators belong to.</para>
     /// </summary>
@@ -65,10 +65,17 @@ public static partial class LayoutRenderer
         var roles = LandPatternLayers.Resolve(tech, PCellLayerSelection.Default, []);
         if (roles.Silkscreen is not { } silk) return none;
 
-        var def = tech?.Layers.FirstOrDefault(l => l.Key.Equals(silk)) ?? FallbackPalette.For(silk);
-        if (!def.Visible) return none;
-        def = LayerCanvasContrast.Drawn(def, opts.Theme.Background);
-        var color = new SKColor(def.Color.R, def.Color.G, def.Color.B);
+        // A bottom placement's designator is on the BOTTOM silkscreen (brief-bsp-2 R-bsp2-7), so the colour and the
+        // visibility are per layer: hiding Silk Bottom hides exactly the bottom parts' designators. Null = not drawn.
+        var colors = new Dictionary<LayerKey, SKColor?>();
+        SKColor? ColorOf(LayerKey layer)
+        {
+            if (colors.TryGetValue(layer, out var known)) return known;
+            var def = tech?.Layers.FirstOrDefault(l => l.Key.Equals(layer)) ?? FallbackPalette.For(layer);
+            if (!def.Visible) return colors[layer] = null;
+            def = LayerCanvasContrast.Drawn(def, opts.Theme.Background);
+            return colors[layer] = new SKColor(def.Color.R, def.Color.G, def.Color.B);
+        }
 
         string baseDir = opts.BaseDir ?? "";
         // One resolve per distinct CellRef per frame, on DrawInstances' own terms and for its own
@@ -99,9 +106,9 @@ public static partial class LayoutRenderer
             // The parts inside a placed module carry designators too — the sub-cell's own text, as pushing in
             // shows it (FootprintLabel.NestedShapesFor). The module's own designator, below, is independent.
             if (cellView is { Instances.Count: > 0 })
-                foreach (var nested in FootprintLabel.NestedShapesFor(inst, baseDir, view.DbuPerMicron, roles, silk))
-                    if (nested.Height * devicePxPerDbu >= DesignatorLegibilityDevicePixels)
-                        list.Add(new DeferredDesignator(-1, nested, color));
+                foreach (var nested in FootprintLabel.NestedShapesFor(inst, baseDir, view.DbuPerMicron, roles, silk, tech))
+                    if (nested.Height * devicePxPerDbu >= DesignatorLegibilityDevicePixels && ColorOf(nested.Layer) is { } nestedColor)
+                        list.Add(new DeferredDesignator(-1, nested, nestedColor));
 
             if (!inst.DesignatorShown || inst.DisplayRefDes is not { Length: > 0 }) continue;
 
@@ -109,9 +116,10 @@ public static partial class LayoutRenderer
             // where the user put it — which is the case where knowing what the part was called matters
             // most. Only the auto position reads the resolved cell.
             if (FootprintLabel.ShapeFor(inst, inst.LabelDx is null || inst.LabelDy is null ? cellView : null,
-                                        roles, view.DbuPerMicron, silk) is not { } label)
+                                        roles, view.DbuPerMicron, FootprintLabel.SilkFor(inst.Side, silk, tech)) is not { } label)
                 continue;
             if (label.Height * devicePxPerDbu < DesignatorLegibilityDevicePixels) continue;
+            if (ColorOf(label.Layer) is not { } color) continue;
 
             list.Add(new DeferredDesignator(entry.Index, label, color));
         }

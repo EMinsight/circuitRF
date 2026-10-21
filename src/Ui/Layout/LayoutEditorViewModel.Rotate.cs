@@ -85,19 +85,25 @@ public partial class LayoutEditorViewModel
     /// Toggling the flag without also fixing the rotation silently mis-places every rotated
     /// instance.</para>
     /// </summary>
-    public void MirrorSelection(bool horizontal = true)
+    public void MirrorSelection(bool horizontal = true) => Reflect(horizontal, "Mirror", flipRoles: null);
+
+    /// <summary>The one reflection Mirror and Flip share (brief-bsp-2 R-bsp2-2): Flip is Mirror's
+    /// horizontal case with the surface swap added, never a second copy of the geometry.</summary>
+    private void Reflect(bool horizontal, string description, SurfaceRoles? flipRoles)
         => ApplyRigidBodyTransform(
             mapAboutOrigin: horizontal ? (x, y) => (-x, y) : (x, y) => (x, -y),
             flipsBulge:     true,                        // a reflection reverses arc handedness
             //  horizontal: Rot(-θ).   vertical: Rot(180-θ), i.e. a half turn on top of the negation.
             instanceRotDeg: horizontal ? d => -d : d => 180.0 - d,
             togglesInstanceMirror: true,
-            // A LabelShape has no mirror flag, so mirrored text is not representable — and reversed
-            // text would be worse than none. The anchor moves with the geometry; the glyphs stay
-            // readable at their existing rotation. Stated rather than silently dropped.
-            labelRotDeg:    d => d,
+            // A LabelShape has no mirror flag, and reversed text would be worse than none (brief-bsp-1
+            // D4): its CENTRE goes where the reflection carries it and its glyphs keep their reading
+            // direction (ReflectLabel). The angle is the reflected direction folded readable, so text
+            // laid along a 30 deg trace still lies along it afterwards.
+            labelRotDeg:    horizontal ? d => 180.0 - d : d => -d,
             portDirection:  r => r,
-            description:    "Mirror");
+            description:    description,
+            flipRoles:      flipRoles);
 
     /// <summary>
     /// The one implementation both rotate and mirror run through: pivot on the selection's combined
@@ -111,7 +117,8 @@ public partial class LayoutEditorViewModel
         bool togglesInstanceMirror,
         Func<double, double> labelRotDeg,
         Func<LayoutRotation, LayoutRotation> portDirection,
-        string description)
+        string description,
+        SurfaceRoles? flipRoles = null)
     {
         var shapeIndices    = RotatableSelectedIndices;
         var instanceIndices = _selectedInstanceIndices.ToList();
@@ -172,7 +179,18 @@ public partial class LayoutEditorViewModel
             }
             else if (clone is LabelShape label)
             {
-                label.RotationDegrees = labelRotDeg(label.RotationDegrees);
+                if (flipsBulge) ReflectLabel((LabelShape)Model.Shapes[i], label, transform, labelRotDeg);
+                else label.RotationDegrees = labelRotDeg(label.RotationDegrees);
+            }
+
+            // A flip (brief-bsp-2 R-bsp2-2) also moves the shape to the other SURFACE, role by role.
+            // FlipSelection has already refused a role with no other side and a blind or buried via,
+            // so every swap here lands; a via keeps its layers, because a through via is symmetric.
+            if (flipRoles is not null && clone is not ViaShape)
+            {
+                clone.Layer = flipRoles.Swap(clone.Layer) ?? clone.Layer;
+                if (clone is LabelShape { PortLayer: { } portLayer } portLabel)
+                    portLabel.PortLayer = flipRoles.Swap(portLayer) ?? portLayer;
             }
 
             removed.Add((i, Model.Shapes[i]));
@@ -189,6 +207,7 @@ public partial class LayoutEditorViewModel
             after.Y   = ny;
             after.RotationDegrees = instanceRotDeg(before.RotationDegrees);
             if (togglesInstanceMirror) after.MirrorX = !before.MirrorX;
+            if (flipRoles is not null) after.Side = Other(before.Side);
             instanceCommands.Add(new Commands.Layout.ReplaceInstanceCommand(Model, i, before, after));
         }
 
@@ -219,6 +238,33 @@ public partial class LayoutEditorViewModel
 
         if (command is not null) Execute(command);
     }
+
+    /// <summary>
+    /// Carries a label through a REFLECTION by its centre (brief-bsp-2 R-bsp2-4, brief-bsp-1 D4): the
+    /// centre goes where the mirror takes it, the angle becomes <paramref name="labelRotDeg"/> folded
+    /// readable, and the anchor is recomputed for the label's own alignment and font — so the text
+    /// sits over the same spot of the mirrored artwork instead of a text-width beside it, and reads
+    /// left to right. Exact for a label whose angle was already readable: mirroring twice gives the
+    /// anchor back, because the centre offset is rounded the same way on the way out and back in.
+    /// </summary>
+    private static void ReflectLabel(LabelShape source, LabelShape target, LayoutCoordinateTransform transform,
+                                     Func<double, double> labelRotDeg)
+    {
+        var (dx, dy) = LayoutTextOutline.CentreOffset(source);
+        var (c, s) = LayoutAngle.CosSin(source.RotationDegrees);
+        long cx = source.X + (long)Math.Round(dx * c - dy * s);
+        long cy = source.Y + (long)Math.Round(dx * s + dy * c);
+        var (wx, wy) = transform.Point(cx, cy);
+
+        double angle = FootprintLabel.ReadableAngle(labelRotDeg(source.RotationDegrees));
+        var (c2, s2) = LayoutAngle.CosSin(angle);
+        target.X = wx - (long)Math.Round(dx * c2 - dy * s2);
+        target.Y = wy - (long)Math.Round(dx * s2 + dy * c2);
+        target.RotationDegrees = angle;
+    }
+
+    private static PlacementSide Other(PlacementSide side)
+        => side == PlacementSide.Top ? PlacementSide.Bottom : PlacementSide.Top;
 
     /// <summary>
     /// Replaces several instances as ONE undoable edit — for a window next door that has worked out

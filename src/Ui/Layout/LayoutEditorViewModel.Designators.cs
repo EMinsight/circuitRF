@@ -77,7 +77,9 @@ public sealed partial class LayoutEditorViewModel
         if (inst.LabelDx is null || inst.LabelDy is null)
             cellView = CellLayoutResolver.Resolve(inst, InstanceBaseDir, Technology).SourceView;   // measured as stored, as FootprintLabel.ShapesFor does
 
-        return FootprintLabel.ShapeFor(inst, cellView, roles, Model.DbuPerMicron, silk);
+        // On the silkscreen of the part's own face (brief-bsp-2 R-bsp2-7) — the layer the renderer draws it on.
+        return FootprintLabel.ShapeFor(inst, cellView, roles, Model.DbuPerMicron,
+                                       FootprintLabel.SilkFor(inst.Side, silk, Technology));
     }
 
     /// <summary>The world box of instance <paramref name="index"/>'s designator — what a click has to

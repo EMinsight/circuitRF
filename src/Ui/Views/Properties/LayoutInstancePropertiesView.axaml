@@ -24,6 +24,22 @@
                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                    FontSize="11" TextWrapping="Wrap"/>
 
+        <!-- brief-bsp-2 R-bsp2-5: the face of the board. Outside the single-instance panel because
+             it is the one row that edits a whole selection — each part not already on the chosen
+             side turns over about its own origin. Static items, so the selection never lands
+             before its items exist; -1 reads "mixed". -->
+        <Grid ColumnDefinitions="56,*" ColumnSpacing="4">
+            <TextBlock Grid.Column="0" Text="Side" VerticalAlignment="Center" FontSize="11"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"/>
+            <ComboBox Grid.Column="1" HorizontalAlignment="Stretch" FontSize="11" Padding="4,2"
+                      PlaceholderText="mixed"
+                      SelectedIndex="{Binding InstanceSideIndex, Mode=TwoWay}"
+                      ToolTip.Tip="The face of the board the part is on. Changing it turns the part over in place: its pads, mask, paste, silkscreen and courtyard move to the other face, and its text still reads left to right.">
+                <ComboBoxItem Content="Top"/>
+                <ComboBoxItem Content="Bottom"/>
+            </ComboBox>
+        </Grid>
+
         <StackPanel IsVisible="{Binding IsSingleInstanceSelected}" Spacing="4">
             <!-- R-L5f-7: a PCell instance's generated cell is an implementation detail —
                  no Cell reference field, no Re-target… button. Both stay for an ordinary

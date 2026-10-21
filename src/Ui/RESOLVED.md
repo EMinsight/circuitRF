@@ -40148,3 +40148,37 @@ provider for this kind. **Any kind whose placed symbol depends on a parameter ne
 palette glyph is the family picture, not what lands. The Inspector's `Symbol` row became a picker over
 `ModelSymbols.Candidates` (the Export step's list) via `SetRuntimeChoices(…, blankLabel)`, whose blank entry commits
 an empty value — `CommitExpression` otherwise refuses an empty expression.
+
+
+## BSP-2: Flip in the layout editor (2026-10-21)
+
+- **Flip is Mirror's horizontal case plus the surface swap, through one path.** `MirrorSelection` and `FlipSelection`
+  both call `Reflect`, which feeds `ApplyRigidBodyTransform`; Flip passes `SurfaceRoles` so loose shapes swap layer
+  (a port label's `PortLayer` too) and instances toggle `Side`. A via keeps its layers. Refused before anything
+  moves (`FlipRefusal`): no technology or no bottom copper; a selected loose shape on a role with no twin (it would be
+  lost); a selected via whose span resolves and is not through — mapping a blind/buried span to the mirrored
+  conductor pair was left out. A placed part's missing role is not a refusal: `ReportFlipOmissions` posts one Info
+  line per placement and role, and a shown designator counts as silkscreen.
+- **Mirror on text was wrong in two ways, both fixed by carrying the CENTRE.** It moved a label's anchor — the left
+  end for an unaligned label — so the text landed a text-width away from where the reflection put it, and it kept the
+  angle, so text laid along a 30° trace crossed the trace afterwards. `ReflectLabel` carries the centre
+  (`LayoutTextOutline.CentreOffset`), takes the reflected direction folded readable, and recomputes the anchor for the
+  label's own alignment, which it keeps. Exact under a double mirror for a label whose angle was already readable.
+- **The designator's angle on a mirrored placement disagreed with its part.** `FootprintLabel.PlacementFor` used
+  `-rot` when mirrored; with `MirrorX` negating local X before rotation, the part's own axis runs along `rot + 180`,
+  i.e. `rot` once folded — `TransformLabel`'s rule for a label at zero degrees. Cardinal angles hid it; a part flipped
+  at 30° drew its designator across its body. `PlacementFor` and `Nested` now use the same rule.
+- **Designators are on the silkscreen of their own face** (`FootprintLabel.SilkFor`, the part's own swap). Nested
+  parts compose sides down the module (`side == child.Side ? Top : Bottom`). The renderer's designator pass resolves
+  colour and visibility PER LAYER: it used to bail out entirely when the top silk was hidden, which would have hidden
+  bottom designators with Silk Top and shown them with Silk Bottom off.
+- **PCell handles on a flipped part need nothing**: the drag goes through `InverseTransformPoint`, which includes
+  `MirrorX`, and `Side` only changes layers — a flipped PCell drags exactly as a mirrored one always has.
+- **The Edit menu had no layout Rotate/Mirror to sit beside**, so Flip went there on its own (a workspace command,
+  like Draw Ground Pour). The NativeMenu item carries no `Gesture`: a bare `B` as a macOS key equivalent would take
+  the letter from every text field. The in-window `InputGesture="B"` only displays it. The key itself is the canvas's
+  (`B`, the overview's proposal for O2 — `F` is Fit).
+- The Properties **Side** combo sits outside the single-instance panel because it is the one instance row that
+  edits a multi-selection; each part not already on the chosen side is flipped about its own origin
+  (`SetSelectedInstancesSide`, one `ReplaceInstancesCommand`).
+- Tests comparing two SVG renders must normalise `cl_<n>`: Skia's SVG device numbers clip paths per process.

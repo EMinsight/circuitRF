@@ -384,6 +384,11 @@ public partial class WorkspaceViewModel
     [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
     private void DrawGroundPour() => ActiveLayoutDocument?.ActiveViewModel.DrawGroundPour();
 
+    /// <summary>Edit ▸ Flip to Other Side (brief-bsp-2): the active layout's selection to the other face of the board —
+    /// <see cref="LayoutEditorViewModel.FlipSelection"/>, which says why when it refuses.</summary>
+    [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]
+    private void FlipLayoutSelection() => ActiveLayoutDocument?.ActiveViewModel.FlipSelection();
+
     /// <summary>View ▸ Show Ratsnest (R-dfr22-3-5): the active layout's guide lines between pins that share a net and
     /// are not yet joined by copper, on or off. An overlay — nothing is drawn into the layout.</summary>
     [RelayCommand(CanExecute = nameof(IsLayoutDocumentActive))]

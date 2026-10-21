@@ -1610,6 +1610,12 @@ public sealed class LayoutCanvas : Control
         AddAvailItem("Rotate 90° CCW", rotAvail).Click += (_, _) => { _viewModel.RotateSelection(clockwise: false); InvalidateVisual(); };
         AddAvailItem("Rotate 90° CW", rotAvail).Click  += (_, _) => { _viewModel.RotateSelection(clockwise: true);  InvalidateVisual(); };
 
+        // brief-bsp-2 R-bsp2-1: the part to the other face — "Flip to Bottom"/"Flip to Top" for one part,
+        // "Flip" for anything else. Disabled with the refusal as its tooltip, as everything here is.
+        var flipItem = AddAvailItem(_viewModel.FlipHeader, _viewModel.FlipAvailability);
+        flipItem.InputGesture = new KeyGesture(Key.B);
+        flipItem.Click += (_, _) => { _viewModel.FlipSelection(); InvalidateVisual(); };
+
         // Duplicate sits directly below Rotate (owner, 2026-08-27) — until now it was reachable only
         // from Ctrl+D, i.e. from nowhere a user could SEE, which is the same complaint Rotate itself
         // answered above. Both surfaces run the same ShowDuplicateDialogAsync, so the offset prompt

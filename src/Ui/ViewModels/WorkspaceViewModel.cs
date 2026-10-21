@@ -16491,6 +16491,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
         CreateSchematicFromArtworkCommand.NotifyCanExecuteChanged();
         DrawGroundPourCommand.NotifyCanExecuteChanged();
+        FlipLayoutSelectionCommand.NotifyCanExecuteChanged();
         ToggleRatsnestCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsRatsnestShown));
         // Edit ▸ Paste Image as Schematic / Layout paste into the document in focus.
@@ -16796,6 +16797,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         UpdateSchematicFromLayoutCommand.NotifyCanExecuteChanged();
         CreateSchematicFromArtworkCommand.NotifyCanExecuteChanged();
         DrawGroundPourCommand.NotifyCanExecuteChanged();
+        FlipLayoutSelectionCommand.NotifyCanExecuteChanged();
         ToggleRatsnestCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsRatsnestShown));
         // Edit ▸ Paste Image as Schematic / Layout paste into the document in focus.

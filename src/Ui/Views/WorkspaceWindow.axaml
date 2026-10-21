@@ -188,6 +188,9 @@
                         <NativeMenuItem Header="Cut"        Command="{Binding CutCommand}"/>
                         <NativeMenuItem Header="Copy"       Command="{Binding CopyCommand}"/>
                         <NativeMenuItem Header="Paste"      Command="{Binding PasteCommand}"/>
+                        <NativeMenuItemSeparator/>
+                        <!-- brief-bsp-2. No Gesture: a bare B as a menu key equivalent would take the letter from every text field. -->
+                        <NativeMenuItem Header="Flip to Other Side" Command="{Binding FlipLayoutSelectionCommand}" ToolTip="B. The selected parts, and the shapes with them, to the other face of the board. Requires an active layout document."/>
                         <!-- Paste Image as Schematic / Layout are hidden until the image reader improves; the commands
                              (PasteImageAsSchematicCommand / PasteImageAsLayoutCommand) are kept. Uncomment to restore.
                         <NativeMenuItem Header="Paste Image as Schematic" Command="{Binding PasteImageAsSchematicCommand}" ToolTip="Read the picture on the clipboard as a schematic and paste it, selected, into the schematic in focus, with the picture under it. Enabled when a schematic is in focus and the clipboard holds a picture. Design > Create > Schematic from Image has the options."/>
@@ -1139,6 +1142,14 @@
                           Command="{Binding PasteCommand}"
                           InputGesture="Ctrl+V">
                     <MenuItem.Icon><mi:MaterialIcon Kind="ContentPaste" Width="16" Height="16"/></MenuItem.Icon>
+                </MenuItem>
+                <Separator/>
+                <!-- brief-bsp-2. InputGesture only DISPLAYS the key; B itself is the layout canvas's. Mirrored in the NativeMenu above. -->
+                <MenuItem Header="_Flip to Other Side"
+                          Command="{Binding FlipLayoutSelectionCommand}"
+                          InputGesture="B"
+                          ToolTip.Tip="The selected parts, and the shapes with them, to the other face of the board. Requires an active layout document.">
+                    <MenuItem.Icon><mi:MaterialIcon Kind="SwapVerticalVariant" Width="16" Height="16"/></MenuItem.Icon>
                 </MenuItem>
                 <!-- Paste Image as Schematic / Layout are hidden until the image reader improves; the commands
                      (PasteImageAsSchematicCommand / PasteImageAsLayoutCommand) are kept. Uncomment to restore.

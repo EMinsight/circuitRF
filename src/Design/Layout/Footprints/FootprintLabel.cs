@@ -147,8 +147,10 @@ public static class FootprintLabel
     ///
     /// <para><b>A mirrored placement draws its designator UN-MIRRORED, at the mirrored anchor</b>
     /// (R-fp4b-3b). No tool draws mirror-reversed designator text, because the string is there to be
-    /// read. Nothing here knows about board SIDE — circuitRF has no such notion (R-fp4b-3c) — and
-    /// this is the right answer on either one.</para>
+    /// read — on either face of the board (brief-bsp-1 D4). The angle follows the part's own axis,
+    /// folded readable: under a mirror that axis runs along the placement angle reversed, which reads
+    /// the same once folded (<see cref="LayoutInstanceTransform.TransformLabel"/>'s rule for a label at
+    /// zero degrees). WHICH silkscreen it is drawn on is the caller's, through <see cref="SilkFor"/>.</para>
     /// </summary>
     public static Placement? PlacementFor(
         LayoutInstance inst, LayoutView? cellView, LandPatternRoles? roles, int parentDbuPerMicron)
@@ -186,7 +188,7 @@ public static class FootprintLabel
             }
         }
 
-        double angle = inst.LabelRotDeg ?? (inst.MirrorX ? -inst.RotationDegrees : inst.RotationDegrees);
+        double angle = inst.LabelRotDeg ?? inst.RotationDegrees;
         return new Placement(text, x, y, ReadableAngle(angle), height);
     }
 
@@ -194,6 +196,20 @@ public static class FootprintLabel
     {
         X = inst.X, Y = inst.Y, RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = 1.0,
     };
+
+    /// <summary>
+    /// The silkscreen a placement on <paramref name="side"/> draws its designator on (brief-bsp-2 R-bsp2-7):
+    /// <paramref name="topSilk"/> on the top, that role's BOTTOM layer on the bottom — through
+    /// <see cref="SurfaceRoles.Swap"/>, the swap the part's own artwork takes. Null when the technology has
+    /// no bottom silkscreen: the designator is omitted with the rest of the part's silk, never relocated.
+    /// With no technology a bottom placement keeps <paramref name="topSilk"/>, as its artwork does
+    /// (brief-bsp-1 R-bsp1-7).
+    /// </summary>
+    public static LayerKey? SilkFor(PlacementSide side, LayerKey? topSilk, Technology? technology)
+    {
+        if (side == PlacementSide.Top || topSilk is not { } silk || technology is null) return topSilk;
+        return SurfaceRoles.For(technology).Swap(silk);
+    }
 
     /// <summary>
     /// The designator of one placement as ARTWORK — a <see cref="LabelShape"/> on
@@ -343,7 +359,8 @@ public static class FootprintLabel
             if (!inst.DesignatorShown || inst.DisplayRefDes is not { Length: > 0 }) continue;
             // A stored offset needs no resolution at all; only the auto position reads the cell.
             var cellView = inst.LabelDx is not null && inst.LabelDy is not null ? null : resolveCell(inst);
-            if (ShapeFor(inst, cellView, roles, view.DbuPerMicron, silk) is { } s) shapes.Add(s);
+            if (ShapeFor(inst, cellView, roles, view.DbuPerMicron, SilkFor(inst.Side, silk, technology)) is { } s)
+                shapes.Add(s);
         }
         return shapes;
     }
@@ -365,17 +382,26 @@ public static class FootprintLabel
     /// therefore draws each of its designators twice; unique board numbering is a future feature, and
     /// <see cref="DuplicateReports"/> still reports only a view's own placements.</para>
     /// </summary>
+    ///
+    /// <para><b>Each is drawn on the silkscreen of the face its part ends up on</b> (brief-bsp-2 R-bsp2-7): a part's
+    /// side composes with its module's down the hierarchy (brief-bsp-1 D5), so a bottom part inside a bottom module
+    /// is on the top. <paramref name="technology"/> finds the bottom layer; a part whose face has no silkscreen
+    /// draws no designator.</para>
     public static IReadOnlyList<LabelShape> NestedShapesFor(
-        LayoutInstance inst, string parentLayoutDir, int parentDbuPerMicron, LandPatternRoles roles, LayerKey silk)
+        LayoutInstance inst, string parentLayoutDir, int parentDbuPerMicron, LandPatternRoles roles, LayerKey silk,
+        Technology? technology)
     {
         var found = new List<LabelShape>();
-        Nested(inst, parentLayoutDir, parentDbuPerMicron, roles, silk, found,
+        Nested(inst, inst.Side, parentLayoutDir, parentDbuPerMicron, roles, silk, technology, found,
                new HashSet<string>(StringComparer.OrdinalIgnoreCase), depth: 1);
         return found;
     }
 
-    private static void Nested(LayoutInstance inst, string parentLayoutDir, int parentDbu, LandPatternRoles roles,
-                               LayerKey silk, List<LabelShape> into, HashSet<string> visiting, int depth)
+    /// <param name="side">The face <paramref name="inst"/> is on in the ROOT's frame — its own side composed with
+    /// every module above it.</param>
+    private static void Nested(LayoutInstance inst, PlacementSide side, string parentLayoutDir, int parentDbu,
+                               LandPatternRoles roles, LayerKey silk, Technology? technology, List<LabelShape> into,
+                               HashSet<string> visiting, int depth)
     {
         if (depth > CellHierarchy.MaxDepth) return;
         // The cell as stored: the designators are read from its placements, and no layer of it is drawn
@@ -389,13 +415,16 @@ public static class FootprintLabel
             var local = new List<LabelShape>();
             foreach (var child in cell.Instances)
             {
+                // The XOR ComposeInstances applies to MirrorX (brief-bsp-1 R-bsp1-2).
+                var childSide = side == child.Side ? PlacementSide.Top : PlacementSide.Bottom;
                 if (child.DesignatorShown && child.DisplayRefDes is { Length: > 0 })
                 {
                     var childCell = child.LabelDx is not null && child.LabelDy is not null
                         ? null : CellLayoutResolver.Resolve(child, cellLayoutDir, tech: null).SourceView;
-                    if (ShapeFor(child, childCell, roles, cell.DbuPerMicron, silk) is { } own) local.Add(own);
+                    if (ShapeFor(child, childCell, roles, cell.DbuPerMicron, SilkFor(childSide, silk, technology)) is { } own)
+                        local.Add(own);
                 }
-                Nested(child, cellLayoutDir, cell.DbuPerMicron, roles, silk, local, visiting, depth + 1);
+                Nested(child, childSide, cellLayoutDir, cell.DbuPerMicron, roles, silk, technology, local, visiting, depth + 1);
             }
             if (local.Count == 0) return;
 
@@ -409,8 +438,10 @@ public static class FootprintLabel
                     foreach (var l in local)
                     {
                         var (x, y) = LayoutInstanceTransform.TransformPoint(l.X, l.Y, inst, r, c);
-                        // The same angle rule PlacementFor applies to a placement's own designator, so the two agree.
-                        double a = l.RotationDegrees + inst.RotationDegrees;
+                        // TransformLabel's angle rule, which PlacementFor's agrees with for a label at zero degrees.
+                        double a = inst.MirrorX
+                            ? inst.RotationDegrees + 180.0 - l.RotationDegrees
+                            : inst.RotationDegrees + l.RotationDegrees;
                         into.Add(new LabelShape
                         {
                             Layer = l.Layer, Text = l.Text, HAlign = l.HAlign, VAlign = l.VAlign,
@@ -418,7 +449,7 @@ public static class FootprintLabel
                             X = ox + (long)Math.Round((x - ox) * k), Y = oy + (long)Math.Round((y - oy) * k),
                             Height = (long)Math.Round(l.Height * Math.Abs(inst.Mag) * k),
                             StrokeWidth = l.StrokeWidth is { } pen ? (long)Math.Round(pen * Math.Abs(inst.Mag) * k) : null,
-                            RotationDegrees = ReadableAngle(inst.MirrorX ? -a : a),
+                            RotationDegrees = ReadableAngle(a),
                         });
                     }
                 }
