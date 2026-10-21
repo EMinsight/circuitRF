@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using CircuitRF.Design.Smith;
 using CommunityToolkit.Mvvm.Input;
 
@@ -45,9 +47,7 @@ public sealed partial class SmithChartViewModel
             Edit(value ? "Snap to preferred values" : "Allow continuous values", () =>
             {
                 _design.SnapToPreferredValues = value;
-                if (value)
-                    moved = SmithPreferredValues.SnapDesign(
-                        _design, SmithPreferredValueStore.Capacitors, SmithPreferredValueStore.Inductors);
+                if (value) moved = SnapDesign();
             });
 
             OnPropertyChanged();
@@ -74,12 +74,11 @@ public sealed partial class SmithChartViewModel
     /// </remarks>
     public void ReapplyPreferredValues()
     {
-        if (!_design.SnapToPreferredValues) return;
+        // An E series does not read the edited list, so there is nothing to re-snap.
+        if (!_design.SnapToPreferredValues || _design.DiscreteSeries != SmithDiscreteSeries.Preferred) return;
 
         int moved = 0;
-        Edit("Apply the edited preferred values", () =>
-            moved = SmithPreferredValues.SnapDesign(
-                _design, SmithPreferredValueStore.Capacitors, SmithPreferredValueStore.Inductors));
+        Edit("Apply the edited preferred values", () => moved = SnapDesign());
 
         if (moved > 0) StripNotice = SnapNotice(moved);
     }
@@ -89,12 +88,78 @@ public sealed partial class SmithChartViewModel
     /// ladder at all. The identity otherwise.
     /// </summary>
     internal double SnapIfEnabled(SmithParameter p, double value)
-        => _design.SnapToPreferredValues
-            ? SmithPreferredValues.Snap(value, SmithPreferredValueStore.LadderFor(p))
-            : value;
+    {
+        if (!_design.SnapToPreferredValues) return value;
+        var (caps, inds) = Ladders();
+        return SmithPreferredValues.Snap(value, SmithPreferredValues.LadderFor(p, caps, inds));
+    }
 
-    private static string SnapNotice(int moved)
-        => moved == 1
-            ? "One value moved onto the preferred-value list."
-            : $"{moved} values moved onto the preferred-value list.";
+    /// <summary>
+    /// Which ladder the toggle snaps onto — the preferences ladder or an E series, the choice the Tune
+    /// and Optimize panels' <i>Standard values</i> menu offers a tune line. <b>Choosing one turns the
+    /// toggle on</b> and snaps the design onto it, as one undo entry: picking a series is asking for
+    /// discrete values on it.
+    /// </summary>
+    public SmithDiscreteSeries DiscreteSeries => _design.DiscreteSeries;
+
+    public bool IsSeriesPreferred => _design.DiscreteSeries == SmithDiscreteSeries.Preferred;
+    public bool IsSeriesE6        => _design.DiscreteSeries == SmithDiscreteSeries.E6;
+    public bool IsSeriesE12       => _design.DiscreteSeries == SmithDiscreteSeries.E12;
+    public bool IsSeriesE24       => _design.DiscreteSeries == SmithDiscreteSeries.E24;
+    public bool IsSeriesE48       => _design.DiscreteSeries == SmithDiscreteSeries.E48;
+    public bool IsSeriesE96       => _design.DiscreteSeries == SmithDiscreteSeries.E96;
+
+    /// <summary>What the discrete-values button's tooltip names as the ladder in force.</summary>
+    public string DiscreteSeriesLabel
+        => IsSeriesPreferred ? "preferences ladder" : _design.DiscreteSeries.ToString();
+
+    /// <summary>Picks the ladder — see <see cref="DiscreteSeries"/>. The token is the enum member's name.</summary>
+    [RelayCommand]
+    private void SetDiscreteSeries(string token)
+    {
+        if (!Enum.TryParse<SmithDiscreteSeries>(token, ignoreCase: true, out var series)) return;
+        if (series == _design.DiscreteSeries && _design.SnapToPreferredValues) return;
+
+        string label = series == SmithDiscreteSeries.Preferred ? "preferred" : series.ToString();
+        int moved = 0;
+        Edit($"Snap to {label} values", () =>
+        {
+            _design.DiscreteSeries        = series;
+            _design.SnapToPreferredValues = true;
+            moved = SnapDesign();
+        });
+
+        OnPropertyChanged(nameof(SnapToPreferredValues));
+        NotifyDiscreteSeries();
+        if (moved > 0) StripNotice = SnapNotice(moved);
+    }
+
+    private void NotifyDiscreteSeries()
+    {
+        OnPropertyChanged(nameof(DiscreteSeries));
+        OnPropertyChanged(nameof(DiscreteSeriesLabel));
+        OnPropertyChanged(nameof(IsSeriesPreferred));
+        OnPropertyChanged(nameof(IsSeriesE6));
+        OnPropertyChanged(nameof(IsSeriesE12));
+        OnPropertyChanged(nameof(IsSeriesE24));
+        OnPropertyChanged(nameof(IsSeriesE48));
+        OnPropertyChanged(nameof(IsSeriesE96));
+    }
+
+    /// <summary>The capacitance and inductance ladders the document's series names.</summary>
+    private (IReadOnlyList<double> Caps, IReadOnlyList<double> Inds) Ladders()
+        => SmithPreferredValues.SeriesLadders(_design.DiscreteSeries)
+           ?? (SmithPreferredValueStore.Capacitors, SmithPreferredValueStore.Inductors);
+
+    private int SnapDesign()
+    {
+        var (caps, inds) = Ladders();
+        return SmithPreferredValues.SnapDesign(_design, caps, inds);
+    }
+
+    private string SnapNotice(int moved)
+    {
+        string onto = IsSeriesPreferred ? "the preferred-value list" : $"the {_design.DiscreteSeries} series";
+        return moved == 1 ? $"One value moved onto {onto}." : $"{moved} values moved onto {onto}.";
+    }
 }

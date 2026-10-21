@@ -213,6 +213,14 @@ entry** &mdash; the flag and the values it moved come back together &mdash; and 
 values moved. Turning it off moves nothing: the list values *are* the design now, and the way back is
 undo.
 
+**The arrow beside the staircase button chooses the list** (a right-click on the staircase opens the
+same menu): your *Preferences ladder* (below), or one of
+the IEC&nbsp;60063 series **E6**, **E12**, **E24**, **E48** or **E96** &mdash; the same choices as
+*Standard values* on a Tune or Optimize row. An E series runs over the same span as the shipped ladder,
+0.1&nbsp;pF to 100&nbsp;nF and 0.1&nbsp;nH to 100&nbsp;&micro;H. Choosing one switches discrete values on
+and snaps the design onto it, as one undo entry. The series is saved with the design; the preferences
+ladder is yours, not the design's.
+
 **Inductance and capacitance only.** A resistance in this vocabulary is as often a parasitic as a part
 &mdash; the **R** of an SRLC, an SRL or a PRC is an ESR or a leakage term, something you measure rather
 than order &mdash; so putting it on a preferred-value ladder would state something untrue about the
@@ -230,7 +238,8 @@ that end.</p>
 
 #### Editing the list {#preferred-values}
 
-**Right-click the staircase button** and choose *Preferred values…*, whether the toggle is on or off.
+Click the **arrow beside the staircase button** and choose *Edit preferences ladder…*, whether the toggle
+is on or off. A design snapped to an E series is not moved by an edit here.
 
 What ships is **E12**, the IEC&nbsp;60063 preferred numbers &mdash; twelve values per decade, 1.0, 1.2,
 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2 &mdash; running 0.1&nbsp;pF to 100&nbsp;nF for

@@ -1148,10 +1148,10 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 aliasFor,
                 alwaysShowSource,
                 // The overlay is captured like every other field on the draw op — a SNAPSHOT of what
-                // this frame needs. It is the object itself rather than a bound delegate because the
-                // theme it draws with is the draw op's own, and building the delegate there keeps the
-                // two from ever disagreeing.
-                Overlay));
+                // this frame needs, taken HERE alongside the trace snapshot above, so the chrome and
+                // the curves beneath it come from the same pointer position (IPlotOverlay.CaptureFrame).
+                // The theme stays an argument, so it is the draw op's own.
+                Overlay?.CaptureFrame()));
         }
 
         // ============================================================
@@ -1171,7 +1171,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
             private readonly VswrReadout?      _vswrReadout;
             private readonly Func<Trace, string?>? _aliasFor;
             private readonly bool _alwaysShowSource;
-            private readonly IPlotOverlay? _overlay;
+            private readonly Action<SKCanvas, TransformSet, RenderTheme>? _overlay;
 
             public PlotDrawOperation(
                 Rect             bounds,
@@ -1185,7 +1185,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                 VswrReadout?     vswrReadout     = null,
                 Func<Trace, string?>? aliasFor   = null,
                 bool alwaysShowSource = false,
-                IPlotOverlay? overlay = null)
+                Action<SKCanvas, TransformSet, RenderTheme>? overlay = null)
             {
                 _bounds          = bounds;
                 _plot            = plot;
@@ -1238,7 +1238,7 @@ namespace CircuitRF.Ui.DataDisplay.Controls
                     // R-smith5-6: the canvas and the transform are ARGUMENTS of this frame, never
                     // remembered — ContourRenderer once drew every contour on every Smith plot to
                     // the first target it had been handed.
-                    overlay: _overlay is { } ov ? (c, tf) => ov.Draw(c, tf, _theme) : null);
+                    overlay: _overlay is { } ov ? (c, tf) => ov(c, tf, _theme) : null);
                 canvas.Restore();
             }
 

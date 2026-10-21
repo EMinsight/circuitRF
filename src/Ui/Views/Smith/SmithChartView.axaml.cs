@@ -61,6 +61,14 @@ public partial class SmithChartView : UserControl
         LayoutUpdated += (_, _) => SyncPlotContainer();
 
         WireNetworkInlineEditor();
+
+        // A right-click on the staircase opens the chevron's own menu — one menu, two ways in, so
+        // the right-click users already learned keeps working.
+        DiscreteValuesButton.ContextRequested += (_, e) =>
+        {
+            DiscreteSeriesButton.Flyout?.ShowAt(DiscreteSeriesButton);
+            e.Handled = true;
+        };
     }
 
     private void OnDataContextChanged(object? sender, EventArgs e)
@@ -174,9 +182,8 @@ public partial class SmithChartView : UserControl
     /// which clears the selections and says nothing about the tool. So the box stayed armed, the
     /// crosshair stayed on, and the next left-drag on the strip zoomed instead of selecting.
     ///
-    /// <para><b>Before <c>base.OnKeyDown</c>, deliberately.</b> <c>InputElement.OnKeyDown</c> is what
-    /// runs this control's <c>KeyBindings</c>, so anything that must pre-empt the Escape binding has
-    /// to be said above that call. Marking it handled is the other half: disarming the tool AND
+    /// <para><b>Ahead of the document's own Escape, deliberately</b> (Clear Selection, just below).
+    /// Marking it handled is the other half: disarming the tool AND
     /// dropping both selections on one press would make Escape do two things at once, and the tool
     /// is the more recent gesture — the strip's own Escape already reads it that way.</para>
     ///
@@ -190,6 +197,17 @@ public partial class SmithChartView : UserControl
             NetworkCanvas.DisarmZoomBox();
             e.Handled = true;
             return;
+        }
+
+        // THE DOCUMENT-WIDE KEYS (see the comment where the KeyBindings used to be, in the .axaml).
+        // On the bubble, so whatever has the focus answers first, and never while the focus is in a
+        // text box: Backspace at the start of a cell's text is a key the box does not mark handled,
+        // and here it would have deleted the selected element.
+        if (!e.Handled && e.KeyModifiers == KeyModifiers.None && e.Source is not TextBox
+         && _doc?.ViewModel is { } vm)
+        {
+            if (e.Key is Key.Delete or Key.Back) { vm.DeleteSelectionCommand.Execute(null); e.Handled = true; return; }
+            if (e.Key == Key.Escape)             { vm.ClearSelectionCommand.Execute(null);  e.Handled = true; return; }
         }
 
         base.OnKeyDown(e);

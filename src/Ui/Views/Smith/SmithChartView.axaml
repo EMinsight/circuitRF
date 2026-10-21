@@ -250,16 +250,12 @@
 
          ESCAPE drops both selections, the marker's and the network strip's element.
 
-         On the ROOT, so they work wherever the focus is inside the document — and the two surfaces
-         that want either key for themselves still take it before it gets here: the network canvas
-         handles Delete as "delete the selected element" while it has the keyboard, and PlotControl
-         consumes Escape while an overlay drag is in flight (R-smith5-8). A KeyBinding only ever sees
-         the keys neither of them marked handled. -->
-    <UserControl.KeyBindings>
-        <KeyBinding Gesture="Delete" Command="{Binding ViewModel.DeleteSelectionCommand}"/>
-        <KeyBinding Gesture="Back"   Command="{Binding ViewModel.DeleteSelectionCommand}"/>
-        <KeyBinding Gesture="Escape" Command="{Binding ViewModel.ClearSelectionCommand}"/>
-    </UserControl.KeyBindings>
+         Handled in SmithChartView.OnKeyDown, NOT as KeyBindings (owner report, 2026-10-21): a
+         KeyBinding runs BEFORE the key is routed to the focused control, so these three took
+         Backspace, Delete and Escape away from every text box in the document — Escape stopped
+         cancelling a generator cell, and Backspace in a cell deleted the selected element. On the
+         bubble, the network canvas, PlotControl's overlay drag (R-smith5-8) and the text boxes all
+         see the key first. -->
 
     <!-- The two splits are the document's own View block, applied and written back in CODE rather
          than bound: a RowDefinition is not in the logical tree, inherits no DataContext, and a
@@ -859,20 +855,50 @@
                              how a toolbar stops being readable. A staircase is a quantized ramp,
                              which is exactly what a value ladder is.
 
-                             RIGHT-CLICK EDITS THE LIST, the slider rows' own "right-click ▸ Set
-                             range…" idiom one control along, so the list is reachable whether the
+                             THE CHEVRON BESIDE IT chooses the ladder — the preferences list or an
+                             E series, the Tune and Optimize panels' own "Standard values" submenu,
+                             and choosing one turns the toggle on — and edits the list, whether the
                              toggle is on or off. -->
-                        <Button Name="DiscreteValuesButton" Classes="SelectionBtn" Padding="6,3"
-                                Classes.ToolActive="{Binding ViewModel.SnapToPreferredValues}"
-                                Command="{Binding ViewModel.ToggleSnapToPreferredValuesCommand}"
-                                ToolTip.Tip="Discrete values — restricts every inductance and capacitance to a list of buyable values, and snaps the ones already here. Resistance, Z₀ and electrical length are left continuous. Right-click to edit the list.">
-                            <mi:MaterialIcon Kind="Stairs" Width="16" Height="16"/>
-                            <Button.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="Preferred values…" Click="OnEditPreferredValues"/>
-                                </ContextMenu>
-                            </Button.ContextMenu>
-                        </Button>
+                        <StackPanel Orientation="Horizontal" Spacing="0">
+                            <Button Name="DiscreteValuesButton" Classes="SelectionBtn" Padding="6,3"
+                                    Classes.ToolActive="{Binding ViewModel.SnapToPreferredValues}"
+                                    Command="{Binding ViewModel.ToggleSnapToPreferredValuesCommand}"
+                                    ToolTip.Tip="Discrete values — restricts every inductance and capacitance to a list of buyable values, and snaps the ones already here. Resistance, Z₀ and electrical length are left continuous. The arrow beside it chooses the preferences ladder or an E series.">
+                                <mi:MaterialIcon Kind="Stairs" Width="16" Height="16"/>
+                            </Button>
+                            <!-- THE LADDER'S PULL-DOWN, a chevron beside the toggle — the 3D editor's
+                                 Look button beside its realistic-view toggle. A right-click menu alone
+                                 was a choice nobody would find (owner report, 2026-10-21); a right-click
+                                 on the staircase still opens this same flyout (code-behind). -->
+                            <Button Name="DiscreteSeriesButton" Classes="SelectionBtn" Padding="1,3" VerticalAlignment="Stretch"
+                                    ToolTip.Tip="Choose the discrete values: the preferences ladder or an E series (E6 … E96), or edit the preferences ladder.">
+                                <mi:MaterialIcon Kind="ChevronDown" Width="12" Height="12"/>
+                                <Button.Flyout>
+                                    <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                                        <MenuItem Header="Preferences ladder" Command="{Binding ViewModel.SetDiscreteSeriesCommand}" CommandParameter="Preferred">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding ViewModel.IsSeriesPreferred}"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="E6" Command="{Binding ViewModel.SetDiscreteSeriesCommand}" CommandParameter="E6">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding ViewModel.IsSeriesE6}"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="E12" Command="{Binding ViewModel.SetDiscreteSeriesCommand}" CommandParameter="E12">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding ViewModel.IsSeriesE12}"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="E24" Command="{Binding ViewModel.SetDiscreteSeriesCommand}" CommandParameter="E24">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding ViewModel.IsSeriesE24}"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="E48" Command="{Binding ViewModel.SetDiscreteSeriesCommand}" CommandParameter="E48">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding ViewModel.IsSeriesE48}"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <MenuItem Header="E96" Command="{Binding ViewModel.SetDiscreteSeriesCommand}" CommandParameter="E96">
+                                            <MenuItem.Icon><mi:MaterialIcon Kind="Check" IsVisible="{Binding ViewModel.IsSeriesE96}"/></MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator/>
+                                        <MenuItem Header="Edit preferences ladder…" Click="OnEditPreferredValues"/>
+                                    </MenuFlyout>
+                                </Button.Flyout>
+                            </Button>
+                        </StackPanel>
 
                         <!-- HELP (R-smith11-4). railRF, harmonicaRF, wBond and the Match Designer
                              each carry one of these and this window did not, so the chapter written

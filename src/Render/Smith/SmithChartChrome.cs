@@ -57,6 +57,37 @@ public readonly record struct SmithChromeState(
 }
 
 /// <summary>
+/// What the chrome reads from the DOCUMENT, copied out of it — so a live frame can capture it when
+/// the frame is RECORDED, alongside the plot's trace snapshot, rather than reading a design a drag
+/// is still writing when the compositor gets round to executing the frame.
+/// </summary>
+/// <remarks>
+/// <b>A live design read at execution time is a frame drawn from two pointer positions</b> (owner
+/// report, 2026-10-21): <c>PlotControl.Render</c> snapshots the traces, the compositor runs the frame
+/// later, and every pointer move in between had already rebuilt the scene, so the arrowheads and
+/// the ring at the end of the dragged curve sat away from the curve they belong to.
+/// </remarks>
+/// <param name="DraggableNode">Per node of the scene's walk, <see cref="SmithChartChrome.Draggable"/>'s
+/// answer.</param>
+public sealed record SmithChromeInputs(
+    bool ShowLabels, bool ShowGrippers, bool QEnabled, double Q, IReadOnlyList<bool> DraggableNode)
+{
+    /// <summary>Copies what the chrome reads out of <paramref name="design"/>.</summary>
+    public static SmithChromeInputs From(SmithChartScene scene, SmithDesign design)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(design);
+
+        var draggable = new bool[scene.Nodes.Count];
+        for (int k = 0; k < draggable.Length; k++)
+            draggable[k] = SmithChartChrome.Draggable(scene, design, k);
+
+        return new SmithChromeInputs(design.Chart.ShowLabels, design.Chart.ShowGrippers,
+                                     design.ConstantQ.Enabled, design.ConstantQ.Q, draggable);
+    }
+}
+
+/// <summary>
 /// The four things drawn over a Smith chart that a <c>Trace</c> cannot express.
 /// </summary>
 /// <remarks>
@@ -137,17 +168,27 @@ public static class SmithChartChrome
     public static void Draw(
         SKCanvas canvas, TransformSet tf, RenderTheme theme,
         SmithChartScene scene, SmithDesign design, SmithChromeState state)
+        => Draw(canvas, tf, theme, scene, SmithChromeInputs.From(scene, design), state);
+
+    /// <summary>
+    /// Draws the chrome from <paramref name="inputs"/> already copied out of the document — the form a
+    /// live frame uses, so it draws what it captured when it was recorded. See
+    /// <see cref="SmithChromeInputs"/>.
+    /// </summary>
+    public static void Draw(
+        SKCanvas canvas, TransformSet tf, RenderTheme theme,
+        SmithChartScene scene, SmithChromeInputs inputs, SmithChromeState state)
     {
         ArgumentNullException.ThrowIfNull(canvas);
         ArgumentNullException.ThrowIfNull(scene);
-        ArgumentNullException.ThrowIfNull(design);
+        ArgumentNullException.ThrowIfNull(inputs);
 
         if (!scene.HasContent) return;
 
-        DrawArrowheads(canvas, tf, scene);
-        DrawQValue(canvas, tf, theme, design);
-        if (design.Chart.ShowLabels)   DrawLoadLabels(canvas, tf, theme, scene);
-        if (design.Chart.ShowGrippers) DrawGrippers(canvas, tf, theme, scene, design, state);
+        DrawArrowheads(canvas, tf, theme, scene);
+        DrawQValue(canvas, tf, theme, inputs);
+        if (inputs.ShowLabels)   DrawLoadLabels(canvas, tf, theme, scene);
+        if (inputs.ShowGrippers) DrawGrippers(canvas, tf, theme, scene, inputs, state);
 
         // THERE IS NO CONSTANT-Q GRAB RING (owner report, 2026-09-19 — "a circle rendered around
         // the cursor during a shift-drag of a constant-Q line"). The ring was drawn at the point of
@@ -181,10 +222,9 @@ public static class SmithChartChrome
     /// boxed number there would read as one more annotation rather than as the ruler's own scale.</para>
     /// </remarks>
     private static void DrawQValue(SKCanvas canvas, TransformSet tf, RenderTheme theme,
-                                   SmithDesign design)
+                                   SmithChromeInputs q)
     {
-        var q = design.ConstantQ;
-        if (!q.Enabled || !(double.IsFinite(q.Q) && q.Q > 0)) return;
+        if (!q.QEnabled || !(double.IsFinite(q.Q) && q.Q > 0)) return;
 
         var circle = SmithQArcs.Circle(q.Q, inductive: true);
         var apex   = new Complex(0.0, circle.Centre.Imaginary + circle.Radius);
@@ -211,7 +251,7 @@ public static class SmithChartChrome
         // behind the number, which on a light theme reads as a white patch punched out of the grid
         // directly under the arc — more conspicuous than the grid lines it was hiding.
         using var ink = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill,
-                                      Color = ReadingColorOpaque };
+                                      Color = theme.TraceColor(ReadingColorOpaque) };
         canvas.DrawText(text, left, baseline, SKTextAlign.Left, font, ink);
     }
 
@@ -268,7 +308,8 @@ public static class SmithChartChrome
     /// adjacent arcs sharing a gripper are otherwise ambiguous about which way the walk goes, and a
     /// second derivation here would be a second chance to get the sign wrong.
     /// </remarks>
-    private static void DrawArrowheads(SKCanvas canvas, TransformSet tf, SmithChartScene scene)
+    private static void DrawArrowheads(SKCanvas canvas, TransformSet tf, RenderTheme theme,
+                                       SmithChartScene scene)
     {
         using var paint = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Fill };
 
@@ -276,7 +317,9 @@ public static class SmithChartChrome
         {
             if (curve.Tangent == Complex.Zero) continue;   // no length, no direction, no arrow
 
-            paint.Color = SmithPlotBuilder.ColorFor(curve.ElementIndex);
+            // Through the theme, exactly as the trajectory underneath is: on a dark canvas a palette
+            // colour is drawn lighter, and a raw one here put a darker blue arrow on a lighter blue curve.
+            paint.Color = theme.TraceColor(SmithPlotBuilder.ColorFor(curve.ElementIndex));
 
             var at = tf.PrimaryToCanvas(curve.Midpoint.Real, curve.Midpoint.Imaginary);
 
@@ -484,7 +527,7 @@ public static class SmithChartChrome
     /// drawing it as a ring would invite a drag it cannot answer.
     /// </remarks>
     private static void DrawGrippers(SKCanvas canvas, TransformSet tf, RenderTheme theme,
-                                     SmithChartScene scene, SmithDesign design,
+                                     SmithChartScene scene, SmithChromeInputs inputs,
                                      SmithChromeState state)
     {
         using var stroke = new SKPaint { IsAntialias = true, Style = SKPaintStyle.Stroke,
@@ -493,14 +536,14 @@ public static class SmithChartChrome
 
         // Node 0 — the generator's anchor.
         var anchor = tf.PrimaryToCanvas(scene.NodeGamma[0].Real, scene.NodeGamma[0].Imaginary);
-        fill.Color = SmithPlotBuilder.ReadingColor;
+        fill.Color = theme.TraceColor(SmithPlotBuilder.ReadingColor);
         canvas.DrawCircle(anchor.X, anchor.Y, RingRadius * 0.55f, fill);
 
         for (int k = 1; k < scene.NodeGamma.Count; k++)
         {
-            if (!Draggable(scene, design, k)) continue;
+            if (k >= inputs.DraggableNode.Count || !inputs.DraggableNode[k]) continue;
 
-            var colour = SmithPlotBuilder.ColorFor(scene.Nodes[k].ElementIndex);
+            var colour = theme.TraceColor(SmithPlotBuilder.ColorFor(scene.Nodes[k].ElementIndex));
             var at     = tf.PrimaryToCanvas(scene.NodeGamma[k].Real, scene.NodeGamma[k].Imaginary);
 
             bool dragging = k == state.DragNode;

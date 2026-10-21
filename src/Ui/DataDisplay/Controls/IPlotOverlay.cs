@@ -1,3 +1,4 @@
+using System;
 using System.Numerics;
 using CircuitRF.Render.DataDisplay;
 using SkiaSharp;
@@ -50,6 +51,16 @@ public interface IPlotOverlay
     /// rebuilt, so the chrome cannot land a pixel away from the curve it belongs to.</param>
     /// <param name="theme">The same theme object the plot underneath was just drawn with.</param>
     void Draw(SKCanvas canvas, TransformSet tf, RenderTheme theme);
+
+    /// <summary>
+    /// The draw this frame will run, with whatever it reads <b>captured now</b> — called on the UI
+    /// thread when <see cref="PlotControl"/> RECORDS a frame, the moment it snapshots the plot's
+    /// traces. The compositor executes the frame later, and an overlay that read live state then
+    /// drew it from a later pointer position than the traces beneath it (owner report, 2026-10-21:
+    /// the Smith arrowheads and end-point ring trailing the curve during a drag). Defaulted to
+    /// <see cref="Draw"/> for an overlay with nothing that moves under a drag.
+    /// </summary>
+    Action<SKCanvas, TransformSet, RenderTheme> CaptureFrame() => Draw;
 
     /// <summary>
     /// The handle under a canvas-space point, or <b>null when the overlay does not want the

@@ -307,6 +307,17 @@ public sealed class InlineEditText : Panel
             if (e.Key == Key.Return) { End(true); e.Handled = true; }
             else if (e.Key == Key.Escape) { End(false); e.Handled = true; }
         };
+
+        // ESCAPE IS ALSO A KEY BINDING ON THE BOX ITSELF (owner report, 2026-10-21: Escape did not
+        // cancel a Smith Chart generator cell). Key bindings run BEFORE the key is routed, nearest the
+        // focus first, so a host's own Escape binding (the Smith document's Clear Selection) took the
+        // key and marked it handled, the KeyDown above never ran, and the deferred LostFocus then
+        // committed the text Escape was meant to throw away. One here is nearer than any host's.
+        box.KeyBindings.Add(new KeyBinding
+        {
+            Gesture = new KeyGesture(Key.Escape),
+            Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => End(false)),
+        });
         box.LostFocus += (_, _) => End(true);
 
         box.Focus();

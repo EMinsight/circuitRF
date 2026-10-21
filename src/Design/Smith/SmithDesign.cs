@@ -463,6 +463,22 @@ public sealed class SmithChartSettings
 }
 
 /// <summary>The constant-Q arc pair (§4.4). <c>Q</c> is |x|/r on the drawn samples.</summary>
+/// <summary>
+/// The ladder a discrete-value Smith design snaps L and C onto — see
+/// <see cref="SmithDesign.DiscreteSeries"/>. A file names a member by its name.
+/// </summary>
+public enum SmithDiscreteSeries
+{
+    /// <summary>The user's own preferences ladder (<c>SmithPreferredValues</c>'s shipped E12 until
+    /// edited).</summary>
+    Preferred,
+    E6,
+    E12,
+    E24,
+    E48,
+    E96,
+}
+
 public sealed class SmithConstantQ
 {
     public bool   Enabled { get; set; }
@@ -702,6 +718,17 @@ public sealed class SmithDesign
     /// chose, and there would be no way to tell it from their own.</para>
     /// </remarks>
     public bool SnapToPreferredValues { get; set; }
+
+    /// <summary>
+    /// Which ladder <see cref="SnapToPreferredValues"/> snaps onto: the user's preferences ladder (the
+    /// default), or an IEC 60063 series — the same choice a tune line's <c>discrete=</c> offers.
+    /// </summary>
+    /// <remarks>
+    /// <b>Unlike the preferences ladder, an E series IS in the document</b>: it is a published
+    /// standard rather than somebody's parts drawer, so <c>E24</c> means the same rungs on every
+    /// machine the `.csmith` is opened on.
+    /// </remarks>
+    public SmithDiscreteSeries DiscreteSeries { get; set; } = SmithDiscreteSeries.Preferred;
 
     // ── the design frequency, DERIVED (owner instruction, 2026-09-19) ────────
 

@@ -1096,6 +1096,9 @@ SmithDesign
   SnapToPreferredValues : bool, written only when ON (§5.6a). The LADDER is not here — it is
                           per-user state, so a document carrying a copy would snap to somebody
                           else's parts drawer on somebody else's machine.
+  DiscreteSeries : Preferred | E6 | E12 | E24 | E48 | E96, written only when not Preferred —
+                   the ladder that snap uses. An IEC 60063 series IS in the document: it is a
+                   published standard, the same rungs on every machine.
   Overlays[]   : the Data Display TraceConfig shape, verbatim — one per overlay, opaque JSON
   Markers[]    : the Data Display Marker shape, verbatim
   View         : splitter positions, network scroll/zoom, MirrorNetwork

@@ -147,6 +147,8 @@ public static class SmithDesignIo
         // Written only when it is ON, so no existing document changes and a `.csmith` from before
         // the feature reads as off — which is what it was.
         SnapToPreferredValues = d.SnapToPreferredValues ? true : null,
+        // Written only when it is not the preferences ladder, for the same reason.
+        DiscreteSeries = d.DiscreteSeries == SmithDiscreteSeries.Preferred ? null : d.DiscreteSeries,
         // THE TRACE CONFIGS, VERBATIM (R-smith12-4b). They arrived as JSON and they leave as JSON;
         // nothing here knows what a trace is. The LEGACY block is not written at all — a document
         // read in the old shape and written back is written in the new one, which is what makes the
@@ -255,6 +257,7 @@ public static class SmithDesignIo
                 Q       = f.ConstantQ?.Q       ?? 1.0,
             },
             SnapToPreferredValues = f.SnapToPreferredValues ?? false,
+            DiscreteSeries        = f.DiscreteSeries ?? SmithDiscreteSeries.Preferred,
             View = new SmithView
             {
                 SplitterMain   = f.View?.SplitterMain   ?? 0.65,
@@ -422,6 +425,10 @@ public static class SmithDesignIo
         /// carrying a copy would snap to somebody else's parts drawer on somebody else's
         /// machine.</summary>
         public bool?                  SnapToPreferredValues { get; set; }
+
+        /// <summary>The ladder that snap uses (<see cref="SmithDesign.DiscreteSeries"/>). Absent is
+        /// the user's preferences ladder.</summary>
+        public SmithDiscreteSeries?   DiscreteSeries { get; set; }
 
         /// <summary>One Data Display <c>TraceConfig</c> per overlay, opaque here — see
         /// <see cref="SmithDesign.Overlays"/>. A `.csmith` written before 2026-09-19 carries

@@ -40199,3 +40199,34 @@ an empty value — `CommitExpression` otherwise refuses an empty expression.
   the same undo step. A part carrying a rider is no longer treated as unconnected by the drop-on-a-wire series cut.
 - Gate: `tests/Ui.Tests/Schematic/DesignerRound24Tests.cs` (drag and rotate fail without the fix; the stays case
   holds either way).
+
+## Smith Chart chrome trailed the curve during a drag; arrowheads off-colour on dark (2026-10-21)
+
+- **A plot overlay must capture what it draws when the frame is RECORDED.** `PlotControl.Render`
+  snapshots the plot's traces (`Plot.RenderSnapshot`), but handed the draw op the live overlay object,
+  which read `SmithChartViewModel.Scene` and the live design when the compositor EXECUTED the frame.
+  A gripper drag rebuilds the scene on every pointer move, so the arrowheads and the ring at the end of
+  the dragged curve were drawn from a later pointer position than the curve under them.
+  `IPlotOverlay.CaptureFrame()` (default: `Draw`) is now what the draw op holds; the Smith overlay
+  copies its scene, `SmithChromeInputs` and hover/drag state there.
+- **Chrome drawn in a curve's colour goes through `RenderTheme.TraceColor`**, as the trace does. Since
+  the dark-canvas palette adaptation, a raw palette Blue arrowhead sat on a lightened Blue curve.
+- The discrete-values button also chooses the ladder now: the preferences ladder or E6…E96
+  (`SmithDesign.DiscreteSeries`, written to the `.csmith` only when not the preferences ladder).
+
+## A KeyBinding pre-empts the focused text box (2026-10-21)
+
+- **Key bindings run BEFORE the key is routed** — nearest the focus first, then each ancestor — and
+  mark it handled. Measured in a headless harness: the key was already handled at the top of the
+  tunnel, so no `KeyDown` handler (tunnel or bubble) without `handledEventsToo` ever saw it. The
+  older belief that `InputElement.OnKeyDown` runs a control's KeyBindings on the bubble, after the
+  focused child, is wrong for this Avalonia.
+- Symptoms in the Smith Chart: the root's Escape (Clear Selection) stopped every `InlineEditText`
+  from cancelling (the generator cells, Z₀, the element name, the slider Min/Max/Value) — the later
+  LostFocus then committed the text — and its **Backspace/Delete (Delete Selection) deleted the
+  selected element while a cell was being typed in**.
+- Fixes: the Smith document's three keys moved to `SmithChartView.OnKeyDown`, skipped when
+  `e.Source is TextBox`; and `InlineEditText` adds an Escape KeyBinding to its own box, which is
+  nearer the focus than any host binding (the workspace window's Escape included).
+- Other hosts with Delete/Escape KeyBindings over text boxes were not changed: `DataDisplayView`,
+  `MatchDesignerWindow`, `RailRfWindow`, `WorkspaceWindow`.

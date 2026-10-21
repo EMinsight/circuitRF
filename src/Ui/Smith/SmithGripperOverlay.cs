@@ -311,4 +311,20 @@ public sealed class SmithGripperOverlay : IPlotOverlay
     public void Draw(SKCanvas canvas, TransformSet tf, RenderTheme theme)
         => SmithChartChrome.Draw(canvas, tf, theme, _vm.Scene, _vm.Design,
                                  new SmithChromeState(_hoverNode, _dragNode, _hoverQ, _dragQ));
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <b>The scene, the document's chrome settings and the hover/drag state are all copied here</b>,
+    /// when the frame is recorded with its trace snapshot. A gripper drag rebuilds the scene and
+    /// writes the dragged value on every pointer move, so reading them when the compositor runs the
+    /// frame drew the arrowheads and the ring at the end of the dragged curve from a later pointer
+    /// position than the curve itself.
+    /// </remarks>
+    public Action<SKCanvas, TransformSet, RenderTheme> CaptureFrame()
+    {
+        var scene  = _vm.Scene;
+        var inputs = SmithChromeInputs.From(scene, _vm.Design);
+        var state  = new SmithChromeState(_hoverNode, _dragNode, _hoverQ, _dragQ);
+        return (canvas, tf, theme) => SmithChartChrome.Draw(canvas, tf, theme, scene, inputs, state);
+    }
 }

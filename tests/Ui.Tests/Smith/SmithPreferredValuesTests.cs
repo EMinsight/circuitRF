@@ -523,5 +523,44 @@ public sealed class SmithPreferredValuesTests : IDisposable
         // The list is reachable whether the toggle is on or off — the slider rows' own
         // "right-click ▸ Set range…" idiom one control along.
         Assert.Contains("OnEditPreferredValues", between);
+
+        // The ladder choice is a VISIBLE pull-down beside the toggle, not a right-click only.
+        Assert.Contains("Name=\"DiscreteSeriesButton\"", between);
+        Assert.Contains("Kind=\"ChevronDown\"", between);
+    }
+
+    // ── the series choice ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Choosing an E series from the button's menu turns the toggle on and snaps onto THAT series, as
+    /// one undo entry — 2.37 nH lands on E24's 2.4 nH, where the shipped E12 ladder would give 2.2.
+    /// </summary>
+    [Fact]
+    public void ChoosingAnESeriesTurnsTheToggleOnAndSnapsOntoIt()
+    {
+        var vm = new SmithChartViewModel(Design(L(2.37e-9, SmithPlacement.Series, "L1")));
+        string original = SmithDesignIo.SerializeUnvalidated(vm.Design);
+
+        vm.SetDiscreteSeriesCommand.Execute("E24");
+
+        Assert.True(vm.SnapToPreferredValues);
+        Assert.Equal(SmithDiscreteSeries.E24, vm.DiscreteSeries);
+        Assert.Equal(2.4e-9, vm.Design.Elements[0].Values.LHenry, 15);
+
+        Assert.Equal(1, DrainUndo(vm));
+        Assert.Equal(original, SmithDesignIo.SerializeUnvalidated(vm.Design));
+    }
+
+    /// <summary>The series is saved with the design, and a design on the preferences ladder writes
+    /// nothing new, so no existing <c>.csmith</c> changes.</summary>
+    [Fact]
+    public void TheSeriesIsSavedOnlyWhenItIsNotThePreferencesLadder()
+    {
+        var d = Design(C(1.0e-12, SmithPlacement.Shunt, "C1"));
+        Assert.DoesNotContain("DiscreteSeries", SmithDesignIo.SerializeUnvalidated(d));
+
+        d.DiscreteSeries = SmithDiscreteSeries.E48;
+        var back = SmithDesignIo.DeserializeUnvalidated(SmithDesignIo.SerializeUnvalidated(d));
+        Assert.Equal(SmithDiscreteSeries.E48, back.DiscreteSeries);
     }
 }

@@ -6,7 +6,9 @@ using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using CircuitRF.Design.Smith;
 using CircuitRF.Render.DataDisplay;
+using CircuitRF.Render.Smith;
 using CircuitRF.Ui.Smith;
+using SkiaSharp;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.Smith;
@@ -474,4 +476,84 @@ public sealed class SmithChartTests
         Assert.False(loadTrace.ExcludeFromAutoscale);
         Assert.False(loadTrace.IsAnnotation);
     }
+
+    // ── the chrome's frame and colour ────────────────────────────────────────
+
+    private static SKBitmap Paint(Action<SKCanvas, TransformSet, RenderTheme> draw, TransformSet tf, RenderTheme theme)
+    {
+        var bmp = new SKBitmap((int)Canvas.W, (int)Canvas.H);
+        using var canvas = new SKCanvas(bmp);
+        canvas.Clear(theme.BackgroundColor);
+        draw(canvas, tf, theme);
+        return bmp;
+    }
+
+    /// <summary>
+    /// A recorded frame draws the chrome as it stood when it was RECORDED. The compositor runs a frame
+    /// after the pointer has moved on, and chrome read live then trailed the trace snapshot beneath it.
+    /// </summary>
+    [Fact]
+    public void ARecordedFrameDrawsTheChromeItWasRecordedWith()
+    {
+        var vm    = new SmithChartViewModel(Design(L(2.2e-9), C(1.0e-12)));
+        var tf    = Tf(vm);
+        var frame = vm.ChartOverlay.CaptureFrame();
+
+        using var recorded = Paint(frame, tf, RenderTheme.Light);
+        vm.SetElementValue(0, SmithParameter.L, 4.7e-9, "Set L1");
+
+        using var replayed = Paint(frame, tf, RenderTheme.Light);
+        using var live     = Paint(vm.ChartOverlay.CaptureFrame(), tf, RenderTheme.Light);
+        Assert.Equal(recorded.Bytes, replayed.Bytes);
+        Assert.NotEqual(recorded.Bytes, live.Bytes);
+    }
+
+    /// <summary>
+    /// On a dark canvas an arrowhead is its curve's DRAWN colour — the palette Blue lightened by
+    /// <see cref="RenderTheme.TraceColor"/> — and never the raw palette entry.
+    /// </summary>
+    [Fact]
+    public void OnADarkCanvasAnArrowheadIsItsCurvesDrawnColour()
+    {
+        var vm    = new SmithChartViewModel(Design(L(2.2e-9), C(1.0e-12)));
+        var theme = RenderTheme.Dark;
+        var raw   = SmithPlotBuilder.ColorFor(1);
+        var drawn = theme.TraceColor(raw);
+        Assert.NotEqual(raw, drawn);   // element 1 is Blue, which the dark canvas adapts
+
+        var arrowsOnly = new SmithChromeInputs(ShowLabels: false, ShowGrippers: false,
+                                               QEnabled: false, Q: 1.0, DraggableNode: []);
+        using var bmp = Paint((c, tf, t) => SmithChartChrome.Draw(c, tf, t, vm.Scene, arrowsOnly,
+                                                                   SmithChromeState.None),
+                              Tf(vm), theme);
+
+        var colours = bmp.Pixels.ToHashSet();
+        Assert.Contains(drawn, colours);
+        Assert.DoesNotContain(raw, colours);
+    }
+
+    /// <summary>
+    /// <b>No document-wide key is a KeyBinding</b> (owner report, 2026-10-21). A KeyBinding runs before
+    /// the key reaches the focused control, so the root's Escape stopped a generator cell from
+    /// cancelling and its Backspace deleted the selected element out from under a cell being typed in.
+    /// The keys are taken on the bubble instead, skipped while a text box has the focus — and the
+    /// inline editor carries an Escape binding of its own, nearer the focus than any host's.
+    /// </summary>
+    [Fact]
+    public void TheDocumentKeysDoNotPreemptATextBox()
+    {
+        string xaml = StripXmlComments(ReadRepoFile("src/Ui/Views/Smith/SmithChartView.axaml"));
+        Assert.DoesNotContain("<KeyBinding", xaml);
+
+        string view = StripComments(ReadRepoFile("src/Ui/Views/Smith/SmithChartView.axaml.cs"));
+        Assert.Contains("e.Source is not TextBox", view);
+        Assert.Contains("DeleteSelectionCommand.Execute", view);
+        Assert.Contains("ClearSelectionCommand.Execute", view);
+
+        string editor = StripComments(ReadRepoFile("src/Ui/Controls/InlineEditText.cs"));
+        Assert.Contains("box.KeyBindings.Add", editor);
+    }
+
+    private static string StripXmlComments(string xaml)
+        => Regex.Replace(xaml, "<!--.*?-->", "", RegexOptions.Singleline);
 }

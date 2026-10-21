@@ -64,6 +64,28 @@ public static class SmithPreferredValues
         _                => null,
     };
 
+    /// <summary>
+    /// <paramref name="series"/>'s capacitance and inductance ladders, over the SAME decades the
+    /// shipped ones span (0.1 pF … 100 nF, 0.1 nH … 100 µH) — or null for
+    /// <see cref="SmithDiscreteSeries.Preferred"/>, whose ladders are the user's and are not known
+    /// here.
+    /// </summary>
+    public static (IReadOnlyList<double> CapacitorsFarad, IReadOnlyList<double> InductorsHenry)?
+        SeriesLadders(SmithDiscreteSeries series)
+    {
+        IReadOnlyList<double>? mantissas = series switch
+        {
+            SmithDiscreteSeries.E6  => PreferredValues.E6,
+            SmithDiscreteSeries.E12 => PreferredValues.E12,
+            SmithDiscreteSeries.E24 => PreferredValues.E24,
+            SmithDiscreteSeries.E48 => PreferredValues.E48,
+            SmithDiscreteSeries.E96 => PreferredValues.E96,
+            _                       => null,
+        };
+        if (mantissas is null) return null;
+        return (PreferredValues.Series(mantissas, -13, -8), PreferredValues.Series(mantissas, -10, -5));
+    }
+
     /// <summary>True when <paramref name="p"/> is a parameter this feature restricts at all.</summary>
     public static bool AppliesTo(SmithParameter p) => p is SmithParameter.L or SmithParameter.C;
 

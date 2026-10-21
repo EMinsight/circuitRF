@@ -532,6 +532,7 @@ public sealed partial class SmithChartViewModel : ObservableObject
         // The discrete-value toggle (§5.6a), on the same channel and for the same reason: an undo of
         // "Snap to preferred values" has to take the button's latched state back with the values.
         OnPropertyChanged(nameof(SnapToPreferredValues));
+        NotifyDiscreteSeries();
         ReimportGeneratorCommand.NotifyCanExecuteChanged();
         foreach (var row in GeneratorRows) row.NotifyAll();
         RefreshLoadRows();
