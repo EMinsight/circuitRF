@@ -51,7 +51,7 @@ public sealed class DarkTraceColourTests
     public void OnADarkCanvas_ColoursThatAlreadyRead_AreUntouched()
     {
         var dark = RenderTheme.Dark;
-        foreach (int index in new[] { 1, 5, 12, 14, 15, 16 })                         // Blue, Gray, Red, White, Yellow, Accent
+        foreach (int index in new[] { 5, 12, 14, 15, 16 })                            // Gray, Red, White, Yellow, Accent
             Assert.Equal(TraceProperties.ColorLUT[index], dark.TraceColor(TraceProperties.ColorLUT[index]));
 
         // "Clear" is #00FFFFFF and must not be mirrored to black.
@@ -62,6 +62,36 @@ public sealed class DarkTraceColourTests
         Assert.Equal(dark.FailColor, dark.ToSKColor(dark.FailColor, 1.0));
 
         Assert.Equal(127, dark.ToSKColor(TraceProperties.ColorLUT[0], 0.5).Alpha);
+    }
+
+    /// <summary>
+    /// Every palette colour reads on the dark canvas, including pure Blue, which sits at HSL mid lightness and so
+    /// escapes the mirror: it is lightened, hue kept, until it clears the contrast floor.
+    /// </summary>
+    [Fact]
+    public void OnADarkCanvas_EveryPaletteColour_ClearsTheContrastFloor()
+    {
+        var dark = RenderTheme.Dark;
+        foreach (var (index, stored) in TraceProperties.ColorLUT)
+        {
+            if (stored.Alpha == 0) continue;                                           // Clear
+            var drawn = dark.TraceColor(stored);
+            Assert.True(RenderTheme.Contrast(drawn, dark.BackgroundColor) >= RenderTheme.MinTraceContrast,
+                        $"index {index} {stored} drew as {drawn}");
+        }
+
+        TraceProperties.ColorLUT[1].ToHsl(out float hs, out _, out _);                 // Blue stays blue
+        dark.TraceColor(TraceProperties.ColorLUT[1]).ToHsl(out float hd, out _, out _);
+        Assert.InRange(Math.Abs(hs - hd), 0f, 1f);
+    }
+
+    /// <summary>A colour that is not a palette entry was chosen by whoever set it, and draws exactly on either canvas.</summary>
+    [Fact]
+    public void AColourOutsideThePalette_IsDrawnExactly()
+    {
+        var navy = new SKColor(20, 30, 90);
+        Assert.Equal(navy, RenderTheme.Dark.TraceColor(navy));
+        Assert.Equal(navy, RenderTheme.Light.TraceColor(navy));
     }
 
     /// <summary>

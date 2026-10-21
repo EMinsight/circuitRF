@@ -158,10 +158,14 @@ public partial class PlotInspectorViewModel : ViewModelBase
             { 12, "Red"    }, { 13, "Teal"   }, { 14, "White"  }, { 15, "Yellow"},
             { 16, "Accent" }
         };
-        return TraceProperties.ColorLUT
+        var items = TraceProperties.ColorLUT
             .OrderBy(kv => kv.Key)
             .Select(kv => new ColorItem(kv.Key, kv.Value, names.GetValueOrDefault(kv.Key, kv.Key.ToString())))
             .ToList();
+        // The swatches paint the colour the canvas draws, which differs between light and dark.
+        if (Avalonia.Application.Current is { } app)
+            app.ActualThemeVariantChanged += (_, _) => items.ForEach(i => i.ThemeChanged());
+        return items;
     }
 
     // ---- Library access (for TraceRowViewModel) -------------------------

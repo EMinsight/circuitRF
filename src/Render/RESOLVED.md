@@ -5185,10 +5185,19 @@ run.
 
 The LIGHT theme returns every stored colour unchanged, so no `.cdd` and no light render moved. Contour
 colours (`cd.LineColor`, colormap derived) deliberately do not pass through: `ContourRenderer` enforces its
-own luminance guard. The inspector swatch keeps showing the stored colour, for the reason
-`LayerCanvasContrast`'s own doc gives: a swatch that changed with the theme would disagree with the file it
-edits. Gate: `tests/Ui.Tests/DataDisplay/DarkTraceColourTests.cs`, whose render-level case is the one a
-missed call site fails.
+own luminance guard. Gate: `tests/Ui.Tests/DataDisplay/DarkTraceColourTests.cs`, whose render-level case
+is the one a missed call site fails.
+
+**Follow-up, same day: three adjustments on merge.**
+- **The inspector's colour swatches paint the DRAWN colour** (`ColorItem` holds a light and a dark brush and
+  follows `ActualThemeVariant`). The first version kept the stored colour on the grounds that a swatch should
+  agree with the file, but a `.cdd` stores the palette INDEX, which a theme-dependent swatch does not
+  contradict; a black swatch beside a trace drawn white was the one place the two disagreed.
+- **Only a palette entry adapts.** A colour set directly (`LineColorStorage` — Harmonica's per-theme trace
+  colours, the thermal plot's) draws exactly; those were already chosen for their canvas.
+- **HSL lightness is not perceived lightness**, so pure Blue (HSL 50) escaped the mirror at 1.9:1 on the dark
+  canvas, as hard to see as Black was. After the mirror a palette colour is lightened, hue and saturation
+  kept, until it clears 3:1 (WCAG's floor for graphical objects) against the background.
 
 Four `Harmonica` tests fail on this machine with the transform disabled as well
 (`HarmonicaBackdropCacheTests` x3, `PowerSweepPanel_TheY2Label_...`), so they are NOT this change: the

@@ -88,19 +88,26 @@ namespace CircuitRF.Render.DataDisplay
         /// <summary>
         /// The colour a trace is DRAWN in on this canvas.
         ///
-        /// <para><b>On a dark canvas only, a colour darker than mid is mirrored about mid lightness</b>
-        /// (<c>l -> 100 - l</c>, SkiaSharp's HSL triple being degrees and 0..100) with its hue and
-        /// saturation kept: Black draws as White, Indigo and Purple as their light selves, while
-        /// Red, Blue, Gray, Yellow, White and the accent sit at or above mid and are untouched.
-        /// Channel inversion was the other candidate and was rejected:
-        /// it turns Red into Cyan, so a trace would change its identity with the theme. Blending toward
-        /// white until a luminance floor clears desaturates the same Red to pink.</para>
+        /// <para><b>Only a PALETTE colour adapts</b> (an entry of <see cref="TraceProperties.ColorLUT"/>):
+        /// a palette entry names a role the canvas decides the shade of. Any other colour was chosen by
+        /// whoever set it (Harmonica's per-theme trace colours, the thermal plot's) and draws exactly.</para>
+        ///
+        /// <para><b>On a dark canvas only, a palette colour darker than mid is mirrored about mid
+        /// lightness</b> (<c>l -> 100 - l</c>, SkiaSharp's HSL triple being degrees and 0..100) with its
+        /// hue and saturation kept: Black draws as White, Indigo and Purple as their light selves.
+        /// Channel inversion was the other candidate and was rejected: it turns Red into Cyan, so a
+        /// trace would change its identity with the theme. Blending toward white until a luminance floor
+        /// clears desaturates the same Red to pink.</para>
+        ///
+        /// <para><b>HSL lightness is not perceived lightness</b>, so the mirror alone left pure Blue
+        /// (HSL 50, 1.9:1 on the dark canvas) as hard to see as the Black it fixed. After the mirror a
+        /// palette colour is lightened further, hue and saturation still kept, until it clears
+        /// <see cref="MinTraceContrast"/> against the background.</para>
         ///
         /// <para>The stored colour and its palette INDEX are untouched. A `.cdd` means what it meant,
         /// and the LIGHT theme, which is the reference, renders bit for bit as it always did. The
-        /// colour picker keeps showing the stored colour for the same reason the Layers panel swatch
-        /// does (<c>LayerCanvasContrast</c>): a swatch that changed with the theme would disagree with
-        /// the file it edits.</para>
+        /// colour picker paints its swatches through this function, so a swatch shows what the canvas
+        /// draws; the file stores an index, which a theme-dependent swatch does not contradict.</para>
         ///
         /// <para>Dark is decided from the BACKGROUND's own Rec. 601 luminance, not from a flag, so a
         /// custom background gets the right treatment too (the test `LayoutRenderer`'s snap marker
@@ -111,12 +118,44 @@ namespace CircuitRF.Render.DataDisplay
         {
             if (c.Alpha == 0) return c;
             if (!DarkCanvas) return c;
+            if (!PaletteColors.Contains(c)) return c;
             c.ToHsl(out float h, out float s, out float l);
-            return l < 50f ? SKColor.FromHsl(h, s, 100f - l, c.Alpha) : c;
+            // A colour that already reads is returned as is: the HSL round trip is not exact.
+            if (l >= 50f && Contrast(c, BackgroundColor) >= MinTraceContrast) return c;
+            if (l < 50f) l = 100f - l;
+            var drawn = SKColor.FromHsl(h, s, l, c.Alpha);
+            while (Contrast(drawn, BackgroundColor) < MinTraceContrast && l < 100f)
+                drawn = SKColor.FromHsl(h, s, l = Math.Min(100f, l + 1f), c.Alpha);
+            return drawn;
         }
+
+        /// <summary>
+        /// The contrast a palette trace colour must clear against a dark canvas: WCAG's 3:1 for
+        /// graphical objects. Red and Gray sit at about 4.2:1 on the dark theme and are untouched.
+        /// </summary>
+        public const double MinTraceContrast = 3.0;
+
+        private static readonly HashSet<SKColor> PaletteColors = [.. TraceProperties.ColorLUT.Values];
 
         private bool DarkCanvas =>
             (0.299 * BackgroundColor.Red + 0.587 * BackgroundColor.Green + 0.114 * BackgroundColor.Blue) < 127.5;
+
+        /// <summary>The WCAG contrast ratio between two opaque colours, 1 to 21.</summary>
+        internal static double Contrast(SKColor a, SKColor b)
+        {
+            double la = RelativeLuminance(a), lb = RelativeLuminance(b);
+            return (Math.Max(la, lb) + 0.05) / (Math.Min(la, lb) + 0.05);
+        }
+
+        private static double RelativeLuminance(SKColor c)
+        {
+            static double Lin(byte v)
+            {
+                double x = v / 255.0;
+                return x <= 0.04045 ? x / 12.92 : Math.Pow((x + 0.055) / 1.055, 2.4);
+            }
+            return 0.2126 * Lin(c.Red) + 0.7152 * Lin(c.Green) + 0.0722 * Lin(c.Blue);
+        }
 
         /// <summary>Returns <paramref name="color"/> with alpha set from [0,1] opacity.</summary>
         public static SKColor WithOpacity(SKColor color, double opacity) =>
