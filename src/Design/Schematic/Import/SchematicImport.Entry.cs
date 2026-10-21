@@ -126,7 +126,18 @@ public static partial class SchematicImport
         ArgumentNullException.ThrowIfNull(source);
         mapping ??= SchematicImportMap.Decide(source);
         var rows = new List<ImportPortCandidate>();
-        foreach (var d in mapping.Where(d => d.Becomes == ImportPartKind.SymbolCell && LooksLikeConnector(d)))
+        var connectors = mapping.Where(d => d.Becomes == ImportPartKind.SymbolCell && LooksLikeConnector(d)).ToList();
+
+        // Only a connector the build would make a Port is offered — one signal pin and at most one other net off ground.
+        // A ten-pin header ticked here used to be refused after the user had asked for it. The build writes nothing.
+        if (connectors.Count > 0)
+        {
+            string nowhere = Path.Combine(Path.GetTempPath(), "circuitrf-port-candidates");
+            var trial = SchematicImportBuild.Build(source, "candidates", nowhere, nowhere,
+                                                   new SchematicImportOptions { Ports = [.. connectors.Select(d => d.Reference)] });
+            if (trial.Ok) connectors = [.. connectors.Where(d => trial.PortParts.Contains(d.Reference))];
+        }
+        foreach (var d in connectors)
             rows.Add(new ImportPortCandidate(d.Reference, $"{d.Reference} ({d.SymbolName})", IsPart: true));
 
         var sheets = source.Hierarchical ? source.Pages.Take(1) : source.Pages;

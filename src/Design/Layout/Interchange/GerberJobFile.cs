@@ -6,6 +6,7 @@
 
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
 
 using System.Globalization;
@@ -118,7 +119,7 @@ public static class GerberJobFile
         }
         catch (JsonException)
         {
-            return null;
+            return ReadLayerList(json);
         }
 
         using (doc)
@@ -166,6 +167,64 @@ public static class GerberJobFile
             return new JobFileContents(files, stackup, layerNumber, boardThickness, diagnostics);
         }
     }
+
+    // ── The layer list ─────────────────────────────────────────────────────────────────────────
+    //
+    // An older companion of a Gerber set, in braces rather than JSON: one block per layer naming its file and its
+    // type —
+    //
+    //     {Layers
+    //         {Layer  1  {File BOARD.TOP} … {Type Top}    }
+    //         {Layer  2  {File BOARD.GND} … {Type Inner}  }
+    //         {Layer  3  {File BOARD.BOT} … {Type Bottom} }
+    //         {Layer  4  {File BOARD.SMT} … {Type Other}  }
+    //
+    // Its types say which files are copper and on which side, top to bottom in layer order, and nothing about the
+    // rest. A set carrying one names its files by extension alone (.TOP, .GND, .BOT, .SMT, .SSB …), so without it
+    // the copper was unidentified, the stackup came out EMPTY and the mask and silkscreen layers had no side of the
+    // board to belong to (designer report). Read by its structure, never by the program that wrote it.
+
+    private static readonly Regex LayerBlock = new(@"\{\s*Layer\s+(\d+)\b(.*?)(?=\{\s*Layer\s+\d+\b|\z)",
+        RegexOptions.Singleline | RegexOptions.CultureInvariant);
+    private static readonly Regex LayerFile = new(@"\{\s*File\s+([^}\r\n]+?)\s*\}", RegexOptions.CultureInvariant);
+    private static readonly Regex LayerType = new(@"\{\s*Type\s+([^}\r\n]+?)\s*\}", RegexOptions.CultureInvariant);
+
+    /// <summary>True when <paramref name="head"/> is a brace-structured layer list: a <c>{Layers</c> block whose
+    /// <c>{Layer n</c> entries name a <c>{File …}</c> and a <c>{Type …}</c>.</summary>
+    public static bool LooksLikeLayerList(string head) =>
+        Regex.IsMatch(head, @"\{\s*Layers\b", RegexOptions.CultureInvariant)
+        && LayerBlock.Matches(head).Any(m => LayerFile.IsMatch(m.Value) && LayerType.IsMatch(m.Value));
+
+    /// <summary>A layer list read as a job file: each layer's file, copper given its place in the stack
+    /// (<c>Copper,L2,Inr</c>) and everything else no function at all, which leaves it to the rungs below. Null when
+    /// the text is not a layer list either.</summary>
+    public static JobFileContents? ReadLayerList(string text)
+    {
+        if (!LooksLikeLayerList(text)) return null;
+        var layers = LayerBlock.Matches(text)
+            .Select(m => (Number: int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture),
+                          File: LayerFile.Match(m.Value) is { Success: true } f ? f.Groups[1].Value.Trim() : null,
+                          Side: LayerType.Match(m.Value) is { Success: true } t ? CopperSide(t.Groups[1].Value) : null))
+            .Where(l => l.File is { Length: > 0 })
+            .OrderBy(l => l.Number)
+            .ToList();
+
+        var copper = layers.Where(l => l.Side is not null).ToList();
+        var files = layers.Select(l => new JobFileEntryRead(l.File!,
+            l.Side is { } side ? $"Copper,L{copper.IndexOf(l) + 1},{side}" : null, null)).ToList();
+        var diagnostics = new List<string>();
+        if (copper.Count == 0) diagnostics.Add("The layer list names no copper layer, so it settled no layer identities.");
+        return new JobFileContents(files, [], copper.Count > 0 ? copper.Count : null, null, diagnostics);
+    }
+
+    /// <summary>A layer type's copper side, in FileFunction's words — or null for a layer that is not copper.</summary>
+    private static string? CopperSide(string type) => type.Trim().ToLowerInvariant() switch
+    {
+        "top" => "Top",
+        "bottom" or "bot" => "Bot",
+        "inner" or "internal" or "plane" or "signal" => "Inr",
+        _ => null,
+    };
 
     /// <summary>Case-insensitive property lookup — <see cref="JsonElement.TryGetProperty(string, out JsonElement)"/>
     /// is ordinal, and this format is written by many hands.</summary>

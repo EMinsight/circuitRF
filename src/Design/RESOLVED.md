@@ -21255,3 +21255,53 @@ read; it imports with connectivity matching both its drawing and its declared ne
   caught as a version mismatch. Deleting the leftover folder lets the tests fall through to the staged worker. A
   `geometry-kernel/` folder under any test project's `bin/` is never refreshed by a build; remove it rather than
   copying a new one in.
+
+## Designer round 23 — schematic import and the Gerber layer list (2026-10-21)
+
+- **A connector refused as a Port was left out of the import altogether.** The parts loop skipped every reference in
+  `SchematicImportOptions.Ports` ("drawn as a Port below"), the symbol-cell pass skipped them too, and `AddPorts` then
+  refused a multi-signal header with a note and `continue`. Nothing drew it, so every net that met only at its pins came
+  out split, ground included, and the check listed each one.
+  Eligibility (`PortRefusal`: at least one pin off ground, at most two signal nets) is now decided right after the nets are
+  named, before anything is drawn; a refused connector is drawn as its symbol cell, and the symbol-cell pass writes a cell
+  for every symbol-cell part, dropping at the end only the cells no drawn instance uses. `SchematicImport.PortCandidates`
+  offers only connectors a trial `Build` (nothing written) actually makes Ports, so the dialog no longer offers a ten-pin
+  header. Gate: `DesignerRound23ImportTests.AConnectorThatCannotBeAPort_IsImportedAsItsPart_AndIsNotOffered`.
+- **A native part longer than the source's symbol ended a source wire inside its body.** A source capacitor pitched 300
+  mils is fitted with circuitRF's 400-mil one; with the source pins at 5200/5500 the fit snaps to 5200/5600, the native
+  pin lands mid-way along the wire leaving the lower source pin, and that wire's end (5500) is an open end inside the
+  capacitor. Connectivity still matched, because a pin on a wire joins it. `TrimUnderBody` cuts, from the routes, the
+  stretch lying along a two-pin native part's axis strictly between its two pins — the one change ever made to a source
+  wire (D6 amended) — and cuts nothing when anything else connects inside that stretch, or when both pins are on one net
+  (a wire running straight under the part would be severed). Gate:
+  `DesignerRound23ImportTests.ALongerNativePart_EndsTheSourceWiresOnItsPins_NotInsideItsBody`.
+- **The fit could land a pin on another net's crossing wire.** `FitNative` took one snap of the mean origin. With pins
+  pitched 300 against 400, the mean is half a grid square off and both snaps are equally near; one of them put a pin on a
+  wire the source only crosses, and `NetlistSchematic` then labelled BOTH nets instead of wiring them. Both snaps are tried
+  and a pin on another net's wire or pin costs more than any distance. Gate:
+  `DesignerRound23ImportTests.ANativePart_IsNotFittedWithAPinOnAnotherNetsWire_WhenTheOtherSnapAvoidsIt`.
+- **`NetlistSchematic.WireExact`: a net with no route whose pins all meet at one point is joined already.** Trimming can
+  remove the only wire of a net — a short wire from one part's pin to another's that the longer native body now covers,
+  leaving the two pins touching. Such a net used to be labelled on every pin and reported as "could not be wired"; it is
+  now drawn as nothing, or with one label at the point when the net has a name to show or labelled pins elsewhere. A net
+  whose pins lie at several points still falls back to labels, and that note can now name a net the old drawing joined by
+  a long dog-leg from a stub under a part — the label is the better drawing there, and the source joins it by label too.
+- **Test points refused a run.** Every `TP` part is a symbol cell with no model. `LeaveOutOfRuns` sets `Disable = Open`
+  on any symbol-cell part whose reference letters are `TP` and on any symbol cell with one pin (a shield can, a fiducial),
+  and the connectivity check excludes their pins on both sides, as it does a ground symbol's. A one-pin part carries no
+  current whatever its model, so leaving it out loses nothing. Gate: `DesignerRound23ImportTests.ATestPoint_IsDrawnButLeftOutOfARun`.
+- **A part's footprint property carried its case size and nothing read it.** `SchematicImportMap.FootprintOfName` reads an
+  IPC-7351 chip name (`RESC`/`CAPC`/`INDC` + size + `X` + height + density letter, any prefix or suffix) and the
+  `<imperial>_<metric>Metric` spelling. **The IPC size is metric**, so it is matched against `MetricTwin` within the chip
+  family, never with `SmtCaseTable.Find`, which reads imperial codes: an IPC `0603` (0.6 × 0.3 mm, the 0201) handed to
+  `Find` comes back as the imperial 0603, a part 2.7 times longer, and nothing downstream would notice. The density
+  letter maps L/N/M to Least/Nominal/Most. Gate: `DesignerRound23ImportTests.AFootprintName_GivesItsChipCase`.
+- **The Gerber layer list.** An older output set names its files by extension alone (`.TOP .GND .BOT .SMT .SMB .SST .SSB
+  .SPT .SPB`) and ships a brace-structured companion — `{Layers {Layer n {File …} {Type Top|Inner|Bottom|Other}} …}` —
+  which the classifier skipped as "no Gerber or drill content". The name heuristic reads the mask, paste and silkscreen
+  extensions correctly but has no rule for `.TOP`/`.BOT`/`.GND` copper (deliberately: copper is never guessed from an
+  extension), so the copper went to the mapping dialog and a headless import left the stackup EMPTY. `GerberJobFile.Read`
+  now falls back to `ReadLayerList` when the text is not JSON, and the classifier calls such a file a job file: copper is
+  identified at rung 0 in layer order (`Copper,L2,Inr`), every `Other` layer is left to the rungs below. Recognised by its
+  structure, never by the program that wrote it. Gate:
+  `DesignerRound23ImportTests.AGerberLayerList_NamesEachCopperFileAndItsPlaceInTheStack`.

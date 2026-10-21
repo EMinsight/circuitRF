@@ -65,7 +65,7 @@ A part becomes one of circuitRF's own components only where the source makes it 
 | Becomes | When |
 |---|---|
 | **R**, **C**, **L** | a two-pin part whose symbol is named as one (`R`, `RES`, `RESISTOR`, `C`, `CAP`, `CAPACITOR`, `CP`, `L`, `IND`, `INDUCTOR`, alone or followed by `_` or a space and more) **and** whose reference starts with exactly that letter |
-| R, C or L with its footprint | a symbol named after its land pattern, such as `R-0603` or `C-1210` |
+| R, C or L with its footprint | a symbol named after its land pattern, such as `R-0603` or `C-1210`; or an R, C or L whose footprint property names a chip land pattern, such as `RESC1005X038L` or `R_0603_1608Metric` |
 | **ground** | a ground symbol, and any net named `GND`, `GROUND`, `EARTH` or `0` |
 
 Everything else comes in as the source's own symbol: a **symbol cell**. A reference such as `RB1` is not `R`, so that
@@ -77,6 +77,10 @@ part stays a symbol cell even though its symbol is a resistor. To keep any R, L 
 multiplier, becomes a global variable named `<Ref>_<parameter>` (`R1_R`), with the source's text in the import's
 report. Its default is 1 kΩ, 1 nF or 1 nH; for a part marked not fitted it is an open — 1 GΩ, 0.01 pF or 1 H. Set the
 variable to the value you meant.
+
+**A footprint property's size is metric when it is an IPC-7351 name.** `RESC1005X038L` is a 1.0 × 0.5 mm resistor,
+the **0402** case, and its last letter is the density level: the part's `Footprint` becomes `smt:0402@L`. Any text
+before or after the name, such as a library prefix, is ignored.
 
 **A supply rail is a net, never a source.** `+5V` stays a net named `+5V`; circuitRF adds no supply for it.
 
@@ -91,10 +95,15 @@ cell is reused; a different cell of the same name is refused, naming both.
 `check` reports it and a simulation refuses to run until you give it one: a schematic of its own, an S-parameter file,
 or a model. circuitRF does not invent electrical behaviour the source did not state.
 
+**Test points are left out of a run.** A part whose reference starts with `TP`, and any other symbol cell with a single
+pin, is drawn as usual with its **Disable** set to **Open**, so it neither needs a model nor takes part in a
+simulation. The report lists them. Set Disable back to **None** on any you want to include.
+
 ## Ports {#ports}
 
-Nothing becomes a circuitRF Port unless you say so, because which connector is an RF port is your decision. Tick one in
-the **Ports** list and:
+Nothing becomes a circuitRF Port unless you say so, because which connector is an RF port is your decision. The
+**Ports** list offers only connectors that can be one: a signal pin, and at most one other net off ground for its
+reference. A header carrying several signals is not offered. Tick one in the list and:
 
 - **a connector** becomes a Term where it was drawn — its first pin off ground the signal, the next its reference — and
   no symbol cell is made for it;
@@ -113,7 +122,8 @@ from 100 MHz to 6 GHz, which you can change like any other. See [Pin, Port and T
 - **The drawing is the source's.** Every part keeps its position and orientation and every wire its own segments. A
   design drawn on a finer grid than 100 mils keeps its points exactly, and the schematic's connection grid is set to
   match. A part whose pins sit at a different spacing from circuitRF's own symbol is joined to the source's wire with
-  one short bend.
+  one short bend. Where circuitRF's symbol is the longer of the two, the stretch of wire its body now covers is
+  removed, so the wire ends on the pin rather than inside the part.
 - **Labels** go where the source shows them: a part's name where it shows the reference, and its value where it shows
   the value, each reading from the same end. A field the source hides is hidden. circuitRF's labels are always level, so
   a part whose source writes a label up the page — usually an upright resistor's value — keeps circuitRF's own layout.

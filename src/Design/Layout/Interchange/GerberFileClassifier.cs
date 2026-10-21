@@ -138,6 +138,9 @@ public static class GerberFileClassifier
         if (LooksLikeJobFile(head))
             return new GerberFileClass(path, GerberFileKind.JobFile, "a job file (JSON naming the set's files)");
 
+        if (GerberJobFile.LooksLikeLayerList(head))
+            return new GerberFileClass(path, GerberFileKind.JobFile, "a layer list (each file of the set with its layer type)");
+
         if (ArtworkEvidence(head) is { } artwork)
             return new GerberFileClass(path, GerberFileKind.Artwork, artwork);
 

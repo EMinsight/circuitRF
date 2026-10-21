@@ -100,6 +100,39 @@ public static class SchematicImportMap
         return dash > 0 && dash < symbolName.Length - 1 ? SmtCaseTable.Find(symbolName[(dash + 1)..]) : null;
     }
 
+    /// <summary>
+    /// The land pattern a part's own footprint property names (<c>PCB Footprint</c>, <c>Footprint</c> — any property whose
+    /// name says footprint), when it is a chip case circuitRF builds: or null.
+    /// </summary>
+    public static FootprintRef? FootprintOfProperties(IReadOnlyDictionary<string, string>? properties) =>
+        properties?.Where(kv => kv.Key.Contains("footprint", StringComparison.OrdinalIgnoreCase))
+                   .Select(kv => FootprintOfName(kv.Value)).FirstOrDefault(f => f is not null);
+
+    /// <summary>
+    /// A chip case read off a footprint's name — an IPC-7351 name (<c>RESC1005X038L</c>, <c>CAPC1608X080N</c>,
+    /// <c>INDC1005X060L</c>, any prefix or suffix around it), whose size is METRIC and whose last letter is its density
+    /// level; or a name stating both sizes, imperial first (<c>R_0603_1608Metric</c>). Null for anything else.
+    /// <para><b>The size in an IPC name is metric, always.</b> <c>1005</c> there is 1.0 x 0.5 mm, the 0402 case — read as
+    /// an imperial code it would be the 01005, a part 2.5 times smaller, and nothing downstream would notice.</para>
+    /// </summary>
+    public static FootprintRef? FootprintOfName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        var ipc = Regex.Match(name, @"(?:RES|CAP|IND)C[A-Z]?(\d{4})X\d+([LNM])?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (ipc.Success
+            && SmtCaseTable.All.FirstOrDefault(c => c.Family == SmtCaseFamily.Chip && c.MetricTwin == ipc.Groups[1].Value) is { } metric)
+            return FootprintRef.For(metric, char.ToUpperInvariant(ipc.Groups[2].Value.FirstOrDefault()) switch
+            {
+                'L' => DensityLevel.Least,
+                'M' => DensityLevel.Most,
+                _ => FootprintRef.DefaultDensity,
+            });
+        var both = Regex.Match(name, @"(?<![0-9])(\d{4})_(\d{4})Metric", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return both.Success && SmtCaseTable.Find(both.Groups[1].Value) is { Family: SmtCaseFamily.Chip } imperial
+                            && imperial.MetricTwin == both.Groups[2].Value
+            ? FootprintRef.For(imperial) : null;
+    }
+
     /// <summary>A net name the source uses for ground — a power label of one of these is node 0 (overview D3).</summary>
     public static bool IsGroundName(string name) =>
         Regex.IsMatch(name.Trim(), "^(GND|GROUND|EARTH|0)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -137,7 +170,7 @@ public static class SchematicImportMap
     private static ImportPartDecision Native(ForeignInstance inst, string name, SchematicImportRule rule) =>
         NativeValue(inst, name, rule) with
         {
-            Footprint = rule.CaseFromName && CaseOf(name) is { } c ? FootprintRef.For(c).ToString() : null,
+            Footprint = (rule.CaseFromName && CaseOf(name) is { } c ? FootprintRef.For(c) : FootprintOfProperties(inst.Properties))?.ToString(),
         };
 
     private static ImportPartDecision NativeValue(ForeignInstance inst, string name, SchematicImportRule rule)

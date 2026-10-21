@@ -79,7 +79,9 @@ made unique; an unnamed net is a quiet `N`k, drawn without a label when one grou
 that pin on the source's point. Its pins are NOT snapped to the 100-mil pin grid (`BuildSymbol(…, snapPins: false)`), so
 a part pitching pins at 50 mils keeps them apart and every pin lands exactly. A native part
 takes the rotation and on-grid origin nearest its source pins; a pin it misses is re-joined by one dog-leg, the source
-wire never moved. A pin the source joins by touching a label or pin (no wire), and a hidden power pin, get a net label on
+wire never moved — except where a native symbol longer than the source's lies over a wire: the stretch along its axis
+between its two pins is cut away, so the wire ends on the pin instead of inside the body (nothing is cut where anything
+else connects inside that stretch). A pin the source joins by touching a label or pin (no wire), and a hidden power pin, get a net label on
 the pin. Each wired physical ground group keeps its wires and gets a ground symbol where the source grounded it; a
 ground pin with no wire gets one on the pin.
 

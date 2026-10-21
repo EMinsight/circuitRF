@@ -19,7 +19,8 @@
 // A symbol cell's symbol is translated so its first pin is the local origin, and the instance is placed with that pin
 // at the source's point: its pins are NOT snapped to circuitRF's 100-mil pin grid (a source pitching pins at 50 mils would
 // have two land on one point — brief-schimp-2), so every pin lands exactly where the source's did. A native part is fitted to its source pins (the rotation and on-grid origin nearest them); a pin it misses is
-// re-joined by NetlistSchematic's one dog-leg, the source wire never moved (D6). A pin the source connects by touching a
+// re-joined by NetlistSchematic's one dog-leg, the source wire never moved (D6) — save the stretch a longer native
+// body lies over, between its two pins, which is cut away so the wire ends on the pin (TrimUnderBody). A pin the source connects by touching a
 // label or another pin, with no wire, is joined by a net label on it. Each physical ground group with wires keeps its
 // wires and a ground symbol where the source grounded it; a ground pin with no wire gets a ground symbol on the pin.
 //
@@ -149,8 +150,8 @@ public static class SchematicImportBuild
         foreach (var sheet in source.Sheets)
             foreach (var inst in sheet.Instances)
             {
-                if (byRef[inst.Reference].Becomes != ImportPartKind.SymbolCell || symbolCells.ContainsKey((inst.SymbolKey, inst.Unit))
-                    || options.Ports.Contains(inst.Reference)) continue;
+                // A connector asked to be a Port gets its cell too: whether it CAN be one is known only once the nets are.
+                if (byRef[inst.Reference].Becomes != ImportPartKind.SymbolCell || symbolCells.ContainsKey((inst.SymbolKey, inst.Unit))) continue;
                 if (source.Symbol(inst.SymbolKey) is not { } symbol || symbol.Unit(inst.Unit) is not { Pins.Count: > 0 } unit)
                 {
                     refusals.Add($"{inst.Reference}: its symbol '{inst.SymbolKey}' (unit {inst.Unit}) has no pins in the design.");
@@ -207,7 +208,12 @@ public static class SchematicImportBuild
                 notes.Add($"The global net '{name}' is used on more than one sheet; circuitRF keeps a cell's nets to that cell, so "
                         + "the sheets' copies of it are not joined.");
 
-        return new ImportBuildResult(built, [.. symbolCells.Values], [.. sheetCells.Values], mapping, renamed, notes, refusals)
+        // A connector drawn as a Port needs no cell: keep only the cells some drawn instance uses.
+        var drawnKeys = source.Sheets.SelectMany(s => s.Instances).Where(i => !portParts.Contains(i.Reference))
+                              .Select(i => (i.SymbolKey, i.Unit)).ToHashSet();
+        var usedCells = symbolCells.Where(kv => drawnKeys.Contains(kv.Key)).Select(kv => kv.Value).ToList();
+
+        return new ImportBuildResult(built, usedCells, [.. sheetCells.Values], mapping, renamed, notes, refusals)
         { PortParts = portParts };
 
         ImportBuildResult Refuse(string? why = null)
@@ -296,14 +302,30 @@ public static class SchematicImportBuild
             var instancePins = new Dictionary<string, IReadOnlyList<ForeignPinRef?>>(StringComparer.Ordinal);
             var excluded = new HashSet<ForeignPinRef>();
             var usedNames = new HashSet<string>(StringComparer.Ordinal);
-            var portRefs = PortReferences();
             var drawnFrom = new Dictionary<string, (ForeignInstance Inst, (double X, double Y) Off, ImportPartDecision Decision)>(StringComparer.Ordinal);
+            var nativePins = new Dictionary<string, (Instance Instance, List<int> Nodes)>(StringComparer.Ordinal);
 
             string NetOfPin(int node) => netOf[node];
+
+            // Where a native pin must not land: on a wire, or a pin, of a net that is not its own.
+            var foreign = _nodes.Select((node, n) => (Node: node, Net: netOf.TryGetValue(n, out var net) ? net : null))
+                                .Where(x => x.Net is not null && x.Node.Kind is NodeKind.Wire or NodeKind.Pin).ToList();
+            bool ClashesWithOtherNet((double X, double Y) at, string net) =>
+                foreign.Any(x => x.Net != net && (x.Node.Wire is { } w ? OnPolyline(w.Points, at) : x.Node.At == at));
             bool Wired(int node) => GroupHasWire(_physical.Find(node));
 
             // Pins by unit, in declaration order.
             var units = pinNodes.GroupBy(n => (_nodes[n].Pin!.Sheet, _nodes[n].Pin!.Inst)).ToList();
+
+            // A connector that cannot be a Port is drawn as the part it is. Decided here, before anything is drawn: decided
+            // after, it was skipped as a Port to be and then refused as one, and was left out of the import altogether.
+            var portRefs = PortReferences();
+            foreach (var unit in units)
+                if (portRefs.Contains(unit.Key.Inst.Reference) && PortRefusal(unit.ToList(), netOf) is { } why)
+                {
+                    notes.Add($"{unit.Key.Inst.Reference} cannot be a Port: it has {why}. It is imported as its symbol cell.");
+                    portRefs.Remove(unit.Key.Inst.Reference);
+                }
             foreach (var unit in units)
             {
                 var inst = unit.Key.Inst;
@@ -334,7 +356,8 @@ public static class SchematicImportBuild
                     tb.Instances.Add(instance);
                     if (decision.Variable is { } v && !tb.GlobalVariables.Any(g => g.Name == v.Name))
                         tb.GlobalVariables.Add(new Variable(v.Name, v.Expression, v.Unit));
-                    exactInstances[name] = FitNative(instance, nodes.Select(n => _nodes[n].At).ToList());
+                    exactInstances[name] = FitNative(instance, nodes.Select(n => _nodes[n].At).ToList(), nets, ClashesWithOtherNet);
+                    nativePins[name] = (instance, nodes);
                 }
                 else
                 {
@@ -375,7 +398,7 @@ public static class SchematicImportBuild
 
             // ── ports (overview D9) ───────────────────────────────────────────────────────────────
             AddPorts(tb, units.Select(u => (u.Key.Inst, u.ToList())).ToList(), netOf, exactInstances, joinByLabel, instancePins,
-                     usedNames, excluded);
+                     usedNames, excluded, portRefs);
 
             // A connector drawn as a Port is not drawn itself, so the wire and ground symbol that grounded its shield
             // would be left standing alone: a ground group that only such pins reached is not drawn.
@@ -393,6 +416,10 @@ public static class SchematicImportBuild
                 if (!routes.TryGetValue(net, out var list)) routes[net] = list = [];
                 list.Add(_nodes[n].Wire!.Points);
             }
+            // A part with both pins on one net may sit on a wire the net runs straight through: cutting would sever it.
+            foreach (var (name, native) in nativePins)
+                if (native.Nodes.Select(n => netOf[n]).Distinct().Count() == native.Nodes.Count)
+                    TrimUnderBody(routes, native.Instance, exactInstances[name], native.Nodes);
 
             var placement = new ExactPlacement
             {
@@ -417,6 +444,9 @@ public static class SchematicImportBuild
                         + "(a pin would land on another net's pin) and were placed beside the drawing.");
             model.GridSize = grid;
             PlaceSourceLabels(model, drawnFrom, result.PlacementFallbacks);
+            // The connectivity check leaves their pins out on both sides, as it does a ground symbol's.
+            foreach (var name in LeaveOutOfRuns(model, drawnFrom))
+                foreach (var pin in instancePins[name]) if (pin is { } p) excluded.Add(p);
 
             // ── what NetlistSchematic does not draw ────────────────────────────────────────────────
             AddGroundSymbols(model, groundGroups);
@@ -647,20 +677,104 @@ public static class SchematicImportBuild
         // ── placement ───────────────────────────────────────────────────────────────────────────
 
         /// <summary>A native part at the rotation, and the origin on the source's grid, that put its pins nearest the
-        /// source's (overview D6): every quarter turn tried, the origin the mean of what each pin asks for.</summary>
-        private ExactInstance FitNative(Instance instance, IReadOnlyList<(double X, double Y)> sourcePins)
+        /// source's (overview D6): every quarter turn tried, the origin the mean of what each pin asks for, snapped either
+        /// way. A fit that lands a pin on another net's wire or pin is taken only when nothing else is left — a capacitor
+        /// pitched 300 mils snaps its 400-mil native symbol 50 mils up or down, and one of the two can put a pin on a wire
+        /// the source only crosses.</summary>
+        private ExactInstance FitNative(Instance instance, IReadOnlyList<(double X, double Y)> sourcePins, IReadOnlyList<string> nets,
+                                        Func<(double X, double Y), string, bool> clashes)
         {
+            const double Clash = 1e9;
             ExactInstance best = new(sourcePins[0].X, sourcePins[0].Y, SymbolRotation.R0, false);
             double bestCost = double.MaxValue;
             foreach (var rot in new[] { SymbolRotation.R0, SymbolRotation.R90, SymbolRotation.R180, SymbolRotation.R270 })
             {
                 if (NetlistSchematic.PinOffsets(instance, rot, false) is not { } offsets || offsets.Count != sourcePins.Count) continue;
-                double ox = Snap(sourcePins.Select((p, k) => p.X - offsets[k].X).Average());
-                double oy = Snap(sourcePins.Select((p, k) => p.Y - offsets[k].Y).Average());
-                double cost = sourcePins.Select((p, k) => Math.Abs(ox + offsets[k].X - p.X) + Math.Abs(oy + offsets[k].Y - p.Y)).Sum();
-                if (cost < bestCost - 1e-9) { bestCost = cost; best = new ExactInstance(ox, oy, rot, false); }
+                double mx = sourcePins.Select((p, k) => p.X - offsets[k].X).Average();
+                double my = sourcePins.Select((p, k) => p.Y - offsets[k].Y).Average();
+                foreach (double ox in SnapsOf(mx))
+                    foreach (double oy in SnapsOf(my))
+                    {
+                        double cost = sourcePins.Select((p, k) => Math.Abs(ox + offsets[k].X - p.X) + Math.Abs(oy + offsets[k].Y - p.Y)).Sum()
+                                    + offsets.Select((o, k) => clashes((ox + o.X, oy + o.Y), nets[k]) ? Clash : 0).Sum();
+                        if (cost < bestCost - 1e-9) { bestCost = cost; best = new ExactInstance(ox, oy, rot, false); }
+                    }
             }
             return best;
+        }
+
+        /// <summary>The nearest grid point to <paramref name="v"/> first, then the other one either side of it.</summary>
+        private IEnumerable<double> SnapsOf(double v)
+        {
+            double near = Snap(v);
+            yield return near;
+            double other = v < near ? near - grid : near + grid;
+            if (Math.Abs(v - near) > 1e-9) yield return other;
+        }
+
+        private static bool OnPolyline(IReadOnlyList<(double X, double Y)> points, (double X, double Y) at)
+        {
+            for (int i = 0; i + 1 < points.Count; i++)
+            {
+                var (a, b) = (points[i], points[i + 1]);
+                if (at.X < Math.Min(a.X, b.X) - 1e-6 || at.X > Math.Max(a.X, b.X) + 1e-6
+                    || at.Y < Math.Min(a.Y, b.Y) - 1e-6 || at.Y > Math.Max(a.Y, b.Y) + 1e-6) continue;
+                if (Math.Abs((b.X - a.X) * (at.Y - a.Y) - (b.Y - a.Y) * (at.X - a.X)) < 1e-6) return true;
+            }
+            return points.Count == 1 && points[0] == at;
+        }
+
+        /// <summary>
+        /// A native part longer than the source's symbol lands its body over part of a source wire: a capacitor drawn
+        /// 300 mils pin to pin is fitted with its 400-mil native symbol, and the wire leaving the source's lower pin now
+        /// starts inside the capacitor, with the native pin somewhere along it. The one change made to a source wire (D6):
+        /// the stretch lying along the part's axis strictly between its two pins is cut away, so the wire ends on the pin
+        /// again. Nothing is cut where anything else connects inside that stretch — another part's pin, a junction, a
+        /// label, or a wire arriving across it — since the part's body would hide that connection either way.
+        /// </summary>
+        private void TrimUnderBody(Dictionary<string, List<IReadOnlyList<(double X, double Y)>>> routes, Instance instance,
+                                   ExactInstance at, List<int> own)
+        {
+            const double Eps = 1e-6;
+            if (NetlistSchematic.PinOffsets(instance, at.Rotation, at.MirrorX) is not { Count: 2 } o) return;
+            var (ax, ay, bx, by) = (at.X + o[0].X, at.Y + o[0].Y, at.X + o[1].X, at.Y + o[1].Y);
+            bool vertical = Math.Abs(ax - bx) < Eps;
+            if (vertical == Math.Abs(ay - by) < Eps) return;
+            double line = vertical ? ax : ay;
+            double lo = vertical ? Math.Min(ay, by) : Math.Min(ax, bx), hi = vertical ? Math.Max(ay, by) : Math.Max(ax, bx);
+
+            bool OnLine((double X, double Y) p) => Math.Abs((vertical ? p.X : p.Y) - line) < Eps;
+            bool Inside((double X, double Y) p) => OnLine(p) && (vertical ? p.Y : p.X) is var u && u > lo + Eps && u < hi - Eps;
+
+            for (int n = 0; n < _nodes.Count; n++)
+                if (_nodes[n].Kind != NodeKind.Wire && !own.Contains(n) && Inside(_nodes[n].At)) return;
+            foreach (var polyline in routes.Values.SelectMany(r => r))
+                for (int i = 0; i < polyline.Count; i++)
+                    if (Inside(polyline[i])
+                        && (i > 0 && !OnLine(polyline[i - 1]) || i + 1 < polyline.Count && !OnLine(polyline[i + 1])))
+                        return;
+
+            foreach (var net in routes.Keys.ToList())
+                routes[net] = [.. routes[net].SelectMany(Cut)];
+
+            IEnumerable<IReadOnlyList<(double X, double Y)>> Cut(IReadOnlyList<(double X, double Y)> polyline)
+            {
+                (double X, double Y) Point(double u) => vertical ? (line, u) : (u, line);
+                var piece = new List<(double X, double Y)> { polyline[0] };
+                for (int i = 0; i + 1 < polyline.Count; i++)
+                {
+                    var (p, q) = (polyline[i], polyline[i + 1]);
+                    double pu = vertical ? p.Y : p.X, qu = vertical ? q.Y : q.X;
+                    double s0 = Math.Max(Math.Min(pu, qu), lo), s1 = Math.Min(Math.Max(pu, qu), hi);
+                    if (!OnLine(p) || !OnLine(q) || s1 - s0 <= Eps) { piece.Add(q); continue; }
+                    double enter = pu <= qu ? s0 : s1, leave = pu <= qu ? s1 : s0;
+                    if (Math.Abs(enter - pu) > Eps) piece.Add(Point(enter));
+                    if (piece.Count >= 2) yield return piece;
+                    piece = [Point(leave)];
+                    if (Math.Abs(leave - qu) > Eps) piece.Add(q);
+                }
+                if (piece.Count >= 2) yield return piece;
+            }
         }
 
         private double Snap(double v) => Math.Round(v / grid) * grid;
@@ -697,7 +811,7 @@ public static class SchematicImportBuild
         private void AddPorts(TestBench tb, List<(ForeignInstance Inst, List<int> Nodes)> units, Dictionary<int, string> netOf,
                               Dictionary<string, ExactInstance> exact, HashSet<(string, int)> joinByLabel,
                               Dictionary<string, IReadOnlyList<ForeignPinRef?>> instancePins, HashSet<string> used,
-                              HashSet<ForeignPinRef> excludedPorts)
+                              HashSet<ForeignPinRef> excludedPorts, HashSet<string> portRefs)
         {
             int num = 0;
             double left = _nodes.Where(n => n.Kind is NodeKind.Wire or NodeKind.Pin).Select(n => n.At.X).DefaultIfEmpty(0).Min() - 800;
@@ -706,18 +820,14 @@ public static class SchematicImportBuild
             foreach (var want in options.Ports)
             {
                 var unit = units.FirstOrDefault(u => u.Inst.Reference == want);
+                if (unit.Inst is not null && !portRefs.Contains(want)) continue;   // refused above, drawn as its part
                 string name = InstanceName($"P{num + 1}", used);
                 if (unit.Inst is not null)
                 {
                     var nodes = unit.Nodes;
                     int sig = nodes.FindIndex(n => !IsGround(netOf[n]));
                     var others = nodes.Where((n, i) => i != sig).ToList();
-                    var otherNets = others.Select(n => netOf[n]).Where(n => !IsGround(n)).Distinct().ToList();
-                    if (sig < 0 || otherNets.Count > 1)
-                    {
-                        notes.Add($"{want} cannot be a Port: it has {(sig < 0 ? "no pin off ground" : "more than two signal nets")}.");
-                        continue;
-                    }
+                    var otherNets = others.Select(n => netOf[n]).Where(n => !IsGround(n) && n != netOf[nodes[sig]]).Distinct().ToList();
                     string minus = otherNets.Count == 1 ? otherNets[0] : "0";
                     tb.Instances.Add(PortInstance(name, ++num, netOf[nodes[sig]], minus));
                     PortParts.Add(want);
@@ -744,6 +854,39 @@ public static class SchematicImportBuild
                 instancePins[name] = [null, null];
             }
             if (num > 0) tb.Analyses.Add(new SParameterAnalysis(RecognitionEmit.AnalysisName, RecognitionEmitOptions.DefaultSweep));
+        }
+
+        /// <summary>
+        /// A test point (<c>TP</c>…) or any other symbol cell with one pin is drawn but left out of a run (Disable = Open):
+        /// it has no model, so a run would refuse the whole design for want of one, and a part with a single pin carries
+        /// no current whatever its model would be. The user can switch it back on like any disabled part.
+        /// </summary>
+        private List<string> LeaveOutOfRuns(SchematicEditModel model,
+            Dictionary<string, (ForeignInstance Inst, (double X, double Y) Off, ImportPartDecision Decision)> drawnFrom)
+        {
+            var left = new List<string>();
+            foreach (var c in model.Components)
+            {
+                if (c.InstanceName is not { } name || !drawnFrom.TryGetValue(name, out var from)
+                    || from.Decision.Becomes != ImportPartKind.SymbolCell) continue;
+                bool testPoint = new string([.. from.Inst.Reference.TakeWhile(char.IsLetter)]).Equals("TP", StringComparison.OrdinalIgnoreCase);
+                if (!testPoint && source.Symbol(from.Inst.SymbolKey)?.Unit(from.Inst.Unit)?.Pins.Count != 1) continue;
+                c.Disable = DisableState.Open;
+                left.Add(name);
+            }
+            if (left.Count > 0)
+                notes.Add($"{left.Count} test point(s) and single-pin part(s) are drawn but left out of a run (Disable = Open): "
+                        + $"{string.Join(", ", left.Order(StringComparer.Ordinal))}.");
+            return left;
+        }
+
+        /// <summary>Why a connector with these pins cannot be a Port (overview D9) — it needs one signal pin, and at most one
+        /// other net off ground for its reference — or null when it can.</summary>
+        private static string? PortRefusal(IReadOnlyList<int> nodes, Dictionary<int, string> netOf)
+        {
+            static bool IsGround(string net) => net == "0" || net.StartsWith("GND_", StringComparison.Ordinal);
+            int off = nodes.Select(n => netOf[n]).Where(n => !IsGround(n)).Distinct().Count();
+            return off == 0 ? "no pin off ground" : off > 2 ? "more than two signal nets" : null;
         }
 
         private static Instance PortInstance(string name, int num, string plus, string minus) =>

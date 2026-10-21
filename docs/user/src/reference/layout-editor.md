@@ -740,7 +740,9 @@ suggests **Convert to Via** for it.
 Point at a folder and the whole board comes in as one flat cell, with its vias rebuilt from the drill data. What
 each file is gets decided by its content, never its extension, and which layer it is by the job file, the
 file's X2 attributes, a Gerber suffix in your technology, a name heuristic, or the layer-mapping dialog, in that
-order. The dialog's **Technology** row chooses between a new technology written from the files &mdash; whose
+order. An older set may carry a layer list instead of a job file &mdash; a text file of `{Layer n {File …} {Type …}}`
+blocks &mdash; and its `Top`, `Inner` and `Bottom` types settle which files are copper, and in what order, exactly as a
+job file does. The dialog's **Technology** row chooses between a new technology written from the files &mdash; whose
 substrate is a guess, named as one in the import summary &mdash; and a technology you already have, which the
 layout then uses unchanged. [AN-02](../app-notes/an02-gerber-import.html) walks an import through on a real
 board, every dialog included.

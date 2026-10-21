@@ -1505,7 +1505,16 @@ public static class NetlistSchematic
             if (exact.Routes.TryGetValue(net, out var given))
                 foreach (var run in given)
                     if (Orthogonal(run.Select(Grid)) is { Count: >= 2 } pts) runs.Add(pts);
-            if (runs.Count == 0) { byLabel.Add(net); continue; }
+            if (runs.Count == 0)
+            {
+                // Pins that touch are joined already (two parts drawn pin to pin): no wire to draw, and one label only to
+                // show the net's name or to join the pins labelled elsewhere.
+                var touching = pins.Select(p => p.At).Distinct().ToList();
+                if (touching.Count != 1) byLabel.Add(net);
+                else if (!exact.QuietNets.Contains(net) || labelled.Any(l => l.Net == net))
+                    model.NetLabels.Add(new EditableNetLabel { X = touching[0].X, Y = touching[0].Y, Name = net });
+                continue;
+            }
 
             var vertices = runs.SelectMany(r => r).Distinct().ToList();
             foreach (var (at, (ox, _)) in pins)
