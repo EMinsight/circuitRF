@@ -1404,3 +1404,18 @@ src/Engine/Modeling/VectorFit.cs|Every response has one value per frequency.
 src/Engine/Modeling/VectorFit.cs|Frequencies are positive.
 src/Engine/Modeling/VectorFit.cs|Least squares needs at least as many rows as columns.
 src/Engine/Modeling/VectorFit.cs|No order could be fitted.
+
+# ── Model Composer MC-26: the Verilog-A writer (2026-10-21) ──────────────────────────────────
+# Every refusal the user reads is a VerilogAExportException built from (field, sentence) pairs, which
+# this gate does not see. These are the writer's internal invariants (an input or array the validated
+# model guarantees, a literal or rule the writer is never handed) and VaUntranslatableException's
+# fragments, which name the construct and are folded into that refusal's own sentence.
+src/Design/Modeling/VerilogA/VaAnn.cs|'{name}' has {inOffset.Length} inputs, not {d}.
+src/Design/Modeling/VerilogA/VaDomain.cs|'{name}' is not an input.
+src/Design/Modeling/VerilogA/VaEquation.cs|'{cl.Name}' with {cl.Args.Length} arguments
+src/Design/Modeling/VerilogA/VaEquation.cs|a condition that is not a comparison
+src/Design/Modeling/VerilogA/VaEquation.cs|the constant '{c.Name}'
+src/Design/Modeling/VerilogA/VaEquation.cs|the function '{cl.Name}'
+src/Design/Modeling/VerilogA/VaEquation.cs|the operator '{op}'
+src/Design/Modeling/VerilogA/VaNetwork.cs|no Verilog-A form for the scaling rule '{v.Rule}'.
+src/Design/Modeling/VerilogA/VaText.cs|{x} has no Verilog-A literal.

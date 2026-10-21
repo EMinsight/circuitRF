@@ -3155,3 +3155,11 @@ through `DriveLadder.ContinueThroughJump`. Never for a vacuous-tolerance refusal
 smaller steps "converge" against the same meaningless tolerance and were reported as compression
 (`VacuousToleranceAndCompressionCredibilityTests` caught it). Continuity is still never judged against the tickle.
 Gate: `ComposedFetLoadpullTests.AFirstRungTheTickleCannotReach_IsContinuedFromIt_AndDrivesToCompression`.
+
+## The DC engine dropped a model's refusal (brief-modelcomposer-26, 2026-10-21)
+
+`TryBuildResidualAndJacobian` takes an `ExternalDeviceException` as an ordinary outcome of trying a bias and shortens the
+step, which is right. Nothing kept the exception's text, though, so when the solve then failed, the report named only
+residuals. The refusal itself was very often the reason: a compiled model's `$fatal` naming the quantity that was not
+finite, attached by the worker channel as `Worker output:`. The engine now keeps the last refusal (`_lastRefusal`), and
+the worst-unsettled report ends with `The last point a model refused: …`. A solve that converges is unaffected.

@@ -1388,6 +1388,7 @@ verb call; every long one takes a `RunControl` (vector fitting is cancellable be
 | `src/Core/Expressions/` | MC-12: `validrange` and `Evaluator.Warn` |
 | `src/Design/Modeling/ModelCommands.cs` | MC-13: the operations no step function was whole — `New`, `Import` (with `Sources`, `FormatOf`, `DefaultName`), `Deembed`, `Fit` (with `AllSteps`, `Configure`, `FitOptions`), `Explain`, `ExportCell`; `CmcFile.ParseDataSet`, `ConservationCheck.RunDevice`/`DefaultThreshold`, `ModelValidationReport.DefaultFolder` |
 | `src/Cli/Model.cs`, `src/Cli/Serve/ToolCatalog.cs` | MC-13: the `model` verb and its MCP tool (`cli.md` §31); `reference cmc`/`cmodel` in `DocumentSchema` |
+| `src/Design/Modeling/VerilogA/` | MC-26: `CmodelVerilogA` (with `VerilogAOptions`, `VerilogAExportException`), `VaEquation`, `VaAnn`, `VaDomain`, `VaNetwork`, `VaText` (§25) |
 
 ## 17. Gates (MC-1 … MC-12)
 
@@ -1786,3 +1787,196 @@ crossing `vds = 0` needs nothing special.
 
 **Cost.** A frozen instance evaluates the surface at 8 nodes per sample, each with its Hessian (for network charges, two
 extra passes per charge). Only instances with a branch switch pay it, and an instance with none runs the code it ran before.
+
+## 25. Verilog-A export (MC-26)
+
+`CmodelVerilogA.Write(ComposedModel, VerilogAOptions)` writes a model as one self-contained Verilog-A module, and
+`Export(cmodelPath, vaPath)` writes that to a file by a temporary file and a rename. It reads the `ComposedModel` that
+`CmodelFile.Read` returns, so a `.cmodel` alone exports. MC-28 will pass `CmodelExport.Assemble`'s in-memory model
+through the same `Write`. The code is in `src/Design/Modeling/VerilogA/`. This phase writes everything that has no state
+of its own. Dispersion, traps and self-heating are refused, and MC-27 adds them.
+
+### 25.1 The module
+
+```
+// header: provenance, model.json SHA-256, every parameter with unit, default and meaning
+`include "disciplines.vams"
+`include "constants.vams"
+module <name>(g, d, s);
+  electrical gi, di, si;                 // network pins 4-6
+  electrical <network nets>;             // and gnd, ground, when an element reaches 0
+  branch (a, b) br_<L>;                  // one per inductor
+  parameter integer N = <N0> from [1:inf);
+  parameter real Temp = -273.15 from [-273.15:inf);
+  parameter real <network variable> = <base SI value> [from (0:inf)];
+  parameter real <constituent>_<parameter> = <fitted value>;
+  parameter real Gx_<payload> = <G_x> from (0:inf);
+  analog function real f_<payload>;  ...  // value, gradient into the d_ outputs
+  analog function real x_<payload>;  ...  // a table or ANN continued outside its domain
+  analog begin
+    kN = N/N0;  <var>_N = <var>*(N/N0 or N0/N);
+    Tdev = Temp set ? Temp : $temperature - `P_CELSIUS0;  T = min(max(Tdev, Tmin), Tmax);
+    @(initial_step) $warning(...) when the model is used outside its temperature;
+    <network contributions>
+    vgs = V(gi, si); vds = V(di, si); image under Exchange;
+    id = x_Id(ugs, uds, T); igs, igd, qg, qd likewise;   $fatal on a value that is not finite
+    I(gi, si) <+ kN*(igs + igd);  I(di, si) <+ kN*(id - igd);
+    I(gi, si) <+ ddt(kN*qg);      I(di, si) <+ ddt(kN*qd);
+  end
+endmodule
+```
+
+- **The name** is the `.cmodel`'s file name made into an identifier (`gan 4x125` → `gan_4x125`, `4x125` → `m_4x125`).
+  `ModuleName` overrides it, and an illegal override is refused.
+- **The bytes** are deterministic. Doubles are written in shortest round-trip form with a lower-case exponent, and a
+  whole number is written `5.0`, because `1/2` between two integer literals is integer division in Verilog-A. Lines end
+  in `\n` and the file is printable ASCII (`°C` is written `degC`). The header carries the model's `Provenance.Created`,
+  its circuitRF version and the SHA-256 of `model.json`. `Export` hashes the entry as the file holds it, and `Write`
+  hashes `CmodelFile.ModelJson`; the two agree because the writer is deterministic.
+- **The parameters** are those of D18 without the switches (MC-27). `N` is an integer from 1, as circuitRF requires.
+  `Temp`'s unset value is −273.15 °C, which circuitRF refuses as a device temperature, so it cannot mean anything else.
+  Network variables are written at the base periphery, and the scaling is code. A variable that is an R's value has
+  `from (0:inf)`. Equation parameters are prefixed by their constituent (`Id_beta`, `Ig_Isg`), so two constituents'
+  parameters cannot collide. ANN weights and normalisations are literals: a 4 × 64 network holds about 12,700 numbers,
+  nobody edits a list that long, and some hosts cap the count. There is no `m` parameter, because the host's own
+  multiplier scales the whole device. In circuitRF the multiplier scales the whole residual, so the branch rows of the
+  internal inductors are scaled too, and the result is the same as circuitRF's own `L/m`.
+
+### 25.2 The network
+
+`VaNetwork` mirrors `ComposedNetworkTemplate.Synthesize`. Pins 1–3 are `g d s`, pins 4–6 are `gi di si`, and every
+other net keeps its name. `R` is written `I <+ V/R`, `C` is `I <+ ddt(C·V)`, `L` is `V(br) <+ L·ddt(I(br))`, and each
+`Mutual` adds `M·ddt(I(br_other))` to both inductors' branches. `Short` is written `V <+ 0`. Anything else is refused by
+element name and type, and so is a Mutual whose ends are not two `L` elements. An element's value is translated from its
+AST over the scaled variables. It is then checked against the number circuitRF folds it to, with and without the site
+unit, and a value whose units cannot be followed is refused rather than written wrong.
+
+### 25.3 Value and gradient, emitted
+
+Each payload is an `analog function` that returns its value and writes its gradient into one `output` argument per
+input. The installed compiler accepts `output` arguments, accepts calls from one function into another, lets a function
+read module parameters, and **differentiates through output arguments**. That was checked first, with
+`f(p_b) + ∇f(p_b)·(p − p_b)` and `p_b` clamped on one axis. A probe through the worker read `∂F/∂x` with the
+`∂(∂f/∂y)/∂x` term included. So each payload is one function. Copying the code once per evaluation point with suffixed
+names was not needed.
+
+Verilog-A's automatic derivatives cannot replace the emitted gradient. They differentiate at the circuit's operating
+point only. Guided extrapolation needs `∇f` at the boundary point, and MC-27's linear-charge switches need `C` at a bias
+point, and the circuit is at neither. The compiler then differentiates the emitted code again where the circuit needs
+it, and because `p_b` moves with `p`, that derivative is the continuation's exact gradient.
+
+- **An equation** (`VaEquation`) is differentiated source to source in forward mode from the expression engine's AST.
+  Every non-leaf node writes its value into a temporary and its derivative by each input into another, with the
+  arithmetic of the engine's dual numbers in the same order. The engine's domain guards are written too: `exp` is capped
+  at 700, `ln` of a non-positive number is taken at 1e-300 and `sqrt` of a negative number at 0. The emitted gradient
+  equals `EvalDualInto`'s to 1e-14 at 50 seeded points for every function (`EquationTranslationTests`).
+- **An ANN** (`VaAnn`) is written neuron by neuron as `AnnEvaluator` carries it: the bias plus the weighted inputs in
+  column order, `h′ = (1 − h²)·z′` for `Tanh` and `h(1 − h)·z′` for the logistic `Sigmoid`, then the de-normalisation.
+  The first layer's gradient is the literal `W·scale`, formed the way the evaluator forms it.
+- **Asinh** gives `f = I0·sinh(u)` and `∇f = ∇u·I0·cosh(u)`. **A drift charge's pieces** are 1- and 2-input ANNs
+  continued to first order beyond their box (`BoxContinuation`), and the analog block sums them as `DriftCharges` does
+  ([I11] eq. 3), reading the channel current at the same point.
+
+**The function map.** The set is the SDD compiler's 21 functions. A test reads them from `SddCompiled.cs` and
+`SddRegisterProgram.cs` and fails when one has no row. A function outside the set is refused by name. There are three
+traps. circuitRF's `log` and `ln` are both natural, but Verilog-A's `log` is base 10, so both are written `ln` and
+`log10` is written `log`. `if(c, a, b)` becomes `c ? a : b`. `^` becomes `pow`, and `sign` is spelled out as a ternary.
+A literal carrying a unit is base SI in the AST, so no unit reaches the file.
+
+### 25.4 Guided extrapolation
+
+`VaDomain` ports `DomainGeometry.Project` and `GuidedExtrapolation.Evaluate` line for line. The centre, extent and
+counter-clockwise vertices are literals computed exactly as the constructor computes them, and the edge vectors and
+squared lengths are formed the same way. The inside test, the edge-by-edge nearest-point search with its strict `<`, and
+the box clamp all read the same numbers in the same order. Inside the domain `p_b` is `p` itself, because a
+round trip through normalised coordinates would move it by a rounding. Outside, every axis comes back through
+`centre + extent·u_b`, as in circuitRF. The value is `f(p_b) + ∇f(p_b)·(p − p_b)`, and for a current it adds
+`(G_x/0.05)·s·√d²` when `d² > 0`. The guard keeps the compiler from differentiating `√0`.
+
+### 25.5 The core
+
+`vgs`, `vds`, the `Exchange` image and its map back (`Id` negated, `IgGs`/`IgGd` exchanged, `Qd = −Qg′ − Qd′`) follow
+§4.10. The compiler then derives the image's Jacobian itself. The currents and charges times `N/N0` are as in §4.2. The
+temperature follows §4.4. `Tdev` is the instance's `Temp`, or `$temperature` in °C. A `Range` model reads it clamped,
+and a `Single` model reads no `T`. Each says so once with a `$warning` at `@(initial_step)` when it is used outside its
+temperature, using circuitRF's own 1e-9 tolerance. A value that is not finite raises `$fatal`, naming the
+constituent and the point.
+
+### 25.6 Refusals
+
+All refusals are collected and reported in one `VerilogAExportException`, one line per field:
+
+- a **table** constituent, every one by name, `IdRF` included (D17). The compiler takes neither arrays nor
+  `$table_model`, and `$table_model` does not interpolate as circuitRF's not-a-knot spline does;
+- a **network element** with no translation, or a parameter on an element other than its value;
+- a **function** outside the set, or another construct with no translation;
+- **traps**, **self-heating** and **dispersion** (MC-27);
+- a **name** that is a Verilog-A keyword, built-in function or standard discipline or nature (`VaText.Reserved`, from
+  the Verilog-AMS 2.4 keyword list), that the module already uses (`vgs`, `N`, `f_Id`, …), or a parameter that differs
+  from another only in case, naming both. Names are refused and never renamed (open item below).
+
+### 25.7 What had to change outside the writer
+
+- **The device worker never installed the model's log hook.** A compiled model sends every `$display`, `$warning`,
+  `$error` and `$fatal` through an `osdi_log` pointer that the library exports and the host must fill in. Left null,
+  the first message a model printed killed the worker with nothing on stderr. `tools/osdi-worker` now installs one. It
+  writes each distinct message to stderr once, because the worker evaluates every point as a DC operating point, so
+  `@(initial_step)` runs on every evaluation. A `$fatal` is always written. A `$fatal` point therefore comes back as a
+  refused point carrying the model's sentence (`tools/osdi-worker/RESOLVED.md`).
+- **A `VerilogA` instance's `m` was forwarded to the model as a parameter**, and every model refused it, although the
+  comment beside the code says circuitRF's own multiplier applies. It is now kept back, and the elaborator's
+  multiplier applies (`src/Core/RESOLVED.md`).
+- **The DC engine dropped a model's refusal.** A refused point is taken as a step to shorten, so a `$fatal` sentence never
+  reached the user. When the solve then fails, the non-convergence report now ends with the last refusal
+  (`src/Engine/RESOLVED.md`).
+
+### 25.8 Measured
+
+| What | Code | Compile |
+|---|---|---|
+| `ComposedTestModels`' all-equation model | 12 KiB | 0.1 s |
+| The shipped example's own Ig, Qg and Qd networks (3 inputs, 2 × 8, Tanh, Asinh gate) with an equation Id | 110 KiB | 0.8 s |
+| One 4 × 64 Tanh ANN (2 inputs) as Id | 1.2 MB | 30 s |
+
+These were measured on an Apple-silicon Mac with the compiler on PATH. The shipped example as a whole has traps and
+self-heating, so it cannot be exported until MC-27. The brief's prototype compiled a 4 × 64 network with a thermal node
+in about 10 s, a third of what this module takes. Each neuron here carries one gradient sum per input, which the
+compiler differentiates again. After the first compile, the artefact is cached on the source's content.
+
+### 25.9 Gates
+
+`tests/Ui.Tests/ModelComposer/VerilogA/`:
+- **`CmodelVerilogAWriterTests`** (text level): the same bytes twice, across a write → read → write, and from `Export`.
+  Also the header and parameters, the module name, and each refusal by its sentence, including three tables in one
+  message.
+- **`EquationTranslationTests`** (text level): the function set against the engine's source, and every function plus
+  `^`, a conditional, `e`/`pi`, division and a unit literal, run through a test-side Verilog-A interpreter
+  (`VaInterpreter`) against `EvalDualInto` at 50 seeded points to 1e-14. It also checks the three traps' spellings.
+- **`CompiledVerilogATests`** (`CompilerTheory`/`CompilerFact`, which skip with a reason when no compiler or worker is
+  reachable). Ten cases each compare the `.va` placed as `VerilogA` with the `.cmodel` placed as `ComposedFET` on one
+  bench. The cases are all-equation, all-ANN `Tanh` and `Sigmoid`, the asinh gate, `Exchange` swept through `vds = 0`,
+  drift charges continued beyond their boxes, a `Range` model at 50 °C and at 150 °C (clamped, warned), `N = 7` and
+  `m = 2`. The gates are:
+  - **DC**, over a grid outside the pentagon on every side: `Id`, `Ig` within max(1e-9 relative, 1e-15 A);
+  - **S**, at three biases, one beyond the oblique edge, 1–20 GHz: within 1e-9·max(1, |S|);
+  - **HB**, a drive sweep to 3 dB compression: Pout and gain within 0.001 dB, PAE within 0.01 pp.
+
+  The worst |ΔS| is 1e-14 to 3e-13, except `m = 2` at 9e-10. That is circuitRF's own `m`: at 1 GHz a `ComposedFET` with
+  `m = 2` sits 8.5e-11 from two parallel `ComposedFET`s, while the `.va` with `m = 2` sits 2.8e-14 from two parallel
+  `.va`s, and two parallel of each agree exactly. HB agrees to about 1e-10 dB. The DC solves run to a residual of
+  1e-12 A. At a forward-biased gate the default 1e-6 alone leaves two exact implementations 2.5e-8 apart.
+  `Exchange` uses the equation model, whose currents are continuous at `vds = 0`. The ANN test networks are not
+  continuous there, and neither simulator solves near zero with them. Two more tests check that a non-finite
+  constituent is refused naming it through the worker, and that a 4 × 64 network compiles (Benchmark tier, 30 s).
+
+### 25.10 Open
+
+- **A name that clashes in case or with a keyword is refused, not renamed** (brief §5). Renaming (`rg` → `rg_1`) would
+  export every model, but it would change names the user chose and will look for in the other simulator.
+- **`atan`, `asin`, `acos` and `atan2` have no derivative in the engine.** Both SDD compilers carry them as constants
+  under differentiation (`CMathConstNode`, `EmitMathConst`), so an equation using one has a zero gradient through it in
+  circuitRF. The emitted gradient copies the engine. The value code, however, is differentiated by the compiler, which
+  gets the true derivative, so a `.va` and a `.cmodel` with such an equation disagree in S-parameters and HB but not
+  in DC.
+- **In circuitRF a `$fatal` is not a stop.** The worker refuses the point and the DC engine shortens its step, so the run
+  ends unconverged with the sentence in its report, instead of stopping at the first refusal as another simulator would.

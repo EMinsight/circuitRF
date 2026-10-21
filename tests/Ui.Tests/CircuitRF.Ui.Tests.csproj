@@ -97,6 +97,8 @@
     <Compile Include="../TestCulture.cs" Link="TestCulture.cs" />
     <!-- The composed-FET test model (brief-modelcomposer-1), shared with Core.Tests and Engine.Tests. -->
     <Compile Include="../Core.Tests/Composed/Support/ComposedTestModels.cs" Link="ModelComposer/Support/ComposedTestModels.cs" />
+    <!-- The hand-set ANN models (brief-modelcomposer-2), shared with Engine.Tests: the Verilog-A export's ANN cases. -->
+    <Compile Include="../Engine.Tests/Composed/Support/RuntimeTestModels.cs" Link="ModelComposer/Support/RuntimeTestModels.cs" />
   </ItemGroup>
 
 </Project>

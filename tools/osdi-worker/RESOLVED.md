@@ -34,3 +34,28 @@ reproduces the reported `undefined symbol` message exactly against it.
 **Not covered by any automated test.** The repository's tests run on macOS only, where neither
 defect can appear. A Linux CI leg running `verify.py` against an as-needed-linked worker would hold
 both shut.
+
+## Any `$warning` or `$fatal` in a model killed the worker (brief-modelcomposer-26, 2026-10-21)
+
+A compiled model sends every display task (`$display`, `$strobe`, `$warning`, `$error`, `$fatal`) through one function
+pointer, `osdi_log`. The library exports the pointer and the HOST must fill it in. The worker never did, so the first
+message a model printed called through null. The worker then died with an empty stderr, which circuitRF reports as a
+worker that closed its output. Models whose own text never prints anything were unaffected, which is why nothing caught
+it. The Verilog-A export writes a `$warning` for a model used outside its temperature and a `$fatal` for a constituent
+that is not finite, and both crashed the worker.
+
+**Fix.** `load_library` installs `crf_osdi_log` when the library exports the pointer. It writes
+`osdi-worker: model <level>: <message>` to stderr. circuitRF already attaches stderr to a refused point, so a `$fatal`
+reaches the user as the model's own sentence. Three details:
+
+- **Each distinct message is written once.** The worker evaluates every point as a DC operating point, so a model's
+  `@(initial_step)` block runs on every evaluation. A harmonic-balance solve is thousands of evaluations, and writing
+  each one would fill the pipe and bury the line that matters. A `$fatal` is always written, because its point is
+  refused.
+- **The message is the compiler's `malloc`'d string, and the worker frees it**, except under `LOG_FMT_ERR`, where the
+  compiler passes the format string itself because formatting failed.
+- **The level is `lvl & 7`.** `osdi.h`'s `LOG_LVL_MASK` is 8, which masks nothing, and the header is the ABI contract and
+  is not edited.
+
+`EVAL_RET_FLAG_FATAL` was already read: the point's status is 0 and its block is left empty. Gate:
+`tests/Ui.Tests/ModelComposer/VerilogA/CompiledVerilogATests.ANonFiniteConstituent_IsRefusedNamingItAndThePoint`.

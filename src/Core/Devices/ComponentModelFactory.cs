@@ -527,6 +527,9 @@ public static class ComponentModelFactory
             // else"; forwarding one asks the model to accept a name it never declared.
             if (key.StartsWith(ExternalDeviceProviderReservedPrefix, StringComparison.Ordinal)) continue;
             if (IsVerilogAHostParameter(key)) continue;
+            // `m` is circuitRF's own multiplier (MULTIPLICITY, below): the elaborator applies it to the whole device, and
+            // forwarding it as well was refused by every model, which declares no `m` (brief-modelcomposer-26).
+            if (key.Equals(Elaboration.Elaborator.MultiplierParamName, StringComparison.Ordinal)) continue;
             // Temperature is not a model parameter — it rides as its own reserved field below.
             if (key.Equals(Temperature.AbsoluteParamName, StringComparison.Ordinal) ||
                 key.Equals(Temperature.DeltaParamName,    StringComparison.Ordinal)) continue;

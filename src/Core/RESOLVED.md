@@ -3743,3 +3743,14 @@ to the structured reader. A plain array has no axis names or values, so a table 
 the Model Composer example's `.csch`, where nothing re-read it. A word is now a unit only when the whole text does not
 parse as an expression and the text before the word does — the rule `Units.LiftInlineUnit` already applies to
 variables. Gate: `CnlReaderTests.Measure_TrailingOperandIsNotAUnit`.
+
+## A `VerilogA` instance's `m` was sent to the model (brief-modelcomposer-26, 2026-10-21)
+
+`CreateVerilogAModel` forwards every instance parameter except the host's own (`File`, `Model`, `Pins`, `OpVars`) and
+temperature, and `m` was not in that list. The comment a few lines below it says circuitRF's own `m` multiplies the
+component and `$mfactor` is not passed, so that it is never applied twice. The elaborator did apply `m`, but the model
+was also handed `m=2` as a parameter. It declares no `m`, so every placement with a multiplier was refused
+(`'<model>' has no parameter named 'm'`). `m` is now kept back, and the elaborator's multiplier scales the whole device,
+its internal nodes' rows included. That is equivalent for an internal inductor branch: the row is scaled, and its
+solution is unchanged. Gate: the `M2` case of `CompiledVerilogATests`, where the `.va` with `m=2` sits 2.8e-14 in S from
+two parallel copies.

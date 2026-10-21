@@ -307,6 +307,13 @@ public sealed class NonlinearDcEngine
     private double[]? _initialNodeVoltages;
     private string? _deferredFailureReport;
 
+    /// <summary>
+    /// The last point an external model refused during the solve, in its own words. A refusal is taken as a step to shorten,
+    /// so on its own it never reaches the user; when the solve then fails, it is very often the reason — a model's
+    /// <c>$fatal</c> naming the quantity that was not finite (brief-modelcomposer-26) — and the failure report carries it.
+    /// </summary>
+    private string? _lastRefusal;
+
     private NonlinearDcEngine(ElaboratedNetlist nl, AnalysisSettings settings,
                               IReadOnlyList<int>? holdThermalRowsAtAmbient = null)
     {
@@ -1127,6 +1134,7 @@ public sealed class NonlinearDcEngine
         });
 
         string message = "DC did not converge. Worst-unsettled: " + string.Join("; ", parts) + ".";
+        if (_lastRefusal is { } refusal) message += " The last point a model refused: " + refusal;
 
         if (_deferFailureReport) { _deferredFailureReport = message; return; }
         _nl.AddWarningOnce("dc-worst-unsettled", message);
@@ -1321,8 +1329,9 @@ public sealed class NonlinearDcEngine
             (f, j) = BuildResidualAndJacobian(x, sourceFrac);
             return true;
         }
-        catch (ExternalDeviceException)
+        catch (ExternalDeviceException ex)
         {
+            _lastRefusal = ex.Message;
             f = []; j = [];
             return false;
         }

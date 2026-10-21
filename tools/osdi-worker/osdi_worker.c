@@ -323,6 +323,48 @@ static const OsdiDescriptor *descriptor_at(uint32_t i) {
     return (const OsdiDescriptor *)(g_lib.descriptors + (size_t)i * g_lib.descriptor_size);
 }
 
+/* ── the model's log ──────────────────────────────────────────────────────────
+ *
+ * A compiled model's $display, $strobe, $warning, $error and $fatal all reach the host through ONE
+ * function pointer the library exports as `osdi_log` and the HOST must fill in. Left null, the first
+ * message a model prints calls through it and the worker dies with nothing on stderr — which is what
+ * every $warning and $fatal did until 2026-10 (brief-modelcomposer-26). Messages go to stderr, which
+ * circuitRF already attaches to a point the model refused, so a $fatal's own sentence is what the
+ * user reads.
+ *
+ * Each distinct message is printed ONCE. This worker evaluates every point as a DC operating point, so
+ * a model's @(initial_step) block runs on every evaluation, and a harmonic-balance solve is thousands
+ * of them: printing each would bury the one line that matters and fill the pipe. A $fatal is always
+ * printed — its point is refused, and the reply must carry why.
+ *
+ * The compiler hands over a malloc'd string, so it is freed here, except under LOG_FMT_ERR, where the
+ * message is the format string itself because formatting failed. The level is the low three bits:
+ * osdi.h's LOG_LVL_MASK is 8, which masks nothing, and the header is not ours to edit. */
+#define CRF_LOG_SEEN 64
+static char *g_log_seen[CRF_LOG_SEEN];
+static int   g_log_seen_count;
+
+static void crf_osdi_log(void *handle, char *msg, uint32_t lvl) {
+    (void)handle;
+    if (!msg) return;
+    uint32_t level = lvl & 7u;
+    bool fatal = level == LOG_LVL_FATAL;
+    bool seen = false;
+    for (int i = 0; i < g_log_seen_count && !seen; i++) seen = strcmp(g_log_seen[i], msg) == 0;
+    if (fatal || !seen) {
+        const char *word = level == LOG_LVL_FATAL ? "fatal" : level == LOG_LVL_ERR ? "error"
+                         : level == LOG_LVL_WARN ? "warning" : "note";
+        size_t len = strlen(msg);
+        fprintf(stderr, "osdi-worker: model %s: %s%s", word, msg, len && msg[len - 1] == '\n' ? "" : "\n");
+        fflush(stderr);
+        if (!seen && g_log_seen_count < CRF_LOG_SEEN) {
+            char *copy = (char *)malloc(len + 1);
+            if (copy) { memcpy(copy, msg, len + 1); g_log_seen[g_log_seen_count++] = copy; }
+        }
+    }
+    if (!(lvl & LOG_FMT_ERR)) free(msg);
+}
+
 static int load_library(const char *path) {
     g_lib.handle = dl_open(path);
     if (!g_lib.handle) { fprintf(stderr, "osdi-worker: dlopen failed: %s\n", dl_error()); return -1; }
@@ -339,6 +381,11 @@ static int load_library(const char *path) {
 
     g_lib.major = *maj; g_lib.minor = *min; g_lib.num_descriptors = *num;
     g_lib.descriptors = (unsigned char *)des;
+
+    /* Absent from a library that prints nothing, which is fine: there is then nothing to call. */
+    void (**log_slot)(void *, char *, uint32_t) =
+        (void (**)(void *, char *, uint32_t))dl_sym(g_lib.handle, "osdi_log");
+    if (log_slot) *log_slot = crf_osdi_log;
 
     /* 0.4 exports the descriptor size so the array can be walked WITHOUT depending on our own
      * sizeof(OsdiDescriptor) — which is exactly what lets a 0.4 library be driven by a header
