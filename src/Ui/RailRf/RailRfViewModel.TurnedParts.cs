@@ -136,7 +136,7 @@ public sealed partial class RailRfViewModel
     }
 
     private static bool SamePlacement(LayoutInstance a, LayoutInstance b) =>
-        a.X == b.X && a.Y == b.Y && a.RotationDegrees == b.RotationDegrees && a.MirrorX == b.MirrorX
+        a.X == b.X && a.Y == b.Y && a.RotationDegrees == b.RotationDegrees && a.MirrorX == b.MirrorX && a.Side == b.Side
         && string.Equals(a.CellRef, b.CellRef, StringComparison.Ordinal)
         && string.Equals(a.SchematicId, b.SchematicId, StringComparison.Ordinal);
 

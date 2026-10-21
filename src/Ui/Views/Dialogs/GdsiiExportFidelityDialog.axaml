@@ -19,6 +19,7 @@
             <SelectableTextBlock x:Name="ViaPadSkippedLine" FontSize="11" TextWrapping="Wrap"
                        Foreground="{DynamicResource CrfWarningBrush}"/>
             <SelectableTextBlock x:Name="LayersRenumberedLine" FontSize="11" TextWrapping="Wrap"/>
+            <SelectableTextBlock x:Name="SideNotesLine" FontSize="11" TextWrapping="Wrap"/>
             <!-- OASIS only: what an OASIS file cannot hold (round ends, odd widths, label transforms). -->
             <SelectableTextBlock x:Name="OasisLossLine" FontSize="11" TextWrapping="Wrap" IsVisible="False"/>
             <SelectableTextBlock x:Name="ViaFabricationNoteLine"

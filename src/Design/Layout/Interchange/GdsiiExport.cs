@@ -37,9 +37,15 @@ public static class GdsiiExport
         int ViaPadsSkipped = 0,
         /// <summary>D7: placeholder layers given a free GDSII number — see
         /// <see cref="GdsiiExportSummary.LayersRenumbered"/>'s own doc comment.</summary>
-        IReadOnlyList<string>? LayersRenumbered = null)
+        IReadOnlyList<string>? LayersRenumbered = null,
+        /// <summary>brief-bsp-3 R-bsp3-4: what the bottom-side placements did to the file — the variant
+        /// structures written for them (a format limit: they read back as cells of their own), a role a
+        /// bottom placement's technology has no bottom layer for, a refused placement.</summary>
+        IReadOnlyList<string>? Notes = null)
     {
         public bool CanWrite => CoordinateOverflowOffenders.Count == 0;
+
+        public IReadOnlyList<string> SideNotes => Notes ?? [];
 
         public IReadOnlyList<string> LayerRenumberings => LayersRenumbered ?? [];
 
@@ -58,7 +64,7 @@ public static class GdsiiExport
         public bool HasNothingToReport =>
             CurvedShapesFlattened == 0 && HolesKeyholed == 0 && BitmapsSkipped == 0 &&
             UnresolvedInstanceReferences.Count == 0 && ViaPadsSkipped == 0 && !HasVias &&
-            LayerRenumberings.Count == 0 && CanWrite;
+            LayerRenumberings.Count == 0 && SideNotes.Count == 0 && CanWrite;
     }
 
     /// <summary>Walks <paramref name="rootCellDir"/>'s hierarchy and computes the fidelity plan — no
@@ -72,7 +78,7 @@ public static class GdsiiExport
     /// (the project-tree/no-open-document path) reads from disk as before.</summary>
     public static ExportPlan Analyze(string rootCellDir, Technology? tech, int dbuPerMicron, LayoutView? rootView = null)
     {
-        var (structures, nameByCellName, unresolvedRefs) = CollectHierarchy(rootCellDir, rootView, tech);
+        var (structures, nameByCellName, unresolvedRefs, notes) = CollectHierarchy(rootCellDir, rootView, tech);
         var units = new GdsiiUnits(1e-6, 1e-6 / dbuPerMicron);
 
         try
@@ -81,11 +87,11 @@ public static class GdsiiExport
             return new ExportPlan(
                 lowered.CurvedShapesFlattened, lowered.HolesKeyholed, lowered.BitmapsSkipped,
                 [], unresolvedRefs, nameByCellName, structures, units, tech, lowered.LabelRecordsWritten,
-                lowered.ViaPadsSkipped, lowered.LayersRenumbered);
+                lowered.ViaPadsSkipped, lowered.LayersRenumbered, notes);
         }
         catch (GdsiiExportException ex)
         {
-            return new ExportPlan(0, 0, 0, ex.Offenders, unresolvedRefs, nameByCellName, structures, units, tech);
+            return new ExportPlan(0, 0, 0, ex.Offenders, unresolvedRefs, nameByCellName, structures, units, tech, Notes: notes);
         }
     }
 
@@ -100,85 +106,71 @@ public static class GdsiiExport
     }
 
     private static (List<InterchangeStructure> Structures, IReadOnlyDictionary<string, string> NameByCellName,
-        IReadOnlyList<string> UnresolvedRefs) CollectHierarchy(string rootCellDir, LayoutView? rootView, Technology? tech)
+        IReadOnlyList<string> UnresolvedRefs, IReadOnlyList<string> Notes) CollectHierarchy(
+            string rootCellDir, LayoutView? rootView, Technology? tech)
     {
-        var rootAbs = Path.GetFullPath(rootCellDir);
-        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rootAbs };
-        var order = new List<string> { rootAbs };
-        var viewByDir = new Dictionary<string, LayoutView>(StringComparer.OrdinalIgnoreCase);
-        var queue = new Queue<string>();
-        queue.Enqueue(rootAbs);
+        // brief-bsp-3 R-bsp3-4: every reachable cell as stored, plus a bottom variant of each cell a
+        // bottom placement uses — and only of those. InterchangeHierarchy is the walk DxfExport shares.
+        var walk = InterchangeHierarchy.Collect(Path.GetFullPath(rootCellDir), rootView, tech, LoadPrimaryLayout);
 
-        while (queue.Count > 0)
+        var cellNames = walk.Tops.Select(n => n.CellName).ToList();
+        var structureNameByCellName = GdsiiStructureNaming.MangleForExport(cellNames);
+
+        var nameOf = new Dictionary<InterchangeHierarchy.Node, string>();
+        foreach (var node in walk.Tops) nameOf[node] = structureNameByCellName[node.CellName];
+
+        // A variant is named after its cell's structure, and after every real structure has its name,
+        // so a cell that happens to be called "<name>_B" keeps its own and the variant takes the suffix.
+        var mapping = new Dictionary<string, string>(structureNameByCellName);
+        if (walk.Variants.Count > 0)
         {
-            var cellDir = queue.Dequeue();
-            // item 5/R-fix-4: the root cell uses the caller-supplied live view (if any) instead of
-            // re-reading its own primary .clay — every OTHER reachable cell still resolves from disk,
-            // since only the root is necessarily the document currently open in the editor.
-            var view = string.Equals(cellDir, rootAbs, StringComparison.OrdinalIgnoreCase) && rootView is not null
-                ? rootView
-                : LoadPrimaryLayout(cellDir);
-            viewByDir[cellDir] = view;
-
-            var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
-            foreach (var inst in view.Instances)
+            var used = new HashSet<string>(nameOf.Values, StringComparer.Ordinal);
+            foreach (var node in walk.Variants)
             {
-                if (Workspace.ExternalCellRef.ResolveCellDir(inst.CellRef, layoutDir) is not { } targetDir)
-                    continue;
-                if (!Directory.Exists(targetDir)) continue; // broken reference — nothing to enqueue
-                if (visited.Add(targetDir))
-                {
-                    order.Add(targetDir);
-                    queue.Enqueue(targetDir);
-                }
+                nameOf[node] = InterchangeHierarchy.VariantName(
+                    structureNameByCellName[node.CellName], used, GdsiiStructureNaming.MaxLength);
+                mapping[$"{node.CellName} (bottom)"] = nameOf[node];
             }
         }
 
-        var cellNames = order.Select(d => Path.GetFileName(d)).ToList();
-        var structureNameByCellName = GdsiiStructureNaming.MangleForExport(cellNames);
-
-        var dirToStructureName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var dir in order)
-            dirToStructureName[dir] = structureNameByCellName[Path.GetFileName(dir)];
-
         var unresolvedRefs = new List<string>();
-        var structures = new List<InterchangeStructure>(order.Count);
-        foreach (var dir in order)
+        var structures = new List<InterchangeStructure>();
+        foreach (var node in walk.All)
         {
-            var view = viewByDir[dir];
-            var cellName = Path.GetFileName(dir);
-            var layoutDir = CellFolder.SubFolderPath(dir, ViewType.Layout);
-            var instances = view.Instances.Select(inst =>
+            var view = node.View;
+            var layoutDir = node.LayoutDir;
+            var instances = new List<LayoutInstance>(view.Instances.Count);
+            for (int i = 0; i < view.Instances.Count; i++)
             {
-                string targetDir = Workspace.ExternalCellRef.ResolveCellDir(inst.CellRef, layoutDir) ?? "";
-                if (!dirToStructureName.TryGetValue(targetDir, out var targetStructureName))
+                var inst = view.Instances[i];
+                if (node.Targets[i] is not { } target || !nameOf.TryGetValue(target, out var targetStructureName))
                 {
                     // Genuinely unresolved within this design — exports as a dangling reference
                     // (every GDSII viewer shows this as an unresolved-reference placeholder), but
                     // reported here so the export dialog can surface it BEFORE writing rather than
                     // leaving the user to discover it as a mysterious placeholder in a third-party tool.
                     targetStructureName = inst.CellRef;
-                    unresolvedRefs.Add($"{cellName}: instance referencing \"{inst.CellRef}\" does not resolve.");
+                    // Said once per cell, not again for its bottom variant's copy of the same reference.
+                    if (node.Side == PlacementSide.Top)
+                        unresolvedRefs.Add($"{node.CellName}: instance referencing \"{inst.CellRef}\" does not resolve.");
                 }
-                return new LayoutInstance
-                {
-                    CellRef = targetStructureName,
-                    X = inst.X, Y = inst.Y, RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = inst.Mag,
-                    Rows = inst.Rows, Cols = inst.Cols, PitchX = inst.PitchX, PitchY = inst.PitchY,
-                };
-            }).ToList();
+                instances.Add(InterchangeHierarchy.Exported(inst, targetStructureName));
+            }
 
             // brief-footprint-4b R-fp4b-4b: each structure carries the designators of ITS OWN
             // placements, as ordinary silkscreen artwork, out of the one function the whole-design
             // flatten and the renderer also use. Per structure rather than only at the root because
             // GDSII keeps the hierarchy, and the parent of a placement is the structure that holds it.
+            // A variant's placements carry their composed side, so their designators land on its face.
             var shapes = new List<LayoutShape>(view.Shapes);
             shapes.AddRange(FootprintLabel.ShapesFor(view, layoutDir, tech, null));
 
-            structures.Add(new InterchangeStructure(dirToStructureName[dir], shapes, instances));
+            structures.Add(new InterchangeStructure(nameOf[node], shapes, instances));
         }
 
-        return (structures, structureNameByCellName, unresolvedRefs);
+        var notes = new List<string>(walk.Notes);
+        if (walk.Variants.Count > 0) notes.Add(InterchangeHierarchy.VariantNote(walk.Variants.Count, "structure"));
+        return (structures, mapping, unresolvedRefs, notes);
     }
 
     private static LayoutView LoadPrimaryLayout(string cellDir)

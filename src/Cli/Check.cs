@@ -576,7 +576,46 @@ internal static class Check
         // see the lands they are about; one that cannot be rebuilt is an ERROR finding, never a skip.
         using var generated = GeneratedCells.PrepareForCheck(view, path, f.Add);
 
-        RunDrc(path, view, full, tech.Tech, f, cache);
+        var sideRefusals = CheckPlacementSides(path, view, full, tech.Tech, f);
+        RunDrc(path, view, full, tech.Tech, f, cache, sideRefusals);
+    }
+
+    /// <summary>
+    /// brief-bsp-3 R-bsp3-10 — every placement's side, through <see cref="CellLayoutResolver"/>, the one
+    /// resolution every reader of a placed part makes: a bottom placement whose technology has no bottom
+    /// layer for one of its roles is a WARNING naming the part and the role (the resolver's own sentence),
+    /// and one on a technology with no bottom copper an ERROR. Nested placements are walked through the
+    /// resolved views, whose sides are already the composed ones (brief-bsp-1 D5).
+    /// </summary>
+    /// <returns>The refusals said, so the design-rule half does not repeat them as notes.</returns>
+    private static HashSet<string> CheckPlacementSides(string path, LayoutView view, string fullPath, Technology? tech, Findings f)
+    {
+        var refusals = new HashSet<string>(StringComparer.Ordinal);
+        var said = new HashSet<string>(StringComparer.Ordinal);
+        var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void Walk(LayoutView v, string baseDir, int depth)
+        {
+            if (depth >= CellHierarchy.MaxDepth) return;
+            foreach (var inst in v.Instances)
+            {
+                var res = CellLayoutResolver.Resolve(inst, baseDir, tech);
+                if (res.State == CellLayoutState.SideRefused && res.Refusal is { } refusal)
+                {
+                    if (refusals.Add(refusal)) f.Add(CliDiagnostics.CheckLayoutSideRefused(path, refusal));
+                    continue;
+                }
+                foreach (var note in res.SideNotes)
+                    if (said.Add(note)) f.Add(CliDiagnostics.CheckLayoutSideRoleOmitted(path, note));
+                if (res.State != CellLayoutState.Resolved || res.ResolvedCellDir is not { } dir) continue;
+                if (!visiting.Add(dir)) continue;   // a cycle is the hierarchy's own finding
+                Walk(res.View!, CellFolder.SubFolderPath(dir, ViewType.Layout), depth + 1);
+                visiting.Remove(dir);
+            }
+        }
+
+        Walk(view, CellHierarchy.BaseDirOfDocument(fullPath), 0);
+        return refusals;
     }
 
     /// <summary>
@@ -728,7 +767,8 @@ internal static class Check
     /// headless check of a `.clay` alone has no wires to check and says so by checking none.
     /// </summary>
     private static void RunDrc(
-        string path, LayoutView view, string fullPath, Technology? tech, Findings f, TechnologyCache cache)
+        string path, LayoutView view, string fullPath, Technology? tech, Findings f, TechnologyCache cache,
+        IReadOnlySet<string>? alreadySaid = null)
     {
         string cellDir = CellDirOf(fullPath);
 
@@ -751,7 +791,10 @@ internal static class Check
             return;
         }
 
-        foreach (var u in flat.UnresolvedInstances) f.Add(CliDiagnostics.CheckDrcNote(path, u));
+        // A refused bottom placement was reported as an error by CheckPlacementSides; the flatten skips it too.
+        foreach (var u in flat.UnresolvedInstances)
+            if (alreadySaid is null || !alreadySaid.Any(r => u.StartsWith(r, StringComparison.Ordinal)))
+                f.Add(CliDiagnostics.CheckDrcNote(path, u));
 
         foreach (var pending in flat.PendingCrossTechMappings)
             f.Add(CliDiagnostics.CheckDrcNote(path,

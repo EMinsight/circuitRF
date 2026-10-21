@@ -999,6 +999,26 @@ Cross-cutting import rules:
 - Import always creates cells through the normal cell-folder machinery — an imported GDSII library
   becomes real circuitRF cells, not an opaque blob.
 
+### 8.1 Bottom-side placements in every output *(brief-bsp-3, 2026-10-21)*
+
+- **Flat outputs need nothing of their own.** Gerber, DRC, EM and the 3D view all read the
+  side-aware flatten (§7.2), so a bottom part's lands are bottom-copper shapes before any of them sees
+  it. A role a bottom part omits is in the flatten's `Notes`, and the Gerber plan carries them to its
+  dialog and to `convert`.
+- **The hierarchical outputs write a bottom VARIANT.** A GDSII structure / DXF block is shared by every
+  placement of its cell, and a bottom placement's layers are not its cell's. `InterchangeHierarchy`
+  walks (cell, side) pairs: every reachable cell as stored, as before, plus a `<name>_B` variant — the
+  resolver's bottom view — of each cell that some bottom placement uses, and only of those. Each bottom
+  placement references the variant with its own transform. Read back, a variant is a cell of its own;
+  that is a format limit, and the export report says so.
+- **The board format separates the face from the reflection.** `Side` picks the footprint's layers
+  (back copper, each child on its back twin); `MirrorX` is geometry, baked as the format bakes a flip
+  (local Y negated). The two reflections differ by a half turn, so a mirrored footprint is written at
+  its angle + 180°. Text inside one is written where circuitRF draws it, with no mirror flag.
+- **The placement table's Side column is `Side`**, never `MirrorX`, and the file states its rotation
+  convention: counter-clockwise from the top, a bottom part flipped about its Y axis first. That is
+  circuitRF's own MirrorX-then-rotate, so a flipped part writes its angle unchanged.
+
 ---
 
 ## 9. Schematic-to-layout

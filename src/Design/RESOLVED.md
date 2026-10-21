@@ -21350,3 +21350,53 @@ question a placement's side does not change; a bottom placement there resolves u
 - `GeneratedCellsRun.Visit`; `LayoutHierarchyResolver.CanPushInto` (push-in edits the cell as stored);
   `WBondGeometryEmbedding.Walk`, `WBondReferenceGeometry.Walk` and its missing-cell repair.
 - `PcbExport`'s flatten of a definition's own sub-instances — the export's structure is BSP-3's.
+
+## BSP-3: what a bottom-side part does to every output (2026-10-21)
+
+- **The board-format writer was a half turn out for every mirrored placement, and had been since L4d.** The
+  format bakes a flip by negating local Y; circuitRF's `MirrorX` negates local X. The two reflections differ by
+  R(180°), so writing the angle verbatim put a mirrored part's lands rotated 180° about its origin. Nothing caught
+  it because `AMirroredInstance_WritesBackSideArtworkWithNegatedLocalY` asserts the baked child data and not the
+  placed lands. The writer now writes a mirrored footprint at angle + 180°. That is also what the receiving tool's
+  own flip gives a part flipped from the top, since circuitRF's Flip negates the angle. The round-trip gate
+  compares every land's centre and layer after export, then a read back.
+- **Face and reflection are separate in the board format.** `PcbFootprintPlacement.Side` picks the layers
+  (`B.Cu`, each child on its `FlipSide` twin) and `MirrorX` the geometry. A mirror on the TOP now stays a front
+  footprint; until this series it was written as a back one, because the mirror was the only proxy for the face.
+  Text inside a mirrored footprint is written where `TransformLabel` draws it, with no mirror flag (D4).
+- **railRF turned a bottom part's lands over a second time.** `RailArtwork.PadsFor` flipped the land of any
+  `MirrorX` placement to the far copper (owner direction 2026-09-24, from before the side model). BSP-1 made
+  `PlacedPins` resolve through the side-aware view, so a flipped part's origin layer was already bottom copper
+  and the flip put it back on top. The flip is gone, the land is `PlacedPins`' own, and a part mirrored on the top
+  stays on the top (D1). `PadRead`'s signature and `TurnedParts.SamePlacement` include `Side`.
+- **A placement table can't express a bottom part left unmirrored.** It is a mirror image of its own footprint.
+  It is written as it stands; the file's `# Rotation:` line states the convention a flipped part follows.
+- **GDSII and DXF share one walk now** (`InterchangeHierarchy`). Before this they had two copies of the BFS, by an
+  older brief's guardrail. A design with no bottom placement walks exactly the old nodes in the old order, so its
+  bytes are unchanged. Variant names are given out after every real structure's, so a cell that happens to be called
+  `<name>_B` keeps its name and the variant takes the `_2` suffix. A refused bottom placement (no bottom copper)
+  keeps its reference to the top structure and says so, where the flatten drops it.
+- **A label stored INSIDE a cell is not made readable in a variant structure.** The variant is shared by placements
+  at different angles, and the readable-angle fold depends on the placement. A receiving viewer reflects it with
+  the reference, as it already reflected text in any mirrored placement. Designators are the parent's data, so they
+  ARE written readable, on the face's silkscreen.
+- **EM: a bottom part on a two-layer microstrip is ground artwork.** Its lands flatten onto Bottom Copper, which
+  that stackup marks as the ground reference, so `PlanarExtractor` meshes only the top trace. A port drawn on the
+  bottom land is refused as on no signal conductor. That is the stackup, not the side model:
+  `BottomSideOutputTests.Em_…` pins it.
+- **A port label inside a placed cell is a cell-boundary marker that every flatten drops** (`IsCellBoundaryMarker`),
+  so an EM port on a bottom part's pin is the board's own label, with `PortLayer` stated.
+- **The 3D view needed nothing.** `Em3dLayoutSolids` builds from `EmGeometry.Flatten` with the technology, so bottom
+  lands are solids on the bottom conductor band, under the board. Technology bodies follow their outline layers.
+- **DRC has no courtyard or part-overlap rule.** Every rule is per layer, and a bottom part's courtyard is on
+  `Courtyard Bottom`, so parts opposite each other on the two faces never meet. Nothing was added.
+- **The BOM has no side or layer column**, so none was added.
+- **`check` reports sides through the resolver, with no rule of its own.** It walks the placements through
+  `CellLayoutResolver.Resolve`, composing sides through the resolved views. An omitted role is
+  `check.layout.side-role-omitted` (warning, the resolver's sentence naming the part and the role); no bottom
+  copper is `check.layout.side-refused` (error). The design-rule half no longer repeats that refusal as a
+  `check.drc.note`.
+- `render --layers` needed nothing: `TechnologyLayerSelection` only flips `Visible` on a clone, so the
+  side swap still finds both coppers in it.
+- `PcbExport` now flattens a footprint definition's own sub-placements with the technology, so a sub-part the cell
+  itself puts on the bottom lands on the bottom roles (the last no-technology site BSP-1 left to this brief).

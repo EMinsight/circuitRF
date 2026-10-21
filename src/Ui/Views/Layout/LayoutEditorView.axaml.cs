@@ -2028,6 +2028,8 @@ public partial class LayoutEditorView : UserControl
                 $"{summary.WiresWritten} bond wire(s), " +
                 $"{summary.RulersWritten} ruler(s) as DIMENSION.",
                 file.Path.LocalPath);
+            // brief-bsp-3 R-bsp3-4: the bottom-side variant blocks written, and any role a bottom part omits.
+            foreach (var n in plan.SideNotes) vm.ReportWarning($"Export DXF: {n}");
 
             // §9B.10's "one Messages note per export" — it says how many rulers were written AND, per
             // R-rul-18b, that a Fixed-size ruler's text height was resolved against this drawing's own

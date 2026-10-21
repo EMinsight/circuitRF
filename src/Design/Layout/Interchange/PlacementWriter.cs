@@ -40,10 +40,12 @@ public sealed record PlacementWriteOptions(
 /// <summary>One row's worth of what a placement table says, taken off one <see cref="LayoutInstance"/>.</summary>
 /// <param name="Refdes">The placement's own designator — <see cref="LayoutInstance.DisplayRefDes"/>,
 /// which is <c>SchematicId</c> before <c>RefDes</c> and is the one spelling the board draws.</param>
+/// <param name="Side">The face the part is on — <see cref="LayoutInstance.Side"/>, never its
+/// <c>MirrorX</c>: a mirrored part on the top is on the top (brief-bsp-3 R-bsp3-2).</param>
 /// <param name="Footprint">What the instance is an instance OF, as a name. Null where the reference
 /// resolves to nothing nameable.</param>
 public sealed record PlacementEntry(
-    string Refdes, long X, long Y, double RotationDegrees, bool Mirror, string? Footprint);
+    string Refdes, long X, long Y, double RotationDegrees, PlacementSide Side, string? Footprint);
 
 public static class PlacementWriter
 {
@@ -90,8 +92,11 @@ public static class PlacementWriter
             // An ARRAY placement is ONE placement carrying one designator (R-ab1-1d), and it is one
             // row here for that reason: the row states where the placement is, and a machine asked
             // to put N parts down under one designator has been told something false.
+            //
+            // The side is the placement's own: these are the ROOT's rows, so there is no parent side
+            // to compose with (D5 composes below a placement, never above the root).
             rows.Add(new PlacementEntry(
-                refdes, inst.X, inst.Y, inst.RotationDegrees, inst.MirrorX,
+                refdes, inst.X, inst.Y, inst.RotationDegrees, inst.Side,
                 nameOfFootprint is not null ? nameOfFootprint(inst) : CellName(inst.CellRef)));
         }
 
@@ -116,6 +121,15 @@ public static class PlacementWriter
         sb.Append("# Units: ").Append(LayoutUnits.AsciiSuffix(o.Units)).Append('\n');
         sb.Append("# Origin: ").Append(OriginWord).Append('\n');
 
+        // THE BOTTOM-SIDE CONVENTION (R-bsp3-2). A reader that assumes the other sense rotates
+        // every bottom part the wrong way, so it is stated. It is the one PlacementFile reads back,
+        // and the one circuitRF's own MirrorX-then-rotate transform already is, so a bottom part
+        // flipped in the editor (MirrorX set, Side Bottom) writes its own RotationDegrees verbatim.
+        // A bottom part left UNMIRRORED is a mirror image of its own footprint, which no placement
+        // convention can say; it is written as it stands.
+        sb.Append("# Rotation: degrees counter-clockwise as seen from the top. A bottom-side part is ")
+          .Append("flipped about its Y axis before it is rotated").Append('\n');
+
         sb.Append(string.Join(o.Delimiter, Columns)).Append('\n');
 
         foreach (var row in rows)
@@ -124,7 +138,7 @@ public static class PlacementWriter
             sb.Append(Coordinate(row.X, o.Units, dbuPerMicron)).Append(o.Delimiter);
             sb.Append(Coordinate(row.Y, o.Units, dbuPerMicron)).Append(o.Delimiter);
             sb.Append(Rotation(row.RotationDegrees)).Append(o.Delimiter);
-            sb.Append(row.Mirror ? "bottom" : "top").Append(o.Delimiter);
+            sb.Append(row.Side == PlacementSide.Bottom ? "bottom" : "top").Append(o.Delimiter);
             sb.Append(Cell(row.Footprint ?? "", o.Delimiter));
             sb.Append('\n');
         }

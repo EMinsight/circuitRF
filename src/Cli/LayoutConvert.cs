@@ -1088,7 +1088,7 @@ public static class LayoutConvert
                 Note(plan.HolesKeyholed, "hole", "keyholed");
                 Note(plan.BitmapsSkipped, "bitmap", $"skipped — {format} carries no raster");
                 Note(plan.ViaPadsSkipped, "via", "exported as a barrel with no landing pad");
-                foreach (var r in plan.LayerRenumberings)
+                foreach (var r in plan.LayerRenumberings.Concat(plan.SideNotes))
                 {
                     Console.Error.WriteLine($"note: {r}");
                     JsonRun.Note(CliDiagnostics.ConvertNote(r));
@@ -1110,6 +1110,11 @@ public static class LayoutConvert
                 var summary = DxfExport.Write(output, plan, opts);
                 JsonRun.AddOutput("dxf", output);
                 foreach (var d in summary.Diagnostics) Console.Error.WriteLine($"note: {d}");
+                foreach (var n in plan.SideNotes)
+                {
+                    Console.Error.WriteLine($"note: {n}");
+                    JsonRun.Note(CliDiagnostics.ConvertNote(n));
+                }
                 Note(summary.BitmapsSkipped, "bitmap", "skipped — DXF carries no raster");
                 Note(summary.MixedArcCubicApproximated, "mixed arc/cubic edge", "approximated");
                 Note(summary.NonAsciiTextEscaped, "text string", "escaped for the chosen DXF version");
@@ -1171,6 +1176,11 @@ public static class LayoutConvert
                 }
 
                 var result = GerberExport.Write(output, stem, plan);
+                foreach (var n in plan.Notes ?? [])
+                {
+                    Console.Error.WriteLine($"note: {n}");
+                    JsonRun.Note(CliDiagnostics.ConvertNote(n));
+                }
                 Note(plan.StrokeLabelsWritten, "label", "written as stroke-font pen strokes — Gerber has no text");
                 Note(plan.SansLabelsConverted, "Sans label", "converted to filled glyph outlines — Gerber has no text");
                 Note(plan.CharactersBoxed, "character", "not in the stroke font, written as a hollow box");

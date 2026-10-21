@@ -54,7 +54,11 @@ public static class GerberExport
         int StrokeLabelsWritten = 0,
         /// <summary>Characters of stroke labels the font has no glyph for, each written as a hollow box (D5) —
         /// counted so none is lost without a word.</summary>
-        int CharactersBoxed = 0)
+        int CharactersBoxed = 0,
+        /// <summary>The flatten's own notes — a bottom-side part whose technology has no bottom layer for
+        /// one of its roles, and so omitted it (brief-bsp-3 R-bsp3-1), and a rotation the flatten had to
+        /// approximate. Said before the write, because the omitted artwork is in no file.</summary>
+        IReadOnlyList<string>? Notes = null)
     {
         public bool RequiresMappingConfirmation => PendingCrossTechMappings.Count > 0;
 
@@ -71,7 +75,7 @@ public static class GerberExport
             CubicEdgesFlattened == 0 && TopLevelInstancesFlattened == 0 &&
             SansLabelsConverted == 0 && StrokeLabelsWritten == 0 && CharactersBoxed == 0 && PortLabelsOmitted == 0 && BitmapsOmitted == 0 &&
             PathsAsRegion == 0 && UnresolvedInstances.Count == 0 && !FormatIsNonDefault &&
-            UnpairedDrillCircles == 0 && UnspannedViaPads == 0;
+            UnpairedDrillCircles == 0 && UnspannedViaPads == 0 && Notes is not { Count: > 0 };
     }
 
     public sealed record WriteResult(IReadOnlyList<string> FilesWritten, int DrillToolsDefined, int DrillHitsWritten);
@@ -197,7 +201,7 @@ public static class GerberExport
             flatten.TopLevelInstancesFlattened, flatten.ShapesContributedByInstances,
             flatten.UnresolvedInstances, flatten.PendingCrossTechMappings, false,
             [], rootTech, unpairedCircles.Count,
-            vias.Count(v => ViaSpanResolver.PadLayer(v, rootTech) is null), strokeLabels, boxed);
+            vias.Count(v => ViaSpanResolver.PadLayer(v, rootTech) is null), strokeLabels, boxed, flatten.Notes);
     }
 
     /// <summary>R-via-5: a drill-function layer is any layer named in a <see cref="StackupKind.Via"/>

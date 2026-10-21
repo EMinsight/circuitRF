@@ -38,9 +38,11 @@ namespace CircuitRF.Design.Layout.Interchange;
 /// <summary>One footprint DEFINITION: cell-local artwork plus the pins that become its pads.</summary>
 public sealed record PcbFootprintDef(string Name, IReadOnlyList<LayoutShape> Shapes, IReadOnlyList<LayoutPin> Pins);
 
-/// <summary>One placement of a <see cref="PcbFootprintDef"/>.</summary>
+/// <summary>One placement of a <see cref="PcbFootprintDef"/>. <paramref name="Side"/> picks the footprint's
+/// face and so its layers; <paramref name="MirrorX"/> is its geometry (brief-bsp-3 R-bsp3-5).</summary>
 public sealed record PcbFootprintPlacement(
-    string DefName, long X, long Y, double RotationDegrees, bool MirrorX, string? Reference);
+    string DefName, long X, long Y, double RotationDegrees, bool MirrorX, string? Reference,
+    PlacementSide Side = PlacementSide.Top);
 
 /// <summary>Everything <c>PcbWriter</c> needs, already resolved. Built by <c>PcbExport</c>.</summary>
 public sealed class PcbExportModel
@@ -680,11 +682,21 @@ public static class PcbWriter
     /// <para><b>A pad's angle is written ABSOLUTE</b> (placement + local), because that is how the
     /// format stores it — also measured, on a part placed at 0° and 180° whose pad angles read 0 and
     /// 180 over byte-identical pad POSITIONS.</para>
+    ///
+    /// <para><b>The face and the reflection are two questions</b> (brief-bsp-3 R-bsp3-5). The face is the
+    /// placement's <see cref="PlacementSide"/> and picks the layers: a bottom part goes on the back copper
+    /// with every child on its back twin. The reflection is <c>MirrorX</c>, and the format's baked flip
+    /// negates local Y where circuitRF's negates local X — the two differ by a half turn, so a mirrored
+    /// placement is written at its angle + 180°, which puts every land exactly where circuitRF draws it
+    /// and is also the angle the receiving tool's own flip gives a part flipped from the top. A mirror on
+    /// the top face stays on the front; a bottom part left unmirrored goes on the back unflipped.</para>
     /// </summary>
     private static void WriteFootprint(Ctx ctx, PcbFootprintDef def, PcbFootprintPlacement placement)
     {
         bool flip = placement.MirrorX;
-        string side = flip ? "B.Cu" : "F.Cu";
+        bool back = placement.Side == PlacementSide.Bottom;
+        string side = back ? "B.Cu" : "F.Cu";
+        if (flip) placement = placement with { RotationDegrees = LayoutAngle.Normalize(placement.RotationDegrees + 180.0) };
 
         ctx.W.WriteLine($"  (footprint {Quote("circuitrf:" + def.Name)}");
         ctx.W.WriteLine($"    (layer {Quote(side)})");
@@ -712,13 +724,13 @@ public static class PcbWriter
             // An oval drill's SLOT is a stroke on the barrel's own layer, alongside it — claim it so it
             // is not written again as graphics, and hand it over so the drill can be written oval.
             var slot = ClaimSlotFor(def, drill, claimed);
-            WritePad(ctx, pin, artwork, drill, placement, flip, span, slot);
+            WritePad(ctx, pin, artwork, drill, placement, flip, back, span, slot);
         }
 
         foreach (var shape in def.Shapes)
         {
             if (claimed.Contains(shape)) continue;
-            WriteFootprintShape(ctx, shape, flip, placement);
+            WriteFootprintShape(ctx, shape, flip, back, placement);
         }
 
         ctx.W.WriteLine("  )");
@@ -827,7 +839,7 @@ public static class PcbWriter
     }
 
     private static void WritePad(
-        Ctx ctx, LayoutPin pin, LayoutShape? artwork, ViaShape? drill, PcbFootprintPlacement placement, bool flip,
+        Ctx ctx, LayoutPin pin, LayoutShape? artwork, ViaShape? drill, PcbFootprintPlacement placement, bool flip, bool back,
         IReadOnlyList<LayerKey> copperSpan, PathShape? slot = null)
     {
         // The pad sits where its ARTWORK is, not where the pin marker is. The pin names the connection;
@@ -850,8 +862,8 @@ public static class PcbWriter
         // (its child layers are already the back-side ones, so MirrorX is false), and pairing that
         // footprint's B.Cu pad with F.Mask opens the solder mask on the wrong face of the board.
         string layers = ctx.LayerName(pin.Layer) is { } pinLayer
-            ? Quote(flip ? PcbLayerNaming.FlipSide(pinLayer) : pinLayer) + " " +
-              Quote(MaskSideFor(flip ? PcbLayerNaming.FlipSide(pinLayer) : pinLayer))
+            ? Quote(back ? PcbLayerNaming.FlipSide(pinLayer) : pinLayer) + " " +
+              Quote(MaskSideFor(back ? PcbLayerNaming.FlipSide(pinLayer) : pinLayer))
             : "\"*.Cu\" \"*.Mask\"";
         double angle = placement.RotationDegrees;   // absolute, per the measurement above
         int net = ctx.NetOf(artwork?.Net ?? null);
@@ -1031,7 +1043,7 @@ public static class PcbWriter
     }
 
     private static void WriteFootprintShape(
-        Ctx ctx, LayoutShape shape, bool flip, PcbFootprintPlacement placement)
+        Ctx ctx, LayoutShape shape, bool flip, bool back, PcbFootprintPlacement placement)
     {
         // A via inside a cell that no pin claimed is still a real drilled hole — a mounting hole, a
         // thermal via. This format has no free-standing via inside a footprint, but it has an UNNAMED
@@ -1049,7 +1061,15 @@ public static class PcbWriter
 
         string? layer = ctx.LayerName(shape.Layer);
         if (layer is null) return;
-        if (flip) layer = PcbLayerNaming.FlipSide(layer);
+        if (back) layer = PcbLayerNaming.FlipSide(layer);
+
+        // Text keeps its reading direction (brief-bsp-1 D4): never a mirror flag, and placed where
+        // circuitRF draws it rather than reflected with the rest of the artwork.
+        if (flip && shape is LabelShape text)
+        {
+            WriteText(ctx, ReadableInFlippedFrame(text, placement.RotationDegrees), layer, prefix: "fp", indent: "    ");
+            return;
+        }
 
         var emitted = flip ? FlipY(shape) : shape;
 
@@ -1060,6 +1080,26 @@ public static class PcbWriter
             case PathShape path: WriteStrokedGraphic(ctx, path, layer, prefix: "fp", indent: "    "); return;
             default: WriteFilledGraphic(ctx, emitted, layer, prefix: "fp", indent: "    "); return;
         }
+    }
+
+    /// <summary>
+    /// A cell-local label of a MIRRORED placement, in the written footprint's own frame, reading as circuitRF
+    /// draws it: <see cref="LayoutInstanceTransform.TransformLabel"/> carries its centre through the mirror
+    /// and folds its angle so it is never upside down, and the result is turned back by the footprint's
+    /// written angle (<paramref name="footprintDegrees"/>, already the placement's + 180°). The mirror is
+    /// circuitRF's MirrorX; the half turn that separates it from the format's flip is in that angle.
+    /// </summary>
+    private static LabelShape ReadableInFlippedFrame(LabelShape local, double footprintDegrees)
+    {
+        double placementDegrees = footprintDegrees - 180.0;
+        var drawn = LayoutInstanceTransform.TransformLabel(
+            local, new LayoutInstance { RotationDegrees = placementDegrees, MirrorX = true }, 0, 0);
+        var (c, s) = LayoutAngle.CosSin(-footprintDegrees);
+        var placed = (LabelShape)LayoutGeometry.Clone(drawn);
+        placed.X = (long)Math.Round(drawn.X * c - drawn.Y * s);
+        placed.Y = (long)Math.Round(drawn.X * s + drawn.Y * c);
+        placed.RotationDegrees = LayoutAngle.Normalize(drawn.RotationDegrees - footprintDegrees);
+        return placed;
     }
 
     /// <summary>The centre of a shape's own bounding box, or null when it has none.</summary>

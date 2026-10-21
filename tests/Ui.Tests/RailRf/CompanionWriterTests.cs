@@ -115,7 +115,7 @@ public sealed class CompanionWriterTests(ITestOutputHelper output) : IDisposable
             var row = Assert.Single(placement.Rows, r => r.Refdes == entry.Refdes);
             Assert.Equal((entry.X, entry.Y), (row.X, row.Y));
             Assert.Equal(entry.RotationDegrees, row.RotationDegrees, 6);
-            Assert.Equal(entry.Mirror, row.Mirror);
+            Assert.Equal(entry.Side == PlacementSide.Bottom, row.Mirror);
             Assert.Equal(entry.Footprint, row.Footprint);
         }
 

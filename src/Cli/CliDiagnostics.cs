@@ -1532,6 +1532,18 @@ internal static class CliDiagnostics
         "check.generated-cell.note", DiagnosticSeverity.Info,
         "{path}: {note}", ("path", path), ("note", note));
 
+    /// <summary>brief-bsp-3 R-bsp3-10 — a bottom-side placement on a technology with no bottom copper: there is
+    /// nothing to solder it to, and every flat output leaves it out. The sentence is the resolver's.</summary>
+    public static Diagnostic CheckLayoutSideRefused(string path, string text) => Diagnostic.Create(
+        "check.layout.side-refused", DiagnosticSeverity.Error,
+        "{path}: {text}", ("path", path), ("text", text));
+
+    /// <summary>brief-bsp-3 R-bsp3-10 — a bottom-side placement whose technology has no bottom layer for one of
+    /// its roles, which every output omits. The sentence is the resolver's and names the part and the role.</summary>
+    public static Diagnostic CheckLayoutSideRoleOmitted(string path, string text) => Diagnostic.Create(
+        "check.layout.side-role-omitted", DiagnosticSeverity.Warning,
+        "{path}: {text}", ("path", path), ("text", text));
+
     public static Diagnostic CheckDrcNote(string path, string text) => Diagnostic.Create(
         "check.drc.note", DiagnosticSeverity.Warning,
         "{path}: {text}", ("path", path), ("text", text));

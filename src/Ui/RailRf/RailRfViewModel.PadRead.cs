@@ -103,7 +103,7 @@ public sealed partial class RailRfViewModel
             var sb = new StringBuilder();
             foreach (var i in view.Instances)
                 sb.Append(i.CellRef).Append('|').Append(i.X).Append(',').Append(i.Y).Append(',')
-                  .Append(i.RotationDegrees).Append(',').Append(i.MirrorX).Append(',').Append(i.Mag).Append(',')
+                  .Append(i.RotationDegrees).Append(',').Append(i.MirrorX).Append(',').Append(i.Side).Append(',').Append(i.Mag).Append(',')
                   .Append(i.Rows).Append('x').Append(i.Cols).Append(',').Append(i.PitchX).Append(',').Append(i.PitchY)
                   .Append('|').Append(i.SchematicId).Append('|').Append(i.RefDes).Append('\n');
 

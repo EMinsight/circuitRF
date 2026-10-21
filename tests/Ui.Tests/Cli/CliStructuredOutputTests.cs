@@ -456,6 +456,8 @@ public sealed class CliStructuredOutputTests(ITestOutputHelper output) : IDispos
         "check.generated-cell.note",
         "check.generated-cell.unbuildable",
         "check.layout.degenerate-shape",
+        "check.layout.side-refused",
+        "check.layout.side-role-omitted",
         "check.layout.unknown-field",
         "check.name.invalid",
         // brief-oasis-gdstk.md §10b — an OASIS file's header, read through the gdstk worker.

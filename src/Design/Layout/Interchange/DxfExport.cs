@@ -32,9 +32,14 @@ public static class DxfExport
         /// rulers are cell-local (§9B.7) and do not render through an instance placement, so a
         /// sub-cell's working notes are not scattered across every design that reuses it.</summary>
         IReadOnlyList<RulerAnnotation>? Rulers = null,
-        LayoutUnit DisplayUnit = LayoutUnit.Um)
+        LayoutUnit DisplayUnit = LayoutUnit.Um,
+        /// <summary>brief-bsp-3 R-bsp3-4 — what the bottom-side placements did to the file; see
+        /// <c>GdsiiExport.ExportPlan.Notes</c>.</summary>
+        IReadOnlyList<string>? Notes = null)
     {
         public bool CanWrite => true;
+
+        public IReadOnlyList<string> SideNotes => Notes ?? [];
 
         /// <summary>R-via-10: any via at all means this export is geometry-only, never a manufacturable
         /// PCB deliverable (DXF carries no drill table) — mirrors <c>GdsiiExport.ExportPlan.HasVias</c>.</summary>
@@ -53,10 +58,10 @@ public static class DxfExport
     /// own parameter exactly. Null (the project-tree/no-open-document path) reads from disk as before.</summary>
     public static ExportPlan Analyze(string rootCellDir, Technology? tech, int dbuPerMicron, LayoutView? rootView = null)
     {
-        var (structures, nameByCellName, unresolvedRefs, rootName, rootRulers, displayUnit) =
+        var (structures, nameByCellName, unresolvedRefs, rootName, rootRulers, displayUnit, notes) =
             CollectHierarchy(rootCellDir, rootView, tech);
         return new ExportPlan(unresolvedRefs, nameByCellName, structures, rootName, tech, dbuPerMicron,
-                              rootRulers, displayUnit);
+                              rootRulers, displayUnit, notes);
     }
 
     /// <summary>
@@ -81,81 +86,65 @@ public static class DxfExport
 
     private static (List<InterchangeStructure> Structures, IReadOnlyDictionary<string, string> NameByCellName,
         IReadOnlyList<string> UnresolvedRefs, string RootName,
-        IReadOnlyList<RulerAnnotation> RootRulers, LayoutUnit DisplayUnit) CollectHierarchy(
+        IReadOnlyList<RulerAnnotation> RootRulers, LayoutUnit DisplayUnit, IReadOnlyList<string> Notes) CollectHierarchy(
             string rootCellDir, LayoutView? rootView, Technology? tech)
     {
-        var rootAbs = Path.GetFullPath(rootCellDir);
-        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rootAbs };
-        var order = new List<string> { rootAbs };
-        var viewByDir = new Dictionary<string, LayoutView>(StringComparer.OrdinalIgnoreCase);
-        var queue = new Queue<string>();
-        queue.Enqueue(rootAbs);
+        // brief-bsp-3 R-bsp3-4 — the walk GdsiiExport shares: every reachable cell, plus a bottom
+        // variant block of each cell a bottom placement uses, and only of those.
+        var walk = InterchangeHierarchy.Collect(Path.GetFullPath(rootCellDir), rootView, tech, LoadPrimaryLayout);
 
-        while (queue.Count > 0)
+        var cellNames = walk.Tops.Select(n => n.CellName).ToList();
+        var blockNameByCellName = DxfNaming.MangleForExport(cellNames);
+
+        var nameOf = new Dictionary<InterchangeHierarchy.Node, string>();
+        foreach (var node in walk.Tops) nameOf[node] = blockNameByCellName[node.CellName];
+
+        var mapping = new Dictionary<string, string>(blockNameByCellName);
+        if (walk.Variants.Count > 0)
         {
-            var cellDir = queue.Dequeue();
-            // item 5/R-fix-4: mirrors GdsiiExport.CollectHierarchy's own root-view substitution exactly.
-            var view = string.Equals(cellDir, rootAbs, StringComparison.OrdinalIgnoreCase) && rootView is not null
-                ? rootView
-                : LoadPrimaryLayout(cellDir);
-            viewByDir[cellDir] = view;
-
-            var layoutDir = CellFolder.SubFolderPath(cellDir, ViewType.Layout);
-            foreach (var inst in view.Instances)
+            // DXF block names compare without case (DxfNaming's own rule).
+            var used = new HashSet<string>(nameOf.Values, StringComparer.OrdinalIgnoreCase);
+            foreach (var node in walk.Variants)
             {
-                if (Workspace.ExternalCellRef.ResolveCellDir(inst.CellRef, layoutDir) is not { } targetDir)
-                    continue;
-                if (!Directory.Exists(targetDir)) continue;
-                if (visited.Add(targetDir))
-                {
-                    order.Add(targetDir);
-                    queue.Enqueue(targetDir);
-                }
+                nameOf[node] = InterchangeHierarchy.VariantName(blockNameByCellName[node.CellName], used, DxfNaming.MaxLength);
+                mapping[$"{node.CellName} (bottom)"] = nameOf[node];
             }
         }
 
-        var cellNames = order.Select(d => Path.GetFileName(d)).ToList();
-        var blockNameByCellName = DxfNaming.MangleForExport(cellNames);
-
-        var dirToBlockName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var dir in order)
-            dirToBlockName[dir] = blockNameByCellName[Path.GetFileName(dir)];
-
         var unresolvedRefs = new List<string>();
-        var structures = new List<InterchangeStructure>(order.Count);
-        foreach (var dir in order)
+        var structures = new List<InterchangeStructure>();
+        foreach (var node in walk.All)
         {
-            var view = viewByDir[dir];
-            var cellName = Path.GetFileName(dir);
-            var layoutDir = CellFolder.SubFolderPath(dir, ViewType.Layout);
-            var instances = view.Instances.Select(inst =>
+            var view = node.View;
+            var layoutDir = node.LayoutDir;
+            var instances = new List<LayoutInstance>(view.Instances.Count);
+            for (int i = 0; i < view.Instances.Count; i++)
             {
-                string targetDir = Workspace.ExternalCellRef.ResolveCellDir(inst.CellRef, layoutDir) ?? "";
-                if (!dirToBlockName.TryGetValue(targetDir, out var targetBlockName))
+                var inst = view.Instances[i];
+                if (node.Targets[i] is not { } target || !nameOf.TryGetValue(target, out var targetBlockName))
                 {
                     targetBlockName = inst.CellRef;
-                    unresolvedRefs.Add($"{cellName}: instance referencing \"{inst.CellRef}\" does not resolve.");
+                    if (node.Side == PlacementSide.Top)
+                        unresolvedRefs.Add($"{node.CellName}: instance referencing \"{inst.CellRef}\" does not resolve.");
                 }
-                return new LayoutInstance
-                {
-                    CellRef = targetBlockName,
-                    X = inst.X, Y = inst.Y, RotationDegrees = inst.RotationDegrees, MirrorX = inst.MirrorX, Mag = inst.Mag,
-                    Rows = inst.Rows, Cols = inst.Cols, PitchX = inst.PitchX, PitchY = inst.PitchY,
-                };
-            }).ToList();
+                instances.Add(InterchangeHierarchy.Exported(inst, targetBlockName));
+            }
 
             // brief-footprint-4b R-fp4b-4b — mirrors GdsiiExport.CollectHierarchy exactly, and out of
             // the same one function: a structure carries the designators of its OWN placements.
             var shapes = new List<LayoutShape>(view.Shapes);
             shapes.AddRange(FootprintLabel.ShapesFor(view, layoutDir, tech, null));
 
-            structures.Add(new InterchangeStructure(dirToBlockName[dir], shapes, instances));
+            structures.Add(new InterchangeStructure(nameOf[node], shapes, instances));
         }
 
+        var notes = new List<string>(walk.Notes);
+        if (walk.Variants.Count > 0) notes.Add(InterchangeHierarchy.VariantNote(walk.Variants.Count, "block"));
+
         // §9B.7: cell-LOCAL. Only the root's own rulers travel; a sub-cell's stay with that cell.
-        var rootLayout = viewByDir[rootAbs];
-        return (structures, blockNameByCellName, unresolvedRefs, dirToBlockName[rootAbs],
-                [.. rootLayout.Rulers], rootLayout.DisplayUnit);
+        var root = walk.Tops[0];
+        return (structures, mapping, unresolvedRefs, nameOf[root],
+                [.. root.View.Rulers], root.View.DisplayUnit, notes);
     }
 
     private static LayoutView LoadPrimaryLayout(string cellDir)

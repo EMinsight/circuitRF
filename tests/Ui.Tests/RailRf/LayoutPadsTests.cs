@@ -117,21 +117,26 @@ public sealed class LayoutPadsTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>
-    /// <b>A mirrored footprint is soldered to the bottom</b> (owner, 2026-09-24): railRF reads its lands
-    /// on the bottom copper, as the board exporters already turn them over. The unmirrored part beside
-    /// it stays on the top — the land the footprint draws its pins on.
+    /// <b>A bottom-side part's lands are read on the bottom copper</b>, and the face is the placement's
+    /// <see cref="LayoutInstance.Side"/> (brief-bsp-3 R-bsp3-8): a part MIRRORED on the top stays on the top,
+    /// since a mirror is a reflection on the same face (brief-bsp-0 D1). Until the side model the mirror
+    /// was what railRF read as the bottom.
     /// </summary>
     [Fact]
-    public void AMirroredFootprintsLands_AreReadOnTheBottomCopper()
+    public void ABottomSidePartsLands_AreReadOnTheBottomCopper_AMirroredTopPartsOnTheTop()
     {
         var bottom = Place("Land", "C2", Mm(9), Mm(7));
         bottom.MirrorX = true;
-        var fx = Board(Place("Land", "C1", Mm(5), Mm(3)), bottom);
+        bottom.Side = PlacementSide.Bottom;
+        var mirrored = Place("Land", "C3", Mm(13), Mm(7));
+        mirrored.MirrorX = true;
+        var fx = Board(Place("Land", "C1", Mm(5), Mm(3)), bottom, mirrored);
 
         var pads = RailArtwork.PadsFor(fx.View, fx.Clay, fx.Tech, null).Pads;
 
         Assert.All(pads.Where(p => p.Refdes == "C1"), p => Assert.Equal(Top, p.Layer));
         Assert.All(pads.Where(p => p.Refdes == "C2"), p => Assert.Equal(Bot, p.Layer));
+        Assert.All(pads.Where(p => p.Refdes == "C3"), p => Assert.Equal(Top, p.Layer));
         Assert.Equal(2, pads.Count(p => p.Refdes == "C2"));
     }
 

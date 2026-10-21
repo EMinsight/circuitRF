@@ -355,7 +355,8 @@ public class PcbExportTests : IDisposable
     /// <summary>
     /// The mirror is BAKED into the written child geometry and child layers, never emitted as a
     /// transform — L4d measured that this is how the format stores a flipped footprint, and a writer
-    /// that emitted the transform instead would produce a part that flips a second time.
+    /// that emitted the transform instead would produce a part that flips a second time. The BACK side is
+    /// the placement's <see cref="PlacementSide"/>, not its mirror (brief-bsp-3 R-bsp3-5).
     /// </summary>
     [Fact]
     public void AMirroredInstance_WritesBackSideArtworkWithNegatedLocalY()
@@ -364,7 +365,7 @@ public class PcbExportTests : IDisposable
         var boardDir = CreateCell("BOARD", v => v.Instances.Add(new LayoutInstance
         {
             CellRef = Path.GetRelativePath(CellFolder.SubFolderPath(Path.Combine(_dir, "BOARD"), ViewType.Layout), partDir),
-            X = 0, Y = 0, RotationDegrees = 0, MirrorX = true,
+            X = 0, Y = 0, RotationDegrees = 0, MirrorX = true, Side = PlacementSide.Bottom,
         }));
 
         var (_, text) = ExportOf(boardDir);

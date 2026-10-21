@@ -319,6 +319,20 @@ names it. A blind or buried via in the selection is refused the same way.
 The **Layers** panel controls the bottom layers as it does the top: hiding **Silk Bottom** hides a
 bottom part's designator, and hiding **Bottom Copper** hides its lands.
 
+**In what you export.** A bottom part's lands, mask and silkscreen are written to the bottom files.
+
+- **Gerber:** the bottom silkscreen is written as it is drawn, so its text reads left to right when you
+  look at the file from above.
+- **Placement file:** the Side column comes from the part's side, not from Mirror. The file states its
+  rotation convention: angles are seen from the top, and a bottom part is flipped about its Y axis first.
+- **Board file:** a bottom part is written as a back-side footprint.
+- **GDSII and DXF:** each cell placed on the bottom is also written as a second structure or block,
+  named with a `_B` suffix, holding its bottom layers. Reading such a file back gives that structure as
+  a cell of its own, and the export report says so.
+
+`check` warns about a bottom part whose technology has no bottom layer for one of its roles, and reports
+a bottom part on a board with no bottom copper as an error.
+
 ## Finding an instance {#find}
 
 On a board with hundreds of parts, **Design ▸ Find Instance…** — <kbd>⌘F</kbd> /

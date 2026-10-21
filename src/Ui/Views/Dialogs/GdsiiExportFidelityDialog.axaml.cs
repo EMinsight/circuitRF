@@ -52,6 +52,10 @@ public partial class GdsiiExportFidelityDialog : Window
         LayersRenumberedLine.Text = string.Join("\n", plan.LayerRenumberings.Select(r => $"• {r}"));
         LayersRenumberedLine.IsVisible = plan.LayerRenumberings.Count > 0;
 
+        // brief-bsp-3 R-bsp3-4: the bottom-side variants written, and any role a bottom part omits.
+        SideNotesLine.Text = string.Join("\n", plan.SideNotes.Select(n => $"• {n}"));
+        SideNotesLine.IsVisible = plan.SideNotes.Count > 0;
+
         // R-via-10: GDSII carries no drill table — never a manufacturable PCB deliverable.
         ViaFabricationNoteLine.IsVisible = plan.HasVias;
 

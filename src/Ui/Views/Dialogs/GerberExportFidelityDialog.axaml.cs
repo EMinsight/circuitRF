@@ -60,6 +60,11 @@ public partial class GerberExportFidelityDialog : Window
             "barrel layer's own file. Set Spans on the via entry in the technology editor's Stackup tab.";
         UnspannedViaPadLine.IsVisible = plan.UnspannedViaPads > 0;
 
+        // A bottom-side part whose technology lacks a bottom layer for one of its roles is written
+        // without that role (brief-bsp-3 R-bsp3-1); said here because the omitted artwork is in no file.
+        FlattenNotesLine.Text = plan.Notes is { Count: > 0 } notes ? "• " + string.Join("\n• ", notes) : "";
+        FlattenNotesLine.IsVisible = plan.Notes is { Count: > 0 };
+
         NoChangesLine.IsVisible = plan.HasNothingToReport;
 
         if (plan.UnresolvedInstances.Count > 0)

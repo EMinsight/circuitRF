@@ -88,8 +88,10 @@ public static class PcbExport
                 // A cell that itself places sub-cells: this format's footprints do not nest, so the
                 // sub-levels are flattened INTO the definition. Reported through the same shape count.
                 var cellLayoutDir = CellFolder.SubFolderPath(targetDir, ViewType.Layout);
+                // With the technology, so a sub-part the cell itself puts on the bottom lands on the
+                // bottom roles in the cell's own frame (brief-bsp-3); the placement's face is applied after.
                 foreach (var sub in cellView.Instances)
-                    shapes.AddRange(LayoutFlatten.FlattenAllLevels(sub, cellLayoutDir).Shapes);
+                    shapes.AddRange(LayoutFlatten.FlattenAllLevels(sub, cellLayoutDir, tech).Shapes);
 
                 model.Definitions[defName] = new PcbFootprintDef(defName, shapes, cellView.Pins);
                 shapeCount += shapes.Count;
@@ -114,7 +116,9 @@ public static class PcbExport
                         // Written as a property, not as flattened outlines: the receiving tool owns how
                         // it draws its own silkscreen text, and a designator baked into geometry could
                         // not be edited, moved or renamed there.
-                        Reference: inst.DisplayRefDes));
+                        Reference: inst.DisplayRefDes,
+                        // brief-bsp-3 R-bsp3-5: the face picks the layers, the mirror the geometry.
+                        Side: inst.Side));
                     shapeCount += model.Definitions[defName].Shapes.Count;
                 }
         }
