@@ -99,7 +99,12 @@ public sealed record SolverRecipe(
     IReadOnlyList<RecipeSource> Sources, IReadOnlyList<RecipePrerequisite> Prerequisites,
     IReadOnlyDictionary<string, string> Environment, IReadOnlyList<string> ClearEnvironment,
     IReadOnlyList<RecipeStep> Steps, string? SpackSpec, string Program, string? SpackInstallTree,
-    RecipeMeasured Measured, IReadOnlyList<string> KnownFailures);
+    RecipeMeasured Measured, IReadOnlyList<string> KnownFailures)
+{
+    /// <summary>brief-emi-2 R-emi2-4 — the sentences the consent adds about what the user accepts by installing (the
+    /// licences of what is fetched), one each, in order. Data, so the installer names no package.</summary>
+    public IReadOnlyList<string> ConsentNotes { get; init; } = [];
+}
 
 /// <summary>
 /// The shipped recipes: <c>recipes/*.json</c>, embedded in this assembly, read through
@@ -217,7 +222,7 @@ public static class SolverRecipes
         void Need(bool ok, string what) { if (!ok) problems.Add(what); }
 
         var tool = SolverHomes.ToolFromId(d.Tool);
-        Need(tool is not null, $"tool '{d.Tool}' is not palace, gmsh or openems");
+        Need(tool is not null, $"tool '{d.Tool}' is not palace, gmsh, openems or emerge");
         RecipePlatform? platform = d.Platform switch { "macos" => RecipePlatform.MacOS, "linux" => RecipePlatform.Linux, "windows" => RecipePlatform.Windows, _ => null };
         Need(platform is not null, $"platform '{d.Platform}' is not macos, linux or windows");
         RecipeArchitecture? arch = d.Architecture switch { "arm64" => RecipeArchitecture.Arm64, "x64" => RecipeArchitecture.X64, _ => null };
@@ -309,7 +314,7 @@ public static class SolverRecipes
             d.Layout == "relocatable", d.LayoutNote!, d.NeedsSpaceFreePath,
             sources, prereqs, d.Environment ?? new(), d.ClearEnvironment ?? [], steps, d.SpackSpec, d.Program!,
             d.SpackInstallTree, new RecipeMeasured(d.Measured!.Minutes, d.Measured.DiskGB, d.Measured.Source!),
-            d.KnownFailures ?? []);
+            d.KnownFailures ?? []) { ConsentNotes = d.ConsentNotes ?? [] };
     }
 
     /// <summary>A command that is a shell — refused by the loader, so no recipe can smuggle a string past
@@ -351,6 +356,7 @@ public static class SolverRecipes
         public List<PrereqDto>? Prerequisites { get; set; }
         public Dictionary<string, string>? Environment { get; set; }
         public List<string>? ClearEnvironment { get; set; }
+        public List<string>? ConsentNotes { get; set; }
         public List<StepDto>? Steps { get; set; }
         public string? SpackSpec { get; set; }
         public string? Program { get; set; }

@@ -2530,8 +2530,8 @@ static int PrintHelp()
     Console.WriteLine("  find    <root>         (what is here: workspaces, cells, views, analyses)");
     Console.WriteLine("  reference [topic] [type]  (what a caller may WRITE: the prose pages, and the");
     Console.WriteLine("                          generated component catalogue. Takes no path.)");
-    Console.WriteLine("  solver list            (Palace, Gmsh, openEMS: found where, which version, what they can do)");
-    Console.WriteLine("  solver install <palace|gmsh|openems> [--yes]  (from its own upstream; without --yes,");
+    Console.WriteLine($"  solver list            ({string.Join(", ", CircuitRF.Design.Em3d.Em3dSolvers.Tools.Select(t => CircuitRF.Design.Em3d.SolverDiscovery.For(t).Name))}: found where, which version, what they can do)");
+    Console.WriteLine($"  solver install <{string.Join("|", Solver.ToolIds)}> [--yes]  (from its own upstream; without --yes,");
     Console.WriteLine("                          prints what it would fetch and where it would go, and exits 1)");
     Console.WriteLine("  serve   --root <dir>   (a protocol server on stdin/stdout, for an external client)");
     Console.WriteLine("  --version              (the version of this build, and nothing else)");

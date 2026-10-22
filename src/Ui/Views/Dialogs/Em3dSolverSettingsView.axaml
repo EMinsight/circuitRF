@@ -165,6 +165,38 @@
       <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="OpenEmsRemovals" Spacing="4"/>
     </Grid>
 
+    <!-- ── brief-emi-2 R-emi2-4: EMerge ─────────────────────────────────
+         The program is a Python with EMerge importable. Blank searches CIRCUITRF_EMERGE, then the copy circuitRF
+         installed, and never PATH (SolverDiscovery.InstalledOnly). The status line is the version and whether it is
+         validated, the sparse-solver tier, then where it was found (SolverDiscovery.DescribeForSettings). -->
+    <SelectableTextBlock Text="EMerge (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+      <TextBox Grid.Row="0" Grid.Column="0" Name="EmergeBox" FontSize="12"
+               PlaceholderText="Leave blank to search (CIRCUITRF_EMERGE, then the copy circuitRF installed)"
+               LostFocus="OnPathCommitted">
+        <ToolTip.Tip>
+          <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                     Text="The Python EMerge is installed in: the interpreter itself, or the folder of its virtual environment. circuitRF asks it which EMerge it has and which sparse solver EMerge would use, and keeps the answer until that environment changes. A Python on PATH is never used on its own."/>
+        </ToolTip.Tip>
+      </TextBox>
+      <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+              Tag="EmergeBox" Click="OnBrowse" ToolTip.Tip="Pick the environment's Python from disk"/>
+      <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="EmergeStatus" FontSize="11" Opacity="0.75"
+                 TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                 Margin="0,4,0,0" Text="Not checked yet.">
+        <SelectableTextBlock.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
+            <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
+          </ContextMenu>
+        </SelectableTextBlock.ContextMenu>
+      </SelectableTextBlock>
+      <Button Grid.Row="2" Grid.ColumnSpan="2" Name="EmergeInstall" Content="Install EMerge…" FontSize="11" Padding="8,3"
+              Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="Emerge" Click="OnInstall"
+              ToolTip.Tip="Download a Python of its own, EMerge and every package it needs, each pinned and checked, into a folder of circuitRF's. Shows what it will fetch and where it will go before anything is downloaded."/>
+      <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="EmergeRemovals" Spacing="4"/>
+    </Grid>
+
     <!-- ── brief-em3d-25 R-em3d25-2: every circuitRF-installed solver, one confirmation ── -->
     <Button Name="RemoveAll" Content="Remove all 3D solvers…" FontSize="11" Padding="8,3" Margin="0,16,0,0"
             HorizontalAlignment="Left" IsVisible="False" Click="OnRemoveAll"

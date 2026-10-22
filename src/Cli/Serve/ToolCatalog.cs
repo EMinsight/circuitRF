@@ -1495,9 +1495,10 @@ internal static class ToolCatalog
         // stay off this surface — both download or delete on the user's machine behind a consent that
         // is the PERSON's to give, and a tool call is not that person.
         new("solver",
-            "Which external 3D solvers (Palace, Gmsh, openEMS) are installed here and what each build can do: "
+            "Which external 3D solvers (Palace, Gmsh, openEMS, EMerge) are installed here and what each build can do: "
           + "driven solves, wave ports, eigenmode solves, and with capability=gpu whether Palace solves on a GPU and "
-          + "how many it finds. Ask before writing a 3D setup that needs one. Reads no file and writes nothing.",
+          + "how many it finds; for EMerge, its sparse-solver tier. Ask before writing a 3D setup that needs one. Reads "
+          + "no file and writes nothing.",
             null, null,
             [
                 new("", [ "solver", "list" ], [],

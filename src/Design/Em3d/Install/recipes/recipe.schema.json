@@ -9,8 +9,8 @@
   "properties": {
     "$schema": { "type": "string" },
     "comment": { "type": "string" },
-    "id": { "type": "string", "pattern": "^(palace|gmsh|openems)-[0-9][0-9A-Za-z.\\-]*-(macos|linux|windows)-(arm64|x64)$" },
-    "tool": { "enum": ["palace", "gmsh", "openems"] },
+    "id": { "type": "string", "pattern": "^(palace|gmsh|openems|emerge)-[0-9][0-9A-Za-z.\\-]*-(macos|linux|windows)-(arm64|x64)$" },
+    "tool": { "enum": ["palace", "gmsh", "openems", "emerge"] },
     "version": { "type": "string", "minLength": 1 },
     "platform": { "enum": ["macos", "linux", "windows"] },
     "architecture": { "enum": ["arm64", "x64"] },
@@ -58,6 +58,7 @@
     },
     "environment": { "type": "object", "additionalProperties": { "type": "string" } },
     "clearEnvironment": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "consentNotes": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "steps": {
       "type": "array",
       "minItems": 1,

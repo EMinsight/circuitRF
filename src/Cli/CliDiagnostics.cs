@@ -4173,9 +4173,10 @@ internal static class CliDiagnostics
 
     // ── solver (brief-em3d-24 R-em3d24-7) ─────────────────────────────────────────────────────────────
 
-    public static Diagnostic SolverNounRequired() => new(
+    public static Diagnostic SolverNounRequired() => Diagnostic.Create(
         "solver.args.noun-required", DiagnosticSeverity.Error,
-        "solver: say what to do — 'solver list', 'solver install <palace|gmsh|openems>' or 'solver remove <tool>|--all'.");
+        "solver: say what to do — 'solver list', 'solver install <{tools}>' or 'solver remove <tool>|--all'.",
+        ("tools", string.Join("|", Solver.ToolIds)));
 
     public static Diagnostic SolverUnknownNoun(string noun) => Diagnostic.Create(
         "solver.args.unknown-noun", DiagnosticSeverity.Error,
@@ -4191,13 +4192,14 @@ internal static class CliDiagnostics
         "solver list: --capability takes gpu, not '{value}'. Driven solves, wave ports and eigenmode solves are always " +
         "reported.", ("value", value));
 
-    public static Diagnostic SolverToolRequired() => new(
+    public static Diagnostic SolverToolRequired() => Diagnostic.Create(
         "solver.install.tool-required", DiagnosticSeverity.Error,
-        "solver install: say which tool — palace, gmsh or openems.");
+        "solver install: say which tool — {tools}.", ("tools", Solver.ToolIdSentence));
 
     public static Diagnostic SolverUnknownTool(string tool) => Diagnostic.Create(
         "solver.install.unknown-tool", DiagnosticSeverity.Error,
-        "solver install: '{tool}' is not a tool circuitRF installs. Known: palace, gmsh, openems.", ("tool", tool));
+        "solver install: '{tool}' is not a tool circuitRF installs. Known: {tools}.", ("tool", tool),
+        ("tools", string.Join(", ", Solver.ToolIds)));
 
     /// <summary>No recipe for this tool (and version) on this platform — the list of platforms that DO
     /// have one says whether the answer is "not here" or "not at all".</summary>
@@ -4225,9 +4227,10 @@ internal static class CliDiagnostics
 
     // ── solver remove (brief-em3d-25) ─────────────────────────────────────────────────────────────────
 
-    public static Diagnostic SolverRemoveTargetRequired() => new(
+    public static Diagnostic SolverRemoveTargetRequired() => Diagnostic.Create(
         "solver.remove.target-required", DiagnosticSeverity.Error,
-        "solver remove: say what to remove — palace, gmsh or openems, or --all for every solver circuitRF installed.");
+        "solver remove: say what to remove — {tools}, or --all for every solver circuitRF installed.",
+        ("tools", Solver.ToolIdSentence));
 
     public static Diagnostic SolverRemoveAllWithTool(string tool) => Diagnostic.Create(
         "solver.remove.all-with-tool", DiagnosticSeverity.Error,

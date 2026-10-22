@@ -21620,3 +21620,95 @@ that read that solver's own settings or output (see above). A `.cem`/`.c3d` nami
 is refused with the list of known ones. Palace's and openEMS's writers and readers (`GmshGeoWriter`,
 `PalaceConfigWriter`, `CsxcadWriter`, `OpenEmsRun`, …) predate the folders and stay in `src/Design/Em3d/`, so removing
 one of those two also means deleting those files. A solver added under this seam keeps all of its code in its folder.
+
+## EMI-2: installing EMerge, finding it, and its Settings row (2026-10-21)
+
+**What the program is.** `SolverTool.Emerge` (appended) is a Python interpreter with EMerge importable. Its version
+question IS the probe: `<python> -I -c EmergeSolver.ProbeSource`, a constant in `Em3d/Solvers/EMerge/`, which prints one
+JSON line (`EmergeProbe.Read` parses it, skipping EMerge's own log lines on stderr). The probe reads EMerge's internals by
+PATTERN — every module-level `_<NAME>_AVAILABLE` flag in `emerge._emerge.solver` — and asks EMerge's own
+`AutomaticRoutine().pick_solver` which direct solver a 20,000-unknown complex-symmetric system gets. That choice is the
+tier (`EmergeProbe.Tier`): `SolverSuperLU` is the baseline, anything else is fast, nothing is unknown. No solver package is
+named in circuitRF's source, and the flags' names are carried in `SparseSolvers` but never displayed. EMI-3 appends the
+"what would make it fast" half of the baseline sentence in `EmergeProbe.TierText`.
+
+**Not in `Em3dSolvers.All` yet.** A descriptor needs a run (`NewLeg`), which is EMI-4/EMI-5. `Em3dSolvers.Integrating`
+adds `EmergeSolver.Tools` to `Em3dSolvers.Tools`, so `solver list`, Settings, install and uninstall all see EMerge while
+no picker, `--solver` word or `Solver3D` spelling can name it. EMI-5 moves the program onto the descriptor and deletes
+`Integrating`. `settings.md` says a setup cannot choose EMerge yet; EMI-5 removes that sentence.
+
+**Discovery (R-emi2-3a).** `SolverDiscovery.InstalledOnly` limits the unprompted routes to "installed by circuitRF": no
+PATH, default directories, Spack or conda. Settings or `CIRCUITRF_EMERGE` may name the interpreter or a FOLDER
+(`EmergeSolver.InterpreterIn`: a venv's `bin/python` / `Scripts\python.exe`, or an EMerge home's `env/`).
+
+**The cache key is wider than the brief's.** The brief asks for the interpreter's path, size and timestamp. A venv's
+`bin/python` is a link to the Python installation, and `pip install` of another EMerge leaves both the link and its
+target untouched, so a key on the interpreter alone would go on calling an upgraded EMerge validated. `Stamp` adds each
+`site-packages` folder's write time (a new version renames its `.dist-info` folder, which moves it). The entry lives in
+`solver-capabilities.json` under the capability column `EmergeProbe`. Only an answer that names a version is kept.
+
+**Probe time.** The first `import emerge` in a fresh environment took 17 s (macOS arm64, bytecode being compiled), and
+later ones took 0.6 s. The install passes `--compile-bytecode`, which took 1 s for 3,605 files, and the probe timeout is
+120 s, not the 20 s other version questions get.
+
+**The recipes** (`emerge-3.0.0b2-<platform>-<arch>.json`, six of them) use only the existing step kinds:
+1. Download and extract uv **0.12.24**, the last 0.12 release, two weeks old. 0.13 had five releases in the 12 days
+   before this work. Each archive is pinned by the SHA-256 GitHub publishes with the asset.
+2. `uv python install cpython-3.13.16-<platform> --install-dir ${home}/python --no-bin --no-registry --no-config`.
+   **`--no-bin` and `--no-registry` are not optional**: without them uv puts a `python3.13` into `~/.local/bin` and, on
+   Windows, registers the interpreter, both outside the home.
+3. `uv venv ${home}/env --python <that interpreter>`.
+4. Write `requirements.lock`, then `uv pip install --require-hashes --no-build --link-mode copy --compile-bytecode`.
+5. Import EMerge (`captureAs`/`expect` 3.0.0b2), then `uv cache clean`. The cache (844 MB here) is gone before the size is
+   measured. After that the installer's own check runs the real probe through discovery.
+   `clearEnvironment` drops `PYTHON*`, `VIRTUAL_ENV`, `CONDA_PREFIX`, `UV_*`, `PIP_*`, and the recipe then sets
+   `UV_PYTHON_INSTALL_DIR` and `UV_CACHE_DIR` to folders inside the home.
+
+**Layout is in-place, measured.** `env/bin/python` is an absolute symlink to the interpreter, and `pyvenv.cfg`'s `home =`
+is absolute, so a renamed `.partial` would break both.
+
+**The lock lines** are `tools/EmergeLock/make_locks.py`'s output: `uv pip compile --generate-hashes --only-binary :all:`
+per platform, then only the hashes of wheels that platform could install, with PyPI's JSON mapping a hash to a file name.
+Unfiltered, uv lists every file of every pinned version: 971 lines and 80 KB for macOS arm64. Filtered, it is 44 lines
+and 5 KB. One requirement per line, so the gate parses them. **`--no-python-downloads` matters there**: without it the
+compile fetched a CPython 3.13.16 into `~/.local/share/uv` in the user's home. The script can also splice its output
+straight into the recipes.
+
+**Linux arm64 compiles something.** Upstream publishes no Linux aarch64 Gmsh wheel (uv's resolver says so, and the only
+gmsh wheels are x86_64, macOS and win_amd64), so EMerge cannot be installed there from wheels. That recipe builds Gmsh's
+library from the source, checksum and prerequisites of `gmsh-4.15.2-linux-arm64.json`, with `-DENABLE_BUILD_DYNAMIC=1`.
+That installs `libgmsh` and `gmsh.py` in `${home}/gmsh/lib`, which a `.pth` file in the environment's `site-packages`
+puts on the path. Its lock drops gmsh (an override with a never-true marker) and the install takes `--no-deps`. It has
+**not been run**. EMerge 3.0.0b2 reads Gmsh's version from the module, not from package metadata (grep), so a missing
+dist-info for gmsh should not matter. That is an expectation, not a measurement.
+
+**Windows arm64** uses the native arm64 uv and asks for the x64 interpreter by its key, so the x64 lock applies (overview
+O2). Neither Windows recipe has been run.
+
+**Measured** (macOS 27.0, Apple M4, 2026-10-21, `CRF_STATE_DIR` in a scratch folder): `solver install emerge --yes` ran
+in 137 s and left 1.02 GB (906 MB environment, 71 MB Python, 28 MB uv). The probe then answered EMerge 3.0.0b2,
+Python 3.13.16, Gmsh 4.15.2, no optional sparse solver, SuperLU: the baseline tier. `solver list` showed it installed and
+validated, and `solver remove emerge` planned its removal. No failure was met, so `knownFailures` is empty.
+
+**Consent text is recipe data.** The new optional `consentNotes` array (schema, `SolverRecipe.ConsentNotes`) holds one
+sentence per licence: EMerge and Gmsh under the GPL, and on every recipe whose environment is x64 (both Windows recipes
+included) the vendor-licensed sparse-solver library EMerge's dependencies pull in. `Consent` prints them after Palace's
+ParMETIS line, and every older recipe is unchanged.
+
+**Tested versions, not a pin (R-emi2-6 amended by the owner, 2026-10-21).** EMerge is `UntestedRuns`, like Gmsh
+(brief-em3d-135) and openEMS: its list `[3.0.0b2]` is of TESTED versions, an EMerge of any other version that a user
+installed runs, and `DescribeUntested`'s warning is the readiness `Warning`, the end of the Settings row, and `solver
+list`'s summary alike. The brief had it refused like Palace. Only circuitRF's OWN install is a single version, because
+a recipe's lock has to name exact versions: it installs the newest tested one, and the installer still fails a recipe
+whose program reports another. EMI-4's script-side version check should therefore warn, not refuse. **Overview O1
+is still open:** the recipes pin a beta, and they should be re-pinned to 3.0.0 final before a release ships them
+(`make_locks.py`, then the version in `SolverDiscovery.Create` and the recipe file names).
+
+**Package names in the lock lines.** The x64 locks spell the vendor-named packages EMerge depends on there. That is the
+exception the series rules allow (a lock file must spell what it pins). Nothing else does: prose, the UI and the consent
+say "a vendor's multi-threaded sparse-solver library".
+
+`solver list --json` gives EMerge's row a `tier` (`SolverJson.Tier`). The CLI's usage, help and `solver` diagnostics list
+the tool ids from `Em3dSolvers.Tools` instead of by hand. Gate: `tests/Ui.Tests/Em3d/EmergeInstallTests.cs` (recipes and
+lock lines, the probe parse, discovery order and the cache, the untested-version warning, and the registry with no tool
+named in `src/Cli/Solver.cs`). Every recipe also goes through `SolverInstallTests`' schema gate 2.

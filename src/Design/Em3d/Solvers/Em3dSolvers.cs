@@ -52,8 +52,16 @@ public static class Em3dSolvers
         return names.Count <= 1 ? string.Concat(names) : string.Join(", ", names[..^1]) + " and " + names[^1];
     }
 
-    /// <summary>The programs every solver needs, each once, in order — what <c>solver list</c> lists.</summary>
-    public static IReadOnlyList<SolverTool> Tools => [.. All.SelectMany(d => d.Tools).Distinct()];
+    /// <summary>The programs every solver needs, each once, in order — what <c>solver list</c> lists and Settings ▸
+    /// Solvers shows.</summary>
+    public static IReadOnlyList<SolverTool> Tools => [.. All.SelectMany(d => d.Tools).Concat(Integrating).Distinct()];
+
+    /// <summary>
+    /// brief-emi-2 — the programs of a solver whose run is not in yet: EMerge, until its descriptor joins <see cref="All"/>
+    /// with its run (EMI-4/EMI-5), which then deletes this. Installed, found and listed like every other program; no
+    /// <c>Solver3D</c> and no picker can name it meanwhile.
+    /// </summary>
+    private static IEnumerable<SolverTool> Integrating => EmergeSolver.Tools;
 
     /// <summary>The solver whose <see cref="Em3dSolverDescriptor.ResultToken"/> is <paramref name="token"/>, any case.</summary>
     public static Em3dSolverDescriptor? ByToken(string token)

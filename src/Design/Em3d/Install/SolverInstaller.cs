@@ -179,6 +179,7 @@ public sealed class SolverInstaller
         if (ConsentNote is { } where) sb.AppendLine(where);
         sb.AppendLine(DescribeMeasured(recipe.Measured));
         if (recipe.Tool == SolverTool.Palace) sb.AppendLine(ParmetisNote);
+        foreach (string note in recipe.ConsentNotes) sb.AppendLine(note);
         sb.AppendLine("It runs in the background and can be cancelled at any point. Cancelling leaves nothing " +
                       "circuitRF would find, and the next attempt removes what it left.");
         return sb.ToString().TrimEnd();

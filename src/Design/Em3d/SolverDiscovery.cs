@@ -8,8 +8,9 @@ using CircuitRF.Design.Layout.Em3d;
 
 namespace CircuitRF.Design.Em3d;
 
-/// <summary>The three programs a 3D EM run can need. circuitRF distributes none of them (em-3d.md §7.1).</summary>
-public enum SolverTool { Palace, Gmsh, OpenEms }
+/// <summary>The programs a 3D EM run can need. circuitRF distributes none of them (em-3d.md §7.1). brief-emi-2 — EMerge is
+/// a Python interpreter with EMerge importable; appended, so no stored value changes.</summary>
+public enum SolverTool { Palace, Gmsh, OpenEms, Emerge }
 
 /// <summary>Where a program was found — the column the Settings row shows. <see cref="Installed"/> and
 /// <see cref="Conda"/> are brief-em3d-24's two routes; they are appended so no stored value changes.</summary>
@@ -82,9 +83,11 @@ public sealed record SolverValidatedVersion(string Release, string Identity, str
 /// <param name="Release">The validated release this identifies, or null when it is not one.</param>
 /// <param name="Distribution">brief-em3d-26 — the Linux subsystem distribution the program is in, or null
 /// for one on this machine. When set, <paramref name="Path"/> is a Linux path inside it.</param>
+/// <param name="Emerge">brief-emi-2 — for EMerge, its probe's whole answer (the tier, the solvers, the cores); null
+/// for every other tool.</param>
 public sealed record SolverInstallation(
     SolverTool Tool, string Path, string Version, string? Companion, string Banner,
-    SolverHowFound HowFound, string HowFoundText, string? Release, string? Distribution = null)
+    SolverHowFound HowFound, string HowFoundText, string? Release, string? Distribution = null, EmergeProbe? Emerge = null)
 {
     /// <summary>The path as a person reads it: with the distribution named when it is in the Linux subsystem.</summary>
     public string Where => Distribution is null ? Path : $"{Path} in the Linux subsystem distribution '{Distribution}'";
@@ -210,6 +213,13 @@ public sealed partial class SolverDiscovery
     public static SolverDiscovery OpenEms { get; } = Create(SolverTool.OpenEms);
 
     /// <summary>
+    /// brief-emi-2 R-emi2-3 — EMerge: the program is a Python interpreter, and its version question is the probe
+    /// (<see cref="EmergeSolver.ProbeSource"/>, run with <c>-I</c> so the user's <c>PYTHONPATH</c> and user
+    /// site-packages play no part), whose answer is cached (<see cref="InstalledOnly"/> explains the walk).
+    /// </summary>
+    public static SolverDiscovery Emerge { get; } = Create(SolverTool.Emerge);
+
+    /// <summary>
     /// A new instance for <paramref name="tool"/> with the shipped data and none of the shared
     /// instance's state — its own counters, no preference, the process's environment. Tests configure
     /// one of these rather than the shared instance, which every other test in the process also reads.
@@ -255,7 +265,7 @@ public sealed partial class SolverDiscovery
             ],
             extraDirectories: [], spackPackage: "gmsh", untestedRuns: true),
 
-        _ => new(
+        SolverTool.OpenEms => new(
             SolverTool.OpenEms, "openEMS", "CIRCUITRF_OPENEMS", ["openEMS"],
             versionArguments: ["--help"],
             // TESTED versions, oldest first; any other runs, with a warning (brief-sar-1, as Gmsh's brief-em3d-135).
@@ -268,6 +278,17 @@ public sealed partial class SolverDiscovery
                 new SolverValidatedVersion("0.37.0", "305df56", "c46e320", ("v0.37.0", "v0.7.0")),
             ],
             extraDirectories: [Path.Combine(Home(), "opt", "openEMS", "bin")], spackPackage: "openems", untestedRuns: true),
+
+        SolverTool.Emerge => new(
+            SolverTool.Emerge, "EMerge", "CIRCUITRF_EMERGE", ["python"],
+            versionArguments: ["-I", "-c", EmergeSolver.ProbeSource],
+            // TESTED versions, oldest first. An untested EMerge RUNS, with a warning naming these (the owner's call,
+            // 2026-10-21, as Gmsh's brief-em3d-135): a user may install any version of their own. circuitRF's own recipe
+            // installs the newest one listed here. Overview O1: re-pin that recipe to 3.0.0 final before a release.
+            validated: [new SolverValidatedVersion("3.0.0b2", "3.0.0b2", null)],
+            extraDirectories: [], untestedRuns: true, installedOnly: true),
+
+        _ => throw new ArgumentOutOfRangeException(nameof(tool), tool, "No such 3D solver program."),
     };
 
     /// <summary>The instance for <paramref name="tool"/>.</summary>
@@ -275,6 +296,7 @@ public sealed partial class SolverDiscovery
     {
         SolverTool.Palace => Palace,
         SolverTool.Gmsh   => Gmsh,
+        SolverTool.Emerge => Emerge,
         _                 => OpenEms,
     };
 
@@ -323,7 +345,7 @@ public sealed partial class SolverDiscovery
     internal SolverDiscovery(
         SolverTool tool, string name, string environmentVariable, IReadOnlyList<string> candidates,
         IReadOnlyList<string> versionArguments, IReadOnlyList<SolverValidatedVersion> validated,
-        IReadOnlyList<string> extraDirectories, string? spackPackage = null, bool untestedRuns = false)
+        IReadOnlyList<string> extraDirectories, string? spackPackage = null, bool untestedRuns = false, bool installedOnly = false)
     {
         Tool                = tool;
         Name                = name;
@@ -334,6 +356,8 @@ public sealed partial class SolverDiscovery
         SearchDirectories   = DefaultSearchDirectories(extraDirectories);
         SpackPackage        = spackPackage;
         UntestedRuns        = untestedRuns;
+        InstalledOnly       = installedOnly;
+        _versionTimeout     = tool == SolverTool.Emerge ? EmergeSolver.ProbeTimeout : VersionTimeout;
         // brief-em3d-26 — on Windows, Palace is also looked for inside the Linux subsystem.
         Subsystem           = tool == SolverTool.Palace && OperatingSystem.IsWindows() ? new Wsl.WslExe() : null;
     }
@@ -398,6 +422,14 @@ public sealed partial class SolverDiscovery
     /// </summary>
     public bool UntestedRuns { get; }
 
+    /// <summary>
+    /// brief-emi-2 R-emi2-3a — whether the ONLY unprompted route is "installed by circuitRF": no <c>PATH</c>, no default
+    /// directory, no Spack, no conda. EMerge's program is a <c>python</c>, and a <c>python</c> on <c>PATH</c> with some
+    /// EMerge in it is far more likely a user's unrelated environment than an intended solver; a user who wants it
+    /// names it in Settings or with <see cref="EnvironmentVariable"/>.
+    /// </summary>
+    public bool InstalledOnly { get; }
+
     /// <summary>Whether a run would use <paramref name="installation"/>: a validated version, or any version of
     /// a tool whose <see cref="UntestedRuns"/> is set.</summary>
     public bool Runs(SolverInstallation installation) => installation.Validated || UntestedRuns;
@@ -432,6 +464,7 @@ public sealed partial class SolverDiscovery
     internal long CapabilityProbesRun => Interlocked.Read(ref _capabilityProbes);
 
     private readonly IReadOnlyList<string> _versionArguments;
+    private readonly TimeSpan _versionTimeout;
     private long _versionProbes;
     private long _capabilityProbes;
 
@@ -486,6 +519,7 @@ public sealed partial class SolverDiscovery
                 return chosen;
             notes.Add($"'{record.Program}' (installed by circuitRF): {why}");
         }
+        if (InstalledOnly) return null;
 
         foreach (string command in CandidateCommands)
         {
@@ -539,14 +573,25 @@ public sealed partial class SolverDiscovery
             why = "that is not a usable path";
             return false;
         }
+        // R-emi2-3a — EMerge may be named by its environment's folder.
+        if (Tool == SolverTool.Emerge && Directory.Exists(absolute))
+        {
+            if (EmergeSolver.InterpreterIn(absolute) is not { } interpreter)
+            {
+                why = "that folder holds no Python environment (no bin/python or Scripts\\python.exe in it or in its env folder)";
+                return false;
+            }
+            absolute = interpreter;
+        }
         if (!File.Exists(absolute))
         {
             why = "there is no file there";
             return false;
         }
+        if (Tool == SolverTool.Emerge) return TryProbeEmerge(absolute, howFound, howFoundText, out installation, out why);
 
         Interlocked.Increment(ref _versionProbes);
-        var run = RunProbe(absolute, _versionArguments, workingDirectory: null, VersionTimeout);
+        var run = RunProbe(absolute, _versionArguments, workingDirectory: null, _versionTimeout);
         if (run.Failure is { } failure) { why = failure; return false; }
 
         if (ParseVersion(Tool, run.Output) is not { } parsed)
@@ -563,6 +608,38 @@ public sealed partial class SolverDiscovery
                                               howFound, howFoundText, release);
         return true;
     }
+
+    /// <summary>
+    /// brief-emi-2 R-emi2-3b/3c — EMerge's version question is its probe, about a second of Python start-up, so a
+    /// parsed answer is cached like Palace's capability verdicts: keyed on the interpreter (path, size, write time,
+    /// and what it links to) AND its environment's <c>site-packages</c>, because installing another EMerge changes
+    /// the second and not the first. Only an answer that names a version is kept.
+    /// </summary>
+    private bool TryProbeEmerge(string interpreter, SolverHowFound howFound, string howFoundText,
+                                out SolverInstallation? installation, out string? why)
+    {
+        installation = null;
+        string? stamp = Stamp(interpreter);
+        string? answer = stamp is null ? null : CapabilityCache.ReadText(CacheFile, interpreter, stamp, EmergeProbeKey);
+        bool fresh = answer is null;
+        if (answer is null)
+        {
+            Interlocked.Increment(ref _versionProbes);
+            var run = RunProbe(interpreter, _versionArguments, workingDirectory: null, _versionTimeout);
+            if (run.Failure is { } failure) { why = failure; return false; }
+            answer = run.Output;
+        }
+        if (EmergeProbe.Read(answer, out why) is not { } probe) return false;
+        if (fresh && stamp is not null) CapabilityCache.WriteText(CacheFile, interpreter, stamp, EmergeProbeKey, answer);
+
+        string? release = ValidatedVersions.FirstOrDefault(v => v.Matches(probe.Emerge, null))?.Release;
+        installation = new SolverInstallation(Tool, interpreter, probe.Emerge, null, probe.Banner, howFound, howFoundText,
+                                              release, Emerge: probe);
+        return true;
+    }
+
+    /// <summary>The cache entry's capability column for EMerge's probe answer.</summary>
+    private const string EmergeProbeKey = "EmergeProbe";
 
     // ── the answer a run, Settings and explain share ─────────────────────────────────────────
 
@@ -647,9 +724,17 @@ public sealed partial class SolverDiscovery
     {
         var sb = new StringBuilder();
         sb.Append($"{Name} was not found, so this 3D setup cannot run. ");
-        sb.Append($"To use a {Name} that is already installed, name it in Settings ▸ Solvers, or set the " +
-                  $"environment variable {EnvironmentVariable} to its full path. ");
-        sb.Append($"To install it, follow “{ManualInstallSection}” in the EM Setup reference ({ManualInstallPage}).");
+        if (InstalledOnly)
+            // brief-emi-2 R-emi2-3a — EMerge is a Python environment, and circuitRF takes none from PATH.
+            sb.Append($"To use an {Name} that is already installed, name its Python in Settings ▸ Solvers (the interpreter, " +
+                      $"or the folder of the virtual environment {Name} is installed in), or set the environment variable " +
+                      $"{EnvironmentVariable} to it; circuitRF does not take a Python from PATH.");
+        else
+        {
+            sb.Append($"To use a {Name} that is already installed, name it in Settings ▸ Solvers, or set the " +
+                      $"environment variable {EnvironmentVariable} to its full path. ");
+            sb.Append($"To install it, follow “{ManualInstallSection}” in the EM Setup reference ({ManualInstallPage}).");
+        }
         // brief-em3d-24 — the assistant, where this machine has a recipe; brief-em3d-26 — on Windows, Palace's
         // recipe runs inside the Linux subsystem.
         if (windows && Tool == SolverTool.Palace)
@@ -675,10 +760,12 @@ public sealed partial class SolverDiscovery
     public string DescribeForSettings(SolverInstallation? found, IReadOnlyList<string> rejected)
     {
         if (found is null)
-            return rejected.Count == 0
-                ? $"Not found: nothing named {string.Join(" or ", CandidateCommands)} installed by circuitRF, on PATH, in " +
-                  "the default directories, in a Spack installation or in a conda environment."
-                : $"Not found. Tried: {string.Join("; ", rejected)}.";
+            return rejected.Count > 0 ? $"Not found. Tried: {string.Join("; ", rejected)}."
+                 : InstalledOnly
+                 ? $"Not found: circuitRF has not installed {Name} here, and neither Settings nor {EnvironmentVariable} names one. " +
+                   $"circuitRF does not take a Python from PATH; name an environment with {Name} in it here to use your own."
+                 : $"Not found: nothing named {string.Join(" or ", CandidateCommands)} installed by circuitRF, on PATH, in " +
+                   "the default directories, in a Spack installation or in a conda environment.";
 
         string validity = found.Validated
             ? ListWord
@@ -687,6 +774,14 @@ public sealed partial class SolverDiscovery
                 : $"NOT validated — a 3D run will refuse it; circuitRF runs {string.Join(", ", ValidatedVersions.Select(v => v.ToString()))}";
         // brief-em3d-135 R-em3d135-1e — an untested Gmsh's row ends with the warning a run gives, word for word.
         string untested = found.Validated || !UntestedRuns ? "" : " " + DescribeUntested(found);
+
+        // brief-emi-2 R-emi2-4 — EMerge's row: the version and whether it is validated, the speed tier, then where.
+        if (found.Emerge is { } probe)
+            return $"{found.DescribeVersion()}, {validity}; {probe.TierText}. " +
+                   (found.HowFound == SolverHowFound.Installed
+                       ? $"Installed by circuitRF at {found.Where}."
+                       : $"Found at {found.Where} ({(found.HowFound == SolverHowFound.Settings ? "set here" : $"named by {EnvironmentVariable}")}).") +
+                   untested;
 
         // brief-em3d-24 R-em3d24-5a — the row says which KIND each tool is: one circuitRF installed (and can
         // later remove, brief 25), or one it merely found, which it never offers to remove.
@@ -726,7 +821,7 @@ public sealed partial class SolverDiscovery
         if (UntestedRuns)
             return $"{Name} at '{installation.Where}' ({installation.HowFoundText}) reports version " +
                    $"{installation.DescribeVersion()}, which circuitRF has not tested. Tested: {list}.";
-        // Palace is the one strict tool: Gmsh and openEMS are UntestedRuns, and were answered above.
+        // Palace is the one strict tool: Gmsh, openEMS and EMerge are UntestedRuns, and were answered above.
         const string why = "Palace's configuration changes meaning between versions, and a key read differently " +
                            "produces a plausible wrong answer rather than an error.";
         return $"{Name} at '{installation.Where}' ({installation.HowFoundText}) reports version " +
@@ -1303,6 +1398,12 @@ public sealed partial class SolverDiscovery
                     foreach (string bin in Directory.EnumerateFiles(d, "palace-*.bin").Order(StringComparer.Ordinal))
                         Add(bin);
             }
+            if (Tool == SolverTool.Emerge)
+                foreach (string site in EmergeSolver.SitePackages(path))
+                {
+                    var di = new DirectoryInfo(site);
+                    parts.Add($"{di.FullName}|{di.LastWriteTimeUtc.Ticks}");
+                }
             return string.Join(";", parts);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
@@ -1355,17 +1456,33 @@ public sealed partial class SolverDiscovery
             }
         }
 
+        /// <summary>brief-emi-2 R-emi2-3c — a stored text answer under <paramref name="key"/> (EMerge's probe), or null.</summary>
+        public static string? ReadText(string file, string path, string stamp, string key)
+        {
+            lock (Gate)
+            {
+                var e = Load(file).Entries.FirstOrDefault(x => x.Path == path && x.Capability == key);
+                return e is not null && e.Stamp == stamp ? e.Detail : null;
+            }
+        }
+
+        public static void WriteText(string file, string path, string stamp, string key, string text)
+            => Store(file, new Entry { Path = path, Stamp = stamp, Capability = key, Available = true, Detail = text });
+
         public static void Write(string file, string path, string stamp, SolverCapabilityVerdict verdict)
+            => Store(file, new Entry
+            {
+                Path = path, Stamp = stamp, Capability = verdict.Capability.ToString(),
+                Available = verdict.Available, Detail = verdict.Detail, Devices = verdict.Devices,
+            });
+
+        private static void Store(string file, Entry entry)
         {
             lock (Gate)
             {
                 var shape = Load(file);
-                shape.Entries.RemoveAll(x => x.Path == path && x.Capability == verdict.Capability.ToString());
-                shape.Entries.Add(new Entry
-                {
-                    Path = path, Stamp = stamp, Capability = verdict.Capability.ToString(),
-                    Available = verdict.Available, Detail = verdict.Detail, Devices = verdict.Devices,
-                });
+                shape.Entries.RemoveAll(x => x.Path == entry.Path && x.Capability == entry.Capability);
+                shape.Entries.Add(entry);
                 try
                 {
                     Directory.CreateDirectory(System.IO.Path.GetDirectoryName(file)!);

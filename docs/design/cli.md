@@ -3314,8 +3314,11 @@ the cross-section, and the question is the same one asked before the line exists
 
 ## 22. `solver` — the 3D solver install assistant, headless
 
-`circuitrf solver list [--capability gpu]` · `circuitrf solver install <palace|gmsh|openems> [--version <v>] [--yes]` ·
-`circuitrf solver remove <palace|gmsh|openems> [--version <v>] [--yes]` · `circuitrf solver remove --all [--yes]`
+`circuitrf solver list [--capability gpu]` · `circuitrf solver install <palace|gmsh|openems|emerge> [--version <v>] [--yes]` ·
+`circuitrf solver remove <palace|gmsh|openems|emerge> [--version <v>] [--yes]` · `circuitrf solver remove --all [--yes]`
+
+The tool ids are `Em3dSolvers.Tools` (brief-emi-2), and the usage and diagnostics list them from there. EMerge's row in
+`--json` also carries `tier`, its probe's sparse-solver tier.
 
 (brief-em3d-24 R-em3d24-7; `em-3d.md` §7.2's "a build machine installs the same way the GUI does".)
 **One verb with nouns, on `history`'s pattern** (owner decision D1); brief-em3d-25 added `remove`.

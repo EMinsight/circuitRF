@@ -97,6 +97,7 @@ public partial class Em3dSolverSettingsView : UserControl
             PalaceBox.Text  = p.Em3dPalacePath  ?? "";
             GmshBox.Text    = p.Em3dGmshPath    ?? "";
             OpenEmsBox.Text = p.Em3dOpenEmsPath ?? "";
+            EmergeBox.Text  = p.Em3dEmergePath  ?? "";
             MpiBox.Text     = p.Em3dMpiLauncherPath ?? "";
         }
         finally { _loading = false; }
@@ -107,6 +108,7 @@ public partial class Em3dSolverSettingsView : UserControl
         (SolverDiscovery.Palace,  PalaceStatus,  PalaceInstall,  PalaceRemovals),
         (SolverDiscovery.Gmsh,    GmshStatus,    GmshInstall,    GmshRemovals),
         (SolverDiscovery.OpenEms, OpenEmsStatus, OpenEmsInstall, OpenEmsRemovals),
+        (SolverDiscovery.Emerge,  EmergeStatus,  EmergeInstall,  EmergeRemovals),
     ];
 
     private void RefreshAll()
@@ -187,12 +189,7 @@ public partial class Em3dSolverSettingsView : UserControl
         finally { RemoveAll.IsEnabled = true; }
     }
 
-    private (SolverDiscovery, TextBlock, Button, StackPanel) Row(SolverTool tool) => Rows[tool switch
-    {
-        SolverTool.Palace => 0,
-        SolverTool.Gmsh   => 1,
-        _                 => 2,
-    }];
+    private (SolverDiscovery, TextBlock, Button, StackPanel) Row(SolverTool tool) => Rows.First(r => r.Discovery.Tool == tool);
 
     /// <summary>The MPI row: which mpirun a Palace run would use, found against the Palace the
     /// Palace row finds — the Spack route needs to know which Palace it is asking about.</summary>
@@ -392,7 +389,8 @@ public partial class Em3dSolverSettingsView : UserControl
                $"Palace: {StatusText(PalaceStatus)}",
                $"MPI launcher: {StatusText(MpiStatus)}",
                $"Gmsh: {StatusText(GmshStatus)}",
-               $"openEMS: {StatusText(OpenEmsStatus)}"));
+               $"openEMS: {StatusText(OpenEmsStatus)}",
+               $"EMerge: {StatusText(EmergeStatus)}"));
 
     private static string StatusText(TextBlock status) => status.Tag as string ?? status.Text ?? "";
 
@@ -441,6 +439,7 @@ public partial class Em3dSolverSettingsView : UserControl
         else if (box == MpiBox)     { AppPreferencesIo.Update(p => p.Em3dMpiLauncherPath = typed); RefreshMpi(); }
         else if (box == GmshBox)    { AppPreferencesIo.Update(p => p.Em3dGmshPath    = typed); Refresh(SolverDiscovery.Gmsh,    GmshStatus,    GmshInstall); }
         else if (box == OpenEmsBox) { AppPreferencesIo.Update(p => p.Em3dOpenEmsPath = typed); Refresh(SolverDiscovery.OpenEms, OpenEmsStatus, OpenEmsInstall); }
+        else if (box == EmergeBox)  { AppPreferencesIo.Update(p => p.Em3dEmergePath  = typed); Refresh(SolverDiscovery.Emerge,  EmergeStatus,  EmergeInstall); }
     }
 
     private async void OnBrowse(object? sender, RoutedEventArgs e)

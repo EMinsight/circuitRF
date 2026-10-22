@@ -345,7 +345,13 @@ namespace RfCore.Export
         bool? Validated,
         IReadOnlyList<SolverCapabilityJson> Capabilities,
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        string? Install);
+        string? Install)
+    {
+        /// <summary>brief-emi-2 R-emi2-5 — for EMerge, the speed tier its probe implies (<c>fast sparse solver</c>,
+        /// <c>baseline sparse solver (one core)</c>); absent for every other tool and when nothing was found.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string? Tier { get; init; }
+    }
 
     /// <param name="Capability">A stable id — <c>driven</c>, <c>wave-ports</c>, <c>eigenmode</c>, and <c>gpu</c> when
     /// asked for (<c>solver list --capability gpu</c>, brief-em3d-136).</param>

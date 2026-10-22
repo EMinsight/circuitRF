@@ -52,11 +52,18 @@ internal static class Solver
         return Usage();
     }
 
+    /// <summary>The ids <c>install</c> and <c>remove</c> take, from the registry: <c>palace</c>, <c>gmsh</c>, …</summary>
+    internal static IEnumerable<string> ToolIds => Em3dSolvers.Tools.Select(SolverHomes.ToolId);
+
+    /// <summary><see cref="ToolIds"/> as a sentence lists them: <c>palace, gmsh, openems or emerge</c>.</summary>
+    internal static string ToolIdSentence => string.Join(", ", ToolIds.SkipLast(1)) + " or " + ToolIds.Last();
+
     private static int Usage()
     {
+        string tools = string.Join("|", ToolIds);
         Console.Error.WriteLine("usage: circuitrf solver list [--capability gpu]");
-        Console.Error.WriteLine("       circuitrf solver install <palace|gmsh|openems> [--version <v>] [--yes]");
-        Console.Error.WriteLine("       circuitrf solver remove <palace|gmsh|openems> [--version <v>] [--yes]");
+        Console.Error.WriteLine($"       circuitrf solver install <{tools}> [--version <v>] [--yes]");
+        Console.Error.WriteLine($"       circuitrf solver remove <{tools}> [--version <v>] [--yes]");
         Console.Error.WriteLine("       circuitrf solver remove --all [--yes]");
         return 1;
     }
@@ -92,7 +99,7 @@ internal static class Solver
                 s.Found?.Where, s.Found?.Version, s.Found is { } f ? Route(f.HowFound) : null, s.Found?.Validated,
                 [.. s.Capabilities.Select(c => new SolverCapabilityJson(CapabilityId(c.Capability), Describe(c.Capability),
                                                                         c.Available, c.Detail) { Devices = c.Devices })],
-                s.OfferInstall ? $"circuitrf solver install {SolverHomes.ToolId(tool)}" : null));
+                s.OfferInstall ? $"circuitrf solver install {SolverHomes.ToolId(tool)}" : null) { Tier = s.Found?.Emerge?.TierText });
             Console.WriteLine($"{s.Name}: {(s.Found is null ? "not found" : s.InstalledByCircuitRf ? "installed by circuitRF" : "found")}");
             Console.WriteLine($"  {s.Summary}");
             if (s.Found is { } found)
@@ -100,6 +107,9 @@ internal static class Solver
                 // brief-em3d-135 — Gmsh's list is of TESTED versions; the JSON key stays "validated" (a contract).
                 Console.WriteLine($"  route: {Route(found.HowFound)}; {SolverDiscovery.For(tool).ListWord}: {(found.Validated ? "yes" : "no")}");
                 JsonRun.AddOutput("solver", found.Path);
+                // brief-emi-2 R-emi2-5 — a probed program's own line (EMerge's).
+                if (found.Emerge is { } probe)
+                    Console.WriteLine($"  probe: {probe.Banner}; {probe.Cores?.ToString() ?? "unknown"} logical cores; {probe.TierText}");
             }
             foreach (var c in s.Capabilities)
                 Console.WriteLine($"  {Describe(c.Capability)}: {(c.Available ? "yes" : "no")} — {c.Detail}");

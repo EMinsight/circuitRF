@@ -477,15 +477,16 @@ computes and the S-parameters it exports — is in {{anchor: wbond.html|the wBon
 {{ui: settings-3d-em}}
 
 A 3D EM setup runs one of two separately installed solvers — **Palace** (FEM) or **openEMS** (FDTD) —
-and Palace's problems are meshed by **Gmsh**. circuitRF includes none of the three. This tab has one row
-per program, and each row says what circuitRF found: the version, whether it is one circuitRF has
-validated (for Gmsh, tested), where the program is, and how it was found.
+and Palace's problems are meshed by **Gmsh**. The tab also has a row for **EMerge** (FEM), which circuitRF
+installs and checks; a 3D setup cannot choose it as its solver yet. circuitRF includes none of these
+programs. This tab has one row per program, and each row says what circuitRF found: the version, whether
+it is one circuitRF has validated (for Gmsh, openEMS and EMerge, tested), where the program is, and how it was found.
 
 | Control | Default | What it does |
 |---|---|---|
-| **Path** (one per program) | blank | The program to run. **Blank means search**: the environment variable (`CIRCUITRF_PALACE`, `CIRCUITRF_GMSH`, `CIRCUITRF_OPENEMS`), then a copy circuitRF installed, then `PATH`, then the usual install folders (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, and `~/opt/openEMS/bin` for openEMS), then Spack's install record, which is where a Palace built with Palace's own recipe is found, then conda environments. A path you name here always wins, and if it does not work circuitRF says so rather than using a different one it found somewhere else. |
+| **Path** (one per program) | blank | The program to run. **Blank means search**: the environment variable (`CIRCUITRF_PALACE`, `CIRCUITRF_GMSH`, `CIRCUITRF_OPENEMS`), then a copy circuitRF installed, then `PATH`, then the usual install folders (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, and `~/opt/openEMS/bin` for openEMS), then Spack's install record, which is where a Palace built with Palace's own recipe is found, then conda environments. A path you name here always wins, and if it does not work circuitRF says so rather than using a different one it found somewhere else. EMerge's row searches less, below. |
 | **Location** (Palace, Windows only) | Automatic | Where Palace is looked for. **Automatic** uses a native Palace if there is one, then the Linux subsystem (WSL 2), trying each distribution in the order `wsl -l` lists them. **Native** looks on this computer only, and **Linux subsystem: *name*** looks in that one distribution only. **Install Palace …** builds it in the distribution chosen here, or in the default one. See [Palace on Windows](em-setup.html#palace-windows). |
-| **Install …** (one per program) | shown when it would help | Installs the program from its own upstream, after showing you what it will fetch and where it will go. Shown when this computer has an install recipe for it and nothing validated (for Gmsh, tested) was found. See [Letting circuitRF install them](em-setup.html#install-assistant). |
+| **Install …** (one per program) | shown when it would help | Installs the program from its own upstream, after showing you what it will fetch and where it will go. Shown when this computer has an install recipe for it and nothing validated (for Gmsh, openEMS and EMerge, tested) was found. See [Letting circuitRF install them](em-setup.html#install-assistant). |
 | **Uninstall …** (one per version circuitRF installed) | shown when there is one | Removes that copy, after showing the space it frees. An older version reads **Remove older …**. A Palace installed in the Linux subsystem names its distribution, and one whose distribution was removed reads **Clean up … (missing)**. See [Removing the 3D solvers](em-setup.html#uninstall-solvers). |
 | **Remove all 3D solvers …** | shown when there is one | Removes every solver circuitRF installed for you, after one confirmation. Nothing is removed if one of them is in use. On macOS and with a Linux `.deb`, removing circuitRF leaves the solvers behind, so use this first to get the space back ([Uninstalling circuitRF](em-setup.html#uninstall-circuitrf)). |
 | **MPI launcher** | blank | The `mpirun` that lets Palace use more than one core. **Blank means search**: `CIRCUITRF_MPIRUN`, then an `mpirun` beside Palace, then — for a Palace built with Spack — the MPI that build was linked against, then `PATH` and the usual install folders. The row shows which one a run would use. Without one, Palace still runs, on one core. For a Palace in the Linux subsystem, the row shows the `mpirun` found inside that distribution, and the path box is not used. |
@@ -496,12 +497,28 @@ circuitRF never offers to remove it.
 
 **A Palace version circuitRF has not validated is refused, not just flagged.** Palace's configuration changes
 meaning between versions, and a setting read the wrong way gives an answer that looks plausible. The row says
-which versions are validated. **Gmsh and openEMS are only flagged**: an untested version runs, and the row and
+which versions are validated. **Gmsh, openEMS and EMerge are only flagged**: an untested version runs, and the row and
 every run say, in the same words, which versions are tested. The same check runs at the start of every
 3D run and in `circuitrf explain`, so all three always agree.
 
 The Palace row also carries its licence note: a default Palace build includes ParMETIS, which may be
 used commercially for evaluation only. If you build Palace, you accept those terms.
+
+**The EMerge row names a Python, not a program.** EMerge runs as a Python package, so its path is a
+Python interpreter that has EMerge installed, or the folder of the virtual environment it is installed
+in. **Blank searches `CIRCUITRF_EMERGE`, then the copy circuitRF installed, and never `PATH`**: a Python
+found there is far more likely to be one of your own environments than one meant for circuitRF. The
+status line gives the EMerge version and whether circuitRF has tested it, then which sparse solver
+EMerge would use — *fast sparse solver*, or *baseline sparse solver (one core)* — then where it was
+found. circuitRF asks EMerge once and keeps the answer until that environment changes. Any EMerge version
+you installed yourself runs; one circuitRF has not tested is flagged, as Gmsh's is, and the row and every
+run name the versions that are tested.
+
+**Install EMerge …** puts a Python of its own, the newest tested EMerge and every package EMerge needs
+into one folder of circuitRF's, each at a pinned version and checked against a recorded checksum; no Python of yours is read
+or changed. It takes about two minutes and 1 GB. EMerge and Gmsh are free software under the GNU GPL;
+on an x64 computer, EMerge's own dependencies also include a vendor's multi-threaded sparse-solver
+library under that vendor's licence. The install says so before anything is downloaded.
 
 How each program was installed for validation is in
 {{anchor: em-setup.html#install-3d-solvers|Installing the 3D solvers by hand}}.

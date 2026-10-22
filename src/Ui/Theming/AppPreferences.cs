@@ -512,6 +512,12 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? Em3dOpenEmsPath { get; set; }
 
+    /// <summary>brief-emi-2 — the Python EMerge runs in: an interpreter, or the folder of its virtual environment. Null
+    /// means search, which for EMerge is CIRCUITRF_EMERGE and then the copy circuitRF installed, never PATH.</summary>
+    [JsonPropertyName("em3d_emerge")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Em3dEmergePath { get; set; }
+
     /// <summary>The MPI launcher Palace runs under (<c>mpirun</c>). Null means search — which finds the
     /// MPI a Spack-built Palace was linked against with no setup (PalaceRun.FindMpiLauncher).</summary>
     [JsonPropertyName("em3d_mpirun")]
