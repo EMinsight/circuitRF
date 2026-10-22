@@ -1015,7 +1015,8 @@ an FDTD grid:
   refine the openEMS grid there or move the conductors apart.
 
 **On EMerge.** EMerge solves the line's mode on the face, as Palace does, and uses its full wave-port
-condition there. A wave port with one conductor on the face runs, a microstrip's end or a coax:
+condition there. A wave port with one conductor on the face runs, a microstrip's end or a coax; so does one with
+several terminals ([below](#wave-port-terminals-emerge)):
 
 - **The S-parameters are referred to the mode at unit power**, and so to the mode's impedance along the
   port's voltage path. circuitRF renormalises them to the port's Z0. The run's notes give each wave port's
@@ -1025,9 +1026,8 @@ condition there. A wave port with one conductor on the face runs, a microstrip's
   renormalisation, and the run's notes say how far it moved.
 - **The run asks each face for a second mode** at the top of the sweep and warns when one propagates,
   as Palace's run does.
-- **Several terminals on one face** run on openEMS, and on Palace for a pair of lines whose modes travel
-  at different speeds. **A hollow waveguide** runs on Palace. EMerge refuses both by name, as it does a
-  wave port in an eigenmode problem.
+- **A hollow waveguide** runs on Palace. EMerge refuses it by name, as it does a wave port in an
+  eigenmode problem.
 
 #### Several conductors on one face {#wave-port-terminals}
 
@@ -1117,6 +1117,38 @@ What a Palace run says about the conversion:
   them apart.
 - **The face supports a mode past its terminals' own** at the top of the sweep: that mode's power is not
   in the result. Make the port region smaller, or lower the sweep's top.
+
+<a id="wave-port-terminals-emerge"></a>**On EMerge**, a port runs with **any number of terminals, up to nine**, on a face
+whose modes travel at **different speeds** (a microstrip pair, coupled lines over a dielectric that does not fill the
+cross-section), and with **two terminals** on a face whose modes travel at **one speed** — a stripline pair, or any pair
+in a homogeneous fill, which Palace refuses. As on Palace, each end is one port face carrying every terminal: EMerge solves
+the face's modes, one per terminal, launches each in turn, and circuitRF converts its S between modes into terminal S, one
+port per terminal at its own Z0. The conversion reads each mode's own field on the face, so it needs no field from the 3D
+solve and runs under EMerge's adaptive sweep. EMerge launches and absorbs every mode of a face at the first mode's speed,
+and the conversion corrects for that.
+
+A face of **one material** has its modes solved once, before the sweep. Its **reference must be one conductor on the
+face**: a face whose ground planes are separate conductors there (two PEC faces with PMC faces between them, as the
+example's *Pair* is drawn) carries a mode of the same speed per extra conductor, and the run is refused before the 3D
+solve, saying how many such modes the face carries. Make the reference one conductor (PEC side walls), or run the setup on
+openEMS. A face of **several materials** has its modes solved at every frequency, and a frequency where the face does not
+give one TEM-like mode per terminal is refused the same way.
+
+Refused on EMerge, each naming openEMS: **three or more terminals on a face of one material** (the conversion of
+equal-speed modes is stated for two), **more than nine terminals** on one face, a **reference plane moved off the face**,
+and a **lumped port** in the same problem. A comparison then goes on without EMerge and says so. EMerge saves no field
+for a terminal port: it excites the face by its modes, and a terminal's own excitation is a mixture of them.
+
+What an EMerge run says about the conversion:
+
+- The same **route note** as Palace's, naming EMerge: *Port 'Left': terminals P1, P2 as modes 1 and 2 of one EMerge
+  wave port, converted to terminal S (modes not degenerate, Robin correction K = 1.051 to 1.060)*; on a face of one
+  material it says the face is degenerate and gives the fit that sorted its modes. The note on each terminal's power and
+  the singular values, and the **not lossless** warning, are Palace's too.
+- With the adaptive sweep off, the run also measures each terminal's voltage in the 3D field and compares it with what
+  the face's modes give, as a note per port. **A difference over 1 %** is a warning: the terminal S is not to be trusted
+  there; refine the mesh at the port face. The same voltages tell whether **a terminal reads another port face's modes**.
+  An adaptive sweep solves no requested frequency directly, so a note says these two checks were not made.
 
 ### Eigenmodes {#eigenmodes}
 

@@ -58,6 +58,23 @@ public sealed class EmergeGpuTests(ITestOutputHelper output) : IDisposable
         Assert.Null(Em3dRunService.WithCpuFallback(EmergeDevice.Auto, 40_000, _ => ("gpu", (EmergeRunFacts?)cpu)).Note);
     }
 
+    /// <summary>
+    /// brief-emw-3 — a GPU sweep the driver stopped once it stalled and solved again on the CPU in the same run: the driver's
+    /// line turns the progress to the CPU, and run.json's account reads back, as a CPU run the whole-run fallback leaves alone.
+    /// </summary>
+    [Fact]
+    public void AStalledGpuSweep_SwitchedToTheCpu_IsReadBack_AndNotSolvedAgain()
+    {
+        var control = new CircuitRF.Engine.RunControl();
+        var tracker = new EmergeStageTracker(control, eigenmode: false);
+        tracker.Line("""{"bestAt": 16, "bestError": 0.00305, "driver": 6, "samples": 24, "stage": "gpu-stalled"}""");
+        Assert.Equal(EmergeStageTracker.CpuAgainLabel, control.Stage);
+
+        var facts = Facts("stalled", """{"device": "cpu", "adaptive": true, "converged": true, "samples": 9, "error": 8.57e-05, "gpuStalled": {"samples": 24, "bestError": 0.00305, "bestAt": 16}}""");
+        Assert.Equal(new EmergeGpuStall(24, 0.00305, 16), facts.GpuStalled);
+        Assert.Null(Em3dRunService.WithCpuFallback(EmergeDevice.Auto, 40_000, _ => ("cpu", (EmergeRunFacts?)facts)).Note);
+    }
+
     /// <summary>Test 4 — the preference: absent is Automatic, and what is stored reads back.</summary>
     [Fact]
     public void ThePreference_AbsentIsAutomatic_AndRoundTrips()

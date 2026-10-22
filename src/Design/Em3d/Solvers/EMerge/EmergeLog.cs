@@ -27,6 +27,10 @@ public sealed record EmergeMeshing : EmergeLogEvent;
 /// <summary><c>GMSH Meshing complete! (◮N, ▲M)</c>: the tetrahedra and triangles of the mesh.</summary>
 public sealed record EmergeMeshDone(long Tetrahedra, long Triangles) : EmergeLogEvent;
 
+/// <summary>brief-emw-3 — the driver's <c>{"stage": "gpu-stalled", …}</c> line: the adaptive sweep on the GPU stopped improving
+/// and is being solved again on the CPU.</summary>
+public sealed record EmergeGpuStalled(int Samples) : EmergeLogEvent;
+
 /// <summary>The driver's <c>{"stage": "meshed", …}</c> line: the mesh's exact counts, before any solve.</summary>
 public sealed record EmergeMeshCounts(long Tetrahedra, long Edges, long Triangles) : EmergeLogEvent;
 
@@ -100,14 +104,16 @@ public static class EmergeLog
         return null;
     }
 
-    /// <summary>The driver's own JSON lines: only <c>{"stage": "meshed"}</c> is an event; its last line is read from
-    /// <c>run.json</c> instead.</summary>
+    /// <summary>The driver's own JSON lines: <c>{"stage": "meshed"}</c> and <c>{"stage": "gpu-stalled"}</c> are events; its
+    /// last line is read from <c>run.json</c> instead.</summary>
     private static EmergeLogEvent? Driver(string json)
     {
         try
         {
             using var doc = JsonDocument.Parse(json);
             var r = doc.RootElement;
+            if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("stage", out var st) && st.GetString() == "gpu-stalled")
+                return new EmergeGpuStalled(r.TryGetProperty("samples", out var n) && n.ValueKind == JsonValueKind.Number ? n.GetInt32() : 0);
             return r.ValueKind == JsonValueKind.Object && r.TryGetProperty("stage", out var stage) && stage.GetString() == "meshed"
                    && r.TryGetProperty("tets", out var tets) && r.TryGetProperty("edges", out var edges)
                    && r.TryGetProperty("triangles", out var tris)
@@ -134,6 +140,25 @@ public static class EmergeLog
         return null;
     }
 
+    /// <summary>brief-emw-3 — the driver's refusal (an error line marked <c>"refused"</c>: a terminal face whose modes cannot be
+    /// converted), or null when the run failed otherwise or not at all.</summary>
+    public static string? DriverRefusal(IEnumerable<string> lines)
+    {
+        foreach (string line in lines.Reverse())
+        {
+            if (!line.TrimStart().StartsWith('{')) continue;
+            try
+            {
+                using var doc = JsonDocument.Parse(line);
+                var r = doc.RootElement;
+                if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("error", out var e))
+                    return r.TryGetProperty("refused", out var refused) && refused.ValueKind == JsonValueKind.True ? e.GetString() : null;
+            }
+            catch (JsonException) { }
+        }
+        return null;
+    }
+
     private static long Long(Group g) => long.Parse(g.Value, CultureInfo.InvariantCulture);
     private static double Num(Group g) => double.Parse(g.Value, NumberStyles.Float, CultureInfo.InvariantCulture);
 }
@@ -149,6 +174,7 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
     public const string SolvingLabel = "Solving (EMerge)";
     public const string EigenLabel = "Solving the eigenmode problem (EMerge, one core)";
     public const string PostLabel = "Post-processing (EMerge)";
+    public const string CpuAgainLabel = "Solving again on the CPU (EMerge)";
 
     /// <summary>The mesh's tetrahedra, as EMerge last reported them (after any refinement pass).</summary>
     public long? Tetrahedra { get; private set; }
@@ -189,6 +215,14 @@ public sealed class EmergeStageTracker(RunControl? control, bool eigenmode)
                 Counts = c;
                 Tetrahedra = c.Tetrahedra;
                 OnMeshed?.Invoke(c);
+                break;
+            case EmergeGpuStalled g:
+                // brief-emw-3 — the sweep starts again, on the CPU: what the user sees while it does
+                _adaptive = false;
+                Samples = null;
+                SweepError = null;
+                control?.BeginStage(CpuAgainLabel);
+                control?.SetStageDetail($"the GPU's sweep stopped improving after {g.Samples} frequencies");
                 break;
             case EmergeRefinementPass p:
                 control?.BeginStage($"Refining the mesh (EMerge), pass {p.Pass}");

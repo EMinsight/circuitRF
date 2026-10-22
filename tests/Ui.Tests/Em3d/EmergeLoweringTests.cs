@@ -39,6 +39,8 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
         ("connector-launch", "examples/3D Connector/Launch/3d/Launch.c3d", "Palace"),
         // brief-emw-2 — the 3D Wave Ports Launch: wave port P1 on the xmin face, lumped port P2 on the board
         ("wave-launch", "examples/3D Wave Ports/Launch/3d/Launch.c3d", "Palace"),
+        // brief-emw-3 — the 3D Wave Ports Coupled Microstrip: two terminal groups, one entry each with its `terminals`
+        ("coupled-microstrip", "examples/3D Wave Ports/Coupled Microstrip/3d/Coupled Microstrip.c3d", "Palace"),
     ];
 
     [Theory]
@@ -56,6 +58,12 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
     /// <c>ports</c>. Its flange is a kernel solid, as the connector launch's housing is.</summary>
     [KernelFact]
     public void Golden_TheWavePortLaunch_LowersByteForByte() => Golden("wave-launch");
+
+    /// <summary>brief-emw-3 R-emw3-3 — a terminal group lowers as ONE <c>wavePorts</c> entry, its leader's, named by the port's
+    /// label, with a <c>terminals</c> list (number, name, path) in terminal order; its face holds two materials, so no
+    /// presolve shift.</summary>
+    [Fact]
+    public void Golden_TheCoupledMicrostrip_LowersByteForByte() => Golden("coupled-microstrip");
 
     private void Golden(string name)
     {
@@ -193,7 +201,7 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
     [InlineData("thermal", "thermal problem")]
     [InlineData("static", "electrostatic problem cannot be lowered for EMerge")]
     [InlineData("settings", "EMerge.ElementOrder is 3")]
-    [InlineData("terminal-group", "Port 'Left' has two terminals. EMerge runs wave ports with one conductor on the face")]
+    [InlineData("terminal-group-moved", "Port 'Left' has its reference plane moved 1 mm off its face; EMerge runs terminal ports with the reference plane on the port face")]
     [InlineData("hollow-waveguide", "is a hollow waveguide: one conductor meets its region")]
     [InlineData("coaxial-port", "is a coaxial lumped port")]
     [InlineData("complex-z0", "terminated in a real resistance")]
@@ -213,9 +221,10 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
             "eigenmode-is-lowered" => p with { Type = Em3dProblemType.Eigenmode, EigenmodeTargetHz = 1e9 },
             "thermal" => p with { Type = Em3dProblemType.Thermal },
             "static" => p with { Type = Em3dProblemType.Electrostatic },
-            "terminal-group" => p with
+            "terminal-group-moved" => p with
             {
-                Ports = [.. p.Ports.Select(q => q with { Kind = Em3dPortKind.Wave, FaceGroup = 1, FaceGroupLabel = "Left" })],
+                Ports = [.. p.Ports.Select(q => q with { Kind = Em3dPortKind.Wave, FaceGroup = 1, FaceGroupLabel = "Left",
+                                                         ReferencePlane = q.ReferencePlane with { ShiftM = 1e-3 } })],
             },
             "hollow-waveguide" => p with { Ports = [port with { Kind = Em3dPortKind.Wave, NegativeObject = port.PositiveObject }, .. p.Ports.Skip(1)] },
             "coaxial-port" => p with { Ports = [port with { Annulus = new Em3dAnnulus(1e-4, 3e-4, true) }, .. p.Ports.Skip(1)] },
@@ -327,7 +336,7 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
             var stderr = p.StandardError.ReadToEndAsync();
             string stdout = p.StandardOutput.ReadToEnd();
             p.WaitForExit();
-            string last = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
+            string last = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault(l => l.StartsWith('{')) ?? "";   // EMerge may print after it
             output.WriteLine($"{name}: {last}");
             Assert.True(p.ExitCode == 0, $"{name}: exit {p.ExitCode}: {last}\n{stderr.Result[^Math.Min(2000, stderr.Result.Length)..]}");
             using var line = JsonDocument.Parse(last);
@@ -366,7 +375,7 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
         var stderr = p.StandardError.ReadToEndAsync();
         string stdout = p.StandardOutput.ReadToEnd();
         p.WaitForExit();
-        string last = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
+        string last = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault(l => l.StartsWith('{')) ?? "";   // EMerge may print after it
         output.WriteLine(last);
         Assert.True(p.ExitCode == 0, $"exit {p.ExitCode}: {last}\n{stderr.Result[^Math.Min(2000, stderr.Result.Length)..]}");
         return last;

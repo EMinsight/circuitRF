@@ -297,7 +297,7 @@ public static partial class Em3dRunService
         Complex[][]? modeZ = null;
         // brief-em3d-115 R-em3d115-4 — with a terminal group, Palace's S is MODAL on that face: every port goes through the
         // transform instead (a one-entry face reduces to the renormalisation below), from S, V_wp, Z_PV and the log's kₙ.
-        (PalaceModalSamples Samples, PalaceTerminalOutcome Outcome)? terminal = null;
+        (WavePortModalSamples Samples, WavePortTerminalOutcome Outcome)? terminal = null;
         if (Em3dPortMap.HasTerminals(ports))
         {
             var modes = PalaceRun.ReadWaveModes(File.ReadLines(Path.Combine(runDir, PalaceRun.PalaceLogFile))).ToList();
@@ -329,7 +329,7 @@ public static partial class Em3dRunService
             var samples = PalaceTerminalS.Read(post, modes, [.. ports.Select(p => p.Number)], out string? terminalError, needed);
             if (samples is null) return Failed(terminalError!);
             if (SweepRows(samples.FrequenciesHz, requestedHz) is { } rows && samples.FrequenciesHz.Length > requestedHz.Length)
-                samples = new PalaceModalSamples([.. rows.Select(k => samples.FrequenciesHz[k])], [.. rows.Select(k => samples.Samples[k])]);
+                samples = new WavePortModalSamples([.. rows.Select(k => samples.FrequenciesHz[k])], [.. rows.Select(k => samples.Samples[k])]);
             var outcome = PalaceTerminalS.Convert(samples, ports, out terminalError);
             if (outcome is null) return Failed(terminalError!);
             terminal = (samples, outcome);

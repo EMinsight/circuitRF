@@ -106,7 +106,8 @@ public static partial class Em3dRunService
                 // An earlier run's arrays would be read as this one's if this one stopped before writing its own.
                 Directory.CreateDirectory(dir);
                 foreach (string old in new[] { EmergeResults.FrequencyFile, EmergeResults.SFile, EmergeResults.Z0File,
-                                               EmergeResults.GammaFile, EmergeResults.ModesFile, EmergeResults.QFile, EmergeResults.RunFile })
+                                               EmergeResults.GammaFile, EmergeResults.ModesFile, EmergeResults.QFile, EmergeResults.RunFile,
+                                               EmergeTerminalS.TVFile, EmergeTerminalS.WFile, EmergeTerminalS.GpFile, EmergeTerminalS.VFile })
                     File.Delete(Path.Combine(dir, old));
                 EmergeFields.Clear(dir);
                 EmergeScriptWriter.WriteInto(lowering, dir);
@@ -144,6 +145,9 @@ public static partial class Em3dRunService
             string logPath = Path.Combine(dir, EmergeResults.LogFile);
             if (ran.Stopped is { } stopped)
                 return (StoppedLeg(Me, "EMerge", stopped, limits, stopped.Meshing ? [] : run.Memory.Last?.Remedies ?? [], logPath), null);
+            // brief-emw-3 R-emw3-4 — a terminal face whose modes cannot be converted is refused by name, as before the solve
+            if (ran.ExitCode != 0 && EmergeLog.DriverRefusal(ran.Tail) is { } refusal)
+                return (Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(TerminalPortsSource, refusal)), null);
             if (ran.ExitCode != 0)
                 return (Failed(EmergeLog.DriverError(ran.Tail) is { } said
                     ? $"EMerge stopped: {said} Its log is {logPath}."
@@ -184,18 +188,58 @@ public static partial class Em3dRunService
         Complex[][] modeZ = [.. sweep.Z0.Select(row => wave.Select(w => row[ports.IndexOf(w)]).ToArray())];
         bool lumpedMoved = sweep.Z0.Any(row => ports.Where((p, i) => p.Kind == Em3dPortKind.Lumped &&
                                                                      (row[i] - p.Z0).Magnitude > 1e-9 * Math.Max(1, p.Z0.Magnitude)).Any());
-        sweep = EmergeResults.AtPortReferences(sweep with { FrequenciesHz = (double[])requested.Clone() }, ports, out _);
-        if (lumpedMoved)
-            log.Notes.Add("EMerge referred a port's S-parameters to another impedance than the port's own; the .sNp states one real " +
-                          "reference per port, so the whole matrix was renormalised to each port's Z0.");
-        if (wave.Count > 0)
+        // brief-emw-3 R-emw3-5 — with a terminal group, EMerge's S is MODAL on that face: every port goes through the conversion
+        // (a one-entry face reduces to the renormalisation from its Z_PV), from S and the faces' own modes
+        (WavePortModalSamples Samples, WavePortTerminalOutcome Outcome, EmergeModalArrays Arrays)? terminal = null;
+        if (Em3dPortMap.HasTerminals(ports))
         {
-            log.Notes.Add(WavePortReferences.Note("EMerge", "EMerge's own mode solve, along the port's voltage path", wave, modeZ));
+            var arrays = EmergeTerminalS.Read(dir, requested.Length, ports.Count, out string? arraysError);
+            if (arrays is null) return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(arraysError!));
+            var faces = WavePortTerminalS.Faces(ports);
+            var raw = sweep.S;
+            // a one-terminal port's moved reference plane, in its mode's own normalisation, before the conversion (a group's is refused)
+            var shifted = ports.Any(p => p.ReferencePlane.ShiftM != 0) ? WavePortReferences.Shift(raw, ports, sweep.Gamma) : raw;
+            var samples = new WavePortModalSamples((double[])requested.Clone(),
+                [.. Enumerable.Range(0, requested.Length).Select(k => EmergeTerminalS.Sample(shifted[k], arrays.TV[k], arrays.W[k], sweep.Gamma[k], faces))]);
+            var outcome = WavePortTerminalS.Convert(samples, ports, ModalRobinForm.SharedWavenumber, out string? terminalError);
+            if (outcome is null) return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(terminalError!));
+            terminal = (samples, outcome, arrays);
+            sweep = sweep with { FrequenciesHz = (double[])requested.Clone(), S = outcome.S.S,
+                                 Z0 = [.. sweep.Z0.Select(_ => ports.Select(p => p.Z0).ToArray())] };
+            modeZ = [.. samples.Samples.Select(x => wave.Select(w => new Complex(x.ZPv[ports.IndexOf(w)], 0)).ToArray())];
+            log.Notes.AddRange(WavePortTerminalS.RouteNotes(ports, outcome, "EMerge"));
+            var (checkNotes, checkWarnings) = WavePortTerminalS.Checks(ports, outcome, WavePortTerminalS.Lossless(problem), "EMerge",
+                                                                       powerConvention: false, offFace: false);
+            log.Notes.AddRange(checkNotes);
+            log.Warnings.AddRange(checkWarnings);
+            var (vNotes, vWarnings) = EmergeTerminalS.MeasuredChecks(ports, requested, raw, arrays);
+            log.Notes.AddRange(vNotes);
+            log.Warnings.AddRange(vWarnings);
             log.Notes.AddRange(WavePortReferences.ShiftNotes(wave));
+            if (EmergeFields.Request(setup, problem) is not null) log.Notes.Add(EmergeTerminalS.FieldsNote(ports));
             SecondModeVerdicts(facts, problem, log);
+        }
+        else
+        {
+            sweep = EmergeResults.AtPortReferences(sweep with { FrequenciesHz = (double[])requested.Clone() }, ports, out _);
+            if (lumpedMoved)
+                log.Notes.Add("EMerge referred a port's S-parameters to another impedance than the port's own; the .sNp states one real " +
+                              "reference per port, so the whole matrix was renormalised to each port's Z0.");
+            if (wave.Count > 0)
+            {
+                log.Notes.Add(WavePortReferences.Note("EMerge", "EMerge's own mode solve, along the port's voltage path", wave, modeZ));
+                log.Notes.AddRange(WavePortReferences.ShiftNotes(wave));
+                SecondModeVerdicts(facts, problem, log);
+            }
         }
 
         string? notConverged = null;
+        // brief-emw-3 — a GPU sweep that stopped improving was solved again on the CPU in the same run, without waiting for its cap
+        if (facts.GpuStalled is { } stall)
+            log.Notes.Add($"EMerge's adaptive sweep on the GPU stopped improving: its estimated error was no lower after {Count(stall.Samples)} " +
+                          $"frequencies than its best ({(stall.BestError is { } be ? PalaceStageTracker.Sci(be) : "unreported")}, at {Count(stall.BestAt)}), " +
+                          "so circuitRF solved it again on the CPU, on the same mesh. This result is the CPU's. The GPU's single precision " +
+                          "can leave an adaptive sweep's samples too noisy to fit; set EMerge's Device to CPU in Settings ▸ Solvers to start there.");
         if (facts.Adaptive)
         {
             log.Notes.Add($"EMerge's adaptive sweep solved the full problem at {Count(facts.Samples)} frequencies and fitted all " +
@@ -215,6 +259,11 @@ public static partial class Em3dRunService
         }
 
         var data = EmergeResults.BuildDataSet(sweep, ports, facts);
+        if (terminal is { } t)
+        {
+            WavePortTerminalS.AddDiagnostics(data, EmergeResults.Group, t.Samples, t.Outcome, ports);
+            data.AddToGroup(EmergeResults.Group, EmergeTerminalS.ModalGpCube, EmergeTerminalS.GramCube(sweep.FrequenciesHz, ports, t.Arrays.Gp));
+        }
         if (wave.Count > 0)
         {
             var values = new Complex[modeZ.Length * wave.Count];
@@ -265,16 +314,24 @@ public static partial class Em3dRunService
         }
         foreach (var m in facts.SecondModes.Where(m => m.Error is not null))
             log.Notes.Add($"Whether port {m.Port}'s second mode propagates was not checked: {m.Error}.");
+        string? Group(EmergeSecondMode m) => problem.Ports.FirstOrDefault(p => p.Number == m.Port)?.FaceGroupLabel;
         foreach (var m in facts.SecondModes.Where(m => m.Propagating))
-            log.Warnings.Add($"Port {m.Port}'s wave-port face supports a SECOND propagating mode at {Fmt(m.FrequencyHz / 1e9)} GHz " +
-                             $"(EMerge's β = {Fmt(m.Second!.Value.Real)} rad/m, the first mode's {Fmt(m.Betas[0].Real)}), so its S-parameters are " +
-                             "those of the first mode alone and power the second carries is not in them. Make the port region smaller " +
-                             "(the Ports3D Width and Height), or lower the sweep's top.");
+            log.Warnings.Add(Group(m) is { } label
+                ? $"Port '{label}''s face supports a propagating mode past its {m.Own} terminals' own at {Fmt(m.FrequencyHz / 1e9)} GHz " +
+                  $"(EMerge's β = {Fmt(m.Second!.Value.Real)} rad/m, the terminals' first mode's {Fmt(m.Betas[0].Real)}), so its S-parameters " +
+                  "are those of its terminals' modes alone and power the extra mode carries is not in them. Make the port region smaller " +
+                  "(the Ports3D Width and Height), or lower the sweep's top."
+                : $"Port {m.Port}'s wave-port face supports a SECOND propagating mode at {Fmt(m.FrequencyHz / 1e9)} GHz " +
+                  $"(EMerge's β = {Fmt(m.Second!.Value.Real)} rad/m, the first mode's {Fmt(m.Betas[0].Real)}), so its S-parameters are " +
+                  "those of the first mode alone and power the second carries is not in them. Make the port region smaller " +
+                  "(the Ports3D Width and Height), or lower the sweep's top.");
         var clean = facts.SecondModes.Where(m => m.Error is null && !m.Propagating).ToList();
         if (clean.Count > 0)
             log.Notes.Add($"No second mode propagates at {top} GHz, the top of the sweep, on the face of " +
-                          $"{(clean.Count == 1 ? "port " : "ports ")}{string.Join(", ", clean.Select(m => m.Port))} (EMerge, asked for two " +
-                          "modes, kept no second one that propagates: it drops a mode that carries no power).");
+                          $"{(clean.Count == 1 ? "port " : "ports ")}{string.Join(", ", clean.Select(m => Group(m) is { } l ? $"'{l}'" : m.Port.ToString(CultureInfo.InvariantCulture)))} " +
+                          (clean.Any(m => m.Own > 1)
+                              ? "(EMerge, asked for each face's modes and more, kept none past a face's own that propagates: it drops a mode that carries no power)."
+                              : "(EMerge, asked for two modes, kept no second one that propagates: it drops a mode that carries no power)."));
     }
 
     /// <summary>

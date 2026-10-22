@@ -19,6 +19,7 @@
 //     K   = diag(Re k_active / Re k_m) per face   (the scalar Robin term is the Active entry's; an inactive mode is
 //                                                  launched and absorbed at the Active entry's wavenumber)
 //     I   = T_I · (2 − K C),   U = M P (= V, less M's off-face part, which is dropped and reported)
+//           (EMerge, brief-emw-3: I = T_I · K (2 − C), ModalRobinForm.SharedWavenumber)
 //     S_t = √y · (U − Z₀ I)(U + Z₀ I)⁻¹ · √z      (Z₀ each terminal's own reference, as FdtdPortTransform forms it)
 //
 // THREE CHOICES THAT CARRY THE RESULT (124, measured):
@@ -45,9 +46,23 @@ public sealed record ModalTerminalSample(Complex[,] ModalS, Complex[,] V, double
 /// gate 4 shows failing.</summary>
 public enum ModalGramForm { Fit, Identity, Complex }
 
-/// <summary>How a face's Robin correction K is formed. <see cref="RealParts"/> is the transform; the others are the wrong
-/// forms gate 4 shows failing.</summary>
-public enum ModalRobinForm { RealParts, Complex, None }
+/// <summary>How a face's Robin correction K is formed. <see cref="RealParts"/> is Palace's transform and
+/// <see cref="SharedWavenumber"/> EMerge's; <see cref="Complex"/> and <see cref="None"/> are the wrong forms gate 4 shows
+/// failing.</summary>
+public enum ModalRobinForm
+{
+    /// <summary>Palace: an inactive entry launched at its own wavenumber and absorbed at the Active one's, D = 2 − K C.</summary>
+    RealParts,
+    Complex,
+    None,
+    /// <summary>
+    /// brief-emw-3 R-emw3-1 — EMerge: every entry launched AND absorbed at its face's first wavenumber, D = K (2 − C), K from
+    /// real parts as <see cref="RealParts"/> forms it. EMerge's port condition is γ = j β₁ and its source −2 j β₁ eₙ for every
+    /// mode n of a face, so the port condition per mode gives the modal current dₙ = (β₁/βₙ)(2δₙⱼ − Cₙ). On a degenerate face
+    /// K = 1 and this equals the others.
+    /// </summary>
+    SharedWavenumber,
+}
 
 /// <summary>One face's fit: whether its modes are degenerate, and the real g and the fit's largest relative residual when
 /// they are (g 0 and residual 0 when not).</summary>
@@ -151,14 +166,16 @@ public static class ModalTerminalTransform
         if (robin != ModalRobinForm.None)
             foreach (var face in faces)
                 foreach (int e in face)
-                    K[e] = robin == ModalRobinForm.RealParts
+                    K[e] = robin is ModalRobinForm.RealParts or ModalRobinForm.SharedWavenumber
                         ? sample.Kn[face[0]].Real / sample.Kn[e].Real
                         : sample.Kn[face[0]].Real / sample.Kn[e];
 
         var C = G.Transpose().Inverse() * P;
         var D = new Mat<Complex>(n, n);
         for (int i = 0; i < n; i++)
-            for (int j = 0; j < n; j++) D[i, j] = (i == j ? 2 : 0) - K[i] * C[i, j];
+            for (int j = 0; j < n; j++)
+                D[i, j] = robin == ModalRobinForm.SharedWavenumber ? K[i] * ((i == j ? 2 : 0) - C[i, j])
+                                                                   : (i == j ? 2 : 0) - K[i] * C[i, j];
         var I = M.Inverse().ConjugateTranspose() * D;
         var U = M * P;                      // V, less the dropped off-face part
 
@@ -313,6 +330,39 @@ public static class ModalTerminalTransform
             if (df != 0) roots[k] = x - f / df;
         }
         return roots;
+    }
+
+    /// <summary>
+    /// brief-emw-3 R-emw3-5 — <see cref="ModalTerminalResult.MOffBlock"/> for a V other than the one <see cref="Solve"/> was
+    /// given: each face's block fitted from that face's own rows of <paramref name="v"/>, and the largest part of
+    /// <paramref name="v"/> the fit leaves unexplained, relative to its largest entry. EMerge's run forms the transform's V
+    /// from its modes, which no face can fail to explain, so its off-face check reads the V it measured in the field.
+    /// </summary>
+    public static double OffFaceResidual(Complex[,] v, Complex[,] modalS, IReadOnlyList<IReadOnlyList<int>> faces)
+    {
+        ArgumentNullException.ThrowIfNull(v);
+        ArgumentNullException.ThrowIfNull(modalS);
+        ArgumentNullException.ThrowIfNull(faces);
+        int n = modalS.GetLength(0);
+        var P = ToMat(modalS);
+        for (int i = 0; i < n; i++) P[i, i] += Complex.One;
+        var V = ToMat(v);
+        var fit = new Mat<Complex>(n, n);
+        foreach (var face in faces)
+        {
+            var block = FitFace(V, P, face);
+            for (int a = 0; a < face.Count; a++)
+                for (int b = 0; b < face.Count; b++) fit[face[a], face[b]] = block[a, b];
+        }
+        var unexplained = V - fit * P;
+        double vMax = 0, off = 0;
+        for (int i = 0; i < n; i++)
+            for (int j = 0; j < n; j++)
+            {
+                vMax = Math.Max(vMax, V[i, j].Magnitude);
+                off = Math.Max(off, unexplained[i, j].Magnitude);
+            }
+        return vMax > 0 ? off / vMax : 0;
     }
 
     /// <summary>A face's block of M: the least-squares solution of V_f = M_f · P_f over every excitation (column), from the

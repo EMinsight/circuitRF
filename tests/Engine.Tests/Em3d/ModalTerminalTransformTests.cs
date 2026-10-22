@@ -64,6 +64,58 @@ public sealed class ModalTerminalTransformTests
         Assert.False(ModalTerminalTransform.IsDegenerate([new Complex(106.3353685537, 0), new Complex(98.40014178105, 0)]));
     }
 
+    /// <summary>
+    /// brief-emw-3 §7 test 1 — EMerge's Robin form on a non-degenerate two-mode face: the currents are I = M⁻ᴴ K (2 − C), K on
+    /// the incident term too (G = 1, so C = P = 1 + S and M = V P⁻¹), checked against that formula written out here; on a
+    /// degenerate face (K = 1) the form equals Palace's.
+    /// </summary>
+    [Fact]
+    public void SharedWavenumber_IsKTimesTwoMinusC_AndOnADegenerateFaceIsPalacesForm()
+    {
+        var sample = Sample();
+        double[] z0 = [50, 50];
+        var solved = ModalTerminalTransform.Solve(sample, [[0, 1]], z0, robin: ModalRobinForm.SharedWavenumber);
+        Assert.Null(solved.Error);
+
+        var P = Add(sample.ModalS, Id2);
+        var M = Mul(sample.V, Inv(P));
+        double[] k = [1, 142.0 / 131.2];
+        var D = new Complex[2, 2];
+        for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++) D[i, j] = k[i] * ((i == j ? 2 : 0) - P[i, j]);
+        var I = Mul(ConjT(Inv(M)), D);
+        var A = new Complex[2, 2];
+        var B = new Complex[2, 2];
+        for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++) { A[i, j] = sample.V[i, j] + z0[i] * I[i, j]; B[i, j] = sample.V[i, j] - z0[i] * I[i, j]; }
+        var expected = Mul(B, Inv(A));
+        for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++)
+            Assert.True((solved.S![i, j] - expected[i, j]).Magnitude < 1e-12, $"S{i + 1}{j + 1}: {solved.S[i, j]} against {expected[i, j]}");
+        var palace = ModalTerminalTransform.Solve(sample, [[0, 1]], z0);
+        Assert.True((solved.S![0, 1] - palace.S![0, 1]).Magnitude > 1e-3);      // K ≠ 1 here: the forms differ
+
+        var degenerate = Sample(k2: 142.0);
+        var shared = ModalTerminalTransform.Solve(degenerate, [[0, 1]], z0, robin: ModalRobinForm.SharedWavenumber);
+        var real = ModalTerminalTransform.Solve(degenerate, [[0, 1]], z0);
+        for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++) Assert.True((shared.S![i, j] - real.S![i, j]).Magnitude < 1e-14);
+    }
+
+    private static readonly Complex[,] Id2 = { { 1, 0 }, { 0, 1 } };
+
+    private static Complex[,] Add(Complex[,] a, Complex[,] b)
+        => new[,] { { a[0, 0] + b[0, 0], a[0, 1] + b[0, 1] }, { a[1, 0] + b[1, 0], a[1, 1] + b[1, 1] } };
+
+    private static Complex[,] Mul(Complex[,] a, Complex[,] b)
+        => new[,] { { a[0, 0] * b[0, 0] + a[0, 1] * b[1, 0], a[0, 0] * b[0, 1] + a[0, 1] * b[1, 1] },
+                    { a[1, 0] * b[0, 0] + a[1, 1] * b[1, 0], a[1, 0] * b[0, 1] + a[1, 1] * b[1, 1] } };
+
+    private static Complex[,] Inv(Complex[,] a)
+    {
+        var d = a[0, 0] * a[1, 1] - a[0, 1] * a[1, 0];
+        return new[,] { { a[1, 1] / d, -a[0, 1] / d }, { -a[1, 0] / d, a[0, 0] / d } };
+    }
+
+    private static Complex[,] ConjT(Complex[,] a)
+        => new[,] { { Complex.Conjugate(a[0, 0]), Complex.Conjugate(a[1, 0]) }, { Complex.Conjugate(a[0, 1]), Complex.Conjugate(a[1, 1]) } };
+
     private static ModalTerminalSample Sample(double k2 = 131.2)
         => new(new Complex[,] { { new(0.1, 0.05), new(0.02, -0.01) }, { new(0.02, -0.01), new(-0.08, 0.03) } },
                new Complex[,] { { new(5.1, 0.01), new(-0.4, 0.2) }, { new(0.6, -0.1), new(4.2, 0.02) } },

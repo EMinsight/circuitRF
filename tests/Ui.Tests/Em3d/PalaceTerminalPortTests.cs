@@ -249,7 +249,7 @@ public sealed class PalaceTerminalPortTests(ITestOutputHelper output)
         => Path.GetFullPath(Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em3d", "terminal", "palace-modal", name));
 
     /// <summary>A run's one frequency, read the way the run service reads it (kₙ from its log).</summary>
-    private static PalaceModalSamples Read(string name, int[] ports)
+    private static WavePortModalSamples Read(string name, int[] ports)
     {
         string dir = Fixture(name);
         var modes = PalaceRun.ReadWaveModes(File.ReadLines(Path.Combine(dir, PalaceRun.PalaceLogFile)));

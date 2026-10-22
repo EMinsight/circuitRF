@@ -160,18 +160,41 @@ public static partial class EmergeScriptWriter
 
         // brief-emw-2 R-emw2-1 — a wave port of one terminal: its region on the air box's face, circuitRF's voltage path, the
         // reference it is renormalised to, how far its plane moves and whether its mode is solved per frequency
+        // brief-emw-3 R-emw3-3 — a terminal group is ONE entry, its leader's (the lowest number): the region and the reference
+        // are shared, and `terminals` lists each terminal's number, name and path in terminal order, the driver's modes 1…N.
+        // A one-terminal wave port is written exactly as EMW-2 writes it.
         e.Key("wavePorts").BeginArray();
         foreach (var p in problem.Ports.Where(p => p.Kind == Em3dPortKind.Wave))
         {
+            var group = p.FaceGroup is { } g ? problem.Ports.Where(q => q.FaceGroup == g).OrderBy(q => q.Number).ToList() : null;
+            if (group is not null && group[0] != p) continue;
             var r = EmergeLoweringRules.Region(p.Min, p.Max);
             var path = p.VoltagePath!.Value;
-            e.BeginObject().Key("number").Int(p.Number).Key("name").Str(p.Name)
+            var faceMaterials = EmergeLoweringRules.RegionMaterials(problem, p);
+            // a group's entry is named by its port's label, which the driver's refusals name it by
+            e.BeginObject().Key("number").Int(p.Number).Key("name").Str(group is not null ? p.FaceGroupLabel ?? p.Name : p.Name)
              .Key("face").Str(problem.FaceOf(p.Min, p.Max)!)
              .Key("origin").Point(r.Origin).Key("u").Point(r.U).Key("v").Point(r.V)
              .Key("path").BeginObject().Key("from").Point(path.From).Key("to").Point(path.To).EndObject()
              .Key("z0").Number(p.Z0.Real).Key("shiftM").Number(p.ReferencePlane.ShiftM)
-             .Key("mixed").Bool(EmergeLoweringRules.RegionMaterials(problem, p).Count > 1)
-             .EndObject();
+             .Key("mixed").Bool(faceMaterials.Count > 1);
+            if (group is not null)
+            {
+                // A face of one material: its modes are solved once, before the sweep, around this effective index
+                // (R-emw3-4: 0.9 of the material's own, off the TEM eigenvalue EMerge's own shift sits on).
+                if (faceMaterials.Count == 1)
+                    e.Key("presolveNeff").Number(EmergeLoweringRules.PresolveNeff(problem, faceMaterials[0]));
+                e.Key("terminals").BeginArray();
+                foreach (var t in group)
+                {
+                    var tp = t.VoltagePath!.Value;
+                    e.BeginObject().Key("number").Int(t.Number).Key("name").Str(t.SourceLabel ?? t.Name)
+                     .Key("path").BeginObject().Key("from").Point(tp.From).Key("to").Point(tp.To).EndObject()
+                     .EndObject();
+                }
+                e.EndArray();
+            }
+            e.EndObject();
         }
         e.EndArray();
 

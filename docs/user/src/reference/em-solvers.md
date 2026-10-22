@@ -54,9 +54,9 @@ capacitance or inductance matrix (electrostatic and magnetostatic).
 **Use FEM (EMerge)** for the same kind of problem when you want an FEM answer quickly, or a second
 FEM answer beside Palace's. It installs in about two minutes with nothing to build, and on the shipped
 cavity its driven sweep takes seconds. It solves driven and eigenmode problems with lumped ports, and
-driven problems with wave ports that have one conductor on the face (a microstrip end, a coax).
-A wave port with several terminals needs openEMS (or Palace, for some), a hollow waveguide needs
-Palace, and so do capacitance and inductance matrices.
+driven problems with wave ports: one conductor on the face (a microstrip end, a coax), or several
+terminals on one face, a stripline pair included. A hollow waveguide needs Palace, and so do
+capacitance and inductance matrices.
 
 **Use FDTD (openEMS)** for Manhattan metal on a stackup over a wide band, and for radiators whose air
 box you want to keep small. It needs far less memory than FEM.
@@ -186,7 +186,7 @@ separate programs you install. The install assistant can do that for you (see
 | Licence | Apache 2.0 | GPL v3 | GPL v2 or later |
 | Mesh | Tetrahedra, made by [Gmsh](https://gmsh.info) from circuitRF's model | A rectilinear grid, written by circuitRF | Tetrahedra, made by EMerge's own copy of Gmsh from the same model |
 | Parallel | Across processes (MPI): one per physical core by default | Across the cores of one machine | Its sparse solver's threads, on the cores of one machine; a GPU on an arm64 Mac. An eigenmode solve uses one core |
-| What circuitRF runs on it | Driven S-parameters, eigenmode, electrostatic, magnetostatic; lumped and wave ports, including two terminals on one face when their modes travel at different speeds (a microstrip pair, not a stripline); radiation pattern | Driven S-parameters; lumped and wave ports, including several terminals on one face ([the 3D Wave Ports example](../new-user-guide/index.html#wave-ports-3d)); radiation pattern | Driven S-parameters and eigenmode; lumped ports, and wave ports with one conductor on the face; radiation pattern |
+| What circuitRF runs on it | Driven S-parameters, eigenmode, electrostatic, magnetostatic; lumped and wave ports, including two terminals on one face when their modes travel at different speeds (a microstrip pair, not a stripline); radiation pattern | Driven S-parameters; lumped and wave ports, including several terminals on one face ([the 3D Wave Ports example](../new-user-guide/index.html#wave-ports-3d)); radiation pattern | Driven S-parameters and eigenmode; lumped and wave ports, including several terminals on one face (a stripline pair too); radiation pattern |
 | Install, as measured on one Apple M4 | Built from source: 52 min, 1.9 GB | 8 min, 0.27 GB | Ready-built packages: about 2 min, 1.0 GB, with a Python of its own |
 | On Windows | Inside your Windows Subsystem for Linux (WSL 2). Palace's GitHub page covers Linux and macOS only; see [Installing Palace on Windows](palace-windows.html) | Native | Native, with an x64 Python, which an arm64 Windows computer runs under its x64 emulation. Not yet measured |
 
@@ -226,7 +226,7 @@ lossy substrate these are the largest expected differences between the two solve
 | Open space, radiation | Exact, with no box | An air box with first-order absorbing faces, kept well away | The same as Palace | An air box with PML, which can stay close |
 | Enclosures, lids, cavities | Not representable | Yes, and eigenmodes find their resonances | Yes, and eigenmodes find their resonances | Yes, but a high-Q cavity rings for a long time |
 | Capacitance and inductance matrices | No | Yes (electrostatic, magnetostatic) | No | No |
-| Ports | Edge ports, de-embedded | Lumped and wave ports | Lumped ports; wave ports with one conductor on the face | Lumped and wave ports |
+| Ports | Edge ports, de-embedded | Lumped and wave ports | Lumped and wave ports, including several terminals on one face ([its rules](em-setup.html#wave-port-terminals-emerge)) | Lumped and wave ports |
 | Metal loss | Yes | Yes (conductivity on every metal surface) | Yes (a surface impedance on every metal surface) | Sheets only; solid metal is lossless |
 | Dielectric loss | Yes, tanδ at every frequency | Yes, tanδ at every frequency | Yes, tanδ at every frequency | Exact at the band centre only |
 | Installed | Always | You install it | You install it | You install it |
@@ -364,8 +364,12 @@ solver is as quick or quicker. Measured on the shipped Cavity, driven, with an a
 
 Both converged in the same number of full solves, and their S-parameters agreed to within 2e-6. The GPU
 works in single precision, and circuitRF turns on the GPU solver's own double-precision correction; without
-it, the same sweeps either needed more solves or never converged. If a sweep on the GPU still stops at its
-limit without converging, circuitRF solves it again on the CPU and says so in the run's Notes.
+it, the same sweeps either needed more solves or never converged. **A sweep on the GPU is watched**: when its
+estimated error has not reached a new low in 8 solves, circuitRF stops it and solves the sweep again on the CPU,
+on the same mesh, and says so in the run's Notes. The 3D Wave Ports *Coupled Microstrip* (336,748 unknowns) is
+such a case: on the GPU its sweep was no better after 22 solves than after 14, and on the CPU it converged in 9,
+at 1.9 s per solve against the GPU's 7.6 s. A sweep on the GPU that stops at its limit without converging is
+also solved again on the CPU.
 
 **Eigenmode runs do not use the GPU**: EMerge's eigensolver runs on the CPU whatever is installed.
 To choose the device yourself, set **Device** in Settings ▸ Solvers to **CPU** or **GPU**, or pass

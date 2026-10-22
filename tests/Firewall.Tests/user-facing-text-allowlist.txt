@@ -1435,3 +1435,4 @@ src/Design/Em3d/Solvers/EMerge/EmergeResults.cs|'{Path.GetFileName(path)}' is no
 src/Design/Em3d/Solvers/EMerge/EmergeScriptWriter.Emit.cs|EMerge's input has no spelling for a non-finite number.
 src/Design/Em3d/Solvers/EMerge/EmergeScriptWriter.cs|A refused lowering writes nothing.
 src/Design/Em3d/Solvers/EMerge/EmergeScriptWriter.cs|EMerge's driver is missing from this assembly's resources.
+src/Design/Em3d/Solvers/EMerge/EmergeTerminalS.cs|EMerge's {file} is [{string.Join(

@@ -22597,3 +22597,72 @@ Palace at element order 2 (the example's README): S11 −25.02 dB at 10 GHz, −
   brought to the rule (the enum bound to a name first; a `None` default, which `not` reads as the `False` did).
 - **Firewall's user-facing-text allow-list** kept an entry for `OpenEmsSarCalc.cs`'s "the operating system started nothing",
   which EMI-10 removed from that file; the entry is gone.
+
+## EMerge terminal groups — EMW-3 (2026-10-22)
+
+`docs/sonnet-briefs/brief-emw-3-terminal-groups.md`. A wave port with several terminals now runs on EMerge: one `wavePorts`
+entry per group carrying `terminals` (problem.json stays version 2; a one-terminal port is written as EMW-2 writes it, so its
+goldens did not move), the driver (version 6) builds the face as one `ModalPort` of one mode per terminal and writes the
+face's mode data beside S (`TV.npy`, `W.npy`, `Gp.npy`, and `V.npy` where a frequency was solved directly), and the run forms
+the transform's sample from them (`EmergeTerminalS`) and converts it through `WavePortTerminalS`, the solver-neutral part of
+`PalaceTerminalS` (its notes and warnings are Palace's, word for word, with the solver's name). `ModalTerminalTransform` gained
+`ModalRobinForm.SharedWavenumber`, D = K (2 − C). EMerge 3.0.0b2, circuitRF's own install, M4 with 16 GB.
+
+### The numbers
+
+| Gate | Measured |
+|---|---|
+| Test 3: EMW-1's Coupled Microstrip, sample formed from T_V·W⁻¹·(1 + S)/√2 | ≤ 0.0110 from Palace's committed S4P (2, 5, 7.5, 11 GHz); ≤ 1.2e-4 from the fixture's measured-V route; σ_max ≤ 1.0001 |
+| Test 4: EMW-1's Pair with PEC sides | ≤ 0.0102 from Cohn's ideal coupled line; reciprocity 6e-4; Gram fit g = +0.003 and +0.007 |
+| Test 7: the Coupled Microstrip end to end, point sweep, 21 frequencies | worst \|ΔS\| **0.0098 at 2 GHz** against Palace's S4P (0.0040–0.0082 elsewhere); measured V within 0.5 % of the modes' on both faces; no warning. 46,964 tetrahedra, 336,748 unknowns, 39 s on the CPU |
+| Test 6: adaptive against point at 2, 5, 7.5, 11 GHz | ≤ **2.2e-6** at EMW-1's tolerance 1e-4 (11 samples) |
+| Test 8: the Pair as drawn (PMC sides) | refused before the 3D solve: "carries 3 modes of one speed for 2 terminals" |
+
+**Test 6 decides it: terminal groups run under the adaptive sweep.** The face's modes at a requested frequency come from a 2D
+solve there, and EMerge's sign gauge kept the basis the same as the point run's. At the preset's own tolerance, 1e-3, the two
+differed by 2.2e-4 at 7.5 GHz and by 5e-12 at 2 GHz, a sample of both: that gap is the fit's error between samples, not the
+basis, and the test runs the sweep at 1e-4 to measure the basis alone.
+
+### Where the brief and EMerge disagreed
+
+- **EMerge requires its port numbers to run 1, 2 … K** (`BoundaryConditionError: Port numbers are not subsequent integers`).
+  A group is one EMerge port carrying several circuitRF numbers, so the Coupled Microstrip's groups 1 and 3 failed as [1, 3].
+  The driver numbers EMerge's ports by rank (`emerge_numbers`) and maps each circuitRF number to EMerge's key: a port's own
+  rank, or `<rank>.<mode>` for a terminal. Without a group the ranks are circuitRF's own numbers, so nothing else moved.
+- **The Pair as drawn showed three equal-speed modes, not EMW-1's five**: the presolve asks for terminals + 4 = 6 around 0.9
+  of the PTFE's index, where EMW-1 asked EMerge's default solve. Either count is more than two, and the refusal names it.
+- **A driver refusal is a refusal.** The count check runs inside the solve; its line carries `"refused": true`
+  (`EmergeLog.DriverRefusal`) and the run ends `Refused` with the terminal-ports source, not as a failed solve.
+- **EMerge's exit-time warning prints after the driver's last JSON line** on a problem with copper sheets (its ThinConductor
+  note). The run service already read back to the last JSON line; `EmergeLoweringTests`' mesh-mode helpers took the last line
+  and now take the last JSON one.
+- **No field is saved for a terminal port.** EMerge excites a terminal face by its modes; a terminal's own excitation is a
+  mixture of them, which the run does not form. The driver skips those steps and the run says so in a note.
+- **The second-mode check on a terminal face** asks for the face's own modes and one more (four more around the presolve shift
+  on a face of one material), and reads the first past them.
+- **The degenerate-face refusal for three or more terminals needs the built problem** (whether one material meets the face):
+  `Em3dTerminalFacts.OneSpeed`, filled by `Em3dRunService.TerminalFacts`, null when the facts come from a document before its
+  problem exists. So `EmRunService`'s pre-check cannot refuse it; the lowering, `check` and the run's descriptor pass do.
+
+### A GPU sweep that stalls switches to the CPU (owner request, same day)
+
+Test 6 on Auto put the Coupled Microstrip on the GPU (336,748 unknowns, over Auto's 40,000). Its adaptive sweep never
+converged: best estimated error 3.0e-3 at sample 16, between 3e-3 and 0.45 at every sample after, 79 samples at 7.6 s each
+when it was stopped, and EMI-9's whole-run fallback would have waited for the cap of 100 before solving it again on the CPU.
+The same sweep on the CPU converged in 9 samples at 1.9 s each. **On this problem the GPU is four times slower per solve as
+well as noisy**, where EMI-9 measured it twice as fast on the Cavity at a similar size; the Auto threshold was not changed.
+
+The driver now watches a GPU sweep (`GPU_STALL_SAMPLES`, 8): when its estimated error has not reached a new low in eight
+samples it stops the sweep by raising from the log sink (`catch=False`), restores EMerge's band and empties its dataset
+(`set_frequency`, `_state.data.reset()`: the interrupted sweep left the band at its last batch and its samples in the data,
+and the CPU's first attempt without the reset failed with `SVD did not converge`), and solves the sweep again on the CPU on the
+same mesh. Measured: GPU stopped at sample 22 (best 3.3e-3 at 14), CPU converged in 9 to exactly the CPU-only result, 160 s in
+all. run.json carries `gpuStalled`, the progress shows *Solving again on the CPU (EMerge)*, and a note says what happened.
+EMI-9's fallback after the cap is kept for a sweep that improves too slowly to stall.
+
+### Seen and not fixed
+
+- **`EmergeRunTests.TheCavity_Driven_OnEMerge_…_TheCliWritesTheGuisBytes` fails** at its 1e-9 tolerance (differences of
+  about 1e-9, different on each run). Both its runs went to the GPU (109,566 unknowns, over Auto's threshold), whose solve is
+  not reproducible to 1e-9. On the CPU the committed driver and this one give identical S, run to run and to each other. Left
+  for the owner: the test predates this brief.

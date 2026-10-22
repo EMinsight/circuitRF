@@ -81,6 +81,6 @@ The findings are `src/Design/RESOLVED.md` § "EMerge wave ports — EMW-1". What
 |---|---|---|
 | EMW-1 | the spike | done |
 | EMW-2 | `brief-emw-2-single-terminal.md`: one-terminal wave ports, the shift, the renormalisation, the Launch gate | briefed |
-| EMW-3 | `brief-emw-3-terminal-groups.md`: terminal groups, the new Robin form, the shared terminal code | briefed |
+| EMW-3 | `brief-emw-3-terminal-groups.md`: terminal groups, the new Robin form, the shared terminal code | done (2026-10-22) |
 | EMW-4 | the example: EMerge setups for Launch, Coupled Microstrip and Pair (PEC sides), Compare runs, `expected-numbers.json` | outline (§3) |
 

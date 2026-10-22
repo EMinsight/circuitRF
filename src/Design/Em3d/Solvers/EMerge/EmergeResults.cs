@@ -31,23 +31,33 @@ public sealed record EmergeRunFacts(string? Version, string? SparseSolver, long?
     /// called), never as asked; null when the run did not say.</summary>
     public EmergeDevice? Device { get; init; }
 
+    /// <summary>brief-emw-3 — the adaptive sweep the run began on the GPU and stopped once it stalled, before solving it again
+    /// on the CPU: how many frequencies it had solved, its best estimated error and where; null when it did not.</summary>
+    public EmergeGpuStall? GpuStalled { get; init; }
+
     /// <summary>brief-emw-2 R-emw2-3a — each wave port's face asked for two modes at the sweep's top; empty when the run has no
     /// wave port or did not say.</summary>
     public IReadOnlyList<EmergeSecondMode> SecondModes { get; init; } = [];
 }
+
+/// <summary>brief-emw-3 — a stalled GPU sweep: its frequencies, its best estimated error, and the frequency count it reached it at.</summary>
+public sealed record EmergeGpuStall(int Samples, double? BestError, int BestAt);
 
 /// <summary>brief-emw-2 R-emw2-3a — one wave port's second-mode check: the modes EMerge kept at <see cref="FrequencyHz"/>
 /// (it drops evanescent ones, so a second one kept propagates), each one's β, rad/m, the face's own mode first; or why the
 /// check could not be made.</summary>
 public sealed record EmergeSecondMode(int Port, double FrequencyHz, IReadOnlyList<Complex> Betas, string? Error)
 {
+    /// <summary>brief-emw-3 — how many of the kept modes are the face's own: its terminals' count on a terminal group, else 1.</summary>
+    public int Own { get; init; } = 1;
+
     /// <summary>A kept solution with β below this fraction of k₀ is the 2D solve's null space, not a mode: on a finely meshed
     /// face EMerge returned one at β/k₀ 5e-5, ten times below any box mode's cutoff (src/Design/RESOLVED.md, EMW-2).</summary>
     public const double NullBetaFraction = 1e-3;
 
     /// <summary>The first kept mode past the face's own whose β is not the null space's; null when there is none.</summary>
     public Complex? Second => Error is null
-        ? Betas.Skip(1).Cast<Complex?>().FirstOrDefault(b => b!.Value.Real > NullBetaFraction * 2 * Math.PI * FrequencyHz / 299792458.0)
+        ? Betas.Skip(Own).Cast<Complex?>().FirstOrDefault(b => b!.Value.Real > NullBetaFraction * 2 * Math.PI * FrequencyHz / 299792458.0)
         : null;
 
     public bool Propagating => Second is not null;
@@ -109,11 +119,19 @@ public static class EmergeResults
                         ? [.. b.EnumerateArray().Select(x => new Complex(x[0].GetDouble(), x[1].GetDouble()))]
                         : new List<Complex>();
                     string? error = m.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : null;
-                    second.Add(new(port.GetInt32(), f.GetDouble(), betas, error));
+                    int own = m.TryGetProperty("own", out var o) && o.ValueKind == JsonValueKind.Number ? o.GetInt32() : 1;
+                    second.Add(new(port.GetInt32(), f.GetDouble(), betas, error) { Own = own });
                 }
             return new(Str("emerge"), Str("sparseSolver"), Long("tets"), Long("unknowns"), (int?)Long("samples"), Bool("adaptive") ?? false,
                        Num("error"), Bool("converged"), (int?)Long("modes"), Num("meshSeconds"), Num("solveSeconds"), warnings)
-                   { Device = Str("device") is "gpu" ? EmergeDevice.Gpu : Str("device") is "cpu" ? EmergeDevice.Cpu : null, SecondModes = second };
+                   {
+                       Device = Str("device") is "gpu" ? EmergeDevice.Gpu : Str("device") is "cpu" ? EmergeDevice.Cpu : null, SecondModes = second,
+                       GpuStalled = r.TryGetProperty("gpuStalled", out var g) && g.ValueKind == JsonValueKind.Object
+                           ? new EmergeGpuStall(g.TryGetProperty("samples", out var gs) && gs.ValueKind == JsonValueKind.Number ? gs.GetInt32() : 0,
+                                                g.TryGetProperty("bestError", out var ge) && ge.ValueKind == JsonValueKind.Number ? ge.GetDouble() : null,
+                                                g.TryGetProperty("bestAt", out var ga) && ga.ValueKind == JsonValueKind.Number ? ga.GetInt32() : 0)
+                           : null,
+                   };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or FormatException)
         {

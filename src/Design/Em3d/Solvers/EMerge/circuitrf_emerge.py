@@ -30,6 +30,19 @@ the Touchstone and their provenance from them, so EMerge's own Touchstone writer
 and run.json (versions, the sparse solver EMerge called, tets, samples, the sweep's error, timings). The JSON line it
 prints last is run.json's content.
 
+(brief-emw-3) A wave-port entry with "terminals" is a TERMINAL GROUP: one ModalPort carrying one mode per terminal (EMerge
+numbers them <number>.1 ... <number>.N, terminal order), never a WavePortIH (it carries one mode) and never align_modes (for
+terminals it picks one mode twice). A face of one material has its modes solved once, before the sweep, around its
+presolveNeff (EMerge's own shift there sits on the TEM eigenvalue and misses the second TEM mode); a face carrying more or
+fewer modes of one speed than terminals is refused, naming the cause. A face of several materials is EMerge's own
+per-frequency solve, each frequency's modes checked to be the terminal count and TEM-classified. When the problem has a
+group, the driven solve also writes, per requested frequency, over every wave-port entry in circuitRF port order
+([f, n, n], block-diagonal by face): TV.npy (path k's integral of mode n's E, 21-point Gauss-Legendre), W.npy (the
+E-overlap EMerge's S projection uses, <e_n, e_i> / <e_i, e_i> over the face), Gp.npy (1/2 integral of e_n x conj(h_m) . n);
+gamma.npy and Z0.npy carry each entry's own mode (Z0 = |TV_kk|^2 / 2: modes carry 1 W). At a frequency solved directly (a
+point sweep) V.npy is each entry's path integral of the TOTAL E for each excitation [f, n, ports]: the run's check, never the
+conversion's input. A terminal group's own excitations are modal, so no field step is saved for one.
+
 (brief-emi-7) When problem.json has a "fields" block, the solve also writes FIELDS, in the .vtu layout circuitRF reads for
 Palace (an UnstructuredGrid of Lagrange tetrahedra, every cell with its own nodes, inline-base64 geometry, appended-raw
 arrays, no compression, complex quantities as <name>_real/<name>_imag):
@@ -51,7 +64,7 @@ import json
 import os
 import sys
 
-DRIVER_VERSION = 5
+DRIVER_VERSION = 6
 FORMAT = "circuitRF EMerge problem"
 FORMAT_VERSION = 2
 C0 = 299792458
@@ -70,6 +83,11 @@ def report(**fields):
 def fail(message):
     report(error=message)
     sys.exit(2)
+
+
+class Refused(Exception):
+    """brief-emw-3 — what the run refuses once EMerge has shown it (a terminal face's modes): its message is the sentence
+    circuitRF reports, and its line says "refused" so the run is a refusal, not a failure."""
 
 
 def main(argv):
@@ -118,13 +136,17 @@ def main(argv):
     meshed = time.time()
     # The mesh's size, before any solve: circuitRF checks the run's memory on it and stops the run when it is refused.
     report(stage="meshed", tets=counts["tets"], edges=counts["edges"], triangles=counts["triangles"])
-    use_gpu(problem, counts, gpu_from, sim, em, warnings)
+    on_gpu = use_gpu(problem, counts, gpu_from, sim, em, warnings)
     # After the build: creating the Simulation reconfigures EMerge's logger, which would drop a handler added before it.
-    heard = Heard()
+    # Not caught: the stall watch stops a GPU sweep by raising from the sink (GpuStalled).
+    heard = Heard(on_gpu)
     from loguru import logger
-    logger.add(heard.sink, level="INFO", format="{message}")
+    logger.add(heard.sink, level="INFO", format="{message}", catch=False)
     try:
         outcome = solve(problem, os.path.dirname(path), sim, model, heard, warnings)
+    except Refused as e:
+        report(error=str(e), refused=True)
+        sys.exit(2)
     except Exception as e:
         fail("%s: %s" % (type(e).__name__, e))
     # The device the solves USED, read back from the solver EMerge's log says it called, never assumed from what was asked.
@@ -189,30 +211,72 @@ def use_gpu(problem, counts, gpu_from, sim, em, warnings):
     default refinement (-1: as many double-precision corrections as its 1e-6 residual target needs) it converged in exactly
     the CPU's sample count at every mesh, within 1.5e-6 of the CPU's S, and still faster."""
     if gpu_from is None or problem["problem"] != "driven":
-        return
+        return False
     order = problem["settings"]["elementOrder"]
     unknowns = 2 * (counts["edges"] + counts["triangles"]) if order == 2 else counts["edges"]
     if unknowns < gpu_from:
-        return
+        return False
     from emerge._emerge import solver as s
     solvers = s.EMSolver
     kind = getattr(solvers, "SPARTA", None)
     gpu = sim.mw.solveroutine.solvers.get(kind) if kind is not None else None
     if gpu is None or not getattr(s, "_SPARTA_AVAILABLE", None):
         warnings.append("EMerge's GPU sparse solver could not be loaded, so this run solved on the CPU.")
-        return
+        return False
     gpu.settings["refinement_steps"] = -1
     sim.mw.solveroutine.set_solver(kind)
+    return True
+
+
+# brief-emw-3 — an adaptive sweep on the GPU whose estimated error has not reached a new low in this many samples has
+# stalled: the GPU's single precision leaves its samples too noisy for the fit (the Coupled Microstrip, 336,748 unknowns:
+# its best error 3.0e-3 at sample 16, no better by sample 80, where the CPU converged in 9; src/Design/RESOLVED.md, EMW-3).
+GPU_STALL_SAMPLES = 8
+
+
+class GpuStalled(Exception):
+    """Raised from the log sink to stop a stalled GPU sweep; the driver solves it again on the CPU."""
+
+
+def adaptive_sweep(sim, settings, heard, freqs):
+    """The adaptive sweep; on the GPU, watched, and solved again on the CPU (EMerge's own choice, in this process and on
+    this mesh) the moment it stalls. Returns the sweep and, after a switch, what the GPU's attempt reached."""
+    def run():
+        return sim.mw.run_adaptive_sweep(n_initial=settings["initialSamples"], tol=settings["tolerance"],
+                                         max_samples=settings["maxSamples"])
+    if not heard.on_gpu:
+        return run(), None
+    heard.watch = True
+    try:
+        return run(), None
+    except GpuStalled:
+        stalled = {"samples": heard.samples, "bestError": heard.best, "bestAt": heard.best_at}
+    finally:
+        heard.watch = False
+    report(stage="gpu-stalled", **stalled)
+    # The interrupted sweep left EMerge's frequency list at its last batch and its samples in the dataset, where the CPU's
+    # fit would read them: the band is restored and the dataset emptied, so the CPU starts as a sweep does.
+    sim.mw.set_frequency(list(freqs))
+    sim.mw._state.data.reset()
+    sim.mw.solveroutine.forced_solver = []
+    heard.on_gpu = False
+    heard.error = heard.converged = None
+    return run(), stalled
 
 
 class Heard:
     """What EMerge's own log said that the run reports: the direct solver it called and the adaptive sweep's last
     estimate. Read from the message text EMerge 3.0.0b2 logs; a line it no longer logs leaves the field unreported."""
 
-    def __init__(self):
+    def __init__(self, on_gpu=False):
         self.solver = None
         self.error = None
         self.converged = None
+        self.on_gpu = on_gpu
+        self.watch = False
+        self.samples = 0
+        self.best = None
+        self.best_at = 0
 
     def sink(self, message):
         import re
@@ -223,6 +287,13 @@ class Heard:
         m = re.search(r"estimated error ([0-9.eE+-]+)", text)
         if m:
             self.error = float(m.group(1))
+        m = re.match(r"Adaptive sweep: (\d+) samples, estimated error ([0-9.eE+-]+)", text)
+        if m and self.watch:
+            self.samples = int(m.group(1))
+            if self.best is None or self.error < self.best:
+                self.best, self.best_at = self.error, self.samples
+            elif self.samples - self.best_at >= GPU_STALL_SAMPLES:
+                raise GpuStalled()
         if text.startswith("Adaptive sweep converged"):
             self.converged = True
         elif text.startswith("Adaptive sweep stopped at max_samples"):
@@ -494,15 +565,19 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
             sim.mw.bc.PMC(selection)
         elif kind == "absorbing":
             sim.mw.bc.AbsorbingBoundary(selection)
+    numbers = emerge_numbers(problem)
     lumped = []
     for p, plate in ports:
-        lumped.append((p, sim.mw.bc.LumpedPort(plate, p["number"], width=p["widthM"], height=p["heightM"],
+        lumped.append((p, sim.mw.bc.LumpedPort(plate, numbers[p["number"]], width=p["widthM"], height=p["heightM"],
                                                direction=tuple(p["direction"]), Z0=p["z0"])))
     for e, plate in elements:
         sim.mw.bc.LumpedElement(plate, impedance(e), width=e["widthM"], height=e["heightM"])
     waves = []
     for w, region in regions:
-        bc = sim.mw.bc.WavePortIH(region, w["number"])
+        if "terminals" in w:
+            waves.append((w, terminal_port(sim, w, region, numbers[w["number"]])))
+            continue
+        bc = sim.mw.bc.WavePortIH(region, numbers[w["number"]])
         # R-emw2-2a — the one line that decides a wave port's polarity: EMerge turns the mode so its integral along this line
         # is positive, and circuitRF's path runs from the negative object to the positive one, the sense a lumped port's
         # direction has. Proved on a thru with a wave port at one end and a lumped port at the other (RESOLVED, EMW-2).
@@ -555,14 +630,19 @@ def solve(problem, folder, sim, model, heard, warnings):
     freqs = np.array(problem["frequenciesHz"], dtype=np.float64)
     sim.mw.set_frequency(list(freqs))
     adaptive = settings["adaptiveSweep"] and len(freqs) > settings["initialSamples"]
+    groups = [(w, bc) for w, bc in model["waves"] if "terminals" in w]
+    for w, bc in groups:
+        if not w["mixed"]:
+            presolve(sim, w, bc, float(freqs[len(freqs) // 2]))
+    stalled = None
     if adaptive:
-        data = sim.mw.run_adaptive_sweep(n_initial=settings["initialSamples"], tol=settings["tolerance"],
-                                         max_samples=settings["maxSamples"])
+        data, stalled = adaptive_sweep(sim, settings, heard, freqs)
     else:
         data = sim.mw.run_sweep()
     grid = data.scalar.grid
-    every = sorted([p["number"] for p in problem["ports"]] + [w["number"] for w in problem["wavePorts"]])
-    index = [grid._portmap[n] for n in every]
+    keys = entry_keys(problem)
+    every = sorted(keys)
+    index = [grid._portmap[keys[n]] for n in every]
     full = grid.model_Smat(freqs) if adaptive else grid.Smat
     S = np.asarray(full)[:, index, :][:, :, index].astype(np.complex128)
     if not adaptive and not np.allclose(np.ravel(grid.freq), freqs, rtol=1e-12, atol=0):
@@ -572,18 +652,35 @@ def solve(problem, folder, sim, model, heard, warnings):
     gamma = np.zeros((len(freqs), len(every)), dtype=np.complex128)
     waves = model["waves"]
     if waves:
-        wz, wg = wave_modes(sim, waves, freqs, adaptive)
-        for j, (w, _) in enumerate(waves):
+        wz, wg = wave_modes(sim, [(w, bc) for w, bc in waves if "terminals" not in w], freqs, adaptive)
+        for j, (w, _) in enumerate([(w, bc) for w, bc in waves if "terminals" not in w]):
             z0[:, every.index(w["number"])] = wz[:, j]
             gamma[:, every.index(w["number"])] = wg[:, j]
+    if groups:
+        # brief-emw-3 R-emw3-4 — every wave-port entry's mode data, the conversion's input; and V where the run solved directly
+        arrays = terminal_arrays(sim, waves, every, freqs, adaptive)
+        for name, a in arrays.items():
+            np.save(os.path.join(folder, name + ".npy"), np.ascontiguousarray(a))
+        rows = [every.index(n) for w, _ in waves for n in entry_numbers(w)]
+        for i in rows:
+            z0[:, i] = np.abs(arrays["TV"][:, i, i]) ** 2 / 2
+            gamma[:, i] = arrays["gammaEntries"][:, i]
+        os.remove(os.path.join(folder, "gammaEntries.npy"))
+        if not adaptive:
+            np.save(os.path.join(folder, "V.npy"), np.ascontiguousarray(measured_v(data, waves, every, keys, freqs)))
     # C order, which circuitRF reads: S is indexed out of EMerge's matrix, and numpy keeps such a view in Fortran order.
     np.save(os.path.join(folder, "freq.npy"), np.ascontiguousarray(freqs))
     np.save(os.path.join(folder, "S.npy"), np.ascontiguousarray(S))
     np.save(os.path.join(folder, "Z0.npy"), np.ascontiguousarray(z0))
     np.save(os.path.join(folder, "gamma.npy"), np.ascontiguousarray(gamma))
     out = {"samples": int(np.size(grid.freq)), "adaptive": bool(adaptive)}
+    if stalled is not None:
+        out["gpuStalled"] = stalled
     if waves:
         out["secondModes"] = second_modes(sim, waves, float(np.max(freqs)))
+    if groups:
+        out["terminalModes"] = [{"port": w["number"], "modes": len(w["terminals"]),
+                                 "presolved": not w["mixed"]} for w, _ in groups]
     if adaptive:
         out["error"] = heard.error
         out["converged"] = heard.converged
@@ -623,11 +720,14 @@ def second_modes(sim, waves, top):
     k0 = 2 * np.pi * top / C0
     out = []
     for w, bc in waves:
+        own = len(w.get("terminals", [None]))
         saved = bc.available_modes.pop(k0, None)
         state = (bc.forced_modetype, bc._last_k0, bc._first_k0, bc.initialized)
         try:
             bc.forced_modetype = None
-            sim.mw.modal_analysis(bc, 2, direct=False, TEM=False, freq=top)
+            # brief-emw-3: a terminal face asks for its own modes and the next; a face of one material around its presolve shift
+            sim.mw.modal_analysis(bc, own + (4 if "presolveNeff" in w else 1), direct=False, TEM=False, freq=top,
+                                  target_neff=w.get("presolveNeff"))
             modes = sorted(bc.available_modes.get(k0, []), key=lambda m: -complex(m.beta).real)
         except Exception as e:
             out.append({"port": w["number"], "frequencyHz": top, "error": "%s: %s" % (type(e).__name__, e)})
@@ -637,7 +737,7 @@ def second_modes(sim, waves, top):
             bc.available_modes.pop(k0, None)
             if saved is not None:
                 bc.available_modes[k0] = saved
-        entry = {"port": w["number"], "frequencyHz": top, "modes": len(modes),
+        entry = {"port": w["number"], "frequencyHz": top, "modes": len(modes), "own": own,
                  "betas": [[complex(m.beta).real, complex(m.beta).imag] for m in modes],
                  "types": [getattr(m, "modetype", None) for m in modes]}
         out.append(entry)
@@ -658,6 +758,187 @@ def wave_conditions(sim, waves):
     return [{"number": w["number"], "condition": type(bc).__name__, "regionFaces": len(bc.tags),
              "pecFaces": len([t for t in bc.tags if t in pec]), "mixed": w["mixed"],
              "modePerFrequency": bool(bc.mixed_materials)} for w, bc in waves]
+
+
+# -- terminal groups (brief-emw-3) ----------------------------------------------------------------------------------------
+
+GAUSS_POINTS = 21        # R-emw1-4: 7, 21 and 41 points along a terminal's path move V by under 5e-5
+SAME_SPEED = 1e-3        # two TEM modes whose Re beta agree to this are of one speed
+
+
+def entry_numbers(w):
+    """The circuitRF port numbers a wave-port entry carries: its terminals' in terminal order, or its own."""
+    return [t["number"] for t in w["terminals"]] if "terminals" in w else [w["number"]]
+
+
+def emerge_numbers(problem):
+    """Each EMerge port's number, by the circuitRF number of its entry: EMerge requires them to run 1, 2, ... K, and a
+    terminal group is one EMerge port carrying several circuitRF numbers, so EMerge's are the entries' ranks. Without a
+    group they are circuitRF's own."""
+    entries = sorted([p["number"] for p in problem["ports"]] + [w["number"] for w in problem["wavePorts"]])
+    return {n: k + 1 for k, n in enumerate(entries)}
+
+
+def entry_keys(problem):
+    """Each circuitRF port number's index in EMerge's S: a lumped port's and a one-terminal wave port's EMerge number, and a
+    terminal's <EMerge number>.<mode> (EMerge's p.m naming of a port's modes; nine at most, R-emw1-1)."""
+    numbers = emerge_numbers(problem)
+    keys = {p["number"]: numbers[p["number"]] for p in problem["ports"]}
+    for w in problem["wavePorts"]:
+        if "terminals" in w:
+            for k, t in enumerate(w["terminals"]):
+                keys[t["number"]] = float("%d.%d" % (numbers[w["number"]], k + 1))
+        else:
+            keys[w["number"]] = numbers[w["number"]]
+    return keys
+
+
+def terminal_port(sim, w, region, number):
+    """A terminal group's ModalPort: one mode per terminal. A face of one material is made TEM-only, its modes solved once
+    before the sweep (presolve), and not re-solved by it; a face of several materials is solved by EMerge at every frequency."""
+    n = len(w["terminals"])
+    bc = sim.mw.bc.ModalPort(region, number, number_of_modes=n, mixed_materials=bool(w["mixed"]),
+                             modetype=None if w["mixed"] else "TEM")
+    # Terminal 1's path: it sets the modes' signs (the conversion does not care which) and EMerge's own Z0's line.
+    t = w["terminals"][0]["path"]
+    bc.set_integration_line(tuple(t["from"]), tuple(t["to"]), 101)
+    return bc
+
+
+def refuse_modes(w, found, why):
+    n = len(w["terminals"])
+    raise Refused(("Port '%s''s face carries %d mode%s of one speed for %d terminals: " % (w["name"], found, "" if found == 1 else "s", n))
+                     + why)
+
+
+SPLIT = ("its reference is split into separate conductors on the face (two PEC faces with PMC between them are two "
+         "conductors). Make the reference one conductor on the face, or run the setup on openEMS.")
+MISSED = ("EMerge's mode solve found fewer modes than the face has terminals, so the terminals' S cannot be formed. Run the "
+          "setup on openEMS.")
+
+
+def presolve(sim, w, bc, freq):
+    """R-emw3-4 — a face of one material: terminals + 4 modes around 0.9 of its index, before the sweep. Its TEM modes all
+    travel at the first's speed; more of them than terminals means a split reference, fewer a missed mode. Exactly the
+    terminals' count is kept, and the sweep does not solve the face again."""
+    import numpy as np
+    n = len(w["terminals"])
+    sim.mw.modal_analysis(bc, nmodes=n + 4, direct=False, TEM=True, target_neff=w["presolveNeff"], freq=freq)
+    k0 = 2 * np.pi * freq / C0
+    modes = bc.get_modes(k0)
+    same = [m for m in modes if m.modetype == "TEM" and abs(complex(m.beta).real - complex(modes[0].beta).real)
+            <= SAME_SPEED * abs(complex(modes[0].beta).real)] if modes else []
+    if len(same) > n:
+        refuse_modes(w, len(same), SPLIT)
+    if len(same) < n:
+        refuse_modes(w, len(same), MISSED)
+    bc.available_modes[min(bc.available_modes.keys(), key=lambda k: abs(k - k0))] = same
+
+
+def checked_modes(w, bc, freq):
+    """A terminal face's modes at freq, the terminals' count of them; a face of several materials refused unless EMerge's
+    solve there gave that many, each TEM-classified (EMerge classes a quasi-TEM mode TEM)."""
+    import numpy as np
+    n = len(w["terminals"])
+    k0 = 2 * np.pi * freq / C0
+    modes = bc.get_modes(k0)[:n]
+    if w["mixed"] and (len(modes) < n or any(m.modetype != "TEM" for m in modes)):
+        kinds = ", ".join(m.modetype for m in modes) or "none"
+        raise Refused("Port '%s''s face gives %d TEM mode(s) for its %d terminals at %.6g GHz (EMerge's modes there: %s), so "
+                         "the terminals' S cannot be formed. Make the port region smaller (a box mode may be propagating), or "
+                         "run the setup on openEMS." % (w["name"], sum(m.modetype == "TEM" for m in modes), n, freq / 1e9, kinds))
+    return modes
+
+
+def face_quadrature(sim, bc):
+    """A degree-4, 6-point rule on every triangle of the port face: points (3, T*6) and weights carrying each area."""
+    import numpy as np
+    mesh = sim.mesh
+    tv = mesh.tris[:, mesh.get_triangles(bc.tags)]
+    a, b = 0.445948490915965, 0.091576213509771
+    wa, wb = 0.223381589678011, 0.109951743655322
+    bary = np.array([[a, a, 1 - 2 * a], [a, 1 - 2 * a, a], [1 - 2 * a, a, a],
+                     [b, b, 1 - 2 * b], [b, 1 - 2 * b, b], [1 - 2 * b, b, b]])
+    weights = np.array([wa] * 3 + [wb] * 3)
+    P = [mesh.nodes[:, tv[k]] for k in range(3)]
+    area = 0.5 * np.linalg.norm(np.cross((P[1] - P[0]).T, (P[2] - P[0]).T), axis=1)
+    pts = sum(bary[:, k][None, :, None] * P[k].T[:, None, :] for k in range(3))
+    return pts.reshape(-1, 3).T, (area[:, None] * weights[None, :]).ravel()
+
+
+def path_integral(func, path):
+    """The integral of func's (3, N) field along the straight path, GAUSS_POINTS-point Gauss-Legendre."""
+    import numpy as np
+    x, wt = np.polynomial.legendre.leggauss(GAUSS_POINTS)
+    p, q = np.asarray(path["from"], float), np.asarray(path["to"], float)
+    s = (x + 1) / 2
+    pts = p[:, None] + (q - p)[:, None] * s[None, :]
+    E = func(pts[0], pts[1], pts[2])
+    d = q - p
+    return complex(np.sum(wt / 2 * (E[0] * d[0] + E[1] * d[1] + E[2] * d[2])))
+
+
+def terminal_arrays(sim, waves, every, freqs, adaptive):
+    """R-emw3-4 — TV, W, Gp [f, n, n] block-diagonal over every wave-port entry and gammaEntries [f, n] (j beta of each
+    entry's own mode), n the circuitRF port order. Read from the port's own modes (port.get_modes, port_mode_3d_global), never
+    from the result's port properties, which repeat mode 1's for every mode (R-emw1-1). An adaptive sweep's requested
+    frequencies had no mode solve: a face of several materials is solved at each here (the guard keeps it fresh); a face of
+    one material keeps its one solve, its TEM modes' shapes not changing with frequency and beta scaling with k0."""
+    import numpy as np
+    n = len(every)
+    TV = np.zeros((len(freqs), n, n), dtype=np.complex128)
+    W = np.zeros_like(TV)
+    Gp = np.zeros_like(TV)
+    gam = np.zeros((len(freqs), n), dtype=np.complex128)
+    for w, bc in waves:
+        rows = [every.index(x) for x in entry_numbers(w)]
+        paths = [t["path"] for t in w["terminals"]] if "terminals" in w else [w["path"]]
+        xq, wq = face_quadrature(sim, bc)
+        for i, f in enumerate(freqs):
+            k0 = 2 * np.pi * f / C0
+            if "terminals" in w:
+                if w["mixed"] and adaptive:
+                    sim.mw.modal_analysis(bc, len(rows), direct=False, TEM=False, freq=float(f))
+                modes = checked_modes(w, bc, float(f))
+            else:
+                if w["mixed"] and adaptive:
+                    sim.mw.modal_analysis(bc, 1, direct=False, TEM=True, freq=float(f))
+                modes = bc.get_modes(k0)[:1]
+            normal = np.asarray(bc.cs.zax.np, float)
+            e = [bc.port_mode_3d_global(xq[0], xq[1], xq[2], k0, which="E", mode_nr=m + 1) for m in range(len(rows))]
+            h = [bc.port_mode_3d_global(xq[0], xq[1], xq[2], k0, which="H", mode_nr=m + 1) for m in range(len(rows))]
+            et = [x - np.outer(normal, normal @ x) for x in e]
+            for a, ra in enumerate(rows):
+                gam[i, ra] = 1j * (complex(modes[a].beta) * k0 / modes[a].k0 if modes[a].modetype == "TEM"
+                                   else complex(modes[a].beta))
+                for b, rb in enumerate(rows):
+                    TV[i, ra, rb] = path_integral(lambda x, y, z, m=b: bc.port_mode_3d_global(x, y, z, k0, which="E", mode_nr=m + 1),
+                                                  paths[a])
+                    W[i, ra, rb] = (np.sum(wq * np.sum(et[b] * np.conj(et[a]), 0)) /
+                                    np.sum(wq * np.sum(et[a] * np.conj(et[a]), 0)))
+                    Gp[i, ra, rb] = 0.5 * np.sum(wq * (normal @ np.cross(e[a].T, np.conj(h[b]).T).T))
+    return {"TV": TV, "W": W, "Gp": Gp, "gammaEntries": gam}
+
+
+def measured_v(data, waves, every, keys, freqs):
+    """R-emw3-5 — at each directly solved frequency, every wave-port entry's path integral of the TOTAL E for each excitation
+    [f, entry, port], entries and ports in circuitRF order: the run's check of the conversion, never its input."""
+    import numpy as np
+    paths = {}
+    for w, _ in waves:
+        for t in (w["terminals"] if "terminals" in w else [w]):
+            paths[t["number"]] = t["path"]
+    out = np.zeros((len(freqs), len(every), len(every)), dtype=np.complex128)
+    fields = list(data.field.iter())
+    for i, f in enumerate(freqs):
+        fd = min(fields, key=lambda e: abs(float(np.real(e.freq)) - f))
+        fd._silent = True
+        for j, n in enumerate(every):
+            fd.excite_port(keys[n])
+            for r, m in enumerate(every):
+                if m in paths:
+                    out[i, r, j] = path_integral(lambda x, y, z: fd.interpolate(x, y, z, usenan=False).E, paths[m])
+    return out
 
 
 # -- fields (brief-emi-7) -------------------------------------------------------------------------------------------------
@@ -934,6 +1215,7 @@ def driven_fields(problem, folder, sim, model, solved):
     bnd = boundary_nodes(mesh, model, order) if req["write"] else None
     obj, _ = cell_owners(mesh, model)
     ports = sorted(model["ports"], key=lambda pb: pb[0]["number"])
+    keys = entry_keys(problem)
     steps, written = [], 0
     farfield = req.get("farField")
     if farfield:
@@ -945,7 +1227,9 @@ def driven_fields(problem, folder, sim, model, solved):
     for i, f in enumerate(freqs):
         field = have[f]
         for j, (p, bc) in enumerate(ports):
-            field.excite_port(p["number"])
+            if "terminals" in p:
+                continue        # brief-emw-3: a terminal group's excitations are modal; a terminal's own is not formed here
+            field.excite_port(keys[p["number"]])
             v, vinc = port_voltage(field, bc), getattr(bc, "voltage", None)
             if p in [w for w, _ in model["waves"]]:
                 # a wave port's mode at 1 W reads sqrt(2 Z_PV) along its line (R-emw1-5); EMerge's own voltage is sqrt(Z0)

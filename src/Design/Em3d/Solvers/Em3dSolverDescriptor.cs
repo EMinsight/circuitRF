@@ -42,7 +42,12 @@ public sealed record Em3dLegRefusal(string Alone, string InCompare);
 /// <summary>A problem's multi-terminal wave ports, as a solver's port refusal reads them: one entry per face group, whether
 /// a lumped port sits beside them, and a terminal port whose reference plane is moved (and how far).</summary>
 public sealed record Em3dTerminalFacts(IReadOnlyList<(string Label, int Terminals)> Ports, bool LumpedPorts,
-                                       (string Label, double ShiftM)? Shifted);
+                                       (string Label, double ShiftM)? Shifted)
+{
+    /// <summary>brief-emw-3 — the labels of the terminal ports whose face meets one material, so whose modes travel at one
+    /// speed; null when not known (facts read from a document, before its problem is built).</summary>
+    public IReadOnlyCollection<string>? OneSpeed { get; init; }
+}
 
 /// <summary>What <c>check</c> reports of a built problem for one solver: refusals (the run would refuse it) and notes.</summary>
 public sealed record Em3dSolverCheck(IReadOnlyList<string> Refusals, IReadOnlyList<string> Notes)

@@ -40,6 +40,8 @@ public static class EmergeSolver
             setup.Emerge = section;
         },
         Refusal = Refusal,
+        // brief-emw-3 R-emw3-6 — what it refuses of a terminal group, so a comparison goes on without it and says so
+        PortRefusal = EmergeLoweringRules.TerminalRefusal,
         Check = Check,
         NewLeg = () => new Em3dRunService.EmergeLeg(),
     };

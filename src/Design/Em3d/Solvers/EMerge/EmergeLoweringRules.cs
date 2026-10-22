@@ -40,6 +40,7 @@ internal static class EmergeLoweringRules
         // What EMerge cannot be told at all is named before what is merely wrong, so a wave port is refused as one.
         foreach (var p in problem.Ports)
             if (KindRefusal(problem, p) is { } kind) return kind;
+        if (TerminalRefusal(Em3dRunService.TerminalFacts(problem)) is { } terminal) return terminal.Alone;
         if (problem.FirstCylindrical() is { } curved) return Em3dCylinderGap.NotHere(curved, "EMerge");
         if (GmshGeoWriter.ImportedOpenEmsOnly(problem.Solids, "EMerge") is { } imported) return imported;
         if (problem.Solids.FirstOrDefault(s => s.Voxel is not null) is { } voxel)
@@ -74,13 +75,8 @@ internal static class EmergeLoweringRules
     private static string? KindRefusal(Em3dProblem problem, Em3dPort p)
     {
         int n = p.SourceNumber ?? p.Number;
-        // brief-emw-2 R-emw2-6 — a wave port of one terminal runs; a terminal group and a hollow waveguide do not yet
-        if (p.Kind == Em3dPortKind.Wave && p.FaceGroup is { } group)
-        {
-            int terminals = problem.Ports.Count(q => q.FaceGroup == group);
-            return $"Port '{p.FaceGroupLabel ?? n.ToString(CultureInfo.InvariantCulture)}' has {Count(terminals)} terminals. EMerge runs wave " +
-                   "ports with one conductor on the face in this version; openEMS runs terminal ports. Set the setup's Solver3D to OpenEms.";
-        }
+        // brief-emw-2 R-emw2-6 — a hollow waveguide does not run yet; brief-emw-3 lifted the terminal group's refusal (what
+        // EMerge still refuses of one is TerminalReason's)
         if (p.Kind == Em3dPortKind.Wave && problem.Type == Em3dProblemType.Eigenmode)
             return $"Port {n} is a wave port, and circuitRF runs EMerge's eigenmode solve with lumped ports only: a wave port's " +
                    "condition is a driven problem's. Make the port lumped, or solve a driven problem.";
@@ -91,6 +87,46 @@ internal static class EmergeLoweringRules
             return $"Port {n} is a coaxial lumped port. EMerge's lumped port drives one uniform field direction across its sheet, " +
                    "and a coaxial annulus is fed radially, which it cannot state. Run the setup on Palace or openEMS, or draw a " +
                    "rectangular port.";
+        return null;
+    }
+
+    /// <summary>brief-emw-3 R-emw3-6 — the most terminals EMerge runs on one face: it names a face's modes <c>p.m</c> as
+    /// floats, and from ten modes on <c>1.10</c> is <c>1.1</c> (R-emw1-1).</summary>
+    public const int MaxTerminals = 9;
+
+    /// <summary>
+    /// brief-emw-3 R-emw3-6 — what EMerge refuses of a problem's terminal ports, naming openEMS, which builds them: a reference
+    /// plane moved off a terminal face (shifting a face of several modes means shifting each by its own β before the
+    /// conversion, which EMW-1 did not measure), three or more terminals on a face whose modes travel at one speed (the
+    /// conversion's real Gram fit is stated for two, and its field-computed Gram was measured only for two), more than
+    /// <see cref="MaxTerminals"/> terminals on one face, and a lumped port beside a terminal group (the conversion is stated
+    /// for wave-port entries). Null when EMerge runs them all. A pair of equal-speed terminals is NOT refused, as Palace
+    /// refuses it: EMerge's mode solve gives such a face a basis the conversion's fit handles. In a comparison the run goes
+    /// on without EMerge and says so.
+    /// </summary>
+    public static Em3dLegRefusal? TerminalRefusal(Em3dTerminalFacts facts)
+        => TerminalReason(facts) is { } why
+            ? new(why + ". Set the setup's solver to openEMS.", why + ", so this setup ran without EMerge.")
+            : null;
+
+    private static string? TerminalReason(Em3dTerminalFacts facts)
+    {
+        if (facts.Ports.Count == 0) return null;
+        if (facts.Ports.FirstOrDefault(p => p.Terminals > MaxTerminals) is { Label: not null } many)
+            return $"Port '{many.Label}' has {Count(many.Terminals)} terminals; EMerge runs at most {Count(MaxTerminals)} terminals on " +
+                   "one face (it numbers a face's modes 1.1 to 1.9)";
+        if (facts.OneSpeed is { } same &&
+            facts.Ports.FirstOrDefault(p => p.Terminals > 2 && same.Contains(p.Label)) is { Label: not null } degenerate)
+            return $"Port '{degenerate.Label}' has {Count(degenerate.Terminals)} terminals on a face of one material, whose modes " +
+                   "travel at one speed; EMerge runs at most two terminals on such a face in this version (the conversion of " +
+                   "equal-speed modes to terminals is stated for two)";
+        if (facts.Shifted is { } s)
+            return $"Port '{s.Label}' has its reference plane moved {G(Math.Abs(s.ShiftM) * 1e3)} mm off its face; EMerge runs terminal " +
+                   "ports with the reference plane on the port face in this version (each of the face's modes would have to be " +
+                   "moved by its own wavenumber before the conversion)";
+        if (facts.LumpedPorts)
+            return $"Port '{facts.Ports[0].Label}' has {Count(facts.Ports[0].Terminals)} terminals; EMerge runs terminal ports only " +
+                   "beside other wave ports in this version, and this problem also has a lumped port";
         return null;
     }
 
@@ -218,6 +254,16 @@ internal static class EmergeLoweringRules
         => FdtdWavePorts.RegionMaterials(problem, p,
                                          problem.Boundary.Material ?? GmshGeoWriter.BackgroundMaterial(problem.Solids, problem.Materials));
 
+    /// <summary>brief-emw-3 R-emw3-4 — the effective index a face of one material's modes are solved around before the sweep:
+    /// 0.9·√(εr μr) of that material. EMerge's own first shift is exactly the TEM eigenvalue there, and on such a face its
+    /// solve missed the second TEM mode (R-emw1-3; EMW-1 used 1.3 for √2.1 = 1.449, a ratio of 0.90).</summary>
+    public static double PresolveNeff(Em3dProblem problem, string material)
+    {
+        var m = problem.Materials.FirstOrDefault(x => x.Name == material) ?? GmshGeoWriter.FreeSpace;
+        double er = m.EpsrTensor is { Count: 3 } t ? t.Max() : m.Epsr;
+        return 0.9 * Math.Sqrt(er * m.Mur);
+    }
+
     private static string Count(int n) => n switch
     {
         2 => "two", 3 => "three", 4 => "four", 5 => "five", 6 => "six", 7 => "seven", 8 => "eight", 9 => "nine",
@@ -296,9 +342,10 @@ internal static class EmergeLoweringRules
         return rows;
     }
 
-    /// <summary>brief-emw-2 R-emw2-5 — explain's row for a wave port of one terminal.</summary>
+    /// <summary>brief-emw-2 R-emw2-5 — explain's row for a wave port of one terminal; brief-emw-3, for a terminal of a group.</summary>
     private static string WaveMapping(Em3dProblem problem, Em3dPort p)
     {
+        if (p.FaceGroup is { } fg) return TerminalMapping(problem, p, [.. problem.Ports.Where(q => q.FaceGroup == fg).OrderBy(q => q.Number)]);
         var r = Region(p.Min, p.Max);
         bool mixed = RegionMaterials(problem, p).Count > 1;
         string path = p.VoltagePath is { } vp
@@ -311,6 +358,29 @@ internal static class EmergeLoweringRules
                                     : "on a face of one material, so its impedance is constant") +
                $"; {path}; renormalised from the mode's impedance to {G(p.Z0.Real)} Ω" +
                (shift != 0 ? $"; reference plane {Mm(Math.Abs(shift))} {(shift > 0 ? "into the structure" : "out of it")}" : "");
+    }
+
+    /// <summary>brief-emw-3 R-emw3-3 — explain's row for one terminal of a group: which mode of the face's modal port it is,
+    /// how the face's modes are found, and the conversion to terminal S.</summary>
+    private static string TerminalMapping(Em3dProblem problem, Em3dPort p, IReadOnlyList<Em3dPort> group)
+    {
+        var r = Region(p.Min, p.Max);
+        var materials = RegionMaterials(problem, p);
+        int mode = group.ToList().IndexOf(p) + 1;
+        string path = p.VoltagePath is { } vp
+            ? $"voltage path from ({Mm3(vp.From)}) to ({Mm3(vp.To)}), the reference to its conductor"
+            : "no voltage path";
+        string modes = materials.Count > 1
+            ? "on a face of several materials, so EMerge solves the face's modes at every frequency, and a run is refused unless " +
+              $"each frequency gives {Count(group.Count)} modes, each TEM or quasi-TEM"
+            : $"on a face of one material ({materials.FirstOrDefault() ?? "none"}), so its modes travel at one speed: they are solved " +
+              $"once, before the sweep, around an effective index of {G(PresolveNeff(problem, materials[0]))}, and a run is refused " +
+              $"unless exactly {Count(group.Count)} modes of that speed are found (more means the face's reference is split into " +
+              "separate conductors)";
+        return $"terminal {p.SourceLabel ?? p.Name} of wave port '{p.FaceGroupLabel}', number {p.Number}: mode {mode} of one EMerge " +
+               $"modal port of {Count(group.Count)} modes on the {problem.FaceOf(p.Min, p.Max)} face's {G(r.Width * 1e3)} × " +
+               $"{G(r.Height * 1e3)} mm region, {modes}; {path}; the face's modal S converted to terminal S from the modes' own " +
+               $"fields, at {G(p.Z0.Real)} Ω";
     }
 
     private static string Mm3(Point3 q)
