@@ -22328,3 +22328,157 @@ viewer, `FieldRun`, `VtuReader`, `FieldSurfacePlot`, `FieldFacePaint` and `rende
   the plot's problem sentence; the Solution and Quantity pickers were built only when the plot was selected. It reloads the
   plot's pickers now (`LoadFieldPlot`, rows kept in place by `KeepOrReplace`). Both were needed: either alone leaves the
   picker without J_s. Gate: `FieldPlotTests.AReRun_ThatOffersMore_RefreshesTheSelectedPlotsQuantityPicker`.
+
+## EMerge wave ports — EMW-1 (2026-10-22)
+
+The spike `docs/sonnet-briefs/brief-emw-1-spike.md` asked for. Harness `tools/emerge-wave-spike/` (its README); fixtures
+`testdata/em3d/terminal/emerge-modal/`. EMerge 3.0.0b2 (circuitRF's own install, its fast sparse solver, 8 threads),
+element order 2, M4 with 16 GB. Every run is short: 3 to 4 frequencies, 4 to 42 s wall clock. Each geometry is built in Gmsh
+through EMerge's own geometry classes, as the driver builds it; nothing went through circuitRF's lowering.
+
+### Go / no-go
+
+| Case | Go? | Transform as used (K, G) | Agreement with reference | Cost (tets, wall clock, peak memory) |
+|---|---|---|---|---|
+| A: 1.575 mm microstrip thru, one-mode face | **Go** | one-entry face: K, G immaterial, a renormalisation from Z_PV | ≤ 0.009 \|ΔS\| against a line of its own Z_PV and β; Z_PV 48.43 Ω at 2 GHz against the 2D quasi-static 48.52 Ω (rising to 50.67 Ω at 10 GHz, physical dispersion) | 24,621 tets, 4.4 s, 2.9 GB (ModalPort); 6.7 s, 4.2 GB (WavePortIH) |
+| B: Coupled Microstrip, two non-degenerate modes per face | **Go, with a new Robin form** | G = 1 (Fit leaves it there), **K (2 − C)** | ≤ 0.011 \|ΔS\| against Palace's committed terminal S at 2, 5, 7.5, 11 GHz (≤ 0.014 on a mesh twice as fine); Palace and openEMS differ by 0.008–0.024 there | 44,803 tets, 11 s, 5.4 GB |
+| C: Pair, two DEGENERATE modes per face | **Go with PEC sides and a mode presolve; no-go as the cell is drawn (PMC sides)** | **unchanged**: G = Fit, K = 1 | ≤ 0.010 \|ΔS\| against Cohn's ideal coupled line at 2, 3.5, 10 GHz; passive and reciprocal | 64,093 tets, 12 s, 7.4 GB |
+| D: the Launch's coax, one-mode face | **Go** (modal port) | one-entry face | Z_PV 49.97 Ω against 50.02 Ω (closed form) and 49.976 Ω (Palace's coax fixture); ∠S21 within 0.04° of −βℓ; ≤ 0.005 \|ΔS\| against the ideal 50 Ω line | 38,134 tets, 6.5 s, 5.0 GB |
+
+**`ModalTerminalTransform` is reused, with one addition**: a third `ModalRobinForm` giving I = M⁻ᴴ K (2 − C), for EMerge.
+Palace's call site keeps `RealParts`. The product's C# `Solve` (Fit, RealParts) was run on all four fixtures from a scratch
+program, against the harness's Python port of it: equal to 8e-16, so every number below that uses the port is the product's.
+
+### R-emw1-1 — multimode indexing
+
+- A face of N modes is N entries of S, named `p.m` as floats (1.1, 1.2, 2.1, …), port by port, mode by mode
+  (`iter_port_modes`). **Ten modes or more on one face collide** (`float("1.10") == 1.1`): nine is the ceiling.
+- `MWField.excite_port(1.2)` selects an excitation; `interpolate(...).E` is then the total field of that excitation.
+- **β and Z₀ per mode come from the port's modes, never from the result's port properties.** `PortProperties` (what
+  `data.field[...].port_modes` and the scalar data carry) are written from `get_beta(k0)` and `portZ0(k0)`, and on a
+  `ModalPort` both read `get_modes(k0)[0]`: every mode of a face is stored with mode 1's β and Z₀. Read
+  `port.get_modes(k0)[m].beta`, `.k0`, `.Z0`. And a mode's own `Z0` is computed on the port's FIRST integration line
+  whatever the mode: on a two-terminal face, mode 2's `Z0` is its impedance along terminal 1's path (32.6 Ω where along its
+  own path it is 11.3 Ω). The driver computes each entry's Z_PV on its own path (below).
+- EMerge's S post-processing caps |S_ij| at 1 and power-normalises columns by default (`settings.mw_cap_sp_single`,
+  `mw_cap_sp_col`; `mw_recip_sp` is off). Both change a modal S the transform then reads: **switch them off**. The column
+  power constants it multiplies S by (`_check_port_powers`) were 1.0 on every face.
+
+### R-emw1-2 — the boundary term per mode: one shared term, and a K form neither of the brief's two
+
+A `ModalPort`'s Robin term is `γ = j·get_beta(k0)` and its excitation `−2·j·get_beta(k0)·eₙ` (`PortBC.get_Uinc`), and
+`get_beta` reads mode 1. So every mode of a face is launched AND absorbed at mode 1's β. Writing the port condition per
+mode gives the modal current dₙ = aₙ − bₙ = Kₙ (2δₙⱼ − Cₙ), Kₙ = β₁/βₙ: **K multiplies the incident term too**. Palace
+launches an inactive entry at its own wavenumber and absorbs it at the active one's, which is the transform's 2 − K C.
+On the Coupled Microstrip (β₁/β₂ = 1.05):
+
+| Form | \|ΔS\| against Palace, 2 / 5 / 7.5 / 11 GHz | σ_max |
+|---|---|---|
+| K (2 − C), EMerge's | 0.006 / 0.008 / 0.009 / 0.011 | 1.0001 |
+| 2 − K C, Palace's | 0.039 / 0.040 / 0.045 / 0.045 | 1.14 (not passive) |
+| K = 1 | 0.023 / 0.029 / 0.009 / 0.036 | 1.0001 |
+
+On a degenerate face K = 1 and all three forms are the same.
+
+### R-emw1-3 — degenerate modes (Pair)
+
+- **EMerge's own mode solve misses the second TEM mode of a homogeneous face.** Its first shift is k₀·√(ε_max μ_max …),
+  on a homogeneous face exactly the TEM eigenvalue; on Pair's face (over 500 unknowns, so shift-invert ARPACK) it returned
+  one TEM mode and a box mode (β constant at 131.5 rad/m), with only its own "variation in port mode propagation
+  constants" warning to say so. **Remedy, the documented API:** call `modal_analysis(port, nmodes=6, target_neff=1.3,
+  TEM=True)` per port before the sweep, on a port made with `modetype="TEM"`. Two TEM modes per face, β = k₀√2.1 to all
+  digits. A port already holding modes is not re-solved by the sweep when it is not `mixed_materials`.
+- **`align_modes` is not for terminals.** It picks, per axis, the mode with the largest |∫E·axis|. Every terminal's path
+  points the same way (up from the reference), so it chose the SAME mode for both entries (W₁₂ = 1, singular). Never call it.
+- **The basis is stable across the sweep and arbitrary across meshes, and that does not matter.** The modes are solved
+  once per run on a homogeneous face, so all frequencies share one basis (g identical at 2, 3.5, 10 GHz). Two meshes gave
+  unrelated bases (Z_PV per entry 44/39/1.1/0.04 Ω on one, 47/50/46/41 Ω on the other) and the same terminal S (0.010 and
+  0.013 from Cohn). Raw modal S: σ 1.025/0.975, |S − Sᵀ| 7e-3 (Palace's failure mode); terminal S: σ 1.0000, 1e-5.
+- **The basis is not power-orthogonal, so G is needed, and the fit is right.** The fitted g (−0.0102, 0.025 on one mesh)
+  equals the power Gram computed from EMerge's own mode fields, ½∫e₁×h₂*·n, to all four printed digits, with fit residuals
+  6e-6 to 2e-4. EMerge can therefore also hand G over directly; the fit is not required, but it is not wrong either.
+- **Pair as drawn has PMC sides, and then it is a no-go on EMerge.** With PMC walls the two ground planes are separate
+  conductors, the face carries a parallel-plate TEM mode besides the two strip modes, and EMerge's solve returns five
+  equal-β TEM-classified modes. Two of them picked as the face's modes give nonsense (Gp₁₂ = 0.70). With PEC sides 11
+  strip widths out (where Cohn's line is unchanged to e^(−πd/b) ≈ e^(−27)) the face has exactly two. EMW-3 refuses a face
+  whose mode solve returns more equal-β modes than it has terminals, naming the cause; the example's EMerge setup for
+  Pair uses PEC sides.
+
+### R-emw1-4 — V
+
+- Each terminal path's line integral of the total E, Gauss-Legendre on the straight path: 7, 21 and 41 points move V by
+  under 5e-5 relative. **21 points.** V = T_V·(1 + S) on a one-mode face to 9e-5 (coax) and 5e-3 (ModalPort microstrip,
+  where the plain Robin term's own loss shows).
+- **V is not needed at all.** EMerge gives the mode fields, so T_V (each path's integral of each mode) comes from the 2D
+  mode solve and U = T_V·C, with C = W⁻¹(1 + S) and W the E-overlap EMerge's projection uses. That route agrees with the
+  measured-V route to 0.0005 in \|ΔS\| on every case. It is what makes an adaptive sweep possible for a terminal group
+  (R-emw1-6): the modal S comes from the sweep's model at any frequency, and the mode data from a 2D solve there.
+
+### R-emw1-5 — the Z_PV convention: same definition, modes normalised to 1 W
+
+EMerge's PV impedance is |V|²/(2P), the transform's definition, but its modes carry 1 W (the power Gram's diagonal reads
+1.000 on every face), so |T_V|² = 2 Z_PV. `ModalTerminalTransform` takes a one-entry face's M as √Z_PV, i.e. modes whose
+|T_V|² is Z_PV: **EMerge's V enters divided by √2.** Without it a two-entry face's M is √2 too large and Z_in off by two:
+the factor-of-two error the brief warned of. With it, |T_V,ii|² meets Z_PV to 1e-4 on the one-mode and degenerate faces.
+**On the Coupled Microstrip it misses by 1.3e-3 to 2.3e-3, over `PalaceTerminalS.PowerConventionLimit` (1e-3), so the
+product's warning would fire on every such EMerge run.** Its off-face part of M, 3.4e-3 to 4.5e-3, stays under
+`OffBlockLimit` (1e-2). It is the same size as the plain Robin term's own power loss there (0.7 %), and the terminal S still
+meets Palace's to 0.011. EMW-3 decides between an EMerge limit for that check and U = T_V·C (R-emw1-4); with T_V·C the
+check passes by construction and no longer tests anything.
+When the port's first integration line is set to circuitRF's voltage path for terminal 1, EMerge's own `mode.Z0` equals
+the harness's Z_PV for that entry to 1e-4 (48.431 against 48.433 Ω).
+
+### R-emw1-6 — frequency behaviour, and an EMerge defect that corrupts multimode faces
+
+- **A re-solved frequency's modes are APPENDED to the ones already stored for it.** A sweep first solves the modes at its
+  mean frequency, then (on a `mixed_materials` port) again at every frequency, and `try_add_mode` appends. At a sweep
+  frequency equal to the mean, the port holds [m₁, m₂, m₁, m₂], sorted by β to [m₁, m₁, m₂, m₂], so mode 2 is a copy of
+  mode 1. **The adaptive sweep solves every sample's modes twice**: on the Coupled Microstrip mode 2 was a copy of mode 1 at
+  12 of its 16 samples, |S(1.1, 1.2)| = 1.002, and the sweep reported convergence at 9e-6. Nothing warned. A one-mode face
+  uses only `[0]` and is unaffected.
+- **The guard**, in the driver: forget a frequency's stored modes before they are solved again (wrap
+  `Microwave3D.modal_analysis` to `pop` that k₀ from `port.available_modes`). With it the adaptive sweep converged in 10
+  samples, its model matched direct solves to 1.5e-6 at 5 and 7.5 GHz, and a point sweep's S is unchanged to 1e-13.
+- **Per-frequency mode solves on a face of mixed dielectrics** (`mixed_materials=True`): needed for the right Z_PV and β,
+  which move from 23.7 to 25.9 Ω and 1.386 to 1.401 k₀ over 2–11 GHz on the Coupled Microstrip. Solving once at the
+  mean frequency froze them and gave about the same \|ΔS\| on this band (≤ 0.012), so this is a correctness choice, not one
+  the spike's numbers forced. A 2D solve is about 0.15 s per face.
+
+### R-emw1-7 — the coax (case D)
+
+- **The modal port**: Z_PV 49.97 Ω at the finer mesh (47.25 Ω on the coarse one: the pin's polygon, `MeshSizeFromCurvature`
+  20 needed), against 50.02 Ω closed form and Palace's 49.976 Ω. The two end faces mesh differently, and the second read
+  49.49 Ω. ∠S21 −104.432° at 6 GHz against −βℓ = −104.410°.
+- **EMerge's analytic `CoaxPort`**: Z_PV exactly 50.021 Ω by construction, raw |S21| −0.03 dB on the same mesh. **Its
+  `portZ0` is the medium's wave impedance η₀/√εr (260 Ω), not the line's**: never read it as Z₀. It needs the face to be
+  exactly the annulus and a coordinate system centred on the axis. The Launch's port is a 2 mm square on the housing's
+  face, which it cannot take. Not used.
+- **A lumped annulus has no EMerge counterpart** (`LumpedPort` is a rectangle), so that comparison was not made.
+- **The Launch itself was not run.** It needs EMW-2's lowering. Its port is now isolated by the coax section above, and
+  the Launch against Palace's committed result is EMW-2's gate.
+
+### What else the cases showed
+
+- **One-mode faces: `WavePortIH` over `ModalPort`.** IH, EMerge's full wave-port condition (a dense block per face), gave a
+  lossless raw S on the lossless microstrip (σ 1.0000/0.9998, |S11| −52 dB). `ModalPort`'s plain Robin term lost 0.9 %
+  of the power (σ_min 0.991, −0.05 dB on |S21|). The cost is 1.7× the solve time and 1.5× the memory. IH carries one mode
+  per face (its block and excitation read mode 1 only), so a terminal group stays on `ModalPort`. Its modal S loses about
+  as much (Coupled Microstrip column power 0.993), and the terminal S inherits that.
+- **Memory follows `EmergeMemory`'s fast-solver fit** (24.1 kB per unknown): 160k unknowns 2.9 GB, 290k 5.4 GB, 579k 7.5 GB.
+- **Mesh sizing** comes from EMerge's own controls: `set_resolution` did not change the coax's mesh (curvature sizing
+  ruled it), and `gmsh.option` Mesh.MeshSizeMax is overwritten by `generate_mesh`; `mesher.set_global_max_size` and
+  `set_curved_boundary_meshing` are what work.
+
+### EMW-2's and EMW-3's scope, from the table
+
+- **EMW-2, single-terminal wave ports (cases A, D): go.** `WavePortIH` on the face, `set_integration_line` on circuitRF's
+  voltage path for the terminal (sign and Z_PV), `mixed_materials` when the face holds more than one dielectric, S
+  corrections off, the duplicate-mode guard. Z_PV is the mode's own `Z0` and `RenormaliseWavePorts` applies unchanged;
+  no V. The reference-plane shift is e^(jβd) with the mode's β (∠S21 matched −βℓ to 0.04° on the coax and 0.07–0.2° on the
+  microstrip). Gate: the Launch against Palace's committed result.
+- **EMW-3, terminal groups (cases B, C): go.** `ModalPort(number_of_modes = terminals)`, at most nine; a presolve with the
+  shift off the TEM eigenvalue on a homogeneous face; no `align_modes`; S corrections off; the guard.
+  `ModalTerminalTransform` with G = Fit and a new `ModalRobinForm` for K (2 − C); Palace's call site and tests unchanged.
+  The driver hands over V/√2, or U from T_V·C. The latter needs no 3D field and works under the adaptive sweep.
+  A face whose solve returns more equal-β modes than terminals is refused by name (PMC walls splitting the reference).
+  Fixtures: `testdata/em3d/terminal/emerge-modal/`, each carrying the expected terminal S.

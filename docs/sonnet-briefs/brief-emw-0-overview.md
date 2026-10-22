@@ -1,8 +1,9 @@
 # Brief EMW-0 — Wave ports and terminal groups on EMerge: overview
 
 **Series:** EMW-0 overview · EMW-1 spike (go/no-go) · EMW-2 single-terminal wave ports · EMW-3 terminal groups ·
-EMW-4 the example. EMW-2…4 are outlined here and **briefed in full only after EMW-1's go/no-go**, as brief 124's spike
-held brief 115. · **Tag:** `R-emw<n>-<k>` · **Depends on:** EMI-5 (an EMerge run exists) · **Origin:** owner request,
+EMW-4 the example. EMW-2…4 were outlined here and **briefed in full only after EMW-1's go/no-go**, as brief 124's spike
+held brief 115. **EMW-1 is done (2026-10-22): every case went** (§5); EMW-2 and EMW-3 are briefed in full, EMW-4 is
+still the outline below. · **Tag:** `R-emw<n>-<k>` · **Depends on:** EMI-5 (an EMerge run exists) · **Origin:** owner request,
 2026-10-21
 
 ---
@@ -57,3 +58,29 @@ Compare greys EMerge out for such a setup with that sentence.
 EMI-0 §6 applies. In particular: the spike's harness and scratch runs live under `tools/emerge-wave-spike/` with a
 git-ignored `runs/`; committed fixtures under `testdata/em3d/terminal/emerge-modal/`; findings in
 `src/Design/RESOLVED.md`. Nothing from EMerge's source is copied; reading it to understand behaviour is fine.
+
+## 5. After EMW-1
+
+The findings are `src/Design/RESOLVED.md` § "EMerge wave ports — EMW-1". What they changed in this plan:
+
+- **§2 was right about the port and wrong about the alignment call.** `ModalPort` solves the face's modes and measures
+  their impedance by power and voltage, as expected. `align_modes` does NOT fix a degenerate basis: for terminals it
+  picked the same mode twice. It is not needed either: the transform's Gram fit handles any basis, and the fitted g equals
+  the power Gram computed from EMerge's own mode fields.
+- **`ModalTerminalTransform` is reused with one new Robin form**, K (2 − C): EMerge launches and absorbs every mode of a
+  face at the first mode's β, where Palace launches each at its own. EMW-3 §1.
+- **Pair gets a second solver**, with PEC sides (EMW-4's setup). As drawn, with PMC sides, its face carries more
+  equal-speed modes than terminals on any solver that takes modes from the face: a refusal (EMW-3 §4).
+- **One-terminal faces use `WavePortIH`**, not `ModalPort` (EMW-2 §0). The analytic coax port is not used.
+- **An EMerge defect every brief's driver guards against**: a re-solved frequency's modes are appended to the ones
+  stored for it, which made mode 2 a copy of mode 1 at 12 of the adaptive sweep's 16 samples.
+- **Fixtures**: `testdata/em3d/terminal/emerge-modal/` (JSON, with each case's expected terminal S); the harness is
+  `tools/emerge-wave-spike/`.
+
+| Brief | Builds | Status |
+|---|---|---|
+| EMW-1 | the spike | done |
+| EMW-2 | `brief-emw-2-single-terminal.md`: one-terminal wave ports, the shift, the renormalisation, the Launch gate | briefed |
+| EMW-3 | `brief-emw-3-terminal-groups.md`: terminal groups, the new Robin form, the shared terminal code | briefed |
+| EMW-4 | the example: EMerge setups for Launch, Coupled Microstrip and Pair (PEC sides), Compare runs, `expected-numbers.json` | outline (§3) |
+
