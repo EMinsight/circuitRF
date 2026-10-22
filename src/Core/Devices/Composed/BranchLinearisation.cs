@@ -63,6 +63,19 @@ public static class BranchLinearisation
         [0.362683783378361982965150449277196, 0.313706645877887287337962201986601,
          0.222381034453374470544355994426241, 0.101228536290376259152531354309962];
 
+    /// <summary>Node <paramref name="k"/> (0 … <see cref="Nodes"/> − 1, in the order <see cref="Evaluate"/> sums them) of
+    /// the rule on [0, 1]: its position <c>s</c> along the line from the bias point and its weight <c>w</c>. The Verilog-A
+    /// export writes these, so the module integrates with the same numbers.</summary>
+    public static (double S, double W) LineNode(int k)
+    {
+        double x = k < 4 ? -X[3 - k] : X[k - 4];
+        return (0.5 * (1 + x), 0.5 * W[k < 4 ? 3 - k : k - 4]);
+    }
+
+    /// <summary>Branch <paramref name="b"/>'s controlling voltage over (vgs, vds) and its terminal incidence over (gate,
+    /// drain).</summary>
+    public static ((double G, double D) Control, (double G, double D) Incidence) Branch(int b) => (Du[b], E[b]);
+
     /// <summary>The branches' names in their fixed order: <c>Cgs</c>, <c>Cdg</c>, <c>Cds</c>, <c>Cm</c>.</summary>
     public static IEnumerable<string> Names(ChargeBranches set)
     {
@@ -110,8 +123,7 @@ public static class BranchLinearisation
         ib.Clear(); gb.Clear();
         for (int k = 0; k < Nodes; k++)
         {
-            double x = k < 4 ? -X[3 - k] : X[k - 4];
-            double s = 0.5 * (1 + x), w = 0.5 * W[k < 4 ? 3 - k : k - 4];
+            var (s, w) = LineNode(k);
             Node(surface, vgsQ + s * d0, vdsQ + s * d1, ck, dck);
             for (int b = 0; b < 4; b++)
             {

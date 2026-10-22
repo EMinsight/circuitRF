@@ -164,6 +164,163 @@ internal static class VaAnn
         return sb.ToString();
     }
 
+    /// <summary>
+    /// The same network with its Hessian along a direction (brief-modelcomposer-27): <c>name(x…, w_x…, d_x…, hw_x…)</c>
+    /// returns the value, writes the gradient into the <c>d_</c> outputs exactly as <see cref="Function"/> forms it, and
+    /// <c>H·w</c> into the <c>hw_</c> outputs — forward mode over the gradient code, as the evaluator's own
+    /// <c>Evaluate(x, grad, w, hw)</c> carries it. Guided extrapolation's exact gradient outside the domain,
+    /// <c>∇f(p_b) + Pᵀ H (p − p_b)</c>, reads it, and the bias-point charge needs that gradient at points the circuit is
+    /// not at.
+    /// </summary>
+    public static string HessianFunction(string name, string comment, IReadOnlyList<string> inputs, VaAnnData net,
+                                         OutputTransform? transform)
+    {
+        int d = inputs.Count;
+        var body = new StringBuilder();
+        var locals = new List<string> { "z", "zw", "sl", "slw" };
+        foreach (string x in inputs) locals.AddRange([$"zg_{x}", $"zgw_{x}"]);
+
+        // The input layer: x̂ = (x − offset)·scale, and its derivative along w.
+        var prev = new string[d];
+        var prevW = new string[d];
+        for (int i = 0; i < d; i++)
+        {
+            prev[i] = $"x{i + 1}";
+            prevW[i] = $"x{i + 1}_w";
+            locals.AddRange([prev[i], prevW[i]]);
+            body.Append($"      {prev[i]} = ({inputs[i]} - {Operand(net.InOffset[i])})*{Operand(net.InScale[i])};\n");
+            body.Append($"      {prevW[i]} = w_{inputs[i]}*{Operand(net.InScale[i])};\n");
+        }
+        string[,]? prevGrad = null, prevGradW = null;
+
+        for (int layer = 0; layer < net.Layers; layer++)
+        {
+            int nIn = net.Width(layer), nOut = net.Width(layer + 1);
+            double[] W = net.Weights[layer], b = net.Biases[layer];
+            bool hidden = layer < net.Layers - 1;
+            var next = new string[nOut];
+            var nextW = new string[nOut];
+            var nextGrad = new string[nOut, d];
+            var nextGradW = new string[nOut, d];
+            body.Append(hidden ? $"      // hidden layer {layer + 1}\n" : "      // output\n");
+
+            for (int r = 0; r < nOut; r++)
+            {
+                string h = hidden ? $"h{layer + 1}_{r + 1}" : "u";
+                next[r] = h;
+                nextW[r] = h + "_w";
+                locals.AddRange([h, h + "_w"]);
+                var z = new StringBuilder(Num(b[r]));
+                for (int c = 0; c < nIn; c++) z.Append(Term(W[r * nIn + c], prev[c]));
+                body.Append($"      z = {z};\n");
+                var row = Enumerable.Range(0, nIn);
+                body.Append($"      zw = {Sum(row.Select(c => Term(W[r * nIn + c], prevW[c])))};\n");
+                for (int g = 0; g < d; g++)
+                {
+                    string zg = prevGrad is null
+                        ? Num(W[r * nIn + g] * net.InScale[g])
+                        : Sum(row.Select(c => Term(W[r * nIn + c], prevGrad[c, g])));
+                    string zgw = prevGradW is null ? "0.0" : Sum(row.Select(c => Term(W[r * nIn + c], prevGradW[c, g])));
+                    body.Append($"      zg_{inputs[g]} = {zg};\n");
+                    body.Append($"      zgw_{inputs[g]} = {zgw};\n");
+                }
+
+                if (!hidden)
+                {
+                    body.Append($"      {h} = z;\n      {h}_w = zw;\n");
+                    for (int g = 0; g < d; g++)
+                    {
+                        string hg = $"u_{inputs[g]}";
+                        locals.AddRange([hg, hg + "_w"]);
+                        nextGrad[r, g] = hg;
+                        nextGradW[r, g] = hg + "_w";
+                        body.Append($"      {hg} = zg_{inputs[g]};\n      {hg}_w = zgw_{inputs[g]};\n");
+                    }
+                    continue;
+                }
+
+                // h' = s·z' and (h')_w = s·(z')_w + s_w·z', s the activation's slope.
+                if (net.Activation == AnnActivation.Tanh)
+                {
+                    body.Append($"      {h} = tanh(z);\n");
+                    body.Append($"      sl = (1.0 - {h}*{h});\n");
+                    body.Append($"      {h}_w = sl*zw;\n");
+                    body.Append($"      slw = -2.0*{h}*{h}_w;\n");
+                }
+                else
+                {
+                    body.Append($"      {h} = 1.0/(1.0 + exp(-z));\n");
+                    body.Append($"      sl = ({h}*(1.0 - {h}));\n");
+                    body.Append($"      {h}_w = sl*zw;\n");
+                    body.Append($"      slw = {h}_w*(1.0 - 2.0*{h});\n");
+                }
+                for (int g = 0; g < d; g++)
+                {
+                    string hg = $"{h}_{inputs[g]}";
+                    locals.AddRange([hg, hg + "_w"]);
+                    nextGrad[r, g] = hg;
+                    nextGradW[r, g] = hg + "_w";
+                    body.Append($"      {hg} = sl*(zg_{inputs[g]});\n");
+                    body.Append($"      {hg}_w = sl*zgw_{inputs[g]} + slw*zg_{inputs[g]};\n");
+                }
+            }
+            prev = next;
+            prevW = nextW;
+            prevGrad = nextGrad;
+            prevGradW = nextGradW;
+        }
+
+        var tail = new StringBuilder();
+        string sc = Operand(net.OutScale);
+        string value = $"{Operand(net.OutOffset)} + {sc}*u";
+        if (transform is null)
+        {
+            tail.Append($"      {name} = {value};\n");
+            for (int g = 0; g < d; g++)
+            {
+                tail.Append($"      d_{inputs[g]} = {sc}*u_{inputs[g]};\n");
+                tail.Append($"      hw_{inputs[g]} = {sc}*u_{inputs[g]}_w;\n");
+            }
+        }
+        else
+        {
+            // f = I0·sinh(y): ∇f = ∇y·I0·cosh(y), and H·w = (∇y)_w·I0·cosh(y) + ∇y·I0·sinh(y)·y_w.
+            locals.AddRange(["w", "sh", "ch", "yw"]);
+            tail.Append($"      w = {value};\n");
+            tail.Append($"      sh = {Operand(transform.Scale)}*sinh(w);\n");
+            tail.Append($"      ch = {Operand(transform.Scale)}*cosh(w);\n");
+            tail.Append($"      yw = {sc}*u_w;\n");
+            tail.Append($"      {name} = sh;\n");
+            for (int g = 0; g < d; g++)
+            {
+                tail.Append($"      d_{inputs[g]} = ({sc}*u_{inputs[g]})*ch;\n");
+                tail.Append($"      hw_{inputs[g]} = ({sc}*u_{inputs[g]}_w)*ch + ({sc}*u_{inputs[g]})*sh*yw;\n");
+            }
+        }
+
+        var args = inputs.Concat(inputs.Select(x => "w_" + x)).ToList();
+        var outs = inputs.Select(x => "d_" + x).Concat(inputs.Select(x => "hw_" + x)).ToList();
+        var sb = new StringBuilder();
+        sb.Append($"  // {comment}\n");
+        sb.Append($"  analog function real {name};\n");
+        sb.Append($"    input {string.Join(", ", args)};\n");
+        sb.Append($"    output {string.Join(", ", outs)};\n");
+        sb.Append($"    real {string.Join(", ", args)};\n");
+        sb.Append($"    real {string.Join(", ", outs)};\n");
+        foreach (var chunk in locals.Distinct().Chunk(12)) sb.Append($"    real {string.Join(", ", chunk)};\n");
+        sb.Append("    begin\n").Append(body).Append(tail).Append("    end\n");
+        sb.Append("  endfunction\n");
+        return sb.ToString();
+    }
+
+    /// <summary>A sum of <see cref="Term"/>s from zero; <c>0.0</c> when there are none.</summary>
+    private static string Sum(IEnumerable<string> terms)
+    {
+        var s = new StringBuilder();
+        foreach (string t in terms) s.Append(s.Length == 0 ? t.TrimStart(' ', '+') : t);
+        return s.Length == 0 ? "0.0" : s.ToString();
+    }
+
     /// <summary><c> + w*a</c>, with the sign folded into the operator.</summary>
     private static string Term(double w, string a)
         => w < 0 || (w == 0 && double.IsNegative(w)) ? $" - {Num(-w)}*{a}" : $" + {Num(w)}*{a}";

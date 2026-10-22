@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using CircuitRF.Core.Devices.Composed;
+using CircuitRF.Core.Devices.Composed.Traps;
 using CircuitRF.Core.Tests.Composed;
 using CircuitRF.Design.Modeling.VerilogA;
 using CircuitRF.Engine.Tests.Composed;
@@ -101,13 +102,76 @@ public sealed class CmodelVerilogAWriterTests
                      ex.Message);
     }
 
+    /// <summary>brief-modelcomposer-27: the shipped example — traps, self-heating, ANNs — exports, and every parameter the module
+    /// declares is in the header, the switches in <see cref="ComposedSwitches.Names"/>' order with its defaults. A switch
+    /// added to circuitRF without one here fails this.</summary>
     [Fact]
-    public void ATrapModelAndSelfHeating_AreRefusedByName()
+    public void EveryModuleParameter_IsInTheHeader_AndTheSwitchesAreComposedSwitchesNamesInOrder()
     {
-        var ex = Assert.Throws<VerilogAExportException>(() =>
-            CmodelVerilogA.Write(CmodelFile.Read(FixturePaths.Require("examples/Model Composer/synthetic-gan/gan_4x125.cmodel")), Named));
-        Assert.Contains("Traps.Model: the trap model 'CaptureEmission' has no Verilog-A writer, so a model with traps cannot be exported.", ex.Message);
-        Assert.Contains("Thermal: a self-heating model cannot be written as Verilog-A by this version of circuitRF.", ex.Message);
+        string va = CmodelVerilogA.Write(CmodelFile.Read(FixturePaths.Require("examples/Model Composer/synthetic-gan/gan_4x125.cmodel")), Named);
+        string header = va[..va.IndexOf("`include", StringComparison.Ordinal)];
+        var declared = va.Split('\n').Where(l => l.StartsWith("  parameter ", StringComparison.Ordinal))
+                         .Select(l => l.Split(' ', StringSplitOptions.RemoveEmptyEntries)[2]).ToList();
+        foreach (string name in declared) Assert.Contains($"//   {name} ", header);
+        foreach (string name in (string[])["Rth", "Cth", "VgsQ", "VdsQ", "TjQ", "TauCapt2", "TauEmit2", "Xref", "Vc", "Tref"])
+            Assert.Contains(name, declared);
+
+        var switches = declared.Where(ComposedSwitches.IsSwitch).ToList();
+        Assert.Equal(ComposedSwitches.Names, switches);
+        foreach (string s in ComposedSwitches.Names)
+            Assert.Contains($"parameter integer {s} = {(ComposedSwitches.DefaultOf(s) ? 1 : 0)} from [0:1];", va);
+        Assert.Contains("For this model GateLag and Dispersion do nothing.", header);
+        Assert.Contains("module gan(g, d, s, t);", va);
+        Assert.Contains("parameter real VgsQ = -1e+300;", va);
+    }
+
+    /// <summary>A model with no self-heating still declares the instance's Rth and Cth, refusing a value by range, and every
+    /// switch.</summary>
+    [Fact]
+    public void AModelWithoutTheParts_DeclaresEverySwitch_AndRefusesRthByRange()
+    {
+        string va = CmodelVerilogA.Write(ComposedTestModels.Model(), Named);
+        Assert.Contains("parameter real Rth = 0.0 from [0:0];", va);
+        Assert.Contains("parameter real Cth = 0.0 from [0:0];", va);
+        foreach (string s in ComposedSwitches.Names) Assert.Contains($"parameter integer {s} = ", va);
+        Assert.Contains("For this model GateLag, DrainLag, SelfHeating and Dispersion do nothing.", va);
+    }
+
+    [Fact]
+    public void ATrapModelWithNoWriter_IsRefusedByName()
+    {
+        string name = "NoWriter" + Guid.NewGuid().ToString("N")[..8];
+        TrapModels.Register(new UnwrittenTraps(name));
+        var m = ComposedTestModels.Model() with
+        {
+            Traps = new ModelTraps { Model = name, States = ["phi1"] },
+            Core = ComposedTestModels.Model().Core with
+            {
+                Qd = Constituent.Equation(ComposedTestModels.QdEq + "+0*phi1", ["vgs", "vds", "phi1"], ComposedTestModels.QdParams),
+            },
+        };
+        var ex = Assert.Throws<VerilogAExportException>(() => CmodelVerilogA.Write(m, Named));
+        Assert.Equal($"Traps.Model: the trap model '{name}' has no Verilog-A writer, so a model with traps cannot be exported.", ex.Message);
+    }
+
+    /// <summary>A trap model a developer registered without giving it a Verilog-A writer.</summary>
+    private sealed class UnwrittenTraps(string name) : TrapModelDefinition
+    {
+        public override string Name => name;
+        public override IReadOnlyList<string> States { get; } = ["phi1"];
+        public override IReadOnlyList<TrapParameter> Parameters { get; } = [];
+        public override TrapDynamics Build(ModelTraps traps, string label) => new Relax(traps.States);
+
+        private sealed class Relax(IReadOnlyList<string> states) : RateTrapDynamics(states)
+        {
+            public override double Rate(int state, double phi, double vgs, double vds, double t, Span<double> grad)
+            {
+                grad[0] = -1e3; grad[1] = 1e3; grad[2] = 0; grad[3] = 0;
+                return (vgs - phi) * 1e3;
+            }
+
+            public override double DcValue(int state, double vgs, double vds, double t) => vgs;
+        }
     }
 
     [Fact]

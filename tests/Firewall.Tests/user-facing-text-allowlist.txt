@@ -1419,3 +1419,4 @@ src/Design/Modeling/VerilogA/VaEquation.cs|the function '{cl.Name}'
 src/Design/Modeling/VerilogA/VaEquation.cs|the operator '{op}'
 src/Design/Modeling/VerilogA/VaNetwork.cs|no Verilog-A form for the scaling rule '{v.Rule}'.
 src/Design/Modeling/VerilogA/VaText.cs|{x} has no Verilog-A literal.
+src/Design/Modeling/VerilogA/VaTraps.cs|'{model}' already has a Verilog-A writer.

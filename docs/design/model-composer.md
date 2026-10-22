@@ -1793,8 +1793,9 @@ extra passes per charge). Only instances with a branch switch pay it, and an ins
 `CmodelVerilogA.Write(ComposedModel, VerilogAOptions)` writes a model as one self-contained Verilog-A module, and
 `Export(cmodelPath, vaPath)` writes that to a file by a temporary file and a rename. It reads the `ComposedModel` that
 `CmodelFile.Read` returns, so a `.cmodel` alone exports. MC-28 will pass `CmodelExport.Assemble`'s in-memory model
-through the same `Write`. The code is in `src/Design/Modeling/VerilogA/`. This phase writes everything that has no state
-of its own. Dispersion, traps and self-heating are refused, and MC-27 adds them.
+through the same `Write`. The code is in `src/Design/Modeling/VerilogA/`. MC-26 wrote everything that has no state of
+its own; MC-27 adds the dispersion node, the trap states, self-heating with its thermal pin, and every instance switch
+with the bias point the linear-charge switches freeze at (§25.11 – §25.16).
 
 ### 25.1 The module
 
@@ -1833,7 +1834,8 @@ endmodule
   in `\n` and the file is printable ASCII (`°C` is written `degC`). The header carries the model's `Provenance.Created`,
   its circuitRF version and the SHA-256 of `model.json`. `Export` hashes the entry as the file holds it, and `Write`
   hashes `CmodelFile.ModelJson`; the two agree because the writer is deterministic.
-- **The parameters** are those of D18 without the switches (MC-27). `N` is an integer from 1, as circuitRF requires.
+- **The parameters** are those of D18; MC-27's (`Rth`, `Cth`, the ten switches, `VgsQ`, `VdsQ`, `TjQ`, the trap
+  parameters) are in §25.11 – §25.15. `N` is an integer from 1, as circuitRF requires.
   `Temp`'s unset value is −273.15 °C, which circuitRF refuses as a device temperature, so it cannot mean anything else.
   Network variables are written at the base periphery, and the scaling is code. A variable that is an R's value has
   `from (0:inf)`. Equation parameters are prefixed by their constituent (`Id_beta`, `Ig_Isg`), so two constituents'
@@ -1910,7 +1912,7 @@ All refusals are collected and reported in one `VerilogAExportException`, one li
   `$table_model`, and `$table_model` does not interpolate as circuitRF's not-a-knot spline does;
 - a **network element** with no translation, or a parameter on an element other than its value;
 - a **function** outside the set, or another construct with no translation;
-- **traps**, **self-heating** and **dispersion** (MC-27);
+- a **trap model with no Verilog-A writer** (§25.12), and a `Custom` trap expression with no translation;
 - a **name** that is a Verilog-A keyword, built-in function or standard discipline or nature (`VaText.Reserved`, from
   the Verilog-AMS 2.4 keyword list), that the module already uses (`vgs`, `N`, `f_Id`, …), or a parameter that differs
   from another only in case, naming both. Names are refused and never renamed (open item below).
@@ -1938,8 +1940,9 @@ All refusals are collected and reported in one `VerilogAExportException`, one li
 | The shipped example's own Ig, Qg and Qd networks (3 inputs, 2 × 8, Tanh, Asinh gate) with an equation Id | 110 KiB | 0.8 s |
 | One 4 × 64 Tanh ANN (2 inputs) as Id | 1.2 MB | 30 s |
 
-These were measured on an Apple-silicon Mac with the compiler on PATH. The shipped example as a whole has traps and
-self-heating, so it cannot be exported until MC-27. The brief's prototype compiled a 4 × 64 network with a thermal node
+These were measured on an Apple-silicon Mac with the compiler on PATH. The shipped example as a whole — ANN currents
+and charges, a drain-lag state and self-heating — exports since MC-27 as 267 KiB and compiles in 11 s; most of the
+growth is the charges' Hessian-carrying copies for the bias point (§25.14). The brief's prototype compiled a 4 × 64 network with a thermal node
 in about 10 s, a third of what this module takes. Each neuron here carries one gradient sum per input, which the
 compiler differentiates again. After the first compile, the artefact is cached on the source's content.
 
@@ -1980,3 +1983,131 @@ compiler differentiates again. After the first compile, the artefact is cached o
   in DC.
 - **In circuitRF a `$fatal` is not a stop.** The worker refuses the point and the DC engine shortens its step, so the run
   ends unconverged with the sentence in its report, instead of stopping at the first refusal as another simulator would.
+
+### 25.11 MC-27: the module grows a thermal pin, state nodes and its instance's parameters
+
+```
+module <name>(g, d, s[, t]);             // t only on a self-heating model
+  thermal t;  thermal ti, t_1, ...;      // the network's own nodes
+  electrical x;                          // a model with IdRF
+  electrical phi1, phi2, ...;            // one per enabled trap state, in the model's order
+  parameter real Rth = 0 from [0:inf);   // [0:0] on a model that does not self-heat
+  parameter real Cth = 0 from [0:inf);
+  parameter integer Charge = 1 from [0:1];  ... the ten, in ComposedSwitches.Names' order
+  parameter real VgsQ = -1e+300;  VdsQ = -1e+300;  TjQ = -273.15 from [-273.15:inf);
+  parameter real TauCapt2 = ... from (0:inf);  ...      // the trap model's own; Trap_<p> for Custom
+  parameter real ShiftDrain = ...;  ShiftGate = ...;     // a Shift coupling's strengths
+```
+
+Every parameter and switch a placed `ComposedFET` has is a module parameter and does the same thing. A switch naming a
+part the model lacks still exists and changes nothing, so every export's parameter list is the same; the header says
+which switches do nothing for this model, with `ComposedSwitches.MissingPart`'s own reasons. `Rth` and `Cth` keep
+`Temp`'s pattern: 0 is unset, the elaborator's refusal of a value ≤ 0 becomes the range, and a model that does not
+self-heat refuses any value by `from [0:0]`, as the elaborator refuses it.
+
+### 25.12 The state nodes
+
+- **Dispersion** (§4.2's form): `I(x) <+ V(x) − (id − idrf) + ddt(τ·V(x))`, the drain carrying `idrf + V(x)`. Both
+  currents are taken in the terminal frame, after any image; `x` is unscaled and `N/N0` multiplies the drain current it
+  feeds. A drift charge reads `IdRF`, as fitted.
+- **Traps**: one electrical node per enabled state, named for it, carrying `RateTrapDynamics`' form
+  `I(phi) <+ ddt(C·V(phi)) − C·rate`, `C` = `RateTrapDynamics.NodeCapacitance` written from the constant. The rate and the
+  DC value are two analog functions per state, `r_<state>(ph, vgs, vds, T)` and `dc_<state>(vgs, vds, T)`, reading the
+  intrinsic voltages (a model with traps has no image) and the device temperature — the junction's when it self-heats,
+  a one-temperature model's own `T0` otherwise.
+- **Writers are per trap model**: `ITrapVerilogA`, registered by model name in `VaTraps`, gives the parameters and the
+  two functions. A model registered with `TrapModels` and given no writer is refused by name. `CaptureEmission` is
+  written line for line — the capture exponential continued by its tangent beyond `ExpLimit`, thermally activated
+  emission (T in kelvin, `Tref` in °C) for a state whose `Ea` the model states, `Ea` written only then — and its
+  parameters keep their names with `CaptureEmissionTraps.Build`'s refusals as ranges. `Custom`'s `Dynamics` and `Dc` go
+  through the equation translator, value only (the compiler differentiates), its parameters prefixed `Trap_`.
+- **The `Shift` coupling**: `Id` is evaluated at `vgs − ΔV`, `ΔV = Σ aₖ·sₖ·(φₖ − φₖ,DC)` with `aₖ` the module parameter
+  and `sₖ` `CaptureSign`, as `TrapShift.Delta` forms it. A drift charge reads the unshifted `Id`, as circuitRF's does.
+
+### 25.13 Self-heating and the thermal pin
+
+`T = Tamb + ΔT`, `Tamb` the clamped device temperature and `ΔT` the internal node `ti`'s temperature. The power
+`ig·vgs + id·vds` of the scaled terminal currents flows into `ti`. The network — `Rth ∥ Cth`, or a Foster ladder through
+`t_1 … t_(n−1)` as `ComposedNetworkTemplate` names them — sits on `ti`, never on `t`: a host commonly grounds an
+unconnected terminal, and a network written on it would be shorted and the model would silently stop heating. Wired
+(`$port_connected(t)`), `t` is joined to `ti` by a zero-temperature-difference branch, so what is attached sits in
+parallel with the model's network. Unwired, the module grounds `t` itself rather than leaving it with no equation:
+circuitRF grounds a terminal beyond `Pins` only when the model collapses it, and a node left alone makes the S-parameter
+matrix singular — regularised with gmin, S moved by 2e-8 (`src/Design/RESOLVED.md`). Scaling is the elaborator's: `Rth ×
+N0/N` with `RthSlope` taken at `Tamb`, `Cth × N/N0`, or the instance's own `Rth`/`Cth` at its finger count, every ladder
+section by the one factor that keeps the shape. The thermal nodes are read through `potential()` and `flow()`: the
+module's parameter `Temp` hides the discipline's `Temp()` access function and the compiler refuses the call.
+
+### 25.14 The switches
+
+| Switch | What the module writes |
+|---|---|
+| `Charge = 0` | `qg = qd = 0`; the state nodes' own charges stay |
+| `LinearC = 1` | `q(v_Q) + C(v_Q)·(v − v_Q)`, the charge read at `VgsQ`, `VdsQ`, `TjQ` and the states' DC values there |
+| `LinearCgs/Cdg/Cds/Cm = 1` | the held surface less each frozen branch's residual `r_b`, `BranchLinearisation`'s construction |
+| `GateLag/DrainLag = 0` | each state with that `CaptureSign` is `dc_<state>(vgs, vds, T)` as code, its node `V(phi) <+ 0` |
+| `SelfHeating = 0` | `T = Tamb`, no power into `ti`; the network and the pin stay, so a wired pin sits at 0 K |
+| `Dispersion = 0` | the drain carries `IdDC`, `V(x) <+ 0` |
+
+A node cannot be left out of a module by a parameter, so a switched-off state is tied to zero and collapses. Because a
+lag switched off writes the DC value as code, the compiler folds the state's lane into `vgs`, `vds` and `T` itself, and
+under `Shift` that state's term is exactly zero. `Charge = 0` wins over the linear-charge switches and `LinearC` over the
+branch switches, as in `ComposedSwitches.FrozenBranches`.
+
+**The bias-point charge** is `qh(vg, vd, Th, h_<state>…)`: the intrinsic charge with its temperature and trap inputs
+held, returning `Qg` and writing `Qd` and `C = ∂(Qg, Qd)/∂(vgs, vds)` in the terminal frame — circuitRF's
+`HeldSurface`, from emitted gradients. An equation's gradient is its own function's. An ANN's must be the
+continuation's exact gradient, `∇f(p_b) + Pᵀ H (p − p_b)`, because the Gauss nodes between the bias point and a driven
+point leave the domain under drive: `VaDomain.GradientFunction` ports `GuidedExtrapolation.Evaluate` whole, the
+projection's Jacobian included, and reads `H·w` from `VaAnn.HessianFunction`, forward mode over the gradient code.
+A drift charge's pieces use `VaDomain.BoxGradientFunction`, and its channel current's gradient comes the same way. The
+branch rule's nodes and weights are `BranchLinearisation.LineNode`'s, written as literals, and `C_b` at each node is
+`qh`'s; the compiler supplies `∇C_b` by differentiating that code. Where circuitRF has no exact Hessian (a drift charge,
+an ANN outside its domain) it differences `C`; the two then differ only in the Jacobian, which moves no converged
+answer.
+
+### 25.15 The bias point (D18)
+
+`VgsQ` and `VdsQ` are the INTRINSIC voltages at the point circuitRF's freeze would settle on, `TjQ` its junction
+temperature (the ambient plus the DC rise). circuitRF finds that point itself from a DC solve; a Verilog-A module cannot
+ask its host for a quiescent operating point, so the user states it. Read it from a DC solve in circuitRF
+(`V(X1.gi, X1.si)`, `V(X1.di, X1.si)`, the temperature plus `V(X1.t)`) or from the other simulator's operating point of
+the internal nodes; the terminal bias differs from it by the drops on the network's resistances.
+
+- **Unset is a refusal**: with any linear-charge switch on and `Charge = 1`, an unset `VgsQ` or `VdsQ` (−1e300, which no
+  bias point can be) stops the module at `@(initial_step)` with `$fatal`, naming the switch and both parameters. A
+  default bias would be a number nobody chose, giving a plausible wrong answer.
+- **`TjQ` unset** is the device's temperature (`Tamb`). On a self-heating device with `SelfHeating = 1` and a
+  linear-charge switch on, the module says once, with `$warning`, that the charge is frozen at the ambient and not at
+  the junction temperature.
+- **What circuitRF does differently**: it solves the quiescent point before the first charge is read and re-freezes when
+  the DC solution moves (`BiasFreeze`). The module holds whatever point it is given; change the bias and the parameters
+  must change with it.
+
+Two things had to change outside the writer. The DC engine reported nothing when a model refused every point — the
+`$fatal` above does exactly that — because its report is built from a residual there was none of
+(`src/Engine/RESOLVED.md`). And `ComposedCoreModel.FrozenAt` exposes the point a freeze settled on, which the gates pass
+to the module.
+
+### 25.16 Gates (MC-27)
+
+All against the `.cmodel` placed as a `ComposedFET` on one bench, to §25.9's tolerances, in
+`tests/Ui.Tests/ModelComposer/VerilogA/`; the worst |ΔS| everywhere is 3e-14 to 1.2e-13.
+- **`VerilogAStateNodeTests`**: dispersion, `CaptureEmission` gate-lag alone, drain-lag alone and both thermally
+  activated on a `Range` model away from `Tref`, a `Custom` model, and the `Shift` coupling — DC on a grid, S at
+  10 kHz, 1 GHz and 10 GHz (both sides of `1/τ`), one HB point. A model with trap states runs HB to a residual of
+  1e-6 A: at 2 GHz the states' charge round-off floors it near 1e-7 A.
+- **`VerilogAThermalTests`**: one pole, a three-section ladder with `RthSlope` at 60 °C, instance `N`, `Rth`, `Cth`,
+  `Temp`, and a ladder given an instance `Rth`/`Cth` — `Id` and the rise at a dissipating bias, the three-pin placement
+  heating (the rise above 5 K, `Id` moved by more than 1 %), no thermal warning, and S across the thermal pole. The pin
+  wired to an external 100 K/W agrees with the `ComposedFET` given the same pin-4 network, and sits at 0 K with
+  `SelfHeating = 0`.
+- **`VerilogASwitchTests`**: `Charge`, `SelfHeating`, `GateLag`, `DrainLag`, both lags and `Dispersion`, each moving the
+  answer; DC, S and one HB point. A switch for a part the model lacks changes nothing.
+- **`VerilogALinearChargeTests`**: the point read from `FrozenAt` as `VgsQ`, `VdsQ`, `TjQ`; `LinearC`, each branch
+  switch and `LinearCgs` with `LinearCds` on a self-heating device whose gate charge moves with temperature, and
+  `LinearC` plus a branch pair on an all-ANN device (the continuation's gradient) and a drift device — S at the bias
+  point and an HB sweep to compression. Unset `VgsQ` is refused with the sentence; unset `TjQ` warns once.
+- **`CmodelVerilogAWriterTests`**: every declared parameter is in the header and the switches are
+  `ComposedSwitches.Names` in order with their defaults, so a switch added to circuitRF without one here fails; a trap
+  model with no writer is refused by name.

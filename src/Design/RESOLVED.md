@@ -21504,3 +21504,22 @@ question a placement's side does not change; a bottom placement there resolves u
   x values the CSV holds; a curve left as data is skipped by the assembly rather than waited for. **Its spacing is the
   sampling spec's, not the x axis's:** taking the axis's (as the first cut did) re-spaced a log grid on a linear axis, or
   a step grid on a log axis, so the file's frequencies were not the CSV's.
+
+## MC-27: the Verilog-A export's thermal pin (2026-10-21)
+
+Two things the brief's construction (the thermal network on an internal node `ti`, the terminal `t` joined to it only
+when `$port_connected(t)`) needed that the brief did not say.
+
+**`Temp(ti)` does not compile in an exported module.** The module has a parameter `Temp` — the instance parameter a
+placed `ComposedFET` has, carried over by MC-26 — and it hides the thermal discipline's access function of the same
+name: the compiler refuses `Temp(ti)` as "expected a function but found parameter 'Temp'". The thermal nodes are read
+and driven through the generic `potential()` and `flow()` instead, which are Verilog-AMS's own and need no nature name.
+
+**Left unconnected, `t` is grounded by the module, not left alone.** circuitRF does not ground a terminal beyond a
+`VerilogA` instance's `Pins` unless the model collapses it: it mints a node, and (for a thermal one) its elaborator pins
+that node at the ambient with a warning that the part runs with no temperature rise — false here, since the module heats
+on `ti`. With the node left alone, the S-parameter solve finds an all-zero row, regularises the whole matrix with gmin,
+and moves S by about 2e-8 against the `ComposedFET` — 20 times the gate. `else potential(t) <+ 0.0` collapses it to
+ground instead, so no node, no pin, no warning and no regularisation; the network on `ti` is untouched, which is the
+point of putting it there. Gates: `VerilogAThermalTests` (the three-pin placement still self-heats, with no thermal
+warning) and `VerilogASwitchTests` (S at 10 kHz on a self-heating model).

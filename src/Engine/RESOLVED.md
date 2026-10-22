@@ -3163,3 +3163,13 @@ step, which is right. Nothing kept the exception's text, though, so when the sol
 residuals. The refusal itself was very often the reason: a compiled model's `$fatal` naming the quantity that was not
 finite, attached by the worker channel as `Worker output:`. The engine now keeps the last refusal (`_lastRefusal`), and
 the worst-unsettled report ends with `The last point a model refused: …`. A solve that converges is unaffected.
+
+## …and said nothing when a model refused every point (brief-modelcomposer-27, 2026-10-21)
+
+The report above is built from the residual at the last iterate. When a model refuses EVERY point — a compiled
+Verilog-A module whose own `@(initial_step)` raises `$fatal`, as an exported composed FET does for a linear-charge switch
+with no bias point — there is no residual to build it from, and `ReportWorstResiduals` returned on the empty vector. The
+run ended unconverged with the model's sentence nowhere: on a self-heating model the only line left was a thermal-node
+warning that the refused evaluations had themselves provoked. An empty residual with a refusal on record now reports
+`DC did not converge: a model refused every point it was asked to evaluate. The last refusal: …`, through the same
+deferral the retry already uses. Gate: `VerilogALinearChargeTests.AnUnsetBiasPoint_IsRefusedWithTheSentence`.

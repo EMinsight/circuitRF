@@ -119,15 +119,20 @@ public sealed record ComposedSwitches
     /// such a switch off changes nothing; the elaborator says so in a note, and an editor disables it with the same words.
     /// </summary>
     public static string? MissingPart(string name, LoadedComposedModel loaded)
+        => MissingPart(name, loaded.Model, loaded.Program.Traps);
+
+    /// <summary><see cref="MissingPart(string, LoadedComposedModel)"/> for a model not loaded from a file, with its trap
+    /// states compiled (<paramref name="traps"/>, null for a model without traps) — what the Verilog-A export says in its
+    /// header.</summary>
+    public static string? MissingPart(string name, ComposedModel model, Traps.TrapDynamics? traps)
     {
-        var traps = loaded.Program.Traps;
         bool HasLag(int sign) => traps is not null && Enumerable.Range(0, traps.States.Count).Any(k => Math.Sign(traps.CaptureSign(k)) == sign);
         return name switch
         {
-            GateLagName     when !HasLag(-1)                  => "has no gate-lag trap state",
-            DrainLagName    when !HasLag(+1)                  => "has no drain-lag trap state",
-            SelfHeatingName when loaded.Model.Thermal is null => "does not self-heat",
-            DispersionName  when loaded.Program.IdRF is null  => "has no DC/RF dispersion",
+            GateLagName     when !HasLag(-1)            => "has no gate-lag trap state",
+            DrainLagName    when !HasLag(+1)            => "has no drain-lag trap state",
+            SelfHeatingName when model.Thermal is null  => "does not self-heat",
+            DispersionName  when model.Core.IdRF is null => "has no DC/RF dispersion",
             _ => null,
         };
     }

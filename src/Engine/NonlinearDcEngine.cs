@@ -1105,7 +1105,15 @@ public sealed class NonlinearDcEngine
     /// </summary>
     private void ReportWorstResiduals(double[] f)
     {
-        if (f.Length == 0) return;
+        // No residual at all: a model refused the very point the report would be read at — as one does on every point
+        // when its own @(initial_step) refuses the instance (brief-modelcomposer-27: a linear-charge switch with no bias
+        // point). Its sentence is then the whole story, and without this nothing reached the user.
+        if (f.Length == 0)
+        {
+            if (_lastRefusal is { } only)
+                Report("DC did not converge: a model refused every point it was asked to evaluate. The last refusal: " + only);
+            return;
+        }
 
         var worst = f.Select((r, i) => (Residual: Math.Abs(r), Index: i))
                      .OrderByDescending(e => e.Residual)
@@ -1135,7 +1143,11 @@ public sealed class NonlinearDcEngine
 
         string message = "DC did not converge. Worst-unsettled: " + string.Join("; ", parts) + ".";
         if (_lastRefusal is { } refusal) message += " The last point a model refused: " + refusal;
+        Report(message);
+    }
 
+    private void Report(string message)
+    {
         if (_deferFailureReport) { _deferredFailureReport = message; return; }
         _nl.AddWarningOnce("dc-worst-unsettled", message);
     }

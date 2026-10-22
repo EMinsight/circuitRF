@@ -251,6 +251,10 @@ public sealed class ComposedCoreModel : ComponentModel, IBiasFrozen
     /// <summary>Whether the charge has been frozen (a linear-charge instance only).</summary>
     public bool IsFrozen => _frozen is not null;
 
+    /// <summary>The port voltages the charge was frozen at — <c>vgs</c>, <c>vds</c>, then the state nodes and the thermal
+    /// node's rise, in port order — or null while unfrozen. What a Verilog-A export's bias-point parameters are read from.</summary>
+    public IReadOnlyList<double>? FrozenAt => _frozen?.At;
+
     public bool FreezeAt(ReadOnlySpan<double> portVoltages)
     {
         if (!NeedsBiasPoint) return false;
