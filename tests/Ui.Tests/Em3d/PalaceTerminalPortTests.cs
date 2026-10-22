@@ -94,7 +94,7 @@ public sealed class PalaceTerminalPortTests(ITestOutputHelper output)
         var ports = new[] { Wave(1), Wave(2) };
         var s = PalaceRun.ReadPortS(Path.Combine(Fixture(name), PalaceRun.PortSFile), [1, 2], out _);
         var z = PalaceRun.ReadPortZ(Path.Combine(Fixture(name), PalaceRun.PortZFile), [1, 2], out _, out _)!;
-        var today = Em3dRunService.RenormaliseWavePorts(s, ports, ports, z);
+        var today = WavePortReferences.Renormalise(s, ports, ports, z);
         var mine = PalaceTerminalS.Convert(samples, ports, out string? error);
         Assert.True(mine is not null, error);
         Assert.Equal(3, today.S.Length);

@@ -357,8 +357,8 @@ public static partial class Em3dRunService
                     zf.Where((f, k) => Math.Abs(f - s.FrequenciesHz[k]) > 1e-6 * Math.Abs(f)).Any())
                     return Failed($"Palace's {PalaceRun.PortZFile} and {PalaceRun.PortSFile} do not list the same frequencies, so the " +
                                   "wave ports' S-parameters cannot be renormalised.");
-                s = RenormaliseWavePorts(s, ports, wave, modeZ);
-                log.Notes.Add(WaveNote(ports, wave, modeZ, s.FrequenciesHz));
+                s = WavePortReferences.Renormalise(s, ports, wave, modeZ);
+                log.Notes.Add(WavePortReferences.Note("Palace", "port-Z.csv", wave, modeZ));
             }
             // R-em3d23-3 — a port face that supports a mode past its own gives an S that means something else. brief-em3d-115
             // R-em3d115-2c: on a terminal face its own are the terminals' modes, so the face is asked about mode N + 1.
@@ -567,44 +567,6 @@ public static partial class Em3dRunService
 
     /// <summary>The Palace group's cube holding each wave port's mode impedance Z_PV, [f, Port], ohms.</summary>
     public const string WaveModeImpedanceCube = "WavePortZmode";
-
-    /// <summary>
-    /// R-em3d23-2d — Palace's S with every wave port moved from its mode's impedance to its stated Z0: the
-    /// whole matrix per frequency (RfCore's <see cref="RFNetwork.SToS"/>), never an element at a time. A lumped
-    /// port is already at its Z0 (its resistance), so its reference is unchanged.
-    /// </summary>
-    internal static PalacePortS RenormaliseWavePorts(PalacePortS s, IReadOnlyList<Em3dPort> ports, IReadOnlyList<Em3dPort> wave,
-                                                     Complex[][] modeZ)
-    {
-        int n = ports.Count;
-        var target = ports.Select(p => p.Z0).ToArray();
-        var mats = new Complex[s.S.Length][,];
-        for (int k = 0; k < s.S.Length; k++)
-        {
-            var from = (Complex[])target.Clone();
-            for (int w = 0; w < wave.Count; w++) from[ports.ToList().IndexOf(wave[w])] = modeZ[k][w];
-            var m = new Mat<Complex>(n, n);
-            for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) m[i, j] = s.S[k][i, j];
-            var r = RFNetwork.SToS(m, from, target);
-            mats[k] = new Complex[n, n];
-            for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) mats[k][i, j] = r[i, j];
-        }
-        return s with { S = mats };
-    }
-
-    /// <summary>What each wave port's S was referred to, and what it is now.</summary>
-    private static string WaveNote(IReadOnlyList<Em3dPort> ports, IReadOnlyList<Em3dPort> wave, Complex[][] modeZ, double[] f)
-    {
-        var parts = wave.Select((p, w) =>
-        {
-            var re = modeZ.Select(z => z[w].Real).ToList();
-            string range = re.Min() == re.Max() ? $"{Fmt(re[0])} Ω" : $"{Fmt(re.Min())} to {Fmt(re.Max())} Ω";
-            return $"port {p.Number}'s mode impedance is {range} over the sweep, renormalised to {Fmt(p.Z0.Real)} Ω";
-        });
-        return "Palace refers a wave port's S-parameters to the port's own mode, normalised to unit power — that is, to the " +
-               "mode's impedance Z_PV (port-Z.csv), which varies with frequency. The .sNp states one real reference per port, " +
-               $"so the wave ports were renormalised: {string.Join("; ", parts)}.";
-    }
 
     /// <summary>
     /// brief-em3d-23 R-em3d23-4c — an eigenmode solve's modes, read by column name, as a DataSet in

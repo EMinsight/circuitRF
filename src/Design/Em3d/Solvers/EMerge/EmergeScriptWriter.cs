@@ -31,8 +31,8 @@ public static partial class EmergeScriptWriter
     /// <summary>The driver's file name, in the run directory beside <see cref="ProblemFile"/>.</summary>
     public const string DriverFile = "circuitrf_emerge.py";
 
-    /// <summary>problem.json's format. The driver refuses one it does not know.</summary>
-    public const int FormatVersion = 1;
+    /// <summary>problem.json's format. The driver refuses one it does not know. brief-emw-2: 2 adds <c>wavePorts</c>.</summary>
+    public const int FormatVersion = 2;
 
     private const string FormatName = "circuitRF EMerge problem";
 
@@ -147,13 +147,30 @@ public static partial class EmergeScriptWriter
         e.EndArray();
 
         e.Key("ports").BeginArray();
-        foreach (var p in problem.Ports)
+        foreach (var p in problem.Ports.Where(p => p.Kind == Em3dPortKind.Lumped))
         {
             var r = EmergeLoweringRules.Rect(p.Min, p.Max, p.Direction)!.Value;
             e.BeginObject().Key("number").Int(p.Number).Key("name").Str(p.Name)
              .Key("origin").Point(r.Origin).Key("u").Point(r.U).Key("v").Point(r.V)
              .Key("widthM").Number(r.Width).Key("heightM").Number(r.Height)
              .Key("direction").Point(p.Direction).Key("z0").Number(p.Z0.Real)
+             .EndObject();
+        }
+        e.EndArray();
+
+        // brief-emw-2 R-emw2-1 — a wave port of one terminal: its region on the air box's face, circuitRF's voltage path, the
+        // reference it is renormalised to, how far its plane moves and whether its mode is solved per frequency
+        e.Key("wavePorts").BeginArray();
+        foreach (var p in problem.Ports.Where(p => p.Kind == Em3dPortKind.Wave))
+        {
+            var r = EmergeLoweringRules.Region(p.Min, p.Max);
+            var path = p.VoltagePath!.Value;
+            e.BeginObject().Key("number").Int(p.Number).Key("name").Str(p.Name)
+             .Key("face").Str(problem.FaceOf(p.Min, p.Max)!)
+             .Key("origin").Point(r.Origin).Key("u").Point(r.U).Key("v").Point(r.V)
+             .Key("path").BeginObject().Key("from").Point(path.From).Key("to").Point(path.To).EndObject()
+             .Key("z0").Number(p.Z0.Real).Key("shiftM").Number(p.ReferencePlane.ShiftM)
+             .Key("mixed").Bool(EmergeLoweringRules.RegionMaterials(problem, p).Count > 1)
              .EndObject();
         }
         e.EndArray();

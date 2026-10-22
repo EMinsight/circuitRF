@@ -943,9 +943,9 @@ in engineering units, and `circuitrf explain` lists which conductors are in whic
 A 3D port is **lumped** by default: a sheet from the line down (or up) to its return, with the port's
 Z0 across it. A lumped sheet has a small series inductance of its own, and on a tall sheet it shows as
 a step in S11 at the top of the band. A **wave port** has none: it is a region of the air box's face where
-the line is fed and measured in its own field. Both solvers build one, each its own way: Palace computes
-the line's mode on that face at every frequency, and openEMS feeds the line from behind the face and
-measures it with probes (*On openEMS*, below). The **3D Wave Ports** example walks through one on each solver
+the line is fed and measured in its own field. Each solver builds one its own way: Palace and EMerge
+compute the line's mode on that face at every frequency, and openEMS feeds the line from behind the face
+and measures it with probes (*On openEMS* and *On EMerge*, below). The **3D Wave Ports** example walks through one on each solver
 ([A first wave port](../new-user-guide/index.html#wave-ports-3d)).
 
 In a 3D view a wave port's two ends are the conductors that meet its region, and its voltage path runs straight
@@ -1013,6 +1013,21 @@ an FDTD grid:
   cell to spare from any other conductor, corners included, or it reads a fraction of the current. A port
   whose loop cannot be placed is refused, naming the conductor it would touch and the clearance needed;
   refine the openEMS grid there or move the conductors apart.
+
+**On EMerge.** EMerge solves the line's mode on the face, as Palace does, and uses its full wave-port
+condition there. A wave port with one conductor on the face runs, a microstrip's end or a coax:
+
+- **The S-parameters are referred to the mode at unit power**, and so to the mode's impedance along the
+  port's voltage path. circuitRF renormalises them to the port's Z0. The run's notes give each wave port's
+  mode impedance over the sweep. EMerge solves the mode at every frequency. On a face of one material, a
+  coax's PTFE for example, the impedance is the same at every frequency.
+- **A reference plane moved by the port's Offset** is de-embedded with the mode's own β, before the
+  renormalisation, and the run's notes say how far it moved.
+- **The run asks each face for a second mode** at the top of the sweep and warns when one propagates,
+  as Palace's run does.
+- **Several terminals on one face** run on openEMS, and on Palace for a pair of lines whose modes travel
+  at different speeds. **A hollow waveguide** runs on Palace. EMerge refuses both by name, as it does a
+  wave port in an eigenmode problem.
 
 #### Several conductors on one face {#wave-port-terminals}
 

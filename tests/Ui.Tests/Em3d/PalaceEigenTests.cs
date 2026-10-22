@@ -143,8 +143,8 @@ public sealed class PalaceEigenTests(ITestOutputHelper output) : IDisposable
 
         var p50 = Wr90(50).Ports;
         var pMode = Wr90(zRef).Ports;
-        var at50 = Em3dRunService.RenormaliseWavePorts(raw, p50, p50, zMode);
-        var atMode = Em3dRunService.RenormaliseWavePorts(raw, pMode, pMode, zMode);
+        var at50 = WavePortReferences.Renormalise(raw, p50, p50, zMode);
+        var atMode = WavePortReferences.Renormalise(raw, pMode, pMode, zMode);
 
         double worst = 0;
         for (int k = 0; k < raw.FrequenciesHz.Length; k++)

@@ -22,8 +22,9 @@ where a problem is solved is the machine's, and problem.json is what the run's p
 
 (brief-emi-5) builds, meshes and solves it, and writes PLAIN ARRAYS beside problem.json -- circuitRF builds the DataSet,
 the Touchstone and their provenance from them, so EMerge's own Touchstone writer is never used:
-  driven     freq.npy (the requested grid, Hz), S.npy (complex, [f, i, j], ports in ascending number), Z0.npy (each port's
-             reference, ohms, complex)
+  driven     freq.npy (the requested grid, Hz), S.npy (complex, [f, i, j], ports in ascending number), Z0.npy (complex,
+             [f, ports]: a lumped port's reference, constant; a wave port's mode impedance at each frequency), gamma.npy
+             (complex, [f, ports]: a wave port's propagation constant alpha + j beta, 0 for a lumped port)
   eigenmode  modes.npy (complex frequencies, Hz, as EMerge returns them -- null-space solutions included; circuitRF
              filters), Q.npy (each one's Q)
 and run.json (versions, the sparse solver EMerge called, tets, samples, the sweep's error, timings). The JSON line it
@@ -50,9 +51,13 @@ import json
 import os
 import sys
 
-DRIVER_VERSION = 4
+DRIVER_VERSION = 5
 FORMAT = "circuitRF EMerge problem"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+C0 = 299792458
+# EMerge's ModalPort.N_mesh_tris: the triangles its mesher aims a port face at (bc._size_constraint), when the port exists
+# before the mesh does. circuitRF assigns its conditions after meshing, so the driver states that size itself (brief-emw-2).
+PORT_TRIANGLES = 50
 MODES = ("mesh", "solve")
 RUN_FILE = "run.json"
 
@@ -98,6 +103,7 @@ def main(argv):
         warnings.append("EMerge %s is not a version circuitRF has tested (%s); it is run as it is."
                         % (version, ", ".join(problem["testedEmerge"])))
 
+    install_guard(warnings)
     import time
     started = time.time()
     try:
@@ -105,6 +111,8 @@ def main(argv):
     except Exception as e:  # EMerge's or Gmsh's own refusal, reported as the run's
         fail("%s: %s" % (type(e).__name__, e))
     if argv[2] == "mesh":
+        if model["waves"]:
+            counts["wavePorts"] = wave_conditions(sim, model["waves"])
         report(emerge=version, warnings=warnings, **counts)
         return
     meshed = time.time()
@@ -134,6 +142,39 @@ def main(argv):
     report(**run)
 
 
+# -- the duplicate-mode guard (brief-emw-2) -------------------------------------------------------------------------------
+
+def install_guard(warnings):
+    """EMerge 3.0.0b2 APPENDS a re-solved frequency's modes to those already stored for it (a sweep solves its mean frequency
+    twice, and an adaptive sweep every sample), so a face's stored list can hold one mode twice (src/Design/RESOLVED.md,
+    EMW-1, R-emw1-6). Before EMerge solves a port's modes at a frequency, the guard forgets that frequency's stored ones.
+    Harmless if a later EMerge stops duplicating, so it is always installed; a run whose EMerge has moved the method or the
+    attribute is told so and runs."""
+    try:
+        from emerge._emerge.physics.microwave.microwave_3d import Microwave3D
+        solve_modes = Microwave3D.modal_analysis
+    except (ImportError, AttributeError):
+        warnings.append("circuitRF could not install its guard against EMerge storing a port's modes twice (this EMerge has "
+                        "no Microwave3D.modal_analysis where circuitRF looks for it); the run goes on without it.")
+        return
+
+    warned = []
+
+    def modal_analysis(self, port, *a, freq=None, **k):
+        f = self.frequencies[0] if freq is None else freq
+        stored = getattr(port, "available_modes", None)
+        if stored is None:
+            if not warned:
+                warnings.append("circuitRF's guard against EMerge storing a port's modes twice found no available_modes on the "
+                                "port (a later EMerge renamed it); the run goes on without it.")
+                warned.append(True)
+        else:
+            stored.pop(2 * 3.141592653589793 * f / C0, None)     # EMerge's own k0 expression
+        return solve_modes(self, port, *a, freq=freq, **k)
+
+    Microwave3D.modal_analysis = modal_analysis
+
+
 # -- the GPU (brief-emi-9) -------------------------------------------------------------------------------------------------
 
 GPU_SOLVER_NAME = "SPARTA"   # how EMerge 3.0.0b2's log names it: "Calling SPARTA Solver (GPU, 0.2.0)."
@@ -154,9 +195,10 @@ def use_gpu(problem, counts, gpu_from, sim, em, warnings):
     if unknowns < gpu_from:
         return
     from emerge._emerge import solver as s
-    kind = getattr(s.EMSolver, "SPARTA", None)
+    solvers = s.EMSolver
+    kind = getattr(solvers, "SPARTA", None)
     gpu = sim.mw.solveroutine.solvers.get(kind) if kind is not None else None
-    if gpu is None or not getattr(s, "_SPARTA_AVAILABLE", False):
+    if gpu is None or not getattr(s, "_SPARTA_AVAILABLE", None):
         warnings.append("EMerge's GPU sparse solver could not be loaded, so this run solved on the CPU.")
         return
     gpu.settings["refinement_steps"] = -1
@@ -306,7 +348,13 @@ def impedance(element):
 # -- the model -----------------------------------------------------------------------------------------------------------
 
 def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
+    from emerge._emerge.attributes import FiniteThickness
     sim = em.Simulation("circuitrf")
+    if problem["wavePorts"]:
+        # brief-emw-2: EMerge's S post-processing caps |S_ij| at 1 and power-normalises columns, which changes the modal S a
+        # wave port's renormalisation then reads (R-emw1-1). A lumped-only run keeps EMerge's defaults, as it always has.
+        sim.settings.mw_cap_sp_single = False
+        sim.settings.mw_cap_sp_col = False
     occ = gmsh.model.occ
     settings = problem["settings"]
     mats = [material(em, m) for m in problem["materials"]]
@@ -328,11 +376,16 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
         g = GeoSurface(planar(gmsh, sh["rings"]), name=sh["name"])
         g.set_material(mats[sh["material"]])
         if not problem["materials"][sh["material"]]["pec"]:
-            g.assign_thickness(sh["thicknessM"])
+            # EMerge 3.0.0b2's GeoSurface.assign_thickness calls a _store it does not have; the property it stores is
+            # FiniteThickness, which EMerge's own PCB builder adds this way and its boundary conditions read.
+            g.properties += FiniteThickness(sh["thicknessM"])
         sheets.append((sh, g))
     ports = [(p, GeoSurface(rectangle(gmsh, p["origin"], p["u"], p["v"]), name=p["name"])) for p in problem["ports"]]
     elements = [(e, GeoSurface(rectangle(gmsh, e["origin"], e["u"], e["v"]), name=e["name"]))
                 for e in problem["lumpedElements"]]
+    # brief-emw-2: a wave port's region is a surface of its own on the air box's face, built as a lumped port's plate is;
+    # commit_geometry fragments it into the face.
+    regions = [(w, GeoSurface(rectangle(gmsh, w["origin"], w["u"], w["v"]), name=w["name"])) for w in problem["wavePorts"]]
 
     sim.commit_geometry()
 
@@ -362,6 +415,11 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     gmsh.model.occ.synchronize()
     for v, _, _, _ in owners:
         v.tags = [t for t in v.tags if t not in metal]
+    # brief-emw-2: a port region's fragments over a conductor's face bounded only metal and went with it (the Launch's square
+    # over its housing), so the region is what is left: the part over meshed space.
+    left = {t for _, t in gmsh.model.getEntities(2)}
+    for _, g in regions:
+        g.tags = [t for t in g.tags if t in left]
     # commit_geometry has already cached every object's boundary faces and generated EMerge's default boundary conditions
     # from them: a removed conductor would keep a surface impedance on faces that no longer exist, and the solve stops on
     # the first. So the cache is taken again, as commit_geometry takes it (a removed conductor has no boundary left), and
@@ -388,13 +446,25 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
             gmsh.model.mesh.field.setNumber(field, key, value)
         sim.mesher.mesh_fields.append(field)
 
+    # brief-emw-2: a wave port's region meshed as EMerge meshes a port face, to about PORT_TRIANGLES triangles (its
+    # _size_constraint, sqrt(area / N * 4 / sqrt 3)). Left to the volume's size, a small region on a coarse mesh had too few
+    # triangles for its mode solve, and EMerge's dense eigensolver failed on it (LinAlgError from ggev; RESOLVED, EMW-2).
+    for _, g in regions:
+        area = sum(gmsh.model.occ.getMass(2, t) for t in g.tags)
+        if area > 0:
+            sim.mesher.set_face_size(g, (area / PORT_TRIANGLES * 4 / 3 ** 0.5) ** 0.5)
+
     # The air box's faces: every outer face of meshed space on a box plane. PEC is EMerge's own default for an outer face,
     # so only PMC and absorbing faces are stated.
     size = max(hi[k] - lo[k] for k in range(3))
     tol = 1e-9 * size
     planes = {"xmin": (0, lo[0]), "xmax": (0, hi[0]), "ymin": (1, lo[1]), "ymax": (1, hi[1]), "zmin": (2, lo[2]), "zmax": (2, hi[2])}
     faces = {key: [] for key in planes}
+    # A port region's fragments are its port, never the face's boundary: a region left PEC is a short across the port.
+    in_region = {t for _, g in regions for t in g.tags}
     for _, tag in gmsh.model.getEntities(2):
+        if tag in in_region:
+            continue
         up, _ = gmsh.model.getAdjacencies(2, tag)
         if len(up) != 1:
             continue
@@ -430,6 +500,17 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
                                                direction=tuple(p["direction"]), Z0=p["z0"])))
     for e, plate in elements:
         sim.mw.bc.LumpedElement(plate, impedance(e), width=e["widthM"], height=e["heightM"])
+    waves = []
+    for w, region in regions:
+        bc = sim.mw.bc.WavePortIH(region, w["number"])
+        # R-emw2-2a — the one line that decides a wave port's polarity: EMerge turns the mode so its integral along this line
+        # is positive, and circuitRF's path runs from the negative object to the positive one, the sense a lumped port's
+        # direction has. Proved on a thru with a wave port at one end and a lumped port at the other (RESOLVED, EMW-2).
+        bc.set_integration_line(tuple(w["path"]["from"]), tuple(w["path"]["to"]), 101)
+        # WavePortIH keeps mixed_materials True, and it must: its dense block and its excitation are built from the stored
+        # mode's own fields and beta (get_modepf_kappa), never rescaled to k0, so the mode is solved at every frequency.
+        # Overriding it on a face of one material gave S right only at the sweep's centre (src/Design/RESOLVED.md, EMW-2).
+        waves.append((w, bc))
 
     mesh = sim.mesh
     # brief-emi-7 — what the fields need of the model: each meshed volume's owner (circuitRF's object, by index into
@@ -443,7 +524,8 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
                 for k, tags in sorted(plated.items())]
     surfaces += [{"kind": "Sheet", "name": sh["name"], "material": sh["material"], "thicknessM": sh["thicknessM"],
                   "tags": (lambda g=g: list(g.tags)), "normal": sh["normal"]} for sh, g in sheets]
-    model = {"names": names, "volumes": volumes, "ports": lumped, "absorbing": absorbing, "surfaces": surfaces}
+    model = {"names": names, "volumes": volumes, "ports": lumped + waves, "waves": waves, "absorbing": absorbing,
+             "surfaces": surfaces}
     return sim, {"tets": int(mesh.n_tets), "edges": int(mesh.n_edges), "triangles": int(mesh.n_tris),
                  "faces": {key: len(tags) for key, tags in faces.items()}, "conductorFaces": sum(len(t) for t in walls.values())}, model
 
@@ -479,24 +561,103 @@ def solve(problem, folder, sim, model, heard, warnings):
     else:
         data = sim.mw.run_sweep()
     grid = data.scalar.grid
-    numbers = [p["number"] for p in sorted(problem["ports"], key=lambda p: p["number"])]
-    index = [grid._portmap[n] for n in numbers]
+    every = sorted([p["number"] for p in problem["ports"]] + [w["number"] for w in problem["wavePorts"]])
+    index = [grid._portmap[n] for n in every]
     full = grid.model_Smat(freqs) if adaptive else grid.Smat
     S = np.asarray(full)[:, index, :][:, :, index].astype(np.complex128)
     if not adaptive and not np.allclose(np.ravel(grid.freq), freqs, rtol=1e-12, atol=0):
         raise ValueError("EMerge solved at frequencies other than the requested ones")
-    z0 = np.asarray(grid.Z0).reshape(-1, len(grid._portmap))[0][index].astype(np.complex128)
+    stated = np.asarray(grid.Z0).reshape(-1, len(grid._portmap))[0][index].astype(np.complex128)
+    z0 = np.tile(stated, (len(freqs), 1))
+    gamma = np.zeros((len(freqs), len(every)), dtype=np.complex128)
+    waves = model["waves"]
+    if waves:
+        wz, wg = wave_modes(sim, waves, freqs, adaptive)
+        for j, (w, _) in enumerate(waves):
+            z0[:, every.index(w["number"])] = wz[:, j]
+            gamma[:, every.index(w["number"])] = wg[:, j]
     # C order, which circuitRF reads: S is indexed out of EMerge's matrix, and numpy keeps such a view in Fortran order.
     np.save(os.path.join(folder, "freq.npy"), np.ascontiguousarray(freqs))
     np.save(os.path.join(folder, "S.npy"), np.ascontiguousarray(S))
     np.save(os.path.join(folder, "Z0.npy"), np.ascontiguousarray(z0))
+    np.save(os.path.join(folder, "gamma.npy"), np.ascontiguousarray(gamma))
     out = {"samples": int(np.size(grid.freq)), "adaptive": bool(adaptive)}
+    if waves:
+        out["secondModes"] = second_modes(sim, waves, float(np.max(freqs)))
     if adaptive:
         out["error"] = heard.error
         out["converged"] = heard.converged
     if problem.get("fields") is not None and problem["fields"]["frequenciesHz"]:
         out.update(driven_fields(problem, folder, sim, model, [] if adaptive else list(data.field.iter())))
     return out
+
+
+# -- wave ports (brief-emw-2) ---------------------------------------------------------------------------------------------
+
+def wave_modes(sim, waves, freqs, adaptive):
+    """Each wave port's mode impedance Z0 (EMerge's own, on circuitRF's voltage path: Z_PV, R-emw1-5) and propagation
+    constant alpha + j beta at every requested frequency, [f, wave port]. Never read from the result's port properties, which
+    repeat mode 1's for every mode (R-emw1-1). A point sweep solved every port's mode at every frequency. An adaptive sweep's
+    requested frequencies had no mode solve of their own: a face of several materials is solved at each here, after it (the
+    guard keeps each solve fresh); a face of one material needs none, its impedance being constant and beta scaling with k0
+    for a TEM mode (EMerge's get_beta), so the nearest stored mode serves."""
+    import numpy as np
+    z = np.zeros((len(freqs), len(waves)), dtype=np.complex128)
+    g = np.zeros((len(freqs), len(waves)), dtype=np.complex128)
+    for j, (w, bc) in enumerate(waves):
+        for i, f in enumerate(freqs):
+            k0 = 2 * np.pi * f / C0
+            if w["mixed"] and adaptive:
+                sim.mw.modal_analysis(bc, 1, direct=False, TEM=True, freq=float(f))
+            z[i, j] = complex(bc.get_modes(k0)[0].Z0)
+            # fields go as exp(-j beta z), so a lossy mode's beta is beta' - j alpha and j beta = alpha + j beta'
+            g[i, j] = 1j * complex(bc.get_beta(k0))
+    return z, g
+
+
+def second_modes(sim, waves, top):
+    """R-emw2-3a — whether each wave port's face carries a second mode at the sweep's top: a mode solve asking for two, with
+    the port's TEM-only filter lifted for it (a box mode is TE or TM). EMerge keeps only modes that carry power, so a second
+    mode kept is a propagating one. The solve's own result is forgotten afterwards and the port's stored state restored."""
+    import numpy as np
+    k0 = 2 * np.pi * top / C0
+    out = []
+    for w, bc in waves:
+        saved = bc.available_modes.pop(k0, None)
+        state = (bc.forced_modetype, bc._last_k0, bc._first_k0, bc.initialized)
+        try:
+            bc.forced_modetype = None
+            sim.mw.modal_analysis(bc, 2, direct=False, TEM=False, freq=top)
+            modes = sorted(bc.available_modes.get(k0, []), key=lambda m: -complex(m.beta).real)
+        except Exception as e:
+            out.append({"port": w["number"], "frequencyHz": top, "error": "%s: %s" % (type(e).__name__, e)})
+            continue
+        finally:
+            bc.forced_modetype, bc._last_k0, bc._first_k0, bc.initialized = state
+            bc.available_modes.pop(k0, None)
+            if saved is not None:
+                bc.available_modes[k0] = saved
+        entry = {"port": w["number"], "frequencyHz": top, "modes": len(modes),
+                 "betas": [[complex(m.beta).real, complex(m.beta).imag] for m in modes],
+                 "types": [getattr(m, "modetype", None) for m in modes]}
+        out.append(entry)
+    return out
+
+
+def wave_conditions(sim, waves):
+    """The mesh mode's account of each wave port: the condition EMerge holds for its region, and how many of the region's
+    faces any PEC also claims once EMerge has generated its default conditions (a region left PEC is a short across it)."""
+    try:
+        sim.mw._autogenerate_bcs()
+    except Exception:
+        pass
+    pec = set()
+    for bc in sim.mw.bc.boundary_conditions:
+        if type(bc).__name__ == "PEC":
+            pec.update(bc.tags)
+    return [{"number": w["number"], "condition": type(bc).__name__, "regionFaces": len(bc.tags),
+             "pecFaces": len([t for t in bc.tags if t in pec]), "mixed": w["mixed"],
+             "modePerFrequency": bool(bc.mixed_materials)} for w, bc in waves]
 
 
 # -- fields (brief-emi-7) -------------------------------------------------------------------------------------------------
@@ -786,6 +947,9 @@ def driven_fields(problem, folder, sim, model, solved):
         for j, (p, bc) in enumerate(ports):
             field.excite_port(p["number"])
             v, vinc = port_voltage(field, bc), getattr(bc, "voltage", None)
+            if p in [w for w, _ in model["waves"]]:
+                # a wave port's mode at 1 W reads sqrt(2 Z_PV) along its line (R-emw1-5); EMerge's own voltage is sqrt(Z0)
+                vinc = (2 * complex(bc.get_modes(2 * np.pi * f / C0)[0].Z0).real) ** 0.5
             # EMerge drives a lumped port with an incident wave of sqrt(2 P Z0) peak, P its power (1 W): P time-averaged.
             scale = (req["incidentPowerW"] / bc.power) ** 0.5
             step = {"port": p["number"], "frequencyHz": f, "scale": scale,

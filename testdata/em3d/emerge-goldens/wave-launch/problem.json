@@ -1,0 +1,192 @@
+{
+  "format": "circuitRF EMerge problem",
+  "version": 2,
+  "testedEmerge": ["3.0.0b2"],
+  "problem": "driven",
+  "frequenciesHz": [2000000000, 6000000000, 10000000000, 14000000000, 18000000000],
+  "sizingHz": 18000000000,
+  "settings": {
+    "elementOrder": 2,
+    "resolution": 0.15,
+    "edgeSizeM": 0.0003368667232518621,
+    "largestSizeM": 0.002498270483333333,
+    "adaptiveSweep": true,
+    "tolerance": 0.001,
+    "initialSamples": 5,
+    "maxSamples": 100,
+    "adaptiveMesh": 0
+  },
+  "materials": [
+    {
+      "name": "Air",
+      "pec": false,
+      "er": 1,
+      "tand": 0,
+      "ur": 1,
+      "cond": 0
+    },
+    {
+      "name": "Connector alloy",
+      "pec": false,
+      "er": 1,
+      "tand": 0,
+      "ur": 1,
+      "cond": 15000000
+    },
+    {
+      "name": "PTFE",
+      "pec": false,
+      "er": 2.1,
+      "tand": 0.0002,
+      "ur": 1,
+      "cond": 0
+    },
+    {
+      "name": "PTFE-glass laminate",
+      "pec": false,
+      "er": 2.2,
+      "tand": 0.0009,
+      "ur": 1,
+      "cond": 0
+    },
+    {
+      "name": "Copper",
+      "pec": false,
+      "er": 1,
+      "tand": 0,
+      "ur": 1,
+      "cond": 58000000
+    }
+  ],
+  "box": {
+    "min": [-0.005, -0.0055, -0.0035],
+    "max": [0.00708, 0.0055, 0.005],
+    "material": 0,
+    "faces": {
+      "xmin": "pec",
+      "xmax": "absorbing",
+      "ymin": "absorbing",
+      "ymax": "absorbing",
+      "zmin": "absorbing",
+      "zmax": "absorbing"
+    }
+  },
+  "solids": [
+    {
+      "name": "housing",
+      "role": "conductor",
+      "material": 1,
+      "priority": 3,
+      "shape": {
+        "kind": "brep",
+        "file": "kernel-HASH.brep",
+        "scale": 1E-06
+      }
+    },
+    {
+      "name": "bore",
+      "role": "dielectric",
+      "material": 2,
+      "priority": 1,
+      "shape": {
+        "kind": "cylinder",
+        "start": [-0.005, 0, 0.0007255],
+        "axis": [0.005, 0, 0],
+        "radius": 0.00067
+      }
+    },
+    {
+      "name": "pin",
+      "role": "conductor",
+      "material": 1,
+      "priority": 4,
+      "shape": {
+        "kind": "brep",
+        "file": "kernel-HASH.brep",
+        "scale": 1E-06
+      }
+    },
+    {
+      "name": "B1/Laminate",
+      "role": "dielectric",
+      "material": 3,
+      "priority": 2,
+      "shape": {
+        "kind": "extrusion",
+        "rings": [
+          [[0, -0.00254, 6.776263578034403E-21], [0.00508, -0.00254, 6.776263578034403E-21], [0.00508, 0.00254, 6.776263578034403E-21], [0, 0.00254, 6.776263578034403E-21]]
+        ],
+        "height": 0.0005080000000000001
+      }
+    },
+    {
+      "name": "B1/Bottom Copper",
+      "role": "conductor",
+      "material": 4,
+      "priority": 5,
+      "shape": {
+        "kind": "extrusion",
+        "rings": [
+          [[0, -0.00254, -3.5E-05], [0.00508, -0.00254, -3.5E-05], [0.00508, 0.00254, -3.5E-05], [0, 0.00254, -3.5E-05]]
+        ],
+        "height": 3.5000000000000004E-05
+      }
+    },
+    {
+      "name": "B1/Top Copper/1",
+      "role": "conductor",
+      "material": 4,
+      "priority": 6,
+      "shape": {
+        "kind": "extrusion",
+        "rings": [
+          [[0.0001016, -0.0007874000000000001, 0.0005080000000000001], [0.00508, -0.0007874000000000001, 0.0005080000000000001], [0.00508, 0.0007874000000000001, 0.0005080000000000001], [0.0001016, 0.0007874000000000001, 0.0005080000000000001]]
+        ],
+        "height": 3.499999999999998E-05
+      }
+    }
+  ],
+  "sheets": [],
+  "ports": [
+    {
+      "number": 2,
+      "name": "port/2",
+      "origin": [0.00508, -0.0007874, 0],
+      "u": [0, 0.0015748, 0],
+      "v": [0, 0, 0.000508],
+      "widthM": 0.0015748,
+      "heightM": 0.000508,
+      "direction": [0, 0, 1],
+      "z0": 50
+    }
+  ],
+  "wavePorts": [
+    {
+      "number": 1,
+      "name": "port/1",
+      "face": "xmin",
+      "origin": [-0.005, -0.001, -0.0002745],
+      "u": [0, 0.002, 0],
+      "v": [0, 0, 0.002],
+      "path": {
+        "from": [-0.005, 2.710505431213761E-20, 0.0013955],
+        "to": [-0.005, 2.710505431213761E-20, 0.0009255]
+      },
+      "z0": 50,
+      "shiftM": 0,
+      "mixed": false
+    }
+  ],
+  "lumpedElements": [],
+  "meshRegions": [],
+  "files": [
+    {
+      "name": "kernel-HASH.brep",
+      "sha256": "SHA256"
+    },
+    {
+      "name": "kernel-HASH.brep",
+      "sha256": "SHA256"
+    }
+  ]
+}

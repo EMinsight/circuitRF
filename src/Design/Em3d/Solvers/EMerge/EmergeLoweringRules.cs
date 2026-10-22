@@ -39,7 +39,7 @@ internal static class EmergeLoweringRules
         if (settings.Problems() is { Count: > 0 } bad) return string.Join(" ", bad);
         // What EMerge cannot be told at all is named before what is merely wrong, so a wave port is refused as one.
         foreach (var p in problem.Ports)
-            if (KindRefusal(p) is { } kind) return kind;
+            if (KindRefusal(problem, p) is { } kind) return kind;
         if (problem.FirstCylindrical() is { } curved) return Em3dCylinderGap.NotHere(curved, "EMerge");
         if (GmshGeoWriter.ImportedOpenEmsOnly(problem.Solids, "EMerge") is { } imported) return imported;
         if (problem.Solids.FirstOrDefault(s => s.Voxel is not null) is { } voxel)
@@ -71,12 +71,22 @@ internal static class EmergeLoweringRules
         return [("xmin", f.XMin), ("xmax", f.XMax), ("ymin", f.YMin), ("ymax", f.YMax), ("zmin", f.ZMin), ("zmax", f.ZMax)];
     }
 
-    private static string? KindRefusal(Em3dPort p)
+    private static string? KindRefusal(Em3dProblem problem, Em3dPort p)
     {
         int n = p.SourceNumber ?? p.Number;
-        if (p.Kind == Em3dPortKind.Wave)
-            return $"Port {n} is a wave port. circuitRF lowers lumped ports for EMerge in this version; its wave ports are a later " +
-                   "series. Palace and openEMS run wave ports: set the setup's Solver3D to Palace or OpenEms, or make the port lumped.";
+        // brief-emw-2 R-emw2-6 — a wave port of one terminal runs; a terminal group and a hollow waveguide do not yet
+        if (p.Kind == Em3dPortKind.Wave && p.FaceGroup is { } group)
+        {
+            int terminals = problem.Ports.Count(q => q.FaceGroup == group);
+            return $"Port '{p.FaceGroupLabel ?? n.ToString(CultureInfo.InvariantCulture)}' has {Count(terminals)} terminals. EMerge runs wave " +
+                   "ports with one conductor on the face in this version; openEMS runs terminal ports. Set the setup's Solver3D to OpenEms.";
+        }
+        if (p.Kind == Em3dPortKind.Wave && problem.Type == Em3dProblemType.Eigenmode)
+            return $"Port {n} is a wave port, and circuitRF runs EMerge's eigenmode solve with lumped ports only: a wave port's " +
+                   "condition is a driven problem's. Make the port lumped, or solve a driven problem.";
+        if (p.Kind == Em3dPortKind.Wave && FdtdWavePorts.IsHollow(problem, p))
+            return $"Port {n} is a hollow waveguide: one conductor meets its region. EMerge's wave port keeps TEM modes only in " +
+                   "this version, and a hollow waveguide carries none. Palace runs it: set the setup's Solver3D to Palace.";
         if (p.Annulus is not null)
             return $"Port {n} is a coaxial lumped port. EMerge's lumped port drives one uniform field direction across its sheet, " +
                    "and a coaxial annulus is fed radially, which it cannot state. Run the setup on Palace or openEMS, or draw a " +
@@ -87,6 +97,11 @@ internal static class EmergeLoweringRules
     private static string? PortRefusal(Em3dPort p)
     {
         int n = p.SourceNumber ?? p.Number;
+        if (p.Kind == Em3dPortKind.Wave)
+            return p.Z0.Imaginary != 0 || !(p.Z0.Real > 0)
+                ? $"Port {n}'s reference impedance is {Ohms(p.Z0)}. EMerge's wave port refers its S-parameters to the mode, and " +
+                  "circuitRF renormalises them to the port's Z0, which must be real and positive: set the port's Z0 to a positive real value."
+                : null;
         if (p.Z0.Imaginary != 0 || !(p.Z0.Real > 0))
             return $"Port {n}'s reference impedance is {Ohms(p.Z0)}. EMerge's lumped port is terminated in a real resistance, " +
                    "which must be positive: set the port's Z0 to a positive real value.";
@@ -179,6 +194,36 @@ internal static class EmergeLoweringRules
         return (min, Along(a, d[a]), Along(b, d[b]), alongA ? d[b] : d[a], alongA ? d[a] : d[b]);
     }
 
+    /// <summary>
+    /// brief-emw-2 — a wave port's region as the driver takes it: an origin and two side vectors spanning the rectangle on its
+    /// face, and its width and height (the two sides' lengths, in that order).
+    /// </summary>
+    public static (Point3 Origin, Point3 U, Point3 V, double Width, double Height) Region(Point3 min, Point3 max)
+    {
+        double[] d = [max.X - min.X, max.Y - min.Y, max.Z - min.Z];
+        int flat = Array.IndexOf(d, d.Min());
+        int a = flat == 0 ? 1 : 0, b = flat == 2 ? 1 : 2;
+        static Point3 Along(int axis, double length) => axis switch
+        {
+            0 => new Point3(length, 0, 0),
+            1 => new Point3(0, length, 0),
+            _ => new Point3(0, 0, length),
+        };
+        return (min, Along(a, d[a]), Along(b, d[b]), d[a], d[b]);
+    }
+
+    /// <summary>brief-emw-2 R-emw2-1 — the materials meeting a wave port's region, by the Engine's own sampling of the face's
+    /// cross-section; more than one makes the port's mode solve per frequency (EMerge's <c>mixed_materials</c>).</summary>
+    public static IReadOnlyList<string> RegionMaterials(Em3dProblem problem, Em3dPort p)
+        => FdtdWavePorts.RegionMaterials(problem, p,
+                                         problem.Boundary.Material ?? GmshGeoWriter.BackgroundMaterial(problem.Solids, problem.Materials));
+
+    private static string Count(int n) => n switch
+    {
+        2 => "two", 3 => "three", 4 => "four", 5 => "five", 6 => "six", 7 => "seven", 8 => "eight", 9 => "nine",
+        _ => n.ToString(CultureInfo.InvariantCulture),
+    };
+
     private static string Ohms(Complex z)
         => z.Imaginary == 0 ? $"{G(z.Real)} Ω" : $"{G(z.Real)}{(z.Imaginary < 0 ? "-" : "+")}j{G(Math.Abs(z.Imaginary))} Ω";
 
@@ -222,6 +267,11 @@ internal static class EmergeLoweringRules
         }
         foreach (var p in problem.Ports)
         {
+            if (p.Kind == Em3dPortKind.Wave)
+            {
+                rows.Add(new(p.Name, "port", WaveMapping(problem, p)));
+                continue;
+            }
             var r = Rect(p.Min, p.Max, p.Direction)!.Value;
             rows.Add(new(p.Name, "port",
                 $"a lumped port, number {p.Number}: {Mm(r.Width)} wide, {Mm(r.Height)} high, voltage along ({G(p.Direction.X)}, " +
@@ -241,8 +291,32 @@ internal static class EmergeLoweringRules
             rows.Add(new(region.Name, "mesh region", $"a box size field: elements at most {Mm(region.SizeM)} inside it"));
         rows.Add(new("mesh", "mesh",
             $"each material at most {G(settings.MaxElementWavelengths)} of its wavelength (EMerge's resolution); {Mm(edgeSizeM)} along " +
-            "the edges of conductors and sheets, growing by 3 away from them (EMerge's own rate); a port is not refined"));
+            "the edges of conductors and sheets, growing by 3 away from them (EMerge's own rate); a port is not refined" +
+            (problem.HasWavePorts ? "; a wave port's region is meshed to about 50 triangles, as EMerge meshes a port face" : "")));
         return rows;
+    }
+
+    /// <summary>brief-emw-2 R-emw2-5 — explain's row for a wave port of one terminal.</summary>
+    private static string WaveMapping(Em3dProblem problem, Em3dPort p)
+    {
+        var r = Region(p.Min, p.Max);
+        bool mixed = RegionMaterials(problem, p).Count > 1;
+        string path = p.VoltagePath is { } vp
+            ? $"voltage path from ({Mm3(vp.From)}) to ({Mm3(vp.To)}), negative object to positive"
+            : "no voltage path";
+        double shift = p.ReferencePlane.ShiftM;
+        return $"a wave port, number {p.Number}: EMerge's full wave-port condition on the {problem.FaceOf(p.Min, p.Max)} face's " +
+               $"{G(r.Width * 1e3)} × {G(r.Height * 1e3)} mm region, its mode solved at every frequency (the condition is built " +
+               "from it) " + (mixed ? "on a face of several materials, so its impedance varies with frequency"
+                                    : "on a face of one material, so its impedance is constant") +
+               $"; {path}; renormalised from the mode's impedance to {G(p.Z0.Real)} Ω" +
+               (shift != 0 ? $"; reference plane {Mm(Math.Abs(shift))} {(shift > 0 ? "into the structure" : "out of it")}" : "");
+    }
+
+    private static string Mm3(Point3 q)
+    {
+        static string C(double m) => G(Math.Abs(m) < 1e-12 ? 0 : m * 1e3);     // a coordinate's round-off reads as 0
+        return $"{C(q.X)}, {C(q.Y)}, {C(q.Z)} mm";
     }
 
     private static string FaceMapping(Em3dBoundaryKind kind) => kind switch

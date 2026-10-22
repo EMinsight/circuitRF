@@ -30,11 +30,33 @@ public sealed record EmergeRunFacts(string? Version, string? SparseSolver, long?
     /// <summary>brief-emi-9 — where the run factorised, as the driver read it back from EMerge's own log (the solver it
     /// called), never as asked; null when the run did not say.</summary>
     public EmergeDevice? Device { get; init; }
+
+    /// <summary>brief-emw-2 R-emw2-3a — each wave port's face asked for two modes at the sweep's top; empty when the run has no
+    /// wave port or did not say.</summary>
+    public IReadOnlyList<EmergeSecondMode> SecondModes { get; init; } = [];
 }
 
-/// <summary>A driven run's arrays: the requested frequencies, S as [f][i, j] over the ports in ascending number, and each
-/// port's reference impedance as EMerge states it.</summary>
-public sealed record EmergeSweep(double[] FrequenciesHz, Complex[][,] S, Complex[] Z0);
+/// <summary>brief-emw-2 R-emw2-3a — one wave port's second-mode check: the modes EMerge kept at <see cref="FrequencyHz"/>
+/// (it drops evanescent ones, so a second one kept propagates), each one's β, rad/m, the face's own mode first; or why the
+/// check could not be made.</summary>
+public sealed record EmergeSecondMode(int Port, double FrequencyHz, IReadOnlyList<Complex> Betas, string? Error)
+{
+    /// <summary>A kept solution with β below this fraction of k₀ is the 2D solve's null space, not a mode: on a finely meshed
+    /// face EMerge returned one at β/k₀ 5e-5, ten times below any box mode's cutoff (src/Design/RESOLVED.md, EMW-2).</summary>
+    public const double NullBetaFraction = 1e-3;
+
+    /// <summary>The first kept mode past the face's own whose β is not the null space's; null when there is none.</summary>
+    public Complex? Second => Error is null
+        ? Betas.Skip(1).Cast<Complex?>().FirstOrDefault(b => b!.Value.Real > NullBetaFraction * 2 * Math.PI * FrequencyHz / 299792458.0)
+        : null;
+
+    public bool Propagating => Second is not null;
+}
+
+/// <summary>A driven run's arrays: the requested frequencies, S as [f][i, j] over the ports in ascending number, each port's
+/// reference impedance as EMerge states it [f][port] (brief-emw-2: a wave port's is its mode's Z_PV at that frequency), and
+/// each port's propagation constant α + jβ [f][port] (0 for a lumped port).</summary>
+public sealed record EmergeSweep(double[] FrequenciesHz, Complex[][,] S, Complex[][] Z0, Complex[][] Gamma);
 
 /// <summary>R-emi5-4b — an eigenmode run's modes after filtering: what is kept, how many were dropped, and below what.
 /// brief-emi-7 — <see cref="Sources"/> is each kept mode's index in <c>modes.npy</c>, which the driver's field steps are by.</summary>
@@ -45,7 +67,8 @@ public static class EmergeResults
     /// <summary>The diagnostics group an EMerge <c>.npy</c> carries beside S.</summary>
     public const string Group = "emerge";
 
-    public const string FrequencyFile = "freq.npy", SFile = "S.npy", Z0File = "Z0.npy", ModesFile = "modes.npy", QFile = "Q.npy";
+    public const string FrequencyFile = "freq.npy", SFile = "S.npy", Z0File = "Z0.npy", GammaFile = "gamma.npy", ModesFile = "modes.npy",
+                        QFile = "Q.npy";
     public const string RunFile = "run.json";
 
     /// <summary>EMerge's stdout and stderr, in the run directory.</summary>
@@ -77,9 +100,20 @@ public static class EmergeResults
             var warnings = r.TryGetProperty("warnings", out var w) && w.ValueKind == JsonValueKind.Array
                 ? [.. w.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!)]
                 : new List<string>();
+            var second = new List<EmergeSecondMode>();
+            if (r.TryGetProperty("secondModes", out var sm) && sm.ValueKind == JsonValueKind.Array)
+                foreach (var m in sm.EnumerateArray())
+                {
+                    if (!m.TryGetProperty("port", out var port) || !m.TryGetProperty("frequencyHz", out var f)) continue;
+                    var betas = m.TryGetProperty("betas", out var b) && b.ValueKind == JsonValueKind.Array
+                        ? [.. b.EnumerateArray().Select(x => new Complex(x[0].GetDouble(), x[1].GetDouble()))]
+                        : new List<Complex>();
+                    string? error = m.TryGetProperty("error", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString() : null;
+                    second.Add(new(port.GetInt32(), f.GetDouble(), betas, error));
+                }
             return new(Str("emerge"), Str("sparseSolver"), Long("tets"), Long("unknowns"), (int?)Long("samples"), Bool("adaptive") ?? false,
                        Num("error"), Bool("converged"), (int?)Long("modes"), Num("meshSeconds"), Num("solveSeconds"), warnings)
-                   { Device = Str("device") is "gpu" ? EmergeDevice.Gpu : Str("device") is "cpu" ? EmergeDevice.Cpu : null };
+                   { Device = Str("device") is "gpu" ? EmergeDevice.Gpu : Str("device") is "cpu" ? EmergeDevice.Cpu : null, SecondModes = second };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or FormatException)
         {
@@ -99,11 +133,15 @@ public static class EmergeResults
             var (f, fShape) = PlainNpy.ReadReal(Path.Combine(runDir, FrequencyFile));
             var (s, sShape) = PlainNpy.ReadComplex(Path.Combine(runDir, SFile));
             var (z, zShape) = PlainNpy.ReadComplex(Path.Combine(runDir, Z0File));
+            var (g, gShape) = PlainNpy.ReadComplex(Path.Combine(runDir, GammaFile));
             int nf = f.Length;
-            if (fShape.Length != 1 || sShape is not [var a, var b, var c] || a != nf || b != ports || c != ports || zShape is not [var nz] || nz != ports)
+            // brief-emw-2 — Z0 and gamma are [f, ports] (driver version 5); any other shape is refused, never reshaped
+            if (fShape.Length != 1 || sShape is not [var a, var b, var c] || a != nf || b != ports || c != ports ||
+                zShape is not [var zf, var zp] || zf != nf || zp != ports || gShape is not [var gf, var gp] || gf != nf || gp != ports)
             {
-                error = $"EMerge's arrays do not agree: {FrequencyFile} [{string.Join(", ", fShape)}], {SFile} [{string.Join(", ", sShape)}] " +
-                        $"and {Z0File} [{string.Join(", ", zShape)}], where {nf} frequencies and {ports} ports were expected.";
+                error = $"EMerge's arrays do not agree: {FrequencyFile} [{string.Join(", ", fShape)}], {SFile} [{string.Join(", ", sShape)}], " +
+                        $"{Z0File} [{string.Join(", ", zShape)}] and {GammaFile} [{string.Join(", ", gShape)}], where [{nf}], " +
+                        $"[{nf}, {ports}, {ports}], [{nf}, {ports}] and [{nf}, {ports}] were expected ({nf} frequencies, {ports} ports).";
                 return null;
             }
             var mats = new Complex[nf][,];
@@ -119,7 +157,8 @@ public static class EmergeResults
                 error = $"EMerge's {SFile} holds a value that is not a number.";
                 return null;
             }
-            return new EmergeSweep(f, mats, z);
+            Complex[][] Rows(Complex[] v) => [.. Enumerable.Range(0, nf).Select(k => v[(k * ports)..((k + 1) * ports)])];
+            return new EmergeSweep(f, mats, Rows(z), Rows(g));
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
         {
@@ -129,26 +168,22 @@ public static class EmergeResults
     }
 
     /// <summary>
-    /// The sweep referred to each port's stated Z0. EMerge refers a lumped port's S to that port's own Z0, which the lowering
-    /// set to the port's, so this is normally the sweep unchanged; when EMerge states another reference the whole matrix is
-    /// renormalised per frequency (RfCore's <see cref="RFNetwork.SToS"/>), never an element at a time.
+    /// The sweep referred to each port's stated Z0. brief-emw-2 R-emw2-4: first each moved reference plane is shifted, in the
+    /// mode's own normalisation (<see cref="WavePortReferences.Shift"/>, with the port's γ), then every port whose stated
+    /// reference differs from its Z0 is renormalised per frequency (<see cref="WavePortReferences.Renormalise"/>, the whole
+    /// matrix, never an element at a time) — the order Palace's run has. EMerge refers a lumped port's S to that port's own
+    /// Z0, which the lowering set to the port's, so a lumped-only run is normally the sweep unchanged; a wave port's S is
+    /// referred to its mode's Z_PV and is always renormalised.
     /// </summary>
     public static EmergeSweep AtPortReferences(EmergeSweep sweep, IReadOnlyList<Em3dPort> ports, out bool renormalised)
     {
         var target = ports.Select(p => p.Z0).ToArray();
-        renormalised = sweep.Z0.Where((z, i) => (z - target[i]).Magnitude > 1e-9 * Math.Max(1, target[i].Magnitude)).Any();
-        if (!renormalised) return sweep;
-        int n = ports.Count;
-        var mats = new Complex[sweep.S.Length][,];
-        for (int k = 0; k < sweep.S.Length; k++)
-        {
-            var m = new Mat<Complex>(n, n);
-            for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) m[i, j] = sweep.S[k][i, j];
-            var r = RFNetwork.SToS(m, sweep.Z0, target);
-            mats[k] = new Complex[n, n];
-            for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) mats[k][i, j] = r[i, j];
-        }
-        return sweep with { S = mats, Z0 = target };
+        var s = sweep.S;
+        if (ports.Any(p => p.Kind == Em3dPortKind.Wave && p.ReferencePlane.ShiftM != 0))
+            s = WavePortReferences.Shift(s, ports, sweep.Gamma);
+        renormalised = sweep.Z0.Any(row => row.Where((z, i) => (z - target[i]).Magnitude > 1e-9 * Math.Max(1, target[i].Magnitude)).Any());
+        if (renormalised) s = WavePortReferences.Renormalise(s, ports, sweep.Z0);
+        return sweep with { S = s, Z0 = [.. sweep.Z0.Select(_ => (Complex[])target.Clone())] };
     }
 
     /// <summary>S and Z0 in the house convention, the port map, and what EMerge reported, in the <see cref="Group"/> group.</summary>

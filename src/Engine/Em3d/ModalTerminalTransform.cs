@@ -29,7 +29,7 @@
 //    does by 0.0085 against openEMS, the real form by 0.0004.
 //
 // A one-entry face (an ungrouped wave port) has G = 1 and K = 1, and the transform reduces to renormalising that port from
-// its Z_PV to its Z₀ — what Em3dRunService.RenormaliseWavePorts does for a run with no group (gate 3 holds the two equal).
+// its Z_PV to its Z₀ — what WavePortReferences.Renormalise does for a run with no group (gate 3 holds the two equal).
 
 using System.Numerics;
 using NumFlat;
@@ -108,7 +108,7 @@ public static class ModalTerminalTransform
         // (the 3D Wave Ports Coupled Microstrip at 7.5 GHz: |T_V,ii|² off Z_PV by 4.8 % through the inverse, 0.08 % by the
         // fit), while each face's rows [1 + S_ff, S_fo] keep full rank. A one-entry face's T_V is √Z_PV, real: Palace pins
         // each mode's ∫E·dl real-positive along its path, and Z_PV is the impedance today's renormalisation uses, so an
-        // ungrouped port is treated exactly as RenormaliseWavePorts treats it. What the full V·P⁻¹ puts outside the blocks
+        // ungrouped port is treated exactly as WavePortReferences.Renormalise treats it. What the full V·P⁻¹ puts outside the blocks
         // is not used; what each face's fit leaves unexplained is the check that a terminal reads only its own face.
         int[] faceOf = new int[n];
         for (int f = 0; f < faces.Count; f++) foreach (int e in faces[f]) faceOf[e] = f;

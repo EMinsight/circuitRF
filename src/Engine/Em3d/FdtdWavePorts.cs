@@ -654,10 +654,56 @@ public static class FdtdWavePorts
     private static double Outside((double U0, double V0, double U1, double V1) f, double pu, double pv)
         => Math.Sqrt(Sq(Math.Max(0, Math.Max(f.U0 - pu, pu - f.U1))) + Sq(Math.Max(0, Math.Max(f.V0 - pv, pv - f.V1))));
 
-    /// <summary>A wave port met by one conductor: both its objects one (or both PEC faces of the box, which are one ground).</summary>
-    private static bool IsHollow(Em3dProblem problem, Em3dPort p)
+    /// <summary>A wave port met by one conductor: both its objects one (or both PEC faces of the box, which are one ground).
+    /// Public for brief-emw-2: EMerge's lowering refuses a hollow waveguide by this same test.</summary>
+    public static bool IsHollow(Em3dProblem problem, Em3dPort p)
         => p.PositiveObject == p.NegativeObject ||
            (problem.Boundary.FaceKind(p.PositiveObject) is not null && problem.Boundary.FaceKind(p.NegativeObject) is not null);
+
+    /// <summary>
+    /// brief-emw-2 R-emw2-1 — the materials that meet a wave port's region: the region sampled on a 33 × 33 grid of points in
+    /// the face's cross-section (sliced a hair inside, as <see cref="Plan"/> slices it), each point given to the solid that
+    /// owns it by circuitRF's precedence (later wins a tie, as the solvers' priorities have it) or to the air box's fill when
+    /// no solid does. A point a conductor owns is not meshed and names no material. Empty for a port on no face.
+    /// </summary>
+    public static IReadOnlyList<string> RegionMaterials(Em3dProblem problem, Em3dPort p, string fill)
+    {
+        ArgumentNullException.ThrowIfNull(problem);
+        if (problem.FaceOf(p.Min, p.Max) is not { } face) return [];
+        var box = problem.Boundary;
+        double span = Math.Max(box.Max.X - box.Min.X, Math.Max(box.Max.Y - box.Min.Y, box.Max.Z - box.Min.Z));
+        int fi = Array.IndexOf(FaceKeys, face);
+        int axis = fi / 2, inward = fi % 2 == 0 ? 1 : -1;
+        double sliceAt = Get(fi % 2 == 0 ? box.Min : box.Max, axis) + inward * 1e-6 * Math.Max(span, 1e-6);
+        int u = (axis + 1) % 3, v = (axis + 2) % 3;
+        if (u > v) (u, v) = (v, u);
+
+        var precedence = Em3dPrecedence.Of(problem);
+        var crossing = new List<(Em3dSolid Solid, int Rank, int Index, List<(Point2 A, Point2 B)> Section)>();
+        for (int i = 0; i < problem.Solids.Count; i++)
+        {
+            var s = problem.Solids[i];
+            var b = Em3dProblem.Bounds(s.Primitive);
+            double lo = axis == 0 ? b.X0 : axis == 1 ? b.Y0 : b.Z0, hi = axis == 0 ? b.X1 : axis == 1 ? b.Y1 : b.Z1;
+            if (lo > sliceAt || hi < sliceAt) continue;
+            var segs = Slice(Em3dTessellation.Of(s), axis, sliceAt, u, v);
+            if (segs.Count > 0) crossing.Add((s, precedence.Of(s), i, segs));
+        }
+        var ranked = crossing.OrderByDescending(c => c.Rank).ThenByDescending(c => c.Index).ToList();
+
+        const int n = 33;
+        double u0 = Get(p.Min, u), u1 = Get(p.Max, u), v0 = Get(p.Min, v), v1 = Get(p.Max, v);
+        var found = new SortedSet<string>(StringComparer.Ordinal);
+        for (int a = 0; a < n; a++)
+            for (int c = 0; c < n; c++)
+            {
+                var q = new Point2(u0 + (u1 - u0) * (a + 0.5) / n, v0 + (v1 - v0) * (c + 0.5) / n);
+                var owner = ranked.FirstOrDefault(r => Inside(r.Section, q)).Solid;
+                if (owner is null) found.Add(fill);
+                else if (owner.Role != Em3dRole.Conductor) found.Add(owner.Material);
+            }
+        return [.. found];
+    }
 
     // ── the side walls (R-em3d116-1d) ────────────────────────────────────────────────────────
 

@@ -1191,10 +1191,9 @@ src/Design/Em3d/SarVolumeFiles.cs|'{path}' is in Fortran order; a SAR volume is 
 src/Design/Em3d/SarVolumeFiles.cs|'{path}' is not a NumPy array.
 
 # ── briefs sar-3 and sar-5 (2026-10-18): a grid file's form, and the SAR engine's own invariants ─────────
-# A given-grid file with no RectilinearGrid (its sentence is completed by CemGridLines' refusal), sar_calc started by
-# nothing, and the engine's argument checks on arrays its callers build. What a user reads about SAR is the run's own
+# A given-grid file with no RectilinearGrid (its sentence is completed by CemGridLines' refusal) and the engine's
+# argument checks on arrays its callers build. What a user reads about SAR is the run's own
 # refusals and notes (Em3dSar, OpenEmsSarResults, OpenEmsSarCalc's cross-check).
-src/Design/Em3d/OpenEmsSarCalc.cs|the operating system started nothing
 src/Design/Layout/Em/EmSetupPersistence.cs|it holds no RectilinearGrid
 src/Engine/Em3d/Sar/SarEngine.cs|An averaging mass of {g} g; every mass is positive.
 src/Engine/Em3d/Sar/SarEngine.cs|The grid's {grid.Count} cells are too many for one table.

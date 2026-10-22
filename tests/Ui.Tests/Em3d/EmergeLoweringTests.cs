@@ -37,6 +37,8 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
         ("cavity", "examples/3D Eigenmode/Cavity/3d/Cavity.c3d", "Driven"),
         ("cavity-with-post", "examples/3D Eigenmode/Cavity with post/3d/Cavity with post.c3d", "Modes"),
         ("connector-launch", "examples/3D Connector/Launch/3d/Launch.c3d", "Palace"),
+        // brief-emw-2 — the 3D Wave Ports Launch: wave port P1 on the xmin face, lumped port P2 on the board
+        ("wave-launch", "examples/3D Wave Ports/Launch/3d/Launch.c3d", "Palace"),
     ];
 
     [Theory]
@@ -49,6 +51,11 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
     /// each file the input names is the one the lowering carries.</summary>
     [KernelFact]
     public void Golden_TheConnectorLaunch_LowersByteForByte_ApartFromItsKernelFilesNames() => Golden("connector-launch");
+
+    /// <summary>brief-emw-2 R-emw2-1 — the Launch's wave port lowers as a <c>wavePorts</c> entry, its lumped port stays in
+    /// <c>ports</c>. Its flange is a kernel solid, as the connector launch's housing is.</summary>
+    [KernelFact]
+    public void Golden_TheWavePortLaunch_LowersByteForByte() => Golden("wave-launch");
 
     private void Golden(string name)
     {
@@ -186,7 +193,8 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
     [InlineData("thermal", "thermal problem")]
     [InlineData("static", "electrostatic problem cannot be lowered for EMerge")]
     [InlineData("settings", "EMerge.ElementOrder is 3")]
-    [InlineData("wave-port", "is a wave port")]
+    [InlineData("terminal-group", "Port 'Left' has two terminals. EMerge runs wave ports with one conductor on the face")]
+    [InlineData("hollow-waveguide", "is a hollow waveguide: one conductor meets its region")]
     [InlineData("coaxial-port", "is a coaxial lumped port")]
     [InlineData("complex-z0", "terminated in a real resistance")]
     [InlineData("voxel", "is a voxelized phantom")]
@@ -205,7 +213,11 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
             "eigenmode-is-lowered" => p with { Type = Em3dProblemType.Eigenmode, EigenmodeTargetHz = 1e9 },
             "thermal" => p with { Type = Em3dProblemType.Thermal },
             "static" => p with { Type = Em3dProblemType.Electrostatic },
-            "wave-port" => p with { Ports = [port with { Kind = Em3dPortKind.Wave }, .. p.Ports.Skip(1)] },
+            "terminal-group" => p with
+            {
+                Ports = [.. p.Ports.Select(q => q with { Kind = Em3dPortKind.Wave, FaceGroup = 1, FaceGroupLabel = "Left" })],
+            },
+            "hollow-waveguide" => p with { Ports = [port with { Kind = Em3dPortKind.Wave, NegativeObject = port.PositiveObject }, .. p.Ports.Skip(1)] },
             "coaxial-port" => p with { Ports = [port with { Annulus = new Em3dAnnulus(1e-4, 3e-4, true) }, .. p.Ports.Skip(1)] },
             "complex-z0" => p with { Ports = [port with { Z0 = new Complex(50, 5) }, .. p.Ports.Skip(1)] },
             "voxel" => p with { Solids = [p.Solids[0] with { Voxel = new Em3dVoxelLattice("Head", new Point3(0, 0, 0), 1e-3) }, .. p.Solids.Skip(1)] },
@@ -230,6 +242,19 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
         Assert.False(low.Ok);
         output.WriteLine(low.Refusal);
         Assert.Contains(expected, low.Refusal, StringComparison.Ordinal);
+    }
+
+    /// <summary>brief-emw-2 R-emw2-6 — a wave port of one terminal is lowered, and the same port with a complex Z0 is refused:
+    /// the renormalisation's target must be real and positive.</summary>
+    [KernelFact]
+    public void AOneTerminalWavePort_IsLowered_AndOneWithAComplexZ0_IsRefused()
+    {
+        Assert.True(Lowered("wave-launch", out var problem).Ok);
+        var wave = problem.Ports.Single(q => q.Kind == Em3dPortKind.Wave);
+        var complex = problem with { Ports = [.. problem.Ports.Select(q => q == wave ? q with { Z0 = new Complex(50, 5) } : q)] };
+        var low = EmergeScriptWriter.Write(complex, EmergeSettings.Default);
+        Assert.False(low.Ok);
+        Assert.Contains("EMerge's wave port refers its S-parameters to the mode", low.Refusal, StringComparison.Ordinal);
     }
 
     /// <summary>The setup-level refusal (the descriptor's, before anything is looked for) names the solver that does it.</summary>
@@ -291,6 +316,7 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
         foreach (var (name, _, _) in Cases)
         {
             if (name == "connector-launch" && KernelForTests.SkipReason is not null) continue;
+            if (name == "wave-launch") continue;     // its own test below reads what the driver says of its wave port
             var low = Lowered(name, out _);
             string dir = Path.Combine(_root, name);
             EmergeScriptWriter.WriteInto(low, dir);
@@ -307,6 +333,43 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
             using var line = JsonDocument.Parse(last);
             Assert.True(line.RootElement.GetProperty("tets").GetInt64() > 0);
         }
+    }
+
+    /// <summary>brief-emw-2 §7 test 5 — the driver builds the wave-port Launch: its region is EMerge's full wave-port condition
+    /// (<c>WavePortIH</c>) with its mode solved at every frequency though one material (PTFE) meets it, and no PEC claims any of its faces, although
+    /// the region lies on the xmin face, which is PEC.</summary>
+    [EmergeFact]
+    public void TheDriver_BuildsTheWavePortLaunch_ItsRegionAWavePortIH_WithNoPec()
+    {
+        if (KernelForTests.SkipReason is { } noKernel) { output.WriteLine("not run: " + noKernel); return; }
+        var low = Lowered("wave-launch", out _);
+        string dir = Path.Combine(_root, "wave-launch");
+        EmergeScriptWriter.WriteInto(low, dir);
+        using var line = JsonDocument.Parse(MeshInEmerge(dir));
+        var wave = line.RootElement.GetProperty("wavePorts").EnumerateArray().Single();
+        Assert.Equal(1, wave.GetProperty("number").GetInt32());
+        Assert.Equal("WavePortIH", wave.GetProperty("condition").GetString());
+        Assert.False(wave.GetProperty("mixed").GetBoolean());
+        Assert.True(wave.GetProperty("modePerFrequency").GetBoolean());
+        Assert.True(wave.GetProperty("regionFaces").GetInt32() > 0);
+        Assert.Equal(0, wave.GetProperty("pecFaces").GetInt32());
+    }
+
+    /// <summary>The driver's mesh mode in <paramref name="dir"/>: its last stdout line, after asserting it succeeded.</summary>
+    private string MeshInEmerge(string dir)
+    {
+        string python = SolverDiscovery.ReadinessFor(EmergeSolver.Id).Single(r => r.Tool == SolverTool.Emerge).Installation!.Path;
+        var psi = new ProcessStartInfo(python) { RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = dir };
+        foreach (string a in new[] { "-I", EmergeScriptWriter.DriverFile, EmergeScriptWriter.ProblemFile, "mesh" }) psi.ArgumentList.Add(a);
+        psi.Environment["MPLBACKEND"] = "Agg";
+        using var p = Process.Start(psi)!;
+        var stderr = p.StandardError.ReadToEndAsync();
+        string stdout = p.StandardOutput.ReadToEnd();
+        p.WaitForExit();
+        string last = stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
+        output.WriteLine(last);
+        Assert.True(p.ExitCode == 0, $"exit {p.ExitCode}: {last}\n{stderr.Result[^Math.Min(2000, stderr.Result.Length)..]}");
+        return last;
     }
 
     // ── fixtures ──────────────────────────────────────────────────────────────────────────────

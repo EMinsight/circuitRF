@@ -1,6 +1,6 @@
 {
   "format": "circuitRF EMerge problem",
-  "version": 1,
+  "version": 2,
   "testedEmerge": ["3.0.0b2"],
   "problem": "eigenmode",
   "eigenmode": {
@@ -188,6 +188,7 @@
       "z0": 50
     }
   ],
+  "wavePorts": [],
   "lumpedElements": [],
   "meshRegions": [],
   "files": []

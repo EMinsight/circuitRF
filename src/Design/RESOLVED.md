@@ -22482,3 +22482,118 @@ the harness's Z_PV for that entry to 1e-4 (48.431 against 48.433 Ω).
   The driver hands over V/√2, or U from T_V·C. The latter needs no 3D field and works under the adaptive sweep.
   A face whose solve returns more equal-β modes than terminals is refused by name (PMC walls splitting the reference).
   Fixtures: `testdata/em3d/terminal/emerge-modal/`, each carrying the expected terminal S.
+
+## EMerge single-terminal wave ports — EMW-2 (2026-10-22)
+
+`docs/sonnet-briefs/brief-emw-2-single-terminal.md`. A wave port with one conductor on the face now runs on EMerge: problem.json
+version 2 carries a `wavePorts` array, the driver (version 5) builds each region as `WavePortIH`, and the result is shifted
+then renormalised by `WavePortReferences` (`src/Design/Em3d/`), the code Palace's run used, moved out of its partial. EMerge
+3.0.0b2, circuitRF's own install, M4 with 16 GB.
+
+### Where the brief and EMerge disagreed
+
+- **`WavePortIH` must keep `mixed_materials = True`; the lowering's `mixed` does not reach it.** The brief said to set it from
+  `mixed`. Its dense block and its excitation come from `get_modepf_kappa`, which reads the STORED mode's own fields and β
+  (`mode.compute_kappa`, `γ = jβ_mode`) and never rescales them to k₀, so the mode must be solved at the frequency being
+  solved. Set False on the Launch (one material, PTFE), the S was right only at the sweep's centre, where EMerge first solves a
+  port's modes: S11 −4.2 dB at 2 GHz against Palace's −26.9, |S21| up to 1.3 at 14 GHz, EMerge's own "|S| greater than 1"
+  warning, and the GPU and CPU disagreeing. Left as EMerge sets it, the same mesh gives the numbers below. `mixed` stays in
+  problem.json: it decides whether an ADAPTIVE sweep needs a mode solve per requested frequency for Z0.npy and gamma.npy (a
+  face of one material does not: its impedance is constant and β scales with k₀), and what explain says of the impedance.
+  The mesh mode reports both (`mixed`, `modePerFrequency`), and the driver test holds them.
+- **A region's fragments over a conductor go with the conductor.** The Launch's 2 mm square lies mostly on its housing's
+  face; that part bounds only metal and is removed with it (`occ.remove(..., recursive=True)`), but EMerge's `GeoSurface`
+  keeps the removed tags and its port asks Gmsh for their normal ("Unknown model face with tag 90"). The driver keeps a
+  region's tags that still exist: the part over meshed space, the bore.
+- **The face loop excludes every region's tags** (the brief's rule), and EMerge's own default PEC also leaves them alone: it
+  is `no_overwrite` and skips assigned tags. The mesh mode calls `_autogenerate_bcs` and reports how many region faces any
+  PEC claims: 0 on the Launch, whose xmin face is PEC.
+- **The goldens change by two lines, not one**: `"wavePorts": []` and `"version": 2`, which the brief's own FormatVersion bump
+  writes. **EMI-5's fixture** (`testdata/em3d/emerge-run/driven/`) took the version-5 shapes: Z0.npy [3, 2] and a zero
+  gamma.npy beside it. Its `cavity.s2p` golden differs from before by one header line, the hash of problem.json (whose
+  text changed); every data line is byte-identical.
+- **EMerge's S corrections are switched off only when the problem has a wave port.** A lumped-only run keeps EMerge's
+  defaults, so its S is what it was.
+- **A wave port in an eigenmode problem is refused** (not in the brief): the eigen solve has no port condition of this kind.
+- **A wave port's region is meshed as EMerge meshes a port face**: about 50 triangles (`ModalPort.N_mesh_tris`), the size
+  `sqrt(area / 50 · 4/√3)` its `_size_constraint` gives. EMerge applies that in `_configure_bc_size` to the ports that exist
+  when it meshes; circuitRF assigns its conditions after meshing, so the driver states the size. Without it a small region on
+  a coarse mesh had too few triangles for its mode solve, and EMerge's dense eigensolver (LAPACK, used under 500 unknowns)
+  failed on the copper-sheet thru at Draft: `LinAlgError: Internal ggev return info = [395]`. With it that thru solves, and
+  the Launch's Z_PV no longer depends on the preset. Lumped ports are still not refined.
+- **The second-mode check ignores a solution with β under 10⁻³·k₀.** On the thru's port face meshed to 50 triangles EMerge
+  kept a "mode" at β/k₀ 5e-5 at 10 GHz, six GHz below the housing's first box mode: the 2D solve's null space. The real box
+  mode at 19.1 GHz (β/k₀ 0.57) is still warned of.
+
+### R-emw2-2a — polarity: the path is written from `from` to `to`
+
+EMW-1's case A as a `.c3d` (one 1.575 mm microstrip, 15 mm, in the Coupled Microstrip's housing; wave port on xmin from the
+floor to the strip; lumped port across the strip's end at x = 15 mm, the end wall 1 mm beyond), Draft, 1,761 tetrahedra:
+EMerge's raw ∠S21 is −1.0°, −2.8° and −4.4° off −βℓ at 2, 6 and 10 GHz (β the mode's own, β/k₀ 1.361–1.371). A reversed
+convention would be 180° off. The comment at `set_integration_line` says so. The strip is a 35 µm copper box; the same thru
+with a copper SHEET runs too, at Draft, once the two fixes below are in.
+
+### R-emw2-3a — the second-mode check, probed
+
+The same housing with one strip. A mode solve asking for three modes with the port's TEM-only filter lifted (`WavePortIH`
+sets `forced_modetype = "TEM"`, which would drop a box mode) kept one mode at 10 and 14 GHz and two from 16 GHz: a TE mode with
+β/k₀ 0.10 at 16 GHz, 0.48 at 18 and 0.62 at 20, so the housing's first box mode starts near 15.9 GHz. The product's check
+(two modes at the sweep's top, the filter lifted for that solve and the port's stored state restored after) on a sweep to
+19.1 GHz kept the TE mode, β 227.7 rad/m beside the strip's 553.3, and the run warned. EMerge drops a mode that carries no power
+(`try_add_mode`), so a second mode kept is a propagating one.
+
+### R-emw2-4 — shift, then renormalise
+
+On `testdata/em3d/terminal/emerge-modal/coax.json` with each plane 1 mm in: ∠S21 within 0.007°, 0.022° and 0.037° of
+−β(ℓ − 2 mm) at 2, 6, 10 GHz, and |ΔS| ≤ 0.0044 against the ideal line of Z_PV (the two faces' mean) and β. **Shifting after
+the renormalisation moves S11 by at most 0.0032 on this line**, under the 0.006 tolerance, so the order is not gated: both
+faces' Z_PV are within 1 % of 50 Ω, and the order matters only as far as the renormalisation mixes the waves. The order is
+still the one Palace's run has.
+
+### The Launch against Palace's Draft run: it misses, and the owner is asked
+
+`examples/3D Wave Ports` Launch, its Palace setup's frequencies and air box, Solver3D EMerge. |S| in dB:
+
+| GHz | EMerge Draft S11 | EMerge Standard S11 | Palace Draft S11 | openEMS S11 | EMerge Draft S21 | EMerge Standard S21 | Palace Draft S21 |
+|---|---|---|---|---|---|---|---|
+| 2 | −36.65 | −43.57 | −26.85 | −28.86 | −0.022 | −0.020 | −0.034 |
+| 6 | −20.92 | −25.34 | −20.99 | −25.70 | −0.107 | −0.082 | −0.121 |
+| 10 | −15.88 | −19.49 | −21.71 | −19.36 | −0.246 | −0.180 | −0.182 |
+| 14 | −14.08 | −16.77 | −21.05 | −18.06 | −0.524 | −0.439 | −0.389 |
+| 18 | −16.09 | −19.13 | −19.53 | −21.38 | −0.589 | −0.538 | −0.562 |
+
+Palace at element order 2 (the example's README): S11 −25.02 dB at 10 GHz, −21.44 dB at 18 GHz.
+
+- **Z_PV**: 50.62 Ω, 1.2 % over 50.02 Ω (the gate is 1 %), at both presets, now that the region is meshed as a port face.
+  Before that, with the region at the volume's size, it was 49.42 Ω at Draft and 50.08 Ω at Standard (the table's S is from
+  then; with the port-face size the S moved by at most 0.004 at Draft and 0.006 at Standard, S11 at 14 GHz now −14.21 and
+  −17.13 dB). Constant over the sweep.
+- **|Δ|S|| against Palace's Draft**: S21 ≤ 0.015 (Draft) and ≤ 0.005 (Standard); S11 up to 0.106 at 14 GHz (Draft) and 0.051
+  (Standard). The gate is 0.03 on both. Against openEMS's recorded run Standard's S11 is within 0.03 at every frequency.
+- **Cost**: Draft 9,879 tetrahedra, 70,720 unknowns, 4 s, peak 1.8 GB on the CPU (the fast sparse solver); on the GPU it agreed
+  with the CPU to 4e-7. Standard 18,561 tetrahedra, 130,966 unknowns, 7 s, 2.6 GB.
+- `EmergeWavePortTests.TheLaunch_OnEMergeAtDraft_MeetsPalacesDraftRun` (Category=Benchmark) holds the brief's tolerances and
+  FAILS on Z_PV; the tolerances were not widened. The owner accepted the miss.
+- **A field step of the Launch draws**: `FieldRun.OpenEmerge` opens port 1's step and its E is finite and not zero. A wave
+  port's step reports its incident voltage as √(2·Z_PV) (a mode at 1 W, R-emw1-5), where `bc.voltage` would give √Z0.
+
+### Not done, and why
+
+- **EMI-6's Compare greying had nothing to lift.** It greys a solver by its descriptor's `Refusal(setup)`, which sees no ports,
+  so EMerge was never greyed out for a wave port; a run or `check` refused it. A terminal group and a hollow waveguide are
+  still refused there, by the §6 sentences. Greying them in the panel needs the assembled problem, which the panel does not
+  build.
+
+### Found on the way, and fixed in the same commit (they predate EMW-2)
+
+- **A copper SHEET did not run on EMerge 3.0.0b2.** The driver called `GeoSurface.assign_thickness`, which calls a `self._store`
+  EMerge 3.0.0b2's `GeoSurface` does not have: `AttributeError: 'GeoSurface' object has no attribute '_store'`, for every sheet
+  of finite σ (the Coupled Microstrip's strips); a PEC sheet never called it. The driver now adds the property that method
+  would have stored, `properties += FiniteThickness(t)`, as EMerge's own PCB builder does, and EMerge's default conditions
+  read it: the sheet becomes a `ThinConductor`. The thru with a copper-sheet strip then ran at Standard (3,231 tetrahedra,
+  |S21| 0.995–0.999), and at Draft once its port region was meshed as a port face (above).
+- **`EmergeLoweringTests.TheDriver_EvaluatesNothing_…` failed since EMI-9**: its scan allows only `getattr(name, "word",
+  None)`, and EMI-9 wrote `getattr(s.EMSolver, "SPARTA", None)` and `getattr(s, "_SPARTA_AVAILABLE", False)`. The code was
+  brought to the rule (the enum bound to a name first; a `None` default, which `not` reads as the `False` did).
+- **Firewall's user-facing-text allow-list** kept an entry for `OpenEmsSarCalc.cs`'s "the operating system started nothing",
+  which EMI-10 removed from that file; the entry is gone.

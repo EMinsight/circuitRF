@@ -5,6 +5,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Numerics;
 using CircuitRF.Design.Layout.Em;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine.Em3d;
@@ -105,7 +106,7 @@ public static partial class Em3dRunService
                 // An earlier run's arrays would be read as this one's if this one stopped before writing its own.
                 Directory.CreateDirectory(dir);
                 foreach (string old in new[] { EmergeResults.FrequencyFile, EmergeResults.SFile, EmergeResults.Z0File,
-                                               EmergeResults.ModesFile, EmergeResults.QFile, EmergeResults.RunFile })
+                                               EmergeResults.GammaFile, EmergeResults.ModesFile, EmergeResults.QFile, EmergeResults.RunFile })
                     File.Delete(Path.Combine(dir, old));
                 EmergeFields.Clear(dir);
                 EmergeScriptWriter.WriteInto(lowering, dir);
@@ -178,10 +179,21 @@ public static partial class Em3dRunService
             sweep.FrequenciesHz.Where((f, k) => Math.Abs(f - requested[k]) > 1e-9 * Math.Abs(requested[k])).Any())
             return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(
                 $"EMerge's {EmergeResults.FrequencyFile} does not list the {requested.Length} frequencies the sweep asked for."));
-        sweep = EmergeResults.AtPortReferences(sweep with { FrequenciesHz = (double[])requested.Clone() }, ports, out bool renormalised);
-        if (renormalised)
+        // brief-emw-2 R-emw2-4 — a wave port's S is referred to its mode (Z_PV per frequency); a lumped port's to its own Z0
+        var wave = ports.Where(p => p.Kind == Em3dPortKind.Wave).ToList();
+        Complex[][] modeZ = [.. sweep.Z0.Select(row => wave.Select(w => row[ports.IndexOf(w)]).ToArray())];
+        bool lumpedMoved = sweep.Z0.Any(row => ports.Where((p, i) => p.Kind == Em3dPortKind.Lumped &&
+                                                                     (row[i] - p.Z0).Magnitude > 1e-9 * Math.Max(1, p.Z0.Magnitude)).Any());
+        sweep = EmergeResults.AtPortReferences(sweep with { FrequenciesHz = (double[])requested.Clone() }, ports, out _);
+        if (lumpedMoved)
             log.Notes.Add("EMerge referred a port's S-parameters to another impedance than the port's own; the .sNp states one real " +
                           "reference per port, so the whole matrix was renormalised to each port's Z0.");
+        if (wave.Count > 0)
+        {
+            log.Notes.Add(WavePortReferences.Note("EMerge", "EMerge's own mode solve, along the port's voltage path", wave, modeZ));
+            log.Notes.AddRange(WavePortReferences.ShiftNotes(wave));
+            SecondModeVerdicts(facts, problem, log);
+        }
 
         string? notConverged = null;
         if (facts.Adaptive)
@@ -203,6 +215,15 @@ public static partial class Em3dRunService
         }
 
         var data = EmergeResults.BuildDataSet(sweep, ports, facts);
+        if (wave.Count > 0)
+        {
+            var values = new Complex[modeZ.Length * wave.Count];
+            for (int k = 0; k < modeZ.Length; k++)
+                for (int i = 0; i < wave.Count; i++) values[k * wave.Count + i] = modeZ[k][i];
+            data.AddToGroup(EmergeResults.Group, WaveModeImpedanceCube, new RfCore.Data.DataCube(
+                [new RfCore.Data.Axis("f", sweep.FrequenciesHz, "Hz"), new RfCore.Data.Axis("Port", [.. wave.Select(p => (double)p.Number)], "")],
+                values) { Unit = "Ohm" });
+        }
         // brief-emi-7 — the saved fields' collections, and the radiation pattern at their frequencies
         var fields = EmergeFields.ReadSteps(dir);
         WriteFieldCollections(dir, fields, null, log);
@@ -228,6 +249,32 @@ public static partial class Em3dRunService
         log.Notes.Add(EmergeCompletionSummary(version, tier, facts, peak, setup, wall.Elapsed, eigenmode: false, EmergeFields.Bytes(dir)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "EMerge " + version, EmergeComparisonFacts(problem, settings, facts),
                        NotConverged: notConverged);
+    }
+
+    /// <summary>
+    /// brief-emw-2 R-emw2-3a — what the driver's second-mode check found, as Palace's run says it: a face that keeps a second mode
+    /// at the sweep's top is a warning, a check that could not be made a note, and a clean one a note.
+    /// </summary>
+    private static void SecondModeVerdicts(EmergeRunFacts facts, Em3dProblem problem, RunLog log)
+    {
+        string top = Fmt(problem.Frequency.StopHz / 1e9);
+        if (facts.SecondModes.Count == 0)
+        {
+            log.Notes.Add("Whether a wave port's second mode propagates was not checked: EMerge's run did not report it.");
+            return;
+        }
+        foreach (var m in facts.SecondModes.Where(m => m.Error is not null))
+            log.Notes.Add($"Whether port {m.Port}'s second mode propagates was not checked: {m.Error}.");
+        foreach (var m in facts.SecondModes.Where(m => m.Propagating))
+            log.Warnings.Add($"Port {m.Port}'s wave-port face supports a SECOND propagating mode at {Fmt(m.FrequencyHz / 1e9)} GHz " +
+                             $"(EMerge's β = {Fmt(m.Second!.Value.Real)} rad/m, the first mode's {Fmt(m.Betas[0].Real)}), so its S-parameters are " +
+                             "those of the first mode alone and power the second carries is not in them. Make the port region smaller " +
+                             "(the Ports3D Width and Height), or lower the sweep's top.");
+        var clean = facts.SecondModes.Where(m => m.Error is null && !m.Propagating).ToList();
+        if (clean.Count > 0)
+            log.Notes.Add($"No second mode propagates at {top} GHz, the top of the sweep, on the face of " +
+                          $"{(clean.Count == 1 ? "port " : "ports ")}{string.Join(", ", clean.Select(m => m.Port))} (EMerge, asked for two " +
+                          "modes, kept no second one that propagates: it drops a mode that carries no power).");
     }
 
     /// <summary>
