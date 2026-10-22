@@ -43,7 +43,8 @@ public sealed record EmergeProbe(
     };
 
     /// <summary>
-    /// The tier in the row's words. EMI-3 adds, to the baseline sentence, what would make it fast on this machine.
+    /// The tier in two or three words: <c>solver list --json</c>'s <c>tier</c>. What a person reads, with what would
+    /// make it faster, is <see cref="EmergeAccelerator.Sentence(SolverInstallation?)"/> (brief-emi-3).
     /// </summary>
     public string TierText => Tier switch
     {

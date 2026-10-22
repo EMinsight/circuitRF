@@ -776,8 +776,9 @@ public sealed partial class SolverDiscovery
         string untested = found.Validated || !UntestedRuns ? "" : " " + DescribeUntested(found);
 
         // brief-emi-2 R-emi2-4 — EMerge's row: the version and whether it is validated, the speed tier, then where.
-        if (found.Emerge is { } probe)
-            return $"{found.DescribeVersion()}, {validity}; {probe.TierText}. " +
+        // brief-emi-3 R-emi3-4 — the tier is EmergeAccelerator's sentence, which also says what would make it faster.
+        if (found.Emerge is not null)
+            return $"{found.DescribeVersion()}, {validity}. {EmergeAccelerator.Sentence(found)} " +
                    (found.HowFound == SolverHowFound.Installed
                        ? $"Installed by circuitRF at {found.Where}."
                        : $"Found at {found.Where} ({(found.HowFound == SolverHowFound.Settings ? "set here" : $"named by {EnvironmentVariable}")}).") +

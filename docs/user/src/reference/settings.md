@@ -509,7 +509,7 @@ Python interpreter that has EMerge installed, or the folder of the virtual envir
 in. **Blank searches `CIRCUITRF_EMERGE`, then the copy circuitRF installed, and never `PATH`**: a Python
 found there is far more likely to be one of your own environments than one meant for circuitRF. The
 status line gives the EMerge version and whether circuitRF has tested it, then which sparse solver
-EMerge would use — *fast sparse solver*, or *baseline sparse solver (one core)* — then where it was
+EMerge would use — *Fast sparse solver*, or *Baseline sparse solver, one core* — then where it was
 found. circuitRF asks EMerge once and keeps the answer until that environment changes. Any EMerge version
 you installed yourself runs; one circuitRF has not tested is flagged, as Gmsh's is, and the row and every
 run name the versions that are tested.
@@ -519,6 +519,14 @@ into one folder of circuitRF's, each at a pinned version and checked against a r
 or changed. It takes about two minutes and 1 GB. EMerge and Gmsh are free software under the GNU GPL;
 on an x64 computer, EMerge's own dependencies also include a vendor's multi-threaded sparse-solver
 library under that vendor's licence. The install says so before anything is downloaded.
+
+**The install also uses the fastest sparse solver your computer can have**, without asking again. On
+an arm64 macOS computer that is a solver it builds from source, which takes a few seconds and needs the
+command line tools. If they are not installed, the status line says so — *Install the command line tools
+(xcode-select --install) and circuitRF will add a faster one automatically* — and **Install the command
+line tools…** beside it starts their installer. When they are in place, circuitRF builds the faster
+solver by itself, the next time this tab is shown or an EMerge run starts. Until then EMerge still runs,
+and gives the same answers, with a multi-threaded solver that needs no compiler.
 
 How each program was installed for validation is in
 {{anchor: em-setup.html#install-3d-solvers|Installing the 3D solvers by hand}}.

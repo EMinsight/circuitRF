@@ -274,6 +274,7 @@
         "requests==2.34.2 --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
         "rich==15.0.0 --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb",
         "rich-rst==2.2.0 --hash=sha256:1ea1c43813dc4a8d86475fce27ffb74e0ada3d4656c9f8130ba2a59868055fe9",
+        "rslab==0.38.0 --hash=sha256:3ee13760b6a3aed1a4bbd511abc7a38da8162178489a71342889204ea7d6eed1",
         "scipy==1.18.1 --hash=sha256:d416b16cccfd70fbf62400e84d0bb2f4e6af519a45557f1692c749b37f14b315",
         "scooby==0.12.0 --hash=sha256:65dea5b32006ef554aea9e945032c0c448eaacada96078187681e24f0a2fe8fa",
         "six==1.17.0 --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",

@@ -317,26 +317,34 @@ public partial class Em3dSolverSettingsView : UserControl
 
     /// <summary>Runs discovery for one row off the UI thread and writes its answer back —
     /// <see cref="SolverStatus.Of"/>, which <c>circuitrf solver list</c> prints too.</summary>
-    private static void Refresh(SolverDiscovery discovery, TextBlock status, Button install)
+    private void Refresh(SolverDiscovery discovery, TextBlock status, Button install)
     {
         status.Text = "Checking…";
         install.IsVisible = false;
+        bool emerge = discovery.Tool == SolverTool.Emerge;
+        if (emerge) EmergeAccelerate.IsVisible = false;
         _ = Task.Run(() =>
         {
             string text;
             bool offer = false;
+            RecipePrerequisite? accelerate = null;
             try
             {
+                // brief-emi-3 R-emi3-3 — Settings being shown is one of the two points circuitRF finishes EMerge's faster
+                // sparse solver once what it needs has appeared. Never asks: the install it belongs to was agreed to.
+                if (emerge) EmergeAccelerator.FinishIfDue(discovery.Find(out _));
                 // brief-em3d-136 R-em3d136-4b — the GPU line only for a user who chose GPU: a CPU user pays no GPU solve.
                 var row = SolverStatus.Of(discovery.Tool, discovery,
                                           gpu: CircuitRF.Ui.Layout.Em.EmPalaceDevicePreference.Preferred == PalaceDevice.Gpu);
                 text  = row.GpuLine is { } gpuLine ? row.Summary + Environment.NewLine + gpuLine : row.Summary;
                 offer = row.OfferInstall;
+                if (emerge) accelerate = EmergeAccelerator.InstallerFor(row.Found);
             }
             catch (Exception ex) { text = ex.Message; }
             Dispatcher.UIThread.Post(() =>
             {
                 ShowStatus(status, text);
+                if (emerge) ShowAccelerate(accelerate);
                 bool running = CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.IsRunning(discovery.Tool);
                 install.IsVisible = offer || running;
                 install.IsEnabled = !running;
@@ -410,6 +418,53 @@ public partial class Em3dSolverSettingsView : UserControl
     }
 
     internal static string FoldSpackPadding(string text) => SpackInstalls.FoldPadding(text);
+
+    /// <summary>brief-emi-3 R-emi3-4 — the prerequisite's own installer, labelled with the recipe's name for it, while
+    /// one is waiting (and not already started from here).</summary>
+    private void ShowAccelerate(RecipePrerequisite? prerequisite)
+    {
+        EmergeAccelerate.IsVisible = prerequisite is not null;
+        EmergeAccelerate.Tag       = prerequisite;
+        EmergeAccelerate.IsEnabled = !_accelerateWatching;
+        if (prerequisite is not null)
+            EmergeAccelerate.Content = _accelerateWatching ? $"Waiting for {prerequisite.Name}…" : $"Install {prerequisite.Name}…";
+    }
+
+    /// <summary>One watch per process: a second Settings window must not start the installer twice.</summary>
+    private static bool _accelerateWatching;
+
+    /// <summary>
+    /// brief-emi-3 R-emi3-4 — starts the prerequisite's own installer, which asks the user itself, then looks every few
+    /// seconds until it has installed, and builds EMerge's faster sparse solver then (R-emi3-3). The user presses
+    /// this and nothing else.
+    /// </summary>
+    private async void OnEmergeAccelerate(object? sender, RoutedEventArgs e)
+    {
+        if (EmergeAccelerate.Tag is not RecipePrerequisite { Installer.Count: > 0 } prerequisite || _accelerateWatching) return;
+        try
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo(prerequisite.Installer[0]) { UseShellExecute = false };
+            foreach (string a in prerequisite.Installer.Skip(1)) psi.ArgumentList.Add(a);
+            System.Diagnostics.Process.Start(psi)?.Dispose();
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            ShowStatus(EmergeStatus, $"The installer for {prerequisite.Name} could not be started: {ex.Message}");
+            return;
+        }
+        _accelerateWatching = true;
+        ShowAccelerate(prerequisite);
+        try
+        {
+            await EmergeAccelerator.FinishWhenInstalledAsync(() => SolverDiscovery.Emerge.Find(out _),
+                                                             TimeSpan.FromSeconds(5), TimeSpan.FromHours(2), CancellationToken.None);
+        }
+        finally
+        {
+            _accelerateWatching = false;
+            Dispatcher.UIThread.Post(() => Refresh(SolverDiscovery.Emerge, EmergeStatus, EmergeInstall));
+        }
+    }
 
     /// <summary>brief-em3d-24 — the row's Install …: consent, then the install in the background.</summary>
     private async void OnInstall(object? sender, RoutedEventArgs e)

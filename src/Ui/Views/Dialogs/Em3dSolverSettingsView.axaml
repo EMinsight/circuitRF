@@ -182,7 +182,7 @@
       <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
               Tag="EmergeBox" Click="OnBrowse" ToolTip.Tip="Pick the environment's Python from disk"/>
       <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="EmergeStatus" FontSize="11" Opacity="0.75"
-                 TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                 TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis"
                  Margin="0,4,0,0" Text="Not checked yet.">
         <SelectableTextBlock.ContextMenu>
           <ContextMenu>
@@ -191,9 +191,16 @@
           </ContextMenu>
         </SelectableTextBlock.ContextMenu>
       </SelectableTextBlock>
-      <Button Grid.Row="2" Grid.ColumnSpan="2" Name="EmergeInstall" Content="Install EMerge…" FontSize="11" Padding="8,3"
-              Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="Emerge" Click="OnInstall"
-              ToolTip.Tip="Download a Python of its own, EMerge and every package it needs, each pinned and checked, into a folder of circuitRF's. Shows what it will fetch and where it will go before anything is downloaded."/>
+      <!-- brief-emi-3 R-emi3-4: beside the status line, the prerequisite's own installer when the faster sparse solver
+           is waiting for it (EmergeAccelerator.InstallerFor). Its label is the recipe's prerequisite name. -->
+      <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+        <Button Name="EmergeInstall" Content="Install EMerge…" FontSize="11" Padding="8,3"
+                HorizontalAlignment="Left" IsVisible="False" Tag="Emerge" Click="OnInstall"
+                ToolTip.Tip="Download a Python of its own, EMerge and every package it needs, each pinned and checked, into a folder of circuitRF's. Shows what it will fetch and where it will go before anything is downloaded."/>
+        <Button Name="EmergeAccelerate" FontSize="11" Padding="8,3" HorizontalAlignment="Left" IsVisible="False"
+                Click="OnEmergeAccelerate"
+                ToolTip.Tip="Starts that installer, which asks you itself. When it has finished, circuitRF builds EMerge's faster sparse solver on its own: there is nothing else to press."/>
+      </StackPanel>
       <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="EmergeRemovals" Spacing="4"/>
     </Grid>
 

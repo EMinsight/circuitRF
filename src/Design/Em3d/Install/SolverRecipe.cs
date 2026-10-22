@@ -74,7 +74,16 @@ public sealed record RecipeSource(string? Id, string Url, string FetchedBy, stri
 /// <c>fedora</c>) with <c>default</c> as the fallback. circuitRF runs none of them.</param>
 public sealed record RecipePrerequisite(
     string Kind, string Name, string? Path, IReadOnlyList<string> Search, string? Variable,
-    IReadOnlyList<string> Arguments, string? MinVersion, IReadOnlyDictionary<string, string> Remedy);
+    IReadOnlyList<string> Arguments, string? MinVersion, IReadOnlyDictionary<string, string> Remedy)
+{
+    /// <summary>brief-emi-3 R-emi3-2a — an OPTIONAL prerequisite never refuses the install: it decides whether the
+    /// steps that name it in <see cref="RecipeStep.When"/> run, and an unmet one leaves them for later.</summary>
+    public bool Optional { get; init; }
+
+    /// <summary>brief-emi-3 R-emi3-4 — the program and arguments that start the prerequisite's OWN installer (its
+    /// vendor's), which the user may start from a button. Empty: there is none, and only the remedy is shown.</summary>
+    public IReadOnlyList<string> Installer { get; init; } = [];
+}
 
 /// <summary>One step. Which fields apply depends on <see cref="Kind"/>; the loader refuses a step
 /// missing what its kind needs.</summary>
@@ -82,7 +91,17 @@ public sealed record RecipeStep(
     string Name, RecipeStepKind Kind,
     string? Command, IReadOnlyList<string> Arguments, string? WorkingDirectory, string? CaptureAs, string? Expect,
     RecipeProgress Progress, string? Source, string? Into, string? Link, string? Target,
-    string? Path, IReadOnlyList<string> Lines);
+    string? Path, IReadOnlyList<string> Lines)
+{
+    /// <summary>brief-emi-3 R-emi3-2a — the optional prerequisite (by its name) this step needs, or null for a step
+    /// every install runs. An optional step whose prerequisite is unmet is SKIPPED, not failed, and one that fails
+    /// leaves the install installed; either way the install records it and finishes it later
+    /// (<see cref="SolverInstaller.FinishOptional"/>). Optional steps are the recipe's tail, so finishing them later
+    /// is running exactly that tail.</summary>
+    public string? When { get; init; }
+
+    public bool Optional => When is not null;
+}
 
 /// <summary>What a recipe cost when it was run, and where that was measured. A null figure is
 /// "not yet measured", and <see cref="Source"/> then says whose run will measure it.</summary>
@@ -104,6 +123,12 @@ public sealed record SolverRecipe(
     /// <summary>brief-emi-2 R-emi2-4 — the sentences the consent adds about what the user accepts by installing (the
     /// licences of what is fetched), one each, in order. Data, so the installer names no package.</summary>
     public IReadOnlyList<string> ConsentNotes { get; init; } = [];
+
+    /// <summary>brief-emi-3 — each optional prerequisite with the steps that need it, in recipe order.</summary>
+    public IReadOnlyList<(RecipePrerequisite When, IReadOnlyList<RecipeStep> Steps)> OptionalGroups
+        => Prerequisites.Where(p => p.Optional)
+                        .Select(p => (p, (IReadOnlyList<RecipeStep>)Steps.Where(s => s.When == p.Name).ToList()))
+                        .Where(g => g.Item2.Count > 0).ToList();
 }
 
 /// <summary>
@@ -258,8 +283,10 @@ public static class SolverRecipes
                  $"prerequisite '{p.Name}' names neither a path nor where to search");
             Need(p.Kind != "command" || p.Path is { Length: > 0 } || p.Search is { Count: > 0 },
                  $"prerequisite '{p.Name}' names neither a path nor where to search");
+            Need(p.Installer is null || (p.Installer.Count > 0 && p.Optional), $"prerequisite '{p.Name}' names an installer but is not optional");
             prereqs.Add(new RecipePrerequisite(p.Kind ?? "", p.Name ?? "", p.Path, p.Search ?? [], p.Variable,
-                                               p.Arguments ?? [], p.MinVersion, p.Remedy ?? new()));
+                                               p.Arguments ?? [], p.MinVersion, p.Remedy ?? new())
+                        { Optional = p.Optional, Installer = p.Installer ?? [] });
         }
 
         var steps = new List<RecipeStep>();
@@ -299,10 +326,18 @@ public static class SolverRecipes
                     Need(s.Path is { Length: > 0 } && s.Lines is { Count: > 0 }, $"step '{s.Name}' needs path and lines");
                     break;
             }
+            // R-emi3-2a — "optional" and "when" come together, "when" names an optional prerequisite, and nothing
+            // required follows an optional step (finishing later runs the tail, and nothing it skipped may be needed).
+            Need(s.Optional == (s.When is not null), $"step '{s.Name}': optional and when go together");
+            Need(s.When is null || prereqs.Any(p => p.Optional && p.Name == s.When),
+                 $"step '{s.Name}' runs when '{s.When}', which is not an optional prerequisite");
+            Need(s.When is not null || steps.All(x => !x.Optional), $"step '{s.Name}' is required but follows an optional step");
             steps.Add(new RecipeStep(s.Name ?? "", kind ?? RecipeStepKind.Run, s.Command, s.Arguments ?? [], s.WorkingDirectory,
                                      s.CaptureAs, s.Expect, progress ?? RecipeProgress.Lines, s.Source, s.Into,
-                                     s.Link, s.Target, s.Path, s.Lines ?? []));
+                                     s.Link, s.Target, s.Path, s.Lines ?? []) { When = s.Optional ? s.When : null });
         }
+        foreach (var p in prereqs.Where(p => p.Optional))
+            Need(steps.Any(s => s.When == p.Name), $"optional prerequisite '{p.Name}' is needed by no step");
         Need(steps.Count > 0, "a recipe has at least one step");
         foreach (string id in d.KnownFailures ?? [])
             Need(Install.KnownFailures.All.Any(k => k.Id == id), $"known failure '{id}' is not in KnownFailures");
@@ -386,6 +421,8 @@ public static class SolverRecipes
         public List<string>? Arguments { get; set; }
         public string? MinVersion { get; set; }
         public Dictionary<string, string>? Remedy { get; set; }
+        public bool Optional { get; set; }
+        public List<string>? Installer { get; set; }
     }
 
     private sealed class StepDto
@@ -404,6 +441,8 @@ public static class SolverRecipes
         public string? Target { get; set; }
         public string? Path { get; set; }
         public List<string>? Lines { get; set; }
+        public bool Optional { get; set; }
+        public string? When { get; set; }
         public string? Comment { get; set; }
     }
 

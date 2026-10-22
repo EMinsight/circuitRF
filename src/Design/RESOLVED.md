@@ -21712,3 +21712,89 @@ say "a vendor's multi-threaded sparse-solver library".
 the tool ids from `Em3dSolvers.Tools` instead of by hand. Gate: `tests/Ui.Tests/Em3d/EmergeInstallTests.cs` (recipes and
 lock lines, the probe parse, discovery order and the cache, the untested-version warning, and the registry with no tool
 named in `src/Cli/Solver.cs`). Every recipe also goes through `SolverInstallTests`' schema gate 2.
+
+## EMI-3: maximum speed by default (2026-10-21)
+
+**A real install with the new recipe** (fresh state folder, same machine): 2 min and 1.04 GB, the optional tail built in
+3.1 s, and the row then read "Fast sparse solver." — EMerge picking the built solver.
+
+**Measured first (R-emi3-1).** Scratch harness, not a test: the 3D Eigenmode example's Cavity written by hand for EMerge
+3.0.0b2 (the EMI-0 probe script), driven, 8–12 GHz adaptive sweep (9 initial samples, tol 1e-3), one EMerge environment
+with every candidate installed and each forced in turn, macOS 27.0 on an M4 (10 cores, 16 GB). Peak memory is the Python
+process's maximum resident size. The S-parameters agree to 1e-10 dB between solvers at each mesh.
+
+| Tets | Solver | All 10 cores | One core | Peak memory (all cores) |
+|---|---|---|---|---|
+| 9,835 | baseline (single-threaded default) | 48.6 s | — | 2.87 GB |
+| 9,835 | macOS sparse solver (built, needs the command line tools) | **3.0 s** | 6.0 s | 1.85 GB |
+| 9,835 | wheel-only multi-threaded solver | 4.0 s | 14.3 s | 2.18 GB |
+| 19,426 | baseline | 235.6 s | — | 5.24 GB |
+| 19,426 | macOS sparse solver | **9.2 s** (10.0 s on a re-run) | 18.2 s | 3.52 GB |
+| 19,426 | wheel-only solver | 11.2 s | 46.3 s | 4.09 GB |
+
+So on macOS arm64 the built solver wins (16× and 26× over the baseline), and the wheel-only one is close behind with no
+compiler, so it is **also in the macOS arm64 lock as the no-compiler fallback**. EMerge's own order prefers the built one
+when both import. **Linux arm64 takes the wheel-only solver too, on the strength of the macOS arm64 measurement**: it is
+the same code compiled for the same architecture, but no Linux arm64 machine was available, so the claim there is an
+expectation, not a measurement, until that recipe's first field install. The x64 platforms already get a vendor's
+multi-threaded solver through EMerge's dependencies and are unchanged.
+
+**The wheel-only solver is pinned at 0.38.0, not its newest (1.7.0).** EMerge 3.0.0b2 calls it with settings (`method`,
+`nemin`, `panel_nb`) that its 1.0 release removed, and every release from 1.0 to 1.7 raises `unknown setting 'method'` on
+EMerge's first factorisation. 0.38.0 is the last that works (0.30 has no `analyze` at all). Re-check when EMerge is
+re-pinned (overview O1). `tools/EmergeLock/make_locks.py` carries it as `EXTRA`.
+
+**Threads (R-emi3-5).** One core vs all ten: the built solver 2.0× faster on all, the wheel-only one 3.6–4.1×. **The
+variables are not interchangeable, measured at 9,835 tets**: the built macOS solver took 3.0 s with nothing set, 3.0 s
+with only `OMP_NUM_THREADS=1` and 5.9 s with only `VECLIB_MAXIMUM_THREADS=1` — it follows its own variable and nothing
+else. The wheel-only solver took 13.6 s with its variable UNSET (EMerge's interface reads a default of four, which did
+not take effect) against 4.0 s with `RSLAB_NUM_THREADS=10`, so a run that sets nothing loses most of its speed.
+`EmergeThreads.Environment` (in `Solvers/EMerge/EmergeAccelerator.cs`) sets `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`,
+`VECLIB_MAXIMUM_THREADS`, `RSLAB_NUM_THREADS` and `RAYON_NUM_THREADS` — what EMerge's own `emerge_config` writes, less
+the x64 vendor library's own variable, which falls back to `OMP_NUM_THREADS` and is not spelled in circuitRF's source
+(that fallback is the library's documented behaviour, not measured here: no x64 machine) — from the Cores preference,
+every physical core when unset. EMI-5's process start applies it.
+
+**Frequency-parallel workers stay off.** At 19,426 tets, all 10 threads in one process took 10.0 s; 2 workers × 5 threads
+13.2 s; 5 workers × 2 threads 15.9 s (and needed 16 samples instead of 13, since the parallel refinement adds several at
+once). Workers only lose here, and they multiply memory. EMerge also refuses them unless the script's body is under an
+`if __name__ == '__main__'` guard, which EMI-4's driver should know if this is ever revisited.
+
+**Eigenmode is single-threaded** in EMerge 3.0 whatever is installed: `EmergeAccelerator.EigenmodeNote` is the one Note.
+
+**The optional step (R-emi3-2a).** A prerequisite may be `"optional": true` (it never refuses the install), and a step
+`"optional": true, "when": "<that prerequisite's name>"`. The loader refuses `optional` without `when`, a `when` naming no
+optional prerequisite, an optional prerequisite no step needs, and **a required step after an optional one**: the optional
+steps are the recipe's tail, so finishing them later is running exactly that tail, and nothing required can have depended
+on a step that was skipped. A skipped group is recorded `missing`, a failed one `failed` with the failing step's last line,
+and the install still installs either way. The record's field is `optional` (one entry per group, with the prerequisite's
+STATE), not the brief's `accelerator`, because the installer knows nothing about solvers. An install from before EMI-3 has
+no entries, and finishing treats that as missing, so the owner's existing EMerge install gets the faster solver at the next
+Settings view or run.
+
+**The prerequisite's state** is what the check found, the first line it answered and that path's last write time
+(`xcode-select -p` names the tools' folder). A failed build is retried only when that differs, so a build that cannot
+succeed is not attempted on every run. **Never ask `/usr/bin/git` or `/usr/bin/clang` before `xcode-select -p` says the
+tools are there**: without them those shims open the tools' installer instead of answering, which is why the prerequisite is
+`xcode-select -p` alone and the build itself is what proves clang runs.
+
+**The macOS arm64 tail** fetches the solver's source as `git init` + `git fetch --depth 1 <url> <commit>` + `checkout
+--force FETCH_HEAD`, then checks the commit — unlike a clone, each step re-runs cleanly over what an interrupted attempt
+left. Its build needs setuptools, which `--no-build-isolation` takes from a second hash-locked file
+(`requirements-build.lock`, setuptools 84.0.0) instead of fetching whatever is newest. The build is one C file and took
+1 s. Then **a check that EMerge reports it available**: EMerge imports it inside a `try` and falls back silently when the
+library does not load, so without this step a broken build would look like success.
+
+**Finishing later (R-emi3-3)** is `SolverInstaller.FinishOptional`, under the install lock, rewriting the record after.
+`EmergeAccelerator.FinishIfDue` calls it for circuitRF's own install; Settings ▸ Solvers calls that when the EMerge row is
+shown, and `EmergeAccelerator.BeforeRun` is what EMI-5's run start calls (Note on a build, Warning quoting the build's line
+on a failure, the baseline Note once per session). **`solver list` does not build**: it is a read-only listing.
+
+**The one sentence (R-emi3-4)** is `EmergeAccelerator.Sentence`: the Settings row (`DescribeForSettings`), the install
+summary and the run Note all call it, and a source scan holds that. The prerequisite's name and command come from the
+recipe. Owner instruction: the prerequisite is called **the command line tools**, with no vendor name. The button beside the
+status line starts the prerequisite's `installer` (recipe data) and then polls every 5 s for up to 2 h, building as soon as
+the tools appear. The docs page EMI-8 writes is not linked from the row yet, because it does not exist.
+
+Gate: `SolverInstallTests` gate 13 (tests 1–3, on the fake recipes) and `tests/Ui.Tests/Em3d/EmergeAcceleratorTests.cs`
+(tests 4–5).

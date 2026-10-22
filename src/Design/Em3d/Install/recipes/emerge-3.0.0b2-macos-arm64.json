@@ -1,6 +1,6 @@
 {
   "$schema": "./recipe.schema.json",
-  "comment": "brief-emi-2 R-emi2-1. uv, a pinned Python and a hash-locked EMerge, all inside the home: no system Python is read or changed. The lock lines are tools/EmergeLock/make_locks.py's output.",
+  "comment": "brief-emi-2 R-emi2-1. uv, a pinned Python and a hash-locked EMerge, all inside the home: no system Python is read or changed. The lock lines are tools/EmergeLock/make_locks.py's output. brief-emi-3: its optional tail builds the faster macOS sparse solver from a pinned commit whenever the command line tools are installed, now or later.",
   "id": "emerge-3.0.0b2-macos-arm64",
   "tool": "emerge",
   "version": "3.0.0b2",
@@ -27,12 +27,36 @@
       "fetchedBy": "uv",
       "sha256": null,
       "checksumNote": "every package is pinned to an exact version and checked against the SHA-256 hashes in requirements.lock, which this recipe writes; uv refuses a file whose hash is not listed"
+    },
+    {
+      "id": "aasds",
+      "url": "https://github.com/FennisRobert/emerge-aasds.git",
+      "fetchedBy": "git (only with the command line tools)",
+      "checksumNote": "a git fetch of commit 47ad46880c3d26df126943ecfffb68864b1875d4, checked against that commit after the fetch; built on this machine and never redistributed"
     }
   ],
-  "prerequisites": [],
+  "prerequisites": [
+    {
+      "kind": "command",
+      "name": "the command line tools",
+      "path": "/usr/bin/xcode-select",
+      "arguments": [
+        "-p"
+      ],
+      "remedy": {
+        "default": "xcode-select --install"
+      },
+      "optional": true,
+      "installer": [
+        "/usr/bin/xcode-select",
+        "--install"
+      ]
+    }
+  ],
   "environment": {
     "UV_PYTHON_INSTALL_DIR": "${home}/python",
-    "UV_CACHE_DIR": "${home}/uv-cache"
+    "UV_CACHE_DIR": "${home}/uv-cache",
+    "GIT_TERMINAL_PROMPT": "0"
   },
   "clearEnvironment": [
     "PYTHON*",
@@ -42,7 +66,8 @@
     "PIP_*"
   ],
   "consentNotes": [
-    "EMerge is free software under the GNU General Public License, version 2 or later, and so is Gmsh, which it meshes with; circuitRF starts them as separate programs and distributes neither."
+    "EMerge is free software under the GNU General Public License, version 2 or later, and so is Gmsh, which it meshes with; circuitRF starts them as separate programs and distributes neither.",
+    "The faster sparse solver it builds on this machine declares the MIT licence; circuitRF builds it here from its upstream source and distributes nothing."
   ],
   "steps": [
     {
@@ -128,6 +153,7 @@
         "requests==2.34.2 --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0",
         "rich==15.0.0 --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb",
         "rich-rst==2.2.0 --hash=sha256:1ea1c43813dc4a8d86475fce27ffb74e0ada3d4656c9f8130ba2a59868055fe9",
+        "rslab==0.38.0 --hash=sha256:36ccca690cf32e9b5c6c95ca3ae9ee28a4a359777c83a63a00fda4ca9717e1d0",
         "scipy==1.18.1 --hash=sha256:e6fb6a55cc0ba97b59a1f288fb86dc6fce8bdfc0fffcbfd015e3a954bf2a2d93 --hash=sha256:ea324d9dd34c38bfb9bec8ca4d1b407db97dbb74029f566b8e322b1b6fe56fe6",
         "scooby==0.12.0 --hash=sha256:65dea5b32006ef554aea9e945032c0c448eaacada96078187681e24f0a2fe8fa",
         "six==1.17.0 --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
@@ -180,13 +206,155 @@
         "--no-config"
       ],
       "comment": "The cache roughly doubles the home's size and nothing reads it again."
+    },
+    {
+      "name": "Fetch the faster sparse solver's source",
+      "kind": "run",
+      "command": "/usr/bin/git",
+      "arguments": [
+        "init",
+        "--quiet",
+        "${home}/accelerator/emerge-aasds"
+      ],
+      "comment": "brief-emi-3 R-emi3-2b. init, fetch one commit and check it out: each step can run again over what an interrupted attempt left, which a clone cannot. /usr/bin/git is only asked once the prerequisite says the tools are there; asked before, it opens the command line tools' installer instead of answering.",
+      "optional": true,
+      "when": "the command line tools"
+    },
+    {
+      "name": "Fetch commit 47ad468 of the faster sparse solver",
+      "kind": "run",
+      "command": "/usr/bin/git",
+      "arguments": [
+        "-C",
+        "${home}/accelerator/emerge-aasds",
+        "fetch",
+        "--quiet",
+        "--depth",
+        "1",
+        "https://github.com/FennisRobert/emerge-aasds.git",
+        "47ad46880c3d26df126943ecfffb68864b1875d4"
+      ],
+      "optional": true,
+      "when": "the command line tools"
+    },
+    {
+      "name": "Check out the faster sparse solver's source",
+      "kind": "run",
+      "command": "/usr/bin/git",
+      "arguments": [
+        "-C",
+        "${home}/accelerator/emerge-aasds",
+        "checkout",
+        "--quiet",
+        "--force",
+        "FETCH_HEAD"
+      ],
+      "optional": true,
+      "when": "the command line tools"
+    },
+    {
+      "name": "Check the faster sparse solver's commit",
+      "kind": "run",
+      "command": "/usr/bin/git",
+      "arguments": [
+        "-C",
+        "${home}/accelerator/emerge-aasds",
+        "rev-parse",
+        "HEAD"
+      ],
+      "captureAs": "aasds",
+      "expect": "47ad46880c3d26df126943ecfffb68864b1875d4",
+      "optional": true,
+      "when": "the command line tools"
+    },
+    {
+      "name": "Write the locked build requirements",
+      "kind": "write",
+      "path": "${home}/requirements-build.lock",
+      "lines": [
+        "# Written by circuitRF's install assistant from recipe ${recipeId}: what building the faster sparse solver needs,",
+        "# at an exact version with the SHA-256 of its one file. Its build is otherwise a single C file, compiled by clang.",
+        "setuptools==84.0.0 --hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670"
+      ],
+      "optional": true,
+      "when": "the command line tools"
+    },
+    {
+      "name": "Install the build requirements",
+      "kind": "run",
+      "command": "${home}/uv/uv-aarch64-apple-darwin/uv",
+      "arguments": [
+        "pip",
+        "install",
+        "--python",
+        "${home}/env/bin/python",
+        "--require-hashes",
+        "--no-build",
+        "--link-mode",
+        "copy",
+        "--no-config",
+        "-r",
+        "${home}/requirements-build.lock"
+      ],
+      "optional": true,
+      "when": "the command line tools"
+    },
+    {
+      "name": "Build and install the faster sparse solver",
+      "kind": "run",
+      "command": "${home}/uv/uv-aarch64-apple-darwin/uv",
+      "arguments": [
+        "pip",
+        "install",
+        "--python",
+        "${home}/env/bin/python",
+        "--no-build-isolation",
+        "--no-deps",
+        "--reinstall-package",
+        "emerge-aasds",
+        "--link-mode",
+        "copy",
+        "--compile-bytecode",
+        "--no-config",
+        "${home}/accelerator/emerge-aasds"
+      ],
+      "comment": "--no-build-isolation: the build uses the hash-locked setuptools above rather than fetching whatever is newest; --no-deps: what it needs is already in the environment. Measured: 1 s on an M4.",
+      "optional": true,
+      "when": "the command line tools"
+    },
+    {
+      "name": "Check that EMerge finds the faster sparse solver",
+      "kind": "run",
+      "command": "${home}/env/bin/python",
+      "arguments": [
+        "-I",
+        "-c",
+        "from emerge._emerge import solver as s; print(s._AASDS_AVAILABLE)"
+      ],
+      "captureAs": "aasdsAvailable",
+      "expect": "True",
+      "comment": "EMerge imports it inside a try and quietly falls back when the library does not load, so this is the step that says whether the build worked.",
+      "optional": true,
+      "when": "the command line tools"
+    },
+    {
+      "name": "Clear uv's download cache again",
+      "kind": "run",
+      "command": "${home}/uv/uv-aarch64-apple-darwin/uv",
+      "arguments": [
+        "cache",
+        "clean",
+        "--no-config"
+      ],
+      "optional": true,
+      "when": "the command line tools"
     }
   ],
   "program": "${home}/env/bin/python",
   "measured": {
     "minutes": 2.3,
     "diskGB": 1.02,
-    "source": "circuitRF's own install, macOS 27.0 on an Apple M4, 2026-10-21: 137 s and 1.02 GB after uv's cache was cleared (906 MB environment, 71 MB Python, 28 MB uv); the probe then answered EMerge 3.0.0b2, Python 3.13.16, Gmsh 4.15.2, baseline sparse solver"
+    "source": "circuitRF's own install, macOS 27.0 on an M4, 2026-10-21: 137 s and 1.02 GB after uv's cache was cleared (906 MB environment, 71 MB Python, 28 MB uv); the probe then answered EMerge 3.0.0b2, Python 3.13.16, Gmsh 4.15.2, baseline sparse solver"
   },
   "knownFailures": []
 }

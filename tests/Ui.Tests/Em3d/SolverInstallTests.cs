@@ -435,6 +435,97 @@ public sealed class SolverInstallTests : IDisposable
         Assert.Contains($"gmsh-{release}-source.tgz", page);
     }
 
+    // ── 13. brief-emi-3: optional steps ─────────────────────────────────────────────────────────
+
+    private const string Tools = "the fake tools";
+    private string Flag => Path.Combine(_tmp, "fake-tools");
+
+    private string OptionalPrerequisite => $$"""
+        { "kind": "file", "name": "{{Tools}}", "path": "{{Flag.Replace("\\", "\\\\")}}",
+          "remedy": { "default": "install the fake tools" }, "optional": true }
+        """;
+
+    private const string OptionalBuild =
+        """{ "name": "Build the extra", "kind": "write", "path": "${home}/extra.txt", "lines": ["built"], "optional": true, "when": "the fake tools" }""";
+
+    private const string OptionalFailure =
+        """{ "name": "Build the extra", "kind": "run", "command": "${home}/no-such-program", "optional": true, "when": "the fake tools" }""";
+
+    /// <summary>R-emi3-2a / test 1 — an optional step with an unmet prerequisite is skipped, the install still installs and
+    /// records it Missing; with the prerequisite met, the same recipe runs it. The loader refuses the shapes that would
+    /// break finishing it later.</summary>
+    [Fact]
+    public void Gate13a_AnOptionalStepIsSkippedWhenItsPrerequisiteIsUnmet_AndRunWhenItIsMet()
+    {
+        string archive = FakeArchive("4.15.2");
+        var recipe = Recipe(archive, Sha(archive), OptionalBuild, OptionalPrerequisite);
+        Assert.Equal(Tools, Assert.Single(recipe.OptionalGroups).When.Name);
+        Assert.Null(SolverRecipes.Parse(RecipeJson(archive, Sha(archive), OptionalBuild.Replace("\"optional\": true, ", ""), OptionalPrerequisite), out _));
+        Assert.Null(SolverRecipes.Parse(RecipeJson(archive, Sha(archive),
+            OptionalBuild + """, { "name": "Required", "kind": "write", "path": "${home}/r.txt", "lines": ["r"] }""", OptionalPrerequisite), out _));
+
+        var outcome = Installer(IsolatedDiscovery()).Install(recipe);
+        Assert.True(outcome.Status == InstallStatus.Installed, outcome.Report);
+        string home = outcome.Record!.Home;
+        Assert.False(File.Exists(Path.Combine(home, "extra.txt")));
+        var missing = Assert.Single(InstallRecord.TryRead(Path.Combine(home, SolverHomes.RecordFile))!.Optional!);
+        Assert.Equal((Tools, OptionalStepsStatus.Missing, "unmet"), (missing.When, missing.Status, missing.PrerequisiteState));
+
+        Directory.Delete(home, recursive: true);
+        File.WriteAllText(Flag, "");
+        outcome = Installer(IsolatedDiscovery()).Install(recipe);
+        Assert.True(outcome.Status == InstallStatus.Installed, outcome.Report);
+        Assert.True(File.Exists(Path.Combine(home, "extra.txt")));
+        Assert.Equal(OptionalStepsStatus.Built, Assert.Single(outcome.Record!.Optional!).Status);
+    }
+
+    /// <summary>R-emi3-3 / test 2 — the prerequisite appearing after the install: the steps run once, at the next
+    /// finish, and never again.</summary>
+    [Fact]
+    public void Gate13b_APrerequisiteThatAppearsLater_RunsTheOptionalStepsOnce_ThenNotAgain()
+    {
+        string archive = FakeArchive("4.15.2");
+        var recipe = Recipe(archive, Sha(archive), OptionalBuild, OptionalPrerequisite);
+        var installer = Installer(IsolatedDiscovery());
+        var record = installer.Install(recipe).Record!;
+        Assert.Empty(installer.FinishOptional(recipe, record));   // still unmet
+
+        File.WriteAllText(Flag, "");
+        var done = Assert.Single(installer.FinishOptional(recipe, record));
+        Assert.Equal(OptionalStepsStatus.Built, done.Status);
+        Assert.True(File.Exists(Path.Combine(record.Home, "extra.txt")));
+
+        record = InstallRecord.TryRead(Path.Combine(record.Home, SolverHomes.RecordFile))!;
+        Assert.Equal(OptionalStepsStatus.Built, Assert.Single(record.Optional!).Status);
+        File.Delete(Path.Combine(record.Home, "extra.txt"));
+        Assert.Empty(installer.FinishOptional(recipe, record));
+        Assert.False(File.Exists(Path.Combine(record.Home, "extra.txt")));
+    }
+
+    /// <summary>R-emi3-3 / test 3 — a failed optional build leaves the install installed, and is not tried again
+    /// until the prerequisite's recorded state changes.</summary>
+    [Fact]
+    public void Gate13c_AFailedOptionalBuild_IsNotRetriedUntilThePrerequisitesStateChanges()
+    {
+        File.WriteAllText(Flag, "");
+        string archive = FakeArchive("4.15.2");
+        var recipe = Recipe(archive, Sha(archive), OptionalFailure, OptionalPrerequisite);
+        var installer = Installer(IsolatedDiscovery());
+        var outcome = installer.Install(recipe);
+        Assert.True(outcome.Status == InstallStatus.Installed, outcome.Report);
+        var failed = Assert.Single(outcome.Record!.Optional!);
+        Assert.Equal(OptionalStepsStatus.Failed, failed.Status);
+        Assert.StartsWith("Build the extra: ", failed.Detail);
+
+        Assert.Empty(installer.FinishOptional(recipe, outcome.Record));
+
+        File.SetLastWriteTimeUtc(Flag, DateTime.UtcNow.AddHours(1));
+        Assert.Equal(OptionalStepsStatus.Failed, Assert.Single(installer.FinishOptional(recipe, outcome.Record)).Status);
+        var again = InstallRecord.TryRead(Path.Combine(outcome.Record.Home, SolverHomes.RecordFile))!;
+        Assert.NotEqual(failed.PrerequisiteState, Assert.Single(again.Optional!).PrerequisiteState);
+        Assert.Empty(installer.FinishOptional(recipe, again));
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────────────────────────
 
     private SolverInstaller Installer(SolverDiscovery discovery)
@@ -488,7 +579,14 @@ public sealed class SolverInstallTests : IDisposable
         return Convert.ToHexStringLower(SHA256.HashData(f));
     }
 
-    private static SolverRecipe Recipe(string archive, string sha, string? extraStep = null)
+    private static SolverRecipe Recipe(string archive, string sha, string? extraStep = null, string? prerequisite = null)
+    {
+        var recipe = SolverRecipes.Parse(RecipeJson(archive, sha, extraStep, prerequisite), out string? error);
+        Assert.True(recipe is not null, error);
+        return recipe!;
+    }
+
+    private static string RecipeJson(string archive, string sha, string? extraStep = null, string? prerequisite = null)
     {
         var here = SolverRecipes.Current()!.Value;
         string platform = here.Platform switch { RecipePlatform.MacOS => "macos", RecipePlatform.Linux => "linux", _ => "windows" };
@@ -500,7 +598,7 @@ public sealed class SolverInstallTests : IDisposable
               "layout": "relocatable", "layoutNote": "a test's stub archive",
               "sources": [ { "id": "archive", "url": "{{new Uri(archive).AbsoluteUri}}", "fetchedBy": "circuitRF",
                              "file": "gmsh-fake.tgz", "sha256": "{{sha}}" } ],
-              "prerequisites": [],
+              "prerequisites": [{{prerequisite ?? ""}}],
               "steps": [
                 { "name": "Download the stub", "kind": "download", "source": "archive" },
                 { "name": "Unpack the stub", "kind": "extract", "source": "archive", "into": "${home}" }
@@ -511,9 +609,7 @@ public sealed class SolverInstallTests : IDisposable
               "knownFailures": []
             }
             """;
-        var recipe = SolverRecipes.Parse(json, out string? error);
-        Assert.True(recipe is not null, error);
-        return recipe!;
+        return json;
     }
 
     private static string Script(string path, string text)

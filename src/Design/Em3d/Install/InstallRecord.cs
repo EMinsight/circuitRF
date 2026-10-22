@@ -14,6 +14,31 @@ namespace CircuitRF.Design.Em3d.Install;
 /// commit).</param>
 public sealed record InstallSource(string Url, string FetchedBy, string? Sha256, bool Verified, string? Note);
 
+/// <summary>What became of a recipe's optional steps (brief-emi-3 R-emi3-2a).</summary>
+public enum OptionalStepsStatus
+{
+    /// <summary>Their prerequisite was not met, so they were skipped; they run once it is.</summary>
+    Missing,
+
+    /// <summary>They ran and every one succeeded.</summary>
+    Built,
+
+    /// <summary>One failed. They are tried again only once their prerequisite's state has changed.</summary>
+    Failed,
+}
+
+/// <summary>
+/// brief-emi-3 R-emi3-2a/3 — one group of optional steps: the prerequisite they need, what became of them, and the
+/// prerequisite's state when that was decided. A failed build is retried only when <see cref="PrerequisiteState"/>
+/// no longer matches what the machine reports, so a build that cannot succeed is not attempted on every run.
+/// </summary>
+/// <param name="When">The optional prerequisite's name, as the recipe spells it.</param>
+/// <param name="Detail">For <see cref="OptionalStepsStatus.Failed"/>, the failing step's own last line.</param>
+/// <param name="Seconds">For <see cref="OptionalStepsStatus.Built"/>, how long the steps took.</param>
+public sealed record OptionalStepsRecord(
+    string When, [property: JsonConverter(typeof(JsonStringEnumConverter))] OptionalStepsStatus Status,
+    string PrerequisiteState, string? Detail = null, double? Seconds = null);
+
 /// <summary>
 /// <c>install.json</c> — what the assistant put where (brief-em3d-24 R-em3d24-2f). Brief 25 removes a
 /// solver BY this record and by nothing else, which is why it names the home, every root it wrote into,
@@ -61,6 +86,10 @@ public sealed record InstallRecord
     /// machine. When set, <see cref="Home"/>, <see cref="Program"/> and <see cref="SpackInstallTree"/> are
     /// Linux paths inside it. Omitted from a native record, so no existing record changes.</summary>
     public string? Distribution { get; init; }
+
+    /// <summary>brief-emi-3 — one entry per group of optional steps the recipe has (the faster sparse solver EMerge
+    /// builds on macOS arm64). Omitted when it has none, so no existing record changes.</summary>
+    public IReadOnlyList<OptionalStepsRecord>? Optional { get; init; }
 
     private static readonly JsonSerializerOptions Json = new()
     {

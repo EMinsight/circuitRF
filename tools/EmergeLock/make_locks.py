@@ -20,6 +20,11 @@ import json, os, re, subprocess, sys, tempfile
 # with --no-deps; its lock leaves gmsh out (an override whose marker never matches drops a dependency).
 DROPPED = {"linux-arm64": ["gmsh"]}
 
+# brief-emi-3 R-emi3-2c -- the wheel-only multi-threaded sparse solver, where it was measured to beat EMerge's
+# single-threaded default and nothing faster comes without a compiler. 0.38.0 is the last release whose API EMerge
+# 3.0.0b2 calls (1.0 renamed the factorisation settings, and EMerge's call then raises).
+EXTRA = {"macos-arm64": ["rslab==0.38.0"], "linux-arm64": ["rslab==0.38.0"]}
+
 PLATFORMS = {
     # recipe platform: (uv --python-platform, platform-tag test)
     "macos-arm64":   ("aarch64-apple-darwin",     re.compile(r"^macosx_\d+_\d+_(arm64|universal2)$")),
@@ -54,9 +59,9 @@ def main(uv, emerge, python, out):
     minor = int(python.split(".")[1])
     os.makedirs(out, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
-        req = os.path.join(tmp, "in.txt")
-        open(req, "w").write(f"emerge=={emerge}\n")
         for name, (target, plat_re) in PLATFORMS.items():
+            req = os.path.join(tmp, name + "-in.txt")
+            open(req, "w").write("".join(f"{r}\n" for r in [f"emerge=={emerge}"] + EXTRA.get(name, [])))
             lock = os.path.join(tmp, name + ".txt")
             overrides = os.path.join(tmp, name + "-overrides.txt")
             open(overrides, "w").write("".join(f'{p} ; sys_platform == "never"\n' for p in DROPPED.get(name, [])))

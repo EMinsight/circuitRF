@@ -38,7 +38,21 @@ public sealed record PrerequisiteCheck(IReadOnlyList<string> Missing, IReadOnlyL
                                        IReadOnlyDictionary<string, string> Variables)
 {
     public bool Ok => Missing.Count == 0;
+
+    /// <summary>brief-emi-3 — every OPTIONAL prerequisite, by name: met or not, never part of <see cref="Missing"/>.</summary>
+    public IReadOnlyDictionary<string, OptionalPrerequisiteCheck> Optional { get; init; } =
+        new Dictionary<string, OptionalPrerequisiteCheck>();
 }
+
+/// <summary>brief-emi-3 R-emi3-2a — what one optional prerequisite's check found.</summary>
+/// <param name="State">The prerequisite's state as a comparable stamp: what was found, what it answered and when it
+/// last changed on disk, or <c>unmet</c>. A failed optional build is retried only once this differs (R-emi3-3).</param>
+/// <param name="Why">For an unmet one, why, in words.</param>
+public sealed record OptionalPrerequisiteCheck(bool Met, string State, string? Why);
+
+/// <summary>brief-emi-3 R-emi3-3 — what <see cref="SolverInstaller.FinishOptional"/> did with one group of optional
+/// steps: built them, or tried and failed (<paramref name="Detail"/> is the failing step's own last line).</summary>
+public sealed record OptionalStepsOutcome(string When, OptionalStepsStatus Status, TimeSpan Elapsed, string? Detail, string? LogPath);
 
 /// <summary>What an install attempt did, and the report a person reads.</summary>
 /// <param name="Report">The whole report: success, refusal, or R-em3d24-3a's failure report.</param>
@@ -180,6 +194,10 @@ public sealed class SolverInstaller
         sb.AppendLine(DescribeMeasured(recipe.Measured));
         if (recipe.Tool == SolverTool.Palace) sb.AppendLine(ParmetisNote);
         foreach (string note in recipe.ConsentNotes) sb.AppendLine(note);
+        // brief-emi-3 R-emi3-2 — the optional tail is part of what is agreed to here; nothing asks again later.
+        foreach (var (when, steps) in recipe.OptionalGroups)
+            sb.AppendLine($"Only with {when.Name}: {string.Join("; ", steps.Select(st => st.Name))}. Without {when.Name} these are " +
+                          $"skipped, and circuitRF runs them later without asking again, as soon as it finds {when.Name}.");
         sb.AppendLine("It runs in the background and can be cancelled at any point. Cancelling leaves nothing " +
                       "circuitRF would find, and the next attempt removes what it left.");
         return sb.ToString().TrimEnd();
@@ -206,12 +224,14 @@ public sealed class SolverInstaller
         var missing   = new List<string>();
         var commands  = new List<string>();
         var variables = new Dictionary<string, string>(StringComparer.Ordinal);
+        var optional  = new Dictionary<string, OptionalPrerequisiteCheck>(StringComparer.Ordinal);
         var env       = Target.Environment(this);
 
         foreach (var p in recipe.Prerequisites)
         {
             string? found = null;
             string? why   = null;
+            string answer = "";
             switch (p.Kind)
             {
                 case "file" when p.Path is { } exactPath:
@@ -246,6 +266,7 @@ public sealed class SolverInstaller
                     string target = p.Path is { } exact ? ExpandStatic(exact, env)
                         : p.Search.Select(d => Target.ProgramIn(ExpandStatic(d, env), p.Name)).FirstOrDefault(c => c is not null) ?? p.Name;
                     var r = Target.FileExists(target) ? Target.Quick(target, p.Arguments) : (ExitCode: -1, Output: "");
+                    answer = FirstLine(r.Output);
                     if (r.ExitCode == 0) found = target;
                     else why = Target.FileExists(target)
                         ? $"{p.Name} ({target}) did not pass its check (exit {r.ExitCode}{(FirstLine(r.Output) is { Length: > 0 } l ? ": " + l : "")})"
@@ -253,17 +274,41 @@ public sealed class SolverInstaller
                     break;
             }
 
-            if (found is not null)
+            if (found is not null && p.Variable is { Length: > 0 } name) variables[name] = found;
+            if (p.Optional)
             {
-                if (p.Variable is { Length: > 0 } v) variables[v] = found;
+                optional[p.Name] = new OptionalPrerequisiteCheck(found is not null, found is null ? "unmet" : StateOf(found, answer), why);
                 continue;
             }
+            if (found is not null) continue;
             missing.Add(why!);
             string remedy = RemedyFor(p);
             if (!commands.Contains(remedy, StringComparer.Ordinal)) commands.Add(remedy);
         }
-        return new PrerequisiteCheck(missing, commands, variables);
+        return new PrerequisiteCheck(missing, commands, variables) { Optional = optional };
     }
+
+    /// <summary>
+    /// brief-emi-3 R-emi3-3 — a met prerequisite's state: what was found, the first line it answered (a
+    /// <c>command</c>'s, such as the folder <c>xcode-select -p</c> names) and the last write time of whichever of the
+    /// two is a path on this machine. Reinstalling or updating the prerequisite moves it; nothing else does.
+    /// </summary>
+    private string StateOf(string found, string answer)
+    {
+        string? path = Target.Distribution is null && answer.Length > 0 && Path.IsPathRooted(answer) ? answer : found;
+        string written = "";
+        if (Target.Distribution is null)
+            try
+            {
+                if (Directory.Exists(path)) written = Directory.GetLastWriteTimeUtc(path).Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                else if (File.Exists(path)) written = File.GetLastWriteTimeUtc(path).Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+        return $"met|{found}|{answer}|{written}";
+    }
+
+    /// <summary>The remedy a person reads for <paramref name="p"/>: the one command for this distribution.</summary>
+    public string Remedy(RecipePrerequisite p) => RemedyFor(p);
 
     /// <summary>The refusal a failed prerequisite check becomes.</summary>
     public string DescribePrerequisites(SolverRecipe recipe, PrerequisiteCheck check)
@@ -387,7 +432,7 @@ public sealed class SolverInstaller
             var sources = new List<InstallSource>();
             try
             {
-                foreach (var step in recipe.Steps)
+                foreach (var step in recipe.Steps.Where(st => !st.Optional))
                 {
                     control.ThrowIfCancellationRequested();
                     log.WriteLine();
@@ -395,6 +440,23 @@ public sealed class SolverInstaller
                     if (run.Do(step, sources) is { } failure)
                         return Fail(recipe, name, step.Name, failure.Verbatim, failure.Summary, logPath);
                     control.Tick();
+                }
+
+                // brief-emi-3 R-emi3-2a — the optional tail: skipped when its prerequisite is unmet, and never the
+                // reason an install fails. Either way it is on the record, which is what finishes it later.
+                var optional = new List<OptionalStepsRecord>();
+                foreach (var (when, steps) in recipe.OptionalGroups)
+                {
+                    var state = prereqs.Optional[when.Name];
+                    if (!state.Met)
+                    {
+                        log.WriteLine();
+                        log.WriteLine($"── skipped, {when.Name} is not installed: {string.Join("; ", steps.Select(st => st.Name))} ──");
+                        foreach (var _ in steps) control.Tick();
+                        optional.Add(new OptionalStepsRecord(when.Name, OptionalStepsStatus.Missing, state.State));
+                        continue;
+                    }
+                    optional.Add(RunOptional(run, when, steps, state, sources, log, control));
                 }
                 control.ThrowIfCancellationRequested();
 
@@ -451,6 +513,7 @@ public sealed class SolverInstaller
                     ElapsedSeconds   = Math.Round(clock.Elapsed.TotalSeconds),
                     Sources          = sources,
                     Distribution     = Target.Distribution,
+                    Optional         = optional.Count > 0 ? optional : null,
                 };
                 Target.WriteRecord(record, Target.Combine(build, SolverHomes.RecordFile));
                 if (recipe.Relocatable) Target.Move(partial, home);
@@ -474,6 +537,114 @@ public sealed class SolverInstaller
         }
     }
 
+    /// <summary>One group of optional steps, run in order; the first failure ends the group and is its record.</summary>
+    private static OptionalStepsRecord RunOptional(Execution run, RecipePrerequisite when, IReadOnlyList<RecipeStep> steps,
+                                                   OptionalPrerequisiteCheck state, List<InstallSource> sources,
+                                                   StreamWriter log, RunControl control)
+    {
+        var clock = Stopwatch.StartNew();
+        foreach (var step in steps)
+        {
+            control.ThrowIfCancellationRequested();
+            log.WriteLine();
+            log.WriteLine($"── {step.Name} (optional: needs {when.Name}) ──");
+            StepFailure? failure;
+            try { failure = run.Do(step, sources); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
+            {
+                failure = new(e.Message, [e.Message]);
+            }
+            if (failure is not null)
+            {
+                string last = failure.Verbatim.LastOrDefault(l => l.Trim().Length > 0)?.Trim() ?? failure.Summary;
+                log.WriteLine($"optional step failed, the install goes on without it: {failure.Summary}");
+                return new OptionalStepsRecord(when.Name, OptionalStepsStatus.Failed, state.State, $"{step.Name}: {last}");
+            }
+            control.Tick();
+        }
+        return new OptionalStepsRecord(when.Name, OptionalStepsStatus.Built, state.State, null, Math.Round(clock.Elapsed.TotalSeconds, 1));
+    }
+
+    /// <summary>
+    /// brief-emi-3 R-emi3-3 — finishes what an install left for later: each group of <paramref name="recipe"/>'s
+    /// optional steps that <paramref name="record"/> says is missing (or failed against a prerequisite state that has
+    /// since changed) and whose prerequisite is met NOW, run in the published home under the install lock, with the
+    /// record rewritten after. Never asks: the steps were part of the install the user agreed to. Returns what it ran
+    /// (empty when nothing was due, or when another install or removal holds the lock — the next caller finishes it).
+    /// A failure is returned, never thrown, and the record keeps the prerequisite's state so it is not retried until
+    /// that state changes. Blocking; run it off the UI thread.
+    /// </summary>
+    public IReadOnlyList<OptionalStepsOutcome> FinishOptional(SolverRecipe recipe, InstallRecord record, RunControl? control = null)
+    {
+        if (record.Distribution is not null || recipe.Id != record.Recipe || recipe.OptionalGroups.Count == 0) return [];
+        // Everything built: nothing to ask the machine. (A record with no entries predates the optional steps, and
+        // finishing it is exactly what an older install needs.)
+        if (record.Optional is { } known && recipe.OptionalGroups.All(g => known.Any(e => e.When == g.When.Name && e.Status == OptionalStepsStatus.Built)))
+            return [];
+        var prereqs = CheckPrerequisites(recipe);
+        var due = recipe.OptionalGroups.Where(g =>
+        {
+            var check = prereqs.Optional[g.When.Name];
+            var entry = record.Optional?.FirstOrDefault(e => e.When == g.When.Name);
+            return check.Met && entry?.Status != OptionalStepsStatus.Built
+                && !(entry is { Status: OptionalStepsStatus.Failed } && entry.PrerequisiteState == check.State);
+        }).ToList();
+        if (due.Count == 0) return [];
+
+        control ??= new RunControl();
+        string toolDir = SolverHomes.ToolDirectory(LocalRoot ?? Root, recipe.Tool);
+        FileStream? gate;
+        try
+        {
+            Directory.CreateDirectory(toolDir);
+            gate = new FileStream(Path.Combine(toolDir, SolverHomes.InstallLockFile), FileMode.OpenOrCreate, FileAccess.ReadWrite,
+                                  FileShare.None, 1, FileOptions.DeleteOnClose);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return []; }
+
+        using (gate)
+        {
+            // Read again under the lock: another process may have finished it while this one waited to look.
+            string recordPath = Path.Combine(record.Home, SolverHomes.RecordFile);
+            if (InstallRecord.TryRead(recordPath) is not { } current) return [];
+            Directory.CreateDirectory(SolverHomes.LogDirectory(LocalRoot ?? Root, recipe.Tool));
+            string logPath = Path.Combine(SolverHomes.LogDirectory(LocalRoot ?? Root, recipe.Tool),
+                                          $"{recipe.Version}-optional-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+            using var log = new StreamWriter(logPath, append: false, new UTF8Encoding(false)) { AutoFlush = true };
+            log.WriteLine($"circuitRF solver install — {recipe.Id}, its optional steps — {DateTimeOffset.Now:O}");
+            log.WriteLine($"home: {current.Home}");
+
+            var run = new Execution(this, recipe, current.Home, prereqs.Variables, log, control);
+            var entries = (current.Optional ?? []).ToList();
+            var outcomes = new List<OptionalStepsOutcome>();
+            var checkedSources = new List<InstallSource>();
+            try
+            {
+                foreach (var (when, steps) in due)
+                {
+                    var clock = Stopwatch.StartNew();
+                    var done = RunOptional(run, when, steps, prereqs.Optional[when.Name], checkedSources, log, control);
+                    entries.RemoveAll(e => e.When == when.Name);
+                    entries.Add(done);
+                    outcomes.Add(new OptionalStepsOutcome(when.Name, done.Status, clock.Elapsed, done.Detail, logPath));
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                run.KillRunning();
+                log.WriteLine("cancelled");
+            }
+            // A source the steps checked (a commit) replaces the record's unchecked entry for the same address.
+            if (outcomes.Count > 0)
+                (current with
+                {
+                    Optional = entries,
+                    Sources  = [.. current.Sources.Select(x => checkedSources.FirstOrDefault(c => c.Url == x.Url) ?? x)],
+                }).Write(recordPath);
+            return outcomes;
+        }
+    }
+
     /// <summary>What an install of <paramref name="tool"/> must prove it can do — every capability a run
     /// could ask of it, brief 23's rows included, so a build that could not run a wave port is not called
     /// installed. <b>Except <see cref="SolverCapability.Gpu"/></b> (brief-em3d-136): every recipe builds for the CPU,
@@ -494,6 +665,9 @@ public sealed class SolverInstaller
         else if (found is not null)
             sb.Append($" A 3D run still uses the {discovery.Name} {found.HowFoundText} ({found.Where}), which comes first; " +
                       "clear that in Settings ▸ Solvers to use this one.");
+        // brief-emi-3 R-emi3-4 — EMerge's speed, in the sentence Settings and a run use.
+        if (found is { HowFound: SolverHowFound.Installed } && EmergeAccelerator.Sentence(found) is { } speed)
+            sb.Append(' ').Append(speed);
         sb.Append(DescribeSuperseded(recipe));
         return sb.ToString();
     }
