@@ -130,9 +130,10 @@ internal static class Explain
                 // brief-em3d-136 R-em3d136-4c — a 3D setup's report as `em --device` would run it: which device, and
                 // (for gpu) whether this Palace can, through the run's own readiness check.
                 case "--device" when i + 1 < args.Length:
-                    if (CircuitRF.Design.Em3d.PalaceDevices.Parse(args[++i]) is not { } parsed)
+                    // brief-emi-9 — `em --device`'s words, auto among them (Palace's CPU).
+                    if (CircuitRF.Design.Em3d.EmergeDevices.Parse(args[++i]) is not { } parsed)
                     { JsonRun.Report(CliDiagnostics.ExplainUnknownDevice(args[i])); return Usage(); }
-                    device = parsed;
+                    device = parsed == CircuitRF.Design.Em3d.EmergeDevice.Gpu ? CircuitRF.Design.Em3d.PalaceDevice.Gpu : CircuitRF.Design.Em3d.PalaceDevice.Cpu;
                     continue;
                 // brief-emi-10 R-emi10-4 — the memory ceiling a run given `em --memory-limit` would keep, refused as that flag is.
                 case "--memory-limit" when i + 1 < args.Length:

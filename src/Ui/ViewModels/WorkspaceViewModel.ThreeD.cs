@@ -508,7 +508,8 @@ public partial class WorkspaceViewModel
         bool ok = await RunEmSetupAsync(panel, setup, (s, control, root) => EmRunService.RunThreeDView(
             s, document, path, cws, root, default, control, CircuitRF.Ui.Layout.Em.EmSolveCorePreference.Preferred, ConfirmEmMemory, fromCem,
             device: CircuitRF.Ui.Layout.Em.EmPalaceDevicePreference.Preferred,
-            memoryCeilingBytes: CircuitRF.Ui.Layout.Em.EmMemoryLimitPreference.CeilingBytes));
+            memoryCeilingBytes: CircuitRF.Ui.Layout.Em.EmMemoryLimitPreference.CeilingBytes,
+            emergeDevice: CircuitRF.Ui.Layout.Em.EmEmergeDevicePreference.Preferred));
         // brief-em3d-98 R-em3d98-6 — whichever setup ran, and however it ended (a cancelled run's status changed too).
         if (ok) c3d.RunFinished();
         else c3d.RefreshSolveStatusNow();

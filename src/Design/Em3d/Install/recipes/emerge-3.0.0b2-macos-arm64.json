@@ -1,6 +1,6 @@
 {
   "$schema": "./recipe.schema.json",
-  "comment": "brief-emi-2 R-emi2-1. uv, a pinned Python and a hash-locked EMerge, all inside the home: no system Python is read or changed. The lock lines are tools/EmergeLock/make_locks.py's output. brief-emi-3: its optional tail builds the faster macOS sparse solver from a pinned commit whenever the command line tools are installed, now or later.",
+  "comment": "brief-emi-2 R-emi2-1. uv, a pinned Python and a hash-locked EMerge, all inside the home: no system Python is read or changed. The lock lines are tools/EmergeLock/make_locks.py's output. brief-emi-3: its optional tail builds the faster macOS sparse solver from a pinned commit whenever the command line tools are installed, now or later. brief-emi-9: a second optional group builds EMerge's GPU sparse solver from a pinned commit whenever a Rust toolchain is found as well; the bootstrap is what Settings' Enable GPU solving fetches for that one build when none is.",
   "id": "emerge-3.0.0b2-macos-arm64",
   "tool": "emerge",
   "version": "3.0.0b2",
@@ -33,6 +33,12 @@
       "url": "https://github.com/FennisRobert/emerge-aasds.git",
       "fetchedBy": "git (only with the command line tools)",
       "checksumNote": "a git fetch of commit 47ad46880c3d26df126943ecfffb68864b1875d4, checked against that commit after the fetch; built on this machine and never redistributed"
+    },
+    {
+      "id": "sparta",
+      "url": "https://github.com/FennisRobert/SPARTA.git",
+      "fetchedBy": "git (only with the command line tools and a Rust toolchain)",
+      "checksumNote": "a git fetch of commit a178949d00f17bcacdcfff1a0ff5f92467aa817d, checked against that commit after the fetch; its Rust dependencies are the ones its Cargo.lock pins, which cargo checks against their SHA-256 (--locked); built on this machine and never redistributed"
     }
   ],
   "prerequisites": [
@@ -51,12 +57,98 @@
         "/usr/bin/xcode-select",
         "--install"
       ]
+    },
+    {
+      "kind": "command",
+      "name": "a Rust toolchain",
+      "program": "cargo",
+      "search": [
+        "${env:CARGO_HOME}/bin",
+        "${env:HOME}/.cargo/bin",
+        "${env:PATH}"
+      ],
+      "arguments": [
+        "--version"
+      ],
+      "variable": "cargo",
+      "remedy": {
+        "default": "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+      },
+      "optional": true,
+      "needs": [
+        "the command line tools"
+      ],
+      "enables": "gpu",
+      "bootstrap": {
+        "comment": "brief-emi-9 R-emi9-2b. Rust's official installer at a pinned version, told where to put everything (RUSTUP_HOME, CARGO_HOME) and not to touch the user's shell (--no-modify-path): the user's own PATH, profile and any Rust they install later are untouched. circuitRF deletes the folder after the build, whatever happened.",
+        "name": "Rust's minimal toolchain",
+        "into": "${home}/toolchain",
+        "environment": {
+          "RUSTUP_HOME": "${home}/toolchain/rustup",
+          "CARGO_HOME": "${home}/toolchain/cargo"
+        },
+        "sources": [
+          {
+            "id": "rustup-init",
+            "url": "https://static.rust-lang.org/rustup/archive/1.29.2/aarch64-apple-darwin/rustup-init",
+            "fetchedBy": "circuitRF",
+            "file": "rustup-init",
+            "sha256": "f7c7e11eb2e07f006e532a8aaac77b32f4527d305ac386c0c633ca6133d35ca9"
+          },
+          {
+            "url": "https://static.rust-lang.org/dist/",
+            "fetchedBy": "rustup",
+            "sha256": null,
+            "checksumNote": "rustup 1.29.2 checks each component of Rust 1.98.1 it downloads against the SHA-256 in that release's manifest"
+          }
+        ],
+        "steps": [
+          {
+            "name": "Download Rust's installer (rustup 1.29.2)",
+            "kind": "download",
+            "source": "rustup-init"
+          },
+          {
+            "name": "Make Rust's installer runnable",
+            "kind": "run",
+            "command": "/bin/chmod",
+            "arguments": [
+              "u+x",
+              "${downloads}/rustup-init"
+            ]
+          },
+          {
+            "name": "Install Rust 1.98.1's minimal toolchain into the EMerge home",
+            "kind": "run",
+            "command": "${downloads}/rustup-init",
+            "arguments": [
+              "-y",
+              "--quiet",
+              "--profile",
+              "minimal",
+              "--default-toolchain",
+              "1.98.1",
+              "--no-modify-path"
+            ]
+          }
+        ],
+        "notes": [
+          "Rust is free software under the MIT and Apache 2.0 licences; circuitRF uses it for this one build and then deletes it."
+        ],
+        "downloadMB": 99,
+        "measured": {
+          "minutes": 0.5,
+          "diskGB": 0.45,
+          "source": "rustup 1.29.2 installing Rust 1.98.1's minimal profile on an M4, 2026-10-22: 28 s for 99 MB (the 11 MB installer and 88 MB of components), 447 MB on disk until it is deleted"
+        }
+      }
     }
   ],
   "environment": {
     "UV_PYTHON_INSTALL_DIR": "${home}/python",
     "UV_CACHE_DIR": "${home}/uv-cache",
-    "GIT_TERMINAL_PROMPT": "0"
+    "GIT_TERMINAL_PROMPT": "0",
+    "MATURIN_NO_INSTALL_RUST": "1"
   },
   "clearEnvironment": [
     "PYTHON*",
@@ -67,7 +159,8 @@
   ],
   "consentNotes": [
     "EMerge is free software under the GNU General Public License, version 2 or later, and so is Gmsh, which it meshes with; circuitRF starts them as separate programs and distributes neither.",
-    "The faster sparse solver it builds on this machine declares the MIT licence; circuitRF builds it here from its upstream source and distributes nothing."
+    "The faster sparse solver it builds on this machine declares the MIT licence; circuitRF builds it here from its upstream source and distributes nothing.",
+    "The GPU sparse solver it builds when a Rust toolchain is present is under the GNU Affero General Public License, version 3 or later; circuitRF builds it here from its upstream source, EMerge runs it in its own process, and circuitRF distributes nothing."
   ],
   "steps": [
     {
@@ -348,6 +441,152 @@
       ],
       "optional": true,
       "when": "the command line tools"
+    },
+    {
+      "name": "Fetch the GPU sparse solver's source",
+      "kind": "run",
+      "command": "/usr/bin/git",
+      "arguments": [
+        "init",
+        "--quiet",
+        "${home}/accelerator/sparta"
+      ],
+      "comment": "brief-emi-9 R-emi9-2. As the faster sparse solver's: init, fetch one commit, check it out, check the commit.",
+      "optional": true,
+      "when": "a Rust toolchain"
+    },
+    {
+      "name": "Fetch commit a178949 of the GPU sparse solver",
+      "kind": "run",
+      "command": "/usr/bin/git",
+      "arguments": [
+        "-C",
+        "${home}/accelerator/sparta",
+        "fetch",
+        "--quiet",
+        "--depth",
+        "1",
+        "https://github.com/FennisRobert/SPARTA.git",
+        "a178949d00f17bcacdcfff1a0ff5f92467aa817d"
+      ],
+      "optional": true,
+      "when": "a Rust toolchain"
+    },
+    {
+      "name": "Check out the GPU sparse solver's source",
+      "kind": "run",
+      "command": "/usr/bin/git",
+      "arguments": [
+        "-C",
+        "${home}/accelerator/sparta",
+        "checkout",
+        "--quiet",
+        "--force",
+        "FETCH_HEAD"
+      ],
+      "optional": true,
+      "when": "a Rust toolchain"
+    },
+    {
+      "name": "Check the GPU sparse solver's commit",
+      "kind": "run",
+      "command": "/usr/bin/git",
+      "arguments": [
+        "-C",
+        "${home}/accelerator/sparta",
+        "rev-parse",
+        "HEAD"
+      ],
+      "captureAs": "sparta",
+      "expect": "a178949d00f17bcacdcfff1a0ff5f92467aa817d",
+      "optional": true,
+      "when": "a Rust toolchain"
+    },
+    {
+      "name": "Write the GPU solver's locked build requirements",
+      "kind": "write",
+      "path": "${home}/requirements-gpu-build.lock",
+      "lines": [
+        "# Written by circuitRF's install assistant from recipe ${recipeId}: what building the GPU sparse solver needs from",
+        "# Python, at an exact version with the SHA-256 of its one file. The rest of its build is Rust, pinned by its Cargo.lock.",
+        "maturin==1.15.0 --hash=sha256:cd35772633f489841132bc8e71d6fc7f842df30b9c05cd5cdf1ee1ddcb744cc7"
+      ],
+      "optional": true,
+      "when": "a Rust toolchain"
+    },
+    {
+      "name": "Install the GPU solver's build requirements",
+      "kind": "run",
+      "command": "${home}/uv/uv-aarch64-apple-darwin/uv",
+      "arguments": [
+        "pip",
+        "install",
+        "--python",
+        "${home}/env/bin/python",
+        "--require-hashes",
+        "--no-build",
+        "--link-mode",
+        "copy",
+        "--no-config",
+        "-r",
+        "${home}/requirements-gpu-build.lock"
+      ],
+      "optional": true,
+      "when": "a Rust toolchain"
+    },
+    {
+      "name": "Build and install the GPU sparse solver",
+      "kind": "run",
+      "command": "${home}/uv/uv-aarch64-apple-darwin/uv",
+      "arguments": [
+        "pip",
+        "install",
+        "--python",
+        "${home}/env/bin/python",
+        "--no-build-isolation",
+        "--no-deps",
+        "--reinstall-package",
+        "sparta-solver",
+        "--link-mode",
+        "copy",
+        "--compile-bytecode",
+        "--no-config",
+        "${home}/accelerator/sparta"
+      ],
+      "environment": {
+        "PATH": "${cargoDir}:/usr/bin:/bin:/usr/sbin:/sbin",
+        "MATURIN_PEP517_ARGS": "--locked"
+      },
+      "comment": "The build tool finds cargo ONLY on PATH (a GUI app's PATH has no ~/.cargo/bin), so the step's PATH starts with the folder the prerequisite found it in. --no-build-isolation with the hash-locked build tool above, and MATURIN_NO_INSTALL_RUST in the recipe's environment: an isolated build fetches whatever is newest, and with no cargo on PATH it downloads a whole Rust toolchain into the user's cache folder unasked (measured: 507 MB). --locked builds exactly what Cargo.lock pins. Measured: 17 s on an M4.",
+      "optional": true,
+      "when": "a Rust toolchain"
+    },
+    {
+      "name": "Check that EMerge finds the GPU sparse solver",
+      "kind": "run",
+      "command": "${home}/env/bin/python",
+      "arguments": [
+        "-I",
+        "-c",
+        "from emerge._emerge import solver as s; print(s._SPARTA_AVAILABLE)"
+      ],
+      "captureAs": "spartaAvailable",
+      "expect": "True",
+      "comment": "EMerge imports it inside a try, and refuses one older than 0.2.0, quietly either way.",
+      "optional": true,
+      "when": "a Rust toolchain"
+    },
+    {
+      "name": "Clear uv's download cache after the GPU build",
+      "kind": "run",
+      "command": "${home}/uv/uv-aarch64-apple-darwin/uv",
+      "arguments": [
+        "cache",
+        "clean",
+        "--no-config"
+      ],
+      "optional": true,
+      "when": "a Rust toolchain"
     }
   ],
   "program": "${home}/env/bin/python",

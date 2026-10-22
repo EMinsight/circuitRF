@@ -62,7 +62,7 @@ internal static class Solver
     {
         string tools = string.Join("|", ToolIds);
         Console.Error.WriteLine("usage: circuitrf solver list [--capability gpu]");
-        Console.Error.WriteLine($"       circuitrf solver install <{tools}> [--version <v>] [--yes]");
+        Console.Error.WriteLine($"       circuitrf solver install <{tools}> [--version <v>] [--gpu] [--yes]");
         Console.Error.WriteLine($"       circuitrf solver remove <{tools}> [--version <v>] [--yes]");
         Console.Error.WriteLine("       circuitrf solver remove --all [--yes]");
         return 1;
@@ -99,7 +99,8 @@ internal static class Solver
                 s.Found?.Where, s.Found?.Version, s.Found is { } f ? Route(f.HowFound) : null, s.Found?.Validated,
                 [.. s.Capabilities.Select(c => new SolverCapabilityJson(CapabilityId(c.Capability), Describe(c.Capability),
                                                                         c.Available, c.Detail) { Devices = c.Devices })],
-                s.OfferInstall ? $"circuitrf solver install {SolverHomes.ToolId(tool)}" : null) { Tier = s.Found?.Emerge?.TierText });
+                s.OfferInstall ? $"circuitrf solver install {SolverHomes.ToolId(tool)}" : null)
+                { Tier = s.Found?.Emerge?.TierText, GpuSolving = EmergeGpu(s.Found) });
             Console.WriteLine($"{s.Name}: {(s.Found is null ? "not found" : s.InstalledByCircuitRf ? "installed by circuitRF" : "found")}");
             Console.WriteLine($"  {s.Summary}");
             if (s.Found is { } found)
@@ -110,6 +111,10 @@ internal static class Solver
                 // brief-emi-2 R-emi2-5 — a probed program's own line (EMerge's).
                 if (found.Emerge is { } probe)
                     Console.WriteLine($"  probe: {probe.Banner}; {probe.Cores?.ToString() ?? "unknown"} logical cores; {probe.TierText}");
+                // brief-emi-9 R-emi9-4 — GPU solving, and the command that enables it.
+                if (EmergeGpu(found) is { } gpuSolving)
+                    Console.WriteLine($"  GPU solving: {(gpuSolving.Enabled ? "enabled" : "not enabled")} — {gpuSolving.Detail}" +
+                                      (gpuSolving.Enable is { } enable ? $"; enable: {enable}" : ""));
             }
             foreach (var c in s.Capabilities)
                 Console.WriteLine($"  {Describe(c.Capability)}: {(c.Available ? "yes" : "no")} — {c.Detail}");
@@ -128,6 +133,13 @@ internal static class Solver
         JsonRun.Solvers = report;
         return 0;
     }
+
+    /// <summary>brief-emi-9 — EMerge's GPU solving as <c>solver list</c> reports it; null for any other tool or nothing found.</summary>
+    private static SolverGpuJson? EmergeGpu(SolverInstallation? found)
+        => found?.Emerge is not { } probe ? null
+         : probe.Gpu ? new SolverGpuJson(true, "EMerge's GPU sparse solver is installed; a run uses it as its device says (em --device).", null)
+         : new SolverGpuJson(false, EmergeAccelerator.GpuSentence(found) ?? "",
+                             EmergeAccelerator.GpuEnableFor(found) is not null ? "circuitrf solver install emerge --gpu --yes" : null);
 
     private static string Route(SolverHowFound how) => how switch
     {
@@ -164,11 +176,13 @@ internal static class Solver
         string? name    = null;
         string? version = null;
         bool    yes     = false;
+        bool    gpu     = false;
         for (int i = 0; i < args.Length; i++)
         {
             switch (args[i])
             {
                 case "--yes" or "-y":                            yes = true; break;
+                case "--gpu":                                    gpu = true; break;
                 case "--version" when i + 1 < args.Length:       version = args[++i]; break;
                 case var a when a.StartsWith('-'):               return JsonRun.Fail(CliDiagnostics.SolverUnknownOption("install", a));
                 case var a when name is null:                    name = a; break;
@@ -177,6 +191,8 @@ internal static class Solver
         }
         if (name is null) return JsonRun.Fail(CliDiagnostics.SolverToolRequired());
         if (SolverHomes.ToolFromId(name) is not { } tool) return JsonRun.Fail(CliDiagnostics.SolverUnknownTool(name));
+        // brief-emi-9 R-emi9-2b — --gpu is EMerge's: Settings' Enable GPU solving…, for a machine with no dialog.
+        if (gpu && tool != SolverTool.Emerge) return JsonRun.Fail(CliDiagnostics.SolverUnknownOption($"install {name}", "--gpu"));
 
         string display = SolverDiscovery.For(tool).Name;
         // brief-em3d-26 — on Windows, Palace's plan is the Linux recipe inside a subsystem distribution, and a
@@ -188,6 +204,14 @@ internal static class Solver
         var (recipe, installer) = (plan.Recipe, plan.Installer);
         Console.Error.WriteLine(installer.Consent(recipe));
         Console.Error.WriteLine();
+        // What --gpu adds is agreed to by the same --yes, so it is printed before that is asked for.
+        if (gpu && EmergeAccelerator.GpuGroupOf(recipe) is { When.Bootstrap: not null } group &&
+            installer.BootstrapConsent(recipe, group.When, installer.HomeFor(recipe)) is { } gpuConsent)
+        {
+            Console.Error.WriteLine("With --gpu, when the GPU sparse solver cannot be built with a Rust toolchain already on this machine:");
+            Console.Error.WriteLine(gpuConsent);
+            Console.Error.WriteLine();
+        }
         if (!yes) return JsonRun.Fail(CliDiagnostics.SolverConsentRequired(SolverHomes.ToolId(tool)));
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(RunHost.Cancellation);
@@ -210,7 +234,7 @@ internal static class Solver
                 case InstallStatus.Installed or InstallStatus.AlreadyInstalled:
                     Console.WriteLine(outcome.Report);
                     JsonRun.AddOutput("solver", outcome.Record!.Program);
-                    return 0;
+                    return gpu ? EnableEmergeGpu(cts.Token) : 0;
                 case InstallStatus.Cancelled:
                     JsonRun.Report(CliDiagnostics.SolverInstallCancelled(outcome.Report));
                     return 130;
@@ -224,6 +248,45 @@ internal static class Solver
         {
             Console.CancelKeyPress -= onCancel;
         }
+    }
+
+    /// <summary>
+    /// brief-emi-9 R-emi9-2b — <c>solver install emerge --gpu</c> after the install: what is due is built (a Rust toolchain
+    /// already here builds it), and otherwise the recipe's toolchain is fetched into the home for the build and deleted after,
+    /// exactly as Settings' button does. 0 when the GPU sparse solver is there at the end; 1 when it could not be; 130 cancelled.
+    /// </summary>
+    private static int EnableEmergeGpu(CancellationToken ct)
+    {
+        var found = SolverDiscovery.Emerge.Find(out _);
+        var recipe = EmergeAccelerator.RecordOf(found) is { } r ? SolverRecipes.All.FirstOrDefault(x => x.Id == r.Recipe) : null;
+        foreach (var o in EmergeAccelerator.FinishIfDue(found))
+            Console.WriteLine(EmergeAccelerator.Outcome(o, recipe));
+        found = SolverDiscovery.Emerge.Find(out _);
+        if (found?.Emerge is { Gpu: true })
+        {
+            Console.WriteLine("GPU solving is enabled: EMerge's GPU sparse solver is installed.");
+            return 0;
+        }
+        if (EmergeAccelerator.GpuEnableFor(found) is not ({ } gpuRecipe, { } record, { } when))
+            return JsonRun.Fail(CliDiagnostics.SolverInstallRefused(
+                "GPU solving cannot be enabled here. " + (EmergeAccelerator.GpuSentence(found) ?? "")));
+
+        var done = EmergeAccelerator.EnableGpu(gpuRecipe, record, when, ProgressToStderr(ct, 0));
+        foreach (var o in done)
+        {
+            Console.WriteLine(EmergeAccelerator.Outcome(o, gpuRecipe));
+            if (o.LogPath is { } log) JsonRun.AddOutput("log", log);
+        }
+        if (ct.IsCancellationRequested)
+        {
+            JsonRun.Report(CliDiagnostics.SolverInstallCancelled("Enabling GPU solving was cancelled; the toolchain circuitRF fetched was deleted."));
+            return 130;
+        }
+        if (SolverDiscovery.Emerge.Find(out _)?.Emerge is { Gpu: true }) return 0;
+        var failed = done.FirstOrDefault(o => o.Status != OptionalStepsStatus.Built);
+        return JsonRun.Fail(CliDiagnostics.SolverInstallFailed(
+            failed is null ? "The GPU sparse solver was built, but EMerge does not report it." : EmergeAccelerator.Outcome(failed, gpuRecipe),
+            failed?.When ?? "", failed?.LogPath ?? ""));
     }
 
     // ── solver remove ─────────────────────────────────────────────────────────────────────────────

@@ -526,6 +526,69 @@ public sealed class SolverInstallTests : IDisposable
         Assert.Empty(installer.FinishOptional(recipe, again));
     }
 
+    // ── 14. brief-emi-9: the GPU group, its toolchain and the bootstrap ─────────────────────────
+
+    private const string Toolchain = "a fake toolchain";
+
+    /// <summary>A second optional prerequisite that also needs the first, found as <c>fakecargo</c> in <c>${env:FAKE_CARGO_HOME}</c>,
+    /// with a bootstrap that writes one there; and the step it gates, which records the directory it was found in.</summary>
+    private string GpuPrerequisites => OptionalPrerequisite + $$"""
+        , { "kind": "file", "name": "{{Toolchain}}", "program": "fakecargo", "search": ["${env:FAKE_CARGO_HOME}"],
+            "variable": "cargo", "remedy": { "default": "install the fake toolchain" }, "optional": true,
+            "needs": ["{{Tools}}"], "enables": "gpu",
+            "bootstrap": { "name": "the fake toolchain", "into": "${home}/toolchain",
+                           "environment": { "FAKE_CARGO_HOME": "${home}/toolchain" }, "sources": [],
+                           "steps": [ { "name": "Write the fake toolchain", "kind": "write", "path": "${home}/toolchain/fakecargo", "lines": ["fake"] } ],
+                           "measured": { "minutes": null, "diskGB": null, "source": "a test" } } }
+        """;
+
+    private const string GpuBuild =
+        """{ "name": "Build the GPU extra", "kind": "write", "path": "${home}/gpu.txt", "lines": ["${cargoDir}"], "optional": true, "when": "a fake toolchain" }""";
+
+    /// <summary>brief-emi-9 §5 test 1 — the GPU group runs when its toolchain is there (and what it also needs), is recorded
+    /// Missing with its remedy when it is not, and the bootstrap fetches the toolchain into the home, builds, and deletes it.</summary>
+    [Fact]
+    public void Gate14_TheGpuGroup_BuildsWithAToolchain_IsRecordedMissingWithout_AndTheBootstrapLeavesNoToolchain()
+    {
+        File.WriteAllText(Flag, "");
+        string archive = FakeArchive("4.15.2");
+        var recipe = Recipe(archive, Sha(archive), OptionalBuild + "," + GpuBuild, GpuPrerequisites);
+        var when = recipe.OptionalGroups.Last().When;
+        Assert.Equal((Toolchain, "gpu", Tools), (when.Name, when.Enables, Assert.Single(when.Needs)));
+
+        // A toolchain on the machine: the install builds the group, and the step saw where it was found.
+        string own = Path.Combine(_tmp, "own-cargo");
+        Directory.CreateDirectory(own);
+        File.WriteAllText(Path.Combine(own, "fakecargo"), "");
+        var withToolchain = new SolverInstaller(Root)
+        {
+            Discovery = _ => IsolatedDiscovery(),
+            InheritedEnvironment = () => new Dictionary<string, string> { ["PATH"] = "/usr/bin:/bin", ["FAKE_CARGO_HOME"] = own },
+        };
+        var outcome = withToolchain.Install(recipe);
+        Assert.True(outcome.Status == InstallStatus.Installed, outcome.Report);
+        Assert.Equal(OptionalStepsStatus.Built, outcome.Record!.Optional!.Single(e => e.When == Toolchain).Status);
+        Assert.Equal(own, File.ReadAllText(Path.Combine(outcome.Record.Home, "gpu.txt")).Trim());
+        Directory.Delete(outcome.Record.Home, recursive: true);
+
+        // None: skipped, recorded Missing, and the remedy is the recipe's.
+        var installer = Installer(IsolatedDiscovery());
+        var record = installer.Install(recipe).Record!;
+        Assert.Equal(OptionalStepsStatus.Missing, record.Optional!.Single(e => e.When == Toolchain).Status);
+        Assert.Equal("install the fake toolchain", installer.Remedy(when));
+        Assert.Empty(installer.FinishOptional(recipe, record));
+        Assert.Contains("the fake toolchain", installer.BootstrapConsent(recipe, when, record.Home));
+
+        // The bootstrap: built with the home's toolchain, which is gone afterwards.
+        var done = Assert.Single(installer.FinishOptionalWithBootstrap(recipe, record, Toolchain));
+        Assert.True(done.Status == OptionalStepsStatus.Built, done.Detail);
+        string toolchain = Path.Combine(record.Home, "toolchain");
+        Assert.Equal(toolchain, File.ReadAllText(Path.Combine(record.Home, "gpu.txt")).Trim());
+        Assert.False(Directory.Exists(toolchain));
+        var after = InstallRecord.TryRead(Path.Combine(record.Home, SolverHomes.RecordFile))!;
+        Assert.Equal(OptionalStepsStatus.Built, after.Optional!.Single(e => e.When == Toolchain).Status);
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────────────────────────
 
     private SolverInstaller Installer(SolverDiscovery discovery)

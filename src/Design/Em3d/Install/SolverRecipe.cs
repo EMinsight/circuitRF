@@ -83,7 +83,43 @@ public sealed record RecipePrerequisite(
     /// <summary>brief-emi-3 R-emi3-4 — the program and arguments that start the prerequisite's OWN installer (its
     /// vendor's), which the user may start from a button. Empty: there is none, and only the remedy is shown.</summary>
     public IReadOnlyList<string> Installer { get; init; } = [];
+
+    /// <summary>brief-emi-9 — the file a <c>program</c> or searched <c>command</c> looks for, when it is not
+    /// <see cref="Name"/> (which is what the user reads: "a Rust toolchain", looked for as <c>cargo</c>).</summary>
+    public string? Program { get; init; }
+
+    /// <summary>The file name looked for: <see cref="Program"/>, or <see cref="Name"/>.</summary>
+    public string ProgramName => Program ?? Name;
+
+    /// <summary>brief-emi-9 — other OPTIONAL prerequisites, by name, that this one's steps also need: the group is due only
+    /// when all of them are met too, and a change in any of them is a change of state (a build that failed for want of a
+    /// linker is tried again when the linker arrives, not only when this prerequisite changes).</summary>
+    public IReadOnlyList<string> Needs { get; init; } = [];
+
+    /// <summary>brief-emi-9 — what this group's steps add, as a word the solver's own code reads (<c>gpu</c>); the
+    /// installer does nothing with it.</summary>
+    public string? Enables { get; init; }
+
+    /// <summary>brief-emi-9 R-emi9-2b — how circuitRF can supply this prerequisite for ONE build when the user asks it to:
+    /// fetched into the home, used, and deleted. Null: only the user can install it.</summary>
+    public RecipeBootstrap? Bootstrap { get; init; }
 }
+
+/// <summary>
+/// brief-emi-9 R-emi9-2b — a temporary copy of an optional prerequisite, fetched into the home for one run of its steps
+/// (<see cref="SolverInstaller.FinishOptionalWithBootstrap"/>) and deleted after it, whatever happened.
+/// </summary>
+/// <param name="Name">What the consent calls it: <c>Rust's minimal toolchain</c>.</param>
+/// <param name="Into">The directory it is put in, under <c>${home}</c>; deleted after.</param>
+/// <param name="Environment">What its steps, the prerequisite's check and the group's steps then see, added to the inherited
+/// environment (where the toolchain is).</param>
+/// <param name="Sources">What it fetches; not the recipe's, since an install never fetches them.</param>
+/// <param name="Steps">How it is fetched and set up: the recipe's own step kinds.</param>
+/// <param name="Notes">The consent's sentences about it (licences).</param>
+/// <param name="DownloadMB">Measured download size.</param>
+public sealed record RecipeBootstrap(
+    string Name, string Into, IReadOnlyDictionary<string, string> Environment, IReadOnlyList<RecipeSource> Sources,
+    IReadOnlyList<RecipeStep> Steps, IReadOnlyList<string> Notes, double? DownloadMB, RecipeMeasured Measured);
 
 /// <summary>One step. Which fields apply depends on <see cref="Kind"/>; the loader refuses a step
 /// missing what its kind needs.</summary>
@@ -101,6 +137,10 @@ public sealed record RecipeStep(
     public string? When { get; init; }
 
     public bool Optional => When is not null;
+
+    /// <summary>brief-emi-9 — variables this step's process alone gets, over the recipe's (<c>PATH</c> holding a
+    /// prerequisite's directory, <c>${cargoDir}</c>).</summary>
+    public IReadOnlyDictionary<string, string> Environment { get; init; } = new Dictionary<string, string>();
 }
 
 /// <summary>What a recipe cost when it was run, and where that was measured. A null figure is
@@ -259,8 +299,7 @@ public static class SolverRecipes
         Need(d.Program is { Length: > 0 }, "program is missing");
         Need(d.Measured is { Source.Length: > 0 }, "measured.source is missing");
 
-        var sources = new List<RecipeSource>();
-        foreach (var s in d.Sources ?? [])
+        RecipeSource Source(SourceDto s)
         {
             Need(s.Url is { Length: > 0 }, "a source has no url");
             Need(s.FetchedBy is { Length: > 0 }, $"source '{s.Url}' has no fetchedBy");
@@ -268,29 +307,11 @@ public static class SolverRecipes
                  $"source '{s.Url}' has no checksum and no checksumNote saying why");
             Need(s.FetchedBy != "circuitRF" || (s.Id is { Length: > 0 } && s.File is { Length: > 0 }),
                  $"source '{s.Url}' is fetched by circuitRF but has no id and file");
-            sources.Add(new RecipeSource(s.Id, s.Url ?? "", s.FetchedBy ?? "", s.File, s.Sha256, s.ChecksumNote));
-        }
-        Need(sources.Count > 0, "a recipe fetches from somewhere, and names it");
-
-        var prereqs = new List<RecipePrerequisite>();
-        foreach (var p in d.Prerequisites ?? [])
-        {
-            Need(p.Kind is "program" or "file" or "command", $"prerequisite kind '{p.Kind}' is unknown");
-            Need(p.Name is { Length: > 0 }, "a prerequisite has no name");
-            Need(p.Remedy is { Count: > 0 }, $"prerequisite '{p.Name}' names no remedy");
-            Need(p.Kind != "program" || p.Search is { Count: > 0 }, $"prerequisite '{p.Name}' says nowhere to search");
-            Need(p.Kind != "file" || p.Path is { Length: > 0 } || p.Search is { Count: > 0 },
-                 $"prerequisite '{p.Name}' names neither a path nor where to search");
-            Need(p.Kind != "command" || p.Path is { Length: > 0 } || p.Search is { Count: > 0 },
-                 $"prerequisite '{p.Name}' names neither a path nor where to search");
-            Need(p.Installer is null || (p.Installer.Count > 0 && p.Optional), $"prerequisite '{p.Name}' names an installer but is not optional");
-            prereqs.Add(new RecipePrerequisite(p.Kind ?? "", p.Name ?? "", p.Path, p.Search ?? [], p.Variable,
-                                               p.Arguments ?? [], p.MinVersion, p.Remedy ?? new())
-                        { Optional = p.Optional, Installer = p.Installer ?? [] });
+            return new RecipeSource(s.Id, s.Url ?? "", s.FetchedBy ?? "", s.File, s.Sha256, s.ChecksumNote);
         }
 
-        var steps = new List<RecipeStep>();
-        foreach (var s in d.Steps ?? [])
+        // One step, checked against the sources it may name (a bootstrap's own); a bootstrap's steps are never optional.
+        RecipeStep Step(StepDto s, IReadOnlyList<RecipeSource> known, bool bootstrap)
         {
             RecipeStepKind? kind = s.Kind switch
             {
@@ -308,11 +329,11 @@ public static class SolverRecipes
             switch (kind)
             {
                 case RecipeStepKind.Download:
-                    Need(sources.Any(x => x.Id == s.Source && x.FetchedBy == "circuitRF"),
+                    Need(known.Any(x => x.Id == s.Source && x.FetchedBy == "circuitRF"),
                          $"step '{s.Name}' downloads '{s.Source}', which is not a circuitRF-fetched source");
                     break;
                 case RecipeStepKind.Extract:
-                    Need(sources.Any(x => x.Id == s.Source && x.File is not null), $"step '{s.Name}' extracts an unknown source '{s.Source}'");
+                    Need(known.Any(x => x.Id == s.Source && x.File is not null), $"step '{s.Name}' extracts an unknown source '{s.Source}'");
                     Need(s.Into is { Length: > 0 }, $"step '{s.Name}' says nowhere to extract into");
                     break;
                 case RecipeStepKind.Run:
@@ -326,15 +347,63 @@ public static class SolverRecipes
                     Need(s.Path is { Length: > 0 } && s.Lines is { Count: > 0 }, $"step '{s.Name}' needs path and lines");
                     break;
             }
+            Need(!bootstrap || (!s.Optional && s.When is null), $"bootstrap step '{s.Name}' is marked optional");
+            return new RecipeStep(s.Name ?? "", kind ?? RecipeStepKind.Run, s.Command, s.Arguments ?? [], s.WorkingDirectory,
+                                  s.CaptureAs, s.Expect, progress ?? RecipeProgress.Lines, s.Source, s.Into,
+                                  s.Link, s.Target, s.Path, s.Lines ?? [])
+                   { When = s.Optional ? s.When : null, Environment = s.Environment ?? new() };
+        }
+
+        var sources = (d.Sources ?? []).Select(Source).ToList();
+        Need(sources.Count > 0, "a recipe fetches from somewhere, and names it");
+
+        var prereqs = new List<RecipePrerequisite>();
+        foreach (var p in d.Prerequisites ?? [])
+        {
+            Need(p.Kind is "program" or "file" or "command", $"prerequisite kind '{p.Kind}' is unknown");
+            Need(p.Name is { Length: > 0 }, "a prerequisite has no name");
+            Need(p.Remedy is { Count: > 0 }, $"prerequisite '{p.Name}' names no remedy");
+            Need(p.Kind != "program" || p.Search is { Count: > 0 }, $"prerequisite '{p.Name}' says nowhere to search");
+            Need(p.Kind != "file" || p.Path is { Length: > 0 } || p.Search is { Count: > 0 },
+                 $"prerequisite '{p.Name}' names neither a path nor where to search");
+            Need(p.Kind != "command" || p.Path is { Length: > 0 } || p.Search is { Count: > 0 },
+                 $"prerequisite '{p.Name}' names neither a path nor where to search");
+            Need(p.Installer is null || (p.Installer.Count > 0 && p.Optional), $"prerequisite '{p.Name}' names an installer but is not optional");
+            // brief-emi-9 — needs, enables and a bootstrap belong to an optional prerequisite; what it needs comes before it.
+            Need((p.Needs is null && p.Enables is null && p.Bootstrap is null) || p.Optional,
+                 $"prerequisite '{p.Name}' names needs, enables or a bootstrap but is not optional");
+            foreach (string need in p.Needs ?? [])
+                Need(prereqs.Any(q => q.Optional && q.Name == need), $"prerequisite '{p.Name}' needs '{need}', which is not an earlier optional prerequisite");
+            RecipeBootstrap? bootstrap = null;
+            if (p.Bootstrap is { } b)
+            {
+                Need(b.Name is { Length: > 0 }, $"prerequisite '{p.Name}': its bootstrap has no name");
+                Need(b.Into is { Length: > 0 } && b.Into.StartsWith("${home}/", StringComparison.Ordinal),
+                     $"prerequisite '{p.Name}': its bootstrap goes somewhere other than under ${{home}}");
+                Need(b.Measured is { Source.Length: > 0 }, $"prerequisite '{p.Name}': its bootstrap's measured.source is missing");
+                var bootSources = (b.Sources ?? []).Select(x => Source(x)).ToList();
+                var bootSteps = (b.Steps ?? []).Select(x => Step(x, bootSources, bootstrap: true)).ToList();
+                Need(bootSteps.Count > 0, $"prerequisite '{p.Name}': its bootstrap has no steps");
+                bootstrap = new RecipeBootstrap(b.Name ?? "", b.Into ?? "", b.Environment ?? new(), bootSources, bootSteps, b.Notes ?? [],
+                                                b.DownloadMB, new RecipeMeasured(b.Measured?.Minutes, b.Measured?.DiskGB, b.Measured?.Source ?? ""));
+            }
+            prereqs.Add(new RecipePrerequisite(p.Kind ?? "", p.Name ?? "", p.Path, p.Search ?? [], p.Variable,
+                                               p.Arguments ?? [], p.MinVersion, p.Remedy ?? new())
+                        { Optional = p.Optional, Installer = p.Installer ?? [], Program = p.Program, Needs = p.Needs ?? [],
+                          Enables = p.Enables, Bootstrap = bootstrap });
+        }
+
+        var steps = new List<RecipeStep>();
+        foreach (var s in d.Steps ?? [])
+        {
+            var step = Step(s, sources, bootstrap: false);
             // R-emi3-2a — "optional" and "when" come together, "when" names an optional prerequisite, and nothing
             // required follows an optional step (finishing later runs the tail, and nothing it skipped may be needed).
             Need(s.Optional == (s.When is not null), $"step '{s.Name}': optional and when go together");
             Need(s.When is null || prereqs.Any(p => p.Optional && p.Name == s.When),
                  $"step '{s.Name}' runs when '{s.When}', which is not an optional prerequisite");
             Need(s.When is not null || steps.All(x => !x.Optional), $"step '{s.Name}' is required but follows an optional step");
-            steps.Add(new RecipeStep(s.Name ?? "", kind ?? RecipeStepKind.Run, s.Command, s.Arguments ?? [], s.WorkingDirectory,
-                                     s.CaptureAs, s.Expect, progress ?? RecipeProgress.Lines, s.Source, s.Into,
-                                     s.Link, s.Target, s.Path, s.Lines ?? []) { When = s.Optional ? s.When : null });
+            steps.Add(step);
         }
         foreach (var p in prereqs.Where(p => p.Optional))
             Need(steps.Any(s => s.When == p.Name), $"optional prerequisite '{p.Name}' is needed by no step");
@@ -423,6 +492,23 @@ public static class SolverRecipes
         public Dictionary<string, string>? Remedy { get; set; }
         public bool Optional { get; set; }
         public List<string>? Installer { get; set; }
+        public string? Program { get; set; }
+        public List<string>? Needs { get; set; }
+        public string? Enables { get; set; }
+        public BootstrapDto? Bootstrap { get; set; }
+    }
+
+    private sealed class BootstrapDto
+    {
+        public string? Name { get; set; }
+        public string? Into { get; set; }
+        public Dictionary<string, string>? Environment { get; set; }
+        public List<SourceDto>? Sources { get; set; }
+        public List<StepDto>? Steps { get; set; }
+        public List<string>? Notes { get; set; }
+        public double? DownloadMB { get; set; }
+        public MeasuredDto? Measured { get; set; }
+        public string? Comment { get; set; }
     }
 
     private sealed class StepDto
@@ -443,6 +529,7 @@ public static class SolverRecipes
         public List<string>? Lines { get; set; }
         public bool Optional { get; set; }
         public string? When { get; set; }
+        public Dictionary<string, string>? Environment { get; set; }
         public string? Comment { get; set; }
     }
 

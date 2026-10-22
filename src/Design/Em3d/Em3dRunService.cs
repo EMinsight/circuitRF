@@ -195,9 +195,10 @@ public static partial class Em3dRunService
     internal static EmRunResult Run(EmSetup setup, EmLayoutSource source, string resultsRoot,
                                     CancellationToken ct, RunControl? control, int? maxCores,
                                     Func<Em3dMemoryVerdict, bool>? confirmMemory = null,
-                                    PalaceDevice device = PalaceDevice.Cpu, long? memoryCeilingBytes = null)
+                                    PalaceDevice device = PalaceDevice.Cpu, long? memoryCeilingBytes = null,
+                                    EmergeDevice emergeDevice = EmergeDevice.Auto)
         => Run(setup, s => Em3dGenerator.Generate(s, source, source.Technology!), resultsRoot, ct, control, maxCores,
-               confirmMemory, device: device, memoryCeilingBytes: memoryCeilingBytes);
+               confirmMemory, device: device, memoryCeilingBytes: memoryCeilingBytes, emergeDevice: emergeDevice);
 
     /// <summary>
     /// brief-em3d-42 — the run, from whatever builds the problem: a <c>.cem</c>'s layout through the generator,
@@ -214,7 +215,8 @@ public static partial class Em3dRunService
                                     CancellationToken ct, RunControl? control, int? maxCores,
                                     Func<Em3dMemoryVerdict, bool>? confirmMemory = null,
                                     Action<Em3dSolverId, string>? keepRecord = null,
-                                    PalaceDevice device = PalaceDevice.Cpu, long? memoryCeilingBytes = null)
+                                    PalaceDevice device = PalaceDevice.Cpu, long? memoryCeilingBytes = null,
+                                    EmergeDevice emergeDevice = EmergeDevice.Auto)
     {
         RunStarting?.Invoke(resultsRoot, memoryCeilingBytes);
         var log = new RunLog();
@@ -255,7 +257,8 @@ public static partial class Em3dRunService
             .ToList() is { Count: > 0 } holds ? new Holds(holds) : null;
 
         // ── each solver's settings ────────────────────────────────────────────────────────────
-        var run = new RunContext(setup, build, resultsRoot, ct, control, maxCores, device, readiness, log, memory, memoryCeilingBytes);
+        var run = new RunContext(setup, build, resultsRoot, ct, control, maxCores, device, readiness, log, memory, memoryCeilingBytes,
+                                 emergeDevice);
         foreach (var leg in legs) leg.Configure(run);
         using var legHolds = new Holds([.. legs.Select(l => l.Hold(holder)).OfType<IDisposable>()]);
         // One solver stops at its first refusal. A comparison goes on while any could still run, so the
@@ -576,10 +579,12 @@ public static partial class Em3dRunService
     /// <summary>What every leg of one run shares: the setup, the inputs the caller passed, discovery's answer and the log.</summary>
     /// <param name="MemoryCeilingBytes">brief-emi-10 R-emi10-4 — the user's memory limit for a solver (Settings ▸ Solvers,
     /// <c>--memory-limit</c>), or null for this machine's memory. An ARGUMENT, as the core cap is.</param>
+    /// <param name="EmergeDevice">brief-emi-9 R-emi9-3 — where an EMerge leg factorises (Settings ▸ Solvers, <c>em --device</c>).
+    /// An ARGUMENT, as <paramref name="Device"/> is for Palace, hashed nowhere.</param>
     internal sealed record RunContext(EmSetup Setup, Func<EmSetup, Em3dGenerationResult> Build, string ResultsRoot,
                                       CancellationToken Ct, RunControl? Control, int? MaxCores, PalaceDevice Device,
                                       IReadOnlyList<SolverReadiness> Readiness, RunLog Log, MemoryGate Memory,
-                                      long? MemoryCeilingBytes = null)
+                                      long? MemoryCeilingBytes = null, EmergeDevice EmergeDevice = EmergeDevice.Auto)
     {
         /// <summary>brief-emi-10 R-emi10-2 — what this run's processes are held to: the ceiling (this machine's memory, or the
         /// user's lower limit), lifted once the user forces the run past its size check.</summary>

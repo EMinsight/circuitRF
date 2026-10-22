@@ -203,6 +203,6 @@ public sealed class PalaceGpuDeviceCliTests
         }
         finally { Console.SetOut(out0); Console.SetError(err0); }
         Assert.Equal(1, exit);
-        Assert.Contains("--device takes cpu or gpu, not 'tpu'", err.ToString());
+        Assert.Contains("--device takes auto, cpu or gpu, not 'tpu'", err.ToString());
     }
 }

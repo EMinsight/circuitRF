@@ -14,7 +14,11 @@ already ranked). Kernel solids are their B-rep files, imported as they are and s
 builds the model and meshes it, and prints one line of JSON: the counts, and any warning. Exit 0 on success; 2 with an
 "error" line when the input or EMerge refuses it.
 
-    python -I circuitrf_emerge.py <problem.json> solve
+    python -I circuitrf_emerge.py <problem.json> solve [gpu-from=<unknowns>]
+
+(brief-emi-9) gpu-from: a driven problem of at least that many unknowns is factorised by EMerge's GPU sparse solver, with
+its iterative refinement on; absent, or an eigenmode problem, it never is. It is an argument and not part of problem.json:
+where a problem is solved is the machine's, and problem.json is what the run's provenance hashes.
 
 (brief-emi-5) builds, meshes and solves it, and writes PLAIN ARRAYS beside problem.json -- circuitRF builds the DataSet,
 the Touchstone and their provenance from them, so EMerge's own Touchstone writer is never used:
@@ -42,7 +46,7 @@ import json
 import os
 import sys
 
-DRIVER_VERSION = 2
+DRIVER_VERSION = 3
 FORMAT = "circuitRF EMerge problem"
 FORMAT_VERSION = 1
 MODES = ("mesh", "solve")
@@ -60,8 +64,16 @@ def fail(message):
 
 
 def main(argv):
-    if len(argv) != 3 or argv[2] not in MODES:
-        fail("usage: circuitrf_emerge.py <problem.json> " + "|".join(MODES))
+    gpu_from = None
+    if len(argv) == 4 and argv[2] == "solve" and argv[3].startswith("gpu-from="):
+        try:
+            gpu_from = int(argv[3][len("gpu-from="):])
+        except ValueError:
+            gpu_from = -1
+        if gpu_from < 0:
+            fail("gpu-from takes a whole number of unknowns, not '%s'" % argv[3])
+    elif len(argv) != 3 or argv[2] not in MODES:
+        fail("usage: circuitrf_emerge.py <problem.json> " + "|".join(MODES) + " [gpu-from=<unknowns>]")
     path = os.path.abspath(argv[1])
     with open(path, encoding="utf-8") as f:
         problem = json.load(f)
@@ -94,6 +106,7 @@ def main(argv):
     meshed = time.time()
     # The mesh's size, before any solve: circuitRF checks the run's memory on it and stops the run when it is refused.
     report(stage="meshed", tets=counts["tets"], edges=counts["edges"], triangles=counts["triangles"])
+    use_gpu(problem, counts, gpu_from, sim, em, warnings)
     # After the build: creating the Simulation reconfigures EMerge's logger, which would drop a handler added before it.
     heard = Heard()
     from loguru import logger
@@ -102,8 +115,10 @@ def main(argv):
         outcome = solve(problem, os.path.dirname(path), sim, model, heard, warnings)
     except Exception as e:
         fail("%s: %s" % (type(e).__name__, e))
-    run = dict(emerge=version, warnings=warnings, sparseSolver=heard.solver, meshSeconds=round(meshed - started, 3),
-               solveSeconds=round(time.time() - meshed, 3), **counts)
+    # The device the solves USED, read back from the solver EMerge's log says it called, never assumed from what was asked.
+    device = None if heard.solver is None else ("gpu" if heard.solver == GPU_SOLVER_NAME else "cpu")
+    run = dict(emerge=version, warnings=warnings, sparseSolver=heard.solver, device=device, gpuFrom=gpu_from,
+               meshSeconds=round(meshed - started, 3), solveSeconds=round(time.time() - meshed, 3), **counts)
     run.update(outcome)
     run["tets"] = int(sim.mesh.n_tets)          # after any adaptive refinement
     mw = sim.mw
@@ -113,6 +128,35 @@ def main(argv):
     with open(os.path.join(os.path.dirname(path), RUN_FILE), "w", encoding="utf-8") as f:
         json.dump(run, f, sort_keys=True)
     report(**run)
+
+
+# -- the GPU (brief-emi-9) -------------------------------------------------------------------------------------------------
+
+GPU_SOLVER_NAME = "SPARTA"   # how EMerge 3.0.0b2's log names it: "Calling SPARTA Solver (GPU, 0.2.0)."
+
+
+def use_gpu(problem, counts, gpu_from, sim, em, warnings):
+    """Hands a driven problem of at least gpu_from unknowns to EMerge's GPU sparse solver, with its iterative refinement ON.
+
+    EMerge never picks this solver itself, and when it is forced EMerge calls it with refinement_steps=0: a bare
+    single-precision factorisation. Measured on the Cavity (src/Design/RESOLVED.md, EMI-9): bare, its answers differed from the
+    CPU's by up to 8e-4 and the adaptive sweep ran to its 100-sample cap without converging at 9k tets; with the solver's own
+    default refinement (-1: as many double-precision corrections as its 1e-6 residual target needs) it converged in exactly
+    the CPU's sample count at every mesh, within 1.5e-6 of the CPU's S, and still faster."""
+    if gpu_from is None or problem["problem"] != "driven":
+        return
+    order = problem["settings"]["elementOrder"]
+    unknowns = 2 * (counts["edges"] + counts["triangles"]) if order == 2 else counts["edges"]
+    if unknowns < gpu_from:
+        return
+    from emerge._emerge import solver as s
+    kind = getattr(s.EMSolver, "SPARTA", None)
+    gpu = sim.mw.solveroutine.solvers.get(kind) if kind is not None else None
+    if gpu is None or not getattr(s, "_SPARTA_AVAILABLE", False):
+        warnings.append("EMerge's GPU sparse solver could not be loaded, so this run solved on the CPU.")
+        return
+    gpu.settings["refinement_steps"] = -1
+    sim.mw.solveroutine.set_solver(kind)
 
 
 class Heard:

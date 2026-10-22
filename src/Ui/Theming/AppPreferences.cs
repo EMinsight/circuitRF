@@ -332,6 +332,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? EmPalaceDevice { get; set; }
 
+    // brief-emi-9 R-emi9-3: where EMerge factorises, "cpu" or "gpu"; absent (or anything else) means Automatic, which uses the
+    // GPU sparse solver for a driven problem it is measured to be faster on. Per MACHINE for EmPalaceDevice's reason exactly,
+    // never in the .cem/.c3d, and hashed nowhere. See EmEmergeDevicePreference.
+    [JsonPropertyName("em_emerge_device")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EmEmergeDevice { get; set; }
+
     // brief-emi-10 R-emi10-4: the memory ceiling, GB, a 3D run's solver and mesher processes are held to, below this machine's
     // memory. Null is Automatic: this machine's memory. Per MACHINE for EmMaxCores' reason exactly, never in the .cem/.c3d,
     // and handed to the run as an argument. See EmMemoryLimitPreference.

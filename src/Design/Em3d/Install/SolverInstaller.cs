@@ -203,6 +203,35 @@ public sealed class SolverInstaller
         return sb.ToString().TrimEnd();
     }
 
+    /// <summary>
+    /// brief-emi-9 R-emi9-2b — what the user agrees to when circuitRF fetches <paramref name="when"/> itself for one build
+    /// (<see cref="FinishOptionalWithBootstrap"/>): what it fetches and from where, where it goes, what it builds with it, that
+    /// it is deleted after, and what it measured. Null when <paramref name="when"/> has no bootstrap.
+    /// </summary>
+    public string? BootstrapConsent(SolverRecipe recipe, RecipePrerequisite when, string home)
+    {
+        if (when.Bootstrap is not { } boot) return null;
+        string into = Expand(boot.Into, new Dictionary<string, string>(StringComparer.Ordinal) { ["home"] = home });
+        var sb = new StringBuilder();
+        sb.AppendLine($"circuitRF fetches {boot.Name} for one build, into {into}, from these upstream sources and from nowhere else:");
+        foreach (var s in boot.Sources)
+            sb.AppendLine($"  • {s.Url} — fetched by {s.FetchedBy}; " +
+                          (s.Sha256 is { } sha ? $"checked against upstream's SHA-256 {sha[..Math.Min(12, sha.Length)]}…" : s.ChecksumNote!));
+        sb.AppendLine();
+        sb.AppendLine($"With it, it runs: {string.Join("; ", recipe.Steps.Where(st => st.When == when.Name).Select(st => st.Name))}.");
+        sb.AppendLine($"Then it deletes {into}, whatever happened: nothing is left behind but what the build made, and removing " +
+                      $"{Discovery(recipe.Tool).Name} removes that too. Your shell, your PATH and any copy of {when.Name} you install " +
+                      "yourself are not touched.");
+        string download = boot.DownloadMB is { } mb ? $", {mb:0} MB downloaded" : "";
+        sb.AppendLine(boot.Measured.Minutes is { } min
+            ? $"Measured: about {(min < 1.5 ? $"{min * 60:0} seconds" : $"{min:0} minutes")}{download} ({boot.Measured.Source})."
+            : $"Time and download: not yet measured — {boot.Measured.Source}.");
+        foreach (string note in boot.Notes) sb.AppendLine(note);
+        foreach (string note in recipe.ConsentNotes) sb.AppendLine(note);
+        sb.AppendLine("It runs in the background and can be cancelled at any point.");
+        return sb.ToString().TrimEnd();
+    }
+
     private static string DescribeMeasured(RecipeMeasured m)
     {
         if (m.Minutes is null && m.DiskGB is null) return $"Time and disk: not yet measured — {m.Source}.";
@@ -242,13 +271,13 @@ public sealed class SolverInstaller
 
                 case "file":
                     found = p.Search.Select(d => ExpandStatic(d, env))
-                                    .SelectMany(d => Target.Entries(d, p.Name)).FirstOrDefault();
+                                    .SelectMany(d => Target.Entries(d, p.ProgramName)).FirstOrDefault();
                     if (found is null) why = $"{p.Name} is not installed (looked in {string.Join(", ", p.Search.Select(s => ExpandStatic(s, env)))})";
                     break;
 
                 case "program":
                     found = p.Search.SelectMany(d => ExpandStatic(d, env).Split(Target.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-                                    .Select(d => Target.ProgramIn(d, p.Name)).FirstOrDefault(c => c is not null);
+                                    .Select(d => Target.ProgramIn(d, p.ProgramName)).FirstOrDefault(c => c is not null);
                     if (found is null) why = $"{p.Name} is not installed (looked in {string.Join(", ", p.Search.Select(s => ExpandStatic(s, env)))})";
                     else if (p.MinVersion is { } min)
                     {
@@ -263,8 +292,10 @@ public sealed class SolverInstaller
                     break;
 
                 case "command":
+                    // brief-emi-9 — a searched entry may be a PATH-like list (${env:PATH}), as a program's is.
                     string target = p.Path is { } exact ? ExpandStatic(exact, env)
-                        : p.Search.Select(d => Target.ProgramIn(ExpandStatic(d, env), p.Name)).FirstOrDefault(c => c is not null) ?? p.Name;
+                        : p.Search.SelectMany(d => ExpandStatic(d, env).Split(Target.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+                                  .Select(d => Target.ProgramIn(d, p.ProgramName)).FirstOrDefault(c => c is not null) ?? p.ProgramName;
                     var r = Target.FileExists(target) ? Target.Quick(target, p.Arguments) : (ExitCode: -1, Output: "");
                     answer = FirstLine(r.Output);
                     if (r.ExitCode == 0) found = target;
@@ -274,7 +305,12 @@ public sealed class SolverInstaller
                     break;
             }
 
-            if (found is not null && p.Variable is { Length: > 0 } name) variables[name] = found;
+            if (found is not null && p.Variable is { Length: > 0 } name)
+            {
+                variables[name] = found;
+                // brief-emi-9 — its directory too, for a step's PATH: a build tool that finds a program only on PATH.
+                if (Path.GetDirectoryName(found) is { Length: > 0 } folder) variables[name + "Dir"] = folder;
+            }
             if (p.Optional)
             {
                 optional[p.Name] = new OptionalPrerequisiteCheck(found is not null, found is null ? "unmet" : StateOf(found, answer), why);
@@ -284,6 +320,17 @@ public sealed class SolverInstaller
             missing.Add(why!);
             string remedy = RemedyFor(p);
             if (!commands.Contains(remedy, StringComparer.Ordinal)) commands.Add(remedy);
+        }
+        // brief-emi-9 — a group that also needs other optional prerequisites is met only with them, and its state is all of theirs.
+        foreach (var p in recipe.Prerequisites.Where(p => p.Optional && p.Needs.Count > 0))
+        {
+            var own = optional[p.Name];
+            var needed = p.Needs.Select(n => (Name: n, Check: optional[n])).ToList();
+            var unmet = needed.FirstOrDefault(n => !n.Check.Met);
+            optional[p.Name] = new OptionalPrerequisiteCheck(
+                own.Met && unmet.Check is null,
+                string.Join("+", needed.Select(n => n.Check.State).Prepend(own.State)),
+                own.Why ?? (unmet.Check is { } u ? u.Why ?? $"{unmet.Name} is not installed" : null));
         }
         return new PrerequisiteCheck(missing, commands, variables) { Optional = optional };
     }
@@ -581,16 +628,61 @@ public sealed class SolverInstaller
         // finishing it is exactly what an older install needs.)
         if (record.Optional is { } known && recipe.OptionalGroups.All(g => known.Any(e => e.When == g.When.Name && e.Status == OptionalStepsStatus.Built)))
             return [];
-        var prereqs = CheckPrerequisites(recipe);
-        var due = recipe.OptionalGroups.Where(g =>
+        if (Due(recipe, record, CheckPrerequisites(recipe)).Count == 0) return [];
+        return UnderInstallLock(recipe, record, (current, log, logPath, ctl) => FinishDue(this, recipe, current, log, logPath, ctl), control);
+    }
+
+    /// <summary>The groups whose prerequisite is met now and that are not built, less any that failed against this same
+    /// state of their prerequisite.</summary>
+    private static List<(RecipePrerequisite When, IReadOnlyList<RecipeStep> Steps)> Due(SolverRecipe recipe, InstallRecord record, PrerequisiteCheck prereqs)
+        => recipe.OptionalGroups.Where(g =>
         {
             var check = prereqs.Optional[g.When.Name];
             var entry = record.Optional?.FirstOrDefault(e => e.When == g.When.Name);
             return check.Met && entry?.Status != OptionalStepsStatus.Built
                 && !(entry is { Status: OptionalStepsStatus.Failed } && entry.PrerequisiteState == check.State);
         }).ToList();
-        if (due.Count == 0) return [];
 
+    /// <summary>Runs the due groups with <paramref name="runner"/>'s environment, in <paramref name="current"/>'s home; the
+    /// record's entries for what ran, and what each did.</summary>
+    private static (List<OptionalStepsRecord> Entries, List<OptionalStepsOutcome> Outcomes, List<InstallSource> Checked)
+        FinishDue(SolverInstaller runner, SolverRecipe recipe, InstallRecord current, StreamWriter log, string logPath, RunControl control)
+    {
+        var prereqs = runner.CheckPrerequisites(recipe);
+        var run = new Execution(runner, recipe, current.Home, prereqs.Variables, log, control);
+        var entries = (current.Optional ?? []).ToList();
+        var outcomes = new List<OptionalStepsOutcome>();
+        var checkedSources = new List<InstallSource>();
+        try
+        {
+            foreach (var (when, steps) in Due(recipe, current, prereqs))
+            {
+                var clock = Stopwatch.StartNew();
+                var done = RunOptional(run, when, steps, prereqs.Optional[when.Name], checkedSources, log, control);
+                entries.RemoveAll(e => e.When == when.Name);
+                entries.Add(done);
+                outcomes.Add(new OptionalStepsOutcome(when.Name, done.Status, clock.Elapsed, done.Detail, logPath));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            run.KillRunning();
+            log.WriteLine("cancelled");
+        }
+        return (entries, outcomes, checkedSources);
+    }
+
+    /// <summary>
+    /// The install lock around <paramref name="body"/>, with the record read again under it (another process may have finished
+    /// the work while this one waited to look) and rewritten after when anything ran. Empty when the lock is held elsewhere —
+    /// the next caller finishes it.
+    /// </summary>
+    private IReadOnlyList<OptionalStepsOutcome> UnderInstallLock(
+        SolverRecipe recipe, InstallRecord record,
+        Func<InstallRecord, StreamWriter, string, RunControl,
+             (List<OptionalStepsRecord> Entries, List<OptionalStepsOutcome> Outcomes, List<InstallSource> Checked)> body,
+        RunControl? control)
+    {
         control ??= new RunControl();
         string toolDir = SolverHomes.ToolDirectory(LocalRoot ?? Root, recipe.Tool);
         FileStream? gate;
@@ -604,7 +696,6 @@ public sealed class SolverInstaller
 
         using (gate)
         {
-            // Read again under the lock: another process may have finished it while this one waited to look.
             string recordPath = Path.Combine(record.Home, SolverHomes.RecordFile);
             if (InstallRecord.TryRead(recordPath) is not { } current) return [];
             Directory.CreateDirectory(SolverHomes.LogDirectory(LocalRoot ?? Root, recipe.Tool));
@@ -614,26 +705,7 @@ public sealed class SolverInstaller
             log.WriteLine($"circuitRF solver install — {recipe.Id}, its optional steps — {DateTimeOffset.Now:O}");
             log.WriteLine($"home: {current.Home}");
 
-            var run = new Execution(this, recipe, current.Home, prereqs.Variables, log, control);
-            var entries = (current.Optional ?? []).ToList();
-            var outcomes = new List<OptionalStepsOutcome>();
-            var checkedSources = new List<InstallSource>();
-            try
-            {
-                foreach (var (when, steps) in due)
-                {
-                    var clock = Stopwatch.StartNew();
-                    var done = RunOptional(run, when, steps, prereqs.Optional[when.Name], checkedSources, log, control);
-                    entries.RemoveAll(e => e.When == when.Name);
-                    entries.Add(done);
-                    outcomes.Add(new OptionalStepsOutcome(when.Name, done.Status, clock.Elapsed, done.Detail, logPath));
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                run.KillRunning();
-                log.WriteLine("cancelled");
-            }
+            var (entries, outcomes, checkedSources) = body(current, log, logPath, control);
             // A source the steps checked (a commit) replaces the record's unchecked entry for the same address.
             if (outcomes.Count > 0)
                 (current with
@@ -643,6 +715,85 @@ public sealed class SolverInstaller
                 }).Write(recordPath);
             return outcomes;
         }
+    }
+
+    /// <summary>
+    /// brief-emi-9 R-emi9-2b — the button that supplies a missing prerequisite for one build: under the install lock, fetches
+    /// <paramref name="when"/>'s <see cref="RecipeBootstrap"/> into the home (its own steps, its own checked sources), finishes
+    /// every group that is then due with the bootstrap's environment, and DELETES the bootstrap, whatever happened. Nothing
+    /// outside the home is written: the bootstrap's environment says where everything goes. Empty when there is no such
+    /// bootstrap, the record is not this recipe's, or the lock is held elsewhere. Blocking; run it off the UI thread.
+    /// </summary>
+    public IReadOnlyList<OptionalStepsOutcome> FinishOptionalWithBootstrap(SolverRecipe recipe, InstallRecord record, string when,
+                                                                         RunControl? control = null)
+    {
+        if (record.Distribution is not null || recipe.Id != record.Recipe) return [];
+        if (recipe.Prerequisites.FirstOrDefault(p => p.Optional && p.Name == when) is not { Bootstrap: { } boot }) return [];
+        return UnderInstallLock(recipe, record, (current, log, logPath, ctl) =>
+        {
+            var home = new Dictionary<string, string>(StringComparer.Ordinal) { ["home"] = current.Home };
+            string into = Expand(boot.Into, home);
+            var added = boot.Environment.ToDictionary(kv => kv.Key, kv => Expand(kv.Value, home), StringComparer.Ordinal);
+            var inherited = InheritedEnvironment;
+            var runner = new SolverInstaller(Root)
+            {
+                Discovery = Discovery, Http = Http, Distribution = Distribution, MaxDownloadBytes = MaxDownloadBytes,
+                StallTimeout = StallTimeout, Target = Target, LocalRoot = LocalRoot,
+                InheritedEnvironment = () =>
+                {
+                    var env = new Dictionary<string, string>(inherited(), StringComparer.Ordinal);
+                    foreach (var (k, v) in added) env[k] = v;
+                    return env;
+                },
+            };
+            var bootRecipe = new SolverRecipe(recipe.Id, recipe.Tool, recipe.Version, recipe.Platform, recipe.Architecture,
+                                              recipe.Relocatable, recipe.LayoutNote, recipe.NeedsSpaceFreePath,
+                                              [.. recipe.Sources, .. boot.Sources], recipe.Prerequisites, recipe.Environment,
+                                              recipe.ClearEnvironment, boot.Steps, null, recipe.Program, null, boot.Measured, []);
+            var clock = Stopwatch.StartNew();
+            try
+            {
+                Target.DeleteTree(into);
+                var setup = new Execution(runner, bootRecipe, current.Home, new Dictionary<string, string>(), log, ctl);
+                try
+                {
+                    foreach (var step in boot.Steps)
+                    {
+                        ctl.ThrowIfCancellationRequested();
+                        log.WriteLine();
+                        log.WriteLine($"── {step.Name} (fetching {boot.Name} for this build only) ──");
+                        if (setup.Do(step, []) is { } failure)
+                        {
+                            string last = failure.Verbatim.LastOrDefault(l => l.Trim().Length > 0)?.Trim() ?? failure.Summary;
+                            return ((current.Optional ?? []).ToList(),
+                                    [new OptionalStepsOutcome(when, OptionalStepsStatus.Failed, clock.Elapsed, $"{step.Name}: {last}", logPath)], []);
+                        }
+                        ctl.Tick();
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    setup.KillRunning();
+                    log.WriteLine("cancelled");
+                    return ((current.Optional ?? []).ToList(), [], []);
+                }
+                var finished = FinishDue(runner, recipe, current, log, logPath, ctl);
+                if (finished.Outcomes.Count == 0 && !ctl.Token.IsCancellationRequested)
+                {
+                    string why = runner.CheckPrerequisites(recipe).Optional[when].Why ?? "nothing was due";
+                    finished.Outcomes.Add(new OptionalStepsOutcome(when, OptionalStepsStatus.Failed, clock.Elapsed,
+                                                                   $"{boot.Name} was fetched, but {why}", logPath));
+                }
+                return finished;
+            }
+            finally
+            {
+                // The toolchain and what fetched it go, whatever happened: nothing is left behind but what the steps built.
+                try { Target.DeleteTree(into); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+                try { Target.DeleteTree(Target.Combine(current.Home, "downloads")); } catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
+                log.WriteLine($"removed {into}");
+            }
+        }, control);
     }
 
     /// <summary>What an install of <paramref name="tool"/> must prove it can do — every capability a run
@@ -908,6 +1059,12 @@ public sealed class SolverInstaller
         private StepFailure? RunStep(RecipeStep step, List<InstallSource> sources)
         {
             var env = owner.StepEnvironment(recipe, _vars);
+            if (step.Environment.Count > 0)
+            {
+                var own = new Dictionary<string, string>(env, env is Dictionary<string, string> d ? d.Comparer : StringComparer.Ordinal);
+                foreach (var (k, v) in step.Environment) own[k] = owner.Expand(v, _vars);
+                env = own;
+            }
             string command = Expand(step.Command!);
             if (!owner.Target.IsRooted(command))
                 command = (env.TryGetValue("PATH", out var searchPath) ? searchPath : "").Split(owner.Target.PathSeparator, StringSplitOptions.RemoveEmptyEntries)

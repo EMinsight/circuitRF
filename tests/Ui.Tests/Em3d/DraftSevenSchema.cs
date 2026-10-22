@@ -18,7 +18,7 @@ internal sealed class DraftSevenSchema(JsonElement root)
 {
     private static readonly HashSet<string> Annotations =
         ["$schema", "$id", "title", "description", "default", "$comment", "examples", "markdownDescription",
-         "x-palace-advanced", "x-palace-deprecated", "$defs"];
+         "x-palace-advanced", "x-palace-deprecated", "$defs", "definitions"];
 
     /// <summary>Every violation, each with the path it was found at; empty when the instance is valid.</summary>
     public List<string> Validate(JsonElement instance)

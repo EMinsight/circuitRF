@@ -170,7 +170,7 @@
          installed, and never PATH (SolverDiscovery.InstalledOnly). The status line is the version and whether it is
          validated, the sparse-solver tier, then where it was found (SolverDiscovery.DescribeForSettings). -->
     <SelectableTextBlock Text="EMerge (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
-    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
       <TextBox Grid.Row="0" Grid.Column="0" Name="EmergeBox" FontSize="12"
                PlaceholderText="Leave blank to search (CIRCUITRF_EMERGE, then the copy circuitRF installed)"
                LostFocus="OnPathCommitted">
@@ -200,8 +200,22 @@
         <Button Name="EmergeAccelerate" FontSize="11" Padding="8,3" HorizontalAlignment="Left" IsVisible="False"
                 Click="OnEmergeAccelerate"
                 ToolTip.Tip="Starts that installer, which asks you itself. When it has finished, circuitRF builds EMerge's faster sparse solver on its own: there is nothing else to press."/>
+        <!-- brief-emi-9 R-emi9-2b: when the GPU sparse solver waits only for a Rust toolchain (EmergeAccelerator.GpuEnableFor). -->
+        <Button Name="EmergeEnableGpu" Content="Enable GPU solving…" FontSize="11" Padding="8,3" HorizontalAlignment="Left"
+                IsVisible="False" Click="OnEmergeEnableGpu"
+                ToolTip.Tip="Fetches Rust's minimal toolchain into EMerge's own folder, builds EMerge's GPU sparse solver with it, then deletes the toolchain. Shows what it will fetch first. Your shell, PATH and any Rust you install yourself are not touched."/>
       </StackPanel>
       <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="EmergeRemovals" Spacing="4"/>
+      <!-- brief-emi-9 R-emi9-4: where EMerge factorises, per machine (EmEmergeDevicePreference). -->
+      <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+        <SelectableTextBlock Text="Device" FontSize="11" VerticalAlignment="Center"/>
+        <ComboBox Name="EmergeDeviceBox" FontSize="11" MinWidth="110" SelectionChanged="OnEmergeDeviceChanged"
+                  ToolTip.Tip="Automatic uses EMerge's GPU sparse solver, when it is installed, for a driven problem large enough to be faster on it, and solves a sweep again on the CPU if the GPU's does not converge. Eigenmode problems always solve on the CPU.">
+          <ComboBoxItem Content="Automatic" Tag="auto"/>
+          <ComboBoxItem Content="CPU" Tag="cpu"/>
+          <ComboBoxItem Content="GPU" Tag="gpu"/>
+        </ComboBox>
+      </StackPanel>
     </Grid>
 
     <!-- ── brief-emi-10 R-emi10-4: the memory ceiling every solver and mesher process is held to ─────────

@@ -528,6 +528,21 @@ line tools…** beside it starts their installer. When they are in place, circui
 solver by itself, the next time this tab is shown or an EMerge run starts. Until then EMerge still runs,
 and gives the same answers, with a multi-threaded solver that needs no compiler.
 
+**On an arm64 macOS computer it also builds EMerge's GPU sparse solver**, when a Rust toolchain is
+installed as well as the command line tools. The status line then says *GPU sparse solver installed*.
+Without Rust it says *GPU solving is available after installing a Rust toolchain*, and **Enable GPU
+solving…** beside it fetches Rust's minimal toolchain into EMerge's own folder, builds the GPU solver with
+it, and deletes the toolchain. It shows what it will fetch first: about 100 MB and half a minute. Your
+shell, your `PATH` and any Rust you install yourself are not touched. If you would rather install Rust
+yourself, circuitRF builds the GPU solver by itself the next time this tab is shown or an EMerge run
+starts. The GPU solver is free software under the GNU Affero GPL; circuitRF builds it on your computer
+and distributes nothing. Headless, `circuitrf solver install emerge --gpu --yes` does the same as the button.
+
+**Device** (EMerge) says where EMerge factorises. **Automatic**, the default, uses the GPU sparse solver
+for a driven problem large enough to be faster on it, and the CPU otherwise. **CPU** never uses it, and
+**GPU** always does when it is installed. It belongs to this computer, not to a setup. See
+[Solvers ▸ EMerge on a GPU](em-solvers.html#emerge-gpu).
+
 How each program was installed for validation is in
 {{anchor: em-setup.html#install-3d-solvers|Installing the 3D solvers by hand}}.
 

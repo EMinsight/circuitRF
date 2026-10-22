@@ -22,6 +22,7 @@ public static partial class Em3dRunService
         private EmergeLowering? _lowering;
         private EmergeFieldRequest? _fields;
         private SolverInstallation? _emerge;
+        private long? _gpuFrom;
 
         public EmergeLeg() : base(EmergeSolver.Descriptor) { }
 
@@ -35,6 +36,14 @@ public static partial class Em3dRunService
             // R-emi3-3 — the faster solver is finished here when it is due, and the run uses what that leaves.
             _emerge = EmergeAccelerator.BeforeRun(found.Installation, log.Notes, log.Warnings);
             if (setup.Problem3D == Em3dProblemType.Eigenmode) log.Notes.Add(EmergeAccelerator.EigenmodeNote);
+            // brief-emi-9 R-emi9-3 — where it factorises: the machine's preference, the problem and what is installed.
+            bool gpu = _emerge.Emerge?.Gpu == true;
+            _gpuFrom = EmergeDevicePolicy.GpuFromUnknowns(setup.Problem3D, gpu, run.EmergeDevice);
+            if (run.EmergeDevice == EmergeDevice.Gpu && setup.Problem3D == Em3dProblemType.Eigenmode)
+                log.Notes.Add(EmergeAccelerator.EigenmodeGpuNote);
+            else if (run.EmergeDevice == EmergeDevice.Gpu && !gpu)
+                log.Warnings.Add("Device GPU was asked for, but EMerge's GPU sparse solver is not installed here, so this run solves on " +
+                                 "the CPU. " + (EmergeAccelerator.GpuSentence(_emerge) ?? ""));
             _settings = EmergeSettings.Resolve(setup.Emerge);
             if (_settings.Problems().Concat(EmergeFields.Problems(setup.Emerge)).ToList() is { Count: > 0 } bad)
                 Stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("emerge-settings", string.Join(" ", bad)));
@@ -52,11 +61,30 @@ public static partial class Em3dRunService
         }
 
         public override Leg Execute(Em3dProblem problem, string snpBase, RunContext run)
-            => ExecuteEmerge(problem, snpBase, run, _settings!, _lowering!, _emerge!);
+            => ExecuteEmerge(problem, snpBase, run, _settings!, _lowering!, _emerge!, _gpuFrom);
+    }
+
+    /// <summary>
+    /// brief-emi-9 R-emi9-3 — runs <paramref name="attempt"/> with <paramref name="gpuFrom"/>, and once more on the CPU (null) when
+    /// <see cref="EmergeDevicePolicy.RerunOnCpu"/> says so: an Auto run on the GPU whose adaptive sweep stopped at its cap. Returns
+    /// the attempt that is kept and, after a re-run, the Note that names both sample counts. At most one re-run.
+    /// </summary>
+    internal static (T Result, string? Note) WithCpuFallback<T>(EmergeDevice preference, long? gpuFrom,
+                                                               Func<long?, (T Result, EmergeRunFacts? Facts)> attempt)
+    {
+        var first = attempt(gpuFrom);
+        if (gpuFrom is null || first.Facts is not { } gpu || !EmergeDevicePolicy.RerunOnCpu(preference, gpu)) return (first.Result, null);
+        var second = attempt(null);
+        string cpu = second.Facts is not { } c ? "and that run did not finish"
+            : c.Converged == false ? $"where it also stopped at its limit, at {Count(c.Samples)} frequencies"
+            : $"where it converged with {Count(c.Samples)}";
+        return (second.Result, $"EMerge's adaptive sweep on the GPU stopped at its limit of {Count(gpu.Samples)} frequencies without " +
+                               $"converging (estimated error {(gpu.Error is { } e ? PalaceStageTracker.Sci(e) : "unreported")}), so circuitRF " +
+                               $"solved it again on the CPU, {cpu}. This result is the CPU's.");
     }
 
     private static Leg ExecuteEmerge(Em3dProblem problem, string snpBase, RunContext run, EmergeSettings settings,
-                                     EmergeLowering lowering, SolverInstallation emerge)
+                                     EmergeLowering lowering, SolverInstallation emerge, long? gpuFrom)
     {
         const Em3dSolverId Me = EmergeSolver.Id;
         Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
@@ -66,63 +94,75 @@ public static partial class Em3dRunService
         long physical = MachineMemory.PhysicalBytes;
 
         string dir = RunDirectory(run.ResultsRoot, setup, Me);
-        try
-        {
-            // An earlier run's arrays would be read as this one's if this one stopped before writing its own.
-            Directory.CreateDirectory(dir);
-            foreach (string old in new[] { EmergeResults.FrequencyFile, EmergeResults.SFile, EmergeResults.Z0File,
-                                           EmergeResults.ModesFile, EmergeResults.QFile, EmergeResults.RunFile })
-                File.Delete(Path.Combine(dir, old));
-            EmergeFields.Clear(dir);
-            EmergeScriptWriter.WriteInto(lowering, dir);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return Failed($"EMerge's input could not be written to '{dir}' ({e.Message}).");
-        }
-
-        // R-emi5-3 — the memory check on the mesh, the moment the driver has made it: a refusal stops the process tree.
         var tier = emerge.Emerge?.Tier ?? EmergeSpeedTier.Unknown;
-        string? tooBig = null;
-        var tracker = new EmergeStageTracker(control, eigen)
-        {
-            OnMeshed = mesh =>
-            {
-                if (run.Memory.Admit(EmergeMemory.Verdict(mesh, settings, tier, eigen, physical), log) is not { } refusal) return;
-                tooBig = refusal;
-                throw new OperationCanceledException();
-            },
-        };
-        var psi = EmergeRun.StartInfo(emerge.Path, dir,
-                                      EmergeThreads.Environment(run.MaxCores, PhysicalCores.Count, Environment.ProcessorCount));
-        PalaceRun.ProcessRun ran;
-        // brief-emi-10 — meshing is EMerge's own until it reports its mesh, and it is the stage a runaway happens in.
-        var limits = run.Limits(physical);
-        try { ran = EmergeRun.Solve(psi, control, run.Ct, tracker, physical, limits); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return Failed($"EMerge could not be started in '{dir}' ({e.Message}).");
-        }
-        if (tooBig is not null) return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(EmergeMemoryRefusalSource, tooBig));
-        if (ran.Cancelled) return Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
-        if (ran.StartFailure is { } start) return Failed($"EMerge could not be started ({start}).");
-        if (ran.MemoryNote is not null) log.Warnings.Add(ran.MemoryNote);
-        string logPath = Path.Combine(dir, EmergeResults.LogFile);
-        if (ran.Stopped is { } stopped)
-            return StoppedLeg(Me, "EMerge", stopped, limits, stopped.Meshing ? [] : run.Memory.Last?.Remedies ?? [], logPath);
-        if (ran.ExitCode != 0)
-            return Failed(EmergeLog.DriverError(ran.Tail) is { } said
-                ? $"EMerge stopped: {said} Its log is {logPath}."
-                : $"EMerge exited with code {ran.ExitCode}: {PalaceRun.Quote(ran.Tail, "Error")}. Its log is {logPath}.");
+        long? peak = null;
 
-        var facts = EmergeResults.ReadFacts(dir);
+        // One run of the driver: a failed leg, or what its run.json says. brief-emi-9 — run twice at most (WithCpuFallback).
+        (Leg? Failed, EmergeRunFacts? Facts) Attempt(long? from)
+        {
+            try
+            {
+                // An earlier run's arrays would be read as this one's if this one stopped before writing its own.
+                Directory.CreateDirectory(dir);
+                foreach (string old in new[] { EmergeResults.FrequencyFile, EmergeResults.SFile, EmergeResults.Z0File,
+                                               EmergeResults.ModesFile, EmergeResults.QFile, EmergeResults.RunFile })
+                    File.Delete(Path.Combine(dir, old));
+                EmergeFields.Clear(dir);
+                EmergeScriptWriter.WriteInto(lowering, dir);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return (Failed($"EMerge's input could not be written to '{dir}' ({e.Message})."), null);
+            }
+
+            // R-emi5-3 — the memory check on the mesh, the moment the driver has made it: a refusal stops the process tree.
+            string? tooBig = null;
+            var tracker = new EmergeStageTracker(control, eigen)
+            {
+                OnMeshed = mesh =>
+                {
+                    if (run.Memory.Admit(EmergeMemory.Verdict(mesh, settings, tier, eigen, physical), log) is not { } refusal) return;
+                    tooBig = refusal;
+                    throw new OperationCanceledException();
+                },
+            };
+            var psi = EmergeRun.StartInfo(emerge.Path, dir,
+                                          EmergeThreads.Environment(run.MaxCores, PhysicalCores.Count, Environment.ProcessorCount), from);
+            PalaceRun.ProcessRun ran;
+            // brief-emi-10 — meshing is EMerge's own until it reports its mesh, and it is the stage a runaway happens in.
+            var limits = run.Limits(physical);
+            try { ran = EmergeRun.Solve(psi, control, run.Ct, tracker, physical, limits); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                return (Failed($"EMerge could not be started in '{dir}' ({e.Message})."), null);
+            }
+            if (tooBig is not null) return (Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(EmergeMemoryRefusalSource, tooBig)), null);
+            if (ran.Cancelled) return (Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled()), null);
+            if (ran.StartFailure is { } start) return (Failed($"EMerge could not be started ({start})."), null);
+            if (ran.MemoryNote is not null) log.Warnings.Add(ran.MemoryNote);
+            string logPath = Path.Combine(dir, EmergeResults.LogFile);
+            if (ran.Stopped is { } stopped)
+                return (StoppedLeg(Me, "EMerge", stopped, limits, stopped.Meshing ? [] : run.Memory.Last?.Remedies ?? [], logPath), null);
+            if (ran.ExitCode != 0)
+                return (Failed(EmergeLog.DriverError(ran.Tail) is { } said
+                    ? $"EMerge stopped: {said} Its log is {logPath}."
+                    : $"EMerge exited with code {ran.ExitCode}: {PalaceRun.Quote(ran.Tail, "Error")}. Its log is {logPath}."), null);
+            peak = ran.PeakResident;
+            return (null, EmergeResults.ReadFacts(dir));
+        }
+
+        var (attempt, rerun) = WithCpuFallback(run.EmergeDevice, gpuFrom, from => { var r = Attempt(from); return (r, r.Facts); });
+        var (failed, read) = attempt;
+        if (failed is not null) return failed;
+        var facts = read!;
+        if (rerun is not null) log.Notes.Add(rerun);
         log.Warnings.AddRange(facts.Warnings);
         control?.BeginStage(ReadingLabel);
         string version = facts.Version ?? emerge.Release ?? "(version unreported)";
         return eigen
-            ? FinishEmergeEigen(problem, setup, run.ResultsRoot, dir, facts, tier, version, ran.PeakResident, wall.Elapsed, log)
+            ? FinishEmergeEigen(problem, setup, run.ResultsRoot, dir, facts, tier, version, peak, wall.Elapsed, log)
             : FinishEmergeDriven(problem, setup, run.ResultsRoot, snpBase, dir, settings, lowering, facts, tier, version,
-                                 ran.PeakResident, wall, log);
+                                 peak, wall, log);
     }
 
     private static Leg FinishEmergeDriven(Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase, string dir,
@@ -154,7 +194,11 @@ public static partial class Em3dRunService
                 notConverged = $"EMerge's adaptive sweep stopped at its limit of {settings.MaxSamples} frequencies with estimated error " +
                                $"{(facts.Error is { } e2 ? PalaceStageTracker.Sci(e2) : "unreported")}, above its tolerance " +
                                $"{PalaceStageTracker.Sci(settings.Tolerance)}.";
-                log.Warnings.Add(notConverged + " Raise EMerge.MaxSamples, or loosen EMerge.Tolerance.");
+                log.Warnings.Add(notConverged + " Raise EMerge.MaxSamples, or loosen EMerge.Tolerance." +
+                                 // brief-emi-9 — only a forced GPU run gets here on the GPU: an Auto one was solved again on the CPU.
+                                 (facts.Device == EmergeDevice.Gpu
+                                     ? " It factorised on the GPU because Device is GPU; with Device Auto, circuitRF solves such a sweep again on the CPU."
+                                     : ""));
             }
         }
 
@@ -292,6 +336,8 @@ public static partial class Em3dRunService
     {
         var parts = new List<string> { $"EMerge done in {Duration(wall)}", $"EMerge {version}" };
         if (eigenmode) parts.Add("eigenmode solve on one core");
+        // brief-emi-9 — the device the run USED, as its run.json reports it
+        else if (facts.Device == EmergeDevice.Gpu) parts.Add("GPU sparse solver");
         else if (tier == EmergeSpeedTier.Fast) parts.Add("fast sparse solver");
         else if (tier == EmergeSpeedTier.Baseline) parts.Add("baseline sparse solver, one core");
         if (facts.Tetrahedra is { } t) parts.Add($"{t.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra");

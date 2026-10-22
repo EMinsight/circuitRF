@@ -26,6 +26,10 @@ public sealed record EmergeRunFacts(string? Version, string? SparseSolver, long?
                                     double? SolveSeconds, IReadOnlyList<string> Warnings)
 {
     public static EmergeRunFacts None { get; } = new(null, null, null, null, null, false, null, null, null, null, null, []);
+
+    /// <summary>brief-emi-9 — where the run factorised, as the driver read it back from EMerge's own log (the solver it
+    /// called), never as asked; null when the run did not say.</summary>
+    public EmergeDevice? Device { get; init; }
 }
 
 /// <summary>A driven run's arrays: the requested frequencies, S as [f][i, j] over the ports in ascending number, and each
@@ -74,7 +78,8 @@ public static class EmergeResults
                 ? [.. w.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!)]
                 : new List<string>();
             return new(Str("emerge"), Str("sparseSolver"), Long("tets"), Long("unknowns"), (int?)Long("samples"), Bool("adaptive") ?? false,
-                       Num("error"), Bool("converged"), (int?)Long("modes"), Num("meshSeconds"), Num("solveSeconds"), warnings);
+                       Num("error"), Bool("converged"), (int?)Long("modes"), Num("meshSeconds"), Num("solveSeconds"), warnings)
+                   { Device = Str("device") is "gpu" ? EmergeDevice.Gpu : Str("device") is "cpu" ? EmergeDevice.Cpu : null };
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or FormatException)
         {

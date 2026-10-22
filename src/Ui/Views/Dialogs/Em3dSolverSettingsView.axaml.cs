@@ -101,6 +101,8 @@ public partial class Em3dSolverSettingsView : UserControl
             OpenEmsBox.Text = p.Em3dOpenEmsPath ?? "";
             EmergeBox.Text  = p.Em3dEmergePath  ?? "";
             MpiBox.Text     = p.Em3dMpiLauncherPath ?? "";
+            string device = CircuitRF.Ui.Layout.Em.EmEmergeDevicePreference.Preferred.Id();
+            EmergeDeviceBox.SelectedItem = EmergeDeviceBox.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string?)i.Tag == device);
             MemoryLimitBox.PlaceholderText = CircuitRF.Ui.Layout.Em.EmMemoryLimitPreference.AutomaticText;
             MemoryLimitBox.Text = CircuitRF.Ui.Layout.Em.EmMemoryLimitPreference.Preferred is { } gb
                 ? gb.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "";
@@ -327,12 +329,13 @@ public partial class Em3dSolverSettingsView : UserControl
         status.Text = "Checking…";
         install.IsVisible = false;
         bool emerge = discovery.Tool == SolverTool.Emerge;
-        if (emerge) EmergeAccelerate.IsVisible = false;
+        if (emerge) { EmergeAccelerate.IsVisible = false; EmergeEnableGpu.IsVisible = false; }
         _ = Task.Run(() =>
         {
             string text;
             bool offer = false;
             RecipePrerequisite? accelerate = null;
+            (SolverRecipe, InstallRecord, RecipePrerequisite)? enableGpu = null;
             try
             {
                 // brief-emi-3 R-emi3-3 — Settings being shown is one of the two points circuitRF finishes EMerge's faster
@@ -344,12 +347,19 @@ public partial class Em3dSolverSettingsView : UserControl
                 text  = row.GpuLine is { } gpuLine ? row.Summary + Environment.NewLine + gpuLine : row.Summary;
                 offer = row.OfferInstall;
                 if (emerge) accelerate = EmergeAccelerator.InstallerFor(row.Found);
+                if (emerge) enableGpu = EmergeAccelerator.GpuEnableFor(row.Found);
             }
             catch (Exception ex) { text = ex.Message; }
             Dispatcher.UIThread.Post(() =>
             {
                 ShowStatus(status, text);
                 if (emerge) ShowAccelerate(accelerate);
+                if (emerge)
+                {
+                    EmergeEnableGpu.Tag = enableGpu;
+                    EmergeEnableGpu.IsVisible = enableGpu is not null && accelerate is null;
+                    EmergeEnableGpu.IsEnabled = !CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.IsRunning(SolverTool.Emerge);
+                }
                 bool running = CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.IsRunning(discovery.Tool);
                 install.IsVisible = offer || running;
                 install.IsEnabled = !running;
@@ -469,6 +479,24 @@ public partial class Em3dSolverSettingsView : UserControl
             _accelerateWatching = false;
             Dispatcher.UIThread.Post(() => Refresh(SolverDiscovery.Emerge, EmergeStatus, EmergeInstall));
         }
+    }
+
+    /// <summary>brief-emi-9 R-emi9-2b — consent, then Rust fetched into EMerge's home, the GPU solver built, the toolchain deleted.</summary>
+    private async void OnEmergeEnableGpu(object? sender, RoutedEventArgs e)
+    {
+        if (EmergeEnableGpu.Tag is not ValueTuple<SolverRecipe, InstallRecord, RecipePrerequisite> (var recipe, var record, var when)) return;
+        EmergeEnableGpu.IsEnabled = false;
+        try { await CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.EnableEmergeGpuAsync(recipe, record, when, TopLevel.GetTopLevel(this) as Window, null); }
+        catch (Exception ex) { ShowStatus(EmergeStatus, ex.Message); }
+        finally { Refresh(SolverDiscovery.Emerge, EmergeStatus, EmergeInstall); }
+    }
+
+    /// <summary>brief-emi-9 R-emi9-4 — stores where EMerge factorises; Automatic is stored as nothing.</summary>
+    private void OnEmergeDeviceChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || EmergeDeviceBox.SelectedItem is not ComboBoxItem { Tag: string id } || EmergeDevices.Parse(id) is not { } device) return;
+        if (CircuitRF.Ui.Layout.Em.EmEmergeDevicePreference.Preferred != device)
+            CircuitRF.Ui.Layout.Em.EmEmergeDevicePreference.Preferred = device;
     }
 
     /// <summary>brief-em3d-24 — the row's Install …: consent, then the install in the background.</summary>

@@ -35,6 +35,13 @@ public sealed record EmergeProbe(
     /// <summary>The first characters of the probe's own line, which is how it is told apart from EMerge's log lines.</summary>
     private const string Marker = "{\"probe\"";
 
+    /// <summary>brief-emi-9 — EMerge's flag for its GPU sparse solver, as the probe lists it.</summary>
+    internal const string GpuSolverFlag = "sparta";
+
+    /// <summary>brief-emi-9 — EMerge can load its GPU sparse solver. EMerge never picks it itself; a run asks for it
+    /// (<see cref="EmergeDevicePolicy"/>).</summary>
+    public bool Gpu => SparseSolvers.Contains(GpuSolverFlag, StringComparer.Ordinal);
+
     public EmergeSpeedTier Tier => DirectSolver switch
     {
         null                => EmergeSpeedTier.Unknown,
@@ -51,7 +58,7 @@ public sealed record EmergeProbe(
         EmergeSpeedTier.Fast     => "fast sparse solver",
         EmergeSpeedTier.Baseline => "baseline sparse solver (one core)",
         _                        => "sparse solver not reported",
-    };
+    } + (Gpu ? ", GPU sparse solver" : "");
 
     /// <summary>The banner line: <c>EMerge 3.0.0b2, Python 3.13.16, Gmsh 4.15.2</c>.</summary>
     public string Banner => $"EMerge {Emerge}" + (Python is { } p ? $", Python {p}" : "") + (Gmsh is { } g ? $", Gmsh {g}" : "");

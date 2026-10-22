@@ -351,7 +351,21 @@ namespace RfCore.Export
         /// <c>baseline sparse solver (one core)</c>); absent for every other tool and when nothing was found.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Tier { get; init; }
+
+        /// <summary>brief-emi-9 R-emi9-4 — for EMerge, whether GPU solving is enabled here and, when it is not, why and the
+        /// command that enables it; absent for every other tool and when nothing was found.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public SolverGpuJson? GpuSolving { get; init; }
     }
+
+    /// <param name="Enabled">The GPU sparse solver is installed, and a run uses it as its device says.</param>
+    /// <param name="Detail">The sentence: installed, or why not.</param>
+    /// <param name="Enable">The command that enables it here, when one would.</param>
+    public sealed record SolverGpuJson(
+        bool Enabled,
+        string Detail,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Enable);
 
     /// <param name="Capability">A stable id — <c>driven</c>, <c>wave-ports</c>, <c>eigenmode</c>, and <c>gpu</c> when
     /// asked for (<c>solver list --capability gpu</c>, brief-em3d-136).</param>

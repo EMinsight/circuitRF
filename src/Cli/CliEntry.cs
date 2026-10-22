@@ -1389,6 +1389,8 @@ static int RunEm(string[] args)
     // brief-em3d-136 R-em3d136-4c — where Palace solves. Headless there is no preference to read, so a build machine
     // says what it means; the default is the CPU.
     var device = CircuitRF.Design.Em3d.PalaceDevice.Cpu;
+    // brief-emi-9 R-emi9-4 — and where EMerge factorises: the same flag, whose `auto` (the default) is the GUI's Automatic.
+    var emergeDevice = CircuitRF.Design.Em3d.EmergeDevice.Auto;
     // brief-emi-10 R-emi10-4 — a lower memory ceiling for this run's solver processes than this machine's memory; no flag is
     // the machine's.
     long? memoryLimit = null;
@@ -1426,9 +1428,11 @@ static int RunEm(string[] args)
             case "--device" when i + 1 < args.Length:
             {
                 string deviceName = args[++i];
-                if (CircuitRF.Design.Em3d.PalaceDevices.Parse(deviceName) is not { } parsed)
+                if (CircuitRF.Design.Em3d.EmergeDevices.Parse(deviceName) is not { } parsed)
                     return JsonRun.Fail(CliDiagnostics.EmUnknownDevice(deviceName));
-                device = parsed;
+                // `auto` is the CPU for Palace, whose own default it is; EMerge's Automatic chooses by the problem.
+                device = parsed == CircuitRF.Design.Em3d.EmergeDevice.Gpu ? CircuitRF.Design.Em3d.PalaceDevice.Gpu : CircuitRF.Design.Em3d.PalaceDevice.Cpu;
+                emergeDevice = parsed;
                 break;
             }
             case "--memory-limit" when i + 1 < args.Length:
@@ -1486,7 +1490,7 @@ static int RunEm(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
-        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device cpu|gpu] [--memory-limit <GB>] [--force] [--set var=expr]");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device auto|cpu|gpu] [--memory-limit <GB>] [--force] [--set var=expr]");
         Console.Error.WriteLine("       circuitrf em [<workspace dir | .cws | .ctech>] --component \"SPIRAL N=3 W=10 um ...\" -o out.sNp [--freq start:stop:step]");
         return code;
     }
@@ -1566,7 +1570,8 @@ static int RunEm(string[] args)
         return JsonRun.Fail(CliDiagnostics.EmSolverOnPlanar(solverName!, Path.GetFileName(cemPath)));
     if (solver is { } chosen) setup.Solver3D = chosen;
     if (device == CircuitRF.Design.Em3d.PalaceDevice.Gpu &&
-        (setup.IsThermal || !CircuitRF.Design.Em3d.Em3dSolvers.Any(setup.Solver3D, c => c.Gpu)))
+        (setup.IsThermal || !(CircuitRF.Design.Em3d.Em3dSolvers.Any(setup.Solver3D, c => c.Gpu) ||
+                                CircuitRF.Design.Em3d.Em3dSolvers.Of(setup.Solver3D).Any(d => d.Id == CircuitRF.Design.Em3d.EmergeSolver.Id))))
         return JsonRun.Fail(CliDiagnostics.EmDeviceWithoutPalace(
             $"'{Path.GetFileName(cemPath)}'" + (setup.IsThermal ? ", a thermal setup"
                 : setup.Is3D ? " on " + CircuitRF.Design.Em3d.Em3dSolvers.Names(CircuitRF.Design.Em3d.Em3dSolvers.Of(setup.Solver3D))
@@ -1661,7 +1666,7 @@ static int RunEm(string[] args)
             {
                 bandResult = EmRunService.RunThreeDView(bandRun, threeD!, threeDPath!, DocumentKinds.AncestorCws(threeDPath!), resultsRoot,
                                                         RunHost.Cancellation, EmProgressToStderr(), confirmMemory: force ? _ => true : null,
-                                                        device: device, memoryCeilingBytes: memoryLimit);
+                                                        device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice);
             }
             catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
             if (ReportEmRun(bandResult, bandRun, cemPath) is var code and not 0) return code;
@@ -1678,9 +1683,9 @@ static int RunEm(string[] args)
         result = threeD is not null
             ? EmRunService.RunThreeDView(setup, threeD, threeDPath!, DocumentKinds.AncestorCws(threeDPath!), resultsRoot,
                                          RunHost.Cancellation, EmProgressToStderr(), confirmMemory: force ? _ => true : null,
-                                         fromCem: !isC3d, circuitSets: emSets, device: device, memoryCeilingBytes: memoryLimit)
+                                         fromCem: !isC3d, circuitSets: emSets, device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice)
             : EmRunService.Run(setup, resolution.Source, resultsRoot, RunHost.Cancellation, EmProgressToStderr(),
-                               confirmMemory: force ? _ => true : null, device: device, memoryCeilingBytes: memoryLimit);
+                               confirmMemory: force ? _ => true : null, device: device, memoryCeilingBytes: memoryLimit, emergeDevice: emergeDevice);
     }
     catch (Exception ex)
     {

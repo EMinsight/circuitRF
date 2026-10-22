@@ -4,6 +4,7 @@
 // circuitRF talks to EMerge anyway, and the thread environment a run sets.
 
 using CircuitRF.Design.Em3d.Install;
+using CircuitRF.Engine;
 
 namespace CircuitRF.Design.Em3d;
 
@@ -13,6 +14,13 @@ public static class EmergeAccelerator
     /// Eigenmode run's Notes; nothing works around it.</summary>
     public const string EigenmodeNote =
         "EMerge 3.0 solves an eigenmode problem on one core, whichever sparse solver is installed.";
+
+    /// <summary>brief-emi-9 R-emi9-3 — Device GPU on an eigenmode run, said once in its Notes.</summary>
+    public const string EigenmodeGpuNote = "EMerge's eigenmode solve does not use the GPU, so this run solves on the CPU.";
+
+    /// <summary>brief-emi-9 — the word a recipe's optional prerequisite carries in <c>enables</c> when its steps build the GPU
+    /// sparse solver.</summary>
+    public const string GpuGroup = "gpu";
 
     /// <summary>
     /// R-emi3-4 — THE sentence about EMerge's speed, and the only function that words it: the Settings row
@@ -28,12 +36,79 @@ public static class EmergeAccelerator
             EmergeSpeedTier.Baseline => "Baseline sparse solver, one core",
             _                        => "Sparse solver not reported",
         };
+        // brief-emi-9 R-emi9-4 — the GPU is part of the tier: installed, or what makes it available.
+        if (probe.Gpu) tier += "; GPU sparse solver installed";
         if (Pending(record, recipe) is not ({ } entry, { } when)) return tier + ".";
+        string remedy = (installer ?? new SolverInstaller()).Remedy(when);
+        if (when.Enables == GpuGroup)
+        {
+            if (probe.Gpu) return tier + ".";
+            return entry.Status == OptionalStepsStatus.Failed
+                ? $"{tier}. circuitRF could not build the GPU sparse solver ({entry.Detail}); it tries again when {when.Name} or " +
+                  $"{string.Join(" or ", when.Needs)} change."
+                : $"{tier}. GPU solving is available after installing {when.Name} ({remedy}): circuitRF then builds the GPU " +
+                  "sparse solver automatically.";
+        }
         string faster = probe.Tier == EmergeSpeedTier.Fast ? "a faster one" : "the faster one";
         if (entry.Status == OptionalStepsStatus.Failed)
             return $"{tier}. circuitRF could not build {faster} ({entry.Detail}); it tries again when {when.Name} change.";
-        string remedy = (installer ?? new SolverInstaller()).Remedy(when);
         return $"{tier}. Install {when.Name} ({remedy}) and circuitRF will add {faster} automatically.";
+    }
+
+    /// <summary>
+    /// brief-emi-9 — why a run that asked for the GPU has none, and what gives it one: the GPU group's own sentence for
+    /// circuitRF's install, or where circuitRF builds it. Null when the GPU solver is installed.
+    /// </summary>
+    public static string? GpuSentence(SolverInstallation? found)
+    {
+        if (found?.Emerge is { Gpu: true }) return null;
+        var record = RecordOf(found);
+        if (RecipeOf(record) is not { } recipe || GpuGroupOf(recipe) is not { } group)
+            return "circuitRF builds EMerge's GPU sparse solver in its own EMerge install on macOS arm64; elsewhere, and in an EMerge " +
+                   "installed some other way, there is none.";
+        var entry = record!.Optional?.FirstOrDefault(e => e.When == group.When.Name);
+        if (entry is { Status: OptionalStepsStatus.Failed })
+            return $"circuitRF could not build it ({entry.Detail}).";
+        return $"It is built automatically once {group.When.Name} is installed ({new SolverInstaller().Remedy(group.When)}), or by " +
+               "Settings ▸ Solvers ▸ Enable GPU solving….";
+    }
+
+    /// <summary>brief-emi-9 — the recipe's group that builds the GPU sparse solver, or null.</summary>
+    public static (RecipePrerequisite When, IReadOnlyList<RecipeStep> Steps)? GpuGroupOf(SolverRecipe recipe)
+        => recipe.OptionalGroups.FirstOrDefault(g => g.When.Enables == GpuGroup) is { When: not null } g ? g : null;
+
+    /// <summary>
+    /// brief-emi-9 R-emi9-2b — what Settings' <i>Enable GPU solving…</i> acts on: circuitRF's own EMerge install whose recipe can
+    /// fetch the GPU group's prerequisite itself (a bootstrap), when the GPU solver is not installed, the group is not built,
+    /// what else it needs is installed (otherwise that prerequisite's own button comes first) and the prerequisite itself is
+    /// not found (otherwise the build runs on its own). Null in every other case.
+    /// </summary>
+    public static (SolverRecipe Recipe, InstallRecord Record, RecipePrerequisite When)? GpuEnableFor(SolverInstallation? found,
+                                                                                                    SolverInstaller? installer = null)
+    {
+        if (found?.Emerge is not { Gpu: false }) return null;
+        var record = RecordOf(found);
+        if (record is null || RecipeOf(record) is not { } recipe || GpuGroupOf(recipe) is not { When.Bootstrap: not null } group) return null;
+        if (record.Optional?.Any(e => e.When == group.When.Name && e.Status == OptionalStepsStatus.Built) == true) return null;
+        var check = (installer ?? new SolverInstaller()).CheckPrerequisites(recipe).Optional;
+        if (check[group.When.Name].Met || group.When.Needs.Any(n => !check[n].Met)) return null;
+        return (recipe, record, group.When);
+    }
+
+    /// <summary>brief-emi-9 R-emi9-2b — the button's and <c>solver install emerge --gpu</c>'s work: fetch the prerequisite into
+    /// the home, build the GPU group, delete the prerequisite. Blocking; call it off the UI thread.</summary>
+    public static IReadOnlyList<OptionalStepsOutcome> EnableGpu(SolverRecipe recipe, InstallRecord record, RecipePrerequisite when,
+                                                              RunControl? control = null, SolverInstaller? installer = null)
+        => (installer ?? new SolverInstaller()).FinishOptionalWithBootstrap(recipe, record, when.Name, control);
+
+    /// <summary>The sentence a finished optional group is reported in: what was built, or why not.</summary>
+    public static string Outcome(OptionalStepsOutcome o, SolverRecipe? recipe)
+    {
+        bool gpu = recipe?.Prerequisites.FirstOrDefault(p => p.Name == o.When)?.Enables == GpuGroup;
+        string what = gpu ? "EMerge's GPU sparse solver" : "EMerge's faster sparse solver";
+        return o.Status == OptionalStepsStatus.Built
+            ? $"Built {what} ({o.Elapsed.TotalSeconds:0} s)."
+            : $"circuitRF could not build {what}: {o.Detail}. The log is {o.LogPath}.";
     }
 
     /// <summary><see cref="Sentence(EmergeProbe, InstallRecord?, SolverRecipe?, SolverInstaller?)"/> for a found
@@ -117,10 +192,15 @@ public static class EmergeAccelerator
                                                SolverDiscovery? discovery = null, SolverInstaller? installer = null)
     {
         var done = FinishIfDue(found, installer);
+        var recipe = RecipeOf(RecordOf(found));
         foreach (var o in done)
         {
+            bool gpu = recipe?.Prerequisites.FirstOrDefault(p => p.Name == o.When)?.Enables == GpuGroup;
             if (o.Status == OptionalStepsStatus.Built)
-                notes.Add($"Built EMerge's faster sparse solver ({o.Elapsed.TotalSeconds:0} s).");
+                notes.Add(Outcome(o, recipe));
+            else if (gpu)
+                warnings.Add($"circuitRF could not build EMerge's GPU sparse solver, so this run solves on the CPU: {o.Detail}. " +
+                             $"It is not tried again until {o.When} changes. The log is {o.LogPath}.");
             else
                 warnings.Add($"circuitRF could not build EMerge's faster sparse solver, so this run uses the baseline one: {o.Detail}. " +
                              $"It is not tried again until {o.When} change. The log is {o.LogPath}.");

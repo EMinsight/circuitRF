@@ -295,7 +295,7 @@ internal static class CliDiagnostics
     public static Diagnostic EmUnknownDevice(string value) => Diagnostic.Create(
         "cli.em.unknown-device",
         DiagnosticSeverity.Error,
-        "em: --device takes cpu or gpu, not '{value}'.",
+        "em: --device takes auto, cpu or gpu, not '{value}'.",
         ("value", value));
 
     /// <summary>brief-emi-10 R-emi10-4 — <c>em --memory-limit</c>: not a number, not positive, or not below this machine's
@@ -310,8 +310,8 @@ internal static class CliDiagnostics
     public static Diagnostic EmDeviceWithoutPalace(string what) => Diagnostic.Create(
         "cli.em.device-without-palace",
         DiagnosticSeverity.Error,
-        "em: --device gpu chooses where Palace solves, and this run is {what}, which does not use Palace. Leave --device " +
-        "out, or set the setup's Solver3D to Palace or Both.",
+        "em: --device gpu chooses where Palace or EMerge solves, and this run is {what}, which uses neither. Leave --device " +
+        "out, or set the setup's Solver3D to Palace or EMerge.",
         ("what", what));
 
     /// <summary>brief-em3d-21 R-em3d21-6a — <c>em --solver</c> on a PLANAR setup is refused, naming the
@@ -1598,7 +1598,7 @@ internal static class CliDiagnostics
     /// <summary>brief-em3d-136 — <c>explain --device</c> takes cpu or gpu, as <c>em --device</c> does.</summary>
     public static Diagnostic ExplainUnknownDevice(string value) => Diagnostic.Create(
         "explain.args.unknown-device", DiagnosticSeverity.Error,
-        "explain: --device takes cpu or gpu, not '{value}'.", ("value", value));
+        "explain: --device takes auto, cpu or gpu, not '{value}'.", ("value", value));
 
     public static Diagnostic ExplainMultiplePaths() => new(
         "explain.args.multiple-paths", DiagnosticSeverity.Error,

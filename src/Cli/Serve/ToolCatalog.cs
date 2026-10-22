@@ -587,9 +587,12 @@ internal static class ToolCatalog
                        + "it is compared, else the first."),
                      // brief-em3d-136 R-em3d136-4d — `em --device`, through the CLI's own parsing and refusals.
                      new("device", "--device", OptKind.Str,
-                         "Where Palace solves: cpu (default) or gpu. gpu needs a Palace built with GPU support and runs one "
-                       + "process per GPU it finds; a Palace that cannot is refused before meshing, saying why. 'solver' "
-                       + "with capability=gpu asks first."),
+                         "Where Palace and EMerge solve: auto (default), cpu or gpu. For Palace, auto is the CPU; gpu needs a "
+                       + "Palace built with GPU support and runs one process per GPU it finds, and one that cannot is refused "
+                       + "before meshing ('solver' with capability=gpu asks first). For EMerge, auto uses its GPU sparse solver "
+                       + "for a driven problem large enough to be faster on it and solves a sweep again on the CPU if the GPU's "
+                       + "does not converge; eigenmode runs always solve on the CPU. 'solver' says whether EMerge's GPU solving "
+                       + "is enabled."),
                      // brief-emi-10 R-emi10-4 — `em --memory-limit`, through the CLI's own parsing and refusals.
                      new("memoryLimitGB", "--memory-limit", OptKind.Number,
                          "A 3D run's memory ceiling for its solver and mesher processes, GB, below this machine's memory. A "
@@ -674,7 +677,7 @@ internal static class ToolCatalog
                         new("setup",   "--setup",   OptKind.Str,
                             "Which of a 3D view's (.c3d's) embedded setups to explain, by name. Needed when it embeds several."),
                         new("device",  "--device",  OptKind.Str,
-                            "A 3D setup's report as a run with this device would see it: cpu (default) or gpu."),
+                            "A 3D setup's report as a run with this device would see it: auto (default), cpu or gpu."),
                         new("memoryLimitGB", "--memory-limit", OptKind.Number,
                             "A 3D setup's report with the memory ceiling a run given this limit (GB) would keep."),
                     ],
@@ -1508,7 +1511,8 @@ internal static class ToolCatalog
         new("solver",
             "Which external 3D solvers (Palace, Gmsh, openEMS, EMerge) are installed here and what each build can do: "
           + "driven solves, wave ports, eigenmode solves, and with capability=gpu whether Palace solves on a GPU and "
-          + "how many it finds; for EMerge, its sparse-solver tier. Ask before writing a 3D setup that needs one. Reads "
+          + "how many it finds; for EMerge, its sparse-solver tier and whether GPU solving is enabled, with the command "
+          + "that enables it. Ask before writing a 3D setup that needs one. Reads "
           + "no file and writes nothing.",
             null, null,
             [

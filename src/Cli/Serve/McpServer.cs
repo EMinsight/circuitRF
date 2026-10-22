@@ -239,8 +239,9 @@ internal sealed class McpServer
                 "unloaded Q and where each mode's energy sits; set Eigenmode.Count and TargetGHz) or " +
                 "Thermal. The formats are 'reference em-setup' and '3d-view'. Eigenmode and static " +
                 "problems run on Palace only; 'solver' says whether Palace is installed here and " +
-                "whether its build does eigenmode solves. device=gpu runs Palace on the GPUs of a GPU build; " +
-                "'solver capability=gpu' says whether this one can.\n" +
+                "whether its build does eigenmode solves. device=gpu runs Palace on the GPUs of a GPU build " +
+                "('solver capability=gpu' says whether this one can), and EMerge on its GPU sparse solver ('solver' says whether " +
+                "GPU solving is enabled); device=auto, the default, picks for EMerge by the problem's size.\n" +
                 "\n" +
                 "End to end. Nothing here writes a document — use your own file tools for step 3.\n" +
                 "  1. create   what=workspace path=<root> name=demo      -> <root>/demo/.cws\n" +

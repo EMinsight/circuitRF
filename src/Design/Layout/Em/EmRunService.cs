@@ -511,6 +511,7 @@ public static class EmRunService
     /// machine's memory. A machine setting and an ARGUMENT, on <paramref name="maxCores"/>' terms: the GUI passes its
     /// preference, <c>em --memory-limit</c> its flag, everything else nothing. It can lower the ceiling, never raise it past
     /// physical memory. It enters no provenance hash.</param>
+    /// <param name="emergeDevice">brief-emi-9 — where an EMerge leg factorises; Palace's <paramref name="device"/>'s terms.</param>
     public static EmRunResult Run(
         EmSetup            setup,
         EmLayoutSource?    source,
@@ -520,9 +521,10 @@ public static class EmRunService
         int?               maxCores = null,
         Func<CircuitRF.Design.Em3d.Em3dMemoryVerdict, bool>? confirmMemory = null,
         CircuitRF.Design.Em3d.PalaceDevice device = CircuitRF.Design.Em3d.PalaceDevice.Cpu,
-        long?              memoryCeilingBytes = null)
+        long?              memoryCeilingBytes = null,
+        CircuitRF.Design.Em3d.EmergeDevice emergeDevice = CircuitRF.Design.Em3d.EmergeDevice.Auto)
     {
-        try { return RunCore(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device, memoryCeilingBytes); }
+        try { return RunCore(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device, memoryCeilingBytes, emergeDevice); }
         catch (OperationCanceledException)
         {
             // A stopped run is a normal outcome, not a failure — and it wrote nothing, because every
@@ -555,7 +557,8 @@ public static class EmRunService
         bool               fromCem = false,
         IReadOnlyList<(string Name, string Expr)>? circuitSets = null,
         CircuitRF.Design.Em3d.PalaceDevice device = CircuitRF.Design.Em3d.PalaceDevice.Cpu,
-        long?              memoryCeilingBytes = null)
+        long?              memoryCeilingBytes = null,
+        CircuitRF.Design.Em3d.EmergeDevice emergeDevice = CircuitRF.Design.Em3d.EmergeDevice.Auto)
     {
         if (control is { Token: var t } && t.CanBeCanceled) ct = t;
         // brief-em3d-73 R-em3d73-5a — a thermal setup is never run as an EM one: from a .cem it is refused outright (D1).
@@ -602,7 +605,7 @@ public static class EmRunService
                 {
                     try { inputs?.KeepIn(dir); }
                     catch (Exception e) when (e is IOException or UnauthorizedAccessException) { notKept.Add(e.Message); }
-                }, device, memoryCeilingBytes);
+                }, device, memoryCeilingBytes, emergeDevice);
             foreach (string why in notKept)
                 result = result with { Warnings = [.. result.Warnings, $"The run's inputs could not be kept, so its result cannot be called stale: {why}"] };
             return result;
@@ -633,7 +636,8 @@ public static class EmRunService
         int?               maxCores,
         Func<CircuitRF.Design.Em3d.Em3dMemoryVerdict, bool>? confirmMemory,
         CircuitRF.Design.Em3d.PalaceDevice device,
-        long?              memoryCeilingBytes)
+        long?              memoryCeilingBytes,
+        CircuitRF.Design.Em3d.EmergeDevice emergeDevice)
     {
         // One token, not two. RunControl bundles cancellation WITH progress precisely so a caller
         // wires both once; where a control is supplied its token is authoritative and the bare `ct`
@@ -672,7 +676,7 @@ public static class EmRunService
         if (setup.Is3D && CemCylindricalRefusal(setup) is { } cemCylinder) return cemCylinder;
         if (setup.Is3D)
             return CircuitRF.Design.Em3d.Em3dRunService.Run(setup, source, resultsRoot, ct, control, maxCores, confirmMemory, device,
-                                                            memoryCeilingBytes);
+                                                            memoryCeilingBytes, emergeDevice);
 
         // ── A .cem WRITTEN BEFORE THE TYPE MOVED TO THE DRAWING ─────────────────────────────────
         //

@@ -245,6 +245,30 @@ size the wire set the time step for the whole model. The same wire on a coarser 
 inductance. A package with many wires is therefore FDTD's worst case: every wire needs a fine grid
 around it, and the finest cell anywhere slows every step.
 
+### EMerge on a GPU {#emerge-gpu}
+
+On an arm64 macOS computer, EMerge can factorise its matrices on the GPU (see
+[Settings ▸ 3D EM solvers](settings.html) for how it is installed). **circuitRF uses it automatically
+when it is faster**: for a driven problem of 40,000 unknowns or more. Below that the CPU's fast sparse
+solver is as quick or quicker. Measured on the shipped Cavity, driven, with an adaptive sweep:
+
+| Unknowns | CPU (fast sparse solver) | GPU |
+|---|---|---|
+| 29,726 | 0.8 s | 0.8 s |
+| 67,106 | 2.3 s | 1.7 s |
+| 142,612 | 6.1 s | 3.7 s |
+| 303,888 | 17.0 s | 9.2 s |
+
+Both converged in the same number of full solves, and their S-parameters agreed to within 2e-6. The GPU
+works in single precision, and circuitRF turns on the GPU solver's own double-precision correction; without
+it, the same sweeps either needed more solves or never converged. If a sweep on the GPU still stops at its
+limit without converging, circuitRF solves it again on the CPU and says so in the run's Notes.
+
+**Eigenmode runs do not use the GPU**: EMerge's eigensolver runs on the CPU whatever is installed.
+To choose the device yourself, set **Device** in Settings ▸ 3D EM solvers to **CPU** or **GPU**, or pass
+`--device cpu` or `--device gpu` to `circuitrf em`. On other computers there is no GPU solver for EMerge,
+and every run solves on the CPU.
+
 So the honest summary is:
 
 - **Small metal in a large volume** (wires, a die in a package): FEM's adaptive mesh spends elements

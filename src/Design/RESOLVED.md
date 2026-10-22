@@ -22105,3 +22105,72 @@ first solution was the 7.78 GHz Q 1.5 non-resonance, and the label check caught 
   APFS container's free space, so the floor reads the same figure and the dedupe of "swap volume = run volume" holds.
 
 Gate: `tests/Ui.Tests/Em3d/ProcessLimitsTests.cs`.
+
+## EMI-9: EMerge on a GPU (2026-10-22)
+
+**Measured first (R-emi9-1).** Scratch harness, not a test: circuitRF's own driver on the 3D Eigenmode example's Cavity,
+driven, Standard's adaptive sweep (5 initial samples, tol 1e-3, cap 100), the mesh scaled through `edgeSizeM`, all 10
+cores, macOS 27.0 on an M4. The GPU sparse solver is upstream commit a178949 (0.2.0). |ΔS| is the largest over the 801
+points and four entries, against the CPU run of the same mesh.
+
+| Tets | Unknowns | CPU (fast solver) | GPU, refinement off (EMerge's call) | GPU, refinement on | GPU, hybrid + refinement |
+|---|---|---|---|---|---|
+| 4,072 | 29,726 | 0.79 s, 10 samples | — | 0.83 s, 10, \|ΔS\| 1.7e-7 | — |
+| 9,267 | 67,106 | 1.9–2.3 s, 10 | **100 samples, not converged** (error 8.8e-3), \|ΔS\| 3.8e-4 | 1.7 s, 10, 2.3e-7 | — |
+| 19,697 | 142,612 | 6.1 s, 10 | 3.0 s, 11, \|ΔS\| 2.2e-4 | 3.7 s, 10, 3.1e-7 | 3.3 s, 10, 3.4e-7 |
+| 42,322 | 303,888 | 17.0 s, 11, 4.3 GB | 9.5 s, 15 (error 8.2e-4, just under tol), \|ΔS\| 7.9e-4 | **9.2 s, 11, 1.5e-6**, 4.6 GB | 8.5 s, 11, 1.5e-6, 5.4 GB |
+
+**Go.** EMerge forces `refinement_steps=0` on the GPU solver (`SolverSparta.settings`), i.e. a bare single-precision
+factorisation. That is what broke the brief's 42k run, and it is just as erratic at 9k tets. The solver's own default
+(-1: as many double-precision corrections as its 1e-6 residual target needs) converges in exactly the CPU's sample count
+at every mesh, still faster. Its report reads a relative residual of 2–12e-5 per solve (refinement stops when it stops
+improving), and that is enough. The driver sets -1 and nothing else. Hybrid is ~8 % faster for ~0.6–0.8 GB more and an
+adaptive CPU share, so it is not used. Crossover: a tie at 30k unknowns; `EmergeDevicePolicy.AutoGpuFromUnknowns` is
+40,000.
+
+**EMerge never picks the GPU solver itself.** Its automatic routine prefers the CPU solvers; the driver forces it
+(`solveroutine.set_solver(EMSolver.SPARTA)`) only past the threshold it is handed as an ARGUMENT (`gpu-from=<n>`), never in
+problem.json, which is what the run's provenance hashes. Unknowns are the driver's own count on the mesh (EMI-5's formula),
+because they exist only inside the driver's process. `run.json` reports `device` from the solver EMerge's log says it
+called (`Calling SPARTA Solver`), not from what was asked. An Auto run whose GPU sweep stops at its cap is run once more
+with no threshold (`Em3dRunService.WithCpuFallback`); the memory gate is idempotent across the two meshings (a
+confirmation is remembered, a warning not repeated). Through the GUI path the Cavity at Standard (109,566 unknowns) took
+5 s on either device with fields saved, |ΔS| 2.5e-7.
+
+**Install (R-emi9-2).** A second optional group in the macOS arm64 recipe, after the fast solver's: git fetch of the pinned
+commit, a hash-locked build tool (maturin 1.15.0), the build, and a check of EMerge's `_SPARTA_AVAILABLE`. A real
+`solver install emerge --gpu --yes` into a fresh state folder took 1 min 44 s and 1.24 GB with both groups built, the Rust
+found in `~/.cargo/bin`. Three things the recipe format had to learn, all general:
+- **A prerequisite's `program`** (the file looked for, when the name the user reads is "a Rust toolchain") and **`needs`**:
+  the group is met only with the command line tools too, and its recorded state is both states joined. Without it, a build
+  that failed for want of a linker would not be retried when the linker arrived.
+- **A found prerequisite's variable also defines `${<variable>Dir}`, and a step may carry its own `environment`.** The
+  build tool finds cargo ONLY through `PATH` (`shutil.which`), and a GUI app's `PATH` has no `~/.cargo/bin`.
+- **The build tool must never run isolated.** With build isolation and no cargo on `PATH`, maturin's backend adds a
+  dependency that downloads a whole Rust toolchain into the user's cache folder, unasked and unpinned (507 MB, measured
+  by accident here). The recipe builds `--no-build-isolation` against the locked maturin, sets `MATURIN_NO_INSTALL_RUST=1`
+  for every step, and passes `--locked` to cargo through `MATURIN_PEP517_ARGS`, so the crates are exactly `Cargo.lock`'s.
+
+**The bootstrap (R-emi9-2b)** is the prerequisite's `bootstrap`: its own sources and steps (rustup-init 1.29.2, checked
+against upstream's SHA-256, then `-y --profile minimal --default-toolchain 1.98.1 --no-modify-path`), an `into` under
+`${home}` and the environment that points `RUSTUP_HOME`/`CARGO_HOME` there. `SolverInstaller.FinishOptionalWithBootstrap`
+runs it under the install lock with an installer whose inherited environment carries those variables. The prerequisite's
+search includes `${env:CARGO_HOME}/bin`, so the same check then finds the temporary cargo. It finishes every due group and
+deletes `into` and `downloads` in a `finally`. Measured: 28 s, 99 MB downloaded (11 MB installer + 88 MB of components),
+447 MB on disk until deleted. A `HOME` pointed at an empty folder stayed empty. **Not measured:** the GPU solver's build
+with that temporary toolchain. Running that third-party build was refused by this session's sandbox, so only the
+bootstrap's own half ran for real; gate 14 runs the whole sequence on a fake toolchain.
+
+**Not offered:** the vendor-GPU route on x64 Windows/Linux. Its extra and its library are named after the vendor's
+product, which this repository does not carry, and there is no such GPU here to test it on (brief §5's field test). The GPU
+solver's own README lists an alpha backend for other GPUs on Windows/Linux in one place and calls it unwritten in another;
+it stays off until upstream ships it.
+
+**Surfaces.** Settings ▸ Solvers' EMerge row: the tier sentence gains the GPU (`EmergeAccelerator.Sentence`); *Enable GPU
+solving…* appears only when `EmergeAccelerator.GpuEnableFor` says so; a **Device** box stores `em_emerge_device` (absent =
+Automatic). `em --device auto|cpu|gpu` applies to both solvers. `auto` is the CPU for Palace, and `--device gpu` is no longer
+refused for an EMerge setup. `solver install emerge --gpu` prints the bootstrap's consent before `--yes` is checked.
+`solver list` gains a `GPU solving:` line and `gpuSolving` in JSON, and the MCP `run`/`solver` descriptions say both.
+
+Gates: `tests/Ui.Tests/Em3d/EmergeGpuTests.cs` (policy, fallback, preference; the Cavity on GPU vs CPU, Skipped without the
+GPU solver) and `SolverInstallTests` gate 14 (the group with and without its toolchain, and the bootstrap).

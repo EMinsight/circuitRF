@@ -118,6 +118,64 @@ internal static class SolverInstallRunner
         }
     }
 
+    /// <summary>
+    /// brief-emi-9 R-emi9-2b — Settings' <i>Enable GPU solving…</i>: the consent (<see cref="SolverInstaller.BootstrapConsent"/>,
+    /// the text <c>circuitrf solver install emerge --gpu</c> prints), then <see cref="EmergeAccelerator.EnableGpu"/> off the UI
+    /// thread as a live Messages row with a Cancel button, as an install runs. It owns no install logic.
+    /// </summary>
+    public static async Task EnableEmergeGpuAsync(SolverRecipe recipe, InstallRecord record, RecipePrerequisite when, Window? owner,
+                                                  IMessageSink? messages)
+    {
+        messages ??= (App.LastActiveWorkspace?.DataContext as ViewModels.WorkspaceViewModel)?.Messages;
+        var installer = new SolverInstaller();
+        if (installer.BootstrapConsent(recipe, when, record.Home) is not { } consent) return;
+        if (!Running.Add(SolverTool.Emerge))
+        {
+            messages?.Info("EMerge is already being installed or built — its progress is in the Messages panel.");
+            return;
+        }
+        try
+        {
+            owner ??= App.DialogOwner();
+            if (owner is null || !await TextConfirmDialog.AskAsync(owner, "Enable GPU solving", "Enable GPU solving for EMerge?", consent,
+                                                                   "_Enable GPU solving"))
+                return;
+            const string title = "Enable GPU solving for EMerge";
+            var live = messages?.BeginProgress(title);
+            live?.Update(title, "starting", indeterminate: true);
+            using var cts = new CancellationTokenSource();
+            var cancellation = new RunCancellation("enabling GPU solving", () =>
+            {
+                messages?.Info("Cancelling. The running step is stopped, and the toolchain circuitRF fetched is deleted.");
+                cts.Cancel();
+            });
+            live?.BindCancellation(cancellation);
+            var control = new RunControl
+            {
+                Token    = cts.Token,
+                Progress = new Inline(p => Dispatcher.UIThread.Post(() => live?.Update($"{title}: {p.Stage}", Counter(p),
+                    p.StageTotal > 0 ? 100.0 * p.StageCompleted / p.StageTotal : null, indeterminate: p.StageTotal == 0))),
+            };
+            IReadOnlyList<OptionalStepsOutcome> done;
+            try { done = await Task.Run(() => EmergeAccelerator.EnableGpu(recipe, record, when, control, installer)); }
+            finally { cancellation.Finish(); }
+
+            var (level, report) = cts.IsCancellationRequested
+                ? (MessageLevel.Info, "Enabling GPU solving was cancelled; the toolchain circuitRF fetched was deleted.")
+                : done.Count == 0
+                    ? (MessageLevel.Info, "Nothing was built: another circuitRF is installing EMerge, or the GPU sparse solver is already there.")
+                    : (done.All(o => o.Status == OptionalStepsStatus.Built) ? MessageLevel.Success : MessageLevel.Error,
+                       string.Join(" ", done.Select(o => EmergeAccelerator.Outcome(o, recipe))));
+            if (live is not null) live.Complete(level, report);
+            else messages?.Post(level, report);
+        }
+        finally
+        {
+            Running.Remove(SolverTool.Emerge);
+            Finished?.Invoke(SolverTool.Emerge);
+        }
+    }
+
     /// <summary>The changing tail of the row: "step k of N", then the stage's own figure.</summary>
     private static string Counter(RunProgress p)
     {

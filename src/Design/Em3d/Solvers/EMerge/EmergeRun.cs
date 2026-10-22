@@ -14,13 +14,19 @@ public static class EmergeRun
     /// <summary>The driver's mode that solves and writes the results.</summary>
     public const string SolveMode = "solve";
 
+    /// <summary>brief-emi-9 — the driver's argument that names the unknowns from which a driven solve uses the GPU.</summary>
+    public const string GpuFromArgument = "gpu-from=";
+
     /// <summary>
     /// The process to start. Its environment is the parent's less every <c>PYTHON*</c> variable and <c>VIRTUAL_ENV</c> (a
     /// user's Python settings must not reach circuitRF's interpreter, which <c>-I</c> also isolates), plus the thread count
     /// for every sparse solver (EMI-3 R-emi3-5), a plotting backend that draws to no window and an off-screen 3D view.
     /// Nothing in a run reaches a network: EMerge's update check is off unless asked for, and the driver never asks.
     /// </summary>
-    public static ProcessStartInfo StartInfo(string python, string runDirectory, IReadOnlyDictionary<string, string> threads)
+    /// <param name="gpuFromUnknowns">brief-emi-9 — the unknowns from which the driver hands a driven problem to EMerge's GPU sparse
+    /// solver (<see cref="EmergeDevicePolicy.GpuFromUnknowns"/>); null, never.</param>
+    public static ProcessStartInfo StartInfo(string python, string runDirectory, IReadOnlyDictionary<string, string> threads,
+                                             long? gpuFromUnknowns = null)
     {
         var psi = new ProcessStartInfo(python)
         {
@@ -31,6 +37,7 @@ public static class EmergeRun
             CreateNoWindow         = true,
         };
         foreach (string a in new[] { "-I", EmergeScriptWriter.DriverFile, EmergeScriptWriter.ProblemFile, SolveMode }) psi.ArgumentList.Add(a);
+        if (gpuFromUnknowns is { } from) psi.ArgumentList.Add(GpuFromArgument + from.ToString(System.Globalization.CultureInfo.InvariantCulture));
         foreach (string key in psi.Environment.Keys.ToList())
             if (key.StartsWith("PYTHON", StringComparison.OrdinalIgnoreCase) || key.Equals("VIRTUAL_ENV", StringComparison.OrdinalIgnoreCase))
                 psi.Environment.Remove(key);
