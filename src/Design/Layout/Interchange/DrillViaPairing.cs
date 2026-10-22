@@ -99,16 +99,20 @@ public static class DrillViaPairing
     /// the drill file itself — a board netlist in the same folder states one, and the message must
     /// then say so rather than keep printing "no layer span was declared" beside a span that was.
     /// Null means the drill file spoke for itself, which is the pre-GI5 wording unchanged.</param>
+    /// <param name="sourcesChecked">Where a span was looked for, named in the sentence when none was found — the
+    /// sources the import actually had, so a set with no netlist is never told about one.</param>
     public static DrillSpanLayers MapSpan(
         DrillSpan? span, LayerKey drillLayer, IReadOnlyList<LayerKey> copperTopToBottom,
-        string? spanEvidence = null)
+        string? spanEvidence = null, string? sourcesChecked = null)
     {
         LayerKey? top = copperTopToBottom.Count > 0 ? copperTopToBottom[0] : null;
         LayerKey? bottom = copperTopToBottom.Count > 0 ? copperTopToBottom[^1] : null;
 
         if (span is null || (span.FromLayer == 0 && span.ToLayer == 0))
             return new DrillSpanLayers(drillLayer, top, bottom,
-                "No layer span was declared; the holes are treated as through-hole.");
+                sourcesChecked is { Length: > 0 } looked
+                    ? $"No layer span was declared — not by {looked} — so the holes are treated as through-hole."
+                    : "No layer span was declared; the holes are treated as through-hole.");
 
         if (span.FromLayer < 1 || span.ToLayer < 1 ||
             span.FromLayer > copperTopToBottom.Count || span.ToLayer > copperTopToBottom.Count)

@@ -105,6 +105,12 @@ public sealed class PortDiscoveryTests
 
         var everyLayer = Recognize(view, tech, scope: RecognitionScope.Polygons([box]));
         Assert.Contains(everyLayer.Board!.Ports, p => p.Layer == Inner);
+
+        // A selection on no copper layer seeds nothing, so it reads every layer rather than leaving all copper out.
+        var onMask = Recognize(view, tech, scope: RecognitionScope.Polygons([box], [Mask]));
+        Assert.True(onMask.Ok, onMask.Refusal);
+        Assert.Contains(onMask.Board!.Ports, p => p.Layer == Inner);
+        Assert.DoesNotContain(onMask.Report.Findings, f => f.Class == RecognitionFindingClass.ScopeOtherLayersLeftOut);
     }
 
     /// <summary>Designer report, round 25: a selection's outline is the copper's own edge, and the board's copper

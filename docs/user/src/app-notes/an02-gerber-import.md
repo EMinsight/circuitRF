@@ -192,6 +192,18 @@ a component hole (X2 `ViaDrill` / `ComponentDrill`) the declaration is used. The
 the via was rebuilt "without the file saying so": from artwork alone, a via and a plated component hole look the
 same. What the via model needs from the stackup is in [Vias](../reference/vias.html#stackup).
 
+**Each drill file's layer span** — which copper layers its holes join — is taken from the first of these that
+states one, and the drill file's line in Messages names which:
+
+1. the drill file's own `FileFunction` attribute (`; #@! TF.FileFunction,Plated,1,2,Blind`);
+2. a board netlist (IPC-D-356) in the set, from the layer pair each blind or buried via record states;
+3. the drill file's name, when it ends in a layer pair, as a set drilled by layer pair names its files
+   (`board-1-2-laser.drl`, `board-3-8.drl`).
+
+The span sets the via's landing layer and the two ends of the drill layer's entry in the stackup. With none of
+the three, the holes go through the whole board, and the line says so. This board's one drill file states no
+span, and its holes do go through.
+
 ## What you get {#result}
 
 One **flat cell**, in a folder of its own at the top of the workspace, named after the folder the files were in.
@@ -357,7 +369,8 @@ says what it guessed on the same terms — here, from the run:
 <pre>
 note: Board.gbrjob names 3 file(s) as part of this board.
 note: Copper stack order was DECLARED for all 2 copper layer(s): Top Copper, Bottom Copper, top to bottom.
-note: Board.drl: 1 tool(s), 1 hit(s) → 1 via(s). No layer span was declared; the holes are treated as through-hole.
+note: Board.drl: 1 tool(s), 1 hit(s) → 1 via(s). No layer span was declared — not by its FileFunction attribute or
+its file name — so the holes are treated as through-hole.
 note: NOT STATED BY ANY FILE IN THIS SET, so circuitRF filled it in with ordinary FR-4 so the technology can be
 simulated as it stands: copper thickness on 2 conductor(s) (35 um outer, 18 um inner); thickness on 1
 dielectric(s) (1778 um each, sharing out a 1778 um board); …

@@ -207,9 +207,9 @@ public static class LayoutConvert
                 case "--arc-tolerance" when i + 1 < args.Length:
                 {
                     // A unit is required, the rule every layout length on this CLI follows.
-                    string text = args[++i];
-                    if (!text.Any(char.IsLetter) || !LayoutUnits.TryParse(text, LayoutUnit.Um, 1000, out long nm)
-                        || nm <= 0 || nm > 100_000)
+                    string text = args[++i].Trim();
+                    if (text.Length == 0 || !char.IsLetter(text[^1]) || !LayoutUnits.TryParse(text, LayoutUnit.Um, 1000, out long nm)
+                        || nm < GerberImport.MinArcToleranceMicrons * 1000 || nm > GerberImport.MaxArcToleranceMicrons * 1000)
                         return JsonRun.Fail(CliDiagnostics.ConvertBadArcTolerance(text));
                     o.ArcToleranceMicrons = nm / 1000.0;
                     break;

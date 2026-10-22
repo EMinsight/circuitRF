@@ -2653,6 +2653,8 @@ static int PrintHelp()
     Console.WriteLine("  --drill-units mm|inch   --drill-format <int>:<dec>");
     Console.WriteLine("  --drill-zeros leading|trailing");
     Console.WriteLine("  --accept-inferred-drill-format   proceed on a guessed Excellon format");
+    Console.WriteLine("  --arc-tolerance <len>   a gerber source's arc flattening, with its unit,");
+    Console.WriteLine("                          1nm to 100um (default 1um)");
     Console.WriteLine("  --open-archives         look inside an archive when a Gerber folder holds");
     Console.WriteLine("                          no artwork of its own (unpacked to a temporary");
     Console.WriteLine("                          folder and deleted again; never done unasked)");

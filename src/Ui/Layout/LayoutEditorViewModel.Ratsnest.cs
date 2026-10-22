@@ -39,6 +39,10 @@ public sealed partial class LayoutEditorViewModel
     /// <summary>Every pin with a net, its copper group, and the instance it belongs to.</summary>
     private List<(RatsnestPin Pin, int Instance)> _ratsnestPins = [];
 
+    /// <summary>The placements those pins were read from, by the index a pin carries. While a read is out the model
+    /// may have been edited under them, so a dragged part is matched by its object, never by an index that has moved.</summary>
+    private LayoutInstance[] _ratsnestPlaced = [];
+
     /// <summary>How many times the pins were re-read — once per edit, never per pointer move.</summary>
     internal int RatsnestRebuildCount { get; private set; }
 
@@ -57,7 +61,7 @@ public sealed partial class LayoutEditorViewModel
     /// <summary>What one read needs, taken on the UI thread: the model is the editor's and not the worker's.</summary>
     private sealed record RatsnestJob(
         Technology Tech, string ClayPath, PdnSchematicNets Nets,
-        IReadOnlyList<LayoutShape> Flat, LayoutView Placements);
+        IReadOnlyList<LayoutShape> Flat, LayoutView Placements, LayoutInstance[] Placed);
 
     /// <summary>Update Layout from Schematic: the nets the run just used, and the ratsnest switched on.</summary>
     internal void ShowRatsnestFrom(PdnSchematicNets nets)
@@ -83,13 +87,17 @@ public sealed partial class LayoutEditorViewModel
 
         // A dragged pin keeps its copper group only when everything in that group is dragged with it: the copper it
         // was joined to otherwise stays behind, and the line has to show.
-        var moving = new HashSet<int>(_selectedInstanceIndices);
-        var anchored = _ratsnestPins.Where(p => !moving.Contains(p.Instance)).Select(p => p.Pin.Group).ToHashSet();
+        var moving = new HashSet<LayoutInstance>(ReferenceEqualityComparer.Instance);
+        foreach (int i in _selectedInstanceIndices)
+            if (i >= 0 && i < Model.Instances.Count) moving.Add(Model.Instances[i]);
+        bool Moves(int inst) => inst >= 0 && inst < _ratsnestPlaced.Length && moving.Contains(_ratsnestPlaced[inst]);
+
+        var anchored = _ratsnestPins.Where(p => !Moves(p.Instance)).Select(p => p.Pin.Group).ToHashSet();
         int fresh = int.MinValue;
         var pins = new List<RatsnestPin>(_ratsnestPins.Count);
         foreach (var (pin, inst) in _ratsnestPins)
         {
-            if (!moving.Contains(inst)) { pins.Add(pin); continue; }
+            if (!Moves(inst)) { pins.Add(pin); continue; }
             pins.Add(pin with
             {
                 X = pin.X + _moveLiveDx, Y = pin.Y + _moveLiveDy,
@@ -103,7 +111,7 @@ public sealed partial class LayoutEditorViewModel
     {
         _ratsnestStale = false;
         RatsnestRebuildCount++;
-        if (SnapshotRatsnestJob() is not { } job) { _ratsnestPins = []; return; }
+        if (SnapshotRatsnestJob() is not { } job) { _ratsnestPins = []; _ratsnestPlaced = []; return; }
 
         List<(RatsnestPin Pin, int Instance)>? read = null;
         var task = ReadRatsnestOffThread(() => read = ReadRatsnestPins(job));
@@ -112,21 +120,21 @@ public sealed partial class LayoutEditorViewModel
         // Inline (the default seam, and every test): the caller is drawing right now and draws this answer.
         if (task.IsCompleted)
         {
-            if (task.IsCompletedSuccessfully) _ratsnestPins = read ?? [];
+            if (task.IsCompletedSuccessfully) (_ratsnestPins, _ratsnestPlaced) = (read ?? [], job.Placed);
             return;
         }
-        _ = PublishWhenRead(task, () => read);
+        _ = PublishWhenRead(task, () => read, job.Placed);
     }
 
     /// <summary>Back on the UI thread: draws the answer — unless the design was edited while it was read, in
     /// which case the answer describes a design that no longer exists and the redraw starts the next read.</summary>
-    private async Task PublishWhenRead(Task task, Func<List<(RatsnestPin Pin, int Instance)>?> read)
+    private async Task PublishWhenRead(Task task, Func<List<(RatsnestPin Pin, int Instance)>?> read, LayoutInstance[] placed)
     {
         bool ok;
         try { await task; ok = true; }
         catch { ok = false; }   // a failed read draws nothing new; the next edit asks again
 
-        if (ok && !_ratsnestStale) _ratsnestPins = read() ?? [];
+        if (ok && !_ratsnestStale) (_ratsnestPins, _ratsnestPlaced) = (read() ?? [], placed);
         RebuildOverlay();
     }
 
@@ -145,7 +153,7 @@ public sealed partial class LayoutEditorViewModel
         var placements = new LayoutView();
         placements.Shapes.AddRange(Model.Shapes);
         foreach (var inst in Model.Instances) placements.Instances.Add(LayoutGeometry.Clone(inst));
-        return new RatsnestJob(tech, clayPath, _ratsnestNets, flat.Shapes, placements);
+        return new RatsnestJob(tech, clayPath, _ratsnestNets, flat.Shapes, placements, [.. Model.Instances]);
     }
 
     private static List<(RatsnestPin Pin, int Instance)> ReadRatsnestPins(RatsnestJob job)

@@ -22719,3 +22719,65 @@ Gates: `PortDiscoveryTests.ASelectionOnTopLeavesOutAnInnerLineNotJoinedToIt`,
   passed unchanged at the new default.
 - **The importer gives every drill file a Top→Bottom span**, even where the file names state the span
   (`-1-2-laser`, `-3-8`, `-1-10`). On an HDI set every via row then has to be edited by hand.
+
+### Review of round 25, same day
+
+- **A selection on no copper layer left out ALL copper.** `JoinedToScopeLayers` seeds from shapes on the selection's
+  layers; a selection of only a silkscreen outline or a mask opening seeds nothing, so every piece of copper under it
+  was "joined to none of the selected copper" and dropped, and the sentence named an empty list of layers. Such a
+  selection now reads every layer, as a rectangle does. Gate: the `Mask` case in
+  `PortDiscoveryTests.ASelectionOnTopLeavesOutAnInnerLineNotJoinedToIt`.
+- **`convert --arc-tolerance 1e1` was taken as 10 µm with no unit**: the unit test was "has any letter", and an
+  exponent's `e` is one. It is now the CLI's usual test (the last character is a letter). The 1 nm–100 µm range is
+  `GerberImport.Min/MaxArcToleranceMicrons`, read by the CLI and Settings rather than restated in each. The MCP
+  `convert` tool gained `arcTolerance`.
+
+### Drill spans: the set stated every one, and the import used none (same day, owner's call)
+
+The ten-layer set above drills by layer pair — six Excellon files, a 1-10 and five blind/buried pairs — and every one
+came in through-hole. Three things, each enough on its own:
+
+- **The netlist was never read.** `GerberFileClassifier` classifies from the first 16 KB, and this IPC-D-356A file's
+  header (a layer table and a padstack table) runs 500 lines; the first feature record is at byte 41,000. With no
+  feature record in the head `BoardNetlistFile.Recognize` said no, and the file was skipped as "no Gerber or drill
+  content". It now also accepts the format's own version record (`P  VER IPC-D-356…`).
+- **Read, it gave wrong spans.** Each blind/buried via record carries one access code and states its two layers
+  outright after the solder-mask field (`S0L01L02`); the reader stepped over the `L` tags. `SpanFor` worked from
+  access codes, where one layer settles nothing — and two of the 1-2 file's 875 holes, a 1-2 microvia over a 9-10
+  one at the same coordinate, merged into one hole naming 1 and 10, so the whole file read as through 1-10. The pair
+  is now parsed (`BoardNetlistRecord.Layers`, `NetlistHoleFact.StatedSpans`) and is the span where stated; a
+  coordinate stating several is a stack and has only to agree with the file's span. All six files now read right,
+  and pairing found 77 / 74 / 32 / 536 vias in four files that had 0, because they now land on the right copper.
+- **No name fallback for Excellon.** `-1-2-laser`, `-3-8`, `-1-10` state the pair; `SpanFromName` only read a Gerber
+  `Via_1_2_3` name. `GerberLayerCascade.DrillSpanFromName` reads the last two numbers of a drill file's name (words
+  only after them, no number before them), checked against the copper count; it is the last source.
+
+**Order, and what Messages says.** Attribute, netlist, name. Each drill file's line names its source ("Its
+FileFunction attribute states…", "The board netlist (x.ipc) states…", "Its file name states…") or lists what was
+checked when none did — only the sources the set had, so a set with no netlist is never told about one. The reader's
+own no-span sentence is no longer printed beside it.
+
+**Every known span reaches the stackup entry.** A span the drill file declared itself used to set only the via's
+landing layer; GI5 had left the entry spanning the whole board so as not to change a set's `.ctech` without a
+netlist. It is now carried like a netlist span. The drill files' `;FILE : … layers TOP and L_2` comment is one CAD
+tool's prose naming layers by name and is not read.
+
+Gates (`Gi5NetlistCompanionTests`): `AHeaderLongerThanTheClassifiersHead_IsStillANetlist`,
+`AStatedLayerPair_IsTheSpan_AndAStackedCoordinateDoesNotOverruleIt`,
+`ADrillFileNamedForItsLayerPair_TakesThatSpan_AndSaysSo`,
+`ADrillFilesOwnSpan_ReachesTheStackupEntry_AndIsNamedAsItsSource`.
+
+**Seen, not changed.** That netlist puts `VIA` in the reference-designator field of every via record; the reader
+takes it as a component with no pin, so 1,450 holes are "unclassified" rather than vias.
+
+### Second review of round 25's drill spans
+
+- **A declared span past the stack narrowed the stackup entry at one end.** Carrying every span to the entry
+  (above) also carried one this board cannot honour: `MapSpan` says a 2-6 span on four copper layers is "treated as
+  through-hole", while `SpanEndName` named layer 2 for the in-range end and fell back to the bottom for the other, so
+  the entry ran 2-4. Only an in-range span is recorded now, top first. Gate:
+  `Gi5NetlistCompanionTests.ADeclaredSpanPastTheStack_LeavesTheEntryThroughTheBoard`.
+- **An Excellon file named as a via file (`Via_1_2_3.drl`) read no span**: `DrillSpanFromName` refuses three
+  numbers in a row, while `SpanFromName` reads that spelling as 1 to 3 for a Gerber drill file. The drill name now
+  tries `SpanFromName` first.
+- `--arc-tolerance` was missing from `circuitRF --help`'s convert section (the verb's own usage had it).

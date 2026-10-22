@@ -815,6 +815,8 @@ internal static class ToolCatalog
                         new("drillZeros", "--drill-zeros", OptKind.Str,  "leading or trailing suppression."),
                         new("acceptInferredDrillFormat", "--accept-inferred-drill-format", OptKind.Flag,
                             "Proceed on a guessed Excellon format. Unstated, it is refused: the two readings differ by four orders of magnitude."),
+                        new("arcTolerance", "--arc-tolerance", OptKind.Str,
+                            "A gerber source's arc flattening, a length with its unit from 1nm to 100um. Default 1um."),
                         .. PictureTraceOptions,
                         new("region",     "--region",      OptKind.Str,
                             "A picture: trace only x0,y0,x1,y1, each in pixels with px. A gltf target: the region to export."),

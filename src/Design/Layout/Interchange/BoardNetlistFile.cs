@@ -87,6 +87,9 @@ public enum BoardNetlistUnitsEvidence
 /// outer surfaces (a through feature); n &gt; 0 names the one layer it is reachable from. Null when
 /// the record did not state one. See <see cref="BoardNetlistEvidence.SpanFor"/> for what can and
 /// cannot be made of it.</param>
+/// <param name="Layers">The start and end copper layer a blind or buried via record states outright
+/// (<c>L01L02</c> at the end of the record), or null when it states none. Where it is stated it IS the
+/// span, and the access code is not consulted.</param>
 public sealed record BoardNetlistRecord(
     int Code,
     string? Net,
@@ -98,7 +101,8 @@ public sealed record BoardNetlistRecord(
     int? Access,
     long X,
     long Y,
-    int Line)
+    int Line,
+    NetlistLayerPair? Layers = null)
 {
     /// <summary>Whether the record carried a drill field at all — a pad with no hole under it is a
     /// surface feature and can never be a via.</summary>
@@ -118,6 +122,9 @@ public sealed record BoardNetlistRecord(
     /// can check.</summary>
     public bool Unclassified => HasHole && !IsVia && !IsComponentHole;
 }
+
+/// <summary>The two copper layers a via record names as its ends, top first.</summary>
+public readonly record struct NetlistLayerPair(int From, int To);
 
 /// <summary>Everything one netlist file turned out to be. <see cref="Refusal"/> non-null means
 /// nothing was read and nothing may be used — the same contract <see cref="ExcellonReadResult"/>
@@ -202,17 +209,34 @@ public static class BoardNetlistFile
     public static bool Recognize(string head, out string why)
     {
         int records = 0, parameters = 0;
+        bool namesItsVersion = false;
         foreach (string line in Lines(head))
         {
-            if (IsParameterRecord(line, out _, out _)) { parameters++; continue; }
+            if (IsParameterRecord(line, out string key, out string value))
+            {
+                parameters++;
+                namesItsVersion |= key.Equals("VER", StringComparison.OrdinalIgnoreCase) &&
+                                   value.StartsWith("IPC-D-356", StringComparison.OrdinalIgnoreCase);
+                continue;
+            }
             if (ParseCode(line) is null) continue;
-            if (ScanTail(line, out long _, out long _, out _, out _, out _, out _, out _)) records++;
+            if (ScanTail(line, out long _, out long _, out _, out _, out _, out _, out _, out _)) records++;
         }
 
         if (records >= MinimumRecords || (records >= 1 && parameters >= 1))
         {
             why = $"a board netlist ({records} feature record(s)" +
                   (parameters > 0 ? $", {parameters} header record(s)" : "") + ")";
+            return true;
+        }
+
+        // A header can outrun the classifier's head: a layer table and a padstack table hundreds of comment lines
+        // long put the first feature record 40 KB in (designer report, round 25), and the netlist that stated every
+        // via's span was skipped as "no Gerber or drill content". The format's own version record says what it is.
+        if (namesItsVersion)
+        {
+            why = $"a board netlist ({parameters} header record(s) naming its IPC-D-356 version; " +
+                  "no feature record in the part read to classify it)";
             return true;
         }
 
@@ -257,7 +281,7 @@ public static class BoardNetlistFile
             if (code == 999) break;                                  // the format's end-of-file record
 
             if (!ScanTail(trimmed, out long rawX, out long rawY, out long? rawDrill, out bool? plated,
-                          out int? access, out bool midpoint, out bool sawCoordinates))
+                          out int? access, out bool midpoint, out bool sawCoordinates, out var layerPair))
             {
                 // A record whose code was read and whose coordinates were not is a record this reader
                 // does not understand. Counted, never skipped in silence (R-L4f-8's discipline).
@@ -281,7 +305,7 @@ public static class BoardNetlistFile
             records.Add(new BoardNetlistRecord(
                 code, net, component, pin, midpoint,
                 rawDrill is { } d ? ToDbu(d, units, dbuPerMicron) : null,
-                plated, access, x, y, line));
+                plated, access, x, y, line, layerPair));
             extents = extents.Include(x, y);
         }
 
@@ -677,7 +701,7 @@ public static class BoardNetlistFile
     /// </summary>
     private static bool ScanTail(
         string line, out long x, out long y, out long? drill, out bool? plated, out int? access,
-        out bool midpoint, out bool sawCoordinates)
+        out bool midpoint, out bool sawCoordinates, out NetlistLayerPair? layerPair)
     {
         x = y = 0;
         drill = null;
@@ -685,7 +709,9 @@ public static class BoardNetlistFile
         access = null;
         midpoint = false;
         sawCoordinates = false;
+        layerPair = null;
         bool sawX = false, sawY = false;
+        int? firstLayer = null;
 
         for (int i = Math.Min(TailColumn, line.Length); i < line.Length; i++)
         {
@@ -729,6 +755,18 @@ public static class BoardNetlistFile
                     if (value is null) break;
                     if (!sawY) { y = value.Value; sawY = true; }
                     break;                                   // the second Y is the feature's height
+                }
+
+                case 'L' or 'l':
+                {
+                    // A blind or buried via's two ends, written as a pair of layer tags after the solder-mask
+                    // field (S0L01L02). Only a pair of two different layers is a span; one alone is nothing.
+                    long? value = ReadDigits(line, ref i);
+                    if (value is not (>= 1 and <= 999)) break;
+                    if (firstLayer is not { } first) { firstLayer = (int)value.Value; break; }
+                    if (first != value.Value)
+                        layerPair = new NetlistLayerPair(Math.Min(first, (int)value.Value), Math.Max(first, (int)value.Value));
+                    break;
                 }
 
                 default:
@@ -788,8 +826,13 @@ public sealed record NetlistHoleFact(
     bool? Plated,
     long? DrillDbu,
     IReadOnlyList<int> AccessCodes,
-    int RecordCount)
+    int RecordCount,
+    IReadOnlyList<NetlistLayerPair>? LayerPairs = null)
 {
+    /// <summary>The spans the records at this coordinate state outright — more than one where two vias of a
+    /// stack share a coordinate (a 1-2 microvia over a 9-10 one).</summary>
+    public IReadOnlyList<NetlistLayerPair> StatedSpans => LayerPairs ?? [];
+
     public bool IsVia => Component is null;
     public bool IsComponentHole => Component is not null && Pin is not null;
 
@@ -1084,9 +1127,10 @@ public sealed class BoardNetlistEvidence
             bool? plated = Single(records.Select(r => r.Plated));
             long? drill = records.FirstOrDefault(r => r.DrillDbu is not null)?.DrillDbu;
             var access = records.Select(r => r.Access).OfType<int>().Distinct().OrderBy(a => a).ToList();
+            var pairs = records.Select(r => r.Layers).OfType<NetlistLayerPair>().Distinct().OrderBy(p => p.From).ThenBy(p => p.To).ToList();
 
             facts.Add((records[0].X, records[0].Y,
-                       new NetlistHoleFact(net, component, pin, plated, drill, access, records.Count)));
+                       new NetlistHoleFact(net, component, pin, plated, drill, access, records.Count, pairs)));
         }
 
         return new NetlistHoleIndex(facts, tolerance);
@@ -1289,6 +1333,13 @@ public sealed class BoardNetlistEvidence
     /// records name exactly one inner layer is reported as what it is and used for nothing, because
     /// one layer is not a span and inventing the other end is inventing a stackup.</para>
     ///
+    /// <para><b>A blind or buried via record may state its span outright</b> — <c>L01L02</c> after the
+    /// solder-mask field — and where it does that is the span, ahead of any reading of access codes
+    /// (designer report, round 25: a ten-layer set's laser vias each carry one access code, and two of a
+    /// file's 875 holes, a 1-2 microvia over a 9-10 one, named 1 and 10 between them and made the whole
+    /// file read as through-hole). A coordinate whose records state SEVERAL spans is a stack and settles
+    /// nothing by itself.</para>
+    ///
     /// <para>R-gi5-5 also forbids synthesising a stackup entry per distinct span found. Nothing here
     /// creates one — the span is applied where <c>GerberImport</c> already mints a via entry, and the
     /// distinct spans found are reported.</para>
@@ -1298,6 +1349,7 @@ public sealed class BoardNetlistEvidence
     {
         var found = new List<(int From, int To)>();
         var partial = new List<int>();
+        var stacked = new List<IReadOnlyList<NetlistLayerPair>>();
         int covered = 0, uncovered = 0;
 
         if (!Any) return (null, [], 0, read.Hits.Count);
@@ -1306,8 +1358,11 @@ public sealed class BoardNetlistEvidence
         foreach (var hit in read.Hits)
         {
             var fact = holes.At(hit.X, hit.Y);
-            if (fact is null || fact.AccessCodes.Count == 0) { uncovered++; continue; }
+            if (fact is null || (fact.AccessCodes.Count == 0 && fact.StatedSpans.Count == 0)) { uncovered++; continue; }
             covered++;
+
+            if (fact.StatedSpans.Count == 1) { found.Add((fact.StatedSpans[0].From, fact.StatedSpans[0].To)); continue; }
+            if (fact.StatedSpans.Count > 1) { stacked.Add(fact.StatedSpans); continue; }
 
             var layers = fact.AccessCodes.Where(a => a > 0).Distinct().OrderBy(a => a).ToList();
             if (fact.AccessCodes.Contains(0) || layers.Count == 0)
@@ -1328,11 +1383,11 @@ public sealed class BoardNetlistEvidence
         if (distinct.Count != 1) return (null, names, covered, uncovered);
 
         var (from, to) = distinct[0];
-        string kind =
-            from == 1 && to == copperLayerCount ? "PTH"
-            : from == 1 || to == copperLayerCount ? "Blind"
-            : "Buried";
-        return (new DrillSpan(from, to, kind, null), names, covered, uncovered);
+        int disagreeing = stacked.Count(pairs => !pairs.Contains(new NetlistLayerPair(from, to)));
+        if (disagreeing > 0)
+            return (null, [.. names, $"{disagreeing} stacked coordinate(s) stating none of {from}-{to}"], covered, uncovered);
+
+        return (new DrillSpan(from, to, DrillSpan.KindOf(from, to, copperLayerCount), null), names, covered, uncovered);
     }
 
     // ── R-gi5-6/-8/-9: net names ──────────────────────────────────────────────

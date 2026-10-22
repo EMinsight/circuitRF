@@ -40272,3 +40272,15 @@ Solvers tab's style — On Launch / Appearance, Copy / Export / Messages, Design
 the last holds Coalesce and the new Gerber arc tolerance (shown in the Units box's Length unit, re-shown when that
 changes). Rendered headlessly in both variants at the default 720 × 640: the General page's extent equals its
 viewport (549 px), so no scroll bar, with ~100 px spare. Deliberately NOT pinned by any test (owner).
+
+### Review of round 25, same day
+
+- **A drag during a ratsnest read could move another part's lines.** A pin carries the INDEX of its placement, and
+  while a read is out the lines on screen are the previous model's: delete or add a part, then drag one, and the pins
+  at the dragged part's NEW index moved — another part's. A pin's index now maps to the placement object it was read
+  from (`_ratsnestPlaced`), and a drag moves a pin only when that object is one being dragged. With no read out the
+  objects are the model's own, so nothing changes there.
+- **`SelectionLayers` read only a selected part's top-level shapes**, so a selected MODULE (parts placed inside a
+  placed cell) contributed none of its parts' copper layers. It now walks the placements inside, to the hierarchy's
+  depth cap; the resolver hands back a bottom placement's side-swapped view, whose own placements already carry the
+  composed side.

@@ -38,6 +38,9 @@ public static class GerberImport
     /// <summary>The smallest arc tolerance accepted, in microns — one DBU at the default resolution.</summary>
     public const double MinArcToleranceMicrons = 0.001;
 
+    /// <summary>The largest arc tolerance accepted, in microns — Settings and <c>convert --arc-tolerance</c> both refuse more.</summary>
+    public const double MaxArcToleranceMicrons = 100;
+
     /// <summary><paramref name="microns"/> in DBU, never less than one.</summary>
     internal static long ArcToleranceDbu(double microns, int dbuPerMicron) =>
         Math.Max(1, (long)Math.Round(microns * dbuPerMicron));
@@ -1009,12 +1012,13 @@ public static class GerberImport
         {
             var drillKey = finalKeyByFile[identity.FilePath];
 
-            // GI5 R-gi5-5. The drill file's own span always wins; the netlist is consulted only where
-            // it declared none, which is the case the "no layer span was declared" apology exists
-            // for. NOTHING here synthesises a stackup entry per distinct span — the spans found are
-            // reported, and one is applied to the via entry this file already mints.
-            var span = read.Span;
-            string? spanEvidence = null;
+            // GI5 R-gi5-5, and designer report round 25. The span comes from the first of these that states one,
+            // and the line below names which: the drill file's own FileFunction attribute, a board netlist in the
+            // set, the drill file's NAME (a set drilled by layer pair names each file for its pair). NOTHING here
+            // synthesises a stackup entry per distinct span — one is applied to the via entry this file already
+            // mints.
+            var span = read.Span is { FromLayer: > 0, ToLayer: > 0 } declared ? declared : null;
+            string? spanEvidence = span is not null ? "Its FileFunction attribute" : null;
             if (span is null && netlists.Any)
             {
                 var (fromNetlist, found, _, uncovered) = netlists.SpanFor(read, copperKeys.Count);
@@ -1022,29 +1026,47 @@ public static class GerberImport
                 if (fromNetlist is not null)
                 {
                     span = fromNetlist;
-                    spanEvidence = "The board netlist";
+                    spanEvidence = $"The board netlist ({string.Join(", ", netlists.Usable.Select(n => n.FileName))})";
                 }
                 else if (found.Count > 1)
                     messages.Add(
                         $"{file.FileName}: the board netlist names {found.Count} different layer spans " +
-                        $"for this file's holes ({string.Join(", ", found)}), so none was applied — one " +
+                        $"for this file's holes ({string.Join(", ", found)}), so it settled none — one " +
                         "drill file is one stackup entry and it cannot carry two. Split them into one " +
                         "drill file per span if the difference matters.");
                 if (uncovered > 0 && fromNetlist is not null)
                     messages.Add(
-                        $"{file.FileName}: the span above was read from the {read.Hits.Count - uncovered} " +
+                        $"{file.FileName}: the span below was read from the {read.Hits.Count - uncovered} " +
                         $"hole(s) the netlist covers; {uncovered} more are not in it and were given the " +
                         "same span.");
             }
+            if (span is null && GerberLayerCascade.DrillSpanFromName(file.Path) is { } named)
+            {
+                if (named.To <= copperKeys.Count)
+                {
+                    span = new DrillSpan(named.From, named.To, DrillSpan.KindOf(named.From, named.To, copperKeys.Count), read.Plated);
+                    spanEvidence = "Its file name";
+                }
+                else
+                    messages.Add(
+                        $"{file.FileName}: its name reads as the layer pair {named.From}-{named.To}, but this set has " +
+                        $"{copperKeys.Count} copper layer(s), so the name was not taken as a span.");
+            }
 
-            // ONLY a netlist-derived span is carried to the stackup entry, and that bound is
-            // R-gi5-2's. A drill file that declares its OWN span already minted a full-stack via
-            // entry before this phase existed; narrowing that too would be strictly more correct and
-            // would also change the `.ctech` of a set with no netlist in it, which is the one thing
-            // this phase promised not to do. Recorded in src/Design/RESOLVED.md as its own piece of
-            // work rather than smuggled in here.
-            if (spanEvidence is not null && span is not null) spanByDrillFile[identity.FilePath] = span;
-            var spanLayers = DrillViaPairing.MapSpan(span, drillKey, copperKeys, spanEvidence);
+            // The span reaches the stackup entry too, whatever stated it: a blind or buried hole modelled as
+            // through-hole is a barrel shorting layers it never touches. Only a span this board can honour —
+            // MapSpan treats any other as through-hole and says so, and an entry narrowed at its one in-range end
+            // would contradict that sentence. Recorded top first, as the stackup reads.
+            if (span is { FromLayer: >= 1, ToLayer: >= 1 } &&
+                span.FromLayer <= copperKeys.Count && span.ToLayer <= copperKeys.Count)
+                spanByDrillFile[identity.FilePath] = span with
+                {
+                    FromLayer = Math.Min(span.FromLayer, span.ToLayer),
+                    ToLayer = Math.Max(span.FromLayer, span.ToLayer),
+                };
+            var spanLayers = DrillViaPairing.MapSpan(span, drillKey, copperKeys, spanEvidence,
+                netlists.Any ? "its FileFunction attribute, the board netlist or its file name"
+                             : "its FileFunction attribute or its file name");
             var paired = DrillViaPairing.Pair(
                 remaining, read, spanLayers.Barrel, spanLayers.Landing, destDbuPerMicron, compositedCopper,
                 compositedPads, copperKeys, netlistHoles);
@@ -1076,10 +1098,9 @@ public static class GerberImport
             foreach (var diagnostic in read.Diagnostics)
             {
                 // GI5 R-gi5-12: REPLACE the apology, never print it beside its replacement. The drill
-                // reader's sentence is true about the drill FILE and false about the folder once a
-                // netlist in it has stated the span, and the line above has already said which.
-                if (spanEvidence is not null &&
-                    diagnostic.StartsWith(NoSpanDeclared, StringComparison.Ordinal)) continue;
+                // reader's sentence is about the drill FILE alone; the line above has already said what
+                // the whole set stated, or that nothing did.
+                if (diagnostic.StartsWith(NoSpanDeclared, StringComparison.Ordinal)) continue;
                 messages.Add($"{file.FileName}: {diagnostic}");
             }
             if (!read.ToolDiametersExact)
@@ -1910,8 +1931,14 @@ public static class GerberImport
             }
 
             // No FileFunction span: the one a via file's name states ("Via_1_2_3"), if it states one.
+            string spanSource = from is not null && to is not null ? "stated by its FileFunction attribute" : "";
             if ((from is null || to is null) && GerberLayerCascade.SpanFromName(identity.FilePath) is { } named)
+            {
                 (from, to) = (named.From, named.To);
+                spanSource = "stated by its file name";
+            }
+            if (spanSource.Length == 0)
+                spanSource = "no span was declared by a FileFunction attribute or the file's name, so the whole board";
 
             var spans = new Dictionary<string, DrillSpan>(StringComparer.Ordinal);
             if (from is not null && to is not null)
@@ -1933,7 +1960,7 @@ public static class GerberImport
                 $"{identity.FileName}: drill holes written as Gerber, read as flashes on '{identity.LayerName}' — " +
                 (conductive
                     ? $"added to the stackup as a plated via layer spanning {SpanEndName(identity.FilePath, true, conductorEntries, spans, true) ?? "the board"}" +
-                      $" to {SpanEndName(identity.FilePath, true, conductorEntries, spans, false) ?? "the board"}, so every hole on it is a barrel."
+                      $" to {SpanEndName(identity.FilePath, true, conductorEntries, spans, false) ?? "the board"} ({spanSource}), so every hole on it is a barrel."
                     : "added to the stackup as a NON-PLATED drill layer, so its holes are not conductors."));
         }
 

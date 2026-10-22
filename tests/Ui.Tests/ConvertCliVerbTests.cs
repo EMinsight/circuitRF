@@ -145,7 +145,7 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>Designer feedback round 25: --arc-tolerance is a layout length, so a bare number is refused — 1 could
-    /// be microns or millimetres, three orders of magnitude apart.</summary>
+    /// be microns or millimetres, three orders of magnitude apart. An exponent's 'e' is not a unit.</summary>
     [Fact]
     public void ArcTolerance_WithNoUnit_IsRefused()
     {
@@ -153,7 +153,7 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
         CircuitRF.Ui.Diagnostics.Fixtures.DocGerberFixtures.WriteSixCopperSet(set);
         string target = Path.Combine(_root, "out");
 
-        var (code, _, stderr) = RunCli("convert", set, "-o", target, "--to", "clay", "--arc-tolerance", "1");
+        var (code, _, stderr) = RunCli("convert", set, "-o", target, "--to", "clay", "--arc-tolerance", "1e1");
 
         Assert.Equal(1, code);
         Assert.Contains("--arc-tolerance wants a length with its unit", stderr);

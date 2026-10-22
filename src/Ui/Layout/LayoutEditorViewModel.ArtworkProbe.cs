@@ -79,12 +79,24 @@ public sealed partial class LayoutEditorViewModel
             if (Model.Shapes[i] is ViaShape { LandingLayer: { } landing }) layers.Add(landing);
         }
         foreach (int i in _selectedInstanceIndices)
-        {
-            if (i < 0 || i >= Model.Instances.Count) continue;
-            if (CellLayoutResolver.Resolve(Model.Instances[i], InstanceBaseDir, Technology) is { State: CellLayoutState.Resolved, View: { } cell })
-                foreach (var shape in cell.Shapes) layers.Add(shape.Layer);
-        }
+            if (i >= 0 && i < Model.Instances.Count) AddPlacedLayers(Model.Instances[i], InstanceBaseDir, 0);
         return [.. layers];
+
+        // A module's parts are placements inside it: their copper is the module's too. The resolved view of a
+        // bottom placement is the side-swapped one, and its own placements have that side composed in already.
+        void AddPlacedLayers(LayoutInstance inst, string baseDir, int depth)
+        {
+            if (depth >= CellHierarchy.MaxDepth) return;
+            if (CellLayoutResolver.Resolve(inst, baseDir, Technology) is not
+                { State: CellLayoutState.Resolved, View: { } cell, ResolvedCellDir: { } cellDir }) return;
+            foreach (var shape in cell.Shapes)
+            {
+                layers.Add(shape.Layer);
+                if (shape is ViaShape { LandingLayer: { } landing }) layers.Add(landing);
+            }
+            string subBaseDir = CellHierarchy.LayoutBaseDirOf(cellDir);
+            foreach (var sub in cell.Instances) AddPlacedLayers(sub, subBaseDir, depth + 1);
+        }
     }
 
     /// <summary>

@@ -343,7 +343,6 @@ public partial class SettingsView : Window
     // that is the unit a tolerance this small is thought of in). Read in nanometre steps.
 
     private const int ArcToleranceDbuPerMicron = 1000;
-    private const double MaxArcToleranceMicrons = 100;
 
     private static LayoutUnit ArcToleranceUnit(AppPreferences prefs) =>
         PreferredUnits.ParseLength(prefs.PreferredLengthUnit) ?? LayoutUnit.Um;
@@ -361,7 +360,8 @@ public partial class SettingsView : Window
     {
         var prefs = AppPreferencesIo.Load();
         if (LayoutUnits.TryParse(GerberArcToleranceBox.Text ?? "", ArcToleranceUnit(prefs), ArcToleranceDbuPerMicron, out long nm)
-            && nm > 0 && nm <= MaxArcToleranceMicrons * ArcToleranceDbuPerMicron)
+            && nm >= CircuitRF.Design.Layout.Interchange.GerberImport.MinArcToleranceMicrons * ArcToleranceDbuPerMicron
+            && nm <= CircuitRF.Design.Layout.Interchange.GerberImport.MaxArcToleranceMicrons * ArcToleranceDbuPerMicron)
         {
             double um = nm / (double)ArcToleranceDbuPerMicron;
             AppPreferencesIo.Update(p => p.GerberArcToleranceMicrons = um);

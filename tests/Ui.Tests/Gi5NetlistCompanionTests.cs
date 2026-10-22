@@ -71,13 +71,14 @@ public class Gi5NetlistCompanionTests : IDisposable
     /// test below depends on being able to write the same digits under a different header.</param>
     private static string Record(
         string net, (int X, int Y) counts, string? component = null, string? pin = null,
-        int? drill = null, bool plated = true, int? access = null, int code = 317)
+        int? drill = null, bool plated = true, int? access = null, int code = 317, string? layers = null)
     {
         string reference = component is null ? "" : $"{component}-{pin ?? ""}";
         string tail =
             (drill is { } d ? $"D{d:0000}{(plated ? 'P' : 'U')}" : "") +
             (access is { } a ? $"A{a:00}" : "") +
-            $"X{Sign(counts.X)}Y{Sign(counts.Y)}";
+            $"X{Sign(counts.X)}Y{Sign(counts.Y)}" +
+            (layers is { } l ? $"   S0{l}" : "");
         return $"{code:000}{net.PadRight(14)}  {reference.PadRight(11)}{tail}\n";
 
         static string Sign(int v) => (v < 0 ? "-" : "+") + Math.Abs(v).ToString("000000");
@@ -390,7 +391,7 @@ public class Gi5NetlistCompanionTests : IDisposable
         string all = All(result);
         var tech = TechOf(result);
 
-        Assert.Contains("The board netlist states a buried span 2-3", all, StringComparison.Ordinal);
+        Assert.Contains("The board netlist (board.ipc) states a buried span 2-3", all, StringComparison.Ordinal);
         Assert.DoesNotContain("No layer span was declared", all, StringComparison.Ordinal);
         Assert.Contains("Layer spans found: 2-3", all, StringComparison.Ordinal);
 
@@ -415,8 +416,113 @@ public class Gi5NetlistCompanionTests : IDisposable
         Write(dir, "board.ipc", Netlist(1, Record("N1", (Counts(2), Counts(2)), drill: 300, access: 0)));
 
         string all = All(Import(dir, "through"));
-        Assert.Contains("The board netlist states a through-hole span 1-2", all, StringComparison.Ordinal);
+        Assert.Contains("The board netlist (board.ipc) states a through-hole span 1-2", all, StringComparison.Ordinal);
         Assert.DoesNotContain("No layer span was declared", all, StringComparison.Ordinal);
+    }
+
+    /// <summary>Designer report, round 25: a header longer than the part the classifier reads — a layer table and a
+    /// padstack table put the first feature record 40 KB in — is still a netlist, because its version record says so.
+    /// It was skipped as "no Gerber or drill content", and with it every via span the set stated.</summary>
+    [Fact]
+    public void AHeaderLongerThanTheClassifiersHead_IsStillANetlist()
+    {
+        string head = "P  JOB   board\nP  UNITS CUST 1\nP  VER IPC-D-356A\n" +
+                      string.Concat(Enumerable.Repeat("C  L_2  COPPER_18UM  PLANE  POS  2\n", 600));
+
+        Assert.Equal(GerberFileKind.Netlist, GerberFileClassifier.ClassifyContent("board.ipc", head).Kind);
+    }
+
+    /// <summary>Designer report, round 25: a via record that states its two layers (S0L01L02) is that span. Read from
+    /// access codes alone, each laser via named one layer and settled nothing, and the one coordinate where a 1-2
+    /// microvia sits over a 3-4 one named 1 and 4 between them — so the whole file read as through-hole.</summary>
+    [Fact]
+    public void AStatedLayerPair_IsTheSpan_AndAStackedCoordinateDoesNotOverruleIt()
+    {
+        string dir = Folder("stated-pair");
+        (double, double)[] at = [(2, 2), (4, 4), (6, 6)];
+        Write(dir, "l1.gtl", Pads("Copper,L1,Top,Signal", at));
+        Write(dir, "l2.g2", Pads("Copper,L2,Inr,Signal", at));
+        Write(dir, "l3.g3", Pads("Copper,L3,Inr,Signal", at));
+        Write(dir, "l4.gbl", Pads("Copper,L4,Bot,Signal", at));
+        Write(dir, "board.drl", Drill(at));
+        Write(dir, "board.ipc", Netlist(1,
+            Record("N1", (Counts(2), Counts(2)), drill: 100, access: 1, code: 307, layers: "L01L02"),
+            Record("N1", (Counts(4), Counts(4)), drill: 100, access: 1, code: 307, layers: "L01L02"),
+            Record("N1", (Counts(6), Counts(6)), drill: 100, access: 1, code: 307, layers: "L01L02"),
+            Record("N1", (Counts(6), Counts(6)), drill: 100, access: 4, code: 307, layers: "L03L04")));
+
+        var result = Import(dir, "stated_pair");
+
+        Assert.Contains("The board netlist (board.ipc) states a blind span 1-2", All(result), StringComparison.Ordinal);
+        var tech = TechOf(result);
+        var via = Assert.Single(tech.Stackup.Layers, l => l.Kind == StackupKind.Via);
+        var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
+        Assert.Equal((conductors[0].Name, conductors[1].Name), (via.SpanFromLayer, via.SpanToLayer));
+    }
+
+    /// <summary>Designer report, round 25: a set drilled by layer pair names each drill file for its pair, and with no
+    /// attribute and no netlist that name is the span — said as such. A number before the pair makes it no pair.</summary>
+    [Fact]
+    public void ADrillFileNamedForItsLayerPair_TakesThatSpan_AndSaysSo()
+    {
+        string dir = Folder("named-pair");
+        Write(dir, "l1.gtl", Pads("Copper,L1,Top,Signal", (2, 2)));
+        Write(dir, "l2.g2", Pads("Copper,L2,Inr,Signal", (2, 2)));
+        Write(dir, "l3.g3", Pads("Copper,L3,Inr,Signal", (2, 2)));
+        Write(dir, "l4.gbl", Pads("Copper,L4,Bot,Signal", (2, 2)));
+        Write(dir, "board_a1-2-3-laser.drl", Drill((2, 2)));
+
+        var result = Import(dir, "named_pair");
+
+        Assert.Contains("Its file name states a buried span 2-3", All(result), StringComparison.Ordinal);
+        var tech = TechOf(result);
+        var via = Assert.Single(tech.Stackup.Layers, l => l.Kind == StackupKind.Via);
+        var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
+        Assert.Equal((conductors[1].Name, conductors[2].Name), (via.SpanFromLayer, via.SpanToLayer));
+        Assert.Null(GerberLayerCascade.DrillSpanFromName("fab-2024-05-17.drl"));
+        Assert.Equal((1, 3), GerberLayerCascade.DrillSpanFromName("Via_1_2_3.drl"));
+    }
+
+    /// <summary>Designer report, round 25: a span the drill file's own FileFunction attribute states reaches the via's
+    /// stackup entry too. It used to set only the landing layer, and the entry still spanned the whole board.</summary>
+    [Fact]
+    public void ADrillFilesOwnSpan_ReachesTheStackupEntry_AndIsNamedAsItsSource()
+    {
+        string dir = Folder("attribute-span");
+        Write(dir, "l1.gtl", Pads("Copper,L1,Top,Signal", (2, 2)));
+        Write(dir, "l2.g2", Pads("Copper,L2,Inr,Signal", (2, 2)));
+        Write(dir, "l3.g3", Pads("Copper,L3,Inr,Signal", (2, 2)));
+        Write(dir, "l4.gbl", Pads("Copper,L4,Bot,Signal", (2, 2)));
+        Write(dir, "board.drl", Drill((2, 2)).Replace("M48\n", "M48\n; #@! TF.FileFunction,Plated,1,2,Blind\n"));
+
+        var result = Import(dir, "attribute_span");
+
+        Assert.Contains("Its FileFunction attribute states a blind span 1-2", All(result), StringComparison.Ordinal);
+        var tech = TechOf(result);
+        var via = Assert.Single(tech.Stackup.Layers, l => l.Kind == StackupKind.Via);
+        var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
+        Assert.Equal((conductors[0].Name, conductors[1].Name), (via.SpanFromLayer, via.SpanToLayer));
+    }
+
+    /// <summary>A declared span naming copper the board does not have is treated as through-hole, and the stackup
+    /// entry says the same: narrowed at its one in-range end it would join layers the sentence says it does not.</summary>
+    [Fact]
+    public void ADeclaredSpanPastTheStack_LeavesTheEntryThroughTheBoard()
+    {
+        string dir = Folder("span-past-stack");
+        Write(dir, "l1.gtl", Pads("Copper,L1,Top,Signal", (2, 2)));
+        Write(dir, "l2.g2", Pads("Copper,L2,Inr,Signal", (2, 2)));
+        Write(dir, "l3.g3", Pads("Copper,L3,Inr,Signal", (2, 2)));
+        Write(dir, "l4.gbl", Pads("Copper,L4,Bot,Signal", (2, 2)));
+        Write(dir, "board.drl", Drill((2, 2)).Replace("M48\n", "M48\n; #@! TF.FileFunction,Plated,2,6,Buried\n"));
+
+        var result = Import(dir, "span_past_stack");
+
+        Assert.Contains("names copper layers this import does not have", All(result), StringComparison.Ordinal);
+        var tech = TechOf(result);
+        var via = Assert.Single(tech.Stackup.Layers, l => l.Kind == StackupKind.Via);
+        var conductors = tech.Stackup.Layers.Where(l => l.Kind == StackupKind.Conductor).ToList();
+        Assert.Equal((conductors[0].Name, conductors[^1].Name), (via.SpanFromLayer, via.SpanToLayer));
     }
 
     /// <summary>Two spans in one drill file is one stackup entry that cannot carry both, so NEITHER

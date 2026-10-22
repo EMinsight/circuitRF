@@ -498,6 +498,33 @@ public static class GerberLayerCascade
         return from < to ? (from, to) : null;
     }
 
+    /// <summary>
+    /// The copper layers a DRILL file's name says it spans — the last two numbers of its name, with nothing but words
+    /// after them: <c>board-1-2-laser.drl</c> is 1 to 2, <c>board-3-8.drl</c> 3 to 8, <c>board_1-10.drl</c> 1 to 10.
+    /// That is how a set drilled by layer pair names its files, and on a ten-layer set it was the only statement of
+    /// the span in the drill files (designer report, round 25). A number before the pair (<c>2024-05-17</c>) makes it
+    /// no pair. A name a via FILE would carry (<c>Via_1_2_3</c>) is read as <see cref="SpanFromName"/> reads it, 1 to 3.
+    /// The caller checks the two against the copper count; numbers count the copper stack from the top.
+    /// </summary>
+    public static (int From, int To)? DrillSpanFromName(string filePath)
+    {
+        if (SpanFromName(filePath) is { } via) return via;
+        string stem = Path.GetFileNameWithoutExtension(filePath);
+        var words = new string([.. stem.Select(c => char.IsAsciiLetterOrDigit(c) ? c : ' ')])
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+        int end = words.Count;
+        while (end > 0 && !words[end - 1].Any(char.IsAsciiDigit)) end--;   // "laser", "blind", "drill" …
+        if (end < 2) return null;
+
+        static bool Number(string w) => w.Length <= 3 && w.All(char.IsAsciiDigit);
+        if (!Number(words[end - 2]) || !Number(words[end - 1])) return null;
+        if (end >= 3 && words[end - 3].All(char.IsAsciiDigit)) return null;
+
+        int from = int.Parse(words[end - 2], System.Globalization.CultureInfo.InvariantCulture);
+        int to = int.Parse(words[end - 1], System.Globalization.CultureInfo.InvariantCulture);
+        return from >= 1 && from < to ? (from, to) : null;
+    }
+
     private static GerberLayerIdentity? Heuristic(string filePath)
     {
         string extension = Path.GetExtension(filePath).TrimStart('.');

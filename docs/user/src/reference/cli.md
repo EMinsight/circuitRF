@@ -1529,6 +1529,7 @@ are the same bytes when neither includes a camera.
 | `--part <path>` | STEP import: import only this part (its occurrence path). Repeat it per part. |
 | `--assembly`, `--as-drawn`, `--thicken-sheets`, `--include-airbox`, `--schema ap214\|ap242`, `--view 3d\|layout` | STEP export: the Export STEP dialog's choices, one flag each. |
 | `--gltf-assembly`, `--gltf-field <plot>`, `--region <name>` | glTF export: the Export glTF dialog's choices. See [glTF](#convert-gltf). |
+| `--arc-tolerance <len>` | A Gerber source: how far a chord may stray from an arc where a curve has to become a polyline, with its unit, from `1nm` to `100um`. Default `1um`, the same as **Settings ▸ General ▸ Gerber Import**. A bare number is refused. |
 | `--open-archives` | Look inside an archive when a Gerber folder holds no artwork of its own. It is unpacked to a temporary folder, imported from there, and deleted again; nothing is added to the folder you named. Without this flag, such a folder is a refusal that names the flag. |
 
 ### Which cell gets exported {#convert-cell}

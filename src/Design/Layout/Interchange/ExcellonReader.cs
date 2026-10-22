@@ -44,6 +44,13 @@ public sealed record DrillSpan(int FromLayer, int ToLayer, string Kind, bool? Pl
 {
     public bool IsThroughHole => Kind.Equals("PTH", StringComparison.OrdinalIgnoreCase) ||
                                  Kind.Equals("NPTH", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>What a span of <paramref name="from"/> to <paramref name="to"/> is on a board of
+    /// <paramref name="copperLayers"/>: through, blind (reaching one outer layer) or buried.</summary>
+    public static string KindOf(int from, int to, int copperLayers) =>
+        from == 1 && to == copperLayers ? "PTH"
+        : from == 1 || to == copperLayers ? "Blind"
+        : "Buried";
 }
 
 /// <summary>An axis-aligned extent in DBU. <see cref="HasAny"/> is false for an empty set — a box of

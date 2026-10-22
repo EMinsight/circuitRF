@@ -591,6 +591,9 @@ public static partial class ArtworkRecognition
             .Where(l => l.Kind is StackupKind.Conductor or StackupKind.Via)
             .SelectMany(l => l.DrawingLayers)
             .ToHashSet();
+        // A selection on no copper at all (a silkscreen outline, a mask opening) seeds nothing, and would leave out
+        // every piece of copper under it; it reads every layer, as a rectangle does.
+        if (!layers.Any(electrical.Contains)) return clipped;
         var pieces = CopperPieces.Build(clipped, tech);
         var seeds = Enumerable.Range(0, clipped.Count).Where(i => selected.Contains(clipped[i].Layer));
         var joined = pieces.ShapesJoinedTo(seeds).ToHashSet();
