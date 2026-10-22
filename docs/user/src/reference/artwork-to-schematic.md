@@ -94,9 +94,15 @@ schematic you drew yourself is never replaced &mdash; choose another name.
 
 ## Scope {#scope}
 
-**Whole layout**, or **Selection** &mdash; the copper inside whatever is selected in the layout when the dialog
-opens. Copper outside the scope is not read. A line the selection's outline cuts becomes a **port** there, which
-is how you model one section of a board without any EM. Ground is always read from the whole board.
+**Whole layout**, or **Selection** &mdash; the copper inside whatever is selected in the layout. Copper outside the
+scope is not read. A line that runs on past the selection's outline becomes a **port** there, which is how you model
+one section of a board without any EM. Ground is always read from the whole board.
+
+A selection also reads only the **layers** its shapes and parts are on. Copper on another layer under the outline
+&mdash; an inner-layer trace or a power plane crossing beneath a selected top-layer line &mdash; is read only where a
+via joins it to the selected copper, and the report says which layers were left out. When you select a line and
+the pads at both of its ends, nothing runs on past the outline, so there is no port: place port labels where the
+circuit's ports belong.
 
 ## Options {#options}
 

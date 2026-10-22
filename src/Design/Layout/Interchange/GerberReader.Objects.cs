@@ -54,12 +54,12 @@ public sealed partial class GerberReader
             // R-L4e-7: a CircleShape cannot carry a hole, so a holed circular aperture is the one case
             // where the shape-identity mapping cannot apply. Counted, because it is a real degradation.
             Count(_skipped, "circular aperture with a hole (imported as a polygon with a hole)");
-            SetRings(def, new Paths64 { GerberPrimitives.Circle(0, 0, d / 2.0) }, hole);
+            SetRings(def, new Paths64 { GerberPrimitives.Circle(0, 0, d / 2.0, _tolDbu) }, hole);
             return;
         }
         def.IsPlainCircle = true;
         def.CircleDiameterDbu = d;
-        def.Paths = [GerberPrimitives.Circle(0, 0, d / 2.0)];
+        def.Paths = [GerberPrimitives.Circle(0, 0, d / 2.0, _tolDbu)];
     }
 
     private void BuildRectAperture(ApertureDef def, string[] mods, bool rounded)
@@ -69,7 +69,7 @@ public sealed partial class GerberReader
         if (rounded)
         {
             // An obround is not expressible as a RectShape and never was — R-L4e-9 maps it to a polygon.
-            SetRings(def, new Paths64 { GerberPrimitives.Obround(0, 0, w, h) }, hole);
+            SetRings(def, new Paths64 { GerberPrimitives.Obround(0, 0, w, h, _tolDbu) }, hole);
             return;
         }
         if (hole is not null)
@@ -101,7 +101,7 @@ public sealed partial class GerberReader
         }
         var args = new double[mods.Length];
         for (int i = 0; i < mods.Length; i++) args[i] = ModValue(mods, i);
-        SetRings(def, macro.Instantiate(args, Format, s => Count(_skipped, s)), hole: null);
+        SetRings(def, macro.Instantiate(args, Format, s => Count(_skipped, s), _tolDbu), hole: null);
     }
 
     /// <summary>The optional hole modifier: a further <c>X&lt;d&gt;</c> (round) or
@@ -111,9 +111,9 @@ public sealed partial class GerberReader
         if (mods.Length <= firstIndex) return null;
         long a = ModDbu(mods, firstIndex);
         if (a <= 0) return null;
-        if (mods.Length <= firstIndex + 1) return [GerberPrimitives.Circle(0, 0, a / 2.0)];
+        if (mods.Length <= firstIndex + 1) return [GerberPrimitives.Circle(0, 0, a / 2.0, _tolDbu)];
         long b = ModDbu(mods, firstIndex + 1);
-        return b <= 0 ? [GerberPrimitives.Circle(0, 0, a / 2.0)] : [GerberPrimitives.Rect(0, 0, a, b)];
+        return b <= 0 ? [GerberPrimitives.Circle(0, 0, a / 2.0, _tolDbu)] : [GerberPrimitives.Rect(0, 0, a, b)];
     }
 
     /// <summary>Resolves an aperture's outer/hole ring structure ONCE, at definition time, so a flash
@@ -375,7 +375,7 @@ public sealed partial class GerberReader
             // Clipper2) is the only correct reading, and it is a real degradation — the path identity
             // and the width are both gone — so it is counted by name.
             Count(_skipped, "stroke with a non-circular aperture (swept into a region)");
-            var centre = FlattenCentreline(xy, _strokeEdges);
+            var centre = FlattenCentreline(xy, _strokeEdges, _tolDbu);
             var swept = new Paths64();
             foreach (var pattern in ap.Paths)
                 swept.AddRange(Clipper.MinkowskiSum(pattern, centre, false));
@@ -404,7 +404,7 @@ public sealed partial class GerberReader
 
     /// <summary>Flattens an open bulge-carrying centreline to a plain polyline — needed only for the
     /// Minkowski sweep above. Everything that survives as a shape keeps its arcs (R-L4e-11).</summary>
-    private static Path64 FlattenCentreline(long[] xy, List<LayoutEdge> edges)
+    private static Path64 FlattenCentreline(long[] xy, List<LayoutEdge> edges, long tolDbu)
     {
         var path = new Path64 { new(xy[0], xy[1]) };
         for (int i = 0; i + 3 < xy.Length; i += 2)
@@ -414,7 +414,7 @@ public sealed partial class GerberReader
             if (edge is { Kind: EdgeKind.Arc, Bulge: not 0 })
             {
                 var arc = LayoutArc.FromBulge(x0, y0, x1, y1, edge.Bulge);
-                int steps = Math.Max(2, GerberPrimitives.CircleSegments(arc.R) * (int)Math.Ceiling(Math.Abs(arc.Sweep) / (2 * Math.PI)));
+                int steps = Math.Max(2, GerberPrimitives.CircleSegments(arc.R, tolDbu) * (int)Math.Ceiling(Math.Abs(arc.Sweep) / (2 * Math.PI)));
                 for (int s = 1; s < steps; s++)
                 {
                     double a = arc.StartAngle + arc.Sweep * s / steps;

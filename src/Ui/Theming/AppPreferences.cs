@@ -202,6 +202,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public bool? CoalesceRasterFillOnImport { get; set; }
 
+    // How far a chord may stray from an arc when a Gerber import turns a curve into a polyline, in MICRONS
+    // whatever unit Settings shows it in. Null means GerberImport.DefaultArcToleranceMicrons (1 µm). Per USER
+    // for CheckDrcOnExport's own reason — it is a working habit, not a property of any design.
+    [JsonPropertyName("gerber_arc_tolerance_um")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? GerberArcToleranceMicrons { get; set; }
+
     // The size mode a newly placed layout ruler starts in. Null means Fixed (R-rul-4: the temporary
     // measurement is the common use, and it wants to read at the same size at every zoom). Per USER
     // for CheckDrcOnExport's own reason — a working habit, not a property of a design. Serialized as

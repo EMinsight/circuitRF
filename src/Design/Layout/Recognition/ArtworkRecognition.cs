@@ -216,6 +216,7 @@ public static partial class ArtworkRecognition
         if (scope is not null)
         {
             var clipped = Clip(input.Shapes, scope, tech);
+            if (input.Scope.Layers.Count > 0) clipped = JoinedToScopeLayers(clipped, input.Scope.Layers, tech, report);
             scopedShapes = clipped;
             var pieces = CopperPieces.Build(clipped, tech, format: fmt);
             if (!pieces.Any) return new RecognitionResult(null, report, "There is no copper in the selected region.");
@@ -575,6 +576,39 @@ public static partial class ArtworkRecognition
             clipped.AddRange(LayoutClipper.FromClipperTree(tree, shape.Layer, shape.Net));
         }
         return clipped;
+    }
+
+    /// <summary>
+    /// The clipped copper a layered selection reads: everything on its own layers, and copper on any other layer only
+    /// where a via joins it to that (designer report, round 25). Artwork that is not copper — masks, silkscreen,
+    /// drill drawings — is kept whatever its layer, since parts are read off it.
+    /// </summary>
+    private static List<LayoutShape> JoinedToScopeLayers(
+        List<LayoutShape> clipped, IReadOnlyList<LayerKey> layers, Technology tech, RecognitionReport report)
+    {
+        var selected = layers.ToHashSet();
+        var electrical = tech.Stackup.Layers
+            .Where(l => l.Kind is StackupKind.Conductor or StackupKind.Via)
+            .SelectMany(l => l.DrawingLayers)
+            .ToHashSet();
+        var pieces = CopperPieces.Build(clipped, tech);
+        var seeds = Enumerable.Range(0, clipped.Count).Where(i => selected.Contains(clipped[i].Layer));
+        var joined = pieces.ShapesJoinedTo(seeds).ToHashSet();
+
+        var kept = new List<LayoutShape>(clipped.Count);
+        var dropped = new SortedSet<string>(StringComparer.Ordinal);
+        for (int i = 0; i < clipped.Count; i++)
+        {
+            var layer = clipped[i].Layer;
+            if (joined.Contains(i) || selected.Contains(layer) || !electrical.Contains(layer)) kept.Add(clipped[i]);
+            else dropped.Add(tech.Layers.FirstOrDefault(l => l.Key == layer)?.Name ?? $"{layer.Layer}/{layer.Datatype}");
+        }
+        if (dropped.Count > 0)
+            report.Add(RecognitionFindingClass.ScopeOtherLayersLeftOut, dropped.Count,
+                $"The selection is on {string.Join(", ", layers.Where(electrical.Contains).Select(l => $"'{tech.Layers.FirstOrDefault(d => d.Key == l)?.Name ?? $"{l.Layer}/{l.Datatype}"}'"))}; " +
+                $"copper under it on {string.Join(", ", dropped.Select(n => $"'{n}'"))} is joined to none of the selected copper " +
+                "and was left out.");
+        return kept;
     }
 
     /// <summary>R-as3-7: the report says when the scope cut a ground pour.</summary>

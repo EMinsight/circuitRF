@@ -56,7 +56,8 @@ public partial class WorkspaceViewModel
             return;
         }
 
-        var vm = new CreateSchematicFromArtworkViewModel(input, selection, post: a => Dispatcher.UIThread.Post(a))
+        var vm = new CreateSchematicFromArtworkViewModel(input, selection, post: a => Dispatcher.UIThread.Post(a),
+                                                         selectionLayers: layoutVm.SelectionLayers())
         {
             ArtworkSides = CircuitRF.Ui.Theming.AppPreferencesIo.Load().LinkSchematicLayoutOrientation ?? true,
         };
@@ -74,7 +75,7 @@ public partial class WorkspaceViewModel
             ReportArtworkSchematic(run, layoutPath);
             dialog.Close();
         };
-        void FollowSelection() => vm.UpdateSelection(layoutVm.SelectionOutline());
+        void FollowSelection() => vm.UpdateSelection(layoutVm.SelectionOutline(), layoutVm.SelectionLayers());
         layoutVm.SelectionChanged += FollowSelection;
         dialog.Closed += (_, _) =>
         {

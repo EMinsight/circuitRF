@@ -92,6 +92,9 @@ public sealed class LayoutCanvas : Control
                 _viewModel.PropertyChanged += OnVmPropertyChanged;
                 _viewModel.Model.Changed   += OnModelChanged;   // Model itself never changes post-construction
 
+                // A document on screen reads its ratsnest off the UI thread; see LayoutEditorViewModel.Ratsnest.
+                _viewModel.ReadRatsnestOffThread = work => System.Threading.Tasks.Task.Run(work);
+
                 // A document that has already BEEN on screen keeps the pan/zoom it was left at; only a
                 // document being shown for the first time gets the initial fit.
                 //

@@ -134,15 +134,14 @@ public sealed partial class GerberReader
     /// than a second number that can drift from it.</summary>
     public const long EntityHardCeiling = LayoutFlatten.FlattenAllLevelsHardCeiling;
 
-    /// <summary>Flattening tolerance for the few places a curve must become a polyline here: hole
-    /// rings, a non-circular aperture sweep, and the compositing booleans. 0.1 micron at the default
-    /// DbuPerMicron. Shapes that survive as shapes keep their arcs (R-L4e-11).</summary>
-    private const long TolDbu = GerberPrimitives.CircleTolDbu;
+    public static GerberReadResult Read(TextReader reader, int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron,
+                                        double arcToleranceMicrons = GerberImport.DefaultArcToleranceMicrons)
+        => Read(reader.ReadToEnd(), dbuPerMicron, arcToleranceMicrons);
 
-    public static GerberReadResult Read(TextReader reader, int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
-        => Read(reader.ReadToEnd(), dbuPerMicron);
-
-    public static GerberReadResult Read(string text, int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron)
+    /// <param name="arcToleranceMicrons">How far a chord may stray from an arc where one must become a
+    /// polyline — <see cref="GerberImport.DefaultArcToleranceMicrons"/> unless the caller says otherwise.</param>
+    public static GerberReadResult Read(string text, int dbuPerMicron = LayoutUnits.DefaultDbuPerMicron,
+                                        double arcToleranceMicrons = GerberImport.DefaultArcToleranceMicrons)
     {
         // R-L4e-20: the census is a raw scan of the text, before a single token or shape is allocated.
         long operations = CountOperations(text);
@@ -153,7 +152,7 @@ public sealed partial class GerberReader
                           $"circuitRF's import ceiling of {EntityHardCeiling:N0}. Nothing was imported.",
             };
 
-        var reader = new GerberReader(dbuPerMicron);
+        var reader = new GerberReader(dbuPerMicron, GerberImport.ArcToleranceDbu(arcToleranceMicrons, dbuPerMicron));
         reader.Parse(text);
         return reader.Build();
     }

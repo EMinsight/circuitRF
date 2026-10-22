@@ -65,6 +65,29 @@ public sealed partial class LayoutEditorViewModel
     }
 
     /// <summary>
+    /// The layers the selection is on — each selected shape's, and the copper of each selected part as it is placed
+    /// (a bottom-side part's pads are on the bottom). Create Schematic from Artwork reads copper on any other layer
+    /// only where a via joins it to these (designer report, round 25).
+    /// </summary>
+    public IReadOnlyList<LayerKey> SelectionLayers()
+    {
+        var layers = new HashSet<LayerKey>();
+        foreach (int i in _selectedIndices)
+        {
+            if (i < 0 || i >= Model.Shapes.Count) continue;
+            layers.Add(Model.Shapes[i].Layer);
+            if (Model.Shapes[i] is ViaShape { LandingLayer: { } landing }) layers.Add(landing);
+        }
+        foreach (int i in _selectedInstanceIndices)
+        {
+            if (i < 0 || i >= Model.Instances.Count) continue;
+            if (CellLayoutResolver.Resolve(Model.Instances[i], InstanceBaseDir, Technology) is { State: CellLayoutState.Resolved, View: { } cell })
+                foreach (var shape in cell.Shapes) layers.Add(shape.Layer);
+        }
+        return [.. layers];
+    }
+
+    /// <summary>
     /// R-as8-5: selects the copper at (<paramref name="x"/>, <paramref name="y"/>) — the smallest top-level shape whose
     /// box holds the point, on <paramref name="layer"/> where one is named — and zooms to it. False when nothing there
     /// is a shape of this layout (copper inside a placed cell, say), in which case the selection is left alone.

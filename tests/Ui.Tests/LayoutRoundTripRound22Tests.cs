@@ -225,6 +225,52 @@ public sealed class LayoutRoundTripRound22Tests : IDisposable
         Assert.Empty(vm.Overlay.Ratsnest);
     }
 
+    /// <summary>
+    /// Designer report, round 25: on a ten-layer board every placement froze the window for the whole copper read.
+    /// The read runs off the UI thread now, and an answer read before an edit is never drawn: the edit's own read
+    /// replaces it.
+    /// </summary>
+    [Fact]
+    public void TheRatsnestRead_LeavesTheUiThread_AndAnAnswerForAnEditedDesignIsNotDrawn()
+    {
+        WriteLineCell();
+        var model = Model();
+        model.Instances.Add(new LayoutInstance { CellRef = "Line", X = 0, Y = 0, Mag = 1, SchematicId = "TL1" });
+        model.Instances.Add(new LayoutInstance { CellRef = "Line", X = 20_000, Y = 0, Mag = 1, SchematicId = "TL2" });
+        var vm = Vm(model);
+        vm.ApplyTechResolution(new TechResolution(Tech(), null, TechResolutionSource.WorkspaceDefault, []));
+        var reads = new System.Collections.Generic.List<(Action Work, System.Threading.Tasks.TaskCompletionSource Done)>();
+        vm.ReadRatsnestOffThread = work =>
+        {
+            var done = new System.Threading.Tasks.TaskCompletionSource();
+            reads.Add((work, done));
+            return done.Task;
+        };
+        var nets = new PdnSchematicNets(null, new Dictionary<string, PdnSchematicPart>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["TL1"] = new(["1", "2"], ["in", "mid"]),
+            ["TL2"] = new(["1", "2"], ["mid", "out"]),
+        }, []);
+
+        vm.ShowRatsnestFrom(nets);
+        Assert.Single(reads);
+        Assert.Empty(vm.Overlay.Ratsnest);          // nothing read yet, and nothing waited for
+
+        // Copper joins the two pins while the first read is out. Its answer (one line) describes the design
+        // before the edit, so it is dropped and the redraw starts the edit's own read.
+        vm.Execute(new AddShapeCommand(model, Rect(Top, 10_000, -500, 20_000, 500)));
+        Assert.Single(reads);                       // one read at a time
+        reads[0].Work();
+        reads[0].Done.SetResult();
+        Assert.Equal(2, reads.Count);
+        Assert.Empty(vm.Overlay.Ratsnest);
+
+        reads[1].Work();
+        reads[1].Done.SetResult();
+        Assert.Empty(vm.Overlay.Ratsnest);          // the joined design: no line
+        Assert.Equal(2, vm.RatsnestRebuildCount);
+    }
+
     // ── R-dfr22-3-6: the tee is reviewed arm by arm ─────────────────────────────────────────────────────
 
     /// <summary>A stub-match tee: a through line and an open stub, all one width.</summary>

@@ -76,6 +76,54 @@ public sealed class PortDiscoveryTests
         Assert.Equal(1, result.Report.Count(RecognitionFindingClass.ScopeCutGround));
     }
 
+    /// <summary>Designer report, round 25: a selection made on Top reads an inner-layer line crossing under it only
+    /// where a via joins the two — and here none does, so it is left out and said so. A rectangle, which has no layers,
+    /// still reads every layer and cuts the inner line into ports of its own.</summary>
+    [Fact]
+    public void ASelectionOnTopLeavesOutAnInnerLineNotJoinedToIt()
+    {
+        var tech = TwoLayer();
+        tech.Layers = [.. tech.Layers, new LayerDef { Key = Inner, Name = "Inner", Purpose = "conductor" }];
+        var core = tech.Stackup.Layers[2];
+        tech.Stackup.Layers =
+        [
+            tech.Stackup.Layers[0], tech.Stackup.Layers[1],
+            new StackupLayer { Kind = StackupKind.Dielectric, Name = "Prepreg", ThicknessDbu = Um(250), Epsr = 4.3 },
+            new StackupLayer { Kind = StackupKind.Conductor, Name = "Inner", ThicknessDbu = Um(18), SigmaSm = 5.8e7, DrawingLayers = [Inner] },
+            core, tech.Stackup.Layers[3],
+        ];
+        var view = PlaneAndLine();
+        view.Shapes.Add(Rect(Inner, 19_800, 0, 20_200, 10_000));
+        long[] box = [Um(10_000), Um(3_000), Um(30_000), Um(3_000), Um(30_000), Um(7_000), Um(10_000), Um(7_000)];
+
+        var onTop = Recognize(view, tech, scope: RecognitionScope.Polygons([box], [Top]));
+        Assert.True(onTop.Ok, onTop.Refusal);
+        Assert.Equal(["X1", "X2"], onTop.Board!.Ports.Select(p => p.Name));
+        Assert.All(onTop.Board.Ports, p => Assert.Equal(Top, p.Layer));
+        Assert.Contains(onTop.Report.Findings, f => f.Class == RecognitionFindingClass.ScopeOtherLayersLeftOut
+                                                    && f.Sentence.Contains("'Inner'", StringComparison.Ordinal));
+
+        var everyLayer = Recognize(view, tech, scope: RecognitionScope.Polygons([box]));
+        Assert.Contains(everyLayer.Board!.Ports, p => p.Layer == Inner);
+    }
+
+    /// <summary>Designer report, round 25: a selection's outline is the copper's own edge, and the board's copper
+    /// differs from it by a fraction of a micron. That sliver is not a line leaving the selection; the line that
+    /// does leave it, at the right, is the one port.</summary>
+    [Fact]
+    public void CopperASubMicronPastTheOutline_IsNoCut_ALineLeavingItIs()
+    {
+        var view = PlaneAndLine(10_000, 40_000);
+        long[] outline = [Um(10_000), Um(4_525) + 300, Um(30_000), Um(4_525) + 300,
+                          Um(30_000), Um(5_475) - 300, Um(10_000), Um(5_475) - 300];
+
+        var result = Recognize(view, TwoLayer(), scope: RecognitionScope.Polygons([outline]));
+
+        Assert.True(result.Ok, result.Refusal);
+        var cut = Assert.Single(result.Board!.Ports, p => p.Source == PortSource.ScopeCut);
+        Assert.InRange(cut.X, Um(29_990), Um(30_010));
+    }
+
     /// <summary>A board with no port is the refusal sentence.</summary>
     [Fact]
     public void ABoardWithNoPortIsTheRefusal()

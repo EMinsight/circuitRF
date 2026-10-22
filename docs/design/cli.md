@@ -97,8 +97,14 @@ editable copper nor meshable. The flag exists for the one case the default canno
 import against its CAM source, or chasing an import bug, where the primitives have to arrive exactly
 as authored. Either way the import SAYS what it did, per layer, with both counts and the flattening
 tolerance — on stderr with the rest of the import's notes, never on stdout, which stays the result
-document. The GUI's own switch is Settings ▸ General ▸ Import; detail and the two counted conditions
+document. The GUI's own switch is Settings ▸ General ▸ Gerber Import; detail and the two counted conditions
 that decide it are in `src/Design/RESOLVED.md`.
+
+**`convert --arc-tolerance <len>` is a Gerber source's arc flattening** (designer feedback round 25), the
+GUI's Settings ▸ General ▸ Gerber Import value, with the same **1 µm** default. It is how far a chord may stray from
+an arc where the import must turn a curve into segments; 0.1 µm, the value before, more than doubled a pour-heavy
+ten-layer board for no fabrication benefit. A unit is required (`1um`, `0.5mil`) — a bare number is a refusal
+(`convert.args.arc-tolerance`), as every layout length on this CLI is — and the range is 1 nm to 100 µm.
 
 **A label reaching a Gerber target is written by its FONT** (brief-silkscreen-stroke-font.md R-ssf-6). A
 stroke-font label — every label's default — becomes D01 strokes through one round aperture of its pen width,

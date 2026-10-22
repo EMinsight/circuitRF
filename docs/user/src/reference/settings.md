@@ -76,9 +76,9 @@ setting names, so there is one place a layout is chosen and not two that can dis
 themselves are described in {{anchor: workspace.html#panels|the workspace chapter}}.</p>
 </div>
 
-### Theme
+### Appearance
 
-Three buttons, one of them always in force: **System** follows your operating system's light/dark
+**Theme** is three buttons, one of them always in force: **System** follows your operating system's light/dark
 setting, **Light** and **Dark** pin circuitRF to one of them regardless. The change is immediate and
 applies to every open window and everything drawn in them.
 
@@ -86,9 +86,7 @@ This is the light/dark *variant*. Which colour each thing is drawn in is the
 {{anchor: settings#color-theme|Color Theme}} tab, and every colour theme carries both variants — the two
 settings compose rather than competing.
 
-### 3D Designs
-
-**Open in realistic view** opens every 3D design with the realistic view already on, as if you had
+**Open 3D designs in realistic view** opens every 3D design with the realistic view already on, as if you had
 pressed its toolbar button. It is off by default, and it takes effect the next time a design opens — one
 already open keeps whatever its toolbar button says.
 
@@ -103,6 +101,11 @@ grid — *is* saved in each design, so turning the view on shows it the way it w
 |---|---|
 | **Copy color** | The light/dark variant a schematic is rendered in when you copy it to the clipboard: *Follow System* (the variant the application is currently showing), *Force Light*, or *Force Dark*. Pasting a dark schematic into a white document is the case this exists for. |
 | **Transparent background** | Whether the copied picture carries its background or leaves it clear. On by default, so a pasted schematic takes the colour of whatever it lands on. |
+
+### Messages
+
+**Timestamps** — how the Messages panel stamps each line: *Time*, *Date + Time*, or *Hidden*. This one
+is live; the panel re-renders as you change it.
 
 ### Design Rules
 
@@ -129,11 +132,6 @@ the way its symbol does, and **Create Schematic from Artwork** draws each shunt 
 copper is on. Off, the schematic and the layout are arranged independently &mdash; a resistor drawn across the page
 has no reason to sit across the board.
 
-**Coalesce imported painted fill into regions**, on by default, turns a copper pour that a Gerber or board file
-paints as thousands of abutting strokes back into the one region it paints &mdash; the shape that draws quickly,
-meshes for EM and checks against design rules. Off, every primitive arrives exactly as it was authored. The import
-reports each layer it coalesced either way.
-
 **Default Ruler Size Mode**, Fixed by default, is the size mode a ruler starts in when it is placed. A Fixed
 ruler's readout is the same size on screen at every zoom; a Scaled one is a height in the layout and grows and
 shrinks with the artwork. Rulers already placed keep their own mode, which the Properties panel changes.
@@ -149,10 +147,18 @@ and no result changes, an existing workspace, layout or schematic keeps the unit
 can still choose its own. *Automatic* takes the technology's unit for length and, for frequency, the unit that
 suits each value.
 
-### Messages
+### Gerber Import
 
-**Timestamps** — how the Messages panel stamps each line: *Time*, *Date + Time*, or *Hidden*. This one
-is live; the panel re-renders as you change it.
+**Coalesce imported painted fill into regions**, on by default, turns a copper pour that a Gerber or board file
+paints as thousands of abutting strokes back into the one region it paints &mdash; the shape that draws quickly,
+meshes for EM and checks against design rules. Off, every primitive arrives exactly as it was authored. The import
+reports each layer it coalesced either way.
+
+**Gerber arc tolerance**, 1 µm by default, is how far a straight segment may stray from a curve when a Gerber
+import turns an arc into straight segments &mdash; round pads and strokes, arcs in pours, holes and thermals. It is
+shown in the **Length** unit chosen under Units. Smaller follows curves more closely and makes the layout larger and
+slower to work with: 1 µm is far finer than any PCB process, and a tenth of that can more than double the size of a
+board with many curved pours. It applies to the next import; a board already imported keeps its shapes.
 
 ## Technology {#technology}
 

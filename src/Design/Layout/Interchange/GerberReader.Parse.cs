@@ -15,9 +15,18 @@ namespace CircuitRF.Design.Layout.Interchange;
 
 public sealed partial class GerberReader
 {
-    private GerberReader(int dbuPerMicron) => _dbuPerMicron = dbuPerMicron;
+    private GerberReader(int dbuPerMicron, long tolDbu)
+    {
+        _dbuPerMicron = dbuPerMicron;
+        _tolDbu = tolDbu;
+    }
 
     private readonly int _dbuPerMicron;
+
+    /// <summary>Flattening tolerance for the few places a curve must become a polyline here: hole
+    /// rings, a non-circular aperture sweep, and the compositing booleans — the import's arc
+    /// tolerance. Shapes that survive as shapes keep their arcs (R-L4e-11).</summary>
+    private readonly long _tolDbu;
 
     // ── Declared format ───────────────────────────────────────────────────────
     private GerberUnit? _unit;

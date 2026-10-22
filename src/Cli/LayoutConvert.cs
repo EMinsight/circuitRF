@@ -85,6 +85,9 @@ public static class LayoutConvert
         // an import bug, where the primitives have to arrive exactly as authored.
         public bool NoCoalesce;
 
+        // A Gerber source's arc tolerance, microns — Settings ▸ General's "Gerber arc tolerance", same default.
+        public double ArcToleranceMicrons = GerberImport.DefaultArcToleranceMicrons;
+
         // brief-em3d-68 R-em3d68-7b — STEP: what the Import STEP dialog would have asked.
         public List<(string Part, string Material)> StepMaterials = [];
         public List<string> StepParts = [];
@@ -201,6 +204,16 @@ public static class LayoutConvert
                 case "--accept-inferred-drill-format": o.AcceptInferredDrillFormat = true; break;
                 case "--open-archives": o.OpenArchives = true; break;
                 case "--no-coalesce": o.NoCoalesce = true; break;
+                case "--arc-tolerance" when i + 1 < args.Length:
+                {
+                    // A unit is required, the rule every layout length on this CLI follows.
+                    string text = args[++i];
+                    if (!text.Any(char.IsLetter) || !LayoutUnits.TryParse(text, LayoutUnit.Um, 1000, out long nm)
+                        || nm <= 0 || nm > 100_000)
+                        return JsonRun.Fail(CliDiagnostics.ConvertBadArcTolerance(text));
+                    o.ArcToleranceMicrons = nm / 1000.0;
+                    break;
+                }
                 case "--material" when i + 1 < args.Length:
                 {
                     string m = args[++i];
@@ -909,6 +922,7 @@ public static class LayoutConvert
             resolveDrillFormat: (fileName, inferred, crossCheck, _) => ResolveDrillFormat(o, fileName, inferred, crossCheck),
             offerArchive: archives => OfferArchive(o, archives),
             coalesceRasterFill: !o.NoCoalesce,
+            arcToleranceMicrons: o.ArcToleranceMicrons,
             target: o.IntoTech is { } into ? GerberTechnologyTarget.Use(into) : null);
         Report(r.Messages);
         // R-gt-3/R-gt-5: the import's own sentence, as the error it is — not "nothing was converted".
@@ -1359,6 +1373,7 @@ public static class LayoutConvert
         Console.Error.WriteLine("              --assembly  --as-drawn  --thicken-sheets  --include-airbox  --schema ap214|ap242  --view 3d|layout  --tech <path.ctech>");
         Console.Error.WriteLine("       gltf target (-o <file>.glb; from a .c3d):  --gltf-assembly  --gltf-field <plot>  --region <name>");
         Console.Error.WriteLine("       --no-coalesce  keep a painted pour's individual strokes");
+        Console.Error.WriteLine("       --arc-tolerance <len>  a gerber source's arc flattening, with its unit (default 1um)");
         Console.Error.WriteLine("       gerber source, clay target:  --into-tech <path.ctech>  import into that technology and write none");
         Console.Error.WriteLine("       picture source (png, jpeg, bmp, gif, webp; --from image):  --scale <len>/px | --dpi <n> |");
         Console.Error.WriteLine("              --scale-points x0,y0,x1,y1=<len> | --scale auto   --tech <id|path.ctech>");

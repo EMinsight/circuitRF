@@ -259,7 +259,7 @@ internal static class DrcRegions
         return double.IsInfinity(best) ? 0 : (long)Math.Round(best);
     }
 
-    private static double SegmentDistance(Point64 p1, Point64 p2, Point64 q1, Point64 q2)
+    internal static double SegmentDistance(Point64 p1, Point64 p2, Point64 q1, Point64 q2)
     {
         if (SegmentsCross(p1, p2, q1, q2)) return 0;
         return Math.Min(Math.Min(PointSegment(p1, q1, q2), PointSegment(p2, q1, q2)),

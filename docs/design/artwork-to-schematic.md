@@ -171,8 +171,14 @@ is the refusal *"Nothing in scope reaches a port — add port labels, a .cem, or
 `RecognitionScope` is `Whole`, `Rectangle(...)` or `Polygons(...)` (the selection's outline), DBU. Copper is clipped to
 it with `LayoutClipper`; a via or a label is kept where its centre is inside. **Ground is read from the whole board**:
 each clipped piece takes the class of the whole-board piece under it, so a pour the selection cuts in two is still one
-ground. A crossing is where the original copper continues just outside the boundary; when the scope cuts a piece of
-ground copper the report says so.
+ground. A crossing is where the original copper continues past the boundary — looked for in a band starting two
+microns outside it, because a selection's outline is the selected copper's own edge and the board's copper differs
+from it by fractions of a micron (chords of a flattened arc, the hairline close moving a curved edge); read on the
+boundary itself, every such sliver was a port. When the scope cuts a piece of ground copper the report says so.
+
+A `Polygons` scope may carry **layers** — the GUI's are the selected shapes' and parts' own. Clipped copper on any
+other electrical layer is kept only where a via joins it to copper on those layers (`ScopeOtherLayersLeftOut` reports
+the rest); non-electrical artwork is kept whatever its layer. A rectangle carries none and reads every layer.
 
 ### 4.7 The report (R-as3-8, D16)
 

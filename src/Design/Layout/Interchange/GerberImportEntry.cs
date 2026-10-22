@@ -165,7 +165,8 @@ public static class GerberImportEntry
         GerberImport.OfferArchive? offerArchive = null,
         bool coalesceRasterFill = true,
         GerberTechnologyTarget? target = null,
-        GerberImport.ResolveGerberMapping? resolveMapping = null)
+        GerberImport.ResolveGerberMapping? resolveMapping = null,
+        double arcToleranceMicrons = GerberImport.DefaultArcToleranceMicrons)
     {
         // The survey classifies every file in the folder BY CONTENT, before either prompt — so it is
         // the first thing that can take a visible moment on a large set, and the first thing worth
@@ -203,7 +204,7 @@ public static class GerberImportEntry
         return GerberImport.Import(
             files, parentDir, importName, destTech, destDbuPerMicron,
             resolveLayerMapping, resolveDrillFormat, control, offerArchive, coalesceRasterFill,
-            target, resolveMapping);
+            target, resolveMapping, arcToleranceMicrons);
     }
 
     /// <summary>The same flow for a folder chosen outright, with no file and therefore no
@@ -219,14 +220,16 @@ public static class GerberImportEntry
         GerberImport.OfferArchive? offerArchive = null,
         bool coalesceRasterFill = true,
         GerberTechnologyTarget? target = null,
-        GerberImport.ResolveGerberMapping? resolveMapping = null)
+        GerberImport.ResolveGerberMapping? resolveMapping = null,
+        double arcToleranceMicrons = GerberImport.DefaultArcToleranceMicrons)
     {
         var (files, importName) = ResolveFolder(dir);
         if (files.Count == 0)
             return Cancelled("That folder holds no files, so nothing was imported.");
         return GerberImport.Import(
             files, parentDir, importName, destTech, destDbuPerMicron, resolveLayerMapping,
-            resolveDrillFormat, control, offerArchive, coalesceRasterFill, target, resolveMapping);
+            resolveDrillFormat, control, offerArchive, coalesceRasterFill, target, resolveMapping,
+            arcToleranceMicrons);
     }
 
     private static GerberImport.ImportResult Cancelled(string why)

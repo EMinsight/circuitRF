@@ -5467,7 +5467,9 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                             .GetAwaiter().GetResult(),
                         // R-rf3-7. The user's own preference, read at the moment of the import rather
                         // than cached, so changing it in Settings applies to the very next import.
-                        coalesceRasterFill: AppPreferencesIo.Load().CoalesceRasterFillOnImport ?? true));
+                        coalesceRasterFill: AppPreferencesIo.Load().CoalesceRasterFillOnImport ?? true,
+                        arcToleranceMicrons: AppPreferencesIo.Load().GerberArcToleranceMicrons
+                                             ?? CircuitRF.Design.Layout.Interchange.GerberImport.DefaultArcToleranceMicrons));
             }
             catch (Exception ex)
             {

@@ -43,8 +43,13 @@ public static class RailArtworkEntry
         GerberImport.ResolveDrillFormat? resolveDrillFormat = null)
         => IsFolder(artworkPath)
             ? GerberImportEntry.RunFolder(
-                artworkPath, parentDir, null, dbuPerMicron, resolveDrillFormat: resolveDrillFormat)
+                artworkPath, parentDir, null, dbuPerMicron, resolveDrillFormat: resolveDrillFormat,
+                arcToleranceMicrons: ArcTolerance)
             : GerberImportEntry.Run(
                 artworkPath, parentDir, null, dbuPerMicron, promptForScope, pickFolder,
-                resolveDrillFormat: resolveDrillFormat);
+                resolveDrillFormat: resolveDrillFormat, arcToleranceMicrons: ArcTolerance);
+
+    /// <summary>Settings ▸ General's Gerber arc tolerance, as the layout editor's own Import Gerber reads it.</summary>
+    private static double ArcTolerance =>
+        CircuitRF.Ui.Theming.AppPreferencesIo.Load().GerberArcToleranceMicrons ?? GerberImport.DefaultArcToleranceMicrons;
 }

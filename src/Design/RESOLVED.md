@@ -22666,3 +22666,56 @@ EMI-9's fallback after the cap is kept for a sweep that improves too slowly to s
   about 1e-9, different on each run). Both its runs went to the GPU (109,566 unknowns, over Auto's threshold), whose solve is
   not reproducible to 1e-9. On the CPU the committed driver and this one give identical S, run to run and to each other. Left
   for the owner: the test predates this brief.
+
+## Designer feedback round 25 — a ten-layer board: extraction cost, recognition scope (2026-10-22)
+
+### The hairline close joined nothing on most layers and cost most of the extraction
+
+`LayerRegions.JoinHairlineGaps` offsets the whole layer out and back (two `InflatePaths`). On a production ten-layer
+board that was 12.2 s of the 15 s `LayerRegions.Build` took, and it joined something on two layers of ten.
+`AnyTwoRingsWithin` now decides first, on a uniform edge grid: a ring's offset stays within the miter limit (2) times
+half the gap of it, so only two rings within twice the gap can be joined; where none are, the region is returned
+unchanged — which is what the close returned there anyway. Checked against the full close on every layer of that board
+and on 3,000 random boards (1,213 with real joins): identical regions and join counts throughout. 12.5 s → 4.9 s; the
+two layers with real joins still pay for the full close. Whole partition: ~20 s → 13 s cold, 8 s when the connectivity
+cache hits (Release).
+
+**Seen and not fixed.** On a layer that DOES have a join, the result is the region unioned with its close, and the
+close moves curved edges outward by a fraction of a micron everywhere on that layer, not only at the joins. That is
+what made the recognition's spurious scope-cut ports below; the port test was made robust to it rather than the close
+made local.
+
+### A selection's outline read every layer under it
+
+The GUI selection becomes `RecognitionScope.Polygons`, and copper on EVERY layer was clipped to it. A selection of a
+top-layer RF line pulled in each inner-layer trace and plane crossing beneath, cut into ports: 19 boundary ports, 15
+TLINs and 11 "separate pours" for a two-capacitor path. The scope now carries `Layers`; `ArtworkRecognition` keeps
+clipped copper on any other electrical layer only where `CopperPieces.ShapesJoinedTo` reaches it from the selected
+layers (a via joins it), and reports the rest (`ScopeOtherLayersLeftOut`). Non-electrical artwork is kept — parts
+are read off masks and silkscreen. A rectangle (`--region`) carries no layers and reads all of them, as before. The
+provenance records them as `scopeLayers`.
+
+### A selection's own edge read as a line leaving it
+
+`PortDiscovery`'s scope-cut test looked for original copper in the first 1 µm outside the boundary. A selection's
+outline IS the selected copper's edge, and the board's copper differs from it by fractions of a micron (a flattened
+arc's chords sit inside the arc; the close above nudges curved edges out). Every such sliver was a port — six round one
+selected trace and its pad. The band now starts 2 µm outside the boundary; a line that really leaves runs far past it.
+
+Gates: `PortDiscoveryTests.ASelectionOnTopLeavesOutAnInnerLineNotJoinedToIt`,
+`PortDiscoveryTests.CopperASubMicronPastTheOutline_IsNoCut_ALineLeavingItIs` (fails with the margin at 0),
+`DesignerRound17Tests.OnlyRingsWithinTwiceTheGap_SendALayerThroughTheClose`.
+
+### Found on the way, not changed
+
+- **The Gerber importer flattened arcs to 0.1 µm** (the old `GerberPrimitives.CircleTolDbu`). On that board 93 % of
+  segments were under 30 µm. Re-imported at 1 µm the `.clay` went 144 → 65 MB, 5.6 M → 2.4 M vertices, 33 → 14 MB
+  gzipped. **Changed the same day on the owner's call**: `GerberImport.DefaultArcToleranceMicrons` is 1 µm, and it is a
+  parameter now — the reader holds it (`_tolDbu`) and hands it to every primitive, rather than a constant. Settings ▸
+  General ▸ Gerber Import sets it per user (`gerber_arc_tolerance_um`, shown in the preferred Length unit, stored in
+  microns); `convert --arc-tolerance <len>` sets it headlessly with the same default. Board-file (`.kicad_pcb`)
+  imports do not use it. Gates: `GerberReaderTests.AnObroundsCaps_FollowTheArcTolerance_OneMicronByDefault`,
+  `ConvertCliVerbTests.ArcTolerance_WithNoUnit_IsRefused`; the 1,157 existing Gerber/convert/recognition tests
+  passed unchanged at the new default.
+- **The importer gives every drill file a Top→Bottom span**, even where the file names state the span
+  (`-1-2-laser`, `-3-8`, `-1-10`). On an HDI set every via row then has to be edited by hand.

@@ -196,23 +196,32 @@ public static class PortDiscovery
         }
 
         // ── 5: where the scope's boundary cuts a signal island ──────────────────────────────────────
+        //
+        // The band copper is looked for in starts a margin OUTSIDE the boundary, not on it (designer report, round 25).
+        // A selection's outline is the selected copper's own edge, and the board's copper differs from it there by
+        // fractions of a micron — a circle's outline is flattened in 1 µm chords that sit inside the arc, and a layer
+        // with a hairline join is unioned with its close, which moves curved edges by a fraction of a micron. Read on
+        // the boundary, every such sliver was a line leaving the selection: six ports round one selected trace and its
+        // pad. A line that does leave runs on far past the margin.
         if (ctx.Scope is { } scope)
         {
             long t = Math.Max(2, board.DbuPerMicron);
+            long margin = 2 * t;
             var outside = Clipper.BooleanOp(ClipType.Difference,
-                Clipper.InflatePaths(scope, t, JoinType.Miter, EndType.Polygon), scope, LayoutClipper.Rule);
+                Clipper.InflatePaths(scope, margin + t, JoinType.Miter, EndType.Polygon),
+                Clipper.InflatePaths(scope, margin, JoinType.Miter, EndType.Polygon), LayoutClipper.Rule);
             var whole = ctx.Whole.Pieces;
             for (int p = 0; p < board.Pieces.Count; p++)
             {
                 if (ctx.IslandOf[p] is not (var island and >= 0) || !ctx.SignalIsland[island]) continue;
                 var layer = board.Pieces.LayerOfPiece(p);
-                var near = DrcRegions.Grow(board.Pieces.BoundsOfPiece(p), 2 * t);
+                var near = DrcRegions.Grow(board.Pieces.BoundsOfPiece(p), margin + 2 * t);
                 var original = new Paths64();
                 for (int w = 0; w < whole.Count; w++)
                     if (whole.LayerOfPiece(w) == layer && whole.BoundsOfPiece(w).Intersects(near)) original.AddRange(whole.PathsOfPiece(w));
                 if (original.Count == 0) continue;
 
-                var grown = Clipper.InflatePaths(board.Pieces.PathsOfPiece(p), 2 * t, JoinType.Miter, EndType.Polygon);
+                var grown = Clipper.InflatePaths(board.Pieces.PathsOfPiece(p), margin + 2 * t, JoinType.Miter, EndType.Polygon);
                 var cut = Clipper.BooleanOp(ClipType.Intersection,
                     Clipper.BooleanOp(ClipType.Intersection, original, outside, LayoutClipper.Rule), grown, LayoutClipper.Rule);
                 foreach (var component in DrcRegions.Components(cut))

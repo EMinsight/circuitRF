@@ -71,6 +71,9 @@ public enum RecognitionFindingClass
     /// <summary>The scope cuts a ground pour or plane; ground was read from the whole board.</summary>
     ScopeCutGround,
 
+    /// <summary>Copper on layers the selection was not made on, joined to none of its copper, left out.</summary>
+    ScopeOtherLayersLeftOut,
+
     // ── AS-4: parts (R-as4-9) ───────────────────────────────────────────────────────────────────
 
     /// <summary>Parts read from placed footprint instances.</summary>

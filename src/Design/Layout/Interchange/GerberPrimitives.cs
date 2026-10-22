@@ -14,26 +14,23 @@ namespace CircuitRF.Design.Layout.Interchange;
 
 internal static class GerberPrimitives
 {
-    /// <summary>Chord tolerance for turning a circular boundary into a polygon: 0.1 micron at the
-    /// default DbuPerMicron=1000. Everything that reaches this file is already a shape circuitRF
-    /// cannot express with a real arc, so this is the accuracy floor for the polygonal stand-in, not a
-    /// choice about how curves are stored generally.</summary>
-    internal const long CircleTolDbu = 100;
-
     private const int MinCircleSegments = 12;
     private const int MaxCircleSegments = 256;
 
-    internal static int CircleSegments(double radius)
+    /// <summary>How many sides a circle of <paramref name="radius"/> takes so no chord strays more than
+    /// <paramref name="tolDbu"/> from the arc — the import's arc tolerance (<see cref="GerberImport.DefaultArcToleranceMicrons"/>).
+    /// Everything that reaches this file is a shape circuitRF cannot express with a real arc.</summary>
+    internal static int CircleSegments(double radius, long tolDbu)
     {
-        if (radius <= CircleTolDbu) return MinCircleSegments;
-        double theta = 2.0 * Math.Acos(1.0 - CircleTolDbu / radius);
+        if (radius <= tolDbu) return MinCircleSegments;
+        double theta = 2.0 * Math.Acos(1.0 - tolDbu / radius);
         int n = (int)Math.Ceiling(2.0 * Math.PI / theta);
         return Math.Clamp(n, MinCircleSegments, MaxCircleSegments);
     }
 
-    internal static Path64 Circle(double cx, double cy, double radius)
+    internal static Path64 Circle(double cx, double cy, double radius, long tolDbu)
     {
-        int n = CircleSegments(radius);
+        int n = CircleSegments(radius, tolDbu);
         var path = new Path64(n);
         for (int i = 0; i < n; i++)
         {
@@ -56,7 +53,7 @@ internal static class GerberPrimitives
     /// <summary>An obround (stadium) pad: a rectangle capped by a semicircle on its shorter pair of
     /// sides. Degenerates to a circle when the two dimensions are equal, which is the correct reading
     /// of <c>O,dXd</c> and not a special case worth branching on.</summary>
-    internal static Path64 Obround(double cx, double cy, double w, double h)
+    internal static Path64 Obround(double cx, double cy, double w, double h, long tolDbu)
     {
         double r = Math.Min(w, h) / 2.0;
         if (r <= 0) return Rect(cx, cy, Math.Max(w, 1), Math.Max(h, 1));
@@ -67,7 +64,7 @@ internal static class GerberPrimitives
         double c1x = horizontal ? cx - span : cx, c1y = horizontal ? cy : cy - span;
         double c2x = horizontal ? cx + span : cx, c2y = horizontal ? cy : cy + span;
 
-        int n = CircleSegments(r);
+        int n = CircleSegments(r, tolDbu);
         if (n % 2 != 0) n++;                       // an even count puts a vertex exactly on each cap seam
         var path = new Path64(n + 2);
 
@@ -122,10 +119,10 @@ internal static class GerberPrimitives
     /// <summary>Macro primitive 7 (thermal): the annulus between two diameters, cut by a horizontal
     /// and a vertical gap of <paramref name="gap"/> — four disconnected spokes, which is why a thermal
     /// flash legitimately produces more than one shape.</summary>
-    internal static Paths64 Thermal(double cx, double cy, double outerDia, double innerDia, double gap)
+    internal static Paths64 Thermal(double cx, double cy, double outerDia, double innerDia, double gap, long tolDbu)
     {
         double ro = outerDia / 2.0, ri = innerDia / 2.0;
-        var ring = Clipper.Difference(new Paths64 { Circle(cx, cy, ro) }, new Paths64 { Circle(cx, cy, ri) },
+        var ring = Clipper.Difference(new Paths64 { Circle(cx, cy, ro, tolDbu) }, new Paths64 { Circle(cx, cy, ri, tolDbu) },
             LayoutClipper.Rule);
         if (gap <= 0) return ring;
 

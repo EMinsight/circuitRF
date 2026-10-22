@@ -27,22 +27,27 @@ public sealed partial class CreateSchematicFromArtworkViewModel : RecognitionSes
     private readonly RecognitionInput _base;
     private readonly IArtworkRecognitionRunner _runner;
     private IReadOnlyList<long[]> _selection;
+    private IReadOnlyList<LayerKey> _selectionLayers;
 
     /// <param name="baseInput">The layout as the CLI reads it (<see cref="IArtworkRecognitionRunner.Load"/>); its
     /// <see cref="RecognitionInput.ClayPath"/> must be set — a scratch layout never reaches here.</param>
     /// <param name="selectionRings">The layout editor's selection outline, DBU; empty when nothing is selected.</param>
     /// <param name="runner">The recognition; the real one when null.</param>
+    /// <param name="selectionLayers">The layers the selected shapes and parts are on — copper on any other layer is
+    /// read only where a via joins it to theirs (<see cref="RecognitionScope.Layers"/>). Empty reads every layer.</param>
     /// <param name="post">How a result from the background reaches the UI thread; immediate when null.</param>
     /// <param name="debounce">How long a burst of changes is let settle before recognising.</param>
     public CreateSchematicFromArtworkViewModel(
         RecognitionInput baseInput, IReadOnlyList<long[]> selectionRings,
-        IArtworkRecognitionRunner? runner = null, Action<Action>? post = null, TimeSpan? debounce = null)
+        IArtworkRecognitionRunner? runner = null, Action<Action>? post = null, TimeSpan? debounce = null,
+        IReadOnlyList<LayerKey>? selectionLayers = null)
         : base((baseInput ?? throw new ArgumentNullException(nameof(baseInput))).EmSetup, post, debounce)
     {
         _base = baseInput;
         ClayPath = Path.GetFullPath(baseInput.ClayPath ?? throw new ArgumentException("The layout must be saved.", nameof(baseInput)));
         _runner = runner ?? ArtworkRecognitionRunner.Instance;
         _selection = selectionRings ?? [];
+        _selectionLayers = selectionLayers ?? [];
 
         ArtworkCellName = Path.GetFileName(RecognitionTarget.CellOf(ClayPath) ?? Path.GetFileNameWithoutExtension(ClayPath));
         ArtworkCellOffered = RecognitionTarget.ArtworkCellOffered(ClayPath);
@@ -99,9 +104,10 @@ public sealed partial class CreateSchematicFromArtworkViewModel : RecognitionSes
     /// greyed until the dialog was closed and opened again, and a large board was read whole in the meantime
     /// (designer report, 2026-10-20). A new selection is taken as the scope; clearing it goes back to the whole layout.
     /// </summary>
-    public void UpdateSelection(IReadOnlyList<long[]> rings)
+    public void UpdateSelection(IReadOnlyList<long[]> rings, IReadOnlyList<LayerKey>? layers = null)
     {
         _selection = rings ?? [];
+        _selectionLayers = layers ?? [];
         bool available = RecognitionScope.Polygons(_selection) is { IsWhole: false };
         SelectionAvailable = available;
         if (ScopeSelection != available) ScopeSelection = available;   // reschedules through OnScopeSelectionChanged
@@ -230,7 +236,7 @@ public sealed partial class CreateSchematicFromArtworkViewModel : RecognitionSes
     /// <summary>The input the run is handed — the CLI's, field for field (D2).</summary>
     public RecognitionInput BuildInput() => _base with
     {
-        Scope = ScopeSelection && SelectionAvailable ? RecognitionScope.Polygons(_selection) : RecognitionScope.Whole,
+        Scope = ScopeSelection && SelectionAvailable ? RecognitionScope.Polygons(_selection, _selectionLayers) : RecognitionScope.Whole,
         Options = BuildOptions(_base.Options),
         Placement = _placement,
         Bom = _bom,

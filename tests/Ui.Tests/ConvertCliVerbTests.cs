@@ -144,6 +144,22 @@ public sealed class ConvertCliVerbTests(ITestOutputHelper output) : IDisposable
         Assert.False(Directory.Exists(target));
     }
 
+    /// <summary>Designer feedback round 25: --arc-tolerance is a layout length, so a bare number is refused — 1 could
+    /// be microns or millimetres, three orders of magnitude apart.</summary>
+    [Fact]
+    public void ArcTolerance_WithNoUnit_IsRefused()
+    {
+        string set = Path.Combine(_root, "set");
+        CircuitRF.Ui.Diagnostics.Fixtures.DocGerberFixtures.WriteSixCopperSet(set);
+        string target = Path.Combine(_root, "out");
+
+        var (code, _, stderr) = RunCli("convert", set, "-o", target, "--to", "clay", "--arc-tolerance", "1");
+
+        Assert.Equal(1, code);
+        Assert.Contains("--arc-tolerance wants a length with its unit", stderr);
+        Assert.False(Directory.Exists(target));
+    }
+
     [Fact]
     public void IntoTech_OnADxfSource_IsRefusedByFormat()
     {

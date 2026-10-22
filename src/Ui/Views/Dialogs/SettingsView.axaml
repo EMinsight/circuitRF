@@ -96,197 +96,190 @@
 
             <!-- ── General tab ────────────────────────────────────────────── -->
             <TabItem Header="General">
+                <!-- Owner request (designer feedback round 25): the page is grouped the way the Solvers tab is —
+                     each subject in its own Border.group box, two boxes to a row so the whole page fits the
+                     dialog's default height with no scroll bar. The ScrollViewer stays for a window the user
+                     has made SHORTER than that. Boxes on one row share its height (Grid rows stretch them).
+                     Labels sit in a 110 px column so every ComboBox in a box starts at the same x. -->
                 <ScrollViewer Margin="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Spacing="0" Grid.IsSharedSizeScope="True">
+                    <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,8,Auto,8,Auto,8,Auto">
+                        <Grid.Styles>
+                            <Style Selector="Border.group">
+                                <Setter Property="Background" Value="{DynamicResource SystemChromeMediumLowColor}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource CrfTileBorderBrush}"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                                <Setter Property="CornerRadius" Value="6"/>
+                                <Setter Property="Padding" Value="10,8"/>
+                            </Style>
+                            <Style Selector="TextBlock.groupTitle">
+                                <Setter Property="FontSize" Value="12"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Setter Property="Margin" Value="0,0,0,6"/>
+                            </Style>
+                        </Grid.Styles>
 
-                        <!-- On Launch, and Theme beside it. Two groups on one row because the
-                             On Launch column is ~310 px of a ~690 px page and the three theme
-                             buttons are ~100 px: stacked, the second group would push Copy / Export
-                             and everything under it below the fold for no reason. The middle column
-                             is the gutter. -->
-                        <Grid Margin="0,0,0,20">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="GeneralLeft"/>
-                                <ColumnDefinition Width="40"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-
-                            <!-- On Launch section -->
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="On Launch" FontSize="11" FontWeight="SemiBold"
-                                           Opacity="0.55" Margin="0,0,0,6"/>
-                                <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto,6,Auto">
-                                    <TextBlock Grid.Row="0" Grid.Column="0"
-                                               Text="Action:" VerticalAlignment="Center" FontSize="12"/>
-                                    <ComboBox  Grid.Row="0" Grid.Column="1"
-                                               Name="LaunchActionCombo" FontSize="12" MinWidth="180"
-                                               HorizontalAlignment="Left"
-                                               SelectionChanged="OnLaunchSettingChanged"/>
-                                    <TextBlock Grid.Row="2" Grid.Column="0"
-                                               Text="Window Layout:" VerticalAlignment="Center" FontSize="12"/>
-                                    <ComboBox  Grid.Row="2" Grid.Column="1"
-                                               Name="WindowLayoutCombo" FontSize="12" MinWidth="180"
-                                               HorizontalAlignment="Left"
-                                               SelectionChanged="OnLaunchSettingChanged"/>
-                                    <CheckBox  Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2"
-                                               Name="ShowDockersOnLaunchCheck" FontSize="12"
-                                               Content="Show Dockers"
-                                               IsCheckedChanged="OnShowDockersOnLaunchChanged"/>
+                        <!-- On Launch -->
+                        <Border Grid.Row="0" Grid.Column="0" Classes="group">
+                            <StackPanel>
+                                <TextBlock Classes="groupTitle" Text="On Launch"/>
+                                <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Action:" FontSize="12" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Row="0" Grid.Column="1" HorizontalAlignment="Left"
+                                          Name="LaunchActionCombo" FontSize="12" MinWidth="180"
+                                          SelectionChanged="OnLaunchSettingChanged"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Window Layout:" FontSize="12" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Left"
+                                          Name="WindowLayoutCombo" FontSize="12" MinWidth="180"
+                                          SelectionChanged="OnLaunchSettingChanged"/>
+                                    <CheckBox Grid.Row="2" Grid.ColumnSpan="2"                                           Name="ShowDockersOnLaunchCheck" FontSize="12"
+                                          Content="Show Dockers"
+                                          IsCheckedChanged="OnShowDockersOnLaunchChanged"/>
                                 </Grid>
                             </StackPanel>
+                        </Border>
 
-                            <!-- Theme section — light/dark, or follow the OS.
-                                 One of the three is always active, so these are radio buttons wearing
-                                 the Layout Editor's toolbar-button clothes: same Padding, same
-                                 Button.ToolActive accent fill for the one in force. The active class
-                                 is set in code (SyncThemeButtons) rather than bound, because this
-                                 dialog has no view model and the state it reflects is a static
-                                 application property, not a bindable one.
-
-                                 This is the light/dark VARIANT, not the Color Theme tab's palette —
-                                 every palette carries both variants and the two compose. -->
-                            <StackPanel Grid.Column="2">
-                                <TextBlock Text="Theme" FontSize="11" FontWeight="SemiBold"
-                                           Opacity="0.55" Margin="0,0,0,6"/>
-                                <StackPanel Orientation="Horizontal" Spacing="4">
+                        <!-- Appearance: the light/dark VARIANT (not the Color Theme tab's palette — every palette
+                             carries both variants and the two compose), and whether a .c3d opens in the realistic
+                             view, which is a property of this machine's GPU rather than of the design
+                             (Realistic3DPreference). The theme buttons are radio buttons in the Layout Editor's
+                             toolbar-button clothes; SyncThemeButtons sets the active one's Button.ToolActive. -->
+                        <Border Grid.Row="0" Grid.Column="2" Classes="group">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="groupTitle" Text="Appearance"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="Theme:" FontSize="12" VerticalAlignment="Center" Width="110"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
                                     <Button Name="ThemeSystemBtn" Click="OnThemeModeClick" Tag="System"
-                                            ToolTip.Tip="System" Padding="6,3">
-                                        <mi:MaterialIcon Kind="ThemeLightDark" Width="16" Height="16"/>
+                                    ToolTip.Tip="System" Padding="6,3">
+                                    <mi:MaterialIcon Kind="ThemeLightDark" Width="16" Height="16"/>
                                     </Button>
                                     <Button Name="ThemeLightBtn" Click="OnThemeModeClick" Tag="Light"
-                                            ToolTip.Tip="Light" Padding="6,3">
-                                        <mi:MaterialIcon Kind="WhiteBalanceSunny" Width="16" Height="16"/>
+                                    ToolTip.Tip="Light" Padding="6,3">
+                                    <mi:MaterialIcon Kind="WhiteBalanceSunny" Width="16" Height="16"/>
                                     </Button>
                                     <Button Name="ThemeDarkBtn" Click="OnThemeModeClick" Tag="Dark"
-                                            ToolTip.Tip="Dark" Padding="6,3">
-                                        <mi:MaterialIcon Kind="WeatherNight" Width="16" Height="16"/>
+                                    ToolTip.Tip="Dark" Padding="6,3">
+                                    <mi:MaterialIcon Kind="WeatherNight" Width="16" Height="16"/>
                                     </Button>
+                                    </StackPanel>
                                 </StackPanel>
-
-                                <!-- 3D Designs — whether a .c3d opens in the realistic view. Here and not in
-                                     the .c3d because what a machine can afford to draw is a property of its
-                                     GPU, not of the design (Realistic3DPreference). Under Theme because it is
-                                     the other "how things look" switch, and the column had the room. -->
-                                <TextBlock Text="3D Designs" FontSize="11" FontWeight="SemiBold"
-                                           Opacity="0.55" Margin="0,20,0,6"/>
                                 <CheckBox  Name="RealisticOnOpenCheck" FontSize="12"
-                                           Content="Open in realistic view"
-                                           IsCheckedChanged="OnRealisticOnOpenChanged"
-                                           ToolTip.Tip="Opens every 3D design with the realistic view already on, as if you had pressed its toolbar button. The look itself — environment, exposure, edges, grid — is saved in each design. Leave this off on a machine whose graphics card makes the realistic view slow; the toolbar button still turns it on for one design."/>
+                                          Content="Open 3D designs in realistic view"
+                                          IsCheckedChanged="OnRealisticOnOpenChanged"
+                                          ToolTip.Tip="Opens every 3D design with the realistic view already on, as if you had pressed its toolbar button. The look itself — environment, exposure, edges, grid — is saved in each design. Leave this off on a machine whose graphics card makes the realistic view slow; the toolbar button still turns it on for one design."/>
                             </StackPanel>
-                        </Grid>
+                        </Border>
 
-                        <!-- Copy / Export section -->
-                        <TextBlock Text="Copy / Export" FontSize="11" FontWeight="SemiBold"
-                                   Opacity="0.55" Margin="0,0,0,6"/>
-                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,6,Auto">
-                            <TextBlock Grid.Row="0" Grid.Column="0"
-                                       Text="Copy color:" VerticalAlignment="Center" FontSize="12"/>
-                            <ComboBox  Grid.Row="0" Grid.Column="1"
-                                       Name="CopyColorCombo" FontSize="12" MinWidth="180"
-                                       HorizontalAlignment="Left"
-                                       SelectionChanged="OnCopyColorChanged"/>
-                            <CheckBox  Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
-                                       Name="TransparentBgCheck"
-                                       Content="Transparent background" FontSize="12"
-                                       IsCheckedChanged="OnTransparentBgChanged"/>
-                        </Grid>
+                        <!-- Copy / Export -->
+                        <Border Grid.Row="2" Grid.Column="0" Classes="group">
+                            <StackPanel>
+                                <TextBlock Classes="groupTitle" Text="Copy / Export"/>
+                                <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto" RowSpacing="6">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Copy color:" FontSize="12" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Row="0" Grid.Column="1" HorizontalAlignment="Left"
+                                          Name="CopyColorCombo" FontSize="12" MinWidth="180"
+                                          SelectionChanged="OnCopyColorChanged"/>
+                                    <CheckBox Grid.Row="1" Grid.ColumnSpan="2"                                           Name="TransparentBgCheck"
+                                          Content="Transparent background" FontSize="12"
+                                          IsCheckedChanged="OnTransparentBgChanged"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
 
-                        <!-- Design Rules, and Layout beside it — two columns for the same reason as
-                             On Launch / Theme above: stacked, this page grew a scrollbar. The left
-                             column shares its width with On Launch's (SharedSizeGroup, scope on the
-                             page's StackPanel) so Layout lines up under Theme / 3D Designs. -->
-                        <Grid Margin="0,20,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" SharedSizeGroup="GeneralLeft"/>
-                                <ColumnDefinition Width="40"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
+                        <!-- Messages -->
+                        <Border Grid.Row="2" Grid.Column="2" Classes="group">
+                            <StackPanel>
+                                <TextBlock Classes="groupTitle" Text="Messages"/>
+                                <Grid ColumnDefinitions="110,*">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Timestamps:" FontSize="12" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Row="0" Grid.Column="1" HorizontalAlignment="Left" Name="MsgTimestampCombo"
+                                          FontSize="12" MinWidth="180"
+                                          SelectionChanged="OnMsgTimestampChanged"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
 
-                            <!-- Design Rules — R16d's own "not mandatory, not silent". Also reachable from
-                                 the pre-export prompt itself, which is where it matters most; here so a
-                                 user whose designs are clean can still find and change it.
-
-                                 brief-lvs-12-gui.md R-lvs12-1e: the LVS offer is the same, DEFAULT OFF —
-                                 LVS needs a schematic, and exporting artwork alone is a legitimate thing to
-                                 do. Off with the box visible is not the same as absent. -->
-                            <StackPanel Grid.Column="0" Spacing="4">
-                                <TextBlock Text="Design Rules" FontSize="11" FontWeight="SemiBold"
-                                           Opacity="0.55" Margin="0,0,0,2"/>
+                        <!-- Design Rules — R16d's own "not mandatory, not silent"; also reachable from the
+                             pre-export prompt itself. brief-lvs-12-gui.md R-lvs12-1e: the LVS offer is DEFAULT OFF —
+                             LVS needs a schematic, and exporting artwork alone is a legitimate thing to do. -->
+                        <Border Grid.Row="4" Grid.Column="0" Classes="group">
+                            <StackPanel Spacing="4">
+                                <TextBlock Classes="groupTitle" Text="Design Rules"/>
                                 <CheckBox  Name="CheckDrcOnExportCheck"
-                                           Content="Run DRC before exporting" FontSize="12"
-                                           IsCheckedChanged="OnCheckDrcOnExportChanged"
-                                           ToolTip.Tip="Runs a design-rule check before writing GDSII, DXF or Gerber. A clean design exports with no interruption; violations are shown first and the export can still go ahead."/>
+                                          Content="Run DRC before exporting" FontSize="12"
+                                          IsCheckedChanged="OnCheckDrcOnExportChanged"
+                                          ToolTip.Tip="Runs a design-rule check before writing GDSII, DXF or Gerber. A clean design exports with no interruption; violations are shown first and the export can still go ahead."/>
                                 <CheckBox  Name="CheckLvsOnExportCheck"
-                                           Content="Run LVS before exporting" FontSize="12"
-                                           IsCheckedChanged="OnCheckLvsOnExportChanged"
-                                           ToolTip.Tip="Compares this cell's artwork against its schematic before writing GDSII, DXF or Gerber. Off by default, because an artwork-only export is a legitimate thing to do and LVS needs a drawing to compare against."/>
+                                          Content="Run LVS before exporting" FontSize="12"
+                                          IsCheckedChanged="OnCheckLvsOnExportChanged"
+                                          ToolTip.Tip="Compares this cell's artwork against its schematic before writing GDSII, DXF or Gerber. Off by default, because an artwork-only export is a legitimate thing to do and LVS needs a drawing to compare against."/>
                             </StackPanel>
+                        </Border>
 
-                            <!-- Layout.
-                                 Link orientation — designer report (round 15): the schematic and the
-                                 layout may be drawn independently.
-                                 Coalesce — R-rf3-7. ON by default: an imported board whose pours arrived
-                                 as tens of thousands of painted scanlines is neither editable copper nor
-                                 meshable, and the region is what every consumer wants. The switch is here
-                                 for the one case the default cannot serve — comparing an import against
-                                 its CAM source, or chasing an import bug. -->
-                            <StackPanel Grid.Column="2" Spacing="4">
-                                <TextBlock Text="Layout" FontSize="11" FontWeight="SemiBold"
-                                           Opacity="0.55" Margin="0,0,0,2"/>
+                        <!-- Layout. Link orientation — designer report (round 15): the schematic and the layout
+                             may be drawn independently. The ruler combo's index == RulerSizeMode ordinal, which is
+                             serialized as a number in preferences.json. -->
+                        <Border Grid.Row="4" Grid.Column="2" Classes="group">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="groupTitle" Text="Layout"/>
                                 <CheckBox  Name="LinkOrientationCheck"
-                                           Content="Link symbol and footprint orientation" FontSize="12"
-                                           IsCheckedChanged="OnLinkOrientationChanged"
-                                           ToolTip.Tip="On: turning a symbol turns its footprint at the next Update Layout from Schematic, and Create Schematic from Artwork draws each shunt part on the side of its line its copper is on. Off: the schematic and the layout are arranged independently."/>
-                                <CheckBox  Name="CoalesceRasterFillCheck"
-                                           Content="Coalesce imported painted fill into regions" FontSize="12"
-                                           IsCheckedChanged="OnCoalesceRasterFillChanged"
-                                           ToolTip.Tip="Some CAM tools paint a copper pour as thousands of abutting strokes instead of one filled region. Importing Gerber or a board file turns those back into the region they paint, which is the shape that draws quickly, meshes for EM and checks against design rules. Turn it off to get the primitives exactly as they were authored — the import reports every layer it coalesces either way."/>
-                                <!-- The size mode a new ruler is placed in. Index == RulerSizeMode ordinal,
-                                     which is serialized as a number in preferences.json. -->
-                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,0">
-                                    <TextBlock Text="Default Ruler Size Mode:" FontSize="12"
-                                               VerticalAlignment="Center"/>
+                                          Content="Link symbol and footprint orientation" FontSize="12"
+                                          IsCheckedChanged="OnLinkOrientationChanged"
+                                          ToolTip.Tip="On: turning a symbol turns its footprint at the next Update Layout from Schematic, and Create Schematic from Artwork draws each shunt part on the side of its line its copper is on. Off: the schematic and the layout are arranged independently."/>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="Default Ruler Size Mode:" FontSize="12" VerticalAlignment="Center"/>
                                     <ComboBox  Name="DefaultRulerSizeModeCombo" FontSize="12" MinWidth="100"
-                                               SelectionChanged="OnDefaultRulerSizeModeChanged"
-                                               ToolTip.Tip="The size mode a ruler starts in when it is placed. Fixed: its readout is the same size on screen at every zoom. Scaled: its readout is a height in the layout and grows and shrinks with the artwork. Rulers already placed keep their own mode."/>
+                                          SelectionChanged="OnDefaultRulerSizeModeChanged"
+                                          ToolTip.Tip="The size mode a ruler starts in when it is placed. Fixed: its readout is the same size on screen at every zoom. Scaled: its readout is a height in the layout and grows and shrinks with the artwork. Rulers already placed keep their own mode."/>
                                 </StackPanel>
                             </StackPanel>
-                        </Grid>
+                        </Border>
 
                         <!-- Units — brief-dfr22-1. The unit circuitRF chooses for something NEW; index 0 is
-                             Automatic (null in preferences.json, the behaviour before these existed), and the
-                             rest are PreferredUnits' choices in order, stored by NAME. -->
-                        <TextBlock Text="Units" FontSize="11" FontWeight="SemiBold"
-                                   Opacity="0.55" Margin="0,20,0,6"/>
-                        <Grid ColumnDefinitions="130,*" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Length:"
-                                       VerticalAlignment="Center" FontSize="12"/>
-                            <ComboBox  Grid.Row="0" Grid.Column="1" Name="PreferredLengthUnitCombo"
-                                       FontSize="12" MinWidth="180" HorizontalAlignment="Left"
-                                       SelectionChanged="OnPreferredLengthUnitChanged"/>
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Frequency:"
-                                       VerticalAlignment="Center" FontSize="12"/>
-                            <ComboBox  Grid.Row="1" Grid.Column="1" Name="PreferredFrequencyUnitCombo"
-                                       FontSize="12" MinWidth="180" HorizontalAlignment="Left"
-                                       SelectionChanged="OnPreferredFrequencyUnitChanged"/>
-                            <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" FontSize="11" Opacity="0.7"
-                                       TextWrapping="Wrap"
-                                       Text="Used for new workspaces, layouts, analyses and plots; any document can still choose its own."/>
-                        </Grid>
+                             Automatic (null in preferences.json), the rest are PreferredUnits' choices in order,
+                             stored by NAME. Length also sets the unit the Gerber arc tolerance is shown in. -->
+                        <Border Grid.Row="6" Grid.Column="0" Classes="group">
+                            <StackPanel>
+                                <TextBlock Classes="groupTitle" Text="Units"/>
+                                <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto" RowSpacing="6"
+                                      ToolTip.Tip="Used for new workspaces, layouts, analyses and plots; any document can still choose its own.">
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Length:" FontSize="12" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Row="0" Grid.Column="1" HorizontalAlignment="Left" Name="PreferredLengthUnitCombo"
+                                          FontSize="12" MinWidth="180"
+                                          SelectionChanged="OnPreferredLengthUnitChanged"/>
+                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Frequency:" FontSize="12" VerticalAlignment="Center"/>
+                                    <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Left" Name="PreferredFrequencyUnitCombo"
+                                          FontSize="12" MinWidth="180"
+                                          SelectionChanged="OnPreferredFrequencyUnitChanged"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
 
-                        <!-- Messages section -->
-                        <TextBlock Text="Messages" FontSize="11" FontWeight="SemiBold"
-                                   Opacity="0.55" Margin="0,20,0,6"/>
-                        <Grid ColumnDefinitions="130,*">
-                            <TextBlock Grid.Column="0" Text="Timestamps:"
-                                       VerticalAlignment="Center" FontSize="12"/>
-                            <ComboBox  Grid.Column="1" Name="MsgTimestampCombo"
-                                       FontSize="12" MinWidth="180" HorizontalAlignment="Left"
-                                       SelectionChanged="OnMsgTimestampChanged"/>
-                        </Grid>
-
-                    </StackPanel>
+                        <!-- Gerber Import (owner: the two Gerber-specific settings together). Coalesce — R-rf3-7, ON by default: an imported board whose pours arrived as
+                             tens of thousands of painted scanlines is neither editable copper nor meshable; the
+                             switch is for comparing an import against its CAM source or chasing an import bug.
+                             Arc tolerance — designer feedback round 25: shown in the Units box's Length unit,
+                             stored in microns; GerberImport.DefaultArcToleranceMicrons when unset. -->
+                        <Border Grid.Row="6" Grid.Column="2" Classes="group">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="groupTitle" Text="Gerber Import"/>
+                                <CheckBox  Name="CoalesceRasterFillCheck"
+                                          Content="Coalesce imported painted fill into regions" FontSize="12"
+                                          IsCheckedChanged="OnCoalesceRasterFillChanged"
+                                          ToolTip.Tip="Some CAM tools paint a copper pour as thousands of abutting strokes instead of one filled region. Importing Gerber or a board file turns those back into the region they paint, which is the shape that draws quickly, meshes for EM and checks against design rules. Turn it off to get the primitives exactly as they were authored — the import reports every layer it coalesces either way."/>
+                                <StackPanel Orientation="Horizontal" Spacing="8"
+                                            ToolTip.Tip="How far a straight segment may stray from a curve when a Gerber import turns an arc into straight segments: round pads and strokes, arcs in pours, holes and thermals. Smaller follows the curve more closely and makes the layout much larger and slower; 1 µm is far finer than any PCB process. Applies to the next import.">
+                                    <TextBlock Text="Gerber arc tolerance:" FontSize="12"
+                                               VerticalAlignment="Center"/>
+                                    <TextBox   Name="GerberArcToleranceBox" FontSize="12" Width="80"
+                                               LostFocus="OnGerberArcToleranceLostFocus"
+                                               KeyDown="OnGerberArcToleranceKeyDown"/>
+                                    <TextBlock Name="GerberArcToleranceUnit" FontSize="12"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
                 </ScrollViewer>
             </TabItem>
 

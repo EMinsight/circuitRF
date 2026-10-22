@@ -39,6 +39,26 @@ public sealed class DesignerRound17Tests : IDisposable
         Assert.Equal(pieces, CopperPieces.Build(copper, TwoLayer()).Count);
     }
 
+    /// <summary>Designer report, round 25: the close is skipped on a layer where no two rings come within twice the
+    /// gap (2 µm here) — the only rings it could ever join — and a ring's own narrow slit never counts as near.</summary>
+    [Theory]
+    [InlineData(1_900, true)]
+    [InlineData(2_100, false)]
+    public void OnlyRingsWithinTwiceTheGap_SendALayerThroughTheClose(long apartDbu, bool near)
+    {
+        Clipper2Lib.Paths64 rings =
+        [
+            [new(0, 0), new(500_000, 0), new(500_000, 200_000), new(0, 200_000)],
+            [new(500_000 + apartDbu, 0), new(900_000, 0), new(900_000, 200_000), new(500_000 + apartDbu, 200_000)],
+        ];
+        Assert.Equal(near, LayerRegions.AnyTwoRingsWithin(rings, 2 * LayerRegions.HairlineGapDbu + 2));
+
+        // A U whose arms are 0.5 µm apart: one ring, so nothing for the close to join.
+        Clipper2Lib.Paths64 u = [[new(0, 0), new(10_000, 0), new(10_000, 5_000), new(5_250, 5_000), new(5_250, 1_000),
+                                  new(4_750, 1_000), new(4_750, 5_000), new(0, 5_000)]];
+        Assert.False(LayerRegions.AnyTwoRingsWithin(u, 2 * LayerRegions.HairlineGapDbu + 2));
+    }
+
     [Fact]
     public void ALineAcrossAHairlineGap_ReachesThePortBeyondIt_AndTheJoinIsReported()
     {

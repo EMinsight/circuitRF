@@ -26,6 +26,22 @@ namespace CircuitRF.Design.Layout.Interchange;
 
 public static class GerberImport
 {
+    /// <summary>
+    /// How far a chord may stray from an arc where the import has to turn a curve into a polyline (round
+    /// aperture strokes, arcs in regions, holes, thermals). <b>1 µm</b>: far inside any PCB process tolerance,
+    /// and against 0.1 µm it more than halves a pour-heavy board — a production ten-layer set went from
+    /// 5.6 M to 2.4 M vertices and its layout file from 144 to 65 MB (designer report, round 25).
+    /// Settings ▸ General's "Gerber arc tolerance" and <c>convert --arc-tolerance</c> change it.
+    /// </summary>
+    public const double DefaultArcToleranceMicrons = 1.0;
+
+    /// <summary>The smallest arc tolerance accepted, in microns — one DBU at the default resolution.</summary>
+    public const double MinArcToleranceMicrons = 0.001;
+
+    /// <summary><paramref name="microns"/> in DBU, never less than one.</summary>
+    internal static long ArcToleranceDbu(double microns, int dbuPerMicron) =>
+        Math.Max(1, (long)Math.Round(microns * dbuPerMicron));
+
     /// <summary>What a drill-format prompt answered. A null <see cref="DrillFormatChoice"/> from the
     /// callback CANCELS the whole import (R-L4h-6); a non-null one with a null
     /// <see cref="Override"/> accepts the inference as it stands. Two states, said once, rather than a
@@ -185,14 +201,16 @@ public static class GerberImport
         OfferArchive? offerArchive = null,
         bool coalesceRasterFill = true,
         GerberTechnologyTarget? target = null,
-        ResolveGerberMapping? resolveMapping = null)
+        ResolveGerberMapping? resolveMapping = null,
+        double arcToleranceMicrons = DefaultArcToleranceMicrons)
     {
         var messages = new List<string>();
         try
         {
             return ImportUnobserved(filePaths, parentDir, importName, destTech, destDbuPerMicron,
                                     resolveLayerMapping, resolveDrillFormat, control, messages, offerArchive,
-                                    coalesceRasterFill, target ?? GerberTechnologyTarget.New, resolveMapping);
+                                    coalesceRasterFill, target ?? GerberTechnologyTarget.New, resolveMapping,
+                                    arcToleranceMicrons);
         }
         catch (OperationCanceledException)
         {
@@ -238,7 +256,8 @@ public static class GerberImport
         OfferArchive? offerArchive,
         bool coalesceRasterFill,
         GerberTechnologyTarget target,
-        ResolveGerberMapping? resolveMapping)
+        ResolveGerberMapping? resolveMapping,
+        double arcToleranceMicrons)
     {
         // ── 1. What is in the set at all (R-L4g-1) ──────────────────────────────────────────────
         // Indeterminate: the classifier reads every candidate file's CONTENT (R-L4g-1 decides by
@@ -315,7 +334,7 @@ public static class GerberImport
                     var inner = ImportUnobserved(
                         extracted.Files, parentDir, importName, destTech, destDbuPerMicron,
                         resolveLayerMapping, resolveDrillFormat, control, messages, offerArchive: null,
-                        coalesceRasterFill, target, resolveMapping);
+                        coalesceRasterFill, target, resolveMapping, arcToleranceMicrons);
                     if (inner.CellDir is not null) return inner;
                 }
         }
@@ -421,7 +440,7 @@ public static class GerberImport
                     foreach (string note in header.Notes) messages.Add($"{file.FileName}: {note}");
                 }
 
-                read = GerberReader.Read(text, destDbuPerMicron);
+                read = GerberReader.Read(text, destDbuPerMicron, arcToleranceMicrons);
             }
             catch (IOException ex)
             {
@@ -1070,7 +1089,8 @@ public static class GerberImport
         if (carved.Count > 0)
         {
             int before = remaining.Count;
-            remaining = CarveClaimedPads(remaining, carved, compositedShapes, destDbuPerMicron);
+            remaining = CarveClaimedPads(remaining, carved, compositedShapes, destDbuPerMicron,
+                                             ArcToleranceDbu(arcToleranceMicrons, destDbuPerMicron));
             messages.Add(
                 $"{carved.Count:N0} via pad(s) were cut back out of the pour they had been composited " +
                 "into, so the copper is not counted twice — each one is now the pad of a via object " +
@@ -2018,7 +2038,8 @@ public static class GerberImport
         IReadOnlyList<GerberImportedShape> artwork,
         IReadOnlyList<CircleShape> pads,
         HashSet<LayoutShape> compositedShapes,
-        int dbuPerMicron)
+        int dbuPerMicron,
+        long arcTolDbu)
     {
         var padsByLayer = pads.GroupBy(p => p.Layer).ToDictionary(g => g.Key, g => g.ToList());
         var result = new List<GerberImportedShape?>(artwork.Count);
@@ -2054,11 +2075,11 @@ public static class GerberImport
 
             var copper = new Paths64();
             foreach (var imported in group)
-                copper.AddRange(LayoutClipper.ToClipperPaths(imported.Shape, GerberPrimitives.CircleTolDbu));
+                copper.AddRange(LayoutClipper.ToClipperPaths(imported.Shape, arcTolDbu));
 
             var discs = new Paths64();
             foreach (var pad in padsByLayer[layer])
-                discs.AddRange(LayoutClipper.ToClipperPaths(pad, GerberPrimitives.CircleTolDbu));
+                discs.AddRange(LayoutClipper.ToClipperPaths(pad, arcTolDbu));
 
             var tree = new PolyTree64();
             Clipper.BooleanOp(ClipType.Difference,

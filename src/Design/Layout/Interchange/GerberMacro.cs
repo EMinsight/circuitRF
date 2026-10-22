@@ -27,7 +27,7 @@ internal sealed class GerberMacroDefinition(string name, IReadOnlyList<string> b
     /// instantiation arguments. <paramref name="skipped"/> receives the name of anything deliberately
     /// not drawn (an unimplemented primitive, a modifier that would not evaluate) so the reader can
     /// report it once with a count instead of dropping it silently.</summary>
-    internal Paths64 Instantiate(IReadOnlyList<double> args, GerberCoordinateFormat format, Action<string> skipped)
+    internal Paths64 Instantiate(IReadOnlyList<double> args, GerberCoordinateFormat format, Action<string> skipped, long tolDbu)
     {
         var vars = new Dictionary<int, double>();
         for (int i = 0; i < args.Count; i++) vars[i + 1] = args[i];
@@ -74,7 +74,7 @@ internal sealed class GerberMacroDefinition(string name, IReadOnlyList<string> b
             }
 
             bool exposeOn = true;
-            Paths64? geometry = BuildPrimitive(code, mods, format, ref exposeOn, skipped);
+            Paths64? geometry = BuildPrimitive(code, mods, format, ref exposeOn, skipped, tolDbu);
             if (geometry is null || geometry.Count == 0) continue;
 
             accumulated = exposeOn
@@ -94,7 +94,7 @@ internal sealed class GerberMacroDefinition(string name, IReadOnlyList<string> b
     }
 
     private static Paths64? BuildPrimitive(
-        int code, double[] m, GerberCoordinateFormat f, ref bool exposeOn, Action<string> skipped)
+        int code, double[] m, GerberCoordinateFormat f, ref bool exposeOn, Action<string> skipped, long tolDbu)
     {
         double D(int i) => i < m.Length ? m[i] * f.DbuPerFileUnit : 0.0;   // a length modifier, in DBU
         double V(int i) => i < m.Length ? m[i] : 0.0;                       // a bare number (count, angle, exposure)
@@ -104,7 +104,7 @@ internal sealed class GerberMacroDefinition(string name, IReadOnlyList<string> b
             case 1:   // circle: exposure, diameter, centreX, centreY [, rotation]
             {
                 exposeOn = V(0) != 0;
-                var paths = new Paths64 { GerberPrimitives.Circle(D(2), D(3), D(1) / 2.0) };
+                var paths = new Paths64 { GerberPrimitives.Circle(D(2), D(3), D(1) / 2.0, tolDbu) };
                 return GerberPrimitives.Rotate(paths, V(4));
             }
 
@@ -167,7 +167,7 @@ internal sealed class GerberMacroDefinition(string name, IReadOnlyList<string> b
             case 7:   // thermal: centreX, centreY, outerDia, innerDia, gap, rotation — no exposure field
             {
                 exposeOn = true;
-                var paths = GerberPrimitives.Thermal(D(0), D(1), D(2), D(3), D(4));
+                var paths = GerberPrimitives.Thermal(D(0), D(1), D(2), D(3), D(4), tolDbu);
                 return GerberPrimitives.Rotate(paths, V(5));
             }
 

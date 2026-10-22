@@ -367,6 +367,10 @@ internal static class CliDiagnostics
         "convert.args.drill-zeros", DiagnosticSeverity.Error,
         "Unknown zero suppression '{zeros}'. Known: leading, trailing.", ("zeros", zeros));
 
+    public static Diagnostic ConvertBadArcTolerance(string text) => Diagnostic.Create(
+        "convert.args.arc-tolerance", DiagnosticSeverity.Error,
+        "--arc-tolerance wants a length with its unit, from 1 nm to 100 um, e.g. 1um — got '{text}'.", ("text", text));
+
     public static Diagnostic ConvertBadDrillFormat(string text) => Diagnostic.Create(
         "convert.args.drill-format", DiagnosticSeverity.Error,
         "--drill-format wants integer:decimal digits, e.g. 2:4 — got '{text}'.", ("text", text));
@@ -407,7 +411,8 @@ internal static class CliDiagnostics
         "       gltf:  -o <file>.glb from a .c3d  --gltf-assembly  --gltf-field <plot>  --region <name>\n" +
         "       --engine native|gdstk  the GDSII reader or writer for a gdsii source or target (default native)\n" +
         "       oasis:  --oas-compression 0-9  --oas-validation none|crc32|checksum32  --oas-standard-properties\n" +
-        "       --no-coalesce  keep a painted pour's individual strokes");
+        "       --no-coalesce  keep a painted pour's individual strokes\n" +
+        "       --arc-tolerance <len>  a gerber source's arc flattening (default 1um)");
 
     // ── brief-oasis-gdstk.md §7d — --engine ──────────────────────────────────────────────────────────
 

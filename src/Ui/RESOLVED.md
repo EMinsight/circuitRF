@@ -40246,3 +40246,29 @@ an empty value — `CommitExpression` otherwise refuses an empty expression.
 - **Make: CSV hides the Touchstone's controls in both modes** — Ports, the matrix (`HasMatrix` now false with CSV),
   the output grid and format, the refusal and its highlights, and the Fit tooltip's Touchstone wording
   (`PlotTraceRowViewModel.SetCsv`, pushed to every row when Make changes).
+
+## Designer feedback round 25 — placing parts on a ten-layer Gerber board took minutes (2026-10-22)
+
+**Cause.** Update Layout from Schematic switches the ratsnest on, and the ratsnest re-read its pins after every edit by
+flattening the design and partitioning ALL of its copper (`CopperPieces.Build`) — synchronously, inside
+`RebuildOverlay`, on the UI thread. On a production ten-layer board (36,700 shapes, 5.6 M vertices) one partition
+was ~20 s in Release, so each placement and each move froze the window for that long. Update Layout itself was 98 ms.
+
+**Fix.** The read leaves the UI thread (`ReadRatsnestOffThread`, inline by default so a test reads its answer
+straight back; the canvas installs `Task.Run` when it binds its view model — railRF's `ReadCopperOffThread` seam). The
+flatten and a snapshot of the placements are taken on the UI thread; the partition and the pin walk run on the worker.
+One read at a time: an edit made while a read is out marks it stale, its answer is dropped, and the redraw starts the
+edit's own read — so a burst of edits costs at most two reads, never a queue. The lines already drawn stay up meanwhile.
+The partition itself also got cheaper — see `src/Design/RESOLVED.md` round 25 (12.5 s → 4.9 s of the hairline close).
+
+Gate: `LayoutRoundTripRound22Tests.TheRatsnestRead_LeavesTheUiThread_AndAnAnswerForAnEditedDesignIsNotDrawn`.
+
+**Create Schematic from Artwork now passes the selection's LAYERS** (`LayoutEditorViewModel.SelectionLayers`: each
+selected shape's layer, a via's landing layer, and the copper layers of each selected part as placed). See
+`src/Design/RESOLVED.md` round 25 for why.
+
+**Settings ▸ General regrouped (owner request, same day).** The tab is two columns of `Border.group` boxes — the
+Solvers tab's style — On Launch / Appearance, Copy / Export / Messages, Design Rules / Layout, Units / Gerber Import;
+the last holds Coalesce and the new Gerber arc tolerance (shown in the Units box's Length unit, re-shown when that
+changes). Rendered headlessly in both variants at the default 720 × 640: the General page's extent equals its
+viewport (549 px), so no scroll bar, with ~100 px spare. Deliberately NOT pinned by any test (owner).

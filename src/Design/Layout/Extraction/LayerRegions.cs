@@ -152,6 +152,13 @@ public static class LayerRegions
     {
         if (region.Count < 2) return (region, 0);
 
+        // The close is two offsets of the whole layer — 12 of the 15 s a production ten-layer board's
+        // regions took (designer report, round 25), on layers where it joined nothing. A ring's offset
+        // stays within the miter limit (2) times half the gap of it, so two rings can only be joined if
+        // they come within twice the gap of each other; where none do, the close would return the
+        // region unchanged, and so does this.
+        if (!AnyTwoRingsWithin(region, 2 * gapDbu + 2)) return (region, 0);
+
         double half = gapDbu / 2.0;
         var grown = Clipper.InflatePaths(region, half, JoinType.Miter, EndType.Polygon, 2.0);
         var closed = Clipper.InflatePaths(grown, -half, JoinType.Miter, EndType.Polygon, 2.0);
@@ -164,6 +171,80 @@ public static class LayerRegions
         var both = new Paths64(region);
         both.AddRange(closed);
         return (DrcRegions.Union(both), joins);
+    }
+
+    /// <summary>Whether an edge of one ring comes within <paramref name="reach"/> of an edge of
+    /// ANOTHER ring — a hole and its own outer ring count as two, which only ever answers yes more
+    /// often. Edges are bucketed on a uniform grid (CSR, <see cref="PieceEdgeGrid"/>'s shape), so a
+    /// layer of half a million vertices is read in tens of milliseconds rather than offset twice.</summary>
+    internal static bool AnyTwoRingsWithin(Paths64 rings, long reach)
+    {
+        int edges = 0;
+        long minX = long.MaxValue, minY = long.MaxValue, maxX = long.MinValue, maxY = long.MinValue;
+        foreach (var ring in rings)
+        {
+            edges += ring.Count;
+            foreach (var p in ring)
+            {
+                if (p.X < minX) minX = p.X; if (p.X > maxX) maxX = p.X;
+                if (p.Y < minY) minY = p.Y; if (p.Y > maxY) maxY = p.Y;
+            }
+        }
+        if (edges == 0) return false;
+
+        var a = new Point64[edges];
+        var b = new Point64[edges];
+        var ringOf = new int[edges];
+        int e = 0;
+        for (int r = 0; r < rings.Count; r++)
+        {
+            var ring = rings[r];
+            for (int i = 0; i < ring.Count; i++, e++)
+            {
+                a[e] = ring[i]; b[e] = ring[i + 1 == ring.Count ? 0 : i + 1]; ringOf[e] = r;
+            }
+        }
+
+        const int MaxCellsPerAxis = 1024;
+        long span = Math.Max(maxX - minX, maxY - minY);
+        long cell = Math.Max(Math.Max(4 * reach, 1), span / MaxCellsPerAxis + 1);
+        int nx = (int)((maxX - minX) / cell) + 1, ny = (int)((maxY - minY) / cell) + 1;
+        int Cx(long x) => (int)Math.Clamp((x - minX) / cell, 0, nx - 1);
+        int Cy(long y) => (int)Math.Clamp((y - minY) / cell, 0, ny - 1);
+
+        // Each edge in every cell its own box covers; a query then looks at its box grown by the reach.
+        var start = new int[nx * ny + 1];
+        for (int k = 0; k < edges; k++)
+            for (int cx = Cx(Math.Min(a[k].X, b[k].X)); cx <= Cx(Math.Max(a[k].X, b[k].X)); cx++)
+            for (int cy = Cy(Math.Min(a[k].Y, b[k].Y)); cy <= Cy(Math.Max(a[k].Y, b[k].Y)); cy++)
+                start[cy * nx + cx + 1]++;
+        for (int c = 0; c < nx * ny; c++) start[c + 1] += start[c];
+        var fill = (int[])start.Clone();
+        var cellEdges = new int[start[nx * ny]];
+        for (int k = 0; k < edges; k++)
+            for (int cx = Cx(Math.Min(a[k].X, b[k].X)); cx <= Cx(Math.Max(a[k].X, b[k].X)); cx++)
+            for (int cy = Cy(Math.Min(a[k].Y, b[k].Y)); cy <= Cy(Math.Max(a[k].Y, b[k].Y)); cy++)
+                cellEdges[fill[cy * nx + cx]++] = k;
+
+        for (int k = 0; k < edges; k++)
+        {
+            long x0 = Math.Min(a[k].X, b[k].X) - reach, x1 = Math.Max(a[k].X, b[k].X) + reach;
+            long y0 = Math.Min(a[k].Y, b[k].Y) - reach, y1 = Math.Max(a[k].Y, b[k].Y) + reach;
+            for (int cx = Cx(x0); cx <= Cx(x1); cx++)
+            for (int cy = Cy(y0); cy <= Cy(y1); cy++)
+            {
+                int c = cy * nx + cx;
+                for (int j = start[c]; j < start[c + 1]; j++)
+                {
+                    int o = cellEdges[j];
+                    if (ringOf[o] <= ringOf[k]) continue;   // each pair of rings once, never a ring with itself
+                    if (Math.Max(a[o].X, b[o].X) < x0 || Math.Min(a[o].X, b[o].X) > x1
+                     || Math.Max(a[o].Y, b[o].Y) < y0 || Math.Min(a[o].Y, b[o].Y) > y1) continue;
+                    if (DrcRegions.SegmentDistance(a[k], b[k], a[o], b[o]) < reach) return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static int OuterRings(Paths64 paths)

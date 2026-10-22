@@ -117,6 +117,22 @@ public class GerberReaderTests
         Assert.Empty(result.UnknownCommandCounts);
     }
 
+    // ── Designer feedback round 25: the arc tolerance ─────────────────────────
+
+    /// <summary>An obround's caps become chords at the arc tolerance — 1 µm unless the import says otherwise — and a
+    /// tighter tolerance is more chords.</summary>
+    [Fact]
+    public void AnObroundsCaps_FollowTheArcTolerance_OneMicronByDefault()
+    {
+        const string body = MmHeader + "%ADD12O,2.000X1.000*%\nD12*\nX0Y0D03*\nM02*\n";
+        int Vertices(GerberReadResult r) => Assert.IsType<PolygonShape>(Assert.Single(r.Shapes).Shape).Xy.Length / 2;
+
+        int byDefault = Vertices(GerberReader.Read(body));
+        Assert.Equal(1.0, GerberImport.DefaultArcToleranceMicrons);
+        Assert.Equal(byDefault, Vertices(GerberReader.Read(body, arcToleranceMicrons: 1.0)));
+        Assert.True(Vertices(GerberReader.Read(body, arcToleranceMicrons: 0.1)) > 2 * byDefault);
+    }
+
     // ── Gate 5: the four standard aperture shapes, and a hole (R-L4e-7) ──────
 
     [Fact]

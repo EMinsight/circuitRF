@@ -222,7 +222,7 @@ public sealed partial class GerberReader
         return seen.Count;
     }
 
-    private static Path64 FlattenClosed(long[] xy, List<LayoutEdge>? edges)
+    private Path64 FlattenClosed(long[] xy, List<LayoutEdge>? edges)
     {
         if (edges is null)
         {
@@ -233,7 +233,7 @@ public sealed partial class GerberReader
         var wrapped = new long[xy.Length + 2];
         Array.Copy(xy, wrapped, xy.Length);
         wrapped[^2] = xy[0]; wrapped[^1] = xy[1];
-        var path = FlattenCentreline(wrapped, edges);
+        var path = FlattenCentreline(wrapped, edges, _tolDbu);
         if (path.Count > 1 && path[0] == path[^1]) path.RemoveAt(path.Count - 1);
         return path;
     }
@@ -336,7 +336,7 @@ public sealed partial class GerberReader
             var run = new Paths64();
             while (i < _objects.Count && _objects[i].Clear == clear)
             {
-                run.AddRange(LayoutClipper.ToClipperPaths(_objects[i].Shape, TolDbu));
+                run.AddRange(LayoutClipper.ToClipperPaths(_objects[i].Shape, _tolDbu));
                 i++;
             }
             run = Clipper.Union(run, LayoutClipper.Rule);

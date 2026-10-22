@@ -192,6 +192,8 @@ public partial class SettingsView : Window
 
             CoalesceRasterFillCheck.IsChecked = prefs.CoalesceRasterFillOnImport ?? true;
 
+            ShowGerberArcTolerance(prefs);
+
             // Index == RulerSizeMode ordinal, serialized as a number — keep these in enum order.
             DefaultRulerSizeModeCombo.ItemsSource   = new[] { "Fixed", "Scaled" };
             DefaultRulerSizeModeCombo.SelectedIndex = (int)(prefs.DefaultRulerSizeMode ?? RulerSizeMode.Fixed);
@@ -332,6 +334,49 @@ public partial class SettingsView : Window
         int i = PreferredLengthUnitCombo.SelectedIndex;
         string? name = i == 0 ? null : PreferredUnits.LengthChoices[i - 1].ToString();
         AppPreferencesIo.Update(p => p.PreferredLengthUnit = name);
+        ShowGerberArcTolerance(AppPreferencesIo.Load());   // the same tolerance, in the new unit
+    }
+
+    // ── Gerber arc tolerance ─────────────────────────────────────────────────────────────────
+    //
+    // Stored in microns, shown in the Length unit chosen under Units (micrometres when that is Automatic, since
+    // that is the unit a tolerance this small is thought of in). Read in nanometre steps.
+
+    private const int ArcToleranceDbuPerMicron = 1000;
+    private const double MaxArcToleranceMicrons = 100;
+
+    private static LayoutUnit ArcToleranceUnit(AppPreferences prefs) =>
+        PreferredUnits.ParseLength(prefs.PreferredLengthUnit) ?? LayoutUnit.Um;
+
+    private void ShowGerberArcTolerance(AppPreferences prefs)
+    {
+        var unit = ArcToleranceUnit(prefs);
+        double um = prefs.GerberArcToleranceMicrons ?? CircuitRF.Design.Layout.Interchange.GerberImport.DefaultArcToleranceMicrons;
+        long nm = (long)Math.Round(um * ArcToleranceDbuPerMicron);
+        GerberArcToleranceBox.Text = LayoutUnits.Format(nm, unit, ArcToleranceDbuPerMicron, maxDecimals: 6);
+        GerberArcToleranceUnit.Text = LayoutUnits.Suffix(unit);
+    }
+
+    private void CommitGerberArcTolerance()
+    {
+        var prefs = AppPreferencesIo.Load();
+        if (LayoutUnits.TryParse(GerberArcToleranceBox.Text ?? "", ArcToleranceUnit(prefs), ArcToleranceDbuPerMicron, out long nm)
+            && nm > 0 && nm <= MaxArcToleranceMicrons * ArcToleranceDbuPerMicron)
+        {
+            double um = nm / (double)ArcToleranceDbuPerMicron;
+            AppPreferencesIo.Update(p => p.GerberArcToleranceMicrons = um);
+            prefs.GerberArcToleranceMicrons = um;
+        }
+        ShowGerberArcTolerance(prefs);   // a value that would not read goes back to the one in force
+    }
+
+    private void OnGerberArcToleranceLostFocus(object? sender, RoutedEventArgs e) => CommitGerberArcTolerance();
+
+    private void OnGerberArcToleranceKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        CommitGerberArcTolerance();
+        e.Handled = true;
     }
 
     private void OnPreferredFrequencyUnitChanged(object? sender, SelectionChangedEventArgs e)
