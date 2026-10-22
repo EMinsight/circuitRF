@@ -21876,3 +21876,93 @@ no port, and nothing in the driver does, so the row now says so.
 
 Gate: `tests/Ui.Tests/Em3d/EmergeLoweringTests.cs` (30, of which the driver test needs an EMerge; the low-σ row now
 uses a conductor solid, because the microstrip fixture has no sheet).
+
+## EMI-5: running EMerge — the process, progress, cancellation, memory, and results (2026-10-21)
+
+**EMerge is in `Em3dSolvers.All`** (after Palace and openEMS) and `Integrating` is gone: the picker's *FEM 3D (EMerge)*
+row, `em --solver emerge`, the MCP `run` tool's `solver=emerge` and `Solver3D: Emerge` all come from that one line.
+`settings.md` no longer says a setup cannot choose it, and `em-setup.md` gains a short *Running EMerge* section (EMI-8
+writes the full docs).
+
+**The process (R-emi5-1).** `<env python> -I circuitrf_emerge.py problem.json solve` in the run directory, by argument
+list, through `PalaceRun.RunProcess` (the helper Palace and openEMS use: both streams to `emerge.log`, the tree's memory
+sampled once a second, the tree killed on cancellation). The brief's `driver.py` is EMI-4's `circuitrf_emerge.py`, which
+gained a `solve` mode beside `mesh`. The environment drops `PYTHON*` and `VIRTUAL_ENV`, adds EMI-3's thread variables, and
+sets `MPLBACKEND=Agg`, `PYVISTA_OFF_SCREEN=true` and `EMERGE_STD_LOGLEVEL=INFO`. Nothing reaches a network: the driver never
+calls EMerge's update check. `EmergeAccelerator.BeforeRun` is called from the leg's `Configure`, before the problem is built.
+
+**The log (R-emi5-2), EMerge 3.0.0b2's own lines**, all on stdout in the form `<elapsed>  <LEVEL>  : <message>`:
+`Calling GMSH mesher`; `GMSH Meshing complete! (◮<tets>, ▲<triangles>)`; `Adaptive sweep: solving at ['9.66 GHz']`;
+`Starting serial solve of <n> jobs.`; `[p00/t00-j001] Calling <solver> Solver.`; `Adaptive sweep: <n> samples, estimated
+error 1.35e+00 (tol 1.0e-03)`; `Adaptive sweep converged with <n> samples.`, or the warning `Adaptive sweep stopped at
+max_samples=<n> with estimated error <e>.`; `Post Processing simulation frequency = 9.955 GHz`; `Pass <k>: …` for each
+adaptive-mesh pass; and, in an eigenmode run, `Pre-assembling matrices of 1 frequency points.`, then nothing at all until
+the eigensolve returns. **Gmsh's own `Info :` lines are not printed** (EMerge silences Gmsh's terminal), so meshing is read
+from EMerge's two lines, not through `GmshLogProgress`. The adaptive sweep has no total; its stage shows the error against
+the tolerance. A plain sweep states a job count, and that one is shown as a fraction. A number in a message can end its
+sentence (`2.10e-03.`), so the reader's number pattern stops before the full stop.
+
+**Three things the driver had to learn.** Creating `em.Simulation` reconfigures EMerge's logger (`logger.configure`), which
+drops any handler added before it, so the driver's own sink (the solver it called, the last error, converged or not) is
+added after the build. The mesh's exact counts are printed by the driver as one JSON line (`{"stage": "meshed", …}`) before
+any solve; that line is what the memory check reads. And **`np.save` of S indexed out of EMerge's matrix wrote a
+Fortran-order array**: every array is saved through `np.ascontiguousarray`, and circuitRF refuses a Fortran-order one.
+
+**Cancellation kills the tree** (`Process.Kill(entireProcessTree: true)` in `RunProcess`). The test's stand-in interpreter
+starts a grandchild and waits on it, and cancelling the run leaves neither.
+
+**Memory (R-emi5-3).** The brief's "~0.2 MB per unknown" is EMerge's guide misread: its `_check_ram` is per TETRAHEDRON
+(EMI-4). Per unknown, EMI-3's measurements give, with EMI-4's 7.24 unknowns per tet: the fast macOS solver 134 MB +
+24.1 kB/unknown, the baseline 440 MB + 34.1 kB/unknown (`EmergeMemory.PeakBytes`). A third point, the Cavity at
+109,566 unknowns, peaked at 2.59 GB against 2.77 GB from the fit. An eigenmode run and an unreported tier take the
+baseline figure. Unknowns are EMerge's own count, 2 × (edges + triangles) at order 2 and the edges at order 1, exact on
+the Cavity. **There is still no estimate before meshing** (EMI-4 measured why). The check runs on the driver's mesh line,
+through the run's `MemoryGate` as Palace's after-meshing check does: a refusal throws out of the line watcher, which kills
+the tree, and the leg returns Refused with the sentence. Its remedy is first-order elements, priced on the same mesh.
+`Em3dMemoryVerdict.Evaluate` takes the solver's name now; it said "Palace" in every sentence.
+
+**Results (R-emi5-4).** The driver writes `freq.npy`, `S.npy` ([f, i, j], ports in ascending number), `Z0.npy`, or
+`modes.npy` and `Q.npy`, and `run.json`. With the adaptive sweep, S is EMerge's AAA model (`model_Smat`) evaluated on the
+setup's own grid. circuitRF checks the frequencies against the requested grid and refers S to each port's Z0 (a whole-matrix
+`SToS` when EMerge states another reference; for a lumped port it never has). It then writes the `S` DataSet with the port
+map, the `emerge` group's scalars (`Tetrahedra`, `DegreesOfFreedom`, `SweepSamples`, `SweepError`), the `.npy` through
+`ResultsWriter`, and the Touchstone through `TouchstoneExporter` with `EmSnpProvenance.BuildHeader3D` (geometry hash over
+`problem.json`). The old arrays are deleted before a run, so a run that stops early is never read as this one. A sweep
+stopped at `MaxSamples` is the leg's `NotConverged` and a warning.
+
+**Eigenmode (R-emi5-4b), measured** on the Cavity at Standard (15,124 tets), `Count` 3, `TargetGHz` 9: 174 s on one core,
+2.65 GB, three solutions: 8.062 + 2.61i GHz (Q 1.55), **9.95686 GHz (Q 633)** and 11.47 + 2.79i GHz (Q 2.06). No near-0 Hz
+solution this time; the overview's probe saw three. EMerge's shift-invert searches either side of the frequency it is
+given, so `EmergeResults.FilterModes` drops every solution below the start less 5 % and the run says how many it dropped.
+Through the CLI on the example's own `Modes` setup (Standard, 21,094 tets, `TargetGHz` 8): **9.95686 GHz, Q 729**, and 7.687
+GHz at Q 1.5 (the line between the ports, as in Palace's table); one solution below 7.6 GHz dropped; 4 min 56 s, 2.8 GB.
+A dropped solution still used one of the `Count` EMerge was asked for, so fewer modes can come back than were asked for, and
+the run warns, as Palace's does. Q_ext, Q_unloaded and Participation are absent, not zero, and a Note says so.
+
+**Not bit-reproducible on several threads.** Two runs of one input with every core differed by up to 2e-12 in S. Printed
+to ten digits, that moved the last digit of 137 of 801 rows. On one thread two runs were identical. So the CLI-vs-Simulate
+gate compares every header line byte for byte (less the write stamp and the cost line), the frequency column exactly and S
+to 1e-9. Both paths run on every core: `em` passes no core cap.
+
+**Not measured:** `EMerge.AdaptiveMesh` (the Accurate preset's 3) calls `adaptive_mesh_refinement(max_steps = passes + 1)`
+before a driven sweep. It is wired but has not been run. An eigenmode run ignores it and says so in a warning.
+
+**Fields.** A field plot asked an EMerge run for fields would have thrown (`SetSavedFieldsGHz`). The descriptor gains a
+`Fields` capability (Palace and openEMS), and the plot's Solver picker, *Other frequency…* and `FieldPlotResolver`'s run
+directories offer only solvers that have it. `Em3dSolverDescriptor.FieldsRefusal` holds the sentence. EMI-7 sets it for
+EMerge.
+
+**The 3D editor's solve status** names the program: `SetupSolveStatus.Program` (null for a thermal leg) gives *FEM (EMerge)*
+in the tooltip and *EMerge result for 'X' is current* in the re-run question. The glyphs stay one per method.
+
+**Firewall.** `user-facing-text-allowlist.txt` lists the plain-array reader's five format checks and EMI-4's three
+internal invariants, which had been failing that gate since EMI-4. **`SolverBoundaryTests.NoScriptingInterfaceIsInvokedOrShippedFromSrc`
+still fails, and not because of this brief**: its rule (em-3d.md §5.2) forbids any `.py` under `src/`, so EMI-4's driver
+breaks it. It also flags `SolverDiscovery.cs`, which starts an interpreter (EMI-2's EMerge probe) in a file that names
+openEMS. The rule was written against openEMS's and CSXCAD's scripting interfaces; EMerge's only interface is Python
+(overview D1). Narrowing it is a decision about the GPL boundary, so it is left for the owner.
+
+Gate: `tests/Ui.Tests/Em3d/EmergeRunTests.cs`. It covers the log reader, the result reader against
+`testdata/em3d/emerge-run/driven/` (three rows of the Cavity's run and its `cavity.s2p` golden;
+`CRF_WRITE_EMERGE_GOLDENS=1` rewrites it), the eigenmode filter, the tree kill (not on Windows), the memory estimate, and
+the Cavity driven on a real EMerge (Skipped without one).

@@ -12,7 +12,7 @@ namespace CircuitRF.Design.Em3d;
 public static class Em3dSolvers
 {
     /// <summary>Every 3D solver, in order.</summary>
-    public static IReadOnlyList<Em3dSolverDescriptor> All { get; } = [PalaceSolver.Descriptor, OpenEmsSolver.Descriptor];
+    public static IReadOnlyList<Em3dSolverDescriptor> All { get; } = [PalaceSolver.Descriptor, OpenEmsSolver.Descriptor, EmergeSolver.Descriptor];
 
     /// <summary>The solver a new 3D setup starts on (overview D4: the FEM default).</summary>
     public static Em3dSolverChoice Default => PalaceSolver.Id;
@@ -25,7 +25,7 @@ public static class Em3dSolvers
 
     /// <summary>The descriptor of <paramref name="id"/>, offered or still integrating.</summary>
     public static Em3dSolverDescriptor Get(Em3dSolverId id)
-        => All.Concat(Integrating).FirstOrDefault(d => d.Id == id)
+        => All.FirstOrDefault(d => d.Id == id)
            ?? throw new ArgumentOutOfRangeException(nameof(id), id, "No such 3D solver.");
 
     /// <summary>The descriptors of the solvers <paramref name="choice"/> runs, in the order it runs them.</summary>
@@ -55,15 +55,7 @@ public static class Em3dSolvers
 
     /// <summary>The programs every solver needs, each once, in order — what <c>solver list</c> lists and Settings ▸
     /// Solvers shows.</summary>
-    public static IReadOnlyList<SolverTool> Tools => [.. All.Concat(Integrating).SelectMany(d => d.Tools).Distinct()];
-
-    /// <summary>
-    /// brief-emi-2 / brief-emi-4 — a solver whose run is not in yet: EMerge, until its descriptor joins <see cref="All"/>
-    /// with its run (EMI-5), which then deletes this. Its programs are installed, found and listed like every other, and a
-    /// <c>Solver3D</c> may spell it so <c>check</c>, <c>explain</c> and the lowering can be asked of it; no picker, no
-    /// <c>em --solver</c> word and no list of the solvers offers it, and its run refuses after writing its input.
-    /// </summary>
-    private static IReadOnlyList<Em3dSolverDescriptor> Integrating { get; } = [EmergeSolver.Descriptor];
+    public static IReadOnlyList<SolverTool> Tools => [.. All.SelectMany(d => d.Tools).Distinct()];
 
     /// <summary>The solver whose <see cref="Em3dSolverDescriptor.ResultToken"/> is <paramref name="token"/>, any case.</summary>
     public static Em3dSolverDescriptor? ByToken(string token)
@@ -100,7 +92,7 @@ public static class Em3dSolvers
     public static Em3dSolverChoice? FromSpelling(string spelling)
         => string.Equals(spelling, NoneSpelling, StringComparison.OrdinalIgnoreCase) ? Em3dSolverChoice.None
          : string.Equals(spelling, BothSpelling, StringComparison.OrdinalIgnoreCase) ? Both
-         : All.Concat(Integrating).FirstOrDefault(d => string.Equals(d.Spelling, spelling, StringComparison.OrdinalIgnoreCase)) is { } d
+         : All.FirstOrDefault(d => string.Equals(d.Spelling, spelling, StringComparison.OrdinalIgnoreCase)) is { } d
              ? d.Id
          : null;
 

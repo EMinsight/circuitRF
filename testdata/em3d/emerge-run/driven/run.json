@@ -1,0 +1,1 @@
+{"adaptive": true, "conductorFaces": 10, "converged": true, "driver": 1, "edges": 21817, "emerge": "3.0.0b2", "error": 0.000285, "faces": {"xmax": 0, "xmin": 0, "ymax": 0, "ymin": 0, "zmax": 0, "zmin": 0}, "meshSeconds": 0.426, "samples": 11, "solveSeconds": 4.658, "sparseSolver": "SuperLU", "tets": 15124, "triangles": 32966, "unknowns": 109566, "warnings": []}

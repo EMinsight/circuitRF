@@ -15,9 +15,9 @@ namespace CircuitRF.Ui.Tests.Em3d;
 public sealed class SolverSeamTests
 {
     [Fact]
-    public void TheRegistry_ListsPalaceThenOpenEms_EachWithItsOwnResultToken()
+    public void TheRegistry_ListsPalaceThenOpenEmsThenEMerge_EachWithItsOwnResultToken()
     {
-        Assert.Equal([PalaceSolver.Id, OpenEmsSolver.Id], Em3dSolvers.All.Select(d => d.Id));
+        Assert.Equal([PalaceSolver.Id, OpenEmsSolver.Id, EmergeSolver.Id], Em3dSolvers.All.Select(d => d.Id));
         Assert.Equal(Em3dSolvers.All.Count, Em3dSolvers.All.Select(d => d.ResultToken).Distinct(StringComparer.OrdinalIgnoreCase).Count());
     }
 
@@ -48,7 +48,7 @@ public sealed class SolverSeamTests
                                          .Replace("\"Solver3D\": \"Palace\"", "\"Solver3D\": \"Retired\"", StringComparison.Ordinal);
         var e = Assert.ThrowsAny<Exception>(() => EmSetupPersistence.Deserialize(text));
         Assert.Contains("Solver3D 'Retired'", e.Message, StringComparison.Ordinal);
-        Assert.Contains("Palace, OpenEms or Both", e.Message, StringComparison.Ordinal);
+        Assert.Contains("Palace, OpenEms, Emerge or Both", e.Message, StringComparison.Ordinal);
     }
 
     /// <summary>R-emi1-2a — a solver is named by its id only in the registry, its descriptor's folder and the format.</summary>

@@ -20,6 +20,7 @@ public static class PalaceSolver
         Method = Em3dSolverFit.Fem,
         Capabilities = new()
         {
+            Fields = true,
             Problems = new HashSet<Em3dProblemType>
             {
                 Em3dProblemType.Driven, Em3dProblemType.Electrostatic, Em3dProblemType.Magnetostatic, Em3dProblemType.Eigenmode,

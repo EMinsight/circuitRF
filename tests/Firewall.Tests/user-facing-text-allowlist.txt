@@ -1426,3 +1426,13 @@ src/Design/Modeling/VerilogA/VaTraps.cs|'{model}' already has a Verilog-A writer
 src/Design/Em3d/Em3dRunService.cs|A comparison of more than two solvers is not built yet.
 src/Design/Layout/Em/Em3dSolverChoice.cs|A comparison names at least two different solvers.
 src/Design/Layout/Em/Em3dSolverChoice.cs|A comparison's reference is one of its solvers.
+# brief-emi-4/5 — EMerge's input and the plain arrays its driver writes back: internal invariants of the lowering, and the
+# format checks of a file only circuitRF's own driver writes (a run reports them as "EMerge's results could not be read").
+src/Design/Em3d/Solvers/EMerge/EmergeResults.cs|'{Path.GetFileName(path)}' holds {b.Length - start} bytes of data where its shape needs {count * size}.
+src/Design/Em3d/Solvers/EMerge/EmergeResults.cs|'{Path.GetFileName(path)}' holds {descr}, not 128-bit complex values.
+src/Design/Em3d/Solvers/EMerge/EmergeResults.cs|'{Path.GetFileName(path)}' holds {descr}, not 64-bit reals.
+src/Design/Em3d/Solvers/EMerge/EmergeResults.cs|'{Path.GetFileName(path)}' is in Fortran order.
+src/Design/Em3d/Solvers/EMerge/EmergeResults.cs|'{Path.GetFileName(path)}' is not a NumPy array.
+src/Design/Em3d/Solvers/EMerge/EmergeScriptWriter.Emit.cs|EMerge's input has no spelling for a non-finite number.
+src/Design/Em3d/Solvers/EMerge/EmergeScriptWriter.cs|A refused lowering writes nothing.
+src/Design/Em3d/Solvers/EMerge/EmergeScriptWriter.cs|EMerge's driver is missing from this assembly's resources.

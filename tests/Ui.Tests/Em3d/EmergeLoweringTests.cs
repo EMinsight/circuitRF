@@ -269,14 +269,14 @@ public sealed class EmergeLoweringTests(ITestOutputHelper output) : IDisposable
         Assert.DoesNotContain("IsEmpty", EmSetupPersistence.ToEmbedded(read).GetRawText(), StringComparison.Ordinal);
     }
 
-    /// <summary>Until EMerge's run is in, a setup may spell it but nothing offers it: not the registry's list, not
-    /// <c>em --solver</c>.</summary>
+    /// <summary>brief-emi-5 — with its run in, EMerge is offered wherever a solver is: the registry's list, <c>em --solver</c>,
+    /// a <c>Solver3D</c> spelling, and the programs Settings lists.</summary>
     [Fact]
-    public void EMerge_IsReadableButNotYetOffered()
+    public void EMerge_IsOffered_ByTheRegistry_TheCliAndTheFormat()
     {
         Assert.Equal(EmergeSolver.Id, Em3dSolvers.FromSpelling("emerge"));
-        Assert.DoesNotContain(Em3dSolvers.All, d => d.Id == EmergeSolver.Id);
-        Assert.Null(Em3dSolvers.FromCliWord("emerge"));
+        Assert.Contains(Em3dSolvers.All, d => d.Id == EmergeSolver.Id);
+        Assert.Equal(EmergeSolver.Id, Em3dSolvers.FromCliWord("emerge"));
         Assert.Contains(SolverTool.Emerge, Em3dSolvers.Tools);
     }
 

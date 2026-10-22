@@ -476,9 +476,8 @@ computes and the S-parameters it exports — is in {{anchor: wbond.html|the wBon
 
 {{ui: settings-3d-em}}
 
-A 3D EM setup runs one of two separately installed solvers — **Palace** (FEM) or **openEMS** (FDTD) —
-and Palace's problems are meshed by **Gmsh**. The tab also has a row for **EMerge** (FEM), which circuitRF
-installs and checks; a 3D setup cannot choose it as its solver yet. circuitRF includes none of these
+A 3D EM setup runs one of three separately installed solvers — **Palace** (FEM), **openEMS** (FDTD) or
+**EMerge** (FEM) — and Palace's problems are meshed by **Gmsh**. circuitRF includes none of these
 programs. This tab has one row per program, and each row says what circuitRF found: the version, whether
 it is one circuitRF has validated (for Gmsh, openEMS and EMerge, tested), where the program is, and how it was found.
 

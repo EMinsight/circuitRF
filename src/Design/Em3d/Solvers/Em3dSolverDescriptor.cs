@@ -16,6 +16,9 @@ public sealed record Em3dSolverCapabilities
     /// <summary>The problem types it solves. A setup asking for another is refused before anything is looked for.</summary>
     public required IReadOnlySet<Em3dProblemType> Problems { get; init; }
 
+    /// <summary>brief-emi-5 — its run saves fields a field plot can draw, at frequencies a setup lists.</summary>
+    public bool Fields { get; init; }
+
     /// <summary>It produces a driven run's far field (the radiation pattern group).</summary>
     public bool RadiationPattern { get; init; }
 
@@ -109,6 +112,12 @@ public sealed class Em3dSolverDescriptor
 
     /// <summary>A fresh leg of one run: its settings, its lowering and its execution (Em3dRunService.Run).</summary>
     internal Func<Em3dRunService.SolverLeg> NewLeg { get; init; } = null!;
+
+    /// <summary>brief-emi-5 — why a field plot cannot ask this solver's run for fields; null when it can.</summary>
+    public string? FieldsRefusal
+        => Capabilities.Fields ? null
+         : $"{DisplayName} saves no fields in this version of circuitRF; a field plot is drawn from a " +
+           $"{string.Join(" or ", Em3dSolvers.With(c => c.Fields).Select(d => d.DisplayName))} run.";
 
     /// <summary><c>FEM</c> or <c>FDTD</c>.</summary>
     public string MethodName => MethodNameOf(Method);

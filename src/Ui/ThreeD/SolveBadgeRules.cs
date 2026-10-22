@@ -95,13 +95,12 @@ public static class SolveBadgeRules
     /// </summary>
     public static string RerunQuestion(string setupName, IReadOnlyList<SetupSolveStatus> legs)
     {
-        static string Program(SolverKind k) => k switch { SolverKind.Fem => "Palace", SolverKind.Fdtd => "openEMS", _ => "Thermal" };
         static string When(SetupSolveStatus l)
             => (l.Solved is { } at ? $"solved {C3dSolveStatus.When(at)}" : "solved") + (l.Took is { } t ? $", took {C3dSolveStatus.Duration(t)}" : "");
         if (legs.Count == 1)
-            return $"{Program(legs[0].Solver)} result for '{setupName}' is current ({When(legs[0])}). Run again?";
-        return $"{string.Join(" and ", legs.Select(l => Program(l.Solver)))} results for '{setupName}' are current " +
-               $"({string.Join("; ", legs.Select(l => $"{Program(l.Solver)} {When(l)}"))}). Run again?";
+            return $"{legs[0].ProgramName} result for '{setupName}' is current ({When(legs[0])}). Run again?";
+        return $"{string.Join(" and ", legs.Select(l => l.ProgramName))} results for '{setupName}' are current " +
+               $"({string.Join("; ", legs.Select(l => $"{l.ProgramName} {When(l)}"))}). Run again?";
     }
 
     /// <summary><c>FEM</c>, <c>FDTD</c>, <c>thermal</c>.</summary>

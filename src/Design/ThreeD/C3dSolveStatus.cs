@@ -34,12 +34,18 @@ public enum SolveState { NotRun, Current, OutOfDate }
 /// <param name="EndedAs">How the last run ended; null when there is no record at all or a run is under way. An interrupted run
 /// (left at <c>running</c> by a process that is gone) reads <see cref="C3dRunState.Running"/> here with <paramref name="Running"/>
 /// false.</param>
+/// <param name="Program">brief-emi-5 — the 3D solver the leg ran, when it is one (two FEM solvers share a kind); null for a
+/// thermal leg.</param>
 public sealed record SetupSolveStatus(string Setup, SolverKind Solver, SolveState State, bool Partial, string? StaleWhat,
                                       DateTime? Solved, TimeSpan? Took, string? Detail, bool Running = false,
-                                      C3dRunState? EndedAs = null)
+                                      C3dRunState? EndedAs = null, Em3dSolverId? Program = null)
 {
-    /// <summary>The solver as a person names it: <c>FEM (Palace)</c>, <c>FDTD (openEMS)</c>, <c>thermal</c>.</summary>
-    public string SolverName => C3dSolveStatus.Name(Solver);
+    /// <summary>The solver as a person names it: <c>FEM (Palace)</c>, <c>FDTD (openEMS)</c>, <c>FEM (EMerge)</c>, <c>thermal</c>.</summary>
+    public string SolverName => Program is { } id ? $"{Em3d.Em3dSolvers.Get(id).MethodName} ({Em3d.Em3dSolvers.Get(id).DisplayName})"
+                                                  : C3dSolveStatus.Name(Solver);
+
+    /// <summary>The program that ran the leg: <c>Palace</c>, <c>openEMS</c>, <c>EMerge</c>, <c>Thermal</c>.</summary>
+    public string ProgramName => Program is { } id ? Em3d.Em3dSolvers.Get(id).DisplayName : C3dSolveStatus.ProgramName(Solver);
 
     /// <summary>The leg's state in words, for a setup row: <c>Solved 14:32 (18 min)</c>, <c>Solved 14:32 (18 min), not
     /// converged</c>, <c>Out of date: 'Board.clay' has changed</c>, <c>Cancelled 14:32: no complete result</c>, <c>Not run</c>.</summary>
@@ -59,10 +65,10 @@ public static class C3dSolveStatus
         {
             ct.ThrowIfCancellationRequested();
             if (embedded.Setup is not { } setup) continue;
-            foreach (var (kind, dir) in RunDirectories(C3dSetups.ForRun(setup, documentPath), resultsRoot))
+            foreach (var (kind, dir, program) in RunDirectories(C3dSetups.ForRun(setup, documentPath), resultsRoot))
             {
                 ct.ThrowIfCancellationRequested();
-                rows.Add(OfLeg(embedded.Name, kind, dir, document, documentPath));
+                rows.Add(OfLeg(embedded.Name, kind, dir, document, documentPath, program));
             }
         }
         return rows;
@@ -76,7 +82,7 @@ public static class C3dSolveStatus
 
     /// <summary>Of the legs <paramref name="runSetup"/> (as its run names it, a <c>--solver</c> override applied) would run.</summary>
     public static IReadOnlyList<SetupSolveStatus> OfRun(EmSetup runSetup, string setupName, C3dDocument document, string documentPath, string resultsRoot)
-        => [.. RunDirectories(runSetup, resultsRoot).Select(x => OfLeg(setupName, x.Kind, x.Directory, document, documentPath))];
+        => [.. RunDirectories(runSetup, resultsRoot).Select(x => OfLeg(setupName, x.Kind, x.Directory, document, documentPath, x.Program))];
 
     /// <summary>
     /// brief-em3d-98 R-em3d98-7 — whether running these legs again would replace a complete, current result: every leg
@@ -99,26 +105,28 @@ public static class C3dSolveStatus
     /// thermal run's own directory, or Palace's and/or openEMS's. <paramref name="runSetup"/> is the setup as its run names it
     /// (<see cref="C3dSetups.ForRun"/>), or a <c>.cem</c>'s own.
     /// </summary>
-    public static IEnumerable<(SolverKind Kind, string Directory)> RunDirectories(EmSetup? runSetup, string? resultsRoot)
+    public static IEnumerable<(SolverKind Kind, string Directory, Em3dSolverId? Program)> RunDirectories(EmSetup? runSetup, string? resultsRoot)
     {
         if (runSetup is null || resultsRoot is null) yield break;
-        if (runSetup.IsThermal) { yield return (SolverKind.Thermal, Thermal.ThermalRunService.RunDirectory(resultsRoot, runSetup)); yield break; }
+        if (runSetup.IsThermal) { yield return (SolverKind.Thermal, Thermal.ThermalRunService.RunDirectory(resultsRoot, runSetup), null); yield break; }
         foreach (var solver in Em3d.Em3dSolvers.Of(runSetup.Solver3D))
             yield return (solver.Method == Em3dSolverFit.Fem ? SolverKind.Fem : SolverKind.Fdtd,
-                          Em3d.Em3dRunService.RunDirectory(resultsRoot, runSetup, solver.Id));
+                          Em3d.Em3dRunService.RunDirectory(resultsRoot, runSetup, solver.Id), solver.Id);
     }
 
-    private static SetupSolveStatus OfLeg(string setup, SolverKind kind, string dir, C3dDocument document, string documentPath)
+    private static SetupSolveStatus OfLeg(string setup, SolverKind kind, string dir, C3dDocument document, string documentPath,
+                                          Em3dSolverId? program)
     {
         var status = C3dRunStatus.Read(dir);
         var check = C3dRunDocument.Check(dir, document, documentPath, setup);      // another setup's edit is no change to this one
-        if (status is null && check is null) return new SetupSolveStatus(setup, kind, SolveState.NotRun, false, null, null, null, null);
+        if (status is null && check is null)
+            return new SetupSolveStatus(setup, kind, SolveState.NotRun, false, null, null, null, null, Program: program);
         var state = check is null ? SolveState.NotRun : check.Stale ? SolveState.OutOfDate : SolveState.Current;
         DateTime? solved = status?.Finished is { } f ? f.ToLocalTime() : check?.Written;
         if (status is { Running: true }) solved = null;
         return new SetupSolveStatus(setup, kind, state, status?.Partial ?? false, check?.Stale == true ? check.What : null,
                                     solved, status?.Took, status?.Detail, status?.Running ?? false,
-                                    status is null || status.Running ? null : status.State);
+                                    status is null || status.Running ? null : status.State, program);
     }
 
     /// <summary>A solver kind as a person names it.</summary>
@@ -127,6 +135,14 @@ public static class C3dSolveStatus
         SolverKind.Fem  => "FEM (Palace)",
         SolverKind.Fdtd => "FDTD (openEMS)",
         _               => "thermal",
+    };
+
+    /// <summary>The program a kind's leg ran when the leg does not say (a status made before brief-emi-5).</summary>
+    public static string ProgramName(SolverKind kind) => kind switch
+    {
+        SolverKind.Fem  => "Palace",
+        SolverKind.Fdtd => "openEMS",
+        _               => "Thermal",
     };
 
     /// <summary>A duration as the setup row spells it: <c>40 s</c>, <c>18 min</c>, <c>2 h 05 min</c>.</summary>

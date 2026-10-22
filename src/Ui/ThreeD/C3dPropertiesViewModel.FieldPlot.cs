@@ -38,7 +38,7 @@ public sealed partial class C3dPropertiesViewModel
 
     public static IReadOnlyList<C3dAxis> PlotAxes { get; } = [C3dAxis.X, C3dAxis.Y, C3dAxis.Z];
     public static IReadOnlyList<double> PlotPercentiles { get; } = [95, 99, 99.9, 100];
-    public static IReadOnlyList<string> PlotSolvers { get; } = [.. CircuitRF.Design.Em3d.Em3dSolvers.All.Select(d => d.DisplayName)];
+    public static IReadOnlyList<string> PlotSolvers { get; } = [.. CircuitRF.Design.Em3d.Em3dSolvers.With(c => c.Fields).Select(d => d.DisplayName)];
 
     /// <summary>brief-em3d-100 — the Referred to picker's rows, in <see cref="C3dDriveReferredTo"/> order.</summary>
     public static IReadOnlyList<string> PlotDriveReferences { get; } = ["Incident (available)", "Accepted"];

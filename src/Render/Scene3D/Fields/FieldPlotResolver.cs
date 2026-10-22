@@ -255,8 +255,10 @@ public static class FieldPlotResolver
         if (setup is null || root is null) return (null, null);
         if (setup.IsThermal) return (ThermalRunService.RunDirectory(root, setup), null);
         // brief-emi-1 — the first chosen FEM solver's directory holds the .vtu field set, the FDTD solver's the .vtr one.
+        // brief-emi-5 — of the solvers that save fields at all: an EMerge run has none to offer until brief-emi-7.
         string? Dir(Em3dSolverFit method)
-            => Em3dSolvers.Of(setup.Solver3D).FirstOrDefault(d => d.Method == method) is { } d ? Em3dRunService.RunDirectory(root, setup, d.Id) : null;
+            => Em3dSolvers.Of(setup.Solver3D).FirstOrDefault(d => d.Method == method && d.Capabilities.Fields) is { } d
+                ? Em3dRunService.RunDirectory(root, setup, d.Id) : null;
         return (Dir(Em3dSolverFit.Fem), Dir(Em3dSolverFit.Fdtd));
     }
 

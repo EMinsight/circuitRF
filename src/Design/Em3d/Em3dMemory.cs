@@ -200,8 +200,9 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
     /// <param name="basis">A sentence put first, saying what the estimate rests on.</param>
     /// <param name="scope">Whose memory <paramref name="physical"/> is — brief-em3d-26: the Linux subsystem's,
     /// with the setting that raises it. Null is this machine's.</param>
+    /// <param name="solver">brief-emi-5 — whose estimate it is, as the sentence names it.</param>
     public static Em3dMemoryVerdict Evaluate(long? estimate, long physical, IReadOnlyList<Em3dMemoryRemedy> remedies,
-                                             string? basis = null, Em3dMemoryScope? scope = null)
+                                             string? basis = null, Em3dMemoryScope? scope = null, string solver = "Palace")
     {
         if (estimate is not { } e || physical <= 0) return new(Em3dMemoryLevel.Fits, estimate, physical, null);
         double share = (double)e / physical;
@@ -211,7 +212,7 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
         string pct = (share * 100).ToString("0", CultureInfo.InvariantCulture);
         // Designer feedback round 11 — the warning had grown to a paragraph; the estimate's provenance
         // (the highest memory per unknown measured) is in the user guide, and "errs high" is what a reader needs of it.
-        string head = (basis is null ? "" : basis + " ") + $"Palace may need about {MachineMemory.Format(e)}, {pct} % of " +
+        string head = (basis is null ? "" : basis + " ") + $"{solver} may need about {MachineMemory.Format(e)}, {pct} % of " +
                       $"{scope?.Owner ?? "this machine's"} {MachineMemory.Format(physical)}" +
                       (level == Em3dMemoryLevel.Severe
                           ? ". At that size the run will very likely swap or be killed by the operating system. "

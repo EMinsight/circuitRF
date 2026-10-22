@@ -624,6 +624,7 @@ public sealed partial class C3dEditorViewModel
         if (read is not { Setup: { } setup }) return "Only a setup of this 3D view can be told to save another frequency.";
         if (!setup.Is3D || setup.IsThermal) return "Only a 3D EM setup saves fields by frequency.";
         var solver = plot.Solver ?? setup.Solver3D.Reference;
+        if (CircuitRF.Design.Em3d.Em3dSolvers.Get(solver).FieldsRefusal is { } noFields) return noFields;
         var saved = SavedFrequencies(setup, solver);
         if (!saved.Any(f => Math.Abs(f - ghz) <= 1e-9 * Math.Max(f, ghz))) saved.Add(ghz);
         saved.Sort();
@@ -647,7 +648,8 @@ public sealed partial class C3dEditorViewModel
     /// setups, whose saved frequencies can be asked for.</summary>
     public bool PlotCanAddFrequency(C3dFieldPlot p)
         => !IsViewOnly && C3dSetups.Read(Document).FirstOrDefault(s => s.Name == (p.Setup ?? ActiveSetupName))?.Setup is
-               { Is3D: true, IsThermal: false, Problem3D: CircuitRF.Engine.Em3d.Em3dProblemType.Driven };
+               { Is3D: true, IsThermal: false, Problem3D: CircuitRF.Engine.Em3d.Em3dProblemType.Driven } setup
+           && CircuitRF.Design.Em3d.Em3dSolvers.Get(p.Solver ?? setup.Solver3D.Reference).Capabilities.Fields;
 
     /// <summary>Where a plot switched to the clip plane cuts: the view's clip plane, or z through the middle.</summary>
     public (C3dAxis Axis, long Offset) PlotClipDefault() => ClipOfView();

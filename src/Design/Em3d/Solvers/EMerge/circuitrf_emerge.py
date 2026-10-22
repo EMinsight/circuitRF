@@ -13,6 +13,17 @@ already ranked). Kernel solids are their B-rep files, imported as they are and s
 
 builds the model and meshes it, and prints one line of JSON: the counts, and any warning. Exit 0 on success; 2 with an
 "error" line when the input or EMerge refuses it.
+
+    python -I circuitrf_emerge.py <problem.json> solve
+
+(brief-emi-5) builds, meshes and solves it, and writes PLAIN ARRAYS beside problem.json -- circuitRF builds the DataSet,
+the Touchstone and their provenance from them, so EMerge's own Touchstone writer is never used:
+  driven     freq.npy (the requested grid, Hz), S.npy (complex, [f, i, j], ports in ascending number), Z0.npy (each port's
+             reference, ohms, complex)
+  eigenmode  modes.npy (complex frequencies, Hz, as EMerge returns them -- null-space solutions included; circuitRF
+             filters), Q.npy (each one's Q)
+and run.json (versions, the sparse solver EMerge called, tets, samples, the sweep's error, timings). The JSON line it
+prints last is run.json's content.
 """
 
 import json
@@ -22,7 +33,8 @@ import sys
 DRIVER_VERSION = 1
 FORMAT = "circuitRF EMerge problem"
 FORMAT_VERSION = 1
-MODES = ("mesh",)
+MODES = ("mesh", "solve")
+RUN_FILE = "run.json"
 
 
 def report(**fields):
@@ -58,11 +70,61 @@ def main(argv):
         warnings.append("EMerge %s is not a version circuitRF has tested (%s); it is run as it is."
                         % (version, ", ".join(problem["testedEmerge"])))
 
+    import time
+    started = time.time()
     try:
         sim, counts = build(problem, os.path.dirname(path), em, gmsh, GeoVolume, GeoSurface)
     except Exception as e:  # EMerge's or Gmsh's own refusal, reported as the run's
         fail("%s: %s" % (type(e).__name__, e))
-    report(emerge=version, warnings=warnings, **counts)
+    if argv[2] == "mesh":
+        report(emerge=version, warnings=warnings, **counts)
+        return
+    meshed = time.time()
+    # The mesh's size, before any solve: circuitRF checks the run's memory on it and stops the run when it is refused.
+    report(stage="meshed", tets=counts["tets"], edges=counts["edges"], triangles=counts["triangles"])
+    # After the build: creating the Simulation reconfigures EMerge's logger, which would drop a handler added before it.
+    heard = Heard()
+    from loguru import logger
+    logger.add(heard.sink, level="INFO", format="{message}")
+    try:
+        outcome = solve(problem, os.path.dirname(path), sim, heard, warnings)
+    except Exception as e:
+        fail("%s: %s" % (type(e).__name__, e))
+    run = dict(emerge=version, warnings=warnings, sparseSolver=heard.solver, meshSeconds=round(meshed - started, 3),
+               solveSeconds=round(time.time() - meshed, 3), **counts)
+    run.update(outcome)
+    run["tets"] = int(sim.mesh.n_tets)          # after any adaptive refinement
+    mw = sim.mw
+    basis = getattr(mw, "basis", None)
+    run["unknowns"] = int(basis.n_field) if basis is not None and hasattr(basis, "n_field") else None
+    run["driver"] = DRIVER_VERSION
+    with open(os.path.join(os.path.dirname(path), RUN_FILE), "w", encoding="utf-8") as f:
+        json.dump(run, f, sort_keys=True)
+    report(**run)
+
+
+class Heard:
+    """What EMerge's own log said that the run reports: the direct solver it called and the adaptive sweep's last
+    estimate. Read from the message text EMerge 3.0.0b2 logs; a line it no longer logs leaves the field unreported."""
+
+    def __init__(self):
+        self.solver = None
+        self.error = None
+        self.converged = None
+
+    def sink(self, message):
+        import re
+        text = message.record["message"]
+        m = re.search(r"Calling (\S+(?: \S+)?) Solver", text)
+        if m:
+            self.solver = m.group(1)
+        m = re.search(r"estimated error ([0-9.eE+-]+)", text)
+        if m:
+            self.error = float(m.group(1))
+        if text.startswith("Adaptive sweep converged"):
+            self.converged = True
+        elif text.startswith("Adaptive sweep stopped at max_samples"):
+            self.converged = False
 
 
 # -- geometry ------------------------------------------------------------------------------------------------------------
@@ -307,6 +369,52 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     mesh = sim.mesh
     return sim, {"tets": int(mesh.n_tets), "edges": int(mesh.n_edges), "triangles": int(mesh.n_tris),
                  "faces": {key: len(tags) for key, tags in faces.items()}, "conductorFaces": sum(len(t) for t in walls.values())}
+
+
+# -- the solve (brief-emi-5) ----------------------------------------------------------------------------------------------
+
+def solve(problem, folder, sim, heard, warnings):
+    """Solves the built model and writes its arrays into folder; returns run.json's solve fields."""
+    import numpy as np
+    settings = problem["settings"]
+    if problem["problem"] == "eigenmode":
+        if settings["adaptiveMesh"] > 0:
+            warnings.append("EMerge refines a mesh on a driven solve, so this eigenmode run used the initial mesh.")
+        eig = problem["eigenmode"]
+        data = sim.mw.eigenmode(search_frequency=eig["targetHz"], nmodes=eig["count"])
+        entries = list(data.scalar.iter())
+        np.save(os.path.join(folder, "modes.npy"), np.array([complex(e.freq) for e in entries], dtype=np.complex128))
+        np.save(os.path.join(folder, "Q.npy"), np.array([float(np.real(e.Q)) for e in entries], dtype=np.float64))
+        return {"modes": len(entries)}
+
+    if settings["adaptiveMesh"] > 0:
+        # Up to adaptiveMesh refinements: EMerge counts solve passes, the first on the initial mesh.
+        sim.adaptive_mesh_refinement(max_steps=settings["adaptiveMesh"] + 1)
+    freqs = np.array(problem["frequenciesHz"], dtype=np.float64)
+    sim.mw.set_frequency(list(freqs))
+    adaptive = settings["adaptiveSweep"] and len(freqs) > settings["initialSamples"]
+    if adaptive:
+        data = sim.mw.run_adaptive_sweep(n_initial=settings["initialSamples"], tol=settings["tolerance"],
+                                         max_samples=settings["maxSamples"])
+    else:
+        data = sim.mw.run_sweep()
+    grid = data.scalar.grid
+    numbers = [p["number"] for p in sorted(problem["ports"], key=lambda p: p["number"])]
+    index = [grid._portmap[n] for n in numbers]
+    full = grid.model_Smat(freqs) if adaptive else grid.Smat
+    S = np.asarray(full)[:, index, :][:, :, index].astype(np.complex128)
+    if not adaptive and not np.allclose(np.ravel(grid.freq), freqs, rtol=1e-12, atol=0):
+        raise ValueError("EMerge solved at frequencies other than the requested ones")
+    z0 = np.asarray(grid.Z0).reshape(-1, len(grid._portmap))[0][index].astype(np.complex128)
+    # C order, which circuitRF reads: S is indexed out of EMerge's matrix, and numpy keeps such a view in Fortran order.
+    np.save(os.path.join(folder, "freq.npy"), np.ascontiguousarray(freqs))
+    np.save(os.path.join(folder, "S.npy"), np.ascontiguousarray(S))
+    np.save(os.path.join(folder, "Z0.npy"), np.ascontiguousarray(z0))
+    out = {"samples": int(np.size(grid.freq)), "adaptive": bool(adaptive)}
+    if adaptive:
+        out["error"] = heard.error
+        out["converged"] = heard.converged
+    return out
 
 
 if __name__ == "__main__":

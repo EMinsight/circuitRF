@@ -19,6 +19,7 @@ public static class OpenEmsSolver
         Method = Em3dSolverFit.Fdtd,
         Capabilities = new()
         {
+            Fields = true,
             Problems = new HashSet<Em3dProblemType> { Em3dProblemType.Driven },
             RadiationPattern = true,
             Sar = true,

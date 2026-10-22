@@ -476,8 +476,8 @@ folder are in [The Command Line](cli.html#em).
 [EM Solvers: MoM, FEM and FDTD](em-solvers.html). This section is the panel's 3D controls, one by one.*
 
 The **Solver** group at the top of the panel picks who solves the setup: circuitRF's own planar and
-cross-section kernels (the default), **FEM 3D (Palace)**, **FDTD 3D (openEMS)**, or **FEM & FDTD -
-Compare**. A 3D setup builds a 3D model from the layout, its technology and any bond wires. The
+cross-section kernels (the default), **FEM 3D (Palace)**, **FDTD 3D (openEMS)**, **FEM 3D (EMerge)**, or
+**FEM & FDTD - Compare**. A 3D setup builds a 3D model from the layout, its technology and any bond wires. The
 settings a 3D run does not read — the surface mesh, adaptive sampling, the port type and the planar
 solver options — are hidden while a 3D solver is chosen; they stay in the
 `.cem` and come back when you switch to Planar. What a 3D run does read stays: the frequency sweep,
@@ -755,6 +755,31 @@ phases that the view does not need. The 3D view shows it for each excited port a
 With `"SaveH": true` it records the magnetic field too, as `hfield<k>_…` beside each `efield<k>_…` pair —
 twice the disk per saved frequency, which is why it is asked for rather than always on.
 
+### Running EMerge {#emerge-run}
+
+**FEM 3D (EMerge)** (`Solver3D: Emerge`, or `circuitrf em x.c3d --solver emerge`; the MCP `run` tool's
+`solver=emerge`) solves a Driven or an Eigenmode setup with EMerge, a finite-element solver installed from
+{{anchor: settings.html#em3d|Settings ▸ Solvers}}. It meshes the same geometry Palace does, with its own copy
+of Gmsh. The `.cem`'s `EMerge` section holds its settings, the same way the `Palace` section holds Palace's.
+
+A driven sweep is built adaptively: EMerge solves the full problem at a few frequencies and fits every
+requested point from them, adding frequencies until its estimated error on |S| is below its tolerance. The
+progress line shows that error against the tolerance. **A sweep that reaches `MaxSamples` first has not
+converged**: its result is still written, with a warning, and the 3D view marks it not converged.
+
+Before solving, the run checks the mesh's size against this computer's memory, as Palace's run does: a
+warning past three quarters of it, and a question (or `--force`) past one and a half times it. A refused run
+stops before the solve.
+
+The result lands beside the other solvers' results: `results/<name>.emerge.sNp` and `<name>.emerge_em.npy`, or
+`<name>.emerge_eig.npy` for an eigenmode run. `results/<name>.emerge/` keeps the input (`problem.json` and the
+driver that reads it), EMerge's log (`emerge.log`) and the arrays it wrote, so a run can be repeated by hand.
+
+**Eigenmodes on EMerge** give **f** and **Q** (the loaded Q, as Palace's), and no **Q_ext**, **Q_unloaded** or
+**Participation**: EMerge does not report them. EMerge's eigensolver looks either side of `TargetGHz`, and near
+0 Hz it can return solutions that are not resonances, so a solution more than 5 % below `TargetGHz` is dropped,
+and the run's notes say how many were. EMerge solves an eigenmode problem on one core.
+
 ### Running both, and the difference {#run-both}
 
 **FEM & FDTD - Compare** (`Solver3D: Both`, or `circuitrf em x.cem --solver both`) builds the 3D model
@@ -980,7 +1005,8 @@ What a Palace run says about the conversion:
 
 **Problem** *Eigenmode* finds the structure's resonant frequencies and their Q — "is there a lid
 resonance inside my band?". `Eigenmode` sets how many modes (`Count`, default 3) above which frequency
-(`TargetGHz`, default the sweep's start). Palace only.
+(`TargetGHz`, default the sweep's start). Palace and EMerge; see [Running EMerge](#emerge-run) for what EMerge's
+table leaves out.
 
 ```
 "Problem3D": "Eigenmode",

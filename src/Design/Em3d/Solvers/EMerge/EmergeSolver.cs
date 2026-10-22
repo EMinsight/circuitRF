@@ -1,7 +1,6 @@
 // brief-emi-2 — EMerge: a finite-element (FEM) solver that runs as a Python program. This folder is everything circuitRF
-// knows about EMerge: the program it finds and installs and the probe it asks (EMI-2/EMI-3), and its descriptor, its
-// settings and its lowering (brief-emi-4). The descriptor is Em3dSolvers' integrating one until its run joins it (EMI-5):
-// a Solver3D may spell it, check and explain answer for it, and its leg writes the input and refuses to start it.
+// knows about EMerge: the program it finds and installs and the probe it asks (EMI-2/EMI-3), its descriptor, its settings
+// and its lowering (brief-emi-4), and its run and the results it reads back (brief-emi-5).
 
 using System.Globalization;
 using CircuitRF.Design.Layout.Em;
@@ -32,7 +31,7 @@ public static class EmergeSolver
         SweepText = SweepText,
         // brief-emi-7 — EMerge's fields arrive with its field plots; until then it saves none and no plot can ask it to.
         SavedFieldsGHz = _ => [],
-        SetSavedFieldsGHz = (_, _) => throw new InvalidOperationException("EMerge saves no fields in this version of circuitRF."),
+        SetSavedFieldsGHz = (_, _) => throw new InvalidOperationException(Descriptor!.FieldsRefusal),
         Refusal = Refusal,
         Check = Check,
         NewLeg = () => new Em3dRunService.EmergeLeg(),
@@ -59,14 +58,8 @@ public static class EmergeSolver
         var notes = new List<string>();
         if (EmergeScriptWriter.RadiationPatternNote(setup, problem) is { } noPattern) notes.Add(noPattern);
         if (EmergeScriptWriter.Write(problem, settings).Refusal is { } refused) return new([refused], notes);
-        notes.Add(NotStartedYet);
         return new([], notes);
     }
-
-    /// <summary>brief-emi-4 — what a run of an EMerge setup says until EMerge's run is in (EMI-5 deletes it).</summary>
-    public const string NotStartedYet =
-        "This version of circuitRF writes EMerge's input for this setup (its run directory's problem.json and driver) but does " +
-        "not start EMerge yet; run the setup on Palace or openEMS for its results.";
 
     /// <summary>What EMerge does with a frequency sweep, as the Messages panel's sweep row says it.</summary>
     private static string SweepText(EmSetup setup)
