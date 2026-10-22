@@ -37,7 +37,7 @@ public sealed class EmergeAcceleratorTests
 
         // What it says for circuitRF's own install with the faster solver still to build: the tier, then the recipe's
         // prerequisite and its command.
-        var recipe = SolverRecipes.All.Single(r => r.Id == "emerge-3.0.0b2-macos-arm64");
+        var recipe = SolverRecipes.All.Single(r => r.Id == "emerge-3.0.0b3-macos-arm64");
         var record = new InstallRecord
         {
             Recipe = recipe.Id, Optional = [new(recipe.OptionalGroups[0].When.Name, OptionalStepsStatus.Missing, "unmet")],

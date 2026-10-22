@@ -22781,3 +22781,19 @@ takes it as a component with no pin, so 1,450 holes are "unclassified" rather th
   numbers in a row, while `SpanFromName` reads that spelling as 1 to 3 for a Gerber drill file. The drill name now
   tries `SpanFromName` first.
 - `--arc-tolerance` was missing from `circuitRF --help`'s convert section (the verb's own usage had it).
+
+## EMerge 3.0.0b3 (2026-10-22)
+
+**Re-pinned every EMerge recipe to 3.0.0b3; 3.0.0b2 stays on the tested list.** The b3 wheel differs from b2's in five
+Python files and no compiled one: the thin-conductor degree-of-freedom split moved out of the one-time boundary setup so
+it is redone on every mesh (in b2 an adaptive mesh refinement dropped it for lossy sheets inside a dielectric), and
+adaptive mesh refinement now refuses a periodic model. Neither touches a solver, so "faster" is against 2.8, not b2.
+`tools/EmergeLock/make_locks.py` with uv 0.12.24 moved only `emerge` and `cyclopts` in the locks. The two built solvers'
+pins (aasds 47ad468, SPARTA a178949) were already their repositories' newest commits.
+
+Sanity check, not a validation: a real `solver install emerge --gpu --yes` into a scratch state folder took 107 s and
+1.24 GB with both optional groups built, as b2's did; the 3D Eigenmode Cavity's EMerge driven sweep on b2 and b3 agreed
+to |ΔS| 8.8e-8 over 801 points.
+
+**The tested list is inside problem.json** (`testedEmerge`), so adding a version changes the provenance geometry hash
+every EMerge result carries; the five lowering goldens and `emerge-run/driven/cavity.s2p` were rewritten for it.

@@ -60,7 +60,7 @@ FDTD and the planar MoM solver â€” cost, memory, and which problems suit each â€
   of the two that computes capacitance and inductance matrices, and it finds a cavity's resonances
   directly. FDTD would have to ring a high-Q cavity down for a long time.
 - **FEM (EMerge)** fits the same geometry as Palace and finds resonances too. It installs in about two
-  minutes with nothing to build and solves a small driven model in seconds, with lumped ports only. It
+  minutes with nothing to build and solves a small driven model in seconds, with lumped or wave ports. It
   is a second FEM answer that shares no code with Palace's.
 - **FDTD (openEMS)** fits Manhattan geometry on a stackup, because metal aligned with its grid costs
   nothing. One pulse covers a whole band. Its absorbing boundaries let the air box around a radiator

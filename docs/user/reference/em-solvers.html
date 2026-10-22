@@ -80,8 +80,10 @@ lids. Use it too when you need something only FEM gives you: a cavity's resonanc
 capacitance or inductance matrix (electrostatic and magnetostatic).</p>
 <p><strong>Use FEM (EMerge)</strong> for the same kind of problem when you want an FEM answer quickly, or a second
 FEM answer beside Palace's. It installs in about two minutes with nothing to build, and on the shipped
-cavity its driven sweep takes seconds. It solves driven and eigenmode problems with lumped ports;
-wave ports need Palace or openEMS, and capacitance and inductance matrices need Palace.</p>
+cavity its driven sweep takes seconds. It solves driven and eigenmode problems with lumped ports, and
+driven problems with wave ports: one conductor on the face (a microstrip end, a coax), or several
+terminals on one face, a stripline pair included. A hollow waveguide needs Palace, and so do
+capacitance and inductance matrices.</p>
 <p><strong>Use FDTD (openEMS)</strong> for Manhattan metal on a stackup over a wide band, and for radiators whose air
 box you want to keep small. It needs far less memory than FEM.</p>
 <p><strong>Compare</strong> (<em>Compare…</em>) when an answer matters and you want a second opinion. FEM and FDTD share no
@@ -181,9 +183,9 @@ why a cavity's resonances are FEM's job, not FDTD's.</li>
 <li><strong>Absorbing boundaries are good.</strong> openEMS's PML (perfectly matched layer) soaks up an outgoing wave
 over a few cells, so a radiator's air box can stay small.</li>
 <li>openEMS drives <strong>one port per run</strong>, so an N-port setup is N runs, one after another.</li>
-<li><strong>The two solvers build a wave port differently.</strong> Palace computes the line's mode on the air box's face
-and projects the field onto it. openEMS computes no mode: it feeds the line from a short extension
-behind the face and measures its voltage and current with probes around the reference plane.
+<li><strong>The solvers build a wave port differently.</strong> Palace and EMerge compute the line's mode on the air
+box's face and project the field onto it. openEMS computes no mode: it feeds the line from a short
+extension behind the face and measures its voltage and current with probes around the reference plane.
 <a href="em-setup.html#wave-ports">Wave ports</a>.</li>
 </ul>
 <h2 id="programs">Palace, openEMS and EMerge: the three programs</h2>
@@ -242,7 +244,7 @@ separate programs you install. The install assistant can do that for you (see
 <td>What circuitRF runs on it</td>
 <td>Driven S-parameters, eigenmode, electrostatic, magnetostatic; lumped and wave ports, including two terminals on one face when their modes travel at different speeds (a microstrip pair, not a stripline); radiation pattern</td>
 <td>Driven S-parameters; lumped and wave ports, including several terminals on one face (<a href="../new-user-guide/index.html#wave-ports-3d">the 3D Wave Ports example</a>); radiation pattern</td>
-<td>Driven S-parameters and eigenmode; lumped ports; radiation pattern</td>
+<td>Driven S-parameters and eigenmode; lumped and wave ports, including several terminals on one face (a stripline pair too); radiation pattern</td>
 </tr>
 <tr>
 <td>Install, as measured on one Apple M4</td>
@@ -355,10 +357,10 @@ lossy substrate these are the largest expected differences between the two solve
 </tr>
 <tr>
 <td>Ports</td>
-<td>Edge ports, de-embedded</td>
-<td>Lumped and wave ports</td>
-<td>Lumped ports</td>
-<td>Lumped and wave ports</td>
+<td>Edge ports (de-embedded), internal delta-gap ports and internal ports (<a href="mom-engine.html#ports">the three types</a>)</td>
+<td>Lumped and wave ports, up to two terminals on one face (<a href="em-setup.html#wave-port-terminals-palace">its rules</a>)</td>
+<td>Lumped and wave ports, up to nine terminals on one face (<a href="em-setup.html#wave-port-terminals-emerge">its rules</a>)</td>
+<td>Lumped and wave ports, any number of terminals on one face (<a href="em-setup.html#wave-port-terminals">its rules</a>)</td>
 </tr>
 <tr>
 <td>Metal loss</td>
@@ -620,8 +622,12 @@ solver is as quick or quicker. Measured on the shipped Cavity, driven, with an a
 </table>
 <p>Both converged in the same number of full solves, and their S-parameters agreed to within 2e-6. The GPU
 works in single precision, and circuitRF turns on the GPU solver's own double-precision correction; without
-it, the same sweeps either needed more solves or never converged. If a sweep on the GPU still stops at its
-limit without converging, circuitRF solves it again on the CPU and says so in the run's Notes.</p>
+it, the same sweeps either needed more solves or never converged. <strong>A sweep on the GPU is watched</strong>: when its
+estimated error has not reached a new low in 8 solves, circuitRF stops it and solves the sweep again on the CPU,
+on the same mesh, and says so in the run's Notes. The 3D Wave Ports <em>Coupled Microstrip</em> (336,748 unknowns) is
+such a case: on the GPU its sweep was no better after 22 solves than after 14, and on the CPU it converged in 9,
+at 1.9 s per solve against the GPU's 7.6 s. A sweep on the GPU that stops at its limit without converging is
+also solved again on the CPU.</p>
 <p><strong>Eigenmode runs do not use the GPU</strong>: EMerge's eigensolver runs on the CPU whatever is installed.
 To choose the device yourself, set <strong>Device</strong> in Settings ▸ Solvers to <strong>CPU</strong> or <strong>GPU</strong>, or pass
 <code>--device cpu</code> or <code>--device gpu</code> to <code>circuitrf em</code>. On other computers there is no GPU solver for EMerge,
@@ -687,7 +693,7 @@ and every run solves on the CPU.</p>
 <td>One pulse covers the band, at little memory</td>
 </tr>
 <tr>
-<td>A quick FEM answer with lumped ports, or a second FEM answer beside Palace's</td>
+<td>A quick FEM answer, or a second FEM answer beside Palace's</td>
 <td><strong>FEM (EMerge)</strong></td>
 <td>Installs in minutes, and a driven sweep of a small model takes seconds; it shares no code with Palace</td>
 </tr>

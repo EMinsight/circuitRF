@@ -77,6 +77,10 @@ public static class EmergeAccelerator
     public static (RecipePrerequisite When, IReadOnlyList<RecipeStep> Steps)? GpuGroupOf(SolverRecipe recipe)
         => recipe.OptionalGroups.FirstOrDefault(g => g.When.Enables == GpuGroup) is { When: not null } g ? g : null;
 
+    /// <summary>Whether any of <paramref name="tool"/>'s recipes, on any platform, builds a GPU sparse solver: what decides that
+    /// <c>solver install &lt;tool&gt; --gpu</c> is an option at all, so the CLI names no tool.</summary>
+    public static bool HasGpuGroup(SolverTool tool) => SolverRecipes.All.Any(r => r.Tool == tool && GpuGroupOf(r) is not null);
+
     /// <summary>
     /// brief-emi-9 R-emi9-2b — what Settings' <i>Enable GPU solving…</i> acts on: circuitRF's own EMerge install whose recipe can
     /// fetch the GPU group's prerequisite itself (a bootstrap), when the GPU solver is not installed, the group is not built,

@@ -226,7 +226,7 @@ lossy substrate these are the largest expected differences between the two solve
 | Open space, radiation | Exact, with no box | An air box with first-order absorbing faces, kept well away | The same as Palace | An air box with PML, which can stay close |
 | Enclosures, lids, cavities | Not representable | Yes, and eigenmodes find their resonances | Yes, and eigenmodes find their resonances | Yes, but a high-Q cavity rings for a long time |
 | Capacitance and inductance matrices | No | Yes (electrostatic, magnetostatic) | No | No |
-| Ports | Edge ports, de-embedded | Lumped and wave ports | Lumped and wave ports, including several terminals on one face ([its rules](em-setup.html#wave-port-terminals-emerge)) | Lumped and wave ports |
+| Ports | Edge ports (de-embedded), internal delta-gap ports and internal ports ([the three types](mom-engine.html#ports)) | Lumped and wave ports, up to two terminals on one face ([its rules](em-setup.html#wave-port-terminals-palace)) | Lumped and wave ports, up to nine terminals on one face ([its rules](em-setup.html#wave-port-terminals-emerge)) | Lumped and wave ports, any number of terminals on one face ([its rules](em-setup.html#wave-port-terminals)) |
 | Metal loss | Yes | Yes (conductivity on every metal surface) | Yes (a surface impedance on every metal surface) | Sheets only; solid metal is lossless |
 | Dielectric loss | Yes, tanδ at every frequency | Yes, tanδ at every frequency | Yes, tanδ at every frequency | Exact at the band centre only |
 | Installed | Always | You install it | You install it | You install it |
@@ -390,7 +390,7 @@ and every run solves on the CPU.
 | "Is there a cavity resonance in my band?" | **FEM, eigenmode** (Palace or EMerge) | Finds each mode's frequency and Q directly ([the 3D Eigenmode example](em-setup.html#eigenmodes)); the two programs put the example's cavity mode within 0.01 % of each other |
 | A package's capacitance or inductance matrix | **FEM, electrostatic or magnetostatic** | Only Palace computes them |
 | A broadband Manhattan board structure: a transition, a launch, a stripline | **FDTD**, or FEM | One pulse covers the band, at little memory |
-| A quick FEM answer with lumped ports, or a second FEM answer beside Palace's | **FEM (EMerge)** | Installs in minutes, and a driven sweep of a small model takes seconds; it shares no code with Palace |
+| A quick FEM answer, or a second FEM answer beside Palace's | **FEM (EMerge)** | Installs in minutes, and a driven sweep of a small model takes seconds; it shares no code with Palace |
 | A radiator that is not planar | **FDTD** or FEM | FDTD's PML keeps the box small; both give a pattern — [Antennas ▸ From a 3D solver](antennas.html#3d) |
 | Any 3D answer you are about to rely on | **Compare…**, Palace with openEMS or EMerge, or all three | Independent solvers; agreement means each has converged |
 
