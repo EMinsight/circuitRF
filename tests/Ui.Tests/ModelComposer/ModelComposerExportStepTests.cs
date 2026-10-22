@@ -79,7 +79,7 @@ public sealed class ModelComposerExportStepTests
     public async Task ExportVerilogA_SitsBesideExport_AndWritesTheModuleBesideTheCmodelPath()
     {
         string axaml = File.ReadAllText(Path.Combine(ModelCliFixture.RepoRoot(), "src", "Ui", "Views", "ModelComposer", "StepsPanelView.axaml"));
-        Assert.Matches(new Regex(@"Content=""Export Verilog-A…"" Command=""\{Binding ExportVerilogACommand\}""[^>]*/>\s*<Button Content=""Export"" Command=""\{Binding ExportCommand\}"""), axaml);
+        Assert.Matches(new Regex(@"<Button Classes=""tool"" Command=""\{Binding ExportVerilogACommand\}""[\s\S]{0,1200}?<Button Classes=""tool"" Command=""\{Binding ExportCommand\}"""), axaml);
 
         string cmc = ExportFixture.Document();
         string dir = Path.GetDirectoryName(cmc)!;

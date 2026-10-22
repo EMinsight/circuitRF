@@ -394,13 +394,16 @@ public static class ModelReportDisplayPreset
     {
         PlotType = PlotType.Rect, Width = W, Height = H, CustomTitle = title, CustomTitleOn = true,
         CustomXLabel = x ?? "", CustomXLabelOn = x is not null, CustomYLabel = y, CustomYLabelOn = true,
-        Traces = [.. traces],
+        Traces = PointsOnTop(traces),
     };
 
     private static PlotContainerConfig Smith(string title, params TraceConfig[] traces) => new()
     {
-        PlotType = PlotType.Smith, Width = H, Height = H, CustomTitle = title, CustomTitleOn = true, Traces = [.. traces],
+        PlotType = PlotType.Smith, Width = H, Height = H, CustomTitle = title, CustomTitleOn = true, Traces = PointsOnTop(traces),
     };
+
+    /// <summary>The model's lines first and the measured symbols over them: a plot paints its traces in order.</summary>
+    private static List<TraceConfig> PointsOnTop(TraceConfig[] traces) => [.. traces.OrderBy(t => t.Properties.MarkerEnabled ? 1 : 0)];
 
     /// <summary>One data file as a display's only source.</summary>
     private sealed class OneSource(string path, DataSet data) : IPlotDataSources

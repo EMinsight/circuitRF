@@ -279,6 +279,7 @@ public sealed partial class ModelComposerViewModel
                 plot.Traces.Clear();
             }
             if (!plot.CustomTitleOn || plot.CustomTitle.Length == 0) plot.CustomTitle = SelectedPlotTab;
+            PointsOnTop(plot);
             RestoreMarkers(plot, _plottedKey);
         }
         finally
@@ -550,6 +551,19 @@ public sealed partial class ModelComposerViewModel
         t.PointLabels = labels;
         t.MarkerValueName = yName;
         return t;
+    }
+
+    /// <summary>
+    /// Every trace that draws point symbols after every trace that does not. The renderer paints in list order and the steps
+    /// add each data set before its model, so the model's line was drawn over the measured circles (owner). Stable, so the
+    /// overlays (fit points, flags, the cursor) stay above the points they mark.
+    /// </summary>
+    private static void PointsOnTop(Plot plot)
+    {
+        var ordered = plot.Traces.OrderBy(t => t.Properties.MarkerEnabled ? 1 : 0).ToList();
+        if (ordered.SequenceEqual(plot.Traces)) return;
+        plot.Traces.Clear();
+        foreach (var t in ordered) plot.Traces.Add(t);
     }
 
     /// <summary>Drawn over the points and not a reading of them: no marker lands on it.</summary>

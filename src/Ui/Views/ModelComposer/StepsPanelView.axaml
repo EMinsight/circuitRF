@@ -462,8 +462,45 @@
                     </StackPanel>
 
                     <!-- ── Export (R-mc15-8) ───────────────────────────────── -->
+                    <!-- The step's actions are a tool strip on its header, as the Network panel's are: small glyph buttons at the
+                         foot of a scrolling column read as stray, and a row of worded buttons clipped at the panel's width. -->
                     <StackPanel IsVisible="{Binding IsExportStep}" Spacing="4">
-                        <TextBlock Classes="panelhdr" Text="Export"/>
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Classes="panelhdr" Text="Export" VerticalAlignment="Center"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
+                                <Button Classes="tool" Command="{Binding CopyInstanceCommand}" IsVisible="{Binding IsActive}"
+                                        ToolTip.Tip="Copy Instance — the exported model, to paste into a schematic">
+                                    <mi:MaterialIcon Kind="ContentCopy" Width="16" Height="16"/>
+                                </Button>
+                                <!-- A boxed text tile, the Layout editor's EM Setup glyph: no icon says Verilog-A. -->
+                                <Button Classes="tool" Command="{Binding ExportVerilogACommand}" IsVisible="{Binding IsActive}"
+                                        ToolTip.Tip="Export Verilog-A… — the model as source, for another simulator">
+                                    <Panel Width="16" Height="16">
+                                        <Border Width="16" Height="12" CornerRadius="2" BorderThickness="1.2"
+                                                BorderBrush="{Binding $parent[Button].Foreground}"
+                                                VerticalAlignment="Center" HorizontalAlignment="Center">
+                                            <TextBlock Text="VA" FontSize="8" FontWeight="Bold" LetterSpacing="-0.3"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                    </Panel>
+                                </Button>
+                                <Border Classes="rule" IsVisible="{Binding IsActive}"/>
+                                <Button Classes="tool" Command="{Binding ExportCommand}" ToolTip.Tip="Export">
+                                    <mi:MaterialIcon Kind="ExportVariant" Width="16" Height="16"/>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                        <!-- Where Export writes, under the button that writes it. -->
+                        <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding IsActive}">
+                            <TextBox Text="{Binding ExportPath}" FontSize="11" ToolTip.Tip="The .cmodel's path"/>
+                            <Button Grid.Column="1" Classes="tool" Command="{Binding PickExportPathCommand}" ToolTip.Tip="Choose">
+                                <mi:MaterialIcon Kind="FolderOpenOutline" Width="14" Height="14"/>
+                            </Button>
+                        </Grid>
+                        <SelectableTextBlock Classes="warn" FontSize="11" Text="{Binding VerilogATables}"
+                                             IsVisible="{Binding VerilogATables, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <SelectableTextBlock Classes="lbl" FontSize="11" Text="{Binding VerilogAResult}" TextWrapping="Wrap"
+                                             IsVisible="{Binding VerilogAResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                         <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding !CanExport}">
                             <SelectableTextBlock Classes="warn" FontSize="11" Text="{Binding ExportBlocked}"/>
                             <Button Grid.Column="1" Content="Run stale" Command="{Binding RunStaleCommand}"/>
@@ -489,34 +526,40 @@
                             <Border Classes="card">
                                 <StackPanel Spacing="2">
                                     <TextBlock Classes="panelhdr" Text="Scaling"/>
+                                    <!-- The Values table's own scaling cell, so the rule is set where the export shows it. -->
                                     <ItemsControl ItemsSource="{Binding NetworkValues}">
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate x:DataType="mc:NetworkValueRow">
-                                                <Grid ColumnDefinitions="*,Auto">
-                                                    <TextBlock Text="{Binding Name}"/>
-                                                    <TextBlock Grid.Column="1" Classes="lbl" Text="{Binding Scaling}"/>
+                                                <Grid ColumnDefinitions="*,130" Margin="0,1">
+                                                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                                    <ComboBox Grid.Column="1" ItemsSource="{Binding $parent[ItemsControl].((mc:ModelComposerViewModel)DataContext).ScalingRules}"
+                                                              SelectedItem="{Binding Scaling}" FontSize="11" MinHeight="0" Padding="4,0"
+                                                              HorizontalAlignment="Stretch"/>
                                                 </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </StackPanel>
                             </Border>
-                            <TextBlock Classes="panelhdr" Text="Symbol"/>
                             <!-- One symbol, drawn large; a click opens the menu of every symbol the model can take, each row
-                                 its own glyph — the Smith Chart's Add menu (SmithChartView.BuildElementMenus). -->
-                            <Button Name="SymbolButton" HorizontalAlignment="Left" Padding="4" ToolTip.Tip="Choose the symbol">
-                                <StackPanel Width="150" Spacing="2">
-                                    <ctl:PaletteGlyphControl Kind="ComposedFET" SymbolCellDir="{Binding SelectedSymbol.GlyphRef}" Height="110"/>
-                                    <TextBlock FontSize="11" Text="{Binding SelectedSymbol.Label}" TextTrimming="CharacterEllipsis"
-                                               HorizontalAlignment="Center"/>
+                                 its own glyph — the Smith Chart's Add menu (SmithChartView.BuildElementMenus). The button is
+                                 transparent: its default fill washed the whole glyph grey. Hover still lights it. -->
+                            <Border Classes="card">
+                                <StackPanel Spacing="2">
+                                    <TextBlock Classes="panelhdr" Text="Symbol"/>
+                                    <Button Name="SymbolButton" Background="Transparent" HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Stretch" Padding="4" ToolTip.Tip="Choose the symbol">
+                                        <StackPanel Spacing="2">
+                                            <ctl:PaletteGlyphControl Kind="ComposedFET" SymbolCellDir="{Binding SelectedSymbol.GlyphRef}" Height="110"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="2" HorizontalAlignment="Center">
+                                                <TextBlock FontSize="11" Text="{Binding SelectedSymbol.Label}" TextTrimming="CharacterEllipsis"
+                                                           VerticalAlignment="Center"/>
+                                                <mi:MaterialIcon Kind="MenuDown" Width="14" Height="14" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
                                 </StackPanel>
-                            </Button>
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBox Text="{Binding ExportPath}" FontSize="11" ToolTip.Tip="The .cmodel's path"/>
-                                <Button Grid.Column="1" Classes="tool" Command="{Binding PickExportPathCommand}" ToolTip.Tip="Choose">
-                                    <mi:MaterialIcon Kind="FolderOpenOutline" Width="14" Height="14"/>
-                                </Button>
-                            </Grid>
+                            </Border>
                         </StackPanel>
                         <StackPanel Spacing="3" IsVisible="{Binding IsPassive}">
                             <Grid ColumnDefinitions="70,*">
@@ -535,17 +578,6 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </StackPanel>
-                        <SelectableTextBlock Classes="warn" FontSize="11" Text="{Binding VerilogATables}"
-                                             IsVisible="{Binding VerilogATables, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                        <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
-                            <Button Content="Copy instance" Command="{Binding CopyInstanceCommand}" IsVisible="{Binding IsActive}"
-                                    ToolTip.Tip="An instance of the exported model, to paste into a schematic"/>
-                            <Button Content="Export Verilog-A…" Command="{Binding ExportVerilogACommand}" IsVisible="{Binding IsActive}"
-                                    ToolTip.Tip="The model as Verilog-A source, for another simulator"/>
-                            <Button Content="Export" Command="{Binding ExportCommand}"/>
-                        </StackPanel>
-                        <SelectableTextBlock Classes="lbl" FontSize="11" Text="{Binding VerilogAResult}" HorizontalAlignment="Right"
-                                             IsVisible="{Binding VerilogAResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     </StackPanel>
 
                     <!-- ── Topology (passive) ───────────────────────────────── -->

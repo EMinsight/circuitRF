@@ -803,17 +803,19 @@ in `report.json` for a program to read.
 
 ## The Export step {#export}
 
-`N0` and `W0`, which can be changed here as on the Data step, the scaling rule of each network value, the symbol, and
-the `.cmodel`'s path. The symbol shows as one picture; click it for the menu of every symbol the model can take, which
-are those with gate, drain and source pins (and a fourth for the thermal node of a self-heating model). **Export** writes
-the model; **Copy instance** puts an instance of it on the clipboard, ready to paste into a schematic. The plots show
+`N0` and `W0`, which can be changed here as on the Data step, the scaling rule of each network value (the same rule as
+the Values table's scaling column, so either can set it), the symbol, and the `.cmodel`'s path. The symbol shows as one
+picture; click it for the menu of every symbol the model can take, which are those with gate, drain and source pins (and
+a fourth for the thermal node of a self-heating model). The step's buttons are on its header: **Export** writes the
+model; **Copy Instance** puts an instance of it on the clipboard, ready to paste into a schematic; **VA** is Export
+Verilog-A. The plots show
 the model's Output and Transfer curves against its data. A placed instance's thermal pin T, and how to get it, is in
 [The thermal pin, T](components.html#composedfet-thermal-pin).
 
 A step whose result predates the data or the network blocks Export with one line naming it; **Run stale** re-runs the
 stale steps in order.
 
-**Export Verilog-A…** writes the same model as Verilog-A source, for another simulator: [Verilog-A export](#veriloga).
+**VA** (Export Verilog-A…) writes the same model as Verilog-A source, for another simulator: [Verilog-A export](#veriloga).
 
 A placed model can have parts of itself switched off per instance, to see what each costs the circuit:
 [Switching parts of the model off](#switches).
@@ -890,8 +892,8 @@ with each DC curve at its own trap state and self-heated temperature.
 
 ## Verilog-A export {#veriloga}
 
-**Export Verilog-A…** on the Export step writes the model as one Verilog-A source file, so the same model runs in another
-simulator. It asks where the file goes, offering `<name>.va` beside the `.cmodel`'s path, and the line under the buttons
+**VA** (Export Verilog-A…) on the Export step's header writes the model as one Verilog-A source file, so the same model runs in another
+simulator. It asks where the file goes, offering `<name>.va` beside the `.cmodel`'s path, and the line under the step's header
 names the file and its module. The file is self-contained: it includes only the standard disciplines and constants
 headers, and its header comment lists every parameter with its unit, default and meaning.
 
@@ -910,7 +912,7 @@ training domain, drain–source symmetry, the charges, dispersion, the trap stat
 and periphery scaling. Equations and ANNs are written as code, so the file computes the model's own numbers.
 
 **Tables are not exported.** A model with a table constituent shows one line on the Export step — `Id and Qg are tables;
-Verilog-A export needs ANN or equation constituents.` — and **Export Verilog-A…** stays off; **Export** is unaffected.
+Verilog-A export needs ANN or equation constituents.` — and **VA** stays off; **Export** is unaffected.
 To export, refit that constituent as an ANN or an equation on its step ([The method picker](#method)), then export again.
 
 ### Terminals
