@@ -350,7 +350,7 @@
                 <Button Name="SimulateButton" Margin="4,0,0,0"
                         IsVisible="{Binding !ViewModel.IsRunning}"
                         Command="{Binding ViewModel.SimulateCommand}"
-                        ToolTip.Tip="{Binding ViewModel.BlockingReason}">
+                        ToolTip.Tip="{Binding ViewModel.SimulateTip}">
                     <StackPanel Orientation="Horizontal" Spacing="4">
                         <mi:MaterialIcon Kind="Play" Width="14" Height="14"/>
                         <TextBlock Text="Simulate"/>
@@ -467,7 +467,7 @@
                      as its placeholder, and the defaults are PalaceSettings.Default — the ones the
                      writers read. -->
                 <Border Classes="group">
-                  <StackPanel Spacing="2">
+                  <StackPanel Spacing="2" Grid.IsSharedSizeScope="True">
                     <TextBlock Classes="grouphdr" Text="Solver"/>
                     <!-- Two real columns (owner request, 2026-09-25): WHO solves on the left, and —
                          for the circuitRF solver only — WHICH of its analyses on the right. The
@@ -479,9 +479,43 @@
                         <!-- A 3D view's list ends with Thermal: circuitRF's own thermal solver is a solver choice, not an EM
                              problem (owner request, 2026-09-28), so a thermal setup keeps this picker and hides Problem. -->
                         <StackPanel Grid.Column="0" Spacing="2">
+                            <!-- brief-emi-6 R-emi6-2 — a solver that is not installed, or cannot solve this setup, is a
+                                 disabled row with its reason as the tooltip; no note text under the controls. -->
                             <ComboBox Classes="cell" MaxWidth="220" HorizontalAlignment="Left"
                                       ItemsSource="{Binding ViewModel.Solver3DChoiceList}"
-                                      SelectedItem="{Binding ViewModel.Solver3DChoice}"/>
+                                      SelectedItem="{Binding ViewModel.Solver3DChoice}">
+                                <ComboBox.Styles>
+                                    <Style Selector="ComboBoxItem" x:DataType="em:Em3dSolverPickerRow">
+                                        <Setter Property="IsEnabled" Value="{Binding IsEnabled}"/>
+                                        <Setter Property="ToolTip.Tip" Value="{Binding DisabledReason}"/>
+                                        <Setter Property="ToolTip.ShowOnDisabled" Value="True"/>
+                                    </Style>
+                                </ComboBox.Styles>
+                            </ComboBox>
+                            <!-- Compare…: one box per solver, and the reference among the checked ones. -->
+                            <StackPanel Spacing="2" Margin="0,3,0,0" IsVisible="{Binding ViewModel.IsCompareSetup}">
+                                <ItemsControl ItemsSource="{Binding ViewModel.CompareSolverRows}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <WrapPanel Orientation="Horizontal"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="em:Em3dCompareSolverRow">
+                                            <CheckBox Content="{Binding Label}" Margin="0,0,10,0"
+                                                      IsChecked="{Binding IsChecked}" IsEnabled="{Binding IsEnabled}"
+                                                      ToolTip.Tip="{Binding DisabledReason}" ToolTip.ShowOnDisabled="True"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Classes="lbl" Text="Reference" VerticalAlignment="Center"/>
+                                    <ComboBox Classes="cell" MinWidth="110"
+                                              ItemsSource="{Binding ViewModel.CompareReferenceChoices}"
+                                              SelectedItem="{Binding ViewModel.CompareReference}"
+                                              ToolTip.Tip="The solver every other one is compared against."/>
+                                </StackPanel>
+                            </StackPanel>
                             <TextBlock Classes="colhdr" TextWrapping="Wrap" Margin="0,3,0,0"
                                        Text="{Binding ViewModel.Solver3DDescription}"/>
                         </StackPanel>
@@ -651,6 +685,9 @@
                     <!-- brief-em3d-21 R-em3d21-4: the preset. Its tooltip is the measured trade; the boxes
                          below show the chosen preset's values as their placeholders, and a box that is
                          filled in overrides the preset for that field only. -->
+                    <!-- A comparison shows several solvers' sections at once: each is titled then. -->
+                    <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="Palace"
+                               IsVisible="{Binding ViewModel.ShowPalaceTitle}"/>
                     <StackPanel IsVisible="{Binding ViewModel.IsPalaceSetup}" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
                         <TextBlock Classes="colhdr" Text="Quality" VerticalAlignment="Center"/>
                         <ComboBox Classes="cell" MinWidth="110"
@@ -665,8 +702,13 @@
                                   ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.PalaceLinearSolverTip}"/>
                     </StackPanel>
                     <Grid IsVisible="{Binding ViewModel.IsPalaceSetup}" Margin="0,6,0,0"
-                          ColumnDefinitions="Auto,90" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                          RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                           ColumnSpacing="8" RowSpacing="2" HorizontalAlignment="Left">
+                        <!-- The solver sections share one label column, so a comparison's boxes line up. -->
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="SolverSectionLabel"/>
+                            <ColumnDefinition Width="90"/>
+                        </Grid.ColumnDefinitions>
                         <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Largest element (λ)" VerticalAlignment="Center"/>
                         <TextBox   Grid.Row="0" Grid.Column="1" Classes="num" Tag="Palace.MaxElementWavelengths"
                                    Text="{Binding ViewModel.PalaceMaxElementWavelengthsText}"
@@ -724,9 +766,15 @@
                     <!-- brief-em3d-9 R-em3d9-6: openEMS's section — brief 8's grid fields and the two run
                          fields. The same rules as Palace's: a blank box is the default the generator and the
                          writer read, and every change is one undoable .cem edit. -->
+                    <TextBlock Classes="colhdr" FontWeight="SemiBold" Margin="0,6,0,0" Text="openEMS"
+                               IsVisible="{Binding ViewModel.ShowOpenEmsTitle}"/>
                     <Grid IsVisible="{Binding ViewModel.IsOpenEmsSetup}" Margin="0,6,0,0"
-                          ColumnDefinitions="Auto,90" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                          RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                           ColumnSpacing="8" RowSpacing="2" HorizontalAlignment="Left">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" SharedSizeGroup="SolverSectionLabel"/>
+                            <ColumnDefinition Width="90"/>
+                        </Grid.ColumnDefinitions>
                         <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Cells per wavelength" VerticalAlignment="Center"/>
                         <TextBox   Grid.Row="0" Grid.Column="1" Classes="num" Tag="OpenEms.CellsPerWavelength"
                                    Text="{Binding ViewModel.OpenEmsCellsPerWavelengthText}"
@@ -881,6 +929,70 @@
                                    LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                    ToolTip.Tip="A point the axis passes through, x, y, z in µm: the centre of the coax's pin."/>
                     </Grid>
+                    <!-- EMerge's section (EMI-4's CemEmerge): the Palace section's rules — a blank box is the preset's
+                         value, and every change is one undoable .cem edit. -->
+                    <StackPanel IsVisible="{Binding ViewModel.IsEmergeSetup}" Spacing="2" Margin="0,6,0,0">
+                        <TextBlock Classes="colhdr" FontWeight="SemiBold" Text="EMerge" IsVisible="{Binding ViewModel.ShowEmergeTitle}"/>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock Classes="colhdr" Text="Quality" VerticalAlignment="Center"/>
+                            <ComboBox Classes="cell" MinWidth="110"
+                                      ItemsSource="{x:Static em:EmSetupEditorViewModel.PalaceQualityChoices}"
+                                      SelectedItem="{Binding ViewModel.EmergeQualityChoice}"
+                                      ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.EmergeQualityTip}"/>
+                        </StackPanel>
+                        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                              ColumnSpacing="8" RowSpacing="2" HorizontalAlignment="Left" Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" SharedSizeGroup="SolverSectionLabel"/>
+                                <ColumnDefinition Width="90"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Classes="colhdr" Text="Largest element (λ)" VerticalAlignment="Center"/>
+                            <TextBox   Grid.Row="0" Grid.Column="1" Classes="num" Tag="Emerge.MaxElementWavelengths"
+                                       Text="{Binding ViewModel.EmergeMaxElementWavelengthsText}"
+                                       PlaceholderText="{Binding ViewModel.EmergeDefaultMaxElementWavelengths}"
+                                       LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                       ToolTip.Tip="The largest element in each material, as a fraction of the wavelength in that material at the sweep's top frequency. At most 0.5."/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" Classes="colhdr" Text="At metal" VerticalAlignment="Center"/>
+                            <TextBox   Grid.Row="1" Grid.Column="1" Classes="num" Tag="Emerge.EdgeRefinement"
+                                       Text="{Binding ViewModel.EmergeEdgeRefinementText}"
+                                       PlaceholderText="{Binding ViewModel.EmergeDefaultEdgeRefinement}"
+                                       LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                       ToolTip.Tip="The element size along the edges of conductors and sheets, as a fraction of the smallest largest-element size above."/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" Classes="colhdr" Text="Element order" VerticalAlignment="Center"/>
+                            <TextBox   Grid.Row="2" Grid.Column="1" Classes="num" Tag="Emerge.ElementOrder"
+                                       Text="{Binding ViewModel.EmergeElementOrderText}"
+                                       PlaceholderText="{Binding ViewModel.EmergeDefaultElementOrder}"
+                                       LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                       ToolTip.Tip="The finite-element order EMerge solves with, 1 or 2. First-order elements are for quick checks; 2 is the one to read answers from."/>
+                            <TextBlock Grid.Row="3" Grid.Column="0" Classes="colhdr" Text="Refinement passes" VerticalAlignment="Center"/>
+                            <TextBox   Grid.Row="3" Grid.Column="1" Classes="num" Tag="Emerge.AdaptiveMesh"
+                                       Text="{Binding ViewModel.EmergeAdaptiveMeshText}"
+                                       PlaceholderText="{Binding ViewModel.EmergeDefaultAdaptiveMesh}"
+                                       LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                       ToolTip.Tip="The most passes in which EMerge refines the mesh itself before the sweep. 0 solves the starting mesh only. Each pass costs a solve and grows memory."/>
+                            <CheckBox  Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Content="Adaptive sweep"
+                                       IsChecked="{Binding ViewModel.EmergeAdaptiveSweep}"
+                                       ToolTip.Tip="EMerge solves a few frequencies and fits every requested point from them, which is most of its speed. Off solves every frequency."/>
+                            <TextBlock Grid.Row="5" Grid.Column="0" Classes="colhdr" Text="Sweep tolerance" VerticalAlignment="Center"/>
+                            <TextBox   Grid.Row="5" Grid.Column="1" Classes="num" Tag="Emerge.Tolerance"
+                                       Text="{Binding ViewModel.EmergeToleranceText}"
+                                       PlaceholderText="{Binding ViewModel.EmergeDefaultTolerance}"
+                                       LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                       IsEnabled="{Binding ViewModel.EmergeAdaptiveSweep}"
+                                       ToolTip.Tip="The adaptive sweep's tolerance on |S|: it adds frequencies until its estimated error is below this."/>
+                            <TextBlock Grid.Row="6" Grid.Column="0" Classes="colhdr" Text="Most sweep solves" VerticalAlignment="Center"/>
+                            <TextBox   Grid.Row="6" Grid.Column="1" Classes="num" Tag="Emerge.MaxSamples"
+                                       Text="{Binding ViewModel.EmergeMaxSamplesText}"
+                                       PlaceholderText="{Binding ViewModel.EmergeDefaultMaxSamples}"
+                                       LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                       IsEnabled="{Binding ViewModel.EmergeAdaptiveSweep}"
+                                       ToolTip.Tip="The most frequencies the adaptive sweep solves. A sweep that reaches it above its tolerance is reported as not converged."/>
+                            <SelectableTextBlock Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" FontSize="10" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource CrfWarningBrush}"
+                                       Text="{Binding ViewModel.EmergeFieldError}"
+                                       IsVisible="{Binding ViewModel.EmergeFieldError, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                        </Grid>
+                    </StackPanel>
                   </StackPanel>
                 </Border>
 

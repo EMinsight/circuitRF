@@ -341,7 +341,8 @@
                      setup, as Simulate ▸ Run (Ctrl/Cmd+R) does with a 3D view in front. The workspace's Stop does not reach an EM
                      run (it stops a schematic run); an EM run is cancelled from its progress row in the Messages panel, so
                      there is no Stop beside this one. -->
-                <Button IsVisible="{Binding ViewModel.IsEditable}" Command="{Binding ViewModel.SimulateActiveCommand}" ToolTip.Tip="Run Analysis: the active setup (Ctrl+R)"
+                <Button IsVisible="{Binding ViewModel.IsEditable}" Command="{Binding ViewModel.SimulateActiveCommand}"
+                        ToolTip.Tip="{Binding ViewModel.SimulateBlockedReason, TargetNullValue='Run Analysis: the active setup (Ctrl+R)'}"
                         Background="Transparent" BorderThickness="0" Padding="4,2">
                     <mi:MaterialIcon Kind="PlayCircleOutline" Width="18" Height="18"/>
                 </Button>

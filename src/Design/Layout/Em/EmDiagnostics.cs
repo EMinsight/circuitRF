@@ -156,6 +156,35 @@ public static class EmDiagnostics
         "Both solvers ran and both results were written, but no comparison was made: {reason}",
         ("reason", reason));
 
+    /// <summary>brief-emi-6 R-emi6-3 — a comparison of three or more solvers refused before any work.</summary>
+    public static Diagnostic CompareRefusedBeforeWork(string refusal, string remedy) => Diagnostic.Create(
+        "em.solver-3d.compare-refused",
+        DiagnosticSeverity.Error,
+        "{refusal} Nothing was run: a setup comparing solvers checks every one before starting any.{remedy}",
+        ("refusal", refusal), ("remedy", remedy));
+
+    /// <summary>brief-emi-6 R-emi6-3 — some solvers of a comparison produced no result. Each failure is named; what completed
+    /// was written, and the comparison sentence says whether those were compared.</summary>
+    public static Diagnostic SomeSolversFailed(string failures, string completed, string where, string comparison) => Diagnostic.Create(
+        "em.solver-3d.some-failed",
+        DiagnosticSeverity.Error,
+        "{failures}; {completed} completed: {where}. {comparison}",
+        ("failures", failures), ("completed", completed), ("where", where), ("comparison", comparison));
+
+    /// <summary>brief-emi-6 R-emi6-3 — no solver of a comparison produced a result.</summary>
+    public static Diagnostic NoSolverSucceeded(string failures) => Diagnostic.Create(
+        "em.solver-3d.all-failed",
+        DiagnosticSeverity.Error,
+        "No solver produced a result. {failures}",
+        ("failures", failures));
+
+    /// <summary>brief-emi-6 R-emi6-4a — three or more results written, and they could not be compared.</summary>
+    public static Diagnostic ComparisonRefusedMany(string reason) => Diagnostic.Create(
+        "em.solver-3d.comparison-refused-many",
+        DiagnosticSeverity.Error,
+        "Every solver ran and every result was written, but no comparison was made: {reason}",
+        ("reason", reason));
+
     /// <summary>The solve threw. Distinct from a refusal: circuitRF failed, the setup did not.</summary>
     public static Diagnostic SolveFailed(string reason) => Diagnostic.Create(
         "em.solve.failed",

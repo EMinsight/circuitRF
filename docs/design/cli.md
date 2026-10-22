@@ -628,6 +628,18 @@ Everything either backend can refuse is refused **before either starts**, naming
 `--solver openems` when one of them would run. A solver failing mid-run keeps the other's result,
 writes no comparison and exits 1; a cancellation keeps a finished Palace result and exits 130.
 
+**`--solver a,b[,c]` compares any set, and `--reference` picks the solver the others are compared
+against** (brief-emi-6). The list runs in registry order whatever order it is typed in; the reference
+defaults to Palace when it is listed, else the first. `--solver compare` runs the setup's own
+`Compare` block (refused on a setup that compares nothing), and `both` stays an alias for
+`palace,openems`. A word naming no solver, a solver listed twice, a one-solver list, and a
+`--reference` outside the list are each refused before the setup is touched further. A solver that is not
+installed, or refuses the setup, is refused before anything runs, naming it and why. Palace against
+openEMS writes the comparison file Both always wrote; any other set writes `S_<token>` per solver and
+`dMag_dB_<token>`, `dPhase_deg_<token>`, `dVec_<token>` per solver against the reference. The MCP
+`run` tool takes the same `solver` and `reference`, and `explain` adds a `compare` block — the
+reference, and each solver's runnable or refused state.
+
 **`--solver` on a PLANAR setup is refused** (`cli.em.solver-on-planar`, exit 1, brief-em3d-21): it
 chooses between 3D solvers and never makes a setup 3D — that is the `.cem`'s `Solver3D` field. It used
 to convert the run silently. **A Palace run prints Palace's own stages on stderr** — `Meshing (Gmsh)`,

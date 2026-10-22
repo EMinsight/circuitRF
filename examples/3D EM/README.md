@@ -151,5 +151,5 @@ nonlinear eigenvalue solve, and was stopped after 28 minutes in its last pass.
 would outlive its version.
 
 **openEMS.** Every setup here is Palace's. An openEMS run of the via or the bond wire is a cross-check,
-not a reference. Choose **FEM & FDTD - Compare** in a setup's Solver group to run both solvers and see how
-far apart they are.
+not a reference. Choose **Compare…** in a setup's Solver group, tick the solvers to run, and see how far
+apart they are.

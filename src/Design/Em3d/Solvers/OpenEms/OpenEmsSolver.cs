@@ -51,7 +51,12 @@ public static class OpenEmsSolver
     /// </summary>
     private static string? Refusal(EmSetup setup)
     {
-        string on = setup.Solver3D.IsCompare ? "both solvers" : Descriptor.DisplayName;
+        string on = setup.Solver3D.Solvers.Count switch
+        {
+            2 => "both solvers",
+            > 2 => Em3dSolvers.Names(Em3dSolvers.Of(setup.Solver3D)),
+            _ => Descriptor.DisplayName,
+        };
         if (setup.IsStatic3D)
         {
             var (only, remedy) = OnlyOn(setup.Problem3D);

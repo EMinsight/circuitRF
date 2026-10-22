@@ -285,7 +285,7 @@ steady-conduction solver — no Palace, no openEMS — but **it needs Gmsh**, th
 <span class="label">Agreement is a cross-check, not a reference</span>
 <p><b>FEM &amp; FDTD - Compare</b> runs both solvers on one model and writes their difference. Both read
 the same model that circuitRF built, so a mistake in building it would appear in both answers. It checks
-the solving, not the model. See <a href="em-setup.html#run-both">EM Setup ▸ Running both</a>.</p>
+the solving, not the model. See <a href="em-setup.html#compare">EM Setup ▸ Compare</a>.</p>
 </div>
 
 ## What each solver sees of curved geometry {#curved}

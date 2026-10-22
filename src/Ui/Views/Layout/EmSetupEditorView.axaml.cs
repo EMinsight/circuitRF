@@ -59,6 +59,12 @@ public partial class EmSetupEditorView : UserControl
 
     private void OnAttachedToVisualTree(object? sender, Avalonia.VisualTreeAttachmentEventArgs e)
     {
+        // brief-emi-6 R-emi6-2 — which solvers are installed is read when the panel opens (and when Settings ▸ Solvers
+        // closes); never polled.
+        Em3dSolverInstallState.Changed -= OnSolverInstallChanged;
+        Em3dSolverInstallState.Changed += OnSolverInstallChanged;
+        Vm?.UpdateSolverAvailability();
+        _ = Em3dSolverInstallState.RefreshAsync();
         DetachWindowHandlers();
         if (TopLevel.GetTopLevel(this) is not Window w) return;
         _hostWindow = w;
@@ -67,7 +73,12 @@ public partial class EmSetupEditorView : UserControl
     }
 
     private void OnDetachedFromVisualTree(object? sender, Avalonia.VisualTreeAttachmentEventArgs e)
-        => DetachWindowHandlers();
+    {
+        Em3dSolverInstallState.Changed -= OnSolverInstallChanged;
+        DetachWindowHandlers();
+    }
+
+    private void OnSolverInstallChanged() => Vm?.UpdateSolverAvailability();
 
     private void DetachWindowHandlers()
     {
@@ -223,6 +234,9 @@ public partial class EmSetupEditorView : UserControl
             case "Eigenmode":   vm.CommitEigenmode(); break;
             case { } openEms when openEms.StartsWith("OpenEms.", StringComparison.Ordinal):
                 vm.CommitOpenEmsField(openEms);
+                break;
+            case { } emerge when emerge.StartsWith("Emerge.", StringComparison.Ordinal):
+                vm.CommitEmergeField(emerge);
                 break;
             case { } sar when sar.StartsWith("Sar.", StringComparison.Ordinal):       // brief-sar-6
                 vm.CommitSarField(sar);

@@ -29,7 +29,7 @@ public enum Em3dSolverId { Palace, OpenEms, Emerge }
 ///
 /// <para>Immutable, with value equality. An <see cref="Em3dSolverId"/> converts to the one-solver choice.</para>
 /// </summary>
-public sealed class Em3dSolverChoice : IEquatable<Em3dSolverChoice>, IJsonSpelled
+public sealed class Em3dSolverChoice : IEquatable<Em3dSolverChoice>
 {
     /// <summary>A planar setup: no 3D solver.</summary>
     public static Em3dSolverChoice None { get; } = new([], default);
@@ -90,9 +90,18 @@ public sealed class Em3dSolverChoice : IEquatable<Em3dSolverChoice>, IJsonSpelle
     public static bool operator ==(Em3dSolverChoice? a, Em3dSolverChoice? b) => a is null ? b is null : a.Equals(b);
     public static bool operator !=(Em3dSolverChoice? a, Em3dSolverChoice? b) => !(a == b);
 
-    /// <summary>The <c>.cem</c>'s spelling: <c>None</c>, <c>Palace</c>, <c>OpenEms</c>, <c>Both</c>.</summary>
+    /// <summary>The <c>.cem</c>'s spelling: <c>None</c>, <c>Palace</c>, <c>OpenEms</c>, <c>Emerge</c>, <c>Both</c> or
+    /// <c>Compare</c>.</summary>
     public override string ToString() => Em3dSolvers.Spelling(this);
+}
 
+/// <summary>
+/// brief-emi-6 R-emi6-1 — the key <c>Solver3D</c> as a file holds it: one spelling, validated when read. <c>Compare</c>'s set
+/// and reference are a second key (<c>Compare</c>), so the choice is resolved from both once the file is read
+/// (<see cref="Em3dSolvers.FromCompareBlock"/>); every other spelling is a whole choice on its own.
+/// </summary>
+public sealed record Em3dSolverSpelling(string Text) : IJsonSpelled
+{
     /// <summary>What the key <c>Solver3D</c> may hold, as <c>circuitrf reference em-setup</c> lists it.</summary>
-    public static IReadOnlyList<string> JsonSpellings => [Em3dSolvers.Spelling(None), .. Em3dSolvers.Spellings];
+    public static IReadOnlyList<string> JsonSpellings => [Em3dSolvers.Spelling(Em3dSolverChoice.None), .. Em3dSolvers.Spellings];
 }

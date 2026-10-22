@@ -23,22 +23,40 @@ public sealed record PalaceQualityChoice(PalaceQuality Value, string Label)
 }
 
 /// <summary>One row of the Solver picker. <paramref name="IsThermal"/>: circuitRF's own thermal solver — a setup whose problem is
-/// Thermal and which names no EM solver (brief 73), so <paramref name="Value"/> is None and is not what tells it apart.</summary>
-public sealed record Em3dSolverPickerRow(Em3dSolverChoice Value, string Label, bool IsThermal = false)
+/// Thermal and which names no EM solver (brief 73), so <paramref name="Value"/> is None and is not what tells it apart.
+/// <paramref name="IsCompare"/> (brief-emi-6): the Compare… row, whose solvers are the checkboxes under it, not its
+/// <paramref name="Value"/>. A row a panel offers says whether its solver can run here (<see cref="IsEnabled"/>), and why not.</summary>
+public sealed partial class Em3dSolverPickerRow(Em3dSolverChoice Value, string Label, bool IsThermal = false, bool IsCompare = false)
+    : ObservableObject
 {
+    public Em3dSolverChoice Value { get; } = Value;
+    public string Label { get; } = Label;
+    public bool IsThermal { get; } = IsThermal;
+    public bool IsCompare { get; } = IsCompare;
+
+    [ObservableProperty] private bool _isEnabled = true;
+
+    /// <summary>The disabled row's tooltip: not installed, or the solver's own refusal of this setup.</summary>
+    [ObservableProperty] private string? _disabledReason;
+
+    /// <summary>A fresh row with this one's value and label, for a panel's own list.</summary>
+    public Em3dSolverPickerRow Copy() => new(this.Value, this.Label, this.IsThermal, this.IsCompare);
+
     public override string ToString() => Label;
 }
 
 public sealed partial class EmSetupEditorViewModel
 {
-    /// <summary>Planar, each 3D solver (brief-emi-1: the registry's, in its order), and the comparison on one problem (brief 10).</summary>
+    /// <summary>Planar, each 3D solver (brief-emi-1: the registry's, in its order), and Compare… — any set of them on one problem
+    /// (brief 10; brief-emi-6). The template every panel copies its own rows from (<see cref="Solver3DChoiceList"/>): a
+    /// panel's rows carry whether each solver can run there, and that is the panel's, not every panel's.</summary>
     public static IReadOnlyList<Em3dSolverPickerRow> Solver3DChoices { get; } =
     [
         new(Em3dSolverChoice.None, "Planar (circuitRF)"),
         .. CircuitRF.Design.Em3d.Em3dSolvers.All.Select(d => new Em3dSolverPickerRow(d.Id, d.PickerLabel)),
-        // brief-em3d-10 — both on one generated problem, and the comparison beside them.
-        new(CircuitRF.Design.Em3d.Em3dSolvers.Both,
-            string.Join(" & ", CircuitRF.Design.Em3d.Em3dSolvers.Of(CircuitRF.Design.Em3d.Em3dSolvers.Both).Select(d => d.MethodName)) + " - Compare"),
+        // brief-emi-6 R-emi6-2 — the set and reference are the checkboxes and combo under the picker. Its value is the format's
+        // Both, the set a setup starts on when Compare is chosen.
+        new(CircuitRF.Design.Em3d.Em3dSolvers.Both, "Compare…", IsCompare: true),
     ];
 
     /// <summary>The Solver picker's Thermal row, offered by a 3D view's panel: who solves a thermal setup is a solver choice,
@@ -89,7 +107,7 @@ public sealed partial class EmSetupEditorViewModel
     /// what no 3D run reads.
     /// </summary>
     public bool ShowRadiationPattern =>
-        !Is3DSetup || CircuitRF.Design.Em3d.Em3dSolvers.Any(Solver3DChoice.Value, c => c.RadiationPattern);
+        !Is3DSetup || CircuitRF.Design.Em3d.Em3dSolvers.Any(Working.Solver3D, c => c.RadiationPattern);
 
     private void RaiseSolverKindVisibility()
     {
@@ -104,11 +122,11 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(ShowNotesGroup));
     }
 
-    /// <summary>True when Palace's section is shown.</summary>
-    public bool IsPalaceSetup => Solver3DChoice.Value.Runs(CircuitRF.Design.Em3d.PalaceSolver.Id);
+    /// <summary>True when Palace's section is shown: Palace is one of the solvers the setup runs (brief-emi-6 R-emi6-2).</summary>
+    public bool IsPalaceSetup => !IsThermalSetup && Working.Solver3D.Runs(CircuitRF.Design.Em3d.PalaceSolver.Id);
 
     /// <summary>True when openEMS's section is shown (brief-em3d-9 R-em3d9-6).</summary>
-    public bool IsOpenEmsSetup => Solver3DChoice.Value.Runs(CircuitRF.Design.Em3d.OpenEmsSolver.Id);
+    public bool IsOpenEmsSetup => !IsThermalSetup && Working.Solver3D.Runs(CircuitRF.Design.Em3d.OpenEmsSolver.Id);
 
     private const string PlanarHiddenNote =
         "The planar-only settings are hidden; they are kept, and come back if you switch to Planar.";
@@ -117,26 +135,23 @@ public sealed partial class EmSetupEditorViewModel
         ? "Temperature, solved by circuitRF's own thermal solver on a mesh Gmsh makes (Settings ▸ Solvers): the heat sources, " +
           "boundaries and probes drawn in this view, their values below."
         : Solver3DChoice.Value is { IsNone: true } ? "circuitRF's own planar and cross-section solvers, chosen under Analysis."
-        : Solver3DChoice.Value.IsCompare
+        : Working.Solver3D.IsCompare
             ? "Generates one 3D model from the layout, its technology and any bond wires and solves it with " +
-              string.Join(", then with ", CircuitRF.Design.Em3d.Em3dSolvers.Of(Solver3DChoice.Value).Select(d => d.DisplayName)) +
-              " (Settings ▸ Solvers), writing each solver's result and a comparison of the two. " + PlanarHiddenNote
-            : CircuitRF.Design.Em3d.Em3dSolvers.Get(Solver3DChoice.Value.Reference).SetupDescription + " " + PlanarHiddenNote;
+              string.Join(", then with ", CircuitRF.Design.Em3d.Em3dSolvers.Of(Working.Solver3D).Select(d => d.DisplayName)) +
+              " (Settings ▸ Solvers), writing each solver's result and a comparison of each against the reference, " +
+              CircuitRF.Design.Em3d.Em3dSolvers.Get(Working.Solver3D.Reference).DisplayName + ". " + PlanarHiddenNote
+            : CircuitRF.Design.Em3d.Em3dSolvers.Get(Working.Solver3D.Reference).SetupDescription + " " + PlanarHiddenNote;
 
     partial void OnSolver3DChoiceChanged(Em3dSolverPickerRow value)
     {
-        OnPropertyChanged(nameof(Is3DSetup));
-        OnPropertyChanged(nameof(IsPalaceSetup));
-        OnPropertyChanged(nameof(IsOpenEmsSetup));
-        OnPropertyChanged(nameof(IsSarSetup));
-        OnPropertyChanged(nameof(Solver3DDescription));
-        RaiseSolverKindVisibility();
-        RaiseStaticVisibility();
+        RaiseSolverDependents();
         if (_suppressCommit) return;
         bool wasThermal = Working.Problem3D == Em3dProblemType.Thermal;
-        if (value.IsThermal == wasThermal && value.Value == Working.Solver3D) return;
+        // brief-emi-6 — Compare… keeps a comparison the setup already has, and otherwise starts on CompareStart's set.
+        var target = value.IsCompare ? Working.Solver3D.IsCompare ? Working.Solver3D : CompareStart() : value.Value;
+        if (value.IsThermal == wasThermal && target == Working.Solver3D) return;
         var before = SnapshotJson();
-        Working.Solver3D = value.Value;
+        Working.Solver3D = target;
         // Thermal is a solver here and a problem in the file: choosing it or leaving it changes both. A thermal setup names
         // no EM solver (brief 73); leaving it solves the EM problem an EM setup starts with.
         if (value.IsThermal) { Working.Problem3D = Em3dProblemType.Thermal; Working.Thermal ??= new CircuitRF.Design.Layout.Em.CemThermal(); }
@@ -151,7 +166,31 @@ public sealed partial class EmSetupEditorViewModel
             RaiseThermalVisibility();
             RaiseStaticVisibility();
         }
+        SyncCompareFields();
+        RaiseSolverDependents();
         Refresh();
+    }
+
+    /// <summary>What the solver choice decides on screen: the sections shown, the description, and the Run gate.</summary>
+    private void RaiseSolverDependents()
+    {
+        OnPropertyChanged(nameof(Is3DSetup));
+        OnPropertyChanged(nameof(IsPalaceSetup));
+        OnPropertyChanged(nameof(IsOpenEmsSetup));
+        OnPropertyChanged(nameof(IsEmergeSetup));
+        OnPropertyChanged(nameof(ShowPalaceTitle));
+        OnPropertyChanged(nameof(ShowOpenEmsTitle));
+        OnPropertyChanged(nameof(ShowEmergeTitle));
+        OnPropertyChanged(nameof(IsSarSetup));
+        OnPropertyChanged(nameof(Solver3DDescription));
+        OnPropertyChanged(nameof(IsCompareSetup));
+        OnPropertyChanged(nameof(CompareBlockingReason));
+        OnPropertyChanged(nameof(BlockingReason));
+        OnPropertyChanged(nameof(SimulateTip));
+        OnPropertyChanged(nameof(CanRun));
+        SimulateCommand.NotifyCanExecuteChanged();
+        RaiseSolverKindVisibility();
+        RaiseStaticVisibility();
     }
 
     // ── Palace's section, as staged text ─────────────────────────────────────────────────────
@@ -249,8 +288,11 @@ public sealed partial class EmSetupEditorViewModel
     {
         _suppressCommit = true;
         Solver3DChoice = IsThermalSetup ? ThermalSolverChoice
-                       : Solver3DChoices.FirstOrDefault(c => c.Value == Working.Solver3D)
+                       : Working.Solver3D.IsCompare ? _solverRows.Single(c => c.IsCompare)
+                       : _solverRows.FirstOrDefault(c => !c.IsCompare && c.Value == Working.Solver3D)
                          ?? new Em3dSolverPickerRow(Working.Solver3D, Working.Solver3D.ToString());
+        SyncCompareFields();
+        _suppressCommit = true;
         var p = Working.Palace;
         PalaceQualityChoice = PalaceQualityChoices.First(c => c.Value == (p?.Quality ?? PalaceQuality.Standard));
         PalaceLinearSolverChoice = PalaceLinearSolverChoices.First(c => c.Value == (p?.LinearSolver ?? PalaceLinearSolver.Iterative));
@@ -265,6 +307,7 @@ public sealed partial class EmSetupEditorViewModel
         OnPropertyChanged(nameof(SaveFieldsPlaceholder));
         PalaceFieldError = null;
         SyncOpenEmsFields();
+        SyncEmergeFields();
         SyncStaticFields();
         _suppressCommit = false;
     }

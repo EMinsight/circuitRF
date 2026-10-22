@@ -29,6 +29,15 @@ public partial class C3dEditorView : UserControl
     public C3dEditorView()
     {
         InitializeComponent();
+        // brief-emi-6 — Run is off for a comparison with fewer than two solvers that can run here: what is installed is read
+        // when the view opens and whenever Settings ▸ Solvers closes.
+        AttachedToVisualTree += (_, _) =>
+        {
+            CircuitRF.Ui.Layout.Em.Em3dSolverInstallState.Changed -= OnSolverInstallChanged;
+            CircuitRF.Ui.Layout.Em.Em3dSolverInstallState.Changed += OnSolverInstallChanged;
+            _ = CircuitRF.Ui.Layout.Em.Em3dSolverInstallState.RefreshAsync();
+        };
+        DetachedFromVisualTree += (_, _) => CircuitRF.Ui.Layout.Em.Em3dSolverInstallState.Changed -= OnSolverInstallChanged;
         // The Look panel is light-dismiss, and its dismiss overlay covers the window and swallows the wheel: the viewport is let
         // through so the picture being tuned can still be zoomed while the panel is open.
         if (LookButton.Flyout is Avalonia.Controls.Primitives.PopupFlyoutBase look) look.OverlayInputPassThroughElement = ViewportPanel;
@@ -86,6 +95,8 @@ public partial class C3dEditorView : UserControl
             FaultText.IsVisible = why is not null;
         };
     }
+
+    private void OnSolverInstallChanged() => _vm?.RefreshSimulateGate();
 
     protected override void OnDataContextChanged(EventArgs e)
     {

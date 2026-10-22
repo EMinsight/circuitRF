@@ -21966,3 +21966,44 @@ Gate: `tests/Ui.Tests/Em3d/EmergeRunTests.cs`. It covers the log reader, the res
 `testdata/em3d/emerge-run/driven/` (three rows of the Cavity's run and its `cavity.s2p` golden;
 `CRF_WRITE_EMERGE_GOLDENS=1` rewrites it), the eigenmode filter, the tree kill (not on Windows), the memory estimate, and
 the Cavity driven on a real EMerge (Skipped without one).
+
+## EMI-6: Compare — any set of installed solvers on one problem (2026-10-22)
+
+`docs/sonnet-briefs/brief-emi-6-compare.md`. `Em3dSolverChoice` (EMI-1) already held any set and a reference; this made the
+format, the run, the comparison, the panel and the CLI use it.
+
+- **The format needed a second key, and the first one's type changed to make that possible.** `"Solver3D": "Compare"` names no
+  set on its own — the set is the `Compare` block — so a converter that turned the one string straight into an
+  `Em3dSolverChoice` could not read it. `CemFile.Solver3D` is now an `Em3dSolverSpelling` (validated on read, still
+  `IJsonSpelled`, so `reference em-setup` still lists its spellings) and `EmSetupPersistence.Solver3DOf` resolves the choice
+  from both keys. `Both` is still written for exactly Palace + openEMS against Palace, so no existing file or example
+  changes. **The old writer would have written `Palace+OpenEms` for any other comparison, which no reader accepted** — it was
+  unreachable until now, and would have produced a file circuitRF could not open again.
+- **Byte identity was gated against a golden written BEFORE the change**: `testdata/em3d/compare/palace-openems.compare_em.npy`
+  came from the two-solver `Em3dComparison.Compare` as it stood; the generalised one reproduces it byte for byte, notes
+  included (they travel in `__meta__`). The legacy layout is chosen by tokens (`palace` reference, `openems` other) inside
+  the engine, which already named those cubes.
+- **Facts belong to a solver, not to "the other side".** The openEMS facts were read only off the non-reference leg. With
+  openEMS as the reference, its PEC solids and dielectric fit still explain a difference, so each leg's facts are worded
+  against the reference (or, for the reference's own, against every other solver). The FEM-vs-FDTD guidance appears only when
+  both methods are compared — between two FEM solvers it says nothing.
+- **A failed leg among three still compares what completed**, when the reference did and one other did: the status stays an
+  error (exit 1) and the sentence names the comparison it did write. Two solvers keep Both's sentences exactly.
+- **An eigenmode comparison writes no comparison file** — there is no S to difference; each solver's modes are its own result.
+- **The panel's rows are per panel.** Whether a solver can run depends on this setup (a descriptor's `Refusal`), so the static
+  `Solver3DChoices` is a template and each view model copies it; the rows are observable so the ComboBox's list stays the
+  same reference. Installation state is `Em3dSolverInstallState`, read off the UI thread when the panel attaches and when the
+  Settings ▸ Solvers page detaches. Unchecking the second-last solver is refused (the box stays ticked), because the file
+  cannot hold a comparison of one.
+- **The EMerge section** (`EmSetupEditorViewModel.Emerge.cs`) is Palace's rules on EMI-4's `CemEmerge`: blank is the preset's
+  value from `EmergeSettings.Preset`, a value `EmergeSettings.Problems` would refuse is refused in the panel with the same
+  limits, and an all-blank section is no section. In a comparison each solver's section is titled, and the three share one
+  label column (`SharedSizeGroup`), so their boxes line up; a single solver's section is laid out as before. Checked by
+  rendering the real view headlessly.
+- **A comparison that cannot run is a TOOLTIP, never the panel's banner.** Routed through `BlockingReason` it appeared as the
+  orange banner across the top — the render showed it — so it is `SimulateTip` and `CanRun` only.
+- **The 3D editor's Run** (`SimulateActiveCommand`) had no CanExecute at all: every refusal was posted when it was pressed. It
+  now asks `EmSetupEditorViewModel.CompareBlockingReasonFor` of the active setup (the panel's own check, static so both
+  share it) and shows the reason as its tooltip; `RunSetupFor` refuses with the same sentence for the menu and Ctrl+R. Every
+  other refusal is still said on press, as before. It re-asks on every setup rebuild (edits and undo arrive there), on a
+  change of active setup, and when `Em3dSolverInstallState` changes.

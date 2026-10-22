@@ -2531,6 +2531,15 @@ namespace RfCore.Export
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         string? Refusal);
 
+    /// <summary>brief-emi-6 R-emi6-5 — a comparison: the solver every other one is compared against, and each solver it runs.</summary>
+    public sealed record Em3dCompareJson(string Reference, IReadOnlyList<Em3dCompareSolverJson> Solvers);
+
+    /// <summary>One solver of a comparison: whether a run would start it, and if not, why (not installed, or its own refusal).</summary>
+    public sealed record Em3dCompareSolverJson(
+        string Solver, bool Runnable,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Refusal);
+
     /// <summary>One object of an EMerge input: its name, what kind of object it is and what EMerge is told it is.</summary>
     public sealed record Em3dEmergeObjectJson(string Name, string Kind, string Mapping);
 
@@ -2563,6 +2572,11 @@ namespace RfCore.Export
         /// Palace.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public Em3dDeviceJson? Device { get; init; }
+
+        /// <summary>brief-emi-6 R-emi6-5 — a comparison's reference and each solver's runnable or refused state; null when the
+        /// setup runs one solver, so every earlier report is unchanged.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Em3dCompareJson? Compare { get; init; }
 
         /// <summary>brief-emi-4 R-emi4-4 — EMerge's lowering of the problem; null when the setup runs no EMerge, so every
         /// earlier report is unchanged.</summary>

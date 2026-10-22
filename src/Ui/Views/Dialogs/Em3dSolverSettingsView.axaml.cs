@@ -40,6 +40,8 @@ public partial class Em3dSolverSettingsView : UserControl
         WslMemoryDialog.Changed += OnSubsystemMemoryChanged;
         DetachedFromVisualTree += (_, _) =>
         {
+            // brief-emi-6 R-emi6-2 — an open EM Setup panel re-reads which solvers are installed when this page closes.
+            _ = CircuitRF.Ui.Layout.Em.Em3dSolverInstallState.RefreshAsync();
             WslMemoryDialog.Changed -= OnSubsystemMemoryChanged;
             CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.Finished -= OnInstallFinished;
             CircuitRF.Ui.Views.Dialogs.SolverRemovalRunner.Finished -= OnRemovalFinished;

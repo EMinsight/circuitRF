@@ -283,12 +283,13 @@ internal static class CliDiagnostics
         "cli.measurement.failed", DiagnosticSeverity.Warning, "{text}", ("text", text));
 
     /// <summary>A warning from the EM setup resolver — a technology that would not resolve, say.</summary>
-    /// <summary>brief-em3d-7 R-em3d7-1b — <c>em --solver</c> names a 3D solver, and only those.</summary>
-    public static Diagnostic EmUnknownSolver(string value) => Diagnostic.Create(
+    /// <summary>brief-em3d-7 R-em3d7-1b — <c>em --solver</c> names a 3D solver, and only those. brief-emi-6 R-emi6-5 —
+    /// <paramref name="why"/>: the parse's own sentence (a list, <c>compare</c>, <c>--reference</c>).</summary>
+    public static Diagnostic EmUnknownSolver(string value, string? why = null) => Diagnostic.Create(
         "cli.em.unknown-solver",
         DiagnosticSeverity.Error,
-        "em: --solver takes " + CircuitRF.Design.Em3d.Em3dSolvers.CliWordList + ", not '{value}'.",
-        ("value", value));
+        "em: {why}",
+        ("value", value), ("why", why ?? $"--solver takes {CircuitRF.Design.Em3d.Em3dSolvers.CliWordList}, not '{value}'."));
 
     /// <summary>brief-em3d-136 R-em3d136-4c — <c>em --device</c> takes cpu or gpu.</summary>
     public static Diagnostic EmUnknownDevice(string value) => Diagnostic.Create(

@@ -28,7 +28,25 @@ internal static class ExplainEm3d
     /// <summary>The report's rows for <paramref name="src"/>, which must be a 3D setup.</summary>
     /// <param name="device">brief-em3d-136 — the device a run would use (<c>explain --device</c>, as <c>em --device</c>).</param>
     public static ExplainEm3dJson Build(Em3dSetupSource src, PalaceDevice device = PalaceDevice.Cpu)
-        => BuildCore(src, device) is var r && Device(src.Setup, device, r.Solvers) is { } d ? r with { Device = d } : r;
+    {
+        var r = BuildCore(src, device);
+        if (Device(src.Setup, device, r.Solvers) is { } d) r = r with { Device = d };
+        return Compare(src.Setup, r.Solvers) is { } c ? r with { Compare = c } : r;
+    }
+
+    /// <summary>brief-emi-6 R-emi6-5 — a comparison's reference and, per solver, whether a run would start it: its own refusal of
+    /// the setup first, then the first of its programs a run would stop at. Null for one solver.</summary>
+    private static Em3dCompareJson? Compare(EmSetup setup, IReadOnlyList<Em3dSolverJson> programs)
+    {
+        if (!setup.Solver3D.IsCompare) return null;
+        return new Em3dCompareJson(Em3dSolvers.Get(setup.Solver3D.Reference).DisplayName,
+            [.. Em3dSolvers.Of(setup.Solver3D).Select(d =>
+            {
+                string? why = d.Refusal(setup)
+                    ?? programs.FirstOrDefault(p => d.Tools.Any(t => SolverDiscovery.For(t).Name == p.Tool) && !p.Proceeds)?.Refusal;
+                return new Em3dCompareSolverJson(d.DisplayName, why is null, why);
+            })]);
+    }
 
     private static ExplainEm3dJson BuildCore(Em3dSetupSource src, PalaceDevice device)
     {
@@ -579,6 +597,12 @@ internal static class ExplainEm3d
 
         if (r.GeometryKernel is { } kernel) PrintKernel(kernel);
         Console.WriteLine($"  3D setup     solver {r.Solver}");
+        if (r.Compare is { } compare)
+        {
+            Console.WriteLine($"  {"",-12} compared against {compare.Reference}");
+            foreach (var c in compare.Solvers)
+                Console.WriteLine($"  {"",-12} {c.Solver}: " + (c.Runnable ? "would run" : $"would not run — {c.Refusal}"));
+        }
         if (r.Refusal is { } refusal)
         {
             Console.WriteLine($"  {"",-12} the 3D problem could not be built: {refusal}");

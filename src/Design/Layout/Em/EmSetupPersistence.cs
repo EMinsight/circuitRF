@@ -1093,26 +1093,40 @@ public sealed class CemThermalPulse
 }
 
 /// <summary>
-/// brief-emi-1 R-emi1-3 — the key <c>Solver3D</c>: a solver's spelling (<c>Palace</c>, <c>OpenEms</c>) or <c>Both</c>, read in
-/// any case as the enum it replaced read them, and written back in the canonical spelling, so a file opened and saved
-/// with no edit is byte-identical. A spelling no solver answers to — a solver whose integration was removed — is refused
-/// with the list of the ones that do.
+/// brief-emi-1 R-emi1-3 — the key <c>Solver3D</c>: a solver's spelling (<c>Palace</c>, <c>OpenEms</c>), <c>Both</c> or (brief-emi-6)
+/// <c>Compare</c>, read in any case as the enum it replaced read them, and written back in the canonical spelling, so a file
+/// opened and saved with no edit is byte-identical. A spelling no solver answers to — a solver whose integration was removed —
+/// is refused with the list of the ones that do.
 /// </summary>
-public sealed class Em3dSolverChoiceConverter : JsonConverter<Em3dSolverChoice?>
+public sealed class Em3dSolverSpellingConverter : JsonConverter<Em3dSolverSpelling?>
 {
-    public override Em3dSolverChoice? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override Em3dSolverSpelling? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType == JsonTokenType.Null) return null;
         if (reader.TokenType != JsonTokenType.String) throw new JsonException(CircuitRF.Design.Em3d.Em3dSolvers.UnknownSpelling(reader.TokenType.ToString()));
         string spelling = reader.GetString() ?? "";
-        return CircuitRF.Design.Em3d.Em3dSolvers.FromSpelling(spelling) ?? throw new JsonException(CircuitRF.Design.Em3d.Em3dSolvers.UnknownSpelling(spelling));
+        if (CircuitRF.Design.Em3d.Em3dSolvers.IsCompareSpelling(spelling)) return new(CircuitRF.Design.Em3d.Em3dSolvers.CompareSpelling);
+        return CircuitRF.Design.Em3d.Em3dSolvers.FromSpelling(spelling) is { } choice
+            ? new(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(choice))
+            : throw new JsonException(CircuitRF.Design.Em3d.Em3dSolvers.UnknownSpelling(spelling));
     }
 
-    public override void Write(Utf8JsonWriter writer, Em3dSolverChoice? value, JsonSerializerOptions options)
+    public override void Write(Utf8JsonWriter writer, Em3dSolverSpelling? value, JsonSerializerOptions options)
     {
         if (value is null) { writer.WriteNullValue(); return; }
-        writer.WriteStringValue(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(value));
+        writer.WriteStringValue(value.Text);
     }
+}
+
+/// <summary>brief-emi-6 R-emi6-1 — what <c>"Solver3D": "Compare"</c> runs: two or more solvers by their <c>Solver3D</c>
+/// spellings, and the one the others are compared against. Written only beside <c>Compare</c>.</summary>
+public sealed class CemCompare
+{
+    /// <summary>The solvers, by spelling (<c>Palace</c>, <c>OpenEms</c>, <c>Emerge</c>); run in circuitRF's solver order.</summary>
+    public List<string>? Solvers { get; set; }
+
+    /// <summary>The solver the others are compared against. Omitted is Palace when it is one of them, else the first.</summary>
+    public string? Reference { get; set; }
 }
 
 /// <summary>brief-em3d-80 — a list of names that may be written as the one string <c>"*"</c>.</summary>
@@ -1364,10 +1378,14 @@ public sealed class CemFile
     /// brief-em3d-3 — <b>null means None</b>: a planar setup, which is what every <c>.cem</c> written
     /// before 3D existed means. Anything else makes this a 3D setup and the planar-only fields above
     /// are kept but not read. Chosen by name only; Auto never resolves to a 3D solver. brief-emi-1 R-emi1-3 — spelt
-    /// <c>Palace</c>, <c>OpenEms</c> or <c>Both</c> exactly as before the solver seam (<see cref="Em3dSolverChoiceConverter"/>).
+    /// <c>Palace</c>, <c>OpenEms</c> or <c>Both</c> exactly as before the solver seam, or <c>Compare</c> (<see cref="Em3dSolverSpellingConverter"/>).
     /// </summary>
-    [JsonConverter(typeof(Em3dSolverChoiceConverter))]
-    public Em3dSolverChoice? Solver3D { get; set; }
+    [JsonConverter(typeof(Em3dSolverSpellingConverter))]
+    public Em3dSolverSpelling? Solver3D { get; set; }
+
+    /// <summary>brief-emi-6 R-emi6-1 — the solvers and reference of <c>"Solver3D": "Compare"</c>. Null for every other choice,
+    /// <c>Both</c> included.</summary>
+    public CemCompare? Compare { get; set; }
 
     /// <summary>The temperature a 3D setup evaluates every conductor's σ at, °C. <b>Null means
     /// 20 °C.</b> Read by 3D setups only.</summary>
@@ -1545,7 +1563,14 @@ public static class EmSetupPersistence
                 s.PlanarMesh.DetailFloorDivisor == PlanarMeshSettings.DefaultDetailFloorDivisor
                     ? null : s.PlanarMesh.DetailFloorDivisor,
         },
-        Solver3D       = s.Solver3D.IsNone ? null : s.Solver3D,
+        Solver3D       = s.Solver3D.IsNone ? null : new Em3dSolverSpelling(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(s.Solver3D)),
+        Compare        = CircuitRF.Design.Em3d.Em3dSolvers.IsCompareSpelling(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(s.Solver3D))
+            ? new CemCompare
+            {
+                Solvers   = [.. CircuitRF.Design.Em3d.Em3dSolvers.Of(s.Solver3D).Select(d => d.Spelling)],
+                Reference = CircuitRF.Design.Em3d.Em3dSolvers.Get(s.Solver3D.Reference).Spelling,
+            }
+            : null,
         OperatingTempC = s.OperatingTempC,
         AirBox         = s.AirBox is { } box ? new CemAirBox
         {
@@ -1631,7 +1656,7 @@ public static class EmSetupPersistence
                                      pm.DetailFloorDivisor
                                          ?? PlanarMeshSettings.DefaultDetailFloorDivisor)
             : PlanarMeshSettings.Default,
-        Solver3D              = f.Solver3D ?? Em3dSolverChoice.None,
+        Solver3D              = Solver3DOf(f),
         OperatingTempC        = f.OperatingTempC,
         AirBox                = f.AirBox is { } box
             ? new EmAirBox(FromFace(box.XMin), FromFace(box.XMax), FromFace(box.YMin),
@@ -1650,6 +1675,17 @@ public static class EmSetupPersistence
         Thermal               = f.Thermal,
         Sar                   = f.Sar,
     };
+
+    /// <summary>brief-emi-6 R-emi6-1 — the choice the keys <c>Solver3D</c> and <c>Compare</c> name together. A <c>Compare</c> block
+    /// beside any other spelling is not read (and not written back).</summary>
+    private static Em3dSolverChoice Solver3DOf(CemFile f)
+    {
+        if (f.Solver3D is not { } spelling) return Em3dSolverChoice.None;
+        if (!CircuitRF.Design.Em3d.Em3dSolvers.IsCompareSpelling(spelling.Text))
+            return CircuitRF.Design.Em3d.Em3dSolvers.FromSpelling(spelling.Text)!;
+        var (choice, refusal) = CircuitRF.Design.Em3d.Em3dSolvers.FromCompareBlock(f.Compare?.Solvers, f.Compare?.Reference);
+        return choice ?? throw new JsonException(refusal);
+    }
 
     /// <summary>
     /// <b>ANT-3's persistence migration, and the refusal is the part that is a decision.</b>

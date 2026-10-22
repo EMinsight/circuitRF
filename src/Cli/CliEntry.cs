@@ -1384,6 +1384,7 @@ static int RunEm(string[] args)
     // brief-sar-12 R-sar12-3 — `em x.c3d --bands <sweep>`: every band's setup, made from the sweep's template, run in turn.
     string? bandsName = null;
     Em3dSolverChoice? solver = null;
+    string? referenceName = null;
     bool force = false;
     // brief-em3d-136 R-em3d136-4c — where Palace solves. Headless there is no preference to read, so a build machine
     // says what it means; the default is the CPU.
@@ -1407,11 +1408,14 @@ static int RunEm(string[] args)
                 break;
             // brief-em3d-7 R-em3d7-1b (owner decision D1) — the 3D solver for THIS run, overriding the
             // setup's Solver3D in memory only. Nothing is written back: the .cem is not saved here.
+            // brief-em3d-10 — `both`, on one generated problem, and the comparison. brief-emi-1 — the words are the registry's.
+            // brief-emi-6 R-emi6-5 — or a comma list of them, or `compare` (the setup's own set); read once the setup is,
+            // since `compare` means the setup's.
             case "--solver" when i + 1 < args.Length:
-                string name = solverName = args[++i];
-                // brief-em3d-10 — `both`, on one generated problem, and the comparison. brief-emi-1 — the words are the registry's.
-                solver = CircuitRF.Design.Em3d.Em3dSolvers.FromCliWord(name);
-                if (solver is null) return JsonRun.Fail(CliDiagnostics.EmUnknownSolver(name));
+                solverName = args[++i];
+                break;
+            case "--reference" when i + 1 < args.Length:
+                referenceName = args[++i];
                 break;
             case "--workspace" when i + 1 < args.Length:
                 workspace = args[++i];
@@ -1468,7 +1472,7 @@ static int RunEm(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
-        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "] [--device cpu|gpu] [--force] [--set var=expr]");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device cpu|gpu] [--force] [--set var=expr]");
         Console.Error.WriteLine("       circuitrf em [<workspace dir | .cws | .ctech>] --component \"SPIRAL N=3 W=10 um ...\" -o out.sNp [--freq start:stop:step]");
         return code;
     }
@@ -1526,6 +1530,15 @@ static int RunEm(string[] args)
         {
             return JsonRun.Fail(CliDiagnostics.SetupUnreadable(cemPath, ex.Message));
         }
+    }
+
+    if (referenceName is not null && solverName is null)
+        return JsonRun.Fail(CliDiagnostics.EmUnknownSolver("", "--reference names a comparison's reference, and needs --solver naming the comparison."));
+    if (solverName is not null)
+    {
+        var (parsed, why) = CircuitRF.Design.Em3d.Em3dSolvers.ParseCliSolvers(solverName, referenceName, setup.Solver3D);
+        if (parsed is null) return JsonRun.Fail(CliDiagnostics.EmUnknownSolver(solverName, why));
+        solver = parsed;
     }
 
     // brief-em3d-73 — nor a thermal one an EM one: the thermal solver is circuitRF's own.

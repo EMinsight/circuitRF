@@ -234,6 +234,26 @@ public sealed class SimulateEditorGateTests : IDisposable
 
     private static C3dDrawInput At(long x, long y, long z) => new(new C3dPoint3(x * Um, y * Um, z * Um), true, true, null, null);
 
+    /// <summary>brief-emi-6 — Run is off for an active comparison with fewer than two solvers that can run here (openEMS has no
+    /// eigensolver), its tooltip the panel's own reason, and on again when the setup can run.</summary>
+    [Fact]
+    public void ACompareThatCannotRun_TurnsRunOff_WithThePanelsReason()
+    {
+        var setup = Setup("S1");
+        setup.Solver3D = Em3dSolvers.Both;
+        setup.Problem3D = Em3dProblemType.Eigenmode;
+        var vm = Open(Microstrip(setup));
+        Assert.False(vm.SimulateActiveCommand.CanExecute(null));
+        Assert.StartsWith("A comparison runs two or more solvers, and only 1 of the checked ones can run here: openEMS:", vm.SimulateBlockedReason);
+        Assert.Equal(vm.SimulateBlockedReason, vm.RunSetupFor(null).Refusal);
+
+        var panel = Assert.IsType<EmSetupDocument>(vm.SetupEditor).ViewModel;
+        panel.Problem3DChoice = EmSetupEditorViewModel.Problem3DChoices.Single(c => c.Value == Em3dProblemType.Driven);
+        Settle(vm);
+        Assert.Null(vm.SimulateBlockedReason);
+        Assert.True(vm.SimulateActiveCommand.CanExecute(null));
+    }
+
     private static EmSetup Setup(string name) => new() { Name = name, Solver3D = Em3dSolverId.Palace };
 
     private static C3dDocument Microstrip(params EmSetup[] setups)

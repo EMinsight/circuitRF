@@ -581,6 +581,10 @@ internal static class ToolCatalog
                          "The .cws paths resolve against. Default: the nearest one above the .cem."),
                      new("solver", "--solver", OptKind.Str,
                          "A 3D setup's solver for this run only: " + CircuitRF.Design.Em3d.Em3dSolvers.CliWordList + ". Default: the .cem's Solver3D."),
+                     // brief-emi-6 R-emi6-5 — a comparison's reference, as `em --reference`.
+                     new("reference", "--reference", OptKind.Str,
+                         "With a solver list or compare: the solver every other one is compared against. Default: Palace when "
+                       + "it is compared, else the first."),
                      // brief-em3d-136 R-em3d136-4d — `em --device`, through the CLI's own parsing and refusals.
                      new("device", "--device", OptKind.Str,
                          "Where Palace solves: cpu (default) or gpu. gpu needs a Palace built with GPU support and runs one "
@@ -593,7 +597,7 @@ internal static class ToolCatalog
                      new("freq", "--freq", OptKind.Str,
                          "With component: the sweep, start:stop:step, e.g. 1GHz:20GHz:1GHz. Default 1-20 GHz.")],
                     "Electromagnetic extraction of the layout the .cem names, a .c3d's embedded setup, or one "
-                  + "component's drawn part. Writes a Touchstone and a .npy; a 3D setup run with both solvers "
+                  + "component's drawn part. Writes a Touchstone and a .npy; a 3D setup run with several solvers "
                   + "writes each one's and a comparison .npy; a static, eigenmode or thermal setup writes the "
                   + ".npy only."),
             ]),

@@ -1423,7 +1423,7 @@ src/Design/Modeling/VerilogA/VaTraps.cs|'{model}' already has a Verilog-A writer
 
 # brief-emi-1 — internal invariants of the 3D solver seam: a comparison built with fewer than two solvers or a reference
 # outside them, and a comparison wider than the two the run compares today. No file or command reaches them.
-src/Design/Em3d/Em3dRunService.cs|A comparison of more than two solvers is not built yet.
+src/Engine/Em3d/Em3dComparison.cs|A comparison has at least one solver besides its reference.
 src/Design/Layout/Em/Em3dSolverChoice.cs|A comparison names at least two different solvers.
 src/Design/Layout/Em/Em3dSolverChoice.cs|A comparison's reference is one of its solvers.
 # brief-emi-4/5 — EMerge's input and the plain arrays its driver writes back: internal invariants of the lowering, and the

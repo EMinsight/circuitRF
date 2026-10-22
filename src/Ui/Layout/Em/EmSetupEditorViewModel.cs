@@ -696,7 +696,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// </summary>
     public string? BlockingReason =>
         // brief-em3d-7 — a 3D setup is not refused by the planar extractors it does not use; its run
-        // reports its own refusals (the solver checks, the 3D problem, the mesh's entity check).
+        // reports its own refusals (the solver checks, the 3D problem, the mesh's entity check). A comparison the panel can
+        // tell will not run says so on Simulate's tooltip only (SimulateTip), never in this banner (brief-emi-6: tooltips only).
         Is3DSetup ? null
         : SelectedKernel == EmAnalysisKind.Planar
             ? PlanarExtractionRefusal ?? PortRefusal ?? KernelRefusal ?? PlanarBudgetRefusal
@@ -719,9 +720,13 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
                                                         ? n : "uniform-line (quasi-static) kernel")
             : null;
 
+    /// <summary>Simulate's tooltip: why it is off — the banner's reason, or (brief-emi-6) a comparison with fewer than two
+    /// solvers that can run here, which has no banner.</summary>
+    public string? SimulateTip => BlockingReason ?? CompareBlockingReason;
+
     public bool CanRun =>
         !IsBusy &&
-        (Is3DSetup ||
+        (Is3DSetup ? CompareBlockingReason is null :
          (SelectedKernel == EmAnalysisKind.Planar
             ? PlanarProblem is not null && BlockingReason is null
             : Problem is not null && BlockingReason is null));
@@ -1084,8 +1089,8 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
     /// <summary>The solver choices this panel offers: a 3D view is never solved by the planar kernels, and may be solved by
     /// circuitRF's own thermal solver (R-em3d75-3 D1: a .cem may not).</summary>
     public IReadOnlyList<Em3dSolverPickerRow> Solver3DChoiceList => IsEmbedded
-        ? [.. Solver3DChoices.Where(c => !c.Value.IsNone), ThermalSolverChoice]
-        : Solver3DChoices;
+        ? [.. _solverRows.Where(c => !c.Value.IsNone), ThermalSolverChoice]
+        : _solverRows;
 
     /// <summary>brief-em3d-49 — set by the 3D editor for an embedded setup: an edit's before and after (the full <c>.cem</c>
     /// spelling) and its description. The editor pushes the undo entry; this panel's own stack stays empty.</summary>
@@ -2223,6 +2228,7 @@ public sealed partial class EmSetupEditorViewModel : ObservableObject
         if (Problem is null && PlanarProblem is null && PortRows.Count > 0) RebuildPortRows(null);
         OnPropertyChanged(nameof(InternalPortOnTheWrongKernel));
         OnPropertyChanged(nameof(BlockingReason));
+        OnPropertyChanged(nameof(SimulateTip));
         OnPropertyChanged(nameof(CanRun));
         SimulateCommand.NotifyCanExecuteChanged();
         AnalysisRefreshed?.Invoke();

@@ -283,6 +283,7 @@ public sealed partial class C3dEditorViewModel
         OnPropertyChanged(nameof(SetupsHeading));
         OnPropertyChanged(nameof(HasSetups));
         ReloadSetupEditor();
+        RefreshSimulateGate();
     }
 
     public bool HasSetups => SetupItems.Count > 0;
@@ -325,6 +326,7 @@ public sealed partial class C3dEditorViewModel
         // brief-em3d-83 — a plot pinned to a setup is unmoved; its row says which setup when it is not the active one.
         RebuildFieldPlotTree();
         ApplyVisiblePlots();
+        RefreshSimulateGate();
     }
 
     partial void OnSelectedSetupItemChanged(C3dSetupItem? value)
@@ -475,8 +477,25 @@ public sealed partial class C3dEditorViewModel
     }
 
     /// <summary>Simulate ▸ Run: the active setup through the shell's run path.</summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSimulateActive))]
     public Task SimulateActive() => RunRequested?.Invoke(this, null) ?? Task.CompletedTask;
+
+    /// <summary>
+    /// brief-emi-6 — why Run is off for the active setup: a comparison with fewer than two solvers that can run here (the
+    /// setup panel's own check, <see cref="EmSetupEditorViewModel.CompareBlockingReasonFor"/>). Null otherwise: every other
+    /// refusal is still said when Run is pressed, as before.
+    /// </summary>
+    public string? SimulateBlockedReason
+        => ActiveSetup is { } setup ? EmSetupEditorViewModel.CompareBlockingReasonFor(setup, Em3dSolverInstallState.Known) : null;
+
+    private bool CanSimulateActive() => SimulateBlockedReason is null;
+
+    /// <summary>Re-asks <see cref="SimulateBlockedReason"/>: the active setup, its solvers, or what is installed changed.</summary>
+    public void RefreshSimulateGate()
+    {
+        OnPropertyChanged(nameof(SimulateBlockedReason));
+        SimulateActiveCommand.NotifyCanExecuteChanged();
+    }
 
     /// <summary>Why the active setup cannot be run now, or null.</summary>
     public string? SimulateRefusal()
@@ -486,7 +505,7 @@ public sealed partial class C3dEditorViewModel
         if (ActiveSetupName is null)
             return SetupItems.Count == 0 ? "This 3D view has no setup. Add one in Simulate ▸ Setup Analyses…" : "No setup is active: make one active in Simulate ▸ Setup Analyses…";
         var read = C3dSetups.Read(Document).FirstOrDefault(s => s.Name == ActiveSetupName);
-        return read is null ? $"The active setup '{ActiveSetupName}' is no longer in this 3D view." : read.Refusal;
+        return read is null ? $"The active setup '{ActiveSetupName}' is no longer in this 3D view." : read.Refusal ?? SimulateBlockedReason;
     }
 
     /// <summary>The setup a run of <paramref name="name"/> (null: the active one) uses, as its run names it — or why not.</summary>
@@ -499,6 +518,8 @@ public sealed partial class C3dEditorViewModel
         var read = C3dSetups.Read(Document).FirstOrDefault(s => s.Name == name);
         if (read is null) return (null, false, $"This 3D view has no setup named '{name}'.");
         if (read.Refusal is { } why) return (null, false, why);
+        if (EmSetupEditorViewModel.CompareBlockingReasonFor(read.Setup!, Em3dSolverInstallState.Known) is { } blocked)
+            return (null, false, blocked);
         return (C3dSetups.ForRun(read.Setup!, TopFilePath), false, null);
     }
 

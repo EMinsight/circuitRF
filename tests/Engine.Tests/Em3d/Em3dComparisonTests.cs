@@ -86,6 +86,97 @@ public sealed class Em3dComparisonTests
         Assert.Equal([0.0, 1.0], carried.RealValues[..2]);
     }
 
+    /// <summary>brief-emi-6 §6.2 — Palace against openEMS, Palace the reference, writes the comparison file it wrote before
+    /// Compare existed, byte for byte: the golden was written by the two-solver comparison EMI-6 generalised.</summary>
+    [Fact]
+    public void PalaceAgainstOpenEms_WritesTheGoldenComparison_ByteForByte()
+    {
+        var (data, _) = GoldenCase();
+        string path = Path.Combine(Path.GetTempPath(), "crf-cmp-" + Guid.NewGuid().ToString("N")[..12] + ".npy");
+        try
+        {
+            RfCore.Export.DataSetExporter.Export(data, path, RfCore.Export.ExportFormat.Npy);
+            string golden = Path.Combine(TestDataRoot(), "em3d", "compare", "palace-openems.compare_em.npy");
+            Assert.Equal(File.ReadAllBytes(golden), File.ReadAllBytes(path));
+        }
+        finally { File.Delete(path); }
+    }
+
+    /// <summary>brief-emi-6 §6.2 — three solvers against Palace: every S cube, each pair's difference cubes with the other
+    /// solver's token appended, and a summary naming the pair that differs most (by |ΔS|), the other pair's summary a note.</summary>
+    [Fact]
+    public void ThreeSolvers_WritePairwiseCubes_AndTheSummaryNamesTheWorstPair()
+    {
+        double[] f = [1e9, 2e9];
+        Complex[] Filled(double s21) => [.. Enumerable.Range(0, f.Length * 4).Select(e => e % 4 is 1 or 2 ? new Complex(s21, 0) : new Complex(0.1, 0))];
+        var palace = new Em3dComparisonLeg("Palace", "palace", Em3dSolverFit.Fem, Cube(f, Filled(0.9)));
+        var openEms = new Em3dComparisonLeg("openEMS", "openems", Em3dSolverFit.Fdtd, Cube(f, Filled(0.89)), new Em3dComparisonFacts(1.5e9, [], [], []));
+        var emerge = new Em3dComparisonLeg("EMerge", "emerge", Em3dSolverFit.Fem, Cube(f, Filled(0.8)));
+
+        var r = Em3dComparison.Compare(palace, [openEms, emerge], Microstrip(tanD: 0));
+        Assert.Null(r.Refusal);
+        Assert.Equal(["S_palace", "S_openems", "S_emerge", "dMag_dB_openems", "dPhase_deg_openems", "dVec_openems",
+                      "dMag_dB_emerge", "dPhase_deg_emerge", "dVec_emerge"],
+                     r.Data!.Cubes.Keys.ToArray());
+        Assert.Equal(0.1, r.Data["dVec_emerge"].RealValues[2], 12);
+        Assert.StartsWith("The largest difference is Palace against EMerge: S21 by at most", r.Summary);
+        Assert.StartsWith("Palace against openEMS: S21 by at most", r.Notes[0]);
+        Assert.Contains(Em3dComparison.CrossCheckSentenceMany, r.Notes);
+    }
+
+    /// <summary>brief-emi-6 §6.3 — an EMerge leg's facts make its notes, and the same leg with no facts makes none of them.</summary>
+    [Fact]
+    public void EmergeFacts_MakeTheirNotes_AndAbsentFactsMakeNone()
+    {
+        double[] f = [1e9, 2e9];
+        var s = Enumerable.Repeat(new Complex(0.1, 0.2), f.Length * 4).ToArray();
+        var palace = new Em3dComparisonLeg("Palace", "palace", Em3dSolverFit.Fem, Cube(f, s));
+        var facts = Em3dComparisonFacts.None with
+        {
+            UniformSheetPorts = true, SurfaceImpedanceSolids = ["housing"], AdaptiveFit = (12, 3e-4, 1e-3),
+        };
+
+        var said = Em3dComparison.Compare(palace, [new("EMerge", "emerge", Em3dSolverFit.Fem, Cube(f, s), facts)], Microstrip(tanD: 0.004));
+        Assert.Contains(said.Notes, n => n.StartsWith("EMerge's lumped port drives one uniform field direction", StringComparison.Ordinal));
+        Assert.Contains(said.Notes, n => n.StartsWith("EMerge gives 'housing' a surface impedance", StringComparison.Ordinal));
+        Assert.Contains(said.Notes, n => n.StartsWith("EMerge's adaptive sweep fitted the band from 12 full solves", StringComparison.Ordinal));
+        Assert.DoesNotContain(said.Notes, n => n.Contains("lossy", StringComparison.Ordinal));          // no dielectric fit: FEM
+        Assert.DoesNotContain(said.Notes, n => n.StartsWith("Expected for this geometry", StringComparison.Ordinal)); // two FEM solvers
+        Assert.Empty(said.Warnings);
+
+        var unconverged = Em3dComparison.Compare(palace, [new("EMerge", "emerge", Em3dSolverFit.Fem, Cube(f, s), facts with { AdaptiveUnconverged = true })],
+                                                 Microstrip(tanD: 0));
+        Assert.Contains("EMerge's adaptive sweep stopped at its limit", Assert.Single(unconverged.Warnings));
+
+        var bare = Em3dComparison.Compare(palace, [new("EMerge", "emerge", Em3dSolverFit.Fem, Cube(f, s))], Microstrip(tanD: 0.004));
+        Assert.DoesNotContain(bare.Notes, n => n.StartsWith("EMerge", StringComparison.Ordinal));
+        Assert.Contains(bare.Notes, n => n.StartsWith("Both solvers use lumped ports", StringComparison.Ordinal));
+    }
+
+    /// <summary>Two 2-port results that differ in every entry, on a lossy microstrip with every openEMS fact set.</summary>
+    private static (DataSet Data, Em3dComparisonResult Result) GoldenCase()
+    {
+        double[] f = [1e9, 1.5e9, 2e9];
+        var p = new Complex[f.Length * 4];
+        var o = new Complex[f.Length * 4];
+        for (int k = 0; k < f.Length; k++)
+            for (int e = 0; e < 4; e++)
+            {
+                p[k * 4 + e] = Complex.FromPolarCoordinates(e is 1 or 2 ? 0.95 - 0.01 * k : 0.1 + 0.02 * e, -k - 0.1 * e);
+                o[k * 4 + e] = Complex.FromPolarCoordinates(e is 1 or 2 ? 0.94 - 0.012 * k : 0.12 + 0.01 * e, -k - 0.1 * e - 0.03);
+            }
+        var r = Em3dComparison.Compare(Cube(f, p), Cube(f, o), Microstrip(tanD: 0.004),
+                                       new Em3dComparisonFacts(1.5e9, ["via1"], ["wire1"], [2]));
+        return (r.Data!, r);
+    }
+
+    private static string TestDataRoot()
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+            if (Directory.Exists(Path.Combine(dir.FullName, "testdata"))) return Path.Combine(dir.FullName, "testdata");
+        throw new DirectoryNotFoundException("testdata not found above " + AppContext.BaseDirectory);
+    }
+
     // ── fixtures ────────────────────────────────────────────────────────────────────────────────
 
     private static double Deg(double d) => d * Math.PI / 180;

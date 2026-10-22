@@ -22,7 +22,7 @@
         <!-- Header: Run (the active setup) + the heading -->
         <Grid Grid.Row="0" ColumnDefinitions="Auto,*" Margin="4,4,4,1">
             <Button Grid.Column="0" Command="{Binding SimulateActiveCommand}"
-                    ToolTip.Tip="Simulate the active setup (Simulate ▸ Run)"
+                    ToolTip.Tip="{Binding SimulateBlockedReason, TargetNullValue='Simulate the active setup (Simulate ▸ Run)'}"
                     Padding="3,2" Background="Transparent" BorderThickness="0" Margin="0,0,5,0">
                 <mi:MaterialIcon Kind="Play" Width="15" Height="15" Foreground="{DynamicResource SystemBaseMediumColor}"/>
             </Button>

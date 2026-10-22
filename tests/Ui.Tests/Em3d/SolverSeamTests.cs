@@ -48,7 +48,7 @@ public sealed class SolverSeamTests
                                          .Replace("\"Solver3D\": \"Palace\"", "\"Solver3D\": \"Retired\"", StringComparison.Ordinal);
         var e = Assert.ThrowsAny<Exception>(() => EmSetupPersistence.Deserialize(text));
         Assert.Contains("Solver3D 'Retired'", e.Message, StringComparison.Ordinal);
-        Assert.Contains("Palace, OpenEms, Emerge or Both", e.Message, StringComparison.Ordinal);
+        Assert.Contains("Palace, OpenEms, Emerge, Both or Compare", e.Message, StringComparison.Ordinal);
     }
 
     /// <summary>R-emi1-2a — a solver is named by its id only in the registry, its descriptor's folder and the format.</summary>

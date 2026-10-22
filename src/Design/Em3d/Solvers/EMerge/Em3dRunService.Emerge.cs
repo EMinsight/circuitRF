@@ -169,7 +169,27 @@ public static partial class Em3dRunService
 
         // R-emi5-4c — the one line a user reads first of what the run cost, the last thing the run says.
         log.Notes.Add(EmergeCompletionSummary(version, tier, facts, peak, setup, wall.Elapsed, eigenmode: false));
-        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "EMerge " + version, NotConverged: notConverged);
+        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "EMerge " + version, EmergeComparisonFacts(problem, settings, facts),
+                       NotConverged: notConverged);
+    }
+
+    /// <summary>
+    /// brief-emi-6 R-emi6-4a — what a driven EMerge run makes expected of a difference from another solver: its lumped-port model
+    /// (when the problem has a lumped port), the conductors it gives a surface impedance and does not solve inside, and the error
+    /// its adaptive sweep reached.
+    /// </summary>
+    internal static Em3dComparisonFacts EmergeComparisonFacts(Em3dProblem problem, EmergeSettings settings, EmergeRunFacts facts)
+    {
+        var materials = problem.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
+        return Em3dComparisonFacts.None with
+        {
+            UniformSheetPorts = problem.Ports.Any(p => p.Kind == Em3dPortKind.Lumped),
+            SurfaceImpedanceSolids = [.. problem.Solids.Where(s => s.Role == Em3dRole.Conductor && materials.TryGetValue(s.Material, out var m)
+                                                                  && !EmergeLoweringRules.IsPerfect(m))
+                                                       .Select(s => s.Name)],
+            AdaptiveFit = facts.Adaptive && facts.Samples is { } n && facts.Error is { } e ? (n, e, settings.Tolerance) : null,
+            AdaptiveUnconverged = facts.Adaptive && facts.Converged == false,
+        };
     }
 
     /// <summary>R-emi5-4b — the modes, as Palace's eigenmode run reports them (f, Q), with what EMerge does not report left out.</summary>

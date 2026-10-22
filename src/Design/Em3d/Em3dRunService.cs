@@ -16,7 +16,7 @@
 // The version and capability checks run FIRST, so a missing or unvalidated program costs seconds and
 // starts no mesher (R-em3d7-4c, gate 11).
 //
-// A comparison (brief-em3d-10; the format's Both) generates the problem ONCE, lowers it for every solver
+// A comparison (brief-em3d-10; the format's Both, and brief-emi-6's Compare of any set) generates the problem ONCE, lowers it for every solver
 // before any starts, runs them in order, and writes Em3dComparison's DataSet (src/Engine) beside the
 // results as `<key>.compare_em.npy`. See "The run" below for the three phases and why the refusals all
 // come first.
@@ -231,10 +231,9 @@ public static partial class Em3dRunService
         {
             var unavailable = EmDiagnostics.SolverUnavailable(blocked.Name, blocked.Refusal!, Install.SolverInstaller.OfferFor(blocked));
             if (!compare) return log.Result(EmRunStatus.Refused, unavailable);
-            var ready = Em3dSolvers.Of(choice).FirstOrDefault(d => readiness.Where(r => d.Tools.Contains(r.Tool)).All(r => r.Proceeds));
-            return log.Result(EmRunStatus.Refused, EmDiagnostics.BothRefusedBeforeWork(
-                string.Join(" ", readiness.Where(r => !r.Proceeds).Select(r => r.Refusal)),
-                ready is null ? "" : Remedy(ready)));
+            var ready = Em3dSolvers.Of(choice).Where(d => readiness.Where(r => d.Tools.Contains(r.Tool)).All(r => r.Proceeds)).ToList();
+            return log.Result(EmRunStatus.Refused, RefusedBeforeWork(choice.Solvers.Count,
+                string.Join(" ", readiness.Where(r => !r.Proceeds).Select(r => r.Refusal)), Remedy(ready)));
         }
         var legs = Em3dSolvers.Of(choice).Select(d => d.NewLeg()).ToList();
         if (legs.Count == 0) return log.Result(EmRunStatus.Refused, EmDiagnostics.ThreeDSolverNotBuilt(choice.ToString()));
@@ -294,7 +293,7 @@ public static partial class Em3dRunService
                 string sarSolvers = Em3dSolvers.Names(Em3dSolvers.With(c => c.Sar));
                 return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded(SarSource,
                     $"This setup asks for SAR, and only {sarSolvers} writes the raw SAR dump it is computed on: set its 3D solver to " +
-                    $"{sarSolvers}, or Both."));
+                    $"{sarSolvers}, or a comparison that includes it."));
             }
             foreach (var leg in legs.Where(l => l.Solver.Capabilities.Sar))
                 if (leg.AdmitSar(problem, generated, run) is { } sarStop) return log.Result(sarStop.Status, sarStop.Diagnostic);
@@ -358,16 +357,17 @@ public static partial class Em3dRunService
     }
 
     /// <summary>
-    /// R-em3d10-1 — each solver in turn on the one problem; then the comparison against <paramref name="reference"/>. A
-    /// failure of one keeps the other's result (R-em3d10-4a); a cancellation keeps what had already finished and writes
-    /// nothing for what was running (R-em3d10-4c). Two solvers — the format's Both — until EMI-6 generalises the wording.
+    /// R-em3d10-1 / brief-emi-6 R-emi6-3 — each solver in turn on the one problem, in registry order; then every other solver
+    /// compared against <paramref name="reference"/>. A failure of one keeps the others' results (R-em3d10-4a); a cancellation
+    /// keeps what had already finished and writes nothing for what was running (R-em3d10-4c). Two solvers say it as Both always
+    /// has.
     /// </summary>
     private static EmRunResult RunCompare(IReadOnlyList<SolverLeg> legs, Em3dSolverId reference, Em3dProblem problem, EmSetup setup,
                                           string resultsRoot, RunContext run, Action<Em3dSolverId, string>? keepRecord)
     {
-        if (legs.Count != 2) throw new NotSupportedException("A comparison of more than two solvers is not built yet.");
         var (log, control) = (run.Log, run.Control);
-        log.Notes.Add($"Both solvers run on the one 3D problem generated above, one after the other — " +
+        bool two = legs.Count == 2;
+        log.Notes.Add($"{(two ? "Both solvers run" : $"All {SolverCount(legs.Count)} solvers run")} on the one 3D problem generated above, one after the other — " +
                       $"{string.Join(", then ", legs.Select(l => l.Solver.DisplayName))} — because each already uses every core.");
 
         // An earlier run's comparison describes files this run is about to rewrite. Left in place past
@@ -380,46 +380,58 @@ public static partial class Em3dRunService
                              $"({e.Message}); it does not describe this run.");
         }
 
-        Leg Execute(SolverLeg leg, string ordinal)
+        var done = new List<Leg>();
+        for (int k = 0; k < legs.Count; k++)
         {
-            control?.BeginStage($"{leg.Solver.DisplayName}, the {ordinal} of two solvers");
-            return Recorded(setup, resultsRoot, leg.Solver.Id, keepRecord, () =>
+            var leg = legs[k];
+            control?.BeginStage($"{leg.Solver.DisplayName}, the {Ordinal(k)} of {SolverCount(legs.Count)} solvers");
+            var ran = Recorded(setup, resultsRoot, leg.Solver.Id, keepRecord, () =>
                 leg.Execute(problem, BothSnpBasePath(resultsRoot, setup, leg.Solver.Id), run));
-        }
+            if (ran.Status != EmRunStatus.Cancelled) { done.Add(ran); continue; }
 
-        var p = Execute(legs[0], "first");
-        if (p.Status == EmRunStatus.Cancelled) return log.Result(EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
-        var o = Execute(legs[1], "second");
-
-        var outputs = new List<EmRunOutput>();
-        foreach (var leg in new[] { p, o }.Where(l => l.Ok))
-        {
-            if (leg.SnpPath is { } snp) outputs.Add(new("touchstone", snp));
-            if (leg.NpyPath is { } npy) outputs.Add(new("npy", npy));
-        }
-
-        if (o.Status == EmRunStatus.Cancelled)
-        {
-            // The first had already failed: its reason is the other half of what this run found.
-            if (!p.Ok && p.Stop is { } firstStop) log.Errors.Add(firstStop.Render());
+            // What had already failed is the other half of what this run found.
+            foreach (var failed in done.Where(l => !l.Ok)) log.Errors.Add(failed.Stop!.Render());
+            var kept = done.Where(l => l.Ok).ToList();
             return log.Result(EmRunStatus.Cancelled,
-                              p.Ok ? EmDiagnostics.CancelledKeeping(Name(o.Solver), Name(p.Solver), Where(p)) : EmDiagnostics.Cancelled(),
-                              outputs);
-        }
-        if (!p.Ok && !o.Ok)
-            return log.Result(p.Status, EmDiagnostics.BothSolversFailed(p.Stop!.Render(), o.Stop!.Render()));
-        if (!p.Ok || !o.Ok)
-        {
-            var (bad, good) = p.Ok ? (o, p) : (p, o);
-            return log.Result(bad.Status, EmDiagnostics.OneSolverFailed(Name(bad.Solver), bad.Stop!.Render(), Name(good.Solver), Where(good)),
-                              outputs);
+                              kept.Count > 0 ? EmDiagnostics.CancelledKeeping(Name(ran.Solver), Names(kept), string.Join("; ", kept.Select(Where)))
+                                             : EmDiagnostics.Cancelled(),
+                              Outputs(kept));
         }
 
-        // ── the comparison (R-em3d10-2, 3) ────────────────────────────────────────────────────
-        var (against, other) = p.Solver == reference ? (p, o) : (o, p);
-        var compared = Em3dComparison.Compare(against.Data!["S"], other.Data!["S"], problem, other.Facts!);
+        var ok = done.Where(l => l.Ok).ToList();
+        var outputs = Outputs(ok);
+        var bad = done.Where(l => !l.Ok).ToList();
+        if (ok.Count == 0)
+            return log.Result(bad[0].Status, two && legs[0].Solver.Id == PalaceSolver.Id && legs[1].Solver.Id == OpenEmsSolver.Id
+                ? EmDiagnostics.BothSolversFailed(bad[0].Stop!.Render(), bad[1].Stop!.Render())
+                : EmDiagnostics.NoSolverSucceeded(string.Join(" ", bad.Select(l => $"{Name(l.Solver)}: {l.Stop!.Render()}"))));
+        if (two && bad.Count == 1)
+            return log.Result(bad[0].Status, EmDiagnostics.OneSolverFailed(Name(bad[0].Solver), bad[0].Stop!.Render(), Name(ok[0].Solver),
+                                                                          Where(ok[0])), outputs);
+
+        // ── the comparison (R-em3d10-2, 3) — of what completed, when the reference did and another did too ──────────────
+        var against = ok.FirstOrDefault(l => l.Solver == reference);
+        var others = ok.Where(l => l.Solver != reference).ToList();
+        if (bad.Count > 0 && (against is null || others.Count == 0))
+            return log.Result(bad[0].Status, EmDiagnostics.SomeSolversFailed(Failures(bad), Names(ok), string.Join("; ", ok.Select(Where)),
+                against is null ? $"No comparison was written, because it is against {Name(reference)}."
+                                : "No comparison was written, because it needs another result to compare."), outputs);
+
+        // An eigenmode comparison has no S to difference: each solver's modes are in its own result.
+        if (problem.Type != Em3dProblemType.Driven)
+        {
+            log.Notes.Add("Each solver's result is its own file; a comparison file is written for a driven problem's S-parameters only.");
+            return bad.Count > 0
+                ? log.Result(bad[0].Status, EmDiagnostics.SomeSolversFailed(Failures(bad), Names(ok), string.Join("; ", ok.Select(Where)), ""), outputs)
+                : new EmRunResult(EmRunStatus.Ok, against!.Data, null, null, null, null, null, log.Warnings,
+                                  KernelName: string.Join(" and ", ok.Select(l => l.KernelName)), Notes: log.Notes, Errors: log.Errors,
+                                  Outputs: outputs, MessageFiles: log.FilesOrNull);
+        }
+
+        var compared = Em3dComparison.Compare(ComparisonLeg(against!), [.. others.Select(ComparisonLeg)], problem);
         if (compared.Data is not { } data)
-            return log.Result(EmRunStatus.EngineError, EmDiagnostics.ComparisonRefused(compared.Refusal!), outputs);
+            return log.Result(EmRunStatus.EngineError, done.Count == 2 ? EmDiagnostics.ComparisonRefused(compared.Refusal!)
+                                                                      : EmDiagnostics.ComparisonRefusedMany(compared.Refusal!), outputs);
 
         log.Warnings.AddRange(compared.Warnings);
         log.Notes.InsertRange(0, [compared.Summary!, .. compared.Notes]);     // the line a user reads first
@@ -439,30 +451,70 @@ public static partial class Em3dRunService
             log.Errors.Add($"The comparison could not be written to '{path}': {e.Message}");
         }
 
+        if (bad.Count > 0)
+            return log.Result(bad[0].Status, EmDiagnostics.SomeSolversFailed(Failures(bad), Names(ok), string.Join("; ", ok.Select(Where)),
+                written is null ? "The comparison of what completed could not be written."
+                                : $"{Names(ok)} were compared: {written}."), outputs);
         return new EmRunResult(EmRunStatus.Ok, data, null, null, written, null, null, log.Warnings,
-                               KernelName: $"{p.KernelName} and {o.KernelName}", Notes: log.Notes, Errors: log.Errors,
+                               KernelName: string.Join(" and ", ok.Select(l => l.KernelName)), Notes: log.Notes, Errors: log.Errors,
                                Outputs: outputs, MessageFiles: log.FilesOrNull);
+
+        static string Failures(IEnumerable<Leg> failed) => string.Join("; ", failed.Select(l => $"{Name(l.Solver)} failed: {l.Stop!.Render()}"));
     }
 
+    /// <summary>A completed leg as the comparison takes it: its descriptor's name, token and method, its S and its facts.</summary>
+    private static Em3dComparisonLeg ComparisonLeg(Leg leg)
+    {
+        var d = Em3dSolvers.Get(leg.Solver);
+        return new Em3dComparisonLeg(d.DisplayName, d.ResultToken, d.Method, leg.Data!["S"], leg.Facts);
+    }
+
+    /// <summary>Each completed leg's Touchstone and <c>.npy</c>, in run order.</summary>
+    private static List<EmRunOutput> Outputs(IEnumerable<Leg> completed)
+    {
+        var outputs = new List<EmRunOutput>();
+        foreach (var leg in completed)
+        {
+            if (leg.SnpPath is { } snp) outputs.Add(new("touchstone", snp));
+            if (leg.NpyPath is { } npy) outputs.Add(new("npy", npy));
+        }
+        return outputs;
+    }
+
+    private static string Ordinal(int k) => k switch { 0 => "first", 1 => "second", 2 => "third", 3 => "fourth", _ => $"{k + 1}th" };
+
+    private static string SolverCount(int n) => n switch { 2 => "two", 3 => "three", 4 => "four", _ => n.ToString(CultureInfo.InvariantCulture) };
+
     private static string Name(Em3dSolverId s) => Em3dSolvers.Get(s).DisplayName;
+
+    private static string Names(IEnumerable<Leg> legs) => Em3dSolvers.Names(legs.Select(l => Em3dSolvers.Get(l.Solver)));
 
     /// <summary>Where a leg's result is, for a sentence naming it.</summary>
     private static string Where(Leg leg)
         => string.Join(" and ", new[] { leg.SnpPath, leg.NpyPath }.OfType<string>()) is { Length: > 0 } w
             ? w : "(its files could not be written; the errors above say why)";
 
-    /// <summary>R-em3d10-4b's pointer to the solver that would run.</summary>
-    private static string Remedy(Em3dSolverDescriptor ready)
-        => $" {ready.DisplayName} is ready: run it alone with `circuitrf em --solver {ready.ResultToken}`, or set the setup's " +
-           $"Solver3D to {ready.Spelling}.";
+    /// <summary>R-em3d10-4b's pointer to what would run: the one ready solver alone, or the ready ones compared.</summary>
+    private static string Remedy(IReadOnlyList<Em3dSolverDescriptor> ready)
+        => ready.Count switch
+        {
+            0 => "",
+            1 => $" {ready[0].DisplayName} is ready: run it alone with `circuitrf em --solver {ready[0].ResultToken}`, or set the setup's " +
+                 $"Solver3D to {ready[0].Spelling}.",
+            _ => $" {Em3dSolvers.Names(ready)} are ready: compare them with `circuitrf em --solver " +
+                 $"{string.Join(",", ready.Select(d => d.ResultToken))}`.",
+        };
 
-    /// <summary>A comparison refused before any work: every leg's refusal, and the solver that would run alone.</summary>
+    /// <summary>A comparison refused before any work: every leg's refusal, and what would run.</summary>
     private static EmRunResult CompareRefused(IReadOnlyList<SolverLeg> legs, RunLog log)
     {
         string text = string.Join(" ", legs.Select(l => l.Stop).OfType<Stop>().Select(s => s.Diagnostic.Render()));
-        string remedy = legs.FirstOrDefault(l => l.Stop is null) is { } ready ? Remedy(ready.Solver) : "";
-        return log.Result(legs.First(l => l.Stop is not null).Stop!.Status, EmDiagnostics.BothRefusedBeforeWork(text, remedy));
+        return log.Result(legs.First(l => l.Stop is not null).Stop!.Status,
+                          RefusedBeforeWork(legs.Count, text, Remedy([.. legs.Where(l => l.Stop is null).Select(l => l.Solver)])));
     }
+
+    private static Diagnostic RefusedBeforeWork(int solvers, string refusal, string remedy)
+        => solvers == 2 ? EmDiagnostics.BothRefusedBeforeWork(refusal, remedy) : EmDiagnostics.CompareRefusedBeforeWork(refusal, remedy);
 
     private static EmRunResult Single(Leg leg, RunLog log)
         => leg.Ok

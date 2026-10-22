@@ -614,6 +614,24 @@ structure that turned out to have four ports is written `.s4p`.
 
 With no workspace above the `.cem`, `results/` is created beside the `.cem` itself.
 
+### Comparing solvers: `--solver` and `--reference` {#em-compare}
+
+A 3D setup's solver can be changed for one run without editing the file: `--solver palace`, `openems` or
+`emerge` runs that solver alone, and a comma list compares them.
+
+```bash
+circuitrf em via.cem --solver palace,emerge                      # EMerge against Palace
+circuitrf em via.cem --solver openems,emerge --reference emerge  # openEMS against EMerge
+circuitrf em via.cem --solver compare                            # the setup's own Compare set
+circuitrf em via.cem --solver both                               # Palace and openEMS
+```
+
+The solvers run one after the other, Palace first, then openEMS, then EMerge. The reference is Palace when
+it is listed, otherwise the first. Each solver's result lands where it would alone, and the comparison in
+`results/<name>.compare_em.npy` ([EM Setup ▸ Compare](em-setup.html#compare) describes what it holds). A
+solver that is not installed, or cannot solve the setup, is refused before anything runs, naming it and
+why.
+
 ### One component's drawn part: `--component` {#em-component}
 
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf em mydie --component "SPIRAL N=2.5 W=10 um S=10 um Din=100 um" --freq 1GHz:20GHz:1GHz -o L1.s2p</code></pre>

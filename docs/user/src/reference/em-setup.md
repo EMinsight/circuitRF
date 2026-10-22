@@ -477,14 +477,16 @@ folder are in [The Command Line](cli.html#em).
 
 The **Solver** group at the top of the panel picks who solves the setup: circuitRF's own planar and
 cross-section kernels (the default), **FEM 3D (Palace)**, **FDTD 3D (openEMS)**, **FEM 3D (EMerge)**, or
-**FEM & FDTD - Compare**. A 3D setup builds a 3D model from the layout, its technology and any bond wires. The
+**Compare…** — any two or more of them on one model ([Compare](#compare)). A solver that is not installed, or that
+cannot solve this setup, is greyed out; its tooltip says which. A 3D setup builds a 3D model from the layout, its technology and any bond wires. The
 settings a 3D run does not read — the surface mesh, adaptive sampling, the port type and the planar
 solver options — are hidden while a 3D solver is chosen; they stay in the
 `.cem` and come back when you switch to Planar. What a 3D run does read stays: the frequency sweep,
 each port's Z₀ (set in the Solver group's port table), the return plane, the solve region, the core count
 and the **radiation pattern**, which a driven 3D run produces too — see
-[Antennas ▸ From a 3D solver](antennas.html#3d). Palace and openEMS each have their own section below, and a setup keeps
-both, so switching solver never loses the other's settings.
+[Antennas ▸ From a 3D solver](antennas.html#3d). Palace, openEMS and EMerge each have their own section below, and a
+setup keeps them all, so switching solver never loses another's settings. A comparison shows the section of every solver
+it runs, each titled with the solver's name.
 
 With Palace chosen the panel shows Palace's own settings. **A blank box is the default shown in it**, and
 every box is a field of the `.cem` — nothing here lives only in the panel.
@@ -762,6 +764,20 @@ twice the disk per saved frequency, which is why it is asked for rather than alw
 {{anchor: settings.html#em3d|Settings ▸ Solvers}}. It meshes the same geometry Palace does, with its own copy
 of Gmsh. The `.cem`'s `EMerge` section holds its settings, the same way the `Palace` section holds Palace's.
 
+With EMerge chosen the panel shows them. **A blank box is the chosen Quality preset's value**, shown in it, and a box
+filled in overrides the preset for that setting only:
+
+| Setting | Key | What it sets |
+|---|---|---|
+| Quality | `Quality` | Draft, Standard (the default) or Accurate: the four settings marked *by preset* together. |
+| Largest element (λ) | `MaxElementWavelengths` | The largest element in each material, as a fraction of the wavelength in it at the sweep's top frequency; at most 0.5. *By preset.* |
+| At metal | `EdgeRefinement` | The element size along conductor and sheet edges, as a fraction of the size above. *By preset.* |
+| Element order | `ElementOrder` | 1 or 2 (the default). First order is for quick checks. |
+| Refinement passes | `AdaptiveMesh` | The most passes in which EMerge refines the mesh itself before the sweep; 0 solves the starting mesh. *By preset.* |
+| Adaptive sweep | `AdaptiveSweep` | On (the default) fits the band from a few solves; off solves every frequency. |
+| Sweep tolerance | `Tolerance` | The adaptive sweep's tolerance on \|S\|. *By preset.* |
+| Most sweep solves | `MaxSamples` | The most frequencies the adaptive sweep solves; at least 5, default 100. |
+
 A driven sweep is built adaptively: EMerge solves the full problem at a few frequencies and fits every
 requested point from them, adding frequencies until its estimated error on |S| is below its tolerance. The
 progress line shows that error against the tolerance. **A sweep that reaches `MaxSamples` first has not
@@ -780,33 +796,61 @@ driver that reads it), EMerge's log (`emerge.log`) and the arrays it wrote, so a
 0 Hz it can return solutions that are not resonances, so a solution more than 5 % below `TargetGHz` is dropped,
 and the run's notes say how many were. EMerge solves an eigenmode problem on one core.
 
-### Running both, and the difference {#run-both}
+### Compare {#compare}
 
-**FEM & FDTD - Compare** (`Solver3D: Both`, or `circuitrf em x.cem --solver both`) builds the 3D model
-once and runs Palace and then openEMS on it, one after the other. Each result lands where it would
-alone, and a third file, `results/<name>.compare_em.npy`, holds the difference: both S matrices,
-`dMag_dB`, `dPhase_deg` and `dVec` (the magnitude of S_Palace − S_openEMS, which stays meaningful where
-|S| is small and a dB difference is not). It opens in the Data Display like any result.
+**Compare…** runs two or more solvers on one 3D model and compares each with one of them, the
+**reference**. Choosing it shows a checkbox per solver and a **Reference** list over the ticked ones; the
+reference starts as Palace when Palace is ticked, otherwise the first ticked solver. A solver that is not
+installed, or cannot solve this setup (openEMS has no eigensolver, for one), is greyed out with its reason
+as the tooltip, and with fewer than two runnable solvers ticked **Simulate** is off, its tooltip saying
+why. Install a solver from **Settings ▸ Solvers**; the panel sees it when that page closes.
 
-The first line the run writes is the summary: the largest S21 and S11 differences over the band and
-where they occur. After it comes what makes a difference **expected** on this model — which solver
-suits its geometry better, a lossy substrate, metal that openEMS treats as perfect, a
-wire below the grid cell — and, as a warning, an openEMS run that did not reach its end criterion, which
-is the first thing to fix. **Agreement is a cross-check, not a validation**: both solvers read the same
-model, so an error in building it would appear in both.
+In the file it is `"Solver3D": "Compare"` with a block naming the solvers and the reference:
 
-Both solvers are checked before either starts, so a missing openEMS is reported in the first second,
-not after the Palace run, with the setting that runs the one that is available. If one solver fails
-part way through, the other's result is still written and no comparison is. The two results must be
-at the same frequencies — they always are when both come from one setup — and a comparison is never
-interpolated.
+```json
+"Solver3D": "Compare",
+"Compare": { "Solvers": [ "Palace", "Emerge" ], "Reference": "Palace" }
+```
+
+`"Solver3D": "Both"` is Palace and openEMS with Palace as the reference, and a setup saying `Both` is
+written back as `Both` while that is still its choice. From the command line,
+`circuitrf em x.cem --solver palace,emerge` compares those two, `--reference emerge` picks the reference,
+`--solver compare` runs the setup's own set, and `--solver both` is Palace and openEMS.
+
+**What it runs.** The model is built once, and each solver runs on it in turn, Palace, then openEMS, then
+EMerge, because each uses every core. Each result lands where it would alone, named for its solver
+(`results/<name>.palace.s2p`, `results/<name>.emerge_em.npy`). Every solver is checked before any starts,
+so a missing one is reported in the first second, not after another's run, with the command that runs
+the ones that are ready. If one fails part way through, the others' results are still written and the
+run says which failed and why; with three or more, the ones that completed are still compared when the
+reference is among them.
+
+**Where the comparison lands.** `results/<name>.compare_em.npy` holds each solver's S matrix as
+`S_<solver>` (`S_palace`, `S_emerge`) and, for each solver against the reference, `dMag_dB_<solver>`,
+`dPhase_deg_<solver>` and `dVec_<solver>`: the magnitude difference in dB, the phase difference in
+degrees and |S_reference − S_solver|, which stays meaningful where |S| is small and a dB difference is
+not. A Palace and openEMS comparison against Palace keeps the names it has always had: `S_palace`,
+`S_openems`, `dMag_dB`, `dPhase_deg` and `dVec`. It opens in the Data Display like any result, each
+solver's traces overlaid.
+
+**How to read it.** The first line the run writes is the summary: the largest S21 and S11 differences over
+the band and where they occur, for the pair that differs most; each other pair's line follows. After them
+comes what makes a difference **expected** on this model, each only when this run makes it true: which
+method suits the geometry better (when FEM and FDTD are compared), a lossy substrate, metal openEMS treats
+as perfect, a wire below its grid cell, EMerge's lumped port model, the conductors EMerge gives a surface
+impedance, and the error EMerge's adaptive sweep reached. A run that did not converge — an openEMS run
+short of its end criterion, an EMerge sweep that stopped above its tolerance — is a warning and the first
+thing to fix. **Agreement is a cross-check, not a validation**: every solver reads the same model, so an
+error in building it would appear in every result. The results must be at the same frequencies — they
+always are when they come from one setup — and a comparison is never interpolated. An eigenmode
+comparison writes each solver's modes to its own result and no comparison file.
 
 ### Package capacitance and inductance {#package-rlc}
 
 A Palace setup can solve for a **matrix** instead of S-parameters. The **Problem** picker
 (`Problem3D`) is *Driven* (S-parameters, the default and omitted from the file), *Electrostatic* (the
 capacitance matrix) or *Magnetostatic* (the inductance matrix). The two static problems run on Palace
-only; a setup naming openEMS or both solvers is refused, and so is its `check`. They ignore the
+only; a setup naming openEMS, or comparing it, is refused, and so is its `check`. They ignore the
 frequency sweep and the port impedances, which are kept but not read (`check` says so).
 
 **Terminals** (`Terminals3D`) are the matrix's rows and columns, in order. Each names a **net** — a net
@@ -1064,7 +1108,7 @@ passes costs more. When a run finishes, its summary line states what its field f
 ### Palace on a GPU {#palace-gpu}
 
 Palace can solve on a GPU, and on several at once, when it was compiled with GPU support. **Device**, under
-*Cores* in the setup panel, chooses **CPU** or **GPU** for a Palace or Both setup. Like *Cores*, it is a setting
+*Cores* in the setup panel, chooses **CPU** or **GPU** for a setup that runs Palace. Like *Cores*, it is a setting
 of this machine, not of the design: it is not saved in the `.cem` or the `.c3d`, so a setup from someone else's
 workspace runs on your machine's choice.
 
@@ -1086,7 +1130,7 @@ workspace runs on your machine's choice.
   to CPU (or leave out `--device gpu`) and the same Palace solves on the CPU. A GPU build needs the GPU
   toolkit's runtime libraries to start at all, even for a CPU run. If they are missing, point
   **Settings ▸ Solvers** at a CPU-only Palace, such as the one circuitRF installs. Both can stay installed.
-- **openEMS is unaffected.** In a Both run, the device applies to the Palace run only.
+- **openEMS is unaffected.** In a comparison, the device applies to the Palace run only.
 
 Once **Device** is GPU, the Palace row in **Settings ▸ Solvers** also reports what Palace found, such as
 *GPU: 2 detected* or *GPU: not in this build*. From the command line:
