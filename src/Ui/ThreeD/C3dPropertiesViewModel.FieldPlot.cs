@@ -38,7 +38,7 @@ public sealed partial class C3dPropertiesViewModel
 
     public static IReadOnlyList<C3dAxis> PlotAxes { get; } = [C3dAxis.X, C3dAxis.Y, C3dAxis.Z];
     public static IReadOnlyList<double> PlotPercentiles { get; } = [95, 99, 99.9, 100];
-    public static IReadOnlyList<string> PlotSolvers { get; } = ["Palace", "openEMS"];
+    public static IReadOnlyList<string> PlotSolvers { get; } = [.. CircuitRF.Design.Em3d.Em3dSolvers.All.Select(d => d.DisplayName)];
 
     /// <summary>brief-em3d-100 — the Referred to picker's rows, in <see cref="C3dDriveReferredTo"/> order.</summary>
     public static IReadOnlyList<string> PlotDriveReferences { get; } = ["Incident (available)", "Accepted"];
@@ -283,8 +283,8 @@ public sealed partial class C3dPropertiesViewModel
     partial void OnPlotSolverChanged(string? value)
     {
         if (value is null) return;
-        var solver = value == "openEMS" ? Em3dSolver.OpenEms : Em3dSolver.Palace;
-        CommitPlot($"Plot {_plotName} from {value}", p => p.Solver = solver);
+        if (CircuitRF.Design.Em3d.Em3dSolvers.ByName(value) is not { } solver) return;
+        CommitPlot($"Plot {_plotName} from {value}", p => p.Solver = solver.Id);
     }
 
     partial void OnPlotSolutionChanged(C3dPlotSolutionChoice? value)

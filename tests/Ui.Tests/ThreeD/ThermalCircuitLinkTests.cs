@@ -232,7 +232,7 @@ public sealed class ThermalCircuitLinkTests(ITestOutputHelper output) : IDisposa
         };
         string path = Path.Combine(ws, "Thru", "3d", "Thru.c3d");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var em = new EmSetup { Name = "EM", Solver3D = Em3dSolver.Palace };
+        var em = new EmSetup { Name = "EM", Solver3D = Em3dSolverId.Palace };
         var thermal = ThermalSetup(new CemThermalFromCircuit { Schematic = "../../circuit/pa.cnl", Analysis = "HB1", Carry = ["Pout"] });
         doc.Setups = [EmSetupPersistence.ToEmbedded(em), EmSetupPersistence.ToEmbedded(thermal)];
         C3dPersistence.SaveToFile(path, doc);

@@ -24,32 +24,32 @@ public sealed record PalaceQualityChoice(PalaceQuality Value, string Label)
 
 /// <summary>One row of the Solver picker. <paramref name="IsThermal"/>: circuitRF's own thermal solver — a setup whose problem is
 /// Thermal and which names no EM solver (brief 73), so <paramref name="Value"/> is None and is not what tells it apart.</summary>
-public sealed record Em3dSolverChoice(Em3dSolver Value, string Label, bool IsThermal = false)
+public sealed record Em3dSolverPickerRow(Em3dSolverChoice Value, string Label, bool IsThermal = false)
 {
     public override string ToString() => Label;
 }
 
 public sealed partial class EmSetupEditorViewModel
 {
-    /// <summary>Planar, the two 3D solvers, and both of them on one problem (brief 10).</summary>
-    public static IReadOnlyList<Em3dSolverChoice> Solver3DChoices { get; } =
+    /// <summary>Planar, each 3D solver (brief-emi-1: the registry's, in its order), and the comparison on one problem (brief 10).</summary>
+    public static IReadOnlyList<Em3dSolverPickerRow> Solver3DChoices { get; } =
     [
-        new(Em3dSolver.None,    "Planar (circuitRF)"),
-        new(Em3dSolver.Palace,  "FEM 3D (Palace)"),
-        new(Em3dSolver.OpenEms, "FDTD 3D (openEMS)"),
+        new(Em3dSolverChoice.None, "Planar (circuitRF)"),
+        .. CircuitRF.Design.Em3d.Em3dSolvers.All.Select(d => new Em3dSolverPickerRow(d.Id, d.PickerLabel)),
         // brief-em3d-10 — both on one generated problem, and the comparison beside them.
-        new(Em3dSolver.Both,    "FEM & FDTD - Compare"),
+        new(CircuitRF.Design.Em3d.Em3dSolvers.Both,
+            string.Join(" & ", CircuitRF.Design.Em3d.Em3dSolvers.Of(CircuitRF.Design.Em3d.Em3dSolvers.Both).Select(d => d.MethodName)) + " - Compare"),
     ];
 
     /// <summary>The Solver picker's Thermal row, offered by a 3D view's panel: who solves a thermal setup is a solver choice,
     /// beside Palace and openEMS, not a kind of EM problem (owner request, 2026-09-28). The file is unchanged: Problem3D
     /// Thermal, Solver3D None.</summary>
-    public static Em3dSolverChoice ThermalSolverChoice { get; } = new(Em3dSolver.None, "Thermal", IsThermal: true);
+    public static Em3dSolverPickerRow ThermalSolverChoice { get; } = new(Em3dSolverChoice.None, "Thermal", IsThermal: true);
 
-    [ObservableProperty] private Em3dSolverChoice _solver3DChoice = Solver3DChoices[0];
+    [ObservableProperty] private Em3dSolverPickerRow _solver3DChoice = Solver3DChoices[0];
 
     /// <summary>True when this setup is a 3D one: the planar controls below are kept but not read.</summary>
-    public bool Is3DSetup => Solver3DChoice.Value != Em3dSolver.None || IsThermalSetup;
+    public bool Is3DSetup => !Solver3DChoice.Value.IsNone || IsThermalSetup;
 
     // What a 3D run does NOT read is hidden while one is chosen, rather than shown and ignored. What
     // it DOES read stays: the frequency sweep, each port's Z0 (EmSetup.ResolvePortZ0), the return
@@ -89,7 +89,7 @@ public sealed partial class EmSetupEditorViewModel
     /// what no 3D run reads.
     /// </summary>
     public bool ShowRadiationPattern =>
-        !Is3DSetup || Solver3DChoice.Value is Em3dSolver.OpenEms or Em3dSolver.Palace or Em3dSolver.Both;
+        !Is3DSetup || CircuitRF.Design.Em3d.Em3dSolvers.Any(Solver3DChoice.Value, c => c.RadiationPattern);
 
     private void RaiseSolverKindVisibility()
     {
@@ -105,10 +105,10 @@ public sealed partial class EmSetupEditorViewModel
     }
 
     /// <summary>True when Palace's section is shown.</summary>
-    public bool IsPalaceSetup => Solver3DChoice.Value is Em3dSolver.Palace or Em3dSolver.Both;
+    public bool IsPalaceSetup => Solver3DChoice.Value.Runs(CircuitRF.Design.Em3d.PalaceSolver.Id);
 
     /// <summary>True when openEMS's section is shown (brief-em3d-9 R-em3d9-6).</summary>
-    public bool IsOpenEmsSetup => Solver3DChoice.Value is Em3dSolver.OpenEms or Em3dSolver.Both;
+    public bool IsOpenEmsSetup => Solver3DChoice.Value.Runs(CircuitRF.Design.Em3d.OpenEmsSolver.Id);
 
     private const string PlanarHiddenNote =
         "The planar-only settings are hidden; they are kept, and come back if you switch to Planar.";
@@ -116,21 +116,14 @@ public sealed partial class EmSetupEditorViewModel
     public string Solver3DDescription => Solver3DChoice.IsThermal
         ? "Temperature, solved by circuitRF's own thermal solver on a mesh Gmsh makes (Settings ▸ Solvers): the heat sources, " +
           "boundaries and probes drawn in this view, their values below."
-        : Solver3DChoice.Value switch
-    {
-        Em3dSolver.Palace =>
-            "Generates a 3D model from the layout, its technology and any bond wires, meshes it with Gmsh and " +
-            "solves it with Palace, both installed separately (Settings ▸ Solvers). " + PlanarHiddenNote,
-        Em3dSolver.OpenEms =>
-            "Generates a 3D model from the layout, its technology and any bond wires, places circuitRF's own FDTD " +
-            "grid on it and solves it with openEMS, installed separately (Settings ▸ Solvers) — once per port. " + PlanarHiddenNote,
-        Em3dSolver.Both =>
-            "Generates one 3D model from the layout, its technology and any bond wires and solves it with Palace, " +
-            "then with openEMS (Settings ▸ Solvers), writing each solver's result and a comparison of the two. " + PlanarHiddenNote,
-        _ => "circuitRF's own planar and cross-section solvers, chosen under Analysis.",
-    };
+        : Solver3DChoice.Value is { IsNone: true } ? "circuitRF's own planar and cross-section solvers, chosen under Analysis."
+        : Solver3DChoice.Value.IsCompare
+            ? "Generates one 3D model from the layout, its technology and any bond wires and solves it with " +
+              string.Join(", then with ", CircuitRF.Design.Em3d.Em3dSolvers.Of(Solver3DChoice.Value).Select(d => d.DisplayName)) +
+              " (Settings ▸ Solvers), writing each solver's result and a comparison of the two. " + PlanarHiddenNote
+            : CircuitRF.Design.Em3d.Em3dSolvers.Get(Solver3DChoice.Value.Reference).SetupDescription + " " + PlanarHiddenNote;
 
-    partial void OnSolver3DChoiceChanged(Em3dSolverChoice value)
+    partial void OnSolver3DChoiceChanged(Em3dSolverPickerRow value)
     {
         OnPropertyChanged(nameof(Is3DSetup));
         OnPropertyChanged(nameof(IsPalaceSetup));
@@ -257,7 +250,7 @@ public sealed partial class EmSetupEditorViewModel
         _suppressCommit = true;
         Solver3DChoice = IsThermalSetup ? ThermalSolverChoice
                        : Solver3DChoices.FirstOrDefault(c => c.Value == Working.Solver3D)
-                         ?? new Em3dSolverChoice(Working.Solver3D, Working.Solver3D.ToString());
+                         ?? new Em3dSolverPickerRow(Working.Solver3D, Working.Solver3D.ToString());
         var p = Working.Palace;
         PalaceQualityChoice = PalaceQualityChoices.First(c => c.Value == (p?.Quality ?? PalaceQuality.Standard));
         PalaceLinearSolverChoice = PalaceLinearSolverChoices.First(c => c.Value == (p?.LinearSolver ?? PalaceLinearSolver.Iterative));

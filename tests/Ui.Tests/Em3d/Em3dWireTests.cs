@@ -374,7 +374,7 @@ public sealed class Em3dWireTests
         {
             Name = "caseA", LayoutRef = "caseA/layout/caseA.clay",
             Frequency = new FrequencySpec("1", "40", 40, SweepKind.Linear, "GHz", "GHz"),
-            Solver3D = Em3dSolver.Palace, OperatingTempC = 20,
+            Solver3D = Em3dSolverId.Palace, OperatingTempC = 20,
         };
         return Em3dGenerator.Generate(setup, new EmLayoutSource("/nowhere/caseA.clay", view, tech, view.DbuPerMicron),
                                       tech, wires ?? new Em3dWireSource(design, WireBondWorkspace.None, null));

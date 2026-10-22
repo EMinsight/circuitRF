@@ -39,7 +39,7 @@ public sealed class RunBothTests(ITestOutputHelper output) : IDisposable
     public void Gate3_ABothRun_GeneratesTheProblemOnce()
     {
         var (setup, source) = Small();
-        setup.Solver3D = Em3dSolver.Both;
+        setup.Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Both;
         string results = Path.Combine(_root, "results");
 
         long before = Em3dRunService.ProblemsGenerated;
@@ -152,7 +152,7 @@ public sealed class RunBothTests(ITestOutputHelper output) : IDisposable
         long um = source.View.DbuPerMicron;
         source.View.Shapes.Add(new RectShape { Layer = edge, X1 = -5000 * um, Y1 = -2500 * um, X2 = 5000 * um, Y2 = 2500 * um });
         setup.AirBox = PalaceBackendTests.Padded(1500);
-        setup.Solver3D = Em3dSolver.Both;
+        setup.Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Both;
 
         var result = EmRunService.Run(setup, source, Path.Combine(_root, "results"));
         Assert.True(result.Status == EmRunStatus.Ok, result.Error);
@@ -183,7 +183,7 @@ public sealed class RunBothTests(ITestOutputHelper output) : IDisposable
     public void Gate8_OpenEmsMissing_RefusesBeforePalaceStarts_NamingSolverPalace()
     {
         var (setup, source) = Small();
-        setup.Solver3D = Em3dSolver.Both;
+        setup.Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Both;
         var discovery = SolverDiscovery.OpenEms;
         var (commands, directories) = (discovery.CandidateCommands, discovery.SearchDirectories);
         long generated = Em3dRunService.ProblemsGenerated, gmsh = PalaceRun.GmshInvocations, palace = PalaceRun.PalaceInvocations;
@@ -241,7 +241,7 @@ public sealed class RunBothTests(ITestOutputHelper output) : IDisposable
 public sealed class BothFactAttribute : FactAttribute
 {
     private static readonly Lazy<string?> Reason = new(() =>
-        SolverDiscovery.ReadinessFor(Em3dSolver.Both).FirstOrDefault(r => !r.Proceeds) is { } r
+        SolverDiscovery.ReadinessFor(CircuitRF.Design.Em3d.Em3dSolvers.Both).FirstOrDefault(r => !r.Proceeds) is { } r
             ? $"needs Palace, Gmsh and openEMS (set CIRCUITRF_PALACE on a machine with F0's installs): {r.Refusal}" : null);
 
     public BothFactAttribute()

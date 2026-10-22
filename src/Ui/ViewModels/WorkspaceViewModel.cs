@@ -9136,8 +9136,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
         if (setup.Problem3D == CircuitRF.Engine.Em3d.Em3dProblemType.Eigenmode && setup.Is3D && result.Data is { } modes)
             vm.AdoptEigenmodes(modes);
         // brief-sar-6 R-sar6-6 — the SAR readouts, from the records the openEMS run left beside its dumps.
-        if (setup.RequestsSar && setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both)
-            vm.AdoptSar(CircuitRF.Design.Em3d.Em3dRunService.RunDirectory(resultsRoot, setup, Em3dSolver.OpenEms));
+        if (setup.RequestsSar && CircuitRF.Design.Em3d.Em3dSolvers.FirstWith(setup.Solver3D, c => c.Sar) is { } sarSolver)
+            vm.AdoptSar(CircuitRF.Design.Em3d.Em3dRunService.RunDirectory(resultsRoot, setup, sarSolver.Id));
         if (result.PlanarMesh is { } planarMesh)
         {
             vm.AdoptPlanarResult(planarMesh, result.PlanarSolve);
@@ -9502,30 +9502,11 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
     }
 
     /// <summary>
-    /// Designer feedback round 11 — what a 3D solver does with the sweep. Palace with a sweep tolerance builds the sweep
-    /// ADAPTIVELY: it solves the full problem at as few frequencies as reach the tolerance and evaluates every requested
-    /// point from the model those solves make — which is why its closing line counts "full solves" that are not the
-    /// requested points. The planar setup's own Adaptive sampling box plays no part in it. openEMS is time-domain: one
-    /// run, every point from its transform.
+    /// Designer feedback round 11 — what each 3D solver the setup runs does with the sweep, in its own words
+    /// (<see cref="CircuitRF.Design.Em3d.Em3dSolverDescriptor.SweepText"/>).
     /// </summary>
     internal static string ThreeDSweepText(EmSetup setup)
-    {
-        string palace;
-        var settings = CircuitRF.Design.Layout.Em.PalaceSettings.Resolve(setup.Palace);
-        string quality = (setup.Palace?.Quality ?? CircuitRF.Design.Layout.Em.PalaceQuality.Standard).ToString();
-        palace = settings.SweepAdaptiveTol > 0
-            ? $"Palace builds the sweep adaptively (tolerance {settings.SweepAdaptiveTol.ToString("G3", CultureInfo.InvariantCulture)}, " +
-              $"the {quality} preset's): it solves the full problem at as few frequencies as reach that tolerance and " +
-              "evaluates every requested point from them"
-            : "Palace solves the full problem at every point";
-        const string openEms = "openEMS runs once in the time domain and takes every point from that run";
-        return setup.Solver3D switch
-        {
-            Em3dSolver.OpenEms => openEms,
-            Em3dSolver.Both    => palace + "; " + openEms,
-            _                  => palace,
-        };
-    }
+        => string.Join("; ", CircuitRF.Design.Em3d.Em3dSolvers.Of(setup.Solver3D).Select(d => d.SweepText(setup)));
 
     /// <summary>The sweep row's own outcome, appended to the end of the row it already owns — so the
     /// finished line still says which setup ran and how many points it got through.</summary>

@@ -90,7 +90,7 @@ public sealed partial class C3dEditorViewModel
     /// <summary>The setups a band sweep may take as its template: every driven openEMS setup.</summary>
     public IReadOnlyList<string> BandTemplates()
         => [.. C3dSetups.Read(Document).Where(s => s.Setup is { Is3D: true, Problem3D: CircuitRF.Engine.Em3d.Em3dProblemType.Driven } st
-                                                   && st.Solver3D is CircuitRF.Design.Layout.Em.Em3dSolver.OpenEms or CircuitRF.Design.Layout.Em.Em3dSolver.Both)
+                                                   && CircuitRF.Design.Em3d.Em3dSolvers.Any(st.Solver3D, c => c.Sar))
                                        .Select(s => s.Name)];
 
     /// <summary>3D ▸ Draw ▸ Phantom ▸ Band Sweep…: the dialog.</summary>

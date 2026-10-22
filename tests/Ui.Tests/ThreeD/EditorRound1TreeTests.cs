@@ -86,7 +86,7 @@ public sealed class EditorRound1TreeTests : IDisposable
     [Fact]
     public void TheAirBox_IsANodeUnderBoxes_NotDeletable_ItsPaddingAShareOfTheExtent()
     {
-        var vm = Open(Doc(new EmSetup { Name = "S1", Solver3D = Em3dSolver.Palace }));
+        var vm = Open(Doc(new EmSetup { Name = "S1", Solver3D = Em3dSolverId.Palace }));
         vm.TreeGrouping = C3dTreeGrouping.Primitive;                     // round 3: by material it is under "Air"
         var box = vm.Tree.Single(g => g.Header == "Boxes").Items[0];
         Assert.True(box.IsAirBox);
@@ -117,7 +117,7 @@ public sealed class EditorRound1TreeTests : IDisposable
     [Fact]
     public void PaddingPercent_RoundTripsTheCem_RefusesBothSpellings_AndAFlatAxisTakesTheDefaultWithANote()
     {
-        var setup = new EmSetup { Name = "S", Solver3D = Em3dSolver.Palace, AirBox = new EmAirBox(ZMin: new EmAirBoxFace(null, null, 50), ZMax: new EmAirBoxFace(null, null, 50)) };
+        var setup = new EmSetup { Name = "S", Solver3D = Em3dSolverId.Palace, AirBox = new EmAirBox(ZMin: new EmAirBoxFace(null, null, 50), ZMax: new EmAirBoxFace(null, null, 50)) };
         Assert.Equal(setup.AirBox, EmSetupPersistence.Deserialize(EmSetupPersistence.Serialize(setup)).AirBox);
 
         var notes = new List<string>();

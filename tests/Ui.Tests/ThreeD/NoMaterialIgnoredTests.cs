@@ -79,7 +79,7 @@ public sealed class NoMaterialIgnoredTests : IDisposable
     private static C3dBox Box(string name, string? material, long x, long y, long z, long dx, long dy, long dz)
         => new() { Name = name, Material = material, Min = new C3dPoint3(x * Um, y * Um, z * Um), Size = new C3dPoint3(dx * Um, dy * Um, dz * Um) };
 
-    private static EmSetup Setup() => new() { Name = "S1", Solver3D = Em3dSolver.Palace };
+    private static EmSetup Setup() => new() { Name = "S1", Solver3D = Em3dSolverId.Palace };
 
     /// <summary>A workspace whose default technology holds Fill (εr 2).</summary>
     private string Workspace()

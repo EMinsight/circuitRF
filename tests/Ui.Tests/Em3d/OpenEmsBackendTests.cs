@@ -72,7 +72,7 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
     {
         var (setup, source) = Em3dGeneratorTests.CaseB(plated: false);
         setup.AirBox = PalaceBackendTests.Padded(1500);
-        setup.Solver3D = Em3dSolver.OpenEms;
+        setup.Solver3D = Em3dSolverId.OpenEms;
         // F0's hand-written case dumps no field; brief 29's DumpBox is compared with fields off.
         setup.OpenEms = new CemOpenEms { SaveFieldsGHz = [] };
         var ours = XDocument.Parse(Lower(setup, source).PortFiles[0]);
@@ -186,7 +186,7 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
         foreach (double len in new[] { len1, len2 })
         {
             var (setup, source) = PalaceBackendTests.Stripline(w, b, len, er);
-            setup.Solver3D = Em3dSolver.OpenEms;
+            setup.Solver3D = Em3dSolverId.OpenEms;
             setup.Palace = null;
             var result = EmRunService.Run(setup, source, Path.Combine(_root, $"results-{len * 1e3:F0}mm"));
             Assert.True(result.Status == EmRunStatus.Ok, result.Error);
@@ -234,7 +234,7 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
         long um = source.View.DbuPerMicron;
         source.View.Shapes.Add(new RectShape { Layer = edge, X1 = -5000 * um, Y1 = -2500 * um, X2 = 5000 * um, Y2 = 2500 * um });
         setup.AirBox = PalaceBackendTests.Padded(1500);
-        setup.Solver3D = Em3dSolver.OpenEms;
+        setup.Solver3D = Em3dSolverId.OpenEms;
         var result = EmRunService.Run(setup, source, Path.Combine(_root, "results"));
         Assert.True(result.Status == EmRunStatus.Ok, result.Error);
         foreach (string n in result.Notes ?? []) output.WriteLine(n);
@@ -287,7 +287,7 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
     {
         var (setup, source) = Em3dGeneratorTests.CaseB(plated: true);
         setup.AirBox = PalaceBackendTests.Padded(1500);
-        setup.Solver3D = Em3dSolver.OpenEms;
+        setup.Solver3D = Em3dSolverId.OpenEms;
         string results = Path.Combine(_root, "results");
 
         using var cts = new CancellationTokenSource();
@@ -307,7 +307,7 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
         Assert.Empty(Directory.EnumerateFiles(results, "*.s*p"));
         int pid = Assert.Single(started);
         Assert.False(PalaceBackendTests.Alive(pid), $"openEMS process {pid} is still running");
-        Assert.False(File.Exists(Path.Combine(Em3dRunService.RunDirectory(results, setup, Em3dSolver.OpenEms), "p1", OpenEmsRun.AbortFile)));
+        Assert.False(File.Exists(Path.Combine(Em3dRunService.RunDirectory(results, setup, Em3dSolverId.OpenEms), "p1", OpenEmsRun.AbortFile)));
     }
 
     // ══ fixtures ════════════════════════════════════════════════════════════════════════════════
@@ -318,7 +318,7 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
     {
         var (setup, source) = name == "via" ? Em3dGeneratorTests.CaseB(plated: true) : Em3dGeneratorTests.Microstrip();
         if (name == "via") setup.AirBox = PalaceBackendTests.Padded(1500);
-        setup.Solver3D = Em3dSolver.OpenEms;
+        setup.Solver3D = Em3dSolverId.OpenEms;
         return Lower(setup, source);
     }
 
@@ -339,7 +339,7 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
         var (setup, source) = Em3dGeneratorTests.Microstrip();
         var face = new EmAirBoxFace(2000, null);
         setup.AirBox = new EmAirBox(face, face, face, face, null, face);
-        setup.Solver3D = Em3dSolver.OpenEms;
+        setup.Solver3D = Em3dSolverId.OpenEms;
         return (setup, source);
     }
 
@@ -406,7 +406,7 @@ public sealed class OpenEmsBackendTests(ITestOutputHelper output) : IDisposable
 public sealed class OpenEmsFactAttribute : FactAttribute
 {
     private static readonly Lazy<string?> Reason = new(() =>
-        SolverDiscovery.ReadinessFor(Em3dSolver.OpenEms).FirstOrDefault(r => !r.Proceeds) is { } r
+        SolverDiscovery.ReadinessFor(Em3dSolverId.OpenEms).FirstOrDefault(r => !r.Proceeds) is { } r
             ? $"needs an openEMS: {r.Refusal}" : null);
 
     public OpenEmsFactAttribute()

@@ -441,7 +441,7 @@ public sealed class OpenEmsWavePortTests(ITestOutputHelper output) : IDisposable
     /// <summary>The coax's setup: PEC walls on the shield, the port face stated PEC (D9 lowers it absorbing), the far end absorbing.</summary>
     internal static EmSetup CoaxSetup(double cellsPerWavelength) => new()
     {
-        Name = "S1", Solver3D = Em3dSolver.OpenEms,
+        Name = "S1", Solver3D = Em3dSolverId.OpenEms,
         Frequency = new CircuitRF.Core.Design.FrequencySpec("2", "18", 5, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz"),
         AirBox = new EmAirBox(new EmAirBoxFace(0, Em3dBoundaryKind.Pec), new EmAirBoxFace(0, Em3dBoundaryKind.Pec),
                               new EmAirBoxFace(0, Em3dBoundaryKind.Pec), new EmAirBoxFace(0, Em3dBoundaryKind.Pec),
@@ -482,7 +482,7 @@ public sealed class OpenEmsWavePortTests(ITestOutputHelper output) : IDisposable
         double side = SideUm(gapUm) - (gapUm / 2 + 1200);
         return new EmSetup
         {
-            Name = "S1", Solver3D = Em3dSolver.OpenEms,
+            Name = "S1", Solver3D = Em3dSolverId.OpenEms,
             Frequency = new CircuitRF.Core.Design.FrequencySpec("2", "8", 3, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz"),
             AirBox = new EmAirBox(new EmAirBoxFace(0, Em3dBoundaryKind.Absorbing), new EmAirBoxFace(0, Em3dBoundaryKind.Absorbing),
                                   new EmAirBoxFace(side, Em3dBoundaryKind.Pmc), new EmAirBoxFace(side, Em3dBoundaryKind.Pmc),

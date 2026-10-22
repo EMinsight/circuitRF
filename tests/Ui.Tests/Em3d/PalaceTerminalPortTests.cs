@@ -181,7 +181,7 @@ public sealed class PalaceTerminalPortTests(ITestOutputHelper output)
     [Fact]
     public void Gate6_AShiftedReferencePlaneIsRefusedNamingOpenEms()
     {
-        string? why = Em3dRunService.TerminalPortRefusal(Em3dSolver.Palace, [("Left", 2)], shifted: ("Left", 0.5e-3));
+        string? why = Em3dRunService.TerminalPortRefusal(Em3dSolverId.Palace, [("Left", 2)], shifted: ("Left", 0.5e-3));
         Assert.Equal("Port 'Left' has its reference plane moved 0.5 mm off its face; Palace runs terminal ports with the reference " +
                      "plane on the port face in this version (the terminal voltages it writes are measured there). Set the setup's " +
                      "solver to openEMS.", why);
@@ -191,7 +191,7 @@ public sealed class PalaceTerminalPortTests(ITestOutputHelper output)
     [Fact]
     public void Gate6_TwoTerminalsRunOnPalace_AndOnBothRunBothSolvers()
     {
-        Assert.Null(Em3dRunService.TerminalPortRefusal(Em3dSolver.Palace, [("Left", 2), ("Right", 2)]));
+        Assert.Null(Em3dRunService.TerminalPortRefusal(Em3dSolverId.Palace, [("Left", 2), ("Right", 2)]));
         Assert.Null(Em3dRunService.TerminalPortsSkipPalace([("Left", 2), ("Right", 2)]));
         Assert.Contains("so this setup ran on openEMS and Palace was skipped for it",
                         Em3dRunService.TerminalPortsSkipPalace([("Left", 3)]));

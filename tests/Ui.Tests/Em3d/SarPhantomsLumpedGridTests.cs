@@ -65,7 +65,7 @@ internal static class SarFixtures
 
     public static EmSetup Setup() => new()
     {
-        Name = "S", Solver3D = Em3dSolver.OpenEms,
+        Name = "S", Solver3D = Em3dSolverId.OpenEms,
         Frequency = new FrequencySpec("0.5", "1.5", 11, SweepKind.Linear, "GHz", "GHz"),
     };
 
@@ -309,7 +309,7 @@ public sealed class SarSetupUnchangedTests
     public void ASetupWithoutSar_WritesTheCommittedGolden()
     {
         var (setup, source) = Em3dGeneratorTests.Microstrip();
-        setup.Solver3D = Em3dSolver.OpenEms;
+        setup.Solver3D = Em3dSolverId.OpenEms;
         var r = Em3dGenerator.Generate(setup, source, source.Technology!);
         Assert.True(r.Ok, r.Refusal);
         var gs = CemOpenEms.ResolveGrid(setup.OpenEms);

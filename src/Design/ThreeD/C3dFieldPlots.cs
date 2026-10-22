@@ -172,7 +172,7 @@ public sealed class C3dFieldPlot
     public string? Setup { get; set; }
 
     /// <summary>Which solver's fields, for a setup that runs both; null otherwise.</summary>
-    public Em3dSolver? Solver { get; set; }
+    public Em3dSolverId? Solver { get; set; }
 
     /// <summary>The saved solution shown, by value. Null shows the first the run saved.</summary>
     public C3dFieldSolution? Solution { get; set; }

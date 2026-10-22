@@ -20,7 +20,7 @@ public class EditorRound7Tests
     {
         Assert.DoesNotContain(EmSetupEditorViewModel.Problem3DChoices, c => c.Value == Em3dProblemType.Thermal);
 
-        var vm = new EmSetupEditorViewModel("model.c3d", new EmSetup { Name = "S1", Solver3D = Em3dSolver.Palace }, embedded: true);
+        var vm = new EmSetupEditorViewModel("model.c3d", new EmSetup { Name = "S1", Solver3D = Em3dSolverId.Palace }, embedded: true);
         var thermal = vm.Solver3DChoiceList[^1];
         Assert.Equal("Thermal", thermal.Label);
         Assert.True(thermal.IsThermal);
@@ -28,20 +28,20 @@ public class EditorRound7Tests
 
         vm.Solver3DChoice = thermal;
         Assert.Equal(Em3dProblemType.Thermal, vm.Working.Problem3D);
-        Assert.Equal(Em3dSolver.None, vm.Working.Solver3D);
+        Assert.Equal(Em3dSolverChoice.None, vm.Working.Solver3D);
         Assert.NotNull(vm.Working.Thermal);
         Assert.True(vm.IsThermalSetup);
         Assert.False(vm.ShowProblem3D);                   // no Problem picker for a thermal setup
         Assert.False(vm.IsPalaceSetup);
 
-        vm.Solver3DChoice = vm.Solver3DChoiceList.First(c => c.Value == Em3dSolver.OpenEms);
+        vm.Solver3DChoice = vm.Solver3DChoiceList.First(c => c.Value == Em3dSolverId.OpenEms);
         Assert.Equal(Em3dProblemType.Driven, vm.Working.Problem3D);
-        Assert.Equal(Em3dSolver.OpenEms, vm.Working.Solver3D);
+        Assert.Equal(Em3dSolverId.OpenEms, vm.Working.Solver3D);
         Assert.True(vm.ShowProblem3D);
 
         // A thermal setup opens on the Thermal row; a .cem offers none (R-em3d75-3 D1).
         var opened = new EmSetupEditorViewModel("model.c3d",
-            new EmSetup { Name = "Hot", Solver3D = Em3dSolver.None, Problem3D = Em3dProblemType.Thermal, Thermal = new CemThermal() }, embedded: true);
+            new EmSetup { Name = "Hot", Solver3D = Em3dSolverChoice.None, Problem3D = Em3dProblemType.Thermal, Thermal = new CemThermal() }, embedded: true);
         Assert.Same(EmSetupEditorViewModel.ThermalSolverChoice, opened.Solver3DChoice);
         Assert.Contains("thermal solver", opened.Solver3DDescription, StringComparison.Ordinal);
         var cem = new EmSetupEditorViewModel("panel.cem", new EmSetup { Name = "panel" });

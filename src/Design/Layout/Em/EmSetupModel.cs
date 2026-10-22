@@ -24,18 +24,7 @@ namespace CircuitRF.Design.Layout.Em;
 // went with it. The member NAMES are unchanged, so every .cem round-trips byte-identically; the
 // enum gained one member, Auto, which no pre-L8e file can contain.
 
-/// <summary>
-/// <b>brief-em3d-3 R-em3d3-3 — which 3D solver a setup runs, if any.</b> <see cref="None"/> is a
-/// planar setup exactly as every <c>.cem</c> before this field was; anything else makes the setup a
-/// 3D one.
-///
-/// <para><b>A separate field, never an <see cref="EmAnalysisKind"/> member</b> (overview §1g,
-/// R-em3d3-3a). <c>Auto</c> picks among the planar kernels and must never land on a 3D solver: one
-/// needs an installed program, can take an hour, and would change the number an existing
-/// <c>.cem</c> produces. Keeping 3D out of that enum is what makes "3D is chosen by name only" true
-/// by construction rather than by a rule inside the registry.</para>
-/// </summary>
-public enum Em3dSolver { None, Palace, OpenEms, Both }
+// brief-em3d-3 R-em3d3-3 — which 3D solver a setup runs is an Em3dSolverChoice (Em3dSolverChoice.cs, brief-emi-1).
 
 /// <summary>One face of a 3D setup's air box, as the <c>.cem</c> states it. Either half may be
 /// omitted, and an omitted half takes the generator's default for that face.</summary>
@@ -506,12 +495,12 @@ public sealed class EmSetup
     // to 3D keeps every planar field (and check notes them, at info); switched back, they are where
     // they were. That is em-3d.md §4.2's "both sections kept", applied to planar vs 3D.
 
-    /// <summary>R-em3d3-3a — which 3D solver this setup runs. <see cref="Em3dSolver.None"/> is a
+    /// <summary>R-em3d3-3a — which 3D solver(s) this setup runs. <see cref="Em3dSolverChoice.None"/> is a
     /// planar setup.</summary>
-    public Em3dSolver Solver3D { get; set; }
+    public Em3dSolverChoice Solver3D { get; set; } = Em3dSolverChoice.None;
 
     /// <summary>True when this setup is a 3D one.</summary>
-    public bool Is3D => Solver3D != Em3dSolver.None;
+    public bool Is3D => !Solver3D.IsNone;
 
     /// <summary>
     /// R-em3d3-4 — the temperature every solid's conductivity is evaluated at, °C. Null is

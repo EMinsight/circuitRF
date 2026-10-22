@@ -48,7 +48,7 @@ public sealed class PalacePresetMeasurementTests(ITestOutputHelper output)
                 foreach (string w in result.Warnings) output.WriteLine($"{c} {q} warning: {w}");
                 output.WriteLine($"{c} {q}: {result.Notes![^1]}");
 
-                string runDir = Path.Combine(dir, "results", Em3dRunService.ResultKey(setup, Em3dSolver.Palace));
+                string runDir = Path.Combine(dir, "results", Em3dRunService.ResultKey(setup, Em3dSolverId.Palace));
                 var tracker = new PalaceStageTracker(PalaceSettings.Resolve(setup.Palace).AdaptiveMaxIterations, 0, null);
                 foreach (string line in File.ReadLines(Path.Combine(runDir, PalaceRun.PalaceLogFile))) tracker.Line(line);
                 var gmsh = new GmshLogProgress(null);

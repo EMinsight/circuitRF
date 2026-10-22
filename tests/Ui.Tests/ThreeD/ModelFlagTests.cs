@@ -88,14 +88,14 @@ public sealed class ModelFlagTests : IDisposable
         Assert.Equal(["keep", "far"], drawn.Solids.Select(s => s.Name));
         Assert.Contains("far", drawn.NotModelled);
 
-        var g = C3dProblemAssembly.Assemble(Setup(Em3dSolver.Palace), doc, path, Cws(ws));
+        var g = C3dProblemAssembly.Assemble(Setup(Em3dSolverId.Palace), doc, path, Cws(ws));
         Assert.True(g.Ok, g.Refusal);
         Assert.Equal(["keep"], g.Problem!.Solids.Select(s => s.Name));
         Assert.Contains(g.Notes, n => n.Contains("'far'", StringComparison.Ordinal) && n.StartsWith("Not modelled", StringComparison.Ordinal));
 
         var alone = new C3dDocument { Objects = [Box("keep", 0, 0)] };
         string ws2 = Workspace();
-        var reference = C3dProblemAssembly.Assemble(Setup(Em3dSolver.Palace), alone, WriteC3d(ws2, alone), Cws(ws2));
+        var reference = C3dProblemAssembly.Assemble(Setup(Em3dSolverId.Palace), alone, WriteC3d(ws2, alone), Cws(ws2));
         Assert.Equal(reference.Problem!.Boundary.Min, g.Problem.Boundary.Min);
         Assert.Equal(reference.Problem.Boundary.Max, g.Problem.Boundary.Max);
     }
@@ -131,9 +131,9 @@ public sealed class ModelFlagTests : IDisposable
         string ws = Workspace();
         var doc = FourPorts();
         doc.Objects.Single(o => o.Name == "t1").Model = false;
-        doc.Setups = [EmSetupPersistence.ToEmbedded(Setup(Em3dSolver.Palace))];
+        doc.Setups = [EmSetupPersistence.ToEmbedded(Setup(Em3dSolverId.Palace))];
         string path = WriteC3d(ws, doc);
-        var g = C3dProblemAssembly.Assemble(Setup(Em3dSolver.Palace), doc, path, Cws(ws));
+        var g = C3dProblemAssembly.Assemble(Setup(Em3dSolverId.Palace), doc, path, Cws(ws));
         Assert.False(g.Ok);
         Assert.Equal(C3dModelled.PortConductorRefusal(doc.Ports[0], "t1", positive: true), g.Refusal);
 
@@ -142,7 +142,7 @@ public sealed class ModelFlagTests : IDisposable
         Assert.Contains("'t1'", stdout + stderr);
 
         doc.Ports[0].Model = false;
-        Assert.True(C3dProblemAssembly.Assemble(Setup(Em3dSolver.Palace), doc, path, Cws(ws)).Ok);
+        Assert.True(C3dProblemAssembly.Assemble(Setup(Em3dSolverId.Palace), doc, path, Cws(ws)).Ok);
     }
 
     /// <summary>Gates 8 and 9: four ports with P2 off assemble as three, numbered 1–3 and mapped P1→1, P3→2, P4→3 in the notes,
@@ -154,8 +154,8 @@ public sealed class ModelFlagTests : IDisposable
         var doc = FourPorts();
         doc.Ports[1].Model = false;
         string path = WriteC3d(ws, doc);
-        var palace = C3dProblemAssembly.Assemble(Setup(Em3dSolver.Palace), doc, path, Cws(ws));
-        var openEms = C3dProblemAssembly.Assemble(Setup(Em3dSolver.OpenEms), doc, path, Cws(ws));
+        var palace = C3dProblemAssembly.Assemble(Setup(Em3dSolverId.Palace), doc, path, Cws(ws));
+        var openEms = C3dProblemAssembly.Assemble(Setup(Em3dSolverId.OpenEms), doc, path, Cws(ws));
         Assert.True(palace.Ok, palace.Refusal);
         var ports = palace.Problem!.Ports;
         Assert.Equal([1, 2, 3], ports.Select(p => p.Number));
@@ -174,9 +174,9 @@ public sealed class ModelFlagTests : IDisposable
         Assert.Empty(Em3dPortMap.Lines([.. ports.Select(p => p with { SourceNumber = null, SourceLabel = null })]));
 
         doc.Objects.Single(o => o.Name == "t2").Model = false;        // P2's conductor off too: no refusal
-        Assert.True(C3dProblemAssembly.Assemble(Setup(Em3dSolver.Palace), doc, path, Cws(ws)).Ok);
+        Assert.True(C3dProblemAssembly.Assemble(Setup(Em3dSolverId.Palace), doc, path, Cws(ws)).Ok);
         foreach (var p in doc.Ports) p.Model = false;
-        Assert.Equal(C3dModelled.AllPortsOff, C3dProblemAssembly.Assemble(Setup(Em3dSolver.Palace), doc, path, Cws(ws)).Refusal);
+        Assert.Equal(C3dModelled.AllPortsOff, C3dProblemAssembly.Assemble(Setup(Em3dSolverId.Palace), doc, path, Cws(ws)).Refusal);
     }
 
     // ── 5, 6. the tree and the Inspector ────────────────────────────────────────────────────────
@@ -251,7 +251,7 @@ public sealed class ModelFlagTests : IDisposable
         return doc;
     }
 
-    private static EmSetup Setup(Em3dSolver solver) => new() { Name = "S", Solver3D = solver };
+    private static EmSetup Setup(Em3dSolverId solver) => new() { Name = "S", Solver3D = solver };
 
     private string Workspace()
     {

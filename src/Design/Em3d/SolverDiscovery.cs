@@ -279,16 +279,11 @@ public sealed partial class SolverDiscovery
     };
 
     /// <summary>
-    /// The programs a setup's solver needs, in the order they are reported. Palace meshes through Gmsh
-    /// (em-3d.md §6.1); openEMS takes circuitRF's own grid and needs nothing else.
+    /// The programs a setup's solver(s) need, in the order they are reported: each chosen solver's
+    /// <see cref="Em3dSolverDescriptor.Tools"/>, each program once (brief-emi-1).
     /// </summary>
-    public static IReadOnlyList<SolverTool> ToolsFor(Em3dSolver solver) => solver switch
-    {
-        Em3dSolver.Palace  => [SolverTool.Palace, SolverTool.Gmsh],
-        Em3dSolver.OpenEms => [SolverTool.OpenEms],
-        Em3dSolver.Both    => [SolverTool.Palace, SolverTool.Gmsh, SolverTool.OpenEms],
-        _                  => [],
-    };
+    public static IReadOnlyList<SolverTool> ToolsFor(Em3dSolverChoice solver)
+        => [.. Em3dSolvers.Of(solver).SelectMany(d => d.Tools).Distinct()];
 
     /// <summary>What a 3D run in this build needs <paramref name="tool"/> to be able to do.</summary>
     public static IReadOnlySet<SolverCapability> CapabilitiesFor(SolverTool tool) => CapabilitiesFor(tool, null);
@@ -316,10 +311,10 @@ public sealed partial class SolverDiscovery
     /// Every program <paramref name="solver"/> needs, checked the way a run checks it. The run, the
     /// Settings page and <c>explain</c> all call this, which is what makes them answer alike.
     /// </summary>
-    public static IReadOnlyList<SolverReadiness> ReadinessFor(Em3dSolver solver) => ReadinessFor(solver, null);
+    public static IReadOnlyList<SolverReadiness> ReadinessFor(Em3dSolverChoice solver) => ReadinessFor(solver, null);
 
-    /// <inheritdoc cref="ReadinessFor(Em3dSolver)"/>
-    public static IReadOnlyList<SolverReadiness> ReadinessFor(Em3dSolver solver, EmSetup? setup,
+    /// <inheritdoc cref="ReadinessFor(Em3dSolverChoice)"/>
+    public static IReadOnlyList<SolverReadiness> ReadinessFor(Em3dSolverChoice solver, EmSetup? setup,
                                                               PalaceDevice device = PalaceDevice.Cpu)
         => ToolsFor(solver).Select(t => For(t).Check(CapabilitiesFor(t, setup, device))).ToList();
 

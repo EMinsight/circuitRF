@@ -305,7 +305,7 @@ public sealed class OpenEmsCylindricalGridTests(ITestOutputHelper output) : IDis
     /// <summary>2 to 10 GHz (113-a's band), PEC sides, both ends stated PEC (D9 lowers each wave-port face absorbing), no field.</summary>
     private static EmSetup Setup(OpenEmsGridKind grid, OpenEmsGridAxis axis = OpenEmsGridAxis.Z, List<double>? origin = null) => new()
     {
-        Name = "S1", Solver3D = Em3dSolver.OpenEms,
+        Name = "S1", Solver3D = Em3dSolverId.OpenEms,
         Frequency = new CircuitRF.Core.Design.FrequencySpec("2", "10", 5, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz"),
         AirBox = new EmAirBox(new EmAirBoxFace(0, Em3dBoundaryKind.Pec), new EmAirBoxFace(0, Em3dBoundaryKind.Pec),
                               new EmAirBoxFace(0, Em3dBoundaryKind.Pec), new EmAirBoxFace(0, Em3dBoundaryKind.Pec),

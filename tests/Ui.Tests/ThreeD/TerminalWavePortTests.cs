@@ -223,8 +223,8 @@ public sealed class TerminalWavePortTests(ITestOutputHelper output) : IDisposabl
     // brief-em3d-116 lifted openEMS's refusal (it builds terminal ports); brief-em3d-115 lifted Palace's for two terminals per
     // face (D-115a), and three or more stay refused.
     [Theory]
-    [InlineData(Em3dSolver.Palace, "Port 'Left' has three terminals; Palace runs terminal ports with two terminals per face in this version. Set the setup's solver to openEMS.")]
-    public void Gate7_AThreeTerminalSetup_IsRefusedBeforeGmsh(Em3dSolver solver, string sentence)
+    [InlineData(Em3dSolverId.Palace, "Port 'Left' has three terminals; Palace runs terminal ports with two terminals per face in this version. Set the setup's solver to openEMS.")]
+    public void Gate7_AThreeTerminalSetup_IsRefusedBeforeGmsh(Em3dSolverId solver, string sentence)
     {
         long gmsh = PalaceRun.GmshInvocations;
         var doc = Pair();
@@ -310,7 +310,7 @@ public sealed class TerminalWavePortTests(ITestOutputHelper output) : IDisposabl
     /// <summary>A Palace setup whose air box's xmin face sits on the content (padding 0), where the ports are.</summary>
     private static EmSetup Setup() => new()
     {
-        Name = "S1", Solver3D = Em3dSolver.Palace,
+        Name = "S1", Solver3D = Em3dSolverId.Palace,
         AirBox = new EmAirBox(XMin: new EmAirBoxFace(0, Em3dBoundaryKind.Absorbing)),
     };
 

@@ -203,7 +203,7 @@ public class RadiationPatternUiTests
         var vm = Editor(dir, new EmSetup
         {
             Name = "panel", LayoutRef = "a.clay", AnalysisKind = EmAnalysisKind.CrossSection,
-            Solver3D = Em3dSolver.OpenEms,
+            Solver3D = Em3dSolverId.OpenEms,
         });
         Assert.True(vm.Is3DSetup);
         Assert.False(vm.ShowCircuitRfSolverControls);

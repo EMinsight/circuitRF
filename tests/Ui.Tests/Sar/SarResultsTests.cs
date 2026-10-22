@@ -90,7 +90,7 @@ internal static class SarSixFixtures
 
     public static EmSetup Setup(CemSar sar) => new()
     {
-        Name = "S", Solver3D = Em3dSolver.OpenEms,
+        Name = "S", Solver3D = Em3dSolverId.OpenEms,
         Frequency = new FrequencySpec("0.5", "1.5", 11, SweepKind.Linear, "GHz", "GHz"),
         Sar = sar,
     };
@@ -286,7 +286,7 @@ public sealed class SarResultsWiringTests(ITestOutputHelper output) : IDisposabl
 
         // the run directory as a run of this setup leaves it: the raw dump, the port's probes, the document it solved
         var runSetup = C3dSetups.ForRun(C3dSetups.Read(doc).Single().Setup!, c3d);
-        string runDir = Em3dRunService.RunDirectory(Path.Combine(Path.GetDirectoryName(cws)!, "results"), runSetup, Em3dSolver.OpenEms);
+        string runDir = Em3dRunService.RunDirectory(Path.Combine(Path.GetDirectoryName(cws)!, "results"), runSetup, Em3dSolverId.OpenEms);
         string p1 = Path.Combine(runDir, OpenEmsRun.PortDirectory(1));
         Directory.CreateDirectory(p1);
         File.Copy(Ref("SAR_raw_dump29.h5"), Path.Combine(p1, Em3dSar.RawDumpFile(0)));

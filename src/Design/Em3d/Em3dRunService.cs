@@ -4,30 +4,28 @@
 // this file through it, and nothing else may call it (gate 12's source scan). It returns the same
 // EmRunResult with the same statuses as a planar run, so no caller branches.
 //
-//   discovery (brief 6)  -> Em3dGenerator (brief 3) -> GmshGeoWriter -> gmsh -> entity check
-//                        -> PalaceConfigWriter -> palace -> port-S.csv -> .sNp + .npy
+// brief-emi-1 — the run is solver-neutral: it asks the setup's Em3dSolverChoice which solvers run, and
+// each one's descriptor (Em3dSolvers) for a LEG that configures, lowers and executes it. A solver's own
+// part of this class lives in its folder, Solvers/<Name>/Em3dRunService.<Name>.cs:
+//
+//   Palace:  discovery (brief 6) -> Em3dGenerator (brief 3) -> GmshGeoWriter -> gmsh -> entity check
+//                                -> PalaceConfigWriter -> palace -> port-S.csv -> .sNp + .npy
+//   openEMS: discovery -> Em3dGenerator -> FdtdGrid (brief 8) -> CsxcadWriter -> openEMS once per port
+//                      -> probe files -> FdtdPortTransform (src/Engine) -> .sNp + .npy
 //
 // The version and capability checks run FIRST, so a missing or unvalidated program costs seconds and
 // starts no mesher (R-em3d7-4c, gate 11).
 //
-// openEMS (brief-em3d-9) is the second backend behind the same door:
+// A comparison (brief-em3d-10; the format's Both) generates the problem ONCE, lowers it for every solver
+// before any starts, runs them in order, and writes Em3dComparison's DataSet (src/Engine) beside the
+// results as `<key>.compare_em.npy`. See "The run" below for the three phases and why the refusals all
+// come first.
 //
-//   discovery -> Em3dGenerator -> FdtdGrid (brief 8) -> CsxcadWriter -> openEMS once per port
-//             -> probe files -> FdtdPortTransform (src/Engine) -> .sNp + .npy
-//
-// and lands by the rule below with the token `openems`.
-//
-// Both (brief-em3d-10) generates the problem ONCE, lowers it for both backends before either starts,
-// runs Palace and then openEMS, and writes Em3dComparison's DataSet (src/Engine) beside the two
-// results as `<key>.compare_em.npy`. See "The run" below for the three phases and why the refusals
-// all come first.
-//
-// WHERE RESULTS LAND (R-em3d7-5, em-3d.md §4.5 — this brief is the first backend built, so it owns the
-// rule and brief 9 reuses it): the solver is part of a 3D result's name, so running a second solver on
-// one setup never overwrites the first. `<key>.palace.sNp`, the `.npy` key `<key>.palace` +
-// NpyKeySuffix, and the run directory `<results>/<key>.palace/`, which is KEPT — the script, the mesh,
-// the groups, the configuration and the solver's log and CSV — so a user can re-run it by hand and F2's
-// viewer can read its fields. A planar result's path does not move by one byte.
+// WHERE RESULTS LAND (R-em3d7-5, em-3d.md §4.5): the solver is part of a 3D result's name, so running a
+// second solver on one setup never overwrites the first. `<key>.<token>.sNp`, the `.npy` key
+// `<key>.<token>` + NpyKeySuffix, and the run directory `<results>/<key>.<token>/`, which is KEPT — the
+// script, the mesh, the configuration and the solver's log and output — so a user can re-run it by hand
+// and F2's viewer can read its fields. A planar result's path does not move by one byte.
 
 using System.Globalization;
 using System.Numerics;
@@ -48,32 +46,21 @@ using RfCore.Export;
 
 namespace CircuitRF.Design.Em3d;
 
-public static class Em3dRunService
+public static partial class Em3dRunService
 {
-    /// <summary>The diagnostics group a Palace <c>.npy</c> carries beside S.</summary>
-    public const string PalaceGroup = "palace";
-
-    /// <summary>The token a solver adds to a result's name — <c>palace</c>, <c>openems</c>.</summary>
-    public static string SolverToken(Em3dSolver solver) => solver switch
-    {
-        Em3dSolver.Palace  => "palace",
-        Em3dSolver.OpenEms => "openems",
-        _                  => solver.ToString().ToLowerInvariant(),
-    };
-
-    /// <summary>R-em3d7-5a — a 3D result's stem: the planar stem and the solver.</summary>
-    public static string ResultKey(EmSetup setup, Em3dSolver solver)
-        => EmRunService.ResolveResultKey(setup) + "." + SolverToken(solver);
+    /// <summary>R-em3d7-5a — a 3D result's stem: the planar stem and the solver's result token.</summary>
+    public static string ResultKey(EmSetup setup, Em3dSolverId solver)
+        => EmRunService.ResolveResultKey(setup) + "." + Em3dSolvers.Get(solver).ResultToken;
 
     /// <summary>The <c>.npy</c>'s key: <see cref="ResultKey"/> + <see cref="EmRunService.NpyKeySuffix"/> —
     /// or, for a static setup, + <c>_es</c> / <c>_ms</c> (brief-em3d-22 R-em3d22-3c): a matrix is not S,
     /// and a setup switched between the two keeps both results.</summary>
-    public static string NpyKey(EmSetup setup, Em3dSolver solver)
+    public static string NpyKey(EmSetup setup, Em3dSolverId solver)
         => ResultKey(setup, solver) + (StaticSuffix(setup) is { Length: > 0 } st ? st : EmRunService.NpyKeySuffix);
 
     /// <summary>The run directory, kept after the run. <c>-o</c> does not move it (R-em3d7-5c). A static
     /// setup's is its own, <c>&lt;key&gt;.palace_es</c>, beside the driven one.</summary>
-    public static string RunDirectory(string resultsRoot, EmSetup setup, Em3dSolver solver)
+    public static string RunDirectory(string resultsRoot, EmSetup setup, Em3dSolverId solver)
         => Path.Combine(resultsRoot, ResultKey(setup, solver) + StaticSuffix(setup));
 
     /// <summary>brief-em3d-22 — <c>_es</c>, <c>_ms</c>; brief-em3d-23 — <c>_eig</c>; empty for a driven setup.</summary>
@@ -86,105 +73,42 @@ public static class Em3dRunService
     };
 
     /// <summary>
-    /// brief-em3d-22 R-em3d22-1b — a static problem runs on Palace only; on openEMS or Both it is refused
-    /// naming Palace, before anything is looked for or started. <c>check</c> reports the same sentence.
+    /// brief-em3d-22 R-em3d22-1b — a static problem runs only on a solver that solves it; on another it is refused
+    /// naming the one that does, before anything is looked for or started. <c>check</c> reports the same sentence.
     /// </summary>
-    public static string? StaticSolverRefusal(EmSetup setup)
-        => setup.IsStatic3D && setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both
-            ? $"This setup asks for a{(setup.Problem3D == Em3dProblemType.Electrostatic ? "n electrostatic" : " magnetostatic")} " +
-              $"solve on {(setup.Solver3D == Em3dSolver.Both ? "both solvers" : "openEMS")}, and only Palace solves the static " +
-              "problems: openEMS is a time-domain solver and has no static one. Set the setup's Solver3D to Palace, or run it " +
-              "with `circuitrf em --solver palace`."
-            : null;
+    public static string? StaticSolverRefusal(EmSetup setup) => setup.IsStatic3D ? SolverRefusal(setup) : null;
 
     /// <summary>brief-em3d-114 — the diagnostic source of a terminal wave port's refusal.</summary>
     public const string TerminalPortsSource = "em3d-terminal-ports";
 
     /// <summary>
-    /// brief-em3d-23 R-em3d23-2e / §7 — what only Palace does: the static problems (brief 22) and an eigenmode solve (FDTD
-    /// has no eigensolver). On openEMS or Both it is refused naming Palace, before anything is looked for. brief-em3d-116
-    /// lifted the wave port from this list: openEMS feeds one as a probed line, and refuses only a hollow waveguide, which
-    /// it learns from the problem (FdtdWavePorts.HollowRefusal, in the lowering — still before any process starts).
+    /// brief-em3d-23 R-em3d23-2e / §7 / brief-emi-1 R-emi1-2c — what a chosen solver refuses of the setup's problem
+    /// type (the static problems, an eigenmode solve), in its own words, before anything is looked for. Each chosen
+    /// solver's descriptor is asked in order (<see cref="Em3dSolverDescriptor.Refusal"/>). brief-em3d-116 lifted the wave
+    /// port from this list: openEMS feeds one as a probed line, and refuses only a hollow waveguide, which it learns from
+    /// the problem (FdtdWavePorts.HollowRefusal, in the lowering — still before any process starts).
     /// </summary>
-    public static string? PalaceOnlyRefusal(EmSetup setup)
-    {
-        if (StaticSolverRefusal(setup) is { } staticOnly) return staticOnly;
-        if (setup.Solver3D is not (Em3dSolver.OpenEms or Em3dSolver.Both)) return null;
-        string on = setup.Solver3D == Em3dSolver.Both ? "both solvers" : "openEMS";
-        const string remedy = "Set the setup's Solver3D to Palace, or run it with `circuitrf em --solver palace`.";
-        if (setup.Problem3D == Em3dProblemType.Eigenmode)
-            return $"This setup asks for an eigenmode solve on {on}, and only Palace finds eigenmodes: openEMS is a " +
-                   "time-domain (FDTD) solver and has no eigensolver. " + remedy;
-        return null;
-    }
+    public static string? SolverRefusal(EmSetup setup)
+        => Em3dSolvers.Of(setup.Solver3D).Select(d => d.Refusal(setup)).FirstOrDefault(r => r is not null);
 
     /// <summary>
-    /// brief-em3d-114 R-em3d114-2e / brief-em3d-115 R-em3d115-2d — what Palace refuses of a problem's multi-terminal wave ports
-    /// (D-115a/b), naming openEMS, which builds them: three or more terminals on one face (the Gram fit of a degenerate face is
-    /// exactly determined at three and under-determined at four, brief 124), a reference plane moved off the port face (the
-    /// terminal voltages Palace writes ignore the Offset, brief 113), and a lumped port beside a terminal group (the transform
-    /// is stated for wave-port entries only). <paramref name="ports"/> is each such port's label and terminal count;
-    /// <paramref name="shifted"/> a terminal port whose reference plane is moved, and how far. Null when Palace runs them all,
-    /// and on every other solver. On Both the run goes ahead on openEMS alone and says Palace was skipped
-    /// (<see cref="TerminalPortsSkipPalace"/>).
+    /// brief-em3d-114 R-em3d114-2e — what the one solver <paramref name="solver"/> names refuses of a problem's
+    /// multi-terminal wave ports (<see cref="Em3dSolverDescriptor.PortRefusal"/>): <paramref name="ports"/> is each such
+    /// port's label and terminal count; <paramref name="shifted"/> a terminal port whose reference plane is moved, and how
+    /// far. Null when it runs them all, and for a comparison, which goes on without a solver that refuses them and says so.
     /// </summary>
-    public static string? TerminalPortRefusal(Em3dSolver solver, IReadOnlyList<(string Label, int Terminals)> ports,
+    public static string? TerminalPortRefusal(Em3dSolverChoice solver, IReadOnlyList<(string Label, int Terminals)> ports,
                                               bool lumpedPorts = false, (string Label, double ShiftM)? shifted = null)
-        => solver == Em3dSolver.Palace && PalaceTerminalReason(ports, lumpedPorts, shifted) is { } why
-            ? why + ". Set the setup's solver to openEMS."
-            : null;
+        => solver.IsCompare ? null
+         : Em3dSolvers.Of(solver).Select(d => d.PortRefusal(new(ports, lumpedPorts, shifted))?.Alone).FirstOrDefault(r => r is not null);
 
-    /// <summary>brief-em3d-116 R-em3d116-3 — the note a Both run carries when Palace refuses its terminal ports and it runs on
-    /// openEMS alone. Null when Palace runs them.</summary>
-    public static string? TerminalPortsSkipPalace(IReadOnlyList<(string Label, int Terminals)> ports, bool lumpedPorts = false,
-                                                  (string Label, double ShiftM)? shifted = null)
-        => PalaceTerminalReason(ports, lumpedPorts, shifted) is { } why
-            ? why + ", so this setup ran on openEMS and Palace was skipped for it."
-            : null;
-
-    private static string? PalaceTerminalReason(IReadOnlyList<(string Label, int Terminals)> ports, bool lumpedPorts,
-                                                (string Label, double ShiftM)? shifted)
-    {
-        if (ports.FirstOrDefault(p => p.Terminals > 2) is { Label: not null } many)
-            return TerminalHead(many) + "Palace runs terminal ports with two terminals per face in this version";
-        if (ports.Count == 0) return null;
-        if (shifted is { } s)
-            return $"Port '{s.Label}' has its reference plane moved {Fmt(Math.Abs(s.ShiftM) * 1e3)} mm off its face; Palace runs terminal " +
-                   "ports with the reference plane on the port face in this version (the terminal voltages it writes are measured there)";
-        if (lumpedPorts)
-            return TerminalHead(ports[0]) + "Palace runs terminal ports only beside other wave ports in this version, and this problem " +
-                   "also has a lumped port";
-        return null;
-    }
-
-    /// <summary>The facts <see cref="TerminalPortRefusal"/> reads, from a built problem.</summary>
-    public static (IReadOnlyList<(string Label, int Terminals)> Ports, bool LumpedPorts, (string Label, double ShiftM)? Shifted)
-        TerminalFacts(Em3dProblem problem)
+    /// <summary>The facts a solver's port refusal reads, from a built problem.</summary>
+    public static Em3dTerminalFacts TerminalFacts(Em3dProblem problem)
     {
         var groups = TerminalPorts(problem.Ports);
         bool lumped = groups.Count > 0 && problem.Ports.Any(p => p.Kind == Em3dPortKind.Lumped);
         var moved = problem.Ports.FirstOrDefault(p => p.FaceGroup is not null && p.ReferencePlane.ShiftM != 0);
-        return (groups, lumped, moved is null ? null : (moved.FaceGroupLabel ?? moved.Name, moved.ReferencePlane.ShiftM));
-    }
-
-    /// <summary>
-    /// brief-em3d-116 R-em3d116-3 — what openEMS's lowering would refuse of <paramref name="problem"/>'s wave ports (a hollow
-    /// waveguide; a current loop with no room), through the planner and the placement the run's writer uses; null when it
-    /// builds them all. <c>check</c> reports it, so a setup that checks clean is not refused by its run for this.
-    /// </summary>
-    public static string? OpenEmsWavePortRefusal(Em3dProblem problem, OpenEmsGridSettings gridSettings)
-    {
-        if (!problem.HasWavePorts || gridSettings.Problems().Count > 0) return null;
-        var grid = FdtdGrid.Build(problem, gridSettings, long.MaxValue);
-        return grid.WavePorts.Refusal ?? FdtdWavePorts.Place(problem, grid.WavePorts, grid).Refusal;
-    }
-
-    private static string TerminalHead((string Label, int Terminals) port)
-    {
-        var (label, n) = port;
-        string count = n switch { 2 => "two", 3 => "three", 4 => "four", 5 => "five", 6 => "six", 7 => "seven", 8 => "eight", 9 => "nine",
-                                  _ => n.ToString(CultureInfo.InvariantCulture) };
-        return $"Port '{label}' has {count} terminals; ";
+        return new(groups, lumped, moved is null ? null : (moved.FaceGroupLabel ?? moved.Name, moved.ReferencePlane.ShiftM));
     }
 
     /// <summary>The problem's multi-terminal ports, as <see cref="TerminalPortRefusal"/> takes them: one entry per face group.</summary>
@@ -192,15 +116,13 @@ public static class Em3dRunService
         => [.. ports.Where(p => p.FaceGroup is not null).GroupBy(p => p.FaceGroup!.Value).OrderBy(g => g.Key)
                     .Select(g => (g.First().FaceGroupLabel ?? $"port {g.Key}", g.Count()))];
 
-    /// <summary>The Touchstone's path without its <c>.sNp</c> suffix: the override when the setup has
-    /// one (<c>-o</c> moves the Touchstone only, as for planar), the solver-named stem otherwise.</summary>
     /// <summary>
     /// brief-em3d-31 R-em3d31-4 — why a 3D setup's radiation pattern is not computed, or null when it is (or
     /// was not asked for): a static or eigenmode problem drives no port at a frequency, so nothing radiates in
     /// the sense a pattern describes. The run carries it as a note and the panel disables the checkbox with it.
     /// </summary>
     public static string? RadiationPatternIgnored(EmSetup setup)
-        => setup.RadiationPattern && setup.Solver3D != Em3dSolver.None && setup.Problem3D != Em3dProblemType.Driven
+        => setup.RadiationPattern && setup.Is3D && setup.Problem3D != Em3dProblemType.Driven
             ? $"No radiation pattern: this setup is {(setup.Problem3D == Em3dProblemType.Eigenmode ? "an eigenmode" : "a static")} " +
               "problem, which drives no port at a frequency, so nothing radiates in the sense a pattern describes. It is " +
               "computed from a Driven 3D run (the setup's Problem3D)."
@@ -211,7 +133,9 @@ public static class Em3dRunService
     internal static double[]? FarFieldFrequencies(EmSetup setup, Em3dProblem problem)
         => setup.RadiationPattern && problem.Type == Em3dProblemType.Driven ? FrequenciesHz(problem.Frequency) : null;
 
-    public static string SnpBasePath(string resultsRoot, EmSetup setup, Em3dSolver solver)
+    /// <summary>The Touchstone's path without its <c>.sNp</c> suffix: the override when the setup has
+    /// one (<c>-o</c> moves the Touchstone only, as for planar), the solver-named stem otherwise.</summary>
+    public static string SnpBasePath(string resultsRoot, EmSetup setup, Em3dSolverId solver)
         => setup.SnpOutputPathOverride is { Length: > 0 }
             ? EmRunService.ResolveSnpBasePath(resultsRoot, setup)
             : Path.Combine(resultsRoot, ResultKey(setup, solver));
@@ -220,22 +144,22 @@ public static class Em3dRunService
     //
     // Three phases, and only the last starts a process:
     //
-    //   1. discovery (brief 6), then each backend's settings
-    //   2. the problem, generated ONCE (R-em3d10-1a), then each backend's lowering — Palace's .geo
-    //      and configuration, openEMS's grid and CSXCAD model
-    //   3. execution: Gmsh + Palace, or openEMS once per port — or both, Palace first (R-em3d10-1c)
+    //   1. discovery (brief 6), then each solver's settings (SolverLeg.Configure)
+    //   2. the problem, generated ONCE (R-em3d10-1a), then each solver's lowering (SolverLeg.Prepare) —
+    //      Palace's .geo and configuration, openEMS's grid and CSXCAD model
+    //   3. execution (SolverLeg.Execute): one solver, or each in turn (R-em3d10-1c)
     //
-    // Everything a backend can refuse is refused in 1 or 2, so a setup asking for both solvers learns
-    // that one of them cannot run before the other has spent half an hour (R-em3d10-4b), and is told
-    // the flag that runs the one that can. Phase 3 is where R-em3d10-4a applies: a solver failing
-    // THERE leaves the other's result written.
+    // Everything a solver can refuse is refused in 1 or 2, so a setup asking for several solvers learns
+    // that one of them cannot run before another has spent half an hour (R-em3d10-4b), and is told the
+    // flag that runs the one that can. Phase 3 is where R-em3d10-4a applies: a solver failing THERE
+    // leaves the others' results written.
 
     /// <summary>How many times a run in this process has generated its 3D problem — R-em3d10-1a's
-    /// counter. A run through both solvers generates once and hands the one problem to both.</summary>
+    /// counter. A run through several solvers generates once and hands the one problem to each.</summary>
     public static long ProblemsGenerated => Interlocked.Read(ref _problemsGenerated);
     private static long _problemsGenerated;
 
-    /// <summary>The token a both-run's comparison adds to the result stem (R-em3d10-2c).</summary>
+    /// <summary>The token a comparison adds to the result stem (R-em3d10-2c).</summary>
     public const string CompareToken = "compare";
 
     /// <summary>R-em3d10-2c — the comparison's key in <c>results/</c>: <c>&lt;key&gt;.compare_em</c>.</summary>
@@ -243,17 +167,17 @@ public static class Em3dRunService
         => EmRunService.ResolveResultKey(setup) + "." + CompareToken + EmRunService.NpyKeySuffix;
 
     /// <summary>
-    /// R-em3d10-5 — one solver's Touchstone stem in a both-run. <c>-o base</c> gives
+    /// R-em3d10-5 — one solver's Touchstone stem in a comparison. <c>-o base</c> gives
     /// <c>base.palace</c> and <c>base.openems</c>, since one path cannot hold two results; with no
     /// <c>-o</c> it is the single-solver stem, <c>results/&lt;key&gt;.&lt;solver&gt;</c>.
     /// </summary>
-    public static string BothSnpBasePath(string resultsRoot, EmSetup setup, Em3dSolver solver)
+    public static string BothSnpBasePath(string resultsRoot, EmSetup setup, Em3dSolverId solver)
         => setup.SnpOutputPathOverride is { Length: > 0 }
-            ? EmRunService.ResolveSnpBasePath(resultsRoot, setup) + "." + SolverToken(solver)
+            ? EmRunService.ResolveSnpBasePath(resultsRoot, setup) + "." + Em3dSolvers.Get(solver).ResultToken
             : Path.Combine(resultsRoot, ResultKey(setup, solver));
 
-    /// <summary>R-em3d10-2c/5 — where a both-run's comparison lands: <c>base.compare_em.npy</c> with
-    /// <c>-o base</c>, <c>results/&lt;key&gt;.compare_em.npy</c> beside the two results otherwise.</summary>
+    /// <summary>R-em3d10-2c/5 — where a comparison lands: <c>base.compare_em.npy</c> with
+    /// <c>-o base</c>, <c>results/&lt;key&gt;.compare_em.npy</c> beside the results otherwise.</summary>
     public static string ComparePath(string resultsRoot, EmSetup setup)
         => setup.SnpOutputPathOverride is { Length: > 0 }
             ? EmRunService.ResolveSnpBasePath(resultsRoot, setup) + "." + CompareToken + EmRunService.NpyKeySuffix + ".npy"
@@ -279,43 +203,41 @@ public static class Em3dRunService
     /// </summary>
     /// <param name="keepRecord">brief-em3d-98 R-em3d98-2 — called with a leg's solver and run directory when that leg completed
     /// (or did not converge), before its status says so: a 3D view's run keeps its inputs record there (EmRunService.RunThreeDView).
-    /// Per LEG, so a Both run whose openEMS leg is cancelled still keeps Palace's.</param>
+    /// Per LEG, so a comparison whose second leg is cancelled still keeps the first's.</param>
     /// <param name="device">brief-em3d-136 — where Palace solves: a machine setting, passed in like
     /// <paramref name="maxCores"/> and hashed nowhere. The Palace leg only; openEMS is unaffected.</param>
     internal static EmRunResult Run(EmSetup setup, Func<EmSetup, Em3dGenerationResult> build, string resultsRoot,
                                     CancellationToken ct, RunControl? control, int? maxCores,
                                     Func<Em3dMemoryVerdict, bool>? confirmMemory = null,
-                                    Action<Em3dSolver, string>? keepRecord = null,
+                                    Action<Em3dSolverId, string>? keepRecord = null,
                                     PalaceDevice device = PalaceDevice.Cpu)
     {
         var log = new RunLog();
         var memory = new MemoryGate(confirmMemory);
-        var solver = setup.Solver3D;
-        bool both = solver == Em3dSolver.Both;
+        var choice = setup.Solver3D;
+        bool compare = choice.IsCompare;
 
         if (StaticSolverRefusal(setup) is { } staticOnly)
             return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-static", staticOnly));
-        if (PalaceOnlyRefusal(setup) is { } palaceOnly)
-            return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-palace-only", palaceOnly));
+        if (SolverRefusal(setup) is { } solverOnly)
+            return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-palace-only", solverOnly));
 
         // ── brief 6: every program found, validated and probed, before anything else ─────────
         // brief-em3d-23 R-em3d23-1c — probed for what THIS setup needs, so a build without an eigensolver
         // is refused here, before Gmsh.
         // brief-em3d-136 R-em3d136-3d — and, for a GPU run, whether this Palace solves on a GPU and how many it sees.
-        var readiness = SolverDiscovery.ReadinessFor(solver, setup, device);
+        var readiness = SolverDiscovery.ReadinessFor(choice, setup, device);
         if (readiness.FirstOrDefault(r => !r.Proceeds) is { } blocked)
         {
             var unavailable = EmDiagnostics.SolverUnavailable(blocked.Name, blocked.Refusal!, Install.SolverInstaller.OfferFor(blocked));
-            if (!both) return log.Result(EmRunStatus.Refused, unavailable);
-            bool palaceReady  = readiness.Where(r => r.Tool is SolverTool.Palace or SolverTool.Gmsh).All(r => r.Proceeds);
-            bool openEmsReady = readiness.Where(r => r.Tool == SolverTool.OpenEms).All(r => r.Proceeds);
+            if (!compare) return log.Result(EmRunStatus.Refused, unavailable);
+            var ready = Em3dSolvers.Of(choice).FirstOrDefault(d => readiness.Where(r => d.Tools.Contains(r.Tool)).All(r => r.Proceeds));
             return log.Result(EmRunStatus.Refused, EmDiagnostics.BothRefusedBeforeWork(
                 string.Join(" ", readiness.Where(r => !r.Proceeds).Select(r => r.Refusal)),
-                palaceReady ? Remedy(Em3dSolver.Palace) : openEmsReady ? Remedy(Em3dSolver.OpenEms) : ""));
+                ready is null ? "" : Remedy(ready)));
         }
-        bool palace  = solver is Em3dSolver.Palace or Em3dSolver.Both;
-        bool openEms = solver is Em3dSolver.OpenEms or Em3dSolver.Both;
-        if (!palace && !openEms) return log.Result(EmRunStatus.Refused, EmDiagnostics.ThreeDSolverNotBuilt(solver.ToString()));
+        var legs = Em3dSolvers.Of(choice).Select(d => d.NewLeg()).ToList();
+        if (legs.Count == 0) return log.Result(EmRunStatus.Refused, EmDiagnostics.ThreeDSolverNotBuilt(choice.ToString()));
 
         // brief-em3d-25 R-em3d25-1c — every circuitRF-installed program this run found is held until it
         // returns, here and (by a lock file in its home) in every other process, so Uninstall refuses
@@ -328,70 +250,14 @@ public static class Em3dRunService
             .Select(i => Wsl.WslSolverHomes.Hold(Install.SolverHomes.DefaultRoots, i, holder)).OfType<IDisposable>()
             .ToList() is { Count: > 0 } holds ? new Holds(holds) : null;
 
-        // ── each backend's settings ───────────────────────────────────────────────────────────
-        Stop? palaceStop = null, openEmsStop = null;
-        PalaceSettings? palaceSettings = null;
-        // brief-em3d-26 — where Palace runs: here, or inside a Linux subsystem distribution, with that
-        // distribution's cores and memory.
-        IPalaceRunner palaceRunner = NativePalaceRunner.Instance;
-        Em3dMemoryScope? palaceMemory = null;
-        OpenEmsGridSettings? gridSettings = null;
-        OpenEmsRunSettings? runSettings = null;
-        // brief-em3d-136 R-em3d136-2a — the GPUs the probe counted (a GPU run only; it was refused above if none).
-        int? gpus = device == PalaceDevice.Gpu
-            ? readiness.FirstOrDefault(r => r.Tool == SolverTool.Palace)?.Capabilities
-                       .FirstOrDefault(c => c.Capability == SolverCapability.Gpu)?.Devices
-            : null;
-        if (palace)
-        {
-            var p = readiness.Single(r => r.Tool == SolverTool.Palace).Installation!;
-            var g = readiness.Single(r => r.Tool == SolverTool.Gmsh).Installation!;
-            log.Notes.Add($"Solver: Palace {p.DescribeVersion()} at {SpackInstalls.FoldPadding(p.Where)}; mesher: Gmsh {g.DescribeVersion()} at {g.Path}.");
-            // brief-em3d-135 R-em3d135-1e — an untested Gmsh runs, and the run says so among its Warnings.
-            if (readiness.Single(r => r.Tool == SolverTool.Gmsh).Warning is { } untested) log.Warnings.Add(untested);
-            palaceSettings = PalaceSettings.Resolve(setup.Palace);
-            if (p.Distribution is not null)
-            {
-                if (SolverDiscovery.For(SolverTool.Palace).Subsystem is not { } wsl)
-                    palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-subsystem",
-                        $"Palace was found in the Linux subsystem distribution '{p.Distribution}', which this machine cannot reach."));
-                else if (Wsl.WslPalace.Runner(wsl, p, PalaceConfigWriter.FieldDirectories(palaceSettings), out string? subsystemRefusal) is { } runner)
-                {
-                    palaceRunner = runner;
-                    palaceMemory = Wsl.WslPalace.MemoryScope(new Wsl.WslSession(wsl, p.Distribution));
-                    log.Notes.Add($"Palace runs in the Linux subsystem distribution '{p.Distribution}', staged in its own Linux " +
-                                  $"filesystem; the mesh, configuration and results stay in the run directory here. MPI: " +
-                                  $"{(runner.MpiLauncher is { } mpi ? SpackInstalls.FoldPadding(mpi) : "none")} ({(runner.MpiLauncher is null ? "Palace runs on one process" : "inside the distribution")}).");
-                }
-                else palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-subsystem", subsystemRefusal));
-            }
-            if (palaceStop is null && palaceSettings.Problems() is { Count: > 0 } bad)
-                palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-settings", string.Join(" ", bad)));
-            // brief-em3d-21 R-em3d21-3b — an explicit core count past the physical one is refused, never
-            // oversubscribed. brief-em3d-26 R-em3d26-2b — the SUBSYSTEM's cores, where Palace runs there.
-            else if (palaceStop is null && PalaceRankRefusal(device, maxCores, palaceRunner.Cores, gpus) is { } ranks)
-                palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-ranks", ranks));
-        }
-        if (openEms)
-        {
-            var o = readiness.Single(r => r.Tool == SolverTool.OpenEms).Installation!;
-            log.Notes.Add($"Solver: openEMS {o.DescribeVersion()} at {o.Path}.");
-            // brief-sar-1 — an untested openEMS runs, and the run says so among its Warnings, as Gmsh's does.
-            if (readiness.Single(r => r.Tool == SolverTool.OpenEms).Warning is { } untested) log.Warnings.Add(untested);
-            // brief-em3d-136 §6 — the device is Palace's setting; openEMS is unaffected by it.
-            if (device == PalaceDevice.Gpu) log.Notes.Add("Device GPU applies to Palace; openEMS runs on the CPU.");
-            gridSettings = CemOpenEms.ResolveGrid(setup.OpenEms);
-            // brief-sar-6 R-sar6-1 — a Sar group turns CellConstantMaterial on unless the section says otherwise (SAR-3).
-            runSettings  = CemOpenEms.ResolveRun(setup.OpenEms, setup.RequestsSar);
-            if (gridSettings.Problems().Concat(runSettings.Problems()).ToList() is { Count: > 0 } bad)
-                openEmsStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-settings", string.Join(" ", bad)));
-        }
-        // brief-em3d-97 R-em3d97-4 — a run in the subsystem holds it, so the memory dialog will not restart it from under the run.
-        using var inSubsystem = palaceRunner is Wsl.WslPalaceRunner wslRunner ? Wsl.WslInUse.Hold(wslRunner.Distribution, holder) : null;
-        // A single solver stops at its first refusal. Both go on while either could still run, so the
-        // refusal can say whether the other one would have.
-        if ((!both || (palaceStop is not null && openEmsStop is not null)) && (palaceStop ?? openEmsStop) is { } early)
-            return both ? BothRefused(palaceStop, openEmsStop, log) : log.Result(early.Status, early.Diagnostic);
+        // ── each solver's settings ────────────────────────────────────────────────────────────
+        var run = new RunContext(setup, build, resultsRoot, ct, control, maxCores, device, readiness, log, memory);
+        foreach (var leg in legs) leg.Configure(run);
+        using var legHolds = new Holds([.. legs.Select(l => l.Hold(holder)).OfType<IDisposable>()]);
+        // One solver stops at its first refusal. A comparison goes on while any could still run, so the
+        // refusal can say whether another one would have.
+        if ((!compare || legs.All(l => l.Stop is not null)) && legs.FirstOrDefault(l => l.Stop is not null)?.Stop is { } early)
+            return compare ? CompareRefused(legs, log) : log.Result(early.Status, early.Diagnostic);
 
         // ── brief 3: the problem, once ────────────────────────────────────────────────────────
         control?.BeginStage("building the 3D problem");
@@ -403,79 +269,54 @@ public static class Em3dRunService
         var problem = generated.Problem!;
         if (problem.Validate() is { Count: > 0 } invalid)
             return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded("em3d-problem", string.Join(" ", invalid)));
-        // brief-em3d-114 R-em3d114-2e — whatever built the problem; a .c3d's run has already refused before discovery
+        // brief-em3d-114 R-em3d114-2e — whatever built the problem; a .c3d's run has already refused before discovery.
+        // brief-em3d-116 R-em3d116-3 / brief-em3d-115 R-em3d115-2d — in a comparison, a solver refusing the terminal ports is
+        // skipped and the run says so. A two-terminal face runs on both.
         var terminalFacts = TerminalFacts(problem);
-        if (TerminalPortRefusal(solver, terminalFacts.Ports, terminalFacts.LumpedPorts, terminalFacts.Shifted) is { } terminalPorts)
-            return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded(TerminalPortsSource, terminalPorts));
-        // brief-em3d-116 R-em3d116-3 / brief-em3d-115 R-em3d115-2d — Both, with a terminal port Palace refuses: openEMS alone, and
-        // the run says Palace was skipped. A two-terminal face runs on both.
-        if (both && TerminalPortsSkipPalace(terminalFacts.Ports, terminalFacts.LumpedPorts, terminalFacts.Shifted) is { } skipPalace)
+        foreach (var leg in legs.ToList())
         {
-            log.Notes.Add(skipPalace);
-            solver = Em3dSolver.OpenEms;
-            both = false;
-            palace = false;
-            palaceStop = null;
-            if (openEmsStop is { } openEmsRefused) return log.Result(openEmsRefused.Status, openEmsRefused.Diagnostic);
+            if (leg.Solver.PortRefusal(terminalFacts) is not { } refusesPorts) continue;
+            if (!compare) return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded(TerminalPortsSource, refusesPorts.Alone));
+            log.Notes.Add(refusesPorts.InCompare);
+            legs.Remove(leg);
+        }
+        if (compare && legs.Count == 1)
+        {
+            compare = false;
+            if (legs[0].Stop is { } remaining) return log.Result(remaining.Status, remaining.Diagnostic);
         }
 
-        // ── brief-sar-6 R-sar6-1 — the Sar group, resolved against the problem: openEMS's run, a Cartesian grid ─────────
+        // ── brief-sar-6 R-sar6-1 — the Sar group, resolved against the problem by the solver that writes its dump ─────────
         if (setup.RequestsSar)
         {
-            if (!openEms)
-                return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded(SarSource,
-                    "This setup asks for SAR, and only openEMS writes the raw SAR dump it is computed on: set its 3D solver to openEMS, or Both."));
-            var sarSettings = SarSettings.Resolve(setup.Sar!);
-            // brief-sar-8b R-sar8b-4 — on a cylindrical grid, local SAR and B1 only: a cube is Cartesian, and the run says so.
-            if (gridSettings!.Cylindrical is not null)
+            if (!legs.Any(l => l.Solver.Capabilities.Sar))
             {
-                var (onCylinder, cylinderRefusal) = Em3dSar.OnCylindricalGrid(sarSettings, setup.Sar!);
-                if (onCylinder is null) return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded(SarSource, cylinderRefusal));
-                sarSettings = onCylinder;
-                log.Notes.Add(Em3dSar.CylindricalNote);
+                string sarSolvers = Em3dSolvers.Names(Em3dSolvers.With(c => c.Sar));
+                return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded(SarSource,
+                    $"This setup asks for SAR, and only {sarSolvers} writes the raw SAR dump it is computed on: set its 3D solver to " +
+                    $"{sarSolvers}, or Both."));
             }
-            var (sarPlan, sarRefusal) = Em3dSar.Resolve(sarSettings, problem, generated.Phantoms);
-            if (sarPlan is null) return log.Result(EmRunStatus.Refused, EmDiagnostics.Forwarded(SarSource, sarRefusal));
-            runSettings = runSettings! with { Sar = sarPlan };
-            if (both) log.Notes.Add("SAR and B1 come with openEMS's result only; Palace's carries none.");
+            foreach (var leg in legs.Where(l => l.Solver.Capabilities.Sar))
+                if (leg.AdmitSar(problem, generated, run) is { } sarStop) return log.Result(sarStop.Status, sarStop.Diagnostic);
+            if (compare)
+                log.Notes.Add($"SAR and B1 come with {Em3dSolvers.Names(legs.Where(l => l.Solver.Capabilities.Sar).Select(l => l.Solver))}'s " +
+                              $"result only; {Em3dSolvers.Names(legs.Where(l => !l.Solver.Capabilities.Sar).Select(l => l.Solver))}'s carries none.");
         }
 
-        // ── each backend's lowering: no process yet ──────────────────────────────────────────
-        PalacePlan? palacePlan = null;
-        OpenEmsPlan? openEmsPlan = null;
-        if (palace && palaceStop is null)
-            palacePlan = PreparePalace(problem, palaceSettings!, readiness, palaceRunner, palaceMemory, log, out palaceStop,
-                                       setup.RadiationPattern, device, gpus);
-        // brief-em3d-21 R-em3d21-2 — will it fit? A warning, and past 150 % a confirmation; still no process.
-        if (palacePlan is not null && palaceStop is null &&
-            memory.Admit(PalaceMemoryVerdict(problem, setup, build, palaceSettings!, palaceMemory?.Bytes ?? MachineMemory.PhysicalBytes,
-                                             palaceMemory), log) is { } tooBig)
-        {
-            palaceStop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource, tooBig));
-            palacePlan = null;
-        }
+        // ── each solver's lowering: no process yet ────────────────────────────────────────────
+        foreach (var leg in legs) leg.Prepare(problem, run);
         if (RadiationPatternIgnored(setup) is { } noPattern) log.Notes.Add(noPattern);
-        // brief-em3d-74 R-em3d74-4b — openEMS meshes on its own grid: a mesh region is Gmsh's, and said to be ignored.
-        if (openEms)
-            foreach (var region in problem.MeshRegions)
-                log.Notes.Add($"openEMS ignores mesh region '{region.Name}': it sizes the Gmsh mesh Palace and a thermal run use, " +
-                              "and openEMS builds its own grid.");
-        if (openEms && openEmsStop is null)
-            openEmsPlan = PrepareOpenEms(problem, gridSettings!, runSettings!, readiness, control, log, out openEmsStop,
-                                         FarFieldFrequencies(setup, problem));
-        if ((palaceStop ?? openEmsStop) is { } refused)
-            return both ? BothRefused(palaceStop, openEmsStop, log) : log.Result(refused.Status, refused.Diagnostic);
+        if (legs.FirstOrDefault(l => l.Stop is not null)?.Stop is { } refused)
+            return compare ? CompareRefused(legs, log) : log.Result(refused.Status, refused.Diagnostic);
 
         // ── execution ─────────────────────────────────────────────────────────────────────────
-        if (solver == Em3dSolver.Palace)
-            return Single(Recorded(setup, resultsRoot, Em3dSolver.Palace, keepRecord, () =>
-                ExecutePalace(palacePlan!, problem, setup, resultsRoot, SnpBasePath(resultsRoot, setup, Em3dSolver.Palace),
-                              ct, control, maxCores, log, memory)), log);
-        if (solver == Em3dSolver.OpenEms)
-            return Single(Recorded(setup, resultsRoot, Em3dSolver.OpenEms, keepRecord, () =>
-                ExecuteOpenEms(openEmsPlan!, problem, setup, resultsRoot, SnpBasePath(resultsRoot, setup, Em3dSolver.OpenEms),
-                               ct, control, maxCores, log)), log);
-        return RunBoth(palacePlan!, openEmsPlan!, problem, setup, resultsRoot, ct, control, maxCores, log, memory, keepRecord);
+        if (!compare)
+        {
+            var only = legs[0];
+            return Single(Recorded(setup, resultsRoot, only.Solver.Id, keepRecord, () =>
+                only.Execute(problem, SnpBasePath(resultsRoot, setup, only.Solver.Id), run)), log);
+        }
+        return RunCompare(legs, choice.Reference, problem, setup, resultsRoot, run, keepRecord);
     }
 
     /// <summary>
@@ -483,7 +324,7 @@ public static class Em3dRunService
     /// before the solver touches the directory, how it ended on every exit path — an exception and a cancellation included —
     /// and, when it completed or did not converge, its inputs record kept first (<paramref name="keep"/>).
     /// </summary>
-    internal static Leg Recorded(EmSetup setup, string resultsRoot, Em3dSolver solver, Action<Em3dSolver, string>? keep, Func<Leg> execute)
+    internal static Leg Recorded(EmSetup setup, string resultsRoot, Em3dSolverId solver, Action<Em3dSolverId, string>? keep, Func<Leg> execute)
     {
         string dir = RunDirectory(resultsRoot, setup, solver);
         var started = C3dRunStatus.Begin(dir);
@@ -517,16 +358,17 @@ public static class Em3dRunService
     }
 
     /// <summary>
-    /// R-em3d10-1 — Palace, then openEMS, on the one problem; then the comparison. A failure of one
-    /// keeps the other's result (R-em3d10-4a); a cancellation keeps what had already finished and
-    /// writes nothing for what was running (R-em3d10-4c).
+    /// R-em3d10-1 — each solver in turn on the one problem; then the comparison against <paramref name="reference"/>. A
+    /// failure of one keeps the other's result (R-em3d10-4a); a cancellation keeps what had already finished and writes
+    /// nothing for what was running (R-em3d10-4c). Two solvers — the format's Both — until EMI-6 generalises the wording.
     /// </summary>
-    private static EmRunResult RunBoth(PalacePlan palacePlan, OpenEmsPlan openEmsPlan, Em3dProblem problem, EmSetup setup,
-                                       string resultsRoot, CancellationToken ct, RunControl? control, int? maxCores, RunLog log,
-                                       MemoryGate memory, Action<Em3dSolver, string>? keepRecord)
+    private static EmRunResult RunCompare(IReadOnlyList<SolverLeg> legs, Em3dSolverId reference, Em3dProblem problem, EmSetup setup,
+                                          string resultsRoot, RunContext run, Action<Em3dSolverId, string>? keepRecord)
     {
-        log.Notes.Add("Both solvers run on the one 3D problem generated above, one after the other — Palace, then " +
-                      "openEMS — because each already uses every core.");
+        if (legs.Count != 2) throw new NotSupportedException("A comparison of more than two solvers is not built yet.");
+        var (log, control) = (run.Log, run.Control);
+        log.Notes.Add($"Both solvers run on the one 3D problem generated above, one after the other — " +
+                      $"{string.Join(", then ", legs.Select(l => l.Solver.DisplayName))} — because each already uses every core.");
 
         // An earlier run's comparison describes files this run is about to rewrite. Left in place past
         // a failed leg or a refused comparison, it would sit beside the fresh result disagreeing with
@@ -538,16 +380,16 @@ public static class Em3dRunService
                              $"({e.Message}); it does not describe this run.");
         }
 
-        control?.BeginStage("Palace, the first of two solvers");
-        var p = Recorded(setup, resultsRoot, Em3dSolver.Palace, keepRecord, () =>
-            ExecutePalace(palacePlan, problem, setup, resultsRoot, BothSnpBasePath(resultsRoot, setup, Em3dSolver.Palace),
-                          ct, control, maxCores, log, memory));
-        if (p.Status == EmRunStatus.Cancelled) return log.Result(EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
+        Leg Execute(SolverLeg leg, string ordinal)
+        {
+            control?.BeginStage($"{leg.Solver.DisplayName}, the {ordinal} of two solvers");
+            return Recorded(setup, resultsRoot, leg.Solver.Id, keepRecord, () =>
+                leg.Execute(problem, BothSnpBasePath(resultsRoot, setup, leg.Solver.Id), run));
+        }
 
-        control?.BeginStage("openEMS, the second of two solvers");
-        var o = Recorded(setup, resultsRoot, Em3dSolver.OpenEms, keepRecord, () =>
-            ExecuteOpenEms(openEmsPlan, problem, setup, resultsRoot, BothSnpBasePath(resultsRoot, setup, Em3dSolver.OpenEms),
-                           ct, control, maxCores, log));
+        var p = Execute(legs[0], "first");
+        if (p.Status == EmRunStatus.Cancelled) return log.Result(EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
+        var o = Execute(legs[1], "second");
 
         var outputs = new List<EmRunOutput>();
         foreach (var leg in new[] { p, o }.Where(l => l.Ok))
@@ -558,10 +400,10 @@ public static class Em3dRunService
 
         if (o.Status == EmRunStatus.Cancelled)
         {
-            // Palace had already failed: its reason is the other half of what this run found.
-            if (!p.Ok && p.Stop is { } palaceStop) log.Errors.Add(palaceStop.Render());
+            // The first had already failed: its reason is the other half of what this run found.
+            if (!p.Ok && p.Stop is { } firstStop) log.Errors.Add(firstStop.Render());
             return log.Result(EmRunStatus.Cancelled,
-                              p.Ok ? EmDiagnostics.CancelledKeeping("openEMS", "Palace", Where(p)) : EmDiagnostics.Cancelled(),
+                              p.Ok ? EmDiagnostics.CancelledKeeping(Name(o.Solver), Name(p.Solver), Where(p)) : EmDiagnostics.Cancelled(),
                               outputs);
         }
         if (!p.Ok && !o.Ok)
@@ -574,7 +416,8 @@ public static class Em3dRunService
         }
 
         // ── the comparison (R-em3d10-2, 3) ────────────────────────────────────────────────────
-        var compared = Em3dComparison.Compare(p.Data!["S"], o.Data!["S"], problem, o.Facts!);
+        var (against, other) = p.Solver == reference ? (p, o) : (o, p);
+        var compared = Em3dComparison.Compare(against.Data!["S"], other.Data!["S"], problem, other.Facts!);
         if (compared.Data is not { } data)
             return log.Result(EmRunStatus.EngineError, EmDiagnostics.ComparisonRefused(compared.Refusal!), outputs);
 
@@ -601,7 +444,7 @@ public static class Em3dRunService
                                Outputs: outputs, MessageFiles: log.FilesOrNull);
     }
 
-    private static string Name(Em3dSolver s) => s == Em3dSolver.Palace ? "Palace" : "openEMS";
+    private static string Name(Em3dSolverId s) => Em3dSolvers.Get(s).DisplayName;
 
     /// <summary>Where a leg's result is, for a sentence naming it.</summary>
     private static string Where(Leg leg)
@@ -609,15 +452,16 @@ public static class Em3dRunService
             ? w : "(its files could not be written; the errors above say why)";
 
     /// <summary>R-em3d10-4b's pointer to the solver that would run.</summary>
-    private static string Remedy(Em3dSolver ready)
-        => $" {Name(ready)} is ready: run it alone with `circuitrf em --solver {SolverToken(ready)}`, or set the setup's " +
-           $"Solver3D to {ready}.";
+    private static string Remedy(Em3dSolverDescriptor ready)
+        => $" {ready.DisplayName} is ready: run it alone with `circuitrf em --solver {ready.ResultToken}`, or set the setup's " +
+           $"Solver3D to {ready.Spelling}.";
 
-    private static EmRunResult BothRefused(Stop? palace, Stop? openEms, RunLog log)
+    /// <summary>A comparison refused before any work: every leg's refusal, and the solver that would run alone.</summary>
+    private static EmRunResult CompareRefused(IReadOnlyList<SolverLeg> legs, RunLog log)
     {
-        string text = string.Join(" ", new[] { palace, openEms }.OfType<Stop>().Select(s => s.Diagnostic.Render()));
-        string remedy = palace is null ? Remedy(Em3dSolver.Palace) : openEms is null ? Remedy(Em3dSolver.OpenEms) : "";
-        return log.Result((palace ?? openEms)!.Status, EmDiagnostics.BothRefusedBeforeWork(text, remedy));
+        string text = string.Join(" ", legs.Select(l => l.Stop).OfType<Stop>().Select(s => s.Diagnostic.Render()));
+        string remedy = legs.FirstOrDefault(l => l.Stop is null) is { } ready ? Remedy(ready.Solver) : "";
+        return log.Result(legs.First(l => l.Stop is not null).Stop!.Status, EmDiagnostics.BothRefusedBeforeWork(text, remedy));
     }
 
     private static EmRunResult Single(Leg leg, RunLog log)
@@ -627,21 +471,58 @@ public static class Em3dRunService
             : log.Result(leg.Status, leg.Stop!);
 
     /// <summary>Why a phase did not go on, and which status says so.</summary>
-    private sealed record Stop(EmRunStatus Status, Diagnostic Diagnostic);
+    internal sealed record Stop(EmRunStatus Status, Diagnostic Diagnostic);
 
     /// <summary>One solver's execution: its status, and on success its data and files.</summary>
+    /// <param name="Facts">What makes a difference from the reference expected (Em3dComparison) — the solver's comparison
+    /// facts, set by a solver whose results are compared against another's (openEMS today).</param>
     /// <param name="NotConverged">brief-em3d-98 — a successful leg's solver said it did not converge (its own signal, never a
     /// criterion of ours): the sentence its <c>status.json</c> carries. Null when it converged.</param>
-    internal sealed record Leg(Em3dSolver Solver, EmRunStatus Status, Diagnostic? Stop, DataSet? Data,
+    internal sealed record Leg(Em3dSolverId Solver, EmRunStatus Status, Diagnostic? Stop, DataSet? Data,
                               string? NpyPath, string? SnpPath, string KernelName, Em3dComparisonFacts? Facts = null,
                               string? NotConverged = null)
     {
         public bool Ok => Status == EmRunStatus.Ok;
-        public static Leg Failed(Em3dSolver s, EmRunStatus status, Diagnostic d) => new(s, status, d, null, null, null, "");
+        public static Leg Failed(Em3dSolverId s, EmRunStatus status, Diagnostic d) => new(s, status, d, null, null, null, "");
     }
 
-    /// <summary>The run's three lists (R-emcli-6), shared by both backends in a both-run.</summary>
-    private sealed class RunLog
+    /// <summary>
+    /// brief-emi-1 R-emi1-1b — one solver's part of one run. A descriptor makes a fresh one per run
+    /// (<see cref="Em3dSolverDescriptor.NewLeg"/>); the run calls it in three phases and only the last starts a process.
+    /// A phase that cannot go on sets <see cref="Stop"/>; whether that ends the run is the run's decision (a comparison
+    /// goes on while another solver could still run).
+    /// </summary>
+    internal abstract class SolverLeg(Em3dSolverDescriptor solver)
+    {
+        public Em3dSolverDescriptor Solver { get; } = solver;
+
+        /// <summary>Why this leg cannot run, once a phase has found it.</summary>
+        public Stop? Stop { get; protected set; }
+
+        /// <summary>Phase 1 — its settings, from what discovery found. Its notes go to the run's log in order.</summary>
+        public abstract void Configure(RunContext run);
+
+        /// <summary>Something held until the run returns (a Linux subsystem distribution the run uses), or null.</summary>
+        public virtual IDisposable? Hold(string holder) => null;
+
+        /// <summary>Phase 2, for a solver with <see cref="Em3dSolverCapabilities.Sar"/> — the setup's Sar group resolved
+        /// against the problem. A refusal here ends the run.</summary>
+        public virtual Stop? AdmitSar(Em3dProblem problem, Em3dGenerationResult generated, RunContext run) => null;
+
+        /// <summary>Phase 2 — its lowering of the one problem; no process.</summary>
+        public abstract void Prepare(Em3dProblem problem, RunContext run);
+
+        /// <summary>Phase 3 — the solve, its results written to <paramref name="snpBase"/> and <c>results/</c>.</summary>
+        public abstract Leg Execute(Em3dProblem problem, string snpBase, RunContext run);
+    }
+
+    /// <summary>What every leg of one run shares: the setup, the inputs the caller passed, discovery's answer and the log.</summary>
+    internal sealed record RunContext(EmSetup Setup, Func<EmSetup, Em3dGenerationResult> Build, string ResultsRoot,
+                                      CancellationToken Ct, RunControl? Control, int? MaxCores, PalaceDevice Device,
+                                      IReadOnlyList<SolverReadiness> Readiness, RunLog Log, MemoryGate Memory);
+
+    /// <summary>The run's three lists (R-emcli-6), shared by every leg of a comparison.</summary>
+    internal sealed class RunLog
     {
         public List<string> Notes { get; } = [];
         public List<string> Warnings { get; } = [];
@@ -665,584 +546,6 @@ public static class Em3dRunService
         public void Dispose() { foreach (var h in holds) h.Dispose(); }
     }
 
-    // ── Palace (brief-em3d-7) ─────────────────────────────────────────────────────────────────
-
-    private sealed record PalacePlan(PalaceSettings Settings, GmshLowering Lowering, string ConfigJson,
-                                     SolverInstallation Palace, SolverInstallation Gmsh, IPalaceRunner Runner,
-                                     Em3dMemoryScope? Memory, bool FarField = false,
-                                     PalaceDevice Device = PalaceDevice.Cpu, int? Gpus = null);
-
-    private static PalacePlan? PreparePalace(Em3dProblem problem, PalaceSettings settings, IReadOnlyList<SolverReadiness> readiness,
-                                             IPalaceRunner runner, Em3dMemoryScope? memoryScope, RunLog log, out Stop? stop,
-                                             bool radiationPattern, PalaceDevice device, int? gpus)
-    {
-        stop = null;
-        var lowering = GmshGeoWriter.Write(problem, settings);
-        if (!lowering.Ok) { stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-lowering", lowering.Refusal)); return null; }
-        // brief-em3d-31 R-em3d31-3 — the far field when asked for and Palace can give one; otherwise the run says
-        // why and goes on (a floor or a wave port changes nothing about S).
-        bool farField = radiationPattern && problem.Type == Em3dProblemType.Driven;
-        if (farField && PalaceConfigWriter.FarFieldRefusal(problem) is { } noFarField)
-        {
-            log.Notes.Add(noFarField);
-            farField = false;
-        }
-        var config = PalaceConfigWriter.Write(problem, lowering.Groups, settings, farField, device);
-        if (!config.Ok) { stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-lowering", config.Refusal)); return null; }
-
-        // F0 Q6 — the void model is the flat-surface impedance: low by up to 10 % on a conductor whose
-        // radius is under about ten skin depths at the bottom of the band.
-        if (!problem.IsStatic && ThinRoundConductors(problem) is { Count: > 0 } thin)
-            log.Notes.Add($"{string.Join(", ", thin.Select(n => $"'{n}'"))} {(thin.Count == 1 ? "is" : "are")} round and under ten " +
-                          $"skin depths in radius at {Fmt(problem.Frequency.StartHz / 1e9)} GHz. Palace models a conductor's " +
-                          "loss as a flat surface's, which on such a wire reads the resistance low by up to about 10 % at the " +
-                          "bottom of the band (3 % at 10 GHz on a 1 mil wire); inductance is not affected.");
-        // brief-em3d-65 R-em3d65-4b/4c — a kernel solid's curved faces: the loss model at a small radius (a warning), and a
-        // radius small enough to set the mesh (a note). Neither blocks the run.
-        foreach (var row in Em3dFidelity.For(problem, Em3dFidelitySolver.Palace, null, GmshGeoWriter.SmallestRequestedSizeM(problem, settings)))
-            (row.Severity == Em3dFidelitySeverity.Warning ? log.Warnings : log.Notes).Add(row.Sentence);
-
-        return new PalacePlan(settings, lowering, config.Json!,
-                              readiness.Single(r => r.Tool == SolverTool.Palace).Installation!,
-                              readiness.Single(r => r.Tool == SolverTool.Gmsh).Installation!, runner, memoryScope, farField,
-                              device, gpus);
-    }
-
-    private static Leg ExecutePalace(PalacePlan plan, Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase,
-                                     CancellationToken ct, RunControl? control, int? maxCores, RunLog log, MemoryGate memory)
-    {
-        const Em3dSolver Me = Em3dSolver.Palace;
-        Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
-        Leg Cancelled() => Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
-        var (settings, lowering, palace) = (plan.Settings, plan.Lowering, plan.Palace);
-        var wall = System.Diagnostics.Stopwatch.StartNew();
-        long physical = plan.Memory?.Bytes ?? MachineMemory.PhysicalBytes;
-        using var runner = plan.Runner;
-
-        string runDir = RunDirectory(resultsRoot, setup, Me);
-        try { Directory.CreateDirectory(runDir); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return Failed($"the run directory '{runDir}' could not be created ({e.Message}).");
-        }
-
-        // ── Gmsh, then the entity check ───────────────────────────────────────────────────────
-        PalaceStep meshed;
-        try { meshed = PalaceRun.Mesh(runDir, lowering, plan.Gmsh.Path, control, ct, physical); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return Failed($"the mesh could not be staged in '{runDir}' ({e.Message}).");
-        }
-        if (meshed.Cancelled) return Cancelled();
-        if (meshed.Refused) return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-mesh", meshed.Message));
-        if (!meshed.Ok) return Failed(meshed.Message!);
-        log.Notes.Add(meshed.Reused
-            ? $"The geometry script is unchanged since the last run, so its mesh was reused ({runDir})."
-            : $"Meshed with Gmsh in {runDir}.");
-
-        // brief-em3d-21 R-em3d21-2 — the mesh's size is known now, and on a problem whose mesh is mostly
-        // refinement (a bond wire) it is the first figure that can say the run will not fit.
-        if (meshed.Tetrahedra is { } tets &&
-            memory.Admit(MeshMemoryVerdict(tets, settings, physical, plan.Memory), log) is { } tooBig)
-            return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(MemoryRefusalSource,
-                tooBig + $" The mesh is kept in {runDir}, so a run started anyway reuses it."));
-
-        // ── Palace ────────────────────────────────────────────────────────────────────────────
-        // brief-em3d-21 R-em3d21-3a — one MPI rank per PHYSICAL core by default (Open MPI's slot count).
-        // brief-em3d-136 R-em3d136-2a — one per GPU on a GPU run, capped by Cores.
-        var (processes, processNote) = PalaceProcessCount(plan.Device, maxCores, runner.Cores, plan.Gpus);
-        if (processNote is not null) log.Notes.Add(processNote);
-        var tracker = new PalaceStageTracker(settings.AdaptiveMaxIterations, settings.SweepAdaptiveTol, control,
-                                             electrostatic: problem.Type == Em3dProblemType.Electrostatic);
-        PalaceStep solved;
-        string? mpiNote;
-        // brief-em3d-115 — a terminal face whose two modes travel at one speed (a stripline, any homogeneous fill) is refused:
-        // Palace returns such a pair in an arbitrary mixture, re-drawn every time it solves the face (per excitation and
-        // frequency in a sweep) and on some meshes as nearly the same field even within one solve, so no conversion can
-        // recover two terminals from it (src/Design/RESOLVED.md § brief-em3d-115). Found before the 3D solve, by the face's
-        // own 2D mode solve at the sweep's centre (seconds).
-        if (problem.Type == Em3dProblemType.Driven && !problem.IsStatic && Em3dPortMap.HasTerminals(problem.Ports))
-        {
-            var ordered = problem.Ports.OrderBy(p => p.Number).ToList();
-            var requested = FrequenciesHz(problem.Frequency);
-            double centre = requested[requested.Length / 2];
-            foreach (var face in PalaceTerminalS.Faces(ordered).Where(f => f.Count > 1))
-            {
-                int attribute = lowering.Groups.Single(g => g.Kind == Em3dGroupKind.Port && g.PortNumber == ordered[face[0]].Number).Attribute;
-                var kn = runner.FaceModes(runDir, plan.ConfigJson, palace.Path, attribute, face.Count, centre, ct, out string? why);
-                if (ct.IsCancellationRequested) return Cancelled();
-                if (kn is null) return Failed($"The terminal faces' modes could not be found before the solve: {why}.");
-                if (ModalTerminalTransform.IsDegenerate(kn))
-                    return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(TerminalPortsSource,
-                        PalaceTerminalS.DegenerateRefusal(ordered[face[0]].FaceGroupLabel ?? ordered[face[0]].Name, kn, centre)));
-            }
-        }
-        try { solved = runner.Solve(runDir, plan.ConfigJson, palace.Path, processes, control, ct, out mpiNote, tracker, physical); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return Failed($"Palace could not be staged in '{runDir}' ({e.Message}).");
-        }
-        if (mpiNote is not null) log.Notes.Add(mpiNote);
-        log.Notes.AddRange(tracker.Notes);
-        log.Warnings.AddRange(tracker.Warnings);
-        if (solved.MemoryNote is not null) log.Notes.Add(solved.MemoryNote);
-        if (solved.Cancelled) return Cancelled();
-        if (!solved.Ok) return Failed(solved.Message!);
-        // brief-em3d-136 R-em3d136-5a — what Palace actually ran on. The probe should have refused a build that would revert
-        // to the CPU; this catches a binary changed since the probe, or an environment that differs between the two.
-        if (plan.Device == PalaceDevice.Gpu && PalaceRun.RanOnCpu(Path.Combine(runDir, PalaceRun.PalaceLogFile)))
-            log.Warnings.Add(GpuRevertedWarning(runDir));
-
-        control?.BeginStage(ReadingLabel);
-        string post = Path.Combine(runDir, PalaceConfigWriter.OutputDirectory);
-        PalaceRun.PruneIterationFields(post);
-        if (problem.IsStatic)
-            return FinishStatic(problem, setup, resultsRoot, post, tracker, processes, log, palace, wall.Elapsed);
-        if (problem.Type == Em3dProblemType.Eigenmode)
-            return FinishEigen(problem, setup, resultsRoot, post, lowering, tracker, processes, log, palace, wall.Elapsed);
-        var ports = problem.Ports.OrderBy(p => p.Number).ToList();
-        var s = PalaceRun.ReadPortS(Path.Combine(post, PalaceRun.PortSFile), [.. ports.Select(p => p.Number)], out string? readError);
-        if (readError is not null) return Failed(readError);
-        var requestedHz = FrequenciesHz(problem.Frequency);
-        s = WithoutSaveOnlyRows(s, requestedHz);
-        // brief-em3d-23 R-em3d23-2d — a wave port's S is referred to its mode's own impedance: renormalised to
-        // the port's stated Z0 before anything else reads it.
-        Complex[][]? modeZ = null;
-        // brief-em3d-115 R-em3d115-4 — with a terminal group, Palace's S is MODAL on that face: every port goes through the
-        // transform instead (a one-entry face reduces to the renormalisation below), from S, V_wp, Z_PV and the log's kₙ.
-        (PalaceModalSamples Samples, PalaceTerminalOutcome Outcome)? terminal = null;
-        if (Em3dPortMap.HasTerminals(ports))
-        {
-            var modes = PalaceRun.ReadWaveModes(File.ReadLines(Path.Combine(runDir, PalaceRun.PalaceLogFile))).ToList();
-            var faces = PalaceTerminalS.Faces(ports).Where(f => f.Count > 1).ToList();
-            var needed = faces.SelectMany(f => f.Select(i => ports[i].Number)).ToHashSet();
-            // R-em3d115-3 — an adaptive sweep logs no kₙ: each terminal face's modes are solved on their own (Palace's 2D mode
-            // solve of that face, seconds) at a few of the sweep's frequencies, and interpolated between.
-            if (requestedHz.Any(f => !modes.Any(m => needed.All(m.Modes.ContainsKey) && Math.Abs(m.FrequencyHz - f) <= 5e-4 * f)))
-            {
-                control?.BeginStage("solving the terminal faces' modes (Palace)");
-                var knots = PalaceTerminalS.KnotFrequenciesHz(requestedHz);
-                foreach (double f in knots)
-                {
-                    var block = new Dictionary<int, PalaceWaveMode>();
-                    foreach (var face in faces)
-                    {
-                        int attribute = lowering.Groups.Single(g => g.Kind == Em3dGroupKind.Port && g.PortNumber == ports[face[0]].Number).Attribute;
-                        var kn = runner.FaceModes(runDir, plan.ConfigJson, palace.Path, attribute, face.Count, f, ct, out string? why);
-                        if (ct.IsCancellationRequested) return Cancelled();
-                        if (kn is null) return Failed($"The terminal faces' wavenumbers could not be found: {why}.");
-                        for (int k = 0; k < face.Count; k++) block[ports[face[k]].Number] = new PalaceWaveMode(ports[face[k]].Number, k + 1, kn[k]);
-                    }
-                    modes.Add(new PalaceWaveModeSample(f, block));
-                }
-                log.Notes.Add($"Palace's adaptive sweep writes no wavenumber kₙ, which the terminal S needs: each terminal face's modes were " +
-                              $"solved on their own (Palace's 2D mode solve of the face) at {string.Join(", ", knots.Select(f => Fmt(f / 1e9)))} GHz " +
-                              "and interpolated between, on the effective permittivity.");
-            }
-            var samples = PalaceTerminalS.Read(post, modes, [.. ports.Select(p => p.Number)], out string? terminalError, needed);
-            if (samples is null) return Failed(terminalError!);
-            if (SweepRows(samples.FrequenciesHz, requestedHz) is { } rows && samples.FrequenciesHz.Length > requestedHz.Length)
-                samples = new PalaceModalSamples([.. rows.Select(k => samples.FrequenciesHz[k])], [.. rows.Select(k => samples.Samples[k])]);
-            var outcome = PalaceTerminalS.Convert(samples, ports, out terminalError);
-            if (outcome is null) return Failed(terminalError!);
-            terminal = (samples, outcome);
-            s = outcome.S;
-            modeZ = [.. samples.Samples.Select(x => x.ZPv.Select(z => new Complex(z, 0)).ToArray())];
-            log.Notes.AddRange(PalaceTerminalS.RouteNotes(ports, outcome));
-            var (checkNotes, checkWarnings) = PalaceTerminalS.Checks(ports, outcome, PalaceTerminalS.Lossless(problem));
-            log.Notes.AddRange(checkNotes);
-            log.Warnings.AddRange(checkWarnings);
-        }
-        if (problem.HasWavePorts)
-        {
-            var wave = ports.Where(p => p.Kind == Em3dPortKind.Wave).ToList();
-            if (terminal is null)
-            {
-                modeZ = PalaceRun.ReadPortZ(Path.Combine(post, PalaceRun.PortZFile), [.. wave.Select(p => p.Number)],
-                                            out double[] zf, out string? zError);
-                if (modeZ is null) return Failed(zError!);
-                if (zf.Length > s.FrequenciesHz.Length && SweepRows(zf, requestedHz) is { } zRows)
-                {
-                    modeZ = [.. zRows.Select(k => modeZ[k])];
-                    zf = [.. zRows.Select(k => zf[k])];
-                }
-                if (zf.Length != s.FrequenciesHz.Length ||
-                    zf.Where((f, k) => Math.Abs(f - s.FrequenciesHz[k]) > 1e-6 * Math.Abs(f)).Any())
-                    return Failed($"Palace's {PalaceRun.PortZFile} and {PalaceRun.PortSFile} do not list the same frequencies, so the " +
-                                  "wave ports' S-parameters cannot be renormalised.");
-                s = RenormaliseWavePorts(s, ports, wave, modeZ);
-                log.Notes.Add(WaveNote(ports, wave, modeZ, s.FrequenciesHz));
-            }
-            // R-em3d23-3 — a port face that supports a mode past its own gives an S that means something else. brief-em3d-115
-            // R-em3d115-2c: on a terminal face its own are the terminals' modes, so the face is asked about mode N + 1.
-            try
-            {
-                var asked = wave.Where(p => !GmshGeoWriter.SharesAnotherTerminalsFace(problem, p)).ToList();
-                var second = runner.SecondModes(runDir, plan.ConfigJson, palace.Path, problem.Frequency.StopHz,
-                                                   [.. asked.Select(p => p.Number)], ct, out string? secondNote);
-                string? Group(PalaceWaveMode m) => ports.First(p => p.Number == m.Port).FaceGroupLabel;
-                int Terminals(PalaceWaveMode m) => wave.Count(q => q.FaceGroup is not null && q.FaceGroup == ports.First(p => p.Number == m.Port).FaceGroup);
-                if (second is null)
-                    log.Notes.Add(terminal is null
-                        ? $"Whether a wave port's second mode propagates was not checked: {secondNote}."
-                        : $"Whether a wave port face supports a mode past its own was not checked: {secondNote}.");
-                else if (second.Any(m => m.Propagating))
-                    foreach (var m in second.Where(m => m.Propagating))
-                        log.Warnings.Add((Group(m) is { } label
-                                             ? $"Port '{label}''s face supports a propagating mode past its {Terminals(m)} terminals' own (mode {m.Mode}) at "
-                                             : $"Port {m.Port}'s wave-port face supports a SECOND propagating mode at ") +
-                                     $"{Fmt(problem.Frequency.StopHz / 1e9)} GHz (Palace's kₙ = {Fmt(m.Kn.Real)}{(m.Kn.Imaginary < 0 ? "−" : "+")}" +
-                                     $"{Fmt(Math.Abs(m.Kn.Imaginary))}i m⁻¹), so its S-parameters are those of " +
-                                     (Group(m) is null ? "the first mode alone and power the second carries is not in them. "
-                                                       : "its terminals' modes alone and power the extra mode carries is not in them. ") +
-                                     "Make the port region smaller (the Ports3D Width and Height), or lower the sweep's top.");
-                else if (terminal is null)
-                    log.Notes.Add($"No wave port's second mode propagates at {Fmt(problem.Frequency.StopHz / 1e9)} GHz, the top of " +
-                                  "the sweep (Palace, asked for mode 2): " + string.Join("; ", second.Select(m =>
-                                      $"port {m.Port}'s decays by 1/e in {Fmt(m.DecayLengthM * 1e3)} mm")) + ".");
-                else
-                    log.Notes.Add($"No wave port face supports a mode past its own at {Fmt(problem.Frequency.StopHz / 1e9)} GHz, the top of " +
-                                  "the sweep (Palace, asked for the next mode of each face): " + string.Join("; ", second.Select(m =>
-                                      $"{(Group(m) is { } l ? $"port '{l}''s mode {m.Mode}" : $"port {m.Port}'s mode 2")} decays by 1/e in " +
-                                      $"{Fmt(m.DecayLengthM * 1e3)} mm")) + ".");
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-                log.Notes.Add($"Whether a wave port's second mode propagates was not checked ({e.Message}).");
-            }
-        }
-        s = AtRequestedFrequencies(s, requestedHz);
-        var facts = PalaceRun.ReadFacts(post);
-        log.Notes.Add($"Palace solved {s.FrequenciesHz.Length} frequencies on {Count(facts.FinalElements)} elements " +
-                      $"({Count(facts.InitialElements)} initially, {facts.AdaptiveIterations ?? 0} adaptive pass(es)), " +
-                      $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
-
-        // ── The DataSet: S and Z0 in the house convention, plus Palace's own record ─────────────
-        var data = BuildDataSet(s, ports, facts);
-        if (terminal is { } t) PalaceTerminalS.AddDiagnostics(data, PalaceGroup, t.Samples, t.Outcome, ports);
-        if (plan.FarField && PalacePattern(post, s, ports, setup, data, log.Notes) is { } patternError) return Failed(patternError);
-        if (modeZ is not null)
-        {
-            var wave = ports.Where(p => p.Kind == Em3dPortKind.Wave).ToList();
-            var values = new System.Numerics.Complex[modeZ.Length * wave.Count];
-            for (int k = 0; k < modeZ.Length; k++)
-                for (int i = 0; i < wave.Count; i++) values[k * wave.Count + i] = modeZ[k][i];
-            data.AddToGroup(PalaceGroup, WaveModeImpedanceCube, new DataCube(
-                [new Axis("f", s.FrequenciesHz, "Hz"), new Axis("Port", [.. wave.Select(p => (double)p.Number)], "")], values) { Unit = "Ohm" });
-        }
-        var summary = tracker.Summary;
-        var quality = setup.Palace?.Quality ?? PalaceQuality.Standard;
-
-        string? snpPath = snpBase + $".s{ports.Count}p";
-        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
-
-        string? snpError;
-        try { snpError = WriteSnp(data, snpBase, setup, problem, lowering, settings, palace, facts, summary, quality, wall.Elapsed); }
-        catch (Exception e) { snpError = e.Message; }
-        if (snpError is not null)
-        {
-            log.Errors.Add($"The .snp could not be written to '{snpPath}': {snpError}");
-            snpPath = null;
-        }
-
-        // R-em3d21-5a — the one line that says what the run cost, the last thing the run says.
-        log.Notes.Add(CompletionSummary(summary, quality, wall.Elapsed, FieldFilesBytes(post)));
-        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "Palace " + palace.DescribeVersion(),
-                       NotConverged: PalaceNotConverged(tracker));
-    }
-
-    /// <summary>brief-em3d-98 — Palace's own not-converged signal: its log's "Linear solver did not converge", which the stage
-    /// tracker already turns into the run's warning. Null when it said no such thing.</summary>
-    private static string? PalaceNotConverged(PalaceStageTracker tracker)
-        => tracker.Warnings.FirstOrDefault() is { } w ? FirstSentence(w) : null;
-
-    /// <summary>
-    /// brief-em3d-22 R-em3d22-3c/4c — a static solve's matrices, read by column name, as a DataSet in
-    /// <c>results/</c> under <c>&lt;key&gt;.palace_es</c> or <c>_ms</c>. No Touchstone: a matrix is not S.
-    /// </summary>
-    private static Leg FinishStatic(Em3dProblem problem, EmSetup setup, string resultsRoot, string post,
-                                    PalaceStageTracker tracker, int processes, RunLog log, SolverInstallation palace, TimeSpan wall)
-    {
-        const Em3dSolver Me = Em3dSolver.Palace;
-        bool es = problem.Type == Em3dProblemType.Electrostatic;
-        int[] indices = [.. Enumerable.Range(1, problem.Terminals.Count)];
-        var (file, mutualFile, symbol, mutualSymbol, unit) = es
-            ? (PalaceRun.CapacitanceFile, PalaceRun.MutualCapacitanceFile, "C", "C_m", "(F)")
-            : (PalaceRun.InductanceFile, PalaceRun.MutualInductanceFile, "M", "M_m", "(H)");
-        var matrix = PalaceRun.ReadTerminalMatrix(Path.Combine(post, file), symbol, unit, indices, out string? error);
-        if (matrix is null) return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(error!));
-        var mutual = PalaceRun.ReadTerminalMatrix(Path.Combine(post, mutualFile), mutualSymbol, unit, indices, out string? mutualError);
-        if (mutual is null) log.Notes.Add($"The {(es ? "mutual capacitance" : "current-difference inductance")} form was not read: {mutualError}");
-
-        var notes = new List<string>();
-        string groundText = GroundText(problem, setup);
-        if (es)
-        {
-            notes.Add("C is the Maxwell capacitance matrix: C[i][i] is terminal i's capacitance to every other conductor " +
-                      "(the charge on i with i at 1 V and all others grounded), and C[i][j] <= 0 off the diagonal. " +
-                      "C_mutual is the lumped-circuit form: C_mutual[i][i] is i's capacitance to ground alone and " +
-                      "C_mutual[i][j] = -C[i][j] is the capacitor between i and j. " + groundText);
-            if (problem.Boundary.Faces is var f && new[] { f.XMin, f.XMax, f.YMin, f.YMax, f.ZMin, f.ZMax }.Contains(Em3dBoundaryKind.Absorbing))
-                notes.Add("An open (Absorbing) face of the air box is a zero-charge face in an electrostatic solve: no field " +
-                          "line ends on it, so every line ends on a conductor of the problem. Set a face to Pec to make it part " +
-                          "of the ground instead.");
-        }
-        else
-        {
-            notes.Add("L is the inductance matrix: L[i][i] is terminal i's self-inductance with its current through its " +
-                      "source port, and L[i][j] the mutual inductance between i and j. " + groundText);
-            notes.Add(Em3dStaticResult.InternalInductanceNote(problem));
-            if (problem.FloatingConductors() is { Count: > 0 } free)
-                notes.Add($"{free.Count} conductor(s) are in no terminal ({string.Join(", ", free.Take(6).Select(n => $"'{n}'"))}" +
-                          $"{(free.Count > 6 ? ", …" : "")}): they carry no source current, only the screening current a perfect " +
-                          "conductor carries.");
-        }
-        log.Notes.AddRange(notes);
-
-        var facts = PalaceRun.ReadFacts(post);
-        var data = Em3dStaticResult.Build(problem.Type, [.. problem.Terminals.Select(t => t.Name)], matrix, mutual, notes);
-        void Scalar(string name, double? v)
-        {
-            if (v is { } x) data.AddToGroup(PalaceGroup, name, DataCube.Scalar(x));
-        }
-        Scalar("MeshElementsInitial", facts.InitialElements);
-        Scalar("MeshElementsFinal",   facts.FinalElements);
-        Scalar("DegreesOfFreedom",    facts.DegreesOfFreedom);
-        Scalar("AdaptiveIterations",  facts.AdaptiveIterations);
-        log.Notes.Add($"Palace solved {problem.Terminals.Count} terminal(s) on {Count(facts.FinalElements)} elements " +
-                      $"({Count(facts.InitialElements)} initially, {facts.AdaptiveIterations ?? 0} adaptive pass(es)), " +
-                      $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
-
-        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
-        log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post)));
-        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion(),
-                       NotConverged: PalaceNotConverged(tracker));
-    }
-
-    /// <summary>
-    /// brief-em3d-31 R-em3d31-3 — Palace's far field through the stage. Each excitation's r·E (Cartesian, poles
-    /// written once) is divided by the driven port's own TOTAL voltage, so the pattern is a 1 V port voltage's;
-    /// the accepted power at that voltage is (|V_inc|² − |V − V_inc|²)/(2·R·|V|²), the incident-minus-reflected
-    /// power of port-V.csv's own waves; and the mismatch factor reads the published S_kk. Only the sweep's own
-    /// rows are read, so a save-only Point sample (brief 29) adds no pattern. Null on success.
-    /// </summary>
-    internal static string? PalacePattern(string post, PalacePortS s, IReadOnlyList<Em3dPort> ports, EmSetup setup, DataSet data,
-                                         List<string> notes)
-    {
-        var numbers = ports.Select(p => p.Number).ToList();
-        var ff = PalaceRun.ReadFarField(Path.Combine(post, PalaceRun.FarFieldFile), out string? error);
-        if (ff is null) return error;
-        var pv = PalaceRun.ReadPortV(Path.Combine(post, PalaceRun.PortVFile), numbers, out error);
-        if (pv is null) return error;
-        var (vf, vinc, vtot) = pv.Value;
-
-        var grid = FarFieldStage.Sphere();
-        int n = ports.Count, nt = grid.ThetaDeg.Count, np = grid.PhiDeg.Count;
-        var points = new Em3dPatternPoint[s.FrequenciesHz.Length * n];
-        for (int i = 0; i < s.FrequenciesHz.Length; i++)
-        {
-            double fHz = s.FrequenciesHz[i];
-            int row = Array.FindIndex(vf, g => Math.Abs(g * 1e9 - fHz) <= 1e-8 * fHz);
-            var key = ff.Keys.Where(k => Math.Abs(k.FGHz * 1e9 - fHz) <= 1e-8 * fHz).Select(k => k.FGHz).DefaultIfEmpty(double.NaN).First();
-            if (row < 0 || double.IsNaN(key))
-                return $"Palace wrote no far field or port voltage at {Fmt(fHz / 1e9)} GHz, a frequency of the sweep.";
-            for (int k = 0; k < n; k++)
-            {
-                if (!ff.TryGetValue((key, numbers[k]), out var dirs))
-                    return $"Palace's {PalaceRun.FarFieldFile} has no rows for port {numbers[k]}'s excitation at {Fmt(fHz / 1e9)} GHz.";
-                Complex v = vtot[row][k];
-                double vi = vinc[row][k], r = ports[k].Z0.Real;
-                if (!(v.Magnitude > 0)) return $"Port {numbers[k]}'s own voltage is zero at {Fmt(fHz / 1e9)} GHz in Palace's run.";
-                var eth = new Complex[nt * np];
-                var eph = new Complex[nt * np];
-                for (int it = 0; it < nt; it++)
-                    for (int ip = 0; ip < np; ip++)
-                    {
-                        int th = (int)Math.Round(grid.ThetaDeg[it] * 1000), phi = th is 0 or 180000 ? 0 : (int)Math.Round(grid.PhiDeg[ip] * 1000);
-                        if (!dirs.TryGetValue((th, phi), out var e))
-                            return $"Palace's {PalaceRun.FarFieldFile} has no row at θ = {grid.ThetaDeg[it]}°, φ = {grid.PhiDeg[ip]}° for port " +
-                                   $"{numbers[k]} at {Fmt(fHz / 1e9)} GHz.";
-                        (eth[grid.IndexOf(it, ip)], eph[grid.IndexOf(it, ip)]) =
-                            NearToFarField.ToSpherical(e.X / v, e.Y / v, e.Z / v, grid.ThetaDeg[it], grid.PhiDeg[ip]);
-                    }
-                double reflected = (v - vi).Magnitude;
-                double accepted = (vi * vi - reflected * reflected) / (2 * r * v.Magnitude * v.Magnitude);
-                points[i * n + k] = new Em3dPatternPoint(FarFieldStage.Pattern(grid, eth, eph, numbers[k], fHz), accepted, s.S[i][k, k]);
-            }
-        }
-        notes.AddRange(Em3dRadiation.Publish(data, "Palace (FEM)", grid, numbers, s.FrequenciesHz, points,
-                                             setup.ReferenceInputPowerDbm, hemisphere: false));
-        notes.Add("Palace's far field is its own Stratton–Chu integral over the air box's absorbing faces, which are first order: " +
-                  "the pattern is only as good as the field those faces leave unreflected, so a box close to the radiator reads " +
-                  $"its nulls and its back radiation high. {PalaceRun.FarFieldFile} is about 16 MB per frequency per port at the 1° sphere.");
-        return null;
-    }
-
-    /// <summary>The Palace group's cube holding each wave port's mode impedance Z_PV, [f, Port], ohms.</summary>
-    public const string WaveModeImpedanceCube = "WavePortZmode";
-
-    /// <summary>
-    /// R-em3d23-2d — Palace's S with every wave port moved from its mode's impedance to its stated Z0: the
-    /// whole matrix per frequency (RfCore's <see cref="RFNetwork.SToS"/>), never an element at a time. A lumped
-    /// port is already at its Z0 (its resistance), so its reference is unchanged.
-    /// </summary>
-    internal static PalacePortS RenormaliseWavePorts(PalacePortS s, IReadOnlyList<Em3dPort> ports, IReadOnlyList<Em3dPort> wave,
-                                                     Complex[][] modeZ)
-    {
-        int n = ports.Count;
-        var target = ports.Select(p => p.Z0).ToArray();
-        var mats = new Complex[s.S.Length][,];
-        for (int k = 0; k < s.S.Length; k++)
-        {
-            var from = (Complex[])target.Clone();
-            for (int w = 0; w < wave.Count; w++) from[ports.ToList().IndexOf(wave[w])] = modeZ[k][w];
-            var m = new Mat<Complex>(n, n);
-            for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) m[i, j] = s.S[k][i, j];
-            var r = RFNetwork.SToS(m, from, target);
-            mats[k] = new Complex[n, n];
-            for (int i = 0; i < n; i++) for (int j = 0; j < n; j++) mats[k][i, j] = r[i, j];
-        }
-        return s with { S = mats };
-    }
-
-    /// <summary>What each wave port's S was referred to, and what it is now.</summary>
-    private static string WaveNote(IReadOnlyList<Em3dPort> ports, IReadOnlyList<Em3dPort> wave, Complex[][] modeZ, double[] f)
-    {
-        var parts = wave.Select((p, w) =>
-        {
-            var re = modeZ.Select(z => z[w].Real).ToList();
-            string range = re.Min() == re.Max() ? $"{Fmt(re[0])} Ω" : $"{Fmt(re.Min())} to {Fmt(re.Max())} Ω";
-            return $"port {p.Number}'s mode impedance is {range} over the sweep, renormalised to {Fmt(p.Z0.Real)} Ω";
-        });
-        return "Palace refers a wave port's S-parameters to the port's own mode, normalised to unit power — that is, to the " +
-               "mode's impedance Z_PV (port-Z.csv), which varies with frequency. The .sNp states one real reference per port, " +
-               $"so the wave ports were renormalised: {string.Join("; ", parts)}.";
-    }
-
-    /// <summary>
-    /// brief-em3d-23 R-em3d23-4c — an eigenmode solve's modes, read by column name, as a DataSet in
-    /// <c>results/</c> under <c>&lt;key&gt;.palace_eig</c>. No Touchstone: a mode is not S. The run directory keeps
-    /// whatever Palace wrote (R-em3d23-4d).
-    /// </summary>
-    private static Leg FinishEigen(Em3dProblem problem, EmSetup setup, string resultsRoot, string post, GmshLowering lowering,
-                                   PalaceStageTracker tracker, int processes, RunLog log, SolverInstallation palace, TimeSpan wall)
-    {
-        const Em3dSolver Me = Em3dSolver.Palace;
-        var modes = PalaceRun.ReadModes(Path.Combine(post, PalaceRun.EigFile), out string? error);
-        if (modes is null) return Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(error!));
-        if (modes.Count < problem.EigenmodeCount)
-            log.Warnings.Add($"Palace found {modes.Count} converged mode(s) above {Fmt(problem.EigenmodeTargetHz / 1e9)} GHz where " +
-                             $"{problem.EigenmodeCount} were asked for.");
-        int[] index = [.. modes.Select(m => m.Index)];
-
-        var lumped = problem.Ports.Where(p => p.Kind == Em3dPortKind.Lumped).OrderBy(p => p.Number).Select(p => p.Number).ToList();
-        double[,]? qExt = null;
-        if (lumped.Count > 0)
-        {
-            qExt = PalaceRun.ReadModeColumns(Path.Combine(post, PalaceRun.PortQFile), [.. lumped.Select(n => $"Q_ext[{n}]")], index, out string? qError);
-            if (qError is not null) log.Notes.Add($"The ports' external Q was not read: {qError}");
-        }
-        var volumes = lowering.Groups.Where(g => g.Dimension == 3).ToList();
-        var participation = PalaceRun.ReadModeColumns(Path.Combine(post, PalaceRun.DomainEnergyFile),
-                                                      [.. volumes.Select((_, k) => $"p_elec[{k + 1}]")], index, out string? pError);
-        if (pError is not null) log.Notes.Add($"The energy participation was not read: {pError}");
-
-        var notes = new List<string>
-        {
-            "f is each mode's resonant frequency (the real part of Palace's complex eigenfrequency). Q is Palace's Q, " +
-            "Re f / 2 Im f: the LOADED Q, with every loss in the problem — finite-conductivity walls, lossy dielectrics, " +
-            "open (absorbing) faces, and each lumped port's resistance, which an eigenmode solve treats as a load.",
-        };
-        if (qExt is not null)
-            notes.Add("Q_ext is each lumped port's external Q, as Palace writes it. Q_unloaded = 1/(1/Q − Σ 1/Q_ext) is the Q " +
-                      "with the ports' loading taken out, computed by circuitRF from those two figures of Palace's.");
-        if (participation is not null)
-            notes.Add("Participation is the fraction of each mode's electric energy in each meshed region (Palace's p_elec): " +
-                      "where the mode lives.");
-        log.Notes.AddRange(notes);
-
-        var data = Em3dEigenResult.Build([.. modes.Select(m => new Em3dMode(m.Index, m.FrequencyHz, m.Q))], lumped, qExt,
-                                         [.. volumes.Select(g => g.Name)], participation, notes);
-        var facts = PalaceRun.ReadFacts(post);
-        void Scalar(string name, double? v)
-        {
-            if (v is { } x) data.AddToGroup(PalaceGroup, name, DataCube.Scalar(x));
-        }
-        Scalar("MeshElementsInitial", facts.InitialElements);
-        Scalar("MeshElementsFinal",   facts.FinalElements);
-        Scalar("DegreesOfFreedom",    facts.DegreesOfFreedom);
-        Scalar("AdaptiveIterations",  facts.AdaptiveIterations);
-        log.Notes.Add($"Palace found {modes.Count} mode(s) above {Fmt(problem.EigenmodeTargetHz / 1e9)} GHz on {Count(facts.FinalElements)} " +
-                      $"elements ({Count(facts.InitialElements)} initially, {facts.AdaptiveIterations ?? 0} adaptive pass(es)), " +
-                      $"{Count(facts.DegreesOfFreedom)} unknowns, {processes} process(es).");
-
-        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
-        log.Notes.Add(CompletionSummary(tracker.Summary, setup.Palace?.Quality ?? PalaceQuality.Standard, wall, FieldFilesBytes(post)));
-        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "Palace " + palace.DescribeVersion(),
-                       NotConverged: PalaceNotConverged(tracker));
-    }
-
-    /// <summary>What the matrix is referred to, in a sentence.</summary>
-    private static string GroundText(Em3dProblem problem, EmSetup setup)
-    {
-        bool pecFace = new[] { problem.Boundary.Faces.XMin, problem.Boundary.Faces.XMax, problem.Boundary.Faces.YMin,
-                               problem.Boundary.Faces.YMax, problem.Boundary.Faces.ZMin, problem.Boundary.Faces.ZMax }
-                       .Contains(Em3dBoundaryKind.Pec);
-        string who = setup.Ground3D is { Length: > 0 } g ? $"net '{g}'" : "the ground-reference conductors";
-        var parts = new List<string>();
-        if (problem.GroundObjects.Count > 0) parts.Add($"{who} ({problem.GroundObjects.Count} conductor(s))");
-        if (pecFace) parts.Add("the air box's PEC face(s)");
-        return parts.Count == 0
-            ? "Nothing in this problem is ground, so the matrix is referred to no conductor outside its terminals."
-            : $"The reference (ground) is {string.Join(" and ", parts)}.";
-    }
-
-    /// <summary>
-    /// R-em3d10-2a — Palace's <c>port-S.csv</c> prints each frequency to nine significant digits, so
-    /// what is read back can sit a few hertz off the frequency Palace was asked for and solved at. When
-    /// every row matches the requested sweep to that printed precision, the requested values are the
-    /// frequencies; otherwise the file's own are kept, and a comparison against another solver refuses.
-    /// </summary>
-    internal static PalacePortS AtRequestedFrequencies(PalacePortS s, double[] requested)
-    {
-        const double PrintedPrecision = 1e-8;      // nine significant digits, with room for Palace's own arithmetic
-        if (s.FrequenciesHz.Length != requested.Length) return s;
-        for (int k = 0; k < requested.Length; k++)
-            if (!(Math.Abs(s.FrequenciesHz[k] - requested[k]) <= PrintedPrecision * Math.Abs(requested[k])))
-                return s;
-        return s with { FrequenciesHz = (double[])requested.Clone() };
-    }
-
-    /// <summary>
-    /// brief-em3d-29 R-em3d29-1b — a field saved at a frequency that is not a sweep point is a Point sample
-    /// Palace evaluates like any other, so its row is in <c>port-S.csv</c> too. Those rows are dropped here:
-    /// the <c>.sNp</c> holds the sweep the setup asked for, and nothing else.
-    /// </summary>
-    internal static PalacePortS WithoutSaveOnlyRows(PalacePortS s, double[] requested)
-    {
-        if (s.FrequenciesHz.Length <= requested.Length || SweepRows(s.FrequenciesHz, requested) is not { } rows) return s;
-        return s with { FrequenciesHz = [.. rows.Select(k => s.FrequenciesHz[k])], S = [.. rows.Select(k => s.S[k])] };
-    }
-
-    /// <summary>The row matching each requested frequency to the printed precision, in order; null when one
-    /// has no row.</summary>
-    internal static int[]? SweepRows(double[] have, double[] requested)
-    {
-        const double PrintedPrecision = 1e-8;
-        var rows = new int[requested.Length];
-        int from = 0;
-        for (int k = 0; k < requested.Length; k++)
-        {
-            int at = -1;
-            for (int j = from; j < have.Length; j++)
-                if (Math.Abs(have[j] - requested[k]) <= PrintedPrecision * Math.Abs(requested[k])) { at = j; break; }
-            if (at < 0) return null;
-            rows[k] = at;
-            from = at + 1;
-        }
-        return rows;
-    }
-
     /// <summary>A solver's grouped <c>.npy</c> in <c>results/</c>; null, with an error, when it could not be written.</summary>
     private static string? WriteNpy(string resultsRoot, string key, DataSet data, RunLog log)
     {
@@ -1261,333 +564,6 @@ public static class Em3dRunService
         }
     }
 
-    // ── openEMS (brief-em3d-9) ────────────────────────────────────────────────────────────────
-
-    /// <summary>The diagnostics group an openEMS <c>.npy</c> carries beside S.</summary>
-    public const string OpenEmsGroup = "openems";
-
-    /// <summary>
-    /// R-em3d9-3e: openEMS's own time step against brief 8's Courant estimate. Outside this band the
-    /// grid or the estimate is wrong, and the run says so.
-    /// </summary>
-    public const double TimeStepRatioLow = 0.5, TimeStepRatioHigh = 1.0;
-
-    private sealed record OpenEmsPlan(OpenEmsGridSettings GridSettings, OpenEmsRunSettings RunSettings, FdtdGridResult Grid,
-                                      CsxcadLowering Lowering, SolverInstallation OpenEms);
-
-    private static OpenEmsPlan? PrepareOpenEms(Em3dProblem problem, OpenEmsGridSettings gridSettings, OpenEmsRunSettings runSettings,
-                                               IReadOnlyList<SolverReadiness> readiness, RunControl? control, RunLog log, out Stop? stop,
-                                               IReadOnlyList<double>? farFieldHz = null)
-    {
-        stop = null;
-
-        // ── brief 8: the grid, then the lowering ──────────────────────────────────────────────
-        control?.BeginStage("placing the FDTD grid");
-        FdtdGridResult grid;
-        try { grid = FdtdGrid.Build(problem, gridSettings); }
-        catch (InvalidOperationException e)
-        {
-            stop = new(EmRunStatus.EngineError, EmDiagnostics.SolveFailed($"the FDTD grid could not be built ({e.Message})"));
-            return null;
-        }
-        if (grid.Refusal is { } tooBig) { stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-grid", tooBig)); return null; }
-        log.Warnings.AddRange(grid.Warnings);
-        log.Notes.AddRange(grid.Merges.Select(m => m.Sentence));
-        log.Notes.AddRange(grid.Snaps.Select(m => m.Sentence));
-
-        var lowering = CsxcadWriter.Write(problem, grid, gridSettings, runSettings, farFieldHz);
-        if (!lowering.Ok) { stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-lowering", lowering.Refusal)); return null; }
-        log.Notes.AddRange(lowering.Notes);
-        int n = lowering.Ports.Count;
-        // brief-sar-6 R-sar6-2 — what the SAR dumps will take on disk, before anything is written.
-        if (runSettings.Sar is { } sar)
-        {
-            var (diskNote, diskWarning) = Em3dSar.DiskNote(sar, grid, n);
-            log.Notes.Add(diskNote);
-            if (diskWarning is not null) log.Warnings.Add(diskWarning);
-        }
-        var s0 = grid.Smallest;
-        if (grid.Cylinder is { } cyl)
-            log.Notes.Add($"openEMS cylindrical grid about {cyl.Describe()}: {grid.X.Lines.Count:N0} ρ × {cyl.AzimuthCells:N0} α × " +
-                          $"{grid.Z.Lines.Count:N0} {FdtdGrid.AxisName(cyl.Axis)} = {grid.Cells:N0} cells; ρ from {FdtdGrid.FormatLength(cyl.RhoMinM)} " +
-                          $"to {FdtdGrid.FormatLength(cyl.RhoMaxM)}; α in {cyl.AzimuthCells} cells, set by {cyl.AzimuthSetBy}; smallest arc " +
-                          $"{FdtdGrid.FormatLength(cyl.SmallestArcM)} at ρ = {FdtdGrid.FormatLength(cyl.SmallestArcAtM)}. openEMS runs once per port: " +
-                          $"{n} run{(n == 1 ? "" : "s")}, each up to {lowering.MaxTimeSteps:N0} time steps.");
-        else
-            log.Notes.Add($"openEMS grid: {grid.X.Lines.Count:N0} × {grid.Y.Lines.Count:N0} × {grid.Z.Lines.Count:N0} = {grid.Cells:N0} " +
-                          $"cells; smallest cell {FdtdGrid.FormatLength(s0.SmallestCellM)} on {FdtdGrid.AxisName(s0.Axis)}, set by " +
-                          $"{string.Join("; ", s0.SmallestCellFeatures.Select(f => f.Describe(s0.Axis)))}. openEMS runs once per port: " +
-                          $"{n} run{(n == 1 ? "" : "s")}, each up to {lowering.MaxTimeSteps:N0} time steps.");
-
-        return new OpenEmsPlan(gridSettings, runSettings, grid, lowering,
-                               readiness.Single(r => r.Tool == SolverTool.OpenEms).Installation!);
-    }
-
-    private static Leg ExecuteOpenEms(OpenEmsPlan plan, Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase,
-                                      CancellationToken ct, RunControl? control, int? maxCores, RunLog log)
-    {
-        const Em3dSolver Me = Em3dSolver.OpenEms;
-        Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
-        var (grid, lowering, runSettings, openEms) = (plan.Grid, plan.Lowering, plan.RunSettings, plan.OpenEms);
-        int n = lowering.Ports.Count;
-
-        string runDir = RunDirectory(resultsRoot, setup, Me);
-        try { OpenEmsRun.Stage(runDir, lowering); }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            return Failed($"the openEMS run could not be staged in '{runDir}' ({e.Message}).");
-        }
-
-        // The earliest the ports' decay may stop a run: the pulse, then a crossing of the STRUCTURE's
-        // diagonal (conductors and ports — the air box's padding carries no signal between ports) and
-        // back at the slowest wave speed in the problem. Before then a far port may not yet have seen
-        // its first arrival (OpenEmsRun.Decay).
-        double x0 = double.PositiveInfinity, y0 = x0, z0 = x0, x1 = double.NegativeInfinity, y1 = x1, z1 = x1;
-        void Grow(double ax, double ay, double az, double bx, double by, double bz)
-        {
-            x0 = Math.Min(x0, ax); y0 = Math.Min(y0, ay); z0 = Math.Min(z0, az);
-            x1 = Math.Max(x1, bx); y1 = Math.Max(y1, by); z1 = Math.Max(z1, bz);
-        }
-        foreach (var solid in problem.Solids.Where(s => s.Role == Em3dRole.Conductor))
-        {
-            var b = Em3dProblem.Bounds(solid.Primitive);
-            Grow(b.X0, b.Y0, b.Z0, b.X1, b.Y1, b.Z1);
-        }
-        foreach (var port in problem.Ports) Grow(port.Min.X, port.Min.Y, port.Min.Z, port.Max.X, port.Max.Y, port.Max.Z);
-        double diagonal = x1 >= x0 ? Math.Sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0) + (z1 - z0) * (z1 - z0)) : 0;
-        // brief-em3d-116 — a wave port's source sits behind its face, its feed's length farther from every other port.
-        diagonal += grid.WavePorts.Feeds.Sum(f => f.ExtensionM);
-        double slowest = problem.Materials.Select(m => Math.Sqrt(Math.Max(1, m.Epsr) * Math.Max(1, m.Mur))).DefaultIfEmpty(1).Max();
-        double settleS = grid.ExcitationS + 2 * diagonal * slowest / 299_792_458.0;
-
-        // ── One run per port (R-em3d9-3a) ─────────────────────────────────────────────────────
-        int? threads = maxCores is { } c ? EmSolveCores.Sanitise(c) : null;
-        var runs = new List<OpenEmsPortRun>();
-        for (int k = 0; k < n; k++)
-        {
-            // brief-em3d-65 R-em3d65-3c — every kernel solid's file, checked immediately before openEMS is started.
-            string portDir = Path.Combine(runDir, OpenEmsRun.PortDirectory(lowering.Ports[k]));
-            if (OpenEmsRun.CheckKernelFiles(portDir, lowering, lowering.PortFiles[k]) is { } damaged)
-                return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded("openems-kernel-file", damaged));
-            OpenEmsPortRun r;
-            try
-            {
-                r = OpenEmsRun.RunPort(runDir, lowering, k, openEms.Path, threads, runSettings.EndCriterionDb,
-                                       grid.ExcitationS, control, ct, settleS);
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-            {
-                return Failed($"openEMS could not be run in '{runDir}' ({e.Message}).");
-            }
-            if (r.Cancelled) return Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
-            if (!r.Ok) return Failed(r.Message!);
-            runs.Add(r);
-
-            var facts = r.Facts!;
-            if (!r.Converged)
-                log.Warnings.Add($"openEMS's run exciting port {r.Port} stopped at its limit of {lowering.MaxTimeSteps:N0} time steps" +
-                                 (double.IsNaN(r.DecayDb) ? ", before the excitation pulse and one pulse length after it had passed"
-                                                          : $" with the port signals {Db(r.DecayDb)} below their peak") +
-                                 (facts.EnergyDb is { } e0 ? $" and the field energy {Db(e0)} below its own" : "") +
-                                 $", against an end criterion of {Db(runSettings.EndCriterionDb)}. It has NOT converged: the " +
-                                 "result is written, and the energy still ringing in the structure is missing from it. Raise the " +
-                                 "openEMS section's MaxTimeSteps.");
-            if (facts.TimeStepS is { } dt && grid.TimeStepEstimateS > 0)
-            {
-                double ratio = dt / grid.TimeStepEstimateS;
-                if (ratio < TimeStepRatioLow || ratio > TimeStepRatioHigh)
-                    log.Warnings.Add($"openEMS chose a time step of {dt:G4} s, {ratio:G3} times circuitRF's Courant estimate of " +
-                                     $"{grid.TimeStepEstimateS:G4} s — outside {TimeStepRatioLow}–{TimeStepRatioHigh}. The answer " +
-                                     "is still openEMS's; the estimate circuitRF reports before a run is what disagrees.");
-            }
-        }
-
-        // ── The transform (R-em3d9-4) ────────────────────────────────────────────────────────
-        var ports = problem.Ports.OrderBy(p => p.Number).ToList();
-        double[] freqs = FrequenciesHz(problem.Frequency);
-        var result = FdtdPortTransform.Solve([.. runs.Select(r => r.Probes!)], freqs, lowering.Ports,
-                                             [.. ports.Select(p => p.Z0)]);
-        if (result.Error is { } singular) return Failed(singular);
-
-        var data = BuildOpenEmsDataSet(result, ports, grid, runs, runSettings);
-        // brief-em3d-116 R-em3d116-2e — each wave-port terminal's line, as it measured itself in its own run.
-        log.Notes.AddRange(LineNotes(runs, lowering, freqs, data));
-
-        // ── brief-em3d-31 R-em3d31-2 — the radiation pattern, from the surface each port's run dumped ─────
-        var efficiencies = new List<(double Hz, int Port, double Efficiency)>();
-        if (lowering.FarField is { } surface)
-        {
-            if (OpenEmsPattern(surface, result, lowering, runDir, setup, maxCores, control, ct, log.Notes, data, efficiencies) is { } patternError)
-            {
-                if (ct.IsCancellationRequested) return Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
-                return Failed(patternError);
-            }
-        }
-
-        // ── brief-sar-6 — SAR and B1 from each port's raw dump, normalised to the power that port accepted ─────────────
-        if (runSettings.Sar is { } sarPlan)
-        {
-            if (SarDrives(sarPlan, runs, lowering, ports) is not { } drives)
-                return Failed("the ports' accepted power at the SAR frequencies could not be formed from their probes.");
-            var sar = OpenEmsSarResults.Process(sarPlan, problem, runDir, drives, efficiencies.Count > 0 ? efficiencies : null, openEms,
-                                                maxCores, control, ct, grid.Cylinder);
-            if (sar.Error is { } sarError) return Failed(sarError);
-            log.Notes.AddRange(sar.Notes);
-            log.Warnings.AddRange(sar.Warnings);
-            OpenEmsSarResults.AddTo(data, sar.Records, sarPlan.Settings);
-        }
-
-        // ── brief-sar-9 R-sar9-1 — every port's fields beside the .sNp, written BEFORE it so the .sNp is never the older ────────
-        string? fieldsLine = null;
-        if (runSettings.Sar is { Settings.PerPortFields: true } fieldPlan)
-        {
-            string folder = PortFieldSet.FolderForBase(snpBase);
-            string stamp = PortFieldSet.NewStamp();
-            var (manifest, fieldError) = PortFieldSetWriter.Write(
-                folder, stamp, Path.GetFileName(snpBase + $".s{ports.Count}p"), setup.Name ?? "", fieldPlan, problem, runDir,
-                lowering.Ports, [.. ports.Select(p => p.Name)], [.. ports.Select(p => p.Z0)], [.. runs.Select(r => r.Probes!)],
-                efficiencies.Count > 0 ? efficiencies : null, control, ct, grid.Cylinder);
-            if (fieldError is not null) return Failed(fieldError);
-            fieldsLine = PortFieldSet.ProvenanceLine(folder, stamp);
-            log.Notes.Add($"Per-port fields kept in '{Path.GetFileName(folder)}': {manifest!.Ports.Count} port{(manifest.Ports.Count == 1 ? "" : "s")} at " +
-                          $"{string.Join(", ", manifest.Frequencies.Select(f => MaterialDispersion.Hz(f.Hz)))}, " +
-                          $"{MachineMemory.Format(manifest.TotalBytes)}; a schematic's fields analysis recombines them with no new EM run.");
-        }
-
-        string? snpPath = snpBase + $".s{ports.Count}p";
-        string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
-
-        string? snpError;
-        try { snpError = WriteOpenEmsSnp(data, snpBase, setup, problem, grid, plan.GridSettings, runSettings, lowering, openEms, runs, fieldsLine); }
-        catch (Exception e) { snpError = e.Message; }
-        if (snpError is not null)
-        {
-            log.Errors.Add($"The .snp could not be written to '{snpPath}': {snpError}");
-            snpPath = null;
-        }
-
-        var comparisonFacts = new Em3dComparisonFacts(lowering.DielectricFitHz, lowering.PecSolids, lowering.SubCellWires,
-                                                      [.. runs.Where(r => !r.Converged).Select(r => r.Port)]);
-        // brief-em3d-98 — openEMS's own signal: each port's run converged or stopped at the step limit (OpenEmsPortRun.Converged).
-        var open = runs.Where(r => !r.Converged).ToList();
-        string? notConverged = open.Count == 0 ? null
-            : $"openEMS stopped at its step limit {(open.Count == 1 ? $"exciting port {open[0].Port}" : $"exciting ports {string.Join(", ", open.Select(r => r.Port))}")}" +
-              (open.Where(r => !double.IsNaN(r.DecayDb)).Select(r => r.DecayDb).DefaultIfEmpty(double.NaN).Max() is var worst && !double.IsNaN(worst)
-                   ? $" at {Db(worst)} against {Db(runSettings.EndCriterionDb)}" : "") + ": not converged.";
-        return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "openEMS " + openEms.DescribeVersion(), comparisonFacts,
-                       NotConverged: notConverged);
-    }
-
-    /// <summary>brief-sar-6 — the source a SAR refusal is forwarded under.</summary>
-    public const string SarSource = "em3d-sar";
-
-    /// <summary>
-    /// brief-sar-6 R-sar6-3 — each driven port's own U and I at each SAR frequency, from the probes S was formed from
-    /// (FdtdPortTransform.Solve at those frequencies): what each dump is normalised by. Null when the transform cannot be formed.
-    /// </summary>
-    internal static List<SarPortDrive>? SarDrives(Em3dSarPlan plan, IReadOnlyList<OpenEmsPortRun> runs, CsxcadLowering lowering,
-                                                  IReadOnlyList<Em3dPort> ports)
-    {
-        double[] hz = [.. plan.Settings.FrequenciesHz];
-        var at = FdtdPortTransform.Solve([.. runs.Select(r => r.Probes!)], hz, lowering.Ports, [.. ports.Select(p => p.Z0)]);
-        if (at.Error is not null) return null;
-        var drives = new List<SarPortDrive>();
-        for (int k = 0; k < lowering.Ports.Count; k++)
-            for (int i = 0; i < hz.Length; i++)
-                drives.Add(new SarPortDrive(lowering.Ports[k], hz[i], at.U[i][k, k], at.I[i][k, k]));
-        return drives;
-    }
-
-    /// <summary>brief-em3d-116 — the cubes of each wave-port terminal's measured line in the openEMS group.</summary>
-    public const string LineZCube = "LineZ", LineEpsEffCube = "LineEpsEff";
-
-    /// <summary>
-    /// brief-em3d-116 R-em3d116-2e — each wave-port terminal's characteristic impedance and effective permittivity, measured at
-    /// its reference plane in the run that excited it, as notes ("Terminal P1: the line measured Z 50.4 Ω, ε_eff 2.20.", at
-    /// the band's middle point) and as <see cref="LineZCube"/>/<see cref="LineEpsEffCube"/> over the sweep. A coupled
-    /// terminal's are seen with the other terminals passive, which the note says; nothing compares them.
-    /// </summary>
-    internal static IReadOnlyList<string> LineNotes(IReadOnlyList<OpenEmsPortRun> runs, CsxcadLowering lowering, double[] freqs, DataSet data)
-    {
-        var notes = new List<string>();
-        var measured = new List<(int Port, FdtdLineMeasure M)>();
-        for (int k = 0; k < runs.Count; k++)
-        {
-            if (runs[k].Line is not { } l) continue;
-            var m = FdtdLineProbes.Measure(l.Ua, l.U, l.Uc, l.Ia, l.Ib, l.SpacingM, freqs);
-            measured.Add((runs[k].Port, m));
-            int mid = freqs.Length / 2;
-            var names = lowering.Probes.FirstOrDefault(p => p.Port == runs[k].Port);
-            string label = names?.Terminal ?? $"P{runs[k].Port}";
-            notes.Add($"Terminal {label}: the line measured Z {Fmt(m.Z[mid].Real)} Ω, ε_eff {m.EpsEff[mid].ToString("F2", CultureInfo.InvariantCulture)}" +
-                      (freqs.Length > 1 ? $" at {Fmt(freqs[mid] / 1e9)} GHz" : "") +
-                      (names?.Group is { } g ? $", with the other terminals of '{g}' passive" : "") + ".");
-        }
-        if (measured.Count > 0)
-        {
-            var portAxis = new Axis("Port", [.. measured.Select(m => (double)m.Port)], "");
-            var f = new Axis("f", freqs, "Hz");
-            var z = new System.Numerics.Complex[freqs.Length * measured.Count];
-            var e = new double[freqs.Length * measured.Count];
-            for (int i = 0; i < freqs.Length; i++)
-                for (int j = 0; j < measured.Count; j++)
-                {
-                    z[i * measured.Count + j] = measured[j].M.Z[i];
-                    e[i * measured.Count + j] = measured[j].M.EpsEff[i];
-                }
-            data.AddToGroup(OpenEmsGroup, LineZCube, new DataCube([f, portAxis], z) { Unit = "Ohm" });
-            data.AddToGroup(OpenEmsGroup, LineEpsEffCube, new DataCube([f, portAxis], e));
-        }
-        return notes;
-    }
-
-    /// <summary>
-    /// brief-em3d-31 — the openEMS pattern: for each port's run and each frequency, the surface's dumps scaled
-    /// into the port DFT's convention and divided by the driven port's own voltage (OpenEmsFarField's header),
-    /// transformed (NearToFarField) and handed to the stage with ½·Re(V·I*) at that port and its published S_kk.
-    /// Null on success; otherwise the error the leg fails with.
-    /// </summary>
-    internal static string? OpenEmsPattern(Nf2ffSurface surface, FdtdPortResult result, CsxcadLowering lowering, string runDir,
-                                          EmSetup setup, int? maxCores, RunControl? control, CancellationToken ct, List<string> notes, DataSet data,
-                                          List<(double Hz, int Port, double Efficiency)>? efficiencies = null)
-    {
-        var grid = surface.Hemisphere ? PlanarFarFieldGrid.Hemisphere() : FarFieldStage.Sphere();
-        var freqs = result.FrequenciesHz;
-        int n = lowering.Ports.Count;
-        control?.BeginStage("far field (openEMS surface transform)", freqs.Length * n, "patterns");
-        var points = new Em3dPatternPoint[freqs.Length * n];
-        long freed = 0;
-        var watch = System.Diagnostics.Stopwatch.StartNew();
-        for (int k = 0; k < n; k++)
-        {
-            string dir = Path.Combine(runDir, OpenEmsRun.PortDirectory(lowering.Ports[k]));
-            for (int i = 0; i < freqs.Length; i++)
-            {
-                ct.ThrowIfCancellationRequested();
-                Complex u = result.U[i][k, k], c = result.I[i][k, k];
-                if (!(u.Magnitude > 0))
-                    return $"Port {lowering.Ports[k]}'s own voltage is zero at {Fmt(freqs[i] / 1e9)} GHz in the run that excited it, so " +
-                           "its radiation pattern has nothing to be referred to.";
-                var samples = OpenEmsFarField.ReadSamples(dir, surface, freqs[i], 0.5 / u, out string? readError);
-                if (samples is null) return readError;
-                var pattern = NearToFarField.Transform(samples, freqs[i], grid, lowering.Ports[k], surface.Floor, surface.FloorZ,
-                                                       maxCores, ct);
-                double accepted = 0.5 * (c / u).Real;       // ½·Re(V·I*) at |V| = 1 V
-                points[i * n + k] = new Em3dPatternPoint(pattern, accepted, result.S[i][k, k]);
-                // brief-sar-6 R-sar6-6 — the power budget's radiated share, at each sweep point
-                efficiencies?.Add((freqs[i], lowering.Ports[k], accepted > 0 ? pattern.RadiatedPowerW / accepted : double.NaN));
-                control?.TickStage();
-            }
-            freed += OpenEmsFarField.DeletePhaseSnapshots(dir);
-        }
-        notes.AddRange(Em3dRadiation.Publish(data, "openEMS (FDTD)", grid, lowering.Ports, freqs, points,
-                                             setup.ReferenceInputPowerDbm, surface.Hemisphere));
-        notes.Add($"The radiation pattern's surface transform took {watch.Elapsed.TotalSeconds:F1} s for {points.Length} pattern(s). " +
-                      $"openEMS's 21 fixed-phase snapshots of each surface dump were removed afterwards ({freed / 1e6:F1} MB); the " +
-                      "magnitude and phase files that carry the field exactly are kept in each port's run directory.");
-        return null;
-    }
-
     /// <summary>The sweep's frequencies, as Palace's <c>NSample</c> spaces them: both ends included.</summary>
     public static double[] FrequenciesHz(Em3dFrequency f)
     {
@@ -1604,382 +580,11 @@ public static class Em3dRunService
         return v;
     }
 
-    private static DataSet BuildOpenEmsDataSet(FdtdPortResult r, IReadOnlyList<Em3dPort> ports, FdtdGridResult grid,
-                                               IReadOnlyList<OpenEmsPortRun> runs, OpenEmsRunSettings settings)
-    {
-        var z0 = ports.Select(p => p.Z0).ToArray();
-        var snp = new SNP(r.FrequenciesHz, r.S, MatrixType.S, MatrixFormat.RI, z0[0]);
-        var ds = DataSetBuilder.FromSnp(snp);
-        ds.Add("Z0", DataSetBuilder.BuildZ0Cube(z0));
-
-        void Scalar(string name, double? v)
-        {
-            if (v is { } x && double.IsFinite(x)) ds.AddToGroup(OpenEmsGroup, name, DataCube.Scalar(x));
-        }
-        Em3dPortMap.AddTo(ds, OpenEmsGroup, ports);
-        Scalar("GridCells", grid.Cells);
-        Scalar("GridLinesX", grid.X.Lines.Count);
-        Scalar("GridLinesY", grid.Y.Lines.Count);
-        Scalar("GridLinesZ", grid.Z.Lines.Count);
-        Scalar("SmallestCell", grid.Smallest.SmallestCellM);
-        Scalar("TimeStepEstimate", grid.TimeStepEstimateS);
-        Scalar("EndCriterionDb", settings.EndCriterionDb);
-        foreach (var run in runs)
-        {
-            Scalar($"TimeStep_p{run.Port}", run.Facts?.TimeStepS);
-            Scalar($"StepsRun_p{run.Port}", run.Facts?.StepsRun);
-            Scalar($"PortDecayDb_p{run.Port}", run.DecayDb);
-            Scalar($"EnergyDb_p{run.Port}", run.Facts?.EnergyDb);
-            Scalar($"Converged_p{run.Port}", run.Converged ? 1 : 0);
-        }
-        return ds;
-    }
-
-    /// <summary>R-em3d9-5b — the planar exporter with the 3D stamp and openEMS's provenance lines.</summary>
-    private static string? WriteOpenEmsSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem, FdtdGridResult grid,
-                                           OpenEmsGridSettings gridSettings, OpenEmsRunSettings runSettings, CsxcadLowering lowering,
-                                           SolverInstallation openEms, IReadOnlyList<OpenEmsPortRun> runs, string? fieldsLine = null)
-    {
-        string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
-        if (group is null) return "the solved DataSet carries no S cube";
-
-        string R(double v) => v.ToString("R", CultureInfo.InvariantCulture);
-        var portText = new StringBuilder();
-        foreach (var p in problem.Ports)
-            portText.Append($"{p.Number}:{p.PositiveObject}:{p.NegativeObject}:{R(p.Min.X)},{R(p.Min.Y)},{R(p.Min.Z)}:" +
-                            $"{R(p.Max.X)},{R(p.Max.Y)},{R(p.Max.Z)}:{R(p.Z0.Real)},{R(p.Z0.Imaginary)}|");
-        string settingsText = string.Join("|", R(gridSettings.CellsPerWavelength), R(gridSettings.GradingRatio),
-            gridSettings.ThirdsRule, gridSettings.MinCellM is { } mc ? R(mc) : "auto", gridSettings.PmlCells,
-            R(runSettings.EndCriterionDb), lowering.MaxTimeSteps);
-
-        var s0 = grid.Smallest;
-        var lines = new List<string>();
-        foreach (var p in problem.Ports.OrderBy(p => p.Number))
-            lines.Add($"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
-                      $"to '{Ascii(p.PositiveObject)}', " +
-                      // brief-em3d-116 — a wave port's terminal: a fed line, measured by probes and referred to Z0 directly
-                      (p.Kind == Em3dPortKind.Wave ? "wave (fed line, voltage and current probes at the reference plane)" : "lumped") +
-                      $", {R(p.Z0.Real)} Ohm");
-        lines.AddRange(Em3dPortMap.Lines(problem.Ports));     // brief-em3d-93 — which document port each is, when one was off
-        lines.Add($"circuitRF-EM 3D grid: {grid.X.Lines.Count} x {grid.Y.Lines.Count} x {grid.Z.Lines.Count} = {grid.Cells} cells; " +
-                  $"smallest cell {Ascii(FdtdGrid.FormatLength(s0.SmallestCellM))} on {FdtdGrid.AxisName(s0.Axis)}, set by " +
-                  Ascii(string.Join("; ", s0.SmallestCellFeatures.Select(f => f.Describe(s0.Axis)))));
-        foreach (var run in runs)
-        {
-            var f = run.Facts!;
-            lines.Add($"circuitRF-EM 3D openEMS run port {run.Port}: dt {(f.TimeStepS is { } dt ? dt.ToString("G6", CultureInfo.InvariantCulture) : "unreported")} s " +
-                      $"(estimate {grid.TimeStepEstimateS.ToString("G6", CultureInfo.InvariantCulture)} s), " +
-                      $"{(f.StepsRun is { } st ? st.ToString(CultureInfo.InvariantCulture) : "an unreported number of")} steps, " +
-                      $"port signals {(double.IsNaN(run.DecayDb) ? "unmeasured (stopped within the pulse)" : Db(run.DecayDb))} and energy {(f.EnergyDb is { } e ? Db(e) : "unreported")} against {Db(runSettings.EndCriterionDb)}, " +
-                      (f.Aborted ? "stopped by circuitRF on the ports' decay, converged"
-                       : f.EnergyCriterionMet ? "stopped by openEMS's energy criterion, converged"
-                       : run.Converged ? "converged" : "stopped at the step limit, NOT converged"));
-        }
-        lines.Add($"circuitRF-EM 3D dielectric loss fitted at: {R(lowering.DielectricFitHz / 1e9)} GHz");
-        lines.Add("circuitRF-EM 3D perfect conductors: " + (lowering.PecSolids.Count == 0 ? "none" : string.Join(", ", lowering.PecSolids.Select(Ascii))));
-        if (lowering.SubCellWires.Count > 0)
-            lines.Add("circuitRF-EM 3D sub-cell wires: " + string.Join(", ", lowering.SubCellWires.Select(Ascii)));
-        lines.Add($"circuitRF-EM 3D operating temperature: {R(problem.OperatingTempC)} C");
-        if (fieldsLine is not null) lines.Add(Ascii(fieldsLine));     // brief-sar-9 R-sar9-1 — the fields move and stale with this file
-
-        double z0 = problem.Ports.OrderBy(p => p.Number).First().Z0.Real;
-        var opts = new TouchstoneExportOptions(
-            Z0Ohms:         z0 > 0 ? z0 : 50,
-            Digits:         10,
-            DigitFormat:    'g',
-            MatrixFormat:   MatrixFormat.RI,
-            HeaderComments: EmSnpProvenance.BuildHeader3D(
-                "openEMS",
-                EmSnpProvenance.HashText(lowering.Model!),
-                EmSnpProvenance.HashText(settingsText),
-                EmSnpProvenance.HashText(portText.ToString()),
-                "openEMS " + openEms.DescribeVersion(),
-                lines,
-                setup.Name is { Length: > 0 } nm ? nm : Path.GetFileNameWithoutExtension(snpBase),
-                setup.SolveRegion is { } reg ? $"{setup.LayoutRef} (solve region {Ascii(reg.Describe())})" : setup.LayoutRef,
-                DateTimeOffset.Now));
-
-        Directory.CreateDirectory(Path.GetDirectoryName(snpBase)!);
-        var result = TouchstoneExporter.Export(
-            data, group, opts,
-            pinnedIndexByAxis:    new Dictionary<string, int>(),
-            allSweepFiles:        false,
-            baseFilePathNoSuffix: snpBase);
-        return result.Status == TouchstoneExportStatus.Ok ? null : $"Touchstone export returned {result.Status}.";
-    }
-
-    private static string Db(double db) => double.IsNegativeInfinity(db) ? "over 300 dB"
-                                           : $"{Math.Abs(db).ToString("0.#", CultureInfo.InvariantCulture)} dB";
-
-    // ── Results ──────────────────────────────────────────────────────────────────────────────
-
-    private static DataSet BuildDataSet(PalacePortS s, IReadOnlyList<Em3dPort> ports, PalaceRunFacts facts)
-    {
-        int nf = s.FrequenciesHz.Length, np = ports.Count;
-        var mats = new Mat<System.Numerics.Complex>[nf];
-        for (int k = 0; k < nf; k++)
-        {
-            var m = new Mat<System.Numerics.Complex>(np, np);
-            for (int i = 0; i < np; i++)
-                for (int j = 0; j < np; j++)
-                    m[i, j] = s.S[k][i, j];
-            mats[k] = m;
-        }
-        var z0 = ports.Select(p => p.Z0).ToArray();
-        var snp = new SNP(s.FrequenciesHz, mats, MatrixType.S, MatrixFormat.RI, z0[0]);
-        var ds = DataSetBuilder.FromSnp(snp);
-        ds.Add("Z0", DataSetBuilder.BuildZ0Cube(z0));
-        Em3dPortMap.AddTo(ds, PalaceGroup, ports);          // brief-em3d-93
-
-        // What the solver itself reported — the part that makes a surprising answer diagnosable.
-        void Scalar(string name, double? v)
-        {
-            if (v is { } x) ds.AddToGroup(PalaceGroup, name, DataCube.Scalar(x));
-        }
-        Scalar("MeshElementsInitial", facts.InitialElements);
-        Scalar("MeshElementsFinal",   facts.FinalElements);
-        Scalar("DegreesOfFreedom",    facts.DegreesOfFreedom);
-        Scalar("AdaptiveIterations",  facts.AdaptiveIterations);
-        return ds;
-    }
-
-    /// <summary>The planar exporter and options, with the planar stamp extended (R-em3d7-5d). Null
-    /// when written; otherwise why not.</summary>
-    private static string? WriteSnp(DataSet data, string snpBase, EmSetup setup, Em3dProblem problem,
-                                 GmshLowering lowering, PalaceSettings settings, SolverInstallation palace,
-                                 PalaceRunFacts facts, PalaceRunSummary summary, PalaceQuality quality, TimeSpan wall)
-    {
-        string? group = data.Groups.FirstOrDefault(g => data.CubesIn(g).ContainsKey("S"));
-        if (group is null) return "the solved DataSet carries no S cube";
-
-        string R(double v) => v.ToString("R", CultureInfo.InvariantCulture);
-        var portText = new StringBuilder();
-        foreach (var p in problem.Ports)
-            portText.Append($"{p.Number}:{p.PositiveObject}:{p.NegativeObject}:{R(p.Min.X)},{R(p.Min.Y)},{R(p.Min.Z)}:" +
-                            $"{R(p.Max.X)},{R(p.Max.Y)},{R(p.Max.Z)}:{R(p.Z0.Real)},{R(p.Z0.Imaginary)}|");
-        string settingsText = string.Join("|", R(settings.MaxElementWavelengths), R(settings.EdgeRefinement),
-            R(settings.Grading), settings.ElementOrder, R(settings.AdaptiveTol), settings.AdaptiveMaxIterations,
-            R(settings.SweepAdaptiveTol));
-        string materialsText = string.Join("|", problem.Materials.Select(m =>
-            $"{m.Name}:{R(m.Epsr)}:{R(m.TanD)}:{R(m.Mur)}:{R(m.SigmaSm)}"));
-
-        var lines = new List<string>();
-        foreach (var p in problem.Ports.OrderBy(p => p.Number))
-            lines.Add($"{EmProvenanceStamp.PortPrefixNumbered}{p.Number}: '{Ascii(p.Name)}' from '{Ascii(p.NegativeObject)}' " +
-                      $"to '{Ascii(p.PositiveObject)}', " + (p.Kind == Em3dPortKind.Wave
-                          // R-em3d23-2d — the file states the one reference its numbers are in, and where they came from.
-                          ? $"wave (mode 1), {R(p.Z0.Real)} Ohm: Palace's S is referred to the mode's own impedance Z_PV, " +
-                            $"renormalised here to {R(p.Z0.Real)} Ohm; reference plane {R(p.ReferencePlane.ShiftM * 1e6)} um " +
-                            "into the structure from the port face"
-                          : $"lumped, {R(p.Z0.Real)} Ohm"));
-        lines.AddRange(Em3dPortMap.Lines(problem.Ports));     // brief-em3d-93 — which document port each is, when one was off
-        lines.Add($"circuitRF-EM 3D mesh: {Count(facts.InitialElements)} elements initially, {Count(facts.FinalElements)} " +
-                  $"finally, {facts.AdaptiveIterations ?? 0} adaptive pass(es), element order {settings.ElementOrder}");
-        lines.Add($"circuitRF-EM 3D operating temperature: {R(problem.OperatingTempC)} C");
-        // brief-em3d-21 R-em3d21-5b — added fields, none renamed. What the solve WAS is one line; what it
-        // COST (wall time, peak memory) is another, because it differs between two runs of one setup
-        // exactly as the write stamp does.
-        lines.Add(RunProvenancePrefix + RunProvenance(summary, quality));
-        lines.Add(CostProvenancePrefix + CostProvenance(summary, wall));
-
-        double z0 = problem.Ports.OrderBy(p => p.Number).First().Z0.Real;
-        var opts = new TouchstoneExportOptions(
-            Z0Ohms:         z0 > 0 ? z0 : 50,
-            Digits:         10,
-            DigitFormat:    'g',
-            MatrixFormat:   MatrixFormat.RI,
-            HeaderComments: EmSnpProvenance.BuildHeader3D(
-                "Palace",
-                EmSnpProvenance.HashText(lowering.Geo! + "\n" + materialsText),
-                EmSnpProvenance.HashText(settingsText),
-                EmSnpProvenance.HashText(portText.ToString()),
-                "Palace " + palace.DescribeVersion(),
-                lines,
-                setup.Name is { Length: > 0 } n ? n : Path.GetFileNameWithoutExtension(snpBase),
-                setup.SolveRegion is { } r ? $"{setup.LayoutRef} (solve region {Ascii(r.Describe())})" : setup.LayoutRef,
-                DateTimeOffset.Now));
-
-        Directory.CreateDirectory(Path.GetDirectoryName(snpBase)!);
-        var result = TouchstoneExporter.Export(
-            data, group, opts,
-            pinnedIndexByAxis:    new Dictionary<string, int>(),
-            allSweepFiles:        false,
-            baseFilePathNoSuffix: snpBase);
-        return result.Status == TouchstoneExportStatus.Ok ? null : $"Touchstone export returned {result.Status}.";
-    }
-
-    // ── brief-em3d-21: ranks, memory, and what the run cost ───────────────────────────────────
-
-    /// <summary>The diagnostic source a memory refusal carries (<c>em.refused.palace-memory</c>).</summary>
-    public const string MemoryRefusalSource = "palace-memory";
-
-    /// <summary>The stage after Palace exits.</summary>
-    public const string ReadingLabel = "Reading results";
-
-    /// <summary>R-em3d21-5b — the <c>.sNp</c> line recording what the solve was.</summary>
-    public const string RunProvenancePrefix = "circuitRF-EM 3D run: ";
-
-    /// <summary>R-em3d21-5b — the <c>.sNp</c> line recording what the solve cost: it differs between two
-    /// runs of one setup, as the write stamp does, so a byte comparison of two runs leaves it out.</summary>
-    public const string CostProvenancePrefix = "circuitRF-EM 3D run cost: ";
-
-    /// <summary>
-    /// brief-em3d-136 R-em3d136-2a — how many Palace processes, and the note that says so. On the CPU: one per physical
-    /// core, or the Cores setting (brief-em3d-21). On a GPU: one per GPU the probe counted — Palace assigns ranks to GPUs
-    /// round-robin, so a second rank per GPU would share it — capped by the Cores setting when that is lower.
-    /// </summary>
-    internal static (int Processes, string? Note) PalaceProcessCount(PalaceDevice device, int? maxCores, PhysicalCoreReading cores,
-                                                                      int? gpus)
-    {
-        if (device == PalaceDevice.Cpu)
-        {
-            int processes = maxCores ?? cores.Count;
-            return (processes, maxCores is null && !cores.Measured ? $"Palace ran on {processes} process(es): {cores.How}." : null);
-        }
-        int n = Math.Max(1, gpus ?? 1);
-        return maxCores is { } cap && cap < n
-            ? (cap, $"Palace ran on {cap} of {n} GPUs, one process each: the Cores setting allows {cap}.")
-            : (n, $"Palace ran on {n} GPU(s), one process each.");
-    }
-
-    /// <summary>
-    /// brief-em3d-136 R-em3d136-2b — <see cref="RankRefusal"/> on the count a run would use. On a GPU run it applies only
-    /// when the Cores setting is what sets the count (it is lower than the GPU count): a count derived from GPUs is
-    /// not a core count, and two GPUs on a one-core machine are no reason to refuse.
-    /// </summary>
-    internal static string? PalaceRankRefusal(PalaceDevice device, int? maxCores, PhysicalCoreReading cores, int? gpus)
-        => device == PalaceDevice.Cpu || maxCores is { } cap && cap < Math.Max(1, gpus ?? 1)
-            ? RankRefusal(maxCores, cores)
-            : null;
-
-    /// <summary>brief-em3d-136 R-em3d136-5a — the run asked for a GPU and Palace's log says it solved on the CPU.</summary>
-    internal static string GpuRevertedWarning(string runDir)
-        => $"Palace was asked to use a GPU but ran on the CPU; see its log in {runDir}.";
-
-    /// <summary>R-em3d21-3b — an explicit process count past the physical core count, refused naming it.</summary>
-    internal static string? RankRefusal(int? asked, PhysicalCoreReading cores)
-        => asked is { } n && n > cores.Count
-            ? $"This run asks for {n} Palace processes (the Cores setting), and this machine has {cores.Count} physical " +
-              $"core{(cores.Count == 1 ? "" : "s")} ({(cores.Measured ? "read from " + cores.How : cores.How)}). Palace " +
-              "runs one MPI process per core, and MPI refuses more processes than physical cores; forced, they run " +
-              $"slower, not faster, so circuitRF does not oversubscribe. Choose {cores.Count} or fewer under Cores, or " +
-              "Automatic."
-            : null;
-
-    /// <summary>
-    /// Palace's size for <paramref name="p"/> at <paramref name="settings"/>, ESTIMATED (brief-em3d-5
-    /// R-em3d5-3c): each meshed region's volume at the Palace section's largest element for its
-    /// material (<see cref="GmshGeoWriter.MaxElementSizeM"/>, the formula the script uses), and the
-    /// memory that implies with refinement allowed or not. Null at an element order no measurement covers.
-    /// <c>explain</c> prints this and the fit check compares it, so the two cannot disagree.
-    /// </summary>
-    public static Em3dPalaceEstimate? EstimatePalace(Em3dProblem p, PalaceSettings settings)
-    {
-        if (settings.ElementOrder is not (1 or 2)) return null;
-        var byName = p.Materials.ToDictionary(m => m.Name, StringComparer.Ordinal);
-        // The background is meshed as GmshGeoWriter meshes it: the box's own fill (3D editor round 3), else the problem's
-        // air, else free space.
-        string fill = p.Boundary.Material ?? GmshGeoWriter.BackgroundMaterial(p.Solids, p.Materials);
-        var background = byName.TryGetValue(fill, out var bg) ? bg : new Em3dMaterial("(free space)", 1, null, 0, 1, 0);
-        double SolidSize(Em3dSolid s) => GmshGeoWriter.MaxElementSizeM(byName[s.Material], GmshGeoWriter.SizingFrequencyHz(p), settings);
-        double backgroundSize = GmshGeoWriter.MaxElementSizeM(background, GmshGeoWriter.SizingFrequencyHz(p), settings);
-        return Em3dSizeEstimate.Palace(p, SolidSize, settings.ElementOrder, backgroundSize, settings.AdaptiveMaxIterations,
-                                       GmshGeoWriter.RefinementSizing(p, SolidSize, backgroundSize, settings));
-    }
-
-    /// <summary>The fit check for a setup as the panel is about to run it: generates the problem and
-    /// compares against this machine. The panel calls it before Simulate starts anything.</summary>
-    public static Em3dMemoryVerdict PalaceMemoryVerdict(EmSetup setup, EmLayoutSource source)
-    {
-        if (source.Technology is null || setup.Solver3D is not (Em3dSolver.Palace or Em3dSolver.Both)) return Em3dMemoryVerdict.Unknown;
-        var settings = PalaceSettings.Resolve(setup.Palace);
-        if (settings.Problems().Count > 0) return Em3dMemoryVerdict.Unknown;
-        var generated = Em3dGenerator.Generate(setup, source, source.Technology);
-        return generated.Problem is { } p && generated.Ok
-            ? PalaceMemoryVerdict(p, setup, source, settings, MachineMemory.PhysicalBytes)
-            : Em3dMemoryVerdict.Unknown;
-    }
-
-    /// <summary>
-    /// R-em3d21-2a/b — the estimate against <paramref name="physicalBytes"/>, with the remedies a
-    /// warning names, each with the estimate it would give: the Draft preset, no refinement passes, and
-    /// an air box with half the padding (regenerated, so its figure is the smaller problem's).
-    /// </summary>
-    public static Em3dMemoryVerdict PalaceMemoryVerdict(Em3dProblem problem, EmSetup setup, EmLayoutSource source,
-                                                        PalaceSettings settings, long physicalBytes, Em3dMemoryScope? scope = null)
-        => PalaceMemoryVerdict(problem, setup,
-                               source.Technology is { } tech ? s => Em3dGenerator.Generate(s, source, tech) : null,
-                               settings, physicalBytes, scope);
-
-    /// <summary>brief-em3d-42 — the same check, regenerating the half-padding remedy through
-    /// <paramref name="regenerate"/> (null: no such remedy is priced).</summary>
-    public static Em3dMemoryVerdict PalaceMemoryVerdict(Em3dProblem problem, EmSetup setup,
-                                                        Func<EmSetup, Em3dGenerationResult>? regenerate,
-                                                        PalaceSettings settings, long physicalBytes, Em3dMemoryScope? scope = null)
-    {
-        // brief-em3d-22 — the volume estimate prices elements per WAVELENGTH, which a static solve does
-        // not have; its check is the one after meshing, on Gmsh's own count.
-        if (problem.IsStatic) return Em3dMemoryVerdict.Unknown;
-        long? estimate = EstimatePalace(problem, settings)?.MemoryBytes;
-        if (estimate is not { } e || physicalBytes <= 0 || e <= Em3dMemoryVerdict.WarnFraction * physicalBytes)
-            return Em3dMemoryVerdict.Evaluate(estimate, physicalBytes, [], scope: scope);
-
-        var remedies = new List<Em3dMemoryRemedy>();
-        var draft = PalaceSettings.Preset(PalaceQuality.Draft);
-        var asDraft = settings with
-        {
-            ElementOrder = draft.ElementOrder, AdaptiveMaxIterations = draft.AdaptiveMaxIterations,
-            AdaptiveTol = draft.AdaptiveTol, SweepAdaptiveTol = draft.SweepAdaptiveTol,
-        };
-        if (asDraft != settings)
-            remedies.Add(new("the Draft preset (Palace.Quality: Draft)", EstimatePalace(problem, asDraft)?.MemoryBytes));
-        if (settings.AdaptiveMaxIterations > 0)
-            remedies.Add(new("no refinement passes (Palace.AdaptiveMaxIterations: 0)",
-                             EstimatePalace(problem, settings with { AdaptiveMaxIterations = 0 })?.MemoryBytes));
-        if (regenerate is not null)
-        {
-            double defaultPadUm = Em3dGenerator.DefaultPaddingFractionOfLongestWavelength * 299_792_458.0 /
-                                  problem.Frequency.StartHz * 1e6;
-            EmAirBoxFace Half(EmAirBoxFace? f) => f?.PaddingPercent is { } pct
-                ? new(null, f.Boundary, pct / 2)
-                : new((f?.PaddingUm ?? defaultPadUm) / 2, f?.Boundary);
-            var box = setup.AirBox ?? new EmAirBox();
-            var smaller = setup.Clone();
-            smaller.AirBox = new EmAirBox(Half(box.XMin), Half(box.XMax), Half(box.YMin), Half(box.YMax),
-                                          Half(box.ZMin), Half(box.ZMax));
-            var regenerated = regenerate(smaller);
-            if (regenerated.Ok && regenerated.Problem is { } q)
-                remedies.Add(new("an air box with half the padding on every side (AirBox)", EstimatePalace(q, settings)?.MemoryBytes));
-        }
-        return Em3dMemoryVerdict.Evaluate(e, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes ?? long.MaxValue)],
-            basis: "Before meshing, from the 3D model's volumes:", scope: scope);
-    }
-
-    /// <summary>
-    /// R-em3d21-2 — the check once Gmsh has made the mesh: <paramref name="tetrahedra"/> as Gmsh
-    /// reported creating them, through the measured unknowns and bytes per unknown. The remedies are the
-    /// ones a mesh this size can be priced for without meshing again.
-    /// </summary>
-    public static Em3dMemoryVerdict MeshMemoryVerdict(long tetrahedra, PalaceSettings settings, long physicalBytes,
-                                                      Em3dMemoryScope? scope = null)
-    {
-        if (settings.ElementOrder is not (1 or 2)) return Em3dMemoryVerdict.Unknown;
-        long e = Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, settings.ElementOrder, settings.AdaptiveMaxIterations);
-        var remedies = new List<Em3dMemoryRemedy>();
-        if (settings.ElementOrder != 1 || settings.AdaptiveMaxIterations > 0)
-            remedies.Add(new("the Draft preset (Palace.Quality: Draft)", Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, 1, 0)));
-        if (settings.AdaptiveMaxIterations > 0)
-            remedies.Add(new("no refinement passes (Palace.AdaptiveMaxIterations: 0)",
-                             Em3dSizeEstimate.PalaceMemoryBytesForMesh(tetrahedra, settings.ElementOrder, 0)));
-        return Em3dMemoryVerdict.Evaluate(e, physicalBytes, [.. remedies.OrderBy(r => r.EstimateBytes)],
-            basis: $"Gmsh made {tetrahedra.ToString("N0", CultureInfo.InvariantCulture)} tetrahedra.", scope: scope);
-    }
-
     /// <summary>
     /// R-em3d21-2b — one run's memory decisions: a warning is posted once at its highest level, and a
     /// run past 150 % is confirmed once (the panel's question, the CLI's --force) or refused.
     /// </summary>
-    private sealed class MemoryGate(Func<Em3dMemoryVerdict, bool>? confirm)
+    internal sealed class MemoryGate(Func<Em3dMemoryVerdict, bool>? confirm)
     {
         private Em3dMemoryLevel _posted = Em3dMemoryLevel.Fits;
         private bool _confirmed;
@@ -2009,88 +614,7 @@ public static class Em3dRunService
         }
     }
 
-    /// <summary>R-em3d21-5a — "Palace done in 2 min 27 s · peak memory 7.4 GB · …", every figure the
-    /// parser read from Palace's log, and a field Palace did not print left out rather than guessed.</summary>
-    public static string CompletionSummary(PalaceRunSummary s, PalaceQuality quality, TimeSpan wall, long? fieldBytes = null)
-    {
-        var parts = new List<string> { $"Palace done in {Duration(wall)}" };
-        if (s.PeakMemoryBytes is { } m) parts.Add($"peak memory {MachineMemory.Format(m)} (Palace's own)");
-        if (s.InitialElements is { } a)
-            parts.Add(s.FinalElements is { } b && b != a ? $"{a:N0} → {b:N0} tetrahedra" : $"{a:N0} tetrahedra");
-        if (s.Unknowns is { } u) parts.Add($"{u:N0} unknowns");
-        if (s.RefinementPasses is { } r) parts.Add($"{r} refinement pass{(r == 1 ? "" : "es")}");
-        // Designer feedback round 11 — Palace's adaptive sweep counts the frequencies it SOLVED to build its model, which is
-        // not the requested point count (6 beside a 5-point sweep read as a miscount), so the clause says what they are.
-        if (s.SweepSamples is { } n) parts.Add($"adaptive sweep built from {n} full solve{(n == 1 ? "" : "s")}");
-        parts.Add($"preset {quality}");
-        // R-em3d29-1d — what the saved fields cost on disk, so a user saving twenty frequencies sees it.
-        if (fieldBytes is > 0 and var f) parts.Add($"field files {MachineMemory.Format(f)}");
-        if (!s.LogRecognised) parts.Add("Palace's log format was not recognised, so some figures are missing");
-        return string.Join(" · ", parts) + ".";
-    }
-
-    /// <summary>The total size of the field files Palace wrote under <paramref name="post"/>, or null
-    /// when it wrote none.</summary>
-    public static long? FieldFilesBytes(string post)
-    {
-        string dir = Path.Combine(post, PalaceConfigWriter.FieldDirectory);
-        try
-        {
-            if (!Directory.Exists(dir)) return null;
-            long n = 0;
-            foreach (var f in new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories)) n += f.Length;
-            return n;
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
-    }
-
-    private static string RunProvenance(PalaceRunSummary s, PalaceQuality quality)
-        => string.Join("; ",
-            $"preset {quality}",
-            $"{N(s.InitialElements)} -> {N(s.FinalElements)} tetrahedra",
-            $"{N(s.Unknowns)} unknowns",
-            $"{N(s.RefinementPasses)} refinement pass(es)",
-            $"{N(s.SweepSamples)} frequency sample(s)");
-
-    private static string CostProvenance(PalaceRunSummary s, TimeSpan wall)
-        => $"wall {wall.TotalSeconds.ToString("0", CultureInfo.InvariantCulture)} s; Palace peak memory " +
-           (s.PeakMemoryBytes is { } m ? Ascii(MachineMemory.Format(m)) : "unreported");
-
-    private static string N(long? v) => v?.ToString(CultureInfo.InvariantCulture) ?? "unreported";
-    private static string N(int? v) => v?.ToString(CultureInfo.InvariantCulture) ?? "unreported";
-
-    /// <summary>"2 min 27 s", "48 s", "1 h 3 min".</summary>
-    public static string Duration(TimeSpan t)
-    {
-        if (t.TotalSeconds < 60) return $"{Math.Max(0, (int)Math.Round(t.TotalSeconds))} s";
-        if (t.TotalMinutes < 60) return $"{(int)t.TotalMinutes} min {t.Seconds} s";
-        return $"{(int)t.TotalHours} h {t.Minutes} min";
-    }
-
     // ── helpers ──────────────────────────────────────────────────────────────────────────────
-
-    /// <summary>Round conductors — vias and round wires — whose radius is under ten skin depths at the
-    /// bottom of the band (F0 Q6's threshold for the void model's curvature error).</summary>
-    private static List<string> ThinRoundConductors(Em3dProblem problem)
-    {
-        const double Mu0 = 4e-7 * Math.PI;
-        var sigma = problem.Materials.ToDictionary(m => m.Name, m => (m.SigmaSm, m.Mur), StringComparer.Ordinal);
-        var names = new List<string>();
-        foreach (var solid in problem.Solids.Where(s => s.Role == Em3dRole.Conductor))
-        {
-            double? radius = solid.Primitive switch
-            {
-                Em3dSweep { Section: Em3dSection.Circle } w => w.Diameter / 2,
-                Em3dCylinder c => c.Radius,
-                Em3dSphere s => s.Radius,
-                _ => null,
-            };
-            if (radius is not { } r || !sigma.TryGetValue(solid.Material, out var m) || !(m.SigmaSm > 0)) continue;
-            double delta = 1 / Math.Sqrt(Math.PI * problem.Frequency.StartHz * Mu0 * m.Mur * m.SigmaSm);
-            if (r < 10 * delta) names.Add(solid.Name);
-        }
-        return names;
-    }
 
     private static string Count(long? v) => v is { } x ? x.ToString("N0", CultureInfo.InvariantCulture) : "an unreported number of";
 

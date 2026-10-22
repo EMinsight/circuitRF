@@ -305,7 +305,7 @@ public sealed class ThermalDocumentTests : IDisposable
         var cem = HotSetup();
         Assert.Contains(C3dThermal.CemRefusal, EmRunService.Run(cem, null, Path.Combine(ws, "results")).Error);
 
-        cem.Solver3D = Em3dSolver.Palace;
+        cem.Solver3D = Em3dSolverId.Palace;
         doc.Setups = [EmSetupPersistence.ToEmbedded(cem)];
         Assert.Contains("states Solver3D: Palace", C3dSetups.Read(doc).Single().Refusal);
 
@@ -516,7 +516,7 @@ public sealed class ThermalDocumentTests : IDisposable
             ],
             Ports = [new C3dPort { Number = 1, Name = "P1", Plane = C3dPlane.YZ, Offset = 0, Rect = Rect(450, 0, 100, 100) }],
         };
-        doc.Setups = [EmSetupPersistence.ToEmbedded(new EmSetup { Name = "S1", Solver3D = Em3dSolver.Palace })];
+        doc.Setups = [EmSetupPersistence.ToEmbedded(new EmSetup { Name = "S1", Solver3D = Em3dSolverId.Palace })];
         return doc;
     }
 

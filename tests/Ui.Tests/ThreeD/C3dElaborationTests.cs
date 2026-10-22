@@ -359,7 +359,7 @@ public sealed class C3dElaborationTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(EmSetupPersistence.Serialize(s), EmSetupPersistence.Serialize(EmSetupPersistence.FromEmbedded(json) is var back
                                                                                          ? Relaid(back, s.LayoutRef) : null!));
 
-        var planar = s.Clone(); planar.Name = "P"; planar.Solver3D = Em3dSolver.None;
+        var planar = s.Clone(); planar.Name = "P"; planar.Solver3D = Em3dSolverChoice.None;
         var nameless = s.Clone(); nameless.Name = "";
         var doc = new C3dDocument { Setups = [json, EmSetupPersistence.ToEmbedded(s), EmSetupPersistence.ToEmbedded(planar), EmSetupPersistence.ToEmbedded(nameless)] };
         var read = C3dSetups.Read(doc);
@@ -371,7 +371,7 @@ public sealed class C3dElaborationTests(ITestOutputHelper output) : IDisposable
 
         var run = C3dSetups.ForRun(read[0].Setup!, "/ws/Pkg/3d/Pkg.c3d");
         Assert.Equal(Path.Combine("/ws/results", "Pkg C.s2p"), EmRunService.ResolveSnpPath("/ws/results", run, 2));
-        Assert.Equal(Path.Combine("/ws/results", "Pkg C.palace"), Em3dRunService.SnpBasePath("/ws/results", run, Em3dSolver.Palace));
+        Assert.Equal(Path.Combine("/ws/results", "Pkg C.palace"), Em3dRunService.SnpBasePath("/ws/results", run, Em3dSolverId.Palace));
 
         static EmSetup Relaid(EmSetup e, string layoutRef) { e.LayoutRef = layoutRef; return e; }
     }

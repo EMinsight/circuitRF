@@ -153,7 +153,7 @@ public sealed class CosimLoopCoilRerunTests(ITestOutputHelper output) : IDisposa
     [Trait("Category", "Benchmark")]
     public void TheFourPortRunAndTheSchematic_ThroughTheCli_StillReproduceTheLumpedRun()
     {
-        Assert.True(SolverDiscovery.ReadinessFor(Em3dSolver.OpenEms).All(r => r.Proceeds), "needs openEMS");
+        Assert.True(SolverDiscovery.ReadinessFor(Em3dSolverId.OpenEms).All(r => r.Proceeds), "needs openEMS");
         // In place: results/ is git-ignored, and the field set the run leaves there is the one the routine test recombines.
         string ws = LoopCosim.Workspace;
         string c3d = Path.Combine(ws, LoopCosim.C3d);

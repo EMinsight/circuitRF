@@ -202,9 +202,9 @@ public sealed class SolvedStatusTests : IDisposable
         bool kept = false;
         try
         {
-            Em3dRunService.Recorded(run, f.Results, Em3dSolver.Palace, (_, _) => kept = true, () => thrown
+            Em3dRunService.Recorded(run, f.Results, Em3dSolverId.Palace, (_, _) => kept = true, () => thrown
                 ? throw new OperationCanceledException()
-                : Em3dRunService.Leg.Failed(Em3dSolver.Palace, EmRunStatus.Cancelled, EmDiagnostics.Cancelled()));
+                : Em3dRunService.Leg.Failed(Em3dSolverId.Palace, EmRunStatus.Cancelled, EmDiagnostics.Cancelled()));
         }
         catch (OperationCanceledException) when (thrown) { }
 
@@ -244,7 +244,7 @@ public sealed class SolvedStatusTests : IDisposable
         {
             f.Doc.Setups.Add(EmSetupPersistence.ToEmbedded(new EmSetup
             {
-                Name = "T2", Solver3D = Em3dSolver.None, Problem3D = Em3dProblemType.Thermal,
+                Name = "T2", Solver3D = Em3dSolverChoice.None, Problem3D = Em3dProblemType.Thermal,
                 Thermal = new CemThermal { Submodel = new CemThermalSubmodel { From = "T1", Region = "r" } },
             }));
             C3dRunInputs.Take(f.Doc, f.C3d, f.Files).KeepIn(f.Dir("T2", SolverKind.Thermal));
@@ -252,7 +252,7 @@ public sealed class SolvedStatusTests : IDisposable
         }
         switch (edit)
         {
-            case "add a setup":          f.Doc.Setups.Add(EmSetupPersistence.ToEmbedded(new EmSetup { Name = "EM3", Solver3D = Em3dSolver.OpenEms })); break;
+            case "add a setup":          f.Doc.Setups.Add(EmSetupPersistence.ToEmbedded(new EmSetup { Name = "EM3", Solver3D = Em3dSolverId.OpenEms })); break;
             case "edit another setup":   Change("EM2", s => s.OperatingTempC = 85); break;
             case "remove another setup": f.Doc.Setups.RemoveAt(C3dSetups.Read(f.Doc).Single(s => s.Name == "T1").Index); break;
             case "edit this setup":      Change("EM1", s => s.OperatingTempC = 85); break;
@@ -401,8 +401,8 @@ public sealed class SolvedStatusTests : IDisposable
             Objects = [Box("a", 0), new C3dBoolean { Name = "b", Op = C3dBooleanOp.Subtract, Blank = Box("", 200), Tools = [Box("t", 220)] }],
             Instances = [new C3dInstance { Name = "I1", CellRef = "Part" }],
             Ports = [new C3dPort { Number = 1, Name = "P1", Kind = Em3dPortKind.Lumped, Rect = new C3dRect { Size = new(10 * Um, 10 * Um) } }],
-            Setups = [EmSetupPersistence.ToEmbedded(new EmSetup { Name = "EM1", Solver3D = Em3dSolver.Palace }),
-                      EmSetupPersistence.ToEmbedded(new EmSetup { Name = "EM2", Solver3D = Em3dSolver.Palace })],
+            Setups = [EmSetupPersistence.ToEmbedded(new EmSetup { Name = "EM1", Solver3D = Em3dSolverId.Palace }),
+                      EmSetupPersistence.ToEmbedded(new EmSetup { Name = "EM2", Solver3D = Em3dSolverId.Palace })],
         };
     }
 
@@ -425,9 +425,9 @@ public sealed class SolvedStatusTests : IDisposable
         var doc = C3dPersistence.LoadFromFile(c3d);
         doc.Setups =
         [
-            EmSetupPersistence.ToEmbedded(new EmSetup { Name = "EM1", Solver3D = Em3dSolver.Palace }),
-            EmSetupPersistence.ToEmbedded(new EmSetup { Name = "EM2", Solver3D = Em3dSolver.Both }),
-            EmSetupPersistence.ToEmbedded(new EmSetup { Name = "T1", Solver3D = Em3dSolver.None, Problem3D = Em3dProblemType.Thermal, Thermal = new CemThermal() }),
+            EmSetupPersistence.ToEmbedded(new EmSetup { Name = "EM1", Solver3D = Em3dSolverId.Palace }),
+            EmSetupPersistence.ToEmbedded(new EmSetup { Name = "EM2", Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Both }),
+            EmSetupPersistence.ToEmbedded(new EmSetup { Name = "T1", Solver3D = Em3dSolverChoice.None, Problem3D = Em3dProblemType.Thermal, Thermal = new CemThermal() }),
         ];
         doc.ActiveSetup = null;
         C3dPersistence.SaveToFile(c3d, doc);

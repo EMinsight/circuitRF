@@ -173,8 +173,8 @@ public sealed class PalaceStaticTests(ITestOutputHelper output) : IDisposable
         }
 
         Assert.Null(result.SnpPath);
-        Assert.Equal(Path.Combine(results, "two.palace_es"), Em3dRunService.RunDirectory(results, setup, Em3dSolver.Palace));
-        Assert.Equal("two.palace_es", Em3dRunService.NpyKey(setup, Em3dSolver.Palace));
+        Assert.Equal(Path.Combine(results, "two.palace_es"), Em3dRunService.RunDirectory(results, setup, Em3dSolverId.Palace));
+        Assert.Equal("two.palace_es", Em3dRunService.NpyKey(setup, Em3dSolverId.Palace));
         Assert.EndsWith("two.palace_es.npy", result.NpyPath);
         Assert.DoesNotContain(Directory.EnumerateFiles(_root, "*.s*p", SearchOption.AllDirectories),
                               f => System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(f), @"\.s\d+p$"));
@@ -187,7 +187,7 @@ public sealed class PalaceStaticTests(ITestOutputHelper output) : IDisposable
     {
         long gmsh = PalaceRun.GmshInvocations;
 
-        foreach (var solver in new[] { Em3dSolver.OpenEms, Em3dSolver.Both })
+        foreach (var solver in new[] { Em3dSolverId.OpenEms, CircuitRF.Design.Em3d.Em3dSolvers.Both })
         {
             var (setup, source) = TwoLines(Em3dProblemType.Electrostatic);
             setup.Solver3D = solver;
@@ -375,7 +375,7 @@ public sealed class PalaceStaticTests(ITestOutputHelper output) : IDisposable
         var setup = new EmSetup
         {
             Name = "two", LayoutRef = "two/layout/two.clay",
-            Solver3D = Em3dSolver.Palace,
+            Solver3D = Em3dSolverId.Palace,
             Problem3D = type,
             Terminals3D = ms ? [new("A", "A", "1"), new("B", "B", "2")] : [new("A", "A"), new("B", "B")],
             Palace = new CemPalace { AdaptiveMaxIterations = 0, EdgeRefinement = 0.5 },
@@ -405,7 +405,7 @@ public sealed class PalaceStaticTests(ITestOutputHelper output) : IDisposable
         string dir = Path.Combine(_root, name);
         var mesh = PalaceRun.Mesh(dir, low, SolverDiscovery.Gmsh.Find(out _)!.Path, null, default);
         Assert.True(mesh.Ok, mesh.Message);
-        string palace = SolverDiscovery.ReadinessFor(Em3dSolver.Palace).Single(r => r.Tool == SolverTool.Palace).Installation!.Path;
+        string palace = SolverDiscovery.ReadinessFor(Em3dSolverId.Palace).Single(r => r.Tool == SolverTool.Palace).Installation!.Path;
         bool es = problem.Type == Em3dProblemType.Electrostatic;
         var tracker = new PalaceStageTracker(0, settings.SweepAdaptiveTol, null, es);
         var solved = PalaceRun.Solve(dir, cfg.Json!, palace, 1, null, default, out _, tracker);

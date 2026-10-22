@@ -251,7 +251,7 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
                                             Technology tech, CancellationToken ct)
     {
         var preview = inputs.Setup.Clone();
-        preview.Solver3D = Em3dSolver.Palace;
+        preview.Solver3D = Em3dSolvers.Default;
         preview.Problem3D = Em3dProblemType.Driven;
         preview.Ports3D = [];
         // Ports that would refuse a solve do not blank the picture: it exists for a look, and a layout with no port
@@ -776,8 +776,8 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
             string tm = Path.Combine(CircuitRF.Design.Thermal.ThermalRunService.RunDirectory(root, setup), GmshGeoWriter.MeshFile);
             return File.Exists(tm) ? tm : null;
         }
-        if (setup.Solver3D is not (Em3dSolver.Palace or Em3dSolver.Both)) return null;
-        string p = Path.Combine(Em3dRunService.RunDirectory(root, setup, Em3dSolver.Palace), GmshGeoWriter.MeshFile);
+        if (Em3dSolvers.FirstWith(setup.Solver3D, c => c.GmshMesh) is not { } meshed) return null;
+        string p = Path.Combine(Em3dRunService.RunDirectory(root, setup, meshed.Id), GmshGeoWriter.MeshFile);
         return File.Exists(p) ? p : null;
     }
 
@@ -807,7 +807,9 @@ public sealed partial class Viewer3DViewModel : ObservableObject, IDisposable
         }
         if (ShowMesh) LoadMesh();
 
-        GridAvailable = _lastSetup?.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both && Scene.Problem is not null;
+        // brief-emi-1 — the grid shown is circuitRF's own FDTD grid, which an FDTD solver's run is placed on.
+        GridAvailable = _lastSetup is { } gridSetup && Em3dSolvers.Of(gridSetup.Solver3D).Any(d => d.Method == Em3dSolverFit.Fdtd)
+                        && Scene.Problem is not null;
         if (!GridAvailable && ShowGrid) ShowGrid = false;
         ScheduleClipOverlays();
         RefreshFields();

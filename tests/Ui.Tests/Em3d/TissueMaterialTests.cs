@@ -130,7 +130,7 @@ public sealed class TissueLibraryTests : IDisposable
 
     private static EmSetup Setup(string startMhz, string stopMhz) => new()
     {
-        Name = "S", Solver3D = Em3dSolver.OpenEms,
+        Name = "S", Solver3D = Em3dSolverId.OpenEms,
         Frequency = new FrequencySpec(startMhz, stopMhz, 5, SweepKind.Linear, "MHz", "MHz"),
     };
 

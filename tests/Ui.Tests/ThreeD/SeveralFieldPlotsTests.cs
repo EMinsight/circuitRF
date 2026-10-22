@@ -227,7 +227,7 @@ public sealed class SeveralFieldPlotsTests : IDisposable
         var none = new EmAirBoxFace(0, null);
         var setup = new EmSetup
         {
-            Name = "modes", Solver3D = Em3dSolver.Palace, Problem3D = Em3dProblemType.Eigenmode,
+            Name = "modes", Solver3D = Em3dSolverId.Palace, Problem3D = Em3dProblemType.Eigenmode,
             AirBox = new EmAirBox(none, none, none, none, none, none), Eigenmode = new EmEigenmode3D(1, 5),
             Frequency = new CircuitRF.Core.Design.FrequencySpec("5", "15", 3, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz"),
         };
@@ -248,7 +248,7 @@ public sealed class SeveralFieldPlotsTests : IDisposable
         Until(() => vm.AdoptedGeneration == vm.Viewer.Source.Requested && vm.Viewer.Scene.Objects.Length > 0, "the scene never settled");
 
         // the committed cavity fixture as the active setup's finished run
-        string run = Em3dRunService.RunDirectory(Path.Combine(_root, "results"), vm.ActiveRunSetup!, Em3dSolver.Palace);
+        string run = Em3dRunService.RunDirectory(Path.Combine(_root, "results"), vm.ActiveRunSetup!, Em3dSolverId.Palace);
         string cavity = Path.Combine(PalaceBackendTests.RepoRoot(), "testdata", "em3d", "fields", "cavity");
         foreach (string f in Directory.EnumerateFiles(cavity, "*", SearchOption.AllDirectories))
         {

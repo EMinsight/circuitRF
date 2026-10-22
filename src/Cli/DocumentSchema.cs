@@ -1148,6 +1148,7 @@ internal static class DocumentSchema
                 foreach (var t in Referenced(p.PropertyType))
                 {
                     if (t.IsEnum) { if (seen.Add(t)) enums.Add(EnumBlock(t)); continue; }
+                    if (SpellingsOf(t) is { } spellings) { if (seen.Add(t)) enums.Add(SpelledBlock(t, spellings)); continue; }
                     if (SpelledAs(t) is not null) continue;
                     if (t.Assembly != asm || !seen.Add(t)) continue;
                     queue.Enqueue(t);
@@ -1187,6 +1188,18 @@ internal static class DocumentSchema
     private static Block EnumBlock(Type t) => new(
         t.Name + "   (one of)",
         [.. Enum.GetNames(t).Select(n => new Field(n, "", ""))]);
+
+    /// <summary>brief-emi-1 — a type written as one string of a set assembled at run time (<see cref="CircuitRF.Design.IJsonSpelled"/>):
+    /// listed as an enum is, never expanded into the properties a file does not hold.</summary>
+    private static IReadOnlyList<string>? SpellingsOf(Type t)
+        => t.GetInterfaces().Contains(typeof(CircuitRF.Design.IJsonSpelled))
+               ? t.GetProperty(nameof(CircuitRF.Design.IJsonSpelled.JsonSpellings), BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
+                     as IReadOnlyList<string>
+               : null;
+
+    private static Block SpelledBlock(Type t, IReadOnlyList<string> spellings) => new(
+        t.Name + "   (one of)",
+        [.. spellings.Select(n => new Field(n, "", ""))]);
 
     /// <summary>The types a property could pull in: itself, and whatever a list or dictionary holds.
     /// Nullable&lt;T&gt; is unwrapped, so a <c>double?</c> reaches the same place a <c>double</c>

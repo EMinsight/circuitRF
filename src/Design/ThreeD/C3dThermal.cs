@@ -39,7 +39,7 @@ public static class C3dThermal
         "embedded Setups. Move it there.";
 
     /// <summary>R-em3d73-5a — a thermal setup stating a 3D solver.</summary>
-    public static string SolverStated(string name, Em3dSolver solver) =>
+    public static string SolverStated(string name, Em3dSolverChoice solver) =>
         $"Embedded setup '{name}' is a thermal setup and states Solver3D: {solver}. The thermal solver is circuitRF's own, so " +
         "a thermal setup names no EM solver: remove Solver3D.";
 

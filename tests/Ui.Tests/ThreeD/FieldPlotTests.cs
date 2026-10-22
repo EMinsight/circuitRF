@@ -345,7 +345,7 @@ public sealed class FieldPlotTests(ITestOutputHelper output) : IDisposable
         var none = new EmAirBoxFace(0, null);
         return new EmSetup
         {
-            Name = "modes", Solver3D = Em3dSolver.Palace, Problem3D = Em3dProblemType.Eigenmode,
+            Name = "modes", Solver3D = Em3dSolverId.Palace, Problem3D = Em3dProblemType.Eigenmode,
             AirBox = new EmAirBox(none, none, none, none, none, none), Eigenmode = new EmEigenmode3D(1, 5),
             Frequency = new CircuitRF.Core.Design.FrequencySpec("5", "15", 3, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz"),
         };
@@ -357,7 +357,7 @@ public sealed class FieldPlotTests(ITestOutputHelper output) : IDisposable
         var none = new EmAirBoxFace(0, null);
         return new EmSetup
         {
-            Name = "drive", Solver3D = Em3dSolver.Palace, Problem3D = Em3dProblemType.Driven,
+            Name = "drive", Solver3D = Em3dSolverId.Palace, Problem3D = Em3dProblemType.Driven,
             AirBox = new EmAirBox(none, none, none, none, none, none),
             Frequency = new CircuitRF.Core.Design.FrequencySpec("2", "18", 9, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz"),
         };
@@ -404,7 +404,7 @@ public sealed class FieldPlotTests(ITestOutputHelper output) : IDisposable
     private void Run(C3dEditorViewModel vm)
     {
         var run = vm.ActiveRunSetup!;
-        string dir = Em3dRunService.RunDirectory(Path.Combine(_root, "results"), run, Em3dSolver.Palace);
+        string dir = Em3dRunService.RunDirectory(Path.Combine(_root, "results"), run, Em3dSolverId.Palace);
         if (!Directory.Exists(dir)) CopyDirectory(Cavity, dir);
         C3dRunInputs.Take(vm.Document, vm.TopFilePath, []).KeepIn(dir);   // what the run service keeps (brief-em3d-87)
         vm.RunFinished();
@@ -419,7 +419,7 @@ public sealed class FieldPlotTests(ITestOutputHelper output) : IDisposable
     private string DrivenRun(C3dEditorViewModel vm, double[] ghz, string? into)
     {
         var run = vm.ActiveRunSetup!;
-        string dir = into ?? Em3dRunService.RunDirectory(Path.Combine(_root, "results"), run, Em3dSolver.Palace);
+        string dir = into ?? Em3dRunService.RunDirectory(Path.Combine(_root, "results"), run, Em3dSolverId.Palace);
         if (Directory.Exists(dir)) Directory.Delete(dir, true);
         CopyDirectory(Cavity, dir);
         string pv = Path.Combine(dir, "postpro", "paraview");

@@ -220,7 +220,7 @@ public sealed partial class C3dEditorViewModel
         {
             Name = C3dFieldPlot.NextName(Document.FieldPlots),
             Setup = ActiveSetupDisplayName,
-            Solver = setup is { Solver3D: Em3dSolver.Both } ? Em3dSolver.Palace : null,
+            Solver = setup is { Solver3D.IsCompare: true } ? setup.Solver3D.Reference : null,
             Quantity = thermal ? C3dFieldPlot.TemperatureQuantity : "E",
             Mode = thermal ? null : nameof(FieldMode.Peak),
             On = thermal ? C3dFieldPlotOn.Surfaces : C3dFieldPlotOn.ClipPlane,
@@ -623,22 +623,11 @@ public sealed partial class C3dEditorViewModel
         var read = C3dSetups.Read(Document).FirstOrDefault(s => s.Name == setupName);
         if (read is not { Setup: { } setup }) return "Only a setup of this 3D view can be told to save another frequency.";
         if (!setup.Is3D || setup.IsThermal) return "Only a 3D EM setup saves fields by frequency.";
-        var solver = plot.Solver ?? (setup.Solver3D == Em3dSolver.OpenEms ? Em3dSolver.OpenEms : Em3dSolver.Palace);
+        var solver = plot.Solver ?? setup.Solver3D.Reference;
         var saved = SavedFrequencies(setup, solver);
         if (!saved.Any(f => Math.Abs(f - ghz) <= 1e-9 * Math.Max(f, ghz))) saved.Add(ghz);
         saved.Sort();
-        if (solver == Em3dSolver.OpenEms)
-        {
-            var section = setup.OpenEms?.Clone() ?? new CemOpenEms();
-            section.SaveFieldsGHz = saved;
-            setup.OpenEms = section;
-        }
-        else
-        {
-            var section = setup.Palace?.Clone() ?? new CemPalace();
-            section.SaveFieldsGHz = saved;
-            setup.Palace = section;
-        }
+        CircuitRF.Design.Em3d.Em3dSolvers.Get(solver).SetSavedFieldsGHz(setup, saved);
         var plotText = C3dPersistence.SerializeFieldPlots(Document.FieldPlots);
         ChangeRecords($"Save the field at {ghz.ToString("G6", CultureInfo.InvariantCulture)} GHz", d =>
         {
@@ -664,9 +653,9 @@ public sealed partial class C3dEditorViewModel
     public (C3dAxis Axis, long Offset) PlotClipDefault() => ClipOfView();
 
     /// <summary>The frequencies a setup's solver saves fields at now, GHz: its list, or the sweep's centre it defaults to.</summary>
-    public static List<double> SavedFrequencies(EmSetup setup, Em3dSolver solver)
+    public static List<double> SavedFrequencies(EmSetup setup, Em3dSolverId solver)
     {
-        var list = solver == Em3dSolver.OpenEms ? setup.OpenEms?.SaveFieldsGHz : setup.Palace?.SaveFieldsGHz;
+        var list = CircuitRF.Design.Em3d.Em3dSolvers.Get(solver).SavedFieldsGHz(setup);
         if (list is not null) return [.. list];
         return CircuitRF.Design.Em3d.PalaceConfigWriter.SweepCentreGHz(setup) is { } c ? [c] : [];
     }

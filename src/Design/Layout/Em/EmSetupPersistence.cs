@@ -1092,6 +1092,29 @@ public sealed class CemThermalPulse
     public Dictionary<string, JsonElement>? Unread { get; set; }
 }
 
+/// <summary>
+/// brief-emi-1 R-emi1-3 — the key <c>Solver3D</c>: a solver's spelling (<c>Palace</c>, <c>OpenEms</c>) or <c>Both</c>, read in
+/// any case as the enum it replaced read them, and written back in the canonical spelling, so a file opened and saved
+/// with no edit is byte-identical. A spelling no solver answers to — a solver whose integration was removed — is refused
+/// with the list of the ones that do.
+/// </summary>
+public sealed class Em3dSolverChoiceConverter : JsonConverter<Em3dSolverChoice?>
+{
+    public override Em3dSolverChoice? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null) return null;
+        if (reader.TokenType != JsonTokenType.String) throw new JsonException(CircuitRF.Design.Em3d.Em3dSolvers.UnknownSpelling(reader.TokenType.ToString()));
+        string spelling = reader.GetString() ?? "";
+        return CircuitRF.Design.Em3d.Em3dSolvers.FromSpelling(spelling) ?? throw new JsonException(CircuitRF.Design.Em3d.Em3dSolvers.UnknownSpelling(spelling));
+    }
+
+    public override void Write(Utf8JsonWriter writer, Em3dSolverChoice? value, JsonSerializerOptions options)
+    {
+        if (value is null) { writer.WriteNullValue(); return; }
+        writer.WriteStringValue(CircuitRF.Design.Em3d.Em3dSolvers.Spelling(value));
+    }
+}
+
 /// <summary>brief-em3d-80 — a list of names that may be written as the one string <c>"*"</c>.</summary>
 public sealed class ThermalNamesConverter : JsonConverter<List<string>?>
 {
@@ -1340,9 +1363,11 @@ public sealed class CemFile
     /// <summary>
     /// brief-em3d-3 — <b>null means None</b>: a planar setup, which is what every <c>.cem</c> written
     /// before 3D existed means. Anything else makes this a 3D setup and the planar-only fields above
-    /// are kept but not read. Chosen by name only; Auto never resolves to a 3D solver.
+    /// are kept but not read. Chosen by name only; Auto never resolves to a 3D solver. brief-emi-1 R-emi1-3 — spelt
+    /// <c>Palace</c>, <c>OpenEms</c> or <c>Both</c> exactly as before the solver seam (<see cref="Em3dSolverChoiceConverter"/>).
     /// </summary>
-    public Em3dSolver? Solver3D { get; set; }
+    [JsonConverter(typeof(Em3dSolverChoiceConverter))]
+    public Em3dSolverChoice? Solver3D { get; set; }
 
     /// <summary>The temperature a 3D setup evaluates every conductor's σ at, °C. <b>Null means
     /// 20 °C.</b> Read by 3D setups only.</summary>
@@ -1515,7 +1540,7 @@ public static class EmSetupPersistence
                 s.PlanarMesh.DetailFloorDivisor == PlanarMeshSettings.DefaultDetailFloorDivisor
                     ? null : s.PlanarMesh.DetailFloorDivisor,
         },
-        Solver3D       = s.Solver3D == Em3dSolver.None ? null : s.Solver3D,
+        Solver3D       = s.Solver3D.IsNone ? null : s.Solver3D,
         OperatingTempC = s.OperatingTempC,
         AirBox         = s.AirBox is { } box ? new CemAirBox
         {
@@ -1600,7 +1625,7 @@ public static class EmSetupPersistence
                                      pm.DetailFloorDivisor
                                          ?? PlanarMeshSettings.DefaultDetailFloorDivisor)
             : PlanarMeshSettings.Default,
-        Solver3D              = f.Solver3D ?? Em3dSolver.None,
+        Solver3D              = f.Solver3D ?? Em3dSolverChoice.None,
         OperatingTempC        = f.OperatingTempC,
         AirBox                = f.AirBox is { } box
             ? new EmAirBox(FromFace(box.XMin), FromFace(box.XMax), FromFace(box.YMin),

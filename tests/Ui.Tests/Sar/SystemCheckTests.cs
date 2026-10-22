@@ -75,10 +75,10 @@ internal static class SystemCheck
         var setup = C3dBandSweeps.Make(doc, sweep).Setups.Single();
         string results = Path.Combine(root, "results");
         var run = C3dSetups.ForRun(setup, c3dPath);
-        string p1 = Path.Combine(Em3dRunService.RunDirectory(results, run, Em3dSolver.OpenEms), "p1");
+        string p1 = Path.Combine(Em3dRunService.RunDirectory(results, run, Em3dSolverId.OpenEms), "p1");
         Directory.CreateDirectory(p1);
         File.Copy(Path.Combine(Output("medium"), Record), Path.Combine(p1, Record));
-        File.Copy(Path.Combine(Output("medium"), Touchstone), Em3dRunService.SnpBasePath(results, run, Em3dSolver.OpenEms) + ".s1p");
+        File.Copy(Path.Combine(Output("medium"), Touchstone), Em3dRunService.SnpBasePath(results, run, Em3dSolverId.OpenEms) + ".s1p");
         return results;
     }
 }
@@ -135,7 +135,7 @@ public sealed class SystemCheckRerunTests(ITestOutputHelper output) : IDisposabl
     [Trait("Category", "Benchmark")]
     public void TheSystemCheck_ThroughTheCli_StillGivesItsValues()
     {
-        Assert.True(SolverDiscovery.ReadinessFor(Em3dSolver.OpenEms).All(r => r.Proceeds), "needs openEMS");
+        Assert.True(SolverDiscovery.ReadinessFor(Em3dSolverId.OpenEms).All(r => r.Proceeds), "needs openEMS");
         string ws = Path.Combine(_root, "system-check");
         foreach (string f in new[] { ".cws", "tech.ctech", "SystemCheck/.ccell", SystemCheck.C3d })
         {

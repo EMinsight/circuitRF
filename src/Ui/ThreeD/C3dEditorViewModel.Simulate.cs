@@ -56,7 +56,7 @@ public sealed partial class C3dSetupItem(string name, int index, string? refusal
             if (setup is null) return "";
             // brief-em3d-73 — a thermal setup names no EM solver: circuitRF's own solves it.
             string solver = setup.IsThermal ? "circuitRF thermal"
-                          : setup.Solver3D switch { Em3dSolver.OpenEms => "openEMS", Em3dSolver.Both => "Palace + openEMS", _ => "Palace" };
+                          : string.Join(" + ", CircuitRF.Design.Em3d.Em3dSolvers.Of(setup.Solver3D).Select(d => d.DisplayName));
             var f = setup.Frequency;
             string body = setup.Problem3D switch
             {
@@ -405,7 +405,7 @@ public sealed partial class C3dEditorViewModel
     {
         var names = C3dSetups.Read(Document).Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         string name = Enumerable.Range(1, 10_000).Select(n => $"S{n}").First(n => !names.Contains(n));
-        var setup = new EmSetup { Name = name, Solver3D = Em3dSolver.Palace };
+        var setup = new EmSetup { Name = name, Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default };
         ChangeRecords($"Add setup {name}", d => d.Setups.Add(EmSetupPersistence.ToEmbedded(setup)));
         if (ActiveSetupName is null || ActiveSetup is null) SetActiveSetup(name);
         SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == name && !i.IsExternal);
@@ -418,7 +418,7 @@ public sealed partial class C3dEditorViewModel
     {
         var names = C3dSetups.Read(Document).Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
         string name = Enumerable.Range(1, 10_000).Select(n => $"T{n}").First(n => !names.Contains(n));
-        var setup = new EmSetup { Name = name, Solver3D = Em3dSolver.None, Problem3D = Em3dProblemType.Thermal, Thermal = new CemThermal() };
+        var setup = new EmSetup { Name = name, Solver3D = Em3dSolverChoice.None, Problem3D = Em3dProblemType.Thermal, Thermal = new CemThermal() };
         ChangeRecords($"Add thermal setup {name}", d => d.Setups.Add(EmSetupPersistence.ToEmbedded(setup)));
         if (ActiveSetupName is null || ActiveSetup is null) SetActiveSetup(name);
         SelectedSetupItem = SetupItems.FirstOrDefault(i => i.Name == name && !i.IsExternal);
@@ -543,7 +543,7 @@ public sealed partial class C3dEditorViewModel
             try { setup = EmSetupPersistence.Deserialize(setupJson); } catch (Exception) { setup = null; }
         // 3D editor round 3 — with no setup, the box a new setup would solve in (owner decision): drawn once there is a solid
         // or a sheet to size it (Extent is null until then), never before.
-        var boxSetup = setup ?? (setupJson is null ? new EmSetup { Solver3D = Em3dSolver.Palace } : null);
+        var boxSetup = setup ?? (setupJson is null ? new EmSetup { Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default } : null);
         // 3D editor round 5 — the box is sized from what DID elaborate, refusals or not: a wire whose end a boolean took the
         // pad from is the wire's refusal, and gating the box on a clean elaboration took the box — and, with no setup, its
         // tree row — away with it. The ports and face boundaries below still wait for a clean elaboration.

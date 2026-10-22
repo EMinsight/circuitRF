@@ -287,7 +287,7 @@ internal static class CliDiagnostics
     public static Diagnostic EmUnknownSolver(string value) => Diagnostic.Create(
         "cli.em.unknown-solver",
         DiagnosticSeverity.Error,
-        "em: --solver takes palace, openems or both, not '{value}'.",
+        "em: --solver takes " + CircuitRF.Design.Em3d.Em3dSolvers.CliWordList + ", not '{value}'.",
         ("value", value));
 
     /// <summary>brief-em3d-136 R-em3d136-4c — <c>em --device</c> takes cpu or gpu.</summary>

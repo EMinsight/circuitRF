@@ -90,7 +90,7 @@ public sealed class SlabLateralBoundTests
         {
             Name = "cpw", LayoutRef = "cpw/layout/cpw.clay",
             Frequency = new FrequencySpec("1", "10", 4, SweepKind.Linear, "GHz", "GHz"),
-            Solver3D = Em3dSolver.Palace, Problem3D = Em3dProblemType.Driven, Ports3D = [],
+            Solver3D = Em3dSolverId.Palace, Problem3D = Em3dProblemType.Driven, Ports3D = [],
         };
 
         var solve = Em3dGenerator.Generate(setup, source, tech);

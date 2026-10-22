@@ -252,7 +252,7 @@ public sealed class PalaceProgressTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(0, overridden.AdaptiveMaxIterations);            // the rest is still Draft's
 
         // The .cem round trip: a preset is a string, and Standard-with-nothing-else is not an empty section.
-        var setup = new EmSetup { Name = "q", Solver3D = Em3dSolver.Palace, Palace = new CemPalace { Quality = PalaceQuality.Accurate } };
+        var setup = new EmSetup { Name = "q", Solver3D = Em3dSolverId.Palace, Palace = new CemPalace { Quality = PalaceQuality.Accurate } };
         string cem = Path.Combine(_root, "q.cem");
         Directory.CreateDirectory(_root);
         EmSetupPersistence.SaveToFile(cem, setup);
@@ -457,7 +457,7 @@ public sealed class PalaceProgressTests(ITestOutputHelper output) : IDisposable
         {
             Name = "caseA", LayoutRef = "caseA.clay",
             Frequency = new FrequencySpec("1", "40", 40, SweepKind.Linear, "GHz", "GHz"),
-            Solver3D = Em3dSolver.Palace, OperatingTempC = 20,
+            Solver3D = Em3dSolverId.Palace, OperatingTempC = 20,
             AirBox = new EmAirBox(side, side, side, side, null, new EmAirBoxFace(825, Em3dBoundaryKind.Pec)),
         };
         return (setup, new EmLayoutSource(clayPath, view, tech, view.DbuPerMicron));

@@ -580,7 +580,7 @@ internal static class ToolCatalog
                      new("workspace", "--workspace", OptKind.Path,
                          "The .cws paths resolve against. Default: the nearest one above the .cem."),
                      new("solver", "--solver", OptKind.Str,
-                         "A 3D setup's solver for this run only: palace, openems or both. Default: the .cem's Solver3D."),
+                         "A 3D setup's solver for this run only: " + CircuitRF.Design.Em3d.Em3dSolvers.CliWordList + ". Default: the .cem's Solver3D."),
                      // brief-em3d-136 R-em3d136-4d — `em --device`, through the CLI's own parsing and refusals.
                      new("device", "--device", OptKind.Str,
                          "Where Palace solves: cpu (default) or gpu. gpu needs a Palace built with GPU support and runs one "

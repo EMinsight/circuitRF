@@ -589,12 +589,12 @@ public class EmPanelDeclutterTests
     [Fact]
     public void RunStartText_ForA3DSetup_SaysWhatItsSolverDoes()
     {
-        var palace = new EmSetup { Name = "Launch Palace", AdaptiveSampling = true, Solver3D = CircuitRF.Design.Layout.Em.Em3dSolver.Palace,
+        var palace = new EmSetup { Name = "Launch Palace", AdaptiveSampling = true, Solver3D = Em3dSolverId.Palace,
                                    Palace = new CemPalace { Quality = PalaceQuality.Draft } };
         string t = ViewModels.WorkspaceViewModel.EmRunStartText(palace, 5, EmAnalysisKind.CrossSection);
         Assert.DoesNotContain("cross-section", t, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Palace builds the sweep adaptively (tolerance 0.001, the Draft preset's)", t, StringComparison.Ordinal);
-        palace.Solver3D = CircuitRF.Design.Layout.Em.Em3dSolver.OpenEms;
+        palace.Solver3D = Em3dSolverId.OpenEms;
         Assert.Contains("openEMS runs once in the time domain",
                         ViewModels.WorkspaceViewModel.EmRunStartText(palace, 5, EmAnalysisKind.CrossSection), StringComparison.Ordinal);
     }

@@ -212,7 +212,7 @@ public static class C3dFragment
             (t.Boundaries ?? []).Where(b => selection.ThermalBoundaries.Contains(b.Face)).ToList() is { Count: > 0 } bs)
             content.Setups = [EmSetupPersistence.ToEmbedded(new EmSetup
             {
-                Name = setupName, Solver3D = Em3dSolver.None, Problem3D = Em3dProblemType.Thermal,
+                Name = setupName, Solver3D = Em3dSolverChoice.None, Problem3D = Em3dProblemType.Thermal,
                 Thermal = new CemThermal { Boundaries = bs },
             })];
 

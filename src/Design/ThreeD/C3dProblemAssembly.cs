@@ -58,7 +58,7 @@ public static class C3dSetups
                 read.Add(new C3dEmbeddedSetup(i, name, null,
                     $"Embedded setups #{first + 1} and #{i + 1} are both named '{name}'; a setup's name is unique in its document."));
             // brief-em3d-73 R-em3d73-5a — a thermal setup names no EM solver, and is no planar analysis either.
-            else if (setup.IsThermal && setup.Solver3D != Em3dSolver.None)
+            else if (setup.IsThermal && !setup.Solver3D.IsNone)
                 read.Add(new C3dEmbeddedSetup(i, name, null, C3dThermal.SolverStated(name, setup.Solver3D)));
             else if (setup.IsThermal)
                 read.Add(new C3dEmbeddedSetup(i, name, setup, null));
@@ -131,7 +131,8 @@ public static class C3dSetups
         var names = SolvedWith(doc, setupName);
         var read = Read(doc);
         if (read.FirstOrDefault(s => s.Name == setupName)?.Setup is not { } mine) return new C3dRunScope(names, false, true, null);
-        if (!mine.IsThermal) return new C3dRunScope(names, false, mine.Solver3D != Em3dSolver.OpenEms, null);
+        if (!mine.IsThermal)
+            return new C3dRunScope(names, false, mine.Solver3D.IsNone || Em3d.Em3dSolvers.Any(mine.Solver3D, c => c.MeshRegions), null);
         var currents = names.Select(n => read.FirstOrDefault(s => s.Name == n)?.Setup).OfType<EmSetup>()
                             .SelectMany(s => s.Thermal?.Currents ?? []).ToList();
         IReadOnlySet<int>? ports = currents.Any(c => c.FromCircuit is not null) ? null : currents.Select(c => c.Port).OfType<int>().ToHashSet();

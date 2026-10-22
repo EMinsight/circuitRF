@@ -148,7 +148,7 @@ public sealed class PatchRadiationCrossSolverTests(ITestOutputHelper output) : I
 
         void Fdtd(EmSetup s)
         {
-            s.Solver3D = Em3dSolver.OpenEms;
+            s.Solver3D = Em3dSolverId.OpenEms;
             s.Frequency = new CircuitRF.Core.Design.FrequencySpec("5.35", "6.35", 3, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz");
         }
         if (Environment.GetEnvironmentVariable("CRF_RECORD_FINITE_GROUND") == "1")

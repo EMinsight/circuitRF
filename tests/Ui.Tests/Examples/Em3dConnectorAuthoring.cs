@@ -177,15 +177,15 @@ public sealed class Em3dConnectorAuthoring
         Port(vm, new DrawingPlane(C3dPlane.YZ, 5_080_000), Snap(5_080_000, -787_400, 0), Snap(5_080_000, 787_400, 508_000));
 
         // The setups: Palace (active) and openEMS, one sweep, the same air box.
-        Setup(vm, "Palace", Em3dSolver.Palace);
-        Setup(vm, "openEMS", Em3dSolver.OpenEms);
+        Setup(vm, "Palace", Em3dSolverId.Palace);
+        Setup(vm, "openEMS", Em3dSolverId.OpenEms);
         vm.SetActiveSetup("Palace");
         Settle(vm);
     }
 
     // ── the setups, chosen by measurement (README ▸ the settings traded away) ──────────────────────────────────────
 
-    private void Setup(C3dEditorViewModel vm, string name, Em3dSolver solver)
+    private void Setup(C3dEditorViewModel vm, string name, Em3dSolverId solver)
     {
         vm.AddSetup();
         Settle(vm);
@@ -201,7 +201,7 @@ public sealed class Em3dConnectorAuthoring
         panel.Frequency.StopCoeff = "18";
         panel.Frequency.NumPointsExpr = "5";
         Settle(vm);
-        if (solver == Em3dSolver.Palace)
+        if (solver == Em3dSolverId.Palace)
         {
             panel = vm.SetupEditor!.ViewModel;
             panel.PalaceQualityChoice = EmSetupEditorViewModel.PalaceQualityChoices.Single(c => c.Value == PalaceQuality.Draft);

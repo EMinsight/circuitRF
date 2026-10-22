@@ -264,7 +264,7 @@ public sealed class Em3dRenderExplainTests(ITestOutputHelper output) : IDisposab
     public void Gate8_WireRowsShowBothLoopHeights_AndWhichLevelSetTheFootLength()
     {
         var result = CaseAWires();
-        var setup = new EmSetup { Name = "caseA", Solver3D = Em3dSolver.Palace };
+        var setup = new EmSetup { Name = "caseA", Solver3D = Em3dSolverId.Palace };
         var report = ExplainEm3d.Build(new Em3dSetupSource("/nowhere/caseA.cem", setup,
                                                            new EmSetupResolution(null, null, null, []), result, null));
 
@@ -323,7 +323,7 @@ public sealed class Em3dRenderExplainTests(ITestOutputHelper output) : IDisposab
         {
             Name = "via3d", LayoutRef = "via/layout/via.clay",
             Frequency = new FrequencySpec("0.1", "20", 200, SweepKind.Linear, "GHz", "GHz"),
-            Solver3D = Em3dSolver.Palace,
+            Solver3D = Em3dSolverId.Palace,
         });
         return new Workspace(ws, cem, Path.Combine(ws, "via", "em", "via.cem"));
     }

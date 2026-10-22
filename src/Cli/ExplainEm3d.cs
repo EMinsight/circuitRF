@@ -33,13 +33,7 @@ internal static class ExplainEm3d
     private static ExplainEm3dJson BuildCore(Em3dSetupSource src, PalaceDevice device)
     {
         var setup = src.Setup;
-        string solver = setup.Solver3D switch
-        {
-            Em3dSolver.Palace  => "Palace",
-            Em3dSolver.OpenEms => "openEMS",
-            Em3dSolver.Both    => "Palace and openEMS",
-            _                  => "none",
-        };
+        string solver = setup.Solver3D.IsNone ? "none" : Em3dSolvers.Names(Em3dSolvers.Of(setup.Solver3D));
         var notes    = src.Generated?.Notes ?? [];
         var warnings = src.Generated?.Warnings ?? [];
         var solvers  = Solvers(setup.Solver3D, setup, device);
@@ -50,7 +44,7 @@ internal static class ExplainEm3d
         var g = src.Generated;
 
         var guidance = Em3dSolverGuidance.For(p)
-            .Select(x => new Em3dGuidanceJson(x.Row, x.Favours == Em3dSolverFit.Fem ? "FEM (Palace)" : "FDTD (openEMS)",
+            .Select(x => new Em3dGuidanceJson(x.Row, $"{Em3dSolverDescriptor.MethodNameOf(x.Favours)} ({Em3dSolvers.NamesOf(x.Favours)})",
                                               x.Sentence))
             .ToList();
 
@@ -156,8 +150,8 @@ internal static class ExplainEm3d
                                    Size(p, setup, grid), solvers, notes, warnings, null)
         {
             Static = Static(p, setup),
-            OpenEmsWavePorts = setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both ? WavePortLines(p, grid.Grid) : null,
-            PalaceTerminalPorts = setup.Solver3D is Em3dSolver.Palace or Em3dSolver.Both ? PalaceTerminalLines(p, setup.Solver3D) : null,
+            OpenEmsWavePorts = setup.Solver3D.Runs(OpenEmsSolver.Id) ? WavePortLines(p, grid.Grid) : null,
+            PalaceTerminalPorts = setup.Solver3D.Runs(PalaceSolver.Id) ? PalaceTerminalLines(p, setup.Solver3D) : null,
             Eigenmode = p.Type != Em3dProblemType.Eigenmode ? null
                 : new Em3dEigenmodeJson(p.EigenmodeCount, setup.Eigenmode?.Count is null ? "default" : "field",
                                         p.EigenmodeTargetHz, setup.Eigenmode?.TargetGHz is null ? "default (the sweep's start)" : "field"),
@@ -196,11 +190,11 @@ internal static class ExplainEm3d
     /// terminal, its Mode, the Active one, the face's one MaxSize, Offset 0) and that whether the face is degenerate is decided
     /// from the run's kₙ — or the sentence the run refuses it with (on Both, the note that Palace is skipped).
     /// </summary>
-    private static IReadOnlyList<string>? PalaceTerminalLines(Em3dProblem p, Em3dSolver solver)
+    private static IReadOnlyList<string>? PalaceTerminalLines(Em3dProblem p, Em3dSolverChoice solver)
     {
         var facts = Em3dRunService.TerminalFacts(p);
         if (facts.Ports.Count == 0) return null;
-        if ((solver == Em3dSolver.Both
+        if ((solver.IsCompare
                 ? Em3dRunService.TerminalPortsSkipPalace(facts.Ports, facts.LumpedPorts, facts.Shifted)
                 : Em3dRunService.TerminalPortRefusal(solver, facts.Ports, facts.LumpedPorts, facts.Shifted)) is { } no)
             return [$"a run would stop here: {no}"];
@@ -311,7 +305,7 @@ internal static class ExplainEm3d
     /// the rule. It starts version probes and, for an uncached Palace, one dry run; it never starts a
     /// mesher or a solver (gate 6 counts that).
     /// </summary>
-    private static IReadOnlyList<Em3dSolverJson> Solvers(Em3dSolver solver, EmSetup setup, PalaceDevice device)
+    private static IReadOnlyList<Em3dSolverJson> Solvers(Em3dSolverChoice solver, EmSetup setup, PalaceDevice device)
         => SolverDiscovery.ReadinessFor(solver, setup, device).Select(r => new Em3dSolverJson(
                r.Name, r.Installation is not null, r.Installation?.Path, r.Installation?.Version,
                r.Installation?.Release, r.Installation?.Validated ?? false,
@@ -337,7 +331,7 @@ internal static class ExplainEm3d
     /// </summary>
     private static Em3dDeviceJson? Device(EmSetup setup, PalaceDevice device, IReadOnlyList<Em3dSolverJson> solvers)
     {
-        if (setup.Solver3D is not (Em3dSolver.Palace or Em3dSolver.Both)) return null;
+        if (!Em3dSolvers.Any(setup.Solver3D, c => c.Gpu)) return null;
         if (device == PalaceDevice.Cpu)
             return new("cpu", "the default: a headless run solves on the CPU unless --device gpu asks for a GPU (the GUI " +
                               "uses this machine's Device setting); one Palace process per physical core, or the Cores setting.");

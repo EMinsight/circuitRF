@@ -83,7 +83,7 @@ internal static class Solver
         }
 
         var report = new List<SolverJson>();
-        foreach (var tool in Enum.GetValues<SolverTool>())
+        foreach (var tool in Em3dSolvers.Tools)
         {
             var s = SolverStatus.Of(tool, gpu: gpu);
             string state = s.Found is null ? "not found" : s.InstalledByCircuitRf ? "installed by circuitRF" : "found";

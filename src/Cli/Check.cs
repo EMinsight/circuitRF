@@ -710,7 +710,7 @@ internal static class Check
         // cylindrical one (a note, never inferred into the run); on a cylindrical grid, what the grid would refuse.
         if (doc.Ports.Any(p => p.Model && p.Kind == CircuitRF.Engine.Em3d.Em3dPortKind.Wave))
             foreach (var embedded in C3dSetups.Read(doc))
-                if (embedded is { Refusal: null, Setup: { Is3D: true, IsStatic3D: false, Solver3D: Em3dSolver.OpenEms or Em3dSolver.Both } s3 })
+                if (embedded is { Refusal: null, Setup: { Is3D: true, IsStatic3D: false } s3 } && s3.Solver3D.Runs(CircuitRF.Design.Em3d.OpenEmsSolver.Id))
                     CylindricalAdvice(path, f, embedded.Name, C3dSetups.ForRun(s3, Path.GetFullPath(path)), doc);
 
         // brief-em3d-65 R-em3d65-4d — what each embedded setup's solver will not respect of a kernel solid, at the row's own
@@ -910,7 +910,7 @@ internal static class Check
         // brief-em3d-73 D1 — a thermal setup lives in its .c3d; the run refuses a .cem holding one, and so does check.
         if (setup.IsThermal) { f.Add(CliDiagnostics.CheckEmRefused(path, C3dThermal.CemRefusal)); return; }
         // brief-em3d-120 C5 — a cylindrical grid is a 3D view's own setup's; the run refuses a .cem stating one, and so does check.
-        if (setup.Is3D && setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both && CemOpenEms.CemCylindricalRefusal(setup.OpenEms) is { } cylinder)
+        if (setup.Is3D && CircuitRF.Design.Em3d.Em3dSolvers.Of(setup.Solver3D).Select(s => s.CemRefusal(setup)).FirstOrDefault(r => r is not null) is { } cylinder)
         { f.Add(CliDiagnostics.CheckEmRefused(path, cylinder)); return; }
 
         string full = Path.GetFullPath(path);
@@ -1027,9 +1027,9 @@ internal static class Check
 
         // brief-em3d-22 R-em3d22-1b/c — a static problem on Palace only, and what it keeps but does not read.
         // brief-em3d-23 — likewise an eigenmode solve: the run's own sentence (brief-em3d-116 lifted the wave port).
-        if (CircuitRF.Design.Em3d.Em3dRunService.PalaceOnlyRefusal(setup) is { } palaceOnly)
+        if (CircuitRF.Design.Em3d.Em3dRunService.SolverRefusal(setup) is { } solverOnly)
         {
-            f.Add(CliDiagnostics.CheckEmRefused(path, palaceOnly));
+            f.Add(CliDiagnostics.CheckEmRefused(path, solverOnly));
             return;
         }
         if (setup.IsStatic3D && setup.DrivenOnlyFieldsSet() is { Count: > 0 } drivenOnly)
@@ -1065,29 +1065,16 @@ internal static class Check
         if (problems.Count == 0 && problem.IsStatic &&
             CircuitRF.Design.Em3d.PalaceConfigWriter.StaticRefusal(problem) is { } floating)
             problems.Add(floating);
-        // brief-em3d-31 — the radiation pattern's surface, placed exactly as the run places it: openEMS refuses a
-        // box too tight for it (so check does), Palace goes on without a pattern and says why.
-        if (problems.Count == 0 && setup.RadiationPattern && problem.Type == CircuitRF.Engine.Em3d.Em3dProblemType.Driven)
+        // brief-em3d-31 / brief-em3d-116 — what each chosen solver's own lowering would say of the built problem
+        // (Em3dSolverDescriptor.Check): openEMS refuses a radiation pattern's surface in a box too tight for it and a wave
+        // port it cannot build, Palace goes on without a pattern and says why.
+        foreach (var solver in CircuitRF.Design.Em3d.Em3dSolvers.Of(setup.Solver3D))
         {
-            if (setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both)
-            {
-                var gridSettings = CemOpenEms.ResolveGrid(setup.OpenEms, path);
-                if (gridSettings.Problems().Count == 0)
-                {
-                    var grid = CircuitRF.Engine.Em3d.FdtdGrid.Build(problem, gridSettings);
-                    if (CircuitRF.Design.Em3d.OpenEmsFarField.Place(problem, grid, [problem.Frequency.StartHz], gridSettings.PmlCells).Refusal is { } tight)
-                        problems.Add(tight);
-                }
-            }
-            if (setup.Solver3D is Em3dSolver.Palace or Em3dSolver.Both &&
-                CircuitRF.Design.Em3d.PalaceConfigWriter.FarFieldRefusal(problem) is { } noPalacePattern)
-                f.Add(CliDiagnostics.CheckEmNote(path, noPalacePattern));
+            if (problems.Count > 0) break;
+            var said = solver.Check(problem, setup, path);
+            foreach (string note in said.Notes) f.Add(CliDiagnostics.CheckEmNote(path, note));
+            problems.AddRange(said.Refusals);
         }
-        // brief-em3d-116 — a wave port openEMS cannot build (a hollow waveguide, a current loop with no room): the lowering's
-        // own sentence, from the run's own planner.
-        if (problems.Count == 0 && setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both &&
-            CircuitRF.Design.Em3d.Em3dRunService.OpenEmsWavePortRefusal(problem, CemOpenEms.ResolveGrid(setup.OpenEms, path)) is { } noWave)
-            problems.Add(noWave);
         foreach (string p in problems) f.Add(CliDiagnostics.CheckEmRefused(path, p));
         if (problems.Count == 0)
             f.Add(CliDiagnostics.CheckEmWouldRun(path,

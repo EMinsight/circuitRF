@@ -238,7 +238,7 @@ public sealed class ThermalEditorTests : IDisposable
         string path = Path.Combine(dir, "cell.c3d");
         var setup = new EmSetup
         {
-            Name = "Hot", Solver3D = Em3dSolver.None, Problem3D = Em3dProblemType.Thermal,
+            Name = "Hot", Solver3D = Em3dSolverChoice.None, Problem3D = Em3dProblemType.Thermal,
             Thermal = new CemThermal { Boundaries = [new CemThermalBoundary { Face = "block/zmin", Kind = ThermalBoundaryKind.FixedT, TempC = "25" }] },
         };
         C3dPersistence.SaveToFile(path, new C3dDocument

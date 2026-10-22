@@ -107,7 +107,7 @@ public static class FieldPlotResolver
     /// </summary>
     public static FieldPlotRequest Request(C3dFieldPlot p, string setupName, EmSetup? run, string? setupProblem, EmSetup? shape)
     {
-        string? solver = shape is { Solver3D: Em3dSolver.Both } ? (p.Solver == Em3dSolver.OpenEms ? "openEMS" : "Palace") : null;
+        string? solver = shape is { Solver3D.IsCompare: true } ? Em3dSolvers.Get(p.Solver ?? shape.Solver3D.Reference).DisplayName : null;
         return new FieldPlotRequest
         {
             Name = p.Name, SetupName = setupName, RunSetup = run, SetupProblem = setupProblem, Solver = solver,
@@ -254,8 +254,10 @@ public static class FieldPlotResolver
     {
         if (setup is null || root is null) return (null, null);
         if (setup.IsThermal) return (ThermalRunService.RunDirectory(root, setup), null);
-        return (setup.Solver3D is Em3dSolver.Palace or Em3dSolver.Both ? Em3dRunService.RunDirectory(root, setup, Em3dSolver.Palace) : null,
-                setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both ? Em3dRunService.RunDirectory(root, setup, Em3dSolver.OpenEms) : null);
+        // brief-emi-1 — the first chosen FEM solver's directory holds the .vtu field set, the FDTD solver's the .vtr one.
+        string? Dir(Em3dSolverFit method)
+            => Em3dSolvers.Of(setup.Solver3D).FirstOrDefault(d => d.Method == method) is { } d ? Em3dRunService.RunDirectory(root, setup, d.Id) : null;
+        return (Dir(Em3dSolverFit.Fem), Dir(Em3dSolverFit.Fdtd));
     }
 
     /// <summary>What <paramref name="setup"/>'s runs saved, each step labelled as the picker shows it. File reads: call it off the

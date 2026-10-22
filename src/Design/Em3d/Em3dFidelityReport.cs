@@ -19,23 +19,8 @@ public static class Em3dFidelityReport
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(setup);
         if (!problem.Solids.Any(s => s.Primitive is Em3dShapeSolid)) return [];
-        var rows = new List<Em3dFidelityFinding>();
-        if (setup.Solver3D is Em3dSolver.Palace or Em3dSolver.Both)
-        {
-            var settings = PalaceSettings.Resolve(setup.Palace);
-            double? smallest = settings.Problems().Count == 0 ? GmshGeoWriter.SmallestRequestedSizeM(problem, settings) : null;
-            rows.AddRange(Em3dFidelity.For(problem, Em3dFidelitySolver.Palace, null, smallest));
-        }
-        if (setup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both && !problem.IsStatic && problem.Type != Em3dProblemType.Eigenmode)
-        {
-            var grid = CemOpenEms.ResolveGrid(setup.OpenEms);
-            if (grid.Problems().Count == 0)
-            {
-                try { rows.AddRange(Em3dFidelity.For(problem, Em3dFidelitySolver.OpenEms, FdtdGrid.Build(problem, grid, long.MaxValue))); }
-                catch (InvalidOperationException) { /* the run reports a grid it cannot build; nothing to measure against */ }
-            }
-        }
-        return rows;
+        // brief-emi-1 — each chosen solver's own rows, from its descriptor, in the order the run runs them.
+        return [.. Em3dSolvers.Of(setup.Solver3D).SelectMany(d => d.Fidelity(problem, setup))];
     }
 
     /// <summary>The solver's name as a row is headed with.</summary>

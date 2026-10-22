@@ -598,13 +598,13 @@ public sealed class FieldTests(ITestOutputHelper output)
         {
             const double h = 500e-6, len = 10e-3, groundTop = 35e-6;
             var (setup, source) = PalaceBackendTests.Stripline(800e-6, 1000e-6, len, 2.2);
-            setup.Solver3D = Em3dSolver.OpenEms;
+            setup.Solver3D = Em3dSolverId.OpenEms;
             setup.Palace = null;
             string results = Path.Combine(root, "results");
             var result = EmRunService.Run(setup, source, results);
             Assert.True(result.Status == EmRunStatus.Ok, result.Error);
 
-            string runDir = Em3dRunService.RunDirectory(results, setup, Em3dSolver.OpenEms);
+            string runDir = Em3dRunService.RunDirectory(results, setup, Em3dSolverId.OpenEms);
             var run = FieldRun.OpenOpenEms(runDir)!;
             Assert.Equal("openEMS", run.Solver);
             Assert.Equal([1, 2], run.Solutions.Select(x => x.Excitation));             // one per excited port

@@ -114,7 +114,7 @@ public sealed class ExplainSetupCliTests(ITestOutputHelper output) : IDisposable
         var freq = new CircuitRF.Core.Design.FrequencySpec("5", "15", 3, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz");
         EmSetup Modes(string name, EmAirBoxFace face) => new()
         {
-            Name = name, Solver3D = Em3dSolver.Palace, Problem3D = Em3dProblemType.Eigenmode,
+            Name = name, Solver3D = Em3dSolverId.Palace, Problem3D = Em3dProblemType.Eigenmode,
             AirBox = new EmAirBox(face, face, face, face, face, face), Eigenmode = new EmEigenmode3D(1, 5), Frequency = freq,
         };
         C3dPersistence.SaveToFile(path, new C3dDocument

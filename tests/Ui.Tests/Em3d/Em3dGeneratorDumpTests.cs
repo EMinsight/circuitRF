@@ -60,7 +60,7 @@ public sealed class Em3dGeneratorDumpTests
             yield return ("cem " + rel, () =>
             {
                 var setup = EmSetupPersistence.LoadFromFile(cem);
-                if (!setup.Is3D) setup.Solver3D = Em3dSolver.Palace;
+                if (!setup.Is3D) setup.Solver3D = Em3dSolverId.Palace;
                 var resolution = EmSetupResolver.Resolve(cem, setup.LayoutRef,
                                                          WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(cem)),
                                                          new TechnologyCache());

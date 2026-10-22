@@ -156,7 +156,7 @@ public sealed class OpenEmsThirdsAccuracyTests(ITestOutputHelper output) : IDisp
         {
             Name = name, LayoutRef = name + ".clay",
             Frequency = new FrequencySpec(band.Start, band.Stop, band.Points, SweepKind.Linear, "GHz", "GHz"),
-            Solver3D = Em3dSolver.OpenEms,
+            Solver3D = Em3dSolverId.OpenEms,
             AirBox = box,
             // The default MinCell, a tenth of the strip, would merge the thin layers back into one cell.
             OpenEms = new CemOpenEms { MinCellUm = 10 },

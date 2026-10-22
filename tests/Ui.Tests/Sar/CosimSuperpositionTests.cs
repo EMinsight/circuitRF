@@ -126,7 +126,7 @@ public sealed class PairSuperpositionRerunTests(ITestOutputHelper output) : IDis
     [Trait("Category", "Benchmark")]
     public async Task TheSimultaneousRun_ThroughOpenEms_IsTheRecombination()
     {
-        Assert.True(SolverDiscovery.ReadinessFor(Em3dSolver.OpenEms).All(r => r.Proceeds), "needs openEMS");
+        Assert.True(SolverDiscovery.ReadinessFor(Em3dSolverId.OpenEms).All(r => r.Proceeds), "needs openEMS");
         string ws = Path.Combine(_root, "pair");
         foreach (string f in new[] { ".cws", "tech.ctech", "Pair/.ccell", PairCosim.C3d })
         {

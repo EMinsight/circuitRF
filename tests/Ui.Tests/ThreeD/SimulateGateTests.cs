@@ -210,7 +210,7 @@ public sealed class SimulateGateTests(ITestOutputHelper output) : IDisposable
         var none = new EmAirBoxFace(0, null);
         var setup = new EmSetup
         {
-            Name = "modes", Solver3D = Em3dSolver.Palace, Problem3D = Em3dProblemType.Eigenmode,
+            Name = "modes", Solver3D = Em3dSolverId.Palace, Problem3D = Em3dProblemType.Eigenmode,
             AirBox = new EmAirBox(none, none, none, none, none, none),
             Eigenmode = new EmEigenmode3D(1, 5),
             Frequency = new CircuitRF.Core.Design.FrequencySpec("5", "15", 3, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz"),
@@ -288,7 +288,7 @@ public sealed class SimulateGateTests(ITestOutputHelper output) : IDisposable
         var pmc = new EmAirBoxFace(0, Em3dBoundaryKind.Pmc);
         var setup = new EmSetup
         {
-            Name = "plates", Solver3D = Em3dSolver.Palace, Problem3D = Em3dProblemType.Electrostatic,
+            Name = "plates", Solver3D = Em3dSolverId.Palace, Problem3D = Em3dProblemType.Electrostatic,
             AirBox = new EmAirBox(pmc, pmc, pmc, pmc, pmc, new EmAirBoxFace(180, Em3dBoundaryKind.Pmc)),
             Terminals3D = [new EmTerminal3D("top", "", null, ["top"])],
             Ground3D = "bottom",
@@ -336,7 +336,7 @@ public sealed class SimulateGateTests(ITestOutputHelper output) : IDisposable
     private static C3dSheet Sheet(string name, long u, long v, long du, long dv, long z)
         => new() { Name = name, Material = "Copper", Plane = C3dPlane.XY, Offset = z * Um, Rect = Rect(u, v, du, dv) };
 
-    private static EmSetup Setup() => new() { Name = "S1", Solver3D = Em3dSolver.Palace };
+    private static EmSetup Setup() => new() { Name = "S1", Solver3D = Em3dSolverId.Palace };
 
     /// <summary>The document's one port resolved against <paramref name="setup"/>'s box (or none), in a scratch workspace.</summary>
     private (C3dPortResult Result, C3dPortContext Context) Resolve(C3dDocument doc, string? path = null, EmSetup? setup = null)
@@ -404,7 +404,7 @@ public sealed class SimulateGateTests(ITestOutputHelper output) : IDisposable
         var mesh = PalaceRun.Mesh(dir, low, SolverDiscovery.Gmsh.Find(out _)!.Path, null, default);
         Assert.True(mesh.Ok, mesh.Message);
         output.WriteLine($"{name}: {mesh.Tetrahedra} tetrahedra");
-        string palace = SolverDiscovery.ReadinessFor(Em3dSolver.Palace).Single(r => r.Tool == SolverTool.Palace).Installation!.Path;
+        string palace = SolverDiscovery.ReadinessFor(Em3dSolverId.Palace).Single(r => r.Tool == SolverTool.Palace).Installation!.Path;
         var tracker = new PalaceStageTracker(0, settings.SweepAdaptiveTol, null, problem.Type == Em3dProblemType.Electrostatic);
         var solved = PalaceRun.Solve(dir, cfg.Json!, palace, 1, null, default, out _, tracker);
         Assert.True(solved.Ok, solved.Message);

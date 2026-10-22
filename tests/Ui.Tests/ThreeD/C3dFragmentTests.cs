@@ -348,7 +348,7 @@ public sealed class C3dFragmentTests : IDisposable
     // ── 8 ──────────────────────────────────────────────────────────────────────────────────────
 
     private static List<System.Text.Json.JsonElement> Thermal(string name, params CemThermalBoundary[] bs)
-        => [EmSetupPersistence.ToEmbedded(new EmSetup { Name = name, Solver3D = Em3dSolver.None, Problem3D = Em3dProblemType.Thermal,
+        => [EmSetupPersistence.ToEmbedded(new EmSetup { Name = name, Solver3D = Em3dSolverChoice.None, Problem3D = Em3dProblemType.Thermal,
                                                         Thermal = new CemThermal { Boundaries = bs.Length > 0 ? [.. bs] : null } })];
 
     private static CemThermalBoundary Fixed(string face, string t) => new() { Face = face, Kind = ThermalBoundaryKind.FixedT, TempC = t };

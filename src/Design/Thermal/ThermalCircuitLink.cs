@@ -168,9 +168,9 @@ public static class ThermalCircuitLink
         => [.. C3dSetups.Read(doc).Where(s => s.Setup is { IsThermal: false, Is3D: true }).SelectMany(s =>
            {
                var run = C3dSetups.ForRun(s.Setup!, c3dPath);
-               return run.Solver3D == Em3dSolver.Both
-                   ? new[] { Em3dSolver.Palace, Em3dSolver.OpenEms }.Select(v => (s.Name, Path.GetFullPath(Em3d.Em3dRunService.BothSnpBasePath(resultsRoot, run, v))))
-                   : [(s.Name, Path.GetFullPath(Em3d.Em3dRunService.SnpBasePath(resultsRoot, run, run.Solver3D)))];
+               return run.Solver3D.IsCompare
+                   ? run.Solver3D.Solvers.Select(v => (s.Name, Path.GetFullPath(Em3d.Em3dRunService.BothSnpBasePath(resultsRoot, run, v))))
+                   : [(s.Name, Path.GetFullPath(Em3d.Em3dRunService.SnpBasePath(resultsRoot, run, run.Solver3D.Reference)))];
            })];
 
     /// <summary>Whether Touchstone <paramref name="snpPath"/> is one of <paramref name="bases"/> with its <c>.sNp</c>.</summary>

@@ -52,7 +52,7 @@ public sealed class SimulateEditorGateTests : IDisposable
         var panel = Assert.IsType<EmSetupDocument>(vm.SetupEditor).ViewModel;
         Assert.True(panel.IsEmbedded);
         Assert.False(panel.ShowGeometryReference);
-        Assert.DoesNotContain(panel.Solver3DChoiceList, c => c.Value == Em3dSolver.None && !c.IsThermal);   // no planar kernel
+        Assert.DoesNotContain(panel.Solver3DChoiceList, c => c.Value == Em3dSolverChoice.None && !c.IsThermal);   // no planar kernel
 
         panel.Problem3DChoice = EmSetupEditorViewModel.Problem3DChoices.Single(c => c.Value == Em3dProblemType.Eigenmode);
         Settle(vm);
@@ -147,7 +147,7 @@ public sealed class SimulateEditorGateTests : IDisposable
         string results = Path.Combine(_root, "results");
         vm.ResultsRootProvider = () => results;
         var run = vm.ActiveRunSetup!;
-        C3dRunInputs.Take(vm.Document, vm.TopFilePath, []).KeepIn(Em3dRunService.RunDirectory(results, run, Em3dSolver.Palace));
+        C3dRunInputs.Take(vm.Document, vm.TopFilePath, []).KeepIn(Em3dRunService.RunDirectory(results, run, Em3dSolverId.Palace));
         vm.RunFinished();
         Assert.Null(vm.FieldsStaleText);
 
@@ -234,7 +234,7 @@ public sealed class SimulateEditorGateTests : IDisposable
 
     private static C3dDrawInput At(long x, long y, long z) => new(new C3dPoint3(x * Um, y * Um, z * Um), true, true, null, null);
 
-    private static EmSetup Setup(string name) => new() { Name = name, Solver3D = Em3dSolver.Palace };
+    private static EmSetup Setup(string name) => new() { Name = name, Solver3D = Em3dSolverId.Palace };
 
     private static C3dDocument Microstrip(params EmSetup[] setups)
     {

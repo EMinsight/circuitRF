@@ -254,7 +254,7 @@ public sealed class Viewer3DFrameGateTests : IDisposable
     public void APlanarSetupWhosePortsRefuse_IsStillDrawn_AndSaysWhy()
     {
         var (setup, source) = Em3dGeneratorTests.Microstrip();
-        setup.Solver3D = Em3dSolver.None;
+        setup.Solver3D = Em3dSolverChoice.None;
         source.View.Shapes.RemoveAll(sh => sh is LabelShape { IsPort: true });
         Assert.False(Em3dGenerator.Generate(setup, source, source.Technology!).Ok);
 
@@ -280,7 +280,7 @@ public sealed class Viewer3DFrameGateTests : IDisposable
     public void APlanarSetupOverWiresAlone_DrawsTheWires_AndSaysItWouldNotRun()
     {
         var (setup, source) = Em3dGeneratorTests.Microstrip();
-        setup.Solver3D = Em3dSolver.None;
+        setup.Solver3D = Em3dSolverChoice.None;
         string clay = Path.Combine(_root, "amp", "layout", "amp.clay");
         Directory.CreateDirectory(Path.GetDirectoryName(clay)!);
         CircuitRF.WBond.WBondIo.WriteFile(Path.ChangeExtension(clay, ".wBond"), CircuitRF.WBond.WBondEmbedding.DefaultDesign());
@@ -315,7 +315,7 @@ public sealed class Viewer3DFrameGateTests : IDisposable
     public void APlanarSetup_IsShownInThreeD_WithOneNote()
     {
         var (setup, source) = Em3dGeneratorTests.CaseB(plated: true);
-        setup.Solver3D = Em3dSolver.None;
+        setup.Solver3D = Em3dSolverChoice.None;
         using var ready = new ManualResetEventSlim(false);
         using var vm = new Viewer3DViewModel(Path.Combine(_root, "via.cem"),
             () => new Viewer3DInputs(setup.Clone(), source, null, ColorTheme.BuiltIn, ColorVariant.Light),

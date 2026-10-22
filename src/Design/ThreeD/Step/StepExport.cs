@@ -357,7 +357,7 @@ public static class StepExport
         Em3dAirBox? box = null;
         if (options.IncludeAirBox)
         {
-            var setup = C3dSetups.Read(doc).FirstOrDefault(s => s.Setup is not null)?.Setup ?? new EmSetup { Solver3D = Em3dSolver.Palace };
+            var setup = C3dSetups.Read(doc).FirstOrDefault(s => s.Setup is not null)?.Setup ?? new EmSetup { Solver3D = Em3d.Em3dSolvers.Default };
             box = C3dProblemAssembly.AirBox(setup, e, out string? why);
             if (box is null) notes.Add("The air box was asked for, but none could be sized" + (why is { } w ? $": {w}" : ".") + " It is not in the file.");
         }
@@ -405,7 +405,7 @@ public static class StepExport
         if (options.IncludeAirBox)
         {
             var b = Extent(solids.Solids, solids.Sheets);
-            box = Em3dGenerator.PaddedAirBox(new EmSetup { Solver3D = Em3dSolver.Palace }, (b.X0, b.Y0, b.X1, b.Y1, b.Z0, b.Z1), 1e9,
+            box = Em3dGenerator.PaddedAirBox(new EmSetup { Solver3D = Em3d.Em3dSolvers.Default }, (b.X0, b.Y0, b.X1, b.Y1, b.Z0, b.Z1), 1e9,
                                              floorZ: null, waves: [], [], out string? why);
             if (box is null) notes.Add("The air box was asked for, but none could be sized" + (why is { } w ? $": {w}" : ".") + " It is not in the file.");
         }

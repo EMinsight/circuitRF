@@ -21541,3 +21541,82 @@ Add/Sub/Mul/Div"); `real(V*conj(V))` is the spelling that works.
 
 **The committed `.va` names the writer's version on its first line**, so a byte comparison with the writer fails at every
 release until someone re-exports. `ModelComposerExampleShippedTests` compares everything but that version.
+
+## EMI-1: the 3D solver seam — one descriptor per solver, one list of them (2026-10-21)
+
+`Em3dSolver { None, Palace, OpenEms, Both }` is gone. A setup's `Solver3D` is an **`Em3dSolverChoice`**
+(`Layout/Em/Em3dSolverChoice.cs`): `None`, one **`Em3dSolverId`**, or `Compare(solvers, reference)` — the format's `Both`
+is `Compare([Palace, OpenEms], Palace)` (`Em3dSolvers.Both`). Immutable with value equality; an id converts to the
+one-solver choice implicitly. Questions about a setup's solver are asked of the choice (`Runs(id)`, `Solvers`,
+`IsCompare`, `Reference`) or of a descriptor; `Em3dSolvers.Any/FirstWith/With` ask a capability across a choice or across
+every solver. `SolverSeamTests` scans `src/` (comment-stripped) for a solver id outside `Em3d/Solvers/` and
+`EmSetupPersistence.cs`.
+
+**The descriptor** (`Em3d/Solvers/Em3dSolverDescriptor.cs`), and where each member came from:
+
+| Member | Was |
+|---|---|
+| `Id`, `DisplayName`, `Spelling`, `ResultToken` | `Em3dRunService.SolverToken`/`Name`, the enum's names, `"Palace"`/`"openEMS"` literals in UI, CLI and explain |
+| `Method` (`Em3dSolverFit`), `MethodName`, `PickerLabel` | `C3dSolveStatus.SolverKind` mapping, the picker's `"FEM 3D (Palace)"` rows, explain's `"FEM (Palace)"` |
+| `Capabilities` — `Problems`, `RadiationPattern`, `Sar`, `Gpu`, `GmshMesh`, `MeshRegions` | the static/eigenmode checks, the SAR checks (run, `WorkspaceViewModel`, `PhoneSar`, band sweeps), `--device gpu`, the 3D view's mesh/grid toggles, `C3dRunScope`'s mesh regions |
+| `Tools` | `SolverDiscovery.ToolsFor`'s switch (it now unions the chosen descriptors' lists) |
+| `Refusal(setup)` | `StaticSolverRefusal` / `PalaceOnlyRefusal` (now `Em3dRunService.SolverRefusal`) — openEMS's sentence, worded as before; "only Palace" is the registry's list of solvers with that problem type |
+| `CemRefusal(setup)` | the openEMS cylindrical-grid refusal of a `.cem`, in `EmRunService` and `check` |
+| `PortRefusal(facts)` → `Em3dLegRefusal(Alone, InCompare)` | `TerminalPortRefusal` + `TerminalPortsSkipPalace` |
+| `Check(problem, setup, path)` | `check`'s far-field and wave-port block |
+| `Fidelity(problem, setup)` | `Em3dFidelityReport`'s two branches |
+| `SweepText`, `SetupDescription`, `SavedFieldsGHz`/`SetSavedFieldsGHz` | `WorkspaceViewModel.ThreeDSweepText`, the panel's description switch, the field-plot editor's Palace/openEMS branch |
+| `MemoryVerdict` (optional) | `PalaceMemoryVerdict(setup, source)` |
+| `NewLeg()` → `Em3dRunService.SolverLeg` | `PreparePalace`/`ExecutePalace`, `PrepareOpenEms`/`ExecuteOpenEms` and the per-solver halves of `Run` |
+| comparison facts (EMI-6) | carried by the leg's `Leg.Facts`, which openEMS's execute sets; not a descriptor member yet |
+
+**The run is solver-neutral.** `Em3dRunService.Run` builds one `SolverLeg` per chosen solver and calls
+`Configure` (settings, notes, its holds), `AdmitSar` (SAR-capable solvers), `Prepare` (lowering, no process) and
+`Execute`. Each solver's leg and every method only its run uses moved, unchanged, into
+`Solvers/<Name>/Em3dRunService.<Name>.cs` as a partial of `Em3dRunService`. The notes come out in the old order with one
+move: "No radiation pattern" is added after every leg's lowering rather than between Palace's and openEMS's. That is the
+same order, because it is only non-null for a static or eigenmode problem, which openEMS refuses before discovery. The
+comparison is still exactly two legs (`RunCompare` refuses more). Its notes, stage names and failure sentences are
+built from the legs' names and are identical for `[Palace, OpenEms]`. The words "Both" and "both solvers" stay as they
+were until EMI-6 rewrites them.
+
+**Format (R-emi1-3).** `CemFile.Solver3D` is read and written by `Em3dSolverChoiceConverter`: any case in, the canonical
+spelling out, so a file is byte-identical through a load and save. A spelling no solver answers to is refused naming the
+ones that do (`Em3dSolvers.UnknownSpelling`). `C3dFieldPlot.Solver` is an `Em3dSolverId?`; its member names are the
+spellings the enum wrote. **`circuitrf reference em-setup` would have expanded the new class's properties**
+(`Solvers`, `Reference`, `IsNone`…), which no file holds. `IJsonSpelled` (`src/Design/IJsonSpelled.cs`) lets
+`DocumentSchema` list a run-time set of spellings as it lists an enum: `Em3dSolverChoice (one of) None Palace OpenEms Both`.
+
+**Mapped by method, to revisit when a second FEM solver arrives.** `C3dSolveStatus.RunDirectories` maps a descriptor to
+`SolverKind.Fem/Fdtd`, and `FieldPlotResolver.RunDirectories` takes the first FEM solver's directory as the `.vtu` one.
+With Palace and EMerge both chosen, the second FEM leg would share a kind and lose its fields. EMI-6/EMI-7 own that.
+
+**Deliberately still named, through the descriptor class rather than the id:** the Palace and openEMS settings sections in
+the panel (`IsPalaceSetup`/`IsOpenEmsSetup`), `explain`'s `OpenEmsWavePorts`/`PalaceTerminalPorts`, and `check`'s
+cylindrical-grid advice. These read a solver's own settings or output, so they belong to that solver. Removing its
+integration turns each into a compile error at the exact line.
+
+`Em3dSolverGuidance` (src/Engine) is unchanged (R-emi1-2d). Only `explain` builds the "FEM (Palace)" label, and it now
+builds it from the registry.
+
+### Adding a 3D solver
+
+1. **The folder** `src/Design/Em3d/Solvers/<Name>/`: `<Name>Solver.cs` (a static class with `const Em3dSolverId Id` and
+   `Descriptor`), and `Em3dRunService.<Name>.cs` (its `SolverLeg` and everything only its run does). Add the id to
+   `Em3dSolverId`.
+2. **The registry line**: append the descriptor to `Em3dSolvers.All`. The order is the order a comparison runs and every
+   list shows. Nothing else lists solvers: the picker, `em --solver`, the MCP option text, `solver list` and the
+   readiness check all read the registry.
+3. **The recipe**: the programs it needs are `SolverTool`s. A new one needs a `SolverTool` member, its `SolverDiscovery`
+   instance (and `For`'s arm), `SolverHomes.ToolId`/`FromId`, and its install recipes
+   `Em3d/Install/recipes/<tool>-<version>-<platform>.json`. Those are the TOOL lists, which EMI-2 extends.
+4. **The docs page section**: a `###` under "Solver — planar or 3D" (`docs/user/src/reference/em-setup.md#solver-3d`), and
+   its row under Settings ▸ Solvers (`docs/user/src/reference/settings.md#em3d`).
+
+### Removing an integration
+
+Delete its folder and its recipes, its `Em3dSolverId` member and its registry line. The compiler then names every line
+that read that solver's own settings or output (see above). A `.cem`/`.c3d` naming it reads as an unknown `Solver3D` and
+is refused with the list of known ones. Palace's and openEMS's writers and readers (`GmshGeoWriter`,
+`PalaceConfigWriter`, `CsxcadWriter`, `OpenEmsRun`, …) predate the folders and stay in `src/Design/Em3d/`, so removing
+one of those two also means deleting those files. A solver added under this seam keeps all of its code in its folder.

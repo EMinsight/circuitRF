@@ -404,7 +404,7 @@ public sealed class KernelBothFactAttribute : FactAttribute
     public KernelBothFactAttribute()
     {
         if (KernelForTests.SkipReason is { } k) Skip = k;
-        else if (SolverDiscovery.ReadinessFor(Em3dSolver.Both).FirstOrDefault(r => !r.Proceeds) is { } r)
+        else if (SolverDiscovery.ReadinessFor(CircuitRF.Design.Em3d.Em3dSolvers.Both).FirstOrDefault(r => !r.Proceeds) is { } r)
             Skip = $"needs Palace, Gmsh and openEMS: {r.Refusal}";
     }
 }
@@ -415,7 +415,7 @@ public sealed class KernelOpenEmsFactAttribute : FactAttribute
     public KernelOpenEmsFactAttribute()
     {
         if (KernelForTests.SkipReason is { } k) Skip = k;
-        else if (SolverDiscovery.ReadinessFor(Em3dSolver.OpenEms).FirstOrDefault(r => !r.Proceeds) is { } r)
+        else if (SolverDiscovery.ReadinessFor(Em3dSolverId.OpenEms).FirstOrDefault(r => !r.Proceeds) is { } r)
             Skip = $"needs an openEMS: {r.Refusal}";
     }
 }

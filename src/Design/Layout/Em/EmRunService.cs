@@ -612,7 +612,7 @@ public static class EmRunService
     /// <summary>brief-em3d-120 C5 — a .cem's openEMS setup asking for a cylindrical grid, refused before anything is looked for.</summary>
     private static EmRunResult? CemCylindricalRefusal(EmSetup setup)
     {
-        if (setup.Solver3D is not (Em3dSolver.OpenEms or Em3dSolver.Both) || CemOpenEms.CemCylindricalRefusal(setup.OpenEms) is not { } why)
+        if (CircuitRF.Design.Em3d.Em3dSolvers.Of(setup.Solver3D).Select(s => s.CemRefusal(setup)).FirstOrDefault(r => r is not null) is not { } why)
             return null;
         var d = EmDiagnostics.Forwarded("openems-cylindrical-cem", why);
         return new EmRunResult(EmRunStatus.Refused, null, null, null, null, null, d.Render(), [], Diagnostic: d);

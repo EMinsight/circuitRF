@@ -283,7 +283,7 @@ public sealed class FieldFaceTests(ITestOutputHelper output) : IDisposable
         var v = vm.Viewer;
         Assert.Contains("no EM fields", vm.PlotFieldRefusal());
         var run = vm.ActiveRunSetup!;
-        string dir = Em3dRunService.RunDirectory(Path.Combine(_root, "results"), run, Em3dSolver.Palace);
+        string dir = Em3dRunService.RunDirectory(Path.Combine(_root, "results"), run, Em3dSolverId.Palace);
         CopyDirectory(Cavity, dir);
         C3dRunInputs.Take(vm.Document, vm.TopFilePath, []).KeepIn(dir);   // what the run service keeps (brief-em3d-87)
         vm.RunFinished();
@@ -335,7 +335,7 @@ public sealed class FieldFaceTests(ITestOutputHelper output) : IDisposable
         var none = new EmAirBoxFace(0, null);
         var setup = new EmSetup
         {
-            Name = "modes", Solver3D = Em3dSolver.Palace, Problem3D = Em3dProblemType.Eigenmode,
+            Name = "modes", Solver3D = Em3dSolverId.Palace, Problem3D = Em3dProblemType.Eigenmode,
             AirBox = new EmAirBox(none, none, none, none, none, none), Eigenmode = new EmEigenmode3D(1, 5),
             Frequency = new CircuitRF.Core.Design.FrequencySpec("5", "15", 3, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz"),
         };

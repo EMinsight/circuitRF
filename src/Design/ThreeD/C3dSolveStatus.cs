@@ -103,10 +103,9 @@ public static class C3dSolveStatus
     {
         if (runSetup is null || resultsRoot is null) yield break;
         if (runSetup.IsThermal) { yield return (SolverKind.Thermal, Thermal.ThermalRunService.RunDirectory(resultsRoot, runSetup)); yield break; }
-        if (runSetup.Solver3D is Em3dSolver.Palace or Em3dSolver.Both)
-            yield return (SolverKind.Fem, Em3d.Em3dRunService.RunDirectory(resultsRoot, runSetup, Em3dSolver.Palace));
-        if (runSetup.Solver3D is Em3dSolver.OpenEms or Em3dSolver.Both)
-            yield return (SolverKind.Fdtd, Em3d.Em3dRunService.RunDirectory(resultsRoot, runSetup, Em3dSolver.OpenEms));
+        foreach (var solver in Em3d.Em3dSolvers.Of(runSetup.Solver3D))
+            yield return (solver.Method == Em3dSolverFit.Fem ? SolverKind.Fem : SolverKind.Fdtd,
+                          Em3d.Em3dRunService.RunDirectory(resultsRoot, runSetup, solver.Id));
     }
 
     private static SetupSolveStatus OfLeg(string setup, SolverKind kind, string dir, C3dDocument document, string documentPath)

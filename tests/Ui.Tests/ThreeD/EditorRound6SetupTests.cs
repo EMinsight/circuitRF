@@ -14,7 +14,7 @@ public class EditorRound6SetupTests
     [Fact]
     public void ThreeDSetup_HidesTheMeshButton_AndA_C3dSetupHidesTheStackup()
     {
-        var embedded = new EmSetupEditorViewModel("model.c3d", new EmSetup { Name = "S1", Solver3D = Em3dSolver.Palace }, embedded: true);
+        var embedded = new EmSetupEditorViewModel("model.c3d", new EmSetup { Name = "S1", Solver3D = Em3dSolverId.Palace }, embedded: true);
         Assert.False(embedded.ShowMeshButton);
         Assert.False(embedded.ShowStackup);
 
@@ -24,7 +24,7 @@ public class EditorRound6SetupTests
         Assert.True(cem.ShowStackup);
         var raised = new List<string?>();
         cem.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
-        cem.Solver3DChoice = EmSetupEditorViewModel.Solver3DChoices.First(c => c.Value == Em3dSolver.Palace);
+        cem.Solver3DChoice = EmSetupEditorViewModel.Solver3DChoices.First(c => c.Value == Em3dSolverId.Palace);
         Assert.False(cem.ShowMeshButton);
         Assert.Contains(nameof(EmSetupEditorViewModel.ShowMeshButton), raised);
         Assert.True(cem.ShowStackup);

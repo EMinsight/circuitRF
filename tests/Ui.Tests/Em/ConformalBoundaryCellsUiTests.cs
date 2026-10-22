@@ -223,7 +223,7 @@ public class ConformalBoundaryCellsUiTests
         Assert.True(vm.ShowPlanarControls);
         Assert.True(vm.ShowCircuitRfSolverControls);
 
-        vm.Solver3DChoice = EmSetupEditorViewModel.Solver3DChoices.Single(c => c.Value == Em3dSolver.Palace);
+        vm.Solver3DChoice = EmSetupEditorViewModel.Solver3DChoices.Single(c => c.Value == Em3dSolverId.Palace);
 
         Assert.Equal("FEM 3D (Palace)", vm.Solver3DChoice.Label);
         Assert.False(vm.ShowPlanarControls);

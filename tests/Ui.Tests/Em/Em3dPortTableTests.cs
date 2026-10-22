@@ -51,7 +51,7 @@ public class Em3dPortTableTests
         var setup = new EmSetup
         {
             LayoutRef = clay, AnalysisKind = EmAnalysisKind.Auto,
-            Solver3D = Em3dSolver.Palace, Ports3D = [.. ports3D],
+            Solver3D = Em3dSolverId.Palace, Ports3D = [.. ports3D],
         };
         var vm = new EmSetupEditorViewModel(clay + ".cem", setup)
         {

@@ -408,7 +408,7 @@ public sealed class FieldDriveTests(ITestOutputHelper output) : IDisposable
         var none = new EmAirBoxFace(0, null);
         return new EmSetup
         {
-            Name = "drive", Solver3D = Em3dSolver.Palace, Problem3D = Em3dProblemType.Driven,
+            Name = "drive", Solver3D = Em3dSolverId.Palace, Problem3D = Em3dProblemType.Driven,
             AirBox = new EmAirBox(none, none, none, none, none, none),
             Frequency = new CircuitRF.Core.Design.FrequencySpec("2", "18", 9, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz"),
         };
@@ -452,7 +452,7 @@ public sealed class FieldDriveTests(ITestOutputHelper output) : IDisposable
     private string DrivenRun(C3dEditorViewModel vm, double[] ghz, Action<string>? edit)
     {
         var run = vm.ActiveRunSetup!;
-        string dir = Em3dRunService.RunDirectory(Path.Combine(_root, "results"), run, Em3dSolver.Palace);
+        string dir = Em3dRunService.RunDirectory(Path.Combine(_root, "results"), run, Em3dSolverId.Palace);
         if (Directory.Exists(dir)) Directory.Delete(dir, true);
         foreach (string f in Directory.EnumerateFiles(Cavity, "*", SearchOption.AllDirectories))
         {

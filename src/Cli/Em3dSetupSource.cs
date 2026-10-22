@@ -73,7 +73,7 @@ internal sealed record Em3dSetupSource(
                 generated.Problem is null ? generated.Refusal ?? "the 3D problem could not be built." : null) { Elaboration = e };
         }
 
-        var drawing = new EmSetup { Name = System.IO.Path.GetFileNameWithoutExtension(full), Solver3D = Em3dSolver.Palace };
+        var drawing = new EmSetup { Name = System.IO.Path.GetFileNameWithoutExtension(full), Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default };
         return Drawing(full, drawing, embedded.Count, elaborator.Elaborate(doc, full, cws), thermal: false);
     }
 

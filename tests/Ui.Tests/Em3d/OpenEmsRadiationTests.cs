@@ -133,7 +133,7 @@ public sealed class OpenEmsRadiationTests(ITestOutputHelper output) : IDisposabl
         var (low, grid) = Lower(p, freqs);
         Assert.True(low.Ok, low.Refusal);
         foreach (string n in low.Notes) output.WriteLine(n);
-        string exe = SolverDiscovery.ReadinessFor(Em3dSolver.OpenEms).Single(r => r.Tool == SolverTool.OpenEms).Installation!.Path;
+        string exe = SolverDiscovery.ReadinessFor(Em3dSolverId.OpenEms).Single(r => r.Tool == SolverTool.OpenEms).Installation!.Path;
         var watch = System.Diagnostics.Stopwatch.StartNew();
         string dir = Path.Combine(_root, Guid.NewGuid().ToString("N")[..8]);
         OpenEmsRun.Stage(dir, low);

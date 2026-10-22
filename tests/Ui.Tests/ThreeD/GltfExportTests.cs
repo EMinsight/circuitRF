@@ -247,7 +247,7 @@ public sealed class GltfExportTests : IDisposable
         // a lumped port in the gap between 'plain' and 'hidden', touching both
         Ports = [new C3dPort { Number = 1, Kind = Em3dPortKind.Lumped, Plane = C3dPlane.XZ, Offset = 50 * Um,
                                Rect = new C3dRect { Min = new C3dPoint2(100 * Um, 0), Size = new C3dPoint2(100 * Um, 100 * Um) } }],
-        Setups = [EmSetupPersistence.ToEmbedded(new EmSetup { Name = "EM", Solver3D = Em3dSolver.Palace })],
+        Setups = [EmSetupPersistence.ToEmbedded(new EmSetup { Name = "EM", Solver3D = Em3dSolverId.Palace })],
     };
 
     private static C3dBox Hide(C3dBox b) { b.Hidden = true; return b; }

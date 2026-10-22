@@ -81,7 +81,7 @@ public sealed class PalaceRadiationTests(ITestOutputHelper output) : IDisposable
         var watch = System.Diagnostics.Stopwatch.StartNew();
         var mesh = PalaceRun.Mesh(_root, low, SolverDiscovery.Gmsh.Find(out _)!.Path, null, default);
         Assert.True(mesh.Ok, mesh.Message);
-        string palace = SolverDiscovery.ReadinessFor(Em3dSolver.Palace).Single(r => r.Tool == SolverTool.Palace).Installation!.Path;
+        string palace = SolverDiscovery.ReadinessFor(Em3dSolverId.Palace).Single(r => r.Tool == SolverTool.Palace).Installation!.Path;
         var solved = PalaceRun.Solve(_root, cfg.Json!, palace, Math.Min(8, Environment.ProcessorCount), null, default, out _,
                                      new PalaceStageTracker(0, Coarse.SweepAdaptiveTol, null));
         Assert.True(solved.Ok, solved.Message);

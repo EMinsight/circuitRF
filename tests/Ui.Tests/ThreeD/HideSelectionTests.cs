@@ -175,7 +175,7 @@ public sealed class HideSelectionTests : IDisposable
         {
             doc.Setups = [EmSetupPersistence.ToEmbedded(new EmSetup
             {
-                Name = "Hot", Solver3D = Em3dSolver.None, Problem3D = Em3dProblemType.Thermal,
+                Name = "Hot", Solver3D = Em3dSolverChoice.None, Problem3D = Em3dProblemType.Thermal,
                 Thermal = new CemThermal { Boundaries = [new CemThermalBoundary { Face = "c/zmax", Kind = ThermalBoundaryKind.FixedT, TempC = "40" }] },
             })];
             doc.Probes = [new C3dProbe { Name = "pr", Point = new C3dPoint3(10 * Um, 10 * Um, 20 * Um) }];

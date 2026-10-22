@@ -488,7 +488,7 @@ public sealed class BirdcageRerunTests(ITestOutputHelper output) : IDisposable
     [Trait("Category", "Benchmark")]
     public void TheRunAndTheRecombination_ThroughTheCli_StillMatch()
     {
-        Assert.True(SolverDiscovery.ReadinessFor(Em3dSolver.OpenEms).All(x => x.Proceeds), "needs openEMS");
+        Assert.True(SolverDiscovery.ReadinessFor(Em3dSolverId.OpenEms).All(x => x.Proceeds), "needs openEMS");
         string ws = Path.Combine(_root, "birdcage");
         foreach (string f in new[] { ".cws", "tech.ctech", "Birdcage/.ccell", BirdcageReplication.C3d, BirdcageReplication.Cosim })
         {

@@ -199,15 +199,15 @@ public partial class WorkspaceViewModel
             try { setup = EmSetupPersistence.LoadFromFile(cem); }
             catch (Exception) { continue; }
             if (!setup.Is3D) continue;
-            foreach (var solver in new[] { Em3dSolver.Palace, Em3dSolver.OpenEms })
+            foreach (var solver in Design.Em3d.Em3dSolvers.All)
             {
-                if (!string.Equals(Path.GetFullPath(Design.Em3d.Em3dRunService.RunDirectory(results, setup, solver)), full,
+                if (!string.Equals(Path.GetFullPath(Design.Em3d.Em3dRunService.RunDirectory(results, setup, solver.Id)), full,
                                    StringComparison.OrdinalIgnoreCase))
                     continue;
                 OpenOrActivate3DView(cem);
                 if (_openDocsByPath.TryGetValue(Viewer3DDocument.KeyFor(cem), out var d) && d is Viewer3DDocument v)
                 {
-                    v.ViewModel.ShowMeshWhenAvailable = solver == Em3dSolver.Palace;
+                    v.ViewModel.ShowMeshWhenAvailable = solver.Capabilities.GmshMesh;
                     v.ViewModel.RefreshSolverOverlays();   // a view already open adopts no new scene
                 }
                 return true;

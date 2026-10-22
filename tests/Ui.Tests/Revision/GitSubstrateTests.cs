@@ -389,8 +389,8 @@ public class GitSubstrateTests
         EmSetup Setup(Em3dProblemType problem) => new() { Name = "Launch Palace", Problem3D = problem };
         string[] runs =
         [
-            .. Enum.GetValues<Em3dProblemType>().Where(p => p != Em3dProblemType.Thermal).Select(p => Em3dRunService.RunDirectory(results, Setup(p), Em3dSolver.Palace)),
-            Em3dRunService.RunDirectory(results, Setup(Em3dProblemType.Driven), Em3dSolver.OpenEms),
+            .. Enum.GetValues<Em3dProblemType>().Where(p => p != Em3dProblemType.Thermal).Select(p => Em3dRunService.RunDirectory(results, Setup(p), Em3dSolverId.Palace)),
+            Em3dRunService.RunDirectory(results, Setup(Em3dProblemType.Driven), Em3dSolverId.OpenEms),
             ThermalRunService.RunDirectory(results, Setup(Em3dProblemType.Driven)),
         ];
         Assert.Equal(runs.Length, runs.Distinct().Count());

@@ -414,12 +414,12 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
                 Em3dProblemType.Electrostatic => "_es", Em3dProblemType.Magnetostatic => "_ms", Em3dProblemType.Eigenmode => "_eig", _ => "",
             };
             string group = kind.Length > 0 ? kind : "_em";
-            Assert.Equal(key + ".palace", Em3dRunService.ResultKey(setup, Em3dSolver.Palace));
-            Assert.Equal(key + ".palace" + group, Em3dRunService.NpyKey(setup, Em3dSolver.Palace));
-            Assert.Equal(Path.Combine(results, key + ".palace" + kind), Em3dRunService.RunDirectory(results, setup, Em3dSolver.Palace));
+            Assert.Equal(key + ".palace", Em3dRunService.ResultKey(setup, Em3dSolverId.Palace));
+            Assert.Equal(key + ".palace" + group, Em3dRunService.NpyKey(setup, Em3dSolverId.Palace));
+            Assert.Equal(Path.Combine(results, key + ".palace" + kind), Em3dRunService.RunDirectory(results, setup, Em3dSolverId.Palace));
             // brief-em3d-9 R-em3d9-5a: openEMS lands by the same rule, beside Palace, never over it.
-            Assert.Equal(key + ".openems", Em3dRunService.ResultKey(setup, Em3dSolver.OpenEms));
-            Assert.Equal(key + ".openems" + group, Em3dRunService.NpyKey(setup, Em3dSolver.OpenEms));
+            Assert.Equal(key + ".openems", Em3dRunService.ResultKey(setup, Em3dSolverId.OpenEms));
+            Assert.Equal(key + ".openems" + group, Em3dRunService.NpyKey(setup, Em3dSolverId.OpenEms));
         }
     }
 
@@ -630,7 +630,7 @@ public sealed class PalaceBackendTests(ITestOutputHelper output) : IDisposable
         {
             Name = "stripline", LayoutRef = "stripline.clay",
             Frequency = new FrequencySpec("1", "4", 7, SweepKind.Linear, "GHz", "GHz"),
-            Solver3D = Em3dSolver.Palace,
+            Solver3D = Em3dSolverId.Palace,
             AirBox = new EmAirBox(side, side, wall, wall, null, new EmAirBoxFace(0, Em3dBoundaryKind.Pec)),
             // 125 µm at the strip — four elements through each half of the stack — and no adaptive
             // passes, so the run is one fixed mesh and the closed form is judged on it.
@@ -746,7 +746,7 @@ public sealed class GmshFactAttribute : FactAttribute
 public sealed class PalaceFactAttribute : FactAttribute
 {
     private static readonly Lazy<string?> Reason = new(() =>
-        SolverDiscovery.ReadinessFor(Em3dSolver.Palace).FirstOrDefault(r => !r.Proceeds) is { } r
+        SolverDiscovery.ReadinessFor(Em3dSolverId.Palace).FirstOrDefault(r => !r.Proceeds) is { } r
             ? $"needs Palace and Gmsh (set CIRCUITRF_PALACE on a machine with F0's installs): {r.Refusal}" : null);
 
     public PalaceFactAttribute()

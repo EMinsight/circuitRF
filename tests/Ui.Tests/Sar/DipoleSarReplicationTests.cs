@@ -241,7 +241,7 @@ public sealed class DipoleSarRerunTests(ITestOutputHelper output) : IDisposable
     [Trait("Category", "Benchmark")]
     public void BothRuns_ThroughTheCli_StillMatch()
     {
-        Assert.True(SolverDiscovery.ReadinessFor(Em3dSolver.OpenEms).All(r => r.Proceeds), "needs openEMS");
+        Assert.True(SolverDiscovery.ReadinessFor(Em3dSolverId.OpenEms).All(r => r.Proceeds), "needs openEMS");
         string ws = Path.Combine(_root, "dipole");
         foreach (string f in new[] { ".cws", "tech.ctech", "Dipole/.ccell", DipoleReplication.C3d })
         {

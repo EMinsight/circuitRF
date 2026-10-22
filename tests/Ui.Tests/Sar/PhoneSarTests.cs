@@ -216,7 +216,7 @@ public sealed class BandSweepTests : IDisposable
         var (setups, _) = C3dBandSweeps.Make(doc, sweep);
         foreach (var (setup, perWatt1g) in setups.Zip(new[] { 2.0, 10.0, 4.0 }))
         {
-            string dir = Path.Combine(Em3dRunService.RunDirectory(results, C3dSetups.ForRun(setup, path), Em3dSolver.OpenEms), "p1");
+            string dir = Path.Combine(Em3dRunService.RunDirectory(results, C3dSetups.ForRun(setup, path), Em3dSolverId.OpenEms), "p1");
             Directory.CreateDirectory(dir);
             double pacc = 2e-26;
             SarVolumeFiles.WriteRecord(Path.Combine(dir, SarVolumeFiles.RecordFile(0)), new SarRunRecord

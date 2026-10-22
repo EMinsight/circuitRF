@@ -242,7 +242,7 @@ public sealed class RealisticRenderCliTests(ITestOutputHelper output) : IDisposa
         string c3d = Path.Combine(dir, "cell.c3d");
         var setup = new EmSetup
         {
-            Name = "Hot", Solver3D = Em3dSolver.None, Problem3D = Em3dProblemType.Thermal,
+            Name = "Hot", Solver3D = Em3dSolverChoice.None, Problem3D = Em3dProblemType.Thermal,
             Thermal = new CemThermal { Boundaries = [new CemThermalBoundary { Face = "block/zmin", Kind = ThermalBoundaryKind.FixedT, TempC = "25" }] },
         };
         var point = new C3dFieldSolution { Point = 1 };

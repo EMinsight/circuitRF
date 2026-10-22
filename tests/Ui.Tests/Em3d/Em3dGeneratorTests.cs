@@ -221,14 +221,14 @@ public sealed class Em3dGeneratorTests
         }
 
         var (setup, _) = Microstrip();
-        setup.Solver3D       = Em3dSolver.Palace;
+        setup.Solver3D       = Em3dSolverId.Palace;
         setup.OperatingTempC = 85;
         setup.AirBox         = new EmAirBox(ZMax: new EmAirBoxFace(2000, Em3dBoundaryKind.Pec));
         setup.Palace         = new CemPalace();
         string once = EmSetupPersistence.Serialize(setup);
         Assert.Equal(once, EmSetupPersistence.Serialize(EmSetupPersistence.Deserialize(once)));
         var back = EmSetupPersistence.Deserialize(once);
-        Assert.Equal(Em3dSolver.Palace, back.Solver3D);
+        Assert.Equal(Em3dSolverId.Palace, back.Solver3D);
         Assert.Equal(85, back.OperatingTempC);
         Assert.Equal(new EmAirBoxFace(2000, Em3dBoundaryKind.Pec), back.AirBox!.ZMax);
         Assert.NotNull(back.Palace);
@@ -395,7 +395,7 @@ public sealed class Em3dGeneratorTests
         {
             Name = "thru", LayoutRef = "thru/layout/thru.clay", GroundStackupLayerName = "Inner 1 (Ground Plane)",
             Frequency = new FrequencySpec("1", "10", 4, SweepKind.Linear, "GHz", "GHz"),
-            Solver3D = Em3dSolver.Palace,
+            Solver3D = Em3dSolverId.Palace,
         };
         var r = Em3dGenerator.Generate(setup, new EmLayoutSource("/nowhere/thru.clay", view, tech, view.DbuPerMicron), tech);
 
@@ -448,7 +448,7 @@ public sealed class Em3dGeneratorTests
         {
             Name = "thru", LayoutRef = "thru/layout/thru.clay",
             Frequency = new FrequencySpec("1", "10", 4, SweepKind.Linear, "GHz", "GHz"),
-            Solver3D = Em3dSolver.Palace,
+            Solver3D = Em3dSolverId.Palace,
         };
         return (setup, new EmLayoutSource("/nowhere/thru.clay", view, tech, view.DbuPerMicron));
     }
@@ -471,7 +471,7 @@ public sealed class Em3dGeneratorTests
         {
             Name = "via", LayoutRef = "via/layout/via.clay",
             Frequency = new FrequencySpec("0.1", "20", 200, SweepKind.Linear, "GHz", "GHz"),
-            Solver3D = Em3dSolver.Palace,
+            Solver3D = Em3dSolverId.Palace,
         };
         return (setup, new EmLayoutSource(clay, view, tech, view.DbuPerMicron));
     }

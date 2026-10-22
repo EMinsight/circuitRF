@@ -203,7 +203,7 @@ public sealed class Em3dConnectorExampleTests(ITestOutputHelper output) : IDispo
             var (setup, a) = Assemble(off, path, cws, name);
             var (_, b) = Assemble(gone, path, cws, name);
             Assert.True(a.Ok && b.Ok, a.Refusal ?? b.Refusal);
-            if (setup.Solver3D == Em3dSolver.Palace)
+            if (setup.Solver3D == Em3dSolverId.Palace)
             {
                 var settings = PalaceSettings.Resolve(setup.Palace);
                 var la = GmshGeoWriter.Write(a.Problem!, settings);

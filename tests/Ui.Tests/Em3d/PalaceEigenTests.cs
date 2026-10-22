@@ -62,7 +62,7 @@ public sealed class PalaceEigenTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(gmsh, PalaceRun.GmshInvocations);
 
         // An eigenmode setup asks for the eigensolver, and is refused the same way.
-        var eig = new EmSetup { Solver3D = Em3dSolver.Palace, Problem3D = Em3dProblemType.Eigenmode };
+        var eig = new EmSetup { Solver3D = Em3dSolverId.Palace, Problem3D = Em3dProblemType.Eigenmode };
         Assert.Contains(SolverCapability.Eigenmode, SolverDiscovery.CapabilitiesFor(SolverTool.Palace, eig));
         var e = d.Check(SolverDiscovery.CapabilitiesFor(SolverTool.Palace, eig));
         Assert.Equal(missing == "eigen", !e.Proceeds);
@@ -271,7 +271,7 @@ public sealed class PalaceEigenTests(ITestOutputHelper output) : IDisposable
     public void Gate8_WaveOffAFace_AndEigenmodeOnOpenEms_AreRefusedBeforeGmsh()
     {
         long gmsh = PalaceRun.GmshInvocations;
-        foreach (var solver in new[] { Em3dSolver.OpenEms, Em3dSolver.Both })
+        foreach (var solver in new[] { Em3dSolverId.OpenEms, CircuitRF.Design.Em3d.Em3dSolvers.Both })
         {
             var (_, src) = WaveMicrostrip(wave: true);
             var eig = new EmSetup { Solver3D = solver, Problem3D = Em3dProblemType.Eigenmode };
@@ -575,7 +575,7 @@ public sealed class PalaceEigenTests(ITestOutputHelper output) : IDisposable
         var mesh = PalaceRun.Mesh(dir, low, SolverDiscovery.Gmsh.Find(out _)!.Path, null, default);
         Assert.True(mesh.Ok, mesh.Message);
         output.WriteLine($"{name}: {mesh.Tetrahedra} tetrahedra");
-        string palace = SolverDiscovery.ReadinessFor(Em3dSolver.Palace).Single(r => r.Tool == SolverTool.Palace).Installation!.Path;
+        string palace = SolverDiscovery.ReadinessFor(Em3dSolverId.Palace).Single(r => r.Tool == SolverTool.Palace).Installation!.Path;
         var tracker = new PalaceStageTracker(0, settings.SweepAdaptiveTol, null);
         var solved = PalaceRun.Solve(dir, cfg.Json!, palace, 1, null, default, out _, tracker);
         Assert.True(solved.Ok, solved.Message);

@@ -178,7 +178,7 @@ public static class C3dBandSweeps
         if (read.FirstOrDefault(r => r.Name == sweep.Template) is not { } t)
             return ([], $"The band sweep '{sweep.Name}' names the template '{sweep.Template}', and this 3D view has no setup of that name.");
         if (t.Setup is not { } template) return ([], t.Refusal);
-        if (!template.Is3D || template.Problem3D != Em3dProblemType.Driven || template.Solver3D is not (Em3dSolver.OpenEms or Em3dSolver.Both))
+        if (!template.Is3D || template.Problem3D != Em3dProblemType.Driven || Em3dSolvers.FirstWith(template.Solver3D, c => c.Sar) is null)
             return ([], $"The template '{template.Name}' is not a driven openEMS setup; SAR is computed only on the raw dump an openEMS run writes.");
         double[] hz;
         try { hz = template.Frequency.Expand(); }
@@ -232,7 +232,8 @@ public static class C3dBandSweeps
         {
             double f = setup.Sar!.FrequenciesGHz![0] * 1e9;
             var run = C3dSetups.ForRun(setup, c3dPath);
-            string dir = Em3dRunService.RunDirectory(resultsRoot, run, Em3dSolver.OpenEms);
+            var sarSolver = Em3dSolvers.FirstWith(run.Solver3D, c => c.Sar)!.Id;
+            string dir = Em3dRunService.RunDirectory(resultsRoot, run, sarSolver);
             var records = SarVolumeFiles.ReadAll(dir);
             if (records.Count == 0)
             {
@@ -242,7 +243,7 @@ public static class C3dBandSweeps
             foreach (var (_, r) in records)
             {
                 double? accepted = sweep.DriveReferredTo == C3dDriveReferredTo.Incident
-                    ? Skk(Em3dRunService.SnpBasePath(resultsRoot, run, Em3dSolver.OpenEms), r.Port, r.FrequencyHz) is { } s
+                    ? Skk(Em3dRunService.SnpBasePath(resultsRoot, run, sarSolver), r.Port, r.FrequencyHz) is { } s
                         ? power * (1 - s * s) : null
                     : power;
                 if (accepted is null)

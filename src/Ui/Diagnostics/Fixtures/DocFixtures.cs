@@ -126,7 +126,7 @@ public static class DocFixtures
         EmPalaceDevicePreference.TestOverrideActive = true;
         EmPalaceDevicePreference.TestOverrideStore = CircuitRF.Design.Em3d.PalaceDevice.Gpu;
 
-        var vm = new EmSetupEditorViewModel("Via.cem", new EmSetup { Solver3D = Em3dSolver.Palace });
+        var vm = new EmSetupEditorViewModel("Via.cem", new EmSetup { Solver3D = CircuitRF.Design.Em3d.Em3dSolvers.Default });
         var view = new EmSetupEditorView { DataContext = new EmSetupDocument("EM Setup", vm, "Via.cem") };
         var crop = FigureCrop.Around(
             view, 560, 2400,

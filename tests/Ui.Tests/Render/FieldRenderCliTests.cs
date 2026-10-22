@@ -402,7 +402,7 @@ public sealed class FieldRenderCliTests(ITestOutputHelper output) : IDisposable
         var none = new EmAirBoxFace(0, null);
         return new EmSetup
         {
-            Name = "modes", Solver3D = Em3dSolver.Palace, Problem3D = Em3dProblemType.Eigenmode,
+            Name = "modes", Solver3D = Em3dSolverId.Palace, Problem3D = Em3dProblemType.Eigenmode,
             AirBox = new EmAirBox(none, none, none, none, none, none), Eigenmode = new EmEigenmode3D(1, 5),
             Frequency = new CircuitRF.Core.Design.FrequencySpec("5", "15", 3, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz"),
         };
@@ -413,7 +413,7 @@ public sealed class FieldRenderCliTests(ITestOutputHelper output) : IDisposable
         var none = new EmAirBoxFace(0, null);
         return new EmSetup
         {
-            Name = "drive", Solver3D = Em3dSolver.Palace, Problem3D = Em3dProblemType.Driven,
+            Name = "drive", Solver3D = Em3dSolverId.Palace, Problem3D = Em3dProblemType.Driven,
             AirBox = new EmAirBox(none, none, none, none, none, none),
             Frequency = new CircuitRF.Core.Design.FrequencySpec("2", "18", 9, CircuitRF.Core.Design.SweepKind.Linear, "GHz", "GHz"),
         };
@@ -445,7 +445,7 @@ public sealed class FieldRenderCliTests(ITestOutputHelper output) : IDisposable
     {
         var doc = C3dPersistence.LoadFromFile(c3d);
         var setup = C3dSetups.ForRun(C3dSetups.Read(doc).Single().Setup!, c3d);
-        return Em3dRunService.RunDirectory(Path.Combine(_root, "ws", "results"), setup, Em3dSolver.Palace);
+        return Em3dRunService.RunDirectory(Path.Combine(_root, "ws", "results"), setup, Em3dSolverId.Palace);
     }
 
     /// <summary>The cavity fixture as the setup's finished run, keeping the document it solved as the 3D editor's Simulate does.</summary>
