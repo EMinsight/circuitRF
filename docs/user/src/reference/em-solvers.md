@@ -3,22 +3,24 @@ title: EM Solvers: MoM, FEM and FDTD
 slug: reference/em-solvers.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > EM solvers
-lede: circuitRF can solve a structure three ways — its own planar method of moments (MoM), Palace's finite element method (FEM) and openEMS's finite-difference time-domain method (FDTD). What each one is, why there are three, and which to use for what.
-keywords: EM solver, electromagnetic solver, FEM, finite element, finite element method, FDTD, finite-difference time-domain, finite difference time domain, MoM, method of moments, planar, 2.5D, 3D, full-wave, full wave, Palace, openEMS, Gmsh, mesh, tetrahedra, Yee grid, time step, CFL, eigenmode, cavity resonance, curved geometry, fillet, staircase, staircasing, fidelity, curved elements, connector, electrostatic, magnetostatic, capacitance matrix, inductance matrix, which solver, compare solvers, speed, memory, open source
+lede: circuitRF can solve a structure three ways — its own planar method of moments (MoM), the finite element method (FEM) of Palace or EMerge, and openEMS's finite-difference time-domain method (FDTD). What each one is, why there are several, which to use for what, and how to get the most speed from EMerge.
+keywords: EM solver, electromagnetic solver, FEM, finite element, finite element method, FDTD, finite-difference time-domain, finite difference time domain, MoM, method of moments, planar, 2.5D, 3D, full-wave, full wave, Palace, openEMS, EMerge, Gmsh, mesh, tetrahedra, Yee grid, time step, CFL, eigenmode, cavity resonance, curved geometry, fillet, staircase, staircasing, fidelity, curved elements, connector, electrostatic, magnetostatic, capacitance matrix, inductance matrix, which solver, compare solvers, speed, memory, open source, sparse solver, GPU, cores, threads, adaptive sweep, command line tools
 ---
 
 circuitRF can solve an electromagnetic problem in three different ways, and each is a different
 method, not a faster or slower version of the same one:
 
 - **MoM**, the **method of moments**: circuitRF's own planar solver, built into the application.
-- **FEM**, the **finite element method**: **Palace**, a separate open-source program that circuitRF runs.
+- **FEM**, the **finite element method**: **Palace** or **EMerge**, two separate open-source programs
+  that circuitRF runs.
 - **FDTD**, the **finite-difference time-domain** method: **openEMS**, another separate open-source
   program that circuitRF runs.
 
 They are chosen in one place, the **Solver** group of an EM setup: *Planar* (MoM), **FEM 3D (Palace)**,
-**FDTD 3D (openEMS)**, or **FEM & FDTD - Compare**. The setup, the layout and the result are the same
-kind of document whichever solves it. This page explains the three methods, and which problems each
-one is good at and bad at. How to set each one up is in [EM Setup](em-setup.html#solver-3d),
+**FDTD 3D (openEMS)**, **FEM 3D (EMerge)**, or **Compare…**, which runs two or more of them on one model.
+The setup, the layout and the result are the same kind of document whichever solves it. This page
+explains the three methods, the three programs that solve in 3D, and which problems each one is good
+at and bad at. How to set each one up is in [EM Setup](em-setup.html#solver-3d),
 [The MoM engine](mom-engine.html) and [3D EM](em-3d.html).
 
 <nav class="toc">
@@ -29,9 +31,10 @@ one is good at and bad at. How to set each one up is in [EM Setup](em-setup.html
   <ul><li><a href="#mom">MoM: unknowns on the metal only</a></li>
       <li><a href="#fem">FEM: a tetrahedral mesh of the volume</a></li>
       <li><a href="#fdtd">FDTD: a grid, stepped through time</a></li></ul></li>
-<li><a href="#programs">Palace and openEMS: the two programs</a></li>
+<li><a href="#programs">Palace, openEMS and EMerge: the three programs</a></li>
 <li><a href="#compare">Side by side</a></li>
 <li><a href="#speed-memory">Is it speed? Is it memory?</a></li>
+<li><a href="#emerge-speed">Getting the most speed from EMerge</a></li>
 <li><a href="#choosing">Choosing, by problem</a></li>
 <li><a href="#curved">What each solver sees of curved geometry</a></li>
 <li><a href="#why-three">Why not just one?</a></li>
@@ -48,11 +51,18 @@ what it cannot represent.
 lids. Use it too when you need something only FEM gives you: a cavity's resonances (eigenmode), or a
 capacitance or inductance matrix (electrostatic and magnetostatic).
 
+**Use FEM (EMerge)** for the same kind of problem when you want an FEM answer quickly, or a second
+FEM answer beside Palace's. It installs in about two minutes with nothing to build, and on the shipped
+cavity its driven sweep takes seconds. It solves driven and eigenmode problems with lumped ports;
+wave ports need Palace or openEMS, and capacitance and inductance matrices need Palace.
+
 **Use FDTD (openEMS)** for Manhattan metal on a stackup over a wide band, and for radiators whose air
 box you want to keep small. It needs far less memory than FEM.
 
-**Use both** (*FEM & FDTD - Compare*) when an answer matters and you want a second opinion. The two
-methods share no numerics, so when they agree, each has probably converged.
+**Compare** (*Compare…*) when an answer matters and you want a second opinion. FEM and FDTD share no
+numerics, so when they agree, each has probably converged. Palace and EMerge share the method but no
+code, so their agreement checks the solving, and a third answer says which of two that disagree to
+doubt.
 
 ## Three ways to discretise Maxwell's equations {#methods}
 
@@ -109,7 +119,7 @@ what makes the method planar (often called 2.5D).
 
 The **finite element method** fills the whole solved region — dielectrics, air, the space inside a
 package — with **tetrahedra**, and solves for the field on each one. Metal is a boundary of that volume.
-circuitRF builds the 3D model, **Gmsh** meshes it, and **Palace** solves it.
+circuitRF builds the 3D model, **Gmsh** meshes it, and **Palace** or **EMerge** solves it.
 
 - **The mesh follows the geometry.** Tetrahedra fit a round wire, a slanted face or a curved via
   barrel. There is no staircase.
@@ -117,15 +127,17 @@ circuitRF builds the 3D model, **Gmsh** meshes it, and **Palace** solves it.
   than a MoM matrix: hundreds of thousands to a million or more unknowns is normal.
 - **Adaptive refinement.** After a solve, Palace estimates where the error is and subdivides only
   those elements, then solves again. Small elements end up where the answer needs them — around a
-  wire, along a strip's edge — without anyone placing them by hand.
+  wire, along a strip's edge — without anyone placing them by hand. EMerge can refine its mesh the same
+  way (its *Accurate* preset does); its other presets solve a finer starting mesh instead.
 - It works **in the frequency domain**. A driven run's adaptive sweep solves a few frequencies in full
   and builds the rest of the band from them.
 - **The same mesh answers other questions.** An **eigenmode** solve finds a structure's resonant
-  frequencies and Q directly. **Electrostatic** and **magnetostatic** solves give capacitance and
-  inductance matrices. Neither of the other two methods offers these in circuitRF.
+  frequencies and Q directly (Palace and EMerge). **Electrostatic** and **magnetostatic** solves give
+  capacitance and inductance matrices (Palace). Neither of the other two methods offers these in
+  circuitRF.
 - The volume must end somewhere, so the model sits in an **air box** whose faces are metal walls,
-  symmetry planes or absorbing boundaries. Palace's absorbing boundaries are first order, so an open
-  structure needs the box kept well away from it.
+  symmetry planes or absorbing boundaries. Palace's and EMerge's absorbing boundaries are first order,
+  so an open structure needs the box kept well away from it.
 
 ### FDTD: a grid, stepped through time {#fdtd}
 
@@ -156,30 +168,36 @@ runs the time stepping.
   behind the face and measures its voltage and current with probes around the reference plane.
   [Wave ports](em-setup.html#wave-ports).
 
-## Palace and openEMS: the two programs {#programs}
+## Palace, openEMS and EMerge: the three programs {#programs}
 
-circuitRF **ships neither 3D solver and contains no code from either.** It runs them as separate
-programs you install. The install assistant can do that for you (see
-[3D EM ▸ Getting the solvers](em-3d.html#getting)), and so can `circuitrf solver install palace`.
-Opening, editing and looking at a 3D model needs neither program. Only **Simulate** does.
+circuitRF **ships none of the 3D solvers and contains no code from any of them.** It runs them as
+separate programs you install. The install assistant can do that for you (see
+[3D EM ▸ Getting the solvers](em-3d.html#getting)), and so can `circuitrf solver install palace`
+(or `openems`, `emerge`). Opening, editing and looking at a 3D model needs none of them. Only
+**Simulate** does.
 
-| | Palace | openEMS |
-|---|---|---|
-| Method | FEM, frequency domain | FDTD |
-| Source | [Palace on GitHub](https://github.com/awslabs/palace) | [openEMS on GitHub](https://github.com/thliebig/openEMS), and its site [openems.de](https://openems.de) |
-| Licence | Apache 2.0 | GPL v3 |
-| Mesh | Tetrahedra, made by [Gmsh](https://gmsh.info) from circuitRF's model | A rectilinear grid, written by circuitRF |
-| Parallel | Across processes (MPI): one per physical core by default | Across the cores of one machine |
-| What circuitRF runs on it | Driven S-parameters, eigenmode, electrostatic, magnetostatic; lumped and wave ports, including two terminals on one face when their modes travel at different speeds (a microstrip pair, not a stripline); radiation pattern | Driven S-parameters; lumped and wave ports, including several terminals on one face ([the 3D Wave Ports example](../new-user-guide/index.html#wave-ports-3d)); radiation pattern |
-| Install, as measured on one Apple M4 | Built from source: 52 min, 1.9 GB | 8 min, 0.27 GB |
-| On Windows | Inside your Windows Subsystem for Linux (WSL 2). Palace's GitHub page covers Linux and macOS only; see [Installing Palace on Windows](palace-windows.html) | Native |
+| | Palace | openEMS | EMerge |
+|---|---|---|---|
+| Method | FEM, frequency domain | FDTD | FEM, frequency domain |
+| Source | [Palace on GitHub](https://github.com/awslabs/palace) | [openEMS on GitHub](https://github.com/thliebig/openEMS), and its site [openems.de](https://openems.de) | [EMerge on GitHub](https://github.com/FennisRobert/EMerge), published as a Python package |
+| Who maintains it | Its development team, in the open on GitHub | Its author and contributors | Its author and contributors, in the open on GitHub |
+| Licence | Apache 2.0 | GPL v3 | GPL v2 or later |
+| Mesh | Tetrahedra, made by [Gmsh](https://gmsh.info) from circuitRF's model | A rectilinear grid, written by circuitRF | Tetrahedra, made by EMerge's own copy of Gmsh from the same model |
+| Parallel | Across processes (MPI): one per physical core by default | Across the cores of one machine | Its sparse solver's threads, on the cores of one machine; a GPU on an arm64 Mac. An eigenmode solve uses one core |
+| What circuitRF runs on it | Driven S-parameters, eigenmode, electrostatic, magnetostatic; lumped and wave ports, including two terminals on one face when their modes travel at different speeds (a microstrip pair, not a stripline); radiation pattern | Driven S-parameters; lumped and wave ports, including several terminals on one face ([the 3D Wave Ports example](../new-user-guide/index.html#wave-ports-3d)); radiation pattern | Driven S-parameters and eigenmode; lumped ports; radiation pattern |
+| Install, as measured on one Apple M4 | Built from source: 52 min, 1.9 GB | 8 min, 0.27 GB | Ready-built packages: about 2 min, 1.0 GB, with a Python of its own |
+| On Windows | Inside your Windows Subsystem for Linux (WSL 2). Palace's GitHub page covers Linux and macOS only; see [Installing Palace on Windows](palace-windows.html) | Native | Native, with an x64 Python, which an arm64 Windows computer runs under its x64 emulation. Not yet measured |
 
 **Palace** is a parallel finite-element code for full-wave 3D electromagnetics. It also has a
 time-domain solver, which circuitRF does not use. **openEMS** is an FDTD solver. It is written for use
-with its own geometry library, and circuitRF writes that library's model file directly. **Gmsh** is
-the open-source mesh generator that turns circuitRF's 3D model into Palace's tetrahedra.
+with its own geometry library, and circuitRF writes that library's model file directly. **EMerge** is a
+finite-element solver for the time-harmonic wave equation, written in Python on compiled numerical
+libraries. It has no program of its own to start, so circuitRF writes the model as a data file and
+starts a small driver script of its own in EMerge's Python, which builds the model through EMerge,
+solves it and writes the answer back as plain arrays. **Gmsh** is the open-source mesh generator that
+turns circuitRF's 3D model into Palace's tetrahedra, and EMerge's.
 
-What circuitRF adds around both programs is the same: it **builds the 3D model** from your layout, its
+What circuitRF adds around every program is the same: it **builds the 3D model** from your layout, its
 technology and bond wires (or from a drawn [3D view](drawing-in-3d.html)), checks that the run fits in
 memory, runs the solver, follows its progress from its log, and reads the answer back as an ordinary
 result. [EM Setup](em-setup.html#solver-3d) has every setting.
@@ -195,20 +213,21 @@ lossy substrate these are the largest expected differences between the two solve
 
 ## Side by side {#compare}
 
-| | **MoM** (planar, built in) | **FEM** (Palace) | **FDTD** (openEMS) |
-|---|---|---|---|
-| Unknowns live on | The metal surfaces | Every tetrahedron of the volume | Every grid cell of the volume |
-| Matrix | Dense, N² | Sparse, very large | None: explicit time stepping |
-| Frequency | One frequency per solve; adaptive sampling | Frequency domain; adaptive sweep | Time domain: one pulse covers the band |
-| Geometry it fits | Planar metal and vias in a layered stack | Anything: curved, slanted, small metal in a large volume | Manhattan metal; curves are staircased |
-| What sets the cost | The metal area, and how finely it is cut | The volume, the highest frequency, and how much refinement the small features need | The number of cells × the number of time steps; the smallest cell sets the time step |
-| Memory | 84 MB at 2,000 unknowns, growing as N² | The largest: gigabytes | Small: tens to hundreds of megabytes |
-| Open space, radiation | Exact, with no box | An air box with first-order absorbing faces, kept well away | An air box with PML, which can stay close |
-| Enclosures, lids, cavities | Not representable | Yes, and eigenmodes find their resonances | Yes, but a high-Q cavity rings for a long time |
-| Capacitance and inductance matrices | No | Yes (electrostatic, magnetostatic) | No |
-| Metal loss | Yes | Yes (conductivity on every metal surface) | Sheets only; solid metal is lossless |
-| Dielectric loss | Yes, tanδ at every frequency | Yes, tanδ at every frequency | Exact at the band centre only |
-| Installed | Always | You install it | You install it |
+| | **MoM** (planar, built in) | **FEM** (Palace) | **FEM** (EMerge) | **FDTD** (openEMS) |
+|---|---|---|---|---|
+| Unknowns live on | The metal surfaces | Every tetrahedron of the volume | Every tetrahedron of the volume | Every grid cell of the volume |
+| Matrix | Dense, N² | Sparse, very large | Sparse, very large | None: explicit time stepping |
+| Frequency | One frequency per solve; adaptive sampling | Frequency domain; adaptive sweep | Frequency domain; adaptive sweep | Time domain: one pulse covers the band |
+| Geometry it fits | Planar metal and vias in a layered stack | Anything: curved, slanted, small metal in a large volume | The same as Palace | Manhattan metal; curves are staircased |
+| What sets the cost | The metal area, and how finely it is cut | The volume, the highest frequency, and how much refinement the small features need | The volume, the highest frequency, and the element size along metal edges | The number of cells × the number of time steps; the smallest cell sets the time step |
+| Memory | 84 MB at 2,000 unknowns, growing as N² | The largest: gigabytes | Gigabytes: 1.6 GB at 54,000 unknowns, about 24 kB more per unknown | Small: tens to hundreds of megabytes |
+| Open space, radiation | Exact, with no box | An air box with first-order absorbing faces, kept well away | The same as Palace | An air box with PML, which can stay close |
+| Enclosures, lids, cavities | Not representable | Yes, and eigenmodes find their resonances | Yes, and eigenmodes find their resonances | Yes, but a high-Q cavity rings for a long time |
+| Capacitance and inductance matrices | No | Yes (electrostatic, magnetostatic) | No | No |
+| Ports | Edge ports, de-embedded | Lumped and wave ports | Lumped ports | Lumped and wave ports |
+| Metal loss | Yes | Yes (conductivity on every metal surface) | Yes (a surface impedance on every metal surface) | Sheets only; solid metal is lossless |
+| Dielectric loss | Yes, tanδ at every frequency | Yes, tanδ at every frequency | Yes, tanδ at every frequency | Exact at the band centre only |
+| Installed | Always | You install it | You install it | You install it |
 
 ## Is it speed? Is it memory? {#speed-memory}
 
@@ -245,10 +264,92 @@ size the wire set the time step for the whole model. The same wire on a coarser 
 inductance. A package with many wires is therefore FDTD's worst case: every wire needs a fine grid
 around it, and the finest cell anywhere slows every step.
 
+**EMerge's driven sweeps are fast, and its memory is set by its sparse solver.** The 3D Eigenmode example's
+runs (8–12 GHz, 801 points) and its calibration, on the same machine:
+
+| EMerge run (from [the 3D Eigenmode example](em-setup.html#eigenmodes)) | Wall time | Peak memory |
+|---|---|---|
+| A cavity, driven, Draft: 53,614 unknowns, 10 full solves | 3 s | 1.6 GB |
+| The same cavity, driven, Standard: 109,566 unknowns | 6 s | 3.1 GB |
+| The same cavity, driven, Accurate: three refinement passes to 415,100 unknowns | 34 s | 6.9 GB |
+| The same cavity's resonances, eigenmode, Draft: 109,708 unknowns, one core | 3 min 21 s | 2.7 GB |
+
+Palace took 34 s and 4.3 GB for that driven sweep, and 3 min 42 s and 3.7 GB for the eigenmode. The two
+answers are compared in the example's README.
+
+So the honest summary is:
+
+- **Small metal in a large volume** (wires, a die in a package): FEM's adaptive mesh spends elements
+  only where the field changes. FDTD's grid refines along whole lines and planes through the model, and
+  its time step falls with the finest cell.
+- **Large, simple, Manhattan structures over a wide band**: FDTD's one pulse and small memory win, and
+  there is no matrix to factor.
+- **Planar structures**: MoM wins both, often by orders of magnitude, because it does not mesh the
+  volume at all.
+- **Narrow resonances**: FEM, by eigenmode, finds a resonance directly. FDTD has to wait for it to ring
+  down, and MoM cannot represent the enclosure.
+
+## Getting the most speed from EMerge {#emerge-speed}
+
+Almost all of an EMerge run's time is spent factorising sparse matrices, so **the sparse solver it uses
+decides its speed**. circuitRF's install gives every computer the fastest one it can have, and adds a
+faster one by itself when your computer gains what that one needs. Nothing about the answer changes:
+on the same mesh, every solver below gave the same S-parameters to within 1e-10 dB.
+
+**What the install gives you, and what makes it faster:**
+
+| Computer | What the install gives | What makes it faster |
+|---|---|---|
+| macOS, arm64 | A multi-threaded sparse solver that needs no compiler | **The command line tools** (`xcode-select --install`). circuitRF then builds a faster solver itself, in a few seconds, the next time Settings ▸ Solvers is shown or an EMerge run starts. With a Rust toolchain as well, it builds the GPU solver too ([below](#emerge-gpu)) |
+| macOS, x64; Linux, x64; Windows | A multi-threaded sparse solver that EMerge's own dependencies bring | Nothing to add. Not yet measured on these computers |
+| Linux, arm64 | The same no-compiler multi-threaded solver as an arm64 Mac | Nothing to add. Expected from the arm64 Mac's measurement; not yet measured on Linux |
+
+Measured on an Apple M4 (10 cores, 16 GB) with the 3D Eigenmode example's cavity, driven, an adaptive
+sweep over 8–12 GHz, every core in use:
+
+| Sparse solver | 9,835 tetrahedra | 19,426 tetrahedra | Peak memory at 9,835 |
+|---|---|---|---|
+| EMerge's single-threaded default, used when nothing faster is installed | 48.6 s | 235.6 s | 2.87 GB |
+| The install's multi-threaded solver | 4.0 s | 11.2 s | 2.18 GB |
+| The solver built with the command line tools | **3.0 s** | **9.2 s** | 1.85 GB |
+
+**Which one you have** is in **Settings ▸ Solvers**: the EMerge row says *Fast sparse solver*, or
+*Baseline sparse solver, one core* with what to install, and *GPU sparse solver installed* when there
+is one. `circuitrf solver list` prints the same. Each run's cost line names the solver it used.
+
+**Cores.** EMerge's sparse solver uses the setup's *Cores* setting as its thread count, and every
+physical core when that is *Automatic*. On one core the run above took 2.0× (the built solver) to 4.1×
+(the install's) as long as on ten. circuitRF does not split a sweep across several EMerge processes: on
+the cavity, two processes of five threads took 13.2 s against one of ten's 10.0 s, and each process
+holds its own copy of the matrices.
+
+**An eigenmode run uses one core**, whatever is installed: EMerge 3.0's eigensolver runs on one. The
+cavity's resonances took 3 min 21 s where its driven sweep took 3 s. Keep `Count` to the modes you need,
+and `TargetGHz` near them ([Running EMerge](em-setup.html#emerge-run) says why).
+
+**The adaptive sweep** solves the full problem at five equally spaced frequencies, fits every requested
+point from them, and adds the frequency where the fit is least certain until its estimated error on |S|
+is below the tolerance. The cavity's 801 points took 10 full solves. Turned off (`AdaptiveSweep` false),
+every point is a full solve of its own — 801 for that sweep. Turn it off when the run warns that the
+sweep reached its most solves (`MaxSamples`) without converging, or when the sweep has only a few
+points, where solving each one costs no more than fitting them. A field saved for the 3D view is always a
+full solve of its own at that frequency.
+
+**Accurate refines the mesh itself, and that is where its memory goes**: on the cavity its three passes took
+the mesh to 60,503 tetrahedra, and on the 3D Connector's launch they passed 7 GB and the run was stopped by its
+memory limit. Standard solves the starting mesh only.
+
+**Memory** grows with the unknowns: about 134 MB plus 24 kB per unknown with a multi-threaded solver,
+and 440 MB plus 34 kB per unknown with the single-threaded default. At element order 2 a mesh has about
+7.2 unknowns per tetrahedron. circuitRF checks the mesh EMerge made against this computer's memory
+before it solves; it cannot estimate the size before meshing, because EMerge sizes its mesh along the
+edges of every metal face. Element order 1 has about a fifth of the unknowns, but it put the cavity's
+notch 25–30 MHz low, which is why every preset uses order 2.
+
 ### EMerge on a GPU {#emerge-gpu}
 
 On an arm64 macOS computer, EMerge can factorise its matrices on the GPU (see
-[Settings ▸ 3D EM solvers](settings.html) for how it is installed). **circuitRF uses it automatically
+[Settings ▸ Solvers](settings.html#em3d) for how it is installed). **circuitRF uses it automatically
 when it is faster**: for a driven problem of 40,000 unknowns or more. Below that the CPU's fast sparse
 solver is as quick or quicker. Measured on the shipped Cavity, driven, with an adaptive sweep:
 
@@ -265,21 +366,9 @@ it, the same sweeps either needed more solves or never converged. If a sweep on 
 limit without converging, circuitRF solves it again on the CPU and says so in the run's Notes.
 
 **Eigenmode runs do not use the GPU**: EMerge's eigensolver runs on the CPU whatever is installed.
-To choose the device yourself, set **Device** in Settings ▸ 3D EM solvers to **CPU** or **GPU**, or pass
+To choose the device yourself, set **Device** in Settings ▸ Solvers to **CPU** or **GPU**, or pass
 `--device cpu` or `--device gpu` to `circuitrf em`. On other computers there is no GPU solver for EMerge,
 and every run solves on the CPU.
-
-So the honest summary is:
-
-- **Small metal in a large volume** (wires, a die in a package): FEM's adaptive mesh spends elements
-  only where the field changes. FDTD's grid refines along whole lines and planes through the model, and
-  its time step falls with the finest cell.
-- **Large, simple, Manhattan structures over a wide band**: FDTD's one pulse and small memory win, and
-  there is no matrix to factor.
-- **Planar structures**: MoM wins both, often by orders of magnitude, because it does not mesh the
-  volume at all.
-- **Narrow resonances**: FEM, by eigenmode, finds a resonance directly. FDTD has to wait for it to ring
-  down, and MoM cannot represent the enclosure.
 
 ## Choosing, by problem {#choosing}
 
@@ -292,30 +381,32 @@ So the honest summary is:
 | Bond wires over one flat ground | **wBond**, then **FEM** | [wBond](wbond.html#fidelity)'s equations and kernel are far faster; curved, thin metal is FEM's strength, and FEM is their independent check |
 | Bond wires over a ground step or split, in a cavity, under a lid | **FEM** | wBond's ground is one flat plane; FEM solves the ground you drew |
 | A die in a package, leads, lids, connectors | **FEM** | Small features in an enclosed volume |
-| "Is there a cavity resonance in my band?" | **FEM, eigenmode** | Finds each mode's frequency and Q directly ([the 3D Eigenmode example](em-setup.html#eigenmodes)) |
+| "Is there a cavity resonance in my band?" | **FEM, eigenmode** (Palace or EMerge) | Finds each mode's frequency and Q directly ([the 3D Eigenmode example](em-setup.html#eigenmodes)); the two programs put the example's cavity mode within 0.01 % of each other |
 | A package's capacitance or inductance matrix | **FEM, electrostatic or magnetostatic** | Only Palace computes them |
 | A broadband Manhattan board structure: a transition, a launch, a stripline | **FDTD**, or FEM | One pulse covers the band, at little memory |
+| A quick FEM answer with lumped ports, or a second FEM answer beside Palace's | **FEM (EMerge)** | Installs in minutes, and a driven sweep of a small model takes seconds; it shares no code with Palace |
 | A radiator that is not planar | **FDTD** or FEM | FDTD's PML keeps the box small; both give a pattern — [Antennas ▸ From a 3D solver](antennas.html#3d) |
-| Any 3D answer you are about to rely on | **FEM & FDTD - Compare** | Two independent methods; agreement means each has converged |
+| Any 3D answer you are about to rely on | **Compare…**, Palace with openEMS or EMerge, or all three | Independent solvers; agreement means each has converged |
 
-When a 3D solver is chosen, the setup panel says which of the two suits the model's geometry. That is
+When a 3D solver is chosen, the setup panel says which method, FEM or FDTD, suits the model's geometry. That is
 advice, not a restriction.
 
 **Heat is a fourth solve, and it is none of these.** A thermal setup on the same 3D model is solved by circuitRF's own
-steady-conduction solver — no Palace, no openEMS — but **it needs Gmsh**, the mesher Palace uses, to mesh the solids. See
+steady-conduction solver — no Palace, openEMS or EMerge — but **it needs Gmsh**, the mesher Palace uses, to mesh the solids. See
 [Thermal](thermal.html).
 
 <div class="callout note">
 <span class="label">Agreement is a cross-check, not a reference</span>
-<p><b>FEM &amp; FDTD - Compare</b> runs both solvers on one model and writes their difference. Both read
-the same model that circuitRF built, so a mistake in building it would appear in both answers. It checks
+<p><b>Compare…</b> runs two or more solvers on one model and writes each one's difference from the
+reference. Every solver reads the same model that circuitRF built, so a mistake in building it would
+appear in every answer. It checks
 the solving, not the model. See <a href="em-setup.html#compare">EM Setup ▸ Compare</a>.</p>
 </div>
 
 ## What each solver sees of curved geometry {#curved}
 
 A bore, a pin, a fillet, a chamfer at an angle: a 3D model is full of surfaces that are not flat and not aligned
-with an axis. The two 3D solvers see them differently, and the difference follows from their methods.
+with an axis. The 3D solvers see them differently, and the difference follows from their methods.
 
 - **Palace meshes the exact surface.** Gmsh reads the geometry kernel's own shape, not a faceted copy of it, and
   circuitRF asks for **second-order (curved) elements** — each tetrahedron's edges bend to lie on the surface — sized
@@ -323,6 +414,10 @@ with an axis. The two 3D solvers see them differently, and the difference follow
   is the **initial mesh**: a small radius forces small elements, and small elements cost unknowns. So Palace's note
   about a curved feature says how small its elements there will be and that the feature *will dominate the mesh* —
   and its setup's **Enabled** box on the feature is how to find out whether it matters.
+- **EMerge meshes the same exact surface** with its own copy of Gmsh, sized by the curvature as EMerge
+  asks Gmsh to, so its tetrahedra follow a bore or a fillet as Palace's do. Its elements are
+  straight-sided: element order 2 is the order of the field inside each one, not a curved edge, so a
+  curve is followed by flat facets that shrink with the elements.
 - **openEMS staircases to its grid.** Its grid is rectilinear, so a curved surface is represented by the cells it
   fills: a bore becomes a staircase, and a feature smaller than about **one cell** is not represented at all — a
   fillet of 100 µm on a grid of 200 µm cells is solved as a sharp edge. Refining the grid converges a staircase; it
@@ -396,7 +491,13 @@ Because **no one method is best at everything**, and the problems an RF designer
 - **Why FDTD as well?** Because on the structures it suits — broadband and Manhattan — it is fast and
   uses very little memory. It is also the independent check on FEM. The two share no numerics, so
   their agreement means something that re-running one solver on a finer mesh cannot.
+- **Why two FEM programs?** Because Palace and EMerge share the method and no code: each builds its own
+  mesh, assembles its own matrices, models its own lumped port and fits its own sweep. A third
+  independent answer is what makes **Compare** useful: when two of three agree, the third is the one to
+  look at, where two that disagree say only that one of them is wrong. EMerge also installs in minutes
+  from ready-built packages, where Palace builds from source for most of an hour, and its driven sweep of
+  a small model takes seconds.
 
 The three also check each other. circuitRF's solvers were validated this way: wBond's wire kernel
-against Palace, the planar patch against a 3D run of the same patch, and Palace and openEMS against each
-other and against closed forms. [3D EM](em-3d.html) and [Antennas](antennas.html#3d) give the numbers.
+against Palace, the planar patch against a 3D run of the same patch, and Palace, openEMS and EMerge against
+each other and against closed forms. [3D EM](em-3d.html) and [Antennas](antennas.html#3d) give the numbers.

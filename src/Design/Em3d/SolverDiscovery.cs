@@ -465,11 +465,15 @@ public sealed partial class SolverDiscovery
 
     private readonly IReadOnlyList<string> _versionArguments;
     private readonly TimeSpan _versionTimeout;
+    internal TimeSpan VersionProbeTimeout => _versionTimeout;
     private long _versionProbes;
     private long _capabilityProbes;
 
-    private static readonly TimeSpan VersionTimeout    = TimeSpan.FromSeconds(20);
-    private static readonly TimeSpan CapabilityTimeout = TimeSpan.FromSeconds(60);
+    // Properties, not static readonly fields: Palace/Gmsh/OpenEms above are static initialisers that run
+    // the constructor BEFORE a field declared down here is assigned, so a field read zero there and every
+    // version probe timed out at once.
+    private static TimeSpan VersionTimeout    => TimeSpan.FromSeconds(20);
+    private static TimeSpan CapabilityTimeout => TimeSpan.FromSeconds(60);
 
     // ── the walk ─────────────────────────────────────────────────────────────────────────────
 

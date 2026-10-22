@@ -202,9 +202,15 @@ convention behind both.</p>
 </tr>
 <tr>
 <td><code>em</code></td>
-<td><code>.cem</code></td>
-<td>The EM kernel the setup resolves to</td>
+<td><code>.cem</code>, or a <code>.c3d</code> with <code>--setup</code></td>
+<td>The EM kernel or 3D solver the setup resolves to</td>
 <td>A Touchstone <code>.sNp</code> <strong>and</strong> a grouped <code>.npy</code>, where <strong>Simulate</strong> writes them</td>
+</tr>
+<tr>
+<td><code>solver list</code>, <code>install</code>, <code>remove</code></td>
+<td><strong>nothing</strong> — a tool name</td>
+<td>The install assistant <strong>Settings ▸ Solvers</strong> runs</td>
+<td>What each 3D solver's row shows, to stdout; an install or a removal, only with <code>--yes</code></td>
 </tr>
 <tr>
 <td><code>opt</code></td>
@@ -728,8 +734,16 @@ actually happened is &quot;nothing it tried reached compression&quot;.</p>
 <a href="em-setup.html">EM Setup panel</a> edits — and runs it: extracts the geometry from the layout the setup
 names, resolves the stackup, meshes, solves the frequency plan, de-embeds, and writes the results.</p>
 <p><strong>It needs no other arguments.</strong> Everything else it needs is already recorded in the files.</p>
-<p>A 3D setup's Palace solves on the CPU unless <code>--device gpu</code> says otherwise; that needs a GPU build of Palace, and
-<a href="em-setup.html#palace-gpu">Palace on a GPU</a> has the details. <code>--device</code> is refused on a run that uses no Palace.</p>
+<p><code>--device auto|cpu|gpu</code> chooses where a 3D run solves. A Palace run solves on the CPU unless <code>--device gpu</code> says
+otherwise; that needs a GPU build of Palace, and <a href="em-setup.html#palace-gpu">Palace on a GPU</a> has the details. An
+EMerge run is <code>auto</code> unless <code>--device</code> says otherwise, whatever <strong>Settings ▸ Solvers</strong> holds: the GPU sparse solver
+for a driven problem large enough to be faster on it (<a href="em-solvers.html#emerge-gpu">EMerge on a GPU</a>), the CPU
+otherwise.
+<code>--device gpu</code> is refused on a run that uses neither Palace nor EMerge.</p>
+<p>A 3D run's solver is stopped if its memory reaches this computer's (<code>--memory-limit &lt;GB&gt;</code> sets a lower limit), or if
+the startup volume or the results' volume falls below 10 GB free; either way the run writes nothing and exits <strong>1</strong>.
+<code>--force</code> lifts the memory limit, never the disk floor. <code>explain</code> on a 3D setup reports both, and takes
+<code>--memory-limit</code> too.</p>
 <p>A <code>.c3d</code> runs too — <code>circuitrf em &lt;view.c3d&gt; --setup &lt;name&gt;</code> — and a <strong>thermal</strong> setup embedded in it runs through the
 same verb with circuitRF's own thermal solver (Gmsh meshes it). It writes <code>&lt;cell&gt; &lt;setup&gt;.thermal.npy</code> and the temperature
 field beside it, and prints the probes, the measures and, when the setup asks for one, the Rth matrix. See
@@ -890,6 +904,19 @@ Wrote amp/results/line_em.npy
 <p>You do not have to get the extension right — the port count decides it, so a <code>.s2p</code> you typed for a
 structure that turned out to have four ports is written <code>.s4p</code>.</p>
 <p>With no workspace above the <code>.cem</code>, <code>results/</code> is created beside the <code>.cem</code> itself.</p>
+<h3 id="em-compare">Comparing solvers: <code>--solver</code> and <code>--reference</code></h3>
+<p>A 3D setup's solver can be changed for one run without editing the file: <code>--solver palace</code>, <code>openems</code> or
+<code>emerge</code> runs that solver alone, and a comma list compares them.</p>
+<pre><code class="language-bash">circuitrf em via.cem --solver palace,emerge                      # EMerge against Palace
+circuitrf em via.cem --solver openems,emerge --reference emerge  # openEMS against EMerge
+circuitrf em via.cem --solver compare                            # the setup's own Compare set
+circuitrf em via.cem --solver both                               # Palace and openEMS
+</code></pre>
+<p>The solvers run one after the other, Palace first, then openEMS, then EMerge. The reference is Palace when
+it is listed, otherwise the first. Each solver's result lands where it would alone, and the comparison in
+<code>results/&lt;name&gt;.compare_em.npy</code> (<a href="em-setup.html#compare">EM Setup ▸ Compare</a> describes what it holds). A
+solver that is not installed, or cannot solve the setup, is refused before anything runs, naming it and
+why.</p>
 <h3 id="em-component">One component's drawn part: <code>--component</code></h3>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf em mydie --component "SPIRAL N=2.5 W=10 um S=10 um Din=100 um" --freq 1GHz:20GHz:1GHz -o L1.s2p</code></pre>
 <p>Extracts one built-in component as it would be drawn: its layout cell on the workspace's technology,
@@ -983,6 +1010,31 @@ analyse. Point this EM setup at a layout that exists.
 </tr>
 </tbody>
 </table>
+<h2 id="solver"><code>solver</code> — installing, listing and removing the 3D solvers</h2>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf solver list [--capability gpu]
+<span class="prompt">$ </span>circuitrf solver install &lt;palace|gmsh|openems|emerge&gt; [--version &lt;v&gt;] [--gpu] [--yes]
+<span class="prompt">$ </span>circuitrf solver remove &lt;palace|gmsh|openems|emerge&gt; [--version &lt;v&gt;] [--yes]
+<span class="prompt">$ </span>circuitrf solver remove --all [--yes]</code></pre>
+<p>The install assistant of <strong>Settings ▸ Solvers</strong>, with no window: the same recipes, the same install record, the
+same removal. A build machine installs a solver this way.</p>
+<ul>
+<li><strong><code>list</code></strong> prints what each Settings row shows: found or not, the version and whether circuitRF has validated or
+tested it, where it is and how it was found, and the command that would install it here. EMerge's line adds the
+sparse solver it would use (<em>fast sparse solver</em>, or the single-threaded baseline with what to install) and
+whether its GPU sparse solver is installed. <code>--capability gpu</code> also asks Palace whether it solves on a GPU, which
+costs a one-element solve. Read-only: it installs and builds nothing.</li>
+<li><strong><code>install &lt;tool&gt;</code></strong> prints what it would fetch, from where, where it would go and what it cost when measured,
+and exits <strong>1</strong> having fetched nothing. <strong><code>--yes</code></strong> agrees and installs. <code>circuitrf solver install emerge --yes</code>
+installs EMerge into a Python of its own and, on an arm64 Mac with the command line tools, builds its faster
+sparse solver in the same run; <strong><code>--gpu</code></strong> also fetches a temporary Rust toolchain into EMerge's folder to build
+its GPU sparse solver, and deletes the toolchain after. See
+<a href="em-solvers.html#emerge-speed">Getting the most speed from EMerge</a>.</li>
+<li><strong><code>remove &lt;tool&gt;</code></strong> removes a copy circuitRF installed, after printing the space it frees; <code>--all</code> removes every
+one. Again nothing happens without <code>--yes</code>. A program circuitRF did not install is never removed.</li>
+</ul>
+<p>Exit <strong>0</strong> when installed (or already installed) or removed, <strong>1</strong> when refused or failed, with the report on
+stderr, <strong>130</strong> when cancelled.</p>
+<hr />
 <h2 id="opt"><code>opt</code> — optimizing from the command line</h2>
 <pre><code class="language-text">circuitrf opt &lt;schematic.csch | netlist.cnl&gt; [flags]
 </code></pre>

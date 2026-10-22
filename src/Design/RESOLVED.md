@@ -22174,3 +22174,108 @@ refused for an EMerge setup. `solver install emerge --gpu` prints the bootstrap'
 
 Gates: `tests/Ui.Tests/Em3d/EmergeGpuTests.cs` (policy, fallback, preference; the Cavity on GPU vs CPU, Skipped without the
 GPU solver) and `SolverInstallTests` gate 14 (the group with and without its toolchain, and the bootstrap).
+
+## EMI-8: docs, the example on EMerge, the validation set, and the notch depth (2026-10-22)
+
+`docs/sonnet-briefs/brief-emi-8-docs-example-validation.md`. Measured on an Apple M4 (10 cores, 16 GB), macOS 27.0, EMerge
+3.0.0b2 with the fast sparse solver and the GPU one installed; **no Palace is installed on this machine**, so every Palace
+figure below is a recorded one (the example's `expected-numbers.json`), never a fresh run.
+
+**A discovery regression from EMI-2, found on the way: every version probe of Palace, Gmsh and openEMS timed out at once.**
+`SolverDiscovery.Palace/Gmsh/OpenEms/Emerge` are static auto-properties initialised in textual order, ABOVE the
+`static readonly TimeSpan VersionTimeout` field EMI-2's constructor line read (`_versionTimeout = … : VersionTimeout`), so
+the shared instances captured `TimeSpan.Zero` and `WaitForExit(0)` failed every probe: `solver list` said Gmsh and openEMS
+"did not answer within 0 s" while each answered by hand in 0.2 s. Only EMerge escaped (its timeout is another class's).
+Every discovery test builds its own instance AFTER static initialisation, which is why none saw it. The two timeouts are
+expression-bodied properties now; `SolverDiscoveryTests.TheSharedInstancesWaitForAVersionProbe` reads the shared ones.
+
+**openEMS's refusal said "only Palace and EMerge finds eigenmodes".** `OnlyOn` now returns whether several solvers are
+named, and the verb agrees (static problems too). `PalaceEigenTests.Gate8` still asserted EMI-1's "only Palace finds
+eigenmodes" and had been red since EMI-5; it asserts the new sentence.
+
+**The example's EMerge setups search from 10 GHz, the band's centre, not Palace's 8.** EMerge's shift-invert returns the
+`Count` solutions nearest the target on either side. From 8 GHz with 3, *Cavity with post* returned one line row (7.76 GHz,
+Q 1.5) after two were dropped below 7.6 GHz, and no cavity mode: 12.84 GHz was too far. From 10 GHz: the Cavity's mode at
+9.95671 GHz, Q 563.8 (Palace 9.95642, 539; from 8 GHz Q 694.0), and the post's at 12.82489 GHz, Q 3,345 (Palace 12.84366,
+2,480). The eigen mesh grew with the target (10,988 tets at 8 GHz, 15,137 at 10), so the cost did too.
+
+**Q_unloaded is the noisy number.** EMerge's Q_ext (circuitRF's ω·R·∫ε|E|²/|V|² on EMerge's field) gave Q_unloaded 2,568
+against Palace's 3,236 for the Cavity and 3,784 against 2,879 with the post: −21 % and +31 %. It is 1/(1/Q − Σ1/Q_ext), a
+small difference of two larger numbers, so a few per cent in Q_ext swings it by tens. Not traced further.
+
+### The notch-depth open item (R-emi8-5): closed — it was the sampling, not either solver
+
+EMI-0 carried EMerge's −13.3 dB against Palace's −11.69 dB as a modelling difference. Every one of those depths is |S21|
+at the **9.955 GHz sample**, on a notch 18 MHz wide (f/Q), and the sample's offset from each solver's own resonance is
+what differs.
+
+- **Resolved**, scratch copies of the Cavity swept 9.94–9.97 GHz in 0.1 MHz steps: EMerge Draft −16.18 dB at 9.9569 GHz,
+  Standard **−15.55 dB at 9.9564 GHz** (−12.26 / −12.87 dB at the 9.955 sample). FWHM 18.0 MHz at Standard → Q_L ≈ 553.
+- **Palace's own eigenmode predicts the bottom.** For a resonator coupled to a through line, |S21| at resonance is
+  Q_L/Q_unloaded; Palace's 539/3,236 gives **−15.57 dB**. From EMerge's resolved notch, Q_u = Q_L/t_min ≈ 3,313 and
+  Q_ext(total) = Q_L/(1 − t_min) ≈ 664, against Palace's 3,236 and 647: EMerge's driven solution and Palace's eigen
+  solution agree to ~3 % on both the walls' loss and the ports' coupling.
+- **Why the samples differ.** With Palace's Q, a sample 1.4 MHz from the bottom reads about −13 dB and one 2.2 MHz away
+  about −11 dB, so Palace's −11.69 is a notch whose driven resonance sits ~2 MHz above 9.955 GHz, and EMerge's ~1 MHz:
+  a 1e-4 relative difference in resonance between two meshes. The 4× mesh study did not move EMerge's depth because
+  EMerge's resonance stayed put (9.9564–9.9569 GHz).
+- **openEMS is no reference for depth here.** Its fine sweep read −34.8 dB at 9.9498 GHz: openEMS writes solid metal as a
+  perfect conductor, so its walls are lossless (Q_u is the laminate's alone), and a narrower band also re-grids the model
+  (10,920 cells), which moved its resonance 7 MHz.
+- **The lumped port is not the cause either.** The brief's thru check, the same Cavity at 2–7 GHz (below every cavity
+  mode), against Hammerstad–Jensen with Kirschning–Jansen dispersion over the 21.6 mm line (ε_eff 1.881–1.885, 50.16 Ω):
+
+  | Run | Tets / cells | Worst \|S11\| | ∠S21 − closed form, 2 / 7 GHz |
+  |---|---|---|---|
+  | EMerge Draft | 3,091 | −13.8 dB | −2.7° / −8.7° |
+  | EMerge Standard | 7,019 | −18.2 dB | −1.9° / −6.4° |
+  | EMerge Accurate (3 refinement passes, 14 s, 4.8 GB) | 30,489 | −27.5 dB | −1.1° / −3.9° |
+  | openEMS | 10,920 cells | −28.6 dB | −1.2° / −4.7° |
+
+  EMerge converges onto openEMS's answer, and both read ~0.6 % extra electrical length (the port strips and the open
+  ends). The closed-form Q_ext resonator the brief also proposed was not built: the eigen/driven agreement above already
+  answers what it was for. **Nothing to offer upstream.** Draft sizes its mesh from the band's TOP, so a band ending at
+  7 GHz gets a mesh 1.7× coarser than the Cavity's 12 GHz one, and its S11 floor shows it; the docs say a match needs
+  Accurate.
+
+### The validation set (R-emi8-4)
+
+`tests/Ui.Tests/Examples/EmergeValidationTests.cs`: one routine test (the EMerge setups ship and the README quotes the
+file) and two `[EmergeFact]` Benchmark ones, which passed here in 6 min 35 s together (the eigenmode one 6 min 28 s; the
+Launch 8 s). A run's peak varies by a few hundred MB between runs of one setup (the Cavity's Modes read 2.7 and 2.4 GB). Tolerances live in the examples' `expected-numbers.json` (`Validation` in 3D
+Eigenmode's, `Emerge` in 3D Connector's).
+
+- **Off the notch, against a bound.** No Palace sweep of the Cavity is committed point by point, and none could be run, so
+  "within 0.05 dB of Palace's off-notch |S21|" is held against the README's statement of Palace's (within 0.15 dB of
+  0 dB): EMerge −0.106 dB. With the post, Palace's least |S21| is recorded (−0.0926 dB): EMerge −0.121.
+- **The Launch holds |S21| only.** Its Palace setup re-pointed to EMerge (Standard, 18,638 tets, 7 s on the GPU, 2.9 GB):
+
+  | GHz | \|Δ\|S21\|\| EMerge−Palace | openEMS−Palace | \|Δ\|S11\|\| EMerge−Palace | openEMS−Palace |
+  |---|---|---|---|---|
+  | 2 | 0.0011 | 0.0011 | 0.0239 | 0.0183 |
+  | 6 | 0.0047 | 0.0020 | 0.0495 | 0.0141 |
+  | 10 | 0.0045 | 0.0128 | 0.0410 | 0.0087 |
+  | 14 | 0.0022 | 0.0020 | 0.0179 | 0.0411 |
+  | 18 | 0.0032 | 0.0067 | 0.0704 | 0.1027 |
+
+  |S21| is within 0.005 everywhere, inside the 0.01 a small entry is judged by. The reflections are 0.02–0.07 apart, the
+  same scale as openEMS from Palace and as Palace from itself across element order (0.03), so they are reported, not
+  held. Palace's −40.75 dB at 18 GHz is a null the other two do not have. **EMerge Accurate on the Launch passed 7 GB in
+  its refinement passes** and EMI-10's limit stopped it (7.9 GB read: the overshoot between two samples).
+- **Accurate, through the real run path, is measured now** (EMI-4 had it without its passes; EMI-5 said its
+  `AdaptiveMesh` 3 was wired and unrun). On the Cavity, CPU: 35,571 → 60,503 tets, 415,100 unknowns, 34 s, notch still
+  9.955 GHz (−13.49 dB at the sample). Its cost line said peak 6.9 GB while EMI-10's watch warned at 9.9 GB of the tree's
+  footprint, and a first try under a 7 GB limit was stopped: **the cost line's peak and the limit's footprint are
+  different measures**, so a run can be stopped "at 7 GB" and still report less. Not changed here. Draft 3 s / 1.6 GB and
+  Standard 6 s / 3.1 GB through the CLI on the CPU (EMI-4's harness figures were 1.23 and 2.29 GB, without fields).
+- **Auto chose the GPU on the example's Draft driven runs** (53,614 and 58,566 unknowns, over EMI-9's 40,000) and took
+  5 s and 3 s against 3 s on the CPU's fast solver; one run each, so it may be the GPU's start-up, not a crossover.
+
+### The docs (R-emi8-1/2/6)
+
+`em-solvers.md` gains the three-program table, an EMerge column, *Getting the most speed from EMerge* (EMI-3's measured
+table, cores, the one-core eigensolver, the adaptive sweep, memory per unknown, where the tier is shown; the GPU section
+moved under it), the choosing rows and a *Why two FEM programs?* answer. `em-3d.md`, `em-setup.md` (preset values, the
+eigen target), `settings.md`, `cli.md` (a `solver` section and `--device` for EMerge), the MCP instructions and
+`docs/design/em-3d.md` (rev 8: §2a, the seam in §4, Compare in §4.4, EMerge's environment in §7.1). The Settings ▸
+Solvers EMerge row is still not linked to the page: that view has no documentation links at all.

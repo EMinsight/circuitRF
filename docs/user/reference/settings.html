@@ -1663,10 +1663,11 @@ computes and the S-parameters it exports — is in <a href="wbond.html">the wBon
 								Close
 						</text></g></g></g></svg></span>
 </span><figcaption>Settings, Solvers: one row per program a 3D EM run can need - Palace, Gmsh and openEMS - with a path to name it and a line saying what circuitRF found. Blank means search.</figcaption></figure>
-<p>A 3D EM setup runs one of two separately installed solvers — <strong>Palace</strong> (FEM) or <strong>openEMS</strong> (FDTD) —
-and Palace's problems are meshed by <strong>Gmsh</strong>. circuitRF includes none of the three. This tab has one row
-per program, and each row says what circuitRF found: the version, whether it is one circuitRF has
-validated (for Gmsh, tested), where the program is, and how it was found.</p>
+<p>A 3D EM setup runs one of three separately installed solvers — <strong>Palace</strong> (FEM), <strong>openEMS</strong> (FDTD) or
+<strong>EMerge</strong> (FEM) — and Palace's problems are meshed by <strong>Gmsh</strong>. circuitRF includes none of these
+programs. The tab starts with the <strong>Memory limit</strong>, which holds every solver and mesher alike, then gives each
+program a panel of its own, and each says what circuitRF found: the version, whether
+it is one circuitRF has validated (for Gmsh, openEMS and EMerge, tested), where the program is, and how it was found.</p>
 <table>
 <thead>
 <tr>
@@ -1677,9 +1678,14 @@ validated (for Gmsh, tested), where the program is, and how it was found.</p>
 </thead>
 <tbody>
 <tr>
+<td><strong>Memory limit</strong></td>
+<td>blank (this computer's memory)</td>
+<td>The memory a 3D solver or mesher may reach before it is stopped and its run writes nothing, in GB. <strong>Blank is Automatic</strong>, this computer's memory, which the box shows greyed. Only a lower limit can be set; a value at or above this computer's memory is refused and not saved. It belongs to this computer, not to a setup. See <a href="em-setup.html#solver-3d">Solver — planar or 3D</a>.</td>
+</tr>
+<tr>
 <td><strong>Path</strong> (one per program)</td>
 <td>blank</td>
-<td>The program to run. <strong>Blank means search</strong>: the environment variable (<code>CIRCUITRF_PALACE</code>, <code>CIRCUITRF_GMSH</code>, <code>CIRCUITRF_OPENEMS</code>), then a copy circuitRF installed, then <code>PATH</code>, then the usual install folders (<code>~/.local/bin</code>, <code>/opt/homebrew/bin</code>, <code>/usr/local/bin</code>, and <code>~/opt/openEMS/bin</code> for openEMS), then Spack's install record, which is where a Palace built with Palace's own recipe is found, then conda environments. A path you name here always wins, and if it does not work circuitRF says so rather than using a different one it found somewhere else.</td>
+<td>The program to run. <strong>Blank means search</strong>: the environment variable (<code>CIRCUITRF_PALACE</code>, <code>CIRCUITRF_GMSH</code>, <code>CIRCUITRF_OPENEMS</code>), then a copy circuitRF installed, then <code>PATH</code>, then the usual install folders (<code>~/.local/bin</code>, <code>/opt/homebrew/bin</code>, <code>/usr/local/bin</code>, and <code>~/opt/openEMS/bin</code> for openEMS), then Spack's install record, which is where a Palace built with Palace's own recipe is found, then conda environments. A path you name here always wins, and if it does not work circuitRF says so rather than using a different one it found somewhere else. EMerge's row searches less, below.</td>
 </tr>
 <tr>
 <td><strong>Location</strong> (Palace, Windows only)</td>
@@ -1689,7 +1695,7 @@ validated (for Gmsh, tested), where the program is, and how it was found.</p>
 <tr>
 <td><strong>Install …</strong> (one per program)</td>
 <td>shown when it would help</td>
-<td>Installs the program from its own upstream, after showing you what it will fetch and where it will go. Shown when this computer has an install recipe for it and nothing validated (for Gmsh, tested) was found. See <a href="em-setup.html#install-assistant">Letting circuitRF install them</a>.</td>
+<td>Installs the program from its own upstream, after showing you what it will fetch and where it will go. Shown when this computer has an install recipe for it and nothing validated (for Gmsh, openEMS and EMerge, tested) was found. See <a href="em-setup.html#install-assistant">Letting circuitRF install them</a>.</td>
 </tr>
 <tr>
 <td><strong>Uninstall …</strong> (one per version circuitRF installed)</td>
@@ -1713,11 +1719,50 @@ assistant put there, and it has an <strong>Uninstall …</strong> button. Anythi
 circuitRF never offers to remove it.</p>
 <p><strong>A Palace version circuitRF has not validated is refused, not just flagged.</strong> Palace's configuration changes
 meaning between versions, and a setting read the wrong way gives an answer that looks plausible. The row says
-which versions are validated. <strong>Gmsh and openEMS are only flagged</strong>: an untested version runs, and the row and
+which versions are validated. <strong>Gmsh, openEMS and EMerge are only flagged</strong>: an untested version runs, and the row and
 every run say, in the same words, which versions are tested. The same check runs at the start of every
 3D run and in <code>circuitrf explain</code>, so all three always agree.</p>
 <p>The Palace row also carries its licence note: a default Palace build includes ParMETIS, which may be
 used commercially for evaluation only. If you build Palace, you accept those terms.</p>
+<p><strong>The EMerge row names a Python, not a program.</strong> EMerge runs as a Python package, so its path is a
+Python interpreter that has EMerge installed, or the folder of the virtual environment it is installed
+in. <strong>Blank searches <code>CIRCUITRF_EMERGE</code>, then the copy circuitRF installed, and never <code>PATH</code></strong>: a Python
+found there is far more likely to be one of your own environments than one meant for circuitRF. The
+status line gives the EMerge version and whether circuitRF has tested it, then which sparse solver
+EMerge would use — <em>Fast sparse solver</em>, or <em>Baseline sparse solver, one core</em> — then where it was
+found. circuitRF asks EMerge once and keeps the answer until that environment changes. Any EMerge version
+you installed yourself runs; one circuitRF has not tested is flagged, as Gmsh's is, and the row and every
+run name the versions that are tested.</p>
+<p><strong>Install EMerge …</strong> puts a Python of its own, the newest tested EMerge and every package EMerge needs
+into one folder of circuitRF's, each at a pinned version and checked against a recorded checksum; no Python of yours is read
+or changed. It takes about two minutes and 1 GB. EMerge and Gmsh are free software under the GNU GPL;
+on an x64 computer, EMerge's own dependencies also include a vendor's multi-threaded sparse-solver
+library under that vendor's licence. The install says so before anything is downloaded.</p>
+<p><strong>The install also uses the fastest sparse solver your computer can have</strong>, without asking again. On
+an arm64 macOS computer that is a solver it builds from source, which takes a few seconds and needs the
+command line tools. If they are not installed, the status line says so — <em>Install the command line tools
+(xcode-select --install) and circuitRF will add a faster one automatically</em> — and <strong>Install the command
+line tools…</strong> beside it starts their installer. When they are in place, circuitRF builds the faster
+solver by itself, the next time this tab is shown or an EMerge run starts. Until then EMerge still runs,
+and gives the same answers, with a multi-threaded solver that needs no compiler. What each solver is worth,
+measured, and what each other kind of computer gets, is in
+<a href="em-solvers.html#emerge-speed">EM Solvers ▸ Getting the most speed from EMerge</a>.</p>
+<p><strong>Uninstall …</strong> on the EMerge row removes the whole folder: its Python, EMerge, and every solver built
+into it. The install puts nothing of EMerge's anywhere else.</p>
+<p><strong>On an arm64 macOS computer it also builds EMerge's GPU sparse solver</strong>, when a Rust toolchain is
+installed as well as the command line tools. The status line then says <em>GPU sparse solver installed</em>.
+Without Rust it says <em>GPU solving is available after installing a Rust toolchain</em>, and <strong>Enable GPU
+solving…</strong> beside it fetches Rust's minimal toolchain into EMerge's own folder, builds the GPU solver with
+it, and deletes the toolchain. It shows what it will fetch first: about 100 MB and half a minute. Your
+shell, your <code>PATH</code> and any Rust you install yourself are not touched. If you would rather install Rust
+yourself, circuitRF builds the GPU solver by itself the next time this tab is shown or an EMerge run
+starts. The GPU solver is free software under the GNU Affero GPL; circuitRF builds it on your computer
+and distributes nothing. Headless, <code>circuitrf solver install emerge --gpu --yes</code> does the same as the button.</p>
+<p><strong>Device</strong> (EMerge) says where EMerge factorises. <strong>Automatic</strong>, the default, uses the GPU sparse solver
+for a driven problem large enough to be faster on it, and the CPU otherwise. <strong>CPU</strong> never uses it, and
+<strong>GPU</strong> always does when it is installed. It belongs to this computer, not to a setup. With no EMerge found it is
+greyed out, and the choice it holds applies again once one is. See
+<a href="em-solvers.html#emerge-gpu">Solvers ▸ EMerge on a GPU</a>.</p>
 <p>How each program was installed for validation is in
 <a href="em-setup.html#install-3d-solvers">Installing the 3D solvers by hand</a>.</p>
 <p><strong>The geometry kernel row</strong> is the one program here that circuitRF <em>does</em> include: Open CASCADE

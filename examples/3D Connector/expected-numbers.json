@@ -1,5 +1,26 @@
 {
   "About": "The key numbers README.md and the EM Solvers page state, in one place, and the recorded |S| of every shipped run. circuitRF's tests check that each quoted value's Readme text appears in both pages, and gate 6 (Category=Benchmark) re-runs the four shipped runs and holds every recorded |S11|, |S21| and |S22| to RegressionTolerance: the regression net for 3D EM results. Measured once on an Apple M4 (10 cores, 16 GB), macOS 27.0, Palace 0.18.1 on 10 processes, Gmsh 4.15.2, openEMS 0.37.0-rc3, OpenCASCADE 8.0.1. A time is the whole run's wall clock; memory is Palace's own peak over its processes; openEMS's size is its grid's cell count.",
+  "Emerge": {
+    "About": "brief-emi-8 R-emi8-4: the Launch's Palace setup run on EMerge 3.0.0b2 (Standard, the setup's EMerge section being empty), against the Palace fillet run recorded above. EmergeValidationTests (Category=Benchmark, Skipped without EMerge) holds |S21| to S21Tolerance in |Δ|S|| at every frequency. |S11| and |S22| are recorded and reported, not held: no solver's is converged at these settings (Palace's own moves by up to 0.03 with its element order, openEMS's is up to 0.10 from it). EMerge's Accurate preset passed 7 GB in its refinement passes on this model and was stopped by the memory limit.",
+    "Setup": "Palace",
+    "Preset": "Standard",
+    "Cost": [ "7 s", "2.9 GB" ],
+    "S21Tolerance": 0.01,
+    "Against": [
+      { "GHz": 2, "S11_dB": -30.058, "S21_dB": -0.029, "S22_dB": -29.793 },
+      { "GHz": 6, "S11_dB": -19.445, "S21_dB": -0.1348, "S22_dB": -19.591 },
+      { "GHz": 10, "S11_dB": -16.713, "S21_dB": -0.2461, "S22_dB": -17.479 },
+      { "GHz": 14, "S11_dB": -19.016, "S21_dB": -0.409, "S22_dB": -20.751 },
+      { "GHz": 18, "S11_dB": -40.747, "S21_dB": -0.5179, "S22_dB": -20.929 }
+    ],
+    "Recorded": [
+      { "GHz": 2, "S11_dB": -42.44, "S21_dB": -0.019, "S22_dB": -37.12 },
+      { "GHz": 6, "S11_dB": -24.87, "S21_dB": -0.094, "S22_dB": -21.88 },
+      { "GHz": 10, "S11_dB": -19.58, "S21_dB": -0.206, "S22_dB": -18.83 },
+      { "GHz": 14, "S11_dB": -17.73, "S21_dB": -0.429, "S22_dB": -20.24 },
+      { "GHz": 18, "S11_dB": -21.99, "S21_dB": -0.488, "S22_dB": -21.52 }
+    ]
+  },
   "RegressionTolerance": {
     "S11_dB": 0.05,
     "S21_dB": 0.005,

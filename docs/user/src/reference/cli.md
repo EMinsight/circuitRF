@@ -121,7 +121,8 @@ convention behind both.</p>
 | `hb` | `.cnl` or `.csch` | Harmonic balance, single- or multi-tone | Spectra tables to stdout; `-o .mat/.npy/.txt` |
 | `lp` | `.cnl` or `.csch` | Loadpull over the directive's Γ grid | A per-Γ-point table; `-o .mat/.npy/.txt/.spl/.lpcwave` |
 | `lpp` | `.cnl` or `.csch` | Loadpull **pursuit** — searches for the optima | Optima + the follow-on grid; `-o` as `hb`; `--out-grid` writes a `.gam` |
-| `em` | `.cem` | The EM kernel the setup resolves to | A Touchstone `.sNp` **and** a grouped `.npy`, where **Simulate** writes them |
+| `em` | `.cem`, or a `.c3d` with `--setup` | The EM kernel or 3D solver the setup resolves to | A Touchstone `.sNp` **and** a grouped `.npy`, where **Simulate** writes them |
+| `solver list`, `install`, `remove` | **nothing** — a tool name | The install assistant **Settings ▸ Solvers** runs | What each 3D solver's row shows, to stdout; an install or a removal, only with `--yes` |
 | `opt` | `.csch` or `.cnl` | The schematic's saved optimization — the [Optimizer](optimization.html)'s own run | The best values and each goal's result to stdout; **nothing** in the design (`--save-preset` adds a preset) |
 | `yield mc`, `yield estimate`, `yield trial` | `.csch` or `.cnl` | A Monte Carlo or yield run over the tolerances on the tune lines, the kit's statistics and the `statistics` line | The yield, each goal's result and the spread to stdout; the trials to `<design>.yield.npy`; **nothing** in the design (`--save-preset`, `--save-corner` with `--trial`) |
 | `yield corners` | `.csch` or `.cnl` | The design at every enabled corner, or a Monte Carlo at each (`--mc`) | A corner × goal margin table to stdout; the corners to `<design>.corners.npy`; **nothing** in the design (`--generate … --write` on a `.csch`) |
@@ -454,8 +455,12 @@ names, resolves the stackup, meshes, solves the frequency plan, de-embeds, and w
 
 **It needs no other arguments.** Everything else it needs is already recorded in the files.
 
-A 3D setup's Palace solves on the CPU unless `--device gpu` says otherwise; that needs a GPU build of Palace, and
-[Palace on a GPU](em-setup.html#palace-gpu) has the details. `--device` is refused on a run that uses no Palace.
+`--device auto|cpu|gpu` chooses where a 3D run solves. A Palace run solves on the CPU unless `--device gpu` says
+otherwise; that needs a GPU build of Palace, and [Palace on a GPU](em-setup.html#palace-gpu) has the details. An
+EMerge run is `auto` unless `--device` says otherwise, whatever **Settings ▸ Solvers** holds: the GPU sparse solver
+for a driven problem large enough to be faster on it ([EMerge on a GPU](em-solvers.html#emerge-gpu)), the CPU
+otherwise.
+`--device gpu` is refused on a run that uses neither Palace nor EMerge.
 
 A 3D run's solver is stopped if its memory reaches this computer's (`--memory-limit <GB>` sets a lower limit), or if
 the startup volume or the results' volume falls below 10 GB free; either way the run writes nothing and exits **1**.
@@ -704,6 +709,35 @@ analyse. Point this EM setup at a layout that exists.
 | **No layout** | The layout reference did not resolve | 1 |
 | **Engine error** | The solve failed | 1 |
 | **Cancelled** | Stopped at a work boundary | 130 |
+
+## `solver` — installing, listing and removing the 3D solvers {#solver}
+
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf solver list [--capability gpu]
+<span class="prompt">$ </span>circuitrf solver install &lt;palace|gmsh|openems|emerge&gt; [--version &lt;v&gt;] [--gpu] [--yes]
+<span class="prompt">$ </span>circuitrf solver remove &lt;palace|gmsh|openems|emerge&gt; [--version &lt;v&gt;] [--yes]
+<span class="prompt">$ </span>circuitrf solver remove --all [--yes]</code></pre>
+
+The install assistant of **Settings ▸ Solvers**, with no window: the same recipes, the same install record, the
+same removal. A build machine installs a solver this way.
+
+- **`list`** prints what each Settings row shows: found or not, the version and whether circuitRF has validated or
+  tested it, where it is and how it was found, and the command that would install it here. EMerge's line adds the
+  sparse solver it would use (*fast sparse solver*, or the single-threaded baseline with what to install) and
+  whether its GPU sparse solver is installed. `--capability gpu` also asks Palace whether it solves on a GPU, which
+  costs a one-element solve. Read-only: it installs and builds nothing.
+- **`install <tool>`** prints what it would fetch, from where, where it would go and what it cost when measured,
+  and exits **1** having fetched nothing. **`--yes`** agrees and installs. `circuitrf solver install emerge --yes`
+  installs EMerge into a Python of its own and, on an arm64 Mac with the command line tools, builds its faster
+  sparse solver in the same run; **`--gpu`** also fetches a temporary Rust toolchain into EMerge's folder to build
+  its GPU sparse solver, and deletes the toolchain after. See
+  [Getting the most speed from EMerge](em-solvers.html#emerge-speed).
+- **`remove <tool>`** removes a copy circuitRF installed, after printing the space it frees; `--all` removes every
+  one. Again nothing happens without `--yes`. A program circuitRF did not install is never removed.
+
+Exit **0** when installed (or already installed) or removed, **1** when refused or failed, with the report on
+stderr, **130** when cancelled.
+
+---
 
 ## `opt` — optimizing from the command line {#opt}
 

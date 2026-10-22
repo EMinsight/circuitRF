@@ -277,7 +277,7 @@ public sealed class PalaceEigenTests(ITestOutputHelper output) : IDisposable
             var eig = new EmSetup { Solver3D = solver, Problem3D = Em3dProblemType.Eigenmode };
             var e = EmRunService.Run(eig, src, Path.Combine(_root, "e-" + solver));
             Assert.Equal(EmRunStatus.Refused, e.Status);
-            Assert.Contains("only Palace finds eigenmodes", e.Error);
+            Assert.Contains("only Palace and EMerge find eigenmodes", e.Error);
         }
 
         // A wave port whose line stops short of the layout's edge: the generator names the port and the face.

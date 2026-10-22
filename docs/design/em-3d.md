@@ -54,6 +54,13 @@ nothing in v1 depends on it.
 > is refused, never shadowed. A **generic library ships** with circuitRF, named by every shipped
 > technology and copied into a new workspace (§4.1a). Briefed as
 > `docs/sonnet-briefs/brief-em3d-53-materials-editor.md`.
+>
+> **rev 7 → rev 8 (2026-10-22), a third solver (the EMI series, `docs/sonnet-briefs/brief-emi-0-overview.md`):**
+> **EMerge** (GPL-2.0-or-later, 3D **FEM** in Python) is added (§2a), and the two-solver framing becomes a **solver
+> seam**: one descriptor per solver, one list of them, and nothing outside it naming a solver (§4). *Both* becomes
+> **Compare**, any set of the installed solvers against a reference (§4.4). EMerge has no executable, so circuitRF
+> drives it through a constant driver script in EMerge's own Python (§5.2), and installs that Python the way it
+> installs every other solver (§7.1).
 
 > **This is a dated survey of a fast-moving landscape — re-survey before building anything.**
 > Every tool choice below reflects what the open-source ecosystem offered on the dates given, and is
@@ -89,14 +96,16 @@ board vias and heatsink.
 
 ## 0. The one-paragraph version
 
-circuitRF writes no full-wave 3D solver. It drives two open-source ones as **external processes** —
+circuitRF writes no full-wave 3D solver. It drives three open-source ones as **external processes** —
 the same arrangement as circuitRF's device workers, and for the same reasons: **Palace** (Apache-2.0,
-MPI-parallel 3D **FEM**) and **openEMS** (GPLv3, 3D **FDTD**). Both are fed from **one solver-neutral
-3D problem** that circuitRF owns — named solids, materials, ports and boundaries, every dimension a
-resolved number — and **the user picks the solver per setup**, or runs both on the same geometry as a
-cross-check. The problem is lowered two ways: for Palace through **Gmsh** (GPL, run as a program) with
-its built-in **OpenCASCADE** kernel (LGPL-2.1 + exception) to a tetrahedral mesh; for openEMS to
-CSXCAD XML and a rectilinear grid that circuitRF generates itself. OpenCASCADE stays circuitRF's
+MPI-parallel 3D **FEM**), **openEMS** (GPLv3, 3D **FDTD**) and **EMerge** (GPL-2.0-or-later, 3D **FEM** in
+Python). All are fed from **one solver-neutral 3D problem** that circuitRF owns — named solids,
+materials, ports and boundaries, every dimension a resolved number — and **the user picks the solver per
+setup**, or compares several on the same geometry as a cross-check. The problem is lowered once per
+solver: for Palace through **Gmsh** (GPL, run as a program) with its built-in **OpenCASCADE** kernel
+(LGPL-2.1 + exception) to a tetrahedral mesh; for openEMS to CSXCAD XML and a rectilinear grid that
+circuitRF generates itself; for EMerge to a data file its driver script builds the same OpenCASCADE
+geometry from, meshed by EMerge's own Gmsh. OpenCASCADE stays circuitRF's
 solid-geometry engine for the editable modeller and the viewer. circuitRF owns what it already owns
 everywhere else: the human-readable design document, the expression engine that resolves every
 dimension, the run service that turns results into Touchstone files and `DataSet`s, and the viewer.
@@ -169,6 +178,37 @@ so that a commercial user learns the terms before building rather than after.
 
 ---
 
+## 2a. EMerge — what it is, measured against what circuitRF needs
+
+Surveyed at **3.0.0b2** (2026-10-21), a pre-release, by building the 3D Eigenmode example's cavity in it
+by hand (`brief-emi-0-overview.md` §2). A finite-element solver for the time-harmonic Helmholtz problem,
+written in Python on NumPy/SciPy, compiled sparse solvers and Gmsh's Python module, GPL-2.0-or-later,
+published on PyPI with compiled wheels for macOS, Linux and Windows x64.
+
+**It has:**
+- **Driven** S-parameters with lumped ports and an **adaptive (rational-fit) frequency sweep**: the
+  cavity's 801-point band from 10–13 solves.
+- **Eigenmode**, by shift-invert about a search frequency: it returns modes on **both sides** of that
+  frequency, so circuitRF drops those below it (`EmergeResults.FilterModes`).
+- Surface impedance on metal, PEC/PMC, first-order absorbing faces, a far-field transform, and the same
+  OpenCASCADE geometry calls Palace's `.geo` makes — so a kernel solid's B-rep is imported unchanged.
+- **Interchangeable sparse solvers**, which decide its speed (`em-solvers.md` ▸ *Getting the most speed
+  from EMerge*): a single-threaded default, multi-threaded ones, and on an arm64 Mac a GPU one.
+
+**It lacks, and each is a design constraint here:**
+- **No executable.** Its only interface is Python, so circuitRF drives it through a constant driver script
+  of its own in a Python it provisions (§5.2, §7.1).
+- **Wave ports and static problems**, as circuitRF needs them: a wave port is refused by name and is the EMW
+  sub-series; electrostatic and magnetostatic stay Palace's.
+- **A stable API.** 3.0 renumbered its solver enum and changed its far-field return and port API; the driver
+  checks its version and warns on an untested one.
+- **A multi-threaded eigensolver**: an eigenmode solve is one core whatever is installed.
+
+**Measured against Palace** on the cavity: the mode within 1e-5, the driven notch at the same 5 MHz sample,
+and the notch depth 1–1.6 dB deeper (EMI-8's open item, `src/Design/RESOLVED.md`).
+
+---
+
 ## 3. openEMS — what it is, measured against what circuitRF needs
 
 Surveyed on 2026-09-24. openEMS is a 3D **finite-difference time-domain** solver (the equivalent-circuit
@@ -211,11 +251,20 @@ model and write it out as **one XML file**, which the `openEMS` executable then 
 
 ---
 
-## 4. Two solvers, one problem
+## 4. Several solvers, one problem: the solver seam
 
-The user's choice between FEM and FDTD is a choice of **backend**, not a second design. Everything the
-design means — the geometry, the materials, which faces are ports, where the air ends — is written
-once; each solver sees a lowering of it.
+The user's choice of solver is a choice of **backend**, not a second design. Everything the design means —
+the geometry, the materials, which faces are ports, where the air ends — is written once; each solver sees
+a lowering of it.
+
+**A solver is one descriptor** (`Em3dSolverDescriptor`, `src/Design/Em3d/Solvers/`), and `Em3dSolvers.All` is
+the list of them: Palace, openEMS, EMerge. The descriptor carries the solver's identity and spellings, its
+method, its **capabilities** (the problems it solves, fields, a radiation pattern, SAR, a GPU, whether Gmsh
+meshes for it), the programs it needs, and its plan and execute steps. Every question asked about a setup's
+solver — can it run this problem, which programs must be found, what is its result called — is asked of a
+descriptor or of the setup's `Em3dSolverChoice` (one solver, or Compare of several), never by naming a
+solver. `SolverSeamTests` scans `src/` for a solver named anywhere else. A fourth solver is a descriptor, its
+lowering and its tool rows, and no edit to the code that runs, compares or displays a result.
 
 ### 4.1 The solver-neutral 3D problem
 
@@ -238,6 +287,7 @@ nothing in it names a mesh entity (§6.4). Tier A's generator (§6.3) produces i
 |---|---|---|
 | **Palace (FEM)** | problem → `.geo` script → Gmsh with OpenCASCADE → tetrahedral `.msh` + Palace JSON | Gmsh, then Palace's adaptive refinement |
 | **openEMS (FDTD)** | problem → CSXCAD XML, written as text | rectilinear grid lines generated by circuitRF (§6.5) |
+| **EMerge (FEM)** | problem → `problem.json` (pure data) + the constant driver `circuitrf_emerge.py` + the kernel solids' B-reps | Gmsh inside EMerge's process, sized by EMerge along metal edges |
 
 ### 4.1a Materials — the technology, extended, not a second file
 
@@ -319,9 +369,9 @@ shared by several technologies.
 The setup document holds the neutral problem **plus one section per solver**, both kept, so switching
 solver is picking a section and "run it in both" is one command, not a second setup.
 
-| Shared (written once) | Palace section | openEMS section |
-|---|---|---|
-| Geometry, materials, ports, boundaries, frequency range, requested outputs | Initial mesh size fields and grading; adaptive-refinement tolerance and iteration cap; element order; sweep tolerance | Grid rules (maximum cell size in wavelengths, the thirds rule at metal edges, grading ratio); end criterion (energy decay in dB); maximum time steps |
+| Shared (written once) | Palace section | openEMS section | EMerge section |
+|---|---|---|---|
+| Geometry, materials, ports, boundaries, frequency range, requested outputs | Initial mesh size fields and grading; adaptive-refinement tolerance and iteration cap; element order; sweep tolerance | Grid rules (maximum cell size in wavelengths, the thirds rule at metal edges, grading ratio); end criterion (energy decay in dB); maximum time steps | Largest element and edge size; element order; adaptive sweep, its tolerance and sample cap; adaptive mesh passes; saved fields |
 
 A solver section left empty takes circuitRF's defaults for it, so a user who only ever runs one
 solver never sees the other's settings.
@@ -350,10 +400,15 @@ definition of radiated power, no faster, and a second program on HDF5 dumps). Pa
 so a conducting floor or a wave port leaves a Palace run without a pattern and says so. Measured findings and
 gates are in `src/Design/RESOLVED.md` §brief-em3d-31.
 
-### 4.4 Running both — what agreement proves
+### 4.4 Compare — what agreement proves
 
-Two discretizations that share nothing numerically — tetrahedra in frequency, a grid in time — agreeing
-on one geometry is strong evidence that each has converged. Two limits keep that honest:
+**Compare** runs any set of the installed solvers that can solve the problem, in turn, on one generated
+model, and differences each against a **reference** the user picks (Palace when chosen, else the first).
+`"Solver3D": "Both"` in an existing file still means Palace and openEMS against Palace. Two discretizations
+that share nothing numerically — tetrahedra in frequency, a grid in time — agreeing on one geometry is
+strong evidence that each has converged; two FEM programs that share no code agreeing checks the solving
+of the same method, and a third answer says which of two that disagree to doubt. Two limits keep that
+honest:
 
 - **It is a cross-check, not a reference.** Both backends read the same generated problem, so a bug in
   the Tier A generator appears identically in both and agreement cannot catch it. §10's validation
@@ -363,13 +418,14 @@ on one geometry is strong evidence that each has converged. Two limits keep that
   definition (§4.1) states its reference plane explicitly and each backend de-embeds to it; without
   that, a user sees a few tenths of a dB between the two solvers and distrusts both.
 
-The comparison is a first-class result: running both produces the two Touchstone files and a
-difference `DataSet` the Data Display can plot like any other.
+The comparison is a first-class result: a comparison produces each solver's Touchstone file and one
+difference `DataSet` (`<name>.compare_em.npy`) the Data Display can plot like any other. An eigenmode
+comparison has no S to difference, so each solver's modes are its own result.
 
 ### 4.5 Where results land
 
 `EmRunService.ResolveSnpPath` is predictable so that a schematic's SnP reference survives a re-run.
-With two backends on one setup, **the solver is part of the path** — otherwise the second run silently
+With several backends on one setup, **the solver is part of the path** — otherwise the second run silently
 overwrites the first — and a schematic's reference names which solver's result it uses. Re-running the
 same solver still lands on the same path.
 
@@ -786,7 +842,7 @@ the matched perimeter; the viewer shows which was done (§8.5).
 
 ### 7.1 circuitRF distributes no solver and no mesher
 
-**Palace, openEMS and Gmsh are installed by the user, never shipped by circuitRF** — no binary in an
+**Palace, openEMS, EMerge and Gmsh are installed by the user, never shipped by circuitRF** — no binary in an
 installer, no image, no first-use download, on any platform. This is the arrangement circuitRF already
 has for the Verilog-A compiler (`VerilogACompilerDiscovery`, `src/Core/RESOLVED.md`), and it is
 adopted for the same reasons, plus two of its own:
@@ -801,6 +857,14 @@ adopted for the same reasons, plus two of its own:
   otherwise have required.
 - **circuitRF works without them.** With none installed, every 3D run is a refusal and nothing else
   changes — schematic, planar EM, HB, loadpull and thermal (§9, managed code) are untouched.
+- **EMerge's Python environment is the same arrangement, not an exception to it.** EMerge is a Python
+  package, so what the install assistant installs for it is a whole environment: `uv` (a single static
+  binary, checksummed) provisions its own CPython and a virtual environment inside the solver home, and
+  installs a hash-locked set of wheels into it. No system Python is read, needed or changed, nothing is put
+  on `PATH`, and uninstalling is deleting the home. Discovery takes that environment's interpreter, or one
+  the user names in Settings or `CIRCUITRF_EMERGE` — **never a Python from `PATH`**, which is far more likely
+  to be the user's own environment than one meant for circuitRF. The faster sparse solvers it builds on an
+  arm64 Mac are built there from their upstream source, and circuitRF redistributes nothing.
 
 What circuitRF does instead is make a user-installed solver **easy to point at and impossible to
 misuse**:

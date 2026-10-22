@@ -132,6 +132,14 @@
 			"Z0": "50"
 		}
 	],
+	"Look": {
+		"ShowEdges": true,
+		"ShowGrid": true,
+		"ShowOverlays": true,
+		"ShowPorts": true,
+		"ShowBoundaries": true,
+		"ShowImages": true
+	},
 	"Setups": [
 		{
 			"FormatVersion": 1,

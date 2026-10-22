@@ -1163,15 +1163,17 @@ folder are in <a href="cli.html#em">The Command Line</a>.</p>
 <a href="em-3d.html">3D EM</a>. How the planar, FEM and FDTD solvers differ, and which suits which problem, is in
 <a href="em-solvers.html">EM Solvers: MoM, FEM and FDTD</a>. This section is the panel's 3D controls, one by one.</em></p>
 <p>The <strong>Solver</strong> group at the top of the panel picks who solves the setup: circuitRF's own planar and
-cross-section kernels (the default), <strong>FEM 3D (Palace)</strong>, <strong>FDTD 3D (openEMS)</strong>, or <strong>FEM &amp; FDTD -
-Compare</strong>. A 3D setup builds a 3D model from the layout, its technology and any bond wires. The
+cross-section kernels (the default), <strong>FEM 3D (Palace)</strong>, <strong>FDTD 3D (openEMS)</strong>, <strong>FEM 3D (EMerge)</strong>, or
+<strong>Compare…</strong> — any two or more of them on one model (<a href="#compare">Compare</a>). A solver that is not installed, or that
+cannot solve this setup, is greyed out; its tooltip says which. A 3D setup builds a 3D model from the layout, its technology and any bond wires. The
 settings a 3D run does not read — the surface mesh, adaptive sampling, the port type and the planar
 solver options — are hidden while a 3D solver is chosen; they stay in the
 <code>.cem</code> and come back when you switch to Planar. What a 3D run does read stays: the frequency sweep,
 each port's Z₀ (set in the Solver group's port table), the return plane, the solve region, the core count
 and the <strong>radiation pattern</strong>, which a driven 3D run produces too — see
-<a href="antennas.html#3d">Antennas ▸ From a 3D solver</a>. Palace and openEMS each have their own section below, and a setup keeps
-both, so switching solver never loses the other's settings.</p>
+<a href="antennas.html#3d">Antennas ▸ From a 3D solver</a>. Palace, openEMS and EMerge each have their own section below, and a
+setup keeps them all, so switching solver never loses another's settings. A comparison shows the section of every solver
+it runs, each titled with the solver's name.</p>
 <p>With Palace chosen the panel shows Palace's own settings. <strong>A blank box is the default shown in it</strong>, and
 every box is a field of the <code>.cem</code> — nothing here lives only in the panel.</p>
 <p><strong>Quality</strong> (<code>Quality</code>: <code>Draft</code>, <code>Standard</code> or <code>Accurate</code>) sets the element order, the refinement and the
@@ -1304,10 +1306,30 @@ a run on its own: the estimate uses the highest memory per unknown circuitRF has
 tolerance it converges on (the bar is that convergence on a log scale, not a share of the work — the
 number of samples is not known in advance); <em>Sweep: evaluating frequencies</em> with a count; <em>Reading
 results</em>. A multi-port setup samples and sweeps each port's excitation in turn, and the row says which.
-Beside the stage is the memory Palace's processes are using, read once a second. If Palace prints
+Beside the stage is the memory Palace's processes are using, shown once a second; where part of it has been swapped
+out or compressed, the larger figure that counts it is shown beside it. If Palace prints
 something circuitRF does not recognise (a Palace version it has not been validated against), the row
 falls back to a count of log lines, with no bar, and the run's notes say so. A 3D run cannot finish
 early and keep what it has, so its running button reads <strong>Cancel</strong>, not Stop.</p>
+<p><strong>A memory limit and a disk floor hold every 3D run while it runs</strong> — Gmsh, Palace, openEMS, EMerge and the short
+checks they make, whichever solver. The checks before a run are estimates; these are measurements, taken ten times a
+second, of everything the solver's processes hold, including what the operating system has swapped out or compressed.</p>
+<ul>
+<li><strong>The memory limit is this computer's memory</strong>, or the lower limit set in <a href="settings.html#em3d">Settings ▸ Solvers</a>
+(<code>--memory-limit</code> for <code>circuitrf em</code>). A solver that reaches it is stopped, with all the processes it started, and
+the run writes nothing. Stopped while meshing, the message says the mesher most likely ran away on one curve and
+points at the log that names it; stopped while solving, it says the problem is larger than this computer and lists
+what would shrink it. Past 90 % of the limit the run carries a warning.</li>
+<li><strong>The disk floor is 10 GB free</strong> (5 % of a smaller volume), on the startup volume, where the operating system swaps,
+and on the volume the results are written to. Below it the run is stopped the same way, and a run that would start
+below it is not started. The message names the volume and the free space left.</li>
+<li><strong>A run you start anyway when the 150 % check asks</strong> (or with <code>--force</code>) has no memory limit, since you chose to let
+it swap, but it keeps the disk floor.</li>
+<li><strong>On Windows the limit is held by the operating system itself</strong>, so a sudden burst cannot overshoot it. Elsewhere
+it can overshoot by the memory taken between two readings, which is why it sits at the computer's memory and not
+above it. <strong>A Palace in the Linux subsystem</strong> is held by the subsystem's own memory setting rather than this
+limit; the disk floor still applies.</li>
+</ul>
 <p><strong>When it finishes</strong>, one line says what it cost — wall time, Palace's own peak memory, the tetrahedra
 it started and finished with, the unknowns, the refinement passes, the sweep's samples and the preset —
 and the <code>.sNp</code>'s header records the same (<code>circuitRF-EM 3D run:</code> and <code>circuitRF-EM 3D run cost:</code>).
@@ -1600,28 +1622,188 @@ magnitude and phase of each component, which is the complex field exactly — pl
 phases that the view does not need. The 3D view shows it for each excited port at each frequency.
 With <code>&quot;SaveH&quot;: true</code> it records the magnetic field too, as <code>hfield&lt;k&gt;_…</code> beside each <code>efield&lt;k&gt;_…</code> pair —
 twice the disk per saved frequency, which is why it is asked for rather than always on.</p>
-<h3 id="run-both">Running both, and the difference</h3>
-<p><strong>FEM &amp; FDTD - Compare</strong> (<code>Solver3D: Both</code>, or <code>circuitrf em x.cem --solver both</code>) builds the 3D model
-once and runs Palace and then openEMS on it, one after the other. Each result lands where it would
-alone, and a third file, <code>results/&lt;name&gt;.compare_em.npy</code>, holds the difference: both S matrices,
-<code>dMag_dB</code>, <code>dPhase_deg</code> and <code>dVec</code> (the magnitude of S_Palace − S_openEMS, which stays meaningful where
-|S| is small and a dB difference is not). It opens in the Data Display like any result.</p>
-<p>The first line the run writes is the summary: the largest S21 and S11 differences over the band and
-where they occur. After it comes what makes a difference <strong>expected</strong> on this model — which solver
-suits its geometry better, a lossy substrate, metal that openEMS treats as perfect, a
-wire below the grid cell — and, as a warning, an openEMS run that did not reach its end criterion, which
-is the first thing to fix. <strong>Agreement is a cross-check, not a validation</strong>: both solvers read the same
-model, so an error in building it would appear in both.</p>
-<p>Both solvers are checked before either starts, so a missing openEMS is reported in the first second,
-not after the Palace run, with the setting that runs the one that is available. If one solver fails
-part way through, the other's result is still written and no comparison is. The two results must be
-at the same frequencies — they always are when both come from one setup — and a comparison is never
-interpolated.</p>
+<h3 id="emerge-run">Running EMerge</h3>
+<p><strong>FEM 3D (EMerge)</strong> (<code>Solver3D: Emerge</code>, or <code>circuitrf em x.c3d --solver emerge</code>; the MCP <code>run</code> tool's
+<code>solver=emerge</code>) solves a Driven or an Eigenmode setup with EMerge, a finite-element solver installed from
+<a href="settings.html#em3d">Settings ▸ Solvers</a>. It meshes the same geometry Palace does, with its own copy
+of Gmsh. The <code>.cem</code>'s <code>EMerge</code> section holds its settings, the same way the <code>Palace</code> section holds Palace's.</p>
+<p>With EMerge chosen the panel shows them. <strong>A blank box is the chosen Quality preset's value</strong>, shown in it, and a box
+filled in overrides the preset for that setting only:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Key</th>
+<th>What it sets</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Quality</td>
+<td><code>Quality</code></td>
+<td>Draft, Standard (the default) or Accurate: the four settings marked <em>by preset</em> together.</td>
+</tr>
+<tr>
+<td>Largest element (λ)</td>
+<td><code>MaxElementWavelengths</code></td>
+<td>The largest element in each material, as a fraction of the wavelength in it at the sweep's top frequency; at most 0.5. <em>By preset.</em></td>
+</tr>
+<tr>
+<td>At metal</td>
+<td><code>EdgeRefinement</code></td>
+<td>The element size along conductor and sheet edges, as a fraction of the size above. <em>By preset.</em></td>
+</tr>
+<tr>
+<td>Element order</td>
+<td><code>ElementOrder</code></td>
+<td>1 or 2 (the default). First order is for quick checks.</td>
+</tr>
+<tr>
+<td>Refinement passes</td>
+<td><code>AdaptiveMesh</code></td>
+<td>The most passes in which EMerge refines the mesh itself before the sweep; 0 solves the starting mesh. <em>By preset.</em></td>
+</tr>
+<tr>
+<td>Adaptive sweep</td>
+<td><code>AdaptiveSweep</code></td>
+<td>On (the default) fits the band from a few solves; off solves every frequency.</td>
+</tr>
+<tr>
+<td>Sweep tolerance</td>
+<td><code>Tolerance</code></td>
+<td>The adaptive sweep's tolerance on |S|. <em>By preset.</em></td>
+</tr>
+<tr>
+<td>Most sweep solves</td>
+<td><code>MaxSamples</code></td>
+<td>The most frequencies the adaptive sweep solves; at least 5, default 100.</td>
+</tr>
+<tr>
+<td>Save fields at (GHz)</td>
+<td><code>SaveFieldsGHz</code></td>
+<td>The frequencies whose fields the run saves for the 3D view, as Palace's box: see <a href="#palace-fields">Fields for the 3D view</a>.</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Preset</th>
+<th>Largest element (λ)</th>
+<th>At metal</th>
+<th>Refinement passes</th>
+<th>Sweep tolerance</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Draft</td>
+<td>0.2</td>
+<td>0.25</td>
+<td>0</td>
+<td>0.001</td>
+</tr>
+<tr>
+<td>Standard</td>
+<td>0.15</td>
+<td>0.2</td>
+<td>0</td>
+<td>0.001</td>
+</tr>
+<tr>
+<td>Accurate</td>
+<td>0.1</td>
+<td>0.15</td>
+<td>3</td>
+<td>0.0001</td>
+</tr>
+</tbody>
+</table>
+<p>Every preset is element order 2. <strong>Draft</strong> was chosen on the 3D Eigenmode example's cavity, where it puts the
+S21 notch at the same 5 MHz step as Standard and Accurate (and as Palace and openEMS) in 3 s and 1.6 GB, against
+6 s and 3.1 GB for Standard and 34 s and 6.9 GB for Accurate, whose three passes took its mesh from 35,571 tetrahedra
+to 60,503. The depth at that step moves by 0.9 dB across the three: a notch's depth is read from a fine sweep across
+it, not from any preset's 5 MHz step. Order 1 put that notch 25–30 MHz low. A match needs Accurate: on a 50 Ω line
+below the cavity's modes, the worst |S11| was −14 dB at Draft, −18 dB at Standard and −28 dB at Accurate. EMerge's sparse solver uses the
+setup's <em>Cores</em> setting as its thread count; how much each choice of solver, core count and device is worth is in
+<a href="em-solvers.html#emerge-speed">EM Solvers ▸ Getting the most speed from EMerge</a>.</p>
+<p>A driven sweep is built adaptively: EMerge solves the full problem at a few frequencies and fits every
+requested point from them, adding frequencies until its estimated error on |S| is below its tolerance. The
+progress line shows that error against the tolerance. <strong>A sweep that reaches <code>MaxSamples</code> first has not
+converged</strong>: its result is still written, with a warning, and the 3D view marks it not converged.</p>
+<p>Before solving, the run checks the mesh's size against this computer's memory, as Palace's run does: a
+warning past three quarters of it, and a question (or <code>--force</code>) past one and a half times it. A refused run
+stops before the solve.</p>
+<p>The result lands beside the other solvers' results: <code>results/&lt;name&gt;.emerge.sNp</code> and <code>&lt;name&gt;.emerge_em.npy</code>, or
+<code>&lt;name&gt;.emerge_eig.npy</code> for an eigenmode run. <code>results/&lt;name&gt;.emerge/</code> keeps the input (<code>problem.json</code> and the
+driver that reads it), EMerge's log (<code>emerge.log</code>) and the arrays it wrote, so a run can be repeated by hand.</p>
+<p><strong>Eigenmodes on EMerge</strong> give <strong>f</strong> and <strong>Q</strong> (the loaded Q, as Palace's). EMerge reports nothing else, so
+circuitRF computes <strong>Q_ext</strong>, <strong>Q_unloaded</strong> and <strong>Participation</strong> from each mode's own field: Q_ext is each lumped
+port's ω·R·∫ε|E|²/|V|² (the mode's stored energy over the power the port takes), and Participation is the share of
+the mode's electric energy in each <strong>material</strong> (Palace's is by object). <strong>EMerge finds the <code>Count</code> modes nearest
+<code>TargetGHz</code>, on either side of it</strong>, where Palace finds the first ones above it, and it evaluates its lumped ports at
+<code>TargetGHz</code> rather than at each mode's own frequency. So <strong>put <code>TargetGHz</code> near the modes you want</strong>: at the band's
+centre to ask whether there is a mode in the band, or just below a mode whose Q you are reading. On the 3D Eigenmode
+example, searched from 8 GHz with three modes, the post's 12.84 GHz mode was not found at all, and the Cavity's
+9.957 GHz mode read Q 694; from 10 GHz both were found, and the Cavity's read Q 564 (Palace: 539). Near 0 Hz the
+eigensolver can return solutions that are not resonances, so a solution more than 5 % below <code>TargetGHz</code> is dropped,
+and the run's notes say how many were. <strong>Q unloaded</strong> is the least certain number: it takes each port's share, computed
+from the mode's field, out of the loaded Q, and on that example it read 21 % below Palace's for one cavity and 31 %
+above for the other. EMerge solves an eigenmode problem on one core.</p>
+<p><strong>Fields and the radiation pattern on EMerge.</strong> An EMerge run saves fields as a Palace run does, by the same
+<em>Save fields at</em> box, and every field plot draws them. Each saved frequency is a <strong>direct solve of its own</strong> after
+the sweep (the adaptive sweep fits S between its own samples and has no field anywhere else), so it costs one more
+solve per frequency, may lie outside the sweep, and changes nothing the <code>.sNp</code> reports. An eigenmode run saves every
+mode. A driven field is at the same drive as Palace's, so the two solvers' plots of one structure read the same
+numbers; a mode is normalised as Palace normalises one. With <strong>Radiation pattern</strong> on and every air-box face
+absorbing, EMerge integrates its far field over those faces at the saved frequencies (the sweep's centre when it
+saves none) and the result carries the same <code>farfield</code> group Palace's does; a conducting face is said in the run's
+notes and the S-parameters are still computed.</p>
+<h3 id="compare">Compare</h3>
+<p><strong>Compare…</strong> runs two or more solvers on one 3D model and compares each with one of them, the
+<strong>reference</strong>. Choosing it shows a checkbox per solver and a <strong>Reference</strong> list over the ticked ones; the
+reference starts as Palace when Palace is ticked, otherwise the first ticked solver. A solver that is not
+installed, or cannot solve this setup (openEMS has no eigensolver, for one), is greyed out with its reason
+as the tooltip, and with fewer than two runnable solvers ticked <strong>Simulate</strong> is off, its tooltip saying
+why. Install a solver from <strong>Settings ▸ Solvers</strong>; the panel sees it when that page closes.</p>
+<p>In the file it is <code>&quot;Solver3D&quot;: &quot;Compare&quot;</code> with a block naming the solvers and the reference:</p>
+<pre><code class="language-json">&quot;Solver3D&quot;: &quot;Compare&quot;,
+&quot;Compare&quot;: { &quot;Solvers&quot;: [ &quot;Palace&quot;, &quot;Emerge&quot; ], &quot;Reference&quot;: &quot;Palace&quot; }
+</code></pre>
+<p><code>&quot;Solver3D&quot;: &quot;Both&quot;</code> is Palace and openEMS with Palace as the reference, and a setup saying <code>Both</code> is
+written back as <code>Both</code> while that is still its choice. From the command line,
+<code>circuitrf em x.cem --solver palace,emerge</code> compares those two, <code>--reference emerge</code> picks the reference,
+<code>--solver compare</code> runs the setup's own set, and <code>--solver both</code> is Palace and openEMS.</p>
+<p><strong>What it runs.</strong> The model is built once, and each solver runs on it in turn, Palace, then openEMS, then
+EMerge, because each uses every core. Each result lands where it would alone, named for its solver
+(<code>results/&lt;name&gt;.palace.s2p</code>, <code>results/&lt;name&gt;.emerge_em.npy</code>). Every solver is checked before any starts,
+so a missing one is reported in the first second, not after another's run, with the command that runs
+the ones that are ready. If one fails part way through, the others' results are still written and the
+run says which failed and why; with three or more, the ones that completed are still compared when the
+reference is among them.</p>
+<p><strong>Where the comparison lands.</strong> <code>results/&lt;name&gt;.compare_em.npy</code> holds each solver's S matrix as
+<code>S_&lt;solver&gt;</code> (<code>S_palace</code>, <code>S_emerge</code>) and, for each solver against the reference, <code>dMag_dB_&lt;solver&gt;</code>,
+<code>dPhase_deg_&lt;solver&gt;</code> and <code>dVec_&lt;solver&gt;</code>: the magnitude difference in dB, the phase difference in
+degrees and |S_reference − S_solver|, which stays meaningful where |S| is small and a dB difference is
+not. A Palace and openEMS comparison against Palace keeps the names it has always had: <code>S_palace</code>,
+<code>S_openems</code>, <code>dMag_dB</code>, <code>dPhase_deg</code> and <code>dVec</code>. It opens in the Data Display like any result, each
+solver's traces overlaid.</p>
+<p><strong>How to read it.</strong> The first line the run writes is the summary: the largest S21 and S11 differences over
+the band and where they occur, for the pair that differs most; each other pair's line follows. After them
+comes what makes a difference <strong>expected</strong> on this model, each only when this run makes it true: which
+method suits the geometry better (when FEM and FDTD are compared), a lossy substrate, metal openEMS treats
+as perfect, a wire below its grid cell, EMerge's lumped port model, the conductors EMerge gives a surface
+impedance, and the error EMerge's adaptive sweep reached. A run that did not converge — an openEMS run
+short of its end criterion, an EMerge sweep that stopped above its tolerance — is a warning and the first
+thing to fix. <strong>Agreement is a cross-check, not a validation</strong>: every solver reads the same model, so an
+error in building it would appear in every result. The results must be at the same frequencies — they
+always are when they come from one setup — and a comparison is never interpolated. An eigenmode
+comparison writes each solver's modes to its own result and no comparison file.</p>
 <h3 id="package-rlc">Package capacitance and inductance</h3>
 <p>A Palace setup can solve for a <strong>matrix</strong> instead of S-parameters. The <strong>Problem</strong> picker
 (<code>Problem3D</code>) is <em>Driven</em> (S-parameters, the default and omitted from the file), <em>Electrostatic</em> (the
 capacitance matrix) or <em>Magnetostatic</em> (the inductance matrix). The two static problems run on Palace
-only; a setup naming openEMS or both solvers is refused, and so is its <code>check</code>. They ignore the
+only; a setup naming openEMS, or comparing it, is refused, and so is its <code>check</code>. They ignore the
 frequency sweep and the port impedances, which are kept but not read (<code>check</code> says so).</p>
 <p><strong>Terminals</strong> (<code>Terminals3D</code>) are the matrix's rows and columns, in order. Each names a <strong>net</strong> — a net
 of the layout, or a <code>.wBond</code> wire array — and every conductor on it (traces, vias, bond wires) belongs to
@@ -1798,7 +1980,8 @@ in the result. Make the port region smaller, or lower the sweep's top.</li>
 <h3 id="eigenmodes">Eigenmodes</h3>
 <p><strong>Problem</strong> <em>Eigenmode</em> finds the structure's resonant frequencies and their Q — &quot;is there a lid
 resonance inside my band?&quot;. <code>Eigenmode</code> sets how many modes (<code>Count</code>, default 3) above which frequency
-(<code>TargetGHz</code>, default the sweep's start). Palace only.</p>
+(<code>TargetGHz</code>, default the sweep's start). Palace and EMerge; see <a href="#emerge-run">Running EMerge</a> for what EMerge's
+table leaves out.</p>
 <pre><code>&quot;Problem3D&quot;: &quot;Eigenmode&quot;,
 &quot;Eigenmode&quot;: { &quot;Count&quot;: 5, &quot;TargetGHz&quot;: 8 }
 </code></pre>
@@ -1816,7 +1999,8 @@ bound, since the laminate on the floor pulls the mode down. The cavity's first m
 inside the band, and the driven S21 has a <strong>−11.69 dB</strong> notch there. With a grounded post beside the line, the mode is
 at <strong>12.84 GHz</strong>, above the band, and the notch is gone. <strong>The post does not damp the mode; it shortens the cavity the
 mode sees</strong>, so the mode's frequency rises (its Q goes up, not down). The example's mode tables also show rows with a Q
-near 1: those are the line between its two ports, not resonances.</p>
+near 1: those are the line between its two ports, not resonances. Each cell also has the two setups on EMerge, which puts
+the modes within 0.15 % of Palace's; the example's README compares the two.</p>
 <p>The result is <code>results/&lt;name&gt;.palace_eig.npy</code> and no Touchstone file; <code>circuitrf em</code> prints the mode
 table and the panel shows it after a run. Palace's own files stay in the run folder.</p>
 <h3 id="palace-fields">Fields for the 3D view</h3>
@@ -1825,7 +2009,7 @@ surfaces or on chosen faces. <strong>Save fields at (GHz)</strong> in the setup 
 in the <code>.cem</code> — says which frequencies. Its box shows the sweep's centre as its placeholder when it is
 blank, and takes a comma list (<code>2, 6, 10</code>) or <code>none</code>. A field plot's <em>Other frequency…</em> adds one to it. A
 run saves only these frequencies, so a plot can show only these: a 2–18 GHz sweep left blank saves its
-centre, 10 GHz, and nothing else. openEMS has the same box, for its field dumps.</p>
+centre, 10 GHz, and nothing else. openEMS and EMerge have the same box, for their own fields.</p>
 <pre><code>&quot;Palace&quot;: { &quot;SaveFieldsGHz&quot;: [2.4, 5.8] }
 </code></pre>
 <ul>
@@ -1847,7 +2031,7 @@ frequencies writes about <strong>5.5 GB</strong>. The size grows with the mesh, 
 passes costs more. When a run finishes, its summary line states what its field files took.</p>
 <h3 id="palace-gpu">Palace on a GPU</h3>
 <p>Palace can solve on a GPU, and on several at once, when it was compiled with GPU support. <strong>Device</strong>, under
-<em>Cores</em> in the setup panel, chooses <strong>CPU</strong> or <strong>GPU</strong> for a Palace or Both setup. Like <em>Cores</em>, it is a setting
+<em>Cores</em> in the setup panel, chooses <strong>CPU</strong> or <strong>GPU</strong> for a setup that runs Palace. Like <em>Cores</em>, it is a setting
 of this machine, not of the design: it is not saved in the <code>.cem</code> or the <code>.c3d</code>, so a setup from someone else's
 workspace runs on your machine's choice.</p>
 <figure class="figure"><span class="frame">
@@ -1899,7 +2083,7 @@ runs out of it, the run fails with Palace's own error message.</li>
 to CPU (or leave out <code>--device gpu</code>) and the same Palace solves on the CPU. A GPU build needs the GPU
 toolkit's runtime libraries to start at all, even for a CPU run. If they are missing, point
 <strong>Settings ▸ Solvers</strong> at a CPU-only Palace, such as the one circuitRF installs. Both can stay installed.</li>
-<li><strong>openEMS is unaffected.</strong> In a Both run, the device applies to the Palace run only.</li>
+<li><strong>openEMS is unaffected.</strong> In a comparison, the device applies to the Palace run only.</li>
 </ul>
 <p>Once <strong>Device</strong> is GPU, the Palace row in <strong>Settings ▸ Solvers</strong> also reports what Palace found, such as
 <em>GPU: 2 detected</em> or <em>GPU: not in this build</em>. From the command line:</p>

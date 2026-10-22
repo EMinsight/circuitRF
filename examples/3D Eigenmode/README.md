@@ -5,23 +5,25 @@ in a **cavity**, and a cavity has resonant modes. The lowest has its electric fi
 lid, strongest in the middle, which is where the line runs. If that mode falls inside the band the line carries, the
 housing couples the line to itself through it, and the transmission has a notch.
 
-This workspace answers that question with Palace's **eigenmode** solve, which finds each mode's frequency and Q
-directly. A **driven** sweep of the same model then shows the notch at the same frequency. It has two cells:
+This workspace answers that question with an **eigenmode** solve, which finds each mode's frequency and Q directly,
+on Palace and on EMerge, the two finite-element solvers circuitRF runs. A **driven** sweep of the same model then
+shows the notch at the same frequency. It has two cells:
 
 - **Cavity**: a 50 Ω microstrip through an aluminium housing. Its first cavity mode is inside the band.
 - **Cavity with post**: the same housing with one grounded post from the floor to the lid, beside the line. The mode
   moves **above** the band and the notch is gone.
 
 The reference chapter is **EM Setup ▸ Eigenmodes**, in **Help ▸ circuitRF Documentation**. This page is the
-walk-through; it does not repeat that chapter. Opening, orbiting, `check` and `explain` need no solver; **Run** needs
-Palace, and the first press without it offers to install it.
+walk-through; it does not repeat that chapter. Opening, orbiting, `check` and `explain` need no solver. **Run** needs
+the setup's solver — Palace for *Modes* and *Driven*, EMerge for *Modes (EMerge)* and *Driven (EMerge)* — and the
+first press without it offers to install it. The walk-through below is Palace's; *On EMerge* repeats it on EMerge.
 
 ## What is here
 
 | Cell | View | What it is |
 |---|---|---|
-| **Cavity** | 3D view, mm | An aluminium housing, a laminate on its floor, a 50 Ω line along its length, and the lid. A lumped port at each end of the line, 0.2 mm short of the end wall. Setups *Modes* (eigenmode) and *Driven* |
-| **Cavity with post** | 3D view, mm | The same, plus one aluminium post, `post_d` across, from the floor through the laminate to the lid. The same two setups |
+| **Cavity** | 3D view, mm | An aluminium housing, a laminate on its floor, a 50 Ω line along its length, and the lid. A lumped port at each end of the line, 0.2 mm short of the end wall. Setups *Modes* (eigenmode) and *Driven* on Palace, and *Modes (EMerge)* and *Driven (EMerge)*, the same two on EMerge |
+| **Cavity with post** | 3D view, mm | The same, plus one aluminium post, `post_d` across, from the floor through the laminate to the lid. The same four setups |
 
 Two cells rather than one with a switch, so each opens and runs as it stands, and their results sit side by side.
 One technology, `tech/housing-and-board.ctech`, serves both.
@@ -117,11 +119,54 @@ The Q confirms it: with the post the loaded Q went **up**, from 539 to 2,480. A 
 The post works because it stands at the mode's maximum. One post moves this mode by about 30 %; moving it further
 needs more posts, or a wall.
 
-## Eigenmode is Palace only
+## On EMerge
+
+Each cell also has *Modes (EMerge)* and *Driven (EMerge)*: the same two setups, solved by EMerge at its *Draft*
+preset (element order 2). Run them as above. They need EMerge, which **Settings ▸ Solvers ▸ Install EMerge …**
+installs in about two minutes.
+
+| Cell | | Palace | EMerge |
+|---|---|---|---|
+| Cavity | the cavity mode | 9.956 GHz, Q 539, Q unloaded 3,236 | **9.9567 GHz**, Q **564**, Q unloaded **2,568** |
+| Cavity | \|S21\| at 9.955 GHz, the deepest sample | −11.69 dB | **−12.56 dB** |
+| Cavity | the worst \|S21\| more than 0.1 GHz from the notch | within 0.15 dB of 0 dB | **−0.106 dB** |
+| Cavity with post | the cavity mode | 12.84 GHz, Q 2,480, Q unloaded 2,879 | **12.82 GHz**, Q **3,345**, Q unloaded **3,784** |
+| Cavity with post | the least \|S21\| in the band | −0.093 dB | **−0.121 dB** |
+
+EMerge's mode tables, as `circuitrf em "Cavity/3d/Cavity.c3d" --setup "Modes (EMerge)"` prints them:
+
+| Cell | Mode | f | Q | Q unloaded | Most energy in |
+|---|---|---|---|---|---|
+| Cavity | 1 | **9.9567 GHz** | 564 | 2,568 | the air, 97 % |
+| Cavity | 2 | 11.80 GHz | 2.0 | 12 | the laminate, 84 % |
+| Cavity with post | 1 | 11.81 GHz | 2.0 | 12 | the laminate, 84 % |
+| Cavity with post | 2 | **12.82 GHz** | 3,345 | 3,784 | the air, 97 % |
+
+How to read the differences:
+
+- **The resonance agrees.** The cavity mode is within 0.003 % of Palace's with the line alone and 0.15 % with the
+  post, and both solvers put the Cavity's notch on the same 5 MHz sample.
+- **The EMerge setups search from 10 GHz, the band's centre**, where Palace's search from 8. EMerge's eigensolver
+  finds the modes nearest the frequency it is given, on either side of it, where Palace's finds the first ones above
+  it. From 8 GHz with three modes, EMerge found the Cavity's mode, but with the post only one of the line's rows: the
+  12.84 GHz mode was too far away. EMerge also evaluates the ports' resistance at that frequency rather than at each
+  mode's own, which moves the loaded Q: the Cavity's mode reads Q 694 searched from 8 GHz and 564 from 10 GHz.
+- **Q unloaded is the least certain number in EMerge's table.** circuitRF computes each port's external Q from
+  EMerge's mode field and takes the ports' share out of the loaded Q, a small difference of two larger numbers. It
+  reads 21 % below Palace's with the line alone and 31 % above with the post.
+- **The line's rows differ**, and that is expected. They are not resonances (a Q near 1 or 2); each solver returns
+  whichever heavily damped solutions lie nearest its search.
+- **The notch's depth is not a difference between the solvers.** It is where the 9.955 GHz sample falls on a notch
+  18 MHz wide. At the bottom of a notch like this one, |S21| is the loaded Q over the unloaded Q, and Palace's own
+  table gives 539 / 3,236: **−15.57 dB**. Swept across the notch in 0.1 MHz steps (9.94–9.97 GHz, Standard),
+  EMerge's bottom is **−15.55 dB** at **9.9564 GHz**. The two samples read −11.69 and −12.56 dB because each solver's
+  resonance sits a different fraction of a megahertz from 9.955 GHz. To read a notch's depth, sweep across it finely.
+
+## Eigenmode is FEM only
 
 openEMS is a time-domain solver and has no eigensolver. Set *Modes*' solver to openEMS and **Run** refuses before
-anything is meshed: *"This setup asks for an eigenmode solve on openEMS, and only Palace finds eigenmodes: openEMS is
-a time-domain (FDTD) solver and has no eigensolver. Set the setup's Solver3D to Palace, or run it with
+anything is meshed: *"This setup asks for an eigenmode solve on openEMS, and only Palace and EMerge find eigenmodes:
+openEMS is a time-domain (FDTD) solver and has no eigensolver. Set the setup's Solver3D to Palace, or run it with
 `circuitrf em --solver palace`."*
 
 ## Run settings, and the numbers
@@ -130,8 +175,12 @@ Every setup is **Draft with element order 2**, "At metal and ports" (`EdgeRefine
 linear solver, as in the 3D Package example's *Lid modes*. The air box is flush with the housing's outside and PEC on
 every face: the housing's interior is the problem. *Modes* asks for 3 modes above 8 GHz, the band's start.
 
-Measured once, on an Apple M4 (10 cores, 16 GB), macOS 27.0, Palace 0.18.1 on 10 processes, Gmsh 4.15.2. A time is the
-whole run's wall clock and memory is Palace's own peak over its processes. Your machine will differ.
+The EMerge setups are **Draft**, which sets element order 2, elements at most 0.2 of a wavelength and 0.25 of that
+along metal edges, and an adaptive sweep to 0.001 on |S|. *Modes (EMerge)* asks for 3 modes about 10 GHz.
+
+Measured once, on an Apple M4 (10 cores, 16 GB), macOS 27.0, Palace 0.18.1 on 10 processes, Gmsh 4.15.2, and EMerge
+3.0.0b2 with its fast sparse solver. A time is the whole run's wall clock and memory is the solver's own peak over its
+processes. Your machine will differ.
 
 | Run | Time | Memory |
 |---|---|---|
@@ -139,10 +188,31 @@ whole run's wall clock and memory is Palace's own peak over its processes. Your 
 | Cavity, *Driven* | 34 s | 4.3 GB |
 | Cavity with post, *Modes* | 1 min 47 s | 4.9 GB |
 | Cavity with post, *Driven* | 41 s | 4.3 GB |
+| Cavity, *Modes (EMerge)* | 3 min 21 s | 2.7 GB |
+| Cavity, *Driven (EMerge)* | 3 s | 1.6 GB |
+| Cavity with post, *Modes (EMerge)* | 3 min 21 s | 2.9 GB |
+| Cavity with post, *Driven (EMerge)* | 3 s | 1.8 GB |
+
+An EMerge eigenmode run uses one core, whatever is installed, so it takes minutes where its driven sweep takes
+seconds.
+
+**What Draft trades on EMerge, and how to change it.** Set **Quality** to *Standard* or *Accurate* in the setup's
+EMerge section (`"EMerge": { "Quality": "Standard" }` in the file). On the Cavity's *Driven (EMerge)*:
+
+| Quality | Tetrahedra | Notch | \|S21\| at 9.955 GHz | Time | Memory |
+|---|---|---|---|---|---|
+| Draft (shipped) | 7,410 | 9.955 GHz | −12.56 dB | 3 s | 1.6 GB |
+| Standard | 15,124 | 9.955 GHz | −13.03 dB | 6 s | 3.1 GB |
+| Accurate (three mesh refinement passes) | 60,503 | 9.955 GHz | −13.49 dB | 34 s | 6.9 GB |
+
+The notch's frequency is settled at Draft; its sampled depth is not, for the reason above. On *Modes (EMerge)*,
+searched from 8 GHz, Draft found the cavity mode at 9.9571 GHz with Q 694 in 2 min 20 s, and Standard at 9.9569 GHz
+with Q 729 in 4 min 56 s (2.8 GB).
 
 *Modes* takes longer than *Driven* because a lossy metal makes the eigenproblem nonlinear: Palace finds the modes of
 a linearised problem in seconds, then refines each one, and the refinement is most of the time. That refinement is what
 did not finish when the line was lossy too, and why the line is a perfect conductor.
 
-The numbers on this page are also in `expected-numbers.json`, beside this file. circuitRF's own tests re-run all four
-setups against that file, so this page and the solver cannot quietly disagree.
+The numbers on this page are also in `expected-numbers.json`, beside this file. circuitRF's own tests re-run every
+setup against that file, Palace's against its own numbers and EMerge's against Palace's, so this page and the solvers
+cannot quietly disagree.

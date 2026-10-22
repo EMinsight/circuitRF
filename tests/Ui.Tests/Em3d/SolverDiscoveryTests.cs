@@ -38,6 +38,15 @@ public sealed class SolverDiscoveryTests : IDisposable
         catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
     }
 
+    // The SHARED instances are built by static initialisers; every test below builds its own after them,
+    // which is why a version timeout read as zero by the shared ones went unseen.
+    [Fact]
+    public void TheSharedInstancesWaitForAVersionProbe()
+    {
+        foreach (var d in new[] { SolverDiscovery.Palace, SolverDiscovery.Gmsh, SolverDiscovery.OpenEms, SolverDiscovery.Emerge })
+            Assert.True(d.VersionProbeTimeout >= TimeSpan.FromSeconds(10), $"{d.Name}: {d.VersionProbeTimeout}");
+    }
+
     // ── 1. order ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

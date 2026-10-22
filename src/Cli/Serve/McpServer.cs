@@ -237,9 +237,9 @@ internal sealed class McpServer
                 "The setup's Problem3D picks the problem: Driven (S-parameters), Electrostatic or " +
                 "Magnetostatic (a C or L matrix), Eigenmode (cavity and package resonances: f, Q, " +
                 "unloaded Q and where each mode's energy sits; set Eigenmode.Count and TargetGHz) or " +
-                "Thermal. The formats are 'reference em-setup' and '3d-view'. Eigenmode and static " +
-                "problems run on Palace only; 'solver' says whether Palace is installed here and " +
-                "whether its build does eigenmode solves. device=gpu runs Palace on the GPUs of a GPU build " +
+                "Thermal. The formats are 'reference em-setup' and '3d-view'. Eigenmode runs on Palace or " +
+                "EMerge (EMerge searches either side of TargetGHz: put it at the band's centre), static " +
+                "problems on Palace only; 'solver' says what is installed here and what each build can do. device=gpu runs Palace on the GPUs of a GPU build " +
                 "('solver capability=gpu' says whether this one can), and EMerge on its GPU sparse solver ('solver' says whether " +
                 "GPU solving is enabled); device=auto, the default, picks for EMerge by the problem's size.\n" +
                 "\n" +

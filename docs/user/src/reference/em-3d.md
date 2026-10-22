@@ -4,12 +4,12 @@ slug: reference/em-3d.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > 3D EM
 lede: What circuitRF's 3D solvers are for, how to get them, how to set one up and read the answer, and a worked example you can open.
-keywords: 3D EM, full-wave, finite element, FEM, FDTD, Palace, openEMS, Gmsh, bond wire, via, package, capacitance matrix, inductance matrix, eigenmode, cavity resonance, lid resonance, wave port, air box, mesh, fields, 3D view, install
+keywords: 3D EM, full-wave, finite element, FEM, FDTD, Palace, openEMS, EMerge, Gmsh, bond wire, via, package, capacitance matrix, inductance matrix, eigenmode, cavity resonance, lid resonance, wave port, air box, mesh, fields, 3D view, install
 ---
 
-circuitRF can hand a layout to a 3D solver: **Palace**, a finite-element (FEM) solver, or **openEMS**, a
-finite-difference time-domain (FDTD) solver. It builds the 3D model itself, from the layout, its
-technology and its bond wires. It meshes the model with **Gmsh**, runs the solver, and reads the answer
+circuitRF can hand a layout to a 3D solver: **Palace** or **EMerge**, two finite-element (FEM) solvers,
+or **openEMS**, a finite-difference time-domain (FDTD) solver. It builds the 3D model itself, from the
+layout, its technology and its bond wires. It meshes the model with **Gmsh**, runs the solver, and reads the answer
 back as an ordinary result. The same `.cem` setup document drives it. You choose a 3D solver in that
 setup's **Solver** group, and nothing else about the workflow changes.
 
@@ -47,10 +47,10 @@ independent check on them. Do not use it as a replacement.
 | Bond wires over a stepped or split ground, in a cavity, or under a lid | **3D.** wBond's ground is one flat plane — see [wBond ▸ Equations, the MoM kernel, or FEM and FDTD](wbond.html#fidelity) |
 | Leadframes, lids, cavities, stepped metal, connectors, package-to-board transitions | **3D.** Nothing planar represents them |
 | A package's capacitance and inductance matrices | **3D (Palace).** Electrostatic and magnetostatic solves |
-| Resonances of a cavity or a lid: "is there a mode inside my band?" | **3D (Palace).** An eigenmode solve finds them directly |
+| Resonances of a cavity or a lid: "is there a mode inside my band?" | **3D (Palace or EMerge).** An eigenmode solve finds them directly |
 | A radiator that is not planar | **3D.** See [Antennas ▸ From a 3D solver](antennas.html#3d) |
 
-**Which 3D solver.** Palace (FEM) and openEMS (FDTD) suit different geometry. The setup panel says which
+**Which 3D solver.** FEM (Palace, EMerge) and FDTD (openEMS) suit different geometry. The setup panel says which
 fits your model when you choose one. This is advice, not a restriction. The full comparison of FEM,
 FDTD and the planar MoM solver — cost, memory, and which problems suit each — is
 [EM Solvers: MoM, FEM and FDTD](em-solvers.html).
@@ -59,21 +59,24 @@ FDTD and the planar MoM solver — cost, memory, and which problems suit each �
   surface, and its adaptive refinement puts small elements only where the error is. It is the only one
   of the two that computes capacitance and inductance matrices, and it finds a cavity's resonances
   directly. FDTD would have to ring a high-Q cavity down for a long time.
+- **FEM (EMerge)** fits the same geometry as Palace and finds resonances too. It installs in about two
+  minutes with nothing to build and solves a small driven model in seconds, with lumped ports only. It
+  is a second FEM answer that shares no code with Palace's.
 - **FDTD (openEMS)** fits Manhattan geometry on a stackup, because metal aligned with its grid costs
   nothing. One pulse covers a whole band. Its absorbing boundaries let the air box around a radiator
   stay small. One fine feature sets its cell size, and through that its time step, so a single thin
   wire in a large model is expensive.
 
-Running **both** on one setup (**FEM & FDTD - Compare**) gives two answers from methods that share nothing
-numerically, and their agreement is strong evidence that each has converged. It is a cross-check, not a
-reference: both solvers read the same generated model, so a mistake in building that model would appear
-in both.
+Running two or more on one setup (**Compare…**) gives answers from solvers that share no code, and FEM
+and FDTD share nothing numerically either; their agreement is strong evidence that each has converged.
+It is a cross-check, not a reference: every solver reads the same generated model, so a mistake in
+building that model would appear in all of them.
 
 ## Getting the solvers {#getting}
 
 circuitRF ships no solver and no mesher. Opening a workspace, editing a 3D setup and looking at its model
 need none of them. **Simulate** is the first step that does. On a machine without them it is refused,
-naming what is missing, and the message offers **Install Palace …** (or Gmsh, or openEMS). **Settings ▸
+naming what is missing, and the message offers **Install Palace …** (or Gmsh, openEMS or EMerge). **Settings ▸
 3D EM** has the same **Install …** buttons, and `circuitrf solver install palace --yes` does the same from
 a terminal. [EM Setup ▸ Letting circuitRF install the 3D solvers](em-setup.html#install-assistant) is the
 full description: what is shown before anything downloads, where each program goes, and what happens
@@ -88,6 +91,7 @@ when an install fails.
 | Palace, Windows (in the Linux subsystem) | Not yet measured. Reported upstream as most of a day |
 | Gmsh, macOS | Under a minute, 0.13 GB |
 | openEMS, macOS | 8 min, 0.27 GB, built by openEMS's own script |
+| EMerge, macOS on Apple silicon | About 2 min, 1.0 GB, from ready-built packages, with a Python of its own; its faster sparse solver adds a few seconds when the command line tools are installed ([Getting the most speed from EMerge](em-solvers.html#emerge-speed)) |
 
 Palace is always built from source, because no ready-built Palace exists for macOS or for the Linux
 subsystem. The build is long but runs in the background, with its progress in the Messages panel, and
@@ -100,14 +104,15 @@ you build Palace, you accept those terms. circuitRF distributes no copy of Palac
 </div>
 
 **On Windows**, Palace runs inside your own Windows Subsystem for Linux distribution, and circuitRF treats
-it like a Palace on this computer. Gmsh and openEMS run natively.
+it like a Palace on this computer. Gmsh, openEMS and EMerge run natively.
 [Installing Palace on Windows](palace-windows.html) walks through it step by step, and
 [EM Setup ▸ Palace on Windows](em-setup.html#palace-windows) has what each missing piece's message says.
 
 **By hand.** If you prefer to build the solvers yourself, circuitRF finds them on `PATH`, in a Spack
-install tree, in a conda environment, or where you name them in **Settings ▸ Solvers**. It runs only the
-Palace and openEMS versions it has validated; any Gmsh runs, with a warning when it is not a version circuitRF
-has tested. The exact versions and the three build problems met on macOS are in
+install tree, in a conda environment, or where you name them in **Settings ▸ Solvers**. An EMerge of your
+own is never taken from `PATH`: name its Python, or its virtual environment's folder, in that row or in
+`CIRCUITRF_EMERGE`. It runs only the Palace versions it has validated; any Gmsh, openEMS or EMerge runs,
+with a warning when it is not a version circuitRF has tested. The exact versions and the three build problems met on macOS are in
 [EM Setup ▸ Installing the 3D solvers by hand](em-setup.html#install-3d-solvers).
 
 **Removing them.** **Uninstall …** in **Settings ▸ Solvers**, or `circuitrf solver remove palace --yes`.
@@ -192,12 +197,15 @@ the other solver's:
 | Electrostatic | `results/<setup>.palace_es.npy`: `C` (Maxwell) and `C_mutual` (the capacitors you would draw). Printed by `circuitrf em` |
 | Magnetostatic | `results/<setup>.palace_ms.npy`: `L` and `L_mutual`. Printed by `circuitrf em` |
 | Eigenmode | `results/<setup>.palace_eig.npy`: each mode's `f`, `Q`, and where its energy is. Printed by `circuitrf em` and shown on the panel |
-| openEMS | `results/<setup>.openems.sNp` |
-| Both | the two above, and `results/<setup>.compare_em.npy` holding their difference |
+| openEMS | `results/<setup>.openems.sNp` and `<setup>.openems_em.npy` |
+| EMerge | `results/<setup>.emerge.sNp` and `<setup>.emerge_em.npy`; an eigenmode run `<setup>.emerge_eig.npy` |
+| Compare | each solver's own result, as above, and `results/<setup>.compare_em.npy` holding each one's difference from the reference |
 
 `results/<setup>.palace/` keeps everything the run made: the Gmsh script, the mesh, the Palace
 configuration, both programs' logs, and the saved fields. The run can be repeated by hand from it. An
-unchanged model reuses its mesh.
+unchanged model reuses its mesh. `results/<setup>.emerge/` is EMerge's: the model as data
+(`problem.json`), the driver script that reads it, EMerge's log, the arrays it wrote and the saved fields,
+in the layout a Palace run's fields use, so every field plot draws either.
 
 **A port with two terminals on Palace** ([On Palace](em-setup.html#wave-port-terminals-palace)) also keeps
 what its terminal S was converted from, per frequency, in the `palace` group of `<setup>.palace_em.npy`:
@@ -234,8 +242,8 @@ an object's **Model** switch (*Model: kept in the drawing, left out of the solve
 active setup, the display unit and the snap grid. Those are how the model is drawn, not what is solved. **Undoing back
 to the solved model makes the result current again.**
 
-**The marks.** Each solver has its own shape: a **diamond** for Palace (FEM), a **triangle** for openEMS (FDTD) and a
-**circle** for a thermal result. Each solver shows at most one mark:
+**The marks.** Each method has its own shape: a **diamond** for FEM (Palace or EMerge), a **triangle** for openEMS
+(FDTD) and a **circle** for a thermal result; the mark's tooltip names the program. Each method shows at most one mark:
 
 - **Filled, solid:** the active setup has a result of this solver, and it matches the model.
 - **Hollow:** the active setup has a result of this solver, and the model has changed since. This wins even when
@@ -246,7 +254,7 @@ to the solved model makes the result current again.**
 - **A star after a mark (`*`):** that result is partial. The run was cancelled, interrupted (circuitRF closed while it
   ran), or did not converge, such as openEMS stopping at its step limit. A partial result can still be current.
 
-A Both setup counts for Palace and for openEMS. Shape and fill carry the meaning, so the marks read the same without
+A Compare setup counts for each solver it runs. Shape and fill carry the meaning, so the marks read the same without
 colour. Hover over a mark for its words: the setup, when it was solved and how long it took, or what has changed since.
 
 {{ui: em3d-solve-badges}}
@@ -255,7 +263,7 @@ colour. Hover over a mark for its words: the setup, when it was solved and how l
 
 - **The setup list** (*Simulate ▸ Setup Analyses…*, and the Analyses panel while a 3D view is active). Each setup's card
   has a status line: *Solved 14:32 (18 min)*, *Solved 14:32 (18 min), not converged*, *Out of date: 'Board.clay' has
-  changed*, *Cancelled 14:32: no complete result*, *Not run*. A Both setup has a line per solver. This is where to
+  changed*, *Cancelled 14:32: no complete result*, *Not run*. A Compare setup has a line per solver. This is where to
   decide whether to run.
 - **The document tab**, after the name. The unsaved-changes dot stays in front of the name.
 - **The workspace tree**, after a `.c3d`'s name. An open document shows what is in the editor, unsaved edits included.

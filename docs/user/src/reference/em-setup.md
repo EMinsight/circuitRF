@@ -799,6 +799,21 @@ filled in overrides the preset for that setting only:
 | Most sweep solves | `MaxSamples` | The most frequencies the adaptive sweep solves; at least 5, default 100. |
 | Save fields at (GHz) | `SaveFieldsGHz` | The frequencies whose fields the run saves for the 3D view, as Palace's box: see [Fields for the 3D view](#palace-fields). |
 
+| Preset | Largest element (λ) | At metal | Refinement passes | Sweep tolerance |
+|---|---|---|---|---|
+| Draft | 0.2 | 0.25 | 0 | 0.001 |
+| Standard | 0.15 | 0.2 | 0 | 0.001 |
+| Accurate | 0.1 | 0.15 | 3 | 0.0001 |
+
+Every preset is element order 2. **Draft** was chosen on the 3D Eigenmode example's cavity, where it puts the
+S21 notch at the same 5 MHz step as Standard and Accurate (and as Palace and openEMS) in 3 s and 1.6 GB, against
+6 s and 3.1 GB for Standard and 34 s and 6.9 GB for Accurate, whose three passes took its mesh from 35,571 tetrahedra
+to 60,503. The depth at that step moves by 0.9 dB across the three: a notch's depth is read from a fine sweep across
+it, not from any preset's 5 MHz step. Order 1 put that notch 25–30 MHz low. A match needs Accurate: on a 50 Ω line
+below the cavity's modes, the worst |S11| was −14 dB at Draft, −18 dB at Standard and −28 dB at Accurate. EMerge's sparse solver uses the
+setup's *Cores* setting as its thread count; how much each choice of solver, core count and device is worth is in
+[EM Solvers ▸ Getting the most speed from EMerge](em-solvers.html#emerge-speed).
+
 A driven sweep is built adaptively: EMerge solves the full problem at a few frequencies and fits every
 requested point from them, adding frequencies until its estimated error on |S| is below its tolerance. The
 progress line shows that error against the tolerance. **A sweep that reaches `MaxSamples` first has not
@@ -815,11 +830,16 @@ driver that reads it), EMerge's log (`emerge.log`) and the arrays it wrote, so a
 **Eigenmodes on EMerge** give **f** and **Q** (the loaded Q, as Palace's). EMerge reports nothing else, so
 circuitRF computes **Q_ext**, **Q_unloaded** and **Participation** from each mode's own field: Q_ext is each lumped
 port's ω·R·∫ε|E|²/|V|² (the mode's stored energy over the power the port takes), and Participation is the share of
-the mode's electric energy in each **material** (Palace's is by object). EMerge evaluates its lumped ports at
-`TargetGHz` rather than at each mode's own frequency, so **set `TargetGHz` just below the mode you are reading**:
-the Cavity's 9.957 GHz mode reads Q 716 with `TargetGHz` 8 and 571 with 9.9 (Palace: 539). EMerge's eigensolver looks
-either side of `TargetGHz`, and near 0 Hz it can return solutions that are not resonances, so a solution more than
-5 % below `TargetGHz` is dropped, and the run's notes say how many were. EMerge solves an eigenmode problem on one core.
+the mode's electric energy in each **material** (Palace's is by object). **EMerge finds the `Count` modes nearest
+`TargetGHz`, on either side of it**, where Palace finds the first ones above it, and it evaluates its lumped ports at
+`TargetGHz` rather than at each mode's own frequency. So **put `TargetGHz` near the modes you want**: at the band's
+centre to ask whether there is a mode in the band, or just below a mode whose Q you are reading. On the 3D Eigenmode
+example, searched from 8 GHz with three modes, the post's 12.84 GHz mode was not found at all, and the Cavity's
+9.957 GHz mode read Q 694; from 10 GHz both were found, and the Cavity's read Q 564 (Palace: 539). Near 0 Hz the
+eigensolver can return solutions that are not resonances, so a solution more than 5 % below `TargetGHz` is dropped,
+and the run's notes say how many were. **Q unloaded** is the least certain number: it takes each port's share, computed
+from the mode's field, out of the loaded Q, and on that example it read 21 % below Palace's for one cavity and 31 %
+above for the other. EMerge solves an eigenmode problem on one core.
 
 **Fields and the radiation pattern on EMerge.** An EMerge run saves fields as a Palace run does, by the same
 *Save fields at* box, and every field plot draws them. Each saved frequency is a **direct solve of its own** after
@@ -1105,7 +1125,8 @@ bound, since the laminate on the floor pulls the mode down. The cavity's first m
 inside the band, and the driven S21 has a **−11.69 dB** notch there. With a grounded post beside the line, the mode is
 at **12.84 GHz**, above the band, and the notch is gone. **The post does not damp the mode; it shortens the cavity the
 mode sees**, so the mode's frequency rises (its Q goes up, not down). The example's mode tables also show rows with a Q
-near 1: those are the line between its two ports, not resonances.
+near 1: those are the line between its two ports, not resonances. Each cell also has the two setups on EMerge, which puts
+the modes within 0.15 % of Palace's; the example's README compares the two.
 
 The result is `results/<name>.palace_eig.npy` and no Touchstone file; `circuitrf em` prints the mode
 table and the panel shows it after a run. Palace's own files stay in the run folder.

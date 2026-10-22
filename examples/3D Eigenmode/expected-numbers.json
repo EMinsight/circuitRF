@@ -3,6 +3,10 @@
   "Band": { "StartGHz": 8, "StopGHz": 12, "StepGHz": 0.005, "Readme": "8–12 GHz" },
   "ClosedForm": { "AMm": 22, "DMm": 20, "Expected": 10.1289, "Readme": "10.13 GHz" },
   "Headline": [ "9.956 GHz", "539", "−11.69 dB", "12.84 GHz" ],
+  "Validation": {
+    "About": "brief-emi-8 R-emi8-4: EMergeValidationTests (Category=Benchmark, Skipped without EMerge) runs each cell's EMerge setups and holds them to Palace's numbers above: the cavity mode within ModeTolerance (a fraction) of Palace's; the Cavity's notch within one sweep step of EMerge's own eigenmode and of Palace's notch; off the notch (beyond OffNotchGHz of it), the worst |S21| within OffNotchToleranceDb of PalaceOffNotchS21Db, which is the README's statement of Palace's (no Palace sweep is recorded point by point); with the post, the cavity mode above the band, no notch, and the least |S21| within OffNotchToleranceDb of Palace's MinS21Db. EMerge 3.0.0b2 on the same machine, its fast sparse solver.",
+    "ModeTolerance": 0.002, "OffNotchGHz": 0.1, "OffNotchToleranceDb": 0.05, "PalaceOffNotchS21Db": -0.15
+  },
   "Cells": [
     {
       "Cell": "Cavity",
@@ -21,6 +25,30 @@
         "Cost": [ "34 s", "4.3 GB" ],
         "NotchGHz": 9.955, "NotchDb": -11.694, "MinS21Db": -11.694,
         "Readme": [ "9.955 GHz", "−11.69 dB" ]
+      },
+      "Emerge": {
+        "CavityMode": 1,
+        "Modes": {
+          "Setup": "Modes (EMerge)",
+          "Preset": "Draft (element order 2), TargetGHz 10",
+          "Cost": [ "3 min 21 s", "2.7 GB" ],
+          "Values": [
+            { "Mode": 1, "GHz": 9.95671, "Q": 563.8, "QUnloaded": 2568.1, "Readme": [ "9.9567 GHz", "564", "2,568" ] },
+            { "Mode": 2, "GHz": 11.80230, "Q": 2.0, "Readme": [ "11.80 GHz" ] }
+          ]
+        },
+        "Driven": {
+          "Setup": "Driven (EMerge)",
+          "Preset": "Draft (element order 2)",
+          "Cost": [ "3 s", "1.6 GB" ],
+          "NotchGHz": 9.955, "NotchDb": -12.563, "MinS21Db": -12.563, "OffNotchS21Db": -0.1063,
+          "Readme": [ "−12.56 dB", "−0.106 dB" ]
+        },
+        "ResolvedNotch": {
+          "Preset": "Standard, 9.94–9.97 GHz in 0.1 MHz steps",
+          "GHz": 9.9564, "Db": -15.552, "PalaceFromItsQ": -15.57,
+          "Readme": [ "9.9564 GHz", "−15.55 dB", "−15.57 dB" ]
+        }
       }
     },
     {
@@ -40,6 +68,25 @@
         "Cost": [ "41 s", "4.3 GB" ],
         "NotchGHz": null, "NotchDb": null, "MinS21Db": -0.0926,
         "Readme": [ "−0.093 dB" ]
+      },
+      "Emerge": {
+        "CavityMode": 2,
+        "Modes": {
+          "Setup": "Modes (EMerge)",
+          "Preset": "Draft (element order 2), TargetGHz 10",
+          "Cost": [ "3 min 21 s", "2.9 GB" ],
+          "Values": [
+            { "Mode": 1, "GHz": 11.80898, "Q": 2.0, "Readme": [ "11.81 GHz" ] },
+            { "Mode": 2, "GHz": 12.82489, "Q": 3345.1, "QUnloaded": 3783.7, "Readme": [ "12.82 GHz", "3,345", "3,784" ] }
+          ]
+        },
+        "Driven": {
+          "Setup": "Driven (EMerge)",
+          "Preset": "Draft (element order 2)",
+          "Cost": [ "3 s", "1.8 GB" ],
+          "NotchGHz": null, "NotchDb": null, "MinS21Db": -0.1207,
+          "Readme": [ "−0.121 dB" ]
+        }
       }
     }
   ]

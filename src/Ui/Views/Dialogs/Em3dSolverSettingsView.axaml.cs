@@ -336,6 +336,7 @@ public partial class Em3dSolverSettingsView : UserControl
             bool offer = false;
             RecipePrerequisite? accelerate = null;
             (SolverRecipe, InstallRecord, RecipePrerequisite)? enableGpu = null;
+            bool found = false;
             try
             {
                 // brief-emi-3 R-emi3-3 — Settings being shown is one of the two points circuitRF finishes EMerge's faster
@@ -346,6 +347,7 @@ public partial class Em3dSolverSettingsView : UserControl
                                           gpu: CircuitRF.Ui.Layout.Em.EmPalaceDevicePreference.Preferred == PalaceDevice.Gpu);
                 text  = row.GpuLine is { } gpuLine ? row.Summary + Environment.NewLine + gpuLine : row.Summary;
                 offer = row.OfferInstall;
+                found = row.Found is not null;
                 if (emerge) accelerate = EmergeAccelerator.InstallerFor(row.Found);
                 if (emerge) enableGpu = EmergeAccelerator.GpuEnableFor(row.Found);
             }
@@ -359,6 +361,10 @@ public partial class Em3dSolverSettingsView : UserControl
                     EmergeEnableGpu.Tag = enableGpu;
                     EmergeEnableGpu.IsVisible = enableGpu is not null && accelerate is null;
                     EmergeEnableGpu.IsEnabled = !CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.IsRunning(SolverTool.Emerge);
+                    // Owner request, 2026-10-22: Device chooses where EMerge solves, so with no EMerge there is nothing
+                    // to choose. The stored preference is kept, and applies again once EMerge is found.
+                    EmergeDeviceBox.IsEnabled = found;
+                    ToolTip.SetTip(EmergeDeviceBox, found ? DeviceTip : NoEmergeDeviceTip);
                 }
                 bool running = CircuitRF.Ui.Views.Dialogs.SolverInstallRunner.IsRunning(discovery.Tool);
                 install.IsVisible = offer || running;
@@ -492,6 +498,12 @@ public partial class Em3dSolverSettingsView : UserControl
     }
 
     /// <summary>brief-emi-9 R-emi9-4 — stores where EMerge factorises; Automatic is stored as nothing.</summary>
+    private const string DeviceTip =
+        "Automatic uses EMerge's GPU sparse solver, when it is installed, for a driven problem large enough to be faster on it, " +
+        "and solves a sweep again on the CPU if the GPU's does not converge. Eigenmode problems always solve on the CPU.";
+
+    private const string NoEmergeDeviceTip = "Where EMerge solves. Install EMerge, or name one above, to choose.";
+
     private void OnEmergeDeviceChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_loading || EmergeDeviceBox.SelectedItem is not ComboBoxItem { Tag: string id } || EmergeDevices.Parse(id) is not { } device) return;

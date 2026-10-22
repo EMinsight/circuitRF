@@ -478,17 +478,18 @@ computes and the S-parameters it exports — is in {{anchor: wbond.html|the wBon
 
 A 3D EM setup runs one of three separately installed solvers — **Palace** (FEM), **openEMS** (FDTD) or
 **EMerge** (FEM) — and Palace's problems are meshed by **Gmsh**. circuitRF includes none of these
-programs. This tab has one row per program, and each row says what circuitRF found: the version, whether
+programs. The tab starts with the **Memory limit**, which holds every solver and mesher alike, then gives each
+program a panel of its own, and each says what circuitRF found: the version, whether
 it is one circuitRF has validated (for Gmsh, openEMS and EMerge, tested), where the program is, and how it was found.
 
 | Control | Default | What it does |
 |---|---|---|
+| **Memory limit** | blank (this computer's memory) | The memory a 3D solver or mesher may reach before it is stopped and its run writes nothing, in GB. **Blank is Automatic**, this computer's memory, which the box shows greyed. Only a lower limit can be set; a value at or above this computer's memory is refused and not saved. It belongs to this computer, not to a setup. See [Solver — planar or 3D](em-setup.html#solver-3d). |
 | **Path** (one per program) | blank | The program to run. **Blank means search**: the environment variable (`CIRCUITRF_PALACE`, `CIRCUITRF_GMSH`, `CIRCUITRF_OPENEMS`), then a copy circuitRF installed, then `PATH`, then the usual install folders (`~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, and `~/opt/openEMS/bin` for openEMS), then Spack's install record, which is where a Palace built with Palace's own recipe is found, then conda environments. A path you name here always wins, and if it does not work circuitRF says so rather than using a different one it found somewhere else. EMerge's row searches less, below. |
 | **Location** (Palace, Windows only) | Automatic | Where Palace is looked for. **Automatic** uses a native Palace if there is one, then the Linux subsystem (WSL 2), trying each distribution in the order `wsl -l` lists them. **Native** looks on this computer only, and **Linux subsystem: *name*** looks in that one distribution only. **Install Palace …** builds it in the distribution chosen here, or in the default one. See [Palace on Windows](em-setup.html#palace-windows). |
 | **Install …** (one per program) | shown when it would help | Installs the program from its own upstream, after showing you what it will fetch and where it will go. Shown when this computer has an install recipe for it and nothing validated (for Gmsh, openEMS and EMerge, tested) was found. See [Letting circuitRF install them](em-setup.html#install-assistant). |
 | **Uninstall …** (one per version circuitRF installed) | shown when there is one | Removes that copy, after showing the space it frees. An older version reads **Remove older …**. A Palace installed in the Linux subsystem names its distribution, and one whose distribution was removed reads **Clean up … (missing)**. See [Removing the 3D solvers](em-setup.html#uninstall-solvers). |
 | **Remove all 3D solvers …** | shown when there is one | Removes every solver circuitRF installed for you, after one confirmation. Nothing is removed if one of them is in use. On macOS and with a Linux `.deb`, removing circuitRF leaves the solvers behind, so use this first to get the space back ([Uninstalling circuitRF](em-setup.html#uninstall-circuitrf)). |
-| **Memory limit** | blank (this computer's memory) | The memory a 3D solver or mesher may reach before it is stopped and its run writes nothing, in GB. **Blank is Automatic**, this computer's memory, which the box shows greyed. Only a lower limit can be set; a value at or above this computer's memory is refused and not saved. It belongs to this computer, not to a setup. See [Solver — planar or 3D](em-setup.html#solver-3d). |
 | **MPI launcher** | blank | The `mpirun` that lets Palace use more than one core. **Blank means search**: `CIRCUITRF_MPIRUN`, then an `mpirun` beside Palace, then — for a Palace built with Spack — the MPI that build was linked against, then `PATH` and the usual install folders. The row shows which one a run would use. Without one, Palace still runs, on one core. For a Palace in the Linux subsystem, the row shows the `mpirun` found inside that distribution, and the path box is not used. |
 
 **Each row says which kind of program it found.** *Installed by circuitRF* is a copy the install
@@ -526,7 +527,12 @@ command line tools. If they are not installed, the status line says so — *Inst
 (xcode-select --install) and circuitRF will add a faster one automatically* — and **Install the command
 line tools…** beside it starts their installer. When they are in place, circuitRF builds the faster
 solver by itself, the next time this tab is shown or an EMerge run starts. Until then EMerge still runs,
-and gives the same answers, with a multi-threaded solver that needs no compiler.
+and gives the same answers, with a multi-threaded solver that needs no compiler. What each solver is worth,
+measured, and what each other kind of computer gets, is in
+[EM Solvers ▸ Getting the most speed from EMerge](em-solvers.html#emerge-speed).
+
+**Uninstall …** on the EMerge row removes the whole folder: its Python, EMerge, and every solver built
+into it. The install puts nothing of EMerge's anywhere else.
 
 **On an arm64 macOS computer it also builds EMerge's GPU sparse solver**, when a Rust toolchain is
 installed as well as the command line tools. The status line then says *GPU sparse solver installed*.
@@ -540,7 +546,8 @@ and distributes nothing. Headless, `circuitrf solver install emerge --gpu --yes`
 
 **Device** (EMerge) says where EMerge factorises. **Automatic**, the default, uses the GPU sparse solver
 for a driven problem large enough to be faster on it, and the CPU otherwise. **CPU** never uses it, and
-**GPU** always does when it is installed. It belongs to this computer, not to a setup. See
+**GPU** always does when it is installed. It belongs to this computer, not to a setup. With no EMerge found it is
+greyed out, and the choice it holds applies again once one is. See
 [Solvers ▸ EMerge on a GPU](em-solvers.html#emerge-gpu).
 
 How each program was installed for validation is in

@@ -269,6 +269,127 @@
 				"ElementOrder": 2,
 				"LinearSolver": "Direct"
 			}
+		},
+		{
+			"FormatVersion": 1,
+			"Name": "Modes (EMerge)",
+			"Frequency": {
+				"StartExpr": "8",
+				"StopExpr": "12",
+				"StepExpr": "",
+				"NumPoints": 801,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": true,
+			"Solver3D": "Emerge",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"XMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"YMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"YMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				}
+			},
+			"Emerge": {
+				"Quality": "Draft"
+			},
+			"Problem3D": "Eigenmode",
+			"Eigenmode": {
+				"Count": 3,
+				"TargetGHz": 10
+			}
+		},
+		{
+			"FormatVersion": 1,
+			"Name": "Driven (EMerge)",
+			"Frequency": {
+				"StartExpr": "8",
+				"StopExpr": "12",
+				"StepExpr": "",
+				"NumPoints": 801,
+				"Mode": "PointCount",
+				"Kind": "Linear",
+				"StartUnit": "GHz",
+				"StopUnit": "GHz",
+				"StepUnit": "Hz"
+			},
+			"Port1Z0Real": 50,
+			"Port1Z0Imag": 0,
+			"Port2Z0Real": 50,
+			"Port2Z0Imag": 0,
+			"Mesh": {
+				"MinCellsAcrossWidth": 6,
+				"EdgeCells": 3,
+				"EdgeFractionOfWidth": 0.03,
+				"EdgeGrowthRatio": 1.7,
+				"TruncationHeights": 20,
+				"TruncationTailCells": 12
+			},
+			"DispersionCorrection": true,
+			"Solver3D": "Emerge",
+			"AirBox": {
+				"XMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"XMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"YMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"YMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMin": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				},
+				"ZMax": {
+					"PaddingUm": 0,
+					"Boundary": "Pec"
+				}
+			},
+			"Emerge": {
+				"Quality": "Draft"
+			}
 		}
 	]
 }

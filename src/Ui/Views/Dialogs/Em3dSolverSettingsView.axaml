@@ -32,205 +32,245 @@
        TextBlock — a tooltip closes before anything in it can be selected. The status lines show Spack's
        padding folded to "…", so their Copy puts the FULL line on the clipboard when nothing is selected,
        and Copy All gives every row at once. -->
+  <!-- Owner request, 2026-10-22: each program in a small panel of its own, so one section is told from the next at a
+       glance; the EM setup panel's Border.group, so the two read alike. The memory limit is first, because it holds
+       every solver and mesher alike. -->
+  <UserControl.Styles>
+    <Style Selector="Border.group">
+      <Setter Property="Background" Value="{DynamicResource SystemChromeMediumLowColor}"/>
+      <Setter Property="BorderBrush" Value="{DynamicResource CrfTileBorderBrush}"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="Padding" Value="10,8"/>
+      <Setter Property="Margin" Value="0,0,0,8"/>
+    </Style>
+  </UserControl.Styles>
+
   <StackPanel Spacing="0">
     <SelectableTextBlock Text="3D EM Solvers" FontSize="11" FontWeight="SemiBold"
                Opacity="0.55" Margin="0,0,0,6"/>
     <SelectableTextBlock FontSize="11" Opacity="0.75" TextWrapping="Wrap" Margin="0,0,0,12"
                Text="circuitRF includes none of these programs. It can install each from its own upstream (Install … below), or you can install them yourself and check each row. Leave a path blank to search for it."/>
 
+    <!-- ── brief-emi-10 R-emi10-4: the memory ceiling every solver and mesher process is held to ─────────
+         Per machine (EmMemoryLimitPreference). Blank is Automatic, this machine's memory, which the placeholder shows greyed.
+         A value at or above it is refused with the CLI flag's own sentence, and is not stored. -->
+    <Border Classes="group">
+      <StackPanel>
+        <SelectableTextBlock Text="Memory limit (every solver and mesher)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <StackPanel Orientation="Horizontal" Spacing="6">
+          <TextBox Name="MemoryLimitBox" FontSize="12" Width="80" LostFocus="OnMemoryLimitCommitted"
+                   ToolTip.Tip="A solver or mesher that reaches this much memory is stopped, and the run writes nothing. Blank is Automatic: this machine's memory, shown greyed. Lower than that only; a run started anyway past its size check keeps no limit."/>
+          <SelectableTextBlock Text="GB" FontSize="11" VerticalAlignment="Center"/>
+        </StackPanel>
+        <SelectableTextBlock Name="MemoryLimitStatus" FontSize="11" Opacity="0.75" TextWrapping="Wrap" Margin="0,4,0,0" IsVisible="False"/>
+      </StackPanel>
+    </Border>
+
     <!-- ── Palace ─────────────────────────────────────────────────────── -->
-    <SelectableTextBlock Text="Palace (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
-    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
-      <TextBox Grid.Row="0" Grid.Column="0" Name="PalaceBox" FontSize="12"
-               PlaceholderText="Leave blank to search (CIRCUITRF_PALACE, PATH, then Spack)"
-               LostFocus="OnPathCommitted">
-        <ToolTip.Tip>
-          <TextBlock TextWrapping="Wrap" MaxWidth="360"
-                     Text="Palace's own 'palace' launcher script, normally in the bin folder of the installation. circuitRF asks it for its version, and once per installed build runs a dry run of a tiny configuration to check the build can do what a 3D run needs."/>
-        </ToolTip.Tip>
-      </TextBox>
-      <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
-              Tag="PalaceBox" Click="OnBrowse" ToolTip.Tip="Pick the Palace launcher from disk"/>
-      <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="PalaceStatus" FontSize="11" Opacity="0.75"
-                 TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
-                 Margin="0,4,0,0" Text="Not checked yet.">
-        <SelectableTextBlock.ContextMenu>
-          <ContextMenu>
-            <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
-            <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
-          </ContextMenu>
-        </SelectableTextBlock.ContextMenu>
-      </SelectableTextBlock>
-      <!-- R-em3d6-4b: the ParMETIS sentence, once, in the row, in plain words. Not a dialog. -->
-      <SelectableTextBlock Grid.Row="2" Grid.ColumnSpan="2" Name="ParmetisNote" FontSize="11" Opacity="0.6"
-                 TextWrapping="Wrap" Margin="0,4,0,0"
-                 Text="A default Palace build includes ParMETIS, whose licence allows commercial use for evaluation only. If you build Palace, you accept those terms."/>
-      <!-- brief-em3d-26 R-em3d26-1d — where Palace is looked for. Windows only: elsewhere there is one location. -->
-      <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="PalaceLocationRow" Orientation="Horizontal" Spacing="6"
-                  Margin="0,6,0,0" IsVisible="False">
-        <SelectableTextBlock Text="Location:" FontSize="11" VerticalAlignment="Center"/>
-        <ComboBox Name="PalaceLocationBox" FontSize="11" MinWidth="220" SelectionChanged="OnLocationChanged">
-          <ToolTip.Tip>
-            <TextBlock TextWrapping="Wrap" MaxWidth="360"
-                       Text="Where circuitRF looks for Palace. Automatic takes a native Palace if there is one, then the Linux subsystem (WSL 2): every distribution, in the order 'wsl -l' lists them. Choose one distribution to use only that one. Install Palace… builds it in the chosen distribution, or in the default one."/>
-          </ToolTip.Tip>
-        </ComboBox>
+    <Border Classes="group">
+      <StackPanel>
+        <SelectableTextBlock Text="Palace (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+          <TextBox Grid.Row="0" Grid.Column="0" Name="PalaceBox" FontSize="12"
+                   PlaceholderText="Leave blank to search (CIRCUITRF_PALACE, PATH, then Spack)"
+                   LostFocus="OnPathCommitted">
+            <ToolTip.Tip>
+              <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                         Text="Palace's own 'palace' launcher script, normally in the bin folder of the installation. circuitRF asks it for its version, and once per installed build runs a dry run of a tiny configuration to check the build can do what a 3D run needs."/>
+            </ToolTip.Tip>
+          </TextBox>
+          <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+                  Tag="PalaceBox" Click="OnBrowse" ToolTip.Tip="Pick the Palace launcher from disk"/>
+          <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="PalaceStatus" FontSize="11" Opacity="0.75"
+                     TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                     Margin="0,4,0,0" Text="Not checked yet.">
+            <SelectableTextBlock.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
+                <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
+              </ContextMenu>
+            </SelectableTextBlock.ContextMenu>
+          </SelectableTextBlock>
+          <!-- R-em3d6-4b: the ParMETIS sentence, once, in the row, in plain words. Not a dialog. -->
+          <SelectableTextBlock Grid.Row="2" Grid.ColumnSpan="2" Name="ParmetisNote" FontSize="11" Opacity="0.6"
+                     TextWrapping="Wrap" Margin="0,4,0,0"
+                     Text="A default Palace build includes ParMETIS, whose licence allows commercial use for evaluation only. If you build Palace, you accept those terms."/>
+          <!-- brief-em3d-26 R-em3d26-1d — where Palace is looked for. Windows only: elsewhere there is one location. -->
+          <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="PalaceLocationRow" Orientation="Horizontal" Spacing="6"
+                      Margin="0,6,0,0" IsVisible="False">
+            <SelectableTextBlock Text="Location:" FontSize="11" VerticalAlignment="Center"/>
+            <ComboBox Name="PalaceLocationBox" FontSize="11" MinWidth="220" SelectionChanged="OnLocationChanged">
+              <ToolTip.Tip>
+                <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                           Text="Where circuitRF looks for Palace. Automatic takes a native Palace if there is one, then the Linux subsystem (WSL 2): every distribution, in the order 'wsl -l' lists them. Choose one distribution to use only that one. Install Palace… builds it in the chosen distribution, or in the default one."/>
+              </ToolTip.Tip>
+            </ComboBox>
+          </StackPanel>
+          <!-- brief-em3d-97 R-em3d97-3 — the subsystem's memory, read live each time the tab is shown, and Change…
+               opening the same dialog the memory warning offers. Windows only, and only when Palace's location is a
+               distribution (or Automatic resolves to one). circuitRF stores nothing: the value lives in .wslconfig. -->
+          <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Name="SubsystemMemoryRow" Orientation="Horizontal" Spacing="6"
+                      Margin="0,6,0,0" IsVisible="False">
+            <SelectableTextBlock Name="SubsystemMemoryText" FontSize="11" Opacity="0.75" VerticalAlignment="Center"
+                                 Text="Linux subsystem: reading…"/>
+            <Button Name="SubsystemMemoryChange" Content="Change…" FontSize="11" Padding="8,3" Click="OnChangeSubsystemMemory"
+                    ToolTip.Tip="Set how much of this computer's memory the Linux subsystem may use (memory= in .wslconfig). Shows the change, and what restarting the subsystem stops, before anything is written."/>
+          </StackPanel>
+          <Button Grid.Row="5" Grid.ColumnSpan="2" Name="PalaceInstall" Content="Install Palace…" FontSize="11" Padding="8,3"
+                  Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="Palace" Click="OnInstall"
+                  ToolTip.Tip="Download Palace from its own upstream and build it for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
+          <StackPanel Grid.Row="6" Grid.ColumnSpan="2" Name="PalaceRemovals" Spacing="4"/>
+        </Grid>
       </StackPanel>
-      <!-- brief-em3d-97 R-em3d97-3 — the subsystem's memory, read live each time the tab is shown, and Change…
-           opening the same dialog the memory warning offers. Windows only, and only when Palace's location is a
-           distribution (or Automatic resolves to one). circuitRF stores nothing: the value lives in .wslconfig. -->
-      <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Name="SubsystemMemoryRow" Orientation="Horizontal" Spacing="6"
-                  Margin="0,6,0,0" IsVisible="False">
-        <SelectableTextBlock Name="SubsystemMemoryText" FontSize="11" Opacity="0.75" VerticalAlignment="Center"
-                             Text="Linux subsystem: reading…"/>
-        <Button Name="SubsystemMemoryChange" Content="Change…" FontSize="11" Padding="8,3" Click="OnChangeSubsystemMemory"
-                ToolTip.Tip="Set how much of this computer's memory the Linux subsystem may use (memory= in .wslconfig). Shows the change, and what restarting the subsystem stops, before anything is written."/>
-      </StackPanel>
-      <Button Grid.Row="5" Grid.ColumnSpan="2" Name="PalaceInstall" Content="Install Palace…" FontSize="11" Padding="8,3"
-              Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="Palace" Click="OnInstall"
-              ToolTip.Tip="Download Palace from its own upstream and build it for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
-      <StackPanel Grid.Row="6" Grid.ColumnSpan="2" Name="PalaceRemovals" Spacing="4"/>
-    </Grid>
+    </Border>
 
     <!-- ── MPI launcher: how Palace uses more than one core ─────────────── -->
-    <SelectableTextBlock Text="MPI launcher (runs Palace on several cores)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
-    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
-      <TextBox Grid.Row="0" Grid.Column="0" Name="MpiBox" FontSize="12"
-               PlaceholderText="Leave blank to search (CIRCUITRF_MPIRUN, Palace's own MPI, then PATH)"
-               LostFocus="OnPathCommitted">
-        <ToolTip.Tip>
-          <TextBlock TextWrapping="Wrap" MaxWidth="360"
-                     Text="The mpirun of the MPI Palace was built with. Blank finds it: beside Palace, or, for a Palace built with Spack, the exact MPI that build links. Without one, Palace still runs, on one core."/>
-        </ToolTip.Tip>
-      </TextBox>
-      <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
-              Tag="MpiBox" Click="OnBrowse" ToolTip.Tip="Pick mpirun from disk"/>
-      <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="MpiStatus" FontSize="11" Opacity="0.75"
-                 TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
-                 Margin="0,4,0,0" Text="Not checked yet.">
-        <SelectableTextBlock.ContextMenu>
-          <ContextMenu>
-            <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
-            <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
-          </ContextMenu>
-        </SelectableTextBlock.ContextMenu>
-      </SelectableTextBlock>
-    </Grid>
+    <Border Classes="group">
+      <StackPanel>
+        <SelectableTextBlock Text="MPI launcher (runs Palace on several cores)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+          <TextBox Grid.Row="0" Grid.Column="0" Name="MpiBox" FontSize="12"
+                   PlaceholderText="Leave blank to search (CIRCUITRF_MPIRUN, Palace's own MPI, then PATH)"
+                   LostFocus="OnPathCommitted">
+            <ToolTip.Tip>
+              <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                         Text="The mpirun of the MPI Palace was built with. Blank finds it: beside Palace, or, for a Palace built with Spack, the exact MPI that build links. Without one, Palace still runs, on one core."/>
+            </ToolTip.Tip>
+          </TextBox>
+          <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+                  Tag="MpiBox" Click="OnBrowse" ToolTip.Tip="Pick mpirun from disk"/>
+          <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="MpiStatus" FontSize="11" Opacity="0.75"
+                     TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                     Margin="0,4,0,0" Text="Not checked yet.">
+            <SelectableTextBlock.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
+                <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
+              </ContextMenu>
+            </SelectableTextBlock.ContextMenu>
+          </SelectableTextBlock>
+        </Grid>
+      </StackPanel>
+    </Border>
 
     <!-- ── Gmsh ───────────────────────────────────────────────────────── -->
-    <SelectableTextBlock Text="Gmsh (meshes Palace's problems)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
-    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
-      <TextBox Grid.Row="0" Grid.Column="0" Name="GmshBox" FontSize="12"
-               PlaceholderText="Leave blank to search (CIRCUITRF_GMSH, PATH, then Spack)"
-               LostFocus="OnPathCommitted"/>
-      <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
-              Tag="GmshBox" Click="OnBrowse" ToolTip.Tip="Pick the Gmsh executable from disk"/>
-      <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="GmshStatus" FontSize="11" Opacity="0.75"
-                 TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
-                 Margin="0,4,0,0" Text="Not checked yet.">
-        <SelectableTextBlock.ContextMenu>
-          <ContextMenu>
-            <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
-            <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
-          </ContextMenu>
-        </SelectableTextBlock.ContextMenu>
-      </SelectableTextBlock>
-      <Button Grid.Row="2" Grid.ColumnSpan="2" Name="GmshInstall" Content="Install Gmsh…" FontSize="11" Padding="8,3"
-              Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="Gmsh" Click="OnInstall"
-              ToolTip.Tip="Download Gmsh's own published archive for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
-      <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="GmshRemovals" Spacing="4"/>
-    </Grid>
+    <Border Classes="group">
+      <StackPanel>
+        <SelectableTextBlock Text="Gmsh (meshes Palace's problems)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+          <TextBox Grid.Row="0" Grid.Column="0" Name="GmshBox" FontSize="12"
+                   PlaceholderText="Leave blank to search (CIRCUITRF_GMSH, PATH, then Spack)"
+                   LostFocus="OnPathCommitted"/>
+          <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+                  Tag="GmshBox" Click="OnBrowse" ToolTip.Tip="Pick the Gmsh executable from disk"/>
+          <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="GmshStatus" FontSize="11" Opacity="0.75"
+                     TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                     Margin="0,4,0,0" Text="Not checked yet.">
+            <SelectableTextBlock.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
+                <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
+              </ContextMenu>
+            </SelectableTextBlock.ContextMenu>
+          </SelectableTextBlock>
+          <Button Grid.Row="2" Grid.ColumnSpan="2" Name="GmshInstall" Content="Install Gmsh…" FontSize="11" Padding="8,3"
+                  Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="Gmsh" Click="OnInstall"
+                  ToolTip.Tip="Download Gmsh's own published archive for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
+          <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="GmshRemovals" Spacing="4"/>
+        </Grid>
+      </StackPanel>
+    </Border>
 
     <!-- ── openEMS ────────────────────────────────────────────────────── -->
-    <SelectableTextBlock Text="openEMS (FDTD)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
-    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
-      <TextBox Grid.Row="0" Grid.Column="0" Name="OpenEmsBox" FontSize="12"
-               PlaceholderText="Leave blank to search (CIRCUITRF_OPENEMS, PATH, then Spack)"
-               LostFocus="OnPathCommitted"/>
-      <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
-              Tag="OpenEmsBox" Click="OnBrowse" ToolTip.Tip="Pick the openEMS executable from disk"/>
-      <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="OpenEmsStatus" FontSize="11" Opacity="0.75"
-                 TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
-                 Margin="0,4,0,0" Text="Not checked yet.">
-        <SelectableTextBlock.ContextMenu>
-          <ContextMenu>
-            <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
-            <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
-          </ContextMenu>
-        </SelectableTextBlock.ContextMenu>
-      </SelectableTextBlock>
-      <Button Grid.Row="2" Grid.ColumnSpan="2" Name="OpenEmsInstall" Content="Install openEMS…" FontSize="11" Padding="8,3"
-              Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="OpenEms" Click="OnInstall"
-              ToolTip.Tip="Download openEMS from its own upstream and install it for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
-      <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="OpenEmsRemovals" Spacing="4"/>
-    </Grid>
+    <Border Classes="group">
+      <StackPanel>
+        <SelectableTextBlock Text="openEMS (FDTD)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto">
+          <TextBox Grid.Row="0" Grid.Column="0" Name="OpenEmsBox" FontSize="12"
+                   PlaceholderText="Leave blank to search (CIRCUITRF_OPENEMS, PATH, then Spack)"
+                   LostFocus="OnPathCommitted"/>
+          <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+                  Tag="OpenEmsBox" Click="OnBrowse" ToolTip.Tip="Pick the openEMS executable from disk"/>
+          <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="OpenEmsStatus" FontSize="11" Opacity="0.75"
+                     TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
+                     Margin="0,4,0,0" Text="Not checked yet.">
+            <SelectableTextBlock.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
+                <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
+              </ContextMenu>
+            </SelectableTextBlock.ContextMenu>
+          </SelectableTextBlock>
+          <Button Grid.Row="2" Grid.ColumnSpan="2" Name="OpenEmsInstall" Content="Install openEMS…" FontSize="11" Padding="8,3"
+                  Margin="0,6,0,0" HorizontalAlignment="Left" IsVisible="False" Tag="OpenEms" Click="OnInstall"
+                  ToolTip.Tip="Download openEMS from its own upstream and install it for this computer. Shows what it will fetch and where it will go before anything is downloaded."/>
+          <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="OpenEmsRemovals" Spacing="4"/>
+        </Grid>
+      </StackPanel>
+    </Border>
 
     <!-- ── brief-emi-2 R-emi2-4: EMerge ─────────────────────────────────
          The program is a Python with EMerge importable. Blank searches CIRCUITRF_EMERGE, then the copy circuitRF
          installed, and never PATH (SolverDiscovery.InstalledOnly). The status line is the version and whether it is
          validated, the sparse-solver tier, then where it was found (SolverDiscovery.DescribeForSettings). -->
-    <SelectableTextBlock Text="EMerge (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
-    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
-      <TextBox Grid.Row="0" Grid.Column="0" Name="EmergeBox" FontSize="12"
-               PlaceholderText="Leave blank to search (CIRCUITRF_EMERGE, then the copy circuitRF installed)"
-               LostFocus="OnPathCommitted">
-        <ToolTip.Tip>
-          <TextBlock TextWrapping="Wrap" MaxWidth="360"
-                     Text="The Python EMerge is installed in: the interpreter itself, or the folder of its virtual environment. circuitRF asks it which EMerge it has and which sparse solver EMerge would use, and keeps the answer until that environment changes. A Python on PATH is never used on its own."/>
-        </ToolTip.Tip>
-      </TextBox>
-      <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
-              Tag="EmergeBox" Click="OnBrowse" ToolTip.Tip="Pick the environment's Python from disk"/>
-      <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="EmergeStatus" FontSize="11" Opacity="0.75"
-                 TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis"
-                 Margin="0,4,0,0" Text="Not checked yet.">
-        <SelectableTextBlock.ContextMenu>
-          <ContextMenu>
-            <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
-            <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
-          </ContextMenu>
-        </SelectableTextBlock.ContextMenu>
-      </SelectableTextBlock>
-      <!-- brief-emi-3 R-emi3-4: beside the status line, the prerequisite's own installer when the faster sparse solver
-           is waiting for it (EmergeAccelerator.InstallerFor). Its label is the recipe's prerequisite name. -->
-      <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
-        <Button Name="EmergeInstall" Content="Install EMerge…" FontSize="11" Padding="8,3"
-                HorizontalAlignment="Left" IsVisible="False" Tag="Emerge" Click="OnInstall"
-                ToolTip.Tip="Download a Python of its own, EMerge and every package it needs, each pinned and checked, into a folder of circuitRF's. Shows what it will fetch and where it will go before anything is downloaded."/>
-        <Button Name="EmergeAccelerate" FontSize="11" Padding="8,3" HorizontalAlignment="Left" IsVisible="False"
-                Click="OnEmergeAccelerate"
-                ToolTip.Tip="Starts that installer, which asks you itself. When it has finished, circuitRF builds EMerge's faster sparse solver on its own: there is nothing else to press."/>
-        <!-- brief-emi-9 R-emi9-2b: when the GPU sparse solver waits only for a Rust toolchain (EmergeAccelerator.GpuEnableFor). -->
-        <Button Name="EmergeEnableGpu" Content="Enable GPU solving…" FontSize="11" Padding="8,3" HorizontalAlignment="Left"
-                IsVisible="False" Click="OnEmergeEnableGpu"
-                ToolTip.Tip="Fetches Rust's minimal toolchain into EMerge's own folder, builds EMerge's GPU sparse solver with it, then deletes the toolchain. Shows what it will fetch first. Your shell, PATH and any Rust you install yourself are not touched."/>
+    <Border Classes="group">
+      <StackPanel>
+        <SelectableTextBlock Text="EMerge (FEM)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+          <TextBox Grid.Row="0" Grid.Column="0" Name="EmergeBox" FontSize="12"
+                   PlaceholderText="Leave blank to search (CIRCUITRF_EMERGE, then the copy circuitRF installed)"
+                   LostFocus="OnPathCommitted">
+            <ToolTip.Tip>
+              <TextBlock TextWrapping="Wrap" MaxWidth="360"
+                         Text="The Python EMerge is installed in: the interpreter itself, or the folder of its virtual environment. circuitRF asks it which EMerge it has and which sparse solver EMerge would use, and keeps the answer until that environment changes. A Python on PATH is never used on its own."/>
+            </ToolTip.Tip>
+          </TextBox>
+          <Button Grid.Row="0" Grid.Column="1" Content="Browse…" FontSize="11" Padding="8,3" Margin="6,0,0,0"
+                  Tag="EmergeBox" Click="OnBrowse" ToolTip.Tip="Pick the environment's Python from disk"/>
+          <SelectableTextBlock Grid.Row="1" Grid.ColumnSpan="2" Name="EmergeStatus" FontSize="11" Opacity="0.75"
+                     TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis"
+                     Margin="0,4,0,0" Text="Not checked yet.">
+            <SelectableTextBlock.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Copy" Click="OnCopyStatusClick"/>
+                <MenuItem Header="Copy All" Click="OnCopyAllStatusClick"/>
+              </ContextMenu>
+            </SelectableTextBlock.ContextMenu>
+          </SelectableTextBlock>
+          <!-- brief-emi-3 R-emi3-4: beside the status line, the prerequisite's own installer when the faster sparse solver
+               is waiting for it (EmergeAccelerator.InstallerFor). Its label is the recipe's prerequisite name. -->
+          <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+            <Button Name="EmergeInstall" Content="Install EMerge…" FontSize="11" Padding="8,3"
+                    HorizontalAlignment="Left" IsVisible="False" Tag="Emerge" Click="OnInstall"
+                    ToolTip.Tip="Download a Python of its own, EMerge and every package it needs, each pinned and checked, into a folder of circuitRF's. Shows what it will fetch and where it will go before anything is downloaded."/>
+            <Button Name="EmergeAccelerate" FontSize="11" Padding="8,3" HorizontalAlignment="Left" IsVisible="False"
+                    Click="OnEmergeAccelerate"
+                    ToolTip.Tip="Starts that installer, which asks you itself. When it has finished, circuitRF builds EMerge's faster sparse solver on its own: there is nothing else to press."/>
+            <!-- brief-emi-9 R-emi9-2b: when the GPU sparse solver waits only for a Rust toolchain (EmergeAccelerator.GpuEnableFor). -->
+            <Button Name="EmergeEnableGpu" Content="Enable GPU solving…" FontSize="11" Padding="8,3" HorizontalAlignment="Left"
+                    IsVisible="False" Click="OnEmergeEnableGpu"
+                    ToolTip.Tip="Fetches Rust's minimal toolchain into EMerge's own folder, builds EMerge's GPU sparse solver with it, then deletes the toolchain. Shows what it will fetch first. Your shell, PATH and any Rust you install yourself are not touched."/>
+          </StackPanel>
+          <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="EmergeRemovals" Spacing="4"/>
+          <!-- brief-emi-9 R-emi9-4: where EMerge factorises, per machine (EmEmergeDevicePreference). -->
+          <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+            <SelectableTextBlock Text="Device" FontSize="11" VerticalAlignment="Center"/>
+            <!-- Disabled, with the reason as its tooltip, until the row finds an EMerge (code-behind, Refresh). -->
+            <ComboBox Name="EmergeDeviceBox" FontSize="11" MinWidth="110" SelectionChanged="OnEmergeDeviceChanged"
+                      IsEnabled="False" ToolTip.ShowOnDisabled="True"
+                      ToolTip.Tip="Where EMerge solves. Install EMerge, or name one above, to choose.">
+              <ComboBoxItem Content="Automatic" Tag="auto"/>
+              <ComboBoxItem Content="CPU" Tag="cpu"/>
+              <ComboBoxItem Content="GPU" Tag="gpu"/>
+            </ComboBox>
+          </StackPanel>
+        </Grid>
       </StackPanel>
-      <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="EmergeRemovals" Spacing="4"/>
-      <!-- brief-emi-9 R-emi9-4: where EMerge factorises, per machine (EmEmergeDevicePreference). -->
-      <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
-        <SelectableTextBlock Text="Device" FontSize="11" VerticalAlignment="Center"/>
-        <ComboBox Name="EmergeDeviceBox" FontSize="11" MinWidth="110" SelectionChanged="OnEmergeDeviceChanged"
-                  ToolTip.Tip="Automatic uses EMerge's GPU sparse solver, when it is installed, for a driven problem large enough to be faster on it, and solves a sweep again on the CPU if the GPU's does not converge. Eigenmode problems always solve on the CPU.">
-          <ComboBoxItem Content="Automatic" Tag="auto"/>
-          <ComboBoxItem Content="CPU" Tag="cpu"/>
-          <ComboBoxItem Content="GPU" Tag="gpu"/>
-        </ComboBox>
-      </StackPanel>
-    </Grid>
-
-    <!-- ── brief-emi-10 R-emi10-4: the memory ceiling every solver and mesher process is held to ─────────
-         Per machine (EmMemoryLimitPreference). Blank is Automatic, this machine's memory, which the placeholder shows greyed.
-         A value at or above it is refused with the CLI flag's own sentence, and is not stored. -->
-    <SelectableTextBlock Text="Memory limit" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
-    <StackPanel Orientation="Horizontal" Spacing="6">
-      <TextBox Name="MemoryLimitBox" FontSize="12" Width="80" LostFocus="OnMemoryLimitCommitted"
-               ToolTip.Tip="A solver or mesher that reaches this much memory is stopped, and the run writes nothing. Blank is Automatic: this machine's memory, shown greyed. Lower than that only; a run started anyway past its size check keeps no limit."/>
-      <SelectableTextBlock Text="GB" FontSize="11" VerticalAlignment="Center"/>
-    </StackPanel>
-    <SelectableTextBlock Name="MemoryLimitStatus" FontSize="11" Opacity="0.75" TextWrapping="Wrap" Margin="0,4,0,0" IsVisible="False"/>
+    </Border>
 
     <!-- ── brief-em3d-25 R-em3d25-2: every circuitRF-installed solver, one confirmation ── -->
-    <Button Name="RemoveAll" Content="Remove all 3D solvers…" FontSize="11" Padding="8,3" Margin="0,16,0,0"
+    <Button Name="RemoveAll" Content="Remove all 3D solvers…" FontSize="11" Padding="8,3" Margin="0,4,0,0"
             HorizontalAlignment="Left" IsVisible="False" Click="OnRemoveAll"
             ToolTip.Tip="Remove every 3D solver circuitRF installed for this account. Lists each with its size first; nothing is removed if any is in use. Your documents are not touched."/>
     <!-- Where removing circuitRF runs none of its code (the macOS Trash, a .deb), the solvers stay behind
@@ -245,15 +285,19 @@
          field would only be a way to run a mismatched build). Every word of its status comes from
          GeometryKernel — the one place its absence is worded — so the title and status are set in code.
          The prominent notice itself lives in THIRD-PARTY-NOTICES.md and the Acknowledgments dialog. -->
-    <SelectableTextBlock Name="KernelTitle" FontSize="12" FontWeight="SemiBold" Margin="0,20,0,4"/>
-    <SelectableTextBlock Name="KernelStatus" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
-    <SelectableTextBlock Name="KernelPath" FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="0,2,0,0"/>
-    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
-      <Button Name="KernelCheck" Content="Check again" FontSize="11" Padding="8,3" Click="OnKernelCheckAgain"
-              ToolTip.Tip="Look for it again and start it, without restarting circuitRF."/>
-      <Button Name="KernelClear" Content="Clear" FontSize="11" Padding="8,3" Click="OnKernelClearCache"
-              ToolTip.Tip="Delete the built shapes kept on disk. They make a document with a large imported part reopen at once, and are rebuilt when next needed."/>
-      <SelectableTextBlock Name="KernelCache" FontSize="11" Opacity="0.6" VerticalAlignment="Center"/>
-    </StackPanel>
+    <Border Classes="group" Margin="0,12,0,0">
+      <StackPanel>
+        <SelectableTextBlock Name="KernelTitle" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <SelectableTextBlock Name="KernelStatus" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+        <SelectableTextBlock Name="KernelPath" FontSize="11" Opacity="0.6" TextWrapping="Wrap" Margin="0,2,0,0"/>
+        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+          <Button Name="KernelCheck" Content="Check again" FontSize="11" Padding="8,3" Click="OnKernelCheckAgain"
+                  ToolTip.Tip="Look for it again and start it, without restarting circuitRF."/>
+          <Button Name="KernelClear" Content="Clear" FontSize="11" Padding="8,3" Click="OnKernelClearCache"
+                  ToolTip.Tip="Delete the built shapes kept on disk. They make a document with a large imported part reopen at once, and are rebuilt when next needed."/>
+          <SelectableTextBlock Name="KernelCache" FontSize="11" Opacity="0.6" VerticalAlignment="Center"/>
+        </StackPanel>
+      </StackPanel>
+    </Border>
   </StackPanel>
 </UserControl>

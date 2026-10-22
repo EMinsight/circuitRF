@@ -59,26 +59,27 @@ public static class OpenEmsSolver
         };
         if (setup.IsStatic3D)
         {
-            var (only, remedy) = OnlyOn(setup.Problem3D);
+            var (only, many, remedy) = OnlyOn(setup.Problem3D);
             return $"This setup asks for a{(setup.Problem3D == Em3dProblemType.Electrostatic ? "n electrostatic" : " magnetostatic")} " +
-                   $"solve on {on}, and only {only} solves the static problems: openEMS is a time-domain solver and has no static " +
+                   $"solve on {on}, and only {only} {(many ? "solve" : "solves")} the static problems: openEMS is a time-domain solver and has no static " +
                    "one. " + remedy;
         }
         if (setup.Problem3D == Em3dProblemType.Eigenmode)
         {
-            var (only, remedy) = OnlyOn(setup.Problem3D);
-            return $"This setup asks for an eigenmode solve on {on}, and only {only} finds eigenmodes: openEMS is a " +
+            var (only, many, remedy) = OnlyOn(setup.Problem3D);
+            return $"This setup asks for an eigenmode solve on {on}, and only {only} {(many ? "find" : "finds")} eigenmodes: openEMS is a " +
                    "time-domain (FDTD) solver and has no eigensolver. " + remedy;
         }
         return null;
     }
 
-    /// <summary>The solvers that solve <paramref name="type"/>, by name, and the sentence that moves the setup to the first.</summary>
-    private static (string Only, string Remedy) OnlyOn(Em3dProblemType type)
+    /// <summary>The solvers that solve <paramref name="type"/>, by name, whether they are several (the verb's number), and the
+    /// sentence that moves the setup to the first.</summary>
+    private static (string Only, bool Many, string Remedy) OnlyOn(Em3dProblemType type)
     {
         var able = Em3dSolvers.With(c => c.Problems.Contains(type));
         var first = able[0];
-        return (Em3dSolvers.Names(able),
+        return (Em3dSolvers.Names(able), able.Count > 1,
                 $"Set the setup's Solver3D to {first.Spelling}, or run it with `circuitrf em --solver {first.ResultToken}`.");
     }
 
