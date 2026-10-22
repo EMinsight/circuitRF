@@ -966,3 +966,60 @@ about 36 Ω, the box built around it started at 30.8 Ω (VSWR 1.3), and rounding
 and the Rect plot autoscaled to it, ended past the MXP, which drew half off the plot's edge. Edges now round outward
 and are clipped to the measured extent again (`RoundOutward`). Gate: `LoadpullSurfaceTests.RecommendedBox_ZPlaneRounding_NeverCutsInward`.
 A `.cdd` saved before the fix keeps its stored window; deleting it lets the next run re-create the display.
+## SignalCache: a shared generation must not take a caller's cancellation token (2026-10-21)
+
+`SignalCache.GetAsync` hands every caller asking for one signal the SAME generation task, and it was
+started with the FIRST caller's token. The Signal Designer cancels a preview whenever a newer one starts
+(and its own auto-preview is the first caller), so under load the second, live preview awaited a task
+the first had cancelled and came back empty — and a simulation waiting on the same cached signal would
+have failed the same way. The generation now runs uncancellable; each caller stops WAITING with
+`Task.WaitAsync(ct)`. Only the first caller receives progress reports; later callers just wait.
+
+## Signal EVM: what a generated record reads, and why it is not exactly zero (2026-10-22)
+
+`SignalEvm.Measure` demodulates a carrier's own native record (FFT right after each cyclic prefix, where
+the WOLA ramps do not reach) against the QAM points the generator drew, regenerated from the seed through
+the generator's own `DrawRow`/`BinOf` so the two cannot drift. Unshaped and unclipped, the record
+demodulates back to its symbols to < 1e-6 %, which is the check that the timing and bin mapping are
+right. With the default -80 dBc shaping it reads a small, real EVM (0.17 % LTE 20, 0.02 % NR 20 at
+1024-point 30 kHz): trimming each symbol's out-of-band skirts across the whole record leaks a little
+back in-band. Clipping is what moves EVM in practice (NR 20 64QAM clipped to 8 dB: ~1.7 %).
+One complex gain is fitted over the record, with no per-subcarrier equaliser, so the number is the
+distortion the source itself adds.
+
+## Clipping now meets its target at 4x oversampling (2026-10-22)
+
+`OfdmGenerator.Clip` clipped each carrier at its native rate. For a 20 MHz carrier that is 30.72 MS/s, only ~1.5x
+the occupied band, so the true peaks fall between samples. A clip to 8 dB read 7.9 dB natively and 9.2 dB peak
+(8.7 dB at 0.01 %) at 122.88 MS/s, which is what the Designer previews and the amplifier sees. It now clips the
+record resampled up 4x (exact, periodic and band-limited) and filters the clipping noise to the occupied band. It
+iterates the peak at 4x to within 0.05 dB, restarting each pass from the original with the threshold moved by the
+miss, and keeps the closest result. It then resamples back down, which is exact because the result lies inside the
+native band. Result: peak at 4x within 0.1 dB of target for LTE and NR at 7, 8 and 9 dB (S6 theory).
+`GeneratorVersion` is now `crf-signals-2`, so cached clipped signals regenerate. Unclipped signals are unchanged.
+
+The old S6 test measured PAPR on the native samples, the same place the clip works, so it could not see this.
+Clipping stays per carrier: a multi-carrier composite still exceeds the target, because the carriers add.
+
+### Then: peak cancellation, and the target as a ceiling (same day)
+
+Clip-and-filter kept only the in-band share of each cut, so it cancelled only part of each peak's excess. It had
+to clip lower and more often to reach the target, and every extra cut became in-band error. `Clip` is now peak
+cancellation: each pass subtracts the occupied-band kernel (peak 1) scaled to exactly each local maximum's excess.
+It touches only the peaks, and every correction is in-band, so ACLR does not move. At the same PAPR, EVM drops by
+10-23 %. NR 20 64QAM: 9 dB 1.17 -> 1.04 %, 8 dB 2.44 -> 2.07 %, 7 dB 4.86 -> 3.96 %. The target is now a CEILING: the
+4x peak finishes at or under it (all cases 0.013-0.02 dB under), and with it the 0.01 % PAPR. A +/-0.05 dB window had
+let the peak end at 8.04 dB, and because peak cancellation stacks many peaks at the threshold, the 0.01 % figure
+followed it over. Generator `crf-signals-3`.
+
+### Then: the target judged at 8x, the work done at a power-of-two length (same day)
+
+A 4x peak still misses the peaks of a wide carrier. NR 100 clipped to 9 dB at 4x read 9.17 dB at the Designer's 8x
+display rate (983.04 MS/s), so the user would have seen the target missed. The outer loop now steers the threshold on
+the 8x peak (`PaprOversample`); the cancellation passes stay at about 4x (`ClipOversample`). Doing the passes at 8x as
+well took NR 100 to two minutes per clip. The passes also now run at the next power of two at or above 4x: an LTE/NR
+record is 2^k x 15 samples, and Bluestein FFTs at that length were most of the cost. Periodic band-limited resampling
+is exact at any length. NR 20 clips in ~3 s (was ~15 s at 4x), NR 100 in ~18 s. Every case lands at or under the
+target at 8x and at the display rate, peak and 0.01 % (NR 100 9 dB: 8.99 / 8.82 dB). EVM rises slightly because the
+stricter judgement clips a little deeper (NR 20 64QAM 8 dB: 2.07 -> 2.21 %). Generator `crf-signals-4`; S6 gains an
+NR 100 case and checks the display rate.

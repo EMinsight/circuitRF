@@ -1197,6 +1197,13 @@ public static class SParameterEngine
             // realized at the external terminals: the wave path adds the port conductance in
             // RunWavePath (skipPorts); the legacy path stamps a 0 V port branch here (mirrors Term).
             // Buried (sub-cell) P1Tones are inert ports but still need their __drv tied off.
+            // MOD_Source in S-parameter mode is its source impedance only; tie off its unused drive node.
+            if (ec.Model is ModSourceModel msrc)
+            {
+                msrc.StampSParamDriveTie(mna, ec);
+                ec.Stamp(mna, omega);
+                continue;
+            }
             if (ec.Model is P1ToneModel p1)
             {
                 bool buried = ec.InstancePath.Contains('.');

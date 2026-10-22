@@ -52,9 +52,14 @@ namespace CircuitRF.Render.DataDisplay
         /// renderer and the `render` verb's composer all obtain their mapping here — which is why
         /// this feature is a change in the middle rather than in twenty places.
         ///
-        /// <para>The Y axis is never logarithmic; only X carries the flag.</para>
+        /// <para>The PRIMARY Y axis can be logarithmic too (<see cref="YLog"/>); the secondary never is.</para>
         /// </summary>
         public bool XLog;
+
+        /// <summary>True when the PRIMARY Y axis maps base-10 logarithmically (<see cref="Axes.YScale"/>):
+        /// <c>Primary.YScale</c> is px per decade and <c>Primary.YOffset</c> is measured against log10(y).
+        /// A non-positive y has no place on it and maps below the plot.</summary>
+        public bool YLog;
 
         // ---- Mapping helpers --------------------------------------------
 
@@ -81,10 +86,14 @@ namespace CircuitRF.Render.DataDisplay
         /// </summary>
         public bool XIsPlottable(double wx) => !XLog || (wx > 0 && double.IsFinite(wx));
 
+        private double MapYPrimary(double wy) =>
+            YLog ? (wy > 0 ? Math.Log10(wy) * Primary.YScale + Primary.YOffset : CanvasSize.H * 4)
+                 : wy * Primary.YScale + Primary.YOffset;
+
         public SKPoint PrimaryToCanvas(float wx, float wy) =>
             new SKPoint(
                 (float)MapX(wx, Primary.XScale, Primary.XOffset),
-                (float)(wy * Primary.YScale   + Primary.YOffset));
+                (float)MapYPrimary(wy));
 
         public SKPoint PrimaryToCanvas(double wx, double wy) =>
             PrimaryToCanvas((float)wx, (float)wy);
@@ -102,7 +111,8 @@ namespace CircuitRF.Render.DataDisplay
 
         public (double Wx, double Wy) PrimaryFromCanvas(float cx, float cy) =>
             (UnmapX(cx, Primary.XScale, Primary.XOffset),
-             (cy - Primary.YOffset)   / Primary.YScale);
+             YLog ? Math.Pow(10.0, (cy - Primary.YOffset) / Primary.YScale)
+                  : (cy - Primary.YOffset)   / Primary.YScale);
 
         public (double Wx, double Wy) SecondaryFromCanvas(float cx, float cy) =>
             (UnmapX(cx, Secondary.XScale, Secondary.XOffset),
@@ -146,7 +156,7 @@ namespace CircuitRF.Render.DataDisplay
         /// is unchanged either way — there is no log Y axis.</param>
         public static (double XScale, double YScale, double XOffset, double YOffset)
             WorldToCanvasParams(PlotRect window, PlotRect viewport,
-                                (double W, double H) canvas, bool xLog = false)
+                                (double W, double H) canvas, bool xLog = false, bool yLog = false)
         {
             double vpLeft   = viewport.X      * canvas.W;
             double vpTop    = viewport.Y      * canvas.H;
@@ -171,8 +181,20 @@ namespace CircuitRF.Render.DataDisplay
                 xScale  =  vpWidth  / window.Width;
                 xOffset =  vpLeft   - window.Left * xScale;
             }
-            double yScale  = -vpHeight / window.Height;
-            double yOffset =  vpTop + vpHeight + window.Top * (vpHeight / window.Height);
+            double yScale, yOffset;
+            if (yLog)
+            {
+                double lgB = window.Top    > 0 ? Math.Log10(window.Top)    : 0.0;
+                double lgT = window.Bottom > 0 ? Math.Log10(window.Bottom) : lgB + 1.0;
+                if (!(lgT > lgB)) lgT = lgB + 1.0;
+                yScale  = -vpHeight / (lgT - lgB);
+                yOffset =  vpTop + vpHeight - lgB * yScale;
+            }
+            else
+            {
+                yScale  = -vpHeight / window.Height;
+                yOffset =  vpTop + vpHeight + window.Top * (vpHeight / window.Height);
+            }
 
             return (xScale, yScale, xOffset, yOffset);
         }
@@ -185,13 +207,15 @@ namespace CircuitRF.Render.DataDisplay
             // transform at all — so the mode cannot leak into a plot kind it has no meaning for even
             // if an Axes were handed it directly.
             bool xLog = plot.PlotType == PlotType.Rect && plot.Axes.XScale == AxisScale.Log;
+            bool yLog = plot.PlotType == PlotType.Rect && plot.Axes.YScale == AxisScale.Log;
             return new TransformSet
             {
-                Primary    = WorldToCanvasParams(plot.Axes.Window,          vp, canvasSize, xLog),
+                Primary    = WorldToCanvasParams(plot.Axes.Window,          vp, canvasSize, xLog, yLog),
                 Secondary  = WorldToCanvasParams(plot.Axes.WindowSecondary, vp, canvasSize, xLog),
                 CanvasSize = canvasSize,
                 Viewport   = vp,
-                XLog       = xLog
+                XLog       = xLog,
+                YLog       = yLog
             };
         }
 

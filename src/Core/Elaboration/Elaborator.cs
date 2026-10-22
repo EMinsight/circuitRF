@@ -932,6 +932,13 @@ public sealed class Elaborator
                     resolvedNodes = [..resolvedNodes, nDrv];
                 }
 
+                // MOD_Source: the same internal drive node (envelope/CW V-source ↔ source impedance).
+                if (inst.Reference.Equals("MOD_Source", StringComparison.OrdinalIgnoreCase))
+                {
+                    int nDrv = netlist.Nodes.GetOrAssign($"__modsrc_{childPath}_drv");
+                    resolvedNodes = [..resolvedNodes, nDrv];
+                }
+
                 // PnTone: same single internal drive node (multi-tone V-source ↔ Z_Port junction).
                 if (inst.Reference.Equals("PnTone", StringComparison.OrdinalIgnoreCase))
                 {
@@ -1208,6 +1215,8 @@ public sealed class Elaborator
             return ResolveP1ToneParameters(inst, parentScope);
         if (inst.Reference.Equals("PnTone", StringComparison.OrdinalIgnoreCase))
             return ResolvePnToneParameters(inst, parentScope);
+        if (inst.Reference.Equals("MOD_Source", StringComparison.OrdinalIgnoreCase))
+            return ResolveModSourceParameters(inst, parentScope);
         if (inst.Reference.Equals("SnP", StringComparison.OrdinalIgnoreCase))
             return ResolveSnpParameters(inst, parentScope);
         // A .cmodel path is not an expression, for SnP's reason.
@@ -2429,6 +2438,37 @@ public sealed class Elaborator
             }
         }
 
+        return result;
+    }
+
+    // ── MOD_Source parameter resolution ──────────────────────────────────────
+    // Carrier[i] is a carrier DESCRIPTION ("NR;BW=20e6;SCS=30e3;..."), never an expression: stored
+    // verbatim with its quotes removed. Shaping may be the word `off`. Everything else (Fc, Pavg, Z,
+    // Record, Clip, Shaping in dBc) is an ordinary numeric expression with its unit.
+
+    private static readonly Regex RxModCarrier = new(@"^Carrier\[\d+\]$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private IReadOnlyDictionary<string, Value> ResolveModSourceParameters(Instance inst, Scope parentScope)
+    {
+        var result = new Dictionary<string, Value>(StringComparer.Ordinal);
+        result["ModSourceName"] = new Value(inst.InstanceName);
+        foreach (var ov in inst.Overrides)
+        {
+            string raw = ov.Expression.Trim();
+            if (RxModCarrier.IsMatch(ov.Name))
+            {
+                result[ov.Name] = new Value(raw.Trim('"'));
+                continue;
+            }
+            if (ov.Name.Equals("Shaping", StringComparison.OrdinalIgnoreCase) &&
+                raw.Trim('"').Equals("off", StringComparison.OrdinalIgnoreCase))
+            {
+                result[ov.Name] = new Value("off");
+                continue;
+            }
+            try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
+            catch { /* skip unresolvable — degrades gracefully, like P1Tone */ }
+        }
         return result;
     }
 

@@ -51,6 +51,7 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         DcAnalysis               => "DC",
         SParameterAnalysis       => "SP",
         HarmonicBalanceAnalysis  => "HB",
+        EnvelopeAnalysis         => "ENV",
         LoadpullPursuitAnalysis  => "LPP",
         LoadpullAnalysis         => "LP",
         ParametricSweepAnalysis  => "SW",
@@ -130,6 +131,7 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
         DcAnalysis                 => "Operating point",
         SParameterAnalysis sp      => FormatSpSummary(sp, model),
         HarmonicBalanceAnalysis hb => FormatHbSummary(hb, model),
+        EnvelopeAnalysis env       => FormatEnvSummary(env),
         LoadpullPursuitAnalysis lpp => FormatLppSummary(lpp),
         LoadpullAnalysis lp        => FormatLpSummary(lp),
         ParametricSweepAnalysis ps => FormatSweepSummary(ps),
@@ -170,6 +172,10 @@ public sealed partial class AnalysisRowViewModel : ObservableObject
     /// The multi-tone test is HbEngine's own (<c>NumFreqs &gt; 1</c> and enough entries to satisfy
     /// it, first <c>NumFreqs</c> taken) so the card can never name a tone set the run would not use.
     /// </summary>
+    private static string FormatEnvSummary(EnvelopeAnalysis env)
+        => env.StopExpr + " s · " + env.Accuracy + " · segments " + env.SegmentsExpr
+           + (string.IsNullOrWhiteSpace(env.Probes) ? "" : " · " + env.Probes);
+
     private static string FormatHbSummary(HarmonicBalanceAnalysis hb, SchematicEditModel model)
     {
         int numFreqs = int.TryParse(hb.NumFreqsExpr.Trim(), NumberStyles.Integer,

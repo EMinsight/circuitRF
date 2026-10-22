@@ -2624,6 +2624,16 @@ namespace CircuitRF.Render.DataDisplay
             return new PlotRect(aX, aY, bX - aX, bY - aY);
         }
 
+        /// <summary>True when the trace has at least one point with a finite X and Y — what makes a
+        /// zero-size <see cref="PathBoundingRect"/> a single point rather than an empty trace.</summary>
+        public bool HasFinitePoint()
+        {
+            if (IsContourTrace) return false;
+            if (IsFamily)
+                return FamilyCurves.Any(c => c.Points.Any(p => float.IsFinite(p.X) && float.IsFinite(p.Y)));
+            return Points.Any(p => float.IsFinite(p.X) && float.IsFinite(p.Y));
+        }
+
         // ---- Positive-X extent, for a logarithmic X axis ------------------
 
         /// <summary>

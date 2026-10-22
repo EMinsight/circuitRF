@@ -75,7 +75,7 @@ public static class InstanceNetContract
         // Each declares ONE port and takes TWO nets. This is the family the catalogue got wrong.
         // SeriesProbeModelBase covers IProbe and WSProbe alike — both bind two nets, G/+ then L/−.
         VdcModel or SeriesProbeModelBase or TunerModel or ToneSourceModelBase
-            or P1ToneModel or PnToneModel or NonlinearCModel                                  => 2,
+            or P1ToneModel or PnToneModel or ModSourceModel or NonlinearCModel                => 2,
 
         // ── Controlled sources: an output pair and a control pair, two ports of two nets each ──
         VccsModel or VcvsModel                                                                => 4,

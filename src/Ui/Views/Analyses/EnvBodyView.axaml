@@ -1,0 +1,63 @@
+<!-- Envelope analysis body (type=env). The stimulus is the schematic's MOD_Source (shown read-only at the
+     top); this card says how long, how accurately, which nodes to keep and how to split the work across
+     cores. Layout and type sizes follow the HB card. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:CircuitRF.Ui.ViewModels"
+             x:Class="CircuitRF.Ui.Views.Analyses.EnvBodyView"
+             x:DataType="vm:EnvBodyViewModel">
+    <UserControl.Styles>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+        <Style Selector="TextBox">
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
+    </UserControl.Styles>
+    <StackPanel Spacing="6">
+        <TextBlock Text="Stimulus" FontSize="11" FontWeight="SemiBold"/>
+        <TextBlock Text="{Binding StimulusSummary}" FontSize="11" TextWrapping="Wrap"
+                   Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
+        <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" RowSpacing="6">
+            <TextBlock Classes="lbl" Text="Stop time (s)"/>
+            <TextBox Grid.Column="1" Text="{Binding Stop}" ToolTip.Tip="Simulated signal time. ACPR settles within ~0.1 dB from 0.5 ms of LTE/NR."/>
+            <TextBlock Grid.Column="2" Classes="lbl" Text="Accuracy" Margin="12,0,8,0"/>
+            <ComboBox Grid.Column="3" ItemsSource="{x:Static vm:EnvBodyViewModel.AccuracyOptions}" SelectedItem="{Binding Accuracy}" FontSize="11" HorizontalAlignment="Stretch"/>
+
+            <TextBlock Grid.Row="1" Grid.ColumnSpan="4" Text="{Binding AccuracyDescription}" FontSize="10" TextWrapping="Wrap"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
+            <TextBlock Grid.Row="5" Classes="lbl" Text="Envelope"/>
+            <ComboBox Grid.Row="5" Grid.Column="1" ItemsSource="{x:Static vm:EnvBodyViewModel.EnvelopeOptions}" SelectedItem="{Binding Envelope}" FontSize="11" HorizontalAlignment="Stretch"
+                      ToolTip.Tip="How widely spaced carriers are simulated: one envelope over all of them, or one fundamental per carrier group"/>
+            <TextBlock Grid.Row="6" Grid.ColumnSpan="4" Text="{Binding EnvelopeDescription}" FontSize="10" TextWrapping="Wrap"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"/>
+
+            <TextBlock Grid.Row="2" Classes="lbl" Text="Harmonics"/>
+            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding MaxHarm}" ToolTip.Tip="Harmonics of the fundamental carried by every envelope step"/>
+            <TextBlock Grid.Row="2" Grid.Column="2" Classes="lbl" Text="Mix order" Margin="12,0,8,0"/>
+            <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding MaxMixOrder}"
+                     ToolTip.Tip="Used when carriers are far apart and each gets its own fundamental. 7 converges IM5; at 5, IM5 sits on the truncation edge."/>
+
+            <TextBlock Grid.Row="3" Classes="lbl" Text="Probes"/>
+            <TextBox Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding Probes}" Watermark="node names, comma-separated — the LAST is the output (gain, AM-AM/AM-PM, DE)"/>
+
+            <TextBlock Grid.Row="4" Classes="lbl" Text="Segments"/>
+            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding Segments}"
+                     ToolTip.Tip="Parallel-in-time: auto = one per core. Each segment starts early by the warm-up, so the result is identical to one sequential run."/>
+            <TextBlock Grid.Row="4" Grid.Column="2" Classes="lbl" Text="Warm-up (s)" Margin="12,0,8,0"/>
+            <TextBox Grid.Row="4" Grid.Column="3" Text="{Binding Warmup}" ToolTip.Tip="auto = 5 us; raise it for bias networks with memory longer than ~1 us"/>
+        </Grid>
+        <StackPanel Orientation="Horizontal" Spacing="12">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Classes="lbl" Text="Zmeas (Ω)"/>
+                <TextBox Text="{Binding Zmeas}" MinWidth="60"/>
+            </StackPanel>
+            <CheckBox FontSize="11" Content="Keep probe envelopes (time cube)" IsChecked="{Binding SaveWaveforms}"
+                      ToolTip.Tip="Off keeps only the measurements: PSD, ACLR, CCDF, AM-AM/AM-PM, IMD, DE"/>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

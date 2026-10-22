@@ -104,6 +104,18 @@ public sealed class CschAnalysis
     public string?   FieldsWeightsExpr { get; set; }
     public string?   FieldsNorm        { get; set; }
     public string?   FieldsAverageExpr { get; set; }
+    // Envelope (type "env") — the remaining env fields reuse HB ones (MaxHarmonicExpr, MaxMixOrderExpr, TolExpr).
+    public string?   EnvStop           { get; set; }
+    public string?   EnvStep           { get; set; }
+    public string?   EnvAccuracy       { get; set; }
+    public string?   EnvProbes         { get; set; }
+    public string?   EnvZmeas          { get; set; }
+    public string?   EnvSegments       { get; set; }
+    public string?   EnvWarmup         { get; set; }
+    public string?   EnvStart          { get; set; }
+    public string?   EnvSaveWaveforms  { get; set; }
+    /// <summary>Envelope mode (single / lattice); null = auto.</summary>
+    public string?   EnvMode           { get; set; }
     public string?   SweepVarName      { get; set; }
     public string?   SweepStartExpr    { get; set; }
     public string?   SweepStopExpr     { get; set; }
@@ -321,6 +333,16 @@ public static class AnalysisSerialization
             PassiveParamsExpr = sp.PassiveParamsExpr.Length > 0 ? sp.PassiveParamsExpr : null,
         },
 
+        EnvelopeAnalysis env => new CschAnalysis
+        {
+            Type = "env", Name = env.Name, Enabled = env.Enabled,
+            EnvStop = env.StopExpr, EnvStep = env.StepExpr, EnvAccuracy = env.Accuracy, EnvProbes = env.Probes,
+            EnvZmeas = env.ZmeasExpr, EnvSegments = env.SegmentsExpr, EnvWarmup = env.WarmupExpr, EnvStart = env.StartExpr,
+            EnvSaveWaveforms = env.SaveWaveforms, MaxHarmonicExpr = env.MaxHarmExpr, MaxMixOrderExpr = env.MaxMixOrderExpr,
+            EnvMode = env.Envelope.Equals("auto", StringComparison.OrdinalIgnoreCase) ? null : env.Envelope,
+            TolExpr = env.TolExpr,
+        },
+
         HarmonicBalanceAnalysis hb => new CschAnalysis
         {
             Type              = "hb",
@@ -480,6 +502,16 @@ public static class AnalysisSerialization
                 PassiveVarsExpr   = dto.PassiveVarsExpr   ?? "",
                 PassiveParamsExpr = dto.PassiveParamsExpr ?? "",
             },
+
+        "env" => new EnvelopeAnalysis(dto.Name)
+        {
+            Enabled = dto.Enabled,
+            StopExpr = dto.EnvStop ?? "100e-6", StepExpr = dto.EnvStep ?? "auto", Accuracy = dto.EnvAccuracy ?? "standard",
+            Probes = dto.EnvProbes ?? "", ZmeasExpr = dto.EnvZmeas ?? "50", SegmentsExpr = dto.EnvSegments ?? "auto",
+            WarmupExpr = dto.EnvWarmup ?? "auto", StartExpr = dto.EnvStart ?? "0", SaveWaveforms = dto.EnvSaveWaveforms ?? "yes",
+            MaxHarmExpr = dto.MaxHarmonicExpr ?? "5", MaxMixOrderExpr = dto.MaxMixOrderExpr ?? "7", TolExpr = dto.TolExpr ?? "1e-6",
+            Envelope = dto.EnvMode ?? "auto",
+        },
 
         "hb" => new HarmonicBalanceAnalysis(dto.Name)
         {

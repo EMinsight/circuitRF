@@ -4,7 +4,7 @@ slug: reference/components.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Components
 lede: Every component in the standard library — its symbol, what it does, and its parameters.
-keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler
+keywords: resistor, capacitor, inductor, transmission line, microstrip, MLIN, CPWG, GCPW, coplanar waveguide, SLIN, stripline, via, VIA, VIAGND, part, symbol, library, bead, ferrite, MMIC, MIMCAP, MIM capacitor, SPIRAL, spiral inductor, OSPIRAL, octagonal spiral, TFR, thin-film resistor, AIRBRIDGE, air bridge, CLIN, MCLIN, BCLIN, MBCLIN, MMITER, broadside, coupler, MOD_Source, modulated, LTE, NR, OFDM
 ---
 
 Symbols are rendered from the live drawing engine, with their connection leads and their pins shown
@@ -351,6 +351,73 @@ match the tones declared on the [Harmonic Balance analysis](simulations.html#two
 owns the mixing grid, and the source just supplies power at those frequencies.
 
 {{table: components/PnTone}}
+
+### Modulated RF Source (MOD_Source) {#modsource}
+
+{{symbol: modsource}}
+
+A **modulated** RF source — LTE, NR, CW or an imported I/Q waveform — for the
+[Envelope analysis](simulations.html#envelope): ACLR/ACPR, EVM-style error, CCDF, AM-AM/AM-PM and
+two-carrier intermodulation with real signals rather than tones. One MOD_Source holds any number of
+**carriers** around its centre frequency `Fc`; `Pavg` is the total average available power behind the
+source impedance `Z`.
+
+- `Carrier[i]` — one carrier, written as a description string, e.g.
+  `"NR;BW=20e6;SCS=30e3;Mod=64QAM;Off=-200e6;P=0;Seed=1"`: the standard (`LTE`, `NR`, `CW`, `FILE`),
+  channel bandwidth, NR subcarrier spacing, modulation, offset from `Fc`, relative power (dB) and the
+  random-data seed. A `FILE` carrier reads a two-column I/Q text file with a `# sample_rate_hz` header.
+- `Record` — periodic record length (s), whole 0.5 ms slots. `Clip` — target PAPR (dB) for
+  clip-and-filter; absent means **unclipped** (the natural OFDM PAPR, about 11–12 dB).
+  `Shaping` — out-of-channel spectral floor (dBc), or `off`.
+
+Select the source and press **Design signal…** in the inspector to open the **Signal Designer**: a
+carrier table with presets (LTE 20, NR 20, NR 100, four contiguous LTE carriers, and two NR carriers at
+any spacing), the composite spectrum and the CCDF (probability that the power exceeds the average by
+more than a given margin, against the Gaussian-noise reference), and the ideal signal's PAPR and ACLR.
+Generation runs in the background — shown in the window's footer and on a live row of the Messages
+pane — and is cached, and the simulation reuses the cached waveform. `Fc` and `Pavg` accept
+expressions (`RFfreq`, `Pin`), which the Designer writes back unchanged.
+
+**Sample rate** (Source box) sets the rate of the preview and of the export. **Auto** picks the
+recommended rate for the carriers (122.88 MS/s for LTE 20 MHz); the list holds the standard rates from
+7.68 to 1966.08 MS/s. A line under it shows the rate in use, the sample period and the samples per
+record. A rate that cannot hold the signal is refused, with the lowest one that can. The rate is a
+Designer setting: it is not written to the source, and the simulation picks its own time step.
+
+**Export signal…** (top of the left panel) saves the signal as a two-column `I Q` text file at a
+location you choose. It holds one record of the composite of all carriers, around `Fc`, at the chosen
+sample rate and unit mean power. The header states the sample rate (in MS/s, Hz and sample period),
+the sample count and record, Fc, Pavg, PAPR, clipping, shaping and each carrier, followed by the
+`# sample_rate_hz`, `# channel_bw_hz`, `# samples` and `# columns I Q` lines. This is the format a
+`FILE` carrier imports, so an exported signal loads back unchanged.
+
+{{ui: signal-designer}}
+
+{{ui: signal-designer-2c}}
+
+The **EVM** tab shows the signal's modulation quality. For each LTE or NR carrier it demodulates the
+record the source plays (after clipping and shaping) and compares every resource element with its ideal
+QAM point. One complex gain is fitted over the record, with no per-subcarrier equaliser. The tab shows:
+
+- the rms EVM in % and dB, and the peak EVM;
+- which signal was measured: carrier, standard, bandwidth, modulation, offset, seed, record and clipping.
+  The tab has no picker of its own. Click a carrier card on the left to show that carrier, and press
+  **Calculate** to generate the signal on the left and measure it again;
+- the chosen carrier's constellation over its ideal points;
+- the envelope power around the record's peak, with the average and the peak as flat lines. An
+  black arrow between them is labelled with the peak-to-average ratio. The **Window** field sets how
+  long a stretch is shown (2 µs by default). It is a view setting: changing it only redraws the plot,
+  and Apply never writes it to the source.
+
+An unclipped signal reads close to 0 %. Clipping is what moves it. CW and imported I/Q carriers carry no
+reference symbols, so they have no EVM.
+
+{{ui: signal-designer-evm}}
+
+In a harmonic-balance or loadpull run a MOD_Source is a CW tone at `Fc` carrying the signal's average
+power; in an S-parameter run it is the passive impedance `Z`.
+
+{{table: components/ModSource}}
 
 ### Voltage-Controlled Current Source (VCCS) {#vccs}
 

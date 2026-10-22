@@ -5241,3 +5241,36 @@ weld by position whenever `SplitShadingCreases` is on, so `split: false` is unch
 a tangent join from a shallow real crease (the kernel reports no edge continuity). The boundary ring's
 normal is the average of both faces' facets, so it leans a few degrees toward the coarser face's facets
 (6.4° on the gate's pin) — continuous, where it used to jump.
+## Scalar Table columns vanished on reopen; one-point traces drew nothing (2026-10-21)
+
+A rank-0 cube (an envelope run's Pout, gain, efficiency) saves an EMPTY `CubeSlice`. `PlotConfigLoader`
+treated a trace as cube-bound only when the slice was non-empty, so every scalar Table column was dropped as
+the display opened. Loading it as null instead resolved to `<invalid>`, since null means "no slice chosen".
+Now a non-null `CubeName` alone makes a trace cube-bound, and its slice loads as an empty array.
+A one-point trace, such as a single-carrier ACLR against its one carrier, had two defects:
+- Autoscale skipped its zero-size bounding box, so the window kept a stale range.
+- A line through one point is a lone MoveTo, so nothing drew.
+
+`AutoscaleCore` now keeps a zero box when the trace has a finite point (`Trace.HasFinitePoint`). The line
+renderer now draws a dot in the line's colour when exactly one point is plottable and markers are off.
+Gate: `ScalarAndSinglePointTraceTests`.
+
+## A dense trace froze the window: draw only what is on the canvas (2026-10-21)
+
+An envelope run keeps every step: 786,000 points per probe for 100 us at 0.127 ns. A Data Display plot of
+50 ns of it built and stroked a path through all of them on every redraw, about 0.7 s a frame on the UI
+thread. The display and the main window both stopped responding, while the other plots (a few thousand
+points) stayed quick. The same plot wrote a 24 MB SVG headlessly.
+
+Traces above 20,000 points now go through `TraceRenderer.AppendLargePolyline`:
+- Off-canvas points are dropped, except the neighbour on each side of every visible stretch. This is
+  pixel-exact: 0 of 484,704 pixels differ, the redraw takes 0.05 s, and the SVG is 24 KB.
+- Only when more than 200,000 points remain ON the canvas (a whole record zoomed out) do consecutive
+  points in one pixel column also collapse to first/min/max/last.
+
+The collapse is not pixel-exact: on a 65,000-point spectrum it moved anti-aliased steep edges by up to a
+pixel (370 pixels). That is why it engages only where the full path would stall, and a spectrum keeps its
+original pixels. Traces under 20,000 points take the original per-point path unchanged.
+
+The single-point dot added earlier the same day now uses its own plain fill paint. `DashSafeShapesTests`
+caught the dash-capable stroke paint reaching `DrawCircle`.

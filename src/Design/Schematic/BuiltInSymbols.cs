@@ -84,6 +84,7 @@ public static class BuiltInSymbols
     private static readonly Symbol _meas         = BuildMeas();
     private static readonly Symbol _generic      = BuildGeneric();
     private static readonly Symbol _p1Tone       = BuildP1Tone();
+    private static readonly Symbol _modSource    = BuildModSource();
     private static readonly Symbol _nonlinearC   = BuildNonlinearC();
     private static readonly Symbol _mutual        = BuildMutual();
     private static readonly Symbol _tline         = BuildTline();
@@ -276,6 +277,7 @@ public static class BuiltInSymbols
             case SymbolKind.Meas:       return _meas;
             case SymbolKind.P1Tone:     return _p1Tone;
             case SymbolKind.PnTone:     return _p1Tone;   // shares P1Tone's glyph (multi-tone variant)
+            case SymbolKind.ModSource:  return _modSource;
             case SymbolKind.Tuner:       return _tuner;
             case SymbolKind.SourceTuner: return _sourceTuner;
             case SymbolKind.LoadTuner:   return _loadTuner;
@@ -1099,6 +1101,28 @@ public static class BuiltInSymbols
         Sine(  0,   55,  20,    1,   90, SineAxis.Horizontal),
         L(    0,  120,    0,  200),          // bottom lead from box (same as Term)
     ], SymbolKind.P1Tone);
+
+    // ── MOD_Source — modulated source: P1Tone's frame, leads and source resistor (the same family,
+    // the same pins), but the circle holds a modulated carrier's SPECTRUM — a noise-topped channel
+    // with sloped skirts over a baseline — where P1Tone has a sinusoid, so the two never read alike.
+    // Pins: (0,-200) top (RF) / (0,+200) bottom (reference).
+
+    private static Symbol BuildModSource() => Sym([
+        L(    0, -200,    0, -110),
+        RRect(0,    0,  110,  240,   12),
+        PLine(  0, -100,   0, -85,
+               18, -73, -18, -55,
+               18, -37, -18, -19,
+                0,  -7,   0,   0),
+        Circ(  0,   55,  45),
+        L(  -34,   80,   34,   80),          // frequency baseline
+        PLine(-30,  80, -24,  76, -19,  50,   // lower skirt rising into the channel
+              -14,  37,  -9,  41,  -4,  35,   // noise-like flat top (OFDM subcarriers)
+                1,  40,   6,  36,  11,  41,
+               15,  37,  19,  50,  24,  76,   // upper skirt
+               30,  80),
+        L(    0,  120,    0,  200),
+    ], SymbolKind.ModSource);
 
     // ── Term — resistor-in-box, "+" (signal) and "−" (reference) pins ───────────
     // Pins: (0,-200) top "+" signal, (0,+200) bottom "−" reference.

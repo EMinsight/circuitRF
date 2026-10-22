@@ -131,6 +131,7 @@ public static class LibraryCatalog
         (SymbolKind.VProbe,      0),
         (SymbolKind.Vdc,         0),
         (SymbolKind.P1Tone,      0),
+        (SymbolKind.ModSource,   0),   // MOD_Source — modulated LTE/NR/multi-carrier source for the envelope analysis
         // Owner, 2026-09-13: ITone first, VTone second. They were added the other way round on the
         // reading that the voltage source is the more common of the pair.
         (SymbolKind.CurrentToneSource, 0), // "I_1Tone" — the single-tone current source, displayed as ITone.

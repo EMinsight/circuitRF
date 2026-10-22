@@ -629,6 +629,11 @@ public enum SymbolKind
     /// order and geometry; the glyph is the model's own symbol (<c>Symbol</c>), drawn through
     /// <see cref="ComposedFetSymbolProvider"/>. Appended so no existing kind's ordinal moves.</summary>
     ComposedFET,
+    /// <summary>Modulated RF source (engine "MOD_Source"): LTE / NR / CW / imported-I/Q carriers around Fc with
+    /// total average available power Pavg behind Z. A CW tone at Fc in HB; per-carrier envelopes in the envelope
+    /// analysis. Carriers are Carrier[i] description strings, edited in the Signal Designer. Reuses P1Tone's
+    /// 2-pin geometry. Not an S-param port.</summary>
+    ModSource,
 }
 
 public enum PortConnectionState { Unconnected, Connected }

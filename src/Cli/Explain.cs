@@ -60,6 +60,7 @@ internal static class Explain
         (a => a is HarmonicBalanceAnalysis,  "HB",               "analysis <name> type=hb ...",                "hb"),
         (a => a is LoadpullAnalysis,         "loadpull",         "analysis <name> type=loadpull ...",          "lp"),
         (a => a is LoadpullPursuitAnalysis,  "loadpull-pursuit", "analysis <name> type=loadpull_pursuit ...",  "lpp"),
+        (a => a is EnvelopeAnalysis,         "envelope",         "analysis <name> type=env ...",               "env"),
     ];
 
     public static int Run(string[] args)

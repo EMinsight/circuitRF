@@ -28,12 +28,14 @@ public partial class ParameterEditorView : UserControl
         {
             _boundVm.WBondLayoutUpdated -= OnWBondLayoutUpdated;
             _boundVm.OpenMatchDesignerRequested -= OnOpenMatchDesigner;
+            _boundVm.OpenSignalDesignerRequested -= OnOpenSignalDesigner;
         }
         _boundVm = DataContext as ParameterEditorViewModel;
         if (_boundVm is not null)
         {
             _boundVm.WBondLayoutUpdated += OnWBondLayoutUpdated;
             _boundVm.OpenMatchDesignerRequested += OnOpenMatchDesigner;
+            _boundVm.OpenSignalDesignerRequested += OnOpenSignalDesigner;
         }
 
         if (DataContext is ParameterEditorViewModel vm)
@@ -60,6 +62,13 @@ public partial class ParameterEditorView : UserControl
     {
         if (Vm?.SchematicVm is not { } schematicVm) return;
         Views.Match.MatchDesignerWindow.Show(schematicVm, comp, TopLevel.GetTopLevel(this) as Window);
+    }
+
+    /// <summary>Opens the Signal Designer for the selected MOD_Source.</summary>
+    private void OnOpenSignalDesigner(CircuitRF.Design.Schematic.EditableComponent comp)
+    {
+        if (Vm?.SchematicVm is not { } schematicVm) return;
+        Views.Signals.SignalDesignerWindow.Show(schematicVm, comp, TopLevel.GetTopLevel(this) as Window);
     }
 
     private async Task OpenCvEditorDialogAsync()

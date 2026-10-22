@@ -412,7 +412,7 @@ public sealed class HbEngine
             MarginThresholdDb: Analysis.ParseMarginThresholdDb(hba.MarginThresholdExpr));
     }
 
-    private static Scope BuildScope(IReadOnlyDictionary<string, Value> globals)
+    internal static Scope BuildScope(IReadOnlyDictionary<string, Value> globals)
     {
         var scope = new Scope("hb-resolve");
         foreach (var kv in globals)
@@ -420,7 +420,7 @@ public sealed class HbEngine
         return scope;
     }
 
-    private static Evaluator BuildEvaluator(IReadOnlyDictionary<string, Value> globals)
+    internal static Evaluator BuildEvaluator(IReadOnlyDictionary<string, Value> globals)
     {
         var ev = new Evaluator();
         foreach (var kv in globals)
@@ -487,6 +487,10 @@ public sealed class HbEngine
                 double driveHz = ec.Parameters.TryGetValue("Freq", out var fv) && fv.Kind == ValueKind.Real
                     ? fv.AsReal() : f0;
                 p1.SetToneContext(fc: f0, driveFreqHz: driveHz);
+            }
+            else if (ec.Model is ModSourceModel ms)
+            {
+                ms.SetToneContext(fc: f0);   // CW tone at Fc carrying the signal's average power
             }
             else if (ec.Model is PnToneModel pn)
             {
@@ -936,6 +940,10 @@ public sealed class HbEngine
                     ? fv.AsReal() : f1;
                 p1.SetToneContext(fc: fcTwoTone, driveFreqHz: driveHz);
             }
+            else if (ec.Model is ModSourceModel ms)
+            {
+                ms.SetToneContext(fc: fcTwoTone);   // CW tone at Fc carrying the signal's average power
+            }
             else if (ec.Model is PnToneModel pn)
             {
                 // A PnTone is the natural two-tone driver: it injects each of its Freq[i] tones (f1, f2)
@@ -1237,6 +1245,10 @@ public sealed class HbEngine
             else if (ec.Model is PnToneModel pn)
             {
                 pn.SetToneContext(fc: fc);
+            }
+            else if (ec.Model is ModSourceModel ms)
+            {
+                ms.SetToneContext(fc: fc);   // CW tone at Fc carrying the signal's average power
             }
             else if (ec.Model is TunerModel tn)
             {
@@ -1540,6 +1552,10 @@ public sealed class HbEngine
 
                 case P1ToneModel p1:
                     Require(ec.InstancePath, "Freq", p1.FreqHz);
+                    break;
+
+                case ModSourceModel ms:
+                    Require(ec.InstancePath, "Fc", ms.FcHz);
                     break;
 
                 case PnToneModel pn:
@@ -2822,6 +2838,7 @@ public sealed class HbEngine
                     ? [fv.AsReal()] : [];
             else if (ec.Model is P1ToneModel p1) freqs = [p1.FreqHz];
             else if (ec.Model is PnToneModel pn) freqs = pn.ToneFreqsHz;
+            else if (ec.Model is ModSourceModel ms) freqs = [ms.FcHz];
             else continue;
 
             foreach (double freqHz in freqs)

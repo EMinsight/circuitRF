@@ -1011,6 +1011,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSnp));
         OnPropertyChanged(nameof(IsSpiceModel));
         OnPropertyChanged(nameof(IsWBond));
+        NotifyModSourceState();
         OnPropertyChanged(nameof(ShowFootprintRow));
         OnPropertyChanged(nameof(IsVerilogA));
         OnPropertyChanged(nameof(ShowCvEditorButton));

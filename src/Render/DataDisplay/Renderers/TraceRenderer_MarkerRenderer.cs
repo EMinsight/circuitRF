@@ -62,6 +62,12 @@ namespace CircuitRF.Render.DataDisplay
                 foreach (var curve in trace.FamilyCurves)
                 {
                     using var p = new SKPath();
+                    if (curve.Points.Count > LargeTracePoints)
+                    {
+                        AppendLargePolyline(p, curve.Points, tf, useSecond);
+                        canvas.DrawPath(p, paint);
+                        continue;
+                    }
                     var line = new ClippedPolyline(p, canvasSize);
                     foreach (var pt in curve.Points)
                     {
@@ -110,6 +116,26 @@ namespace CircuitRF.Render.DataDisplay
                 paint.PathEffect = LinePathEffect(props.LineType, strokeW);
 
                 canvas.DrawPath(path, paint);
+
+                // A line through ONE point is a MoveTo with nothing after it and draws nothing, so
+                // a one-point trace (a single-carrier ACLR, a one-row sweep) vanished. Draw it as a
+                // dot in the line's colour unless the trace already draws its own marker.
+                if (!props.MarkerEnabled && !trace.IsStabilityCircle)
+                {
+                    int drawable = 0; SKPoint only = default;
+                    foreach (var pt in trace.Points)
+                    {
+                        if (!tf.XIsPlottable(pt.X) || !float.IsFinite(pt.Y)) continue;
+                        if (++drawable > 1) break;
+                        only = tf.ToCanvas(pt.X, pt.Y, trace.UseSecondaryAxis);
+                    }
+                    if (drawable == 1)
+                    {
+                        // its own plain fill paint: a dash effect must never reach a bare primitive
+                        using var dot = new SKPaint { Color = paint.Color, Style = SKPaintStyle.Fill, IsAntialias = true };
+                        canvas.DrawCircle(only, Math.Max(strokeW * 2f, 3f * lw), dot);
+                    }
+                }
             }
 
             // ---- Point markers ----
@@ -329,6 +355,90 @@ namespace CircuitRF.Render.DataDisplay
             }
         }
 
+        /// <summary>Above this many points a line is drawn through <see cref="AppendLargePolyline"/>.
+        /// Below it the original per-point path is used unchanged.</summary>
+        internal const int LargeTracePoints = 20_000;
+
+        /// <summary>Above this many points ON the canvas the per-column collapse engages as well. Below it a
+        /// large trace is only culled, which is pixel-exact; the collapse can move an anti-aliased steep edge
+        /// by up to a pixel, so it is kept for the case where the full path would stall a redraw.</summary>
+        internal const int CollapseVisiblePoints = 200_000;
+
+        /// <summary>
+        /// The same picture as a LineTo per point, for a trace far denser than the screen. An envelope
+        /// run keeps every step - 786,000 points per probe for 100 us at 0.127 ns - and a plot of 50 ns
+        /// of it stroked all of them on every redraw (0.7 s a frame, which froze the window). Two steps:
+        /// <list type="number">
+        /// <item>Off-canvas points are dropped, except the last one before and the first one after each
+        /// visible stretch, so a segment that crosses the edge is still drawn up to it. Pixel-exact (a 50 ns
+        /// window of that record renders identically, 0 of 484,704 pixels different, in 0.05 s, not 0.7 s).</item>
+        /// <item>Only when more than <see cref="CollapseVisiblePoints"/> remain on the canvas (a whole record
+        /// zoomed out): consecutive points in one pixel column collapse to the first, the lowest, the highest
+        /// and the last of that column, in their original order - the usual min/max decimation, which can
+        /// shift an anti-aliased steep edge by up to a pixel.</item>
+        /// </list>
+        /// Neither step assumes X is sorted. An unplottable X (log axis) still breaks the line.
+        /// </summary>
+        internal static void AppendLargePolyline(SKPath path, IReadOnlyList<Vector2> pts, TransformSet tf, bool useSecondary)
+        {
+            float w = (float)tf.CanvasSize.W;
+            int n = pts.Count;
+            var cx = new SKPoint[n];
+            var side = new sbyte[n];          // -1 left of the canvas, +1 right of it, 0 on it; 2 = unplottable
+            for (int i = 0; i < n; i++)
+            {
+                var pt = pts[i];
+                if (!tf.XIsPlottable(pt.X) || !float.IsFinite(pt.Y)) { side[i] = 2; continue; }
+                var c = tf.ToCanvas(pt.X, pt.Y, useSecondary);
+                cx[i] = c;
+                side[i] = c.X < -2 ? (sbyte)-1 : c.X > w + 2 ? (sbyte)1 : (sbyte)0;
+            }
+
+            int visible = 0;
+            for (int i = 0; i < n; i++) if (side[i] == 0) visible++;
+            bool collapse = visible > CollapseVisiblePoints;
+
+            bool open = false;                 // a sub-path is in progress
+            int col = int.MinValue;            // pixel column of the current run
+            int runFirst = -1, runLo = -1, runHi = -1, runLast = -1;
+
+            void Emit(int i)
+            {
+                if (!open) { path.MoveTo(cx[i]); open = true; }
+                else path.LineTo(cx[i]);
+            }
+            void Flush()
+            {
+                if (runFirst < 0) return;
+                // the run's vertices in their original order, each once
+                Span<int> idx = stackalloc int[4] { runFirst, runLo, runHi, runLast };
+                idx.Sort();
+                int prev = -1;
+                foreach (int i in idx) { if (i != prev) Emit(i); prev = i; }
+                runFirst = runLo = runHi = runLast = -1;
+            }
+
+            for (int i = 0; i < n; i++)
+            {
+                if (side[i] == 2) { Flush(); open = false; col = int.MinValue; continue; }
+                if (side[i] != 0)
+                {
+                    bool keep = (i > 0 && side[i - 1] != side[i]) || (i + 1 < n && side[i + 1] != side[i]);
+                    if (!keep) continue;
+                    Flush(); col = int.MinValue;
+                    Emit(i);
+                    continue;
+                }
+                if (!collapse) { Emit(i); continue; }
+                int c = (int)MathF.Floor(cx[i].X);
+                if (c != col) { Flush(); col = c; runFirst = runLo = runHi = i; }
+                if (cx[i].Y < cx[runLo].Y) runLo = i;
+                if (cx[i].Y > cx[runHi].Y) runHi = i;
+                runLast = i;
+            }
+            Flush();
+        }
+
         private static SKPath BuildPath(Trace trace, TransformSet tf)
         {
             var  path         = new SKPath();
@@ -345,6 +455,10 @@ namespace CircuitRF.Render.DataDisplay
                     float r   = Math.Abs(ePx.X - cPx.X);
                     path.AddCircle(cPx.X, cPx.Y, r);
                 }
+            }
+            else if (trace.Points.Count > LargeTracePoints)
+            {
+                AppendLargePolyline(path, trace.Points, tf, useSecondary);
             }
             else
             {

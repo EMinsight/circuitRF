@@ -1,0 +1,50 @@
+using System;
+using System.Linq;
+using CircuitRF.Design.Schematic;
+using CommunityToolkit.Mvvm.Input;
+using RfCore.Signals;
+
+namespace CircuitRF.Ui.ViewModels;
+
+public partial class ParameterEditorViewModel
+{
+    /// <summary>True for a MOD_Source: the inspector shows its signal summary and the Signal Designer button.</summary>
+    public bool IsModSource => _target?.Symbol == SymbolKind.ModSource;
+
+    /// <summary>One line per carrier, read from the Carrier[i] descriptions — what the source will actually play.</summary>
+    public string ModSourceSummary
+    {
+        get
+        {
+            if (_target is not { Symbol: SymbolKind.ModSource } t) return "";
+            var lines = t.Parameters
+                .Where(p => p.Name.StartsWith("Carrier[", StringComparison.OrdinalIgnoreCase))
+                .Select(p =>
+                {
+                    try
+                    {
+                        var c = SignalSpec.ParseCarrier(p.Expression.Trim().Trim('"'));
+                        return c.OffsetHz == 0 ? c.Label : $"{c.Label} @ {c.OffsetHz / 1e6:+0.##;-0.##} MHz";
+                    }
+                    catch (FormatException ex) { return $"{p.Name}: {ex.Message}"; }
+                })
+                .ToList();
+            return lines.Count == 0 ? "No carriers — the default LTE 20 MHz is used." : string.Join("\n", lines);
+        }
+    }
+
+    /// <summary>Raised by <see cref="OpenSignalDesignerCommand"/>; the view opens the window (it knows the owner).</summary>
+    public event Action<EditableComponent>? OpenSignalDesignerRequested;
+
+    [RelayCommand]
+    private void OpenSignalDesigner()
+    {
+        if (_target is { Symbol: SymbolKind.ModSource }) OpenSignalDesignerRequested?.Invoke(_target);
+    }
+
+    private void NotifyModSourceState()
+    {
+        OnPropertyChanged(nameof(IsModSource));
+        OnPropertyChanged(nameof(ModSourceSummary));
+    }
+}

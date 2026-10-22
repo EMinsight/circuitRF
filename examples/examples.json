@@ -17,6 +17,11 @@
       "Summary": "A 48 V GaN power amplifier driven into compression, and the same amplifier under two tones for IM2/IM3/IM5. The FET is a reusable sub-cell."
     },
     {
+      "Folder": "Envelope",
+      "Title": "Envelope (modulated)",
+      "Summary": "The same GaN amplifier driven by an NR 20 MHz signal from a MOD_Source: ACPR1/ACPR2, spectrum, AM-AM/AM-PM and efficiency from one envelope run, and ACPR against drive from a sweep."
+    },
+    {
       "Folder": "Loadpull",
       "Title": "Loadpull and Pursuit",
       "Summary": "The same device swept over a polar load grid (LP), and again with the pursuit search walking to the optimum (LPP)."

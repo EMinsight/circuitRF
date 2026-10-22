@@ -222,6 +222,16 @@
                             ToolTip.Tip="Band, terminations, order, response, the ladder, its response, and the Norton-transform sliders"/>
                 </StackPanel>
 
+                <!-- MOD_Source: what the source plays, and the Signal Designer. The Carrier[i] rows above stay
+                     editable as text; the Designer is where they are built and previewed. -->
+                <StackPanel IsVisible="{Binding IsModSource}" Margin="6,4" Spacing="4">
+                    <TextBlock Text="Signal" FontSize="11" FontWeight="SemiBold"/>
+                    <SelectableTextBlock FontSize="11" TextWrapping="Wrap" Text="{Binding ModSourceSummary}"/>
+                    <Button Content="Design signal…" HorizontalAlignment="Right" FontSize="11" Padding="8,3"
+                            Command="{Binding OpenSignalDesignerCommand}"
+                            ToolTip.Tip="Carriers (LTE / NR / CW / I/Q file), presets, spectrum and CCDF preview"/>
+                </StackPanel>
+
                 <StackPanel IsVisible="{Binding IsWBond}"
                             Margin="6,4"
                             Spacing="8">

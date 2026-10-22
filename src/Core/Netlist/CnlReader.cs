@@ -101,6 +101,8 @@ public sealed class CnlReader
             // If this is a type=hb directive, parse it into a typed HarmonicBalanceAnalysis.
             if (TryParseHbDirective(rawLine, out var hbAnalysis))
                 tb.Analyses.Add(hbAnalysis!);
+            else if (TryParseEnvDirective(rawLine, out var envAnalysis))
+                tb.Analyses.Add(envAnalysis!);
             else if (TryParseDcDirective(rawLine, out var dcAnalysis))
                 tb.Analyses.Add(dcAnalysis!);
             else if (TryParseLoadpullPursuitDirective(rawLine, _sourceDirectory, out var lppAnalysis))
@@ -1552,6 +1554,40 @@ public sealed class CnlReader
         }
 
         result.Enabled = ParseEnabledToken(tokens);
+        return true;
+    }
+
+    private static bool TryParseEnvDirective(string rawLine, out CircuitRF.Core.Design.EnvelopeAnalysis? result)
+    {
+        result = null;
+        var tokens = TokeniseLine(rawLine);
+        if (tokens.Count < 2) return false;
+        var kv = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 1; i < tokens.Count; i++)
+        {
+            int eq = tokens[i].IndexOf('=');
+            if (eq <= 0) continue;
+            string val = tokens[i][(eq + 1)..];
+            if (val.Length >= 2 && val[0] == '"' && val[^1] == '"') val = val[1..^1];
+            kv[tokens[i][..eq]] = val;
+        }
+        if (!kv.TryGetValue("type", out var t) || !t.Equals("env", StringComparison.OrdinalIgnoreCase)) return false;
+        result = new CircuitRF.Core.Design.EnvelopeAnalysis(tokens[0])
+        {
+            StopExpr = kv.GetValueOrDefault("Stop", "100e-6"),
+            StepExpr = kv.GetValueOrDefault("Step", "auto"),
+            Accuracy = kv.GetValueOrDefault("Accuracy", "standard"),
+            MaxHarmExpr = kv.GetValueOrDefault("MaxHarm", "5"),
+            Envelope = kv.GetValueOrDefault("Envelope", "auto"),
+            MaxMixOrderExpr = kv.GetValueOrDefault("MaxMixOrder", "7"),
+            Probes = kv.GetValueOrDefault("Probes", ""),
+            ZmeasExpr = kv.GetValueOrDefault("Zmeas", "50"),
+            SegmentsExpr = kv.GetValueOrDefault("Segments", "auto"),
+            WarmupExpr = kv.GetValueOrDefault("Warmup", "auto"),
+            StartExpr = kv.GetValueOrDefault("Start", "0"),
+            TolExpr = kv.GetValueOrDefault("Tol", "1e-6"),
+            SaveWaveforms = kv.GetValueOrDefault("SaveWaveforms", "yes"),
+        };
         return true;
     }
 

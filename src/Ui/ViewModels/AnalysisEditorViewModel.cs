@@ -21,7 +21,7 @@ namespace CircuitRF.Ui.ViewModels;
 /// </summary>
 public sealed partial class AnalysisEditorViewModel : ObservableObject
 {
-    public enum AnalysisKind { DC, SP, HB, LP, LPP, Fields }
+    public enum AnalysisKind { DC, SP, HB, LP, LPP, Fields, ENV }
 
     private readonly SchematicEditModel _model;
     private readonly List<string>       _existingNames;
@@ -37,7 +37,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
     // ── Type selection ────────────────────────────────────────────────────────
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsDc), nameof(IsSp), nameof(IsHb), nameof(IsLp), nameof(IsLpp), nameof(IsFields),
+    [NotifyPropertyChangedFor(nameof(IsDc), nameof(IsSp), nameof(IsHb), nameof(IsLp), nameof(IsLpp), nameof(IsFields), nameof(IsEnv),
                               nameof(ShowSweeps))]
     private AnalysisKind _type = AnalysisKind.DC;
 
@@ -50,6 +50,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     /// <summary>brief-sar-9 — the fields analysis's body.</summary>
     public FieldsBodyViewModel FieldsBody { get; private set; } = new();
+    public bool IsEnv => Type == AnalysisKind.ENV;
 
     /// <summary>Parametric-sweep chains are supported on every analysis type — including freq-swept
     /// Loadpull and Loadpull-Pursuit over a tone VAR (FreqSweptLoadpull brief, Layers A–E).</summary>
@@ -82,6 +83,9 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
 
     /// <summary>Loadpull-Pursuit body (brief 06).</summary>
     public LppBodyViewModel LppBody { get; }
+
+    /// <summary>Circuit-envelope body (type=env) — the modulated stimulus is the schematic's MOD_Source.</summary>
+    public EnvBodyViewModel EnvBody { get; }
 
     // ── Parametric sweep axes ─────────────────────────────────────────────────
 
@@ -129,6 +133,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         HbBody         = SeededHb(model);
         LpBody         = SeededLp(model, workspaceRoot);
         LppBody        = SeededLpp(model, workspaceRoot);
+        EnvBody        = new EnvBodyViewModel(model);
         ValidateName();
     }
 
@@ -153,8 +158,17 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
         _editingChainNames.Add(inner.Name);
         _editingChainNames.AddRange(sweepChain.Select(s => s.Name));
 
+        EnvBody = inner is EnvelopeAnalysis env0 ? EnvBodyViewModel.FromAnalysis(env0, model) : new EnvBodyViewModel(model);
         switch (inner)
         {
+            case EnvelopeAnalysis:
+                _type   = AnalysisKind.ENV;
+                SpBody  = new SpBodyViewModel(model);
+                HbBody  = SeededHb(model);
+                LpBody  = SeededLp(model, workspaceRoot);
+                LppBody = SeededLpp(model, workspaceRoot);
+                break;
+
             case SParameterAnalysis sp:
                 _type  = AnalysisKind.SP;
                 SpBody = SpBodyViewModel.FromAnalysis(sp, model);
@@ -336,6 +350,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
             AnalysisKind.LP  => "LP",
             AnalysisKind.LPP => "LPP",
             AnalysisKind.Fields => "F",
+            AnalysisKind.ENV => "ENV",
             _                => "DC",
         };
         for (int n = 1; n <= 999; n++)
@@ -383,6 +398,7 @@ public sealed partial class AnalysisEditorViewModel : ObservableObject
             AnalysisKind.LP  => LpBody.IsValid  ? LpBody.BuildAnalysis(name, Enabled)  : null,
             AnalysisKind.LPP => LppBody.IsValid ? LppBody.BuildAnalysis(name, Enabled) : null,
             AnalysisKind.Fields => FieldsBody.IsValid ? FieldsBody.BuildAnalysis(name, Enabled) : null,
+            AnalysisKind.ENV => EnvBody.BuildAnalysis(name, Enabled),
             _                => null,
         };
         if (inner is null) return null;
