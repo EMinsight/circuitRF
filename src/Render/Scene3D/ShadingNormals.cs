@@ -4,7 +4,10 @@
 //
 // THE RULE, per vertex, over the triangles that use it:
 //   a. Triangles are already grouped by FACE: the builder gives every (mesh vertex, face) a scene vertex of its own, so two
-//      faces never share one and an edge between faces is always sharp. Nothing here needs to know the face.
+//      faces never share one. Nothing here needs to know the face. The builder also passes the WELD — which vertices sit at
+//      one point — and the rule below runs over a point's corners, so an edge between two faces is smooth where (b) would
+//      join them: a fillet meets the cylinder it rounds tangentially, and kept sharp its edge drew as a seam in the realistic
+//      view. Each face still keeps its own vertex, with the group's normal.
 //   b. Within a face, two triangles that share an edge through the vertex join one smoothing group unless their planes turn
 //      by more than Em3dSectionScene.SharpEdgeDegrees (30°) — the feature-edge rule, the same constant, not a second literal.
 //      A group is what is reachable through such joins, so a 32-facet cylinder (11.25° a facet) and the sphere are smooth and a
@@ -19,9 +22,9 @@
 //      on a sphere, which is every vertex of the sphere.
 //      A degenerate triangle (height below 1e-5 of its longest edge, where its plane is rounding noise) contributes nothing
 //      and splits nothing; a group left with no contribution takes its first triangle's plane normal, or +z. Never NaN.
-//   e. Where (b) or (c) splits a vertex, the vertex is DUPLICATED: the first group keeps it, each later group gets a copy
-//      appended after every original (vertices ascending, groups in first-use order), and only the index of a triangle in that
-//      group changes. The caller copies the vertex itself, so position, id, colour and face are identical and the default
+//   e. Where (b) or (c) splits a vertex, the vertex is DUPLICATED: the first group it is in keeps it, each later group gets a
+//      copy appended after every original (points ascending, groups in first-use order), and only the index of a triangle in
+//      that group changes. The caller copies the vertex itself, so position, id, colour and face are identical and the default
 //      view (which takes its normal from screen-space derivatives) draws the same pixels.
 //   f. The normal is in the positions' own frame (the scene-local frame, for the builder).
 //
@@ -55,15 +58,20 @@ public static class ShadingNormals
     /// The shading normals of <paramref name="positions"/> under <paramref name="indices"/> (triangles; each index is
     /// <paramref name="baseVertex"/> plus a position's index, and so is every index returned — a duplicate is numbered
     /// <paramref name="baseVertex"/> + <c>positions.Count</c> + k). <paramref name="split"/> false keeps every vertex whole (one
-    /// group per vertex) — the switch that proves the default view is unchanged by duplication.
+    /// group per vertex) — the switch that proves the default view is unchanged by duplication. <paramref name="weld"/>, when
+    /// given, names each vertex's representative (the lowest-numbered vertex at its point, 0-based): the vertices of one point
+    /// are then grouped together, so two faces that meet at a turn within the crease shade smooth across their edge while each
+    /// keeps its own vertices.
     /// </summary>
     public static ShadingNormalsResult Compute(IReadOnlyList<Vector3> positions, ReadOnlySpan<uint> indices, uint baseVertex = 0,
-                                               bool split = true)
+                                               bool split = true, IReadOnlyList<int>? weld = null)
     {
         Interlocked.Increment(ref _built);
         int n = positions.Count, tris = indices.Length / 3;
         var local = new int[tris * 3];
         for (int k = 0; k < local.Length; k++) local[k] = (int)(indices[k] - baseVertex);
+        var rep = new int[n];
+        for (int v = 0; v < n; v++) rep[v] = weld is null ? v : weld[v];
 
         // Each triangle's unit normal (zero when degenerate) and its plane's normal however small (the fallback).
         var unit = new Vector3D[tris];
@@ -80,34 +88,38 @@ public static class ShadingNormals
             unit[t] = degenerate[t] ? default : plane[t];
         }
 
-        // Every vertex's corners, in index order (CSR): corner c is triangle c / 3, slot c % 3.
+        // Every point's corners (a point is a vertex, or the vertices welded to one), in index order (CSR): corner c is
+        // triangle c / 3, slot c % 3.
         var start = new int[n + 1];
-        foreach (int v in local) start[v + 1]++;
+        foreach (int v in local) start[rep[v] + 1]++;
         for (int v = 0; v < n; v++) start[v + 1] += start[v];
         var corners = new int[local.Length];
         var fill = (int[])start.Clone();
-        for (int c = 0; c < local.Length; c++) corners[fill[local[c]]++] = c;
+        for (int c = 0; c < local.Length; c++) corners[fill[rep[local[c]]]++] = c;
 
-        var normals = new List<Vector3>(n);
+        var normals = new Vector3[n];
+        Array.Fill(normals, Vector3.UnitZ);
         var dups = new List<int>();
         var outIdx = new uint[local.Length];
         var dupNormals = new List<Vector3>();
         int[] parent = [], groupOf = [];
         var byOther = new Dictionary<int, int>();       // lookups only: never iterated, so its order cannot leak out
+        var target = new Dictionary<(int V, int G), uint>();
+        var kept = new HashSet<int>();
         var roots = new List<int>();
-        for (int v = 0; v < n; v++)
+        for (int r = 0; r < n; r++)
         {
-            int first = start[v], count = start[v + 1] - first;
-            if (count == 0) { normals.Add(Vector3.UnitZ); continue; }
+            int first = start[r], count = start[r + 1] - first;
+            if (count == 0) continue;
             if (parent.Length < count) { parent = new int[Math.Max(count, 2 * parent.Length)]; groupOf = new int[parent.Length]; }
             for (int i = 0; i < count; i++) parent[i] = i;
 
             if (!split) for (int i = 1; i < count; i++) Union(parent, 0, i);
             else
             {
-                // b. Join triangles sharing an edge through v (keyed by the edge's other vertex) that turn by no more than the
-                // crease. A degenerate corner then joins its first non-degenerate edge neighbour (so it can never bridge a
-                // crease), else the vertex's first non-degenerate corner, else the first corner.
+                // b. Join triangles sharing an edge through the point (keyed by the edge's other point) that turn by no more than
+                // the crease. A degenerate corner then joins its first non-degenerate edge neighbour (so it can never bridge a
+                // crease), else the point's first non-degenerate corner, else the first corner.
                 byOther.Clear();
                 int firstSolid = -1;
                 for (int i = 0; i < count; i++)
@@ -117,8 +129,8 @@ public static class ShadingNormals
                     if (firstSolid < 0) firstSolid = i;
                     for (int s = 0; s < 3; s++)
                     {
-                        int x = local[3 * ti + s];
-                        if (x == v) continue;
+                        int x = rep[local[3 * ti + s]];
+                        if (x == r) continue;
                         if (!byOther.TryGetValue(x, out int j)) byOther[x] = i;
                         else if (Vector3D.Dot(unit[ti], unit[corners[first + j] / 3]) >= CosCrease) Union(parent, j, i);
                     }
@@ -129,19 +141,21 @@ public static class ShadingNormals
                     if (!degenerate[ti]) continue;
                     int joined = firstSolid >= 0 ? firstSolid : 0;
                     for (int s = 0; s < 3; s++)
-                        if (local[3 * ti + s] is int x && x != v && byOther.TryGetValue(x, out int j)) { joined = j; break; }
+                        if (rep[local[3 * ti + s]] is int x && x != r && byOther.TryGetValue(x, out int j)) { joined = j; break; }
                     Union(parent, i, joined);
                 }
             }
 
-            // Groups in first-use order; the first keeps v.
+            // Groups in first-use order; a vertex keeps its own index in the first group it is in, and is copied for each later.
             roots.Clear();
             for (int i = 0; i < count; i++)
             {
-                int r = Find(parent, i), g = roots.IndexOf(r);
-                if (g < 0) { g = roots.Count; roots.Add(r); }
+                int root = Find(parent, i), g = roots.IndexOf(root);
+                if (g < 0) { g = roots.Count; roots.Add(root); }
                 groupOf[i] = g;
             }
+            target.Clear();
+            kept.Clear();
             for (int g = 0; g < roots.Count; g++)
             {
                 var sum = default(Vector3D);
@@ -157,15 +171,21 @@ public static class ShadingNormals
                 double len = sum.Length;
                 var nrm = len > 0 && double.IsFinite(len) ? sum / len : plane[firstTri].LengthSquared > 0 ? plane[firstTri] : new Vector3D(0, 0, 1);
                 var f = new Vector3((float)nrm.X, (float)nrm.Y, (float)nrm.Z);
-                uint target;
-                if (g == 0) { normals.Add(f); target = (uint)v; }
-                else { target = (uint)(n + dups.Count); dups.Add(v); dupNormals.Add(f); }
                 for (int i = 0; i < count; i++)
-                    if (groupOf[i] == g) outIdx[corners[first + i]] = baseVertex + target;
+                {
+                    if (groupOf[i] != g) continue;
+                    int c = corners[first + i], v = local[c];
+                    if (!target.TryGetValue((v, g), out uint to))
+                    {
+                        if (kept.Add(v)) { normals[v] = f; to = (uint)v; }
+                        else { to = (uint)(n + dups.Count); dups.Add(v); dupNormals.Add(f); }
+                        target[(v, g)] = to;
+                    }
+                    outIdx[c] = baseVertex + to;
+                }
             }
         }
-        normals.AddRange(dupNormals);
-        return new ShadingNormalsResult([.. normals], [.. dups], outIdx);
+        return new ShadingNormalsResult([.. normals, .. dupNormals], [.. dups], outIdx);
     }
 
     /// <summary>Corner <paramref name="c"/>'s weight: sin α / (|e₁| |e₂|), the angle α between its two edges e₁, e₂ — Max (1999),

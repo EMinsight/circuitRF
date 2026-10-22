@@ -456,6 +456,45 @@ public sealed class EdgesFilletsChamfersTests : IDisposable
         Assert.StartsWith("Fillet 0.02 mm", Row(), StringComparison.Ordinal);
     }
 
+    /// <summary>A kernel cylinder's side is smooth all the way round: the kernel repeats the vertices along a periodic face's seam,
+    /// and unwelded they shaded as an open edge — a line down the pin and through its fillet in the realistic view. The fillet
+    /// meets the side and the top tangentially, so those edges shade smooth too; the bottom rim stays sharp.</summary>
+    [KernelFact]
+    public void AKernelCylindersSeam_ShadesSmooth()
+    {
+        var vm = Open(Write([Fillet("pin", Cyl("", "Gold", 0, 0, 0, 2000, 200), 50, "side|top")]), Kernel(KernelForTests.New()));
+        var s = vm.Viewer.Scene;
+        var o = vm.SceneObject("pin")!;
+        uint face = (uint)Enumerable.Range(0, o.FaceNames.Count).Single(i => o.FaceNames[i] == "side");
+        int side = 0;
+        for (int k = o.FirstVertex; k < o.FirstVertex + o.VertexCount; k++)
+        {
+            if (s.Vertices[k].Face != face) continue;
+            var w = s.ToWorld(new Vector3(s.Vertices[k].X, s.Vertices[k].Y, s.Vertices[k].Z));
+            if (w.Z > 1900 * UmM) continue;                                 // the ring the fillet's normals are averaged into
+            side++;
+            var n = s.ShadeVertices[k];
+            double r = Math.Sqrt(w.X * w.X + w.Y * w.Y);
+            double cos = (n.Nx * w.X + n.Ny * w.Y) / r;
+            Assert.True(cos > Math.Cos(Math.PI / 180), $"the side's normal at ({w.X}, {w.Y}, {w.Z}) is {Math.Acos(Math.Min(1, cos)) * 180 / Math.PI:F2}° off radial");
+        }
+        Assert.True(side > 0);
+
+        // The fillet's own seam, and its edges with the side and the top: off the bottom rim, one point has one normal.
+        var normals = new Dictionary<Vector3, Vector3>();
+        int rim = 0;
+        for (int k = o.FirstVertex; k < o.FirstVertex + o.VertexCount; k++)
+        {
+            var p = new Vector3(s.Vertices[k].X, s.Vertices[k].Y, s.Vertices[k].Z);
+            var n = new Vector3(s.ShadeVertices[k].Nx, s.ShadeVertices[k].Ny, s.ShadeVertices[k].Nz);
+            if (!normals.TryGetValue(p, out var m)) { normals[p] = n; continue; }
+            if (s.ToWorld(p).Z < 1e-9) { rim++; Assert.True(Math.Abs(Vector3.Dot(m, n)) < 0.01, "the bottom rim is not sharp"); }
+            else Assert.True(Vector3.Dot(m, n) > MathF.Cos(MathF.PI / 180),
+                             $"face {o.FaceNames[(int)s.Vertices[k].Face]} has a seam at {s.ToWorld(p)}");
+        }
+        Assert.True(rim > 0);
+    }
+
     // ── helpers ────────────────────────────────────────────────────────────────────────────────────
 
     private GeometryKernel Kernel(GeometryKernel k)

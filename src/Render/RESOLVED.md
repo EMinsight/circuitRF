@@ -5211,3 +5211,33 @@ or problem.json, scale 1 (the driver already wrote Palace's incident power). No 
 layout `VtuReader` reads. `FieldPlotResolver.RunDirectories`/`Discover` take an optional solver (the plot's, by display
 name) so a comparison's FEM legs are each drawable; callers in the 3D view, the editor and `render --field` pass
 `request.Solver`. Detail in `src/Design/RESOLVED.md` "EMI-7".
+
+## A seam down a kernel cylinder in the realistic view (2026-10-22)
+
+A filleted pin drawn by the geometry kernel showed a line along its length, through the fillet, in the
+realistic view only. **The kernel tessellates each face on its own and repeats the vertices along a
+periodic face's parametric seam** (a cylinder's side, a torus fillet), so the two columns of triangles
+either side of the seam shared no vertex. `ShadingNormals` smooths only across SHARED edges, so it
+treated the seam as an open edge and gave each side its one facet's normal: half a facet off radial
+each way, an ~11.6° jump at the default deflection. The default view takes its normal from
+screen-space derivatives and never showed it.
+
+**Fix: the faced path in `Scene3DBuilder.Object` keys its scene vertex by the corner WELDED BY
+POSITION** (the `welded` map it already built for the feature edges) plus the face. The seam's
+duplicates are bit-identical, so exact welding finds them. Faces still never share a vertex, so an
+edge between faces stays sharp. Pole duplicates on a kernel sphere now weld into one vertex too, which
+is what a pole's normal wants. Gate: `EdgesFilletsChamfersTests.AKernelCylindersSeam_ShadesSmooth`.
+
+**Then the edge where the fillet meets the cylinder.** With the seam welded, a second line remained at the
+fillet's boundary. That edge was sharp by rule: faces never share a vertex, so each face's boundary normal
+came from its own triangles, and the fillet's first facets lean toward the axis while the side's stay
+radial — a jump of about a facet's half-angle at a tangent join. **`ShadingNormals.Compute` now takes an
+optional `weld`** (each vertex's representative at its point). It groups a POINT's corners, and the 30°
+crease rule decides whether two faces join there, exactly as it decides inside a face. Each face keeps its
+own vertex (face picking still reads it) and takes the group's normal. `Scene3DBuilder.Shade` passes the
+weld by position whenever `SplitShadingCreases` is on, so `split: false` is unchanged. This matches
+`Em3dOutline`, which already welds by position before applying the same 30° rule to its feature edges.
+**Trade-offs:** a face boundary that turns by less than 30° now shades smooth, because the mesh cannot tell
+a tangent join from a shallow real crease (the kernel reports no edge continuity). The boundary ring's
+normal is the average of both faces' facets, so it leans a few degrees toward the coarser face's facets
+(6.4° on the gate's pin) — continuous, where it used to jump.

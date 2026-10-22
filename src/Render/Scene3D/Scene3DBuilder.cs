@@ -1197,13 +1197,16 @@ public static class Scene3DBuilder
                     var key = a < c ? (a, c) : (c, a);
                     edgeFaces[key] = edgeFaces.TryGetValue(key, out var e) ? (e.F0, e.Count == 1 ? f : e.F1, e.Count + 1) : (f, -1, 1);
                 }
+                // The scene vertex is keyed by the WELDED corner too: the kernel tessellates a periodic face (a cylinder, a torus
+                // fillet) with its seam's vertices repeated, and unwelded the shading normals took the seam for an open edge — a
+                // line drawn down the face in the realistic view.
                 foreach (var t in mesh.Triangles)
                 {
                     int f = sheet ? 0 : t.Face;
                     if (f < 0) f = FaceUnknown;
-                    idx[w++] = V(t.A, f);
-                    idx[w++] = V(t.B, f);
-                    idx[w++] = V(t.C, f);
+                    idx[w++] = V(welded[t.A], f);
+                    idx[w++] = V(welded[t.B], f);
+                    idx[w++] = V(welded[t.C], f);
                     Edge(t.A, t.B, f); Edge(t.B, t.C, f); Edge(t.C, t.A, f);
                 }
                 var edges = new List<Scene3DVertex>();
@@ -1254,7 +1257,19 @@ public static class Scene3DBuilder
             }
             var pos = new Vector3[count];
             for (int k = 0; k < count; k++) { var v = _verts[first + k]; pos[k] = new Vector3(v.X, v.Y, v.Z); }
-            var r = ShadingNormals.Compute(pos, idx, (uint)first, SplitShading);
+            // Each face's vertices welded to the other faces' at the same point, so a tangent edge between faces shades smooth.
+            int[]? weld = null;
+            if (SplitShading)
+            {
+                weld = new int[count];
+                var at = new Dictionary<Vector3, int>();
+                for (int k = 0; k < count; k++)
+                {
+                    if (!at.TryGetValue(pos[k], out int w)) at[pos[k]] = w = k;
+                    weld[k] = w;
+                }
+            }
+            var r = ShadingNormals.Compute(pos, idx, (uint)first, SplitShading, weld);
             foreach (int d in r.Duplicates) _verts.Add(_verts[first + d]);
             foreach (var n in r.Normals) _shade.Add(new Scene3DShadeVertex(n.X, n.Y, n.Z));
             return r.Indices;
