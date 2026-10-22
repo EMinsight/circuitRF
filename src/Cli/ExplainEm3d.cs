@@ -152,6 +152,7 @@ internal static class ExplainEm3d
             Static = Static(p, setup),
             OpenEmsWavePorts = setup.Solver3D.Runs(OpenEmsSolver.Id) ? WavePortLines(p, grid.Grid) : null,
             PalaceTerminalPorts = setup.Solver3D.Runs(PalaceSolver.Id) ? PalaceTerminalLines(p, setup.Solver3D) : null,
+            Emerge = setup.Solver3D.Runs(EmergeSolver.Id) ? Emerge(p, setup) : null,
             Eigenmode = p.Type != Em3dProblemType.Eigenmode ? null
                 : new Em3dEigenmodeJson(p.EigenmodeCount, setup.Eigenmode?.Count is null ? "default" : "field",
                                         p.EigenmodeTargetHz, setup.Eigenmode?.TargetGHz is null ? "default (the sweep's start)" : "field"),
@@ -183,6 +184,20 @@ internal static class ExplainEm3d
         return new Em3dSarJson(s.FrequenciesHz, s.MassesGrams, s.Method.ToString(), plan.RegionName, plan.Region, s.B1, s.B0AxisName,
                                s.B1 ? plan.B1RegionName : null, s.CrossCheck, tissue, cells,
                                cells is { } c ? Em3dSar.EstimateBytes(plan, c, p.Ports.Count, grid?.Cylinder is not null) : null, null) { PerPortFields = s.PerPortFields };
+    }
+
+    /// <summary>brief-emi-4 R-emi4-4 — the EMerge section resolved and the lowering's objects, through the lowering a run
+    /// writes (EmergeScriptWriter.Write), so explain cannot describe an input the run would not write.</summary>
+    private static Em3dEmergeJson Emerge(Em3dProblem p, EmSetup setup)
+    {
+        var s = EmergeSettings.Resolve(setup.Emerge);
+        string quality = setup.Emerge?.Quality is { } q ? $"{q} (field)" : "Standard (default)";
+        var low = s.Problems() is { Count: > 0 } bad ? null : EmergeScriptWriter.Write(p, s);
+        return new Em3dEmergeJson(quality, s.MaxElementWavelengths, s.EdgeRefinement, s.ElementOrder, s.AdaptiveSweep, s.Tolerance,
+                                  s.InitialSamples, s.MaxSamples, s.AdaptiveMesh,
+                                  low is { Ok: true } ? low.EdgeSizeM : null, low is { Ok: true } ? low.LargestSizeM : null,
+                                  [.. (low?.Objects ?? []).Select(o => new Em3dEmergeObjectJson(o.Name, o.Kind, o.Mapping))],
+                                  low is null ? string.Join(" ", s.Problems()) : low.Refusal);
     }
 
     /// <summary>
@@ -371,8 +386,20 @@ internal static class ExplainEm3d
                 "conductor, sheet and port. A curved surface's own refinement and Palace's adaptive passes add to " +
                 "it, and the run reports the real counts. No mesher is run to get it.");
         }
-        return [palace, OpenEmsSize(grid, p?.Ports.Count ?? 0)];
+        return setup.Solver3D.Runs(EmergeSolver.Id)
+            ? [palace, OpenEmsSize(grid, p?.Ports.Count ?? 0), EmergeSize(p)]
+            : [palace, OpenEmsSize(grid, p?.Ports.Count ?? 0)];
     }
+
+    /// <summary>brief-emi-4 R-emi4-4 — EMerge's size is not estimated: Palace's volume-and-shell estimate read 6 to 15 times
+    /// EMerge's real count on the Cavity, because EMerge refines round the EDGES of each conductor face rather than over it
+    /// (src/Design/RESOLVED.md, EMI-4). The row says so rather than print a number that far off.</summary>
+    private static Em3dSizeJson EmergeSize(Em3dProblem? p)
+        => new("emerge", "unavailable", null, null, null, null, p is null
+            ? "there is no 3D problem to size."
+            : "no estimate: EMerge refines round the edges of each conductor and sheet face, which circuitRF does not price " +
+              "yet. A run reports its mesh, and EMerge checks its own memory figure (0.25 MB per element) against free " +
+              "memory before it solves.");
 
     /// <summary>
     /// The openEMS grid for the problem, through the generator a run uses, with the section's grid
@@ -529,6 +556,22 @@ internal static class ExplainEm3d
                               $"   from {m.From}");
     }
 
+    private static void PrintEmerge(Em3dEmergeJson e)
+    {
+        Console.WriteLine($"  EMerge       quality {e.Quality}: element order {e.ElementOrder}, each material at most " +
+                          $"{G(e.MaxElementWavelengths)} of its wavelength, edges at {G(e.EdgeRefinement)} of the smallest" +
+                          (e.EdgeSizeM is { } edge ? $" ({L(edge)})" : "") +
+                          (e.LargestSizeM is { } big ? $", largest {L(big)}" : "") + "; " +
+                          (e.AdaptiveSweep ? $"adaptive sweep to {G(e.Tolerance)} on |S| from {e.InitialSamples} samples, at most {e.MaxSamples}"
+                                           : "every frequency solved") +
+                          $"; {e.AdaptiveMesh} mesh refinement pass(es)");
+        if (e.Refusal is { } no) Console.WriteLine($"  {"",-12} a run would stop here: {no}");
+        foreach (var o in e.Objects) Console.WriteLine($"    {o.Name,-28} {o.Kind,-14} {o.Mapping}");
+
+        static string L(double m) => Em3dSectionScene.FormatLength(m);
+        static string G(double v) => v.ToString("G4", CultureInfo.InvariantCulture);
+    }
+
     public static void Print(ExplainEm3dJson r)
     {
         static string L(double m) => Em3dSectionScene.FormatLength(m);
@@ -600,6 +643,7 @@ internal static class ExplainEm3d
             Console.WriteLine("  Palace terminal ports");
             foreach (string l in palaceLines) Console.WriteLine($"    {l}");
         }
+        if (r.Emerge is { } em) PrintEmerge(em);
         if (r.Eigenmode is { } eig)
             Console.WriteLine($"  eigenmode    {eig.Count} mode(s) ({eig.CountFrom}) above {G(eig.TargetHz / 1e9)} GHz ({eig.TargetFrom})");
         if (r.Sar is { } sarGroup) PrintSar(sarGroup);

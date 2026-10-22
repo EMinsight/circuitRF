@@ -584,6 +584,10 @@ public sealed class EmSetup
     /// <see cref="CemOpenEms.ResolveGrid"/> for the defaults. Null takes circuitRF's defaults.</summary>
     public CemOpenEms? OpenEms { get; set; }
 
+    /// <summary>brief-emi-4 R-emi4-1 — EMerge's own section — see <see cref="EmergeSettings"/> for the defaults. Null takes
+    /// circuitRF's defaults.</summary>
+    public CemEmerge? Emerge { get; set; }
+
     /// <summary>
     /// R-em3d3-3b — the planar-only fields this setup sets away from their defaults, by their
     /// <c>.cem</c> key. A 3D setup ignores every one of them; <c>check</c> names them at info so a
@@ -667,6 +671,7 @@ public sealed class EmSetup
         AirBox                 = AirBox,         // record, immutable
         Palace                 = Palace?.Clone(),
         OpenEms                = OpenEms?.Clone(),
+        Emerge                 = Emerge?.Clone(),
         Problem3D              = Problem3D,
         Terminals3D            = [.. Terminals3D],   // records, immutable
         Ground3D               = Ground3D,

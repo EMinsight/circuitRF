@@ -21798,3 +21798,81 @@ the tools appear. The docs page EMI-8 writes is not linked from the row yet, bec
 
 Gate: `SolverInstallTests` gate 13 (tests 1–3, on the fake recipes) and `tests/Ui.Tests/Em3d/EmergeAcceleratorTests.cs`
 (tests 4–5).
+
+## EMI-4: the lowering — an `Em3dProblem` as EMerge's input (2026-10-21)
+
+**Shape (R-emi4-0).** A run directory gets `problem.json` (pure data: every object by index, every length in metres, every
+decision made in C#), the constant driver `circuitrf_emerge.py` (an embedded resource, written unchanged) and the kernel
+solids' B-reps. Names reach the input only through `PyStr`; `EmergeScriptWriter` and its `.Emit` partial compose no text,
+`EmergeLoweringRules` composes every sentence. Driver mode `mesh` builds and meshes and prints one JSON line; solving is
+EMI-5's.
+
+**The mapping table (R-emi4-2)**, checked against EMerge 3.0.0b2's source and run through the driver:
+
+| circuitRF | EMerge | Refused when |
+|---|---|---|
+| box, cylinder, sphere, extruded polygon, sweep, polyhedron, truncated sphere, ellipsoid | the same OpenCASCADE calls Palace's `.geo` writes, each wrapped as a `GeoVolume` | — |
+| kernel solid (STEP part, fillet, boolean) | its B-rep file imported as it is and dilated µm → m (the file Palace's Gmsh reads; no STEP round trip) | — |
+| construction order (later wins, metal over dielectric) | EMerge's priorities, ranked by `Priorities`; `commit_geometry` fragments and gives each fragment to the highest | — |
+| conductor, σ > 1e4 S/m (EMerge's surface-impedance limit) | **removed before meshing** (a void, as in Palace's mesh); its faces shared with meshed space carry `SurfaceImpedance` | σ at or below 1e4 S/m (EMerge would solve it as a lossy dielectric) |
+| conductor, no finite σ | removed; its faces `PEC` | — |
+| dielectric / fill | `Material(er or diagonal er tensor, ur, tand, cond)` | σ above 1e4 S/m (EMerge would make it a conductor) |
+| sheet | a plate: `PEC`, or a thin conductor with its thickness | σ at or below the limit |
+| lumped port (rectangle) | `LumpedPort(width, height, direction, Z0)`, direction exactly circuitRF's | coaxial annulus; Z0 complex or ≤ 0; direction not along a side |
+| lumped element | `LumpedElement` with Z(f) from R, L, C | no value; negative/non-finite; a zero that makes a short or open |
+| air-box faces | PEC (EMerge's default), `PMC`, `AbsorbingBoundary` | Symmetry (states neither wall) |
+| mesh region | a Gmsh Box field in EMerge's field list | — |
+| driven / eigenmode | adaptive sweep / eigenmode | thermal, electrostatic, magnetostatic (Palace) |
+| wave port, voxel phantom, face boundary, cylindrical gap, imported-openEMS-only solid | — | always, by name |
+
+**Two driver defects found only by solving, not by meshing** (EMerge 3.0.0b2):
+
+- **A runaway 1D mesh.** On the 3D Connector launch (the pin's B-rep cut by its 35 µm trace), Gmsh's curvature sizing,
+  which EMerge turns on (`Mesh.MeshSizeFromCurvature` 10), asked for elements of essentially zero length on a trimmed
+  curve: about 8 GB in under half a second, growing until killed. Curvature sizing off: 2 s, 282 MB. Palace's `.geo` uses
+  curvature sizing (12) on the same B-reps without trouble; its model is in micrometres, EMerge's in metres, so Gmsh's
+  absolute tolerances no longer stop it. Palace's `MeshSizeFromPoints = 0` and `MeshSizeExtendFromBoundary = 0` did not
+  help. **Fix: `Mesh.MeshSizeMin = edge/1000`.** The launch meshes the same from edge/10 000 (18,689 tets) to edge/10
+  (18,572), so the floor changes nothing real. EMerge's `set_scale_factor` would also model in µm, but it is marked
+  experimental and logs a warning.
+- **Stale default boundary conditions.** `commit_geometry` caches every object's boundary faces and generates EMerge's
+  default boundary conditions from that cache, BEFORE the driver removes the conductors. The solve then stopped with
+  `KeyError` on a surface impedance naming a removed face. A mesh-only run never reaches it. **Fix:** after the removal,
+  `_cache_gmsh()` on every object (what `commit_geometry` itself calls; a removed conductor then has no boundary) and
+  `sim.mw.reset()`, so EMerge generates its defaults afresh at solve time under the conditions the driver sets.
+  `_cache_gmsh` is private API, so a new EMerge version should be checked here first.
+
+**Calibration (R-emi4-3)**, the 3D Eigenmode example's Cavity, driven 8–12 GHz in 5 MHz steps, through the driver's own
+`build()` and EMerge's adaptive sweep, M4, macOS sparse solver:
+
+| Preset | Tets | Unknowns | S21 notch | Depth | Peak | Time |
+|---|---|---|---|---|---|---|
+| Draft (0.2 λ, edge 0.25) | 7,410 | 53,614 | **9.955 GHz** | −12.56 dB | 1.23 GB | 3 s |
+| Standard (0.15 λ, edge 0.2) | 15,124 | 109,566 | **9.955 GHz** | −13.03 dB | 2.29 GB | 8 s |
+| Accurate (0.1 λ, edge 0.15) | 35,571 | — | **9.955 GHz** | −13.22 dB | 4.08 GB | 17 s |
+
+Palace and openEMS put the notch at 9.955 GHz too, so **Draft meets the brief's criterion** (within one 5 MHz step). The
+depth converges towards EMI-0's −13.3 dB, not Palace's −11.69 dB: that is EMI-8's open item and unchanged. **Order 1** (the
+same meshes) puts the notch at 9.930 / 9.925 GHz, 25–30 MHz low, which is why every preset is order 2. Unknowns are exactly
+2 × (edges + faces) at order 2 and the edge count at order 1 (7.24 and 1.44 per tet here).
+
+The launch at Standard (18,638 tets, 19 s), |S21| at 10 / 18 GHz: −0.206 / −0.488 dB, between Palace's −0.246 / −0.518 and
+openEMS's −0.133 / −0.457; |S11| −19.6 / −22.0 dB against Palace −16.7 / −40.8 and openEMS −17.3 / −19.0. No adaptive mesh
+refinement; EMI-8 validates.
+
+**No size estimate in `explain` (R-emi4-4), on purpose.** The brief cites EMerge's memory guide as 0.2 MB per unknown. The
+guide in EMerge's source is **per tetrahedron**: `_check_ram` wants 0.17 / 0.25 / 0.40 MB per tet (low / nominal / high) and
+refuses to start below the nominal. The measured peaks above are 0.17 / 0.15 / 0.12 MB per tet. Palace's estimator
+(`Em3dSizeEstimate.Palace`, volume at the largest element plus a refined shell over each conductor surface), run with
+EMerge's sizes, read **48,204 / 134,174 / 537,553** tets against 7,410 / 15,124 / 35,571 measured. That is 6–15× high,
+because EMerge's `set_boundary_size` refines round the EDGES of each conductor face (a Distance field on its curves), not
+over the face. A per-edge-length fit matched the Cavity's three presets to ±3 % with tets ∝ s^-1.3, but that is one geometry
+family, and kernel solids' edge lengths are not cheaply known. So the row says "unavailable" and why. `explain` does report
+the section resolved (preset, every value, the edge and largest sizes) and every object's mapping, through `Write` itself.
+`check` reports the lowering's refusals and notes through the descriptor's `Check`.
+
+**Corrected in passing:** the mesh mapping row said EMerge sizes each port at a quarter of its smaller side. EMerge refines
+no port, and nothing in the driver does, so the row now says so.
+
+Gate: `tests/Ui.Tests/Em3d/EmergeLoweringTests.cs` (30, of which the driver test needs an EMerge; the low-σ row now
+uses a conductor solid, because the microstrip fixture has no sheet).

@@ -2515,6 +2515,25 @@ namespace RfCore.Export
     /// <param name="Why">What chose it, and what it implies for the process count.</param>
     public sealed record Em3dDeviceJson(string Device, string Why);
 
+    /// <summary>brief-emi-4 R-emi4-4 — what EMerge is told for a setup that runs it: the EMerge section resolved, every
+    /// object and what it becomes in EMerge's input, and the element sizes; or why EMerge's lowering refuses it.</summary>
+    /// <param name="Quality">The preset the section resolves from, and whether the section names it.</param>
+    /// <param name="EdgeSizeM">The element size along conductor and sheet edges, metres; null with a refusal.</param>
+    /// <param name="LargestSizeM">The largest element of any meshed material, metres; null with a refusal.</param>
+    public sealed record Em3dEmergeJson(
+        string Quality, double MaxElementWavelengths, double EdgeRefinement, int ElementOrder, bool AdaptiveSweep,
+        double Tolerance, int InitialSamples, int MaxSamples, int AdaptiveMesh,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? EdgeSizeM,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        double? LargestSizeM,
+        IReadOnlyList<Em3dEmergeObjectJson> Objects,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? Refusal);
+
+    /// <summary>One object of an EMerge input: its name, what kind of object it is and what EMerge is told it is.</summary>
+    public sealed record Em3dEmergeObjectJson(string Name, string Kind, string Mapping);
+
     public sealed record ExplainEm3dJson(
         string                               Solver,
         string                               LengthUnit,
@@ -2544,6 +2563,11 @@ namespace RfCore.Export
         /// Palace.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public Em3dDeviceJson? Device { get; init; }
+
+        /// <summary>brief-emi-4 R-emi4-4 — EMerge's lowering of the problem; null when the setup runs no EMerge, so every
+        /// earlier report is unchanged.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public Em3dEmergeJson? Emerge { get; init; }
 
         /// <summary>brief-em3d-116 R-em3d116-3 — how openEMS builds each wave port (its feed, source, planes, current boxes),
         /// as sentences; null when the setup runs no wave port on openEMS, so every earlier report is unchanged.</summary>

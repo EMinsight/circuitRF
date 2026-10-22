@@ -139,6 +139,13 @@
                       LogicalName="CircuitRF.Design.Em3d.Install.recipes.%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <!-- brief-emi-4 R-emi4-0b: EMerge's driver, a constant Python program that reads a run's problem.json. Written beside
+       it into the run directory by EmergeScriptWriter under its own name; a change to it is a diff of this one file. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Em3d\Solvers\EMerge\circuitrf_emerge.py"
+                      LogicalName="CircuitRF.Design.Em3d.Solvers.EMerge.circuitrf_emerge.py" />
+  </ItemGroup>
+
   <!-- brief-em3d-63 R-em3d63-2b: the geometry kernel's recipe, read IN PLACE (brief 62's single copy), so the
        client pins exactly the OCCT version the worker was built from and knows which RIDs ship it. A second
        copy of the version here would be a third place to forget when the recipe moves (VERSION's rule). -->

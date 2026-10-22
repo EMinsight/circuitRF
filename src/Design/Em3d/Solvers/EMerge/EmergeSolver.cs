@@ -1,12 +1,83 @@
 // brief-emi-2 — EMerge: a finite-element (FEM) solver that runs as a Python program. This folder is everything circuitRF
-// knows about EMerge as a program it can find and install: the probe it asks, and what the answer means. Its descriptor
-// (Em3dSolverDescriptor) joins the registry with its run (EMI-4/EMI-5); until then Em3dSolvers.Tools lists its program
-// so it is installed, found and listed like every other, and no Solver3D can name it.
+// knows about EMerge: the program it finds and installs and the probe it asks (EMI-2/EMI-3), and its descriptor, its
+// settings and its lowering (brief-emi-4). The descriptor is Em3dSolvers' integrating one until its run joins it (EMI-5):
+// a Solver3D may spell it, check and explain answer for it, and its leg writes the input and refuses to start it.
+
+using System.Globalization;
+using CircuitRF.Design.Layout.Em;
+using CircuitRF.Engine.Em3d;
 
 namespace CircuitRF.Design.Em3d;
 
 public static class EmergeSolver
 {
+    public const Em3dSolverId Id = Em3dSolverId.Emerge;
+
+    public static Em3dSolverDescriptor Descriptor { get; } = new()
+    {
+        Id = Id,
+        DisplayName = "EMerge",
+        Spelling = "Emerge",
+        ResultToken = "emerge",
+        Method = Em3dSolverFit.Fem,
+        Capabilities = new()
+        {
+            Problems = new HashSet<Em3dProblemType> { Em3dProblemType.Driven, Em3dProblemType.Eigenmode },
+            MeshRegions = true,
+        },
+        Tools = [SolverTool.Emerge],
+        SetupDescription =
+            "Generates a 3D model from the layout, its technology and any bond wires and solves it with EMerge, which meshes " +
+            "it with its own Gmsh; installed separately (Settings ▸ Solvers).",
+        SweepText = SweepText,
+        // brief-emi-7 — EMerge's fields arrive with its field plots; until then it saves none and no plot can ask it to.
+        SavedFieldsGHz = _ => [],
+        SetSavedFieldsGHz = (_, _) => throw new InvalidOperationException("EMerge saves no fields in this version of circuitRF."),
+        Refusal = Refusal,
+        Check = Check,
+        NewLeg = () => new Em3dRunService.EmergeLeg(),
+    };
+
+    /// <summary>R-emi4-4 — what EMerge's run in circuitRF does not solve, refused before anything is looked for, naming the
+    /// solver that does.</summary>
+    private static string? Refusal(EmSetup setup)
+    {
+        if (!setup.IsStatic3D) return null;
+        var able = Em3dSolvers.With(c => c.Problems.Contains(setup.Problem3D));
+        string kind = setup.Problem3D == Em3dProblemType.Electrostatic ? "an electrostatic" : "a magnetostatic";
+        return $"This setup asks for {kind} solve on EMerge, and only {Em3dSolvers.Names(able)} solves the static problems: " +
+               "circuitRF runs EMerge for driven and eigenmode problems. " +
+               $"Set the setup's Solver3D to {able[0].Spelling}, or run it with `circuitrf em --solver {able[0].ResultToken}`.";
+    }
+
+    /// <summary>R-emi4-4 — what EMerge's lowering would refuse of a built problem (each sentence the run's own), and what
+    /// it goes on without.</summary>
+    private static Em3dSolverCheck Check(Em3dProblem problem, EmSetup setup, string? settingsPath)
+    {
+        var settings = EmergeSettings.Resolve(setup.Emerge);
+        if (settings.Problems() is { Count: > 0 } bad) return new(bad, []);
+        var notes = new List<string>();
+        if (EmergeScriptWriter.RadiationPatternNote(setup, problem) is { } noPattern) notes.Add(noPattern);
+        if (EmergeScriptWriter.Write(problem, settings).Refusal is { } refused) return new([refused], notes);
+        notes.Add(NotStartedYet);
+        return new([], notes);
+    }
+
+    /// <summary>brief-emi-4 — what a run of an EMerge setup says until EMerge's run is in (EMI-5 deletes it).</summary>
+    public const string NotStartedYet =
+        "This version of circuitRF writes EMerge's input for this setup (its run directory's problem.json and driver) but does " +
+        "not start EMerge yet; run the setup on Palace or openEMS for its results.";
+
+    /// <summary>What EMerge does with a frequency sweep, as the Messages panel's sweep row says it.</summary>
+    private static string SweepText(EmSetup setup)
+    {
+        var settings = EmergeSettings.Resolve(setup.Emerge);
+        return settings.AdaptiveSweep
+            ? $"EMerge builds the sweep adaptively (tolerance {settings.Tolerance.ToString("G3", CultureInfo.InvariantCulture)} on |S|): " +
+              "it solves the full problem at as few frequencies as reach that tolerance and fits every requested point from them"
+            : "EMerge solves the full problem at every point";
+    }
+
     /// <summary>The program it needs: a Python interpreter with EMerge importable (R-emi2-3a).</summary>
     public static IReadOnlyList<SolverTool> Tools { get; } = [SolverTool.Emerge];
 

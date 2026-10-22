@@ -993,21 +993,7 @@ public static partial class GmshGeoWriter
         for (int k = 0; k < ph.Vertices.Count; k++)
             L($"Point(p + {k}) = {{{Um(ph.Vertices[k].X)}, {Um(ph.Vertices[k].Y)}, {Um(ph.Vertices[k].Z)}}};");
 
-        // The loops, as vertex rings: a planar face's own rings, a bent face's triangles.
-        var faces = new List<List<IReadOnlyList<int>>>();
-        var mesh = Em3dTessellation.Of(new Em3dSolid("", "", Em3dRole.Conductor, ph, 0));
-        var meshVertex = new Dictionary<Point3, int>();
-        for (int k = 0; k < ph.Vertices.Count; k++) meshVertex.TryAdd(ph.Vertices[k], k);
-        for (int f = 0; f < ph.Faces.Count; f++)
-        {
-            var face = ph.Faces[f];
-            if (ph.IsPlanar(face, PlanarityToleranceUm * 1e-6))
-                faces.Add([face.Outer, .. face.Holes]);
-            else
-                foreach (var t in mesh.Triangles.Where(t => t.Face == f))
-                    faces.Add([new[] { meshVertex[mesh.Vertices[t.A]], meshVertex[mesh.Vertices[t.B]], meshVertex[mesh.Vertices[t.C]] }]);
-        }
-
+        var faces = PolyhedronLoops(ph);
         var edge = new Dictionary<(int, int), int>();
         foreach (var rings in faces)
             foreach (var ring in rings)
@@ -1042,6 +1028,29 @@ public static partial class GmshGeoWriter
         L("sl = newsl; Surface Loop(sl) = {sf[]};");
         L("v = newv; Volume(v) = {sl};");
         L($"{list}[] = {{v}};");
+    }
+
+    /// <summary>
+    /// A polyhedron's faces as the OCC factory is handed them, each a list of vertex rings (outline, then holes): a planar
+    /// face's own rings, and a face bent past <see cref="PlanarityToleranceUm"/> as its triangles. Shared with EMerge's
+    /// lowering (brief-emi-4), which builds the same faces.
+    /// </summary>
+    internal static List<List<IReadOnlyList<int>>> PolyhedronLoops(Em3dPolyhedron ph)
+    {
+        var faces = new List<List<IReadOnlyList<int>>>();
+        var mesh = Em3dTessellation.Of(new Em3dSolid("", "", Em3dRole.Conductor, ph, 0));
+        var meshVertex = new Dictionary<Point3, int>();
+        for (int k = 0; k < ph.Vertices.Count; k++) meshVertex.TryAdd(ph.Vertices[k], k);
+        for (int f = 0; f < ph.Faces.Count; f++)
+        {
+            var face = ph.Faces[f];
+            if (ph.IsPlanar(face, PlanarityToleranceUm * 1e-6))
+                faces.Add([face.Outer, .. face.Holes]);
+            else
+                foreach (var t in mesh.Triangles.Where(t => t.Face == f))
+                    faces.Add([new[] { meshVertex[mesh.Vertices[t.A]], meshVertex[mesh.Vertices[t.B]], meshVertex[mesh.Vertices[t.C]] }]);
+        }
+        return faces;
     }
 
     /// <summary>A polyhedron face bent by more than this, in micrometres, is written as triangles: a tenth of
@@ -1205,7 +1214,7 @@ public static partial class GmshGeoWriter
         => (b.X1 - b.X0) * (b.Y1 - b.Y0) * (b.Z1 - b.Z0);
 
     /// <summary>A ring with its closing duplicate and any repeated vertex removed.</summary>
-    private static List<Point2> Clean(IReadOnlyList<Point2> ring)
+    internal static List<Point2> Clean(IReadOnlyList<Point2> ring)
     {
         var o = new List<Point2>(ring.Count);
         foreach (var q in ring)

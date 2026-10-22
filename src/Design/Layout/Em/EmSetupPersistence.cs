@@ -1382,6 +1382,11 @@ public sealed class CemFile
     /// <summary>openEMS's own section. Null takes the defaults.</summary>
     public CemOpenEms? OpenEms { get; set; }
 
+    /// <summary>brief-emi-4 R-emi4-1 — EMerge's own section, spelt <c>EMerge</c>. Null takes the defaults, and an empty one
+    /// is never written.</summary>
+    [JsonPropertyName("EMerge")]
+    public CemEmerge? Emerge { get; set; }
+
     /// <summary>brief-em3d-22 — what a 3D setup solves: Driven (S over the sweep), Electrostatic (a
     /// capacitance matrix) or Magnetostatic (an inductance matrix). <b>Null means Driven.</b> The two
     /// static problems run on Palace only.</summary>
@@ -1550,6 +1555,7 @@ public static class EmSetupPersistence
         } : null,
         Palace         = s.Palace,
         OpenEms        = s.OpenEms,
+        Emerge         = s.Emerge is { IsEmpty: false } emerge ? emerge : null,
         Problem3D      = s.Problem3D == CircuitRF.Engine.Em3d.Em3dProblemType.Driven ? null : s.Problem3D,
         Terminals3D    = s.Terminals3D.Count == 0 ? null
             : [.. s.Terminals3D.Select(t => new CemTerminal3D { Name = t.Name, Net = t.Net,
@@ -1633,6 +1639,7 @@ public static class EmSetupPersistence
             : null,
         Palace                = f.Palace,
         OpenEms               = f.OpenEms,
+        Emerge                = f.Emerge,
         Problem3D             = f.Problem3D ?? CircuitRF.Engine.Em3d.Em3dProblemType.Driven,
         Terminals3D           = f.Terminals3D is { } ts ? [.. ts.Select(t => new EmTerminal3D(t.Name ?? "", t.Net ?? "", t.Source, t.Objects is { Count: > 0 } o ? [.. o] : null))] : [],
         Ground3D              = f.Ground3D ?? "",

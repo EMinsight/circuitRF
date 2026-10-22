@@ -15,7 +15,7 @@ namespace CircuitRF.Design.Layout.Em;
 /// One 3D solver. <b>Closed and without a "both" member</b>: several solvers on one problem is an
 /// <see cref="Em3dSolverChoice"/>, not a solver. Its member names are the spellings a <c>.c3d</c>'s field plot stores.
 /// </summary>
-public enum Em3dSolverId { Palace, OpenEms }
+public enum Em3dSolverId { Palace, OpenEms, Emerge }
 
 /// <summary>
 /// <b>brief-em3d-3 R-em3d3-3 / brief-emi-1 R-emi1-1a — which 3D solver(s) a setup runs, if any.</b>
