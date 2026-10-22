@@ -176,6 +176,7 @@ public class NetlistContractTests
     [InlineData("lpp",   "loadpull_pursuit")]
     [InlineData("sweep", "parametric_sweep")]
     [InlineData("hb",    "hb")]
+    [InlineData("env",   "env")]
     [InlineData("dc",    "dc")]
     public void TheSchematicsOwnTypeTagsResolve(string tag, string canonical)
         => Assert.Equal(canonical, AnalysisDirectiveSchema.Find(tag)?.Type);
@@ -517,6 +518,7 @@ public class NetlistContractTests
         "dc"               => "analysis A1 type=dc\n",
         "sparam"           => "analysis A1 type=sparam start=1 GHz stop=2 GHz npts=3\n",
         "hb"               => "analysis A1 type=hb Tone=2e9\n",
+        "env"              => "analysis A1 type=env Stop=10e-6 Accuracy=draft\n",
         "loadpull"         => "analysis A1 type=loadpull Tone=2e9 LoadTuner=L SourceTuner=S Grid=\"g.gam\"\n",
         "loadpull_pursuit" => "analysis A1 type=loadpull_pursuit Tone=2e9 LoadTuner=L SourceTuner=S\n",
         "parametric_sweep" => "analysis Inner1 type=hb Tone=2e9\n" +

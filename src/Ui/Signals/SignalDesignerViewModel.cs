@@ -1,0 +1,1019 @@
+// ================================================================
+//  SignalDesignerViewModel.cs  —  the MOD_Source Signal Designer
+//
+//  Edits a MOD_Source's carriers (LTE / NR / CW / imported I/Q file),
+//  record length, clipping and spectral shaping, previews the signal
+//  (generated in the BACKGROUND through SignalCache — the same cache a
+//  simulation reads, so a previewed signal is never generated twice),
+//  and writes the result back as ONE SetParametersCommand on the
+//  owning schematic's undo stack (Carrier[i] / Record / Clip / Shaping,
+//  plus Fc and Pavg).
+//
+//  The plots are Data Display PlotControls fed from a DataSet (PSD in
+//  dB re peak against the offset from Fc, CCDF against dB above the
+//  mean with the Gaussian-noise reference; on the EVM tab the
+//  constellation of each LTE / NR carrier over its ideal points, and
+//  a few envelope cycles of power around the record's peak with the
+//  average and peak lines) — never a bespoke chart.
+// ================================================================
+
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.Globalization;
+using System.Linq;
+using System.Numerics;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
+using CircuitRF.Design.Schematic;
+using CircuitRF.Render.DataDisplay;
+using CircuitRF.Ui.Commands.Schematic;
+using CircuitRF.Ui.DataDisplay.ViewModels;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using RfCore;
+using RfCore.Data;
+using RfCore.Signals;
+
+namespace CircuitRF.Ui.Signals;
+
+public sealed partial class CarrierRowViewModel : ObservableObject
+{
+    public static IReadOnlyList<string> Standards { get; } = ["LTE", "NR", "CW", "FILE"];
+    public static IReadOnlyList<string> Modulations { get; } = ["QPSK", "16QAM", "64QAM", "256QAM", "1024QAM"];
+    public static IReadOnlyList<double> ScsOptions { get; } = [15, 30, 60];
+
+    [ObservableProperty] private int _index = 1;
+    [ObservableProperty] private string _standard = "LTE";
+    [ObservableProperty] private double _bandwidthMHz = 20;
+    [ObservableProperty] private double _scsKHz = 30;
+    [ObservableProperty] private string _modulation = "64QAM";
+    [ObservableProperty] private double _offsetMHz;
+    [ObservableProperty] private double _powerDb;
+    [ObservableProperty] private int _seed = 1;
+    [ObservableProperty] private string _filePath = "";
+
+    /// <summary>The card picked on the left; the EVM tab shows this carrier.</summary>
+    [ObservableProperty] private bool _isSelected;
+
+    public bool IsOfdm => Standard is "LTE" or "NR";
+    public bool IsNr => Standard == "NR";
+    public bool IsFile => Standard == "FILE";
+
+    public IReadOnlyList<double> BandwidthOptions => Standard switch
+    {
+        "LTE" => OfdmGenerator.LteBandwidths.Select(b => b / 1e6).ToList(),
+        "NR" => OfdmGenerator.NrBandwidthsMHz(ScsKHz * 1e3).Select(b => (double)b).ToList(),
+        _ => new List<double> { 20 },
+    };
+
+    partial void OnStandardChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsOfdm)); OnPropertyChanged(nameof(IsNr)); OnPropertyChanged(nameof(IsFile));
+        OnPropertyChanged(nameof(BandwidthOptions));
+        if (!BandwidthOptions.Contains(BandwidthMHz)) BandwidthMHz = BandwidthOptions.Contains(20) ? 20 : BandwidthOptions.FirstOrDefault(20);
+    }
+
+    partial void OnScsKHzChanged(double value)
+    {
+        OnPropertyChanged(nameof(BandwidthOptions));
+        if (Standard == "NR" && !BandwidthOptions.Contains(BandwidthMHz)) BandwidthMHz = BandwidthOptions.LastOrDefault(20);
+    }
+
+    public CarrierSpec ToSpec() => new()
+    {
+        Standard = Standard switch { "NR" => CarrierStandard.Nr, "CW" => CarrierStandard.Cw, "FILE" => CarrierStandard.File, _ => CarrierStandard.Lte },
+        BandwidthHz = BandwidthMHz * 1e6,
+        ScsHz = ScsKHz * 1e3,
+        Modulation = SignalSpec.ParseMod(Modulation),
+        OffsetHz = OffsetMHz * 1e6,
+        PowerDb = PowerDb,
+        Seed = Seed,
+        FilePath = Standard == "FILE" ? FilePath : null,
+    };
+
+    public static CarrierRowViewModel FromSpec(CarrierSpec c, int index) => new()
+    {
+        Index = index,
+        Standard = c.Standard switch { CarrierStandard.Nr => "NR", CarrierStandard.Cw => "CW", CarrierStandard.File => "FILE", _ => "LTE" },
+        ScsKHz = c.ScsHz / 1e3,
+        BandwidthMHz = c.BandwidthHz / 1e6,
+        Modulation = CarrierSpec.ModName(c.Modulation),
+        OffsetMHz = c.OffsetHz / 1e6,
+        PowerDb = c.PowerDb,
+        Seed = c.Seed,
+        FilePath = c.FilePath ?? "",
+    };
+}
+
+/// <summary>A sample-rate choice: <see cref="Hz"/> = 0 is Auto (the signal's recommended rate).</summary>
+public sealed record SampleRateOption(double Hz, string Label)
+{
+    public override string ToString() => Label;
+}
+
+/// <summary>One LTE / NR carrier's EVM, as the EVM tab lists it.</summary>
+public sealed record EvmRow(int CarrierIndex, string Label, EvmResult Result)
+{
+    public string RmsText => Result.RmsPercent.ToString(Result.RmsPercent < 10 ? "0.00" : "0.0", CultureInfo.InvariantCulture) + " %";
+    public string DbText => Result.RmsDb.ToString("0.0", CultureInfo.InvariantCulture) + " dB";
+    public string PeakText => Result.PeakPercent.ToString("0.0", CultureInfo.InvariantCulture) + " %";
+    public string LimitText => Result.LimitPercent.ToString("0.#", CultureInfo.InvariantCulture) + " %";
+    public string Verdict => Result.Passes ? "PASS" : "FAIL";
+    public bool Passes => Result.Passes;
+    public override string ToString() => Label;
+}
+
+public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposable
+{
+    private ViewModels.SchematicViewModel? _schematicVm;
+    private EditableComponent? _target;
+    private CancellationTokenSource? _cts;
+
+    public ObservableCollection<CarrierRowViewModel> Carriers { get; } = new();
+
+    /// <summary>Fc and Pavg as the user's own TEXT — a number (GHz / dBm) or an expression such as
+    /// <c>RFfreq</c> or <c>Pin</c>, which is written back verbatim. A swept source must stay swept.</summary>
+    [ObservableProperty] private string _fcText = "2";
+    [ObservableProperty] private string _pavgText = "10";
+    private EditableParameter? _fcOrig, _pavgOrig;
+    private string _fcLoaded = "", _pavgLoaded = "";
+    [ObservableProperty] private double _recordMs = 1.0;
+    [ObservableProperty] private bool _clipEnabled;
+    [ObservableProperty] private double _clipPaprDb = 8;
+    [ObservableProperty] private bool _shapingEnabled = true;
+    [ObservableProperty] private double _shapingFloorDbc = -80;
+    [ObservableProperty] private double _presetSpacingMHz = 400;
+    [ObservableProperty] private bool _isBusy;
+    [ObservableProperty] private double _progress;
+    [ObservableProperty] private string _status = "Edit the carriers, then Preview.";
+    [ObservableProperty] private string _stats = "";
+    [ObservableProperty] private string _title = "Signal Designer";
+
+    /// <summary>Set by the view: opens a file picker and returns a path, or null.</summary>
+    public Func<Task<string?>>? PickIqFileAsync { get; set; }
+
+    /// <summary>Set by the view: opens a save dialog (suggested file name in) and returns the chosen path, or null.</summary>
+    public Func<string, Task<string?>>? PickExportPathAsync { get; set; }
+
+    public DataDisplayViewModel PlotHost { get; } = new(new DataSourceLibraryViewModel(), addEmptyPlot: false, selectEmptyPlot: false);
+    public PlotContainerViewModel PsdContainer { get; private set; } = null!;
+    public PlotContainerViewModel CcdfContainer { get; private set; } = null!;
+    public Plot PsdPlot => PsdContainer.PlotVM.Plot;
+    public Plot CcdfPlot => CcdfContainer.PlotVM.Plot;
+    public PlotContainerViewModel ConstellationContainer { get; private set; } = null!;
+    public PlotContainerViewModel EnvelopeContainer { get; private set; } = null!;
+    public Plot ConstellationPlot => ConstellationContainer.PlotVM.Plot;
+    public Plot EnvelopePlot => EnvelopeContainer.PlotVM.Plot;
+
+    /// <summary>0 = spectrum and CCDF, 1 = EVM.</summary>
+    [ObservableProperty] private int _previewTab;
+
+    /// <summary>
+    /// EVM of every LTE / NR carrier of the last calculation. The EVM tab has no picker of its own: it shows the
+    /// carrier selected on the left (<see cref="SelectedCarrier"/>) as <see cref="SelectedEvm"/>, and says which
+    /// signal that was in <see cref="EvmSignalText"/>.
+    /// </summary>
+    public ObservableCollection<EvmRow> EvmRows { get; } = new();
+    [ObservableProperty] private EvmRow? _selectedEvm;
+    [ObservableProperty] private bool _hasEvm;
+    [ObservableProperty] private string _evmNote = "";
+    [ObservableProperty] private string _evmSignalText = "";
+    [ObservableProperty] private CarrierRowViewModel? _selectedCarrier;
+    private ModulatedSignal? _evmSig;
+    [ObservableProperty] private string _paprText = "";
+
+    /// <summary>
+    /// Standard sample rates (the LTE / NR 1.92 MHz x 2^k ladder, plus 92.16 MS/s for LTE 15 MHz). Auto is the
+    /// signal's recommended rate: the smallest of these holding the carriers plus +-2 channels of regrowth.
+    /// </summary>
+    public static IReadOnlyList<SampleRateOption> SampleRateOptions { get; } =
+    [
+        new(0, "Auto (recommended)"),
+        .. new[] { 7.68, 15.36, 30.72, 61.44, 92.16, 122.88, 245.76, 491.52, 983.04, 1966.08 }
+            .Select(m => new SampleRateOption(m * 1e6, m.ToString("0.##", CultureInfo.InvariantCulture) + " MS/s")),
+    ];
+
+    /// <summary>
+    /// Sample rate of the preview analysis and of Export signal. A Designer setting: it is not written to the
+    /// MOD_Source and does not change the simulation, which picks its own time step.
+    /// </summary>
+    [ObservableProperty] private SampleRateOption _sampleRate = SampleRateOptions[0];
+
+    /// <summary>The rate in effect, its sample period and the samples per record, after the last preview.</summary>
+    [ObservableProperty] private string _sampleRateInfo = "";
+
+    partial void OnSampleRateChanged(SampleRateOption value) => SchedulePreview();
+
+    /// <summary>
+    /// The rate <paramref name="choice"/> gives for <paramref name="sig"/>. Refuses a rate that cannot hold the
+    /// signal (below twice its furthest carrier edge) or one that does not give whole samples over the record.
+    /// </summary>
+    public static double RateFor(ModulatedSignal sig, SampleRateOption choice)
+    {
+        double rate = choice.Hz > 0 ? choice.Hz : sig.SuggestedCompositeRateHz();
+        double edge = sig.Carriers.Max(c => Math.Abs(c.OffsetHz) + c.Spec.BandwidthHz / 2);
+        if (rate < 2 * edge)
+        {
+            var ok = SampleRateOptions.Where(o => o.Hz >= 2 * edge).Select(o => o.Label).FirstOrDefault() ?? "a higher rate";
+            throw new ArgumentException(string.Format(CultureInfo.InvariantCulture,
+                "{0:0.##} MS/s cannot hold this signal (carriers reach {1:0.##} MHz from Fc): choose {2} or more.",
+                rate / 1e6, edge / 1e6, ok));
+        }
+        sig.LengthAt(rate);                       // throws when the record is not a whole number of samples
+        return rate;
+    }
+
+    private static string DescribeRate(ModulatedSignal sig, double rate, bool auto)
+        => string.Format(CultureInfo.InvariantCulture, "{0:0.##} MS/s{1}   ·   {2:0.###} ns per sample   ·   {3:N0} samples per record",
+            rate / 1e6, auto ? " (auto)" : "", 1e9 / rate, sig.LengthAt(rate));
+
+    /// <summary>
+    /// Raised after any plot's traces or axes change. The Data Display repaints on its own only when its Plot
+    /// object is replaced or the user interacts with it; these four keep their Plot and change its content.
+    /// </summary>
+    public event EventHandler? PlotsUpdated;
+
+    /// <summary>Where the peak-average arrow stands (time, in the envelope plot's own units) and its length (dB).</summary>
+    public double GapArrowX { get; private set; }
+    public double GapDb { get; private set; }
+
+    /// <summary>Length of the envelope-power window (µs); editing it re-cuts the plot from the cached signal.</summary>
+    [ObservableProperty] private double _envelopeWindowUs = DefaultEnvelopeWindowUs;
+    private ModulatedSignal? _envSig;
+    private EnvelopeStats _envStats;
+
+    partial void OnEnvelopeWindowUsChanged(double value)
+    {
+        if (_envSig is not null) ShowEnvelope(EnvelopeChunk(_envSig, _envStats, value * 1e-6));
+    }
+
+    partial void OnSelectedEvmChanged(EvmRow? value) => ShowConstellation(value);
+
+    partial void OnSelectedCarrierChanged(CarrierRowViewModel? value)
+    {
+        foreach (var c in Carriers) c.IsSelected = ReferenceEquals(c, value);
+        PickEvm();
+    }
+
+    /// <summary>Selects a carrier card on the left; the EVM tab follows it.</summary>
+    [RelayCommand]
+    private void SelectCarrier(CarrierRowViewModel? row)
+    {
+        if (row is not null && Carriers.Contains(row)) SelectedCarrier = row;
+    }
+
+    /// <summary>Re-generates the signal from the left panel and measures it (the same as Preview).</summary>
+    [RelayCommand]
+    private Task CalculateEvm() => PreviewAsync();
+
+    public SignalDesignerViewModel()
+    {
+        PsdContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, left: 0, top: 0, width: 640, height: 300);
+        CcdfContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, left: 0, top: 300, width: 640, height: 300);
+        ConstellationContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, left: 0, top: 600, width: 400, height: 400);
+        EnvelopeContainer = PlotHost.AddPlot(PlotType.Rect, FreqUnit.GHz, left: 0, top: 1000, width: 640, height: 300);
+        PsdPlot.Axes.LockedPanning = true;
+        CcdfPlot.Axes.LockedPanning = true;
+        ConstellationPlot.Axes.LockedPanning = true;
+        EnvelopePlot.Axes.LockedPanning = true;
+        foreach (var p in new[] { PsdPlot, CcdfPlot, ConstellationPlot, EnvelopePlot }) Readable(p);
+        PlotHost.SelectOnly((PlotContainerViewModel?)null);
+
+        // Live preview: any edit to a carrier or a waveform setting re-previews after a short pause (each
+        // new edit cancels the pending one; generation itself is cancellable and cached).
+        Carriers.CollectionChanged += (_, e) =>
+        {
+            if (e.NewItems is not null)
+                foreach (CarrierRowViewModel r in e.NewItems) r.PropertyChanged += OnRowChanged;
+            if (e.OldItems is not null)
+                foreach (CarrierRowViewModel r in e.OldItems) r.PropertyChanged -= OnRowChanged;
+            if (SelectedCarrier is null || !Carriers.Contains(SelectedCarrier)) SelectedCarrier = Carriers.FirstOrDefault();
+            SchedulePreview();
+        };
+        PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(RecordMs) or nameof(ClipEnabled) or nameof(ClipPaprDb)
+                or nameof(ShapingEnabled) or nameof(ShapingFloorDbc))
+                SchedulePreview();
+        };
+    }
+
+    private void OnRowChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(CarrierRowViewModel.Index) or nameof(CarrierRowViewModel.IsSelected)) return;
+        SchedulePreview();
+    }
+
+    /// <summary>Quiet time between the last edit and the automatic preview.</summary>
+    public static TimeSpan PreviewDelay { get; set; } = TimeSpan.FromMilliseconds(400);
+    private CancellationTokenSource? _pending;
+    private bool _loading;
+
+    private void SchedulePreview()
+    {
+        if (_loading) return;
+        _pending?.Cancel();
+        var cts = _pending = new CancellationTokenSource();
+        _ = DelayThenPreview(cts.Token);
+    }
+
+    private async Task DelayThenPreview(CancellationToken ct)
+    {
+        try { await Task.Delay(PreviewDelay, ct); }
+        catch (OperationCanceledException) { return; }
+        if (!ct.IsCancellationRequested) await PreviewAsync();
+    }
+
+    // ── load from / write to the component ────────────────────────────────
+
+    public void SetTarget(ViewModels.SchematicViewModel schematicVm, EditableComponent comp, bool preview = true)
+    {
+        _schematicVm = schematicVm;
+        _target = comp;
+        Title = $"Signal Designer — {comp.InstanceName}";
+        _loading = true;
+        Carriers.Clear();
+        var inv = CultureInfo.InvariantCulture;
+        int idx = 1;
+        foreach (var p in comp.Parameters.Where(p => p.Name.StartsWith("Carrier[", StringComparison.OrdinalIgnoreCase))
+                                         .OrderBy(p => ParseIndex(p.Name)))
+        {
+            try { Carriers.Add(CarrierRowViewModel.FromSpec(SignalSpec.ParseCarrier(p.Expression.Trim().Trim('"')), idx++)); }
+            catch (FormatException ex) { Status = $"{p.Name}: {ex.Message}"; }
+        }
+        if (Carriers.Count == 0) Carriers.Add(new CarrierRowViewModel());
+        EditableParameter? Find(string name) => comp.Parameters.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        double Num(string name, double def, double scale = 1)
+        {
+            var p = Find(name);
+            if (p is null || !double.TryParse(p.Expression, NumberStyles.Float, inv, out double v)) return def;
+            return v * UnitScale(p.Unit) / scale;
+        }
+        // A number is shown in the field's own unit; anything else (a variable, an expression) verbatim.
+        string Text(EditableParameter? p, string def, double fieldScale)
+        {
+            if (p is null) return def;
+            if (double.TryParse(p.Expression, NumberStyles.Float, inv, out double v))
+                return (v * UnitScale(p.Unit) / fieldScale).ToString("0.#########", inv);
+            return p.Expression.Trim();
+        }
+        _fcOrig = Find("Fc"); _pavgOrig = Find("Pavg");
+        FcText = _fcLoaded = Text(_fcOrig, "2", 1e9);
+        PavgText = _pavgLoaded = Text(_pavgOrig, "10", 1);
+        RecordMs = Num("Record", 1e-3, 1e-3);
+        var clip = comp.Parameters.FirstOrDefault(x => x.Name.Equals("Clip", StringComparison.OrdinalIgnoreCase));
+        ClipEnabled = clip is not null;
+        if (clip is not null && double.TryParse(clip.Expression, NumberStyles.Float, inv, out double cv)) ClipPaprDb = cv;
+        var sh = comp.Parameters.FirstOrDefault(x => x.Name.Equals("Shaping", StringComparison.OrdinalIgnoreCase));
+        ShapingEnabled = sh is null || !sh.Expression.Trim('"').Equals("off", StringComparison.OrdinalIgnoreCase);
+        if (sh is not null && double.TryParse(sh.Expression, NumberStyles.Float, inv, out double sv)) ShapingFloorDbc = sv;
+        _loading = false;
+        if (preview) _ = PreviewAsync();
+    }
+
+    /// <summary>
+    /// Shows an already generated <paramref name="sig"/> synchronously — plots, numbers and status — for a
+    /// caller that cannot await the dispatcher (the documentation's figure capture runs ON it).
+    /// </summary>
+    public void ShowPreview(ModulatedSignal sig)
+    {
+        double rate = RateFor(sig, SampleRate);
+        var (ds, text, env) = AnalyseWithEnvelope(sig, rate);
+        SampleRateInfo = DescribeRate(sig, rate, SampleRate.Hz <= 0);
+        ShowPlots(ds);
+        _envSig = sig; _envStats = env;
+        ShowEnvelope(EnvelopeChunk(sig, env, EnvelopeWindowUs * 1e-6));
+        _evmSig = sig;
+        ShowEvm(AnalyseEvm(sig));
+        Stats = text;
+        Status = "Ready. Generated in the background and cached — the simulation reuses it.";
+    }
+
+    private static int ParseIndex(string name)
+    {
+        int a = name.IndexOf('['), b = name.IndexOf(']');
+        return a >= 0 && b > a && int.TryParse(name[(a + 1)..b], out int i) ? i : 0;
+    }
+
+    private static double UnitScale(string unit) => unit switch
+    {
+        "GHz" => 1e9, "MHz" => 1e6, "kHz" => 1e3, "ms" => 1e-3, "us" or "µs" => 1e-6, _ => 1,
+    };
+
+    public SignalSpec BuildSpec() => new()
+    {
+        Carriers = Carriers.Select(c => c.ToSpec()).ToList(),
+        RecordSeconds = Math.Max(0.5, RecordMs) * 1e-3,
+        ClipPaprDb = ClipEnabled ? ClipPaprDb : null,
+        ShapingFloorDbc = ShapingEnabled ? ShapingFloorDbc : null,
+    };
+
+    [RelayCommand]
+    private void Apply()
+    {
+        if (_schematicVm is null || _target is null) return;
+        var inv = CultureInfo.InvariantCulture;
+        var keep = _target.Parameters
+            .Where(p => !p.Name.StartsWith("Carrier[", StringComparison.OrdinalIgnoreCase)
+                        && !p.Name.Equals("Record", StringComparison.OrdinalIgnoreCase)
+                        && !p.Name.Equals("Clip", StringComparison.OrdinalIgnoreCase)
+                        && !p.Name.Equals("Shaping", StringComparison.OrdinalIgnoreCase)
+                        && !p.Name.Equals("Fc", StringComparison.OrdinalIgnoreCase)
+                        && !p.Name.Equals("Pavg", StringComparison.OrdinalIgnoreCase))
+            .Select(Clone).ToList();
+        // Unchanged Fc / Pavg go back exactly as they came (expression AND unit); an edited number takes the
+        // field's unit; an edited expression keeps the parameter's own unit, as the inspector would.
+        EditableParameter Field(string name, string text, string loaded, EditableParameter? orig, string unit, UnitDimension dim)
+        {
+            if (orig is not null && text.Trim() == loaded) return Clone(orig);
+            bool numeric = double.TryParse(text, NumberStyles.Float, inv, out _);
+            return new EditableParameter
+            {
+                Name = name, Expression = text.Trim(), Unit = numeric ? unit : orig?.Unit ?? "",
+                ShowOnSchematic = orig?.ShowOnSchematic ?? true, Dimension = dim,
+            };
+        }
+        var updated = new List<EditableParameter>
+        {
+            Field("Fc", FcText, _fcLoaded, _fcOrig, "GHz", UnitDimension.Frequency),
+            Field("Pavg", PavgText, _pavgLoaded, _pavgOrig, "dBm", UnitDimension.Power),
+        };
+        updated.AddRange(keep);
+        for (int i = 0; i < Carriers.Count; i++)
+            updated.Add(new EditableParameter
+            {
+                Name = $"Carrier[{i + 1}]",
+                Expression = "\"" + SignalSpec.FormatCarrier(Carriers[i].ToSpec()) + "\"",
+                ShowOnSchematic = true,
+                Dimension = UnitDimension.None,
+            });
+        updated.Add(new EditableParameter { Name = "Record", Expression = (Math.Max(0.5, RecordMs) * 1e-3).ToString("R", inv), ShowOnSchematic = false, Dimension = UnitDimension.None });
+        if (ClipEnabled)
+            updated.Add(new EditableParameter { Name = "Clip", Expression = ClipPaprDb.ToString("R", inv), ShowOnSchematic = false, Dimension = UnitDimension.None });
+        updated.Add(new EditableParameter
+        {
+            Name = "Shaping", Expression = ShapingEnabled ? ShapingFloorDbc.ToString("R", inv) : "off",
+            ShowOnSchematic = false, Dimension = UnitDimension.None,
+        });
+        _schematicVm.Execute(new SetParametersCommand(_schematicVm.EditModel, _target, updated));
+        Status = "Applied to " + _target.InstanceName + ".";
+    }
+
+    private static EditableParameter Clone(EditableParameter p) => new()
+    {
+        Name = p.Name, Expression = p.Expression, Unit = p.Unit, ShowOnSchematic = p.ShowOnSchematic, Dimension = p.Dimension,
+    };
+
+    // ── carriers and presets ──────────────────────────────────────────────
+
+    [RelayCommand]
+    private void AddCarrier()
+    {
+        var last = Carriers.LastOrDefault();
+        var c = last is null ? new CarrierRowViewModel() : CarrierRowViewModel.FromSpec(last.ToSpec() with { OffsetHz = last.OffsetMHz * 1e6 + last.BandwidthMHz * 1e6, Seed = last.Seed + 1 }, Carriers.Count + 1);
+        Carriers.Add(c);
+        Renumber();
+    }
+
+    [RelayCommand]
+    private void RemoveCarrier(CarrierRowViewModel? row)
+    {
+        if (row is null || Carriers.Count <= 1) return;
+        Carriers.Remove(row);
+        Renumber();
+    }
+
+    private void Renumber()
+    {
+        for (int i = 0; i < Carriers.Count; i++) Carriers[i].Index = i + 1;
+    }
+
+    private void Preset(params CarrierSpec[] cs)
+    {
+        _loading = true;
+        Carriers.Clear();
+        for (int i = 0; i < cs.Length; i++) Carriers.Add(CarrierRowViewModel.FromSpec(cs[i], i + 1));
+        _loading = false;
+        _pending?.Cancel();
+        _ = PreviewAsync();
+    }
+
+    [RelayCommand] private void PresetLte20() => Preset(new CarrierSpec { Standard = CarrierStandard.Lte, BandwidthHz = 20e6, Modulation = QamOrder.Qam64 });
+    [RelayCommand] private void PresetNr20() => Preset(new CarrierSpec { Standard = CarrierStandard.Nr, BandwidthHz = 20e6, ScsHz = 30e3, Modulation = QamOrder.Qam64 });
+    [RelayCommand] private void PresetNr100() => Preset(new CarrierSpec { Standard = CarrierStandard.Nr, BandwidthHz = 100e6, ScsHz = 30e3, Modulation = QamOrder.Qam256 });
+
+    [RelayCommand]
+    private void PresetTwoCarrier()
+    {
+        double half = PresetSpacingMHz * 1e6 / 2;
+        Preset(new CarrierSpec { Standard = CarrierStandard.Nr, BandwidthHz = 20e6, ScsHz = 30e3, OffsetHz = -half, Seed = 1 },
+               new CarrierSpec { Standard = CarrierStandard.Nr, BandwidthHz = 20e6, ScsHz = 30e3, OffsetHz = +half, Seed = 2 });
+    }
+
+    [RelayCommand]
+    private void PresetFourCarrierLte()
+        => Preset(Enumerable.Range(0, 4).Select(i => new CarrierSpec
+        {
+            Standard = CarrierStandard.Lte, BandwidthHz = 20e6, OffsetHz = (i - 1.5) * 20e6, Seed = i + 1,
+        }).ToArray());
+
+    /// <summary>Asks where to save, then writes the signal on the left as a two-column I/Q text file.</summary>
+    [RelayCommand]
+    private async Task ExportSignal()
+    {
+        if (PickExportPathAsync is null) return;
+        string name = (_target?.InstanceName is { Length: > 0 } n ? n : "signal") + "_iq.txt";
+        var path = await PickExportPathAsync(name);
+        if (path is null) return;
+        await ExportSignalAsync(path);
+    }
+
+    /// <summary>
+    /// Writes the signal defined on the left (the composite of every carrier, each at its offset, around Fc) to
+    /// <paramref name="path"/> in the I/Q text format a FILE carrier imports: a header saying what it is, the sample
+    /// rate, then one <c>I Q</c> line per sample over one whole record, unit mean power.
+    /// </summary>
+    public async Task<bool> ExportSignalAsync(string path)
+    {
+        SignalSpec spec;
+        try { spec = BuildSpec(); }
+        catch (Exception ex) { Status = ex.Message; return false; }
+        IsBusy = true; Progress = 0; Status = "Exporting…";
+        var cts = new CancellationTokenSource();
+        try
+        {
+            var sig = await SignalCache.GetAsync(spec, null, cts.Token);
+            var inv = CultureInfo.InvariantCulture;
+            double rate = RateFor(sig, SampleRate);
+            int n = sig.LengthAt(rate);
+            var comments = new List<string>
+            {
+                "circuitRF Signal Designer export: complex baseband I/Q around Fc, one periodic record",
+                string.Format(inv, "SAMPLE RATE {0:0.######} MS/s ({1} Hz), sample period {2:0.######} ns{3}",
+                    rate / 1e6, rate.ToString("R", inv), 1e9 / rate, SampleRate.Hz > 0 ? "" : " (auto, recommended)"),
+                string.Format(inv, "{0} samples = {1:0.######} ms record (periodic: the last sample wraps to the first)",
+                    n, sig.RecordSeconds * 1e3),
+                "Fc = " + FcText + " GHz (the I/Q is relative to it),  Pavg = " + PavgText + " dBm",
+                "scale: unit mean power (|I + jQ|^2 averages 1); set the level with the source's Pavg",
+                string.Format(inv, "PAPR {0:0.00} dB at 0.01 %,  clipping {1},  shaping {2}",
+                    SignalMeasure.PaprDb(sig.CompositeWindow(rate, 0, 0, Math.Min(n, 1 << 22)), 1e-4),
+                    spec.ClipPaprDb is double c ? c.ToString("0.#", inv) + " dB PAPR" : "off",
+                    spec.ShapingFloorDbc is double f ? f.ToString("0", inv) + " dBc" : "off"),
+            };
+            for (int i = 0; i < sig.Carriers.Count; i++)
+                comments.Add(string.Format(inv, "carrier C{0}: {1}   ({2})", i + 1, DescribeEvmSignal(sig, i + 1).Split(":  ", 2)[1],
+                    SignalSpec.FormatCarrier(sig.Carriers[i].Spec)));
+            double bw = sig.Carriers.Count == 1 ? sig.Carriers[0].Spec.BandwidthHz : sig.InstantaneousBandwidthHz;
+            var prog = new Progress<double>(v => Progress = v);
+            await Task.Run(() =>
+            {
+                var x = sig.Composite(rate);
+                IqFile.Write(path, x, rate, bw, comments, prog, cts.Token);
+            }, cts.Token);
+            Status = $"Exported {System.IO.Path.GetFileName(path)} ({sig.LengthAt(rate):N0} samples at {rate / 1e6:0.##} MS/s).";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Status = "Cannot export: " + ex.Message;
+            return false;
+        }
+        finally { IsBusy = false; }
+    }
+
+    [RelayCommand]
+    private async Task BrowseFile(CarrierRowViewModel? row)
+    {
+        if (row is null || PickIqFileAsync is null) return;
+        var path = await PickIqFileAsync();
+        if (path is not null) row.FilePath = path;
+    }
+
+    // ── preview ───────────────────────────────────────────────────────────
+
+    [RelayCommand]
+    private Task Preview() => PreviewAsync();
+
+    public async Task PreviewAsync()
+    {
+        // An explicit run (Calculate, Preview, a preset) supersedes a scheduled one. Without this, an edit's
+        // auto-preview firing 400 ms later cancelled a Calculate still generating a new signal, which then
+        // returned with the OLD signal's EVM and constellation on screen.
+        _pending?.Cancel();
+        _cts?.Cancel();
+        var cts = _cts = new CancellationTokenSource();
+        SignalSpec spec;
+        try { spec = BuildSpec(); }
+        catch (Exception ex) { Status = ex.Message; return; }
+        IsBusy = true; Progress = 0; Status = "Generating…";
+        var sw = Stopwatch.StartNew();
+        // A signal that is not cached yet takes seconds: it reports on a LIVE row of the Messages pane, the
+        // application's one progress surface for background work, as well as in this window's footer.
+        string what = string.Join(" + ", spec.Carriers.Select(c => c.Label));
+        var live = SignalCache.IsCached(spec) ? null : _schematicVm?.MessageSink?.BeginProgress($"Signal Designer — generating {what}");
+        try
+        {
+            var prog = new Progress<double>(v =>
+            {
+                Progress = v;
+                live?.Update($"Signal Designer — generating {what}", $"{v * 100:0} %", v * 100);
+            });
+            var sig = await SignalCache.GetAsync(spec, prog, cts.Token);
+            var choice = SampleRate;
+            double rate = RateFor(sig, choice);
+            var (ds, text, env) = await Task.Run(() => AnalyseWithEnvelope(sig, rate), cts.Token);
+            double window = EnvelopeWindowUs * 1e-6;
+            var chunk = await Task.Run(() => EnvelopeChunk(sig, env, window), cts.Token);
+            var evm = await Task.Run(() => AnalyseEvm(sig), cts.Token);
+            if (cts.IsCancellationRequested) { live?.Finish(Messages.MessageLevel.Info, "cancelled", keepBar: false); return; }
+            SampleRateInfo = DescribeRate(sig, rate, choice.Hz <= 0);
+            ShowPlots(ds);
+            _envSig = sig; _envStats = env;
+            ShowEnvelope(chunk);
+            _evmSig = sig;
+            ShowEvm(evm);
+            Stats = text;
+            Status = $"Ready ({sw.Elapsed.TotalSeconds:0.0} s). Generated in the background and cached — the simulation reuses it.";
+            live?.Finish(Messages.MessageLevel.Success, $"ready in {sw.Elapsed.TotalSeconds:0.0} s", keepBar: false);
+        }
+        catch (OperationCanceledException) { live?.Finish(Messages.MessageLevel.Info, "cancelled", keepBar: false); }
+        catch (Exception ex)
+        {
+            Status = "Cannot generate: " + ex.Message;
+            live?.Finish(Messages.MessageLevel.Error, ex.Message, keepBar: false);
+        }
+        finally { if (ReferenceEquals(_cts, cts)) IsBusy = false; }
+    }
+
+    [RelayCommand]
+    private void Cancel()
+    {
+        _pending?.Cancel();
+        _cts?.Cancel();
+        Status = "Cancelled.";
+    }
+
+    /// <summary>Composite spectrum, CCDF and per-carrier ideal ACLR of a signal (pure computation, any thread).</summary>
+    public static (DataSet ds, string text) Analyse(ModulatedSignal sig)
+    {
+        var (ds, text, _) = AnalyseWithEnvelope(sig);
+        return (ds, text);
+    }
+
+    /// <summary><see cref="Analyse"/>, plus where the record peaks and its mean power for the EVM tab's envelope plot.</summary>
+    public static (DataSet ds, string text, EnvelopeStats env) AnalyseWithEnvelope(ModulatedSignal sig, double rateHz = 0)
+    {
+        double rate = rateHz > 0 ? rateHz : sig.SuggestedCompositeRateHz();
+        int n = sig.LengthAt(rate);
+        // keep the preview fast: at most ~4 M samples of the record
+        int count = Math.Min(n, 1 << 22);
+        var x = sig.CompositeWindow(rate, 0, 0, count);
+        var (f, p) = SignalMeasure.Welch(x, rate, 8192);
+        double pk = p.Max();
+        // PSD against the OFFSET from Fc in MHz (Fc may be an expression — the shape does not depend on it),
+        // cropped to the occupied span plus two and a half channels each side so a 20 MHz carrier fills the
+        // plot instead of being a line on a sample-rate-wide axis; floor at -120 dB re peak.
+        double lo = sig.Carriers.Min(c => c.OffsetHz - 0.5 * c.Spec.BandwidthHz);
+        double hi = sig.Carriers.Max(c => c.OffsetHz + 0.5 * c.Spec.BandwidthHz);
+        double margin = Math.Max(2.5 * sig.Carriers.Max(c => c.Spec.BandwidthHz), 5e6);
+        var keep = Enumerable.Range(0, f.Length).Where(i => f[i] >= lo - margin && f[i] <= hi + margin).ToArray();
+        if (keep.Length < 2) keep = Enumerable.Range(0, f.Length).ToArray();
+        var psd = keep.Select(i => Math.Max(10 * Math.Log10(Math.Max(p[i], 1e-300) / pk), -120)).ToArray();
+        var ds = new DataSet();
+        ds.Add("PSD", new DataCube([new Axis("offset from Fc", keep.Select(i => f[i] / 1e6).ToArray(), "")], psd));
+        var (db, pr) = SignalMeasure.Ccdf(x, 160, 1e-5);
+        // The standard CCDF: probability (%) that the instantaneous power exceeds the average by more than
+        // x dB, on a log probability axis, from 0 dB — plus the Gaussian-noise (Rayleigh envelope) reference.
+        var order = Enumerable.Range(0, db.Length).Where(i => db[i] >= 0 && pr[i] > 0).OrderBy(i => db[i]).ToArray();
+        var dbAx = order.Select(i => db[i]).ToArray();
+        for (int i = 1; i < dbAx.Length; i++) if (dbAx[i] <= dbAx[i - 1]) dbAx[i] = dbAx[i - 1] + 1e-9;
+        var ccdfAxis = new Axis("power above average", dbAx, "dB");
+        ds.Add("CCDF", new DataCube([ccdfAxis], order.Select(i => 100 * pr[i]).ToArray()));
+        ds.Add("Gaussian", new DataCube([ccdfAxis], dbAx.Select(d => Math.Max(100 * Math.Exp(-Math.Pow(10, d / 10)), 1e-6)).ToArray()));
+
+        var inv = CultureInfo.InvariantCulture;
+        var sb = new StringBuilder();
+        sb.AppendLine(string.Format(inv, "{0} carrier(s)   IBW {1:0.##} MHz   record {2:0.###e0} s   rate {3:0.##} MS/s",
+            sig.Carriers.Count, sig.InstantaneousBandwidthHz / 1e6, sig.RecordSeconds, rate / 1e6));
+        sb.AppendLine(string.Format(inv, "PAPR {0:0.00} dB at 0.01 %   peak {1:0.00} dB", SignalMeasure.PaprDb(x, 1e-4), SignalMeasure.PaprDb(x, 0)));
+        foreach (var c in sig.Carriers)
+        {
+            if (c.Spec.Standard is not (CarrierStandard.Lte or CarrierStandard.Nr)) continue;
+            var (mb, sp) = SignalMeasure.AclrBands(c.Spec);
+            var a = SignalMeasure.Aclr(f, p, rate, c.OffsetHz, mb, sp);
+            sb.AppendLine(string.Format(inv, "{0,-24} {1,6:+0.##;-0.##} MHz  ACPR1 {2:0.0}/{3:0.0}  ACPR2 {4:0.0}/{5:0.0} dBc",
+                c.Spec.Label, c.OffsetHz / 1e6, a.Acpr1L, a.Acpr1U, a.Acpr2L, a.Acpr2U));
+        }
+        return (ds, sb.ToString().TrimEnd(), MeasureEnvelope(x, rate));
+    }
+
+    /// <summary>Default length of the EVM tab's envelope-power window; the field beside the plot changes it.</summary>
+    public const double DefaultEnvelopeWindowUs = 2;
+
+    /// <summary>Most points in that window: it is re-interpolated finely for a short window, capped for a long one.</summary>
+    public const int EnvelopeWindowPoints = 20_000;
+
+    /// <summary>Samples per 1 / IBW when the cap allows, so a short window draws as a smooth curve.</summary>
+    public const int SamplesPerCycle = 64;
+
+    /// <summary>Where the analysed stretch peaks (s), its mean power and its highest sample's power.</summary>
+    public readonly record struct EnvelopeStats(double PeakTimeS, double Mean, double PeakSample);
+
+    private static EnvelopeStats MeasureEnvelope(Complex[] x, double rate)
+    {
+        double mean = 0, pk = 0; int ipk = 0;
+        for (int i = 0; i < x.Length; i++)
+        {
+            double v = x[i].Real * x[i].Real + x[i].Imaginary * x[i].Imaginary;
+            mean += v;
+            if (v > pk) { pk = v; ipk = i; }
+        }
+        return new EnvelopeStats(ipk / rate, mean / Math.Max(1, x.Length), pk);
+    }
+
+    /// <summary>
+    /// <paramref name="windowSeconds"/> of instantaneous power centred on the record's peak, in dB re the average,
+    /// with the average (0 dB) and the peak as flat lines: the gap between the two lines IS the peak-to-average
+    /// ratio. Re-interpolated from the carriers' native records (<see cref="SamplesPerCycle"/> points per 1 / IBW, at
+    /// most <see cref="EnvelopeWindowPoints"/>), so the peak line also takes the true peak between samples.
+    /// </summary>
+    public static DataSet EnvelopeChunk(ModulatedSignal sig, EnvelopeStats st, double windowSeconds)
+    {
+        var ds = new DataSet();
+        if (st.Mean <= 0 || !(windowSeconds > 0)) return ds;
+        double ibw = Math.Max(sig.InstantaneousBandwidthHz, 1e6);
+        double fine = Math.Min(SamplesPerCycle * ibw, (EnvelopeWindowPoints - 1) / windowSeconds);
+        int len = (int)Math.Round(windowSeconds * fine) + 1;
+        long start = (long)Math.Round(st.PeakTimeS * fine) - len / 2;
+        var w = sig.CompositeWindow(fine, 0, start, len);
+        double pk = st.PeakSample;
+        bool us = windowSeconds >= 10e-6;
+        var t = new double[len];
+        var p = new double[len];
+        for (int k = 0; k < len; k++)
+        {
+            double v = w[k].Real * w[k].Real + w[k].Imaginary * w[k].Imaginary;
+            pk = Math.Max(pk, v);
+            t[k] = k / fine * (us ? 1e6 : 1e9);
+            p[k] = Math.Max(10 * Math.Log10(Math.Max(v, 1e-300) / st.Mean), -30);
+        }
+        double papr = 10 * Math.Log10(pk / st.Mean);
+        var axis = new Axis("time", t, us ? "us" : "ns");
+        ds.Add("Envelope", new DataCube([axis], p));
+        ds.Add("Average", new DataCube([axis], new double[len]));
+        ds.Add("Peak", new DataCube([axis], Enumerable.Repeat(papr, len).ToArray()));
+        return ds;
+    }
+
+    /// <summary>EVM of every LTE / NR carrier of a signal (pure computation, any thread).</summary>
+    public static List<EvmRow> AnalyseEvm(ModulatedSignal sig)
+    {
+        var rows = new List<EvmRow>();
+        for (int i = 0; i < sig.Carriers.Count; i++)
+        {
+            var c = sig.Carriers[i];
+            if (c.Spec.Standard is not (CarrierStandard.Lte or CarrierStandard.Nr)) continue;
+            rows.Add(new EvmRow(i + 1, $"C{i + 1}  {c.Spec.Label}", SignalEvm.Measure(c.Spec, c.Native, sig.RecordSeconds)));
+        }
+        return rows;
+    }
+
+    private void ShowPlots(DataSet ds)
+    {
+        Fill(PsdPlot, ds, [("PSD", 0)], "Spectrum", "PSD (dB re peak)", "Offset from Fc (MHz)");
+        CcdfPlot.Axes.YScale = AxisScale.Log;
+        Fill(CcdfPlot, ds, [("CCDF", 0), ("Gaussian", 3)], "CCDF", "Probability (%)", "Power above average (dB)");
+        PlotsUpdated?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void ShowEnvelope(DataSet ds)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        string unit = ds.Contains("Envelope") && ds["Envelope"].Axes[0].Unit == "us" ? "µs" : "ns";
+        double papr = ds.Contains("Peak") ? ds["Peak"].RealValues[0] : 0;
+        PaprText = string.Format(inv, "{0:0.00} dB", papr);
+        // Power in blue, the average a solid green line, the peak a dashed red one (the key above the plot).
+        // No title: the peak - average gap is marked IN the plot, by the arrow below and its label (the view).
+        Fill(EnvelopePlot, ds, [("Envelope", 1), ("Average", 3), ("Peak", 0)],
+             "", "Power re average (dB)", $"Time ({unit})");
+        EnvelopePlot.CustomTitleOn = false;
+        foreach (var tr in EnvelopePlot.Traces)
+        {
+            tr.Properties.LineType = tr.CubeName == "Peak" ? LineType.Dashed : LineType.Solid;
+            tr.Properties.LineWidth = tr.CubeName == "Envelope" ? 1.0 : 1.8;
+            tr.QuantityName = tr.CubeName switch
+            {
+                "Average" => "Average (0 dB)",
+                "Peak" => string.Format(inv, "Peak (+{0:0.00} dB)", papr),
+                _ => "Instantaneous power",
+            };
+        }
+        // A clear strip left of the data holds the arrow, so it crosses no trace; room above the peak line and
+        // below the floor, so neither flat line runs along the frame.
+        double t1 = ds.Contains("Envelope") ? ds["Envelope"].Axes[0].Values[^1] : 1;
+        double left = -0.16 * t1;
+        GapArrowX = 0.55 * left;
+        GapDb = papr;
+        AddGapArrow(EnvelopePlot, GapArrowX, papr);
+        EnvelopePlot.Axes.Window = new PlotRect(left, -30, t1 - left + 0.02 * t1, Math.Ceiling((papr + 3) / 5) * 5 + 30);
+        Readable(EnvelopePlot);                         // the arrow traces re-lay the margins out
+        PlotsUpdated?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>A double-headed arrow from the average (0 dB) to the peak line at <paramref name="x"/>.</summary>
+    private static void AddGapArrow(Plot plot, double x, double papr)
+    {
+        if (!(papr > 0)) return;
+        var ds = new DataSet();
+        var two = new Axis("i", [0.0, 1.0], "");
+        ds.Add("GapY", new DataCube([two], [0.0, papr]));
+        ds.Add("GapX", new DataCube([two], [x, x]));
+        var one = new Axis("i", [0.0], "");
+        ds.Add("TopY", new DataCube([one], [papr - 0.55]));
+        ds.Add("TopX", new DataCube([one], [x]));
+        ds.Add("BotY", new DataCube([one], [0.55]));
+        ds.Add("BotX", new DataCube([one], [x]));
+        AddXY(plot, ds, "GapY", "GapX", line: true, MarkerType.Circle, 0);
+        AddXY(plot, ds, "TopY", "TopX", line: false, MarkerType.TriangleUp, 2.6);
+        AddXY(plot, ds, "BotY", "BotX", line: false, MarkerType.TriangleDown, 2.6);
+    }
+
+    // The arrow's colour: solid black (position 9 of the trace colour order), as is the gap label in the view.
+    private const int ArrowColour = 9;
+
+    /// <summary>Tick numbers and axis names read at a glance in these small panels.</summary>
+    public const double AxisFontSize = 9;
+
+    /// <summary>
+    /// Larger axis text than the Data Display's default (6), on margins widened to hold it. The axis names and the
+    /// tick numbers both scale with <see cref="Axes.FontSizeTicks"/>, and the margins are FRACTIONS of the plot, so
+    /// the larger text needs a wider left strip and a deeper bottom one. Re-applied after every autoscale, which
+    /// recomputes the margins for the default font (<c>Plot.SetAxesViewport</c>).
+    /// </summary>
+    private static void Readable(Plot plot)
+    {
+        plot.Axes.FontSizeTicks = AxisFontSize;
+        plot.Axes.Viewport = new PlotRect(0.22, 0.08, 0.74, 0.68);
+    }
+
+    private static void AddXY(Plot plot, DataSet ds, string y, string x, bool line, MarkerType shape, double size)
+    {
+        if (!CubeTraceSpecParser.TryParse(y, ds, out string cube, out var slice, out var transform, out _)) return;
+        int index = TraceProperties.LineColorOrder[ArrowColour];
+        var style = new TraceProperties
+        {
+            LineColorIndex = index, MarkerColorIndex = index, FillColorIndex = index,
+            LineEnabled = line, LineWidth = 1.6, MarkerEnabled = !line, MarkerType = shape, MarkerSize = size,
+        };
+        var t = new CircuitRF.Render.DataDisplay.Trace(new SNP([1e9], 1), MatrixType.S, 0, 0, DependentVarFormat.Real, secondaryAxis: false, style)
+        {
+            CubeName = cube, Slice = slice, Transform = transform, Expression = y, XSpec = x,
+        };
+        t.QuantityName = "peak - average";
+        TraceResolve.SetCubeDataFrom(t, ds, PlotType.Rect, FreqUnit.GHz);
+        if (t.Points.Count > 0) plot.Traces.Add(t);
+    }
+
+    private void ShowEvm(List<EvmRow> rows)
+    {
+        EvmRows.Clear();
+        foreach (var r in rows) EvmRows.Add(r);
+        PickEvm();
+    }
+
+    /// <summary>Shows the calculated EVM of the carrier selected on the left, and says which signal it is.</summary>
+    private void PickEvm()
+    {
+        int index = SelectedCarrier?.Index ?? 1;
+        var pick = EvmRows.FirstOrDefault(r => r.CarrierIndex == index);
+        HasEvm = pick is not null;
+        EvmSignalText = DescribeEvmSignal(_evmSig, index);
+        EvmNote = pick is not null || _evmSig is null ? ""
+            : $"C{index} has no EVM: CW and imported I/Q carriers carry no reference symbols. Select an LTE or NR carrier on the left.";
+        if (ReferenceEquals(pick, SelectedEvm)) ShowConstellation(pick);
+        else SelectedEvm = pick;
+    }
+
+    /// <summary>What the EVM was measured on: carrier, standard, bandwidth, SCS, modulation, offset, record, clipping.</summary>
+    public static string DescribeEvmSignal(ModulatedSignal? sig, int carrierIndex)
+    {
+        if (sig is null || carrierIndex < 1 || carrierIndex > sig.Carriers.Count) return "Not calculated yet.";
+        var inv = CultureInfo.InvariantCulture;
+        var c = sig.Carriers[carrierIndex - 1];
+        var s = c.Spec;
+        string what = s.Standard switch
+        {
+            CarrierStandard.Lte => string.Format(inv, "LTE {0:0.#} MHz, {1}", s.BandwidthHz / 1e6, CarrierSpec.ModName(s.Modulation)),
+            CarrierStandard.Nr => string.Format(inv, "NR {0:0.#} MHz, {1:0} kHz SCS, {2}", s.BandwidthHz / 1e6, s.ScsHz / 1e3, CarrierSpec.ModName(s.Modulation)),
+            CarrierStandard.Cw => "CW",
+            _ => "I/Q file " + System.IO.Path.GetFileName(s.FilePath ?? ""),
+        };
+        string clip = sig.Spec.ClipPaprDb is double t ? string.Format(inv, "clipped to {0:0.#} dB PAPR", t) : "unclipped";
+        // the record in the Spectrum tab's own spelling ("record 1e-3 s")
+        return string.Format(inv, "C{0} of {1}:  {2},  offset {3:+0.###;-0.###;0} MHz,  seed {4},  record {5:0.###e0} s,  {6}",
+            carrierIndex, sig.Carriers.Count, what, c.OffsetHz / 1e6, s.Seed, sig.RecordSeconds, clip);
+    }
+
+    /// <summary>Most received points drawn on the constellation; the EVM itself uses every one.</summary>
+    public const int ConstellationPoints = 6000;
+
+    private void ShowConstellation(EvmRow? row)
+    {
+        var plot = ConstellationPlot;
+        plot.Traces.Clear();
+        plot.CustomTitleOn = true;
+        plot.CustomXLabelOn = true;
+        plot.CustomXLabel = "In-phase (I)";
+        plot.CustomYLabelOn = true;
+        plot.CustomYLabel = "Quadrature (Q)";
+        if (row is null) { plot.CustomTitle = "Constellation"; PlotsUpdated?.Invoke(this, EventArgs.Empty); return; }
+        var r = row.Result;
+        plot.CustomTitle = $"Constellation C{row.CarrierIndex}: EVM {row.RmsText} rms";
+
+        int stride = Math.Max(1, (r.Received.Length + ConstellationPoints - 1) / ConstellationPoints);
+        var rx = Enumerable.Range(0, (r.Received.Length + stride - 1) / stride).Select(k => r.Received[k * stride]).ToArray();
+        var ideal = r.Ideal.Select(z => (Math.Round(z.Real, 9), Math.Round(z.Imaginary, 9))).Distinct()
+                     .Select(z => new Complex(z.Item1, z.Item2)).ToArray();
+        var ds = new DataSet();
+        var ra = new Axis("point", Enumerable.Range(0, rx.Length).Select(i => (double)i).ToArray(), "");
+        var ia = new Axis("point", Enumerable.Range(0, ideal.Length).Select(i => (double)i).ToArray(), "");
+        ds.Add("RxI", new DataCube([ra], rx.Select(z => z.Real).ToArray()));
+        ds.Add("RxQ", new DataCube([ra], rx.Select(z => z.Imaginary).ToArray()));
+        ds.Add("IdealI", new DataCube([ia], ideal.Select(z => z.Real).ToArray()));
+        ds.Add("IdealQ", new DataCube([ia], ideal.Select(z => z.Imaginary).ToArray()));
+        // Received in blue, the ideal points as small red crosses on top: small enough that the cloud
+        // around each one stays visible (the key under the plot).
+        Scatter(plot, ds, "RxQ", "RxI", "Received", 1, MarkerType.Circle, 0.8, 0.5);
+        Scatter(plot, ds, "IdealQ", "IdealI", "Ideal", 0, MarkerType.Cross, 1.6, 1.0);
+
+        // Square and centred: I and Q share one scale, so a circle of error looks like a circle.
+        double lim = Math.Max(ideal.Max(z => Math.Max(Math.Abs(z.Real), Math.Abs(z.Imaginary))),
+                              rx.Max(z => Math.Max(Math.Abs(z.Real), Math.Abs(z.Imaginary))));
+        lim = Math.Ceiling(lim * 1.1 / 0.25) * 0.25;
+        plot.Axes.Window = new PlotRect(-lim, -lim, 2 * lim, 2 * lim);
+        Readable(plot);
+        PlotsUpdated?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static void Scatter(Plot plot, DataSet ds, string y, string x, string name, int colour, MarkerType shape,
+                                double size, double opacity)
+    {
+        if (!CubeTraceSpecParser.TryParse(y, ds, out string cube, out var slice, out var transform, out _)) return;
+        int index = TraceProperties.LineColorOrder[colour % TraceProperties.LineColorOrder.Length];
+        var style = new TraceProperties
+        {
+            LineColorIndex = index, MarkerColorIndex = index, FillColorIndex = index,
+            LineEnabled = false, MarkerEnabled = true, MarkerType = shape, MarkerSize = size, MarkerOpacity = opacity,
+        };
+        var t = new CircuitRF.Render.DataDisplay.Trace(new SNP([1e9], 1), MatrixType.S, 0, 0, DependentVarFormat.Real, secondaryAxis: false, style)
+        {
+            CubeName = cube, Slice = slice, Transform = transform, Expression = y, XSpec = x,
+        };
+        t.QuantityName = name;
+        TraceResolve.SetCubeDataFrom(t, ds, PlotType.Rect, FreqUnit.GHz);
+        if (t.Points.Count > 0) plot.Traces.Add(t);
+    }
+
+    // The two plots keep the Data Display's own text sizes (as the Match Designer's do): a bigger axis
+    // font overran the tick numbers, because the plot's margins are laid out for its own sizes.
+    private static void Fill(Plot plot, DataSet ds, (string cube, int colour)[] cubes, string title, string ylabel, string xlabel)
+    {
+        plot.CustomTitleOn = true;
+        plot.CustomTitle = title;
+        plot.CustomXLabelOn = true;
+        plot.CustomXLabel = xlabel;
+        plot.Traces.Clear();
+        foreach (var (cube, colour) in cubes)
+        {
+            if (!CubeTraceSpecParser.TryParse(cube, ds, out string name, out var slice, out var transform, out _)) continue;
+            int index = TraceProperties.LineColorOrder[colour % TraceProperties.LineColorOrder.Length];
+            var style = new TraceProperties
+            {
+                LineColorIndex = index, MarkerColorIndex = index, FillColorIndex = index,
+                LineEnabled = true, LineType = colour == 3 ? LineType.Dashed : LineType.Solid,
+                LineWidth = colour is 2 or 3 ? 1.2 : 1.6,
+            };
+            var t = new CircuitRF.Render.DataDisplay.Trace(new SNP([1e9], 1), MatrixType.S, 0, 0, DependentVarFormat.Real, secondaryAxis: false, style)
+            {
+                CubeName = name, Slice = slice, Transform = transform, Expression = cube,
+            };
+            t.QuantityName = cube switch { "Gaussian" => "Gaussian noise", "CCDF" => "Signal", _ => cube };
+            TraceResolve.SetCubeDataFrom(t, ds, PlotType.Rect, FreqUnit.GHz);
+            if (t.Points.Count > 0) plot.Traces.Add(t);
+        }
+        plot.CustomYLabelOn = true;
+        plot.CustomYLabel = ylabel;
+        plot.Autoscale(force: true);
+        Readable(plot);                                  // the autoscale re-lays the margins out for the default font
+    }
+
+    public void Dispose()
+    {
+        _pending?.Cancel();
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

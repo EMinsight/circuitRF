@@ -413,6 +413,24 @@ public static class ParametricSweepEngine
 
         switch (inner)
         {
+            case EnvelopeAnalysis env:
+            {
+                // Each point is a whole envelope run (parallel in time inside it); its segments elaborate
+                // their own netlists from this point's testbench state, the first reusing this one.
+                var plan  = Envelope.EnvelopeRunner.Resolve(env, netlist.ResolvedGlobals);
+                bool first = true;
+                object gate = new();
+                ElaboratedNetlist Elab()
+                {
+                    lock (gate)
+                    {
+                        if (first) { first = false; return netlist; }
+                        return new Elaborator(lib).Elaborate(tb);
+                    }
+                }
+                return Envelope.EnvelopeRunner.Run(plan, Elab, settings, control?.Child());
+            }
+
             case HarmonicBalanceAnalysis hba:
             {
                 var p  = HbEngine.Resolve(hba, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);

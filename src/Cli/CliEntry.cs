@@ -184,6 +184,7 @@ return JsonRun.Finish(Dispatch(JsonRun.Verb) is { } run ? run(args[1..]) : Unkno
     "sparam" => RunSparam,
     "dc"     => RunDc,
     "hb"     => RunHb,
+    "env" or "envelope" => EnvelopeVerb.Run,
     "lp"  or "loadpull"         => a => RunLoadpull(a, pursuit: false),
     "lpp" or "loadpull_pursuit" or "pursuit"
                                 => a => RunLoadpull(a, pursuit: true),

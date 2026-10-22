@@ -750,6 +750,25 @@ public static class FigureCatalog
             WindowFrame.Titled("C-V Editor - C1"),
             "The C-V Editor: a measured C(V) table, the fit order, and the polynomial it fits."),
 
+        // ── Signal Designer (MOD_Source) ──────────────────────────────────────────
+
+        new("signal-designer", DocSignalFixtures.DesignerNr20, 1199, 800,
+            WindowFrame.Titled("Signal Designer — SRC1"),
+            "The Signal Designer on a MOD_Source playing one NR 20 MHz carrier: the carrier cards, the "
+          + "presets, and the preview — the spectrum against offset from Fc and the CCDF against the "
+          + "Gaussian-noise reference, with PAPR and the source's own ACLR."),
+
+        new("signal-designer-2c", DocSignalFixtures.DesignerTwoCarrier, 1199, 800,
+            WindowFrame.Titled("Signal Designer — SRC1"),
+            "Two NR 20 MHz carriers 400 MHz apart: the spectrum is framed on both channels, and the "
+          + "simulation gives each its own envelope fundamental."),
+
+        new("signal-designer-evm", DocSignalFixtures.DesignerEvm, 1199, 800,
+            WindowFrame.Titled("Signal Designer — SRC1"),
+            "The EVM tab on an unclipped NR 20 MHz carrier: the clean source's EVM, the constellation "
+          + "over the ideal 64QAM points, and a few envelope swings of power around the peak with the "
+          + "average and peak lines."),
+
         // ── Match ─────────────────────────────────────────────────────────────────
 
         new("match-designer", DocMatchFixtures.Designer, 1280, 860,

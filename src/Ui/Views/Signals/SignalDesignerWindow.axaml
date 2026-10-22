@@ -1,0 +1,363 @@
+<!-- The MOD_Source Signal Designer. Left pane: the carriers (LTE / NR / CW / imported I/Q) as cards, the
+     signal-wide settings and the presets for the common cases (one LTE or NR channel, two carriers at
+     any spacing, four contiguous LTE). Right pane: the composite spectrum and the CCDF — Data Display
+     PlotControls at the golden ratio, exactly as the Match Designer hosts its two — and the numbers a
+     designer reads first (IBW, PAPR, ideal ACLR). A second tab, EVM, shows each LTE / NR carrier's
+     constellation over its ideal points with the EVM, and a few envelope cycles of
+     power around the peak with the average and peak lines. Generation runs in the background through the same
+     cache the simulation reads, and reports in the footer and on a live row of the Messages pane.
+     Styling is the Match Designer's: `pane` / `card` borders on the theme's chrome brushes and the one
+     tile border the application uses, sentence-case headings. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:CircuitRF.Ui.Signals"
+        xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        xmlns:ctl="using:CircuitRF.Ui.Controls"
+        xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
+        x:Class="CircuitRF.Ui.Views.Signals.SignalDesignerWindow"
+        x:DataType="vm:SignalDesignerViewModel"
+        Title="{Binding Title}"
+        Width="1199" Height="800" MinWidth="1000" MinHeight="680"
+        CanResize="True">
+
+    <Window.Styles>
+        <Style Selector="Border.pane">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeMediumLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="10"/>
+            <Setter Property="Margin"          Value="4"/>
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background"      Value="{DynamicResource SystemChromeLowColor}"/>
+            <Setter Property="BorderBrush"     Value="{DynamicResource CrfTileBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius"    Value="6"/>
+            <Setter Property="Padding"         Value="8,6"/>
+            <Setter Property="Margin"          Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.panelhdr">
+            <Setter Property="FontSize"   Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.cardhdr">
+            <Setter Property="FontSize"   Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin"     Value="0,2,0,4"/>
+        </Style>
+        <Style Selector="TextBlock.lbl">
+            <Setter Property="FontSize"          Value="12"/>
+            <Setter Property="Opacity"           Value="0.8"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector=":is(TextBlock).note">
+            <Setter Property="FontSize"     Value="11"/>
+            <Setter Property="Opacity"      Value="0.75"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="Border.card NumericUpDown">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="MinWidth" Value="72"/>
+        </Style>
+        <Style Selector="Border.card ComboBox">
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style Selector="Border.card TextBox">
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style Selector="Border.card CheckBox">
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style Selector="Border.card.selected">
+            <Setter Property="BorderBrush"     Value="{DynamicResource SystemAccentColor}"/>
+            <Setter Property="BorderThickness" Value="2"/>
+        </Style>
+        <Style Selector="TextBlock.bignum">
+            <Setter Property="FontSize"   Value="26"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="TextBlock.caption">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Opacity"  Value="0.75"/>
+        </Style>
+        <Style Selector="StackPanel.key TextBlock">
+            <Setter Property="FontSize"          Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.small">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding"  Value="10,4"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="*,Auto" Margin="4">
+        <Grid ColumnDefinitions="640,*">
+            <!-- ── left: signal definition ─────────────────────────────────────── -->
+            <Border Grid.Column="0" Classes="pane">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="0,0,6,0">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Classes="panelhdr" Text="Signal" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Classes="small" Command="{Binding ExportSignalCommand}"
+                                    ToolTip.Tip="Save the signal as a two-column I Q text file (sample-rate header), the format a FILE carrier imports">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <mi:MaterialIcon Kind="Export" Width="14" Height="14"/>
+                                    <TextBlock Text="Export signal…"/>
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+
+                        <Border Classes="card">
+                            <StackPanel>
+                                <TextBlock Classes="cardhdr" Text="Source"/>
+                                <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto">
+                                    <TextBlock Classes="lbl" Text="Centre Fc (GHz)" Margin="0,0,6,0"/>
+                                    <TextBox Grid.Column="1" Text="{Binding FcText}"
+                                             ToolTip.Tip="A number in GHz, or an expression / variable (e.g. RFfreq) — written back exactly as typed"/>
+                                    <TextBlock Grid.Column="2" Classes="lbl" Text="Pavg (dBm)" Margin="12,0,6,0"/>
+                                    <TextBox Grid.Column="3" Text="{Binding PavgText}"
+                                             ToolTip.Tip="A number in dBm, or an expression / variable (e.g. Pin, so a power sweep still sweeps it)"/>
+                                    <TextBlock Grid.Row="1" Classes="lbl" Text="Record (ms)" Margin="0,6,6,0"/>
+                                    <NumericUpDown Grid.Row="1" Grid.Column="1" Margin="0,6,0,0" Value="{Binding RecordMs}" Increment="0.5" Minimum="0.5" FormatString="0.#"
+                                                   ToolTip.Tip="Periodic record length, whole 0.5 ms slots. ACPR settles within ~0.1 dB from 0.5 ms; longer records tighten the statistics."/>
+                                    <TextBlock Grid.Row="1" Grid.Column="2" Classes="lbl" Text="Sample rate" Margin="12,6,6,0"/>
+                                    <ComboBox Grid.Row="1" Grid.Column="3" Margin="0,6,0,0" HorizontalAlignment="Stretch"
+                                              ItemsSource="{x:Static vm:SignalDesignerViewModel.SampleRateOptions}" SelectedItem="{Binding SampleRate}"
+                                              ToolTip.Tip="Sample rate of the preview and of Export signal. Auto = the recommended rate for these carriers. Not written to the source; the simulation picks its own time step."/>
+                                    <TextBlock Grid.Row="2" Grid.ColumnSpan="4" Classes="note" Margin="0,6,0,0" Text="{Binding SampleRateInfo}"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,2">
+                            <TextBlock Classes="cardhdr" Text="Carriers" VerticalAlignment="Center"/>
+                            <Button Grid.Column="1" Classes="small" Command="{Binding AddCarrierCommand}" ToolTip.Tip="Add a carrier next to the last one">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <mi:MaterialIcon Kind="Plus" Width="14" Height="14"/>
+                                    <TextBlock Text="Add carrier"/>
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Carriers}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:CarrierRowViewModel">
+                                    <Border Classes="card" Classes.selected="{Binding IsSelected}" Tag="carrier-card" Background="Transparent"
+                                            ToolTip.Tip="Click a carrier to show its EVM on the EVM tab">
+                                        <Grid ColumnDefinitions="Auto,90,*,Auto" RowDefinitions="Auto,Auto,Auto">
+                                            <Border Background="{DynamicResource SystemListLowColor}" CornerRadius="3" Padding="5,1" VerticalAlignment="Center" Margin="0,0,6,0">
+                                                <TextBlock FontSize="12" FontWeight="SemiBold" Text="{Binding Index, StringFormat='C{0}'}"/>
+                                            </Border>
+                                            <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:CarrierRowViewModel.Standards}" SelectedItem="{Binding Standard}" HorizontalAlignment="Stretch"/>
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0" IsVisible="{Binding IsOfdm}">
+                                                <TextBlock Classes="lbl" Text="BW (MHz)"/>
+                                                <ComboBox ItemsSource="{Binding BandwidthOptions}" SelectedItem="{Binding BandwidthMHz}" MinWidth="70"/>
+                                                <TextBlock Classes="lbl" Text="SCS (kHz)" IsVisible="{Binding IsNr}"/>
+                                                <ComboBox ItemsSource="{x:Static vm:CarrierRowViewModel.ScsOptions}" SelectedItem="{Binding ScsKHz}" IsVisible="{Binding IsNr}" MinWidth="60"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="3" Classes="small" Padding="4,2"
+                                                    Command="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).RemoveCarrierCommand}"
+                                                    CommandParameter="{Binding}" ToolTip.Tip="Remove this carrier">
+                                                <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+                                            </Button>
+                                            <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+                                                <TextBlock Classes="lbl" Text="Offset (MHz)"/>
+                                                <NumericUpDown Value="{Binding OffsetMHz}" Increment="5" FormatString="0.###" MinWidth="90"
+                                                               ToolTip.Tip="Carrier centre relative to Fc. Carriers more than 3 channel bandwidths apart get their own envelope fundamental in the simulation."/>
+                                                <TextBlock Classes="lbl" Text="Power (dB)"/>
+                                                <NumericUpDown Value="{Binding PowerDb}" Increment="1" FormatString="0.##" MinWidth="70"
+                                                               ToolTip.Tip="Relative to the other carriers; Pavg sets the total"/>
+                                                <TextBlock Classes="lbl" Text="Seed"/>
+                                                <NumericUpDown Value="{Binding Seed}" Increment="1" Minimum="0" FormatString="0" MinWidth="60"/>
+                                                <ComboBox ItemsSource="{x:Static vm:CarrierRowViewModel.Modulations}" SelectedItem="{Binding Modulation}" MinWidth="96"
+                                                          IsVisible="{Binding IsOfdm}" ToolTip.Tip="Subcarrier modulation"/>
+                                            </StackPanel>
+                                            <Grid Grid.Row="2" Grid.ColumnSpan="4" ColumnDefinitions="*,Auto" Margin="0,6,0,0" IsVisible="{Binding IsFile}">
+                                                <TextBox Text="{Binding FilePath}" PlaceholderText="I/Q text file (# sample_rate_hz header, I Q columns)"/>
+                                                <Button Grid.Column="1" Classes="small" Margin="4,0,0,0" Content="Browse…"
+                                                        Command="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).BrowseFileCommand}"
+                                                        CommandParameter="{Binding}"/>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <Border Classes="card" Margin="0,4,0,6">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="cardhdr" Text="Presets"/>
+                                <WrapPanel>
+                                    <Button Classes="small" Margin="0,0,6,4" Content="LTE 20 MHz" Command="{Binding PresetLte20Command}"/>
+                                    <Button Classes="small" Margin="0,0,6,4" Content="NR 20 MHz (30 kHz)" Command="{Binding PresetNr20Command}"/>
+                                    <Button Classes="small" Margin="0,0,6,4" Content="NR 100 MHz (30 kHz)" Command="{Binding PresetNr100Command}"/>
+                                    <Button Classes="small" Margin="0,0,6,4" Content="4 x LTE 20 contiguous" Command="{Binding PresetFourCarrierLteCommand}"/>
+                                </WrapPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <Button Classes="small" Content="2C NR 20 at spacing" Command="{Binding PresetTwoCarrierCommand}"/>
+                                    <NumericUpDown Value="{Binding PresetSpacingMHz}" Increment="20" Minimum="20" FormatString="0.#" MinWidth="90"/>
+                                    <TextBlock Classes="lbl" Text="MHz centre-to-centre"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Classes="card">
+                            <StackPanel>
+                                <TextBlock Classes="cardhdr" Text="Waveform"/>
+                                <Grid ColumnDefinitions="Auto,Auto" RowDefinitions="Auto,Auto">
+                                    <CheckBox Content="Clip to PAPR (dB)" IsChecked="{Binding ClipEnabled}"
+                                              ToolTip.Tip="Off = unclipped (natural OFDM PAPR, ~11-12 dB). On = iterative clip-and-filter to the target."/>
+                                    <NumericUpDown Grid.Column="1" Margin="6,0" Value="{Binding ClipPaprDb}" Increment="0.5" FormatString="0.#" IsEnabled="{Binding ClipEnabled}"/>
+                                    <CheckBox Grid.Row="1" Margin="0,4,0,0" Content="Spectral shaping floor (dBc)" IsChecked="{Binding ShapingEnabled}"
+                                              ToolTip.Tip="A per-bin ceiling outside the occupied band, so the source's own ACLR sits far below the amplifier's"/>
+                                    <NumericUpDown Grid.Row="1" Grid.Column="1" Margin="6,4,6,0" Value="{Binding ShapingFloorDbc}" Increment="5" FormatString="0" IsEnabled="{Binding ShapingEnabled}"/>
+                                </Grid>
+                                <TextBlock Classes="note" Margin="0,6,0,0"
+                                           Text="Every edit previews by itself. The signal is generated in the background and cached; a simulation of this source reuses it."/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <!-- ── right: preview ───────────────────────────────────────────────── -->
+            <Border Grid.Column="1" Classes="pane">
+                <Grid RowDefinitions="Auto,*">
+                    <TextBlock Classes="panelhdr" Text="Preview"/>
+                    <TabControl Grid.Row="1" SelectedIndex="{Binding PreviewTab}" Padding="0,4,0,0">
+                        <TabItem Header="Spectrum and CCDF" FontSize="13">
+                            <Grid RowDefinitions="*,*,Auto">
+                                <!-- Golden ratio, the Match Designer's own layout: the panel LAYS the plot out at
+                                     1.618:1 so the axis text and strokes keep the Data Display's own sizes. -->
+                                <ctl:AspectRatioPanel Grid.Row="0" Margin="0,2">
+                                    <ddc:PlotControl Name="PsdPlotControl" Plot="{Binding PsdPlot}" Library="{Binding PlotHost.Library}"
+                                                     CanDeletePlot="False" CanEditPlotProperties="False"/>
+                                </ctl:AspectRatioPanel>
+                                <ctl:AspectRatioPanel Grid.Row="1" Margin="0,2">
+                                    <ddc:PlotControl Name="CcdfPlotControl" Plot="{Binding CcdfPlot}" Library="{Binding PlotHost.Library}"
+                                                     CanDeletePlot="False" CanEditPlotProperties="False"/>
+                                </ctl:AspectRatioPanel>
+                                <Border Grid.Row="2" Classes="card" Margin="0,4,0,0">
+                                    <SelectableTextBlock Text="{Binding Stats}" FontFamily="Cascadia Mono,Consolas,Menlo,monospace" FontSize="11" TextWrapping="NoWrap"/>
+                                </Border>
+                            </Grid>
+                        </TabItem>
+
+                        <!-- EVM: the numbers first (EVM against its limit, peak-to-average), then the
+                             constellation of the chosen carrier over its ideal points, then a few
+                             envelope cycles of power around the peak with the average and peak lines. -->
+                        <TabItem Header="EVM" FontSize="13">
+                            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
+                                <Grid ColumnDefinitions="*,*">
+                                    <!-- the two headline numbers, laid out alike: caption, number, one detail line -->
+                                    <Border Classes="card" Margin="0,0,6,6">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Classes="caption" Text="EVM (rms)"/>
+                                            <TextBlock Classes="bignum" Text="{Binding SelectedEvm.RmsText, FallbackValue='-'}"/>
+                                            <TextBlock Classes="caption" IsVisible="{Binding HasEvm}">
+                                                <Run Text="{Binding SelectedEvm.DbText, FallbackValue=''}"/>
+                                                <Run Text="   ·   peak"/>
+                                                <Run Text="{Binding SelectedEvm.PeakText, FallbackValue=''}"/>
+                                            </TextBlock>
+                                            <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding EvmNote}" IsVisible="{Binding !HasEvm}"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="1" Classes="card" Margin="0,0,0,6">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Classes="caption" Text="Peak - average"/>
+                                            <TextBlock Classes="bignum" Text="{Binding PaprText}"/>
+                                            <TextBlock Classes="caption" Text="gap between the two lines below"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+
+                                <!-- which signal the EVM was measured on: read-only, it follows the carrier selected
+                                     on the left; Calculate re-generates from the left panel and measures again -->
+                                <Border Grid.Row="1" Classes="card" Margin="0,0,0,6">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Spacing="2" VerticalAlignment="Center">
+                                            <TextBlock Classes="caption" Text="Measured signal (select a carrier on the left)"/>
+                                            <TextBlock FontSize="12" TextWrapping="Wrap" Text="{Binding EvmSignalText}"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Classes="small" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                Command="{Binding CalculateEvmCommand}" ToolTip.Tip="Generate the signal on the left and measure its EVM">
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <mi:MaterialIcon Kind="Calculator" Width="14" Height="14"/>
+                                                <TextBlock Text="Calculate"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+
+                                <!-- the constellation, square and centred, with its key -->
+                                <StackPanel Grid.Row="2" Width="250" HorizontalAlignment="Center" Margin="0,2">
+                                    <ctl:AspectRatioPanel Ratio="1">
+                                        <ddc:PlotControl Name="ConstellationPlotControl" Plot="{Binding ConstellationPlot}" Library="{Binding PlotHost.Library}"
+                                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
+                                    </ctl:AspectRatioPanel>
+                                    <StackPanel Classes="key" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                        <Ellipse Width="7" Height="7" Fill="#0000FF"/>
+                                        <TextBlock Text="received"/>
+                                        <TextBlock Text="×" Foreground="#FF0000" FontWeight="Bold" FontSize="13" Margin="10,0,0,0"/>
+                                        <TextBlock Text="ideal"/>
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="3" Classes="key" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center" Margin="0,8,0,0">
+                                    <Rectangle Width="18" Height="2" Fill="#0000FF"/>
+                                    <TextBlock Text="power"/>
+                                    <Rectangle Width="18" Height="3" Fill="#008000" Margin="10,0,0,0"/>
+                                    <TextBlock Text="average"/>
+                                    <Line StartPoint="0,0" EndPoint="18,0" Stroke="#FF0000" StrokeThickness="2.5" StrokeDashArray="2,1.5" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="peak"/>
+                                    <TextBlock Text="Window (µs)" Margin="16,0,0,0" Opacity="0.8"/>
+                                    <NumericUpDown Value="{Binding EnvelopeWindowUs}" Minimum="0.05" Maximum="500" Increment="0.5"
+                                                   FormatString="0.##" FontSize="11" MinWidth="90" Height="24"
+                                                   ToolTip.Tip="Length of the stretch shown, centred on the record's peak. Changing it only redraws this plot."/>
+                                </StackPanel>
+                                <!-- fills the height that is left, centred, so the time axis is never below the window edge -->
+                                <ctl:AspectRatioPanel Grid.Row="4" Margin="0,2" MinHeight="200">
+                                    <Grid>
+                                        <ddc:PlotControl Name="EnvelopePlotControl" Plot="{Binding EnvelopePlot}" Library="{Binding PlotHost.Library}"
+                                                         CanDeletePlot="False" CanEditPlotProperties="False"/>
+                                        <!-- the peak - average value, beside the black arrow; placed from the plot's own transform -->
+                                        <Canvas IsHitTestVisible="False">
+                                            <Border Name="GapLabel" Background="#D0FFFFFF" CornerRadius="3" Padding="3,0" IsVisible="False">
+                                                <TextBlock Name="GapLabelText" FontSize="12" FontWeight="Bold" Foreground="Black"/>
+                                            </Border>
+                                        </Canvas>
+                                    </Grid>
+                                </ctl:AspectRatioPanel>
+                            </Grid>
+                        </TabItem>
+                    </TabControl>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ── footer: status + the Match Designer's progress row, then the actions ─────────────── -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto,Auto,Auto" Margin="6,2,6,4">
+            <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                <TextBlock FontSize="12" Opacity="0.85" Text="{Binding Status}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                <ProgressBar Width="120" Height="4" Minimum="0" Maximum="1" VerticalAlignment="Center"
+                             Value="{Binding Progress}" IsVisible="{Binding IsBusy}"/>
+                <Button Content="Cancel" FontSize="11" Padding="6,1" Command="{Binding CancelCommand}" IsVisible="{Binding IsBusy}"/>
+            </StackPanel>
+            <Button Grid.Column="1" Classes="small" Margin="6,0,0,0" Command="{Binding PreviewCommand}">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <mi:MaterialIcon Kind="Refresh" Width="14" Height="14"/>
+                    <TextBlock Text="Preview"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="2" Classes="small" Margin="6,0,0,0" Command="{Binding ApplyCommand}" ToolTip.Tip="Write the signal to the MOD_Source (one undo step)">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <mi:MaterialIcon Kind="Check" Width="14" Height="14"/>
+                    <TextBlock Text="Apply"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="3" Classes="small" Margin="6,0,0,0" Content="Apply &amp; Close" Click="OnApplyClose"/>
+            <Button Grid.Column="4" Classes="small" Margin="6,0,0,0" Content="Close" Click="OnClose"/>
+        </Grid>
+    </Grid>
+</Window>

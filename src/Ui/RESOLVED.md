@@ -40284,3 +40284,36 @@ viewport (549 px), so no scroll bar, with ~100 px spare. Deliberately NOT pinned
   placed cell) contributed none of its parts' copper layers. It now walks the placements inside, to the hierarchy's
   depth cap; the resolver hands back a bottom placement's side-swapped view, whose own placements already carry the
   composed side.
+## Signal Designer EVM tab (2026-10-22)
+
+- The envelope window has no single right length: 20 µs of a 20 MHz carrier is a solid band, and 500 ns
+  shows only a few swings. It is a field (2 µs default). Changing it re-cuts the plot from the cached
+  signal and the peak position found at preview time; it never regenerates or re-analyses. The window is
+  re-interpolated from the native records at 64 points per 1 / IBW (capped at 20,000 points), because a
+  short window at the analysis rate is only a handful of samples.
+- A figure-capture check treats any "number µs" in a committed figure as an elapsed-time measurement and
+  refuses the capture. The window length is therefore stated in the docs, not in the plot title or key.
+- The constellation draws at most `ConstellationPoints` received points (the EVM uses all of them). The
+  stride must round UP: integer division let a 17,136-point record through as 8,568 points.
+- The envelope plot fills the height left under the constellation rather than sitting in a golden-ratio
+  panel. At the window's minimum height the panel pushed the time axis below the edge.
+- The envelope plot sits in an `AspectRatioPanel` in the `*` row. The panel centres its child; a bare
+  PlotControl drew right of centre. The earlier overflow came from a ScrollViewer around the tab.
+- The Designer's plots stayed stale after an edit: the plot data changed but nothing repainted.
+  A PlotControl repaints only when its Plot object is REPLACED or the user interacts with it, and the
+  Designer keeps its four Plot objects and changes their traces. The plots appeared to update only
+  after an unrelated click such as Apply. The view model now raises `PlotsUpdated` after every change,
+  and the window invalidates all four.
+- Calculate could return with the OLD signal's EVM. An edit schedules an auto-preview 400 ms later; when
+  Calculate was still generating a new signal (1024QAM takes longer than 400 ms), that auto-preview fired
+  and cancelled it mid-way. An explicit run now cancels the pending auto-preview first. The modulation
+  theory test (QPSK to 1024QAM) failed on exactly this before the fix.
+- The peak-average label is a view overlay placed with `PlotRenderer.BuildTransforms(...).ToCanvas`, so it
+  follows resizes. The arrow itself is plot traces in a clear strip left of the data, where it crosses no
+  trace.
+- Export signal writes the composite over one record at the chosen sample rate (Auto = `SuggestedCompositeRateHz`), through
+  `IqFile.Write`, the reader's own format, so an export imports back as a FILE carrier (the test round-trips
+  the 400 MHz two-carrier case to 1e-7). That case is 983,040 lines (~25 MB) and is written on a worker.
+- Larger axis text on the four Designer plots (`Axes.FontSizeTicks` 9, against the default 6) needs wider margins. The
+  margins (`Axes.Viewport`) are recomputed for the default font by every autoscale and every trace added
+  (`Plot.SetAxesViewport`), so the Designer re-applies its own after each one; set once, they were silently reset.

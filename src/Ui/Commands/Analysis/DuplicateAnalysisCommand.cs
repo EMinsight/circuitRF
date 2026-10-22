@@ -67,6 +67,15 @@ internal sealed class DuplicateAnalysisCommand : IUiCommand
         SParameterAnalysis sp =>
             new SParameterAnalysis(newName, sp.Sweeps) { Enabled = a.Enabled },
 
+        EnvelopeAnalysis env =>
+            new EnvelopeAnalysis(newName)
+            {
+                Enabled = env.Enabled, StopExpr = env.StopExpr, StepExpr = env.StepExpr, Accuracy = env.Accuracy,
+                MaxHarmExpr = env.MaxHarmExpr, MaxMixOrderExpr = env.MaxMixOrderExpr, Probes = env.Probes,
+                ZmeasExpr = env.ZmeasExpr, SegmentsExpr = env.SegmentsExpr, WarmupExpr = env.WarmupExpr,
+                StartExpr = env.StartExpr, TolExpr = env.TolExpr, SaveWaveforms = env.SaveWaveforms, Envelope = env.Envelope,
+            },
+
         HarmonicBalanceAnalysis hb =>
             new HarmonicBalanceAnalysis(newName)
             {

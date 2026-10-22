@@ -75,6 +75,7 @@ public static class SymbolArtworkGenerator
         (SymbolKind.Transformer,     "transformer",       4),
         (SymbolKind.P1Tone,          "p1tone",            2),
         (SymbolKind.PnTone,          "pntone",            2),
+        (SymbolKind.ModSource,       "modsource",         2),
         (SymbolKind.Ground,          "ground",            1),
         (SymbolKind.Term,            "term",              1),
         (SymbolKind.TermG,           "termg",             1),

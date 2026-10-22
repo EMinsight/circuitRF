@@ -187,6 +187,41 @@ public sealed class SParameterAnalysis : Analysis
 ///   Single-tone:  Tone=f0  MaxHarm=K
 ///   Multi-tone:   NumFreqs=N  Tone[1]=f1 … Tone[N]=fN  MaxMixOrder=M  MaxHarm=K
 /// </summary>
+/// <summary>
+/// Circuit-envelope analysis directive (envelope.md). Every field is a raw expression/keyword string
+/// resolved at engine time, like <see cref="HarmonicBalanceAnalysis"/>. The modulated stimulus comes
+/// from the circuit's MOD_Source instances; the fundamental is the first source's centre frequency.
+/// </summary>
+public sealed class EnvelopeAnalysis(string name) : Analysis(name)
+{
+    /// <summary>Simulated time after the start point (s).</summary>
+    public string StopExpr      { get; init; } = "100e-6";
+    /// <summary>Envelope step (s) or <c>auto</c> (signal rate x the accuracy preset's oversampling).</summary>
+    public string StepExpr      { get; init; } = "auto";
+    /// <summary><c>draft</c> (1x), <c>standard</c> (4x, default), <c>fine</c> (8x) — oversampling of the signal rate.</summary>
+    public string Accuracy      { get; init; } = "standard";
+    public string MaxHarmExpr   { get; init; } = "5";
+    /// <summary><c>auto</c> (default): carriers farther apart than 3x their bandwidth each get their own
+    /// fundamental (a two-fundamental lattice); <c>single</c>: ONE envelope around the first source's Fc
+    /// spans every carrier and their IM3 (slower, no lattice); <c>lattice</c>: as auto, stated explicitly.</summary>
+    public string Envelope      { get; init; } = "auto";
+    /// <summary>Mixing order kept when widely spaced carriers get their own fundamentals (|k1|+|k2| &lt;= order).</summary>
+    public string MaxMixOrderExpr { get; init; } = "7";
+    /// <summary>Comma-separated node names whose envelopes are kept and measured. Empty = the MOD_Source nodes.</summary>
+    public string Probes        { get; init; } = "";
+    /// <summary>Reference impedance (ohm) for power at a probe node.</summary>
+    public string ZmeasExpr     { get; init; } = "50";
+    /// <summary>Parallel-in-time segments: <c>auto</c> (one per core), or a count (1 = sequential).</summary>
+    public string SegmentsExpr  { get; init; } = "auto";
+    /// <summary>Warm-up before each segment (s) or <c>auto</c> (from the network's slowest pole, at least 2 us).</summary>
+    public string WarmupExpr    { get; init; } = "auto";
+    /// <summary>Signal-record time of t = 0 (s).</summary>
+    public string StartExpr     { get; init; } = "0";
+    public string TolExpr       { get; init; } = "1e-6";
+    /// <summary>Keep the probe envelopes as a time cube (<c>yes</c>) or measurements only (<c>no</c>).</summary>
+    public string SaveWaveforms { get; init; } = "yes";
+}
+
 public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
 {
     // Raw expression strings from the .cnl directive; resolved at engine time.

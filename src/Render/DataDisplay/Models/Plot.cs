@@ -1150,7 +1150,12 @@ namespace CircuitRF.Render.DataDisplay
                 var box = t.PathBoundingRect();
                 // Bars stand on zero and are a bin wide (brief-yield-8 R-ya8-1), so the frame includes both.
                 if (PlotType == PlotType.Rect && t.DrawsBars) box = t.BarBounds(box, FreqUnits);
-                if (box.Width <= 0 && box.Height <= 0) continue;
+                // A zero-size box is still a real extent when the trace has exactly one point (a
+                // single-carrier ACLR against its one carrier, a one-row sweep): skipping it left
+                // the window on whatever it held before and the point off-screen. EnsureMinExtent
+                // below opens the degenerate extent around it.
+                if (box.Width <= 0 && box.Height <= 0
+                    && !(t.HasFinitePoint() && double.IsFinite(box.X) && double.IsFinite(box.Y))) continue;
                 // A vertical spec line is a limit on the X axis — a histogram's — and a limit framed out of the picture
                 // is a limit nobody sees (brief-yield-16 R-ya16-12). Only an autoscaled axis reaches here; a range the
                 // user fixed stays as set, and the line then marks the edge it lies beyond.
@@ -1225,6 +1230,9 @@ namespace CircuitRF.Render.DataDisplay
                     primary   = new PlotRect(dLo, primary.Y,   dHi - dLo, primary.Height);
                     secondary = new PlotRect(dLo, secondary.Y, dHi - dLo, secondary.Height);
                 }
+                // A log LEFT-Y axis frames the enclosing decades of the left-axis traces' positive Y.
+                if (Axes.YScale == AxisScale.Log && TryEnclosingDecadesY(out double yLo, out double yHi))
+                    primary = new PlotRect(primary.X, yLo, primary.Width, yHi - yLo);
             }
             else
             {
@@ -1304,6 +1312,23 @@ namespace CircuitRF.Render.DataDisplay
         /// trace has a positive X at all, in which case the caller leaves the window alone and
         /// <see cref="Axes.RepairLogWindow"/> is the backstop.
         /// </summary>
+        private bool TryEnclosingDecadesY(out double lo, out double hi)
+        {
+            double l = double.PositiveInfinity, h = double.NegativeInfinity;
+            void Take(double y) { if (y > 0 && double.IsFinite(y)) { if (y < l) l = y; if (y > h) h = y; } }
+            foreach (var t in LeftAxisTraces)
+            {
+                if (t.IsFamily) { foreach (var c in t.FamilyCurves) foreach (var pt in c.Points) Take(pt.Y); }
+                else foreach (var pt in t.Points) Take(pt.Y);
+            }
+            lo = l; hi = h;
+            if (!double.IsFinite(lo) || !double.IsFinite(hi)) return false;
+            lo = Math.Pow(10.0, Math.Floor(Math.Log10(lo)));
+            hi = Math.Pow(10.0, Math.Ceiling(Math.Log10(hi)));
+            if (!(hi > lo)) hi = lo * 10.0;
+            return true;
+        }
+
         private bool TryEnclosingDecades(out double lo, out double hi)
         {
             lo = double.PositiveInfinity; hi = double.NegativeInfinity;

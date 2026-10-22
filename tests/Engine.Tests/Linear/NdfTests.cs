@@ -959,6 +959,7 @@ public sealed class NdfTests(ITestOutputHelper output)
         ["ToneSourceModel"]       = Activity.Passive,
         ["CurrentToneSourceModel"] = Activity.Passive,
         ["PnToneModel"]           = Activity.Passive,
+        ["ModSourceModel"]        = Activity.Passive,
         ["P1ToneModel"]           = Activity.Passive,
         ["TunerModel"]            = Activity.Passive,
 

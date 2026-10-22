@@ -302,7 +302,7 @@ public static class DeviceTypes
         // guessed at by a second list somewhere else.
         SymbolKind.Vdc or SymbolKind.ToneSource or SymbolKind.CurrentToneSource
             or SymbolKind.Term or SymbolKind.TermG or SymbolKind.ZPort
-            or SymbolKind.P1Tone or SymbolKind.PnTone
+            or SymbolKind.P1Tone or SymbolKind.PnTone or SymbolKind.ModSource
             or SymbolKind.Tuner or SymbolKind.SourceTuner or SymbolKind.LoadTuner
             => DeviceKind.Fixture,
 

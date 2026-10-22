@@ -428,6 +428,10 @@ public static class ComponentTypeRegistry
             Category: ComponentCategory.Sources,
             SearchTerms: ["PnTone", "multi-tone", "two-tone", "2-tone", "two tone", "IM3", "intermod", "power", "Pavl", "RF source"],
             IsCommon: true),
+        [SymbolKind.ModSource]     = new("MOD_Source", "S",
+            Category: ComponentCategory.Sources,
+            SearchTerms: ["MOD_Source", "modulated", "LTE", "NR", "5G", "OFDM", "ACPR", "ACLR", "envelope", "two-carrier", "multi-carrier", "IQ", "waveform"],
+            IsCommon: true),
         [SymbolKind.Snp]           = new("SnP",   "S",
             Category: ComponentCategory.DataFiles,
             SearchTerms: ["SnP", "Touchstone", "snp", "s2p", "sparam file", "data file", "network"],
@@ -1040,7 +1044,7 @@ public static class ComponentTypeRegistry
           + "arrow on the + lead points at. Note this is the opposite sense to the VCCS's arrow, "
           + "which is a controlled source and is drawn the way controlled sources are.",
 
-        SymbolKind.P1Tone or SymbolKind.PnTone =>
+        SymbolKind.P1Tone or SymbolKind.PnTone or SymbolKind.ModSource =>
             "+ is the RF output and − the reference, normally ground — Term's own convention, since "
           + "this is a source with Term's internal resistance in front of it. The source's internal "
           + "impedance Z is in series with +.",
@@ -1124,6 +1128,7 @@ public static class ComponentTypeRegistry
         SymbolKind.Meas          => "MEAS",  // sentinel — never emitted as an Instance; rows route to tb.Measurements
         SymbolKind.P1Tone        => "P1Tone",
         SymbolKind.PnTone        => "PnTone",
+        SymbolKind.ModSource     => "MOD_Source",
         SymbolKind.Snp           => "SnP",
         // Sentinel, like Var and Meas: no ComponentModelFactory entry exists and none can. A
         // SpiceModel resolves at EXTRACTION to whatever its file describes — a primitive for a
@@ -2193,6 +2198,15 @@ public static class ComponentTypeRegistry
                 new("Pavl[2]",  "0",    "dBm", true,  UnitDimension.Power),
                 new("Phase[2]", "0",    "deg", false, UnitDimension.Angle),
                 new("Z",       "50",    "Ω",   true,  UnitDimension.Resistance)];
+
+            // MOD_Source: one 20 MHz LTE carrier at 2 GHz, 10 dBm average — a ready modulated source. The Signal
+            // Designer rewrites Carrier[i] / Record / Clip; Carrier strings are descriptions, never expressions.
+            case SymbolKind.ModSource: return [
+                new("Fc",         "2",    "GHz", true,  UnitDimension.Frequency),
+                new("Pavg",       "10",   "dBm", true,  UnitDimension.Power),
+                new("Z",          "50",   "Ω",   true,  UnitDimension.Resistance),
+                new("Carrier[1]", "\"LTE;BW=20e6;Mod=64QAM;Off=0;P=0;Seed=1\"", "", true, UnitDimension.None),
+                new("Record",     "1e-3", "",    false, UnitDimension.None)];
 
             case SymbolKind.ZPort:
             {
@@ -3307,6 +3321,8 @@ public static class ComponentTypeRegistry
             case "MEAS":   kind = SymbolKind.Meas;          return true;
             case "P1TONE": kind = SymbolKind.P1Tone;        return true;
             case "PNTONE": kind = SymbolKind.PnTone;        return true;
+            case "MOD_SOURCE":
+            case "MODSOURCE": kind = SymbolKind.ModSource;  return true;
             case "NONLINEARC":
             case "NLC":    kind = SymbolKind.NonlinearC;  return true;
             case "MUTUAL":

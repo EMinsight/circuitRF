@@ -78,6 +78,11 @@
                                          GroupName="AnalysisType"
                                          FontSize="12"
                                          IsCheckedChanged="OnTypeRadioChanged"/>
+                            <RadioButton x:Name="EnvRadio"
+                                         Content="Envelope (modulated)"
+                                         GroupName="AnalysisType"
+                                         FontSize="12"
+                                         IsCheckedChanged="OnTypeRadioChanged"/>
                         </StackPanel>
                     </Grid>
                 </StackPanel>
@@ -186,6 +191,15 @@
                     <CheckBox  Grid.Row="5" Grid.Column="1" Grid.ColumnSpan="2" FontSize="12" Content="Averaged SAR"
                                IsChecked="{Binding FieldsBody.Average}"/>
                 </Grid>
+            </Border>
+
+            <!-- ── Envelope body ─────────────────────────────────────────────────── -->
+            <Border x:Name="EnvBodyPanel"
+                    Background="{DynamicResource SystemRegionColor}"
+                    CornerRadius="6"
+                    Padding="10,10"
+                    IsVisible="False">
+                <analyses:EnvBodyView x:Name="EnvBodyViewControl"/>
             </Border>
 
             <!-- ── Parametric Sweeps section (DC/SP/HB; hidden for LP/LPP in v1) ─── -->

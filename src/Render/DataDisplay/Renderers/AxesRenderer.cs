@@ -79,7 +79,7 @@ namespace CircuitRF.Render.DataDisplay
                 majorGridPath.MoveTo(top); majorGridPath.LineTo(bot);
 
                 var tickBase = tf.PrimaryToCanvas(tx, axes.Window.Top);
-                var tickTip  = tf.PrimaryToCanvas(tx, axes.Window.Top + axes.TickLengthY);
+                var tickTip  = tf.PrimaryToCanvas(tx, axes.YPlusTickLength(axes.Window.Top, 1.0));
                 majorTickPath.MoveTo(tickBase); majorTickPath.LineTo(tickTip);
 
                 if (labels && xCategories is null)
@@ -132,7 +132,8 @@ namespace CircuitRF.Render.DataDisplay
 
                 if (labels)
                 {
-                    double v     = EngineeringFormat.SnapNearZero(yPrimary, axes.YTick);
+                    double v     = axes.YScale == AxisScale.Log
+                        ? yPrimary : EngineeringFormat.SnapNearZero(yPrimary, axes.YTick);
                     string label = EngineeringFormat.Tick(v, yGroup, axes.NumDigitsLeftY);
                     float  tw    = textFont.MeasureText(label);
                     canvas.DrawText(label,
@@ -217,7 +218,7 @@ namespace CircuitRF.Render.DataDisplay
                 minorGridPath.MoveTo(tf.PrimaryToCanvas(tx, axes.Window.Top));
                 minorGridPath.LineTo(tf.PrimaryToCanvas(tx, axes.Window.Bottom));
                 minorTickPath.MoveTo(tf.PrimaryToCanvas(tx, axes.Window.Top));
-                minorTickPath.LineTo(tf.PrimaryToCanvas(tx, axes.Window.Top + axes.TickLengthY / 2));
+                minorTickPath.LineTo(tf.PrimaryToCanvas(tx, axes.YPlusTickLength(axes.Window.Top, 0.5)));
             }
 
             foreach (var ty in ticks.MinorY)

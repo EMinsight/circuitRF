@@ -44,6 +44,13 @@ public sealed class AnalysisClonePropertyParityTests
             AverageExpr = "no",
         },
 
+        [typeof(EnvelopeAnalysis)] = new EnvelopeAnalysis("ENV1")
+        {
+            Enabled = false, StopExpr = "250e-6", StepExpr = "1e-9", Accuracy = "fine", MaxHarmExpr = "6",
+            MaxMixOrderExpr = "9", Probes = "n_out,n_bias", ZmeasExpr = "25", SegmentsExpr = "3",
+            WarmupExpr = "4e-6", StartExpr = "1e-6", TolExpr = "1e-7", SaveWaveforms = "no", Envelope = "single",
+        },
+
         [typeof(SParameterAnalysis)] = new SParameterAnalysis(
             "SP1", new[] { new FrequencySpec("1", "2", 11, SweepKind.Log, "GHz", "GHz") })
         { Enabled = false },

@@ -148,6 +148,38 @@ namespace CircuitRF.Render.DataDisplay
             }
         }
 
+        // ---- Left-Y axis scale --------------------------------------------
+
+        private AxisScale _yScale = AxisScale.Linear;
+
+        /// <summary>
+        /// Linear (the default) or base-10 Log for the PRIMARY (left) Y axis — a probability that spans
+        /// decades (a CCDF) is unreadable on a linear one. The secondary Y axis stays linear, and a log
+        /// left axis does not drive it through a shared grid. Not persisted: it is set by code that
+        /// builds a plot for one purpose, not yet by the Axes Limits flyout.
+        /// </summary>
+        public AxisScale YScale
+        {
+            get => _yScale;
+            set
+            {
+                if (_yScale == value) return;
+                _yScale = value;
+                Window = _window;                    // re-runs the mode-dependent repair below
+            }
+        }
+
+        /// <summary>The Y analogue of <see cref="RepairLogWindow"/>: a positive bottom edge four decades
+        /// below the top when the window carries none.</summary>
+        internal static PlotRect RepairLogWindowY(PlotRect w)
+        {
+            if (w.Y > 0 && w.Height > 0) return w;
+            double top = w.Y + w.Height;
+            if (!(top > 0) || !double.IsFinite(top)) return new PlotRect(w.X, 1, w.Width, 9);
+            double bottom = top * 1e-4;
+            return new PlotRect(w.X, bottom, w.Width, top - bottom);
+        }
+
         // ---- Primary window (world coordinates) -------------------------
 
         private PlotRect _window = new PlotRect(-50, -50, 150, 150);
@@ -172,6 +204,8 @@ namespace CircuitRF.Render.DataDisplay
                     value = RepairLogWindow(value);
                 else if (value.X == 0)
                     value = new PlotRect(-1e-6, value.Y, value.Width + 1e-6, value.Height);
+                if (_yScale == AxisScale.Log)
+                    value = RepairLogWindowY(value);
                 _window = value;
                 SetTicks();
             }
@@ -236,6 +270,17 @@ namespace CircuitRF.Render.DataDisplay
             return x * Math.Pow(10.0, Ticksize * decades * factor);
         }
 
+        /// <summary>The world Y that sits <paramref name="factor"/> tick-lengths from <paramref name="y"/> —
+        /// <see cref="XPlusTickLength"/>'s twin for the X ticks' nubs. Linear: exactly the old expression.</summary>
+        public double YPlusTickLength(double y, double factor)
+        {
+            if (_yScale != AxisScale.Log) return y + TickLengthY * factor;
+            double top = Window.Bottom;
+            if (!(y > 0) || !(Window.Top > 0) || !(top > Window.Top)) return y;
+            double decades = Math.Log10(top) - Math.Log10(Window.Top);
+            return y * Math.Pow(10.0, Ticksize * decades * factor);
+        }
+
         public bool SecondaryShareGrid { get; set; } = true;
         public bool ShowSecondary      { get; set; } = false;
 
@@ -254,6 +299,7 @@ namespace CircuitRF.Render.DataDisplay
             // so a copy that took the windows before the mode would run a log window through the
             // linear zero-nudge.
             _xScale                = src._xScale;
+            _yScale                = src._yScale;
             Box                    = src.Box;
             FontSizeLabel          = src.FontSizeLabel;
             FontSizeTicks          = src.FontSizeTicks;
@@ -438,7 +484,9 @@ namespace CircuitRF.Render.DataDisplay
             var majorXTicks = _xScale == AxisScale.Log
                 ? LogLattice(Window.Left, Window.Right, major: true)
                 : Lattice(Window.Left, Window.Right,  dmx);
-            var majorYTicks = Lattice(Window.Top,  Window.Bottom, dmy);
+            var majorYTicks = _yScale == AxisScale.Log
+                ? LogLattice(Window.Top, Window.Bottom, major: true)
+                : Lattice(Window.Top,  Window.Bottom, dmy);
 
             // Secondary Y major ticks
             var majorY2Ticks = new List<double>();
@@ -470,7 +518,9 @@ namespace CircuitRF.Render.DataDisplay
                 minorX = _xScale == AxisScale.Log
                     ? LogLattice(Window.Left, Window.Right, major: false)
                     : Lattice(Window.Left, Window.Right,  XTick, skipEvery: majX);
-                minorY = Lattice(Window.Top,  Window.Bottom, YTick, skipEvery: majY);
+                minorY = _yScale == AxisScale.Log
+                    ? LogLattice(Window.Top, Window.Bottom, major: false)
+                    : Lattice(Window.Top,  Window.Bottom, YTick, skipEvery: majY);
 
                 if (ShowSecondary)
                 {

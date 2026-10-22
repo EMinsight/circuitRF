@@ -146,7 +146,10 @@ public static class PlotConfigLoader
         // deliberately accepts.
         SNP? snp = resolvedPath is not null ? sources.NetworkFor(resolvedPath) : null;
 
-        bool isCubeBound    = (traceConfig.CubeName is not null && traceConfig.CubeSlice.Count > 0)
+        // A SCALAR (rank-0) cube has no axes, so its saved slice is empty by construction: requiring
+        // a non-empty slice dropped every Table column of Pout, gain, efficiency … as the display
+        // opened. A network trace saves CubeName as null, so the name alone is the discriminator.
+        bool isCubeBound    = traceConfig.CubeName is not null
                            || traceConfig.Expression is not null;
         bool isContourTrace = traceConfig.ContourTrace is not null;
         bool isSummaryTrace = traceConfig.SummaryColumn is not null;
@@ -262,7 +265,9 @@ public static class PlotConfigLoader
             trace.MirrorPatternAngle = traceConfig.MirrorPatternAngle;
             trace.PatternWholePlane  = traceConfig.PatternWholePlane;
             trace.ReferenceInputPowerDbmOverride = traceConfig.ReferenceInputPowerDbmOverride;
-            trace.Slice      = traceConfig.CubeSlice.Count > 0
+            // A scalar cube's slice is EMPTY, not absent — null reads as "no slice chosen" and
+            // resolves to <invalid>.
+            trace.Slice      = traceConfig.CubeSlice.Count > 0 || traceConfig.CubeName is not null
                 ? traceConfig.CubeSlice.Select(s => s.ToSlice()).ToArray()
                 : null;
             trace.Expression = traceConfig.Expression;

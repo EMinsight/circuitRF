@@ -21,6 +21,7 @@ public partial class AnalysesListView : UserControl
             HarmonicBalanceAnalysis => "harmonic-balance",
             ParametricSweepAnalysis => "parametric-sweep",
             LoadpullPursuitAnalysis => "loadpull-pursuit",
+            EnvelopeAnalysis        => "envelope",
             LoadpullAnalysis        => "loadpull",
             _                       => null,
         };

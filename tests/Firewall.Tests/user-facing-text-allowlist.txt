@@ -1436,3 +1436,44 @@ src/Design/Em3d/Solvers/EMerge/EmergeScriptWriter.Emit.cs|EMerge's input has no 
 src/Design/Em3d/Solvers/EMerge/EmergeScriptWriter.cs|A refused lowering writes nothing.
 src/Design/Em3d/Solvers/EMerge/EmergeScriptWriter.cs|EMerge's driver is missing from this assembly's resources.
 src/Design/Em3d/Solvers/EMerge/EmergeTerminalS.cs|EMerge's {file} is [{string.Join(
+# Circuit-envelope analysis + MOD_Source + modulated-signal library (refusals naming the cause; Diagnostic conversion owed)
+src/Core/Devices/ModSourceModel.cs|MOD_Source '{name}': {kv.Key} must be a quoted carrier description
+src/Core/Devices/ModSourceModel.cs|MOD_Source '{name}': {kv.Key}: {ex.Message}
+src/Engine/Envelope/EnvelopeEngine.cs|Envelope analysis does not support SDD control currents yet ('{ec.InstancePath}').
+src/Engine/Envelope/EnvelopeEngine.cs|Envelope analysis needs at least one MOD_Source (the modulated signal).
+src/Engine/Envelope/EnvelopeEngine.cs|all MOD_Sources in one envelope run must use the same record length
+src/Engine/Envelope/EnvelopeEngine.cs|envelope probe '{nm}' is not a node of the circuit
+src/Engine/Envelope/EnvelopeEngine.cs|envelope step {h:G4} s does not divide the {record * 1e3:0.###} ms signal record; leave Step automatic or pick a divisor
+src/Engine/Envelope/EnvelopeEngine.cs|envelope step {step} (t = {(step - nWarm) * h:G4} s) did not converge
+src/Engine/Envelope/EnvelopeEngine.cs|envelope step {step}: singular Jacobian
+src/Engine/Envelope/EnvelopeEngine.cs|envelope: singular port impedance matrix
+src/Engine/Envelope/EnvelopeEngine.cs|envelope: the harmonic-balance start point did not converge
+src/Engine/Envelope/EnvelopeEngine.cs|envelope: the linear network's size changes with frequency (a model adds unknowns only at some frequencies)
+src/Engine/Envelope/EnvelopeEngineMt.cs|envelope probe '{nm}' is not a node of the circuit
+src/Engine/Envelope/EnvelopeEngineMt.cs|envelope step {step} (t = {(step - nWarm) * h:G4} s) did not converge
+src/Engine/Envelope/EnvelopeEngineMt.cs|envelope step {step}: singular Jacobian
+src/Engine/Envelope/EnvelopeEngineMt.cs|envelope: mixing products {lat.Label(a)} and {lat.Label(b)} fall on the same frequency 
+src/Engine/Envelope/EnvelopeEngineMt.cs|envelope: the multi-tone harmonic-balance start point did not converge
+src/Engine/Envelope/EnvelopeRunner.cs|Envelope analysis needs at least one MOD_Source (the modulated signal).
+src/Engine/Envelope/EnvelopeRunner.cs|envelope '{a.Name}': Accuracy must be draft, standard, fine or an oversampling count
+src/Engine/Envelope/EnvelopeRunner.cs|envelope '{a.Name}': Stop must be positive
+src/Engine/Envelope/EnvelopeRunner.cs|envelope '{a.Name}': cannot evaluate '{expr}': {ex.Message}
+src/Engine/Envelope/EnvelopeRunner.cs|envelope: {fundamentals} widely spaced carrier groups would need {fundamentals} fundamentals; up to 2 are supported
+src/RfCore/Signals/ModulatedSignal.cs|I/Q file not found: {path}
+src/RfCore/Signals/ModulatedSignal.cs|a FILE carrier needs File=<path>
+src/RfCore/Signals/ModulatedSignal.cs|a signal needs at least one carrier
+src/RfCore/Signals/ModulatedSignal.cs|an imported I/Q file mixed with generated carriers must last a whole number of 0.5 ms slots
+src/RfCore/Signals/ModulatedSignal.cs|rate {rateHz / 1e6:0.###} MHz does not give a whole number of samples over the {RecordSeconds * 1e3:0.###} ms record
+src/RfCore/Signals/ModulatedSignal.cs|{Path.GetFileName(path)}: no '# sample_rate_hz' header line
+src/RfCore/Signals/ModulatedSignal.cs|{Path.GetFileName(path)}: no I Q samples
+src/RfCore/Signals/OfdmGenerator.cs|LTE channel bandwidth {c.BandwidthHz / 1e6:0.###} MHz is not one of 1.4, 3, 5, 10, 15, 20 MHz
+src/RfCore/Signals/OfdmGenerator.cs|NR subcarrier spacing {scsK} kHz is not one of 15, 30, 60 kHz
+src/RfCore/Signals/OfdmGenerator.cs|NR {bw} MHz is not defined at {scsK} kHz
+src/RfCore/Signals/OfdmGenerator.cs|numerology is defined only for LTE and NR carriers
+src/RfCore/Signals/SignalCache.cs|carrier count mismatch
+src/RfCore/Signals/SignalSpec.cs|carrier field '{p}' is not key=value
+src/RfCore/Signals/SignalSpec.cs|empty carrier description
+src/RfCore/Signals/SignalSpec.cs|empty signal description
+src/RfCore/Signals/SignalSpec.cs|unknown carrier field '{k}'
+src/RfCore/Signals/SignalSpec.cs|unknown carrier standard '{parts[0]}' (LTE, NR, CW or FILE)
+src/RfCore/Signals/SignalSpec.cs|unknown modulation '{v}' (QPSK, 16QAM, 64QAM, 256QAM, 1024QAM)

@@ -114,6 +114,23 @@ public static partial class AnalysisDirectiveSchema
             new("PassiveParams", Summary: "Instance parameters, spelled <instance>.<parameter>, that the passive assembly re-elaborates at 0 — the only route into a compiled or external model."),
         ], BareWords: ["log"]),
 
+        new("env", ["envelope", "circuit_envelope"],
+        [
+            new("Stop",      Default: "100e-6",  Summary: "Simulated time after the start point (s)."),
+            new("Step",      Default: "auto",    Summary: "Envelope time step (s), or auto: the signal rate times the Accuracy oversampling."),
+            new("Accuracy",  Default: "standard",Summary: "draft (1x the signal rate), standard (4x) or fine (8x). 1x reads ACPR2 ~0.4 dB and bias-node memory poorly; 4x is converged on measured cases."),
+            new("MaxHarm",   Default: "5",       Summary: "Highest harmonic of the fundamental carried by every envelope step."),
+            new("Envelope",  Default: "auto",    Summary: "auto: carriers farther apart than 3x their bandwidth each get their own fundamental (two-fundamental lattice). single: one envelope around Fc spanning every carrier and their IM3 - the step shrinks with the spacing. lattice: as auto."),
+            new("MaxMixOrder", Default: "7",     Summary: "Mixing order kept when widely spaced carriers get their own fundamentals (|k1|+|k2| <= order). 7 converges IM5; at 5, IM5 sits on the truncation edge (measured 0.5-1 dB off)."),
+            new("Probes",    Default: "",        Summary: "Comma-separated nodes whose envelopes are kept and measured. Empty = the MOD_Source nodes."),
+            new("Zmeas",     Default: "50",      Summary: "Reference impedance (ohm) for power measured at a probe node."),
+            new("Segments",  Default: "auto",    Summary: "Parallel-in-time segments: auto (one per core) or a count; 1 runs sequentially."),
+            new("Warmup",    Default: "auto",    Summary: "Warm-up simulated and discarded before each segment (s), or auto (from the network's slowest pole, at least 2 us)."),
+            new("Start",     Default: "0",       Summary: "Signal-record time of t = 0 (s)."),
+            new("Tol",       Default: "1e-6",    Summary: "Newton residual tolerance per envelope step (A)."),
+            new("SaveWaveforms", Default: "yes", Summary: "yes keeps the probe envelopes as a time cube; no keeps the measurements only."),
+        ]),
+
         new("hb", ["harmonic_balance", "harmonicbalance"],
         [
             new("Tone",                       Summary: "Fundamental frequency expression. Single-tone spelling; a multi-tone run writes Tone[1], Tone[2], …"),

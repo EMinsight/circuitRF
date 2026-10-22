@@ -342,6 +342,7 @@ public static class SymbolPortDefs
             case SymbolKind.CurrentToneSource:
             case SymbolKind.P1Tone:
             case SymbolKind.PnTone:
+            case SymbolKind.ModSource:
                 return [("+", 0f, -200f), ("−", 0f, +200f)];
             // The vertical two-terminal fallback. What lands here is every part whose two ends are
             // told apart by NOTHING — R, L, C, SRLC, PRLC, Bead, NonlinearC — plus the file-backed

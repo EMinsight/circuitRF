@@ -64,7 +64,7 @@ public static class ComponentModelFactory
         new(StringComparer.OrdinalIgnoreCase)
         {
             "SnP", "Mutual", "SDD", "Z_Port", "V_1Tone", "V_nTone", "I_1Tone", "I_nTone",
-            "Tuner", "P1Tone", "PnTone",
+            "Tuner", "P1Tone", "PnTone", "MOD_Source",
             "NonlinearC", "Diode", "SemiC", "VerilogA",
             "FET_Curtice", "FET_CurticeCubic", "FET_Statz", "FET_Materka", "FET_Angelov",
             // p-channel exists only for the three laws that mirror unambiguously — see
@@ -172,6 +172,8 @@ public static class ComponentModelFactory
             return CreateP1ToneModel(parameters);
         if (typeName.Equals("PnTone", StringComparison.OrdinalIgnoreCase))
             return CreatePnToneModel(parameters);
+        if (typeName.Equals("MOD_Source", StringComparison.OrdinalIgnoreCase))
+            return ModSourceModel.Create(parameters);
         if (typeName.Equals("NonlinearC", StringComparison.OrdinalIgnoreCase))
             return CreateNonlinearCModel(parameters);
         if (typeName.Equals("Diode", StringComparison.OrdinalIgnoreCase))

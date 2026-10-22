@@ -3173,3 +3173,66 @@ run ended unconverged with the model's sentence nowhere: on a self-heating model
 warning that the refused evaluations had themselves provoked. An empty residual with a refusal on record now reports
 `DC did not converge: a model refused every point it was asked to evaluate. The last refusal: …`, through the same
 deferral the retry already uses. Gate: `VerilogALinearChargeTests.AnUnsetBiasPoint_IsRefusedWithTheSentence`.
+## Envelope chord Newton: a stalled CHORD step is not converged (2026-10-21)
+
+`EnvelopeEngine`/`EnvelopeEngineMt` reuse one dense LU across steps (chord Newton) and rebuild it
+when the residual contracts by less than 4x. The acceptance test also took a step whose residual had
+merely stopped halving while still up to 1000x above `Tol` — and it ran BEFORE the rebuild check, so a
+stale Jacobian's slow contraction was accepted instead of curing it. On a two-fundamental 2C run
+(order 7, native step) that left about a dozen isolated single-sample glitches in 12,000 steps: up to
+21 % of IM3's peak at one step, invisible in every integrated metric (≤ 0.004 dB) and obvious only on
+a zoomed waveform against an independent reference. A stall is now accepted only after an update made
+with a FRESH Jacobian (a genuine round-off floor), at ≤ 100x `Tol`. Tightening `Tol` 100x after the fix
+changes nothing, which is how the remaining sub-percent difference on the weak products was shown not
+to be Newton's.
+
+## Envelope PSD: appending each product's span made a stitched spectrum (2026-10-21)
+
+With two fundamentals, the PSD was each lattice product's envelope spectrum (fk ± fs/2) appended in
+order. Whenever fs exceeds the product spacing, neighbouring spans overlap. At standard accuracy two
+NR20 carriers 400 MHz apart run at fs = 491.52 MHz, so C1's span reaches 2.046 GHz and C2's starts at
+1.954 GHz. The frequency axis therefore ran backwards at every seam: two skirts crossed, plus a closing
+line across the overlap. The 1x validation runs (122.88 MHz spans) never overlapped, which is why it
+went unseen. The spans are now power-summed onto ONE ascending grid over their union
+(`EnvelopeDataSet.CompositeGrid`; the cross-spectrum between products is neglected, which only matters
+in the far skirts). Single-fundamental runs are unchanged: one span, the same bins.
+
+## Envelope spectra: resolution follows the carriers, not the envelope rate (2026-10-21)
+
+The Welch segment was a fixed 8192 bins, so the bin width scaled with the envelope rate. A single
+envelope spanning widely spaced carriers (`Envelope=single`) runs 8-16x faster than a carrier's own
+envelope. Its bins grew to 0.5-2 MHz, and Hann leakage at a 20 MHz channel edge read ACPR1 up to
+7 dB high. A finer step looked WORSE, which is what gave it away. The segment is now 8192 bins at the
+carrier groups' own rate (`EnvelopeEngineMt.Plan` needRate). For one fundamental and for the lattice
+that is the same 8192 as before, so no existing result moves.
+
+## Envelope=single: a product lives in envelope k = a+b, not round(F/f0) (2026-10-21)
+
+A single envelope over two carriers at f0 -/+ s reads each IMD product from a harmonic envelope.
+`round(F/f0)` chose that envelope, but IM5 at f0 -/+ 5s is exactly 0.5 f0 and 1.5 f0 when s = f0/10.
+Banker's rounding then sent IM5L to the baseband envelope and IM5U to the second harmonic's. The
+figures read were wrong, and they moved with the step, which is what exposed them. The fast-time
+transform freezes the envelopes over a carrier period, so a product a f1 + b f2 is generated in envelope
+k = a + b. That is now the rule.
+
+A centre-shift test then separated method from bug. The lattice IMD is identical to 0.01 dB with Fc
+at 2.0 or 1.8 GHz. The single envelope moves 0.3 dB on IM3U and 1-4 dB on IM5 between the two
+centres, and also between fine and 32x oversampling. Far products are not converged in a single
+envelope, so the lattice stays the reference. The same pattern showed in the other simulator's
+composite route.
+
+The lattice PSD previously drew only the six labelled products. It now draws every product with
+|k1+k2| <= 1, so the even-order baseband products (for example (-3,3) at 1.2 GHz) that the run
+simulates are also on the plot.
+
+## Envelope: two crashes found while adding the export test (2026-10-21)
+
+- **Single-carrier runs fell into the two-fundamental branch of `EnvelopeDataSet.Build`.** An `else`
+  attached to the wrong `if` when the single-envelope baseband span was added, so every ordinary
+  one-carrier run (and a sweep of one) dereferenced the absent mixing lattice. The two-carrier runs that
+  change was tested on never took that path, and there was no single-carrier envelope test.
+- **A purely resistive network crashed the tangent check.** With C = 0 the combined matrix carries no
+  `Values` array, and `EnvelopeEngine.RelDiff` iterated it.
+
+Both are now covered by `EnvelopeExportCliTests.ASingleCarrierRun_ExportsTheCliLayout_LikeHb`:
+a CW source into 50 ohm, run as a real CLI process, delivering 0 dBm.

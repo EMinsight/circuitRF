@@ -488,6 +488,14 @@ public static class CircuitEvaluation
                         $"({spa.Sweeps.Count} segment(s))", freqs.Length, true);
             }
 
+            case EnvelopeAnalysis env:
+            {
+                var plan = CircuitRF.Engine.Envelope.EnvelopeRunner.Resolve(env, nl.ResolvedGlobals);
+                string segs = plan.Segments == 0 ? "auto" : plan.Segments.ToString(CultureInfo.InvariantCulture);
+                return ("Envelope '" + env.Name + "': " + (plan.Params.StopS * 1e6).ToString("G4", CultureInfo.InvariantCulture)
+                        + " us, x" + plan.Params.Oversample + " oversampling, segments " + segs, 1, false);
+            }
+
             case HarmonicBalanceAnalysis hba:
             {
                 var p     = HbEngine.Resolve(hba, nl.ResolvedGlobals, nl.GlobalsWithExplicitUnit);
@@ -616,6 +624,25 @@ public static class CircuitEvaluation
                         Analysis.ParseMarginThresholdDb(spa.MarginThresholdExpr)),
                     control,
                     ndf: NdfRequestFor(spa, lib, tb, baseDirectory));
+
+            case EnvelopeAnalysis env:
+            {
+                // Parallel-in-time: every segment runs on its own netlist (device models and sparse solvers carry
+                // per-instance scratch), so the runner is handed an elaborator rather than this netlist.
+                var plan = CircuitRF.Engine.Envelope.EnvelopeRunner.Resolve(env, nl.ResolvedGlobals);
+                bool first = true;
+                object gate = new();
+                ElaboratedNetlist Elab()
+                {
+                    lock (gate)
+                    {
+                        if (first) { first = false; return nl; }
+                        return new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
+                    }
+                }
+                return CircuitRF.Engine.Envelope.EnvelopeRunner.Run(plan, Elab, AnalysisSettings.Default, control,
+                                                                    n => nl.AddWarningOnce("env-note:" + n, n));
+            }
 
             case HarmonicBalanceAnalysis hba:
             {

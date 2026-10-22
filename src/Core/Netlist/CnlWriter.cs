@@ -330,6 +330,10 @@ public static class CnlWriter
     private static string FormatAnalysis(Analysis analysis) => analysis switch
     {
         HarmonicBalanceAnalysis hb    => FormatHbAnalysis(hb),
+        EnvelopeAnalysis env          => $"analysis {env.Name} type=env Stop={env.StopExpr} Step={env.StepExpr} Accuracy={env.Accuracy} " +
+                                         $"MaxHarm={env.MaxHarmExpr} MaxMixOrder={env.MaxMixOrderExpr} Probes=\"{env.Probes}\" Zmeas={env.ZmeasExpr} Segments={env.SegmentsExpr} " +
+                                         $"Warmup={env.WarmupExpr} Start={env.StartExpr} Tol={env.TolExpr} SaveWaveforms={env.SaveWaveforms}" +
+                                         (env.Envelope.Equals("auto", StringComparison.OrdinalIgnoreCase) ? "" : $" Envelope={env.Envelope}"),
         LoadpullAnalysis lp           => FormatLoadpullAnalysis(lp),
         LoadpullPursuitAnalysis lpp   => FormatLoadpullPursuitAnalysis(lpp),
         ParametricSweepAnalysis ps    => FormatParametricSweepAnalysis(ps),

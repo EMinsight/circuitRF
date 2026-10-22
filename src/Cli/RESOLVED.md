@@ -3257,3 +3257,12 @@ ComposedFET names `synthetic-gan/gan_4x125.cmodel` therefore ran only when the v
 and from anywhere else its first sweep point reported the model missing under `GanPowerSweep/schematic/`. Every
 elaborator and every sweep engine of one run now takes `CircuitSource.ReferenceBaseOf(input)`: the workspace root for a
 `.csch` (`SchematicCircuit.ReferenceBaseOf`), the file's own folder for a `.cnl`, as `CnlReader.ReadFile` reads it.
+## `env -o` keeps the CLI export layout of every other run verb (2026-10-21)
+
+A schematic run writes `results/<cell>.npy` with each analysis as a group (`ENV1.PSD`, `HB1.V`). Every
+run verb's `-o` writes the engine's cubes un-grouped (`hb -o`: `V`, `INl`, plus `measurements.*`), and
+`env -o` does the same. A change that grouped `env -o` like the GUI file was reverted the same day: the
+owner decided the envelope follows the established CLI style rather than diverging from `hb`. One
+consequence: a Data Display authored against a GUI result names `ENV1.PSD`, so pointing it at a headless
+export reads `<invalid>`. That is the same as for `hb`, and is not specific to the envelope.
+Gate: `EnvelopeExportCliTests`.

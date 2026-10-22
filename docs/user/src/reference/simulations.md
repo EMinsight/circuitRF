@@ -4,7 +4,7 @@ slug: reference/simulations.html
 doc-kind: Reference Guide
 breadcrumb: Docs > Reference > Simulations
 lede: Every analysis circuitRF runs, what it computes, a short overview of the method, and the full set of settings. Algorithm details are deferred to the design notes / white papers; this chapter is the operational reference.
-keywords: analysis, sweep, DC, S-parameters, harmonic balance, HB, loadpull, load pull, parametric sweep, run, simulate
+keywords: analysis, sweep, DC, S-parameters, harmonic balance, HB, loadpull, load pull, parametric sweep, run, simulate, envelope, modulated, ACLR, ACPR
 ---
 
 <nav class="toc">
@@ -17,6 +17,7 @@ keywords: analysis, sweep, DC, S-parameters, harmonic balance, HB, loadpull, loa
       <li><a href="#loadpull">Loadpull / Sourcepull</a></li>
       <li><a href="#loadpull-pursuit">Loadpull Pursuit</a></li>
       <li><a href="#two-tone">Multi-Tone Harmonic Balance</a></li>
+      <li><a href="#envelope">Circuit Envelope (modulated signals)</a></li>
       <li><a href="#cli">Running an analysis from the command line</a></li>
     </ol>
   </nav>
@@ -120,6 +121,66 @@ compression and IM3, and passive intermodulation on the blocks that carry it. Tw
     </tbody>
     <caption>Multi-tone analysis adds the extra tones and a mixing order (≥ 5 at two tones, to capture close-in IM products; lower it as tones are added).</caption>
   </table>
+
+## Circuit Envelope (modulated signals) {#envelope}
+
+**Computes:** the circuit's response to a **modulated** signal — LTE, NR, several carriers, or an
+imported I/Q waveform from a [MOD_Source](components.html#modsource) — as a time series of
+harmonic-balance spectra, and from it the modulated measurements: **ACLR / ACPR1 / ACPR2** per carrier,
+channel power, **PAPR and CCDF**, **AM-AM and AM-PM** (with the memory spread), gain, error (NMSE)
+against the input, **drain efficiency** from the DC supply currents, and for two widely spaced
+carriers the **IM2 / IM3 / IM5** products.
+
+**Method.** Every envelope time step is one harmonic-balance solve with a time derivative added to
+each charge (Gear-2, backward Euler on the first step). The linear network is factored once per
+harmonic for the whole run, and each step costs one back-substitution per harmonic plus a small
+Newton solve at the nonlinear devices, reusing its factored Jacobian while it keeps converging fast.
+
+Three things make long modulated runs practical:
+
+- **Carriers far apart get their own fundamental.** Two 20 MHz carriers 400 MHz apart are simulated
+  with each carrier's narrow envelope on a two-tone mixing lattice, so the time step follows each
+  carrier's bandwidth, not the 400 MHz spacing. A single envelope around the centre would need a step
+  fine enough for the IM3 products 600 MHz out; measured, that is 64× the native rate to converge.
+  `Envelope = single` runs it that way anyway: the whole multi-carrier signal as one time vector
+  around Fc, with the step chosen so the band holds the carriers and their IM3. Use it as a
+  cross-check. Measured on two NR20 carriers 400 MHz apart, at `fine`, against the lattice:
+  - channel power and ACPR1 agree within 0.1 dB, and ACPR2 within 0.5 dB at a −58 dBc floor;
+  - IM3L, IM2, f1+f2 and the second harmonics agree within 0.2 dB.
+
+  Products far from Fc are not reliable in a single envelope. IM3U moves 0.3 dB and IM5 moves 1–4 dB
+  when only the envelope's centre frequency moves. The lattice result does not move (to 0.01 dB), so
+  the lattice is the reference. Both modes write the same `IMD` cube. The spectrum is one continuous
+  `PSD` either way, and shows every product of the baseband and fundamental zones.
+- **Parallel in time.** The record is split into segments that run on all cores at once. Each segment
+  starts a warm-up early from its own harmonic-balance point, so the stitched result is identical to
+  one sequential run (measured to round-off), and the overlap disagreement is reported as the seam
+  error.
+- **The step follows an accuracy preset.** *standard* (default) steps at 4× the signal's sample rate,
+  where ACPR2 and the bias-node memory are converged on every measured case. *draft* (1×) is about
+  0.4 dB pessimistic on ACPR2 and badly off on bias-network ringing. *fine* (8×) is for reference runs.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| Stop | 100e-6 s | Signal time simulated. ACPR settles within ~0.1 dB from 0.5 ms of LTE/NR. |
+| Accuracy | standard | draft / standard / fine = 1× / 4× / 8× the signal rate. |
+| MaxHarm | 5 | Harmonics of the fundamental at every step. |
+| Envelope | auto | *auto* / *lattice*: carriers more than 3× their bandwidth apart get their own fundamentals. *single*: one envelope around Fc spans every carrier and their IM3 (smaller step, slower). |
+| MaxMixOrder | 7 | Lattice order when carriers get their own fundamentals; 7 converges IM5. |
+| Probes | MOD_Source node | Nodes kept and measured; the **last** probe is the output for gain, AM-AM/PM and DE. |
+| Segments | auto | Parallel-in-time segments; 1 runs sequentially. |
+| Warmup | auto (5 µs) | Simulated before each segment and discarded; raise it for bias networks with longer memory. |
+| Zmeas | 50 Ω | Reference impedance for power at a probe node. |
+| SaveWaveforms | yes | Keep the probe envelopes (`V[time, node, harmonic]`); `no` keeps the measurements only. |
+
+**Results.** `PSD[node, freq]` (dBm/Hz), `ACLR[node, carrier, metric]`, `Pavg_dBm`, `PAPR_dB`,
+`CCDF[node, prob]`, `AMAM` / `AMAM_min` / `AMAM_max` / `AMPM` against instantaneous input power (axis `Pin_inst`, dBm),
+`IMD[node, product]` for two widely spaced carriers (either mode), the scalars `Pin_avg_dBm`, `Pout_avg_dBm`, `Gt_dB`,
+`NMSE_dB`, `Pdc_W`, `DE_pct`, and the probe envelopes `V[time, node, harmonic]` (or `mixIndex` with two
+fundamentals). A [Parametric Sweep](#parametric-sweep) around an envelope analysis (sweeping the
+source's `Pavg`, say) gives ACPR against output power in one run.
+
+From the command line: `circuitrf env design.cnl [--stop 0.5e-3] [--accuracy standard] [-o out.npy]`.
 
 ## Parametric Sweep {#parametric-sweep}
 
