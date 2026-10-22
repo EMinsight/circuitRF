@@ -142,7 +142,8 @@ public static partial class Em3dRunService
         }
 
         public override Leg Execute(Em3dProblem problem, string snpBase, RunContext run)
-            => ExecutePalace(_plan!, problem, run.Setup, run.ResultsRoot, snpBase, run.Ct, run.Control, run.MaxCores, run.Log, run.Memory);
+            => ExecutePalace(_plan!, problem, run.Setup, run.ResultsRoot, snpBase, run.Ct, run.Control, run.MaxCores, run.Log, run.Memory,
+                             run.Limits(_memory?.Bytes ?? MachineMemory.PhysicalBytes));
     }
 
     // ── Palace (brief-em3d-7) ─────────────────────────────────────────────────────────────────
@@ -189,7 +190,8 @@ public static partial class Em3dRunService
     }
 
     private static Leg ExecutePalace(PalacePlan plan, Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase,
-                                     CancellationToken ct, RunControl? control, int? maxCores, RunLog log, MemoryGate memory)
+                                     CancellationToken ct, RunControl? control, int? maxCores, RunLog log, MemoryGate memory,
+                                     ProcessLimits limits)
     {
         const Em3dSolverId Me = PalaceSolver.Id;
         Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
@@ -208,12 +210,15 @@ public static partial class Em3dRunService
 
         // ── Gmsh, then the entity check ───────────────────────────────────────────────────────
         PalaceStep meshed;
-        try { meshed = PalaceRun.Mesh(runDir, lowering, plan.Gmsh.Path, control, ct, physical); }
+        try { meshed = PalaceRun.Mesh(runDir, lowering, plan.Gmsh.Path, control, ct, limits, physical); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return Failed($"the mesh could not be staged in '{runDir}' ({e.Message}).");
         }
         if (meshed.Cancelled) return Cancelled();
+        // brief-emi-10 — Gmsh at the memory ceiling or the disk floor: a runaway, most likely, and the run's refusal.
+        if (meshed.Stopped is { } meshStop)
+            return StoppedLeg(Me, "Gmsh", meshStop, limits, [], Path.Combine(runDir, PalaceRun.GmshLogFile));
         if (meshed.Refused) return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded("palace-mesh", meshed.Message));
         if (!meshed.Ok) return Failed(meshed.Message!);
         log.Notes.Add(meshed.Reused
@@ -257,7 +262,7 @@ public static partial class Em3dRunService
                         PalaceTerminalS.DegenerateRefusal(ordered[face[0]].FaceGroupLabel ?? ordered[face[0]].Name, kn, centre)));
             }
         }
-        try { solved = runner.Solve(runDir, plan.ConfigJson, palace.Path, processes, control, ct, out mpiNote, tracker, physical); }
+        try { solved = runner.Solve(runDir, plan.ConfigJson, palace.Path, processes, control, ct, out mpiNote, tracker, physical, limits); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return Failed($"Palace could not be staged in '{runDir}' ({e.Message}).");
@@ -265,8 +270,10 @@ public static partial class Em3dRunService
         if (mpiNote is not null) log.Notes.Add(mpiNote);
         log.Notes.AddRange(tracker.Notes);
         log.Warnings.AddRange(tracker.Warnings);
-        if (solved.MemoryNote is not null) log.Notes.Add(solved.MemoryNote);
+        if (solved.MemoryNote is not null) log.Warnings.Add(solved.MemoryNote);
         if (solved.Cancelled) return Cancelled();
+        if (solved.Stopped is { } solveStop)
+            return StoppedLeg(Me, "Palace", solveStop, limits, memory.Last?.Remedies ?? [], Path.Combine(runDir, PalaceRun.PalaceLogFile));
         if (!solved.Ok) return Failed(solved.Message!);
         // brief-em3d-136 R-em3d136-5a — what Palace actually ran on. The probe should have refused a build that would revert
         // to the CPU; this catches a binary changed since the probe, or an environment that differs between the two.

@@ -298,6 +298,14 @@ internal static class CliDiagnostics
         "em: --device takes cpu or gpu, not '{value}'.",
         ("value", value));
 
+    /// <summary>brief-emi-10 R-emi10-4 — <c>em --memory-limit</c>: not a number, not positive, or not below this machine's
+    /// memory (the panel refuses it with the same sentence).</summary>
+    public static Diagnostic EmMemoryLimit(string why) => Diagnostic.Create(
+        "cli.em.memory-limit",
+        DiagnosticSeverity.Error,
+        "em: {why}",
+        ("why", why));
+
     /// <summary>brief-em3d-136 — <c>em --device gpu</c> on a run that starts no Palace: refused, never ignored.</summary>
     public static Diagnostic EmDeviceWithoutPalace(string what) => Diagnostic.Create(
         "cli.em.device-without-palace",
@@ -1582,6 +1590,10 @@ internal static class CliDiagnostics
     public static Diagnostic ExplainUnknownOption(string option) => Diagnostic.Create(
         "explain.args.unknown-option", DiagnosticSeverity.Error,
         "explain: unknown option '{option}'.", ("option", option));
+
+    /// <summary>brief-emi-10 — <c>explain --memory-limit</c>, refused as <c>em --memory-limit</c> is.</summary>
+    public static Diagnostic ExplainMemoryLimit(string why) => Diagnostic.Create(
+        "cli.explain.memory-limit", DiagnosticSeverity.Error, "explain: {why}", ("why", why));
 
     /// <summary>brief-em3d-136 — <c>explain --device</c> takes cpu or gpu, as <c>em --device</c> does.</summary>
     public static Diagnostic ExplainUnknownDevice(string value) => Diagnostic.Create(

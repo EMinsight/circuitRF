@@ -1389,6 +1389,9 @@ static int RunEm(string[] args)
     // brief-em3d-136 R-em3d136-4c — where Palace solves. Headless there is no preference to read, so a build machine
     // says what it means; the default is the CPU.
     var device = CircuitRF.Design.Em3d.PalaceDevice.Cpu;
+    // brief-emi-10 R-emi10-4 — a lower memory ceiling for this run's solver processes than this machine's memory; no flag is
+    // the machine's.
+    long? memoryLimit = null;
     var emSets = new List<(string Name, string Expr)>();
     // AA-1 — `em --component "SPIRAL N=3 W=10 um"`: one built-in component's drawn part, extracted.
     string? component = null, componentFreq = null;
@@ -1428,8 +1431,19 @@ static int RunEm(string[] args)
                 device = parsed;
                 break;
             }
+            case "--memory-limit" when i + 1 < args.Length:
+            {
+                string text = args[++i];
+                if (!double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double gb))
+                    return JsonRun.Fail(CliDiagnostics.EmMemoryLimit($"--memory-limit takes a number of GB, not '{text}'."));
+                if (CircuitRF.Design.Em3d.Em3dMemoryLimit.Refusal(gb, CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes) is { } badLimit)
+                    return JsonRun.Fail(CliDiagnostics.EmMemoryLimit(badLimit));
+                memoryLimit = CircuitRF.Design.Em3d.Em3dMemoryLimit.Bytes(gb);
+                break;
+            }
             // brief-em3d-21 R-em3d21-2b — start a Palace run whose memory estimate is past 150 % of this
             // machine's. The panel asks instead; headless there is nobody to ask.
+            // brief-emi-10 — and a run started this way keeps no memory ceiling; the disk floor still holds.
             case "--force":
                 force = true;
                 break;
@@ -1472,7 +1486,7 @@ static int RunEm(string[] args)
     if (input is null)
     {
         int code = JsonRun.Fail(CliDiagnostics.InputRequired("em", ".cem"));
-        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device cpu|gpu] [--force] [--set var=expr]");
+        Console.Error.WriteLine("Usage: circuitrf em <setup.cem | view.c3d> [--setup <name> | --bands <sweep>] [-o out.sNp] [--workspace <file.cws>] [--solver " + string.Join("|", CircuitRF.Design.Em3d.Em3dSolvers.CliWords) + "|<solver,solver,...>] [--reference <solver>] [--device cpu|gpu] [--memory-limit <GB>] [--force] [--set var=expr]");
         Console.Error.WriteLine("       circuitrf em [<workspace dir | .cws | .ctech>] --component \"SPIRAL N=3 W=10 um ...\" -o out.sNp [--freq start:stop:step]");
         return code;
     }
@@ -1647,7 +1661,7 @@ static int RunEm(string[] args)
             {
                 bandResult = EmRunService.RunThreeDView(bandRun, threeD!, threeDPath!, DocumentKinds.AncestorCws(threeDPath!), resultsRoot,
                                                         RunHost.Cancellation, EmProgressToStderr(), confirmMemory: force ? _ => true : null,
-                                                        device: device);
+                                                        device: device, memoryCeilingBytes: memoryLimit);
             }
             catch (Exception ex) { return JsonRun.Fail(CliDiagnostics.RunFailed(ex.Message)); }
             if (ReportEmRun(bandResult, bandRun, cemPath) is var code and not 0) return code;
@@ -1664,9 +1678,9 @@ static int RunEm(string[] args)
         result = threeD is not null
             ? EmRunService.RunThreeDView(setup, threeD, threeDPath!, DocumentKinds.AncestorCws(threeDPath!), resultsRoot,
                                          RunHost.Cancellation, EmProgressToStderr(), confirmMemory: force ? _ => true : null,
-                                         fromCem: !isC3d, circuitSets: emSets, device: device)
+                                         fromCem: !isC3d, circuitSets: emSets, device: device, memoryCeilingBytes: memoryLimit)
             : EmRunService.Run(setup, resolution.Source, resultsRoot, RunHost.Cancellation, EmProgressToStderr(),
-                               confirmMemory: force ? _ => true : null, device: device);
+                               confirmMemory: force ? _ => true : null, device: device, memoryCeilingBytes: memoryLimit);
     }
     catch (Exception ex)
     {

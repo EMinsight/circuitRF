@@ -65,27 +65,13 @@ public static class OpenEmsSarCalc
         };
         foreach (string a in Arguments(rawDump, output, massGrams, method)) info.ArgumentList.Add(a);
 
-        string text;
-        try
-        {
-            using var p = Em3dProcessLauncher.Start(info, Em3dProcessKind.Solver)
-                          ?? throw new InvalidOperationException("the operating system started nothing");
-            Interlocked.Increment(ref _runs);
-            var stdout = p.StandardOutput.ReadToEndAsync(cancel);
-            var stderr = p.StandardError.ReadToEndAsync(cancel);
-            try { p.WaitForExitAsync(cancel).GetAwaiter().GetResult(); }
-            catch (OperationCanceledException)
-            {
-                try { p.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
-                throw;
-            }
-            text = stdout.GetAwaiter().GetResult() + stderr.GetAwaiter().GetResult();
-        }
-        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            return new SarCalcRun(false, output, log, $"sar_calc could not be started: {e.Message}", null);
-        }
-        File.WriteAllText(log, text);
+        // brief-emi-10 — through the one process loop, so it is held to the memory ceiling and the disk floor as openEMS is.
+        var watch = PalaceRun.Watch(null, null, 0, info.WorkingDirectory) with { OnStarted = _ => Interlocked.Increment(ref _runs) };
+        var run = PalaceRun.RunProcess(info, log, Em3dProcessKind.Solver, null, cancel, watch);
+        if (run.Cancelled) throw new OperationCanceledException(cancel);
+        if (run.StartFailure is { } why) return new SarCalcRun(false, output, log, $"sar_calc could not be started: {why}", null);
+        if (run.Stopped is { } stopped)
+            return new SarCalcRun(false, output, log, stopped.Sentence("sar_calc", ProcessLimits.MachineOwner, [], log), null);
 
         // Judged by its output, never its exit status (see the file header).
         if (!File.Exists(output))

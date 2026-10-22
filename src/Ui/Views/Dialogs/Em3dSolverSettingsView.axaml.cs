@@ -101,6 +101,9 @@ public partial class Em3dSolverSettingsView : UserControl
             OpenEmsBox.Text = p.Em3dOpenEmsPath ?? "";
             EmergeBox.Text  = p.Em3dEmergePath  ?? "";
             MpiBox.Text     = p.Em3dMpiLauncherPath ?? "";
+            MemoryLimitBox.PlaceholderText = CircuitRF.Ui.Layout.Em.EmMemoryLimitPreference.AutomaticText;
+            MemoryLimitBox.Text = CircuitRF.Ui.Layout.Em.EmMemoryLimitPreference.Preferred is { } gb
+                ? gb.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "";
         }
         finally { _loading = false; }
     }
@@ -497,6 +500,19 @@ public partial class Em3dSolverSettingsView : UserControl
         else if (box == GmshBox)    { AppPreferencesIo.Update(p => p.Em3dGmshPath    = typed); Refresh(SolverDiscovery.Gmsh,    GmshStatus,    GmshInstall); }
         else if (box == OpenEmsBox) { AppPreferencesIo.Update(p => p.Em3dOpenEmsPath = typed); Refresh(SolverDiscovery.OpenEms, OpenEmsStatus, OpenEmsInstall); }
         else if (box == EmergeBox)  { AppPreferencesIo.Update(p => p.Em3dEmergePath  = typed); Refresh(SolverDiscovery.Emerge,  EmergeStatus,  EmergeInstall); }
+    }
+
+    /// <summary>brief-emi-10 R-emi10-4 — stores the memory limit, blank as Automatic; a refused value is said and not stored.</summary>
+    private void OnMemoryLimitCommitted(object? sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        string text = MemoryLimitBox.Text?.Trim() ?? "";
+        string? refused = text.Length == 0 ? CircuitRF.Ui.Layout.Em.EmMemoryLimitPreference.TrySet(null)
+            : double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double gb)
+                ? CircuitRF.Ui.Layout.Em.EmMemoryLimitPreference.TrySet(gb)
+                : $"A memory limit for a solver is a number of GB, not '{text}'.";
+        MemoryLimitStatus.Text = refused ?? "";
+        MemoryLimitStatus.IsVisible = refused is not null;
     }
 
     private async void OnBrowse(object? sender, RoutedEventArgs e)

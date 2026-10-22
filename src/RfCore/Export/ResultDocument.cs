@@ -2573,6 +2573,11 @@ namespace RfCore.Export
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public Em3dDeviceJson? Device { get; init; }
 
+        /// <summary>brief-emi-10 R-emi10-4 — the memory ceiling and the free-disk floor a run's solver processes would be held
+        /// to, each with where it came from; null when no 3D solver runs.</summary>
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public IReadOnlyList<string>? Limits { get; init; }
+
         /// <summary>brief-emi-6 R-emi6-5 — a comparison's reference and each solver's runnable or refused state; null when the
         /// setup runs one solver, so every earlier report is unchanged.</summary>
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

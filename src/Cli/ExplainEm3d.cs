@@ -27,10 +27,15 @@ internal static class ExplainEm3d
 {
     /// <summary>The report's rows for <paramref name="src"/>, which must be a 3D setup.</summary>
     /// <param name="device">brief-em3d-136 — the device a run would use (<c>explain --device</c>, as <c>em --device</c>).</param>
-    public static ExplainEm3dJson Build(Em3dSetupSource src, PalaceDevice device = PalaceDevice.Cpu)
+    /// <param name="memoryLimitBytes">brief-emi-10 — the limit a run would be given (<c>explain --memory-limit</c>, as
+    /// <c>em --memory-limit</c>); null for this machine's memory.</param>
+    public static ExplainEm3dJson Build(Em3dSetupSource src, PalaceDevice device = PalaceDevice.Cpu, long? memoryLimitBytes = null)
     {
         var r = BuildCore(src, device);
         if (Device(src.Setup, device, r.Solvers) is { } d) r = r with { Device = d };
+        if (!src.Setup.Solver3D.IsNone && !src.Setup.IsThermal)
+            r = r with { Limits = Em3dMemoryLimit.Describe(MachineMemory.PhysicalBytes, memoryLimitBytes,
+                                                           System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(src.Path)) ?? ".") };
         return Compare(src.Setup, r.Solvers) is { } c ? r with { Compare = c } : r;
     }
 
@@ -607,6 +612,7 @@ internal static class ExplainEm3d
         {
             Console.WriteLine($"  {"",-12} the 3D problem could not be built: {refusal}");
             PrintDevice(r.Device);
+            PrintLimits(r.Limits);
             PrintSolvers(r.Solvers);
             return;
         }
@@ -705,6 +711,7 @@ internal static class ExplainEm3d
         }
 
         PrintDevice(r.Device);
+        PrintLimits(r.Limits);
         PrintSolvers(r.Solvers);
 
         foreach (var w in r.Warnings) Console.WriteLine($"  warning: {w}");
@@ -714,6 +721,11 @@ internal static class ExplainEm3d
     private static void PrintDevice(Em3dDeviceJson? device)
     {
         if (device is not null) Console.WriteLine($"  device: {device.Device} — {device.Why}");
+    }
+
+    private static void PrintLimits(IReadOnlyList<string>? limits)
+    {
+        foreach (string line in limits ?? []) Console.WriteLine($"  {line}");
     }
 
     private static void PrintSolvers(IReadOnlyList<Em3dSolverJson> solvers)

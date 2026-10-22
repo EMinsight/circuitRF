@@ -457,6 +457,11 @@ names, resolves the stackup, meshes, solves the frequency plan, de-embeds, and w
 A 3D setup's Palace solves on the CPU unless `--device gpu` says otherwise; that needs a GPU build of Palace, and
 [Palace on a GPU](em-setup.html#palace-gpu) has the details. `--device` is refused on a run that uses no Palace.
 
+A 3D run's solver is stopped if its memory reaches this computer's (`--memory-limit <GB>` sets a lower limit), or if
+the startup volume or the results' volume falls below 10 GB free; either way the run writes nothing and exits **1**.
+`--force` lifts the memory limit, never the disk floor. `explain` on a 3D setup reports both, and takes
+`--memory-limit` too.
+
 A `.c3d` runs too — `circuitrf em <view.c3d> --setup <name>` — and a **thermal** setup embedded in it runs through the
 same verb with circuitRF's own thermal solver (Gmsh meshes it). It writes `<cell> <setup>.thermal.npy` and the temperature
 field beside it, and prints the probes, the measures and, when the setup asks for one, the Rth matrix. See

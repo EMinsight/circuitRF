@@ -79,7 +79,8 @@ internal sealed class WslPalaceRunner(WslSession session, string linuxHome, stri
     internal TimeSpan Grace { get; init; } = WslProcessGroup.Grace;
 
     public PalaceStep Solve(string runDir, string configJson, string palace, int processes, RunControl? control,
-                            CancellationToken ct, out string? note, PalaceStageTracker? tracker, long physicalBytes)
+                            CancellationToken ct, out string? note, PalaceStageTracker? tracker, long physicalBytes,
+                            ProcessLimits? limits = null)
     {
         note = null;
         File.WriteAllText(Path.Combine(runDir, PalaceConfigWriter.ConfigFile), configJson, new UTF8Encoding(false));
@@ -97,8 +98,9 @@ internal sealed class WslPalaceRunner(WslSession session, string linuxHome, stri
         if (tracker is not null) tracker.Begin();
         else control?.BeginStage("solving (Palace, in the Linux subsystem)", 0, "lines");
         var run = Start(plan, plan.LinuxRunDirectory, Path.Combine(runDir, PalaceRun.PalaceLogFile),
-                        [exe, .. args], control, ct, new ProcessWatch(tracker is null ? null : tracker.Line, 0));
+                        [exe, .. args], control, ct, PalaceRun.Watch(limits, tracker is null ? null : tracker.Line, 0, runDir));
         if (run.Cancelled) return new(false, true, false, null);
+        if (run.Stopped is { } stopped) return new(false, false, false, null) { Stopped = stopped };
         if (run.StartFailure is { } why) return new(false, false, false, $"Palace could not be started in the Linux subsystem ({why}).");
         if (run.ExitCode != 0)
             return new(false, false, false,
@@ -160,7 +162,7 @@ internal sealed class WslPalaceRunner(WslSession session, string linuxHome, stri
             bool bare = palace.EndsWith(".bin", StringComparison.Ordinal);
             return Start(plan, linuxDir, Path.Combine(dir, PalaceRun.PalaceLogFile),
                          bare ? [palace, PalaceConfigWriter.ConfigFile] : [palace, "--serial", PalaceConfigWriter.ConfigFile],
-                         null, ct, new ProcessWatch(null, 0));
+                         null, ct, PalaceRun.Watch(null, null, 0, dir));
         });
     }
 

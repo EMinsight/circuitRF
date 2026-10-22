@@ -34,8 +34,15 @@ public sealed record PalaceStep(bool Ok, bool Cancelled, bool Refused, string? M
     /// where this OS lets it be read.</summary>
     public long? PeakResidentBytes { get; init; }
 
-    /// <summary>The one-time note a tree reaching 90 % of physical memory gets.</summary>
+    /// <summary>brief-emi-10 — the tree's highest footprint (resident, compressed and swapped), bytes.</summary>
+    public long? PeakFootprintBytes { get; init; }
+
+    /// <summary>The one-time warning a tree reaching 90 % of its memory ceiling gets.</summary>
     public string? MemoryNote { get; init; }
+
+    /// <summary>brief-emi-10 — the memory ceiling or the disk floor stopped the tree (or refused to start it). Not
+    /// <see cref="PalaceStep.Ok"/>, and nothing was written.</summary>
+    public ProcessStop? Stopped { get; init; }
 
     /// <summary>A mesh step's tetrahedra, as Gmsh reported creating them — from this run's log, or from
     /// the log the reused mesh was made with. Null when Gmsh printed no count.</summary>
@@ -45,9 +52,41 @@ public sealed record PalaceStep(bool Ok, bool Cancelled, bool Refused, string? M
 /// <summary>
 /// brief-em3d-21 — what a running program's output and memory are watched with: a line handler, fed
 /// on the RUN's thread (so a cancellation it throws can kill the tree), and the machine's memory for
-/// the once-a-second resident sample. Null handler: the stage ticks once per line, as before.
+/// the memory sample. Null handler: the stage ticks once per line, as before.
+/// brief-emi-10 — and what the tree is held to: a memory ceiling on its footprint, read every 100 ms, and a free-disk floor on
+/// <see cref="FloorVolumes"/>, read every second. <see cref="ProcessLimits.Watch"/> fills both for a run.
 /// </summary>
-public sealed record ProcessWatch(Action<string>? OnLine, long PhysicalBytes);
+public sealed record ProcessWatch(Action<string>? OnLine, long PhysicalBytes)
+{
+    /// <summary>The footprint at which the tree is killed; null for none.</summary>
+    public long? CeilingBytes { get; init; }
+
+    /// <summary>True once the run has been forced past its size check: the ceiling no longer applies (owner decision O2).</summary>
+    public Func<bool>? CeilingLifted { get; init; }
+
+    /// <summary>Whose ceiling it is, as the sentence names it.</summary>
+    public string CeilingOwner { get; init; } = ProcessLimits.MachineOwner;
+
+    /// <summary>The volumes the free-disk floor is kept on.</summary>
+    public IReadOnlyList<FloorVolume> FloorVolumes { get; init; } = [];
+
+    /// <summary>Called on the run's thread every tick (100 ms), after the lines are handed over: openEMS's decay check. A
+    /// cancellation it throws kills the tree.</summary>
+    public Action? OnTick { get; init; }
+
+    /// <summary>Whether the process is meshing rather than solving, for a solver that meshes itself (EMerge, until it reports
+    /// its mesh). Null: a mesher's process meshes and a solver's solves.</summary>
+    public Func<bool>? Meshing { get; init; }
+
+    /// <summary>Every process this watch's loop starts, as it starts.</summary>
+    public Action<System.Diagnostics.Process>? OnStarted { get; init; }
+
+    /// <summary>Test seam: the tree's memory for a root pid, in place of the operating system's (a reader per run).</summary>
+    internal Func<int, Func<TreeMemory?>>? ReadMemory { get; init; }
+
+    /// <summary>Test seam: a volume's free space, in place of the operating system's.</summary>
+    internal Func<string, VolumeSpace?>? ReadSpace { get; init; }
+}
 
 /// <summary>What Palace said about the run it made (<c>postpro/palace.json</c>): the mesh it started
 /// from and the one it finished on, and how many adaptive passes lay between.</summary>
@@ -114,7 +153,7 @@ public static class PalaceRun
     /// (R-em3d7-3b) — on a reused mesh too, since the check is the thing that makes a mesh usable.
     /// </summary>
     public static PalaceStep Mesh(string runDir, GmshLowering lowering, string gmsh, RunControl? control,
-                                  CancellationToken ct, long physicalBytes = 0)
+                                  CancellationToken ct, ProcessLimits? limits = null, long physicalBytes = 0)
     {
         ArgumentNullException.ThrowIfNull(lowering);
         if (!lowering.Ok) return new(false, false, true, lowering.Refusal);
@@ -147,8 +186,9 @@ public static class PalaceRun
             gmshLog.Begin();
             Interlocked.Increment(ref _gmsh);
             var run = RunProcess(gmsh, [GmshGeoWriter.GeoFile, "-3", "-o", GmshGeoWriter.MeshFile], runDir, logPath,
-                                 Em3dProcessKind.Mesher, env: null, control, ct, new ProcessWatch(gmshLog.Line, physicalBytes));
+                                 Em3dProcessKind.Mesher, env: null, control, ct, Watch(limits, gmshLog.Line, physicalBytes, runDir));
             if (run.Cancelled) return new(false, true, false, null);
+            if (run.Stopped is { } stopped) return new(false, false, false, null) { Stopped = stopped, PeakFootprintBytes = run.PeakFootprint };
             if (run.StartFailure is { } why)
                 return new(false, false, false, $"Gmsh could not be started ({why}).");
             if (run.ExitCode != 0)
@@ -184,7 +224,7 @@ public static class PalaceRun
     /// once per line, as it did before.</param>
     public static PalaceStep Solve(string runDir, string configJson, string palace, int processes,
                                    RunControl? control, CancellationToken ct, out string? note,
-                                   PalaceStageTracker? tracker = null, long physicalBytes = 0)
+                                   PalaceStageTracker? tracker = null, long physicalBytes = 0, ProcessLimits? limits = null)
     {
         note = null;
         WriteText(Path.Combine(runDir, PalaceConfigWriter.ConfigFile), configJson);
@@ -209,14 +249,16 @@ public static class PalaceRun
         Interlocked.Increment(ref _palace);
         var run = RunProcess(exe, args, runDir, Path.Combine(runDir, PalaceLogFile), Em3dProcessKind.Solver,
                              env: new Dictionary<string, string> { ["OMP_NUM_THREADS"] = "1" }, control, ct,
-                             new ProcessWatch(tracker is null ? null : tracker.Line, physicalBytes));
+                             Watch(limits, tracker is null ? null : tracker.Line, physicalBytes, runDir));
         if (run.Cancelled) return new(false, true, false, null);
+        if (run.Stopped is { } stopped)
+            return new(false, false, false, null) { Stopped = stopped, PeakResidentBytes = run.PeakResident, PeakFootprintBytes = run.PeakFootprint };
         if (run.StartFailure is { } why) return new(false, false, false, $"Palace could not be started ({why}).");
         if (run.ExitCode != 0)
             return new(false, false, false,
                 $"Palace failed (exit code {run.ExitCode}). Its own words: {Quote(run.Tail, "rror")} " +
                 $"The full log is {Path.Combine(runDir, PalaceLogFile)}.");
-        return PalaceStep.Done() with { PeakResidentBytes = run.PeakResident, MemoryNote = run.MemoryNote };
+        return PalaceStep.Done() with { PeakResidentBytes = run.PeakResident, PeakFootprintBytes = run.PeakFootprint, MemoryNote = run.MemoryNote };
     }
 
     /// <summary>
@@ -667,10 +709,11 @@ public static class PalaceRun
             if (ParseWaveMode(line) is { } m && expected.TryGetValue(m.Port, out int mode) && m.Mode == mode) seen[m.Port] = m;
             if (asked.All(seen.ContainsKey)) throw new OperationCanceledException();
         }
-        var result = run(dir, new ProcessWatch(OnLine, 0));
+        var result = run(dir, Watch(null, OnLine, 0, dir));
         if (asked.All(seen.ContainsKey)) return [.. asked.Select(p => seen[p])];
         note = result.Cancelled ? "the second-mode check was cancelled"
              : result.StartFailure is { } why ? $"the second-mode check could not start Palace ({why})"
+             : result.Stopped is { } stop ? $"the second-mode check was stopped: {stop.Sentence("Palace", ProcessLimits.MachineOwner, [], null)}"
              : $"Palace printed no line for the mode past each wave port face's own (exit {result.ExitCode}; its log is {Path.Combine(dir, PalaceLogFile)})";
         return null;
     }
@@ -727,6 +770,7 @@ public static class PalaceRun
         if (modes.Count >= count) return [.. modes.Take(count)];
         note = result.Cancelled ? "the port face's mode solve was cancelled"
              : result.StartFailure is { } why ? $"the port face's mode solve could not start Palace ({why})"
+             : result.Stopped is { } stop ? $"the port face's mode solve was stopped: {stop.Sentence("Palace", ProcessLimits.MachineOwner, [], null)}"
              : $"Palace's mode solve of attribute {attribute} at {(fHz / 1e9).ToString("G6", CultureInfo.InvariantCulture)} GHz printed " +
                $"{modes.Count} of {count} modes (exit {result.ExitCode}; its log is {Path.Combine(dir, PalaceLogFile)})";
         return null;
@@ -757,7 +801,7 @@ public static class PalaceRun
             Interlocked.Increment(ref _palace);
             return RunProcess(palace, bareBinary ? [PalaceConfigWriter.ConfigFile] : ["--serial", PalaceConfigWriter.ConfigFile],
                               dir, Path.Combine(dir, PalaceLogFile), Em3dProcessKind.Solver,
-                              env: new Dictionary<string, string> { ["OMP_NUM_THREADS"] = "1" }, null, ct, new ProcessWatch(null, 0));
+                              env: new Dictionary<string, string> { ["OMP_NUM_THREADS"] = "1" }, null, ct, Watch(null, null, 0, dir));
         });
 
     /// <summary>brief-em3d-31 — Palace's far field, r·E in Cartesian components per (frequency, excitation, θ, φ).</summary>
@@ -1015,8 +1059,19 @@ public static class PalaceRun
 
     // ── one child process ────────────────────────────────────────────────────────────────────
 
+    /// <param name="Stopped">brief-emi-10 — the ceiling or the floor stopped the tree, or the floor refused to start it.</param>
     internal sealed record ProcessRun(int ExitCode, bool Cancelled, string? StartFailure, IReadOnlyList<string> Tail,
-                                      long? PeakResident = null, string? MemoryNote = null);
+                                      long? PeakResident = null, string? MemoryNote = null, ProcessStop? Stopped = null,
+                                      long? PeakFootprint = null)
+    {
+        /// <summary>The memory ceiling stopped the tree.</summary>
+        public bool StoppedForMemory => Stopped?.Reason == ProcessStopReason.Memory;
+    }
+
+    /// <summary>The watch a step runs under: the run's limits, or — called with none, as a probe or a test is — this machine's
+    /// ceiling, and the floor on the volume <paramref name="runDir"/> is on and the swap volume.</summary>
+    internal static ProcessWatch Watch(ProcessLimits? limits, Action<string>? onLine, long physicalBytes, string runDir)
+        => (limits ?? ProcessLimits.For(MachineMemory.PhysicalBytes, null)).Watch(onLine, physicalBytes, runDir);
 
     private static ProcessRun RunProcess(string exe, IReadOnlyList<string> args, string cwd, string logPath,
                                          Em3dProcessKind kind, IReadOnlyDictionary<string, string>? env,
@@ -1039,15 +1094,34 @@ public static class PalaceRun
     /// Starts <paramref name="psi"/>, logs and relays its lines, and stops it on cancellation.
     /// <paramref name="kill"/> replaces the tree kill — brief-em3d-26: killing <c>wsl.exe</c> does not kill
     /// the Linux processes it started, so a subsystem run stops its own process group first.
-    /// <paramref name="sampleMemory"/> false skips the resident-memory sample, which on a subsystem run would
-    /// read <c>wsl.exe</c>'s own few megabytes, not Palace's.
+    /// <paramref name="sampleMemory"/> false skips the memory sample, and with it the ceiling: on a subsystem run it
+    /// would read <c>wsl.exe</c>'s own few megabytes, not Palace's, and the subsystem's own memory limit bounds the run.
     /// </summary>
+    /// <remarks>brief-emi-10 — THE one loop every mesher and solver process runs in, so one ceiling and one floor hold for all
+    /// of them: the tree's footprint every 100 ms against <see cref="ProcessWatch.CeilingBytes"/>, each floor volume's free
+    /// space every second, and a volume already below the floor refuses the start, so a counter of processes started stays
+    /// put.</remarks>
     internal static ProcessRun RunProcess(ProcessStartInfo psi, string logPath, Em3dProcessKind kind, RunControl? control,
                                           CancellationToken ct, ProcessWatch? watch, Action<Process>? kill = null,
                                           bool sampleMemory = true)
     {
         if (ct.IsCancellationRequested) return new(-1, true, null, []);
         string exe = psi.FileName;
+        bool meshing = kind == Em3dProcessKind.Mesher;
+        bool Meshing() => watch?.Meshing?.Invoke() ?? meshing;
+
+        // R-emi10-3 — a volume already below the floor: nothing is started that would be stopped at once.
+        var readSpace = watch?.ReadSpace ?? DiskFloor.Read;
+        ProcessStop? BelowFloor(bool beforeStart)
+        {
+            foreach (var v in watch?.FloorVolumes ?? [])
+                if (readSpace(v.Path) is { } space && space.FreeBytes < DiskFloor.FloorFor(space.TotalBytes))
+                    return new(ProcessStopReason.Disk, space.FreeBytes, DiskFloor.FloorFor(space.TotalBytes), Meshing(), beforeStart,
+                               DiskFloor.Name(v.Path), v.Role);
+            return null;
+        }
+        if (BelowFloor(beforeStart: true) is { } refused) return new(-1, false, null, [], Stopped: refused);
+
         void Stop(Process p)
         {
             if (kill is not null) kill(p);
@@ -1058,12 +1132,17 @@ public static class PalaceRun
         var tail = new Queue<string>();
         var pending = new Queue<string>();       // lines not yet handed to the watcher (the run's thread drains it)
         long lines = 0;
+        // Set under the gate before the writer is disposed: after a Kill the timed WaitForExit does not wait for the
+        // redirected streams, so a late line can still arrive — and a handler that throws on a disposed writer is rethrown on
+        // a thread-pool thread, which ends the process (the guard openEMS's own loop had).
+        bool closed = false;
         using var log = new StreamWriter(logPath, append: false, new UTF8Encoding(false)) { NewLine = "\n" };
         void Line(string? text)
         {
             if (text is null) return;
             lock (gate)
             {
+                if (closed) return;
                 log.WriteLine(text);
                 tail.Enqueue(text);
                 if (tail.Count > 60) tail.Dequeue();
@@ -1077,73 +1156,115 @@ public static class PalaceRun
         catch (Exception e) { return new(-1, false, e.Message, []); }
         if (p is null) return new(-1, false, "the operating system started nothing", []);
 
-        using (p)
+        bool watchMemory = watch is not null && sampleMemory;
+        long? Ceiling() => watch?.CeilingLifted?.Invoke() == true ? null : watch?.CeilingBytes;
+        using var job = watchMemory ? Em3dProcessJob.Attach(p, Ceiling()) : null;
+        try
         {
-            ProcessStarted?.Invoke(p);
-            if (psi.RedirectStandardInput) p.StandardInput.Close();
-            p.OutputDataReceived += (_, e) => Line(e.Data);
-            p.ErrorDataReceived  += (_, e) => Line(e.Data);
-            p.BeginOutputReadLine();
-            p.BeginErrorReadLine();
+            using (p)
+            {
+                ProcessStarted?.Invoke(p);
+                watch?.OnStarted?.Invoke(p);
+                if (psi.RedirectStandardInput) p.StandardInput.Close();
+                p.OutputDataReceived += (_, e) => Line(e.Data);
+                p.ErrorDataReceived  += (_, e) => Line(e.Data);
+                p.BeginOutputReadLine();
+                p.BeginErrorReadLine();
 
-            long reported = 0;
-            long? peak = null;
-            string? memoryNote = null;
-            var sampled = Stopwatch.StartNew();
-            // Hands every line read so far to the watcher, or ticks the stage once per line without one.
-            // On the run's thread, so a cancellation thrown by the control lands here.
-            void Drain()
-            {
-                if (watch?.OnLine is { } onLine)
+                long reported = 0;
+                long? peak = null, peakFootprint = null;
+                string? memoryNote = null;
+                var shown = Stopwatch.StartNew();
+                var diskRead = Stopwatch.StartNew();
+                var read = !watchMemory ? null
+                         : watch!.ReadMemory?.Invoke(p.Id) ?? (job is not null ? job.Read : ProcessTreeMemory.Sampler(p.Id));
+                // Hands every line read so far to the watcher, or ticks the stage once per line without one.
+                // On the run's thread, so a cancellation thrown by the control lands here.
+                void Drain()
                 {
-                    while (true)
+                    if (watch?.OnLine is { } onLine)
                     {
-                        string next;
-                        lock (gate) { if (pending.Count == 0) break; next = pending.Dequeue(); }
-                        onLine(next);
+                        while (true)
+                        {
+                            string next;
+                            lock (gate) { if (pending.Count == 0) break; next = pending.Dequeue(); }
+                            onLine(next);
+                        }
+                        return;
                     }
-                    return;
+                    long now;
+                    lock (gate) now = lines;
+                    if (now > reported && control is not null)
+                    {
+                        control.TickStage(now - reported);
+                        reported = now;
+                    }
                 }
-                long now;
-                lock (gate) now = lines;
-                if (now > reported && control is not null)
+                // R-em3d21-2c, R-emi10-2 — the whole tree's memory every tick, against the ceiling; beside the stage once a second.
+                ProcessStop? Sample()
                 {
-                    control.TickStage(now - reported);
-                    reported = now;
+                    if (read is null) return null;
+                    long? ceiling = Ceiling();
+                    if (job is not null && job.Limit != ceiling) job.SetLimit(ceiling);    // lifted by a confirmation mid-run
+                    if (job is not null && ceiling is { } held && job.LimitReached())
+                        return new(ProcessStopReason.Memory, Math.Max(job.Peak, peakFootprint ?? 0), held, Meshing());
+                    if (read() is not { } m || m.ResidentBytes <= 0 && m.FootprintBytes <= 0) return null;
+                    peak = Math.Max(peak ?? 0, m.ResidentBytes);
+                    peakFootprint = Math.Max(peakFootprint ?? 0, m.FootprintBytes);
+                    if (ceiling is { } c && m.FootprintBytes >= c) return new(ProcessStopReason.Memory, m.FootprintBytes, c, Meshing());
+                    long near = ceiling ?? watch!.PhysicalBytes;
+                    if (memoryNote is null && near > 0 && m.FootprintBytes >= Em3dMemoryVerdict.InUseNoteFraction * near)
+                        memoryNote = ceiling is { } limit
+                            ? $"{Path.GetFileName(exe)} and the processes it started reached {MachineMemory.Format(m.FootprintBytes)}, " +
+                              $"{(100.0 * m.FootprintBytes / limit).ToString("0", CultureInfo.InvariantCulture)} % of {watch!.CeilingOwner} " +
+                              $"({MachineMemory.Format(limit)}); at the limit it is stopped."
+                            : $"{Path.GetFileName(exe)} and the processes it started reached {MachineMemory.Format(m.FootprintBytes)}, " +
+                              $"{(100.0 * m.FootprintBytes / near).ToString("0", CultureInfo.InvariantCulture)} % of this machine's " +
+                              $"{MachineMemory.Format(near)}. Past this the operating system swaps, and the run slows sharply; it was " +
+                              "started past its size check, so it is not stopped for memory.";
+                    if (shown.ElapsedMilliseconds >= 1000)
+                    {
+                        shown.Restart();
+                        control?.SetStageDetail(m.Describe() + (memoryNote is not null ? " — near the memory limit" : ""));
+                    }
+                    return null;
                 }
-            }
-            // R-em3d21-2c — the whole tree's resident memory, once a second, beside the stage.
-            void Sample()
-            {
-                if (watch is null || !sampleMemory || sampled.ElapsedMilliseconds < 1000) return;
-                sampled.Restart();
-                if (ProcessTreeMemory.ResidentBytes(p.Id) is not { } rss || rss <= 0) return;
-                peak = Math.Max(peak ?? 0, rss);
-                string detail = $"{MachineMemory.Format(rss)} in use";
-                if (memoryNote is null && watch.PhysicalBytes > 0 && rss >= Em3dMemoryVerdict.InUseNoteFraction * watch.PhysicalBytes)
-                    memoryNote = $"{Path.GetFileName(exe)} and the processes it started reached {MachineMemory.Format(rss)} of resident " +
-                                 $"memory, {(100.0 * rss / watch.PhysicalBytes).ToString("0", CultureInfo.InvariantCulture)} % of " +
-                                 $"this machine's {MachineMemory.Format(watch.PhysicalBytes)}. Past this the operating system " +
-                                 "swaps, and the run slows sharply; it was not stopped.";
-                if (memoryNote is not null) detail += " — near this machine's memory";
-                control?.SetStageDetail(detail);
-            }
-            while (!p.WaitForExit(100))
-            {
-                if (ct.IsCancellationRequested)
+                ProcessRun Stopped(ProcessStop why)
                 {
                     Stop(p);
-                    return new(-1, true, null, []);
+                    lock (gate) return new(-1, false, null, [.. tail], peak, memoryNote, why, peakFootprint);
                 }
+                while (!p.WaitForExit(100))
+                {
+                    if (ct.IsCancellationRequested)
+                    {
+                        Stop(p);
+                        return new(-1, true, null, []);
+                    }
+                    try { Drain(); watch?.OnTick?.Invoke(); }
+                    catch (OperationCanceledException) { Stop(p); return new(-1, true, null, []); }
+                    if (Sample() is { } over) return Stopped(over);
+                    if (diskRead.ElapsedMilliseconds >= 1000)
+                    {
+                        diskRead.Restart();
+                        if (BelowFloor(beforeStart: false) is { } full) return Stopped(full);
+                    }
+                }
+                p.WaitForExit();                  // drains the asynchronous readers
+                if (ct.IsCancellationRequested) return new(-1, true, null, []);
+                // On Windows the kernel refuses the allocation at the limit and the process fails on its own: it is still
+                // a stop for memory, not the solver's failure.
+                if (job is not null && Ceiling() is { } jobCeiling && job.LimitReached())
+                    lock (gate) return new(-1, false, null, [.. tail], peak, memoryNote,
+                                           new(ProcessStopReason.Memory, Math.Max(job.Peak, peakFootprint ?? 0), jobCeiling, Meshing()), peakFootprint);
                 try { Drain(); }
-                catch (OperationCanceledException) { Stop(p); return new(-1, true, null, []); }
-                Sample();
+                catch (OperationCanceledException) { return new(-1, true, null, []); }
+                lock (gate) return new(p.ExitCode, false, null, [.. tail], peak, memoryNote, PeakFootprint: peakFootprint);
             }
-            p.WaitForExit();                  // drains the asynchronous readers
-            if (ct.IsCancellationRequested) return new(-1, true, null, []);
-            try { Drain(); }
-            catch (OperationCanceledException) { return new(-1, true, null, []); }
-            lock (gate) return new(p.ExitCode, false, null, [.. tail], peak, memoryNote);
+        }
+        finally
+        {
+            lock (gate) closed = true;
         }
     }
 

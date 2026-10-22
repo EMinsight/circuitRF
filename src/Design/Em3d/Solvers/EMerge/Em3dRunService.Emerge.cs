@@ -96,7 +96,9 @@ public static partial class Em3dRunService
         var psi = EmergeRun.StartInfo(emerge.Path, dir,
                                       EmergeThreads.Environment(run.MaxCores, PhysicalCores.Count, Environment.ProcessorCount));
         PalaceRun.ProcessRun ran;
-        try { ran = EmergeRun.Solve(psi, control, run.Ct, tracker, physical); }
+        // brief-emi-10 — meshing is EMerge's own until it reports its mesh, and it is the stage a runaway happens in.
+        var limits = run.Limits(physical);
+        try { ran = EmergeRun.Solve(psi, control, run.Ct, tracker, physical, limits); }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             return Failed($"EMerge could not be started in '{dir}' ({e.Message}).");
@@ -104,8 +106,10 @@ public static partial class Em3dRunService
         if (tooBig is not null) return Leg.Failed(Me, EmRunStatus.Refused, EmDiagnostics.Forwarded(EmergeMemoryRefusalSource, tooBig));
         if (ran.Cancelled) return Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
         if (ran.StartFailure is { } start) return Failed($"EMerge could not be started ({start}).");
-        if (ran.MemoryNote is not null) log.Notes.Add(ran.MemoryNote);
+        if (ran.MemoryNote is not null) log.Warnings.Add(ran.MemoryNote);
         string logPath = Path.Combine(dir, EmergeResults.LogFile);
+        if (ran.Stopped is { } stopped)
+            return StoppedLeg(Me, "EMerge", stopped, limits, stopped.Meshing ? [] : run.Memory.Last?.Remedies ?? [], logPath);
         if (ran.ExitCode != 0)
             return Failed(EmergeLog.DriverError(ran.Tail) is { } said
                 ? $"EMerge stopped: {said} Its log is {logPath}."

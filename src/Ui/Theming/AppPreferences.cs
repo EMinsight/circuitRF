@@ -332,6 +332,13 @@ public sealed class AppPreferences
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? EmPalaceDevice { get; set; }
 
+    // brief-emi-10 R-emi10-4: the memory ceiling, GB, a 3D run's solver and mesher processes are held to, below this machine's
+    // memory. Null is Automatic: this machine's memory. Per MACHINE for EmMaxCores' reason exactly, never in the .cem/.c3d,
+    // and handed to the run as an argument. See EmMemoryLimitPreference.
+    [JsonPropertyName("em_memory_limit_gb")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public double? EmMemoryLimitGb { get; set; }
+
     // brief-em3d-44 R-em3d44-5: the 3D snap's switches — the master and one per kind. Per USER, not per
     // document: how someone likes to snap is a working habit, and a .c3d from someone else must not change it.
     // Null means the shipped default (on, every kind). See Snap3DPreference.

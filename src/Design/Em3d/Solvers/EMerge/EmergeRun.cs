@@ -1,6 +1,6 @@
 // brief-emi-5 R-emi5-1/2 — the EMerge process: `<env python> -I circuitrf_emerge.py problem.json solve`, in the run directory,
 // started with an argument list (never a shell) through the process helper Palace's run uses, which logs both streams to
-// emerge.log, samples the whole tree's memory and, on cancellation, kills the whole TREE: EMerge can start worker processes, and
+// emerge.log, holds the whole tree to the memory ceiling and the disk floor (brief-emi-10) and, on cancellation, kills the whole TREE: EMerge can start worker processes, and
 // killing only the interpreter would leave them solving.
 
 using System.Diagnostics;
@@ -42,12 +42,15 @@ public static class EmergeRun
     }
 
     /// <summary>Runs <paramref name="psi"/> to its end, every line through <paramref name="tracker"/>, the log in
-    /// <c>emerge.log</c> beside the input. Cancelled (or stopped by the tracker's memory check) kills the whole tree.</summary>
+    /// <c>emerge.log</c> beside the input. Cancelled (or stopped by the tracker's memory check) kills the whole tree.
+    /// brief-emi-10 — held to <paramref name="limits"/>' ceiling and the disk floor; until the driver reports its mesh the
+    /// process is meshing, which is what a stop's sentence says.</summary>
     internal static PalaceRun.ProcessRun Solve(ProcessStartInfo psi, RunControl? control, CancellationToken ct,
-                                               EmergeStageTracker tracker, long physicalBytes)
+                                               EmergeStageTracker tracker, long physicalBytes, ProcessLimits? limits = null)
     {
         tracker.Begin();
         return PalaceRun.RunProcess(psi, Path.Combine(psi.WorkingDirectory, EmergeResults.LogFile), Em3dProcessKind.Solver, control, ct,
-                                    new ProcessWatch(tracker.Line, physicalBytes));
+                                    PalaceRun.Watch(limits, tracker.Line, physicalBytes, psi.WorkingDirectory)
+                                        with { Meshing = () => tracker.Tetrahedra is null });
     }
 }

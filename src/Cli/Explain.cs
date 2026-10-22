@@ -69,6 +69,7 @@ internal static class Explain
         bool wantFootprints = false, wantLook = false, wantTunables = false, wantMaterials = false;
         ViewType? askedView = null;
         var device = CircuitRF.Design.Em3d.PalaceDevice.Cpu;
+        long? memoryLimit = null;
         var sets = new List<(string Name, string Expr)>();
 
         for (int i = 0; i < args.Length; i++)
@@ -133,6 +134,17 @@ internal static class Explain
                     { JsonRun.Report(CliDiagnostics.ExplainUnknownDevice(args[i])); return Usage(); }
                     device = parsed;
                     continue;
+                // brief-emi-10 R-emi10-4 — the memory ceiling a run given `em --memory-limit` would keep, refused as that flag is.
+                case "--memory-limit" when i + 1 < args.Length:
+                {
+                    string text = args[++i];
+                    if (!double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double gb))
+                    { JsonRun.Report(CliDiagnostics.ExplainMemoryLimit($"--memory-limit takes a number of GB, not '{text}'.")); return Usage(); }
+                    if (CircuitRF.Design.Em3d.Em3dMemoryLimit.Refusal(gb, CircuitRF.Design.Em3d.MachineMemory.PhysicalBytes) is { } badLimit)
+                    { JsonRun.Report(CliDiagnostics.ExplainMemoryLimit(badLimit)); return Usage(); }
+                    memoryLimit = CircuitRF.Design.Em3d.Em3dMemoryLimit.Bytes(gb);
+                    continue;
+                }
                 case "--set" when i + 1 < args.Length:
                 {
                     // The same override the run verbs take, applied the same way (cli.md §5): it
@@ -202,9 +214,9 @@ internal static class Explain
         switch (kind)
         {
             case DocumentKind.Layout:   ExplainLayout(path, walks); break;
-            case DocumentKind.EmSetup:  exit |= ExplainEmSetup(path, walks, out em3d, device); break;
+            case DocumentKind.EmSetup:  exit |= ExplainEmSetup(path, walks, out em3d, device, memoryLimit); break;
             case DocumentKind.ThreeD:
-                exit |= ExplainThreeD(path, walks, out em3d, sets, setupName, objectName, device);
+                exit |= ExplainThreeD(path, walks, out em3d, sets, setupName, objectName, device, memoryLimit);
                 solved = Solved.Of(Path.GetFullPath(path));          // brief-em3d-98 R-em3d98-8
                 break;
             case DocumentKind.Technology:      exit |= ExplainTechnology(path, walks); break;
@@ -364,7 +376,7 @@ internal static class Explain
         Console.Error.WriteLine("Usage: circuitrf explain <path> [--expr \"<expression>\"] [--set var=expr]");
         Console.Error.WriteLine("                            [--analysis [<name>]] [--ref <relative-ref>]");
         Console.Error.WriteLine("                            [--cells [--all]] [--layers] [--extents] [--view <name>]");
-        Console.Error.WriteLine("                            [--footprints] [--setup <name>] [--object <name>] [--look] [--device cpu|gpu]");
+        Console.Error.WriteLine("                            [--footprints] [--setup <name>] [--object <name>] [--look] [--device cpu|gpu] [--memory-limit <GB>]");
         Console.Error.WriteLine("                            [--tunables]");
         return 1;
     }
@@ -682,7 +694,7 @@ internal static class Explain
     /// is reported here is what <c>circuitrf em</c> actually used (Gate 5).
     /// </summary>
     private static int ExplainEmSetup(string path, List<ResolutionStepJson> walks, out ExplainEm3dJson? em3d,
-                                      CircuitRF.Design.Em3d.PalaceDevice device)
+                                      CircuitRF.Design.Em3d.PalaceDevice device, long? memoryLimit = null)
     {
         em3d = null;
         string full = Path.GetFullPath(path);
@@ -700,7 +712,7 @@ internal static class Explain
                 cws is null ? "relative to the .cem's own directory — no ancestor workspace"
                             : "relative to the .cem's ancestor workspace"));
             if (src.Elaboration is { } elaborated) ThreeDWalk(elaborated, walks);
-            if (setup.Is3D) em3d = ExplainEm3d.Build(src, device);
+            if (setup.Is3D) em3d = ExplainEm3d.Build(src, device, memoryLimit);
             return src.Refusal is null ? 0 : 1;
         }
 
@@ -739,7 +751,7 @@ internal static class Explain
         if (setup.Is3D)
         {
             var source = Em3dSetupSource.From(full, setup, resolution);
-            em3d = ExplainEm3d.Build(source, device);
+            em3d = ExplainEm3d.Build(source, device, memoryLimit);
             if (source.Refusal is not null && resolution.Source is not null) return 1;
         }
 
@@ -753,7 +765,7 @@ internal static class Explain
     /// </summary>
     private static int ExplainThreeD(string path, List<ResolutionStepJson> walks, out ExplainEm3dJson? em3d,
                                      IReadOnlyList<(string Name, string Expr)> sets, string? setupName, string? objectName,
-                                     CircuitRF.Design.Em3d.PalaceDevice device)
+                                     CircuitRF.Design.Em3d.PalaceDevice device, long? memoryLimit = null)
     {
         em3d = null;
         string full = Path.GetFullPath(path);
@@ -781,7 +793,7 @@ internal static class Explain
             if (!AppearanceWalk(elaborated, objectName, walks)) return JsonRun.Fail(CliDiagnostics.ExplainObjectNotFound(objectName, path));
             StepSolidsWalk(full, objectName, walks);
         }
-        em3d = ExplainEm3d.Build(src, device);
+        em3d = ExplainEm3d.Build(src, device, memoryLimit);
         // brief-em3d-64 R-em3d64-6b — only a document that holds a kernel object asks the kernel anything.
         if (src.Elaboration is { KernelBuilds.Count: > 0 } withKernel)
             em3d = em3d with { GeometryKernel = ExplainEm3d.Kernel(withKernel) };

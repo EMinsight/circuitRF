@@ -22075,3 +22075,33 @@ drive, the request and its lowering, participation and Q_ext from canned integra
 `Em3dRadiation.Publish`'s, and (with EMerge, `Category=Benchmark`, ~2.5 min) the Cavity's Modes run: mode 1 written, peak
 mid-cavity, `render --field` draws. That test searches from 9.9 GHz for ONE mode: from the setup's own 8 GHz, EMerge's
 first solution was the 7.78 GHz Q 1.5 non-resonance, and the label check caught it.
+
+## EMI-10: a memory ceiling and a free-disk floor for every solver process (2026-10-22)
+
+- **The resident sample could never have stopped the crash.** `ps -o rss` / `statm` count resident pages; once a tree
+  swaps its resident figure flattens while its real footprint keeps growing, so a ceiling on it near physical memory
+  never trips. The measure is now a FOOTPRINT: macOS `proc_pid_rusage` (`RUSAGE_INFO_V2`, `ri_phys_footprint` at
+  offset 72, `ri_resident_size` at 64) with the tree from `proc_listchildpids`, both reached through `"libc"` (the
+  system's own `libSystem`), cheap enough for 100 ms; Linux `/proc/<pid>/status` `VmRSS + VmSwap`, the tree re-scanned
+  once a second; Windows the Job Object's members' `PrivateUsage` (`Em3dProcessJob`). Verified on this machine: a perl
+  child touching 600 MB reads ≥ 550 MB, and one past a 300 MB ceiling is stopped.
+- **One loop.** openEMS's own process loop and `sar_calc`'s are gone; both run through `PalaceRun.RunProcess` (openEMS
+  keeps its step count through `OnLine` and its decay/ABORT check through the new `OnTick`). Every mesher and solver
+  process now has one ceiling and one floor.
+- **Latent crash fixed on the way:** `RunProcess` disposed its log writer while a late line could still arrive after a
+  Kill (the timed `WaitForExit` does not wait for the redirected streams); a throw on a disposed writer is rethrown on a
+  thread-pool thread and ends the process. openEMS's loop had the `closed` guard; `RunProcess` now has it too.
+- **Forced = no ceiling, read every tick.** EMerge's size check is answered WHILE its process runs (when the driver
+  reports its mesh), so the lift is a `Func<bool>` on the watch (`MemoryGate.Forced`), not a value fixed at start; on
+  Windows the job's limit is cleared when it flips.
+- **Windows.** The job holds the ceiling itself (`JOB_OBJECT_LIMIT_JOB_MEMORY`): the kernel refuses the allocation and
+  posts `JOB_OBJECT_MSG_JOB_MEMORY_LIMIT` to the job's completion port, which the loop reads every tick — so a stop is
+  reported as a memory stop even when the process then fails on its own. The process is assigned just after it starts
+  (`Process.Start` cannot start one suspended); a child started in that instant would escape. `KILL_ON_JOB_CLOSE` also
+  takes down anything of the tree left when the run lets go. Not exercised on Windows by this change.
+- **A stop is a refusal** (`memory-ceiling` / `disk-floor`), so `em` exits 1, not 2. A volume already below the floor
+  refuses BEFORE `Em3dProcessLauncher.Start`, so no log file is created and no process counted.
+- **macOS firmlinks:** a home directory's path string-matches the `/` mount, not `/System/Volumes/Data`; both share one
+  APFS container's free space, so the floor reads the same figure and the dedupe of "swap volume = run volume" holds.
+
+Gate: `tests/Ui.Tests/Em3d/ProcessLimitsTests.cs`.

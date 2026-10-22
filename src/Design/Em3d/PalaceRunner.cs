@@ -15,7 +15,8 @@ internal interface IPalaceRunner : IDisposable
     /// <summary>Runs Palace on <paramref name="runDir"/>'s mesh and configuration. On return the run
     /// directory's <c>postpro/</c> holds what Palace wrote, wherever it ran.</summary>
     PalaceStep Solve(string runDir, string configJson, string palace, int processes, RunControl? control,
-                     CancellationToken ct, out string? note, PalaceStageTracker? tracker, long physicalBytes);
+                     CancellationToken ct, out string? note, PalaceStageTracker? tracker, long physicalBytes,
+                     ProcessLimits? limits = null);
 
     /// <inheritdoc cref="PalaceRun.SecondModes(string, string, string, double, IReadOnlyList{int}, CancellationToken, out string?)"/>
     IReadOnlyList<PalaceWaveMode>? SecondModes(string runDir, string configJson, string palace, double topHz,
@@ -34,8 +35,9 @@ internal sealed class NativePalaceRunner : IPalaceRunner
     public Engine.Em3d.PhysicalCoreReading Cores => Engine.Em3d.PhysicalCores.Current;
 
     public PalaceStep Solve(string runDir, string configJson, string palace, int processes, RunControl? control,
-                            CancellationToken ct, out string? note, PalaceStageTracker? tracker, long physicalBytes)
-        => PalaceRun.Solve(runDir, configJson, palace, processes, control, ct, out note, tracker, physicalBytes);
+                            CancellationToken ct, out string? note, PalaceStageTracker? tracker, long physicalBytes,
+                            ProcessLimits? limits = null)
+        => PalaceRun.Solve(runDir, configJson, palace, processes, control, ct, out note, tracker, physicalBytes, limits);
 
     public IReadOnlyList<PalaceWaveMode>? SecondModes(string runDir, string configJson, string palace, double topHz,
                                                       IReadOnlyList<int> wavePorts, CancellationToken ct, out string? note)

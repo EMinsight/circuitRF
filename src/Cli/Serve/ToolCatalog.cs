@@ -590,6 +590,11 @@ internal static class ToolCatalog
                          "Where Palace solves: cpu (default) or gpu. gpu needs a Palace built with GPU support and runs one "
                        + "process per GPU it finds; a Palace that cannot is refused before meshing, saying why. 'solver' "
                        + "with capability=gpu asks first."),
+                     // brief-emi-10 R-emi10-4 — `em --memory-limit`, through the CLI's own parsing and refusals.
+                     new("memoryLimitGB", "--memory-limit", OptKind.Number,
+                         "A 3D run's memory ceiling for its solver and mesher processes, GB, below this machine's memory. A "
+                       + "process reaching it is stopped and the run refused, writing nothing. Default: this machine's memory; "
+                       + "a run started with force past its size check keeps none."),
                      new("component", "--component", OptKind.Str,
                          "Extract one built-in component's drawn part instead of a .cem: its type and parameters as on a "
                        + ".cnl instance line, e.g. \"SPIRAL N=3 W=10 um S=8 um Din=100 um\". Port n is terminal n. "
@@ -670,6 +675,8 @@ internal static class ToolCatalog
                             "Which of a 3D view's (.c3d's) embedded setups to explain, by name. Needed when it embeds several."),
                         new("device",  "--device",  OptKind.Str,
                             "A 3D setup's report as a run with this device would see it: cpu (default) or gpu."),
+                        new("memoryLimitGB", "--memory-limit", OptKind.Number,
+                            "A 3D setup's report with the memory ceiling a run given this limit (GB) would keep."),
                     ],
                     ""),
             ]),

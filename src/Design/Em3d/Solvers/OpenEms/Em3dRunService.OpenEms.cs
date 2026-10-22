@@ -96,7 +96,8 @@ public static partial class Em3dRunService
         }
 
         public override Leg Execute(Em3dProblem problem, string snpBase, RunContext run)
-            => ExecuteOpenEms(_plan!, problem, run.Setup, run.ResultsRoot, snpBase, run.Ct, run.Control, run.MaxCores, run.Log);
+            => ExecuteOpenEms(_plan!, problem, run.Setup, run.ResultsRoot, snpBase, run.Ct, run.Control, run.MaxCores, run.Log,
+                              run.Limits(MachineMemory.PhysicalBytes));
     }
 
     // ── openEMS (brief-em3d-9) ────────────────────────────────────────────────────────────────
@@ -162,7 +163,8 @@ public static partial class Em3dRunService
     }
 
     private static Leg ExecuteOpenEms(OpenEmsPlan plan, Em3dProblem problem, EmSetup setup, string resultsRoot, string snpBase,
-                                      CancellationToken ct, RunControl? control, int? maxCores, RunLog log)
+                                      CancellationToken ct, RunControl? control, int? maxCores, RunLog log,
+                                      ProcessLimits? limits = null)
     {
         const Em3dSolverId Me = OpenEmsSolver.Id;
         Leg Failed(string reason) => Leg.Failed(Me, EmRunStatus.EngineError, EmDiagnostics.SolveFailed(reason));
@@ -211,13 +213,16 @@ public static partial class Em3dRunService
             try
             {
                 r = OpenEmsRun.RunPort(runDir, lowering, k, openEms.Path, threads, runSettings.EndCriterionDb,
-                                       grid.ExcitationS, control, ct, settleS);
+                                       grid.ExcitationS, control, ct, settleS, limits);
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException)
             {
                 return Failed($"openEMS could not be run in '{runDir}' ({e.Message}).");
             }
             if (r.Cancelled) return Leg.Failed(Me, EmRunStatus.Cancelled, EmDiagnostics.Cancelled());
+            if (r.Stopped is { } stopped)
+                return StoppedLeg(Me, "openEMS", stopped, limits ?? ProcessLimits.For(MachineMemory.PhysicalBytes, null), [],
+                                  Path.Combine(portDir, OpenEmsRun.LogFile));
             if (!r.Ok) return Failed(r.Message!);
             runs.Add(r);
 

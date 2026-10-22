@@ -608,6 +608,15 @@ never a `.cem` key, and enters no hash. Any other value is refused (`cli.em.unkn
 that starts no Palace (planar, thermal, openEMS-only, `--component`) is refused rather than ignored
 (`cli.em.device-without-palace`). `explain --device` reports the device and the readiness check a run would make.
 
+**`--memory-limit <GB>`** (brief-emi-10 R-emi10-4) lowers the memory ceiling every solver and mesher process of a 3D run
+is held to, from this machine's physical memory; it reaches `EmRunService.Run` as an ARGUMENT on `--device`'s terms
+(`RunContext.MemoryCeilingBytes`), the GUI filling it from `em_memory_limit_gb`. A value that is not a number, not
+positive, or not below physical memory is refused (`cli.em.memory-limit`) with `Em3dMemoryLimit.Refusal`'s sentence,
+the one Settings ▸ Solvers shows. A process stopped at the ceiling or below the free-disk floor is a REFUSAL (sources
+`memory-ceiling`, `disk-floor`), so it exits 1, not 2: nothing in the solver failed. `--force` lifts the ceiling (owner
+decision O2), never the floor. `explain` reports the ceiling and the floor a run would keep, and takes the same flag
+(`cli.explain.memory-limit`). The MCP `run` and `explain` tools spell it `memoryLimitGB`.
+
 **A 3D result carries its solver in its name** (em-3d.md §4.5), so running a second solver on one setup
 never overwrites the first: `<key>.palace.sNp`, the `.npy` key `<key>.palace_em`, and a run directory
 `results/<key>.palace/` that is **kept** — the `.geo` script, the mesh and its SHA-256, `groups.json`

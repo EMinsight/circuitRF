@@ -8884,7 +8884,8 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
             string c3dPath = cemThreeD!;
             run = (s, control, root) => EmRunService.RunThreeDView(s, threeD, c3dPath, CircuitRF.Design.Workspace.WorkspaceRootFinder.FindAncestorCws(Path.GetDirectoryName(c3dPath)), root, default, control,
                                                                   EmSolveCorePreference.Preferred, ConfirmEmMemory, fromCem: true,
-                                                                  device: EmPalaceDevicePreference.Preferred);
+                                                                  device: EmPalaceDevicePreference.Preferred,
+                                                                  memoryCeilingBytes: EmMemoryLimitPreference.CeilingBytes);
         }
         var source = run is null ? ResolveEmLayout(vm.FilePath, vm.Working.LayoutRef) : null;
 
@@ -9000,7 +9001,7 @@ public partial class WorkspaceViewModel : ViewModelBase, ITreeActions, IHierarch
                 // argument. EmRunService itself lives in CircuitRF.Design and cannot reach it.
                 result = await Task.Run(() => run is not null ? run(setup, control, resultsRoot) : EmRunService.Run(
                     setup, source, resultsRoot, default, control, EmSolveCorePreference.Preferred, ConfirmEmMemory,
-                    EmPalaceDevicePreference.Preferred));
+                    EmPalaceDevicePreference.Preferred, EmMemoryLimitPreference.CeilingBytes));
             }
             catch (Exception ex)
             {

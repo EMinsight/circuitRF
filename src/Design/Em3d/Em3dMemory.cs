@@ -5,12 +5,13 @@
 // per-unknown figure F0 measured), so refusing on it would refuse runs that fit. Only past 150 % does
 // a run need to be confirmed — the panel asks, the CLI takes --force.
 //
-// During a run: the resident memory of the solver's whole process tree (the Palace wrapper, mpirun,
-// every rank), sampled once a second and shown beside the stage. At 90 % of physical memory the run
-// gets a one-time note naming it. Nothing here kills a run: the user decides.
+// During a run: the memory of the solver's whole process tree (the Palace wrapper, mpirun, every rank),
+// shown beside the stage. brief-emi-10: read every 100 ms as a FOOTPRINT (swapped and compressed pages
+// included), and held to a ceiling by the one process loop (PalaceRun.RunProcess) — see Em3dProcessLimits.
 
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.InteropServices;
 
 namespace CircuitRF.Design.Em3d;
 
@@ -79,25 +80,40 @@ public static class MachineMemory
                         : (bytes / 1e6).ToString("0", CultureInfo.InvariantCulture) + " MB";
 }
 
-/// <summary>R-em3d21-2c — the resident memory of a process and every process under it.</summary>
+/// <summary>brief-emi-10 R-emi10-1 — one reading of a process tree: what is resident, and the footprint, which also counts the
+/// pages the operating system has compressed or swapped out. Once a tree swaps its resident size stops growing while its
+/// footprint does not, so a ceiling is held against the footprint.</summary>
+public readonly record struct TreeMemory(long ResidentBytes, long FootprintBytes)
+{
+    /// <summary>The stage detail's figure: the resident one, which users already read, with the footprint beside it only where
+    /// the two differ by more than 10 %.</summary>
+    public string Describe()
+        => FootprintBytes > 1.1 * ResidentBytes
+            ? $"{MachineMemory.Format(ResidentBytes)} in use ({MachineMemory.Format(FootprintBytes)} with swapped and compressed memory)"
+            : $"{MachineMemory.Format(ResidentBytes)} in use";
+}
+
+/// <summary>
+/// R-em3d21-2c, brief-emi-10 R-emi10-1 — the memory of a process and every process under it, cheap enough to read every 100 ms:
+/// on macOS each process's physical footprint (<c>proc_pid_rusage</c>) and its children (<c>proc_listchildpids</c>), both
+/// system calls; on Linux <c>/proc/&lt;pid&gt;/status</c>'s <c>VmRSS</c> + <c>VmSwap</c>, with the tree from a scan of
+/// <c>/proc</c> once a second; on Windows the Job Object the solver was started into (<see cref="Em3dProcessJob"/>).
+/// </summary>
 public static class ProcessTreeMemory
 {
-    /// <summary>One row of a process table: the process, its parent, and its resident bytes.</summary>
-    public readonly record struct Row(int Pid, int Parent, long ResidentBytes);
+    /// <summary>One row of a process table: the process, its parent, its resident bytes and its footprint.</summary>
+    public readonly record struct Row(int Pid, int Parent, long ResidentBytes, long FootprintBytes = 0);
 
-    /// <summary>The tree's resident bytes, or null where this OS offers no process table circuitRF
-    /// reads (Windows: Palace does not run there natively).</summary>
-    public static long? ResidentBytes(int rootPid)
+    /// <summary>A reader for one tree, to be called every tick: it keeps what it learnt of the tree between calls.</summary>
+    public static Func<TreeMemory?> Sampler(int rootPid)
     {
-        IReadOnlyList<Row>? rows = null;
-        try
+        if (OperatingSystem.IsMacOS()) return () => ReadMac(rootPid);
+        if (OperatingSystem.IsLinux())
         {
-            if (OperatingSystem.IsLinux()) rows = ReadProc();
-            else if (OperatingSystem.IsMacOS() && MachineMemory.RunTool("/bin/ps", "-A -o pid=,ppid=,rss=") is { } ps)
-                rows = ParsePs(ps);
+            var tree = new LinuxTree(rootPid);
+            return tree.Read;
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }
-        return rows is null ? null : SumTree(rows, rootPid);
+        return () => null;          // Windows reads the job instead
     }
 
     /// <summary><c>ps -A -o pid=,ppid=,rss=</c>'s output: three integers a row, the last in KiB.
@@ -110,7 +126,7 @@ public static class ProcessTreeMemory
             var f = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
             if (f.Length == 3 && int.TryParse(f[0], out int pid) && int.TryParse(f[1], out int parent) &&
                 long.TryParse(f[2], out long kib))
-                rows.Add(new Row(pid, parent, kib * 1024));
+                rows.Add(new Row(pid, parent, kib * 1024, kib * 1024));
         }
         return rows;
     }
@@ -129,44 +145,163 @@ public static class ProcessTreeMemory
         if (after.Length < 2 || pages.Length < 2 || !int.TryParse(after[1], out int parent) ||
             !long.TryParse(pages[1], out long resident))
             return null;
-        return new Row(pid, parent, resident * pageSize);
+        return new Row(pid, parent, resident * pageSize, resident * pageSize);
+    }
+
+    /// <summary>
+    /// brief-emi-10 — a Linux <c>/proc/&lt;pid&gt;/status</c> as one row: <c>PPid</c>, <c>VmRSS</c> and <c>VmSwap</c> (kB). The
+    /// footprint is resident plus swapped. A kernel thread has no <c>VmRSS</c> line and reads as zero.
+    /// </summary>
+    public static Row? ParseProcStatus(int pid, string status)
+    {
+        int? parent = null;
+        long rss = 0, swap = 0;
+        foreach (string line in status.Split('\n'))
+        {
+            if (line.StartsWith("PPid:", StringComparison.Ordinal) && int.TryParse(line[5..].Trim(), out int pp)) parent = pp;
+            else if (line.StartsWith("VmRSS:", StringComparison.Ordinal)) rss = Kib(line[6..]);
+            else if (line.StartsWith("VmSwap:", StringComparison.Ordinal)) swap = Kib(line[7..]);
+        }
+        return parent is { } p ? new Row(pid, p, rss, rss + swap) : null;
+
+        static long Kib(string v) => long.TryParse(v.Replace("kB", "").Trim(), out long k) ? k * 1024 : 0;
     }
 
     /// <summary>The root's resident bytes plus every descendant's.</summary>
-    public static long SumTree(IReadOnlyList<Row> rows, int root)
+    public static long SumTree(IReadOnlyList<Row> rows, int root) => Sum(rows, root).ResidentBytes;
+
+    /// <summary>The root's reading plus every descendant's.</summary>
+    public static TreeMemory Sum(IReadOnlyList<Row> rows, int root)
     {
         var children = rows.ToLookup(r => r.Parent);
-        var own = rows.GroupBy(r => r.Pid).ToDictionary(g => g.Key, g => g.First().ResidentBytes);
-        long total = 0;
+        var own = rows.GroupBy(r => r.Pid).ToDictionary(g => g.Key, g => g.First());
+        long resident = 0, footprint = 0;
+        foreach (int pid in Descendants(root, p => children[p].Select(c => c.Pid)))
+            if (own.TryGetValue(pid, out var row)) { resident += row.ResidentBytes; footprint += row.FootprintBytes; }
+        return new(resident, footprint);
+    }
+
+    /// <summary>The root and every process under it, each once.</summary>
+    private static List<int> Descendants(int root, Func<int, IEnumerable<int>> children)
+    {
         var seen = new HashSet<int>();
+        var order = new List<int>();
         var stack = new Stack<int>([root]);
         while (stack.Count > 0)
         {
             int pid = stack.Pop();
             if (!seen.Add(pid)) continue;
-            total += own.GetValueOrDefault(pid);
-            foreach (var c in children[pid]) stack.Push(c.Pid);
+            order.Add(pid);
+            foreach (int c in children(pid)) stack.Push(c);
         }
-        return total;
+        return order;
     }
 
-    private static List<Row> ReadProc()
+    // ── Linux ────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The tree from a scan of every <c>/proc/&lt;pid&gt;/stat</c>, once a second; each member's <c>status</c> every
+    /// call. A process started since the last scan is counted from the next.</summary>
+    private sealed class LinuxTree(int root)
     {
-        var rows = new List<Row>();
-        long page = Environment.SystemPageSize;
-        foreach (string dir in Directory.EnumerateDirectories("/proc"))
+        private List<int> _members = [root];
+        private readonly Stopwatch _scanned = new();
+
+        public TreeMemory? Read()
         {
-            if (!int.TryParse(Path.GetFileName(dir), out int pid)) continue;
             try
             {
-                if (ParseProcStat(pid, File.ReadAllText(Path.Combine(dir, "stat")),
-                                  File.ReadAllText(Path.Combine(dir, "statm")), page) is { } row)
-                    rows.Add(row);
+                if (!_scanned.IsRunning || _scanned.ElapsedMilliseconds >= 1000)
+                {
+                    _scanned.Restart();
+                    var rows = ScanParents();
+                    var children = rows.ToLookup(r => r.Parent, r => r.Pid);
+                    _members = Descendants(root, p => children[p]);
+                }
+                long resident = 0, footprint = 0;
+                foreach (int pid in _members)
+                {
+                    string text;
+                    try { text = File.ReadAllText($"/proc/{pid}/status"); }
+                    catch (Exception e) when (e is IOException or UnauthorizedAccessException) { continue; }   // it exited
+                    if (ParseProcStatus(pid, text) is { } row) { resident += row.ResidentBytes; footprint += row.FootprintBytes; }
+                }
+                return new(resident, footprint);
             }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }   // it exited
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return null; }
         }
-        return rows;
+
+        private static List<(int Pid, int Parent)> ScanParents()
+        {
+            var rows = new List<(int, int)>();
+            foreach (string dir in Directory.EnumerateDirectories("/proc"))
+            {
+                if (!int.TryParse(Path.GetFileName(dir), out int pid)) continue;
+                try
+                {
+                    string stat = File.ReadAllText(Path.Combine(dir, "stat"));
+                    int close = stat.LastIndexOf(')');
+                    var after = close < 0 ? [] : stat[(close + 1)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (after.Length >= 2 && int.TryParse(after[1], out int parent)) rows.Add((pid, parent));
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException) { }   // it exited
+            }
+            return rows;
+        }
     }
+
+    // ── macOS ────────────────────────────────────────────────────────────────────────────────
+
+    private static TreeMemory? ReadMac(int root)
+    {
+        try
+        {
+            long resident = 0, footprint = 0;
+            bool any = false;
+            foreach (int pid in Descendants(root, MacChildren))
+            {
+                if (MacUsage(pid) is not { } u) continue;
+                resident += u.Resident;
+                footprint += u.Footprint;
+                any = true;
+            }
+            return any ? new(resident, footprint) : null;
+        }
+        catch (Exception e) when (e is DllNotFoundException or EntryPointNotFoundException) { return null; }
+    }
+
+    // rusage_info_v2: a 16-byte uuid, then 64-bit fields; ri_resident_size is the 7th and ri_phys_footprint the 8th.
+    private const int RusageInfoV2 = 2;
+    private const int ResidentOffset = 16 + 6 * 8;
+    private const int FootprintOffset = 16 + 7 * 8;
+
+    private static (long Resident, long Footprint)? MacUsage(int pid)
+    {
+        var buffer = new byte[256];         // rusage_info_v2 is 160 bytes
+        if (proc_pid_rusage(pid, RusageInfoV2, buffer) != 0) return null;    // it exited, or is not ours to read
+        return (BitConverter.ToInt64(buffer, ResidentOffset), BitConverter.ToInt64(buffer, FootprintOffset));
+    }
+
+    private static IEnumerable<int> MacChildren(int pid)
+    {
+        var buffer = new int[256];
+        while (true)
+        {
+            int n = proc_listchildpids(pid, buffer, buffer.Length * sizeof(int));
+            if (n <= 0) return [];
+            if (n < buffer.Length) return buffer.Take(n).Where(c => c > 0).ToArray();
+            buffer = new int[buffer.Length * 4];        // full: there may be more
+        }
+    }
+
+    // DllImport rather than LibraryImport, which needs AllowUnsafeBlocks (src/Ui/Updates/AtomicFile.cs says why). Both live in
+    // the system's own C library, so nothing is shipped (owner decision O1).
+#pragma warning disable SYSLIB1054
+    [DllImport("libc")]
+    private static extern int proc_pid_rusage(int pid, int flavor, [Out] byte[] buffer);
+
+    [DllImport("libc")]
+    private static extern int proc_listchildpids(int ppid, [Out] int[] buffer, int bufferSize);
+#pragma warning restore SYSLIB1054
 }
 
 /// <summary>How a run's memory estimate sits against the machine.</summary>
@@ -188,8 +323,13 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
     /// <summary>Above this share a run must be confirmed (the panel asks; the CLI needs --force).</summary>
     public const double SevereFraction = 1.5;
 
-    /// <summary>During a run, the share of physical memory the process tree may reach before a note.</summary>
+    /// <summary>During a run, the share of its memory ceiling (of physical memory, on a run forced past the size check) the
+    /// process tree may reach before a warning that the ceiling is near.</summary>
     public const double InUseNoteFraction = 0.9;
+
+    /// <summary>brief-emi-10 — the remedies the verdict was evaluated with, in their order: what a run stopped at its memory
+    /// ceiling names.</summary>
+    public IReadOnlyList<Em3dMemoryRemedy> Remedies { get; init; } = [];
 
     public static readonly Em3dMemoryVerdict Unknown = new(Em3dMemoryLevel.Fits, null, 0, null);
 
@@ -204,9 +344,9 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
     public static Em3dMemoryVerdict Evaluate(long? estimate, long physical, IReadOnlyList<Em3dMemoryRemedy> remedies,
                                              string? basis = null, Em3dMemoryScope? scope = null, string solver = "Palace")
     {
-        if (estimate is not { } e || physical <= 0) return new(Em3dMemoryLevel.Fits, estimate, physical, null);
+        if (estimate is not { } e || physical <= 0) return new(Em3dMemoryLevel.Fits, estimate, physical, null) { Remedies = remedies };
         double share = (double)e / physical;
-        if (share <= WarnFraction) return new(Em3dMemoryLevel.Fits, e, physical, null);
+        if (share <= WarnFraction) return new(Em3dMemoryLevel.Fits, e, physical, null) { Remedies = remedies };
 
         var level = share > SevereFraction ? Em3dMemoryLevel.Severe : Em3dMemoryLevel.Warning;
         string pct = (share * 100).ToString("0", CultureInfo.InvariantCulture);
@@ -222,7 +362,7 @@ public sealed record Em3dMemoryVerdict(Em3dMemoryLevel Level, long? EstimateByte
             : "In order of effect: " + string.Join("; ", useful.Select(r =>
                   $"{r.What} — about {MachineMemory.Format(r.EstimateBytes!.Value)}")) + ".";
         var raise = scope?.Remedy?.Invoke(e);
-        return new(level, e, physical, (head + tail).TrimEnd() + (raise?.Text is { } r ? " " + r : ""), raise?.File);
+        return new(level, e, physical, (head + tail).TrimEnd() + (raise?.Text is { } r ? " " + r : ""), raise?.File) { Remedies = remedies };
     }
 }
 

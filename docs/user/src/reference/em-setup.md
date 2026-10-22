@@ -544,10 +544,30 @@ a run on its own: the estimate uses the highest memory per unknown circuitRF has
 tolerance it converges on (the bar is that convergence on a log scale, not a share of the work — the
 number of samples is not known in advance); *Sweep: evaluating frequencies* with a count; *Reading
 results*. A multi-port setup samples and sweeps each port's excitation in turn, and the row says which.
-Beside the stage is the memory Palace's processes are using, read once a second. If Palace prints
+Beside the stage is the memory Palace's processes are using, shown once a second; where part of it has been swapped
+out or compressed, the larger figure that counts it is shown beside it. If Palace prints
 something circuitRF does not recognise (a Palace version it has not been validated against), the row
 falls back to a count of log lines, with no bar, and the run's notes say so. A 3D run cannot finish
 early and keep what it has, so its running button reads **Cancel**, not Stop.
+
+**A memory limit and a disk floor hold every 3D run while it runs** — Gmsh, Palace, openEMS, EMerge and the short
+checks they make, whichever solver. The checks before a run are estimates; these are measurements, taken ten times a
+second, of everything the solver's processes hold, including what the operating system has swapped out or compressed.
+
+- **The memory limit is this computer's memory**, or the lower limit set in [Settings ▸ Solvers](settings.html#em3d)
+  (`--memory-limit` for `circuitrf em`). A solver that reaches it is stopped, with all the processes it started, and
+  the run writes nothing. Stopped while meshing, the message says the mesher most likely ran away on one curve and
+  points at the log that names it; stopped while solving, it says the problem is larger than this computer and lists
+  what would shrink it. Past 90 % of the limit the run carries a warning.
+- **The disk floor is 10 GB free** (5 % of a smaller volume), on the startup volume, where the operating system swaps,
+  and on the volume the results are written to. Below it the run is stopped the same way, and a run that would start
+  below it is not started. The message names the volume and the free space left.
+- **A run you start anyway when the 150 % check asks** (or with `--force`) has no memory limit, since you chose to let
+  it swap, but it keeps the disk floor.
+- **On Windows the limit is held by the operating system itself**, so a sudden burst cannot overshoot it. Elsewhere
+  it can overshoot by the memory taken between two readings, which is why it sits at the computer's memory and not
+  above it. **A Palace in the Linux subsystem** is held by the subsystem's own memory setting rather than this
+  limit; the disk floor still applies.
 
 **When it finishes**, one line says what it cost — wall time, Palace's own peak memory, the tetrahedra
 it started and finished with, the unknowns, the refinement passes, the sweep's samples and the preset —

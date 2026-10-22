@@ -51,6 +51,9 @@ public sealed record OpenEmsPortRun(int Port, bool Ok, bool Cancelled, string? M
     /// <summary>brief-em3d-116 R-em3d116-2e — when the excited port is a wave-port terminal, its five probes in this run
     /// (U_a, U, U_c, I_a, I_b) and the voltage planes' spacing: what the line's own Z and ε_eff are measured from.</summary>
     public (FdtdProbe Ua, FdtdProbe U, FdtdProbe Uc, FdtdProbe Ia, FdtdProbe Ib, double SpacingM)? Line { get; init; }
+
+    /// <summary>brief-emi-10 — the memory ceiling or the disk floor stopped openEMS (or refused to start it).</summary>
+    public ProcessStop? Stopped { get; init; }
 }
 
 public static class OpenEmsRun
@@ -136,7 +139,7 @@ public static class OpenEmsRun
     /// </summary>
     public static OpenEmsPortRun RunPort(string runDir, CsxcadLowering lowering, int index, string openEms, int? threads,
                                          double endCriterionDb, double windowS, RunControl? control, CancellationToken ct,
-                                         double settleS = 0)
+                                         double settleS = 0, ProcessLimits? limits = null)
     {
         int port = lowering.Ports[index];
         int n = lowering.Ports.Count;
@@ -167,85 +170,47 @@ public static class OpenEmsRun
         var tails = Names(lowering).SelectMany(p => new[] { new ProbeTail(Path.Combine(dir, p.U[0])),
                                                             new ProbeTail(Path.Combine(dir, p.I[0])) })
                                    .ToArray();
-        var gate = new Lock();
-        var tail = new Queue<string>();
-        long latestStep = 0;
-        var log = new StreamWriter(logPath, append: false, new UTF8Encoding(false)) { NewLine = "\n", AutoFlush = true };
-        // Set under the gate before the writer is disposed. After a Kill, the timed WaitForExit does not
-        // wait for the redirected streams, so a late line can still arrive — and a handler that throws
-        // on a disposed writer is rethrown on a thread-pool thread, which ends the process.
-        bool closed = false;
-        void Line(string? text)
-        {
-            if (text is null) return;
-            lock (gate)
-            {
-                if (closed) return;
-                log.WriteLine(text);
-                tail.Enqueue(text);
-                if (tail.Count > 60) tail.Dequeue();
-                if (StepLine.Match(text) is { Success: true } m &&
-                    long.TryParse(m.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long s))
-                    latestStep = s;
-            }
-        }
-
-        Process? p;
-        try { p = Em3dProcessLauncher.Start(psi, Em3dProcessKind.Solver); }
-        catch (Exception e) { log.Dispose(); return Fail($"openEMS could not be started ({e.Message})."); }
-        if (p is null) { log.Dispose(); return Fail("openEMS could not be started (the operating system started nothing)."); }
-        Interlocked.Increment(ref _runs);
-
+        // brief-emi-10 R-emi10-2 — the process loop every solver runs in, so openEMS is held to the same memory ceiling and
+        // disk floor. Its own watching rides on it: the step count from each line, and on each tick the stage and, every half
+        // second, the probes' decay — written as openEMS's own graceful stop, the ABORT file it checks every time step.
+        long latestStep = 0, reported = 0;
         bool stoppedOnDecay = false;
-        using (log)
-        using (p)
-        try
+        var decayWatch = Stopwatch.StartNew();
+        void OnLine(string text)
         {
-            ProcessStarted?.Invoke(p);
-            p.OutputDataReceived += (_, e) => Line(e.Data);
-            p.ErrorDataReceived  += (_, e) => Line(e.Data);
-            p.BeginOutputReadLine();
-            p.BeginErrorReadLine();
-
-            long reported = 0;
-            var watch = Stopwatch.StartNew();
-            while (!p.WaitForExit(100))
+            if (StepLine.Match(text) is { Success: true } m &&
+                long.TryParse(m.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long s))
+                latestStep = s;
+        }
+        void OnTick()
+        {
+            if (latestStep > reported && control is not null)
             {
-                if (ct.IsCancellationRequested) { Kill(p); TryDelete(abort); return Cancel(); }
-                long now;
-                lock (gate) now = latestStep;
-                if (now > reported && control is not null)
-                {
-                    try { control.TickStage(now - reported); }
-                    catch (OperationCanceledException) { Kill(p); TryDelete(abort); return Cancel(); }
-                    reported = now;
-                }
-                if (!stoppedOnDecay && watch.ElapsedMilliseconds >= 500)
-                {
-                    watch.Restart();
-                    foreach (var tl in tails) tl.Poll();
-                    if (Decay(Pairs(tails), windowS, settleS) is { } level && level <= endCriterionDb)
-                    {
-                        // openEMS's own graceful stop: it checks for this file every time step.
-                        try { WriteText(abort, "circuitRF: the port signals have decayed to the end criterion.\n"); stoppedOnDecay = true; }
-                        catch (IOException) { }
-                    }
-                }
+                control.TickStage(latestStep - reported);
+                reported = latestStep;
             }
-            p.WaitForExit();                 // drains the asynchronous readers
-            TryDelete(abort);                // a re-run by hand must not stop at its first step
-            if (ct.IsCancellationRequested) return Cancel();
-
-            string[] lastLines;
-            lock (gate) lastLines = [.. tail];
-            if (p.ExitCode != 0)
-                return Fail($"openEMS failed on port {port}'s run (exit code {p.ExitCode}). Its own words: " +
-                            $"{Quote(lastLines)} The full log is {logPath}.");
+            if (stoppedOnDecay || decayWatch.ElapsedMilliseconds < 500) return;
+            decayWatch.Restart();
+            foreach (var tl in tails) tl.Poll();
+            if (Decay(Pairs(tails), windowS, settleS) is { } level && level <= endCriterionDb)
+            {
+                try { WriteText(abort, "circuitRF: the port signals have decayed to the end criterion.\n"); stoppedOnDecay = true; }
+                catch (IOException) { }
+            }
         }
-        finally
+        var watch = PalaceRun.Watch(limits, OnLine, 0, runDir) with
         {
-            lock (gate) closed = true;
-        }
+            OnTick = OnTick,
+            OnStarted = p => { Interlocked.Increment(ref _runs); ProcessStarted?.Invoke(p); },
+        };
+        var run = PalaceRun.RunProcess(psi, logPath, Em3dProcessKind.Solver, control, ct, watch);
+        TryDelete(abort);                    // a re-run by hand must not stop at its first step
+        if (run.Cancelled) return Cancel();
+        if (run.StartFailure is { } why) return Fail($"openEMS could not be started ({why}).");
+        if (run.Stopped is { } stopped) return new(port, false, false, null, null, double.NaN, false, null) { Stopped = stopped };
+        if (run.ExitCode != 0)
+            return Fail($"openEMS failed on port {port}'s run (exit code {run.ExitCode}). Its own words: " +
+                        $"{Quote([.. run.Tail])} The full log is {logPath}.");
 
         // The log is closed — and so flushed — before it is read: the writer above buffers.
         string logText = File.ReadAllText(logPath);
@@ -487,12 +452,6 @@ public static class OpenEmsRun
         }
 
         public FdtdProbe Snapshot() => new([.. _t], [.. _x]);
-    }
-
-    private static void Kill(Process p)
-    {
-        try { p.Kill(entireProcessTree: true); } catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { }
-        try { p.WaitForExit(10_000); } catch (InvalidOperationException) { }
     }
 
     private static void TryDelete(string path)

@@ -159,6 +159,10 @@ public static partial class Em3dRunService
     public static long ProblemsGenerated => Interlocked.Read(ref _problemsGenerated);
     private static long _problemsGenerated;
 
+    /// <summary>brief-emi-10 — test seam: called first thing in every run with its results root and the memory limit it was
+    /// handed, so a test can see a flag reach the run (and cancel it by throwing) without a solver installed.</summary>
+    internal static Action<string, long?>? RunStarting;
+
     /// <summary>The token a comparison adds to the result stem (R-em3d10-2c).</summary>
     public const string CompareToken = "compare";
 
@@ -191,9 +195,9 @@ public static partial class Em3dRunService
     internal static EmRunResult Run(EmSetup setup, EmLayoutSource source, string resultsRoot,
                                     CancellationToken ct, RunControl? control, int? maxCores,
                                     Func<Em3dMemoryVerdict, bool>? confirmMemory = null,
-                                    PalaceDevice device = PalaceDevice.Cpu)
+                                    PalaceDevice device = PalaceDevice.Cpu, long? memoryCeilingBytes = null)
         => Run(setup, s => Em3dGenerator.Generate(s, source, source.Technology!), resultsRoot, ct, control, maxCores,
-               confirmMemory, device: device);
+               confirmMemory, device: device, memoryCeilingBytes: memoryCeilingBytes);
 
     /// <summary>
     /// brief-em3d-42 — the run, from whatever builds the problem: a <c>.cem</c>'s layout through the generator,
@@ -210,8 +214,9 @@ public static partial class Em3dRunService
                                     CancellationToken ct, RunControl? control, int? maxCores,
                                     Func<Em3dMemoryVerdict, bool>? confirmMemory = null,
                                     Action<Em3dSolverId, string>? keepRecord = null,
-                                    PalaceDevice device = PalaceDevice.Cpu)
+                                    PalaceDevice device = PalaceDevice.Cpu, long? memoryCeilingBytes = null)
     {
+        RunStarting?.Invoke(resultsRoot, memoryCeilingBytes);
         var log = new RunLog();
         var memory = new MemoryGate(confirmMemory);
         var choice = setup.Solver3D;
@@ -250,7 +255,7 @@ public static partial class Em3dRunService
             .ToList() is { Count: > 0 } holds ? new Holds(holds) : null;
 
         // ── each solver's settings ────────────────────────────────────────────────────────────
-        var run = new RunContext(setup, build, resultsRoot, ct, control, maxCores, device, readiness, log, memory);
+        var run = new RunContext(setup, build, resultsRoot, ct, control, maxCores, device, readiness, log, memory, memoryCeilingBytes);
         foreach (var leg in legs) leg.Configure(run);
         using var legHolds = new Holds([.. legs.Select(l => l.Hold(holder)).OfType<IDisposable>()]);
         // One solver stops at its first refusal. A comparison goes on while any could still run, so the
@@ -569,9 +574,32 @@ public static partial class Em3dRunService
     }
 
     /// <summary>What every leg of one run shares: the setup, the inputs the caller passed, discovery's answer and the log.</summary>
+    /// <param name="MemoryCeilingBytes">brief-emi-10 R-emi10-4 — the user's memory limit for a solver (Settings ▸ Solvers,
+    /// <c>--memory-limit</c>), or null for this machine's memory. An ARGUMENT, as the core cap is.</param>
     internal sealed record RunContext(EmSetup Setup, Func<EmSetup, Em3dGenerationResult> Build, string ResultsRoot,
                                       CancellationToken Ct, RunControl? Control, int? MaxCores, PalaceDevice Device,
-                                      IReadOnlyList<SolverReadiness> Readiness, RunLog Log, MemoryGate Memory);
+                                      IReadOnlyList<SolverReadiness> Readiness, RunLog Log, MemoryGate Memory,
+                                      long? MemoryCeilingBytes = null)
+    {
+        /// <summary>brief-emi-10 R-emi10-2 — what this run's processes are held to: the ceiling (this machine's memory, or the
+        /// user's lower limit), lifted once the user forces the run past its size check.</summary>
+        public ProcessLimits Limits(long physicalBytes)
+            => ProcessLimits.For(physicalBytes, MemoryCeilingBytes) with { Lifted = () => Memory.Forced };
+    }
+
+    /// <summary>brief-emi-10 — a process stopped by the memory ceiling or the disk floor, as the leg's refusal: the run's own,
+    /// not the solver's failure (the CLI exits 1, not 2).</summary>
+    internal static Leg StoppedLeg(Em3dSolverId solver, string name, ProcessStop stop, ProcessLimits limits,
+                                   IReadOnlyList<Em3dMemoryRemedy> remedies, string? logPath)
+        => Leg.Failed(solver, EmRunStatus.Refused, EmDiagnostics.Forwarded(
+               stop.Reason == ProcessStopReason.Memory ? MemoryCeilingSource : DiskFloorSource,
+               stop.Sentence(name, limits.CeilingOwner, remedies, logPath)));
+
+    /// <summary>The diagnostic source of a run stopped at its memory ceiling.</summary>
+    public const string MemoryCeilingSource = "memory-ceiling";
+
+    /// <summary>The diagnostic source of a run stopped, or not started, below the free-disk floor.</summary>
+    public const string DiskFloorSource = "disk-floor";
 
     /// <summary>The run's three lists (R-emcli-6), shared by every leg of a comparison.</summary>
     internal sealed class RunLog
@@ -641,9 +669,16 @@ public static partial class Em3dRunService
         private Em3dMemoryLevel _posted = Em3dMemoryLevel.Fits;
         private bool _confirmed;
 
+        /// <summary>brief-emi-10 — the user forced the run past its size check: its processes keep no memory ceiling.</summary>
+        public bool Forced => _confirmed;
+
+        /// <summary>The last verdict the gate was given: its remedies are what a run stopped at its ceiling names.</summary>
+        public Em3dMemoryVerdict? Last { get; private set; }
+
         /// <summary>Null to go on; otherwise the refusal.</summary>
         public string? Admit(Em3dMemoryVerdict verdict, RunLog log)
         {
+            Last = verdict;
             if (verdict.Level == Em3dMemoryLevel.Fits || verdict.Text is null) return null;
             if (verdict.Level == Em3dMemoryLevel.Severe && !_confirmed)
             {

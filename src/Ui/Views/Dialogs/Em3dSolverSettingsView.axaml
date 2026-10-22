@@ -204,6 +204,17 @@
       <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Name="EmergeRemovals" Spacing="4"/>
     </Grid>
 
+    <!-- ── brief-emi-10 R-emi10-4: the memory ceiling every solver and mesher process is held to ─────────
+         Per machine (EmMemoryLimitPreference). Blank is Automatic, this machine's memory, which the placeholder shows greyed.
+         A value at or above it is refused with the CLI flag's own sentence, and is not stored. -->
+    <SelectableTextBlock Text="Memory limit" FontSize="12" FontWeight="SemiBold" Margin="0,16,0,4"/>
+    <StackPanel Orientation="Horizontal" Spacing="6">
+      <TextBox Name="MemoryLimitBox" FontSize="12" Width="80" LostFocus="OnMemoryLimitCommitted"
+               ToolTip.Tip="A solver or mesher that reaches this much memory is stopped, and the run writes nothing. Blank is Automatic: this machine's memory, shown greyed. Lower than that only; a run started anyway past its size check keeps no limit."/>
+      <SelectableTextBlock Text="GB" FontSize="11" VerticalAlignment="Center"/>
+    </StackPanel>
+    <SelectableTextBlock Name="MemoryLimitStatus" FontSize="11" Opacity="0.75" TextWrapping="Wrap" Margin="0,4,0,0" IsVisible="False"/>
+
     <!-- ── brief-em3d-25 R-em3d25-2: every circuitRF-installed solver, one confirmation ── -->
     <Button Name="RemoveAll" Content="Remove all 3D solvers…" FontSize="11" Padding="8,3" Margin="0,16,0,0"
             HorizontalAlignment="Left" IsVisible="False" Click="OnRemoveAll"
