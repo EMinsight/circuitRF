@@ -404,6 +404,9 @@ public sealed class EnvelopeEngineMt
         try
         {
             var dc = NonlinearDcEngine.Run(_nl, _settings);
+            // A linearised-charge model (a composed FET with LinearC) evaluates its charge at the quiescent point:
+            // freeze it there before the first HB solve reads charge, as HbEngine does.
+            BiasFreeze.Apply(_nl, dc.Converged ? dc.NodeVoltages : null, dc.NodeVoltages);
             var V = new Complex[N, M];
             for (int a = 0; a < N; a++)
                 V[a, 0] = dc.Converged && ifNodes[a] - 1 < dc.NodeVoltages.Length ? dc.NodeVoltages[ifNodes[a] - 1] : 0.0;

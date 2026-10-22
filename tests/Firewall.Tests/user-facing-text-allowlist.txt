@@ -1459,6 +1459,7 @@ src/Engine/Envelope/EnvelopeRunner.cs|envelope '{a.Name}': Accuracy must be draf
 src/Engine/Envelope/EnvelopeRunner.cs|envelope '{a.Name}': Stop must be positive
 src/Engine/Envelope/EnvelopeRunner.cs|envelope '{a.Name}': cannot evaluate '{expr}': {ex.Message}
 src/Engine/Envelope/EnvelopeRunner.cs|envelope: {fundamentals} widely spaced carrier groups would need {fundamentals} fundamentals; up to 2 are supported
+src/Engine/Envelope/EnvelopeRunner.cs|envelope '{a.Name}': Envelope must be auto, single or lattice (got '{a.Envelope}')
 src/RfCore/Signals/ModulatedSignal.cs|I/Q file not found: {path}
 src/RfCore/Signals/ModulatedSignal.cs|a FILE carrier needs File=<path>
 src/RfCore/Signals/ModulatedSignal.cs|a signal needs at least one carrier
@@ -1471,6 +1472,7 @@ src/RfCore/Signals/OfdmGenerator.cs|NR subcarrier spacing {scsK} kHz is not one 
 src/RfCore/Signals/OfdmGenerator.cs|NR {bw} MHz is not defined at {scsK} kHz
 src/RfCore/Signals/OfdmGenerator.cs|numerology is defined only for LTE and NR carriers
 src/RfCore/Signals/SignalCache.cs|carrier count mismatch
+src/RfCore/Signals/SignalEvm.cs|{c.Label}: the record holds {native.Length} samples, not the {nm.SamplesPerHalfMs * halfMs} its numerology gives
 src/RfCore/Signals/SignalSpec.cs|carrier field '{p}' is not key=value
 src/RfCore/Signals/SignalSpec.cs|empty carrier description
 src/RfCore/Signals/SignalSpec.cs|empty signal description
