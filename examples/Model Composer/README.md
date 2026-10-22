@@ -38,6 +38,10 @@ doubled, its series resistances halved and its Rth halved:
 |---|---|
 | `GanPowerSweep` | A class-AB stage at 2 GHz, Vgs −0.8 V, Vdd 8 V, 50 Ω in and out, drive swept −4 … 22 dBm |
 | `GanLoadpull` | The same device over 49 loads centred between its maximum-power and maximum-efficiency loads, each driven to 3 dB compression |
+| `GanVerilogA` | The same device twice on identical bias networks: as the `.cmodel` on ports 1 and 2, and as `gan_4x125.va` on ports 3 and 4. A Vgs sweep, S-parameters and a drive sweep 0 … 16 dBm, each measure in pairs. Needs a Verilog-A compiler |
+
+`gan_4x125.va` is the same model as Verilog-A source, for another simulator: **Export Verilog-A…** on the Export step,
+or `circuitrf model export synthetic-gan/gan_4x125.cmodel -o synthetic-gan/gan_4x125.va`.
 
 **Settings chosen for this example**, with what a real job would use:
 
@@ -86,5 +90,6 @@ circuitrf model deembed synthetic-gan/gan_4x125.cmc
 circuitrf model fit synthetic-gan/gan_4x125.cmc --step all
 circuitrf model validate synthetic-gan/gan_4x125.cmc
 circuitrf model export synthetic-gan/gan_4x125.cmc -o synthetic-gan/gan_4x125.cmodel
+circuitrf model export synthetic-gan/gan_4x125.cmodel -o synthetic-gan/gan_4x125.va
 circuitrf hb GanPowerSweep/schematic/GanPowerSweep.csch
 ```

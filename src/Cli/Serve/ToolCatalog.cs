@@ -1348,7 +1348,8 @@ internal static class ToolCatalog
             "Model Composer: build a FET model (.cmodel) or a passive cell from measured or simulated data. "
           + "new -> import -> deembed -> fit (step=all) -> check-charge -> export -> validate. 'reference cmc' and "
           + "'reference cmodel' hold the formats; a .cmodel of your own (equations, a table, an ANN) needs no .cmc, and "
-          + "'reference cmodel' is how to write one. Exit 3: a check failed (charge conservation, a validation tolerance).",
+          + "'reference cmodel' is how to write one. An export to a .va output writes Verilog-A source for other simulators, "
+          + "from a .cmc or a .cmodel, and refuses table constituents. Exit 3: a check failed (charge conservation, a validation tolerance).",
             "noun",
             "What to do.",
             [
@@ -1408,15 +1409,16 @@ internal static class ToolCatalog
                     [new("path", true, "The .cmc.")], [],
                     "Data sets, intrinsic ranges, N0/W0, the temperature mode, each step's state, network values and trap levels."),
                 new("export", ["model", "export"],
-                    [new("path", true, "The .cmc.")],
+                    [new("path", true, "The .cmc, or a .cmodel to write as Verilog-A.")],
                     [
-                        new("output",  "-o",        OptKind.Path,       "Active: the .cmodel to write."),
-                        new("symbol",  "--symbol",  OptKind.PathOrName, "Active: a library symbol name or a .csym; Passive: a .csym."),
-                        new("created", "--created", OptKind.Str,        "Active: the provenance timestamp. Default: now."),
+                        new("output",  "-o",        OptKind.Path,       "Active: the file to write; its extension picks the format, .cmodel or .va/.vams (Verilog-A)."),
+                        new("module",  "--module",  OptKind.Str,        "Verilog-A: the module's name. Default: the model's file name."),
+                        new("symbol",  "--symbol",  OptKind.PathOrName, "Active .cmodel: a library symbol name or a .csym; Passive: a .csym."),
+                        new("created", "--created", OptKind.Str,        "Active .cmodel: the provenance timestamp. Default: now."),
                         new("cell",    "--cell",    OptKind.Path,       "Passive: the workspace (or library folder) the cell is created in."),
                         new("name",    "--name",    OptKind.Str,        "Passive: the cell's name."),
                     ],
-                    "Write the model: a .cmodel, or a cell."),
+                    "Write the model: a .cmodel, Verilog-A source, or a cell."),
                 new("validate", ["model", "validate"],
                     [new("path", true, "The .cmc, or a .cmodel with cmc.")],
                     [

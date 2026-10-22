@@ -21523,3 +21523,21 @@ and moves S by about 2e-8 against the `ComposedFET` — 20 times the gate. `else
 ground instead, so no node, no pin, no warning and no regularisation; the network on `ti` is untouched, which is the
 point of putting it there. Gates: `VerilogAThermalTests` (the three-pin placement still self-heats, with no thermal
 warning) and `VerilogASwitchTests` (S at 10 kHz on a self-heating model).
+
+## MC-28: the Verilog-A export's example bench (2026-10-21)
+
+**`check` of a `VerilogA` compiles it.** Elaboration describes the model through the device worker, so `check` of a
+bench holding a `.va` fails on a machine with no Verilog-A compiler or no built worker, naming the compiler. A shipped
+bench that must check clean everywhere is checked through its own extracted netlist with that device placed as the
+`.cmodel` it was written from; the `.va` is held to the writer's output by a byte comparison instead.
+
+**`NetlistSchematic` draws one net per symbol pin.** A self-heating `ComposedFET`'s standard symbol has a T pin, and its
+three-net line — exactly what extraction writes for a T pin left unwired — is refused ("binds 3 net(s) and its symbol
+has 4 pin(s)"). The example's authoring gives the pin a one-pin net and removes that net's label from the drawing, which
+leaves the pin unwired and extracts as the three-net line again.
+
+**A measure cannot raise a result to a power.** `mag(HB1.V("o1",1))^2` is refused ("Cube operand must go through
+Add/Sub/Mul/Div"); `real(V*conj(V))` is the spelling that works.
+
+**The committed `.va` names the writer's version on its first line**, so a byte comparison with the writer fails at every
+release until someone re-exports. `ModelComposerExampleShippedTests` compares everything but that version.

@@ -19,7 +19,9 @@ public sealed class ModelComposerNoLogicTests
          // MC-15: the model steps' plots, the check, the validation, the export and the report — each the verb's own call.
          "ModelStepPlots.Build(", "ConservationCheck.RunFile(", "ModelValidation.RunFile(", "CmodelExport.Export(",
          "ModelCommands.ExportCell(", "ModelValidationReport.Generate(", "ModelReportDisplayPreset.WriteDocument(",
-         "ModelReportDisplayPreset.WritePdf("];
+         "ModelReportDisplayPreset.WritePdf(",
+         // MC-28: Export Verilog-A, the verb's own call.
+         "CmodelVerilogA.Export("];
 
     [Fact]
     public void TheWindowsFolders_HoldNoFlow_AndCallTheSharedFunctions()

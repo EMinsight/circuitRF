@@ -71,6 +71,7 @@
 <li><a href="#validate">The Validate step</a></li>
 <li><a href="#report">The Model Validation Report</a></li>
 <li><a href="#export">The Export step</a></li>
+<li><a href="#veriloga">Verilog-A export</a></li>
 <li><a href="#plots">Plots</a></li>
 <li><a href="#passive">Passive documents: Data and Topology</a></li>
 <li><a href="#undo">Undo</a></li>
@@ -806,6 +807,8 @@ loadpull.</li>
 measured ones.</li>
 <li><code>simulated-tables</code>: a model built from a simulator's tables, showing the intrinsic-voltage cross-check.</li>
 </ul>
+<p>The <code>synthetic-gan</code> model is also there as Verilog-A source, <code>gan_4x125.va</code>, and the <code>GanVerilogA</code> bench runs the two
+side by side: <a href="#veriloga">Verilog-A export</a>.</p>
 <p>Its README lists every setting it uses, and the value a real job would use where it differs.</p>
 <h2 id="open">Opening a document</h2>
 <p><strong>Tools ▸ Model Composer…</strong> opens a window on a new document and asks one question: <strong>Active</strong> (a three-terminal FET)
@@ -2900,6 +2903,7 @@ the model's Output and Transfer curves against its data. A placed instance's the
 <a href="components.html#composedfet-thermal-pin">The thermal pin, T</a>.</p>
 <p>A step whose result predates the data or the network blocks Export with one line naming it; <strong>Run stale</strong> re-runs the
 stale steps in order.</p>
+<p><strong>Export Verilog-A…</strong> writes the same model as Verilog-A source, for another simulator: <a href="#veriloga">Verilog-A export</a>.</p>
 <p>A placed model can have parts of itself switched off per instance, to see what each costs the circuit:
 <a href="#switches">Switching parts of the model off</a>.</p>
 <p>A passive document exports as a cell: its name, the library or workspace folder it goes in, and the fitted values as
@@ -3004,6 +3008,139 @@ one note to Messages. <code>circuitrf explain</code> reports each instance's swi
 strip, and each toggle re-solves the loadline, the contours and the power sweep while you watch. The strip's <code>DUT</code> line
 names whatever is switched off. The loadline and its DCIV family are read at the intrinsic device, inside the network,
 with each DC curve at its own trap state and self-heated temperature.</p>
+<h2 id="veriloga">Verilog-A export</h2>
+<p><strong>Export Verilog-A…</strong> on the Export step writes the model as one Verilog-A source file, so the same model runs in another
+simulator. It asks where the file goes, offering <code>&lt;name&gt;.va</code> beside the <code>.cmodel</code>'s path, and the line under the buttons
+names the file and its module. The file is self-contained: it includes only the standard disciplines and constants
+headers, and its header comment lists every parameter with its unit, default and meaning.</p>
+<p>circuitRF runs Verilog-A too, so it can check the file itself. In the example, the <code>GanVerilogA</code> bench places the
+<code>.cmodel</code> as a <code>ComposedFET</code> and <code>gan_4x125.va</code> as a <a href="veriloga.html">VerilogA</a> on identical bias networks — ports 1 and 2
+for one, 3 and 4 for the other — with a DC sweep, S-parameters and a drive sweep; its measures show each pair side by
+side. Running it needs a Verilog-A compiler (<a href="veriloga.html#compiler">The compiler, and why it is yours</a>).</p>
+<p>Headless, the same function is <code>circuitrf model export gan.cmc -o gan.va</code>, and a <code>.cmodel</code> someone sent you exports with
+no document: <code>circuitrf model export gan.cmodel -o gan.va</code> (<a href="cli.html#model"><code>model</code></a>).</p>
+<h3 id="what-is-exported">What is exported</h3>
+<p>Everything a placed <code>ComposedFET</code> has: the network, the equation and ANN constituents, the continuation outside the
+training domain, drain–source symmetry, the charges, dispersion, the trap states, self-heating, the temperature range
+and periphery scaling. Equations and ANNs are written as code, so the file computes the model's own numbers.</p>
+<p><strong>Tables are not exported.</strong> A model with a table constituent shows one line on the Export step — <code>Id and Qg are tables; Verilog-A export needs ANN or equation constituents.</code> — and <strong>Export Verilog-A…</strong> stays off; <strong>Export</strong> is unaffected.
+To export, refit that constituent as an ANN or an equation on its step (<a href="#method">The method picker</a>), then export again.</p>
+<h3 id="terminals">Terminals</h3>
+<p><code>g</code>, <code>d</code> and <code>s</code>, and for a self-heating model a fourth, <code>t</code>, whose temperature is the channel's rise above the ambient,
+in K. Leave <code>t</code> off the symbol (one pin fewer) and the device heats on the model's own thermal network. Drawn and left
+unwired, it does the same: unlike the general rule in <a href="veriloga.html#terminals">The thermal terminal</a>, this module keeps
+its thermal network on a node of its own and joins <code>t</code> to it, so an unwired <code>t</code> is never a floating node. A thermal
+network wired to <code>t</code> sits in parallel with the model's, as on a <code>ComposedFET</code>'s <a href="components.html#composedfet-thermal-pin">T pin</a>.</p>
+<h3 id="parameters">Parameters</h3>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>N</code></td>
+<td>The finger count. Currents, charges and network values scale from the measured device's <code>N0</code>, as on a <code>ComposedFET</code>.</td>
+</tr>
+<tr>
+<td><code>Temp</code></td>
+<td>The device temperature, °C. Unset follows the simulator's.</td>
+</tr>
+<tr>
+<td><code>Rth</code>, <code>Cth</code></td>
+<td>This device's own thermal resistance and capacitance at <code>N</code> fingers. Unset is the model's, scaled.</td>
+</tr>
+<tr>
+<td>The ten switches</td>
+<td>Below.</td>
+</tr>
+<tr>
+<td><code>VgsQ</code>, <code>VdsQ</code>, <code>TjQ</code></td>
+<td>The bias point the linear-charge switches hold the charge at. Below.</td>
+</tr>
+<tr>
+<td>Network values</td>
+<td>One per value of the six-pin network, at its fitted value, with its scaling rule in the header.</td>
+</tr>
+<tr>
+<td><code>Id_beta</code>, …</td>
+<td>An equation constituent's parameters, named after the constituent.</td>
+</tr>
+<tr>
+<td><code>Gx_Id</code>, …</td>
+<td>The conductances the continuation outside the training domain adds.</td>
+</tr>
+<tr>
+<td>Trap parameters</td>
+<td>The trap model's own, such as <code>TauEmit2</code>.</td>
+</tr>
+</tbody>
+</table>
+<p><code>m</code> is the host simulator's own device multiplier: it multiplies the whole device, so the module declares none.</p>
+<p>The switches are those of <a href="#switches">Switching parts of the model off</a>, as integers, <code>1</code> on and <code>0</code> off:</p>
+<table>
+<thead>
+<tr>
+<th>Switch</th>
+<th>Default</th>
+<th><code>0</code> or <code>1</code> does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Charge</code></td>
+<td><code>1</code></td>
+<td><code>0</code>: no intrinsic capacitance.</td>
+</tr>
+<tr>
+<td><code>LinearC</code></td>
+<td><code>0</code></td>
+<td><code>1</code>: the intrinsic capacitances held at the bias point.</td>
+</tr>
+<tr>
+<td><code>LinearCgs</code>, <code>LinearCdg</code>, <code>LinearCds</code>, <code>LinearCm</code></td>
+<td><code>0</code></td>
+<td><code>1</code>: that one capacitance held at the bias point.</td>
+</tr>
+<tr>
+<td><code>GateLag</code>, <code>DrainLag</code></td>
+<td><code>1</code></td>
+<td><code>0</code>: those trap states follow the voltage instantly.</td>
+</tr>
+<tr>
+<td><code>SelfHeating</code></td>
+<td><code>1</code></td>
+<td><code>0</code>: the device stays at <code>Temp</code>.</td>
+</tr>
+<tr>
+<td><code>Dispersion</code></td>
+<td><code>1</code></td>
+<td><code>0</code>: the drain carries its DC current at every frequency.</td>
+</tr>
+</tbody>
+</table>
+<p>A switch naming a part the model does not have changes nothing, and the header names those switches.</p>
+<h3 id="veriloga-bias">The bias point</h3>
+<p><code>VgsQ</code>, <code>VdsQ</code> and <code>TjQ</code> are needed only when <code>LinearC</code> or one of the four single-capacitance switches is on. Unset with
+such a switch on, the run stops at its first step with a message naming the switch and the parameters to set.</p>
+<ul>
+<li><code>VgsQ</code> and <code>VdsQ</code> are the <strong>intrinsic</strong> gate–source and drain–source voltages, in V: across the core, inside the
+network, not at the terminals. They differ from the terminal bias by the drops on the network's resistances.</li>
+<li><code>TjQ</code> is the junction temperature at that point, in °C. Unset, it is <code>Temp</code>, and a self-heating device says once that
+its charge is held at the ambient.</li>
+</ul>
+<p>To get them from circuitRF, place the <code>.cmodel</code> as a <code>ComposedFET</code> on the same bias network and run DC. Its intrinsic
+nodes and its thermal node are in the DC result as <code>X1.gi</code>, <code>X1.di</code>, <code>X1.si</code> and <code>X1.t</code>:</p>
+<pre><code>VgsQ = V(X1.gi) − V(X1.si)      VdsQ = V(X1.di) − V(X1.si)      TjQ = temp + V(X1.t)
+</code></pre>
+<p>On the example's bench that is <code>VgsQ = −0.8453</code>, <code>VdsQ = 7.891</code> and <code>TjQ = 26.36</code>. Or take them from the other
+simulator's own operating point of the placed module: the same differences across its internal nodes <code>gi</code>, <code>di</code> and
+<code>si</code>, and the rise on its thermal node <code>ti</code>.</p>
+<h3 id="what-differs-from-a-composedfet">What differs from a <code>ComposedFET</code></h3>
+<p>A <code>ComposedFET</code> finds the bias point itself, from the circuit's DC solution; the <code>.va</code> takes it as given. Nothing else
+differs.</p>
 <h2 id="plots">Plots</h2>
 <p>Every plot is a Data Display plot. Measured traces are symbols and model traces lines. The plots are drawn from the
 document, so the menu's Plot Properties… and Axes Labels… are greyed; Copy and Export… are always there.</p>

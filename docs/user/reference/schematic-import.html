@@ -142,7 +142,7 @@ cell. Save the schematic first: an unsaved one has nowhere to put them.</p>
 </tr>
 <tr>
 <td>R, C or L with its footprint</td>
-<td>a symbol named after its land pattern, such as <code>R-0603</code> or <code>C-1210</code></td>
+<td>a symbol named after its land pattern, such as <code>R-0603</code> or <code>C-1210</code>; or an R, C or L whose footprint property names a chip land pattern, such as <code>RESC1005X038L</code> or <code>R_0603_1608Metric</code></td>
 </tr>
 <tr>
 <td><strong>ground</strong></td>
@@ -158,6 +158,9 @@ part stays a symbol cell even though its symbol is a resistor. To keep any R, L 
 multiplier, becomes a global variable named <code>&lt;Ref&gt;_&lt;parameter&gt;</code> (<code>R1_R</code>), with the source's text in the import's
 report. Its default is 1 kΩ, 1 nF or 1 nH; for a part marked not fitted it is an open — 1 GΩ, 0.01 pF or 1 H. Set the
 variable to the value you meant.</p>
+<p><strong>A footprint property's size is metric when it is an IPC-7351 name.</strong> <code>RESC1005X038L</code> is a 1.0 × 0.5 mm resistor,
+the <strong>0402</strong> case, and its last letter is the density level: the part's <code>Footprint</code> becomes <code>smt:0402@L</code>. Any text
+before or after the name, such as a library prefix, is ignored.</p>
 <p><strong>A supply rail is a net, never a source.</strong> <code>+5V</code> stays a net named <code>+5V</code>; circuitRF adds no supply for it.</p>
 <h2 id="symbol-cells">Symbol cells, and why they do not simulate yet</h2>
 <p>Each distinct symbol becomes one cell, holding the source's drawing as its symbol, in a folder beside the new cell
@@ -167,9 +170,13 @@ cell is reused; a different cell of the same name is refused, naming both.</p>
 <p><strong>A symbol cell has no model.</strong> It is the source's picture of a transistor or an IC with nothing behind its pins, so
 <code>check</code> reports it and a simulation refuses to run until you give it one: a schematic of its own, an S-parameter file,
 or a model. circuitRF does not invent electrical behaviour the source did not state.</p>
+<p><strong>Test points are left out of a run.</strong> A part whose reference starts with <code>TP</code>, and any other symbol cell with a single
+pin, is drawn as usual with its <strong>Disable</strong> set to <strong>Open</strong>, so it neither needs a model nor takes part in a
+simulation. The report lists them. Set Disable back to <strong>None</strong> on any you want to include.</p>
 <h2 id="ports">Ports</h2>
-<p>Nothing becomes a circuitRF Port unless you say so, because which connector is an RF port is your decision. Tick one in
-the <strong>Ports</strong> list and:</p>
+<p>Nothing becomes a circuitRF Port unless you say so, because which connector is an RF port is your decision. The
+<strong>Ports</strong> list offers only connectors that can be one: a signal pin, and at most one other net off ground for its
+reference. A header carrying several signals is not offered. Tick one in the list and:</p>
 <ul>
 <li><strong>a connector</strong> becomes a Term where it was drawn — its first pin off ground the signal, the next its reference — and
 no symbol cell is made for it;</li>
@@ -187,7 +194,8 @@ every cell; any other global net used on more than one sheet is not joined acros
 <li><strong>The drawing is the source's.</strong> Every part keeps its position and orientation and every wire its own segments. A
 design drawn on a finer grid than 100 mils keeps its points exactly, and the schematic's connection grid is set to
 match. A part whose pins sit at a different spacing from circuitRF's own symbol is joined to the source's wire with
-one short bend.</li>
+one short bend. Where circuitRF's symbol is the longer of the two, the stretch of wire its body now covers is
+removed, so the wire ends on the pin rather than inside the part.</li>
 <li><strong>Labels</strong> go where the source shows them: a part's name where it shows the reference, and its value where it shows
 the value, each reading from the same end. A field the source hides is hidden. circuitRF's labels are always level, so
 a part whose source writes a label up the page — usually an upright resistor's value — keeps circuitRF's own layout.</li>

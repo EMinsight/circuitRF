@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using CircuitRF.Core.Devices.Composed;
 using CircuitRF.Design.Modeling;
 using CircuitRF.Design.Modeling.Passive;
+using CircuitRF.Design.Modeling.VerilogA;
 using CircuitRF.Design.Optimization;
 using CircuitRF.Diagnostics;
 using CircuitRF.Engine;
@@ -43,7 +44,7 @@ internal static class Model
         ("fit",          "Fits one --step, or all of them, with the document's settings (--method and --seed change them)."),
         ("check-charge", "Checks charge conservation of a .cmc's fitted charges, or of a device in a .cnl; exit 3 above --threshold."),
         ("explain",      "Data sets and planes, intrinsic ranges, N0/W0, temperature mode, each step's state, network values, trap levels."),
-        ("export",       "Writes the model: an Active document as a .cmodel (-o), a Passive one as a cell (--cell)."),
+        ("export",       "Writes the model: an Active document (or a .cmodel) as -o's extension says, .cmodel or Verilog-A .va; a Passive one as a cell (--cell)."),
         ("validate",     "Compares a model with the document's data at the measurement plane; exit 3 when a tolerance is missed."),
         ("report",       "Writes the Model Validation Report into a folder, with the document's stored options unless flags change them."),
     ];
@@ -78,6 +79,7 @@ internal static class Model
         ("--cell",           "workspace [name]",          ["export"]),
         ("--symbol",         "name|path.csym",            ["export"]),
         ("--created",        "timestamp",                 ["export"]),
+        ("--module",         "name",                      ["export"]),
         ("--model",          "x.cmodel",                  ["validate", "report"]),
         ("--cmc",            "doc.cmc",                   ["validate"]),
         ("--against",        "set,set",                   ["validate"]),
@@ -167,7 +169,7 @@ internal static class Model
             return 130;
         }
         catch (Exception ex) when (ex is ModelingException or CmcFormatException or DataImportException or CmodelFormatException
-                                       or InvalidDataException or IOException or UnauthorizedAccessException or ArgumentException)
+                                       or VerilogAExportException or InvalidDataException or IOException or UnauthorizedAccessException or ArgumentException)
         {
             return JsonRun.Fail(CliDiagnostics.ModelRefused(noun, ex.Message));
         }
@@ -315,10 +317,14 @@ internal static class Model
         return 3;
     }
 
+    /// <summary>The formats an Active model exports as, by <c>-o</c>'s extension — <c>render</c>'s rule.</summary>
+    private static readonly string[] ExportExtensions = [CmodelFile.Extension, ".va", ".vams"];
+
     private static int Export(string path, Args a, RunControl rc)
     {
-        var doc = CmcFile.Read(path);
-        if (doc.Kind == CmcKind.Passive)
+        bool cmodel = path.EndsWith(CmodelFile.Extension, StringComparison.OrdinalIgnoreCase);
+        var doc = cmodel ? null : CmcFile.Read(path);
+        if (doc is { Kind: CmcKind.Passive })
         {
             if (a["--cell"] is not { } workspace)
                 return Missing("export", "--cell", "a passive model exports as a cell; give --cell <workspace> <name>");
@@ -328,12 +334,37 @@ internal static class Model
             return Report("export", path, [.. result.Lines.Select(l => new ModelLine("export", cell, l))],
                           written: [.. result.Cell.Paths]);
         }
-        if (a["--cell"] is not null) return JsonRun.Fail(CliDiagnostics.ModelRefused("export", "an Active document exports as a .cmodel; give -o <out.cmodel>."));
-        if (a["-o"] is not { } output) return Missing("export", "-o", "say where the model goes: -o <out.cmodel>");
+        if (a["--cell"] is not null) return JsonRun.Fail(CliDiagnostics.ModelRefused("export", "an Active document exports as a .cmodel or a .va; give -o <out.cmodel> or -o <out.va>."));
+        if (a["-o"] is not { } output) return Missing("export", "-o", "say where the model goes: -o <out.cmodel>, or -o <out.va> for Verilog-A");
+        string ext = Path.GetExtension(output).ToLowerInvariant();
+        if (!ExportExtensions.Contains(ext))
+            return JsonRun.Fail(CliDiagnostics.ModelRefused("export",
+                $"-o '{Path.GetFileName(output)}': the extension says the format, and it is one of .cmodel, .va or .vams (Verilog-A)."));
+        if (ext != CmodelFile.Extension) return ExportVerilogA(path, Path.GetFullPath(output), a, rc);
+        if (cmodel) return JsonRun.Fail(CliDiagnostics.ModelRefused("export", "the model is a .cmodel already; there is nothing to export. Give -o <out.va> for Verilog-A."));
+        if (a["--module"] is not null) return JsonRun.Fail(CliDiagnostics.ModelRefused("export", "--module names a Verilog-A module; a .cmodel has none. Give -o <out.va>."));
         string? sym = a["--symbol"] is { } sy && sy.EndsWith(".csym", StringComparison.OrdinalIgnoreCase) ? Path.GetFullPath(sy) : a["--symbol"];
         var export = CmodelExport.Export(path, Path.GetFullPath(output), sym, a["--created"], rc);
         return Report("export", path, [.. export.Lines.Select(l => new ModelLine("export", Path.GetFileName(export.Path), l))],
                       written: [export.Path]);
+    }
+
+    /// <summary>A <c>.cmc</c> or a <c>.cmodel</c> as Verilog-A source (brief-modelcomposer-28 R-mc28-2), through the one
+    /// function the Export step calls.</summary>
+    private static int ExportVerilogA(string path, string output, Args a, RunControl rc)
+    {
+        if (a["--created"] is not null)
+            return JsonRun.Fail(CliDiagnostics.ModelRefused("export", "--created is a .cmodel's; a .va records the model's own Created."));
+        if (a["--symbol"] is not null)
+            return JsonRun.Fail(CliDiagnostics.ModelRefused("export", "--symbol is a .cmodel's; a Verilog-A module has no symbol."));
+        var r = CmodelVerilogA.Export(path, output, new VerilogAOptions { ModuleName = a["--module"] }, rc);
+        string file = Path.GetFileName(r.Path);
+        var lines = new List<ModelLine> { new("export", file, $"{file}: module {r.ModuleName}, {r.Parameters} parameters.") };
+        if (r.InertSwitches.Count > 0)
+            lines.Add(new("export", file, $"For this model {Yield.NounList(r.InertSwitches)} change{(r.InertSwitches.Count == 1 ? "s" : "")} nothing."));
+        int code = Report("export", path, lines, written: [r.Path]);
+        JsonRun.Model = JsonRun.Model! with { VerilogA = new ModelVerilogAJson(r.Path, r.ModuleName, r.Parameters, r.InertSwitches) };
+        return code;
     }
 
     private static int Validate(string path, Args a, RunControl rc)
@@ -425,7 +456,7 @@ internal static class Model
         foreach (string w in written ?? [])
         {
             Console.Error.WriteLine($"Wrote {w}");
-            JsonRun.AddOutput(Path.GetExtension(w) switch { ".cmc" => "cmc", ".cmodel" => "cmodel", _ => JsonRun.KindOf(w) }, w);
+            JsonRun.AddOutput(Path.GetExtension(w) switch { ".cmc" => "cmc", ".cmodel" => "cmodel", ".va" or ".vams" => "veriloga", _ => JsonRun.KindOf(w) }, w);
         }
         return 0;
     }

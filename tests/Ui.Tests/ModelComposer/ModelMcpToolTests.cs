@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json.Nodes;
+using CircuitRF.Design.Modeling;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -7,7 +8,7 @@ namespace CircuitRF.Ui.Tests.ModelComposer;
 
 /// <summary>
 /// brief-modelcomposer-13 R-mc13-6: over the protocol, the <c>model</c> tool's <c>export</c> writes the bytes the CLI's
-/// does, and <c>reference cmodel</c> returns the format's field table.
+/// does, and <c>reference cmodel</c> returns the format's field table. MC-28 adds the Verilog-A output.
 /// </summary>
 public sealed class ModelMcpToolTests(ITestOutputHelper output)
 {
@@ -39,6 +40,39 @@ public sealed class ModelMcpToolTests(ITestOutputHelper output)
         string page = JsonNode.Parse(calls[1]["content"]![0]!["text"]!.GetValue<string>())!["result"]!["reference"]!["topic"]!["text"]!.GetValue<string>();
         Assert.Contains("`Core.Constituents`", page, StringComparison.Ordinal);
         Assert.Contains("`Provenance`", page, StringComparison.Ordinal);
+    }
+
+    /// <summary>brief-modelcomposer-28 R-mc28-3: a <c>.va</c> output writes Verilog-A from a <c>.cmodel</c> — the CLI's bytes,
+    /// with the module named — and a table model is refused naming every table constituent.</summary>
+    [Fact]
+    public void TheModelToolsExport_ToAVa_IsTheClisBytes_AndRefusesTables()
+    {
+        string cmc = ExportFixture.Document();
+        string dir = Path.GetDirectoryName(cmc)!;
+        string cmodel = CmodelExport.Export(cmc, Path.Combine(dir, "fet.cmodel"), created: Created).Path;
+        string mixed = Path.Combine(dir, "mixed.cmodel");
+        File.Copy(CircuitRF.Core.Tests.Composed.ComposedTestModels.WriteTemp(CircuitRF.Engine.Tests.Composed.RuntimeTestModels.MixedModel(), "mixed.cmodel"), mixed);
+
+        JsonObject Export(string path, string output) => new()
+        {
+            ["name"] = "model",
+            ["arguments"] = new JsonObject { ["noun"] = "export", ["path"] = path, ["output"] = output, ["module"] = "amp" },
+        };
+        var calls = Serve(dir, Export(cmodel, Path.Combine(dir, "tool.va")), Export(mixed, Path.Combine(dir, "mixed.va")));
+
+        var doc = JsonNode.Parse(calls[0]["content"]![0]!["text"]!.GetValue<string>())!;
+        Assert.Equal(0, doc["exitCode"]!.GetValue<int>());
+        Assert.Equal("amp", doc["result"]!["model"]!["verilogA"]!["module"]!.GetValue<string>());
+        var cli = ModelCliFixture.Run(dir, "model", "export", cmodel, "-o", Path.Combine(dir, "cli.va"), "--module", "amp");
+        Assert.Equal(0, cli.ExitCode);
+        Assert.Equal(File.ReadAllBytes(Path.Combine(dir, "cli.va")), File.ReadAllBytes(Path.Combine(dir, "tool.va")));
+
+        var refusal = JsonNode.Parse(calls[1]["content"]![0]!["text"]!.GetValue<string>())!;
+        Assert.Equal(1, refusal["exitCode"]!.GetValue<int>());
+        string refused = string.Join("\n", refusal["diagnostics"]!.AsArray().Select(d => d!["message"]!.GetValue<string>()));
+        foreach (string name in new[] { "Id", "Qg" })
+            Assert.Contains($"Core.Constituents.{name}.Method: 'Table' cannot be written as Verilog-A", refused, StringComparison.Ordinal);
+        Assert.False(File.Exists(Path.Combine(dir, "mixed.va")));
     }
 
     /// <summary>One <c>serve</c> process over <paramref name="root"/>: initialize, then each tool call; their results.</summary>

@@ -1,14 +1,16 @@
 # circuitRF — Model Composer and the composed FET
 
-**Status:** built, MC-1 … MC-16 — the `.cmodel` format and the `ComposedFET` device (MC-1); table and ANN constituents
+**Status:** built, MC-1 … MC-28 — the `.cmodel` format and the `ComposedFET` device (MC-1); table and ANN constituents
 with guided extrapolation (MC-2); the `.cmc` document, its data and cache (MC-3); pads, the six-pin network and the
 intrinsic data (MC-4); the extrinsic fit (MC-5); the ANN trainer (MC-6); the currents and DC/RF dispersion (MC-7); the
 charges and Check Charge Conservation (MC-8); temperature and self-heating (MC-9); traps (MC-10); export, validation and
 the Model Validation Report (MC-11); passive models (MC-12); the `model` verb and its MCP tool (MC-13); the window
-(MC-14); the steps and their plots (MC-15); the example, the user pages and the series acceptance (MC-16). §20 records
+(MC-14); the steps and their plots (MC-15); the example, the user pages and the series acceptance (MC-16); the later
+phases (MC-17 … MC-25) in their own sections; the Verilog-A export, its Export step button, verb, MCP path and example
+bench (MC-26 … MC-28, §25). §20 records
 every deviation from the series as built, §21 the open items and §22 the example and the acceptance ·
 **Source:** `docs/sonnet-briefs/brief-modelcomposer-0-overview.md` (decisions D1–D16) and the phase briefs
-`brief-modelcomposer-1` … `-16` · **Primary reference:** [P1] J. C. Pedro, D. E. Root, J. Xu, L. C. Nunes,
+`brief-modelcomposer-1` … `-28` · **Primary reference:** [P1] J. C. Pedro, D. E. Root, J. Xu, L. C. Nunes,
 *Nonlinear Circuit Simulation and Modeling*, Cambridge University Press, 2018.
 **Reads with:** `sdd.md` (the expression engine and dual-number AD the constituents share),
 `nonlinear-dc.md` (the `Evaluate` contract), `harmonic-balance.md`, `data-model.md` §5.
@@ -1792,10 +1794,11 @@ extra passes per charge). Only instances with a branch switch pay it, and an ins
 
 `CmodelVerilogA.Write(ComposedModel, VerilogAOptions)` writes a model as one self-contained Verilog-A module, and
 `Export(cmodelPath, vaPath)` writes that to a file by a temporary file and a rename. It reads the `ComposedModel` that
-`CmodelFile.Read` returns, so a `.cmodel` alone exports. MC-28 will pass `CmodelExport.Assemble`'s in-memory model
-through the same `Write`. The code is in `src/Design/Modeling/VerilogA/`. MC-26 wrote everything that has no state of
-its own; MC-27 adds the dispersion node, the trap states, self-heating with its thermal pin, and every instance switch
-with the bias point the linear-charge switches freeze at (§25.11 – §25.16).
+`CmodelFile.Read` returns, so a `.cmodel` alone exports; given a `.cmc`, `Export` assembles it with
+`CmodelExport.Assemble` and passes the in-memory model through the same `Write` (MC-28). The code is in
+`src/Design/Modeling/VerilogA/`. MC-26 wrote everything that has no state of its own; MC-27 adds the dispersion node, the
+trap states, self-heating with its thermal pin, and every instance switch with the bias point the linear-charge switches
+freeze at (§25.11 – §25.16); MC-28 puts it in front of the user (§25.17 – §25.20).
 
 ### 25.1 The module
 
@@ -2111,3 +2114,78 @@ All against the `.cmodel` placed as a `ComposedFET` on one bench, to §25.9's to
 - **`CmodelVerilogAWriterTests`**: every declared parameter is in the header and the switches are
   `ComposedSwitches.Names` in order with their defaults, so a switch added to circuitRF without one here fails; a trap
   model with no writer is refused by name.
+
+### 25.17 MC-28: three entry points, one function
+
+`CmodelVerilogA.Export(path, vaPath, options, rc)` is what all three call (D15). `path` is a `.cmodel`, or a `.cmc`
+assembled as `CmodelExport.Export` assembles it — the stale-step refusal first, then the writer's own. A `.cmc`'s header
+hashes `CmodelFile.ModelJson` of the assembled model, the bytes its `.cmodel` would hold, and records
+`VerilogAOptions.Created` (null: the time of the export). The result carries the module name, the parameter count and
+the switches that change nothing for the model; `TablesLine(CmcDocument)` is the one line naming the fitted table
+constituents, read from the step records before anything is assembled.
+- **The Export step**: **Export Verilog-A…** beside **Export**, enabled when Export is and no constituent is a table;
+  the tables line shows under the step when one is. The save dialog offers `<name>.va` beside the `.cmodel` path. The
+  run is `RunOnFile`, as Export's; the line under the buttons is `<file>: module <name>`.
+- **`model export <path> -o <out>`**: `-o`'s extension picks the format — `.cmodel`, `.va`, `.vams` — and any other is
+  refused listing them. `<path>` may be a `.cmodel`; a `.cmodel` to `.cmodel` is refused. `--module` is new;
+  `--created` and `--symbol` belong to a `.cmodel` and are refused for a `.va`. `--json` adds `result.model.verilogA`
+  (`path`, `module`, `parameters`, `inertSwitches`); the output's kind is `veriloga`. Exit 1 on a refusal, every one
+  of the writer's listed; 130 on a cancel.
+- **The MCP `model` tool**: the `export` noun's `output` picks the format the same way, with `module` and a `.cmodel`
+  `path`.
+
+### 25.18 The example bench
+
+`examples/Model Composer/synthetic-gan/gan_4x125.va` is the writer's output for the shipped `.cmodel`, written by
+`ModelComposerExampleAuthoring.BuildTheVerilogABench` (the whole-workspace rebuild calls it too). The workspace's
+`.gitattributes` marks `*.va -text`, so no checkout converts its line ends. `GanVerilogA` places the 8-finger device as
+a `ComposedFET` on ports 1 – 2 and as a `VerilogA` (`File=synthetic-gan/gan_4x125.va Pins=3`) on ports 3 – 4, each on
+its own copy of one bias network (100 nH chokes, 100 pF blocks, 50 Ω ports, input and supply probes), with a `VGS` sweep
+from −2 to 0 V, S from 0.5 to 20 GHz and an HB drive sweep from 0 to 16 dBm at 2 GHz; its measures put each pair side by
+side. Neither thermal terminal is wired. A schematic draws one net per pin, so the `ComposedFET`'s unwired T pin is
+drawn from a one-pin net, `t1`, whose label the authoring then removes; the bench extracts as the three-net line a
+schematic with an unwired T pin always has.
+
+Three things had to change for the bench to exist:
+- **A `VerilogA`'s `File` resolves against the workspace root**, as an SnP's and a `ComposedFET`'s do
+  (`Elaborator.ResolveExtDeviceParameters`, and the parameter editor's description of the file). Until then a relative
+  path resolved against the process's working directory, so no shipped workspace could name a `.va` at all.
+- **`check` of a `VerilogA` compiles it**: elaboration describes the model through the worker. A machine with no
+  compiler or no worker fails `check` on the bench, so `ExampleWorkspaceLoadsTests` checks the bench itself where both
+  are reachable, and otherwise its own extracted netlist with `X2` placed as the `.cmodel` — the wiring, the analyses and
+  the measures — while `ModelComposerExampleShippedTests` holds the `.va` to the writer's output.
+- **A measure cannot raise a result to a power** (`mag(V)^2` is refused); the bench writes `real(V*conj(V))`.
+
+### 25.19 Acceptance
+
+`ModelComposerVerilogABenchTests` (a `CompilerTheory`) runs the bench's own extracted netlist through the engines, with
+the DC residual at 1e-12 A — the bench's 1e-6 A default would let the two halves of one solve stop further apart than
+the comparison allows — and compares the two devices at every point of the bench's three analyses, to §25.9's tolerances:
+the switches at their defaults, `GateLag = 0` (a switch this model has no part for), `DrainLag = 0`, `SelfHeating = 0`,
+and `LinearC = 1` with the module given the point circuitRF's freeze settled on (`VgsQ = −0.8453`, `VdsQ = 7.891`,
+`TjQ = 26.36`). Measured:
+
+| Switches | Worst \|ΔS\| | Largest HB difference: Pout, gain | PAE |
+|---|---|---|---|
+| defaults | 1.1e-13 | 3.4e-7 dB | 1.3e-6 pp |
+| `GateLag = 0` | 1.1e-13 | 3.4e-7 dB | 1.3e-6 pp |
+| `DrainLag = 0` | 1.3e-13 | 1.1e-6 dB | 6.7e-6 pp |
+| `SelfHeating = 0` | 1.3e-13 | 3.4e-7 dB | 1.3e-6 pp |
+| `LinearC = 1` | 9.3e-14 | 3.4e-7 dB | 1.3e-6 pp |
+
+The DC probe currents agree to 1e-9 relative at every `VGS`. The HB differences are the bench's own 1e-6 A HB residual.
+
+### 25.20 Gates (MC-28)
+
+- **`ModelExportVerilogACliTests`**: the verb as a process against the in-process `Export`, from a `.cmc` (every line but
+  the provenance line, which a `.cmc` export records at its own time) and from a `.cmodel` (byte for byte, with
+  `--module`); the `--json` shape; each refusal — an unknown extension, `.cmodel` to `.cmodel`, `--created` with a `.va`,
+  an illegal `--module`, and a table model naming both its tables in one refusal — writing nothing.
+- **`ModelMcpToolTests`**: the tool's `.va` is the CLI's bytes; the table refusal over the protocol.
+- **`ModelComposerExportStepTests`**: the button sits beside Export in the view; unblocked, it suggests `<name>.va`
+  beside the `.cmodel` path and writes the in-process bytes, with its result line; a table blocks it with the one line
+  and leaves Export enabled.
+- **`ModelComposerExampleShippedTests`**: the committed `.va` is `Write` of the committed `.cmodel`, in the repository and
+  as it ships — except the writer's version on the first line, so a release does not fail it before a re-export.
+  **`ExampleWorkspaceLoadsTests`**: the bench checks clean, with or without a compiler.
+- **`ModelCliNoLogicTests`**, **`ModelComposerNoLogicTests`**: both reach the export through `CmodelVerilogA.Export(`.

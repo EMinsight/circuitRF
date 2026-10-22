@@ -1320,8 +1320,8 @@ what it is about), progress on stderr. The formats are in <a href="file-formats.
 <td>The data sets and their planes, the intrinsic ranges, N0 and W0, the temperature mode, each step as fresh, stale or absent, every network value with its error and whether it is poorly determined, and the levels each trap state was trained from, or the shift coupling's strengths. Fits nothing.</td>
 </tr>
 <tr>
-<td><code>export &lt;doc.cmc&gt; -o &lt;out.cmodel&gt;</code></td>
-<td>Writes the model; <code>--symbol</code> names the symbol. A passive document exports as a cell: <code>--cell &lt;workspace&gt; &lt;name&gt;</code>.</td>
+<td><code>export &lt;doc.cmc&gt; -o &lt;out&gt;</code></td>
+<td>Writes the model in the format <code>-o</code>'s extension names: <code>.cmodel</code>, with <code>--symbol</code> naming the symbol, or <code>.va</code> (also <code>.vams</code>), <a href="model-composer.html#veriloga">Verilog-A source</a> for another simulator, with <code>--module</code> naming the module (default: the file name). A <code>.cmodel</code> exports to <code>.va</code> too, with no document. A table constituent is refused, naming each. <code>--created</code> sets a <code>.cmodel</code>'s timestamp; a <code>.va</code> records the model's own. A passive document exports as a cell: <code>--cell &lt;workspace&gt; &lt;name&gt;</code>.</td>
 </tr>
 <tr>
 <td><code>validate &lt;doc.cmc&gt;</code></td>
@@ -1339,8 +1339,11 @@ what it is about), progress on stderr. The formats are in <a href="file-formats.
 <span class="prompt">$ </span>circuitrf model import fet.cmc sparams --as SParams --pattern "Vgs{vgs}_Vds{vds}_Id{id:mA}" --condition ReferencePlane=device
 <span class="prompt">$ </span>circuitrf model import fet.cmc dc.csv --as DcIv --map Vgs=vgs:V --map Vds=vds:V --map Ig=ig:A --map Id=id:A
 <span class="prompt">$ </span>circuitrf model fit fet.cmc --step all --seed 1
-<span class="prompt">$ </span>circuitrf model export fet.cmc -o fet.cmodel</code></pre>
-<p>Then place it — <code>ComposedFET:X1 g d 0 File=fet.cmodel</code> — and run it like any device.</p>
+<span class="prompt">$ </span>circuitrf model export fet.cmc -o fet.cmodel
+<span class="prompt">$ </span>circuitrf model export fet.cmodel -o fet.va</code></pre>
+<p>Then place it — <code>ComposedFET:X1 g d 0 File=fet.cmodel</code> — and run it like any device. <code>fet.va</code> is the same model for
+another simulator; <code>--json</code> adds <code>result.model.verilogA</code>: the path, the module, its parameter count and the switches
+that change nothing for this model.</p>
 <p>Exit <strong>0</strong> done; <strong>1</strong> refused; <strong>3</strong> finished, but a check failed; <strong>130</strong> cancelled, with nothing written. <code>fit --step all</code> keeps the steps that finished before a cancellation. Over MCP it is the <code>model</code> tool, one mode per noun.</p>
 <h2 id="rail"><code>rail</code> — power integrity, headless</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf rail &lt;board.crail&gt; [--rail NAME] [--accurate] [-o out.{csv,npy,mat,txt,svg,pdf}]</code></pre>
@@ -1624,6 +1627,55 @@ no copper in the region, no port — with nothing written, <strong>130</strong> 
 result carries every finding with its count and where it is on the board, and the parts table row for row.</p>
 <p><code>explain</code> on a schematic this command wrote shows where it came from — the layout, the region and the
 options — and <code>explain --ref</code> resolves the layout's path.</p>
+<h3 id="recognize-by-hand">A plot digitised by hand</h3>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf recognize plot.png --manual-box x0px,y0px,x1px,y1px[@deg]
+<span class="prompt">  </span>--x-range LOW..HIGH[:log] --y-range LOW..HIGH[:log] [--y2-range LOW..HIGH[:log]]
+<span class="prompt">  </span>[--curve "NAME=px,py;px,py;…[,axis=right][,is=S21:db]"] [--follow NAME=px,py]
+<span class="prompt">  </span>[--sample N | --sample-step STEP] [--method linear|smooth] --csv out.csv [-o out.s2p]</code></pre>
+<p>The dialog's <a href="create-from-image.md#by-hand">Digitise by hand</a> from the command line. Nothing is read off the picture:
+the box is the plot area and the ranges are the values at its edges.</p>
+<pre><code class="cmd"><span class="prompt">$ </span>circuitrf recognize s21.png --manual-box 228px,147px,671px,443px \
+<span class="prompt">  </span>    --x-range 1GHz..5GHz --y-range -36..0 --follow S21=560,193 --csv s21.csv</code></pre>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--manual-box x0px,y0px,x1px,y1px[@deg]</code></td>
+<td>Two opposite corners of the plot area, in pixels, <code>px</code> on every number. <code>@3</code> turns the box 3° counter-clockwise, for a scan that is not square.</td>
+</tr>
+<tr>
+<td><code>--x-range</code>, <code>--y-range</code>, <code>--y2-range</code></td>
+<td>The values at the box's left and right, and bottom and top, edges. An x range is frequencies with units (<code>100MHz..10GHz</code>), or plain numbers for an x that is not frequency. <code>--y2-range</code> is a second scale on the right. <code>:log</code> marks a logarithmic axis.</td>
+</tr>
+<tr>
+<td><code>--curve &quot;NAME=px,py;…&quot;</code></td>
+<td>A curve's points in pixels. <code>,axis=right</code> reads it on the right-hand scale; <code>,is=S21:db</code> makes it an S-parameter quantity, otherwise it is data. Repeatable.</td>
+</tr>
+<tr>
+<td><code>--follow NAME=px,py</code></td>
+<td>One click on a curve: it is followed by its colour inside the box and its points placed, one every 20 pixels and at every peak and dip.</td>
+</tr>
+<tr>
+<td><code>--sample N</code>, <code>--sample-step STEP</code></td>
+<td>Each curve sampled at N x values (101) from its first point to its last, or every STEP.</td>
+</tr>
+<tr>
+<td><code>--method linear\|smooth</code></td>
+<td>Straight between points, or a curve through them that never overshoots. Nothing is sampled beyond a curve's points.</td>
+</tr>
+<tr>
+<td><code>--csv out.csv</code>, <code>-o out.s2p</code></td>
+<td>The sampled curves as CSV; a Touchstone of the curves <code>is=</code> names, on a frequency x.</td>
+</tr>
+</tbody>
+</table>
+<p>A box given without both ranges is refused, naming the one missing. <strong>Exit 0</strong> when the CSV (and the Touchstone, when
+asked) was written, <strong>1</strong> when refused.</p>
 <h2 id="impedance"><code>impedance</code> — every trace against a target Z0</h2>
 <pre><code class="cmd"><span class="prompt">$ </span>circuitrf impedance &lt;layout&gt; [--target 50] [--tol 10] [--warn 20] [--max-freq 6GHz]
 <span class="prompt">  </span>[--layers "Top Copper,Inner 2"] [--max-width &lt;um&gt;] [--via-transition 400um] [--width "Top Copper=457"]… [--no-scope]

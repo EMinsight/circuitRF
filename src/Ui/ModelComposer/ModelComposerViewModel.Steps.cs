@@ -1,7 +1,8 @@
 // The model steps (brief-modelcomposer-15 R-mc15-1 … R-mc15-8): Current, Charge, Thermal, Traps, Check, Validate and Export,
 // each a thin view over its phase's function. A setting is an edit through the step's own WithSettings (one undo step);
 // a run is the file-based function the `model` verb calls — ModelCommands.Fit, ConservationCheck.RunFile,
-// ModelValidation.RunFile, CmodelExport.Export, ModelCommands.ExportCell — off the UI thread (D13, D15). Nothing here
+// ModelValidation.RunFile, CmodelExport.Export, CmodelVerilogA.Export, ModelCommands.ExportCell — off the UI thread (D13,
+// D15). Nothing here
 // computes a result: the readouts are the records' own numbers, formatted.
 
 using System;
@@ -15,6 +16,7 @@ using CircuitRF.Core.Devices.Composed;
 using CircuitRF.Core.Devices.Composed.Traps;
 using CircuitRF.Design.Modeling;
 using CircuitRF.Design.Modeling.Passive;
+using CircuitRF.Design.Modeling.VerilogA;
 using CircuitRF.Design.Schematic;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -817,6 +819,27 @@ public sealed partial class ModelComposerViewModel
     {
         OnPropertyChanged(nameof(CanExport));
         ExportCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanExportVerilogA));
+        ExportVerilogACommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>The one line naming the table constituents that block Export Verilog-A (R-mc28-1); empty when there is none.
+    /// Export itself is unaffected.</summary>
+    [ObservableProperty] private string _verilogATables = "";
+    /// <summary>The last Verilog-A export: its file and module, the line under the buttons.</summary>
+    [ObservableProperty] private string _verilogAResult = "";
+
+    /// <summary>Export Verilog-A is blocked by what blocks Export, and by a table constituent.</summary>
+    public bool CanExportVerilogA => CanExport && VerilogATables.Length == 0;
+
+    /// <summary>Why Export Verilog-A is blocked: the stale-step line, or the tables line; empty when it is not.</summary>
+    public string ExportVerilogABlocked => ExportBlocked.Length > 0 ? ExportBlocked : VerilogATables;
+
+    partial void OnVerilogATablesChanged(string value)
+    {
+        OnPropertyChanged(nameof(CanExportVerilogA));
+        OnPropertyChanged(nameof(ExportVerilogABlocked));
+        ExportVerilogACommand.NotifyCanExecuteChanged();
     }
 
     private string? _symbolsKey;
@@ -834,6 +857,7 @@ public sealed partial class ModelComposerViewModel
             if (PassiveStep.Record(Document) is { } r) foreach (string line in r.Report.Take(12)) CellParameters.Add(line);
             return;
         }
+        VerilogATables = CmodelVerilogA.TablesLine(Document);
         if (DocumentPath is { } path && ExportPath.Length == 0)
             ExportPath = Path.ChangeExtension(path, CmodelFile.Extension);
         string outDir = ExportPath.Length > 0 ? Path.GetDirectoryName(Path.GetFullPath(ExportPath))! : DocumentFolder ?? "";
@@ -903,6 +927,36 @@ public sealed partial class ModelComposerViewModel
             return [.. r.Lines.Select(l => new ModelLine("export", Path.GetFileName(r.Path), l))];
         });
         if (ok) ExportedModel = output;
+        return ok;
+    }
+
+    /// <summary>Asks where the <c>.va</c> goes, given the path it suggests — <c>&lt;name&gt;.va</c> beside the <c>.cmodel</c>
+    /// path; null when cancelled.</summary>
+    public Func<string, Task<string?>>? PickVerilogAPath { get; set; }
+
+    [RelayCommand(CanExecute = nameof(CanExportVerilogA))]
+    private Task ExportVerilogA() => ExportVerilogAAsync();
+
+    /// <summary>
+    /// Export Verilog-A (R-mc28-1): asks where the <c>.va</c> goes, then writes the document's model through
+    /// <see cref="CmodelVerilogA.Export"/>, assembled as Export assembles it. Blocked by a stale step or a table constituent.
+    /// </summary>
+    public async Task<bool> ExportVerilogAAsync()
+    {
+        if (!CanExportVerilogA) { Warn(ExportVerilogABlocked); return false; }
+        if (PickVerilogAPath is null) return false;
+        string beside = ExportPath.Trim().Length > 0 ? Path.GetFullPath(ExportPath.Trim()) : DocumentPath ?? FileName;
+        if (await PickVerilogAPath(Path.ChangeExtension(beside, ".va")) is not { Length: > 0 } picked) return false;
+        string output = Path.GetFullPath(picked);
+        var options = new VerilogAOptions { Created = ExportCreated };
+        string line = "";
+        bool ok = await RunOnFile("Exporting Verilog-A", (path, rc) =>
+        {
+            var r = CmodelVerilogA.Export(path, output, options, rc);
+            line = $"{Path.GetFileName(r.Path)}: module {r.ModuleName}";
+            return [new ModelLine("export", Path.GetFileName(r.Path), line)];
+        });
+        VerilogAResult = ok ? line : "";
         return ok;
     }
 

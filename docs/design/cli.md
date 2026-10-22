@@ -4189,7 +4189,20 @@ Over MCP the verb is the `model` tool, one mode per noun; `reference cmc` and `r
 page's own sections (the `.cmc` adds the walk of its step settings), and the server's instructions carry the
 new → import → deembed → fit → check-charge → export → validate recipe.
 
-### 31.5 The gate
+### 31.5 `export`: `-o`'s extension picks the format (brief-modelcomposer-28)
+
+`render`'s rule: `-o x.cmodel` writes a `.cmodel` through `CmodelExport.Export`; `-o x.va` or `x.vams` writes Verilog-A
+source through `CmodelVerilogA.Export`, the function the window's **Export Verilog-A…** calls; any other extension is
+refused, listing the three. The input may be a `.cmc` (assembled as the `.cmodel` export assembles it) or a `.cmodel`,
+which needs no document; a `.cmodel` to `.cmodel` is refused, there being nothing to do. `--module <name>` names the
+Verilog-A module (default: the input's file name made an identifier) and is refused for a `.cmodel`; `--created` and
+`--symbol` are a `.cmodel`'s and are refused for a `.va`, which records the model's own `Created`. The writer's refusals —
+every table constituent, an illegal module name, a network or equation it cannot translate — arrive as one
+`cli.model.refused` diagnostic, one line each, exit 1. `--json` adds `result.model.verilogA` (`path`, `module`,
+`parameters`, `inertSwitches`), and the written file's output kind is `veriloga`. The MCP `model` tool's `export` takes
+the same `output`, `module` and a `.cmodel` `path`. Gates: `ModelExportVerilogACliTests`, `ModelMcpToolTests`.
+
+### 31.6 The gate
 
 `tests/Ui.Tests/ModelComposer/`: `ModelCliVerbTests` (the verb as a process against the in-process functions, byte for
 byte, for `new`, `import`, `fit --step all --seed 1`, `export` and `check-charge` on `SyntheticFetData`'s raw files; exit

@@ -9,8 +9,8 @@
 //    New Workspace ▸ the GaN two-shell network as a cell of its own ▸ for synthetic-gan: New (Active, 4 × 125 µm), the
 //    open/short pads, one import per data set, the settings (Lg, Ld, Ls free; Rth and τth typed; drain lag), Fit all,
 //    Export ▸ for simulated-tables: New, one SimulatedTables import, Fit all ▸ for passive-spiral: New (Passive), one
-//    family import, the spiral topology with its substrate sides tied, Fit, Export as a cell ▸ the three test benches,
-//    drawn from their netlists.
+//    family import, the spiral topology with its substrate sides tied, Fit, Export as a cell ▸ the four test benches,
+//    drawn from their netlists ▸ Export Verilog-A of the GaN model, and the bench that places it beside the .cmodel.
 //
 //  The data is synthetic (SyntheticGan, SyntheticFetData, the spiral truth below) and every data set's Note says so.
 // ================================================================
@@ -22,6 +22,7 @@ using CircuitRF.Core.Netlist;
 using CircuitRF.Design.Cells;
 using CircuitRF.Design.Modeling;
 using CircuitRF.Design.Modeling.Passive;
+using CircuitRF.Design.Modeling.VerilogA;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Design.Workspace;
 using CircuitRF.Ui.Schematic;
@@ -40,6 +41,9 @@ public sealed class ModelComposerExampleAuthoring(ITestOutputHelper output)
     public const string Folder = "Model Composer";
     public const string Network = "GaNTwoShell";
     public const string GanModel = "synthetic-gan/gan_4x125.cmodel";
+    /// <summary>The same model as Verilog-A source, written from the <c>.cmodel</c> (brief-modelcomposer-28 R-mc28-4).</summary>
+    public const string GanVa = "synthetic-gan/gan_4x125.va";
+    public const string VerilogABench = "GanVerilogA";
     /// <summary>The export's provenance timestamp, fixed so a rebuild writes the same bytes.</summary>
     public const string Created = "2026-10-20T00:00:00Z";
 
@@ -70,13 +74,28 @@ public sealed class ModelComposerExampleAuthoring(ITestOutputHelper output)
         File.AppendAllText(Path.Combine(ws, ".gitignore"),
             "\n# The Model Composer example ships its simulated tables and each document's cache, which holds the fits.\n" +
             "!simulated-tables/*.npy\n!**/*.cmc-cache/**\n");
+        File.AppendAllText(Path.Combine(ws, ".gitattributes"),
+            "\n# The Verilog-A export is compared byte for byte with the writer's output; line-ending conversion would break that.\n" +
+            "*.va -text\n");
 
         BuildSyntheticGan(ws);
         BuildSimulatedTables(ws);
         BuildPassiveSpiral(ws);
         BuildGanBenches(ws);
         BuildSpiralFilter(ws);
+        BuildVerilogA(ws);
         foreach (var (file, text) in keptLayouts) File.WriteAllText(file, text);
+    }
+
+    /// <summary>The Verilog-A export and its bench alone, into the workspace as it stands: what a change to the writer or
+    /// to the bench needs, without refitting every document.</summary>
+    [AuthorFact]
+    public void BuildTheVerilogABench()
+    {
+        string ws = Path.Combine(PalaceBackendTests.RepoRoot(), "examples", Folder);
+        string cell = Path.Combine(ws, VerilogABench);
+        if (Directory.Exists(cell)) Directory.Delete(cell, true);
+        BuildVerilogA(ws);
     }
 
     /// <summary>The bench schematics whose component placement was tidied by hand after they were drawn: a rebuild draws them
@@ -258,6 +277,69 @@ public sealed class ModelComposerExampleAuthoring(ITestOutputHelper output)
         labelednets Vin Vout
         """;
 
+    /// <summary>
+    /// The shipped model and its Verilog-A export side by side (brief-modelcomposer-28 R-mc28-4): the 8-finger device as a
+    /// <c>ComposedFET</c> (ports 1 and 2) and as a <c>VerilogA</c> (ports 3 and 4), each on its own copy of one bias
+    /// network — chokes to the supplies, DC blocks to 50 Ω ports. Neither thermal terminal is wired: the VerilogA's is left
+    /// off (<c>Pins=3</c>) and the ComposedFET's T pin is drawn unwired (the drawing needs a net for each of the symbol's
+    /// pins, so <c>t1</c> names it and its label is removed), so both heat on the model's own network. A gate-voltage DC
+    /// sweep, S-parameters at the bias, and a short HB drive sweep; the measures put each pair of numbers side by side.
+    /// </summary>
+    public const string VerilogANetlist = """
+        Pin = 0
+        RFfreq = 2 GHz
+        VGS = -0.8
+        VDD = 8
+        temp = 25
+        P1Tone:P1  a1  0  Num=1  Pavl=Pin dBm  Z=50 Ohm  Freq=RFfreq  Phase=0 deg
+        IProbe:IIN1  a1  i1
+        C:C1  i1  g1  C=100 pF
+        L:L1  g1  b1  L=100 nH
+        IProbe:IG1  b1  c1
+        Vdc:V1  c1  0  Vdc=VGS V
+        ComposedFET:X1  g1  d1  0  t1  File="synthetic-gan/gan_4x125.cmodel"  N=8
+        L:L2  e1  d1  L=100 nH
+        IProbe:ID1  VDD1  e1
+        Vdc:V2  VDD1  0  Vdc=VDD V
+        C:C2  d1  o1  C=100 pF
+        Port:P2  o1  0  Num=2  Z=50 Ohm
+        P1Tone:P3  a2  0  Num=3  Pavl=Pin dBm  Z=50 Ohm  Freq=RFfreq  Phase=0 deg
+        IProbe:IIN2  a2  i2
+        C:C3  i2  g2  C=100 pF
+        L:L3  g2  b2  L=100 nH
+        IProbe:IG2  b2  c2
+        Vdc:V3  c2  0  Vdc=VGS V
+        VerilogA:X2  g2  d2  0  File="synthetic-gan/gan_4x125.va"  Pins=3  N=8
+        L:L4  e2  d2  L=100 nH
+        IProbe:ID2  VDD2  e2
+        Vdc:V4  VDD2  0  Vdc=VDD V
+        C:C4  d2  o2  C=100 pF
+        Port:P4  o2  0  Num=4  Z=50 Ohm
+        analysis DC1 type=dc
+        analysis DC1_sweep_VGS type=parametric_sweep Var=VGS Start=-2 Stop=0 Step=0.25 Inner=DC1
+        analysis SP1 type=sparam Start=0.5 Stop=20 Npts=40 Unit=GHz
+        analysis HB1 type=hb Tone="RFfreq" ToneUnit=GHz MaxHarm=5
+        analysis HB1_sweep_Pin type=parametric_sweep Var=Pin Start=0 Stop=16 Step=4 Inner=HB1
+        measure Id_ComposedFET = DC1.I("ID1")
+        measure Id_VerilogA = DC1.I("ID2")
+        measure S21_ComposedFET = dB(SP1.S(2,1))
+        measure S21_VerilogA = dB(SP1.S(4,3))
+        measure Pout_W_ComposedFET = real(0.5*HB1.V("o1",1)*conj(HB1.V("o1",1)))/50
+        measure Pout_W_VerilogA = real(0.5*HB1.V("o2",1)*conj(HB1.V("o2",1)))/50
+        measure Pout_ComposedFET = 10*log10(Pout_W_ComposedFET*1000)
+        measure Pout_VerilogA = 10*log10(Pout_W_VerilogA*1000)
+        measure PAE_ComposedFET = (Pout_W_ComposedFET - real(0.5*HB1.V("a1",1)*conj(HB1.I("IIN1",1))))/real(VDD*HB1.I("ID1",0))*100
+        measure PAE_VerilogA = (Pout_W_VerilogA - real(0.5*HB1.V("a2",1)*conj(HB1.I("IIN2",1))))/real(VDD*HB1.I("ID2",0))*100
+        labelednets a1 g1 d1 o1 a2 g2 d2 o2
+        """;
+
+    /// <summary>The export of the shipped <c>.cmodel</c>, and the bench that places both.</summary>
+    private static void BuildVerilogA(string ws)
+    {
+        CmodelVerilogA.Export(Path.Combine(ws, GanModel), Path.Combine(ws, GanVa));
+        Draw(ws, VerilogABench, VerilogANetlist, unwired: "t1");
+    }
+
     private void BuildGanBenches(string ws)
     {
         Draw(ws, "GanPowerSweep", PowerSweepNetlist);
@@ -290,17 +372,20 @@ public sealed class ModelComposerExampleAuthoring(ITestOutputHelper output)
     }
 
     /// <summary>A test bench cell whose schematic is <paramref name="netlist"/> drawn — <c>netlist --to-schematic</c>'s own
-    /// function.</summary>
-    private static SchematicEditModel Draw(string ws, string cell, string netlist)
+    /// function. <paramref name="unwired"/> names a net on one pin that the drawing leaves unwired.</summary>
+    private static SchematicEditModel Draw(string ws, string cell, string netlist, string? unwired = null)
     {
         var created = CellCreate.Create(ws, cell, CellViews.Schematic);
         string schDir = Path.GetDirectoryName(created.SchematicPath!)!;
         var (lib, tb) = new CnlReader().Read(netlist, cell, ws);
         var drawn = NetlistSchematic.Build(lib, tb, schDir);
         Assert.True(drawn.Schematic is not null, string.Join("; ", drawn.Refusals));
+        // A net on one pin only is drawn as that pin's label; without it the pin is unwired, as a schematic leaves it.
+        if (unwired is not null) Assert.Equal(1, drawn.Schematic!.NetLabels.RemoveAll(l => l.Name == unwired));
         // A schematic stores a File unquoted, relative to its workspace root; the drawing keeps the netlist's quotes.
         string json = SchematicPersistence.Serialize(drawn.Schematic!, cell)
-            .Replace($"\"\\u0022{GanModel}\\u0022\"", $"\"{GanModel}\"", StringComparison.Ordinal);
+            .Replace($"\"\\u0022{GanModel}\\u0022\"", $"\"{GanModel}\"", StringComparison.Ordinal)
+            .Replace($"\"\\u0022{GanVa}\\u0022\"", $"\"{GanVa}\"", StringComparison.Ordinal);
         // The reader resolves a loadpull grid to an absolute path and the drawing keeps it; a schematic stores it relative
         // to its workspace root, as the Loadpull example's does.
         foreach (var lp in drawn.Schematic!.Analyses.OfType<CircuitRF.Core.Design.LoadpullAnalysis>())

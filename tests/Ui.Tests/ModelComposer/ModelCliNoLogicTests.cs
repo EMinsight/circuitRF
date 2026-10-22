@@ -27,7 +27,7 @@ public sealed class ModelCliNoLogicTests
     [
         "ModelCommands.New(", "ModelCommands.Import(", "ModelCommands.Deembed(", "ModelCommands.Fit(", "ModelCommands.Explain(",
         "ModelCommands.ExportCell(", "CmodelExport.Export(", "ModelValidation.RunFile(", "ModelValidationReport.Generate(",
-        "ModelValidationReport.Write(", "ConservationCheck.RunFile(", "ConservationCheck.RunDevice(",
+        "ModelValidationReport.Write(", "ConservationCheck.RunFile(", "ConservationCheck.RunDevice(", "CmodelVerilogA.Export(",
     ];
 
     [Fact]

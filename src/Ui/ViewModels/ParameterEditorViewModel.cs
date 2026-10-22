@@ -1182,7 +1182,7 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
             return;
         }
 
-        string file = ParamValue(_target, ComponentModelFactory.VerilogAFileParam);
+        string file = VerilogAModelFile();
 
         // Describing starts the model-hosting worker; VerilogAModelIntrospection caches by path and
         // mtime, so this is one launch per distinct file rather than one per model change.
@@ -1472,13 +1472,18 @@ public sealed partial class ParameterEditorViewModel : ObservableObject
                 Task<VerilogAParameterInfo?>>? PickModelParameterAsync
     { get; set; }
 
+    /// <summary>The model file as the elaborator resolves it: a relative path against the workspace root.</summary>
+    private string VerilogAModelFile()
+        => CircuitRF.Core.Elaboration.Elaborator.ResolveFileReference(
+            ParamValue(_target!, ComponentModelFactory.VerilogAFileParam), _schematicVm?.WorkspaceRoot);
+
     /// <summary>The parameters the currently chosen model declares. Read on demand — this stands a
     /// probe model up inside the worker, so it is the picker's own cost, not the dialog's.</summary>
     public IReadOnlyList<VerilogAParameterInfo> DeclaredModelParameters()
     {
         if (_target is null || _target.Symbol != SymbolKind.VerilogA) return [];
         return VerilogAModelIntrospection.DescribeParameters(
-            ParamValue(_target, ComponentModelFactory.VerilogAFileParam),
+            VerilogAModelFile(),
             ParamValue(_target, ComponentModelFactory.VerilogAModelParam),
             out _);
     }

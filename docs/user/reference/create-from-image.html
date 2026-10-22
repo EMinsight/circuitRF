@@ -1613,7 +1613,7 @@ against frequency, a Smith chart, a polar chart — is read as <strong>Plot</str
 </tr>
 <tr>
 <td><strong>Tools</strong> menu</td>
-<td><strong>Digitise Plot…</strong> — the dialog, empty, in plot mode.</td>
+<td><strong>Digitise Plot…</strong> — the dialog, empty, in plot mode, read by hand (<strong>Manual</strong>).</td>
 </tr>
 <tr>
 <td>Right-click a picture file in the <strong>Project</strong> panel</td>
@@ -1621,6 +1621,11 @@ against frequency, a Smith chart, a polar chart — is read as <strong>Plot</str
 </tr>
 </tbody>
 </table>
+<p><strong>Read</strong> is <strong>Automatic</strong> or <strong>Manual</strong>. Automatic finds each plot, reads its tick labels and traces its curves, and
+you correct what it read; the two Touchstone rows open in it. Manual reads nothing off the picture: you draw the plot
+area, type its scale and place each curve's points, so it works on any picture — see
+<a href="#by-hand">Digitise by hand</a>. <strong>Digitise Plot…</strong> opens in Manual, or in Automatic if that is what you chose there last.
+Switching keeps the picture.</p>
 <p><strong>Several pictures make one file.</strong> A datasheet's S21 and S11 are often separate figures: <strong>Add picture…</strong> under
 <strong>Pictures</strong>, or drop or paste another, adds it to the same session; <strong>✕</strong> takes one out. Plots and traces are
 numbered across all of them — plot 1 is the first picture's first plot, and traces are T1, T2 and so on.
@@ -1642,7 +1647,7 @@ x number takes the unit the other x labels were read in, and is refused when non
 calibrate it; a third replaces the older of the two. This also corrects an axis calibrated from misread labels: the
 values you give replace what was read. Each value is written into the plot's <strong>x axis</strong> or <strong>y axis</strong> row as a pixel
 position and its value, <code>120px=1GHz,900px=5GHz</code>, and the row can be typed directly in that form. A logarithmic axis is
-read as one from its labels.</p>
+read as one from its labels; <strong>Log</strong> beside the row says so when its labels did not read.</p>
 <p><strong>A y axis on the right.</strong> Many datasheets draw two quantities against one frequency axis — dB(S21) against the
 left axis and its phase against the right, or gain and noise figure. The right axis is read from its own labels, and the
 plot's row gains <strong>y2 axis (right)</strong>, which waits and is typed or clicked exactly as the y row is: a label clicked right
@@ -1745,7 +1750,37 @@ Display, and its passivity, reciprocity and causality check goes to Messages.</p
 <p><strong>CSV</strong> writes the curves exactly as read, in each plot's own units, and never waits: any plot digitises, S-parameters
 or not — a temperature against time comes out just as well. Its <code>y_axis</code> column says which y axis each
 rectangular curve was read against, and its last column, <code>y_fit</code>, holds a fitted curve's fit at each point beside the
-value read.</p>
+value read. With <strong>CSV</strong> chosen, <strong>Ports</strong>, the matrix and the output grid are not shown: they are the Touchstone's.</p>
+<h3 id="by-hand">Digitise by hand</h3>
+<p>With <strong>Read: Manual</strong> the right column is six steps, each enabled once the one before it is done.</p>
+<ol>
+<li><strong>Plot area.</strong> Drag a box across the plot's axes. Its left and right edges are x low and x high, its bottom and top
+y low and y high. Drag a corner or an edge handle to resize it. For a scan that is not square, drag the round handle
+above the box or type its <strong>Angle</strong>. When circuitRF happens to find the plot's frame, the box starts there, dashed:
+move its edges onto the axes. <strong>Draw box</strong> draws it again.</li>
+<li><strong>Scales.</strong> <strong>One y scale</strong> or <strong>Two y scales</strong> (a second on the right). Type <strong>x low</strong> and <strong>x high</strong> — a
+frequency with its unit (<code>1 GHz</code>), or a plain number for an x that is not frequency — and <strong>y low</strong> and <strong>y
+high</strong>, with a unit after the number if you like (<code>-40 dB</code>); that unit is the CSV's <code>y_unit</code>. <strong>Log</strong> marks a
+logarithmic axis. Each value is written beside its edge of the box, so a wrong corner shows at once. Text in the
+picture is never read: the scale you type is the scale.</li>
+<li><strong>Curves.</strong> <strong>Add curve</strong> for each curve to take. Each row has a name (the CSV's trace column), a colour, <strong>Axis</strong>
+(with two scales) and <strong>Is</strong>: <strong>Data</strong> — plain x and y — or an entry and quantity such as S21 dB.</li>
+<li><strong>Points.</strong> With a curve selected, <strong>double-click</strong> on the picture to add a point, <strong>drag</strong> a point to move it, and
+<strong>right-click</strong> it, or click it and press <strong>Delete</strong>, to remove it. <strong>Escape</strong> stops placing;
+<strong>Place points</strong> starts again. While you place or drag
+a point a 4× magnifier follows the pointer, and the readout beside it gives the value under the pointer.
+<strong>Find curve</strong>, then a click on the curve, follows it by its colour inside the box and places its points for you
+— one every 20 pixels and one at every peak and dip — to edit as you would your own. A click on blank
+paper finds nothing, and says so. <strong>Undo</strong> (Cmd/Ctrl+Z) puts the box, the curves and the points back one change at a time.</li>
+<li><strong>Sample.</strong> The points are joined and sampled at x values: from the curve's first point to its last, 101 of them,
+unless you type a start, stop and number of points, or a <strong>step</strong> (<code>50 MHz</code>). <strong>Linear</strong> joins the points with
+straight lines (in log coordinates on a log axis); <strong>Smooth</strong> with a curve through every point that never overshoots
+between two of them. Nothing is sampled beyond a curve's first and last points. The sampled curve is drawn dashed in
+its colour over the picture.</li>
+<li><strong>Create.</strong> <strong>Create…</strong> writes the CSV, one row per sampled point. When a curve <strong>Is</strong> an S-parameter quantity on a
+frequency axis, <strong>Also save as Touchstone…</strong> writes a Touchstone of those curves as well, on the same x values.</li>
+</ol>
+<p>The same reading runs from the command line, <code>circuitrf recognize plot.png --manual-box … --x-range … --y-range … --curve … --csv out.csv</code> (the <a href="cli.md">command-line reference</a> lists every flag).</p>
 <table>
 <thead>
 <tr>

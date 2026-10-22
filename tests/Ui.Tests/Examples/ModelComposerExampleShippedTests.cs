@@ -6,7 +6,10 @@
 //  ExampleWorkspaceLoadsTests takes one, cannot see that.
 // ================================================================
 
+using System.Text;
+using CircuitRF.Core.Devices.Composed;
 using CircuitRF.Design.Modeling;
+using CircuitRF.Design.Modeling.VerilogA;
 using CircuitRF.Ui.Tests.ModelComposer;
 using Xunit;
 
@@ -53,5 +56,33 @@ public sealed class ModelComposerExampleShippedTests
         vm = await ComposerFixture.Open(gan);
         Assert.False(vm.Steps.First(s => s.Name == "Current").IsDone);
         Assert.True(vm.Steps.First(s => s.Name == "Charge").IsDone);
+    }
+
+    /// <summary>
+    /// brief-modelcomposer-28 R-mc28-4: the committed <c>.va</c> is the writer's output for the committed <c>.cmodel</c>, byte
+    /// for byte, in the repository and as it ships — what keeps the two in step when either is regenerated. The writer's
+    /// own version on the first line is the one exception, so a release does not fail this until somebody re-exports.
+    /// </summary>
+    [Fact]
+    public void TheShippedVerilogA_IsTheWriterOutputOfTheShippedCmodel()
+    {
+        string repo = Path.Combine(ModelCliFixture.RepoRoot(), "examples", ModelComposerExampleAuthoring.Folder);
+        string cmodel = Path.Combine(repo, ModelComposerExampleAuthoring.GanModel);
+        string expected = Unversioned(CmodelVerilogA.Write(CmodelFile.Read(cmodel),
+                                                           new VerilogAOptions { SourceName = Path.GetFileName(cmodel) }));
+        foreach (string root in new[] { repo, Shipped })
+        {
+            string va = Path.Combine(root, ModelComposerExampleAuthoring.GanVa);
+            Assert.True(File.Exists(va), $"{va} does not exist");
+            Assert.Equal(expected, Unversioned(Encoding.UTF8.GetString(File.ReadAllBytes(va))));
+        }
+    }
+
+    /// <summary>The text with the first line's "by circuitRF &lt;version&gt;," taken out.</summary>
+    private static string Unversioned(string va)
+    {
+        int nl = va.IndexOf('\n'), by = va.IndexOf(" by circuitRF ", StringComparison.Ordinal), comma = va.IndexOf(", from ", StringComparison.Ordinal);
+        Assert.True(by > 0 && comma > by && comma < nl, "the first line names the writer's version");
+        return va[..by] + va[comma..];
     }
 }

@@ -189,7 +189,17 @@ namespace RfCore.Export
     /// <param name="Noun"><c>new</c>, <c>import</c>, <c>deembed</c>, <c>fit</c>, <c>check-charge</c>, <c>explain</c>,
     /// <c>export</c>, <c>validate</c> or <c>report</c>.</param>
     /// <param name="Document">The <c>.cmc</c> (or <c>.cnl</c>, <c>.cmodel</c>) the noun read.</param>
-    public sealed record ModelReportJson(string Noun, string Document, IReadOnlyList<ModelItemJson> Items);
+    /// <param name="VerilogA"><c>export -o x.va</c>: the module written (brief-modelcomposer-28 R-mc28-2).</param>
+    public sealed record ModelReportJson(
+        string Noun,
+        string Document,
+        IReadOnlyList<ModelItemJson> Items,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        ModelVerilogAJson? VerilogA = null);
+
+    /// <summary>A Verilog-A export: where it went, the module's name, how many parameters it declares, and the switches that
+    /// change nothing for this model.</summary>
+    public sealed record ModelVerilogAJson(string Path, string Module, int Parameters, IReadOnlyList<string> InertSwitches);
 
     /// <summary>One line of a <c>model</c> report.</summary>
     /// <param name="Kind">What the line is about: <c>document</c>, <c>dataSet</c>, <c>step</c>, <c>check</c>,

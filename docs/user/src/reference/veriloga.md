@@ -33,6 +33,9 @@ or more fitted parameter sets. What this page buys you is the whole of that rout
 placed five-terminal device out, running DC, S-parameters and harmonic balance like any other
 component.
 
+A FET model built in the Model Composer exports as one such file, for another simulator, and runs
+here too: [Verilog-A export](model-composer.html#veriloga).
+
 <div class="callout note">
 <span class="label">Two file types, one component</span>
 <p>The <code>File</code> parameter takes either <b>Verilog-A source</b> (<code>.va</code>,

@@ -1,6 +1,6 @@
 // ================================================================
 //  ExampleWorkspaceLoadsTests.cs — the shipped Model Composer example (brief-modelcomposer-16 R-mc16-1): each document
-//  opens as it was left, `check` finds nothing wrong with it, and its test benches run.
+//  opens as it was left, `check` finds nothing wrong with it, and its test benches run (the Verilog-A bench, MC-28, checks).
 //
 //  Run on a COPY of the example, as File ▸ New ▸ Examples makes one: the copy takes new timestamps, which is exactly the
 //  case that once rewrote the cache and lost every fit.
@@ -8,6 +8,7 @@
 
 using CircuitRF.Design.Circuit;
 using CircuitRF.Design.Modeling;
+using CircuitRF.Design.Schematic;
 using CircuitRF.Ui.Tests.ModelComposer;
 using Xunit;
 using Xunit.Abstractions;
@@ -67,6 +68,36 @@ public sealed class ExampleWorkspaceLoadsTests(ITestOutputHelper output) : IDisp
             output.WriteLine($"check {rel} → {check.ExitCode}\n{check.StdOut}{check.StdErr}");
             Assert.Equal(0, check.ExitCode);
         }
+    }
+
+    /// <summary>
+    /// brief-modelcomposer-28 R-mc28-4: the bench that places the model beside its Verilog-A export checks clean — and never
+    /// needs a compiler to pass. Checking a <c>VerilogA</c> compiles its source, so where no compiler or device worker is
+    /// reachable the bench's own netlist is checked with that one device placed as the <c>.cmodel</c> it was written from;
+    /// the <c>.va</c> itself is held to the writer's output by <see cref="ModelComposerExampleShippedTests"/>.
+    /// </summary>
+    [Fact]
+    public void TheVerilogABench_ChecksClean()
+    {
+        string rel = Path.Combine(ModelComposerExampleAuthoring.VerilogABench, "schematic", ModelComposerExampleAuthoring.VerilogABench + ".csch");
+        if (CompilerAvailability.SkipReason is null)
+        {
+            var check = ModelCliFixture.Run(_ws, "check", rel);
+            output.WriteLine($"check {rel} → {check.ExitCode}\n{check.StdOut}{check.StdErr}");
+            Assert.Equal(0, check.ExitCode);
+            return;
+        }
+        output.WriteLine($"{CompilerAvailability.SkipReason} Checking the bench with X2 placed as the .cmodel.");
+        string cnl = SchematicCircuit.CnlTextOf(Path.Combine(_ws, rel));
+        var lines = cnl.Split('\n');
+        int k = Array.FindIndex(lines, l => l.StartsWith("VerilogA:X2 ", StringComparison.Ordinal));
+        Assert.True(k >= 0, cnl);
+        var nodes = lines[k].Split(' ', StringSplitOptions.RemoveEmptyEntries)[1..4];
+        lines[k] = $"ComposedFET:X2 {string.Join(' ', nodes)} File=\"{ModelComposerExampleAuthoring.GanModel}\" N=8";
+        File.WriteAllText(Path.Combine(_ws, "verilog-a-bench.cnl"), string.Join('\n', lines));
+        var swapped = ModelCliFixture.Run(_ws, "check", "verilog-a-bench.cnl");
+        output.WriteLine($"{swapped.StdOut}{swapped.StdErr}");
+        Assert.Equal(0, swapped.ExitCode);
     }
 
     [Fact]

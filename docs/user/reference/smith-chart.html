@@ -632,6 +632,13 @@ chart steps with it, and a number you type is taken to the nearest entry. <stron
 entry</strong> — the flag and the values it moved come back together — and the strip says how many
 values moved. Turning it off moves nothing: the list values <em>are</em> the design now, and the way back is
 undo.</p>
+<p><strong>The arrow beside the staircase button chooses the list</strong> (a right-click on the staircase opens the
+same menu): your <em>Preferences ladder</em> (below), or one of
+the IEC 60063 series <strong>E6</strong>, <strong>E12</strong>, <strong>E24</strong>, <strong>E48</strong> or <strong>E96</strong> — the same choices as
+<em>Standard values</em> on a Tune or Optimize row. An E series runs over the same span as the shipped ladder,
+0.1 pF to 100 nF and 0.1 nH to 100 µH. Choosing one switches discrete values on
+and snaps the design onto it, as one undo entry. The series is saved with the design; the preferences
+ladder is yours, not the design's.</p>
 <p><strong>Inductance and capacitance only.</strong> A resistance in this vocabulary is as often a parasitic as a part
 — the <strong>R</strong> of an SRLC, an SRL or a PRC is an ESR or a leakage term, something you measure rather
 than order — so putting it on a preferred-value ladder would state something untrue about the
@@ -646,7 +653,8 @@ snaps <i>down</i> to 1.0 and 1.11&nbsp;pF snaps up to 1.2. A value past either e
 that end.</p>
 </div>
 <h4 id="preferred-values">Editing the list</h4>
-<p><strong>Right-click the staircase button</strong> and choose <em>Preferred values…</em>, whether the toggle is on or off.</p>
+<p>Click the <strong>arrow beside the staircase button</strong> and choose <em>Edit preferences ladder…</em>, whether the toggle
+is on or off. A design snapped to an E series is not moved by an edit here.</p>
 <p>What ships is <strong>E12</strong>, the IEC 60063 preferred numbers — twelve values per decade, 1.0, 1.2,
 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2 — running 0.1 pF to 100 nF for
 capacitors and 0.1 nH to 100 µH for inductors. If the range you buy from is stocked on

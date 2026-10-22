@@ -535,11 +535,17 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </StackPanel>
+                        <SelectableTextBlock Classes="warn" FontSize="11" Text="{Binding VerilogATables}"
+                                             IsVisible="{Binding VerilogATables, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                         <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
                             <Button Content="Copy instance" Command="{Binding CopyInstanceCommand}" IsVisible="{Binding IsActive}"
                                     ToolTip.Tip="An instance of the exported model, to paste into a schematic"/>
+                            <Button Content="Export Verilog-A…" Command="{Binding ExportVerilogACommand}" IsVisible="{Binding IsActive}"
+                                    ToolTip.Tip="The model as Verilog-A source, for another simulator"/>
                             <Button Content="Export" Command="{Binding ExportCommand}"/>
                         </StackPanel>
+                        <SelectableTextBlock Classes="lbl" FontSize="11" Text="{Binding VerilogAResult}" HorizontalAlignment="Right"
+                                             IsVisible="{Binding VerilogAResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                     </StackPanel>
 
                     <!-- ── Topology (passive) ───────────────────────────────── -->

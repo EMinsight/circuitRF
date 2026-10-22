@@ -772,7 +772,8 @@ Anything added to the schematic after it was recognised is laid out in rows belo
 <p>Clear the box to hand that component back to ordinary layout sync; it is one undo step and changes nothing else.</p>
 <h3 id="drawing">Drawing the schematic</h3>
 <p>With <strong>Arrange ▸ As on the board</strong> (the default), each part, line and port is drawn roughly where it sits on the
-board, turned the way it lies there, and the wires are routed between them. A part that would land on another is
+board, turned the way it lies there, and the wires are routed between them. Parts keep their order across and down
+the board, but long runs of line and empty board are drawn short, so the sheet stays compact. A part that would land on another is
 drawn below the rest instead, and the report names it. A recognition of a selection is drawn relative to that
 selection. <strong>Update Schematic from Layout</strong> on a layout of bare artwork draws the same way.</p>
 <p>With <strong>Tidy</strong>, the schematic is laid out along the signal path, in the order the parts sit along the copper. With

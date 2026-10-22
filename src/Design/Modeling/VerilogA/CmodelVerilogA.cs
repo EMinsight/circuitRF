@@ -6,7 +6,8 @@
 // dispersion node, the trap states, self-heating with its thermal pin, and every instance switch with the bias point the
 // linear-charge switches freeze at (MC-27). Equations and ANNs are written as code and compute the .cmodel's numbers to
 // rounding; a table is refused by name (D17). Every refusal is collected and reported in one message. Export writes the
-// file by a temporary file and a rename.
+// file by a temporary file and a rename, from a .cmodel or from a .cmc assembled as the .cmodel export assembles it —
+// the one function the Export step, `model export -o x.va` and the MCP `model` tool call (MC-28).
 
 using System.Globalization;
 using System.IO.Compression;
@@ -31,6 +32,10 @@ public sealed record VerilogAOptions
     /// sets it; null names the module <c>composed_fet</c>.</summary>
     public string? SourceName { get; init; }
 
+    /// <summary>The provenance timestamp a model assembled from a <c>.cmc</c> records, as <c>model export --created</c>
+    /// gives a <c>.cmodel</c>; null records the time of the export. A <c>.cmodel</c> keeps its own.</summary>
+    public string? Created { get; init; }
+
     public static VerilogAOptions Default { get; } = new();
 }
 
@@ -45,8 +50,9 @@ public sealed class VerilogAExportException(IReadOnlyList<(string Field, string 
     public string Field => Refusals[0].Field;
 }
 
-/// <summary>A written module: where it went and what it is called.</summary>
-public sealed record VerilogAExportResult(string Path, string ModuleName, long Bytes);
+/// <summary>A written module: where it went, what it is called, how many parameters it declares, and the switches that
+/// change nothing for this model (each names a part the model does not have).</summary>
+public sealed record VerilogAExportResult(string Path, string ModuleName, long Bytes, int Parameters, IReadOnlyList<string> InertSwitches);
 
 public static class CmodelVerilogA
 {
@@ -63,22 +69,35 @@ public static class CmodelVerilogA
     // ── Export ────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Reads <paramref name="cmodelPath"/>, writes its module to <paramref name="vaPath"/> by a temporary file and a rename.
-    /// Refused, failed or cancelled, nothing is written. The header's SHA-256 is of <c>model.json</c> as the file holds it.
+    /// Writes the module of <paramref name="path"/> — a <c>.cmodel</c>, or a <c>.cmc</c> assembled as
+    /// <see cref="CmodelExport.Export"/> assembles it — to <paramref name="vaPath"/> by a temporary file and a rename.
+    /// Refused, failed or cancelled, nothing is written. The header's SHA-256 is of <c>model.json</c> as the
+    /// <c>.cmodel</c> holds it, or would hold it. A <c>.cmc</c>'s refusals are the assembly's (<see cref="ModelingException"/>,
+    /// a stale step first) and then the writer's.
     /// </summary>
-    public static VerilogAExportResult Export(string cmodelPath, string vaPath, VerilogAOptions? options = null, RunControl? rc = null)
+    public static VerilogAExportResult Export(string path, string vaPath, VerilogAOptions? options = null, RunControl? rc = null)
     {
         rc?.BeginStage("Verilog-A", 1);
-        var model = CmodelFile.Read(cmodelPath);
+        options ??= VerilogAOptions.Default;
+        vaPath = Path.GetFullPath(vaPath);
+        ComposedModel model;
         string sha;
-        using (var zip = ZipFile.OpenRead(cmodelPath))
-        using (var s = zip.GetEntry("model.json")!.Open())
+        if (path.EndsWith(CmcFile.Extension, StringComparison.OrdinalIgnoreCase))
+        {
+            model = CmodelExport.Assemble(path, CmcFile.Read(path), Path.GetDirectoryName(vaPath)!, created: options.Created, rc: rc);
+            sha = Convert.ToHexStringLower(SHA256.HashData(CmodelFile.ModelJson(model)));
+        }
+        else
+        {
+            model = CmodelFile.Read(path);
+            using var zip = ZipFile.OpenRead(path);
+            using var s = zip.GetEntry("model.json")!.Open();
             sha = Convert.ToHexStringLower(SHA256.HashData(s));
-        options = (options ?? VerilogAOptions.Default) with { SourceName = Path.GetFileName(cmodelPath) };
-        string text = Write(model, options, sha);
+        }
+        options = options with { SourceName = Path.GetFileName(path) };
+        var (text, parameters, inert) = Render(model, options, sha);
         rc?.ThrowIfCancellationRequested();
 
-        vaPath = Path.GetFullPath(vaPath);
         Directory.CreateDirectory(Path.GetDirectoryName(vaPath)!);
         string tmp = vaPath + ".tmp-" + Guid.NewGuid().ToString("N")[..8];
         var bytes = new UTF8Encoding(false).GetBytes(text);
@@ -90,17 +109,34 @@ public static class CmodelVerilogA
         }
         finally { if (File.Exists(tmp)) File.Delete(tmp); }
         rc?.TickStage();
-        return new VerilogAExportResult(vaPath, ModuleName(options), bytes.Length);
+        return new VerilogAExportResult(vaPath, ModuleName(options), bytes.Length, parameters, inert);
     }
 
     /// <summary>The module as text — the same model always the same bytes.</summary>
     public static string Write(ComposedModel model, VerilogAOptions options)
-        => Write(model, options, Convert.ToHexStringLower(SHA256.HashData(CmodelFile.ModelJson(model))));
+        => Render(model, options, Convert.ToHexStringLower(SHA256.HashData(CmodelFile.ModelJson(model)))).Text;
+
+    /// <summary>
+    /// What blocks a Verilog-A export of the document's fitted constituents, before anything is assembled: one line naming
+    /// every table — <c>Id and Qg are tables; Verilog-A export needs ANN or equation constituents.</c> — or "" when there
+    /// is none. The Export step shows it; the writer's own refusal names each table's field.
+    /// </summary>
+    public static string TablesLine(CmcDocument doc)
+    {
+        var current = CurrentFit.Record(doc);
+        var charge = ChargeFit.Record(doc);
+        (string Name, Constituent? C)[] all =
+            [("Id", current?.Id), ("Ig", current?.Ig), ("IdRF", current?.IdRF), ("Qg", charge?.Qg), ("Qd", charge?.Qd)];
+        var tables = all.Where(c => c.C?.Method == Constituent.TableMethod).Select(c => c.Name).ToList();
+        if (tables.Count == 0) return "";
+        string names = tables.Count == 1 ? tables[0] : $"{string.Join(", ", tables.SkipLast(1))} and {tables[^1]}";
+        return $"{names} {(tables.Count == 1 ? "is a table" : "are tables")}; Verilog-A export needs ANN or equation constituents.";
+    }
 
     private static string ModuleName(VerilogAOptions o)
         => o.ModuleName ?? ModuleNameFrom(Path.GetFileNameWithoutExtension(o.SourceName ?? "composed_fet"));
 
-    private static string Write(ComposedModel model, VerilogAOptions options, string modelSha)
+    private static (string Text, int Parameters, IReadOnlyList<string> Inert) Render(ComposedModel model, VerilogAOptions options, string modelSha)
     {
         CmodelFile.Validate(model);
         var refusals = new List<(string Field, string Sentence)>();
@@ -123,7 +159,7 @@ public static class CmodelVerilogA
         var w = new Writer(model, module, modelSha, options.SourceName, network, names, refusals);
         w.Plan();
         if (refusals.Count > 0) throw new VerilogAExportException(refusals);
-        return w.Text();
+        return (w.Text(), w.ParameterCount, w.Inert);
     }
 
     private static IEnumerable<(string Name, Constituent C)> Constituents(CoreConstituents k)
@@ -228,6 +264,12 @@ public static class CmodelVerilogA
 
         /// <summary>What a warning or a refusal calls the model: its file name, safe inside a Verilog-A string.</summary>
         private string Who => new([.. Ascii(source ?? module).Select(c => c is '"' or '\\' or '%' ? '_' : c)]);
+
+        /// <summary>How many parameters the module declares, each a row of the header's table.</summary>
+        public int ParameterCount => _doc.Count;
+
+        /// <summary>The switches that name a part this model does not have, in <see cref="ComposedSwitches.Names"/>' order.</summary>
+        public IReadOnlyList<string> Inert => [.. ComposedSwitches.Names.Where(s => ComposedSwitches.MissingPart(s, model, _dynamics) is not null)];
 
         public void Plan()
         {
@@ -751,7 +793,7 @@ public static class CmodelVerilogA
                           "// source exchanged.\n");
             sb.Append($"// Switches: {string.Join(", ", ComposedSwitches.Names.SkipLast(1))} and {ComposedSwitches.Names[^1]}, as a\n" +
                       "// placed ComposedFET has them; 1 is on.");
-            var inert = ComposedSwitches.Names.Where(s => ComposedSwitches.MissingPart(s, model, _dynamics) is not null).ToList();
+            var inert = Inert;
             string list = inert.Count <= 1 ? string.Concat(inert) : $"{string.Join(", ", inert.SkipLast(1))} and {inert[^1]}";
             sb.Append(inert.Count == 0 ? "\n" : $" For this model {list} do{(inert.Count == 1 ? "es" : "")} nothing.\n");
             sb.Append("// The bias point: LinearC and the four branch switches hold the intrinsic charge at VgsQ, VdsQ and TjQ, which\n" +

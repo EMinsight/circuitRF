@@ -1729,11 +1729,17 @@ public sealed class Elaborator
                  })
             if (Devices.ComponentModelFactory.ReservedKey(names, reserved) is { } key) selectors.Add(key);
 
+        bool verilogA = inst.Reference.Equals("VerilogA", StringComparison.OrdinalIgnoreCase);
         foreach (var ov in inst.Overrides)
         {
             if (selectors.Contains(ov.Name))
             {
-                result[ov.Name] = ResolveExtDeviceSelector(ov.Expression, parentScope);
+                var selector = ResolveExtDeviceSelector(ov.Expression, parentScope);
+                // A VerilogA's model file resolves against the workspace root, as a ComposedFET's .cmodel does, so a
+                // workspace that ships a .va beside its .cmodel names both the same way (brief-modelcomposer-28).
+                if (verilogA && ov.Name.Equals(Devices.ComponentModelFactory.VerilogAFileParam, StringComparison.OrdinalIgnoreCase))
+                    selector = new Value(ResolveSnpFilePath(selector.AsString()));
+                result[ov.Name] = selector;
                 continue;
             }
 

@@ -3754,3 +3754,13 @@ was also handed `m=2` as a parameter. It declares no `m`, so every placement wit
 its internal nodes' rows included. That is equivalent for an internal inductor branch: the row is scaled, and its
 solution is unchanged. Gate: the `M2` case of `CompiledVerilogATests`, where the `.va` with `m=2` sits 2.8e-14 in S from
 two parallel copies.
+
+## A `VerilogA`'s relative `File` resolved against the working directory (brief-modelcomposer-28, 2026-10-21)
+
+An SnP's and a `ComposedFET`'s `File` resolve against the workspace root (`Elaborator.ResolveFileReference`); a
+`VerilogA`'s went to `VerilogAFileResolver.ProviderNameFor` as written, which is `Path.GetFullPath` — the process's
+working directory. A relative path therefore worked only when the run happened to start in the right folder, and no
+shipped workspace could name a `.va` at all. `ResolveExtDeviceParameters` now resolves a `VerilogA`'s `File` selector
+by the same rule, and the parameter editor describes the file by it too. An `ExtDevice`'s parameters are untouched:
+they belong to its provider. Gate: the example's `GanVerilogA` bench (`File=synthetic-gan/gan_4x125.va`), run by
+`ModelComposerVerilogABenchTests` and checked by `ExampleWorkspaceLoadsTests`.

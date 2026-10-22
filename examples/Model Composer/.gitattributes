@@ -14,3 +14,6 @@
 *.ctech -merge -text
 *.c3d -merge -text
 
+
+# The Verilog-A export is compared byte for byte with the writer's output; line-ending conversion would break that.
+*.va -text

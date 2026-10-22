@@ -138,9 +138,10 @@ public partial class ModelComposerWindow : Window, ICrfDocumentWindow
 
     // ── the seams ────────────────────────────────────────────────────────────
 
-    private async Task<string?> PickSave(ModelComposerViewModel vm, string title, string name, string kind, string pattern)
+    private async Task<string?> PickSave(ModelComposerViewModel vm, string title, string name, string kind, string pattern,
+                                         string? folderPath = null)
     {
-        IStorageFolder? start = vm.DocumentFolder is { } folder ? await StorageProvider.TryGetFolderFromPathAsync(folder) : null;
+        IStorageFolder? start = (folderPath ?? vm.DocumentFolder) is { } folder ? await StorageProvider.TryGetFolderFromPathAsync(folder) : null;
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
         {
             Title = title,
@@ -211,6 +212,8 @@ public partial class ModelComposerWindow : Window, ICrfDocumentWindow
             if (Clipboard is { } clipboard) await clipboard.SetTextAsync(payload);
         };
         vm.PickModelPath = name => PickSave(vm, "Export the model", name, "Composed model", "*" + CmodelFile.Extension);
+        vm.PickVerilogAPath = suggested => PickSave(vm, "Export the model as Verilog-A", Path.GetFileNameWithoutExtension(suggested),
+                                                     "Verilog-A source", "*.va", Path.GetDirectoryName(suggested));
         vm.PickPdfPath = name => PickSave(vm, "Export the report as PDF", name, "PDF", "*.pdf");
         vm.ShowReportDialog = report => new ModelReportDialog(report).ShowDialog(this);
 

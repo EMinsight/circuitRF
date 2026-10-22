@@ -900,7 +900,7 @@ what it is about), progress on stderr. The formats are in [File Formats](file-fo
 | `fit <doc.cmc> --step <step>` | `network`, `thermal`, `current`, `traps`, `charge`, `passive`, or `all` — every step the document needs, in order. The document's own settings, with `--method` (the step's method: `MultiBias`, `ANN`, `Table`, `Equation`, a trap model — with no pulsed I–V, written with the `Shift` coupling), `--seed n` and, for a passive document, `--topology` written into them first. To change anything else, edit the step's `Settings` in the `.cmc` and fit again. Only DC I–V is needed: with no S data, `all` holds the network at its values and the charge step writes the capacitances typed in its `Settings.Typed` (zero when none are). |
 | `check-charge <doc.cmc>` | Checks the fitted charges conserve charge. Also `<design.cnl> --device X1 --bias vgs,vds`, for any device in a netlist (`--region` adds the capacitance check over a rectangle). Exit **3** when the spurious DC at the gate is above `--threshold` (default 0.1 % of the fundamental gate current). |
 | `explain <doc.cmc>` | The data sets and their planes, the intrinsic ranges, N0 and W0, the temperature mode, each step as fresh, stale or absent, every network value with its error and whether it is poorly determined, and the levels each trap state was trained from, or the shift coupling's strengths. Fits nothing. |
-| `export <doc.cmc> -o <out.cmodel>` | Writes the model; `--symbol` names the symbol. A passive document exports as a cell: `--cell <workspace> <name>`. |
+| `export <doc.cmc> -o <out>` | Writes the model in the format `-o`'s extension names: `.cmodel`, with `--symbol` naming the symbol, or `.va` (also `.vams`), [Verilog-A source](model-composer.html#veriloga) for another simulator, with `--module` naming the module (default: the file name). A `.cmodel` exports to `.va` too, with no document. A table constituent is refused, naming each. `--created` sets a `.cmodel`'s timestamp; a `.va` records the model's own. A passive document exports as a cell: `--cell <workspace> <name>`. |
 | `validate <doc.cmc>` | Compares the document's current model — or `--model x.cmodel` (or a `.cmodel` with `--cmc doc.cmc`) — with its data, at the measurement plane. `--against set,set`, `--tolerance S95=0.02` (also `SMedian`, `IvRelative`, `PowerDb`, `EfficiencyPoints`, `AmPmDegrees`, `ImpedanceVswr`), `--compression dB` for the compression a loadpull is compared at. Exit **3** when a tolerance is missed. |
 | `report <doc.cmc>` | Writes the Model Validation Report folder (`-o`, default `<name>-report` beside the document): `report.npy`, `summary.txt` and every testbench it ran — and its Data Display document, `<folder>.cdd`, beside the folder. `--pdf out.pdf` also draws every tab of it, one page each: the same file the window's Export PDF writes. `--model`, `--sections`, `--classes B,J,F,FInverse`, `--freq`, `--bias vgs,vds`, `--source-2f0 re,im`, `--ropt`, `--disc radius,rings,spokes`, `--pin start,step,max` and `--compression` override the options the document stores. |
 
@@ -911,9 +911,12 @@ A choice the window would ask you for is refused, naming the flag that answers i
 <span class="prompt">$ </span>circuitrf model import fet.cmc sparams --as SParams --pattern "Vgs{vgs}_Vds{vds}_Id{id:mA}" --condition ReferencePlane=device
 <span class="prompt">$ </span>circuitrf model import fet.cmc dc.csv --as DcIv --map Vgs=vgs:V --map Vds=vds:V --map Ig=ig:A --map Id=id:A
 <span class="prompt">$ </span>circuitrf model fit fet.cmc --step all --seed 1
-<span class="prompt">$ </span>circuitrf model export fet.cmc -o fet.cmodel</code></pre>
+<span class="prompt">$ </span>circuitrf model export fet.cmc -o fet.cmodel
+<span class="prompt">$ </span>circuitrf model export fet.cmodel -o fet.va</code></pre>
 
-Then place it — `ComposedFET:X1 g d 0 File=fet.cmodel` — and run it like any device.
+Then place it — `ComposedFET:X1 g d 0 File=fet.cmodel` — and run it like any device. `fet.va` is the same model for
+another simulator; `--json` adds `result.model.verilogA`: the path, the module, its parameter count and the switches
+that change nothing for this model.
 
 Exit **0** done; **1** refused; **3** finished, but a check failed; **130** cancelled, with nothing written. `fit --step
 all` keeps the steps that finished before a cancellation. Over MCP it is the `model` tool, one mode per noun.

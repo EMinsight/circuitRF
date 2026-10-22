@@ -1,6 +1,10 @@
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using CircuitRF.Core.Devices.Composed;
 using CircuitRF.Design.Modeling;
+using CircuitRF.Design.Modeling.VerilogA;
 using CircuitRF.Design.Symbol;
+using RfCore.Data;
 using Xunit;
 
 namespace CircuitRF.Ui.Tests.ModelComposer;
@@ -8,7 +12,7 @@ namespace CircuitRF.Ui.Tests.ModelComposer;
 /// <summary>
 /// brief-modelcomposer-15 R-mc15-8: Export from the window writes the bytes <c>circuitrf model export</c> writes on the same
 /// document; the symbol picker offers no 2-pin symbol; its plots are the exported model's I–V; a stale step blocks Export,
-/// and Run stale clears it.
+/// and Run stale clears it. MC-28 R-mc28-1: Export Verilog-A beside it, blocked by a table constituent with one line.
 /// </summary>
 public sealed class ModelComposerExportStepTests
 {
@@ -68,6 +72,58 @@ public sealed class ModelComposerExportStepTests
         Assert.True(await vm.RunStaleAsync(), vm.StatusText);
         Assert.Empty(vm.Loaded.Stale);
         Assert.Equal("", vm.ExportBlocked);
+        Assert.True(vm.ExportCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task ExportVerilogA_SitsBesideExport_AndWritesTheModuleBesideTheCmodelPath()
+    {
+        string axaml = File.ReadAllText(Path.Combine(ModelCliFixture.RepoRoot(), "src", "Ui", "Views", "ModelComposer", "StepsPanelView.axaml"));
+        Assert.Matches(new Regex(@"Content=""Export Verilog-A…"" Command=""\{Binding ExportVerilogACommand\}""[^>]*/>\s*<Button Content=""Export"" Command=""\{Binding ExportCommand\}"""), axaml);
+
+        string cmc = ExportFixture.Document();
+        string dir = Path.GetDirectoryName(cmc)!;
+        var vm = await ComposerFixture.Open(cmc);
+        vm.ExportCreated = Created;
+        vm.ExportPath = Path.Combine(dir, "out", "amp.cmodel");
+        vm.SelectedStep = vm.Steps.First(s => s.Name == "Export");
+        Assert.True(vm.ExportVerilogACommand.CanExecute(null));
+        Assert.Equal("", vm.VerilogATables);
+
+        string? suggested = null;
+        string written = Path.Combine(dir, "window.va");
+        vm.PickVerilogAPath = s => { suggested = s; return Task.FromResult<string?>(written); };
+        Assert.True(await vm.ExportVerilogAAsync(), vm.StatusText);
+        Assert.Equal(Path.Combine(dir, "out", "amp.va"), suggested);
+        Assert.Equal("window.va: module fet", vm.VerilogAResult);
+
+        var r = CmodelVerilogA.Export(cmc, Path.Combine(dir, "inproc.va"), new VerilogAOptions { Created = Created });
+        Assert.Equal(File.ReadAllBytes(r.Path), File.ReadAllBytes(written));
+    }
+
+    [Fact]
+    public async Task ATableConstituent_BlocksExportVerilogA_WithOneLine_AndNotExport()
+    {
+        string cmc = ExportFixture.Document();
+        var doc = CmcFile.Read(cmc);
+        string[] inputs = [ComposedCoreProgram.Vgs, ComposedCoreProgram.Vds];
+        var domain = CircuitRF.Engine.Tests.Composed.RuntimeTestModels.Pentagon;
+        var current = CurrentFit.Record(doc)!;
+        doc = CurrentFit.Apply(doc, new CurrentFitResult(CurrentFitSettings.Default,
+            current with { Id = Constituent.Table("Id", inputs, domain) }, new Dictionary<string, DataCube>()));
+        var charge = ChargeFit.Record(doc)!;
+        doc = ChargeFit.Apply(doc, new ChargeFitResult(ChargeFitSettings.Default,
+            charge with { Qg = Constituent.Table("Qg", inputs, domain) }, new Dictionary<string, DataCube>()));
+        string digest = CmcStamps.DataDigest(cmc, doc);
+        doc = CmcStamps.Stamp(CmcStamps.Stamp(doc, CurrentFit.StepName, digest), ChargeFit.StepName, digest);
+        CmcFile.Write(cmc, doc);
+
+        var vm = await ComposerFixture.Open(cmc);
+        vm.SelectedStep = vm.Steps.First(s => s.Name == "Export");
+        Assert.Equal("Id and Qg are tables; Verilog-A export needs ANN or equation constituents.", vm.VerilogATables);
+        Assert.Equal(vm.VerilogATables, vm.ExportVerilogABlocked);
+        Assert.False(vm.ExportVerilogACommand.CanExecute(null));
+        Assert.False(await vm.ExportVerilogAAsync());
         Assert.True(vm.ExportCommand.CanExecute(null));
     }
 }
