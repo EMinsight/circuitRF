@@ -142,6 +142,19 @@ public sealed class SolverBoundaryTests : IDisposable
         Assert.NotEmpty(Boundary.ScriptingViolations(root));
     }
 
+    /// <summary>A named separate-process driver is permitted as a FILE, never as an importer of CSXCAD or openEMS.</summary>
+    [Fact]
+    public void Planted_ANamedDriverImportingOpenEmsIsCaught()
+    {
+        string root = Path.Combine(_tmp, "src");
+        string rel = Boundary.SeparateProcessDrivers.Keys.First();
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(root, rel))!);
+        File.WriteAllText(Path.Combine(root, rel), "import json\nfrom openEMS import openEMS\n");
+        var found = Boundary.ScriptingViolations(root);
+        Assert.Single(found);
+        Assert.Contains("from openEMS", found[0], StringComparison.Ordinal);
+    }
+
     // ── 6. the notices name none of them ─────────────────────────────────────────────────────
 
     /// <summary>R-em3d6-6c. circuitRF redistributes none of the three (§7.1), so there is nothing to give
@@ -373,6 +386,19 @@ internal static class Boundary
         return found;
     }
 
+    /// <summary>
+    /// The scripts src/ may ship, by path under src/, each with why it is not a scripting interface in circuitRF's process.
+    /// A named driver is a program of circuitRF's own that circuitRF writes into a run directory and starts as a SEPARATE
+    /// process — the arrangement §5.2 requires — so nothing it imports is ever loaded into circuitRF. It is still scanned for a
+    /// CSXCAD or openEMS import like every other script.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> SeparateProcessDrivers = new Dictionary<string, string>
+    {
+        ["Design/Em3d/Solvers/EMerge/circuitrf_emerge.py"] =
+            "EMerge's driver (brief-emi-0 D1, brief-emi-4): EMerge is a Python package with no other interface, so circuitRF " +
+            "writes this constant program beside problem.json and starts the user's separately installed Python on it.",
+    };
+
     public static IReadOnlyList<string> ScriptingViolations(string srcRoot)
     {
         var found = new List<string>();
@@ -381,9 +407,16 @@ internal static class Boundary
                                       && !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
                              .ToList();
 
-        // §5.2 forbids the scripting interfaces, so no script in either language ships from src/.
-        foreach (string f in files)
-            if (Path.GetExtension(f) is ".py" or ".m") found.Add($"{f}: a {Path.GetExtension(f)} file in src/");
+        // §5.2 forbids loading a GPL solver's scripting interface into circuitRF's process, so no script ships from src/ but
+        // a named separate-process driver (SeparateProcessDrivers) — and no script at all, named or not, imports CSXCAD or
+        // openEMS, whose Python and Octave interfaces are never used.
+        var scriptImport = new Regex(@"^\s*(?:import|from)\s+(?:csxcad|openems)\b|\b(?:InitCSX|InitFDTD)\s*\(", RegexOptions.IgnoreCase | RegexOptions.Multiline);
+        foreach (string f in files.Where(f => Path.GetExtension(f) is ".py" or ".m"))
+        {
+            string rel = Path.GetRelativePath(srcRoot, f).Replace('\\', '/');
+            if (!SeparateProcessDrivers.ContainsKey(rel)) found.Add($"{f}: a {Path.GetExtension(f)} file in src/ that is not a named separate-process driver");
+            if (scriptImport.Match(File.ReadAllText(f)) is { Success: true } m) found.Add($"{f}: {m.Value.Trim()}");
+        }
 
         var literal     = new Regex(@"""((?:[^""\\\n]|\\.)*)""");
         var start       = new Regex(@"ProcessStartInfo|Process\.Start|Em3dProcessLauncher\.Start");

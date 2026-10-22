@@ -63,7 +63,7 @@ internal static class RenderEm3dField
             string? why = setupProblem;
             if (why is null)
             {
-                var found = FieldPlotResolver.Discover(run, root, problem);
+                var found = FieldPlotResolver.Discover(run, root, problem, request.Solver);
                 var item = FieldPlotResolver.PickSolution(request.Solution, request.Solver, found.Items, problem, request.Quantity);
                 why = item is null ? Missing(request, found, problem) : QuantityProblem(item, request);
             }
@@ -187,7 +187,7 @@ internal static class RenderEm3dField
 
         string root = ResultsRoot.For(full, DocumentKinds.AncestorCws(full));
         var request = FieldPlotResolver.Request(plot, setupName, run, null, run);
-        var found = FieldPlotResolver.Discover(run, root, problem);
+        var found = FieldPlotResolver.Discover(run, root, problem, request.Solver);
         var item = FieldPlotResolver.PickSolution(request.Solution, request.Solver, found.Items, problem, request.Quantity);
         if (item is null) return JsonRun.Fail(CliDiagnostics.RenderFieldMissingData(plot.Name, Missing(request, found, problem)));
         string? runDir = found.DirectoryOf(item);

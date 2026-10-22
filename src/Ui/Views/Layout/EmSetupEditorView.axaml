@@ -940,7 +940,7 @@
                                       SelectedItem="{Binding ViewModel.EmergeQualityChoice}"
                                       ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.EmergeQualityTip}"/>
                         </StackPanel>
-                        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
                               ColumnSpacing="8" RowSpacing="2" HorizontalAlignment="Left" Margin="0,4,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" SharedSizeGroup="SolverSectionLabel"/>
@@ -987,7 +987,14 @@
                                        LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
                                        IsEnabled="{Binding ViewModel.EmergeAdaptiveSweep}"
                                        ToolTip.Tip="The most frequencies the adaptive sweep solves. A sweep that reaches it above its tolerance is reported as not converged."/>
-                            <SelectableTextBlock Grid.Row="7" Grid.Column="0" Grid.ColumnSpan="2" FontSize="10" TextWrapping="Wrap"
+                            <!-- brief-emi-7 — the frequencies a run saves fields at, Palace's box and rules -->
+                            <TextBlock Grid.Row="7" Grid.Column="0" Classes="colhdr" Text="Save fields at (GHz)" VerticalAlignment="Center"/>
+                            <TextBox   Grid.Row="7" Grid.Column="1" Classes="num" Tag="Emerge.SaveFieldsGHz"
+                                       Text="{Binding ViewModel.EmergeSaveFieldsText}"
+                                       PlaceholderText="{Binding ViewModel.SaveFieldsPlaceholder}"
+                                       LostFocus="OnFieldLostFocus" KeyDown="OnFieldKeyDown"
+                                       ToolTip.Tip="{x:Static em:EmSetupEditorViewModel.SaveFieldsTip}"/>
+                            <SelectableTextBlock Grid.Row="8" Grid.Column="0" Grid.ColumnSpan="2" FontSize="10" TextWrapping="Wrap"
                                        Foreground="{DynamicResource CrfWarningBrush}"
                                        Text="{Binding ViewModel.EmergeFieldError}"
                                        IsVisible="{Binding ViewModel.EmergeFieldError, Converter={x:Static ObjectConverters.IsNotNull}}"/>

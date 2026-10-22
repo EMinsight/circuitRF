@@ -20,6 +20,7 @@ public static partial class Em3dRunService
     {
         private EmergeSettings? _settings;
         private EmergeLowering? _lowering;
+        private EmergeFieldRequest? _fields;
         private SolverInstallation? _emerge;
 
         public EmergeLeg() : base(EmergeSolver.Descriptor) { }
@@ -35,14 +36,15 @@ public static partial class Em3dRunService
             _emerge = EmergeAccelerator.BeforeRun(found.Installation, log.Notes, log.Warnings);
             if (setup.Problem3D == Em3dProblemType.Eigenmode) log.Notes.Add(EmergeAccelerator.EigenmodeNote);
             _settings = EmergeSettings.Resolve(setup.Emerge);
-            if (_settings.Problems() is { Count: > 0 } bad)
+            if (_settings.Problems().Concat(EmergeFields.Problems(setup.Emerge)).ToList() is { Count: > 0 } bad)
                 Stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("emerge-settings", string.Join(" ", bad)));
         }
 
         public override void Prepare(Em3dProblem problem, RunContext run)
         {
             if (Stop is not null) return;
-            _lowering = EmergeScriptWriter.Write(problem, _settings!);
+            _fields = EmergeFields.Request(run.Setup, problem);
+            _lowering = EmergeScriptWriter.Write(problem, _settings!, _fields);
             if (_lowering.Refusal is { } refused)
                 Stop = new(EmRunStatus.Refused, EmDiagnostics.Forwarded("emerge-lowering", refused));
             else if (EmergeScriptWriter.RadiationPatternNote(run.Setup, problem) is { } noPattern)
@@ -71,6 +73,7 @@ public static partial class Em3dRunService
             foreach (string old in new[] { EmergeResults.FrequencyFile, EmergeResults.SFile, EmergeResults.Z0File,
                                            EmergeResults.ModesFile, EmergeResults.QFile, EmergeResults.RunFile })
                 File.Delete(Path.Combine(dir, old));
+            EmergeFields.Clear(dir);
             EmergeScriptWriter.WriteInto(lowering, dir);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
@@ -152,6 +155,12 @@ public static partial class Em3dRunService
         }
 
         var data = EmergeResults.BuildDataSet(sweep, ports, facts);
+        // brief-emi-7 — the saved fields' collections, and the radiation pattern at their frequencies
+        var fields = EmergeFields.ReadSteps(dir);
+        WriteFieldCollections(dir, fields, null, log);
+        if (setup.RadiationPattern && File.Exists(Path.Combine(dir, EmergeFields.FarFieldFile)) &&
+            EmergeFields.PublishPattern(dir, fields, ports, setup, data, log.Notes) is { } patternError)
+            log.Warnings.Add($"No radiation pattern from EMerge: {patternError}");
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
         string? snpPath = snpBase + $".s{ports.Count}p";
         string? snpError;
@@ -168,7 +177,7 @@ public static partial class Em3dRunService
         }
 
         // R-emi5-4c — the one line a user reads first of what the run cost, the last thing the run says.
-        log.Notes.Add(EmergeCompletionSummary(version, tier, facts, peak, setup, wall.Elapsed, eigenmode: false));
+        log.Notes.Add(EmergeCompletionSummary(version, tier, facts, peak, setup, wall.Elapsed, eigenmode: false, EmergeFields.Bytes(dir)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, snpPath, "EMerge " + version, EmergeComparisonFacts(problem, settings, facts),
                        NotConverged: notConverged);
     }
@@ -204,13 +213,24 @@ public static partial class Em3dRunService
             log.Warnings.Add($"EMerge found {modes.Kept.Count} mode(s) at or above {Fmt(modes.FloorHz / 1e9)} GHz where " +
                              $"{problem.EigenmodeCount} were asked for.");
 
+        // brief-emi-7 R-emi7-3 — participation and each lumped port's external Q, from the driver's integrals over each mode
+        var fields = EmergeFields.ReadSteps(dir);
+        WriteFieldCollections(dir, fields, modes.Sources, log);
+        var extras = EmergeEigenExtras(modes, fields);
         var notes = new List<string>
         {
             "f is each mode's resonant frequency (the real part of EMerge's complex eigenfrequency). Q is EMerge's Q, Re f / 2 Im f: " +
             "the LOADED Q, with every loss in the problem, each lumped port's resistance included.",
-            "EMerge reports no port's external Q and not where a mode's energy sits, so this result has no Q_unloaded and no " +
-            "participation; Palace's eigenmode run reports both.",
         };
+        if (extras.QExt is not null)
+            notes.Add("Q_ext is each lumped port's external Q, ω·R·∫ε|E|² / |V|²: the mode's stored energy over the power the port's " +
+                      "resistance takes at the mode's own voltage across it, computed by circuitRF from EMerge's mode field. " +
+                      "Q_unloaded = 1/(1/Q − Σ 1/Q_ext) is the Q with the ports' loading taken out.");
+        if (extras.Participation is not null)
+            notes.Add("Participation is the fraction of each mode's electric energy in each material (∫Re(ε)|E|² over that material's " +
+                      "cells over the whole mesh's), computed by circuitRF from EMerge's mode field: where the mode lives.");
+        if (extras.QExt is null && extras.Participation is null)
+            notes.Add("EMerge's run reported no mode field, so this result has no Q_unloaded and no participation.");
         if (modes.Dropped > 0)
             notes.Add($"{modes.Dropped} of EMerge's {arrays.Frequencies.Length} solution(s) were below {Fmt(modes.FloorHz / 1e9)} GHz " +
                       $"({EmergeResults.ModeFloorMargin * 100:0} % under the search start, {Fmt(problem.EigenmodeTargetHz / 1e9)} GHz) " +
@@ -218,7 +238,7 @@ public static partial class Em3dRunService
                       "it, and near 0 Hz it can return solutions that are not resonances.");
         log.Notes.AddRange(notes);
 
-        var data = Em3dEigenResult.Build(modes.Kept, [], null, [], null, notes);
+        var data = Em3dEigenResult.Build(modes.Kept, extras.Ports, extras.QExt, extras.Domains, extras.Participation, notes);
         void Scalar(string name, double? v)
         {
             if (v is { } x) data.AddToGroup(EmergeResults.Group, name, RfCore.Data.DataCube.Scalar(x));
@@ -229,8 +249,33 @@ public static partial class Em3dRunService
                       $"tetrahedra, {Count(facts.Unknowns)} unknowns.");
 
         string? npyPath = WriteNpy(resultsRoot, NpyKey(setup, Me), data, log);
-        log.Notes.Add(EmergeCompletionSummary(version, tier, facts, peak, setup, wall, eigenmode: true));
+        log.Notes.Add(EmergeCompletionSummary(version, tier, facts, peak, setup, wall, eigenmode: true, EmergeFields.Bytes(dir)));
         return new Leg(Me, EmRunStatus.Ok, null, data, npyPath, null, "EMerge " + version);
+    }
+
+    /// <summary>brief-emi-7 R-emi7-3 — the reported modes' participation [mode, material] and lumped ports' external Q
+    /// [mode, port], each null when the driver reported nothing to compute it from.</summary>
+    internal static (IReadOnlyList<int> Ports, double[,]? QExt, IReadOnlyList<string> Domains, double[,]? Participation)
+        EmergeEigenExtras(EmergeModes modes, EmergeFieldFacts fields)
+    {
+        var byMode = fields.Steps.Where(s => s.Mode is not null).ToDictionary(s => s.Mode!.Value);
+        var steps = modes.Sources.Select(k => byMode.GetValueOrDefault(k)).ToList();
+        if (steps.Count == 0 || steps.Any(s => s?.Energy is null)) return ([], null, [], null);
+        var energies = steps.Select(s => s!.Energy!).ToList();
+        var columns = EmergeFields.EnergyColumns(energies, fields.MaterialNames.Count);
+        double[,]? participation = columns.Length > 0 ? EmergeFields.Participation(energies, columns) : null;
+        string[] domains = [.. columns.Select(c => fields.MaterialNames[c])];
+
+        double[,]? qExt = null;
+        var ports = fields.PortNumbers;
+        if (ports.Count > 0 && fields.PortR.Count == ports.Count && steps.All(s => s!.PortV?.Count == ports.Count))
+        {
+            qExt = new double[steps.Count, ports.Count];
+            for (int i = 0; i < steps.Count; i++)
+                for (int k = 0; k < ports.Count; k++)
+                    qExt[i, k] = EmergeFields.ExternalQ(modes.Kept[i].FrequencyHz, energies[i].Sum(), steps[i]!.PortV![k], fields.PortR[k]);
+        }
+        return (qExt is null ? [] : ports, qExt, domains, participation);
     }
 
     /// <summary>
@@ -239,7 +284,7 @@ public static partial class Em3dRunService
     /// read left out rather than guessed.
     /// </summary>
     public static string EmergeCompletionSummary(string version, EmergeSpeedTier tier, EmergeRunFacts facts, long? peakBytes,
-                                                 EmSetup setup, TimeSpan wall, bool eigenmode)
+                                                 EmSetup setup, TimeSpan wall, bool eigenmode, long? fieldBytes = null)
     {
         var parts = new List<string> { $"EMerge done in {Duration(wall)}", $"EMerge {version}" };
         if (eigenmode) parts.Add("eigenmode solve on one core");
@@ -251,6 +296,18 @@ public static partial class Em3dRunService
             parts.Add(facts.Adaptive ? $"adaptive sweep built from {n} full solve{(n == 1 ? "" : "s")}" : $"{n} frequencies solved");
         if (peakBytes is { } m) parts.Add($"peak memory {MachineMemory.Format(m)}");
         parts.Add($"preset {setup.Emerge?.Quality ?? PalaceQuality.Standard}");
+        // brief-emi-7 — what the saved fields cost on disk, as Palace's line reports it (R-em3d29-1d)
+        if (fieldBytes is > 0 and var f) parts.Add($"field files {MachineMemory.Format(f)}");
         return string.Join(" · ", parts) + ".";
+    }
+
+    /// <summary>brief-emi-7 — the .pvd collections of the steps the driver wrote; a failure costs the plots, not the result.</summary>
+    private static void WriteFieldCollections(string dir, EmergeFieldFacts fields, IReadOnlyList<int>? modeSources, RunLog log)
+    {
+        try { EmergeFields.WriteCollections(dir, fields, modeSources); }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            log.Warnings.Add($"EMerge's field files could not be indexed in '{dir}' ({e.Message}); the result is unaffected, but no field plot can read them.");
+        }
     }
 }

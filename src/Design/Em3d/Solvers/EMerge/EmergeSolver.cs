@@ -23,15 +23,22 @@ public static class EmergeSolver
         {
             Problems = new HashSet<Em3dProblemType> { Em3dProblemType.Driven, Em3dProblemType.Eigenmode },
             MeshRegions = true,
+            // brief-emi-7 — in the .vtu layout Palace's fields are read in, and a far field on an absorbing box
+            Fields = true,
+            RadiationPattern = true,
         },
         Tools = [SolverTool.Emerge],
         SetupDescription =
             "Generates a 3D model from the layout, its technology and any bond wires and solves it with EMerge, which meshes " +
             "it with its own Gmsh; installed separately (Settings ▸ Solvers).",
         SweepText = SweepText,
-        // brief-emi-7 — EMerge's fields arrive with its field plots; until then it saves none and no plot can ask it to.
-        SavedFieldsGHz = _ => [],
-        SetSavedFieldsGHz = (_, _) => throw new InvalidOperationException(Descriptor!.FieldsRefusal),
+        SavedFieldsGHz = setup => setup.Emerge?.SaveFieldsGHz,
+        SetSavedFieldsGHz = (setup, ghz) =>
+        {
+            var section = setup.Emerge?.Clone() ?? new CemEmerge();
+            section.SaveFieldsGHz = ghz;
+            setup.Emerge = section;
+        },
         Refusal = Refusal,
         Check = Check,
         NewLeg = () => new Em3dRunService.EmergeLeg(),
@@ -54,7 +61,7 @@ public static class EmergeSolver
     private static Em3dSolverCheck Check(Em3dProblem problem, EmSetup setup, string? settingsPath)
     {
         var settings = EmergeSettings.Resolve(setup.Emerge);
-        if (settings.Problems() is { Count: > 0 } bad) return new(bad, []);
+        if (settings.Problems().Concat(EmergeFields.Problems(setup.Emerge)).ToList() is { Count: > 0 } bad) return new(bad, []);
         var notes = new List<string>();
         if (EmergeScriptWriter.RadiationPatternNote(setup, problem) is { } noPattern) notes.Add(noPattern);
         if (EmergeScriptWriter.Write(problem, settings).Refusal is { } refused) return new([refused], notes);
@@ -73,6 +80,10 @@ public static class EmergeSolver
 
     /// <summary>The program it needs: a Python interpreter with EMerge importable (R-emi2-3a).</summary>
     public static IReadOnlyList<SolverTool> Tools { get; } = [SolverTool.Emerge];
+
+    /// <summary>The program names discovery looks for: a Python interpreter. Here rather than in SolverDiscovery's table, so
+    /// the one file that names openEMS starts no interpreter (tests/Firewall.Tests' GPL-boundary scan).</summary>
+    public static string[] ProgramNames => ["python"];
 
     /// <summary>
     /// R-emi2-3b — the probe, run as <c>&lt;python&gt; -I -c &lt;this&gt;</c>. A constant: no user string is ever

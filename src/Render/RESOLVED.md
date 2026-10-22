@@ -5202,3 +5202,12 @@ is the one a missed call site fails.
 Four `Harmonica` tests fail on this machine with the transform disabled as well
 (`HarmonicaBackdropCacheTests` x3, `PowerSweepPanel_TheY2Label_...`), so they are NOT this change: the
 probe that disables the transform leaves them red.
+
+## brief-emi-7 — EMerge's fields through the Palace reader (2026-10-22)
+
+`FieldRun.OpenEmerge` is `OpenPalace`'s body (now the shared `OpenParaview`) with the solver "EMerge", metres, and
+`FieldDrive.Emerge` — Γ from the port voltages the driver measured in each step's own solve, Z0 from the run's kept document
+or problem.json, scale 1 (the driver already wrote Palace's incident power). No reader changed: the driver writes the
+layout `VtuReader` reads. `FieldPlotResolver.RunDirectories`/`Discover` take an optional solver (the plot's, by display
+name) so a comparison's FEM legs are each drawable; callers in the 3D view, the editor and `render --field` pass
+`request.Solver`. Detail in `src/Design/RESOLVED.md` "EMI-7".

@@ -150,7 +150,7 @@ public sealed partial class Viewer3DViewModel
             _own.Dirs = dirs;
             _own.Item = read.Items.FirstOrDefault();
         }
-        else StartRead(dirs, FieldSetupOf(_own));
+        else StartRead(dirs, FieldSetupOf(_own), _own.Request?.Solver);
         MirrorRead(changed: false);
         MirrorFocused();
         ClearFieldGeometry(_own);
@@ -200,7 +200,7 @@ public sealed partial class Viewer3DViewModel
             // the run is read first; AdoptRead applies every layer reading it
             layer.Read = null;
             layer.Dirs = dirs;
-            if (!_reading.ContainsKey(dirs)) StartRead(dirs, FieldSetupOf(layer));
+            if (!_reading.ContainsKey(dirs)) StartRead(dirs, FieldSetupOf(layer), layer.Request?.Solver);
             return;
         }
         bool newRead = !ReferenceEquals(layer.Read, read);

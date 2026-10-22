@@ -318,7 +318,7 @@ public sealed partial class C3dEditorViewModel
             // section — it used to follow the plot's plane, which made the two one control.
             var request = PlotRequest(plot);
             string key = string.Join("|", C3dPersistence.SerializeFieldPlots([plot]), request.Plane.Offset, request.Plane.Flip,
-                string.Join(",", request.Faces), FieldPlotResolver.RunDirectories(request.RunSetup, ResultsRootProvider?.Invoke()),
+                string.Join(",", request.Faces), FieldPlotResolver.RunDirectories(request.RunSetup, ResultsRootProvider?.Invoke(), request.Solver),
                 request.Solver, request.SetupProblem, Viewer.Scene.Origin);
             requests.Add(request with { Key = key });
         }
@@ -383,9 +383,9 @@ public sealed partial class C3dEditorViewModel
         if (IsViewOnly || request.SetupProblem is not null)
             return new FieldDiscovery([], IsViewOnly ? [.. Viewer.FieldSolutions] : [], null, [], null, IsViewOnly && Viewer.FieldsAvailable, null, null);
         var root = ResultsRootProvider?.Invoke();
-        var dirs = FieldPlotResolver.RunDirectories(request.RunSetup, root);
+        var dirs = FieldPlotResolver.RunDirectories(request.RunSetup, root, request.Solver);
         if (_discoveries.TryGetValue(dirs, out var d)) return d;
-        return _discoveries[dirs] = FieldPlotResolver.Discover(request.RunSetup, root, Viewer.Scene.Problem);
+        return _discoveries[dirs] = FieldPlotResolver.Discover(request.RunSetup, root, Viewer.Scene.Problem, request.Solver);
     }
 
     /// <summary>A run finished, or the viewer read one: every plot's check reads the runs again.</summary>

@@ -248,37 +248,45 @@ public static class FieldPlotResolver
 
     // ── discovery ───────────────────────────────────────────────────────────────────────────
 
-    /// <summary>The run directories of <paramref name="setup"/>'s 3D solvers under <paramref name="root"/>: Palace's (or a
-    /// thermal run's own), openEMS's — whichever it runs.</summary>
-    public static (string? Palace, string? OpenEms) RunDirectories(EmSetup? setup, string? root)
+    /// <summary>The run directories of <paramref name="setup"/>'s 3D solvers under <paramref name="root"/>: the FEM solver's (or a
+    /// thermal run's own), openEMS's — whichever it runs. <paramref name="solver"/> (a plot's, by display name) picks among the
+    /// FEM solvers of a comparison; otherwise the first that saves fields.</summary>
+    public static (string? Palace, string? OpenEms) RunDirectories(EmSetup? setup, string? root, string? solver = null)
     {
         if (setup is null || root is null) return (null, null);
         if (setup.IsThermal) return (ThermalRunService.RunDirectory(root, setup), null);
-        // brief-emi-1 — the first chosen FEM solver's directory holds the .vtu field set, the FDTD solver's the .vtr one.
-        // brief-emi-5 — of the solvers that save fields at all: an EMerge run has none to offer until brief-emi-7.
         string? Dir(Em3dSolverFit method)
-            => Em3dSolvers.Of(setup.Solver3D).FirstOrDefault(d => d.Method == method && d.Capabilities.Fields) is { } d
-                ? Em3dRunService.RunDirectory(root, setup, d.Id) : null;
+            => FieldSolver(setup, method, solver) is { } d ? Em3dRunService.RunDirectory(root, setup, d.Id) : null;
         return (Dir(Em3dSolverFit.Fem), Dir(Em3dSolverFit.Fdtd));
     }
 
-    /// <summary>What <paramref name="setup"/>'s runs saved, each step labelled as the picker shows it. File reads: call it off the
-    /// UI thread when it can be large, or cache it.</summary>
-    public static FieldDiscovery Discover(EmSetup? setup, string? root, Em3dProblem? problem)
+    /// <summary>brief-emi-1/5/7 — the solver of <paramref name="setup"/> whose run directory holds its <paramref name="method"/>'s
+    /// field set: of the solvers that save fields, <paramref name="solver"/> when it is one, else the first chosen.</summary>
+    private static Em3dSolverDescriptor? FieldSolver(EmSetup setup, Em3dSolverFit method, string? solver)
     {
-        var (dir, openEmsDir) = RunDirectories(setup, root);
+        var able = Em3dSolvers.Of(setup.Solver3D).Where(d => d.Method == method && d.Capabilities.Fields).ToList();
+        return able.FirstOrDefault(d => string.Equals(d.DisplayName, solver, StringComparison.OrdinalIgnoreCase)) ?? able.FirstOrDefault();
+    }
+
+    /// <summary>What <paramref name="setup"/>'s runs saved, each step labelled as the picker shows it. File reads: call it off the
+    /// UI thread when it can be large, or cache it. <paramref name="solver"/> as <see cref="RunDirectories"/> takes it.</summary>
+    public static FieldDiscovery Discover(EmSetup? setup, string? root, Em3dProblem? problem, string? solver = null)
+    {
+        var (dir, openEmsDir) = RunDirectories(setup, root, solver);
+        bool emerge = setup is { IsThermal: false } && FieldSolver(setup, Em3dSolverFit.Fem, solver)?.Id == EmergeSolver.Id;
         FieldRun? run = null, openEms = null;
         string? why = null;
         var table = setup is { IsThermal: true } && root is not null ? ReadThermalTable(setup, root) : null;
         try
         {
-            run = dir is null ? null : FieldRun.OpenPalace(dir, GmshGeoWriter.LengthUnitM);
+            run = dir is null ? null : emerge ? FieldRun.OpenEmerge(dir) : FieldRun.OpenPalace(dir, GmshGeoWriter.LengthUnitM);
             openEms = openEmsDir is null ? null : FieldRun.OpenOpenEms(openEmsDir);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or FormatException) { why = e.Message; }
         var groups = dir is null ? [] : FieldGroups.Read(dir);
-        var modes = run?.Kind == FieldProblemKind.Eigenmode
-            ? PalaceRun.ReadModes(Path.Combine(dir!, PalaceConfigWriter.OutputDirectory, PalaceRun.EigFile), out _) : null;
+        var modes = run?.Kind != FieldProblemKind.Eigenmode ? null
+            : emerge ? EmergeResults.ReportedModes(dir!)?.Kept.Select(m => new PalaceMode(m.Index, m.FrequencyHz, 0, m.Q, 0, 0)).ToList()
+            : PalaceRun.ReadModes(Path.Combine(dir!, PalaceConfigWriter.OutputDirectory, PalaceRun.EigFile), out _);
         FieldRun[] runs = [.. new[] { run, openEms }.OfType<FieldRun>()];
         var items = new List<FieldSolutionItem>();
         foreach (var r in runs)

@@ -1,7 +1,7 @@
 # Brief EMI-0 — EMerge as a third 3D solver: overview
 
 **Series:** EMI-0 overview · EMI-1 the solver seam · EMI-2 install and Settings · EMI-3 maximum speed · EMI-4 the
-lowering · EMI-5 run and results · EMI-6 Compare · EMI-7 fields and radiation · EMI-8 docs, example and validation · EMI-9 GPU.
+lowering · EMI-5 run and results · EMI-6 Compare · EMI-7 fields and radiation · EMI-8 docs, example and validation · EMI-9 GPU · EMI-10 memory ceiling.
 Wave ports are their own sub-series, **EMW-0…** (`brief-emw-0-overview.md`). · **Tag:** `R-emi<n>-<k>` · **Origin:**
 owner request, 2026-10-21
 
@@ -95,6 +95,7 @@ the solver that can run it. EMW adds wave ports and terminal groups and may reus
 | EMI-7 | Field plots and radiation patterns from an EMerge run | EMI-5 |
 | EMI-8 | User docs (including "getting the most speed"), the example, the validation set, the open notch item | all |
 | EMI-9 | GPU solving: built automatically when the tools exist, used automatically when faster, CPU fallback when the sweep does not converge | EMI-3, EMI-5 |
+| EMI-10 | A memory ceiling and a free-disk floor for every solver and mesher process (added 2026-10-22, after a run filled the disk through swap) | EMI-5 |
 
 EMI-2/EMI-3 and EMI-4 are independent once EMI-1 is in. EMW-1 (the spike) can start any time after EMI-5.
 

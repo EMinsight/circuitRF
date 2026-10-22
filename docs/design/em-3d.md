@@ -450,6 +450,15 @@ They link the GPL engine and library into the calling process. circuitRF writes 
 text from the format, runs the executable, and reads the text and VTK/HDF5 files it writes — which
 means circuitRF does the port post-processing itself (§5.3), the same arrangement §6.1 sets for Gmsh.
 
+**A solver whose only interface is a language is driven by a separate-process DRIVER.** EMerge is a
+Python package with no executable (brief-emi-0 D1), so circuitRF ships one constant program of its own,
+`circuitrf_emerge.py`, writes it into the run directory beside its data file, and starts the user's
+separately installed Python on it. What that program imports is loaded into ITS process, never into
+circuitRF's, which is the property this section is about. `tests/Firewall.Tests` holds it: a script
+under `src/` is a violation unless it is named in `SeparateProcessDrivers` with its reason, and every
+script, named or not, is still scanned for a CSXCAD or openEMS import — openEMS's interfaces stay unused
+whatever runs them.
+
 ### 5.3 The contract circuitRF holds
 
 - **A short list of validated versions of each solver.** The user installs the solver (§7.1), so

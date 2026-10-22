@@ -22007,3 +22007,71 @@ format, the run, the comparison, the panel and the CLI use it.
   share it) and shows the reason as its tooltip; `RunSetupFor` refuses with the same sentence for the menu and Ctrl+R. Every
   other refusal is still said on press, as before. It re-asks on every setup rebuild (edits and undo arrive there), on a
   change of active setup, and when `Em3dSolverInstallState` changes.
+
+## EMI-7: field plots and radiation patterns from an EMerge run (2026-10-22)
+
+`docs/sonnet-briefs/brief-emi-7-fields-and-radiation.md`. `EmergeFields.cs` is the C# half; the driver
+(`circuitrf_emerge.py`, now `DRIVER_VERSION = 2`) is the other.
+
+- **The files are Palace's layout, and circuitRF writes the collections.** The driver writes each step as
+  `postpro/paraview/{driven/excitation_<k>,eigenmode}/Cycle<n>/data.pvtu` + one `proc000000.vtu` (Lagrange tetrahedra, every
+  cell its own nodes, inline-base64 geometry, appended-raw `E_*`/`B_*`, the owning object as `attribute`, `groups.json`
+  beside), and reports each in run.json's `fieldSteps`. **The `.pvd` files are circuitRF's** (`EmergeFields.WriteCollections`):
+  EMerge's eigen solutions are filtered and renumbered by `EmergeResults.FilterModes`, which only circuitRF runs, so the
+  collection is what maps a REPORTED mode to its file (`EmergeModes.Sources`, each kept mode's index in `modes.npy`). The
+  reader is `FieldRun.OpenEmerge` — `OpenPalace`'s body with the solver name, metres (`ToMetres` 1) and its own drives.
+- **Each node is evaluated inside its own cell**: EMerge's `MWField.interpolate(..., mapping=cells)` takes the
+  point-to-tetrahedron mapping, so no global search picks either side of a face. EMerge's quadrature points
+  (`generate_int_data_tet`) come quadrature-point-major: `mapping = tile(arange(nT), nq)` (checked against cell centroids).
+- **Scale, driven (R-emi7-2).** EMerge's lumped port drives an incident wave of `voltage = √(2·P·Z0)` peak with `power`
+  1 W, and its S uses `a = voltage·√(1/2Z0)`: a 1 W time-averaged incident wave, peak phasors. Palace's field is at 0.5 W in
+  the same convention (`PalaceDrive`), so the driver multiplies E, B and the reported port voltages by √(0.5/P). The power
+  constant travels in problem.json (`fields.incidentPowerW`), so it lives once, in C#.
+- **Scale, eigenmode.** A mode's amplitude is arbitrary, so Palace's normalisation was read off the committed cavity fixture:
+  ∫ε|E|² over the mesh is 8.36–8.43e-11 J for all three modes (quadratic quadrature of its own `U_e`, which is ½ε|E|²), which
+  is Lc/c₀ with Lc = 25 mm, the mesh's largest extent — Palace's default characteristic length, whose field unit is √Z₀/Lc and
+  energy unit 1 W·Lc/c₀. The driver scales each mode to `fields.modeEnergyJ` = (largest air-box extent)/c₀ and turns its
+  phase so the largest node component is real. The brief's Palace comparison of the mode plot's peak |E| was not run: no
+  Palace is installed here and the fixture is a different cavity.
+- **Eigen extras (R-emi7-3).** The driver integrates Re(ε)|E|² over each material's cells by EMerge's own tetrahedral rule
+  (`gaus_quad_tet(4)`, 11 points) and each lumped port's voltage by EMerge's own integration lines; participation and
+  Q_ext = ω·R·∫ε|E|²/|V|² are computed in C# (`EmergeFields`), so the arithmetic is gated without Python. Participation is by
+  MATERIAL where Palace's is by object. EMerge's eigen system includes the lumped ports (a Robin term), so Q_unloaded is
+  meaningful — **but EMerge assembles that term at the SEARCH frequency** (`assemble_eig_matrix(..., search_frequency)`),
+  measured on the Cavity's 9.957 GHz mode: Q 716 with `TargetGHz` 8, 571 with 9.9 (Palace 539); Q_ext per port ~2,250 →
+  ~1,470 and Q_unloaded ~1,970 → 2,565 (Palace 3,236). The docs tell a user to put `TargetGHz` just below the mode. What
+  remains is EMerge's lumped port coupling more weakly than Palace's, the notch-depth open item EMI-8 carries.
+- **Mode 0 of that run was a 7.72 GHz solution with Q 1.5** — a heavily loaded non-resonance just above EMI-5's 5 % floor
+  (7.6 GHz for an 8 GHz start). Not changed here; worth knowing when reading an EMerge mode table.
+- **Driven fields are direct solves.** The adaptive sweep fits S between its own samples and holds no field elsewhere, so
+  every save frequency is solved after the sweep (`run_sweep` at those frequencies); a non-adaptive sweep's own fields are
+  reused. A save frequency outside the sweep is therefore allowed (Palace's is refused, because there it moves the sweep).
+  `SaveFieldsGHz` is a new `CemEmerge` key with Palace's meaning (omitted = the sweep's centre, `[]` = none), with the
+  panel's box.
+- **The radiation pattern (R-emi7-4)** is `MWField.farfield(θ, φ, absorbing faces)` on the 1° sphere at the save
+  frequencies (the centre alone when none are saved), its `Etheta`/`Ephi` written as `ff_E.npy` [f, port, 2, θ, φ]; C#
+  divides by the step's own port voltage and forms accepted power and Γ from V and V_inc as `PalacePattern` does from
+  port-V.csv, then publishes through `Em3dRadiation.Publish`. Every face must be absorbing (EMerge applies no image), or the
+  run says why. **Measured**: a short dipole reads 1.88 dBi (Draft, 1,234 tets; closed form 1.76). A 0.47 λ dipole's
+  radiated-over-accepted read 113–115 % with the box λ/4 out (2,690 and 18,265 tets) and 108 % at λ/2, while EMerge's own
+  near-field Poynting flux through the same faces matched the accepted power to 3 % — so the excess is EMerge's far-field
+  transform (first-order absorber close in, edge-centre quadrature on coarse box triangles), not a scale error here. The
+  pattern publishes with Em3dRadiation's efficiency tolerance, so an efficiency past it is refused in the metrics.
+- **Discovery is solver-aware.** `FieldPlotResolver.RunDirectories`/`Discover` take the plot's solver (a comparison's), so
+  a Compare of Palace and EMerge draws either one's fields; with none named it is the first FEM solver that saves fields.
+- **The completion line reports `field files …`** as Palace's does; Palace warns at no size, so neither does EMerge.
+
+**The GPL-boundary scan (`SolverBoundaryTests.NoScriptingInterfaceIsInvokedOrShippedFromSrc`) passes again**, narrowed by
+the owner's request rather than worked around. Its rule forbade any `.py` under `src/`; em-3d.md §5.2's actual rule is that
+no GPL solver's scripting interface is loaded into circuitRF's process. Now a script is allowed only when named in
+`Boundary.SeparateProcessDrivers` with its reason (EMerge's driver, the separate-process arrangement EMI-0 D1 chose), and
+EVERY script, named or not, is still scanned for a CSXCAD/openEMS import (a planted import in the named driver's own path is
+caught). The second hit — `SolverDiscovery.cs` starting an interpreter in a file that names openEMS — was EMerge's
+`["python"]` program name in the discovery table; it moved to `EmergeSolver.ProgramNames`, so the heuristic stands
+unchanged. em-3d.md §5.2 states the rule.
+
+Gate: `tests/Ui.Tests/Em3d/EmergeFieldsTests.cs` — a driver-shaped step through `VtuReader`/`FieldRun.OpenEmerge` with its
+drive, the request and its lowering, participation and Q_ext from canned integrals, the pattern's group against
+`Em3dRadiation.Publish`'s, and (with EMerge, `Category=Benchmark`, ~2.5 min) the Cavity's Modes run: mode 1 written, peak
+mid-cavity, `render --field` draws. That test searches from 9.9 GHz for ONE mode: from the setup's own 8 GHz, EMerge's
+first solution was the 7.78 GHz Q 1.5 non-resonance, and the label check caught it.

@@ -280,7 +280,7 @@ public sealed partial class SolverDiscovery
             extraDirectories: [Path.Combine(Home(), "opt", "openEMS", "bin")], spackPackage: "openems", untestedRuns: true),
 
         SolverTool.Emerge => new(
-            SolverTool.Emerge, "EMerge", "CIRCUITRF_EMERGE", ["python"],
+            SolverTool.Emerge, "EMerge", "CIRCUITRF_EMERGE", EmergeSolver.ProgramNames,
             versionArguments: ["-I", "-c", EmergeSolver.ProbeSource],
             // TESTED versions, oldest first. An untested EMerge RUNS, with a warning naming these (the owner's call,
             // 2026-10-21, as Gmsh's brief-em3d-135): a user may install any version of their own. circuitRF's own recipe

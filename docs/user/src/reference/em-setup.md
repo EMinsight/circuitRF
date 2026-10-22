@@ -777,6 +777,7 @@ filled in overrides the preset for that setting only:
 | Adaptive sweep | `AdaptiveSweep` | On (the default) fits the band from a few solves; off solves every frequency. |
 | Sweep tolerance | `Tolerance` | The adaptive sweep's tolerance on \|S\|. *By preset.* |
 | Most sweep solves | `MaxSamples` | The most frequencies the adaptive sweep solves; at least 5, default 100. |
+| Save fields at (GHz) | `SaveFieldsGHz` | The frequencies whose fields the run saves for the 3D view, as Palace's box: see [Fields for the 3D view](#palace-fields). |
 
 A driven sweep is built adaptively: EMerge solves the full problem at a few frequencies and fits every
 requested point from them, adding frequencies until its estimated error on |S| is below its tolerance. The
@@ -791,10 +792,24 @@ The result lands beside the other solvers' results: `results/<name>.emerge.sNp` 
 `<name>.emerge_eig.npy` for an eigenmode run. `results/<name>.emerge/` keeps the input (`problem.json` and the
 driver that reads it), EMerge's log (`emerge.log`) and the arrays it wrote, so a run can be repeated by hand.
 
-**Eigenmodes on EMerge** give **f** and **Q** (the loaded Q, as Palace's), and no **Q_ext**, **Q_unloaded** or
-**Participation**: EMerge does not report them. EMerge's eigensolver looks either side of `TargetGHz`, and near
-0 Hz it can return solutions that are not resonances, so a solution more than 5 % below `TargetGHz` is dropped,
-and the run's notes say how many were. EMerge solves an eigenmode problem on one core.
+**Eigenmodes on EMerge** give **f** and **Q** (the loaded Q, as Palace's). EMerge reports nothing else, so
+circuitRF computes **Q_ext**, **Q_unloaded** and **Participation** from each mode's own field: Q_ext is each lumped
+port's ω·R·∫ε|E|²/|V|² (the mode's stored energy over the power the port takes), and Participation is the share of
+the mode's electric energy in each **material** (Palace's is by object). EMerge evaluates its lumped ports at
+`TargetGHz` rather than at each mode's own frequency, so **set `TargetGHz` just below the mode you are reading**:
+the Cavity's 9.957 GHz mode reads Q 716 with `TargetGHz` 8 and 571 with 9.9 (Palace: 539). EMerge's eigensolver looks
+either side of `TargetGHz`, and near 0 Hz it can return solutions that are not resonances, so a solution more than
+5 % below `TargetGHz` is dropped, and the run's notes say how many were. EMerge solves an eigenmode problem on one core.
+
+**Fields and the radiation pattern on EMerge.** An EMerge run saves fields as a Palace run does, by the same
+*Save fields at* box, and every field plot draws them. Each saved frequency is a **direct solve of its own** after
+the sweep (the adaptive sweep fits S between its own samples and has no field anywhere else), so it costs one more
+solve per frequency, may lie outside the sweep, and changes nothing the `.sNp` reports. An eigenmode run saves every
+mode. A driven field is at the same drive as Palace's, so the two solvers' plots of one structure read the same
+numbers; a mode is normalised as Palace normalises one. With **Radiation pattern** on and every air-box face
+absorbing, EMerge integrates its far field over those faces at the saved frequencies (the sweep's centre when it
+saves none) and the result carries the same `farfield` group Palace's does; a conducting face is said in the run's
+notes and the S-parameters are still computed.
 
 ### Compare {#compare}
 
@@ -1082,7 +1097,7 @@ surfaces or on chosen faces. **Save fields at (GHz)** in the setup panel's Palac
 in the `.cem` — says which frequencies. Its box shows the sweep's centre as its placeholder when it is
 blank, and takes a comma list (`2, 6, 10`) or `none`. A field plot's *Other frequency…* adds one to it. A
 run saves only these frequencies, so a plot can show only these: a 2–18 GHz sweep left blank saves its
-centre, 10 GHz, and nothing else. openEMS has the same box, for its field dumps.
+centre, 10 GHz, and nothing else. openEMS and EMerge have the same box, for their own fields.
 
 ```
 "Palace": { "SaveFieldsGHz": [2.4, 5.8] }

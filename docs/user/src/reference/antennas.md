@@ -74,8 +74,8 @@ fiction. The run's note says which of the two it is in.
 
 ## From a 3D solver {#3d}
 
-The same checkbox works on a **driven** 3D setup — **FDTD 3D (openEMS)**, **FEM 3D (Palace)** or **FEM &
-FDTD - Compare** — and produces the same `farfield` cubes, so the Data Display, the metrics and `circuitrf em`
+The same checkbox works on a **driven** 3D setup — **FDTD 3D (openEMS)**, **FEM 3D (Palace)**, **FEM 3D
+(EMerge)** or a **Compare** of them — and produces the same `farfield` cubes, so the Data Display, the metrics and `circuitrf em`
 read them exactly as they read a planar run's. It is disabled on a static or eigenmode problem, which drives
 no port at a frequency. What is different:
 
@@ -98,6 +98,10 @@ no port at a frequency. What is different:
   every port lumped**. Otherwise the S-parameters are still computed and the run says why there is no
   pattern; on *Compare* the openEMS half still produces one. Palace's absorbing faces are first order, so
   keep the box well away from the radiator. Its far-field file is about 16 MB per frequency per port.
+- **FEM 3D (EMerge)** integrates its own far field over the absorbing faces, with the same requirement of
+  every face absorbing, and only at the frequencies the setup **saves fields at** — the sweep's centre unless
+  *Save fields at* names others — because each is a direct solve of its own after the adaptive sweep. Its
+  absorbing faces are first order too.
 
 **Measured** (circuitRF against closed forms and against itself, 2026-09-26): a short dipole reads
 1.78 dBi through openEMS and 1.77–1.79 dBi through Palace, against 1.76; a half-wave dipole through openEMS
@@ -106,6 +110,12 @@ efficiency 98.7–99.0 % for lossless metal. The shipped patch with its ground m
 the planar solve at 5.85 GHz to 0.3° in the H-plane beamwidth and 0.09 dB in directivity once the planar
 kernel's surface-wave power is counted as radiated; drawn with its real 40 × 40 mm ground it reads 7.19 dBi
 with an 82.6° E-plane — the finite plane's own effect.
+
+**Measured through EMerge** (2026-10-22): a short dipole reads 1.88 dBi on a Draft mesh, against 1.76. A half-wave
+dipole's radiated power reads 13–15 % above its accepted power with the box a quarter wavelength out and 8 % above at
+half a wavelength, while EMerge's own power flow through the same faces matches the accepted power to 3 %: its
+far-field integral reads high when the box is close, so give EMerge's air box more room than Palace's, and read its
+efficiency with that in mind.
 
 ## Which feeds work {#feeds}
 

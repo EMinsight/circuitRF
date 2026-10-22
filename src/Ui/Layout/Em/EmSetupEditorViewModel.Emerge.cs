@@ -20,6 +20,7 @@ public sealed partial class EmSetupEditorViewModel
     [ObservableProperty] private string _emergeToleranceText             = "";
     [ObservableProperty] private string _emergeMaxSamplesText            = "";
     [ObservableProperty] private string _emergeAdaptiveMeshText          = "";
+    [ObservableProperty] private string _emergeSaveFieldsText            = "";   // brief-emi-7
     [ObservableProperty] private string? _emergeFieldError;
 
     /// <summary>True when EMerge's section is shown: EMerge is one of the solvers the setup runs.</summary>
@@ -121,6 +122,9 @@ public sealed partial class EmSetupEditorViewModel
                 Whole(EmergeAdaptiveMeshText, v => v >= 0, "Enter a whole number of 0 or more (0 solves the first mesh).",
                       v => section.AdaptiveMesh = v);
                 break;
+            case "Emerge.SaveFieldsGHz":                // brief-emi-7 — Palace's box and rules (EmSetupEditorViewModel.SaveFields.cs)
+                if (TryParseSaveFields(EmergeSaveFieldsText, out var saves, out error)) section.SaveFieldsGHz = saves;
+                break;
             default:
                 return;
         }
@@ -150,6 +154,7 @@ public sealed partial class EmSetupEditorViewModel
         EmergeToleranceText             = G(e?.Tolerance);
         EmergeMaxSamplesText            = e?.MaxSamples?.ToString(CultureInfo.InvariantCulture) ?? "";
         EmergeAdaptiveMeshText          = e?.AdaptiveMesh?.ToString(CultureInfo.InvariantCulture) ?? "";
+        EmergeSaveFieldsText            = SaveFieldsText(e?.SaveFieldsGHz);
         EmergeFieldError = null;
     }
 }

@@ -114,6 +114,33 @@ public static class FieldDrive
     }
 
     /// <summary>
+    /// brief-emi-7 — the drive of each of an EMerge run's driven steps: the port its excitation folder names, Z0 from the run's
+    /// kept document (else the port's own in problem.json), and Γ = (V − V_inc)/V_inc from the voltages the driver measured in
+    /// that step's own solve — never interpolated. The driver wrote the arrays at Palace's incident power, so the scale is 1.
+    /// </summary>
+    internal static IReadOnlyList<FieldSolution> Emerge(string runDir, IReadOnlyList<FieldSolution> steps)
+    {
+        if (steps.All(s => s.Kind != FieldProblemKind.Driven)) return steps;
+        var facts = EmergeFields.ReadSteps(runDir);
+        var document = RunPortZ0s(runDir);
+        var stated = EmergeFields.PortZ0s(runDir);
+        var list = new List<FieldSolution>(steps.Count);
+        foreach (var s in steps)
+        {
+            if (s.Kind != FieldProblemKind.Driven) { list.Add(s); continue; }
+            int port = s.Excitation;
+            Complex? z0 = document is not null && document.TryGetValue(port, out var dz) ? dz : stated.TryGetValue(port, out var sz) ? sz : null;
+            var step = facts.Steps.FirstOrDefault(x => x.Port == port && Math.Abs(x.FrequencyHz - s.FrequencyHz) <= 1e-7 * s.FrequencyHz);
+            Complex? gamma = step is { V: { } v, VInc: { } vi } && vi.Magnitude > 0 ? (v - vi) / vi : null;
+            string? why = gamma is null
+                ? $"EMerge's run recorded no voltage across port {port} at {G(s.Timestep)} GHz, so the accepted power is not known; Incident still works."
+                : null;
+            list.Add(s with { Drive = new FieldPortDrive(port, z0, gamma, 1, true, why) });
+        }
+        return list;
+    }
+
+    /// <summary>
     /// brief-em3d-100 R-em3d100-1 — the drive of each of an openEMS run's steps: port k's own probes in <c>p&lt;k&gt;/</c>, read
     /// once per port and transformed at every dump frequency of that port (FdtdPortTransform.Dft, the function S was formed
     /// with), Z0 from the run's kept document. A port whose probes, or whose Z0, the run did not keep is not referred (D3).

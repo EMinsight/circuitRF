@@ -50,11 +50,12 @@ internal static class Em3dRadiation
     /// <summary>
     /// Assembles the points — row-major <c>[freq, port]</c>, frequencies ascending, ports as
     /// <paramref name="portNumbers"/> — through the stage, publishes the group into <paramref name="data"/>
-    /// and returns the sentences the run carries.
+    /// and returns the sentences the run carries. <paramref name="frequencies"/> says which frequencies the pattern is at, when
+    /// they are not every frequency of the sweep (brief-emi-7: EMerge's are its field frequencies).
     /// </summary>
     public static List<string> Publish(DataSet data, string solver, PlanarFarFieldGrid grid, IReadOnlyList<int> portNumbers,
                                        IReadOnlyList<double> freqs, IReadOnlyList<Em3dPatternPoint> points,
-                                       double referenceInputPowerDbm, bool hemisphere)
+                                       double referenceInputPowerDbm, bool hemisphere, string? frequencies = null)
     {
         var settings = PlanarMetricSettings.Default with { ReferenceInputPowerDbm = referenceInputPowerDbm };
         var slices = new List<FarFieldSlice>(freqs.Count);
@@ -86,7 +87,7 @@ internal static class Em3dRadiation
                   $"{Eng(first.Pattern.RadiatedPowerW)}W over the {(hemisphere ? "upper hemisphere" : "whole sphere")} " +
                   $"against {Eng(first.AcceptedW)}W accepted at the port (radiation efficiency " +
                   $"{m0.Budget.RadiationEfficiency:P2}). Each port's pattern is the run that excited that port. " +
-                  $"A pattern at each of the sweep's {freqs.Count} frequencies, on a 1° grid.");
+                  $"{frequencies ?? $"A pattern at each of the sweep's {freqs.Count} frequencies"}, on a 1° grid.");
         foreach (string r in sets.Metrics.Refusals) notes.Add(r);
         var pol = sets.Polarization.At(0, 0);
         notes.Add(pol.ScaleCaption);

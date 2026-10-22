@@ -70,7 +70,7 @@ public sealed partial class Viewer3DViewModel
 
     public string FieldsTip => FieldsAvailable
         ? "Show the solved field, read from the solver's own files"
-        : "Simulate with Palace to save fields (the setup's SaveFieldsGHz; the sweep's centre by default)";
+        : "Simulate with Palace or EMerge to save fields (the setup's SaveFieldsGHz; the sweep's centre by default)";
 
     /// <summary>A drawn quantity is animated: φ, Play and the loop period drive it (brief-em3d-96: one clock for every layer).</summary>
     public bool FieldCanAnimate => DrawnLayers.Any(l => l.Quantity is { Animated: true }) || SelectedFieldQuantity is { Animated: true };
@@ -268,7 +268,8 @@ public sealed partial class Viewer3DViewModel
 
     /// <summary>The run directories a layer reads (FieldPlotResolver.RunDirectories): Palace's for its setup's problem type,
     /// openEMS's — whichever the setup runs.</summary>
-    private (string? Palace, string? OpenEms) DirsOf(FieldLayer layer) => FieldPlotResolver.RunDirectories(FieldSetupOf(layer), _resultsRoot());
+    private (string? Palace, string? OpenEms) DirsOf(FieldLayer layer)
+        => FieldPlotResolver.RunDirectories(FieldSetupOf(layer), _resultsRoot(), layer.Request?.Solver);
 
     /// <summary>The runs read, by directory: every layer reading one shares it.</summary>
     private readonly Dictionary<(string?, string?), FieldRead> _reads = [];
@@ -287,18 +288,18 @@ public sealed partial class Viewer3DViewModel
         var targets = _layers.Where(l => !l.Disposed).ToList();
         var dirs = targets.Select(DirsOf).ToHashSet();
         foreach (var key in _reads.Keys.Where(k => !dirs.Contains(k)).ToList()) _reads.Remove(key);
-        foreach (var group in targets.GroupBy(DirsOf)) StartRead(group.Key, FieldSetupOf(group.First()));
+        foreach (var group in targets.GroupBy(DirsOf)) StartRead(group.Key, FieldSetupOf(group.First()), group.First().Request?.Solver);
     }
 
     /// <summary>Discovers <paramref name="dirs"/> off the UI thread and adopts it for every layer reading it.</summary>
-    private void StartRead((string? Palace, string? OpenEms) dirs, EmSetup? setup)
+    private void StartRead((string? Palace, string? OpenEms) dirs, EmSetup? setup, string? solver)
     {
         var scene = Scene;
         string? root = _resultsRoot();
         long token = _reading[dirs] = ++_readTokens;
         Task.Run(() =>
         {
-            var found = FieldPlotResolver.Discover(setup, root, scene.Problem);
+            var found = FieldPlotResolver.Discover(setup, root, scene.Problem, solver);
             _post(() =>
             {
                 if (_disposed || !_reading.TryGetValue(dirs, out long now) || now != token) return;

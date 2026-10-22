@@ -60,7 +60,7 @@ public sealed partial class FieldRun
 {
     /// <summary>Where the field files are: Palace's paraview folder, or openEMS's run directory.</summary>
     public required string Directory { get; init; }
-    /// <summary>"Palace" or "openEMS".</summary>
+    /// <summary>"Palace", "EMerge" or "openEMS".</summary>
     public string Solver { get; init; } = "Palace";
     public required FieldProblemKind Kind { get; init; }
     public required IReadOnlyList<FieldSolution> Solutions { get; init; }
@@ -82,6 +82,18 @@ public sealed partial class FieldRun
     /// <c>postpro/</c>), or null when Palace saved none there.
     /// </summary>
     public static FieldRun? OpenPalace(string runDir, double defaultToMetres = 1e-6)
+        => OpenParaview(runDir, "Palace", LengthUnit(runDir) ?? defaultToMetres, steps => FieldDrive.Palace(runDir, steps));
+
+    /// <summary>
+    /// brief-emi-7 — the fields an EMerge run saved in <paramref name="runDir"/>, or null when it saved none: the driver writes
+    /// Palace's layout (metres, so <see cref="ToMetres"/> is 1) and circuitRF the collections, so it is read as Palace's is;
+    /// each driven step's drive comes from the run's own port voltages (FieldDrive.Emerge).
+    /// </summary>
+    public static FieldRun? OpenEmerge(string runDir)
+        => OpenParaview(runDir, "EMerge", 1, steps => FieldDrive.Emerge(runDir, steps));
+
+    private static FieldRun? OpenParaview(string runDir, string solver, double toMetres,
+                                          Func<IReadOnlyList<FieldSolution>, IReadOnlyList<FieldSolution>> drives)
     {
         string paraview = Path.Combine(runDir, "postpro", "paraview");
         if (!System.IO.Directory.Exists(paraview)) return null;
@@ -100,15 +112,15 @@ public sealed partial class FieldRun
                 {
                     if (IsIndicator(pvtu)) { indicator ??= pvtu; continue; }
                     string? b = bsteps?.FirstOrDefault(s => s.Timestep == t).Pvtu;
-                    solutions.Add(new FieldSolution(kind, excitation, t, pvtu, b));
+                    solutions.Add(new FieldSolution(kind, excitation, t, pvtu, b, solver));
                 }
             }
             if (solutions.Count == 0 && indicator is null) continue;
             return new FieldRun
             {
-                Directory = paraview, Kind = kind, IndicatorPvtu = indicator,
-                Solutions = FieldDrive.Palace(runDir, [.. solutions.OrderBy(s => s.Timestep).ThenBy(s => s.Excitation)]),
-                ToMetres = LengthUnit(runDir) ?? defaultToMetres,
+                Directory = paraview, Solver = solver, Kind = kind, IndicatorPvtu = indicator,
+                Solutions = drives([.. solutions.OrderBy(s => s.Timestep).ThenBy(s => s.Excitation)]),
+                ToMetres = toMetres,
             };
         }
         return null;

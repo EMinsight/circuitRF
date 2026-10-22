@@ -40,15 +40,28 @@ public sealed class CemEmerge
     /// quality.</summary>
     public int? AdaptiveMesh { get; set; }
 
+    /// <summary>
+    /// brief-emi-7 — the frequencies, GHz, whose fields EMerge saves for the 3D view, as Palace's key means it: omitted saves
+    /// the sweep's centre only, <c>[]</c> saves none, a list saves those. Each is a direct solve of its own after the sweep (the
+    /// adaptive sweep fits S between its own samples and holds no field elsewhere), so a frequency outside the sweep changes
+    /// nothing the sweep reports. An eigenmode run saves every mode unless this is <c>[]</c>.
+    /// </summary>
+    public List<double>? SaveFieldsGHz { get; set; }
+
     /// <summary>A copy, so an editor can change one without touching a setup that shares it.</summary>
-    public CemEmerge Clone() => (CemEmerge)MemberwiseClone();
+    public CemEmerge Clone()
+    {
+        var c = (CemEmerge)MemberwiseClone();
+        c.SaveFieldsGHz = SaveFieldsGHz is { } f ? [.. f] : null;
+        return c;
+    }
 
     /// <summary>True when no field is set: the same run as an omitted section, and never written. Not serialised: an
     /// embedded setup is written by reflection, which writes a get-only property too.</summary>
     [JsonIgnore]
     public bool IsEmpty =>
         Quality is null && MaxElementWavelengths is null && EdgeRefinement is null && ElementOrder is null &&
-        AdaptiveSweep is null && Tolerance is null && MaxSamples is null && AdaptiveMesh is null;
+        AdaptiveSweep is null && Tolerance is null && MaxSamples is null && AdaptiveMesh is null && SaveFieldsGHz is null;
 }
 
 /// <summary>

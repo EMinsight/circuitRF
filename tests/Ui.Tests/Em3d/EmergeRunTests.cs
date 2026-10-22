@@ -254,7 +254,7 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
         return (assembled.Problem!, setup, lowering);
     }
 
-    private static void CopyDirectory(string from, string to)
+    internal static void CopyDirectory(string from, string to)
     {
         foreach (string dir in Directory.EnumerateDirectories(from, "*", SearchOption.AllDirectories))
             Directory.CreateDirectory(Path.Combine(to, Path.GetRelativePath(from, dir)));
@@ -264,7 +264,7 @@ public sealed class EmergeRunTests(ITestOutputHelper output) : IDisposable
     }
 
     /// <summary>The built CLI as a process (EmCliVerbTests' pattern: the BUILT dll, both pipes drained concurrently).</summary>
-    private static (int ExitCode, string StdOut, string StdErr) RunCli(string cwd, params string[] args)
+    internal static (int ExitCode, string StdOut, string StdErr) RunCli(string cwd, params string[] args)
     {
         string cliDir = System.Reflection.CustomAttributeExtensions
             .GetCustomAttributes<System.Reflection.AssemblyMetadataAttribute>(typeof(EmergeRunTests).Assembly)

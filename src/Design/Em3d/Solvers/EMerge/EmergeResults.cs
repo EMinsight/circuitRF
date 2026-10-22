@@ -32,8 +32,9 @@ public sealed record EmergeRunFacts(string? Version, string? SparseSolver, long?
 /// port's reference impedance as EMerge states it.</summary>
 public sealed record EmergeSweep(double[] FrequenciesHz, Complex[][,] S, Complex[] Z0);
 
-/// <summary>R-emi5-4b — an eigenmode run's modes after filtering: what is kept, how many were dropped, and below what.</summary>
-public sealed record EmergeModes(IReadOnlyList<Em3dMode> Kept, int Dropped, double FloorHz);
+/// <summary>R-emi5-4b — an eigenmode run's modes after filtering: what is kept, how many were dropped, and below what.
+/// brief-emi-7 — <see cref="Sources"/> is each kept mode's index in <c>modes.npy</c>, which the driver's field steps are by.</summary>
+public sealed record EmergeModes(IReadOnlyList<Em3dMode> Kept, int Dropped, double FloorHz, IReadOnlyList<int> Sources);
 
 public static class EmergeResults
 {
@@ -244,6 +245,19 @@ public static class EmergeResults
     // ── eigenmode ────────────────────────────────────────────────────────────────────────────
 
     /// <summary>The eigenmode arrays: each solution's complex frequency (Hz) and its Q. Null with a sentence when unreadable.</summary>
+    /// <summary>brief-emi-7 — the modes a finished eigenmode run reports, read back from its directory as the run filtered them
+    /// (modes.npy at problem.json's search start): the field picker labels its steps with them. Null when either is missing.</summary>
+    public static EmergeModes? ReportedModes(string runDir)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(runDir, EmergeScriptWriter.ProblemFile)));
+            if (!doc.RootElement.TryGetProperty("eigenmode", out var eig) || !eig.TryGetProperty("targetHz", out var t)) return null;
+            return ReadModes(runDir, out _) is { } m ? FilterModes(m.Frequencies, m.Q, t.GetDouble()) : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException) { return null; }
+    }
+
     public static (Complex[] Frequencies, double[] Q)? ReadModes(string runDir, out string? error)
     {
         error = null;
@@ -272,10 +286,11 @@ public static class EmergeResults
     public static EmergeModes FilterModes(IReadOnlyList<Complex> frequencies, IReadOnlyList<double> q, double searchStartHz)
     {
         double floor = searchStartHz * (1 - ModeFloorMargin);
-        var kept = frequencies.Select((f, i) => (F: f.Real, Q: q[i]))
+        var kept = frequencies.Select((f, i) => (F: f.Real, Q: q[i], I: i))
                               .Where(m => double.IsFinite(m.F) && m.F >= floor)
                               .OrderBy(m => m.F).ToList();
-        return new EmergeModes([.. kept.Select((m, i) => new Em3dMode(i + 1, m.F, m.Q))], frequencies.Count - kept.Count, floor);
+        return new EmergeModes([.. kept.Select((m, i) => new Em3dMode(i + 1, m.F, m.Q))], frequencies.Count - kept.Count, floor,
+                               [.. kept.Select(m => m.I)]);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────

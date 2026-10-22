@@ -52,19 +52,18 @@ public static partial class EmergeScriptWriter
     /// <summary>The EMerge versions circuitRF has tested, oldest first: the driver warns on any other, and runs it.</summary>
     public static IReadOnlyList<string> TestedVersions => [.. SolverDiscovery.Emerge.ValidatedVersions.Select(v => v.Release)];
 
-    /// <summary>Why EMerge has no radiation pattern for this setup, or null when none was asked for (brief-emi-7 adds it).</summary>
+    /// <summary>brief-emi-7 — why EMerge computes no radiation pattern for this setup, or null when it does (or none was asked
+    /// for): its far field is integrated over the air box's absorbing faces, which must close round the whole problem.</summary>
     public static string? RadiationPatternNote(EmSetup setup, Em3dProblem problem)
-        => setup.RadiationPattern && problem.Type == Em3dProblemType.Driven ? EmergeRadiationNote : null;
-
-    private const string EmergeRadiationNote =
-        "No radiation pattern from EMerge: circuitRF does not read EMerge's far field in this version. Palace and openEMS " +
-        "compute one from a driven run.";
+        => setup.RadiationPattern && problem.Type == Em3dProblemType.Driven ? EmergeFields.FarFieldRefusal(problem) : null;
 
     /// <summary>
     /// <paramref name="problem"/> as EMerge's input, or the first thing of it EMerge cannot be told
     /// (<see cref="EmergeLoweringRules.Refusal"/>). Byte-deterministic: the same problem and settings write the same bytes.
+    /// brief-emi-7 — <paramref name="fields"/> is what the run saves of its fields (<see cref="EmergeFields.Request"/>); null
+    /// writes no <c>fields</c> block, the input as it was before fields existed.
     /// </summary>
-    public static EmergeLowering Write(Em3dProblem problem, EmergeSettings settings)
+    public static EmergeLowering Write(Em3dProblem problem, EmergeSettings settings, EmergeFieldRequest? fields = null)
     {
         ArgumentNullException.ThrowIfNull(problem);
         ArgumentNullException.ThrowIfNull(settings);
@@ -100,6 +99,20 @@ public static partial class EmergeScriptWriter
          .Key("maxSamples").Int(settings.MaxSamples)
          .Key("adaptiveMesh").Int(settings.AdaptiveMesh)
          .EndObject();
+
+        if (fields is not null)
+        {
+            e.Key("fields").BeginObject().Key("write").Bool(fields.Write);
+            if (problem.Type == Em3dProblemType.Eigenmode) e.Key("modeEnergyJ").Number(fields.ModeEnergyJ);
+            else
+            {
+                e.Key("frequenciesHz").Numbers(fields.FrequenciesHz).Key("incidentPowerW").Number(PalaceDrive.IncidentPowerW);
+                if (fields.FarField)
+                    e.Key("farField").BeginObject().Key("thetaStepDeg").Number(EmergeFields.FarFieldStepDeg)
+                     .Key("phiStepDeg").Number(EmergeFields.FarFieldStepDeg).EndObject();
+            }
+            e.EndObject();
+        }
 
         e.Key("materials").BeginArray();
         foreach (var (m, pec) in materials.Entries) WriteMaterial(e, m, pec);

@@ -24,13 +24,25 @@ the Touchstone and their provenance from them, so EMerge's own Touchstone writer
              filters), Q.npy (each one's Q)
 and run.json (versions, the sparse solver EMerge called, tets, samples, the sweep's error, timings). The JSON line it
 prints last is run.json's content.
+
+(brief-emi-7) When problem.json has a "fields" block, the solve also writes FIELDS, in the .vtu layout circuitRF reads for
+Palace (an UnstructuredGrid of Lagrange tetrahedra, every cell with its own nodes, inline-base64 geometry, appended-raw
+arrays, no compression, complex quantities as <name>_real/<name>_imag):
+  driven     postpro/paraview/driven/excitation_<port>/Cycle<k>/data.pvtu + proc000000.vtu, one per (port, frequency) asked
+             for, each from a direct solve at that frequency (the adaptive sweep's fields are at its own samples). E and B
+             at a PEAK incident power of fields.incidentPowerW, circuitRF's reading of Palace's convention; ff_*.npy, the
+             far field on the air box's absorbing faces, when fields.farField asks.
+  eigenmode  postpro/paraview/eigenmode/Cycle<k>/..., mode k-1 of modes.npy, normalised so the integral of eps|E|^2 over
+             the mesh is fields.modeEnergyJ (Palace's mode normalisation), its largest field component real.
+run.json's "fieldSteps" lists them with what circuitRF needs beside them: each driven step's port voltage and incident
+voltage, each mode's integral of eps|E|^2 per material and each lumped port's voltage. circuitRF writes the .pvd collections.
 """
 
 import json
 import os
 import sys
 
-DRIVER_VERSION = 1
+DRIVER_VERSION = 2
 FORMAT = "circuitRF EMerge problem"
 FORMAT_VERSION = 1
 MODES = ("mesh", "solve")
@@ -73,7 +85,7 @@ def main(argv):
     import time
     started = time.time()
     try:
-        sim, counts = build(problem, os.path.dirname(path), em, gmsh, GeoVolume, GeoSurface)
+        sim, counts, model = build(problem, os.path.dirname(path), em, gmsh, GeoVolume, GeoSurface)
     except Exception as e:  # EMerge's or Gmsh's own refusal, reported as the run's
         fail("%s: %s" % (type(e).__name__, e))
     if argv[2] == "mesh":
@@ -87,7 +99,7 @@ def main(argv):
     from loguru import logger
     logger.add(heard.sink, level="INFO", format="{message}")
     try:
-        outcome = solve(problem, os.path.dirname(path), sim, heard, warnings)
+        outcome = solve(problem, os.path.dirname(path), sim, model, heard, warnings)
     except Exception as e:
         fail("%s: %s" % (type(e).__name__, e))
     run = dict(emerge=version, warnings=warnings, sparseSolver=heard.solver, meshSeconds=round(meshed - started, 3),
@@ -256,10 +268,12 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     air = GeoVolume(occ.addBox(lo[0], lo[1], lo[2], hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]), name="air box")
     air.set_material(mats[box["material"]]).prio_set(0)
     owners = [(air, 0, "air", box["material"])]
+    names = ["background"]
     for s in problem["solids"]:
         v = GeoVolume(shape(gmsh, s["shape"], folder), name=s["name"])
         v.set_material(mats[s["material"]]).prio_set(s["priority"])
         owners.append((v, s["priority"], s["role"], s["material"]))
+        names.append(s["name"])
 
     sheets = []
     for sh in problem["sheets"]:
@@ -281,11 +295,11 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     # slivers, curves and points to mesh (the 3D Connector's pin, half sunk into its 35 um trace, never finished).
     gmsh.model.occ.synchronize()
     owner = {}
-    for v, priority, role, mat in owners:
+    for k, (v, priority, role, mat) in enumerate(owners):
         for t in v.tags:
             if t not in owner or priority >= owner[t][0]:
-                owner[t] = (priority, role, mat)
-    metal = {t for t, (_, role, _) in owner.items() if role == "conductor"}
+                owner[t] = (priority, role, mat, k)
+    metal = {t for t, (_, role, _, _) in owner.items() if role == "conductor"}
     walls = {}
     for _, tag in gmsh.model.getEntities(2):
         up, _ = gmsh.model.getAdjacencies(2, tag)
@@ -360,20 +374,26 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
             sim.mw.bc.PMC(selection)
         elif kind == "absorbing":
             sim.mw.bc.AbsorbingBoundary(selection)
+    lumped = []
     for p, plate in ports:
-        sim.mw.bc.LumpedPort(plate, p["number"], width=p["widthM"], height=p["heightM"], direction=tuple(p["direction"]),
-                             Z0=p["z0"])
+        lumped.append((p, sim.mw.bc.LumpedPort(plate, p["number"], width=p["widthM"], height=p["heightM"],
+                                               direction=tuple(p["direction"]), Z0=p["z0"])))
     for e, plate in elements:
         sim.mw.bc.LumpedElement(plate, impedance(e), width=e["widthM"], height=e["heightM"])
 
     mesh = sim.mesh
+    # brief-emi-7 — what the fields need of the model: each meshed volume's owner (circuitRF's object, by index into
+    # names, and its material), the lumped ports' EMerge objects, and the absorbing faces a far field is integrated over.
+    volumes = {t: (k, mat) for t, (_, _, mat, k) in owner.items() if t not in metal}
+    absorbing = [tag for key, kind in box["faces"].items() if kind == "absorbing" for tag in faces[key]]
+    model = {"names": names, "volumes": volumes, "ports": lumped, "absorbing": absorbing}
     return sim, {"tets": int(mesh.n_tets), "edges": int(mesh.n_edges), "triangles": int(mesh.n_tris),
-                 "faces": {key: len(tags) for key, tags in faces.items()}, "conductorFaces": sum(len(t) for t in walls.values())}
+                 "faces": {key: len(tags) for key, tags in faces.items()}, "conductorFaces": sum(len(t) for t in walls.values())}, model
 
 
 # -- the solve (brief-emi-5) ----------------------------------------------------------------------------------------------
 
-def solve(problem, folder, sim, heard, warnings):
+def solve(problem, folder, sim, model, heard, warnings):
     """Solves the built model and writes its arrays into folder; returns run.json's solve fields."""
     import numpy as np
     settings = problem["settings"]
@@ -385,7 +405,10 @@ def solve(problem, folder, sim, heard, warnings):
         entries = list(data.scalar.iter())
         np.save(os.path.join(folder, "modes.npy"), np.array([complex(e.freq) for e in entries], dtype=np.complex128))
         np.save(os.path.join(folder, "Q.npy"), np.array([float(np.real(e.Q)) for e in entries], dtype=np.float64))
-        return {"modes": len(entries)}
+        out = {"modes": len(entries)}
+        if problem.get("fields") is not None:
+            out.update(mode_fields(problem, folder, sim, model, list(data.field.iter())))
+        return out
 
     if settings["adaptiveMesh"] > 0:
         # Up to adaptiveMesh refinements: EMerge counts solve passes, the first on the initial mesh.
@@ -414,7 +437,265 @@ def solve(problem, folder, sim, heard, warnings):
     if adaptive:
         out["error"] = heard.error
         out["converged"] = heard.converged
+    if problem.get("fields") is not None and problem["fields"]["frequenciesHz"]:
+        out.update(driven_fields(problem, folder, sim, model, [] if adaptive else list(data.field.iter())))
     return out
+
+
+# -- fields (brief-emi-7) -------------------------------------------------------------------------------------------------
+
+MU0 = 4e-7 * 3.141592653589793
+EPS0 = 8.8541878128e-12
+PARAVIEW = os.path.join("postpro", "paraview")
+# VTK's Lagrange tetrahedron and its 10-node edge order: the four vertices, then the midpoints of (0,1) (1,2) (0,2) (0,3)
+# (1,3) (2,3).
+LAGRANGE_TETRAHEDRON = 71
+TET_EDGES = ((0, 1), (1, 2), (0, 2), (0, 3), (1, 3), (2, 3))
+
+
+def cell_nodes(mesh, order):
+    """Every cell's own nodes, cell by cell (a Nedelec field is not continuous across a face, so no node is shared): the
+    points (3, cells * per), the cell each belongs to, and the nodes per cell."""
+    import numpy as np
+    corners = mesh.nodes[:, mesh.tets]                          # (3, 4, cells)
+    if order == 2:
+        mids = [(corners[:, a, :] + corners[:, b, :]) / 2 for a, b in TET_EDGES]
+        corners = np.concatenate([corners, np.stack(mids, axis=1)], axis=1)
+    per = corners.shape[1]
+    points = np.ascontiguousarray(np.transpose(corners, (0, 2, 1)).reshape(3, -1))
+    return points, np.repeat(np.arange(mesh.n_tets), per), per
+
+
+def evaluate(field, points, cells):
+    """E and H at points, each evaluated INSIDE the cell named for it (the point-to-tetrahedron mapping supplied), never by
+    a search that would pick either side of a face."""
+    import numpy as np
+    field._silent = True
+    field.interpolate(points[0], points[1], points[2], usenan=False, mapping=cells)
+    E = np.array([field.Ex, field.Ey, field.Ez]).reshape(3, -1)
+    H = np.array([field.Hx, field.Hy, field.Hz]).reshape(3, -1)
+    return E, H
+
+
+def cell_owners(mesh, model):
+    """Each tetrahedron's object (by index into the model's names) and material index."""
+    import numpy as np
+    obj = np.zeros(mesh.n_tets, dtype=np.int32)
+    mat = np.zeros(mesh.n_tets, dtype=np.int32)
+    for tag, tets in mesh.vtag_to_tet.items():
+        if tag in model["volumes"]:
+            k, m = model["volumes"][tag]
+            obj[tets] = k
+            mat[tets] = m
+    return obj, mat
+
+
+def write_step(folder, rel, points, per, attribute, arrays):
+    """One step in Palace's layout: <rel>/data.pvtu naming one piece, <rel>/proc000000.vtu. arrays: name -> (3, N) float
+    (point data, Float32). Returns the bytes written."""
+    import base64
+    import numpy as np
+    d = os.path.join(folder, rel)
+    os.makedirs(d, exist_ok=True)
+    cells = attribute.shape[0]
+
+    def inline(a):
+        b = np.ascontiguousarray(a).tobytes()
+        return (base64.b64encode(np.uint32(len(b)).tobytes()) + base64.b64encode(b)).decode("ascii")
+
+    def head(kind, name, comps, tail):
+        n = ' Name="%s"' % name if name else ""
+        return '<DataArray type="%s"%s NumberOfComponents="%d" %s' % (kind, n, comps, tail)
+
+    blocks, offset, entries = [], 0, []
+    for name, a in arrays:
+        b = np.ascontiguousarray(a.T.astype(np.float32)).tobytes()
+        entries.append(head("Float32", name, 3, 'format="appended" offset="%d"/>' % offset))
+        blocks.append(np.uint32(len(b)).tobytes() + b)
+        offset += 4 + len(b)
+    xml = ['<?xml version="1.0"?>',
+           '<VTKFile type="UnstructuredGrid" version="2.2" byte_order="LittleEndian" header_type="UInt32">',
+           '<UnstructuredGrid>', '<Piece NumberOfPoints="%d" NumberOfCells="%d">' % (points.shape[1], cells),
+           '<Points>', head("Float32", None, 3, 'format="binary">') + inline(points.T.astype(np.float32)) + '</DataArray>',
+           '</Points>', '<Cells>',
+           head("Int32", "connectivity", 1, 'format="binary">') + inline(np.arange(cells * per, dtype=np.int32)) + '</DataArray>',
+           head("Int32", "offsets", 1, 'format="binary">') + inline(np.arange(1, cells + 1, dtype=np.int32) * per) + '</DataArray>',
+           head("UInt8", "types", 1, 'format="binary">') + inline(np.full(cells, LAGRANGE_TETRAHEDRON, dtype=np.uint8)) + '</DataArray>',
+           '</Cells>', '<PointData>'] + entries + ['</PointData>', '<CellData>',
+           head("Int32", "attribute", 1, 'format="binary">') + inline(attribute.astype(np.int32)) + '</DataArray>',
+           '</CellData>', '</Piece>', '</UnstructuredGrid>', '<AppendedData encoding="raw">']
+    piece = os.path.join(d, "proc000000.vtu")
+    with open(piece, "wb") as f:
+        f.write(("\n".join(xml) + "\n_").encode("ascii"))
+        for b in blocks:
+            f.write(b)
+        f.write(b"\n</AppendedData>\n</VTKFile>\n")
+    pdata = "\n".join('<PDataArray type="Float32" Name="%s" NumberOfComponents="3" format="appended"/>' % n for n, _ in arrays)
+    pvtu = "\n".join([
+        '<?xml version="1.0"?>', '<VTKFile type="PUnstructuredGrid" version="2.2" byte_order="LittleEndian">',
+        '<PUnstructuredGrid GhostLevel="0">',
+        '<PPoints>', '<PDataArray type="Float32" Name="Points" NumberOfComponents="3" format="binary"/>', '</PPoints>',
+        '<PCells>', '<PDataArray type="Int32" Name="connectivity" NumberOfComponents="1" format="binary"/>',
+        '<PDataArray type="Int32" Name="offsets" NumberOfComponents="1" format="binary"/>',
+        '<PDataArray type="UInt8" Name="types" NumberOfComponents="1" format="binary"/>', '</PCells>',
+        '<PPointData>', pdata, '</PPointData>',
+        '<PCellData>', '<PDataArray type="Int32" Name="attribute" NumberOfComponents="1" format="binary"/>', '</PCellData>',
+        '<Piece Source="proc000000.vtu"/>', '</PUnstructuredGrid>', '</VTKFile>', ''])
+    with open(os.path.join(d, "data.pvtu"), "w", encoding="ascii") as f:
+        f.write(pvtu)
+    return os.path.getsize(piece) + len(pvtu)
+
+
+def write_field(folder, rel, mesh, field, points, cells, per, attribute, scale):
+    """E and B of field (times scale) at every cell's own nodes, as one step. Returns the bytes written."""
+    import numpy as np
+    E, H = evaluate(field, points, cells)
+    ur = np.real(np.asarray(field._dur)).reshape(-1)[cells]
+    E = E * scale
+    B = H * (scale * MU0) * ur
+    arrays = [("B_imag", B.imag), ("B_real", B.real), ("E_imag", E.imag), ("E_real", E.real)]
+    return write_step(folder, rel, points, per, attribute, arrays)
+
+
+def write_groups(folder, model, mats):
+    """groups.json: each attribute's object, as circuitRF's Palace mesh records it (FieldGroups reads Name, Attribute,
+    Dimension, Kind)."""
+    groups = [{"Attribute": k + 1, "Name": name, "Dimension": 3, "Kind": "Background" if k == 0 else "Volume",
+               "Material": mats[m]["name"]}
+              for k, name in enumerate(model["names"])
+              for m in sorted({mm for kk, mm in model["volumes"].values() if kk == k})[:1]]
+    with open(os.path.join(folder, "groups.json"), "w", encoding="utf-8") as f:
+        json.dump({"Generator": "circuitRF brief-emi-7: the mapping from named objects to EMerge field attributes",
+                   "LengthUnitM": 1, "Groups": groups}, f, indent=2)
+
+
+def port_voltage(field, bc):
+    """A lumped port's voltage in field: EMerge's own integration lines, averaged, as its S-parameters are computed."""
+    import numpy as np
+    lines = list(getattr(bc, "voltage_integration_line", None) or [])
+    if not lines:
+        return None
+    total = 0
+    for line in lines:
+        field._silent = True
+        field.interpolate(np.asarray(line.xs), np.asarray(line.ys), np.asarray(line.zs), usenan=False)
+        total += line.line_integral_precalc(np.ravel(field.Ex), np.ravel(field.Ey), np.ravel(field.Ez)) / len(lines)
+    return complex(total)
+
+
+def energy_by_material(field, mesh, mat, materials):
+    """The integral of Re(eps)|E|^2 over each material's cells, J (peak phasors), by EMerge's own tetrahedral quadrature."""
+    import numpy as np
+    from emerge._emerge.mth.optimized import gaus_quad_tet
+    from emr.mth import generate_int_data_tet
+    rule = gaus_quad_tet(4)
+    X, Y, Z, W, A, _ = generate_int_data_tet(mesh.nodes, mesh.tets, rule)
+    cells = np.tile(np.arange(mesh.n_tets), rule.shape[1])     # the points come quadrature point by quadrature point
+    E, _ = evaluate(field, np.array([X, Y, Z]), cells)
+    er = np.real(np.asarray(field._der)).reshape(-1)[cells]
+    density = EPS0 * er * np.sum(np.abs(E) ** 2, axis=0) * A * W
+    return [float(np.sum(density[mat[cells] == m])) for m in range(len(materials))]
+
+
+def driven_fields(problem, folder, sim, model, solved):
+    """The fields asked for, one step per (port, frequency), and the far field when asked; returns run.json's fields."""
+    import numpy as np
+    req = problem["fields"]
+    freqs = req["frequenciesHz"]
+    near = lambda a, b: abs(a - b) <= 1e-9 * max(abs(a), abs(b))
+    have = {}
+    for e in solved:
+        for f in freqs:
+            if near(float(np.real(e.freq)), f):
+                have[f] = e
+    missing = [f for f in freqs if f not in have]
+    if missing:
+        # A direct solve at each: the adaptive sweep fitted S between its own samples, and has no field anywhere else.
+        sim.mw.set_frequency(list(missing))
+        for e in sim.mw.run_sweep().field.iter():
+            for f in missing:
+                if near(float(np.real(e.freq)), f):
+                    have[f] = e
+    mesh = sim.mesh
+    order = problem["settings"]["elementOrder"]
+    points, cells, per = cell_nodes(mesh, order) if req["write"] else (None, None, 0)
+    obj, _ = cell_owners(mesh, model)
+    ports = sorted(model["ports"], key=lambda pb: pb[0]["number"])
+    steps, written = [], 0
+    farfield = req.get("farField")
+    if farfield:
+        theta = np.arange(0, 180 + 1e-9, farfield["thetaStepDeg"])
+        phi = np.arange(0, 360 - 1e-9, farfield["phiStepDeg"])
+        T, P = np.meshgrid(np.radians(theta), np.radians(phi), indexing="ij")
+        far = np.zeros((len(freqs), len(ports), 2, len(theta), len(phi)), dtype=np.complex128)
+        faces = em_faces(model["absorbing"])
+    for i, f in enumerate(freqs):
+        field = have[f]
+        for j, (p, bc) in enumerate(ports):
+            field.excite_port(p["number"])
+            v, vinc = port_voltage(field, bc), getattr(bc, "voltage", None)
+            # EMerge drives a lumped port with an incident wave of sqrt(2 P Z0) peak, P its power (1 W): P time-averaged.
+            scale = (req["incidentPowerW"] / bc.power) ** 0.5
+            step = {"port": p["number"], "frequencyHz": f, "scale": scale,
+                    "v": None if v is None else [v.real * scale, v.imag * scale],
+                    "vinc": None if vinc is None else [float(vinc) * scale, 0.0]}
+            if req["write"]:
+                rel = os.path.join(PARAVIEW, "driven", "excitation_%d" % p["number"], "Cycle%06d" % (i + 1))
+                written += write_field(folder, rel, mesh, field, points, cells, per, obj + 1, scale)
+                step["pvtu"] = os.path.join(rel, "data.pvtu").replace(os.sep, "/")
+            if farfield:
+                ff = field.farfield(T, P, faces)
+                far[i, j, 0] = np.asarray(ff.Etheta).reshape(T.shape) * scale
+                far[i, j, 1] = np.asarray(ff.Ephi).reshape(T.shape) * scale
+            steps.append(step)
+    if req["write"]:
+        write_groups(folder, model, problem["materials"])
+    if farfield:
+        np.save(os.path.join(folder, "ff_E.npy"), np.ascontiguousarray(far))
+        np.save(os.path.join(folder, "ff_theta.npy"), np.ascontiguousarray(theta.astype(np.float64)))
+        np.save(os.path.join(folder, "ff_phi.npy"), np.ascontiguousarray(phi.astype(np.float64)))
+        np.save(os.path.join(folder, "ff_freq.npy"), np.ascontiguousarray(np.array(freqs, dtype=np.float64)))
+    return {"fieldSteps": steps, "fieldBytes": written, "fieldOrder": order}
+
+
+def em_faces(tags):
+    import emerge as em
+    return em.FaceSelection(list(tags))
+
+
+def mode_fields(problem, folder, sim, model, entries):
+    """Each mode's energy by material, its lumped ports' voltages and (asked) its field, normalised as Palace normalises a
+    mode; returns run.json's fields."""
+    import numpy as np
+    req = problem["fields"]
+    mesh = sim.mesh
+    order = problem["settings"]["elementOrder"]
+    points, cells, per = cell_nodes(mesh, order) if req["write"] else (None, None, 0)
+    obj, mat = cell_owners(mesh, model)
+    ports = sorted(model["ports"], key=lambda pb: pb[0]["number"])
+    steps, written = [], 0
+    for k, field in enumerate(entries):
+        energy = energy_by_material(field, mesh, mat, problem["materials"])
+        total = sum(energy)
+        scale = (req["modeEnergyJ"] / total) ** 0.5 if total > 0 else 1.0
+        if req["write"]:
+            # The phase: the largest field component at any node real and positive, so Re{E} is the mode at its peak.
+            E, _ = evaluate(field, points, cells)
+            at = np.unravel_index(np.argmax(np.abs(E)), E.shape)
+            scale = scale * np.conj(E[at]) / abs(E[at]) if abs(E[at]) > 0 else scale
+        volts = [port_voltage(field, bc) for _, bc in ports]
+        step = {"mode": k, "energy": [e * abs(scale) ** 2 for e in energy],
+                "portV": [None if v is None else [(v * scale).real, (v * scale).imag] for v in volts]}
+        if req["write"]:
+            rel = os.path.join(PARAVIEW, "eigenmode", "Cycle%06d" % (k + 1))
+            written += write_field(folder, rel, mesh, field, points, cells, per, obj + 1, scale)
+            step["pvtu"] = os.path.join(rel, "data.pvtu").replace(os.sep, "/")
+        steps.append(step)
+    if req["write"]:
+        write_groups(folder, model, problem["materials"])
+    return {"fieldSteps": steps, "fieldBytes": written, "fieldOrder": order,
+            "portNumbers": [p["number"] for p, _ in ports], "portR": [p["z0"] for p, _ in ports],
+            "materialNames": [m["name"] for m in problem["materials"]]}
 
 
 if __name__ == "__main__":
