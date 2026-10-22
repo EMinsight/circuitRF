@@ -5,7 +5,8 @@
 // with one piece, an UnstructuredGrid of Lagrange tetrahedra in exactly the form VtuReader reads for Palace; circuitRF writes
 // the .pvd collections (WriteCollections), because only circuitRF knows which of EMerge's eigen solutions it reports and
 // under what number (EmergeResults.FilterModes). So every field plot — clip plane, surface, the 3D view, `render --field` —
-// reads an EMerge run with the reader it already had.
+// reads an EMerge run with the reader it already had. brief-emi-11: beside each step, a boundary step of Lagrange triangles on
+// the conductors' walls and the sheets (<problem>_boundary/…, J_s and Q_s), with their face groups in groups.json, as Palace's.
 //
 // THE SCALE IS PALACE'S (R-emi7-2). A driven step is at PalaceDrive.IncidentPowerW time-averaged incident power at the driven
 // port, peak phasors: EMerge drives a lumped port with an incident wave of √(2·P·Z0) peak, P its power (1 W), so the driver
@@ -37,7 +38,12 @@ public sealed record EmergeFieldRequest(IReadOnlyList<double> FrequenciesHz, boo
 /// scale, or a mode (its index in <c>modes.npy</c>) with its energy per material and each lumped port's voltage. Pvtu is the
 /// step's file relative to the run directory, null when none was written.</summary>
 public sealed record EmergeFieldStep(int? Port, double FrequencyHz, int? Mode, string? Pvtu, Complex? V, Complex? VInc,
-                                     IReadOnlyList<double>? Energy, IReadOnlyList<Complex?>? PortV);
+                                     IReadOnlyList<double>? Energy, IReadOnlyList<Complex?>? PortV)
+{
+    /// <summary>brief-emi-11 — the boundary step beside <see cref="Pvtu"/> (J_s and Q_s on the conductors and sheets), relative to
+    /// the run directory; null when none was written (no volume step, or no conductor or sheet face in the mesh).</summary>
+    public string? BoundaryPvtu { get; init; }
+}
 
 /// <summary>Every step of a run, the bytes the driver wrote, and (eigenmode) the ports and materials its arrays are over.</summary>
 public sealed record EmergeFieldFacts(IReadOnlyList<EmergeFieldStep> Steps, long Bytes, IReadOnlyList<int> PortNumbers,
@@ -132,7 +138,10 @@ public static class EmergeFields
                     s.TryGetProperty("pvtu", out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null,
                     Cplx(s, "v"), Cplx(s, "vinc"),
                     s.TryGetProperty("energy", out var e) && e.ValueKind == JsonValueKind.Array ? [.. e.EnumerateArray().Select(x => x.GetDouble())] : null,
-                    s.TryGetProperty("portV", out var v) && v.ValueKind == JsonValueKind.Array ? [.. v.EnumerateArray().Select(CplxOf)] : null));
+                    s.TryGetProperty("portV", out var v) && v.ValueKind == JsonValueKind.Array ? [.. v.EnumerateArray().Select(CplxOf)] : null)
+                {
+                    BoundaryPvtu = s.TryGetProperty("boundaryPvtu", out var bp) && bp.ValueKind == JsonValueKind.String ? bp.GetString() : null,
+                });
             long bytes = r.TryGetProperty("fieldBytes", out var b) && b.ValueKind == JsonValueKind.Number ? b.GetInt64() : 0;
             int[] ports = r.TryGetProperty("portNumbers", out var pn) && pn.ValueKind == JsonValueKind.Array ? [.. pn.EnumerateArray().Select(x => x.GetInt32())] : [];
             double[] rs = r.TryGetProperty("portR", out var pr) && pr.ValueKind == JsonValueKind.Array ? [.. pr.EnumerateArray().Select(x => x.GetDouble())] : [];
@@ -171,24 +180,29 @@ public static class EmergeFields
     /// each step's timestep its frequency in GHz) and the eigenmode one (<c>eigenmode/eigenmode.pvd</c>, timestep the 0-based
     /// REPORTED mode). <paramref name="modeSources"/> is each reported mode's index in <c>modes.npy</c> (EmergeModes.Sources),
     /// so a solution circuitRF dropped has no step and the rest are numbered as the result's table numbers them.
+    /// brief-emi-11 — the boundary steps the same way, beside them (<c>driven_boundary/…</c>, <c>eigenmode_boundary/…</c>), each
+    /// with its volume step's timestep: that is how FieldRun pairs a solution with its surfaces.
     /// </summary>
     public static void WriteCollections(string runDir, EmergeFieldFacts facts, IReadOnlyList<int>? modeSources)
     {
         string root = ParaviewDirectory(runDir);
-        foreach (var port in facts.Steps.Where(s => s.Port is not null && s.Pvtu is not null).GroupBy(s => s.Port!.Value))
+        foreach (var (problem, file) in new (string, Func<EmergeFieldStep, string?>)[] { ("driven", s => s.Pvtu), ("driven_boundary", s => s.BoundaryPvtu) })
+            foreach (var port in facts.Steps.Where(s => s.Port is not null && s.Pvtu is not null && file(s) is not null).GroupBy(s => s.Port!.Value))
+            {
+                string dir = Path.Combine(root, problem, $"excitation_{port.Key}");
+                WritePvd(Path.Combine(dir, $"excitation_{port.Key}.pvd"),
+                         port.OrderBy(s => s.FrequencyHz).Select(s => ((s.FrequencyHz / 1e9).ToString("R", CultureInfo.InvariantCulture),
+                                                                        Relative(dir, Path.Combine(runDir, file(s)!)))));
+            }
+        if (modeSources is null) return;
+        foreach (var (problem, file) in new (string, Func<EmergeFieldStep, string?>)[] { ("eigenmode", s => s.Pvtu), ("eigenmode_boundary", s => s.BoundaryPvtu) })
         {
-            string dir = Path.Combine(root, "driven", $"excitation_{port.Key}");
-            WritePvd(Path.Combine(dir, $"excitation_{port.Key}.pvd"),
-                     port.OrderBy(s => s.FrequencyHz).Select(s => ((s.FrequencyHz / 1e9).ToString("R", CultureInfo.InvariantCulture),
-                                                                    Relative(dir, Path.Combine(runDir, s.Pvtu!)))));
-        }
-        var modes = facts.Steps.Where(s => s.Mode is not null && s.Pvtu is not null).ToDictionary(s => s.Mode!.Value);
-        if (modes.Count > 0 && modeSources is not null)
-        {
-            string dir = Path.Combine(root, "eigenmode");
-            WritePvd(Path.Combine(dir, "eigenmode.pvd"),
+            var modes = facts.Steps.Where(s => s.Mode is not null && s.Pvtu is not null && file(s) is not null).ToDictionary(s => s.Mode!.Value);
+            if (modes.Count == 0) continue;
+            string dir = Path.Combine(root, problem);
+            WritePvd(Path.Combine(dir, problem + ".pvd"),
                      modeSources.Select((raw, i) => (Raw: raw, I: i)).Where(m => modes.ContainsKey(m.Raw))
-                                .Select(m => (m.I.ToString(CultureInfo.InvariantCulture), Relative(dir, Path.Combine(runDir, modes[m.Raw].Pvtu!)))));
+                                .Select(m => (m.I.ToString(CultureInfo.InvariantCulture), Relative(dir, Path.Combine(runDir, file(modes[m.Raw])!)))));
         }
     }
 

@@ -22279,3 +22279,52 @@ moved under it), the choosing rows and a *Why two FEM programs?* answer. `em-3d.
 eigen target), `settings.md`, `cli.md` (a `solver` section and `--device` for EMerge), the MCP instructions and
 `docs/design/em-3d.md` (rev 8: §2a, the seam in §4, Compare in §4.4, EMerge's environment in §7.1). The Settings ▸
 Solvers EMerge row is still not linked to the page: that view has no documentation links at all.
+
+## EMI-11: surface current J_s from an EMerge run (2026-10-22)
+
+An EMerge run's field steps now carry a boundary step beside each volume step, in Palace's layout
+(`postpro/paraview/driven_boundary/excitation_<k>/Cycle<n>/` and `eigenmode_boundary/Cycle<n>/`, the same `Cycle` and the
+same `.pvd` timestep as its volume step), with J_s and Q_s on Lagrange triangles. `groups.json` names each conductor's walls
+and each sheet as a Dimension 2 group (`Kind` `Conductor` / `Sheet`), numbered after every object's volume attribute. **The
+viewer, `FieldRun`, `VtuReader`, `FieldSurfacePlot`, `FieldFacePaint` and `render --field` needed no change.** Driver v4.
+
+- **Palace's J_s on an interior face is the jump, confirmed in its source, not its fixtures.** No committed Palace fixture
+  has a sheet (the cavity's boundary is all air-box walls; `plates` is electrostatic, no B). Palace 0.18.1 (0dc74cd) computes
+  J_s = n × (H₁ − H₂), n into element 1, on both paths that can write the `.vtu`: `BdrSurfaceCurrentVectorCoefficient`
+  (`fem/coefficient.hpp`) and the libCEED boundary qfunction `f_eval_bdr_current_j_2_32` (`fem/qfunctions/32/surf_32_qf.h`).
+  Q_s is n · (D₁ − D₂) on the same terms (`f_eval_bdr_flux_q_2_32`). Both are independent of which side is "1": swapping
+  the sides flips n and the difference together. The driver uses the same form, J_s = n × (H_a − H_b), H_a evaluated inside
+  the tetrahedron n points into and H_b inside the other (zero where there is none) — `surface_current`/`surface_charge`.
+- **A side with no tetrahedron.** A conductor's wall has one (the conductor is a void), so J_s = n × H with n into the meshed
+  side. A sheet lying on the air box has one too; its J_s is then n_into × H whichever side the tetrahedron is on, which is
+  what Palace's one-sided branch gives.
+- **Orientation of the written triangles.** A conductor's triangle is wound to face the meshed side; a sheet's to face its
+  own +n, which problem.json now carries (`sheets[].normal`: `Frame.Normal`, or +z for a layout's horizontal sheet). That
+  changed the two cavity goldens by one line each and nothing else. J_s does not depend on it (above); the winding only makes
+  every triangle of one group face the same way.
+- **Q_s cost a few lines**, so it is written (R-emi11-4): D = ε₀·Re(εr)·E with the tetrahedron's own εr, as
+  `energy_by_material` reads EMerge's per-tetrahedron `_der`.
+- **No boundary step when the mesh has no conductor wall or sheet.** An empty triangle piece would open as a mesh with no
+  cell type and fail where `FieldSurfaces.Boundary` asserts triangles, so the driver writes none, and J_s is simply not offered
+  for that run — Palace's Surfaces hint for "no conductors" is never reached there.
+- **A conductor's volume quantity on its face now resolves on an EMerge run as well.** `FieldFacePaint` refuses a conductor
+  face whose object has no Dimension 2 `Conductor` group ("is not in the solved mesh"); the driver's groups.json had none,
+  so right-click a conductor face ▸ Plot Field ▸ E failed on EMerge before this. Not separately tested.
+- **Measured on the Cavity's `Driven (EMerge)` at Draft, three frequencies** (the 10 GHz field is the sweep's own solve): the
+  run took ~4 s; 10,952 boundary triangles on the walls, lid and strip; the strip's peak |J_s| is 266 A/m at y = −0.390 mm,
+  its long edge (the strip is 0.78 mm wide), against the conductor surfaces' 99th percentile of 154 A/m.
+- **Not run: the Palace-against-EMerge comparison** (`TheCavityDriven_PeakJs_OnPalaceAndEMerge_AgreeWithinTheirSAgreement`),
+  for want of a Palace on this machine; it reports Skipped. Its tolerance is the brief's: the relative difference of the two
+  peaks against the largest |ΔS| between the two runs. A pointwise peak at a strip's edge is the most mesh-sensitive number
+  either solver writes, so expect it to fail that bound on a coarse mesh; that is a finding for whoever first runs it, not a
+  tolerance to widen.
+- `render` with a Surfaces plot needs `--view-dir` (or `--iso`); it refuses otherwise, as for any Surfaces plot.
+- **Owner-reported after the first GUI re-run: the Properties Quantity combobox did not offer J_s.** The run's files were
+  right (read fresh they offer J_s and Q_s); two caches in `src/Ui` held the previous run's answer, and before EMI-11 a re-run
+  never changed which arrays a step offers, so neither had been exercised. (1) `Viewer3DViewModel.AdoptRead` decided a read
+  was "the same run" by the volume steps' paths and the first volume file's write time; a re-run that adds boundary steps
+  beside the same volume paths could be adopted as unchanged, keeping solutions with no `BoundaryPvtu`. It compares the
+  boundary paths too now. (2) `C3dPropertiesViewModel.RefreshPlotProblem`, which every read after a run calls, refreshed only
+  the plot's problem sentence; the Solution and Quantity pickers were built only when the plot was selected. It reloads the
+  plot's pickers now (`LoadFieldPlot`, rows kept in place by `KeepOrReplace`). Both were needed: either alone leaves the
+  picker without J_s. Gate: `FieldPlotTests.AReRun_ThatOffersMore_RefreshesTheSelectedPlotsQuantityPicker`.

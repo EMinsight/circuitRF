@@ -194,6 +194,27 @@ public sealed class FieldPlotTests(ITestOutputHelper output) : IDisposable
         Assert.Equal(0, resets);
     }
 
+    /// <summary>A re-run whose step offers more than the last one's (brief-emi-11: an EMerge run gaining J_s on its surfaces) lists
+    /// the new quantities in the Inspector of the plot already selected: the read after a run refreshes the pickers, not only the
+    /// plot's problem sentence, so nobody has to select another row and come back.</summary>
+    [Fact]
+    public void AReRun_ThatOffersMore_RefreshesTheSelectedPlotsQuantityPicker()
+    {
+        var vm = Open(Eigenmode());
+        string dir = Em3dRunService.RunDirectory(Path.Combine(_root, "results"), vm.ActiveRunSetup!, Em3dSolverId.Palace);
+        CopyDirectory(Cavity, dir);
+        Directory.Delete(Path.Combine(dir, "postpro", "paraview", "eigenmode_boundary"), true);
+        Run(vm);
+        vm.NewFieldPlot();
+        Assert.DoesNotContain(vm.Properties.PlotQuantities, q => q.Quantity == "J_s");
+
+        Directory.Delete(dir, true);
+        CopyDirectory(Cavity, dir);
+        foreach (string f in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories)) File.SetLastWriteTimeUtc(f, DateTime.UtcNow.AddMinutes(1));
+        Run(vm);
+        Until(() => vm.Properties.PlotQuantities.Any(q => q.Quantity == "J_s"), "the selected plot's Quantity picker never offered J_s");
+    }
+
     /// <summary>The offset slider draws the plane where it is dragged, writes nothing until released, then writes one entry; the
     /// toolbar's section is not the plot's and does not move.</summary>
     [Fact]

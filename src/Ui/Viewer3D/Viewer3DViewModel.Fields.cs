@@ -314,8 +314,10 @@ public sealed partial class Viewer3DViewModel
         var (runs, table, groups, why) = (found.Runs, found.Table, found.Groups, found.Why);
         string? dir = dirs.Palace;
         var old = _reads.GetValueOrDefault(dirs);
+        // brief-emi-11 — the boundary steps count too: a re-run can save surface steps (J_s) beside the same volume steps
         bool same = old is not null && runs.Count > 0 && runs.Count == old.Runs.Count && dir == old.Dir &&
-                    runs.Zip(old.Runs).All(p => p.First.Solutions.Select(x => x.VolumePvtu).SequenceEqual(p.Second.Solutions.Select(x => x.VolumePvtu)) &&
+                    runs.Zip(old.Runs).All(p => p.First.Solutions.Select(x => (x.VolumePvtu, x.BoundaryPvtu))
+                                                  .SequenceEqual(p.Second.Solutions.Select(x => (x.VolumePvtu, x.BoundaryPvtu))) &&
                                                   StampOf(p.First) == StampOf(p.Second));
         FieldRead read;
         if (same)

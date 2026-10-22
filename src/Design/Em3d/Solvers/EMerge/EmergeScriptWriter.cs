@@ -139,6 +139,9 @@ public static partial class EmergeScriptWriter
         foreach (var sh in problem.Sheets)
             e.BeginObject().Key("name").Str(sh.Name).Key("material").Int(materials.Of(sh.Material, conductor: true))
              .Key("thicknessM").Number(sh.ThicknessM)
+             // brief-emi-11 — its +n (the local +z through World, the side Plot Field ▸ Top side names): the driver orients the
+             // sheet's surface current and its triangles by it
+             .Key("normal").Point(sh.Frame?.Normal ?? new Point3(0, 0, 1))
              .Key("rings").Rings(new[] { sh.Outline }.Concat(sh.Holes).Select(r => GmshGeoWriter.Clean(r).Select(sh.World)))
              .EndObject();
         e.EndArray();

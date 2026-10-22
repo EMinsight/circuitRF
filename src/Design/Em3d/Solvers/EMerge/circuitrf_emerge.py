@@ -38,6 +38,10 @@ arrays, no compression, complex quantities as <name>_real/<name>_imag):
              far field on the air box's absorbing faces, when fields.farField asks.
   eigenmode  postpro/paraview/eigenmode/Cycle<k>/..., mode k-1 of modes.npy, normalised so the integral of eps|E|^2 over
              the mesh is fields.modeEnergyJ (Palace's mode normalisation), its largest field component real.
+(brief-emi-11) Beside every step, on the conductors' walls and the sheets, the boundary step Palace writes beside its own:
+postpro/paraview/driven_boundary/excitation_<port>/Cycle<k>/... or eigenmode_boundary/Cycle<k>/..., Lagrange triangles
+with J_s (the jump in tangential H, n x [H]) and Q_s (n . [D]) at the volume step's scale, and groups.json names each
+conductor's and sheet's faces (Dimension 2, Kind Conductor or Sheet) as Palace's mesh does.
 run.json's "fieldSteps" lists them with what circuitRF needs beside them: each driven step's port voltage and incident
 voltage, each mode's integral of eps|E|^2 per material and each lumped port's voltage. circuitRF writes the .pvd collections.
 """
@@ -46,7 +50,7 @@ import json
 import os
 import sys
 
-DRIVER_VERSION = 3
+DRIVER_VERSION = 4
 FORMAT = "circuitRF EMerge problem"
 FORMAT_VERSION = 1
 MODES = ("mesh", "solve")
@@ -325,7 +329,7 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
         g.set_material(mats[sh["material"]])
         if not problem["materials"][sh["material"]]["pec"]:
             g.assign_thickness(sh["thicknessM"])
-        sheets.append(g)
+        sheets.append((sh, g))
     ports = [(p, GeoSurface(rectangle(gmsh, p["origin"], p["u"], p["v"]), name=p["name"])) for p in problem["ports"]]
     elements = [(e, GeoSurface(rectangle(gmsh, e["origin"], e["u"], e["v"]), name=e["name"]))
                 for e in problem["lumpedElements"]]
@@ -344,12 +348,14 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
             if t not in owner or priority >= owner[t][0]:
                 owner[t] = (priority, role, mat, k)
     metal = {t for t, (_, role, _, _) in owner.items() if role == "conductor"}
-    walls = {}
+    walls, plated = {}, {}
     for _, tag in gmsh.model.getEntities(2):
         up, _ = gmsh.model.getAdjacencies(2, tag)
         in_metal = [v for v in up if v in metal]
         if in_metal and any(v not in metal for v in up):
-            walls.setdefault(owner[in_metal[0]][2], []).append(tag)
+            _, _, mat, k = owner[in_metal[0]]
+            walls.setdefault(mat, []).append(tag)
+            plated.setdefault(k, []).append(tag)    # brief-emi-11: and the conductor it belongs to, for its surface current
     # Recursive, as Palace's script deletes its conductors: whatever bounded only metal goes too, down to its curves and
     # points, and whatever still bounds meshed space stays.
     gmsh.model.occ.remove([(3, t) for t in sorted(metal)], recursive=True)
@@ -370,7 +376,7 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
 
     # Refinement along the edges of every sheet and every conductor's faces.
     edge = settings["edgeSizeM"]
-    for g in sheets:
+    for _, g in sheets:
         sim.mesher.set_boundary_size(g, edge)
     for tags in walls.values():
         sim.mesher.set_boundary_size(em.FaceSelection(tags), edge)
@@ -430,7 +436,14 @@ def build(problem, folder, em, gmsh, GeoVolume, GeoSurface):
     # names, and its material), the lumped ports' EMerge objects, and the absorbing faces a far field is integrated over.
     volumes = {t: (k, mat) for t, (_, _, mat, k) in owner.items() if t not in metal}
     absorbing = [tag for key, kind in box["faces"].items() if kind == "absorbing" for tag in faces[key]]
-    model = {"names": names, "volumes": volumes, "ports": lumped, "absorbing": absorbing}
+    # brief-emi-11 — the faces a surface current is written on, grouped as Palace's mesh groups them: each conductor's walls
+    # and each sheet, with its +n. A sheet's face tags are read once meshed (EMerge's own, after fragmenting). Ports, lumped
+    # elements and the air box's own faces are not among them, as on a Palace run.
+    surfaces = [{"kind": "Conductor", "name": names[k], "material": owners[k][3], "tags": (lambda t=tags: t), "normal": None}
+                for k, tags in sorted(plated.items())]
+    surfaces += [{"kind": "Sheet", "name": sh["name"], "material": sh["material"], "thicknessM": sh["thicknessM"],
+                  "tags": (lambda g=g: list(g.tags)), "normal": sh["normal"]} for sh, g in sheets]
+    model = {"names": names, "volumes": volumes, "ports": lumped, "absorbing": absorbing, "surfaces": surfaces}
     return sim, {"tets": int(mesh.n_tets), "edges": int(mesh.n_edges), "triangles": int(mesh.n_tris),
                  "faces": {key: len(tags) for key, tags in faces.items()}, "conductorFaces": sum(len(t) for t in walls.values())}, model
 
@@ -495,6 +508,9 @@ PARAVIEW = os.path.join("postpro", "paraview")
 # (1,3) (2,3).
 LAGRANGE_TETRAHEDRON = 71
 TET_EDGES = ((0, 1), (1, 2), (0, 2), (0, 3), (1, 3), (2, 3))
+# brief-emi-11 — VTK's Lagrange triangle and its 6-node edge order: the three vertices, then the midpoints of (0,1) (1,2) (2,0).
+LAGRANGE_TRIANGLE = 69
+TRI_EDGES = ((0, 1), (1, 2), (2, 0))
 
 
 def cell_nodes(mesh, order):
@@ -534,9 +550,9 @@ def cell_owners(mesh, model):
     return obj, mat
 
 
-def write_step(folder, rel, points, per, attribute, arrays):
-    """One step in Palace's layout: <rel>/data.pvtu naming one piece, <rel>/proc000000.vtu. arrays: name -> (3, N) float
-    (point data, Float32). Returns the bytes written."""
+def write_step(folder, rel, points, per, attribute, arrays, cell_type=LAGRANGE_TETRAHEDRON):
+    """One step in Palace's layout: <rel>/data.pvtu naming one piece, <rel>/proc000000.vtu, its cells all of cell_type with
+    per nodes. arrays: name -> (components, N) or (N,) float (point data, Float32). Returns the bytes written."""
     import base64
     import numpy as np
     d = os.path.join(folder, rel)
@@ -551,10 +567,11 @@ def write_step(folder, rel, points, per, attribute, arrays):
         n = ' Name="%s"' % name if name else ""
         return '<DataArray type="%s"%s NumberOfComponents="%d" %s' % (kind, n, comps, tail)
 
+    arrays = [(name, np.atleast_2d(a)) for name, a in arrays]
     blocks, offset, entries = [], 0, []
     for name, a in arrays:
         b = np.ascontiguousarray(a.T.astype(np.float32)).tobytes()
-        entries.append(head("Float32", name, 3, 'format="appended" offset="%d"/>' % offset))
+        entries.append(head("Float32", name, a.shape[0], 'format="appended" offset="%d"/>' % offset))
         blocks.append(np.uint32(len(b)).tobytes() + b)
         offset += 4 + len(b)
     xml = ['<?xml version="1.0"?>',
@@ -564,7 +581,7 @@ def write_step(folder, rel, points, per, attribute, arrays):
            '</Points>', '<Cells>',
            head("Int32", "connectivity", 1, 'format="binary">') + inline(np.arange(cells * per, dtype=np.int32)) + '</DataArray>',
            head("Int32", "offsets", 1, 'format="binary">') + inline(np.arange(1, cells + 1, dtype=np.int32) * per) + '</DataArray>',
-           head("UInt8", "types", 1, 'format="binary">') + inline(np.full(cells, LAGRANGE_TETRAHEDRON, dtype=np.uint8)) + '</DataArray>',
+           head("UInt8", "types", 1, 'format="binary">') + inline(np.full(cells, cell_type, dtype=np.uint8)) + '</DataArray>',
            '</Cells>', '<PointData>'] + entries + ['</PointData>', '<CellData>',
            head("Int32", "attribute", 1, 'format="binary">') + inline(attribute.astype(np.int32)) + '</DataArray>',
            '</CellData>', '</Piece>', '</UnstructuredGrid>', '<AppendedData encoding="raw">']
@@ -574,7 +591,8 @@ def write_step(folder, rel, points, per, attribute, arrays):
         for b in blocks:
             f.write(b)
         f.write(b"\n</AppendedData>\n</VTKFile>\n")
-    pdata = "\n".join('<PDataArray type="Float32" Name="%s" NumberOfComponents="3" format="appended"/>' % n for n, _ in arrays)
+    pdata = "\n".join('<PDataArray type="Float32" Name="%s" NumberOfComponents="%d" format="appended"/>' % (n, a.shape[0])
+                      for n, a in arrays)
     pvtu = "\n".join([
         '<?xml version="1.0"?>', '<VTKFile type="PUnstructuredGrid" version="2.2" byte_order="LittleEndian">',
         '<PUnstructuredGrid GhostLevel="0">',
@@ -601,13 +619,102 @@ def write_field(folder, rel, mesh, field, points, cells, per, attribute, scale):
     return write_step(folder, rel, points, per, attribute, arrays)
 
 
+def surface_groups(model):
+    """brief-emi-11 — each conductor's and sheet's face group with its attribute, numbered after every object's volume."""
+    first = len(model["names"]) + 1
+    return [(first + i, s) for i, s in enumerate(model["surfaces"])]
+
+
+def boundary_nodes(mesh, model, order):
+    """brief-emi-11 — the triangles of every conductor's walls and every sheet, each with its own nodes as cell_nodes gives a
+    tetrahedron's: a dict of the points (3, triangles * per), the tetrahedron on each side of every node's triangle ("a" the
+    one n points into, "b" the other; -1 where there is none), n at every node, each triangle's attribute, and the nodes per
+    triangle; None when there is no such face. n points out of a conductor into the meshed side, and along a sheet's own +n;
+    a triangle wound against n is wound again, so every triangle of one group faces the same way."""
+    import numpy as np
+    ids, attrs, refs = [], [], []
+    for attribute, s in surface_groups(model):
+        tags = [t for t in s["tags"]() if t in mesh.ftag_to_tri]
+        if not tags:
+            continue
+        tris = np.asarray(mesh.get_triangles(tags), dtype=np.int64)
+        ids.append(tris)
+        attrs.append(np.full(tris.size, attribute, dtype=np.int32))
+        refs.append(np.repeat(np.asarray(s["normal"] if s["normal"] is not None else [np.nan] * 3, dtype=np.float64)[:, None],
+                              tris.size, axis=1))
+    if not ids:
+        return None
+    ids, attribute, ref = np.concatenate(ids), np.concatenate(attrs), np.concatenate(refs, axis=1)
+    corners = mesh.nodes[:, mesh.tris[:, ids]]                  # (3, 3, triangles)
+    centre = corners.mean(axis=1)
+    a, b = mesh.tri_to_tet[0, ids].copy(), mesh.tri_to_tet[1, ids].copy()
+    a[a < 0], b[b < 0] = -1, -1
+    toward_a = mesh.nodes[:, mesh.tets[:, a]].mean(axis=1) - centre
+    wall = np.isnan(ref[0])
+    ref[:, wall] = toward_a[:, wall]                            # a conductor's wall: into its one tetrahedron
+    n = np.cross(corners[:, 1] - corners[:, 0], corners[:, 2] - corners[:, 0], axis=0)
+    flip = np.sum(n * ref, axis=0) < 0
+    n[:, flip] *= -1
+    corners[:, 1:, flip] = corners[:, 2:0:-1, flip]
+    n /= np.linalg.norm(n, axis=0)
+    swap = np.sum(n * toward_a, axis=0) < 0                     # a sheet: side a is the +n side
+    a[swap], b[swap] = b[swap], a[swap]
+    if order == 2:
+        mids = [(corners[:, i, :] + corners[:, j, :]) / 2 for i, j in TRI_EDGES]
+        corners = np.concatenate([corners, np.stack(mids, axis=1)], axis=1)
+    per = corners.shape[1]
+    return {"points": np.ascontiguousarray(np.transpose(corners, (0, 2, 1)).reshape(3, -1)),
+            "a": np.repeat(a, per), "b": np.repeat(b, per), "n": np.repeat(n, per, axis=1), "attribute": attribute, "per": per}
+
+
+def side_fields(field, points, cells):
+    """D and H on one side of every boundary node, each evaluated inside that side's tetrahedron (the one-sided limit); zero
+    where there is no tetrahedron (cells -1). D is eps E with the cell's own real permittivity, as energy_by_material reads it."""
+    import numpy as np
+    D = np.zeros((3, cells.size), dtype=np.complex128)
+    H = np.zeros((3, cells.size), dtype=np.complex128)
+    on = cells >= 0
+    if on.any():
+        E, H[:, on] = evaluate(field, points[:, on], cells[on])
+        D[:, on] = EPS0 * np.real(np.asarray(field._der)).reshape(-1)[cells[on]] * E
+    return D, H
+
+
+def surface_current(n, h_a, h_b):
+    """J_s = n x (H_a - H_b): the jump in tangential H across a face, n pointing into side a (src/Design/RESOLVED.md, EMI-11:
+    Palace's own, n into element 1 and H1 - H2). A conductor's wall has no side b, so it is n x H on the meshed side."""
+    import numpy as np
+    return np.cross(n, h_a - h_b, axis=0)
+
+
+def surface_charge(n, d_a, d_b):
+    """Q_s = n . (D_a - D_b), on the same terms as surface_current (Palace's two-sided surface charge)."""
+    import numpy as np
+    return np.sum(n * (d_a - d_b), axis=0)
+
+
+def write_boundary(folder, rel, field, bnd, scale):
+    """J_s and Q_s of field (times scale, the volume step's own) on the boundary triangles, as one step. Returns the bytes."""
+    Da, Ha = side_fields(field, bnd["points"], bnd["a"])
+    Db, Hb = side_fields(field, bnd["points"], bnd["b"])
+    J = surface_current(bnd["n"], Ha, Hb) * scale
+    Q = surface_charge(bnd["n"], Da, Db) * scale
+    arrays = [("J_s_imag", J.imag), ("J_s_real", J.real), ("Q_s_imag", Q.imag), ("Q_s_real", Q.real)]
+    return write_step(folder, rel, bnd["points"], bnd["per"], bnd["attribute"], arrays, LAGRANGE_TRIANGLE)
+
+
 def write_groups(folder, model, mats):
     """groups.json: each attribute's object, as circuitRF's Palace mesh records it (FieldGroups reads Name, Attribute,
-    Dimension, Kind)."""
+    Dimension, Kind) -- the volumes, then (brief-emi-11) the conductors' and sheets' face groups."""
     groups = [{"Attribute": k + 1, "Name": name, "Dimension": 3, "Kind": "Background" if k == 0 else "Volume",
                "Material": mats[m]["name"]}
               for k, name in enumerate(model["names"])
               for m in sorted({mm for kk, mm in model["volumes"].values() if kk == k})[:1]]
+    for attribute, s in surface_groups(model):
+        g = {"Attribute": attribute, "Name": s["name"], "Dimension": 2, "Kind": s["kind"], "Material": mats[s["material"]]["name"]}
+        if "thicknessM" in s:
+            g["ThicknessM"] = s["thicknessM"]
+        groups.append(g)
     with open(os.path.join(folder, "groups.json"), "w", encoding="utf-8") as f:
         json.dump({"Generator": "circuitRF brief-emi-7: the mapping from named objects to EMerge field attributes",
                    "LengthUnitM": 1, "Groups": groups}, f, indent=2)
@@ -663,6 +770,7 @@ def driven_fields(problem, folder, sim, model, solved):
     mesh = sim.mesh
     order = problem["settings"]["elementOrder"]
     points, cells, per = cell_nodes(mesh, order) if req["write"] else (None, None, 0)
+    bnd = boundary_nodes(mesh, model, order) if req["write"] else None
     obj, _ = cell_owners(mesh, model)
     ports = sorted(model["ports"], key=lambda pb: pb[0]["number"])
     steps, written = [], 0
@@ -687,6 +795,10 @@ def driven_fields(problem, folder, sim, model, solved):
                 rel = os.path.join(PARAVIEW, "driven", "excitation_%d" % p["number"], "Cycle%06d" % (i + 1))
                 written += write_field(folder, rel, mesh, field, points, cells, per, obj + 1, scale)
                 step["pvtu"] = os.path.join(rel, "data.pvtu").replace(os.sep, "/")
+                if bnd is not None:
+                    rel = os.path.join(PARAVIEW, "driven_boundary", "excitation_%d" % p["number"], "Cycle%06d" % (i + 1))
+                    written += write_boundary(folder, rel, field, bnd, scale)
+                    step["boundaryPvtu"] = os.path.join(rel, "data.pvtu").replace(os.sep, "/")
             if farfield:
                 ff = field.farfield(T, P, faces)
                 far[i, j, 0] = np.asarray(ff.Etheta).reshape(T.shape) * scale
@@ -715,6 +827,7 @@ def mode_fields(problem, folder, sim, model, entries):
     mesh = sim.mesh
     order = problem["settings"]["elementOrder"]
     points, cells, per = cell_nodes(mesh, order) if req["write"] else (None, None, 0)
+    bnd = boundary_nodes(mesh, model, order) if req["write"] else None
     obj, mat = cell_owners(mesh, model)
     ports = sorted(model["ports"], key=lambda pb: pb[0]["number"])
     steps, written = [], 0
@@ -734,6 +847,10 @@ def mode_fields(problem, folder, sim, model, entries):
             rel = os.path.join(PARAVIEW, "eigenmode", "Cycle%06d" % (k + 1))
             written += write_field(folder, rel, mesh, field, points, cells, per, obj + 1, scale)
             step["pvtu"] = os.path.join(rel, "data.pvtu").replace(os.sep, "/")
+            if bnd is not None:
+                rel = os.path.join(PARAVIEW, "eigenmode_boundary", "Cycle%06d" % (k + 1))
+                written += write_boundary(folder, rel, field, bnd, scale)
+                step["boundaryPvtu"] = os.path.join(rel, "data.pvtu").replace(os.sep, "/")
         steps.append(step)
     if req["write"]:
         write_groups(folder, model, problem["materials"])

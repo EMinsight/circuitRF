@@ -846,7 +846,10 @@ above for the other. EMerge solves an eigenmode problem on one core.
 the sweep (the adaptive sweep fits S between its own samples and has no field anywhere else), so it costs one more
 solve per frequency, may lie outside the sweep, and changes nothing the `.sNp` reports. An eigenmode run saves every
 mode. A driven field is at the same drive as Palace's, so the two solvers' plots of one structure read the same
-numbers; a mode is normalised as Palace normalises one. With **Radiation pattern** on and every air-box face
+numbers; a mode is normalised as Palace normalises one. Beside E and B, each saved field carries the **surface
+current J_s** and surface charge Q_s on the conductors and sheets, as on Palace, so a J_s plot on surfaces, or on a
+conductor's or sheet's face, draws an EMerge run too; as on Palace, ports, lumped elements and the air box's own faces
+carry none. With **Radiation pattern** on and every air-box face
 absorbing, EMerge integrates its far field over those faces at the saved frequencies (the sweep's centre when it
 saves none) and the result carries the same `farfield` group Palace's does; a conducting face is said in the run's
 notes and the S-parameters are still computed.

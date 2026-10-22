@@ -256,14 +256,16 @@ public sealed partial class C3dPropertiesViewModel
         CommitPlot($"Cut {_plotName} at {PlotAxis} = {PlotOffsetText.Trim()}", p => { p.Axis ??= PlotAxis; p.Offset = dbu; });
     }
 
-    /// <summary>The drawn plot's verdict changed (the run was read, the step loaded): the sentence above the fields follows.</summary>
+    /// <summary>The drawn plot's verdict changed (the run was read, the step loaded): the sentence above the fields follows, and
+    /// so do the pickers — a re-run may save steps or arrays the last one did not (brief-emi-11: an EMerge run gaining J_s on its
+    /// surfaces), and the plot already selected must list them. Rows that did not change stay in place (KeepOrReplace).</summary>
     internal void RefreshPlotProblem()
     {
-        if (IsFieldPlot && Editor.FieldPlot(_plotName) is { } p)
-        {
-            PlotProblem = Editor.FieldPlotProblem(p);
-            PlotStale = Editor.FieldPlotStaleText(p);
-        }
+        if (!IsFieldPlot || Editor.FieldPlot(_plotName) is null) return;
+        bool was = _loading;
+        _loading = true;
+        try { LoadFieldPlot(_plotName); }
+        finally { _loading = was; }
     }
 
     private void CommitPlot(string description, Action<C3dFieldPlot> mutate)
