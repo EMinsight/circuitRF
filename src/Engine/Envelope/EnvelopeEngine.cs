@@ -112,17 +112,38 @@ public sealed class EnvelopeEngine
         _settings = settings ?? new AnalysisSettings();
     }
 
+    /// <summary>What one envelope Newton evaluation hands on: the charge and total-injection spectra the step keeps,
+    /// and the Jacobian ingredients.</summary>
+    private sealed record StepEval(Complex[,] Q, Complex[,] Inj, Complex[,,] G, Complex[,,] Cc,
+                                   IReadOnlyList<HigherWeightBucket> Buckets);
+
+    /// <summary>One product's linear network factored at one <c>alpha</c>: <c>G + (j w + alpha) C</c>.</summary>
+    internal sealed class Stage
+    {
+        public SparseLU Lu = null!;
+        public Complex[][] Zcol = null!;                     // [port][row]
+        public Complex[,] Y = null!;
+        public Complex[] Xs = null!;                         // static-source solution
+        public Complex[][] Xu = null!;                       // [source][row] unit-drive solution
+
+        public static Stage Of((SparseLU lu, Complex[][] zcol, Complex[,] Y, Complex[] xs, Complex[][] xu) t)
+            => new() { Lu = t.lu, Zcol = t.zcol, Y = t.Y, Xs = t.xs, Xu = t.xu };
+    }
+
     private sealed class Product
     {
         public double Omega;
-        public SparseLU LuBe = null!, LuG2 = null!;
-        public CompressedColumnStorage<Complex> C = null!;
-        public Complex[][] ZcolBe = null!, ZcolG2 = null!;     // [port][row]
-        public Complex[,] YBe = null!, YG2 = null!;
-        public Complex[] XsBe = null!, XsG2 = null!;           // static-source solution
-        public Complex[][] XuBe = null!, XuG2 = null!;         // [source][row] unit-drive solution
+        public CompressedColumnStorage<Complex> A0 = null!, C = null!;
+        public Complex[] BStatic = null!;
+        public Complex[][] BUnit = null!;
+        public Stage Be = null!, G2 = null!;
+        /// <summary>Backward Euler at h/m, factored the first time a step is split m ways.</summary>
+        public readonly Dictionary<int, Stage> Split = new();
         public Complex[] Xm1 = null!, Xm2 = null!;             // state history
     }
+
+    /// <summary>How finely a step whose Newton failed may be split before the run gives up.</summary>
+    internal const int MaxStepSplit = 16;
 
     public EnvelopeRunResult Run(EnvelopeParams p, RunControl? control = null)
     {
@@ -247,9 +268,9 @@ public sealed class EnvelopeEngine
                     for (int r = 0; r < b.Length; r++) b[r] -= bStatic[r];
                     bUnit[s] = b;
                 }
-                var pr = new Product { Omega = w, C = C };
-                (pr.LuBe, pr.ZcolBe, pr.YBe, pr.XsBe, pr.XuBe) = Prepare(A0, C, w, aBe, ifNodes, bStatic, bUnit);
-                (pr.LuG2, pr.ZcolG2, pr.YG2, pr.XsG2, pr.XuG2) = Prepare(A0, C, w, aG2, ifNodes, bStatic, bUnit);
+                var pr = new Product { Omega = w, A0 = A0, C = C, BStatic = bStatic, BUnit = bUnit };
+                pr.Be = Stage.Of(Prepare(A0, C, w, aBe, ifNodes, bStatic, bUnit));
+                pr.G2 = Stage.Of(Prepare(A0, C, w, aG2, ifNodes, bStatic, bUnit));
                 products[k] = pr;
             }
         }
@@ -302,58 +323,143 @@ public sealed class EnvelopeEngine
 
         // ── time stepping ─────────────────────────────────────────────────
         int dof = 2 * N * (K + 1);
-        DenseLu? lu = null;
-        long newtonIters = 0; int jacBuilds = 0;
-        var iSrc = new Complex[K + 1][];
-        var yEff = new Complex[K + 1][,];
-        var xoc = new Complex[K + 1][];
+        bool stateRows = HbNewton.HasStateRow(_nl, ifNodes);
+        var newton = new EnvelopeNewton(dof, stateRows);
         var vHist = new List<Complex[,]> { (Complex[,])V.Clone() };
         double tolAbs = p.Tol;
         bool prof = Environment.GetEnvironmentVariable("CRF_ENV_PROFILE") is not null;
-        var swL = new Stopwatch(); var swE = new Stopwatch(); var swF = new Stopwatch(); var swJ = new Stopwatch(); var swS = new Stopwatch(); var swU = new Stopwatch();
-        for (int step = 1; step < total; step++)
+        var swL = new Stopwatch(); var swE = new Stopwatch(); var swF = new Stopwatch(); var swJ = new Stopwatch(); var swU = new Stopwatch();
+        int splitSteps = 0, finestSplit = 1;
+
+        // One step from the history (x1, x2, q1, q2) to the new state of every product, with V the starting guess and,
+        // on return, the solved interface spectrum. Null when Newton did not converge.
+        Complex[][]? Advance(EnvelopeNewton nw, double alpha, double b1, double b2, Func<int, Stage> stageOf,
+                             Func<int, Complex> drv, Complex[][] x1, Complex[][] x2, Complex[,] q1, Complex[,] q2,
+                             Complex[,] V, out Complex[,] qNow)
         {
             if (prof) swL.Start();
-            if ((step & 1023) == 0) control?.ThrowIfCancellationRequested();
-            bool be = step == 1;
-            double alpha = be ? aBe : aG2;
-            double b1 = be ? -aBe : b1G2, b2 = be ? 0.0 : b2G2;
-            if (step <= 2) lu = null;                       // alpha changes BE -> Gear-2
+            var iSrc = new Complex[K + 1][];
+            var yEff = new Complex[K + 1][,];
+            var xoc = new Complex[K + 1][];
             for (int k = 0; k <= K; k++)
             {
-                var pr = products[k];
-                var luS = be ? pr.LuBe : pr.LuG2;
-                var Y = be ? pr.YBe : pr.YG2;
-                var xs = be ? pr.XsBe : pr.XsG2;
-                var xu = be ? pr.XuBe : pr.XuG2;
-                int n = xs.Length;
+                var sg = stageOf(k);
+                int n = sg.Xs.Length;
                 // history right-hand side: -C (b1 x(n-1) + b2 x(n-2))
                 var hv = new Complex[n];
-                for (int r = 0; r < n; r++) hv[r] = b1 * pr.Xm1[r] + b2 * pr.Xm2[r];
+                for (int r = 0; r < n; r++) hv[r] = b1 * x1[k][r] + b2 * x2[k][r];
                 var bh = new Complex[n];
-                MulCsc(pr.C, hv, bh, -1.0);
+                MulCsc(products[k].C, hv, bh, -1.0);
                 var xh = new Complex[n];
-                luS.Solve(bh, xh);
+                sg.Lu.Solve(bh, xh);
                 var x = xoc[k] = new Complex[n];
-                for (int r = 0; r < n; r++) x[r] = xs[r] + xh[r];
+                for (int r = 0; r < n; r++) x[r] = sg.Xs[r] + xh[r];
                 if (k == 1)
                     for (int s = 0; s < sources.Length; s++)
                     {
-                        Complex a = Drv(s, step);
-                        var u = xu[s];
+                        Complex a = drv(s);
+                        var u = sg.Xu[s];
                         for (int r = 0; r < n; r++) x[r] += a * u[r];
                     }
                 var voc = new Complex[N];
                 for (int j = 0; j < N; j++) voc[j] = x[ifNodes[j] - 1];
                 var isrc = new Complex[N];
-                for (int a = 0; a < N; a++) { Complex acc = 0; for (int b = 0; b < N; b++) acc += Y[a, b] * voc[b]; isrc[a] = -acc; }
+                for (int a = 0; a < N; a++) { Complex acc = 0; for (int b = 0; b < N; b++) acc += sg.Y[a, b] * voc[b]; isrc[a] = -acc; }
                 if (k == 0) for (int a = 0; a < N; a++) isrc[a] = new Complex(isrc[a].Real, 0);
-                iSrc[k] = isrc; yEff[k] = Y;
+                iSrc[k] = isrc; yEff[k] = sg.Y;
             }
             if (prof) swL.Stop();
             // device charge history (Gear): b1 q(n-1) + b2 q(n-2)
             var qh = new Complex[N, K + 1];
-            for (int a = 0; a < N; a++) for (int k = 0; k <= K; k++) qh[a, k] = b1 * qm1[a, k] + b2 * qm2[a, k];
+            for (int a = 0; a < N; a++) for (int k = 0; k <= K; k++) qh[a, k] = b1 * q1[a, k] + b2 * q2[a, k];
+
+            var accepted = nw.Solve(V, tolAbs, v =>
+            {
+                if (prof) swE.Start();
+                var (iNl, qNl, G, Cc, buckets) = HbNewton.EvaluateNonlinear(v, N, K, gridN, _nl, ifNodes);
+                if (prof) { swE.Stop(); swF.Start(); }
+                var inj = new Complex[N, K + 1];
+                for (int a = 0; a < N; a++) for (int k = 0; k <= K; k++) inj[a, k] = iNl[a, k] + alpha * qNl[a, k] + qh[a, k];
+                var F = HbNewton.BuildF(v, yEff, iSrc, inj, qNl, N, K, omega0, buckets);
+                if (prof) swF.Stop();
+                return (F, new StepEval(qNl, inj, G, Cc, buckets));
+            }, e =>
+            {
+                if (prof) swJ.Start();
+                var Gs = new Complex[N, N, e.G.GetLength(2)];
+                for (int a = 0; a < N; a++) for (int b = 0; b < N; b++) for (int m = 0; m < e.G.GetLength(2); m++)
+                    Gs[a, b, m] = e.G[a, b, m] + alpha * e.Cc[a, b, m];
+                var J = HbNewton.BuildJ(yEff, Gs, e.Cc, N, K, omega0, 0, e.Buckets);
+                if (prof) swJ.Stop();
+                return J;
+            });
+            if (accepted is null) { qNow = null!; return null; }
+            qNow = accepted.Q;
+
+            if (prof) swU.Start();
+            // update linear state: x = x_oc - sum_j Zcol_j * (total device injection)_j
+            for (int k = 0; k <= K; k++)
+            {
+                var zc = stageOf(k).Zcol;
+                var x = xoc[k];
+                for (int j = 0; j < N; j++)
+                {
+                    Complex inj = accepted.Inj[j, k] + (k > 0 ? new Complex(0, k * omega0) * qNow[j, k] : Complex.Zero);
+                    if (k == 0) inj = new Complex(inj.Real, 0);
+                    var z = zc[j];
+                    for (int r = 0; r < x.Length; r++) x[r] -= z[r] * inj;
+                }
+            }
+            if (prof) swU.Stop();
+            return xoc;
+        }
+
+        // A step whose Newton failed is retaken as m backward-Euler sub-steps of h/m (m = 2, 4, … MaxStepSplit), the
+        // drive interpolated linearly between the step's two samples. The last sub-step lands on the step's own time,
+        // so the Gear-2 history at h — x(n-1), x(n-2) — is exactly what the next step needs.
+        Complex[][] Split(int step, Complex[,] V, out Complex[,] qNow)
+        {
+            for (int m = 2; m <= MaxStepSplit; m *= 2)
+            {
+                double aSub = m / h;
+                var nw = new EnvelopeNewton(dof, stateRows);
+                var x = products.Select(pr => pr.Xm1).ToArray();
+                var q = qm1;
+                var vs = (Complex[,])vHist[^1].Clone();
+                bool ok = true;
+                for (int i = 1; i <= m && ok; i++)
+                {
+                    double f = (double)i / m;
+                    var xn = Advance(nw, aSub, -aSub, 0.0, k => SplitStage(products[k], m, aSub),
+                                     s => Drv(s, step - 1) + f * (Drv(s, step) - Drv(s, step - 1)), x, x, q, q, vs, out var qn);
+                    if (xn is null) ok = false;
+                    else { x = xn; q = qn; }
+                }
+                if (!ok) continue;
+                Array.Copy(vs, V, V.Length);
+                newton.Invalidate();                        // built at the failed full step's last iterate
+                splitSteps++; finestSplit = Math.Max(finestSplit, m);
+                qNow = q;
+                return x;
+            }
+            throw new InvalidOperationException(
+                $"envelope step {step} (t = {p.StartS + (step - nWarm) * h:G4} s) did not converge, even split into {MaxStepSplit} sub-steps");
+        }
+
+        Stage SplitStage(Product pr, int m, double aSub)
+        {
+            if (!pr.Split.TryGetValue(m, out var sg))
+                pr.Split[m] = sg = Stage.Of(Prepare(pr.A0, pr.C, pr.Omega, aSub, ifNodes, pr.BStatic, pr.BUnit));
+            return sg;
+        }
+
+        for (int step = 1; step < total; step++)
+        {
+            if ((step & 1023) == 0) control?.ThrowIfCancellationRequested();
+            bool be = step == 1;
+            double alpha = be ? aBe : aG2;
+            double b1 = be ? -aBe : b1G2, b2 = be ? 0.0 : b2G2;
+            if (step <= 2) newton.Invalidate();             // alpha changes BE -> Gear-2
 
             // predictor: quadratic extrapolation of the interface spectrum
             if (vHist.Count >= 3)
@@ -362,90 +468,32 @@ public sealed class EnvelopeEngine
                 for (int a = 0; a < N; a++) for (int k = 0; k <= K; k++) V[a, k] = 3 * v1[a, k] - 3 * v2[a, k] + v3[a, k];
             }
 
-            Complex[,] qNow = null!, iTot = null!;
-            double r0 = double.NaN;
-            bool ok = false, freshJ = false;
-            for (int it = 0; it < 50; it++)
-            {
-                if (prof) swE.Start();
-                var (iNl, qNl, G, Cc, buckets) = HbNewton.EvaluateNonlinear(V, N, K, gridN, _nl, ifNodes);
-                if (prof) { swE.Stop(); swF.Start(); }
-                var inj = new Complex[N, K + 1];
-                for (int a = 0; a < N; a++) for (int k = 0; k <= K; k++) inj[a, k] = iNl[a, k] + alpha * qNl[a, k] + qh[a, k];
-                var F = HbNewton.BuildF(V, yEff, iSrc, inj, qNl, N, K, omega0, buckets);
-                double rn = 0; foreach (var fv in F) rn = Math.Max(rn, Math.Abs(fv));
-                if (prof) swF.Stop();
-                // A stalled residual is accepted only after an update made with a FRESH Jacobian (a true
-                // round-off floor). A stalled CHORD iteration means a stale Jacobian: rebuild it instead —
-                // accepting there left isolated steps up to 1e3 x Tol off (single-sample glitches).
-                if (rn < tolAbs || (freshJ && !double.IsNaN(r0) && rn < 1e2 * tolAbs && rn > 0.5 * r0))
-                {
-                    qNow = qNl; iTot = inj; ok = true; newtonIters += it; break;
-                }
-                freshJ = false;
-                if (lu is null || (!double.IsNaN(r0) && rn > 0.25 * r0))
-                {
-                    freshJ = true;
-                    var Gs = new Complex[N, N, G.GetLength(2)];
-                    for (int a = 0; a < N; a++) for (int b = 0; b < N; b++) for (int m = 0; m < G.GetLength(2); m++)
-                        Gs[a, b, m] = G[a, b, m] + alpha * Cc[a, b, m];
-                    if (prof) swJ.Start();
-                    var J = HbNewton.BuildJ(yEff, Gs, Cc, N, K, omega0, 0, buckets);
-                    lu = DenseLu.Factor(J, dof) ?? throw new InvalidOperationException($"envelope step {step}: singular Jacobian");
-                    jacBuilds++;
-                    if (prof) swJ.Stop();
-                }
-                if (prof) swS.Start();
-                for (int i = 0; i < dof; i++) F[i] = -F[i];
-                lu.Solve(F);
-                if (prof) swS.Stop();
-                for (int a = 0; a < N; a++)
-                    for (int k = 0; k <= K; k++)
-                    {
-                        int ir = 2 * (a * (K + 1) + k);
-                        V[a, k] += new Complex(F[ir], k == 0 ? 0 : F[ir + 1]);
-                    }
-                r0 = rn;
-            }
-            if (!ok)
-                throw new InvalidOperationException($"envelope step {step} (t = {(step - nWarm) * h:G4} s) did not converge");
-
-            if (prof) swU.Start();
-            // update linear state: x = x_oc - sum_j Zcol_j * (total device injection)_j
-            for (int k = 0; k <= K; k++)
-            {
-                var pr = products[k];
-                var zc = be ? pr.ZcolBe : pr.ZcolG2;
-                var x = xoc[k];
-                for (int j = 0; j < N; j++)
-                {
-                    Complex inj = iTot[j, k] + (k > 0 ? new Complex(0, k * omega0) * qNow[j, k] : Complex.Zero);
-                    if (k == 0) inj = new Complex(inj.Real, 0);
-                    var z = zc[j];
-                    for (int r = 0; r < x.Length; r++) x[r] -= z[r] * inj;
-                }
-                pr.Xm2 = pr.Xm1; pr.Xm1 = x;
-            }
-            if (prof) swU.Stop();
+            var xNew = Advance(newton, alpha, b1, b2, k => be ? products[k].Be : products[k].G2, s => Drv(s, step),
+                               products.Select(pr => pr.Xm1).ToArray(), products.Select(pr => pr.Xm2).ToArray(), qm1, qm2, V,
+                               out var qNow)
+                       ?? Split(step, V, out qNow);
+            for (int k = 0; k <= K; k++) { products[k].Xm2 = products[k].Xm1; products[k].Xm1 = xNew[k]; }
             qm2 = qm1; qm1 = qNow;
             vHist.Add((Complex[,])V.Clone()); if (vHist.Count > 3) vHist.RemoveAt(0);
             Record(step);
         }
 
         if (prof)
-            Console.Error.WriteLine($"[env-profile] steps {total - 1}  linear {swL.Elapsed.TotalSeconds:0.00}s  eval {swE.Elapsed.TotalSeconds:0.00}s  F {swF.Elapsed.TotalSeconds:0.00}s  J {swJ.Elapsed.TotalSeconds:0.00}s ({jacBuilds})  solve {swS.Elapsed.TotalSeconds:0.00}s  update {swU.Elapsed.TotalSeconds:0.00}s  newton {(double)newtonIters / Math.Max(1, total - 1):0.00}");
+            Console.Error.WriteLine($"[env-profile] steps {total - 1}  linear {swL.Elapsed.TotalSeconds:0.00}s  eval {swE.Elapsed.TotalSeconds:0.00}s  F {swF.Elapsed.TotalSeconds:0.00}s  J {swJ.Elapsed.TotalSeconds:0.00}s ({newton.JacobianBuilds})  update {swU.Elapsed.TotalSeconds:0.00}s  newton {(double)newton.Iterations / Math.Max(1, total - 1):0.00}");
         var res = new EnvelopeRunResult
         {
             Time = tOut, ProbeNames = probeNodes.Select(x => x.name).ToArray(), Probe = pOut,
             SupplyNames = supplies.Select(c => c.InstancePath).ToArray(), SupplyCurrent = sOut, SupplyVoltage = supplyV,
             Drive = dOut, DriveRe = sources.Select(s => s.Z.Real).ToArray(),
             F0Hz = f0, StepS = h, MaxHarm = K, SignalRateHz = rate, Sources = sources,
-            WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = (double)newtonIters / Math.Max(1, total - 1),
-            JacobianBuilds = jacBuilds, WorstTangentError = tanErrWorst, SnpFits = snpFit.Reports,
+            WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = (double)newton.Iterations / Math.Max(1, total - 1),
+            JacobianBuilds = newton.JacobianBuilds, WorstTangentError = tanErrWorst, SnpFits = snpFit.Reports,
             CarrierMix = sources.SelectMany((s, si) => signals[si].Carriers.Select(_ => 1)).ToArray(),
             CarrierOffsetHz = sources.SelectMany((s, si) => signals[si].Carriers.Select(c => s.FcHz + c.OffsetHz - f0)).ToArray(),
             CarrierLabels = sources.SelectMany((s, si) => signals[si].Carriers.Select(c => $"{s.InstanceName}:{c.Spec.Label} @ {(s.FcHz + c.OffsetHz) / 1e9:0.####} GHz")).ToArray(),
         };
+        if (splitSteps > 0)
+            res.Notes.Add($"envelope: {splitSteps} step(s) did not converge at the full step and were retaken as up to {finestSplit} sub-steps");
         return res;
     }
 

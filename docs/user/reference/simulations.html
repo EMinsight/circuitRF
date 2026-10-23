@@ -146,7 +146,10 @@ carriers the <strong>IM2 / IM3 / IM5</strong> products.</p>
 <p><strong>Method.</strong> Every envelope time step is one harmonic-balance solve with a time derivative added to
 each charge (Gear-2, backward Euler on the first step). The linear network is factored once per
 harmonic for the whole run, and each step costs one back-substitution per harmonic plus a small
-Newton solve at the nonlinear devices, reusing its factored Jacobian while it keeps converging fast.</p>
+Newton solve at the nonlinear devices, reusing its factored Jacobian while it keeps converging fast.
+Each Newton update is damped by a line search, so a device driven hard at a signal peak, or one with
+trap or thermal states, does not throw the solve off. A step that still does not converge is retaken
+as up to 16 shorter steps, and the Messages pane says how many were.</p>
 <p>Three things make long modulated runs practical:</p>
 <ul>
 <li><p><strong>Carriers far apart get their own fundamental.</strong> Two 20 MHz carriers 400 MHz apart are simulated
@@ -168,7 +171,8 @@ the lattice is the reference. Both modes write the same <code>IMD</code> cube. T
 <li><p><strong>Parallel in time.</strong> The record is split into segments that run on all cores at once. Each segment
 starts a warm-up early from its own harmonic-balance point, so the stitched result is identical to
 one sequential run (measured to round-off), and the overlap disagreement is reported as the seam
-error.</p>
+error. In a parametric sweep the points also run at the same time, up to one per core, and share the
+cores with their segments.</p>
 </li>
 <li><p><strong>The step follows an accuracy preset.</strong> <em>standard</em> (default) steps at 4× the signal's sample rate,
 where ACPR2 and the bias-node memory are converged on every measured case. <em>draft</em> (1×) is about
@@ -257,7 +261,8 @@ large enough to move ACPR by about 0.1 dB.</li>
 <code>IMD[node, product]</code> for two widely spaced carriers (either mode), the scalars <code>Pin_avg_dBm</code>, <code>Pout_avg_dBm</code>, <code>Gt_dB</code>,
 <code>NMSE_dB</code>, <code>Pdc_W</code>, <code>DE_pct</code>, and the probe envelopes <code>V[time, node, harmonic]</code> (or <code>mixIndex</code> with two
 fundamentals). A <a href="#parametric-sweep">Parametric Sweep</a> around an envelope analysis (sweeping the
-source's <code>Pavg</code>, say) gives ACPR against output power in one run.</p>
+source's <code>Pavg</code>, say) gives ACPR against output power in one run. A sweep point that fails is NaN
+and named in the Messages pane; the other points are kept.</p>
 <h3 id="envelope-power">How the power and efficiency scalars are calculated</h3>
 <p><code>Pin_avg_dBm</code>, <code>Pout_avg_dBm</code>, <code>Gt_dB</code>, <code>Pdc_W</code> and <code>DE_pct</code> are calculated for convenience, as a
 quick first look at a modulated run. Each one is a time average over the measured record (after the

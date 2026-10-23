@@ -39,8 +39,8 @@ envelope at the fundamental.
 ## NR20_ACPR_vs_Pin
 
 The same bench with the envelope inside a parametric sweep of `Pin`, 10 → 26 dBm in 4 dB steps:
-ACPR1 and ACPR2 against drive, the curve a linearity budget is read from. The sweep points run in
-parallel with each other. **NR20_ACPR_vs_Pin.cdd** plots ACPR1/ACPR2 (both sides), output power and gain,
+ACPR1 and ACPR2 against drive, the curve a linearity budget is read from. The five points run at the
+same time, each split into fewer time segments so they share the cores. **NR20_ACPR_vs_Pin.cdd** plots ACPR1/ACPR2 (both sides), output power and gain,
 drain efficiency and DC power against `Pin`, and the AM-AM of every drive level on one axis — they lie on
 one curve, because AM-AM against the instantaneous input power does not depend on the average drive.
 

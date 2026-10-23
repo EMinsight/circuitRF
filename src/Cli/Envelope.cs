@@ -97,7 +97,12 @@ internal static class EnvelopeVerb
                 int at = tb.Analyses.FindIndex(x => x.Name == env.Name);
                 tb.Analyses[at] = env;
                 Console.Error.WriteLine($"[circuitRF] envelope {env.Name} inside sweep {sweep.Name} ({sweep.SweepVarName})");
-                var sds = ParametricSweepEngine.Run(sweep, lib, tb, new AnalysisSettings(), refBase, RunHost.Control);
+                // Each point elaborates a netlist of its own and throws it away; this one collects what they reported.
+                using var diag = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
+                var sds = ParametricSweepEngine.Run(sweep, lib, tb, new AnalysisSettings(), refBase, RunHost.Control,
+                                                    diagnosticsInto: diag);
+                foreach (var w in diag.Warnings) Console.Error.WriteLine($"[circuitRF] warning: {w}");
+                foreach (var n in diag.Notes) Console.Error.WriteLine($"[circuitRF] note: {n}");
                 JsonRun.Analysis = sweep.Name;
                 JsonRun.Data = sds;
                 PrintSweep(sds, sweep);

@@ -3337,3 +3337,45 @@ length now runs and passes the line's closed-form gain (−1.93820 dB) to 1e-5 d
 10 Ω draws 0.1 W to 2e-12. The cost is the line's frequency dependence across the baseband, measured by the same
 terminated measure and warned above `EnvelopeTangentCheck.WarnAbove`: a 90° line at 1 GHz (4.5° at 50 MHz) is not
 named; 810° reads 54 % and 2970° 147 %, and are. Gate: `tests/Engine.Tests/Envelope/EnvelopeBasebandTests.cs`.
+
+## Envelope: a composed FET stopped the run at a signal peak; one failed point lost the sweep (2026-10-22)
+
+The Model Composer example's GaN FET (traps and self-heating on) in an NR20 envelope bench ran to 12 dBm average and
+stopped at 16 and 20 dBm (`fine`), and at 10 dBm on `standard`, with "envelope step N did not converge". A residual
+trace of the failing step showed the same defect MC-25 found in HB: the envelope Newton took every update whole, and on
+the composed core the trap-state row (`core_x0`) then the thermal row (`X1.t`) went to 1e13 … 1e28 and never came
+back. Switching off traps, self-heating, dispersion or charge did not move the failing step, so it was the update, not
+one part of the model.
+
+Fix (`EnvelopeNewton.cs`, used by both engines): every update takes `HbNewton.Backtrack` on the scaled norm
+(`LineSearchWeights` when a device has a state row). A full step that reduces the residual is accepted on the first
+trial, so a step that converged before takes the same iterates (8 dBm: every printed figure unchanged). A rejected CHORD
+step is not halved: its direction came from an older Jacobian, so the Jacobian is rebuilt at the iterate first. That
+alone carried 16 and 20 dBm on `fine`; 20 dBm on `standard` still lost one step, so a step that fails is retaken as
+2, 4, 8 or 16 backward-Euler sub-steps, the drive linear between its samples, landing on the step's own time so the
+Gear-2 history at h stays valid. 20 dBm: `standard` with one split step and `fine` agree to 0.0003 dB in Pout.
+
+`ParametricSweepEngine` let one failed envelope point throw away the whole sweep, with a message naming no sweep
+value. An envelope point that fails is now NaN with a warning naming its value (`Pin = 16 dBm: …`) and the
+finished points are kept; only a sweep in which no point completes throws, listing every point. The engines' notes
+used to be dropped inside a sweep; they are now kept, prefixed with the point. The `env` CLI's sweep path passes
+`diagnosticsInto` and prints them, and a segment's failure surfaces as its own message rather than
+"One or more errors occurred". Gate: `tests/Engine.Tests/Envelope/EnvelopeConvergenceTests.cs`, where each of the
+first two tests fails with its own fix switched off.
+
+## Envelope sweep points ran one at a time (2026-10-22)
+
+The Envelope example's README said a swept envelope's points run in parallel; they never did. `ParametricSweepEngine`
+takes points one at a time for every inner analysis, and the only parallelism was inside a point (time segments, at
+least 20 µs each). A record under 40 µs is one segment, so a 7-point 10 µs sweep of the composed FET ran on one of
+ten cores (118 s).
+
+Envelope points now run side by side (`RunEnvelopePoints`), up to one per core, each with at most
+`cores / concurrent` segments when `Segments` is auto. The testbench holds ONE point's value at a time, so
+`EnvelopeRunner.Run` is split into `Prepare` (every segment's netlist elaborated with the value set, on the calling
+thread) and `Execute` (simulation only, touching no testbench). At most `concurrent` points are prepared and
+unfinished; each point disposes its models when it ends, and warnings are merged afterwards in sweep order.
+`CRF_ENV_SERIAL` makes it one point at a time again. The same 7-point sweep: 42 s, every figure unchanged. The
+example's 5 × 200 µs sweep: 11.0 s → 7.9 s at 2 segments per point instead of 10, the table unchanged to the printed
+digit. Gate: `tests/Engine.Tests/Parametric/SweptEnvelopeConcurrentPointsTests.cs` (each point bit for bit against
+its own run alone, and a concurrency counter rather than a timing).

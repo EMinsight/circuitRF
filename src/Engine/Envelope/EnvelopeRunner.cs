@@ -15,6 +15,7 @@
 
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.ExceptionServices;
 using CircuitRF.Core.Design;
 using CircuitRF.Core.Elaboration;
 using CircuitRF.Core.Expressions;
@@ -114,9 +115,40 @@ public static class EnvelopeRunner
     public static DataSet Run(Plan plan, Func<ElaboratedNetlist> elaborate, AnalysisSettings? settings = null,
                               RunControl? control = null, Action<string>? note = null)
     {
-        var sw = Stopwatch.StartNew();
+        using var prepared = Prepare(plan, elaborate, note: note);
+        return Execute(prepared, settings, control, note);
+    }
+
+    /// <summary>
+    /// A run with every netlist it needs elaborated and nothing simulated: what <see cref="Execute"/> takes. Split from
+    /// <see cref="Run"/> for a sweep running its points side by side, which can elaborate only while that point's
+    /// value is in the testbench and must simulate after it has moved on. Disposing it disposes the segments'
+    /// netlists, never the first, which stays the caller's.
+    /// </summary>
+    internal sealed class Prepared : IDisposable
+    {
+        internal required Plan Plan { get; init; }
+        internal required ElaboratedNetlist[] Nets { get; init; }
+        internal required int Fundamentals { get; init; }
+        internal required double StepS { get; init; }
+        internal required double WarmS { get; init; }
+        internal required int[] Bound { get; init; }
+        internal required int TailSteps { get; init; }
+        internal Stopwatch Clock { get; } = Stopwatch.StartNew();
+        public int Segments => Nets.Length;
+
+        public void Dispose()
+        {
+            for (int s = 1; s < Nets.Length; s++) Nets[s]?.Dispose();
+        }
+    }
+
+    /// <param name="maxSegments">The most time segments this run may take when <c>Segments</c> is auto; 0 = one per
+    /// core. A sweep running points side by side shares the cores between them this way.</param>
+    internal static Prepared Prepare(Plan plan, Func<ElaboratedNetlist> elaborate, int maxSegments = 0,
+                                   Action<string>? note = null)
+    {
         var p = plan.Params;
-        // probe step size and total steps with a throw-away engine construction (cheap: no run)
         var first = elaborate();
         var src = first.Components.Select(c => c.Model).OfType<Core.Devices.ModSourceModel>().FirstOrDefault()
                   ?? throw new InvalidOperationException("Envelope analysis needs at least one MOD_Source (the modulated signal).");
@@ -132,7 +164,7 @@ public static class EnvelopeRunner
 
         int cores = Math.Max(1, Environment.ProcessorCount);
         double warm = double.IsNaN(plan.WarmupS) ? 5e-6 : plan.WarmupS;
-        int segs = plan.Segments > 0 ? plan.Segments : cores;
+        int segs = plan.Segments > 0 ? plan.Segments : maxSegments > 0 ? Math.Min(maxSegments, cores) : cores;
         // never cut a segment shorter than 4x its warm-up or 20 us — the warm-up would dominate
         segs = (int)Math.Clamp(Math.Floor(p.StopS / Math.Max(4 * warm, 20e-6)), 1, segs);
         if (plan.Segments == 1) segs = 1;
@@ -144,13 +176,42 @@ public static class EnvelopeRunner
         var bound = Enumerable.Range(0, segs + 1).Select(i => (int)((long)totalSteps * i / segs)).ToArray();
         int tailSteps = segs > 1 ? Math.Max(1, (int)Math.Min(0.25 * totalSteps / segs, Math.Round(1e-6 / h))) : 0;
 
-        var results = new EnvelopeRunResult[segs];
         var nets = new ElaboratedNetlist[segs];
         nets[0] = first;
+        var prepared = new Prepared
+        {
+            Plan = plan, Nets = nets, Fundamentals = fundamentals, StepS = h, WarmS = warm, Bound = bound, TailSteps = tailSteps,
+        };
         try
         {
             for (int s = 1; s < segs; s++) nets[s] = elaborate();
-            var opts = new ParallelOptions { MaxDegreeOfParallelism = Environment.GetEnvironmentVariable("CRF_ENV_SERIAL") is null ? cores : 1, CancellationToken = control?.Token ?? default };
+        }
+        catch
+        {
+            prepared.Dispose();
+            throw;
+        }
+        return prepared;
+    }
+
+    /// <summary>Simulates a prepared run. Touches no testbench and elaborates nothing, so prepared runs of different
+    /// sweep points may execute at the same time.</summary>
+    internal static DataSet Execute(Prepared prepared, AnalysisSettings? settings = null, RunControl? control = null,
+                                  Action<string>? note = null)
+    {
+        var sw = prepared.Clock;
+        var plan = prepared.Plan;
+        var p = plan.Params;
+        var nets = prepared.Nets;
+        int segs = nets.Length, fundamentals = prepared.Fundamentals, tailSteps = prepared.TailSteps;
+        double h = prepared.StepS, warm = prepared.WarmS;
+        var bound = prepared.Bound;
+        int cores = Math.Max(1, Environment.ProcessorCount);
+
+        var results = new EnvelopeRunResult[segs];
+        var opts = new ParallelOptions { MaxDegreeOfParallelism = Environment.GetEnvironmentVariable("CRF_ENV_SERIAL") is null ? cores : 1, CancellationToken = control?.Token ?? default };
+        try
+        {
             Parallel.For(0, segs, opts, s =>
             {
                 var ps = p with
@@ -165,9 +226,13 @@ public static class EnvelopeRunner
                     : new EnvelopeEngine(nets[s], settings).Run(ps, control);
             });
         }
-        finally
+        catch (AggregateException ae)
         {
-            for (int s = 1; s < segs; s++) nets[s]?.Dispose();
+            // A segment's own exception rather than "One or more errors occurred (…)": a cancellation if there
+            // was one, else the first failure reported.
+            var all = ae.Flatten().InnerExceptions;
+            ExceptionDispatchInfo.Capture(all.FirstOrDefault(e => e is OperationCanceledException) ?? all[0]).Throw();
+            throw;
         }
 
         // stitch, measure the seam on the overlap tails

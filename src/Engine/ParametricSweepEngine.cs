@@ -164,7 +164,11 @@ public static class ParametricSweepEngine
         var thermal = new CircuitRF.WBond.Thermal.WireThermalSession();
         string? outerDrive = diagnosticsInto?.WireThermal?.Drive;
 
-        for (int si = 0; si < sweepValues.Length; si++)
+        var failedPoints = new List<string>();
+        if (inner is EnvelopeAnalysis env)
+            RunEnvelopePoints(env, sweep, lib, tb, settings, baseDirectory, sweepValues, effUnit, baseUnit, outerDrive,
+                              control, countsLeaves, diagnosticsInto, datasets, failedPoints);
+        else for (int si = 0; si < sweepValues.Length; si++)
         {
             control?.ThrowIfCancellationRequested();
 
@@ -227,6 +231,15 @@ public static class ParametricSweepEngine
             if (countsLeaves) control?.Tick();
         }
 
+        if (failedPoints.Count > 0)
+        {
+            if (failedPoints.Count == datasets.Count)
+                throw new InvalidOperationException(
+                    $"envelope '{inner.Name}': no point of sweep '{sweep.Name}' completed — {string.Join("; ", failedPoints)}");
+            var template = datasets.First(d => d is not null);
+            for (int i = 0; i < datasets.Count; i++) datasets[i] ??= NaNLike(template);
+        }
+
         // Loadpull frequency sweep: when every per-point DataSet carries a __Freq tone carrier and the
         // tone varies across points, the swept variable IS the tone frequency. Stack with a "freq" axis
         // (Hz) built from the resolved per-point tones — LoadpullSurface keys the frequency dimension on
@@ -246,6 +259,169 @@ public static class ParametricSweepEngine
         }
         // Tag with base SI unit so marker readouts show "freq=2 GHz". SweepValues are already base SI.
         return DataSet.StackSweepAxis(new Axis(sweep.SweepVarName, sweepValues, baseUnit), datasets);
+    }
+
+    /// <summary>
+    /// The envelope points of a sweep, run SIDE BY SIDE. A point is seconds to minutes of work, independent of every
+    /// other (nothing warm-starts across envelope points), and a short record is one time segment — so taken one at a
+    /// time a 10 µs sweep ran on one core. Up to one point per core runs at once, and the cores are shared: each point
+    /// takes at most <c>cores / concurrent</c> segments when its <c>Segments</c> is auto. Fewer, longer segments also
+    /// waste less: each one simulates a warm-up first and throws it away.
+    ///
+    /// <para>Elaboration reads the testbench, which holds ONE point's value at a time, so a point is elaborated —
+    /// every segment's netlist, by <see cref="Envelope.EnvelopeRunner.Prepare"/> — here on the calling thread with
+    /// its value set, and only the simulation runs alongside the others. At most <c>concurrent</c> points are
+    /// elaborated and not yet finished, and each point's models are released the moment it ends; its warnings are
+    /// merged afterwards in sweep order, so the Messages pane does not depend on which point finished first.</para>
+    ///
+    /// <para>A point that fails is NaN with a warning naming its value, and the others are kept.</para>
+    /// </summary>
+    private static void RunEnvelopePoints(EnvelopeAnalysis env, ParametricSweepAnalysis sweep, Library lib, TestBench tb,
+        AnalysisSettings? settings, string? baseDirectory, double[] sweepValues, string effUnit, string baseUnit,
+        string? outerDrive, RunControl? control, bool countsLeaves, ElaboratedNetlist? diagnosticsInto,
+        List<DataSet> datasets, List<string> failedPoints)
+    {
+        int n = sweepValues.Length;
+        int cores = Math.Max(1, Environment.ProcessorCount);
+        int concurrent = Environment.GetEnvironmentVariable("CRF_ENV_SERIAL") is null ? Math.Min(n, cores) : 1;
+        int segmentBudget = Math.Max(1, cores / concurrent);
+        LastEnvelopeConcurrency = concurrent;
+
+        var points = new DataSet?[n];
+        var errors = new string?[n];
+        var nets = new ElaboratedNetlist?[n];
+        var running = new List<Task>();
+        var pointControl = control?.Child();
+        Exception? pending = null;
+        using var slots = new SemaphoreSlim(concurrent);
+        try
+        {
+            for (int si = 0; si < n; si++)
+            {
+                slots.Wait(control?.Token ?? default);
+                control?.ThrowIfCancellationRequested();
+                string drive = DriveText(sweep.SweepVarName, sweepValues[si], effUnit, baseUnit, outerDrive);
+                string at = $"{drive}: ";
+
+                int varIdx = tb.GlobalVariables.FindIndex(v => v.Name == sweep.SweepVarName);
+                var origVar = varIdx >= 0 ? tb.GlobalVariables[varIdx] : null;
+                var overrideVar = new Variable(sweep.SweepVarName,
+                    sweepValues[si].ToString("G17", CultureInfo.InvariantCulture),
+                    string.IsNullOrEmpty(baseUnit) ? null : baseUnit);
+                if (varIdx >= 0) tb.GlobalVariables[varIdx] = overrideVar;
+                else tb.GlobalVariables.Add(overrideVar);
+
+                Envelope.EnvelopeRunner.Prepared? prepared = null;
+                ElaboratedNetlist netlist;
+                try
+                {
+                    netlist = nets[si] = new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
+                    try
+                    {
+                        var plan = Envelope.EnvelopeRunner.Resolve(env, netlist.ResolvedGlobals);
+                        bool first = true;
+                        prepared = Envelope.EnvelopeRunner.Prepare(plan, () =>
+                        {
+                            if (first) { first = false; return netlist; }
+                            return new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
+                        }, segmentBudget, m => netlist.AddWarningOnce("env-note:" + at + m, at + m));
+                    }
+                    catch (Exception ex) when (!IsCancellation(ex))
+                    {
+                        errors[si] = at + PointFailure(ex);
+                    }
+                }
+                finally
+                {
+                    if (origVar is not null) tb.GlobalVariables[varIdx] = origVar;
+                    else tb.GlobalVariables.RemoveAt(tb.GlobalVariables.Count - 1);
+                }
+
+                if (prepared is null)
+                {
+                    netlist.Dispose();
+                    slots.Release();
+                    if (countsLeaves) control?.Tick();
+                    continue;
+                }
+                int i = si;
+                running.Add(Task.Run(() =>
+                {
+                    try
+                    {
+                        points[i] = Envelope.EnvelopeRunner.Execute(prepared, settings, pointControl,
+                            m => netlist.AddWarningOnce("env-note:" + at + m, at + m));
+                    }
+                    catch (Exception ex) when (!IsCancellation(ex))
+                    {
+                        errors[i] = at + PointFailure(ex);
+                    }
+                    finally
+                    {
+                        prepared.Dispose();
+                        netlist.Dispose();
+                        slots.Release();
+                    }
+                    if (countsLeaves) control?.Tick();
+                }));
+            }
+        }
+        catch (Exception ex)
+        {
+            pending = ex;
+        }
+
+        // Nothing is left running behind a throw: a point still simulating holds models and threads.
+        try { Task.WaitAll([.. running]); }
+        catch (AggregateException ae)
+        {
+            var all = ae.Flatten().InnerExceptions;
+            pending ??= all.FirstOrDefault(e => e is OperationCanceledException) ?? all[0];
+        }
+        if (pending is not null)
+        {
+            foreach (var nl in nets) nl?.Dispose();
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(pending).Throw();
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            if (nets[i] is { } nl) diagnosticsInto?.MergeDiagnosticsFrom(nl);
+            if (errors[i] is { } why)
+            {
+                failedPoints.Add(why);
+                diagnosticsInto?.AddWarningOnce($"envelope-point-failed:{why}",
+                    $"envelope '{env.Name}' at {why} — that point is NaN; the other points are kept.");
+            }
+            datasets.Add(points[i]!);
+        }
+    }
+
+    /// <summary>How many envelope sweep points the last sweep on this thread ran at once. Test-facing: the claim is
+    /// that points run side by side, which a timing cannot hold steadily and a count can.</summary>
+    [ThreadStatic] internal static int LastEnvelopeConcurrency;
+
+    private static string PointFailure(Exception ex)
+        => ex.Message.StartsWith("envelope: ", StringComparison.Ordinal) ? ex.Message[10..] : ex.Message;
+
+    /// <summary>A cancelled run, however it arrives — directly, or from inside the envelope's parallel segments.</summary>
+    private static bool IsCancellation(Exception ex)
+        => ex is OperationCanceledException
+           || ex is AggregateException a && a.Flatten().InnerExceptions.Any(e => e is OperationCanceledException);
+
+    /// <summary>A failed point's stand-in: every cube of a finished point at the same shape, all NaN; metadata kept.</summary>
+    private static DataSet NaNLike(DataSet template)
+    {
+        var ds = new DataSet();
+        foreach (var (name, c) in template.Cubes)
+        {
+            if (name.StartsWith("__", StringComparison.Ordinal)) { ds.Add(name, c); continue; }
+            int n = c.BufferLength;
+            ds.Add(name, c.DataKind == DataKind.Complex
+                ? new DataCube([.. c.Axes], Enumerable.Repeat(new Complex(double.NaN, double.NaN), n).ToArray())
+                : new DataCube([.. c.Axes], Enumerable.Repeat(double.NaN, n).ToArray()));
+        }
+        return ds;
     }
 
     /// <summary>A sweep point as a warning names it: <c>Pin = 27.5 dBm</c>, in the unit the sweep was stated in, after the
@@ -413,26 +589,6 @@ public static class ParametricSweepEngine
 
         switch (inner)
         {
-            case EnvelopeAnalysis env:
-            {
-                // Each point is a whole envelope run (parallel in time inside it); its segments elaborate
-                // their own netlists from this point's testbench state, the first reusing this one. They
-                // take the point's BaseDirectory, or a relative SnP or .cmodel resolves in segment 1 and
-                // not in the rest.
-                var plan  = Envelope.EnvelopeRunner.Resolve(env, netlist.ResolvedGlobals);
-                bool first = true;
-                object gate = new();
-                ElaboratedNetlist Elab()
-                {
-                    lock (gate)
-                    {
-                        if (first) { first = false; return netlist; }
-                        return new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
-                    }
-                }
-                return Envelope.EnvelopeRunner.Run(plan, Elab, settings, control?.Child());
-            }
-
             case HarmonicBalanceAnalysis hba:
             {
                 var p  = HbEngine.Resolve(hba, netlist.ResolvedGlobals, netlist.GlobalsWithExplicitUnit);

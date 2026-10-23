@@ -136,6 +136,9 @@ carriers the **IM2 / IM3 / IM5** products.
 each charge (Gear-2, backward Euler on the first step). The linear network is factored once per
 harmonic for the whole run, and each step costs one back-substitution per harmonic plus a small
 Newton solve at the nonlinear devices, reusing its factored Jacobian while it keeps converging fast.
+Each Newton update is damped by a line search, so a device driven hard at a signal peak, or one with
+trap or thermal states, does not throw the solve off. A step that still does not converge is retaken
+as up to 16 shorter steps, and the Messages pane says how many were.
 
 Three things make long modulated runs practical:
 
@@ -156,7 +159,8 @@ Three things make long modulated runs practical:
 - **Parallel in time.** The record is split into segments that run on all cores at once. Each segment
   starts a warm-up early from its own harmonic-balance point, so the stitched result is identical to
   one sequential run (measured to round-off), and the overlap disagreement is reported as the seam
-  error.
+  error. In a parametric sweep the points also run at the same time, up to one per core, and share the
+  cores with their segments.
 - **The step follows an accuracy preset.** *standard* (default) steps at 4× the signal's sample rate,
   where ACPR2 and the bias-node memory are converged on every measured case. *draft* (1×) is about
   0.4 dB pessimistic on ACPR2 and badly off on bias-network ringing. *fine* (8×) is for reference runs.
@@ -195,7 +199,8 @@ as follows.
 `IMD[node, product]` for two widely spaced carriers (either mode), the scalars `Pin_avg_dBm`, `Pout_avg_dBm`, `Gt_dB`,
 `NMSE_dB`, `Pdc_W`, `DE_pct`, and the probe envelopes `V[time, node, harmonic]` (or `mixIndex` with two
 fundamentals). A [Parametric Sweep](#parametric-sweep) around an envelope analysis (sweeping the
-source's `Pavg`, say) gives ACPR against output power in one run.
+source's `Pavg`, say) gives ACPR against output power in one run. A sweep point that fails is NaN
+and named in the Messages pane; the other points are kept.
 
 ### How the power and efficiency scalars are calculated {#envelope-power}
 

@@ -39,6 +39,9 @@ public sealed class EnvelopeEngineMt
     private readonly ElaboratedNetlist _nl;
     private readonly AnalysisSettings _settings;
 
+    /// <summary>What one envelope Newton evaluation hands on (see <see cref="EnvelopeNewton"/>).</summary>
+    private sealed record StepEval(Complex[,] Q, Complex[,] Inj, double[][] Dg, double[][] Dc);
+
     public EnvelopeEngineMt(ElaboratedNetlist netlist, AnalysisSettings? settings = null)
     {
         _nl = netlist;
@@ -78,12 +81,12 @@ public sealed class EnvelopeEngineMt
     {
         public double W;            // signed
         public bool Neg;            // works at |W| with conjugation
-        public SparseLU LuBe = null!, LuG2 = null!;
-        public CompressedColumnStorage<Complex> C = null!;
-        public Complex[][] ZBe = null!, ZG2 = null!;
-        public Complex[,] YBe = null!, YG2 = null!;
-        public Complex[] XsBe = null!, XsG2 = null!;
-        public Complex[][] XuBe = null!, XuG2 = null!;   // [source] unit drive at this product (tone products only)
+        public CompressedColumnStorage<Complex> A0 = null!, C = null!;
+        public Complex[] BStatic = null!;
+        public Complex[][] BUnit = null!;                // [source] unit drive at this product (tone products only)
+        public EnvelopeEngine.Stage Be = null!, G2 = null!;
+        /// <summary>Backward Euler at h/m, factored the first time a step is split m ways.</summary>
+        public readonly Dictionary<int, EnvelopeEngine.Stage> Split = new();
         public Complex[] Xm1 = null!, Xm2 = null!;       // canonical (|W|) state history
     }
 
@@ -196,9 +199,9 @@ public sealed class EnvelopeEngineMt
                     for (int r = 0; r < b.Length; r++) b[r] -= bStatic[r];
                     bUnit[s] = b;
                 }
-                var pr = new Prod { W = wMix[m], Neg = wMix[m] < 0, C = C };
-                (pr.LuBe, pr.ZBe, pr.YBe, pr.XsBe, pr.XuBe) = EnvelopeEngine.Prepare(A0, C, w, aBe, ifNodes, bStatic, bUnit);
-                (pr.LuG2, pr.ZG2, pr.YG2, pr.XsG2, pr.XuG2) = EnvelopeEngine.Prepare(A0, C, w, aG2, ifNodes, bStatic, bUnit);
+                var pr = new Prod { W = wMix[m], Neg = wMix[m] < 0, A0 = A0, C = C, BStatic = bStatic, BUnit = bUnit };
+                pr.Be = EnvelopeEngine.Stage.Of(EnvelopeEngine.Prepare(A0, C, w, aBe, ifNodes, bStatic, bUnit));
+                pr.G2 = EnvelopeEngine.Stage.Of(EnvelopeEngine.Prepare(A0, C, w, aG2, ifNodes, bStatic, bUnit));
                 prods[m] = pr;
             }
         }
@@ -238,44 +241,43 @@ public sealed class EnvelopeEngineMt
         Record(0);
 
         int dof = 2 * N * M;
-        DenseLu? lu = null;
-        long newtonIters = 0; int jacBuilds = 0;
-        var yEff = new Complex[M][,];
-        var iSrc = new Complex[M][];
-        var xoc = new Complex[M][];
+        bool stateRows = HbNewton.HasStateRow(_nl, ifNodes);
+        var newton = new EnvelopeNewton(dof, stateRows);
         var vHist = new List<Complex[,]> { (Complex[,])V.Clone() };
-        for (int step = 1; step < total; step++)
+        int splitSteps = 0, finestSplit = 1;
+
+        // One step from the history to the new state of every product (see EnvelopeEngine.Run's own Advance); drv(s, t)
+        // is source s's drive at tone t. Null when Newton did not converge.
+        Complex[][]? Advance(EnvelopeNewton nw, double alpha, double b1, double b2, Func<int, EnvelopeEngine.Stage> stageOf,
+                             Func<int, int, Complex> drvAt, Complex[][] x1, Complex[][] x2, Complex[,] q1, Complex[,] q2,
+                             Complex[,] V, out Complex[,] qNow)
         {
-            if ((step & 1023) == 0) control?.ThrowIfCancellationRequested();
-            bool be = step == 1;
-            double alpha = be ? aBe : aG2, b1 = be ? -aBe : b1G2, b2 = be ? 0.0 : b2G2;
-            if (step <= 2) lu = null;
+            var yEff = new Complex[M][,];
+            var iSrc = new Complex[M][];
+            var xoc = new Complex[M][];
             for (int m = 0; m < M; m++)
             {
                 var pr = prods[m];
-                var luS = be ? pr.LuBe : pr.LuG2;
-                var Yc = be ? pr.YBe : pr.YG2;
-                var xs = be ? pr.XsBe : pr.XsG2;
-                var xu = be ? pr.XuBe : pr.XuG2;
-                int n = xs.Length;
+                var sg = stageOf(m);
+                int n = sg.Xs.Length;
                 var hv = new Complex[n];
-                for (int r = 0; r < n; r++) hv[r] = b1 * pr.Xm1[r] + b2 * pr.Xm2[r];
+                for (int r = 0; r < n; r++) hv[r] = b1 * x1[m][r] + b2 * x2[m][r];
                 var bh = new Complex[n];
                 EnvelopeEngine.MulCsc(pr.C, hv, bh, -1.0);
                 var xh = new Complex[n];
-                luS.Solve(bh, xh);
+                sg.Lu.Solve(bh, xh);
                 var x = xoc[m] = new Complex[n];
-                for (int r = 0; r < n; r++) x[r] = xs[r] + xh[r];
+                for (int r = 0; r < n; r++) x[r] = sg.Xs[r] + xh[r];
                 int tone = Array.IndexOf(toneMix, m);
                 if (tone >= 0)
                     for (int s = 0; s < sources.Length; s++)
                     {
-                        Complex a = drv[s, tone][step];
+                        Complex a = drvAt(s, tone);
                         if (a == Complex.Zero) continue;
-                        var u = xu[s];
+                        var u = sg.Xu[s];
                         for (int r = 0; r < n; r++) x[r] += a * u[r];
                     }
-                var Y = pr.Neg ? Conj(Yc) : Yc;
+                var Y = pr.Neg ? Conj(sg.Y) : sg.Y;
                 var isrc = new Complex[N];
                 for (int a = 0; a < N; a++)
                 {
@@ -290,67 +292,100 @@ public sealed class EnvelopeEngineMt
                 iSrc[m] = isrc; yEff[m] = Y;
             }
             var qh = new Complex[N, M];
-            for (int a = 0; a < N; a++) for (int m = 0; m < M; m++) qh[a, m] = b1 * qm1[a, m] + b2 * qm2[a, m];
+            for (int a = 0; a < N; a++) for (int m = 0; m < M; m++) qh[a, m] = b1 * q1[a, m] + b2 * q2[a, m];
+
+            var accepted = nw.Solve(V, p.Tol, v =>
+            {
+                var (iNl, qNl, dg, dc) = HbNewtonNd.EvaluateNonlinearNd(v, apft, N, _nl, ifNodes);
+                var injNow = new Complex[N, M];
+                for (int a = 0; a < N; a++) for (int m = 0; m < M; m++) injNow[a, m] = iNl[a, m] + alpha * qNl[a, m] + qh[a, m];
+                return (HbNewtonNd.BuildFNd(v, yEff, iSrc, injNow, qNl, lat, N, tones), new StepEval(qNl, injNow, dg, dc));
+            }, e =>
+            {
+                var dgA = new double[e.Dg.Length][];
+                for (int i = 0; i < e.Dg.Length; i++)
+                {
+                    dgA[i] = new double[e.Dg[i].Length];
+                    for (int j = 0; j < e.Dg[i].Length; j++) dgA[i][j] = e.Dg[i][j] + alpha * e.Dc[i][j];
+                }
+                return HbNewtonNd.BuildJNd(yEff, dgA, e.Dc, apft, N, tones);
+            });
+            if (accepted is null) { qNow = null!; return null; }
+            qNow = accepted.Q;
+
+            for (int m = 0; m < M; m++)
+            {
+                var pr = prods[m];
+                var zc = stageOf(m).Zcol;
+                var x = xoc[m];
+                for (int j = 0; j < N; j++)
+                {
+                    Complex tot = accepted.Inj[j, m] + (m > 0 ? new Complex(0, wMix[m]) * qNow[j, m] : Complex.Zero);
+                    if (m == 0) tot = new Complex(tot.Real, 0);
+                    if (pr.Neg) tot = Complex.Conjugate(tot);
+                    var z = zc[j];
+                    for (int r = 0; r < x.Length; r++) x[r] -= z[r] * tot;
+                }
+            }
+            return xoc;
+        }
+
+        // A failed step retaken as split backward-Euler sub-steps, exactly as EnvelopeEngine.Run's own Split.
+        Complex[][] Split(int step, Complex[,] V, out Complex[,] qNow)
+        {
+            for (int sub = 2; sub <= EnvelopeEngine.MaxStepSplit; sub *= 2)
+            {
+                double aSub = sub / h;
+                var nw = new EnvelopeNewton(dof, stateRows);
+                var x = prods.Select(pr => pr.Xm1).ToArray();
+                var q = qm1;
+                var vs = (Complex[,])vHist[^1].Clone();
+                bool ok = true;
+                for (int i = 1; i <= sub && ok; i++)
+                {
+                    double f = (double)i / sub;
+                    var xn = Advance(nw, aSub, -aSub, 0.0, m => SplitStage(prods[m], sub, aSub),
+                                     (s, t) => drv[s, t][step - 1] + f * (drv[s, t][step] - drv[s, t][step - 1]),
+                                     x, x, q, q, vs, out var qn);
+                    if (xn is null) ok = false;
+                    else { x = xn; q = qn; }
+                }
+                if (!ok) continue;
+                Array.Copy(vs, V, V.Length);
+                newton.Invalidate();                        // built at the failed full step's last iterate
+                splitSteps++; finestSplit = Math.Max(finestSplit, sub);
+                qNow = q;
+                return x;
+            }
+            throw new InvalidOperationException(
+                $"envelope step {step} (t = {p.StartS + (step - nWarm) * h:G4} s) did not converge, even split into {EnvelopeEngine.MaxStepSplit} sub-steps");
+        }
+
+        EnvelopeEngine.Stage SplitStage(Prod pr, int sub, double aSub)
+        {
+            if (!pr.Split.TryGetValue(sub, out var sg))
+                pr.Split[sub] = sg = EnvelopeEngine.Stage.Of(
+                    EnvelopeEngine.Prepare(pr.A0, pr.C, Math.Abs(pr.W), aSub, ifNodes, pr.BStatic, pr.BUnit));
+            return sg;
+        }
+
+        for (int step = 1; step < total; step++)
+        {
+            if ((step & 1023) == 0) control?.ThrowIfCancellationRequested();
+            bool be = step == 1;
+            double alpha = be ? aBe : aG2, b1 = be ? -aBe : b1G2, b2 = be ? 0.0 : b2G2;
+            if (step <= 2) newton.Invalidate();
             if (vHist.Count >= 3)
             {
                 var v1 = vHist[^1]; var v2 = vHist[^2]; var v3 = vHist[^3];
                 for (int a = 0; a < N; a++) for (int m = 0; m < M; m++) V[a, m] = 3 * v1[a, m] - 3 * v2[a, m] + v3[a, m];
             }
 
-            Complex[,] qNow = null!, inj = null!;
-            double r0 = double.NaN; bool ok = false, freshJ = false;
-            for (int it = 0; it < 50; it++)
-            {
-                var (iNl, qNl, dg, dc) = HbNewtonNd.EvaluateNonlinearNd(V, apft, N, _nl, ifNodes);
-                var injNow = new Complex[N, M];
-                for (int a = 0; a < N; a++) for (int m = 0; m < M; m++) injNow[a, m] = iNl[a, m] + alpha * qNl[a, m] + qh[a, m];
-                var F = HbNewtonNd.BuildFNd(V, yEff, iSrc, injNow, qNl, lat, N, tones);
-                double rn = 0; foreach (var fv in F) rn = Math.Max(rn, Math.Abs(fv));
-                // Stall accepted only after a FRESH-Jacobian update (see EnvelopeEngine): a stalled chord
-                // iteration rebuilds the Jacobian instead of accepting an unconverged step.
-                if (rn < p.Tol || (freshJ && !double.IsNaN(r0) && rn < 1e2 * p.Tol && rn > 0.5 * r0))
-                { qNow = qNl; inj = injNow; ok = true; newtonIters += it; break; }
-                freshJ = false;
-                if (lu is null || (!double.IsNaN(r0) && rn > 0.25 * r0))
-                {
-                    freshJ = true;
-                    var dgA = new double[dg.Length][];
-                    for (int i = 0; i < dg.Length; i++)
-                    {
-                        dgA[i] = new double[dg[i].Length];
-                        for (int j = 0; j < dg[i].Length; j++) dgA[i][j] = dg[i][j] + alpha * dc[i][j];
-                    }
-                    var J = HbNewtonNd.BuildJNd(yEff, dgA, dc, apft, N, tones);
-                    lu = DenseLu.Factor(J, dof) ?? throw new InvalidOperationException($"envelope step {step}: singular Jacobian");
-                    jacBuilds++;
-                }
-                for (int i = 0; i < dof; i++) F[i] = -F[i];
-                lu.Solve(F);
-                for (int a = 0; a < N; a++)
-                    for (int m = 0; m < M; m++)
-                    {
-                        int ir = 2 * (a * M + m);
-                        V[a, m] += new Complex(F[ir], m == 0 ? 0 : F[ir + 1]);
-                    }
-                r0 = rn;
-            }
-            if (!ok) throw new InvalidOperationException($"envelope step {step} (t = {(step - nWarm) * h:G4} s) did not converge");
-
-            for (int m = 0; m < M; m++)
-            {
-                var pr = prods[m];
-                var zc = be ? pr.ZBe : pr.ZG2;
-                var x = xoc[m];
-                for (int j = 0; j < N; j++)
-                {
-                    Complex tot = inj[j, m] + (m > 0 ? new Complex(0, wMix[m]) * qNow[j, m] : Complex.Zero);
-                    if (m == 0) tot = new Complex(tot.Real, 0);
-                    if (pr.Neg) tot = Complex.Conjugate(tot);
-                    var z = zc[j];
-                    for (int r = 0; r < x.Length; r++) x[r] -= z[r] * tot;
-                }
-                pr.Xm2 = pr.Xm1; pr.Xm1 = x;
-            }
+            var xNew = Advance(newton, alpha, b1, b2, m => be ? prods[m].Be : prods[m].G2, (s, t) => drv[s, t][step],
+                               prods.Select(pr => pr.Xm1).ToArray(), prods.Select(pr => pr.Xm2).ToArray(), qm1, qm2, V,
+                               out var qNow)
+                       ?? Split(step, V, out qNow);
+            for (int m = 0; m < M; m++) { prods[m].Xm2 = prods[m].Xm1; prods[m].Xm1 = xNew[m]; }
             qm2 = qm1; qm1 = qNow;
             vHist.Add((Complex[,])V.Clone()); if (vHist.Count > 3) vHist.RemoveAt(0);
             Record(step);
@@ -366,19 +401,22 @@ public sealed class EnvelopeEngineMt
                 carOff.Add(sources[s].FcHz + cr.OffsetHz - tones[t]);
                 carLab.Add($"{sources[s].InstanceName}:{cr.Spec.Label} @ {(sources[s].FcHz + cr.OffsetHz) / 1e9:0.####} GHz");
             }
-        return new EnvelopeRunResult
+        var res = new EnvelopeRunResult
         {
             Time = tOut, ProbeNames = probes.Select(x => x.name).ToArray(), Probe = pOut,
             SupplyNames = Array.Empty<string>(), SupplyCurrent = Enumerable.Range(0, nSteps + 1).Select(_ => Array.Empty<double>()).ToArray(),
             SupplyVoltage = Array.Empty<double>(), Drive = dOut, DriveRe = sources.Select(s => s.Z.Real).ToArray(),
             F0Hz = tones[0], StepS = h, MaxHarm = M - 1, SignalRateHz = rate, Sources = sources,
-            WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = (double)newtonIters / Math.Max(1, total - 1), JacobianBuilds = jacBuilds,
+            WallSeconds = sw.Elapsed.TotalSeconds, MeanNewton = (double)newton.Iterations / Math.Max(1, total - 1), JacobianBuilds = newton.JacobianBuilds,
             WorstTangentError = tanErrWorst, SnpFits = snpFit.Reports,
             CarrierMix = carMix.ToArray(), CarrierOffsetHz = carOff.ToArray(), CarrierLabels = carLab.ToArray(),
             ToneFreqsHz = tones, MixLabels = Enumerable.Range(0, M).Select(m => lat.Label(m)).ToArray(),
             MixFreqHz = wMix.Select(w => w / (2 * Math.PI)).ToArray(),
             MixTones = Enumerable.Range(0, M).Select(m => lat.ToneOf(m)).ToArray(),
         };
+        if (splitSteps > 0)
+            res.Notes.Add($"envelope: {splitSteps} step(s) did not converge at the full step and were retaken as up to {finestSplit} sub-steps");
+        return res;
     }
 
     private static Complex[,] Conj(Complex[,] a)
