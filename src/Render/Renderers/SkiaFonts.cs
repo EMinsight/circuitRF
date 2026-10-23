@@ -106,8 +106,16 @@ internal static class SkiaFonts
 
     internal static SKTypeface RealPlexRegular  => _plexRegular.Value;
     internal static SKTypeface RealPlexBold     => _plexBold.Value;
+    internal static SKTypeface RealPlexSemiBold => _plexSemiBold.Value;
     internal static SKTypeface RealPlexItalic   => _plexItalic.Value;
     internal static SKTypeface RealPlexLight    => _plexLight.Value;
+
+    // SvgTextOutliner, a third caller: it turns an SVG's text into the glyphs of the face the run names, which is the
+    // shipped face whatever a test has substituted — a substituted face writes a different family name, which it leaves as text.
+    internal static SKTypeface RealDejaVuRegular     => _dejaVuRegular.Value;
+    internal static SKTypeface RealDejaVuBold        => _dejaVuBold.Value;
+    internal static SKTypeface RealDejaVuOblique     => _dejaVuOblique.Value;
+    internal static SKTypeface RealDejaVuBoldOblique => _dejaVuBoldOblique.Value;
 
     /// <summary>The face <see cref="Load"/> produces for <paramref name="assetRelativePath"/>,
     /// ignoring <see cref="TestOverrideTypeface"/> — see the note above. Reads the resource each

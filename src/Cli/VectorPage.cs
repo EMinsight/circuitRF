@@ -59,6 +59,24 @@ internal static class VectorPage
                 Encoding.UTF8.GetString(stream.DetachAsData().ToArray())));
     }
 
+    /// <summary>
+    /// <c>--outline-text</c>: an SVG page's text as glyph outlines, through <see cref="SvgTextOutliner"/>,
+    /// so the file draws the same in a viewer that does not have IBM Plex Sans. Shared by <c>render</c>
+    /// and <c>plot</c> for this file's own reason — one encoder, not two that drift. A family the
+    /// outliner cannot resolve to an embedded face stays as text and is reported as a note, once each.
+    /// </summary>
+    internal static byte[] OutlineText(byte[] svg, string verb)
+    {
+        string outlined = SvgTextOutliner.Outline(Encoding.UTF8.GetString(svg), out var unresolved);
+        foreach (var family in unresolved)
+        {
+            var d = CliDiagnostics.OutlineTextUnresolved(verb, family);
+            Console.Error.WriteLine("warning: " + d.Render());
+            JsonRun.Note(d);
+        }
+        return Encoding.UTF8.GetBytes(outlined);
+    }
+
     /// <summary>A raster page, in device pixels.</summary>
     /// <remarks>The bitmap arrives already zero-initialised because <c>LayoutRenderer</c> never
     /// <c>Clear</c>s (see its header) — which is what makes a transparent background mean

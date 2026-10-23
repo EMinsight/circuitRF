@@ -43,7 +43,11 @@ internal static class RenderDataDisplay
         /// <summary>Null when --background was not typed: the display then takes the application's
         /// own export default, which is what §5.1's byte-identity gate compares against.</summary>
         bool?        Transparent,
-        bool         Dark);
+        bool         Dark,
+        /// <summary><c>--outline-text</c> (svg only, refused on the others before this is reached).</summary>
+        bool         OutlineText = false,
+        /// <summary>Which verb asked, for the warning a family left as text produces.</summary>
+        string       Verb = "render");
 
     public static int Draw(string path, Request req)
     {
@@ -302,6 +306,9 @@ internal static class RenderDataDisplay
                                                     PlotDocumentWriter.PdfTitleFor(req.Output)),
             "png"
                 => PlotDocumentWriter.BuildPngBytes(PageRender(pages[0]), page, (float)req.Scale) ?? [],
+            _ when req.OutlineText
+                => VectorPage.OutlineText(new UTF8Encoding(false).GetBytes(
+                       PlotDocumentWriter.BuildSvgString(PageRender(pages[0]), page)), req.Verb),
             _
                 => new UTF8Encoding(false).GetBytes(
                        PlotDocumentWriter.BuildSvgString(PageRender(pages[0]), page)),

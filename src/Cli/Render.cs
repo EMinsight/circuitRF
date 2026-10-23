@@ -98,6 +98,10 @@ internal static class Render
         public bool         BackgroundStated;
         public bool         Grid;
         public bool         NoRulers;
+        /// <summary><c>--outline-text</c>: an SVG's text written as glyph outlines rather than live
+        /// <c>&lt;text&gt;</c>, so a viewer without IBM Plex Sans draws it as circuitRF did instead of
+        /// substituting a face of its own (see <see cref="SvgTextOutliner"/>). svg only.</summary>
+        public bool         OutlineText;
 
         // ── .cdd only (RND-4) ────────────────────────────────────────────────
         /// <summary>Files bound with <c>--data</c>, in the order given. R-rnd4-4: the FIRST binds the
@@ -173,6 +177,11 @@ internal static class Render
 
         if (o.Output is not null && ResolveFormat(o) is { } formatRefusal) return formatRefusal;
 
+        // Before any document is read, and on every kind alike: a PDF already embeds its fonts and a PNG
+        // has no text, so the flag would silently do nothing there.
+        if (o.OutlineText && o.Format is not Format.Svg)
+            return JsonRun.Fail(CliDiagnostics.OutlineTextNotSvg("render", o.Format == Format.Pdf ? "pdf" : "png"));
+
         // brief-em3d-110 — a realistic picture's own options, refused rather than ignored on any other picture
         if (!o.Realistic && (o.LookSet.Count > 0 || o.Supersample is not null))
             return JsonRun.Fail(CliDiagnostics.RenderLookOptionNeedsRealistic(o.LookSet.Count > 0 ? "--look-set" : "--supersample"));
@@ -204,6 +213,7 @@ internal static class Render
             "                        [--layer-colors name=#rrggbb,...] [--detail full|screen|<px>]\n" +
             "                        [--theme name|file.ccolor] [--variant light|dark]\n" +
             "                        [--background opaque|transparent] [--grid] [--no-rulers]\n" +
+            "                        [--outline-text] (svg: text as glyph outlines, so no viewer substitutes a font)\n" +
             "  a .cdd adds:          [--data file]... [--tab name|n] [--plot n] [--all-tabs]\n" +
             "  a 3D .cem takes:      --section z=<len> | --section xz@y=<len> | --section yz@x=<len> | --iso\n" +
             "                        [--axes] [--scale-bar]\n" +
@@ -346,6 +356,7 @@ internal static class Render
                     continue;
                 case "--grid":      o.Grid = true;     continue;
                 case "--no-rulers": o.NoRulers = true; continue;
+                case "--outline-text": o.OutlineText = true; continue;
 
                 // ── .cdd only (RND-4) ─────────────────────────────────────────
                 case "--data" when i + 1 < args.Length: o.Data.Add(args[++i]); continue;
@@ -600,7 +611,8 @@ internal static class Render
                 o.Data, o.Tab, o.PlotIndex, o.AllTabs,
                 o.SizeStated ? o.Width  : null,
                 o.SizeStated ? o.Height : null,
-                o.Scale, o.BackgroundStated ? o.Transparent : null, o.Variant == ColorVariant.Dark));
+                o.Scale, o.BackgroundStated ? o.Transparent : null, o.Variant == ColorVariant.Dark,
+                o.OutlineText));
         }
 
         var (target, refusal) = ResolveTarget(o);
@@ -1488,7 +1500,8 @@ internal static class Render
     {
         Format.Pdf => VectorPage.Pdf(pxW, pxH, draw),
         Format.Png => VectorPage.Png(pxW, pxH, draw),
-        _          => VectorPage.Svg(pxW, pxH, draw),
+        _          => o.OutlineText ? VectorPage.OutlineText(VectorPage.Svg(pxW, pxH, draw), "render")
+                                        : VectorPage.Svg(pxW, pxH, draw),
     };
 
     private static int Publish(

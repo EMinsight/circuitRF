@@ -140,6 +140,8 @@ internal static class PlotVerb
         public string?         ScaleOption;
         public bool?           Transparent;
         public bool            Dark;
+        /// <summary><c>--outline-text</c>, as <c>render</c> spells it: svg text as glyph outlines.</summary>
+        public bool            OutlineText;
         public string?         WriteCdd;
         public bool?           SpecLines;   // null = the default, on where the result records goals
 
@@ -200,6 +202,9 @@ internal static class PlotVerb
 
         if (o.ScaleOption is not null && format != "png")
             return JsonRun.Fail(CliDiagnostics.PlotScaleOnVector(o.ScaleOption, format));
+
+        if (o.OutlineText && format != "svg")
+            return JsonRun.Fail(CliDiagnostics.OutlineTextNotSvg("plot", format));
 
         if (o.Traces.Count == 0)
         {
@@ -345,7 +350,7 @@ internal static class PlotVerb
         // beside it) and the bound --data, which is how `render --data` binds the same file.
         var request = new RenderDataDisplay.Request(
             o.Output, format, [o.Result], Tab: null, PlotIndex: null, AllTabs: false,
-            o.Width, o.Height, o.Scale, o.Transparent, o.Dark);
+            o.Width, o.Height, o.Scale, o.Transparent, o.Dark, o.OutlineText, Verb: "plot");
 
         return RenderDataDisplay.Draw(o.Result, config, request, reportKind: "result");
     }
@@ -359,6 +364,7 @@ internal static class PlotVerb
             "                     [--x lo:hi] [--y lo:hi] [--y2 lo:hi]\n" +
             "                     [--size WxH] [--scale n | --dpi n] [--variant light|dark]\n" +
             "                     [--background opaque|transparent] [--write-cdd out.cdd]\n" +
+            "                     [--outline-text] (svg: text as glyph outlines, so no viewer substitutes a font)\n" +
             "                     [--radial linear|db] [--db-floor -40] [--db-ring 10]\n" +
             "                     [--db-ref peak|<dB>] [--db-unit dBi]\n" +
             "  a trace spec is comma-separated key=value: cube=S i=2 j=1 y=db20 axis=left|right\n" +
@@ -495,6 +501,7 @@ internal static class PlotVerb
                         default: return JsonRun.Fail(CliDiagnostics.PlotUnknownBackground(args[i]));
                     }
                     continue;
+                case "--outline-text": o.OutlineText = true; continue;
 
                 case "--radial" when i + 1 < args.Length:
                     o.DbOptions.Add(a);

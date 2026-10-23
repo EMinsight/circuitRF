@@ -924,6 +924,10 @@ internal static class ToolCatalog
                         new("grid", "--grid", OptKind.Flag, "Draw the grid. Off by default, as every export is."),
                         new("noRulers", "--no-rulers", OptKind.Flag,
                             "Leave the rulers out. They are on by default because a ruler is in the document."),
+                        new("outlineText", "--outline-text", OptKind.Flag,
+                            "svg only: write the text as glyph outlines instead of live text, so a viewer or importer "
+                          + "without IBM Plex Sans draws the letters circuitRF drew rather than substituting a font. "
+                          + "The text is no longer editable as text. Refused on png and pdf."),
 
                         // The .cdd half (RND-4). Options of the one verb, not a second tool: a data
                         // display is a document kind like the other three.
@@ -1091,6 +1095,8 @@ internal static class ToolCatalog
                             "png only: the same multiplier spelled relative to 96 dpi."),
                         new("variant", "--variant", OptKind.Str, "light or dark. Default light."),
                         new("background", "--background", OptKind.Str, "opaque or transparent."),
+                        new("outlineText", "--outline-text", OptKind.Flag,
+                            "svg only: the text as glyph outlines, as render spells it. Refused on png and pdf."),
                         new("writeCdd", "--write-cdd", OptKind.Path,
                             "Also write the data display this drew, so you can edit it and go on with render."),
                     ],

@@ -5274,3 +5274,21 @@ original pixels. Traces under 20,000 points take the original per-point path unc
 
 The single-point dot added earlier the same day now uses its own plain fill paint. `DashSafeShapesTests`
 caught the dash-capable stroke paint reaching `DrawCircle`.
+
+## SVG text drew in a substituted font outside circuitRF: `--outline-text` (2026-10-23)
+
+An SVG written by `render` or `plot` and opened in a browser or another tool showed its labels in a serif
+whenever IBM Plex Sans was not installed there. Skia's SVG device writes live `<text font-family="IBM Plex
+Sans">`, and a viewer without the family substitutes one silently, so the file looked right only on machines
+that happened to have the font. Reproduced in WebKit on a Mac without Plex installed.
+
+- **No Skia flag to use.** Skia's SVG canvas can convert text to paths (`kConvertTextToPaths_Flag`), but
+  SkiaSharp 3.119.4 exposes only `SKSvgCanvas.Create(bounds, stream)`, and the native library exports only the
+  flagless `sk_svgcanvas_create_with_stream` (checked with `nm`). So `SvgTextOutliner` converts the finished
+  document instead, as `SvgFontNormalizer` repairs it.
+- **Embedding the font (`@font-face` with the TTF inline) was tried first and fixes browsers**, but importers
+  that ignore `@font-face` still substitute. Outlines need nothing from the viewer, so that is what the flag does.
+- **Faces come from `SkiaFonts`' real embedded faces**, not the test-override face: a run drawn in an
+  overridden face carries that face's family name, which does not resolve, so it stays as text.
+- **Outlined vs live text through one rasteriser** differs only by a hairline of antialiasing around every glyph
+  (outline fill against hinted glyph raster), with no displacement.

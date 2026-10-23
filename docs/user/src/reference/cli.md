@@ -1879,6 +1879,16 @@ you check an override landed — a colour change is the one thing a picture alon
 | `--background` | `opaque` or `transparent`. Default `opaque`. |
 | `--grid` | Draw the grid. Off by default, as every export is. |
 | `--no-rulers` | Leave the rulers out. |
+| `--outline-text` | `.svg` only: write every label as glyph outlines instead of live text. Refused on `.png` and `.pdf`. |
+
+**`--outline-text` is for an SVG that leaves circuitRF.** By default an SVG's labels are live text that
+names IBM Plex Sans. A browser, vector editor or animation tool that does not have that font installed
+quietly substitutes another (usually a serif), with different letter shapes and widths and no warning.
+With `--outline-text` each letter is written as the outline of the glyph circuitRF drew, at the same
+position, so the file looks identical in any viewer. Nothing else in the file changes. The cost is that
+the text can no longer be edited or searched as text, and the file is larger. Text in a face circuitRF
+does not ship (a platform font used for a symbol neither shipped font covers) stays as text, with a
+warning naming the face. A PDF already embeds its fonts and a PNG has no text, so neither needs it.
 
 **Rulers are on by default and everything else is off.** A ruler is *document content* — it is in the
 `.clay` and the layout editor treats it that way — so an export that dropped it would be showing you a
@@ -2699,6 +2709,7 @@ from. A cube the file does not hold is refused, listing the ones it does.
 | `--x lo:hi`, `--y lo:hi`, `--y2 lo:hi` | Axis windows. An axis you leave out autoscales. Refused on a Smith or Polar chart, whose window is the complex plane. |
 | `--size WxH`, `--scale`, `--dpi` | The page. Default 792×612 points — the same page **File ▸ Export** writes. `--scale`/`--dpi` are `.png` only. |
 | `--variant light\|dark`, `--background opaque\|transparent` | As `render`. |
+| `--outline-text` | `.svg` only: labels as glyph outlines, so no viewer substitutes a font. As [`render`](#render). |
 | `--radial linear\|db` | How a **polar** plot's radius is read. `db` makes it an antenna pattern plot. Refused on any other `--type`. |
 | `--db-floor <dB>` | The centre of a `db` plot, **relative to the outer ring**. Default −40. |
 | `--db-ring <dB>` | Ring spacing. Default 10. |

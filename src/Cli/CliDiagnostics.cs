@@ -2706,6 +2706,21 @@ internal static class CliDiagnostics
         "render: {option} is a raster multiplier and {format} has no pixels to multiply. Use --size "
       + "to change a vector page.", ("option", option), ("format", format));
 
+    /// <summary><c>--outline-text</c> on a format with no live text to outline: a PDF embeds its fonts
+    /// and a PNG is pixels. Refused rather than ignored, so a caller never believes it outlined something.</summary>
+    public static Diagnostic OutlineTextNotSvg(string verb, string format) => Diagnostic.Create(
+        verb + ".outline-text.not-svg", DiagnosticSeverity.Error,
+        "{verb}: --outline-text applies to svg only; {format} {why}.",
+        ("verb", verb), ("format", format),
+        ("why", format == "pdf" ? "already embeds its fonts" : "has no text to outline"));
+
+    /// <summary>A text run whose family is not a face circuitRF embeds, so it was left as live text.</summary>
+    public static Diagnostic OutlineTextUnresolved(string verb, string family) => Diagnostic.Create(
+        verb + ".outline-text.unresolved", DiagnosticSeverity.Warning,
+        "{verb}: --outline-text left text in '{family}' as text: it is not a face circuitRF embeds, so a viewer "
+      + "without that font will substitute one.",
+        ("verb", verb), ("family", family.Length == 0 ? "(no family)" : family));
+
     public static Diagnostic RenderScaleAndDpi() => new(
         "render.scale.conflict", DiagnosticSeverity.Error,
         "render: --scale and --dpi are two spellings of one number (--dpi is relative to 96). Pass one.");

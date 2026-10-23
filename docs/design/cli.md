@@ -1973,7 +1973,20 @@ across frames — which is what every existing export already passes.
 --layer-colors <name=#rrggbb[aa],...>   how a layer draws, for this render only. Repeatable.
 --theme <name|path.ccolor>   --variant light|dark   --background opaque|transparent
 --grid                   default off      --no-rulers   default: whatever the document says
+--outline-text           svg only: text as glyph outlines (also on plot); refused on png and pdf
 ```
+
+**`--outline-text` replaces each `<text>` with the outlines of the glyphs it names**
+(`SvgTextOutliner`, in `src/Render`, beside `SvgFontNormalizer`). Skia's SVG device writes live
+`<text font-family="IBM Plex Sans">`, and a viewer without that family substitutes a face of its own
+without a word: the defect is invisible on the machine that wrote the file. Skia's own SVG canvas has a
+convert-text-to-paths flag, but SkiaSharp 3.119 exposes only the flagless
+`sk_svgcanvas_create_with_stream`, so the conversion runs on the finished document, as the font repairs
+do. Each run's face is resolved through `SvgFontNormalizer.Resolve` to an embedded face, and each glyph
+comes from `SKFont.GetGlyphPath` at the x Skia wrote for it. **A family that is not embedded stays as
+text and is a warning, never a guess.** Every other attribute moves to the replacement `<g>`, so outside
+the text the file is byte-identical to the plain one, and the gate (`OutlineTextTests`) checks exactly
+that. It is refused on png and pdf rather than ignored: a PDF already embeds its fonts.
 
 The default is **every layer**. A `.ctech` carries no visibility (brief-layout-layers-panel.md): which
 layers a layout shows is each user's own view state, kept in the `.cwsuser`, so a headless picture never

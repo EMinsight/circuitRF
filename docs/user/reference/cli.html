@@ -2621,8 +2621,20 @@ you check an override landed — a colour change is the one thing a picture alon
 <td><code>--no-rulers</code></td>
 <td>Leave the rulers out.</td>
 </tr>
+<tr>
+<td><code>--outline-text</code></td>
+<td><code>.svg</code> only: write every label as glyph outlines instead of live text. Refused on <code>.png</code> and <code>.pdf</code>.</td>
+</tr>
 </tbody>
 </table>
+<p><strong><code>--outline-text</code> is for an SVG that leaves circuitRF.</strong> By default an SVG's labels are live text that
+names IBM Plex Sans. A browser, vector editor or animation tool that does not have that font installed
+quietly substitutes another (usually a serif), with different letter shapes and widths and no warning.
+With <code>--outline-text</code> each letter is written as the outline of the glyph circuitRF drew, at the same
+position, so the file looks identical in any viewer. Nothing else in the file changes. The cost is that
+the text can no longer be edited or searched as text, and the file is larger. Text in a face circuitRF
+does not ship (a platform font used for a symbol neither shipped font covers) stays as text, with a
+warning naming the face. A PDF already embeds its fonts and a PNG has no text, so neither needs it.</p>
 <p><strong>Rulers are on by default and everything else is off.</strong> A ruler is <em>document content</em> — it is in the
 <code>.clay</code> and the layout editor treats it that way — so an export that dropped it would be showing you a
 different document. Selection chrome, handles, the marquee, PCell pin overlays, snap glyphs and the
@@ -3376,6 +3388,10 @@ from. A cube the file does not hold is refused, listing the ones it does.</p>
 <tr>
 <td><code>--variant light\|dark</code>, <code>--background opaque\|transparent</code></td>
 <td>As <code>render</code>.</td>
+</tr>
+<tr>
+<td><code>--outline-text</code></td>
+<td><code>.svg</code> only: labels as glyph outlines, so no viewer substitutes a font. As <a href="#render"><code>render</code></a>.</td>
 </tr>
 <tr>
 <td><code>--radial linear\|db</code></td>
