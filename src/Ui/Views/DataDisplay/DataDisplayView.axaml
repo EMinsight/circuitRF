@@ -270,6 +270,10 @@
                             <Setter Property="Padding" Value="5,2,2,2"/>
                             <Setter Property="VerticalContentAlignment" Value="Center"/>
                         </Style>
+                        <!-- The selection pipe shares the header's Panel; see SettingsView.axaml. -->
+                        <Style Selector="TabItem /template/ ContentPresenter#PART_ContentPresenter">
+                            <Setter Property="Margin" Value="0,0,0,5"/>
+                        </Style>
                     </TabControl.Styles>
 
                     <TabControl.ItemTemplate>
