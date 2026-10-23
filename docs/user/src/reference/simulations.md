@@ -180,6 +180,39 @@ Three things make long modulated runs practical:
 fundamentals). A [Parametric Sweep](#parametric-sweep) around an envelope analysis (sweeping the
 source's `Pavg`, say) gives ACPR against output power in one run.
 
+### How the power and efficiency scalars are calculated {#envelope-power}
+
+`Pin_avg_dBm`, `Pout_avg_dBm`, `Gt_dB`, `Pdc_W` and `DE_pct` are calculated for convenience, as a
+quick first look at a modulated run. Each one is a time average over the measured record (after the
+warm-up), and each rests on the simplifications below. Check them against your circuit before
+relying on the numbers.
+
+| Scalar | How it is calculated |
+|---|---|
+| `Pin_avg_dBm` | The **available** power of the drive: the mean of \|V<sub>drive</sub>(t)\|² / (8 · Re Z<sub>source</sub>), where V<sub>drive</sub> is the source's open-circuit envelope. This is not the power delivered into the input. |
+| `Pout_avg_dBm` | The **fundamental-band** power at the **last node listed in Probes**: the mean of \|V<sub>1</sub>(t)\|² / (2 · Zmeas), where V<sub>1</sub> is that node's carrier envelope. Everything inside that envelope counts, including the adjacent-channel and distortion power. Power at 2f₀, 3f₀ … does not. |
+| `Gt_dB` | `Pout_avg` / `Pin_avg`: transducer gain from available input power. |
+| `Pdc_W` | The sum over **every DC source with a non-zero `Vdc`** of −Vdc · ⟨I<sub>dc</sub>(t)⟩, where I<sub>dc</sub>(t) is that source's DC branch current at each envelope step. The current follows the modulation, so this is the true average supply power. |
+| `DE_pct` | 100 · `Pout_avg` / `Pdc`: average drain efficiency in the fundamental band. NaN when no DC power is drawn. |
+
+Things to keep in mind:
+
+- **Pout is taken from the probe's voltage, not from the current into the load.** It is exact only
+  when the last probe node is loaded by a resistance equal to `Zmeas`. With a different load, or a
+  probe placed before the output match, `Pout_avg_dBm`, `Gt_dB` and `DE_pct` are wrong by the
+  mismatch.
+- **The output is the last node listed in Probes.** `Probes = Vin,Vout` measures Pout at `Vout`,
+  but `Probes = Vout,Vin` measures it at `Vin`, and the gain and efficiency are then wrong.
+- **An empty Probes setting probes only the MOD_Source's node.** That node is then the output, so
+  `Pout_avg_dBm`, `Gt_dB` and `DE_pct` describe the input side. List the output node last in Probes
+  whenever you read these scalars.
+- **Every non-zero DC source counts toward Pdc**, gate and auxiliary supplies included. A gate supply
+  that draws no current adds nothing. A bias divider or other resistive bias network adds its own
+  dissipation, which lowers `DE_pct`.
+- **No PAE is reported.** PAE needs the power delivered into the input, and `Pin_avg_dBm` is the
+  available power.
+- **With two fundamentals** (carriers on the mixing lattice), `Pdc_W` and `DE_pct` are not produced.
+
 From the command line: `circuitrf env design.cnl [--stop 0.5e-3] [--accuracy standard] [-o out.npy]`.
 
 ## Parametric Sweep {#parametric-sweep}

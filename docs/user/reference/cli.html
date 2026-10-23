@@ -2238,6 +2238,10 @@ otherwise.</li>
 <td>glTF export: the Export glTF dialog's choices. See <a href="#convert-gltf">glTF</a>.</td>
 </tr>
 <tr>
+<td><code>--arc-tolerance &lt;len&gt;</code></td>
+<td>A Gerber source: how far a chord may stray from an arc where a curve has to become a polyline, with its unit, from <code>1nm</code> to <code>100um</code>. Default <code>1um</code>, the same as <strong>Settings ▸ General ▸ Gerber Import</strong>. A bare number is refused.</td>
+</tr>
+<tr>
 <td><code>--open-archives</code></td>
 <td>Look inside an archive when a Gerber folder holds no artwork of its own. It is unpacked to a temporary folder, imported from there, and deleted again; nothing is added to the folder you named. Without this flag, such a folder is a refusal that names the flag.</td>
 </tr>

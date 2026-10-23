@@ -241,6 +241,59 @@ where ACPR2 and the bias-node memory are converged on every measured case. <em>d
 <code>NMSE_dB</code>, <code>Pdc_W</code>, <code>DE_pct</code>, and the probe envelopes <code>V[time, node, harmonic]</code> (or <code>mixIndex</code> with two
 fundamentals). A <a href="#parametric-sweep">Parametric Sweep</a> around an envelope analysis (sweeping the
 source's <code>Pavg</code>, say) gives ACPR against output power in one run.</p>
+<h3 id="envelope-power">How the power and efficiency scalars are calculated</h3>
+<p><code>Pin_avg_dBm</code>, <code>Pout_avg_dBm</code>, <code>Gt_dB</code>, <code>Pdc_W</code> and <code>DE_pct</code> are calculated for convenience, as a
+quick first look at a modulated run. Each one is a time average over the measured record (after the
+warm-up), and each rests on the simplifications below. Check them against your circuit before
+relying on the numbers.</p>
+<table>
+<thead>
+<tr>
+<th>Scalar</th>
+<th>How it is calculated</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Pin_avg_dBm</code></td>
+<td>The <strong>available</strong> power of the drive: the mean of |V<sub>drive</sub>(t)|² / (8 · Re Z<sub>source</sub>), where V<sub>drive</sub> is the source's open-circuit envelope. This is not the power delivered into the input.</td>
+</tr>
+<tr>
+<td><code>Pout_avg_dBm</code></td>
+<td>The <strong>fundamental-band</strong> power at the <strong>last node listed in Probes</strong>: the mean of |V<sub>1</sub>(t)|² / (2 · Zmeas), where V<sub>1</sub> is that node's carrier envelope. Everything inside that envelope counts, including the adjacent-channel and distortion power. Power at 2f₀, 3f₀ … does not.</td>
+</tr>
+<tr>
+<td><code>Gt_dB</code></td>
+<td><code>Pout_avg</code> / <code>Pin_avg</code>: transducer gain from available input power.</td>
+</tr>
+<tr>
+<td><code>Pdc_W</code></td>
+<td>The sum over <strong>every DC source with a non-zero <code>Vdc</code></strong> of −Vdc · ⟨I<sub>dc</sub>(t)⟩, where I<sub>dc</sub>(t) is that source's DC branch current at each envelope step. The current follows the modulation, so this is the true average supply power.</td>
+</tr>
+<tr>
+<td><code>DE_pct</code></td>
+<td>100 · <code>Pout_avg</code> / <code>Pdc</code>: average drain efficiency in the fundamental band. NaN when no DC power is drawn.</td>
+</tr>
+</tbody>
+</table>
+<p>Things to keep in mind:</p>
+<ul>
+<li><strong>Pout is taken from the probe's voltage, not from the current into the load.</strong> It is exact only
+when the last probe node is loaded by a resistance equal to <code>Zmeas</code>. With a different load, or a
+probe placed before the output match, <code>Pout_avg_dBm</code>, <code>Gt_dB</code> and <code>DE_pct</code> are wrong by the
+mismatch.</li>
+<li><strong>The output is the last node listed in Probes.</strong> <code>Probes = Vin,Vout</code> measures Pout at <code>Vout</code>,
+but <code>Probes = Vout,Vin</code> measures it at <code>Vin</code>, and the gain and efficiency are then wrong.</li>
+<li><strong>An empty Probes setting probes only the MOD_Source's node.</strong> That node is then the output, so
+<code>Pout_avg_dBm</code>, <code>Gt_dB</code> and <code>DE_pct</code> describe the input side. List the output node last in Probes
+whenever you read these scalars.</li>
+<li><strong>Every non-zero DC source counts toward Pdc</strong>, gate and auxiliary supplies included. A gate supply
+that draws no current adds nothing. A bias divider or other resistive bias network adds its own
+dissipation, which lowers <code>DE_pct</code>.</li>
+<li><strong>No PAE is reported.</strong> PAE needs the power delivered into the input, and <code>Pin_avg_dBm</code> is the
+available power.</li>
+<li><strong>With two fundamentals</strong> (carriers on the mixing lattice), <code>Pdc_W</code> and <code>DE_pct</code> are not produced.</li>
+</ul>
 <p>From the command line: <code>circuitrf env design.cnl [--stop 0.5e-3] [--accuracy standard] [-o out.npy]</code>.</p>
 <h2 id="parametric-sweep">Parametric Sweep</h2>
 <p><strong>Computes:</strong> nothing new on its own — it <em>wraps</em> another analysis and re-runs it across one or
