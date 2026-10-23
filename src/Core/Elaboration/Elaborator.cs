@@ -2442,7 +2442,7 @@ public sealed class Elaborator
     }
 
     // ── MOD_Source parameter resolution ──────────────────────────────────────
-    // Carrier[i] is a carrier DESCRIPTION ("NR;BW=20e6;SCS=30e3;..."), never an expression: stored
+    // Carrier[i] is a carrier DESCRIPTION ("NR;BW=20MHz;SCS=30kHz;..."), never an expression: stored
     // verbatim with its quotes removed. Shaping may be the word `off`. Everything else (Fc, Pavg, Z,
     // Record, Clip, Shaping in dBc) is an ordinary numeric expression with its unit.
 
@@ -2466,8 +2466,9 @@ public sealed class Elaborator
                 result[ov.Name] = new Value("off");
                 continue;
             }
-            try { result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit); }
-            catch { /* skip unresolvable — degrades gracefully, like P1Tone */ }
+            // Not skipped on failure, unlike P1Tone: a skipped Fc or Pavg fell back to a default and the
+            // run went ahead at a frequency or power nobody wrote. The evaluator's own error names the cause.
+            result[ov.Name] = _evaluator.Eval(ov.Expression, parentScope, ov.Unit);
         }
         return result;
     }

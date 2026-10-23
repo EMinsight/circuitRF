@@ -40317,3 +40317,29 @@ viewport (549 px), so no scroll bar, with ~100 px spare. Deliberately NOT pinned
 - Larger axis text on the four Designer plots (`Axes.FontSizeTicks` 9, against the default 6) needs wider margins. The
   margins (`Axes.Viewport`) are recomputed for the default font by every autoscale and every trace added
   (`Plot.SetAxesViewport`), so the Designer re-applies its own after each one; set once, they were silently reset.
+
+## Signal Designer: markers had no info box, no selection and no Delete (2026-10-22)
+
+The Designer hosts four bare `PlotControl`s, which makes the window their host, as the Match Designer is for its
+two. None of the host's duties were wired: marker providers, `MarkerAdded`/`PlotChanged`, an info-box layer, the
+click-away deselect and a Delete binding. A marker therefore appeared with no box. It could not be selected, since
+selection lives on the box, and so it could not be deleted. The fix is the Match Designer's wiring, with one info
+box layer per preview TAB, so a hidden tab's boxes hide with it.
+
+A second half only shows once boxes exist: every preview clears and rebuilds the traces, which dropped the
+markers on each edit. The boxes would also have been left pointing at discarded traces. `TakeMarkers`/`GiveMarkers`
+move each marker onto the new trace with the same expression, where a cube marker resolves to the nearest point of
+the new data. Each rebuild then calls `OnPlotChanged` on its container. Gate:
+`SignalDesignerTests.AMarker_SurvivesAPreview_WithItsInfoBox_AndDeletes`.
+
+### Signal Designer: clipping looked like no change on the CCDF; selecting a carrier shifted the layout
+
+- **The Gaussian reference was drawn on the signal's own dB axis**, so a signal clipped to 8 dB cut the
+  reference off at 8 dB as well. The autoscale then stretched both across the plot, and the picture barely changed.
+  The reference is the same curve whatever the signal: it now has its own axis, from 0 dB to the 1e-5 probability
+  the CCDF is measured to (about 10.6 dB). A clipped signal visibly stops short of it. Clipping is per carrier, so
+  a multi-carrier composite still peaks above the target; that part is the physics, not a display problem.
+- **A selected card's border went from 1 to 2 px**, which moved its contents by 1 px and everything below it by
+  2 px on every selection. That is 4 physical pixels on a 2x display, about 400 controls at once, measured with a
+  headless harness on real clicks. The selected style now takes the extra pixel back out of the padding, and the
+  same clicks move nothing.

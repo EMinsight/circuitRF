@@ -242,14 +242,14 @@
         },
         {
           "Name": "Carrier[1]",
-          "Expression": "\"NR;BW=20000000;SCS=30000;Mod=64QAM;Off=-200000000;P=0;Seed=1\"",
+          "Expression": "\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-200MHz;P=0;Seed=1\"",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"
         },
         {
           "Name": "Carrier[2]",
-          "Expression": "\"NR;BW=20000000;SCS=30000;Mod=64QAM;Off=200000000;P=0;Seed=2\"",
+          "Expression": "\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=200MHz;P=0;Seed=2\"",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"

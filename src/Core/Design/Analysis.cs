@@ -180,15 +180,7 @@ public sealed class SParameterAnalysis : Analysis
 }
 
 /// <summary>
-/// HB analysis directive (harmonic-balance.md §3.2).
-/// Key=value fields store raw expression strings (resolved later via ResolvedGlobals).
-///
-/// Two spellings — one model (harmonic-balance.md §3.2):
-///   Single-tone:  Tone=f0  MaxHarm=K
-///   Multi-tone:   NumFreqs=N  Tone[1]=f1 … Tone[N]=fN  MaxMixOrder=M  MaxHarm=K
-/// </summary>
-/// <summary>
-/// Circuit-envelope analysis directive (envelope.md). Every field is a raw expression/keyword string
+/// Circuit-envelope analysis directive (<c>type=env</c>). Every field is a raw expression/keyword string
 /// resolved at engine time, like <see cref="HarmonicBalanceAnalysis"/>. The modulated stimulus comes
 /// from the circuit's MOD_Source instances; the fundamental is the first source's centre frequency.
 /// </summary>
@@ -222,6 +214,14 @@ public sealed class EnvelopeAnalysis(string name) : Analysis(name)
     public string SaveWaveforms { get; init; } = "yes";
 }
 
+/// <summary>
+/// HB analysis directive (harmonic-balance.md §3.2).
+/// Key=value fields store raw expression strings (resolved later via ResolvedGlobals).
+///
+/// Two spellings — one model (harmonic-balance.md §3.2):
+///   Single-tone:  Tone=f0  MaxHarm=K
+///   Multi-tone:   NumFreqs=N  Tone[1]=f1 … Tone[N]=fN  MaxMixOrder=M  MaxHarm=K
+/// </summary>
 public sealed class HarmonicBalanceAnalysis(string name) : Analysis(name)
 {
     // Raw expression strings from the .cnl directive; resolved at engine time.

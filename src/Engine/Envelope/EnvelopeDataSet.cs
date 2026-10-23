@@ -272,19 +272,18 @@ public static class EnvelopeDataSet
                 }
                 // A FIXED absolute grid (AmGridLoDbm..AmGridHiDbm, 0.5 dB), the same at every sweep point: a
                 // data-dependent grid made a swept AM-AM stack every point against the FIRST point's axis.
-                // A bin with fewer than AmMinSamples samples is NaN (plots skip it) rather than noise.
+                // A bin with fewer than AmMinSamples samples is NaN (plots skip it) rather than noise. The cubes are
+                // emitted at EVERY point, however few bins hold data: a sweep point without them (a CW drive fills one
+                // bin) could not be stacked against the others, and the whole sweep was refused.
                 int b0 = (int)Math.Round(AmGridLoDbm / 0.5), b1 = (int)Math.Round(AmGridHiDbm / 0.5);
-                if (bins.Count(kv => kv.Value.n >= AmMinSamples) > 1)
-                {
-                    int nb = b1 - b0;
-                    var pinAxis = new Axis("Pin_inst", Enumerable.Range(b0, nb).Select(b => (b + 0.5) * 0.5).ToArray(), "dBm");
-                    double[] Col(Func<(double sum, double min, double max, double ph, int n), double> f) =>
-                        Enumerable.Range(b0, nb).Select(b => bins.TryGetValue(b, out var e) && e.n >= AmMinSamples ? f(e) : double.NaN).ToArray();
-                    ds.Add("AMAM", new DataCube([pinAxis], Col(e => e.sum / e.n)));
-                    ds.Add("AMAM_min", new DataCube([pinAxis], Col(e => e.min)));
-                    ds.Add("AMAM_max", new DataCube([pinAxis], Col(e => e.max)));
-                    ds.Add("AMPM", new DataCube([pinAxis], Col(e => e.ph / e.n)));
-                }
+                int nb = b1 - b0;
+                var pinAxis = new Axis("Pin_inst", Enumerable.Range(b0, nb).Select(b => (b + 0.5) * 0.5).ToArray(), "dBm");
+                double[] Col(Func<(double sum, double min, double max, double ph, int n), double> f) =>
+                    Enumerable.Range(b0, nb).Select(b => bins.TryGetValue(b, out var e) && e.n >= AmMinSamples ? f(e) : double.NaN).ToArray();
+                ds.Add("AMAM", new DataCube([pinAxis], Col(e => e.sum / e.n)));
+                ds.Add("AMAM_min", new DataCube([pinAxis], Col(e => e.min)));
+                ds.Add("AMAM_max", new DataCube([pinAxis], Col(e => e.max)));
+                ds.Add("AMPM", new DataCube([pinAxis], Col(e => e.ph / e.n)));
             }
             if (r.SupplyNames.Length > 0)
             {
@@ -296,7 +295,8 @@ public static class EnvelopeDataSet
                     pdc += -r.SupplyVoltage[s] * iav / nm;      // branch current flows + node -> source; a supply delivers -V*I
                 }
                 ds.Add("Pdc_W", DataCube.Scalar(pdc));
-                if (pdc > 0) ds.Add("DE_pct", DataCube.Scalar(100 * poutW / pdc));
+                // NaN rather than absent when no DC power is drawn, for the same reason: every sweep point has the cube.
+                ds.Add("DE_pct", DataCube.Scalar(pdc > 0 ? 100 * poutW / pdc : double.NaN));
             }
         }
         ds.Add("__EnvStep_s", DataCube.Scalar(r.StepS));

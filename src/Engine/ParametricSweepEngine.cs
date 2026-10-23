@@ -416,7 +416,9 @@ public static class ParametricSweepEngine
             case EnvelopeAnalysis env:
             {
                 // Each point is a whole envelope run (parallel in time inside it); its segments elaborate
-                // their own netlists from this point's testbench state, the first reusing this one.
+                // their own netlists from this point's testbench state, the first reusing this one. They
+                // take the point's BaseDirectory, or a relative SnP or .cmodel resolves in segment 1 and
+                // not in the rest.
                 var plan  = Envelope.EnvelopeRunner.Resolve(env, netlist.ResolvedGlobals);
                 bool first = true;
                 object gate = new();
@@ -425,7 +427,7 @@ public static class ParametricSweepEngine
                     lock (gate)
                     {
                         if (first) { first = false; return netlist; }
-                        return new Elaborator(lib).Elaborate(tb);
+                        return new Elaborator(lib) { BaseDirectory = baseDirectory }.Elaborate(tb);
                     }
                 }
                 return Envelope.EnvelopeRunner.Run(plan, Elab, settings, control?.Child());

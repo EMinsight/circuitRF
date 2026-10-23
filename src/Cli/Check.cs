@@ -1433,23 +1433,21 @@ internal static class Check
                 return;
             }
 
-            // Second: of the three kinds that go through chain selection, does a DECLARED one fail
+            // Second: of the kinds that go through chain selection, does a DECLARED one fail
             // to select? Asked through ChainSelector — the function the run verbs themselves select
             // with — so "check says it will run" and "it runs" cannot part company (Gate 4). A kind
             // the netlist declares NONE of is not a finding; a kind it declares and cannot run is —
-            // but only when NO kind runs: a disabled HB chain beside an enabled envelope is a bench
-            // switched to the envelope, not one where nothing dispatches.
-            var why = new List<string>();
-            bool anySelected = false;
+            // but only when NOTHING runs, which is what the finding says. A disabled HB chain beside
+            // an enabled S-parameter or envelope analysis is a bench switched to that analysis, so
+            // every kind counts here (AnalysisChain.RunnableTops), not only the chain-selected ones.
+            if (AnalysisChain.RunnableTops(tb).Count > 0) return;
             foreach (var (isBase, label, hint, _) in Explain.AnalysisKinds)
             {
                 if (!tb.Analyses.Any(isBase)) continue;
                 var sel = ChainSelector.Select(tb, null, isBase, label, hint);
-                if (sel.Selected is not null) anySelected = true;
-                else if (sel.Why is { } w) why.Add(w);
+                if (sel.Selected is null && sel.Why is { } why)
+                    f.Add(CliDiagnostics.CheckNoRunnableAnalysis(path, why));
             }
-            if (!anySelected)
-                foreach (var w in why) f.Add(CliDiagnostics.CheckNoRunnableAnalysis(path, w));
         }
     }
 

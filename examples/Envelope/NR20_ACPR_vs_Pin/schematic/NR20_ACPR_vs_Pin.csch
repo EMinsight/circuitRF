@@ -338,7 +338,7 @@
         },
         {
           "Name": "Carrier[1]",
-          "Expression": "\"NR;BW=20e6;SCS=30e3;Mod=64QAM;Off=0;P=0;Seed=1\"",
+          "Expression": "\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1\"",
           "Unit": "",
           "ShowOnSchematic": true,
           "Dimension": "None"

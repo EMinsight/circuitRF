@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -9,6 +10,7 @@ using Avalonia.Platform.Storage;
 using CircuitRF.Design.Schematic;
 using CircuitRF.Render.DataDisplay;
 using CircuitRF.Ui.DataDisplay.Controls;
+using CircuitRF.Ui.DataDisplay.ViewModels;
 using CircuitRF.Ui.Signals;
 
 namespace CircuitRF.Ui.Views.Signals;
@@ -26,12 +28,18 @@ public partial class SignalDesignerWindow : Window
         DataContextChanged += (_, _) =>
         {
             SyncPlotTheme();
-            if (Vm is { } vm) vm.PlotsUpdated += (_, _) => RepaintPlots();
+            if (Vm is { } vm)
+            {
+                vm.PlotsUpdated += (_, _) => RepaintPlots();
+                WireMarkers(vm);
+            }
         };
         ActualThemeVariantChanged += (_, _) => SyncPlotTheme();
         // A click anywhere on a carrier card - its fields included - selects that carrier for the EVM tab.
         // Tunnelling, so a field that handles the press still selects its card.
         AddHandler(PointerPressedEvent, OnCarrierCardPressed, RoutingStrategies.Tunnel);
+        // A press anywhere but on an info box clears the marker selection, as the Data Display's canvas does.
+        AddHandler(PointerPressedEvent, OnWindowPointerPressed, RoutingStrategies.Tunnel);
         // the label follows the plot when the window is resized
         this.FindControl<PlotControl>("EnvelopePlotControl")!.PropertyChanged += (_, e) =>
         {
@@ -57,6 +65,92 @@ public partial class SignalDesignerWindow : Window
     }
 
     private SignalDesignerViewModel? Vm => DataContext as SignalDesignerViewModel;
+
+    // ── Markers ─────────────────────────────────────────────────────────────
+    //
+    // The plots are bare PlotControls, so this window is their host, as the Match Designer is for its two: it
+    // hands each one its container's marker providers and events, and gives the info boxes somewhere to be
+    // drawn. None of that was wired, so a marker was added with no info box, and could not be selected (the
+    // selection lives on its box) or deleted. Each tab has its own layer holding that tab's boxes, and a
+    // container's rectangle is kept equal to its plot's in that layer's coordinates.
+
+    private readonly System.Collections.ObjectModel.ObservableCollection<MarkerInfoBoxViewModel> _spectrumBoxes = [];
+    private readonly System.Collections.ObjectModel.ObservableCollection<MarkerInfoBoxViewModel> _evmBoxes = [];
+    private (PlotControl Plot, PlotContainerViewModel Container, ItemsControl Layer)[] _hosted = [];
+
+    private void WireMarkers(SignalDesignerViewModel vm)
+    {
+        var spectrum = this.FindControl<ItemsControl>("SpectrumInfoBoxLayer")!;
+        var evm = this.FindControl<ItemsControl>("EvmInfoBoxLayer")!;
+        spectrum.ItemsSource = _spectrumBoxes;
+        evm.ItemsSource = _evmBoxes;
+        _hosted =
+        [
+            (this.FindControl<PlotControl>("PsdPlotControl")!, vm.PsdContainer, spectrum),
+            (this.FindControl<PlotControl>("CcdfPlotControl")!, vm.CcdfContainer, spectrum),
+            (this.FindControl<PlotControl>("ConstellationPlotControl")!, vm.ConstellationContainer, evm),
+            (this.FindControl<PlotControl>("EnvelopePlotControl")!, vm.EnvelopeContainer, evm),
+        ];
+        foreach (var (plot, container, _) in _hosted)
+        {
+            plot.NextMarkerIndexProvider     = container.GetNextMarkerIndex;
+            plot.FindMarkerInfoBoxVmProvider = container.FindMarkerInfoBoxVm;
+            plot.ContainerProvider           = () => container;
+            plot.SelectedMarkersProvider     = container.GetSelectedMarkers;
+            plot.StepSelectedMarkersHandler  = container.StepSelectedMarkers;
+            plot.DoubleTapped += (_, args) => { plot.HandleDoubleTapAt(args.GetPosition(plot)); args.Handled = true; };
+            plot.PlotChanged += container.OnPlotChanged;
+            plot.MarkerMoved += (_, _) => container.OnMarkerMoved();
+            plot.MarkerAdded += container.OnMarkerAdded;
+            container.PlotNeedsRedraw += (_, _) => plot.InvalidateVisual();
+        }
+        vm.PlotHost.MarkerInfoBoxes.CollectionChanged += (_, _) => SortBoxesByTab();
+        SortBoxesByTab();
+        // LayoutUpdated rather than SizeChanged: a plot can move without resizing, and its boxes must follow.
+        LayoutUpdated += (_, _) => SyncPlotContainers();
+    }
+
+    private void SortBoxesByTab()
+    {
+        if (Vm is null) return;
+        Refill(_spectrumBoxes, Vm.PsdContainer, Vm.CcdfContainer);
+        Refill(_evmBoxes, Vm.ConstellationContainer, Vm.EnvelopeContainer);
+
+        void Refill(System.Collections.ObjectModel.ObservableCollection<MarkerInfoBoxViewModel> into, params PlotContainerViewModel[] mine)
+        {
+            into.Clear();
+            foreach (var box in Vm.PlotHost.MarkerInfoBoxes)
+                if (mine.Contains(box.Container)) into.Add(box);
+        }
+    }
+
+    private void SyncPlotContainers()
+    {
+        foreach (var (plot, container, layer) in _hosted)
+        {
+            // A plot on the hidden tab is not laid out; its boxes are hidden with the tab, so leave it be.
+            if (plot.Bounds.Width < 1 || plot.Bounds.Height < 1) continue;
+            if (plot.TranslatePoint(default, layer) is not { } origin) continue;
+            if (Math.Abs(container.Left - origin.X) < 0.5 && Math.Abs(container.Top - origin.Y) < 0.5
+                && Math.Abs(container.Width - plot.Bounds.Width) < 0.5 && Math.Abs(container.Height - plot.Bounds.Height) < 0.5)
+                continue;   // LayoutUpdated fires constantly; only a real move is worth notifying
+            container.Left = origin.X;
+            container.Top = origin.Y;
+            container.Width = plot.Bounds.Width;
+            container.Height = plot.Bounds.Height;
+            container.NotifyViewProperties();
+        }
+    }
+
+    private void OnWindowPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (Vm is null || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta)) return;
+        if (e.Source is Avalonia.Visual v
+            && v.FindAncestorOfType<Views.DataDisplay.MarkerInfoBoxView>(includeSelf: true) is not null)
+            return;
+        Vm.PlotHost.SelectOnly((MarkerInfoBoxViewModel?)null);
+    }
 
     private static readonly string[] PlotNames = ["PsdPlotControl", "CcdfPlotControl", "ConstellationPlotControl", "EnvelopePlotControl"];
 

@@ -1023,3 +1023,11 @@ is exact at any length. NR 20 clips in ~3 s (was ~15 s at 4x), NR 100 in ~18 s. 
 target at 8x and at the display rate, peak and 0.01 % (NR 100 9 dB: 8.99 / 8.82 dB). EVM rises slightly because the
 stricter judgement clips a little deeper (NR 20 64QAM 8 dB: 2.07 -> 2.21 %). Generator `crf-signals-4`; S6 gains an
 NR 100 case and checks the display rate.
+
+### Carrier frequencies take units (2026-10-22)
+
+`BW`, `SCS` and `Off` in a carrier description accept `Hz`, `kHz`, `MHz` or `GHz` (exact case, since `m` is milli
+everywhere else); a bare number is still Hz. The prefix is applied by re-reading the literal with its exponent, so
+`20MHz`, `20000kHz` and `20e6` parse to the same double. The cache key is therefore unchanged, and the generated
+records are identical (S10). `FormatCarrier` writes BW and Off in MHz and SCS in kHz, but only when the text
+reads back as the same double; otherwise it writes plain Hz.

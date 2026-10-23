@@ -363,9 +363,9 @@ two-carrier intermodulation with real signals rather than tones. One MOD_Source 
 source impedance `Z`.
 
 - `Carrier[i]` — one carrier, written as a description string, e.g.
-  `"NR;BW=20e6;SCS=30e3;Mod=64QAM;Off=-200e6;P=0;Seed=1"`: the standard (`LTE`, `NR`, `CW`, `FILE`),
+  `"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-200MHz;P=0;Seed=1"`: the standard (`LTE`, `NR`, `CW`, `FILE`),
   channel bandwidth, NR subcarrier spacing, modulation, offset from `Fc`, relative power (dB) and the
-  random-data seed. A `FILE` carrier reads a two-column I/Q text file with a `# sample_rate_hz` header.
+  random-data seed. `BW`, `SCS` and `Off` take `Hz`, `kHz`, `MHz` or `GHz`; a bare number is in Hz. A `FILE` carrier reads a two-column I/Q text file with a `# sample_rate_hz` header.
 - `Record` — periodic record length (s), whole 0.5 ms slots. `Clip` — target PAPR (dB) for
   clip-and-filter; absent means **unclipped** (the natural OFDM PAPR, about 11–12 dB).
   `Shaping` — out-of-channel spectral floor (dBc), or `off`.

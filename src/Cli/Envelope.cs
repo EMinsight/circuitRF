@@ -11,7 +11,7 @@ namespace CircuitRF.Cli;
 
 /// <summary>
 /// <c>circuitrf env &lt;file.cnl|.csch&gt; [-a name] [--set var=expr] [--stop t] [--accuracy draft|standard|fine]
-/// [--segments n|auto] [--warmup t] [--probes a,b] [-o out.{npy,mat,txt}]</c> — runs the netlist's envelope
+/// [--segments n|auto] [--warmup t] [--probes a,b] [--all] [-o out.{npy,mat,txt}]</c> — runs the netlist's envelope
 /// (<c>type=env</c>) analysis. The modulated stimulus is the circuit's MOD_Source; every override replaces a field
 /// of the directive, as for <c>hb</c>.
 /// </summary>
@@ -22,6 +22,7 @@ internal static class EnvelopeVerb
         string? input = null, exportPath = null, name = null;
         string? stop = null, acc = null, segs = null, warm = null, probes = null, step = null, mode = null;
         var sets = new List<(string, string)>();
+        bool all = false;
         for (int i = 0; i < args.Length; i++)
         {
             string a = args[i];
@@ -37,6 +38,7 @@ internal static class EnvelopeVerb
                 case "--segments": segs = Next(); break;
                 case "--warmup": warm = Next(); break;
                 case "--probes": probes = Next(); break;
+                case "--all": all = true; break;
                 case "--set":
                 {
                     var kv = Next(); int eq = kv.IndexOf('=');
@@ -54,7 +56,7 @@ internal static class EnvelopeVerb
             int code = JsonRun.Fail(CliDiagnostics.InputRequired("env", ".cnl"));
             Console.Error.WriteLine("Usage: circuitrf env <file.cnl|.csch> [-a name] [--set var=expr] [--stop t] [--step t]");
             Console.Error.WriteLine("                     [--accuracy draft|standard|fine] [--envelope auto|single|lattice] [--segments n|auto]");
-            Console.Error.WriteLine("                     [--warmup t] [--probes a,b] [-o out.{npy,mat,txt}]");
+            Console.Error.WriteLine("                     [--warmup t] [--probes a,b] [--all] [-o out.{npy,mat,txt}]");
             return code;
         }
         JsonRun.InputPath = input;
@@ -63,6 +65,11 @@ internal static class EnvelopeVerb
         {
             if (CircuitSource.ReadRunInput("env", input, out int refusal) is not { } source) return refusal;
             var (lib, tb) = source;
+            // Under --json the waveforms and spectrum stay in -o's file unless asked for (JsonRun.InlineCubeLimit).
+            JsonRun.AllCubes = all;
+            JsonRun.InlineCubeLimit = 10_000;
+            // Every elaboration of this run resolves relative references (SnP, .cmodel) against the document.
+            string? refBase = CircuitSource.ReferenceBaseOf(input);
             foreach (var (n, e) in sets)
             {
                 HbCircuitRun.ApplySet(tb, n, e);
@@ -90,7 +97,7 @@ internal static class EnvelopeVerb
                 int at = tb.Analyses.FindIndex(x => x.Name == env.Name);
                 tb.Analyses[at] = env;
                 Console.Error.WriteLine($"[circuitRF] envelope {env.Name} inside sweep {sweep.Name} ({sweep.SweepVarName})");
-                var sds = ParametricSweepEngine.Run(sweep, lib, tb, new AnalysisSettings(), null, RunHost.Control);
+                var sds = ParametricSweepEngine.Run(sweep, lib, tb, new AnalysisSettings(), refBase, RunHost.Control);
                 JsonRun.Analysis = sweep.Name;
                 JsonRun.Data = sds;
                 PrintSweep(sds, sweep);
@@ -105,7 +112,7 @@ internal static class EnvelopeVerb
                 }
                 return 0;
             }
-            var first = new Elaborator(lib).Elaborate(tb);
+            using var first = new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
             var plan = EnvelopeRunner.Resolve(env, first.ResolvedGlobals);
             bool used = false;
             ElaboratedNetlist Elab()
@@ -113,7 +120,7 @@ internal static class EnvelopeVerb
                 lock (lib)
                 {
                     if (!used) { used = true; return first; }
-                    return new Elaborator(lib).Elaborate(tb);
+                    return new Elaborator(lib) { BaseDirectory = refBase }.Elaborate(tb);
                 }
             }
             Console.Error.WriteLine($"[circuitRF] envelope {env.Name}: Stop {plan.Params.StopS * 1e6:0.###} us, accuracy x{plan.Params.Oversample}, segments {(plan.Segments == 0 ? "auto" : plan.Segments.ToString(CultureInfo.InvariantCulture))}");

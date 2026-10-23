@@ -14,6 +14,7 @@
 //       its offset in the composite spectrum, equal shares at equal PowerDb.
 //   S8  The cache returns the same signal for the same spec and a different one for a different seed.
 //   S9  Inline carrier syntax round-trips.
+//   S10 A carrier's frequencies mean the same in any unit: 20MHz, 20000kHz and 20e6 generate the identical signal.
 
 using System;
 using System.IO;
@@ -194,6 +195,29 @@ public class SignalLibraryTests
         Assert.Equal(QamOrder.Qam256, c.Modulation);
         Assert.Equal(-200e6, c.OffsetHz);
         Assert.Equal(c, SignalSpec.ParseCarrier(SignalSpec.FormatCarrier(c)));
+        // Frequencies take a unit, and the Designer writes them with one: the same doubles either way.
+        Assert.Equal(c, SignalSpec.ParseCarrier("NR;BW=20MHz;SCS=30kHz;Mod=256QAM;Off=-200MHz;P=-3;Seed=5"));
+        Assert.Equal("NR;BW=20MHz;SCS=30kHz;Mod=256QAM;Off=-200MHz;P=-3;Seed=5", SignalSpec.FormatCarrier(c));
+        Assert.Throws<FormatException>(() => SignalSpec.ParseCarrier("NR;BW=20mhz"));
         Assert.Throws<FormatException>(() => SignalSpec.ParseCarrier("WIFI;BW=20e6"));
+    }
+
+    [Fact]
+    public void S10_CarrierUnits_GiveTheSameSignal()
+    {
+        // The same NR 20 MHz carrier in three spellings. Equal specs share one cache key, so a simulation reuses one
+        // generation; generating each anyway shows the record itself is identical, sample for sample.
+        string[] spellings =
+        [
+            "NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1",
+            "NR;BW=20000kHz;SCS=0.03MHz;Mod=64QAM;Off=0Hz;P=0;Seed=1",
+            "NR;BW=20e6;SCS=30e3;Mod=64QAM;Off=0;P=0;Seed=1",
+        ];
+        var specs = spellings.Select(t => new SignalSpec { RecordSeconds = 0.5e-3, Carriers = new() { SignalSpec.ParseCarrier(t) } }).ToArray();
+        Assert.All(specs, sp => Assert.Equal(specs[0].CacheKey(), sp.CacheKey()));
+
+        var reference = SignalComposer.Generate(specs[0]).Carriers[0].Native;
+        foreach (var sp in specs.Skip(1))
+            Assert.Equal(reference, SignalComposer.Generate(sp).Carriers[0].Native);
     }
 }

@@ -134,9 +134,16 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
 
     public ObservableCollection<CarrierRowViewModel> Carriers { get; } = new();
 
+    /// <summary>More than one carrier. With one, its Power (dB) means nothing (it is relative to the others, and Pavg
+    /// is its power) and it cannot be removed (a source needs a carrier), so both controls are disabled.</summary>
+    public bool HasSeveralCarriers => Carriers.Count > 1;
+
     /// <summary>Fc and Pavg as the user's own TEXT — a number (GHz / dBm) or an expression such as
     /// <c>RFfreq</c> or <c>Pin</c>, which is written back verbatim. A swept source must stay swept.</summary>
     [ObservableProperty] private string _fcText = "2";
+    /// <summary>The unit <see cref="FcText"/> is read in: the source's own Fc unit, else the preferred frequency unit
+    /// (Settings ▸ General ▸ Units), else GHz. A source placed in MHz is shown and written back in MHz.</summary>
+    [ObservableProperty] private string _fcUnit = "GHz";
     [ObservableProperty] private string _pavgText = "10";
     private EditableParameter? _fcOrig, _pavgOrig;
     private string _fcLoaded = "", _pavgLoaded = "";
@@ -291,6 +298,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
             if (e.OldItems is not null)
                 foreach (CarrierRowViewModel r in e.OldItems) r.PropertyChanged -= OnRowChanged;
             if (SelectedCarrier is null || !Carriers.Contains(SelectedCarrier)) SelectedCarrier = Carriers.FirstOrDefault();
+            OnPropertyChanged(nameof(HasSeveralCarriers));
             SchedulePreview();
         };
         PropertyChanged += (_, e) =>
@@ -361,7 +369,9 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
             return p.Expression.Trim();
         }
         _fcOrig = Find("Fc"); _pavgOrig = Find("Pavg");
-        FcText = _fcLoaded = Text(_fcOrig, "2", 1e9);
+        FcUnit = _fcOrig is { } fo && CircuitRF.Ui.ViewModels.FreqUnitHelper.Units.Contains(fo.Unit) ? fo.Unit
+               : CircuitRF.Ui.Theming.PreferredUnits.Frequency ?? "GHz";
+        FcText = _fcLoaded = Text(_fcOrig, "2", UnitScale(FcUnit));
         PavgText = _pavgLoaded = Text(_pavgOrig, "10", 1);
         RecordMs = Num("Record", 1e-3, 1e-3);
         var clip = comp.Parameters.FirstOrDefault(x => x.Name.Equals("Clip", StringComparison.OrdinalIgnoreCase));
@@ -438,7 +448,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         }
         var updated = new List<EditableParameter>
         {
-            Field("Fc", FcText, _fcLoaded, _fcOrig, "GHz", UnitDimension.Frequency),
+            Field("Fc", FcText, _fcLoaded, _fcOrig, FcUnit, UnitDimension.Frequency),
             Field("Pavg", PavgText, _pavgLoaded, _pavgOrig, "dBm", UnitDimension.Power),
         };
         updated.AddRange(keep);
@@ -556,7 +566,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
                     rate / 1e6, rate.ToString("R", inv), 1e9 / rate, SampleRate.Hz > 0 ? "" : " (auto, recommended)"),
                 string.Format(inv, "{0} samples = {1:0.######} ms record (periodic: the last sample wraps to the first)",
                     n, sig.RecordSeconds * 1e3),
-                "Fc = " + FcText + " GHz (the I/Q is relative to it),  Pavg = " + PavgText + " dBm",
+                "Fc = " + FcText + " " + FcUnit + " (the I/Q is relative to it),  Pavg = " + PavgText + " dBm",
                 "scale: unit mean power (|I + jQ|^2 averages 1); set the level with the source's Pavg",
                 string.Format(inv, "PAPR {0:0.00} dB at 0.01 %,  clipping {1},  shaping {2}",
                     SignalMeasure.PaprDb(sig.CompositeWindow(rate, 0, 0, Math.Min(n, 1 << 22)), 1e-4),
@@ -684,7 +694,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         var psd = keep.Select(i => Math.Max(10 * Math.Log10(Math.Max(p[i], 1e-300) / pk), -120)).ToArray();
         var ds = new DataSet();
         ds.Add("PSD", new DataCube([new Axis("offset from Fc", keep.Select(i => f[i] / 1e6).ToArray(), "")], psd));
-        var (db, pr) = SignalMeasure.Ccdf(x, 160, 1e-5);
+        var (db, pr) = SignalMeasure.Ccdf(x, 160, 1e-5);   // the floor the Gaussian reference below runs to
         // The standard CCDF: probability (%) that the instantaneous power exceeds the average by more than
         // x dB, on a log probability axis, from 0 dB — plus the Gaussian-noise (Rayleigh envelope) reference.
         var order = Enumerable.Range(0, db.Length).Where(i => db[i] >= 0 && pr[i] > 0).OrderBy(i => db[i]).ToArray();
@@ -692,7 +702,15 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         for (int i = 1; i < dbAx.Length; i++) if (dbAx[i] <= dbAx[i - 1]) dbAx[i] = dbAx[i - 1] + 1e-9;
         var ccdfAxis = new Axis("power above average", dbAx, "dB");
         ds.Add("CCDF", new DataCube([ccdfAxis], order.Select(i => 100 * pr[i]).ToArray()));
-        ds.Add("Gaussian", new DataCube([ccdfAxis], dbAx.Select(d => Math.Max(100 * Math.Exp(-Math.Pow(10, d / 10)), 1e-6)).ToArray()));
+        // The reference is the SAME curve whatever the signal: on its own axis, from 0 dB down to the probability the
+        // CCDF is measured to (1e-5, ~10.6 dB). On the signal's axis it was cut where the signal ends, so a clipped
+        // signal took the reference with it, the autoscale stretched both across the plot, and clipping looked like
+        // no change at all.
+        const double ccdfFloor = 1e-5;
+        double gaussTop = 10 * Math.Log10(-Math.Log(ccdfFloor));
+        var gaussDb = Enumerable.Range(0, 213).Select(i => gaussTop * i / 212).ToArray();
+        ds.Add("Gaussian", new DataCube([new Axis("power above average", gaussDb, "dB")],
+                                        gaussDb.Select(d => 100 * Math.Exp(-Math.Pow(10, d / 10))).ToArray()));
 
         var inv = CultureInfo.InvariantCulture;
         var sb = new StringBuilder();
@@ -786,7 +804,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         Fill(PsdPlot, ds, [("PSD", 0)], "Spectrum", "PSD (dB re peak)", "Offset from Fc (MHz)");
         CcdfPlot.Axes.YScale = AxisScale.Log;
         Fill(CcdfPlot, ds, [("CCDF", 0), ("Gaussian", 3)], "CCDF", "Probability (%)", "Power above average (dB)");
-        PlotsUpdated?.Invoke(this, EventArgs.Empty);
+        Announce(PsdContainer, CcdfContainer);
     }
 
     private void ShowEnvelope(DataSet ds)
@@ -820,7 +838,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         AddGapArrow(EnvelopePlot, GapArrowX, papr);
         EnvelopePlot.Axes.Window = new PlotRect(left, -30, t1 - left + 0.02 * t1, Math.Ceiling((papr + 3) / 5) * 5 + 30);
         Readable(EnvelopePlot);                         // the arrow traces re-lay the margins out
-        PlotsUpdated?.Invoke(this, EventArgs.Empty);
+        Announce(EnvelopeContainer);
     }
 
     /// <summary>A double-headed arrow from the average (0 dB) to the peak line at <paramref name="x"/>.</summary>
@@ -923,13 +941,13 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
     private void ShowConstellation(EvmRow? row)
     {
         var plot = ConstellationPlot;
-        plot.Traces.Clear();
+        var markers = TakeMarkers(plot);
         plot.CustomTitleOn = true;
         plot.CustomXLabelOn = true;
         plot.CustomXLabel = "In-phase (I)";
         plot.CustomYLabelOn = true;
         plot.CustomYLabel = "Quadrature (Q)";
-        if (row is null) { plot.CustomTitle = "Constellation"; PlotsUpdated?.Invoke(this, EventArgs.Empty); return; }
+        if (row is null) { plot.CustomTitle = "Constellation"; Announce(ConstellationContainer); return; }
         var r = row.Result;
         plot.CustomTitle = $"Constellation C{row.CarrierIndex}: EVM {row.RmsText} rms";
 
@@ -955,7 +973,8 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         lim = Math.Ceiling(lim * 1.1 / 0.25) * 0.25;
         plot.Axes.Window = new PlotRect(-lim, -lim, 2 * lim, 2 * lim);
         Readable(plot);
-        PlotsUpdated?.Invoke(this, EventArgs.Empty);
+        GiveMarkers(plot, markers);
+        Announce(ConstellationContainer);
     }
 
     private static void Scatter(Plot plot, DataSet ds, string y, string x, string name, int colour, MarkerType shape,
@@ -985,7 +1004,7 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
         plot.CustomTitle = title;
         plot.CustomXLabelOn = true;
         plot.CustomXLabel = xlabel;
-        plot.Traces.Clear();
+        var markers = TakeMarkers(plot);
         foreach (var (cube, colour) in cubes)
         {
             if (!CubeTraceSpecParser.TryParse(cube, ds, out string name, out var slice, out var transform, out _)) continue;
@@ -1004,10 +1023,49 @@ public sealed partial class SignalDesignerViewModel : ObservableObject, IDisposa
             TraceResolve.SetCubeDataFrom(t, ds, PlotType.Rect, FreqUnit.GHz);
             if (t.Points.Count > 0) plot.Traces.Add(t);
         }
+        GiveMarkers(plot, markers);
         plot.CustomYLabelOn = true;
         plot.CustomYLabel = ylabel;
         plot.Autoscale(force: true);
         Readable(plot);                                  // the autoscale re-lays the margins out for the default font
+    }
+
+    /// <summary>Clears <paramref name="plot"/>'s traces and returns their markers by trace expression. Every preview
+    /// rebuilds the traces from scratch, and a marker the user placed belongs to the QUANTITY, not to one rebuild of
+    /// it: <see cref="GiveMarkers"/> puts each back on the new trace of the same expression, where it resolves to the
+    /// nearest point of the new data.</summary>
+    private static Dictionary<string, List<Marker>> TakeMarkers(Plot plot)
+    {
+        var kept = new Dictionary<string, List<Marker>>(StringComparer.Ordinal);
+        foreach (var t in plot.Traces)
+            if (t.Expression is { } e && t.Markers.Count > 0)
+                (kept.TryGetValue(e, out var list) ? list : kept[e] = []).AddRange(t.Markers);
+        plot.Traces.Clear();
+        return kept;
+    }
+
+    private static void GiveMarkers(Plot plot, Dictionary<string, List<Marker>> kept)
+    {
+        foreach (var t in plot.Traces)
+            if (t.Expression is { } e && kept.Remove(e, out var markers))
+                t.Markers.AddRange(markers);
+    }
+
+    /// <summary>The traces of <paramref name="containers"/> were just replaced: their info boxes are rebuilt against
+    /// the new traces (a box pointing at a discarded trace reads nothing), and the window repaints.</summary>
+    private void Announce(params PlotContainerViewModel[] containers)
+    {
+        foreach (var c in containers) c.OnPlotChanged(this, EventArgs.Empty);
+        PlotsUpdated?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>Removes every SELECTED marker, as the Delete key does in a Data Display. Not
+    /// <c>DataDisplayViewModel.DeleteSelected</c>: that also deletes selected PLOTS, and these four are fixed.</summary>
+    [RelayCommand]
+    public void DeleteSelectedMarkers()
+    {
+        foreach (var box in PlotHost.MarkerInfoBoxes.Where(b => b.IsSelected).ToList())
+            box.Container.RemoveMarkerWithUndo(box.Marker, box.Trace);
     }
 
     public void Dispose()

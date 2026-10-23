@@ -109,7 +109,9 @@ public static class EnvelopeRunner
         return 1.0 / (rate * Math.Max(1, p.Oversample));
     }
 
-    /// <summary>Runs the plan; <paramref name="elaborate"/> must return a fresh netlist on every call.</summary>
+    /// <summary>Runs the plan; <paramref name="elaborate"/> must return a fresh netlist on every call. The FIRST one
+    /// stays the caller's; every later one is a segment's and is disposed here, or a compiled model's worker
+    /// instances would outlive the run (a sweep elaborates one per segment per point).</summary>
     public static DataSet Run(Plan plan, Func<ElaboratedNetlist> elaborate, AnalysisSettings? settings = null,
                               RunControl? control = null, Action<string>? note = null)
     {
@@ -146,21 +148,28 @@ public static class EnvelopeRunner
         var results = new EnvelopeRunResult[segs];
         var nets = new ElaboratedNetlist[segs];
         nets[0] = first;
-        for (int s = 1; s < segs; s++) nets[s] = elaborate();
-        var opts = new ParallelOptions { MaxDegreeOfParallelism = Environment.GetEnvironmentVariable("CRF_ENV_SERIAL") is null ? cores : 1, CancellationToken = control?.Token ?? default };
-        Parallel.For(0, segs, opts, s =>
+        try
         {
-            var ps = p with
+            for (int s = 1; s < segs; s++) nets[s] = elaborate();
+            var opts = new ParallelOptions { MaxDegreeOfParallelism = Environment.GetEnvironmentVariable("CRF_ENV_SERIAL") is null ? cores : 1, CancellationToken = control?.Token ?? default };
+            Parallel.For(0, segs, opts, s =>
             {
-                StepS = h,
-                StartS = p.StartS + bound[s] * h,
-                StopS = (bound[s + 1] - bound[s] + (s < segs - 1 ? tailSteps : 0)) * h,
-                WarmupS = segs > 1 && s > 0 ? warm : (plan.Segments == 1 || segs == 1 ? (double.IsNaN(plan.WarmupS) ? 0 : plan.WarmupS) : warm),
-            };
-            results[s] = fundamentals == 2
-                ? new EnvelopeEngineMt(nets[s], settings).Run(ps, plan.MaxMixOrder, control)
-                : new EnvelopeEngine(nets[s], settings).Run(ps, control);
-        });
+                var ps = p with
+                {
+                    StepS = h,
+                    StartS = p.StartS + bound[s] * h,
+                    StopS = (bound[s + 1] - bound[s] + (s < segs - 1 ? tailSteps : 0)) * h,
+                    WarmupS = segs > 1 && s > 0 ? warm : (plan.Segments == 1 || segs == 1 ? (double.IsNaN(plan.WarmupS) ? 0 : plan.WarmupS) : warm),
+                };
+                results[s] = fundamentals == 2
+                    ? new EnvelopeEngineMt(nets[s], settings).Run(ps, plan.MaxMixOrder, control)
+                    : new EnvelopeEngine(nets[s], settings).Run(ps, control);
+            });
+        }
+        finally
+        {
+            for (int s = 1; s < segs; s++) nets[s]?.Dispose();
+        }
 
         // stitch, measure the seam on the overlap tails
         h = results[0].StepS;

@@ -405,7 +405,7 @@ internal static class ToolCatalog
           // whole result inline while `lpp` returned a written path and nothing else, with nothing
           // in this schema to say which a caller would get.
           + "Every run returns result.shape — the groups, cubes, units and axis extents it produced. "
-          + "sparam, dc, hb, em and fields return the values inline as well; lp and lpp return their "
+          + "sparam, dc, hb, em and fields return the values inline as well; env returns all but its waveforms and spectrum; lp and lpp return their "
           + "one-row-per-grid-point summary instead, and hand over the cubes when asked with all, "
           + "only or group. Narrow a large result with at, range or result=summary rather than "
           + "receiving it whole. A 3D em setup's Problem3D decides what comes back: Driven an S-matrix, "
@@ -442,6 +442,23 @@ internal static class ToolCatalog
                     [new("path", true, "The .cnl to run.")],
                     [Analysis, Set, Output, All, .. Narrowing, .. SolverOptions],
                     "Harmonic balance. Runs the parametric sweep when one wraps it."),
+                // The `env` verb: a MOD_Source's modulated signal through the circuit. Its waveforms and spectrum stay
+                // out of the default document (JsonRun.InlineCubeLimit); all, only or group bring them in.
+                new("env", ["env"],
+                    [new("path", true, "The .cnl or .csch whose envelope (type=env) analysis to run.")],
+                    [Analysis, Set, Output, All, .. Narrowing,
+                     new("stop",     "--stop",     OptKind.Str, "Simulated time, s (200e-6)."),
+                     new("step",     "--step",     OptKind.Str, "Envelope step, s, or auto: the signal's sample rate times the accuracy."),
+                     new("accuracy", "--accuracy", OptKind.Str, "draft (1x the signal rate), standard (4x) or fine (8x)."),
+                     new("envelope", "--envelope", OptKind.Str, "auto, single or lattice: whether widely spaced carriers get their own fundamental."),
+                     new("segments", "--segments", OptKind.Str, "Parallel-in-time segments: auto (one per core) or a count; 1 runs sequentially."),
+                     new("warmup",   "--warmup",   OptKind.Str, "Warm-up before each segment, s, or auto."),
+                     new("probes",   "--probes",   OptKind.Str, "Nodes to keep and measure, separated by commas. Default: the MOD_Source nodes.")],
+                    "Circuit envelope: the circuit driven by its MOD_Source's LTE, NR, CW or I/Q signal. Returns ACLR "
+                  + "(channel power, ACPR1/ACPR2 per carrier), AM-AM/AM-PM, IMD for two carriers, and the scalars "
+                  + "(Pout_avg_dBm, Gt_dB, Pdc_W, DE_pct, NMSE_dB, PAPR). The time waveforms (V) and spectrum (PSD) are in "
+                  + "the shape and in -o's file; ask for them with all, only or group. Runs the parametric sweep when one wraps it. "
+                  + "Minutes, not seconds: 200 us of an NR 20 MHz signal is about a minute on 10 cores."),
                 new("lp", ["lp"],
                     [new("path", true, "The .cnl to run.")],
                     [Analysis, Set, Output, All, .. Narrowing, .. LoadpullSolverOptions, .. LoadpullOptions],

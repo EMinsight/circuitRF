@@ -10,7 +10,7 @@ A `MOD_Source` plays a modulated signal around `Fc` at an average power `Pavg`, 
 `Carrier[i]` is one line of text describing one carrier — standard, bandwidth, subcarrier spacing,
 modulation, offset from `Fc`, relative power and random seed:
 
-    NR;BW=20e6;SCS=30e3;Mod=64QAM;Off=0;P=0;Seed=1
+    NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1
 
 Select it and press **Design signal…** in the inspector to edit the carriers in the Signal
 Designer: presets (LTE 20, NR 20, NR 100, two carriers at any spacing, four contiguous LTE), the

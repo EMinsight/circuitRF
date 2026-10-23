@@ -23,16 +23,16 @@ public static class DocSignalFixtures
 {
     /// <summary>One NR 20 MHz carrier (30 kHz, 64QAM) at Fc = RFfreq, Pavg = Pin — the Envelope example's source.</summary>
     public static FigureScene DesignerNr20() => Designer(
-        "\"NR;BW=20e6;SCS=30e3;Mod=64QAM;Off=0;P=0;Seed=1\"");
+        "\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1\"");
 
     /// <summary>Two NR 20 MHz carriers 400 MHz apart — the wide two-carrier case.</summary>
     public static FigureScene DesignerTwoCarrier() => Designer(
-        "\"NR;BW=20e6;SCS=30e3;Mod=64QAM;Off=-200e6;P=0;Seed=1\"",
-        "\"NR;BW=20e6;SCS=30e3;Mod=64QAM;Off=200e6;P=0;Seed=2\"");
+        "\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-200MHz;P=0;Seed=1\"",
+        "\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=200MHz;P=0;Seed=2\"");
 
     /// <summary>One NR 20 MHz carrier on the EVM tab: an unclipped source, so its EVM is the clean-source floor.</summary>
     public static FigureScene DesignerEvm() => Designer(tab: 1, clip: null,
-        carriers: "\"NR;BW=20e6;SCS=30e3;Mod=64QAM;Off=0;P=0;Seed=1\"");
+        carriers: "\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1\"");
 
     private static FigureScene Designer(params string[] carriers) => Designer(0, null, carriers);
 

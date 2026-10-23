@@ -2205,7 +2205,7 @@ public static class ComponentTypeRegistry
                 new("Fc",         "2",    "GHz", true,  UnitDimension.Frequency),
                 new("Pavg",       "10",   "dBm", true,  UnitDimension.Power),
                 new("Z",          "50",   "Ω",   true,  UnitDimension.Resistance),
-                new("Carrier[1]", "\"LTE;BW=20e6;Mod=64QAM;Off=0;P=0;Seed=1\"", "", true, UnitDimension.None),
+                new("Carrier[1]", "\"LTE;BW=20MHz;Mod=64QAM;Off=0;P=0;Seed=1\"", "", true, UnitDimension.None),
                 new("Record",     "1e-3", "",    false, UnitDimension.None)];
 
             case SymbolKind.ZPort:

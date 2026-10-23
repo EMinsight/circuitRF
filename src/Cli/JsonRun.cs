@@ -78,6 +78,11 @@ internal static class JsonRun
     /// <summary>Set by <c>lp</c>/<c>lpp</c>, the two verbs whose default document is the summary.</summary>
     public static bool SummaryIsTheDefault;
 
+    /// <summary>Set by <c>env</c>: with no <c>--all</c>, <c>--only</c> or <c>--group</c>, the document carries only the
+    /// cubes of at most this many values. An envelope's time waveforms and spectrum run to hundreds of MB of JSON;
+    /// its ACLR, AM-AM/AM-PM and scalars are the answer, and the shape still names everything else.</summary>
+    public static int? InlineCubeLimit;
+
     public static string  Verb      = "";
     public static string? InputPath;
 
@@ -217,6 +222,7 @@ internal static class JsonRun
         _onlyGroups         = null;
         AllCubes            = false;
         SummaryIsTheDefault = false;
+        InlineCubeLimit     = null;
         Verb                = "";
         InputPath           = null;
         Analysis            = null;
@@ -529,8 +535,12 @@ internal static class JsonRun
         bool wantGroups = !_summaryOnly
                        && (!SummaryIsTheDefault || AllCubes || _onlyCubes is not null || _onlyGroups is not null);
 
+        string[]? onlyCubes = _onlyCubes;
+        if (onlyCubes is null && _onlyGroups is null && !AllCubes && InlineCubeLimit is int limit)
+            onlyCubes = [.. ds.Groups.SelectMany(g => ds.CubesIn(g)).Where(c => c.Value.BufferLength <= limit).Select(c => c.Key).Distinct()];
+
         var groups = wantGroups
-            ? ResultDocumentWriter.ToJson(ds, _onlyGroups, _onlyCubes)
+            ? ResultDocumentWriter.ToJson(ds, _onlyGroups, onlyCubes)
             : null;
 
         // R-aut9-10: the shape is uniform across every verb, present whether or not the values are.

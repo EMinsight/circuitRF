@@ -12,6 +12,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:CircuitRF.Ui.Signals"
         xmlns:ddc="using:CircuitRF.Ui.DataDisplay.Controls"
+        xmlns:ddv="using:CircuitRF.Ui.DataDisplay.ViewModels"
+        xmlns:ddvw="using:CircuitRF.Ui.Views.DataDisplay"
         xmlns:ctl="using:CircuitRF.Ui.Controls"
         xmlns:mi="clr-namespace:Material.Icons.Avalonia;assembly=Material.Icons.Avalonia"
         x:Class="CircuitRF.Ui.Views.Signals.SignalDesignerWindow"
@@ -19,6 +21,11 @@
         Title="{Binding Title}"
         Width="1199" Height="800" MinWidth="1000" MinHeight="680"
         CanResize="True">
+
+    <!-- Delete removes the selected markers, wherever focus sits; a text field takes the key first. -->
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Delete" Command="{Binding DeleteSelectedMarkersCommand}"/>
+    </Window.KeyBindings>
 
     <Window.Styles>
         <Style Selector="Border.pane">
@@ -70,9 +77,12 @@
         <Style Selector="Border.card CheckBox">
             <Setter Property="FontSize" Value="12"/>
         </Style>
+        <!-- The thicker border takes its extra pixel out of the padding (8,6 in Border.card), so selecting a card
+             moves nothing: neither its own contents nor the cards below it. -->
         <Style Selector="Border.card.selected">
             <Setter Property="BorderBrush"     Value="{DynamicResource SystemAccentColor}"/>
             <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="Padding"         Value="7,5"/>
         </Style>
         <Style Selector="TextBlock.bignum">
             <Setter Property="FontSize"   Value="26"/>
@@ -100,12 +110,10 @@
                     <StackPanel Margin="0,0,6,0">
                         <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Classes="panelhdr" Text="Signal" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Classes="small" Command="{Binding ExportSignalCommand}"
-                                    ToolTip.Tip="Save the signal as a two-column I Q text file (sample-rate header), the format a FILE carrier imports">
-                                <StackPanel Orientation="Horizontal" Spacing="4">
-                                    <mi:MaterialIcon Kind="Export" Width="14" Height="14"/>
-                                    <TextBlock Text="Export signal…"/>
-                                </StackPanel>
+                            <!-- Icon-only, as the schematic toolbar's buttons are: the name is in the tooltip. -->
+                            <Button Grid.Column="1" Padding="6,3" Margin="0,2,0,8" Command="{Binding ExportSignalCommand}"
+                                    ToolTip.Tip="Export signal: save it as a two-column I Q text file (sample-rate header), the format a FILE carrier imports">
+                                <mi:MaterialIcon Kind="ExportVariant" Width="16" Height="16"/>
                             </Button>
                         </Grid>
 
@@ -113,9 +121,9 @@
                             <StackPanel>
                                 <TextBlock Classes="cardhdr" Text="Source"/>
                                 <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto">
-                                    <TextBlock Classes="lbl" Text="Centre Fc (GHz)" Margin="0,0,6,0"/>
+                                    <TextBlock Classes="lbl" Text="{Binding FcUnit, StringFormat='Centre Fc ({0})'}" Margin="0,0,6,0"/>
                                     <TextBox Grid.Column="1" Text="{Binding FcText}"
-                                             ToolTip.Tip="A number in GHz, or an expression / variable (e.g. RFfreq) — written back exactly as typed"/>
+                                             ToolTip.Tip="A number in the unit shown, or an expression / variable (e.g. RFfreq) — written back exactly as typed"/>
                                     <TextBlock Grid.Column="2" Classes="lbl" Text="Pavg (dBm)" Margin="12,0,6,0"/>
                                     <TextBox Grid.Column="3" Text="{Binding PavgText}"
                                              ToolTip.Tip="A number in dBm, or an expression / variable (e.g. Pin, so a power sweep still sweeps it)"/>
@@ -130,60 +138,6 @@
                                 </Grid>
                             </StackPanel>
                         </Border>
-
-                        <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,2">
-                            <TextBlock Classes="cardhdr" Text="Carriers" VerticalAlignment="Center"/>
-                            <Button Grid.Column="1" Classes="small" Command="{Binding AddCarrierCommand}" ToolTip.Tip="Add a carrier next to the last one">
-                                <StackPanel Orientation="Horizontal" Spacing="4">
-                                    <mi:MaterialIcon Kind="Plus" Width="14" Height="14"/>
-                                    <TextBlock Text="Add carrier"/>
-                                </StackPanel>
-                            </Button>
-                        </Grid>
-                        <ItemsControl ItemsSource="{Binding Carriers}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate x:DataType="vm:CarrierRowViewModel">
-                                    <Border Classes="card" Classes.selected="{Binding IsSelected}" Tag="carrier-card" Background="Transparent"
-                                            ToolTip.Tip="Click a carrier to show its EVM on the EVM tab">
-                                        <Grid ColumnDefinitions="Auto,90,*,Auto" RowDefinitions="Auto,Auto,Auto">
-                                            <Border Background="{DynamicResource SystemListLowColor}" CornerRadius="3" Padding="5,1" VerticalAlignment="Center" Margin="0,0,6,0">
-                                                <TextBlock FontSize="12" FontWeight="SemiBold" Text="{Binding Index, StringFormat='C{0}'}"/>
-                                            </Border>
-                                            <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:CarrierRowViewModel.Standards}" SelectedItem="{Binding Standard}" HorizontalAlignment="Stretch"/>
-                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0" IsVisible="{Binding IsOfdm}">
-                                                <TextBlock Classes="lbl" Text="BW (MHz)"/>
-                                                <ComboBox ItemsSource="{Binding BandwidthOptions}" SelectedItem="{Binding BandwidthMHz}" MinWidth="70"/>
-                                                <TextBlock Classes="lbl" Text="SCS (kHz)" IsVisible="{Binding IsNr}"/>
-                                                <ComboBox ItemsSource="{x:Static vm:CarrierRowViewModel.ScsOptions}" SelectedItem="{Binding ScsKHz}" IsVisible="{Binding IsNr}" MinWidth="60"/>
-                                            </StackPanel>
-                                            <Button Grid.Column="3" Classes="small" Padding="4,2"
-                                                    Command="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).RemoveCarrierCommand}"
-                                                    CommandParameter="{Binding}" ToolTip.Tip="Remove this carrier">
-                                                <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
-                                            </Button>
-                                            <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
-                                                <TextBlock Classes="lbl" Text="Offset (MHz)"/>
-                                                <NumericUpDown Value="{Binding OffsetMHz}" Increment="5" FormatString="0.###" MinWidth="90"
-                                                               ToolTip.Tip="Carrier centre relative to Fc. Carriers more than 3 channel bandwidths apart get their own envelope fundamental in the simulation."/>
-                                                <TextBlock Classes="lbl" Text="Power (dB)"/>
-                                                <NumericUpDown Value="{Binding PowerDb}" Increment="1" FormatString="0.##" MinWidth="70"
-                                                               ToolTip.Tip="Relative to the other carriers; Pavg sets the total"/>
-                                                <TextBlock Classes="lbl" Text="Seed"/>
-                                                <NumericUpDown Value="{Binding Seed}" Increment="1" Minimum="0" FormatString="0" MinWidth="60"/>
-                                                <ComboBox ItemsSource="{x:Static vm:CarrierRowViewModel.Modulations}" SelectedItem="{Binding Modulation}" MinWidth="96"
-                                                          IsVisible="{Binding IsOfdm}" ToolTip.Tip="Subcarrier modulation"/>
-                                            </StackPanel>
-                                            <Grid Grid.Row="2" Grid.ColumnSpan="4" ColumnDefinitions="*,Auto" Margin="0,6,0,0" IsVisible="{Binding IsFile}">
-                                                <TextBox Text="{Binding FilePath}" PlaceholderText="I/Q text file (# sample_rate_hz header, I Q columns)"/>
-                                                <Button Grid.Column="1" Classes="small" Margin="4,0,0,0" Content="Browse…"
-                                                        Command="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).BrowseFileCommand}"
-                                                        CommandParameter="{Binding}"/>
-                                            </Grid>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
 
                         <Border Classes="card" Margin="0,4,0,6">
                             <StackPanel Spacing="6">
@@ -202,7 +156,7 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Classes="card">
+                        <Border Classes="card" Margin="0,0,0,6">
                             <StackPanel>
                                 <TextBlock Classes="cardhdr" Text="Waveform"/>
                                 <Grid ColumnDefinitions="Auto,Auto" RowDefinitions="Auto,Auto">
@@ -217,6 +171,60 @@
                                            Text="Every edit previews by itself. The signal is generated in the background and cached; a simulation of this source reuses it."/>
                             </StackPanel>
                         </Border>
+
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,6">
+                            <TextBlock Classes="cardhdr" Text="Carriers" VerticalAlignment="Center"/>
+                            <Button Padding="6,3" Margin="8,0,0,0" VerticalAlignment="Center" Command="{Binding AddCarrierCommand}"
+                                    ToolTip.Tip="Add carrier: a new one next to the last">
+                                <mi:MaterialIcon Kind="Plus" Width="16" Height="16"/>
+                            </Button>
+                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding Carriers}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:CarrierRowViewModel">
+                                    <Border Classes="card" Classes.selected="{Binding IsSelected}" Tag="carrier-card" Background="Transparent"
+                                            ToolTip.Tip="Click a carrier to show its EVM on the EVM tab">
+                                        <Grid ColumnDefinitions="Auto,90,*,Auto" RowDefinitions="Auto,Auto,Auto">
+                                            <Border Background="{DynamicResource SystemListLowColor}" CornerRadius="3" Padding="5,1" VerticalAlignment="Center" Margin="0,0,6,0">
+                                                <TextBlock FontSize="12" FontWeight="SemiBold" Text="{Binding Index, StringFormat='C{0}'}"/>
+                                            </Border>
+                                            <ComboBox Grid.Column="1" ItemsSource="{x:Static vm:CarrierRowViewModel.Standards}" SelectedItem="{Binding Standard}" HorizontalAlignment="Stretch"/>
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0" IsVisible="{Binding IsOfdm}">
+                                                <TextBlock Classes="lbl" Text="BW (MHz)"/>
+                                                <ComboBox ItemsSource="{Binding BandwidthOptions}" SelectedItem="{Binding BandwidthMHz}" MinWidth="70"/>
+                                                <TextBlock Classes="lbl" Text="SCS (kHz)" IsVisible="{Binding IsNr}"/>
+                                                <ComboBox ItemsSource="{x:Static vm:CarrierRowViewModel.ScsOptions}" SelectedItem="{Binding ScsKHz}" IsVisible="{Binding IsNr}" MinWidth="60"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="3" Classes="small" Padding="4,2"
+                                                    Command="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).RemoveCarrierCommand}"
+                                                    CommandParameter="{Binding}" ToolTip.Tip="Remove this carrier"
+                                                    IsEnabled="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).HasSeveralCarriers}">
+                                                <mi:MaterialIcon Kind="Close" Width="14" Height="14"/>
+                                            </Button>
+                                            <StackPanel Grid.Row="1" Grid.ColumnSpan="4" Orientation="Horizontal" Spacing="6" Margin="0,6,0,0">
+                                                <TextBlock Classes="lbl" Text="Offset (MHz)"/>
+                                                <NumericUpDown Value="{Binding OffsetMHz}" Increment="5" FormatString="0.###" MinWidth="90"
+                                                               ToolTip.Tip="Carrier centre relative to Fc. Carriers more than 3 channel bandwidths apart get their own envelope fundamental in the simulation."/>
+                                                <TextBlock Classes="lbl" Text="Power (dB)"/>
+                                                <NumericUpDown Value="{Binding PowerDb}" Increment="1" FormatString="0.##" MinWidth="70"
+                                                               IsEnabled="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).HasSeveralCarriers}"
+                                                               ToolTip.Tip="Relative to the other carriers; Pavg sets the total. With one carrier there is nothing to be relative to."/>
+                                                <TextBlock Classes="lbl" Text="Seed"/>
+                                                <NumericUpDown Value="{Binding Seed}" Increment="1" Minimum="0" FormatString="0" MinWidth="60"/>
+                                                <ComboBox ItemsSource="{x:Static vm:CarrierRowViewModel.Modulations}" SelectedItem="{Binding Modulation}" MinWidth="96"
+                                                          IsVisible="{Binding IsOfdm}" ToolTip.Tip="Subcarrier modulation"/>
+                                            </StackPanel>
+                                            <Grid Grid.Row="2" Grid.ColumnSpan="4" ColumnDefinitions="*,Auto" Margin="0,6,0,0" IsVisible="{Binding IsFile}">
+                                                <TextBox Text="{Binding FilePath}" PlaceholderText="I/Q text file (# sample_rate_hz header, I Q columns)"/>
+                                                <Button Grid.Column="1" Classes="small" Margin="4,0,0,0" Content="Browse…"
+                                                        Command="{Binding $parent[Window].((vm:SignalDesignerViewModel)DataContext).BrowseFileCommand}"
+                                                        CommandParameter="{Binding}"/>
+                                            </Grid>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </StackPanel>
                 </ScrollViewer>
             </Border>
@@ -241,6 +249,26 @@
                                 <Border Grid.Row="2" Classes="card" Margin="0,4,0,0">
                                     <SelectableTextBlock Text="{Binding Stats}" FontFamily="Cascadia Mono,Consolas,Menlo,monospace" FontSize="11" TextWrapping="NoWrap"/>
                                 </Border>
+                                <!-- Marker info boxes for this tab's plots: the Data Display's own overlay, click-through
+                                     (no Background) except on a box. One layer per tab, so a hidden tab's boxes hide too. -->
+                                <ItemsControl Name="SpectrumInfoBoxLayer" Grid.RowSpan="3" Background="{x:Null}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <Canvas Background="{x:Null}"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemContainerTheme>
+                                        <ControlTheme TargetType="ContentPresenter">
+                                            <Setter Property="Canvas.Left" Value="{ReflectionBinding ViewLeft}"/>
+                                            <Setter Property="Canvas.Top"  Value="{ReflectionBinding ViewTop}"/>
+                                        </ControlTheme>
+                                    </ItemsControl.ItemContainerTheme>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="ddv:MarkerInfoBoxViewModel">
+                                            <ddvw:MarkerInfoBoxView/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </Grid>
                         </TabItem>
 
@@ -329,6 +357,26 @@
                                         </Canvas>
                                     </Grid>
                                 </ctl:AspectRatioPanel>
+                                <!-- Marker info boxes for this tab's plots: the Data Display's own overlay, click-through
+                                     (no Background) except on a box. One layer per tab, so a hidden tab's boxes hide too. -->
+                                <ItemsControl Name="EvmInfoBoxLayer" Grid.RowSpan="5" Background="{x:Null}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <Canvas Background="{x:Null}"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemContainerTheme>
+                                        <ControlTheme TargetType="ContentPresenter">
+                                            <Setter Property="Canvas.Left" Value="{ReflectionBinding ViewLeft}"/>
+                                            <Setter Property="Canvas.Top"  Value="{ReflectionBinding ViewTop}"/>
+                                        </ControlTheme>
+                                    </ItemsControl.ItemContainerTheme>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="ddv:MarkerInfoBoxViewModel">
+                                            <ddvw:MarkerInfoBoxView/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </Grid>
                         </TabItem>
                     </TabControl>

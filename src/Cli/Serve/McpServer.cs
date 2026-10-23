@@ -277,6 +277,11 @@ internal sealed class McpServer
                 "analysis=center and read the verified yield. 9. which factors matter: a doe line (doe design=pb, then " +
                 "doe design=ccf on the active few) and run analysis=doe -> result.doe, the effects with their alias sets; " +
                 "optimum=true confirms the fitted model's best point by simulation.\n" +
+                // The circuit envelope: a modulated signal through the circuit, beside the analyses it extends.
+                "Modulated signals (ACLR/ACPR, AM-AM/AM-PM, two-carrier IMD): drive the circuit with a MOD_Source " +
+                "(MOD_Source:S1 in 0 Fc=2 GHz Pavg=10 dBm Carrier[1]=\"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=0;P=0;Seed=1\"; " +
+                "'reference components' lists its keys), add analysis ENV1 type=env Stop=200e-6 ('reference analyses " +
+                "type=env'), and run analysis=env. A minute or more, not seconds.\n" +
                 // brief-artsch-7 R-as7-7: a board's artwork as a circuit, in the order an agent uses it.
                 "Artwork to circuit: 1. recognize path=<.clay> -> the report and the parts table; writes nothing. " +
                 "2. recognize partsOut=<p.csv>, edit Kind/Value there, pass it back as parts=<p.csv>. 3. recognize " +

@@ -120,7 +120,8 @@ namespace RfCore.Signals
 
         /// <summary>
         /// Parses the compact inline carrier form used in netlists:
-        /// <c>"NR;BW=20e6;SCS=30e3;Mod=64QAM;Off=-200e6;P=0;Seed=3"</c>.
+        /// <c>"NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-200MHz;P=0;Seed=3"</c>. BW, SCS and Off take Hz, kHz, MHz or
+        /// GHz after the number; a bare number is Hz (<c>BW=20e6</c>).
         /// </summary>
         public static CarrierSpec ParseCarrier(string text)
         {
@@ -145,9 +146,9 @@ namespace RfCore.Signals
                 double Num() => double.Parse(v, NumberStyles.Float, CultureInfo.InvariantCulture);
                 c = k switch
                 {
-                    "BW" => c with { BandwidthHz = Num() },
-                    "SCS" => c with { ScsHz = Num() },
-                    "OFF" or "OFFSET" => c with { OffsetHz = Num() },
+                    "BW" => c with { BandwidthHz = ParseHz(k, v) },
+                    "SCS" => c with { ScsHz = ParseHz(k, v) },
+                    "OFF" or "OFFSET" => c with { OffsetHz = ParseHz(k, v) },
                     "P" or "POWER" => c with { PowerDb = Num() },
                     "SEED" => c with { Seed = (int)Num() },
                     "FILE" => c with { FilePath = v.Trim('"') },
@@ -156,6 +157,34 @@ namespace RfCore.Signals
                 };
             }
             return c;
+        }
+
+        private static readonly (string Unit, string Exponent)[] FrequencyUnits =
+            [("GHz", "e9"), ("MHz", "e6"), ("kHz", "e3"), ("Hz", "")];
+
+        /// <summary>A frequency field: a number, optionally followed by Hz, kHz, MHz or GHz (exact case: m is milli
+        /// everywhere else in circuitRF). The prefix is applied by re-reading the literal with its exponent rather than
+        /// by multiplying, which is what lets <c>20MHz</c> and <c>20e6</c> parse to the same double.</summary>
+        private static double ParseHz(string key, string v)
+        {
+            string num = v, exp = "";
+            foreach (var (unit, e) in FrequencyUnits)
+                if (v.EndsWith(unit, StringComparison.Ordinal)) { num = v[..^unit.Length].TrimEnd(); exp = e; break; }
+            bool hasExponent = num.Contains('e', StringComparison.OrdinalIgnoreCase);
+            if (!double.TryParse(hasExponent ? num : num + exp, NumberStyles.Float, CultureInfo.InvariantCulture, out double hz))
+                throw new FormatException($"carrier field {key}={v} is not a frequency: a number with Hz, kHz, MHz or GHz");
+            return hasExponent && exp.Length > 0 ? hz * Math.Pow(10, int.Parse(exp[1..], CultureInfo.InvariantCulture)) : hz;
+        }
+
+        /// <summary>Writes <paramref name="hz"/> in <paramref name="unit"/> when that reads back as the same double, and
+        /// as plain Hz otherwise — a carrier written by the Signal Designer never changes value on its way through text.</summary>
+        private static string FormatHz(double hz, string unit)
+        {
+            if (hz == 0) return "0";
+            var inv = CultureInfo.InvariantCulture;
+            string exp = FrequencyUnits.First(u => u.Unit == unit).Exponent;
+            string scaled = (hz / double.Parse("1" + exp, inv)).ToString("R", inv);
+            return !scaled.Contains('E') && ParseHz("", scaled + unit) == hz ? scaled + unit : hz.ToString("R", inv);
         }
 
         public static QamOrder ParseMod(string v) => v.ToUpperInvariant() switch
@@ -174,12 +203,12 @@ namespace RfCore.Signals
             var sb = new StringBuilder(c.Standard.ToString().ToUpperInvariant());
             if (c.Standard is CarrierStandard.Lte or CarrierStandard.Nr)
             {
-                sb.Append(";BW=").Append(c.BandwidthHz.ToString("R", inv));
-                if (c.Standard == CarrierStandard.Nr) sb.Append(";SCS=").Append(c.ScsHz.ToString("R", inv));
+                sb.Append(";BW=").Append(FormatHz(c.BandwidthHz, "MHz"));
+                if (c.Standard == CarrierStandard.Nr) sb.Append(";SCS=").Append(FormatHz(c.ScsHz, "kHz"));
                 sb.Append(";Mod=").Append(CarrierSpec.ModName(c.Modulation));
             }
             if (c.Standard == CarrierStandard.File) sb.Append(";File=").Append(c.FilePath);
-            sb.Append(";Off=").Append(c.OffsetHz.ToString("R", inv));
+            sb.Append(";Off=").Append(FormatHz(c.OffsetHz, "MHz"));
             sb.Append(";P=").Append(c.PowerDb.ToString("R", inv));
             sb.Append(";Seed=").Append(c.Seed.ToString(inv));
             return sb.ToString();

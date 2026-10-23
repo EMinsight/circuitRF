@@ -5233,6 +5233,9 @@ public sealed partial class SchematicViewModel : ObservableObject
                     foreach (var dp in ComponentTypeRegistry.DefaultParameters(newKind, portCount))
                         newComp.Parameters.Add(new EditableParameter
                             { Name = dp.Name, Expression = dp.Expression, Unit = dp.Unit, ShowOnSchematic = dp.ShowOnSchematic, Dimension = dp.Dimension });
+                    // A part made by typing its type is as new as one placed from the palette: its GHz rows read
+                    // in the preferred unit too (Settings ▸ General ▸ Units).
+                    PreferredUnits.ApplyToNewFrequencyRows(newComp.Parameters, PreferredUnits.Frequency);
                     // Auto-assign the next-free Num so a type-change to Pin/Term/TermG/P1Tone never
                     // duplicates. Routed through ComponentTypeRegistry.OwnsUniquePortNum, not a
                     // hand-typed SymbolKind test — a bare "newKind == SymbolKind.Term" check here was

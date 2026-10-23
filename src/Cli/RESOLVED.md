@@ -3266,3 +3266,14 @@ owner decided the envelope follows the established CLI style rather than divergi
 consequence: a Data Display authored against a GUI result names `ENV1.PSD`, so pointing it at a headless
 export reads `<invalid>`. That is the same as for `hb`, and is not specific to the envelope.
 Gate: `EnvelopeExportCliTests`.
+
+## Envelope follow-ups: `check`'s no-dispatch warning, `env` reference base, MCP `run analysis=env` (2026-10-22)
+
+- **`check.analysis.none` fires only when nothing at all runs**, which is what its sentence says. It used to fire
+  for any chain-selected kind whose chain was disabled, even beside an enabled S-parameter or envelope analysis.
+  Now `AnalysisChain.RunnableTops` decides, so every kind counts.
+- **`env` passes `CircuitSource.ReferenceBaseOf(input)`** to every elaboration and to the sweep engine, like the
+  other run verbs; it passed none.
+- **MCP `run analysis=env`.** The envelope had no MCP entry. Its `--json` default now carries only cubes of at most
+  10,000 values (`JsonRun.InlineCubeLimit`): the time waveforms (`V`) and spectrum (`PSD`) of an NR run reach
+  hundreds of MB of JSON. The shape still lists them, and `--all`, `--only` or `--group` bring them in.

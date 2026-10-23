@@ -258,6 +258,32 @@ public class SignalDesignerTests
         finally { System.IO.File.Delete(path); }
     }
 
+    /// <summary>Every preview rebuilds the traces. A marker the user placed survives it on the new trace, with its
+    /// one info box pointing there (a box on a discarded trace reads nothing), and Delete removes it.</summary>
+    [Fact]
+    public async Task AMarker_SurvivesAPreview_WithItsInfoBox_AndDeletes()
+    {
+        using var d = await OpenLte();
+        var before = d.PsdPlot.Traces[0];
+        var marker = new CircuitRF.Render.DataDisplay.Marker(before, 0.0, false, false, 1, CircuitRF.Render.DataDisplay.FreqUnit.GHz)
+            { PositionStatic = before.Points[before.Points.Count / 2] };
+        before.Markers.Add(marker);
+        d.PsdContainer.OnPlotChanged(null, System.EventArgs.Empty);     // what the plot raises on adding one
+
+        await d.PreviewAsync();
+
+        var after = d.PsdPlot.Traces[0];
+        Assert.NotSame(before, after);
+        Assert.Contains(marker, after.Markers);
+        var box = Assert.Single(d.PlotHost.MarkerInfoBoxes);
+        Assert.Same(after, box.Trace);
+
+        box.SelectOnly();
+        d.DeleteSelectedMarkersCommand.Execute(null);
+        Assert.Empty(after.Markers);
+        Assert.Empty(d.PlotHost.MarkerInfoBoxes);
+    }
+
     /// <summary>One LTE 20 MHz carrier, opened in the Designer and previewed.</summary>
     private static async Task<SignalDesignerViewModel> OpenLte()
     {

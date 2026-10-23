@@ -15,7 +15,7 @@ namespace CircuitRF.Core.Devices;
 /// Netlist:
 /// <code>
 /// MOD_Source:S1 n_in 0 Fc=2 GHz Pavg=14 Z=50 Record=1e-3 \
-///     Carrier[1]="NR;BW=20e6;SCS=30e3;Mod=64QAM;Off=-200e6;P=0" Carrier[2]="LTE;BW=20e6;Off=200e6;P=0"
+///     Carrier[1]="NR;BW=20MHz;SCS=30kHz;Mod=64QAM;Off=-200MHz;P=0" Carrier[2]="LTE;BW=20MHz;Off=200MHz;P=0"
 /// </code>
 /// Optional: <c>Clip=8</c> (target PAPR, dB; absent = unclipped), <c>Shaping=-80</c> (dBc floor; <c>Shaping=off</c>).
 ///
@@ -133,6 +133,10 @@ public sealed class ModSourceModel : ComponentModel, IDriveScalable
     {
         string name = p.TryGetValue("ModSourceName", out var nm) && nm.Kind == ValueKind.String ? nm.AsString() : "MOD_Source";
         double Real(string k, double def) => p.TryGetValue(k, out var v) && v.Kind == ValueKind.Real ? v.AsReal() : def;
+        // Fc and Pavg have no default: a source that silently played 1 GHz at 0 dBm is a run nobody asked for.
+        double Required(string k, string what) => p.TryGetValue(k, out var v) && v.Kind == ValueKind.Real
+            ? v.AsReal()
+            : throw new ParameterRefusalException($"MOD_Source needs {k}, its {what}");
         Complex z = p.TryGetValue("Z", out var zv)
             ? (zv.Kind == ValueKind.Complex ? zv.AsComplex() : new Complex(zv.AsReal(), 0))
             : new Complex(50, 0);
@@ -165,6 +169,6 @@ public sealed class ModSourceModel : ComponentModel, IDriveScalable
             ClipPaprDb = clip,
             ShapingFloorDbc = shaping,
         };
-        return new ModSourceModel(name, z, Real("Pavg", 0.0), Real("Fc", 1e9), spec);
+        return new ModSourceModel(name, z, Required("Pavg", "average power in dBm"), Required("Fc", "centre frequency"), spec);
     }
 }

@@ -3236,3 +3236,18 @@ simulates are also on the plot.
 
 Both are now covered by `EnvelopeExportCliTests.ASingleCarrierRun_ExportsTheCliLayout_LikeHb`:
 a CW source into 50 ohm, run as a real CLI process, delivering 0 dBm.
+
+## Envelope: follow-up fixes after merge review (2026-10-22)
+
+- **A swept envelope's later segments lost the reference base.** `ParametricSweepEngine`'s envelope case
+  elaborated segments 2..S with no `BaseDirectory`, so a relative SnP or `.cmodel` path resolved in segment 1
+  and was "not found" in the rest. A `.cnl` hid it, because `CnlReader` anchors its `File=` paths when it reads
+  the file; a schematic's stay relative. Gate: `SweptEnvelopeReferenceBaseTests`, which fails with the fix
+  removed.
+- **Segment netlists were never disposed.** `EnvelopeRunner.Run` now disposes every netlist it elaborated
+  (the first stays the caller's). A compiled model's worker instances otherwise outlived the run, one per
+  segment per sweep point.
+- **AM-AM/AM-PM and DE_pct are emitted at every point.** They were added only when more than one power bin
+  held data (and DE only when Pdc > 0), so a sweep whose points differed (a CW drive fills one bin) could not
+  be stacked and the whole sweep was refused. The AM-AM grid is fixed, so the shape never changes; an empty
+  bin, or a DE with no DC power, is NaN.
