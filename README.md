@@ -8,13 +8,13 @@
 [![UI: Avalonia](https://img.shields.io/badge/UI-Avalonia%2012-7B68EE.svg)](https://avaloniaui.net/)
 
 circuitRF is a full-featured EDA tool for RF and microwave design — schematic capture + nonlinear analysis, layout and
-EM and thermal simulation in one cross-platform application. **DC**, **S-parameter** and **harmonic-balance**
-analyses with first-class **loadpull / sourcepull**, over designs from a handful of components to
+EM and thermal simulation in one cross-platform application. **DC**, **S-parameter**, **harmonic-balance** and
+**circuit envelope** analyses with first-class **loadpull / sourcepull**, over designs from a handful of components to
 hierarchical, multi-port ones with thousands. A **layout editor** for PCB and MMIC work, with
 substrate-aware microstrip components, schematic↔layout generation, **DRC** and **LVS**, and two-way
 interchange with **Gerber + Excellon**, **GDSII**, **DXF** and `.kicad_pcb` boards. A **2.5D
 electromagnetic solver** over the layout's own substrate stackup. **3D editor** for FEM / FDTD EM solutions (using Palace
-/ openEMS), and a built-in FEM **thermal solver**.  Supports command line and MCP.
+/ EMerge / openEMS), and a built-in FEM **thermal solver**.  Supports command line and MCP.
 
 **🎬 [circuitRF overview video](https://www.youtube.com/watch?v=s6teobulr_A)**
 
@@ -23,10 +23,10 @@ electromagnetic solver** over the layout's own substrate stackup. **3D editor** 
 circuitRF is for RF practitioners or researchers who can't justify the cost of traditional tools (or find those tools too heavy for a quick investigation): **power-amplifier, LNA, and mixer designers; RF EDA and device-modeling engineers; academic researchers; and capable hobbyists.** It is written in **C# / .NET 10**, with an **Avalonia 12** GUI rendered through **SkiaSharp**, and it was built largely **AI-assisted** (see
 [AI-assisted development](#ai-assisted-development)).
 
-> **Status:** 1.1.0. Please file issues.
+> **Status:** 1.5.0. Please file issues.
 
 ## Features
-- schematic + circuit simulation (DC, S-param, HB, Loadpull)
+- schematic + circuit simulation (DC, S-param, HB, Loadpull, Envelope)
 - 2D layout editor (imports and exports Gerber, GDSII, OASIS, DXF, .kicad_pcb)
 - 3D geometry editor (imports / exports Step)
 - hierarchy for all cell view types (including 3D)
@@ -35,7 +35,7 @@ circuitRF is for RF practitioners or researchers who can't justify the cost of t
 - Tuning and Optimization UI
 - Monte Carlo, yield, corners, design centering and design of experiments
 - 2.5D MoM
-- 3D FEM and FDTD (using [Palace](https://github.com/awslabs/palace) and [openEMS](https://github.com/thliebig/openEMS))
+- 3D FEM and FDTD (using [Palace](https://github.com/awslabs/palace), [EMerge](https://github.com/FennisRobert/EMerge) and [openEMS](https://github.com/thliebig/openEMS))
 - 3D FEM thermal solver
 - command line and MCP server ([use it from an AI agent](#use-circuitrf-from-an-ai-agent))
 - Documentation with examples
@@ -82,29 +82,29 @@ their schematic parameters, hierarchy with arrays, and export to GDSII, DXF and 
 
 ## Download
 
-> **circuitRF 1.1.0 is the current stable release.** Beta versions are published as GitHub
+> **circuitRF 1.5.0 is the current stable release.** Beta versions are published as GitHub
 > pre-releases, and *Settings ▸ Security & Permissions ▸ Include beta releases* is what puts them on
 > your update channel. It is ticked by default — untick it to receive stable releases only.
 
 | Platform | Download |
 |---|---|
-| Windows, Intel/AMD | [circuitRF-1.1.0-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.1.0/circuitRF-1.1.0-win-x64-user.msi) |
-| Windows, ARM | [circuitRF-1.1.0-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.1.0/circuitRF-1.1.0-win-arm64-user.msi) |
-| Windows, 32-bit | [circuitRF-1.1.0-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.1.0/circuitRF-1.1.0-win-x86-user.msi) |
+| Windows, Intel/AMD | [circuitRF-1.5.0-win-x64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.0/circuitRF-1.5.0-win-x64-user.msi) |
+| Windows, ARM | [circuitRF-1.5.0-win-arm64-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.0/circuitRF-1.5.0-win-arm64-user.msi) |
+| Windows, 32-bit | [circuitRF-1.5.0-win-x86-user.msi](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.0/circuitRF-1.5.0-win-x86-user.msi) |
 |  |  |
-| macOS, Apple Silicon | [circuitRF-1.1.0-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.1.0/circuitRF-1.1.0-arm64.dmg) |
-| macOS, Intel | [circuitRF-1.1.0-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.1.0/circuitRF-1.1.0-x64.dmg) |
+| macOS, Apple Silicon | [circuitRF-1.5.0-arm64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.0/circuitRF-1.5.0-arm64.dmg) |
+| macOS, Intel | [circuitRF-1.5.0-x64.dmg](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.0/circuitRF-1.5.0-x64.dmg) |
 |  |  |
-| Linux, Intel/AMD | [circuitRF-1.1.0-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.1.0/circuitRF-1.1.0-linux-x64.tar.gz) |
-| Linux, ARM | [circuitRF-1.1.0-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.1.0/circuitRF-1.1.0-linux-arm64.tar.gz) |
+| Linux, Intel/AMD | [circuitRF-1.5.0-linux-x64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.0/circuitRF-1.5.0-linux-x64.tar.gz) |
+| Linux, ARM | [circuitRF-1.5.0-linux-arm64.tar.gz](https://github.com/potatobeanradio/circuitRF/releases/download/1.5.0/circuitRF-1.5.0-linux-arm64.tar.gz) |
 
 
 **Linux** — unpack and run `install.sh`. It writes only inside `~/.local`, puts `circuitrf` on your PATH
 and registers the menu entry and file types; `--uninstall` removes it and leaves your work alone.
 
 ```sh
-tar xzf circuitRF-1.1.0-linux-x64.tar.gz
-./circuitRF-1.1.0/install.sh
+tar xzf circuitRF-1.5.0-linux-x64.tar.gz
+./circuitRF-1.5.0/install.sh
 ```
 
 **Installing for everyone on the machine?** The Windows `.msi` files without `-user`, and the `.deb`
@@ -347,7 +347,6 @@ var dataset          = SParameterEngine.Run(netlist, freqsHz);   // → a DataSe
 
 - **Noise analysis** — no noise figure, no phase noise, no Fmin / Γopt / Rn extraction.
 - **Transient analysis** — circuitRF is frequency-domain by design; there is no time-domain solver.
-- **Envelope analysis** — no simulation of modulated waveforms (no ACPR, no EVM, no pre-distortion)
 
 If you want to contribute to any of the above, please contact me.
 
